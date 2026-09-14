@@ -194,6 +194,35 @@ type AnthropicStreamEvent struct {
 	} `json:"delta"`
 }
 
+// ---------------------------------------------------------------------------
+// Cloudflare Workers AI
+// ---------------------------------------------------------------------------
+
+// WorkersAIRequest is the body of a Workers AI /ai/run/{model} call.
+type WorkersAIRequest struct {
+	Messages  []OpenAIChatMessage `json:"messages"`
+	Stream    bool                `json:"stream,omitempty"`
+	MaxTokens int                 `json:"max_tokens,omitempty"`
+}
+
+// WorkersAIError is a single Workers AI error entry.
+type WorkersAIError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+// WorkersAIResponse is the non-streaming Workers AI response. Chat models
+// return result.choices (OpenAI-compatible); text-generation models return
+// result.response.
+type WorkersAIResponse struct {
+	Result struct {
+		Response string             `json:"response"`
+		Choices  []OpenAIChatChoice `json:"choices"`
+	} `json:"result"`
+	Success bool             `json:"success"`
+	Errors  []WorkersAIError `json:"errors"`
+}
+
 // ApplyAuthHeader applies the surface's auth header to an outgoing request.
 func ApplyAuthHeader(req *http.Request, s Surface, apiKey string) {
 	if s == SurfaceAnthropicMessages {

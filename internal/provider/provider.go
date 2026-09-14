@@ -21,12 +21,15 @@ type Provider struct {
 	apiKey  string
 }
 
-// New validates and returns a Provider. name must be "openai" or "anthropic";
-// baseURL must be a valid http(s) URL; apiKey must be non-empty.
+// New validates and returns a Provider. Supported names are "openai",
+// "anthropic", "cloudflare-workers-ai", and "cloudflare-ai-gateway". baseURL
+// must be a valid http(s) URL; apiKey must be non-empty.
 func New(name, baseURL, apiKey string) (*Provider, error) {
 	n := strings.ToLower(strings.TrimSpace(name))
-	if n != "openai" && n != "anthropic" {
-		return nil, fmt.Errorf("unsupported provider %q (want openai or anthropic)", name)
+	switch n {
+	case "openai", "anthropic", "cloudflare-workers-ai", "cloudflare-ai-gateway":
+	default:
+		return nil, fmt.Errorf("unsupported provider %q (want openai, anthropic, cloudflare-workers-ai, or cloudflare-ai-gateway)", name)
 	}
 	baseURL = strings.TrimSpace(baseURL)
 	if baseURL == "" {
@@ -54,16 +57,27 @@ func (p *Provider) IsAnthropic() bool { return p.name == "anthropic" }
 // IsOpenAI reports whether this provider speaks the OpenAI surfaces.
 func (p *Provider) IsOpenAI() bool { return p.name == "openai" }
 
-// Headers returns the auth headers for the provider's surface.
-func (p *Provider) Headers() map[string]string {
-	return wire.AuthHeaders(p.surface(), p.apiKey)
-}
+// IsCloudflareWorkersAI reports whether this provider is Cloudflare Workers AI.
+func (p *Provider) IsCloudflareWorkersAI() bool { return p.name == "cloudflare-workers-ai" }
 
-func (p *Provider) surface() wire.Surface {
-	if p.IsAnthropic() {
-		return wire.SurfaceAnthropicMessages
+// IsCloudflareAIGateway reports whether this provider is the Cloudflare AI Gateway.
+func (p *Provider) IsCloudflareAIGateway() bool { return p.name == "cloudflare-ai-gateway" }
+
+// Headers returns the auth headers for the provider. Cloudflare AI Gateway
+// authenticates with cf-aig-authorization; Anthropic with x-api-key; OpenAI
+// and Cloudflare Workers AI with a Bearer token — matching Pi's provider auth.
+func (p *Provider) Headers() map[string]string {
+	h := map[string]string{"content-type": "application/json"}
+	switch p.name {
+	case "anthropic":
+		h["x-api-key"] = p.apiKey
+		h["anthropic-version"] = "2023-06-01"
+	case "cloudflare-ai-gateway":
+		h["cf-aig-authorization"] = "Bearer " + p.apiKey
+	default: // openai, cloudflare-workers-ai
+		h["authorization"] = "Bearer " + p.apiKey
 	}
-	return wire.SurfaceOpenAIChat
+	return h
 }
 
 func (p *Provider) chatURL() string {
