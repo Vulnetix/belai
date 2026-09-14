@@ -6,28 +6,13 @@ exposes.
 
 ## Role Manager
 
-The Role Manager is the central safety boundary. It owns:
+The Role Manager is Signet's central safety boundary: security classification,
+the sanitize → classify → decision pipeline, system/agent block boundaries,
+tool-call and permission invariants, skill/hook validation, and operating-mode
+auto-detection.
 
-- **Classification** (`internal/rolemanager`): untrusted tool output is sent to
-  a classifier model with a specialised system prompt and **no tools, no
-  skills, and no agent block**. The classifier must reply with exactly one
-  sentinel token: `SAFE`, `PROMPT_INJECTION`, `JAILBREAK`,
-  `DATA_EXTRACTION`, or `MODEL_EXTRACTION`. The sentinel is parsed strictly;
-  malformed output fails closed.
-- **Pipeline** (`internal/rolemanager/pipeline.go`): Read/WebSearch/WebFetch
-  results flow through sanitize → classify → sentinel decision. `SAFE` proceeds;
-  every other sentinel (and malformed output) warns. No tools execute during
-  the classifier turn.
-- **Boundaries** (`internal/rolemanager/boundaries.go`): untrusted text can
-  never enter system or agent blocks. Only fragments from trusted sources
-  (`harness` or `tool`) are accepted.
-- **Tool-call invariants** (`internal/rolemanager/toolcalls.go`): every model
-  tool call is checked against the tools present in the prompt. A mismatch
-  triggers the user policy: abort (default), strip, or ignore.
-
-A separate permission layer (`internal/permissions`) provides allow/ask/block
-per tool using the Claude permission-settings shape (`allow`/`ask`/`deny`, with
-`block` accepted as an alias). Unknown tools are never forwarded.
+Its full business rules — sentinel tables, decision trees, and flow diagrams —
+live in [role-manager.md](role-manager.md).
 
 ## Delimiter, nonce, and integrity model
 
