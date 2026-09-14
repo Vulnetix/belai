@@ -1,0 +1,245 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v1.2.3)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+# Never run two releases for the same version at once.
+concurrency:
+  group: release-${{ inputs.version || github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Force JS actions to Node 24 so deprecated Node 20 runs stop firing.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+    steps:
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Releasing $VERSION"
+
+  # Signet is pure Go (CGO_ENABLED=0), so every target cross-compiles from one
+  # Linux box. That box is the org's self-hosted x64 pool
+  # (github-runner-aws): [self-hosted, Linux, X64, vulnetix-local].
+  build:
+    needs: version
+    runs-on: [self-hosted, Linux, X64, vulnetix-local]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build cross-platform binaries
+        run: |
+          VERSION=${{ needs.version.outputs.version }}
+          COMMIT=$(git rev-parse --short HEAD)
+          BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          LDFLAGS="-s -w -X github.com/vulnetix/signet/internal/version.Version=${VERSION} -X github.com/vulnetix/signet/internal/version.Commit=${COMMIT} -X github.com/vulnetix/signet/internal/version.BuildDate=${BUILD_DATE}"
+          mkdir -p bin
+
+          build_target() {
+            local goos="$1" goarch="$2" suffix="$3"
+            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
+              go build -ldflags "$LDFLAGS" \
+              -o "bin/signet-${goos}-${goarch}${suffix}" ./cmd/signet
+          }
+
+          build_target linux   amd64 ""
+          build_target linux   arm64 ""
+          build_target darwin  amd64 ""
+          build_target darwin  arm64 ""
+          build_target windows amd64 ".exe"
+          build_target windows arm64 ".exe"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: binaries
+          path: bin/*
+
+  release:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      version: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: binaries
+          path: bin
+
+      - name: Generate checksums
+        run: |
+          cd bin
+          sha256sum * > checksums.txt
+
+      - name: Create or update Release
+        run: |
+          VERSION=${{ needs.version.outputs.version }}
+          if gh release view "$VERSION" > /dev/null 2>&1; then
+            gh release upload "$VERSION" bin/* --clobber
+          else
+            gh release create "$VERSION" bin/* \
+              --title "Release $VERSION" \
+              --generate-notes
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  update-packages:
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout signet repo
+        uses: actions/checkout@v5
+        with:
+          token: ${{ secrets.PACKAGES_TOKEN }}
+
+      - name: Checkout homebrew-tap
+        uses: actions/checkout@v5
+        with:
+          repository: Vulnetix/homebrew-tap
+          ref: main
+          token: ${{ secrets.PACKAGES_TOKEN }}
+          path: homebrew-tap
+
+      - name: Checkout scoop-bucket
+        uses: actions/checkout@v5
+        with:
+          repository: Vulnetix/scoop-bucket
+          ref: main
+          token: ${{ secrets.PACKAGES_TOKEN }}
+          path: scoop-bucket
+
+      - name: Download checksums
+        run: |
+          curl -fsSL \
+            "https://github.com/Vulnetix/signet/releases/download/${{ needs.release.outputs.version }}/checksums.txt" \
+            -o checksums.txt
+
+      - name: Update Homebrew formula
+        run: |
+          set -euo pipefail
+          VER_NUM="${{ needs.release.outputs.version }}"
+          VER_NUM="${VER_NUM#v}"
+
+          hash_for() {
+            local sum
+            sum=$(awk -v f="$1" '$2 == f { print $1 }' checksums.txt)
+            if [ ${#sum} -ne 64 ]; then
+              echo "::error::no SHA-256 for $1 in checksums.txt" >&2
+              exit 1
+            fi
+            printf '%s' "$sum"
+          }
+          DARWIN_ARM64=$(hash_for signet-darwin-arm64)
+          DARWIN_AMD64=$(hash_for signet-darwin-amd64)
+          LINUX_ARM64=$(hash_for signet-linux-arm64)
+          LINUX_AMD64=$(hash_for signet-linux-amd64)
+
+          cd homebrew-tap
+          BREW="Formula/signet.rb"
+          if [ ! -f "$BREW" ]; then
+            echo "::error::homebrew-tap has no Formula/signet.rb" >&2
+            exit 1
+          fi
+          sed -i "s/version \"[^\"]*\"/version \"${VER_NUM}\"/" "$BREW"
+          sed -i "/signet-darwin-arm64/{n;s/sha256 \"[a-f0-9]*\"/sha256 \"${DARWIN_ARM64}\"/}" "$BREW"
+          sed -i "/signet-darwin-amd64/{n;s/sha256 \"[a-f0-9]*\"/sha256 \"${DARWIN_AMD64}\"/}" "$BREW"
+          sed -i "/signet-linux-arm64/{n;s/sha256 \"[a-f0-9]*\"/sha256 \"${LINUX_ARM64}\"/}" "$BREW"
+          sed -i "/signet-linux-amd64/{n;s/sha256 \"[a-f0-9]*\"/sha256 \"${LINUX_AMD64}\"/}" "$BREW"
+
+          for want in "${VER_NUM}" "${DARWIN_ARM64}" "${DARWIN_AMD64}" "${LINUX_ARM64}" "${LINUX_AMD64}"; do
+            if ! grep -q "$want" "$BREW"; then
+              echo "::error::$BREW does not contain $want after the edit; the formula layout has moved" >&2
+              exit 1
+            fi
+          done
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$BREW"
+          if ! git diff --cached --quiet; then
+            git commit -m "signet ${VER_NUM}"
+            git push
+          fi
+
+      - name: Update Scoop manifest
+        run: |
+          set -euo pipefail
+          VER_NUM="${{ needs.release.outputs.version }}"
+          VER_NUM="${VER_NUM#v}"
+
+          hash_for() {
+            local sum
+            sum=$(awk -v f="$1" '$2 == f { print $1 }' checksums.txt)
+            if [ ${#sum} -ne 64 ]; then
+              echo "::error::no SHA-256 for $1 in checksums.txt" >&2
+              exit 1
+            fi
+            printf '%s' "$sum"
+          }
+          WIN_AMD64=$(hash_for signet-windows-amd64.exe)
+          WIN_ARM64=$(hash_for signet-windows-arm64.exe)
+
+          cd scoop-bucket
+          if [ ! -f bucket/signet.json ]; then
+            echo "::error::scoop-bucket has no bucket/signet.json" >&2
+            exit 1
+          fi
+          jq --indent 4 \
+            --arg v "$VER_NUM" \
+            --arg h64 "$WIN_AMD64" \
+            --arg harm "$WIN_ARM64" \
+            '.version = $v |
+             .architecture."64bit".url = "https://github.com/Vulnetix/signet/releases/download/v\($v)/signet-windows-amd64.exe#/signet.exe" |
+             .architecture."64bit".hash = $h64 |
+             .architecture.arm64.url = "https://github.com/Vulnetix/signet/releases/download/v\($v)/signet-windows-arm64.exe#/signet.exe" |
+             .architecture.arm64.hash = $harm' bucket/signet.json > /tmp/signet.json
+          mv /tmp/signet.json bucket/signet.json
+
+          test "$(jq -r .version bucket/signet.json)" = "$VER_NUM"
+          test "$(jq -r '.architecture."64bit".hash' bucket/signet.json)" = "$WIN_AMD64"
+          test "$(jq -r '.architecture.arm64.hash' bucket/signet.json)" = "$WIN_ARM64"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add bucket/signet.json
+          if ! git diff --cached --quiet; then
+            git commit -m "signet ${VER_NUM}"
+            git push
+          fi
