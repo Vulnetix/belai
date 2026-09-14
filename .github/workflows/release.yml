@@ -147,7 +147,7 @@ jobs:
 
       - name: Download checksums
         run: |
-          curl -fsSL \
+          curl -fsSL --retry 8 --retry-all-errors --retry-delay 5 \
             "https://github.com/Vulnetix/signet/releases/download/${{ needs.release.outputs.version }}/checksums.txt" \
             -o checksums.txt
 
