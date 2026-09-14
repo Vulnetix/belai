@@ -207,7 +207,11 @@ func (a *App) classifyMode(input string) {
 	if d.AgentName != "" {
 		a.addSystem("engaged agent: " + d.AgentName)
 	} else {
-		a.addSystem("mode: " + string(d.Mode))
+		msg := "mode: " + string(d.Mode)
+		if d.Explore {
+			msg += " (launch explore agents)"
+		}
+		a.addSystem(msg)
 	}
 	if d.Warning != "" {
 		a.addSystem(d.Warning)
