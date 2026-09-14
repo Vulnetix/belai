@@ -1,0 +1,127 @@
+# Signet architecture
+
+Signet is a role-managed, injection-safe LLM coding harness with a Codex-style
+terminal UI. This document describes its security model and the modes it
+exposes.
+
+## Role Manager
+
+The Role Manager is the central safety boundary. It owns:
+
+- **Classification** (`internal/rolemanager`): untrusted tool output is sent to
+  a classifier model with a specialised system prompt and **no tools, no
+  skills, and no agent block**. The classifier must reply with exactly one
+  sentinel token: `SAFE`, `PROMPT_INJECTION`, `JAILBREAK`,
+  `DATA_EXTRACTION`, or `MODEL_EXTRACTION`. The sentinel is parsed strictly;
+  malformed output fails closed.
+- **Pipeline** (`internal/rolemanager/pipeline.go`): Read/WebSearch/WebFetch
+  results flow through sanitize → classify → sentinel decision. `SAFE` proceeds;
+  every other sentinel (and malformed output) warns. No tools execute during
+  the classifier turn.
+- **Boundaries** (`internal/rolemanager/boundaries.go`): untrusted text can
+  never enter system or agent blocks. Only fragments from trusted sources
+  (`harness` or `tool`) are accepted.
+- **Tool-call invariants** (`internal/rolemanager/toolcalls.go`): every model
+  tool call is checked against the tools present in the prompt. A mismatch
+  triggers the user policy: abort (default), strip, or ignore.
+
+A separate permission layer (`internal/permissions`) provides allow/ask/block
+per tool using the Claude permission-settings shape (`allow`/`ask`/`deny`, with
+`block` accepted as an alias). Unknown tools are never forwarded.
+
+## Delimiter, nonce, and integrity model
+
+Harness-generated blocks use tags such as:
+
+```
+<system nonce="…" integrity="…">content</system>
+```
+
+- **Nonce**: a 128-bit CSPRNG value from the nonce pool
+  (`internal/nonce`). Only *reserved* nonces are valid; the pool supports
+  reserve/release/rotate and falls back to local generation.
+- **Integrity**: `integrity` is the lowercase hex SHA-256 of the enclosed
+  content.
+- **Egress verification** (`internal/delimiters`): before any payload leaves
+  for a model provider, every block is checked. A block lacking a nonce,
+  carrying an unknown nonce, or failing its integrity hash is stripped.
+- **Sanitization** (`internal/sanitize`): untrusted Read/WebSearch/WebFetch
+  output is stripped of any harness delimiter markup (and nonce/integrity
+  attributes) *before* it is ever wrapped in a delimiter, so adversarial text
+  cannot forge tags.
+
+See [nonce-endpoint-spec.md](nonce-endpoint-spec.md) for the provider nonce GET
+spec (`GET {base_url}/v1/nonces`).
+
+## Provider layer
+
+`internal/provider` + `internal/wire` reach every provider through two knobs —
+`base_url` and `api_key` — speaking the three ai-firewall surfaces:
+
+| Surface                 | Path                    | Auth header           |
+| ----------------------- | ----------------------- | --------------------- |
+| OpenAI chat             | `/chat/completions`     | `Authorization: Bearer` |
+| OpenAI responses        | `/responses`            | `Authorization: Bearer` |
+| Anthropic messages      | `/v1/messages`          | `x-api-key`           |
+
+Anthropic base URLs carry no `/v1`; OpenAI-style base URLs do. Streaming and
+non-streaming request/response shapes live in `internal/wire`.
+
+`internal/guardrails` auto-discovers the Vulnetix ai-firewall configuration and
+writes the provider entry (base URL + key source) with no custom headers.
+
+## Modes
+
+`internal/modes` defines three modes; agent is the default.
+
+### Agent mode
+
+Interactive default. Profiles (`internal/profiles`, stored under
+`~/.signet/profiles/`) are selectable at startup and mid-session via
+`/profile`.
+
+### Plan mode (read-only)
+
+Mirrors Pi's plan-mode extension:
+
+- Built-in edit/write tools are disabled; other tools remain active.
+- `bash` is restricted to a read-only allowlist (`cat`, `grep`, `find`, `ls`,
+  read-only `git` subcommands such as `status`/`log`/`diff`, `uname`, etc.).
+  Mutating commands (`rm`, `mv`, `cp`, `mkdir`, `touch`, `git add/commit/push`,
+  package installs, `sudo`/`kill`, editors) are blocked.
+- Toggle via `/plan`, `Ctrl+Alt+P`, or `--plan`; `/todos` shows progress.
+- After the agent emits a numbered plan under a `Plan:` header, the steps are
+  extracted (`internal/plans/extract.go`) and the user is prompted with three
+  options:
+  - **Execute the plan** — leaves plan mode (full tools restored);
+    `[DONE:n]` markers advance the progress widget
+    (`internal/plans/progress.go`).
+  - **Stay in plan mode** — keeps read-only constraints.
+  - **Refine the plan** — opens the editor and sends the revision back as a
+    user message.
+- Plan-mode state (enabled/executing/todos) is persisted as session entries so
+  it survives resume.
+
+### Goal mode
+
+Reads and writes goals under `.vulnetix/goals/`. The "memorise" action saves a
+goal; memorised goals are surfaced later through slash-command autocomplete
+(replay).
+
+## Session store
+
+`internal/session` persists append-only JSONL session trees
+(`id` + `parentId`) under `~/.signet/sessions/<workdir>/<session>.jsonl`, with
+fork/resume reads (full or partial UUID) and display names.
+
+## System prompt
+
+`internal/prompt` assembles the system prompt. It carries exactly one context
+block at a time (active plan, goal, or profile) and rewrites assistant voice
+guidance when `caveman` is on.
+
+## TUI
+
+`internal/tui` is a Bubble Tea app laid out Codex-style: message list,
+streaming assistant/tool output, slash-command editor with autocomplete,
+model/effort picker, and a status footer (session/tokens/cost/model).

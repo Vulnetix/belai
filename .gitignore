@@ -1,0 +1,35 @@
+# Binaries
+/signet
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Build artifacts
+/dist/
+/build/
+
+# Test artifacts
+*.test
+*.out
+coverage.txt
+
+# Go workspace
+vendor/
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Session & state (global)
+~/.signet/
+
+# Project-local state
+.vulnetix/
