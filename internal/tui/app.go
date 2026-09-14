@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/vulnetix/signet/internal/modelselect"
+	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/tui/components"
 )
 
@@ -24,6 +25,11 @@ type App struct {
 	mode         string
 	providerKey  string
 	autocomplete []string
+
+	// mode classification (optional; nil skips auto-detection)
+	classifier  rolemanager.Classifier
+	namedAgent  string
+	modeWarning string
 
 	// simulated streaming state
 	streaming  bool
@@ -48,6 +54,12 @@ func NewApp(workdir, providerKey string) *App {
 	}
 	_ = a.editor.Focus()
 	return a
+}
+
+// SetClassifier installs the operating-mode classifier. When nil, prompts are
+// not auto-classified and the current mode is left unchanged.
+func (a *App) SetClassifier(c rolemanager.Classifier) {
+	a.classifier = c
 }
 
 type tickMsg struct{}
@@ -87,6 +99,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.handleCommand(input)
 				return a, nil
 			}
+			a.classifyMode(input)
 			a.messages = append(a.messages, components.Message{Role: "user", Content: input})
 			return a, a.startStream(replyText(input, a.providerKey))
 		}
@@ -173,6 +186,32 @@ func (a *App) handleCommand(input string) {
 
 func (a *App) addSystem(text string) {
 	a.messages = append(a.messages, components.Message{Role: "system", Content: text})
+}
+
+// classifyMode runs the operating-mode classifier on a user prompt that did
+// not explicitly specify a mode. The classifier sees only the prompt text.
+func (a *App) classifyMode(input string) {
+	if a.classifier == nil {
+		return
+	}
+	d, err := rolemanager.Select(a.classifier, rolemanager.ModeInput{Prompt: input})
+	if err != nil {
+		a.mode = "agent"
+		a.modeWarning = "mode classifier error: " + err.Error()
+		a.addSystem(a.modeWarning)
+		return
+	}
+	a.mode = string(d.Mode)
+	a.namedAgent = d.AgentName
+	a.modeWarning = d.Warning
+	if d.AgentName != "" {
+		a.addSystem("engaged agent: " + d.AgentName)
+	} else {
+		a.addSystem("mode: " + string(d.Mode))
+	}
+	if d.Warning != "" {
+		a.addSystem(d.Warning)
+	}
 }
 
 // replyText produces the streamed reply. Without a provider key it returns a
