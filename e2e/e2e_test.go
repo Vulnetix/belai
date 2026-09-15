@@ -547,3 +547,202 @@ func TestDenyRuleWithholdsTool(t *testing.T) {
 		t.Fatalf("denied tool content must not reach the model: %q", tm.toolUsers[0])
 	}
 }
+
+// newWorkersAIMockServer returns a mock server that behaves like Cloudflare Workers AI.
+// It validates that tool call arguments are JSON objects (not strings) and responds
+// appropriately for classifier and chat requests.
+func newWorkersAIMockServer(t *testing.T, model string) (*httptest.Server, *workersAIMock) {
+	t.Helper()
+	wm := &workersAIMock{
+		model: model,
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var req struct {
+			Messages []struct {
+				Role      string `json:"role"`
+				Content   string `json:"content"`
+				ToolCalls []struct {
+					ID       string `json:"id"`
+					Type     string `json:"type"`
+					Function struct {
+						Name      string          `json:"name"`
+						Arguments json.RawMessage `json:"arguments"`
+					} `json:"function"`
+				} `json:"tool_calls,omitempty"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var system string
+		var haveToolResult bool
+		for _, m := range req.Messages {
+			switch m.Role {
+			case "system":
+				system = m.Content
+			case "tool":
+				haveToolResult = true
+			}
+		}
+		wm.mu.Lock()
+		defer wm.mu.Unlock()
+		if strings.Contains(system, "security classifier") {
+			wm.securityUsers = append(wm.securityUsers, extractUserMsg(req.Messages))
+			workersAIWriteText(w, securitySentinelFor(extractUserMsg(req.Messages)))
+			return
+		}
+		if strings.Contains(system, "operating-mode classifier") {
+			wm.modeUsers = append(wm.modeUsers, extractUserMsg(req.Messages))
+			workersAIWriteText(w, modeSentinelFor(extractUserMsg(req.Messages)))
+			return
+		}
+		// Chat request
+		// Validate tool call arguments are objects, not strings.
+		for _, m := range req.Messages {
+			if m.Role == "assistant" {
+				for _, tc := range m.ToolCalls {
+					var argInterface interface{}
+					if err := json.Unmarshal(tc.Function.Arguments, &argInterface); err != nil {
+						http.Error(w, err.Error(), http.StatusBadRequest)
+						return
+					}
+					switch argInterface.(type) {
+					case string:
+						// arguments is a JSON string -> invalid for Workers AI
+						errResp := map[string]any{
+							"errors": []map[string]any{
+								{
+									"message": "AiError: AiError: {\"object\":\"error\",\"message\":\"Assistant tool call function.arguments must be a JSON object.\",\"type\":\"BadRequest\",\"param\":null,\"code\":400}",
+									"code":    float64(http.StatusBadRequest),
+								},
+							},
+							"success": false,
+						}
+						b, _ := json.Marshal(errResp)
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(http.StatusBadRequest)
+						w.Write(b)
+						return
+					default:
+						// object, array, number, bool, null are ok
+					}
+				}
+			}
+		}
+		if !haveToolResult {
+			// No tool result yet: return a tool call.
+			workersAIWriteToolCall(w, "Read", map[string]any{"path": "safe.txt"})
+		} else {
+			// Already have tool result: return final text.
+			workersAIWriteText(w, "done")
+		}
+	}))
+	return srv, wm
+}
+
+type workersAIMock struct {
+	mu                 sync.Mutex
+	securityUsers      []string
+	modeUsers          []string
+	model              string
+	haveSeenToolResult bool
+}
+
+func extractUserMsg(messages []struct {
+	Role      string `json:"role"`
+	Content   string `json:"content"`
+	ToolCalls []struct {
+		ID       string `json:"id"`
+		Type     string `json:"type"`
+		Function struct {
+			Name      string          `json:"name"`
+			Arguments json.RawMessage `json:"arguments"`
+		} `json:"function"`
+	} `json:"tool_calls,omitempty"`
+}) string {
+	for _, m := range messages {
+		if m.Role == "user" {
+			return m.Content
+		}
+	}
+	return ""
+}
+func workersAIWriteText(w http.ResponseWriter, text string) {
+	resp := map[string]any{
+		"result": map[string]any{
+			"response": text,
+		},
+		"success": true,
+	}
+	b, _ := json.Marshal(resp)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(b)
+}
+
+func workersAIWriteToolCall(w http.ResponseWriter, toolName string, args map[string]any) {
+	argsJSON, _ := json.Marshal(args)
+	resp := map[string]any{
+		"result": map[string]any{
+			"choices": []map[string]any{
+				{
+					"index": 0,
+					"message": map[string]any{
+						"role":    "assistant",
+						"content": "",
+						"tool_calls": []map[string]any{
+							{
+								"id":       "call_1",
+								"type":     "function",
+								"function": map[string]any{"name": toolName, "arguments": json.RawMessage(argsJSON)},
+							},
+						},
+					},
+					"finish_reason": "tool_calls",
+				},
+			},
+		},
+		"success": true,
+	}
+	b, _ := json.Marshal(resp)
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(b)
+}
+
+func TestWorkersAIToolLoop(t *testing.T) {
+	tmp := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmp, "safe.txt"), []byte("hello world"), 0o600); err != nil {
+		t.Fatalf("write safe.txt: %v", err)
+	}
+	srv, wm := newWorkersAIMockServer(t, "@cf/deepseek-ai/deepseek-v4-pro-0813")
+	defer srv.Close()
+
+	// Set environment variables for the Workers AI provider.
+	os.Setenv("CLOUDFLARE_API_KEY", "test")
+	os.Setenv("CLOUDFLARE_ACCOUNT_ID", "testacct")
+	os.Setenv("SIGNET_BASE_URL", srv.URL) // this overrides the base URL derived from account ID
+
+	out, errOut, code := runSignetDir(t, tmp, srv.URL,
+		"-tools", "-provider", "cloudflare-workers-ai", "-model", "@cf/deepseek-ai/deepseek-v4-pro-0813",
+		"-prompt", "read the file")
+	if code != 0 {
+		t.Fatalf("exit = %d (stderr %q)", code, errOut)
+	}
+	if !strings.Contains(out, "done") {
+		t.Fatalf("stdout = %q, want done", out)
+	}
+	// Ensure the mock saw a tool call with object arguments (implicitly, otherwise we would have returned 400)
+	wm.mu.Lock()
+	defer wm.mu.Unlock()
+	if len(wm.securityUsers) < 2 {
+		t.Fatalf("expected admission + tool-result classification, got %d classifier calls", len(wm.securityUsers))
+	}
+	// Clean env for other tests
+	os.Unsetenv("CLOUDFLARE_API_KEY")
+	os.Unsetenv("CLOUDFLARE_ACCOUNT_ID")
+	os.Unsetenv("SIGNET_BASE_URL")
+}
