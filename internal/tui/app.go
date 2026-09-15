@@ -20,6 +20,7 @@ import (
 
 	"github.com/vulnetix/signet/internal/agent"
 	"github.com/vulnetix/signet/internal/clipboard"
+	"github.com/vulnetix/signet/internal/commands"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
 	"github.com/vulnetix/signet/internal/gitinfo"
@@ -65,6 +66,12 @@ type copiedMsg struct{ text string }
 type compactDoneMsg struct {
 	summary string
 	err     error
+}
+
+// codeReviewDoneMsg carries the result of an async /code-review run.
+type codeReviewDoneMsg struct {
+	report commands.Report
+	err    error
 }
 
 // sessionNamedMsg carries the result of an async session-naming call.
@@ -921,7 +928,7 @@ func (a *App) classifyMode(input string) {
 	if a.classifier == nil {
 		return
 	}
-	d, err := rolemanager.Select(a.classifier, rolemanager.ModeInput{Prompt: input})
+	d, err := rolemanager.Select(a.ctx, a.classifier, rolemanager.ModeInput{Prompt: input})
 	if err != nil {
 		a.mode = "agent"
 		a.modeWarning = "mode classifier error: " + err.Error()
@@ -1133,7 +1140,7 @@ func (a *App) shouldAutoName() bool {
 func (a *App) nameSessionCmd(firstUserMessage string) tea.Cmd {
 	c := a.classifier
 	return func() tea.Msg {
-		raw, err := c.Classify(rolemanager.BuildSessionNamePayload(firstUserMessage))
+		raw, err := c.Classify(a.ctx, rolemanager.BuildSessionNamePayload(firstUserMessage))
 		if err != nil {
 			return sessionNamedMsg{err: err}
 		}
@@ -1167,7 +1174,7 @@ func (a *App) compactCmd() tea.Cmd {
 	doc := transcript.Serialize(msgs, transcript.SerializeOptions{Nonce: nonceHex()})
 	c := a.classifier
 	return func() tea.Msg {
-		raw, err := c.Classify(rolemanager.BuildCompactionPayload(doc))
+		raw, err := c.Classify(a.ctx, rolemanager.BuildCompactionPayload(doc))
 		if err != nil {
 			return compactDoneMsg{err: err}
 		}

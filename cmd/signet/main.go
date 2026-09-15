@@ -151,7 +151,7 @@ func runPromptOrTUI(prompt, model, providerName string, detectMode, verbose bool
 	if enableTools {
 		res, err = runAgent(cfg, prompt, http.DefaultClient, pol, workdir, settings)
 	} else {
-		res, err = run.EngageWithPosture(cfg, prompt, detectMode, http.DefaultClient, pol)
+		res, err = run.EngageWithPosture(context.Background(), cfg, prompt, detectMode, http.DefaultClient, pol)
 	}
 	if err != nil {
 		return err

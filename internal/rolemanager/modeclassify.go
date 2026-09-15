@@ -1,6 +1,7 @@
 package rolemanager
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -54,8 +55,8 @@ func BuildModeClassifierPayload(prompt string) ClassifierPayload {
 // ClassifyMode sends only the user prompt to the mode classifier. Malformed
 // classifier output fails closed to ModeUndetermined, which engages default
 // agent mode.
-func ClassifyMode(c Classifier, prompt string) (ModeSentinel, error) {
-	raw, err := c.Classify(BuildModeClassifierPayload(prompt))
+func ClassifyMode(ctx context.Context, c Classifier, prompt string) (ModeSentinel, error) {
+	raw, err := c.Classify(ctx, BuildModeClassifierPayload(prompt))
 	if err != nil {
 		return "", err
 	}

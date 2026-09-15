@@ -1,6 +1,7 @@
 package rolemanager
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -53,7 +54,7 @@ func TestBuildModeClassifierPayloadIsPromptOnly(t *testing.T) {
 
 func TestClassifyMode(t *testing.T) {
 	fc := &fakeClassifier{raw: "GOAL"}
-	got, err := ClassifyMode(fc, "ship the thing")
+	got, err := ClassifyMode(context.Background(), fc, "ship the thing")
 	if err != nil {
 		t.Fatalf("ClassifyMode: %v", err)
 	}
@@ -67,7 +68,7 @@ func TestClassifyMode(t *testing.T) {
 
 func TestClassifyModeMalformedFailsClosed(t *testing.T) {
 	fc := &fakeClassifier{raw: "not a mode"}
-	got, err := ClassifyMode(fc, "hello")
+	got, err := ClassifyMode(context.Background(), fc, "hello")
 	if err != nil {
 		t.Fatalf("malformed output should fail closed without error, got %v", err)
 	}
@@ -78,7 +79,7 @@ func TestClassifyModeMalformedFailsClosed(t *testing.T) {
 
 func TestClassifyModePropagatesError(t *testing.T) {
 	fc := &fakeClassifier{err: errors.New("down")}
-	if _, err := ClassifyMode(fc, "hello"); err == nil {
+	if _, err := ClassifyMode(context.Background(), fc, "hello"); err == nil {
 		t.Fatalf("expected classifier error to propagate")
 	}
 }

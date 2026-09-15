@@ -108,6 +108,9 @@ type TurnInput struct {
 // transport. It is the CLI path and is byte-identical in behaviour to a
 // drained RunStream.
 func (s *Session) Run(ctx context.Context, userPrompt string) (run.Result, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	return s.run(ctx, nil, TurnInput{Prompt: userPrompt}, false, func(Event) {})
 }
 
@@ -118,7 +121,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	clean := sanitize.Sanitize(in.Prompt)
 
 	pipe := rolemanager.NewPipeline(run.NewClassifier(s.cfg, s.client))
-	dec, err := pipe.Admit(clean, s.posture)
+	dec, err := pipe.Admit(ctx, clean, s.posture)
 	if err != nil {
 		return run.Result{SanitizedPrompt: clean}, err
 	}
@@ -126,7 +129,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		return run.Result{SanitizedPrompt: clean}, &rolemanager.RefusalError{Sentinel: dec.Sentinel}
 	}
 
-	modeDec, err := rolemanager.Select(pipe.Classifier, rolemanager.ModeInput{Prompt: clean, GoalLimit: rolemanager.DefaultGoalPromptLengthLimit, HasReferences: in.HasReferences})
+	modeDec, err := rolemanager.Select(ctx, pipe.Classifier, rolemanager.ModeInput{Prompt: clean, GoalLimit: rolemanager.DefaultGoalPromptLengthLimit, HasReferences: in.HasReferences})
 	if err != nil {
 		return run.Result{SanitizedPrompt: clean, SecuritySentinel: dec.Sentinel}, err
 	}
@@ -245,7 +248,7 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall) st
 	}
 
 	pipe := rolemanager.NewPipeline(run.NewClassifier(s.cfg, s.client))
-	dec, err := pipe.Process(res)
+	dec, err := pipe.Process(ctx, res)
 	if err != nil {
 		return fmt.Sprintf("tool result withheld: classifier error for %q: %v", call.Name, err)
 	}

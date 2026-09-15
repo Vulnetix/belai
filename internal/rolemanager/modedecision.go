@@ -1,6 +1,7 @@
 package rolemanager
 
 import (
+	"context"
 	"fmt"
 	"unicode/utf8"
 
@@ -76,8 +77,8 @@ func DecideMode(s ModeSentinel, in ModeInput) ModeDecision {
 // Select runs the mode classifier and returns the resulting decision. A
 // classifier transport error is returned to the caller; malformed classifier
 // output falls through to default agent mode via ClassifyMode.
-func Select(c Classifier, in ModeInput) (ModeDecision, error) {
-	s, err := ClassifyMode(c, in.Prompt)
+func Select(ctx context.Context, c Classifier, in ModeInput) (ModeDecision, error) {
+	s, err := ClassifyMode(ctx, c, in.Prompt)
 	if err != nil {
 		return ModeDecision{}, err
 	}

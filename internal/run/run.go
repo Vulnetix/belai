@@ -406,17 +406,17 @@ func ResolveWithSource(model, providerName string, env func(string) string, src 
 }
 
 // chat sends a raw system+user exchange and returns the assistant reply text.
-func chat(cfg Config, system, user string, client *http.Client) (string, error) {
-	return doChat(cfg, system, []Turn{{Role: "user", Content: user}}, client)
+func chat(ctx context.Context, cfg Config, system, user string, client *http.Client) (string, error) {
+	return doChat(ctx, cfg, system, []Turn{{Role: "user", Content: user}}, client)
 }
 
 // doChat is the blocking, non-tool classifier/chat shim.
-func doChat(cfg Config, system string, turns []Turn, client *http.Client) (string, error) {
-	return doChatWithPool(cfg, system, turns, client, nil)
+func doChat(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client) (string, error) {
+	return doChatWithPool(ctx, cfg, system, turns, client, nil)
 }
 
-func doChatWithPool(cfg Config, system string, turns []Turn, client *http.Client, pool *nonce.Pool) (string, error) {
-	a, err := SendTurnsWithTools(cfg, system, turns, client, pool, nil, nil)
+func doChatWithPool(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, pool *nonce.Pool) (string, error) {
+	a, err := SendTurnsWithTools(ctx, cfg, system, turns, client, pool, nil, nil)
 	if err != nil {
 		return "", err
 	}
@@ -425,8 +425,8 @@ func doChatWithPool(cfg Config, system string, turns []Turn, client *http.Client
 
 // NewClassifier returns a rolemanager.Classifier backed by the configured provider.
 func NewClassifier(cfg Config, client *http.Client) rolemanager.Classifier {
-	return rolemanager.ClassifierFunc(func(p rolemanager.ClassifierPayload) (string, error) {
-		return chat(cfg, p.System, p.User, client)
+	return rolemanager.ClassifierFunc(func(ctx context.Context, p rolemanager.ClassifierPayload) (string, error) {
+		return chat(ctx, cfg, p.System, p.User, client)
 	})
 }
 
@@ -464,7 +464,7 @@ func SealSystem(cfg Config, pool *nonce.Pool, opts prompt.Options) (string, erro
 // The returned dialect is the structural guarantee: SendTurnsWithTools and
 // decodeDelta consume the same dialect that built the request, so they cannot
 // drift.
-func buildRequest(cfg Config, system string, turns []Turn, stream bool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (*http.Request, dialect, error) {
+func buildRequest(ctx context.Context, cfg Config, system string, turns []Turn, stream bool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (*http.Request, dialect, error) {
 	d, err := resolveDialect(cfg)
 	if err != nil {
 		return nil, dialect{}, err
@@ -474,7 +474,7 @@ func buildRequest(cfg Config, system string, turns []Turn, stream bool, openAITo
 	// while Prepare stays offline.
 	key := cfg.APIKey
 	if cfg.Auth == provider.AuthCopilot {
-		token, err := copilotExchanger.Token(context.Background(), cfg.APIKey)
+		token, err := copilotExchanger.Token(ctx, cfg.APIKey)
 		if err != nil {
 			return nil, dialect{}, err
 		}
@@ -556,27 +556,27 @@ type Assistant struct {
 
 // SendTurns sends a conversation and returns the assistant reply, including
 // any tool calls the model emitted.
-func SendTurns(cfg Config, system string, turns []Turn, client *http.Client) (Assistant, error) {
-	return SendTurnsWithTools(cfg, system, turns, client, nil, nil, nil)
+func SendTurns(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client) (Assistant, error) {
+	return SendTurnsWithTools(ctx, cfg, system, turns, client, nil, nil, nil)
 }
 
 // SendTurnsWithTools is SendTurns with tool definitions advertised to the model.
 // The turns are sanitised and egress-verified before being serialised.
-func SendTurnsWithTools(cfg Config, system string, turns []Turn, client *http.Client, pool *nonce.Pool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (Assistant, error) {
+func SendTurnsWithTools(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, pool *nonce.Pool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (Assistant, error) {
 	if pool == nil {
 		pool = nonce.New()
 	}
 	turns = egressTurns(turns, pool)
-	return sendTurnsWithTools(cfg, system, turns, client, openAITools, anthropicTools)
+	return sendTurnsWithTools(ctx, cfg, system, turns, client, openAITools, anthropicTools)
 }
 
 // sendTurnsWithTools is the core blocking request/response path. The caller
 // must already have sanitised and egress-verified turns.
-func sendTurnsWithTools(cfg Config, system string, turns []Turn, client *http.Client, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (Assistant, error) {
+func sendTurnsWithTools(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (Assistant, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	req, d, err := buildRequest(cfg, system, turns, false, openAITools, anthropicTools)
+	req, d, err := buildRequest(ctx, cfg, system, turns, false, openAITools, anthropicTools)
 	if err != nil {
 		return Assistant{}, err
 	}
@@ -585,16 +585,16 @@ func sendTurnsWithTools(cfg Config, system string, turns []Turn, client *http.Cl
 	}
 	switch d.kind {
 	case kindWorkersAI:
-		return parseWorkersAI(client, req, redact)
+		return parseWorkersAI(ctx, client, req, redact)
 	case kindAnthropicMessages:
-		return parseAnthropic(client, req, redact)
+		return parseAnthropic(ctx, client, req, redact)
 	default:
-		return parseOpenAIChat(client, req, redact)
+		return parseOpenAIChat(ctx, client, req, redact)
 	}
 }
 
-func parseWorkersAI(client *http.Client, req *http.Request, redact func(string) string) (Assistant, error) {
-	body, status, err := roundTrip(client, req, redact)
+func parseWorkersAI(ctx context.Context, client *http.Client, req *http.Request, redact func(string) string) (Assistant, error) {
+	body, status, err := roundTrip(ctx, client, req, redact)
 	if err != nil {
 		return Assistant{}, err
 	}
@@ -620,8 +620,8 @@ func parseWorkersAI(client *http.Client, req *http.Request, redact func(string) 
 	return Assistant{Text: wr.Result.Response}, nil
 }
 
-func parseOpenAIChat(client *http.Client, req *http.Request, redact func(string) string) (Assistant, error) {
-	body, status, err := roundTrip(client, req, redact)
+func parseOpenAIChat(ctx context.Context, client *http.Client, req *http.Request, redact func(string) string) (Assistant, error) {
+	body, status, err := roundTrip(ctx, client, req, redact)
 	if err != nil {
 		return Assistant{}, err
 	}
@@ -653,8 +653,8 @@ func parseOpenAIChat(client *http.Client, req *http.Request, redact func(string)
 	return Assistant{Text: msg.Content, ToolCalls: calls, Stop: stop, Usage: usage, StopReason: cr.Choices[0].FinishReason}, nil
 }
 
-func parseAnthropic(client *http.Client, req *http.Request, redact func(string) string) (Assistant, error) {
-	body, status, err := roundTrip(client, req, redact)
+func parseAnthropic(ctx context.Context, client *http.Client, req *http.Request, redact func(string) string) (Assistant, error) {
+	body, status, err := roundTrip(ctx, client, req, redact)
 	if err != nil {
 		return Assistant{}, err
 	}
@@ -749,8 +749,8 @@ func chatMessages(system, user string) []wire.OpenAIChatMessage {
 
 // Run sends one prompt — sanitized, sealed with a nonce/integrity delimiter,
 // and egress-verified — and returns the completion text.
-func Run(cfg Config, userPrompt string, client *http.Client) (string, error) {
-	out, err := RunTurns(cfg, []Turn{{Role: "user", Content: userPrompt}}, client)
+func Run(ctx context.Context, cfg Config, userPrompt string, client *http.Client) (string, error) {
+	out, err := RunTurns(ctx, cfg, []Turn{{Role: "user", Content: userPrompt}}, client)
 	if err != nil {
 		return "", err
 	}
@@ -758,13 +758,13 @@ func Run(cfg Config, userPrompt string, client *http.Client) (string, error) {
 }
 
 // RunTurns sends a conversation history and returns the latest assistant reply.
-func RunTurns(cfg Config, turns []Turn, client *http.Client) (string, error) {
-	return RunTurnsWithPool(cfg, turns, client, nonce.New(), prompt.Options{})
+func RunTurns(ctx context.Context, cfg Config, turns []Turn, client *http.Client) (string, error) {
+	return RunTurnsWithPool(ctx, cfg, turns, client, nonce.New(), prompt.Options{})
 }
 
 // RunTurnsWithPool is RunTurns with a caller-provided nonce pool so that
 // multi-turn sessions reuse the same pool across requests.
-func RunTurnsWithPool(cfg Config, turns []Turn, client *http.Client, pool *nonce.Pool, opts prompt.Options) (string, error) {
+func RunTurnsWithPool(ctx context.Context, cfg Config, turns []Turn, client *http.Client, pool *nonce.Pool, opts prompt.Options) (string, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
@@ -776,7 +776,7 @@ func RunTurnsWithPool(cfg Config, turns []Turn, client *http.Client, pool *nonce
 		return "", err
 	}
 
-	return doChatWithPool(cfg, verifiedSystem, turns, client, pool)
+	return doChatWithPool(ctx, cfg, verifiedSystem, turns, client, pool)
 }
 
 // Result captures what the noninteractive pipeline decided and produced.
@@ -791,12 +791,12 @@ type Result struct {
 // Engage runs the full noninteractive Role Manager pipeline: sanitize, then
 // security-classify (refusing any non-SAFE sentinel), then optionally
 // mode-classify, then send the sanitized prompt and return the reply.
-func Engage(cfg Config, prompt string, detectMode bool, client *http.Client) (Result, error) {
-	return EngageWithPosture(cfg, prompt, detectMode, client, posture.Defaults())
+func Engage(ctx context.Context, cfg Config, prompt string, detectMode bool, client *http.Client) (Result, error) {
+	return EngageWithPosture(ctx, cfg, prompt, detectMode, client, posture.Defaults())
 }
 
 // EngageWithPosture is Engage with an explicit posture policy.
-func EngageWithPosture(cfg Config, prompt string, detectMode bool, client *http.Client, pol posture.Policy) (Result, error) {
+func EngageWithPosture(ctx context.Context, cfg Config, prompt string, detectMode bool, client *http.Client, pol posture.Policy) (Result, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
@@ -804,7 +804,7 @@ func EngageWithPosture(cfg Config, prompt string, detectMode bool, client *http.
 	res := Result{SanitizedPrompt: clean}
 
 	pipe := rolemanager.NewPipeline(classifier(cfg, client))
-	dec, err := pipe.Admit(clean, pol)
+	dec, err := pipe.Admit(ctx, clean, pol)
 	if err != nil {
 		return res, err
 	}
@@ -813,13 +813,13 @@ func EngageWithPosture(cfg Config, prompt string, detectMode bool, client *http.
 	}
 	res.SecuritySentinel = dec.Sentinel
 
-	modeDec, err := rolemanager.Select(pipe.Classifier, rolemanager.ModeInput{Prompt: clean, GoalLimit: rolemanager.DefaultGoalPromptLengthLimit})
+	modeDec, err := rolemanager.Select(ctx, pipe.Classifier, rolemanager.ModeInput{Prompt: clean, GoalLimit: rolemanager.DefaultGoalPromptLengthLimit})
 	if err != nil {
 		return res, err
 	}
 	res.ModeDecision = modeDec
 
-	reply, err := Run(cfg, clean, client)
+	reply, err := Run(ctx, cfg, clean, client)
 	if err != nil {
 		return res, err
 	}
@@ -827,7 +827,8 @@ func EngageWithPosture(cfg Config, prompt string, detectMode bool, client *http.
 	return res, nil
 }
 
-func roundTrip(client *http.Client, req *http.Request, redact func(string) string) ([]byte, int, error) {
+func roundTrip(ctx context.Context, client *http.Client, req *http.Request, redact func(string) string) ([]byte, int, error) {
+	req = req.WithContext(ctx)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, 0, fmt.Errorf("request: %w", err)

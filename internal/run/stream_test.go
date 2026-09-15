@@ -192,7 +192,7 @@ func TestStreamAndRunTurnsSealIdentically(t *testing.T) {
 	defer srv.Close()
 
 	cfg := Config{Provider: "openai", BaseURL: srv.URL, APIKey: "sk", Model: "gpt-5"}
-	RunTurns(cfg, []Turn{{Role: "user", Content: "ping"}}, srv.Client())
+	RunTurns(context.Background(), cfg, []Turn{{Role: "user", Content: "ping"}}, srv.Client())
 
 	// Stream sends accept: text/event-stream so let it hit the same handler.
 	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

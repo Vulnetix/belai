@@ -51,7 +51,7 @@ func (a *App) handleShell(input string) tea.Cmd {
 		if !ok {
 			return shellDoneMsg{command: cmd, err: fmt.Errorf("Bash tool not registered")}
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(a.ctx, 30*time.Second)
 		defer cancel()
 		res, err := bash.Execute(ctx, map[string]any{"command": cmd})
 		if err != nil {
@@ -59,7 +59,7 @@ func (a *App) handleShell(input string) tea.Cmd {
 		}
 		body := res.Content
 		pipe := rolemanager.NewPipeline(run.NewClassifier(cfg, client))
-		dec, perr := pipe.Process(res)
+		dec, perr := pipe.Process(ctx, res)
 		if perr == nil && dec.Action == rolemanager.ActionProceed {
 			body = dec.Content
 		}

@@ -77,7 +77,7 @@ func SendTurnsStreamed(ctx context.Context, cfg Config, system string, turns []T
 			pool = nonce.New()
 		}
 		turns = egressTurns(turns, pool)
-		a, err := sendTurnsWithTools(cfg, system, turns, client, openAITools, anthropicTools)
+		a, err := sendTurnsWithTools(ctx, cfg, system, turns, client, openAITools, anthropicTools)
 		if err != nil {
 			ch <- Chunk{Err: err, Done: true}
 			return
@@ -123,7 +123,7 @@ func egressTurns(turns []Turn, pool *nonce.Pool) []Turn {
 func streamTurns(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, pool *nonce.Pool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (<-chan Chunk, error) {
 	sanitized := egressTurns(turns, pool)
 
-	req, d, err := buildRequest(cfg, system, sanitized, true, openAITools, anthropicTools)
+	req, d, err := buildRequest(ctx, cfg, system, sanitized, true, openAITools, anthropicTools)
 	if err != nil {
 		return nil, err
 	}

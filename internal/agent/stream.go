@@ -55,6 +55,9 @@ type Event struct {
 // and streams events on the returned channel. The channel is closed exactly
 // once, always ending in EventDone or EventError.
 func (s *Session) RunStream(ctx context.Context, history []run.Turn, in TurnInput) <-chan Event {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	ch := make(chan Event)
 	go func() {
 		defer close(ch)

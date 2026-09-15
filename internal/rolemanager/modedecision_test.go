@@ -1,6 +1,7 @@
 package rolemanager
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -91,7 +92,7 @@ func TestDecideMode(t *testing.T) {
 
 func TestSelect(t *testing.T) {
 	fc := &fakeClassifier{raw: "PLAN"}
-	d, err := Select(fc, ModeInput{Prompt: "plan the migration"})
+	d, err := Select(context.Background(), fc, ModeInput{Prompt: "plan the migration"})
 	if err != nil {
 		t.Fatalf("Select: %v", err)
 	}
@@ -100,12 +101,12 @@ func TestSelect(t *testing.T) {
 	}
 
 	// classifier transport error propagates
-	if _, err := Select(&fakeClassifier{err: errors.New("down")}, ModeInput{Prompt: "x"}); err == nil {
+	if _, err := Select(context.Background(), &fakeClassifier{err: errors.New("down")}, ModeInput{Prompt: "x"}); err == nil {
 		t.Fatalf("expected classifier error to propagate")
 	}
 
 	// malformed output falls through to default agent mode
-	d2, err := Select(&fakeClassifier{raw: "garbage"}, ModeInput{Prompt: "x"})
+	d2, err := Select(context.Background(), &fakeClassifier{raw: "garbage"}, ModeInput{Prompt: "x"})
 	if err != nil {
 		t.Fatalf("Select malformed: %v", err)
 	}

@@ -1,6 +1,7 @@
 package rolemanager
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/vulnetix/signet/internal/posture"
@@ -30,14 +31,16 @@ type Decision struct {
 
 // Classifier sends a ClassifierPayload to a model and returns the raw reply.
 type Classifier interface {
-	Classify(ClassifierPayload) (string, error)
+	Classify(context.Context, ClassifierPayload) (string, error)
 }
 
 // ClassifierFunc adapts a func to Classifier.
-type ClassifierFunc func(ClassifierPayload) (string, error)
+type ClassifierFunc func(context.Context, ClassifierPayload) (string, error)
 
 // Classify implements Classifier.
-func (f ClassifierFunc) Classify(p ClassifierPayload) (string, error) { return f(p) }
+func (f ClassifierFunc) Classify(ctx context.Context, p ClassifierPayload) (string, error) {
+	return f(ctx, p)
+}
 
 // Pipeline sanitizes and classifies untrusted tool results. The classifier
 // turn carries no tools, skills, or agent block, and the pipeline never
@@ -52,11 +55,11 @@ func NewPipeline(c Classifier) *Pipeline {
 }
 
 // run performs sanitize -> classify -> parse and returns the raw result.
-func (p *Pipeline) run(content string) (clean string, s Sentinel, parsed bool, err error) {
+func (p *Pipeline) run(ctx context.Context, content string) (clean string, s Sentinel, parsed bool, err error) {
 	clean = sanitize.Sanitize(content)
 	payload := BuildClassifierPayload(clean)
 
-	raw, err := p.Classifier.Classify(payload)
+	raw, err := p.Classifier.Classify(ctx, payload)
 	if err != nil {
 		return clean, "", false, err
 	}
@@ -71,8 +74,8 @@ func (p *Pipeline) run(content string) (clean string, s Sentinel, parsed bool, e
 // Process runs a tool result through sanitize -> classifier -> sentinel.
 // SAFE yields ActionProceed; every other sentinel — and any malformed
 // classifier output — fails closed to ActionWarn.
-func (p *Pipeline) Process(r tools.Result) (Decision, error) {
-	clean, s, parsed, err := p.run(r.Content)
+func (p *Pipeline) Process(ctx context.Context, r tools.Result) (Decision, error) {
+	clean, s, parsed, err := p.run(ctx, r.Content)
 	if err != nil {
 		return Decision{}, err
 	}
@@ -88,11 +91,11 @@ func (p *Pipeline) Process(r tools.Result) (Decision, error) {
 
 // Admit classifies an arbitrary piece of content (e.g. a user prompt) and
 // applies the posture policy. Under enforce a non-SAFE sentinel is refused.
-func (p *Pipeline) Admit(content string, pol posture.Policy) (Decision, error) {
+func (p *Pipeline) Admit(ctx context.Context, content string, pol posture.Policy) (Decision, error) {
 	if pol.Level(posture.PromptUnsafe) == posture.Ignore && pol.Level(posture.PromptMalformed) == posture.Ignore {
 		return Decision{Action: ActionProceed, Content: content}, nil
 	}
-	clean, s, parsed, err := p.run(content)
+	clean, s, parsed, err := p.run(ctx, content)
 	if err != nil {
 		return Decision{}, err
 	}

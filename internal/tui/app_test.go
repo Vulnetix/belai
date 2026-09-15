@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/vulnetix/signet/internal/agent"
 	"github.com/vulnetix/signet/internal/credentials"
+	"github.com/vulnetix/signet/internal/promptlib"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/session"
@@ -50,7 +52,7 @@ type fakeClassifier struct {
 	payloads []rolemanager.ClassifierPayload
 }
 
-func (f *fakeClassifier) Classify(p rolemanager.ClassifierPayload) (string, error) {
+func (f *fakeClassifier) Classify(_ context.Context, p rolemanager.ClassifierPayload) (string, error) {
 	f.payloads = append(f.payloads, p)
 	if f.err != nil {
 		return "", f.err
