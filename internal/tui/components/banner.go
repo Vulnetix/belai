@@ -37,7 +37,7 @@ var pixColors = map[rune]lipgloss.Color{
 }
 
 // Banner renders the Pix owl + wordmark.
-type Banner struct{
+type Banner struct {
 	Width int
 }
 

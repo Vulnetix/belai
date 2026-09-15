@@ -29,6 +29,11 @@ The architecture overview lives in [architecture.md](architecture.md).
 | Tool executor | `internal/agent` | Registry lookup → permission check → execute → pipeline | Live |
 | Streaming | `internal/run` | Send turns and parse tool calls from provider responses | Live |
 | Carrier resolution | `internal/agent` | Resolve active plan/goal/profile into prompt.Options | Live |
+| Credential resolution | `internal/credentials` | Detect configured providers and select the right default | Live |
+| Mode cycling | `internal/tui` | shift+tab cycles agent → plan → goal with persistence | Live |
+| Status bar | `internal/tui` | Provider·model, mode chip, cwd, git branch, tokens/cost | Live |
+| Banner | `internal/tui` | Pix owl rendered with half-blocks, ASCII fallback | Live |
+| Settings UI | `internal/tui` | /settings placeholder (persistence wired, full editor planned) | Partial |
 | Streaming tool calls | `internal/tui` | Render tool-use deltas in the TUI stream | Planned |
 | Explore-agent launch | — | Auto-launch explore agents for PLAN / GOAL with references | Planned |
 
