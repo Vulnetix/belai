@@ -14,6 +14,7 @@ import (
 	"github.com/vulnetix/signet/internal/delimiters"
 	"github.com/vulnetix/signet/internal/nonce"
 	"github.com/vulnetix/signet/internal/provider"
+	"github.com/vulnetix/signet/internal/resilience"
 	"github.com/vulnetix/signet/internal/transcript"
 	"github.com/vulnetix/signet/internal/wire"
 )
@@ -440,5 +441,43 @@ func TestStreamDoneAlwaysBuildsAssistant(t *testing.T) {
 	}
 	if asst == nil {
 		t.Fatalf("expected Assistant on Done chunk")
+	}
+}
+
+func TestStreamRetriesOpenStream(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls < 2 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte(`temporarily unavailable`))
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	defer srv.Close()
+
+	policy := resilience.Policy{MaxAttempts: 3, Base: time.Millisecond, Cap: time.Millisecond, Jitter: 0}
+	cfg := Config{Provider: "openai", BaseURL: srv.URL, APIKey: "sk", Model: "gpt-5"}
+	ch, err := Stream(context.Background(), cfg, []Turn{{Role: "user", Content: "hi"}}, srv.Client())
+	_ = policy
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	var sawDone bool
+	for c := range ch {
+		if c.Done {
+			sawDone = true
+			break
+		}
+	}
+	if !sawDone {
+		t.Fatal("did not see done")
+	}
+	if calls < 2 {
+		t.Fatalf("expected retry, calls=%d", calls)
 	}
 }

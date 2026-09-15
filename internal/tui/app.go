@@ -20,7 +20,6 @@ import (
 
 	"github.com/vulnetix/signet/internal/agent"
 	"github.com/vulnetix/signet/internal/clipboard"
-	"github.com/vulnetix/signet/internal/commands"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
 	"github.com/vulnetix/signet/internal/gitinfo"
@@ -30,7 +29,6 @@ import (
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/profiles"
 	"github.com/vulnetix/signet/internal/prompt"
-	"github.com/vulnetix/signet/internal/promptlib"
 	"github.com/vulnetix/signet/internal/provider"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
@@ -67,12 +65,6 @@ type copiedMsg struct{ text string }
 type compactDoneMsg struct {
 	summary string
 	err     error
-}
-
-// codeReviewDoneMsg carries the result of an async /code-review run.
-type codeReviewDoneMsg struct {
-	report commands.Report
-	err    error
 }
 
 // sessionNamedMsg carries the result of an async session-naming call.

@@ -14,6 +14,7 @@ import (
 	"github.com/vulnetix/signet/internal/delimiters"
 	"github.com/vulnetix/signet/internal/nonce"
 	"github.com/vulnetix/signet/internal/prompt"
+	"github.com/vulnetix/signet/internal/resilience"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/sanitize"
 	"github.com/vulnetix/signet/internal/transcript"
@@ -118,119 +119,139 @@ func egressTurns(turns []Turn, pool *nonce.Pool) []Turn {
 	return out
 }
 
+// openStream builds a streaming request and waits for a 2xx response. It is
+// the retryable, pre-first-byte half of the streaming path: a failed
+// attempt drains and closes the response body before returning so the
+// backoff sleep does not hold a live connection.
+func openStream(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (*http.Response, dialect, error) {
+	factory, d, err := newRequestFactory(cfg, system, turns, true, openAITools, anthropicTools)
+	if err != nil {
+		return nil, d, err
+	}
+	redact := func(s string) string {
+		return strings.ReplaceAll(s, cfg.APIKey, "<redacted>")
+	}
+
+	do := func(ctx context.Context) (*http.Response, error) {
+		req, err := factory(ctx)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("accept", "text/event-stream")
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("request: %w", err)
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			body, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			return nil, newProviderError("openStream", cfg, resp, body, redact)
+		}
+		return resp, nil
+	}
+
+	resp, err := resilience.Do(ctx, defaultRetryPolicy, resilience.DefaultClassifier{}, do, nil)
+	return resp, d, err
+}
+
+// drainStream reads an already-open SSE response until completion or error.
+// It always closes resp.Body and closes ch exactly once.
+func drainStream(ctx context.Context, ch chan<- Chunk, resp *http.Response, d dialect) {
+	defer close(ch)
+	defer resp.Body.Close()
+	scan := bufio.NewScanner(resp.Body)
+	scan.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+	acc := newToolAccumulator()
+	var text strings.Builder
+	var usage *transcript.Usage
+	var calls []rolemanager.ToolCall
+	var stopReason string
+
+	send := func(c Chunk) bool {
+		select {
+		case ch <- c:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
+
+	sendDone := func() {
+		send(Chunk{Done: true, Usage: usage, Assistant: &Assistant{Text: text.String(), ToolCalls: calls, Usage: usage, StopReason: stopReason}})
+	}
+
+	for scan.Scan() {
+		line := scan.Text()
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		data := strings.TrimPrefix(line, "data: ")
+		if data == "[DONE]" {
+			sendDone()
+			return
+		}
+		delta, err := decodeStreamEvent(d, data, acc)
+		if err != nil {
+			send(Chunk{Err: err, Done: true})
+			return
+		}
+		if delta.usage != nil {
+			if usage == nil {
+				usage = &transcript.Usage{}
+			}
+			usage.PromptTokens += delta.usage.PromptTokens
+			usage.CompletionTokens += delta.usage.CompletionTokens
+			if delta.usage.TotalTokens != 0 {
+				usage.TotalTokens = delta.usage.TotalTokens
+			}
+		}
+		if delta.text != "" {
+			text.WriteString(delta.text)
+			if !send(Chunk{Text: delta.text}) {
+				return
+			}
+		}
+		if delta.toolDelta != nil {
+			if !send(Chunk{ToolCall: delta.toolDelta}) {
+				return
+			}
+		}
+		for _, c := range delta.completed {
+			calls = append(calls, c)
+		}
+		if delta.stopReason != "" {
+			stopReason = delta.stopReason
+		}
+		select {
+		case <-ctx.Done():
+			send(Chunk{Err: ctx.Err(), Done: true})
+			return
+		default:
+		}
+	}
+	if err := scan.Err(); err != nil {
+		if !send(Chunk{Err: fmt.Errorf("stream read: %w", err), Done: true}) {
+			return
+		}
+		return
+	}
+	sendDone()
+}
+
 // streamTurns sends one streaming request with an already-sealed system prompt
-// and drains it into Chunks.
+// and drains it into Chunks. The retryable openStream call happens in the
+// caller's goroutine so an error return means the final attempt failed.
 func streamTurns(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, pool *nonce.Pool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (<-chan Chunk, error) {
 	sanitized := egressTurns(turns, pool)
-
-	req, d, err := buildRequest(ctx, cfg, system, sanitized, true, openAITools, anthropicTools)
+	resp, d, err := openStream(ctx, cfg, system, sanitized, client, openAITools, anthropicTools)
 	if err != nil {
 		return nil, err
 	}
-	req = req.WithContext(ctx)
-	req.Header.Set("accept", "text/event-stream")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		defer resp.Body.Close()
-		body, _ := io.ReadAll(resp.Body)
-		msg := strings.TrimSpace(string(body))
-		msg = strings.ReplaceAll(msg, cfg.APIKey, "<redacted>")
-		return nil, fmt.Errorf("provider returned %d: %s", resp.StatusCode, msg)
-	}
-
 	ch := make(chan Chunk)
-	go func() {
-		defer close(ch)
-		defer resp.Body.Close()
-		scan := bufio.NewScanner(resp.Body)
-		scan.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-
-		acc := newToolAccumulator()
-		var text strings.Builder
-		var usage *transcript.Usage
-		var calls []rolemanager.ToolCall
-		var stopReason string
-
-		// send emits one chunk unless the context is already done. Using a
-		// select keeps a blocked consumer from pinning the producer goroutine
-		// past cancellation.
-		send := func(c Chunk) bool {
-			select {
-			case ch <- c:
-				return true
-			case <-ctx.Done():
-				return false
-			}
-		}
-
-		sendDone := func() {
-			send(Chunk{Done: true, Usage: usage, Assistant: &Assistant{Text: text.String(), ToolCalls: calls, Usage: usage, StopReason: stopReason}})
-		}
-
-		for scan.Scan() {
-			line := scan.Text()
-			if !strings.HasPrefix(line, "data: ") {
-				continue
-			}
-			data := strings.TrimPrefix(line, "data: ")
-			if data == "[DONE]" {
-				sendDone()
-				return
-			}
-			delta, err := decodeStreamEvent(d, data, acc)
-			if err != nil {
-				send(Chunk{Err: err, Done: true})
-				return
-			}
-			if delta.usage != nil {
-				if usage == nil {
-					usage = &transcript.Usage{}
-				}
-				usage.PromptTokens += delta.usage.PromptTokens
-				usage.CompletionTokens += delta.usage.CompletionTokens
-				if delta.usage.TotalTokens != 0 {
-					usage.TotalTokens = delta.usage.TotalTokens
-				}
-			}
-			if delta.text != "" {
-				text.WriteString(delta.text)
-				if !send(Chunk{Text: delta.text}) {
-					return
-				}
-			}
-			if delta.toolDelta != nil {
-				if !send(Chunk{ToolCall: delta.toolDelta}) {
-					return
-				}
-			}
-			for _, c := range delta.completed {
-				calls = append(calls, c)
-			}
-			if delta.stopReason != "" {
-				stopReason = delta.stopReason
-			}
-			select {
-			case <-ctx.Done():
-				send(Chunk{Err: ctx.Err(), Done: true})
-				return
-			default:
-			}
-		}
-		if err := scan.Err(); err != nil {
-			if !send(Chunk{Err: fmt.Errorf("stream read: %w", err), Done: true}) {
-				return
-			}
-			return
-		}
-		sendDone()
-	}()
+	go drainStream(ctx, ch, resp, d)
 	return ch, nil
 }
-
 func anthropicEventUsage(ev *wire.AnthropicStreamEvent) *transcript.Usage {
 	var u wire.AnthropicUsage
 	if ev.Message != nil && ev.Message.Usage != nil {
