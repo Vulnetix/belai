@@ -106,6 +106,18 @@ Reads and writes goals under `.vulnetix/goals/`. The "memorise" action saves a
 goal; memorised goals are surfaced later through slash-command autocomplete
 (replay).
 
+### Background agents
+
+`internal/bgagent` runs named, reusable agents defined by `internal/agentprofile`
+profiles in the background. Profiles are stored under
+`~/.vulnetix/signet/profiles/agents/` and specify a system prompt, tool
+allow-list, operating mode (`single`, `loop`, `scheduled`, `monitor`), and
+autonomy level (`supervised` or `autonomous`).
+
+The TUI integrates background agents via `/agent create`, `/agent start`,
+`/agent stop`, and `/agent list`. Events stream into the main transcript as
+system lines so the user's session is never blocked.
+
 ## Session store
 
 `internal/session` persists append-only JSONL session trees

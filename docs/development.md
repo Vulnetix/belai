@@ -70,6 +70,8 @@ just ask anthropic claude-sonnet-4-5 "review this diff" -detect-mode -verbose
 | `-session-retention-days` | idle session retention in days (default 28) |
 | `-detect-mode` | run the operating-mode classifier and report the decision (`agent`, `plan`, `goal`) |
 | `-tools` | enable tool execution (noninteractive agent mode) |
+| `-agent` | start a background agent by name in foreground mode |
+| `-agent-create` | create an agent profile from a description and save to disk |
 | `-verbose` | print Role Manager decisions and the security sentinel to stderr |
 | `-version` | print the version and exit |
 
@@ -135,7 +137,7 @@ just detect-mode "add a retry to the HTTP client"   # agent
 just detect-mode "how does the nonce sealing work"  # plan
 ```
 
-**TUI smoke test.** `just tui`, then exercise slash-command autocomplete (`/p` → `/permissions`, `/plan`, `/profile`), `/credentials`, `/settings`, `/permissions`, `/help`, `/model`, `/compact`, `/clear`, `/rename`, and streaming output. Confirm `shift+tab` cycles the mode chip, `ctrl+d` quits, `ctrl+c` copies the prompt (native or OSC 52), and `esc` escapes every full-screen view — including permissions back to settings. In `/settings`, confirm the **bash read-only** toggle renders `off` by default, that `space` flips it on and persists it to the scoped settings file, and that `x` clears it. In `/permissions` with no rules, confirm the empty state reads "every tool call is allowed" and that a `Read x` preview shows the allowed-by-default wording (or blocked when `preferences.yaml` sets `permission_no_match: enforce`).
+**TUI smoke test.** `just tui`, then exercise slash-command autocomplete (`/p` → `/permissions`, `/plan`, `/profile`), `/credentials`, `/settings`, `/permissions`, `/help`, `/model`, `/compact`, `/clear`, `/rename`, `/agent list`, and streaming output. Confirm `shift+tab` cycles the mode chip, `ctrl+d` quits, `ctrl+c` copies the prompt (native or OSC 52), and `esc` escapes every full-screen view — including permissions back to settings. In `/settings`, confirm the **bash read-only** toggle renders `off` by default, that `space` flips it on and persists it to the scoped settings file, and that `x` clears it. In `/permissions` with no rules, confirm the empty state reads "every tool call is allowed" and that a `Read x` preview shows the allowed-by-default wording (or blocked when `preferences.yaml` sets `permission_no_match: enforce`).
 
 **Release parity.** `just build-all` cross-compiles all six release targets into `bin/` with the same ldflags the release workflow uses, and writes `bin/checksums.txt`. Run the host binary and check `-version` reports the git description.
 
