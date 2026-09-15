@@ -61,3 +61,18 @@ func TestSpecMatchesRunResolve(t *testing.T) {
 		}
 	}
 }
+
+func TestSpecUnknownProviderDoesNotUseOpenAIKey(t *testing.T) {
+	spec := Spec("llama")
+	if len(spec) != 1 {
+		t.Fatalf("expected 1 field, got %d", len(spec))
+	}
+	for _, ev := range spec[0].EnvVars {
+		if ev == "OPENAI_API_KEY" {
+			t.Fatalf("unknown provider must not resolve from OPENAI_API_KEY")
+		}
+	}
+	if len(spec[0].EnvVars) == 0 || spec[0].EnvVars[0] != "SIGNET_LLAMA_API_KEY" {
+		t.Fatalf("EnvVars = %v, want [SIGNET_LLAMA_API_KEY]", spec[0].EnvVars)
+	}
+}

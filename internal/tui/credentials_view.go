@@ -8,7 +8,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/vulnetix/signet/internal/credentials"
-	"github.com/vulnetix/signet/internal/provider"
 )
 
 // credentialViewState tracks the credential manager UI.
@@ -94,7 +93,7 @@ func (a *App) credentialView() string {
 // initCredentialState populates the credential view state.
 func (a *App) initCredentialState() {
 	a.credentialState = credentialViewState{
-		providers: provider.Names(),
+		providers: a.providerNames(),
 		backend:   credentials.SourceUserFile,
 	}
 	if a.resolver != nil {

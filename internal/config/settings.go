@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/vulnetix/signet/internal/wire"
 )
 
 // Settings holds user- and project-level configuration.
@@ -31,6 +33,31 @@ type Settings struct {
 	ContextWindows map[string]int `json:"context_windows,omitempty"`
 	// ShowSessionNames toggles session names in the status bar (default on).
 	ShowSessionNames *bool `json:"show_session_names,omitempty"`
+	// Providers defines custom provider profiles, keyed by provider name.
+	// Secrets never live here; they are resolved from api_key_env or the
+	// credential backends.
+	Providers map[string]ProviderProfile `json:"providers,omitempty"`
+	// AllowProjectProviders opts in to project-layer provider definitions.
+	// Defaults to false: a project file defining a provider is an API-key
+	// exfiltration primitive, so it requires an explicit user opt-in.
+	AllowProjectProviders *bool `json:"allow_project_providers,omitempty"`
+}
+
+// ProviderProfile is the JSON shape for one custom provider definition.
+type ProviderProfile struct {
+	BaseURL   string          `json:"base_url"`
+	API       wire.Surface    `json:"api"`
+	Auth      string          `json:"auth,omitempty"`        // bearer (default) | x-api-key | cf-aig
+	APIKeyEnv string          `json:"api_key_env,omitempty"` // env var holding the key
+	Models    []ProviderModel `json:"models,omitempty"`
+}
+
+// ProviderModel is one model in a custom provider's catalogue.
+type ProviderModel struct {
+	ID            string `json:"id"`
+	Name          string `json:"name,omitempty"`
+	ContextWindow int    `json:"context_window,omitempty"`
+	MaxTokens     int    `json:"max_tokens,omitempty"`
 }
 
 // UISettings holds TUI presentation toggles.
@@ -51,6 +78,12 @@ func (s Settings) SessionRetention() int {
 // status bar. The default is true.
 func (s Settings) SessionNamesVisible() bool {
 	return s.ShowSessionNames == nil || *s.ShowSessionNames
+}
+
+// AllowProjectProvidersEnabled reports whether the global opt-in for
+// project-layer provider definitions is set.
+func (s Settings) AllowProjectProvidersEnabled() bool {
+	return s.AllowProjectProviders != nil && *s.AllowProjectProviders
 }
 
 // Override merges project settings over the receiver (which should be the
@@ -98,6 +131,16 @@ func (s Settings) Override(proj Settings) Settings {
 			merged[k] = v
 		}
 		out.ContextWindows = merged
+	}
+	if proj.Providers != nil {
+		merged := make(map[string]ProviderProfile, len(out.Providers)+len(proj.Providers))
+		for k, v := range out.Providers {
+			merged[k] = v
+		}
+		for k, v := range proj.Providers {
+			merged[k] = v
+		}
+		out.Providers = merged
 	}
 	if proj.ShowSessionNames != nil {
 		out.ShowSessionNames = proj.ShowSessionNames

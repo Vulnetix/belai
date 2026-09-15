@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vulnetix/signet/internal/provider"
 	"github.com/vulnetix/signet/internal/transcript"
 	"github.com/vulnetix/signet/internal/wire"
 )
@@ -371,6 +372,41 @@ func TestStreamGatewayClaudeDecodesAnthropicEvents(t *testing.T) {
 		out.WriteString(c.Text)
 	}
 	if out.String() != "gateway-claude-reply" {
+		t.Fatalf("got %q", out.String())
+	}
+}
+
+func TestStreamCustomAnthropicDialectDecodesEvents(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		chunk, _ := json.Marshal(wire.AnthropicStreamEvent{Delta: struct {
+			Type       string `json:"type,omitempty"`
+			Text       string `json:"text,omitempty"`
+			StopReason string `json:"stop_reason,omitempty"`
+		}{Text: "custom-anthropic-reply"}})
+		fmt.Fprintf(w, "data: %s\n\n", chunk)
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	defer srv.Close()
+
+	cfg := Config{Provider: "my-llm", BaseURL: srv.URL, APIKey: "sk", Model: "m1", API: wire.SurfaceAnthropicMessages, Auth: provider.AuthXAPIKey}
+	ch, err := Stream(context.Background(), cfg, []Turn{{Role: "user", Content: "hi"}}, srv.Client())
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	var out strings.Builder
+	for c := range ch {
+		if c.Err != nil {
+			t.Fatalf("stream error: %v", c.Err)
+		}
+		if c.Done {
+			break
+		}
+		out.WriteString(c.Text)
+	}
+	if out.String() != "custom-anthropic-reply" {
 		t.Fatalf("got %q", out.String())
 	}
 }

@@ -37,12 +37,16 @@ func Catalog(provider string) []Model {
 			{ID: "claude-opus-4-5", Label: "Claude Opus 4.5", Efforts: defaultEfforts},
 			{ID: "gpt-5", Label: "GPT-5", Efforts: defaultEfforts},
 		}
-	default: // openai
+	case "openai":
 		return []Model{
 			{ID: "gpt-5", Label: "GPT-5", Efforts: defaultEfforts},
 			{ID: "gpt-5-mini", Label: "GPT-5 Mini", Efforts: defaultEfforts},
 			{ID: "gpt-4.1", Label: "GPT-4.1", Efforts: defaultEfforts},
 		}
+	default:
+		// Unknown names are custom providers; their catalogue comes from the
+		// profile, never the OpenAI list.
+		return nil
 	}
 }
 

@@ -50,11 +50,40 @@ func Spec(provider string) []Field {
 		return []Field{
 			{Name: "api_key", EnvVars: []string{"ANTHROPIC_API_KEY"}, Secret: true},
 		}
-	default:
+	case "openai":
 		return []Field{
 			{Name: "api_key", EnvVars: []string{"OPENAI_API_KEY"}, Secret: true},
 		}
+	default:
+		// An unknown name is a custom provider, never a fallback to OpenAI.
+		// The derived variable is the fail-closed default; a profile's
+		// api_key_env is prepended by the resolver when one is configured.
+		return []Field{
+			{Name: "api_key", EnvVars: []string{EnvVarForProvider(provider)}, Secret: true},
+		}
 	}
+}
+
+// EnvVarForProvider returns the conventional environment variable holding a
+// custom provider's API key: SIGNET_<UPPER_SNAKE_NAME>_API_KEY.
+func EnvVarForProvider(provider string) string {
+	return "SIGNET_" + upperSnake(provider) + "_API_KEY"
+}
+
+func upperSnake(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'a' && c <= 'z':
+			b.WriteByte(c - 'a' + 'A')
+		case c >= '0' && c <= '9':
+			b.WriteByte(c)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
 }
 
 // Value carries a resolved credential and its provenance.

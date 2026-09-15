@@ -8,7 +8,6 @@ import (
 
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/models"
-	"github.com/vulnetix/signet/internal/provider"
 )
 
 // modelViewState tracks the /model picker UI.
@@ -23,17 +22,17 @@ type modelViewState struct {
 var modelHeader = lipgloss.NewStyle().Bold(true).Underline(true)
 
 func (a *App) enterModel() tea.Cmd {
-	providers := provider.Names()
+	providers := a.providerNames()
 	pidx := indexOfString(providers, a.cfg.Provider)
 	if pidx < 0 {
 		pidx = 0
 	}
-	catalog := models.Catalog(providers[pidx])
+	catalog := a.catalogFor(providers[pidx])
 	midx := indexOfModel(catalog, a.cfg.Model)
 	if midx < 0 {
 		midx = 0
 	}
-	efforts := catalog[midx].Efforts
+	efforts := modelEfforts(catalog, midx)
 	eidx := indexOfString(efforts, a.settings.Effort)
 	if eidx < 0 {
 		eidx = indexOfString(efforts, "medium")
@@ -46,22 +45,13 @@ func (a *App) enterModel() tea.Cmd {
 }
 
 func (a *App) modelView() string {
-	providers := provider.Names()
-	pidx := a.modelState.providerIdx
-	if pidx < 0 || pidx >= len(providers) {
-		pidx = 0
-	}
+	providers := a.providerNames()
+	pidx := clampIdx(a.modelState.providerIdx, len(providers))
 	p := providers[pidx]
-	catalog := models.Catalog(p)
-	midx := a.modelState.modelIdx
-	if midx < 0 || midx >= len(catalog) {
-		midx = 0
-	}
-	efforts := catalog[midx].Efforts
-	eidx := a.modelState.effortIdx
-	if eidx < 0 || eidx >= len(efforts) {
-		eidx = 0
-	}
+	catalog := a.catalogFor(p)
+	midx := clampIdx(a.modelState.modelIdx, len(catalog))
+	efforts := modelEfforts(catalog, midx)
+	eidx := clampIdx(a.modelState.effortIdx, len(efforts))
 
 	var b strings.Builder
 	b.WriteString(modelHeader.Render("Model & Provider") + "\n\n")
@@ -80,28 +70,37 @@ func (a *App) modelView() string {
 	}
 	b.WriteString(strings.Join(tabs, "   ") + "\n\n")
 
-	for i, m := range catalog {
-		prefix := "   "
-		if i == midx {
-			prefix = " > "
+	if len(catalog) == 0 {
+		b.WriteString("   (no models in profile; type or import a model id)\n")
+	} else {
+		for i, m := range catalog {
+			prefix := "   "
+			if i == midx {
+				prefix = " > "
+			}
+			line := prefix + m.ID
+			if m.ID == a.cfg.Model && p == a.cfg.Provider {
+				line += "  (current)"
+			}
+			b.WriteString(line + "\n")
 		}
-		line := prefix + m.ID
-		if m.ID == a.cfg.Model && p == a.cfg.Provider {
-			line += "  (current)"
-		}
-		b.WriteString(line + "\n")
 	}
 
-	b.WriteString("\neffort: ")
-	for i, e := range efforts {
-		if i == eidx {
-			b.WriteString(lipgloss.NewStyle().Bold(true).Render("[" + e + "]"))
-		} else {
-			b.WriteString(" " + e)
+	if len(efforts) == 0 {
+		b.WriteString("\neffort: unavailable (custom provider)\n")
+	} else {
+		b.WriteString("\neffort: ")
+		for i, e := range efforts {
+			if i == eidx {
+				b.WriteString(lipgloss.NewStyle().Bold(true).Render("[" + e + "]"))
+			} else {
+				b.WriteString(" " + e)
+			}
+			b.WriteString(" ")
 		}
-		b.WriteString(" ")
+		b.WriteString("\n")
 	}
-	b.WriteString("\nscope:   " + a.modelState.scope + "\n")
+	b.WriteString("scope:   " + a.modelState.scope + "\n")
 
 	if a.modelState.errorMsg != "" {
 		b.WriteString("\nerror: " + a.modelState.errorMsg + "\n")
@@ -116,27 +115,27 @@ func (a *App) handleModelKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.pop()
 		return a, nil
 	case "left", "h":
-		a.modelState.providerIdx = (a.modelState.providerIdx - 1 + len(provider.Names())) % len(provider.Names())
+		a.modelState.providerIdx = (a.modelState.providerIdx - 1 + len(a.providerNames())) % len(a.providerNames())
 		a.modelState.modelIdx = 0
 		a.modelState.effortIdx = 0
 		return a, nil
 	case "right", "l":
-		a.modelState.providerIdx = (a.modelState.providerIdx + 1) % len(provider.Names())
+		a.modelState.providerIdx = (a.modelState.providerIdx + 1) % len(a.providerNames())
 		a.modelState.modelIdx = 0
 		a.modelState.effortIdx = 0
 		return a, nil
 	case "up", "k":
-		cat := models.Catalog(provider.Names()[a.modelState.providerIdx])
+		cat := a.catalogFor(a.providerNames()[a.modelState.providerIdx])
 		if a.modelState.modelIdx > 0 {
 			a.modelState.modelIdx--
-		} else {
+		} else if len(cat) > 0 {
 			a.modelState.modelIdx = len(cat) - 1
 		}
 		a.modelState.effortIdx = 0
 		return a, nil
 	case "down", "j":
-		cat := models.Catalog(provider.Names()[a.modelState.providerIdx])
-		if a.modelState.modelIdx < len(cat)-1 {
+		cat := a.catalogFor(a.providerNames()[a.modelState.providerIdx])
+		if len(cat) > 0 && a.modelState.modelIdx < len(cat)-1 {
 			a.modelState.modelIdx++
 		} else {
 			a.modelState.modelIdx = 0
@@ -144,8 +143,11 @@ func (a *App) handleModelKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.modelState.effortIdx = 0
 		return a, nil
 	case "e":
-		cat := models.Catalog(provider.Names()[a.modelState.providerIdx])
-		efforts := cat[a.modelState.modelIdx].Efforts
+		cat := a.catalogFor(a.providerNames()[a.modelState.providerIdx])
+		efforts := modelEfforts(cat, a.modelState.modelIdx)
+		if len(efforts) == 0 {
+			return a, nil
+		}
 		a.modelState.effortIdx = (a.modelState.effortIdx + 1) % len(efforts)
 		return a, nil
 	case "s":
@@ -172,24 +174,24 @@ func (a *App) handleModelKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) commitModel() tea.Cmd {
-	providers := provider.Names()
-	pidx := a.modelState.providerIdx
-	if pidx < 0 || pidx >= len(providers) {
-		pidx = 0
-	}
+	providers := a.providerNames()
+	pidx := clampIdx(a.modelState.providerIdx, len(providers))
 	p := providers[pidx]
-	catalog := models.Catalog(p)
-	midx := a.modelState.modelIdx
-	if midx < 0 || midx >= len(catalog) {
-		midx = 0
+	catalog := a.catalogFor(p)
+	midx := clampIdx(a.modelState.modelIdx, len(catalog))
+
+	var model string
+	if len(catalog) == 0 {
+		model = a.cfg.Model
+	} else {
+		model = catalog[midx].ID
 	}
-	model := catalog[midx].ID
-	efforts := catalog[midx].Efforts
-	eidx := a.modelState.effortIdx
-	if eidx < 0 || eidx >= len(efforts) {
-		eidx = 0
+	efforts := modelEfforts(catalog, midx)
+	eidx := clampIdx(a.modelState.effortIdx, len(efforts))
+	effort := ""
+	if len(efforts) > 0 {
+		effort = efforts[eidx]
 	}
-	effort := efforts[eidx]
 
 	if a.modelState.scope == "session" {
 		a.state.Model = model
@@ -223,6 +225,24 @@ func (a *App) commitModel() tea.Cmd {
 	a.cfg.Model = model
 	a.pop()
 	return a.refreshProvider()
+}
+
+func modelEfforts(catalog []models.Model, midx int) []string {
+	if len(catalog) == 0 {
+		return nil
+	}
+	midx = clampIdx(midx, len(catalog))
+	return catalog[midx].Efforts
+}
+
+func clampIdx(idx, n int) int {
+	if n <= 0 {
+		return 0
+	}
+	if idx < 0 || idx >= n {
+		return 0
+	}
+	return idx
 }
 
 func indexOfString(list []string, s string) int {

@@ -16,10 +16,9 @@ func TestCatalogReturnsModels(t *testing.T) {
 	}
 }
 
-func TestCatalogUnknownProviderDefaultsToOpenAI(t *testing.T) {
-	cat := Catalog("bogus")
-	if len(cat) == 0 || cat[0].ID != "gpt-5" {
-		t.Fatalf("unknown provider should default to openai catalog, got %+v", cat)
+func TestCatalogUnknownProviderIsEmpty(t *testing.T) {
+	if cat := Catalog("bogus"); cat != nil {
+		t.Fatalf("unknown provider should have no built-in catalog, got %+v", cat)
 	}
 }
 

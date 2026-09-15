@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -20,6 +21,8 @@ import (
 	"github.com/vulnetix/signet/internal/credentials"
 	"github.com/vulnetix/signet/internal/gitinfo"
 	"github.com/vulnetix/signet/internal/modelinfo"
+	"github.com/vulnetix/signet/internal/models"
+	"github.com/vulnetix/signet/internal/provider"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/session"
@@ -206,6 +209,42 @@ func New(opts Options) *App {
 	a.initCredentialState()
 	a.refreshFooter()
 	return a
+}
+
+// providerNames returns built-in providers followed by configured custom
+// names, sorted within the custom group. The model picker and the credential
+// view must read this same ordered list so the 'c' key syncs indices.
+func (a *App) providerNames() []string {
+	names := append([]string{}, provider.Names()...)
+	var custom []string
+	for name := range a.settings.Providers {
+		if !provider.Builtin(name) {
+			custom = append(custom, name)
+		}
+	}
+	sort.Strings(custom)
+	return append(names, custom...)
+}
+
+// catalogFor returns the selectable models for a provider: the built-in
+// catalogue for compiled-in names, the profile's Models for custom names.
+func (a *App) catalogFor(name string) []models.Model {
+	if cat := models.Catalog(name); cat != nil {
+		return cat
+	}
+	prof, ok := a.settings.Providers[name]
+	if !ok {
+		return nil
+	}
+	out := make([]models.Model, 0, len(prof.Models))
+	for _, m := range prof.Models {
+		label := m.Name
+		if label == "" {
+			label = m.ID
+		}
+		out = append(out, models.Model{ID: m.ID, Label: label})
+	}
+	return out
 }
 
 func (a *App) showCredentialMessage(provider string, resolver *credentials.Resolver) {

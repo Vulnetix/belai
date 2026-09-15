@@ -123,23 +123,19 @@ func isCharDevice(f *os.File) bool {
 }
 
 func runPromptOrTUI(prompt, model, providerName string, detectMode, verbose bool, workdir string, pol posture.Policy, enableTools bool, settings config.Settings) error {
-	cfg, err := run.Resolve(model, providerName, os.Getenv)
+	resolver, err := credentials.NewResolver(workdir)
+	if err != nil {
+		return err
+	}
+	cfg, err := run.ResolveWithSource(model, providerName, os.Getenv, resolver)
 	if err != nil {
 		var nce *run.NotConfiguredError
 		if errors.As(err, &nce) && interactive(isCharDevice(os.Stdout), isCharDevice(os.Stdin), os.Getenv) {
 			fmt.Fprintf(os.Stderr, "signet: no credentials for %s (missing %s). Opening the credential manager…\n",
 				nce.Provider, strings.Join(nce.Missing, ", "))
-			resolver, err := credentials.NewResolver(workdir)
-			if err != nil {
-				return err
-			}
 			return tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Prompt: prompt, Provider: providerName, Model: model, Settings: &settings})
 		}
-		// Without a TTY, fail closed listing every location searched.
-		var nce2 *run.NotConfiguredError
-		if errors.As(err, &nce2) {
-			return fmt.Errorf("%s requires %s (looked in: %s)", nce2.Provider, strings.Join(nce2.EnvHints, ", "), strings.Join(nce2.Searched, ", "))
-		}
+		// Without a TTY, fail closed naming every location searched.
 		return err
 	}
 

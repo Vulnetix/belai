@@ -64,6 +64,9 @@ type NotConfiguredError struct {
 }
 
 func (e *NotConfiguredError) Error() string {
+	if len(e.Missing) == 1 && e.Missing[0] == "provider" {
+		return fmt.Sprintf("%s is not a built-in provider and no custom profile is defined (add it under the providers block in settings.json)", e.Provider)
+	}
 	return fmt.Sprintf("%s requires %s (looked in: %s)", e.Provider, strings.Join(e.EnvHints, ", "), strings.Join(e.Searched, ", "))
 }
 
@@ -72,6 +75,12 @@ func (e *NotConfiguredError) Is(target error) bool { return target == ErrNotConf
 // CredentialSource resolves one provider field.
 type CredentialSource interface {
 	Lookup(provider, field string) (value, origin string, ok bool)
+}
+
+// ProviderSource resolves a custom provider profile by name. A CredentialSource
+// that does not implement it has no custom providers.
+type ProviderSource interface {
+	Profile(name string) (provider.Profile, bool)
 }
 
 // EnvSource adapts an environment-lookup function to CredentialSource.
@@ -109,6 +118,14 @@ func (f EnvSource) Lookup(provider, field string) (value, origin string, ok bool
 		if v := f("CLOUDFLARE_GATEWAY_ID"); v != "" {
 			return v, "$CLOUDFLARE_GATEWAY_ID", true
 		}
+	default:
+		// Custom providers resolve from their derived variable; EnvSource
+		// fails closed rather than falling back to an unrelated provider's key.
+		if field == "api_key" {
+			if v := f(envVarForProvider(provider)); v != "" {
+				return v, "$" + envVarForProvider(provider), true
+			}
+		}
 	}
 	return "", "", false
 }
@@ -118,6 +135,7 @@ type Status struct {
 	Configured bool
 	Missing    []string
 	Origins    map[string]string // field -> origin description
+	Notes      []string
 }
 
 // DefaultModel returns a sensible model for a provider when none is given.
@@ -145,7 +163,7 @@ func normalizeProvider(providerName string) string {
 // Prepare resolves a provider configuration from a CredentialSource.
 func Prepare(model, providerName string, src CredentialSource) (Config, Status) {
 	name := normalizeProvider(providerName)
-	if model == "" {
+	if model == "" && provider.Builtin(name) {
 		model = DefaultModel(name)
 	}
 
@@ -194,7 +212,7 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 			status.Missing = append(status.Missing, "api_key")
 		}
 		cfg.BaseURL = "https://api.anthropic.com"
-	default:
+	case "openai":
 		if key, origin, ok := src.Lookup(name, "api_key"); ok {
 			cfg.APIKey = key
 			status.Origins["api_key"] = origin
@@ -202,11 +220,41 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 			status.Missing = append(status.Missing, "api_key")
 		}
 		cfg.BaseURL = "https://api.openai.com/v1"
+	default:
+		// Custom path: an unknown name must resolve to a configured profile.
+		// Built-in arms are reached first, so a profile named "openai" is never
+		// consulted — the second layer of the shadowing defence.
+		ps, ok := src.(ProviderSource)
+		if !ok {
+			status.Missing = append(status.Missing, "provider")
+			break
+		}
+		prof, ok := ps.Profile(name)
+		if !ok {
+			status.Missing = append(status.Missing, "provider")
+			break
+		}
+		cfg.BaseURL = prof.BaseURL
+		cfg.API = prof.API
+		cfg.Auth = prof.Auth
+		if cfg.Model == "" && len(prof.Models) > 0 {
+			cfg.Model = prof.Models[0]
+		}
+		if key, origin, ok := src.Lookup(name, "api_key"); ok {
+			cfg.APIKey = key
+			status.Origins["api_key"] = origin
+		} else {
+			status.Missing = append(status.Missing, "api_key")
+		}
 	}
 
 	status.Configured = len(status.Missing) == 0
 	if override := strings.TrimSpace(os.Getenv("SIGNET_BASE_URL")); override != "" {
+		if cfg.BaseURL != "" && cfg.BaseURL != override {
+			status.Notes = append(status.Notes, fmt.Sprintf("SIGNET_BASE_URL overrides the base URL for %s", name))
+		}
 		cfg.BaseURL = override
+		status.Origins["base_url"] = "$SIGNET_BASE_URL"
 	}
 	return cfg, status
 }
@@ -216,6 +264,12 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 // PI_PROVIDER, then a default of openai. SIGNET_BASE_URL overrides the base
 // URL for any provider (used by tests and proxies).
 func Resolve(model, providerName string, env func(string) string) (Config, error) {
+	return ResolveWithSource(model, providerName, env, EnvSource(env))
+}
+
+// ResolveWithSource is Resolve with an explicit CredentialSource. Passing a
+// source that implements ProviderSource enables custom providers.
+func ResolveWithSource(model, providerName string, env func(string) string, src CredentialSource) (Config, error) {
 	name := strings.ToLower(strings.TrimSpace(providerName))
 	if name == "" {
 		name = strings.ToLower(strings.TrimSpace(env("SIGNET_PROVIDER")))
@@ -226,11 +280,8 @@ func Resolve(model, providerName string, env func(string) string) (Config, error
 	if name == "" {
 		name = "openai"
 	}
-	if model == "" {
-		model = DefaultModel(name)
-	}
 
-	cfg, status := Prepare(model, name, EnvSource(env))
+	cfg, status := Prepare(model, name, src)
 	if !status.Configured {
 		var envHints []string
 		for _, m := range status.Missing {
@@ -245,19 +296,24 @@ func Resolve(model, providerName string, env func(string) string) (Config, error
 				envHints = append(envHints, "CLOUDFLARE_ACCOUNT_ID")
 			case "cloudflare-ai-gateway:gateway_id":
 				envHints = append(envHints, "CLOUDFLARE_GATEWAY_ID")
+			default:
+				if m == "api_key" {
+					envHints = append(envHints, envVarForProvider(cfg.Provider))
+				}
 			}
+		}
+		searched := []string{"environment"}
+		if len(status.Missing) == 1 && status.Missing[0] == "provider" {
+			searched = []string{"settings providers block"}
 		}
 		return Config{}, &NotConfiguredError{
 			Provider: cfg.Provider,
 			Missing:  status.Missing,
 			EnvHints: envHints,
-			Searched: []string{"environment"},
+			Searched: searched,
 		}
 	}
 
-	if override := strings.TrimSpace(env("SIGNET_BASE_URL")); override != "" {
-		cfg.BaseURL = override
-	}
 	return cfg, nil
 }
 
@@ -312,7 +368,12 @@ func buildRequest(cfg Config, system string, turns []Turn, stream bool, openAITo
 	if err != nil {
 		return nil, dialect{}, err
 	}
-	p, err := provider.New(cfg.Provider, cfg.BaseURL, cfg.APIKey)
+	var p *provider.Provider
+	if cfg.API != "" {
+		p, err = provider.NewFromProfile(cfg.Provider, provider.Profile{BaseURL: cfg.BaseURL, API: cfg.API, Auth: cfg.Auth}, cfg.APIKey)
+	} else {
+		p, err = provider.New(cfg.Provider, cfg.BaseURL, cfg.APIKey)
+	}
 	if err != nil {
 		return nil, dialect{}, err
 	}

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/vulnetix/signet/internal/provider"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/version"
 	"github.com/vulnetix/signet/internal/wire"
@@ -569,5 +570,199 @@ func TestBuildRequestThinkingOnlyForNativeAnthropic(t *testing.T) {
 	b, _ = io.ReadAll(req.Body)
 	if strings.Contains(string(b), "thinking") {
 		t.Fatalf("gateway claude with effort must omit thinking: %s", b)
+	}
+}
+
+type fakeProfileSource struct {
+	vals     map[string]string
+	profiles map[string]provider.Profile
+}
+
+func (f fakeProfileSource) Lookup(provider, field string) (value, origin string, ok bool) {
+	key := provider + ":" + field
+	if v, ok := f.vals[key]; ok {
+		return v, "fake", true
+	}
+	return "", "", false
+}
+
+func (f fakeProfileSource) Profile(name string) (provider.Profile, bool) {
+	p, ok := f.profiles[name]
+	return p, ok
+}
+
+func TestPrepareUnknownProviderFailsClosed(t *testing.T) {
+	cfg, status := Prepare("", "llama", EnvSource(envMap(map[string]string{})))
+	if status.Configured {
+		t.Fatal("expected not configured")
+	}
+	if cfg.BaseURL == "https://api.openai.com/v1" {
+		t.Fatalf("unknown provider must not fall back to openai base URL")
+	}
+	if !sliceEqual(status.Missing, []string{"provider"}) {
+		t.Fatalf("missing = %v, want [provider]", status.Missing)
+	}
+}
+
+func TestPrepareCustomProviderFromProfileSource(t *testing.T) {
+	src := fakeProfileSource{
+		vals: map[string]string{"my-llm:api_key": "k"},
+		profiles: map[string]provider.Profile{
+			"my-llm": {BaseURL: "https://llm.example/v1", API: wire.SurfaceOpenAIChat, Auth: provider.AuthBearer, Models: []string{"m1"}},
+		},
+	}
+	cfg, status := Prepare("", "my-llm", src)
+	if !status.Configured {
+		t.Fatalf("expected configured, missing=%v", status.Missing)
+	}
+	if cfg.BaseURL != "https://llm.example/v1" {
+		t.Fatalf("BaseURL = %q", cfg.BaseURL)
+	}
+	if cfg.API != wire.SurfaceOpenAIChat {
+		t.Fatalf("API = %q", cfg.API)
+	}
+	if cfg.Auth != provider.AuthBearer {
+		t.Fatalf("Auth = %q", cfg.Auth)
+	}
+	if cfg.Model != "m1" {
+		t.Fatalf("Model = %q, want m1", cfg.Model)
+	}
+	if cfg.APIKey != "k" {
+		t.Fatalf("APIKey = %q", cfg.APIKey)
+	}
+}
+
+func TestPrepareCustomProviderMissingAPIKey(t *testing.T) {
+	src := fakeProfileSource{
+		profiles: map[string]provider.Profile{
+			"my-llm": {BaseURL: "https://llm.example/v1", API: wire.SurfaceOpenAIChat, Auth: provider.AuthBearer},
+		},
+	}
+	_, status := Prepare("", "my-llm", src)
+	if status.Configured {
+		t.Fatal("expected not configured")
+	}
+	if !sliceEqual(status.Missing, []string{"api_key"}) {
+		t.Fatalf("missing = %v, want [api_key]", status.Missing)
+	}
+}
+
+func TestPrepareCustomProviderUsesFirstProfileModelWhenModelEmpty(t *testing.T) {
+	src := fakeProfileSource{
+		vals: map[string]string{"my-llm:api_key": "k"},
+		profiles: map[string]provider.Profile{
+			"my-llm": {BaseURL: "https://llm.example/v1", API: wire.SurfaceOpenAIChat, Auth: provider.AuthBearer, Models: []string{"first", "second"}},
+		},
+	}
+	cfg, _ := Prepare("", "my-llm", src)
+	if cfg.Model != "first" {
+		t.Fatalf("Model = %q, want first", cfg.Model)
+	}
+	cfg2, _ := Prepare("explicit", "my-llm", src)
+	if cfg2.Model != "explicit" {
+		t.Fatalf("Model = %q, want explicit", cfg2.Model)
+	}
+}
+
+func TestPrepareIgnoresProfileShadowingBuiltin(t *testing.T) {
+	src := fakeProfileSource{
+		vals: map[string]string{"openai:api_key": "k"},
+		profiles: map[string]provider.Profile{
+			"openai": {BaseURL: "https://evil.example/v1", API: wire.SurfaceOpenAIChat, Auth: provider.AuthBearer},
+		},
+	}
+	cfg, _ := Prepare("", "openai", src)
+	if cfg.BaseURL == "https://evil.example/v1" {
+		t.Fatalf("built-in openai must not be shadowed by a profile")
+	}
+	if cfg.BaseURL != "https://api.openai.com/v1" {
+		t.Fatalf("BaseURL = %q", cfg.BaseURL)
+	}
+	if cfg.API != "" || cfg.Auth != "" {
+		t.Fatalf("built-in must not pick up custom API/Auth: %+v", cfg)
+	}
+}
+
+func TestBuildRequestCustomOpenAIChatOmitsEffortAndStreamOptions(t *testing.T) {
+	cfg := Config{Provider: "my-llm", BaseURL: "https://llm.example/v1", APIKey: "k", Model: "m1", Effort: "high", API: wire.SurfaceOpenAIChat, Auth: provider.AuthBearer}
+	req, _, err := buildRequest(cfg, "sys", nil, true, nil, nil)
+	if err != nil {
+		t.Fatalf("buildRequest: %v", err)
+	}
+	if req.URL.String() != "https://llm.example/v1/chat/completions" {
+		t.Fatalf("URL = %q", req.URL.String())
+	}
+	b, _ := io.ReadAll(req.Body)
+	if strings.Contains(string(b), "reasoning_effort") || strings.Contains(string(b), "stream_options") {
+		t.Fatalf("custom providers must omit effort and stream_options: %s", b)
+	}
+}
+
+func TestBuildRequestCustomAnthropicMessagesURL(t *testing.T) {
+	cfg := Config{Provider: "my-llm", BaseURL: "https://llm.example", APIKey: "k", Model: "m1", API: wire.SurfaceAnthropicMessages, Auth: provider.AuthXAPIKey}
+	req, _, err := buildRequest(cfg, "sys", nil, false, nil, nil)
+	if err != nil {
+		t.Fatalf("buildRequest: %v", err)
+	}
+	if req.URL.String() != "https://llm.example/v1/messages" {
+		t.Fatalf("URL = %q", req.URL.String())
+	}
+}
+
+func TestBuildRequestCustomResponsesSurfaceErrors(t *testing.T) {
+	cfg := Config{Provider: "my-llm", BaseURL: "https://llm.example/v1", APIKey: "k", Model: "m1", API: wire.SurfaceOpenAIResponses, Auth: provider.AuthBearer}
+	_, _, err := buildRequest(cfg, "sys", nil, false, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "not supported") {
+		t.Fatalf("error = %v, want not supported", err)
+	}
+}
+
+func TestResolveWithSourceCustomProvider(t *testing.T) {
+	src := fakeProfileSource{
+		vals: map[string]string{"my-llm:api_key": "k"},
+		profiles: map[string]provider.Profile{
+			"my-llm": {BaseURL: "https://llm.example/v1", API: wire.SurfaceOpenAIChat, Auth: provider.AuthBearer, Models: []string{"m1"}},
+		},
+	}
+	cfg, err := ResolveWithSource("", "my-llm", envMap(map[string]string{}), src)
+	if err != nil {
+		t.Fatalf("ResolveWithSource: %v", err)
+	}
+	if cfg.Provider != "my-llm" || cfg.Model != "m1" || cfg.BaseURL != "https://llm.example/v1" {
+		t.Fatalf("cfg = %+v", cfg)
+	}
+}
+
+func TestPrepareRecordsBaseURLOverrideOrigin(t *testing.T) {
+	t.Setenv("SIGNET_BASE_URL", "https://override.example/v1")
+	_, status := Prepare("", "openai", fakeSource{vals: map[string]string{"openai:api_key": "k"}})
+	if status.Origins["base_url"] != "$SIGNET_BASE_URL" {
+		t.Fatalf("base_url origin = %q, want $SIGNET_BASE_URL", status.Origins["base_url"])
+	}
+}
+
+func TestPrepareOverrideDisplacesCustomProfileBaseURL(t *testing.T) {
+	t.Setenv("SIGNET_BASE_URL", "https://override.example/v1")
+	src := fakeProfileSource{
+		vals: map[string]string{"my-llm:api_key": "k"},
+		profiles: map[string]provider.Profile{
+			"my-llm": {BaseURL: "https://llm.example/v1", API: wire.SurfaceOpenAIChat, Auth: provider.AuthBearer},
+		},
+	}
+	cfg, status := Prepare("", "my-llm", src)
+	if cfg.BaseURL != "https://override.example/v1" {
+		t.Fatalf("BaseURL = %q, want override", cfg.BaseURL)
+	}
+	if status.Origins["base_url"] != "$SIGNET_BASE_URL" {
+		t.Fatalf("base_url origin = %q", status.Origins["base_url"])
+	}
+	found := false
+	for _, n := range status.Notes {
+		if strings.Contains(n, "SIGNET_BASE_URL") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected a displacement note, got %v", status.Notes)
 	}
 }

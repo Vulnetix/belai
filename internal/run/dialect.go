@@ -44,6 +44,9 @@ type dialect struct {
 // kindAnthropicMessages. Collapsing them would silently change the gateway's
 // behaviour.
 func resolveDialect(cfg Config) (dialect, error) {
+	if cfg.API != "" {
+		return customDialect(cfg.API)
+	}
 	switch cfg.Provider {
 	case "cloudflare-workers-ai":
 		return dialect{kind: kindWorkersAI, route: routeWorkersAI}, nil
@@ -61,10 +64,47 @@ func resolveDialect(cfg Config) (dialect, error) {
 	}
 }
 
+// customDialect maps a custom profile's wire surface onto a dialect. It
+// rejects openai-responses rather than silently downgrading: run has no
+// parser or stream decoder for that surface, so admitting it would produce
+// empty replies.
+func customDialect(s wire.Surface) (dialect, error) {
+	switch s {
+	case wire.SurfaceOpenAIChat:
+		return dialect{kind: kindOpenAIChat, route: routeNative}, nil
+	case wire.SurfaceAnthropicMessages:
+		return dialect{kind: kindAnthropicMessages, route: routeNative}, nil
+	default:
+		return dialect{}, fmt.Errorf("custom provider surface %q is not supported", s)
+	}
+}
+
 // isClaudeModel reports whether a model id routes to a Claude upstream on the
 // gateway. The prefix test is case-insensitive.
 func isClaudeModel(model string) bool {
 	return strings.HasPrefix(strings.ToLower(model), "claude")
+}
+
+// envVarForProvider returns the conventional environment variable holding a
+// custom provider's API key: SIGNET_<UPPER_SNAKE_NAME>_API_KEY.
+func envVarForProvider(providerName string) string {
+	return "SIGNET_" + upperSnake(providerName) + "_API_KEY"
+}
+
+func upperSnake(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c >= 'a' && c <= 'z':
+			b.WriteByte(c - 'a' + 'A')
+		case c >= '0' && c <= '9':
+			b.WriteByte(c)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
 }
 
 // streamSurface returns the wire surface whose SSE events this dialect

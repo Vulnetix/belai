@@ -22,6 +22,7 @@ const (
 type Effective struct {
 	Settings Settings
 	Origin   map[string]Source
+	Notes    []string
 }
 
 // Resolve merges every settings source into one Effective view. Precedence,
@@ -52,6 +53,14 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	if err != nil {
 		return eff, err
 	}
+	// Project-layer provider definitions are an API-key exfiltration
+	// primitive: a hostile repo's .vulnetix/settings.json could define a
+	// provider whose base URL is attacker-controlled. They are ignored unless
+	// the user's global settings opt in explicitly.
+	if len(proj.Providers) > 0 && !global.AllowProjectProvidersEnabled() {
+		proj.Providers = nil
+		eff.Notes = append(eff.Notes, "project providers ignored (set allow_project_providers in global settings to use them)")
+	}
 	eff.apply(proj, SourceProject)
 
 	// 4. environment.
@@ -63,6 +72,10 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 
 	// 5. CLI flags.
 	eff.apply(flags, SourceFlag)
+
+	if err := ValidateProviders(eff.Settings); err != nil {
+		return eff, err
+	}
 
 	return eff, nil
 }
@@ -115,6 +128,19 @@ func (e *Effective) apply(s Settings, src Source) {
 			e.Settings.ContextWindows[k] = v
 		}
 		e.Origin["context_windows"] = src
+	}
+	if s.Providers != nil {
+		if e.Settings.Providers == nil {
+			e.Settings.Providers = map[string]ProviderProfile{}
+		}
+		for k, v := range s.Providers {
+			e.Settings.Providers[k] = v
+		}
+		e.Origin["providers"] = src
+	}
+	if s.AllowProjectProviders != nil {
+		e.Settings.AllowProjectProviders = s.AllowProjectProviders
+		e.Origin["allow_project_providers"] = src
 	}
 	if s.ShowSessionNames != nil {
 		e.Settings.ShowSessionNames = s.ShowSessionNames

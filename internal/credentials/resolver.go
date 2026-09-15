@@ -13,6 +13,7 @@ import (
 type Resolver struct {
 	env      func(string) string
 	workdir  string
+	settings config.Settings
 	userFile *fileStore
 	projFile *fileStore
 	netrc    *netrcStore
@@ -28,15 +29,61 @@ type BackendInfo struct {
 }
 
 // ConfiguredProviders returns every provider for which at least one field
-// resolves through this resolver.
+// resolves through this resolver: built-ins first, then configured custom
+// names.
 func (r *Resolver) ConfiguredProviders() []string {
 	var out []string
-	for _, p := range provider.Names() {
+	for _, p := range r.providerNames() {
 		if r.Configured(p) {
 			out = append(out, p)
 		}
 	}
 	return out
+}
+
+// providerNames returns built-in providers followed by configured custom names,
+// sorted within the custom group.
+func (r *Resolver) providerNames() []string {
+	names := append([]string{}, provider.Names()...)
+	var custom []string
+	for name := range r.settings.Providers {
+		if !provider.Builtin(name) {
+			custom = append(custom, name)
+		}
+	}
+	sort.Strings(custom)
+	return append(names, custom...)
+}
+
+// Profile returns the domain provider profile for a configured custom name.
+func (r *Resolver) Profile(name string) (provider.Profile, bool) {
+	p, ok := r.settings.Providers[name]
+	if !ok {
+		return provider.Profile{}, false
+	}
+	auth := provider.AuthBearer
+	if p.Auth != "" {
+		auth = provider.Auth(p.Auth)
+	}
+	models := make([]string, 0, len(p.Models))
+	for _, m := range p.Models {
+		models = append(models, m.ID)
+	}
+	return provider.Profile{BaseURL: p.BaseURL, API: p.API, Auth: auth, Models: models}, true
+}
+
+// spec returns the required fields for a provider, prepending a configured
+// profile's api_key_env so it is preferred over the derived variable.
+func (r *Resolver) spec(provider string) []Field {
+	spec := Spec(provider)
+	if p, ok := r.settings.Providers[provider]; ok && p.APIKeyEnv != "" {
+		for i := range spec {
+			if spec[i].Name == "api_key" {
+				spec[i].EnvVars = append([]string{p.APIKeyEnv}, spec[i].EnvVars...)
+			}
+		}
+	}
+	return spec
 }
 
 // Configured reports whether the given provider has every required field
@@ -54,9 +101,14 @@ func NewResolver(workdir string) (*Resolver, error) {
 		return nil, err
 	}
 	projPath := config.ProjectCredentialsPath(workdir)
+	settings, err := config.LoadMerged(workdir)
+	if err != nil {
+		return nil, err
+	}
 	return &Resolver{
 		env:      os.Getenv,
 		workdir:  workdir,
+		settings: settings,
 		userFile: newFileStore(userPath, false),
 		projFile: newFileStore(projPath, true),
 		netrc:    newNetrcStore(),
@@ -66,7 +118,7 @@ func NewResolver(workdir string) (*Resolver, error) {
 
 // Resolve returns a Set containing every known value and every missing field.
 func (r *Resolver) Resolve(provider string) Set {
-	spec := Spec(provider)
+	spec := r.spec(provider)
 	set := Set{
 		Provider: provider,
 		Values:   map[string]Value{},
@@ -134,7 +186,7 @@ func (r *Resolver) Resolve(provider string) Set {
 
 // Lookup returns the value and origin for a single field.
 func (r *Resolver) Lookup(provider, field string) (value, origin string, ok bool) {
-	spec := Spec(provider)
+	spec := r.spec(provider)
 	// Environment first.
 	for _, f := range spec {
 		if f.Name != field {

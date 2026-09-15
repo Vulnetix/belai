@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/provider"
 )
 
 // settingsViewState tracks the settings browser UI.
@@ -249,7 +248,7 @@ func (a *App) commitTextRow(row settingsRow, raw string) error {
 		if val == "" {
 			return a.unsetSetting("provider")
 		}
-		if !isProviderName(val) {
+		if !a.isProviderName(val) {
 			return fmt.Errorf("unknown provider %q", val)
 		}
 		return a.mutateSetting(func(s *config.Settings) { s.Provider = val })
@@ -346,8 +345,8 @@ func nextBool(b *bool) *bool {
 	return nil
 }
 
-func isProviderName(name string) bool {
-	for _, n := range provider.Names() {
+func (a *App) isProviderName(name string) bool {
+	for _, n := range a.providerNames() {
 		if n == name {
 			return true
 		}
