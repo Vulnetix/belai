@@ -692,3 +692,24 @@ func TestModeCyclingSuppressesClassification(t *testing.T) {
 		t.Fatalf("modeExplicit should be consumed after the turn")
 	}
 }
+
+// TestChatViewEditorOnOwnLine guards a regression where the editor was
+// concatenated onto the viewport's last (width-padded) line, pushing typed
+// text off the right edge of the terminal.
+func TestChatViewEditorOnOwnLine(t *testing.T) {
+	a := New(Options{})
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	for _, r := range "hello" {
+		a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	for _, line := range strings.Split(a.View(), "\n") {
+		if !strings.Contains(line, "hello") {
+			continue
+		}
+		if got := len(line) - len(strings.TrimLeft(line, " ")); got > 2 {
+			t.Fatalf("editor line indented by %d columns, want <= 2: %q", got, line)
+		}
+		return
+	}
+	t.Fatal("typed text not rendered in chat view")
+}

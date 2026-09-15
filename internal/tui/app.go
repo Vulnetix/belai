@@ -453,6 +453,7 @@ func (a *App) chatView() string {
 		sb.WriteString("\n")
 	}
 	sb.WriteString(a.vp.View())
+	sb.WriteString("\n")
 	if len(a.autocomplete) > 0 {
 		sb.WriteString("suggestions: " + strings.Join(a.autocomplete, "  ") + "\n")
 	}
