@@ -72,7 +72,7 @@ cd ~/code/my-project
 signet
 ```
 
-Inside the UI, `/` opens slash-command autocomplete — `/credentials` to configure providers, `/settings`, `/plan`, `/goal`, `/todos`, `/profile`, `/code-review`.
+Inside the UI, `/` opens slash-command autocomplete — `/credentials` to configure providers, `/model` to pick provider/model/effort, `/settings` to edit settings, `/permissions` to edit tool rules, `/plan`, `/goal`, `/todos`, `/profile`, `/code-review`, `/compact` to summarise a long session into a new one, `/clear` (or `/new`) to start a fresh session, and `/rename` to name the session. `/help` lists everything.
 
 For a single answer without the UI:
 
@@ -86,6 +86,10 @@ signet -provider anthropic -model claude-sonnet-4-5 -prompt "review this diff"
 | `-prompt` | send one turn, print the reply, exit |
 | `-provider` | `openai`, `anthropic`, `cloudflare-workers-ai`, `cloudflare-ai-gateway` |
 | `-model` | model id; each provider has a default |
+| `-effort` | thinking-effort level: `low`, `medium`, or `high` |
+| `-caveman` | enable caveman voice rewrite for this run |
+| `-tools` | enable tool execution for this run |
+| `-session-retention-days` | idle session retention in days (default 28) |
 | `-detect-mode` | report which operating mode the prompt selects |
 | `-verbose` | print mode and security decisions to stderr |
 | `-version` | print the version and exit |
@@ -110,6 +114,41 @@ Pick a default provider without passing `-provider` every time by setting `SIGNE
 For a custom state directory, set `SIGNET_HOME`. To disable the TUI and keep the old one-shot behaviour, set `SIGNET_NO_TUI=1` or run in CI (`CI` is honoured).
 
 Signet creates `~/.vulnetix/signet/` at mode `0700` and credential files at mode `0600`. If you already have a `~/.signet/` directory, it is migrated automatically on the next run. We recommend adding `.vulnetix/signet/` to your repository `.gitignore` — even though the project file only holds references, defence in depth is cheap.
+
+### Settings files
+
+Declared intent lives in `settings.json`; last-used runtime values live in
+`state.json`. The global file is `~/.vulnetix/signet/settings.json` (or
+`$SIGNET_HOME/settings.json`); the project file is
+`<workdir>/.vulnetix/settings.json`. Precedence, lowest to highest:
+`defaults` < `state.json` < global `settings.json` < project `settings.json` <
+environment < CLI flags. The `/settings` browser shows the effective value and
+its provenance for every key.
+
+| Key | Meaning |
+| --- | --- |
+| `provider` | default provider name |
+| `model` | default model id |
+| `effort` | default thinking effort: `low`, `medium`, `high` |
+| `caveman` | toggle the caveman voice rewrite |
+| `permissions` | structured `allow` / `ask` / `deny` tool rule arrays |
+| `session_retention_days` | idle session retention (default 28) |
+| `ui.banner` / `ui.status_bar` | TUI presentation toggles |
+| `show_session_names` | show session names in the status bar (default on) |
+| `context_windows` | per-model context-window overrides, in tokens |
+
+**Permissions merge is a union, never a replacement.** A project file can add
+rules but can never remove a rule you set globally, and a deny from either
+scope wins. The legacy flat-map form (`"bash": "ask"`) is still accepted on
+read but files self-upgrade to the structured form on first write.
+
+### Session storage
+
+The TUI writes an append-only JSONL session per workdir under
+`~/.vulnetix/signet/sessions/`. `/compact` never mutates the old file — it
+writes a new session whose root entry links `meta.parent_session` to the old
+id, and carries the old name forward. `/clear` starts a new session and leaves
+the previous one on disk untouched.
 
 ## Documentation
 

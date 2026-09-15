@@ -99,6 +99,21 @@ goal; memorised goals are surfaced later through slash-command autocomplete
 (`id` + `parentId`) under `~/.vulnetix/signet/sessions/<workdir>/<session>.jsonl`, with
 fork/resume reads (full or partial UUID) and display names.
 
+The TUI owns a live session: `App.sessionID` is minted at launch, entries are
+appended lazily (no file until the first message), and the footer shows the
+session name or short id. Entry types:
+
+| Type | Role | Content |
+| ---- | ---- | ------- |
+| `user` | `user` | the prompt |
+| `assistant` | `assistant` | the reply, with `prompt_tokens` / `completion_tokens` / `total_tokens` / `model` / `provider` in `meta` |
+| `session_name` | *(empty)* | the name; append-only, latest wins, empty clears |
+| `summary` | *(empty)* | a compaction summary; `meta.parent_session` links the source session |
+
+`/compact` creates a **new** session whose root entry is the summary and links
+the old id via `meta.parent_session`; the old file is never mutated, truncated,
+or deleted. Naming is append-only: the last `session_name` entry wins.
+
 ## Credentials
 
 `internal/credentials` implements layered credential resolution for the four
@@ -134,26 +149,39 @@ guidance when `caveman` is on.
 
 ## TUI
 
-`internal/tui` is a Bubble Tea app laid out Codex-style: message list,
-streaming assistant/tool output, slash-command editor with autocomplete,
-model/effort picker, and a status footer (session/tokens/cost/model).
+`internal/tui` is a Bubble Tea app laid out Codex-style: a scrolling transcript
+viewport, Pix banner, streaming assistant/tool output, slash-command editor
+with autocomplete, `/model` provider/model/effort picker, `/settings` browser,
+`/permissions` editor, and a two-line status footer.
 
 ### Status bar
 
 The footer is a two-line status bar:
 - Line 1: cwd (home collapsed to `~`) and git branch (`⎇ main`).
-- Line 2: provider·model, mode chip (colored), session, tokens, cost.
-- Truncates gracefully when the terminal is narrow.
+- Line 2: provider·model, mode chip (colored), session (name or short id),
+  context usage with remaining percentage, cost.
+- Truncates per segment, dropping cost then session before wrapping.
+
+Context usage has three degraded renderings:
+- `~` prefix — pure `chars/4` estimate (no provider usage anchor yet).
+- `(?)` instead of a percentage — the window is unknown, or the anchor predates
+  a `/compact` (stale).
+- a coloured percentage — only when anchored and fresh; `≥50%` green,
+  `≥20%` amber, `<20%` red.
 
 ### Keybindings
 
 | Key | Behaviour |
 | --- | --------- |
-| `ctrl+c` | Copy the current prompt to the clipboard (OSC 52) |
-| `ctrl+d` | Quit (only when the editor is empty) |
+| `ctrl+c` | Copy the current prompt to the clipboard (native, then OSC 52) |
+| `ctrl+d` | Quit, unconditionally |
 | `shift+tab` | Cycle mode: agent → plan → goal |
-| `esc` | Close any full-screen view |
-| `ctrl+l` | Clear the transcript |
+| `esc` | Close any full-screen view (nested views pop to their parent) |
+| `ctrl+l` | Clear the transcript *view* — the session is kept |
+
+`ctrl+l` clears the transcript view; `/clear` (or `/new`) starts a *new* session.
+They are deliberately different: one is cosmetic, the other changes what is
+persisted.
 
 ### Slash commands
 
@@ -178,3 +206,24 @@ The footer is a two-line status bar:
 When the selected provider is unconfigured but other providers are, the TUI
 points the user at `/model` instead of claiming the selected provider's
 credentials are missing. When nothing is configured, it says so clearly.
+
+### Context accounting
+
+`internal/transcript` implements hybrid token accounting with no tokenizer
+dependency: anchor on the last assistant message carrying provider-reported
+usage, then add a conservative `chars/4` estimate only for messages after that
+anchor. `internal/modelinfo` maps model ids to context-window sizes; unlisted
+models render `(?)` rather than a guessed denominator. The `context_windows`
+setting overrides the registry for models Signet does not know. After
+`/compact` the anchor describes the pre-compaction conversation, so the footer
+renders `(?)` until a fresh assistant response lands.
+
+### Settings
+
+The effective settings view merges, lowest to highest: defaults, `state.json`,
+global `settings.json`, project `settings.json`, environment, then CLI flags.
+`/settings` shows the effective value and provenance for each key. Settings
+include `provider`, `model`, `effort`, `caveman`, `permissions` (structured
+`allow`/`ask`/`deny`), `session_retention_days`, `ui.banner`, `ui.status_bar`,
+`show_session_names` (default on), and `context_windows`. Permission rules
+merge by union — a project file can add rules but never remove a global rule.
