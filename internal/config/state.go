@@ -46,7 +46,8 @@ func SaveState(st State) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	mode := os.FileMode(0o700)
+	if err := os.MkdirAll(filepath.Dir(path), mode); err != nil {
 		return fmt.Errorf("create state dir: %w", err)
 	}
 	data, err := json.MarshalIndent(st, "", "  ")

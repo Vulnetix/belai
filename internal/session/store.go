@@ -12,6 +12,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/vulnetix/signet/internal/config"
 )
 
 // Store persists JSONL session trees under a root directory. Each working
@@ -22,13 +24,13 @@ type Store struct {
 	Root string
 }
 
-// NewStore returns a Store rooted at ~/.signet/sessions.
+// NewStore returns a Store rooted at <GlobalDir>/sessions.
 func NewStore() (*Store, error) {
-	home, err := os.UserHomeDir()
+	dir, err := config.GlobalDir()
 	if err != nil {
-		return nil, fmt.Errorf("locate home dir: %w", err)
+		return nil, fmt.Errorf("locate global dir: %w", err)
 	}
-	return &Store{Root: filepath.Join(home, ".signet", "sessions")}, nil
+	return &Store{Root: filepath.Join(dir, "sessions")}, nil
 }
 
 // NewStoreAt returns a Store rooted at an explicit path (used by tests).

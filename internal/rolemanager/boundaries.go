@@ -3,6 +3,8 @@ package rolemanager
 import (
 	"fmt"
 	"strings"
+
+	"github.com/vulnetix/signet/internal/delimiters"
 )
 
 // TrustedSource identifies where a prompt fragment came from. Only fragments
@@ -28,6 +30,12 @@ func isTrusted(s TrustedSource) bool {
 	return s == SourceHarness || s == SourceTool
 }
 
+// Noncer reserves and validates nonces for sealed delimiters.
+type Noncer interface {
+	Reserve() (string, error)
+	Valid(string) bool
+}
+
 // VerifyTrustedBlocks rejects any block not from a trusted source. This is the
 // boundary that guarantees untrusted text never enters system or agent blocks.
 func VerifyTrustedBlocks(blocks []SystemBlock) error {
@@ -40,14 +48,25 @@ func VerifyTrustedBlocks(blocks []SystemBlock) error {
 }
 
 // BuildSystemPrompt assembles the system/agent prompt from trusted blocks only.
-func BuildSystemPrompt(blocks []SystemBlock) (string, error) {
+// Each block is wrapped in a harness delimiter carrying a reserved nonce and a
+// SHA-256 integrity hash of its content. The assembled prompt is verified with
+// Egress so any forged or malformed block is stripped before it can leave.
+func BuildSystemPrompt(blocks []SystemBlock, noncer Noncer) (string, error) {
 	if err := VerifyTrustedBlocks(blocks); err != nil {
 		return "", err
 	}
+	if noncer == nil {
+		return "", fmt.Errorf("noncer is required")
+	}
 	var b strings.Builder
 	for _, blk := range blocks {
-		b.WriteString(blk.Content)
+		nonce, err := noncer.Reserve()
+		if err != nil {
+			return "", fmt.Errorf("reserve nonce: %w", err)
+		}
+		wrapped := delimiters.Wrap("system", nonce, blk.Content)
+		b.WriteString(wrapped)
 		b.WriteString("\n")
 	}
-	return b.String(), nil
+	return delimiters.Egress(b.String(), noncer), nil
 }

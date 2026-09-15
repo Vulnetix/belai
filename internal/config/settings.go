@@ -108,7 +108,11 @@ func SaveProject(workdir string, s Settings) error {
 }
 
 func saveSettings(path string, s Settings) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	mode := os.FileMode(0o755)
+	if gd, _ := GlobalDir(); filepath.Dir(path) == gd {
+		mode = 0o700
+	}
+	if err := os.MkdirAll(filepath.Dir(path), mode); err != nil {
 		return fmt.Errorf("create settings dir: %w", err)
 	}
 	data, err := json.MarshalIndent(s, "", "  ")

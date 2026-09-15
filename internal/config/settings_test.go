@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 )
@@ -146,5 +148,90 @@ func TestProjectPaths(t *testing.T) {
 	}
 	if got := ProjectGoalsDir(workdir); got != "/tmp/work/.vulnetix/goals" {
 		t.Fatalf("ProjectGoalsDir = %q", got)
+	}
+	if got := ProjectSignetDir(workdir); got != "/tmp/work/.vulnetix/signet" {
+		t.Fatalf("ProjectSignetDir = %q", got)
+	}
+	if got := ProjectCredentialsPath(workdir); got != "/tmp/work/.vulnetix/signet/credentials.json" {
+		t.Fatalf("ProjectCredentialsPath = %q", got)
+	}
+}
+
+func TestGlobalDirHonoursSignetHome(t *testing.T) {
+	t.Setenv("SIGNET_HOME", "/custom/signet")
+	got, err := GlobalDir()
+	if err != nil {
+		t.Fatalf("GlobalDir: %v", err)
+	}
+	if got != "/custom/signet" {
+		t.Fatalf("GlobalDir = %q, want /custom/signet", got)
+	}
+}
+
+func TestMigrateMovesLegacyDir(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	legacy := filepath.Join(tmp, ".signet")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatalf("mkdir legacy: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(legacy, "settings.json"), []byte(`{"model":"m"}`), 0o600); err != nil {
+		t.Fatalf("write legacy file: %v", err)
+	}
+
+	migrated, err := Migrate()
+	if err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	if !migrated {
+		t.Fatalf("expected migration")
+	}
+
+	newDir := filepath.Join(tmp, ".vulnetix", "signet")
+	if _, err := os.Stat(newDir); err != nil {
+		t.Fatalf("new dir missing: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(newDir, "settings.json"))
+	if err != nil {
+		t.Fatalf("read migrated file: %v", err)
+	}
+	if string(data) != `{"model":"m"}` {
+		t.Fatalf("migrated content wrong: %s", data)
+	}
+}
+
+func TestMigrateSkipsWhenTargetExists(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	legacy := filepath.Join(tmp, ".signet")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatalf("mkdir legacy: %v", err)
+	}
+	newDir := filepath.Join(tmp, ".vulnetix", "signet")
+	if err := os.MkdirAll(newDir, 0o700); err != nil {
+		t.Fatalf("mkdir new: %v", err)
+	}
+
+	migrated, err := Migrate()
+	if err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	if migrated {
+		t.Fatalf("expected no migration when target exists")
+	}
+}
+
+func TestMigrateIsNoOpWithoutLegacyDir(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	migrated, err := Migrate()
+	if err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	if migrated {
+		t.Fatalf("expected no migration without legacy dir")
 	}
 }
