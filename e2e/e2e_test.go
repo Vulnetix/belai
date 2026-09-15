@@ -280,3 +280,40 @@ func TestGoalLengthLimitDefaultsToAgent(t *testing.T) {
 		t.Fatalf("stderr = %q, want a length warning", errOut)
 	}
 }
+
+func TestCustomProviderFromProjectSettings(t *testing.T) {
+	srv, mp := newMockServer(t)
+	defer srv.Close()
+
+	workdir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workdir, ".vulnetix", "signet"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	settings := `{"providers":{"my-llm":{"base_url":"https://llm.example/v1","api":"openai-chat","api_key_env":"MY_LLM_KEY"}}}`
+	if err := os.WriteFile(filepath.Join(workdir, ".vulnetix", "settings.json"), []byte(settings), 0o600); err != nil {
+		t.Fatalf("write settings: %v", err)
+	}
+	creds := `{"version":1,"providers":{"my-llm":{"api_key":{"source":"env","name":"MY_LLM_KEY"}}}}`
+	if err := os.WriteFile(filepath.Join(workdir, ".vulnetix", "signet", "credentials.json"), []byte(creds), 0o600); err != nil {
+		t.Fatalf("write credentials: %v", err)
+	}
+
+	var out, errb bytes.Buffer
+	cmd := exec.Command(signetBin, "-provider", "my-llm", "-model", "m1", "-prompt", "hello")
+	cmd.Dir = workdir
+	cmd.Env = append(os.Environ(), "SIGNET_BASE_URL="+srv.URL, "MY_LLM_KEY=test")
+	cmd.Stdout = &out
+	cmd.Stderr = &errb
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("run signet: %v\nstderr: %s", err, errb.String())
+	}
+	if !strings.Contains(out.String(), "mock reply") {
+		t.Fatalf("stdout = %q", out.String())
+	}
+
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+	if len(mp.chatUser) != 1 || mp.chatUser[0] != "hello" {
+		t.Fatalf("chat user = %v, want [hello]", mp.chatUser)
+	}
+}
