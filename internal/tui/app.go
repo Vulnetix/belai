@@ -92,6 +92,7 @@ type App struct {
 	settingsState   settingsViewState
 	modelState      modelViewState
 	permState       permissionsViewState
+	importState     importViewState
 
 	// workdir and git
 	workdir string

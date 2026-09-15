@@ -87,7 +87,7 @@ func (a *App) credentialView() string {
 		b.WriteString("\nbackends: " + strings.Join(parts, " · ") + "\n")
 	}
 
-	b.WriteString("\nkeys: s set · e set env ref · c clear · b cycle backend · esc back\n")
+	b.WriteString("\nkeys: s set · e set env ref · c clear · b cycle backend · i import · esc back\n")
 	return b.String()
 }
 
@@ -194,6 +194,8 @@ func (a *App) handleCredentialKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return a, nil
+	case "i":
+		return a, a.push(viewImport)
 	}
 
 	cmd := a.editor.Update(m)
