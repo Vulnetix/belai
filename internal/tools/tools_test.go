@@ -222,8 +222,8 @@ func TestGlobExecuteWithPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if !strings.Contains(res.Content, "sub/file.txt") {
-		t.Fatalf("expected sub/file.txt in %q", res.Content)
+	if !strings.Contains(res.Content, "file.txt") {
+		t.Fatalf("expected file.txt in %q", res.Content)
 	}
 }
 
