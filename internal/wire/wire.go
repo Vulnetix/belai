@@ -59,8 +59,11 @@ func AuthHeaders(s Surface, apiKey string) map[string]string {
 
 // OpenAIChatMessage is a single message in a chat/completions request.
 type OpenAIChatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string         `json:"role"`
+	Content    string         `json:"content,omitempty"`
+	ToolCalls  []OpenAIToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string         `json:"tool_call_id,omitempty"`
+	Name       string         `json:"name,omitempty"`
 }
 
 // OpenAIChatRequest is the body of a chat/completions call.
@@ -70,7 +73,8 @@ type OpenAIChatRequest struct {
 	Stream      bool                `json:"stream,omitempty"`
 	Temperature *float64            `json:"temperature,omitempty"`
 	MaxTokens   int                 `json:"max_tokens,omitempty"`
-	Tools       []any               `json:"tools,omitempty"`
+	Tools       []OpenAITool        `json:"tools,omitempty"`
+	ToolChoice  string              `json:"tool_choice,omitempty"`
 }
 
 // OpenAIChatResponse is the non-streaming chat/completions response.
@@ -155,7 +159,13 @@ type OpenAIResponsesStreamEvent struct {
 // AnthropicMessage is a single message in a messages request.
 type AnthropicMessage struct {
 	Role    string `json:"role"`
-	Content string `json:"content"`
+	Content any    `json:"content"`
+}
+
+// NewAnthropicTextMessage builds an AnthropicMessage whose Content is a plain
+// string, preserving wire compatibility with pre-tool callers.
+func NewAnthropicTextMessage(role, text string) AnthropicMessage {
+	return AnthropicMessage{Role: role, Content: text}
 }
 
 // AnthropicMessagesRequest is the body of a messages call.
@@ -165,12 +175,17 @@ type AnthropicMessagesRequest struct {
 	System    string             `json:"system,omitempty"`
 	Messages  []AnthropicMessage `json:"messages"`
 	Stream    bool               `json:"stream,omitempty"`
+	Tools     []AnthropicToolDef `json:"tools,omitempty"`
+	ToolChoice string            `json:"tool_choice,omitempty"`
 }
 
 // AnthropicContentBlock is a content block in a messages response.
 type AnthropicContentBlock struct {
 	Type string `json:"type"`
 	Text string `json:"text,omitempty"`
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name,omitempty"`
+	Input map[string]any `json:"input,omitempty"`
 }
 
 // AnthropicMessagesResponse is the non-streaming messages response.
@@ -203,6 +218,7 @@ type WorkersAIRequest struct {
 	Messages  []OpenAIChatMessage `json:"messages"`
 	Stream    bool                `json:"stream,omitempty"`
 	MaxTokens int                 `json:"max_tokens,omitempty"`
+	Tools     []OpenAITool        `json:"tools,omitempty"`
 }
 
 // WorkersAIError is a single Workers AI error entry.
