@@ -62,3 +62,20 @@ func TestResolveDialectUnknownProviderErrors(t *testing.T) {
 		t.Fatal("expected error for unknown provider")
 	}
 }
+
+func TestResolveDialectNewBuiltinsOpenAIChat(t *testing.T) {
+	for _, name := range []string{"openrouter", "google-gemini", "ollama"} {
+		t.Run(name, func(t *testing.T) {
+			d, err := resolveDialect(Config{Provider: name})
+			if err != nil {
+				t.Fatalf("resolveDialect: %v", err)
+			}
+			if d.kind != kindOpenAIChat || d.route != routeNative {
+				t.Fatalf("dialect = %+v, want openai chat native", d)
+			}
+			if d.effort || d.usage || d.thinking {
+				t.Fatalf("feature bits should stay off for %s: %+v", name, d)
+			}
+		})
+	}
+}

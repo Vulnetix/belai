@@ -54,6 +54,18 @@ func Spec(provider string) []Field {
 		return []Field{
 			{Name: "api_key", EnvVars: []string{"OPENAI_API_KEY"}, Secret: true},
 		}
+	case "openrouter":
+		return []Field{
+			{Name: "api_key", EnvVars: []string{"OPENROUTER_API_KEY"}, Secret: true},
+		}
+	case "google-gemini":
+		return []Field{
+			{Name: "api_key", EnvVars: []string{"GEMINI_API_KEY", "GOOGLE_API_KEY"}, Secret: true},
+		}
+	case "ollama":
+		// Ollama is local and needs no credential; a missing key is not a
+		// misconfiguration.
+		return nil
 	default:
 		// An unknown name is a custom provider, never a fallback to OpenAI.
 		// The derived variable is the fail-closed default; a profile's
@@ -167,6 +179,10 @@ func providerHost(provider string) string {
 		return "api.cloudflare.com"
 	case "cloudflare-ai-gateway":
 		return "gateway.ai.cloudflare.com"
+	case "openrouter":
+		return "openrouter.ai"
+	case "google-gemini":
+		return "generativelanguage.googleapis.com"
 	default:
 		return ""
 	}

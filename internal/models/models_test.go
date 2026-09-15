@@ -48,3 +48,9 @@ func TestLabel(t *testing.T) {
 		t.Fatalf("Label fallback = %q", got)
 	}
 }
+
+func TestCatalogOllamaIsEmpty(t *testing.T) {
+	if cat := Catalog("ollama"); cat != nil {
+		t.Fatalf("ollama catalog should be empty, got %+v", cat)
+	}
+}

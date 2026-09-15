@@ -59,6 +59,10 @@ func resolveDialect(cfg Config) (dialect, error) {
 		return dialect{kind: kindAnthropicMessages, route: routeNative, thinking: true}, nil
 	case "openai":
 		return dialect{kind: kindOpenAIChat, route: routeNative, effort: true, usage: true}, nil
+	case "openrouter", "google-gemini", "ollama":
+		// OpenAI-compatible surfaces without native reasoning_effort or
+		// stream_options.include_usage: those stay openai-only.
+		return dialect{kind: kindOpenAIChat, route: routeNative}, nil
 	default:
 		return dialect{}, fmt.Errorf("unknown provider %q", cfg.Provider)
 	}

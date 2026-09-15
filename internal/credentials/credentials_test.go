@@ -76,3 +76,9 @@ func TestSpecUnknownProviderDoesNotUseOpenAIKey(t *testing.T) {
 		t.Fatalf("EnvVars = %v, want [SIGNET_LLAMA_API_KEY]", spec[0].EnvVars)
 	}
 }
+
+func TestSpecOllamaHasNoRequiredFields(t *testing.T) {
+	if got := Spec("ollama"); len(got) != 0 {
+		t.Fatalf("ollama should have no required fields, got %+v", got)
+	}
+}

@@ -348,3 +348,21 @@ func TestNewFromProfileValidatesBaseURLAndKey(t *testing.T) {
 		t.Fatalf("empty key error = %v", err)
 	}
 }
+
+func TestNewAssignsAuthForNewBuiltins(t *testing.T) {
+	for name, want := range map[string]Auth{
+		"openrouter":    AuthBearer,
+		"google-gemini": AuthBearer,
+		"ollama":        AuthBearer,
+	} {
+		t.Run(name, func(t *testing.T) {
+			p, err := New(name, "https://x.example/v1", "k")
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			if p.Auth() != want {
+				t.Fatalf("Auth() = %q, want %q", p.Auth(), want)
+			}
+		})
+	}
+}

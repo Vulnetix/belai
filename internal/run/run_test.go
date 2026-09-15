@@ -766,3 +766,56 @@ func TestPrepareOverrideDisplacesCustomProfileBaseURL(t *testing.T) {
 		t.Fatalf("expected a displacement note, got %v", status.Notes)
 	}
 }
+
+func TestPrepareOpenRouterBaseURL(t *testing.T) {
+	cfg, status := Prepare("", "openrouter", fakeSource{vals: map[string]string{"openrouter:api_key": "k"}})
+	if !status.Configured {
+		t.Fatalf("expected configured, missing=%v", status.Missing)
+	}
+	if cfg.BaseURL != "https://openrouter.ai/api/v1" {
+		t.Fatalf("BaseURL = %q", cfg.BaseURL)
+	}
+	if cfg.Model != "openrouter/auto" {
+		t.Fatalf("Model = %q, want openrouter/auto", cfg.Model)
+	}
+}
+
+func TestPrepareGeminiBaseURL(t *testing.T) {
+	cfg, status := Prepare("", "google-gemini", fakeSource{vals: map[string]string{"google-gemini:api_key": "k"}})
+	if !status.Configured {
+		t.Fatalf("expected configured, missing=%v", status.Missing)
+	}
+	if cfg.BaseURL != "https://generativelanguage.googleapis.com/v1beta/openai" {
+		t.Fatalf("BaseURL = %q", cfg.BaseURL)
+	}
+	if cfg.Model != "gemini-2.5-flash" {
+		t.Fatalf("Model = %q, want gemini-2.5-flash", cfg.Model)
+	}
+}
+
+func TestPrepareOllamaNeedsNoCredential(t *testing.T) {
+	cfg, status := Prepare("", "ollama", fakeSource{})
+	if !status.Configured {
+		t.Fatalf("ollama should be configured with no credential, missing=%v", status.Missing)
+	}
+	if cfg.APIKey == "" {
+		t.Fatal("ollama should carry a placeholder key")
+	}
+	if cfg.BaseURL != "http://localhost:11434/v1" {
+		t.Fatalf("BaseURL = %q, want local default", cfg.BaseURL)
+	}
+}
+
+func TestPrepareOllamaHonoursOllamaHost(t *testing.T) {
+	t.Setenv("OLLAMA_HOST", "localhost:9999")
+	cfg, _ := Prepare("", "ollama", fakeSource{})
+	if cfg.BaseURL != "http://localhost:9999/v1" {
+		t.Fatalf("BaseURL = %q, want scheme added and /v1", cfg.BaseURL)
+	}
+
+	t.Setenv("OLLAMA_HOST", "http://host:1234/")
+	cfg, _ = Prepare("", "ollama", fakeSource{})
+	if cfg.BaseURL != "http://host:1234/v1" {
+		t.Fatalf("BaseURL = %q, want normalised", cfg.BaseURL)
+	}
+}

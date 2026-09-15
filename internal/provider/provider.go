@@ -61,6 +61,9 @@ var builtins = []struct {
 	{"anthropic", AuthXAPIKey},
 	{"cloudflare-workers-ai", AuthBearer},
 	{"cloudflare-ai-gateway", AuthCFAIG},
+	{"openrouter", AuthBearer},
+	{"google-gemini", AuthBearer},
+	{"ollama", AuthBearer},
 }
 
 // Names returns the supported provider names in a stable order.
@@ -120,10 +123,8 @@ type Provider struct {
 	auth    Auth
 }
 
-// New validates and returns a Provider for a built-in name. Supported names
-// are "openai", "anthropic", "cloudflare-workers-ai", and
-// "cloudflare-ai-gateway". baseURL must be a valid http(s) URL; apiKey must
-// be non-empty.
+// New validates and returns a Provider for a built-in name. baseURL must be a
+// valid http(s) URL; apiKey must be non-empty.
 func New(name, baseURL, apiKey string) (*Provider, error) {
 	n := strings.ToLower(strings.TrimSpace(name))
 	var auth Auth

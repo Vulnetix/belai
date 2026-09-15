@@ -43,6 +43,23 @@ func Catalog(provider string) []Model {
 			{ID: "gpt-5-mini", Label: "GPT-5 Mini", Efforts: defaultEfforts},
 			{ID: "gpt-4.1", Label: "GPT-4.1", Efforts: defaultEfforts},
 		}
+	case "openrouter":
+		return []Model{
+			{ID: "openrouter/auto", Label: "OpenRouter Auto", Efforts: defaultEfforts},
+			{ID: "openai/gpt-4o", Label: "GPT-4o", Efforts: defaultEfforts},
+			{ID: "anthropic/claude-3.5-sonnet", Label: "Claude 3.5 Sonnet", Efforts: defaultEfforts},
+			{ID: "google/gemini-2.5-flash", Label: "Gemini 2.5 Flash", Efforts: defaultEfforts},
+		}
+	case "google-gemini":
+		return []Model{
+			{ID: "gemini-2.5-flash", Label: "Gemini 2.5 Flash", Efforts: defaultEfforts},
+			{ID: "gemini-2.5-pro", Label: "Gemini 2.5 Pro", Efforts: defaultEfforts},
+			{ID: "gemini-2.0-flash", Label: "Gemini 2.0 Flash", Efforts: defaultEfforts},
+		}
+	case "ollama":
+		// Ollama's model list is host-specific and unknowable offline: the
+		// catalogue is empty and the model id is typed or imported.
+		return nil
 	default:
 		// Unknown names are custom providers; their catalogue comes from the
 		// profile, never the OpenAI list.

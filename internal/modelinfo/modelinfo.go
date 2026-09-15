@@ -48,6 +48,13 @@ func init() {
 	register(131_000, 16_384, "@cf/meta/llama-4-scout-17b-16e-instruct")
 	register(32_768, 32_768, "@cf/qwen/qwen3-30b-a3b-fp8")
 
+	// New built-in adapters (OpenRouter, Gemini). Ollama's model list is
+	// host-specific, so it is typed or imported and has no registry entry.
+	register(1_000_000, 65_536, "gemini-2.5-flash", "gemini-2.5-pro")
+	register(1_048_576, 8_192, "gemini-2.0-flash")
+	register(128_000, 16_384, "openai/gpt-4o", "openai/gpt-4o-mini")
+	register(200_000, 64_000, "anthropic/claude-3.5-sonnet", "anthropic/claude-3.7-sonnet")
+
 	// Conservative prefixes, longest-first. Exact entries always win, so the
 	// divergent in-family ids (claude-opus-4-5, gpt-5.4, gpt-5.5) still resolve
 	// correctly before these fall through to a family bucket.

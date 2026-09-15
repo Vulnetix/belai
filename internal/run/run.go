@@ -118,6 +118,17 @@ func (f EnvSource) Lookup(provider, field string) (value, origin string, ok bool
 		if v := f("CLOUDFLARE_GATEWAY_ID"); v != "" {
 			return v, "$CLOUDFLARE_GATEWAY_ID", true
 		}
+	case "openrouter:api_key":
+		if v := f("OPENROUTER_API_KEY"); v != "" {
+			return v, "$OPENROUTER_API_KEY", true
+		}
+	case "google-gemini:api_key":
+		if v := f("GEMINI_API_KEY"); v != "" {
+			return v, "$GEMINI_API_KEY", true
+		}
+		if v := f("GOOGLE_API_KEY"); v != "" {
+			return v, "$GOOGLE_API_KEY", true
+		}
 	default:
 		// Custom providers resolve from their derived variable; EnvSource
 		// fails closed rather than falling back to an unrelated provider's key.
@@ -147,6 +158,12 @@ func DefaultModel(providerName string) string {
 		return "claude-sonnet-4-5"
 	case "anthropic":
 		return "claude-opus-4-5"
+	case "openrouter":
+		return "openrouter/auto"
+	case "google-gemini":
+		return "gemini-2.5-flash"
+	case "ollama":
+		return "llama3"
 	default:
 		return "gpt-5"
 	}
@@ -158,6 +175,19 @@ func normalizeProvider(providerName string) string {
 		return "openai"
 	}
 	return name
+}
+
+// ollamaBaseURL returns the Ollama base URL: OLLAMA_HOST when set, normalised
+// to include a scheme and the /v1 suffix, otherwise the local default.
+func ollamaBaseURL() string {
+	host := strings.TrimSpace(os.Getenv("OLLAMA_HOST"))
+	if host == "" {
+		return "http://localhost:11434/v1"
+	}
+	if !strings.Contains(host, "://") {
+		host = "http://" + host
+	}
+	return strings.TrimRight(host, "/") + "/v1"
 }
 
 // Prepare resolves a provider configuration from a CredentialSource.
@@ -220,6 +250,28 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 			status.Missing = append(status.Missing, "api_key")
 		}
 		cfg.BaseURL = "https://api.openai.com/v1"
+	case "openrouter":
+		if key, origin, ok := src.Lookup(name, "api_key"); ok {
+			cfg.APIKey = key
+			status.Origins["api_key"] = origin
+		} else {
+			status.Missing = append(status.Missing, "api_key")
+		}
+		cfg.BaseURL = "https://openrouter.ai/api/v1"
+	case "google-gemini":
+		if key, origin, ok := src.Lookup(name, "api_key"); ok {
+			cfg.APIKey = key
+			status.Origins["api_key"] = origin
+		} else {
+			status.Missing = append(status.Missing, "api_key")
+		}
+		cfg.BaseURL = "https://generativelanguage.googleapis.com/v1beta/openai"
+	case "ollama":
+		// Ollama is local and needs no credential. provider.New still requires
+		// a non-empty key, so pass a fixed placeholder rather than loosening
+		// that validation for everyone.
+		cfg.APIKey = "ollama"
+		cfg.BaseURL = ollamaBaseURL()
 	default:
 		// Custom path: an unknown name must resolve to a configured profile.
 		// Built-in arms are reached first, so a profile named "openai" is never
@@ -296,6 +348,10 @@ func ResolveWithSource(model, providerName string, env func(string) string, src 
 				envHints = append(envHints, "CLOUDFLARE_ACCOUNT_ID")
 			case "cloudflare-ai-gateway:gateway_id":
 				envHints = append(envHints, "CLOUDFLARE_GATEWAY_ID")
+			case "openrouter:api_key":
+				envHints = append(envHints, "OPENROUTER_API_KEY")
+			case "google-gemini:api_key":
+				envHints = append(envHints, "GEMINI_API_KEY", "GOOGLE_API_KEY")
 			default:
 				if m == "api_key" {
 					envHints = append(envHints, envVarForProvider(cfg.Provider))
