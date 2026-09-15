@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/vulnetix/signet/internal/version"
 	"github.com/vulnetix/signet/internal/wire"
 )
 
@@ -67,7 +68,10 @@ func (p *Provider) IsCloudflareAIGateway() bool { return p.name == "cloudflare-a
 // authenticates with cf-aig-authorization; Anthropic with x-api-key; OpenAI
 // and Cloudflare Workers AI with a Bearer token — matching Pi's provider auth.
 func (p *Provider) Headers() map[string]string {
-	h := map[string]string{"content-type": "application/json"}
+	h := map[string]string{
+		"content-type": "application/json",
+		"user-agent":   version.UserAgent(),
+	}
 	switch p.name {
 	case "anthropic":
 		h["x-api-key"] = p.apiKey

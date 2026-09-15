@@ -41,7 +41,7 @@ func StreamWithPool(ctx context.Context, cfg Config, turns []Turn, client *http.
 		pool = nonce.New()
 	}
 
-	verifiedSystem, err := SealSystem(pool, opts)
+	verifiedSystem, err := SealSystem(cfg, pool, opts)
 	if err != nil {
 		return nil, err
 	}

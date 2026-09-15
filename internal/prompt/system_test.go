@@ -99,3 +99,56 @@ func TestSystemNone(t *testing.T) {
 		t.Fatalf("no carrier should be rendered: %q", got)
 	}
 }
+
+func TestSystemNamesThreeIdentities(t *testing.T) {
+	got, err := System(Options{Provider: "anthropic", Model: "claude-sonnet-4-5"})
+	if err != nil {
+		t.Fatalf("System: %v", err)
+	}
+
+	for _, want := range []string{
+		"running inside Signet",
+		"- Harness: Signet.",
+		"- Provider: anthropic.",
+		"- Model: claude-sonnet-4-5,",
+		"Keep your own identity",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("system prompt missing %q:\n%s", want, got)
+		}
+	}
+}
+
+// The harness must never tell the model it *is* Signet. Doing so overrode the
+// model's own trained identity, and it answered questions about itself by
+// disclaiming any knowledge of which model it was.
+func TestSystemDoesNotClaimModelIsHarness(t *testing.T) {
+	cases := []Options{
+		{},
+		{Provider: "openai", Model: "gpt-5"},
+		{Carrier: CarrierPlan, PlanText: "ship it", Provider: "openai", Model: "gpt-5"},
+	}
+	for _, opts := range cases {
+		got, err := System(opts)
+		if err != nil {
+			t.Fatalf("System(%+v): %v", opts, err)
+		}
+		if strings.Contains(got, "You are Signet") {
+			t.Fatalf("system prompt claims the model is the harness:\n%s", got)
+		}
+	}
+}
+
+// An unknown provider or model is omitted rather than guessed at.
+func TestSystemOmitsUnknownProviderAndModel(t *testing.T) {
+	got, err := System(Options{})
+	if err != nil {
+		t.Fatalf("System: %v", err)
+	}
+	if !strings.Contains(got, "- Provider: the API serving this session.") {
+		t.Fatalf("expected a provider line without a name:\n%s", got)
+	}
+	if !strings.Contains(got, "- Model: you.") {
+		t.Fatalf("expected a model line without a name:\n%s", got)
+	}
+}

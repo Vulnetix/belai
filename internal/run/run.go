@@ -270,7 +270,17 @@ func classifier(cfg Config, client *http.Client) rolemanager.Classifier {
 }
 
 // SealSystem builds and seals the system prompt from trusted harness blocks.
-func SealSystem(pool *nonce.Pool, opts prompt.Options) (string, error) {
+//
+// The provider and model come from cfg rather than the caller so that the
+// three identities named in the prompt — harness, provider, model — always
+// match the request actually being sent.
+func SealSystem(cfg Config, pool *nonce.Pool, opts prompt.Options) (string, error) {
+	if opts.Provider == "" {
+		opts.Provider = cfg.Provider
+	}
+	if opts.Model == "" {
+		opts.Model = cfg.Model
+	}
 	sysText, err := prompt.System(opts)
 	if err != nil {
 		return "", fmt.Errorf("build system prompt: %w", err)
@@ -534,7 +544,7 @@ func RunTurnsWithPool(cfg Config, turns []Turn, client *http.Client, pool *nonce
 	if pool == nil {
 		pool = nonce.New()
 	}
-	verifiedSystem, err := SealSystem(pool, opts)
+	verifiedSystem, err := SealSystem(cfg, pool, opts)
 	if err != nil {
 		return "", err
 	}

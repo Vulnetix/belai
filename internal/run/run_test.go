@@ -9,8 +9,11 @@ import (
 	"net/http/httptest"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/signet/internal/version"
 	"github.com/vulnetix/signet/internal/wire"
 )
 
@@ -148,8 +151,12 @@ func TestRunSanitizesPrompt(t *testing.T) {
 	if body.Messages[0].Role != "system" {
 		t.Fatalf("expected system message first, got %s", body.Messages[0].Role)
 	}
-	if !strings.Contains(body.Messages[0].Content, "You are Signet") {
+	if !strings.Contains(body.Messages[0].Content, "running inside Signet") {
 		t.Fatalf("system message missing base prompt: %q", body.Messages[0].Content)
+	}
+	// The harness names itself as the harness, never as the assistant.
+	if strings.Contains(body.Messages[0].Content, "You are Signet") {
+		t.Fatalf("system prompt claims the model is Signet: %q", body.Messages[0].Content)
 	}
 	if strings.Contains(body.Messages[1].Content, "<system>") {
 		t.Fatalf("user message should be sanitized of harness tags, got %q", body.Messages[1].Content)
@@ -370,4 +377,49 @@ func sliceEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// Every outbound call a session makes — the model turn and the Role Manager's
+// classifier turn alike — identifies the harness and its version, with one
+// value. A server must not see one User-Agent for the turn and another, or
+// none, for the classification that gated it.
+func TestUserAgentIsConsistentAcrossRoleManagerCalls(t *testing.T) {
+	var mu sync.Mutex
+	var agents []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		agents = append(agents, r.Header.Get("User-Agent"))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"SAFE"},"finish_reason":"stop"}]}`)
+	}))
+	defer srv.Close()
+
+	cfg := Config{Provider: "openai", BaseURL: srv.URL, APIKey: "sk", Model: "gpt-5"}
+
+	// A classifier turn and a model turn.
+	if _, err := NewClassifier(cfg, srv.Client()).Classify(rolemanager.ClassifierPayload{System: "s", User: "u"}); err != nil {
+		t.Fatalf("Classify: %v", err)
+	}
+	if _, err := Run(cfg, "ping", srv.Client()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(agents) < 2 {
+		t.Fatalf("expected at least 2 requests, got %d", len(agents))
+	}
+	want := version.UserAgent()
+	for i, got := range agents {
+		if got != want {
+			t.Fatalf("request %d User-Agent = %q, want %q", i, got, want)
+		}
+	}
+	if !strings.HasPrefix(want, "signet/") {
+		t.Fatalf("User-Agent %q does not identify signet", want)
+	}
+	if strings.Contains(want, "signet/dev") && version.Version != "dev" {
+		t.Fatalf("User-Agent %q does not carry the build version", want)
+	}
 }

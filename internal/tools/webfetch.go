@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/vulnetix/signet/internal/version"
 )
 
 // WebFetch is the web-fetch tool with SSRF protection.
@@ -92,7 +94,7 @@ func (w *WebFetch) Execute(ctx context.Context, args map[string]any) (Result, er
 	if err != nil {
 		return Result{}, err
 	}
-	req.Header.Set("user-agent", "signet/1.0")
+	req.Header.Set("user-agent", version.UserAgent())
 
 	resp, err := client.Do(req)
 	if err != nil {

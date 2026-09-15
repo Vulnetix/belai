@@ -15,6 +15,8 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+
+	"github.com/vulnetix/signet/internal/version"
 )
 
 // ErrUnsupported is returned when a provider does not implement the nonce GET
@@ -165,6 +167,7 @@ func FetchNonces(baseURL, apiKey string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("user-agent", version.UserAgent())
 	if apiKey != "" {
 		req.Header.Set("authorization", "Bearer "+apiKey)
 	}

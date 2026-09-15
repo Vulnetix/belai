@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/vulnetix/signet/internal/version"
 )
 
 // WebSearch is the web-search tool.
@@ -73,6 +75,7 @@ func (w *WebSearch) Execute(ctx context.Context, args map[string]any) (Result, e
 		return Result{}, err
 	}
 	req.Header.Set("accept", "application/json")
+	req.Header.Set("user-agent", version.UserAgent())
 	resp, err := client.Do(req)
 	if err != nil {
 		return Result{}, err
@@ -102,6 +105,7 @@ func (w *WebSearch) duckDuckGo(ctx context.Context, query string) (Result, error
 		return Result{}, err
 	}
 	req.Header.Set("accept", "application/json")
+	req.Header.Set("user-agent", version.UserAgent())
 	resp, err := client.Do(req)
 	if err != nil {
 		return Result{}, err
@@ -158,6 +162,7 @@ func (w *WebSearch) Available() bool {
 	if err != nil {
 		return false
 	}
+	req.Header.Set("user-agent", version.UserAgent())
 	resp, err := client.Do(req)
 	if err != nil {
 		return false

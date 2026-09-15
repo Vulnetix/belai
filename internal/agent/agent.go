@@ -120,7 +120,7 @@ func (s *Session) Run(ctx context.Context, userPrompt string) (run.Result, error
 		opts.Caveman = s.opts.Caveman
 	}
 
-	system, err := run.SealSystem(s.pool, opts)
+	system, err := run.SealSystem(s.cfg, s.pool, opts)
 	if err != nil {
 		return run.Result{SanitizedPrompt: clean, SecuritySentinel: dec.Sentinel, ModeDecision: modeDec}, err
 	}

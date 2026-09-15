@@ -26,9 +26,41 @@ type Options struct {
 	GoalText    string
 	ProfileText string
 	Caveman     bool
+	// Provider and Model name the two identities the harness does not own.
+	// Empty values are omitted rather than guessed at.
+	Provider string
+	Model    string
 }
 
-const baseSystem = "You are Signet, an LLM coding harness.\n"
+// identity tells the model which of the three identities in a session is its
+// own. Signet is the harness, not the assistant: an earlier version of this
+// prompt opened with "You are Signet, an LLM coding harness", which the model
+// read as an instruction to adopt Signet as its identity. It then disclaimed
+// knowledge of itself — answering "I don't have visibility into the underlying
+// model" to a direct question about what it is — because the prompt had
+// replaced what it knows about itself from training.
+//
+// The harness names itself, names the provider, and leaves the model's own
+// identity to the model.
+func identity(provider, model string) string {
+	var b strings.Builder
+	b.WriteString("You are an AI model running inside Signet, an LLM coding harness.\n")
+	b.WriteString("Three identities are in play in this session and they are not interchangeable:\n")
+	b.WriteString("- Harness: Signet. The tooling around you — this prompt, the tools, the safety pipeline. Signet is not you.\n")
+	if provider != "" {
+		b.WriteString(fmt.Sprintf("- Provider: %s. The API serving this session.\n", provider))
+	} else {
+		b.WriteString("- Provider: the API serving this session.\n")
+	}
+	if model != "" {
+		b.WriteString(fmt.Sprintf("- Model: %s, as the provider names it. That is you.\n", model))
+	} else {
+		b.WriteString("- Model: you.\n")
+	}
+	b.WriteString("Keep your own identity, capabilities, and knowledge as they come from your training. ")
+	b.WriteString("Asked what you are, answer as yourself and name Signet as the harness rather than claiming to be it.\n")
+	return b.String()
+}
 
 const normalVoice = "Voice guidance: respond clearly and professionally.\n"
 
@@ -44,7 +76,7 @@ func System(opts Options) (string, error) {
 	}
 
 	var b strings.Builder
-	b.WriteString(baseSystem)
+	b.WriteString(identity(opts.Provider, opts.Model))
 	if carrier != CarrierNone {
 		b.WriteString(fmt.Sprintf("Active %s:\n%s\n", carrier, text))
 	}
