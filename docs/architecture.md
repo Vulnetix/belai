@@ -40,8 +40,9 @@ spec (`GET {base_url}/v1/nonces`).
 
 ## Provider layer
 
-`internal/provider` + `internal/wire` reach every provider through two knobs —
-`base_url` and `api_key` — speaking the three ai-firewall surfaces:
+`internal/provider` + `internal/wire` reach every provider through a base URL,
+an API key, a wire surface, and an auth style — speaking the three
+ai-firewall surfaces:
 
 | Surface                 | Path                    | Auth header           |
 | ----------------------- | ----------------------- | --------------------- |
@@ -116,8 +117,9 @@ or deleted. Naming is append-only: the last `session_name` entry wins.
 
 ## Credentials
 
-`internal/credentials` implements layered credential resolution for the four
-supported providers. The resolution order is:
+`internal/credentials` implements layered credential resolution for the
+built-in providers and any custom providers defined in `settings.json`. The
+resolution order is:
 
 1. **Environment** — preserves existing behaviour exactly.
 2. **Project file** — `<workdir>/.vulnetix/signet/credentials.json`.
@@ -130,16 +132,39 @@ The user file may store inline secrets (JSON `{"source":"inline","value":"…"}`
 when the file mode is `0600` and the containing directory is `0700`. The
 project file may store references (`{"source":"env","name":"OPENAI_API_KEY"}`)
 but **never** inline secrets — a project file lives in whatever repository you
-happen to `cd` into.
+happen to `cd` into. A credential may be stored as the *name* of an
+environment variable rather than a value, read at resolve time and never
+written to disk; this is what keeps project credential files committable.
 
 When `~/.signet` exists and `~/.vulnetix/signet` does not, `config.Migrate()`
 moves the directory on first startup. A cross-filesystem fallback copies
 recursively and leaves a `.migrated` marker; nothing is deleted.
 
 The TUI credential manager (`/credentials`) shows provenance for every field,
-accepts `s` to set, `c` to clear, and `b` to cycle the write backend. The
-default write backend is the keychain when available, otherwise the user file
-with an explicit confirmation.
+accepts `s` to set a value, `e` to set an env reference, `c` to clear, `b` to
+cycle the write backend, and `i` to open the import screen. The default write
+backend is the keychain when available, otherwise the user file with an
+explicit confirmation.
+
+### Custom providers
+
+`settings.json` may carry a `providers` block mapping a name to a profile with
+`base_url`, `api` (one of `openai-chat`, `openai-responses`,
+`anthropic-messages`), optional `auth` (`bearer`, `x-api-key`, `cf-aig`),
+optional `api_key_env`, and a `models` catalogue. Secrets never live there.
+Profiles merge key-by-key across layers, and a project-layer `providers` block
+is ignored unless the global settings opt in with
+`allow_project_providers: true`.
+
+### Discovery
+
+`internal/agentscan` is read-only credential discovery. It runs only on an
+explicit key press (`i` inside `/credentials`), never at startup. It opens a
+fixed list of paths for Pi, Codex, Claude Code, Goose, OpenCode, Copilot,
+Gemini, Qwen, Crush, and Aider, caps every read at 1 MiB, honours
+`XDG_CONFIG_HOME`/`XDG_DATA_HOME`, never follows symlinks out of home, and
+never executes anything. Discovered secrets render masked and are never logged;
+agents installed but holding no importable key are listed with the reason.
 
 ## System prompt
 
@@ -225,5 +250,7 @@ global `settings.json`, project `settings.json`, environment, then CLI flags.
 `/settings` shows the effective value and provenance for each key. Settings
 include `provider`, `model`, `effort`, `caveman`, `permissions` (structured
 `allow`/`ask`/`deny`), `session_retention_days`, `ui.banner`, `ui.status_bar`,
-`show_session_names` (default on), and `context_windows`. Permission rules
-merge by union — a project file can add rules but never remove a global rule.
+`show_session_names` (default on), `context_windows`, `providers`, and
+`allow_project_providers`. Permission rules merge by union — a project file can
+add rules but never remove a global rule. Provider profiles merge key-by-key
+the same way.

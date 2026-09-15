@@ -63,7 +63,7 @@ just ask anthropic claude-sonnet-4-5 "review this diff" -detect-mode -verbose
 | Flag | Meaning |
 | --- | --- |
 | `-prompt` | send one turn noninteractively, print the reply, exit |
-| `-provider` | `openai`, `anthropic`, `cloudflare-workers-ai`, `cloudflare-ai-gateway` |
+| `-provider` | `openai`, `anthropic`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`, `github-copilot`, or a custom name from `settings.json` |
 | `-model` | model id; defaults are `gpt-5`, `claude-sonnet-4-5`, `@cf/moonshotai/kimi-k2.6` |
 | `-effort` | thinking-effort level: `low`, `medium`, or `high` |
 | `-caveman` | enable caveman voice rewrite for this run |
@@ -95,6 +95,10 @@ Credentials resolve in this order, first hit wins:
 | `anthropic` | `ANTHROPIC_API_KEY` |
 | `cloudflare-workers-ai` | `CLOUDFLARE_API_KEY`, `CLOUDFLARE_ACCOUNT_ID` |
 | `cloudflare-ai-gateway` | `CLOUDFLARE_API_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_GATEWAY_ID` |
+| `openrouter` | `OPENROUTER_API_KEY` |
+| `google-gemini` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` |
+| `ollama` | none (local; honours `OLLAMA_HOST`) |
+| `github-copilot` | `GITHUB_COPILOT_TOKEN` or `GH_TOKEN` (exchanged for a session token) |
 
 For a throwaway QA shell, export into the environment so nothing is written to disk:
 
@@ -103,7 +107,7 @@ export CLOUDFLARE_API_KEY=… CLOUDFLARE_ACCOUNT_ID=…
 just ask cloudflare-workers-ai '@cf/moonshotai/kimi-k2.6' "what model is this"
 ```
 
-Inside the TUI, `/credentials` manages stored credentials and shows which backend each value came from.
+Inside the TUI, `/credentials` manages stored credentials and shows which backend each value came from. Its keys are `s` set value, `e` set env reference, `c` clear, `b` cycle backend, `i` import, and `esc` back.
 
 ## QA checklist
 

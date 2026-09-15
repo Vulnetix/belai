@@ -84,7 +84,7 @@ signet -provider anthropic -model claude-sonnet-4-5 -prompt "review this diff"
 | Flag | Meaning |
 | --- | --- |
 | `-prompt` | send one turn, print the reply, exit |
-| `-provider` | `openai`, `anthropic`, `cloudflare-workers-ai`, `cloudflare-ai-gateway` |
+| `-provider` | `openai`, `anthropic`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`, `github-copilot`, or a custom name from `settings.json` |
 | `-model` | model id; each provider has a default |
 | `-effort` | thinking-effort level: `low`, `medium`, or `high` |
 | `-caveman` | enable caveman voice rewrite for this run |
@@ -106,8 +106,15 @@ Set the API key for your provider and Signet picks it up:
 | `anthropic` | `ANTHROPIC_API_KEY` |
 | `cloudflare-workers-ai` | `CLOUDFLARE_API_KEY`, `CLOUDFLARE_ACCOUNT_ID` |
 | `cloudflare-ai-gateway` | `CLOUDFLARE_API_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_GATEWAY_ID` |
+| `openrouter` | `OPENROUTER_API_KEY` |
+| `google-gemini` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` |
+| `ollama` | none (local; honours `OLLAMA_HOST`) |
+| `github-copilot` | `GITHUB_COPILOT_TOKEN` or `GH_TOKEN` (OAuth, exchanged for a session token) |
 
-`/credentials` in the UI stores them for you instead, in your host keychain or in `~/.vulnetix/signet/credentials.json`. Signet resolves credentials from the environment first, then a project-local `.vulnetix/signet/credentials.json`, then the user file, then `~/.netrc`, then the keychain — and tells you which one each value came from.
+A custom provider defined in `settings.json` resolves its key from its
+`api_key_env` variable or `SIGNET_<NAME>_API_KEY`.
+
+`/credentials` in the UI stores them for you instead, in your host keychain or in `~/.vulnetix/signet/credentials.json`. Signet resolves credentials from the environment first, then a project-local `.vulnetix/signet/credentials.json`, then the user file, then `~/.netrc`, then the keychain — and tells you which one each value came from. A credential may be stored as the *name* of an environment variable rather than a value, which is how project credential files stay committable.
 
 Pick a default provider without passing `-provider` every time by setting `SIGNET_PROVIDER`.
 
@@ -136,6 +143,17 @@ its provenance for every key.
 | `ui.banner` / `ui.status_bar` | TUI presentation toggles |
 | `show_session_names` | show session names in the status bar (default on) |
 | `context_windows` | per-model context-window overrides, in tokens |
+| `providers` | custom provider profiles (see below) |
+| `allow_project_providers` | opt in to project-layer `providers` (default off) |
+
+**Custom providers.** A `providers` block defines a provider by name, with
+`base_url`, `api` (`openai-chat`, `openai-responses`, or
+`anthropic-messages`), optional `auth` (`bearer`, `x-api-key`, or `cf-aig`),
+optional `api_key_env`, and a `models` catalogue. Secrets never live here; a
+profile references the key via `api_key_env` or the credential backends.
+Project-layer `providers` blocks are ignored unless the global settings set
+`allow_project_providers: true`, because a hostile repo defining a provider is
+an API-key exfiltration primitive.
 
 **Permissions merge is a union, never a replacement.** A project file can add
 rules but can never remove a rule you set globally, and a deny from either
