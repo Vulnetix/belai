@@ -333,8 +333,10 @@ func (s *Store) UserPrompts(workdir string) ([]string, error) {
 		}
 		return nil, err
 	}
-	seen := make(map[string]bool)
-	var out []string
+	// Sort oldest session first so appending entries in order and then
+	// reversing yields globally most-recent-first.
+	sort.Slice(infos, func(i, j int) bool { return infos[i].ModTime < infos[j].ModTime })
+	var all []string
 	for _, info := range infos {
 		entries, err := s.Read(workdir, info.ID)
 		if err != nil {
@@ -342,11 +344,21 @@ func (s *Store) UserPrompts(workdir string) ([]string, error) {
 		}
 		for _, e := range entries {
 			if e.Type == "user" || e.Role == "user" {
-				if e.Content != "" && !seen[e.Content] {
-					seen[e.Content] = true
-					out = append(out, e.Content)
+				if e.Content != "" {
+					all = append(all, e.Content)
 				}
 			}
+		}
+	}
+	for i, j := 0, len(all)-1; i < j; i, j = i+1, j-1 {
+		all[i], all[j] = all[j], all[i]
+	}
+	seen := make(map[string]bool)
+	var out []string
+	for _, p := range all {
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
 		}
 	}
 	return out, nil
