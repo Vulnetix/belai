@@ -1,6 +1,14 @@
+// Copyright 2025 Vulnetix. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package wire
 
-import "encoding/json"
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+)
 
 // ToolMethod controls how OpenAI-style tool-call arguments are serialised on
 // the wire: as a JSON-encoded string (classic OpenAI), as a raw JSON object
@@ -82,4 +90,49 @@ type AnthropicRequestBlock struct {
 	Input     map[string]any `json:"input,omitempty"`
 	ToolUseID string         `json:"tool_use_id,omitempty"`
 	Content   string         `json:"content,omitempty"`
+}
+
+// CanonicalToolArgs converts raw wire bytes into canonical JSON text.
+// Accepts both tool call argument shapes: a JSON string whose content is
+// JSON text (OpenAI), and a bare JSON object/array (Workers AI).
+// Null or absent arguments yield "".
+func CanonicalToolArgs(raw json.RawMessage) (string, error) {
+	b := bytes.TrimSpace(raw)
+	if len(b) == 0 || string(b) == "null" {
+		return "", nil
+	}
+	if b[0] == '"' {
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return "", err
+		}
+		return s, nil
+	}
+	if b[0] == '{' || b[0] == '[' {
+		if !json.Valid(b) {
+			return "", fmt.Errorf("tool arguments are not a JSON object or array: %q", b)
+		}
+		return string(b), nil
+	}
+	return "", fmt.Errorf("tool arguments are neither a JSON string nor a JSON object: %q", b)
+}
+
+// ToolArgsFragment returns the content fragment of one streamed tool-call
+// arguments delta. String-shaped fragments have their JSON quoting and
+// escaping removed so fragments concatenate into canonical JSON text;
+// object-shaped payloads (providers that stream whole objects) pass through
+// verbatim.
+func ToolArgsFragment(raw json.RawMessage) string {
+	b := bytes.TrimSpace(raw)
+	if len(b) == 0 || string(b) == "null" {
+		return ""
+	}
+	if b[0] == '"' {
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return ""
+		}
+		return s
+	}
+	return string(b)
 }
