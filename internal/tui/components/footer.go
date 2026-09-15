@@ -19,6 +19,15 @@ type Footer struct {
 	Width    int
 	Cwd      string
 	Branch   string
+
+	// Context metering.
+	ContextLimit int  // 0 when the model's window is unknown
+	ContextStale bool // usage predates a compaction
+	Estimated    bool // no provider usage anchor yet; Tokens is an estimate
+
+	// Session naming.
+	SessionName string
+	ShowName    bool
 }
 
 var (
@@ -64,10 +73,8 @@ func (f *Footer) View() string {
 		parts = append(parts, f.Model)
 	}
 	rightParts := []string{}
-	if f.Session != "" {
-		rightParts = append(rightParts, "session: "+f.Session)
-	}
-	rightParts = append(rightParts, fmt.Sprintf("tokens: %d", f.Tokens))
+	rightParts = append(rightParts, f.sessionSegment())
+	rightParts = append(rightParts, f.contextSegment())
 	if f.Cost != "" {
 		rightParts = append(rightParts, "cost: "+f.Cost)
 	}
@@ -95,4 +102,90 @@ func (f *Footer) View() string {
 		return line1 + "\n" + line2
 	}
 	return line2
+}
+
+// sessionSegment renders the session name (when shown) or the short id.
+func (f *Footer) sessionSegment() string {
+	if f.ShowName && f.SessionName != "" {
+		return "session: " + truncateRunes(f.SessionName, 24)
+	}
+	if f.Session != "" {
+		return "session: " + f.Session
+	}
+	return ""
+}
+
+// contextSegment renders the context-window pressure with its three degraded
+// renderings: a leading ~ for an estimate, (?) for a stale or unknown window,
+// and a coloured remaining percentage only when it is safe to show one.
+func (f *Footer) contextSegment() string {
+	tokens := formatTokens(f.Tokens)
+
+	if f.ContextLimit > 0 {
+		limit := formatTokens(f.ContextLimit)
+		if f.ContextStale {
+			return fmt.Sprintf("tokens: ~%s/%s (?)", tokens, limit)
+		}
+		prefix := ""
+		if f.Estimated {
+			prefix = "~"
+		}
+		pct, ok := f.percentRemaining()
+		if !ok {
+			return fmt.Sprintf("tokens: %s%s/%s (?)", prefix, tokens, limit)
+		}
+		return fmt.Sprintf("tokens: %s%s/%s (%s)", prefix, tokens, limit, f.colourPct(pct))
+	}
+	if f.ContextStale || !f.Estimated {
+		return fmt.Sprintf("tokens: %s (?)", tokens)
+	}
+	return fmt.Sprintf("tokens: ~%s (?)", tokens)
+}
+
+func (f *Footer) percentRemaining() (int, bool) {
+	if f.ContextLimit <= 0 || f.ContextStale {
+		return 0, false
+	}
+	if f.Tokens >= f.ContextLimit {
+		return 0, true
+	}
+	return int(float64(f.ContextLimit-f.Tokens) / float64(f.ContextLimit) * 100), true
+}
+
+func (f *Footer) colourPct(pct int) string {
+	colour := lipgloss.Color("2")
+	switch {
+	case pct < 20:
+		colour = lipgloss.Color("1")
+	case pct < 50:
+		colour = lipgloss.Color("3")
+	}
+	return lipgloss.NewStyle().Foreground(colour).Render(fmt.Sprintf("%d%%", pct))
+}
+
+// formatTokens renders a token count compactly: 842, 12.4k, 1.2M.
+func formatTokens(n int) string {
+	switch {
+	case n >= 1_000_000:
+		v := float64(n) / 1_000_000
+		return trimFloat(v) + "M"
+	case n >= 10_000:
+		v := float64(n) / 1_000
+		return trimFloat(v) + "k"
+	default:
+		return fmt.Sprintf("%d", n)
+	}
+}
+
+func trimFloat(v float64) string {
+	s := fmt.Sprintf("%.1f", v)
+	return strings.TrimSuffix(strings.TrimSuffix(s, "0"), ".")
+}
+
+func truncateRunes(s string, max int) string {
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max-1]) + "…"
 }

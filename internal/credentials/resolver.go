@@ -31,12 +31,17 @@ type BackendInfo struct {
 func (r *Resolver) ConfiguredProviders() []string {
 	var out []string
 	for _, p := range []string{"openai", "anthropic", "cloudflare-workers-ai", "cloudflare-ai-gateway"} {
-		set := r.Resolve(p)
-		if set.Complete() {
+		if r.Configured(p) {
 			out = append(out, p)
 		}
 	}
 	return out
+}
+
+// Configured reports whether the given provider has every required field
+// resolved through this resolver.
+func (r *Resolver) Configured(provider string) bool {
+	return r.Resolve(provider).Complete()
 }
 
 // NewResolver builds a resolver for the given working directory.

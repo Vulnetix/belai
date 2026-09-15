@@ -24,6 +24,9 @@ type State struct {
 	ActiveGoal string `json:"active_goal,omitempty"`
 	// ActiveProfile is the currently selected agent profile.
 	ActiveProfile string `json:"active_profile,omitempty"`
+	// ActiveSession is the last active session id, written for a future
+	// /resume. Each launch mints a new session regardless.
+	ActiveSession string `json:"active_session,omitempty"`
 }
 
 // LoadState reads ~/.signet/state.json. A missing file yields zero-value

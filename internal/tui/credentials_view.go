@@ -4,18 +4,10 @@ import (
 	"fmt"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/vulnetix/signet/internal/credentials"
-)
-
-// viewState selects which full-screen view is active.
-type viewState int
-
-const (
-	viewChat viewState = iota
-	viewCredentials
-	viewSettings
 )
 
 // credentialViewState tracks the credential manager UI.
@@ -112,4 +104,90 @@ func (a *App) initCredentialState() {
 			}
 		}
 	}
+}
+
+// handleCredentialKey is the key handler for the credential manager view.
+func (a *App) handleCredentialKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if a.credentialState.setMode {
+		switch m.String() {
+		case "esc":
+			a.credentialState.setMode = false
+			a.editor.Masked = false
+			a.editor.Reset()
+			return a, nil
+		case "enter":
+			val := a.editor.Value()
+			p := a.credentialState.providers[a.credentialState.selectedIdx]
+			spec := credentials.Spec(p)
+			if len(spec) > 0 && a.resolver != nil {
+				_ = a.resolver.Store(p, spec[0].Name, val, a.credentialState.backend)
+			}
+			a.editor.Reset()
+			a.editor.Masked = false
+			a.credentialState.setMode = false
+			a.refreshCredentials()
+			return a, a.refreshProvider()
+		default:
+			cmd := a.editor.Update(m)
+			return a, cmd
+		}
+	}
+
+	switch m.String() {
+	case "up", "k":
+		if a.credentialState.selectedIdx > 0 {
+			a.credentialState.selectedIdx--
+		}
+		return a, nil
+	case "down", "j":
+		if a.credentialState.selectedIdx < len(a.credentialState.providers)-1 {
+			a.credentialState.selectedIdx++
+		}
+		return a, nil
+	case "esc":
+		a.pop()
+		return a, nil
+	case "s":
+		a.credentialState.setMode = true
+		a.editor.Masked = true
+		_ = a.editor.Focus()
+		return a, nil
+	case "c":
+		if a.resolver != nil {
+			p := a.credentialState.providers[a.credentialState.selectedIdx]
+			for _, f := range credentials.Spec(p) {
+				_ = a.resolver.Clear(p, f.Name, a.credentialState.backend)
+			}
+			a.refreshCredentials()
+			return a, a.refreshProvider()
+		}
+		return a, nil
+	case "b":
+		if a.resolver != nil {
+			backends := a.resolver.Backends()
+			var writable []credentials.Source
+			for _, be := range backends {
+				if be.Writable && be.Available {
+					writable = append(writable, credentials.Source(be.Name))
+				}
+			}
+			if len(writable) == 0 {
+				return a, nil
+			}
+			for i, s := range writable {
+				if s == a.credentialState.backend {
+					a.credentialState.backend = writable[(i+1)%len(writable)]
+					break
+				}
+			}
+		}
+		return a, nil
+	}
+
+	cmd := a.editor.Update(m)
+	return a, cmd
+}
+
+func (a *App) refreshCredentials() {
+	a.credentialState.sets = nil
 }

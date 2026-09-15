@@ -5,6 +5,8 @@
 package permissions
 
 import (
+	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -30,8 +32,20 @@ type Settings struct {
 	Block []string `json:"block,omitempty"`
 }
 
+// From builds Settings from explicit allow/ask/deny rule slices.
+func From(allow, ask, deny []string) Settings {
+	return Settings{
+		Allow: append([]string{}, allow...),
+		Ask:   append([]string{}, ask...),
+		Deny:  append([]string{}, deny...),
+	}
+}
+
 // FromSimple converts a map of tool name -> allow/ask/block into Settings with
 // bare-tool-name rules. Unknown decision values are treated as block.
+//
+// Deprecated: the settings file now uses the structured PermissionRules form;
+// FromSimple remains only for legacy flat-map decoding.
 func FromSimple(m map[string]string) Settings {
 	var s Settings
 	for tool, d := range m {
@@ -47,32 +61,67 @@ func FromSimple(m map[string]string) Settings {
 	return s
 }
 
-// Evaluate returns the decision for a tool invocation against a rule subject.
-// tool is the tool name (e.g. "Bash"); subject is the specific target the rule
-// spec is matched against (e.g. the command or path).
-func (s Settings) Evaluate(tool, subject string) Decision {
+// ValidateRule reports whether a rule string is well-formed: "Tool" or
+// "Tool(spec)" with a non-empty tool name and a compilable glob subject.
+func ValidateRule(rule string) error {
+	rule = strings.TrimSpace(rule)
+	if rule == "" {
+		return errors.New("permission rule is empty")
+	}
+	tool, spec, hasSpec := parseRule(rule)
+	if tool == "" {
+		return fmt.Errorf("rule %q has no tool name", rule)
+	}
+	if strings.ContainsAny(tool, " \t()") {
+		return fmt.Errorf("rule %q has invalid tool name %q", rule, tool)
+	}
+	if hasSpec {
+		if spec == "" {
+			return fmt.Errorf("rule %q has an empty subject", rule)
+		}
+		if _, err := globToRegexp(spec); err != nil {
+			return fmt.Errorf("rule %q has an invalid pattern: %w", rule, err)
+		}
+	}
+	return nil
+}
+
+// Explain returns the decision for a tool invocation against a rule subject,
+// plus the rule that decided it ("" when no rule matched and the default
+// block applies).
+func (s Settings) Explain(tool, subject string) (Decision, string) {
 	for _, r := range append(append([]string{}, s.Deny...), s.Block...) {
 		if matchRule(r, tool, subject) {
-			return DecisionBlock
+			return DecisionBlock, r
 		}
 	}
 	for _, r := range s.Allow {
 		if matchRule(r, tool, subject) {
-			return DecisionAllow
+			return DecisionAllow, r
 		}
 	}
 	for _, r := range s.Ask {
 		if matchRule(r, tool, subject) {
-			return DecisionAsk
+			return DecisionAsk, r
 		}
 	}
-	return DecisionBlock
+	return DecisionBlock, ""
 }
 
-// matchRule matches one rule against a tool name and subject.
+// Evaluate returns the decision for a tool invocation against a rule subject.
+// tool is the tool name (e.g. "Bash"); subject is the specific target the rule
+// spec is matched against (e.g. the command or path).
+func (s Settings) Evaluate(tool, subject string) Decision {
+	d, _ := s.Explain(tool, subject)
+	return d
+}
+
+// matchRule matches one rule against a tool name and subject. Tool names are
+// matched case-insensitively so a rule written "read" still applies to the
+// canonical "Read" tool; subjects remain case-sensitive.
 func matchRule(rule, tool, subject string) bool {
 	rt, spec, hasSpec := parseRule(rule)
-	if rt != tool {
+	if !strings.EqualFold(rt, tool) {
 		return false
 	}
 	if !hasSpec {
@@ -94,14 +143,20 @@ func parseRule(rule string) (tool, spec string, hasSpec bool) {
 	return rule, "", false
 }
 
-// globToRegexp converts a glob (`*` matches any run, `?` matches one run) to a
-// regexp. Unlike path.Match, `*` crosses path separators.
+// globToRegexp converts a glob to a regexp. `*` and `**` match any run
+// (crossing path separators); `?` matches exactly one character.
 func globToRegexp(pattern string) (*regexp.Regexp, error) {
 	var b strings.Builder
 	b.WriteString("^")
-	for _, r := range pattern {
+	runes := []rune(pattern)
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
 		switch r {
 		case '*':
+			// Collapse consecutive stars: ** is the same wildcard as *.
+			for i+1 < len(runes) && runes[i+1] == '*' {
+				i++
+			}
 			b.WriteString(".*")
 		case '?':
 			b.WriteString(".")

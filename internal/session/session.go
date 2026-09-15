@@ -19,6 +19,10 @@ type Entry struct {
 	Meta      map[string]any `json:"meta,omitempty"`
 }
 
+// EntryTypeSessionName is the entry type carrying an explicit session name.
+// Names are append-only: the last one wins, and an empty name clears.
+const EntryTypeSessionName = "session_name"
+
 // NewID returns a random RFC 4122 version 4 UUID string.
 func NewID() (string, error) {
 	var b [16]byte
@@ -75,24 +79,47 @@ func BuildTree(entries []Entry) []*Node {
 	return roots
 }
 
-// DisplayName derives a short human-facing name for a session: the first
-// user-typed message, flattened and truncated, or a short session-id prefix
-// when there is no user content.
+// Name returns the explicit session name, or "" when the session was never
+// named or the most recent name entry cleared it.
+func Name(entries []Entry) string {
+	name := ""
+	for _, e := range entries {
+		if e.Type == EntryTypeSessionName {
+			name = e.Content
+		}
+	}
+	return name
+}
+
+// DisplayName derives a short human-facing name for a session: an explicit
+// name, then the first user-typed message flattened and truncated, then a
+// short session-id prefix when there is no user content.
 func DisplayName(entries []Entry, sessionID string) string {
+	if name := Name(entries); name != "" {
+		return truncateDisplay(name)
+	}
 	for _, e := range entries {
 		if e.Type == "user" || e.Role == "user" {
 			name := strings.Join(strings.Fields(e.Content), " ")
 			if name == "" {
 				continue
 			}
-			if len(name) > 60 {
-				name = name[:57] + "..."
-			}
-			return name
+			return truncateDisplay(name)
 		}
 	}
 	if len(sessionID) >= 8 {
 		return sessionID[:8]
 	}
 	return sessionID
+}
+
+// truncateDisplay truncates rune-safely so multi-byte text never yields
+// invalid UTF-8 (the old byte-slice truncation could split a rune).
+func truncateDisplay(name string) string {
+	const max = 60
+	runes := []rune(name)
+	if len(runes) <= max {
+		return name
+	}
+	return string(runes[:max-3]) + "..."
 }

@@ -5,12 +5,14 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/vulnetix/signet/internal/transcript"
 )
 
 // Message is one message in the transcript.
 type Message struct {
 	Role    string // user, assistant, tool, system
 	Content string
+	Usage   *transcript.Usage // non-nil on metered assistant turns
 }
 
 // MessageList renders the transcript.

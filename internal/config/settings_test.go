@@ -16,7 +16,7 @@ func TestGlobalSettingsRoundTrip(t *testing.T) {
 		Model:       "gpt-5",
 		Effort:      "high",
 		Caveman:     boolPtr(true),
-		Permissions: map[string]string{"bash": "ask", "edit": "allow"},
+		Permissions: PermissionRules{Allow: []string{"Read"}, Ask: []string{"Bash"}, Deny: []string{"Write"}},
 	}
 	if err := SaveGlobal(want); err != nil {
 		t.Fatalf("SaveGlobal: %v", err)
@@ -34,10 +34,10 @@ func TestProjectSettingsRoundTrip(t *testing.T) {
 	workdir := t.TempDir()
 
 	want := Settings{
-		Model:       "claude-opus-4",
+		Model:       "claude-opus-4-5",
 		Effort:      "max",
 		Caveman:     boolPtr(false),
-		Permissions: map[string]string{"write": "block"},
+		Permissions: PermissionRules{Deny: []string{"Write(*)"}},
 	}
 	if err := SaveProject(workdir, want); err != nil {
 		t.Fatalf("SaveProject: %v", err)
@@ -59,12 +59,12 @@ func TestProjectOverridesGlobal(t *testing.T) {
 		Model:       "global-model",
 		Effort:      "low",
 		Caveman:     boolPtr(false),
-		Permissions: map[string]string{"bash": "ask", "edit": "allow"},
+		Permissions: PermissionRules{Allow: []string{"Read"}, Deny: []string{"Bash(git push*)"}},
 	}
 	proj := Settings{
 		Model:       "project-model",
 		Caveman:     boolPtr(true),
-		Permissions: map[string]string{"edit": "block"},
+		Permissions: PermissionRules{Allow: []string{"Bash(git diff:*)"}},
 	}
 	if err := SaveGlobal(global); err != nil {
 		t.Fatalf("SaveGlobal: %v", err)
@@ -79,10 +79,14 @@ func TestProjectOverridesGlobal(t *testing.T) {
 	}
 
 	want := Settings{
-		Model:       "project-model",                                   // project wins
-		Effort:      "low",                                             // project empty -> global
-		Caveman:     boolPtr(true),                                     // project wins
-		Permissions: map[string]string{"bash": "ask", "edit": "block"}, // merged
+		Model:   "project-model", // project wins
+		Effort:  "low",           // project empty -> global
+		Caveman: boolPtr(true),   // project wins
+		// Permissions merge is a union: the global deny and allow survive.
+		Permissions: PermissionRules{
+			Allow: []string{"Read", "Bash(git diff:*)"},
+			Deny:  []string{"Bash(git push*)"},
+		},
 	}
 	if !reflect.DeepEqual(want, got) {
 		t.Fatalf("merge mismatch:\n want=%+v\n  got=%+v", want, got)

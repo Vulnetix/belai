@@ -16,14 +16,16 @@ import (
 	"github.com/vulnetix/signet/internal/nonce"
 	"github.com/vulnetix/signet/internal/prompt"
 	"github.com/vulnetix/signet/internal/sanitize"
+	"github.com/vulnetix/signet/internal/transcript"
 	"github.com/vulnetix/signet/internal/wire"
 )
 
 // Chunk is one piece of a streamed response.
 type Chunk struct {
-	Text string
-	Err  error
-	Done bool
+	Text  string
+	Err   error
+	Done  bool
+	Usage *transcript.Usage // set on the Done chunk when the provider reported it
 }
 
 // Stream sends a conversation and returns a channel of text deltas.
@@ -79,6 +81,11 @@ func StreamWithPool(ctx context.Context, cfg Config, turns []Turn, client *http.
 		defer resp.Body.Close()
 		scan := bufio.NewScanner(resp.Body)
 		scan.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+		var acc transcript.Usage
+		sendDone := func() {
+			u := acc
+			ch <- Chunk{Done: true, Usage: &u}
+		}
 		for scan.Scan() {
 			line := scan.Text()
 			if !strings.HasPrefix(line, "data: ") {
@@ -86,13 +93,20 @@ func StreamWithPool(ctx context.Context, cfg Config, turns []Turn, client *http.
 			}
 			data := strings.TrimPrefix(line, "data: ")
 			if data == "[DONE]" {
-				ch <- Chunk{Done: true}
+				sendDone()
 				return
 			}
-			text, err := decodeDelta(cfg, data)
+			text, usage, err := decodeDelta(cfg, data)
 			if err != nil {
 				ch <- Chunk{Err: err}
 				return
+			}
+			if usage != nil {
+				acc.PromptTokens += usage.PromptTokens
+				acc.CompletionTokens += usage.CompletionTokens
+				if usage.TotalTokens != 0 {
+					acc.TotalTokens = usage.TotalTokens
+				}
 			}
 			if text != "" {
 				ch <- Chunk{Text: text}
@@ -106,53 +120,93 @@ func StreamWithPool(ctx context.Context, cfg Config, turns []Turn, client *http.
 		if err := scan.Err(); err != nil {
 			ch <- Chunk{Err: fmt.Errorf("stream read: %w", err)}
 		}
-		ch <- Chunk{Done: true}
+		sendDone()
 	}()
 	return ch, nil
 }
 
-func decodeDelta(cfg Config, data string) (string, error) {
+// decodeDelta returns the text delta and any usage carried by this SSE
+// payload. A payload may carry usage with no text (OpenAI's final usage chunk,
+// Anthropic's message_start).
+func decodeDelta(cfg Config, data string) (string, *transcript.Usage, error) {
 	switch cfg.Provider {
 	case "anthropic":
 		var ev wire.AnthropicStreamEvent
 		if err := json.Unmarshal([]byte(data), &ev); err != nil {
-			return "", err
+			return "", nil, err
 		}
-		return ev.Delta.Text, nil
+		return ev.Delta.Text, anthropicEventUsage(&ev), nil
 	case "cloudflare-ai-gateway":
 		// Gateway dispatches by model prefix.
 		if strings.HasPrefix(strings.ToLower(cfg.Model), "claude") {
 			var ev wire.AnthropicStreamEvent
 			if err := json.Unmarshal([]byte(data), &ev); err != nil {
-				return "", err
+				return "", nil, err
 			}
-			return ev.Delta.Text, nil
+			return ev.Delta.Text, anthropicEventUsage(&ev), nil
 		}
 		var chunk wire.OpenAIChatStreamChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			return "", err
+			return "", nil, err
 		}
-		if len(chunk.Choices) > 0 {
-			return chunk.Choices[0].Delta.Content, nil
-		}
-		return "", nil
+		return openAIDelta(&chunk), openAIChunkUsage(&chunk), nil
 	case "cloudflare-workers-ai":
 		var chunk wire.OpenAIChatStreamChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			return "", err
+			return "", nil, err
 		}
-		if len(chunk.Choices) > 0 {
-			return chunk.Choices[0].Delta.Content, nil
-		}
-		return "", nil
+		return openAIDelta(&chunk), openAIChunkUsage(&chunk), nil
 	default:
 		var chunk wire.OpenAIChatStreamChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			return "", err
+			return "", nil, err
 		}
-		if len(chunk.Choices) > 0 {
-			return chunk.Choices[0].Delta.Content, nil
+		return openAIDelta(&chunk), openAIChunkUsage(&chunk), nil
+	}
+}
+
+func openAIDelta(chunk *wire.OpenAIChatStreamChunk) string {
+	if len(chunk.Choices) > 0 {
+		return chunk.Choices[0].Delta.Content
+	}
+	return ""
+}
+
+func openAIChunkUsage(chunk *wire.OpenAIChatStreamChunk) *transcript.Usage {
+	if chunk.Usage == nil || chunk.Usage.TotalTokens <= 0 {
+		return nil
+	}
+	return &transcript.Usage{
+		PromptTokens:     chunk.Usage.PromptTokens,
+		CompletionTokens: chunk.Usage.CompletionTokens,
+		TotalTokens:      chunk.Usage.TotalTokens,
+	}
+}
+
+func anthropicEventUsage(ev *wire.AnthropicStreamEvent) *transcript.Usage {
+	var u wire.AnthropicUsage
+	if ev.Message != nil && ev.Message.Usage != nil {
+		u = *ev.Message.Usage
+	}
+	if ev.Usage != nil {
+		if ev.Usage.InputTokens != 0 {
+			u.InputTokens = ev.Usage.InputTokens
 		}
-		return "", nil
+		if ev.Usage.OutputTokens != 0 {
+			u.OutputTokens = ev.Usage.OutputTokens
+		}
+		if ev.Usage.CacheCreationInputTokens != 0 {
+			u.CacheCreationInputTokens = ev.Usage.CacheCreationInputTokens
+		}
+		if ev.Usage.CacheReadInputTokens != 0 {
+			u.CacheReadInputTokens = ev.Usage.CacheReadInputTokens
+		}
+	}
+	if u.InputTokens == 0 && u.OutputTokens == 0 {
+		return nil
+	}
+	return &transcript.Usage{
+		PromptTokens:     u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens,
+		CompletionTokens: u.OutputTokens,
 	}
 }

@@ -22,6 +22,11 @@ type Provider struct {
 	apiKey  string
 }
 
+// Names returns the supported provider names in a stable order.
+func Names() []string {
+	return []string{"openai", "anthropic", "cloudflare-workers-ai", "cloudflare-ai-gateway"}
+}
+
 // New validates and returns a Provider. Supported names are "openai",
 // "anthropic", "cloudflare-workers-ai", and "cloudflare-ai-gateway". baseURL
 // must be a valid http(s) URL; apiKey must be non-empty.

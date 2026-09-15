@@ -68,13 +68,20 @@ type OpenAIChatMessage struct {
 
 // OpenAIChatRequest is the body of a chat/completions call.
 type OpenAIChatRequest struct {
-	Model       string              `json:"model"`
-	Messages    []OpenAIChatMessage `json:"messages"`
-	Stream      bool                `json:"stream,omitempty"`
-	Temperature *float64            `json:"temperature,omitempty"`
-	MaxTokens   int                 `json:"max_tokens,omitempty"`
-	Tools       []OpenAITool        `json:"tools,omitempty"`
-	ToolChoice  string              `json:"tool_choice,omitempty"`
+	Model           string               `json:"model"`
+	Messages        []OpenAIChatMessage  `json:"messages"`
+	Stream          bool                 `json:"stream,omitempty"`
+	Temperature     *float64             `json:"temperature,omitempty"`
+	MaxTokens       int                  `json:"max_tokens,omitempty"`
+	Tools           []OpenAITool         `json:"tools,omitempty"`
+	ToolChoice      string               `json:"tool_choice,omitempty"`
+	ReasoningEffort string               `json:"reasoning_effort,omitempty"`
+	StreamOptions   *OpenAIStreamOptions `json:"stream_options,omitempty"`
+}
+
+// OpenAIStreamOptions requests usage accounting on a streamed response.
+type OpenAIStreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 // OpenAIChatResponse is the non-streaming chat/completions response.
@@ -100,7 +107,8 @@ type OpenAIChatUsage struct {
 }
 
 // OpenAIChatStreamChunk is one SSE `data:` payload in a streaming
-// chat/completions response.
+// chat/completions response. The final usage chunk has an empty choices array
+// and carries usage in the Usage field.
 type OpenAIChatStreamChunk struct {
 	Choices []struct {
 		Delta struct {
@@ -109,6 +117,7 @@ type OpenAIChatStreamChunk struct {
 		} `json:"delta"`
 		FinishReason string `json:"finish_reason,omitempty"`
 	} `json:"choices"`
+	Usage *OpenAIChatUsage `json:"usage,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -177,6 +186,13 @@ type AnthropicMessagesRequest struct {
 	Stream     bool               `json:"stream,omitempty"`
 	Tools      []AnthropicToolDef `json:"tools,omitempty"`
 	ToolChoice string             `json:"tool_choice,omitempty"`
+	Thinking   *AnthropicThinking `json:"thinking,omitempty"`
+}
+
+// AnthropicThinking enables extended thinking with a token budget.
+type AnthropicThinking struct {
+	Type         string `json:"type"`
+	BudgetTokens int    `json:"budget_tokens"`
 }
 
 // AnthropicContentBlock is a content block in a messages response.
@@ -195,10 +211,22 @@ type AnthropicMessagesResponse struct {
 	Role       string                  `json:"role"`
 	Content    []AnthropicContentBlock `json:"content"`
 	StopReason string                  `json:"stop_reason"`
+	Usage      AnthropicUsage          `json:"usage"`
+}
+
+// AnthropicUsage reports token usage on a messages response. Cache tokens
+// occupy the window, so the cache read/creation inputs are part of the prompt
+// total when mapped onto transcript.Usage.
+type AnthropicUsage struct {
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens,omitempty"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens,omitempty"`
 }
 
 // AnthropicStreamEvent is one SSE `data:` payload in a streaming messages
-// response.
+// response. message_start carries input tokens and message_delta carries
+// output tokens; both describe one response.
 type AnthropicStreamEvent struct {
 	Type  string `json:"type"`
 	Index *int   `json:"index,omitempty"`
@@ -207,6 +235,10 @@ type AnthropicStreamEvent struct {
 		Text       string `json:"text,omitempty"`
 		StopReason string `json:"stop_reason,omitempty"`
 	} `json:"delta"`
+	Message *struct {
+		Usage *AnthropicUsage `json:"usage,omitempty"`
+	} `json:"message,omitempty"`
+	Usage *AnthropicUsage `json:"usage,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -234,6 +266,7 @@ type WorkersAIResponse struct {
 	Result struct {
 		Response string             `json:"response"`
 		Choices  []OpenAIChatChoice `json:"choices"`
+		Usage    *OpenAIChatUsage   `json:"usage,omitempty"`
 	} `json:"result"`
 	Success bool             `json:"success"`
 	Errors  []WorkersAIError `json:"errors"`

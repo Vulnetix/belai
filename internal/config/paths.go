@@ -56,6 +56,15 @@ func UserCredentialsPath() (string, error) {
 	return filepath.Join(dir, "credentials.json"), nil
 }
 
+// SessionsDir returns <GlobalDir>/sessions.
+func SessionsDir() (string, error) {
+	dir, err := GlobalDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "sessions"), nil
+}
+
 // ProjectDir returns the project-local state directory for a working directory.
 func ProjectDir(workdir string) string {
 	return filepath.Join(workdir, ".vulnetix")

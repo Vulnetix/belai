@@ -9,15 +9,18 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/vulnetix/signet/internal/delimiters"
+	"github.com/vulnetix/signet/internal/models"
 	"github.com/vulnetix/signet/internal/nonce"
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/prompt"
 	"github.com/vulnetix/signet/internal/provider"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/sanitize"
+	"github.com/vulnetix/signet/internal/transcript"
 	"github.com/vulnetix/signet/internal/wire"
 )
 
@@ -27,6 +30,7 @@ type Config struct {
 	BaseURL  string
 	APIKey   string
 	Model    string
+	Effort   string // empty means provider default thinking level
 }
 
 func (c Config) String() string {
@@ -122,7 +126,7 @@ func DefaultModel(providerName string) string {
 	case "cloudflare-ai-gateway":
 		return "claude-sonnet-4-5"
 	case "anthropic":
-		return "claude-opus-4"
+		return "claude-opus-4-5"
 	default:
 		return "gpt-5"
 	}
@@ -199,6 +203,9 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 	}
 
 	status.Configured = len(status.Missing) == 0
+	if override := strings.TrimSpace(os.Getenv("SIGNET_BASE_URL")); override != "" {
+		cfg.BaseURL = override
+	}
 	return cfg, status
 }
 
@@ -301,6 +308,25 @@ func buildRequest(cfg Config, system string, turns []Turn, stream bool, openAITo
 		return nil, err
 	}
 
+	// Effort maps to per-surface thinking controls. Empty effort emits nothing,
+	// keeping requests byte-identical to today for every provider.
+	var reasoningEffort string
+	if cfg.Effort != "" {
+		reasoningEffort = strings.ToLower(strings.TrimSpace(cfg.Effort))
+	}
+	var thinking *wire.AnthropicThinking
+	if budget := models.ThinkingBudget(cfg.Effort); budget > 0 {
+		thinking = &wire.AnthropicThinking{Type: "enabled", BudgetTokens: budget}
+	}
+	// Usage metering is requested only for the native OpenAI streaming surface.
+	// Cloudflare AI Gateway relays to heterogeneous upstreams that may 400 on
+	// the unrecognised field, and a 400 there would break all streaming, not
+	// just metering. The gateway therefore degrades to pure estimation.
+	var streamOpts *wire.OpenAIStreamOptions
+	if stream && cfg.Provider == "openai" {
+		streamOpts = &wire.OpenAIStreamOptions{IncludeUsage: true}
+	}
+
 	switch cfg.Provider {
 	case "cloudflare-workers-ai":
 		return p.NewWorkersAIRequest(cfg.Model, wire.WorkersAIRequest{
@@ -336,23 +362,28 @@ func buildRequest(cfg Config, system string, turns []Turn, stream bool, openAITo
 			Stream:     stream,
 			Tools:      anthropicTools,
 			ToolChoice: "auto",
+			Thinking:   thinking,
 		})
 	default:
 		return p.NewChatRequest(wire.OpenAIChatRequest{
-			Model:      cfg.Model,
-			Messages:   buildOpenAIMessages(system, turns),
-			Stream:     stream,
-			Tools:      openAITools,
-			ToolChoice: "auto",
+			Model:           cfg.Model,
+			Messages:        buildOpenAIMessages(system, turns),
+			Stream:          stream,
+			Tools:           openAITools,
+			ToolChoice:      "auto",
+			ReasoningEffort: reasoningEffort,
+			StreamOptions:   streamOpts,
 		})
 	}
 }
 
 // Assistant is the structured result from a model turn.
 type Assistant struct {
-	Text      string
-	ToolCalls []rolemanager.ToolCall
-	Stop      bool
+	Text       string
+	ToolCalls  []rolemanager.ToolCall
+	Stop       bool
+	Usage      *transcript.Usage // provider-reported usage, when available
+	StopReason string
 }
 
 // SendTurns sends a conversation and returns the assistant reply, including
@@ -445,7 +476,15 @@ func parseOpenAIChat(client *http.Client, req *http.Request, redact func(string)
 		calls = append(calls, rolemanager.ToolCall{ID: tc.ID, Name: tc.Function.Name, Args: args})
 	}
 	stop := cr.Choices[0].FinishReason == "stop" || cr.Choices[0].FinishReason == "end_turn"
-	return Assistant{Text: msg.Content, ToolCalls: calls, Stop: stop}, nil
+	var usage *transcript.Usage
+	if cr.Usage.TotalTokens > 0 {
+		usage = &transcript.Usage{
+			PromptTokens:     cr.Usage.PromptTokens,
+			CompletionTokens: cr.Usage.CompletionTokens,
+			TotalTokens:      cr.Usage.TotalTokens,
+		}
+	}
+	return Assistant{Text: msg.Content, ToolCalls: calls, Stop: stop, Usage: usage, StopReason: cr.Choices[0].FinishReason}, nil
 }
 
 func parseAnthropic(client *http.Client, req *http.Request, redact func(string) string) (Assistant, error) {
@@ -469,7 +508,11 @@ func parseAnthropic(client *http.Client, req *http.Request, redact func(string) 
 			})
 		}
 	}
-	return Assistant{Text: b.String(), ToolCalls: calls}, nil
+	usage := &transcript.Usage{
+		PromptTokens:     ar.Usage.InputTokens + ar.Usage.CacheReadInputTokens + ar.Usage.CacheCreationInputTokens,
+		CompletionTokens: ar.Usage.OutputTokens,
+	}
+	return Assistant{Text: b.String(), ToolCalls: calls, Usage: usage, StopReason: ar.StopReason}, nil
 }
 
 func buildOpenAIMessages(system string, turns []Turn) []wire.OpenAIChatMessage {

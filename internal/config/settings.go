@@ -11,18 +11,32 @@ import (
 // Settings holds user- and project-level configuration.
 // Project settings override global settings field-by-field.
 type Settings struct {
-	// Model is the default model ID (e.g. "gpt-5", "claude-opus-4").
-	Model string `json:"model,omitempty"`
 	// Provider is the default provider name.
 	Provider string `json:"provider,omitempty"`
+	// Model is the default model ID (e.g. "gpt-5", "claude-opus-4-5").
+	Model string `json:"model,omitempty"`
 	// Effort is the default effort/thinking level (e.g. "low", "medium", "high").
 	Effort string `json:"effort,omitempty"`
 	// Caveman, when non-nil, toggles the caveman voice rewrite.
 	Caveman *bool `json:"caveman,omitempty"`
-	// Permissions maps tool names to "allow", "block", or "ask".
-	Permissions map[string]string `json:"permissions,omitempty"`
+	// Permissions is the structured tool-permission rule set. The legacy flat
+	// map form is still accepted on read but never written.
+	Permissions PermissionRules `json:"permissions,omitempty"`
 	// SessionRetentionDays is how long to keep idle sessions (default 28).
 	SessionRetentionDays *int `json:"session_retention_days,omitempty"`
+	// UI holds TUI presentation toggles.
+	UI *UISettings `json:"ui,omitempty"`
+	// ContextWindows overrides the built-in context-window size (in tokens)
+	// for specific model ids. Use it for models Signet does not know.
+	ContextWindows map[string]int `json:"context_windows,omitempty"`
+	// ShowSessionNames toggles session names in the status bar (default on).
+	ShowSessionNames *bool `json:"show_session_names,omitempty"`
+}
+
+// UISettings holds TUI presentation toggles.
+type UISettings struct {
+	Banner    *bool `json:"banner,omitempty"`
+	StatusBar *bool `json:"status_bar,omitempty"`
 }
 
 // SessionRetention returns the retention duration, defaulting to 28 days.
@@ -33,10 +47,17 @@ func (s Settings) SessionRetention() int {
 	return 28
 }
 
+// SessionNamesVisible reports whether session names should be shown in the
+// status bar. The default is true.
+func (s Settings) SessionNamesVisible() bool {
+	return s.ShowSessionNames == nil || *s.ShowSessionNames
+}
+
 // Override merges project settings over the receiver (which should be the
 // global settings). It returns the merged result and never mutates the
 // receiver. Non-zero project fields win; nil/empty project fields fall back
-// to the global value.
+// to the global value. Permissions and ContextWindows merge key-by-key (union),
+// never replace, so a cloned project file cannot widen permissions.
 func (s Settings) Override(proj Settings) Settings {
 	out := s
 	if proj.Model != "" {
@@ -51,16 +72,35 @@ func (s Settings) Override(proj Settings) Settings {
 	if proj.Caveman != nil {
 		out.Caveman = proj.Caveman
 	}
-	if proj.Permissions != nil {
-		if out.Permissions == nil {
-			out.Permissions = make(map[string]string, len(proj.Permissions))
-		}
-		for k, v := range proj.Permissions {
-			out.Permissions[k] = v
-		}
-	}
+	out.Permissions = out.Permissions.Merge(proj.Permissions)
 	if proj.SessionRetentionDays != nil {
 		out.SessionRetentionDays = proj.SessionRetentionDays
+	}
+	if proj.UI != nil {
+		merged := &UISettings{}
+		if out.UI != nil {
+			*merged = *out.UI
+		}
+		if proj.UI.Banner != nil {
+			merged.Banner = proj.UI.Banner
+		}
+		if proj.UI.StatusBar != nil {
+			merged.StatusBar = proj.UI.StatusBar
+		}
+		out.UI = merged
+	}
+	if proj.ContextWindows != nil {
+		merged := make(map[string]int, len(out.ContextWindows)+len(proj.ContextWindows))
+		for k, v := range out.ContextWindows {
+			merged[k] = v
+		}
+		for k, v := range proj.ContextWindows {
+			merged[k] = v
+		}
+		out.ContextWindows = merged
+	}
+	if proj.ShowSessionNames != nil {
+		out.ShowSessionNames = proj.ShowSessionNames
 	}
 	return out
 }

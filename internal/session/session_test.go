@@ -201,6 +201,50 @@ func TestDisplayName(t *testing.T) {
 	}
 }
 
+func TestNameExplicit(t *testing.T) {
+	entries := []Entry{
+		{ID: "1", Type: "user", Content: "hello"},
+		{ID: "2", Type: EntryTypeSessionName, Content: "review PR #42"},
+	}
+	if got := Name(entries); got != "review PR #42" {
+		t.Fatalf("expected explicit name, got %q", got)
+	}
+	if got := DisplayName(entries, "sess-id"); got != "review PR #42" {
+		t.Fatalf("DisplayName should prefer explicit name, got %q", got)
+	}
+}
+
+func TestNameOverwrite(t *testing.T) {
+	entries := []Entry{
+		{ID: "1", Type: EntryTypeSessionName, Content: "first"},
+		{ID: "2", Type: EntryTypeSessionName, Content: "second"},
+	}
+	if got := Name(entries); got != "second" {
+		t.Fatalf("expected last name to win, got %q", got)
+	}
+}
+
+func TestNameEmptyClears(t *testing.T) {
+	entries := []Entry{
+		{ID: "1", Type: EntryTypeSessionName, Content: "first"},
+		{ID: "2", Type: EntryTypeSessionName, Content: ""},
+	}
+	if got := Name(entries); got != "" {
+		t.Fatalf("expected empty after clear, got %q", got)
+	}
+}
+
+func TestDisplayNameUnicodeTruncation(t *testing.T) {
+	entries := []Entry{
+		{ID: "1", Type: "user", Content: strings.Repeat("あ", 70)},
+	}
+	name := DisplayName(entries, "id")
+	runes := []rune(name)
+	if len(runes) > 60 {
+		t.Fatalf("unicode truncation failed: %d runes", len(runes))
+	}
+}
+
 func TestWorkdirKey(t *testing.T) {
 	a := WorkdirKey("/home/user/proj")
 	b := WorkdirKey("/home/user/proj")

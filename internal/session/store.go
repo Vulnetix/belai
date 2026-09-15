@@ -49,11 +49,11 @@ type Store struct {
 
 // NewStore returns a Store rooted at <GlobalDir>/sessions.
 func NewStore() (*Store, error) {
-	dir, err := config.GlobalDir()
+	dir, err := config.SessionsDir()
 	if err != nil {
 		return nil, fmt.Errorf("locate global dir: %w", err)
 	}
-	return &Store{Root: filepath.Join(dir, "sessions")}, nil
+	return &Store{Root: dir}, nil
 }
 
 // NewStoreAt returns a Store rooted at an explicit path (used by tests).

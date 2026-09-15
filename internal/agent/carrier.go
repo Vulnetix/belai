@@ -48,11 +48,6 @@ func CarrierOptions(workdir string, d rolemanager.ModeDecision, st config.State,
 		}
 	}
 
-	merged, _ := config.LoadMerged(workdir)
-	if merged.Caveman != nil {
-		set.Caveman = merged.Caveman
-	}
-
 	opts := d.PromptOptions(planText, goalText, profileText)
 	opts.Caveman = set.Caveman != nil && *set.Caveman
 

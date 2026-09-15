@@ -1,18 +1,60 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/vulnetix/signet/internal/credentials"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/signet/internal/session"
+	"github.com/vulnetix/signet/internal/transcript"
 	"github.com/vulnetix/signet/internal/tui/components"
 )
+
+func TestMain(m *testing.M) {
+	tmp, err := os.MkdirTemp("", "signet-tui-test")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	defer os.RemoveAll(tmp)
+
+	// Isolate state/session files and provider env from the developer machine.
+	os.Setenv("SIGNET_HOME", tmp)
+	os.Setenv("OPENAI_API_KEY", "")
+	os.Setenv("ANTHROPIC_API_KEY", "")
+	os.Setenv("CLOUDFLARE_API_KEY", "")
+	os.Setenv("CLOUDFLARE_ACCOUNT_ID", "")
+	os.Setenv("CLOUDFLARE_GATEWAY_ID", "")
+	os.Setenv("SIGNET_PROVIDER", "")
+	os.Setenv("PI_PROVIDER", "")
+	os.Setenv("SIGNET_MODEL", "")
+	os.Setenv("SIGNET_EFFORT", "")
+	os.Exit(m.Run())
+}
+
+// fakeClassifier records payloads and returns a fixed result (or error).
+type fakeClassifier struct {
+	raw      string
+	err      error
+	payloads []rolemanager.ClassifierPayload
+}
+
+func (f *fakeClassifier) Classify(p rolemanager.ClassifierPayload) (string, error) {
+	f.payloads = append(f.payloads, p)
+	if f.err != nil {
+		return "", f.err
+	}
+	return f.raw, nil
+}
 
 func TestNewAppView(t *testing.T) {
 	a := NewApp(t.TempDir(), "")
@@ -24,17 +66,9 @@ func TestNewAppView(t *testing.T) {
 	}
 }
 
-type fakeClassifier struct {
-	raw string
-}
-
-func (f fakeClassifier) Classify(rolemanager.ClassifierPayload) (string, error) {
-	return f.raw, nil
-}
-
 func TestClassifyModeSelectsPlan(t *testing.T) {
 	a := NewApp(t.TempDir(), "")
-	a.SetClassifier(fakeClassifier{raw: "PLAN"})
+	a.SetClassifier(&fakeClassifier{raw: "PLAN"})
 
 	a.classifyMode("figure out how to refactor this")
 
@@ -48,7 +82,7 @@ func TestClassifyModeSelectsPlan(t *testing.T) {
 
 func TestClassifyModeGoalOverLimitDefaultsToAgent(t *testing.T) {
 	a := NewApp(t.TempDir(), "")
-	a.SetClassifier(fakeClassifier{raw: "GOAL"})
+	a.SetClassifier(&fakeClassifier{raw: "GOAL"})
 
 	long := make([]byte, rolemanager.DefaultGoalPromptLengthLimit+1)
 	for i := range long {
@@ -66,7 +100,7 @@ func TestClassifyModeGoalOverLimitDefaultsToAgent(t *testing.T) {
 
 func TestClassifyModeNamedAgent(t *testing.T) {
 	a := NewApp(t.TempDir(), "")
-	a.SetClassifier(fakeClassifier{raw: "AGENT"})
+	a.SetClassifier(&fakeClassifier{raw: "AGENT"})
 
 	a.classifyMode("review this @agent:security-expert")
 
@@ -80,12 +114,8 @@ func TestClassifyModeNamedAgent(t *testing.T) {
 
 func TestClassifyModeSkippedWithoutClassifier(t *testing.T) {
 	a := NewApp(t.TempDir(), "")
-	// Ensure no classifier is present (New may install one when credentials are configured).
 	a.SetClassifier(nil)
-	// Force agent mode so the test is not affected by any persisted state.
 	a.mode = "agent"
-	// New may already have posted a "credentials missing" notice; classifyMode
-	// must not add to whatever is there.
 	before := len(a.messages)
 	a.classifyMode("anything")
 	if a.mode != "agent" {
@@ -115,9 +145,6 @@ func TestStreamChunksAppendToAssistantMessage(t *testing.T) {
 }
 
 func TestNoCredentialsStillRenders(t *testing.T) {
-	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("ANTHROPIC_API_KEY", "")
-	t.Setenv("CLOUDFLARE_API_KEY", "")
 	a := New(Options{})
 	if v := a.View(); v == "" {
 		t.Fatalf("View returned empty")
@@ -180,15 +207,11 @@ func TestSetCredentialClearsEditor(t *testing.T) {
 }
 
 func TestEnterWithoutCredentialsDoesNotCallProvider(t *testing.T) {
-	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("ANTHROPIC_API_KEY", "")
-	t.Setenv("CLOUDFLARE_API_KEY", "")
 	called := false
 	transport := &fatalTransport{t: t, called: &called}
 	client := &http.Client{Transport: transport}
 	a := New(Options{Client: client})
 
-	// Simulate pressing enter
 	m, _ := a.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	a = m.(*App)
 	cmd := a.send(a.buildTurns())
@@ -234,9 +257,7 @@ func TestSendCallsProvider(t *testing.T) {
 	a.status = status
 
 	cmd := a.send([]run.Turn{{Role: "user", Content: "ping"}})
-	// Execute the command synchronously to start the stream
 	msg := cmd()
-	// Now pump messages until Done
 	for {
 		chunk := msg.(streamChunkMsg)
 		if chunk.Done || chunk.Err != nil {
@@ -306,7 +327,6 @@ func TestAssistantTurnsAccumulate(t *testing.T) {
 	a.cfg = cfg
 	a.status = status
 
-	// First turn
 	a.messages = append(a.messages, components.Message{Role: "user", Content: "ping"})
 	cmd := a.send(a.buildTurns())
 	msg := cmd()
@@ -323,7 +343,6 @@ func TestAssistantTurnsAccumulate(t *testing.T) {
 		msg = nextCmd()
 	}
 
-	// Second turn
 	a.messages = append(a.messages, components.Message{Role: "user", Content: "ping again"})
 	turns := a.buildTurns()
 	if len(turns) != 3 {
@@ -337,5 +356,339 @@ func TestAssistantTurnsAccumulate(t *testing.T) {
 	}
 	if turns[2].Role != "user" || turns[2].Content != "ping again" {
 		t.Fatalf("turn 2 wrong: %+v", turns[2])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Plan 1 regression tests
+// ---------------------------------------------------------------------------
+
+func TestCtrlDQuits(t *testing.T) {
+	a := New(Options{})
+	_, cmd := a.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	if cmd == nil {
+		t.Fatalf("ctrl+d must quit")
+	}
+	if msg, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatalf("ctrl+d cmd = %#v, want quit", msg)
+	}
+}
+
+func TestCtrlCCopiesPromptDoesNotQuit(t *testing.T) {
+	a := New(Options{})
+	a.editor.SetValue("hello")
+	_, cmd := a.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if cmd == nil {
+		t.Fatalf("ctrl+c with text should copy")
+	}
+	msg := cmd()
+	if _, ok := msg.(copiedMsg); !ok {
+		t.Fatalf("ctrl+c cmd produced %#v, want copiedMsg", msg)
+	}
+	if a.view != viewChat {
+		t.Fatalf("ctrl+c must not quit")
+	}
+}
+
+func TestCredentialSetRebuildsClassifier(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+	a := New(Options{})
+	a.SetClassifier(nil)
+	a.cfg = run.Config{Provider: "openai", Model: "gpt-5", BaseURL: "https://api.openai.com/v1"}
+	a.status = run.Status{}
+	a.resolver = nil
+	a.refreshProvider()
+	if a.classifier == nil {
+		t.Fatalf("expected classifier rebuilt after credential set")
+	}
+	if !a.status.Configured {
+		t.Fatalf("expected configured after credential set")
+	}
+}
+
+func TestCredentialClearRefreshesProvider(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+	a := New(Options{})
+	a.SetClassifier(nil)
+	a.cfg = run.Config{Provider: "openai", Model: "gpt-5"}
+	a.status = run.Status{Configured: true}
+	a.resolver = nil
+	a.refreshProvider()
+	if a.status.Configured {
+		t.Fatalf("expected unconfigured after clear")
+	}
+	if a.classifier != nil {
+		t.Fatalf("expected nil classifier after clear")
+	}
+}
+
+func TestSettingsViewRendersAndEscapes(t *testing.T) {
+	a := New(Options{})
+	a.push(viewSettings)
+	if v := a.View(); !strings.Contains(v, "Settings") {
+		t.Fatalf("settings view should render, got %q", v)
+	}
+	m, _ := a.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	a = m.(*App)
+	if a.view != viewChat {
+		t.Fatalf("esc should return to chat, got view %v", a.view)
+	}
+}
+
+func TestPermissionsEscReturnsToSettings(t *testing.T) {
+	a := New(Options{})
+	a.push(viewSettings)
+	a.push(viewPermissions)
+	m, _ := a.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	a = m.(*App)
+	if a.view != viewSettings {
+		t.Fatalf("permissions esc should land on settings, got view %v", a.view)
+	}
+	m, _ = a.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	a = m.(*App)
+	if a.view != viewChat {
+		t.Fatalf("settings esc should land on chat, got view %v", a.view)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Plan 2 tests
+// ---------------------------------------------------------------------------
+
+const validSummary = "## Goal\nfinish the job\n## Constraints & Preferences\nnone\n## Progress\n### Done\nx\n### In Progress\ny\n### Blocked\nz\n## Key Decisions\na\n## Next Steps\nb\n## Critical Context\nc"
+
+func TestClearStartsNewSession(t *testing.T) {
+	workdir := t.TempDir()
+	a := New(Options{Workdir: workdir})
+	old := a.sessionID
+	a.messages = append(a.messages, components.Message{Role: "user", Content: "hi"})
+	a.sessionName = "old name"
+	a.summary = "old summary"
+
+	a.handleCommand("/clear")
+
+	if a.sessionID == old {
+		t.Fatalf("/clear should change session id")
+	}
+	if len(a.messages) != 0 {
+		t.Fatalf("/clear should empty messages")
+	}
+	if a.sessionName != "" {
+		t.Fatalf("/clear should clear name")
+	}
+	if a.summary != "" {
+		t.Fatalf("/clear should clear summary")
+	}
+}
+
+func TestNewAliasMatchesClear(t *testing.T) {
+	a := New(Options{})
+	a.sessionName = "x"
+	a.summary = "y"
+	a.handleCommand("/new")
+	if a.sessionName != "" || a.summary != "" {
+		t.Fatalf("/new should behave like /clear")
+	}
+}
+
+func TestRenameWritesSessionNameEntry(t *testing.T) {
+	workdir := t.TempDir()
+	a := New(Options{Workdir: workdir})
+	a.handleCommand("/rename my demo session")
+	if a.sessionName != "my demo session" {
+		t.Fatalf("sessionName = %q", a.sessionName)
+	}
+	st, _ := session.NewStore()
+	entries, err := st.Read(workdir, a.sessionID)
+	if err != nil {
+		t.Fatalf("read session: %v", err)
+	}
+	found := false
+	for _, e := range entries {
+		if e.Type == session.EntryTypeSessionName && e.Content == "my demo session" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected a session_name entry, got %+v", entries)
+	}
+}
+
+func TestCompactHappyPath(t *testing.T) {
+	workdir := t.TempDir()
+	a := New(Options{Workdir: workdir})
+	fc := &fakeClassifier{raw: validSummary}
+	a.SetClassifier(fc)
+	a.sessionID = session.MustID()
+	old := a.sessionID
+	a.sessionName = "old name"
+	a.messages = append(a.messages,
+		components.Message{Role: "user", Content: "hi"},
+		components.Message{Role: "assistant", Content: "hello"},
+	)
+	// Persist the old session so it exists on disk before compaction.
+	a.appendEntry(session.Entry{Type: "user", Role: "user", Content: "hi"})
+	a.appendEntry(session.Entry{Type: "assistant", Role: "assistant", Content: "hello"})
+
+	cmd := a.handleCommand("/compact")
+	if cmd == nil {
+		t.Fatalf("compact command should return a Cmd")
+	}
+	msg := cmd()
+	done, ok := msg.(compactDoneMsg)
+	if !ok {
+		t.Fatalf("compact cmd produced %#v", msg)
+	}
+	if done.err != nil {
+		t.Fatalf("compact err = %v", done.err)
+	}
+	a.handleCompactDone(done)
+
+	if a.sessionID == old {
+		t.Fatalf("compact should mint a new session id")
+	}
+	if a.sessionName != "old name" {
+		t.Fatalf("name should carry over, got %q", a.sessionName)
+	}
+	if !a.usageStale {
+		t.Fatalf("compacted session should mark usage stale")
+	}
+	if a.summary == "" {
+		t.Fatalf("summary should be set")
+	}
+
+	// The new session's root entry links the parent.
+	st, _ := session.NewStore()
+	entries, err := st.Read(workdir, a.sessionID)
+	if err != nil {
+		t.Fatalf("read compacted session: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatalf("expected root entry")
+	}
+	if parent, _ := entries[0].Meta["parent_session"].(string); parent != old {
+		t.Fatalf("root entry parent_session = %v, want %s", entries[0].Meta["parent_session"], old)
+	}
+
+	// The old file is untouched.
+	oldEntries, err := st.Read(workdir, old)
+	if err != nil {
+		t.Fatalf("old session should still be readable: %v", err)
+	}
+	if len(oldEntries) == 0 {
+		t.Fatalf("old session should still have entries")
+	}
+}
+
+func TestCompactFailureLeavesSessionIntact(t *testing.T) {
+	workdir := t.TempDir()
+	a := New(Options{Workdir: workdir})
+	a.SetClassifier(&fakeClassifier{err: errors.New("boom")})
+	a.sessionID = session.MustID()
+	old := a.sessionID
+	a.messages = append(a.messages, components.Message{Role: "user", Content: "hi"})
+
+	cmd := a.handleCommand("/compact")
+	done := cmd().(compactDoneMsg)
+	if done.err == nil {
+		t.Fatalf("expected classifier error")
+	}
+	a.handleCompactDone(done)
+	if a.sessionID != old {
+		t.Fatalf("failed compact must not change session id")
+	}
+	if a.summary != "" {
+		t.Fatalf("failed compact must not set summary")
+	}
+}
+
+func TestCompactMalformedSummaryFails(t *testing.T) {
+	a := New(Options{})
+	a.SetClassifier(&fakeClassifier{raw: "not a structured summary"})
+	a.sessionID = session.MustID()
+	old := a.sessionID
+	a.messages = append(a.messages, components.Message{Role: "user", Content: "hi"})
+
+	cmd := a.handleCommand("/compact")
+	done := cmd().(compactDoneMsg)
+	if done.err == nil {
+		t.Fatalf("expected validation error")
+	}
+	a.handleCompactDone(done)
+	if a.sessionID != old {
+		t.Fatalf("malformed summary must not change session id")
+	}
+}
+
+func TestBuildTurnsOnCompactedApp(t *testing.T) {
+	a := New(Options{})
+	a.summary = "the summary"
+	a.messages = append(a.messages, components.Message{Role: "user", Content: "next"})
+	turns := a.buildTurns()
+	if len(turns) != 3 {
+		t.Fatalf("expected 3 turns, got %d: %+v", len(turns), turns)
+	}
+	if turns[0].Role != "user" || !strings.Contains(turns[0].Content, "the summary") {
+		t.Fatalf("turn 0 should be the summary user turn: %+v", turns[0])
+	}
+	if turns[1].Role != "assistant" || turns[1].Content != rolemanager.SummaryAck {
+		t.Fatalf("turn 1 should be the ack: %+v", turns[1])
+	}
+	if turns[2].Role != "user" || turns[2].Content != "next" {
+		t.Fatalf("turn 2 wrong: %+v", turns[2])
+	}
+}
+
+func TestAutoNamingMarksRequested(t *testing.T) {
+	a := New(Options{})
+	a.SetClassifier(&fakeClassifier{raw: "My Session"})
+	a.modeExplicit = true
+	a.editor.SetValue("hello world")
+	m, cmd := a.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	a = m.(*App)
+	if !a.nameRequested {
+		t.Fatalf("first user message should mark nameRequested")
+	}
+	if cmd == nil {
+		t.Fatalf("expected a command batch")
+	}
+}
+
+func TestStreamDoneUsageClearsStale(t *testing.T) {
+	a := New(Options{})
+	a.usageStale = true
+	a.messages = append(a.messages, components.Message{Role: "assistant"})
+	m, _ := a.Update(streamChunkMsg{Done: true, Usage: &transcript.Usage{TotalTokens: 100}})
+	a = m.(*App)
+	if a.usageStale {
+		t.Fatalf("fresh usage should clear staleness")
+	}
+	if a.messages[len(a.messages)-1].Usage == nil {
+		t.Fatalf("assistant message should carry usage")
+	}
+	if a.footer.ContextStale {
+		t.Fatalf("footer should not be stale after fresh usage")
+	}
+}
+
+func TestModeCyclingSuppressesClassification(t *testing.T) {
+	a := NewApp(t.TempDir(), "")
+	fc := &fakeClassifier{raw: "PLAN"}
+	a.SetClassifier(fc)
+	a.mode = "agent"
+
+	a.cycleMode() // shift+tab
+	if !a.modeExplicit {
+		t.Fatalf("manual mode choice should set modeExplicit")
+	}
+
+	a.editor.SetValue("hello")
+	m, _ := a.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	a = m.(*App)
+	if a.mode != "plan" {
+		t.Fatalf("manual cycle should have moved agent→plan, got %q", a.mode)
+	}
+	if a.modeExplicit {
+		t.Fatalf("modeExplicit should be consumed after the turn")
 	}
 }
