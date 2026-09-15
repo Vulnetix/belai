@@ -7,7 +7,7 @@ import (
 
 func TestToolAccumulatorOpenAI(t *testing.T) {
 	acc := newToolAccumulator()
-	acc.open(0, "call_1", "Read")
+	acc.open(0, "call_1", "Read", "")
 	acc.appendArgs(0, `{"pa`)
 	acc.appendArgs(0, `th":"x.go"}`)
 
@@ -70,7 +70,7 @@ func TestDecodeAnthropicAccumulatesToolUse(t *testing.T) {
 
 func TestAccumulatorMalformedJSONFailsClosed(t *testing.T) {
 	acc := newToolAccumulator()
-	acc.open(0, "call_1", "Read")
+	acc.open(0, "call_1", "Read", "")
 	acc.appendArgs(0, `{"path":`)
 	if _, err := acc.complete(0); err == nil || !strings.Contains(err.Error(), "malformed tool arguments") {
 		t.Fatalf("expected malformed-tool-arguments error, got %v", err)

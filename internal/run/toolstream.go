@@ -3,6 +3,7 @@ package run
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/vulnetix/signet/internal/rolemanager"
@@ -24,7 +25,8 @@ type ToolCallDelta struct {
 // rolemanager.ToolCall values. Arguments JSON is parsed only once a block
 // closes; a partial fragment never produces a callable tool.
 type toolAccumulator struct {
-	calls map[int]*toolBuilder
+	calls     map[int]*toolBuilder
+	openKinds map[int]string // Anthropic content block kind ("tool_use" or "text")
 }
 
 type toolBuilder struct {
@@ -34,14 +36,20 @@ type toolBuilder struct {
 }
 
 func newToolAccumulator() *toolAccumulator {
-	return &toolAccumulator{calls: map[int]*toolBuilder{}}
+	return &toolAccumulator{
+		calls:     map[int]*toolBuilder{},
+		openKinds: map[int]string{},
+	}
 }
 
-func (a *toolAccumulator) open(index int, id, name string) {
+func (a *toolAccumulator) open(index int, id, name, kind string) {
 	b := a.calls[index]
 	if b == nil {
 		b = &toolBuilder{}
 		a.calls[index] = b
+	}
+	if kind != "" {
+		a.openKinds[index] = kind
 	}
 	if id != "" {
 		b.id = id
@@ -68,6 +76,7 @@ func (a *toolAccumulator) complete(index int) (rolemanager.ToolCall, error) {
 		return rolemanager.ToolCall{}, fmt.Errorf("tool call %d closed without a start block", index)
 	}
 	delete(a.calls, index)
+	delete(a.openKinds, index)
 	var args map[string]any
 	if raw := b.args.String(); raw != "" {
 		if err := json.Unmarshal([]byte(raw), &args); err != nil {
@@ -76,6 +85,9 @@ func (a *toolAccumulator) complete(index int) (rolemanager.ToolCall, error) {
 	}
 	return rolemanager.ToolCall{ID: b.id, Name: b.name, Args: args}, nil
 }
+
+// openedKind returns the kind of the block opened at index, if any.
+func (a *toolAccumulator) openedKind(index int) string { return a.openKinds[index] }
 
 // streamDelta is the decoded result of one SSE payload.
 type streamDelta struct {
@@ -119,7 +131,7 @@ func decodeOpenAIEvent(data string, acc *toolAccumulator) (streamDelta, error) {
 
 	for _, tc := range choice.Delta.ToolCalls {
 		if acc != nil {
-			acc.open(tc.Index, tc.ID, tc.Function.Name)
+			acc.open(tc.Index, tc.ID, tc.Function.Name, "")
 			acc.appendArgs(tc.Index, tc.Function.Arguments)
 		}
 		out.toolDelta = &ToolCallDelta{
@@ -132,9 +144,14 @@ func decodeOpenAIEvent(data string, acc *toolAccumulator) (streamDelta, error) {
 
 	// finish_reason closes the whole tool-call set. OpenAI signals a tool turn
 	// with finish_reason "tool_calls"; a stop reason with no tool fragments
-	// leaves completed empty.
+	// leaves completed empty. Sort keys so tool order is deterministic.
 	if choice.FinishReason == "tool_calls" && acc != nil {
+		idxs := make([]int, 0, len(acc.calls))
 		for idx := range acc.calls {
+			idxs = append(idxs, idx)
+		}
+		sort.Ints(idxs)
+		for _, idx := range idxs {
 			call, err := acc.complete(idx)
 			if err != nil {
 				return streamDelta{}, err
@@ -154,12 +171,14 @@ func decodeAnthropicEvent(data string, acc *toolAccumulator) (streamDelta, error
 
 	switch ev.Type {
 	case "content_block_start":
-		if ev.ContentBlock != nil && ev.ContentBlock.Type == "tool_use" {
+		if ev.ContentBlock != nil {
 			idx := eventIndex(&ev)
 			if acc != nil {
-				acc.open(idx, ev.ContentBlock.ID, ev.ContentBlock.Name)
+				acc.open(idx, ev.ContentBlock.ID, ev.ContentBlock.Name, ev.ContentBlock.Type)
 			}
-			out.toolDelta = &ToolCallDelta{Index: idx, ID: ev.ContentBlock.ID, Name: ev.ContentBlock.Name}
+			if ev.ContentBlock.Type == "tool_use" {
+				out.toolDelta = &ToolCallDelta{Index: idx, ID: ev.ContentBlock.ID, Name: ev.ContentBlock.Name}
+			}
 		}
 	case "content_block_delta":
 		idx := eventIndex(&ev)
@@ -174,7 +193,7 @@ func decodeAnthropicEvent(data string, acc *toolAccumulator) (streamDelta, error
 		}
 	case "content_block_stop":
 		idx := eventIndex(&ev)
-		if acc != nil {
+		if acc != nil && acc.openedKind(idx) == "tool_use" {
 			call, err := acc.complete(idx)
 			if err != nil {
 				return streamDelta{}, err

@@ -155,12 +155,20 @@ func streamTurns(ctx context.Context, cfg Config, system string, turns []Turn, c
 		var calls []rolemanager.ToolCall
 		var stopReason string
 
-		sendDone := func() {
-			var assistant *Assistant
-			if len(calls) > 0 || stopReason != "" {
-				assistant = &Assistant{Text: text.String(), ToolCalls: calls, Usage: usage, StopReason: stopReason}
+		// send emits one chunk unless the context is already done. Using a
+		// select keeps a blocked consumer from pinning the producer goroutine
+		// past cancellation.
+		send := func(c Chunk) bool {
+			select {
+			case ch <- c:
+				return true
+			case <-ctx.Done():
+				return false
 			}
-			ch <- Chunk{Done: true, Usage: usage, Assistant: assistant}
+		}
+
+		sendDone := func() {
+			send(Chunk{Done: true, Usage: usage, Assistant: &Assistant{Text: text.String(), ToolCalls: calls, Usage: usage, StopReason: stopReason}})
 		}
 
 		for scan.Scan() {
@@ -175,7 +183,7 @@ func streamTurns(ctx context.Context, cfg Config, system string, turns []Turn, c
 			}
 			delta, err := decodeStreamEvent(d, data, acc)
 			if err != nil {
-				ch <- Chunk{Err: err}
+				send(Chunk{Err: err, Done: true})
 				return
 			}
 			if delta.usage != nil {
@@ -190,10 +198,14 @@ func streamTurns(ctx context.Context, cfg Config, system string, turns []Turn, c
 			}
 			if delta.text != "" {
 				text.WriteString(delta.text)
-				ch <- Chunk{Text: delta.text}
+				if !send(Chunk{Text: delta.text}) {
+					return
+				}
 			}
 			if delta.toolDelta != nil {
-				ch <- Chunk{ToolCall: delta.toolDelta}
+				if !send(Chunk{ToolCall: delta.toolDelta}) {
+					return
+				}
 			}
 			for _, c := range delta.completed {
 				calls = append(calls, c)
@@ -203,12 +215,16 @@ func streamTurns(ctx context.Context, cfg Config, system string, turns []Turn, c
 			}
 			select {
 			case <-ctx.Done():
+				send(Chunk{Err: ctx.Err(), Done: true})
 				return
 			default:
 			}
 		}
 		if err := scan.Err(); err != nil {
-			ch <- Chunk{Err: fmt.Errorf("stream read: %w", err)}
+			if !send(Chunk{Err: fmt.Errorf("stream read: %w", err), Done: true}) {
+				return
+			}
+			return
 		}
 		sendDone()
 	}()

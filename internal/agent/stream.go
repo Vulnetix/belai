@@ -76,14 +76,19 @@ func (s *Session) RunStream(ctx context.Context, history []run.Turn, in TurnInpu
 // streamTurn drains one transport turn into an Assistant, emitting render
 // events as chunks arrive.
 func (s *Session) streamTurn(ctx context.Context, system string, turns []run.Turn, streaming bool, emit func(Event)) (run.Assistant, error) {
+	// Each provider turn gets its own cancel scope so a retry or a UI abort
+	// can tear down the producer goroutine without touching the session ctx.
+	turnCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	var (
 		ch  <-chan run.Chunk
 		err error
 	)
 	if streaming {
-		ch, err = run.StreamTurnsWithTools(ctx, s.cfg, system, turns, s.client, s.pool, s.openAITools, s.anthropicTools)
+		ch, err = run.StreamTurnsWithTools(turnCtx, s.cfg, system, turns, s.client, s.pool, s.openAITools, s.anthropicTools)
 	} else {
-		ch = run.SendTurnsStreamed(ctx, s.cfg, system, turns, s.client, s.pool, s.openAITools, s.anthropicTools)
+		ch = run.SendTurnsStreamed(turnCtx, s.cfg, system, turns, s.client, s.pool, s.openAITools, s.anthropicTools)
 	}
 	if err != nil {
 		return run.Assistant{}, err

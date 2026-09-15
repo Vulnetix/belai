@@ -175,11 +175,12 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 			return run.Result{SanitizedPrompt: clean, SecuritySentinel: dec.Sentinel, ModeDecision: modeDec}, err
 		}
 
-		// Append assistant turn containing its tool_calls.
+		// Append assistant turn containing its tool_calls. Use the filtered
+		// set so a PolicyStrip turn matches the tool turns that follow.
 		turns = append(turns, run.Turn{
 			Role:      "assistant",
 			Content:   assistant.Text,
-			ToolCalls: assistant.ToolCalls,
+			ToolCalls: filtered,
 		})
 
 		for _, call := range filtered {

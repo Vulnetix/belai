@@ -8,6 +8,8 @@ const (
 	KindWebSearch Kind = "web_search"
 	KindWebFetch  Kind = "web_fetch"
 	KindBash      Kind = "bash"
+	KindGrep      Kind = "grep"
+	KindGlob      Kind = "glob"
 )
 
 // Result is a tool output.
