@@ -68,8 +68,11 @@ func (a *toolAccumulator) appendArgs(index int, fragment string) {
 	b.args.WriteString(fragment)
 }
 
-// complete parses the accumulated arguments and removes the builder. Malformed
-// JSON fails closed with an error rather than producing a half-built call.
+// complete materialises the accumulated arguments and removes the builder.
+// It intentionally does not parse the JSON here: semantic repair (including
+// salvage of prefix-truncated JSON) happens later in the agent loop so that
+// a malformed call becomes an isError result for that call only, leaving
+// sibling calls free to execute.
 func (a *toolAccumulator) complete(index int) (rolemanager.ToolCall, error) {
 	b := a.calls[index]
 	if b == nil {
@@ -77,13 +80,7 @@ func (a *toolAccumulator) complete(index int) (rolemanager.ToolCall, error) {
 	}
 	delete(a.calls, index)
 	delete(a.openKinds, index)
-	var args map[string]any
-	if raw := b.args.String(); raw != "" {
-		if err := json.Unmarshal([]byte(raw), &args); err != nil {
-			return rolemanager.ToolCall{}, fmt.Errorf("malformed tool arguments for %s: %w", b.name, err)
-		}
-	}
-	return rolemanager.ToolCall{ID: b.id, Name: b.name, Args: args}, nil
+	return rolemanager.ToolCall{ID: b.id, Name: b.name, RawArgs: b.args.String()}, nil
 }
 
 // openedKind returns the kind of the block opened at index, if any.

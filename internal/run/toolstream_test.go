@@ -1,7 +1,6 @@
 package run
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -18,8 +17,8 @@ func TestToolAccumulatorOpenAI(t *testing.T) {
 	if call.ID != "call_1" || call.Name != "Read" {
 		t.Fatalf("call = %+v", call)
 	}
-	if call.Args["path"] != "x.go" {
-		t.Fatalf("args = %+v", call.Args)
+	if call.RawArgs != `{"path":"x.go"}` {
+		t.Fatalf("raw args = %q, want %q", call.RawArgs, `{"path":"x.go"}`)
 	}
 }
 
@@ -40,8 +39,8 @@ func TestDecodeOpenAIAccumulatesSplitJSON(t *testing.T) {
 	if len(delta.completed) != 1 {
 		t.Fatalf("completed = %+v", delta.completed)
 	}
-	if delta.completed[0].Args["path"] != "x.go" {
-		t.Fatalf("args = %+v", delta.completed[0].Args)
+	if delta.completed[0].RawArgs != `{"path":"x.go"}` {
+		t.Fatalf("raw args = %q", delta.completed[0].RawArgs)
 	}
 }
 
@@ -63,17 +62,21 @@ func TestDecodeAnthropicAccumulatesToolUse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode stop: %v", err)
 	}
-	if len(delta.completed) != 1 || delta.completed[0].ID != "toolu_1" || delta.completed[0].Args["path"] != "x.go" {
+	if len(delta.completed) != 1 || delta.completed[0].ID != "toolu_1" || delta.completed[0].RawArgs != `{"path":"x.go"}` {
 		t.Fatalf("completed = %+v", delta.completed)
 	}
 }
 
-func TestAccumulatorMalformedJSONFailsClosed(t *testing.T) {
+func TestAccumulatorPreservesMalformedJSONForRepair(t *testing.T) {
 	acc := newToolAccumulator()
 	acc.open(0, "call_1", "Read", "")
 	acc.appendArgs(0, `{"path":`)
-	if _, err := acc.complete(0); err == nil || !strings.Contains(err.Error(), "malformed tool arguments") {
-		t.Fatalf("expected malformed-tool-arguments error, got %v", err)
+	call, err := acc.complete(0)
+	if err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	if call.RawArgs != `{"path":` {
+		t.Fatalf("raw args = %q", call.RawArgs)
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/signet/internal/delimiters"
+	"github.com/vulnetix/signet/internal/guardrails"
 	"github.com/vulnetix/signet/internal/models"
 	"github.com/vulnetix/signet/internal/nonce"
 	"github.com/vulnetix/signet/internal/posture"
@@ -391,6 +392,11 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 		}
 		cfg.BaseURL = override
 		status.Origins["base_url"] = "$SIGNET_BASE_URL"
+	} else if g, err := guardrails.Load(); err == nil && string(g.Provider) == name {
+		// Guardrails is a fallback base-URL source, below SIGNET_BASE_URL, and
+		// only for the provider it serves.
+		cfg.BaseURL = g.BaseURL
+		status.Origins["base_url"] = "guardrails (" + g.KeySource + ")"
 	}
 	return cfg, status
 }
@@ -562,6 +568,11 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 		if stream && d.usage {
 			streamOpts = &wire.OpenAIStreamOptions{IncludeUsage: true}
 		}
+
+		// Repair any assistant turns whose tool_calls never received a matching
+		// tool result in the stored transcript. Synthetic results are added to
+		// the outbound payload only and are never written to session storage.
+		turns = synthesizeDanglingToolResults(turns)
 
 		switch d.kind {
 		case kindWorkersAI:
@@ -769,6 +780,36 @@ func parseAnthropic(body []byte, status int, redact func(string) string) (Assist
 	return Assistant{Text: b.String(), ToolCalls: calls, Usage: usage, StopReason: ar.StopReason}, nil
 }
 
+// synthesizeDanglingToolResults inserts synthetic "No result provided"
+// tool-role turns for every tool_call that has no matching tool turn in the
+// transcript. It works on a copy: the original stored turns are never mutated.
+func synthesizeDanglingToolResults(turns []Turn) []Turn {
+	resolved := make(map[string]bool)
+	for _, t := range turns {
+		if t.Role == "tool" && t.ToolCallID != "" {
+			resolved[t.ToolCallID] = true
+		}
+	}
+	out := make([]Turn, 0, len(turns))
+	for _, t := range turns {
+		out = append(out, t)
+		if t.Role != "assistant" || len(t.ToolCalls) == 0 {
+			continue
+		}
+		for _, tc := range t.ToolCalls {
+			if tc.ID != "" && !resolved[tc.ID] {
+				out = append(out, Turn{
+					Role:       "tool",
+					Content:    "No result provided",
+					ToolCallID: tc.ID,
+					ToolName:   tc.Name,
+				})
+			}
+		}
+	}
+	return out
+}
+
 func buildOpenAIMessages(system string, turns []Turn) []wire.OpenAIChatMessage {
 	msgs := make([]wire.OpenAIChatMessage, 0, len(turns)+1)
 	if system != "" {
@@ -779,15 +820,22 @@ func buildOpenAIMessages(system string, turns []Turn) []wire.OpenAIChatMessage {
 		case "assistant":
 			msg := wire.OpenAIChatMessage{Role: t.Role, Content: t.Content}
 			for _, tc := range t.ToolCalls {
-				args, _ := json.Marshal(tc.Args)
+				args := string(tc.RawArgs)
+				if args == "" {
+					b, _ := json.Marshal(tc.Args)
+					args = string(b)
+				}
 				msg.ToolCalls = append(msg.ToolCalls, wire.OpenAIToolCall{
 					ID:   tc.ID,
 					Type: "function",
 					Function: struct {
 						Name      string `json:"name"`
 						Arguments string `json:"arguments"`
-					}{Name: tc.Name, Arguments: string(args)},
+					}{Name: tc.Name, Arguments: args},
 				})
+			}
+			if t.Content == "" && len(msg.ToolCalls) == 0 {
+				continue
 			}
 			msgs = append(msgs, msg)
 		case "tool":
@@ -804,12 +852,21 @@ func buildAnthropicMessages(turns []Turn) []wire.AnthropicMessage {
 	for _, t := range turns {
 		switch t.Role {
 		case "assistant":
+			if t.Content == "" && len(t.ToolCalls) == 0 {
+				continue
+			}
 			blocks := make([]wire.AnthropicRequestBlock, 0, 1+len(t.ToolCalls))
 			if t.Content != "" {
 				blocks = append(blocks, wire.AnthropicRequestBlock{Type: "text", Text: t.Content})
 			}
 			for _, tc := range t.ToolCalls {
-				blocks = append(blocks, wire.AnthropicRequestBlock{Type: "tool_use", ID: tc.ID, Name: tc.Name, Input: tc.Args})
+				input := tc.Args
+				if tc.RawArgs != "" {
+					var rawInput map[string]any
+					_ = json.Unmarshal([]byte(tc.RawArgs), &rawInput)
+					input = rawInput
+				}
+				blocks = append(blocks, wire.AnthropicRequestBlock{Type: "tool_use", ID: tc.ID, Name: tc.Name, Input: input})
 			}
 			msgs = append(msgs, wire.NewAnthropicBlockMessage(t.Role, blocks))
 		case "tool":

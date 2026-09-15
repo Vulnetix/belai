@@ -4,9 +4,10 @@ import "fmt"
 
 // ToolCall is a model-emitted tool invocation.
 type ToolCall struct {
-	ID   string
-	Name string
-	Args map[string]any
+	ID      string
+	Name    string
+	Args    map[string]any
+	RawArgs string // original JSON text; set when Args were not fully parsed
 }
 
 // ToolCallMismatchPolicy is the user-configured behavior when a model emits a

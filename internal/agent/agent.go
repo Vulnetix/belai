@@ -2,8 +2,10 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/delimiters"
@@ -186,12 +188,45 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 			ToolCalls: filtered,
 		})
 
+		// Semantic repair: if the model ran out of tokens mid-tool-call, do
+		// not execute partially-specified arguments. Refuse the whole set as
+		// isError results so the model can re-issue in the next iteration.
+		if assistant.StopReason == "length" && len(filtered) > 0 {
+			for _, call := range filtered {
+				emit(Event{Kind: EventToolStartKind, Tool: &call})
+				result := "tool result withheld: arguments may be truncated; re-issue the tool call with complete arguments"
+				emit(Event{Kind: EventToolResultKind, ToolName: call.Name, ToolResult: result})
+				turns = append(turns, run.Turn{
+					Role:       "tool",
+					Content:    result,
+					ToolCallID: call.ID,
+					ToolName:   call.Name,
+				})
+			}
+			continue
+		}
+
 		for _, call := range filtered {
 			if s.permissionDecision(call) == permissions.DecisionAsk {
 				emit(Event{Kind: EventPermissionAskKind, AskName: call.Name})
 			}
 			emit(Event{Kind: EventToolStartKind, Tool: &call})
-			toolResult := s.executeCall(ctx, call)
+
+			args, parseErr := parseToolArgs(call)
+			if parseErr != nil {
+				toolResult := fmt.Sprintf("tool result withheld: malformed arguments for %q: %v", call.Name, parseErr)
+				emit(Event{Kind: EventToolResultKind, ToolName: call.Name, ToolResult: toolResult})
+				turns = append(turns, run.Turn{
+					Role:       "tool",
+					Content:    toolResult,
+					ToolCallID: call.ID,
+					ToolName:   call.Name,
+				})
+				continue
+			}
+			callCopy := call
+			callCopy.Args = args
+			toolResult := s.executeCall(ctx, callCopy)
 			emit(Event{Kind: EventToolResultKind, ToolName: call.Name, ToolResult: toolResult})
 			turns = append(turns, run.Turn{
 				Role:       "tool",
@@ -215,6 +250,36 @@ func (s *Session) mismatchPolicy() rolemanager.ToolCallMismatchPolicy {
 	default:
 		return rolemanager.PolicyAbort
 	}
+}
+
+// parseToolArgs decodes a tool call's RawArgs into a map. If the JSON is
+// malformed it attempts the provably-safe prefix salvage (append a missing
+// closing delimiter) before giving up.
+func parseToolArgs(call rolemanager.ToolCall) (map[string]any, error) {
+	if len(call.Args) > 0 {
+		return call.Args, nil
+	}
+	raw := strings.TrimSpace(call.RawArgs)
+	if raw == "" {
+		return map[string]any{}, nil
+	}
+	var args map[string]any
+	if err := json.Unmarshal([]byte(raw), &args); err == nil {
+		return args, nil
+	}
+	salvaged := raw
+	switch {
+	case strings.HasPrefix(salvaged, "{") && !strings.HasSuffix(salvaged, "}"):
+		salvaged += "}"
+	case strings.HasPrefix(salvaged, "[") && !strings.HasSuffix(salvaged, "]"):
+		salvaged += "]"
+	case strings.HasPrefix(salvaged, "\"") && !strings.HasSuffix(salvaged, "\""):
+		salvaged += "\""
+	}
+	if err := json.Unmarshal([]byte(salvaged), &args); err != nil {
+		return nil, fmt.Errorf("invalid JSON; tried %q: %w", salvaged, err)
+	}
+	return args, nil
 }
 
 // decidePermission wraps the permissions layer and re-blocks unmatched calls
