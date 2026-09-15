@@ -132,6 +132,11 @@ type App struct {
 	permState       permissionsViewState
 	importState     importViewState
 
+	// live model catalogue cache (on-demand fetch)
+	catalogCache   map[string][]models.Model
+	catalogErr     map[string]string
+	catalogLoading map[string]bool
+
 	// workdir and git
 	workdir string
 	gitInfo gitinfo.Info
@@ -293,21 +298,39 @@ func (a *App) providerNames() []string {
 
 // catalogFor returns the selectable models for a provider: the built-in
 // catalogue for compiled-in names, the profile's Models for custom names.
+// catalogFor returns the selectable models for a provider: the live fetched
+// catalogue when available, then the profile's models, then the built-in
+// catalogue. It never returns an empty list when a static catalogue exists.
 func (a *App) catalogFor(name string) []models.Model {
-	if cat := models.Catalog(name); cat != nil {
-		return cat
-	}
-	prof, ok := a.settings.Providers[name]
-	if !ok {
-		return nil
-	}
-	out := make([]models.Model, 0, len(prof.Models))
-	for _, m := range prof.Models {
-		label := m.Name
-		if label == "" {
-			label = m.ID
+	var out []models.Model
+	seen := map[string]bool{}
+	if fetched, ok := a.catalogCache[name]; ok {
+		for _, m := range fetched {
+			if !seen[m.ID] {
+				seen[m.ID] = true
+				out = append(out, m)
+			}
 		}
-		out = append(out, models.Model{ID: m.ID, Label: label})
+	}
+	if prof, ok := a.settings.Providers[name]; ok {
+		for _, m := range prof.Models {
+			if !seen[m.ID] {
+				seen[m.ID] = true
+				label := m.Name
+				if label == "" {
+					label = m.ID
+				}
+				out = append(out, models.Model{ID: m.ID, Label: label, ContextWindow: m.ContextWindow})
+			}
+		}
+	}
+	if cat := models.Catalog(name); cat != nil {
+		for _, m := range cat {
+			if !seen[m.ID] {
+				seen[m.ID] = true
+				out = append(out, m)
+			}
+		}
 	}
 	return out
 }
@@ -584,6 +607,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case codeReviewDoneMsg:
 		return a, a.handleCodeReviewDone(m)
+
+	case modelsFetchedMsg:
+		return a, a.handleModelsFetched(m)
 
 	case attachValidatedMsg:
 		return a, a.handleAttachValidated(m)

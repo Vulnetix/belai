@@ -1,12 +1,15 @@
 package tui
 
 import (
+	"context"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/signet/internal/modelfetch"
 	"github.com/vulnetix/signet/internal/models"
 	"github.com/vulnetix/signet/internal/tui/components"
 )
@@ -40,6 +43,54 @@ func (a *App) enterModel() tea.Cmd {
 		eidx = 0
 	}
 	a.modelState = modelViewState{providerIdx: pidx, modelIdx: midx, effortIdx: eidx, scope: "project"}
+	return a.fetchCatalogCmd(providers[pidx])
+}
+
+// modelsFetchedMsg carries the result of an async live-catalogue fetch.
+type modelsFetchedMsg struct {
+	provider string
+	models   []models.Model
+	err      error
+}
+
+// fetchCatalogCmd fetches the live model catalogue for a provider off the UI
+// thread, caching the result.
+func (a *App) fetchCatalogCmd(name string) tea.Cmd {
+	if a.catalogCache == nil {
+		a.catalogCache = map[string][]models.Model{}
+	}
+	if a.catalogLoading == nil {
+		a.catalogLoading = map[string]bool{}
+	}
+	if _, ok := a.catalogCache[name]; ok || a.catalogLoading[name] {
+		return nil
+	}
+	a.catalogLoading[name] = true
+	target := modelfetch.Target{Name: name, BaseURL: a.cfg.BaseURL, APIKey: a.cfg.APIKey, Auth: a.cfg.Auth, API: a.cfg.API}
+	client := a.client
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		m, err := modelfetch.List(ctx, target, client)
+		return modelsFetchedMsg{provider: name, models: m, err: err}
+	}
+}
+
+// handleModelsFetched fills the catalogue cache.
+func (a *App) handleModelsFetched(m modelsFetchedMsg) tea.Cmd {
+	if a.catalogCache == nil {
+		a.catalogCache = map[string][]models.Model{}
+	}
+	if a.catalogErr == nil {
+		a.catalogErr = map[string]string{}
+	}
+	delete(a.catalogLoading, m.provider)
+	if m.err != nil {
+		a.catalogErr[m.provider] = m.err.Error()
+		return nil
+	}
+	delete(a.catalogErr, m.provider)
+	a.catalogCache[m.provider] = m.models
 	return nil
 }
 
@@ -118,12 +169,12 @@ func (a *App) handleModelKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.modelState.providerIdx = (a.modelState.providerIdx - 1 + len(a.providerNames())) % len(a.providerNames())
 		a.modelState.modelIdx = 0
 		a.modelState.effortIdx = 0
-		return a, nil
+		return a, a.fetchCatalogCmd(a.providerNames()[a.modelState.providerIdx])
 	case "right", "l":
 		a.modelState.providerIdx = (a.modelState.providerIdx + 1) % len(a.providerNames())
 		a.modelState.modelIdx = 0
 		a.modelState.effortIdx = 0
-		return a, nil
+		return a, a.fetchCatalogCmd(a.providerNames()[a.modelState.providerIdx])
 	case "up", "k":
 		cat := a.catalogFor(a.providerNames()[a.modelState.providerIdx])
 		if a.modelState.modelIdx > 0 {
@@ -160,6 +211,9 @@ func (a *App) handleModelKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.modelState.scope = "session"
 		}
 		return a, nil
+	case "r":
+		delete(a.catalogCache, a.providerNames()[a.modelState.providerIdx])
+		return a, a.fetchCatalogCmd(a.providerNames()[a.modelState.providerIdx])
 	case "c":
 		if a.modelState.providerIdx < len(a.credentialState.providers) {
 			a.credentialState.selectedIdx = a.modelState.providerIdx
