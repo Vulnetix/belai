@@ -134,6 +134,8 @@ func TestImportSavesProfileAndSecret(t *testing.T) {
 }
 
 func TestImportNotImportableRowCannotBeChosen(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("XDG_DATA_HOME", "")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	writeAgentFixture(t, home, ".config/goose/secrets.yaml", "SOME_RANDOM: value\n")

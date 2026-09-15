@@ -119,6 +119,7 @@ func TestScanClaudeCodeOAuthIsNote(t *testing.T) {
 }
 
 func TestScanGooseCopilotTokenMapsToProvider(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
 	home := t.TempDir()
 	writeFixture(t, filepath.Join(home, ".config", "goose", "secrets.yaml"), "GITHUB_COPILOT_TOKEN: gho_x\n")
 	f := findFound(t, Scan(home), "github-copilot")
@@ -128,6 +129,7 @@ func TestScanGooseCopilotTokenMapsToProvider(t *testing.T) {
 }
 
 func TestScanGooseUnmappedSecretIsNote(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "")
 	home := t.TempDir()
 	writeFixture(t, filepath.Join(home, ".config", "goose", "secrets.yaml"), "SOME_RANDOM: value\n")
 	f := findNote(t, Scan(home), "not a mapped")
@@ -137,6 +139,7 @@ func TestScanGooseUnmappedSecretIsNote(t *testing.T) {
 }
 
 func TestScanOpenCodeOpenRouterMapsToBuiltin(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "")
 	home := t.TempDir()
 	writeFixture(t, filepath.Join(home, ".local", "share", "opencode", "auth.json"),
 		`{"openrouter":{"type":"api","key":"sk-or"}}`)
