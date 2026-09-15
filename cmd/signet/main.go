@@ -49,6 +49,7 @@ func main() {
 	caveman := flag.Bool("caveman", false, "enable caveman voice rewrite for this run")
 	sessionRetentionDays := flag.Int("session-retention-days", 0, "idle session retention in days (default 28)")
 	noPrune := flag.Bool("no-prune", false, "never prune idle sessions")
+	planMode := flag.Bool("plan", false, "start in plan mode (read-only)")
 	flag.Parse()
 
 	if *showVersion {
@@ -105,7 +106,7 @@ func main() {
 	}
 
 	if *prompt != "" {
-		if err := runPromptOrTUI(*prompt, *model, *provider, *detectMode, *verbose, workdir, pol, *enableTools, settings); err != nil {
+		if err := runPromptOrTUI(*prompt, *model, *provider, *detectMode, *verbose, workdir, pol, *enableTools, *planMode, settings); err != nil {
 			fmt.Fprintln(os.Stderr, "signet:", err)
 			os.Exit(1)
 		}
@@ -118,7 +119,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "signet:", err)
 			os.Exit(1)
 		}
-		if err := tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Provider: *provider, Model: *model, Settings: &settings, Posture: pol}); err != nil {
+		if err := tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Provider: *provider, Model: *model, Settings: &settings, Posture: pol, PlanMode: *planMode}); err != nil {
 			fmt.Fprintln(os.Stderr, "signet:", err)
 			os.Exit(1)
 		}
@@ -140,7 +141,7 @@ func isCharDevice(f *os.File) bool {
 	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }
 
-func runPromptOrTUI(prompt, model, providerName string, detectMode, verbose bool, workdir string, pol posture.Policy, enableTools bool, settings config.Settings) error {
+func runPromptOrTUI(prompt, model, providerName string, detectMode, verbose bool, workdir string, pol posture.Policy, enableTools, planMode bool, settings config.Settings) error {
 	resolver, err := credentials.NewResolver(workdir)
 	if err != nil {
 		return err
@@ -151,7 +152,7 @@ func runPromptOrTUI(prompt, model, providerName string, detectMode, verbose bool
 		if errors.As(err, &nce) && interactive(isCharDevice(os.Stdout), isCharDevice(os.Stdin), os.Getenv) {
 			fmt.Fprintf(os.Stderr, "signet: no credentials for %s (missing %s). Opening the credential manager…\n",
 				nce.Provider, strings.Join(nce.Missing, ", "))
-			return tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Prompt: prompt, Provider: providerName, Model: model, Settings: &settings, Posture: pol})
+			return tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Prompt: prompt, Provider: providerName, Model: model, Settings: &settings, Posture: pol, PlanMode: planMode})
 		}
 		// Without a TTY, fail closed naming every location searched.
 		return err
@@ -159,7 +160,7 @@ func runPromptOrTUI(prompt, model, providerName string, detectMode, verbose bool
 
 	var res run.Result
 	if enableTools {
-		res, err = runAgent(cfg, prompt, http.DefaultClient, pol, workdir, settings)
+		res, err = runAgent(cfg, prompt, http.DefaultClient, pol, workdir, settings, planMode)
 	} else {
 		res, err = run.EngageWithPosture(context.Background(), cfg, prompt, detectMode, http.DefaultClient, pol)
 	}
@@ -185,7 +186,7 @@ func runPromptOrTUI(prompt, model, providerName string, detectMode, verbose bool
 	return nil
 }
 
-func runAgent(cfg run.Config, userPrompt string, client *http.Client, pol posture.Policy, workdir string, settings config.Settings) (run.Result, error) {
+func runAgent(cfg run.Config, userPrompt string, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool) (run.Result, error) {
 	reg := tools.Default(workdir, settings.BashReadOnlyEnabled())
 
 	perms := permissions.From(settings.Permissions.Allow, settings.Permissions.Ask, settings.Permissions.Deny)
@@ -201,6 +202,7 @@ func runAgent(cfg run.Config, userPrompt string, client *http.Client, pol postur
 		Registry:      reg,
 		Perms:         perms,
 		Posture:       pol,
+		PlanMode:      planMode,
 		Workdir:       workdir,
 		Settings:      settings,
 		PromptOptions: promptOpts,
