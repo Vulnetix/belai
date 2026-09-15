@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/delimiters"
+	"github.com/vulnetix/signet/internal/hooks"
 	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/nonce"
 	"github.com/vulnetix/signet/internal/permissions"
@@ -33,6 +36,7 @@ type Options struct {
 	PlanMode      bool
 	MaxIterations int
 	PromptOptions prompt.Options
+	ToolMethod    run.ToolMethod
 	Workdir       string
 	State         config.State
 	Settings      config.Settings
@@ -54,6 +58,9 @@ type Session struct {
 	pool           *nonce.Pool
 	openAITools    []wire.OpenAITool
 	anthropicTools []wire.AnthropicToolDef
+	hooks          []*hooks.Hook
+	hookRunner     *hooks.Runner
+	toolMethod     run.ToolMethod
 }
 
 // NewSession builds a session from options.
@@ -78,6 +85,25 @@ func NewSession(o Options) (*Session, error) {
 		openAITools = append(openAITools, d.OpenAITool())
 		anthropicTools = append(anthropicTools, d.AnthropicTool())
 	}
+
+	// Load validated hooks for the six declared events. Discovery fails closed:
+	// an unreadable dir yields no hooks, never an error.
+	var hs []*hooks.Hook
+	var runner *hooks.Runner
+	if dir, err := config.GlobalHooksDir(); err == nil {
+		if loaded, err := hooks.LoadDir(dir, o.Posture); err == nil && len(loaded) > 0 {
+			hs = loaded
+			runner = &hooks.Runner{Root: dir, Timeout: 5 * time.Second, MaxBytes: 64 * 1024}
+		}
+	}
+	method := o.ToolMethod
+	if method == run.ToolMethodNone {
+		var err error
+		method, err = run.DetectToolMethod(o.Cfg)
+		if err != nil {
+			return nil, fmt.Errorf("detect tool method: %w", err)
+		}
+	}
 	return &Session{
 		cfg:            o.Cfg,
 		client:         o.Client,
@@ -93,6 +119,9 @@ func NewSession(o Options) (*Session, error) {
 		pool:           pool,
 		openAITools:    openAITools,
 		anthropicTools: anthropicTools,
+		hooks:          hs,
+		hookRunner:     runner,
+		toolMethod:     method,
 	}, nil
 }
 
@@ -256,6 +285,24 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 // PlanMode reports whether the session runs with plan-mode tool restrictions.
 func (s *Session) PlanMode() bool { return s.planMode }
 
+// ToolMethod returns the session's tool calling method.
+func (s *Session) ToolMethod() run.ToolMethod { return s.toolMethod }
+
+// applyToolMethod adopts the provider-demanded tool calling method if it
+// differs from the session's current one. Only the string/object axis is
+// correctable: the Anthropic blocks method has no function.arguments to
+// reject.
+func (s *Session) applyToolMethod(m run.ToolMethod) bool {
+	if m == s.toolMethod {
+		return false
+	}
+	if s.toolMethod != run.ToolMethodString && s.toolMethod != run.ToolMethodObject {
+		return false
+	}
+	s.toolMethod = m
+	return true
+}
+
 // mismatchPolicy maps the tool_call_mismatch gate to a mismatch policy.
 func (s *Session) mismatchPolicy() rolemanager.ToolCallMismatchPolicy {
 	switch s.posture.Level(posture.ToolCallMismatch) {
@@ -375,4 +422,26 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall) st
 	// placeholder and continues; the strict abort is handled by refusing to
 	// promote the unsafe content, which is what a placeholder does.
 	return fmt.Sprintf("tool result withheld: classified %s", dec.Sentinel)
+}
+
+// runHooks executes every hook registered for event against the tool call.
+// Hook stdout is surfaced to stderr (never promoted into the prompt).
+func (s *Session) runHooks(ctx context.Context, event string, call rolemanager.ToolCall) error {
+	if s.hookRunner == nil {
+		return nil
+	}
+	var firstErr error
+	for _, h := range s.hooks {
+		if h.Event != event {
+			continue
+		}
+		out, err := s.hookRunner.Run(ctx, *h)
+		if out != "" {
+			fmt.Fprintf(os.Stderr, "signet: hook %s: %s\n", h.Name, out)
+		}
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
 }

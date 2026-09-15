@@ -118,6 +118,15 @@ func GlobalSkillsDir() (string, error) {
 	return filepath.Join(dir, "skills"), nil
 }
 
+// GlobalHooksDir returns <GlobalDir>/hooks.
+func GlobalHooksDir() (string, error) {
+	dir, err := GlobalDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "hooks"), nil
+}
+
 // Migrate is a one-shot migration from ~/.signet to ~/.vulnetix/signet.
 // It runs only when the legacy directory exists and the new one does not.
 // If os.Rename fails across filesystems, it falls back to a recursive copy
