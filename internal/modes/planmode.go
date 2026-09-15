@@ -8,7 +8,6 @@ import (
 
 	"github.com/vulnetix/signet/internal/plans"
 	"github.com/vulnetix/signet/internal/session"
-	"github.com/vulnetix/signet/internal/tools"
 )
 
 // PlanOption is the user's choice after a plan is extracted.
@@ -111,22 +110,31 @@ var writeTools = map[string]bool{
 // names are case-folded so a registered "Bash" cannot bypass a lowercase key.
 func IsWriteTool(name string) bool { return writeTools[strings.ToLower(name)] }
 
-// readOnlyBash is the plan-mode bash allowlist: read-only inspection/search/
-// directory/read-only-git/system-info commands. Anything else is blocked.
+// readOnlyBash is the bash allowlist: read-only inspection/search/
+// directory/read-only-git/system-info and data-filter commands. Anything
+// else is blocked. awk/sed/xargs are deliberately absent — each is a write or
+// arbitrary-execution primitive, not a read-only filter.
 var readOnlyBash = map[string]bool{
 	"cat": true, "grep": true, "egrep": true, "rg": true, "find": true,
 	"ls": true, "uname": true, "pwd": true, "head": true, "tail": true,
 	"wc": true, "sort": true, "uniq": true, "file": true, "which": true,
 	"diff": true, "stat": true, "du": true, "basename": true,
 	"dirname": true, "realpath": true, "readlink": true,
+	"jq": true, "cut": true, "tr": true, "nl": true, "fold": true,
+	"paste": true, "join": true, "comm": true, "rev": true, "shuf": true,
+	"seq": true, "od": true, "xxd": true, "base64": true, "date": true,
+	"printf": true, "echo": true, "tree": true, "fd": true, "zcat": true,
+	"gunzip": true, "md5sum": true, "sha256sum": true, "column": true,
+	"expand": true, "unexpand": true,
 }
 
 // bashMetacharacters are shell syntax that would let a command escape the
 // allowlist. The bash tool never executes through a shell, but rejecting these
 // before tokenising keeps the gate honest and fails closed.
-const bashMetacharacters = tools.ShellMetacharacters
-
-var _ = tools.ShellMetacharacters // keep the import used when the alias is the only reference
+// It is spelled out rather than aliased to tools.ShellMetacharacters because
+// the bash tool imports this package; tools.TestShellMetacharactersMatchesPlanmode
+// pins the two to the same literal.
+const bashMetacharacters = ";&|$`<>\n()"
 
 // findUnsafeOptions are find flags that write, delete, or execute. A read-only
 // find may not carry them.

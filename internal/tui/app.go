@@ -356,7 +356,8 @@ func (a *App) chromeHeight() int {
 		h++
 	}
 	h += a.attachStripHeight()
-	h += a.editor.Height() + 1 // editor plus separator before footer
+	h += a.editor.Height() + 2 // composer frame (top and bottom edges)
+	h++                        // separator before the footer
 	h += a.footerHeight()
 	return h
 }
@@ -382,10 +383,11 @@ func (a *App) fitEditor() bool {
 // dimensions and transcript state. It is cheap enough to call every frame.
 func (a *App) relayout() {
 	a.fitEditor()
-	if a.width > 4 {
-		a.editor.SetWidth(a.width - 4)
+	if a.width > 6 {
+		// Two border cells and one column of padding on each side.
+		a.editor.SetWidth(a.width - 6)
 	}
-	a.vp.Width = a.width - 2
+	a.vp.Width = a.contentWidth()
 	vpHeight := a.height - a.chromeHeight()
 	if vpHeight < 5 {
 		vpHeight = 5
@@ -731,25 +733,7 @@ func (a *App) View() string {
 
 func (a *App) chatView() string {
 	a.relayout()
-	var b strings.Builder
-	for _, m := range a.messages {
-		if m.Role == "tool" {
-			b.WriteString("[tool] ")
-			b.WriteString(m.ToolName)
-			if m.ToolArgs != "" {
-				b.WriteString(" " + m.ToolArgs)
-			}
-			if m.Status != "" {
-				b.WriteString(" " + m.Status)
-			}
-			b.WriteString("\n\n")
-			continue
-		}
-		b.WriteString("[" + m.Role + "] ")
-		b.WriteString(m.Content)
-		b.WriteString("\n\n")
-	}
-	a.vp.SetContent(b.String())
+	a.vp.SetContent(components.MessageList{Messages: a.messages, Width: a.contentWidth()}.View())
 
 	var sb strings.Builder
 	if a.bannerVisible() {
@@ -764,17 +748,73 @@ func (a *App) chatView() string {
 	sb.WriteString(a.vp.View())
 	sb.WriteString("\n")
 	if len(a.autocomplete) > 0 {
-		sb.WriteString("suggestions: " + strings.Join(a.autocomplete, "  ") + "\n")
+		sb.WriteString(a.renderSuggestions())
+		sb.WriteString("\n")
 	}
 	if len(a.attachments) > 0 {
 		sb.WriteString(a.renderAttachStrip())
 		sb.WriteString("\n")
 	}
-	sb.WriteString(a.editor.View())
+	sb.WriteString(a.renderComposer())
 	sb.WriteString("\n")
 	a.refreshFooter()
 	sb.WriteString(a.footer.View())
 	return lipgloss.NewStyle().Padding(1).Render(sb.String())
+}
+
+// contentWidth is the width available inside the outer one-column padding.
+func (a *App) contentWidth() int {
+	if a.width <= 2 {
+		return 76
+	}
+	return a.width - 2
+}
+
+// renderComposer frames the editor. The frame is the only chrome the input
+// carries: send/newline hints ride the top edge instead of costing a line.
+func (a *App) renderComposer() string {
+	title, accent := "ask", lipgloss.TerminalColor(components.ColorTeal)
+	meta := "⏎ send · ctrl+j newline"
+	if a.editor.Masked {
+		title, accent, meta = "secret", lipgloss.TerminalColor(components.ColorAmber), "input hidden · ⏎ save"
+	}
+	return components.Panel{
+		Title:  title,
+		Meta:   meta,
+		Body:   a.editor.View(),
+		Width:  a.contentWidth(),
+		Accent: accent,
+		Raw:    true,
+	}.View()
+}
+
+// renderFieldEditor frames the shared editor for an inline field edit inside a
+// full-screen view, matching the chat composer's frame.
+func (a *App) renderFieldEditor(title string, width int) string {
+	accent := lipgloss.TerminalColor(components.ColorTeal)
+	meta := "⏎ save · esc cancel"
+	if a.editor.Masked {
+		accent = lipgloss.TerminalColor(components.ColorAmber)
+		meta = "input hidden · ⏎ save"
+	}
+	return components.Panel{
+		Title:  title,
+		Meta:   meta,
+		Body:   a.editor.View(),
+		Width:  width,
+		Accent: accent,
+		Raw:    true,
+	}.View()
+}
+
+// renderSuggestions draws slash-command completions as a row of chips.
+func (a *App) renderSuggestions() string {
+	parts := make([]string, 0, len(a.autocomplete))
+	for _, s := range a.autocomplete {
+		parts = append(parts, components.KeyStyle.Render(s))
+	}
+	line := components.MutedStyle.Render("⌕ ") + strings.Join(parts, components.MutedStyle.Render("  ·  "))
+	return lipgloss.NewStyle().MaxWidth(a.contentWidth()).Render(line)
 }
 
 func (a *App) bannerVisible() bool {
@@ -909,7 +949,9 @@ func (a *App) reloadSettings() error {
 }
 
 func (a *App) refreshFooter() {
-	a.footer.Width = a.width
+	// The footer draws a full-width rule, so it must measure the space inside
+	// the outer padding, not the terminal.
+	a.footer.Width = a.contentWidth()
 	a.footer.Mode = a.mode
 	a.footer.Provider = a.cfg.Provider
 	a.footer.Model = a.cfg.Model

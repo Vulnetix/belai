@@ -8,6 +8,7 @@ import (
 
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/models"
+	"github.com/vulnetix/signet/internal/tui/components"
 )
 
 // modelViewState tracks the /model picker UI.
@@ -18,8 +19,6 @@ type modelViewState struct {
 	scope       string // session | global | project
 	errorMsg    string
 }
-
-var modelHeader = lipgloss.NewStyle().Bold(true).Underline(true)
 
 func (a *App) enterModel() tea.Cmd {
 	providers := a.providerNames()
@@ -53,60 +52,61 @@ func (a *App) modelView() string {
 	efforts := modelEfforts(catalog, midx)
 	eidx := clampIdx(a.modelState.effortIdx, len(efforts))
 
+	w := a.contentWidth()
 	var b strings.Builder
-	b.WriteString(modelHeader.Render("Model & Provider") + "\n\n")
+	b.WriteString(components.SectionHeader("Model & Provider", "esc cancel", w))
 
 	var tabs []string
 	for i, name := range providers {
-		glyph := "○"
 		if i == pidx {
-			glyph = "●"
+			tabs = append(tabs, components.Chip(name, components.ColorTeal))
+			continue
 		}
-		tab := name + " " + glyph
-		if i == pidx {
-			tab = lipgloss.NewStyle().Bold(true).Render(tab)
-		}
-		tabs = append(tabs, tab)
+		tabs = append(tabs, components.MutedStyle.Render(" "+name+" "))
 	}
-	b.WriteString(strings.Join(tabs, "   ") + "\n\n")
+	b.WriteString(strings.Join(tabs, " ") + "\n\n")
 
 	if len(catalog) == 0 {
-		b.WriteString("   (no models in profile; type or import a model id)\n")
+		b.WriteString(components.MutedStyle.Render("  no models in this profile — type or import a model id") + "\n")
 	} else {
 		for i, m := range catalog {
-			prefix := "   "
-			if i == midx {
-				prefix = " > "
+			selected := i == midx
+			id := m.ID
+			if selected {
+				id = components.EmphStyle.Render(id)
 			}
-			line := prefix + m.ID
+			line := components.Cursor(selected) + id
 			if m.ID == a.cfg.Model && p == a.cfg.Provider {
-				line += "  (current)"
+				line += components.AccentStyle.Render("  ● current")
 			}
 			b.WriteString(line + "\n")
 		}
 	}
 
+	b.WriteString("\n" + components.MutedStyle.Render("effort  "))
 	if len(efforts) == 0 {
-		b.WriteString("\neffort: unavailable (custom provider)\n")
+		b.WriteString(components.MutedStyle.Render("unavailable (custom provider)") + "\n")
 	} else {
-		b.WriteString("\neffort: ")
+		var chips []string
 		for i, e := range efforts {
 			if i == eidx {
-				b.WriteString(lipgloss.NewStyle().Bold(true).Render("[" + e + "]"))
-			} else {
-				b.WriteString(" " + e)
+				chips = append(chips, components.Chip(e, components.ColorTealSoft))
+				continue
 			}
-			b.WriteString(" ")
+			chips = append(chips, components.MutedStyle.Render(" "+e+" "))
 		}
-		b.WriteString("\n")
+		b.WriteString(strings.Join(chips, " ") + "\n")
 	}
-	b.WriteString("scope:   " + a.modelState.scope + "\n")
+	b.WriteString(components.MutedStyle.Render("scope   ") +
+		components.Chip(a.modelState.scope, components.ColorAmber) + "\n")
 
 	if a.modelState.errorMsg != "" {
-		b.WriteString("\nerror: " + a.modelState.errorMsg + "\n")
+		b.WriteString("\n" + components.DangerStyle.Render("✗ "+a.modelState.errorMsg) + "\n")
 	}
-	b.WriteString("\nkeys: ←→ provider · ↑↓ model · e effort · s scope · c credentials · enter set · esc cancel\n")
-	return b.String()
+	b.WriteString("\n" + components.HelpBar(
+		"←→", "provider", "↑↓", "model", "e", "effort", "s", "scope",
+		"c", "credentials", "enter", "set", "esc", "cancel") + "\n")
+	return lipgloss.NewStyle().Padding(1).Render(b.String())
 }
 
 func (a *App) handleModelKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {

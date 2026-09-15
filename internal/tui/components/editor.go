@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Editor wraps a textarea for slash-command and message input.
@@ -21,6 +22,17 @@ func NewEditor() Editor {
 	ta.ShowLineNumbers = false
 	ta.SetHeight(3)
 	ta.SetWidth(80)
+	// The composer frame supplies the chrome: drop the textarea's own gutter
+	// prompt and cursor-line fill so the input reads as one clean field.
+	ta.Prompt = ""
+	ta.FocusedStyle.CursorLine = lipgloss.NewStyle()
+	ta.FocusedStyle.Base = lipgloss.NewStyle()
+	ta.FocusedStyle.Placeholder = MutedStyle
+	ta.FocusedStyle.Text = lipgloss.NewStyle().Foreground(ColorCream)
+	ta.BlurredStyle.CursorLine = lipgloss.NewStyle()
+	ta.BlurredStyle.Base = lipgloss.NewStyle()
+	ta.BlurredStyle.Placeholder = MutedStyle
+	ta.BlurredStyle.Text = MutedStyle
 	ta.KeyMap.InsertNewline = key.NewBinding(
 		key.WithKeys("ctrl+j", "alt+enter"),
 		key.WithHelp("ctrl+j", "newline"),

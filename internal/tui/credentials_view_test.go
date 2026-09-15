@@ -144,10 +144,13 @@ func TestCredentialViewMarksSelectedField(t *testing.T) {
 	if accountLine == "" || apiKeyLine == "" {
 		t.Fatalf("view should list both fields:\n%s", view)
 	}
-	if !strings.Contains(accountLine, "  > ") {
+	// The renderer downgrades the cursor glyph on ASCII-only terminals, so
+	// assert that the selected line carries a marker and the other does not,
+	// rather than pinning the glyph itself.
+	if strings.HasPrefix(strings.TrimLeft(accountLine, " "), "account_id") {
 		t.Fatalf("selected field line lacks cursor: %q", accountLine)
 	}
-	if strings.Contains(apiKeyLine, "  > ") {
+	if !strings.HasPrefix(strings.TrimLeft(apiKeyLine, " "), "api_key") {
 		t.Fatalf("unselected field must not carry cursor: %q", apiKeyLine)
 	}
 }

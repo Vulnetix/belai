@@ -55,6 +55,8 @@ func (b *Bash) Execute(ctx context.Context, args map[string]any) (Result, error)
 		return Result{}, fmt.Errorf("command contains shell metacharacters")
 	}
 
+	// The Bash executor has no shell; plan-mode restrictions live in
+	// modes.ToolAllowed, which callers must apply before Execute.
 	fields := strings.Fields(cmd)
 	if len(fields) == 0 {
 		return Result{}, fmt.Errorf("empty command")

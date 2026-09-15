@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/vulnetix/signet/internal/credentials"
+	"github.com/vulnetix/signet/internal/tui/components"
 )
 
 // credentialViewState tracks the credential manager UI.
@@ -21,11 +22,10 @@ type credentialViewState struct {
 	sets        map[string]credentials.Set
 }
 
-var credentialHeader = lipgloss.NewStyle().Bold(true).Underline(true)
-
 func (a *App) credentialView() string {
+	w := a.contentWidth()
 	var b strings.Builder
-	b.WriteString(credentialHeader.Render("Credential Manager") + "\n\n")
+	b.WriteString(components.SectionHeader("Credential Manager", "esc back", w))
 
 	sets := a.credentialState.sets
 	if sets == nil {
@@ -42,58 +42,70 @@ func (a *App) credentialView() string {
 
 	for i, p := range a.credentialState.providers {
 		set := sets[p]
-		prefix := "  "
-		if i == a.credentialState.selectedIdx {
-			prefix = "> "
+		providerSelected := i == a.credentialState.selectedIdx
+		name := p
+		if providerSelected {
+			name = components.EmphStyle.Render(p)
+		} else {
+			name = components.MutedStyle.Render(p)
 		}
-		b.WriteString(prefix + p + "\n")
+		b.WriteString(components.Cursor(providerSelected) + name + "\n")
+
 		for j, f := range credentials.Spec(p) {
 			v, ok := set.Values[f.Name]
-			status := "missing"
-			from := "—"
+			// Pad inside the style: padding a pre-styled string would count
+			// the escape sequences as columns.
+			status := components.MutedStyle.Width(16).Render("○ missing")
+			from := components.MutedStyle.Render("—")
 			if ok {
-				status = "configured"
-				from = string(v.Source)
+				status = components.AccentStyle.Width(16).Render("● configured")
+				from = components.MutedStyle.Render(string(v.Source))
 			}
-			fprefix := "    "
-			if i == a.credentialState.selectedIdx && j == a.credentialState.fieldIdx {
-				fprefix = "  > "
+			marker := "    "
+			if providerSelected && j == a.credentialState.fieldIdx {
+				marker = "  > "
 			}
-			b.WriteString(fmt.Sprintf("%s%-12s %-12s %s\n", fprefix, f.Name, status, from))
+			b.WriteString(marker + fmt.Sprintf("%-14s ", f.Name) + status + " " + from + "\n")
 		}
-		if len(set.Notes) > 0 {
-			for _, note := range set.Notes {
-				b.WriteString("    note: " + note + "\n")
-			}
+		for _, note := range set.Notes {
+			b.WriteString("    " + components.MutedStyle.Render("│ "+note) + "\n")
 		}
 	}
 
 	if a.resolver != nil {
-		backends := a.resolver.Backends()
 		var parts []string
-		for _, be := range backends {
-			p := be.Name
+		for _, be := range a.resolver.Backends() {
+			glyph, style := "●", components.AccentStyle
+			if !be.Available {
+				glyph, style = "○", components.MutedStyle
+			}
+			label := be.Name
 			if be.Writable {
-				p += " writable"
+				label += " writable"
 			} else {
-				p += " read-only"
+				label += " read-only"
 			}
-			if be.Available {
-				p += " available"
-			} else {
-				if be.Reason != "" {
-					p += " unavailable (" + be.Reason + ")"
-				} else {
-					p += " unavailable"
-				}
+			if !be.Available && be.Reason != "" {
+				label += " (" + be.Reason + ")"
 			}
-			parts = append(parts, p)
+			parts = append(parts, style.Render(glyph+" "+label))
 		}
-		b.WriteString("\nbackends: " + strings.Join(parts, " · ") + "\n")
+		b.WriteString("\n" + components.MutedStyle.Render("backends  ") +
+			strings.Join(parts, components.MutedStyle.Render("  ·  ")) + "\n")
 	}
 
-	b.WriteString("\nkeys: s set · e set env ref · c clear · b cycle backend · i import · h/l field · esc back\n")
-	return b.String()
+	if a.credentialState.setMode || a.credentialState.envMode {
+		title := "secret"
+		if a.credentialState.envMode {
+			title = "env var name"
+		}
+		b.WriteString("\n" + a.renderFieldEditor(title, w) + "\n")
+	}
+
+	b.WriteString("\n" + components.HelpBar(
+		"s", "set", "e", "env ref", "c", "clear", "b", "backend",
+		"i", "import", "h/l", "field", "esc", "back") + "\n")
+	return lipgloss.NewStyle().Padding(1).Render(b.String())
 }
 
 // credentialFieldCount returns the number of settable fields on the currently

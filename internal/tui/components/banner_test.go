@@ -79,10 +79,12 @@ func TestTextViewContainsVersion(t *testing.T) {
 func TestBannerHeightIsStable(t *testing.T) {
 	without := Banner{Width: 80}.pixView()
 	with := Banner{Width: 80, Version: "0.4.2"}.pixView()
-	if lipgloss.Height(without) != 8 {
-		t.Fatalf("expected banner height 8 without version, got %d", lipgloss.Height(without))
+	// The wordmark block sits beside the owl, so the banner is six rows tall
+	// whether or not the build carries a version stamp.
+	if lipgloss.Height(without) != 6 {
+		t.Fatalf("expected banner height 6 without version, got %d", lipgloss.Height(without))
 	}
-	if lipgloss.Height(with) != 9 {
-		t.Fatalf("expected banner height 9 with version, got %d", lipgloss.Height(with))
+	if lipgloss.Height(with) != 6 {
+		t.Fatalf("expected banner height 6 with version, got %d", lipgloss.Height(with))
 	}
 }

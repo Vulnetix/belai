@@ -10,6 +10,7 @@ import (
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/permissions"
 	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/signet/internal/tui/components"
 )
 
 // permissionsViewState tracks the permissions editor UI.
@@ -32,7 +33,6 @@ type permRow struct {
 	broad     bool
 }
 
-var permHeader = lipgloss.NewStyle().Bold(true).Underline(true)
 var dimStyle = lipgloss.NewStyle().Faint(true)
 
 func (a *App) permissionRows() []permRow {
@@ -77,65 +77,90 @@ func makePermRow(decision, rule string, inherited bool, known map[string]bool) p
 
 func (a *App) permissionsView() string {
 	rows := a.permissionRows()
+	w := a.contentWidth()
 	var b strings.Builder
-	b.WriteString(permHeader.Render("Tool Permissions") + "\n\n")
-
-	scopeName := string(a.permState.scope)
-	b.WriteString(fmt.Sprintf("scope: %s\n\n", scopeName))
+	b.WriteString(components.SectionHeader("Tool Permissions", "esc back", w))
+	scope := string(a.permState.scope)
+	if scope == "" {
+		// The view opens before a scope has been chosen; it writes project.
+		scope = string(config.ScopeProject)
+	}
+	b.WriteString(components.Chip(scope, components.ColorTealSoft) + "\n\n")
 
 	if len(rows) == 0 {
-		b.WriteString("No rules — every tool call is denied. Add an allow rule to enable tools.\n")
+		b.WriteString(components.MutedStyle.Render(
+			"  no rules — every tool call is denied; add an allow rule to enable tools") + "\n")
 	} else {
 		for i, row := range rows {
-			prefix := "  "
-			if i == a.permState.selected {
-				prefix = "> "
+			selected := i == a.permState.selected
+			decision := decisionStyle(row.decision).Width(8).Render(row.decision)
+
+			rule := fmt.Sprintf("%-34s", row.rule)
+			if selected {
+				rule = components.EmphStyle.Render(rule)
+			} else if row.inherited {
+				rule = components.MutedStyle.Render(rule)
 			}
-			markers := ""
+
+			var markers []string
 			if row.unknown {
-				markers += " ?"
+				markers = append(markers, components.MutedStyle.Render("? unknown tool"))
 			}
 			if row.broad {
-				markers += " !"
-			}
-			line := fmt.Sprintf("%s%-6s %-32s%s", prefix, row.decision, row.rule, markers)
-			if row.inherited {
-				line += "  (inherited)"
+				markers = append(markers, components.WarnStyle.Render("! broad"))
 			}
 			if row.inherited {
-				b.WriteString(dimStyle.Render(line) + "\n")
-			} else {
-				b.WriteString(line + "\n")
+				markers = append(markers, components.MutedStyle.Render("inherited"))
 			}
+
+			b.WriteString(components.Cursor(selected) + decision + rule +
+				strings.Join(markers, components.MutedStyle.Render(" · ")) + "\n")
 		}
 	}
 
 	if a.permState.mode == "preview" {
-		b.WriteString("\npreview subject: " + a.permState.previewSubject + "\n")
+		b.WriteString("\n" + components.MutedStyle.Render("preview  ") + a.permState.previewSubject + "\n")
 		if strings.TrimSpace(a.permState.previewSubject) != "" {
 			tool, subject := splitPreview(a.permState.previewSubject)
 			dec, rule := permissions.From(a.settings.Permissions.Allow, a.settings.Permissions.Ask, a.settings.Permissions.Deny).Explain(tool, subject)
 			if rule == "" {
-				b.WriteString("preview: blocked (no rule matches)\n")
+				b.WriteString(components.DangerStyle.Render("         blocked (no rule matches)") + "\n")
 			} else {
-				b.WriteString(fmt.Sprintf("preview: %s via %s\n", dec, rule))
+				b.WriteString("         " + decisionStyle(string(dec)).Render(string(dec)) +
+					components.MutedStyle.Render(" via "+rule) + "\n")
 			}
 		}
 	} else if a.permState.mode != "" {
-		b.WriteString("\n" + a.editor.View() + "\n")
+		b.WriteString("\n" + a.renderFieldEditor(a.permState.mode+" rule", w) + "\n")
 	}
 
 	if a.permState.errorMsg != "" {
-		b.WriteString("\nerror: " + a.permState.errorMsg + "\n")
+		b.WriteString("\n" + components.DangerStyle.Render("✗ "+a.permState.errorMsg) + "\n")
 	}
 
 	if a.permState.mode != "" {
-		b.WriteString("\nkeys: enter save · esc cancel\n")
+		b.WriteString("\n" + components.HelpBar("enter", "save", "esc", "cancel") + "\n")
 	} else {
-		b.WriteString("\nkeys: a add · ←→ cycle decision · e edit · d delete · s scope · p preview · esc back\n")
+		b.WriteString("\n" + components.HelpBar(
+			"a", "add", "←→", "decision", "e", "edit", "d", "delete",
+			"s", "scope", "p", "preview", "esc", "back") + "\n")
 	}
-	b.WriteString("(these rules affect signet -tools runs; the TUI has no tool loop)\n")
-	return b.String()
+	b.WriteString(components.MutedStyle.Render(
+		"these rules affect signet -tools runs; the TUI has no tool loop") + "\n")
+	return lipgloss.NewStyle().Padding(1).Render(b.String())
+}
+
+// decisionStyle colours a permission decision: deny reads as a stop, allow as
+// go, ask as a pause.
+func decisionStyle(decision string) lipgloss.Style {
+	switch decision {
+	case "allow":
+		return components.AccentStyle
+	case "deny":
+		return components.DangerStyle
+	default:
+		return components.WarnStyle
+	}
 }
 
 func (a *App) handlePermissionsKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {

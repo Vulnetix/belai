@@ -157,8 +157,15 @@ an API-key exfiltration primitive.
 
 **Permissions merge is a union, never a replacement.** A project file can add
 rules but can never remove a rule you set globally, and a deny from either
-scope wins. The legacy flat-map form (`"bash": "ask"`) is still accepted on
-read but files self-upgrade to the structured form on first write.
+scope wins.
+
+**Bash permissions.** Because `Bash` is now a registered tool, permission
+rules use the same `Tool(spec)` shape as other tools. Common rules include
+`Bash(git status *)`, `Bash(git diff *)`, `Bash(ls *)`, and `Bash(echo *)`.
+All Bash executions run without a shell, so pipes, redirections, and command
+substitution are rejected structurally. The legacy flat-map form
+(`"bash": "ask"`) is still accepted on read but files self-upgrade to the
+structured form on first write.
 
 ### Session storage
 

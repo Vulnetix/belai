@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/signet/internal/tui/components"
 )
 
 // settingsViewState tracks the settings browser UI.
@@ -29,43 +30,54 @@ type settingsRow struct {
 	src   string   // provenance label
 }
 
-var settingsHeader = lipgloss.NewStyle().Bold(true).Underline(true)
-
 func (a *App) settingsView() string {
 	rows := a.settingsRows()
+	w := a.contentWidth()
 	var b strings.Builder
-	b.WriteString(settingsHeader.Render("Settings") + "\n\n")
+	b.WriteString(components.SectionHeader("Settings", "esc back", w))
 
-	scopeName := string(a.settingsState.scope)
 	path := config.ProjectSettingsPath(a.workdir)
+	scope := string(a.settingsState.scope)
 	if a.settingsState.scope == config.ScopeGlobal {
 		p, _ := config.GlobalSettingsPath()
 		path = p
 	}
-	b.WriteString(fmt.Sprintf("scope: %s  (%s)\n\n", scopeName, path))
+	if scope == "" {
+		// The view opens before a scope has been chosen; it writes project.
+		scope = string(config.ScopeProject)
+	}
+	b.WriteString(components.Chip(scope, components.ColorTealSoft) +
+		"  " + components.MutedStyle.Render(path) + "\n\n")
 
 	for i, row := range rows {
-		prefix := "  "
-		if i == a.settingsState.selected {
-			prefix = "> "
-		}
-		b.WriteString(fmt.Sprintf("%s%-18s %-20s effective: %-20s (%s)\n", prefix, row.label, row.value, row.value, row.src))
+		selected := i == a.settingsState.selected
+		label := fmt.Sprintf("%-20s", row.label)
+		value := fmt.Sprintf("%-27s ", row.value)
 		if row.kind == "submenu" {
-			b.WriteString(strings.Repeat(" ", len(prefix)) + "                                                          →\n")
+			value = fmt.Sprintf("%-25s → ", row.value)
 		}
+		if selected {
+			label = components.AccentStyle.Bold(true).Render(label)
+			value = components.EmphStyle.Render(value)
+		} else {
+			label = components.MutedStyle.Render(label)
+		}
+		b.WriteString(components.Cursor(selected) + label + value +
+			components.MutedStyle.Render(row.src) + "\n")
 	}
 
 	if a.settingsState.errorMsg != "" {
-		b.WriteString("\nerror: " + a.settingsState.errorMsg + "\n")
+		b.WriteString("\n" + components.DangerStyle.Render("✗ "+a.settingsState.errorMsg) + "\n")
 	}
 
 	if a.settingsState.editMode {
-		b.WriteString("\n" + a.editor.View() + "\n")
-		b.WriteString("\nkeys: enter save · esc cancel\n")
+		b.WriteString("\n" + a.renderFieldEditor("edit", w) + "\n")
+		b.WriteString("\n" + components.HelpBar("enter", "save", "esc", "cancel") + "\n")
 	} else {
-		b.WriteString("\nkeys: ↑↓ move · space/enter edit/open · x unset · s scope · esc back\n")
+		b.WriteString("\n" + components.HelpBar(
+			"↑↓", "move", "space", "edit/open", "x", "unset", "s", "scope", "esc", "back") + "\n")
 	}
-	return b.String()
+	return lipgloss.NewStyle().Padding(1).Render(b.String())
 }
 
 func (a *App) settingsRows() []settingsRow {

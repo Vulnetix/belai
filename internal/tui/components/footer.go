@@ -30,18 +30,14 @@ type Footer struct {
 	ShowName    bool
 }
 
-var (
-	modeStyle = lipgloss.NewStyle().Bold(true).Padding(0, 1)
-)
-
-func modeColor(mode string) lipgloss.Color {
+func modeColor(mode string) lipgloss.TerminalColor {
 	switch mode {
 	case "plan":
-		return lipgloss.Color("4")
+		return ColorTealSoft
 	case "goal":
-		return lipgloss.Color("5")
+		return ColorAmber
 	default:
-		return lipgloss.Color("2")
+		return ColorTeal
 	}
 }
 
@@ -57,30 +53,30 @@ func (f *Footer) View() string {
 		if home, _ := os.UserHomeDir(); home != "" && strings.HasPrefix(cwd, home) {
 			cwd = "~" + strings.TrimPrefix(cwd, home)
 		}
-		line1Parts = append(line1Parts, cwd)
+		line1Parts = append(line1Parts, MutedStyle.Render(cwd))
 	}
 	if f.Branch != "" {
-		line1Parts = append(line1Parts, "⎇ "+f.Branch)
+		line1Parts = append(line1Parts, AccentStyle.Render("⎇ ")+MutedStyle.Render(f.Branch))
 	}
-	line1 := strings.Join(line1Parts, "  ")
+	line1 := strings.Join(line1Parts, MutedStyle.Render("  ·  "))
 
-	modeChip := modeStyle.Background(modeColor(f.Mode)).Foreground(lipgloss.Color("0")).Render(f.Mode)
+	modeChip := Chip(f.Mode, modeColor(f.Mode))
 	parts := []string{}
 	if f.Provider != "" {
-		parts = append(parts, f.Provider)
+		parts = append(parts, MutedStyle.Render(f.Provider))
 	}
 	if f.Model != "" {
-		parts = append(parts, f.Model)
+		parts = append(parts, lipgloss.NewStyle().Foreground(ColorCream).Render(f.Model))
 	}
 	rightParts := []string{}
-	rightParts = append(rightParts, f.sessionSegment())
+	rightParts = append(rightParts, MutedStyle.Render(f.sessionSegment()))
 	rightParts = append(rightParts, f.contextSegment())
 	if f.Cost != "" {
-		rightParts = append(rightParts, "cost: "+f.Cost)
+		rightParts = append(rightParts, MutedStyle.Render("cost: "+f.Cost))
 	}
 
-	left := strings.Join(parts, " · ")
-	right := strings.Join(rightParts, "  |  ")
+	left := strings.Join(parts, MutedStyle.Render(" · "))
+	right := strings.Join(rightParts, MutedStyle.Render("  ·  "))
 
 	line2 := left
 	if right != "" {
@@ -98,10 +94,11 @@ func (f *Footer) View() string {
 		line2 = left + " " + modeChip
 	}
 
+	rule := Rule(f.Width)
 	if line1 != "" {
-		return line1 + "\n" + line2
+		return rule + "\n" + line1 + "\n" + line2
 	}
-	return line2
+	return rule + "\n" + line2
 }
 
 // sessionSegment renders the session name (when shown) or the short id.
@@ -153,12 +150,12 @@ func (f *Footer) percentRemaining() (int, bool) {
 }
 
 func (f *Footer) colourPct(pct int) string {
-	colour := lipgloss.Color("2")
+	var colour lipgloss.TerminalColor = ColorTeal
 	switch {
 	case pct < 20:
-		colour = lipgloss.Color("1")
+		colour = ColorDanger
 	case pct < 50:
-		colour = lipgloss.Color("3")
+		colour = ColorAmber
 	}
 	return lipgloss.NewStyle().Foreground(colour).Render(fmt.Sprintf("%d%%", pct))
 }

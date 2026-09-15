@@ -8,7 +8,7 @@ import (
 	"github.com/muesli/termenv"
 )
 
-var versionStyle = lipgloss.NewStyle().Faint(true)
+var versionStyle = lipgloss.NewStyle().Foreground(ColorMuted)
 
 func isVersionSentinel(s string) bool {
 	switch s {
@@ -114,12 +114,23 @@ func (b Banner) pixView() string {
 		lines = append(lines, line.String())
 	}
 
-	wordmark := lipgloss.NewStyle().Bold(true).Render("SIGNET")
-	lines = append(lines, "", wordmark)
-	if v := b.versionLine(); v != "" {
-		lines = append(lines, v)
+	owl := strings.Join(lines, "\n")
+
+	// The wordmark block sits beside the owl rather than under it: it keeps
+	// the banner to six rows and leaves the transcript more of the screen.
+	// Six rows, always: the owl is six rows tall, and an unstamped build must
+	// not change the banner's height and reflow the transcript under it.
+	right := []string{
+		"",
+		lipgloss.NewStyle().Foreground(ColorCream).Bold(true).Render("S I G N E T"),
+		MutedStyle.Render("injection-safe coding harness"),
+		b.versionLine(),
+		"",
+		MutedStyle.Render("type ") + KeyStyle.Render("/help") + MutedStyle.Render(" for commands"),
 	}
-	return strings.Join(lines, "\n")
+
+	block := lipgloss.NewStyle().PaddingLeft(3).Render(strings.Join(right, "\n"))
+	return lipgloss.JoinHorizontal(lipgloss.Top, owl, block)
 }
 
 func (b Banner) textView() string {

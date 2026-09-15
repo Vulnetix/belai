@@ -11,6 +11,7 @@ import (
 	"github.com/vulnetix/signet/internal/agentscan"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
+	"github.com/vulnetix/signet/internal/tui/components"
 )
 
 // importViewState tracks the credential import UI.
@@ -33,8 +34,6 @@ type importRow struct {
 	existing  string
 	overwrite bool
 }
-
-var importHeader = lipgloss.NewStyle().Bold(true).Underline(true)
 
 func (a *App) enterImport() tea.Cmd {
 	a.importState = importViewState{
@@ -73,40 +72,45 @@ func (a *App) importRows() []importRow {
 }
 
 func (a *App) importView() string {
+	w := a.contentWidth()
 	var b strings.Builder
-	b.WriteString(importHeader.Render("Import Credentials") + "\n\n")
-	b.WriteString(fmt.Sprintf("backend: %s   scope: %s\n\n", string(a.importState.backend), string(a.importState.scope)))
+	b.WriteString(components.SectionHeader("Import Credentials", "esc back", w))
+	b.WriteString(components.Chip(string(a.importState.backend), components.ColorTealSoft) + " " +
+		components.Chip(string(a.importState.scope), components.ColorAmber) + "\n\n")
 
 	if len(a.importState.rows) == 0 {
-		b.WriteString("Nothing found. Press r to rescan.\n")
+		b.WriteString(components.MutedStyle.Render("  nothing found — press r to rescan") + "\n")
 	} else {
 		for i, row := range a.importState.rows {
-			prefix := "  "
-			if i == a.importState.selected {
-				prefix = "> "
-			}
-			mark := " "
+			selected := i == a.importState.selected
+			box := components.MutedStyle.Render("☐")
 			if row.chosen {
-				mark = "x"
+				box = components.AccentStyle.Render("☑")
 			}
-			status := a.importRowStatus(row)
-			line := fmt.Sprintf("%s[%s] %-10s %-22s %-12s %-12s %s", prefix, mark, row.found.Agent, row.found.Provider, row.found.Field, row.found.Mask(), status)
-			if !row.found.Importable() {
-				b.WriteString(dimStyle.Render(line) + "\n")
-			} else {
-				b.WriteString(line + "\n")
+			line := fmt.Sprintf("%-10s %-22s %-12s %-14s %s",
+				row.found.Agent, row.found.Provider, row.found.Field, row.found.Mask(),
+				a.importRowStatus(row))
+			switch {
+			case !row.found.Importable():
+				line = components.MutedStyle.Render(line)
+			case selected:
+				line = components.EmphStyle.Render(line)
 			}
+			b.WriteString(components.Cursor(selected) + box + " " + line + "\n")
 		}
 	}
 
 	if a.importState.confirming {
-		b.WriteString("\noverwrite existing credential? y/n\n")
+		b.WriteString("\n" + components.WarnStyle.Render("! overwrite existing credential?") + " " +
+			components.HelpBar("y", "yes", "n", "no") + "\n")
 	}
 	if a.importState.errorMsg != "" {
-		b.WriteString("\nerror: " + a.importState.errorMsg + "\n")
+		b.WriteString("\n" + components.DangerStyle.Render("✗ "+a.importState.errorMsg) + "\n")
 	}
-	b.WriteString("\nkeys: space toggle · v env-ref · o overwrite · b backend · s scope · r rescan · enter save · esc back\n")
-	return b.String()
+	b.WriteString("\n" + components.HelpBar(
+		"space", "toggle", "v", "env-ref", "o", "overwrite", "b", "backend",
+		"s", "scope", "r", "rescan", "enter", "save", "esc", "back") + "\n")
+	return lipgloss.NewStyle().Padding(1).Render(b.String())
 }
 
 func (a *App) importRowStatus(row importRow) string {
