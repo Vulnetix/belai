@@ -40,7 +40,7 @@ The architecture overview lives in [architecture.md](architecture.md).
 | Streaming tool calls | `internal/tui` | Render tool-use deltas in the TUI stream | Live |
 | File attachments | `internal/tui` | Parse `@file` references, seal SAFE contents as `<attachment>` blocks | Live |
 | Inline shell | `internal/tui` | Execute `!cmd` and round-trip output under the debug profile | Live |
-| Explore-agent launch | — | Auto-launch explore agents for PLAN / GOAL with references | Planned |
+| Explore-agent launch | `internal/explore` + `internal/agent` | Auto-launch read-only explore subagents for PLAN / GOAL with references | Live |
 
 ## Trust model
 
