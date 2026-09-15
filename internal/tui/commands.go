@@ -153,6 +153,26 @@ func NewRegistry(workdir string) *Registry {
 		a.addSystem("goal replaying: " + g.Name)
 		return nil
 	})
+	r.Register("execute", "leave plan mode and execute the plan", nil, func(a *App, arg string) tea.Cmd {
+		a.mode = "agent"
+		a.modeExplicit = true
+		a.syncPlanMode()
+		a.saveMode()
+		a.addSystem("plan mode off — executing")
+		return nil
+	})
+	r.Register("stay", "stay in plan mode", nil, func(a *App, arg string) tea.Cmd {
+		a.mode = "plan"
+		a.modeExplicit = true
+		a.syncPlanMode()
+		a.addSystem("staying in plan mode")
+		return nil
+	})
+	r.Register("refine", "refine the extracted plan", nil, func(a *App, arg string) tea.Cmd {
+		a.editor.SetValue(a.lastPlanText)
+		a.addSystem("refine the plan, then submit")
+		return nil
+	})
 	r.Register("code-review", "run Vulnetix code review", nil, func(a *App, arg string) tea.Cmd {
 		return func() tea.Msg {
 			cli, err := vulnetixcli.Detect()

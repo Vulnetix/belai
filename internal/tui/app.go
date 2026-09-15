@@ -115,6 +115,7 @@ type App struct {
 	// settings without rewriting the settings file.
 	reasoningOverride *bool
 	toolCallsOverride *bool
+	lastPlanText      string
 
 	// attachments state
 	attachments  map[int]*attachment
@@ -234,6 +235,11 @@ func New(opts Options) *App {
 		pol = posture.Defaults()
 	}
 
+	client := opts.Client
+	if client == nil {
+		client = &http.Client{Timeout: 60 * time.Second}
+	}
+
 	store, _ := session.NewStore()
 
 	a := &App{
@@ -244,7 +250,7 @@ func New(opts Options) *App {
 		ctx:         context.Background(),
 		cfg:         cfg,
 		status:      status,
-		client:      opts.Client,
+		client:      client,
 		resolver:    opts.Resolver,
 		posture:     pol,
 		planMode:    mode == "plan",
@@ -1030,7 +1036,8 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 					ps.Todos = append(ps.Todos, modes.Todo{N: i + 1, Text: s})
 				}
 				a.appendEntry(ps.ToEntry(a.lastEntryID))
-				a.addSystem(fmt.Sprintf("plan: %d steps extracted", len(steps)))
+				a.lastPlanText = strings.Join(steps, "\n")
+				a.addSystem(fmt.Sprintf("plan: %d steps extracted — /execute, /stay, or /refine", len(steps)))
 			}
 		}
 		a.refreshFooter()
