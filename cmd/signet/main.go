@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/vulnetix/signet/internal/agent"
 	"github.com/vulnetix/signet/internal/config"
@@ -16,6 +17,7 @@ import (
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/prompt"
 	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/signet/internal/session"
 	"github.com/vulnetix/signet/internal/tools"
 	"github.com/vulnetix/signet/internal/tui"
 	"github.com/vulnetix/signet/internal/version"
@@ -45,6 +47,7 @@ func main() {
 	effort := flag.String("effort", "", "thinking effort level: low, medium, or high")
 	caveman := flag.Bool("caveman", false, "enable caveman voice rewrite for this run")
 	sessionRetentionDays := flag.Int("session-retention-days", 0, "idle session retention in days (default 28)")
+	noPrune := flag.Bool("no-prune", false, "never prune idle sessions")
 	flag.Parse()
 
 	if *showVersion {
@@ -68,6 +71,10 @@ func main() {
 	}
 	if *sessionRetentionDays > 0 {
 		settings.SessionRetentionDays = sessionRetentionDays
+	}
+
+	if !*noPrune {
+		go pruneSessions(settings)
 	}
 
 	fs := posture.FlagSet{
@@ -192,4 +199,14 @@ func runAgent(cfg run.Config, userPrompt string, client *http.Client, pol postur
 		return run.Result{}, err
 	}
 	return sess.Run(context.Background(), userPrompt)
+}
+
+// pruneSessions removes idle sessions older than the configured retention, in
+// a best-effort goroutine so startup never blocks on it.
+func pruneSessions(settings config.Settings) {
+	store, err := session.NewStore()
+	if err != nil {
+		return
+	}
+	_, _ = store.Prune(time.Duration(settings.SessionRetention()) * 24 * time.Hour)
 }
