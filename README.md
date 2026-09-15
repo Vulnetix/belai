@@ -10,6 +10,13 @@ Signet is a role-managed, injection-safe LLM coding harness. It pairs a Codex-st
 brew install vulnetix/tap/signet
 ```
 
+Homebrew also knows an unrelated cask called `signet`, so upgrade by the tapped
+name to avoid the ambiguity:
+
+```bash
+brew upgrade --formula vulnetix/tap/signet
+```
+
 ### Windows (Scoop)
 
 ```powershell
