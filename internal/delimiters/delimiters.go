@@ -19,17 +19,23 @@ import (
 // !shell and sealed at egress with a nonce from the active pool.
 const KindAttachment = "attachment"
 
+// KindExploration is the delimiter kind for explore-subagent findings. Like
+// attachments, a sealed exploration block survives egress while an unsealed or
+// forged one is stripped whole.
+const KindExploration = "exploration"
+
 // KnownKinds is the set of harness block kinds the engine manages. Tags with
 // any other kind (e.g. arbitrary HTML in user content) are left untouched.
 var KnownKinds = map[string]bool{
-	"system":       true,
-	"agent":        true,
-	"plan":         true,
-	"goal":         true,
-	"tools":        true,
-	"skills":       true,
-	"hooks":        true,
-	KindAttachment: true,
+	"system":        true,
+	"agent":         true,
+	"plan":          true,
+	"goal":          true,
+	"tools":         true,
+	"skills":        true,
+	"hooks":         true,
+	KindAttachment:  true,
+	KindExploration: true,
 }
 
 // NonceChecker reports whether a nonce is currently valid (present in the

@@ -29,6 +29,9 @@ type Options struct {
 	// Skills is the rendered list of available skills (name + description),
 	// harness-loaded from disk. The classifier turns never carry these.
 	Skills []string
+	// ExploreNote is a harness-generated framing sentence added when explore
+	// subagent reports are appended as user turns.
+	ExploreNote string
 	// Provider and Model name the two identities the harness does not own.
 	// Empty values are omitted rather than guessed at.
 	Provider string
@@ -88,6 +91,9 @@ func System(opts Options) (string, error) {
 		for _, s := range opts.Skills {
 			b.WriteString("- " + s + "\n")
 		}
+	}
+	if opts.ExploreNote != "" {
+		b.WriteString(opts.ExploreNote + "\n")
 	}
 	if opts.Caveman {
 		b.WriteString(cavemanVoice)

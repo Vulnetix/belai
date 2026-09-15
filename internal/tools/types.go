@@ -10,6 +10,7 @@ const (
 	KindBash      Kind = "bash"
 	KindGrep      Kind = "grep"
 	KindGlob      Kind = "glob"
+	KindExplore   Kind = "explore"
 )
 
 // Result is a tool output.
