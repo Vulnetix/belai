@@ -1,6 +1,7 @@
 // Package provider adapts the wire-level shapes into concrete HTTP requests
-// for each model provider. Every provider is reached through exactly two
-// knobs — base URL and API key — matching the ai-firewall gateway contract.
+// for each model provider. Every provider is reached through a base URL, an
+// API key, a wire surface, and an auth style — matching the ai-firewall
+// gateway contract.
 package provider
 
 import (
@@ -15,28 +16,163 @@ import (
 	"github.com/vulnetix/signet/internal/wire"
 )
 
+// Auth names one wire authentication style. It is independent of the wire
+// surface a provider speaks: a custom provider may, for example, speak the
+// Anthropic surface with a bearer token.
+//
+// AuthXAPIKey additionally carries an anthropic-version header. That header is
+// conceptually a surface concern, but bundling it here preserves today's bytes
+// exactly and is correct in practice; do not thread the surface into Provider
+// to split it.
+type Auth string
+
+const (
+	AuthBearer  Auth = "bearer"    // authorization: Bearer <key>
+	AuthXAPIKey Auth = "x-api-key" // x-api-key + anthropic-version: 2023-06-01
+	AuthCFAIG   Auth = "cf-aig"    // cf-aig-authorization: Bearer <key>
+)
+
+// Valid reports whether a is a known auth style.
+func (a Auth) Valid() bool {
+	switch a {
+	case AuthBearer, AuthXAPIKey, AuthCFAIG:
+		return true
+	}
+	return false
+}
+
+// Profile describes a provider that is not compiled in: where it lives, which
+// wire surface it speaks, how it authenticates, and which models it offers.
+type Profile struct {
+	BaseURL string
+	API     wire.Surface
+	Auth    Auth
+	Models  []string
+}
+
+// builtins is the single source of truth for the compiled-in providers: their
+// canonical name and their auth style. New's whitelist, Builtin, and Names all
+// derive from it so they cannot drift.
+var builtins = []struct {
+	name string
+	auth Auth
+}{
+	{"openai", AuthBearer},
+	{"anthropic", AuthXAPIKey},
+	{"cloudflare-workers-ai", AuthBearer},
+	{"cloudflare-ai-gateway", AuthCFAIG},
+}
+
+// Names returns the supported provider names in a stable order.
+func Names() []string {
+	out := make([]string, len(builtins))
+	for i, b := range builtins {
+		out[i] = b.name
+	}
+	return out
+}
+
+// Builtin reports whether name is one of the compiled-in provider names.
+func Builtin(name string) bool {
+	n := strings.ToLower(strings.TrimSpace(name))
+	for _, b := range builtins {
+		if b.name == n {
+			return true
+		}
+	}
+	return false
+}
+
+// ValidCustomName reports whether name is a safe custom-provider name. The
+// name is used to build keychain accounts (a ":" would collide across
+// providers), to key credential JSON, and — critically — it is written into
+// the sealed system prompt, so an unconstrained name is prompt-injection
+// surface inside a trusted block. Charset: lowercase, alphanumeric first
+// character, then [a-z0-9._-].
+func ValidCustomName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		switch {
+		case c >= 'a' && c <= 'z':
+		case c >= '0' && c <= '9':
+			if i == 0 {
+				return false
+			}
+		case c == '.' || c == '_' || c == '-':
+			if i == 0 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // Provider reaches a single model provider.
 type Provider struct {
 	name    string
 	baseURL string
 	apiKey  string
+	auth    Auth
 }
 
-// Names returns the supported provider names in a stable order.
-func Names() []string {
-	return []string{"openai", "anthropic", "cloudflare-workers-ai", "cloudflare-ai-gateway"}
-}
-
-// New validates and returns a Provider. Supported names are "openai",
-// "anthropic", "cloudflare-workers-ai", and "cloudflare-ai-gateway". baseURL
-// must be a valid http(s) URL; apiKey must be non-empty.
+// New validates and returns a Provider for a built-in name. Supported names
+// are "openai", "anthropic", "cloudflare-workers-ai", and
+// "cloudflare-ai-gateway". baseURL must be a valid http(s) URL; apiKey must
+// be non-empty.
 func New(name, baseURL, apiKey string) (*Provider, error) {
 	n := strings.ToLower(strings.TrimSpace(name))
-	switch n {
-	case "openai", "anthropic", "cloudflare-workers-ai", "cloudflare-ai-gateway":
-	default:
-		return nil, fmt.Errorf("unsupported provider %q (want openai, anthropic, cloudflare-workers-ai, or cloudflare-ai-gateway)", name)
+	var auth Auth
+	found := false
+	for _, b := range builtins {
+		if b.name == n {
+			auth = b.auth
+			found = true
+			break
+		}
 	}
+	if !found {
+		return nil, fmt.Errorf("unsupported provider %q (want %s)", name, strings.Join(Names(), ", "))
+	}
+	return newProvider(n, baseURL, apiKey, auth)
+}
+
+// NewFromProfile validates and returns a Provider from a custom profile. It
+// rejects any built-in name so a settings file cannot shadow a compiled-in
+// provider with an attacker-controlled base URL, and rejects any name failing
+// ValidCustomName.
+func NewFromProfile(name string, prof Profile, apiKey string) (*Provider, error) {
+	if Builtin(name) {
+		return nil, fmt.Errorf("provider name %q is built-in; use New for built-ins", name)
+	}
+	if !ValidCustomName(name) {
+		return nil, fmt.Errorf("invalid custom provider name %q", name)
+	}
+	if !prof.Auth.Valid() {
+		return nil, fmt.Errorf("unknown auth style %q", prof.Auth)
+	}
+	if !validSurface(prof.API) {
+		return nil, fmt.Errorf("unknown api surface %q", prof.API)
+	}
+	return newProvider(name, prof.BaseURL, apiKey, prof.Auth)
+}
+
+func validSurface(s wire.Surface) bool {
+	switch s {
+	case wire.SurfaceOpenAIChat, wire.SurfaceOpenAIResponses, wire.SurfaceAnthropicMessages:
+		return true
+	}
+	return false
+}
+
+// newProvider validates the parts shared by every constructor: base URL and
+// key. It exists once so the validation cannot drift between built-in and
+// custom paths.
+func newProvider(name, baseURL, apiKey string, auth Auth) (*Provider, error) {
 	baseURL = strings.TrimSpace(baseURL)
 	if baseURL == "" {
 		return nil, fmt.Errorf("base_url is required")
@@ -48,7 +184,7 @@ func New(name, baseURL, apiKey string) (*Provider, error) {
 	if strings.TrimSpace(apiKey) == "" {
 		return nil, fmt.Errorf("api_key is required")
 	}
-	return &Provider{name: n, baseURL: baseURL, apiKey: apiKey}, nil
+	return &Provider{name: name, baseURL: baseURL, apiKey: apiKey, auth: auth}, nil
 }
 
 // Name returns the normalized provider name.
@@ -57,17 +193,8 @@ func (p *Provider) Name() string { return p.name }
 // BaseURL returns the configured base URL.
 func (p *Provider) BaseURL() string { return p.baseURL }
 
-// IsAnthropic reports whether this provider speaks the Anthropic surface.
-func (p *Provider) IsAnthropic() bool { return p.name == "anthropic" }
-
-// IsOpenAI reports whether this provider speaks the OpenAI surfaces.
-func (p *Provider) IsOpenAI() bool { return p.name == "openai" }
-
-// IsCloudflareWorkersAI reports whether this provider is Cloudflare Workers AI.
-func (p *Provider) IsCloudflareWorkersAI() bool { return p.name == "cloudflare-workers-ai" }
-
-// IsCloudflareAIGateway reports whether this provider is the Cloudflare AI Gateway.
-func (p *Provider) IsCloudflareAIGateway() bool { return p.name == "cloudflare-ai-gateway" }
+// Auth returns the provider's auth style.
+func (p *Provider) Auth() Auth { return p.auth }
 
 // Headers returns the auth headers for the provider. Cloudflare AI Gateway
 // authenticates with cf-aig-authorization; Anthropic with x-api-key; OpenAI
@@ -77,13 +204,13 @@ func (p *Provider) Headers() map[string]string {
 		"content-type": "application/json",
 		"user-agent":   version.UserAgent(),
 	}
-	switch p.name {
-	case "anthropic":
+	switch p.auth {
+	case AuthXAPIKey:
 		h["x-api-key"] = p.apiKey
 		h["anthropic-version"] = "2023-06-01"
-	case "cloudflare-ai-gateway":
+	case AuthCFAIG:
 		h["cf-aig-authorization"] = "Bearer " + p.apiKey
-	default: // openai, cloudflare-workers-ai
+	default: // AuthBearer
 		h["authorization"] = "Bearer " + p.apiKey
 	}
 	return h

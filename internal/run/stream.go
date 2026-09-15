@@ -56,7 +56,7 @@ func StreamWithPool(ctx context.Context, cfg Config, turns []Turn, client *http.
 		}
 	}
 
-	req, err := buildRequest(cfg, verifiedSystem, sanitized, true, nil, nil)
+	req, d, err := buildRequest(cfg, verifiedSystem, sanitized, true, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func StreamWithPool(ctx context.Context, cfg Config, turns []Turn, client *http.
 				sendDone()
 				return
 			}
-			text, usage, err := decodeDelta(cfg, data)
+			text, usage, err := decodeDelta(d, data)
 			if err != nil {
 				ch <- Chunk{Err: err}
 				return
@@ -131,42 +131,21 @@ func StreamWithPool(ctx context.Context, cfg Config, turns []Turn, client *http.
 
 // decodeDelta returns the text delta and any usage carried by this SSE
 // payload. A payload may carry usage with no text (OpenAI's final usage chunk,
-// Anthropic's message_start).
-func decodeDelta(cfg Config, data string) (string, *transcript.Usage, error) {
-	switch cfg.Provider {
-	case "anthropic":
+// Anthropic's message_start). Workers AI keeps decoding OpenAI chunks exactly
+// as it always has.
+func decodeDelta(d dialect, data string) (string, *transcript.Usage, error) {
+	if d.kind == kindAnthropicMessages {
 		var ev wire.AnthropicStreamEvent
 		if err := json.Unmarshal([]byte(data), &ev); err != nil {
 			return "", nil, err
 		}
 		return ev.Delta.Text, anthropicEventUsage(&ev), nil
-	case "cloudflare-ai-gateway":
-		// Gateway dispatches by model prefix.
-		if strings.HasPrefix(strings.ToLower(cfg.Model), "claude") {
-			var ev wire.AnthropicStreamEvent
-			if err := json.Unmarshal([]byte(data), &ev); err != nil {
-				return "", nil, err
-			}
-			return ev.Delta.Text, anthropicEventUsage(&ev), nil
-		}
-		var chunk wire.OpenAIChatStreamChunk
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			return "", nil, err
-		}
-		return openAIDelta(&chunk), openAIChunkUsage(&chunk), nil
-	case "cloudflare-workers-ai":
-		var chunk wire.OpenAIChatStreamChunk
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			return "", nil, err
-		}
-		return openAIDelta(&chunk), openAIChunkUsage(&chunk), nil
-	default:
-		var chunk wire.OpenAIChatStreamChunk
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			return "", nil, err
-		}
-		return openAIDelta(&chunk), openAIChunkUsage(&chunk), nil
 	}
+	var chunk wire.OpenAIChatStreamChunk
+	if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+		return "", nil, err
+	}
+	return openAIDelta(&chunk), openAIChunkUsage(&chunk), nil
 }
 
 func openAIDelta(chunk *wire.OpenAIChatStreamChunk) string {

@@ -30,7 +30,9 @@ type Config struct {
 	BaseURL  string
 	APIKey   string
 	Model    string
-	Effort   string // empty means provider default thinking level
+	Effort   string        // empty means provider default thinking level
+	API      wire.Surface  // empty for built-ins; custom providers carry their surface
+	Auth     provider.Auth // empty for built-ins; custom providers carry their auth style
 }
 
 func (c Config) String() string {
@@ -302,59 +304,50 @@ func SealSystem(cfg Config, pool *nonce.Pool, opts prompt.Options) (string, erro
 // buildRequest creates the sealed HTTP request for a provider.
 // It is the single place where a chat/completions request is built,
 // guarding against the streaming path drifting from the sealed path.
-func buildRequest(cfg Config, system string, turns []Turn, stream bool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (*http.Request, error) {
+// The returned dialect is the structural guarantee: SendTurnsWithTools and
+// decodeDelta consume the same dialect that built the request, so they cannot
+// drift.
+func buildRequest(cfg Config, system string, turns []Turn, stream bool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (*http.Request, dialect, error) {
+	d, err := resolveDialect(cfg)
+	if err != nil {
+		return nil, dialect{}, err
+	}
 	p, err := provider.New(cfg.Provider, cfg.BaseURL, cfg.APIKey)
 	if err != nil {
-		return nil, err
+		return nil, dialect{}, err
 	}
 
 	// Effort maps to per-surface thinking controls. Empty effort emits nothing,
 	// keeping requests byte-identical to today for every provider.
 	var reasoningEffort string
-	if cfg.Effort != "" {
+	if d.effort && cfg.Effort != "" {
 		reasoningEffort = strings.ToLower(strings.TrimSpace(cfg.Effort))
 	}
 	var thinking *wire.AnthropicThinking
-	if budget := models.ThinkingBudget(cfg.Effort); budget > 0 {
-		thinking = &wire.AnthropicThinking{Type: "enabled", BudgetTokens: budget}
+	if d.thinking {
+		if budget := models.ThinkingBudget(cfg.Effort); budget > 0 {
+			thinking = &wire.AnthropicThinking{Type: "enabled", BudgetTokens: budget}
+		}
 	}
 	// Usage metering is requested only for the native OpenAI streaming surface.
 	// Cloudflare AI Gateway relays to heterogeneous upstreams that may 400 on
 	// the unrecognised field, and a 400 there would break all streaming, not
 	// just metering. The gateway therefore degrades to pure estimation.
 	var streamOpts *wire.OpenAIStreamOptions
-	if stream && cfg.Provider == "openai" {
+	if stream && d.usage {
 		streamOpts = &wire.OpenAIStreamOptions{IncludeUsage: true}
 	}
 
-	switch cfg.Provider {
-	case "cloudflare-workers-ai":
-		return p.NewWorkersAIRequest(cfg.Model, wire.WorkersAIRequest{
+	switch d.kind {
+	case kindWorkersAI:
+		req, err := p.NewWorkersAIRequest(cfg.Model, wire.WorkersAIRequest{
 			Messages: buildOpenAIMessages(system, turns),
 			Stream:   stream,
 			Tools:    openAITools,
 		})
-	case "cloudflare-ai-gateway":
-		if strings.HasPrefix(strings.ToLower(cfg.Model), "claude") {
-			return p.NewGatewayMessagesRequest(wire.AnthropicMessagesRequest{
-				Model:      cfg.Model,
-				MaxTokens:  4096,
-				System:     system,
-				Messages:   buildAnthropicMessages(turns),
-				Stream:     stream,
-				Tools:      anthropicTools,
-				ToolChoice: "auto",
-			})
-		}
-		return p.NewGatewayChatRequest(wire.OpenAIChatRequest{
-			Model:      cfg.Model,
-			Messages:   buildOpenAIMessages(system, turns),
-			Stream:     stream,
-			Tools:      openAITools,
-			ToolChoice: "auto",
-		})
-	case "anthropic":
-		return p.NewMessagesRequest(wire.AnthropicMessagesRequest{
+		return req, d, err
+	case kindAnthropicMessages:
+		req, err := d.messagesRequest(p, wire.AnthropicMessagesRequest{
 			Model:      cfg.Model,
 			MaxTokens:  4096,
 			System:     system,
@@ -364,8 +357,9 @@ func buildRequest(cfg Config, system string, turns []Turn, stream bool, openAITo
 			ToolChoice: "auto",
 			Thinking:   thinking,
 		})
+		return req, d, err
 	default:
-		return p.NewChatRequest(wire.OpenAIChatRequest{
+		req, err := d.chatRequest(p, wire.OpenAIChatRequest{
 			Model:           cfg.Model,
 			Messages:        buildOpenAIMessages(system, turns),
 			Stream:          stream,
@@ -374,6 +368,7 @@ func buildRequest(cfg Config, system string, turns []Turn, stream bool, openAITo
 			ReasoningEffort: reasoningEffort,
 			StreamOptions:   streamOpts,
 		})
+		return req, d, err
 	}
 }
 
@@ -397,22 +392,17 @@ func SendTurnsWithTools(cfg Config, system string, turns []Turn, client *http.Cl
 	if client == nil {
 		client = http.DefaultClient
 	}
-	req, err := buildRequest(cfg, system, turns, false, openAITools, anthropicTools)
+	req, d, err := buildRequest(cfg, system, turns, false, openAITools, anthropicTools)
 	if err != nil {
 		return Assistant{}, err
 	}
 	redact := func(s string) string {
 		return strings.ReplaceAll(s, cfg.APIKey, "<redacted>")
 	}
-	switch cfg.Provider {
-	case "cloudflare-workers-ai":
+	switch d.kind {
+	case kindWorkersAI:
 		return parseWorkersAI(client, req, redact)
-	case "cloudflare-ai-gateway":
-		if strings.HasPrefix(strings.ToLower(cfg.Model), "claude") {
-			return parseAnthropic(client, req, redact)
-		}
-		return parseOpenAIChat(client, req, redact)
-	case "anthropic":
+	case kindAnthropicMessages:
 		return parseAnthropic(client, req, redact)
 	default:
 		return parseOpenAIChat(client, req, redact)

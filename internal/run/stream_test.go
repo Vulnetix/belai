@@ -339,3 +339,38 @@ func TestStreamNoUsageIsNil(t *testing.T) {
 		t.Fatalf("no-usage stream must end with nil usage, got %+v (done=%v)", usage, sawDone)
 	}
 }
+
+func TestStreamGatewayClaudeDecodesAnthropicEvents(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		chunk, _ := json.Marshal(wire.AnthropicStreamEvent{Delta: struct {
+			Type       string `json:"type,omitempty"`
+			Text       string `json:"text,omitempty"`
+			StopReason string `json:"stop_reason,omitempty"`
+		}{Text: "gateway-claude-reply"}})
+		fmt.Fprintf(w, "data: %s\n\n", chunk)
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	defer srv.Close()
+
+	cfg := Config{Provider: "cloudflare-ai-gateway", BaseURL: srv.URL, APIKey: "sk", Model: "claude-sonnet-4-5"}
+	ch, err := Stream(context.Background(), cfg, []Turn{{Role: "user", Content: "hi"}}, srv.Client())
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	var out strings.Builder
+	for c := range ch {
+		if c.Err != nil {
+			t.Fatalf("stream error: %v", c.Err)
+		}
+		if c.Done {
+			break
+		}
+		out.WriteString(c.Text)
+	}
+	if out.String() != "gateway-claude-reply" {
+		t.Fatalf("got %q", out.String())
+	}
+}

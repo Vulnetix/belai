@@ -29,6 +29,15 @@ func TestOpenAIChatMessageToolFieldsOmitEmpty(t *testing.T) {
 	}
 }
 
+func TestSurfacePathUnknownIsEmpty(t *testing.T) {
+	if got := Surface("").Path(); got != "" {
+		t.Fatalf("empty surface Path() = %q, want empty", got)
+	}
+	if got := Surface("bogus").Path(); got != "" {
+		t.Fatalf("bogus surface Path() = %q, want empty", got)
+	}
+}
+
 func TestAnthropicMessagesRequestToolFields(t *testing.T) {
 	req := AnthropicMessagesRequest{
 		Model:      "claude-opus-4",

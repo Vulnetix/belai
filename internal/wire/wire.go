@@ -5,7 +5,6 @@
 package wire
 
 import (
-	"net/http"
 	"strings"
 )
 
@@ -37,20 +36,6 @@ func (s Surface) Path() string {
 // on the base URL.
 func BuildURL(baseURL string, s Surface) string {
 	return strings.TrimRight(baseURL, "/") + s.Path()
-}
-
-// AuthHeaders returns the provider-specific authentication headers.
-// OpenAI-style surfaces use a Bearer token; Anthropic uses x-api-key plus an
-// anthropic-version header.
-func AuthHeaders(s Surface, apiKey string) map[string]string {
-	h := map[string]string{"content-type": "application/json"}
-	if s == SurfaceAnthropicMessages {
-		h["x-api-key"] = apiKey
-		h["anthropic-version"] = "2023-06-01"
-	} else {
-		h["authorization"] = "Bearer " + apiKey
-	}
-	return h
 }
 
 // ---------------------------------------------------------------------------
@@ -270,14 +255,4 @@ type WorkersAIResponse struct {
 	} `json:"result"`
 	Success bool             `json:"success"`
 	Errors  []WorkersAIError `json:"errors"`
-}
-
-// ApplyAuthHeader applies the surface's auth header to an outgoing request.
-func ApplyAuthHeader(req *http.Request, s Surface, apiKey string) {
-	if s == SurfaceAnthropicMessages {
-		req.Header.Set("x-api-key", apiKey)
-		req.Header.Set("anthropic-version", "2023-06-01")
-	} else {
-		req.Header.Set("authorization", "Bearer "+apiKey)
-	}
 }

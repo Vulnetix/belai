@@ -469,7 +469,7 @@ func TestParseAnthropicPopulatesUsageAndStopReason(t *testing.T) {
 
 func TestBuildRequestOmitsEffortWhenUnset(t *testing.T) {
 	cfg := Config{Provider: "openai", BaseURL: "https://api.openai.com/v1", APIKey: "sk", Model: "gpt-5"}
-	req, err := buildRequest(cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, false, nil, nil)
+	req, _, err := buildRequest(cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, false, nil, nil)
 	if err != nil {
 		t.Fatalf("buildRequest: %v", err)
 	}
@@ -481,7 +481,7 @@ func TestBuildRequestOmitsEffortWhenUnset(t *testing.T) {
 
 func TestBuildRequestMapsEffort(t *testing.T) {
 	cfg := Config{Provider: "openai", BaseURL: "https://api.openai.com/v1", APIKey: "sk", Model: "gpt-5", Effort: "high"}
-	req, err := buildRequest(cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, false, nil, nil)
+	req, _, err := buildRequest(cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, false, nil, nil)
 	if err != nil {
 		t.Fatalf("buildRequest: %v", err)
 	}
@@ -491,7 +491,7 @@ func TestBuildRequestMapsEffort(t *testing.T) {
 	}
 
 	cfg2 := Config{Provider: "anthropic", BaseURL: "https://api.anthropic.com", APIKey: "sk", Model: "claude-opus-4-5", Effort: "medium"}
-	req2, err := buildRequest(cfg2, "sys", []Turn{{Role: "user", Content: "hi"}}, false, nil, nil)
+	req2, _, err := buildRequest(cfg2, "sys", []Turn{{Role: "user", Content: "hi"}}, false, nil, nil)
 	if err != nil {
 		t.Fatalf("buildRequest: %v", err)
 	}
@@ -504,5 +504,70 @@ func TestBuildRequestMapsEffort(t *testing.T) {
 func TestDefaultModelAnthropic(t *testing.T) {
 	if got := DefaultModel("anthropic"); got != "claude-opus-4-5" {
 		t.Fatalf("DefaultModel(anthropic) = %q", got)
+	}
+}
+
+func TestBuildRequestURLsUnchanged(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  Config
+		want string
+	}{
+		{"openai", Config{Provider: "openai", BaseURL: "https://api.openai.com/v1", APIKey: "sk", Model: "gpt-5"}, "https://api.openai.com/v1/chat/completions"},
+		{"anthropic", Config{Provider: "anthropic", BaseURL: "https://api.anthropic.com", APIKey: "sk", Model: "claude-opus-4-5"}, "https://api.anthropic.com/v1/messages"},
+		{"workers", Config{Provider: "cloudflare-workers-ai", BaseURL: "https://api.cloudflare.com/client/v4/accounts/acct", APIKey: "sk", Model: "@cf/moonshotai/kimi-k2.6"}, "https://api.cloudflare.com/client/v4/accounts/acct/ai/run/@cf/moonshotai/kimi-k2.6"},
+		{"gateway claude", Config{Provider: "cloudflare-ai-gateway", BaseURL: "https://gateway.ai.cloudflare.com/v1/acct/gw", APIKey: "sk", Model: "claude-sonnet-4-5"}, "https://gateway.ai.cloudflare.com/v1/acct/gw/anthropic/v1/messages"},
+		{"gateway openai", Config{Provider: "cloudflare-ai-gateway", BaseURL: "https://gateway.ai.cloudflare.com/v1/acct/gw", APIKey: "sk", Model: "gpt-5"}, "https://gateway.ai.cloudflare.com/v1/acct/gw/openai/chat/completions"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req, _, err := buildRequest(tc.cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, false, nil, nil)
+			if err != nil {
+				t.Fatalf("buildRequest: %v", err)
+			}
+			if req.URL.String() != tc.want {
+				t.Fatalf("URL = %q, want %q", req.URL.String(), tc.want)
+			}
+		})
+	}
+}
+
+func TestBuildRequestStreamOptionsOnlyForNativeOpenAI(t *testing.T) {
+	req, _, err := buildRequest(Config{Provider: "openai", BaseURL: "https://api.openai.com/v1", APIKey: "sk", Model: "gpt-5"}, "sys", nil, true, nil, nil)
+	if err != nil {
+		t.Fatalf("buildRequest: %v", err)
+	}
+	b, _ := io.ReadAll(req.Body)
+	if !strings.Contains(string(b), "stream_options") {
+		t.Fatalf("native openai streaming must carry stream_options: %s", b)
+	}
+
+	req, _, err = buildRequest(Config{Provider: "cloudflare-ai-gateway", BaseURL: "https://gateway.ai.cloudflare.com/v1/acct/gw", APIKey: "sk", Model: "gpt-5"}, "sys", nil, true, nil, nil)
+	if err != nil {
+		t.Fatalf("buildRequest: %v", err)
+	}
+	b, _ = io.ReadAll(req.Body)
+	if strings.Contains(string(b), "stream_options") {
+		t.Fatalf("gateway streaming must omit stream_options: %s", b)
+	}
+}
+
+func TestBuildRequestThinkingOnlyForNativeAnthropic(t *testing.T) {
+	req, _, err := buildRequest(Config{Provider: "anthropic", BaseURL: "https://api.anthropic.com", APIKey: "sk", Model: "claude-opus-4-5", Effort: "high"}, "sys", nil, false, nil, nil)
+	if err != nil {
+		t.Fatalf("buildRequest: %v", err)
+	}
+	b, _ := io.ReadAll(req.Body)
+	if !strings.Contains(string(b), "thinking") {
+		t.Fatalf("native anthropic with effort must emit thinking: %s", b)
+	}
+
+	req, _, err = buildRequest(Config{Provider: "cloudflare-ai-gateway", BaseURL: "https://gateway.ai.cloudflare.com/v1/acct/gw", APIKey: "sk", Model: "claude-sonnet-4-5", Effort: "high"}, "sys", nil, false, nil, nil)
+	if err != nil {
+		t.Fatalf("buildRequest: %v", err)
+	}
+	b, _ = io.ReadAll(req.Body)
+	if strings.Contains(string(b), "thinking") {
+		t.Fatalf("gateway claude with effort must omit thinking: %s", b)
 	}
 }

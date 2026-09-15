@@ -188,7 +188,7 @@ func TestLiveRequest(t *testing.T) {
 		t.Fatalf("New: %v", err)
 	}
 	var req *http.Request
-	if p.IsAnthropic() {
+	if p.Auth() == AuthXAPIKey {
 		req, err = p.NewMessagesRequest(wire.AnthropicMessagesRequest{Model: "claude-opus-4", MaxTokens: 16, Messages: []wire.AnthropicMessage{{Role: "user", Content: "ping"}}})
 	} else {
 		req, err = p.NewChatRequest(wire.OpenAIChatRequest{Model: "gpt-4o-mini", Messages: []wire.OpenAIChatMessage{{Role: "user", Content: "ping"}}})
@@ -203,5 +203,148 @@ func TestLiveRequest(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		t.Fatalf("live status = %d", resp.StatusCode)
+	}
+}
+
+func TestNewAssignsBuiltinAuth(t *testing.T) {
+	cases := map[string]Auth{
+		"openai":                AuthBearer,
+		"anthropic":             AuthXAPIKey,
+		"cloudflare-workers-ai": AuthBearer,
+		"cloudflare-ai-gateway": AuthCFAIG,
+	}
+	for name, want := range cases {
+		t.Run(name, func(t *testing.T) {
+			p, err := New(name, "https://x.example/v1", "k")
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			if p.Auth() != want {
+				t.Fatalf("Auth() = %q, want %q", p.Auth(), want)
+			}
+		})
+	}
+}
+
+func TestHeadersGoldenForBuiltins(t *testing.T) {
+	ua := "signet/dev (+https://github.com/Vulnetix/signet)"
+	cases := []struct {
+		name string
+		want map[string]string
+	}{
+		{"openai", map[string]string{
+			"content-type":  "application/json",
+			"user-agent":    ua,
+			"authorization": "Bearer sk",
+		}},
+		{"anthropic", map[string]string{
+			"content-type":      "application/json",
+			"user-agent":        ua,
+			"x-api-key":         "sk",
+			"anthropic-version": "2023-06-01",
+		}},
+		{"cloudflare-workers-ai", map[string]string{
+			"content-type":  "application/json",
+			"user-agent":    ua,
+			"authorization": "Bearer sk",
+		}},
+		{"cloudflare-ai-gateway", map[string]string{
+			"content-type":         "application/json",
+			"user-agent":           ua,
+			"cf-aig-authorization": "Bearer sk",
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := New(tc.name, "https://x.example/v1", "sk")
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			got := p.Headers()
+			if len(got) != len(tc.want) {
+				t.Fatalf("Headers() = %v, want %v", got, tc.want)
+			}
+			for k, v := range tc.want {
+				if got[k] != v {
+					t.Fatalf("Headers()[%q] = %q, want %q", k, got[k], v)
+				}
+			}
+		})
+	}
+}
+
+func TestNewStillRejectsUnknownName(t *testing.T) {
+	if _, err := New("gemini", "https://x.example/v1", "k"); err == nil || !strings.Contains(err.Error(), "unsupported provider") {
+		t.Fatalf("error = %v, want unsupported provider", err)
+	}
+}
+
+func TestNewFromProfileRejectsBuiltinName(t *testing.T) {
+	_, err := NewFromProfile("openai", Profile{BaseURL: "https://evil.example/v1", API: wire.SurfaceOpenAIChat, Auth: AuthBearer}, "k")
+	if err == nil || !strings.Contains(err.Error(), "built-in") {
+		t.Fatalf("error = %v, want built-in rejection", err)
+	}
+}
+
+func TestNewFromProfileRejectsInvalidName(t *testing.T) {
+	for _, name := range []string{"", "My-LLM", "a b", "a:b", "../x", "-lead"} {
+		t.Run(name, func(t *testing.T) {
+			_, err := NewFromProfile(name, Profile{BaseURL: "https://x.example/v1", API: wire.SurfaceOpenAIChat, Auth: AuthBearer}, "k")
+			if err == nil || !strings.Contains(err.Error(), "invalid custom provider name") {
+				t.Fatalf("error = %v, want invalid custom provider name", err)
+			}
+		})
+	}
+}
+
+func TestNewFromProfileRejectsUnknownAuth(t *testing.T) {
+	_, err := NewFromProfile("my-llm", Profile{BaseURL: "https://x.example/v1", API: wire.SurfaceOpenAIChat, Auth: Auth("digest")}, "k")
+	if err == nil || !strings.Contains(err.Error(), "unknown auth style") {
+		t.Fatalf("error = %v, want unknown auth style", err)
+	}
+}
+
+func TestNewFromProfileRejectsUnknownSurface(t *testing.T) {
+	_, err := NewFromProfile("my-llm", Profile{BaseURL: "https://x.example/v1", API: wire.Surface("bogus"), Auth: AuthBearer}, "k")
+	if err == nil || !strings.Contains(err.Error(), "unknown api surface") {
+		t.Fatalf("error = %v, want unknown api surface", err)
+	}
+}
+
+func TestNewFromProfileHeadersPerAuthStyle(t *testing.T) {
+	cases := []struct {
+		auth Auth
+		key  string
+		want string
+	}{
+		{AuthBearer, "authorization", "Bearer k"},
+		{AuthXAPIKey, "x-api-key", "k"},
+		{AuthCFAIG, "cf-aig-authorization", "Bearer k"},
+	}
+	for _, tc := range cases {
+		t.Run(string(tc.auth), func(t *testing.T) {
+			p, err := NewFromProfile("my-llm", Profile{BaseURL: "https://x.example/v1", API: wire.SurfaceOpenAIChat, Auth: tc.auth}, "k")
+			if err != nil {
+				t.Fatalf("NewFromProfile: %v", err)
+			}
+			if got := p.Headers()[tc.key]; got != tc.want {
+				t.Fatalf("Headers()[%q] = %q, want %q", tc.key, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNewFromProfileValidatesBaseURLAndKey(t *testing.T) {
+	_, err := NewFromProfile("my-llm", Profile{BaseURL: "", API: wire.SurfaceOpenAIChat, Auth: AuthBearer}, "k")
+	if err == nil || !strings.Contains(err.Error(), "base_url is required") {
+		t.Fatalf("empty base error = %v", err)
+	}
+	_, err = NewFromProfile("my-llm", Profile{BaseURL: "ftp://x", API: wire.SurfaceOpenAIChat, Auth: AuthBearer}, "k")
+	if err == nil || !strings.Contains(err.Error(), "invalid base_url") {
+		t.Fatalf("bad scheme error = %v", err)
+	}
+	_, err = NewFromProfile("my-llm", Profile{BaseURL: "https://x.example/v1", API: wire.SurfaceOpenAIChat, Auth: AuthBearer}, "")
+	if err == nil || !strings.Contains(err.Error(), "api_key is required") {
+		t.Fatalf("empty key error = %v", err)
 	}
 }
