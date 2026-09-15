@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/signet/internal/permissions"
+	"github.com/vulnetix/signet/internal/resilience"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
 )
@@ -83,6 +84,44 @@ func (s *Session) RunStream(ctx context.Context, history []run.Turn, in TurnInpu
 		ch <- Event{Kind: EventDoneKind, Result: res}
 	}()
 	return ch
+}
+
+// streamTurnRetry attempts a single provider turn up to MaxAttempts times,
+// emitting EventRetryKind between attempts. It delegates to streamTurn for
+// one attempt.
+func (s *Session) streamTurnRetry(ctx context.Context, system string, turns []run.Turn, streaming bool, emit func(Event)) (run.Assistant, error) {
+	maxAttempts := s.settings.Resilience.MaxAttemptsOr(3)
+	policy := resilience.Policy{MaxAttempts: maxAttempts}
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		assistant, err := s.streamTurn(ctx, system, turns, streaming, emit)
+		if err == nil {
+			return assistant, nil
+		}
+		lastErr = err
+		if attempt == maxAttempts {
+			break
+		}
+		verdict := resilience.DefaultClassifier{}.Classify(err)
+		if verdict.Class != resilience.ClassRetryable {
+			return run.Assistant{}, err
+		}
+		retryAfter := time.Duration(0)
+		if rerr, ok := err.(*run.ProviderError); ok {
+			retryAfter = rerr.RetryAfter()
+		}
+		delay := policy.Delay(attempt-1, retryAfter, policy.Rand())
+		emit(Event{
+			Kind:         EventRetryKind,
+			RetryAttempt: attempt + 1,
+			RetryDelay:   delay,
+			RetryReason:  err.Error(),
+		})
+		if sleepErr := policy.Sleep(ctx, delay); sleepErr != nil {
+			return run.Assistant{}, sleepErr
+		}
+	}
+	return run.Assistant{}, lastErr
 }
 
 // streamTurn drains one transport turn into an Assistant, emitting render

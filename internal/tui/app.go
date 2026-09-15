@@ -941,10 +941,12 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		return a.nextAgent()
 	case agent.EventRetryKind:
 		// Dim the current assistant bubble so the user knows it is partial and
-		// will not be replayed into context when the retry starts.
+		// will not be replayed into context when the retry starts. Start a
+		// fresh assistant bubble for the retry output.
 		if len(a.messages) > 0 && a.messages[len(a.messages)-1].Role == "assistant" {
 			a.messages[len(a.messages)-1].Partial = true
 		}
+		a.messages = append(a.messages, components.Message{Role: "assistant"})
 		a.addSystem(fmt.Sprintf("retrying (%d/%d) after %s — %s", m.RetryAttempt, 10, m.RetryDelay.Round(time.Millisecond), m.RetryReason))
 		return a.nextAgent()
 	case agent.EventDoneKind:

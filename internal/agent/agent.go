@@ -157,7 +157,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	turns = append(turns, run.Turn{Role: "user", Content: clean, Attachments: in.Attachments})
 
 	for i := 0; i < s.maxIter; i++ {
-		assistant, err := s.streamTurn(ctx, system, turns, streaming, emit)
+		assistant, err := s.streamTurnRetry(ctx, system, turns, streaming, emit)
 		if err != nil {
 			return run.Result{SanitizedPrompt: clean, SecuritySentinel: dec.Sentinel, ModeDecision: modeDec}, err
 		}
