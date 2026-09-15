@@ -109,6 +109,11 @@ type App struct {
 	events   <-chan agent.Event
 	pending  string // pending prompt to send once configured
 
+	// session display overrides (ctrl+r / ctrl+t), shadowing the resolved
+	// settings without rewriting the settings file.
+	reasoningOverride *bool
+	toolCallsOverride *bool
+
 	// attachments state
 	attachments  map[int]*attachment
 	attachOrder  []int
@@ -591,6 +596,18 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.copyPrompt()
 		case "ctrl+d":
 			return a, tea.Quit
+		case "ctrl+r":
+			a.reasoningOverride = nextBoolPtr(a.reasoningOverride)
+			a.addSystem("reasoning display: " + boolLabel(a.reasoningVisible()))
+			return a, nil
+		case "ctrl+t":
+			a.toolCallsOverride = nextBoolPtr(a.toolCallsOverride)
+			a.addSystem("tool-call display: " + boolLabel(a.toolCallsVisible()))
+			return a, nil
+		case "ctrl+alt+p":
+			a.cycleMode()
+			a.syncPlanMode()
+			return a, nil
 		}
 		if a.view != viewChat {
 			if h, ok := viewHandlers[a.view]; ok {
@@ -1558,4 +1575,34 @@ func nonceHex() string {
 		return "00000000"
 	}
 	return hex.EncodeToString(b[:])
+}
+
+// reasoningVisible reports whether reasoning deltas render, honouring the
+// ctrl+r session override over the resolved setting.
+func (a *App) reasoningVisible() bool {
+	if a.reasoningOverride != nil {
+		return *a.reasoningOverride
+	}
+	return a.settings.ReasoningVisible()
+}
+
+// toolCallsVisible reports whether tool-call rows render, honouring the ctrl+t
+// session override over the resolved setting.
+func (a *App) toolCallsVisible() bool {
+	if a.toolCallsOverride != nil {
+		return *a.toolCallsOverride
+	}
+	return a.settings.ToolCallsVisible()
+}
+
+func nextBoolPtr(b *bool) *bool {
+	if b == nil {
+		t := true
+		return &t
+	}
+	if *b {
+		f := false
+		return &f
+	}
+	return nil
 }
