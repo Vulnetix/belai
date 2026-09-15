@@ -97,12 +97,25 @@ type OpenAIChatUsage struct {
 type OpenAIChatStreamChunk struct {
 	Choices []struct {
 		Delta struct {
-			Role    string `json:"role,omitempty"`
-			Content string `json:"content,omitempty"`
+			Role      string                `json:"role,omitempty"`
+			Content   string                `json:"content,omitempty"`
+			ToolCalls []OpenAIToolCallDelta `json:"tool_calls,omitempty"`
 		} `json:"delta"`
 		FinishReason string `json:"finish_reason,omitempty"`
 	} `json:"choices"`
 	Usage *OpenAIChatUsage `json:"usage,omitempty"`
+}
+
+// OpenAIToolCallDelta is one tool-call fragment in an OpenAI stream delta.
+// Arguments arrive as string fragments and are assembled by index.
+type OpenAIToolCallDelta struct {
+	Index    int    `json:"index"`
+	ID       string `json:"id,omitempty"`
+	Type     string `json:"type,omitempty"`
+	Function struct {
+		Name      string `json:"name,omitempty"`
+		Arguments string `json:"arguments,omitempty"`
+	} `json:"function"`
 }
 
 // ---------------------------------------------------------------------------
@@ -217,15 +230,23 @@ type AnthropicUsage struct {
 
 // AnthropicStreamEvent is one SSE `data:` payload in a streaming messages
 // response. message_start carries input tokens and message_delta carries
-// output tokens; both describe one response.
+// output tokens; both describe one response. content_block_start carries a
+// tool_use block's id/name, and content_block_delta carries text_delta or
+// input_json_delta fragments.
 type AnthropicStreamEvent struct {
 	Type  string `json:"type"`
 	Index *int   `json:"index,omitempty"`
 	Delta struct {
-		Type       string `json:"type,omitempty"`
-		Text       string `json:"text,omitempty"`
-		StopReason string `json:"stop_reason,omitempty"`
+		Type        string `json:"type,omitempty"`
+		Text        string `json:"text,omitempty"`
+		StopReason  string `json:"stop_reason,omitempty"`
+		PartialJSON string `json:"partial_json,omitempty"`
 	} `json:"delta"`
+	ContentBlock *struct {
+		Type string `json:"type,omitempty"`
+		ID   string `json:"id,omitempty"`
+		Name string `json:"name,omitempty"`
+	} `json:"content_block,omitempty"`
 	Message *struct {
 		Usage *AnthropicUsage `json:"usage,omitempty"`
 	} `json:"message,omitempty"`

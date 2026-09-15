@@ -1,0 +1,78 @@
+package run
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestToolAccumulatorOpenAI(t *testing.T) {
+	acc := newToolAccumulator()
+	acc.open(0, "call_1", "Read")
+	acc.appendArgs(0, `{"pa`)
+	acc.appendArgs(0, `th":"x.go"}`)
+
+	call, err := acc.complete(0)
+	if err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	if call.ID != "call_1" || call.Name != "Read" {
+		t.Fatalf("call = %+v", call)
+	}
+	if call.Args["path"] != "x.go" {
+		t.Fatalf("args = %+v", call.Args)
+	}
+}
+
+func TestDecodeOpenAIAccumulatesSplitJSON(t *testing.T) {
+	acc := newToolAccumulator()
+	d := dialect{kind: kindOpenAIChat}
+
+	if _, err := decodeStreamEvent(d, `{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"Read","arguments":"{\"path\":"}}]}}]}`, acc); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, err := decodeStreamEvent(d, `{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"x.go\"}"}}]}}]}`, acc); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	delta, err := decodeStreamEvent(d, `{"choices":[{"finish_reason":"tool_calls"}]}`, acc)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(delta.completed) != 1 {
+		t.Fatalf("completed = %+v", delta.completed)
+	}
+	if delta.completed[0].Args["path"] != "x.go" {
+		t.Fatalf("args = %+v", delta.completed[0].Args)
+	}
+}
+
+func TestDecodeAnthropicAccumulatesToolUse(t *testing.T) {
+	acc := newToolAccumulator()
+	d := dialect{kind: kindAnthropicMessages}
+
+	events := []string{
+		`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"Read"}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"path\":"}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"\"x.go\"}"}}`,
+	}
+	for _, e := range events {
+		if _, err := decodeStreamEvent(d, e, acc); err != nil {
+			t.Fatalf("decode %s: %v", e, err)
+		}
+	}
+	delta, err := decodeStreamEvent(d, `{"type":"content_block_stop","index":0}`, acc)
+	if err != nil {
+		t.Fatalf("decode stop: %v", err)
+	}
+	if len(delta.completed) != 1 || delta.completed[0].ID != "toolu_1" || delta.completed[0].Args["path"] != "x.go" {
+		t.Fatalf("completed = %+v", delta.completed)
+	}
+}
+
+func TestAccumulatorMalformedJSONFailsClosed(t *testing.T) {
+	acc := newToolAccumulator()
+	acc.open(0, "call_1", "Read")
+	acc.appendArgs(0, `{"path":`)
+	if _, err := acc.complete(0); err == nil || !strings.Contains(err.Error(), "malformed tool arguments") {
+		t.Fatalf("expected malformed-tool-arguments error, got %v", err)
+	}
+}

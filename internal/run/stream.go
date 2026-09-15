@@ -6,7 +6,6 @@ package run
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +14,7 @@ import (
 	"github.com/vulnetix/signet/internal/delimiters"
 	"github.com/vulnetix/signet/internal/nonce"
 	"github.com/vulnetix/signet/internal/prompt"
+	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/sanitize"
 	"github.com/vulnetix/signet/internal/transcript"
 	"github.com/vulnetix/signet/internal/wire"
@@ -22,10 +22,12 @@ import (
 
 // Chunk is one piece of a streamed response.
 type Chunk struct {
-	Text  string
-	Err   error
-	Done  bool
-	Usage *transcript.Usage // set on the Done chunk when the provider reported it
+	Text      string
+	ToolCall  *ToolCallDelta // render-only; never carries execution authority
+	Err       error
+	Done      bool
+	Usage     *transcript.Usage // set on the Done chunk when the provider reported it
+	Assistant *Assistant        // set on the Done chunk when the turn completed
 }
 
 // Stream sends a conversation and returns a channel of text deltas.
@@ -48,15 +50,80 @@ func StreamWithPool(ctx context.Context, cfg Config, turns []Turn, client *http.
 		return nil, err
 	}
 
-	sanitized := make([]Turn, len(turns))
+	return streamTurns(ctx, cfg, verifiedSystem, turns, client, pool, nil, nil)
+}
+
+// StreamTurnsWithTools streams a conversation with tool definitions, taking an
+// already-sealed system prompt. Sealing happens once, before the first
+// connect; re-sealing each iteration would mint fresh nonces and invalidate
+// the sealed system block mid-conversation.
+func StreamTurnsWithTools(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, pool *nonce.Pool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (<-chan Chunk, error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	if pool == nil {
+		pool = nonce.New()
+	}
+	return streamTurns(ctx, cfg, system, turns, client, pool, openAITools, anthropicTools)
+}
+
+// SendTurnsStreamed adapts the blocking sender to the same Chunk channel so a
+// caller can consume both transports through one interface.
+func SendTurnsStreamed(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, pool *nonce.Pool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) <-chan Chunk {
+	ch := make(chan Chunk)
+	go func() {
+		defer close(ch)
+		if pool == nil {
+			pool = nonce.New()
+		}
+		turns = egressTurns(turns, pool)
+		a, err := sendTurnsWithTools(cfg, system, turns, client, openAITools, anthropicTools)
+		if err != nil {
+			ch <- Chunk{Err: err, Done: true}
+			return
+		}
+		if a.Text != "" {
+			ch <- Chunk{Text: a.Text}
+		}
+		ch <- Chunk{Done: true, Usage: a.Usage, Assistant: &a}
+	}()
+	return ch
+}
+
+// egressTurns sanitises and egress-verifies every turn, then seals any SAFE
+// attachments into the same turn after the sanitise pass. Tool-call metadata
+// is preserved so the tool round-trip survives. Sanitise/Egress are idempotent
+// on already-processed content.
+func egressTurns(turns []Turn, pool *nonce.Pool) []Turn {
+	out := make([]Turn, len(turns))
 	for i, t := range turns {
-		sanitized[i] = Turn{
-			Role:    t.Role,
-			Content: delimiters.Egress(sanitize.Sanitize(t.Content), pool),
+		content := sanitize.Sanitize(t.Content)
+		for _, att := range t.Attachments {
+			nonceVal, err := pool.Reserve()
+			if err != nil {
+				// Fail closed: drop attachments we cannot seal.
+				continue
+			}
+			body := sanitize.Sanitize(att.Kind + ":" + att.Label + "\n" + att.Body)
+			content += "\n" + delimiters.Wrap(delimiters.KindAttachment, nonceVal, body)
+		}
+		out[i] = Turn{
+			Role:       t.Role,
+			Content:    delimiters.Egress(content, pool),
+			ToolCalls:  t.ToolCalls,
+			ToolCallID: t.ToolCallID,
+			ToolName:   t.ToolName,
 		}
 	}
+	return out
+}
 
-	req, d, err := buildRequest(cfg, verifiedSystem, sanitized, true, nil, nil)
+// streamTurns sends one streaming request with an already-sealed system prompt
+// and drains it into Chunks.
+func streamTurns(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, pool *nonce.Pool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (<-chan Chunk, error) {
+	sanitized := egressTurns(turns, pool)
+
+	req, d, err := buildRequest(cfg, system, sanitized, true, openAITools, anthropicTools)
 	if err != nil {
 		return nil, err
 	}
@@ -81,15 +148,21 @@ func StreamWithPool(ctx context.Context, cfg Config, turns []Turn, client *http.
 		defer resp.Body.Close()
 		scan := bufio.NewScanner(resp.Body)
 		scan.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-		var acc transcript.Usage
+
+		acc := newToolAccumulator()
+		var text strings.Builder
+		var usage *transcript.Usage
+		var calls []rolemanager.ToolCall
+		var stopReason string
+
 		sendDone := func() {
-			var usage *transcript.Usage
-			if acc.PromptTokens != 0 || acc.CompletionTokens != 0 || acc.TotalTokens != 0 {
-				u := acc
-				usage = &u
+			var assistant *Assistant
+			if len(calls) > 0 || stopReason != "" {
+				assistant = &Assistant{Text: text.String(), ToolCalls: calls, Usage: usage, StopReason: stopReason}
 			}
-			ch <- Chunk{Done: true, Usage: usage}
+			ch <- Chunk{Done: true, Usage: usage, Assistant: assistant}
 		}
+
 		for scan.Scan() {
 			line := scan.Text()
 			if !strings.HasPrefix(line, "data: ") {
@@ -100,20 +173,33 @@ func StreamWithPool(ctx context.Context, cfg Config, turns []Turn, client *http.
 				sendDone()
 				return
 			}
-			text, usage, err := decodeDelta(d, data)
+			delta, err := decodeStreamEvent(d, data, acc)
 			if err != nil {
 				ch <- Chunk{Err: err}
 				return
 			}
-			if usage != nil {
-				acc.PromptTokens += usage.PromptTokens
-				acc.CompletionTokens += usage.CompletionTokens
-				if usage.TotalTokens != 0 {
-					acc.TotalTokens = usage.TotalTokens
+			if delta.usage != nil {
+				if usage == nil {
+					usage = &transcript.Usage{}
+				}
+				usage.PromptTokens += delta.usage.PromptTokens
+				usage.CompletionTokens += delta.usage.CompletionTokens
+				if delta.usage.TotalTokens != 0 {
+					usage.TotalTokens = delta.usage.TotalTokens
 				}
 			}
-			if text != "" {
-				ch <- Chunk{Text: text}
+			if delta.text != "" {
+				text.WriteString(delta.text)
+				ch <- Chunk{Text: delta.text}
+			}
+			if delta.toolDelta != nil {
+				ch <- Chunk{ToolCall: delta.toolDelta}
+			}
+			for _, c := range delta.completed {
+				calls = append(calls, c)
+			}
+			if delta.stopReason != "" {
+				stopReason = delta.stopReason
 			}
 			select {
 			case <-ctx.Done():
@@ -127,43 +213,6 @@ func StreamWithPool(ctx context.Context, cfg Config, turns []Turn, client *http.
 		sendDone()
 	}()
 	return ch, nil
-}
-
-// decodeDelta returns the text delta and any usage carried by this SSE
-// payload. A payload may carry usage with no text (OpenAI's final usage chunk,
-// Anthropic's message_start). Workers AI keeps decoding OpenAI chunks exactly
-// as it always has.
-func decodeDelta(d dialect, data string) (string, *transcript.Usage, error) {
-	if d.kind == kindAnthropicMessages {
-		var ev wire.AnthropicStreamEvent
-		if err := json.Unmarshal([]byte(data), &ev); err != nil {
-			return "", nil, err
-		}
-		return ev.Delta.Text, anthropicEventUsage(&ev), nil
-	}
-	var chunk wire.OpenAIChatStreamChunk
-	if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-		return "", nil, err
-	}
-	return openAIDelta(&chunk), openAIChunkUsage(&chunk), nil
-}
-
-func openAIDelta(chunk *wire.OpenAIChatStreamChunk) string {
-	if len(chunk.Choices) > 0 {
-		return chunk.Choices[0].Delta.Content
-	}
-	return ""
-}
-
-func openAIChunkUsage(chunk *wire.OpenAIChatStreamChunk) *transcript.Usage {
-	if chunk.Usage == nil || chunk.Usage.TotalTokens <= 0 {
-		return nil
-	}
-	return &transcript.Usage{
-		PromptTokens:     chunk.Usage.PromptTokens,
-		CompletionTokens: chunk.Usage.CompletionTokens,
-		TotalTokens:      chunk.Usage.TotalTokens,
-	}
 }
 
 func anthropicEventUsage(ev *wire.AnthropicStreamEvent) *transcript.Usage {

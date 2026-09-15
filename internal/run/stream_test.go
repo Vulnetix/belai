@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vulnetix/signet/internal/delimiters"
+	"github.com/vulnetix/signet/internal/nonce"
 	"github.com/vulnetix/signet/internal/provider"
 	"github.com/vulnetix/signet/internal/transcript"
 	"github.com/vulnetix/signet/internal/wire"
@@ -24,17 +26,10 @@ func TestStreamOpenAIChatDeltas(t *testing.T) {
 			t.Fatalf("expected flusher")
 		}
 		for _, word := range []string{"hello", " world"} {
-			chunk, _ := json.Marshal(wire.OpenAIChatStreamChunk{
-				Choices: []struct {
-					Delta struct {
-						Role    string `json:"role,omitempty"`
-						Content string `json:"content,omitempty"`
-					} `json:"delta"`
-					FinishReason string `json:"finish_reason,omitempty"`
-				}{{Delta: struct {
-					Role    string `json:"role,omitempty"`
-					Content string `json:"content,omitempty"`
-				}{Content: word}}},
+			chunk, _ := json.Marshal(map[string]any{
+				"choices": []any{map[string]any{
+					"delta": map[string]any{"content": word},
+				}},
 			})
 			fmt.Fprintf(w, "data: %s\n\n", chunk)
 			flusher.Flush()
@@ -68,11 +63,7 @@ func TestStreamAnthropicDeltas(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher, _ := w.(http.Flusher)
-		chunk, _ := json.Marshal(wire.AnthropicStreamEvent{Delta: struct {
-			Type       string `json:"type,omitempty"`
-			Text       string `json:"text,omitempty"`
-			StopReason string `json:"stop_reason,omitempty"`
-		}{Text: "anthropic-reply"}})
+		chunk, _ := json.Marshal(map[string]any{"type": "content_block_delta", "delta": map[string]any{"type": "text_delta", "text": "anthropic-reply"}})
 		fmt.Fprintf(w, "data: %s\n\n", chunk)
 		fmt.Fprint(w, "data: [DONE]\n\n")
 		flusher.Flush()
@@ -103,17 +94,10 @@ func TestStreamWorkersAI(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher, _ := w.(http.Flusher)
-		chunk, _ := json.Marshal(wire.OpenAIChatStreamChunk{
-			Choices: []struct {
-				Delta struct {
-					Role    string `json:"role,omitempty"`
-					Content string `json:"content,omitempty"`
-				} `json:"delta"`
-				FinishReason string `json:"finish_reason,omitempty"`
-			}{{Delta: struct {
-				Role    string `json:"role,omitempty"`
-				Content string `json:"content,omitempty"`
-			}{Content: "workers-reply"}}},
+		chunk, _ := json.Marshal(map[string]any{
+			"choices": []any{map[string]any{
+				"delta": map[string]any{"content": "workers-reply"},
+			}},
 		})
 		fmt.Fprintf(w, "data: %s\n\n", chunk)
 		fmt.Fprint(w, "data: [DONE]\n\n")
@@ -345,11 +329,7 @@ func TestStreamGatewayClaudeDecodesAnthropicEvents(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher, _ := w.(http.Flusher)
-		chunk, _ := json.Marshal(wire.AnthropicStreamEvent{Delta: struct {
-			Type       string `json:"type,omitempty"`
-			Text       string `json:"text,omitempty"`
-			StopReason string `json:"stop_reason,omitempty"`
-		}{Text: "gateway-claude-reply"}})
+		chunk, _ := json.Marshal(map[string]any{"type": "content_block_delta", "delta": map[string]any{"type": "text_delta", "text": "gateway-claude-reply"}})
 		fmt.Fprintf(w, "data: %s\n\n", chunk)
 		fmt.Fprint(w, "data: [DONE]\n\n")
 		flusher.Flush()
@@ -376,15 +356,41 @@ func TestStreamGatewayClaudeDecodesAnthropicEvents(t *testing.T) {
 	}
 }
 
+func TestEgressTurnsSealsAttachments(t *testing.T) {
+	pool := nonce.New()
+	if err := pool.Seed(4); err != nil {
+		t.Fatal(err)
+	}
+	turns := []Turn{{
+		Role:    "user",
+		Content: "explain this file",
+		Attachments: []Attachment{
+			{Kind: "file", Label: "README.md", Body: "hello world"},
+		},
+	}}
+	out := egressTurns(turns, pool)
+	body := out[0].Content
+	if !strings.Contains(body, "<attachment ") {
+		t.Fatalf("expected sealed attachment block in %q", body)
+	}
+	// A second Egress pass with the same pool must keep the block.
+	again := delimiters.Egress(body, pool)
+	if again != body {
+		t.Fatalf("second egress changed content")
+	}
+	// A fresh pool (no valid nonces) strips it.
+	fresh := nonce.New()
+	stripped := delimiters.Egress(body, fresh)
+	if strings.Contains(stripped, "<attachment ") {
+		t.Fatalf("expected attachment stripped by fresh pool")
+	}
+}
+
 func TestStreamCustomAnthropicDialectDecodesEvents(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher, _ := w.(http.Flusher)
-		chunk, _ := json.Marshal(wire.AnthropicStreamEvent{Delta: struct {
-			Type       string `json:"type,omitempty"`
-			Text       string `json:"text,omitempty"`
-			StopReason string `json:"stop_reason,omitempty"`
-		}{Text: "custom-anthropic-reply"}})
+		chunk, _ := json.Marshal(map[string]any{"type": "content_block_delta", "delta": map[string]any{"type": "text_delta", "text": "custom-anthropic-reply"}})
 		fmt.Fprintf(w, "data: %s\n\n", chunk)
 		fmt.Fprint(w, "data: [DONE]\n\n")
 		flusher.Flush()

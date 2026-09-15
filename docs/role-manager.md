@@ -37,7 +37,9 @@ The architecture overview lives in [architecture.md](architecture.md).
 | Model picker | `internal/tui` | /model provider tabs, model list, effort, scope | Live |
 | Session store | `internal/session` | Append-only JSONL; TUI owns a live session; /compact forks | Live |
 | Context metering | `internal/transcript` + `internal/modelinfo` | Hybrid usage accounting with context-window registry | Live |
-| Streaming tool calls | `internal/tui` | Render tool-use deltas in the TUI stream | Planned |
+| Streaming tool calls | `internal/tui` | Render tool-use deltas in the TUI stream | Live |
+| File attachments | `internal/tui` | Parse `@file` references, seal SAFE contents as `<attachment>` blocks | Live |
+| Inline shell | `internal/tui` | Execute `!cmd` and round-trip output under the debug profile | Live |
 | Explore-agent launch | — | Auto-launch explore agents for PLAN / GOAL with references | Planned |
 
 ## Trust model
@@ -92,6 +94,19 @@ and agent-less. The invariant holds for all four builders:
 | Agent block | Always empty | Live |
 | User content | Only the single untrusted blob under test | Live |
 | System prompt | The specialised classifier prompt only | Live |
+
+### Attachment admission
+
+`@file` references typed in the TUI are resolved against the working
+directory, read with the bounded `Read` tool, and run through the same
+`sanitize → classify` pipeline as any other untrusted tool result. Only
+`SAFE` attachments are sealed with a fresh nonce from the active pool and
+appended to the user turn as an `<attachment>` block. Rejected attachments are
+shown in the attachment strip and are never sent.
+
+`HasReferences` on `rolemanager.ModeInput` is set when any `SAFE`
+attachment is present, so a goal-classified prompt with attachments engages
+explore mode rather than pursuing immediately.
 
 ### Compaction payload
 
@@ -505,13 +520,14 @@ content.
 | Rule | Behaviour | Status |
 | ---- | --------- | ------ |
 | Block shape | `<kind nonce="…" integrity="…">content</kind>` | Live |
-| Known kinds | `system`, `agent`, `plan`, `goal`, `tools`, `skills`, `hooks` | Live |
+| Known kinds | `system`, `agent`, `plan`, `goal`, `tools`, `skills`, `hooks`, `attachment` | Live |
 | Integrity | `integrity` is lowercase hex SHA-256 of the enclosed content | Live |
 | Nonce | 128-bit CSPRNG; only *reserved* nonces are valid | Live |
 | Egress — missing nonce | Block stripped | Live |
 | Egress — unknown nonce | Block stripped | Live |
 | Egress — integrity mismatch | Block stripped **only when an `integrity` attribute is present and non-empty** | Live |
 | Egress — valid | Block preserved | Live |
+| Egress — `<attachment>` without integrity | Stripped (attachment blocks must carry an integrity attribute) | Live |
 | Egress — nil checker | A nil `NonceChecker` skips nonce validation entirely | Live |
 | Provider nonces | `GET {base_url}/v1/nonces`; fallback only on `ErrUnsupported` (HTTP 401/403/404) | Live |
 | NonceURL | Strips a trailing `/v1` before appending `/v1/nonces` | Live |

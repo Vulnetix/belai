@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,22 +13,30 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/vulnetix/signet/internal/agent"
 	"github.com/vulnetix/signet/internal/clipboard"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
 	"github.com/vulnetix/signet/internal/gitinfo"
 	"github.com/vulnetix/signet/internal/modelinfo"
 	"github.com/vulnetix/signet/internal/models"
+	"github.com/vulnetix/signet/internal/permissions"
+	"github.com/vulnetix/signet/internal/posture"
+	"github.com/vulnetix/signet/internal/profiles"
+	"github.com/vulnetix/signet/internal/prompt"
 	"github.com/vulnetix/signet/internal/provider"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/session"
+	"github.com/vulnetix/signet/internal/tools"
 	"github.com/vulnetix/signet/internal/transcript"
 	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/signet/internal/version"
 )
 
 // Options configures a new TUI app.
@@ -39,10 +48,15 @@ type Options struct {
 	Model    string
 	Prompt   string           // optional seed turn
 	Settings *config.Settings // nil means load from disk
+	Posture  posture.Policy   // posture gates; defaults to posture.Defaults()
+	PlanMode bool
 }
 
-// streamChunkMsg wraps one chunk from the streaming channel.
+// streamChunkMsg wraps one chunk from the streaming channel (legacy text path).
 type streamChunkMsg run.Chunk
+
+// agentEventMsg wraps one agent streaming event.
+type agentEventMsg agent.Event
 
 // copiedMsg reports the result of a clipboard copy.
 type copiedMsg struct{ text string }
@@ -58,6 +72,11 @@ type sessionNamedMsg struct {
 	name string
 	err  error
 }
+
+const (
+	editorMinHeight = 3
+	editorMaxHeight = 12
+)
 
 // App is the Bubble Tea model for the Signet TUI.
 type App struct {
@@ -82,8 +101,18 @@ type App struct {
 	status   run.Status
 	client   *http.Client
 	resolver *credentials.Resolver
-	stream   <-chan run.Chunk
+	posture  posture.Policy
+	planMode bool
+	agent    *agent.Session
+	events   <-chan agent.Event
 	pending  string // pending prompt to send once configured
+
+	// attachments state
+	attachments  map[int]*attachment
+	attachOrder  []int
+	attachSeq    int
+	attachSpin   spinner.Model
+	pendingInput string // prompt held while attachments validate
 
 	// view state
 	view            viewState
@@ -169,27 +198,36 @@ func New(opts Options) *App {
 	cfg, status := run.Prepare(eff.Settings.Model, name, src)
 	cfg.Effort = eff.Settings.Effort
 
+	pol := opts.Posture
+	if len(pol) == 0 {
+		pol = posture.Defaults()
+	}
+
 	store, _ := session.NewStore()
 
 	a := &App{
-		registry:  NewRegistry(workdir),
-		editor:    components.NewEditor(),
-		footer:    components.Footer{Session: "new", Model: cfg.Model, Cost: "$0.00"},
-		mode:      mode,
-		ctx:       context.Background(),
-		cfg:       cfg,
-		status:    status,
-		client:    opts.Client,
-		resolver:  opts.Resolver,
-		pending:   opts.Prompt,
-		workdir:   workdir,
-		settings:  eff.Settings,
-		eff:       eff,
-		flags:     flags,
-		state:     st,
-		vp:        viewport.New(80, 24),
-		store:     store,
-		sessionID: session.MustID(),
+		registry:    NewRegistry(workdir),
+		editor:      components.NewEditor(),
+		footer:      components.Footer{Session: "new", Model: cfg.Model, Cost: "$0.00"},
+		mode:        mode,
+		ctx:         context.Background(),
+		cfg:         cfg,
+		status:      status,
+		client:      opts.Client,
+		resolver:    opts.Resolver,
+		posture:     pol,
+		planMode:    opts.PlanMode,
+		pending:     opts.Prompt,
+		workdir:     workdir,
+		settings:    eff.Settings,
+		eff:         eff,
+		flags:       flags,
+		state:       st,
+		vp:          viewport.New(80, 24),
+		store:       store,
+		sessionID:   session.MustID(),
+		attachments: map[int]*attachment{},
+		attachSpin:  spinner.New(),
 	}
 	if a.status.Configured {
 		a.SetClassifier(run.NewClassifier(a.cfg, a.client))
@@ -290,6 +328,71 @@ func (a *App) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// bannerHeight returns the rendered height of the banner when visible.
+func (a *App) bannerHeight() int {
+	if !a.bannerVisible() {
+		return 0
+	}
+	return lipgloss.Height(components.Banner{
+		Width:   a.width,
+		Version: version.Version,
+		Commit:  version.Commit,
+		Built:   version.BuildDate,
+	}.View())
+}
+
+// footerHeight returns the rendered height of the current footer.
+func (a *App) footerHeight() int {
+	return lipgloss.Height(a.footer.View())
+}
+
+// chromeHeight is the total height consumed by everything except the viewport.
+func (a *App) chromeHeight() int {
+	h := 2 // top+bottom padding from the outer lipgloss frame
+	if a.bannerVisible() {
+		h += a.bannerHeight() + 1 // separator
+	}
+	if len(a.autocomplete) > 0 {
+		h++
+	}
+	h += a.attachStripHeight()
+	h += a.editor.Height() + 1 // editor plus separator before footer
+	h += a.footerHeight()
+	return h
+}
+
+// fitEditor clamps the editor height to [editorMinHeight, editorMaxHeight]
+// based on its logical line count. It returns true if the height changed.
+func (a *App) fitEditor() bool {
+	want := a.editor.LineCount()
+	if want < editorMinHeight {
+		want = editorMinHeight
+	}
+	if want > editorMaxHeight {
+		want = editorMaxHeight
+	}
+	if a.editor.Height() != want {
+		a.editor.SetHeight(want)
+		return true
+	}
+	return false
+}
+
+// relayout recomputes editor and viewport sizes from the current terminal
+// dimensions and transcript state. It is cheap enough to call every frame.
+func (a *App) relayout() {
+	a.fitEditor()
+	if a.width > 4 {
+		a.editor.SetWidth(a.width - 4)
+	}
+	a.vp.Width = a.width - 2
+	vpHeight := a.height - a.chromeHeight()
+	if vpHeight < 5 {
+		vpHeight = 5
+	}
+	a.vp.Height = vpHeight
+}
+
 func (a *App) sendPending() tea.Cmd {
 	prompt := a.pending
 	a.pending = ""
@@ -300,28 +403,114 @@ func (a *App) sendPending() tea.Cmd {
 func (a *App) send(turns []run.Turn) tea.Cmd {
 	if !a.status.Configured {
 		return func() tea.Msg {
-			return streamChunkMsg{Err: fmt.Errorf("%s credentials missing (%s). Type /credentials to configure.", a.cfg.Provider, strings.Join(a.status.Missing, ", ")), Done: true}
+			return agentEventMsg{Kind: agent.EventErrorKind, Err: fmt.Errorf("%s credentials missing (%s). Type /credentials to configure.", a.cfg.Provider, strings.Join(a.status.Missing, ", "))}
 		}
 	}
-	ch, err := run.Stream(a.ctx, a.cfg, turns, a.client)
+	// The last turn is the new user prompt; the rest is history.
+	history := turns
+	var promptText string
+	if n := len(turns); n > 0 && turns[n-1].Role == "user" {
+		promptText = turns[n-1].Content
+		history = turns[:n-1]
+	}
+	sess, err := a.agentSession()
 	if err != nil {
 		return func() tea.Msg {
-			return streamChunkMsg{Err: err, Done: true}
+			return agentEventMsg{Kind: agent.EventErrorKind, Err: err}
 		}
 	}
-	a.stream = ch
+	in := agent.TurnInput{Prompt: promptText}
+	if a.namedAgent != "" {
+		in.ForceAgent = a.namedAgent
+	}
+	if n := len(turns); n > 0 && turns[n-1].Role == "user" {
+		in.Attachments = turns[n-1].Attachments
+		in.HasReferences = len(in.Attachments) > 0
+		for _, att := range turns[n-1].Attachments {
+			if att.Kind == "shell" {
+				in.ForceAgent = profiles.DebugProfile
+				break
+			}
+		}
+	}
+	a.events = sess.RunStream(a.ctx, history, in)
 	a.messages = append(a.messages, components.Message{Role: "assistant"})
-	return a.next()
+	return a.nextAgent()
 }
 
-func (a *App) next() tea.Cmd {
-	return func() tea.Msg {
-		c, ok := <-a.stream
-		if !ok {
-			c.Done = true
-		}
-		return streamChunkMsg(c)
+// submitInput finalises one user prompt, including any SAFE attachments, and
+// starts the agent turn.
+func (a *App) submitInput(input string) tea.Cmd {
+	if !a.modeExplicit {
+		a.classifyMode(input)
 	}
+	a.modeExplicit = false
+
+	var safe []run.Attachment
+	for _, id := range a.attachOrder {
+		att := a.attachments[id]
+		if att.state == attachSafe && att.body != "" {
+			safe = append(safe, run.Attachment{Kind: "file", Label: att.text, Body: att.body})
+		}
+	}
+	a.attachments = map[int]*attachment{}
+	a.attachOrder = nil
+	a.pendingInput = ""
+	a.editor.Reset()
+	a.autocomplete = nil
+
+	firstUser := !a.hasUserMessage()
+	if firstUser && a.shouldAutoName() {
+		a.nameRequested = true
+		return tea.Batch(a.sendWithAttachments(input, safe), a.nameSessionCmd(input))
+	}
+	return a.sendWithAttachments(input, safe)
+}
+
+func (a *App) nextAgent() tea.Cmd {
+	return func() tea.Msg {
+		e, ok := <-a.events
+		if !ok {
+			return agentEventMsg{Kind: agent.EventDoneKind}
+		}
+		return agentEventMsg(e)
+	}
+}
+
+// agentSession builds (or reuses) the agent session for the current
+// config/posture/permissions. It is invalidated whenever any of those change.
+func (a *App) agentSession() (*agent.Session, error) {
+	if a.agent != nil {
+		return a.agent, nil
+	}
+	reg := tools.Default(a.workdir)
+	perms := permissions.From(a.settings.Permissions.Allow, a.settings.Permissions.Ask, a.settings.Permissions.Deny)
+	var promptOpts prompt.Options
+	if a.settings.Caveman != nil && *a.settings.Caveman {
+		promptOpts.Caveman = true
+	}
+	sess, err := agent.NewSession(agent.Options{
+		Cfg:           a.cfg,
+		Client:        a.client,
+		Registry:      reg,
+		Perms:         perms,
+		Posture:       a.posture,
+		PlanMode:      a.planMode,
+		Workdir:       a.workdir,
+		Settings:      a.settings,
+		PromptOptions: promptOpts,
+	})
+	if err != nil {
+		return nil, err
+	}
+	a.agent = sess
+	return sess, nil
+}
+
+// invalidateAgentSession drops the cached agent session so the next send
+// re-resolves the carrier and reseals the system prompt.
+func (a *App) invalidateAgentSession() {
+	a.agent = nil
 }
 
 // Update implements tea.Model.
@@ -330,18 +519,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		a.width = m.Width
 		a.height = m.Height
-		if m.Width > 4 {
-			a.editor.SetWidth(m.Width - 4)
-		}
-		vpHeight := m.Height - 8
-		if a.bannerVisible() {
-			vpHeight -= 6
-		}
-		if vpHeight < 5 {
-			vpHeight = 5
-		}
-		a.vp.Width = m.Width - 2
-		a.vp.Height = vpHeight
+		a.relayout()
 		return a, nil
 
 	case tickMsg:
@@ -352,6 +530,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case streamChunkMsg:
 		return a, a.handleStreamChunk(m)
 
+	case agentEventMsg:
+		return a, a.handleAgentEvent(m)
+
 	case copiedMsg:
 		a.addSystem(m.text)
 		return a, nil
@@ -361,6 +542,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case sessionNamedMsg:
 		return a, a.handleSessionNamed(m)
+
+	case attachValidatedMsg:
+		return a, a.handleAttachValidated(m)
+
+	case shellDoneMsg:
+		return a, a.handleShellDone(m)
 
 	case tea.KeyMsg:
 		// Global keys work on every screen.
@@ -381,7 +568,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	cmd := a.editor.Update(msg)
 	a.autocomplete = a.registry.Complete(a.editor.Value())
-	return a, cmd
+	spin, spinCmd := a.attachSpin.Update(msg)
+	a.attachSpin = spin
+	a.relayout()
+	return a, tea.Batch(cmd, spinCmd)
 }
 
 func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
@@ -394,33 +584,37 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		a.messages = nil
 		return nil
 	case "esc":
+		if a.pendingInput != "" {
+			a.pendingInput = ""
+			return a.submitInput(strings.TrimSpace(a.editor.Value()))
+		}
 		return nil
 	case "enter":
 		input := strings.TrimSpace(a.editor.Value())
-		a.editor.Reset()
-		a.autocomplete = nil
 		if input == "" {
 			return nil
 		}
+		if isShellInput(input) {
+			a.editor.Reset()
+			a.autocomplete = nil
+			return a.handleShell(input)
+		}
 		if strings.HasPrefix(input, "/") {
+			a.editor.Reset()
+			a.autocomplete = nil
 			return a.handleCommand(input)
 		}
-		if !a.modeExplicit {
-			a.classifyMode(input)
+		cmd := a.syncAttachments()
+		if a.hasPendingAttachments() {
+			a.pendingInput = input
+			return tea.Batch(cmd, a.attachSpin.Tick)
 		}
-		a.modeExplicit = false
-		firstUser := !a.hasUserMessage()
-		a.messages = append(a.messages, components.Message{Role: "user", Content: input})
-		a.appendEntry(session.Entry{Type: "user", Role: "user", Content: input})
-		if firstUser && a.shouldAutoName() {
-			a.nameRequested = true
-			return tea.Batch(a.send(a.buildTurns()), a.nameSessionCmd(input))
-		}
-		return a.send(a.buildTurns())
+		return a.submitInput(input)
 	}
 
 	cmd := a.editor.Update(m)
 	a.autocomplete = a.registry.Complete(a.editor.Value())
+	a.relayout()
 	return cmd
 }
 
@@ -437,7 +631,7 @@ func (a *App) handleStreamChunk(m streamChunkMsg) tea.Cmd {
 		a.usageStale = false
 	}
 	if !m.Done {
-		return a.next()
+		return nil
 	}
 	if len(a.messages) > 0 && a.messages[len(a.messages)-1].Role == "assistant" {
 		a.messages[len(a.messages)-1].Usage = m.Usage
@@ -445,6 +639,63 @@ func (a *App) handleStreamChunk(m streamChunkMsg) tea.Cmd {
 	a.appendAssistant(m.Usage)
 	a.refreshFooter()
 	return nil
+}
+
+// handleAgentEvent renders one agent streaming event.
+func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
+	switch m.Kind {
+	case agent.EventErrorKind:
+		a.addSystem("agent error: " + m.Err.Error())
+		return nil
+	case agent.EventTextKind:
+		if len(a.messages) == 0 || a.messages[len(a.messages)-1].Role != "assistant" {
+			a.messages = append(a.messages, components.Message{Role: "assistant"})
+		}
+		a.messages[len(a.messages)-1].Content += m.Text
+		return a.nextAgent()
+	case agent.EventToolCallDeltaKind:
+		// Render-only; no execution authority. The live fragment updates the
+		// pending tool row if one is present.
+		if len(a.messages) > 0 && a.messages[len(a.messages)-1].Role == "tool" {
+			a.messages[len(a.messages)-1].ToolArgs += m.ToolDelta.Args
+		}
+		return a.nextAgent()
+	case agent.EventToolStartKind:
+		a.messages = append(a.messages, components.Message{
+			Role:     "tool",
+			ToolName: m.Tool.Name,
+			ToolArgs: toolArgsString(m.Tool.Args),
+		})
+		return a.nextAgent()
+	case agent.EventToolResultKind:
+		if len(a.messages) > 0 && a.messages[len(a.messages)-1].Role == "tool" {
+			a.messages[len(a.messages)-1].Status = "✓"
+		}
+		return a.nextAgent()
+	case agent.EventPermissionAskKind:
+		a.addSystem("permission ask required for " + m.AskName)
+		return a.nextAgent()
+	case agent.EventDoneKind:
+		if len(a.messages) > 0 && a.messages[len(a.messages)-1].Role == "assistant" {
+			a.messages[len(a.messages)-1].Usage = m.Result.Usage
+		}
+		if m.Result.Usage != nil {
+			a.usage = m.Result.Usage
+			a.usageStale = false
+		}
+		a.appendAssistant(m.Result.Usage)
+		a.refreshFooter()
+		return nil
+	}
+	return nil
+}
+
+func toolArgsString(args map[string]any) string {
+	if len(args) == 0 {
+		return ""
+	}
+	b, _ := json.Marshal(args)
+	return string(b)
 }
 
 // buildTurns renders the live transcript as provider turns. A compacted
@@ -479,8 +730,21 @@ func (a *App) View() string {
 }
 
 func (a *App) chatView() string {
+	a.relayout()
 	var b strings.Builder
 	for _, m := range a.messages {
+		if m.Role == "tool" {
+			b.WriteString("[tool] ")
+			b.WriteString(m.ToolName)
+			if m.ToolArgs != "" {
+				b.WriteString(" " + m.ToolArgs)
+			}
+			if m.Status != "" {
+				b.WriteString(" " + m.Status)
+			}
+			b.WriteString("\n\n")
+			continue
+		}
 		b.WriteString("[" + m.Role + "] ")
 		b.WriteString(m.Content)
 		b.WriteString("\n\n")
@@ -489,13 +753,22 @@ func (a *App) chatView() string {
 
 	var sb strings.Builder
 	if a.bannerVisible() {
-		sb.WriteString(components.Banner{Width: a.width}.View())
+		sb.WriteString(components.Banner{
+			Width:   a.width,
+			Version: version.Version,
+			Commit:  version.Commit,
+			Built:   version.BuildDate,
+		}.View())
 		sb.WriteString("\n")
 	}
 	sb.WriteString(a.vp.View())
 	sb.WriteString("\n")
 	if len(a.autocomplete) > 0 {
 		sb.WriteString("suggestions: " + strings.Join(a.autocomplete, "  ") + "\n")
+	}
+	if len(a.attachments) > 0 {
+		sb.WriteString(a.renderAttachStrip())
+		sb.WriteString("\n")
 	}
 	sb.WriteString(a.editor.View())
 	sb.WriteString("\n")
@@ -612,6 +885,7 @@ func (a *App) refreshProvider() tea.Cmd {
 	a.cfg = cfg
 	a.status = status
 	a.classifier = nil
+	a.invalidateAgentSession()
 	if status.Configured {
 		a.SetClassifier(run.NewClassifier(cfg, a.client))
 	}

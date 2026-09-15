@@ -25,6 +25,8 @@ Harness-generated blocks use tags such as:
 - **Nonce**: a 128-bit CSPRNG value from the nonce pool
   (`internal/nonce`). Only *reserved* nonces are valid; the pool supports
   reserve/release/rotate and falls back to local generation.
+- **Known kinds**: `system`, `agent`, `plan`, `goal`, `tools`, `skills`,
+  `hooks`, and `attachment` (for `@file` / `!shell` contents).
 - **Integrity**: `integrity` is the lowercase hex SHA-256 of the enclosed
   content.
 - **Egress verification** (`internal/delimiters`): before any payload leaves
@@ -64,15 +66,18 @@ writes the provider entry (base URL + key source) with no custom headers.
 
 Interactive default. Profiles (`internal/profiles`, stored under
 `~/.vulnetix/signet/profiles/`) are selectable at startup and mid-session via
-`/profile`.
+`/profile`. Built-in profiles live under the `signet:` namespace; the debug
+profile (`signet:debug`) is automatically engaged for `!cmd` inline-shell
+round-trips. User files cannot shadow a built-in name.
 
 ### Plan mode (read-only)
 
 Mirrors Pi's plan-mode extension:
 
 - Built-in edit/write tools are disabled; other tools remain active.
-- `bash` is restricted to a read-only allowlist (`cat`, `grep`, `find`, `ls`,
-  read-only `git` subcommands such as `status`/`log`/`diff`, `uname`, etc.).
+- `Bash` is registered by default and restricted to a read-only allowlist
+  (`cat`, `grep`, `find`, `ls`, read-only `git` subcommands such as
+  `status`/`log`/`diff`, `uname`, etc.).
   Mutating commands (`rm`, `mv`, `cp`, `mkdir`, `touch`, `git add/commit/push`,
   package installs, `sudo`/`kill`, editors) are blocked.
 - Toggle via `/plan`, `Ctrl+Alt+P`, or `--plan`; `/todos` shows progress.
@@ -201,12 +206,21 @@ Context usage has three degraded renderings:
 | `ctrl+c` | Copy the current prompt to the clipboard (native, then OSC 52) |
 | `ctrl+d` | Quit, unconditionally |
 | `shift+tab` | Cycle mode: agent → plan → goal |
-| `esc` | Close any full-screen view (nested views pop to their parent) |
+| `esc` | Close any full-screen view (nested views pop to their parent); cancels a held submit |
 | `ctrl+l` | Clear the transcript *view* — the session is kept |
+| `ctrl+j` / `alt+enter` | Insert a newline in the prompt editor |
+| `shift+enter` | Insert a newline on terminals that support the kitty keyboard protocol |
 
 `ctrl+l` clears the transcript view; `/clear` (or `/new`) starts a *new* session.
 They are deliberately different: one is cosmetic, the other changes what is
 persisted.
+
+### Prompt syntax
+
+- `@path` or `@"path with spaces"` attaches the contents of a file after
+  classification. Use `@agent:name` to engage a named agent instead.
+- `!cmd` executes a local, read-only `Bash` command and sends the output to
+  the model under the `signet:debug` profile.
 
 ### Slash commands
 

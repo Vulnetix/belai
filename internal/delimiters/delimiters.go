@@ -15,16 +15,21 @@ import (
 	"strings"
 )
 
+// KindAttachment is delimited user-supplied content referenced by @file or
+// !shell and sealed at egress with a nonce from the active pool.
+const KindAttachment = "attachment"
+
 // KnownKinds is the set of harness block kinds the engine manages. Tags with
 // any other kind (e.g. arbitrary HTML in user content) are left untouched.
 var KnownKinds = map[string]bool{
-	"system": true,
-	"agent":  true,
-	"plan":   true,
-	"goal":   true,
-	"tools":  true,
-	"skills": true,
-	"hooks":  true,
+	"system":       true,
+	"agent":        true,
+	"plan":         true,
+	"goal":         true,
+	"tools":        true,
+	"skills":       true,
+	"hooks":        true,
+	KindAttachment: true,
 }
 
 // NonceChecker reports whether a nonce is currently valid (present in the
@@ -80,6 +85,9 @@ var (
 // in their entirety (opening tag, content, and closing tag). Unmatched
 // closing tags of known kinds are removed too; unknown-kind tags are left
 // untouched.
+//
+// <attachment> blocks are handled like other harness kinds: a sealed
+// attachment survives, while an unsealed or forged one is stripped whole.
 func Egress(text string, checker NonceChecker) string {
 	var b strings.Builder
 	pos := 0
@@ -114,7 +122,7 @@ func Egress(text string, checker NonceChecker) string {
 		closeEnd := openEnd + closeLoc[1]
 		content := text[openEnd:closeStart]
 
-		if valid(attrs, content, checker) {
+		if valid(attrs, content, checker, kind) {
 			b.WriteString(text[openStart:closeEnd])
 		}
 		pos = closeEnd
@@ -133,8 +141,11 @@ func stripStrayCloses(s string) string {
 	})
 }
 
-// valid applies the three fail-closed checks to one block.
-func valid(attrs, content string, checker NonceChecker) bool {
+// valid applies the three fail-closed checks to one block. Attachment
+// blocks must carry an integrity attribute because they wrap untrusted
+// content; other kinds retain their historical "nonce only is enough"
+// behaviour for backward compatibility.
+func valid(attrs, content string, checker NonceChecker, kind string) bool {
 	parsed := parseAttrs(attrs)
 	nonce, ok := parsed["nonce"]
 	if !ok || nonce == "" {
@@ -143,10 +154,15 @@ func valid(attrs, content string, checker NonceChecker) bool {
 	if checker != nil && !checker.Valid(nonce) {
 		return false
 	}
-	if integ, present := parsed["integrity"]; present && integ != "" {
-		if integ != Integrity(content) {
+	integ, present := parsed["integrity"]
+	if kind == KindAttachment {
+		if !present || integ == "" {
 			return false
 		}
+		return integ == Integrity(content)
+	}
+	if present && integ != "" {
+		return integ == Integrity(content)
 	}
 	return true
 }

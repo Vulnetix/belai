@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/vulnetix/signet/internal/agent"
 	"github.com/vulnetix/signet/internal/credentials"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
@@ -216,9 +218,9 @@ func TestEnterWithoutCredentialsDoesNotCallProvider(t *testing.T) {
 	a = m.(*App)
 	cmd := a.send(a.buildTurns())
 	msg := cmd()
-	chunk := msg.(streamChunkMsg)
-	if chunk.Err == nil {
-		t.Fatalf("expected error for missing credentials")
+	ev := msg.(agentEventMsg)
+	if ev.Kind != agent.EventErrorKind || ev.Err == nil {
+		t.Fatalf("expected error event, got %+v", ev)
 	}
 	if *transport.called {
 		t.Fatalf("provider should not have been called")
@@ -237,13 +239,7 @@ func (f *fatalTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func TestSendCallsProvider(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		flusher, _ := w.(http.Flusher)
-		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"pong\"}}]}\n\n")
-		fmt.Fprint(w, "data: [DONE]\n\n")
-		flusher.Flush()
-	}))
+	srv := newAgentSSEServer(t, "pong")
 	defer srv.Close()
 
 	src := &fakeCredentialSource{vals: map[string]string{"openai:api_key": "sk-test"}}
@@ -256,23 +252,73 @@ func TestSendCallsProvider(t *testing.T) {
 	a.cfg = cfg
 	a.status = status
 
-	cmd := a.send([]run.Turn{{Role: "user", Content: "ping"}})
-	msg := cmd()
-	for {
-		chunk := msg.(streamChunkMsg)
-		if chunk.Done || chunk.Err != nil {
-			break
-		}
-		m, nextCmd := a.Update(chunk)
-		a = m.(*App)
-		if nextCmd == nil {
-			break
-		}
-		msg = nextCmd()
-	}
+	a = drainAgent(t, a, a.send([]run.Turn{{Role: "user", Content: "ping"}}))
 	if len(a.messages) == 0 || a.messages[len(a.messages)-1].Content != "pong" {
 		t.Fatalf("expected assistant reply 'pong', got %v", a.messages)
 	}
+}
+
+func newAgentSSEServer(t *testing.T, finalReply string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var req struct {
+			Stream   bool `json:"stream"`
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		var system string
+		for _, m := range req.Messages {
+			if m.Role == "system" {
+				system = m.Content
+			}
+		}
+		reply := finalReply
+		if strings.Contains(system, "security classifier") {
+			reply = "SAFE"
+		} else if strings.Contains(system, "operating-mode classifier") {
+			reply = "AGENT"
+		}
+		if req.Stream {
+			w.Header().Set("Content-Type", "text/event-stream")
+			flusher, _ := w.(http.Flusher)
+			fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":%q}}]}\n\n", reply)
+			fmt.Fprint(w, "data: [DONE]\n\n")
+			flusher.Flush()
+			return
+		}
+		b, _ := json.Marshal(map[string]any{
+			"id":     "x",
+			"object": "chat.completion",
+			"choices": []any{map[string]any{
+				"index":         0,
+				"message":       map[string]any{"role": "assistant", "content": reply},
+				"finish_reason": "stop",
+			}},
+		})
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(b)
+	}))
+}
+
+func drainAgent(t *testing.T, a *App, cmd tea.Cmd) *App {
+	t.Helper()
+	for cmd != nil {
+		msg := cmd()
+		if _, ok := msg.(agentEventMsg); !ok {
+			t.Fatalf("unexpected message %T", msg)
+		}
+		m, next := a.Update(msg)
+		a = m.(*App)
+		cmd = next
+	}
+	return a
 }
 
 type fakeCredentialSource struct {
@@ -308,13 +354,7 @@ func TestCredentialViewShowsProvenanceNotSecret(t *testing.T) {
 }
 
 func TestAssistantTurnsAccumulate(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		flusher, _ := w.(http.Flusher)
-		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"pong\"}}]}\n\n")
-		fmt.Fprint(w, "data: [DONE]\n\n")
-		flusher.Flush()
-	}))
+	srv := newAgentSSEServer(t, "pong")
 	defer srv.Close()
 
 	src := &fakeCredentialSource{vals: map[string]string{"openai:api_key": "sk-test"}}
@@ -328,20 +368,7 @@ func TestAssistantTurnsAccumulate(t *testing.T) {
 	a.status = status
 
 	a.messages = append(a.messages, components.Message{Role: "user", Content: "ping"})
-	cmd := a.send(a.buildTurns())
-	msg := cmd()
-	for {
-		chunk := msg.(streamChunkMsg)
-		if chunk.Done || chunk.Err != nil {
-			break
-		}
-		m, nextCmd := a.Update(chunk)
-		a = m.(*App)
-		if nextCmd == nil {
-			break
-		}
-		msg = nextCmd()
-	}
+	a = drainAgent(t, a, a.send(a.buildTurns()))
 
 	a.messages = append(a.messages, components.Message{Role: "user", Content: "ping again"})
 	turns := a.buildTurns()
@@ -712,6 +739,37 @@ func TestChatViewEditorOnOwnLine(t *testing.T) {
 		return
 	}
 	t.Fatal("typed text not rendered in chat view")
+}
+
+func TestEditorGrowsWithNewlines(t *testing.T) {
+	a := New(Options{})
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	base := a.editor.Height()
+	a.editor.SetValue("line1\nline2\nline3\nline4")
+	a.relayout()
+	if a.editor.Height() <= base {
+		t.Fatalf("editor should grow with newlines: %d vs base %d", a.editor.Height(), base)
+	}
+}
+
+func TestEditorHeightClamps(t *testing.T) {
+	a := New(Options{})
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 80})
+	a.editor.SetValue(strings.Repeat("x\n", 50))
+	a.relayout()
+	if a.editor.Height() > editorMaxHeight {
+		t.Fatalf("editor height %d exceeds max %d", a.editor.Height(), editorMaxHeight)
+	}
+}
+
+func TestChromeHeightMatchesRenderedView(t *testing.T) {
+	a := New(Options{})
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	a.relayout()
+	want := a.height - a.vp.Height
+	if a.chromeHeight() != want {
+		t.Fatalf("chromeHeight = %d, want %d (height=%d vp.Height=%d)", a.chromeHeight(), want, a.height, a.vp.Height)
+	}
 }
 
 func TestCredentialViewSetsEnvReference(t *testing.T) {

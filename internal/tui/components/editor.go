@@ -3,6 +3,7 @@ package components
 import (
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -20,6 +21,10 @@ func NewEditor() Editor {
 	ta.ShowLineNumbers = false
 	ta.SetHeight(3)
 	ta.SetWidth(80)
+	ta.KeyMap.InsertNewline = key.NewBinding(
+		key.WithKeys("ctrl+j", "alt+enter"),
+		key.WithHelp("ctrl+j", "newline"),
+	)
 	return Editor{textarea: ta}
 }
 
@@ -44,6 +49,15 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 	e.textarea = m
 	return cmd
 }
+
+// SetHeight sets the editor height.
+func (e *Editor) SetHeight(h int) { e.textarea.SetHeight(h) }
+
+// Height returns the editor height.
+func (e Editor) Height() int { return e.textarea.Height() }
+
+// LineCount returns the number of logical lines in the editor value.
+func (e Editor) LineCount() int { return e.textarea.LineCount() }
 
 // Value returns the current editor contents.
 func (e Editor) Value() string { return e.textarea.Value() }

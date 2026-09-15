@@ -18,9 +18,13 @@ import (
 // Profile is a named agent profile. Its content is carried into the system
 // prompt when the profile is active.
 type Profile struct {
-	Name    string `json:"name"`
-	Content string `json:"content"`
+	Name    string   `json:"name"`
+	Content string   `json:"content"`
+	Tools   []string `json:"tools,omitempty"` // empty means every registered tool
+	Builtin bool     `json:"-"`               // true for harness-supplied profiles
 }
+
+const BuiltinPrefix = "signet:"
 
 var unsafeName = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
 
@@ -30,6 +34,11 @@ func nameFile(name string) (string, error) {
 		return "", fmt.Errorf("invalid profile name %q", name)
 	}
 	return clean + ".json", nil
+}
+
+// IsBuiltin reports whether name is a harness-supplied profile name.
+func IsBuiltin(name string) bool {
+	return strings.HasPrefix(name, BuiltinPrefix)
 }
 
 // Dir returns the profiles directory (~/.signet/profiles).
@@ -43,11 +52,18 @@ func Dir() (string, error) {
 
 // Validate checks a profile's required fields.
 func Validate(p Profile) error {
+	return validate(p, false)
+}
+
+func validate(p Profile, allowBuiltin bool) error {
 	if strings.TrimSpace(p.Name) == "" {
 		return errors.New("profile name is required")
 	}
 	if strings.TrimSpace(p.Content) == "" {
 		return errors.New("profile content is required")
+	}
+	if !allowBuiltin && IsBuiltin(p.Name) {
+		return fmt.Errorf("profile name %q is reserved for built-in profiles", p.Name)
 	}
 	if _, err := nameFile(p.Name); err != nil {
 		return err
@@ -79,8 +95,17 @@ func Save(p Profile) (string, error) {
 	return path, nil
 }
 
-// Load reads a profile by name.
+// Load reads a profile by name. Built-in names resolve from the embedded
+// profile set and never touch disk, so a user file named signet_debug.json
+// cannot shadow the built-in signet:debug profile.
 func Load(name string) (Profile, error) {
+	if IsBuiltin(name) {
+		p, ok := builtinByName(name)
+		if !ok {
+			return Profile{}, fmt.Errorf("unknown built-in profile %q", name)
+		}
+		return p, nil
+	}
 	fn, err := nameFile(name)
 	if err != nil {
 		return Profile{}, err
@@ -108,17 +133,16 @@ func Switch(name string) (Profile, error) {
 	return Load(name)
 }
 
-// List returns all stored profiles, sorted by name.
+// List returns all stored profiles, sorted by name. Built-in profiles are
+// appended after user profiles so they are selectable but cannot be clobbered
+// on disk.
 func List() ([]Profile, error) {
 	dir, err := Dir()
 	if err != nil {
 		return nil, err
 	}
 	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
+	if err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
 	var out []Profile
@@ -134,5 +158,6 @@ func List() ([]Profile, error) {
 		out = append(out, p)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	out = append(out, builtins()...)
 	return out, nil
 }

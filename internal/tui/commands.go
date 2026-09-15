@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/vulnetix/signet/internal/goals"
+	"github.com/vulnetix/signet/internal/profiles"
 )
 
 // Handler runs a slash command with its argument.
@@ -33,8 +34,40 @@ type Registry struct {
 func NewRegistry(workdir string) *Registry {
 	r := &Registry{commands: map[string]Command{}, workdir: workdir}
 
-	r.Register("profile", "switch agent profile", nil, func(a *App, arg string) tea.Cmd {
-		a.addSystem("profile: use /profile <name> to switch")
+	r.Register("profile", "switch agent profile", func() []string {
+		names, _ := profiles.List()
+		out := make([]string, 0, len(names))
+		for _, p := range names {
+			out = append(out, p.Name)
+		}
+		return out
+	}, func(a *App, arg string) tea.Cmd {
+		if arg == "" {
+			names, err := profiles.List()
+			if err != nil {
+				a.addSystem("profile list failed: " + err.Error())
+				return nil
+			}
+			var parts []string
+			for _, p := range names {
+				marker := ""
+				if p.Builtin {
+					marker = " (built-in)"
+				}
+				parts = append(parts, p.Name+marker)
+			}
+			a.addSystem("profiles: " + strings.Join(parts, ", "))
+			return nil
+		}
+		p, err := profiles.Load(arg)
+		if err != nil {
+			a.addSystem("profile: " + err.Error())
+			return nil
+		}
+		a.namedAgent = p.Name
+		a.mode = "agent"
+		a.modeExplicit = true
+		a.addSystem("profile: " + p.Name)
 		return nil
 	})
 	r.Register("model", "pick provider and model", nil, func(a *App, arg string) tea.Cmd {

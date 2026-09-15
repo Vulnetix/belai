@@ -7,6 +7,7 @@ const (
 	KindRead      Kind = "read"
 	KindWebSearch Kind = "web_search"
 	KindWebFetch  Kind = "web_fetch"
+	KindBash      Kind = "bash"
 )
 
 // Result is a tool output.

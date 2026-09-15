@@ -62,8 +62,9 @@ type ProviderModel struct {
 
 // UISettings holds TUI presentation toggles.
 type UISettings struct {
-	Banner    *bool `json:"banner,omitempty"`
-	StatusBar *bool `json:"status_bar,omitempty"`
+	Banner        *bool `json:"banner,omitempty"`
+	StatusBar     *bool `json:"status_bar,omitempty"`
+	KittyKeyboard *bool `json:"kitty_keyboard,omitempty"`
 }
 
 // SessionRetention returns the retention duration, defaulting to 28 days.
@@ -119,6 +120,9 @@ func (s Settings) Override(proj Settings) Settings {
 		}
 		if proj.UI.StatusBar != nil {
 			merged.StatusBar = proj.UI.StatusBar
+		}
+		if proj.UI.KittyKeyboard != nil {
+			merged.KittyKeyboard = proj.UI.KittyKeyboard
 		}
 		out.UI = merged
 	}

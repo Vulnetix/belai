@@ -44,13 +44,24 @@ func (c Config) GoString() string {
 	return fmt.Sprintf("run.Config{Provider:%q, BaseURL:%q, APIKey:%q, Model:%q}", c.Provider, c.BaseURL, "<redacted>", c.Model)
 }
 
+// Attachment is user-referenced content that has already been sanitised and
+// classified SAFE by the caller. It is sealed into its turn at egress, with a
+// nonce from the live pool, so the seal survives the sanitise pass every turn
+// body goes through.
+type Attachment struct {
+	Kind  string // "file" | "shell"
+	Label string // the @path the user typed, or the ! command
+	Body  string
+}
+
 // Turn is one message in a multi-turn conversation.
 type Turn struct {
-	Role       string // "user" | "assistant" | "tool"
-	Content    string
-	ToolCalls  []rolemanager.ToolCall
-	ToolCallID string
-	ToolName   string
+	Role        string // "user" | "assistant" | "tool"
+	Content     string
+	ToolCalls   []rolemanager.ToolCall
+	ToolCallID  string
+	ToolName    string
+	Attachments []Attachment
 }
 
 // ErrNotConfigured is returned when provider credentials are missing.
@@ -399,6 +410,19 @@ func chat(cfg Config, system, user string, client *http.Client) (string, error) 
 	return doChat(cfg, system, []Turn{{Role: "user", Content: user}}, client)
 }
 
+// doChat is the blocking, non-tool classifier/chat shim.
+func doChat(cfg Config, system string, turns []Turn, client *http.Client) (string, error) {
+	return doChatWithPool(cfg, system, turns, client, nil)
+}
+
+func doChatWithPool(cfg Config, system string, turns []Turn, client *http.Client, pool *nonce.Pool) (string, error) {
+	a, err := SendTurnsWithTools(cfg, system, turns, client, pool, nil, nil)
+	if err != nil {
+		return "", err
+	}
+	return a.Text, nil
+}
+
 // NewClassifier returns a rolemanager.Classifier backed by the configured provider.
 func NewClassifier(cfg Config, client *http.Client) rolemanager.Classifier {
 	return rolemanager.ClassifierFunc(func(p rolemanager.ClassifierPayload) (string, error) {
@@ -533,11 +557,22 @@ type Assistant struct {
 // SendTurns sends a conversation and returns the assistant reply, including
 // any tool calls the model emitted.
 func SendTurns(cfg Config, system string, turns []Turn, client *http.Client) (Assistant, error) {
-	return SendTurnsWithTools(cfg, system, turns, client, nil, nil)
+	return SendTurnsWithTools(cfg, system, turns, client, nil, nil, nil)
 }
 
 // SendTurnsWithTools is SendTurns with tool definitions advertised to the model.
-func SendTurnsWithTools(cfg Config, system string, turns []Turn, client *http.Client, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (Assistant, error) {
+// The turns are sanitised and egress-verified before being serialised.
+func SendTurnsWithTools(cfg Config, system string, turns []Turn, client *http.Client, pool *nonce.Pool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (Assistant, error) {
+	if pool == nil {
+		pool = nonce.New()
+	}
+	turns = egressTurns(turns, pool)
+	return sendTurnsWithTools(cfg, system, turns, client, openAITools, anthropicTools)
+}
+
+// sendTurnsWithTools is the core blocking request/response path. The caller
+// must already have sanitised and egress-verified turns.
+func sendTurnsWithTools(cfg Config, system string, turns []Turn, client *http.Client, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (Assistant, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
@@ -556,14 +591,6 @@ func SendTurnsWithTools(cfg Config, system string, turns []Turn, client *http.Cl
 	default:
 		return parseOpenAIChat(client, req, redact)
 	}
-}
-
-func doChat(cfg Config, system string, turns []Turn, client *http.Client) (string, error) {
-	a, err := SendTurns(cfg, system, turns, client)
-	if err != nil {
-		return "", err
-	}
-	return a.Text, nil
 }
 
 func parseWorkersAI(client *http.Client, req *http.Request, redact func(string) string) (Assistant, error) {
@@ -749,14 +776,7 @@ func RunTurnsWithPool(cfg Config, turns []Turn, client *http.Client, pool *nonce
 		return "", err
 	}
 
-	sanitized := make([]Turn, len(turns))
-	for i, t := range turns {
-		sanitized[i] = Turn{
-			Role:    t.Role,
-			Content: delimiters.Egress(sanitize.Sanitize(t.Content), pool),
-		}
-	}
-	return doChat(cfg, verifiedSystem, sanitized, client)
+	return doChatWithPool(cfg, verifiedSystem, turns, client, pool)
 }
 
 // Result captures what the noninteractive pipeline decided and produced.
@@ -765,6 +785,7 @@ type Result struct {
 	SecuritySentinel rolemanager.Sentinel
 	ModeDecision     rolemanager.ModeDecision
 	Reply            string
+	Usage            *transcript.Usage // provider-reported usage on the final turn
 }
 
 // Engage runs the full noninteractive Role Manager pipeline: sanitize, then

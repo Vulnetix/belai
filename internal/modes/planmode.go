@@ -8,6 +8,7 @@ import (
 
 	"github.com/vulnetix/signet/internal/plans"
 	"github.com/vulnetix/signet/internal/session"
+	"github.com/vulnetix/signet/internal/tools"
 )
 
 // PlanOption is the user's choice after a plan is extracted.
@@ -123,7 +124,9 @@ var readOnlyBash = map[string]bool{
 // bashMetacharacters are shell syntax that would let a command escape the
 // allowlist. The bash tool never executes through a shell, but rejecting these
 // before tokenising keeps the gate honest and fails closed.
-const bashMetacharacters = ";&|$`<>\n()"
+const bashMetacharacters = tools.ShellMetacharacters
+
+var _ = tools.ShellMetacharacters // keep the import used when the alias is the only reference
 
 // findUnsafeOptions are find flags that write, delete, or execute. A read-only
 // find may not carry them.

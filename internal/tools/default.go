@@ -1,8 +1,11 @@
 package tools
 
+import "time"
+
 // Default builds the default tool registry for a working directory: Read
-// (bounded to 64 KiB), WebFetch, and WebSearch when a search backend is
-// configured.
+// (bounded to 64 KiB), WebFetch, WebSearch when a search backend is
+// configured, and Bash (read-only by default, gated by permissions and
+// plan-mode allowlists).
 func Default(workdir string) *Registry {
 	var list []Tool
 	list = append(list, &Read{Root: workdir, MaxBytes: 64 * 1024})
@@ -11,5 +14,6 @@ func Default(workdir string) *Registry {
 	if ws.Available() {
 		list = append(list, ws)
 	}
+	list = append(list, &Bash{Root: workdir, Timeout: 30 * time.Second, MaxBytes: 64 * 1024})
 	return NewRegistry(list...)
 }

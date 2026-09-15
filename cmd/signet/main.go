@@ -101,7 +101,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "signet:", err)
 			os.Exit(1)
 		}
-		if err := tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Provider: *provider, Model: *model, Settings: &settings}); err != nil {
+		if err := tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Provider: *provider, Model: *model, Settings: &settings, Posture: pol}); err != nil {
 			fmt.Fprintln(os.Stderr, "signet:", err)
 			os.Exit(1)
 		}
@@ -134,7 +134,7 @@ func runPromptOrTUI(prompt, model, providerName string, detectMode, verbose bool
 		if errors.As(err, &nce) && interactive(isCharDevice(os.Stdout), isCharDevice(os.Stdin), os.Getenv) {
 			fmt.Fprintf(os.Stderr, "signet: no credentials for %s (missing %s). Opening the credential manager…\n",
 				nce.Provider, strings.Join(nce.Missing, ", "))
-			return tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Prompt: prompt, Provider: providerName, Model: model, Settings: &settings})
+			return tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Prompt: prompt, Provider: providerName, Model: model, Settings: &settings, Posture: pol})
 		}
 		// Without a TTY, fail closed naming every location searched.
 		return err

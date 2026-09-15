@@ -8,6 +8,16 @@ import (
 	"github.com/muesli/termenv"
 )
 
+var versionStyle = lipgloss.NewStyle().Faint(true)
+
+func isVersionSentinel(s string) bool {
+	switch s {
+	case "", "dev", "unknown":
+		return true
+	}
+	return false
+}
+
 // PixGrid is a 12×12 pixel cartoon owl rendered with half-blocks (▀).
 // Each text cell shows two pixels; 12 cols × 6 text rows.
 var PixGrid = [12]string{
@@ -38,7 +48,10 @@ var pixColors = map[rune]lipgloss.Color{
 
 // Banner renders the Pix owl + wordmark.
 type Banner struct {
-	Width int
+	Width   int
+	Version string
+	Commit  string
+	Built   string
 }
 
 // View returns the banner. In ASCII/NO_COLOR mode it falls back to plain text.
@@ -47,6 +60,32 @@ func (b Banner) View() string {
 		return b.textView()
 	}
 	return b.pixView()
+}
+
+// versionLine renders one dim line with the build facts that are known.
+// Empty fields and unstamped sentinels are dropped; if nothing is known it
+// returns "" so a bare `go build` shows no line at all.
+func (b Banner) versionLine() string {
+	var parts []string
+	if !isVersionSentinel(b.Version) {
+		parts = append(parts, "v"+b.Version)
+	}
+	if !isVersionSentinel(b.Commit) {
+		parts = append(parts, b.Commit)
+	}
+	if !isVersionSentinel(b.Built) {
+		parts = append(parts, b.Built)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	line := strings.Join(parts, " · ")
+	if b.Width > 0 {
+		line = versionStyle.Copy().MaxWidth(b.Width).Render(line)
+	} else {
+		line = versionStyle.Render(line)
+	}
+	return line
 }
 
 func (b Banner) pixView() string {
@@ -77,9 +116,17 @@ func (b Banner) pixView() string {
 
 	wordmark := lipgloss.NewStyle().Bold(true).Render("SIGNET")
 	lines = append(lines, "", wordmark)
+	if v := b.versionLine(); v != "" {
+		lines = append(lines, v)
+	}
 	return strings.Join(lines, "\n")
 }
 
 func (b Banner) textView() string {
-	return "SIGNET"
+	var out []string
+	out = append(out, "SIGNET")
+	if v := b.versionLine(); v != "" {
+		out = append(out, v)
+	}
+	return strings.Join(out, "\n")
 }

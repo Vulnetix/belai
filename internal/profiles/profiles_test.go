@@ -113,6 +113,73 @@ func TestWizardRejectsInvalidInput(t *testing.T) {
 	}
 }
 
+func TestBuiltinDebugLoads(t *testing.T) {
+	p, err := Load(DebugProfile)
+	if err != nil {
+		t.Fatalf("Load(%s): %v", DebugProfile, err)
+	}
+	if p.Name != DebugProfile {
+		t.Fatalf("Name = %q", p.Name)
+	}
+	if p.Content == "" {
+		t.Fatalf("built-in debug profile should have content")
+	}
+	if !p.Builtin {
+		t.Fatalf("built-in profile should be marked Builtin")
+	}
+}
+
+func TestUserFileCannotShadowBuiltin(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	dir, _ := Dir()
+	_ = os.MkdirAll(dir, 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "signet_debug.json"), []byte(`{"name":"signet_debug","content":"user shadow"}`), 0o600)
+	p, err := Load(DebugProfile)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if p.Content == "user shadow" {
+		t.Fatalf("user file shadowed built-in profile")
+	}
+}
+
+func TestSaveRejectsBuiltinPrefix(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	_, err := Save(Profile{Name: DebugProfile, Content: "x"})
+	if err == nil {
+		t.Fatalf("Save should reject built-in prefix")
+	}
+}
+
+func TestListIncludesBuiltins(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	_, _ = Save(Profile{Name: "alpha", Content: "a"})
+	profiles, err := List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	found := false
+	for _, p := range profiles {
+		if p.Name == DebugProfile {
+			found = true
+			if !p.Builtin {
+				t.Fatalf("builtin marker missing")
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("built-in profile missing from List")
+	}
+}
+
+func TestEveryBuiltinValidates(t *testing.T) {
+	for _, p := range builtins() {
+		if err := validate(p, true); err != nil {
+			t.Fatalf("built-in %q invalid: %v", p.Name, err)
+		}
+	}
+}
+
 func TestLoadRejectsInvalidProfile(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	dir, err := Dir()

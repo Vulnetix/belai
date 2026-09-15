@@ -14,6 +14,7 @@ import (
 type credentialViewState struct {
 	providers   []string
 	selectedIdx int
+	fieldIdx    int // selected field within the selected provider
 	setMode     bool
 	envMode     bool
 	backend     credentials.Source
@@ -46,7 +47,7 @@ func (a *App) credentialView() string {
 			prefix = "> "
 		}
 		b.WriteString(prefix + p + "\n")
-		for _, f := range credentials.Spec(p) {
+		for j, f := range credentials.Spec(p) {
 			v, ok := set.Values[f.Name]
 			status := "missing"
 			from := "—"
@@ -54,7 +55,11 @@ func (a *App) credentialView() string {
 				status = "configured"
 				from = string(v.Source)
 			}
-			b.WriteString(fmt.Sprintf("    %-12s %-12s %s\n", f.Name, status, from))
+			fprefix := "    "
+			if i == a.credentialState.selectedIdx && j == a.credentialState.fieldIdx {
+				fprefix = "  > "
+			}
+			b.WriteString(fmt.Sprintf("%s%-12s %-12s %s\n", fprefix, f.Name, status, from))
 		}
 		if len(set.Notes) > 0 {
 			for _, note := range set.Notes {
@@ -87,8 +92,17 @@ func (a *App) credentialView() string {
 		b.WriteString("\nbackends: " + strings.Join(parts, " · ") + "\n")
 	}
 
-	b.WriteString("\nkeys: s set · e set env ref · c clear · b cycle backend · i import · esc back\n")
+	b.WriteString("\nkeys: s set · e set env ref · c clear · b cycle backend · i import · h/l field · esc back\n")
 	return b.String()
+}
+
+// credentialFieldCount returns the number of settable fields on the currently
+// selected provider. Providers without a spec (e.g. ollama) have none.
+func (a *App) credentialFieldCount() int {
+	if a.credentialState.selectedIdx >= len(a.credentialState.providers) {
+		return 0
+	}
+	return len(credentials.Spec(a.credentialState.providers[a.credentialState.selectedIdx]))
 }
 
 // initCredentialState populates the credential view state.
@@ -121,11 +135,15 @@ func (a *App) handleCredentialKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			val := strings.TrimSpace(a.editor.Value())
 			p := a.credentialState.providers[a.credentialState.selectedIdx]
 			spec := credentials.Spec(p)
+			if a.credentialState.fieldIdx < 0 || a.credentialState.fieldIdx >= len(spec) {
+				a.credentialState.fieldIdx = 0
+			}
 			if len(spec) > 0 && a.resolver != nil {
+				f := spec[a.credentialState.fieldIdx]
 				if a.credentialState.envMode {
-					_ = a.resolver.StoreEnvRef(p, spec[0].Name, val, a.credentialState.backend)
+					_ = a.resolver.StoreEnvRef(p, f.Name, val, a.credentialState.backend)
 				} else {
-					_ = a.resolver.Store(p, spec[0].Name, val, a.credentialState.backend)
+					_ = a.resolver.Store(p, f.Name, val, a.credentialState.backend)
 				}
 			}
 			a.editor.Reset()
@@ -144,22 +162,40 @@ func (a *App) handleCredentialKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "up", "k":
 		if a.credentialState.selectedIdx > 0 {
 			a.credentialState.selectedIdx--
+			a.credentialState.fieldIdx = 0
 		}
 		return a, nil
 	case "down", "j":
 		if a.credentialState.selectedIdx < len(a.credentialState.providers)-1 {
 			a.credentialState.selectedIdx++
+			a.credentialState.fieldIdx = 0
+		}
+		return a, nil
+	case "left", "h":
+		if a.credentialState.fieldIdx > 0 {
+			a.credentialState.fieldIdx--
+		}
+		return a, nil
+	case "right", "l":
+		if n := a.credentialFieldCount(); n > 1 && a.credentialState.fieldIdx < n-1 {
+			a.credentialState.fieldIdx++
 		}
 		return a, nil
 	case "esc":
 		a.pop()
 		return a, nil
 	case "s":
+		if a.credentialFieldCount() == 0 {
+			return a, nil
+		}
 		a.credentialState.setMode = true
 		a.editor.Masked = true
 		_ = a.editor.Focus()
 		return a, nil
 	case "e":
+		if a.credentialFieldCount() == 0 {
+			return a, nil
+		}
 		a.credentialState.envMode = true
 		a.editor.Masked = false
 		_ = a.editor.Focus()

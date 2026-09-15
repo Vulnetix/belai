@@ -66,16 +66,18 @@ func NewSession(o Options) (*Session, error) {
 	}
 	var openAITools []wire.OpenAITool
 	var anthropicTools []wire.AnthropicToolDef
-	if o.Registry != nil {
-		for _, d := range o.Registry.Definitions() {
-			openAITools = append(openAITools, d.OpenAITool())
-			anthropicTools = append(anthropicTools, d.AnthropicTool())
-		}
+	reg := o.Registry
+	if reg == nil {
+		reg = tools.NewRegistry()
+	}
+	for _, d := range reg.Definitions() {
+		openAITools = append(openAITools, d.OpenAITool())
+		anthropicTools = append(anthropicTools, d.AnthropicTool())
 	}
 	return &Session{
 		cfg:            o.Cfg,
 		client:         o.Client,
-		registry:       o.Registry,
+		registry:       reg,
 		perms:          o.Perms,
 		posture:        o.Posture,
 		planMode:       o.PlanMode,
@@ -90,14 +92,30 @@ func NewSession(o Options) (*Session, error) {
 	}, nil
 }
 
-// Result is the outcome of a session run.
-type Result struct {
-	Text string
+// TurnInput is the structured input for one agent turn. It carries the
+// user's prompt plus any attachments and harness-level overrides that the
+// TUI or CLI has already resolved.
+type TurnInput struct {
+	Prompt        string
+	Attachments   []run.Attachment
+	HasReferences bool
+	ForceAgent    string
 }
 
-// Run executes the full pipeline including tool loop.
+// Result is the outcome of a session run.
+// (Kept as a type alias so callers continue to see run.Result.)
+// Run executes the full pipeline including the tool loop, using the blocking
+// transport. It is the CLI path and is byte-identical in behaviour to a
+// drained RunStream.
 func (s *Session) Run(ctx context.Context, userPrompt string) (run.Result, error) {
-	clean := sanitize.Sanitize(userPrompt)
+	return s.run(ctx, nil, TurnInput{Prompt: userPrompt}, false, func(Event) {})
+}
+
+// run is the shared loop body for both transports. Order is identical to the
+// pre-refactor Run: sanitize → Admit → Select → CarrierOptions → SealSystem →
+// bounded loop → CheckToolCalls → executeCall.
+func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, streaming bool, emit func(Event)) (run.Result, error) {
+	clean := sanitize.Sanitize(in.Prompt)
 
 	pipe := rolemanager.NewPipeline(run.NewClassifier(s.cfg, s.client))
 	dec, err := pipe.Admit(clean, s.posture)
@@ -108,9 +126,16 @@ func (s *Session) Run(ctx context.Context, userPrompt string) (run.Result, error
 		return run.Result{SanitizedPrompt: clean}, &rolemanager.RefusalError{Sentinel: dec.Sentinel}
 	}
 
-	modeDec, err := rolemanager.Select(pipe.Classifier, rolemanager.ModeInput{Prompt: clean, GoalLimit: rolemanager.DefaultGoalPromptLengthLimit})
+	modeDec, err := rolemanager.Select(pipe.Classifier, rolemanager.ModeInput{Prompt: clean, GoalLimit: rolemanager.DefaultGoalPromptLengthLimit, HasReferences: in.HasReferences})
 	if err != nil {
 		return run.Result{SanitizedPrompt: clean, SecuritySentinel: dec.Sentinel}, err
+	}
+
+	if in.ForceAgent != "" {
+		modeDec.Mode = modes.ModeAgent
+		modeDec.AgentName = in.ForceAgent
+		modeDec.AppendCarrier = true
+		modeDec.Explore = false
 	}
 
 	opts, _ := CarrierOptions(s.workdir, modeDec, s.state, s.settings)
@@ -125,10 +150,11 @@ func (s *Session) Run(ctx context.Context, userPrompt string) (run.Result, error
 		return run.Result{SanitizedPrompt: clean, SecuritySentinel: dec.Sentinel, ModeDecision: modeDec}, err
 	}
 
-	turns := []run.Turn{{Role: "user", Content: clean}}
+	turns := append([]run.Turn{}, history...)
+	turns = append(turns, run.Turn{Role: "user", Content: clean, Attachments: in.Attachments})
 
 	for i := 0; i < s.maxIter; i++ {
-		assistant, err := run.SendTurnsWithTools(s.cfg, system, turns, s.client, s.openAITools, s.anthropicTools)
+		assistant, err := s.streamTurn(ctx, system, turns, streaming, emit)
 		if err != nil {
 			return run.Result{SanitizedPrompt: clean, SecuritySentinel: dec.Sentinel, ModeDecision: modeDec}, err
 		}
@@ -139,6 +165,7 @@ func (s *Session) Run(ctx context.Context, userPrompt string) (run.Result, error
 				SecuritySentinel: dec.Sentinel,
 				ModeDecision:     modeDec,
 				Reply:            assistant.Text,
+				Usage:            assistant.Usage,
 			}, nil
 		}
 
@@ -156,7 +183,12 @@ func (s *Session) Run(ctx context.Context, userPrompt string) (run.Result, error
 		})
 
 		for _, call := range filtered {
+			if s.permissionDecision(call) == permissions.DecisionAsk {
+				emit(Event{Kind: EventPermissionAskKind, AskName: call.Name})
+			}
+			emit(Event{Kind: EventToolStartKind, Tool: &call})
 			toolResult := s.executeCall(ctx, call)
+			emit(Event{Kind: EventToolResultKind, ToolName: call.Name, ToolResult: toolResult})
 			turns = append(turns, run.Turn{
 				Role:       "tool",
 				Content:    toolResult,

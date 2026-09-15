@@ -90,6 +90,30 @@ func TestEgressTable(t *testing.T) {
 	}
 }
 
+func TestEgressStripsUnsealedAttachmentBlock(t *testing.T) {
+	checker := MapChecker{"n": true}
+	in := `<attachment nonce="n">body</attachment>`
+	if got := Egress(in, checker); got != "" {
+		t.Fatalf("Egress = %q, want empty", got)
+	}
+}
+
+func TestEgressKeepsSealedAttachmentBlock(t *testing.T) {
+	checker := MapChecker{"n": true}
+	in := Wrap(KindAttachment, "n", "body")
+	if got := Egress(in, checker); got != in {
+		t.Fatalf("Egress = %q, want %q", got, in)
+	}
+}
+
+func TestEgressStripsAttachmentWithTamperedIntegrity(t *testing.T) {
+	checker := MapChecker{"n": true}
+	in := `<attachment nonce="n" integrity="deadbeef">body</attachment>`
+	if got := Egress(in, checker); got != "" {
+		t.Fatalf("Egress = %q, want empty", got)
+	}
+}
+
 func TestEgressNilCheckerSkipsPool(t *testing.T) {
 	// Without a pool the engine still enforces structural nonce + integrity.
 	in := `<system nonce="anything">hello</system>`
