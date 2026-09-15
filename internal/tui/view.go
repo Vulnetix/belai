@@ -14,6 +14,7 @@ const (
 	viewPermissions
 	viewModel
 	viewImport
+	viewAgent
 )
 
 // viewHandler is one full-screen view. Chat is the base state and lives
@@ -33,6 +34,7 @@ func init() {
 	viewHandlers[viewPermissions] = viewHandler{name: "permissions", key: (*App).handlePermissionsKey, render: (*App).permissionsView}
 	viewHandlers[viewModel] = viewHandler{name: "model", enter: (*App).enterModel, key: (*App).handleModelKey, render: (*App).modelView}
 	viewHandlers[viewImport] = viewHandler{name: "import", enter: (*App).enterImport, key: (*App).handleImportKey, render: (*App).importView}
+	viewHandlers[viewAgent] = viewHandler{name: "agent", key: (*App).handleAgentKey, render: (*App).agentView}
 }
 
 // push navigates to a full-screen view, remembering the current one on the

@@ -19,6 +19,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/vulnetix/signet/internal/agent"
+	"github.com/vulnetix/signet/internal/agentprofile"
+	"github.com/vulnetix/signet/internal/bgagent"
 	"github.com/vulnetix/signet/internal/clipboard"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
@@ -69,6 +71,16 @@ type compactDoneMsg struct {
 	summary string
 	err     error
 }
+
+// agentBuilderDoneMsg carries the result of an async /agent create run.
+type agentBuilderDoneMsg struct {
+	profile agentprofile.AgentProfile
+	path    string
+	err     error
+}
+
+// bgAgentEventMsg carries one background-agent event into the TUI loop.
+type bgAgentEventMsg bgagent.Event
 
 // sessionNamedMsg carries the result of an async session-naming call.
 type sessionNamedMsg struct {
@@ -182,6 +194,9 @@ type App struct {
 
 	// expandAll disables truncation and shows every message in full.
 	expandAll bool
+
+	// background agent manager
+	bgManager *bgagent.Manager
 }
 
 type tickMsg time.Time
@@ -268,6 +283,7 @@ func New(opts Options) *App {
 	}
 	if a.status.Configured {
 		a.SetClassifier(run.NewClassifier(a.cfg, a.client))
+		a.bgManager = bgagent.NewManager(workdir, a.cfg, a.client, a.settings, a.posture)
 	}
 	a.refreshGitInfo()
 	_ = a.editor.Focus()
@@ -613,6 +629,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case codeReviewDoneMsg:
 		return a, a.handleCodeReviewDone(m)
+
+	case agentBuilderDoneMsg:
+		return a, a.handleAgentBuilderDone(m)
+
+	case bgAgentEventMsg:
+		return a, a.handleBgAgentEvent(m)
 
 	case modelsFetchedMsg:
 		return a, a.handleModelsFetched(m)
@@ -1515,6 +1537,53 @@ func (a *App) handleCodeReviewDone(m codeReviewDoneMsg) tea.Cmd {
 		a.addSystem("code-review:\n" + m.report.Summary)
 	}
 	return nil
+}
+
+// handleAgentBuilderDone renders the result of an async /agent create run.
+func (a *App) handleAgentBuilderDone(m agentBuilderDoneMsg) tea.Cmd {
+	if m.err != nil {
+		a.addSystem("agent builder failed: " + m.err.Error())
+		return nil
+	}
+	a.addSystem("agent saved: " + m.path)
+	return nil
+}
+
+// handleBgAgentEvent appends a background-agent event as a system line.
+func (a *App) handleBgAgentEvent(m bgAgentEventMsg) tea.Cmd {
+	name := m.AgentName
+	switch m.Kind {
+	case agent.EventErrorKind:
+		if m.Err != nil {
+			a.addSystem(fmt.Sprintf("[agent:%s] error: %s", name, m.Err.Error()))
+		}
+	case agent.EventTextKind:
+		a.addSystem(fmt.Sprintf("[agent:%s] %s", name, m.Text))
+	case agent.EventToolStartKind:
+		a.addSystem(fmt.Sprintf("[agent:%s] tool: %s", name, m.ToolName))
+	case agent.EventToolResultKind:
+		a.addSystem(fmt.Sprintf("[agent:%s] result: %s", name, m.ToolResult))
+	case agent.EventDoneKind:
+		a.addSystem(fmt.Sprintf("[agent:%s] done", name))
+	}
+	if inst, ok := a.bgManager.Lookup(name); ok && inst.State != bgagent.StateDone {
+		return a.watchAgentEvents(name)
+	}
+	return nil
+}
+
+func (a *App) watchAgentEvents(name string) tea.Cmd {
+	inst, ok := a.bgManager.Lookup(name)
+	if !ok {
+		return nil
+	}
+	return func() tea.Msg {
+		e, open := <-inst.Events
+		if !open {
+			return bgAgentEventMsg{AgentName: name, Kind: agent.EventDoneKind}
+		}
+		return bgAgentEventMsg(e)
+	}
 }
 
 // ---------------------------------------------------------------------------

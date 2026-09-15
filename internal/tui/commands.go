@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/vulnetix/signet/internal/agentprofile"
 	"github.com/vulnetix/signet/internal/commands"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/goals"
@@ -219,6 +221,95 @@ func NewRegistry(workdir string) *Registry {
 	})
 	r.Register("rename", "rename this session", nil, func(a *App, arg string) tea.Cmd {
 		return a.renameSession(arg)
+	})
+	r.Register("agent", "manage background agents", func() []string {
+		return []string{"create", "list", "start", "stop", "log"}
+	}, func(a *App, arg string) tea.Cmd {
+		if arg == "" {
+			a.addSystem("agent: subcommands: create, list, start <name>, stop <name>, log <name>")
+			return nil
+		}
+		sub, rest, _ := strings.Cut(arg, " ")
+		switch sub {
+		case "create":
+			desc := strings.TrimSpace(rest)
+			if desc == "" {
+				a.addSystem("agent create <description>")
+				return nil
+			}
+			return func() tea.Msg {
+				b := agentprofile.Builder{Classifier: a.classifier, MaxAttempts: 3}
+				p, err := b.Build(context.Background(), desc)
+				if err != nil {
+					return agentBuilderDoneMsg{err: err}
+				}
+				path, err := agentprofile.Save(p)
+				if err != nil {
+					return agentBuilderDoneMsg{err: err}
+				}
+				return agentBuilderDoneMsg{profile: p, path: path}
+			}
+		case "list":
+			return a.push(viewAgent)
+		case "start":
+			name := strings.TrimSpace(rest)
+			if name == "" {
+				a.addSystem("agent start <name>")
+				return nil
+			}
+			if a.bgManager == nil {
+				a.addSystem("agent: no background manager configured")
+				return nil
+			}
+			p, err := agentprofile.Load(name)
+			if err != nil {
+				a.addSystem("agent start: " + err.Error())
+				return nil
+			}
+			if err := a.bgManager.Start(name, p); err != nil {
+				a.addSystem("agent start: " + err.Error())
+				return nil
+			}
+			a.addSystem("agent started: " + name)
+			return a.watchAgentEvents(name)
+		case "stop":
+			name := strings.TrimSpace(rest)
+			if name == "" {
+				a.addSystem("agent stop <name>")
+				return nil
+			}
+			if a.bgManager == nil {
+				a.addSystem("agent: no background manager configured")
+				return nil
+			}
+			if err := a.bgManager.Stop(name); err != nil {
+				a.addSystem("agent stop: " + err.Error())
+				return nil
+			}
+			a.addSystem("agent stopped: " + name)
+			return nil
+		case "log":
+			name := strings.TrimSpace(rest)
+			if name == "" {
+				a.addSystem("agent log <name>")
+				return nil
+			}
+			inst, ok := a.bgManager.Lookup(name)
+			if !ok {
+				a.addSystem("agent log: " + name + " not found")
+				return nil
+			}
+			out := inst.LastOutput()
+			if out == "" {
+				a.addSystem("agent log: " + name + " — no output yet")
+			} else {
+				a.addSystem("agent log: " + name + "\n" + out)
+			}
+			return nil
+		default:
+			a.addSystem("agent: unknown subcommand " + sub)
+			return nil
+		}
 	})
 	// Hidden alias: dispatchable, absent from Names() and autocomplete.
 	r.RegisterHiddenAlias("provider", "model")

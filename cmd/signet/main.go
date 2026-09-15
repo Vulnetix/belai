@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -11,6 +12,8 @@ import (
 	"time"
 
 	"github.com/vulnetix/signet/internal/agent"
+	"github.com/vulnetix/signet/internal/agentprofile"
+	"github.com/vulnetix/signet/internal/bgagent"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
 	"github.com/vulnetix/signet/internal/guardrails"
@@ -50,6 +53,8 @@ func main() {
 	sessionRetentionDays := flag.Int("session-retention-days", 0, "idle session retention in days (default 28)")
 	noPrune := flag.Bool("no-prune", false, "never prune idle sessions")
 	planMode := flag.Bool("plan", false, "start in plan mode (read-only)")
+	agentName := flag.String("agent", "", "start a background agent by name in foreground mode")
+	agentCreate := flag.String("agent-create", "", "create an agent profile from a description and save to disk")
 	flag.Parse()
 
 	if *showVersion {
@@ -103,6 +108,22 @@ func main() {
 		if _, err := guardrails.Configure(os.Getenv); err != nil {
 			fmt.Fprintln(os.Stderr, "signet: guardrails discovery:", err)
 		}
+	}
+
+	if *agentCreate != "" {
+		if err := runAgentCreate(*agentCreate, *model, *provider, workdir, pol, settings); err != nil {
+			fmt.Fprintln(os.Stderr, "signet:", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
+	if *agentName != "" {
+		if err := runAgentForeground(*agentName, *model, *provider, workdir, pol, settings); err != nil {
+			fmt.Fprintln(os.Stderr, "signet:", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
 	}
 
 	if *prompt != "" {
@@ -215,6 +236,59 @@ func runAgent(cfg run.Config, userPrompt string, client *http.Client, pol postur
 
 // pruneSessions removes idle sessions older than the configured retention, in
 // a best-effort goroutine so startup never blocks on it.
+func runAgentCreate(description, model, providerName, workdir string, pol posture.Policy, settings config.Settings) error {
+	resolver, err := credentials.NewResolver(workdir)
+	if err != nil {
+		return err
+	}
+	cfg, err := run.ResolveWithSource(model, providerName, os.Getenv, resolver)
+	if err != nil {
+		return err
+	}
+	classifier := run.NewClassifier(cfg, http.DefaultClient)
+	b := agentprofile.Builder{Classifier: classifier, MaxAttempts: 3}
+	profile, err := b.Build(context.Background(), description)
+	if err != nil {
+		return err
+	}
+	path, err := agentprofile.Save(profile)
+	if err != nil {
+		return err
+	}
+	fmt.Println(path)
+	return nil
+}
+
+func runAgentForeground(name, model, providerName, workdir string, pol posture.Policy, settings config.Settings) error {
+	resolver, err := credentials.NewResolver(workdir)
+	if err != nil {
+		return err
+	}
+	cfg, err := run.ResolveWithSource(model, providerName, os.Getenv, resolver)
+	if err != nil {
+		return err
+	}
+	profile, err := agentprofile.Load(name)
+	if err != nil {
+		return err
+	}
+	mgr := bgagent.NewManager(workdir, cfg, http.DefaultClient, settings, pol)
+	if err := mgr.Start(name, profile); err != nil {
+		return err
+	}
+	inst, ok := mgr.Lookup(name)
+	if !ok {
+		return fmt.Errorf("agent %q not found after start", name)
+	}
+	enc := json.NewEncoder(os.Stdout)
+	for e := range inst.Events {
+		if err := enc.Encode(e); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func pruneSessions(settings config.Settings) {
 	store, err := session.NewStore()
 	if err != nil {

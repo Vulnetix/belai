@@ -9,7 +9,7 @@ import (
 
 func TestRegistryNames(t *testing.T) {
 	r := NewRegistry(t.TempDir())
-	want := []string{"clear", "code-review", "compact", "credentials", "execute", "goal", "help", "mode", "model", "new", "permissions", "plan", "profile", "refine", "rename", "settings", "stay", "todos"}
+	want := []string{"agent", "clear", "code-review", "compact", "credentials", "execute", "goal", "help", "mode", "model", "new", "permissions", "plan", "profile", "refine", "rename", "settings", "stay", "todos"}
 	if !reflect.DeepEqual(r.Names(), want) {
 		t.Fatalf("Names = %v, want %v", r.Names(), want)
 	}
@@ -37,6 +37,15 @@ func TestCompleteAlias(t *testing.T) {
 	r := NewRegistry(t.TempDir())
 	if got := r.Complete("/n"); !reflect.DeepEqual(got, []string{"/new"}) {
 		t.Fatalf("Complete(/n) = %v, want [/new]", got)
+	}
+}
+
+func TestCompleteAgentSubcommands(t *testing.T) {
+	r := NewRegistry(t.TempDir())
+	got := r.Complete("/agent ")
+	want := []string{"/agent create", "/agent list", "/agent log", "/agent start", "/agent stop"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Complete(/agent ) = %v, want %v", got, want)
 	}
 }
 
