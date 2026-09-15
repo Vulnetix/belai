@@ -9,7 +9,7 @@ import (
 
 func TestRegistryNames(t *testing.T) {
 	r := NewRegistry(t.TempDir())
-	want := []string{"code-review", "goal", "plan", "profile", "todos"}
+	want := []string{"code-review", "credentials", "goal", "plan", "profile", "settings", "todos"}
 	if !reflect.DeepEqual(r.Names(), want) {
 		t.Fatalf("Names = %v, want %v", r.Names(), want)
 	}

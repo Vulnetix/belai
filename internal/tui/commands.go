@@ -32,6 +32,10 @@ func NewRegistry(workdir string) *Registry {
 		return names
 	})
 	r.Register("code-review", "run Vulnetix code review", nil)
+	r.Register("settings", "view and edit settings", nil)
+	r.Register("credentials", "manage provider credentials", func() []string {
+		return []string{"openai", "anthropic", "cloudflare-workers-ai", "cloudflare-ai-gateway"}
+	})
 	return r
 }
 

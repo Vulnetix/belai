@@ -6,8 +6,7 @@
 *.dylib
 
 # Build artifacts
-/dist/
-/build/
+/bin/
 
 # Test artifacts
 *.test
@@ -27,9 +26,6 @@ vendor/
 # OS
 .DS_Store
 Thumbs.db
-
-# Session & state (global)
-~/.signet/
 
 # Project-local state
 .vulnetix/

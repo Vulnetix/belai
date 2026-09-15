@@ -1,19 +1,35 @@
-// Package tui implements the Codex-style terminal UI: a message list, a
-// streaming assistant output, a slash-command editor with autocomplete, and a
-// status footer.
 package tui
 
 import (
+	"context"
+	"fmt"
+	"net/http"
+	"os"
 	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/signet/internal/credentials"
 	"github.com/vulnetix/signet/internal/modelselect"
 	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/tui/components"
 )
+
+// Options configures a new TUI app.
+type Options struct {
+	Workdir  string
+	Client   *http.Client
+	Resolver *credentials.Resolver // nil means environment only
+	Provider string
+	Model    string
+	Prompt   string // optional seed turn
+}
+
+// streamChunkMsg wraps one chunk from the streaming channel.
+type streamChunkMsg run.Chunk
 
 // App is the Bubble Tea model for the Signet TUI.
 type App struct {
@@ -23,7 +39,6 @@ type App struct {
 	footer       components.Footer
 	width        int
 	mode         string
-	providerKey  string
 	autocomplete []string
 
 	// mode classification (optional; nil skips auto-detection)
@@ -31,45 +46,128 @@ type App struct {
 	namedAgent  string
 	modeWarning string
 
-	// simulated streaming state
-	streaming  bool
-	words      []string
-	wordIdx    int
-	streamText string
+	// provider & streaming state
+	ctx      context.Context
+	cfg      run.Config
+	status   run.Status
+	client   *http.Client
+	resolver *credentials.Resolver
+	stream   <-chan run.Chunk
+	pending  string // pending prompt to send once configured
+
+	// view state
+	view            viewState
+	credentialState credentialViewState
 }
 
-// NewApp builds a TUI app for a working directory. providerKey may be empty;
-// with no key the app streams a simulated reply so the UI is smoke-testable.
-func NewApp(workdir, providerKey string) *App {
+// New builds a TUI app from Options.
+func New(opts Options) *App {
+	workdir := opts.Workdir
+	if workdir == "" {
+		workdir, _ = os.Getwd()
+	}
+
 	sel, err := modelselect.Restore()
 	if err != nil || sel.Model == "" {
 		sel = modelselect.Default()
 	}
+	if merged, err := config.LoadMerged(workdir); err == nil && merged.Model != "" {
+		sel.Model = merged.Model
+	}
+	if opts.Model != "" {
+		sel.Model = opts.Model
+	}
+
+	src := run.CredentialSource(run.EnvSource(os.Getenv))
+	if opts.Resolver != nil {
+		src = opts.Resolver
+	}
+	name := opts.Provider
+	if name == "" {
+		name = os.Getenv("SIGNET_PROVIDER")
+	}
+	if name == "" {
+		name = os.Getenv("PI_PROVIDER")
+	}
+	cfg, status := run.Prepare(sel.Model, name, src)
+
 	a := &App{
-		registry:    NewRegistry(workdir),
-		editor:      components.NewEditor(),
-		footer:      components.Footer{Session: "new", Model: sel.Model, Cost: "$0.00"},
-		mode:        "agent",
-		providerKey: providerKey,
+		registry: NewRegistry(workdir),
+		editor:   components.NewEditor(),
+		footer:   components.Footer{Session: "new", Model: sel.Model, Cost: "$0.00"},
+		mode:     "agent",
+		ctx:      context.Background(),
+		cfg:      cfg,
+		status:   status,
+		client:   opts.Client,
+		resolver: opts.Resolver,
+		pending:  opts.Prompt,
 	}
 	_ = a.editor.Focus()
+
+	if !status.Configured {
+		a.addSystem(fmt.Sprintf("%s credentials missing (%s). Type /credentials to configure.", cfg.Provider, strings.Join(status.Missing, ", ")))
+	}
+
+	if opts.Prompt != "" && status.Configured {
+		a.messages = append(a.messages, components.Message{Role: "user", Content: opts.Prompt})
+	}
+
+	a.initCredentialState()
 	return a
 }
 
-// SetClassifier installs the operating-mode classifier. When nil, prompts are
-// not auto-classified and the current mode is left unchanged.
+// NewApp is a deprecated shim; use New(Options{}) instead.
+func NewApp(workdir, providerKey string) *App {
+	return New(Options{Workdir: workdir})
+}
+
+// SetClassifier installs the operating-mode classifier.
 func (a *App) SetClassifier(c rolemanager.Classifier) {
 	a.classifier = c
 }
 
-type tickMsg struct{}
-
-func tick() tea.Cmd {
-	return tea.Tick(40*time.Millisecond, func(time.Time) tea.Msg { return tickMsg{} })
+// Init implements tea.Model.
+func (a *App) Init() tea.Cmd {
+	if a.pending != "" && a.status.Configured {
+		return a.sendPending()
+	}
+	return nil
 }
 
-// Init implements tea.Model.
-func (a *App) Init() tea.Cmd { return nil }
+func (a *App) sendPending() tea.Cmd {
+	prompt := a.pending
+	a.pending = ""
+	return a.send([]run.Turn{{Role: "user", Content: prompt}})
+}
+
+// send starts a streaming request with the given conversation turns.
+func (a *App) send(turns []run.Turn) tea.Cmd {
+	if !a.status.Configured {
+		return func() tea.Msg {
+			return streamChunkMsg{Err: fmt.Errorf("%s credentials missing (%s). Type /credentials to configure.", a.cfg.Provider, strings.Join(a.status.Missing, ", ")), Done: true}
+		}
+	}
+	ch, err := run.Stream(a.ctx, a.cfg, turns, a.client)
+	if err != nil {
+		return func() tea.Msg {
+			return streamChunkMsg{Err: err, Done: true}
+		}
+	}
+	a.stream = ch
+	a.messages = append(a.messages, components.Message{Role: "assistant"})
+	return a.next()
+}
+
+func (a *App) next() tea.Cmd {
+	return func() tea.Msg {
+		c, ok := <-a.stream
+		if !ok {
+			c.Done = true
+		}
+		return streamChunkMsg(c)
+	}
+}
 
 // Update implements tea.Model.
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -81,12 +179,29 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 
+	case streamChunkMsg:
+		if m.Err != nil {
+			a.addSystem("provider error: " + m.Err.Error())
+			return a, nil
+		}
+		if len(a.messages) > 0 && a.messages[len(a.messages)-1].Role == "assistant" {
+			a.messages[len(a.messages)-1].Content += m.Text
+		}
+		if !m.Done {
+			return a, a.next()
+		}
+		return a, nil
+
 	case tea.KeyMsg:
+		if a.view == viewCredentials {
+			return a.handleCredentialKey(m)
+		}
+
 		switch m.String() {
 		case "ctrl+c":
 			return a, tea.Quit
 		case "enter":
-			if a.streaming {
+			if a.view != viewChat {
 				return a, nil
 			}
 			input := strings.TrimSpace(a.editor.Value())
@@ -101,14 +216,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			a.classifyMode(input)
 			a.messages = append(a.messages, components.Message{Role: "user", Content: input})
-			return a, a.startStream(replyText(input, a.providerKey))
+			return a, a.send(a.buildTurns())
 		}
-
-	case tickMsg:
-		if a.streaming {
-			return a.advanceStream()
-		}
-		return a, nil
 	}
 
 	cmd := a.editor.Update(msg)
@@ -116,8 +225,114 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return a, cmd
 }
 
+func (a *App) buildTurns() []run.Turn {
+	var turns []run.Turn
+	for _, m := range a.messages {
+		if m.Role == "user" || m.Role == "assistant" {
+			turns = append(turns, run.Turn{Role: m.Role, Content: m.Content})
+		}
+	}
+	return turns
+}
+
+func (a *App) handleCredentialKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if a.credentialState.setMode {
+		switch m.String() {
+		case "esc":
+			a.credentialState.setMode = false
+			a.editor.Masked = false
+			a.editor.Reset()
+			return a, nil
+		case "enter":
+			val := a.editor.Value()
+			p := a.credentialState.providers[a.credentialState.selectedIdx]
+			spec := credentials.Spec(p)
+			if len(spec) > 0 && a.resolver != nil {
+				_ = a.resolver.Store(p, spec[0].Name, val, a.credentialState.backend)
+			}
+			a.editor.Reset()
+			a.editor.Masked = false
+			a.credentialState.setMode = false
+			a.refreshCredentials()
+			// Re-prepare so status reflects the new credential.
+			if a.resolver != nil {
+				cfg, status := run.Prepare(a.cfg.Model, a.cfg.Provider, a.resolver)
+				a.cfg = cfg
+				a.status = status
+			}
+			if a.pending != "" && a.status.Configured {
+				return a, a.sendPending()
+			}
+			return a, nil
+		default:
+			cmd := a.editor.Update(m)
+			return a, cmd
+		}
+	}
+
+	switch m.String() {
+	case "up", "k":
+		if a.credentialState.selectedIdx > 0 {
+			a.credentialState.selectedIdx--
+		}
+		return a, nil
+	case "down", "j":
+		if a.credentialState.selectedIdx < len(a.credentialState.providers)-1 {
+			a.credentialState.selectedIdx++
+		}
+		return a, nil
+	case "esc":
+		a.view = viewChat
+		return a, nil
+	case "s":
+		a.credentialState.setMode = true
+		a.editor.Masked = true
+		_ = a.editor.Focus()
+		return a, nil
+	case "c":
+		if a.resolver != nil {
+			p := a.credentialState.providers[a.credentialState.selectedIdx]
+			for _, f := range credentials.Spec(p) {
+				_ = a.resolver.Clear(p, f.Name, a.credentialState.backend)
+			}
+			a.refreshCredentials()
+		}
+		return a, nil
+	case "b":
+		if a.resolver != nil {
+			backends := a.resolver.Backends()
+			var writable []credentials.Source
+			for _, be := range backends {
+				if be.Writable && be.Available {
+					writable = append(writable, credentials.Source(be.Name))
+				}
+			}
+			if len(writable) == 0 {
+				return a, nil
+			}
+			for i, s := range writable {
+				if s == a.credentialState.backend {
+					a.credentialState.backend = writable[(i+1)%len(writable)]
+					break
+				}
+			}
+		}
+		return a, nil
+	}
+
+	cmd := a.editor.Update(m)
+	return a, cmd
+}
+
 // View implements tea.Model.
 func (a *App) View() string {
+	switch a.view {
+	case viewCredentials:
+		return a.credentialView()
+	case viewSettings:
+		return "Settings view (placeholder)\n\nPress esc to return."
+	}
+
 	list := components.MessageList{Messages: a.messages, Width: a.width}
 	var b strings.Builder
 	b.WriteString(list.View())
@@ -128,31 +343,6 @@ func (a *App) View() string {
 	b.WriteString("\n")
 	b.WriteString(a.footer.View())
 	return lipgloss.NewStyle().Padding(1).Render(b.String())
-}
-
-// startStream begins a word-by-word simulated stream of text.
-func (a *App) startStream(text string) tea.Cmd {
-	a.streaming = true
-	a.words = strings.Fields(text)
-	a.wordIdx = 0
-	a.streamText = ""
-	a.messages = append(a.messages, components.Message{Role: "assistant"})
-	return tick()
-}
-
-// advanceStream appends the next word; when done it stops streaming.
-func (a *App) advanceStream() (tea.Model, tea.Cmd) {
-	if a.wordIdx < len(a.words) {
-		if a.streamText != "" {
-			a.streamText += " "
-		}
-		a.streamText += a.words[a.wordIdx]
-		a.wordIdx++
-		a.messages[len(a.messages)-1].Content = a.streamText
-		return a, tick()
-	}
-	a.streaming = false
-	return a, nil
 }
 
 // handleCommand dispatches a slash command.
@@ -179,6 +369,10 @@ func (a *App) handleCommand(input string) {
 		}
 	case "code-review":
 		a.addSystem("code-review: running Vulnetix CLI (integration point)")
+	case "settings":
+		a.view = viewSettings
+	case "credentials":
+		a.view = viewCredentials
 	default:
 		a.addSystem("unknown command: " + input)
 	}
@@ -218,11 +412,6 @@ func (a *App) classifyMode(input string) {
 	}
 }
 
-// replyText produces the streamed reply. Without a provider key it returns a
-// simulated message; with a key it marks the provider-stream integration point.
-func replyText(input, providerKey string) string {
-	if providerKey == "" {
-		return "This is a simulated streaming reply. Set a provider key to stream from the model."
-	}
-	return "Provider streaming integration point for: " + input
+func (a *App) refreshCredentials() {
+	a.credentialState.sets = nil
 }

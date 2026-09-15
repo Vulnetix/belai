@@ -62,7 +62,7 @@ writes the provider entry (base URL + key source) with no custom headers.
 ### Agent mode
 
 Interactive default. Profiles (`internal/profiles`, stored under
-`~/.signet/profiles/`) are selectable at startup and mid-session via
+`~/.vulnetix/signet/profiles/`) are selectable at startup and mid-session via
 `/profile`.
 
 ### Plan mode (read-only)
@@ -96,8 +96,35 @@ goal; memorised goals are surfaced later through slash-command autocomplete
 ## Session store
 
 `internal/session` persists append-only JSONL session trees
-(`id` + `parentId`) under `~/.signet/sessions/<workdir>/<session>.jsonl`, with
+(`id` + `parentId`) under `~/.vulnetix/signet/sessions/<workdir>/<session>.jsonl`, with
 fork/resume reads (full or partial UUID) and display names.
+
+## Credentials
+
+`internal/credentials` implements layered credential resolution for the four
+supported providers. The resolution order is:
+
+1. **Environment** — preserves existing behaviour exactly.
+2. **Project file** — `<workdir>/.vulnetix/signet/credentials.json`.
+3. **User file** — `~/.vulnetix/signet/credentials.json`.
+4. **`.netrc`** — read-only; never written by Signet.
+5. **Host keychain** — via `zalando/go-keyring`, with a 5-second timeout so a
+   locked D-Bus collection cannot block startup.
+
+The user file may store inline secrets (JSON `{"source":"inline","value":"…"}`)
+when the file mode is `0600` and the containing directory is `0700`. The
+project file may store references (`{"source":"env","name":"OPENAI_API_KEY"}`)
+but **never** inline secrets — a project file lives in whatever repository you
+happen to `cd` into.
+
+When `~/.signet` exists and `~/.vulnetix/signet` does not, `config.Migrate()`
+moves the directory on first startup. A cross-filesystem fallback copies
+recursively and leaves a `.migrated` marker; nothing is deleted.
+
+The TUI credential manager (`/credentials`) shows provenance for every field,
+accepts `s` to set, `c` to clear, and `b` to cycle the write backend. The
+default write backend is the keychain when available, otherwise the user file
+with an explicit confirmation.
 
 ## System prompt
 

@@ -5,6 +5,7 @@ package run
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,6 +28,88 @@ type Config struct {
 	Model    string
 }
 
+func (c Config) String() string {
+	return fmt.Sprintf("{Provider:%s BaseURL:%s APIKey:<redacted> Model:%s}", c.Provider, c.BaseURL, c.Model)
+}
+
+func (c Config) GoString() string {
+	return fmt.Sprintf("run.Config{Provider:%q, BaseURL:%q, APIKey:%q, Model:%q}", c.Provider, c.BaseURL, "<redacted>", c.Model)
+}
+
+// Turn is one message in a multi-turn conversation.
+type Turn struct {
+	Role    string // "user" | "assistant"
+	Content string
+}
+
+// ErrNotConfigured is returned when provider credentials are missing.
+var ErrNotConfigured = errors.New("provider credentials not configured")
+
+// NotConfiguredError carries the details of a missing credential.
+type NotConfiguredError struct {
+	Provider string
+	Missing  []string
+	EnvHints []string
+	Searched []string
+}
+
+func (e *NotConfiguredError) Error() string {
+	return fmt.Sprintf("%s requires %s (looked in: %s)", e.Provider, strings.Join(e.EnvHints, ", "), strings.Join(e.Searched, ", "))
+}
+
+func (e *NotConfiguredError) Is(target error) bool { return target == ErrNotConfigured }
+
+// CredentialSource resolves one provider field.
+type CredentialSource interface {
+	Lookup(provider, field string) (value, origin string, ok bool)
+}
+
+// EnvSource adapts an environment-lookup function to CredentialSource.
+type EnvSource func(string) string
+
+// Lookup implements CredentialSource.
+func (f EnvSource) Lookup(provider, field string) (value, origin string, ok bool) {
+	key := provider + ":" + field
+	switch key {
+	case "openai:api_key":
+		if v := f("OPENAI_API_KEY"); v != "" {
+			return v, "$OPENAI_API_KEY", true
+		}
+	case "anthropic:api_key":
+		if v := f("ANTHROPIC_API_KEY"); v != "" {
+			return v, "$ANTHROPIC_API_KEY", true
+		}
+	case "cloudflare-workers-ai:api_key":
+		if v := f("CLOUDFLARE_API_KEY"); v != "" {
+			return v, "$CLOUDFLARE_API_KEY", true
+		}
+	case "cloudflare-workers-ai:account_id":
+		if v := f("CLOUDFLARE_ACCOUNT_ID"); v != "" {
+			return v, "$CLOUDFLARE_ACCOUNT_ID", true
+		}
+	case "cloudflare-ai-gateway:api_key":
+		if v := f("CLOUDFLARE_API_KEY"); v != "" {
+			return v, "$CLOUDFLARE_API_KEY", true
+		}
+	case "cloudflare-ai-gateway:account_id":
+		if v := f("CLOUDFLARE_ACCOUNT_ID"); v != "" {
+			return v, "$CLOUDFLARE_ACCOUNT_ID", true
+		}
+	case "cloudflare-ai-gateway:gateway_id":
+		if v := f("CLOUDFLARE_GATEWAY_ID"); v != "" {
+			return v, "$CLOUDFLARE_GATEWAY_ID", true
+		}
+	}
+	return "", "", false
+}
+
+// Status reports how a provider's credentials resolved.
+type Status struct {
+	Configured bool
+	Missing    []string
+	Origins    map[string]string // field -> origin description
+}
+
 // DefaultModel returns a sensible model for a provider when none is given.
 func DefaultModel(providerName string) string {
 	switch providerName {
@@ -39,6 +122,80 @@ func DefaultModel(providerName string) string {
 	default:
 		return "gpt-5"
 	}
+}
+
+func normalizeProvider(providerName string) string {
+	name := strings.ToLower(strings.TrimSpace(providerName))
+	if name == "" {
+		return "openai"
+	}
+	return name
+}
+
+// Prepare resolves a provider configuration from a CredentialSource.
+func Prepare(model, providerName string, src CredentialSource) (Config, Status) {
+	name := normalizeProvider(providerName)
+	if model == "" {
+		model = DefaultModel(name)
+	}
+
+	cfg := Config{Provider: name, Model: model}
+	status := Status{Origins: map[string]string{}}
+
+	switch name {
+	case "cloudflare-workers-ai":
+		if key, origin, ok := src.Lookup(name, "api_key"); ok {
+			cfg.APIKey = key
+			status.Origins["api_key"] = origin
+		} else {
+			status.Missing = append(status.Missing, "api_key")
+		}
+		if acct, origin, ok := src.Lookup(name, "account_id"); ok {
+			cfg.BaseURL = "https://api.cloudflare.com/client/v4/accounts/" + acct
+			status.Origins["account_id"] = origin
+		} else {
+			status.Missing = append(status.Missing, "account_id")
+		}
+	case "cloudflare-ai-gateway":
+		var acct string
+		if key, origin, ok := src.Lookup(name, "api_key"); ok {
+			cfg.APIKey = key
+			status.Origins["api_key"] = origin
+		} else {
+			status.Missing = append(status.Missing, "api_key")
+		}
+		if a, origin, ok := src.Lookup(name, "account_id"); ok {
+			acct = a
+			status.Origins["account_id"] = origin
+		} else {
+			status.Missing = append(status.Missing, "account_id")
+		}
+		if gw, origin, ok := src.Lookup(name, "gateway_id"); ok {
+			cfg.BaseURL = "https://gateway.ai.cloudflare.com/v1/" + acct + "/" + gw
+			status.Origins["gateway_id"] = origin
+		} else {
+			status.Missing = append(status.Missing, "gateway_id")
+		}
+	case "anthropic":
+		if key, origin, ok := src.Lookup(name, "api_key"); ok {
+			cfg.APIKey = key
+			status.Origins["api_key"] = origin
+		} else {
+			status.Missing = append(status.Missing, "api_key")
+		}
+		cfg.BaseURL = "https://api.anthropic.com"
+	default:
+		if key, origin, ok := src.Lookup(name, "api_key"); ok {
+			cfg.APIKey = key
+			status.Origins["api_key"] = origin
+		} else {
+			status.Missing = append(status.Missing, "api_key")
+		}
+		cfg.BaseURL = "https://api.openai.com/v1"
+	}
+
+	status.Configured = len(status.Missing) == 0
+	return cfg, status
 }
 
 // Resolve reads provider configuration from environment variables, mirroring
@@ -60,36 +217,29 @@ func Resolve(model, providerName string, env func(string) string) (Config, error
 		model = DefaultModel(name)
 	}
 
-	cfg := Config{Provider: name, Model: model}
-	switch name {
-	case "cloudflare-workers-ai":
-		key, acct := env("CLOUDFLARE_API_KEY"), env("CLOUDFLARE_ACCOUNT_ID")
-		if key == "" || acct == "" {
-			return Config{}, fmt.Errorf("cloudflare-workers-ai requires CLOUDFLARE_API_KEY and CLOUDFLARE_ACCOUNT_ID")
+	cfg, status := Prepare(model, name, EnvSource(env))
+	if !status.Configured {
+		var envHints []string
+		for _, m := range status.Missing {
+			switch cfg.Provider + ":" + m {
+			case "openai:api_key":
+				envHints = append(envHints, "OPENAI_API_KEY")
+			case "anthropic:api_key":
+				envHints = append(envHints, "ANTHROPIC_API_KEY")
+			case "cloudflare-workers-ai:api_key", "cloudflare-ai-gateway:api_key":
+				envHints = append(envHints, "CLOUDFLARE_API_KEY")
+			case "cloudflare-workers-ai:account_id", "cloudflare-ai-gateway:account_id":
+				envHints = append(envHints, "CLOUDFLARE_ACCOUNT_ID")
+			case "cloudflare-ai-gateway:gateway_id":
+				envHints = append(envHints, "CLOUDFLARE_GATEWAY_ID")
+			}
 		}
-		cfg.APIKey = key
-		cfg.BaseURL = "https://api.cloudflare.com/client/v4/accounts/" + acct
-	case "cloudflare-ai-gateway":
-		key, acct, gw := env("CLOUDFLARE_API_KEY"), env("CLOUDFLARE_ACCOUNT_ID"), env("CLOUDFLARE_GATEWAY_ID")
-		if key == "" || acct == "" || gw == "" {
-			return Config{}, fmt.Errorf("cloudflare-ai-gateway requires CLOUDFLARE_API_KEY, CLOUDFLARE_ACCOUNT_ID, and CLOUDFLARE_GATEWAY_ID")
+		return Config{}, &NotConfiguredError{
+			Provider: cfg.Provider,
+			Missing:  status.Missing,
+			EnvHints: envHints,
+			Searched: []string{"environment"},
 		}
-		cfg.APIKey = key
-		cfg.BaseURL = "https://gateway.ai.cloudflare.com/v1/" + acct + "/" + gw
-	case "anthropic":
-		key := env("ANTHROPIC_API_KEY")
-		if key == "" {
-			return Config{}, fmt.Errorf("anthropic requires ANTHROPIC_API_KEY")
-		}
-		cfg.APIKey = key
-		cfg.BaseURL = "https://api.anthropic.com"
-	default:
-		key := env("OPENAI_API_KEY")
-		if key == "" {
-			return Config{}, fmt.Errorf("%s requires OPENAI_API_KEY", name)
-		}
-		cfg.APIKey = key
-		cfg.BaseURL = "https://api.openai.com/v1"
 	}
 
 	if override := strings.TrimSpace(env("SIGNET_BASE_URL")); override != "" {
@@ -100,54 +250,99 @@ func Resolve(model, providerName string, env func(string) string) (Config, error
 
 // chat sends a raw system+user exchange and returns the assistant reply text.
 func chat(cfg Config, system, user string, client *http.Client) (string, error) {
+	return doChat(cfg, system, []Turn{{Role: "user", Content: user}}, client)
+}
+
+// buildRequest creates the sealed HTTP request for a provider.
+// It is the single place where a chat/completions request is built,
+// guarding against the streaming path drifting from the sealed path.
+func buildRequest(cfg Config, system string, turns []Turn, stream bool) (*http.Request, error) {
 	p, err := provider.New(cfg.Provider, cfg.BaseURL, cfg.APIKey)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	var req *http.Request
+
 	switch cfg.Provider {
 	case "cloudflare-workers-ai":
-		req, err = p.NewWorkersAIRequest(cfg.Model, wire.WorkersAIRequest{Messages: chatMessages(system, user)})
-		if err != nil {
-			return "", err
-		}
-		return doWorkersAI(client, req)
+		return p.NewWorkersAIRequest(cfg.Model, wire.WorkersAIRequest{
+			Messages: buildOpenAIMessages(system, turns),
+			Stream:   stream,
+		})
 	case "cloudflare-ai-gateway":
 		if strings.HasPrefix(strings.ToLower(cfg.Model), "claude") {
-			req, err = p.NewGatewayMessagesRequest(wire.AnthropicMessagesRequest{
+			return p.NewGatewayMessagesRequest(wire.AnthropicMessagesRequest{
 				Model:     cfg.Model,
 				MaxTokens: 4096,
 				System:    system,
-				Messages:  []wire.AnthropicMessage{{Role: "user", Content: user}},
+				Messages:  buildAnthropicMessages(turns),
+				Stream:    stream,
 			})
-			if err != nil {
-				return "", err
-			}
-			return doAnthropic(client, req)
 		}
-		req, err = p.NewGatewayChatRequest(wire.OpenAIChatRequest{Model: cfg.Model, Messages: chatMessages(system, user)})
-		if err != nil {
-			return "", err
-		}
-		return doOpenAIChat(client, req)
+		return p.NewGatewayChatRequest(wire.OpenAIChatRequest{
+			Model:    cfg.Model,
+			Messages: buildOpenAIMessages(system, turns),
+			Stream:   stream,
+		})
 	case "anthropic":
-		req, err = p.NewMessagesRequest(wire.AnthropicMessagesRequest{
+		return p.NewMessagesRequest(wire.AnthropicMessagesRequest{
 			Model:     cfg.Model,
 			MaxTokens: 4096,
 			System:    system,
-			Messages:  []wire.AnthropicMessage{{Role: "user", Content: user}},
+			Messages:  buildAnthropicMessages(turns),
+			Stream:    stream,
 		})
-		if err != nil {
-			return "", err
-		}
-		return doAnthropic(client, req)
 	default:
-		req, err = p.NewChatRequest(wire.OpenAIChatRequest{Model: cfg.Model, Messages: chatMessages(system, user)})
-		if err != nil {
-			return "", err
-		}
-		return doOpenAIChat(client, req)
+		return p.NewChatRequest(wire.OpenAIChatRequest{
+			Model:    cfg.Model,
+			Messages: buildOpenAIMessages(system, turns),
+			Stream:   stream,
+		})
 	}
+}
+
+func doChat(cfg Config, system string, turns []Turn, client *http.Client) (string, error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	req, err := buildRequest(cfg, system, turns, false)
+	if err != nil {
+		return "", err
+	}
+	redact := func(s string) string {
+		return strings.ReplaceAll(s, cfg.APIKey, "<redacted>")
+	}
+	switch cfg.Provider {
+	case "cloudflare-workers-ai":
+		return doWorkersAI(client, req, redact)
+	case "cloudflare-ai-gateway":
+		if strings.HasPrefix(strings.ToLower(cfg.Model), "claude") {
+			return doAnthropic(client, req, redact)
+		}
+		return doOpenAIChat(client, req, redact)
+	case "anthropic":
+		return doAnthropic(client, req, redact)
+	default:
+		return doOpenAIChat(client, req, redact)
+	}
+}
+
+func buildOpenAIMessages(system string, turns []Turn) []wire.OpenAIChatMessage {
+	msgs := make([]wire.OpenAIChatMessage, 0, len(turns)+1)
+	if system != "" {
+		msgs = append(msgs, wire.OpenAIChatMessage{Role: "system", Content: system})
+	}
+	for _, t := range turns {
+		msgs = append(msgs, wire.OpenAIChatMessage{Role: t.Role, Content: t.Content})
+	}
+	return msgs
+}
+
+func buildAnthropicMessages(turns []Turn) []wire.AnthropicMessage {
+	msgs := make([]wire.AnthropicMessage, 0, len(turns))
+	for _, t := range turns {
+		msgs = append(msgs, wire.AnthropicMessage{Role: t.Role, Content: t.Content})
+	}
+	return msgs
 }
 
 // chatMessages builds an OpenAI-style message list with an optional system
@@ -163,11 +358,18 @@ func chatMessages(system, user string) []wire.OpenAIChatMessage {
 // Run sends one prompt — sanitized, sealed with a nonce/integrity delimiter,
 // and egress-verified — and returns the completion text.
 func Run(cfg Config, userPrompt string, client *http.Client) (string, error) {
+	out, err := RunTurns(cfg, []Turn{{Role: "user", Content: userPrompt}}, client)
+	if err != nil {
+		return "", err
+	}
+	return out, nil
+}
+
+// RunTurns sends a conversation history and returns the latest assistant reply.
+func RunTurns(cfg Config, turns []Turn, client *http.Client) (string, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	clean := sanitize.Sanitize(userPrompt)
-
 	pool := nonce.New()
 	sysText, err := prompt.System(prompt.Options{})
 	if err != nil {
@@ -177,8 +379,16 @@ func Run(cfg Config, userPrompt string, client *http.Client) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("seal system prompt: %w", err)
 	}
-	verified := delimiters.Egress(clean, pool)
-	return chat(cfg, sealed, verified, client)
+	verifiedSystem := delimiters.Egress(sealed, pool)
+
+	sanitized := make([]Turn, len(turns))
+	for i, t := range turns {
+		sanitized[i] = Turn{
+			Role:    t.Role,
+			Content: delimiters.Egress(sanitize.Sanitize(t.Content), pool),
+		}
+	}
+	return doChat(cfg, verifiedSystem, sanitized, client)
 }
 
 // classifySecurity runs the security classifier over sanitized content.
@@ -253,8 +463,8 @@ func Engage(cfg Config, prompt string, detectMode bool, client *http.Client) (Re
 	return res, nil
 }
 
-func doWorkersAI(client *http.Client, req *http.Request) (string, error) {
-	body, status, err := roundTrip(client, req)
+func doWorkersAI(client *http.Client, req *http.Request, redact func(string) string) (string, error) {
+	body, status, err := roundTrip(client, req, redact)
 	if err != nil {
 		return "", err
 	}
@@ -271,8 +481,8 @@ func doWorkersAI(client *http.Client, req *http.Request) (string, error) {
 	return wr.Result.Response, nil
 }
 
-func doOpenAIChat(client *http.Client, req *http.Request) (string, error) {
-	body, status, err := roundTrip(client, req)
+func doOpenAIChat(client *http.Client, req *http.Request, redact func(string) string) (string, error) {
+	body, status, err := roundTrip(client, req, redact)
 	if err != nil {
 		return "", err
 	}
@@ -286,8 +496,8 @@ func doOpenAIChat(client *http.Client, req *http.Request) (string, error) {
 	return cr.Choices[0].Message.Content, nil
 }
 
-func doAnthropic(client *http.Client, req *http.Request) (string, error) {
-	body, status, err := roundTrip(client, req)
+func doAnthropic(client *http.Client, req *http.Request, redact func(string) string) (string, error) {
+	body, status, err := roundTrip(client, req, redact)
 	if err != nil {
 		return "", err
 	}
@@ -302,7 +512,7 @@ func doAnthropic(client *http.Client, req *http.Request) (string, error) {
 	return b.String(), nil
 }
 
-func roundTrip(client *http.Client, req *http.Request) ([]byte, int, error) {
+func roundTrip(client *http.Client, req *http.Request, redact func(string) string) ([]byte, int, error) {
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, 0, fmt.Errorf("request: %w", err)
@@ -313,7 +523,11 @@ func roundTrip(client *http.Client, req *http.Request) ([]byte, int, error) {
 		return nil, resp.StatusCode, fmt.Errorf("read response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, resp.StatusCode, fmt.Errorf("provider returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		msg := strings.TrimSpace(string(body))
+		if redact != nil {
+			msg = redact(msg)
+		}
+		return nil, resp.StatusCode, fmt.Errorf("provider returned %d: %s", resp.StatusCode, msg)
 	}
 	return body, resp.StatusCode, nil
 }

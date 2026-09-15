@@ -4,10 +4,17 @@ Guidance for coding agents (and humans) working in this repository.
 
 ## Build and test
 
-- `go build ./...` must succeed.
-- `go test ./...` must pass; CI runs `go test -race ./...`.
-- `gofmt -l .` must print nothing.
-- `go vet ./...` must pass.
+Tasks live in the `justfile`; run `just` to list them. There is no Makefile —
+`make` cannot forward arguments, which forced developers onto stale prebuilt
+binaries. Everything below runs from source.
+
+- `just check` must pass. It is `gofmt` + `go vet ./...` + `go test -race ./...`,
+  in the same order as `.github/workflows/ci.yml`.
+- `just build` must succeed.
+- `just prompt "…"` / `just ask PROVIDER MODEL "…"` drive the CLI from source.
+- `just e2e` drives the built binary against a mock provider.
+
+See [docs/development.md](docs/development.md) for the full local and QA workflow.
 
 ## Security invariants — do not weaken
 
@@ -30,7 +37,8 @@ Guidance for coding agents (and humans) working in this repository.
 
 - `cmd/signet` — entrypoint.
 - `internal/...` — library code, one package per concern.
-- `docs/` — architecture and specs.
+- `e2e/` — end-to-end tests that drive the built binary.
+- `docs/` — architecture, specs, and the development workflow.
 
 ## Conventions
 

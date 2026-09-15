@@ -1,6 +1,8 @@
 package components
 
 import (
+	"strings"
+
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -8,6 +10,7 @@ import (
 // Editor wraps a textarea for slash-command and message input.
 type Editor struct {
 	textarea textarea.Model
+	Masked   bool
 }
 
 // NewEditor returns a focused input editor.
@@ -46,7 +49,15 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 func (e Editor) Value() string { return e.textarea.Value() }
 
 // View renders the editor.
-func (e Editor) View() string { return e.textarea.View() }
+func (e Editor) View() string {
+	if e.Masked {
+		v := e.Value()
+		if v != "" {
+			return strings.Repeat("•", len(v))
+		}
+	}
+	return e.textarea.View()
+}
 
 // Width returns the editor width.
 func (e Editor) Width() int { return e.textarea.Width() }
