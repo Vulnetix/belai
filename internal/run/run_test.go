@@ -951,3 +951,35 @@ func TestSendTurnsDoesNotRetryFatalStatus(t *testing.T) {
 		t.Fatalf("expected exactly one call, got %d", calls)
 	}
 }
+
+func TestSynthesizeDanglingToolResults(t *testing.T) {
+	turns := []Turn{
+		{Role: "assistant", Content: "", ToolCalls: []rolemanager.ToolCall{{ID: "call_1", Name: "Read", Args: map[string]any{"path": "x.go"}}}},
+	}
+	out := synthesizeDanglingToolResults(turns)
+	if len(out) != 2 {
+		t.Fatalf("got %d turns, want 2", len(out))
+	}
+	if out[1].Role != "tool" || out[1].ToolCallID != "call_1" || out[1].Content != "No result provided" {
+		t.Fatalf("synthetic turn = %+v", out[1])
+	}
+}
+
+func TestBuildOpenAIMessagesRawArgsFallback(t *testing.T) {
+	msgs := buildOpenAIMessages("sys", []Turn{
+		{Role: "assistant", ToolCalls: []rolemanager.ToolCall{{ID: "c1", Name: "Read", RawArgs: `{"path":"x.go"}`}}},
+	})
+	if len(msgs) != 2 {
+		t.Fatalf("got %d msgs, want 2", len(msgs))
+	}
+	if got := msgs[1].ToolCalls[0].Function.Arguments; got != `{"path":"x.go"}` {
+		t.Fatalf("arguments = %q", got)
+	}
+}
+
+func TestEmptyAssistantMessageSkipped(t *testing.T) {
+	msgs := buildOpenAIMessages("sys", []Turn{{Role: "assistant", Content: ""}})
+	if len(msgs) != 1 || msgs[0].Role != "system" {
+		t.Fatalf("empty assistant should be skipped: %+v", msgs)
+	}
+}
