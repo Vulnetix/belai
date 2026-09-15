@@ -71,13 +71,13 @@ func bashAllowed(command string) bool {
 	}
 }
 
-// Bash runs a single command. With ReadOnly true (the default, including when
-// the field is nil) it executes without a shell and is confined to the
-// read-only allowlist. Set ReadOnly to false explicitly to run through `sh -c`
-// with full shell syntax (pipes, redirections, chaining).
+// Bash runs a single command. With ReadOnly set it executes without a shell
+// and is confined to the read-only allowlist; otherwise (the zero value, the
+// default) it runs through `sh -c` with full shell syntax (pipes,
+// redirections, chaining).
 type Bash struct {
 	Root     string
-	ReadOnly *bool
+	ReadOnly bool
 	Timeout  time.Duration
 	MaxBytes int
 }
@@ -85,9 +85,8 @@ type Bash struct {
 // Definition returns the static tool metadata. The description branches on
 // the mode so the model knows which execution model it has.
 func (b *Bash) Definition() Definition {
-	readOnly := b.ReadOnly == nil || *b.ReadOnly
 	desc := "Run a local shell command. The full shell is available (pipes, redirections, and command chaining)."
-	if readOnly {
+	if b.ReadOnly {
 		desc = "Run a read-only local shell command: a single command from the read-only allowlist (no pipes, redirections, or command chaining)."
 	}
 	return Definition{
@@ -127,8 +126,7 @@ func (b *Bash) Execute(ctx context.Context, args map[string]any) (Result, error)
 	}
 
 	var ec *exec.Cmd
-	readOnly := b.ReadOnly == nil || *b.ReadOnly
-	if readOnly {
+	if b.ReadOnly {
 		// Read-only mode: no shell, fail closed on anything outside the
 		// allowlist. Plan-mode restrictions additionally live in
 		// modes.ToolAllowed, which callers must apply before Execute.

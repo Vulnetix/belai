@@ -8,10 +8,8 @@ import (
 	"time"
 )
 
-func boolPtr(b bool) *bool { return &b }
-
 func TestBashEcho(t *testing.T) {
-	b := &Bash{Root: t.TempDir(), ReadOnly: boolPtr(true), Timeout: 5 * time.Second}
+	b := &Bash{Root: t.TempDir(), ReadOnly: true, Timeout: 5 * time.Second}
 	res, err := b.Execute(context.Background(), map[string]any{"command": "echo hello"})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -22,7 +20,7 @@ func TestBashEcho(t *testing.T) {
 }
 
 func TestBashRejectsShellMetacharacters(t *testing.T) {
-	b := &Bash{Root: t.TempDir(), ReadOnly: boolPtr(true), Timeout: 5 * time.Second}
+	b := &Bash{Root: t.TempDir(), ReadOnly: true, Timeout: 5 * time.Second}
 	for _, meta := range ";&|$`<>()" {
 		_, err := b.Execute(context.Background(), map[string]any{"command": "echo " + string(meta)})
 		if err == nil {
@@ -32,7 +30,7 @@ func TestBashRejectsShellMetacharacters(t *testing.T) {
 }
 
 func TestBashNonZeroExitReturnsOutputAndNoError(t *testing.T) {
-	b := &Bash{Root: t.TempDir(), ReadOnly: boolPtr(true), Timeout: 5 * time.Second}
+	b := &Bash{Root: t.TempDir(), ReadOnly: true, Timeout: 5 * time.Second}
 	res, err := b.Execute(context.Background(), map[string]any{"command": "false"})
 	if err != nil {
 		t.Fatalf("Execute should not error on non-zero exit: %v", err)
@@ -43,7 +41,7 @@ func TestBashNonZeroExitReturnsOutputAndNoError(t *testing.T) {
 }
 
 func TestBashTimeout(t *testing.T) {
-	b := &Bash{Root: t.TempDir(), ReadOnly: boolPtr(true), Timeout: 100 * time.Millisecond}
+	b := &Bash{Root: t.TempDir(), ReadOnly: true, Timeout: 100 * time.Millisecond}
 	_, err := b.Execute(context.Background(), map[string]any{"command": "sleep 5"})
 	if err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("expected timeout error, got %v", err)
@@ -51,7 +49,7 @@ func TestBashTimeout(t *testing.T) {
 }
 
 func TestBashTruncation(t *testing.T) {
-	b := &Bash{Root: t.TempDir(), ReadOnly: boolPtr(true), Timeout: 5 * time.Second, MaxBytes: 5}
+	b := &Bash{Root: t.TempDir(), ReadOnly: true, Timeout: 5 * time.Second, MaxBytes: 5}
 	res, err := b.Execute(context.Background(), map[string]any{"command": "printf '123456789'"})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -63,7 +61,7 @@ func TestBashTruncation(t *testing.T) {
 
 func TestBashConfinesToRoot(t *testing.T) {
 	root := t.TempDir()
-	b := &Bash{Root: root, ReadOnly: boolPtr(true), Timeout: 5 * time.Second}
+	b := &Bash{Root: root, ReadOnly: true, Timeout: 5 * time.Second}
 	res, err := b.Execute(context.Background(), map[string]any{"command": "pwd"})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -75,7 +73,7 @@ func TestBashConfinesToRoot(t *testing.T) {
 
 func TestBashScrubsCredentialEnv(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "super-secret")
-	b := &Bash{Root: t.TempDir(), ReadOnly: boolPtr(true), Timeout: 5 * time.Second}
+	b := &Bash{Root: t.TempDir(), ReadOnly: true, Timeout: 5 * time.Second}
 	res, err := b.Execute(context.Background(), map[string]any{"command": "env"})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -100,7 +98,7 @@ func TestShellMetacharactersMatchesPlanmode(t *testing.T) {
 }
 
 func TestBashRejectsNonAllowlisted(t *testing.T) {
-	b := &Bash{Root: t.TempDir(), ReadOnly: boolPtr(true)}
+	b := &Bash{Root: t.TempDir(), ReadOnly: true}
 	for _, cmd := range []string{"rm -rf /", "awk '{print > \"x\"}'", "sed -i x", "xargs rm", "git add ."} {
 		if _, err := b.Execute(context.Background(), map[string]any{"command": cmd}); err == nil {
 			t.Fatalf("Bash(%q) should be rejected", cmd)
@@ -109,7 +107,7 @@ func TestBashRejectsNonAllowlisted(t *testing.T) {
 }
 
 func TestBashAllowsDataWork(t *testing.T) {
-	b := &Bash{Root: t.TempDir(), ReadOnly: boolPtr(true)}
+	b := &Bash{Root: t.TempDir(), ReadOnly: true}
 	for _, cmd := range []string{"echo hi", "cat x", "git status", "find . -name x", "jq . x"} {
 		if _, err := b.Execute(context.Background(), map[string]any{"command": cmd}); err != nil && strings.Contains(err.Error(), "allowlist") {
 			t.Fatalf("Bash(%q) should be allowlisted, got %v", cmd, err)
@@ -118,7 +116,7 @@ func TestBashAllowsDataWork(t *testing.T) {
 }
 
 func TestBashFullModeRunsShellSyntax(t *testing.T) {
-	b := &Bash{Root: t.TempDir(), ReadOnly: boolPtr(false), Timeout: 5 * time.Second}
+	b := &Bash{Root: t.TempDir(), Timeout: 5 * time.Second}
 	res, err := b.Execute(context.Background(), map[string]any{"command": "echo a && echo b"})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -136,7 +134,7 @@ func TestBashFullModeRunsShellSyntax(t *testing.T) {
 }
 
 func TestBashFullModeRunsNonAllowlisted(t *testing.T) {
-	b := &Bash{Root: t.TempDir(), ReadOnly: boolPtr(false), Timeout: 5 * time.Second}
+	b := &Bash{Root: t.TempDir(), Timeout: 5 * time.Second}
 	// touch is not in the read-only allowlist; full mode runs it fine.
 	res, err := b.Execute(context.Background(), map[string]any{"command": "touch made.txt && ls made.txt"})
 	if err != nil {
@@ -148,11 +146,11 @@ func TestBashFullModeRunsNonAllowlisted(t *testing.T) {
 }
 
 func TestBashDefinitionBranchesOnMode(t *testing.T) {
-	full := (&Bash{Root: t.TempDir(), ReadOnly: boolPtr(false)}).Definition()
+	full := (&Bash{Root: t.TempDir()}).Definition()
 	if !strings.Contains(full.Description, "full shell") {
 		t.Fatalf("full-mode description = %q", full.Description)
 	}
-	ro := (&Bash{Root: t.TempDir(), ReadOnly: boolPtr(true)}).Definition()
+	ro := (&Bash{Root: t.TempDir(), ReadOnly: true}).Definition()
 	if !strings.Contains(ro.Description, "read-only") {
 		t.Fatalf("read-only description = %q", ro.Description)
 	}
@@ -164,14 +162,14 @@ func TestDefaultWiresBashReadOnly(t *testing.T) {
 	if !ok {
 		t.Fatalf("Bash not registered")
 	}
-	if b, ok := full.(*Bash); !ok || (b.ReadOnly != nil && *b.ReadOnly) {
+	if b, ok := full.(*Bash); !ok || b.ReadOnly {
 		t.Fatalf("Default(dir, false) should give full-mode Bash, got %v", full)
 	}
 	ro, ok := Default(dir, true).Find("Bash")
 	if !ok {
 		t.Fatalf("Bash not registered")
 	}
-	if b, ok := ro.(*Bash); !ok || (b.ReadOnly == nil || !*b.ReadOnly) {
+	if b, ok := ro.(*Bash); !ok || !b.ReadOnly {
 		t.Fatalf("Default(dir, true) should give read-only Bash, got %v", ro)
 	}
 }

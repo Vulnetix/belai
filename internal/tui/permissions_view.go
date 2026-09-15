@@ -9,6 +9,7 @@ import (
 
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/permissions"
+	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/tools"
 	"github.com/vulnetix/signet/internal/tui/components"
 )
@@ -89,7 +90,7 @@ func (a *App) permissionsView() string {
 
 	if len(rows) == 0 {
 		b.WriteString(components.MutedStyle.Render(
-			"  no rules — every tool call is denied; add an allow rule to enable tools") + "\n")
+			"  no rules — every tool call is allowed; add a deny rule to restrict") + "\n")
 	} else {
 		for i, row := range rows {
 			selected := i == a.permState.selected
@@ -124,7 +125,11 @@ func (a *App) permissionsView() string {
 			tool, subject := splitPreview(a.permState.previewSubject)
 			dec, rule := permissions.From(a.settings.Permissions.Allow, a.settings.Permissions.Ask, a.settings.Permissions.Deny).Explain(tool, subject)
 			if rule == "" {
-				b.WriteString(components.DangerStyle.Render("         blocked (no rule matches)") + "\n")
+				if a.posture != nil && a.posture.Level(posture.PermissionNoMatch) == posture.Enforce {
+					b.WriteString(components.DangerStyle.Render("         blocked (no rule matches; permission_no_match=enforce)") + "\n")
+				} else {
+					b.WriteString(components.AccentStyle.Render("         allowed (no rule matches — default)") + "\n")
+				}
 			} else {
 				b.WriteString("         " + decisionStyle(string(dec)).Render(string(dec)) +
 					components.MutedStyle.Render(" via "+rule) + "\n")
@@ -145,8 +150,6 @@ func (a *App) permissionsView() string {
 			"a", "add", "←→", "decision", "e", "edit", "d", "delete",
 			"s", "scope", "p", "preview", "esc", "back") + "\n")
 	}
-	b.WriteString(components.MutedStyle.Render(
-		"these rules affect signet -tools runs; the TUI has no tool loop") + "\n")
 	return lipgloss.NewStyle().Padding(1).Render(b.String())
 }
 
