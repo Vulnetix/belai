@@ -78,6 +78,9 @@ func (s *Session) RunStream(ctx context.Context, history []run.Turn, in TurnInpu
 func (s *Session) streamTurn(ctx context.Context, system string, turns []run.Turn, streaming bool, emit func(Event)) (run.Assistant, error) {
 	// Each provider turn gets its own cancel scope so a retry or a UI abort
 	// can tear down the producer goroutine without touching the session ctx.
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	turnCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 

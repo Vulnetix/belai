@@ -800,3 +800,24 @@ func TestCredentialViewSetsEnvReference(t *testing.T) {
 		t.Fatalf("origin = %q, want $MY_KEY", origin)
 	}
 }
+
+func TestBuildTurnsPreservesToolMetadata(t *testing.T) {
+	a := New(Options{})
+	a.messages = []components.Message{
+		{Role: "user", Content: "run the tests"},
+		{Role: "assistant", Content: "will do", ToolCalls: []components.AgentToolCall{
+			{ID: "call_1", Name: "Bash", Args: `{"command":"go test ./..."}`},
+		}},
+		{Role: "tool", Content: "ok", ToolName: "Bash", ToolCallID: "call_1"},
+	}
+	turns := a.buildTurns()
+	if len(turns) != 3 {
+		t.Fatalf("expected 3 turns, got %d", len(turns))
+	}
+	if len(turns[1].ToolCalls) != 1 || turns[1].ToolCalls[0].Name != "Bash" {
+		t.Fatalf("assistant turn lost tool calls: %+v", turns[1].ToolCalls)
+	}
+	if turns[2].Role != "tool" || turns[2].ToolCallID != "call_1" || turns[2].ToolName != "Bash" {
+		t.Fatalf("tool turn metadata wrong: %+v", turns[2])
+	}
+}

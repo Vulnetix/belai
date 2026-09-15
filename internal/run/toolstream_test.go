@@ -76,3 +76,45 @@ func TestAccumulatorMalformedJSONFailsClosed(t *testing.T) {
 		t.Fatalf("expected malformed-tool-arguments error, got %v", err)
 	}
 }
+
+func TestDecodeAnthropicTextStopDoesNotComplete(t *testing.T) {
+	acc := newToolAccumulator()
+	d := dialect{kind: kindAnthropicMessages}
+
+	events := []string{
+		`{"type":"content_block_start","index":0,"content_block":{"type":"text"}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello"}}`,
+		`{"type":"content_block_stop","index":0}`,
+	}
+	for _, e := range events {
+		if _, err := decodeStreamEvent(d, e, acc); err != nil {
+			t.Fatalf("decode %s: %v", e, err)
+		}
+	}
+	if len(acc.calls) != 0 {
+		t.Fatalf("expected no pending tool calls, got %+v", acc.calls)
+	}
+}
+
+func TestDecodeOpenAICompletesToolCallsInOrder(t *testing.T) {
+	acc := newToolAccumulator()
+	d := dialect{kind: kindOpenAIChat}
+
+	// two parallel tool-call fragments arriving out of index order
+	if _, err := decodeStreamEvent(d, `{"choices":[{"delta":{"tool_calls":[{"index":1,"id":"call_2","function":{"name":"Bash","arguments":"{}"}}]}}]}`, acc); err != nil {
+		t.Fatalf("decode 1: %v", err)
+	}
+	if _, err := decodeStreamEvent(d, `{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"Read","arguments":"{\"path\":\"a.go\"}"}}]}}]}`, acc); err != nil {
+		t.Fatalf("decode 0: %v", err)
+	}
+	delta, err := decodeStreamEvent(d, `{"choices":[{"finish_reason":"tool_calls"}]}`, acc)
+	if err != nil {
+		t.Fatalf("decode finish: %v", err)
+	}
+	if len(delta.completed) != 2 {
+		t.Fatalf("completed count = %d", len(delta.completed))
+	}
+	if delta.completed[0].ID != "call_1" || delta.completed[1].ID != "call_2" {
+		t.Fatalf("order = %+v", delta.completed)
+	}
+}

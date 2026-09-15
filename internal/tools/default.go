@@ -15,5 +15,7 @@ func Default(workdir string) *Registry {
 		list = append(list, ws)
 	}
 	list = append(list, &Bash{Root: workdir, Timeout: 30 * time.Second, MaxBytes: 64 * 1024})
+	list = append(list, &Grep{Root: workdir, MaxMatches: 200, MaxLineLen: 200})
+	list = append(list, &Glob{Root: workdir, MaxResults: 200})
 	return NewRegistry(list...)
 }

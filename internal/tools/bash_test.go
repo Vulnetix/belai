@@ -96,3 +96,21 @@ func TestShellMetacharactersMatchesPlanmode(t *testing.T) {
 	}
 	_ = os.Environ()
 }
+
+func TestBashRejectsNonAllowlisted(t *testing.T) {
+	b := &Bash{Root: t.TempDir()}
+	for _, cmd := range []string{"rm -rf /", "awk '{print > \"x\"}'", "sed -i x", "xargs rm", "git add ."} {
+		if _, err := b.Execute(context.Background(), map[string]any{"command": cmd}); err == nil {
+			t.Fatalf("Bash(%q) should be rejected", cmd)
+		}
+	}
+}
+
+func TestBashAllowsDataWork(t *testing.T) {
+	b := &Bash{Root: t.TempDir()}
+	for _, cmd := range []string{"echo hi", "cat x", "git status", "find . -name x", "jq . x"} {
+		if _, err := b.Execute(context.Background(), map[string]any{"command": cmd}); err != nil && strings.Contains(err.Error(), "allowlist") {
+			t.Fatalf("Bash(%q) should be allowlisted, got %v", cmd, err)
+		}
+	}
+}

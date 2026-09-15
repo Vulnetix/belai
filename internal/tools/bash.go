@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -13,6 +14,62 @@ import (
 // no-shell execution model. The Bash tool never executes through a shell, so
 // rejecting these before tokenising keeps the gate honest and fails closed.
 const ShellMetacharacters = ";&|$`<>\n()"
+
+// readOnlyBash holds the read-only commands the Bash tool is allowed to run.
+// Git read-only subcommands and the metacharacter gate are defined below.
+var readOnlyBash = map[string]bool{
+	"cat": true, "env": true, "false": true, "grep": true, "egrep": true, "rg": true, "find": true,
+	"ls": true, "uname": true, "pwd": true, "head": true, "tail": true,
+	"wc": true, "sort": true, "uniq": true, "file": true, "which": true,
+	"diff": true, "stat": true, "du": true, "basename": true,
+	"dirname": true, "realpath": true, "readlink": true,
+	"jq": true, "cut": true, "tr": true, "nl": true, "fold": true,
+	"paste": true, "printenv": true, "join": true, "comm": true, "rev": true, "shuf": true,
+	"seq": true, "sleep": true, "od": true, "xxd": true, "base64": true, "date": true,
+	"printf": true, "echo": true, "tree": true, "fd": true, "zcat": true,
+	"gunzip": true, "md5sum": true, "sha256sum": true, "column": true,
+	"expand": true, "unexpand": true,
+}
+
+var gitReadSubcommands = map[string]bool{
+	"status": true, "log": true, "diff": true, "show": true,
+	"rev-parse": true, "ls-files": true, "grep": true, "describe": true,
+}
+
+var findUnsafeOptions = map[string]bool{
+	"-exec": true, "-execdir": true, "-ok": true, "-okdir": true,
+	"-delete": true, "-fprint": true, "-fls": true, "-fprintf": true,
+}
+
+// bashAllowed reports whether the whole command passes the read-only gate.
+func bashAllowed(command string) bool {
+	command = strings.TrimSpace(command)
+	if command == "" || strings.ContainsAny(command, ShellMetacharacters) {
+		return false
+	}
+	fields := strings.Fields(command)
+	base := filepath.Base(fields[0])
+	switch base {
+	case "git":
+		for i := 1; i < len(fields); i++ {
+			f := fields[i]
+			if f == "-C" || f == "-c" || f == "--git-dir" || f == "--work-tree" || strings.HasPrefix(f, "--") {
+				continue
+			}
+			return gitReadSubcommands[f]
+		}
+		return false
+	case "find":
+		for _, f := range fields[1:] {
+			if findUnsafeOptions[f] {
+				return false
+			}
+		}
+		return true
+	default:
+		return readOnlyBash[base]
+	}
+}
 
 // Bash runs a single command without a shell.
 type Bash struct {
@@ -53,6 +110,11 @@ func (b *Bash) Execute(ctx context.Context, args map[string]any) (Result, error)
 	}
 	if strings.ContainsAny(cmd, ShellMetacharacters) {
 		return Result{}, fmt.Errorf("command contains shell metacharacters")
+	}
+	// Fail closed unconditionally: the Bash tool is read-only by construction,
+	// in plan mode and out of it.
+	if !bashAllowed(cmd) {
+		return Result{}, fmt.Errorf("command not in read-only allowlist: %s", cmd)
 	}
 
 	// The Bash executor has no shell; plan-mode restrictions live in

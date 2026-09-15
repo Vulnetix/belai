@@ -663,15 +663,28 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		}
 		return a.nextAgent()
 	case agent.EventToolStartKind:
+		last := len(a.messages) - 1
+		if last >= 0 && a.messages[last].Role == "assistant" {
+			a.messages[last].ToolCalls = append(a.messages[last].ToolCalls, components.AgentToolCall{
+				ID:   m.Tool.ID,
+				Name: m.Tool.Name,
+				Args: toolArgsString(m.Tool.Args),
+			})
+		}
 		a.messages = append(a.messages, components.Message{
-			Role:     "tool",
-			ToolName: m.Tool.Name,
-			ToolArgs: toolArgsString(m.Tool.Args),
+			Role:       "tool",
+			ToolName:   m.Tool.Name,
+			ToolArgs:   toolArgsString(m.Tool.Args),
+			ToolCallID: m.Tool.ID,
 		})
 		return a.nextAgent()
 	case agent.EventToolResultKind:
 		if len(a.messages) > 0 && a.messages[len(a.messages)-1].Role == "tool" {
-			a.messages[len(a.messages)-1].Status = "✓"
+			status := "✓"
+			if strings.HasPrefix(m.ToolResult, "tool result withheld:") {
+				status = "withheld"
+			}
+			a.messages[len(a.messages)-1].Status = status
 		}
 		return a.nextAgent()
 	case agent.EventPermissionAskKind:
@@ -714,8 +727,28 @@ func (a *App) buildTurns() []run.Turn {
 		)
 	}
 	for _, m := range a.messages {
-		if m.Role == "user" || m.Role == "assistant" {
+		switch m.Role {
+		case "user":
 			turns = append(turns, run.Turn{Role: m.Role, Content: m.Content})
+		case "assistant":
+			turn := run.Turn{Role: m.Role, Content: m.Content}
+			if len(m.ToolCalls) > 0 {
+				for _, tc := range m.ToolCalls {
+					args := map[string]any{}
+					if tc.Args != "" {
+						_ = json.Unmarshal([]byte(tc.Args), &args)
+					}
+					turn.ToolCalls = append(turn.ToolCalls, rolemanager.ToolCall{ID: tc.ID, Name: tc.Name, Args: args})
+				}
+			}
+			turns = append(turns, turn)
+		case "tool":
+			turns = append(turns, run.Turn{
+				Role:       "tool",
+				Content:    m.Content,
+				ToolCallID: m.ToolCallID,
+				ToolName:   m.ToolName,
+			})
 		}
 	}
 	return turns

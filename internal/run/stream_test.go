@@ -416,3 +416,29 @@ func TestStreamCustomAnthropicDialectDecodesEvents(t *testing.T) {
 		t.Fatalf("got %q", out.String())
 	}
 }
+
+func TestStreamDoneAlwaysBuildsAssistant(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	defer srv.Close()
+
+	cfg := Config{Provider: "openai", BaseURL: srv.URL, APIKey: "sk", Model: "gpt-5"}
+	ch, err := Stream(context.Background(), cfg, []Turn{{Role: "user", Content: "hi"}}, srv.Client())
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	var asst *Assistant
+	for c := range ch {
+		if c.Done {
+			asst = c.Assistant
+			break
+		}
+	}
+	if asst == nil {
+		t.Fatalf("expected Assistant on Done chunk")
+	}
+}

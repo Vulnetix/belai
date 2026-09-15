@@ -8,6 +8,15 @@ import (
 	"github.com/vulnetix/signet/internal/transcript"
 )
 
+// AgentToolCall records a tool call that belongs to an assistant turn. The
+// raw JSON arguments are kept as text so this package stays UI-only; the
+// caller parses JSON when rebuilding provider turns.
+type AgentToolCall struct {
+	ID   string
+	Name string
+	Args string // raw JSON text
+}
+
 // Message is one message in the transcript.
 type Message struct {
 	Role     string // user, assistant, tool, system
@@ -16,6 +25,15 @@ type Message struct {
 	ToolName string            // set on tool turns
 	ToolArgs string            // set on tool turns
 	Status   string            // set on tool turns (✓, withheld, …)
+
+	// ToolCallID is set on tool turns. It groups a result turn back to the
+	// assistant call that requested it.
+	ToolCallID string
+
+	// ToolCalls records the calls requested by an assistant turn. It is only
+	// meaningful when Role == "assistant"; it lets buildTurns preserve the
+	// tool-call metadata across rounds.
+	ToolCalls []AgentToolCall
 }
 
 // MessageList renders the transcript.

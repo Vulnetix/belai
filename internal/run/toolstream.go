@@ -89,6 +89,14 @@ func (a *toolAccumulator) complete(index int) (rolemanager.ToolCall, error) {
 // openedKind returns the kind of the block opened at index, if any.
 func (a *toolAccumulator) openedKind(index int) string { return a.openKinds[index] }
 
+// drop removes any partial builder at index, used when a non-tool content
+// block (e.g. text) stops so the accumulator does not confuse it with a tool
+// call.
+func (a *toolAccumulator) drop(index int) {
+	delete(a.calls, index)
+	delete(a.openKinds, index)
+}
+
 // streamDelta is the decoded result of one SSE payload.
 type streamDelta struct {
 	text       string
@@ -193,12 +201,17 @@ func decodeAnthropicEvent(data string, acc *toolAccumulator) (streamDelta, error
 		}
 	case "content_block_stop":
 		idx := eventIndex(&ev)
-		if acc != nil && acc.openedKind(idx) == "tool_use" {
+		if acc == nil {
+			break
+		}
+		if acc.openedKind(idx) == "tool_use" {
 			call, err := acc.complete(idx)
 			if err != nil {
 				return streamDelta{}, err
 			}
 			out.completed = append(out.completed, call)
+		} else {
+			acc.drop(idx)
 		}
 	case "message_delta":
 		if ev.Delta.StopReason != "" {
