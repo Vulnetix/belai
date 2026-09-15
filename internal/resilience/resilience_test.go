@@ -201,5 +201,5 @@ type statusErr struct {
 	code int
 }
 
-func (e *statusErr) Error() string { return "status" }
+func (e *statusErr) Error() string   { return "status" }
 func (e *statusErr) StatusCode() int { return e.code }
