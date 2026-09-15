@@ -1,0 +1,163 @@
+// Package modelfetch queries a provider for its live model catalogue. It is
+// deliberately leaf-only in the direction that matters: it imports wire,
+// provider, and models, never run, so the transport layer does not grow a
+// dependency on this fetch layer.
+package modelfetch
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+
+	"github.com/vulnetix/signet/internal/models"
+	"github.com/vulnetix/signet/internal/provider"
+	"github.com/vulnetix/signet/internal/wire"
+)
+
+// Target identifies a provider endpoint and its auth.
+type Target struct {
+	Name    string
+	BaseURL string
+	APIKey  string
+	Auth    provider.Auth
+	API     wire.Surface // custom providers only
+}
+
+// List fetches the live model catalogue for the target and returns it as
+// []models.Model. Static-only targets (cloudflare-ai-gateway) return an empty
+// list with no error.
+func List(ctx context.Context, t Target, client *http.Client) ([]models.Model, error) {
+	endpoint, err := endpointFor(t)
+	if err != nil {
+		return nil, err
+	}
+	if endpoint == "" {
+		return nil, nil // static-only passthrough
+	}
+	if client == nil {
+		client = http.DefaultClient
+	}
+
+	p, err := provider.New(t.Name, t.BaseURL, t.APIKey)
+	if err != nil && t.API != "" {
+		p, err = provider.NewFromProfile(t.Name, provider.Profile{BaseURL: t.BaseURL, API: t.API, Auth: t.Auth}, t.APIKey)
+	}
+	if err != nil {
+		return nil, err
+	}
+	req, err := p.NewGetRequest(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	req.Header.Set("accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch models: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("provider returned %d", resp.StatusCode)
+	}
+	return parseModels(t, resp)
+}
+
+func endpointFor(t Target) (string, error) {
+	base := strings.TrimRight(t.BaseURL, "/")
+	switch t.Name {
+	case "cloudflare-ai-gateway":
+		return "", nil // passthrough: no discoverable model list
+	case "anthropic":
+		return base + "/v1/models", nil
+	case "cloudflare-workers-ai":
+		return base + "/ai/models/search", nil
+	case "openai", "openrouter", "google-gemini", "ollama", "github-copilot":
+		return base + "/models", nil
+	default:
+		// Custom provider: choose by surface.
+		switch t.API {
+		case wire.SurfaceAnthropicMessages:
+			return base + "/v1/models", nil
+		default:
+			return base + "/models", nil
+		}
+	}
+}
+
+// parseModels decodes a provider-specific response into []models.Model.
+func parseModels(t Target, resp *http.Response) ([]models.Model, error) {
+	switch t.Name {
+	case "anthropic":
+		var r struct {
+			Data []struct {
+				ID          string `json:"id"`
+				DisplayName string `json:"display_name"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+			return nil, err
+		}
+		out := make([]models.Model, 0, len(r.Data))
+		for _, m := range r.Data {
+			out = append(out, models.Model{ID: m.ID, Label: firstNonEmpty(m.DisplayName, m.ID)})
+		}
+		return out, nil
+
+	case "openrouter", "github-copilot":
+		var r struct {
+			Data []struct {
+				ID            string `json:"id"`
+				Name          string `json:"name"`
+				ContextLength int    `json:"context_length"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+			return nil, err
+		}
+		out := make([]models.Model, 0, len(r.Data))
+		for _, m := range r.Data {
+			out = append(out, models.Model{ID: m.ID, Label: firstNonEmpty(m.Name, m.ID), ContextWindow: m.ContextLength})
+		}
+		return out, nil
+
+	case "cloudflare-workers-ai":
+		var r struct {
+			Result []struct {
+				Name string `json:"name"`
+			} `json:"result"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+			return nil, err
+		}
+		out := make([]models.Model, 0, len(r.Result))
+		for _, m := range r.Result {
+			out = append(out, models.Model{ID: m.Name, Label: m.Name})
+		}
+		return out, nil
+
+	default: // openai, google-gemini, ollama, custom openai-chat
+		var r struct {
+			Data []struct {
+				ID string `json:"id"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+			return nil, err
+		}
+		out := make([]models.Model, 0, len(r.Data))
+		for _, m := range r.Data {
+			out = append(out, models.Model{ID: m.ID, Label: m.ID})
+		}
+		return out, nil
+	}
+}
+
+func firstNonEmpty(a, b string) string {
+	if strings.TrimSpace(a) != "" {
+		return a
+	}
+	return b
+}

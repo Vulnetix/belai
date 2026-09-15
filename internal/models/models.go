@@ -6,14 +6,18 @@ import "strings"
 
 // Model is one selectable model in a provider's catalog.
 type Model struct {
-	ID      string
-	Label   string
-	Efforts []string
+	ID            string
+	Label         string
+	Efforts       []string
+	ContextWindow int // 0 when unknown
 }
 
 // defaultEfforts is the effort set used by providers that expose all three
 // levels. Empty effort means "provider default".
 var defaultEfforts = []string{"low", "medium", "high"}
+
+// DefaultEfforts returns the standard effort set for built-in providers.
+func DefaultEfforts() []string { return defaultEfforts }
 
 // Catalog returns the selectable models for a provider, in display order.
 func Catalog(provider string) []Model {

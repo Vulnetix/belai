@@ -250,3 +250,16 @@ func (p *Provider) newRequest(endpoint string, body any) (*http.Request, error) 
 	}
 	return req, nil
 }
+
+// NewGetRequest builds a GET request with the provider's auth headers, for
+// read-only endpoints such as /models.
+func (p *Provider) NewGetRequest(endpoint string) (*http.Request, error) {
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build get request: %w", err)
+	}
+	for k, v := range p.Headers() {
+		req.Header.Set(k, v)
+	}
+	return req, nil
+}
