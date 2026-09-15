@@ -75,3 +75,71 @@ func TestFromSimple(t *testing.T) {
 		t.Fatalf("unknown = %q, want block", got)
 	}
 }
+
+func TestFrom(t *testing.T) {
+	s := From([]string{"Read"}, []string{"Bash(ls)"}, []string{"Bash(rm *)"})
+	if got := s.Evaluate("Read", "x"); got != DecisionAllow {
+		t.Fatalf("Read = %q", got)
+	}
+	if got := s.Evaluate("Bash", "ls"); got != DecisionAsk {
+		t.Fatalf("ls = %q", got)
+	}
+	if got := s.Evaluate("Bash", "rm -rf /"); got != DecisionBlock {
+		t.Fatalf("rm = %q", got)
+	}
+}
+
+func TestExplainReturnsDecidingRule(t *testing.T) {
+	s := Settings{Allow: []string{"Read(./src/**)"}}
+	dec, rule := s.Explain("Read", "./src/main.go")
+	if dec != DecisionAllow || rule != "Read(./src/**)" {
+		t.Fatalf("Explain = %q/%q", dec, rule)
+	}
+	dec, rule = s.Explain("Read", "./other.go")
+	if dec != DecisionBlock || rule != "" {
+		t.Fatalf("default block = %q/%q", dec, rule)
+	}
+}
+
+func TestValidateRule(t *testing.T) {
+	valid := []string{"Read", "Read(./src/**)", "Bash(git diff:*)", "Read(*.md)"}
+	for _, r := range valid {
+		if err := ValidateRule(r); err != nil {
+			t.Fatalf("ValidateRule(%q) = %v", r, err)
+		}
+	}
+	invalid := []string{"", "Read(", "Read()", "Bash(git [", "Tool(x)(y"}
+	for _, r := range invalid {
+		if err := ValidateRule(r); err == nil {
+			t.Fatalf("ValidateRule(%q) should fail", r)
+		}
+	}
+}
+
+func TestCaseInsensitiveToolNames(t *testing.T) {
+	s := Settings{Allow: []string{"read"}}
+	if got := s.Evaluate("Read", "file.go"); got != DecisionAllow {
+		t.Fatalf("lowercase rule should match canonical tool, got %q", got)
+	}
+	s2 := Settings{Deny: []string{"BASH(rm *)"}}
+	if got := s2.Evaluate("Bash", "rm -rf /"); got != DecisionBlock {
+		t.Fatalf("mixed-case rule should deny, got %q", got)
+	}
+}
+
+func TestDoubleStarGlob(t *testing.T) {
+	s := Settings{Allow: []string{"Read(./src/**)"}}
+	if got := s.Evaluate("Read", "./src/a/b/c.go"); got != DecisionAllow {
+		t.Fatalf("** should cross separators, got %q", got)
+	}
+}
+
+func TestQuestionMarkMatchesOneRune(t *testing.T) {
+	s := Settings{Allow: []string{"Read(a?c)"}}
+	if got := s.Evaluate("Read", "abc"); got != DecisionAllow {
+		t.Fatalf("? should match one char, got %q", got)
+	}
+	if got := s.Evaluate("Read", "abbc"); got != DecisionBlock {
+		t.Fatalf("? should not match two chars, got %q", got)
+	}
+}

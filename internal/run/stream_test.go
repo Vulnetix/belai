@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vulnetix/signet/internal/transcript"
 	"github.com/vulnetix/signet/internal/wire"
 )
 
@@ -241,5 +242,100 @@ func TestStreamAndRunTurnsSealIdentically(t *testing.T) {
 		if c1 != c2 {
 			t.Fatalf("message %d content differs: %q vs %q", i, c1, c2)
 		}
+	}
+}
+
+func TestStreamOpenAIUsageOnDoneChunk(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"pong\"}}]}\n\n")
+		fmt.Fprint(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":20,\"total_tokens\":30}}\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	defer srv.Close()
+
+	cfg := Config{Provider: "openai", BaseURL: srv.URL, APIKey: "sk", Model: "gpt-5"}
+	ch, err := Stream(context.Background(), cfg, []Turn{{Role: "user", Content: "hi"}}, srv.Client())
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	var usage *transcript.Usage
+	for c := range ch {
+		if c.Err != nil {
+			t.Fatalf("stream error: %v", c.Err)
+		}
+		if c.Done {
+			usage = c.Usage
+			break
+		}
+	}
+	if usage == nil || usage.Total() != 30 {
+		t.Fatalf("Done usage = %+v, want total 30", usage)
+	}
+}
+
+func TestStreamAnthropicUsageMerged(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		fmt.Fprint(w, "data: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":100,\"cache_read_input_tokens\":5}}}\n\n")
+		fmt.Fprint(w, "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\n\n")
+		fmt.Fprint(w, "data: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":7}}\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	defer srv.Close()
+
+	cfg := Config{Provider: "anthropic", BaseURL: srv.URL, APIKey: "sk", Model: "claude-opus-4-5"}
+	ch, err := Stream(context.Background(), cfg, []Turn{{Role: "user", Content: "hi"}}, srv.Client())
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	var usage *transcript.Usage
+	for c := range ch {
+		if c.Err != nil {
+			t.Fatalf("stream error: %v", c.Err)
+		}
+		if c.Done {
+			usage = c.Usage
+			break
+		}
+	}
+	if usage == nil {
+		t.Fatalf("expected usage on Done chunk")
+	}
+	if usage.PromptTokens != 105 || usage.CompletionTokens != 7 || usage.Total() != 112 {
+		t.Fatalf("merged usage = %+v, want prompt 105 completion 7 total 112", usage)
+	}
+}
+
+func TestStreamNoUsageIsNil(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"pong\"}}]}\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	defer srv.Close()
+
+	cfg := Config{Provider: "openai", BaseURL: srv.URL, APIKey: "sk", Model: "gpt-5"}
+	ch, err := Stream(context.Background(), cfg, []Turn{{Role: "user", Content: "hi"}}, srv.Client())
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	var usage *transcript.Usage
+	var sawDone bool
+	for c := range ch {
+		if c.Done {
+			usage = c.Usage
+			sawDone = true
+			break
+		}
+	}
+	if !sawDone || usage != nil {
+		t.Fatalf("no-usage stream must end with nil usage, got %+v (done=%v)", usage, sawDone)
 	}
 }

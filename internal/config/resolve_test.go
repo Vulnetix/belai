@@ -1,156 +1,89 @@
 package config
 
-import (
-	"reflect"
-	"testing"
-)
-
-func ptr[T any](v T) *T { return &v }
+import "testing"
 
 func TestResolvePrecedence(t *testing.T) {
-	dir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	workdir := t.TempDir()
 
-	// Write global settings.
-	global := Settings{Model: "global-model", Provider: "global-provider", Effort: "low"}
-	if err := SaveGlobal(global); err != nil {
+	if err := SaveState(State{Model: "state-model", Provider: "openai"}); err != nil {
+		t.Fatalf("SaveState: %v", err)
+	}
+	if err := SaveGlobal(Settings{Model: "global-model", Effort: "low"}); err != nil {
 		t.Fatalf("SaveGlobal: %v", err)
 	}
-	// Write project settings.
-	proj := Settings{Model: "project-model", Effort: "medium"}
-	if err := SaveProject(dir, proj); err != nil {
+	if err := SaveProject(workdir, Settings{Model: "project-model", Caveman: boolPtr(true)}); err != nil {
 		t.Fatalf("SaveProject: %v", err)
 	}
 
-	eff, err := Resolve(dir, func(string) string { return "" }, Settings{})
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-
-	if eff.Settings.Model != "project-model" {
-		t.Fatalf("model: want project-model, got %q", eff.Settings.Model)
-	}
-	if eff.Origin["model"] != SourceProject {
-		t.Fatalf("model origin: want project, got %s", eff.Origin["model"])
-	}
-
-	if eff.Settings.Provider != "global-provider" {
-		t.Fatalf("provider: want global-provider, got %q", eff.Settings.Provider)
-	}
-	if eff.Origin["provider"] != SourceGlobal {
-		t.Fatalf("provider origin: want global, got %s", eff.Origin["provider"])
-	}
-
-	if eff.Settings.Effort != "medium" {
-		t.Fatalf("effort: want medium, got %q", eff.Settings.Effort)
-	}
-	if eff.Origin["effort"] != SourceProject {
-		t.Fatalf("effort origin: want project, got %s", eff.Origin["effort"])
-	}
-}
-
-func TestResolveEnvOverrides(t *testing.T) {
-	dir := t.TempDir()
 	env := func(k string) string {
 		switch k {
-		case "SIGNET_PROVIDER":
-			return "env-provider"
 		case "SIGNET_MODEL":
 			return "env-model"
-		case "SIGNET_EFFORT":
-			return "high"
-		}
-		return ""
-	}
-
-	eff, err := Resolve(dir, env, Settings{})
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	if eff.Settings.Provider != "env-provider" {
-		t.Fatalf("provider: want env-provider, got %q", eff.Settings.Provider)
-	}
-	if eff.Origin["provider"] != SourceEnv {
-		t.Fatalf("provider origin: want env, got %s", eff.Origin["provider"])
-	}
-}
-
-func TestResolveFlagOverridesEnv(t *testing.T) {
-	dir := t.TempDir()
-	env := func(k string) string {
-		if k == "SIGNET_MODEL" {
-			return "env-model"
+		case "SIGNET_PROVIDER":
+			return "anthropic"
 		}
 		return ""
 	}
 	flags := Settings{Model: "flag-model"}
 
-	eff, err := Resolve(dir, env, flags)
+	eff, err := Resolve(workdir, env, flags)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
+
 	if eff.Settings.Model != "flag-model" {
-		t.Fatalf("model: want flag-model, got %q", eff.Settings.Model)
+		t.Fatalf("Model = %q, want flag-model", eff.Settings.Model)
 	}
 	if eff.Origin["model"] != SourceFlag {
-		t.Fatalf("model origin: want flag, got %s", eff.Origin["model"])
+		t.Fatalf("model origin = %q, want flag", eff.Origin["model"])
 	}
-}
-
-func TestResolveCaveman(t *testing.T) {
-	dir := t.TempDir()
-	flags := Settings{Caveman: ptr(true)}
-
-	eff, err := Resolve(dir, func(string) string { return "" }, flags)
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
+	if eff.Settings.Provider != "anthropic" {
+		t.Fatalf("Provider = %q, want env anthropic", eff.Settings.Provider)
 	}
+	if eff.Origin["provider"] != SourceEnv {
+		t.Fatalf("provider origin = %q, want env", eff.Origin["provider"])
+	}
+	// effort comes from global (not overridden by anything above it).
+	if eff.Settings.Effort != "low" {
+		t.Fatalf("Effort = %q, want low from global", eff.Settings.Effort)
+	}
+	if eff.Origin["effort"] != SourceGlobal {
+		t.Fatalf("effort origin = %q, want global", eff.Origin["effort"])
+	}
+	// caveman comes from project.
 	if eff.Settings.Caveman == nil || !*eff.Settings.Caveman {
-		t.Fatal("expected caveman true")
+		t.Fatalf("Caveman should come from project")
 	}
-	if eff.Origin["caveman"] != SourceFlag {
-		t.Fatalf("caveman origin: want flag, got %s", eff.Origin["caveman"])
+	if eff.Origin["caveman"] != SourceProject {
+		t.Fatalf("caveman origin = %q, want project", eff.Origin["caveman"])
 	}
 }
 
-func TestResolvePermissionsMerge(t *testing.T) {
-	dir := t.TempDir()
-	global := Settings{Permissions: PermissionRules{Allow: []string{"Read"}}}
-	if err := SaveGlobal(global); err != nil {
+func TestResolveStateBeatsDefaultOnly(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	if err := SaveState(State{Model: "state-model"}); err != nil {
+		t.Fatalf("SaveState: %v", err)
+	}
+	if err := SaveGlobal(Settings{Model: "global-model"}); err != nil {
 		t.Fatalf("SaveGlobal: %v", err)
 	}
-	proj := Settings{Permissions: PermissionRules{Deny: []string{"Write"}}}
-	if err := SaveProject(dir, proj); err != nil {
-		t.Fatalf("SaveProject: %v", err)
-	}
-
-	eff, err := Resolve(dir, func(string) string { return "" }, Settings{})
+	eff, err := Resolve(t.TempDir(), func(string) string { return "" }, Settings{})
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	want := PermissionRules{Allow: []string{"Read"}, Deny: []string{"Write"}}
-	if !reflect.DeepEqual(eff.Settings.Permissions, want) {
-		t.Fatalf("permissions mismatch:\n want=%+v\n  got=%+v", want, eff.Settings.Permissions)
+	if eff.Settings.Model != "global-model" {
+		t.Fatalf("global should beat state, got %q", eff.Settings.Model)
+	}
+	if eff.Origin["model"] != SourceGlobal {
+		t.Fatalf("origin = %q", eff.Origin["model"])
 	}
 }
 
-func TestResolveUIAndContextWindows(t *testing.T) {
-	flags := Settings{
-		UI:               &UISettings{Banner: ptr(true)},
-		ContextWindows:   map[string]int{"custom": 128000},
-		ShowSessionNames: ptr(false),
-	}
-
-	eff, err := Resolve(t.TempDir(), func(string) string { return "" }, flags)
-	if err != nil {
+func TestResolveNilEnvFallsBackToOS(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	// nil env must not panic; it falls back to os.Getenv.
+	if _, err := Resolve(t.TempDir(), nil, Settings{}); err != nil {
 		t.Fatalf("Resolve: %v", err)
-	}
-	if eff.Settings.UI == nil || eff.Settings.UI.Banner == nil || !*eff.Settings.UI.Banner {
-		t.Fatal("expected banner true")
-	}
-	if !reflect.DeepEqual(eff.Settings.ContextWindows, map[string]int{"custom": 128000}) {
-		t.Fatalf("context windows mismatch: %v", eff.Settings.ContextWindows)
-	}
-	if eff.Settings.ShowSessionNames == nil || *eff.Settings.ShowSessionNames {
-		t.Fatal("expected show_session_names false")
 	}
 }

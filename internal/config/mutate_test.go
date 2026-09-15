@@ -3,108 +3,126 @@ package config
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"testing"
 )
 
-func TestOpenSettingsMissing(t *testing.T) {
-	d, err := OpenSettings(ScopeGlobal, "")
-	if err != nil {
-		t.Fatalf("OpenSettings missing: %v", err)
-	}
-	if d.Settings.Model != "" {
-		t.Fatalf("expected empty settings, got %+v", d.Settings)
-	}
-}
-
-func TestDocumentSaveAndRoundTrip(t *testing.T) {
-	dir := t.TempDir()
-
-	d, err := OpenSettings(ScopeProject, dir)
-	if err != nil {
-		t.Fatalf("OpenSettings: %v", err)
-	}
-	d.Settings.Model = "test-model"
-	d.Settings.Provider = "openai"
-	if err := d.Save(); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
-
-	d2, err := OpenSettings(ScopeProject, dir)
-	if err != nil {
-		t.Fatalf("OpenSettings round-trip: %v", err)
-	}
-	if d2.Settings.Model != "test-model" {
-		t.Fatalf("model mismatch: want test-model, got %q", d2.Settings.Model)
-	}
-	if d2.Settings.Provider != "openai" {
-		t.Fatalf("provider mismatch: want openai, got %q", d2.Settings.Provider)
-	}
-}
-
-func TestDocumentPreservesUnmanagedKeys(t *testing.T) {
-	dir := t.TempDir()
-	path := ProjectSettingsPath(dir)
-	if err := os.MkdirAll(dir+"/.vulnetix", 0o755); err != nil {
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	// Write a file with both managed and unmanaged keys.
-	original := []byte(`{"model":"m","provider":"p","unmanaged_key":"keep_me"}`)
-	if err := os.WriteFile(path, original, 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
 	}
+}
 
-	d, err := OpenSettings(ScopeProject, dir)
-	if err != nil {
-		t.Fatalf("OpenSettings: %v", err)
-	}
-	d.Settings.Model = "new-model"
-	if err := d.Save(); err != nil {
-		t.Fatalf("Save: %v", err)
+func TestMutatePreservesUnknownKeys(t *testing.T) {
+	workdir := t.TempDir()
+	path := ProjectSettingsPath(workdir)
+	seed := `{"model":"a","vulnetix_extra":{"nested":{"x":1},"keep":true}}`
+	writeFile(t, path, seed)
+
+	if err := Mutate(ScopeProject, workdir, func(s *Settings) error {
+		s.Model = "b"
+		return nil
+	}); err != nil {
+		t.Fatalf("Mutate: %v", err)
 	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	var m map[string]any
-	if err := json.Unmarshal(data, &m); err != nil {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if m["unmanaged_key"] != "keep_me" {
-		t.Fatalf("unmanaged key lost: %v", m["unmanaged_key"])
+	if string(raw["model"]) != `"b"` {
+		t.Fatalf("model = %s, want b", raw["model"])
 	}
-	if m["model"] != "new-model" {
-		t.Fatalf("managed key not updated: %v", m["model"])
+	var extra map[string]any
+	if err := json.Unmarshal(raw["vulnetix_extra"], &extra); err != nil {
+		t.Fatalf("foreign key not valid JSON: %s (%v)", raw["vulnetix_extra"], err)
+	}
+	if extra["keep"] != true {
+		t.Fatalf("foreign key lost: %s", raw["vulnetix_extra"])
+	}
+	nested, ok := extra["nested"].(map[string]any)
+	if !ok || nested["x"] != float64(1) {
+		t.Fatalf("foreign nested key lost: %s", raw["vulnetix_extra"])
 	}
 }
 
-func TestMutate(t *testing.T) {
-	dir := t.TempDir()
+func TestMutateDeletesUnsetKeys(t *testing.T) {
+	workdir := t.TempDir()
+	path := ProjectSettingsPath(workdir)
+	writeFile(t, path, `{"model":"a","effort":"high"}`)
 
-	if err := Mutate(ScopeProject, dir, func(s *Settings) error {
-		s.Model = "mutated"
+	if err := Mutate(ScopeProject, workdir, func(s *Settings) error {
+		s.Model = ""
 		return nil
 	}); err != nil {
 		t.Fatalf("Mutate: %v", err)
 	}
-
-	got, err := LoadProject(dir)
-	if err != nil {
-		t.Fatalf("LoadProject: %v", err)
+	data, _ := os.ReadFile(path)
+	var raw map[string]json.RawMessage
+	_ = json.Unmarshal(data, &raw)
+	if _, ok := raw["model"]; ok {
+		t.Fatalf("unset model key should be deleted: %s", data)
 	}
-	if got.Model != "mutated" {
-		t.Fatalf("model: want mutated, got %q", got.Model)
+	if _, ok := raw["effort"]; !ok {
+		t.Fatalf("effort key should survive: %s", data)
 	}
 }
 
-func TestIsUnsetJSON(t *testing.T) {
-	if !isUnsetJSON([]byte("null")) {
-		t.Fatal("null should be unset")
+func TestMutateGlobalScope(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	if err := Mutate(ScopeGlobal, "/ignored", func(s *Settings) error {
+		s.Provider = "openai"
+		return nil
+	}); err != nil {
+		t.Fatalf("Mutate global: %v", err)
 	}
-	if !isUnsetJSON([]byte("{}")) {
-		t.Fatal("{} should be unset")
+	g, err := LoadGlobal()
+	if err != nil {
+		t.Fatalf("LoadGlobal: %v", err)
 	}
-	if isUnsetJSON([]byte(`"x"`)) {
-		t.Fatal("string should not be unset")
+	if g.Provider != "openai" {
+		t.Fatalf("global provider = %q", g.Provider)
+	}
+}
+
+func TestMutateCreatesFile(t *testing.T) {
+	workdir := t.TempDir()
+	if err := Mutate(ScopeProject, workdir, func(s *Settings) error {
+		s.Caveman = boolPtr(true)
+		return nil
+	}); err != nil {
+		t.Fatalf("Mutate: %v", err)
+	}
+	got, err := LoadProject(workdir)
+	if err != nil {
+		t.Fatalf("LoadProject: %v", err)
+	}
+	if got.Caveman == nil || !*got.Caveman {
+		t.Fatalf("caveman = %v", got.Caveman)
+	}
+}
+
+func TestSettingsFileNameAndMode(t *testing.T) {
+	workdir := t.TempDir()
+	if err := Mutate(ScopeProject, workdir, func(s *Settings) error {
+		s.Model = "m"
+		return nil
+	}); err != nil {
+		t.Fatalf("Mutate: %v", err)
+	}
+	fi, err := os.Stat(ProjectSettingsPath(workdir))
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if fi.Mode().Perm() != 0o600 {
+		t.Fatalf("settings file mode = %o, want 600", fi.Mode().Perm())
 	}
 }

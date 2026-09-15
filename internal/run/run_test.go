@@ -423,3 +423,86 @@ func TestUserAgentIsConsistentAcrossRoleManagerCalls(t *testing.T) {
 		t.Fatalf("User-Agent %q does not carry the build version", want)
 	}
 }
+
+func TestParseOpenAIChatPopulatesUsageAndStopReason(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"x","object":"chat.completion","usage":{"prompt_tokens":10,"completion_tokens":20,"total_tokens":30},"choices":[{"index":0,"message":{"role":"assistant","content":"pong"},"finish_reason":"stop"}]}`)
+	}))
+	defer srv.Close()
+
+	cfg := Config{Provider: "openai", BaseURL: srv.URL, APIKey: "sk", Model: "gpt-5"}
+	a, err := SendTurns(cfg, "", []Turn{{Role: "user", Content: "hi"}}, srv.Client())
+	if err != nil {
+		t.Fatalf("SendTurns: %v", err)
+	}
+	if a.Usage == nil || a.Usage.Total() != 30 {
+		t.Fatalf("Usage = %+v, want total 30", a.Usage)
+	}
+	if a.StopReason != "stop" {
+		t.Fatalf("StopReason = %q", a.StopReason)
+	}
+}
+
+func TestParseAnthropicPopulatesUsageAndStopReason(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"x","type":"message","role":"assistant","content":[{"type":"text","text":"pong"}],"stop_reason":"end_turn","usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":2}}`)
+	}))
+	defer srv.Close()
+
+	cfg := Config{Provider: "anthropic", BaseURL: srv.URL, APIKey: "sk", Model: "claude-opus-4-5"}
+	a, err := SendTurns(cfg, "", []Turn{{Role: "user", Content: "hi"}}, srv.Client())
+	if err != nil {
+		t.Fatalf("SendTurns: %v", err)
+	}
+	if a.Usage == nil || a.Usage.PromptTokens != 12 {
+		t.Fatalf("Usage = %+v, want prompt 12 (input + cache read)", a.Usage)
+	}
+	if a.Usage.CompletionTokens != 5 {
+		t.Fatalf("CompletionTokens = %d", a.Usage.CompletionTokens)
+	}
+	if a.StopReason != "end_turn" {
+		t.Fatalf("StopReason = %q", a.StopReason)
+	}
+}
+
+func TestBuildRequestOmitsEffortWhenUnset(t *testing.T) {
+	cfg := Config{Provider: "openai", BaseURL: "https://api.openai.com/v1", APIKey: "sk", Model: "gpt-5"}
+	req, err := buildRequest(cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, false, nil, nil)
+	if err != nil {
+		t.Fatalf("buildRequest: %v", err)
+	}
+	b, _ := io.ReadAll(req.Body)
+	if strings.Contains(string(b), "reasoning_effort") || strings.Contains(string(b), "stream_options") {
+		t.Fatalf("empty effort must emit nothing: %s", b)
+	}
+}
+
+func TestBuildRequestMapsEffort(t *testing.T) {
+	cfg := Config{Provider: "openai", BaseURL: "https://api.openai.com/v1", APIKey: "sk", Model: "gpt-5", Effort: "high"}
+	req, err := buildRequest(cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, false, nil, nil)
+	if err != nil {
+		t.Fatalf("buildRequest: %v", err)
+	}
+	b, _ := io.ReadAll(req.Body)
+	if !strings.Contains(string(b), `"reasoning_effort":"high"`) {
+		t.Fatalf("expected reasoning_effort: %s", b)
+	}
+
+	cfg2 := Config{Provider: "anthropic", BaseURL: "https://api.anthropic.com", APIKey: "sk", Model: "claude-opus-4-5", Effort: "medium"}
+	req2, err := buildRequest(cfg2, "sys", []Turn{{Role: "user", Content: "hi"}}, false, nil, nil)
+	if err != nil {
+		t.Fatalf("buildRequest: %v", err)
+	}
+	b2, _ := io.ReadAll(req2.Body)
+	if !strings.Contains(string(b2), `"budget_tokens":4096`) {
+		t.Fatalf("expected anthropic thinking budget: %s", b2)
+	}
+}
+
+func TestDefaultModelAnthropic(t *testing.T) {
+	if got := DefaultModel("anthropic"); got != "claude-opus-4-5" {
+		t.Fatalf("DefaultModel(anthropic) = %q", got)
+	}
+}

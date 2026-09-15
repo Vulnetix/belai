@@ -2,70 +2,50 @@ package models
 
 import "testing"
 
-func TestCatalogOpenAI(t *testing.T) {
-	c := Catalog("openai")
-	if len(c) == 0 {
-		t.Fatal("expected non-empty openai catalog")
-	}
-	if c[0].ID != "gpt-5" {
-		t.Fatalf("expected gpt-5 first, got %s", c[0].ID)
-	}
-}
-
-func TestCatalogAnthropic(t *testing.T) {
-	c := Catalog("anthropic")
-	found := false
-	for _, m := range c {
-		if m.ID == "claude-opus-4-5" {
-			found = true
+func TestCatalogReturnsModels(t *testing.T) {
+	for _, p := range []string{"openai", "anthropic", "cloudflare-workers-ai", "cloudflare-ai-gateway"} {
+		cat := Catalog(p)
+		if len(cat) == 0 {
+			t.Fatalf("Catalog(%s) is empty", p)
+		}
+		for _, m := range cat {
+			if m.ID == "" || m.Label == "" || len(m.Efforts) == 0 {
+				t.Fatalf("Catalog(%s) has incomplete model %+v", p, m)
+			}
 		}
 	}
-	if !found {
-		t.Fatal("expected claude-opus-4-5 in anthropic catalog")
+}
+
+func TestCatalogUnknownProviderDefaultsToOpenAI(t *testing.T) {
+	cat := Catalog("bogus")
+	if len(cat) == 0 || cat[0].ID != "gpt-5" {
+		t.Fatalf("unknown provider should default to openai catalog, got %+v", cat)
 	}
 }
 
-func TestCatalogUnknownProvider(t *testing.T) {
-	c := Catalog("unknown")
-	if len(c) == 0 {
-		t.Fatal("expected default openai catalog for unknown provider")
+func TestEffortsFallsBack(t *testing.T) {
+	if got := Efforts("openai", "not-a-model"); len(got) != 3 {
+		t.Fatalf("Efforts fallback = %v", got)
 	}
-}
-
-func TestEfforts(t *testing.T) {
-	e := Efforts("openai", "gpt-5")
-	if len(e) != 3 {
-		t.Fatalf("expected 3 effort levels, got %d", len(e))
-	}
-}
-
-func TestEffortsUnknownModel(t *testing.T) {
-	e := Efforts("openai", "unknown")
-	if len(e) != 3 {
-		t.Fatalf("expected default efforts for unknown model, got %d", len(e))
+	if got := Efforts("openai", "gpt-5"); len(got) == 0 {
+		t.Fatalf("known model should have efforts")
 	}
 }
 
 func TestThinkingBudget(t *testing.T) {
-	if v := ThinkingBudget("low"); v != 1024 {
-		t.Fatalf("expected 1024, got %d", v)
-	}
-	if v := ThinkingBudget("medium"); v != 4096 {
-		t.Fatalf("expected 4096, got %d", v)
-	}
-	if v := ThinkingBudget("high"); v != 16384 {
-		t.Fatalf("expected 16384, got %d", v)
-	}
-	if v := ThinkingBudget(""); v != 0 {
-		t.Fatalf("expected 0, got %d", v)
+	cases := map[string]int{"low": 1024, "medium": 4096, "high": 16384, "": 0, "bogus": 0}
+	for effort, want := range cases {
+		if got := ThinkingBudget(effort); got != want {
+			t.Fatalf("ThinkingBudget(%q) = %d, want %d", effort, got, want)
+		}
 	}
 }
 
 func TestLabel(t *testing.T) {
-	if v := Label("openai", "gpt-5"); v != "GPT-5" {
-		t.Fatalf("expected GPT-5, got %s", v)
+	if got := Label("openai", "gpt-5"); got != "GPT-5" {
+		t.Fatalf("Label = %q", got)
 	}
-	if v := Label("openai", "unknown"); v != "unknown" {
-		t.Fatalf("expected unknown, got %s", v)
+	if got := Label("openai", "unknown-id"); got != "unknown-id" {
+		t.Fatalf("Label fallback = %q", got)
 	}
 }

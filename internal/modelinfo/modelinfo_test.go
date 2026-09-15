@@ -2,64 +2,79 @@ package modelinfo
 
 import "testing"
 
-func TestLookupExact(t *testing.T) {
+func TestExactHit(t *testing.T) {
 	info, ok := Lookup("gpt-5")
-	if !ok {
-		t.Fatal("expected gpt-5 to be known")
-	}
-	if info.ContextWindow != 400_000 {
-		t.Fatalf("expected 400k window, got %d", info.ContextWindow)
+	if !ok || info.ContextWindow != 400_000 || info.MaxOutput != 128_000 {
+		t.Fatalf("Lookup(gpt-5) = %+v, %v", info, ok)
 	}
 }
 
-func TestLookupPrefix(t *testing.T) {
-	info, ok := Lookup("claude-opus-4-9")
-	if !ok {
-		t.Fatal("expected prefix match")
-	}
-	if info.ContextWindow != 1_000_000 {
-		t.Fatalf("expected 1M window, got %d", info.ContextWindow)
+func TestCaseFoldAndTrim(t *testing.T) {
+	info, ok := Lookup("  GPT-5 ")
+	if !ok || info.ContextWindow != 400_000 {
+		t.Fatalf("Lookup = %+v, %v", info, ok)
 	}
 }
 
-func TestLookupUnknown(t *testing.T) {
-	_, ok := Lookup("totally-unknown-model-xyz")
-	if ok {
-		t.Fatal("expected unknown model")
+func TestDotDashEquivalence(t *testing.T) {
+	dashed, ok1 := Lookup("claude-sonnet-4-5")
+	dotted, ok2 := Lookup("claude-sonnet-4.5")
+	if !ok1 || !ok2 {
+		t.Fatalf("both forms must resolve")
+	}
+	if dashed.ContextWindow != dotted.ContextWindow || dashed.ContextWindow != 1_000_000 {
+		t.Fatalf("dot/dash forms diverged: %+v vs %+v", dashed, dotted)
 	}
 }
 
-func TestLookupNormalization(t *testing.T) {
-	info, ok := Lookup("  GPT-5  ")
-	if !ok {
-		t.Fatal("expected normalized match")
-	}
-	if info.ID != "gpt-5" {
-		t.Fatalf("expected gpt-5, got %s", info.ID)
-	}
-}
-
-func TestLookupWorkersAI(t *testing.T) {
+func TestWorkersAIPrefixStrip(t *testing.T) {
 	info, ok := Lookup("workers-ai/@cf/moonshotai/kimi-k2.6")
-	if !ok {
-		t.Fatal("expected workers-ai prefix stripped")
-	}
-	if info.ID != "@cf/moonshotai/kimi-k2.6" {
-		t.Fatalf("unexpected id %s", info.ID)
+	if !ok || info.ContextWindow != 262_144 {
+		t.Fatalf("Lookup = %+v, %v", info, ok)
 	}
 }
 
-func TestResolveWithOverride(t *testing.T) {
-	overrides := map[string]int{"custom": 999}
-	v, ok := Resolve("custom", overrides)
-	if !ok || v != 999 {
-		t.Fatalf("expected override 999, got %d %v", v, ok)
+func TestExactBeatsPrefix(t *testing.T) {
+	info, ok := Lookup("claude-opus-4-5")
+	if !ok || info.ContextWindow != 200_000 {
+		t.Fatalf("claude-opus-4-5 = %+v, want 200k (not the 1M family prefix)", info)
 	}
 }
 
-func TestResolveFallback(t *testing.T) {
-	v, ok := Resolve("gpt-5", nil)
-	if !ok || v != 400_000 {
-		t.Fatalf("expected fallback 400000, got %d %v", v, ok)
+func TestLongestPrefixWins(t *testing.T) {
+	info, ok := Lookup("gpt-4.1-custom-variant")
+	if !ok || info.ContextWindow != 1_047_576 {
+		t.Fatalf("gpt-4.1 prefix should win, got %+v", info)
+	}
+}
+
+func TestUnknownReturnsFalse(t *testing.T) {
+	if _, ok := Lookup("no-such-model-xyz"); ok {
+		t.Fatalf("unknown model must return ok=false")
+	}
+}
+
+func TestResolveHonoursOverride(t *testing.T) {
+	got, ok := Resolve("my-model", map[string]int{"my-model": 12345})
+	if !ok || got != 12345 {
+		t.Fatalf("Resolve = %d, %v", got, ok)
+	}
+}
+
+func TestResolveNilSafe(t *testing.T) {
+	got, ok := Resolve("gpt-5", nil)
+	if !ok || got != 400_000 {
+		t.Fatalf("Resolve = %d, %v", got, ok)
+	}
+	if _, ok := Resolve("unknown", nil); ok {
+		t.Fatalf("unknown with nil overrides must return ok=false")
+	}
+}
+
+func TestAllDefaultModelsCovered(t *testing.T) {
+	for _, id := range []string{"gpt-5", "claude-sonnet-4-5", "claude-opus-4-5", "@cf/moonshotai/kimi-k2.6"} {
+		if _, ok := Lookup(id); !ok {
+			t.Fatalf("default model %q must be in the registry", id)
+		}
 	}
 }

@@ -3,39 +3,77 @@ package rolemanager
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
-func TestBuildSessionNamePayload(t *testing.T) {
-	p := BuildSessionNamePayload("refactor the parser")
-	if p.System == "" {
-		t.Fatal("expected non-empty system prompt")
-	}
-	if p.User != "refactor the parser" {
-		t.Fatalf("expected user content preserved, got %q", p.User)
-	}
-	if len(p.Tools) != 0 || len(p.Skills) != 0 || p.Agent != "" {
-		t.Fatal("session name payload should have no tools/skills/agent")
+func TestParseSessionNamePlain(t *testing.T) {
+	got, err := ParseSessionName("fix the parser bug")
+	if err != nil || got != "fix the parser bug" {
+		t.Fatalf("ParseSessionName = %q, %v", got, err)
 	}
 }
 
-func TestMaxSessionNameRunes(t *testing.T) {
-	const max = MaxSessionNameRunes
-	if max <= 0 {
-		t.Fatal("MaxSessionNameRunes should be positive")
+func TestParseSessionNameStripsQuotes(t *testing.T) {
+	got, err := ParseSessionName(`"quoted title"`)
+	if err != nil || got != "quoted title" {
+		t.Fatalf("ParseSessionName = %q, %v", got, err)
 	}
 }
 
-func TestBuildSessionNamePayloadEmpty(t *testing.T) {
-	p := BuildSessionNamePayload("")
-	if p.User != "" {
-		t.Fatalf("expected empty user, got %q", p.User)
+func TestParseSessionNameRejectsMultiline(t *testing.T) {
+	if _, err := ParseSessionName("line one\nline two"); err == nil {
+		t.Fatalf("multiline should fail")
 	}
 }
 
-func TestBuildSessionNamePayloadLong(t *testing.T) {
-	msg := strings.Repeat("x", 1000)
-	p := BuildSessionNamePayload(msg)
-	if p.User != msg {
-		t.Fatal("long message should be preserved exactly")
+func TestParseSessionNameStripsControlChars(t *testing.T) {
+	got, err := ParseSessionName("bad\x00name")
+	if err != nil || got != "bad name" {
+		t.Fatalf("control char should be stripped to space, got %q, %v", got, err)
+	}
+}
+
+func TestParseSessionNameRejectsNonPrintable(t *testing.T) {
+	if _, err := ParseSessionName("bad\u200bname"); err == nil {
+		t.Fatalf("non-printable rune should fail")
+	}
+}
+
+func TestParseSessionNameRejectsLeadingSlash(t *testing.T) {
+	if _, err := ParseSessionName("/compact"); err == nil {
+		t.Fatalf("leading slash should fail")
+	}
+}
+
+func TestParseSessionNameTruncatesRuneSafe(t *testing.T) {
+	long := strings.Repeat("é", 200)
+	got, err := ParseSessionName(long)
+	if err != nil {
+		t.Fatalf("ParseSessionName: %v", err)
+	}
+	if len([]rune(got)) != MaxSessionNameRunes {
+		t.Fatalf("length = %d runes, want %d", len([]rune(got)), MaxSessionNameRunes)
+	}
+	if !utf8.ValidString(got) {
+		t.Fatalf("truncation emitted invalid UTF-8")
+	}
+}
+
+func TestParseSessionNameRejectsEmpty(t *testing.T) {
+	if _, err := ParseSessionName("   "); err == nil {
+		t.Fatalf("empty should fail")
+	}
+}
+
+func TestSanitizeSessionNameTruncatesInsteadOfRejecting(t *testing.T) {
+	got, err := SanitizeSessionName("line one\nline two is fine here")
+	if err != nil {
+		t.Fatalf("SanitizeSessionName: %v", err)
+	}
+	if strings.Contains(got, "\n") {
+		t.Fatalf("newlines should collapse: %q", got)
+	}
+	if len([]rune(got)) > MaxSessionNameRunes {
+		t.Fatalf("too long: %d runes", len([]rune(got)))
 	}
 }
