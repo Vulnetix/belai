@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/signet/internal/provider"
 )
 
 // Resolver resolves provider credentials from a stack of sources.
@@ -30,7 +31,7 @@ type BackendInfo struct {
 // resolves through this resolver.
 func (r *Resolver) ConfiguredProviders() []string {
 	var out []string
-	for _, p := range []string{"openai", "anthropic", "cloudflare-workers-ai", "cloudflare-ai-gateway"} {
+	for _, p := range provider.Names() {
 		if r.Configured(p) {
 			out = append(out, p)
 		}

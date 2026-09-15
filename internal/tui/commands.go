@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/vulnetix/signet/internal/goals"
+	"github.com/vulnetix/signet/internal/provider"
 )
 
 // Handler runs a slash command with its argument.
@@ -86,7 +87,7 @@ func NewRegistry(workdir string) *Registry {
 		return a.push(viewSettings)
 	})
 	r.Register("credentials", "manage provider credentials", func() []string {
-		return []string{"openai", "anthropic", "cloudflare-workers-ai", "cloudflare-ai-gateway"}
+		return provider.Names()
 	}, func(a *App, arg string) tea.Cmd {
 		return a.push(viewCredentials)
 	})

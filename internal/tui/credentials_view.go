@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/vulnetix/signet/internal/credentials"
+	"github.com/vulnetix/signet/internal/provider"
 )
 
 // credentialViewState tracks the credential manager UI.
@@ -93,7 +94,7 @@ func (a *App) credentialView() string {
 // initCredentialState populates the credential view state.
 func (a *App) initCredentialState() {
 	a.credentialState = credentialViewState{
-		providers: []string{"openai", "anthropic", "cloudflare-workers-ai", "cloudflare-ai-gateway"},
+		providers: provider.Names(),
 		backend:   credentials.SourceUserFile,
 	}
 	if a.resolver != nil {
