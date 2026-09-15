@@ -237,7 +237,7 @@ func New(opts Options) *App {
 
 	client := opts.Client
 	if client == nil {
-		client = &http.Client{Timeout: 60 * time.Second}
+		client = http.DefaultClient
 	}
 
 	store, _ := session.NewStore()
