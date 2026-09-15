@@ -3,7 +3,7 @@ package wire
 // OpenAITool is the wire shape for a tool offered in an OpenAI chat
 // /completions or responses request.
 type OpenAITool struct {
-	Type     string           `json:"type"`
+	Type     string            `json:"type"`
 	Function OpenAIFunctionDef `json:"function"`
 }
 
@@ -16,7 +16,7 @@ type OpenAIFunctionDef struct {
 
 // OpenAIToolCall is a model-emitted tool invocation inside an assistant
 // message. The Arguments field is a JSON *string* requiring a second unmarshal
-to access the typed map.
+// to access the typed map.
 type OpenAIToolCall struct {
 	ID       string `json:"id"`
 	Type     string `json:"type"`
