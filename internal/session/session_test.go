@@ -260,6 +260,48 @@ func TestSessions(t *testing.T) {
 	}
 }
 
+func TestUserPromptsDedupedAndOrdered(t *testing.T) {
+	st := testStore(t, t.TempDir())
+	workdir := t.TempDir()
+
+	if err := st.Append(workdir, "sess-old", Entry{ID: "a", Type: "user", Role: "user", Content: "duplicate"}); err != nil {
+		t.Fatalf("append old: %v", err)
+	}
+	if err := st.Append(workdir, "sess-old", Entry{ID: "b", Type: "assistant", Role: "assistant", Content: "ok"}); err != nil {
+		t.Fatalf("append old assistant: %v", err)
+	}
+
+	if err := st.Append(workdir, "sess-new", Entry{ID: "c", Type: "user", Role: "user", Content: "unique new"}); err != nil {
+		t.Fatalf("append new: %v", err)
+	}
+	if err := st.Append(workdir, "sess-new", Entry{ID: "d", Type: "user", Role: "user", Content: "duplicate"}); err != nil {
+		t.Fatalf("append new dup: %v", err)
+	}
+
+	prompts, err := st.UserPrompts(workdir)
+	if err != nil {
+		t.Fatalf("UserPrompts: %v", err)
+	}
+	// Most recently appended first across sessions (sessions ordered by most
+	// recent modification); the duplicated "duplicate" prompt keeps its most
+	// recent occurrence, which came after "unique new".
+	want := []string{"duplicate", "unique new"}
+	if !reflect.DeepEqual(prompts, want) {
+		t.Fatalf("got %v, want %v", prompts, want)
+	}
+}
+
+func TestUserPromptsMissingDir(t *testing.T) {
+	st := testStore(t, t.TempDir())
+	prompts, err := st.UserPrompts(t.TempDir())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(prompts) != 0 {
+		t.Fatalf("expected empty, got %v", prompts)
+	}
+}
+
 func TestNewIDUnique(t *testing.T) {
 	seen := map[string]bool{}
 	for i := 0; i < 1000; i++ {

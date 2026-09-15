@@ -395,7 +395,15 @@ func runSignetDir(t *testing.T, dir, baseURL string, args ...string) (stdout, st
 	var out, errb bytes.Buffer
 	cmd := exec.Command(signetBin, args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "SIGNET_BASE_URL="+baseURL, "OPENAI_API_KEY=test")
+	// Isolate global state so the developer's (or CI's) local settings cannot
+	// change the posture/policy under test.
+	home := filepath.Join(t.TempDir(), "signet-home")
+	_ = os.MkdirAll(home, 0o700)
+	settings := []byte(`{"permissions":{"allow":["Read"]}}`)
+	if err := os.WriteFile(filepath.Join(home, "settings.json"), settings, 0o600); err != nil {
+		t.Fatalf("write settings.json: %v", err)
+	}
+	cmd.Env = append(os.Environ(), "SIGNET_BASE_URL="+baseURL, "OPENAI_API_KEY=test", "SIGNET_HOME="+home)
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
 	if err := cmd.Run(); err != nil {

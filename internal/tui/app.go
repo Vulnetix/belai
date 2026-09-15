@@ -29,6 +29,7 @@ import (
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/profiles"
 	"github.com/vulnetix/signet/internal/prompt"
+	"github.com/vulnetix/signet/internal/promptlib"
 	"github.com/vulnetix/signet/internal/provider"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
@@ -147,6 +148,20 @@ type App struct {
 	parentSession string            // set on a compacted session
 	usage         *transcript.Usage // last provider-reported usage
 	usageStale    bool              // set by /compact, cleared by fresh usage
+
+	// prompt history / library cycling
+	historyActive   bool
+	historyQuery    string
+	historyOriginal string
+	historyIndex    int
+	historyResults  []string
+
+	// autocomplete cycling
+	autocompleteIndex int
+
+	// save to library
+	savePromptMode  bool
+	savePromptValue string
 
 	// layout
 	vp viewport.Model
@@ -577,6 +592,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
+	if a.savePromptMode {
+		return a.handleSavePromptKey(m)
+	}
+	if a.historyActive {
+		return a.handleHistoryKey(m)
+	}
+
 	switch m.String() {
 	case "shift+tab":
 		a.cycleMode()
@@ -599,11 +621,13 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		if isShellInput(input) {
 			a.editor.Reset()
 			a.autocomplete = nil
+			a.autocompleteIndex = 0
 			return a.handleShell(input)
 		}
 		if strings.HasPrefix(input, "/") {
 			a.editor.Reset()
 			a.autocomplete = nil
+			a.autocompleteIndex = 0
 			return a.handleCommand(input)
 		}
 		cmd := a.syncAttachments()
@@ -612,12 +636,224 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 			return tea.Batch(cmd, a.attachSpin.Tick)
 		}
 		return a.submitInput(input)
+	case "up":
+		return a.startHistoryCycle()
+	case "alt+s":
+		return a.startSavePrompt()
+	}
+
+	if len(a.autocomplete) > 0 {
+		switch m.String() {
+		case "tab":
+			return a.cycleAutocomplete()
+		case "right":
+			return a.acceptAutocomplete()
+		}
 	}
 
 	cmd := a.editor.Update(m)
 	a.autocomplete = a.registry.Complete(a.editor.Value())
+	a.autocompleteIndex = 0
 	a.relayout()
 	return cmd
+}
+
+// ---------------------------------------------------------------------------
+// Prompt history / library cycling
+// ---------------------------------------------------------------------------
+
+func (a *App) startHistoryCycle() tea.Cmd {
+	a.historyQuery = strings.TrimSpace(a.editor.Value())
+	a.historyOriginal = a.editor.Value()
+	a.historyResults = a.buildHistoryResults(a.historyQuery)
+	a.historyActive = true
+	if len(a.historyResults) > 0 {
+		a.historyIndex = 0
+		a.editor.SetValue(a.historyResults[0])
+		a.editor.CursorEnd()
+	} else {
+		a.historyIndex = -1
+		a.editor.SetValue(a.historyQuery)
+	}
+	a.autocomplete = nil
+	a.autocompleteIndex = 0
+	return nil
+}
+
+func (a *App) buildHistoryResults(query string) []string {
+	var results []string
+	seen := make(map[string]bool)
+
+	globalLib, _ := promptlib.LoadGlobal()
+	projLib, _ := promptlib.LoadProject(a.workdir)
+	lib := promptlib.Merge(globalLib, projLib)
+	for _, e := range lib.Filter(query) {
+		if !seen[e.Prompt] {
+			seen[e.Prompt] = true
+			results = append(results, e.Prompt)
+		}
+	}
+
+	if a.store != nil {
+		prompts, _ := a.store.UserPrompts(a.workdir)
+		for _, p := range prompts {
+			if !seen[p] && promptlib.Match(promptlib.Entry{Name: "", Prompt: p}, query) {
+				seen[p] = true
+				results = append(results, p)
+			}
+		}
+	}
+
+	return results
+}
+
+func (a *App) handleHistoryKey(m tea.KeyMsg) tea.Cmd {
+	switch m.String() {
+	case "up":
+		if a.historyIndex < len(a.historyResults)-1 {
+			a.historyIndex++
+			a.editor.SetValue(a.historyResults[a.historyIndex])
+			a.editor.CursorEnd()
+		}
+		return nil
+	case "down":
+		if a.historyIndex > 0 {
+			a.historyIndex--
+			a.editor.SetValue(a.historyResults[a.historyIndex])
+			a.editor.CursorEnd()
+		} else {
+			a.exitHistoryCycle(false)
+		}
+		return nil
+	case "enter":
+		a.exitHistoryCycle(true)
+		return nil
+	case "esc":
+		a.exitHistoryCycle(false)
+		return nil
+	}
+
+	switch m.Type {
+	case tea.KeyRunes:
+		a.historyQuery += string(m.Runes)
+	case tea.KeyBackspace:
+		r := []rune(a.historyQuery)
+		if len(r) > 0 {
+			a.historyQuery = string(r[:len(r)-1])
+		} else {
+			a.exitHistoryCycle(false)
+			return nil
+		}
+	case tea.KeySpace:
+		a.historyQuery += " "
+	default:
+		a.exitHistoryCycle(false)
+		return a.editor.Update(m)
+	}
+
+	a.historyResults = a.buildHistoryResults(a.historyQuery)
+	if len(a.historyResults) > 0 {
+		a.historyIndex = 0
+		a.editor.SetValue(a.historyResults[0])
+		a.editor.CursorEnd()
+	} else {
+		a.historyIndex = -1
+		a.editor.SetValue(a.historyQuery)
+	}
+	return nil
+}
+
+func (a *App) exitHistoryCycle(accept bool) {
+	a.historyActive = false
+	if !accept {
+		a.editor.SetValue(a.historyOriginal)
+	}
+	a.historyResults = nil
+	a.historyIndex = 0
+	a.historyQuery = ""
+	a.historyOriginal = ""
+	a.autocomplete = a.registry.Complete(a.editor.Value())
+}
+
+// ---------------------------------------------------------------------------
+// Autocomplete cycling
+// ---------------------------------------------------------------------------
+
+func (a *App) cycleAutocomplete() tea.Cmd {
+	a.autocompleteIndex++
+	if a.autocompleteIndex >= len(a.autocomplete) {
+		a.autocompleteIndex = 0
+	}
+	a.editor.SetValue(a.autocomplete[a.autocompleteIndex])
+	a.editor.CursorEnd()
+	return nil
+}
+
+func (a *App) acceptAutocomplete() tea.Cmd {
+	if len(a.autocomplete) == 0 {
+		return nil
+	}
+	a.editor.SetValue(a.autocomplete[0])
+	a.editor.CursorEnd()
+	a.autocomplete = nil
+	a.autocompleteIndex = 0
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Save prompt to library
+// ---------------------------------------------------------------------------
+
+func (a *App) startSavePrompt() tea.Cmd {
+	val := strings.TrimSpace(a.editor.Value())
+	if val == "" {
+		a.addSystem("nothing to save; type a prompt first")
+		return nil
+	}
+	a.savePromptValue = val
+	a.savePromptMode = true
+	a.editor.Reset()
+	a.autocomplete = nil
+	a.autocompleteIndex = 0
+	return nil
+}
+
+func (a *App) handleSavePromptKey(m tea.KeyMsg) tea.Cmd {
+	switch m.String() {
+	case "enter":
+		name := strings.TrimSpace(a.editor.Value())
+		if name == "" {
+			a.addSystem("save cancelled: name required")
+			a.cancelSavePrompt()
+			return nil
+		}
+		return a.finishSavePrompt(name)
+	case "esc":
+		a.cancelSavePrompt()
+		a.addSystem("save cancelled")
+		return nil
+	}
+	return a.editor.Update(m)
+}
+
+func (a *App) finishSavePrompt(name string) tea.Cmd {
+	lib, _ := promptlib.LoadProject(a.workdir)
+	lib.Add(promptlib.Entry{Name: name, Prompt: a.savePromptValue})
+	if err := promptlib.SaveProject(a.workdir, lib); err != nil {
+		a.addSystem("save failed: " + err.Error())
+	} else {
+		a.addSystem("saved prompt to project library: " + name)
+	}
+	a.savePromptMode = false
+	a.savePromptValue = ""
+	a.editor.Reset()
+	return nil
+}
+
+func (a *App) cancelSavePrompt() {
+	a.savePromptMode = false
+	a.savePromptValue = ""
+	a.editor.Reset()
 }
 
 func (a *App) handleStreamChunk(m streamChunkMsg) tea.Cmd {
@@ -810,6 +1046,12 @@ func (a *App) renderComposer() string {
 	meta := "⏎ send · ctrl+j newline"
 	if a.editor.Masked {
 		title, accent, meta = "secret", lipgloss.TerminalColor(components.ColorAmber), "input hidden · ⏎ save"
+	}
+	if a.savePromptMode {
+		title, accent, meta = "name prompt", lipgloss.TerminalColor(components.ColorAmber), "⏎ save · esc cancel"
+	}
+	if a.historyActive {
+		meta = "↑↓ cycle · type to search · esc cancel"
 	}
 	return components.Panel{
 		Title:  title,

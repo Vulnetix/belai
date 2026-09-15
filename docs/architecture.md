@@ -217,6 +217,10 @@ Context usage has three degraded renderings:
 | `ctrl+l` | Clear the transcript *view* — the session is kept |
 | `ctrl+j` / `alt+enter` | Insert a newline in the prompt editor |
 | `shift+enter` | Insert a newline on terminals that support the kitty keyboard protocol |
+| `up` / `down` | Cycle prompt history and prompt library (type to filter) |
+| `alt+s` | Save the current prompt to the project prompt library |
+| `tab` | Cycle slash-command autocomplete hints |
+| `right` | Accept the first slash-command autocomplete hint |
 
 `ctrl+l` clears the transcript view; `/clear` (or `/new`) starts a *new* session.
 They are deliberately different: one is cosmetic, the other changes what is
@@ -228,6 +232,19 @@ persisted.
   classification. Use `@agent:name` to engage a named agent instead.
 - `!cmd` executes a local, read-only `Bash` command and sends the output to
   the model under the `signet:debug` profile.
+
+### Prompt library
+
+Named prompts live in a library that merges a global file
+(`~/.vulnetix/signet/prompts.json`) with a project override
+(`<workdir>/.vulnetix/prompts.json`). Project entries win by name.
+
+Library entries are ranked before session history when cycling with the Up
+arrow. Typing while cycling filters both sources case-insensitively (name
+and prompt text), with library matches appearing first.
+
+`alt+s` in the chat composer enters a naming mode: type a name and press
+Enter to save the current editor text to the project library. Esc cancels.
 
 ### Slash commands
 

@@ -321,3 +321,33 @@ func (s *Store) Sessions(workdir string) ([]SessionInfo, error) {
 	})
 	return infos, nil
 }
+
+// UserPrompts returns all unique user-typed prompts across every stored
+// session for a workdir, most recently appended first. Duplicates are
+// deduplicated while preserving the first (most recent) occurrence.
+func (s *Store) UserPrompts(workdir string) ([]string, error) {
+	infos, err := s.Sessions(workdir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	seen := make(map[string]bool)
+	var out []string
+	for _, info := range infos {
+		entries, err := s.Read(workdir, info.ID)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.Type == "user" || e.Role == "user" {
+				if e.Content != "" && !seen[e.Content] {
+					seen[e.Content] = true
+					out = append(out, e.Content)
+				}
+			}
+		}
+	}
+	return out, nil
+}

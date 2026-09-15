@@ -49,6 +49,9 @@ func (e *Editor) Blur() { e.textarea.Blur() }
 // SetValue replaces the editor contents.
 func (e *Editor) SetValue(s string) { e.textarea.SetValue(s) }
 
+// CursorEnd moves the cursor to the end of the text.
+func (e *Editor) CursorEnd() { e.textarea.CursorEnd() }
+
 // Reset clears the editor.
 func (e *Editor) Reset() { e.textarea.Reset() }
 

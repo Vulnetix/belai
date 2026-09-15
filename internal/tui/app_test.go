@@ -15,6 +15,7 @@ import (
 
 	"github.com/vulnetix/signet/internal/agent"
 	"github.com/vulnetix/signet/internal/credentials"
+	"github.com/vulnetix/signet/internal/promptlib"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/session"
@@ -820,5 +821,290 @@ func TestBuildTurnsPreservesToolMetadata(t *testing.T) {
 	}
 	if turns[2].Role != "tool" || turns[2].ToolCallID != "call_1" || turns[2].ToolName != "Bash" {
 		t.Fatalf("tool turn metadata wrong: %+v", turns[2])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Prompt history / library tests
+// ---------------------------------------------------------------------------
+
+func TestHistoryCycleUpArrow(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	st, _ := session.NewStore()
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "older prompt"})
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "newer prompt"})
+
+	a := New(Options{Workdir: workdir})
+	a.store = st
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+	if !a.historyActive {
+		t.Fatalf("expected historyActive after Up")
+	}
+	if a.editor.Value() != "newer prompt" {
+		t.Fatalf("editor = %q, want newer prompt", a.editor.Value())
+	}
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+	if a.editor.Value() != "older prompt" {
+		t.Fatalf("editor = %q, want older prompt", a.editor.Value())
+	}
+}
+
+func TestHistoryCycleDownArrowRestoresOriginal(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	st, _ := session.NewStore()
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "history item"})
+
+	a := New(Options{Workdir: workdir})
+	a.store = st
+	a.editor.SetValue("")
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+	if a.editor.Value() != "history item" {
+		t.Fatalf("expected history item, got %q", a.editor.Value())
+	}
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyDown})
+	if a.historyActive {
+		t.Fatalf("expected history cycle to exit")
+	}
+	if a.editor.Value() != "" {
+		t.Fatalf("editor = %q, want empty", a.editor.Value())
+	}
+}
+
+func TestHistoryCycleEnterAccepts(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	st, _ := session.NewStore()
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "accepted prompt"})
+
+	a := New(Options{Workdir: workdir})
+	a.store = st
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if a.historyActive {
+		t.Fatalf("expected history cycle to exit after Enter")
+	}
+	if a.editor.Value() != "accepted prompt" {
+		t.Fatalf("editor = %q", a.editor.Value())
+	}
+}
+
+func TestHistoryCycleEscCancels(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	st, _ := session.NewStore()
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "history item"})
+
+	a := New(Options{Workdir: workdir})
+	a.store = st
+	a.editor.SetValue("my text")
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEsc})
+
+	if a.historyActive {
+		t.Fatalf("expected history cycle to exit after Esc")
+	}
+	if a.editor.Value() != "my text" {
+		t.Fatalf("editor = %q, want my text", a.editor.Value())
+	}
+}
+
+func TestHistoryCycleTypingFilters(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	st, _ := session.NewStore()
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "how to deploy"})
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "how to test"})
+
+	a := New(Options{Workdir: workdir})
+	a.store = st
+	a.editor.SetValue("how to")
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+	if a.editor.Value() != "how to test" {
+		t.Fatalf("expected 'how to test' first, got %q", a.editor.Value())
+	}
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' ', 'd', 'e'}})
+	if !strings.Contains(a.editor.Value(), "deploy") {
+		t.Fatalf("expected filter to narrow to deploy, got %q", a.editor.Value())
+	}
+}
+
+func TestLibraryRankedBeforeHistory(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	lib := promptlib.Library{Entries: []promptlib.Entry{
+		{Name: "deploy", Prompt: "deploy the app"},
+	}}
+	_ = promptlib.SaveGlobal(lib)
+
+	st, _ := session.NewStore()
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "deploy the app"})
+
+	a := New(Options{Workdir: workdir})
+	a.store = st
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+	if a.editor.Value() != "deploy the app" {
+		t.Fatalf("expected library prompt, got %q", a.editor.Value())
+	}
+}
+
+func TestAutocompleteTabCycles(t *testing.T) {
+	a := New(Options{})
+	a.editor.SetValue("/cle")
+	a.autocomplete = a.registry.Complete(a.editor.Value())
+	if len(a.autocomplete) == 0 {
+		t.Fatalf("expected autocomplete hints")
+	}
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+	if a.editor.Value() != "/clear" {
+		t.Fatalf("expected /clear, got %q", a.editor.Value())
+	}
+}
+
+func TestAutocompleteRightArrowAcceptsFirst(t *testing.T) {
+	a := New(Options{})
+	a.editor.SetValue("/cle")
+	a.autocomplete = a.registry.Complete(a.editor.Value())
+	if len(a.autocomplete) == 0 {
+		t.Fatalf("expected autocomplete hints")
+	}
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRight})
+	if a.editor.Value() != "/clear" {
+		t.Fatalf("expected /clear, got %q", a.editor.Value())
+	}
+	if len(a.autocomplete) != 0 {
+		t.Fatalf("expected autocomplete cleared")
+	}
+}
+
+func TestSavePromptMode(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	a := New(Options{Workdir: workdir})
+	a.editor.SetValue("my favourite prompt")
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}, Alt: true})
+	if !a.savePromptMode {
+		t.Fatalf("expected savePromptMode")
+	}
+	if a.editor.Value() != "" {
+		t.Fatalf("editor should be cleared for naming")
+	}
+
+	for _, r := range "fave" {
+		a.handleChatKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if a.savePromptMode {
+		t.Fatalf("save mode should exit after Enter")
+	}
+
+	lib, err := promptlib.LoadProject(workdir)
+	if err != nil {
+		t.Fatalf("load project library: %v", err)
+	}
+	if len(lib.Entries) != 1 || lib.Entries[0].Name != "fave" || lib.Entries[0].Prompt != "my favourite prompt" {
+		t.Fatalf("library = %+v", lib.Entries)
+	}
+}
+
+func TestSavePromptModeEmptyNameCancels(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	a := New(Options{Workdir: workdir})
+	a.editor.SetValue("prompt body")
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}, Alt: true})
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if a.savePromptMode {
+		t.Fatalf("save mode should exit after empty-name Enter")
+	}
+}
+
+func TestSavePromptModeEscCancels(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	a := New(Options{Workdir: workdir})
+	a.editor.SetValue("prompt body")
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}, Alt: true})
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEscape})
+	if a.savePromptMode {
+		t.Fatalf("save mode should exit after Esc")
+	}
+}
+
+func TestSavePromptModeEmptyPromptWarns(t *testing.T) {
+	a := New(Options{})
+	a.editor.SetValue("")
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}, Alt: true})
+	if a.savePromptMode {
+		t.Fatalf("save mode should not start with empty prompt")
+	}
+}
+
+func TestHistoryCycleBackspaceRefilters(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	st, _ := session.NewStore()
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "abc"})
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "axyz"})
+
+	a := New(Options{Workdir: workdir})
+	a.store = st
+	a.editor.SetValue("abc")
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+	if a.editor.Value() != "abc" {
+		t.Fatalf("expected 'abc', got %q", a.editor.Value())
+	}
+
+	// Backspace removes last rune from query, should still match "abc".
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyBackspace})
+	if a.editor.Value() != "abc" {
+		t.Fatalf("expected 'abc' after backspace to 'ab', got %q", a.editor.Value())
+	}
+}
+
+func TestLibraryProjectOverridesGlobal(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	_ = promptlib.SaveGlobal(promptlib.Library{Entries: []promptlib.Entry{
+		{Name: "x", Prompt: "global x"},
+	}})
+	_ = promptlib.SaveProject(workdir, promptlib.Library{Entries: []promptlib.Entry{
+		{Name: "x", Prompt: "project x"},
+	}})
+
+	a := New(Options{Workdir: workdir})
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+
+	if a.editor.Value() != "project x" {
+		t.Fatalf("expected project override, got %q", a.editor.Value())
 	}
 }
