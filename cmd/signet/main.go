@@ -80,7 +80,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "signet:", err)
 			os.Exit(1)
 		}
-		if err := tui.Start(tui.Options{Workdir: workdir, Resolver: resolver}); err != nil {
+		if err := tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Provider: *provider, Model: *model}); err != nil {
 			fmt.Fprintln(os.Stderr, "signet:", err)
 			os.Exit(1)
 		}
@@ -113,7 +113,7 @@ func runPromptOrTUI(prompt, model, providerName string, detectMode, verbose bool
 			if err != nil {
 				return err
 			}
-			return tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Prompt: prompt})
+			return tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Prompt: prompt, Provider: providerName, Model: model})
 		}
 		// Without a TTY, fail closed listing every location searched.
 		var nce2 *run.NotConfiguredError

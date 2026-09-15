@@ -6,12 +6,16 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
+	"github.com/vulnetix/signet/internal/gitinfo"
 	"github.com/vulnetix/signet/internal/modelselect"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
@@ -38,6 +42,7 @@ type App struct {
 	editor       components.Editor
 	footer       components.Footer
 	width        int
+	height       int
 	mode         string
 	autocomplete []string
 
@@ -58,6 +63,25 @@ type App struct {
 	// view state
 	view            viewState
 	credentialState credentialViewState
+
+	// workdir and session
+	workdir   string
+	sessionID string
+
+	// settings / state persistence
+	settings config.Settings
+	state    config.State
+
+	// layout
+	vp viewport.Model
+}
+
+type tickMsg time.Time
+
+func tickCmd() tea.Cmd {
+	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+		return tickMsg(t)
+	})
 }
 
 // New builds a TUI app from Options.
@@ -67,12 +91,18 @@ func New(opts Options) *App {
 		workdir, _ = os.Getwd()
 	}
 
+	st, _ := config.LoadState()
+	settings, _ := config.LoadMerged(workdir)
+
 	sel, err := modelselect.Restore()
 	if err != nil || sel.Model == "" {
 		sel = modelselect.Default()
 	}
-	if merged, err := config.LoadMerged(workdir); err == nil && merged.Model != "" {
-		sel.Model = merged.Model
+	if settings.Model != "" {
+		sel.Model = settings.Model
+	}
+	if st.Model != "" {
+		sel.Model = st.Model
 	}
 	if opts.Model != "" {
 		sel.Model = opts.Model
@@ -89,19 +119,40 @@ func New(opts Options) *App {
 	if name == "" {
 		name = os.Getenv("PI_PROVIDER")
 	}
+	if name == "" && settings.Provider != "" {
+		name = settings.Provider
+	}
+	if name == "" && st.Provider != "" {
+		name = st.Provider
+	}
+	if name == "" && opts.Resolver != nil {
+		configured := opts.Resolver.ConfiguredProviders()
+		if len(configured) == 1 {
+			name = configured[0]
+		}
+	}
 	cfg, status := run.Prepare(sel.Model, name, src)
+
+	mode := st.LastMode
+	if mode == "" {
+		mode = "agent"
+	}
 
 	a := &App{
 		registry: NewRegistry(workdir),
 		editor:   components.NewEditor(),
 		footer:   components.Footer{Session: "new", Model: sel.Model, Cost: "$0.00"},
-		mode:     "agent",
+		mode:     mode,
 		ctx:      context.Background(),
 		cfg:      cfg,
 		status:   status,
 		client:   opts.Client,
 		resolver: opts.Resolver,
 		pending:  opts.Prompt,
+		workdir:  workdir,
+		settings: settings,
+		state:    st,
+		vp:       viewport.New(80, 24),
 	}
 	if a.status.Configured {
 		a.SetClassifier(run.NewClassifier(a.cfg, a.client))
@@ -109,7 +160,7 @@ func New(opts Options) *App {
 	_ = a.editor.Focus()
 
 	if !status.Configured {
-		a.addSystem(fmt.Sprintf("%s credentials missing (%s). Type /credentials to configure.", cfg.Provider, strings.Join(status.Missing, ", ")))
+		a.showCredentialMessage(cfg.Provider, opts.Resolver)
 	}
 
 	if opts.Prompt != "" && status.Configured {
@@ -118,6 +169,29 @@ func New(opts Options) *App {
 
 	a.initCredentialState()
 	return a
+}
+
+func (a *App) showCredentialMessage(provider string, resolver *credentials.Resolver) {
+	if resolver == nil {
+		a.addSystem(fmt.Sprintf("no provider credentials found. Type /credentials to configure."))
+		return
+	}
+	configured := resolver.ConfiguredProviders()
+	if len(configured) == 0 {
+		a.addSystem("no provider credentials found. Type /credentials to configure.")
+		return
+	}
+	var others []string
+	for _, p := range configured {
+		if p != provider {
+			others = append(others, p)
+		}
+	}
+	if len(others) > 0 {
+		a.addSystem(fmt.Sprintf("%s is configured; %s is not. Type /model to switch provider.", strings.Join(others, ", "), provider))
+	} else {
+		a.addSystem(fmt.Sprintf("%s credentials missing (%s). Type /credentials to configure.", provider, strings.Join(a.status.Missing, ", ")))
+	}
 }
 
 // NewApp is a deprecated shim; use New(Options{}) instead.
@@ -132,10 +206,11 @@ func (a *App) SetClassifier(c rolemanager.Classifier) {
 
 // Init implements tea.Model.
 func (a *App) Init() tea.Cmd {
+	cmds := []tea.Cmd{tickCmd()}
 	if a.pending != "" && a.status.Configured {
-		return a.sendPending()
+		cmds = append(cmds, a.sendPending())
 	}
-	return nil
+	return tea.Batch(cmds...)
 }
 
 func (a *App) sendPending() tea.Cmd {
@@ -177,10 +252,20 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.width = m.Width
+		a.height = m.Height
 		if m.Width > 4 {
 			a.editor.SetWidth(m.Width - 4)
 		}
+		// Reserve rows for padding(2) + editor + status(1) + gap(1)
+		vpHeight := m.Height - 8
+		if vpHeight < 5 {
+			vpHeight = 5
+		}
+		a.vp.Width = m.Width - 2
+		a.vp.Height = vpHeight
 		return a, nil
+	case tickMsg:
+		return a, tickCmd()
 
 	case streamChunkMsg:
 		if m.Err != nil {
@@ -199,10 +284,38 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.view == viewCredentials {
 			return a.handleCredentialKey(m)
 		}
+		if a.view == viewSettings {
+			if m.String() == "esc" {
+				a.view = viewChat
+				return a, nil
+			}
+			return a, nil
+		}
 
 		switch m.String() {
 		case "ctrl+c":
-			return a, tea.Quit
+			text := a.editor.Value()
+			if text != "" {
+				termenv.Copy(text)
+			}
+			return a, nil
+		case "ctrl+d":
+			if strings.TrimSpace(a.editor.Value()) == "" {
+				return a, tea.Quit
+			}
+			return a, nil
+		case "shift+tab":
+			a.cycleMode()
+			return a, nil
+		case "ctrl+l":
+			a.messages = nil
+			return a, nil
+		case "esc":
+			if a.view != viewChat {
+				a.view = viewChat
+				return a, nil
+			}
+			return a, nil
 		case "enter":
 			if a.view != viewChat {
 				return a, nil
@@ -336,21 +449,44 @@ func (a *App) View() string {
 		return "Settings view (placeholder)\n\nPress esc to return."
 	}
 
-	list := components.MessageList{Messages: a.messages, Width: a.width}
 	var b strings.Builder
-	b.WriteString(list.View())
-	if len(a.autocomplete) > 0 {
-		b.WriteString("suggestions: " + strings.Join(a.autocomplete, "  ") + "\n")
+	for _, m := range a.messages {
+		b.WriteString("[" + m.Role + "] ")
+		b.WriteString(m.Content)
+		b.WriteString("\n\n")
 	}
-	b.WriteString(a.editor.View())
-	b.WriteString("\n")
-	b.WriteString(a.footer.View())
-	return lipgloss.NewStyle().Padding(1).Render(b.String())
+	a.vp.SetContent(b.String())
+
+	var sb strings.Builder
+	sb.WriteString(a.vp.View())
+	if len(a.autocomplete) > 0 {
+		sb.WriteString("suggestions: " + strings.Join(a.autocomplete, "  ") + "\n")
+	}
+	sb.WriteString(a.editor.View())
+	sb.WriteString("\n")
+	a.footer.Width = a.width
+	a.footer.Mode = a.mode
+	a.footer.Provider = a.cfg.Provider
+	a.footer.Model = a.cfg.Model
+	if info, ok := gitinfo.Detect(a.workdir); ok {
+		a.footer.Branch = info.Branch
+		if a.footer.Cwd == "" {
+			a.footer.Cwd = a.workdir
+		}
+	}
+	sb.WriteString(a.footer.View())
+	return lipgloss.NewStyle().Padding(1).Render(sb.String())
 }
 
 // handleCommand dispatches a slash command.
 func (a *App) handleCommand(input string) {
 	name, arg, _ := strings.Cut(strings.TrimPrefix(input, "/"), " ")
+	cmd, ok := a.registry.Command(name)
+	if !ok {
+		a.addSystem("unknown command: " + input)
+		return
+	}
+	_ = cmd
 	switch name {
 	case "plan":
 		if a.mode == "plan" {
@@ -360,6 +496,7 @@ func (a *App) handleCommand(input string) {
 			a.mode = "plan"
 			a.addSystem("plan mode on (read-only)")
 		}
+		a.saveMode()
 	case "todos":
 		a.addSystem("todos: no plan tracked yet")
 	case "profile":
@@ -379,6 +516,27 @@ func (a *App) handleCommand(input string) {
 	default:
 		a.addSystem("unknown command: " + input)
 	}
+}
+
+func (a *App) cycleMode() {
+	switch a.mode {
+	case "agent":
+		a.mode = "plan"
+		a.addSystem("plan mode on (read-only)")
+	case "plan":
+		a.mode = "goal"
+		a.addSystem("goal mode on")
+	case "goal":
+		a.mode = "agent"
+		a.addSystem("agent mode on")
+	}
+	a.saveMode()
+}
+
+func (a *App) saveMode() {
+	st, _ := config.LoadState()
+	st.LastMode = a.mode
+	_ = config.SaveState(st)
 }
 
 func (a *App) addSystem(text string) {

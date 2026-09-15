@@ -26,6 +26,19 @@ type BackendInfo struct {
 	Reason    string `json:"reason,omitempty"`
 }
 
+// ConfiguredProviders returns every provider for which at least one field
+// resolves through this resolver.
+func (r *Resolver) ConfiguredProviders() []string {
+	var out []string
+	for _, p := range []string{"openai", "anthropic", "cloudflare-workers-ai", "cloudflare-ai-gateway"} {
+		set := r.Resolve(p)
+		if set.Complete() {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // NewResolver builds a resolver for the given working directory.
 // It reads from the environment, project file, user file, netrc,
 // and host keychain in that order.

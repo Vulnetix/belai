@@ -13,6 +13,8 @@ import (
 type Settings struct {
 	// Model is the default model ID (e.g. "gpt-5", "claude-opus-4").
 	Model string `json:"model,omitempty"`
+	// Provider is the default provider name.
+	Provider string `json:"provider,omitempty"`
 	// Effort is the default effort/thinking level (e.g. "low", "medium", "high").
 	Effort string `json:"effort,omitempty"`
 	// Caveman, when non-nil, toggles the caveman voice rewrite.
@@ -39,6 +41,9 @@ func (s Settings) Override(proj Settings) Settings {
 	out := s
 	if proj.Model != "" {
 		out.Model = proj.Model
+	}
+	if proj.Provider != "" {
+		out.Provider = proj.Provider
 	}
 	if proj.Effort != "" {
 		out.Effort = proj.Effort

@@ -25,6 +25,8 @@ type Registry struct {
 func NewRegistry(workdir string) *Registry {
 	r := &Registry{commands: map[string]Command{}, workdir: workdir}
 	r.Register("profile", "switch agent profile", nil)
+	r.Register("model", "pick provider and model", nil)
+	r.Register("mode", "show or set operating mode", nil)
 	r.Register("plan", "toggle plan mode", nil)
 	r.Register("todos", "show plan progress", nil)
 	r.Register("goal", "memorise or replay a goal", func() []string {
@@ -36,6 +38,7 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("credentials", "manage provider credentials", func() []string {
 		return []string{"openai", "anthropic", "cloudflare-workers-ai", "cloudflare-ai-gateway"}
 	})
+	r.Register("help", "show available commands", nil)
 	return r
 }
 

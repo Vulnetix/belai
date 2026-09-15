@@ -12,6 +12,8 @@ import (
 type State struct {
 	// Model is the last-selected (or saved-default) model ID.
 	Model string `json:"model,omitempty"`
+	// Provider is the last-selected provider name.
+	Provider string `json:"provider,omitempty"`
 	// Effort is the last-selected effort/thinking level.
 	Effort string `json:"effort,omitempty"`
 	// LastMode is the last active mode ("agent", "plan", or "goal").
