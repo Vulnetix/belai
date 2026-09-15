@@ -1158,6 +1158,7 @@ func (a *App) cycleMode() {
 		a.addSystem("agent mode on")
 	}
 	a.modeExplicit = true
+	a.syncPlanMode()
 	a.saveMode()
 }
 
@@ -1201,11 +1202,13 @@ func (a *App) classifyMode(input string) {
 		a.mode = "agent"
 		a.modeWarning = "mode classifier error: " + err.Error()
 		a.addSystem(a.modeWarning)
+		a.syncPlanMode()
 		return
 	}
 	a.mode = string(d.Mode)
 	a.namedAgent = d.AgentName
 	a.modeWarning = d.Warning
+	a.syncPlanMode()
 	if d.AgentName != "" {
 		a.addSystem("engaged agent: " + d.AgentName)
 	} else {

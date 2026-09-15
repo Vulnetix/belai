@@ -80,7 +80,7 @@ func NewRegistry(workdir string) *Registry {
 		a.mode = "agent"
 		a.modeExplicit = true
 		// Re-resolve the carrier and reseal the system prompt on the next send.
-		a.invalidateAgentSession()
+		a.syncPlanMode()
 		a.addSystem("profile: " + p.Name)
 		return nil
 	})
@@ -91,6 +91,7 @@ func NewRegistry(workdir string) *Registry {
 		if arg != "" {
 			a.mode = arg
 			a.modeExplicit = true
+			a.syncPlanMode()
 			a.saveMode()
 			a.addSystem("mode: " + arg)
 		} else {
@@ -107,6 +108,7 @@ func NewRegistry(workdir string) *Registry {
 			a.addSystem("plan mode on (read-only)")
 		}
 		a.modeExplicit = true
+		a.syncPlanMode()
 		a.saveMode()
 		return nil
 	})
