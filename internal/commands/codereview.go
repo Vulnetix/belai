@@ -7,9 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/nonce"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/vulnetixcli"
 )
@@ -50,13 +50,16 @@ func (r CodeReview) Run() (Report, error) {
 		})
 	}
 
-	// Role Manager boundary: only trusted internal content is promoted,
-	// wrapped with nonce/integrity delimiters and verified on egress.
-	pool := nonce.New()
-	summary, err := rolemanager.BuildSystemPrompt(blocks, pool)
-	if err != nil {
+	// Role Manager boundary: only trusted internal content is promoted.
+	if err := rolemanager.VerifyTrustedBlocks(blocks); err != nil {
 		return Report{}, err
 	}
+	var b strings.Builder
+	for _, blk := range blocks {
+		b.WriteString(blk.Content)
+		b.WriteString("\n")
+	}
+	summary := b.String()
 
 	manifest, err := r.collectManifest()
 	if err != nil {

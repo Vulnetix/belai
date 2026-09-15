@@ -16,6 +16,29 @@ import (
 	"github.com/vulnetix/signet/internal/config"
 )
 
+// Prune removes session files older than maxAge, best-effort per file.
+func (s *Store) Prune(maxAge time.Duration) (removed int, err error) {
+	if _, err := os.Stat(s.Root); err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	cutoff := time.Now().Add(-maxAge)
+	_ = filepath.Walk(s.Root, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !strings.HasSuffix(info.Name(), ".jsonl") {
+			return nil
+		}
+		if info.ModTime().Before(cutoff) {
+			if os.Remove(path) == nil {
+				removed++
+			}
+		}
+		return nil
+	})
+	return removed, nil
+}
+
 // Store persists JSONL session trees under a root directory. Each working
 // directory maps to its own sub-directory, and each session is a single
 // append-only .jsonl file of Entry records.

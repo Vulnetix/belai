@@ -388,10 +388,18 @@ func Run(cfg Config, userPrompt string, client *http.Client) (string, error) {
 
 // RunTurns sends a conversation history and returns the latest assistant reply.
 func RunTurns(cfg Config, turns []Turn, client *http.Client) (string, error) {
+	return RunTurnsWithPool(cfg, turns, client, nonce.New())
+}
+
+// RunTurnsWithPool is RunTurns with a caller-provided nonce pool so that
+// multi-turn sessions reuse the same pool across requests.
+func RunTurnsWithPool(cfg Config, turns []Turn, client *http.Client, pool *nonce.Pool) (string, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	pool := nonce.New()
+	if pool == nil {
+		pool = nonce.New()
+	}
 	verifiedSystem, err := SealSystem(pool, prompt.Options{})
 	if err != nil {
 		return "", err

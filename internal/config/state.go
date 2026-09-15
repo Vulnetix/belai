@@ -16,6 +16,12 @@ type State struct {
 	Effort string `json:"effort,omitempty"`
 	// LastMode is the last active mode ("agent", "plan", or "goal").
 	LastMode string `json:"last_mode,omitempty"`
+	// ActivePlan is the currently selected plan name.
+	ActivePlan string `json:"active_plan,omitempty"`
+	// ActiveGoal is the currently selected goal name.
+	ActiveGoal string `json:"active_goal,omitempty"`
+	// ActiveProfile is the currently selected agent profile.
+	ActiveProfile string `json:"active_profile,omitempty"`
 }
 
 // LoadState reads ~/.signet/state.json. A missing file yields zero-value

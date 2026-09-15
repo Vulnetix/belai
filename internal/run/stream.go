@@ -29,11 +29,18 @@ type Chunk struct {
 // Stream sends a conversation and returns a channel of text deltas.
 // Cancellation runs through ctx. The channel is always closed exactly once.
 func Stream(ctx context.Context, cfg Config, turns []Turn, client *http.Client) (<-chan Chunk, error) {
+	return StreamWithPool(ctx, cfg, turns, client, nonce.New())
+}
+
+// StreamWithPool is Stream with a caller-provided nonce pool.
+func StreamWithPool(ctx context.Context, cfg Config, turns []Turn, client *http.Client, pool *nonce.Pool) (<-chan Chunk, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
+	if pool == nil {
+		pool = nonce.New()
+	}
 
-	pool := nonce.New()
 	verifiedSystem, err := SealSystem(pool, prompt.Options{})
 	if err != nil {
 		return nil, err

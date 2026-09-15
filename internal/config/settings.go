@@ -19,6 +19,16 @@ type Settings struct {
 	Caveman *bool `json:"caveman,omitempty"`
 	// Permissions maps tool names to "allow", "block", or "ask".
 	Permissions map[string]string `json:"permissions,omitempty"`
+	// SessionRetentionDays is how long to keep idle sessions (default 28).
+	SessionRetentionDays *int `json:"session_retention_days,omitempty"`
+}
+
+// SessionRetention returns the retention duration, defaulting to 28 days.
+func (s Settings) SessionRetention() int {
+	if s.SessionRetentionDays != nil {
+		return *s.SessionRetentionDays
+	}
+	return 28
 }
 
 // Override merges project settings over the receiver (which should be the
@@ -43,6 +53,9 @@ func (s Settings) Override(proj Settings) Settings {
 		for k, v := range proj.Permissions {
 			out.Permissions[k] = v
 		}
+	}
+	if proj.SessionRetentionDays != nil {
+		out.SessionRetentionDays = proj.SessionRetentionDays
 	}
 	return out
 }
