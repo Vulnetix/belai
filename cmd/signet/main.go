@@ -186,7 +186,7 @@ func runPromptOrTUI(prompt, model, providerName string, detectMode, verbose bool
 }
 
 func runAgent(cfg run.Config, userPrompt string, client *http.Client, pol posture.Policy, workdir string, settings config.Settings) (run.Result, error) {
-	reg := tools.Default(workdir)
+	reg := tools.Default(workdir, settings.BashReadOnlyEnabled())
 
 	perms := permissions.From(settings.Permissions.Allow, settings.Permissions.Ask, settings.Permissions.Deny)
 

@@ -44,10 +44,11 @@ func (a *App) handleShell(input string) tea.Cmd {
 	cfg := a.cfg
 	client := a.client
 	workdir := a.workdir
+	bashReadOnly := a.settings.BashReadOnlyEnabled()
 	pol := a.posture
 
 	return func() tea.Msg {
-		bash, ok := tools.Default(workdir).Find("Bash")
+		bash, ok := tools.Default(workdir, bashReadOnly).Find("Bash")
 		if !ok {
 			return shellDoneMsg{command: cmd, err: fmt.Errorf("Bash tool not registered")}
 		}

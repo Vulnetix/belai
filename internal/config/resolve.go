@@ -99,6 +99,10 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.Caveman = s.Caveman
 		e.Origin["caveman"] = src
 	}
+	if s.BashReadOnly != nil {
+		e.Settings.BashReadOnly = s.BashReadOnly
+		e.Origin["bash_readonly"] = src
+	}
 	if !s.Permissions.IsZero() {
 		e.Settings.Permissions = e.Settings.Permissions.Merge(s.Permissions)
 		e.Origin["permissions"] = src

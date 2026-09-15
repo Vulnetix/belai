@@ -505,7 +505,7 @@ func (a *App) agentSession() (*agent.Session, error) {
 	if a.agent != nil {
 		return a.agent, nil
 	}
-	reg := tools.Default(a.workdir)
+	reg := tools.Default(a.workdir, a.settings.BashReadOnlyEnabled())
 	perms := permissions.From(a.settings.Permissions.Allow, a.settings.Permissions.Ask, a.settings.Permissions.Deny)
 	var promptOpts prompt.Options
 	if a.settings.Caveman != nil && *a.settings.Caveman {

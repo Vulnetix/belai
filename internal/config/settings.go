@@ -21,6 +21,9 @@ type Settings struct {
 	Effort string `json:"effort,omitempty"`
 	// Caveman, when non-nil, toggles the caveman voice rewrite.
 	Caveman *bool `json:"caveman,omitempty"`
+	// BashReadOnly, when non-nil, controls whether the Bash tool defaults to
+	// read-only execution. A nil value defaults to true (read-only) for safety.
+	BashReadOnly *bool `json:"bash_read_only,omitempty"`
 	// Permissions is the structured tool-permission rule set. The legacy flat
 	// map form is still accepted on read but never written.
 	Permissions PermissionRules `json:"permissions,omitempty"`
@@ -115,6 +118,15 @@ func (s Settings) AllowProjectProvidersEnabled() bool {
 	return s.AllowProjectProviders != nil && *s.AllowProjectProviders
 }
 
+// BashReadOnlyEnabled reports whether the Bash tool should be restricted to
+// read-only commands. Defaults to true.
+func (s Settings) BashReadOnlyEnabled() bool {
+	if s.BashReadOnly == nil {
+		return true
+	}
+	return *s.BashReadOnly
+}
+
 // Override merges project settings over the receiver (which should be the
 // global settings). It returns the merged result and never mutates the
 // receiver. Non-zero project fields win; nil/empty project fields fall back
@@ -133,6 +145,9 @@ func (s Settings) Override(proj Settings) Settings {
 	}
 	if proj.Caveman != nil {
 		out.Caveman = proj.Caveman
+	}
+	if proj.BashReadOnly != nil {
+		out.BashReadOnly = proj.BashReadOnly
 	}
 	out.Permissions = out.Permissions.Merge(proj.Permissions)
 	if proj.SessionRetentionDays != nil {

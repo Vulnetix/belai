@@ -11,8 +11,8 @@ import (
 )
 
 // ShellMetacharacters are shell syntax that would let a command escape a
-// no-shell execution model. The Bash tool never executes through a shell, so
-// rejecting these before tokenising keeps the gate honest and fails closed.
+// no-shell execution model. Read-only Bash never executes through a shell, so
+// rejecting these before tokenising keeps that gate honest and fails closed.
 const ShellMetacharacters = ";&|$`<>\n()"
 
 // readOnlyBash holds the read-only commands the Bash tool is allowed to run.
@@ -71,18 +71,28 @@ func bashAllowed(command string) bool {
 	}
 }
 
-// Bash runs a single command without a shell.
+// Bash runs a single command. With ReadOnly true (the default, including when
+// the field is nil) it executes without a shell and is confined to the
+// read-only allowlist. Set ReadOnly to false explicitly to run through `sh -c`
+// with full shell syntax (pipes, redirections, chaining).
 type Bash struct {
 	Root     string
+	ReadOnly *bool
 	Timeout  time.Duration
 	MaxBytes int
 }
 
-// Definition returns the static tool metadata.
+// Definition returns the static tool metadata. The description branches on
+// the mode so the model knows which execution model it has.
 func (b *Bash) Definition() Definition {
+	readOnly := b.ReadOnly == nil || *b.ReadOnly
+	desc := "Run a local shell command. The full shell is available (pipes, redirections, and command chaining)."
+	if readOnly {
+		desc = "Run a read-only local shell command: a single command from the read-only allowlist (no pipes, redirections, or command chaining)."
+	}
 	return Definition{
 		Name:        "Bash",
-		Description: "Run a local shell command read-only inspection command (no pipes, redirections, or command substitution).",
+		Description: desc,
 		Properties: map[string]Property{
 			"command": {Type: "string", Description: "The command to run, e.g. \"git status\" or \"ls -la\""},
 		},
@@ -101,27 +111,13 @@ func (b *Bash) Subject(args map[string]any) string {
 	return ""
 }
 
-// Execute runs the command without a shell, confining it to Root and
-// scrubbing credential env vars from the subprocess.
+// Execute runs the command, confining it to Root and scrubbing credential
+// env vars from the subprocess. In ReadOnly mode the no-shell metacharacter
+// gate and read-only allowlist apply; otherwise the command runs via `sh -c`.
 func (b *Bash) Execute(ctx context.Context, args map[string]any) (Result, error) {
 	cmd, ok := args["command"].(string)
 	if !ok || strings.TrimSpace(cmd) == "" {
 		return Result{}, fmt.Errorf("missing command argument")
-	}
-	if strings.ContainsAny(cmd, ShellMetacharacters) {
-		return Result{}, fmt.Errorf("command contains shell metacharacters")
-	}
-	// Fail closed unconditionally: the Bash tool is read-only by construction,
-	// in plan mode and out of it.
-	if !bashAllowed(cmd) {
-		return Result{}, fmt.Errorf("command not in read-only allowlist: %s", cmd)
-	}
-
-	// The Bash executor has no shell; plan-mode restrictions live in
-	// modes.ToolAllowed, which callers must apply before Execute.
-	fields := strings.Fields(cmd)
-	if len(fields) == 0 {
-		return Result{}, fmt.Errorf("empty command")
 	}
 
 	if b.Timeout > 0 {
@@ -130,7 +126,29 @@ func (b *Bash) Execute(ctx context.Context, args map[string]any) (Result, error)
 		defer cancel()
 	}
 
-	ec := exec.CommandContext(ctx, fields[0], fields[1:]...)
+	var ec *exec.Cmd
+	readOnly := b.ReadOnly == nil || *b.ReadOnly
+	if readOnly {
+		// Read-only mode: no shell, fail closed on anything outside the
+		// allowlist. Plan-mode restrictions additionally live in
+		// modes.ToolAllowed, which callers must apply before Execute.
+		if strings.ContainsAny(cmd, ShellMetacharacters) {
+			return Result{}, fmt.Errorf("command contains shell metacharacters")
+		}
+		if !bashAllowed(cmd) {
+			return Result{}, fmt.Errorf("command not in read-only allowlist: %s", cmd)
+		}
+		fields := strings.Fields(cmd)
+		if len(fields) == 0 {
+			return Result{}, fmt.Errorf("empty command")
+		}
+		ec = exec.CommandContext(ctx, fields[0], fields[1:]...)
+	} else {
+		// Full mode: `sh -c` so &&, pipes, and substitutions work. The
+		// timeout, Dir confinement, env scrubbing, and output truncation
+		// hardening below still apply.
+		ec = exec.CommandContext(ctx, "sh", "-c", cmd)
+	}
 	ec.Dir = b.Root
 	ec.Env = scrubbedEnv()
 

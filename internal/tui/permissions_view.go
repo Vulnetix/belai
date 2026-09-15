@@ -393,7 +393,7 @@ func splitRule(rule string) (tool, spec string, hasSpec bool) {
 
 func knownToolNames(workdir string) map[string]bool {
 	out := map[string]bool{}
-	for _, n := range tools.Default(workdir).Names() {
+	for _, n := range tools.Default(workdir, false).Names() {
 		out[strings.ToLower(n)] = true
 	}
 	return out
