@@ -59,11 +59,11 @@ func AuthHeaders(s Surface, apiKey string) map[string]string {
 
 // OpenAIChatMessage is a single message in a chat/completions request.
 type OpenAIChatMessage struct {
-	Role       string         `json:"role"`
-	Content    string         `json:"content,omitempty"`
+	Role       string           `json:"role"`
+	Content    string           `json:"content,omitempty"`
 	ToolCalls  []OpenAIToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string         `json:"tool_call_id,omitempty"`
-	Name       string         `json:"name,omitempty"`
+	ToolCallID string           `json:"tool_call_id,omitempty"`
+	Name       string           `json:"name,omitempty"`
 }
 
 // OpenAIChatRequest is the body of a chat/completions call.
@@ -170,21 +170,21 @@ func NewAnthropicTextMessage(role, text string) AnthropicMessage {
 
 // AnthropicMessagesRequest is the body of a messages call.
 type AnthropicMessagesRequest struct {
-	Model     string             `json:"model"`
-	MaxTokens int                `json:"max_tokens"`
-	System    string             `json:"system,omitempty"`
-	Messages  []AnthropicMessage `json:"messages"`
-	Stream    bool               `json:"stream,omitempty"`
-	Tools     []AnthropicToolDef `json:"tools,omitempty"`
-	ToolChoice string            `json:"tool_choice,omitempty"`
+	Model      string             `json:"model"`
+	MaxTokens  int                `json:"max_tokens"`
+	System     string             `json:"system,omitempty"`
+	Messages   []AnthropicMessage `json:"messages"`
+	Stream     bool               `json:"stream,omitempty"`
+	Tools      []AnthropicToolDef `json:"tools,omitempty"`
+	ToolChoice string             `json:"tool_choice,omitempty"`
 }
 
 // AnthropicContentBlock is a content block in a messages response.
 type AnthropicContentBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
-	ID   string `json:"id,omitempty"`
-	Name string `json:"name,omitempty"`
+	Type  string         `json:"type"`
+	Text  string         `json:"text,omitempty"`
+	ID    string         `json:"id,omitempty"`
+	Name  string         `json:"name,omitempty"`
 	Input map[string]any `json:"input,omitempty"`
 }
 

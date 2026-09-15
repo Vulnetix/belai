@@ -54,7 +54,7 @@ func StreamWithPool(ctx context.Context, cfg Config, turns []Turn, client *http.
 		}
 	}
 
-	req, err := buildRequest(cfg, verifiedSystem, sanitized, true)
+	req, err := buildRequest(cfg, verifiedSystem, sanitized, true, nil, nil)
 	if err != nil {
 		return nil, err
 	}

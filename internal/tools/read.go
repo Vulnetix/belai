@@ -20,7 +20,7 @@ func (r *Read) Definition() Definition {
 		Name:        "Read",
 		Description: "Read the contents of a file at a given path.",
 		Properties: map[string]Property{
-			"path":  {Type: "string", Description: "Relative path to the file"},
+			"path":   {Type: "string", Description: "Relative path to the file"},
 			"offset": {Type: "integer", Description: "Optional byte offset to start reading"},
 			"limit":  {Type: "integer", Description: "Optional maximum bytes to read"},
 		},

@@ -39,11 +39,11 @@ func (c Config) GoString() string {
 
 // Turn is one message in a multi-turn conversation.
 type Turn struct {
-	Role      string // "user" | "assistant" | "tool"
-	Content   string
-	ToolCalls []wire.OpenAIToolCall
+	Role       string // "user" | "assistant" | "tool"
+	Content    string
+	ToolCalls  []rolemanager.ToolCall
 	ToolCallID string
-	ToolName  string
+	ToolName   string
 }
 
 // ErrNotConfigured is returned when provider credentials are missing.
@@ -285,7 +285,7 @@ func SealSystem(pool *nonce.Pool, opts prompt.Options) (string, error) {
 // buildRequest creates the sealed HTTP request for a provider.
 // It is the single place where a chat/completions request is built,
 // guarding against the streaming path drifting from the sealed path.
-func buildRequest(cfg Config, system string, turns []Turn, stream bool) (*http.Request, error) {
+func buildRequest(cfg Config, system string, turns []Turn, stream bool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (*http.Request, error) {
 	p, err := provider.New(cfg.Provider, cfg.BaseURL, cfg.APIKey)
 	if err != nil {
 		return nil, err
@@ -296,63 +296,170 @@ func buildRequest(cfg Config, system string, turns []Turn, stream bool) (*http.R
 		return p.NewWorkersAIRequest(cfg.Model, wire.WorkersAIRequest{
 			Messages: buildOpenAIMessages(system, turns),
 			Stream:   stream,
+			Tools:    openAITools,
 		})
 	case "cloudflare-ai-gateway":
 		if strings.HasPrefix(strings.ToLower(cfg.Model), "claude") {
 			return p.NewGatewayMessagesRequest(wire.AnthropicMessagesRequest{
-				Model:     cfg.Model,
-				MaxTokens: 4096,
-				System:    system,
-				Messages:  buildAnthropicMessages(turns),
-				Stream:    stream,
+				Model:      cfg.Model,
+				MaxTokens:  4096,
+				System:     system,
+				Messages:   buildAnthropicMessages(turns),
+				Stream:     stream,
+				Tools:      anthropicTools,
+				ToolChoice: "auto",
 			})
 		}
 		return p.NewGatewayChatRequest(wire.OpenAIChatRequest{
-			Model:    cfg.Model,
-			Messages: buildOpenAIMessages(system, turns),
-			Stream:   stream,
+			Model:      cfg.Model,
+			Messages:   buildOpenAIMessages(system, turns),
+			Stream:     stream,
+			Tools:      openAITools,
+			ToolChoice: "auto",
 		})
 	case "anthropic":
 		return p.NewMessagesRequest(wire.AnthropicMessagesRequest{
-			Model:     cfg.Model,
-			MaxTokens: 4096,
-			System:    system,
-			Messages:  buildAnthropicMessages(turns),
-			Stream:    stream,
+			Model:      cfg.Model,
+			MaxTokens:  4096,
+			System:     system,
+			Messages:   buildAnthropicMessages(turns),
+			Stream:     stream,
+			Tools:      anthropicTools,
+			ToolChoice: "auto",
 		})
 	default:
 		return p.NewChatRequest(wire.OpenAIChatRequest{
-			Model:    cfg.Model,
-			Messages: buildOpenAIMessages(system, turns),
-			Stream:   stream,
+			Model:      cfg.Model,
+			Messages:   buildOpenAIMessages(system, turns),
+			Stream:     stream,
+			Tools:      openAITools,
+			ToolChoice: "auto",
 		})
 	}
 }
 
-func doChat(cfg Config, system string, turns []Turn, client *http.Client) (string, error) {
+// Assistant is the structured result from a model turn.
+type Assistant struct {
+	Text      string
+	ToolCalls []rolemanager.ToolCall
+	Stop      bool
+}
+
+// SendTurns sends a conversation and returns the assistant reply, including
+// any tool calls the model emitted.
+func SendTurns(cfg Config, system string, turns []Turn, client *http.Client) (Assistant, error) {
+	return SendTurnsWithTools(cfg, system, turns, client, nil, nil)
+}
+
+// SendTurnsWithTools is SendTurns with tool definitions advertised to the model.
+func SendTurnsWithTools(cfg Config, system string, turns []Turn, client *http.Client, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (Assistant, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	req, err := buildRequest(cfg, system, turns, false)
+	req, err := buildRequest(cfg, system, turns, false, openAITools, anthropicTools)
 	if err != nil {
-		return "", err
+		return Assistant{}, err
 	}
 	redact := func(s string) string {
 		return strings.ReplaceAll(s, cfg.APIKey, "<redacted>")
 	}
 	switch cfg.Provider {
 	case "cloudflare-workers-ai":
-		return doWorkersAI(client, req, redact)
+		return parseWorkersAI(client, req, redact)
 	case "cloudflare-ai-gateway":
 		if strings.HasPrefix(strings.ToLower(cfg.Model), "claude") {
-			return doAnthropic(client, req, redact)
+			return parseAnthropic(client, req, redact)
 		}
-		return doOpenAIChat(client, req, redact)
+		return parseOpenAIChat(client, req, redact)
 	case "anthropic":
-		return doAnthropic(client, req, redact)
+		return parseAnthropic(client, req, redact)
 	default:
-		return doOpenAIChat(client, req, redact)
+		return parseOpenAIChat(client, req, redact)
 	}
+}
+
+func doChat(cfg Config, system string, turns []Turn, client *http.Client) (string, error) {
+	a, err := SendTurns(cfg, system, turns, client)
+	if err != nil {
+		return "", err
+	}
+	return a.Text, nil
+}
+
+func parseWorkersAI(client *http.Client, req *http.Request, redact func(string) string) (Assistant, error) {
+	body, status, err := roundTrip(client, req, redact)
+	if err != nil {
+		return Assistant{}, err
+	}
+	var wr wire.WorkersAIResponse
+	if err := json.Unmarshal(body, &wr); err != nil {
+		return Assistant{}, fmt.Errorf("decode workers ai response (%d): %w", status, err)
+	}
+	if !wr.Success {
+		return Assistant{}, fmt.Errorf("workers ai error: %+v", wr.Errors)
+	}
+	if len(wr.Result.Choices) > 0 {
+		msg := wr.Result.Choices[0].Message
+		var calls []rolemanager.ToolCall
+		for _, tc := range msg.ToolCalls {
+			var args map[string]any
+			if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+				return Assistant{}, fmt.Errorf("malformed tool arguments: %w", err)
+			}
+			calls = append(calls, rolemanager.ToolCall{ID: tc.ID, Name: tc.Function.Name, Args: args})
+		}
+		return Assistant{Text: msg.Content, ToolCalls: calls}, nil
+	}
+	return Assistant{Text: wr.Result.Response}, nil
+}
+
+func parseOpenAIChat(client *http.Client, req *http.Request, redact func(string) string) (Assistant, error) {
+	body, status, err := roundTrip(client, req, redact)
+	if err != nil {
+		return Assistant{}, err
+	}
+	var cr wire.OpenAIChatResponse
+	if err := json.Unmarshal(body, &cr); err != nil {
+		return Assistant{}, fmt.Errorf("decode openai chat response (%d): %w", status, err)
+	}
+	if len(cr.Choices) == 0 {
+		return Assistant{}, fmt.Errorf("openai chat response has no choices")
+	}
+	msg := cr.Choices[0].Message
+	var calls []rolemanager.ToolCall
+	for _, tc := range msg.ToolCalls {
+		var args map[string]any
+		if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+			return Assistant{}, fmt.Errorf("malformed tool arguments for %s: %w", tc.Function.Name, err)
+		}
+		calls = append(calls, rolemanager.ToolCall{ID: tc.ID, Name: tc.Function.Name, Args: args})
+	}
+	stop := cr.Choices[0].FinishReason == "stop" || cr.Choices[0].FinishReason == "end_turn"
+	return Assistant{Text: msg.Content, ToolCalls: calls, Stop: stop}, nil
+}
+
+func parseAnthropic(client *http.Client, req *http.Request, redact func(string) string) (Assistant, error) {
+	body, status, err := roundTrip(client, req, redact)
+	if err != nil {
+		return Assistant{}, err
+	}
+	var ar wire.AnthropicMessagesResponse
+	if err := json.Unmarshal(body, &ar); err != nil {
+		return Assistant{}, fmt.Errorf("decode anthropic response (%d): %w", status, err)
+	}
+	var b strings.Builder
+	var calls []rolemanager.ToolCall
+	for _, c := range ar.Content {
+		b.WriteString(c.Text)
+		if c.Type == "tool_use" {
+			calls = append(calls, rolemanager.ToolCall{
+				ID:   c.ID,
+				Name: c.Name,
+				Args: c.Input,
+			})
+		}
+	}
+	return Assistant{Text: b.String(), ToolCalls: calls}, nil
 }
 
 func buildOpenAIMessages(system string, turns []Turn) []wire.OpenAIChatMessage {
@@ -361,7 +468,26 @@ func buildOpenAIMessages(system string, turns []Turn) []wire.OpenAIChatMessage {
 		msgs = append(msgs, wire.OpenAIChatMessage{Role: "system", Content: system})
 	}
 	for _, t := range turns {
-		msgs = append(msgs, wire.OpenAIChatMessage{Role: t.Role, Content: t.Content})
+		switch t.Role {
+		case "assistant":
+			msg := wire.OpenAIChatMessage{Role: t.Role, Content: t.Content}
+			for _, tc := range t.ToolCalls {
+				args, _ := json.Marshal(tc.Args)
+				msg.ToolCalls = append(msg.ToolCalls, wire.OpenAIToolCall{
+					ID:   tc.ID,
+					Type: "function",
+					Function: struct {
+						Name      string `json:"name"`
+						Arguments string `json:"arguments"`
+					}{Name: tc.Name, Arguments: string(args)},
+				})
+			}
+			msgs = append(msgs, msg)
+		case "tool":
+			msgs = append(msgs, wire.OpenAIChatMessage{Role: "tool", Content: t.Content, ToolCallID: t.ToolCallID, Name: t.ToolName})
+		default:
+			msgs = append(msgs, wire.OpenAIChatMessage{Role: t.Role, Content: t.Content})
+		}
 	}
 	return msgs
 }
@@ -468,55 +594,6 @@ func EngageWithPosture(cfg Config, prompt string, detectMode bool, client *http.
 	}
 	res.Reply = reply
 	return res, nil
-}
-
-func doWorkersAI(client *http.Client, req *http.Request, redact func(string) string) (string, error) {
-	body, status, err := roundTrip(client, req, redact)
-	if err != nil {
-		return "", err
-	}
-	var wr wire.WorkersAIResponse
-	if err := json.Unmarshal(body, &wr); err != nil {
-		return "", fmt.Errorf("decode workers ai response (%d): %w", status, err)
-	}
-	if !wr.Success {
-		return "", fmt.Errorf("workers ai error: %+v", wr.Errors)
-	}
-	if len(wr.Result.Choices) > 0 {
-		return wr.Result.Choices[0].Message.Content, nil
-	}
-	return wr.Result.Response, nil
-}
-
-func doOpenAIChat(client *http.Client, req *http.Request, redact func(string) string) (string, error) {
-	body, status, err := roundTrip(client, req, redact)
-	if err != nil {
-		return "", err
-	}
-	var cr wire.OpenAIChatResponse
-	if err := json.Unmarshal(body, &cr); err != nil {
-		return "", fmt.Errorf("decode openai chat response (%d): %w", status, err)
-	}
-	if len(cr.Choices) == 0 {
-		return "", fmt.Errorf("openai chat response has no choices")
-	}
-	return cr.Choices[0].Message.Content, nil
-}
-
-func doAnthropic(client *http.Client, req *http.Request, redact func(string) string) (string, error) {
-	body, status, err := roundTrip(client, req, redact)
-	if err != nil {
-		return "", err
-	}
-	var ar wire.AnthropicMessagesResponse
-	if err := json.Unmarshal(body, &ar); err != nil {
-		return "", fmt.Errorf("decode anthropic response (%d): %w", status, err)
-	}
-	var b strings.Builder
-	for _, c := range ar.Content {
-		b.WriteString(c.Text)
-	}
-	return b.String(), nil
 }
 
 func roundTrip(client *http.Client, req *http.Request, redact func(string) string) ([]byte, int, error) {

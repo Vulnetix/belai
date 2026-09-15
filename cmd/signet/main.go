@@ -8,10 +8,13 @@ import (
 	"os"
 	"strings"
 
+	"github.com/vulnetix/signet/internal/agent"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
+	"github.com/vulnetix/signet/internal/permissions"
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/signet/internal/tools"
 	"github.com/vulnetix/signet/internal/tui"
 	"github.com/vulnetix/signet/internal/version"
 )
@@ -36,6 +39,7 @@ func main() {
 	allowInvalidSkills := flag.Bool("allow-invalid-skills", false, "ignore invalid skill validation")
 	allowInvalidHooks := flag.Bool("allow-invalid-hooks", false, "ignore invalid hook validation")
 	dangerouslyYolo := flag.Bool("dangerously-yolo-everything", false, "ignore every posture gate")
+	enableTools := flag.Bool("tools", false, "enable tool execution")
 	flag.Parse()
 
 	if *showVersion {
@@ -63,7 +67,7 @@ func main() {
 	posture.PrintBanner(pol, os.Stderr)
 
 	if *prompt != "" {
-		if err := runPromptOrTUI(*prompt, *model, *provider, *detectMode, *verbose, workdir, pol); err != nil {
+		if err := runPromptOrTUI(*prompt, *model, *provider, *detectMode, *verbose, workdir, pol, *enableTools); err != nil {
 			fmt.Fprintln(os.Stderr, "signet:", err)
 			os.Exit(1)
 		}
@@ -98,7 +102,7 @@ func isCharDevice(f *os.File) bool {
 	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }
 
-func runPromptOrTUI(prompt, model, providerName string, detectMode, verbose bool, workdir string, pol posture.Policy) error {
+func runPromptOrTUI(prompt, model, providerName string, detectMode, verbose bool, workdir string, pol posture.Policy, enableTools bool) error {
 	cfg, err := run.Resolve(model, providerName, os.Getenv)
 	if err != nil {
 		var nce *run.NotConfiguredError
@@ -118,7 +122,13 @@ func runPromptOrTUI(prompt, model, providerName string, detectMode, verbose bool
 		}
 		return err
 	}
-	res, err := run.EngageWithPosture(cfg, prompt, detectMode, http.DefaultClient, pol)
+
+	var res run.Result
+	if enableTools {
+		res, err = runAgent(cfg, prompt, http.DefaultClient, pol, workdir)
+	} else {
+		res, err = run.EngageWithPosture(cfg, prompt, detectMode, http.DefaultClient, pol)
+	}
 	if err != nil {
 		return err
 	}
@@ -139,4 +149,32 @@ func runPromptOrTUI(prompt, model, providerName string, detectMode, verbose bool
 	}
 	fmt.Println(res.Reply)
 	return nil
+}
+
+func runAgent(cfg run.Config, prompt string, client *http.Client, pol posture.Policy, workdir string) (run.Result, error) {
+	var toolList []tools.Tool
+	toolList = append(toolList, &tools.Read{Root: workdir, MaxBytes: 64 * 1024})
+	toolList = append(toolList, &tools.WebFetch{})
+	ws := &tools.WebSearch{}
+	if ws.Available() {
+		toolList = append(toolList, ws)
+	}
+	reg := tools.NewRegistry(toolList...)
+
+	settings, _ := config.LoadMerged(workdir)
+	perms := permissions.FromSimple(settings.Permissions)
+
+	sess, err := agent.NewSession(agent.Options{
+		Cfg:      cfg,
+		Client:   client,
+		Registry: reg,
+		Perms:    perms,
+		Posture:  pol,
+		Workdir:  workdir,
+		Settings: settings,
+	})
+	if err != nil {
+		return run.Result{}, err
+	}
+	return sess.Run(nil, prompt)
 }
