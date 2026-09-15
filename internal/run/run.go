@@ -37,6 +37,10 @@ type Config struct {
 	Effort   string        // empty means provider default thinking level
 	API      wire.Surface  // empty for built-ins; custom providers carry their surface
 	Auth     provider.Auth // empty for built-ins; custom providers carry their auth style
+	// ToolMethod is the session-stored tool calling method; ToolMethodNone
+	// (zero) means detect. It is resolved once per session and carried on
+	// every request so the model's method is not re-checked per turn.
+	ToolMethod ToolMethod
 }
 
 func (c Config) String() string {
@@ -532,6 +536,11 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 	if err != nil {
 		return nil, dialect{}, err
 	}
+	// A session-stored tool method (from detection or provider correction)
+	// wins over the dialect's default.
+	if cfg.ToolMethod != ToolMethodNone {
+		d.method = cfg.ToolMethod
+	}
 
 	// Copilot token exchange and provider construction live inside the factory
 	// so each retry attempt gets a fresh token and a fresh request.
@@ -577,7 +586,7 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 		switch d.kind {
 		case kindWorkersAI:
 			return p.NewWorkersAIRequest(cfg.Model, wire.WorkersAIRequest{
-				Messages: buildOpenAIMessages(system, turns),
+				Messages: buildOpenAIMessages(system, turns, d.method),
 				Stream:   stream,
 				Tools:    openAITools,
 			})
@@ -595,7 +604,7 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 		default:
 			return d.chatRequest(p, wire.OpenAIChatRequest{
 				Model:           cfg.Model,
-				Messages:        buildOpenAIMessages(system, turns),
+				Messages:        buildOpenAIMessages(system, turns, d.method),
 				Stream:          stream,
 				Tools:           openAITools,
 				ToolChoice:      "auto",
@@ -714,8 +723,8 @@ func parseWorkersAI(body []byte, status int, redact func(string) string) (Assist
 		msg := wr.Result.Choices[0].Message
 		var calls []rolemanager.ToolCall
 		for _, tc := range msg.ToolCalls {
-			var args map[string]any
-			if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+			args, err := parseToolCallArgs(tc.Function.Arguments)
+			if err != nil {
 				return Assistant{}, fmt.Errorf("malformed tool arguments: %w", err)
 			}
 			calls = append(calls, rolemanager.ToolCall{ID: tc.ID, Name: tc.Function.Name, Args: args})
@@ -737,8 +746,8 @@ func parseOpenAIChat(body []byte, status int, redact func(string) string) (Assis
 	msg := cr.Choices[0].Message
 	var calls []rolemanager.ToolCall
 	for _, tc := range msg.ToolCalls {
-		var args map[string]any
-		if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+		args, err := parseToolCallArgs(tc.Function.Arguments)
+		if err != nil {
 			return Assistant{}, fmt.Errorf("malformed tool arguments for %s: %w", tc.Function.Name, err)
 		}
 		calls = append(calls, rolemanager.ToolCall{ID: tc.ID, Name: tc.Function.Name, Args: args})
@@ -810,7 +819,7 @@ func synthesizeDanglingToolResults(turns []Turn) []Turn {
 	return out
 }
 
-func buildOpenAIMessages(system string, turns []Turn) []wire.OpenAIChatMessage {
+func buildOpenAIMessages(system string, turns []Turn, method wire.ToolMethod) []wire.OpenAIChatMessage {
 	msgs := make([]wire.OpenAIChatMessage, 0, len(turns)+1)
 	if system != "" {
 		msgs = append(msgs, wire.OpenAIChatMessage{Role: "system", Content: system})
@@ -825,13 +834,19 @@ func buildOpenAIMessages(system string, turns []Turn) []wire.OpenAIChatMessage {
 					b, _ := json.Marshal(tc.Args)
 					args = string(b)
 				}
+				var argsJSON json.RawMessage
+				if method == wire.ToolMethodObject {
+					argsJSON = wire.NewObjectToolCallArgs(args)
+				} else {
+					argsJSON = wire.NewStringToolCallArgs(args)
+				}
 				msg.ToolCalls = append(msg.ToolCalls, wire.OpenAIToolCall{
 					ID:   tc.ID,
 					Type: "function",
-					Function: struct {
-						Name      string `json:"name"`
-						Arguments string `json:"arguments"`
-					}{Name: tc.Name, Arguments: args},
+					Function: wire.ToolCallFunction{
+						Name:      tc.Name,
+						Arguments: argsJSON,
+					},
 				})
 			}
 			if t.Content == "" && len(msg.ToolCalls) == 0 {
@@ -987,4 +1002,27 @@ func roundTrip(ctx context.Context, client *http.Client, req *http.Request, cfg 
 		return nil, resp.StatusCode, newProviderError("roundTrip", cfg, resp, body, redact)
 	}
 	return body, resp.StatusCode, nil
+}
+
+// parseToolCallArgs decodes a raw tool-call arguments value that may be either
+// a JSON-encoded string (classic OpenAI) or a raw JSON object.
+func parseToolCallArgs(raw json.RawMessage) (map[string]any, error) {
+	if len(raw) == 0 {
+		return map[string]any{}, nil
+	}
+	// Try the classic string form first.
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		var args map[string]any
+		if err := json.Unmarshal([]byte(s), &args); err != nil {
+			return nil, err
+		}
+		return args, nil
+	}
+	// Otherwise it is an object form.
+	var args map[string]any
+	if err := json.Unmarshal(raw, &args); err != nil {
+		return nil, err
+	}
+	return args, nil
 }

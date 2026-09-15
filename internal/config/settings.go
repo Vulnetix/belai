@@ -177,10 +177,7 @@ func (s Settings) AllowProjectProvidersEnabled() bool {
 // BashReadOnlyEnabled reports whether the read-only Bash gate is on. The
 // default (nil or false) is off: full shell.
 func (s Settings) BashReadOnlyEnabled() bool {
-	if s.BashReadOnly == nil {
-		return true
-	}
-	return *s.BashReadOnly
+	return s.BashReadOnly != nil && *s.BashReadOnly
 }
 
 // Override merges project settings over the receiver (which should be the

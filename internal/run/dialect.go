@@ -36,6 +36,7 @@ type dialect struct {
 	thinking bool // emit wire.AnthropicThinking from Effort
 	effort   bool // emit reasoning_effort from Effort
 	usage    bool // emit stream_options.include_usage when streaming
+	method   wire.ToolMethod
 }
 
 // resolveDialect maps a provider (and model) onto its dialect. The three
@@ -49,20 +50,20 @@ func resolveDialect(cfg Config) (dialect, error) {
 	}
 	switch cfg.Provider {
 	case "cloudflare-workers-ai":
-		return dialect{kind: kindWorkersAI, route: routeWorkersAI}, nil
+		return dialect{kind: kindWorkersAI, route: routeWorkersAI, method: wire.ToolMethodObject}, nil
 	case "cloudflare-ai-gateway":
 		if isClaudeModel(cfg.Model) {
 			return dialect{kind: kindAnthropicMessages, route: routeGateway}, nil
 		}
-		return dialect{kind: kindOpenAIChat, route: routeGateway}, nil
+		return dialect{kind: kindOpenAIChat, route: routeGateway, method: wire.ToolMethodString}, nil
 	case "anthropic":
 		return dialect{kind: kindAnthropicMessages, route: routeNative, thinking: true}, nil
 	case "openai":
-		return dialect{kind: kindOpenAIChat, route: routeNative, effort: true, usage: true}, nil
+		return dialect{kind: kindOpenAIChat, route: routeNative, effort: true, usage: true, method: wire.ToolMethodString}, nil
 	case "openrouter", "google-gemini", "ollama", "github-copilot":
 		// OpenAI-compatible surfaces without native reasoning_effort or
 		// stream_options.include_usage: those stay openai-only.
-		return dialect{kind: kindOpenAIChat, route: routeNative}, nil
+		return dialect{kind: kindOpenAIChat, route: routeNative, method: wire.ToolMethodString}, nil
 	default:
 		return dialect{}, fmt.Errorf("unknown provider %q", cfg.Provider)
 	}
@@ -75,7 +76,7 @@ func resolveDialect(cfg Config) (dialect, error) {
 func customDialect(s wire.Surface) (dialect, error) {
 	switch s {
 	case wire.SurfaceOpenAIChat:
-		return dialect{kind: kindOpenAIChat, route: routeNative}, nil
+		return dialect{kind: kindOpenAIChat, route: routeNative, method: wire.ToolMethodString}, nil
 	case wire.SurfaceAnthropicMessages:
 		return dialect{kind: kindAnthropicMessages, route: routeNative}, nil
 	default:

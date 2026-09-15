@@ -968,17 +968,17 @@ func TestSynthesizeDanglingToolResults(t *testing.T) {
 func TestBuildOpenAIMessagesRawArgsFallback(t *testing.T) {
 	msgs := buildOpenAIMessages("sys", []Turn{
 		{Role: "assistant", ToolCalls: []rolemanager.ToolCall{{ID: "c1", Name: "Read", RawArgs: `{"path":"x.go"}`}}},
-	})
+	}, wire.ToolMethodString)
 	if len(msgs) != 2 {
 		t.Fatalf("got %d msgs, want 2", len(msgs))
 	}
-	if got := msgs[1].ToolCalls[0].Function.Arguments; got != `{"path":"x.go"}` {
-		t.Fatalf("arguments = %q", got)
+	if got := string(msgs[1].ToolCalls[0].Function.Arguments); got != `"{\"path\":\"x.go\"}"` {
+		t.Fatalf("arguments = %s", got)
 	}
 }
 
 func TestEmptyAssistantMessageSkipped(t *testing.T) {
-	msgs := buildOpenAIMessages("sys", []Turn{{Role: "assistant", Content: ""}})
+	msgs := buildOpenAIMessages("sys", []Turn{{Role: "assistant", Content: ""}}, wire.ToolMethodString)
 	if len(msgs) != 1 || msgs[0].Role != "system" {
 		t.Fatalf("empty assistant should be skipped: %+v", msgs)
 	}

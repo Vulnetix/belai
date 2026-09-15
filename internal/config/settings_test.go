@@ -97,10 +97,10 @@ func TestProjectOverridesGlobal(t *testing.T) {
 func TestBashReadOnlyRoundTripAndDefault(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 
-	// Default: unset means read-only (the fail-closed default).
+	// Default: unset means full shell (read-only is an opt-in).
 	var zero Settings
-	if !zero.BashReadOnlyEnabled() {
-		t.Fatalf("unset bash_readonly should default to read-only mode")
+	if zero.BashReadOnlyEnabled() {
+		t.Fatalf("unset bash_readonly should default to full shell")
 	}
 
 	// Marshal: key name and value round-trip.

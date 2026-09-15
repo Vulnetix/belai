@@ -1,6 +1,10 @@
 package run
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/vulnetix/signet/internal/wire"
+)
 
 func TestResolveDialectBuiltins(t *testing.T) {
 	cases := []struct {
@@ -11,7 +15,7 @@ func TestResolveDialectBuiltins(t *testing.T) {
 		{
 			name: "workers",
 			cfg:  Config{Provider: "cloudflare-workers-ai"},
-			want: dialect{kind: kindWorkersAI, route: routeWorkersAI},
+			want: dialect{kind: kindWorkersAI, route: routeWorkersAI, method: wire.ToolMethodObject},
 		},
 		{
 			name: "gateway claude",
@@ -21,7 +25,7 @@ func TestResolveDialectBuiltins(t *testing.T) {
 		{
 			name: "gateway openai",
 			cfg:  Config{Provider: "cloudflare-ai-gateway", Model: "gpt-5"},
-			want: dialect{kind: kindOpenAIChat, route: routeGateway},
+			want: dialect{kind: kindOpenAIChat, route: routeGateway, method: wire.ToolMethodString},
 		},
 		{
 			name: "anthropic",
@@ -31,7 +35,7 @@ func TestResolveDialectBuiltins(t *testing.T) {
 		{
 			name: "openai",
 			cfg:  Config{Provider: "openai"},
-			want: dialect{kind: kindOpenAIChat, route: routeNative, effort: true, usage: true},
+			want: dialect{kind: kindOpenAIChat, route: routeNative, effort: true, usage: true, method: wire.ToolMethodString},
 		},
 	}
 	for _, tc := range cases {

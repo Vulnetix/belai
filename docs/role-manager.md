@@ -259,7 +259,7 @@ Every safety gate has three postures:
 | `prompt_unsafe` | `enforce` | `--allow-unsafe-prompt` |
 | `prompt_malformed` | `enforce` | `--allow-malformed-prompt` |
 | `tool_call_mismatch` | `enforce` (`abort`) | `--tool-call-mismatch=abort\|strip\|ignore` |
-| `permission_no_match` | `enforce` | `--allow-unpermitted-tools` |
+| `permission_no_match` | `ignore` (allow) | `--allow-unpermitted-tools` |
 | `permission_ask_no_tty` | `enforce` | `--allow-ask-without-tty` |
 | `skill_invalid` | `enforce` | `--allow-invalid-skills` |
 | `hook_invalid` | `enforce` | `--allow-invalid-hooks` |
@@ -328,7 +328,7 @@ alias for `deny`).
 | ---- | --------- | ------ |
 | Rule shape | `Tool` or `Tool(spec)` where `spec` is a glob (`*`, `?`) | Live |
 | Precedence | `deny` / `block` beats `allow` and `ask` | Live |
-| No match | Blocked — unknown tools are never forwarded | Live |
+| No match | Allowed by default — `permission_no_match: enforce` (preferences.yaml) restores the legacy block; unknown *tool names* are still rejected earlier by the registry check | Live |
 | Alias | `block` is accepted and treated as `deny` | Live |
 | `FromSimple` default | Every unrecognized decision value is treated as deny | Live |
 
@@ -342,7 +342,8 @@ flowchart TD
     Allow -->|yes| Permit[Allow]
     Allow -->|no| Ask{Ask match?}
     Ask -->|yes| Prompt[Ask user]
-    Ask -->|no| Block
+    Ask -->|no| Def[Allow by default]
+    Def -.->|permission_no_match=enforce| Block
 ```
 
 ## Skill validation
@@ -540,7 +541,7 @@ content.
 | Classifier returns malformed output | Warn, do not promote | `tool_result_malformed` / `prompt_malformed` |
 | Classifier transport error | Propagate error | — |
 | Tool-call mismatch, no/empty policy | Abort | `tool_call_mismatch` |
-| Tool matches no permission rule | Block | `permission_no_match` |
+| Tool matches no permission rule | Allow (default); block under `enforce` | `permission_no_match` |
 | Skill front-matter invalid | Reject skill | `skill_invalid` |
 | Hook schema / path invalid | Reject hook | `hook_invalid` |
 | Untrusted block reaches system/agent boundary | Reject | — |

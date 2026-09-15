@@ -230,7 +230,8 @@ persisted.
 
 - `@path` or `@"path with spaces"` attaches the contents of a file after
   classification. Use `@agent:name` to engage a named agent instead.
-- `!cmd` executes a local, read-only `Bash` command and sends the output to
+- `!cmd` executes a local `Bash` command (full shell by default; read-only
+  in plan mode, or whenever `bash_readonly` is set) and sends the output to
   the model under the `signet:debug` profile.
 
 ### Prompt library
@@ -286,9 +287,19 @@ renders `(?)` until a fresh assistant response lands.
 The effective settings view merges, lowest to highest: defaults, `state.json`,
 global `settings.json`, project `settings.json`, environment, then CLI flags.
 `/settings` shows the effective value and provenance for each key. Settings
-include `provider`, `model`, `effort`, `caveman`, `permissions` (structured
-`allow`/`ask`/`deny`), `session_retention_days`, `ui.banner`, `ui.status_bar`,
-`show_session_names` (default on), `context_windows`, `providers`, and
-`allow_project_providers`. Permission rules merge by union — a project file can
-add rules but never remove a global rule. Provider profiles merge key-by-key
-the same way.
+include `provider`, `model`, `effort`, `caveman`, `bash_readonly`,
+`permissions` (structured `allow`/`ask`/`deny`), `session_retention_days`,
+`ui.banner`, `ui.status_bar`, `show_session_names` (default on),
+`context_windows`, `providers`, and `allow_project_providers`. Permission
+rules merge by union — a project file can add rules but never remove a
+global rule. Provider profiles merge key-by-key the same way.
+
+Tool availability defaults to allow: a call matching no permission rule
+proceeds (unregistered tool names are still rejected by the agent's registry
+check first). Opt-outs, in order of strength: a `permissions.deny` rule
+always blocks; `bash_readonly: true` (settings file or the `/settings` "bash
+read-only" toggle) confines Bash to its read-only allowlist; and
+`postures: {permission_no_match: enforce}` in `preferences.yaml` restores the
+legacy no-match-block. Bash otherwise runs full shell commands via `sh -c`
+(timeout, env scrubbing, and output truncation still apply); plan mode keeps
+Bash read-only regardless of `bash_readonly`.

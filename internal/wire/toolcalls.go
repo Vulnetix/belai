@@ -1,5 +1,43 @@
 package wire
 
+import "encoding/json"
+
+// ToolMethod controls how OpenAI-style tool-call arguments are serialised on
+// the wire: as a JSON-encoded string (classic OpenAI), as a raw JSON object
+// (Workers AI and some gateways), or as Anthropic content blocks (no
+// function.arguments field). ToolMethodNone means "not yet detected".
+type ToolMethod string
+
+const (
+	ToolMethodNone   ToolMethod = ""
+	ToolMethodString ToolMethod = "string"
+	ToolMethodObject ToolMethod = "object"
+	ToolMethodBlocks ToolMethod = "blocks"
+)
+
+// ToolCallFunction is the function half of an OpenAI tool call. Arguments is
+// a raw JSON value so the request path can choose string vs object form.
+type ToolCallFunction struct {
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments"`
+}
+
+// NewObjectToolCallArgs parses argsJSON and returns it as a raw JSON object.
+// A malformed args string fails closed to an empty object.
+func NewObjectToolCallArgs(argsJSON string) json.RawMessage {
+	var raw json.RawMessage
+	if err := json.Unmarshal([]byte(argsJSON), &raw); err == nil && len(raw) > 0 && raw[0] == '{' {
+		return raw
+	}
+	return json.RawMessage("{}")
+}
+
+// NewStringToolCallArgs wraps argsJSON as a JSON-encoded string.
+func NewStringToolCallArgs(argsJSON string) json.RawMessage {
+	b, _ := json.Marshal(argsJSON)
+	return b
+}
+
 // OpenAITool is the wire shape for a tool offered in an OpenAI chat
 // /completions or responses request.
 type OpenAITool struct {
@@ -15,15 +53,13 @@ type OpenAIFunctionDef struct {
 }
 
 // OpenAIToolCall is a model-emitted tool invocation inside an assistant
-// message. The Arguments field is a JSON *string* requiring a second unmarshal
-// to access the typed map.
+// message. The Arguments field is a raw JSON value; on the request path it is
+// built via NewStringToolCallArgs or NewObjectToolCallArgs, and on the
+// response path it may arrive as either form.
 type OpenAIToolCall struct {
-	ID       string `json:"id"`
-	Type     string `json:"type"`
-	Function struct {
-		Name      string `json:"name"`
-		Arguments string `json:"arguments"`
-	} `json:"function"`
+	ID       string           `json:"id"`
+	Type     string           `json:"type"`
+	Function ToolCallFunction `json:"function"`
 }
 
 // AnthropicToolDef is the wire shape for a tool offered in an Anthropic

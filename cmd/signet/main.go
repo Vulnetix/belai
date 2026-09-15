@@ -39,7 +39,7 @@ func main() {
 	allowUnsafePrompt := flag.Bool("allow-unsafe-prompt", false, "ignore unsafe prompt classification")
 	allowMalformedPrompt := flag.Bool("allow-malformed-prompt", false, "ignore malformed prompt classification")
 	toolCallMismatch := flag.String("tool-call-mismatch", "", "abort|strip|ignore tool-call mismatches")
-	allowUnpermittedTools := flag.Bool("allow-unpermitted-tools", false, "ignore permission blocks")
+	allowUnpermittedTools := flag.Bool("allow-unpermitted-tools", false, "allow tool calls matching no permission rule (default)")
 	allowAskWithoutTTY := flag.Bool("allow-ask-without-tty", false, "ignore ask-without-tty blocks")
 	allowInvalidSkills := flag.Bool("allow-invalid-skills", false, "ignore invalid skill validation")
 	allowInvalidHooks := flag.Bool("allow-invalid-hooks", false, "ignore invalid hook validation")

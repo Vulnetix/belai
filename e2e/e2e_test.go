@@ -345,6 +345,7 @@ type toolMock struct {
 	mu            sync.Mutex
 	securityUsers []string
 	chatUsers     []string
+	toolUsers     []string
 }
 
 func newToolMockServer(t *testing.T, toolPath string) (*httptest.Server, *toolMock) {
@@ -368,6 +369,9 @@ func newToolMockServer(t *testing.T, toolPath string) (*httptest.Server, *toolMo
 				user = m.Content
 			case "tool":
 				hasTool = true
+				tm.mu.Lock()
+				tm.toolUsers = append(tm.toolUsers, m.Content)
+				tm.mu.Unlock()
 			}
 		}
 		tm.mu.Lock()
@@ -392,20 +396,34 @@ func newToolMockServer(t *testing.T, toolPath string) (*httptest.Server, *toolMo
 
 func runSignetDir(t *testing.T, dir, baseURL string, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
+	// A permissive global rule keeps this helper stable under either no-match
+	// default; the default-allow and deny tests below use the bare variant.
+	return runSignetDirWithGlobal(t, dir, baseURL, `{"permissions":{"allow":["Read"]}}`, args...)
+}
+
+// runSignetDirWithGlobal runs the built binary in dir against baseURL with an
+// isolated SIGNET_HOME containing the given global settings ("" writes no
+// settings file at all, so the run exercises pure defaults).
+func runSignetDirWithGlobal(t *testing.T, dir, baseURL, globalSettings string, args ...string) (stdout, stderr string, code int) {
+	t.Helper()
 	var out, errb bytes.Buffer
 	cmd := exec.Command(signetBin, args...)
 	cmd.Dir = dir
 	// Isolate global state so the developer's (or CI's) local settings cannot
 	// change the posture/policy under test.
 	home := filepath.Join(t.TempDir(), "signet-home")
-	_ = os.MkdirAll(home, 0o700)
-	settings := []byte(`{"permissions":{"allow":["Read"]}}`)
-	if err := os.WriteFile(filepath.Join(home, "settings.json"), settings, 0o600); err != nil {
-		t.Fatalf("write settings.json: %v", err)
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		t.Fatalf("mkdir home: %v", err)
+	}
+	if globalSettings != "" {
+		if err := os.WriteFile(filepath.Join(home, "settings.json"), []byte(globalSettings), 0o600); err != nil {
+			t.Fatalf("write settings.json: %v", err)
+		}
 	}
 	cmd.Env = append(os.Environ(), "SIGNET_BASE_URL="+baseURL, "OPENAI_API_KEY=test", "SIGNET_HOME="+home)
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
+	code = 0
 	if err := cmd.Run(); err != nil {
 		if ee, ok := err.(*exec.ExitError); ok {
 			code = ee.ExitCode()
@@ -455,5 +473,77 @@ func TestToolResultWithheld(t *testing.T) {
 	}
 	if !strings.Contains(out, "done") {
 		t.Fatalf("stdout = %q, want done", out)
+	}
+}
+
+// TestToolsAllowedByDefault proves the default-allow tool loop end to end:
+// with no settings.json anywhere (no permission rules), the requested Read
+// tool actually runs and its real content reaches the model. TestToolLoopExecutes
+// cannot prove this: it passes even when the tool result is withheld.
+func TestToolsAllowedByDefault(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "safe.txt"), []byte("hello default-allow-world"), 0o600); err != nil {
+		t.Fatalf("write safe.txt: %v", err)
+	}
+	srv, tm := newToolMockServer(t, "safe.txt")
+	defer srv.Close()
+
+	out, errOut, code := runSignetDirWithGlobal(t, dir, srv.URL, "",
+		"-tools", "-provider", "openai", "-model", "test", "-prompt", "read the file")
+	if code != 0 {
+		t.Fatalf("exit = %d (stderr %q)", code, errOut)
+	}
+	if !strings.Contains(out, "done") {
+		t.Fatalf("stdout = %q, want done", out)
+	}
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	if len(tm.toolUsers) != 1 {
+		t.Fatalf("expected exactly one tool result, got %d: %v", len(tm.toolUsers), tm.toolUsers)
+	}
+	if !strings.Contains(tm.toolUsers[0], "hello default-allow-world") {
+		t.Fatalf("real tool content not forwarded to model: %q", tm.toolUsers[0])
+	}
+	if strings.Contains(tm.toolUsers[0], "tool result withheld") {
+		t.Fatalf("no tool result may be withheld with no permission rules: %q", tm.toolUsers[0])
+	}
+}
+
+// TestDenyRuleWithholdsTool proves the permissions.deny opt-out: a project
+// settings.json denying Read keeps the loop withholding that tool even though
+// the default is allow.
+func TestDenyRuleWithholdsTool(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "safe.txt"), []byte("hello default-allow-world"), 0o600); err != nil {
+		t.Fatalf("write safe.txt: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".vulnetix"), 0o755); err != nil {
+		t.Fatalf("mkdir .vulnetix: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".vulnetix", "settings.json"),
+		[]byte(`{"permissions":{"deny":["Read"]}}`), 0o600); err != nil {
+		t.Fatalf("write project settings: %v", err)
+	}
+	srv, tm := newToolMockServer(t, "safe.txt")
+	defer srv.Close()
+
+	out, errOut, code := runSignetDirWithGlobal(t, dir, srv.URL, "",
+		"-tools", "-provider", "openai", "-model", "test", "-prompt", "read the file")
+	if code != 0 {
+		t.Fatalf("exit = %d (stderr %q)", code, errOut)
+	}
+	if !strings.Contains(out, "done") {
+		t.Fatalf("stdout = %q, want done", out)
+	}
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	if len(tm.toolUsers) != 1 {
+		t.Fatalf("expected exactly one tool result, got %d: %v", len(tm.toolUsers), tm.toolUsers)
+	}
+	if !strings.Contains(tm.toolUsers[0], "tool result withheld: permission denied") {
+		t.Fatalf("deny rule should withhold the tool: %q", tm.toolUsers[0])
+	}
+	if strings.Contains(tm.toolUsers[0], "hello default-allow-world") {
+		t.Fatalf("denied tool content must not reach the model: %q", tm.toolUsers[0])
 	}
 }
