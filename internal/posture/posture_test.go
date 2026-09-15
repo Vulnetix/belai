@@ -7,9 +7,12 @@ import (
 func TestDefaults(t *testing.T) {
 	p := Defaults()
 	for _, g := range AllGates {
-		if p.Level(g) != Enforce {
-			t.Fatalf("gate %q expected enforce, got %q", g, p.Level(g))
+		if p.Level(g) != DefaultLevel(g) {
+			t.Fatalf("gate %q expected default %q, got %q", g, DefaultLevel(g), p.Level(g))
 		}
+	}
+	if p.Level(PermissionNoMatch) != Ignore {
+		t.Fatalf("permission_no_match should default to ignore, got %q", p.Level(PermissionNoMatch))
 	}
 }
 
@@ -17,6 +20,9 @@ func TestLevelDefault(t *testing.T) {
 	var p Policy
 	if p.Level(ToolResultUnsafe) != Enforce {
 		t.Fatalf("nil policy should default to enforce")
+	}
+	if p.Level(PermissionNoMatch) != Ignore {
+		t.Fatalf("nil policy should default permission_no_match to ignore, got %q", p.Level(PermissionNoMatch))
 	}
 }
 
@@ -39,7 +45,15 @@ func TestDowngrades(t *testing.T) {
 	p := Policy{ToolResultUnsafe: Warn, SkillInvalid: Ignore}
 	d := p.Downgrades()
 	if len(d) != 2 {
-		t.Fatalf("expected 2 downgrades, got %d", len(d))
+		t.Fatalf("expected 2 downgrades, got %d: %v", len(d), d)
+	}
+}
+
+// The default policy must not emit banner noise: every gate sits at its
+// default level, including permission_no_match=ignore.
+func TestDefaultsNoDowngradeBanner(t *testing.T) {
+	if d := Defaults().Downgrades(); len(d) != 0 {
+		t.Fatalf("expected no downgrades from defaults, got %v", d)
 	}
 }
 

@@ -23,7 +23,8 @@ const (
 // Settings is the permission configuration. Rules are either a bare tool name
 // ("Read") or a tool name plus a glob spec ("Bash(git diff:*)",
 // "Read(./src/**)"). Deny (or Block) wins over Allow and Ask; a tool that
-// matches no rule is blocked (unknown tools are never forwarded).
+// matches no rule is allowed by default (the agent's registry check still
+// rejects unregistered tools before permissions are consulted).
 type Settings struct {
 	Allow []string `json:"allow,omitempty"`
 	Ask   []string `json:"ask,omitempty"`
@@ -88,7 +89,7 @@ func ValidateRule(rule string) error {
 
 // Explain returns the decision for a tool invocation against a rule subject,
 // plus the rule that decided it ("" when no rule matched and the default
-// block applies).
+// allow applies).
 func (s Settings) Explain(tool, subject string) (Decision, string) {
 	for _, r := range append(append([]string{}, s.Deny...), s.Block...) {
 		if matchRule(r, tool, subject) {
@@ -105,7 +106,9 @@ func (s Settings) Explain(tool, subject string) (Decision, string) {
 			return DecisionAsk, r
 		}
 	}
-	return DecisionBlock, ""
+	// No rule matched: allow by default. The permission_no_match posture gate
+	// (agent layer) can restore the legacy fail-closed block.
+	return DecisionAllow, ""
 }
 
 // Evaluate returns the decision for a tool invocation against a rule subject.

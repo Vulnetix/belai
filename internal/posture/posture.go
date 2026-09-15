@@ -54,22 +54,39 @@ var AllGates = []Gate{
 // Policy maps gates to their configured level.
 type Policy map[Gate]Level
 
-// Level returns the posture level for a gate, defaulting to enforce.
-func (p Policy) Level(g Gate) Level {
-	if p == nil {
-		return Enforce
-	}
-	if l, ok := p[g]; ok {
+// gateDefaultLevel holds the non-enforce default for individual gates. Every
+// gate not listed here defaults to Enforce. PermissionNoMatch defaults to
+// Ignore because the permission layer now allows unmatched calls by default;
+// `postures: {permission_no_match: enforce}` in preferences.yaml restores the
+// legacy fail-closed block.
+var gateDefaultLevel = map[Gate]Level{
+	PermissionNoMatch: Ignore,
+}
+
+// DefaultLevel returns the default posture level for a gate.
+func DefaultLevel(g Gate) Level {
+	if l, ok := gateDefaultLevel[g]; ok {
 		return l
 	}
 	return Enforce
 }
 
-// Defaults returns a policy where every gate is enforce.
+// Level returns the posture level for a gate, falling back to the gate's
+// default level.
+func (p Policy) Level(g Gate) Level {
+	if p != nil {
+		if l, ok := p[g]; ok {
+			return l
+		}
+	}
+	return DefaultLevel(g)
+}
+
+// Defaults returns a policy seeded from each gate's default level.
 func Defaults() Policy {
 	p := make(Policy, len(AllGates))
 	for _, g := range AllGates {
-		p[g] = Enforce
+		p[g] = DefaultLevel(g)
 	}
 	return p
 }
@@ -88,16 +105,23 @@ func (p Policy) Override(q Policy) Policy {
 	return out
 }
 
-// Downgrades returns a human-readable summary of every gate that is not
-// enforce, ordered by gate name.
+// Downgrades returns a human-readable summary of every gate whose level is
+// relaxed compared with that gate's default, ordered by gate name.
 func (p Policy) Downgrades() []string {
 	var out []string
 	for _, g := range AllGates {
-		if l := p.Level(g); l != Enforce {
+		l := p.Level(g)
+		if isLessStrict(l, DefaultLevel(g)) {
 			out = append(out, fmt.Sprintf("%s=%s", g, l))
 		}
 	}
 	return out
+}
+
+// isLessStrict reports whether current is a weaker posture than default.
+func isLessStrict(current, def Level) bool {
+	rank := map[Level]int{Ignore: 0, Warn: 1, Enforce: 2}
+	return rank[current] < rank[def]
 }
 
 // preferencesFile is the name of the posture/preferences file.

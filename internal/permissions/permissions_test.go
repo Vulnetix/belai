@@ -7,8 +7,8 @@ func TestAllowRule(t *testing.T) {
 	if got := s.Evaluate("Bash", "git diff:HEAD"); got != DecisionAllow {
 		t.Fatalf("Evaluate = %q, want allow", got)
 	}
-	if got := s.Evaluate("Bash", "git push:origin"); got != DecisionBlock {
-		t.Fatalf("non-matching subject should block, got %q", got)
+	if got := s.Evaluate("Bash", "git push:origin"); got != DecisionAllow {
+		t.Fatalf("non-matching subject should fall through to default allow, got %q", got)
 	}
 }
 
@@ -24,8 +24,8 @@ func TestAskRule(t *testing.T) {
 	if got := s.Evaluate("Read", "README.md"); got != DecisionAsk {
 		t.Fatalf("Evaluate = %q, want ask", got)
 	}
-	if got := s.Evaluate("Read", "main.go"); got != DecisionBlock {
-		t.Fatalf("non-matching subject should block, got %q", got)
+	if got := s.Evaluate("Read", "main.go"); got != DecisionAllow {
+		t.Fatalf("non-matching subject should fall through to default allow, got %q", got)
 	}
 }
 
@@ -49,10 +49,16 @@ func TestBlockAlias(t *testing.T) {
 	}
 }
 
-func TestUnknownToolBlocked(t *testing.T) {
+func TestUnmatchedToolAllowed(t *testing.T) {
+	// The permissions layer allows any unmatched tool call; unregistered tools
+	// are rejected earlier by the agent's registry check, not here.
 	s := Settings{Allow: []string{"Read"}}
-	if got := s.Evaluate("Write", "file"); got != DecisionBlock {
-		t.Fatalf("unknown tool should block, got %q", got)
+	if got := s.Evaluate("Write", "file"); got != DecisionAllow {
+		t.Fatalf("unmatched tool should be allowed by default, got %q", got)
+	}
+	empty := Settings{}
+	if got := empty.Evaluate("AnyTool", "x"); got != DecisionAllow {
+		t.Fatalf("no rules should allow by default, got %q", got)
 	}
 }
 
@@ -71,8 +77,8 @@ func TestFromSimple(t *testing.T) {
 	if got := s.Evaluate("rm", "x"); got != DecisionBlock {
 		t.Fatalf("rm = %q, want block", got)
 	}
-	if got := s.Evaluate("unknown", "x"); got != DecisionBlock {
-		t.Fatalf("unknown = %q, want block", got)
+	if got := s.Evaluate("unknown", "x"); got != DecisionAllow {
+		t.Fatalf("unknown = %q, want allow (default)", got)
 	}
 }
 
@@ -96,8 +102,8 @@ func TestExplainReturnsDecidingRule(t *testing.T) {
 		t.Fatalf("Explain = %q/%q", dec, rule)
 	}
 	dec, rule = s.Explain("Read", "./other.go")
-	if dec != DecisionBlock || rule != "" {
-		t.Fatalf("default block = %q/%q", dec, rule)
+	if dec != DecisionAllow || rule != "" {
+		t.Fatalf("default allow = %q/%q", dec, rule)
 	}
 }
 
@@ -139,7 +145,7 @@ func TestQuestionMarkMatchesOneRune(t *testing.T) {
 	if got := s.Evaluate("Read", "abc"); got != DecisionAllow {
 		t.Fatalf("? should match one char, got %q", got)
 	}
-	if got := s.Evaluate("Read", "abbc"); got != DecisionBlock {
-		t.Fatalf("? should not match two chars, got %q", got)
+	if got := s.Evaluate("Read", "abbc"); got != DecisionAllow {
+		t.Fatalf("? should not match two chars, want default allow, got %q", got)
 	}
 }
