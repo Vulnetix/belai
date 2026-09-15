@@ -153,3 +153,20 @@ func TestBashAllowedRejectsMetacharacters(t *testing.T) {
 		}
 	}
 }
+
+func TestPlanStateApplyMarkers(t *testing.T) {
+	s := PlanState{Todos: []Todo{
+		{N: 1, Text: "a", Done: false},
+		{N: 2, Text: "b", Done: false},
+		{N: 3, Text: "c", Done: false},
+	}}
+	s.ApplyMarkers("did [DONE:1] and [DONE:3]")
+	if !s.Todos[0].Done || s.Todos[1].Done || !s.Todos[2].Done {
+		t.Fatalf("todos after ApplyMarkers = %+v, want 1 and 3 done", s.Todos)
+	}
+	// The write is durable across a rebuilt Progress().
+	p := s.Progress()
+	if p.Completed() != 2 {
+		t.Fatalf("Completed = %d, want 2", p.Completed())
+	}
+}

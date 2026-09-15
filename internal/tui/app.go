@@ -25,7 +25,9 @@ import (
 	"github.com/vulnetix/signet/internal/gitinfo"
 	"github.com/vulnetix/signet/internal/modelinfo"
 	"github.com/vulnetix/signet/internal/models"
+	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/permissions"
+	"github.com/vulnetix/signet/internal/plans"
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/profiles"
 	"github.com/vulnetix/signet/internal/prompt"
@@ -993,6 +995,18 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			a.usageStale = false
 		}
 		a.appendAssistant(m.Result.Usage)
+		// In plan mode, extract a numbered plan out of the reply and persist it
+		// so /todos and a later resume can rebuild progress.
+		if a.planMode && m.Result.Reply != "" {
+			if steps, err := plans.ExtractSteps(m.Result.Reply); err == nil && len(steps) > 0 {
+				ps := modes.PlanState{Enabled: true, Executing: false}
+				for i, s := range steps {
+					ps.Todos = append(ps.Todos, modes.Todo{N: i + 1, Text: s})
+				}
+				a.appendEntry(ps.ToEntry(a.lastEntryID))
+				a.addSystem(fmt.Sprintf("plan: %d steps extracted", len(steps)))
+			}
+		}
 		a.refreshFooter()
 		return nil
 	}
