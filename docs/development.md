@@ -125,7 +125,7 @@ just detect-mode "add a retry to the HTTP client"   # agent
 just detect-mode "how does the nonce sealing work"  # plan
 ```
 
-**TUI smoke test.** `just tui`, then exercise slash-command autocomplete (`/p` → `/plan`, `/profile`), `/credentials`, `/settings`, and streaming output.
+**TUI smoke test.** `just tui`, then exercise slash-command autocomplete (`/p` → `/plan`, `/profile`), `/credentials`, `/settings`, `/help`, `/model`, and streaming output. Confirm `shift+tab` cycles the mode chip, `ctrl+d` quits, `ctrl+c` copies the prompt, and `esc` escapes every full-screen view.
 
 **Release parity.** `just build-all` cross-compiles all six release targets into `bin/` with the same ldflags the release workflow uses, and writes `bin/checksums.txt`. Run the host binary and check `-version` reports the git description.
 

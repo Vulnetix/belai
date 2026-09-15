@@ -497,6 +497,25 @@ func (a *App) handleCommand(input string) {
 			a.addSystem("plan mode on (read-only)")
 		}
 		a.saveMode()
+	case "mode":
+		if arg != "" {
+			a.mode = arg
+			a.saveMode()
+			a.addSystem("mode: " + arg)
+		} else {
+			a.addSystem("mode: " + a.mode)
+		}
+	case "help":
+		var lines []string
+		lines = append(lines, "commands:")
+		for _, n := range a.registry.Names() {
+			if c, ok := a.registry.Command(n); ok {
+				lines = append(lines, "  /"+n+" — "+c.Description)
+			}
+		}
+		a.addSystem(strings.Join(lines, "\n"))
+	case "model":
+		a.addSystem("model: " + a.cfg.Provider + " / " + a.cfg.Model + "\nType /model <provider> to switch.")
 	case "todos":
 		a.addSystem("todos: no plan tracked yet")
 	case "profile":

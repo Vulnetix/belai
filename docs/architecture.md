@@ -137,3 +137,39 @@ guidance when `caveman` is on.
 `internal/tui` is a Bubble Tea app laid out Codex-style: message list,
 streaming assistant/tool output, slash-command editor with autocomplete,
 model/effort picker, and a status footer (session/tokens/cost/model).
+
+### Status bar
+
+The footer is a two-line status bar:
+- Line 1: cwd (home collapsed to `~`) and git branch (`⎇ main`).
+- Line 2: provider·model, mode chip (colored), session, tokens, cost.
+- Truncates gracefully when the terminal is narrow.
+
+### Keybindings
+
+| Key | Behaviour |
+| --- | --------- |
+| `ctrl+c` | Copy the current prompt to the clipboard (OSC 52) |
+| `ctrl+d` | Quit (only when the editor is empty) |
+| `shift+tab` | Cycle mode: agent → plan → goal |
+| `esc` | Close any full-screen view |
+| `ctrl+l` | Clear the transcript |
+
+### Slash commands
+
+| Command | Description |
+| ------- | ----------- |
+| `/help` | Show available commands |
+| `/model` | Show current provider and model |
+| `/mode` | Show or set operating mode |
+| `/plan` | Toggle plan mode |
+| `/settings` | View and edit settings |
+| `/credentials` | Manage provider credentials |
+| `/goal` | Memorise or replay a goal |
+| `/profile` | Switch agent profile |
+
+### Startup credential message
+
+When the selected provider is unconfigured but other providers are, the TUI
+points the user at `/model` instead of claiming the selected provider's
+credentials are missing. When nothing is configured, it says so clearly.
