@@ -843,3 +843,39 @@ func TestPrepareCopilotRequiresOAuthToken(t *testing.T) {
 		t.Fatalf("Model = %q, want gpt-4o", cfg.Model)
 	}
 }
+
+func TestBuildAnthropicMessagesToolRoundTrip(t *testing.T) {
+	turns := []Turn{
+		{Role: "user", Content: "run a tool"},
+		{Role: "assistant", Content: "thinking", ToolCalls: []rolemanager.ToolCall{
+			{ID: "toolu_1", Name: "Read", Args: map[string]any{"path": "x.go"}},
+		}},
+		{Role: "tool", Content: "file contents", ToolCallID: "toolu_1", ToolName: "Read"},
+	}
+	msgs := buildAnthropicMessages(turns)
+	if len(msgs) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(msgs))
+	}
+
+	blocks, ok := msgs[1].Content.([]wire.AnthropicRequestBlock)
+	if !ok {
+		t.Fatalf("assistant content should be blocks, got %T", msgs[1].Content)
+	}
+	if len(blocks) != 2 || blocks[0].Type != "text" || blocks[1].Type != "tool_use" {
+		t.Fatalf("assistant blocks = %+v", blocks)
+	}
+	if blocks[1].ID != "toolu_1" || blocks[1].Name != "Read" {
+		t.Fatalf("tool_use block = %+v", blocks[1])
+	}
+
+	toolBlocks, ok := msgs[2].Content.([]wire.AnthropicRequestBlock)
+	if !ok || len(toolBlocks) != 1 || toolBlocks[0].Type != "tool_result" {
+		t.Fatalf("tool message content = %+v", msgs[2].Content)
+	}
+	if msgs[2].Role != "user" {
+		t.Fatalf("tool result should be a user message, got %q", msgs[2].Role)
+	}
+	if toolBlocks[0].ToolUseID != "toolu_1" || toolBlocks[0].Content != "file contents" {
+		t.Fatalf("tool_result block = %+v", toolBlocks[0])
+	}
+}

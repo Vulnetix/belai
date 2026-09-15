@@ -106,8 +106,9 @@ var writeTools = map[string]bool{
 	"insert":        true,
 }
 
-// IsWriteTool reports whether a tool is a built-in edit/write tool.
-func IsWriteTool(name string) bool { return writeTools[name] }
+// IsWriteTool reports whether a tool is a built-in edit/write tool. Tool
+// names are case-folded so a registered "Bash" cannot bypass a lowercase key.
+func IsWriteTool(name string) bool { return writeTools[strings.ToLower(name)] }
 
 // readOnlyBash is the plan-mode bash allowlist: read-only inspection/search/
 // directory/read-only-git/system-info commands. Anything else is blocked.
@@ -115,8 +116,20 @@ var readOnlyBash = map[string]bool{
 	"cat": true, "grep": true, "egrep": true, "rg": true, "find": true,
 	"ls": true, "uname": true, "pwd": true, "head": true, "tail": true,
 	"wc": true, "sort": true, "uniq": true, "file": true, "which": true,
-	"diff": true, "stat": true, "du": true, "env": true, "basename": true,
+	"diff": true, "stat": true, "du": true, "basename": true,
 	"dirname": true, "realpath": true, "readlink": true,
+}
+
+// bashMetacharacters are shell syntax that would let a command escape the
+// allowlist. The bash tool never executes through a shell, but rejecting these
+// before tokenising keeps the gate honest and fails closed.
+const bashMetacharacters = ";&|$`<>\n()"
+
+// findUnsafeOptions are find flags that write, delete, or execute. A read-only
+// find may not carry them.
+var findUnsafeOptions = map[string]bool{
+	"-exec": true, "-execdir": true, "-ok": true, "-okdir": true,
+	"-delete": true, "-fprint": true, "-fls": true, "-fprintf": true,
 }
 
 // gitReadSubcommands is the read-only git subcommand allowlist. add/commit/
@@ -133,16 +146,33 @@ var gitReadSubcommands = map[string]bool{
 }
 
 // BashAllowed reports whether a bash command is within the read-only allowlist.
+// Shell metacharacters are rejected before tokenising, so "cat x; rm -rf /"
+// can never pass by merely starting with an allowlisted word.
 func BashAllowed(command string) bool {
-	fields := strings.Fields(strings.TrimSpace(command))
-	if len(fields) == 0 {
+	command = strings.TrimSpace(command)
+	if command == "" || strings.ContainsAny(command, bashMetacharacters) {
 		return false
 	}
+	fields := strings.Fields(command)
 	base := filepath.Base(fields[0])
-	if base == "git" {
+	switch base {
+	case "git":
 		return gitReadOnly(fields)
+	case "find":
+		return findReadOnly(fields)
+	default:
+		return readOnlyBash[base]
 	}
-	return readOnlyBash[base]
+}
+
+// findReadOnly rejects find invocations that can write, delete, or execute.
+func findReadOnly(fields []string) bool {
+	for _, f := range fields[1:] {
+		if findUnsafeOptions[f] {
+			return false
+		}
+	}
+	return true
 }
 
 // gitValueOptions are git options that consume a following argument.
@@ -168,7 +198,7 @@ func gitReadOnly(fields []string) bool {
 
 // ToolAllowed reports whether a tool call may proceed. In plan mode write
 // tools are disabled and bash is restricted to the read-only allowlist; other
-// tools remain active.
+// tools remain active. Names are case-folded.
 func ToolAllowed(name string, args map[string]any, planEnabled bool) bool {
 	if !planEnabled {
 		return true
@@ -176,7 +206,7 @@ func ToolAllowed(name string, args map[string]any, planEnabled bool) bool {
 	if IsWriteTool(name) {
 		return false
 	}
-	if name == "bash" {
+	if strings.EqualFold(name, "bash") {
 		cmd, _ := args["command"].(string)
 		return BashAllowed(cmd)
 	}

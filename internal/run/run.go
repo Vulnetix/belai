@@ -687,7 +687,25 @@ func buildOpenAIMessages(system string, turns []Turn) []wire.OpenAIChatMessage {
 func buildAnthropicMessages(turns []Turn) []wire.AnthropicMessage {
 	msgs := make([]wire.AnthropicMessage, 0, len(turns))
 	for _, t := range turns {
-		msgs = append(msgs, wire.NewAnthropicTextMessage(t.Role, t.Content))
+		switch t.Role {
+		case "assistant":
+			blocks := make([]wire.AnthropicRequestBlock, 0, 1+len(t.ToolCalls))
+			if t.Content != "" {
+				blocks = append(blocks, wire.AnthropicRequestBlock{Type: "text", Text: t.Content})
+			}
+			for _, tc := range t.ToolCalls {
+				blocks = append(blocks, wire.AnthropicRequestBlock{Type: "tool_use", ID: tc.ID, Name: tc.Name, Input: tc.Args})
+			}
+			msgs = append(msgs, wire.NewAnthropicBlockMessage(t.Role, blocks))
+		case "tool":
+			// Anthropic tool results re-enter as a user message carrying a
+			// tool_result block keyed to the originating tool_use id.
+			msgs = append(msgs, wire.NewAnthropicBlockMessage("user", []wire.AnthropicRequestBlock{
+				{Type: "tool_result", ToolUseID: t.ToolCallID, Content: t.Content},
+			}))
+		default:
+			msgs = append(msgs, wire.NewAnthropicTextMessage(t.Role, t.Content))
+		}
 	}
 	return msgs
 }

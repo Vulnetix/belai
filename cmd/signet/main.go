@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -190,5 +191,5 @@ func runAgent(cfg run.Config, userPrompt string, client *http.Client, pol postur
 	if err != nil {
 		return run.Result{}, err
 	}
-	return sess.Run(nil, userPrompt)
+	return sess.Run(context.Background(), userPrompt)
 }

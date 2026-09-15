@@ -162,6 +162,12 @@ func NewAnthropicTextMessage(role, text string) AnthropicMessage {
 	return AnthropicMessage{Role: role, Content: text}
 }
 
+// NewAnthropicBlockMessage builds an AnthropicMessage whose Content is an
+// array of blocks (text, tool_use, or tool_result).
+func NewAnthropicBlockMessage(role string, blocks []AnthropicRequestBlock) AnthropicMessage {
+	return AnthropicMessage{Role: role, Content: blocks}
+}
+
 // AnthropicMessagesRequest is the body of a messages call.
 type AnthropicMessagesRequest struct {
 	Model      string             `json:"model"`

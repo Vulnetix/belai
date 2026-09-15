@@ -7,6 +7,7 @@
 package nonce
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/vulnetix/signet/internal/version"
 )
@@ -118,9 +120,11 @@ func (p *Pool) Active() int {
 }
 
 // SeedFromProvider seeds the pool from the provider's nonce endpoint, falling
-// back to n locally-generated nonces when the endpoint is unsupported.
-func (p *Pool) SeedFromProvider(baseURL, apiKey string, fallbackN int) error {
-	nonces, err := FetchNonces(baseURL, apiKey)
+// back to n locally-generated nonces when the endpoint is unsupported. The
+// client may be nil; it is used for the fetch and should carry a timeout when
+// set by the caller.
+func (p *Pool) SeedFromProvider(client *http.Client, baseURL, apiKey string, fallbackN int) error {
+	nonces, err := FetchNonces(client, baseURL, apiKey)
 	if errors.Is(err, ErrUnsupported) {
 		return p.Seed(fallbackN)
 	}
@@ -161,9 +165,15 @@ type NonceResponse struct {
 
 // FetchNonces GETs {base_url}/v1/nonces. apiKey, when non-empty, is sent as a
 // Bearer token. A 401/403/404 is reported as ErrUnsupported so callers fall
-// back to local generation.
-func FetchNonces(baseURL, apiKey string) ([]string, error) {
-	req, err := http.NewRequest(http.MethodGet, NonceURL(baseURL), nil)
+// back to local generation. The request is bounded by a 3s deadline so a
+// hanging provider cannot freeze session construction.
+func FetchNonces(client *http.Client, baseURL, apiKey string) ([]string, error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, NonceURL(baseURL), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +181,7 @@ func FetchNonces(baseURL, apiKey string) ([]string, error) {
 	if apiKey != "" {
 		req.Header.Set("authorization", "Bearer "+apiKey)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch nonces: %w", err)
 	}

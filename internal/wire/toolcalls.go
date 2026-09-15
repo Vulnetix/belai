@@ -36,11 +36,14 @@ type AnthropicToolDef struct {
 
 // AnthropicRequestBlock is one content block in an Anthropic message.
 // For text turns it contains just Text; for tool_use blocks it contains
-// ID, Name, and Input.
+// ID, Name, and Input; for tool_result blocks it contains ToolUseID and
+// Content.
 type AnthropicRequestBlock struct {
-	Type  string         `json:"type"`
-	Text  string         `json:"text,omitempty"`
-	ID    string         `json:"id,omitempty"`
-	Name  string         `json:"name,omitempty"`
-	Input map[string]any `json:"input,omitempty"`
+	Type      string         `json:"type"`
+	Text      string         `json:"text,omitempty"`
+	ID        string         `json:"id,omitempty"`
+	Name      string         `json:"name,omitempty"`
+	Input     map[string]any `json:"input,omitempty"`
+	ToolUseID string         `json:"tool_use_id,omitempty"`
+	Content   string         `json:"content,omitempty"`
 }

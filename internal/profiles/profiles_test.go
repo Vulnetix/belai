@@ -112,3 +112,20 @@ func TestWizardRejectsInvalidInput(t *testing.T) {
 		t.Fatalf("expected wizard to reject empty name")
 	}
 }
+
+func TestLoadRejectsInvalidProfile(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	dir, err := Dir()
+	if err != nil {
+		t.Fatalf("Dir: %v", err)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "broken.json"), []byte(`{"name":"broken","content":""}`), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, err := Load("broken"); err == nil {
+		t.Fatal("expected invalid profile to be rejected on load")
+	}
+}

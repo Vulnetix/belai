@@ -59,7 +59,7 @@ func NewSession(o Options) (*Session, error) {
 		maxIter = 10
 	}
 	pool := nonce.New()
-	if err := pool.SeedFromProvider(o.Cfg.BaseURL, o.Cfg.APIKey, 16); err != nil {
+	if err := pool.SeedFromProvider(o.Client, o.Cfg.BaseURL, o.Cfg.APIKey, 16); err != nil {
 		if err := pool.Seed(16); err != nil {
 			return nil, fmt.Errorf("seed nonce pool: %w", err)
 		}

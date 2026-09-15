@@ -97,6 +97,9 @@ func Load(name string) (Profile, error) {
 	if err := json.Unmarshal(data, &p); err != nil {
 		return Profile{}, err
 	}
+	if err := Validate(p); err != nil {
+		return Profile{}, fmt.Errorf("invalid profile %s: %w", name, err)
+	}
 	return p, nil
 }
 
