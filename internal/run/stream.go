@@ -83,8 +83,12 @@ func StreamWithPool(ctx context.Context, cfg Config, turns []Turn, client *http.
 		scan.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 		var acc transcript.Usage
 		sendDone := func() {
-			u := acc
-			ch <- Chunk{Done: true, Usage: &u}
+			var usage *transcript.Usage
+			if acc.PromptTokens != 0 || acc.CompletionTokens != 0 || acc.TotalTokens != 0 {
+				u := acc
+				usage = &u
+			}
+			ch <- Chunk{Done: true, Usage: usage}
 		}
 		for scan.Scan() {
 			line := scan.Text()

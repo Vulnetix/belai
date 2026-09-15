@@ -31,9 +31,12 @@ The architecture overview lives in [architecture.md](architecture.md).
 | Carrier resolution | `internal/agent` | Resolve active plan/goal/profile into prompt.Options | Live |
 | Credential resolution | `internal/credentials` | Detect configured providers and select the right default | Live |
 | Mode cycling | `internal/tui` | shift+tab cycles agent → plan → goal with persistence | Live |
-| Status bar | `internal/tui` | Provider·model, mode chip, cwd, git branch, tokens/cost | Live |
+| Status bar | `internal/tui` | Provider·model, mode chip, cwd, git branch, context usage, cost | Live |
 | Banner | `internal/tui` | Pix owl rendered with half-blocks, ASCII fallback | Live |
-| Settings UI | `internal/tui` | /settings placeholder (persistence wired, full editor planned) | Partial |
+| Settings UI | `internal/tui` | /settings browser (write-through) + /permissions editor | Live |
+| Model picker | `internal/tui` | /model provider tabs, model list, effort, scope | Live |
+| Session store | `internal/session` | Append-only JSONL; TUI owns a live session; /compact forks | Live |
+| Context metering | `internal/transcript` + `internal/modelinfo` | Hybrid usage accounting with context-window registry | Live |
 | Streaming tool calls | `internal/tui` | Render tool-use deltas in the TUI stream | Planned |
 | Explore-agent launch | — | Auto-launch explore agents for PLAN / GOAL with references | Planned |
 
@@ -72,6 +75,16 @@ anything that is not an exact token fails closed.
 
 ### Classifier payload invariants
 
+Every classifier payload builder keeps the classifier turn tool-less, skill-less,
+and agent-less. The invariant holds for all four builders:
+
+| Payload builder | System prompt | User content | Tools / Skills / Agent |
+| --------------- | ------------- | ------------ | ---------------------- |
+| Security | `internal/rolemanager/classify.go` | single untrusted blob | empty |
+| Mode | `internal/rolemanager/modeclassify.go` | the user prompt only | empty |
+| Compaction | `internal/rolemanager/compact.go` | serialized conversation | empty |
+| Session name | `internal/rolemanager/sessionname.go` | first user message | empty |
+
 | Invariant | Rule | Status |
 | --------- | ---- | ------ |
 | Tools | Always empty — the classifier turn exposes no tools | Live |
@@ -79,6 +92,37 @@ anything that is not an exact token fails closed.
 | Agent block | Always empty | Live |
 | User content | Only the single untrusted blob under test | Live |
 | System prompt | The specialised classifier prompt only | Live |
+
+### Compaction payload
+
+`/compact` serializes the live conversation into one plain-text block wrapped in
+`<conversation id="…">` tags and hands it to the compaction classifier. The
+conversation-as-document design is what makes the turn safe: a serialized
+document cannot be "continued", and tool-lessness is structural — the payload
+carries no tools, no skills, and no agent block.
+
+The summary section contract is `## Goal`, `## Constraints & Preferences`,
+`## Progress` (with `### Done` / `### In Progress` / `### Blocked`),
+`## Key Decisions`, `## Next Steps`, `## Critical Context`.
+`rolemanager.ValidateSummary` fails closed: it rejects an empty summary and any
+summary lacking `## Goal`, `## Next Steps`, or `## Critical Context`, then runs
+the result through `sanitize.Sanitize`.
+
+**The summary is untrusted.** It is produced by a model from conversation text
+that may embed tool output. It re-enters the prompt as a *user* turn, never a
+system block, so "untrusted content stays untrusted" holds. The nonce'd
+`<conversation>` wrapper plus sanitization before store are the two mitigations
+that keep tool output from closing a wrapper it does not know.
+
+### Session-name payload
+
+Auto-naming sends only the first user message to the naming classifier.
+`rolemanager.ParseSessionName` is a strict single-line parse: trim and reject
+empty, reject more than one non-empty line, strip control characters and
+matched wrapping quotes/backticks, collapse whitespace, reject a leading `/`
+and any non-printable rune, then truncate rune-safely to 48 runes. A malformed
+reply fails closed to *unnamed* rather than taking a mangled or
+attacker-chosen title.
 
 ### Security decision tree
 
@@ -487,3 +531,5 @@ content.
 | Delimiter lacking/unknown nonce or bad integrity | Strip before transport | — |
 | Mode classifier returns malformed output | Default agent | — |
 | Goal-classified prompt exceeds length limit | Default agent + warning | — |
+| Compaction summary empty or missing required headings | Refuse compaction, keep session | — |
+| Session-name classifier returns malformed output | Leave session unnamed | — |
