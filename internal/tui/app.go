@@ -458,6 +458,11 @@ func (a *App) View() string {
 	a.vp.SetContent(b.String())
 
 	var sb strings.Builder
+	if len(a.messages) < 3 {
+		banner := components.Banner{Width: a.width}
+		sb.WriteString(banner.View())
+		sb.WriteString("\n")
+	}
 	sb.WriteString(a.vp.View())
 	if len(a.autocomplete) > 0 {
 		sb.WriteString("suggestions: " + strings.Join(a.autocomplete, "  ") + "\n")
