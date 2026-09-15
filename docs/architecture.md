@@ -40,6 +40,13 @@ Harness-generated blocks use tags such as:
 See [nonce-endpoint-spec.md](nonce-endpoint-spec.md) for the provider nonce GET
 spec (`GET {base_url}/v1/nonces`).
 
+## Resilience
+
+Transient provider failures are recovered in layers: typed provider errors,
+pre-first-byte transport retry (blocking and streaming), turn-level retry in
+the agent loop, and semantic repair of malformed tool calls. The model is
+documented in [resilience.md](resilience.md).
+
 ## Provider layer
 
 `internal/provider` + `internal/wire` reach every provider through a base URL,
