@@ -26,6 +26,9 @@ type Options struct {
 	GoalText    string
 	ProfileText string
 	Caveman     bool
+	// Skills is the rendered list of available skills (name + description),
+	// harness-loaded from disk. The classifier turns never carry these.
+	Skills []string
 	// Provider and Model name the two identities the harness does not own.
 	// Empty values are omitted rather than guessed at.
 	Provider string
@@ -79,6 +82,12 @@ func System(opts Options) (string, error) {
 	b.WriteString(identity(opts.Provider, opts.Model))
 	if carrier != CarrierNone {
 		b.WriteString(fmt.Sprintf("Active %s:\n%s\n", carrier, text))
+	}
+	if len(opts.Skills) > 0 {
+		b.WriteString("Available skills:\n")
+		for _, s := range opts.Skills {
+			b.WriteString("- " + s + "\n")
+		}
 	}
 	if opts.Caveman {
 		b.WriteString(cavemanVoice)

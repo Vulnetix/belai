@@ -18,6 +18,7 @@ import (
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/sanitize"
+	"github.com/vulnetix/signet/internal/skills"
 	"github.com/vulnetix/signet/internal/tools"
 	"github.com/vulnetix/signet/internal/wire"
 )
@@ -151,6 +152,16 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		opts.Caveman = s.opts.Caveman
 	}
 
+	// Harness-loaded skills enter the system prompt (SourceHarness provenance).
+	// The skill bodies are read only on invocation and are untrusted then.
+	if dir, err := config.GlobalSkillsDir(); err == nil {
+		if manifests, err := skills.LoadDir(dir, s.posture); err == nil {
+			for _, m := range manifests {
+				opts.Skills = append(opts.Skills, m.Name+": "+m.Description)
+			}
+		}
+	}
+
 	system, err := run.SealSystem(s.cfg, s.pool, opts)
 	if err != nil {
 		return run.Result{SanitizedPrompt: clean, SecuritySentinel: dec.Sentinel, ModeDecision: modeDec}, err
@@ -242,6 +253,10 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		fmt.Errorf("max iterations (%d) reached", s.maxIter)
 }
 
+// PlanMode reports whether the session runs with plan-mode tool restrictions.
+func (s *Session) PlanMode() bool { return s.planMode }
+
+// mismatchPolicy maps the tool_call_mismatch gate to a mismatch policy.
 func (s *Session) mismatchPolicy() rolemanager.ToolCallMismatchPolicy {
 	switch s.posture.Level(posture.ToolCallMismatch) {
 	case posture.Warn:

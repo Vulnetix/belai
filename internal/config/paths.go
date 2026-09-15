@@ -109,6 +109,15 @@ func ProjectGoalsDir(workdir string) string {
 	return filepath.Join(ProjectDir(workdir), "goals")
 }
 
+// GlobalSkillsDir returns <GlobalDir>/skills.
+func GlobalSkillsDir() (string, error) {
+	dir, err := GlobalDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "skills"), nil
+}
+
 // Migrate is a one-shot migration from ~/.signet to ~/.vulnetix/signet.
 // It runs only when the legacy directory exists and the new one does not.
 // If os.Rename fails across filesystems, it falls back to a recursive copy
