@@ -165,8 +165,13 @@ The footer is a two-line status bar:
 | `/plan` | Toggle plan mode |
 | `/settings` | View and edit settings |
 | `/credentials` | Manage provider credentials |
+| `/permissions` | Edit tool permissions |
 | `/goal` | Memorise or replay a goal |
 | `/profile` | Switch agent profile |
+| `/clear` (or `/new`) | Start a new session |
+| `/compact` | Summarise the session into a new one |
+| `/rename` | Rename the current session |
+| `/todos` | Show plan progress |
 
 ### Startup credential message
 

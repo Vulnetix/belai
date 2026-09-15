@@ -65,9 +65,15 @@ just ask anthropic claude-sonnet-4-5 "review this diff" -detect-mode -verbose
 | `-prompt` | send one turn noninteractively, print the reply, exit |
 | `-provider` | `openai`, `anthropic`, `cloudflare-workers-ai`, `cloudflare-ai-gateway` |
 | `-model` | model id; defaults are `gpt-5`, `claude-sonnet-4-5`, `@cf/moonshotai/kimi-k2.6` |
+| `-effort` | thinking-effort level: `low`, `medium`, or `high` |
+| `-caveman` | enable caveman voice rewrite for this run |
+| `-session-retention-days` | idle session retention in days (default 28) |
 | `-detect-mode` | run the operating-mode classifier and report the decision (`agent`, `plan`, `goal`) |
+| `-tools` | enable tool execution (noninteractive agent mode) |
 | `-verbose` | print Role Manager decisions and the security sentinel to stderr |
 | `-version` | print the version and exit |
+
+Runtime flag values override the settings file for the current run but are never persisted.
 
 With no `-prompt` and a TTY on both stdin and stdout, Signet starts the TUI. Set `SIGNET_NO_TUI=1` (or `CI=1`) to force the noninteractive path — useful when piping output or reproducing a CI failure locally.
 
