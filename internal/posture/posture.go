@@ -1,0 +1,221 @@
+// Package posture implements the enforcement posture system: fail-closed by
+// default, with per-gate opt-outs to warn or ignore. It loads policy from CLI
+// flags, project preferences, and global preferences, in that precedence.
+package posture
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"gopkg.in/yaml.v3"
+
+	"github.com/vulnetix/signet/internal/config"
+)
+
+// Level is the enforcement posture for one gate.
+type Level string
+
+const (
+	Enforce Level = "enforce"
+	Warn    Level = "warn"
+	Ignore  Level = "ignore"
+)
+
+// Gate is a named safety gate.
+type Gate string
+
+const (
+	ToolResultUnsafe      Gate = "tool_result_unsafe"
+	ToolResultMalformed   Gate = "tool_result_malformed"
+	PromptUnsafe          Gate = "prompt_unsafe"
+	PromptMalformed       Gate = "prompt_malformed"
+	ToolCallMismatch      Gate = "tool_call_mismatch"
+	PermissionNoMatch     Gate = "permission_no_match"
+	PermissionAskNoTTY    Gate = "permission_ask_no_tty"
+	SkillInvalid          Gate = "skill_invalid"
+	HookInvalid           Gate = "hook_invalid"
+)
+
+// AllGates is every posture gate, in deterministic order.
+var AllGates = []Gate{
+	ToolResultUnsafe,
+	ToolResultMalformed,
+	PromptUnsafe,
+	PromptMalformed,
+	ToolCallMismatch,
+	PermissionNoMatch,
+	PermissionAskNoTTY,
+	SkillInvalid,
+	HookInvalid,
+}
+
+// Policy maps gates to their configured level.
+type Policy map[Gate]Level
+
+// Level returns the posture level for a gate, defaulting to enforce.
+func (p Policy) Level(g Gate) Level {
+	if p == nil {
+		return Enforce
+	}
+	if l, ok := p[g]; ok {
+		return l
+	}
+	return Enforce
+}
+
+// Defaults returns a policy where every gate is enforce.
+func Defaults() Policy {
+	p := make(Policy, len(AllGates))
+	for _, g := range AllGates {
+		p[g] = Enforce
+	}
+	return p
+}
+
+// Override merges q over p; non-empty values in q win.
+func (p Policy) Override(q Policy) Policy {
+	out := make(Policy, len(p)+len(q))
+	for g, l := range p {
+		out[g] = l
+	}
+	for g, l := range q {
+		if l != "" {
+			out[g] = l
+		}
+	}
+	return out
+}
+
+// Downgrades returns a human-readable summary of every gate that is not
+// enforce, ordered by gate name.
+func (p Policy) Downgrades() []string {
+	var out []string
+	for _, g := range AllGates {
+		if l := p.Level(g); l != Enforce {
+			out = append(out, fmt.Sprintf("%s=%s", g, l))
+		}
+	}
+	return out
+}
+
+// preferencesFile is the name of the posture/preferences file.
+const preferencesFile = "preferences.yaml"
+
+// Load reads global then project preferences.yaml and returns the merged
+// policy. A missing file yields an empty policy with no error.
+func Load(workdir string) (Policy, error) {
+	global, err := loadPreferencesDir(config.GlobalDir)
+	if err != nil {
+		return nil, err
+	}
+	proj, err := loadPreferencesPath(filepath.Join(config.ProjectSignetDir(workdir), preferencesFile))
+	if err != nil {
+		return nil, err
+	}
+	return Defaults().Override(global).Override(proj), nil
+}
+
+// loadPreferencesDir tries to read preferences.yaml inside a directory.
+func loadPreferencesDir(dirFn func() (string, error)) (Policy, error) {
+	dir, err := dirFn()
+	if err != nil {
+		return nil, err
+	}
+	return loadPreferencesPath(filepath.Join(dir, preferencesFile))
+}
+
+// loadPreferencesPath reads a single preferences.yaml. Missing files are
+// benign.
+func loadPreferencesPath(path string) (Policy, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var raw struct {
+		Postures map[string]string `yaml:"postures"`
+	}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	if raw.Postures == nil {
+		return nil, nil
+	}
+	p := make(Policy, len(raw.Postures))
+	for k, v := range raw.Postures {
+		p[Gate(strings.TrimSpace(k))] = Level(strings.TrimSpace(v))
+	}
+	return p, nil
+}
+
+// FlagSet captures CLI overrides. Zero values mean "not set".
+type FlagSet struct {
+	AllowUnsafeToolResult    *bool
+	AllowMalformedToolResult *bool
+	AllowUnsafePrompt        *bool
+	AllowMalformedPrompt     *bool
+	ToolCallMismatch         *string
+	AllowUnpermittedTools    *bool
+	AllowAskWithoutTTY       *bool
+	AllowInvalidSkills       *bool
+	AllowInvalidHooks        *bool
+	DangerouslyYolo          bool
+}
+
+// ToPolicy converts CLI overrides to a Policy. `--dangerously-yolo-everything`
+// maps every gate except the unoverridable BoundarySource gate to ignore.
+func (fs FlagSet) ToPolicy() Policy {
+	if fs.DangerouslyYolo {
+		p := make(Policy, len(AllGates))
+		for _, g := range AllGates {
+			p[g] = Ignore
+		}
+		return p
+	}
+	p := make(Policy)
+	if fs.AllowUnsafeToolResult != nil && *fs.AllowUnsafeToolResult {
+		p[ToolResultUnsafe] = Ignore
+	}
+	if fs.AllowMalformedToolResult != nil && *fs.AllowMalformedToolResult {
+		p[ToolResultMalformed] = Ignore
+	}
+	if fs.AllowUnsafePrompt != nil && *fs.AllowUnsafePrompt {
+		p[PromptUnsafe] = Ignore
+	}
+	if fs.AllowMalformedPrompt != nil && *fs.AllowMalformedPrompt {
+		p[PromptMalformed] = Ignore
+	}
+	if fs.ToolCallMismatch != nil {
+		switch strings.ToLower(*fs.ToolCallMismatch) {
+		case "strip":
+			p[ToolCallMismatch] = Warn
+		case "ignore":
+			p[ToolCallMismatch] = Ignore
+		}
+	}
+	if fs.AllowUnpermittedTools != nil && *fs.AllowUnpermittedTools {
+		p[PermissionNoMatch] = Ignore
+	}
+	if fs.AllowAskWithoutTTY != nil && *fs.AllowAskWithoutTTY {
+		p[PermissionAskNoTTY] = Ignore
+	}
+	if fs.AllowInvalidSkills != nil && *fs.AllowInvalidSkills {
+		p[SkillInvalid] = Ignore
+	}
+	if fs.AllowInvalidHooks != nil && *fs.AllowInvalidHooks {
+		p[HookInvalid] = Ignore
+	}
+	return p
+}
+
+// PrintBanner prints a one-line stderr warning for every non-enforce gate,
+// and a prominent banner for --dangerously-yolo-everything.
+func PrintBanner(p Policy, w *os.File) {
+	if down := p.Downgrades(); len(down) > 0 {
+		fmt.Fprintf(w, "signet: posture downgrades: %s\n", strings.Join(down, ", "))
+	}
+}

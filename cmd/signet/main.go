@@ -10,6 +10,7 @@ import (
 
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
+	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/tui"
 	"github.com/vulnetix/signet/internal/version"
@@ -24,6 +25,17 @@ func main() {
 	provider := flag.String("provider", "", "provider: openai, anthropic, cloudflare-workers-ai, or cloudflare-ai-gateway")
 	detectMode := flag.Bool("detect-mode", false, "run the operating-mode classifier and report the decision")
 	verbose := flag.Bool("verbose", false, "print role-manager decisions to stderr")
+
+	allowUnsafeToolResult := flag.Bool("allow-unsafe-tool-result", false, "ignore unsafe tool results")
+	allowMalformedToolResult := flag.Bool("allow-malformed-tool-result", false, "ignore malformed tool results")
+	allowUnsafePrompt := flag.Bool("allow-unsafe-prompt", false, "ignore unsafe prompt classification")
+	allowMalformedPrompt := flag.Bool("allow-malformed-prompt", false, "ignore malformed prompt classification")
+	toolCallMismatch := flag.String("tool-call-mismatch", "", "abort|strip|ignore tool-call mismatches")
+	allowUnpermittedTools := flag.Bool("allow-unpermitted-tools", false, "ignore permission blocks")
+	allowAskWithoutTTY := flag.Bool("allow-ask-without-tty", false, "ignore ask-without-tty blocks")
+	allowInvalidSkills := flag.Bool("allow-invalid-skills", false, "ignore invalid skill validation")
+	allowInvalidHooks := flag.Bool("allow-invalid-hooks", false, "ignore invalid hook validation")
+	dangerouslyYolo := flag.Bool("dangerously-yolo-everything", false, "ignore every posture gate")
 	flag.Parse()
 
 	if *showVersion {
@@ -33,8 +45,25 @@ func main() {
 
 	workdir, _ := os.Getwd()
 
+	fs := posture.FlagSet{
+		AllowUnsafeToolResult:    allowUnsafeToolResult,
+		AllowMalformedToolResult: allowMalformedToolResult,
+		AllowUnsafePrompt:      allowUnsafePrompt,
+		AllowMalformedPrompt:   allowMalformedPrompt,
+		ToolCallMismatch:       toolCallMismatch,
+		AllowUnpermittedTools:  allowUnpermittedTools,
+		AllowAskWithoutTTY:     allowAskWithoutTTY,
+		AllowInvalidSkills:     allowInvalidSkills,
+		AllowInvalidHooks:      allowInvalidHooks,
+		DangerouslyYolo:        *dangerouslyYolo,
+	}
+	cliPol := fs.ToPolicy()
+	projectPol, _ := posture.Load(workdir)
+	pol := posture.Defaults().Override(projectPol).Override(cliPol)
+	posture.PrintBanner(pol, os.Stderr)
+
 	if *prompt != "" {
-		if err := runPromptOrTUI(*prompt, *model, *provider, *detectMode, *verbose, workdir); err != nil {
+		if err := runPromptOrTUI(*prompt, *model, *provider, *detectMode, *verbose, workdir, pol); err != nil {
 			fmt.Fprintln(os.Stderr, "signet:", err)
 			os.Exit(1)
 		}
@@ -69,7 +98,7 @@ func isCharDevice(f *os.File) bool {
 	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }
 
-func runPromptOrTUI(prompt, model, providerName string, detectMode, verbose bool, workdir string) error {
+func runPromptOrTUI(prompt, model, providerName string, detectMode, verbose bool, workdir string, pol posture.Policy) error {
 	cfg, err := run.Resolve(model, providerName, os.Getenv)
 	if err != nil {
 		var nce *run.NotConfiguredError
@@ -89,7 +118,7 @@ func runPromptOrTUI(prompt, model, providerName string, detectMode, verbose bool
 		}
 		return err
 	}
-	res, err := run.Engage(cfg, prompt, detectMode, http.DefaultClient)
+	res, err := run.EngageWithPosture(cfg, prompt, detectMode, http.DefaultClient, pol)
 	if err != nil {
 		return err
 	}

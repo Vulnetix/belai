@@ -13,6 +13,7 @@ import (
 
 	"github.com/vulnetix/signet/internal/delimiters"
 	"github.com/vulnetix/signet/internal/nonce"
+	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/prompt"
 	"github.com/vulnetix/signet/internal/provider"
 	"github.com/vulnetix/signet/internal/rolemanager"
@@ -253,6 +254,26 @@ func chat(cfg Config, system, user string, client *http.Client) (string, error) 
 	return doChat(cfg, system, []Turn{{Role: "user", Content: user}}, client)
 }
 
+// classifier adapts a chat round-trip to the rolemanager.Classifier interface.
+func classifier(cfg Config, client *http.Client) rolemanager.Classifier {
+	return rolemanager.ClassifierFunc(func(p rolemanager.ClassifierPayload) (string, error) {
+		return chat(cfg, p.System, p.User, client)
+	})
+}
+
+// SealSystem builds and seals the system prompt from trusted harness blocks.
+func SealSystem(pool *nonce.Pool, opts prompt.Options) (string, error) {
+	sysText, err := prompt.System(opts)
+	if err != nil {
+		return "", fmt.Errorf("build system prompt: %w", err)
+	}
+	sealed, err := rolemanager.BuildSystemPrompt([]rolemanager.SystemBlock{{Source: rolemanager.SourceHarness, Content: sysText}}, pool)
+	if err != nil {
+		return "", fmt.Errorf("seal system prompt: %w", err)
+	}
+	return delimiters.Egress(sealed, pool), nil
+}
+
 // buildRequest creates the sealed HTTP request for a provider.
 // It is the single place where a chat/completions request is built,
 // guarding against the streaming path drifting from the sealed path.
@@ -371,15 +392,10 @@ func RunTurns(cfg Config, turns []Turn, client *http.Client) (string, error) {
 		client = http.DefaultClient
 	}
 	pool := nonce.New()
-	sysText, err := prompt.System(prompt.Options{})
+	verifiedSystem, err := SealSystem(pool, prompt.Options{})
 	if err != nil {
-		return "", fmt.Errorf("build system prompt: %w", err)
+		return "", err
 	}
-	sealed, err := rolemanager.BuildSystemPrompt([]rolemanager.SystemBlock{{Source: rolemanager.SourceHarness, Content: sysText}}, pool)
-	if err != nil {
-		return "", fmt.Errorf("seal system prompt: %w", err)
-	}
-	verifiedSystem := delimiters.Egress(sealed, pool)
 
 	sanitized := make([]Turn, len(turns))
 	for i, t := range turns {
@@ -391,34 +407,7 @@ func RunTurns(cfg Config, turns []Turn, client *http.Client) (string, error) {
 	return doChat(cfg, verifiedSystem, sanitized, client)
 }
 
-// classifySecurity runs the security classifier over sanitized content.
-func classifySecurity(cfg Config, content string, client *http.Client) (rolemanager.Sentinel, error) {
-	p := rolemanager.BuildClassifierPayload(content)
-	raw, err := chat(cfg, p.System, p.User, client)
-	if err != nil {
-		return "", err
-	}
-	s, err := rolemanager.ParseSentinel(raw)
-	if err != nil {
-		return "", fmt.Errorf("malformed security classifier output %q", raw)
-	}
-	return s, nil
-}
 
-// classifyMode runs the operating-mode classifier over sanitized content.
-// Malformed output fails closed to ModeUndetermined.
-func classifyMode(cfg Config, content string, client *http.Client) (rolemanager.ModeSentinel, error) {
-	p := rolemanager.BuildModeClassifierPayload(content)
-	raw, err := chat(cfg, p.System, p.User, client)
-	if err != nil {
-		return "", err
-	}
-	s, err := rolemanager.ParseModeSentinel(raw)
-	if err != nil {
-		return rolemanager.ModeUndetermined, nil
-	}
-	return s, nil
-}
 
 // Result captures what the noninteractive pipeline decided and produced.
 type Result struct {
@@ -432,27 +421,33 @@ type Result struct {
 // security-classify (refusing any non-SAFE sentinel), then optionally
 // mode-classify, then send the sanitized prompt and return the reply.
 func Engage(cfg Config, prompt string, detectMode bool, client *http.Client) (Result, error) {
+	return EngageWithPosture(cfg, prompt, detectMode, client, posture.Defaults())
+}
+
+// EngageWithPosture is Engage with an explicit posture policy.
+func EngageWithPosture(cfg Config, prompt string, detectMode bool, client *http.Client, pol posture.Policy) (Result, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
 	clean := sanitize.Sanitize(prompt)
 	res := Result{SanitizedPrompt: clean}
 
-	sec, err := classifySecurity(cfg, clean, client)
+	pipe := rolemanager.NewPipeline(classifier(cfg, client))
+	dec, err := pipe.Admit(clean, pol)
 	if err != nil {
 		return res, err
 	}
-	res.SecuritySentinel = sec
-	if !sec.IsSafe() {
-		return res, fmt.Errorf("refusing prompt: classified as %s", sec)
+	if dec.Action != rolemanager.ActionProceed {
+		return res, &rolemanager.RefusalError{Sentinel: dec.Sentinel}
 	}
+	res.SecuritySentinel = dec.Sentinel
 
 	if detectMode {
-		ms, err := classifyMode(cfg, clean, client)
+		modeDec, err := rolemanager.Select(pipe.Classifier, rolemanager.ModeInput{Prompt: clean})
 		if err != nil {
 			return res, err
 		}
-		res.ModeDecision = rolemanager.DecideMode(ms, rolemanager.ModeInput{Prompt: clean})
+		res.ModeDecision = modeDec
 	}
 
 	reply, err := Run(cfg, clean, client)

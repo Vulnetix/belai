@@ -15,7 +15,6 @@ import (
 	"github.com/vulnetix/signet/internal/delimiters"
 	"github.com/vulnetix/signet/internal/nonce"
 	"github.com/vulnetix/signet/internal/prompt"
-	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/sanitize"
 	"github.com/vulnetix/signet/internal/wire"
 )
@@ -35,15 +34,10 @@ func Stream(ctx context.Context, cfg Config, turns []Turn, client *http.Client) 
 	}
 
 	pool := nonce.New()
-	sysText, err := prompt.System(prompt.Options{})
+	verifiedSystem, err := SealSystem(pool, prompt.Options{})
 	if err != nil {
-		return nil, fmt.Errorf("build system prompt: %w", err)
+		return nil, err
 	}
-	sealed, err := rolemanager.BuildSystemPrompt([]rolemanager.SystemBlock{{Source: rolemanager.SourceHarness, Content: sysText}}, pool)
-	if err != nil {
-		return nil, fmt.Errorf("seal system prompt: %w", err)
-	}
-	verifiedSystem := delimiters.Egress(sealed, pool)
 
 	sanitized := make([]Turn, len(turns))
 	for i, t := range turns {

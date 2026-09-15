@@ -1,6 +1,9 @@
 package rolemanager
 
 import (
+	"fmt"
+
+	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/sanitize"
 	"github.com/vulnetix/signet/internal/tools"
 )
@@ -48,27 +51,82 @@ func NewPipeline(c Classifier) *Pipeline {
 	return &Pipeline{Classifier: c}
 }
 
-// Process runs a tool result through sanitize -> classifier -> sentinel.
-// SAFE yields ActionProceed; every other sentinel — and any malformed
-// classifier output — fails closed to ActionWarn.
-func (p *Pipeline) Process(r tools.Result) (Decision, error) {
-	clean := sanitize.Sanitize(r.Content)
+// run performs sanitize -> classify -> parse and returns the raw result.
+func (p *Pipeline) run(content string) (clean string, s Sentinel, parsed bool, err error) {
+	clean = sanitize.Sanitize(content)
 	payload := BuildClassifierPayload(clean)
 
 	raw, err := p.Classifier.Classify(payload)
 	if err != nil {
+		return clean, "", false, err
+	}
+
+	s, err = ParseSentinel(raw)
+	if err != nil {
+		return clean, "", false, nil
+	}
+	return clean, s, true, nil
+}
+
+// Process runs a tool result through sanitize -> classifier -> sentinel.
+// SAFE yields ActionProceed; every other sentinel — and any malformed
+// classifier output — fails closed to ActionWarn.
+func (p *Pipeline) Process(r tools.Result) (Decision, error) {
+	clean, s, parsed, err := p.run(r.Content)
+	if err != nil {
 		return Decision{}, err
 	}
-
-	s, err := ParseSentinel(raw)
-	if err != nil {
-		// Fail closed: unparseable output is never treated as safe.
+	if !parsed {
 		return Decision{Kind: r.Kind, Action: ActionWarn, Content: clean}, nil
 	}
-
 	action := ActionWarn
 	if s.IsSafe() {
 		action = ActionProceed
 	}
 	return Decision{Kind: r.Kind, Action: action, Sentinel: s, Content: clean}, nil
+}
+
+// Admit classifies an arbitrary piece of content (e.g. a user prompt) and
+// applies the posture policy. Under enforce a non-SAFE sentinel is refused.
+func (p *Pipeline) Admit(content string, pol posture.Policy) (Decision, error) {
+	if pol.Level(posture.PromptUnsafe) == posture.Ignore && pol.Level(posture.PromptMalformed) == posture.Ignore {
+		return Decision{Action: ActionProceed, Content: content}, nil
+	}
+	clean, s, parsed, err := p.run(content)
+	if err != nil {
+		return Decision{}, err
+	}
+	if !parsed {
+		if pol.Level(posture.PromptMalformed) == posture.Ignore {
+			return Decision{Action: ActionProceed, Content: clean}, nil
+		}
+		if pol.Level(posture.PromptMalformed) == posture.Warn {
+			return Decision{Action: ActionWarn, Content: clean}, nil
+		}
+		return Decision{}, &RefusalError{Sentinel: SentinelMalformed}
+	}
+	if s.IsSafe() {
+		return Decision{Action: ActionProceed, Sentinel: s, Content: clean}, nil
+	}
+	if pol.Level(posture.PromptUnsafe) == posture.Ignore {
+		return Decision{Action: ActionProceed, Sentinel: s, Content: clean}, nil
+	}
+	if pol.Level(posture.PromptUnsafe) == posture.Warn {
+		return Decision{Action: ActionWarn, Sentinel: s, Content: clean}, nil
+	}
+	return Decision{}, &RefusalError{Sentinel: s}
+}
+
+// SentinelMalformed is the sentinel used when a refusal error carries no
+// parseable sentinel.
+const SentinelMalformed Sentinel = "MALFORMED"
+
+// RefusalError is returned by Admit when a prompt is refused.
+type RefusalError struct {
+	Sentinel Sentinel
+}
+
+// Error contains the sentinel token so that callers can assert on it.
+func (e *RefusalError) Error() string {
+	return fmt.Sprintf("refusing prompt: classified as %s", e.Sentinel)
 }
