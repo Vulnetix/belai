@@ -21,9 +21,10 @@ type Settings struct {
 	Effort string `json:"effort,omitempty"`
 	// Caveman, when non-nil, toggles the caveman voice rewrite.
 	Caveman *bool `json:"caveman,omitempty"`
-	// BashReadOnly, when non-nil, controls whether the Bash tool defaults to
-	// read-only execution. A nil value defaults to true (read-only) for safety.
-	BashReadOnly *bool `json:"bash_read_only,omitempty"`
+	// BashReadOnly, when non-nil and true, confines the Bash tool to its
+	// read-only allowlist. nil or false (the default) runs full shell
+	// commands via `sh -c`.
+	BashReadOnly *bool `json:"bash_readonly,omitempty"`
 	// Permissions is the structured tool-permission rule set. The legacy flat
 	// map form is still accepted on read but never written.
 	Permissions PermissionRules `json:"permissions,omitempty"`
@@ -70,6 +71,40 @@ type UISettings struct {
 	Banner        *bool `json:"banner,omitempty"`
 	StatusBar     *bool `json:"status_bar,omitempty"`
 	KittyKeyboard *bool `json:"kitty_keyboard,omitempty"`
+	Colors        *bool `json:"colors,omitempty"`
+	Spinner       *bool `json:"spinner,omitempty"`
+	ShowReasoning *bool `json:"show_reasoning,omitempty"`
+	ShowToolCalls *bool `json:"show_tool_calls,omitempty"`
+}
+
+// merge folds from over u, taking any non-nil field from from. It is the
+// single place the per-field UI merge lives, so a fifth field cannot be added
+// to one merge path and forgotten in the other.
+func (u *UISettings) merge(from *UISettings) {
+	if from == nil {
+		return
+	}
+	if from.Banner != nil {
+		u.Banner = from.Banner
+	}
+	if from.StatusBar != nil {
+		u.StatusBar = from.StatusBar
+	}
+	if from.KittyKeyboard != nil {
+		u.KittyKeyboard = from.KittyKeyboard
+	}
+	if from.Colors != nil {
+		u.Colors = from.Colors
+	}
+	if from.Spinner != nil {
+		u.Spinner = from.Spinner
+	}
+	if from.ShowReasoning != nil {
+		u.ShowReasoning = from.ShowReasoning
+	}
+	if from.ShowToolCalls != nil {
+		u.ShowToolCalls = from.ShowToolCalls
+	}
 }
 
 // ResilienceSettings controls the provider retry and agent-loop budgets.
@@ -98,6 +133,27 @@ func (r *ResilienceSettings) MaxIterationsOr(def int) int {
 	return r.MaxIterations
 }
 
+// ColorsEnabled reports whether role colours are on. Default true.
+func (s Settings) ColorsEnabled() bool {
+	return s.UI == nil || s.UI.Colors == nil || *s.UI.Colors
+}
+
+// SpinnerEnabled reports whether the work-indicator spinner is on. Default
+// true.
+func (s Settings) SpinnerEnabled() bool {
+	return s.UI == nil || s.UI.Spinner == nil || *s.UI.Spinner
+}
+
+// ReasoningVisible reports whether reasoning deltas render. Default false.
+func (s Settings) ReasoningVisible() bool {
+	return s.UI != nil && s.UI.ShowReasoning != nil && *s.UI.ShowReasoning
+}
+
+// ToolCallsVisible reports whether tool-call rows render. Default true.
+func (s Settings) ToolCallsVisible() bool {
+	return s.UI == nil || s.UI.ShowToolCalls == nil || *s.UI.ShowToolCalls
+}
+
 // SessionRetention returns the retention duration, defaulting to 28 days.
 func (s Settings) SessionRetention() int {
 	if s.SessionRetentionDays != nil {
@@ -118,13 +174,10 @@ func (s Settings) AllowProjectProvidersEnabled() bool {
 	return s.AllowProjectProviders != nil && *s.AllowProjectProviders
 }
 
-// BashReadOnlyEnabled reports whether the Bash tool should be restricted to
-// read-only commands. Defaults to true.
+// BashReadOnlyEnabled reports whether the read-only Bash gate is on. The
+// default (nil or false) is off: full shell.
 func (s Settings) BashReadOnlyEnabled() bool {
-	if s.BashReadOnly == nil {
-		return true
-	}
-	return *s.BashReadOnly
+	return s.BashReadOnly != nil && *s.BashReadOnly
 }
 
 // Override merges project settings over the receiver (which should be the
@@ -158,15 +211,7 @@ func (s Settings) Override(proj Settings) Settings {
 		if out.UI != nil {
 			*merged = *out.UI
 		}
-		if proj.UI.Banner != nil {
-			merged.Banner = proj.UI.Banner
-		}
-		if proj.UI.StatusBar != nil {
-			merged.StatusBar = proj.UI.StatusBar
-		}
-		if proj.UI.KittyKeyboard != nil {
-			merged.KittyKeyboard = proj.UI.KittyKeyboard
-		}
+		merged.merge(proj.UI)
 		out.UI = merged
 	}
 	if proj.ContextWindows != nil {

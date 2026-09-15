@@ -100,6 +100,7 @@ func (a *App) settingsRows() []settingsRow {
 	if s.Caveman != nil && *s.Caveman {
 		cavemanVal = "on"
 	}
+	bashROVal := boolLabel(s.BashReadOnlyEnabled())
 	retentionVal := "28 days"
 	if s.SessionRetentionDays != nil {
 		retentionVal = fmt.Sprintf("%d days", *s.SessionRetentionDays)
@@ -108,6 +109,10 @@ func (a *App) settingsRows() []settingsRow {
 	if s.UI != nil && s.UI.Banner != nil {
 		bannerVal = boolLabel(*s.UI.Banner)
 	}
+	colorsVal := boolLabel(s.ColorsEnabled())
+	spinnerVal := boolLabel(s.SpinnerEnabled())
+	reasoningVal := boolLabel(s.ReasoningVisible())
+	toolCallsVal := boolLabel(s.ToolCallsVisible())
 	showNamesVal := boolLabel(s.SessionNamesVisible())
 	permsVal := fmt.Sprintf("%d allow · %d ask · %d deny", len(s.Permissions.Allow), len(s.Permissions.Ask), len(s.Permissions.Deny))
 
@@ -116,8 +121,13 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "model", label: "model", kind: "text", value: modelVal, src: sourceLabel(origin["model"])},
 		{key: "effort", label: "effort", kind: "choose", opts: []string{"low", "medium", "high"}, value: effortVal, src: sourceLabel(origin["effort"])},
 		{key: "caveman", label: "caveman", kind: "toggle", value: cavemanVal, src: sourceLabel(origin["caveman"])},
+		{key: "bash_readonly", label: "bash read-only", kind: "toggle", value: bashROVal, src: sourceLabel(origin["bash_readonly"])},
 		{key: "session_retention_days", label: "session retention", kind: "text", value: retentionVal, src: sourceLabel(origin["session_retention_days"])},
 		{key: "banner", label: "banner", kind: "toggle", value: bannerVal, src: sourceLabel(origin["ui"])},
+		{key: "colors", label: "colours", kind: "toggle", value: colorsVal, src: sourceLabel(origin["ui"])},
+		{key: "spinner", label: "spinner", kind: "toggle", value: spinnerVal, src: sourceLabel(origin["ui"])},
+		{key: "show_reasoning", label: "reasoning", kind: "toggle", value: reasoningVal, src: sourceLabel(origin["ui"])},
+		{key: "show_tool_calls", label: "tool calls", kind: "toggle", value: toolCallsVal, src: sourceLabel(origin["ui"])},
 		{key: "show_session_names", label: "session names", kind: "toggle", value: showNamesVal, src: sourceLabel(origin["show_session_names"])},
 		{key: "permissions", label: "permissions", kind: "submenu", value: permsVal, src: sourceLabel(origin["permissions"])},
 	}
@@ -284,11 +294,33 @@ func (a *App) cycleToggle(key string) error {
 		switch key {
 		case "caveman":
 			s.Caveman = nextBool(s.Caveman)
+		case "bash_readonly":
+			s.BashReadOnly = nextBool(s.BashReadOnly)
 		case "banner":
 			if s.UI == nil {
 				s.UI = &config.UISettings{}
 			}
 			s.UI.Banner = nextBool(s.UI.Banner)
+		case "colors":
+			if s.UI == nil {
+				s.UI = &config.UISettings{}
+			}
+			s.UI.Colors = nextBool(s.UI.Colors)
+		case "spinner":
+			if s.UI == nil {
+				s.UI = &config.UISettings{}
+			}
+			s.UI.Spinner = nextBool(s.UI.Spinner)
+		case "show_reasoning":
+			if s.UI == nil {
+				s.UI = &config.UISettings{}
+			}
+			s.UI.ShowReasoning = nextBool(s.UI.ShowReasoning)
+		case "show_tool_calls":
+			if s.UI == nil {
+				s.UI = &config.UISettings{}
+			}
+			s.UI.ShowToolCalls = nextBool(s.UI.ShowToolCalls)
 		case "show_session_names":
 			s.ShowSessionNames = nextBool(s.ShowSessionNames)
 		}
@@ -323,11 +355,29 @@ func (a *App) unsetSetting(key string) error {
 			s.Effort = ""
 		case "caveman":
 			s.Caveman = nil
+		case "bash_readonly":
+			s.BashReadOnly = nil
 		case "session_retention_days":
 			s.SessionRetentionDays = nil
 		case "banner":
 			if s.UI != nil {
 				s.UI.Banner = nil
+			}
+		case "colors":
+			if s.UI != nil {
+				s.UI.Colors = nil
+			}
+		case "spinner":
+			if s.UI != nil {
+				s.UI.Spinner = nil
+			}
+		case "show_reasoning":
+			if s.UI != nil {
+				s.UI.ShowReasoning = nil
+			}
+		case "show_tool_calls":
+			if s.UI != nil {
+				s.UI.ShowToolCalls = nil
 			}
 		case "show_session_names":
 			s.ShowSessionNames = nil

@@ -115,14 +115,8 @@ func (e *Effective) apply(s Settings, src Source) {
 		if e.Settings.UI == nil {
 			e.Settings.UI = &UISettings{}
 		}
-		if s.UI.Banner != nil {
-			e.Settings.UI.Banner = s.UI.Banner
-			e.Origin["ui"] = src
-		}
-		if s.UI.StatusBar != nil {
-			e.Settings.UI.StatusBar = s.UI.StatusBar
-			e.Origin["ui"] = src
-		}
+		e.Settings.UI.merge(s.UI)
+		e.Origin["ui"] = src
 	}
 	if s.ContextWindows != nil {
 		if e.Settings.ContextWindows == nil {

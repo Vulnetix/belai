@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -90,6 +91,80 @@ func TestProjectOverridesGlobal(t *testing.T) {
 	}
 	if !reflect.DeepEqual(want, got) {
 		t.Fatalf("merge mismatch:\n want=%+v\n  got=%+v", want, got)
+	}
+}
+
+func TestBashReadOnlyRoundTripAndDefault(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	// Default: unset means full shell (read-only is an opt-in).
+	var zero Settings
+	if zero.BashReadOnlyEnabled() {
+		t.Fatalf("unset bash_readonly should default to full shell")
+	}
+
+	// Marshal: key name and value round-trip.
+	if err := SaveGlobal(Settings{BashReadOnly: boolPtr(true)}); err != nil {
+		t.Fatalf("SaveGlobal: %v", err)
+	}
+	path, err := GlobalSettingsPath()
+	if err != nil {
+		t.Fatalf("GlobalSettingsPath: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read settings: %v", err)
+	}
+	if !strings.Contains(string(data), `"bash_readonly": true`) {
+		t.Fatalf("settings file should carry bash_readonly: true, got %s", data)
+	}
+	got, err := LoadGlobal()
+	if err != nil {
+		t.Fatalf("LoadGlobal: %v", err)
+	}
+	if got.BashReadOnly == nil || !*got.BashReadOnly || !got.BashReadOnlyEnabled() {
+		t.Fatalf("round-trip = %+v, want bash_readonly true", got)
+	}
+
+	// omitempty: an unset value must not be written.
+	if err := SaveGlobal(Settings{Model: "m"}); err != nil {
+		t.Fatalf("SaveGlobal: %v", err)
+	}
+	data, _ = os.ReadFile(path)
+	if strings.Contains(string(data), "bash_readonly") {
+		t.Fatalf("unset bash_readonly should be omitted, got %s", data)
+	}
+}
+
+func TestBashReadOnlyOverridePrecedence(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	workdir := t.TempDir()
+
+	// An explicit project false must beat a global true.
+	if err := SaveGlobal(Settings{BashReadOnly: boolPtr(true)}); err != nil {
+		t.Fatalf("SaveGlobal: %v", err)
+	}
+	if err := SaveProject(workdir, Settings{BashReadOnly: boolPtr(false)}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	merged, err := LoadMerged(workdir)
+	if err != nil {
+		t.Fatalf("LoadMerged: %v", err)
+	}
+	if merged.BashReadOnly == nil || *merged.BashReadOnly {
+		t.Fatalf("project false should beat global true, got %+v", merged.BashReadOnly)
+	}
+
+	// An unset project field falls back to the global value.
+	if err := SaveProject(workdir, Settings{Model: "m"}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	merged, err = LoadMerged(workdir)
+	if err != nil {
+		t.Fatalf("LoadMerged: %v", err)
+	}
+	if merged.BashReadOnly == nil || !*merged.BashReadOnly {
+		t.Fatalf("unset project should fall back to global true, got %+v", merged.BashReadOnly)
 	}
 }
 
