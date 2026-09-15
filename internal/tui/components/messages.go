@@ -26,6 +26,11 @@ type Message struct {
 	ToolArgs string            // set on tool turns
 	Status   string            // set on tool turns (✓, withheld, …)
 
+	// Partial is set on assistant bubbles that belong to a turn that failed
+	// and is being retried. They are dimmed and skipped when rebuilding the
+	// provider-facing transcript.
+	Partial bool
+
 	// ToolCallID is set on tool turns. It groups a result turn back to the
 	// assistant call that requested it.
 	ToolCallID string
@@ -79,11 +84,20 @@ func turnPanel(msg Message, width int) string {
 			meta = formatTokens(n) + " tok"
 		}
 	}
+	if msg.Partial {
+		meta = "retrying…"
+	}
+
+	body := strings.TrimRight(msg.Content, "\n")
+	if msg.Partial {
+		body = MutedStyle.Render(body)
+		title = MutedStyle.Render(title)
+	}
 
 	return Panel{
 		Title:  title,
 		Meta:   meta,
-		Body:   strings.TrimRight(msg.Content, "\n"),
+		Body:   body,
 		Width:  width,
 		Accent: accent,
 	}.View()

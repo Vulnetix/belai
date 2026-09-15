@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/vulnetix/signet/internal/permissions"
 	"github.com/vulnetix/signet/internal/rolemanager"
@@ -20,6 +21,9 @@ const (
 	EventPermissionAskKind
 	EventDoneKind
 	EventErrorKind
+	// EventRetryKind is emitted before each L2 turn retry. It carries the
+	// retry attempt number and delay, but no execution authority.
+	EventRetryKind
 )
 
 // Event is one streaming agent event. Only the fields for the event's Kind are
@@ -43,6 +47,11 @@ type Event struct {
 	// AskName / AskSubject carry EventPermissionAsk.
 	AskName    string
 	AskSubject string
+
+	// RetryAttempt and RetryDelay carry EventRetryKind metadata.
+	RetryAttempt int
+	RetryDelay   time.Duration
+	RetryReason  string
 
 	// Err carries EventError.
 	Err error
@@ -123,11 +132,13 @@ func (s *Session) streamTurn(ctx context.Context, system string, turns []run.Tur
 }
 
 // permissionDecision evaluates the permission for a tool call before execution
-// so the loop can surface EventPermissionAsk.
+// so the loop can surface EventPermissionAsk. The permission_no_match posture
+// gate applies exactly as in executeCall.
 func (s *Session) permissionDecision(call rolemanager.ToolCall) permissions.Decision {
 	tool, ok := s.registry.Find(call.Name)
 	if !ok {
 		return permissions.DecisionBlock
 	}
-	return s.perms.Evaluate(call.Name, tool.Subject(call.Args))
+	dec, _ := s.decidePermission(call.Name, tool.Subject(call.Args))
+	return dec
 }

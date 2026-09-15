@@ -217,6 +217,19 @@ func (s *Session) mismatchPolicy() rolemanager.ToolCallMismatchPolicy {
 	}
 }
 
+// decidePermission wraps the permissions layer and re-blocks unmatched calls
+// when the permission_no_match posture gate is enforce (the legacy
+// fail-closed behavior, restorable via preferences.yaml). Matched rules are
+// unaffected by the gate: an explicit deny always blocks, an explicit allow
+// always allows.
+func (s *Session) decidePermission(tool, subject string) (permissions.Decision, string) {
+	dec, rule := s.perms.Explain(tool, subject)
+	if rule == "" && s.posture.Level(posture.PermissionNoMatch) == posture.Enforce {
+		return permissions.DecisionBlock, ""
+	}
+	return dec, rule
+}
+
 func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall) string {
 	tool, ok := s.registry.Find(call.Name)
 	if !ok {
@@ -227,7 +240,7 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall) st
 		return fmt.Sprintf("tool result withheld: %q is not allowed in plan mode", call.Name)
 	}
 
-	perm := s.perms.Evaluate(call.Name, tool.Subject(call.Args))
+	perm, _ := s.decidePermission(call.Name, tool.Subject(call.Args))
 	switch perm {
 	case permissions.DecisionBlock:
 		return fmt.Sprintf("tool result withheld: permission denied for %q", call.Name)
