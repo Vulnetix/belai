@@ -520,7 +520,11 @@ func (a *App) handleCommand(input string) {
 		}
 		a.addSystem(strings.Join(lines, "\n"))
 	case "model":
-		a.addSystem("model: " + a.cfg.Provider + " / " + a.cfg.Model + "\nType /model <provider> to switch.")
+		if arg != "" {
+			a.switchProvider(arg)
+		} else {
+			a.addSystem("model: " + a.cfg.Provider + " / " + a.cfg.Model + "\nType /model <provider> to switch.")
+		}
 	case "todos":
 		a.addSystem("todos: no plan tracked yet")
 	case "profile":
@@ -563,6 +567,14 @@ func (a *App) saveMode() {
 	_ = config.SaveState(st)
 }
 
+func (a *App) saveState() {
+	st, _ := config.LoadState()
+	st.Model = a.cfg.Model
+	st.Provider = a.cfg.Provider
+	st.LastMode = a.mode
+	_ = config.SaveState(st)
+}
+
 func (a *App) addSystem(text string) {
 	a.messages = append(a.messages, components.Message{Role: "system", Content: text})
 }
@@ -594,6 +606,27 @@ func (a *App) classifyMode(input string) {
 	}
 	if d.Warning != "" {
 		a.addSystem(d.Warning)
+	}
+}
+
+func (a *App) switchProvider(name string) {
+	src := run.CredentialSource(run.EnvSource(os.Getenv))
+	if a.resolver != nil {
+		src = a.resolver
+	}
+	cfg, status := run.Prepare(a.cfg.Model, name, src)
+	a.cfg = cfg
+	a.status = status
+	if a.status.Configured {
+		a.SetClassifier(run.NewClassifier(a.cfg, a.client))
+	}
+	a.footer.Model = cfg.Model
+	a.footer.Provider = cfg.Provider
+	a.saveState()
+	if a.status.Configured {
+		a.addSystem("switched to " + cfg.Provider + " / " + cfg.Model)
+	} else {
+		a.showCredentialMessage(cfg.Provider, a.resolver)
 	}
 }
 

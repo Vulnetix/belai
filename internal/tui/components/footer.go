@@ -2,6 +2,7 @@ package components
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -43,7 +44,11 @@ func (f *Footer) View() string {
 
 	var line1Parts []string
 	if f.Cwd != "" {
-		line1Parts = append(line1Parts, f.Cwd)
+		cwd := f.Cwd
+		if home, _ := os.UserHomeDir(); home != "" && strings.HasPrefix(cwd, home) {
+			cwd = "~" + strings.TrimPrefix(cwd, home)
+		}
+		line1Parts = append(line1Parts, cwd)
 	}
 	if f.Branch != "" {
 		line1Parts = append(line1Parts, "⎇ "+f.Branch)
