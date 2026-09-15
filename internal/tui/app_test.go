@@ -1108,3 +1108,91 @@ func TestLibraryProjectOverridesGlobal(t *testing.T) {
 		t.Fatalf("expected project override, got %q", a.editor.Value())
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Output truncation and expansion tests
+// ---------------------------------------------------------------------------
+
+func TestCtrlOTogglesExpandAll(t *testing.T) {
+	a := New(Options{})
+	if a.expandAll {
+		t.Fatalf("expandAll should default to false")
+	}
+	m, _ := a.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
+	a = m.(*App)
+	if !a.expandAll {
+		t.Fatalf("first ctrl+o should expand all")
+	}
+	m, _ = a.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
+	a = m.(*App)
+	if a.expandAll {
+		t.Fatalf("second ctrl+o should collapse all")
+	}
+}
+
+func TestCtrlOOnlyWorksInChatView(t *testing.T) {
+	a := New(Options{})
+	a.push(viewSettings)
+	m, _ := a.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
+	a = m.(*App)
+	if a.expandAll {
+		t.Fatalf("ctrl+o should not expand all while in settings view")
+	}
+}
+
+func TestToolResultStoresContentAndSetsErrorStatus(t *testing.T) {
+	a := New(Options{})
+	a.messages = []components.Message{
+		{Role: "assistant"},
+		{Role: "tool", ToolName: "Bash", ToolCallID: "call_1"},
+	}
+	_, cmd := a.Update(agentEventMsg{Kind: agent.EventToolResultKind, ToolName: "Bash", ToolResult: "exit status 1"})
+	if cmd == nil {
+		t.Fatalf("expected follow-up command to keep draining events")
+	}
+	last := a.messages[len(a.messages)-1]
+	if last.Content != "exit status 1" {
+		t.Fatalf("tool content = %q, want exit status 1", last.Content)
+	}
+	if last.Status != "✗" {
+		t.Fatalf("tool status = %q, want ✗", last.Status)
+	}
+}
+
+func TestToolResultStoresContentAndSetsWithheldStatus(t *testing.T) {
+	a := New(Options{})
+	a.messages = []components.Message{
+		{Role: "assistant"},
+		{Role: "tool", ToolName: "Read", ToolCallID: "call_1"},
+	}
+	_, cmd := a.Update(agentEventMsg{Kind: agent.EventToolResultKind, ToolName: "Read", ToolResult: "tool result withheld: permission denied"})
+	if cmd == nil {
+		t.Fatalf("expected follow-up command to keep draining events")
+	}
+	last := a.messages[len(a.messages)-1]
+	if last.Content != "tool result withheld: permission denied" {
+		t.Fatalf("tool content = %q", last.Content)
+	}
+	if last.Status != "withheld" {
+		t.Fatalf("tool status = %q, want withheld", last.Status)
+	}
+}
+
+func TestToolResultStoresContentAndSetsSuccessStatus(t *testing.T) {
+	a := New(Options{})
+	a.messages = []components.Message{
+		{Role: "assistant"},
+		{Role: "tool", ToolName: "Bash", ToolCallID: "call_1"},
+	}
+	_, cmd := a.Update(agentEventMsg{Kind: agent.EventToolResultKind, ToolName: "Bash", ToolResult: "hello"})
+	if cmd == nil {
+		t.Fatalf("expected follow-up command to keep draining events")
+	}
+	last := a.messages[len(a.messages)-1]
+	if last.Content != "hello" {
+		t.Fatalf("tool content = %q, want hello", last.Content)
+	}
+	if last.Status != "✓" {
+		t.Fatalf("tool status = %q, want ✓", last.Status)
+	}
+}

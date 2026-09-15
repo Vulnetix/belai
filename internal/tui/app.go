@@ -166,6 +166,9 @@ type App struct {
 
 	// layout
 	vp viewport.Model
+
+	// expandAll disables truncation and shows every message in full.
+	expandAll bool
 }
 
 type tickMsg time.Time
@@ -622,6 +625,10 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		// Clear the transcript view; the session is untouched.
 		a.messages = nil
 		return nil
+	case "ctrl+o":
+		// Toggle full output for all truncated turns and tool results.
+		a.expandAll = !a.expandAll
+		return nil
 	case "esc":
 		if a.pendingInput != "" {
 			a.pendingInput = ""
@@ -936,9 +943,13 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		return a.nextAgent()
 	case agent.EventToolResultKind:
 		if len(a.messages) > 0 && a.messages[len(a.messages)-1].Role == "tool" {
+			a.messages[len(a.messages)-1].Content = m.ToolResult
 			status := "✓"
-			if strings.HasPrefix(m.ToolResult, "tool result withheld:") {
+			switch {
+			case strings.HasPrefix(m.ToolResult, "tool result withheld:"):
 				status = "withheld"
+			case m.ToolName == "Bash" && strings.Contains(m.ToolResult, "exit status"):
+				status = "✗"
 			}
 			a.messages[len(a.messages)-1].Status = status
 		}
@@ -1035,7 +1046,7 @@ func (a *App) View() string {
 
 func (a *App) chatView() string {
 	a.relayout()
-	a.vp.SetContent(components.MessageList{Messages: a.messages, Width: a.contentWidth()}.View())
+	a.vp.SetContent(components.MessageList{Messages: a.messages, Width: a.contentWidth(), ExpandAll: a.expandAll}.View())
 
 	var sb strings.Builder
 	if a.bannerVisible() {
