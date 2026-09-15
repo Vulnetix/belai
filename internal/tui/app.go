@@ -103,6 +103,9 @@ func New(opts Options) *App {
 		resolver: opts.Resolver,
 		pending:  opts.Prompt,
 	}
+	if a.status.Configured {
+		a.SetClassifier(run.NewClassifier(a.cfg, a.client))
+	}
 	_ = a.editor.Focus()
 
 	if !status.Configured {

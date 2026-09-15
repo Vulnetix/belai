@@ -80,6 +80,8 @@ func TestClassifyModeNamedAgent(t *testing.T) {
 
 func TestClassifyModeSkippedWithoutClassifier(t *testing.T) {
 	a := NewApp(t.TempDir(), "")
+	// Ensure no classifier is present (New may install one when credentials are configured).
+	a.SetClassifier(nil)
 	// New may already have posted a "credentials missing" notice; classifyMode
 	// must not add to whatever is there.
 	before := len(a.messages)

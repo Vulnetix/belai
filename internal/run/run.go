@@ -254,11 +254,16 @@ func chat(cfg Config, system, user string, client *http.Client) (string, error) 
 	return doChat(cfg, system, []Turn{{Role: "user", Content: user}}, client)
 }
 
-// classifier adapts a chat round-trip to the rolemanager.Classifier interface.
-func classifier(cfg Config, client *http.Client) rolemanager.Classifier {
+// NewClassifier returns a rolemanager.Classifier backed by the configured provider.
+func NewClassifier(cfg Config, client *http.Client) rolemanager.Classifier {
 	return rolemanager.ClassifierFunc(func(p rolemanager.ClassifierPayload) (string, error) {
 		return chat(cfg, p.System, p.User, client)
 	})
+}
+
+// classifier is the internal alias for NewClassifier.
+func classifier(cfg Config, client *http.Client) rolemanager.Classifier {
+	return NewClassifier(cfg, client)
 }
 
 // SealSystem builds and seals the system prompt from trusted harness blocks.
@@ -388,19 +393,19 @@ func Run(cfg Config, userPrompt string, client *http.Client) (string, error) {
 
 // RunTurns sends a conversation history and returns the latest assistant reply.
 func RunTurns(cfg Config, turns []Turn, client *http.Client) (string, error) {
-	return RunTurnsWithPool(cfg, turns, client, nonce.New())
+	return RunTurnsWithPool(cfg, turns, client, nonce.New(), prompt.Options{})
 }
 
 // RunTurnsWithPool is RunTurns with a caller-provided nonce pool so that
 // multi-turn sessions reuse the same pool across requests.
-func RunTurnsWithPool(cfg Config, turns []Turn, client *http.Client, pool *nonce.Pool) (string, error) {
+func RunTurnsWithPool(cfg Config, turns []Turn, client *http.Client, pool *nonce.Pool, opts prompt.Options) (string, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
 	if pool == nil {
 		pool = nonce.New()
 	}
-	verifiedSystem, err := SealSystem(pool, prompt.Options{})
+	verifiedSystem, err := SealSystem(pool, opts)
 	if err != nil {
 		return "", err
 	}
@@ -450,13 +455,11 @@ func EngageWithPosture(cfg Config, prompt string, detectMode bool, client *http.
 	}
 	res.SecuritySentinel = dec.Sentinel
 
-	if detectMode {
-		modeDec, err := rolemanager.Select(pipe.Classifier, rolemanager.ModeInput{Prompt: clean})
-		if err != nil {
-			return res, err
-		}
-		res.ModeDecision = modeDec
+	modeDec, err := rolemanager.Select(pipe.Classifier, rolemanager.ModeInput{Prompt: clean, GoalLimit: rolemanager.DefaultGoalPromptLengthLimit})
+	if err != nil {
+		return res, err
 	}
+	res.ModeDecision = modeDec
 
 	reply, err := Run(cfg, clean, client)
 	if err != nil {
