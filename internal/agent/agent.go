@@ -56,7 +56,7 @@ type Session struct {
 func NewSession(o Options) (*Session, error) {
 	maxIter := o.MaxIterations
 	if maxIter <= 0 {
-		maxIter = 10
+		maxIter = o.Settings.Resilience.MaxIterationsOr(10)
 	}
 	pool := nonce.New()
 	if err := pool.SeedFromProvider(o.Client, o.Cfg.BaseURL, o.Cfg.APIKey, 16); err != nil {

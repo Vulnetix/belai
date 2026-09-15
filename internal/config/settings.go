@@ -33,6 +33,8 @@ type Settings struct {
 	ContextWindows map[string]int `json:"context_windows,omitempty"`
 	// ShowSessionNames toggles session names in the status bar (default on).
 	ShowSessionNames *bool `json:"show_session_names,omitempty"`
+	// Resilience controls provider retry and tool-loop budgets.
+	Resilience *ResilienceSettings `json:"resilience,omitempty"`
 	// Providers defines custom provider profiles, keyed by provider name.
 	// Secrets never live here; they are resolved from api_key_env or the
 	// credential backends.
@@ -65,6 +67,32 @@ type UISettings struct {
 	Banner        *bool `json:"banner,omitempty"`
 	StatusBar     *bool `json:"status_bar,omitempty"`
 	KittyKeyboard *bool `json:"kitty_keyboard,omitempty"`
+}
+
+// ResilienceSettings controls the provider retry and agent-loop budgets.
+// A zero value means "use the built-in default".
+type ResilienceSettings struct {
+	// MaxAttempts is the inclusive pre-first-byte retry budget per model
+	// call. It defaults to 3.
+	MaxAttempts int `json:"max_attempts,omitempty"`
+	// MaxIterations is the per-prompt tool-loop budget. It defaults to 10.
+	MaxIterations int `json:"max_iterations,omitempty"`
+}
+
+// MaxAttemptsOr returns MaxAttempts or the provided default.
+func (r *ResilienceSettings) MaxAttemptsOr(def int) int {
+	if r == nil || r.MaxAttempts == 0 {
+		return def
+	}
+	return r.MaxAttempts
+}
+
+// MaxIterationsOr returns MaxIterations or the provided default.
+func (r *ResilienceSettings) MaxIterationsOr(def int) int {
+	if r == nil || r.MaxIterations == 0 {
+		return def
+	}
+	return r.MaxIterations
 }
 
 // SessionRetention returns the retention duration, defaulting to 28 days.
@@ -148,6 +176,28 @@ func (s Settings) Override(proj Settings) Settings {
 	}
 	if proj.ShowSessionNames != nil {
 		out.ShowSessionNames = proj.ShowSessionNames
+	}
+	if proj.Resilience != nil {
+		merged := &ResilienceSettings{}
+		if out.Resilience != nil {
+			*merged = *out.Resilience
+		}
+		if proj.Resilience.MaxAttempts != 0 {
+			if merged.MaxAttempts == 0 {
+				merged.MaxAttempts = proj.Resilience.MaxAttempts
+			} else {
+				// Project settings cannot widen the budget; take the minimum.
+				merged.MaxAttempts = min(merged.MaxAttempts, proj.Resilience.MaxAttempts)
+			}
+		}
+		if proj.Resilience.MaxIterations != 0 {
+			if merged.MaxIterations == 0 {
+				merged.MaxIterations = proj.Resilience.MaxIterations
+			} else {
+				merged.MaxIterations = min(merged.MaxIterations, proj.Resilience.MaxIterations)
+			}
+		}
+		out.Resilience = merged
 	}
 	return out
 }

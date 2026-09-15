@@ -239,3 +239,33 @@ func TestMigrateIsNoOpWithoutLegacyDir(t *testing.T) {
 		t.Fatalf("expected no migration without legacy dir")
 	}
 }
+
+func TestResilienceOverrideTakesMinimumAttempts(t *testing.T) {
+	global := Settings{Resilience: &ResilienceSettings{MaxAttempts: 5, MaxIterations: 12}}
+	projectHigh := Settings{Resilience: &ResilienceSettings{MaxAttempts: 10, MaxIterations: 20}}
+	got := global.Override(projectHigh)
+	if got.Resilience.MaxAttempts != 5 {
+		t.Fatalf("project cannot raise attempts: got %d", got.Resilience.MaxAttempts)
+	}
+	if got.Resilience.MaxIterations != 12 {
+		t.Fatalf("project cannot raise iterations: got %d", got.Resilience.MaxIterations)
+	}
+
+	projectLow := Settings{Resilience: &ResilienceSettings{MaxAttempts: 2, MaxIterations: 3}}
+	got = global.Override(projectLow)
+	if got.Resilience.MaxAttempts != 2 {
+		t.Fatalf("project can lower attempts: got %d", got.Resilience.MaxAttempts)
+	}
+	if got.Resilience.MaxIterations != 3 {
+		t.Fatalf("project can lower iterations: got %d", got.Resilience.MaxIterations)
+	}
+}
+
+func TestResilienceOverrideFillsFromGlobal(t *testing.T) {
+	global := Settings{Resilience: &ResilienceSettings{MaxAttempts: 4}}
+	project := Settings{Resilience: &ResilienceSettings{MaxIterations: 6}}
+	got := global.Override(project)
+	if got.Resilience.MaxAttempts != 4 || got.Resilience.MaxIterations != 6 {
+		t.Fatalf("got %+v", got.Resilience)
+	}
+}
