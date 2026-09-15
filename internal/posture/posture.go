@@ -27,15 +27,15 @@ const (
 type Gate string
 
 const (
-	ToolResultUnsafe      Gate = "tool_result_unsafe"
-	ToolResultMalformed   Gate = "tool_result_malformed"
-	PromptUnsafe          Gate = "prompt_unsafe"
-	PromptMalformed       Gate = "prompt_malformed"
-	ToolCallMismatch      Gate = "tool_call_mismatch"
-	PermissionNoMatch     Gate = "permission_no_match"
-	PermissionAskNoTTY    Gate = "permission_ask_no_tty"
-	SkillInvalid          Gate = "skill_invalid"
-	HookInvalid           Gate = "hook_invalid"
+	ToolResultUnsafe    Gate = "tool_result_unsafe"
+	ToolResultMalformed Gate = "tool_result_malformed"
+	PromptUnsafe        Gate = "prompt_unsafe"
+	PromptMalformed     Gate = "prompt_malformed"
+	ToolCallMismatch    Gate = "tool_call_mismatch"
+	PermissionNoMatch   Gate = "permission_no_match"
+	PermissionAskNoTTY  Gate = "permission_ask_no_tty"
+	SkillInvalid        Gate = "skill_invalid"
+	HookInvalid         Gate = "hook_invalid"
 )
 
 // AllGates is every posture gate, in deterministic order.

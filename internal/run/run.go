@@ -420,8 +420,6 @@ func RunTurnsWithPool(cfg Config, turns []Turn, client *http.Client, pool *nonce
 	return doChat(cfg, verifiedSystem, sanitized, client)
 }
 
-
-
 // Result captures what the noninteractive pipeline decided and produced.
 type Result struct {
 	SanitizedPrompt  string

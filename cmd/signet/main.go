@@ -48,14 +48,14 @@ func main() {
 	fs := posture.FlagSet{
 		AllowUnsafeToolResult:    allowUnsafeToolResult,
 		AllowMalformedToolResult: allowMalformedToolResult,
-		AllowUnsafePrompt:      allowUnsafePrompt,
-		AllowMalformedPrompt:   allowMalformedPrompt,
-		ToolCallMismatch:       toolCallMismatch,
-		AllowUnpermittedTools:  allowUnpermittedTools,
-		AllowAskWithoutTTY:     allowAskWithoutTTY,
-		AllowInvalidSkills:     allowInvalidSkills,
-		AllowInvalidHooks:      allowInvalidHooks,
-		DangerouslyYolo:        *dangerouslyYolo,
+		AllowUnsafePrompt:        allowUnsafePrompt,
+		AllowMalformedPrompt:     allowMalformedPrompt,
+		ToolCallMismatch:         toolCallMismatch,
+		AllowUnpermittedTools:    allowUnpermittedTools,
+		AllowAskWithoutTTY:       allowAskWithoutTTY,
+		AllowInvalidSkills:       allowInvalidSkills,
+		AllowInvalidHooks:        allowInvalidHooks,
+		DangerouslyYolo:          *dangerouslyYolo,
 	}
 	cliPol := fs.ToPolicy()
 	projectPol, _ := posture.Load(workdir)

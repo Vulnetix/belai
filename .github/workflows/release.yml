@@ -101,6 +101,12 @@ jobs:
           name: binaries
           path: bin
 
+      # Ship the installer with the release so a vanity host can redirect to
+      # releases/latest/download/install.sh, and so the script that fetches a
+      # release is versioned alongside it.
+      - name: Stage installer
+        run: cp install.sh bin/install.sh
+
       - name: Generate checksums
         run: |
           cd bin

@@ -27,7 +27,17 @@ scoop install signet
 ### Shell installer
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/vulnetix/signet/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Vulnetix/signet/main/install.sh | sh
+```
+
+The script detects your platform, verifies the download against the release
+`checksums.txt`, and refuses to install on a mismatch. It installs to
+`/usr/local/bin`, falling back to `~/.local/bin` when that is not writable.
+
+```bash
+# choose the directory or the version
+curl -fsSL https://raw.githubusercontent.com/Vulnetix/signet/main/install.sh | sh -s -- --install-dir ~/.local/bin
+curl -fsSL https://raw.githubusercontent.com/Vulnetix/signet/main/install.sh | sh -s -- --version v0.1.1
 ```
 
 ### GitHub Releases
