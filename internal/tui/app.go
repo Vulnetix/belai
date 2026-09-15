@@ -232,7 +232,7 @@ func New(opts Options) *App {
 		client:      opts.Client,
 		resolver:    opts.Resolver,
 		posture:     pol,
-		planMode:    opts.PlanMode,
+		planMode:    mode == "plan",
 		pending:     opts.Prompt,
 		workdir:     workdir,
 		settings:    eff.Settings,
@@ -533,6 +533,13 @@ func (a *App) agentSession() (*agent.Session, error) {
 // re-resolves the carrier and reseals the system prompt.
 func (a *App) invalidateAgentSession() {
 	a.agent = nil
+}
+
+// syncPlanMode keeps the agent session's plan mode in lockstep with the mode
+// chip and drops the cached session so the next send picks up the new mode.
+func (a *App) syncPlanMode() {
+	a.planMode = a.mode == "plan"
+	a.invalidateAgentSession()
 }
 
 // Update implements tea.Model.
