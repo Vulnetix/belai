@@ -60,6 +60,12 @@ func Catalog(provider string) []Model {
 		// Ollama's model list is host-specific and unknowable offline: the
 		// catalogue is empty and the model id is typed or imported.
 		return nil
+	case "github-copilot":
+		return []Model{
+			{ID: "gpt-4o", Label: "GPT-4o", Efforts: defaultEfforts},
+			{ID: "claude-sonnet-4-5", Label: "Claude Sonnet 4.5", Efforts: defaultEfforts},
+			{ID: "o3-mini", Label: "o3 Mini", Efforts: defaultEfforts},
+		}
 	default:
 		// Unknown names are custom providers; their catalogue comes from the
 		// profile, never the OpenAI list.

@@ -30,12 +30,13 @@ const (
 	AuthBearer  Auth = "bearer"    // authorization: Bearer <key>
 	AuthXAPIKey Auth = "x-api-key" // x-api-key + anthropic-version: 2023-06-01
 	AuthCFAIG   Auth = "cf-aig"    // cf-aig-authorization: Bearer <key>
+	AuthCopilot Auth = "copilot"   // Bearer + Editor-Version + Copilot-Integration-Id
 )
 
 // Valid reports whether a is a known auth style.
 func (a Auth) Valid() bool {
 	switch a {
-	case AuthBearer, AuthXAPIKey, AuthCFAIG:
+	case AuthBearer, AuthXAPIKey, AuthCFAIG, AuthCopilot:
 		return true
 	}
 	return false
@@ -64,6 +65,7 @@ var builtins = []struct {
 	{"openrouter", AuthBearer},
 	{"google-gemini", AuthBearer},
 	{"ollama", AuthBearer},
+	{"github-copilot", AuthCopilot},
 }
 
 // Names returns the supported provider names in a stable order.
@@ -211,6 +213,10 @@ func (p *Provider) Headers() map[string]string {
 		h["anthropic-version"] = "2023-06-01"
 	case AuthCFAIG:
 		h["cf-aig-authorization"] = "Bearer " + p.apiKey
+	case AuthCopilot:
+		h["authorization"] = "Bearer " + p.apiKey
+		h["editor-version"] = "vscode/1.85.0"
+		h["copilot-integration-id"] = "vscode-chat"
 	default: // AuthBearer
 		h["authorization"] = "Bearer " + p.apiKey
 	}

@@ -4,6 +4,7 @@
 package run
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -122,12 +123,19 @@ func (f EnvSource) Lookup(provider, field string) (value, origin string, ok bool
 		if v := f("OPENROUTER_API_KEY"); v != "" {
 			return v, "$OPENROUTER_API_KEY", true
 		}
-	case "google-gemini:api_key":
+	case "google-gemini":
 		if v := f("GEMINI_API_KEY"); v != "" {
 			return v, "$GEMINI_API_KEY", true
 		}
 		if v := f("GOOGLE_API_KEY"); v != "" {
 			return v, "$GOOGLE_API_KEY", true
+		}
+	case "github-copilot:oauth_token":
+		if v := f("GITHUB_COPILOT_TOKEN"); v != "" {
+			return v, "$GITHUB_COPILOT_TOKEN", true
+		}
+		if v := f("GH_TOKEN"); v != "" {
+			return v, "$GH_TOKEN", true
 		}
 	default:
 		// Custom providers resolve from their derived variable; EnvSource
@@ -164,6 +172,8 @@ func DefaultModel(providerName string) string {
 		return "gemini-2.5-flash"
 	case "ollama":
 		return "llama3"
+	case "github-copilot":
+		return "gpt-4o"
 	default:
 		return "gpt-5"
 	}
@@ -272,6 +282,15 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 		// that validation for everyone.
 		cfg.APIKey = "ollama"
 		cfg.BaseURL = ollamaBaseURL()
+	case "github-copilot":
+		if oauth, origin, ok := src.Lookup(name, "oauth_token"); ok {
+			cfg.APIKey = oauth
+			status.Origins["oauth_token"] = origin
+		} else {
+			status.Missing = append(status.Missing, "oauth_token")
+		}
+		cfg.BaseURL = "https://api.githubcopilot.com"
+		cfg.Auth = provider.AuthCopilot
 	default:
 		// Custom path: an unknown name must resolve to a configured profile.
 		// Built-in arms are reached first, so a profile named "openai" is never
@@ -352,6 +371,8 @@ func ResolveWithSource(model, providerName string, env func(string) string, src 
 				envHints = append(envHints, "OPENROUTER_API_KEY")
 			case "google-gemini:api_key":
 				envHints = append(envHints, "GEMINI_API_KEY", "GOOGLE_API_KEY")
+			case "github-copilot:oauth_token":
+				envHints = append(envHints, "GITHUB_COPILOT_TOKEN", "GH_TOKEN")
 			default:
 				if m == "api_key" {
 					envHints = append(envHints, envVarForProvider(cfg.Provider))
@@ -424,11 +445,22 @@ func buildRequest(cfg Config, system string, turns []Turn, stream bool, openAITo
 	if err != nil {
 		return nil, dialect{}, err
 	}
+	// Copilot is the one provider whose key is exchanged for a short-lived
+	// session token on the auth path. It can fail here, in buildRequest,
+	// while Prepare stays offline.
+	key := cfg.APIKey
+	if cfg.Auth == provider.AuthCopilot {
+		token, err := copilotExchanger.Token(context.Background(), cfg.APIKey)
+		if err != nil {
+			return nil, dialect{}, err
+		}
+		key = token.Value
+	}
 	var p *provider.Provider
 	if cfg.API != "" {
-		p, err = provider.NewFromProfile(cfg.Provider, provider.Profile{BaseURL: cfg.BaseURL, API: cfg.API, Auth: cfg.Auth}, cfg.APIKey)
+		p, err = provider.NewFromProfile(cfg.Provider, provider.Profile{BaseURL: cfg.BaseURL, API: cfg.API, Auth: cfg.Auth}, key)
 	} else {
-		p, err = provider.New(cfg.Provider, cfg.BaseURL, cfg.APIKey)
+		p, err = provider.New(cfg.Provider, cfg.BaseURL, key)
 	}
 	if err != nil {
 		return nil, dialect{}, err

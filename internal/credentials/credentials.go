@@ -66,6 +66,10 @@ func Spec(provider string) []Field {
 		// Ollama is local and needs no credential; a missing key is not a
 		// misconfiguration.
 		return nil
+	case "github-copilot":
+		return []Field{
+			{Name: "oauth_token", EnvVars: []string{"GITHUB_COPILOT_TOKEN", "GH_TOKEN"}, Secret: true},
+		}
 	default:
 		// An unknown name is a custom provider, never a fallback to OpenAI.
 		// The derived variable is the fail-closed default; a profile's

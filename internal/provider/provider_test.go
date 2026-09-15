@@ -366,3 +366,23 @@ func TestNewAssignsAuthForNewBuiltins(t *testing.T) {
 		})
 	}
 }
+
+func TestCopilotHeadersIncludeIntegrationID(t *testing.T) {
+	p, err := New("github-copilot", "https://api.githubcopilot.com", "session-token")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if p.Auth() != AuthCopilot {
+		t.Fatalf("Auth() = %q, want AuthCopilot", p.Auth())
+	}
+	h := p.Headers()
+	if h["authorization"] != "Bearer session-token" {
+		t.Fatalf("authorization = %q", h["authorization"])
+	}
+	if h["copilot-integration-id"] == "" {
+		t.Fatal("copilot-integration-id missing")
+	}
+	if h["editor-version"] == "" {
+		t.Fatal("editor-version missing")
+	}
+}

@@ -819,3 +819,27 @@ func TestPrepareOllamaHonoursOllamaHost(t *testing.T) {
 		t.Fatalf("BaseURL = %q, want normalised", cfg.BaseURL)
 	}
 }
+
+func TestPrepareCopilotRequiresOAuthToken(t *testing.T) {
+	_, status := Prepare("", "github-copilot", fakeSource{})
+	if status.Configured {
+		t.Fatal("expected not configured without an oauth token")
+	}
+	if !sliceEqual(status.Missing, []string{"oauth_token"}) {
+		t.Fatalf("missing = %v, want [oauth_token]", status.Missing)
+	}
+
+	cfg, status := Prepare("", "github-copilot", fakeSource{vals: map[string]string{"github-copilot:oauth_token": "gho_x"}})
+	if !status.Configured {
+		t.Fatalf("expected configured, missing=%v", status.Missing)
+	}
+	if cfg.Auth != provider.AuthCopilot {
+		t.Fatalf("Auth = %q, want AuthCopilot", cfg.Auth)
+	}
+	if cfg.BaseURL != "https://api.githubcopilot.com" {
+		t.Fatalf("BaseURL = %q", cfg.BaseURL)
+	}
+	if cfg.Model != "gpt-4o" {
+		t.Fatalf("Model = %q, want gpt-4o", cfg.Model)
+	}
+}
