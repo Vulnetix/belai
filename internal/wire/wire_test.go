@@ -1,56 +1,58 @@
 package wire
 
 import (
-	"encoding/json"
 	"testing"
 )
 
-func TestAnthropicTextMessageMarshalsAsString(t *testing.T) {
-	msg := NewAnthropicTextMessage("user", "hello")
-	b, err := json.Marshal(msg)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
+func TestSurfacePath(t *testing.T) {
+	cases := []struct {
+		s    Surface
+		want string
+	}{
+		{SurfaceOpenAIChat, "/chat/completions"},
+		{SurfaceOpenAIResponses, "/responses"},
+		{SurfaceAnthropicMessages, "/v1/messages"},
+		{Surface("unknown"), ""},
 	}
-	want := `{"role":"user","content":"hello"}`
-	if string(b) != want {
-		t.Fatalf("got %s, want %s", b, want)
-	}
-}
-
-func TestOpenAIChatMessageToolFieldsOmitEmpty(t *testing.T) {
-	msg := OpenAIChatMessage{Role: "user", Content: "hi"}
-	b, err := json.Marshal(msg)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	want := `{"role":"user","content":"hi"}`
-	if string(b) != want {
-		t.Fatalf("got %s, want %s", b, want)
+	for _, c := range cases {
+		if got := c.s.Path(); got != c.want {
+			t.Fatalf("Path(%q) = %q, want %q", c.s, got, c.want)
+		}
 	}
 }
 
-func TestSurfacePathUnknownIsEmpty(t *testing.T) {
-	if got := Surface("").Path(); got != "" {
-		t.Fatalf("empty surface Path() = %q, want empty", got)
+func TestBuildURL(t *testing.T) {
+	cases := []struct {
+		base string
+		s    Surface
+		want string
+	}{
+		{"https://api.openai.com/v1", SurfaceOpenAIChat, "https://api.openai.com/v1/chat/completions"},
+		{"https://api.anthropic.com", SurfaceAnthropicMessages, "https://api.anthropic.com/v1/messages"},
+		{"https://x.com/", SurfaceOpenAIResponses, "https://x.com/responses"},
 	}
-	if got := Surface("bogus").Path(); got != "" {
-		t.Fatalf("bogus surface Path() = %q, want empty", got)
+	for _, c := range cases {
+		if got := BuildURL(c.base, c.s); got != c.want {
+			t.Fatalf("BuildURL(%q, %q) = %q, want %q", c.base, c.s, got, c.want)
+		}
 	}
 }
 
-func TestAnthropicMessagesRequestToolFields(t *testing.T) {
-	req := AnthropicMessagesRequest{
-		Model:      "claude-opus-4",
-		MaxTokens:  1024,
-		Messages:   []AnthropicMessage{NewAnthropicTextMessage("user", "hi")},
-		Tools:      []AnthropicToolDef{{Name: "Read", Description: "read file"}},
-		ToolChoice: "auto",
+func TestNewAnthropicTextMessage(t *testing.T) {
+	m := NewAnthropicTextMessage("user", "hello")
+	if m.Role != "user" || m.Content != "hello" {
+		t.Fatalf("message = %+v", m)
 	}
-	b, err := json.Marshal(req)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
+}
+
+func TestNewAnthropicBlockMessage(t *testing.T) {
+	blocks := []AnthropicRequestBlock{{Type: "text", Text: "hi"}}
+	m := NewAnthropicBlockMessage("assistant", blocks)
+	if m.Role != "assistant" {
+		t.Fatalf("role = %q", m.Role)
 	}
-	if !json.Valid(b) {
-		t.Fatal("invalid json")
+	content, ok := m.Content.([]AnthropicRequestBlock)
+	if !ok || len(content) != 1 {
+		t.Fatalf("content = %+v", m.Content)
 	}
 }

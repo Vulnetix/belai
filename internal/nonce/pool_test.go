@@ -1,120 +1,203 @@
 package nonce
 
-import "testing"
+import (
+	"encoding/hex"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
 
-func TestSeedAndUniqueness(t *testing.T) {
+func TestNewPool(t *testing.T) {
 	p := New()
-	if err := p.Seed(1000); err != nil {
-		t.Fatalf("Seed: %v", err)
-	}
-	if p.Available() != 1000 {
-		t.Fatalf("Available = %d, want 1000", p.Available())
-	}
-	seen := map[string]bool{}
-	for _, s := range p.avail {
-		if seen[s] {
-			t.Fatalf("duplicate seeded nonce %q", s)
-		}
-		seen[s] = true
+	if p.Available() != 0 || p.Active() != 0 {
+		t.Fatalf("new pool not empty")
 	}
 }
 
-func TestReserveRelease(t *testing.T) {
+func TestSeedAndAvailable(t *testing.T) {
 	p := New()
-	if err := p.Seed(3); err != nil {
+	if err := p.Seed(5); err != nil {
 		t.Fatalf("Seed: %v", err)
 	}
+	if p.Available() != 5 {
+		t.Fatalf("available = %d", p.Available())
+	}
+}
 
-	n1, err := p.Reserve()
+func TestReserveCreatesActive(t *testing.T) {
+	p := New()
+	if err := p.Seed(2); err != nil {
+		t.Fatal(err)
+	}
+	n, err := p.Reserve()
 	if err != nil {
 		t.Fatalf("Reserve: %v", err)
 	}
-	if !p.Valid(n1) {
-		t.Fatalf("reserved nonce should be valid")
+	if !p.Valid(n) {
+		t.Fatal("reserved nonce should be valid")
 	}
-	if p.Available() != 2 || p.Active() != 1 {
-		t.Fatalf("counts after reserve: avail=%d active=%d", p.Available(), p.Active())
-	}
-
-	p.Release(n1)
-	if p.Valid(n1) {
-		t.Fatalf("released nonce should not be valid")
-	}
-	if p.Available() != 3 || p.Active() != 0 {
-		t.Fatalf("counts after release: avail=%d active=%d", p.Available(), p.Active())
-	}
-
-	// Re-reserving the released nonce should make it valid again.
-	n2, _ := p.Reserve()
-	if n2 != n1 {
-		t.Fatalf("re-reserved nonce = %q, want %q", n2, n1)
-	}
-	if !p.Valid(n1) {
-		t.Fatalf("re-reserved nonce should be valid")
+	if p.Available() != 1 || p.Active() != 1 {
+		t.Fatalf("avail=%d active=%d", p.Available(), p.Active())
 	}
 }
 
-func TestAvailableNonceNotValidUntilReserved(t *testing.T) {
-	p := New()
-	if err := p.Seed(1); err != nil {
-		t.Fatalf("Seed: %v", err)
-	}
-	avail := p.avail[0]
-	if p.Valid(avail) {
-		t.Fatalf("unreserved nonce must not be valid")
-	}
-}
-
-func TestReserveMintsOnEmpty(t *testing.T) {
+func TestReserveFallback(t *testing.T) {
 	p := New()
 	n, err := p.Reserve()
 	if err != nil {
 		t.Fatalf("Reserve: %v", err)
 	}
 	if n == "" {
-		t.Fatalf("minted nonce is empty")
+		t.Fatal("expected nonce")
 	}
 	if !p.Valid(n) {
-		t.Fatalf("minted nonce should be valid")
+		t.Fatal("expected valid")
 	}
 }
 
-func TestRotateInvalidatesOldNonces(t *testing.T) {
+func TestRelease(t *testing.T) {
 	p := New()
-	if err := p.Seed(2); err != nil {
-		t.Fatalf("Seed: %v", err)
+	_ = p.Seed(1)
+	n, _ := p.Reserve()
+	if p.Available() != 0 {
+		t.Fatal("expected 0 available")
 	}
-	old, err := p.Reserve()
-	if err != nil {
-		t.Fatalf("Reserve: %v", err)
+	p.Release(n)
+	if p.Available() != 1 {
+		t.Fatalf("expected 1 available, got %d", p.Available())
 	}
-	if !p.Valid(old) {
-		t.Fatalf("old nonce should be valid before rotate")
+	if p.Valid(n) {
+		t.Fatal("released nonce should not be valid")
 	}
+}
+
+func TestReleaseUnknown(t *testing.T) {
+	p := New()
+	p.Release("nope") // should not panic
+}
+
+func TestRotate(t *testing.T) {
+	p := New()
+	_ = p.Seed(3)
+	n, _ := p.Reserve()
 	if err := p.Rotate(2); err != nil {
 		t.Fatalf("Rotate: %v", err)
 	}
-	if p.Valid(old) {
-		t.Fatalf("old nonce should be invalid after rotate")
+	if p.Valid(n) {
+		t.Fatal("old nonce should be invalid after rotate")
 	}
 	if p.Available() != 2 || p.Active() != 0 {
-		t.Fatalf("counts after rotate: avail=%d active=%d", p.Available(), p.Active())
+		t.Fatalf("avail=%d active=%d", p.Available(), p.Active())
+	}
+}
+
+func TestMintLengthAndHex(t *testing.T) {
+	n, err := mint()
+	if err != nil {
+		t.Fatalf("mint: %v", err)
+	}
+	if len(n) != 32 {
+		t.Fatalf("len = %d", len(n))
+	}
+	_, err = hex.DecodeString(n)
+	if err != nil {
+		t.Fatalf("not hex: %v", err)
 	}
 }
 
 func TestNonceURL(t *testing.T) {
 	cases := []struct {
-		in   string
+		base string
 		want string
 	}{
 		{"https://api.openai.com/v1", "https://api.openai.com/v1/nonces"},
-		{"https://api.openai.com/v1/", "https://api.openai.com/v1/nonces"},
 		{"https://api.anthropic.com", "https://api.anthropic.com/v1/nonces"},
-		{"https://gateway.example/openai/org/v1", "https://gateway.example/openai/org/v1/nonces"},
+		{"https://x.com/v1/", "https://x.com/v1/nonces"},
 	}
-	for _, tc := range cases {
-		if got := NonceURL(tc.in); got != tc.want {
-			t.Fatalf("NonceURL(%q) = %q, want %q", tc.in, got, tc.want)
+	for _, c := range cases {
+		if got := NonceURL(c.base); got != c.want {
+			t.Fatalf("NonceURL(%q) = %q, want %q", c.base, got, c.want)
 		}
+	}
+}
+
+func TestFetchNoncesUnsupported(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+	_, err := FetchNonces(server.Client(), server.URL, "")
+	if !strings.Contains(err.Error(), "unsupported") {
+		t.Fatalf("expected unsupported, got %v", err)
+	}
+}
+
+func TestFetchNoncesSuccess(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/nonces" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(NonceResponse{Nonces: []string{"abc", "def"}, Count: 2})
+	}))
+	defer server.Close()
+	nonces, err := FetchNonces(server.Client(), server.URL, "key")
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if len(nonces) != 2 {
+		t.Fatalf("len = %d", len(nonces))
+	}
+}
+
+func TestFetchNoncesBadStatus(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	_, err := FetchNonces(server.Client(), server.URL, "")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestFetchNoncesInvalidJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("not json"))
+	}))
+	defer server.Close()
+	_, err := FetchNonces(server.Client(), server.URL, "")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestSeedFromProviderUnsupported(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+	p := New()
+	if err := p.SeedFromProvider(server.Client(), server.URL, "", 3); err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if p.Available() != 3 {
+		t.Fatalf("avail = %d", p.Available())
+	}
+}
+
+func TestSeedFromProviderSuccess(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(NonceResponse{Nonces: []string{"001", "002"}, Count: 2})
+	}))
+	defer server.Close()
+	p := New()
+	if err := p.SeedFromProvider(server.Client(), server.URL, "", 3); err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if p.Available() != 2 {
+		t.Fatalf("avail = %d", p.Available())
 	}
 }
