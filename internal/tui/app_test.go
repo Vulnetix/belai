@@ -713,3 +713,32 @@ func TestChatViewEditorOnOwnLine(t *testing.T) {
 	}
 	t.Fatal("typed text not rendered in chat view")
 }
+
+func TestCredentialViewSetsEnvReference(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	workdir := t.TempDir()
+	resolver, err := credentials.NewResolver(workdir)
+	if err != nil {
+		t.Fatalf("NewResolver: %v", err)
+	}
+	a := New(Options{Workdir: workdir, Resolver: resolver})
+	a.view = viewCredentials
+	a.credentialState.backend = credentials.SourceUserFile
+	a.credentialState.envMode = true
+	a.editor.SetValue("MY_KEY")
+
+	m, _ := a.handleCredentialKey(tea.KeyMsg{Type: tea.KeyEnter})
+	a = m.(*App)
+	if a.credentialState.envMode {
+		t.Fatal("envMode should be cleared after enter")
+	}
+
+	t.Setenv("MY_KEY", "secret")
+	v, origin, ok := resolver.Lookup("openai", "api_key")
+	if !ok || v != "secret" {
+		t.Fatalf("lookup = %q, %q, %v; want secret via env ref", v, origin, ok)
+	}
+	if origin != "$MY_KEY" {
+		t.Fatalf("origin = %q, want $MY_KEY", origin)
+	}
+}

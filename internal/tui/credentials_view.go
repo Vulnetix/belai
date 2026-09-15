@@ -15,6 +15,7 @@ type credentialViewState struct {
 	providers   []string
 	selectedIdx int
 	setMode     bool
+	envMode     bool
 	backend     credentials.Source
 	sets        map[string]credentials.Set
 }
@@ -86,7 +87,7 @@ func (a *App) credentialView() string {
 		b.WriteString("\nbackends: " + strings.Join(parts, " · ") + "\n")
 	}
 
-	b.WriteString("\nkeys: s set · c clear · b cycle backend · esc back\n")
+	b.WriteString("\nkeys: s set · e set env ref · c clear · b cycle backend · esc back\n")
 	return b.String()
 }
 
@@ -108,23 +109,29 @@ func (a *App) initCredentialState() {
 
 // handleCredentialKey is the key handler for the credential manager view.
 func (a *App) handleCredentialKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if a.credentialState.setMode {
+	if a.credentialState.setMode || a.credentialState.envMode {
 		switch m.String() {
 		case "esc":
 			a.credentialState.setMode = false
+			a.credentialState.envMode = false
 			a.editor.Masked = false
 			a.editor.Reset()
 			return a, nil
 		case "enter":
-			val := a.editor.Value()
+			val := strings.TrimSpace(a.editor.Value())
 			p := a.credentialState.providers[a.credentialState.selectedIdx]
 			spec := credentials.Spec(p)
 			if len(spec) > 0 && a.resolver != nil {
-				_ = a.resolver.Store(p, spec[0].Name, val, a.credentialState.backend)
+				if a.credentialState.envMode {
+					_ = a.resolver.StoreEnvRef(p, spec[0].Name, val, a.credentialState.backend)
+				} else {
+					_ = a.resolver.Store(p, spec[0].Name, val, a.credentialState.backend)
+				}
 			}
 			a.editor.Reset()
 			a.editor.Masked = false
 			a.credentialState.setMode = false
+			a.credentialState.envMode = false
 			a.refreshCredentials()
 			return a, a.refreshProvider()
 		default:
@@ -150,6 +157,11 @@ func (a *App) handleCredentialKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "s":
 		a.credentialState.setMode = true
 		a.editor.Masked = true
+		_ = a.editor.Focus()
+		return a, nil
+	case "e":
+		a.credentialState.envMode = true
+		a.editor.Masked = false
 		_ = a.editor.Focus()
 		return a, nil
 	case "c":

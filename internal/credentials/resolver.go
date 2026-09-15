@@ -241,6 +241,23 @@ func (r *Resolver) Store(provider, field, secret string, backend Source) error {
 	}
 }
 
+// StoreEnvRef stores a credential as the name of an environment variable
+// rather than a value. Only file backends can hold a reference; a keychain
+// entry cannot.
+func (r *Resolver) StoreEnvRef(provider, field, envName string, backend Source) error {
+	if !config.ValidEnvName(envName) {
+		return fmt.Errorf("invalid env var name %q", envName)
+	}
+	switch backend {
+	case SourceUserFile:
+		return r.userFile.writeEnvRef(provider, field, envName)
+	case SourceProjectFile:
+		return r.projFile.writeEnvRef(provider, field, envName)
+	default:
+		return fmt.Errorf("backend %q cannot hold an env reference", backend)
+	}
+}
+
 // Clear removes a credential from the chosen backend.
 func (r *Resolver) Clear(provider, field string, backend Source) error {
 	switch backend {

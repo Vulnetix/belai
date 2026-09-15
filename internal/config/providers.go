@@ -12,7 +12,7 @@ import (
 // envNameRe matches an environment variable name: a letter or underscore,
 // then letters, digits, or underscores. This is the shape api_key_env must
 // take, and the shape the discovery scanner reuses.
-var envNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+var envNameRe = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
 
 // ValidEnvName reports whether name is a plausible environment variable name.
 func ValidEnvName(name string) bool {

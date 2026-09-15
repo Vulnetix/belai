@@ -159,6 +159,23 @@ func (f *fileStore) write(provider, field, secret string) error {
 	return f.save(cf)
 }
 
+// writeEnvRef writes a credential entry that references an environment
+// variable rather than holding the value. A reference is not a secret, so it
+// is legal in a project credential file.
+func (f *fileStore) writeEnvRef(provider, field, envName string) error {
+	cf, _, err := f.load()
+	if err != nil {
+		return err
+	}
+	p, ok := cf.Providers[provider]
+	if !ok {
+		p = map[string]credentialFileEntry{}
+		cf.Providers[provider] = p
+	}
+	p[field] = credentialFileEntry{Source: "env", Name: envName}
+	return f.save(cf)
+}
+
 func (f *fileStore) delete(provider, field string) error {
 	cf, _, err := f.load()
 	if err != nil {
