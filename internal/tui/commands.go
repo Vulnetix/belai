@@ -1,13 +1,19 @@
 package tui
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/vulnetix/signet/internal/commands"
+	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/goals"
+	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/profiles"
+	"github.com/vulnetix/signet/internal/sanitize"
+	"github.com/vulnetix/signet/internal/vulnetixcli"
 )
 
 // Handler runs a slash command with its argument.
@@ -22,6 +28,12 @@ type Command struct {
 	Run     Handler // panics on Register if nil
 	AliasOf string  // canonical target; empty for canonical commands
 	Hidden  bool    // hidden commands dispatch but are absent from Names/Complete
+}
+
+// codeReviewDoneMsg carries the result of an async /code-review run.
+type codeReviewDoneMsg struct {
+	report commands.Report
+	err    error
 }
 
 // Registry holds the slash commands and provides autocomplete.
@@ -67,6 +79,8 @@ func NewRegistry(workdir string) *Registry {
 		a.namedAgent = p.Name
 		a.mode = "agent"
 		a.modeExplicit = true
+		// Re-resolve the carrier and reseal the system prompt on the next send.
+		a.invalidateAgentSession()
 		a.addSystem("profile: " + p.Name)
 		return nil
 	})
@@ -97,23 +111,55 @@ func NewRegistry(workdir string) *Registry {
 		return nil
 	})
 	r.Register("todos", "show plan progress", nil, func(a *App, arg string) tea.Cmd {
-		a.addSystem("todos: no plan tracked yet")
+		p := modes.PlanState{}.Progress()
+		if p.Total == 0 {
+			a.addSystem("todos: no plan tracked yet")
+			return nil
+		}
+		a.addSystem(fmt.Sprintf("todos: %d/%d done", p.Completed(), p.Total))
 		return nil
 	})
 	r.Register("goal", "memorise or replay a goal", func() []string {
 		names, _ := goals.Names(workdir)
 		return names
 	}, func(a *App, arg string) tea.Cmd {
-		if arg != "" {
-			a.addSystem("goal replay: " + arg)
-		} else {
-			a.addSystem("goal: use /goal <name> to replay a memorised goal")
+		if arg == "" {
+			a.addSystem("goal: use /goal <name> to replay, or /goal memorise <name> <content>")
+			return nil
 		}
+		if rest, ok := strings.CutPrefix(arg, "memorise "); ok {
+			name, body, _ := strings.Cut(rest, " ")
+			if name == "" || body == "" {
+				a.addSystem("goal memorise <name> <content>")
+				return nil
+			}
+			if _, err := goals.Memorise(workdir, goals.Goal{Name: name, Content: sanitize.Sanitize(body)}); err != nil {
+				a.addSystem("goal memorise failed: " + err.Error())
+				return nil
+			}
+			a.addSystem("goal memorised: " + name)
+			return nil
+		}
+		g, err := goals.Load(workdir, arg)
+		if err != nil {
+			a.addSystem("goal: " + err.Error())
+			return nil
+		}
+		a.state.ActiveGoal = arg
+		_ = config.SaveState(a.state)
+		a.invalidateAgentSession()
+		a.addSystem("goal replaying: " + g.Name)
 		return nil
 	})
 	r.Register("code-review", "run Vulnetix code review", nil, func(a *App, arg string) tea.Cmd {
-		a.addSystem("code-review: running Vulnetix CLI (integration point)")
-		return nil
+		return func() tea.Msg {
+			cli, err := vulnetixcli.Detect()
+			if err != nil {
+				return codeReviewDoneMsg{err: err}
+			}
+			rep, err := commands.CodeReview{CLI: cli, Workdir: a.workdir}.Run()
+			return codeReviewDoneMsg{report: rep, err: err}
+		}
 	})
 	r.Register("settings", "view and edit settings", nil, func(a *App, arg string) tea.Cmd {
 		return a.push(viewSettings)

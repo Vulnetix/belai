@@ -98,6 +98,7 @@ type App struct {
 
 	// provider & streaming state
 	ctx      context.Context
+	cancel   context.CancelFunc
 	cfg      run.Config
 	status   run.Status
 	client   *http.Client
@@ -450,6 +451,10 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 			}
 		}
 	}
+	if a.cancel != nil {
+		a.cancel()
+	}
+	a.ctx, a.cancel = context.WithCancel(context.Background())
 	a.events = sess.RunStream(a.ctx, history, in)
 	a.messages = append(a.messages, components.Message{Role: "assistant"})
 	return a.nextAgent()
@@ -560,6 +565,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case sessionNamedMsg:
 		return a, a.handleSessionNamed(m)
 
+	case codeReviewDoneMsg:
+		return a, a.handleCodeReviewDone(m)
+
 	case attachValidatedMsg:
 		return a, a.handleAttachValidated(m)
 
@@ -611,6 +619,11 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		if a.pendingInput != "" {
 			a.pendingInput = ""
 			return a.submitInput(strings.TrimSpace(a.editor.Value()))
+		}
+		if a.cancel != nil {
+			a.cancel()
+			a.cancel = nil
+			a.addSystem("request cancelled")
 		}
 		return nil
 	case "enter":
@@ -926,6 +939,14 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 	case agent.EventPermissionAskKind:
 		a.addSystem("permission ask required for " + m.AskName)
 		return a.nextAgent()
+	case agent.EventRetryKind:
+		// Dim the current assistant bubble so the user knows it is partial and
+		// will not be replayed into context when the retry starts.
+		if len(a.messages) > 0 && a.messages[len(a.messages)-1].Role == "assistant" {
+			a.messages[len(a.messages)-1].Partial = true
+		}
+		a.addSystem(fmt.Sprintf("retrying (%d/%d) after %s — %s", m.RetryAttempt, 10, m.RetryDelay.Round(time.Millisecond), m.RetryReason))
+		return a.nextAgent()
 	case agent.EventDoneKind:
 		if len(a.messages) > 0 && a.messages[len(a.messages)-1].Role == "assistant" {
 			a.messages[len(a.messages)-1].Usage = m.Result.Usage
@@ -963,6 +984,9 @@ func (a *App) buildTurns() []run.Turn {
 		)
 	}
 	for _, m := range a.messages {
+		if m.Partial {
+			continue
+		}
 		switch m.Role {
 		case "user":
 			turns = append(turns, run.Turn{Role: m.Role, Content: m.Content})
@@ -1391,6 +1415,18 @@ func (a *App) handleSessionNamed(m sessionNamedMsg) tea.Cmd {
 	a.sessionName = m.name
 	a.appendEntry(session.Entry{Type: session.EntryTypeSessionName, Role: "", Content: m.name, Meta: map[string]any{"source": "model"}})
 	a.refreshFooter()
+	return nil
+}
+
+// handleCodeReviewDone renders the result of an async /code-review run.
+func (a *App) handleCodeReviewDone(m codeReviewDoneMsg) tea.Cmd {
+	if m.err != nil {
+		a.addSystem("code-review failed: " + m.err.Error())
+		return nil
+	}
+	if m.report.Summary != "" {
+		a.addSystem("code-review:\n" + m.report.Summary)
+	}
 	return nil
 }
 
