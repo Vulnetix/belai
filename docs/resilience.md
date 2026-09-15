@@ -58,16 +58,37 @@ assistant bubble as `Partial` so it is rendered dimly and skipped by
 The retry budget is **consecutive failures**: any success resets the counter.
 There is no circuit breaker or cross-session cooldown.
 
+## Configuration
+
+Retry budgets are configurable via `config.Settings.Resilience`:
+
+- `max_attempts`: L2 turn retry budget per model call (default 3, same as
+  the internal L1 default).
+- `max_iterations`: per-prompt tool-loop budget (default 10).
+
+Project-level `max_attempts` and `max_iterations` are constrained to the
+*minimum* of the global and project values, so a cloned project file cannot
+raise either budget.
+
+## Overflow surfacing
+
+`context length` / `token limit` failures are classified `ClassOverflow` and
+are never retried. They are surfaced as a terminal error with a clear hint:
+`context length exceeded; use /compact to reduce conversation size`.
+
 ## Semantic repair
 
 Not all provider output failures should abort the turn:
 
 - Malformed tool JSON → an `isError` tool result for that call only; siblings
-  still execute.
+  still execute. JSON parsing is deferred until execution so the accumulator
+  can hand off the raw text.
 - Salvageably truncated JSON (missing closing `}`/`]`/`"`) → append the
-  missing delimiter and validate, but only the exact prefix case.
-- `finish_reason: "length"` with tool calls → refuse the tool set and ask the
-  model to re-issue with complete arguments.
+  missing delimiter and validate, but only the exact prefix case. No other
+  silent truncation is allowed.
+- `finish_reason: "length"` with tool calls → refuse the whole set as
+  `isError` results with the message
+  `"arguments may be truncated; re-issue the tool call with complete arguments"`.
 - Dangling tool calls in the transcript → synthesize `"No result provided"`
   results at payload-build time only, never in stored `turns`, and without
   harness delimiters.

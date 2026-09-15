@@ -516,3 +516,39 @@ func writeToolCallJSON(w http.ResponseWriter, name, args string) {
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(b)
 }
+
+func TestParseToolArgsValidAndSalvage(t *testing.T) {
+	args, err := parseToolArgs(rolemanager.ToolCall{RawArgs: `{"path":"x.go"}`})
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if args["path"] != "x.go" {
+		t.Fatalf("args = %+v", args)
+	}
+
+	args, err = parseToolArgs(rolemanager.ToolCall{RawArgs: `{"path":"x.go"`})
+	if err != nil {
+		t.Fatalf("salvage: %v", err)
+	}
+	if args["path"] != "x.go" {
+		t.Fatalf("salvaged args = %+v", args)
+	}
+
+	if _, err := parseToolArgs(rolemanager.ToolCall{RawArgs: `{"path":`}); err == nil {
+		t.Fatal("expected parse error")
+	}
+}
+
+func TestMaybeCompactOverflow(t *testing.T) {
+	overflow := &run.ProviderError{Provider: "openai", Op: "roundTrip", Status: 413, Body: "context length exceeded"}
+	if err := maybeCompact(overflow); !strings.Contains(err.Error(), "/compact") {
+		t.Fatalf("expected /compact hint, got %v", err)
+	}
+	plain := fmt.Errorf("something else")
+	if err := maybeCompact(plain); err != plain {
+		t.Fatalf("expected same error")
+	}
+	if err := maybeCompact(nil); err != nil {
+		t.Fatalf("expected nil")
+	}
+}

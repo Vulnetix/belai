@@ -104,7 +104,7 @@ func (s *Session) streamTurnRetry(ctx context.Context, system string, turns []ru
 		}
 		verdict := resilience.DefaultClassifier{}.Classify(err)
 		if verdict.Class != resilience.ClassRetryable {
-			return run.Assistant{}, err
+			return run.Assistant{}, maybeCompact(err)
 		}
 		retryAfter := time.Duration(0)
 		if rerr, ok := err.(*run.ProviderError); ok {
@@ -121,7 +121,7 @@ func (s *Session) streamTurnRetry(ctx context.Context, system string, turns []ru
 			return run.Assistant{}, sleepErr
 		}
 	}
-	return run.Assistant{}, lastErr
+	return run.Assistant{}, maybeCompact(lastErr)
 }
 
 // streamTurn drains one transport turn into an Assistant, emitting render

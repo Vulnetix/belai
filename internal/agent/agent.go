@@ -14,6 +14,7 @@ import (
 	"github.com/vulnetix/signet/internal/permissions"
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/prompt"
+	"github.com/vulnetix/signet/internal/resilience"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/sanitize"
@@ -125,7 +126,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	pipe := rolemanager.NewPipeline(run.NewClassifier(s.cfg, s.client))
 	dec, err := pipe.Admit(ctx, clean, s.posture)
 	if err != nil {
-		return run.Result{SanitizedPrompt: clean}, err
+		return run.Result{SanitizedPrompt: clean}, maybeCompact(err)
 	}
 	if dec.Action != rolemanager.ActionProceed {
 		return run.Result{SanitizedPrompt: clean}, &rolemanager.RefusalError{Sentinel: dec.Sentinel}
@@ -133,7 +134,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 
 	modeDec, err := rolemanager.Select(ctx, pipe.Classifier, rolemanager.ModeInput{Prompt: clean, GoalLimit: rolemanager.DefaultGoalPromptLengthLimit, HasReferences: in.HasReferences})
 	if err != nil {
-		return run.Result{SanitizedPrompt: clean, SecuritySentinel: dec.Sentinel}, err
+		return run.Result{SanitizedPrompt: clean, SecuritySentinel: dec.Sentinel}, maybeCompact(err)
 	}
 
 	if in.ForceAgent != "" {
@@ -280,6 +281,20 @@ func parseToolArgs(call rolemanager.ToolCall) (map[string]any, error) {
 		return nil, fmt.Errorf("invalid JSON; tried %q: %w", salvaged, err)
 	}
 	return args, nil
+}
+
+// maybeCompact rewrites context-length errors into a message that directs the
+// user to the /compact command. It is invoked on terminal errors so callers do
+// not retry overflow conditions.
+func maybeCompact(err error) error {
+	if err == nil {
+		return nil
+	}
+	verdict := resilience.DefaultClassifier{}
+	if verdict.Classify(err).Class == resilience.ClassOverflow {
+		return fmt.Errorf("context length exceeded; use /compact to reduce conversation size: %w", err)
+	}
+	return err
 }
 
 // decidePermission wraps the permissions layer and re-blocks unmatched calls
