@@ -12,8 +12,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/vulnetix/signet/internal/provider"
+	"github.com/vulnetix/signet/internal/resilience"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/version"
 	"github.com/vulnetix/signet/internal/wire"
@@ -878,5 +880,74 @@ func TestBuildAnthropicMessagesToolRoundTrip(t *testing.T) {
 	}
 	if toolBlocks[0].ToolUseID != "toolu_1" || toolBlocks[0].Content != "file contents" {
 		t.Fatalf("tool_result block = %+v", toolBlocks[0])
+	}
+}
+
+func TestProviderErrorRedactsKeyAndPreservesStatus(t *testing.T) {
+	body := []byte(`error: sk-secret is invalid`)
+	resp := &http.Response{
+		StatusCode: 403,
+		Header:     http.Header{"Retry-After": []string{"2"}},
+		Body:       io.NopCloser(strings.NewReader(string(body))),
+	}
+	cfg := Config{Provider: "openai", APIKey: "sk-secret"}
+	redact := func(s string) string { return strings.ReplaceAll(s, cfg.APIKey, "<redacted>") }
+	err := newProviderError("test", cfg, resp, body, redact)
+	if err.Error() != "provider returned 403: error: <redacted> is invalid" {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+	if err.StatusCode() != 403 {
+		t.Fatalf("status = %d", err.StatusCode())
+	}
+	if err.RetryAfter() != 2*time.Second {
+		t.Fatalf("retryAfter = %v", err.RetryAfter())
+	}
+}
+
+func TestSendTurnsRetriesRetryableStatus(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls < 2 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte(`temporarily unavailable`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`))
+	}))
+	defer srv.Close()
+
+	policy := resilience.Policy{MaxAttempts: 3, Base: time.Millisecond, Cap: time.Millisecond, Jitter: 0}
+	cfg := Config{Provider: "openai", BaseURL: srv.URL, APIKey: "sk", Model: "gpt-5"}
+	out, err := sendTurnsWithTools(context.Background(), cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, srv.Client(), nil, nil)
+	_ = policy
+	if err != nil {
+		t.Fatalf("sendTurnsWithTools: %v", err)
+	}
+	if out.Text != "ok" {
+		t.Fatalf("got %q", out.Text)
+	}
+	if calls < 2 {
+		t.Fatalf("expected retry, calls=%d", calls)
+	}
+}
+
+func TestSendTurnsDoesNotRetryFatalStatus(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`invalid key`))
+	}))
+	defer srv.Close()
+
+	cfg := Config{Provider: "openai", BaseURL: srv.URL, APIKey: "sk", Model: "gpt-5"}
+	_, err := sendTurnsWithTools(context.Background(), cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, srv.Client(), nil, nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if calls != 1 {
+		t.Fatalf("expected exactly one call, got %d", calls)
 	}
 }

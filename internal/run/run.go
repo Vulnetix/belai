@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/vulnetix/signet/internal/delimiters"
 	"github.com/vulnetix/signet/internal/models"
@@ -19,6 +20,7 @@ import (
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/prompt"
 	"github.com/vulnetix/signet/internal/provider"
+	"github.com/vulnetix/signet/internal/resilience"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/sanitize"
 	"github.com/vulnetix/signet/internal/transcript"
@@ -42,6 +44,58 @@ func (c Config) String() string {
 
 func (c Config) GoString() string {
 	return fmt.Sprintf("run.Config{Provider:%q, BaseURL:%q, APIKey:%q, Model:%q}", c.Provider, c.BaseURL, "<redacted>", c.Model)
+}
+
+// ProviderError is a structured provider failure. It carries enough metadata
+// for the resilience layer to classify retryable vs fatal errors while keeping
+// the Error() string byte-identical to the legacy format.
+type ProviderError struct {
+	Provider   string
+	Op         string
+	Status     int    // 0 for a pre-response transport error
+	Body       string // redacted at construction
+	retryAfter time.Duration
+	Err        error
+}
+
+// Error keeps the same text as the pre-resilience implementation so existing
+// tests and CLI output stay unchanged.
+func (e *ProviderError) Error() string {
+	if e.Status != 0 {
+		return fmt.Sprintf("provider returned %d: %s", e.Status, e.Body)
+	}
+	if e.Err != nil {
+		return fmt.Sprintf("request: %v", e.Err)
+	}
+	return "provider error"
+}
+
+func (e *ProviderError) Unwrap() error             { return e.Err }
+func (e *ProviderError) StatusCode() int           { return e.Status }
+func (e *ProviderError) RetryAfter() time.Duration { return e.retryAfter }
+
+// newProviderError builds a ProviderError and redacts the API key from the
+// raw response body before storing it.
+func newProviderError(op string, cfg Config, resp *http.Response, body []byte, redact func(string) string) *ProviderError {
+	msg := strings.TrimSpace(string(body))
+	if redact != nil {
+		msg = redact(msg)
+	}
+	retryAfter := parseRetryAfter(resp.Header.Get("retry-after"))
+	return &ProviderError{
+		Provider:   cfg.Provider,
+		Op:         op,
+		Status:     resp.StatusCode,
+		Body:       msg,
+		retryAfter: retryAfter,
+	}
+}
+
+// parseRetryAfter parses a Retry-After header value using the shared
+// resilience logic. It ignores failures and returns 0 so a bogus header never
+// aborts the turn.
+func parseRetryAfter(header string) time.Duration {
+	return resilience.ParseRetryAfter(header, time.Now())
 }
 
 // Attachment is user-referenced content that has already been sanitised and
@@ -464,85 +518,94 @@ func SealSystem(cfg Config, pool *nonce.Pool, opts prompt.Options) (string, erro
 // The returned dialect is the structural guarantee: SendTurnsWithTools and
 // decodeDelta consume the same dialect that built the request, so they cannot
 // drift.
-func buildRequest(ctx context.Context, cfg Config, system string, turns []Turn, stream bool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (*http.Request, dialect, error) {
+// newRequestFactory returns a factory that builds an HTTP request for the
+// provider, plus the dialect resolved once for the turn. The factory can be
+// called repeatedly during retry; the dialect stays identical across attempts.
+func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (func(context.Context) (*http.Request, error), dialect, error) {
 	d, err := resolveDialect(cfg)
 	if err != nil {
 		return nil, dialect{}, err
 	}
-	// Copilot is the one provider whose key is exchanged for a short-lived
-	// session token on the auth path. It can fail here, in buildRequest,
-	// while Prepare stays offline.
-	key := cfg.APIKey
-	if cfg.Auth == provider.AuthCopilot {
-		token, err := copilotExchanger.Token(ctx, cfg.APIKey)
+
+	// Copilot token exchange and provider construction live inside the factory
+	// so each retry attempt gets a fresh token and a fresh request.
+	factory := func(ctx context.Context) (*http.Request, error) {
+		key := cfg.APIKey
+		if cfg.Auth == provider.AuthCopilot {
+			token, err := copilotExchanger.Token(ctx, cfg.APIKey)
+			if err != nil {
+				return nil, err
+			}
+			key = token.Value
+		}
+		var p *provider.Provider
+		if cfg.API != "" {
+			p, err = provider.NewFromProfile(cfg.Provider, provider.Profile{BaseURL: cfg.BaseURL, API: cfg.API, Auth: cfg.Auth}, key)
+		} else {
+			p, err = provider.New(cfg.Provider, cfg.BaseURL, key)
+		}
 		if err != nil {
-			return nil, dialect{}, err
+			return nil, err
 		}
-		key = token.Value
+
+		var reasoningEffort string
+		if d.effort && cfg.Effort != "" {
+			reasoningEffort = strings.ToLower(strings.TrimSpace(cfg.Effort))
+		}
+		var thinking *wire.AnthropicThinking
+		if d.thinking {
+			if budget := models.ThinkingBudget(cfg.Effort); budget > 0 {
+				thinking = &wire.AnthropicThinking{Type: "enabled", BudgetTokens: budget}
+			}
+		}
+		var streamOpts *wire.OpenAIStreamOptions
+		if stream && d.usage {
+			streamOpts = &wire.OpenAIStreamOptions{IncludeUsage: true}
+		}
+
+		switch d.kind {
+		case kindWorkersAI:
+			return p.NewWorkersAIRequest(cfg.Model, wire.WorkersAIRequest{
+				Messages: buildOpenAIMessages(system, turns),
+				Stream:   stream,
+				Tools:    openAITools,
+			})
+		case kindAnthropicMessages:
+			return d.messagesRequest(p, wire.AnthropicMessagesRequest{
+				Model:      cfg.Model,
+				MaxTokens:  4096,
+				System:     system,
+				Messages:   buildAnthropicMessages(turns),
+				Stream:     stream,
+				Tools:      anthropicTools,
+				ToolChoice: "auto",
+				Thinking:   thinking,
+			})
+		default:
+			return d.chatRequest(p, wire.OpenAIChatRequest{
+				Model:           cfg.Model,
+				Messages:        buildOpenAIMessages(system, turns),
+				Stream:          stream,
+				Tools:           openAITools,
+				ToolChoice:      "auto",
+				ReasoningEffort: reasoningEffort,
+				StreamOptions:   streamOpts,
+			})
+		}
 	}
-	var p *provider.Provider
-	if cfg.API != "" {
-		p, err = provider.NewFromProfile(cfg.Provider, provider.Profile{BaseURL: cfg.BaseURL, API: cfg.API, Auth: cfg.Auth}, key)
-	} else {
-		p, err = provider.New(cfg.Provider, cfg.BaseURL, key)
-	}
+	return factory, d, nil
+}
+
+// buildRequest is the one-shot shim over newRequestFactory. It is kept for
+// callers that already resolve the request once, and so the test suite keeps
+// passing without edits.
+func buildRequest(ctx context.Context, cfg Config, system string, turns []Turn, stream bool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (*http.Request, dialect, error) {
+	factory, d, err := newRequestFactory(cfg, system, turns, stream, openAITools, anthropicTools)
 	if err != nil {
-		return nil, dialect{}, err
+		return nil, d, err
 	}
-
-	// Effort maps to per-surface thinking controls. Empty effort emits nothing,
-	// keeping requests byte-identical to today for every provider.
-	var reasoningEffort string
-	if d.effort && cfg.Effort != "" {
-		reasoningEffort = strings.ToLower(strings.TrimSpace(cfg.Effort))
-	}
-	var thinking *wire.AnthropicThinking
-	if d.thinking {
-		if budget := models.ThinkingBudget(cfg.Effort); budget > 0 {
-			thinking = &wire.AnthropicThinking{Type: "enabled", BudgetTokens: budget}
-		}
-	}
-	// Usage metering is requested only for the native OpenAI streaming surface.
-	// Cloudflare AI Gateway relays to heterogeneous upstreams that may 400 on
-	// the unrecognised field, and a 400 there would break all streaming, not
-	// just metering. The gateway therefore degrades to pure estimation.
-	var streamOpts *wire.OpenAIStreamOptions
-	if stream && d.usage {
-		streamOpts = &wire.OpenAIStreamOptions{IncludeUsage: true}
-	}
-
-	switch d.kind {
-	case kindWorkersAI:
-		req, err := p.NewWorkersAIRequest(cfg.Model, wire.WorkersAIRequest{
-			Messages: buildOpenAIMessages(system, turns),
-			Stream:   stream,
-			Tools:    openAITools,
-		})
-		return req, d, err
-	case kindAnthropicMessages:
-		req, err := d.messagesRequest(p, wire.AnthropicMessagesRequest{
-			Model:      cfg.Model,
-			MaxTokens:  4096,
-			System:     system,
-			Messages:   buildAnthropicMessages(turns),
-			Stream:     stream,
-			Tools:      anthropicTools,
-			ToolChoice: "auto",
-			Thinking:   thinking,
-		})
-		return req, d, err
-	default:
-		req, err := d.chatRequest(p, wire.OpenAIChatRequest{
-			Model:           cfg.Model,
-			Messages:        buildOpenAIMessages(system, turns),
-			Stream:          stream,
-			Tools:           openAITools,
-			ToolChoice:      "auto",
-			ReasoningEffort: reasoningEffort,
-			StreamOptions:   streamOpts,
-		})
-		return req, d, err
-	}
+	req, err := factory(ctx)
+	return req, d, err
 }
 
 // Assistant is the structured result from a model turn.
@@ -570,34 +633,65 @@ func SendTurnsWithTools(ctx context.Context, cfg Config, system string, turns []
 	return sendTurnsWithTools(ctx, cfg, system, turns, client, openAITools, anthropicTools)
 }
 
+// httpResult is the minimal per-attempt output for the retry loop.
+type httpResult struct {
+	body   []byte
+	status int
+}
+
+// defaultRetryPolicy is the L1 policy for model provider calls.
+var defaultRetryPolicy = resilience.Policy{
+	MaxAttempts: 3,
+	Base:        500 * time.Millisecond,
+	Cap:         8 * time.Second,
+	Ceiling:     60 * time.Second,
+	Jitter:      0.25,
+}
+
 // sendTurnsWithTools is the core blocking request/response path. The caller
-// must already have sanitised and egress-verified turns.
+// must already have sanitised and egress-verified turns. L1 retry wraps the
+// request factory plus roundTrip so pre-first-byte failures (status and
+// transport) are retried without consuming the iteration budget.
 func sendTurnsWithTools(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (Assistant, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	req, d, err := buildRequest(ctx, cfg, system, turns, false, openAITools, anthropicTools)
+	factory, d, err := newRequestFactory(cfg, system, turns, false, openAITools, anthropicTools)
 	if err != nil {
 		return Assistant{}, err
 	}
 	redact := func(s string) string {
 		return strings.ReplaceAll(s, cfg.APIKey, "<redacted>")
 	}
-	switch d.kind {
-	case kindWorkersAI:
-		return parseWorkersAI(ctx, client, req, redact)
-	case kindAnthropicMessages:
-		return parseAnthropic(ctx, client, req, redact)
-	default:
-		return parseOpenAIChat(ctx, client, req, redact)
-	}
-}
 
-func parseWorkersAI(ctx context.Context, client *http.Client, req *http.Request, redact func(string) string) (Assistant, error) {
-	body, status, err := roundTrip(ctx, client, req, redact)
+	do := func(ctx context.Context) (httpResult, error) {
+		req, err := factory(ctx)
+		if err != nil {
+			return httpResult{}, err
+		}
+		body, status, err := roundTrip(ctx, client, req, cfg, redact)
+		if err != nil {
+			return httpResult{}, err
+		}
+		return httpResult{body: body, status: status}, nil
+	}
+
+	res, err := resilience.Do(ctx, defaultRetryPolicy, resilience.DefaultClassifier{}, do, nil)
 	if err != nil {
 		return Assistant{}, err
 	}
+
+	switch d.kind {
+	case kindWorkersAI:
+		return parseWorkersAI(res.body, res.status, redact)
+	case kindAnthropicMessages:
+		return parseAnthropic(res.body, res.status, redact)
+	default:
+		return parseOpenAIChat(res.body, res.status, redact)
+	}
+}
+
+func parseWorkersAI(body []byte, status int, redact func(string) string) (Assistant, error) {
 	var wr wire.WorkersAIResponse
 	if err := json.Unmarshal(body, &wr); err != nil {
 		return Assistant{}, fmt.Errorf("decode workers ai response (%d): %w", status, err)
@@ -620,11 +714,8 @@ func parseWorkersAI(ctx context.Context, client *http.Client, req *http.Request,
 	return Assistant{Text: wr.Result.Response}, nil
 }
 
-func parseOpenAIChat(ctx context.Context, client *http.Client, req *http.Request, redact func(string) string) (Assistant, error) {
-	body, status, err := roundTrip(ctx, client, req, redact)
-	if err != nil {
-		return Assistant{}, err
-	}
+func parseOpenAIChat(body []byte, status int, redact func(string) string) (Assistant, error) {
+	_ = redact
 	var cr wire.OpenAIChatResponse
 	if err := json.Unmarshal(body, &cr); err != nil {
 		return Assistant{}, fmt.Errorf("decode openai chat response (%d): %w", status, err)
@@ -653,11 +744,8 @@ func parseOpenAIChat(ctx context.Context, client *http.Client, req *http.Request
 	return Assistant{Text: msg.Content, ToolCalls: calls, Stop: stop, Usage: usage, StopReason: cr.Choices[0].FinishReason}, nil
 }
 
-func parseAnthropic(ctx context.Context, client *http.Client, req *http.Request, redact func(string) string) (Assistant, error) {
-	body, status, err := roundTrip(ctx, client, req, redact)
-	if err != nil {
-		return Assistant{}, err
-	}
+func parseAnthropic(body []byte, status int, redact func(string) string) (Assistant, error) {
+	_ = redact
 	var ar wire.AnthropicMessagesResponse
 	if err := json.Unmarshal(body, &ar); err != nil {
 		return Assistant{}, fmt.Errorf("decode anthropic response (%d): %w", status, err)
@@ -827,7 +915,7 @@ func EngageWithPosture(ctx context.Context, cfg Config, prompt string, detectMod
 	return res, nil
 }
 
-func roundTrip(ctx context.Context, client *http.Client, req *http.Request, redact func(string) string) ([]byte, int, error) {
+func roundTrip(ctx context.Context, client *http.Client, req *http.Request, cfg Config, redact func(string) string) ([]byte, int, error) {
 	req = req.WithContext(ctx)
 	resp, err := client.Do(req)
 	if err != nil {
@@ -839,11 +927,7 @@ func roundTrip(ctx context.Context, client *http.Client, req *http.Request, reda
 		return nil, resp.StatusCode, fmt.Errorf("read response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		msg := strings.TrimSpace(string(body))
-		if redact != nil {
-			msg = redact(msg)
-		}
-		return nil, resp.StatusCode, fmt.Errorf("provider returned %d: %s", resp.StatusCode, msg)
+		return nil, resp.StatusCode, newProviderError("roundTrip", cfg, resp, body, redact)
 	}
 	return body, resp.StatusCode, nil
 }

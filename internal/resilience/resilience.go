@@ -166,7 +166,7 @@ func ClassifyStatus(status int) Verdict {
 var (
 	denyRE     = regexp.MustCompile(`(?i)quota|billing|usage.limit|insufficient_quota|payment|CARD_|invalid_api_key|invalid_auth`)
 	overflowRE = regexp.MustCompile(`(?i)context.length|context.too.long|maximum.context|token.?limit|too many tokens|context length exceeded`)
-	allowRE    = regexp.MustCompile(`(?i)ended without|stream reset|connection reset|unexpected EOF|broken pipe|timeout awaiting response headers`)
+	allowRE    = regexp.MustCompile(`(?i)ended without|stream reset|connection reset|connection refused|read response|unexpected EOF|broken pipe|timeout awaiting response headers|no such host`)
 )
 
 // DefaultClassifier is the denylist-first classifier used by Signet's provider
