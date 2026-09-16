@@ -77,6 +77,13 @@ just ask anthropic claude-sonnet-4-5 "review this diff" -detect-mode -verbose
 
 Runtime flag values override the settings file for the current run but are never persisted.
 
+Every non-TUI entry point (`-prompt`, `-agent`, `-agent-create`) runs under a
+`signal.NotifyContext` root. Goal mode's pass loop is unbounded by design, so an
+interruptible context is the only thing that can stop it: the first `SIGINT` or
+`SIGTERM` cancels it and the loop unwinds at its next pass boundary, returning
+the partial result. A second signal hard-exits with status 130, because that
+boundary may still be seconds away.
+
 With no `-prompt` and a TTY on both stdin and stdout, Signet starts the TUI. Set `SIGNET_NO_TUI=1` (or `CI=1`) to force the noninteractive path — useful when piping output or reproducing a CI failure locally.
 
 ## Credentials for QA
@@ -192,7 +199,10 @@ Signet is pure Go with `CGO_ENABLED=0`, so every target cross-compiles from one 
 - `internal/…` — library code, one package per concern.
 - `e2e/` — end-to-end tests that drive the built binary.
 - `docs/architecture.md` — system design.
-- `docs/role-manager.md` — operating-mode business rules.
+- `docs/role-manager.md` — Role Manager, operating-mode, and goal pass-loop
+  business rules.
+- `docs/resilience.md` — retry layers, budgets, and pass-boundary recovery.
+- `docs/agent-profiles.md` — background agent schema and lifecycle.
 - `docs/nonce-endpoint-spec.md` — provider nonce GET spec.
 
 Security invariants that changes must not weaken are listed in [AGENTS.md](../AGENTS.md).

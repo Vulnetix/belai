@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/vulnetix/signet/internal/agent"
@@ -29,6 +31,15 @@ import (
 
 func main() {
 	_, _ = config.Migrate()
+
+	// One root context for every non-TUI entry point. Goal mode's pass loop is
+	// unbounded by design, so an interruptible context is the only thing that
+	// can stop it: without this, SIGINT kills the process outright, leaving no
+	// clean stop and no session entry. A second signal hard-exits, because a
+	// pass boundary may still be seconds away.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go hardExitOnSecondSignal(ctx)
 
 	showVersion := flag.Bool("version", false, "print version and exit")
 	prompt := flag.String("prompt", "", "send a noninteractive prompt and print the reply, then exit")
@@ -111,7 +122,7 @@ func main() {
 	}
 
 	if *agentCreate != "" {
-		if err := runAgentCreate(*agentCreate, *model, *provider, workdir, pol, settings); err != nil {
+		if err := runAgentCreate(ctx, *agentCreate, *model, *provider, workdir, pol, settings); err != nil {
 			fmt.Fprintln(os.Stderr, "signet:", err)
 			os.Exit(1)
 		}
@@ -119,7 +130,7 @@ func main() {
 	}
 
 	if *agentName != "" {
-		if err := runAgentForeground(*agentName, *model, *provider, workdir, pol, settings); err != nil {
+		if err := runAgentForeground(ctx, *agentName, *model, *provider, workdir, pol, settings); err != nil {
 			fmt.Fprintln(os.Stderr, "signet:", err)
 			os.Exit(1)
 		}
@@ -127,7 +138,7 @@ func main() {
 	}
 
 	if *prompt != "" {
-		if err := runPromptOrTUI(*prompt, *model, *provider, *detectMode, *verbose, workdir, pol, *enableTools, *planMode, settings); err != nil {
+		if err := runPromptOrTUI(ctx, *prompt, *model, *provider, *detectMode, *verbose, workdir, pol, *enableTools, *planMode, settings); err != nil {
 			fmt.Fprintln(os.Stderr, "signet:", err)
 			os.Exit(1)
 		}
@@ -150,6 +161,17 @@ func main() {
 	fmt.Println("signet", version.Version)
 }
 
+// hardExitOnSecondSignal waits for the first signal to cancel ctx, then exits
+// immediately on the next one. The graceful path unwinds at a pass boundary,
+// which can be seconds away; a user pressing ctrl+c twice means "now".
+func hardExitOnSecondSignal(ctx context.Context) {
+	<-ctx.Done()
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	<-sig
+	os.Exit(130)
+}
+
 func interactive(stdoutTTY, stdinTTY bool, env func(string) string) bool {
 	if env("SIGNET_NO_TUI") != "" || env("CI") != "" {
 		return false
@@ -162,7 +184,7 @@ func isCharDevice(f *os.File) bool {
 	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }
 
-func runPromptOrTUI(prompt, model, providerName string, detectMode, verbose bool, workdir string, pol posture.Policy, enableTools, planMode bool, settings config.Settings) error {
+func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, detectMode, verbose bool, workdir string, pol posture.Policy, enableTools, planMode bool, settings config.Settings) error {
 	resolver, err := credentials.NewResolver(workdir)
 	if err != nil {
 		return err
@@ -181,9 +203,9 @@ func runPromptOrTUI(prompt, model, providerName string, detectMode, verbose bool
 
 	var res run.Result
 	if enableTools {
-		res, err = runAgent(cfg, prompt, http.DefaultClient, pol, workdir, settings, planMode)
+		res, err = runAgent(ctx, cfg, prompt, http.DefaultClient, pol, workdir, settings, planMode)
 	} else {
-		res, err = run.EngageWithPosture(context.Background(), cfg, prompt, detectMode, http.DefaultClient, pol)
+		res, err = run.EngageWithPosture(ctx, cfg, prompt, detectMode, http.DefaultClient, pol)
 	}
 	if err != nil {
 		return err
@@ -207,7 +229,7 @@ func runPromptOrTUI(prompt, model, providerName string, detectMode, verbose bool
 	return nil
 }
 
-func runAgent(cfg run.Config, userPrompt string, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool) (run.Result, error) {
+func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool) (run.Result, error) {
 	reg := tools.Default(workdir, settings.BashReadOnlyEnabled())
 
 	perms := permissions.From(settings.Permissions.Allow, settings.Permissions.Ask, settings.Permissions.Deny)
@@ -227,16 +249,19 @@ func runAgent(cfg run.Config, userPrompt string, client *http.Client, pol postur
 		Workdir:       workdir,
 		Settings:      settings,
 		PromptOptions: promptOpts,
+		// Top-level session: explore subagents may fan out from here. A
+		// subagent sets this false so it can never fan out again.
+		AllowExplore: true,
 	})
 	if err != nil {
 		return run.Result{}, err
 	}
-	return sess.Run(context.Background(), userPrompt)
+	return sess.Run(ctx, userPrompt)
 }
 
 // pruneSessions removes idle sessions older than the configured retention, in
 // a best-effort goroutine so startup never blocks on it.
-func runAgentCreate(description, model, providerName, workdir string, pol posture.Policy, settings config.Settings) error {
+func runAgentCreate(ctx context.Context, description, model, providerName, workdir string, pol posture.Policy, settings config.Settings) error {
 	resolver, err := credentials.NewResolver(workdir)
 	if err != nil {
 		return err
@@ -247,7 +272,7 @@ func runAgentCreate(description, model, providerName, workdir string, pol postur
 	}
 	classifier := run.NewClassifier(cfg, http.DefaultClient)
 	b := agentprofile.Builder{Classifier: classifier, MaxAttempts: 3}
-	profile, err := b.Build(context.Background(), description)
+	profile, err := b.Build(ctx, description)
 	if err != nil {
 		return err
 	}
@@ -259,7 +284,7 @@ func runAgentCreate(description, model, providerName, workdir string, pol postur
 	return nil
 }
 
-func runAgentForeground(name, model, providerName, workdir string, pol posture.Policy, settings config.Settings) error {
+func runAgentForeground(ctx context.Context, name, model, providerName, workdir string, pol posture.Policy, settings config.Settings) error {
 	resolver, err := credentials.NewResolver(workdir)
 	if err != nil {
 		return err
