@@ -168,17 +168,27 @@ func TestGrepKeyNumeric(t *testing.T) {
 
 func TestDefaultRegistry(t *testing.T) {
 	r := Default(t.TempDir(), false)
-	for _, name := range []string{"Read", "Bash", "Grep", "Glob", "WebFetch"} {
+	for _, name := range []string{"Read", "Write", "Edit", "Bash", "Grep", "Glob", "WebFetch"} {
 		if _, ok := r.Find(name); !ok {
 			t.Fatalf("%s not in default registry", name)
 		}
 	}
 }
 
-func TestDefaultRegistryBashReadOnly(t *testing.T) {
+// TestDefaultRegistryReadOnly pins the master switch: mutating tools are not
+// registered at all, but a read-only Bash survives for inspection.
+func TestDefaultRegistryReadOnly(t *testing.T) {
 	dir := t.TempDir()
 	full := Default(dir, false)
 	ro := Default(dir, true)
+	for _, name := range []string{"Write", "Edit"} {
+		if _, ok := ro.Find(name); ok {
+			t.Fatalf("%s must not be registered in read-only mode", name)
+		}
+	}
+	if _, ok := ro.Find("Bash"); !ok {
+		t.Fatal("read-only Bash must remain registered")
+	}
 	fullBash, _ := full.Find("Bash")
 	roBash, _ := ro.Find("Bash")
 	if fullBash.(*Bash).ReadOnly {
@@ -314,6 +324,17 @@ func TestSchemaRequired(t *testing.T) {
 	}
 }
 
+// TestSchemaOmitsEmptyRequired pins the "required": null fix: some
+// OpenAI-compatible servers 400 on a null required field, so an empty list
+// must omit the key entirely.
+func TestSchemaOmitsEmptyRequired(t *testing.T) {
+	d := Definition{Name: "Read", Properties: map[string]Property{"path": {Type: "string"}}}
+	schema := d.Schema()
+	if _, present := schema["required"]; present {
+		t.Fatalf("empty Required must omit the key, got %v", schema["required"])
+	}
+}
+
 func TestGlobWalkMatchesRelativeToSubpath(t *testing.T) {
 	root := t.TempDir()
 	_ = os.MkdirAll(filepath.Join(root, "sub"), 0o755)
@@ -367,11 +388,46 @@ func TestForbiddenIP(t *testing.T) {
 func TestKindReadOnly(t *testing.T) {
 	readOnly := map[Kind]bool{
 		KindRead: true, KindWebSearch: true, KindWebFetch: true, KindGrep: true, KindGlob: true, KindExplore: true,
-		KindBash: false,
+		KindBash: false, KindWrite: false, KindEdit: false,
 	}
 	for k, want := range readOnly {
 		if got := k.ReadOnly(); got != want {
 			t.Fatalf("Kind(%s).ReadOnly() = %v, want %v", k, got, want)
 		}
+	}
+}
+
+// TestKindReadOnlyClassification pins the closed allowlist over every kind, so
+// a newly added Kind must be explicitly classified read-only or mutating.
+func TestKindReadOnlyClassification(t *testing.T) {
+	want := map[Kind]bool{
+		KindRead: true, KindWebSearch: true, KindWebFetch: true, KindGrep: true, KindGlob: true, KindExplore: true,
+		KindBash: false, KindWrite: false, KindEdit: false,
+	}
+	seen := map[Kind]bool{}
+	for _, k := range AllKinds {
+		if _, dup := seen[k]; dup {
+			t.Fatalf("AllKinds lists %q twice", k)
+		}
+		seen[k] = true
+		w, ok := want[k]
+		if !ok {
+			t.Fatalf("AllKinds contains %q with no expected classification in this test", k)
+		}
+		if got := k.ReadOnly(); got != w {
+			t.Fatalf("Kind(%s).ReadOnly() = %v, want %v", k, got, w)
+		}
+	}
+	if len(seen) != len(want) {
+		t.Fatalf("AllKinds has %d kinds, want %d", len(seen), len(want))
+	}
+}
+
+// TestUnknownKindIsNotReadOnly is the fail-closed contract: a Kind absent from
+// the allowlist is mutating, so it runs sequentially rather than racing the
+// concurrent read-only fan-out.
+func TestUnknownKindIsNotReadOnly(t *testing.T) {
+	if Kind("brand_new_kind").ReadOnly() {
+		t.Fatal("an unknown kind must default to mutating")
 	}
 }

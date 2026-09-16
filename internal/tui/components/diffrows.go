@@ -38,6 +38,18 @@ const (
 	diffPreviewRows = 6
 )
 
+// DiffView renders a change's diff body for the tool-permission approval
+// view. It reuses the same diff renderer the transcript uses, expanded.
+func DiffView(ch *filediff.Change, width int) string {
+	if ch == nil {
+		return ""
+	}
+	msg := Message{Role: "tool"}
+	msg.SetDiff(ch)
+	out, _ := diffToolRow(msg, width, true)
+	return out
+}
+
 // diffToolRow renders what a command changed, beneath its tool row.
 func diffToolRow(msg Message, width int, expand bool) (string, LineMap) {
 	ch := msg.Diff()

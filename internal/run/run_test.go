@@ -18,6 +18,7 @@ import (
 	"github.com/vulnetix/signet/internal/provider"
 	"github.com/vulnetix/signet/internal/resilience"
 	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/signet/internal/tools"
 	"github.com/vulnetix/signet/internal/version"
 	"github.com/vulnetix/signet/internal/wire"
 )
@@ -1164,6 +1165,43 @@ func TestDefaultModelTable(t *testing.T) {
 	for provider, want := range cases {
 		if got := DefaultModel(provider); got != want {
 			t.Fatalf("DefaultModel(%q) = %q, want %q", provider, got, want)
+		}
+	}
+}
+
+// TestWorkersAIRequestCarriesWriteEditTools covers the third wire surface:
+// Workers AI reuses openAITools, so the new tools must reach its request body
+// too.
+func TestWorkersAIRequestCarriesWriteEditTools(t *testing.T) {
+	cfg := Config{Provider: "cloudflare-workers-ai", BaseURL: "https://api.cloudflare.com/client/v4/accounts/acct", APIKey: "k", Model: "@cf/m"}
+	reg := tools.Default(t.TempDir(), false)
+	var openAI []wire.OpenAITool
+	for _, d := range reg.Definitions() {
+		openAI = append(openAI, d.OpenAITool())
+	}
+
+	factory, d, err := newRequestFactory(cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, false, openAI, nil)
+	if err != nil {
+		t.Fatalf("newRequestFactory: %v", err)
+	}
+	if d.kind != kindWorkersAI {
+		t.Fatalf("dialect kind = %v, want kindWorkersAI", d.kind)
+	}
+	req, err := factory(context.Background())
+	if err != nil {
+		t.Fatalf("factory: %v", err)
+	}
+	var body wire.WorkersAIRequest
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
+	names := map[string]bool{}
+	for _, o := range body.Tools {
+		names[o.Function.Name] = true
+	}
+	for _, want := range []string{"Write", "Edit"} {
+		if !names[want] {
+			t.Fatalf("Workers AI request missing %s: %v", want, names)
 		}
 	}
 }

@@ -1,13 +1,13 @@
 // Package filediff works out what a command changed on disk and turns it into
 // rows a UI can draw.
 //
-// Signet has no Edit or Write tool — every mutation goes through Bash, by
-// design (see internal/tools/types.go). So a diff cannot be reported by the
-// tool that made the change; it has to be observed around it. Inside a git
-// repository that observation is authoritative, because `git status` sees
-// whatever happened regardless of how it happened: sed, a heredoc, a
-// formatter, `make`, a test that rewrites its own fixtures. Outside one it
-// falls back to inferring targets from the command, which is honest but lossy.
+// Write and Edit report their own targets through tools.Targeter, so their
+// diffs are snapshotted around the call by path. Bash's changes are still
+// observed, because inside a git repository that observation is authoritative:
+// `git status` sees whatever happened regardless of how it happened — sed, a
+// heredoc, a formatter, `make`, a test that rewrites its own fixtures.
+// Outside a repository Bash falls back to inferring targets from the command,
+// which is honest but lossy.
 //
 // The package is deliberately free of any rendering dependency. It produces
 // data; internal/tui/components decides what it looks like.
@@ -65,3 +65,24 @@ type Change struct {
 
 // Empty reports whether there is nothing to show.
 func (c Change) Empty() bool { return len(c.Files) == 0 && c.Unavailable == "" }
+
+// Preview builds a Change describing the effect of writing new content to a
+// single path, without touching disk. It feeds the tool-permission gate so the
+// user approves a concrete diff rather than a bare path. path is display-only.
+func Preview(path, old, new string) Change {
+	fc := FileChange{Path: path, Old: old, New: new}
+	if fc.Old == "" && fc.New != "" {
+		fc.Created = true
+	}
+	if fc.Old != "" && fc.New == "" {
+		fc.Deleted = true
+	}
+	if isBinary(fc.Old) || isBinary(fc.New) {
+		fc.Binary = true
+		fc.Old, fc.New = "", ""
+	}
+	if fc.Old == fc.New && !fc.Created && !fc.Deleted && !fc.Binary {
+		return Change{}
+	}
+	return Change{Files: []FileChange{fc}}
+}

@@ -25,9 +25,9 @@ const (
 
 // Recorder observes what a command changed.
 //
-// A Recorder is used from one goroutine at a time: only Bash mutates, and the
-// agent loop runs Bash on its sequential path, never in the concurrent
-// read-only fan-out.
+// A Recorder is used from one goroutine at a time: mutating tools always run
+// on the sequential path because Kind.ReadOnly() is false for them, which is
+// what keeps this single-goroutine.
 type Recorder struct {
 	Root     string // the working directory commands run in
 	RepoRoot string // "" when Root is not inside a git repository
@@ -83,6 +83,54 @@ func (r *Recorder) Before(ctx context.Context, command string) *Snapshot {
 		return r.beforeGit(ctx)
 	}
 	return r.beforeHeuristic(command)
+}
+
+// BeforePaths captures the state of the given paths before a mutating tool
+// runs. Inside a git repository it delegates to beforeGit; outside one it
+// snapshots exactly the given paths, including ones that do not exist yet, so
+// a file creation still yields a diff.
+func (r *Recorder) BeforePaths(ctx context.Context, paths ...string) *Snapshot {
+	if r == nil || r.disabled {
+		return nil
+	}
+	if r.RepoRoot != "" && !r.gitUnavailable {
+		return r.beforeGit(ctx)
+	}
+	return r.beforePathsHeuristic(paths)
+}
+
+// beforePathsHeuristic snapshots explicit paths outside a git repository. It
+// differs from beforeHeuristic in two ways: the paths are trusted (they came
+// from the tool, not a parsed command), and a non-existent path is recorded as
+// "" and still added to targets, or a creation would produce no diff at all.
+func (r *Recorder) beforePathsHeuristic(paths []string) *Snapshot {
+	if len(paths) == 0 {
+		return nil
+	}
+	if len(paths) > maxHeuristicFiles {
+		return &Snapshot{rec: r, unavailable: "too many files to watch"}
+	}
+
+	s := &Snapshot{rec: r, existed: map[string]string{}}
+	for _, p := range paths {
+		abs := p
+		if !filepath.IsAbs(abs) {
+			abs = filepath.Join(r.Root, p)
+		}
+		if !r.within(abs) {
+			continue
+		}
+		s.targets = append(s.targets, abs)
+		if body, ok := readCapped(abs, heuristicMaxBytes); ok {
+			s.existed[abs] = body
+		} else {
+			s.existed[abs] = "" // may not exist yet (a creation)
+		}
+	}
+	if len(s.targets) == 0 {
+		return nil
+	}
+	return s
 }
 
 // After computes what changed. It is safe to call on a nil Snapshot.

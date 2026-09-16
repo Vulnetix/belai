@@ -21,9 +21,12 @@ type Settings struct {
 	Effort string `json:"effort,omitempty"`
 	// Caveman, when non-nil, toggles the caveman voice rewrite.
 	Caveman *bool `json:"caveman,omitempty"`
-	// BashReadOnly, when non-nil and true, confines the Bash tool to its
-	// read-only allowlist. nil or false (the default) runs full shell
-	// commands via `sh -c`.
+	// ReadOnly, when non-nil and true, is the master read-only switch:
+	// mutating tools (Bash, Write, Edit) are not registered at all. nil or
+	// false (the default) registers the full tool set.
+	ReadOnly *bool `json:"read_only,omitempty"`
+	// BashReadOnly is the deprecated alias for ReadOnly, accepted on read for
+	// backward compatibility and folded into ReadOnly. It is never written.
 	BashReadOnly *bool `json:"bash_readonly,omitempty"`
 	// Permissions is the structured tool-permission rule set. The legacy flat
 	// map form is still accepted on read but never written.
@@ -50,6 +53,25 @@ type Settings struct {
 	// Classifier configures the security classifier separately from the main
 	// agent model. nil means reuse the main provider/model with reasoning off.
 	Classifier *ClassifierSettings `json:"classifier,omitempty"`
+}
+
+// UnmarshalJSON accepts read_only (canonical) and bash_readonly (deprecated
+// alias), folding the alias into ReadOnly when the canonical key is absent.
+// The alias is never retained, so files written back emit read_only only.
+func (s *Settings) UnmarshalJSON(data []byte) error {
+	type alias Settings
+	aux := struct {
+		*alias
+		BashReadOnly *bool `json:"bash_readonly,omitempty"`
+	}{alias: (*alias)(s)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if s.ReadOnly == nil && aux.BashReadOnly != nil {
+		s.ReadOnly = aux.BashReadOnly
+	}
+	s.BashReadOnly = nil
+	return nil
 }
 
 // ClassifierSettings configures the security classifier independently of the
@@ -292,9 +314,12 @@ func (s Settings) AllowProjectProvidersEnabled() bool {
 	return s.AllowProjectProviders != nil && *s.AllowProjectProviders
 }
 
-// BashReadOnlyEnabled reports whether the read-only Bash gate is on. The
-// default (nil or false) is off: full shell.
-func (s Settings) BashReadOnlyEnabled() bool {
+// ReadOnlyEnabled reports whether the master read-only switch is on. The
+// default (nil or false) is off: the full tool set, including mutating tools.
+func (s Settings) ReadOnlyEnabled() bool {
+	if s.ReadOnly != nil {
+		return *s.ReadOnly
+	}
 	return s.BashReadOnly != nil && *s.BashReadOnly
 }
 
@@ -317,8 +342,17 @@ func (s Settings) Override(proj Settings) Settings {
 	if proj.Caveman != nil {
 		out.Caveman = proj.Caveman
 	}
-	if proj.BashReadOnly != nil {
-		out.BashReadOnly = proj.BashReadOnly
+	if proj.BashReadOnly != nil || proj.ReadOnly != nil {
+		if proj.ReadOnly != nil {
+			out.ReadOnly = proj.ReadOnly
+		}
+		if proj.BashReadOnly != nil {
+			// Deprecated alias: read_only wins when both are present.
+			if out.ReadOnly == nil {
+				out.ReadOnly = proj.BashReadOnly
+			}
+		}
+		out.BashReadOnly = nil
 	}
 	out.Permissions = out.Permissions.Merge(proj.Permissions)
 	if proj.SessionRetentionDays != nil {

@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -68,6 +69,40 @@ func (r *Registry) Find(name string) (Tool, bool) {
 	return nil, false
 }
 
+// Mutator is implemented by tools that can report, per instance, whether they
+// mutate the workspace. It exists because read-only Bash is still KindBash: a
+// Kind-level predicate cannot tell the two Bash modes apart.
+type Mutator interface{ Mutates() bool }
+
+// Mutates reports whether a tool mutates the workspace. Tools that implement
+// Mutator answer for themselves; every other tool falls back to its Kind's
+// read-only classification.
+func Mutates(t Tool) bool {
+	if m, ok := t.(Mutator); ok {
+		return m.Mutates()
+	}
+	return !t.Kind().ReadOnly()
+}
+
+// ReadOnly returns a registry with every mutating tool removed. It is the
+// single place the read-only master switch is enforced.
+func (r *Registry) ReadOnly() *Registry {
+	var list []Tool
+	for _, t := range r.tools {
+		if !Mutates(t) {
+			list = append(list, t)
+		}
+	}
+	return NewRegistry(list...)
+}
+
+// Targeter is implemented by mutating tools that can name the concrete paths
+// they will touch, so the diff recorder can snapshot exactly those files even
+// outside a git repository.
+type Targeter interface {
+	Targets(args map[string]any) []string
+}
+
 // SanitizePath resolves a user-provided path against root, follows symlinks,
 // and returns the clean relative path or an error if it escapes root.
 func SanitizePath(root, raw string) (string, error) {
@@ -91,4 +126,107 @@ func SanitizePath(root, raw string) (string, error) {
 		return "", fmt.Errorf("path escapes root")
 	}
 	return rel, nil
+}
+
+// SanitizeNewPath resolves and confines a path that may not exist yet. It
+// resolves the deepest existing ancestor, re-appends the unresolved tail, and
+// then resolves a final component that is itself a symlink. A path whose
+// resolved form escapes root is rejected.
+func SanitizeNewPath(root, raw string) (string, error) {
+	if strings.Contains(raw, "\x00") {
+		return "", fmt.Errorf("path contains NUL")
+	}
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	joined := filepath.Join(absRoot, raw)
+	rel, err := filepath.Rel(absRoot, joined)
+	if err != nil {
+		return "", err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path escapes root")
+	}
+
+	// Walk upward from the target to the deepest component that exists.
+	existing := joined
+	var tail []string
+	for {
+		if _, err := os.Lstat(existing); err == nil {
+			break
+		} else if !os.IsNotExist(err) {
+			return "", err
+		}
+		parent := filepath.Dir(existing)
+		if parent == existing {
+			return "", fmt.Errorf("root does not exist")
+		}
+		tail = append([]string{filepath.Base(existing)}, tail...)
+		existing = parent
+	}
+
+	resolved, err := filepath.EvalSymlinks(existing)
+	if err != nil {
+		return "", err
+	}
+	if err := confine(absRoot, resolved); err != nil {
+		return "", err
+	}
+
+	full := resolved
+	if len(tail) > 0 {
+		full = filepath.Join(append([]string{resolved}, tail...)...)
+	}
+
+	// If the full path already exists as a symlink (or points through one),
+	// resolve it too and re-confine.
+	if resolvedFinal, err := filepath.EvalSymlinks(full); err == nil {
+		full = resolvedFinal
+		if err := confine(absRoot, full); err != nil {
+			return "", err
+		}
+	} else if !os.IsNotExist(err) {
+		return "", err
+	}
+
+	out, err := filepath.Rel(absRoot, full)
+	if err != nil {
+		return "", err
+	}
+	return out, nil
+}
+
+// SubjectPath returns a pure-lexical cleaned path relative to root, with no
+// symlink resolution. It is the permission-rule subject for mutating tools, so
+// a Deny rule cannot be bypassed by "./" or ".." indirection.
+func SubjectPath(root, raw string) string {
+	if raw == "" {
+		return ""
+	}
+	if root == "" {
+		return filepath.ToSlash(filepath.Clean(raw))
+	}
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return filepath.ToSlash(filepath.Clean(raw))
+	}
+	joined := filepath.Join(absRoot, raw)
+	rel, err := filepath.Rel(absRoot, joined)
+	if err != nil {
+		return filepath.ToSlash(filepath.Clean(raw))
+	}
+	return filepath.ToSlash(filepath.Clean(rel))
+}
+
+// confine rejects a resolved absolute path that escapes absRoot.
+func confine(absRoot, resolved string) error {
+	rel, err := filepath.Rel(absRoot, resolved)
+	if err != nil {
+		return err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("path escapes root")
+	}
+	return nil
 }

@@ -45,6 +45,10 @@ type Options struct {
 	// never block on a user reply. Default false; only the interactive TUI
 	// sets it true.
 	AllowClarify bool
+	// AllowAsk gates the interactive tool-permission gate for mutating calls.
+	// It is a distinct authority from AllowClarify: only the interactive TUI
+	// sets it true, and it is never inherited by subagents.
+	AllowAsk bool
 	// AllowPassLoop gates the goal-mode pass loop. It is a distinct authority
 	// from AllowExplore: a subagent may explore (or not) but must never enter
 	// the unbounded pass loop, which would spawn recursive unbounded subagents.
@@ -73,6 +77,7 @@ type Session struct {
 	planMode       bool
 	allowExplore   bool
 	allowClarify   bool
+	allowAsk       bool
 	allowPassLoop  bool
 	maxIter        int
 	cache          *rolemanager.Cache
@@ -89,7 +94,7 @@ type Session struct {
 	steer          chan string
 	trace          *trace.Writer
 	// diffs observes what a mutating command changed. Nil disables the
-	// feature; it is consulted only around Bash, the one mutating tool.
+	// feature; it is consulted around every mutating tool (Bash, Write, Edit).
 	diffs *filediff.Recorder
 }
 
@@ -155,6 +160,7 @@ func NewSession(o Options) (*Session, error) {
 		planMode:       o.PlanMode,
 		allowExplore:   o.AllowExplore,
 		allowClarify:   o.AllowClarify,
+		allowAsk:       o.AllowAsk,
 		allowPassLoop:  o.AllowPassLoop,
 		maxIter:        maxIter,
 		cache:          cache,
@@ -269,6 +275,18 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		modeDec.AppendCarrier = true
 		modeDec.Explore = false
 	}
+
+	// Per-turn plan-mode latch: a classifier-inferred ModePlan must hold the
+	// whole turn read-only, but a session is reused across turns, so the
+	// previous value is restored on the way out rather than latched
+	// permanently. The write happens-before the tool fan-out goroutines, which
+	// start and join inside pass. The TUI's syncPlanMode remains authoritative
+	// for the interactive path.
+	savedPlanMode := s.planMode
+	if modeDec.Mode == modes.ModePlan {
+		s.planMode = true
+	}
+	defer func() { s.planMode = savedPlanMode }()
 
 	// Explore-agent launch: read-only subagents run before sealing, and their
 	// classified findings re-enter as untrusted user turns ahead of the prompt.
@@ -459,13 +477,13 @@ func maybeCompact(err error) error {
 // when the permission_no_match posture gate is enforce (the legacy
 // fail-closed behavior, restorable via preferences.yaml). Matched rules are
 // unaffected by the gate: an explicit deny always blocks, an explicit allow
-// always allows.
-func (s *Session) decidePermission(tool, subject string) (permissions.Decision, string) {
-	dec, rule := s.perms.Explain(tool, subject)
+// always allows. matched reports whether an explicit rule decided the call.
+func (s *Session) decidePermission(tool, subject string) (dec permissions.Decision, rule string, matched bool) {
+	dec, rule = s.perms.Explain(tool, subject)
 	if rule == "" && s.posture.Level(posture.PermissionNoMatch) == posture.Enforce {
-		return permissions.DecisionBlock, ""
+		return permissions.DecisionBlock, "", false
 	}
-	return dec, rule
+	return dec, rule, rule != ""
 }
 
 // runTool executes a tool, streaming its partial output to the UI when the
@@ -506,23 +524,38 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 		return fmt.Sprintf("tool result withheld: %q is not allowed in plan mode", call.Name)
 	}
 
-	perm, _ := s.decidePermission(call.Name, tool.Subject(call.Args))
-	switch perm {
-	case permissions.DecisionBlock:
+	perm, _, matched := s.decidePermission(call.Name, tool.Subject(call.Args))
+	if perm == permissions.DecisionBlock {
 		return fmt.Sprintf("tool result withheld: permission denied for %q", call.Name)
-	case permissions.DecisionAsk:
-		if s.posture.Level(posture.PermissionAskNoTTY) == posture.Enforce {
-			return fmt.Sprintf("tool result withheld: permission ask required for %q", call.Name)
-		}
-		// warn/ignore fall through to allow
 	}
 
-	// Observe what the command changes. Bash is the only mutating tool, and it
-	// always runs on the sequential path in pass, so this never races the
-	// concurrent read-only fan-out and needs no locking.
+	// Every mutating call asks, unless an explicit Allow rule matched. An
+	// explicit Deny already blocked above; an Ask decision always asks.
+	mutates := tools.Mutates(tool)
+	if perm == permissions.DecisionAsk || (mutates && !matched) {
+		if !s.allowAsk {
+			// Non-TTY policy: fall back to today's PermissionAskNoTTY posture.
+			// Enforce withholds naming the flag; warn/ignore falls through to
+			// allow.
+			if s.posture.Level(posture.PermissionAskNoTTY) == posture.Enforce {
+				return fmt.Sprintf("tool result withheld: permission ask required for %q (pass -allow-ask-without-tty to allow without a TTY)", call.Name)
+			}
+		} else if !s.gateMutation(ctx, call, tool, emit) {
+			return fmt.Sprintf("tool result withheld: permission denied by user for %q", call.Name)
+		}
+	}
+
+	// Observe what the command changes. Every mutating tool runs on the
+	// sequential path in pass, so this never races the concurrent read-only
+	// fan-out and needs no locking. Write and Edit name their targets through
+	// tools.Targeter; Bash is still observed from its command.
 	var snap *filediff.Snapshot
-	if s.diffs != nil && tool.Kind() == tools.KindBash {
-		snap = s.diffs.Before(ctx, tool.Subject(call.Args))
+	if s.diffs != nil && !tool.Kind().ReadOnly() {
+		if tt, ok := tool.(tools.Targeter); ok {
+			snap = s.diffs.BeforePaths(ctx, tt.Targets(call.Args)...)
+		} else {
+			snap = s.diffs.Before(ctx, tool.Subject(call.Args))
+		}
 	}
 
 	res, err := runTool(ctx, tool, call, emit)
@@ -574,6 +607,35 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 	// placeholder and continues; the strict abort is handled by refusing to
 	// promote the unsafe content, which is what a placeholder does.
 	return fmt.Sprintf("tool result withheld: classified %s", dec.Sentinel)
+}
+
+// gateMutation asks the user before a mutating tool touches disk. It blocks on
+// the reply channel; a denied answer or a cancelled context returns false.
+func (s *Session) gateMutation(ctx context.Context, call rolemanager.ToolCall, tool tools.Tool, emit func(Event)) bool {
+	var preview *filediff.Change
+	if p, ok := tool.(interface {
+		Preview(args map[string]any) (path, old, new string, ok bool)
+	}); ok {
+		if path, old, new, ok := p.Preview(call.Args); ok {
+			ch := filediff.Preview(path, old, new)
+			preview = &ch
+		}
+	}
+
+	reply := make(chan PermissionAskReply, 1)
+	emit(Event{Kind: EventPermissionAskKind, Ask: &AskRequest{
+		Name:    call.Name,
+		Subject: tool.Subject(call.Args),
+		Args:    call.Args,
+		Preview: preview,
+	}, AskReply: reply})
+
+	select {
+	case r := <-reply:
+		return r.Allow
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // classifierErrorMaxRunes bounds the provider detail carried in a withheld

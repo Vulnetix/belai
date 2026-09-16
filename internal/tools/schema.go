@@ -10,11 +10,14 @@ func (d Definition) Schema() map[string]any {
 	for k, v := range d.Properties {
 		props[k] = map[string]any{"type": v.Type, "description": v.Description}
 	}
-	return map[string]any{
+	out := map[string]any{
 		"type":       "object",
 		"properties": props,
-		"required":   d.Required,
 	}
+	if len(d.Required) > 0 {
+		out["required"] = d.Required
+	}
+	return out
 }
 
 // OpenAITool converts a Definition into a wire.OpenAITool.

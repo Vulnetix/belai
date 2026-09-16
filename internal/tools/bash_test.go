@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -248,13 +247,6 @@ func TestBashResult(t *testing.T) {
 	if res.Kind != KindBash || res.Content != "x" {
 		t.Fatalf("BashResult = %+v", res)
 	}
-}
-
-func TestShellMetacharactersMatchesPlanmode(t *testing.T) {
-	if ShellMetacharacters != ";&|$`<>\n()" {
-		t.Fatalf("ShellMetacharacters = %q", ShellMetacharacters)
-	}
-	_ = os.Environ()
 }
 
 func TestBashRejectsNonAllowlisted(t *testing.T) {

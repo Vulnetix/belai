@@ -113,6 +113,10 @@ type Event struct {
 	// AskName / AskSubject carry EventPermissionAsk.
 	AskName    string
 	AskSubject string
+	// Ask carries the full tool-permission request on EventPermissionAskKind;
+	// AskReply is the channel the UI must answer on.
+	Ask      *AskRequest
+	AskReply chan PermissionAskReply
 
 	// Clarify carries the questionnaire on EventClarifyAskKind; Reply is the
 	// channel the UI must send the user's Answers on.
@@ -145,6 +149,23 @@ type Event struct {
 
 	// Result carries EventDone.
 	Result run.Result
+}
+
+// PermissionAskReply is the UI's answer to a tool-permission ask.
+type PermissionAskReply struct {
+	// Allow is the decision: true executes the call once, false withholds it.
+	Allow bool
+}
+
+// AskRequest is an interactive tool-permission request emitted on
+// EventPermissionAskKind. The UI renders it and answers on AskReply.
+type AskRequest struct {
+	Name    string
+	Subject string
+	Args    map[string]any
+	// Preview is the diff the call would make, for render only. It is nil
+	// when no preview could be produced.
+	Preview *filediff.Change
 }
 
 // RunStream runs the full pipeline on the supplied input (continuing history)
@@ -280,6 +301,6 @@ func (s *Session) permissionDecision(call rolemanager.ToolCall) permissions.Deci
 	if !ok {
 		return permissions.DecisionBlock
 	}
-	dec, _ := s.decidePermission(call.Name, tool.Subject(call.Args))
+	dec, _, _ := s.decidePermission(call.Name, tool.Subject(call.Args))
 	return dec
 }

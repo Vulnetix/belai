@@ -3,13 +3,11 @@ package tui
 import (
 	"reflect"
 	"testing"
-
-	"github.com/vulnetix/signet/internal/goals"
 )
 
 func TestRegistryNames(t *testing.T) {
 	r := NewRegistry(t.TempDir())
-	want := []string{"agent", "clear", "code-review", "compact", "credentials", "execute", "goal", "help", "local-model", "mode", "model", "new", "permissions", "plan", "profile", "refine", "rename", "settings", "stay", "todos"}
+	want := []string{"agent", "clear", "code-review", "compact", "credentials", "execute", "help", "local-model", "mode", "model", "new", "permissions", "profile", "refine", "rename", "settings", "todos"}
 	if !reflect.DeepEqual(r.Names(), want) {
 		t.Fatalf("Names = %v, want %v", r.Names(), want)
 	}
@@ -19,7 +17,7 @@ func TestCompleteCommandPrefix(t *testing.T) {
 	r := NewRegistry(t.TempDir())
 
 	got := r.Complete("/p")
-	want := []string{"/permissions", "/plan", "/profile"}
+	want := []string{"/permissions", "/profile"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Complete(/p) = %v, want %v", got, want)
 	}
@@ -43,38 +41,16 @@ func TestCompleteAlias(t *testing.T) {
 func TestCompleteAgentSubcommands(t *testing.T) {
 	r := NewRegistry(t.TempDir())
 	got := r.Complete("/agent ")
-	want := []string{"/agent create", "/agent list", "/agent log", "/agent pause", "/agent resume", "/agent start", "/agent stop"}
+	want := []string{"/agent create", "/agent edit", "/agent list", "/agent log", "/agent pause", "/agent resume", "/agent start", "/agent stop"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Complete(/agent ) = %v, want %v", got, want)
 	}
 }
 
-func TestCompleteGoalReplay(t *testing.T) {
-	workdir := t.TempDir()
-	if _, err := goals.Memorise(workdir, goals.Goal{Name: "alpha", Content: "a"}); err != nil {
-		t.Fatalf("Memorise: %v", err)
-	}
-	if _, err := goals.Memorise(workdir, goals.Goal{Name: "beta", Content: "b"}); err != nil {
-		t.Fatalf("Memorise: %v", err)
-	}
-	r := NewRegistry(workdir)
-
-	got := r.Complete("/goal ")
-	want := []string{"/goal alpha", "/goal beta"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("Complete(/goal ) = %v, want %v", got, want)
-	}
-
-	got = r.Complete("/goal al")
-	if !reflect.DeepEqual(got, []string{"/goal alpha"}) {
-		t.Fatalf("Complete(/goal al) = %v", got)
-	}
-}
-
 func TestCommandLookup(t *testing.T) {
 	r := NewRegistry(t.TempDir())
-	if _, ok := r.Command("plan"); !ok {
-		t.Fatalf("plan command missing")
+	if _, ok := r.Command("mode"); !ok {
+		t.Fatalf("mode command missing")
 	}
 	if _, ok := r.Command("nope"); ok {
 		t.Fatalf("unexpected command present")
@@ -107,8 +83,8 @@ func TestAliasCanonical(t *testing.T) {
 	if got := r.Canonical("provider"); got != "model" {
 		t.Fatalf("Canonical(provider) = %q, want model", got)
 	}
-	if got := r.Canonical("plan"); got != "plan" {
-		t.Fatalf("Canonical(plan) = %q, want plan", got)
+	if got := r.Canonical("agent"); got != "agent" {
+		t.Fatalf("Canonical(agent) = %q, want agent", got)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -241,6 +242,8 @@ type App struct {
 	permState       permissionsViewState
 	importState     importViewState
 	clarifyState    clarifyViewState
+	permAskState    permissionAskViewState
+	agentState      agentViewState
 
 	// live model catalogue cache (on-demand fetch)
 	catalogCache   map[string][]models.Model
@@ -286,8 +289,17 @@ type App struct {
 	historyIndex    int
 	historyResults  []string
 
-	// autocomplete cycling
+	// autocomplete cycling; noAutocompleteSelection means nothing is
+	// highlighted yet, so the first tab lands on the first candidate.
 	autocompleteIndex int
+
+	// agent picker: the profiles offered above the composer in agent mode,
+	// and the highlighted one (noAgentSelection when none is).
+	agents     []agentChoice
+	agentIndex int
+	// namedAgentTools is the engaged background definition's tool allowlist,
+	// applied to the session it carries. Empty means every registered tool.
+	namedAgentTools []string
 
 	// save to library
 	savePromptMode  bool
@@ -414,6 +426,8 @@ func New(opts Options) *App {
 		attachSpin:        spinner.New(),
 		workSpin:          spinner.New(spinner.WithSpinner(spinner.MiniDot)),
 		follow:            true,
+		autocompleteIndex: noAutocompleteSelection,
+		agentIndex:        noAgentSelection,
 		bannerW:           -1,
 		footerW:           -1,
 		trace:             trace.Env(),
@@ -423,6 +437,7 @@ func New(opts Options) *App {
 		a.bgManager = bgagent.NewManager(workdir, initial, a.client, a.settings, a.posture)
 	}
 	a.applyGitInfo(gitinfo.Detect(a.workdir))
+	a.loadAgents()
 	_ = a.editor.Focus()
 
 	if startErr != "" {
@@ -597,6 +612,9 @@ func (a *App) belowViewportHeight() int {
 	if len(a.autocomplete) > 0 {
 		h++
 	}
+	if a.agentPickerVisible() {
+		h++
+	}
 	h += a.attachStripHeight()
 	h += a.todoPanelHeight()
 	h += a.editor.Height() + 2 // composer frame (top and bottom edges)
@@ -669,8 +687,11 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 	}
 	in := agent.TurnInput{Prompt: promptText, ForceMode: a.forceMode, Mode: a.modeDecision}
 	a.forceMode = ""
-	if a.namedAgent != "" {
-		in.ForceAgent = a.namedAgent
+	// Only agent mode carries an agent: ForceAgent also forces the mode, so
+	// sending an engaged agent from plan or goal mode would silently leave the
+	// mode the user chose.
+	if eng := a.engagedAgent(); eng != "" {
+		in.ForceAgent = eng
 	}
 	if n := len(turns); n > 0 && turns[n-1].Role == "user" {
 		in.Attachments = turns[n-1].Attachments
@@ -726,7 +747,7 @@ func (a *App) submitInput(input string) tea.Cmd {
 	a.attachOrder = nil
 	a.pendingInput = ""
 	a.editor.Reset()
-	a.autocomplete = nil
+	a.clearAutocomplete()
 
 	firstUser := !a.hasUserMessage()
 
@@ -992,6 +1013,9 @@ type sessionBuildParams struct {
 	posture      posture.Policy
 	planMode     bool
 	allowClarify bool
+	// toolAllow restricts the registry to an engaged background definition's
+	// tools. Empty means every registered tool.
+	toolAllow []string
 }
 
 func (a *App) sessionBuildParams() sessionBuildParams {
@@ -1003,6 +1027,7 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 		posture:      a.posture,
 		planMode:     a.planMode,
 		allowClarify: true,
+		toolAllow:    a.engagedAgentTools(),
 	}
 }
 
@@ -1010,7 +1035,19 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 // is the pure construction half of agentSession, safe to run off the Bubble
 // Tea goroutine.
 func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
-	reg := tools.Default(p.workdir, p.settings.BashReadOnlyEnabled())
+	reg := tools.Default(p.workdir, p.settings.ReadOnlyEnabled())
+	if len(p.toolAllow) > 0 {
+		// An engaged background definition brings its allowlist with it, the
+		// same narrowing internal/bgagent applies when it runs the definition
+		// on its own.
+		var filtered []tools.Tool
+		for _, name := range p.toolAllow {
+			if t, ok := reg.Find(name); ok {
+				filtered = append(filtered, t)
+			}
+		}
+		reg = tools.NewRegistry(filtered...)
+	}
 	perms := permissions.From(p.settings.Permissions.Allow, p.settings.Permissions.Ask, p.settings.Permissions.Deny)
 	var promptOpts prompt.Options
 	if p.settings.Caveman != nil && *p.settings.Caveman {
@@ -1033,6 +1070,9 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		// clarification loop may run. Subagents and the non-interactive CLI
 		// leave this false.
 		AllowClarify: true,
+		// Top-level TUI session: mutating tool calls ask the user through the
+		// approval view before touching disk. Never inherited by subagents.
+		AllowAsk: true,
 		// Top-level goal-mode prompts may run the unbounded pass loop; a
 		// subagent never does.
 		AllowPassLoop: true,
@@ -1191,7 +1231,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		cmd := a.editor.Update(m)
-		a.autocomplete = a.registry.Complete(a.editor.Value())
+		a.refreshAutocomplete()
 		spin, spinCmd := a.attachSpin.Update(m)
 		a.attachSpin = spin
 		workSpin, workCmd := a.workSpin.Update(m)
@@ -1236,7 +1276,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	cmd := a.editor.Update(msg)
-	a.autocomplete = a.registry.Complete(a.editor.Value())
+	a.refreshAutocomplete()
 	spin, spinCmd := a.attachSpin.Update(msg)
 	a.attachSpin = spin
 	workSpin, workCmd := a.workSpin.Update(msg)
@@ -1298,6 +1338,17 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 			a.sel = selection{}
 			return nil
 		}
+		// A highlighted completion is dropped before esc reaches the request:
+		// the popup is the thing the user is looking at. The agent picker's
+		// highlight is dismissed the same way.
+		if _, ok := a.autocompleteSelection(); ok {
+			a.autocompleteIndex = noAutocompleteSelection
+			return nil
+		}
+		if a.agentIndex != noAgentSelection {
+			a.agentIndex = noAgentSelection
+			return nil
+		}
 		if a.pendingInput != "" {
 			a.pendingInput = ""
 			return a.submitInput(strings.TrimSpace(a.editor.Value()))
@@ -1318,20 +1369,30 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 	case "enter":
+		// A highlighted completion is a selection, not a submission: enter
+		// puts it in the prompt and a second enter sends it. A highlighted
+		// agent is the same bargain — it engages the profile, it does not
+		// send the turn.
+		if _, ok := a.autocompleteSelection(); ok {
+			return a.acceptAutocomplete()
+		}
+		if a.agentPickerVisible() {
+			if _, ok := a.agentSelection(); ok {
+				return a.acceptAgent()
+			}
+		}
 		input := strings.TrimSpace(a.editor.Value())
 		if input == "" {
 			return nil
 		}
 		if isShellInput(input) {
 			a.editor.Reset()
-			a.autocomplete = nil
-			a.autocompleteIndex = 0
+			a.clearAutocomplete()
 			return a.handleShell(input)
 		}
 		if strings.HasPrefix(input, "/") {
 			a.editor.Reset()
-			a.autocomplete = nil
-			a.autocompleteIndex = 0
+			a.clearAutocomplete()
 			return a.handleCommand(input)
 		}
 		if a.working() {
@@ -1340,8 +1401,7 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 				a.addSystem("steering queue full — message dropped")
 			}
 			a.editor.Reset()
-			a.autocomplete = nil
-			a.autocompleteIndex = 0
+			a.clearAutocomplete()
 			return nil
 		}
 		if a.preSend {
@@ -1371,6 +1431,26 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		}
 	}
 
+	// The agent picker takes the same three keys, but only tab unprompted:
+	// right and enter still belong to the editor until a candidate is
+	// actually highlighted.
+	if a.agentPickerVisible() {
+		switch m.String() {
+		case "tab":
+			return a.cycleAgent()
+		case "right":
+			if _, ok := a.agentSelection(); ok {
+				return a.acceptAgent()
+			}
+		case "ctrl+g":
+			// Starting a background agent is a different act from engaging
+			// one, so it gets its own key rather than overloading enter.
+			if c, ok := a.agentSelection(); ok && c.Name != agentNoneLabel {
+				return a.startAgentChoice(c)
+			}
+		}
+	}
+
 	return a.forwardToEditor(m)
 }
 
@@ -1378,8 +1458,10 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 // depends on its contents.
 func (a *App) forwardToEditor(m tea.KeyMsg) tea.Cmd {
 	cmd := a.editor.Update(m)
-	a.autocomplete = a.registry.Complete(a.editor.Value())
-	a.autocompleteIndex = 0
+	// Typing re-filters the agent strip, so a highlight from the old list
+	// would point at a name that is no longer under it.
+	a.agentIndex = noAgentSelection
+	a.refreshAutocomplete()
 	a.relayout()
 	return cmd
 }
@@ -1401,8 +1483,7 @@ func (a *App) startHistoryCycle() tea.Cmd {
 		a.historyIndex = -1
 		a.editor.SetValue(a.historyQuery)
 	}
-	a.autocomplete = nil
-	a.autocompleteIndex = 0
+	a.clearAutocomplete()
 	return nil
 }
 
@@ -1459,14 +1540,12 @@ func (a *App) handleHistoryKey(m tea.KeyMsg) tea.Cmd {
 		}
 		if isShellInput(input) {
 			a.editor.Reset()
-			a.autocomplete = nil
-			a.autocompleteIndex = 0
+			a.clearAutocomplete()
 			return a.handleShell(input)
 		}
 		if strings.HasPrefix(input, "/") {
 			a.editor.Reset()
-			a.autocomplete = nil
-			a.autocompleteIndex = 0
+			a.clearAutocomplete()
 			return a.handleCommand(input)
 		}
 		if a.working() {
@@ -1475,8 +1554,7 @@ func (a *App) handleHistoryKey(m tea.KeyMsg) tea.Cmd {
 				a.addSystem("steering queue full — message dropped")
 			}
 			a.editor.Reset()
-			a.autocomplete = nil
-			a.autocompleteIndex = 0
+			a.clearAutocomplete()
 			return nil
 		}
 		if a.preSend {
@@ -1533,32 +1611,73 @@ func (a *App) exitHistoryCycle(accept bool) {
 	a.historyIndex = 0
 	a.historyQuery = ""
 	a.historyOriginal = ""
-	a.autocomplete = a.registry.Complete(a.editor.Value())
+	a.refreshAutocomplete()
 }
 
 // ---------------------------------------------------------------------------
 // Autocomplete cycling
 // ---------------------------------------------------------------------------
 
+// noAutocompleteSelection is the autocompleteIndex value meaning "no candidate
+// is highlighted": the popup is showing, but the prompt is still whatever the
+// user typed.
+const noAutocompleteSelection = -1
+
+// cycleAutocomplete moves the highlight to the next candidate. It deliberately
+// leaves the prompt alone: writing the candidate into the editor would narrow
+// the candidate list to that one command on the next refresh, which pinned the
+// cycle to a single entry. Enter (or right) is what commits the highlight.
 func (a *App) cycleAutocomplete() tea.Cmd {
+	if len(a.autocomplete) == 0 {
+		return nil
+	}
 	a.autocompleteIndex++
 	if a.autocompleteIndex >= len(a.autocomplete) {
 		a.autocompleteIndex = 0
 	}
-	a.editor.SetValue(a.autocomplete[a.autocompleteIndex])
-	a.editor.CursorEnd()
 	return nil
 }
 
+// acceptAutocomplete writes the highlighted candidate — or the first one, when
+// nothing is highlighted yet — into the prompt and dismisses the popup.
 func (a *App) acceptAutocomplete() tea.Cmd {
-	if len(a.autocomplete) == 0 {
-		return nil
+	choice, ok := a.autocompleteSelection()
+	if !ok {
+		if len(a.autocomplete) == 0 {
+			return nil
+		}
+		choice = a.autocomplete[0]
 	}
-	a.editor.SetValue(a.autocomplete[0])
+	a.editor.SetValue(choice)
 	a.editor.CursorEnd()
-	a.autocomplete = nil
-	a.autocompleteIndex = 0
+	a.clearAutocomplete()
+	a.relayout()
 	return nil
+}
+
+// autocompleteSelection returns the highlighted candidate, if there is one.
+func (a *App) autocompleteSelection() (string, bool) {
+	if a.autocompleteIndex < 0 || a.autocompleteIndex >= len(a.autocomplete) {
+		return "", false
+	}
+	return a.autocomplete[a.autocompleteIndex], true
+}
+
+// refreshAutocomplete recomputes the candidates for the current prompt text.
+// The highlight survives only while the candidate list is unchanged, so a
+// stale index can never point at a different command than the chip row showed.
+func (a *App) refreshAutocomplete() {
+	next := a.registry.Complete(a.editor.Value())
+	if !slices.Equal(next, a.autocomplete) {
+		a.autocompleteIndex = noAutocompleteSelection
+	}
+	a.autocomplete = next
+}
+
+// clearAutocomplete dismisses the popup and drops the highlight.
+func (a *App) clearAutocomplete() {
+	a.autocomplete = nil
+	a.autocompleteIndex = noAutocompleteSelection
 }
 
 // ---------------------------------------------------------------------------
@@ -1574,8 +1693,7 @@ func (a *App) startSavePrompt() tea.Cmd {
 	a.savePromptValue = val
 	a.savePromptMode = true
 	a.editor.Reset()
-	a.autocomplete = nil
-	a.autocompleteIndex = 0
+	a.clearAutocomplete()
 	return nil
 }
 
@@ -1770,8 +1888,12 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		}
 		return a.nextAgent()
 	case agent.EventPermissionAskKind:
-		a.addSystem("permission ask required for " + m.AskName)
-		return a.nextAgent()
+		if m.Ask == nil || m.AskReply == nil {
+			a.addSystem("permission ask required for " + m.AskName)
+			return a.nextAgent()
+		}
+		a.permAskState = newPermissionAskState(m.Ask, m.AskReply)
+		return a.push(viewPermissionAsk)
 	case agent.EventClarifyAskKind:
 		q := *m.Clarify
 		a.clarifyState = newClarifyState(q, m.Reply)
@@ -1853,7 +1975,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 				a.lastPlanText = strings.Join(steps, "\n")
 				l := todos.New(m.Result.SanitizedPrompt, steps)
 				a.setTodos(&l)
-				a.addSystem(fmt.Sprintf("plan: %d steps extracted — /execute, /stay, or /refine", len(steps)))
+				a.addSystem(fmt.Sprintf("plan: %d steps extracted — /execute or /refine", len(steps)))
 			}
 		}
 		// Advance the shared todo list from [DONE:n] markers in the assistant
@@ -1995,6 +2117,10 @@ func (a *App) chatView() string {
 		sb.WriteString(a.renderSuggestions())
 		sb.WriteString("\n")
 	}
+	if a.agentPickerVisible() {
+		sb.WriteString(a.renderAgentPicker())
+		sb.WriteString("\n")
+	}
 	if len(a.attachments) > 0 {
 		sb.WriteString(a.renderAttachStrip())
 		sb.WriteString("\n")
@@ -2102,7 +2228,11 @@ func (a *App) renderFieldEditor(title string, width int) string {
 // renderSuggestions draws slash-command completions as a row of chips.
 func (a *App) renderSuggestions() string {
 	parts := make([]string, 0, len(a.autocomplete))
-	for _, s := range a.autocomplete {
+	for i, s := range a.autocomplete {
+		if i == a.autocompleteIndex {
+			parts = append(parts, components.Chip(s, components.ColorTealSoft))
+			continue
+		}
 		parts = append(parts, components.KeyStyle.Render(s))
 	}
 	line := components.MutedStyle.Render("⌕ ") + strings.Join(parts, components.MutedStyle.Render("  ·  "))
@@ -2196,19 +2326,25 @@ func (a *App) applyModeDecision(d rolemanager.ModeDecision, err error) {
 		a.syncPlanMode()
 		return
 	}
+	previous := a.mode
 	a.mode = string(d.Mode)
 	a.namedAgent = d.AgentName
 	a.modeDecision = d
 	a.modeWarning = d.Warning
 	a.syncPlanMode()
-	if d.AgentName != "" {
+	switch {
+	case d.AgentName != "":
 		a.addSystem("engaged agent: " + d.AgentName)
-	} else {
+	case string(d.Mode) != previous:
 		msg := "mode: " + string(d.Mode)
 		if d.Explore {
 			msg += " (launch explore agents)"
 		}
 		a.addSystem(msg)
+	case d.Explore:
+		// The mode is where it already was, so naming it repeats the footer
+		// chip. What the turn does differently is still worth a line.
+		a.addSystem("launch explore agents")
 	}
 	if d.Warning != "" {
 		a.addSystem(d.Warning)
@@ -2314,6 +2450,7 @@ func (a *App) refreshFooter() {
 	// the outer padding, not the terminal.
 	a.footer.Width = a.contentWidth()
 	a.footer.Mode = a.mode
+	a.footer.Agent = a.engagedAgent()
 	a.footer.Provider = a.cfg.Provider
 	a.footer.Model = a.cfg.Model
 	// The effective settings are the UI's canonical effort source: the model
@@ -2683,6 +2820,11 @@ func (a *App) startNewSession() {
 	// The todo list belongs to the session that produced it. Carrying it into
 	// a fresh one would render stale work and write it back under the new id.
 	a.todos = nil
+	// The engaged profile is session state too, and the picker reloads in case
+	// a profile was written while this session ran.
+	a.namedAgent = ""
+	a.namedAgentTools = nil
+	a.loadAgents()
 	a.saveSession()
 	a.refreshFooter()
 }
@@ -2726,13 +2868,16 @@ func (a *App) handleCodeReviewDone(m codeReviewDoneMsg) tea.Cmd {
 }
 
 // handleAgentBuilderDone renders the result of an async /agent create run.
+// After a successful save it opens the agent list with the new profile
+// selected for editing, so the user can review and adjust its properties.
 func (a *App) handleAgentBuilderDone(m agentBuilderDoneMsg) tea.Cmd {
 	if m.err != nil {
 		a.addSystem("agent builder failed: " + m.err.Error())
 		return nil
 	}
 	a.addSystem("agent saved: " + m.path)
-	return nil
+	a.agentState.pendingEditProfile = m.profile.Name
+	return a.push(viewAgent)
 }
 
 // handleBgAgentEvent appends a background-agent event as a system line.

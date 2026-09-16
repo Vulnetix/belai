@@ -226,7 +226,7 @@ func drainStream(ctx context.Context, ch chan<- Chunk, resp *http.Response, d di
 	}
 
 	sendDone := func() {
-		if d.kind == kindWorkersAI && len(acc.calls) > 0 {
+		if len(acc.calls) > 0 {
 			if completed, err := acc.completeAll(); err == nil {
 				calls = append(calls, completed...)
 			}

@@ -87,8 +87,12 @@ func (a *toolAccumulator) complete(index int) (rolemanager.ToolCall, error) {
 func (a *toolAccumulator) openedKind(index int) string { return a.openKinds[index] }
 
 // completeAll materialises every accumulated call in index order and empties
-// the accumulator. Workers AI has no finish_reason: "tool_calls" on its native
-// response shape, so the stream drains open calls on [DONE] instead.
+// the accumulator. Providers that close a stream without finish_reason
+// "tool_calls" (Workers AI's native shape, and any OpenAI-compatible server
+// that ends with stop/length or a bare [DONE]) never complete their calls, so
+// the stream drains open calls here instead of silently dropping them. This is
+// idempotent: complete() deletes each builder, so calls already materialised
+// by finish_reason are not double-counted.
 func (a *toolAccumulator) completeAll() ([]rolemanager.ToolCall, error) {
 	if len(a.calls) == 0 {
 		return nil, nil

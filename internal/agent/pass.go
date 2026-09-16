@@ -18,6 +18,21 @@ import (
 // worse than sequential.
 const toolConcurrency = 4
 
+// concurrentEnd returns the length of the leading run of read-only,
+// permission-allowed, parseable calls. A mutating tool ends the run, so a Read
+// after a Write observes the write.
+func concurrentEnd(units []callUnit) int {
+	end := 0
+	for end < len(units) {
+		u := units[end]
+		if u.parseErr != nil || u.tool == nil || !u.tool.Kind().ReadOnly() || u.decision != permissions.DecisionAllow {
+			break
+		}
+		end++
+	}
+	return end
+}
+
 // passOutcome is the result of one bounded tool-loop pass.
 type passOutcome struct {
 	reply     string
@@ -36,6 +51,16 @@ type passOutcome struct {
 	// doing any work, so a pass can exhaust itself entirely on truncation
 	// repair; productive==0 must not buy another pass.
 	productive int
+}
+
+// callUnit is one parsed, permission-checked tool call, used to decide the
+// concurrent run without reordering.
+type callUnit struct {
+	call     rolemanager.ToolCall
+	args     map[string]any
+	parseErr error
+	tool     tools.Tool
+	decision permissions.Decision
 }
 
 // pass runs exactly one bounded tool-loop pass. It is the verbatim body of the
@@ -99,13 +124,6 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 
 		// Parse and permission-check every call up front so the concurrent run
 		// can be decided without reordering.
-		type callUnit struct {
-			call     rolemanager.ToolCall
-			args     map[string]any
-			parseErr error
-			tool     tools.Tool
-			decision permissions.Decision
-		}
 		units := make([]callUnit, len(filtered))
 		for i, call := range filtered {
 			args, parseErr := parseToolArgs(call)
@@ -113,25 +131,18 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 			if parseErr == nil {
 				if tool, ok := s.registry.Find(call.Name); ok {
 					u.tool = tool
-					u.decision, _ = s.decidePermission(call.Name, tool.Subject(args))
+					u.decision, _, _ = s.decidePermission(call.Name, tool.Subject(args))
 				}
 			}
 			units[i] = u
 		}
 
 		// The concurrent group is the leading run of read-only, permission-
-		// allowed, parseable calls. The sole mutating kind is Bash, and a Read
-		// after a Bash that wrote the file must observe the write, so nothing
-		// reorders across a Bash call. A permission ask ends the run because
-		// two concurrent asks would race the UI.
-		concurrentEnd := 0
-		for concurrentEnd < len(units) {
-			u := units[concurrentEnd]
-			if u.parseErr != nil || u.tool == nil || !u.tool.Kind().ReadOnly() || u.decision != permissions.DecisionAllow {
-				break
-			}
-			concurrentEnd++
-		}
+		// allowed, parseable calls. A mutating kind (Write, Edit, full Bash)
+		// ends the run: a Read after a Write that wrote the file must observe
+		// the write, so nothing reorders across a mutating call. A permission
+		// ask ends the run because two concurrent asks would race the UI.
+		concurrentEnd := concurrentEnd(units)
 
 		results := make([]string, len(units))
 		if concurrentEnd > 0 {
@@ -157,9 +168,6 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		for i := 0; i < len(units); i++ {
 			u := units[i]
 			if i >= concurrentEnd {
-				if u.decision == permissions.DecisionAsk {
-					emit(Event{Kind: EventPermissionAskKind, AskName: u.call.Name})
-				}
 				emit(Event{Kind: EventToolStartKind, Tool: &u.call})
 				if u.parseErr != nil {
 					results[i] = fmt.Sprintf("tool result withheld: malformed arguments for %q: %v", u.call.Name, u.parseErr)

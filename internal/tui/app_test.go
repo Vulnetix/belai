@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -85,6 +86,53 @@ func TestClassifyModeSelectsPlan(t *testing.T) {
 	}
 	if len(a.messages) == 0 {
 		t.Fatalf("expected a mode message")
+	}
+}
+
+// A decision that lands on the mode already selected tells the user nothing
+// the footer chip is not showing, so it writes no transcript line.
+func TestClassifyModeSameModeIsSilent(t *testing.T) {
+	a := NewApp(t.TempDir(), "")
+	a.SetClassifier(&fakeClassifier{raw: "AGENT"})
+	a.mode = "agent"
+	before := len(a.messages)
+
+	a.classifyMode("do the thing")
+
+	if a.mode != "agent" {
+		t.Fatalf("mode = %q, want agent", a.mode)
+	}
+	if len(a.messages) != before {
+		t.Fatalf("expected no message for an unchanged mode, got %q", a.messages[len(a.messages)-1].Text())
+	}
+}
+
+// An unchanged mode that still launches explore agents keeps that line: it
+// describes the turn, not the mode chip.
+func TestClassifyModeSameModeStillReportsExplore(t *testing.T) {
+	a := NewApp(t.TempDir(), "")
+	a.SetClassifier(&fakeClassifier{raw: "PLAN"})
+	a.mode = "plan"
+
+	a.classifyMode("figure out how to refactor this")
+
+	last := a.messages[len(a.messages)-1].Text()
+	if last != "launch explore agents" {
+		t.Fatalf("last message = %q, want \"launch explore agents\"", last)
+	}
+}
+
+// A mode that did change is still announced.
+func TestClassifyModeChangeIsAnnounced(t *testing.T) {
+	a := NewApp(t.TempDir(), "")
+	a.SetClassifier(&fakeClassifier{raw: "PLAN"})
+	a.mode = "agent"
+
+	a.classifyMode("figure out how to refactor this")
+
+	last := a.messages[len(a.messages)-1].Text()
+	if last != "mode: plan (launch explore agents)" {
+		t.Fatalf("last message = %q, want \"mode: plan (launch explore agents)\"", last)
 	}
 }
 
@@ -991,17 +1039,113 @@ func TestLibraryRankedBeforeHistory(t *testing.T) {
 	}
 }
 
-func TestAutocompleteTabCycles(t *testing.T) {
+// Tab moves the highlight through every candidate and wraps. It must not write
+// into the prompt: doing so narrowed the candidate list to the written command
+// on the next refresh, which pinned the cycle to one entry.
+func TestAutocompleteTabCyclesWithoutTouchingThePrompt(t *testing.T) {
 	a := New(Options{})
-	a.editor.SetValue("/cle")
-	a.autocomplete = a.registry.Complete(a.editor.Value())
-	if len(a.autocomplete) == 0 {
-		t.Fatalf("expected autocomplete hints")
+	a.editor.SetValue("/c")
+	a.refreshAutocomplete()
+	want := a.autocomplete
+	if len(want) < 3 {
+		t.Fatalf("expected several autocomplete hints, got %v", want)
+	}
+
+	for i := range want {
+		a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+		got, ok := a.autocompleteSelection()
+		if !ok || got != want[i] {
+			t.Fatalf("tab %d: selection = %q (ok=%v), want %q", i+1, got, ok, want[i])
+		}
+		if a.editor.Value() != "/c" {
+			t.Fatalf("tab %d: prompt = %q, want it untouched", i+1, a.editor.Value())
+		}
+		if !slices.Equal(a.autocomplete, want) {
+			t.Fatalf("tab %d: candidates = %v, want %v", i+1, a.autocomplete, want)
+		}
 	}
 
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
-	if a.editor.Value() != "/clear" {
-		t.Fatalf("expected /clear, got %q", a.editor.Value())
+	if got, _ := a.autocompleteSelection(); got != want[0] {
+		t.Fatalf("selection after wrap = %q, want %q", got, want[0])
+	}
+}
+
+// A refresh driven by an unrelated message (the cursor blink runs one per
+// tick) must not disturb the highlight while the prompt is unchanged.
+func TestAutocompleteHighlightSurvivesRefresh(t *testing.T) {
+	a := New(Options{})
+	a.editor.SetValue("/c")
+	a.refreshAutocomplete()
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+	want, _ := a.autocompleteSelection()
+
+	a.refreshAutocomplete()
+
+	if got, ok := a.autocompleteSelection(); !ok || got != want {
+		t.Fatalf("selection after refresh = %q (ok=%v), want %q", got, ok, want)
+	}
+}
+
+// Enter commits the highlighted candidate into the prompt rather than sending
+// the turn; the popup closes and a second enter is what submits.
+func TestAutocompleteEnterSelectsHighlight(t *testing.T) {
+	a := New(Options{})
+	a.editor.SetValue("/c")
+	a.refreshAutocomplete()
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+	want, _ := a.autocompleteSelection()
+	before := len(a.messages)
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if a.editor.Value() != want {
+		t.Fatalf("prompt = %q, want %q", a.editor.Value(), want)
+	}
+	if len(a.autocomplete) != 0 {
+		t.Fatalf("expected the popup to close, got %v", a.autocomplete)
+	}
+	if len(a.messages) != before {
+		t.Fatalf("enter submitted the turn: messages %d, want %d", len(a.messages), before)
+	}
+}
+
+// Typing after a tab drops the highlight, so enter submits again instead of
+// re-selecting a candidate the chip row no longer shows.
+func TestAutocompleteTypingDropsHighlight(t *testing.T) {
+	a := New(Options{})
+	a.editor.SetValue("/c")
+	a.refreshAutocomplete()
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+
+	if _, ok := a.autocompleteSelection(); ok {
+		t.Fatalf("expected the highlight to be dropped after typing")
+	}
+}
+
+// Esc dismisses the highlight before it reaches the request, so a stray tab
+// cannot turn an esc into a cancelled turn.
+func TestAutocompleteEscClearsHighlightFirst(t *testing.T) {
+	a := New(Options{})
+	a.editor.SetValue("/c")
+	a.refreshAutocomplete()
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+	before := len(a.messages)
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEsc})
+
+	if _, ok := a.autocompleteSelection(); ok {
+		t.Fatalf("expected the highlight to be cleared")
+	}
+	if len(a.autocomplete) == 0 {
+		t.Fatalf("expected the candidates to stay on screen")
+	}
+	if len(a.messages) != before {
+		t.Fatalf("esc reached the request: messages %d, want %d", len(a.messages), before)
 	}
 }
 

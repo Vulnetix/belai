@@ -43,8 +43,18 @@ var findUnsafeOptions = map[string]bool{
 	"-delete": true, "-fprint": true, "-fls": true, "-fprintf": true,
 }
 
-// bashAllowed reports whether the whole command passes the read-only gate.
-func bashAllowed(command string) bool {
+// gitValueOptions are git options that consume a following argument. The git
+// branch skips the option's value so `git -C sub status` cannot smuggle a
+// mutating subcommand past the gate through an option argument.
+var gitValueOptions = map[string]bool{
+	"-C": true, "-c": true, "--git-dir": true, "--work-tree": true,
+	"--namespace": true, "--exec-path": true, "--config-env": true,
+}
+
+// BashAllowed reports whether the whole command passes the read-only gate.
+// It is the single source of truth for the read-only Bash allowlist; plan mode
+// forwards to it.
+func BashAllowed(command string) bool {
 	command = strings.TrimSpace(command)
 	if command == "" || strings.ContainsAny(command, ShellMetacharacters) {
 		return false
@@ -53,24 +63,57 @@ func bashAllowed(command string) bool {
 	base := filepath.Base(fields[0])
 	switch base {
 	case "git":
-		for i := 1; i < len(fields); i++ {
-			f := fields[i]
-			if f == "-C" || f == "-c" || f == "--git-dir" || f == "--work-tree" || strings.HasPrefix(f, "--") {
-				continue
-			}
-			return gitReadSubcommands[f]
-		}
-		return false
+		return gitReadOnly(fields)
 	case "find":
-		for _, f := range fields[1:] {
-			if findUnsafeOptions[f] {
-				return false
-			}
-		}
-		return true
+		return findReadOnly(fields)
+	case "env":
+		return envReadOnly(fields)
 	default:
 		return readOnlyBash[base]
 	}
+}
+
+// envReadOnly allows env only when it prints the environment rather than
+// executing a command. `env VAR=x` and `env` print; `env cmd` executes, so any
+// bare argument that is not an assignment or a print-only option is rejected.
+// This keeps the read-only gate fail-closed even though env sits in the word
+// list.
+func envReadOnly(fields []string) bool {
+	for _, f := range fields[1:] {
+		if strings.HasPrefix(f, "-") || strings.Contains(f, "=") {
+			continue
+		}
+		return false // a bare token names a command to execute
+	}
+	return true
+}
+
+// gitReadOnly rejects git invocations whose subcommand mutates. Options that
+// consume a value are skipped along with their argument, so the subcommand is
+// always the first non-option, non-value token.
+func gitReadOnly(fields []string) bool {
+	for i := 1; i < len(fields); i++ {
+		f := fields[i]
+		if gitValueOptions[f] {
+			i++ // skip the option's argument
+			continue
+		}
+		if strings.HasPrefix(f, "-") {
+			continue
+		}
+		return gitReadSubcommands[f]
+	}
+	return false
+}
+
+// findReadOnly rejects find invocations that can write, delete, or execute.
+func findReadOnly(fields []string) bool {
+	for _, f := range fields[1:] {
+		if findUnsafeOptions[f] {
+			return false
+		}
+	}
+	return true
 }
 
 // Bash runs a single command. With ReadOnly set it executes without a shell
@@ -103,6 +146,10 @@ func (b *Bash) Definition() Definition {
 
 // Kind returns "bash".
 func (b *Bash) Kind() Kind { return KindBash }
+
+// Mutates reports whether Bash mutates the workspace: full mode does,
+// read-only mode does not.
+func (b *Bash) Mutates() bool { return !b.ReadOnly }
 
 // Subject returns the raw command for permission evaluation.
 func (b *Bash) Subject(args map[string]any) string {
@@ -144,7 +191,7 @@ func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink
 		if strings.ContainsAny(cmd, ShellMetacharacters) {
 			return Result{}, fmt.Errorf("command contains shell metacharacters")
 		}
-		if !bashAllowed(cmd) {
+		if !BashAllowed(cmd) {
 			return Result{}, fmt.Errorf("command not in read-only allowlist: %s", cmd)
 		}
 		fields := strings.Fields(cmd)

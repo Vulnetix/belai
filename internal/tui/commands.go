@@ -10,10 +10,7 @@ import (
 
 	"github.com/vulnetix/signet/internal/agentprofile"
 	"github.com/vulnetix/signet/internal/commands"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/goals"
 	"github.com/vulnetix/signet/internal/profiles"
-	"github.com/vulnetix/signet/internal/sanitize"
 	"github.com/vulnetix/signet/internal/vulnetixcli"
 )
 
@@ -138,19 +135,6 @@ func NewRegistry(workdir string) *Registry {
 		}
 		return nil
 	})
-	r.Register("plan", "toggle plan mode", nil, func(a *App, arg string) tea.Cmd {
-		if a.mode == "plan" {
-			a.mode = "agent"
-			a.addSystem("plan mode off")
-		} else {
-			a.mode = "plan"
-			a.addSystem("plan mode on (read-only)")
-		}
-		a.modeExplicit = true
-		a.syncPlanMode()
-		a.saveMode()
-		return nil
-	})
 	r.Register("todos", "show plan progress", nil, func(a *App, arg string) tea.Cmd {
 		if a.todos == nil || len(a.todos.Items) == 0 {
 			a.addSystem("todos: no plan tracked yet")
@@ -160,51 +144,12 @@ func NewRegistry(workdir string) *Registry {
 		a.addSystem(fmt.Sprintf("todos: %d/%d done", p.Completed(), p.Total))
 		return nil
 	})
-	r.Register("goal", "memorise or replay a goal", func() []string {
-		names, _ := goals.Names(workdir)
-		return names
-	}, func(a *App, arg string) tea.Cmd {
-		if arg == "" {
-			a.addSystem("goal: use /goal <name> to replay, or /goal memorise <name> <content>")
-			return nil
-		}
-		if rest, ok := strings.CutPrefix(arg, "memorise "); ok {
-			name, body, _ := strings.Cut(rest, " ")
-			if name == "" || body == "" {
-				a.addSystem("goal memorise <name> <content>")
-				return nil
-			}
-			if _, err := goals.Memorise(workdir, goals.Goal{Name: name, Content: sanitize.Sanitize(body)}); err != nil {
-				a.addSystem("goal memorise failed: " + err.Error())
-				return nil
-			}
-			a.addSystem("goal memorised: " + name)
-			return nil
-		}
-		g, err := goals.Load(workdir, arg)
-		if err != nil {
-			a.addSystem("goal: " + err.Error())
-			return nil
-		}
-		a.state.ActiveGoal = arg
-		_ = config.SaveState(a.state)
-		a.invalidateAgentSession()
-		a.addSystem("goal replaying: " + g.Name)
-		return nil
-	})
 	r.Register("execute", "leave plan mode and execute the plan", nil, func(a *App, arg string) tea.Cmd {
 		a.mode = "agent"
 		a.modeExplicit = true
 		a.syncPlanMode()
 		a.saveMode()
 		a.addSystem("plan mode off — executing")
-		return nil
-	})
-	r.Register("stay", "stay in plan mode", nil, func(a *App, arg string) tea.Cmd {
-		a.mode = "plan"
-		a.modeExplicit = true
-		a.syncPlanMode()
-		a.addSystem("staying in plan mode")
 		return nil
 	})
 	r.Register("refine", "refine the extracted plan", nil, func(a *App, arg string) tea.Cmd {
@@ -231,21 +176,8 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("permissions", "edit tool permissions", nil, func(a *App, arg string) tea.Cmd {
 		return a.push(viewPermissions)
 	})
-	r.Register("help", "show available commands", nil, func(a *App, arg string) tea.Cmd {
-		var lines []string
-		lines = append(lines, "commands:")
-		for _, n := range a.registry.Names() {
-			c, ok := a.registry.Command(n)
-			if !ok {
-				continue
-			}
-			if c.AliasOf != "" {
-				lines = append(lines, "  /"+n+" — alias of /"+c.AliasOf)
-			} else {
-				lines = append(lines, "  /"+n+" — "+c.Description)
-			}
-		}
-		a.addSystem(strings.Join(lines, "\n"))
+	r.Register("help", "show commands and keyboard shortcuts", nil, func(a *App, arg string) tea.Cmd {
+		a.addSystem(helpText(a.registry))
 		return nil
 	})
 	r.Register("clear", "start a new session", nil, func(a *App, arg string) tea.Cmd {
@@ -260,10 +192,10 @@ func NewRegistry(workdir string) *Registry {
 		return a.renameSession(arg)
 	})
 	r.Register("agent", "manage background agents", func() []string {
-		return []string{"create", "list", "start", "stop", "pause", "resume", "log"}
+		return []string{"create", "list", "edit", "start", "stop", "pause", "resume", "log"}
 	}, func(a *App, arg string) tea.Cmd {
 		if arg == "" {
-			a.addSystem("agent: subcommands: create, list, start <name>, stop <name>, pause <name>, resume <name>, log <name>")
+			a.addSystem("agent: subcommands: create, list, edit <name>, start <name>, stop <name>, pause <name>, resume <name>, log <name>")
 			return nil
 		}
 		sub, rest, _ := strings.Cut(arg, " ")
@@ -287,6 +219,18 @@ func NewRegistry(workdir string) *Registry {
 				return agentBuilderDoneMsg{profile: p, path: path}
 			}
 		case "list":
+			return a.push(viewAgent)
+		case "edit":
+			name := strings.TrimSpace(rest)
+			if name == "" {
+				a.addSystem("agent edit <name>")
+				return nil
+			}
+			if _, err := agentprofile.Load(name); err != nil {
+				a.addSystem("agent edit: " + err.Error())
+				return nil
+			}
+			a.agentState.pendingEditProfile = name
 			return a.push(viewAgent)
 		case "start":
 			name := strings.TrimSpace(rest)

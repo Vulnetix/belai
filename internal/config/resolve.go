@@ -104,9 +104,18 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.Caveman = s.Caveman
 		e.Origin["caveman"] = src
 	}
-	if s.BashReadOnly != nil {
-		e.Settings.BashReadOnly = s.BashReadOnly
-		e.Origin["bash_readonly"] = src
+	if s.ReadOnly != nil || s.BashReadOnly != nil {
+		if s.ReadOnly != nil {
+			e.Settings.ReadOnly = s.ReadOnly
+		}
+		if s.BashReadOnly != nil {
+			// Deprecated alias: read_only wins when both are present.
+			if e.Settings.ReadOnly == nil {
+				e.Settings.ReadOnly = s.BashReadOnly
+			}
+		}
+		e.Settings.BashReadOnly = nil
+		e.Origin["read_only"] = src
 	}
 	if !s.Permissions.IsZero() {
 		e.Settings.Permissions = e.Settings.Permissions.Merge(s.Permissions)

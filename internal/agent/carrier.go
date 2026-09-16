@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/vulnetix/signet/internal/agentprofile"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/goals"
 	"github.com/vulnetix/signet/internal/modes"
@@ -39,9 +40,17 @@ func CarrierOptions(workdir string, d rolemanager.ModeDecision, st config.State,
 	case modes.ModeAgent:
 		if d.AgentName != "" {
 			prof, err := profiles.Load(d.AgentName)
-			if err == nil {
+			switch {
+			case err == nil:
 				profileText = prof.Content
-			} else {
+			default:
+				// A background-agent definition can carry a foreground turn
+				// too: its system_prompt is the same kind of text, stored in
+				// the other tree. Flat profiles win the name.
+				if bg, bgErr := agentprofile.Load(d.AgentName); bgErr == nil {
+					profileText = bg.SystemPrompt
+					break
+				}
 				loadErr = fmt.Errorf("load profile %q: %w", d.AgentName, err)
 				fmt.Fprintf(os.Stderr, "signet: warning: %v; falling back to default agent\n", loadErr)
 			}

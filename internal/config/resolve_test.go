@@ -88,22 +88,22 @@ func TestResolveNilEnvFallsBackToOS(t *testing.T) {
 	}
 }
 
-func TestResolveBashReadOnlyOrigin(t *testing.T) {
+func TestResolveReadOnlyOrigin(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 	workdir := t.TempDir()
 
-	if err := SaveGlobal(Settings{BashReadOnly: boolPtr(true)}); err != nil {
+	if err := SaveGlobal(Settings{ReadOnly: boolPtr(true)}); err != nil {
 		t.Fatalf("SaveGlobal: %v", err)
 	}
 	eff, err := Resolve(workdir, func(string) string { return "" }, Settings{})
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if eff.Settings.BashReadOnly == nil || !*eff.Settings.BashReadOnly {
-		t.Fatalf("expected bash_readonly true from global settings")
+	if eff.Settings.ReadOnly == nil || !*eff.Settings.ReadOnly {
+		t.Fatalf("expected read_only true from global settings")
 	}
-	if eff.Origin["bash_readonly"] != SourceGlobal {
-		t.Fatalf("bash_readonly origin = %q, want global", eff.Origin["bash_readonly"])
+	if eff.Origin["read_only"] != SourceGlobal {
+		t.Fatalf("read_only origin = %q, want global", eff.Origin["read_only"])
 	}
 }
 

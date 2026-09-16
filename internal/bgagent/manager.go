@@ -418,7 +418,7 @@ func (m *Manager) executeTurn(ctx context.Context, inst *AgentInstance) {
 }
 
 func (m *Manager) buildSession(profile agentprofile.AgentProfile) (*agent.Session, error) {
-	reg := tools.Default(m.workdir, m.settings.BashReadOnlyEnabled())
+	reg := tools.Default(m.workdir, m.settings.ReadOnlyEnabled())
 	if len(profile.Tools) > 0 {
 		var filtered []tools.Tool
 		for _, name := range profile.Tools {

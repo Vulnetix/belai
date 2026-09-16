@@ -13,14 +13,35 @@ const (
 	KindGrep      Kind = "grep"
 	KindGlob      Kind = "glob"
 	KindExplore   Kind = "explore"
+	KindWrite     Kind = "write"
+	KindEdit      Kind = "edit"
 )
 
+// AllKinds is every registered Kind, in declaration order. Tests iterate it to
+// pin that the read-only classification can never silently admit a new
+// mutating kind into the concurrent read-only fan-out.
+var AllKinds = []Kind{
+	KindRead, KindWebSearch, KindWebFetch, KindBash, KindGrep, KindGlob,
+	KindExplore, KindWrite, KindEdit,
+}
+
+// readOnlyKinds is the closed allowlist of kinds that only read. A Kind absent
+// from this map is mutating: that is the fail-closed default, so adding a new
+// kind without registering it here makes it run on the sequential path rather
+// than racing the concurrent read-only fan-out.
+var readOnlyKinds = map[Kind]bool{
+	KindRead:      true,
+	KindWebSearch: true,
+	KindWebFetch:  true,
+	KindGrep:      true,
+	KindGlob:      true,
+	KindExplore:   true,
+}
+
 // ReadOnly reports whether a tool of this kind only reads and never mutates
-// the workspace. The sole mutating kind is Bash: there is no Edit/Write tool,
-// and all mutation goes through Bash. It gates the concurrent read-only tool
-// run in the agent loop.
+// the workspace. It gates the concurrent read-only tool run in the agent loop.
 func (k Kind) ReadOnly() bool {
-	return k != KindBash
+	return readOnlyKinds[k]
 }
 
 // Result is a tool output.
@@ -67,6 +88,16 @@ func ReadResult(content string) Result {
 // ReadResultMeta constructs a Read tool result with attached metadata.
 func ReadResultMeta(content string, meta map[string]any) Result {
 	return Result{Kind: KindRead, Content: content, Meta: meta}
+}
+
+// WriteResult constructs a Write tool result.
+func WriteResult(content string) Result {
+	return Result{Kind: KindWrite, Content: content}
+}
+
+// EditResult constructs an Edit tool result.
+func EditResult(content string) Result {
+	return Result{Kind: KindEdit, Content: content}
 }
 
 // WebFetchResult constructs an untrusted WebFetch tool result.

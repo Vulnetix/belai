@@ -3,11 +3,11 @@ package modes
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"strings"
 
 	"github.com/vulnetix/signet/internal/plans"
 	"github.com/vulnetix/signet/internal/session"
+	"github.com/vulnetix/signet/internal/tools"
 )
 
 // PlanOption is the user's choice after a plan is extracted.
@@ -126,102 +126,10 @@ var writeTools = map[string]bool{
 // names are case-folded so a registered "Bash" cannot bypass a lowercase key.
 func IsWriteTool(name string) bool { return writeTools[strings.ToLower(name)] }
 
-// readOnlyBash is the bash allowlist: read-only inspection/search/
-// directory/read-only-git/system-info and data-filter commands. Anything
-// else is blocked. awk/sed/xargs are deliberately absent — each is a write or
-// arbitrary-execution primitive, not a read-only filter.
-var readOnlyBash = map[string]bool{
-	"cat": true, "grep": true, "egrep": true, "rg": true, "find": true,
-	"ls": true, "uname": true, "pwd": true, "head": true, "tail": true,
-	"wc": true, "sort": true, "uniq": true, "file": true, "which": true,
-	"diff": true, "stat": true, "du": true, "basename": true,
-	"dirname": true, "realpath": true, "readlink": true,
-	"jq": true, "cut": true, "tr": true, "nl": true, "fold": true,
-	"paste": true, "join": true, "comm": true, "rev": true, "shuf": true,
-	"seq": true, "od": true, "xxd": true, "base64": true, "date": true,
-	"printf": true, "echo": true, "tree": true, "fd": true, "zcat": true,
-	"gunzip": true, "md5sum": true, "sha256sum": true, "column": true,
-	"expand": true, "unexpand": true,
-}
-
-// bashMetacharacters are shell syntax that would let a command escape the
-// allowlist. The bash tool never executes through a shell, but rejecting these
-// before tokenising keeps the gate honest and fails closed.
-// It is spelled out rather than aliased to tools.ShellMetacharacters because
-// the bash tool imports this package; tools.TestShellMetacharactersMatchesPlanmode
-// pins the two to the same literal.
-const bashMetacharacters = ";&|$`<>\n()"
-
-// findUnsafeOptions are find flags that write, delete, or execute. A read-only
-// find may not carry them.
-var findUnsafeOptions = map[string]bool{
-	"-exec": true, "-execdir": true, "-ok": true, "-okdir": true,
-	"-delete": true, "-fprint": true, "-fls": true, "-fprintf": true,
-}
-
-// gitReadSubcommands is the read-only git subcommand allowlist. add/commit/
-// push and other mutating subcommands are blocked.
-var gitReadSubcommands = map[string]bool{
-	"status":    true,
-	"log":       true,
-	"diff":      true,
-	"show":      true,
-	"rev-parse": true,
-	"ls-files":  true,
-	"grep":      true,
-	"describe":  true,
-}
-
 // BashAllowed reports whether a bash command is within the read-only allowlist.
-// Shell metacharacters are rejected before tokenising, so "cat x; rm -rf /"
-// can never pass by merely starting with an allowlisted word.
-func BashAllowed(command string) bool {
-	command = strings.TrimSpace(command)
-	if command == "" || strings.ContainsAny(command, bashMetacharacters) {
-		return false
-	}
-	fields := strings.Fields(command)
-	base := filepath.Base(fields[0])
-	switch base {
-	case "git":
-		return gitReadOnly(fields)
-	case "find":
-		return findReadOnly(fields)
-	default:
-		return readOnlyBash[base]
-	}
-}
-
-// findReadOnly rejects find invocations that can write, delete, or execute.
-func findReadOnly(fields []string) bool {
-	for _, f := range fields[1:] {
-		if findUnsafeOptions[f] {
-			return false
-		}
-	}
-	return true
-}
-
-// gitValueOptions are git options that consume a following argument.
-var gitValueOptions = map[string]bool{
-	"-C": true, "-c": true, "--git-dir": true, "--work-tree": true,
-	"--namespace": true, "--exec-path": true, "--config-env": true,
-}
-
-func gitReadOnly(fields []string) bool {
-	for i := 1; i < len(fields); i++ {
-		f := fields[i]
-		if gitValueOptions[f] {
-			i++ // skip the option's argument
-			continue
-		}
-		if strings.HasPrefix(f, "-") {
-			continue
-		}
-		return gitReadSubcommands[f]
-	}
-	return false
-}
+// It forwards to internal/tools, the single source of truth; plan mode and the
+// read-only Bash tool share one parser and one word list.
+func BashAllowed(command string) bool { return tools.BashAllowed(command) }
 
 // ToolAllowed reports whether a tool call may proceed. In plan mode write
 // tools are disabled and bash is restricted to the read-only allowlist; other

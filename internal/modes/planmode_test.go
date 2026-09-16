@@ -3,6 +3,8 @@ package modes
 import (
 	"reflect"
 	"testing"
+
+	"github.com/vulnetix/signet/internal/tools"
 )
 
 func TestToolAllowed(t *testing.T) {
@@ -131,6 +133,40 @@ func TestToolAllowedCaseFold(t *testing.T) {
 	}
 	if !ToolAllowed("Write", nil, false) {
 		t.Fatal("Write should be allowed outside plan mode")
+	}
+}
+
+// TestToolAllowedBlocksCanonicalWriteEdit pins the dormant denylist: the
+// canonical Write and Edit tools are blocked by their case-folded names.
+func TestToolAllowedBlocksCanonicalWriteEdit(t *testing.T) {
+	for _, name := range []string{"Write", "Edit", "write", "edit"} {
+		if ToolAllowed(name, map[string]any{"path": "x"}, true) {
+			t.Fatalf("ToolAllowed(%q) = true in plan mode, want false", name)
+		}
+		if !ToolAllowed(name, map[string]any{"path": "x"}, false) {
+			t.Fatalf("ToolAllowed(%q) = false outside plan mode, want true", name)
+		}
+	}
+}
+
+// TestBashAllowedMatchesToolsParser pins that the plan-mode forwarder and the
+// tools parser are one implementation: they must agree on the whole corpus,
+// including the git value-option skipping that drifted before.
+func TestBashAllowedMatchesToolsParser(t *testing.T) {
+	corpus := []string{
+		"", " ", "cat x", "env", "printenv", "sleep 1", "false",
+		"git status", "git -C /x status", "git -c x=y status",
+		"git --git-dir=/x status", "git log", "git push",
+		"git -C /x push", "find . -name x", "find . -delete",
+		"find . -exec rm {} \\;", "grep x f", "rm -rf /",
+		"echo hi", "cat x; rm -rf /", "ls | sh",
+	}
+	for _, c := range corpus {
+		a := BashAllowed(c)
+		b := tools.BashAllowed(c)
+		if a != b {
+			t.Fatalf("BashAllowed(%q) = %v but tools.BashAllowed = %v", c, a, b)
+		}
 	}
 }
 

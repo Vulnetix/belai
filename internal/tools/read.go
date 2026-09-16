@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 
 	"github.com/alecthomas/chroma/v2/lexers"
 )
@@ -75,17 +74,8 @@ func (r *Read) Execute(ctx context.Context, args map[string]any) (Result, error)
 	}
 
 	offset := int64(0)
-	if v, ok := args["offset"]; ok {
-		switch t := v.(type) {
-		case float64:
-			offset = int64(t)
-		case int:
-			offset = int64(t)
-		case int64:
-			offset = t
-		case string:
-			offset, _ = strconv.ParseInt(t, 10, 64)
-		}
+	if v, ok := argInt64(args, "offset"); ok {
+		offset = v
 	}
 	if offset > 0 {
 		if _, err := f.Seek(offset, 0); err != nil {
@@ -94,17 +84,8 @@ func (r *Read) Execute(ctx context.Context, args map[string]any) (Result, error)
 	}
 
 	limit := max
-	if v, ok := args["limit"]; ok {
-		switch t := v.(type) {
-		case float64:
-			limit = int64(t)
-		case int:
-			limit = int64(t)
-		case int64:
-			limit = t
-		case string:
-			limit, _ = strconv.ParseInt(t, 10, 64)
-		}
+	if v, ok := argInt64(args, "limit"); ok {
+		limit = v
 		if limit > max {
 			limit = max
 		}

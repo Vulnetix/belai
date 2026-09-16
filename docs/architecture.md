@@ -155,24 +155,22 @@ Mirrors Pi's plan-mode extension:
   `status`/`log`/`diff`, `uname`, etc.).
   Mutating commands (`rm`, `mv`, `cp`, `mkdir`, `touch`, `git add/commit/push`,
   package installs, `sudo`/`kill`, editors) are blocked.
-- Toggle via `/plan`, `Ctrl+Alt+P`, or `--plan`; `/todos` shows progress.
+- Toggle via `/mode plan`, `Ctrl+Alt+P`, or `--plan`; `/todos` shows progress.
 - After the agent emits a numbered plan under a `Plan:` header, the steps are
-  extracted (`internal/plans/extract.go`) and the user is prompted with three
+  extracted (`internal/plans/extract.go`) and the user is prompted with two
   options:
-  - **Execute the plan** — leaves plan mode (full tools restored);
+  - **Execute the plan** — `/execute` leaves plan mode (full tools restored);
     `[DONE:n]` markers advance the progress widget
     (`internal/plans/progress.go`).
-  - **Stay in plan mode** — keeps read-only constraints.
-  - **Refine the plan** — opens the editor and sends the revision back as a
-    user message.
+  - **Refine the plan** — `/refine` opens the editor and sends the revision
+    back as a user message while staying in plan mode.
 - Plan-mode state (enabled/executing/todos) is persisted as session entries so
   it survives resume.
 
 ### Goal mode
 
-Reads and writes goals under `.vulnetix/goals/`. The "memorise" action saves a
-goal; memorised goals are surfaced later through slash-command autocomplete
-(replay).
+Goal-mode state is stored under `.vulnetix/goals/`. It is entered with
+`/mode goal` or by a mode classifier routing the prompt to goal mode.
 
 A goal-mode prompt at the top level runs a **pass loop** instead of a single
 bounded tool loop: when a pass exhausts its iteration budget, a goal evaluator
@@ -183,9 +181,7 @@ normative rules, including the verification gate and every termination
 condition, are in [role-manager.md](role-manager.md), "Goal pass loop".
 
 A prompt the classifier routes to goal mode carries the prompt itself as the
-goal carrier. `CarrierOptions` only knows how to load a *memorised* goal, so
-without this a classifier-routed goal would reach the evaluator with nothing to
-evaluate against.
+goal carrier, so a goal-mode turn always has something to evaluate against.
 
 Subagents never enter the pass loop: `AllowPassLoop` is a separate authority
 from `AllowExplore` and only top-level session construction sets it, so an
@@ -217,10 +213,15 @@ profiles in the background. Profiles are stored under
 allow-list, operating mode (`single`, `loop`, `scheduled`, `monitor`), and
 autonomy level (`supervised` or `autonomous`).
 
-The TUI integrates background agents via `/agent create`, `/agent start`,
-`/agent pause`, `/agent resume`, `/agent stop`, `/agent list`, and
-`/agent log`. Events stream into the main transcript as system lines so the
-user's session is never blocked.
+The TUI integrates background agents via `/agent create`, `/agent edit`,
+`/agent start`, `/agent pause`, `/agent resume`, `/agent stop`, `/agent list`,
+and `/agent log`. `/agent list` discovers every stored profile, shows the
+file path for each, and highlights running instances; pressing `e` opens an
+editor where the profile's description, mode, schedule, monitor condition,
+autonomy, max iterations, reflection, and system prompt can be changed. After
+a successful `/agent create`, the new profile is selected and the editor is
+opened automatically. Events stream into the main transcript as system lines
+so the user's session is never blocked.
 
 `loop` mode treats `max_iterations` as an *inner* budget: when it is exhausted,
 an agent-loop evaluator decides whether to continue, pause, sleep one schedule
@@ -314,8 +315,8 @@ guidance when `caveman` is on.
 
 `internal/tui` is a Bubble Tea app laid out Codex-style: a scrolling transcript
 viewport, Pix banner, streaming assistant/tool output, slash-command editor
-with autocomplete, `/model` provider/model/effort picker, `/settings` browser,
-`/permissions` editor, and a two-line status footer. The Ask composer doubles
+with autocomplete, the agent picker, `/model` provider/model/effort picker,
+`/settings` browser, `/permissions` editor, and a two-line status footer. The Ask composer doubles
 as the working indicator: it shows a Role Manager pill while classification
 runs and a generic `working` label for plain I/O (see below).
 
@@ -324,10 +325,18 @@ runs and a generic `working` label for plain I/O (see below).
 The footer is a two-line status bar:
 - Line 1: cwd (home collapsed to `~`) and git branch (`⎇ main`).
 - Line 2: provider·model, mode chip (colored), session (name or short id),
-  context-usage progress bar and remaining percentage.
+  context-usage progress bar and remaining percentage. The mode chip carries
+  the engaged agent when there is one and the mode is agent — `agent ·
+  reviewer` — so what is carrying the turn is visible without opening
+  anything.
 - Segments are never truncated or wrapped: when the terminal is narrower
   than the content, the padding between the mode chip and the right-hand
   segments clamps to one cell and the line overflows instead.
+
+A mode decision writes a transcript line only when it changes something: a
+classifier result that lands on the mode already selected repeats what the
+chip is showing, so it stays silent. A decision that also launches explore
+agents still says so, since that describes the turn rather than the chip.
 
 Effort, when set, renders subtly next to the model id in muted style
 (`gpt-5 · high`). An explicit `none` (reasoning off) is a real value and
@@ -561,20 +570,39 @@ Business rules:
 | `ctrl+l` | Clear the transcript *view* — the session is kept |
 | `ctrl+o` | Toggle full output for all truncated turns and tool results |
 | `ctrl+r` / `ctrl+t` | Toggle reasoning-panel / tool-row display for the session |
+| `ctrl+alt+p` | Cycle mode and re-sync plan mode, from any screen |
+| `ctrl+home` / `ctrl+end` | Jump the transcript to the top / bottom |
 | `ctrl+j` / `alt+enter` | Insert a newline in the prompt editor |
 | `shift+enter` | Insert a newline on terminals that support the kitty keyboard protocol |
 | `up` / `down` | Browse prompt history and prompt library (type to filter; any edit key leaves the browse cycle) |
 | `alt+s` | Save the current prompt to the project prompt library |
-| `tab` | Cycle slash-command autocomplete hints |
-| `right` | Accept the first slash-command autocomplete hint |
+| `tab` | Move the highlight through the slash-command hints, or — with no `/` popup, in agent mode — through the agent picker. It never writes into the prompt |
+| `right` / `enter` | Accept the highlighted hint (or the first, for `right` with nothing highlighted); in the agent picker, engage the highlighted agent. Without a highlight, `right` is the cursor key and `enter` sends |
+| `ctrl+g` | Start the highlighted `↻` background-agent definition as a background agent |
+| `esc` (with a highlight) | Drop the highlight, keeping the popup or strip on screen |
 | `enter` (while working) | Steer the running turn with a new user message |
 | mouse wheel / `pgup` / `pgdown` / `shift+up` / `shift+down` | Scroll the transcript (detaches auto-follow) |
 | left drag over the transcript | Select a character range (highlighted live); release copies the clean text |
 | `esc` (with a live selection) | Clear the selection first; a second `esc` cancels/pre-send as usual |
 
+Highlighting and accepting are deliberately separate in both the `/` popup and
+the agent picker. `tab` moves a highlight only; it must not write the
+candidate into the prompt, because the completion list is recomputed from the
+prompt text on every message — including the cursor blink — so writing `/mode`
+into the editor narrowed the list to that one command and pinned the cycle to
+a single entry. `refreshAutocomplete` drops the highlight only when the
+candidate list actually changes, so a blink can never move it either.
+
 `ctrl+l` clears the transcript view; `/clear` (or `/new`) starts a *new* session.
 They are deliberately different: one is cosmetic, the other changes what is
 persisted.
+
+The user-facing inventory of every binding, including the per-view keys the
+`HelpBar` footers advertise, lives in `keySections()` in
+`internal/tui/help.go`; `/help` renders it under the command list.
+`TestHelpTextCoversEveryHandledKey` scans the `case "<key>":` literals across
+the package and fails when a handled key is missing from that table, so a new
+binding needs a line there as well as in this document.
 
 ### Prompt syntax
 
@@ -583,6 +611,52 @@ persisted.
 - `!cmd` executes a local `Bash` command (full shell by default; read-only
   in plan mode, or whenever `bash_readonly` is set) and sends the output to
   the model under the `signet:debug` profile.
+
+### Agent picker
+
+In agent mode the composer carries a strip of the agents that can carry the
+turn, drawn from both trees:
+
+| Row | Source | Marker |
+| --- | ------ | ------ |
+| user profile | `internal/profiles` (flat `Name`/`Content`) | none, keycap bright |
+| background definition | `internal/agentprofile` | `↻`, amber |
+| built-in | embedded `signet:` profile | `◈`, muted |
+
+A flat profile owns a shared name — it is what `CarrierOptions` resolves
+first — so a background definition of the same name is not offered twice.
+
+The strip is the slash popup's sibling and shares its keys: `tab` highlights
+the next candidate (ending on a `(none)` entry that clears the selection),
+`enter` or `right` engages the highlighted one, `esc` drops the highlight.
+Typing `@name` — or `@agent:name` — filters the strip, and the filter text is
+removed from the prompt when a candidate is engaged. The slash popup wins the
+strip and `tab` whenever both could show.
+
+`ctrl+g` is the second verb, and only background definitions answer it: it
+starts the highlighted definition as a background agent (`bgagent.Manager`),
+exactly as `/agent start <name>` does. Starting a loop does not answer the
+prompt in the composer, so it is deliberately not `enter`.
+
+The engaged agent is session state: it applies to every following turn
+(`App.namedAgent` → `agent.TurnInput.ForceAgent`), shows in the footer chip
+next to the mode, and is cleared by `/clear`. It is **agent mode only**. Plan
+and goal mode carry Signet's own plan or goal — `resolveCarrier` admits
+exactly one carrier, and `ForceAgent` also forces the mode, so sending an
+engaged agent from plan mode would silently drop the mode the user picked.
+Outside agent mode the selection goes dormant rather than being discarded
+(`App.engagedAgent`, `App.engagedAgentTools` both return nothing): the footer
+hides it, the picker hides, the tool allow-list does not apply, and cycling
+`agent → plan → goal → agent` gets it back. `/profile <name>` engages the
+same field. The system prompt keeps its shape — the engaged text is the
+single carrier block (`prompt.CarrierProfile`), so the identity block naming
+Signet, the provider and the model still opens the prompt. For a background
+definition the carrier text is its `system_prompt`, resolved by
+`CarrierOptions` falling back to `agentprofile.Load`, and its `tools`
+allow-list narrows the foreground session's registry the same way
+`bgagent.buildSession` narrows it. Its `mode`, `schedule` and
+`max_iterations` are background-loop settings and do not apply in the
+foreground.
 
 ### Prompt library
 
@@ -617,22 +691,19 @@ Enter to save the current editor text to the project library. Esc cancels.
 
 | Command | Description |
 | ------- | ----------- |
-| `/help` | Show available commands |
+| `/help` | Show the commands and every keyboard shortcut |
 | `/model` | Show current provider and model |
-| `/mode` | Show or set operating mode |
-| `/plan` | Toggle plan mode |
+| `/mode` | Show or set operating mode (e.g. `/mode plan`) |
 | `/settings` | View and edit settings |
 | `/credentials` | Manage provider credentials |
 | `/permissions` | Edit tool permissions |
-| `/goal` | Memorise or replay a goal |
 | `/profile` | Switch agent profile |
 | `/clear` (or `/new`) | Start a new session |
 | `/compact` | Summarise the session into a new one |
 | `/rename` | Rename the current session |
 | `/todos` | Show progress of the tracked todo list |
-| `/agent` | Manage background agents (`create`, `list`, `start`, `stop`, `pause`, `resume`, `log`) |
+| `/agent` | Manage background agents (`create`, `list`, `edit <name>`, `start`, `stop`, `pause`, `resume`, `log`) |
 | `/execute` | Leave plan mode and execute the extracted plan |
-| `/stay` | Stay in plan mode after a plan is proposed |
 | `/refine` | Refine the extracted plan without leaving plan mode |
 | `/code-review` | Run a Vulnetix code review over the working tree |
 | `/local-model` | Assess, download, launch, or stop a local classifier model |

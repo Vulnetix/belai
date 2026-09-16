@@ -262,7 +262,7 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 }
 
 func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool) (run.Result, error) {
-	reg := tools.Default(workdir, settings.BashReadOnlyEnabled())
+	reg := tools.Default(workdir, settings.ReadOnlyEnabled())
 
 	perms := permissions.From(settings.Permissions.Allow, settings.Permissions.Ask, settings.Permissions.Deny)
 

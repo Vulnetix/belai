@@ -126,12 +126,21 @@ second time. A bounded loop hid that; a restarting one compounds it every pass.
 
 | Command | Effect |
 | ------- | ------ |
+| `/agent create <description>` | Build and save a new agent profile |
+| `/agent edit <name>` | Open an existing profile in the agent editor |
+| `/agent list` | Show every discovered profile, its file path, and any running state |
 | `/agent start <name>` | Start the agent and stream its events into the transcript |
 | `/agent pause <name>` | Suspend a running loop-mode agent at its next boundary |
 | `/agent resume <name>` | Wake a paused agent and re-attach its event stream |
 | `/agent stop <name>` | Cancel the agent's context and close it out |
-| `/agent list` | Show every agent with its state and iteration count |
 | `/agent log <name>` | Show the agent's recent events |
+
+In the list view, `↑`/`↓` selects a profile, `enter` or `e` opens the editor, and
+`esc` returns to chat. The editor exposes the description, mode, schedule,
+monitor condition, autonomy, max iterations, reflection, and system prompt.
+Toggles and choose fields are cycled with `space` or `enter`; text fields open
+an inline editor and commit with `enter`. After `/agent create` the new profile
+is selected and the editor opens automatically.
 
 ## Event flow
 
@@ -166,6 +175,23 @@ User-built agents live under `~/.vulnetix/signet/profiles/agents/` to avoid
 clashing with the flat `profiles/` namespace used by `/profile`. The two
 namespaces are disjoint; no migration is required. Setting `SIGNET_HOME` moves
 both.
+
+## Running a definition in the foreground
+
+A definition is not only a background agent. The agent picker above the
+composer (see [architecture.md](architecture.md), "Agent picker") lists both
+trees, marking definitions from this one with `↻`, and offers two verbs:
+
+| Key | Effect |
+| --- | ------ |
+| `enter` / `right` | Engage the definition for the session's agent-mode turns: its `system_prompt` becomes the system prompt's carrier block and its `tools` allow-list narrows the session registry, the same narrowing `Manager.buildSession` applies. `mode`, `schedule`, `monitor_condition`, `reflection` and `max_iterations` are loop settings and do not apply in the foreground. |
+| `ctrl+g` | Start it as a background agent, exactly as `/agent start <name>` does. It does not touch the prompt in the composer. |
+
+Engaging resolves through `agent.CarrierOptions`, which tries
+`profiles.Load` first and falls back to `agentprofile.Load` — so
+`@agent:<name>` and `/profile <name>` reach these definitions too. A flat
+profile owns a shared name, and the picker drops the shadowed definition
+rather than offering a row that would engage the other file.
 
 ## Hermes-style builder
 

@@ -94,17 +94,17 @@ func TestProjectOverridesGlobal(t *testing.T) {
 	}
 }
 
-func TestBashReadOnlyRoundTripAndDefault(t *testing.T) {
+func TestReadOnlyRoundTripAndDefault(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 
-	// Default: unset means full shell (read-only is an opt-in).
+	// Default: unset means the full tool set (read-only is an opt-in).
 	var zero Settings
-	if zero.BashReadOnlyEnabled() {
-		t.Fatalf("unset bash_readonly should default to full shell")
+	if zero.ReadOnlyEnabled() {
+		t.Fatalf("unset read_only should default to full tools")
 	}
 
 	// Marshal: key name and value round-trip.
-	if err := SaveGlobal(Settings{BashReadOnly: boolPtr(true)}); err != nil {
+	if err := SaveGlobal(Settings{ReadOnly: boolPtr(true)}); err != nil {
 		t.Fatalf("SaveGlobal: %v", err)
 	}
 	path, err := GlobalSettingsPath()
@@ -115,15 +115,15 @@ func TestBashReadOnlyRoundTripAndDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read settings: %v", err)
 	}
-	if !strings.Contains(string(data), `"bash_readonly": true`) {
-		t.Fatalf("settings file should carry bash_readonly: true, got %s", data)
+	if !strings.Contains(string(data), `"read_only": true`) {
+		t.Fatalf("settings file should carry read_only: true, got %s", data)
 	}
 	got, err := LoadGlobal()
 	if err != nil {
 		t.Fatalf("LoadGlobal: %v", err)
 	}
-	if got.BashReadOnly == nil || !*got.BashReadOnly || !got.BashReadOnlyEnabled() {
-		t.Fatalf("round-trip = %+v, want bash_readonly true", got)
+	if got.ReadOnly == nil || !*got.ReadOnly || !got.ReadOnlyEnabled() {
+		t.Fatalf("round-trip = %+v, want read_only true", got)
 	}
 
 	// omitempty: an unset value must not be written.
@@ -131,28 +131,57 @@ func TestBashReadOnlyRoundTripAndDefault(t *testing.T) {
 		t.Fatalf("SaveGlobal: %v", err)
 	}
 	data, _ = os.ReadFile(path)
-	if strings.Contains(string(data), "bash_readonly") {
-		t.Fatalf("unset bash_readonly should be omitted, got %s", data)
+	if strings.Contains(string(data), "read_only") || strings.Contains(string(data), "bash_readonly") {
+		t.Fatalf("unset read_only should be omitted, got %s", data)
 	}
 }
 
-func TestBashReadOnlyOverridePrecedence(t *testing.T) {
+// TestBashReadOnlyAliasDecodes pins the deprecated alias: a legacy settings
+// file carrying bash_readonly still turns the master switch on.
+func TestBashReadOnlyAliasDecodes(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	path, err := GlobalSettingsPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"bash_readonly": true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := LoadGlobal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.ReadOnlyEnabled() {
+		t.Fatal("bash_readonly alias should fold into read_only")
+	}
+	if got.BashReadOnly != nil {
+		t.Fatalf("alias must be cleared after decode, got %+v", got.BashReadOnly)
+	}
+	if got.ReadOnly == nil || !*got.ReadOnly {
+		t.Fatalf("read_only = %+v", got.ReadOnly)
+	}
+}
+
+func TestReadOnlyOverridePrecedence(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 	workdir := t.TempDir()
 
 	// An explicit project false must beat a global true.
-	if err := SaveGlobal(Settings{BashReadOnly: boolPtr(true)}); err != nil {
+	if err := SaveGlobal(Settings{ReadOnly: boolPtr(true)}); err != nil {
 		t.Fatalf("SaveGlobal: %v", err)
 	}
-	if err := SaveProject(workdir, Settings{BashReadOnly: boolPtr(false)}); err != nil {
+	if err := SaveProject(workdir, Settings{ReadOnly: boolPtr(false)}); err != nil {
 		t.Fatalf("SaveProject: %v", err)
 	}
 	merged, err := LoadMerged(workdir)
 	if err != nil {
 		t.Fatalf("LoadMerged: %v", err)
 	}
-	if merged.BashReadOnly == nil || *merged.BashReadOnly {
-		t.Fatalf("project false should beat global true, got %+v", merged.BashReadOnly)
+	if merged.ReadOnly == nil || *merged.ReadOnly {
+		t.Fatalf("project false should beat global true, got %+v", merged.ReadOnly)
 	}
 
 	// An unset project field falls back to the global value.
@@ -163,8 +192,8 @@ func TestBashReadOnlyOverridePrecedence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadMerged: %v", err)
 	}
-	if merged.BashReadOnly == nil || !*merged.BashReadOnly {
-		t.Fatalf("unset project should fall back to global true, got %+v", merged.BashReadOnly)
+	if merged.ReadOnly == nil || !*merged.ReadOnly {
+		t.Fatalf("unset project should fall back to global true, got %+v", merged.ReadOnly)
 	}
 }
 

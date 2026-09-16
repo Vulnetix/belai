@@ -17,35 +17,35 @@ func enforceNoMatchPostureForTest() posture.Policy {
 }
 
 // ---------------------------------------------------------------------------
-// /settings "bash read-only" toggle
+// /settings "read-only tools" toggle
 // ---------------------------------------------------------------------------
 
-func TestSettingsBashReadOnlyRowRendersOffByDefault(t *testing.T) {
+func TestSettingsReadOnlyRowRendersOffByDefault(t *testing.T) {
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir})
 	a.push(viewSettings)
 
 	v := a.View()
-	if !strings.Contains(v, "bash read-only") {
-		t.Fatalf("settings view missing bash read-only row:\n%s", v)
+	if !strings.Contains(v, "read-only tools") {
+		t.Fatalf("settings view missing read-only tools row:\n%s", v)
 	}
 
 	rows := a.settingsRows()
 	idx := -1
 	for i, r := range rows {
-		if r.key == "bash_readonly" {
+		if r.key == "read_only" {
 			idx = i
 		}
 	}
 	if idx < 0 {
-		t.Fatalf("no bash_readonly row in settingsRows")
+		t.Fatalf("no read_only row in settingsRows")
 	}
 	if rows[idx].value != "off" {
-		t.Fatalf("bash read-only should render off by default, got %q", rows[idx].value)
+		t.Fatalf("read-only tools should render off by default, got %q", rows[idx].value)
 	}
 }
 
-func TestSettingsBashReadOnlySpaceTogglesAndPersists(t *testing.T) {
+func TestSettingsReadOnlySpaceTogglesAndPersists(t *testing.T) {
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir})
 	a.push(viewSettings)
@@ -53,7 +53,7 @@ func TestSettingsBashReadOnlySpaceTogglesAndPersists(t *testing.T) {
 	rows := a.settingsRows()
 	idx := -1
 	for i, r := range rows {
-		if r.key == "bash_readonly" {
+		if r.key == "read_only" {
 			idx = i
 		}
 	}
@@ -66,8 +66,8 @@ func TestSettingsBashReadOnlySpaceTogglesAndPersists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadProject: %v", err)
 	}
-	if got.BashReadOnly == nil || !*got.BashReadOnly {
-		t.Fatalf("space should persist bash_readonly=true to project settings, got %+v", got.BashReadOnly)
+	if got.ReadOnly == nil || !*got.ReadOnly {
+		t.Fatalf("space should persist read_only=true to project settings, got %+v", got.ReadOnly)
 	}
 
 	// space again: on -> explicit off.
@@ -77,8 +77,8 @@ func TestSettingsBashReadOnlySpaceTogglesAndPersists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadProject: %v", err)
 	}
-	if got.BashReadOnly == nil || *got.BashReadOnly {
-		t.Fatalf("second toggle should persist bash_readonly=false, got %+v", got.BashReadOnly)
+	if got.ReadOnly == nil || *got.ReadOnly {
+		t.Fatalf("second toggle should persist read_only=false, got %+v", got.ReadOnly)
 	}
 
 	// x: unset (back to nil).
@@ -89,12 +89,12 @@ func TestSettingsBashReadOnlySpaceTogglesAndPersists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadProject: %v", err)
 	}
-	if got.BashReadOnly != nil {
-		t.Fatalf("x should unset bash_readonly, got %+v", got.BashReadOnly)
+	if got.ReadOnly != nil {
+		t.Fatalf("x should unset read_only, got %+v", got.ReadOnly)
 	}
 }
 
-func TestSettingsBashReadOnlyGlobalScope(t *testing.T) {
+func TestSettingsReadOnlyGlobalScope(t *testing.T) {
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir})
 	a.push(viewSettings)
@@ -102,7 +102,7 @@ func TestSettingsBashReadOnlyGlobalScope(t *testing.T) {
 
 	rows := a.settingsRows()
 	for i, r := range rows {
-		if r.key == "bash_readonly" {
+		if r.key == "read_only" {
 			a.settingsState.selected = i
 		}
 	}
@@ -113,11 +113,11 @@ func TestSettingsBashReadOnlyGlobalScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadGlobal: %v", err)
 	}
-	if got.BashReadOnly == nil || !*got.BashReadOnly {
-		t.Fatalf("global scope should persist bash_readonly=true, got %+v", got.BashReadOnly)
+	if got.ReadOnly == nil || !*got.ReadOnly {
+		t.Fatalf("global scope should persist read_only=true, got %+v", got.ReadOnly)
 	}
-	if p, err := config.LoadProject(workdir); err == nil && p.BashReadOnly != nil {
-		t.Fatalf("global-scope toggle must not touch project settings, got %+v", p.BashReadOnly)
+	if p, err := config.LoadProject(workdir); err == nil && p.ReadOnly != nil {
+		t.Fatalf("global-scope toggle must not touch project settings, got %+v", p.ReadOnly)
 	}
 }
 
@@ -187,19 +187,19 @@ func TestModeChipDrivesAgentPlanMode(t *testing.T) {
 	}
 }
 
-func TestSlashPlanTogglesAgentPlanMode(t *testing.T) {
+func TestSlashModeSetsPlanMode(t *testing.T) {
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir})
 	if _, err := a.agentSession(); err != nil {
 		t.Fatalf("agentSession: %v", err)
 	}
 
-	a.handleCommand("/plan")
+	a.handleCommand("/mode plan")
 	if a.mode != "plan" || !a.planMode {
-		t.Fatalf("/plan should enable plan mode: mode=%q planMode=%v", a.mode, a.planMode)
+		t.Fatalf("/mode plan should enable plan mode: mode=%q planMode=%v", a.mode, a.planMode)
 	}
 	if a.agent != nil {
-		t.Fatalf("/plan must invalidate the cached agent session")
+		t.Fatalf("/mode plan must invalidate the cached agent session")
 	}
 	sess, err := a.agentSession()
 	if err != nil {
@@ -209,9 +209,9 @@ func TestSlashPlanTogglesAgentPlanMode(t *testing.T) {
 		t.Fatalf("next agent session should receive PlanMode=true")
 	}
 
-	a.handleCommand("/plan")
+	a.handleCommand("/mode agent")
 	if a.mode != "agent" || a.planMode {
-		t.Fatalf("/plan again should restore agent mode: mode=%q planMode=%v", a.mode, a.planMode)
+		t.Fatalf("/mode agent should restore agent mode: mode=%q planMode=%v", a.mode, a.planMode)
 	}
 }
 

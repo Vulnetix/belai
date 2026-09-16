@@ -82,7 +82,7 @@ func (a *App) handleShell(input string) tea.Cmd {
 	cfg := a.cfg
 	client := a.client
 	workdir := a.workdir
-	bashReadOnly := a.settings.BashReadOnlyEnabled()
+	bashReadOnly := a.settings.ReadOnlyEnabled()
 	pol := a.posture
 
 	// Render `!cmd` as a real tool row rather than a system notice. It then

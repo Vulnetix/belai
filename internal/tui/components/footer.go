@@ -21,9 +21,13 @@ type Footer struct {
 	Effort   string
 	Provider string
 	Mode     string
-	Width    int
-	Cwd      string
-	Branch   string
+
+	// Agent is the engaged agent profile, shown inside the mode chip. Empty
+	// means the default agent, which the mode name already says.
+	Agent  string
+	Width  int
+	Cwd    string
+	Branch string
 
 	// Context metering.
 	ContextLimit int  // 0 when the model's window is unknown
@@ -65,7 +69,11 @@ func (f *Footer) View() string {
 	}
 	line1 := strings.Join(line1Parts, MutedStyle.Render("  ·  "))
 
-	modeChip := Chip(f.Mode, modeColor(f.Mode))
+	modeLabel := f.Mode
+	if f.Agent != "" {
+		modeLabel += " · " + f.Agent
+	}
+	modeChip := Chip(modeLabel, modeColor(f.Mode))
 	parts := []string{}
 	if f.Provider != "" {
 		parts = append(parts, MutedStyle.Render(f.Provider))

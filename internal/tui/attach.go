@@ -248,7 +248,7 @@ func (a *App) flushPendingSubmit() tea.Cmd {
 	a.attachments = map[int]*attachment{}
 	a.attachOrder = nil
 	a.editor.Reset()
-	a.autocomplete = nil
+	a.clearAutocomplete()
 	return a.sendWithAttachments(input, atts)
 }
 

@@ -126,7 +126,7 @@ func (b Banner) pixView() string {
 		MutedStyle.Render("injection-safe coding harness"),
 		b.versionLine(),
 		"",
-		MutedStyle.Render("type ") + KeyStyle.Render("/help") + MutedStyle.Render(" for commands"),
+		MutedStyle.Render("type ") + KeyStyle.Render("/help") + MutedStyle.Render(" for commands and shortcuts"),
 	}
 
 	block := lipgloss.NewStyle().PaddingLeft(3).Render(strings.Join(right, "\n"))

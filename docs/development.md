@@ -188,7 +188,24 @@ just detect-mode "add a retry to the HTTP client"   # agent
 just detect-mode "how does the nonce sealing work"  # plan
 ```
 
-**TUI smoke test.** `just tui`, then exercise slash-command autocomplete (`/p` → `/permissions`, `/plan`, `/profile`), `/credentials`, `/settings`, `/permissions`, `/help`, `/model`, `/compact`, `/clear`, `/rename`, `/agent list`, `/local-model`, and streaming output. Confirm `shift+tab` cycles the mode chip, `ctrl+d` quits, `ctrl+c` copies the prompt (native or OSC 52), and `esc` escapes every full-screen view — including permissions back to settings. In the Ask prompt, confirm Enter echoes the prompt into the transcript as a `user prompt` instantly, that the composer shows the filled `role manager` pill with a `pre-prompt processing` caption while the classifier runs and a plain `working` label only for model/tool I/O, and that Enter while a turn is running queues a `user steering` message. In `/settings`, confirm the **bash read-only** toggle renders `off` by default, that `space` flips it on and persists it to the scoped settings file, and that `x` clears it. In `/permissions` with no rules, confirm the empty state reads "every tool call is allowed" and that a `Read x` preview shows the allowed-by-default wording (or blocked when `preferences.yaml` sets `permission_no_match: enforce`).
+**TUI smoke test.** `just tui`, then exercise slash-command autocomplete (`/p` → `/permissions`, `/profile`), `/credentials`, `/settings`, `/permissions`, `/help`, `/model`, `/compact`, `/clear`, `/rename`, `/agent list`, `/local-model`, and streaming output. Confirm `shift+tab` cycles the mode chip, `ctrl+d` quits, `ctrl+c` copies the prompt (native or OSC 52), and `esc` escapes every full-screen view — including permissions back to settings. In the Ask prompt, confirm Enter echoes the prompt into the transcript as a `user prompt` instantly, that the composer shows the filled `role manager` pill with a `pre-prompt processing` caption while the classifier runs and a plain `working` label only for model/tool I/O, and that Enter while a turn is running queues a `user steering` message. In `/settings`, confirm the **bash read-only** toggle renders `off` by default, that `space` flips it on and persists it to the scoped settings file, and that `x` clears it. In `/permissions` with no rules, confirm the empty state reads "every tool call is allowed" and that a `Read x` preview shows the allowed-by-default wording (or blocked when `preferences.yaml` sets `permission_no_match: enforce`).
+
+**Agent picker.** In the TUI in agent mode, confirm the strip above the prompt
+lists your profiles, the `↻` background-agent definitions, and the `◈`
+built-ins. Press `tab` repeatedly and confirm the highlight walks every
+candidate, ends on `(none)`, wraps, and never writes into the prompt; that
+`enter` engages the highlighted one and shows it in the footer chip rather
+than sending the turn; that `enter` with nothing highlighted still sends; and
+that `right` moves the cursor until something is highlighted. Type `@` and a
+partial name to filter, engage, and confirm the `@…` text is removed from the
+prompt. Press `ctrl+g` on a `↻` row and confirm the agent starts in the
+background; on a flat profile, confirm it says so instead. Then `shift+tab`
+into plan and goal mode and confirm the chip drops the agent name and the
+strip disappears, and that returning to agent mode brings both back.
+
+**Slash completion.** Type `/c`, then `tab` several times, and confirm the
+highlight cycles through every match instead of sticking on the second one —
+the prompt text must not change until `enter` or `right` accepts.
 
 **Release parity.** `just build-all` cross-compiles all six release targets into `bin/` with the same ldflags the release workflow uses, and writes `bin/checksums.txt`. Run the host binary and check `-version` reports the git description.
 

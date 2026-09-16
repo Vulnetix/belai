@@ -100,7 +100,7 @@ func (a *App) settingsRows() []settingsRow {
 	if s.Caveman != nil && *s.Caveman {
 		cavemanVal = "on"
 	}
-	bashROVal := boolLabel(s.BashReadOnlyEnabled())
+	readOnlyVal := boolLabel(s.ReadOnlyEnabled())
 	retentionVal := "28 days"
 	if s.SessionRetentionDays != nil {
 		retentionVal = fmt.Sprintf("%d days", *s.SessionRetentionDays)
@@ -123,7 +123,7 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "model", label: "model", kind: "text", value: modelVal, src: sourceLabel(origin["model"])},
 		{key: "effort", label: "effort", kind: "choose", opts: []string{"low", "medium", "high"}, value: effortVal, src: sourceLabel(origin["effort"])},
 		{key: "caveman", label: "caveman", kind: "toggle", value: cavemanVal, src: sourceLabel(origin["caveman"])},
-		{key: "bash_readonly", label: "bash read-only", kind: "toggle", value: bashROVal, src: sourceLabel(origin["bash_readonly"])},
+		{key: "read_only", label: "read-only tools", kind: "toggle", value: readOnlyVal, src: sourceLabel(origin["read_only"])},
 		{key: "session_retention_days", label: "session retention", kind: "text", value: retentionVal, src: sourceLabel(origin["session_retention_days"])},
 		{key: "banner", label: "banner", kind: "toggle", value: bannerVal, src: sourceLabel(origin["ui"])},
 		{key: "colors", label: "colours", kind: "toggle", value: colorsVal, src: sourceLabel(origin["ui"])},
@@ -298,8 +298,8 @@ func (a *App) cycleToggle(key string) error {
 		switch key {
 		case "caveman":
 			s.Caveman = nextBool(s.Caveman)
-		case "bash_readonly":
-			s.BashReadOnly = nextBool(s.BashReadOnly)
+		case "read_only":
+			s.ReadOnly = nextBool(s.ReadOnly)
 		case "banner":
 			if s.UI == nil {
 				s.UI = &config.UISettings{}
@@ -369,8 +369,8 @@ func (a *App) unsetSetting(key string) error {
 			s.Effort = ""
 		case "caveman":
 			s.Caveman = nil
-		case "bash_readonly":
-			s.BashReadOnly = nil
+		case "read_only":
+			s.ReadOnly = nil
 		case "session_retention_days":
 			s.SessionRetentionDays = nil
 		case "banner":
