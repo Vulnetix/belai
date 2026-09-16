@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/vulnetix/signet/internal/transcript"
 )
 
@@ -73,6 +74,14 @@ const (
 // turn never renders a bare box. Framed panels are separated by a blank line;
 // consecutive flat rows sit on adjacent lines.
 func (m MessageList) View() string {
+	s, _ := m.Render()
+	return s
+}
+
+// Render renders the transcript and returns the per-line provenance of every
+// row it emits. The text is byte-identical to what View returns today; the
+// map is the side channel drag-selection uses for hit-testing and copying.
+func (m MessageList) Render() (string, LineMap) {
 	width := max(m.Width, messageMinWidth)
 
 	type entry struct {
@@ -103,35 +112,42 @@ func (m MessageList) View() string {
 	}
 
 	var b strings.Builder
+	var lm LineMap
 	for i, e := range entries {
+		var s string
+		var sub LineMap
 		switch e.msg.Role {
 		case "tool":
-			b.WriteString(toolRow(e.msg, width, m.ExpandAll))
+			s, sub = toolRow(e.msg, width, m.ExpandAll)
 		case "system":
-			b.WriteString(systemRow(e.msg.Content, width))
+			s, sub = systemRow(e.msg.Content, width)
 		case "reasoning":
-			b.WriteString(reasoningPanel(e.msg, width, m.ExpandAll))
+			s, sub = reasoningPanel(e.msg, width, m.ExpandAll)
 		default:
-			b.WriteString(turnPanel(e.msg, width, m.ExpandAll))
+			s, sub = turnPanel(e.msg, width, m.ExpandAll)
 		}
+		b.WriteString(s)
+		lm = append(lm, sub...)
 		if i == len(entries)-1 {
 			break
 		}
 		if e.framed || entries[i+1].framed {
 			b.WriteString("\n\n")
+			lm = append(lm, SourceLine{Chrome: true})
 		} else {
 			b.WriteString("\n")
 		}
 	}
-	return b.String()
+	return b.String(), lm
 }
 
 // reasoningPanel renders streamed chain-of-thought as a dim, unbordered
 // sibling of the assistant panel, truncated like any other turn.
-func reasoningPanel(msg Message, width int, expandAll bool) string {
+func reasoningPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 	body := strings.TrimRight(msg.Content, "\n")
+	var marker, hidden string
 	if !expandAll && !msg.Expanded {
-		body = truncateBody(body, assistantPreviewLines)
+		body, marker, hidden = truncateBody(body, assistantPreviewLines)
 	}
 	body = MutedStyle.Render(body)
 	return Panel{
@@ -139,13 +155,15 @@ func reasoningPanel(msg Message, width int, expandAll bool) string {
 		Body:   body,
 		Width:  width,
 		Accent: lipgloss.TerminalColor(ColorMuted),
-	}.View()
+		Marker: marker,
+		Hidden: hidden,
+	}.Render()
 }
 
 // turnPanel renders a user or assistant turn. When the turn is longer than
 // assistantPreviewLines and the transcript is not expanded, only the first
 // few lines are shown with a trailing count of hidden lines.
-func turnPanel(msg Message, width int, expandAll bool) string {
+func turnPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 	title, accent := "signet", lipgloss.TerminalColor(ColorTeal)
 	if msg.Role == "user" {
 		title, accent = "user prompt", lipgloss.TerminalColor(ColorTealSoft)
@@ -170,8 +188,9 @@ func turnPanel(msg Message, width int, expandAll bool) string {
 	if strings.TrimSpace(body) == "" && len(msg.ToolCalls) > 0 {
 		body = toolCallSummary(msg.ToolCalls, width)
 	}
+	var marker, hidden string
 	if !expandAll && !msg.Expanded {
-		body = truncateBody(body, assistantPreviewLines)
+		body, marker, hidden = truncateBody(body, assistantPreviewLines)
 	}
 	if msg.Partial {
 		body = MutedStyle.Render(body)
@@ -184,7 +203,9 @@ func turnPanel(msg Message, width int, expandAll bool) string {
 		Body:   body,
 		Width:  width,
 		Accent: accent,
-	}.View()
+		Marker: marker,
+		Hidden: hidden,
+	}.Render()
 }
 
 // toolCallSummary renders a muted one-line substitute for an assistant turn
@@ -210,19 +231,22 @@ func toolCallSummary(calls []AgentToolCall, width int) string {
 }
 
 // truncateBody keeps up to maxLines of body and appends a muted hint when
-// content was hidden.
-func truncateBody(body string, maxLines int) string {
+// content was hidden. It returns the hint's plain text and the hidden
+// remainder alongside the rendered body so the caller can hand both to the
+// panel: a selection over the hint then copies the full remainder instead of
+// the "… N more lines" marker.
+func truncateBody(body string, maxLines int) (out, marker, hidden string) {
 	if maxLines < 1 {
-		return body
+		return body, "", ""
 	}
 	lines := strings.Split(body, "\n")
 	if len(lines) <= maxLines {
-		return body
+		return body, "", ""
 	}
 	kept := strings.Join(lines[:maxLines], "\n")
-	hidden := len(lines) - maxLines
-	hint := MutedStyle.Render("… " + strconv.Itoa(hidden) + " more lines")
-	return kept + "\n" + hint
+	hidden = strings.Join(lines[maxLines:], "\n")
+	marker = "… " + strconv.Itoa(len(lines)-maxLines) + " more lines"
+	return kept + "\n" + MutedStyle.Render(marker), marker, hidden
 }
 
 // toolRow renders one tool call as a flat row — tool activity is subordinate
@@ -230,7 +254,7 @@ func truncateBody(body string, maxLines int) string {
 // line shows the tool name, its human-readable invocation, and the status.
 // When the result is available, a preview of the first line of stdout/stderr
 // is shown beneath; bash errors are rendered in red.
-func toolRow(msg Message, width int, expandAll bool) string {
+func toolRow(msg Message, width int, expandAll bool) (string, LineMap) {
 	isErr := toolResultIsError(msg.ToolName, msg.Content)
 
 	status := strings.TrimSpace(msg.Status)
@@ -255,22 +279,44 @@ func toolRow(msg Message, width int, expandAll bool) string {
 
 	statusLine := alignStatus(head, plain, status, width)
 
+	// The header's map is built from the rendered line, not the logical
+	// strings: alignStatus may have truncated the head, and the copyable
+	// region is what survives — everything after the "⌁ " prefix, up to the
+	// right-aligned status and its padding. The prefix glyph, the padding and
+	// the ✓/✗/withheld glyph all stay out of copies.
+	prefixCol := visibleLen("⌁ ")
+	statusPlain := ansi.Strip(statusLine)
+	headEnd := visibleLen(statusPlain)
+	if status != "" {
+		headEnd -= visibleLen(status)
+	}
+	if headEnd < prefixCol {
+		headEnd = prefixCol
+	}
+	lm := LineMap{{
+		Col:   prefixCol,
+		Width: headEnd - prefixCol,
+		Text:  ansi.Cut(statusPlain, prefixCol, headEnd),
+	}}
+
 	content := strings.TrimRight(msg.Content, "\n")
 	if content == "" {
-		return statusLine
+		return statusLine, lm
 	}
 
 	expand := expandAll || msg.Expanded
+	var hidden string
 	preview := content
 	if !expand {
 		lines := strings.Split(content, "\n")
 		preview = lines[0]
 		if len(lines) > toolPreviewLines {
-			hidden := len(lines) - toolPreviewLines
-			preview += "  " + MutedStyle.Render("… "+strconv.Itoa(hidden)+" more lines")
+			hidden = strings.Join(lines[toolPreviewLines:], "\n")
+			preview += "  " + MutedStyle.Render("… "+strconv.Itoa(len(lines)-toolPreviewLines)+" more lines")
 		}
 	}
-	return statusLine + "\n" + renderToolContent(preview, width, isErr)
+	rendered, contentLm := renderToolContent(preview, width, isErr, hidden)
+	return statusLine + "\n" + rendered, append(lm, contentLm...)
 }
 
 // alignStatus right-aligns the status on the same line as the tool header,
@@ -290,8 +336,12 @@ func alignStatus(head, plain, status string, width int) string {
 	return head + spaces(pad) + statusStyle(status).Render(status)
 }
 
-// renderToolContent indents and wraps a tool result line.
-func renderToolContent(content string, width int, isErr bool) string {
+// renderToolContent indents and wraps a tool result line. When hidden is
+// non-empty, the preview carries an inline "… N more lines" hint and hidden
+// is the remainder it hides; the hint's position is located in the rendered
+// line (the wrap decides where it lands — the logical string is not
+// consulted), so a selection over it copies the full remainder.
+func renderToolContent(content string, width int, isErr bool, hidden string) (string, LineMap) {
 	prefix := "  "
 	inner := max(width-visibleLen(prefix), 8)
 	body := content
@@ -299,16 +349,44 @@ func renderToolContent(content string, width int, isErr bool) string {
 		body = DangerStyle.Render(body)
 	}
 	rendered := lipgloss.NewStyle().Width(inner).Render(body)
-	var b strings.Builder
-	first := true
+
+	pcol := visibleLen(prefix)
+	plainLines := make([]string, 0)
 	for _, line := range strings.Split(rendered, "\n") {
+		plainLines = append(plainLines, ansi.Strip(prefix+strings.TrimRight(line, " ")))
+	}
+
+	markerLine, markerIdx := -1, -1
+	if hidden != "" {
+		hint := "… " + strconv.Itoa(strings.Count(hidden, "\n")+1) + " more lines"
+		// The hint is what the caller appended at the end, so the last
+		// rendered line holding it is the marker's line.
+		for i := len(plainLines) - 1; i >= 0; i-- {
+			if idx := strings.LastIndex(plainLines[i], hint); idx >= 0 {
+				markerLine, markerIdx = i, idx
+				break
+			}
+		}
+	}
+
+	var b strings.Builder
+	var lm LineMap
+	first := true
+	for i, line := range plainLines {
 		if !first {
 			b.WriteString("\n")
 		}
 		first = false
-		b.WriteString(prefix + strings.TrimRight(line, " "))
+		b.WriteString(line)
+		sl := SourceLine{Col: pcol, Width: visibleLen(line) - pcol, Text: line[pcol:]}
+		if i == markerLine && markerIdx >= 0 {
+			sl.MarkerCol = pcol + visibleLen(line[:markerIdx])
+			sl.MarkerWidth = visibleLen(line) - sl.MarkerCol
+			sl.Hidden = hidden
+		}
+		lm = append(lm, sl)
 	}
-	return b.String()
+	return b.String(), lm
 }
 
 // formatToolInvocation extracts the most descriptive argument from a tool's
@@ -367,22 +445,27 @@ func toolResultIsError(name, content string) bool {
 	return false
 }
 
-// systemRow renders a system notice as a dim, marked line.
-func systemRow(content string, width int) string {
+// systemRow renders a system notice as a dim, marked line. The "│ " marker
+// is two cells, so the selectable text starts at column 2.
+func systemRow(content string, width int) (string, LineMap) {
 	body := strings.TrimRight(content, "\n")
 	marker := MutedStyle.Render("│ ")
 	wrapped := lipgloss.NewStyle().Foreground(ColorMuted).Width(max(width-2, 8)).Render(body)
 
 	var b strings.Builder
+	var lm LineMap
+	mcol := visibleLen("│ ")
 	first := true
 	for _, line := range strings.Split(wrapped, "\n") {
+		line = strings.TrimRight(line, " ")
 		if !first {
 			b.WriteString("\n")
 		}
 		first = false
-		b.WriteString(marker + strings.TrimRight(line, " "))
+		b.WriteString(marker + line)
+		lm = append(lm, SourceLine{Col: mcol, Width: visibleLen(line), Text: line})
 	}
-	return b.String()
+	return b.String(), lm
 }
 
 func statusStyle(status string) lipgloss.Style {

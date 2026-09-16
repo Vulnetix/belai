@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Panel is one flat bordered block: a rounded frame carrying its title inline
@@ -19,12 +20,32 @@ type Panel struct {
 	// Raw keeps the body verbatim (no re-wrapping) for bodies that already
 	// render at the right width, such as the textarea.
 	Raw bool
+
+	// Marker names a truncation hint (plain text, e.g. "… 12 more lines")
+	// that occupies a whole body line; Hidden is the text the hint hides.
+	// Render attaches them to the last body line whose stripped text equals
+	// Marker so a selection over the hint copies the hidden remainder.
+	// Empty Marker means the panel has no truncation marker.
+	Marker string
+	Hidden string
 }
 
 const panelMinWidth = 24
 
-// View renders the panel.
+// View renders the panel. It is the string-only half of Render; the line map
+// is dropped because callers that only draw do not need provenance.
 func (p Panel) View() string {
+	s, _ := p.Render()
+	return s
+}
+
+// Render renders the panel and returns the per-line provenance of every row
+// it emits. The text is byte-identical to what View returns today; the map
+// exists so hit-testing and copying can recover clean text without
+// pattern-matching the rendered output (the │ panel bar and the │ system-row
+// marker are the same glyph, and only the renderer knows which columns are
+// decoration).
+func (p Panel) Render() (string, LineMap) {
 	width := max(p.Width, panelMinWidth)
 	inner := width - 4 // two border cells plus one space of padding each side
 
@@ -72,16 +93,43 @@ func (p Panel) View() string {
 	}
 
 	bar := edge.Render("│")
+	barCol := visibleLen("│ ") // border cell plus its one column of padding
+
+	// The marker, when set, rides the last body line whose stripped text
+	// equals it; the caller passes truncation info down instead of the panel
+	// string-matching its own output.
+	bodyLines := strings.Split(body, "\n")
+	markerIdx := -1
+	if p.Marker != "" {
+		for i := len(bodyLines) - 1; i >= 0; i-- {
+			if strings.TrimRight(ansi.Strip(bodyLines[i]), " ") == p.Marker {
+				markerIdx = i
+				break
+			}
+		}
+	}
+
 	var b strings.Builder
+	var lm LineMap
 	b.WriteString(top + "\n")
-	for _, line := range strings.Split(body, "\n") {
+	lm = append(lm, SourceLine{Chrome: true})
+	for i, line := range bodyLines {
 		if w := visibleLen(line); w > inner {
 			line = lipgloss.NewStyle().MaxWidth(inner).Render(line)
 		} else {
 			line += spaces(inner - w)
 		}
 		b.WriteString(bar + " " + line + " " + bar + "\n")
+		plain := ansi.Strip(line)
+		sl := SourceLine{Col: barCol, Width: visibleLen(plain), Text: plain}
+		if i == markerIdx {
+			sl.MarkerCol = sl.Col
+			sl.MarkerWidth = sl.Width
+			sl.Hidden = p.Hidden
+		}
+		lm = append(lm, sl)
 	}
 	b.WriteString(bottom)
-	return b.String()
+	lm = append(lm, SourceLine{Chrome: true})
+	return b.String(), lm
 }

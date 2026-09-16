@@ -38,6 +38,9 @@ var (
 	DangerStyle = lipgloss.NewStyle().Foreground(ColorDanger)
 	// WarnStyle renders warnings and tool activity.
 	WarnStyle = lipgloss.NewStyle().Foreground(ColorAmber)
+	// SelectionStyle renders an active drag selection. Reverse video is
+	// profile-neutral and degrades gracefully on 16-colour terminals.
+	SelectionStyle = lipgloss.NewStyle().Reverse(true)
 
 	headerStyle = lipgloss.NewStyle().Foreground(ColorCream).Bold(true)
 	chipStyle   = lipgloss.NewStyle().Foreground(ColorInk).Background(ColorTeal).Bold(true).Padding(0, 1)

@@ -3,11 +3,13 @@ package components
 import (
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestTurnPanelRendersAssistantContent(t *testing.T) {
 	msg := Message{Role: "assistant", Content: "hello world"}
-	out := turnPanel(msg, 40, false)
+	out, _ := turnPanel(msg, 40, false)
 	if !strings.Contains(out, "hello world") {
 		t.Fatalf("expected content in panel, got:\n%s", out)
 	}
@@ -19,7 +21,7 @@ func TestTurnPanelRendersAssistantContent(t *testing.T) {
 func TestTurnPanelTruncatesLongAssistantContent(t *testing.T) {
 	lines := []string{"one", "two", "three", "four", "five"}
 	msg := Message{Role: "assistant", Content: strings.Join(lines, "\n")}
-	out := turnPanel(msg, 40, false)
+	out, _ := turnPanel(msg, 40, false)
 	for i := 0; i < assistantPreviewLines; i++ {
 		if !strings.Contains(out, lines[i]) {
 			t.Fatalf("expected line %d %q in truncated panel, got:\n%s", i, lines[i], out)
@@ -36,7 +38,7 @@ func TestTurnPanelTruncatesLongAssistantContent(t *testing.T) {
 func TestTurnPanelExpandedShowsAllLines(t *testing.T) {
 	lines := []string{"one", "two", "three", "four", "five"}
 	msg := Message{Role: "assistant", Content: strings.Join(lines, "\n")}
-	out := turnPanel(msg, 40, true)
+	out, _ := turnPanel(msg, 40, true)
 	for _, l := range lines {
 		if !strings.Contains(out, l) {
 			t.Fatalf("expected line %q in expanded panel, got:\n%s", l, out)
@@ -49,7 +51,7 @@ func TestTurnPanelExpandedShowsAllLines(t *testing.T) {
 
 func TestTurnPanelEmptyBodyStillRendersFrame(t *testing.T) {
 	msg := Message{Role: "assistant", Content: ""}
-	out := turnPanel(msg, 40, false)
+	out, _ := turnPanel(msg, 40, false)
 	if !strings.Contains(out, "signet") {
 		t.Fatalf("expected empty panel to render title, got:\n%s", out)
 	}
@@ -57,7 +59,7 @@ func TestTurnPanelEmptyBodyStillRendersFrame(t *testing.T) {
 
 func TestTurnPanelUserTitle(t *testing.T) {
 	msg := Message{Role: "user", Content: "hi"}
-	out := turnPanel(msg, 40, false)
+	out, _ := turnPanel(msg, 40, false)
 	if !strings.Contains(out, "user prompt") {
 		t.Fatalf("expected user prompt title, got:\n%s", out)
 	}
@@ -65,7 +67,7 @@ func TestTurnPanelUserTitle(t *testing.T) {
 
 func TestTurnPanelSteeringTitle(t *testing.T) {
 	msg := Message{Role: "user", Content: "keep going", Steering: true}
-	out := turnPanel(msg, 40, false)
+	out, _ := turnPanel(msg, 40, false)
 	if !strings.Contains(out, "user steering") {
 		t.Fatalf("expected user steering title, got:\n%s", out)
 	}
@@ -81,7 +83,7 @@ func TestTurnPanelEmptyWithToolCallsRendersSummary(t *testing.T) {
 			{ID: "3", Name: "Grep"},
 		},
 	}
-	out := turnPanel(msg, 60, false)
+	out, _ := turnPanel(msg, 60, false)
 	if !strings.Contains(out, "requested 2 tools") {
 		t.Fatalf("expected tool summary, got:\n%s", out)
 	}
@@ -98,7 +100,7 @@ func TestToolRowRendersNameAndStatus(t *testing.T) {
 		Content:  "hi",
 		Status:   "✓",
 	}
-	out := toolRow(msg, 60, false)
+	out, _ := toolRow(msg, 60, false)
 	if !strings.Contains(out, "Bash") {
 		t.Fatalf("expected tool name, got:\n%s", out)
 	}
@@ -121,7 +123,7 @@ func TestToolRowExtractsInvocationForRead(t *testing.T) {
 		Content:  "package foo",
 		Status:   "✓",
 	}
-	out := toolRow(msg, 80, false)
+	out, _ := toolRow(msg, 80, false)
 	if !strings.Contains(out, "internal/foo.go") {
 		t.Fatalf("expected path argument, got:\n%s", out)
 	}
@@ -135,7 +137,7 @@ func TestToolRowShowsFirstLineAndHint(t *testing.T) {
 		Content:  "1\n2\n3",
 		Status:   "✓",
 	}
-	out := toolRow(msg, 80, false)
+	out, _ := toolRow(msg, 80, false)
 	lines := strings.Split(out, "\n")
 	if len(lines) < 2 {
 		t.Fatalf("expected preview line, got:\n%s", out)
@@ -157,7 +159,7 @@ func TestToolRowExpandedShowsFullContent(t *testing.T) {
 		Content:  "1\n2\n3",
 		Status:   "✓",
 	}
-	out := toolRow(msg, 80, true)
+	out, _ := toolRow(msg, 80, true)
 	for _, want := range []string{"1", "2", "3"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected line %q in expanded output, got:\n%s", want, out)
@@ -176,7 +178,7 @@ func TestToolRowBashErrorIsRed(t *testing.T) {
 		Content:  "exit status 1",
 		Status:   "",
 	}
-	out := toolRow(msg, 80, false)
+	out, _ := toolRow(msg, 80, false)
 	if !strings.Contains(out, "✗") {
 		t.Fatalf("expected error status for bash failure, got:\n%s", out)
 	}
@@ -193,7 +195,7 @@ func TestToolRowWithheldStatus(t *testing.T) {
 		Content:  "tool result withheld: permission denied for \"Read\"",
 		Status:   "",
 	}
-	out := toolRow(msg, 80, false)
+	out, _ := toolRow(msg, 80, false)
 	if !strings.Contains(out, "withheld") {
 		t.Fatalf("expected withheld status, got:\n%s", out)
 	}
@@ -207,7 +209,7 @@ func TestToolRowEmptyContentNoBody(t *testing.T) {
 		Content:  "",
 		Status:   "",
 	}
-	out := toolRow(msg, 80, false)
+	out, _ := toolRow(msg, 80, false)
 	if strings.Count(out, "\n") != 0 {
 		t.Fatalf("expected single-line row when content empty, got %d lines:\n%s", strings.Count(out, "\n")+1, out)
 	}
@@ -221,7 +223,7 @@ func TestToolRowFallsBackToRawArgsWhenInvalidJSON(t *testing.T) {
 		Content:  "ok",
 		Status:   "✓",
 	}
-	out := toolRow(msg, 80, false)
+	out, _ := toolRow(msg, 80, false)
 	if !strings.Contains(out, "not json") {
 		t.Fatalf("expected raw args fallback, got:\n%s", out)
 	}
@@ -355,5 +357,127 @@ func TestMessageListShowToolsGated(t *testing.T) {
 	list.ShowTools = true
 	if !strings.Contains(list.View(), "Grep") {
 		t.Fatalf("tool rows should render when ShowTools is true")
+	}
+}
+
+// The whole selection feature rests on this: one content line maps 1:1 to one
+// screen row, so the map length must always equal the frame's line count.
+func TestMessageListRenderMapMatchesFrameLineCount(t *testing.T) {
+	cases := []struct {
+		name string
+		list MessageList
+	}{
+		{"empty", MessageList{Width: 60}},
+		{
+			name: "turns tools and system rows",
+			list: MessageList{
+				Width:     60,
+				ShowTools: true,
+				Messages: []Message{
+					{Role: "user", Content: "do the thing"},
+					{Role: "assistant", Content: "on it", ToolCalls: []AgentToolCall{{Name: "Read", Args: `{"path":"a.txt"}`}}},
+					{Role: "tool", ToolName: "Read", Content: "line one\nline two\nline three"},
+					{Role: "system", Content: "a notice"},
+					{Role: "assistant", Content: "done"},
+				},
+			},
+		},
+		{
+			name: "long body truncated",
+			list: MessageList{
+				Width:    60,
+				Messages: []Message{{Role: "assistant", Content: strings.Repeat("a line\n", 40)}},
+			},
+		},
+		{
+			name: "reasoning shown",
+			list: MessageList{
+				Width:         60,
+				ShowReasoning: true,
+				Messages: []Message{
+					{Role: "reasoning", Content: "thinking about it"},
+					{Role: "assistant", Content: "answer"},
+				},
+			},
+		},
+		{
+			name: "expanded",
+			list: MessageList{
+				Width:     60,
+				ShowTools: true,
+				ExpandAll: true,
+				Messages: []Message{
+					{Role: "assistant", Content: strings.Repeat("a line\n", 40)},
+					{Role: "tool", ToolName: "Bash", Content: strings.Repeat("out\n", 40)},
+				},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, lm := tc.list.Render()
+			if out != tc.list.View() {
+				t.Fatal("View and Render disagree on the rendered text")
+			}
+			want := strings.Count(out, "\n") + 1
+			if out == "" {
+				want = 0
+			}
+			if len(lm) != want {
+				t.Fatalf("map has %d entries for %d lines", len(lm), want)
+			}
+		})
+	}
+}
+
+func TestMessageListRenderMapRecoversCleanText(t *testing.T) {
+	list := MessageList{
+		Width:     60,
+		ShowTools: true,
+		Messages: []Message{
+			{Role: "assistant", Content: "hello world"},
+			{Role: "system", Content: "a notice"},
+		},
+	}
+
+	out, lm := list.Render()
+	lines := strings.Split(out, "\n")
+
+	var found bool
+	for i, sl := range lm {
+		if sl.Chrome || sl.Width == 0 {
+			continue
+		}
+		if cut := ansi.Cut(ansi.Strip(lines[i]), sl.Col, sl.Col+sl.Width); cut != sl.Text {
+			t.Fatalf("line %d: cut %q != mapped %q", i, cut, sl.Text)
+		}
+		if strings.Contains(sl.Text, "hello world") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no mapped line carried the assistant text:\n%s", out)
+	}
+}
+
+func TestMessageListRenderMarksTruncationMarker(t *testing.T) {
+	list := MessageList{
+		Width:    60,
+		Messages: []Message{{Role: "assistant", Content: strings.Repeat("a line\n", 40)}},
+	}
+
+	_, lm := list.Render()
+	var markers int
+	for _, sl := range lm {
+		if sl.MarkerWidth > 0 {
+			markers++
+			if sl.Hidden == "" {
+				t.Fatal("a marker line must carry the text it hides")
+			}
+		}
+	}
+	if markers != 1 {
+		t.Fatalf("%d marker lines in a truncated turn, want 1", markers)
 	}
 }
