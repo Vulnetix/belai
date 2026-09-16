@@ -59,6 +59,13 @@ type Policy struct {
 	Sleep       func(context.Context, time.Duration) error
 }
 
+// DefaultRateLimitRetryAfter is the low-pressure backoff used when a provider
+// signals rate limiting (HTTP 429 or rate-limit text in the error body) but
+// does not supply a Retry-After header. One minute is conservative enough to
+// clear most per-minute inference limits while still being bounded by the
+// policy Ceiling.
+const DefaultRateLimitRetryAfter = 60 * time.Second
+
 // WithDefaults returns a copy of p with every zero field replaced by its
 // default, including the Rand and Sleep hooks. Do and Delay normalise
 // internally; any caller that reads Policy fields directly must normalise
@@ -173,9 +180,10 @@ func ClassifyStatus(status int) Verdict {
 }
 
 var (
-	denyRE     = regexp.MustCompile(`(?i)quota|billing|usage.limit|insufficient_quota|payment|CARD_|invalid_api_key|invalid_auth`)
-	overflowRE = regexp.MustCompile(`(?i)context.length|context.too.long|maximum.context|token.?limit|too many tokens|context length exceeded`)
-	allowRE    = regexp.MustCompile(`(?i)ended without|stream reset|connection reset|connection refused|read response|unexpected EOF|broken pipe|timeout awaiting response headers|no such host`)
+	denyRE      = regexp.MustCompile(`(?i)quota|billing|usage.limit|insufficient_quota|payment|CARD_|invalid_api_key|invalid_auth`)
+	overflowRE  = regexp.MustCompile(`(?i)context.length|context.too.long|maximum.context|token.?limit|too many tokens|context length exceeded`)
+	allowRE     = regexp.MustCompile(`(?i)ended without|stream reset|connection reset|connection refused|read response|unexpected EOF|broken pipe|timeout awaiting response headers|no such host`)
+	rateLimitRE = regexp.MustCompile(`(?i)rate.?limit|too.?many.?requests|throttl|requests?\s+per\s+(min|minute|sec|second|hour)|inferencerequestpermin|over.?capacity`)
 )
 
 // DefaultClassifier is the denylist-first classifier used by Signet's provider
@@ -187,8 +195,10 @@ type DefaultClassifier struct{}
 //  2. explicit non-retryable sentinels → ClassFatal
 //  3. denylist text → ClassFatal
 //  4. overflow text → ClassOverflow
-//  5. status code / retryable text → ClassRetryable
-//  6. default → ClassFatal
+//  5. explicit Retry-After → ClassRetryable
+//  6. rate-limit signal without Retry-After → ClassRetryable with low-pressure default
+//  7. status code / retryable text → ClassRetryable
+//  8. default → ClassFatal
 func (DefaultClassifier) Classify(err error) Verdict {
 	if err == nil {
 		return Verdict{Class: ClassFatal, Reason: "nil error"}
@@ -212,9 +222,22 @@ func (DefaultClassifier) Classify(err error) Verdict {
 			return Verdict{Class: ClassRetryable, RetryAfter: retryAfter, Reason: "retry-after supplied"}
 		}
 	}
+
+	status := 0
 	if s, ok := err.(StatusCoder); ok {
-		v := ClassifyStatus(s.StatusCode())
-		return v
+		status = s.StatusCode()
+	}
+	// Low-pressure rate-limit retry: when the provider says 429 or the body
+	// contains a rate-limit signal but omits Retry-After, default to a longer
+	// wait instead of the usual exponential storm. This keeps Signet civil to
+	// providers with per-minute limits (common for local inference and small
+	// model endpoints) without requiring users to configure a ceiling.
+	if status == http.StatusTooManyRequests || rateLimitRE.MatchString(msg) {
+		return Verdict{Class: ClassRetryable, RetryAfter: DefaultRateLimitRetryAfter, Reason: "rate limit; using low-pressure default backoff"}
+	}
+
+	if status != 0 {
+		return ClassifyStatus(status)
 	}
 	if allowRE.MatchString(msg) {
 		return Verdict{Class: ClassRetryable, Reason: "connection/stream reset"}

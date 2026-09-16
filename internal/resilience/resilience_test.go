@@ -197,6 +197,56 @@ func TestDefaultClassifierAllowList(t *testing.T) {
 	}
 }
 
+func TestDefaultClassifierRateLimit429UsesDefaultRetryAfter(t *testing.T) {
+	c := DefaultClassifier{}
+	v := c.Classify(&statusErr{code: http.StatusTooManyRequests})
+	if v.Class != ClassRetryable {
+		t.Fatalf("429 -> %v, want retryable", v.Class)
+	}
+	if v.RetryAfter != DefaultRateLimitRetryAfter {
+		t.Fatalf("RetryAfter = %v, want %v", v.RetryAfter, DefaultRateLimitRetryAfter)
+	}
+}
+
+func TestDefaultClassifierRateLimitTextUsesDefaultRetryAfter(t *testing.T) {
+	c := DefaultClassifier{}
+	v := c.Classify(errors.New("inference request per min rate reached"))
+	if v.Class != ClassRetryable {
+		t.Fatalf("rate-limit text -> %v, want retryable", v.Class)
+	}
+	if v.RetryAfter != DefaultRateLimitRetryAfter {
+		t.Fatalf("RetryAfter = %v, want %v", v.RetryAfter, DefaultRateLimitRetryAfter)
+	}
+}
+
+func TestDefaultClassifierExplicitRetryAfterOverridesDefault(t *testing.T) {
+	c := DefaultClassifier{}
+	v := c.Classify(&retryAfterErr{code: http.StatusTooManyRequests, retryAfter: 5 * time.Second})
+	if v.Class != ClassRetryable {
+		t.Fatalf("explicit retry-after -> %v, want retryable", v.Class)
+	}
+	if v.RetryAfter != 5*time.Second {
+		t.Fatalf("RetryAfter = %v, want 5s", v.RetryAfter)
+	}
+}
+
+func TestDefaultClassifierDenyListQuotaRemainsFatal(t *testing.T) {
+	c := DefaultClassifier{}
+	v := c.Classify(errors.New("insufficient_quota: please check billing"))
+	if v.Class != ClassFatal {
+		t.Fatalf("denylist quota -> %v, want fatal", v.Class)
+	}
+}
+
+type retryAfterErr struct {
+	code       int
+	retryAfter time.Duration
+}
+
+func (e *retryAfterErr) Error() string             { return "rate limited" }
+func (e *retryAfterErr) StatusCode() int           { return e.code }
+func (e *retryAfterErr) RetryAfter() time.Duration { return e.retryAfter }
+
 type statusErr struct {
 	code int
 }
