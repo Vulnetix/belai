@@ -3,6 +3,7 @@ package components
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 )
@@ -212,6 +213,47 @@ func TestToolRowEmptyContentNoBody(t *testing.T) {
 	out, _ := toolRow(msg, 80, false)
 	if strings.Count(out, "\n") != 0 {
 		t.Fatalf("expected single-line row when content empty, got %d lines:\n%s", strings.Count(out, "\n")+1, out)
+	}
+}
+
+// TestToolRowRunningElapsed pins the live-elapsed status: a tool that has
+// started but produced no result yet shows a running elapsed label, not the
+// premature ✓ that would otherwise appear.
+func TestToolRowRunningElapsed(t *testing.T) {
+	msg := Message{
+		Role:      "tool",
+		ToolName:  "Read",
+		ToolArgs:  `{"path":"x"}`,
+		Content:   "",
+		Status:    "",
+		StartedAt: time.Now().Add(-1300 * time.Millisecond),
+	}
+	out, _ := toolRow(msg, 80, false)
+	if !strings.Contains(out, "· 1.3s") {
+		t.Fatalf("expected running elapsed '· 1.3s', got:\n%s", out)
+	}
+	if strings.Contains(out, "✓") {
+		t.Fatalf("running tool must not show ✓:\n%s", out)
+	}
+}
+
+// TestToolRowDoneIgnoresStartedAt pins that a completed tool shows its real
+// status (here ✓), not the stale running elapsed label.
+func TestToolRowDoneIgnoresStartedAt(t *testing.T) {
+	msg := Message{
+		Role:      "tool",
+		ToolName:  "Read",
+		ToolArgs:  `{"path":"x"}`,
+		Content:   "contents",
+		Status:    "",
+		StartedAt: time.Now().Add(-500 * time.Millisecond),
+	}
+	out, _ := toolRow(msg, 80, false)
+	if !strings.Contains(out, "✓") {
+		t.Fatalf("completed tool should show ✓:\n%s", out)
+	}
+	if strings.Contains(out, "· ") {
+		t.Fatalf("completed tool must not show elapsed:\n%s", out)
 	}
 }
 

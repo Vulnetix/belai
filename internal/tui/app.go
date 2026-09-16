@@ -40,6 +40,7 @@ import (
 	"github.com/vulnetix/signet/internal/session"
 	"github.com/vulnetix/signet/internal/todos"
 	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/signet/internal/trace"
 	"github.com/vulnetix/signet/internal/transcript"
 	"github.com/vulnetix/signet/internal/tui/components"
 	"github.com/vulnetix/signet/internal/version"
@@ -141,6 +142,15 @@ type App struct {
 	phase   workingPhase // current activity; phaseIdle when no prompt is in flight
 	rmPhase string       // Role Manager sub-phase (agent.RoleManagerPhase*) for the caption
 	preSend bool         // prompt echoed, awaiting the async mode classification
+	// phaseStartedAt is when the in-flight turn (or pre-send classification)
+	// began. It drives the live "working · N.Ns" elapsed label and is zeroed
+	// when the turn ends.
+	phaseStartedAt time.Time
+	// painted marks the first rendered chat frame, used to emit one
+	// SIGNET_TRACE first_paint event.
+	painted bool
+	// trace is the opt-in SIGNET_TRACE writer; nil when tracing is off.
+	trace *trace.Writer
 
 	// provider & streaming state
 	ctx      context.Context
@@ -327,6 +337,7 @@ func New(opts Options) *App {
 		attachSpin:  spinner.New(),
 		workSpin:    spinner.New(spinner.WithSpinner(spinner.MiniDot)),
 		follow:      true,
+		trace:       trace.Env(),
 	}
 	if a.status.Configured {
 		a.SetClassifier(run.NewClassifier(a.cfg, a.client))
@@ -681,15 +692,40 @@ func (a *App) handleModeClassified(m modeClassifiedMsg) tea.Cmd {
 // setPhaseRoleManager marks the Role Manager as the active signal, with the
 // sub-phase used for the composer caption.
 func (a *App) setPhaseRoleManager(subphase string) {
+	a.startPhase()
 	a.phase = phaseRoleManager
 	a.rmPhase = subphase
 }
 
 // setPhaseWorking marks generic I/O with no Role Manager signal.
-func (a *App) setPhaseWorking() { a.phase = phaseWorking }
+func (a *App) setPhaseWorking() {
+	a.startPhase()
+	a.phase = phaseWorking
+}
+
+// startPhase stamps the turn-start time once per in-flight turn. A turn runs
+// through several sub-phases (pre-prompt, working, tool result, …) but the
+// elapsed label counts from the user pressing enter, so it is set only when
+// no turn is already running.
+func (a *App) startPhase() {
+	if a.phaseStartedAt.IsZero() {
+		a.phaseStartedAt = time.Now()
+	}
+}
+
+// elapsedLabel renders the live turn elapsed time, or "" when idle.
+func (a *App) elapsedLabel() string {
+	if a.phaseStartedAt.IsZero() {
+		return ""
+	}
+	return " · " + time.Since(a.phaseStartedAt).Round(100*time.Millisecond).String()
+}
 
 // endPhase marks the in-flight prompt finished.
-func (a *App) endPhase() { a.phase = phaseIdle }
+func (a *App) endPhase() {
+	a.phase = phaseIdle
+	a.phaseStartedAt = time.Time{}
+}
 
 // rmCaption is the sub-phase caption shown beside the role manager pill.
 func (a *App) rmCaption() string {
@@ -1273,8 +1309,13 @@ func (a *App) handleStreamChunk(m streamChunkMsg) tea.Cmd {
 
 // handleAgentEvent renders one agent streaming event.
 func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
+	evStart := time.Now()
+	defer func() { a.trace.Event("tui", "agent_event", time.Since(evStart)) }()
 	switch m.Kind {
 	case agent.EventErrorKind:
+		if !a.phaseStartedAt.IsZero() {
+			a.trace.Event("tui", "turn_total", time.Since(a.phaseStartedAt))
+		}
 		a.cancel = nil
 		a.preSend = false
 		a.endPhase()
@@ -1323,6 +1364,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			ToolName:   m.Tool.Name,
 			ToolArgs:   toolArgsString(m.Tool.Args),
 			ToolCallID: m.Tool.ID,
+			StartedAt:  time.Now(),
 		})
 		return a.nextAgent()
 	case agent.EventToolResultKind:
@@ -1380,6 +1422,9 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		}
 		return a.nextAgent()
 	case agent.EventDoneKind:
+		if !a.phaseStartedAt.IsZero() {
+			a.trace.Event("tui", "turn_total", time.Since(a.phaseStartedAt))
+		}
 		a.cancel = nil
 		a.endPhase()
 		if len(a.messages) > 0 && a.messages[len(a.messages)-1].Role == "assistant" {
@@ -1487,6 +1532,7 @@ func (a *App) View() string {
 }
 
 func (a *App) chatView() string {
+	renderStart := time.Now()
 	a.relayout()
 	body, lm := components.MessageList{
 		Messages:      a.messages,
@@ -1550,6 +1596,18 @@ func (a *App) chatView() string {
 	sb.WriteString("\n")
 	a.refreshFooter()
 	sb.WriteString(a.footer.View())
+
+	// Per-frame render timing: first_paint once, then one render event per
+	// frame while a turn is in flight. Idle frames (typing, scrolling) are
+	// deliberately not traced.
+	el := time.Since(renderStart)
+	if !a.painted {
+		a.painted = true
+		a.trace.Event("tui", "first_paint", el)
+	} else if a.phase != phaseIdle {
+		a.trace.Event("tui", "render", el)
+	}
+
 	return lipgloss.NewStyle().Padding(1).Render(sb.String())
 }
 
@@ -1580,7 +1638,7 @@ func (a *App) renderComposer() string {
 		// "role manager" pill plus a sub-phase caption. The generic working
 		// label is reserved for I/O without this signal.
 		pill := components.Chip("role manager", components.ColorTeal)
-		title = a.spinMark() + " " + pill + " " + components.MutedStyle.Render(a.rmCaption())
+		title = a.spinMark() + " " + pill + " " + components.MutedStyle.Render(a.rmCaption()+a.elapsedLabel())
 		accent = lipgloss.TerminalColor(components.ColorTeal)
 		if a.preSend {
 			meta = "preparing · esc cancel"
@@ -1588,7 +1646,7 @@ func (a *App) renderComposer() string {
 			meta = "⏎ steer · esc cancel"
 		}
 	} else if a.phase == phaseWorking {
-		title = a.spinMark() + " working"
+		title = a.spinMark() + " working" + a.elapsedLabel()
 		accent = lipgloss.TerminalColor(components.ColorAmber)
 		meta = "⏎ steer · esc cancel"
 	}

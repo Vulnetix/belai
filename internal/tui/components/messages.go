@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -40,6 +41,12 @@ type Message struct {
 	// ToolCallID is set on tool turns. It groups a result turn back to the
 	// assistant call that requested it.
 	ToolCallID string
+
+	// StartedAt marks when a tool call began executing (set on tool turns when
+	// the start event lands, before any result). A non-zero value with empty
+	// Content means the tool is still running, so the row shows a live elapsed
+	// time instead of a ✓ status. Zero means unknown/not running.
+	StartedAt time.Time
 
 	// ToolCalls records the calls requested by an assistant turn. It is only
 	// meaningful when Role == "assistant"; it lets buildTurns preserve the
@@ -264,6 +271,9 @@ func toolRow(msg Message, width int, expandAll bool) (string, LineMap) {
 			status = "✗"
 		case strings.HasPrefix(msg.Content, "tool result withheld:"):
 			status = "withheld"
+		case !msg.StartedAt.IsZero() && msg.Content == "":
+			// Running: show live elapsed time rather than a premature ✓.
+			status = "· " + time.Since(msg.StartedAt).Round(100*time.Millisecond).String()
 		default:
 			status = "✓"
 		}

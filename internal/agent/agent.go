@@ -23,6 +23,7 @@ import (
 	"github.com/vulnetix/signet/internal/sanitize"
 	"github.com/vulnetix/signet/internal/skills"
 	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/signet/internal/trace"
 	"github.com/vulnetix/signet/internal/wire"
 )
 
@@ -70,6 +71,7 @@ type Session struct {
 	hookRunner     *hooks.Runner
 	toolMethod     run.ToolMethod
 	steer          chan string
+	trace          *trace.Writer
 }
 
 // steerBuffer is the steering queue capacity. A full queue drops the newest
@@ -138,6 +140,7 @@ func NewSession(o Options) (*Session, error) {
 		hookRunner:     runner,
 		toolMethod:     method,
 		steer:          make(chan string, steerBuffer),
+		trace:          trace.Env(),
 	}, nil
 }
 
@@ -171,6 +174,9 @@ func (s *Session) Run(ctx context.Context, userPrompt string) (run.Result, error
 // pre-refactor Run: sanitize → Admit → Select → CarrierOptions → SealSystem →
 // bounded loop → CheckToolCalls → executeCall.
 func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, streaming bool, emit func(Event)) (run.Result, error) {
+	turnStart := time.Now()
+	defer func() { s.trace.Event("agent", "turn", time.Since(turnStart)) }()
+
 	clean := sanitize.Sanitize(in.Prompt)
 
 	pipe := rolemanager.NewPipeline(run.NewClassifier(s.cfg, s.client))
@@ -178,6 +184,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	// selection are pre-prompt classification. Emit the signal so a UI can
 	// show a dedicated indicator rather than a generic working label.
 	emit(Event{Kind: EventRoleManagerKind, Phase: RoleManagerPhasePrePrompt})
+	preStart := time.Now()
 	dec, err := pipe.Admit(ctx, clean, s.posture)
 	if err != nil {
 		return run.Result{SanitizedPrompt: clean}, maybeCompact(err)
@@ -191,6 +198,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	if err != nil {
 		return run.Result{SanitizedPrompt: clean, SecuritySentinel: dec.Sentinel}, maybeCompact(err)
 	}
+	s.trace.Event("agent", "pre_prompt", time.Since(preStart))
 
 	// An explicitly chosen mode outranks the classifier. ForceAgent is the
 	// narrower of the two (it also names the profile), so it is applied last.
@@ -429,7 +437,9 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 
 	emit(Event{Kind: EventRoleManagerKind, Phase: RoleManagerPhaseToolResult})
 	pipe := rolemanager.NewPipeline(run.NewClassifier(s.cfg, s.client))
+	cStart := time.Now()
 	dec, err := pipe.Process(ctx, res)
+	s.trace.Event("agent", "tool_result_classify", time.Since(cStart))
 	if err != nil {
 		return fmt.Sprintf("tool result withheld: classifier error for %q: %v", call.Name, err)
 	}
