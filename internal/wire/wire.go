@@ -5,6 +5,7 @@
 package wire
 
 import (
+	"encoding/json"
 	"strings"
 )
 
@@ -47,13 +48,52 @@ func BuildURL(baseURL string, s Surface) string {
 // ---------------------------------------------------------------------------
 
 // OpenAIChatMessage is a single message in a chat/completions request.
+//
+// Content is written by MarshalJSON rather than by the struct tag: the field
+// is required on every role except an assistant turn that carries tool calls.
 type OpenAIChatMessage struct {
 	Role             string           `json:"role"`
-	Content          string           `json:"content,omitempty"`
+	Content          string           `json:"content"`
 	ToolCalls        []OpenAIToolCall `json:"tool_calls,omitempty"`
 	ToolCallID       string           `json:"tool_call_id,omitempty"`
 	Name             string           `json:"name,omitempty"`
 	ReasoningContent string           `json:"reasoning_content,omitempty"`
+}
+
+// chatMessageWire is the marshalling shape of OpenAIChatMessage. A nil Content
+// pointer omits the field; a pointer to "" emits an empty content field.
+type chatMessageWire struct {
+	Role             string           `json:"role"`
+	Content          *string          `json:"content,omitempty"`
+	ToolCalls        []OpenAIToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string           `json:"tool_call_id,omitempty"`
+	Name             string           `json:"name,omitempty"`
+	ReasoningContent string           `json:"reasoning_content,omitempty"`
+}
+
+// MarshalJSON emits a content field even when the content is empty.
+// OpenAI-compatible servers validate a user, system, or tool message against a
+// schema that requires content; a message serialised as a bare {"role":"user"}
+// fails that schema, falls through to one that forbids the role, and the whole
+// request is rejected with a 400 naming both failures. An empty tool result —
+// a shell command that printed nothing — produced exactly that body.
+//
+// The one exception is an assistant turn carrying tool calls, where the
+// content field is legitimately absent and providers reject an empty string in
+// its place.
+func (m OpenAIChatMessage) MarshalJSON() ([]byte, error) {
+	w := chatMessageWire{
+		Role:             m.Role,
+		ToolCalls:        m.ToolCalls,
+		ToolCallID:       m.ToolCallID,
+		Name:             m.Name,
+		ReasoningContent: m.ReasoningContent,
+	}
+	if m.Content != "" || len(m.ToolCalls) == 0 {
+		content := m.Content
+		w.Content = &content
+	}
+	return json.Marshal(w)
 }
 
 // OpenAIChatRequest is the body of a chat/completions call.

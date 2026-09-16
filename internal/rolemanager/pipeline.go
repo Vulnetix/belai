@@ -3,6 +3,7 @@ package rolemanager
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"unicode/utf8"
 
@@ -87,6 +88,13 @@ func NewPipelineWithChunk(c Classifier, chunk ChunkConfig) *Pipeline {
 // chunks and folded fail-closed.
 func (p *Pipeline) run(ctx context.Context, content string) (clean string, s Sentinel, parsed bool, err error) {
 	clean = sanitize.Sanitize(content)
+	// Content that is empty (or only whitespace) carries nothing to classify:
+	// a shell command that printed nothing cannot hold an injection. Calling
+	// the classifier anyway spends a round trip per silent command and sends a
+	// user message with no content, which providers reject with a 400.
+	if strings.TrimSpace(clean) == "" {
+		return clean, SentinelSafe, true, nil
+	}
 	if p.Cache != nil {
 		key := Key(clean)
 		if cached, ok := p.Cache.Get(key); ok {

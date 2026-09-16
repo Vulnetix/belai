@@ -1,6 +1,8 @@
 package wire
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -54,5 +56,46 @@ func TestNewAnthropicBlockMessage(t *testing.T) {
 	content, ok := m.Content.([]AnthropicRequestBlock)
 	if !ok || len(content) != 1 {
 		t.Fatalf("content = %+v", m.Content)
+	}
+}
+
+// An OpenAI-compatible server validates a user/system/tool message against a
+// schema that requires "content". Omitting the field on an empty message makes
+// the server fall through to a schema that forbids the role, and the request
+// fails with a 400 naming both errors, so an empty content field must still be
+// sent as "".
+func TestChatMessageKeepsEmptyContentForContentRoles(t *testing.T) {
+	for _, role := range []string{"user", "system", "tool"} {
+		b, err := json.Marshal(OpenAIChatMessage{Role: role})
+		if err != nil {
+			t.Fatalf("Marshal(%s): %v", role, err)
+		}
+		var got map[string]any
+		if err := json.Unmarshal(b, &got); err != nil {
+			t.Fatalf("Unmarshal(%s): %v", role, err)
+		}
+		content, ok := got["content"]
+		if !ok {
+			t.Fatalf("role %q marshalled without a content field: %s", role, b)
+		}
+		if content != "" {
+			t.Fatalf("role %q content = %v, want the empty string", role, content)
+		}
+	}
+}
+
+// An assistant message carrying tool calls is the one case where the content
+// field is legitimately absent; providers reject an empty assistant content
+// alongside tool_calls.
+func TestAssistantWithToolCallsOmitsEmptyContent(t *testing.T) {
+	b, err := json.Marshal(OpenAIChatMessage{
+		Role:      "assistant",
+		ToolCalls: []OpenAIToolCall{{ID: "1", Type: "function"}},
+	})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(b), `"content"`) {
+		t.Fatalf("assistant tool-call message carries a content field: %s", b)
 	}
 }

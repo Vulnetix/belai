@@ -48,6 +48,11 @@ Business rules:
   sentinel fails the whole content, and any malformed chunk makes the whole
   result malformed. Overlap guarantees an injection straddling a boundary is
   seen whole by at least one chunk.
+- **Empty content**: content that is empty or whitespace-only after
+  sanitization is SAFE without a classifier call. It carries nothing to
+  classify — a shell command that printed nothing cannot hold an injection —
+  and the round trip both costs latency per silent command and sends a user
+  message with no content field, which OpenAI-compatible servers reject.
 - **Verdict cache**: verdicts are memoised by the SHA-256 of the *sanitized*
   content. SAFE verdicts live in a bounded session LRU (512); non-SAFE hashes
   persist to `<GlobalDir>/bad-hashes.json` (written atomically) and load at

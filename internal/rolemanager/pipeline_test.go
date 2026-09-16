@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/tools"
 )
 
@@ -99,5 +100,46 @@ func TestProcessPropagatesClassifierError(t *testing.T) {
 	p := NewPipeline(fc)
 	if _, err := p.Process(context.Background(), tools.ReadResult("x")); err == nil {
 		t.Fatalf("expected classifier error to propagate")
+	}
+}
+
+// Empty content carries nothing to classify, so the pipeline must proceed
+// without a classifier round trip. A silent shell command (sed -i, go build)
+// produces an empty tool result, and sending it built a user message with no
+// content field at all, which OpenAI-compatible servers reject with a 400.
+func TestProcessEmptyContentSkipsClassifier(t *testing.T) {
+	for _, content := range []string{"", "   \n\t "} {
+		fc := &fakeClassifier{err: errors.New("classifier must not be called for empty content")}
+		p := NewPipeline(fc)
+		d, err := p.Process(context.Background(), tools.BashResult(content))
+		if err != nil {
+			t.Fatalf("Process(%q): %v", content, err)
+		}
+		if fc.payload.System != "" || fc.payload.User != "" {
+			t.Fatalf("Process(%q) called the classifier with %+v", content, fc.payload)
+		}
+		if d.Action != ActionProceed {
+			t.Fatalf("Process(%q) Action = %q, want %q", content, d.Action, ActionProceed)
+		}
+		if d.Sentinel != SentinelSafe {
+			t.Fatalf("Process(%q) Sentinel = %q, want %q", content, d.Sentinel, SentinelSafe)
+		}
+	}
+}
+
+// Admit takes the same short circuit: an empty prompt has nothing to classify.
+func TestAdmitEmptyContentSkipsClassifier(t *testing.T) {
+	fc := &fakeClassifier{err: errors.New("classifier must not be called for empty content")}
+	p := NewPipeline(fc)
+	pol := posture.Policy{}
+	d, err := p.Admit(context.Background(), "", pol)
+	if err != nil {
+		t.Fatalf("Admit: %v", err)
+	}
+	if fc.payload.System != "" || fc.payload.User != "" {
+		t.Fatalf("Admit called the classifier with %+v", fc.payload)
+	}
+	if d.Action != ActionProceed {
+		t.Fatalf("Admit Action = %q, want %q", d.Action, ActionProceed)
 	}
 }
