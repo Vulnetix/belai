@@ -420,6 +420,35 @@ func TestMaxClarifyRoundsOrDefaults(t *testing.T) {
 	}
 }
 
+func TestMaxExploreIterationsOrDefaults(t *testing.T) {
+	var nilSettings *ResilienceSettings
+	if got := nilSettings.MaxExploreIterationsOr(8); got != 8 {
+		t.Fatalf("nil MaxExploreIterationsOr = %d, want 8", got)
+	}
+	if got := (&ResilienceSettings{}).MaxExploreIterationsOr(8); got != 8 {
+		t.Fatalf("unset MaxExploreIterationsOr = %d, want 8", got)
+	}
+	if got := (&ResilienceSettings{MaxExploreIterations: 12}).MaxExploreIterationsOr(8); got != 12 {
+		t.Fatalf("MaxExploreIterationsOr = %d, want 12", got)
+	}
+}
+
+func TestResilienceOverrideTakesMinimumExploreIterations(t *testing.T) {
+	global := Settings{Resilience: &ResilienceSettings{MaxExploreIterations: 8}}
+	got := global.Override(Settings{Resilience: &ResilienceSettings{MaxExploreIterations: 20}})
+	if got.Resilience.MaxExploreIterations != 8 {
+		t.Fatalf("project cannot raise explore iterations: got %d", got.Resilience.MaxExploreIterations)
+	}
+	got = global.Override(Settings{Resilience: &ResilienceSettings{MaxExploreIterations: 4}})
+	if got.Resilience.MaxExploreIterations != 4 {
+		t.Fatalf("project can lower explore iterations: got %d", got.Resilience.MaxExploreIterations)
+	}
+	got = Settings{Resilience: &ResilienceSettings{}}.Override(Settings{Resilience: &ResilienceSettings{MaxExploreIterations: 6}})
+	if got.Resilience.MaxExploreIterations != 6 {
+		t.Fatalf("unset global should take project explore iterations: got %d", got.Resilience.MaxExploreIterations)
+	}
+}
+
 func TestResilienceOverrideFillsFromGlobal(t *testing.T) {
 	global := Settings{Resilience: &ResilienceSettings{MaxAttempts: 4}}
 	project := Settings{Resilience: &ResilienceSettings{MaxIterations: 6}}

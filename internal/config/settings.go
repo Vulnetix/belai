@@ -228,6 +228,11 @@ type ResilienceSettings struct {
 	// MaxClarifyRounds bounds the explore→clarify→explore loop. Zero means the
 	// default (3); a negative value disables clarification entirely.
 	MaxClarifyRounds int `json:"max_clarify_rounds,omitempty"`
+	// MaxExploreIterations bounds the tool-loop budget of a single explore
+	// subagent (the agentic explore phase). It defaults to 8, deeper than the
+	// historical 4 so a subagent actually runs rg/find/git before clarifying,
+	// while still keeping the fan-out bounded. Zero means the default (8).
+	MaxExploreIterations int `json:"max_explore_iterations,omitempty"`
 }
 
 // MaxAttemptsOr returns MaxAttempts or the provided default.
@@ -261,6 +266,15 @@ func (r *ResilienceSettings) MaxClarifyRoundsOr(def int) int {
 		return def
 	}
 	return r.MaxClarifyRounds
+}
+
+// MaxExploreIterationsOr returns MaxExploreIterations or the provided default.
+// Zero means "use the default"; callers should pass the built-in default (8).
+func (r *ResilienceSettings) MaxExploreIterationsOr(def int) int {
+	if r == nil || r.MaxExploreIterations == 0 {
+		return def
+	}
+	return r.MaxExploreIterations
 }
 
 // ColorsEnabled reports whether role colours are on. Default true.
@@ -435,6 +449,13 @@ func (s Settings) Override(proj Settings) Settings {
 				merged.MaxClarifyRounds = proj.Resilience.MaxClarifyRounds
 			} else {
 				merged.MaxClarifyRounds = min(merged.MaxClarifyRounds, proj.Resilience.MaxClarifyRounds)
+			}
+		}
+		if proj.Resilience.MaxExploreIterations != 0 {
+			if merged.MaxExploreIterations == 0 {
+				merged.MaxExploreIterations = proj.Resilience.MaxExploreIterations
+			} else {
+				merged.MaxExploreIterations = min(merged.MaxExploreIterations, proj.Resilience.MaxExploreIterations)
 			}
 		}
 		out.Resilience = merged
