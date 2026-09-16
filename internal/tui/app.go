@@ -111,6 +111,14 @@ type sessionNamedMsg struct {
 	err  error
 }
 
+// gitInfoMsg carries the result of an async git-context detection. Detection
+// walks up from the workdir stat-ing for .git and reads HEAD, so it is moved
+// off the render goroutine onto a tea.Cmd rather than running on the 2s tick.
+type gitInfoMsg struct {
+	info gitinfo.Info
+	ok   bool
+}
+
 const (
 	editorMinHeight = 3
 	editorMaxHeight = 12
@@ -218,6 +226,13 @@ type App struct {
 	usage         *transcript.Usage // last provider-reported usage
 	usageStale    bool              // set by /compact, cleared by fresh usage
 
+	// est memoises the footer's context estimate. refreshFooter runs every
+	// frame, and the estimate walks the whole transcript; it is only
+	// recomputed when the transcript shape or tail changes.
+	est     transcript.Estimate
+	estKey  string
+	estInit bool
+
 	// prompt history / library cycling
 	historyActive   bool
 	historyQuery    string
@@ -235,6 +250,16 @@ type App struct {
 	// layout
 	vp     viewport.Model
 	follow bool // autoscroll: keep the transcript pinned to the tail
+
+	// bannerH/footerH memoise the two chrome heights that are constant per
+	// width. relayout() measures them every frame to size the viewport, and
+	// measuring means re-rendering; caching by width halves the chrome renders
+	// per frame. The footer cache is invalidated when git info changes because
+	// a branch/cwd line appears, which changes the footer's height.
+	bannerH int
+	bannerW int // width bannerH was measured for; -1 invalid
+	footerH int
+	footerW int
 
 	// drag-selection state (see selection.go). lastFrame is the geometry and
 	// provenance of the last rendered transcript frame; lastBody is its
@@ -337,13 +362,15 @@ func New(opts Options) *App {
 		attachSpin:  spinner.New(),
 		workSpin:    spinner.New(spinner.WithSpinner(spinner.MiniDot)),
 		follow:      true,
+		bannerW:     -1,
+		footerW:     -1,
 		trace:       trace.Env(),
 	}
 	if a.status.Configured {
 		a.SetClassifier(run.NewClassifier(a.cfg, a.client))
 		a.bgManager = bgagent.NewManager(workdir, a.cfg, a.client, a.settings, a.posture)
 	}
-	a.refreshGitInfo()
+	a.applyGitInfo(gitinfo.Detect(a.workdir))
 	_ = a.editor.Focus()
 
 	if startErr != "" {
@@ -457,22 +484,36 @@ func (a *App) Init() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// bannerHeight returns the rendered height of the banner when visible.
+// bannerHeight returns the rendered height of the banner when visible. The
+// height is constant per width, so it is memoised: relayout() measures it
+// every frame and measuring re-renders the whole banner.
 func (a *App) bannerHeight() int {
 	if !a.bannerVisible() {
 		return 0
 	}
-	return lipgloss.Height(components.Banner{
+	if a.bannerW == a.width {
+		return a.bannerH
+	}
+	a.bannerH = lipgloss.Height(components.Banner{
 		Width:   a.width,
 		Version: version.Version,
 		Commit:  version.Commit,
 		Built:   version.BuildDate,
 	}.View())
+	a.bannerW = a.width
+	return a.bannerH
 }
 
-// footerHeight returns the rendered height of the current footer.
+// footerHeight returns the rendered height of the current footer, memoised per
+// width. refreshGitInfo invalidates the cache when the branch/cwd line
+// appears or disappears, since that changes the height at the same width.
 func (a *App) footerHeight() int {
-	return lipgloss.Height(a.footer.View())
+	if a.footerW == a.width {
+		return a.footerH
+	}
+	a.footerH = lipgloss.Height(a.footer.View())
+	a.footerW = a.width
+	return a.footerH
 }
 
 // chromeHeight is the total height consumed by everything except the viewport.
@@ -812,9 +853,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tickMsg:
-		a.refreshGitInfo()
 		a.refreshFooter()
-		return a, tickCmd()
+		return a, tea.Batch(tickCmd(), a.refreshGitInfoCmd())
 
 	case streamChunkMsg:
 		return a, a.handleStreamChunk(m)
@@ -831,6 +871,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case sessionNamedMsg:
 		return a, a.handleSessionNamed(m)
+
+	case gitInfoMsg:
+		a.applyGitInfo(m.info, m.ok)
+		a.refreshFooter()
+		return a, nil
 
 	case codeReviewDoneMsg:
 		return a, a.handleCodeReviewDone(m)
@@ -910,6 +955,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.phase == phaseIdle {
 			workCmd = nil
 		}
+		if !a.hasPendingAttachments() {
+			spinCmd = nil
+		}
 		a.relayout()
 		return a, tea.Batch(vpCmd, copyCmd, cmd, spinCmd, workCmd)
 
@@ -950,6 +998,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	a.workSpin = workSpin
 	if a.phase == phaseIdle {
 		workCmd = nil
+	}
+	if !a.hasPendingAttachments() {
+		spinCmd = nil
 	}
 	a.relayout()
 	return a, tea.Batch(cmd, spinCmd, workCmd)
@@ -1736,28 +1787,27 @@ func (a *App) cycleMode() {
 }
 
 func (a *App) saveMode() {
-	st, _ := config.LoadState()
-	st.LastMode = a.mode
-	_ = config.SaveState(st)
+	a.state.LastMode = a.mode
+	_ = config.SaveState(a.state)
 }
 
 func (a *App) saveState() {
-	st, _ := config.LoadState()
-	st.Model = a.cfg.Model
-	st.Provider = a.cfg.Provider
-	st.LastMode = a.mode
-	_ = config.SaveState(st)
+	a.state.Model = a.cfg.Model
+	a.state.Provider = a.cfg.Provider
+	a.state.LastMode = a.mode
+	_ = config.SaveState(a.state)
 }
 
 // saveSession persists the active session id plus the last-used model/provider
-// and mode. It reloads state first so unrelated fields are never clobbered.
+// and mode. The in-memory a.state is the single writer of state.json in this
+// process, so it is mutated and saved directly instead of re-reading the file
+// first — the reload was redundant disk I/O per mode keypress.
 func (a *App) saveSession() {
-	st, _ := config.LoadState()
-	st.ActiveSession = a.sessionID
-	st.Model = a.cfg.Model
-	st.Provider = a.cfg.Provider
-	st.LastMode = a.mode
-	_ = config.SaveState(st)
+	a.state.ActiveSession = a.sessionID
+	a.state.Model = a.cfg.Model
+	a.state.Provider = a.cfg.Provider
+	a.state.LastMode = a.mode
+	_ = config.SaveState(a.state)
 }
 
 func (a *App) addSystem(text string) {
@@ -1854,7 +1904,7 @@ func (a *App) refreshFooter() {
 	a.footer.SessionName = a.sessionName
 	a.footer.ShowName = a.settings.SessionNamesVisible()
 
-	est := transcript.EstimateContext(a.transcriptMessages())
+	est := a.contextEstimate()
 	a.footer.Tokens = est.Tokens
 	a.footer.Estimated = est.LastUsageIndex < 0
 	a.footer.ContextStale = a.usageStale
@@ -1872,10 +1922,53 @@ func (a *App) sessionDisplay() string {
 	return a.sessionID
 }
 
-func (a *App) refreshGitInfo() {
-	if info, ok := gitinfo.Detect(a.workdir); ok {
-		a.gitInfo = info
+// contextEstimate memoises the footer's context-window estimate. refreshFooter
+// runs every rendered frame, and both transcriptMessages (an allocation per
+// message) and EstimateContext (a full walk) are wasted on an unchanged
+// transcript. The key is the message count plus the tail message's role and
+// content length, so it is stable while idle and recomputes only when the
+// transcript grows (a new message or a streaming delta).
+func (a *App) contextEstimate() transcript.Estimate {
+	key := a.estimateKey()
+	if a.estInit && a.estKey == key {
+		return a.est
+	}
+	a.estInit = true
+	a.estKey = key
+	a.est = transcript.EstimateContext(a.transcriptMessages())
+	return a.est
+}
+
+func (a *App) estimateKey() string {
+	n := len(a.messages)
+	if n == 0 {
+		return "0"
+	}
+	last := a.messages[n-1]
+	return fmt.Sprintf("%d:%s:%d", n, last.Role, len(last.Content))
+}
+
+// refreshGitInfoCmd runs git-context detection off the render goroutine. The
+// result lands as a gitInfoMsg and is applied to the footer.
+func (a *App) refreshGitInfoCmd() tea.Cmd {
+	workdir := a.workdir
+	return func() tea.Msg {
+		info, ok := gitinfo.Detect(workdir)
+		return gitInfoMsg{info: info, ok: ok}
+	}
+}
+
+// applyGitInfo records detected repository context. The first successful
+// detection adds the branch/cwd line to the footer, which changes its height
+// at the same width, so the memo is dropped.
+func (a *App) applyGitInfo(info gitinfo.Info, ok bool) {
+	if !ok {
+		return
+	}
+	a.gitInfo = info
+	if !a.gitOK {
 		a.gitOK = true
+		a.footerW = -1
 	}
 }
 

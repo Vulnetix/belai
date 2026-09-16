@@ -41,6 +41,32 @@ type codeReviewDoneMsg struct {
 type Registry struct {
 	commands map[string]Command
 	workdir  string
+
+	// profileNames caches the /profile completion candidates. Listing profiles
+	// is a directory scan plus a parse/validate per file; Complete runs on
+	// every keystroke, so it must not re-scan. The list is loaded once per
+	// Registry and is stable because nothing in-process writes the flat
+	// profile directory (agent profiles live in a separate tree).
+	profileNames       []string
+	profileNamesLoaded bool
+}
+
+// profileNameList returns the memoised /profile completion names, loading
+// them on first use.
+func (r *Registry) profileNameList() []string {
+	if !r.profileNamesLoaded {
+		r.profileNamesLoaded = true
+		names, err := profiles.List()
+		if err != nil {
+			return nil
+		}
+		out := make([]string, 0, len(names))
+		for _, p := range names {
+			out = append(out, p.Name)
+		}
+		r.profileNames = out
+	}
+	return r.profileNames
 }
 
 // NewRegistry returns a Registry with the built-in commands registered.
@@ -48,12 +74,7 @@ func NewRegistry(workdir string) *Registry {
 	r := &Registry{commands: map[string]Command{}, workdir: workdir}
 
 	r.Register("profile", "switch agent profile", func() []string {
-		names, _ := profiles.List()
-		out := make([]string, 0, len(names))
-		for _, p := range names {
-			out = append(out, p.Name)
-		}
-		return out
+		return r.profileNameList()
 	}, func(a *App, arg string) tea.Cmd {
 		if arg == "" {
 			names, err := profiles.List()

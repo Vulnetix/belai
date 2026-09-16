@@ -1575,3 +1575,36 @@ func TestHistoryCycleEditAfterLeftArrowInsertsAtCursor(t *testing.T) {
 		t.Fatalf("editor = %q, want abcXd", a.editor.Value())
 	}
 }
+
+func TestContextEstimateMemoised(t *testing.T) {
+	a := New(Options{})
+	a.messages = []components.Message{
+		{Role: "user", Content: "hello"},
+		{Role: "assistant", Content: "hi there"},
+	}
+
+	first := a.contextEstimate()
+	if !a.estInit || a.estKey == "" {
+		t.Fatalf("estimate not initialised: estInit=%v estKey=%q", a.estInit, a.estKey)
+	}
+	key := a.estKey
+
+	// Unchanged transcript: same key, same estimate, no recompute.
+	if got := a.contextEstimate(); got != first {
+		t.Fatalf("estimate changed on unchanged transcript: %+v != %+v", got, first)
+	}
+	if a.estKey != key {
+		t.Fatalf("estimate key changed on unchanged transcript: %q != %q", a.estKey, key)
+	}
+
+	// A streaming delta grows the tail content: the key changes and the
+	// estimate is recomputed to a larger value.
+	a.messages[len(a.messages)-1].Content = "hi there, this is a much longer reply"
+	second := a.contextEstimate()
+	if a.estKey == key {
+		t.Fatalf("estimate key did not change after tail grew: %q", a.estKey)
+	}
+	if second.Tokens <= first.Tokens {
+		t.Fatalf("estimate did not grow with content: %+v <= %+v", second, first)
+	}
+}
