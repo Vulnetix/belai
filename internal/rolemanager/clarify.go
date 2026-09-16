@@ -11,8 +11,11 @@ import (
 )
 
 // clarifySystemPrompt instructs the classifier to emit a clarification
-// questionnaire as strict JSON.
-const clarifySystemPrompt = `You are a clarification assistant for a secure LLM coding harness. The user sent an ambiguous prompt, and read-only exploration has produced some findings. Decide what still needs to be clarified, and reply with ONLY a JSON object matching this schema:
+// questionnaire as strict JSON. It is the planner framing: the classifier is
+// asked, after exploration, whether it can proceed or still needs the user.
+const clarifySystemPrompt = `You are a planning assistant for a secure LLM coding harness. The user sent a prompt, and read-only exploration has produced the findings below. Decide whether you can proceed to planning without further user input, or whether you still need the user to answer a clarification questionnaire.
+
+Reply with ONLY a JSON object matching this schema:
 
 {
   "groups": [
@@ -28,7 +31,7 @@ const clarifySystemPrompt = `You are a clarification assistant for a secure LLM 
 
 Rules:
 - Reply with ONLY valid JSON. No Markdown fences, no prose outside the JSON, no trailing text.
-- groups may contain 1–6 items. Use {"groups": []} when there is nothing left to clarify.
+- groups may contain 1–6 items. Use {"groups": []} when you can proceed without the user.
 - Each group must have 2–4 options. One option is not a choice.
 - context must be a single line, ≤200 runes, and end with '.' or '?'.
 - label must be non-empty, a single line, ≤80 runes, and unique within its group.
@@ -55,6 +58,19 @@ func BuildClarifyPayload(in ClarifyInput) ClassifierPayload {
 // ErrClarifyUnusable is returned when the classifier cannot produce a valid
 // questionnaire after the retry budget is exhausted.
 var ErrClarifyUnusable = errors.New("clarifier output was not usable after retries")
+
+// ShouldClarify asks the planner classifier whether the user still needs to
+// answer a clarification questionnaire after exploration. It returns proceed
+// when the classifier produced an empty questionnaire (or could not produce a
+// usable one — fail open to planning with the evidence at hand). A non-empty
+// questionnaire returns proceed=false with the questionnaire ready to render.
+func ShouldClarify(ctx context.Context, c Classifier, in ClarifyInput, maxAttempts int) (proceed bool, q clarify.Questionnaire, err error) {
+	q, err = AskClarify(ctx, c, in, maxAttempts)
+	if err != nil {
+		return true, clarify.Questionnaire{}, nil // fail open: plan with current evidence
+	}
+	return q.Empty(), q, nil
+}
 
 type clarifyTurn struct {
 	role    string

@@ -146,13 +146,35 @@ func (l *passLedger) notePartial() bool {
 // preserved verbatim. Only a top-level goal-mode prompt enters the loop.
 func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, system string, turns []run.Turn, modeDec rolemanager.ModeDecision, goalText string, streaming bool, emit func(Event)) (run.Result, error) {
 	if !s.allowPassLoop || modeDec.Mode != modes.ModeGoal {
-		out, _, err := s.pass(ctx, pipe, system, turns, streaming, emit)
+		out, turns, err := s.pass(ctx, pipe, system, turns, streaming, emit)
 		if err != nil {
 			return run.Result{}, err
 		}
 		if !out.exhausted {
 			return run.Result{Reply: out.reply, Usage: out.usage}, nil
 		}
+
+		// Reset-on-steer: an explore subagent whose iteration budget is spent
+		// does not hard-fail if new steering arrived. The steering restarts
+		// the budget and the subagent keeps investigating. Only when no new
+		// steering exists does the budget exhaustion surface as an error.
+		if s.exploreSubagent {
+			for {
+				if steer := s.drainSteer(ctx, pipe, emit); len(steer) > 0 {
+					turns = append(turns, steer...)
+					out, turns, err = s.pass(ctx, pipe, system, turns, streaming, emit)
+					if err != nil {
+						return run.Result{}, err
+					}
+					if !out.exhausted {
+						return run.Result{Reply: out.reply, Usage: out.usage}, nil
+					}
+					continue
+				}
+				break
+			}
+		}
+
 		return run.Result{}, fmt.Errorf("max iterations (%d) reached", s.maxIter)
 	}
 

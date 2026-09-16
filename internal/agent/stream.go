@@ -38,6 +38,10 @@ const (
 	// UI can show a dedicated "Role Manager" indicator instead of the generic
 	// working label.
 	EventRoleManagerKind
+	// EventWarningKind carries a non-fatal problem (e.g. a classifier error
+	// that caused a tool result to be withheld). It renders as a system line
+	// but does not abort the turn, so it is safe to emit mid-pass.
+	EventWarningKind
 	// EventGoalEvalKind reports a goal-evaluator verdict at a pass boundary.
 	// It carries the sentinel and the pass number, no execution authority.
 	EventGoalEvalKind
@@ -146,6 +150,9 @@ type Event struct {
 
 	// Err carries EventError.
 	Err error
+
+	// Warning carries EventWarning.
+	Warning string
 
 	// Result carries EventDone.
 	Result run.Result

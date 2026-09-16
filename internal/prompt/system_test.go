@@ -152,3 +152,26 @@ func TestSystemOmitsUnknownProviderAndModel(t *testing.T) {
 		t.Fatalf("expected a model line without a name:\n%s", got)
 	}
 }
+
+// TestSystemExplorePreamble pins the plan-mode explore guidance: it only
+// appears when Explore is set, and never appears in a normal prompt.
+func TestSystemExplorePreamble(t *testing.T) {
+	on, err := System(Options{Explore: true})
+	if err != nil {
+		t.Fatalf("System(Explore): %v", err)
+	}
+	if !strings.Contains(on, "plan-mode exploration") {
+		t.Fatalf("explore preamble missing:\n%s", on)
+	}
+	if !strings.Contains(on, "Grep") || !strings.Contains(on, "Git") {
+		t.Fatalf("explore preamble should name the native tools:\n%s", on)
+	}
+
+	off, err := System(Options{})
+	if err != nil {
+		t.Fatalf("System: %v", err)
+	}
+	if strings.Contains(off, "plan-mode exploration") {
+		t.Fatalf("explore preamble must not render for a normal prompt:\n%s", off)
+	}
+}

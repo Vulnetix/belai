@@ -104,7 +104,7 @@ func newMockServer(t *testing.T) (*httptest.Server, *mockProvider) {
 		case strings.Contains(system, "operating-mode classifier"):
 			mp.modeUser = append(mp.modeUser, user)
 			writeChat(w, modeSentinelFor(user))
-		case strings.Contains(system, "clarification assistant"):
+		case strings.Contains(system, "clarification questionnaire"):
 			mp.clarifierUser = append(mp.clarifierUser, user)
 			mp.clarifierSys = append(mp.clarifierSys, system)
 			writeChat(w, `{"groups":[]}`)
@@ -1000,5 +1000,119 @@ func TestToolsDefaultOn(t *testing.T) {
 	defer tm.mu.Unlock()
 	if len(tm.toolUsers) != 1 || !strings.Contains(tm.toolUsers[0], "hello default-tools") {
 		t.Fatalf("expected the Read tool to run by default, got %v", tm.toolUsers)
+	}
+}
+
+// exploreMock records an agentic plan-mode exploration: the explore subagent
+// must call a read-only tool before producing its finding, and no clarifier
+// call may fire.
+type exploreMock struct {
+	mu                sync.Mutex
+	securityUsers     []string
+	modeUsers         []string
+	clarifierUsers    []string
+	subagentToolCalls int
+	parentChatUsers   []string
+}
+
+func newExploreMockServer(t *testing.T, toolPath string) (*httptest.Server, *exploreMock) {
+	t.Helper()
+	em := &exploreMock{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var req struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var system, user string
+		var userContents []string
+		hasToolResult := false
+		for _, m := range req.Messages {
+			switch m.Role {
+			case "system":
+				system = m.Content
+			case "user":
+				user = m.Content
+				userContents = append(userContents, m.Content)
+			case "tool":
+				hasToolResult = true
+			}
+		}
+		em.mu.Lock()
+		defer em.mu.Unlock()
+		switch {
+		case strings.Contains(system, "security classifier"):
+			em.securityUsers = append(em.securityUsers, user)
+			writeChat(w, securitySentinelFor(user))
+		case strings.Contains(system, "operating-mode classifier"):
+			em.modeUsers = append(em.modeUsers, user)
+			writeChat(w, "PLAN")
+		case strings.Contains(system, "clarification questionnaire"):
+			em.clarifierUsers = append(em.clarifierUsers, user)
+			writeChat(w, `{"groups":[]}`)
+		case strings.Contains(system, "plan-mode exploration"):
+			// Explore subagent: issue one read-only tool call, then report.
+			if !hasToolResult {
+				em.subagentToolCalls++
+				writeToolCallChat(w, "Read", map[string]any{"path": toolPath})
+			} else {
+				writeChat(w, "found: repo has "+toolPath)
+			}
+		default:
+			// Parent final model turn.
+			em.parentChatUsers = append(em.parentChatUsers, userContents...)
+			writeChat(w, "mock reply")
+		}
+	}))
+	return srv, em
+}
+
+// TestPlanModeExploresWithToolsBeforeReplying pins the agentic-exploration
+// contract end to end: a plan-mode prompt with an @file reference launches an
+// explore subagent that actually runs a read-only tool before the parent model
+// replies, and no clarification questionnaire fires on the non-interactive
+// path.
+func TestPlanModeExploresWithToolsBeforeReplying(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("hello"), 0o600); err != nil {
+		t.Fatalf("write README.md: %v", err)
+	}
+	srv, em := newExploreMockServer(t, "README.md")
+	defer srv.Close()
+
+	out, errOut, code := runSignetDirWithGlobal(t, dir, srv.URL, "",
+		"-provider", "openai", "-model", "test", "-prompt", "plan how to refactor @README.md")
+	if code != 0 {
+		t.Fatalf("exit = %d (stderr %q)", code, errOut)
+	}
+	if !strings.Contains(out, "mock reply") {
+		t.Fatalf("stdout = %q, want mock reply", out)
+	}
+
+	em.mu.Lock()
+	defer em.mu.Unlock()
+	if em.subagentToolCalls == 0 {
+		t.Fatal("explore subagent issued no read-only tool call before its finding")
+	}
+	if len(em.clarifierUsers) != 0 {
+		t.Fatalf("non-interactive plan mode fired %d clarifier calls", len(em.clarifierUsers))
+	}
+	foundFinding := false
+	for _, u := range em.parentChatUsers {
+		if strings.Contains(u, "found: repo has README.md") {
+			foundFinding = true
+		}
+	}
+	if !foundFinding {
+		t.Fatalf("parent never saw the explore finding; parent users = %q", em.parentChatUsers)
 	}
 }

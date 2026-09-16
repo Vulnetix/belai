@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/vulnetix/signet/internal/config"
@@ -58,6 +60,10 @@ type Options struct {
 	// persisted bad hashes). nil means no caching. A subagent inherits the
 	// parent's cache so verdicts are shared across the fan-out.
 	Cache *rolemanager.Cache
+	// Caps is the capability-detection result used to build the native tool
+	// catalogue for this session and its explore subagents. A zero value means
+	// no native tools (the pre-catalogue behaviour).
+	Caps tools.Capabilities
 	// SkipNonceSeed skips the SeedFromProvider GET and seeds the pool locally.
 	// A subagent sets this: it discards the provider-seeded pool one line later
 	// in favour of a fresh local pool, so the GET is a wasted round trip.
@@ -81,6 +87,7 @@ type Session struct {
 	allowPassLoop  bool
 	maxIter        int
 	cache          *rolemanager.Cache
+	caps           tools.Capabilities
 	opts           prompt.Options
 	workdir        string
 	state          config.State
@@ -93,6 +100,18 @@ type Session struct {
 	toolMethod     run.ToolMethod
 	steer          chan string
 	trace          *trace.Writer
+	// exploreBridge fans steering to explore subagents while a fan-out runs.
+	// It is nil/empty outside explore; the pointer form keeps Steer (called
+	// from the UI goroutine) race-free with the fan-out's lifecycle.
+	exploreBridge atomic.Pointer[steerBridge]
+	// exploreSubagent marks this session as an explore subagent, which lets the
+	// pass loop reset its iteration budget when steering arrives instead of
+	// returning a hard "max iterations" error.
+	exploreSubagent bool
+	// steerSource, when non-nil, is polled by drainSteer in addition to the
+	// session's own steer channel. Explore subagents use it to receive parent
+	// steering broadcast during the fan-out.
+	steerSource func() string
 	// diffs observes what a mutating command changed. Nil disables the
 	// feature; it is consulted around every mutating tool (Bash, Write, Edit).
 	diffs *filediff.Recorder
@@ -164,6 +183,7 @@ func NewSession(o Options) (*Session, error) {
 		allowPassLoop:  o.AllowPassLoop,
 		maxIter:        maxIter,
 		cache:          cache,
+		caps:           o.Caps,
 		opts:           o.PromptOptions,
 		workdir:        o.Workdir,
 		state:          o.State,
@@ -220,7 +240,10 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 
 	clean := sanitize.Sanitize(in.Prompt)
 
-	pipe := run.NewPipeline(s.cfg, s.client, s.cache)
+	onClassifierRetry := func(a resilience.Attempt) {
+		emit(Event{Kind: EventRetryKind, RetryAttempt: a.Attempt, RetryDelay: a.Delay, RetryReason: a.Reason})
+	}
+	pipe := run.NewPipelineWithRetry(s.cfg, s.client, s.cache, onClassifierRetry)
 	// The Role Manager is working before any model I/O: admission and mode
 	// selection are pre-prompt classification. Emit the signal so a UI can
 	// show a dedicated indicator rather than a generic working label.
@@ -235,8 +258,16 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	needSelect := in.Mode.Mode == "" && in.ForceMode == "" && in.ForceAgent == ""
 	selectCh := make(chan rolemanager.ModeDecision, 1)
 	selectErrCh := make(chan error, 1)
+	// selectWG joins the mode-selection goroutine before run returns on ANY
+	// path. Without it, an early return (admission failure/refusal) leaves the
+	// classifier goroutine still emitting retry events on the streaming
+	// channel while RunStream closes it — a close/send race.
+	var selectWG sync.WaitGroup
+	defer selectWG.Wait()
 	if needSelect {
+		selectWG.Add(1)
 		go func() {
+			defer selectWG.Done()
 			d, err := rolemanager.Select(ctx, pipe.Classifier, rolemanager.ModeInput{
 				Prompt: clean, GoalLimit: rolemanager.DefaultGoalPromptLengthLimit, HasReferences: in.HasReferences,
 			})
@@ -295,9 +326,10 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		exploreTurns = s.exploreTurns(ctx, modeDec, clean)
 	}
 
-	// Clarify round loop: if there is an interactive UI, ask the user follow-up
-	// questions based on the explore findings, then run a second explore wave.
-	if modeDec.Explore && s.allowClarify {
+	// Clarify round loop: only when exploration actually produced findings, and
+	// only when the planner classifier can articulate a concrete question the
+	// user must answer. A zero-findings wave no longer triggers a questionnaire.
+	if modeDec.Explore && s.allowClarify && len(exploreTurns) > 0 {
 		exploreTurns = append(exploreTurns, s.clarifyRounds(ctx, pipe, modeDec, clean, exploreTurns, emit)...)
 	}
 
@@ -357,10 +389,16 @@ func (s *Session) PlanMode() bool { return s.planMode }
 
 // Steer queues an extra user turn for the next loop iteration. It returns
 // false when the queue is full, in which case the caller drops the message
-// rather than blocking the UI. Empty steering is rejected.
+// rather than blocking the UI. Empty steering is rejected. While an explore
+// fan-out is running the message is also broadcast to the explore subagents,
+// so their iteration budgets reset rather than the steering waiting for the
+// main loop.
 func (s *Session) Steer(text string) bool {
 	if strings.TrimSpace(text) == "" {
 		return false
+	}
+	if b := s.exploreBridge.Load(); b != nil {
+		b.push(text)
 	}
 	select {
 	case s.steer <- text:
@@ -368,6 +406,22 @@ func (s *Session) Steer(text string) bool {
 	default:
 		return false
 	}
+}
+
+// nextSteer returns the next queued steering message, first from the session's
+// own channel and then from the optional steerSource.
+func (s *Session) nextSteer() (string, bool) {
+	select {
+	case text := <-s.steer:
+		return text, true
+	default:
+	}
+	if s.steerSource != nil {
+		if text := s.steerSource(); text != "" {
+			return text, true
+		}
+	}
+	return "", false
 }
 
 // drainSteer non-blockingly pulls every queued steered turn and runs each
@@ -379,23 +433,22 @@ func (s *Session) Steer(text string) bool {
 func (s *Session) drainSteer(ctx context.Context, pipe *rolemanager.Pipeline, emit func(Event)) []run.Turn {
 	var out []run.Turn
 	for {
-		select {
-		case text := <-s.steer:
-			clean := sanitize.Sanitize(text)
-			emit(Event{Kind: EventRoleManagerKind, Phase: RoleManagerPhaseSteer})
-			dec, err := pipe.Admit(ctx, clean, s.posture)
-			if err != nil {
-				emit(Event{Kind: EventErrorKind, Err: err})
-				continue
-			}
-			if dec.Action != rolemanager.ActionProceed {
-				emit(Event{Kind: EventErrorKind, Err: &rolemanager.RefusalError{Sentinel: dec.Sentinel}})
-				continue
-			}
-			out = append(out, run.Turn{Role: "user", Content: clean})
-		default:
+		text, ok := s.nextSteer()
+		if !ok {
 			return out
 		}
+		clean := sanitize.Sanitize(text)
+		emit(Event{Kind: EventRoleManagerKind, Phase: RoleManagerPhaseSteer})
+		dec, err := pipe.Admit(ctx, clean, s.posture)
+		if err != nil {
+			emit(Event{Kind: EventErrorKind, Err: err})
+			continue
+		}
+		if dec.Action != rolemanager.ActionProceed {
+			emit(Event{Kind: EventErrorKind, Err: &rolemanager.RefusalError{Sentinel: dec.Sentinel}})
+			continue
+		}
+		out = append(out, run.Turn{Role: "user", Content: clean})
 	}
 }
 
@@ -584,12 +637,17 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 	}
 
 	emit(Event{Kind: EventRoleManagerKind, Phase: RoleManagerPhaseToolResult})
-	pipe := run.NewPipeline(s.cfg, s.client, s.cache)
+	pipe := run.NewPipelineWithRetry(s.cfg, s.client, s.cache, func(a resilience.Attempt) {
+		emit(Event{Kind: EventRetryKind, RetryAttempt: a.Attempt, RetryDelay: a.Delay, RetryReason: a.Reason})
+	})
 	cStart := time.Now()
 	dec, err := pipe.Process(ctx, res)
 	s.trace.Event("agent", "tool_result_classify", time.Since(cStart))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "signet: classifier error for %s: %v\n", call.Name, err)
+		// The placeholder carries the abbreviated detail; surface the full
+		// error to the TUI as a warning so it never corrupts the terminal by
+		// writing to stderr mid-render.
+		emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("classifier error for %q: %v; result withheld", call.Name, err)})
 		return classifierWithheld(call.Name, err)
 	}
 
@@ -647,7 +705,7 @@ const classifierErrorMaxRunes = 180
 // classifierWithheld renders the placeholder that stands in for a tool result
 // the classifier could not verify. The placeholder enters the model's context
 // and the transcript, so the provider detail is flattened to a single line and
-// clipped; the full error goes to stderr at the call site.
+// clipped. The full error is surfaced through the event system, not stderr.
 func classifierWithheld(name string, err error) string {
 	detail := strings.Join(strings.Fields(err.Error()), " ")
 	if runes := []rune(detail); len(runes) > classifierErrorMaxRunes {

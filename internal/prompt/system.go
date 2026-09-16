@@ -32,6 +32,10 @@ type Options struct {
 	// ExploreNote is a harness-generated framing sentence added when explore
 	// subagent reports are appended as user turns.
 	ExploreNote string
+	// Explore marks a plan-mode explore subagent. It renders the exploration
+	// preamble that tells the subagent to investigate with read-only tools
+	// rather than ask the user for clarification.
+	Explore bool
 	// Provider and Model name the two identities the harness does not own.
 	// Empty values are omitted rather than guessed at.
 	Provider string
@@ -72,6 +76,12 @@ const normalVoice = "Voice guidance: respond clearly and professionally.\n"
 
 const cavemanVoice = "Voice guidance: talk like caveman. Short words. No long words. 'Me fix now.'\n"
 
+// explorePreamble is the harness-authored guidance attached to a plan-mode
+// explore subagent's system prompt. It is trusted harness text (SourceHarness
+// provenance via SealSystem), never model output.
+const explorePreamble = `You are in plan-mode exploration. You may use the read-only tools listed below to investigate the repository. Prefer to discover facts yourself with the native read-only tools (Grep, Glob, Find, Git, Cat, Head, Tail, JQ, YQ, LS, File, Diff, and the others) rather than asking questions. Only ask the user a clarifying question when you have exhausted the available evidence and the decision genuinely requires user judgment. Produce a concise findings report as your final reply.
+`
+
 // System renders the system prompt. Exactly one carrier may be active: if
 // Carrier is set, only that carrier's text may be non-empty; if Carrier is
 // none, no carrier text may be provided.
@@ -94,6 +104,9 @@ func System(opts Options) (string, error) {
 	}
 	if opts.ExploreNote != "" {
 		b.WriteString(opts.ExploreNote + "\n")
+	}
+	if opts.Explore {
+		b.WriteString(explorePreamble)
 	}
 	if opts.Caveman {
 		b.WriteString(cavemanVoice)

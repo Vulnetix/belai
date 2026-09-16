@@ -25,13 +25,49 @@ func (s *Session) exploreTurns(ctx context.Context, decision rolemanager.ModeDec
 	return s.runExploreTasks(ctx, explore.Plan(clean, decision))
 }
 
+// steerBridge fans one steering message out to every explore subagent running
+// under the current fan-out. It is the parent→subagent steering channel that
+// makes reset-on-steer possible: a steering message sent while explore is
+// running reaches the affected subagents, whose iteration budget then resets.
+type steerBridge struct {
+	mu    sync.Mutex
+	chans []chan string
+}
+
+func (b *steerBridge) subscribe() chan string {
+	ch := make(chan string, steerBuffer)
+	b.mu.Lock()
+	b.chans = append(b.chans, ch)
+	b.mu.Unlock()
+	return ch
+}
+
+func (b *steerBridge) push(text string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, ch := range b.chans {
+		select {
+		case ch <- text:
+		default: // drop rather than block the UI
+		}
+	}
+}
+
 // runExploreTasks fans the given tasks out over bounded-parallel read-only
 // subagents and returns their classified findings as user turns, in task index
 // order. It is the shared runner for initial explore and forced goal surveys.
+//
+// Steering sent while the fan-out is running is broadcast to every subagent so
+// an explore subagent that has exhausted its iteration budget can reset and
+// continue ("explore more", "now check X").
 func (s *Session) runExploreTasks(ctx context.Context, tasks []explore.Task) []run.Turn {
 	if len(tasks) == 0 {
 		return nil
 	}
+
+	bridge := &steerBridge{}
+	s.exploreBridge.Store(bridge)
+	defer s.exploreBridge.Store(nil)
 
 	results := make([]string, len(tasks))
 	var wg sync.WaitGroup
@@ -42,7 +78,7 @@ func (s *Session) runExploreTasks(ctx context.Context, tasks []explore.Task) []r
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			results[t.Index] = s.runSubagent(ctx, t)
+			results[t.Index] = s.runSubagent(ctx, t, bridge.subscribe())
 		}(t)
 	}
 	wg.Wait()
@@ -68,10 +104,24 @@ func (s *Session) goalSurveyTurns(ctx context.Context, goalText string) []run.Tu
 	return s.runExploreTasks(ctx, explore.PlanGoalSurvey(goalText))
 }
 
-// runSubagent runs one read-only subagent and returns its classified, sealed
-// finding (or "" when the finding is unsafe or the subagent fails).
-func (s *Session) runSubagent(ctx context.Context, t explore.Task) string {
-	reg := tools.Default(s.workdir, true) // read-only Bash
+// runSubagent runs one read-only explore subagent and returns its classified,
+// sealed finding (or "" when the finding is unsafe or the subagent fails).
+// The subagent sees the original prompt, the grounding evidence, and the
+// native read-only tool catalogue; it has a dedicated iteration budget from
+// resilience.max_explore_iterations and may reset that budget when steering
+// arrives through the steer channel.
+func (s *Session) runSubagent(ctx context.Context, t explore.Task, steerCh chan string) string {
+	reg := tools.DefaultWithCaps(s.workdir, true, s.caps) // read-only native + base tools
+
+	grounding := s.groundingProbe(ctx).digest()
+	promptText := t.Prompt
+	if grounding != "" {
+		promptText += "\n\nWorkspace grounding (untrusted evidence):\n" + grounding
+	}
+
+	opts := s.opts
+	opts.Explore = true // plan-mode exploration preamble
+
 	sub, err := NewSession(Options{
 		Cfg:           s.cfg,
 		Client:        s.client,
@@ -79,15 +129,25 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task) string {
 		Posture:       s.posture,
 		PlanMode:      true,  // read-only even if the registry grows
 		AllowExplore:  false, // a subagent must not fan out again
-		MaxIterations: 4,     // exploration is shallow by construction
+		MaxIterations: s.settings.Resilience.MaxExploreIterationsOr(8),
 		Workdir:       s.workdir,
 		Settings:      s.settings,
-		PromptOptions: s.opts,
+		PromptOptions: opts,
+		Caps:          s.caps,
 		Cache:         s.cache, // share the session verdict cache across fan-out
 		SkipNonceSeed: true,    // the subagent re-seeds locally below
 	})
 	if err != nil {
 		return ""
+	}
+	sub.exploreSubagent = true
+	sub.steerSource = func() string {
+		select {
+		case text := <-steerCh:
+			return text
+		default:
+			return ""
+		}
 	}
 	// One fresh, locally-seeded pool per subagent: a child's nonces are unknown
 	// to the parent pool, and a child Rotate cannot invalidate the parent's
@@ -97,16 +157,14 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task) string {
 		return ""
 	}
 
-	ch := sub.RunStream(ctx, nil, TurnInput{Prompt: t.Prompt})
-	var reply string
-	for ev := range ch {
-		switch ev.Kind {
-		case EventErrorKind:
-			return ""
-		case EventDoneKind:
-			reply = ev.Result.Reply
-		}
+	// The subagent runs on the blocking transport: it only needs the final
+	// finding, not streaming events, and the blocking path matches how the
+	// non-interactive CLI drives a model.
+	res, err := sub.Run(ctx, promptText)
+	if err != nil {
+		return ""
 	}
+	reply := res.Reply
 	if reply == "" {
 		return ""
 	}

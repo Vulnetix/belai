@@ -37,6 +37,7 @@ type Event struct {
 	Text       string
 	ToolName   string
 	ToolResult string
+	Warning    string
 	Err        error
 }
 
@@ -418,7 +419,8 @@ func (m *Manager) executeTurn(ctx context.Context, inst *AgentInstance) {
 }
 
 func (m *Manager) buildSession(profile agentprofile.AgentProfile) (*agent.Session, error) {
-	reg := tools.Default(m.workdir, m.settings.ReadOnlyEnabled())
+	caps := tools.DetectDefault()
+	reg := tools.DefaultWithCaps(m.workdir, m.settings.ReadOnlyEnabled(), caps)
 	if len(profile.Tools) > 0 {
 		var filtered []tools.Tool
 		for _, name := range profile.Tools {
@@ -443,11 +445,12 @@ func (m *Manager) buildSession(profile agentprofile.AgentProfile) (*agent.Sessio
 		Settings:      m.settings,
 		PromptOptions: promptOpts,
 		MaxIterations: 1,
+		Caps:          caps,
 	})
 }
 
 func (m *Manager) wrapEvent(name string, e agent.Event) Event {
-	return Event{AgentName: name, Kind: e.Kind, Text: e.Text, ToolName: e.ToolName, ToolResult: e.ToolResult, Err: e.Err}
+	return Event{AgentName: name, Kind: e.Kind, Text: e.Text, ToolName: e.ToolName, ToolResult: e.ToolResult, Warning: e.Warning, Err: e.Err}
 }
 
 func (m *Manager) evaluateMonitor(ctx context.Context, condition string) (bool, error) {

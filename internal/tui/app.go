@@ -1035,7 +1035,8 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 // is the pure construction half of agentSession, safe to run off the Bubble
 // Tea goroutine.
 func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
-	reg := tools.Default(p.workdir, p.settings.ReadOnlyEnabled())
+	caps := tools.DetectDefault()
+	reg := tools.DefaultWithCaps(p.workdir, p.settings.ReadOnlyEnabled(), caps)
 	if len(p.toolAllow) > 0 {
 		// An engaged background definition brings its allowlist with it, the
 		// same narrowing internal/bgagent applies when it runs the definition
@@ -1063,6 +1064,7 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		Workdir:       p.workdir,
 		Settings:      p.settings,
 		PromptOptions: promptOpts,
+		Caps:          caps,
 		// Top-level session: explore subagents may fan out from here. A
 		// subagent sets this false so it can never fan out again.
 		AllowExplore: true,
@@ -1826,6 +1828,9 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 	evStart := time.Now()
 	defer func() { a.trace.Event("tui", "agent_event", time.Since(evStart)) }()
 	switch m.Kind {
+	case agent.EventWarningKind:
+		a.addSystem(m.Warning)
+		return a.nextAgent()
 	case agent.EventErrorKind:
 		if !a.phaseStartedAt.IsZero() {
 			a.trace.Event("tui", "turn_total", time.Since(a.phaseStartedAt))
@@ -1844,7 +1849,9 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		if last := len(a.messages) - 1; last >= 0 && a.messages[last].Role == "assistant" {
 			a.messages[last].Materialise()
 		}
-		a.addSystem("agent error: " + m.Err.Error())
+		if m.Err != nil {
+			a.addSystem("agent error: " + m.Err.Error())
+		}
 		return nil
 	case agent.EventTextKind:
 		a.setPhaseWorking()

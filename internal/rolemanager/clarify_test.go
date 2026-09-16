@@ -95,3 +95,50 @@ func TestAskClarifyReturnsValidatedQuestionnaire(t *testing.T) {
 		t.Fatalf("returned questionnaire was not valid: %v", err)
 	}
 }
+
+// TestShouldClarifyProceedsOnEmpty pins the clarify gating rule: an empty
+// questionnaire means the planner can proceed, so the harness does not ask the
+// user anything.
+func TestShouldClarifyProceedsOnEmpty(t *testing.T) {
+	c := &recordingClassifier{raw: `{"groups": []}`}
+	proceed, q, err := ShouldClarify(context.Background(), c, ClarifyInput{Prompt: "p"}, 3)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !proceed {
+		t.Fatal("empty questionnaire should proceed")
+	}
+	if !q.Empty() {
+		t.Fatalf("expected empty questionnaire, got %+v", q)
+	}
+}
+
+// TestShouldClarifyAsksOnNonEmpty pins the other half: a non-empty
+// questionnaire is the only path that enters the clarify loop.
+func TestShouldClarifyAsksOnNonEmpty(t *testing.T) {
+	c := &recordingClassifier{raw: `{"groups":[{"context":"Which?","options":[{"label":"A"},{"label":"B"}]}]}`}
+	proceed, q, err := ShouldClarify(context.Background(), c, ClarifyInput{Prompt: "p"}, 3)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if proceed {
+		t.Fatal("non-empty questionnaire must not proceed")
+	}
+	if q.Empty() {
+		t.Fatal("expected a questionnaire")
+	}
+}
+
+// TestShouldClarifyFailsOpen pins the fail-open rule: a classifier that cannot
+// produce a usable questionnaire proceeds with the evidence at hand rather
+// than blocking planning.
+func TestShouldClarifyFailsOpen(t *testing.T) {
+	c := &recordingClassifier{err: errors.New("boom")}
+	proceed, _, err := ShouldClarify(context.Background(), c, ClarifyInput{Prompt: "p"}, 3)
+	if err != nil {
+		t.Fatalf("ShouldClarify should fail open with no error, got %v", err)
+	}
+	if !proceed {
+		t.Fatal("unusable classifier should proceed")
+	}
+}

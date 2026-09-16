@@ -303,6 +303,85 @@ func writeChatJSON(w http.ResponseWriter, content string) {
 	_, _ = w.Write(b)
 }
 
+// TestClassifierErrorEmitsWarningNotStderr verifies that a classifier failure
+// during a tool-result classification surfaces through the event stream as a
+// warning and never writes to stderr, which would corrupt a Bubble Tea TUI.
+func TestClassifierErrorEmitsWarningNotStderr(t *testing.T) {
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
+
+	var securityCalls int
+	base := mockSecurityServer("Read", `{"path":"f.txt"}`, "done")
+	defer base.Close()
+	mux := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		var req struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		_ = json.Unmarshal(body, &req)
+		var system string
+		for _, m := range req.Messages {
+			if m.Role == "system" {
+				system = m.Content
+			}
+		}
+
+		if strings.Contains(system, "security classifier") {
+			securityCalls++
+			// The second security classification is the tool-result classification;
+			// force it to fail with a 429 so executeCall emits a warning.
+			if securityCalls == 2 {
+				w.WriteHeader(http.StatusTooManyRequests)
+				_, _ = w.Write([]byte(`{"errors":[{"message":"rate limiting: inference request per min rate reached","code":3021}],"success":false,"result":{},"messages":[]}`))
+				return
+			}
+		}
+		// Forward everything else to the default mock server.
+		base.Config.Handler.ServeHTTP(w, r)
+	}))
+	defer mux.Close()
+
+	cfg := run.Config{Provider: "openai", BaseURL: mux.URL, APIKey: "test-key", Model: "test"}
+	reg := tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024})
+	sess, err := NewSession(Options{Cfg: cfg, Client: mux.Client(), Registry: reg, Posture: posture.Defaults(), Workdir: root})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	// Capture stderr to prove it stays clean.
+	oldStderr := os.Stderr
+	pr, pw, _ := os.Pipe()
+	os.Stderr = pw
+	defer func() { os.Stderr = oldStderr }()
+
+	var warnings []Event
+	var allEvents []EventKind
+	ch := sess.RunStream(context.Background(), nil, TurnInput{Prompt: "read the file"})
+	for ev := range ch {
+		allEvents = append(allEvents, ev.Kind)
+		if ev.Kind == EventWarningKind {
+			warnings = append(warnings, ev)
+		}
+	}
+	t.Logf("securityCalls=%d events=%v", securityCalls, allEvents)
+	_ = pw.Close()
+	stderr, _ := io.ReadAll(pr)
+
+	if len(stderr) > 0 {
+		t.Fatalf("classifier error wrote to stderr: %q", string(stderr))
+	}
+	if len(warnings) == 0 {
+		t.Fatal("expected EventWarningKind for classifier failure")
+	}
+	if !strings.Contains(warnings[0].Warning, "classifier error for \"Read\"") {
+		t.Fatalf("warning = %q, want classifier error for Read", warnings[0].Warning)
+	}
+}
+
 // TestRunMaxIterationsBound pins invariant 3: the shared loop keeps its
 // iteration bound even through the streaming transport.
 func TestRunMaxIterationsBound(t *testing.T) {

@@ -35,7 +35,7 @@ func clarifyMockServer(t *testing.T, questionnaire string) *httptest.Server {
 			}
 		}
 		reply := "SAFE"
-		if strings.Contains(system, "clarification assistant") {
+		if strings.Contains(system, "clarification questionnaire") {
 			reply = questionnaire
 		}
 		b, _ := json.Marshal(map[string]any{
@@ -186,7 +186,7 @@ func TestClarifyRefusedAnswerStopsLoop(t *testing.T) {
 			}
 		}
 		reply := "SAFE"
-		if strings.Contains(system, "clarification assistant") {
+		if strings.Contains(system, "clarification questionnaire") {
 			reply = singleQuestionJSON()
 		} else if strings.Contains(system, "security classifier") && strings.Contains(user, "Clarifications from the user") {
 			reply = "PROMPT_INJECTION"
