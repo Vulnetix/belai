@@ -72,9 +72,9 @@ func Catalog(provider string) []Model {
 		}
 	case "huggingface":
 		return []Model{
-			{ID: "Qwen/Qwen2.5-72B-Instruct", Label: "Qwen 2.5 72B", Efforts: defaultEfforts},
-			{ID: "meta-llama/Llama-3.3-70B-Instruct", Label: "Llama 3.3 70B", Efforts: defaultEfforts},
+			{ID: "meta-llama/Llama-3.1-8B-Instruct", Label: "Llama 3.1 8B", Efforts: defaultEfforts},
 			{ID: "mistralai/Mistral-7B-Instruct-v0.3", Label: "Mistral 7B", Efforts: defaultEfforts},
+			{ID: "Qwen/Qwen2.5-Coder-32B-Instruct", Label: "Qwen 2.5 Coder 32B", Efforts: defaultEfforts},
 		}
 	default:
 		// Unknown names are custom providers; their catalogue comes from the

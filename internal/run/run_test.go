@@ -833,8 +833,8 @@ func TestPrepareHuggingFaceBaseURL(t *testing.T) {
 	if cfg.BaseURL != "https://router.huggingface.co/hf-inference/v1" {
 		t.Fatalf("BaseURL = %q", cfg.BaseURL)
 	}
-	if cfg.Model != "Qwen/Qwen2.5-72B-Instruct" {
-		t.Fatalf("Model = %q, want Qwen/Qwen2.5-72B-Instruct", cfg.Model)
+	if cfg.Model != "meta-llama/Llama-3.1-8B-Instruct" {
+		t.Fatalf("Model = %q, want meta-llama/Llama-3.1-8B-Instruct", cfg.Model)
 	}
 	if cfg.APIKey != "hf-secret" {
 		t.Fatalf("APIKey = %q", cfg.APIKey)
@@ -1220,7 +1220,7 @@ func TestDefaultModelTable(t *testing.T) {
 		"google-gemini":         "gemini-2.5-flash",
 		"ollama":                "llama3",
 		"github-copilot":        "gpt-4o",
-		"huggingface":           "Qwen/Qwen2.5-72B-Instruct",
+		"huggingface":           "meta-llama/Llama-3.1-8B-Instruct",
 		"my-custom-provider":    "gpt-5",
 		"":                      "gpt-5",
 	}

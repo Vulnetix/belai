@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/modelfetch"
 	"github.com/vulnetix/signet/internal/models"
+	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/tui/components"
 )
 
@@ -71,9 +73,17 @@ func (a *App) fetchCatalogCmd(name string) tea.Cmd {
 		return nil
 	}
 	a.catalogLoading[name] = true
-	target := modelfetch.Target{Name: name, BaseURL: a.cfg.BaseURL, APIKey: a.cfg.APIKey, Auth: a.cfg.Auth, API: a.cfg.API}
 	client := a.client
+	resolver := a.resolver
 	return func() tea.Msg {
+		src := run.CredentialSource(run.EnvSource(os.Getenv))
+		if resolver != nil {
+			src = resolver
+		}
+		// Resolve the target provider (not the currently-committed one) so
+		// browsing previewed providers still fetches from the right endpoint.
+		cfg, _ := run.Prepare("", name, src)
+		target := modelfetch.Target{Name: name, BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Auth: cfg.Auth, API: cfg.API}
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		m, err := modelfetch.List(ctx, target, client)
@@ -232,6 +242,9 @@ func (a *App) modelView() string {
 	if a.modelState.errorMsg != "" {
 		tail.WriteString("\n" + components.DangerStyle.Render("✗ "+a.modelState.errorMsg) + "\n")
 	}
+	if errMsg := a.catalogErr[name]; errMsg != "" {
+		tail.WriteString("\n" + components.DangerStyle.Render("✗ fetch: "+errMsg) + "\n")
+	}
 	tail.WriteString("\n" + a.modelHelpBar() + "\n")
 
 	// Available list rows are measured, not guessed, so chrome never scrolls
@@ -360,6 +373,7 @@ func (a *App) handleModelKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "r":
 		name, _ := a.modelCatalog()
 		delete(a.catalogCache, name)
+		delete(a.catalogErr, name)
 		return a, a.fetchCatalogCmd(name)
 	case "c":
 		if a.modelState.providerIdx < len(a.credentialState.providers) {

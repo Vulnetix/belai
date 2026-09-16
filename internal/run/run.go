@@ -401,7 +401,7 @@ func DefaultModel(providerName string) string {
 	case "github-copilot":
 		return "gpt-4o"
 	case "huggingface":
-		return "Qwen/Qwen2.5-72B-Instruct"
+		return "meta-llama/Llama-3.1-8B-Instruct"
 	default:
 		return "gpt-5"
 	}
