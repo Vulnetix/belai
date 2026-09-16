@@ -4,12 +4,19 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/vulnetix/signet/internal/permissions"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/signet/internal/tools"
 	"github.com/vulnetix/signet/internal/transcript"
 )
+
+// toolConcurrency caps how many read-only tool calls execute in parallel.
+// Unbounded fan-out against a rate-limited provider produces 429s, which is
+// worse than sequential.
+const toolConcurrency = 4
 
 // passOutcome is the result of one bounded tool-loop pass.
 type passOutcome struct {
@@ -90,34 +97,85 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 			continue
 		}
 
-		productiveIter := false
-		for _, call := range filtered {
-			if s.permissionDecision(call) == permissions.DecisionAsk {
-				emit(Event{Kind: EventPermissionAskKind, AskName: call.Name})
-			}
-			emit(Event{Kind: EventToolStartKind, Tool: &call})
-
+		// Parse and permission-check every call up front so the concurrent run
+		// can be decided without reordering.
+		type callUnit struct {
+			call     rolemanager.ToolCall
+			args     map[string]any
+			parseErr error
+			tool     tools.Tool
+			decision permissions.Decision
+		}
+		units := make([]callUnit, len(filtered))
+		for i, call := range filtered {
 			args, parseErr := parseToolArgs(call)
-			if parseErr != nil {
-				toolResult := fmt.Sprintf("tool result withheld: malformed arguments for %q: %v", call.Name, parseErr)
-				emit(Event{Kind: EventToolResultKind, ToolName: call.Name, ToolResult: toolResult})
-				turns = append(turns, run.Turn{
-					Role:       "tool",
-					Content:    toolResult,
-					ToolCallID: call.ID,
-					ToolName:   call.Name,
-				})
-				continue
+			u := callUnit{call: call, args: args, parseErr: parseErr}
+			if parseErr == nil {
+				if tool, ok := s.registry.Find(call.Name); ok {
+					u.tool = tool
+					u.decision, _ = s.decidePermission(call.Name, tool.Subject(args))
+				}
 			}
-			callCopy := call
-			callCopy.Args = args
-			toolResult := s.executeCall(ctx, callCopy, emit)
-			emit(Event{Kind: EventToolResultKind, ToolName: call.Name, ToolResult: toolResult})
+			units[i] = u
+		}
+
+		// The concurrent group is the leading run of read-only, permission-
+		// allowed, parseable calls. The sole mutating kind is Bash, and a Read
+		// after a Bash that wrote the file must observe the write, so nothing
+		// reorders across a Bash call. A permission ask ends the run because
+		// two concurrent asks would race the UI.
+		concurrentEnd := 0
+		for concurrentEnd < len(units) {
+			u := units[concurrentEnd]
+			if u.parseErr != nil || u.tool == nil || !u.tool.Kind().ReadOnly() || u.decision != permissions.DecisionAllow {
+				break
+			}
+			concurrentEnd++
+		}
+
+		results := make([]string, len(units))
+		if concurrentEnd > 0 {
+			sem := make(chan struct{}, toolConcurrency)
+			var wg sync.WaitGroup
+			for i := 0; i < concurrentEnd; i++ {
+				u := units[i]
+				emit(Event{Kind: EventToolStartKind, Tool: &u.call})
+				wg.Add(1)
+				go func(i int, u callUnit) {
+					defer wg.Done()
+					sem <- struct{}{}
+					defer func() { <-sem }()
+					callCopy := u.call
+					callCopy.Args = u.args
+					results[i] = s.executeCall(ctx, callCopy, emit)
+				}(i, u)
+			}
+			wg.Wait()
+		}
+
+		productiveIter := false
+		for i := 0; i < len(units); i++ {
+			u := units[i]
+			if i >= concurrentEnd {
+				if u.decision == permissions.DecisionAsk {
+					emit(Event{Kind: EventPermissionAskKind, AskName: u.call.Name})
+				}
+				emit(Event{Kind: EventToolStartKind, Tool: &u.call})
+				if u.parseErr != nil {
+					results[i] = fmt.Sprintf("tool result withheld: malformed arguments for %q: %v", u.call.Name, u.parseErr)
+				} else {
+					callCopy := u.call
+					callCopy.Args = u.args
+					results[i] = s.executeCall(ctx, callCopy, emit)
+				}
+			}
+			toolResult := results[i]
+			emit(Event{Kind: EventToolResultKind, ToolName: u.call.Name, ToolCallID: u.call.ID, ToolResult: toolResult})
 			turns = append(turns, run.Turn{
 				Role:       "tool",
 				Content:    toolResult,
-				ToolCallID: call.ID,
-				ToolName:   call.Name,
+				ToolCallID: u.call.ID,
+				ToolName:   u.call.Name,
 			})
 			if !strings.HasPrefix(toolResult, "tool result withheld:") {
 				productiveIter = true

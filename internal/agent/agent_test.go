@@ -849,3 +849,214 @@ func eventKinds(events []Event) []EventKind {
 	}
 	return out
 }
+
+// TestTurnInputModeSkipsSelect pins the duplicate-Select fix: when the caller
+// supplies a resolved ModeDecision, the agent must not run the operating-mode
+// classifier again (its result would be discarded).
+func TestTurnInputModeSkipsSelect(t *testing.T) {
+	var modeCalls int32
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		var system string
+		for _, m := range req.Messages {
+			if m.Role == "system" {
+				system = m.Content
+			}
+		}
+		switch {
+		case strings.Contains(system, "security classifier"):
+			writeChatJSON(w, "SAFE")
+		case strings.Contains(system, "operating-mode classifier"):
+			mu.Lock()
+			modeCalls++
+			mu.Unlock()
+			writeChatJSON(w, "AGENT")
+		default:
+			writeChatJSON(w, "reply")
+		}
+	}))
+	defer srv.Close()
+
+	cfg := run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"}
+	sess, err := NewSession(Options{Cfg: cfg, Client: srv.Client(), Posture: posture.Defaults()})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	res, err := sess.run(context.Background(), nil, TurnInput{
+		Prompt: "hello",
+		Mode:   rolemanager.ModeDecision{Mode: modes.ModeAgent},
+	}, false, func(Event) {})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if res.ModeDecision.Mode != modes.ModeAgent {
+		t.Fatalf("mode = %q, want agent", res.ModeDecision.Mode)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if modeCalls != 0 {
+		t.Fatalf("operating-mode classifier called %d times, want 0 (skipped)", modeCalls)
+	}
+}
+
+// TestForcedModeSkipsSelect pins that an explicitly chosen mode never pays for
+// a mode-classifier round trip whose result would be discarded.
+func TestForcedModeSkipsSelect(t *testing.T) {
+	var modeCalls int32
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		var system string
+		for _, m := range req.Messages {
+			if m.Role == "system" {
+				system = m.Content
+			}
+		}
+		switch {
+		case strings.Contains(system, "security classifier"):
+			writeChatJSON(w, "SAFE")
+		case strings.Contains(system, "operating-mode classifier"):
+			mu.Lock()
+			modeCalls++
+			mu.Unlock()
+			writeChatJSON(w, "PLAN")
+		default:
+			writeChatJSON(w, "reply")
+		}
+	}))
+	defer srv.Close()
+
+	cfg := run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"}
+	sess, err := NewSession(Options{Cfg: cfg, Client: srv.Client(), Posture: posture.Defaults()})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	_, err = sess.run(context.Background(), nil, TurnInput{Prompt: "hello", ForceMode: modes.ModeAgent}, false, func(Event) {})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if modeCalls != 0 {
+		t.Fatalf("operating-mode classifier called %d times, want 0 (skipped)", modeCalls)
+	}
+}
+
+// TestConcurrentReadOnlyToolsPreserveOrder pins T2.1: a leading run of
+// read-only tools executes concurrently but their results re-enter the
+// transcript in call order, so providers never see reordered tool_call_ids.
+func TestConcurrentReadOnlyToolsPreserveOrder(t *testing.T) {
+	root := t.TempDir()
+	for _, f := range []string{"a.txt", "b.txt", "c.txt"} {
+		_ = os.WriteFile(filepath.Join(root, f), []byte("content-"+f), 0o600)
+	}
+
+	var mu sync.Mutex
+	var toolOrder []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []struct {
+				Role       string `json:"role"`
+				Content    string `json:"content"`
+				ToolCallID string `json:"tool_call_id"`
+				ToolCalls  []struct {
+					ID       string `json:"id"`
+					Function struct {
+						Name      string `json:"name"`
+						Arguments string `json:"arguments"`
+					} `json:"function"`
+				} `json:"tool_calls,omitempty"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+
+		var system string
+		for _, m := range req.Messages {
+			if m.Role == "system" {
+				system = m.Content
+			}
+		}
+		switch {
+		case contains(system, "security classifier"):
+			writeChatJSON(w, "SAFE")
+		case contains(system, "operating-mode classifier"):
+			writeChatJSON(w, "AGENT")
+		default:
+			hasToolResult := false
+			for _, m := range req.Messages {
+				if m.Role == "tool" {
+					hasToolResult = true
+				}
+			}
+			msg := map[string]any{"role": "assistant", "content": ""}
+			if !hasToolResult {
+				var calls []any
+				for i, name := range []string{"Read", "Read", "Read"} {
+					path := []string{"a.txt", "b.txt", "c.txt"}[i]
+					calls = append(calls, map[string]any{
+						"id":       fmt.Sprintf("call_%d", i+1),
+						"type":     "function",
+						"function": map[string]any{"name": name, "arguments": fmt.Sprintf(`{"path":%q}`, path)},
+					})
+				}
+				msg["tool_calls"] = calls
+			} else {
+				mu.Lock()
+				for _, m := range req.Messages {
+					if m.Role == "tool" {
+						toolOrder = append(toolOrder, m.ToolCallID)
+					}
+				}
+				mu.Unlock()
+				msg["content"] = "all read"
+			}
+			b, _ := json.Marshal(map[string]any{
+				"id":      "x",
+				"object":  "chat.completion",
+				"choices": []any{map[string]any{"index": 0, "message": msg, "finish_reason": "stop"}},
+			})
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(b)
+		}
+	}))
+	defer srv.Close()
+
+	cfg := run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"}
+	reg := tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024})
+	sess, err := NewSession(Options{Cfg: cfg, Client: srv.Client(), Registry: reg, Posture: posture.Defaults(), Workdir: root})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	res, err := sess.Run(nil, "read three files")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Reply != "all read" {
+		t.Fatalf("reply = %q", res.Reply)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	want := []string{"call_1", "call_2", "call_3"}
+	if len(toolOrder) != len(want) {
+		t.Fatalf("tool result order = %v, want %v", toolOrder, want)
+	}
+	for i := range want {
+		if toolOrder[i] != want[i] {
+			t.Fatalf("tool result order = %v, want %v", toolOrder, want)
+		}
+	}
+}

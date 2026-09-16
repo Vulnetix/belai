@@ -77,6 +77,10 @@ type Event struct {
 	// ToolName / ToolResult carry EventToolResult.
 	ToolName   string
 	ToolResult string
+	// ToolCallID keys a tool result back to the assistant call that requested
+	// it. Tool results may now arrive out of order (concurrent read-only
+	// tools), so the TUI must match on this rather than the last tool row.
+	ToolCallID string
 
 	// AskName / AskSubject carry EventPermissionAsk.
 	AskName    string

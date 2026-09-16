@@ -13,6 +13,14 @@ const (
 	KindExplore   Kind = "explore"
 )
 
+// ReadOnly reports whether a tool of this kind only reads and never mutates
+// the workspace. The sole mutating kind is Bash: there is no Edit/Write tool,
+// and all mutation goes through Bash. It gates the concurrent read-only tool
+// run in the agent loop.
+func (k Kind) ReadOnly() bool {
+	return k != KindBash
+}
+
 // Result is a tool output.
 type Result struct {
 	Kind    Kind

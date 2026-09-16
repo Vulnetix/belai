@@ -1637,16 +1637,23 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		})
 		return a.nextAgent()
 	case agent.EventToolResultKind:
+		a.setPhaseWorking()
+		// Key by ToolCallID: concurrent read-only tools may complete out of
+		// order, so the result must land on its own row rather than the last
+		// tool row.
+		if m.ToolCallID != "" {
+			for i := len(a.messages) - 1; i >= 0; i-- {
+				if a.messages[i].Role == "tool" && a.messages[i].ToolCallID == m.ToolCallID {
+					a.messages[i].SetContent(m.ToolResult)
+					a.messages[i].Status = toolResultStatus(m.ToolName, m.ToolResult)
+					return a.nextAgent()
+				}
+			}
+		}
+		// Fallback for legacy events without a ToolCallID: the last tool row.
 		if len(a.messages) > 0 && a.messages[len(a.messages)-1].Role == "tool" {
 			a.messages[len(a.messages)-1].SetContent(m.ToolResult)
-			status := "✓"
-			switch {
-			case strings.HasPrefix(m.ToolResult, "tool result withheld:"):
-				status = "withheld"
-			case m.ToolName == "Bash" && strings.Contains(m.ToolResult, "exit status"):
-				status = "✗"
-			}
-			a.messages[len(a.messages)-1].Status = status
+			a.messages[len(a.messages)-1].Status = toolResultStatus(m.ToolName, m.ToolResult)
 		}
 		return a.nextAgent()
 	case agent.EventPermissionAskKind:
@@ -1754,6 +1761,18 @@ func toolArgsString(args map[string]any) string {
 	}
 	b, _ := json.Marshal(args)
 	return string(b)
+}
+
+// toolResultStatus maps a tool result to its row status glyph.
+func toolResultStatus(name, result string) string {
+	switch {
+	case strings.HasPrefix(result, "tool result withheld:"):
+		return "withheld"
+	case name == "Bash" && strings.Contains(result, "exit status"):
+		return "✗"
+	default:
+		return "✓"
+	}
 }
 
 // buildTurns renders the live transcript as provider turns. A compacted

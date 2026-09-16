@@ -363,3 +363,15 @@ func TestForbiddenIP(t *testing.T) {
 		}
 	}
 }
+
+func TestKindReadOnly(t *testing.T) {
+	readOnly := map[Kind]bool{
+		KindRead: true, KindWebSearch: true, KindWebFetch: true, KindGrep: true, KindGlob: true, KindExplore: true,
+		KindBash: false,
+	}
+	for k, want := range readOnly {
+		if got := k.ReadOnly(); got != want {
+			t.Fatalf("Kind(%s).ReadOnly() = %v, want %v", k, got, want)
+		}
+	}
+}
