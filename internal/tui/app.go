@@ -124,6 +124,11 @@ type App struct {
 	height       int
 	mode         string
 	modeExplicit bool // a manual mode choice suppresses classification this turn
+	// forceMode carries that manual choice into the agent session. Suppressing
+	// the TUI's own classification is not enough: Session.run classifies again
+	// internally, so without this the user's explicit mode is discarded.
+	// One-shot, matching modeExplicit.
+	forceMode    modes.Mode
 	autocomplete []string
 
 	// mode classification (optional; nil skips auto-detection)
@@ -523,7 +528,8 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 			return agentEventMsg{Kind: agent.EventErrorKind, Err: err}
 		}
 	}
-	in := agent.TurnInput{Prompt: promptText}
+	in := agent.TurnInput{Prompt: promptText, ForceMode: a.forceMode}
+	a.forceMode = ""
 	if a.namedAgent != "" {
 		in.ForceAgent = a.namedAgent
 	}
@@ -574,6 +580,9 @@ func (a *App) submitInput(input string) tea.Cmd {
 	a.setPhaseRoleManager(agent.RoleManagerPhasePrePrompt)
 
 	if a.modeExplicit || a.classifier == nil {
+		if a.modeExplicit {
+			a.forceMode = modes.Mode(a.mode)
+		}
 		a.modeExplicit = false
 		return a.sendTurn(firstUser, input, safe)
 	}

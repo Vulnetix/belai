@@ -74,6 +74,26 @@ func DecideMode(s ModeSentinel, in ModeInput) ModeDecision {
 	}
 }
 
+// DecideForcedMode builds the decision for a mode the user chose explicitly,
+// bypassing the classifier. It reuses DecideMode so an explicit choice gets the
+// same carrier and explore wiring as an inferred one — with one deliberate
+// difference: the goal length limit does not apply. The limit exists to stop
+// the classifier from routing a long prompt into goal mode by mistake, and a
+// user who selected goal mode has made no mistake to guard against.
+func DecideForcedMode(m modes.Mode, prompt string, hasReferences bool) ModeDecision {
+	in := ModeInput{Prompt: prompt, HasReferences: hasReferences}
+	switch m {
+	case modes.ModeGoal:
+		return ModeDecision{Mode: modes.ModeGoal, AppendCarrier: true, Explore: hasReferences}
+	case modes.ModePlan:
+		return DecideMode(ModePlan, in)
+	case modes.ModeAgent:
+		return DecideMode(ModeAgent, in)
+	default:
+		return DecideMode(ModeUndetermined, in)
+	}
+}
+
 // Select runs the mode classifier and returns the resulting decision. A
 // classifier transport error is returned to the caller; malformed classifier
 // output falls through to default agent mode via ClassifyMode.
