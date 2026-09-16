@@ -52,10 +52,10 @@ type Options struct {
 	// Cache is the session-scoped classifier verdict cache (SAFE LRU plus
 	// persisted bad hashes). nil means no caching. A subagent inherits the
 	// parent's cache so verdicts are shared across the fan-out.
-	Cache *rolemanager.Cache
-	Workdir       string
-	State         config.State
-	Settings      config.Settings
+	Cache    *rolemanager.Cache
+	Workdir  string
+	State    config.State
+	Settings config.Settings
 }
 
 // Session executes the tool loop for a single user prompt.

@@ -183,7 +183,7 @@ func (a *App) validateAttachmentCmd(id int, rel string) tea.Cmd {
 		if err != nil {
 			return attachValidatedMsg{id: id, err: err, sentinel: rolemanager.SentinelMalformed}
 		}
-		pipe := rolemanager.NewPipeline(run.NewClassifier(cfg, client))
+		pipe := run.NewPipeline(cfg, client, a.cache)
 		dec, perr := pipe.Process(ctx, res)
 		body := res.Content
 		if perr == nil && dec.Action == rolemanager.ActionProceed {

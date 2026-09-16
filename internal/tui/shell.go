@@ -59,7 +59,7 @@ func (a *App) handleShell(input string) tea.Cmd {
 			return shellDoneMsg{command: cmd, err: err}
 		}
 		body := res.Content
-		pipe := rolemanager.NewPipeline(run.NewClassifier(cfg, client))
+		pipe := run.NewPipeline(cfg, client, a.cache)
 		dec, perr := pipe.Process(ctx, res)
 		if perr == nil && dec.Action == rolemanager.ActionProceed {
 			body = dec.Content
