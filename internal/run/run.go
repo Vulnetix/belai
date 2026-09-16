@@ -659,22 +659,51 @@ func doChatWithPool(ctx context.Context, cfg Config, system string, turns []Turn
 // provider. The classifier uses cfg.Classifier when one was resolved, else the
 // main config with reasoning off.
 func NewClassifier(cfg Config, client *http.Client) rolemanager.Classifier {
+	return NewClassifierWithRetry(cfg, client, nil)
+}
+
+// NewClassifierWithRetry is NewClassifier with an onRetry callback invoked
+// before each L1 backoff. The callback can forward resilience.Attempt metadata
+// to observers such as the TUI.
+func NewClassifierWithRetry(cfg Config, client *http.Client, onRetry func(resilience.Attempt)) rolemanager.Classifier {
 	cc := cfg.ClassifierOrDefault()
 	return rolemanager.ClassifierFunc(func(ctx context.Context, p rolemanager.ClassifierPayload) (string, error) {
 		c := cc.config()
 		if p.MaxTokens > 0 {
 			c.MaxTokens = p.MaxTokens
 		}
-		return chat(ctx, c, p.System, p.User, client)
+		return chatWithRetry(ctx, c, p.System, p.User, client, onRetry)
 	})
+}
+
+func chatWithRetry(ctx context.Context, cfg Config, system, user string, client *http.Client, onRetry func(resilience.Attempt)) (string, error) {
+	return doChatWithPoolRetry(ctx, cfg, system, []Turn{{Role: "user", Content: user}}, client, nil, onRetry)
+}
+
+func doChatWithPoolRetry(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, pool *nonce.Pool, onRetry func(resilience.Attempt)) (string, error) {
+	if pool == nil {
+		pool = nonce.New()
+	}
+	turns = egressTurns(turns, pool)
+	a, err := sendTurnsWithTools(ctx, cfg, system, turns, client, nil, nil, onRetry)
+	if err != nil {
+		return "", err
+	}
+	return a.Text, nil
 }
 
 // NewPipeline builds a rolemanager.Pipeline from the resolved classifier
 // config: the classifier (reasoning off by default) plus the chunked
 // classify-all bounds and an optional verdict cache.
 func NewPipeline(cfg Config, client *http.Client, cache *rolemanager.Cache) *rolemanager.Pipeline {
+	return NewPipelineWithRetry(cfg, client, cache, nil)
+}
+
+// NewPipelineWithRetry is NewPipeline with an onRetry callback forwarded to
+// the underlying classifier so retries are visible to observers.
+func NewPipelineWithRetry(cfg Config, client *http.Client, cache *rolemanager.Cache, onRetry func(resilience.Attempt)) *rolemanager.Pipeline {
 	cc := cfg.ClassifierOrDefault()
-	p := rolemanager.NewPipelineWithChunk(NewClassifier(cfg, client), rolemanager.ChunkConfig{
+	p := rolemanager.NewPipelineWithChunk(NewClassifierWithRetry(cfg, client, onRetry), rolemanager.ChunkConfig{
 		MaxBytes:    cc.Chunk.MaxBytes,
 		Concurrency: cc.Chunk.Concurrency,
 	})
