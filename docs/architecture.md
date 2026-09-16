@@ -420,6 +420,79 @@ whose map length does not match — a desynced map must never corrupt the frame.
 Slicing is by terminal cell, never by rune index, so CJK and emoji stay on
 cluster boundaries.
 
+### Styled rows
+
+Every transcript row that carries colour is built from `Seg` and `Row`
+(`styledline.go`) rather than assembled by hand. A `Row` is clipped and
+measured while its text is still plain, and only then turned into escape
+sequences, with its `SourceLine` derived from that plain twin — so both
+`LineMap` invariants hold by construction instead of by review. `renderRows`
+is the only path from rows to the transcript, and it guarantees one map entry
+per emitted line.
+
+`sgr.go` is the only place in the TUI that writes SGR by hand. lipgloss closes
+every styled span with a full reset, which clears the background as well as the
+foreground; inside a row with a background that would cancel the wash at the
+first coloured token and render the rest of the line bare. Rows therefore close
+foregrounds with `\x1b[39m` and the background once with `\x1b[49m`, and use
+reverse video (`\x1b[7m`) for intra-line emphasis because it composes with a
+background the segment cannot see. **Never emit `\x1b[0m` inside a `Row`, and
+never hand styled text to lipgloss for wrapping** — its wrap path re-emits a
+full reset at every break.
+
+`NewSeg` strips ESC, C0, C1 and DEL from its text. This is load-bearing, not
+hygiene: tool output and file contents are attacker-controlled bytes on their
+way to a terminal, and an OSC 52 sequence that survived would write the user's
+clipboard. Tabs are expanded before anything measures the text, since the
+terminal resolves its own tab stops from the screen edge and a gutter has
+already shifted the code.
+
+### Tool row previews
+
+Collapsed tool rows show a different amount per tool, because the useful part
+is in a different place:
+
+| Tool | Collapsed | Anchored |
+|---|---|---|
+| `Bash` | 3 lines | tail — a command's verdict is at the end |
+| `Read` | 3 lines, numbered | head — a file's identity is at the start |
+| a diff | 6 rows | first change — leading context is wasted rows |
+| everything else | 1 line | head — already a summary |
+
+A tail-anchored preview puts its hint *above* the content, since the hint
+summarises what came before it. `ctrl+o` expands everything.
+
+Read rows are numbered at render time, never by the Read tool: the tool's
+`offset` is a byte count, so a model that read a line number out of the output
+and passed it back would silently get the wrong region. A partial read
+(`offset > 0`) is therefore left unnumbered rather than numbered wrongly.
+Syntax highlighting (chroma, mapped onto the palette in `theme.go`, lexer
+chosen by filename only) applies to expanded rows alone — collapsed, the diff
+and status colours are the whole signal.
+
+### Diffs
+
+There is no Edit or Write tool, so a diff cannot be reported by the tool that
+made the change; `internal/filediff` observes it around the call instead.
+Inside a git repository discovery is by `git status`, which sees what happened
+however it happened — `sed`, a heredoc, a formatter, `make`, a test that
+rewrites its own fixtures. Outside one it falls back to inferring targets from
+the command, and refuses far more than it accepts: reporting "nothing changed"
+for a command that changed everything would be worse than showing nothing.
+
+The recorder hooks `executeCall` around Bash only (the sole mutating tool,
+which always runs on the sequential path, so no locking is needed) and emits
+`EventToolDiffKind`. Like `EventToolProgressKind` it is render-only: neither
+enters the conversation nor reaches a model, and tests assert the
+provider-facing turns are unchanged by their presence.
+
+Collapsed diff rows are foreground-only. Expanded rows carry a background wash
+instead, which marks the row without using the foreground — freeing it for
+syntax colour, so a changed line reads as code rather than as a stripe. Costs
+are bounded throughout: a git timeout latches the feature off for the session
+rather than being paid per command, plus per-file byte caps and a file count
+cap.
+
 ### Transcript selection
 
 Left-button press-drag-release over the transcript selects a character range
@@ -540,6 +613,11 @@ Enter to save the current editor text to the project library. Esc cancels.
 | `/todos` | Show progress of the tracked todo list |
 | `/agent` | Manage background agents (`create`, `list`, `start`, `stop`, `pause`, `resume`, `log`) |
 
+> **Inconsistency (doc vs code):** the registered command set
+> (`internal/tui.NewRegistry`) also includes `/execute`, `/stay`, `/refine`,
+> `/code-review`, and `/local-model`; this table omits them. Remaining work:
+> add the missing rows (or mark the table as a subset).
+
 ### Startup credential message
 
 When the selected provider is unconfigured but other providers are, the TUI
@@ -565,14 +643,20 @@ global `settings.json`, project `settings.json`, environment, then CLI flags.
 include `provider`, `model`, `effort`, `caveman`, `bash_readonly`,
 `permissions` (structured `allow`/`ask`/`deny`), `session_retention_days`,
 `ui.banner`, `ui.status_bar`, `ui.spinner`, `ui.show_reasoning`,
-`ui.show_tool_calls`, `ui.show_todos`, `ui.mouse` (all default on),
+`ui.show_tool_calls`, `ui.show_todos`, `ui.mouse` (default on; `ui.show_reasoning` defaults off),
 `show_session_names` (default on), `context_windows`,
-`resilience` (`max_attempts`, `max_iterations`, `max_passes`), `providers`,
+`resilience` (`max_attempts`, `max_iterations`, `max_passes`, `max_clarify_rounds`), `providers`,
 and `allow_project_providers`. Permission
 rules merge by union — a project file can add rules but never remove a
 global rule. Provider profiles merge key-by-key the same way. Resilience
 budgets merge to the *minimum* of global and project, so a project file can
 tighten a budget but never raise one.
+
+> **Inconsistency (doc vs code):** this settings list is incomplete vs
+> `internal/config.Settings` — it omits `ui.colors`, `ui.kitty_keyboard`, and
+> the `classifier` block (the latter is documented in the Security classifier
+> section above). `resilience.max_clarify_rounds` was also missing and is added
+> above. Remaining work: reconcile this enumeration with the `Settings` struct.
 
 Tool availability defaults to allow: a call matching no permission rule
 proceeds (unregistered tool names are still rejected by the agent's registry
