@@ -137,6 +137,14 @@ env -u OPENAI_API_KEY SIGNET_NO_TUI=1 just prompt "hello"
 # signet: openai requires OPENAI_API_KEY (looked in: environment)
 ```
 
+**Clarify loop.** In the TUI, `shift+tab` to plan mode and send an ambiguous
+prompt with an `@file` reference (for example, "plan how to refactor @README.md
+into packages"). Confirm the questionnaire appears, `space` selects options,
+`n` adds a note, `s` skips a question, `enter` submits and triggers a second
+explore round, and planning finally proceeds. Press `esc` at the questionnaire
+and confirm the turn cancels cleanly without a raw `context.Canceled` in the
+transcript.
+
 **Mode classification.** Confirm the Role Manager routes prompts as `docs/role-manager.md` specifies:
 
 ```bash

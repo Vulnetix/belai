@@ -336,6 +336,41 @@ func TestResilienceOverrideTakesMinimumAttempts(t *testing.T) {
 	}
 }
 
+func TestResilienceOverrideTakesMinimumClarifyRounds(t *testing.T) {
+	global := Settings{Resilience: &ResilienceSettings{MaxClarifyRounds: 3}}
+
+	got := global.Override(Settings{Resilience: &ResilienceSettings{MaxClarifyRounds: 5}})
+	if got.Resilience.MaxClarifyRounds != 3 {
+		t.Fatalf("project cannot raise clarify rounds: got %d", got.Resilience.MaxClarifyRounds)
+	}
+
+	got = global.Override(Settings{Resilience: &ResilienceSettings{MaxClarifyRounds: 1}})
+	if got.Resilience.MaxClarifyRounds != 1 {
+		t.Fatalf("project can lower clarify rounds: got %d", got.Resilience.MaxClarifyRounds)
+	}
+
+	got = Settings{Resilience: &ResilienceSettings{}}.Override(Settings{Resilience: &ResilienceSettings{MaxClarifyRounds: 2}})
+	if got.Resilience.MaxClarifyRounds != 2 {
+		t.Fatalf("unset global should take project clarify rounds: got %d", got.Resilience.MaxClarifyRounds)
+	}
+}
+
+func TestMaxClarifyRoundsOrDefaults(t *testing.T) {
+	var nilSettings *ResilienceSettings
+	if got := nilSettings.MaxClarifyRoundsOr(3); got != 3 {
+		t.Fatalf("nil MaxClarifyRoundsOr = %d, want 3", got)
+	}
+	if got := (&ResilienceSettings{}).MaxClarifyRoundsOr(3); got != 3 {
+		t.Fatalf("unset MaxClarifyRoundsOr = %d, want 3", got)
+	}
+	if got := (&ResilienceSettings{MaxClarifyRounds: 5}).MaxClarifyRoundsOr(3); got != 5 {
+		t.Fatalf("MaxClarifyRoundsOr = %d, want 5", got)
+	}
+	if got := (&ResilienceSettings{MaxClarifyRounds: -1}).MaxClarifyRoundsOr(3); got != -1 {
+		t.Fatalf("negative MaxClarifyRoundsOr = %d, want -1", got)
+	}
+}
+
 func TestResilienceOverrideFillsFromGlobal(t *testing.T) {
 	global := Settings{Resilience: &ResilienceSettings{MaxAttempts: 4}}
 	project := Settings{Resilience: &ResilienceSettings{MaxIterations: 6}}

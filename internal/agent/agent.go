@@ -39,6 +39,11 @@ type Options struct {
 	PromptOptions prompt.Options
 	ToolMethod    run.ToolMethod
 	AllowExplore  bool
+	// AllowClarify gates the interactive explore→clarify→explore loop. It is
+	// a distinct authority from AllowExplore: a subagent may explore but must
+	// never block on a user reply. Default false; only the interactive TUI
+	// sets it true.
+	AllowClarify bool
 	// AllowPassLoop gates the goal-mode pass loop. It is a distinct authority
 	// from AllowExplore: a subagent may explore (or not) but must never enter
 	// the unbounded pass loop, which would spawn recursive unbounded subagents.
@@ -58,6 +63,7 @@ type Session struct {
 	posture        posture.Policy
 	planMode       bool
 	allowExplore   bool
+	allowClarify   bool
 	allowPassLoop  bool
 	maxIter        int
 	opts           prompt.Options
@@ -127,6 +133,7 @@ func NewSession(o Options) (*Session, error) {
 		posture:        o.Posture,
 		planMode:       o.PlanMode,
 		allowExplore:   o.AllowExplore,
+		allowClarify:   o.AllowClarify,
 		allowPassLoop:  o.AllowPassLoop,
 		maxIter:        maxIter,
 		opts:           o.PromptOptions,
@@ -218,6 +225,12 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	var exploreTurns []run.Turn
 	if modeDec.Explore {
 		exploreTurns = s.exploreTurns(ctx, modeDec, clean)
+	}
+
+	// Clarify round loop: if there is an interactive UI, ask the user follow-up
+	// questions based on the explore findings, then run a second explore wave.
+	if modeDec.Explore && s.allowClarify {
+		exploreTurns = append(exploreTurns, s.clarifyRounds(ctx, pipe, modeDec, clean, exploreTurns, emit)...)
 	}
 
 	opts, _ := CarrierOptions(s.workdir, modeDec, s.state, s.settings)

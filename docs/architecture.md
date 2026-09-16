@@ -387,6 +387,7 @@ Business rules:
 | `ctrl+d` | Quit, unconditionally |
 | `shift+tab` | Cycle mode: agent → plan → goal |
 | `esc` | Close any full-screen view (nested views pop to their parent); cancels a held submit or an in-flight pre-send |
+| `space` / `n` / `s` / `enter` | Use in the **Clarify** questionnaire view: select, add a note, skip the question, submit |
 | `ctrl+l` | Clear the transcript *view* — the session is kept |
 | `ctrl+o` | Toggle full output for all truncated turns and tool results |
 | `ctrl+r` / `ctrl+t` | Toggle reasoning-panel / tool-row display for the session |

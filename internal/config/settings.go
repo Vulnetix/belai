@@ -47,6 +47,82 @@ type Settings struct {
 	// Defaults to false: a project file defining a provider is an API-key
 	// exfiltration primitive, so it requires an explicit user opt-in.
 	AllowProjectProviders *bool `json:"allow_project_providers,omitempty"`
+	// Classifier configures the security classifier separately from the main
+	// agent model. nil means reuse the main provider/model with reasoning off.
+	Classifier *ClassifierSettings `json:"classifier,omitempty"`
+}
+
+// ClassifierSettings configures the security classifier independently of the
+// main agent model. The classifier's whole job is to emit a single sentinel
+// token, so its effort defaults to "none" (reasoning off) regardless of the
+// main model's effort.
+type ClassifierSettings struct {
+	// Provider is the classifier's provider; empty means the main provider.
+	Provider string `json:"provider,omitempty"`
+	// Model is the classifier's model; empty means the main model.
+	Model string `json:"model,omitempty"`
+	// Effort is the classifier's reasoning effort; empty means "none".
+	Effort string `json:"effort,omitempty"`
+	// Chunk bounds the chunked classify-all path for oversized payloads.
+	Chunk ClassifierChunkSettings `json:"chunk,omitempty"`
+}
+
+// ClassifierChunkSettings bounds chunked classification of oversized content.
+// Content over the threshold is split into overlapping chunks (so an injection
+// straddling a boundary is still seen whole by one chunk) and classified
+// concurrently; any non-SAFE verdict fails the whole content closed.
+type ClassifierChunkSettings struct {
+	// MaxBytes is the size over which content is chunked. Zero means 1 MiB.
+	MaxBytes int `json:"max_bytes,omitempty"`
+	// Concurrency caps how many chunks classify in parallel. Zero means 4.
+	Concurrency int `json:"concurrency,omitempty"`
+}
+
+// merge folds from over c, taking any non-zero field from from.
+func (c *ClassifierSettings) merge(from *ClassifierSettings) {
+	if from == nil {
+		return
+	}
+	if from.Provider != "" {
+		c.Provider = from.Provider
+	}
+	if from.Model != "" {
+		c.Model = from.Model
+	}
+	if from.Effort != "" {
+		c.Effort = from.Effort
+	}
+	if from.Chunk.MaxBytes != 0 {
+		c.Chunk.MaxBytes = from.Chunk.MaxBytes
+	}
+	if from.Chunk.Concurrency != 0 {
+		c.Chunk.Concurrency = from.Chunk.Concurrency
+	}
+}
+
+// IsZero reports whether the classifier settings carry no overrides.
+func (c *ClassifierSettings) IsZero() bool {
+	if c == nil {
+		return true
+	}
+	return c.Provider == "" && c.Model == "" && c.Effort == "" &&
+		c.Chunk.MaxBytes == 0 && c.Chunk.Concurrency == 0
+}
+
+// MaxBytesOr returns the chunk threshold, defaulting to 1 MiB.
+func (c ClassifierChunkSettings) MaxBytesOr() int {
+	if c.MaxBytes <= 0 {
+		return 1 << 20
+	}
+	return c.MaxBytes
+}
+
+// ConcurrencyOr returns the chunk concurrency, defaulting to 4.
+func (c ClassifierChunkSettings) ConcurrencyOr() int {
+	if c.Concurrency <= 0 {
+		return 4
+	}
+	return c.Concurrency
 }
 
 // ProviderProfile is the JSON shape for one custom provider definition.
@@ -127,6 +203,9 @@ type ResilienceSettings struct {
 	// the default honours that, and the setting exists for CI and for anyone
 	// who wants a hard ceiling.
 	MaxPasses int `json:"max_passes,omitempty"`
+	// MaxClarifyRounds bounds the explore→clarify→explore loop. Zero means the
+	// default (3); a negative value disables clarification entirely.
+	MaxClarifyRounds int `json:"max_clarify_rounds,omitempty"`
 }
 
 // MaxAttemptsOr returns MaxAttempts or the provided default.
@@ -151,6 +230,15 @@ func (r *ResilienceSettings) MaxPassesOr() int {
 		return 0
 	}
 	return r.MaxPasses
+}
+
+// MaxClarifyRoundsOr returns MaxClarifyRounds or the provided default. Zero
+// means "use the default"; callers should pass the built-in default.
+func (r *ResilienceSettings) MaxClarifyRoundsOr(def int) int {
+	if r == nil || r.MaxClarifyRounds == 0 {
+		return def
+	}
+	return r.MaxClarifyRounds
 }
 
 // ColorsEnabled reports whether role colours are on. Default true.
@@ -267,6 +355,14 @@ func (s Settings) Override(proj Settings) Settings {
 	if proj.ShowSessionNames != nil {
 		out.ShowSessionNames = proj.ShowSessionNames
 	}
+	if proj.Classifier != nil {
+		merged := &ClassifierSettings{}
+		if out.Classifier != nil {
+			*merged = *out.Classifier
+		}
+		merged.merge(proj.Classifier)
+		out.Classifier = merged
+	}
 	if proj.Resilience != nil {
 		merged := &ResilienceSettings{}
 		if out.Resilience != nil {
@@ -292,6 +388,13 @@ func (s Settings) Override(proj Settings) Settings {
 				merged.MaxPasses = proj.Resilience.MaxPasses
 			} else {
 				merged.MaxPasses = min(merged.MaxPasses, proj.Resilience.MaxPasses)
+			}
+		}
+		if proj.Resilience.MaxClarifyRounds != 0 {
+			if merged.MaxClarifyRounds == 0 {
+				merged.MaxClarifyRounds = proj.Resilience.MaxClarifyRounds
+			} else {
+				merged.MaxClarifyRounds = min(merged.MaxClarifyRounds, proj.Resilience.MaxClarifyRounds)
 			}
 		}
 		out.Resilience = merged

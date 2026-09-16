@@ -7,9 +7,11 @@
 package explore
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
+	"github.com/vulnetix/signet/internal/clarify"
 	"github.com/vulnetix/signet/internal/rolemanager"
 )
 
@@ -44,6 +46,51 @@ func Plan(prompt string, decision rolemanager.ModeDecision) []Task {
 	}
 	if len(tasks) > MaxTasks {
 		tasks = tasks[:MaxTasks]
+	}
+	return tasks
+}
+
+// PlanClarified derives read-only tasks from the user's clarification answers.
+// Skipped groups produce no task; answered groups become one investigation each.
+// The result is capped at MaxTasks and is deterministic.
+func PlanClarified(prompt string, q clarify.Questionnaire, a clarify.Answers) []Task {
+	var tasks []Task
+	idx := 0
+	for _, ans := range a.Items {
+		if ans.Skipped {
+			continue
+		}
+		if ans.GroupIndex < 0 || ans.GroupIndex >= len(q.Groups) {
+			continue
+		}
+		g := q.Groups[ans.GroupIndex]
+		if len(ans.Chosen) == 0 && ans.Note == "" {
+			continue
+		}
+		var labels []string
+		for _, c := range ans.Chosen {
+			if c < 0 || c >= len(g.Options) {
+				continue
+			}
+			labels = append(labels, g.Options[c].Label)
+		}
+		note := ""
+		if ans.Note != "" {
+			note = " " + ans.Note
+		}
+		labelsStr := "(none)"
+		if len(labels) > 0 {
+			labelsStr = strings.Join(labels, ", ")
+		}
+		tasks = append(tasks, Task{
+			Index:     idx,
+			Reference: fmt.Sprintf("clarification %d", idx+1),
+			Prompt:    fmt.Sprintf("Investigate: %s The user chose %s.%s Goal: %s", g.Context, labelsStr, note, prompt),
+		})
+		idx++
+		if len(tasks) >= MaxTasks {
+			break
+		}
 	}
 	return tasks
 }

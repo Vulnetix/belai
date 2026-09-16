@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vulnetix/signet/internal/clarify"
 	"github.com/vulnetix/signet/internal/permissions"
 	"github.com/vulnetix/signet/internal/resilience"
 	"github.com/vulnetix/signet/internal/rolemanager"
@@ -22,6 +23,7 @@ const (
 	EventToolStartKind
 	EventToolResultKind
 	EventPermissionAskKind
+	EventClarifyAskKind
 	EventDoneKind
 	EventErrorKind
 	// EventReasoningKind carries a streamed reasoning delta (chain-of-thought
@@ -52,6 +54,7 @@ const (
 	RoleManagerPhasePrePrompt  = "pre-prompt"  // admission plus mode selection before the first model turn
 	RoleManagerPhaseToolResult = "tool-result" // classification of a tool result before promotion
 	RoleManagerPhaseSteer      = "steer"       // admission of a mid-loop steering message
+	RoleManagerPhaseClarify    = "clarify"     // interactive questionnaire between explore and planning
 )
 
 // Event is one streaming agent event. Only the fields for the event's Kind are
@@ -78,6 +81,11 @@ type Event struct {
 	// AskName / AskSubject carry EventPermissionAsk.
 	AskName    string
 	AskSubject string
+
+	// Clarify carries the questionnaire on EventClarifyAskKind; Reply is the
+	// channel the UI must send the user's Answers on.
+	Clarify *clarify.Questionnaire
+	Reply   chan clarify.Answers
 
 	// RetryAttempt and RetryDelay carry EventRetryKind metadata.
 	RetryAttempt int

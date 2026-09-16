@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vulnetix/signet/internal/clarify"
 	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/rolemanager"
 )
@@ -96,4 +97,79 @@ func TestPlanGoalSurveyReferencesAreDistinct(t *testing.T) {
 		}
 		seen[task.Reference] = true
 	}
+}
+
+func TestPlanClarifiedSkipsEmptyAndSkipped(t *testing.T) {
+	q := clarify.Questionnaire{Groups: []clarify.Group{
+		{Context: "Which pool?", Options: []clarify.Option{{Label: "Parent"}, {Label: "Child"}}},
+		{Context: "Which format?", Options: []clarify.Option{{Label: "JSON"}, {Label: "YAML"}}},
+	}}
+	a := clarify.Answers{Items: []clarify.Answer{
+		{GroupIndex: 0, Chosen: []int{0}},
+		{GroupIndex: 1, Skipped: true},
+	}}
+	tasks := PlanClarified("do the thing", q, a)
+	if len(tasks) != 1 {
+		t.Fatalf("got %d tasks, want 1", len(tasks))
+	}
+	if !strings.Contains(tasks[0].Prompt, "Parent") {
+		t.Fatalf("missing chosen label: %q", tasks[0].Prompt)
+	}
+	if strings.Contains(tasks[0].Prompt, "format") {
+		t.Fatalf("skipped group leaked into tasks")
+	}
+}
+
+func TestPlanClarifiedIncludesNote(t *testing.T) {
+	q := clarify.Questionnaire{Groups: []clarify.Group{
+		{Context: "Which pool?", Options: []clarify.Option{{Label: "Parent"}, {Label: "Child"}}},
+	}}
+	a := clarify.Answers{Items: []clarify.Answer{
+		{GroupIndex: 0, Chosen: []int{1}, Note: "use seed 42"},
+	}}
+	tasks := PlanClarified("do the thing", q, a)
+	if len(tasks) != 1 {
+		t.Fatalf("got %d tasks, want 1", len(tasks))
+	}
+	if !strings.Contains(tasks[0].Prompt, "use seed 42") {
+		t.Fatalf("missing note: %q", tasks[0].Prompt)
+	}
+}
+
+func TestPlanClarifiedCapsAtMaxTasks(t *testing.T) {
+	var groups []clarify.Group
+	var items []clarify.Answer
+	for i := 0; i < MaxTasks+3; i++ {
+		groups = append(groups, clarify.Group{
+			Context: "Question?",
+			Options: []clarify.Option{{Label: "A"}, {Label: "B"}},
+		})
+		items = append(items, clarify.Answer{GroupIndex: i, Chosen: []int{0}})
+	}
+	tasks := PlanClarified("prompt", clarify.Questionnaire{Groups: groups}, clarify.Answers{Items: items})
+	if len(tasks) != MaxTasks {
+		t.Fatalf("got %d tasks, want %d", len(tasks), MaxTasks)
+	}
+}
+
+func TestPlanClarifiedDeterministic(t *testing.T) {
+	q := clarify.Questionnaire{Groups: []clarify.Group{
+		{Context: "Which?", Options: []clarify.Option{{Label: "A"}, {Label: "B"}}},
+	}}
+	a := clarify.Answers{Items: []clarify.Answer{{GroupIndex: 0, Chosen: []int{0}}}}
+	if got, want := PlanClarified("p", q, a), PlanClarified("p", q, a); !slicesEqual(got, want) {
+		t.Fatalf("PlanClarified not deterministic")
+	}
+}
+
+func slicesEqual(a, b []Task) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

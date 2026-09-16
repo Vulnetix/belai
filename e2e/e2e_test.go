@@ -57,15 +57,17 @@ func moduleRoot() string {
 }
 
 // mockProvider emulates the OpenAI chat/completions surface and records the
-// messages each request carried. It distinguishes the two classifier turns by
-// their system prompts and the final chat by the absence of those prompts.
+// messages each request carried. It distinguishes the two classifier turns, the
+// clarifier turn, and the final chat by their system prompts.
 type mockProvider struct {
-	mu           sync.Mutex
-	securityUser []string
-	securitySys  []string
-	modeUser     []string
-	chatUser     []string
-	chatSys      []string
+	mu            sync.Mutex
+	securityUser  []string
+	securitySys   []string
+	modeUser      []string
+	clarifierUser []string
+	clarifierSys  []string
+	chatUser      []string
+	chatSys       []string
 }
 
 func newMockServer(t *testing.T) (*httptest.Server, *mockProvider) {
@@ -102,6 +104,10 @@ func newMockServer(t *testing.T) (*httptest.Server, *mockProvider) {
 		case strings.Contains(system, "operating-mode classifier"):
 			mp.modeUser = append(mp.modeUser, user)
 			writeChat(w, modeSentinelFor(user))
+		case strings.Contains(system, "clarification assistant"):
+			mp.clarifierUser = append(mp.clarifierUser, user)
+			mp.clarifierSys = append(mp.clarifierSys, system)
+			writeChat(w, `{"groups":[]}`)
 		default:
 			mp.chatUser = append(mp.chatUser, user)
 			mp.chatSys = append(mp.chatSys, system)
@@ -246,6 +252,29 @@ func TestModeDetection(t *testing.T) {
 		if !strings.Contains(errOut, "mode: "+tc.wantMode) {
 			t.Fatalf("%q stderr = %q, want mode %q", tc.prompt, errOut, tc.wantMode)
 		}
+	}
+}
+
+func TestPlanModeNonInteractiveDoesNotClarify(t *testing.T) {
+	srv, mp := newMockServer(t)
+	defer srv.Close()
+
+	out, errOut, code := runSignet(t, srv.URL,
+		"-provider", "openai", "-model", "test", "-prompt", "plan the migration")
+	if code != 0 {
+		t.Fatalf("exit = %d (stderr %q)", code, errOut)
+	}
+	if !strings.Contains(out, "mock reply") {
+		t.Fatalf("stdout = %q, want mock reply", out)
+	}
+
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+	if len(mp.modeUser) != 1 || !strings.Contains(mp.modeUser[0], "plan") {
+		t.Fatalf("expected one mode classification, got %v", mp.modeUser)
+	}
+	if len(mp.clarifierSys) != 0 {
+		t.Fatalf("non-interactive run issued clarifier calls: %d", len(mp.clarifierSys))
 	}
 }
 

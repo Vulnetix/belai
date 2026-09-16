@@ -222,6 +222,7 @@ type App struct {
 	modelState      modelViewState
 	permState       permissionsViewState
 	importState     importViewState
+	clarifyState    clarifyViewState
 
 	// live model catalogue cache (on-demand fetch)
 	catalogCache   map[string][]models.Model
@@ -343,6 +344,9 @@ func New(opts Options) *App {
 	name := eff.Settings.Provider
 	initial, initialStatus := run.Prepare(eff.Settings.Model, name, run.EnvSource(os.Getenv))
 	initial.Effort = eff.Settings.Effort
+	if cc, err := run.ResolveClassifier(initial, eff.Settings.Classifier, run.EnvSource(os.Getenv)); err == nil {
+		initial.Classifier = cc
+	}
 
 	pol := opts.Posture
 	if len(pol) == 0 {
@@ -832,6 +836,8 @@ func (a *App) rmCaption() string {
 		return "classifying tool result"
 	case agent.RoleManagerPhaseSteer:
 		return "classifying steering"
+	case agent.RoleManagerPhaseClarify:
+		return "clarifying"
 	default:
 		return "pre-prompt processing"
 	}
@@ -911,22 +917,24 @@ func coalesced(first agent.Event, acc string) agent.Event {
 // build reads. It is captured on the Bubble Tea goroutine so the async build
 // goroutine never races a config change.
 type sessionBuildParams struct {
-	workdir  string
-	settings config.Settings
-	cfg      run.Config
-	client   *http.Client
-	posture  posture.Policy
-	planMode bool
+	workdir      string
+	settings     config.Settings
+	cfg          run.Config
+	client       *http.Client
+	posture      posture.Policy
+	planMode     bool
+	allowClarify bool
 }
 
 func (a *App) sessionBuildParams() sessionBuildParams {
 	return sessionBuildParams{
-		workdir:  a.workdir,
-		settings: a.settings,
-		cfg:      a.cfg,
-		client:   a.client,
-		posture:  a.posture,
-		planMode: a.planMode,
+		workdir:      a.workdir,
+		settings:     a.settings,
+		cfg:          a.cfg,
+		client:       a.client,
+		posture:      a.posture,
+		planMode:     a.planMode,
+		allowClarify: true,
 	}
 }
 
@@ -953,6 +961,10 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		// Top-level session: explore subagents may fan out from here. A
 		// subagent sets this false so it can never fan out again.
 		AllowExplore: true,
+		// Top-level TUI session: the user is present, so the interactive
+		// clarification loop may run. Subagents and the non-interactive CLI
+		// leave this false.
+		AllowClarify: true,
 		// Top-level goal-mode prompts may run the unbounded pass loop; a
 		// subagent never does.
 		AllowPassLoop: true,
@@ -1594,6 +1606,11 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 	case agent.EventPermissionAskKind:
 		a.addSystem("permission ask required for " + m.AskName)
 		return a.nextAgent()
+	case agent.EventClarifyAskKind:
+		q := *m.Clarify
+		a.clarifyState = newClarifyState(q, m.Reply)
+		a.addSystem(formatQuestionnaire(q))
+		return a.push(viewClarify)
 	case agent.EventRoleManagerKind:
 		// The Role Manager is actively classifying (admission, mode selection,
 		// steering, or a tool result): show the dedicated indicator instead of
@@ -2026,6 +2043,7 @@ func (a *App) resolveCredentialsCmd() tea.Cmd {
 	model := a.settings.Model
 	effort := a.settings.Effort
 	name := a.requestedProvider
+	cls := a.settings.Classifier
 	return func() tea.Msg {
 		src := run.CredentialSource(run.EnvSource(os.Getenv))
 		if resolver != nil {
@@ -2040,6 +2058,9 @@ func (a *App) resolveCredentialsCmd() tea.Cmd {
 		}
 		cfg, status := run.Prepare(model, name, src)
 		cfg.Effort = effort
+		if cc, err := run.ResolveClassifier(cfg, cls, src); err == nil {
+			cfg.Classifier = cc
+		}
 		return credentialsResolvedMsg{cfg: cfg, status: status}
 	}
 }
@@ -2078,6 +2099,9 @@ func (a *App) refreshProvider() tea.Cmd {
 	}
 	cfg, status := run.Prepare(a.cfg.Model, a.cfg.Provider, src)
 	cfg.Effort = a.settings.Effort
+	if cc, err := run.ResolveClassifier(cfg, a.settings.Classifier, src); err == nil {
+		cfg.Classifier = cc
+	}
 	a.cfg = cfg
 	a.status = status
 	a.classifier = nil

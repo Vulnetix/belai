@@ -768,6 +768,99 @@ A **supervised** profile that receives `CONTINUE` is paused instead. Unattended
 unbounded tool use is exactly what `supervised` exists to prevent, so
 autonomous operation stays an explicit opt-in that a classifier cannot grant.
 
+## Clarify loop
+
+After the initial read-only explore wave finishes, ambiguous plan-mode prompts
+enter an interactive clarification round before planning. The loop is gated by
+`resilience.max_clarify_rounds` (default 3; 0 means default; negative disables
+it). The loop only runs when both the engaged mode requests exploration and
+the session was built with `AllowClarify` — only the interactive TUI sets that
+flag; subagents and the non-interactive CLI leave it false so they never block
+on a user reply.
+
+### Schema
+
+A questionnaire contains 1–6 groups. Each group has one context sentence and
+2–4 options. `multi` is optional and defaults to false.
+
+```json
+{
+  "groups": [
+    {
+      "context": "The repo has two nonce pools...",
+      "multi": false,
+      "options": [
+        {"label": "Parent pool", "description": "Reuse the session pool"},
+        {"label": "Fresh child pool", "description": "Seed a local pool per round"}
+      ]
+    }
+  ]
+}
+```
+
+### Validation rules (all fail closed)
+
+| Rule | Limit |
+| ---- | ----- |
+| `groups` | 1–6, non-empty |
+| `context` | non-empty, single line, ≤200 runes, ends `.` or `?` |
+| duplicate `context` | rejected |
+| `options` | 2–4 per group |
+| `label` | non-empty, single line, ≤80 runes, unique within the group |
+| `description` | optional, single line, ≤160 runes |
+| `multi` | optional bool, defaults false |
+| unknown JSON field | rejected by the decoder |
+| every string | run through `sanitize.Sanitize` after parse |
+
+`{"groups": []}` is the legal end-of-questions signal.
+
+### Loop behaviour
+
+```mermaid
+flowchart TD
+    Explore[Initial explore wave] --> Digest[Sanitized findings digest]
+    Digest --> Ask[Clarifier questionnaire]
+    Ask --> Empty{Empty?}
+    Empty -->|yes| Plan[Proceed to planning]
+    Empty -->|no| UI[Present questionnaire to user]
+    UI --> Answer{User answers?}
+    Answer -->|esc / cancel| Plan
+    Answer -->|submit| Admit[Role Manager admits rendered answers]
+    Admit --> Refused{Refused?}
+    Refused -->|yes| Plan
+    Refused -->|no| Second[Run clarified explore tasks]
+    Second --> Cap{Round cap reached?}
+    Cap -->|no| Ask
+    Cap -->|yes| Plan
+```
+
+1. The clarifier classifier sees only the original prompt and a sanitized
+   digest of the explore findings.
+2. The user's answers are rendered into a harness-authored user turn, then
+   sanitized and admitted through the same `sanitize → classify` pipeline as
+   steering messages.
+3. Each answered (non-skipped) group becomes one read-only explore task via
+   `explore.PlanClarified`, capped at `MaxTasks`.
+4. A refused answer set, an empty questionnaire, a cancellation, or hitting the
+   round cap ends the loop and planning proceeds with whatever explore findings
+   are already in context.
+
+### TUI interaction
+
+The questionnaire appears as a full-screen view (`internal/tui/viewClarify`):
+
+| Key | Effect |
+| --- | ------ |
+| `↑` / `↓` | Move between option rows, skipping headers |
+| `space` | Toggle selection (radio for single, checkbox for multi) |
+| `n` | Add a note to the cursor option |
+| `s` | Mark the cursor's question skipped |
+| `enter` | Submit answers and resume the agent pump |
+| `esc` | Cancel the turn, pop back to chat, and clear the agent event stream |
+
+The questionnaire is also echoed into the transcript as a system notice so the
+exchange survives in the session record.
+
 ## Adjacent security primitives
 
 These sit just outside the Role Manager but feed its pipeline.
@@ -847,6 +940,8 @@ skill-less, and agent-less for every attempt.
 | Tool matches no permission rule | Allow (default); block under `enforce` | `permission_no_match` |
 | Skill front-matter invalid | Reject skill | `skill_invalid` |
 | Hook schema / path invalid | Reject hook | `hook_invalid` |
+| Clarifier output invalid or retry budget exhausted | Treat as no questions; planning proceeds without clarification | — |
+| Clarification answers refused by admission | Drop answers and stop asking; proceed with current explore findings | — |
 | Untrusted block reaches system/agent boundary | Reject | — |
 | Delimiter lacking/unknown nonce or bad integrity | Strip before transport | — |
 | Mode classifier returns malformed output | Default agent | — |

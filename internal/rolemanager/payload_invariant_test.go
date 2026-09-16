@@ -16,6 +16,7 @@ func TestClassifierPayloadsAreToolSkillAgentFree(t *testing.T) {
 		{"compaction", BuildCompactionPayload("<conversation>")},
 		{"goal evaluator", BuildGoalEvalPayload(GoalEvalInput{Goal: "g", Todos: "t", Evidence: "e"})},
 		{"agent loop evaluator", BuildAgentEvalPayload("goals", "output")},
+		{"clarify", BuildClarifyPayload(ClarifyInput{Prompt: "p", Findings: "f", Round: "1"})},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
