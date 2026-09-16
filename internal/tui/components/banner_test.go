@@ -59,6 +59,17 @@ func TestBannerVersionLineDropsSentinels(t *testing.T) {
 	}
 }
 
+func TestBannerVersionLineWithVPrefix(t *testing.T) {
+	b := Banner{Width: 80, Version: "v0.9.0-dirty", Commit: "ab12cd3", Built: "2026-09-15T10:00:00Z"}
+	line := b.versionLine()
+	if strings.Contains(line, "vv") {
+		t.Fatalf("expected no double v prefix in %q", line)
+	}
+	if !strings.Contains(line, "v0.9.0-dirty") {
+		t.Fatalf("expected v0.9.0-dirty in %q", line)
+	}
+}
+
 func TestBannerVersionLineTruncatesToWidth(t *testing.T) {
 	b := Banner{Width: 20, Version: "0.4.2", Commit: "ab12cd3", Built: "2026-09-15T10:00:00Z"}
 	line := b.versionLine()

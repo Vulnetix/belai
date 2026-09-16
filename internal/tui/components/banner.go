@@ -68,7 +68,7 @@ func (b Banner) View() string {
 func (b Banner) versionLine() string {
 	var parts []string
 	if !isVersionSentinel(b.Version) {
-		parts = append(parts, "v"+b.Version)
+		parts = append(parts, "v"+strings.TrimPrefix(b.Version, "v"))
 	}
 	if !isVersionSentinel(b.Commit) {
 		parts = append(parts, b.Commit)
