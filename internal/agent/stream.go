@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/vulnetix/signet/internal/permissions"
@@ -198,13 +199,13 @@ func (s *Session) streamTurn(ctx context.Context, system string, turns []run.Tur
 		return run.Assistant{}, err
 	}
 
-	var text string
+	var text strings.Builder
 	for c := range ch {
 		if c.Err != nil {
 			return run.Assistant{}, c.Err
 		}
 		if c.Text != "" {
-			text += c.Text
+			text.WriteString(c.Text)
 			emit(Event{Kind: EventTextKind, Text: c.Text})
 		}
 		if c.Reasoning != "" {
@@ -217,7 +218,7 @@ func (s *Session) streamTurn(ctx context.Context, system string, turns []run.Tur
 			if c.Assistant != nil {
 				return *c.Assistant, nil
 			}
-			return run.Assistant{Text: text, Usage: c.Usage}, nil
+			return run.Assistant{Text: text.String(), Usage: c.Usage}, nil
 		}
 	}
 	return run.Assistant{}, fmt.Errorf("stream closed without a done chunk")

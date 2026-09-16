@@ -55,6 +55,55 @@ type Message struct {
 
 	// Steering marks a user turn injected mid-loop while the agent is running.
 	Steering bool
+
+	// buf accumulates streamed deltas for an in-flight message. Content stays
+	// empty while buf is live; Text() materialises on read without a copy, so
+	// appending one delta is O(1) amortised instead of the O(n²) of
+	// Content += delta over a long reply. It is written and read only on the
+	// Bubble Tea goroutine.
+	buf *strings.Builder
+}
+
+// AppendText appends a streamed delta to an in-flight message. Any existing
+// Content is moved into the buffer first so a message can start with a
+// non-streamed prefix and then receive deltas.
+func (m *Message) AppendText(s string) {
+	if s == "" {
+		return
+	}
+	if m.buf == nil {
+		m.buf = &strings.Builder{}
+		if m.Content != "" {
+			m.buf.WriteString(m.Content)
+			m.Content = ""
+		}
+	}
+	m.buf.WriteString(s)
+}
+
+// Text returns the message content, materialising from the streaming buffer
+// when one is live. The returned string is not copied when it comes from a
+// builder, so callers must not mutate it.
+func (m Message) Text() string {
+	if m.buf != nil {
+		return m.buf.String()
+	}
+	return m.Content
+}
+
+// SetContent replaces the whole content and drops any streaming buffer.
+func (m *Message) SetContent(s string) {
+	m.Content = s
+	m.buf = nil
+}
+
+// Materialise flushes the streaming buffer into Content and drops it, so the
+// message is a plain value again (used when a turn ends).
+func (m *Message) Materialise() {
+	if m.buf != nil {
+		m.Content = m.buf.String()
+		m.buf = nil
+	}
 }
 
 // MessageList renders the transcript.
@@ -111,7 +160,7 @@ func (m MessageList) Render() (string, LineMap) {
 		case "system":
 			entries = append(entries, entry{msg, false})
 		default:
-			if strings.TrimSpace(msg.Content) == "" && len(msg.ToolCalls) == 0 {
+			if strings.TrimSpace(msg.Text()) == "" && len(msg.ToolCalls) == 0 {
 				continue
 			}
 			entries = append(entries, entry{msg, true})
@@ -127,7 +176,7 @@ func (m MessageList) Render() (string, LineMap) {
 		case "tool":
 			s, sub = toolRow(e.msg, width, m.ExpandAll)
 		case "system":
-			s, sub = systemRow(e.msg.Content, width)
+			s, sub = systemRow(e.msg.Text(), width)
 		case "reasoning":
 			s, sub = reasoningPanel(e.msg, width, m.ExpandAll)
 		default:
@@ -151,7 +200,7 @@ func (m MessageList) Render() (string, LineMap) {
 // reasoningPanel renders streamed chain-of-thought as a dim, unbordered
 // sibling of the assistant panel, truncated like any other turn.
 func reasoningPanel(msg Message, width int, expandAll bool) (string, LineMap) {
-	body := strings.TrimRight(msg.Content, "\n")
+	body := strings.TrimRight(msg.Text(), "\n")
 	var marker, hidden string
 	if !expandAll && !msg.Expanded {
 		body, marker, hidden = truncateBody(body, assistantPreviewLines)
@@ -191,7 +240,7 @@ func turnPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 		meta = "retrying…"
 	}
 
-	body := strings.TrimRight(msg.Content, "\n")
+	body := strings.TrimRight(msg.Text(), "\n")
 	if strings.TrimSpace(body) == "" && len(msg.ToolCalls) > 0 {
 		body = toolCallSummary(msg.ToolCalls, width)
 	}
@@ -262,16 +311,16 @@ func truncateBody(body string, maxLines int) (out, marker, hidden string) {
 // When the result is available, a preview of the first line of stdout/stderr
 // is shown beneath; bash errors are rendered in red.
 func toolRow(msg Message, width int, expandAll bool) (string, LineMap) {
-	isErr := toolResultIsError(msg.ToolName, msg.Content)
+	isErr := toolResultIsError(msg.ToolName, msg.Text())
 
 	status := strings.TrimSpace(msg.Status)
 	if status == "" {
 		switch {
 		case isErr:
 			status = "✗"
-		case strings.HasPrefix(msg.Content, "tool result withheld:"):
+		case strings.HasPrefix(msg.Text(), "tool result withheld:"):
 			status = "withheld"
-		case !msg.StartedAt.IsZero() && msg.Content == "":
+		case !msg.StartedAt.IsZero() && msg.Text() == "":
 			// Running: show live elapsed time rather than a premature ✓.
 			status = "· " + time.Since(msg.StartedAt).Round(100*time.Millisecond).String()
 		default:
@@ -309,7 +358,7 @@ func toolRow(msg Message, width int, expandAll bool) (string, LineMap) {
 		Text:  ansi.Cut(statusPlain, prefixCol, headEnd),
 	}}
 
-	content := strings.TrimRight(msg.Content, "\n")
+	content := strings.TrimRight(msg.Text(), "\n")
 	if content == "" {
 		return statusLine, lm
 	}

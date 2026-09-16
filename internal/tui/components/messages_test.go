@@ -523,3 +523,40 @@ func TestMessageListRenderMarksTruncationMarker(t *testing.T) {
 		t.Fatalf("%d marker lines in a truncated turn, want 1", markers)
 	}
 }
+
+func TestMessageStreamingBuffer(t *testing.T) {
+	var m Message
+
+	// AppendText moves an existing prefix into the buffer and accumulates.
+	m.Content = "pre"
+	m.AppendText("fix")
+	if got := m.Text(); got != "prefix" {
+		t.Fatalf("Text after prefix append = %q, want prefix", got)
+	}
+	if m.Content != "" {
+		t.Fatalf("Content should stay empty while streaming, got %q", m.Content)
+	}
+
+	// Further deltas accumulate in O(1) amortised, and empty deltas are no-ops.
+	m.AppendText("")
+	m.AppendText(" is streaming")
+	if got := m.Text(); got != "prefix is streaming" {
+		t.Fatalf("Text = %q", got)
+	}
+
+	// SetContent replaces the whole value and drops the buffer.
+	m.SetContent("final")
+	if got := m.Text(); got != "final" {
+		t.Fatalf("Text after SetContent = %q", got)
+	}
+	if m.buf != nil {
+		t.Fatalf("SetContent must drop the buffer")
+	}
+
+	// Materialise flushes the buffer back into Content.
+	m.AppendText("again")
+	m.Materialise()
+	if m.Content != "finalagain" || m.buf != nil {
+		t.Fatalf("Materialise = %q buf=%v, want finalagain nil", m.Content, m.buf)
+	}
+}

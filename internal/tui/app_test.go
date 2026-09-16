@@ -139,14 +139,14 @@ func TestStreamChunksAppendToAssistantMessage(t *testing.T) {
 
 	m, _ := a.Update(streamChunkMsg{Text: "hello"})
 	a = m.(*App)
-	if a.messages[len(a.messages)-1].Content != "hello" {
-		t.Fatalf("content = %q", a.messages[len(a.messages)-1].Content)
+	if a.messages[len(a.messages)-1].Text() != "hello" {
+		t.Fatalf("content = %q", a.messages[len(a.messages)-1].Text())
 	}
 
 	m, _ = a.Update(streamChunkMsg{Text: " world"})
 	a = m.(*App)
-	if a.messages[len(a.messages)-1].Content != "hello world" {
-		t.Fatalf("content = %q", a.messages[len(a.messages)-1].Content)
+	if a.messages[len(a.messages)-1].Text() != "hello world" {
+		t.Fatalf("content = %q", a.messages[len(a.messages)-1].Text())
 	}
 }
 

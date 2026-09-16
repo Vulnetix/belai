@@ -1341,7 +1341,7 @@ func (a *App) handleStreamChunk(m streamChunkMsg) tea.Cmd {
 		return nil
 	}
 	if len(a.messages) > 0 && a.messages[len(a.messages)-1].Role == "assistant" {
-		a.messages[len(a.messages)-1].Content += m.Text
+		a.messages[len(a.messages)-1].AppendText(m.Text)
 	}
 	if m.Usage != nil {
 		a.usage = m.Usage
@@ -1352,6 +1352,7 @@ func (a *App) handleStreamChunk(m streamChunkMsg) tea.Cmd {
 	}
 	if len(a.messages) > 0 && a.messages[len(a.messages)-1].Role == "assistant" {
 		a.messages[len(a.messages)-1].Usage = m.Usage
+		a.messages[len(a.messages)-1].Materialise()
 	}
 	a.appendAssistant(m.Usage)
 	a.refreshFooter()
@@ -1373,8 +1374,13 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		// Drop a trailing empty assistant bubble so an aborted turn does not
 		// leave a bare frame above the error row.
 		if last := len(a.messages) - 1; last >= 0 && a.messages[last].Role == "assistant" &&
-			strings.TrimSpace(a.messages[last].Content) == "" && len(a.messages[last].ToolCalls) == 0 {
+			strings.TrimSpace(a.messages[last].Text()) == "" && len(a.messages[last].ToolCalls) == 0 {
 			a.messages = a.messages[:last]
+		}
+		// A partially streamed assistant bubble keeps its accumulated text: the
+		// turn is over, so flush the builder back into Content.
+		if last := len(a.messages) - 1; last >= 0 && a.messages[last].Role == "assistant" {
+			a.messages[last].Materialise()
 		}
 		a.addSystem("agent error: " + m.Err.Error())
 		return nil
@@ -1383,14 +1389,14 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		if len(a.messages) == 0 || a.messages[len(a.messages)-1].Role != "assistant" {
 			a.messages = append(a.messages, components.Message{Role: "assistant"})
 		}
-		a.messages[len(a.messages)-1].Content += m.Text
+		a.messages[len(a.messages)-1].AppendText(m.Text)
 		return a.nextAgent()
 	case agent.EventReasoningKind:
 		a.setPhaseWorking()
 		if len(a.messages) == 0 || a.messages[len(a.messages)-1].Role != "reasoning" {
 			a.messages = append(a.messages, components.Message{Role: "reasoning"})
 		}
-		a.messages[len(a.messages)-1].Content += m.Reasoning
+		a.messages[len(a.messages)-1].AppendText(m.Reasoning)
 		return a.nextAgent()
 	case agent.EventToolCallDeltaKind:
 		a.setPhaseWorking()
@@ -1420,7 +1426,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		return a.nextAgent()
 	case agent.EventToolResultKind:
 		if len(a.messages) > 0 && a.messages[len(a.messages)-1].Role == "tool" {
-			a.messages[len(a.messages)-1].Content = m.ToolResult
+			a.messages[len(a.messages)-1].SetContent(m.ToolResult)
 			status := "✓"
 			switch {
 			case strings.HasPrefix(m.ToolResult, "tool result withheld:"):
@@ -1485,8 +1491,13 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		// turn that streamed only tool calls or arrived as one final chunk is
 		// never persisted (or rendered) as an empty frame.
 		if last := len(a.messages) - 1; last >= 0 && a.messages[last].Role == "assistant" &&
-			strings.TrimSpace(a.messages[last].Content) == "" && m.Result.Reply != "" {
-			a.messages[last].Content = m.Result.Reply
+			strings.TrimSpace(a.messages[last].Text()) == "" && m.Result.Reply != "" {
+			a.messages[last].SetContent(m.Result.Reply)
+		}
+		// The turn is over: flush any streamed builder back into Content so the
+		// message is a plain value for the persistence and rebuild paths.
+		if last := len(a.messages) - 1; last >= 0 && a.messages[last].Role == "assistant" {
+			a.messages[last].Materialise()
 		}
 		if m.Result.Usage != nil {
 			a.usage = m.Result.Usage
@@ -1547,9 +1558,9 @@ func (a *App) buildTurns() []run.Turn {
 		}
 		switch m.Role {
 		case "user":
-			turns = append(turns, run.Turn{Role: m.Role, Content: m.Content})
+			turns = append(turns, run.Turn{Role: m.Role, Content: m.Text()})
 		case "assistant":
-			turn := run.Turn{Role: m.Role, Content: m.Content}
+			turn := run.Turn{Role: m.Role, Content: m.Text()}
 			if len(m.ToolCalls) > 0 {
 				for _, tc := range m.ToolCalls {
 					args := map[string]any{}
@@ -1563,7 +1574,7 @@ func (a *App) buildTurns() []run.Turn {
 		case "tool":
 			turns = append(turns, run.Turn{
 				Role:       "tool",
-				Content:    m.Content,
+				Content:    m.Text(),
 				ToolCallID: m.ToolCallID,
 				ToolName:   m.ToolName,
 			})
@@ -1945,7 +1956,7 @@ func (a *App) estimateKey() string {
 		return "0"
 	}
 	last := a.messages[n-1]
-	return fmt.Sprintf("%d:%s:%d", n, last.Role, len(last.Content))
+	return fmt.Sprintf("%d:%s:%d", n, last.Role, len(last.Text()))
 }
 
 // refreshGitInfoCmd runs git-context detection off the render goroutine. The
@@ -2022,7 +2033,7 @@ func (a *App) transcriptMessages() []transcript.Message {
 	for _, m := range a.messages {
 		out = append(out, transcript.Message{
 			Role:    m.Role,
-			Content: m.Content,
+			Content: m.Text(),
 			Usage:   m.Usage,
 		})
 	}
@@ -2079,7 +2090,7 @@ func (a *App) appendAssistant(usage *transcript.Usage) {
 	if len(a.messages) == 0 || a.messages[len(a.messages)-1].Role != "assistant" {
 		return
 	}
-	content := a.messages[len(a.messages)-1].Content
+	content := a.messages[len(a.messages)-1].Text()
 	if strings.TrimSpace(content) == "" {
 		return
 	}
