@@ -43,3 +43,37 @@ func writeSkill(t *testing.T, root, name, doc string) {
 		t.Fatalf("write: %v", err)
 	}
 }
+
+func TestLoadDirMemoisesPerDirAndPosture(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "demo"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	doc := `---
+name: demo
+description: a demo skill
+---
+body`
+	if err := os.WriteFile(filepath.Join(dir, "demo", "SKILL.md"), []byte(doc), 0o600); err != nil {
+		t.Fatalf("write SKILL.md: %v", err)
+	}
+
+	first, err := LoadDir(dir, posture.Defaults())
+	if err != nil {
+		t.Fatalf("LoadDir: %v", err)
+	}
+	second, err := LoadDir(dir, posture.Defaults())
+	if err != nil {
+		t.Fatalf("LoadDir again: %v", err)
+	}
+	if len(first) != 1 || len(second) != 1 || first[0].Name != "demo" {
+		t.Fatalf("manifests = %+v / %+v, want one demo skill", first, second)
+	}
+
+	// A different skill_invalid posture is a different cache key and re-reads.
+	warn := posture.Defaults()
+	warn[posture.SkillInvalid] = posture.Warn
+	if _, err := LoadDir(dir, warn); err != nil {
+		t.Fatalf("LoadDir under warn: %v", err)
+	}
+}
