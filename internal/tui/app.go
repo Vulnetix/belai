@@ -161,10 +161,11 @@ type App struct {
 	autocomplete []string
 
 	// mode classification (optional; nil skips auto-detection)
-	classifier  rolemanager.Classifier
-	cache       *rolemanager.Cache
-	namedAgent  string
-	modeWarning string
+	classifier   rolemanager.Classifier
+	cache        *rolemanager.Cache
+	namedAgent   string
+	modeDecision rolemanager.ModeDecision
+	modeWarning  string
 
 	// working indicator
 	phase   workingPhase // current activity; phaseIdle when no prompt is in flight
@@ -643,7 +644,7 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 		promptText = turns[n-1].Content
 		history = turns[:n-1]
 	}
-	in := agent.TurnInput{Prompt: promptText, ForceMode: a.forceMode}
+	in := agent.TurnInput{Prompt: promptText, ForceMode: a.forceMode, Mode: a.modeDecision}
 	a.forceMode = ""
 	if a.namedAgent != "" {
 		in.ForceAgent = a.namedAgent
@@ -763,7 +764,11 @@ func (a *App) classifyAndSend(input string, atts []run.Attachment, firstUser boo
 	c := a.classifier
 	ctx := a.ctx
 	return func() tea.Msg {
-		d, err := rolemanager.Select(ctx, c, rolemanager.ModeInput{Prompt: input})
+		d, err := rolemanager.Select(ctx, c, rolemanager.ModeInput{
+			Prompt:        input,
+			GoalLimit:     rolemanager.DefaultGoalPromptLengthLimit,
+			HasReferences: len(atts) > 0,
+		})
 		return modeClassifiedMsg{input: input, atts: atts, firstUser: firstUser, decision: d, err: err}
 	}
 }
@@ -1378,7 +1383,44 @@ func (a *App) handleHistoryKey(m tea.KeyMsg) tea.Cmd {
 		return nil
 	case "enter":
 		a.exitHistoryCycle(true)
-		return nil
+		input := strings.TrimSpace(a.editor.Value())
+		if input == "" {
+			return nil
+		}
+		if isShellInput(input) {
+			a.editor.Reset()
+			a.autocomplete = nil
+			a.autocompleteIndex = 0
+			return a.handleShell(input)
+		}
+		if strings.HasPrefix(input, "/") {
+			a.editor.Reset()
+			a.autocomplete = nil
+			a.autocompleteIndex = 0
+			return a.handleCommand(input)
+		}
+		if a.working() {
+			a.messages = append(a.messages, components.Message{Role: "user", Content: input, Steering: true})
+			if a.agent == nil || !a.agent.Steer(input) {
+				a.addSystem("steering queue full — message dropped")
+			}
+			a.editor.Reset()
+			a.autocomplete = nil
+			a.autocompleteIndex = 0
+			return nil
+		}
+		if a.preSend {
+			// The previous prompt is still in pre-send classification; the
+			// model has not started, so there is nothing to steer yet.
+			a.addSystem("still preparing the previous prompt — one moment")
+			return nil
+		}
+		cmd := a.syncAttachments()
+		if a.hasPendingAttachments() {
+			a.pendingInput = input
+			return tea.Batch(cmd, a.attachSpin.Tick)
+		}
+		return a.submitInput(input)
 	case "esc":
 		a.exitHistoryCycle(false)
 		return nil
@@ -1968,6 +2010,7 @@ func (a *App) cycleMode() {
 		a.addSystem("agent mode on")
 	}
 	a.modeExplicit = true
+	a.modeDecision = rolemanager.ModeDecision{}
 	a.syncPlanMode()
 	a.saveMode()
 }
@@ -2015,6 +2058,7 @@ func (a *App) classifyMode(input string) {
 func (a *App) applyModeDecision(d rolemanager.ModeDecision, err error) {
 	if err != nil {
 		a.mode = "agent"
+		a.modeDecision = rolemanager.ModeDecision{}
 		a.modeWarning = "mode classifier error: " + err.Error()
 		a.addSystem(a.modeWarning)
 		a.syncPlanMode()
@@ -2022,6 +2066,7 @@ func (a *App) applyModeDecision(d rolemanager.ModeDecision, err error) {
 	}
 	a.mode = string(d.Mode)
 	a.namedAgent = d.AgentName
+	a.modeDecision = d
 	a.modeWarning = d.Warning
 	a.syncPlanMode()
 	if d.AgentName != "" {

@@ -908,8 +908,19 @@ func TestHistoryCycleEnterAccepts(t *testing.T) {
 	if a.historyActive {
 		t.Fatalf("expected history cycle to exit after Enter")
 	}
-	if a.editor.Value() != "accepted prompt" {
-		t.Fatalf("editor = %q", a.editor.Value())
+	// Enter now submits the loaded history item, which resets the editor.
+	if a.editor.Value() != "" {
+		t.Fatalf("editor = %q, want empty after submit", a.editor.Value())
+	}
+	found := false
+	for _, m := range a.messages {
+		if m.Role == "user" && m.Content == "accepted prompt" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("submitted history item not echoed: %+v", a.messages)
 	}
 }
 
