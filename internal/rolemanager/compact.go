@@ -30,8 +30,9 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 // already-serialized conversation. Tools, Skills, and Agent are always empty.
 func BuildCompactionPayload(conversation string) ClassifierPayload {
 	return ClassifierPayload{
-		System: compactionSystemPrompt,
-		User:   conversation,
+		System:    compactionSystemPrompt,
+		User:      conversation,
+		MaxTokens: ClassifierStructuredMaxTokens,
 	}
 }
 

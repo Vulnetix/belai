@@ -58,8 +58,9 @@ func (b *Builder) Build(ctx context.Context, userRequest string) (AgentProfile, 
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		payload := rolemanager.ClassifierPayload{
-			System: system,
-			User:   buildBuilderUserContent(turns),
+			System:    system,
+			User:      buildBuilderUserContent(turns),
+			MaxTokens: rolemanager.ClassifierStructuredMaxTokens,
 		}
 		raw, err := b.Classifier.Classify(ctx, payload)
 		if err != nil {

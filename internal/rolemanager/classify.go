@@ -21,7 +21,19 @@ type ClassifierPayload struct {
 	Tools  []any
 	Skills []any
 	Agent  string
+	// MaxTokens overrides the classifier's completion cap for this call.
+	// Zero means the classifier's configured default (run.ClassifierMaxTokens),
+	// which is sized for single-token sentinel replies. Structured-output
+	// builders (compaction, clarification, agent-profile generation) set a
+	// larger budget because their replies are multi-token JSON or summaries.
+	MaxTokens int
 }
+
+// ClassifierStructuredMaxTokens is the completion budget for classifier calls
+// whose reply is structured multi-token output (a compaction summary, a
+// clarification questionnaire, or a generated agent profile) rather than a
+// single sentinel token. It matches the surface default used elsewhere.
+const ClassifierStructuredMaxTokens = 4096
 
 // BuildClassifierPayload constructs the classifier request for untrusted
 // content. Tools, Skills, and Agent are always empty: the classifier turn must

@@ -14,6 +14,46 @@ auto-detection.
 Its full business rules — sentinel tables, decision trees, and flow diagrams —
 live in [role-manager.md](role-manager.md).
 
+### Security classifier configuration
+
+The security classifier is configured independently of the main agent model
+through a `classifier` settings block (resolved by the standard precedence
+chain: default < state < global < project < env < flag):
+
+```jsonc
+"classifier": {
+  "provider": "ollama",          // omit → main provider
+  "model":    "qwen2.5-7b-instruct-q4_k_m",
+  "effort":   "none",             // default: reasoning OFF
+  "chunk": { "max_bytes": 1048576, "concurrency": 4 }
+}
+```
+
+Flags `-classifier-provider`, `-classifier-model`, `-classifier-effort`, and
+env vars `SIGNET_CLASSIFIER_PROVIDER/MODEL/EFFORT` set the same fields.
+
+Business rules:
+
+- **Default** (no block): the classifier reuses the main provider/model with
+  reasoning off and a bounded `max_tokens` cap (1024), so a single-sentinel
+  call never pays for extended thinking. A reasoning-effort of `"none"` is
+  *omitted* from the OpenAI `reasoning_effort` field rather than sent verbatim
+  (OpenAI rejects it).
+- **Separate provider**: a `classifier.provider` that differs from the main
+  provider is resolved through the same credential backends with its own
+  credentials. Missing credentials fail closed with `ErrNotConfigured`.
+- **Chunked classify-all**: content over `chunk.max_bytes` is split into
+  overlapping chunks (default 1/8 overlap, aligned to rune boundaries) and
+  classified concurrently (default 4). Verdicts fold fail-closed: any non-SAFE
+  sentinel fails the whole content, and any malformed chunk makes the whole
+  result malformed. Overlap guarantees an injection straddling a boundary is
+  seen whole by at least one chunk.
+- **Verdict cache**: verdicts are memoised by the SHA-256 of the *sanitized*
+  content. SAFE verdicts live in a bounded session LRU (512); non-SAFE hashes
+  persist to `<GlobalDir>/bad-hashes.json` (written atomically) and load at
+  session start. The bad-hash set stays small: memory is bounded and I/O is
+  one read at startup plus an append per new bad verdict.
+
 ## Delimiter, nonce, and integrity model
 
 Harness-generated blocks use tags such as:
@@ -543,3 +583,54 @@ read-only" toggle) confines Bash to its read-only allowlist; and
 legacy no-match-block. Bash otherwise runs full shell commands via `sh -c`
 (timeout, env scrubbing, and output truncation still apply); plan mode keeps
 Bash read-only regardless of `bash_readonly`.
+## Local inference
+
+The classifier can run against a local model through the existing `ollama`
+provider seam: set `classifier.provider` to `ollama`, `classifier.model` to the
+local model id, and `OLLAMA_HOST` to the server's base URL
+(`http://127.0.0.1:18080/v1`). Routing is all-or-nothing: once a local
+classifier is configured it handles every classification.
+
+Supporting pieces:
+
+- `internal/machineprobe` measures CPU threads, RAM, GPU backend/VRAM (via
+  `llama-server --list-devices`), and free disk, then produces a plain-language
+  suitability verdict. The verdict states the iGPU prefill caveat honestly:
+  an integrated GPU shares LPDDR bandwidth with the CPU, so the security
+  classifier — prefill-bound on large tool results — may classify *slower*
+  than a small frontier model despite free VRAM. Chunked classification is what
+  makes this tolerable.
+- `internal/localinfer` detects a launchable server (`llama-server`, `ollama`,
+  `vllm`), probes common ports (`11434`, `18080`, `8000`) for an already-running
+  server, launches with the default args for this device, health-checks
+  `GET {base}/v1/models`, and resolves HuggingFace model metadata (largest GGUF
+  file, size, sha256) for download. Models download under
+  `<GlobalDir>/models/`.
+- The HuggingFace token resolves as provider `huggingface` (`HF_TOKEN` /
+  `HUGGINGFACE_TOKEN`) through the same credential stack as providers.
+
+## Performance
+
+The TUI's perceived-latency path is tuned at several layers:
+
+- **Stream coalescing**: both stream hops are buffered (256) and the TUI's
+  `nextAgent` drains a run of same-kind text/reasoning deltas into one update,
+  so a long reply repaints once per drain rather than once per token.
+- **Builder accumulation**: streamed text appends into a `strings.Builder`
+  (`Message.AppendText`/`Text`), avoiding O(n²) string concatenation.
+- **Per-message render memoisation**: `MessageList.Render` caches each
+  message's rendered text + `LineMap`, keyed on the fields that affect it
+  (content length, width, expand, role, status, …). The streaming tail and
+  running tool rows re-render; everything else renders once per change.
+- **Concurrent read-only tools**: a leading run of read-only, permission-allowed
+  tool calls executes concurrently (bounded by 4), never reordering across a
+  Bash call, and results re-enter in call order keyed by `ToolCallID`.
+- **Shared HTTP client**: one tuned `httpclient.Default()` transport
+  (`MaxIdleConnsPerHost: 16`, `ResponseHeaderTimeout: 30s`, no blanket
+  `Client.Timeout`) serves provider, tool, credential and catalogue I/O. SSE
+  streams carry an idle-gap watchdog instead. WebFetch uses a dedicated
+  transport whose validating `DialContext` resolves once and pins the address,
+  closing the DNS-rebinding TOCTOU.
+- **Timing**: opt-in `SIGNET_TRACE=<path>` writes JSONL `{phase, event,
+  duration}` records; the composer meta shows a live `working · N.Ns` elapsed
+  label and running tool rows show live elapsed time.

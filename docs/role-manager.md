@@ -83,19 +83,41 @@ anything that is not an exact token fails closed.
 | `MODEL_EXTRACTION` | Model extraction / model stealing | **Warn** — do not promote | Live |
 | _anything else_ | Malformed output (not one token) | **Warn** — fail closed | Live |
 
+### Completion budget
+
+The classifier has a two-tier completion budget. Single-token sentinel calls
+(security, mode, goal evaluation, agent evaluation, session naming) use
+`run.ClassifierMaxTokens`, and structured-output calls (compaction,
+clarification, agent-profile generation) override it with
+`rolemanager.ClassifierStructuredMaxTokens` (4096), because their replies are
+multi-token summaries or JSON. The override travels on
+`ClassifierPayload.MaxTokens` and is applied per call by `run.NewClassifier`.
+
+The sentinel budget is sized for reasoning models. A reasoning model emits its
+chain-of-thought into `reasoning_content` **before** it writes the final token
+into `content`. A 16-token cap consumed the whole budget mid-reasoning, leaving
+`content` empty; the strict sentinel parse then refused an entirely benign
+prompt as `MALFORMED`. The budget is large enough for a short reasoning
+preamble plus the token. Non-reasoning models still stop after the single
+token, so the wider budget costs them nothing. If a model still truncates
+(`finish_reason: length` with empty `content`), the strict parse fails closed
+to `MALFORMED` — refusal, never a forced verdict.
+
 ### Classifier payload invariants
 
 Every classifier payload builder keeps the classifier turn tool-less, skill-less,
-and agent-less. The invariant holds for all six builders:
+and agent-less. The invariant holds for all eight builders:
 
-| Payload builder | System prompt | User content | Tools / Skills / Agent |
-| --------------- | ------------- | ------------ | ---------------------- |
-| Security | `internal/rolemanager/classify.go` | single untrusted blob | empty |
-| Mode | `internal/rolemanager/modeclassify.go` | the user prompt only | empty |
-| Compaction | `internal/rolemanager/compact.go` | serialized conversation | empty |
-| Session name | `internal/rolemanager/sessionname.go` | first user message | empty |
-| Goal evaluator | `internal/rolemanager/goaleval.go` | goal + rendered todo list + sanitized pass-evidence digest | empty |
-| Agent-loop evaluator | `internal/rolemanager/agenteval.go` | the agent profile's goals + its most recent output | empty |
+| Payload builder | System prompt | User content | Tools / Skills / Agent | Budget |
+| --------------- | ------------- | ------------ | ---------------------- | ------ |
+| Security | `internal/rolemanager/classify.go` | single untrusted blob | empty | sentinel default |
+| Mode | `internal/rolemanager/modeclassify.go` | the user prompt only | empty | sentinel default |
+| Compaction | `internal/rolemanager/compact.go` | serialized conversation | empty | structured |
+| Session name | `internal/rolemanager/sessionname.go` | first user message | empty | sentinel default |
+| Goal evaluator | `internal/rolemanager/goaleval.go` | goal + rendered todo list + sanitized pass-evidence digest | empty | sentinel default |
+| Agent-loop evaluator | `internal/rolemanager/agenteval.go` | the agent profile's goals + its most recent output | empty | sentinel default |
+| Clarify | `internal/rolemanager/clarify.go` | original prompt + exploration findings | empty | structured |
+| Agent profile | `internal/agentprofile/builder.go` | sanitized user request + validation feedback | empty | structured |
 
 | Invariant | Rule | Status |
 | --------- | ---- | ------ |

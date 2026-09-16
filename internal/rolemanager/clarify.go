@@ -46,8 +46,9 @@ type ClarifyInput struct {
 // round. The payload carries no tools, no skills, and no agent block.
 func BuildClarifyPayload(in ClarifyInput) ClassifierPayload {
 	return ClassifierPayload{
-		System: clarifySystemPrompt,
-		User:   buildClarifyUserContent(in.Prompt, in.Findings, in.Round),
+		System:    clarifySystemPrompt,
+		User:      buildClarifyUserContent(in.Prompt, in.Findings, in.Round),
+		MaxTokens: ClassifierStructuredMaxTokens,
 	}
 }
 
