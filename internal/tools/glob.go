@@ -125,7 +125,14 @@ func (g *Glob) walk(pattern, sub string) []string {
 		if err != nil {
 			return nil
 		}
-		if matchGlob(pattern, filepath.ToSlash(rel)) {
+		// Match the pattern against the path relative to the search base
+		// (sub), mirroring fd, which applies the glob inside the search root;
+		// the result is still reported relative to Root so both backends agree.
+		matchRel := rel
+		if sub != "" {
+			matchRel, _ = filepath.Rel(base, p)
+		}
+		if matchGlob(pattern, filepath.ToSlash(matchRel)) {
 			out = append(out, filepath.ToSlash(rel))
 		}
 		return nil

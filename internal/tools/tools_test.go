@@ -295,3 +295,21 @@ func TestSchemaRequired(t *testing.T) {
 		t.Fatalf("required = %v", req)
 	}
 }
+
+func TestGlobWalkMatchesRelativeToSubpath(t *testing.T) {
+	root := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, "sub"), 0o755)
+	_ = os.WriteFile(filepath.Join(root, "sub", "file.txt"), []byte("hello"), 0o600)
+	g := &Glob{Root: root}
+	got := g.walk("*.txt", "sub")
+	if len(got) != 1 || got[0] != "sub/file.txt" {
+		t.Fatalf("walk = %q, want [sub/file.txt]", got)
+	}
+
+	// A pattern without a leading directory still matches inside sub only,
+	// never files outside it.
+	got = g.walk("**/*.txt", "sub")
+	if len(got) != 1 || got[0] != "sub/file.txt" {
+		t.Fatalf("walk recursive = %q, want [sub/file.txt]", got)
+	}
+}
