@@ -173,6 +173,11 @@ type TurnInput struct {
 	// the classifier infers. A user who cycles to goal mode with shift+tab has
 	// stated their intent; a classifier guess must not override it.
 	ForceMode modes.Mode
+	// Mode is an already-resolved mode decision from the caller (the TUI's
+	// pre-send classifier). When Mode.Mode is non-empty the agent skips its own
+	// Select call, since the caller's decision would otherwise be re-run and
+	// discarded. It is not "forced": an empty Mode still classifies.
+	Mode rolemanager.ModeDecision
 }
 
 // Result is the outcome of a session run.
@@ -202,6 +207,25 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	// show a dedicated indicator rather than a generic working label.
 	emit(Event{Kind: EventRoleManagerKind, Phase: RoleManagerPhasePrePrompt})
 	preStart := time.Now()
+
+	// Admit and mode selection are independent: both read the same sanitized
+	// prompt, use different system prompts, and neither feeds the other, so
+	// they run concurrently. Selection is skipped when the caller already
+	// supplied a decision or forced a mode/agent — its result would be
+	// discarded below.
+	needSelect := in.Mode.Mode == "" && in.ForceMode == "" && in.ForceAgent == ""
+	selectCh := make(chan rolemanager.ModeDecision, 1)
+	selectErrCh := make(chan error, 1)
+	if needSelect {
+		go func() {
+			d, err := rolemanager.Select(ctx, pipe.Classifier, rolemanager.ModeInput{
+				Prompt: clean, GoalLimit: rolemanager.DefaultGoalPromptLengthLimit, HasReferences: in.HasReferences,
+			})
+			selectCh <- d
+			selectErrCh <- err
+		}()
+	}
+
 	dec, err := pipe.Admit(ctx, clean, s.posture)
 	if err != nil {
 		return run.Result{SanitizedPrompt: clean}, maybeCompact(err)
@@ -211,9 +235,12 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	}
 
 	emit(Event{Kind: EventRoleManagerKind, Phase: RoleManagerPhasePrePrompt})
-	modeDec, err := rolemanager.Select(ctx, pipe.Classifier, rolemanager.ModeInput{Prompt: clean, GoalLimit: rolemanager.DefaultGoalPromptLengthLimit, HasReferences: in.HasReferences})
-	if err != nil {
-		return run.Result{SanitizedPrompt: clean, SecuritySentinel: dec.Sentinel}, maybeCompact(err)
+	modeDec := in.Mode
+	if needSelect {
+		if err := <-selectErrCh; err != nil {
+			return run.Result{SanitizedPrompt: clean, SecuritySentinel: dec.Sentinel}, maybeCompact(err)
+		}
+		modeDec = <-selectCh
 	}
 	s.trace.Event("agent", "pre_prompt", time.Since(preStart))
 

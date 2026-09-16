@@ -1132,6 +1132,17 @@ func EngageWithPosture(ctx context.Context, cfg Config, prompt string, detectMod
 	res := Result{SanitizedPrompt: clean}
 
 	pipe := NewPipeline(cfg, client, nil)
+
+	// Admit and Select are independent (same sanitized prompt, different
+	// system prompts, no data flow): run them concurrently.
+	selectCh := make(chan rolemanager.ModeDecision, 1)
+	selectErrCh := make(chan error, 1)
+	go func() {
+		d, err := rolemanager.Select(ctx, pipe.Classifier, rolemanager.ModeInput{Prompt: clean, GoalLimit: rolemanager.DefaultGoalPromptLengthLimit})
+		selectCh <- d
+		selectErrCh <- err
+	}()
+
 	dec, err := pipe.Admit(ctx, clean, pol)
 	if err != nil {
 		return res, err
@@ -1141,11 +1152,10 @@ func EngageWithPosture(ctx context.Context, cfg Config, prompt string, detectMod
 	}
 	res.SecuritySentinel = dec.Sentinel
 
-	modeDec, err := rolemanager.Select(ctx, pipe.Classifier, rolemanager.ModeInput{Prompt: clean, GoalLimit: rolemanager.DefaultGoalPromptLengthLimit})
-	if err != nil {
+	if err := <-selectErrCh; err != nil {
 		return res, err
 	}
-	res.ModeDecision = modeDec
+	res.ModeDecision = <-selectCh
 
 	reply, err := Run(ctx, cfg, clean, client)
 	if err != nil {
