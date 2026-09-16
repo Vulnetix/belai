@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/vulnetix/signet/internal/posture"
@@ -13,11 +14,17 @@ import (
 )
 
 func TestLengthStopReasonRefusesTools(t *testing.T) {
-	requests := 0
+	var (
+		mu       sync.Mutex
+		requests int
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		requests++
+		count := requests
+		mu.Unlock()
 		// First call is nonce pool seeding; return empty success.
-		if requests == 1 {
+		if count == 1 {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("{}"))
 			return

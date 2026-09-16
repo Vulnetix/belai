@@ -442,10 +442,15 @@ func TestHasReferencesReachesModeInput(t *testing.T) {
 }
 
 func TestAttachmentsReachTheUserTurn(t *testing.T) {
-	var bodies [][]byte
+	var (
+		mu     sync.Mutex
+		bodies [][]byte
+	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
 		bodies = append(bodies, b)
+		mu.Unlock()
 		var req struct {
 			Messages []struct {
 				Role    string `json:"role"`
