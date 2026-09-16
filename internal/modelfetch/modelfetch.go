@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/vulnetix/signet/internal/httpclient"
 	"github.com/vulnetix/signet/internal/models"
 	"github.com/vulnetix/signet/internal/provider"
 	"github.com/vulnetix/signet/internal/wire"
@@ -37,7 +38,7 @@ func List(ctx context.Context, t Target, client *http.Client) ([]models.Model, e
 		return nil, nil // static-only passthrough
 	}
 	if client == nil {
-		client = http.DefaultClient
+		client = httpclient.Default()
 	}
 
 	p, err := provider.New(t.Name, t.BaseURL, t.APIKey)

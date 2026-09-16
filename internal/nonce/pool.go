@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vulnetix/signet/internal/httpclient"
 	"github.com/vulnetix/signet/internal/version"
 )
 
@@ -169,7 +170,7 @@ type NonceResponse struct {
 // hanging provider cannot freeze session construction.
 func FetchNonces(client *http.Client, baseURL, apiKey string) ([]string, error) {
 	if client == nil {
-		client = http.DefaultClient
+		client = httpclient.Default()
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

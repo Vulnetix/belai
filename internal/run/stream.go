@@ -10,8 +10,11 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/vulnetix/signet/internal/delimiters"
+	"github.com/vulnetix/signet/internal/httpclient"
 	"github.com/vulnetix/signet/internal/nonce"
 	"github.com/vulnetix/signet/internal/prompt"
 	"github.com/vulnetix/signet/internal/resilience"
@@ -41,7 +44,7 @@ func Stream(ctx context.Context, cfg Config, turns []Turn, client *http.Client) 
 // StreamWithPool is Stream with a caller-provided nonce pool.
 func StreamWithPool(ctx context.Context, cfg Config, turns []Turn, client *http.Client, pool *nonce.Pool, opts prompt.Options) (<-chan Chunk, error) {
 	if client == nil {
-		client = http.DefaultClient
+		client = httpclient.Default()
 	}
 	if pool == nil {
 		pool = nonce.New()
@@ -61,7 +64,7 @@ func StreamWithPool(ctx context.Context, cfg Config, turns []Turn, client *http.
 // the sealed system block mid-conversation.
 func StreamTurnsWithTools(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, pool *nonce.Pool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (<-chan Chunk, error) {
 	if client == nil {
-		client = http.DefaultClient
+		client = httpclient.Default()
 	}
 	if pool == nil {
 		pool = nonce.New()
@@ -177,11 +180,18 @@ func openStream(ctx context.Context, cfg Config, system string, turns []Turn, cl
 }
 
 // drainStream reads an already-open SSE response until completion or error.
-// It always closes resp.Body and closes ch exactly once.
+// It always closes resp.Body and closes ch exactly once. An idle-gap watchdog
+// wraps the body so a provider that stops producing bytes mid-stream is torn
+// down after httpclient.StreamIdleTimeout instead of hanging the turn forever.
 func drainStream(ctx context.Context, ch chan<- Chunk, resp *http.Response, d dialect) {
 	defer close(ch)
 	defer resp.Body.Close()
-	scan := bufio.NewScanner(resp.Body)
+
+	wd := newIdleWatchdog(resp.Body, httpclient.StreamIdleTimeout)
+	wd.start(func() { resp.Body.Close() })
+	defer wd.stop()
+
+	scan := bufio.NewScanner(wd)
 	scan.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	acc := newToolAccumulator()
@@ -265,6 +275,10 @@ func drainStream(ctx context.Context, ch chan<- Chunk, resp *http.Response, d di
 		}
 	}
 	if err := scan.Err(); err != nil {
+		if wd.fired() {
+			send(Chunk{Err: fmt.Errorf("stream idle timeout after %s", httpclient.StreamIdleTimeout), Done: true})
+			return
+		}
 		if !send(Chunk{Err: fmt.Errorf("stream read: %w", err), Done: true}) {
 			return
 		}
@@ -272,6 +286,43 @@ func drainStream(ctx context.Context, ch chan<- Chunk, resp *http.Response, d di
 	}
 	sendDone()
 }
+
+// idleWatchdog wraps a response body so a stream that stops producing bytes is
+// torn down after a gap. Reset on every successful read; on expiry it closes
+// the body, which unblocks the pending read with an error.
+type idleWatchdog struct {
+	r         io.Reader
+	d         time.Duration
+	t         *time.Timer
+	firedFlag atomic.Bool
+}
+
+func newIdleWatchdog(r io.Reader, d time.Duration) *idleWatchdog {
+	return &idleWatchdog{r: r, d: d}
+}
+
+func (w *idleWatchdog) Read(p []byte) (int, error) {
+	n, err := w.r.Read(p)
+	if n > 0 && w.t != nil {
+		w.t.Reset(w.d)
+	}
+	return n, err
+}
+
+func (w *idleWatchdog) start(closeFn func()) {
+	w.t = time.AfterFunc(w.d, func() {
+		w.firedFlag.Store(true)
+		closeFn()
+	})
+}
+
+func (w *idleWatchdog) stop() {
+	if w.t != nil {
+		w.t.Stop()
+	}
+}
+
+func (w *idleWatchdog) fired() bool { return w.firedFlag.Load() }
 
 // streamTurns sends one streaming request with an already-sealed system prompt
 // and drains it into Chunks. The retryable openStream call happens in the

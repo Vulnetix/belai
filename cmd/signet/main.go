@@ -19,6 +19,7 @@ import (
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
 	"github.com/vulnetix/signet/internal/guardrails"
+	"github.com/vulnetix/signet/internal/httpclient"
 	"github.com/vulnetix/signet/internal/permissions"
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/prompt"
@@ -234,9 +235,9 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 
 	var res run.Result
 	if enableTools {
-		res, err = runAgent(ctx, cfg, prompt, http.DefaultClient, pol, workdir, settings, planMode)
+		res, err = runAgent(ctx, cfg, prompt, httpclient.Default(), pol, workdir, settings, planMode)
 	} else {
-		res, err = run.EngageWithPosture(ctx, cfg, prompt, detectMode, http.DefaultClient, pol)
+		res, err = run.EngageWithPosture(ctx, cfg, prompt, detectMode, httpclient.Default(), pol)
 	}
 	if err != nil {
 		return err
@@ -308,7 +309,7 @@ func runAgentCreate(ctx context.Context, description, model, providerName, workd
 	if err != nil {
 		return err
 	}
-	classifier := run.NewClassifier(cfg, http.DefaultClient)
+	classifier := run.NewClassifier(cfg, httpclient.Default())
 	b := agentprofile.Builder{Classifier: classifier, MaxAttempts: 3}
 	profile, err := b.Build(ctx, description)
 	if err != nil {
@@ -339,7 +340,7 @@ func runAgentForeground(ctx context.Context, name, model, providerName, workdir 
 	if err != nil {
 		return err
 	}
-	mgr := bgagent.NewManager(workdir, cfg, http.DefaultClient, settings, pol)
+	mgr := bgagent.NewManager(workdir, cfg, httpclient.Default(), settings, pol)
 	if err := mgr.Start(name, profile); err != nil {
 		return err
 	}

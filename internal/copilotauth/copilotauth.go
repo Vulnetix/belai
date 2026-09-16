@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/vulnetix/signet/internal/httpclient"
 	"io"
 	"net/http"
 	"strings"
@@ -56,10 +57,10 @@ type Exchanger struct {
 	pending map[string]*inFlight
 }
 
-// NewExchanger builds an exchanger over client (nil means http.DefaultClient).
+// NewExchanger builds an exchanger over client (nil means httpclient.Default()).
 func NewExchanger(client *http.Client) *Exchanger {
 	if client == nil {
-		client = http.DefaultClient
+		client = httpclient.Default()
 	}
 	return &Exchanger{
 		client:   client,

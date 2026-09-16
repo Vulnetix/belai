@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/vulnetix/signet/internal/httpclient"
 	"github.com/vulnetix/signet/internal/version"
 )
 
@@ -56,37 +57,33 @@ func (w *WebFetch) Execute(ctx context.Context, args map[string]any) (Result, er
 	}
 
 	host := u.Hostname()
-	if ip := net.ParseIP(host); ip != nil {
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
-			return Result{}, fmt.Errorf("private IP rejected")
-		}
-	} else {
-		addrs, err := net.LookupIP(host)
-		if err != nil {
-			return Result{}, fmt.Errorf("dns lookup failed: %w", err)
-		}
-		for _, ip := range addrs {
-			if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
-				return Result{}, fmt.Errorf("private IP rejected")
-			}
-		}
-	}
 
+	// The default client validates and pins every connection in its
+	// DialContext, so a hostname is resolved exactly once (no second lookup in
+	// client.Do) and the dial cannot race a DNS rebinding swap after
+	// validation. A caller-supplied client keeps the pre-dial validation below
+	// because its transport cannot be pinned here.
 	client := w.Client
 	if client == nil {
-		client = http.DefaultClient
+		client = newSSRFClient()
+	} else if err := validateHost(host); err != nil {
+		return Result{}, err
 	}
 	if client.CheckRedirect == nil {
-		// Copy the resolved client (w.Client or http.DefaultClient) before
-		// installing the redirect guard. Copying a nil w.Client here would
-		// panic; the base must be the client we actually resolved above.
+		// Copy the resolved client before installing the redirect guard. The
+		// guard only limits the redirect chain: each redirect dials through
+		// the same validating DialContext, so a redirect to a private address
+		// is rejected at connect time, not by a second DNS lookup here.
 		base := *client
 		client = &base
 		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
 				return fmt.Errorf("too many redirects")
 			}
-			return checkHost(req.URL)
+			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+				return fmt.Errorf("redirect to non-http scheme rejected")
+			}
+			return nil
 		}
 	}
 
@@ -119,14 +116,74 @@ func (w *WebFetch) Execute(ctx context.Context, args map[string]any) (Result, er
 	return WebFetchResult(string(body)), nil
 }
 
-func checkHost(u *url.URL) error {
-	host := u.Hostname()
+// newSSRFClient builds the default WebFetch client: a copy of the shared tuned
+// transport whose DialContext resolves, validates and pins every connection
+// address. This is the SSRF guard — no host is ever dialled without its
+// resolved addresses passing the forbidden-address check, and the dial uses
+// those exact addresses rather than re-resolving (closing the TOCTOU gap).
+func newSSRFClient() *http.Client {
+	transport := httpclient.Transport()
+	dialer := &net.Dialer{Timeout: httpclient.DialTimeout, KeepAlive: httpclient.KeepAlive}
+	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, err
+		}
+		var ips []net.IP
+		if ip := net.ParseIP(host); ip != nil {
+			ips = []net.IP{ip}
+		} else {
+			ips, err = net.LookupIP(host)
+			if err != nil {
+				return nil, err
+			}
+		}
+		for _, ip := range ips {
+			if forbiddenIP(ip) {
+				return nil, fmt.Errorf("private IP %s rejected", ip)
+			}
+		}
+		var lastErr error
+		for _, ip := range ips {
+			conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+			if err == nil {
+				return conn, nil
+			}
+			lastErr = err
+		}
+		if lastErr == nil {
+			lastErr = fmt.Errorf("no addresses for %s", host)
+		}
+		return nil, lastErr
+	}
+	return &http.Client{Transport: transport}
+}
+
+// validateHost rejects a host that resolves to a forbidden address. It is the
+// pre-dial SSRF guard for a caller-supplied client whose transport cannot be
+// pinned.
+func validateHost(host string) error {
 	if ip := net.ParseIP(host); ip != nil {
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
-			return fmt.Errorf("redirect to private IP rejected")
+		if forbiddenIP(ip) {
+			return fmt.Errorf("private IP rejected")
+		}
+		return nil
+	}
+	addrs, err := net.LookupIP(host)
+	if err != nil {
+		return fmt.Errorf("dns lookup failed: %w", err)
+	}
+	for _, ip := range addrs {
+		if forbiddenIP(ip) {
+			return fmt.Errorf("private IP rejected")
 		}
 	}
 	return nil
+}
+
+// forbiddenIP reports whether an address must never be fetched.
+func forbiddenIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified()
 }
 
 func allowedContentType(ct string) bool {

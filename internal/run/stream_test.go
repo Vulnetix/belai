@@ -3,6 +3,7 @@ package run
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -647,5 +648,28 @@ func TestStreamRetriesOpenStream(t *testing.T) {
 	}
 	if calls < 2 {
 		t.Fatalf("expected retry, calls=%d", calls)
+	}
+}
+
+func TestIdleWatchdogTearsDownAfterGap(t *testing.T) {
+	pr, pw := io.Pipe()
+	wd := newIdleWatchdog(pr, 20*time.Millisecond)
+	wd.start(func() { pw.CloseWithError(errors.New("closed by idle watchdog")) })
+	defer wd.stop()
+
+	// Feed one byte to reset the timer, then leave the pipe idle.
+	go func() { _, _ = pw.Write([]byte("x")) }()
+	buf := make([]byte, 1)
+	if _, err := wd.Read(buf); err != nil {
+		t.Fatalf("first read: %v", err)
+	}
+
+	// The next read blocks; the watchdog fires after the gap and closes the
+	// pipe, unblocking the read with an error.
+	if _, err := wd.Read(buf); err == nil {
+		t.Fatal("expected an error after the idle gap")
+	}
+	if !wd.fired() {
+		t.Fatal("watchdog should have fired")
 	}
 }

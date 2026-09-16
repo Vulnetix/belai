@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/vulnetix/signet/internal/httpclient"
 	"github.com/vulnetix/signet/internal/version"
 )
 
@@ -68,7 +69,7 @@ func (w *WebSearch) Execute(ctx context.Context, args map[string]any) (Result, e
 
 	client := w.Client
 	if client == nil {
-		client = http.DefaultClient
+		client = httpclient.Default()
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
@@ -98,7 +99,7 @@ func (w *WebSearch) duckDuckGo(ctx context.Context, query string) (Result, error
 	u := "https://api.duckduckgo.com/?format=json&no_html=1&skip_disambig=1&q=" + url.QueryEscape(query)
 	client := w.Client
 	if client == nil {
-		client = http.DefaultClient
+		client = httpclient.Default()
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
@@ -156,7 +157,7 @@ func (w *WebSearch) duckDuckGo(ctx context.Context, query string) (Result, error
 func (w *WebSearch) Available() bool {
 	client := w.Client
 	if client == nil {
-		client = http.DefaultClient
+		client = httpclient.Default()
 	}
 	req, err := http.NewRequest(http.MethodHead, "https://api.duckduckgo.com/", nil)
 	if err != nil {

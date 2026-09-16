@@ -25,6 +25,7 @@ import (
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
 	"github.com/vulnetix/signet/internal/gitinfo"
+	"github.com/vulnetix/signet/internal/httpclient"
 	"github.com/vulnetix/signet/internal/modelinfo"
 	"github.com/vulnetix/signet/internal/models"
 	"github.com/vulnetix/signet/internal/modes"
@@ -355,7 +356,7 @@ func New(opts Options) *App {
 
 	client := opts.Client
 	if client == nil {
-		client = http.DefaultClient
+		client = httpclient.Default()
 	}
 
 	store, _ := session.NewStore()

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -328,5 +329,37 @@ func TestGlobWalkMatchesRelativeToSubpath(t *testing.T) {
 	got = g.walk("**/*.txt", "sub")
 	if len(got) != 1 || got[0] != "sub/file.txt" {
 		t.Fatalf("walk recursive = %q, want [sub/file.txt]", got)
+	}
+}
+
+// TestWebFetchRejectsLoopbackViaDial pins the SSRF guard on the default
+// (dedicated-transport) path: a loopback address is rejected at dial time by
+// the validating DialContext before any connection is attempted.
+func TestWebFetchRejectsLoopbackViaDial(t *testing.T) {
+	wf := &WebFetch{}
+	_, err := wf.Execute(context.Background(), map[string]any{"url": "http://127.0.0.1/"})
+	if err == nil || !strings.Contains(err.Error(), "rejected") {
+		t.Fatalf("expected loopback rejection, got %v", err)
+	}
+}
+
+func TestForbiddenIP(t *testing.T) {
+	cases := []struct {
+		ip   string
+		want bool
+	}{
+		{"127.0.0.1", true},
+		{"10.0.0.1", true},
+		{"192.168.1.1", true},
+		{"169.254.1.1", true},
+		{"0.0.0.0", true},
+		{"::1", true},
+		{"8.8.8.8", false},
+		{"93.184.216.34", false},
+	}
+	for _, c := range cases {
+		if got := forbiddenIP(net.ParseIP(c.ip)); got != c.want {
+			t.Fatalf("forbiddenIP(%s) = %v, want %v", c.ip, got, c.want)
+		}
 	}
 }

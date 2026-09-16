@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/delimiters"
 	"github.com/vulnetix/signet/internal/guardrails"
+	"github.com/vulnetix/signet/internal/httpclient"
 	"github.com/vulnetix/signet/internal/models"
 	"github.com/vulnetix/signet/internal/nonce"
 	"github.com/vulnetix/signet/internal/posture"
@@ -658,7 +658,9 @@ func SealSystem(cfg Config, pool *nonce.Pool, opts prompt.Options) (string, erro
 	if err != nil {
 		return "", fmt.Errorf("seal system prompt: %w", err)
 	}
-	return delimiters.Egress(sealed, pool), nil
+	// BuildSystemPrompt already verified and egressed the block; re-running
+	// Egress here would re-scan the whole prompt for no effect.
+	return sealed, nil
 }
 
 // buildRequest creates the sealed HTTP request for a provider.
@@ -816,7 +818,7 @@ var defaultRetryPolicy = resilience.Policy{
 // transport) are retried without consuming the iteration budget.
 func sendTurnsWithTools(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (Assistant, error) {
 	if client == nil {
-		client = http.DefaultClient
+		client = httpclient.Default()
 	}
 	factory, d, err := newRequestFactory(cfg, system, turns, false, openAITools, anthropicTools)
 	if err != nil {
@@ -1074,7 +1076,7 @@ func RunTurns(ctx context.Context, cfg Config, turns []Turn, client *http.Client
 // multi-turn sessions reuse the same pool across requests.
 func RunTurnsWithPool(ctx context.Context, cfg Config, turns []Turn, client *http.Client, pool *nonce.Pool, opts prompt.Options) (string, error) {
 	if client == nil {
-		client = http.DefaultClient
+		client = httpclient.Default()
 	}
 	if pool == nil {
 		pool = nonce.New()
@@ -1110,7 +1112,7 @@ func Engage(ctx context.Context, cfg Config, prompt string, detectMode bool, cli
 // EngageWithPosture is Engage with an explicit posture policy.
 func EngageWithPosture(ctx context.Context, cfg Config, prompt string, detectMode bool, client *http.Client, pol posture.Policy) (Result, error) {
 	if client == nil {
-		client = http.DefaultClient
+		client = httpclient.Default()
 	}
 	clean := sanitize.Sanitize(prompt)
 	res := Result{SanitizedPrompt: clean}
