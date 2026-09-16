@@ -9,6 +9,7 @@ L0  typed errors      run.ProviderError (status, retry-after, redacted body)
 L1  transport retry   pre-first-byte only; rounds trips + streaming connect
 L2  turn retry        agent loop re-issues the same turn
 L3  semantic repair   malformed / truncated / dangling tool calls -> tool results
+L4  pass boundary     goal mode: compact once on overflow, then re-run the pass
 ```
 
 ## Error classification (`internal/resilience`)
@@ -31,6 +32,29 @@ Classification is fail-closed:
 Backoff honors a `Retry-After` header (seconds or HTTP-date), clamps to the
 policy ceiling, then falls back to `min(0.5·2ⁿ, 8) s` with up to 25 % downward
 jitter. Sleep is a first-class seam so tests never wait.
+
+### Policy defaults
+
+`Policy` is a plain struct, so a caller may read its fields directly instead of
+going through `resilience.Do`. `Do` and `Delay` normalise internally, but a
+bare `Policy{}` still has a nil `Rand` and a nil `Sleep` — calling either
+panics. `Policy.WithDefaults()` returns a normalised copy and is what any
+caller reading those fields (L2 turn retry) must use.
+
+| Field | Zero value becomes | Note |
+| ----- | ------------------ | ---- |
+| `MaxAttempts` | 3 | inclusive of the first attempt |
+| `Base` | 500 ms | |
+| `Cap` | 8 s | caps the exponential term |
+| `Ceiling` | 60 s | absolute cap; also bounds `Retry-After` |
+| `Jitter` | **stays 0** | the one field with no non-zero default: 0 means no jitter. Signet's L1 and L2 policies both opt into 0.25 |
+| `Rand` | `rand.Float64` | |
+| `Sleep` | context-aware `time.After` | |
+
+Jitter is opt-in rather than defaulted because zero is a legitimate explicit
+choice (deterministic backoff in tests) and a Go zero value cannot distinguish
+"unset" from "none". Both real policies set it, so every retry Signet issues in
+production is jittered.
 
 ## Pre-first-byte boundary
 
@@ -64,17 +88,48 @@ Retry budgets are configurable via `config.Settings.Resilience`:
 
 - `max_attempts`: L2 turn retry budget per model call (default 3, same as
   the internal L1 default).
-- `max_iterations`: per-prompt tool-loop budget (default 10).
+- `max_iterations`: per-pass tool-loop budget (default 10).
+- `max_passes`: goal-mode pass-loop ceiling (default 0 — unbounded). The pass
+  loop's own stall detectors are what normally stop it; this exists for CI and
+  for anyone who wants a hard bound on spend. When it is reached the loop
+  returns `goal pass loop stopped: max passes (N) reached`.
 
-Project-level `max_attempts` and `max_iterations` are constrained to the
-*minimum* of the global and project values, so a cloned project file cannot
-raise either budget.
+Project-level values are constrained to the *minimum* of the global and project
+values, so a cloned project file cannot raise a budget. For `max_passes` an
+unset global (0, unbounded) takes the project value: there is no ceiling to
+lower, and adding one is a tightening, not a relaxation.
 
 ## Overflow surfacing
 
 `context length` / `token limit` failures are classified `ClassOverflow` and
-are never retried. They are surfaced as a terminal error with a clear hint:
-`context length exceeded; use /compact to reduce conversation size`.
+are never retried at L1 or L2. They are surfaced as a terminal error with a
+clear hint: `context length exceeded; use /compact to reduce conversation size`.
+
+## Pass-boundary recovery (goal mode)
+
+The goal pass loop adds the one place an overflow is recoverable. An overflow
+escaping a pass is caught **once** per prompt: the loop compacts at the pass
+boundary and re-runs the pass. A second overflow is terminal, and every other
+error is terminal immediately — L2 already owns the retry budget, so retrying
+again here would multiply it.
+
+Compaction runs only at a pass boundary. Mid-pass, `turns` may hold an
+assistant turn carrying `tool_calls` whose matching tool turns are not yet
+appended; truncating there orphans `tool_call_id`s and providers reject the
+payload. The trigger is an estimated context above 70 % of the resolved model
+window; an unknown window skips compaction entirely rather than guessing.
+
+The summary re-enters through Role Manager admission (see
+[role-manager.md](role-manager.md), "Compaction at the boundary"), and any
+failure — no window, no summary, refused admission — simply skips compaction
+for that boundary.
+
+Cancellation is the loop's only true ceiling, and it is not an error: `esc` in
+the TUI or `SIGINT` on the CLI returns the partial result wrapped in
+`ErrPassLoopCancelled`, never a raw `context.Canceled` the transcript would
+print as an agent failure. Non-TUI entry points install a
+`signal.NotifyContext` root for exactly this reason; a second signal hard-exits
+with status 130, because the next pass boundary may be seconds away.
 
 ## Semantic repair
 

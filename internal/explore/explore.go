@@ -48,6 +48,26 @@ func Plan(prompt string, decision rolemanager.ModeDecision) []Task {
 	return tasks
 }
 
+// PlanGoalSurvey derives read-only codebase-survey tasks for a goal prompt
+// that has no @references. A forced explore must not simply re-ask the
+// original question — it has to survey the repository so the goal pass has
+// real evidence to plan from. It is pure and deterministic.
+func PlanGoalSurvey(goalText string) []Task {
+	surveys := []struct {
+		reference string
+		prompt    string
+	}{
+		{"repository structure", "Survey the repository structure: list the top-level directories, the main packages, and how they relate. Goal: " + goalText},
+		{"entry points", "Identify the entry points and the modules most relevant to the goal. Goal: " + goalText},
+		{"tests and docs", "Find the existing tests and documentation that bear on the goal, and report their locations. Goal: " + goalText},
+	}
+	tasks := make([]Task, 0, len(surveys))
+	for i, s := range surveys {
+		tasks = append(tasks, Task{Index: i, Reference: s.reference, Prompt: s.prompt})
+	}
+	return tasks
+}
+
 // extractReferences returns the @-prefixed tokens in prompt, excluding the
 // @agent:NAME directive (that engages a named agent, not an explore task),
 // deduplicated and in first-seen order.

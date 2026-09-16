@@ -18,6 +18,12 @@ The architecture overview lives in [architecture.md](architecture.md).
 | Posture system | `internal/posture` | Per-gate enforce / warn / ignore policy with CLI + YAML load | Live |
 | Tool-call invariants | `internal/rolemanager` | Reconcile model tool calls with the tools in the prompt | Live |
 | Mode classifier | `internal/rolemanager` | Classify a mode-less prompt into agent/plan/goal | Live |
+| Forced mode | `internal/rolemanager` | Build the decision for a mode the user chose explicitly, bypassing the classifier | Live |
+| Goal evaluator | `internal/rolemanager` | Single-token verdict on goal progress at a pass boundary | Live |
+| Goal pass loop | `internal/agent` | Grant further passes while a goal measurably advances | Live |
+| Agent-loop evaluator | `internal/rolemanager` | Single-token verdict on a background loop agent at its budget boundary | Live |
+| Directive framing | `internal/rolemanager` + `internal/run` | Seal harness continuation instructions into `<directive>` blocks | Live |
+| Todo list | `internal/todos` | One tracked plan per session, advanced from assistant text only | Live |
 | Permissions | `internal/permissions` | Allow / ask / block per tool (Claude settings shape) | Live |
 | Skill validation | `internal/skills` | Reject skills with invalid front-matter before load | Live |
 | Hook validation | `internal/hooks` | Reject hooks with invalid schema or unsafe code paths | Live |
@@ -80,7 +86,7 @@ anything that is not an exact token fails closed.
 ### Classifier payload invariants
 
 Every classifier payload builder keeps the classifier turn tool-less, skill-less,
-and agent-less. The invariant holds for all four builders:
+and agent-less. The invariant holds for all six builders:
 
 | Payload builder | System prompt | User content | Tools / Skills / Agent |
 | --------------- | ------------- | ------------ | ---------------------- |
@@ -88,6 +94,8 @@ and agent-less. The invariant holds for all four builders:
 | Mode | `internal/rolemanager/modeclassify.go` | the user prompt only | empty |
 | Compaction | `internal/rolemanager/compact.go` | serialized conversation | empty |
 | Session name | `internal/rolemanager/sessionname.go` | first user message | empty |
+| Goal evaluator | `internal/rolemanager/goaleval.go` | goal + rendered todo list + sanitized pass-evidence digest | empty |
+| Agent-loop evaluator | `internal/rolemanager/agenteval.go` | the agent profile's goals + its most recent output | empty |
 
 | Invariant | Rule | Status |
 | --------- | ---- | ------ |
@@ -462,6 +470,35 @@ reporting toggle that prints the decision to stderr.
 - A named agent is referenced as `@agent:NAME`.
 - `HasReferences` and `GoalLimit` are set at every call site.
 
+### Forced mode
+
+A mode the user selected — `shift+tab` in the TUI, or `/mode <name>` — is not a
+guess, so it is not re-guessed. `TurnInput.ForceMode` carries the choice into
+`Session.run`, which rebuilds the decision with
+`rolemanager.DecideForcedMode(mode, prompt, hasReferences)` **after** the
+classifier has already run, discarding the classifier's answer.
+
+Suppressing the TUI's own classification is not sufficient on its own:
+`Session.run` classifies again internally, so without `ForceMode` the explicit
+choice is silently discarded on the way to the session.
+
+| Forced mode | Decision | Explore |
+| ----------- | -------- | ------- |
+| `goal` | Goal carrier, length limit **not** applied | only when references are present |
+| `plan` | Same as a `PLAN` sentinel | yes |
+| `agent` | Same as an `AGENT` sentinel, named agent preserved | no |
+| anything else | Falls back to the `UNDETERMINED` path (default agent) | no |
+
+The goal length limit is deliberately skipped for a forced goal. That limit
+exists to stop the *classifier* from routing a long prompt into goal mode by
+mistake; a user who selected goal mode has made no mistake to guard against.
+
+`ForceMode` is one-shot: it applies to the turn that carried it and is cleared
+as soon as the turn is sent, matching how `modeExplicit` behaves in the TUI.
+
+`ForceAgent` (`@agent:NAME`) is applied *after* `ForceMode`, because it is the
+narrower statement of intent — it names a profile as well as a mode.
+
 ### Operating-mode decision tree
 
 ```mermaid
@@ -516,8 +553,220 @@ becomes a hard "build system prompt" error on the live path.
 ## Max-iteration bound
 
 The agent loop is bounded to prevent infinite tool-call loops. The default
-maximum is 10 iterations; each provider turn counts as one iteration.
-When the bound is reached the session returns an error.
+maximum is 10 iterations; each provider turn counts as one iteration. One run
+of that bounded loop is a **pass**.
+
+Outside goal mode — and for every subagent, whatever its mode — exactly one
+pass runs, and exhausting the iteration budget returns
+`max iterations (N) reached`. A top-level goal-mode prompt instead enters the
+goal pass loop below, where exhausting the budget is a question ("is the goal
+met?") rather than an answer.
+
+## Goal pass loop
+
+A goal is not finished when the tool budget runs out; it is finished when the
+goal is met. The pass loop makes that the terminating condition: when a pass
+burns its whole iteration budget, an evaluator decides whether the work
+advanced, and only a loop that is *not* advancing stops.
+
+The loop is **unbounded by design**. Every mechanism below is a stall
+detector, not a ceiling: none of them can stop a loop that is making
+measurable progress.
+
+### Entry conditions
+
+All three must hold, or a single bounded pass runs instead:
+
+| Condition | Why |
+| --------- | --- |
+| `Options.AllowPassLoop` is true | Only top-level session construction sets it. A subagent must never enter the loop, which would spawn recursive unbounded subagents. It is a distinct authority from `AllowExplore`. |
+| The engaged mode is `goal` | Agent and plan mode keep today's bounded behaviour verbatim. |
+| The pass exhausted its iteration budget | A pass that ends with a plain reply returns it. A goal is only re-checked when the model burns the whole budget. |
+
+### Pass ledger
+
+The loop's decision state lives in a loop-local `passLedger` — never in
+`turns`, and never re-parsed out of transcript text. This is a trust boundary:
+if pass count, verification count, or sentinel history were derived from
+content, a `SAFE`-classified file containing the right token could flip harness
+state.
+
+| Field | Meaning |
+| ----- | ------- |
+| `passes` | Passes run so far; reported as `Result.Passes`. |
+| `list` / `hasList` | The shared todo list (`internal/todos`). |
+| `todoChanged` | The pass that just ended moved at least one item's state. |
+| `partialStreak` | Consecutive no-progress `GOAL_PARTIAL` verdicts. A todo transition resets it to 0. |
+| `verificationPasses` | Finished verification passes; gates `GOAL_COMPLETE`. |
+| `malformedStreak` | Consecutive malformed evaluator replies. A clean reply resets it. |
+| `surveyedLastPass` | The pass that just ended ran on forced-survey findings. |
+| `overflowRetried` | A context overflow has already been recovered once this prompt. |
+
+### Goal evaluator
+
+At each pass boundary the evaluator is shown the goal, the rendered todo list,
+and a **sanitized** digest of that pass's turns (`transcript.Serialize`, with
+tool results bounded by `transcript.DefaultMaxToolResultChars`). Its reply must
+be exactly one token.
+
+| Sentinel | Meaning | Loop response |
+| -------- | ------- | ------------- |
+| `GOAL_COMPLETE` | Every todo item is done and the goal is achieved | Accepted only past the verification gate; otherwise downgraded to a verification pass |
+| `GOAL_PARTIAL` | Work advanced but the goal is not met | Grant another pass with a continuation directive |
+| `GOAL_NOT_STARTED` | No meaningful work has happened yet | Force a codebase survey (once), then inject the planning directive |
+| _malformed output_ | — | Fails closed to `GOAL_PARTIAL`; the streak is counted |
+
+### Termination rules
+
+| Rule | Condition | Outcome |
+| ---- | --------- | ------- |
+| Goal met | `GOAL_COMPLETE` **and** `verificationPasses ≥ 1` | Success; todo list marked complete; reply is the pass's last assistant text |
+| Natural exit | A pass ends with no tool calls | Success; the model's reply is returned unchanged |
+| Verification gate | `GOAL_COMPLETE` with `verificationPasses == 0` | Downgraded: arm one verification pass and continue. Harness logic — the model cannot talk its way past it |
+| Stall | `partialStreak ≥ 4` (`2 × goalVerifyEvery`) | Error: *N consecutive passes without todo progress* |
+| Unproductive pass | A pass executed no non-withheld tool result | Error: *pass N executed no tools*. Truncation repair burns iterations without doing work and must not buy another pass |
+| Broken evaluator | 2 consecutive malformed evaluator replies | Error: *N consecutive malformed evaluator replies* |
+| Evaluator transport failure | `Classify` returns an error | Terminal. An unknown verdict must not grant compute |
+| Cancellation | `ctx` cancelled (`esc`, `SIGINT`) | `ErrPassLoopCancelled` with the partial result — never a raw `context.Canceled` |
+| Configured ceiling | `resilience.max_passes` reached (0 = unbounded, the default) | Error: *max passes (N) reached* |
+
+### Verification passes
+
+Every second consecutive no-progress `GOAL_PARTIAL`
+(`partialStreak % goalVerifyEvery == 0`, `goalVerifyEvery = 2`) becomes a
+verification pass: the injected directive orders the model to check the
+completed todo items against the files on disk, read-only, before doing further
+work. `GOAL_COMPLETE` is accepted only after at least one verification pass has
+finished, so "done" is always claimed at least once *after* an explicit
+re-check.
+
+### Directives
+
+A continuation instruction is harness-authored text that re-enters the
+conversation as a user turn, so the model must be able to tell it apart from
+something it wrote or read. Three mechanisms do that together:
+
+1. **Framing** — `DirectivePrefix` / `DirectiveSuffix` prose wraps it, followed
+   by a synthetic assistant `DirectiveAck`, so the model reads it as context
+   rather than as the question to answer. This mirrors the compaction
+   `SummaryPrefix` / `SummaryAck` framing.
+2. **Sealing** — the body travels in `run.Turn.Directive`, a field separate from
+   `Content`, and is wrapped in a `<directive nonce="…" integrity="…">` block at
+   egress. It is a separate field because `egressTurns` sanitizes `Content`
+   first — which strips every known harness kind — so a directive written into
+   `Content` would be silently deleted on its way to the provider.
+3. **Fail-closed drop** — a directive that cannot be sealed (no nonce available)
+   is dropped rather than sent as bare prose the model could mistake for a user
+   instruction.
+
+| Directive | Injected when |
+| --------- | ------------- |
+| Planning | `GOAL_NOT_STARTED` — write a numbered plan under a `Plan:` header, then start step 1 |
+| Verification | An armed verification pass — re-check completed items against disk before continuing |
+| Continuation | `GOAL_PARTIAL` — continue from the rendered todo list state |
+
+### Forced survey
+
+A `GOAL_NOT_STARTED` verdict forces a read-only codebase survey
+(`explore.PlanGoalSurvey`) before the planning directive — repository
+structure, entry points, and tests/docs bearing on the goal. It does **not**
+re-ask the original prompt: a goal-mode prompt usually carries no
+`@references`, so the ordinary explore plan would just repeat the question back.
+The survey runs at most once per `GOAL_NOT_STARTED` streak
+(`surveyedLastPass`), and its findings re-enter as untrusted user turns like
+any other explore result.
+
+### Todo markers
+
+The shared todo list is advanced **only** from the pass's accumulated
+model-authored assistant text. Tool results, file contents, and every other
+untrusted string are excluded by construction — `passOutcome.text` accumulates
+assistant text alone. A repository file containing `[DONE:1] [DONE:2]` must
+never mark work complete, because completion is an input to whether the loop
+stops. `plans.ParseDoneMarkers` is the single definition of the marker syntax;
+`todos.List.ApplyMarkers` and `modes.PlanState.ApplyMarkers` both call it.
+
+### Steering precedence
+
+A steering message queued while a pass is running outranks the evaluator: if
+`drainSteer` returns anything at a pass boundary, the loop appends it and
+continues without calling the evaluator. Explicit user intent beats a
+classifier, and skipping the call saves a model round-trip. Steered turns pass
+through the same Role Manager admission as the original prompt.
+
+### Compaction at the boundary
+
+A `ClassOverflow` error escaping a pass is recovered **once** per prompt:
+compact at the pass boundary, then re-run the pass. A second overflow is
+terminal.
+
+Compaction only ever runs at a pass boundary. Mid-pass, `turns` may hold an
+assistant turn with `tool_calls` whose matching tool turns are not yet
+appended; truncating there would orphan `tool_call_id`s and providers reject
+the payload. It triggers when the estimated context exceeds
+`compactThresholdPct` (70 %) of the resolved model window.
+
+The summary is model output derived from tool results, so it is admitted
+through the Role Manager before re-injection — the same fail-closed rule as
+steering, and deliberately stricter than the TUI `/compact` path, which does
+not admit. Any failure skips compaction for that boundary; the next boundary
+retries.
+
+### Sealed-once invariant
+
+`sanitize` through `SealSystem` runs once per prompt, in `Session.run`. The
+system prompt is passed into the loop as a value and every pass reuses the same
+sealed bytes. Re-sealing would rotate nonces and invalidate already-sealed
+tool-result blocks (see [resilience.md](resilience.md), "Turn retry and state
+invariants").
+
+### Goal pass loop decision tree
+
+```mermaid
+flowchart TD
+    Start[Goal-mode prompt, top level] --> Pass[Run one bounded pass]
+    Pass --> Exhausted{Budget exhausted?}
+    Exhausted -->|no| Reply[Return the model's reply]
+    Exhausted -->|yes| Steer{Steering queued?}
+    Steer -->|yes| Pass
+    Steer -->|no| Prod{Any tool executed?}
+    Prod -->|no| StopUnproductive[Stop: pass executed no tools]
+    Prod -->|yes| Eval[Goal evaluator]
+    Eval -->|transport error| StopErr[Stop: unknown verdict]
+    Eval -->|malformed x2| StopMalformed[Stop: broken evaluator]
+    Eval -->|GOAL_NOT_STARTED| Survey[Forced survey once + planning directive]
+    Survey --> Pass
+    Eval -->|GOAL_PARTIAL| Stall{4 passes without progress?}
+    Stall -->|yes| StopStall[Stop: no todo progress]
+    Stall -->|no| Verify{Every 2nd no-progress pass?}
+    Verify -->|yes| VerifyPass[Verification directive]
+    Verify -->|no| Continue[Continuation directive]
+    VerifyPass --> Pass
+    Continue --> Pass
+    Eval -->|GOAL_COMPLETE| Gate{Verification pass run?}
+    Gate -->|no| VerifyPass
+    Gate -->|yes| Done[Goal met: mark todos done, return]
+```
+
+## Agent-loop evaluator
+
+Background agents in `loop` mode use the same shape for a different question:
+not "is the goal met?" but "should this agent keep spending tokens?". At the
+end of each inner budget (`max_iterations`), the evaluator is shown the
+profile's goals and the agent's most recent output.
+
+| Verdict | Meaning | Manager response |
+| ------- | ------- | ---------------- |
+| `CONTINUE` | Goals unmet, keep working now | Reset the inner budget and continue — **autonomous profiles only** |
+| `PAUSE` | Stop and wait for the user | Enter `paused`; the goroutine blocks until `/agent resume` |
+| `SLEEP` | Wait one schedule interval, then continue | Sleep `profile.schedule`, reset the inner budget |
+| `STOP` | The work is finished | Exit the loop; state becomes `done` |
+| _malformed output_ | — | Fails closed to `PAUSE` |
+| _transport error_ | — | Surfaced as an error event, then `PAUSE` |
+
+A **supervised** profile that receives `CONTINUE` is paused instead. Unattended
+unbounded tool use is exactly what `supervised` exists to prevent, so
+autonomous operation stays an explicit opt-in that a classifier cannot grant.
 
 ## Adjacent security primitives
 
@@ -540,7 +789,7 @@ content.
 | Rule | Behaviour | Status |
 | ---- | --------- | ------ |
 | Block shape | `<kind nonce="…" integrity="…">content</kind>` | Live |
-| Known kinds | `system`, `agent`, `plan`, `goal`, `tools`, `skills`, `hooks`, `attachment` | Live |
+| Known kinds | `system`, `agent`, `plan`, `goal`, `tools`, `skills`, `hooks`, `attachment`, `exploration`, `directive` | Live |
 | Integrity | `integrity` is lowercase hex SHA-256 of the enclosed content | Live |
 | Nonce | 128-bit CSPRNG; only *reserved* nonces are valid | Live |
 | Egress — missing nonce | Block stripped | Live |
@@ -548,6 +797,7 @@ content.
 | Egress — integrity mismatch | Block stripped **only when an `integrity` attribute is present and non-empty** | Live |
 | Egress — valid | Block preserved | Live |
 | Egress — `<attachment>` without integrity | Stripped (attachment blocks must carry an integrity attribute) | Live |
+| Egress — `<directive>` without integrity | Stripped. A directive carries harness authority, so a nonce alone would let a replayed block have its body swapped | Live |
 | Egress — nil checker | A nil `NonceChecker` skips nonce validation entirely | Live |
 | Provider nonces | `GET {base_url}/v1/nonces`; fallback only on `ErrUnsupported` (HTTP 401/403/404) | Live |
 | NonceURL | Strips a trailing `/v1` before appending `/v1/nonces` | Live |
@@ -601,5 +851,13 @@ skill-less, and agent-less for every attempt.
 | Delimiter lacking/unknown nonce or bad integrity | Strip before transport | — |
 | Mode classifier returns malformed output | Default agent | — |
 | Goal-classified prompt exceeds length limit | Default agent + warning | — |
+| Goal evaluator returns malformed output | `GOAL_PARTIAL` (never completion); 2 in a row stops the loop | — |
+| Goal evaluator transport error | Stop the loop — an unknown verdict grants no compute | — |
+| `GOAL_COMPLETE` before any verification pass | Downgraded; one verification pass is forced | — |
+| Goal pass executes no tools | Stop the loop — no evidence, no further pass | — |
+| Agent-loop evaluator malformed or unreachable | `PAUSE` — stop spending, wait for the user | — |
+| Supervised agent receives `CONTINUE` | `PAUSE` — autonomy is an explicit opt-in | — |
+| Directive cannot be sealed | Dropped, never sent as bare prose | — |
+| `[DONE:n]` marker in a tool result or file | Ignored — only assistant text advances a todo list | — |
 | Compaction summary empty or missing required headings | Refuse compaction, keep session | — |
 | Session-name classifier returns malformed output | Leave session unnamed | — |

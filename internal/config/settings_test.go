@@ -344,3 +344,69 @@ func TestResilienceOverrideFillsFromGlobal(t *testing.T) {
 		t.Fatalf("got %+v", got.Resilience)
 	}
 }
+
+func TestMaxPassesOrDefaultsToUnbounded(t *testing.T) {
+	var nilSettings *ResilienceSettings
+	if got := nilSettings.MaxPassesOr(); got != 0 {
+		t.Fatalf("nil resilience MaxPassesOr() = %d, want 0 (unbounded)", got)
+	}
+	if got := (&ResilienceSettings{}).MaxPassesOr(); got != 0 {
+		t.Fatalf("unset MaxPassesOr() = %d, want 0 (unbounded)", got)
+	}
+	if got := (&ResilienceSettings{MaxPasses: 4}).MaxPassesOr(); got != 4 {
+		t.Fatalf("MaxPassesOr() = %d, want 4", got)
+	}
+}
+
+func TestResilienceOverrideTakesMinimumPasses(t *testing.T) {
+	global := Settings{Resilience: &ResilienceSettings{MaxPasses: 6}}
+
+	// A project may lower the ceiling.
+	got := global.Override(Settings{Resilience: &ResilienceSettings{MaxPasses: 2}})
+	if got.Resilience.MaxPasses != 2 {
+		t.Fatalf("project cannot lower passes: got %d", got.Resilience.MaxPasses)
+	}
+
+	// It may not raise it.
+	got = global.Override(Settings{Resilience: &ResilienceSettings{MaxPasses: 99}})
+	if got.Resilience.MaxPasses != 6 {
+		t.Fatalf("project raised passes: got %d", got.Resilience.MaxPasses)
+	}
+
+	// An unset global takes the project value: there is no ceiling to lower.
+	got = Settings{Resilience: &ResilienceSettings{}}.Override(Settings{Resilience: &ResilienceSettings{MaxPasses: 3}})
+	if got.Resilience.MaxPasses != 3 {
+		t.Fatalf("unset global did not take the project ceiling: got %d", got.Resilience.MaxPasses)
+	}
+}
+
+func TestTodosVisibleDefaultsOn(t *testing.T) {
+	if !(Settings{}).TodosVisible() {
+		t.Fatal("todo panel must default to visible")
+	}
+	if !(Settings{UI: &UISettings{}}).TodosVisible() {
+		t.Fatal("unset ui.show_todos must default to visible")
+	}
+
+	off := false
+	if (Settings{UI: &UISettings{ShowTodos: &off}}).TodosVisible() {
+		t.Fatal("ui.show_todos=false must hide the panel")
+	}
+	on := true
+	if !(Settings{UI: &UISettings{ShowTodos: &on}}).TodosVisible() {
+		t.Fatal("ui.show_todos=true must show the panel")
+	}
+}
+
+func TestUIOverrideCarriesShowTodos(t *testing.T) {
+	off := false
+	base := Settings{UI: &UISettings{}}
+	got := base.Override(Settings{UI: &UISettings{ShowTodos: &off}})
+
+	if got.TodosVisible() {
+		t.Fatal("project ui.show_todos=false did not override")
+	}
+	if base.UI.ShowTodos != nil {
+		t.Fatal("Override mutated the receiver")
+	}
+}

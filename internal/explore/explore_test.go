@@ -1,6 +1,7 @@
 package explore
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/vulnetix/signet/internal/modes"
@@ -47,5 +48,52 @@ func TestPlanDeterministicOrder(t *testing.T) {
 		if a[i].Reference != b[i].Reference {
 			t.Fatalf("Plan order drifted: %v vs %v", a, b)
 		}
+	}
+}
+
+func TestPlanGoalSurveyIsDeterministicAndBounded(t *testing.T) {
+	a := PlanGoalSurvey("add rate limiting")
+	b := PlanGoalSurvey("add rate limiting")
+
+	if len(a) == 0 {
+		t.Fatal("goal survey produced no tasks")
+	}
+	if len(a) > MaxTasks {
+		t.Fatalf("goal survey fan-out = %d, want <= %d", len(a), MaxTasks)
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			t.Fatalf("goal survey drifted at %d: %+v vs %+v", i, a[i], b[i])
+		}
+		if a[i].Index != i {
+			t.Fatalf("task %d has Index %d", i, a[i].Index)
+		}
+	}
+}
+
+func TestPlanGoalSurveySurveysRatherThanRepeatingThePrompt(t *testing.T) {
+	const goal = "add rate limiting"
+	tasks := PlanGoalSurvey(goal)
+
+	for _, task := range tasks {
+		if task.Prompt == goal {
+			t.Fatalf("task %q just re-asks the goal", task.Reference)
+		}
+		if !strings.Contains(task.Prompt, goal) {
+			t.Fatalf("task %q lost the goal text: %q", task.Reference, task.Prompt)
+		}
+		if task.Reference == "" {
+			t.Fatal("survey task has no reference label")
+		}
+	}
+}
+
+func TestPlanGoalSurveyReferencesAreDistinct(t *testing.T) {
+	seen := map[string]bool{}
+	for _, task := range PlanGoalSurvey("goal") {
+		if seen[task.Reference] {
+			t.Fatalf("duplicate survey reference %q", task.Reference)
+		}
+		seen[task.Reference] = true
 	}
 }

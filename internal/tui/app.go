@@ -694,6 +694,9 @@ func (a *App) agentSession() (*agent.Session, error) {
 		Workdir:       a.workdir,
 		Settings:      a.settings,
 		PromptOptions: promptOpts,
+		// Top-level session: explore subagents may fan out from here. A
+		// subagent sets this false so it can never fan out again.
+		AllowExplore: true,
 	})
 	if err != nil {
 		return nil, err

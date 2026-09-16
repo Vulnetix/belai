@@ -9,6 +9,7 @@ import (
 	"github.com/vulnetix/signet/internal/resilience"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/signet/internal/todos"
 )
 
 // EventKind identifies one streaming agent event.
@@ -33,6 +34,16 @@ const (
 	// UI can show a dedicated "Role Manager" indicator instead of the generic
 	// working label.
 	EventRoleManagerKind
+	// EventGoalEvalKind reports a goal-evaluator verdict at a pass boundary.
+	// It carries the sentinel and the pass number, no execution authority.
+	EventGoalEvalKind
+	// EventPassKind reports that a new goal-mode pass started. It carries the
+	// pass number and whether a forced explore ran for it.
+	EventPassKind
+	// EventTodosKind reports a change to the shared todo list (created or
+	// advanced). It carries the list; the TUI renders and persists it, the
+	// agent never touches the session store.
+	EventTodosKind
 )
 
 // Role Manager sub-phases carried by EventRoleManagerKind.
@@ -75,6 +86,19 @@ type Event struct {
 	// Phase carries the Role Manager sub-phase for EventRoleManagerKind.
 	Phase string
 
+	// GoalSentinel carries EventGoalEvalKind verdicts.
+	GoalSentinel rolemanager.GoalSentinel
+
+	// Pass carries the pass number for EventPassKind / EventGoalEvalKind.
+	Pass int
+
+	// Explored reports whether a forced explore ran for EventPassKind.
+	Explored bool
+
+	// Todos carries the goal-mode todo list when it changes, so the TUI can
+	// render and persist it without the agent touching the session store.
+	Todos *todos.List
+
 	// Err carries EventError.
 	Err error
 
@@ -112,7 +136,12 @@ func (s *Session) RunStream(ctx context.Context, history []run.Turn, in TurnInpu
 // one attempt.
 func (s *Session) streamTurnRetry(ctx context.Context, system string, turns []run.Turn, streaming bool, emit func(Event)) (run.Assistant, error) {
 	maxAttempts := s.settings.Resilience.MaxAttemptsOr(3)
-	policy := resilience.Policy{MaxAttempts: maxAttempts}
+	// A bare Policy leaves Rand and Sleep nil; this loop reads both as plain
+	// fields, so calling them unnormalised would panic on the first retry.
+	// Jitter has no non-zero default, so L2 opts into the same 0.25 as the L1
+	// transport policy — without it every session retrying one provider wakes
+	// together.
+	policy := resilience.Policy{MaxAttempts: maxAttempts, Jitter: 0.25}.WithDefaults()
 	var lastErr error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		assistant, err := s.streamTurn(ctx, system, turns, streaming, emit)

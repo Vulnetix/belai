@@ -22,7 +22,13 @@ func (s *Session) exploreTurns(ctx context.Context, decision rolemanager.ModeDec
 	if !s.allowExplore {
 		return nil
 	}
-	tasks := explore.Plan(clean, decision)
+	return s.runExploreTasks(ctx, explore.Plan(clean, decision))
+}
+
+// runExploreTasks fans the given tasks out over bounded-parallel read-only
+// subagents and returns their classified findings as user turns, in task index
+// order. It is the shared runner for initial explore and forced goal surveys.
+func (s *Session) runExploreTasks(ctx context.Context, tasks []explore.Task) []run.Turn {
 	if len(tasks) == 0 {
 		return nil
 	}
@@ -49,6 +55,17 @@ func (s *Session) exploreTurns(ctx context.Context, decision rolemanager.ModeDec
 		turns = append(turns, run.Turn{Role: "user", Content: body})
 	}
 	return turns
+}
+
+// goalSurveyTurns runs the forced codebase survey for a GOAL_NOT_STARTED
+// verdict. It uses explore.PlanGoalSurvey so the forced explore surveys the
+// repository rather than re-asking the raw prompt (a goal-mode prompt usually
+// has no @references, so the ordinary plan would just repeat it).
+func (s *Session) goalSurveyTurns(ctx context.Context, goalText string) []run.Turn {
+	if !s.allowExplore {
+		return nil
+	}
+	return s.runExploreTasks(ctx, explore.PlanGoalSurvey(goalText))
 }
 
 // runSubagent runs one read-only subagent and returns its classified, sealed

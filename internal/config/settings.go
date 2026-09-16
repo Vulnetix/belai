@@ -75,6 +75,7 @@ type UISettings struct {
 	Spinner       *bool `json:"spinner,omitempty"`
 	ShowReasoning *bool `json:"show_reasoning,omitempty"`
 	ShowToolCalls *bool `json:"show_tool_calls,omitempty"`
+	ShowTodos     *bool `json:"show_todos,omitempty"`
 	Mouse         *bool `json:"mouse,omitempty"`
 }
 
@@ -106,6 +107,9 @@ func (u *UISettings) merge(from *UISettings) {
 	if from.ShowToolCalls != nil {
 		u.ShowToolCalls = from.ShowToolCalls
 	}
+	if from.ShowTodos != nil {
+		u.ShowTodos = from.ShowTodos
+	}
 	if from.Mouse != nil {
 		u.Mouse = from.Mouse
 	}
@@ -119,6 +123,10 @@ type ResilienceSettings struct {
 	MaxAttempts int `json:"max_attempts,omitempty"`
 	// MaxIterations is the per-prompt tool-loop budget. It defaults to 10.
 	MaxIterations int `json:"max_iterations,omitempty"`
+	// MaxPasses is the goal-mode pass-loop ceiling. Zero means unbounded;
+	// the default honours that, and the setting exists for CI and for anyone
+	// who wants a hard ceiling.
+	MaxPasses int `json:"max_passes,omitempty"`
 }
 
 // MaxAttemptsOr returns MaxAttempts or the provided default.
@@ -135,6 +143,14 @@ func (r *ResilienceSettings) MaxIterationsOr(def int) int {
 		return def
 	}
 	return r.MaxIterations
+}
+
+// MaxPassesOr returns MaxPasses, or 0 (unbounded) when unset.
+func (r *ResilienceSettings) MaxPassesOr() int {
+	if r == nil {
+		return 0
+	}
+	return r.MaxPasses
 }
 
 // ColorsEnabled reports whether role colours are on. Default true.
@@ -156,6 +172,11 @@ func (s Settings) ReasoningVisible() bool {
 // ToolCallsVisible reports whether tool-call rows render. Default true.
 func (s Settings) ToolCallsVisible() bool {
 	return s.UI == nil || s.UI.ShowToolCalls == nil || *s.UI.ShowToolCalls
+}
+
+// TodosVisible reports whether the TODO panel renders. Default true.
+func (s Settings) TodosVisible() bool {
+	return s.UI == nil || s.UI.ShowTodos == nil || *s.UI.ShowTodos
 }
 
 // MouseEnabled reports whether the TUI captures the mouse. Default true.
@@ -264,6 +285,13 @@ func (s Settings) Override(proj Settings) Settings {
 				merged.MaxIterations = proj.Resilience.MaxIterations
 			} else {
 				merged.MaxIterations = min(merged.MaxIterations, proj.Resilience.MaxIterations)
+			}
+		}
+		if proj.Resilience.MaxPasses != 0 {
+			if merged.MaxPasses == 0 {
+				merged.MaxPasses = proj.Resilience.MaxPasses
+			} else {
+				merged.MaxPasses = min(merged.MaxPasses, proj.Resilience.MaxPasses)
 			}
 		}
 		out.Resilience = merged

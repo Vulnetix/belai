@@ -72,7 +72,9 @@ cd ~/code/my-project
 signet
 ```
 
-Inside the UI, `/` opens slash-command autocomplete — `/credentials` to configure providers, `/model` to pick provider/model/effort, `/settings` to edit settings, `/permissions` to edit tool rules, `/plan`, `/goal`, `/todos`, `/profile`, `/code-review`, `/compact` to summarise a long session into a new one, `/clear` (or `/new`) to start a fresh session, and `/rename` to name the session. `/help` lists everything.
+Inside the UI, `/` opens slash-command autocomplete — `/credentials` to configure providers, `/model` to pick provider/model/effort, `/settings` to edit settings, `/permissions` to edit tool rules, `/plan`, `/goal`, `/todos`, `/profile`, `/agent` to run background agents, `/code-review`, `/compact` to summarise a long session into a new one, `/clear` (or `/new`) to start a fresh session, and `/rename` to name the session. `/help` lists everything.
+
+`shift+tab` cycles the mode. **Goal mode** is the one that keeps going: instead of stopping when the tool budget runs out, an evaluator checks whether the work advanced and grants another pass while it does, tracking a todo list in a panel above the prompt. It is stopped by a stall, not a counter — press `esc` (or `ctrl+c` outside the UI) to stop it and keep the partial result. Set `resilience.max_passes` if you want a hard ceiling. The rules are in [docs/role-manager.md](docs/role-manager.md).
 
 For a single answer without the UI:
 
