@@ -1082,7 +1082,7 @@ func TestSavePromptModeEmptyPromptWarns(t *testing.T) {
 	}
 }
 
-func TestHistoryCycleBackspaceRefilters(t *testing.T) {
+func TestHistoryCycleBackspaceLeavesCycleAndEdits(t *testing.T) {
 	workdir := t.TempDir()
 	t.Setenv("SIGNET_HOME", t.TempDir())
 
@@ -1099,10 +1099,14 @@ func TestHistoryCycleBackspaceRefilters(t *testing.T) {
 		t.Fatalf("expected 'abc', got %q", a.editor.Value())
 	}
 
-	// Backspace removes last rune from query, should still match "abc".
+	// Backspace ends the browse cycle and deletes one rune of the loaded
+	// prompt — it does not re-filter and swap the composer contents.
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyBackspace})
-	if a.editor.Value() != "abc" {
-		t.Fatalf("expected 'abc' after backspace to 'ab', got %q", a.editor.Value())
+	if a.historyActive {
+		t.Fatalf("expected history cycle to exit on backspace")
+	}
+	if a.editor.Value() != "ab" {
+		t.Fatalf("editor = %q, want %q", a.editor.Value(), "ab")
 	}
 }
 
@@ -1480,5 +1484,94 @@ func TestSpinMarkHonoursSpinnerSetting(t *testing.T) {
 	a.settings.UI = &config.UISettings{Spinner: &f}
 	if got := a.spinMark(); got != "•" {
 		t.Fatalf("spinner off must render the static dot, got %q", got)
+	}
+}
+
+func TestHistoryCycleBackspaceEditsLoadedPrompt(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	st, _ := session.NewStore()
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "history item"})
+
+	a := New(Options{Workdir: workdir})
+	a.store = st
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+	if a.editor.Value() != "history item" {
+		t.Fatalf("expected history item, got %q", a.editor.Value())
+	}
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyBackspace})
+	if a.historyActive {
+		t.Fatalf("expected history cycle to exit on backspace")
+	}
+	if a.editor.Value() != "history ite" {
+		t.Fatalf("editor = %q, want %q", a.editor.Value(), "history ite")
+	}
+}
+
+func TestHistoryCycleBackspaceAfterFilterEditsLoadedPrompt(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	st, _ := session.NewStore()
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "how to deploy"})
+
+	a := New(Options{Workdir: workdir})
+	a.store = st
+	a.editor.SetValue("how")
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+	if a.editor.Value() != "how to deploy" {
+		t.Fatalf("expected how to deploy, got %q", a.editor.Value())
+	}
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyBackspace})
+	if a.historyActive {
+		t.Fatalf("expected history cycle to exit on backspace")
+	}
+	if a.editor.Value() != "how to deplo" {
+		t.Fatalf("editor = %q, want %q", a.editor.Value(), "how to deplo")
+	}
+}
+
+func TestHistoryCycleLeftArrowKeepsLoadedPrompt(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	st, _ := session.NewStore()
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "history item"})
+
+	a := New(Options{Workdir: workdir})
+	a.store = st
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyLeft})
+
+	if a.historyActive {
+		t.Fatalf("expected history cycle to exit on left arrow")
+	}
+	if a.editor.Value() != "history item" {
+		t.Fatalf("editor = %q, want history item", a.editor.Value())
+	}
+}
+
+func TestHistoryCycleEditAfterLeftArrowInsertsAtCursor(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	st, _ := session.NewStore()
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "abcd"})
+
+	a := New(Options{Workdir: workdir})
+	a.store = st
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyLeft})
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'X'}})
+
+	if a.editor.Value() != "abcXd" {
+		t.Fatalf("editor = %q, want abcXd", a.editor.Value())
 	}
 }

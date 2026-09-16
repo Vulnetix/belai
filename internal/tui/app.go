@@ -951,6 +951,12 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		}
 	}
 
+	return a.forwardToEditor(m)
+}
+
+// forwardToEditor hands a key to the composer and refreshes the state that
+// depends on its contents.
+func (a *App) forwardToEditor(m tea.KeyMsg) tea.Cmd {
 	cmd := a.editor.Update(m)
 	a.autocomplete = a.registry.Complete(a.editor.Value())
 	a.autocompleteIndex = 0
@@ -1036,19 +1042,15 @@ func (a *App) handleHistoryKey(m tea.KeyMsg) tea.Cmd {
 	switch m.Type {
 	case tea.KeyRunes:
 		a.historyQuery += string(m.Runes)
-	case tea.KeyBackspace:
-		r := []rune(a.historyQuery)
-		if len(r) > 0 {
-			a.historyQuery = string(r[:len(r)-1])
-		} else {
-			a.exitHistoryCycle(false)
-			return nil
-		}
 	case tea.KeySpace:
 		a.historyQuery += " "
 	default:
-		a.exitHistoryCycle(false)
-		return a.editor.Update(m)
+		// Any other key — backspace, cursor motion, delete — means the user is
+		// done browsing and wants to edit the prompt that was loaded. Leave the
+		// cycle with the loaded text intact and hand the key to the editor so it
+		// performs its normal edit instead of clearing the composer.
+		a.exitHistoryCycle(true)
+		return a.forwardToEditor(m)
 	}
 
 	a.historyResults = a.buildHistoryResults(a.historyQuery)
@@ -1063,6 +1065,8 @@ func (a *App) handleHistoryKey(m tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
+// exitHistoryCycle leaves the browse cycle. accept keeps whatever prompt is
+// loaded in the composer; otherwise the text from before the cycle is restored.
 func (a *App) exitHistoryCycle(accept bool) {
 	a.historyActive = false
 	if !accept {
