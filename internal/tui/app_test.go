@@ -329,9 +329,6 @@ func drainAgent(t *testing.T, a *App, cmd tea.Cmd) *App {
 			cmd = tea.Batch(cmds...)
 			continue
 		}
-		if _, ok := msg.(agentEventMsg); !ok {
-			t.Fatalf("unexpected message %T", msg)
-		}
 		m, next := a.Update(msg)
 		a = m.(*App)
 		cmd = next
@@ -1641,5 +1638,36 @@ func TestNextAgentCoalescesDeltas(t *testing.T) {
 	}
 	if e := next(); e.Kind != agent.EventDoneKind {
 		t.Fatalf("fourth = %+v, want done", e)
+	}
+}
+
+func TestHandleAgentReadyDropsCancelledBuild(t *testing.T) {
+	a := New(Options{})
+	a.ctx, a.cancel = context.WithCancel(context.Background())
+	a.cancel()
+
+	if cmd := a.handleAgentReady(agentReadyMsg{}); cmd != nil {
+		t.Fatalf("cancelled session build must be dropped, got cmd %v", cmd)
+	}
+}
+
+func TestHandleAgentReadySurfacesBuildError(t *testing.T) {
+	a := New(Options{})
+	a.ctx, a.cancel = context.WithCancel(context.Background())
+
+	if cmd := a.handleAgentReady(agentReadyMsg{err: errors.New("boom")}); cmd != nil {
+		t.Fatalf("build error should return nil cmd, got %v", cmd)
+	}
+	if a.phase != phaseIdle {
+		t.Fatalf("phase after build error = %d, want idle", a.phase)
+	}
+	found := false
+	for _, m := range a.messages {
+		if m.Role == "system" && strings.Contains(m.Text(), "boom") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected build error surfaced as system message, got %v", a.messages)
 	}
 }

@@ -65,6 +65,16 @@ type streamChunkMsg run.Chunk
 // agentEventMsg wraps one agent streaming event.
 type agentEventMsg agent.Event
 
+// agentReadyMsg carries the result of an async agent-session build. Session
+// construction can block on a nonce GET (3s deadline), so it runs on a tea.Cmd
+// goroutine instead of freezing the Update loop.
+type agentReadyMsg struct {
+	sess    *agent.Session
+	history []run.Turn
+	in      agent.TurnInput
+	err     error
+}
+
 // copiedMsg reports the result of a clipboard copy.
 type copiedMsg struct{ text string }
 
@@ -611,12 +621,6 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 		promptText = turns[n-1].Content
 		history = turns[:n-1]
 	}
-	sess, err := a.agentSession()
-	if err != nil {
-		return func() tea.Msg {
-			return agentEventMsg{Kind: agent.EventErrorKind, Err: err}
-		}
-	}
 	in := agent.TurnInput{Prompt: promptText, ForceMode: a.forceMode}
 	a.forceMode = ""
 	if a.namedAgent != "" {
@@ -637,8 +641,25 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 	}
 	a.ctx, a.cancel = context.WithCancel(context.Background())
 	a.setPhaseRoleManager(agent.RoleManagerPhasePrePrompt)
-	a.events = sess.RunStream(a.ctx, history, in)
 	a.messages = append(a.messages, components.Message{Role: "assistant"})
+
+	// A cached session starts synchronously; a cold session build (which can
+	// block on a nonce GET) is hoisted onto a tea.Cmd goroutine so the TUI
+	// keeps painting. The build reads a snapshot taken here, never live App
+	// fields, so the goroutine cannot race a config change.
+	if a.agent != nil {
+		return a.startAgent(a.agent, history, in)
+	}
+	params := a.sessionBuildParams()
+	return func() tea.Msg {
+		sess, err := buildAgentSession(params)
+		return agentReadyMsg{sess: sess, history: history, in: in, err: err}
+	}
+}
+
+// startAgent begins the streaming turn on an already-built session.
+func (a *App) startAgent(sess *agent.Session, history []run.Turn, in agent.TurnInput) tea.Cmd {
+	a.events = sess.RunStream(a.ctx, history, in)
 	return tea.Batch(a.nextAgent(), a.workSpin.Tick)
 }
 
@@ -733,6 +754,23 @@ func (a *App) handleModeClassified(m modeClassifiedMsg) tea.Cmd {
 	}
 	a.applyModeDecision(m.decision, m.err)
 	return a.sendTurn(m.firstUser, m.input, m.atts)
+}
+
+// handleAgentReady starts the streaming turn once the async session build
+// lands. A turn cancelled while the session was building is dropped: the ctx
+// was already cancelled and the phase cleared by the esc path.
+func (a *App) handleAgentReady(m agentReadyMsg) tea.Cmd {
+	if a.ctx != nil && a.ctx.Err() != nil {
+		return nil // cancelled during the build
+	}
+	if m.err != nil {
+		a.cancel = nil
+		a.endPhase()
+		a.addSystem("agent error: " + m.err.Error())
+		return nil
+	}
+	a.agent = m.sess
+	return a.startAgent(m.sess, m.history, m.in)
 }
 
 // setPhaseRoleManager marks the Role Manager as the active signal, with the
@@ -855,25 +893,48 @@ func coalesced(first agent.Event, acc string) agent.Event {
 
 // agentSession builds (or reuses) the agent session for the current
 // config/posture/permissions. It is invalidated whenever any of those change.
-func (a *App) agentSession() (*agent.Session, error) {
-	if a.agent != nil {
-		return a.agent, nil
+// sessionBuildParams is an immutable snapshot of every App field a session
+// build reads. It is captured on the Bubble Tea goroutine so the async build
+// goroutine never races a config change.
+type sessionBuildParams struct {
+	workdir  string
+	settings config.Settings
+	cfg      run.Config
+	client   *http.Client
+	posture  posture.Policy
+	planMode bool
+}
+
+func (a *App) sessionBuildParams() sessionBuildParams {
+	return sessionBuildParams{
+		workdir:  a.workdir,
+		settings: a.settings,
+		cfg:      a.cfg,
+		client:   a.client,
+		posture:  a.posture,
+		planMode: a.planMode,
 	}
-	reg := tools.Default(a.workdir, a.settings.BashReadOnlyEnabled())
-	perms := permissions.From(a.settings.Permissions.Allow, a.settings.Permissions.Ask, a.settings.Permissions.Deny)
+}
+
+// buildAgentSession constructs a top-level agent session from a snapshot. It
+// is the pure construction half of agentSession, safe to run off the Bubble
+// Tea goroutine.
+func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
+	reg := tools.Default(p.workdir, p.settings.BashReadOnlyEnabled())
+	perms := permissions.From(p.settings.Permissions.Allow, p.settings.Permissions.Ask, p.settings.Permissions.Deny)
 	var promptOpts prompt.Options
-	if a.settings.Caveman != nil && *a.settings.Caveman {
+	if p.settings.Caveman != nil && *p.settings.Caveman {
 		promptOpts.Caveman = true
 	}
-	sess, err := agent.NewSession(agent.Options{
-		Cfg:           a.cfg,
-		Client:        a.client,
+	return agent.NewSession(agent.Options{
+		Cfg:           p.cfg,
+		Client:        p.client,
 		Registry:      reg,
 		Perms:         perms,
-		Posture:       a.posture,
-		PlanMode:      a.planMode,
-		Workdir:       a.workdir,
-		Settings:      a.settings,
+		Posture:       p.posture,
+		PlanMode:      p.planMode,
+		Workdir:       p.workdir,
+		Settings:      p.settings,
 		PromptOptions: promptOpts,
 		// Top-level session: explore subagents may fan out from here. A
 		// subagent sets this false so it can never fan out again.
@@ -882,6 +943,16 @@ func (a *App) agentSession() (*agent.Session, error) {
 		// subagent never does.
 		AllowPassLoop: true,
 	})
+}
+
+// agentSession returns the cached session, building it from the live App state
+// when absent. It is the synchronous path used by callers that cannot defer to
+// a tea.Cmd (for example the /agent builder).
+func (a *App) agentSession() (*agent.Session, error) {
+	if a.agent != nil {
+		return a.agent, nil
+	}
+	sess, err := buildAgentSession(a.sessionBuildParams())
 	if err != nil {
 		return nil, err
 	}
@@ -924,6 +995,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case agentEventMsg:
 		return a, a.handleAgentEvent(m)
+
+	case agentReadyMsg:
+		return a, a.handleAgentReady(m)
 
 	case copiedMsg:
 		a.addSystem(m.text)
