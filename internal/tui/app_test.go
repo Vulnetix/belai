@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/vulnetix/signet/internal/agent"
 	"github.com/vulnetix/signet/internal/credentials"
@@ -311,8 +312,22 @@ func newAgentSSEServer(t *testing.T, finalReply string) *httptest.Server {
 
 func drainAgent(t *testing.T, a *App, cmd tea.Cmd) *App {
 	t.Helper()
-	for cmd != nil {
+	for steps := 0; cmd != nil; steps++ {
+		if steps > 10000 {
+			t.Fatalf("drainAgent did not terminate")
+		}
 		msg := cmd()
+		if batch, ok := msg.(tea.BatchMsg); ok {
+			var cmds []tea.Cmd
+			for _, c := range batch {
+				m := c()
+				mm, next := a.Update(m)
+				a = mm.(*App)
+				cmds = append(cmds, next)
+			}
+			cmd = tea.Batch(cmds...)
+			continue
+		}
 		if _, ok := msg.(agentEventMsg); !ok {
 			t.Fatalf("unexpected message %T", msg)
 		}
@@ -768,9 +783,9 @@ func TestChromeHeightMatchesRenderedView(t *testing.T) {
 	a := New(Options{})
 	a.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	a.relayout()
-	want := a.height - a.vp.Height
-	if a.chromeHeight() != want {
-		t.Fatalf("chromeHeight = %d, want %d (height=%d vp.Height=%d)", a.chromeHeight(), want, a.height, a.vp.Height)
+	rendered := lipgloss.Height(a.View())
+	if got := a.chromeHeight(); got != rendered-a.vp.Height {
+		t.Fatalf("chromeHeight = %d, want %d (rendered=%d vp.Height=%d)", got, rendered-a.vp.Height, rendered, a.vp.Height)
 	}
 }
 
@@ -1194,5 +1209,32 @@ func TestToolResultStoresContentAndSetsSuccessStatus(t *testing.T) {
 	}
 	if last.Status != "✓" {
 		t.Fatalf("tool status = %q, want ✓", last.Status)
+	}
+}
+
+func TestEnterWhileWorkingSteers(t *testing.T) {
+	a := New(Options{})
+	a.cancel = func() {}
+	a.agent = &agent.Session{}
+	a.editor.SetValue("keep going")
+
+	cmd := a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Fatalf("steering must not start a new send, got cmd %v", cmd)
+	}
+	if len(a.messages) == 0 {
+		t.Fatal("expected a steering message")
+	}
+	var found bool
+	for _, m := range a.messages {
+		if m.Role == "user" && m.Steering && m.Content == "keep going" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected steering user message, got %+v", a.messages)
+	}
+	if a.editor.Value() != "" {
+		t.Fatalf("editor should reset after steering, got %q", a.editor.Value())
 	}
 }

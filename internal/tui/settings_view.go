@@ -113,6 +113,7 @@ func (a *App) settingsRows() []settingsRow {
 	spinnerVal := boolLabel(s.SpinnerEnabled())
 	reasoningVal := boolLabel(s.ReasoningVisible())
 	toolCallsVal := boolLabel(s.ToolCallsVisible())
+	mouseVal := boolLabel(s.MouseEnabled())
 	showNamesVal := boolLabel(s.SessionNamesVisible())
 	permsVal := fmt.Sprintf("%d allow · %d ask · %d deny", len(s.Permissions.Allow), len(s.Permissions.Ask), len(s.Permissions.Deny))
 
@@ -128,6 +129,7 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "spinner", label: "spinner", kind: "toggle", value: spinnerVal, src: sourceLabel(origin["ui"])},
 		{key: "show_reasoning", label: "reasoning", kind: "toggle", value: reasoningVal, src: sourceLabel(origin["ui"])},
 		{key: "show_tool_calls", label: "tool calls", kind: "toggle", value: toolCallsVal, src: sourceLabel(origin["ui"])},
+		{key: "mouse", label: "mouse capture", kind: "toggle", value: mouseVal, src: sourceLabel(origin["ui"])},
 		{key: "show_session_names", label: "session names", kind: "toggle", value: showNamesVal, src: sourceLabel(origin["show_session_names"])},
 		{key: "permissions", label: "permissions", kind: "submenu", value: permsVal, src: sourceLabel(origin["permissions"])},
 	}
@@ -321,6 +323,11 @@ func (a *App) cycleToggle(key string) error {
 				s.UI = &config.UISettings{}
 			}
 			s.UI.ShowToolCalls = nextBool(s.UI.ShowToolCalls)
+		case "mouse":
+			if s.UI == nil {
+				s.UI = &config.UISettings{}
+			}
+			s.UI.Mouse = nextBool(s.UI.Mouse)
 		case "show_session_names":
 			s.ShowSessionNames = nextBool(s.ShowSessionNames)
 		}
@@ -378,6 +385,10 @@ func (a *App) unsetSetting(key string) error {
 		case "show_tool_calls":
 			if s.UI != nil {
 				s.UI.ShowToolCalls = nil
+			}
+		case "mouse":
+			if s.UI != nil {
+				s.UI.Mouse = nil
 			}
 		case "show_session_names":
 			s.ShowSessionNames = nil

@@ -75,6 +75,7 @@ type UISettings struct {
 	Spinner       *bool `json:"spinner,omitempty"`
 	ShowReasoning *bool `json:"show_reasoning,omitempty"`
 	ShowToolCalls *bool `json:"show_tool_calls,omitempty"`
+	Mouse         *bool `json:"mouse,omitempty"`
 }
 
 // merge folds from over u, taking any non-nil field from from. It is the
@@ -104,6 +105,9 @@ func (u *UISettings) merge(from *UISettings) {
 	}
 	if from.ShowToolCalls != nil {
 		u.ShowToolCalls = from.ShowToolCalls
+	}
+	if from.Mouse != nil {
+		u.Mouse = from.Mouse
 	}
 }
 
@@ -152,6 +156,11 @@ func (s Settings) ReasoningVisible() bool {
 // ToolCallsVisible reports whether tool-call rows render. Default true.
 func (s Settings) ToolCallsVisible() bool {
 	return s.UI == nil || s.UI.ShowToolCalls == nil || *s.UI.ShowToolCalls
+}
+
+// MouseEnabled reports whether the TUI captures the mouse. Default true.
+func (s Settings) MouseEnabled() bool {
+	return s.UI == nil || s.UI.Mouse == nil || *s.UI.Mouse
 }
 
 // SessionRetention returns the retention duration, defaulting to 28 days.

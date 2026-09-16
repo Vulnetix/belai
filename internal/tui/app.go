@@ -134,6 +134,7 @@ type App struct {
 	attachOrder  []int
 	attachSeq    int
 	attachSpin   spinner.Model
+	workSpin     spinner.Model
 	pendingInput string // prompt held while attachments validate
 
 	// view state
@@ -190,7 +191,8 @@ type App struct {
 	savePromptValue string
 
 	// layout
-	vp viewport.Model
+	vp     viewport.Model
+	follow bool // autoscroll: keep the transcript pinned to the tail
 
 	// expandAll disables truncation and shows every message in full.
 	expandAll bool
@@ -280,6 +282,8 @@ func New(opts Options) *App {
 		sessionID:   session.MustID(),
 		attachments: map[int]*attachment{},
 		attachSpin:  spinner.New(),
+		workSpin:    spinner.New(spinner.WithSpinner(spinner.MiniDot)),
+		follow:      true,
 	}
 	if a.status.Configured {
 		a.SetClassifier(run.NewClassifier(a.cfg, a.client))
@@ -418,17 +422,18 @@ func (a *App) footerHeight() int {
 }
 
 // chromeHeight is the total height consumed by everything except the viewport.
+// The "\n" written after the banner, viewport, suggestions, attach strip, and
+// composer are line terminators, not blank rows, so they cost nothing here.
 func (a *App) chromeHeight() int {
 	h := 2 // top+bottom padding from the outer lipgloss frame
 	if a.bannerVisible() {
-		h += a.bannerHeight() + 1 // separator
+		h += a.bannerHeight()
 	}
 	if len(a.autocomplete) > 0 {
 		h++
 	}
 	h += a.attachStripHeight()
 	h += a.editor.Height() + 2 // composer frame (top and bottom edges)
-	h++                        // separator before the footer
 	h += a.footerHeight()
 	return h
 }
@@ -512,7 +517,7 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 	a.ctx, a.cancel = context.WithCancel(context.Background())
 	a.events = sess.RunStream(a.ctx, history, in)
 	a.messages = append(a.messages, components.Message{Role: "assistant"})
-	return a.nextAgent()
+	return tea.Batch(a.nextAgent(), a.workSpin.Tick)
 }
 
 // submitInput finalises one user prompt, including any SAFE attachments, and
@@ -645,6 +650,24 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case shellDoneMsg:
 		return a, a.handleShellDone(m)
 
+	case tea.MouseMsg:
+		var vpCmd tea.Cmd
+		if a.view == viewChat {
+			a.vp, vpCmd = a.vp.Update(m)
+			a.follow = a.vp.AtBottom()
+		}
+		cmd := a.editor.Update(m)
+		a.autocomplete = a.registry.Complete(a.editor.Value())
+		spin, spinCmd := a.attachSpin.Update(m)
+		a.attachSpin = spin
+		workSpin, workCmd := a.workSpin.Update(m)
+		a.workSpin = workSpin
+		if !a.working() {
+			workCmd = nil
+		}
+		a.relayout()
+		return a, tea.Batch(vpCmd, cmd, spinCmd, workCmd)
+
 	case tea.KeyMsg:
 		// Global keys work on every screen.
 		switch m.String() {
@@ -678,8 +701,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	a.autocomplete = a.registry.Complete(a.editor.Value())
 	spin, spinCmd := a.attachSpin.Update(msg)
 	a.attachSpin = spin
+	workSpin, workCmd := a.workSpin.Update(msg)
+	a.workSpin = workSpin
+	if !a.working() {
+		workCmd = nil
+	}
 	a.relayout()
-	return a, tea.Batch(cmd, spinCmd)
+	return a, tea.Batch(cmd, spinCmd, workCmd)
 }
 
 func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
@@ -691,6 +719,23 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 	}
 
 	switch m.String() {
+	case "pgup", "pgdown", "shift+up", "shift+down", "ctrl+home", "ctrl+end":
+		switch m.String() {
+		case "pgup":
+			a.vp.PageUp()
+		case "pgdown":
+			a.vp.PageDown()
+		case "shift+up":
+			a.vp.ScrollUp(1)
+		case "shift+down":
+			a.vp.ScrollDown(1)
+		case "ctrl+home":
+			a.vp.GotoTop()
+		case "ctrl+end":
+			a.vp.GotoBottom()
+		}
+		a.follow = a.vp.AtBottom()
+		return nil
 	case "shift+tab":
 		a.cycleMode()
 		return nil
@@ -699,8 +744,10 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		a.messages = nil
 		return nil
 	case "ctrl+o":
-		// Toggle full output for all truncated turns and tool results.
+		// Toggle full output for all truncated turns and tool results, then
+		// re-attach to the tail so the reflow lands somewhere sensible.
 		a.expandAll = !a.expandAll
+		a.follow = true
 		return nil
 	case "esc":
 		if a.pendingInput != "" {
@@ -729,6 +776,16 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 			a.autocomplete = nil
 			a.autocompleteIndex = 0
 			return a.handleCommand(input)
+		}
+		if a.working() {
+			a.messages = append(a.messages, components.Message{Role: "user", Content: input, Steering: true})
+			if a.agent == nil || !a.agent.Steer(input) {
+				a.addSystem("steering queue full — message dropped")
+			}
+			a.editor.Reset()
+			a.autocomplete = nil
+			a.autocompleteIndex = 0
+			return nil
 		}
 		cmd := a.syncAttachments()
 		if a.hasPendingAttachments() {
@@ -983,6 +1040,13 @@ func (a *App) handleStreamChunk(m streamChunkMsg) tea.Cmd {
 func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 	switch m.Kind {
 	case agent.EventErrorKind:
+		a.cancel = nil
+		// Drop a trailing empty assistant bubble so an aborted turn does not
+		// leave a bare frame above the error row.
+		if last := len(a.messages) - 1; last >= 0 && a.messages[last].Role == "assistant" &&
+			strings.TrimSpace(a.messages[last].Content) == "" && len(a.messages[last].ToolCalls) == 0 {
+			a.messages = a.messages[:last]
+		}
 		a.addSystem("agent error: " + m.Err.Error())
 		return nil
 	case agent.EventTextKind:
@@ -990,6 +1054,12 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			a.messages = append(a.messages, components.Message{Role: "assistant"})
 		}
 		a.messages[len(a.messages)-1].Content += m.Text
+		return a.nextAgent()
+	case agent.EventReasoningKind:
+		if len(a.messages) == 0 || a.messages[len(a.messages)-1].Role != "reasoning" {
+			a.messages = append(a.messages, components.Message{Role: "reasoning"})
+		}
+		a.messages[len(a.messages)-1].Content += m.Reasoning
 		return a.nextAgent()
 	case agent.EventToolCallDeltaKind:
 		// Render-only; no execution authority. The live fragment updates the
@@ -1041,8 +1111,16 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		a.addSystem(fmt.Sprintf("retrying (%d/%d) after %s — %s", m.RetryAttempt, 10, m.RetryDelay.Round(time.Millisecond), m.RetryReason))
 		return a.nextAgent()
 	case agent.EventDoneKind:
+		a.cancel = nil
 		if len(a.messages) > 0 && a.messages[len(a.messages)-1].Role == "assistant" {
 			a.messages[len(a.messages)-1].Usage = m.Result.Usage
+		}
+		// Backfill the final reply into the trailing assistant bubble so a
+		// turn that streamed only tool calls or arrived as one final chunk is
+		// never persisted (or rendered) as an empty frame.
+		if last := len(a.messages) - 1; last >= 0 && a.messages[last].Role == "assistant" &&
+			strings.TrimSpace(a.messages[last].Content) == "" && m.Result.Reply != "" {
+			a.messages[last].Content = m.Result.Reply
 		}
 		if m.Result.Usage != nil {
 			a.usage = m.Result.Usage
@@ -1132,7 +1210,16 @@ func (a *App) View() string {
 
 func (a *App) chatView() string {
 	a.relayout()
-	a.vp.SetContent(components.MessageList{Messages: a.messages, Width: a.contentWidth(), ExpandAll: a.expandAll}.View())
+	a.vp.SetContent(components.MessageList{
+		Messages:      a.messages,
+		Width:         a.contentWidth(),
+		ExpandAll:     a.expandAll,
+		ShowReasoning: a.reasoningVisible(),
+		ShowTools:     a.toolCallsVisible(),
+	}.View())
+	if a.follow {
+		a.vp.GotoBottom()
+	}
 
 	var sb strings.Builder
 	if a.bannerVisible() {
@@ -1182,6 +1269,11 @@ func (a *App) renderComposer() string {
 	}
 	if a.historyActive {
 		meta = "↑↓ cycle · type to search · esc cancel"
+	}
+	if a.working() {
+		title = a.workSpin.View() + " working"
+		accent = lipgloss.TerminalColor(components.ColorAmber)
+		meta = "⏎ steer · esc cancel"
 	}
 	return components.Panel{
 		Title:  title,
@@ -1475,6 +1567,9 @@ func (a *App) appendAssistant(usage *transcript.Usage) {
 		return
 	}
 	content := a.messages[len(a.messages)-1].Content
+	if strings.TrimSpace(content) == "" {
+		return
+	}
 	meta := map[string]any{"model": a.cfg.Model, "provider": a.cfg.Provider}
 	if usage != nil {
 		meta["prompt_tokens"] = usage.PromptTokens
@@ -1692,6 +1787,12 @@ func nonceHex() string {
 	}
 	return hex.EncodeToString(b[:])
 }
+
+// working reports whether an agent turn is in flight. It is true from send()
+// until the turn's EventDone or EventError arrives (cancel is cleared by the
+// done/error path via the request completing), and drives the composer's
+// working state and steering submit.
+func (a *App) working() bool { return a.cancel != nil }
 
 // reasoningVisible reports whether reasoning deltas render, honouring the
 // ctrl+r session override over the resolved setting.
