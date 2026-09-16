@@ -79,6 +79,27 @@ Interactive default. Profiles (`internal/profiles`, stored under
 profile (`signet:debug`) is automatically engaged for `!cmd` inline-shell
 round-trips. User files cannot shadow a built-in name.
 
+### Tool execution
+
+Within one pass, tool calls execute in the order the model emitted them, with
+one exception: the **leading run** of calls that are each parseable,
+permission-allowed, and read-only runs concurrently, capped at 4 in flight —
+unbounded fan-out against a rate-limited provider produces 429s, which is
+worse than sequential. Anything else ends the run:
+
+- `Bash` — the sole mutating kind (there is no Edit/Write tool; all mutation
+  goes through Bash). A `Read` after a `Bash` that wrote the file must
+  observe the write, so nothing reorders across a Bash call.
+- A permission ask — two concurrent asks would race the UI, so the run stops
+  at the first one and the tail runs sequentially with the ask.
+- Malformed arguments or an unknown tool name — the call is answered
+  (withheld) in order like the sequential tail.
+
+Results match back to their transcript row by tool call id, so an
+out-of-order completion from the concurrent group lands on its own row
+rather than the newest tool row; legacy events without a call id fall back
+to the last tool row.
+
 ### Plan mode (read-only)
 
 Mirrors Pi's plan-mode extension:

@@ -58,6 +58,17 @@ When a provider does not implement the endpoint, or has it disabled, it returns
 `401` (or, for gateways that prefer it, `403`/`404`). Signet treats any of
 these as "unsupported" and falls back to its local CSPRNG pool.
 
+The unsupported answer is **negative-cached per base URL for the process
+lifetime**: a provider without the endpoint is probed at most once, so
+repeated session construction and pool invalidation never re-hit the
+401/403/404. Only the three "absent" statuses poison the cache — a `200`
+response, any other status (5xx et al.), and transport errors including the
+3-second timeout are all re-tried next time.
+
+Subagents skip the GET entirely. They discard the provider-seeded pool for a
+fresh local one immediately after construction, so they seed locally and the
+round trip is never made.
+
 ## Verification semantics
 
 Nonces fetched from this endpoint are added to the harness's nonce pool. The
