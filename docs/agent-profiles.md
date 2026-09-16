@@ -68,8 +68,60 @@ stateDiagram-v2
 | ----- | ------- |
 | `Idle` | Agent is loaded but not executing; waiting for a trigger. |
 | `Running` | Agent turn(s) are active in a goroutine. |
-| `Paused` | Agent was running and is temporarily suspended. |
-| `Done` | Agent completed its work (single turn, max iterations, or cancel). |
+| `Paused` | Agent was running and is temporarily suspended. Its goroutine is alive and blocked; its events channel stays open. |
+| `Done` | Agent completed its work (loop evaluator `STOP`, single turn finished, or cancel). |
+
+`Pause` is only valid from `Running` and `Resume` only from `Paused`; either
+call on an agent in the wrong state returns an error rather than changing it.
+The loop observes the state at its next boundary and blocks on a per-instance
+buffered resume channel, so `Pause` never waits for the model and `Resume`
+never blocks the UI. A spurious wake is harmless: the loop re-checks the state
+after waking.
+
+A paused agent is deliberately **not** marked `Done` when its goroutine's
+deferred cleanup runs — closing its events channel would make `Resume`
+impossible. Only a natural exit or an explicit stop marks it done.
+
+### Loop mode and the agent evaluator
+
+`loop` mode is not bounded by `max_iterations`; that value is the *inner*
+budget. When the inner budget is exhausted, the agent-loop evaluator is asked
+what to do next (see [role-manager.md](role-manager.md), "Agent-loop
+evaluator"): `CONTINUE` resets the inner budget, `SLEEP` waits one `schedule`
+interval and resets it, `PAUSE` suspends until `/agent resume`, and `STOP`
+ends the loop.
+
+Two safeguards bound this:
+
+- A **supervised** profile that receives `CONTINUE` is paused instead.
+  Unattended unbounded tool use is what `supervised` exists to prevent, so a
+  classifier can never grant autonomy the profile was not given.
+- A malformed or unreachable evaluator fails closed to `PAUSE` — stop spending
+  tokens, wait for the user.
+
+### Reflection
+
+When `reflection` is true, every loop turn's prompt is prefixed with an
+instruction to emit a `<thinking>` block before acting, so the agent's
+reasoning is visible in the transcript ahead of any tool call.
+
+### Per-turn output isolation
+
+`lastOutput` is reset before each turn, not only assigned on success. A turn
+ending in an error event never reaches the assignment, so without the reset the
+previous turn's reply would be carried forward and appended to `History` a
+second time. A bounded loop hid that; a restarting one compounds it every pass.
+
+### TUI commands
+
+| Command | Effect |
+| ------- | ------ |
+| `/agent start <name>` | Start the agent and stream its events into the transcript |
+| `/agent pause <name>` | Suspend a running loop-mode agent at its next boundary |
+| `/agent resume <name>` | Wake a paused agent and re-attach its event stream |
+| `/agent stop <name>` | Cancel the agent's context and close it out |
+| `/agent list` | Show every agent with its state and iteration count |
+| `/agent log <name>` | Show the agent's recent events |
 
 ## Event flow
 

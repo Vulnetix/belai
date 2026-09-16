@@ -195,3 +195,36 @@ func newMockServer(t *testing.T) *httptest.Server {
 		}
 	}))
 }
+
+// A turn that fails never reaches the EventDoneKind assignment that sets
+// lastOutput, so without a reset at the top of executeTurn the previous turn's
+// reply is carried forward and appended to History a second time.
+func TestExecuteTurnDiscardsPreviousOutputOnFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	t.Cleanup(server.Close)
+
+	m := NewManager(t.TempDir(), run.Config{
+		Provider: "openai", BaseURL: server.URL + "/v1", APIKey: "test", Model: "gpt-4",
+	}, server.Client(), config.Settings{}, posture.Defaults())
+
+	inst := &AgentInstance{
+		Profile: agentprofile.AgentProfile{
+			Name: "carry", Description: "d", SystemPrompt: "s", Mode: agentprofile.ModeSingle,
+		},
+		Events: make(chan Event, 256),
+	}
+	inst.lastOutput = "stale reply from the previous turn"
+
+	m.executeTurn(t.Context(), inst)
+
+	if got := inst.LastOutput(); got != "" {
+		t.Fatalf("lastOutput = %q, want empty after a failed turn", got)
+	}
+	for _, turn := range inst.History {
+		if strings.Contains(turn.Content, "stale reply") {
+			t.Fatalf("failed turn re-appended the previous reply: %+v", inst.History)
+		}
+	}
+}

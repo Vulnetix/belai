@@ -223,10 +223,10 @@ func NewRegistry(workdir string) *Registry {
 		return a.renameSession(arg)
 	})
 	r.Register("agent", "manage background agents", func() []string {
-		return []string{"create", "list", "start", "stop", "log"}
+		return []string{"create", "list", "start", "stop", "pause", "resume", "log"}
 	}, func(a *App, arg string) tea.Cmd {
 		if arg == "" {
-			a.addSystem("agent: subcommands: create, list, start <name>, stop <name>, log <name>")
+			a.addSystem("agent: subcommands: create, list, start <name>, stop <name>, pause <name>, resume <name>, log <name>")
 			return nil
 		}
 		sub, rest, _ := strings.Cut(arg, " ")
@@ -288,6 +288,38 @@ func NewRegistry(workdir string) *Registry {
 			}
 			a.addSystem("agent stopped: " + name)
 			return nil
+		case "pause":
+			name := strings.TrimSpace(rest)
+			if name == "" {
+				a.addSystem("agent pause <name>")
+				return nil
+			}
+			if a.bgManager == nil {
+				a.addSystem("agent: no background manager configured")
+				return nil
+			}
+			if err := a.bgManager.Pause(name); err != nil {
+				a.addSystem("agent pause: " + err.Error())
+				return nil
+			}
+			a.addSystem("agent paused: " + name)
+			return nil
+		case "resume":
+			name := strings.TrimSpace(rest)
+			if name == "" {
+				a.addSystem("agent resume <name>")
+				return nil
+			}
+			if a.bgManager == nil {
+				a.addSystem("agent: no background manager configured")
+				return nil
+			}
+			if err := a.bgManager.Resume(name); err != nil {
+				a.addSystem("agent resume: " + err.Error())
+				return nil
+			}
+			a.addSystem("agent resumed: " + name)
+			return a.watchAgentEvents(name)
 		case "log":
 			name := strings.TrimSpace(rest)
 			if name == "" {

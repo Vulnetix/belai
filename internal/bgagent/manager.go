@@ -2,6 +2,7 @@ package bgagent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/vulnetix/signet/internal/permissions"
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/prompt"
+	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/tools"
 )
@@ -56,7 +58,10 @@ type AgentInstance struct {
 	History    []run.Turn
 	iteration  int
 	lastOutput string
-	mu         sync.Mutex
+	// resume wakes a paused loop-mode agent. Buffered size 1 so Resume never
+	// blocks the UI; the loop re-checks State after waking.
+	resume chan struct{}
+	mu     sync.Mutex
 }
 
 // Manager owns a map of active background agents.
@@ -95,6 +100,7 @@ func (m *Manager) Start(name string, profile agentprofile.AgentProfile) error {
 		State:   StateIdle,
 		Events:  make(chan Event, 64),
 		Cancel:  cancel,
+		resume:  make(chan struct{}, 1),
 	}
 	m.agents[name] = inst
 	go m.runLoop(ctx, inst)
@@ -113,6 +119,48 @@ func (m *Manager) Stop(name string) error {
 	m.mu.Unlock()
 	if inst.Cancel != nil {
 		inst.Cancel()
+	}
+	return nil
+}
+
+// Pause suspends a running loop-mode agent. The loop observes the state at
+// its next boundary and blocks on the per-instance resume channel; the events
+// channel stays open so Resume can continue the same goroutine.
+func (m *Manager) Pause(name string) error {
+	m.mu.RLock()
+	inst, ok := m.agents[name]
+	m.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("agent %q not found", name)
+	}
+	inst.mu.Lock()
+	if inst.State != StateRunning {
+		inst.mu.Unlock()
+		return fmt.Errorf("agent %q is not running", name)
+	}
+	inst.State = StatePaused
+	inst.mu.Unlock()
+	return nil
+}
+
+// Resume wakes a paused loop-mode agent.
+func (m *Manager) Resume(name string) error {
+	m.mu.RLock()
+	inst, ok := m.agents[name]
+	m.mu.RUnlock()
+	if !ok {
+		return fmt.Errorf("agent %q not found", name)
+	}
+	inst.mu.Lock()
+	if inst.State != StatePaused {
+		inst.mu.Unlock()
+		return fmt.Errorf("agent %q is not paused", name)
+	}
+	inst.State = StateRunning
+	inst.mu.Unlock()
+	select {
+	case inst.resume <- struct{}{}:
+	default:
 	}
 	return nil
 }
@@ -148,7 +196,12 @@ func (m *Manager) runLoop(ctx context.Context, inst *AgentInstance) {
 	defer close(inst.Events)
 	defer func() {
 		inst.mu.Lock()
-		inst.State = StateDone
+		// A paused agent is suspended, not finished: closing its events
+		// channel would make Resume impossible. Only a natural exit or stop
+		// marks it done.
+		if inst.State != StatePaused {
+			inst.State = StateDone
+		}
 		inst.mu.Unlock()
 	}()
 	switch inst.Profile.Mode {
@@ -175,21 +228,93 @@ func (m *Manager) runLoopMode(ctx context.Context, inst *AgentInstance) {
 	if maxIter <= 0 {
 		maxIter = m.settings.Resilience.MaxIterationsOr(10)
 	}
-	for i := 0; i < maxIter; i++ {
+	classifier := run.NewClassifier(m.cfg, m.client)
+
+	inner := 0
+	for {
+		if m.blockIfPaused(ctx, inst) {
+			return
+		}
 		select {
 		case <-ctx.Done():
 			return
 		default:
 		}
+
 		inst.mu.Lock()
 		inst.State = StateRunning
-		inst.iteration = i + 1
+		inst.iteration++
 		inst.mu.Unlock()
 		m.executeTurn(ctx, inst)
+
 		select {
 		case <-ctx.Done():
 			return
 		default:
+		}
+
+		inner++
+		if inner < maxIter {
+			continue
+		}
+
+		// Exhausted the inner budget: ask the evaluator what to do next.
+		verdict, err := rolemanager.EvaluateAgent(ctx, classifier, inst.Profile.SystemPrompt, inst.LastOutput())
+		if err != nil && !errors.Is(err, rolemanager.ErrMalformedAgentEval) {
+			// A transport failure is an unknown verdict; fail safe to PAUSE
+			// rather than grant unattended compute.
+			inst.pushEvent(Event{AgentName: inst.Profile.Name, Kind: agent.EventErrorKind, Err: err})
+			verdict = rolemanager.AgentPause
+		}
+
+		switch verdict {
+		case rolemanager.AgentContinue:
+			// Autonomous mode requires an explicit opt-in. A supervised profile
+			// that says CONTINUE is paused instead: unattended unbounded tool
+			// use is exactly what supervised is meant to prevent.
+			if inst.Profile.Autonomy != agentprofile.AutonomyAutonomous {
+				verdict = rolemanager.AgentPause
+			} else {
+				inner = 0
+				continue
+			}
+			fallthrough
+		case rolemanager.AgentPause:
+			inst.mu.Lock()
+			inst.State = StatePaused
+			inst.mu.Unlock()
+			if m.blockIfPaused(ctx, inst) {
+				return
+			}
+			inner = 0
+		case rolemanager.AgentSleep:
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(parseSchedule(inst.Profile.Schedule)):
+			}
+			inner = 0
+		case rolemanager.AgentStop:
+			return
+		}
+	}
+}
+
+// blockIfPaused blocks while an agent is paused, returning true when the
+// context is cancelled. Resume sends on inst.resume to wake it; the loop then
+// re-checks State so a spurious wake never runs a paused agent.
+func (m *Manager) blockIfPaused(ctx context.Context, inst *AgentInstance) bool {
+	for {
+		inst.mu.Lock()
+		paused := inst.State == StatePaused
+		inst.mu.Unlock()
+		if !paused {
+			return false
+		}
+		select {
+		case <-ctx.Done():
+			return true
+		case <-inst.resume:
 		}
 	}
 }
@@ -253,8 +378,23 @@ func (m *Manager) executeTurn(ctx context.Context, inst *AgentInstance) {
 		inst.pushEvent(Event{AgentName: inst.Profile.Name, Kind: agent.EventErrorKind, Err: err})
 		return
 	}
+	// Reset before the turn. lastOutput is only *assigned* on EventDoneKind; a
+	// turn that ends in EventErrorKind never reaches that assignment, so
+	// without this the previous turn's reply is carried forward and appended to
+	// History a second time. A bounded loop hid it; a restarting one compounds
+	// it every pass.
+	inst.mu.Lock()
+	inst.lastOutput = ""
+	inst.mu.Unlock()
+
 	history := append([]run.Turn{}, inst.History...)
-	in := agent.TurnInput{Prompt: inst.Profile.SystemPrompt}
+	promptText := inst.Profile.SystemPrompt
+	if inst.Profile.Reflection {
+		// Reflection requests a thinking preamble on every loop turn so the
+		// agent's reasoning is visible before it acts.
+		promptText = "Before acting, emit a <thinking> block with your reasoning, then proceed.\n\n" + promptText
+	}
+	in := agent.TurnInput{Prompt: promptText}
 	ch := sess.RunStream(ctx, history, in)
 	for e := range ch {
 		inst.pushEvent(m.wrapEvent(inst.Profile.Name, e))
