@@ -3,6 +3,8 @@ package components
 import (
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestContextSegmentAnchoredFresh(t *testing.T) {
@@ -119,4 +121,116 @@ func TestBarColourThresholds(t *testing.T) {
 	if f.barColour(10) != ColorDanger {
 		t.Fatal("10% remaining should be red")
 	}
+}
+
+// TestContextBarEighthResolution pins the fill geometry: a 10-cell bar at
+// eighth-cell resolution, so partial cells use the ▏..▉ glyphs and a fraction
+// over 7/8 carries into the next cell.
+func TestContextBarEighthResolution(t *testing.T) {
+	dots := strings.Repeat("░", barWidth)
+	cases := []struct {
+		name string
+		f    Footer
+		want string
+	}{
+		{"zero", Footer{Tokens: 0, ContextLimit: 1000}, dots},
+		{"half of first cell", Footer{Tokens: 400, ContextLimit: 8000}, "▌" + strings.Repeat("░", barWidth-1)},
+		{"eighth cell", Footer{Tokens: 1000, ContextLimit: 8000}, "█▎" + strings.Repeat("░", barWidth-2)},
+		{"quarter", Footer{Tokens: 1000, ContextLimit: 4000}, "██▌" + strings.Repeat("░", barWidth-3)},
+		{"half exact", Footer{Tokens: 500, ContextLimit: 1000}, strings.Repeat("█", 5) + strings.Repeat("░", 5)},
+		{"half plus eighth", Footer{Tokens: 510, ContextLimit: 1000}, strings.Repeat("█", 5) + "▏" + strings.Repeat("░", 4)},
+		{"half cell boundary", Footer{Tokens: 550, ContextLimit: 1000}, strings.Repeat("█", 5) + "▌" + strings.Repeat("░", 4)},
+		{"carry into next cell", Footer{Tokens: 595, ContextLimit: 1000}, strings.Repeat("█", 6) + strings.Repeat("░", 4)},
+		{"small fraction", Footer{Tokens: 12400, ContextLimit: 200000}, "▋" + strings.Repeat("░", barWidth-1)},
+		{"exact full", Footer{Tokens: 1000, ContextLimit: 1000}, strings.Repeat("█", barWidth)},
+		{"over full clamps to full", Footer{Tokens: 1500, ContextLimit: 1000}, strings.Repeat("█", barWidth)},
+		{"negative tokens clamp to zero", Footer{Tokens: -5, ContextLimit: 1000}, dots},
+		{"estimated still fills", Footer{Tokens: 900, ContextLimit: 1000, Estimated: true}, strings.Repeat("█", 9) + "░"},
+		{"stale renders empty despite usage", Footer{Tokens: 900, ContextLimit: 1000, ContextStale: true}, dots},
+		{"unknown window renders empty", Footer{Tokens: 900}, dots},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.f.contextBar()
+			if len([]rune(got)) != barWidth {
+				t.Fatalf("bar = %q has %d cells, want %d", got, len([]rune(got)), barWidth)
+			}
+			if got != tc.want {
+				t.Fatalf("bar = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// The bar and the text percentage must use one colour rule. Every fresh
+// anchored footer renders its bar with the same colour the percentage uses.
+func TestBarAndPercentageShareColourRule(t *testing.T) {
+	cases := map[int]lipgloss.TerminalColor{
+		0:   ColorDanger, // window full
+		19:  ColorDanger,
+		20:  ColorAmber,
+		49:  ColorAmber,
+		50:  ColorTeal,
+		100: ColorTeal,
+	}
+	for pct, want := range cases {
+		// 1% of a 1000-token window is 10 tokens.
+		f := Footer{Tokens: 1000 - pct*10, ContextLimit: 1000}
+		got, ok := f.percentRemaining()
+		if !ok {
+			t.Fatalf("percentRemaining(pct=%d) = !ok", pct)
+		}
+		if got != pct {
+			t.Fatalf("percentRemaining(pct=%d) = %d", pct, got)
+		}
+		if c := f.barColour(got); c != want {
+			t.Fatalf("barColour(%d) = %v, want %v", pct, c, want)
+		}
+	}
+}
+
+// TestFooterHasNoCostLabel pins the removal of the cost element: no "cost"
+// text may appear anywhere in the rendered footer.
+func TestFooterHasNoCostLabel(t *testing.T) {
+	f := Footer{Session: "abcd1234", SessionName: "s", ShowName: true, Tokens: 12400, ContextLimit: 200000, Model: "gpt-5", Provider: "openai", Mode: "agent", Width: 140, Cwd: "/tmp", Branch: "main"}
+	v := f.View()
+	if strings.Contains(v, "cost") {
+		t.Fatalf("footer must not render a cost element: %q", v)
+	}
+}
+
+// TestFooterEffortRendering pins the subtle effort display: effort renders
+// muted, directly next to the model id, and only when both a model and an
+// effort value are present.
+func TestFooterEffortRendering(t *testing.T) {
+	t.Run("effort shown next to model", func(t *testing.T) {
+		f := Footer{Model: "gpt-5", Effort: "high", Provider: "openai", Mode: "agent", Width: 100}
+		v := f.View()
+		if !strings.Contains(v, "gpt-5 · high") {
+			t.Fatalf("effort should sit next to the model: %q", v)
+		}
+	})
+	t.Run("none is an explicit value and shows", func(t *testing.T) {
+		f := Footer{Model: "gpt-5", Effort: "none", Mode: "agent", Width: 100}
+		v := f.View()
+		if !strings.Contains(v, "gpt-5 · none") {
+			t.Fatalf("explicit none should render: %q", v)
+		}
+	})
+	t.Run("empty effort renders nothing", func(t *testing.T) {
+		f := Footer{Model: "gpt-5", Effort: "", Mode: "agent", Width: 100}
+		v := f.View()
+		lines := strings.Split(v, "\n")
+		line2 := lines[len(lines)-1]
+		if strings.Contains(line2, "gpt-5 ·") {
+			t.Fatalf("empty effort must not render a separator: %q", line2)
+		}
+	})
+	t.Run("effort without a model renders nothing", func(t *testing.T) {
+		f := Footer{Model: "", Effort: "high", Provider: "openai", Mode: "agent", Width: 100}
+		v := f.View()
+		if strings.Contains(v, "high") {
+			t.Fatalf("effort must not render without a model: %q", v)
+		}
+	})
 }

@@ -259,7 +259,14 @@ The footer is a two-line status bar:
 - Line 1: cwd (home collapsed to `~`) and git branch (`⎇ main`).
 - Line 2: provider·model, mode chip (colored), session (name or short id),
   context-usage progress bar and remaining percentage.
-- Truncates per segment, dropping the context bar then session before wrapping.
+- Segments are never truncated or wrapped: when the terminal is narrower
+  than the content, the padding between the mode chip and the right-hand
+  segments clamps to one cell and the line overflows instead.
+
+Effort, when set, renders subtly next to the model id in muted style
+(`gpt-5 · high`). An explicit `none` (reasoning off) is a real value and
+renders; an empty effort means the provider default and renders nothing, and
+without a configured model the effort is not shown at all.
 
 Context usage has three degraded renderings:
 - `~` prefix — pure `chars/4` estimate (no provider usage anchor yet).
@@ -267,6 +274,16 @@ Context usage has three degraded renderings:
   a `/compact` (stale), so the context bar is empty and muted.
 - a coloured bar and percentage — only when anchored and fresh; `<20%`
   remaining reads red, `<50%` remaining reads amber, otherwise teal.
+
+Progress-bar business rules: the bar is 10 cells, filled by
+`tokens / context window` clamped to [0, 1] at eighth-cell resolution
+(`▏`–`▉`), so partial cells step in 2% increments and a fraction past 7/8
+carries into the next cell. The fill shares the percentage's colour rule,
+so bar and number can never disagree. When the window is unknown or the
+usage is stale the bar is empty and muted — the harness draws no fill it
+cannot stand behind; the `(?)` in the text segment carries that state. An
+unanchored (estimated) token count still fills the bar normally; the `~`
+in the text marks it as an estimate.
 
 ### Submit flow and working indicator
 

@@ -2139,6 +2139,10 @@ func (a *App) refreshFooter() {
 	a.footer.Mode = a.mode
 	a.footer.Provider = a.cfg.Provider
 	a.footer.Model = a.cfg.Model
+	// The effective settings are the UI's canonical effort source: the model
+	// picker and settings view both write there, and refreshProvider copies
+	// the value into cfg for the agent session.
+	a.footer.Effort = a.settings.Effort
 	if a.gitOK {
 		a.footer.Branch = a.gitInfo.Branch
 		a.footer.Cwd = a.workdir

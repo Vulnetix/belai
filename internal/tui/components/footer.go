@@ -11,9 +11,14 @@ import (
 // Footer shows session, context usage (number and progress bar), model with
 // optional effort, provider, and mode status.
 type Footer struct {
-	Session  string
-	Tokens   int
-	Model    string
+	Session string
+	Tokens  int
+	Model   string
+
+	// Effort is the model's reasoning effort (e.g. "low", "medium", "high",
+	// "none"). Rendered subtly next to the model when set; empty means the
+	// provider default and renders nothing.
+	Effort   string
 	Provider string
 	Mode     string
 	Width    int
@@ -66,7 +71,13 @@ func (f *Footer) View() string {
 		parts = append(parts, MutedStyle.Render(f.Provider))
 	}
 	if f.Model != "" {
-		parts = append(parts, lipgloss.NewStyle().Foreground(ColorCream).Render(f.Model))
+		modelPart := lipgloss.NewStyle().Foreground(ColorCream).Render(f.Model)
+		if f.Effort != "" {
+			// Effort sits directly against the model in muted style: present
+			// but secondary to the model id itself.
+			modelPart += MutedStyle.Render(" · " + f.Effort)
+		}
+		parts = append(parts, modelPart)
 	}
 	rightParts := []string{}
 	rightParts = append(rightParts, MutedStyle.Render(f.sessionSegment()))
