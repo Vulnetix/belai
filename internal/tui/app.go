@@ -327,6 +327,10 @@ type App struct {
 	// downloadCh carries progress updates from the in-flight local model
 	// download started by /local-model download. nil when no download runs.
 	downloadCh chan downloadProgressMsg
+
+	// localServerStop stops the locally launched inference server, when one was
+	// started by /local-model launch. nil when no local server is managed.
+	localServerStop func() error
 }
 
 type tickMsg time.Time
@@ -1207,6 +1211,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return a, a.copyPrompt()
 		case "ctrl+d":
+			a.stopLocalServer()
 			return a, tea.Quit
 		case "ctrl+r":
 			a.reasoningOverride = nextBoolPtr(a.reasoningOverride)
@@ -2490,6 +2495,35 @@ func (a *App) handleDownloadProgress(m downloadProgressMsg) tea.Cmd {
 // formatMiB renders a byte count in MiB with one decimal.
 func formatMiB(n int64) string {
 	return fmt.Sprintf("%.1f MiB", float64(n)/(1024*1024))
+}
+
+// localModelLaunchCmd launches a local llama-server for the given HF repo and
+// health-checks it. The stop function is stored so quitting Signet tears the
+// server down.
+func (a *App) localModelLaunchCmd(repo string) tea.Cmd {
+	return func() tea.Msg {
+		bin, ok := localinfer.Detect()
+		if !ok || bin.Name != "llama-server" {
+			return localModelReportMsg{text: "launch requires the llama-server binary (llama.cpp); see https://github.com/ggerganov/llama.cpp"}
+		}
+		baseURL := "http://127.0.0.1:18080/v1"
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		defer cancel()
+		stop, err := localinfer.Launch(ctx, bin, localinfer.Args(repo, 18080), baseURL)
+		if err != nil {
+			return localModelReportMsg{text: "launch failed: " + err.Error()}
+		}
+		a.localServerStop = stop
+		return localModelReportMsg{text: fmt.Sprintf("local classifier server running at %s (set classifier.provider=ollama and OLLAMA_HOST=%s)", baseURL, baseURL)}
+	}
+}
+
+// stopLocalServer stops the managed local inference server, if any.
+func (a *App) stopLocalServer() {
+	if a.localServerStop != nil {
+		_ = a.localServerStop()
+		a.localServerStop = nil
+	}
 }
 
 func (a *App) copyPrompt() tea.Cmd {

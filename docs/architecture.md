@@ -608,6 +608,11 @@ Supporting pieces:
   `<GlobalDir>/models/`.
 - The HuggingFace token resolves as provider `huggingface` (`HF_TOKEN` /
   `HUGGINGFACE_TOKEN`) through the same credential stack as providers.
+- The TUI exposes this through `/local-model` (assess the machine and server),
+  `/local-model download <repo>` (resumable, checksummed download with live
+  progress), `/local-model launch <repo>` (launch llama-server with the default
+  args and health-check `/v1/models`), and `/local-model stop`. Quitting the TUI
+  stops a launched server.
 
 ## Performance
 

@@ -1764,3 +1764,18 @@ func TestLocalModelDownloadCommand(t *testing.T) {
 		t.Fatalf("download completion not reported; messages = %v", a.messages)
 	}
 }
+
+func TestStopLocalServer(t *testing.T) {
+	a := New(Options{})
+	a.stopLocalServer() // nil stop is a no-op
+
+	called := false
+	a.localServerStop = func() error { called = true; return nil }
+	a.stopLocalServer()
+	if !called {
+		t.Fatal("stop function not called")
+	}
+	if a.localServerStop != nil {
+		t.Fatal("stop function not cleared")
+	}
+}
