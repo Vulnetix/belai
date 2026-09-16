@@ -262,7 +262,8 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 }
 
 func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool) (run.Result, error) {
-	reg := tools.Default(workdir, settings.ReadOnlyEnabled())
+	caps := tools.DetectDefault()
+	reg := tools.DefaultWithCaps(workdir, settings.ReadOnlyEnabled(), caps)
 
 	perms := permissions.From(settings.Permissions.Allow, settings.Permissions.Ask, settings.Permissions.Deny)
 
@@ -281,6 +282,7 @@ func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *ht
 		Workdir:       workdir,
 		Settings:      settings,
 		PromptOptions: promptOpts,
+		Caps:          caps,
 		// Top-level session: explore subagents may fan out from here. A
 		// subagent sets this false so it can never fan out again.
 		AllowExplore: true,

@@ -498,7 +498,7 @@ func toolRow(msg Message, width int, expandAll bool) (string, LineMap) {
 		}
 	}
 
-	head := MutedStyle.Render("⌁ " + msg.ToolName)
+	head := toolNameStyle(msg.ToolName).Render("⌁ " + msg.ToolName)
 	plain := "⌁ " + msg.ToolName
 
 	if invocation := formatToolInvocation(msg.ToolName, msg.ToolArgs); invocation != "" {
@@ -755,11 +755,34 @@ func formatToolInvocation(name, argsJSON string) string {
 		"Glob":      {"pattern", "query"},
 		"WebSearch": {"query", "q"},
 		"WebFetch":  {"url"},
+		// Native catalogue tools: surface the most descriptive argument first.
+		"Git":     {"command"},
+		"JQ":      {"filter", "input"},
+		"YQ":      {"filter", "input"},
+		"Sed":     {"expression"},
+		"Awk":     {"program"},
+		"Cut":     {"fields"},
+		"Tr":      {"set1"},
+		"Sort":    {"path", "input"},
+		"Uniq":    {"path", "input"},
+		"WC":      {"path", "input"},
+		"Paste":   {"path", "input"},
+		"Join":    {"a"},
+		"Find":    {"name", "path"},
+		"Cat":     {"path"},
+		"Head":    {"path"},
+		"Tail":    {"path"},
+		"LS":      {"path"},
+		"File":    {"path"},
+		"Strings": {"path"},
+		"Diff":    {"a"},
+		"Cmp":     {"a"},
+		"Echo":    {"text"},
 	}
 
 	keys := keyOrder[name]
 	if len(keys) == 0 {
-		keys = []string{"command", "path", "pattern", "query", "url", "args"}
+		keys = []string{"command", "path", "pattern", "filter", "query", "url", "args"}
 	}
 	for _, k := range keys {
 		if v, ok := args[k]; ok {
@@ -775,6 +798,56 @@ func formatToolInvocation(name, argsJSON string) string {
 	}
 	return ""
 }
+
+// vendorToolColors maps cloud/SaaS tools to their vendor colour for the tool
+// row header. Purely cosmetic: it orients the user, nothing downstream reads
+// it. Local native tools fall through to the standard tool colour.
+var vendorToolColors = map[string]lipgloss.TerminalColor{
+	"AWS":         lipgloss.Color("#FF9900"),
+	"GH":          lipgloss.Color("#8957E5"),
+	"Glab":        lipgloss.Color("#FC6D26"),
+	"AZ":          lipgloss.Color("#0078D4"),
+	"GCloud":      lipgloss.Color("#4285F4"),
+	"Kubectl":     lipgloss.Color("#326CE5"),
+	"Terraform":   lipgloss.Color("#7B42BC"),
+	"Pulumi":      lipgloss.Color("#8A3391"),
+	"Heroku":      lipgloss.Color("#79589F"),
+	"Fly":         lipgloss.Color("#8B5CF6"),
+	"Netlify":     lipgloss.Color("#00C7B7"),
+	"Doctl":       lipgloss.Color("#0080FF"),
+	"Stripe":      lipgloss.Color("#635BFF"),
+	"OnePassword": lipgloss.Color("#0085FF"),
+	"Bitwarden":   lipgloss.Color("#175DDC"),
+}
+
+// toolNameStyle returns the style for a tool row's name: the vendor colour for
+// a known cloud/SaaS tool, the standard tool colour for the other native
+// catalogue tools, and the muted style for everything else (unchanged).
+func toolNameStyle(name string) lipgloss.Style {
+	if c, ok := vendorToolColors[name]; ok {
+		return lipgloss.NewStyle().Foreground(c)
+	}
+	if isNativeTool(name) {
+		return WarnStyle
+	}
+	return MutedStyle
+}
+
+// nativeToolNames is the set of first-class native tools (local + cloud). A
+// native tool gets the standard tool colour even when it has no vendor colour.
+var nativeToolNames = map[string]bool{
+	"Cat": true, "Head": true, "Tail": true, "LS": true, "Find": true,
+	"Git": true, "JQ": true, "YQ": true, "Sed": true, "Awk": true,
+	"Cut": true, "Sort": true, "Uniq": true, "WC": true, "Tr": true,
+	"Paste": true, "Join": true, "Echo": true, "Date": true, "Pwd": true,
+	"Env": true, "Diff": true, "Cmp": true, "File": true, "Strings": true,
+	"AWS": true, "GH": true, "Glab": true, "AZ": true, "GCloud": true,
+	"Kubectl": true, "Terraform": true, "Pulumi": true, "Heroku": true,
+	"Fly": true, "Vercel": true, "Netlify": true, "Doctl": true,
+	"Stripe": true, "OnePassword": true, "Bitwarden": true,
+}
+
+func isNativeTool(name string) bool { return nativeToolNames[name] }
 
 // toolResultIsError reports whether a tool result represents a failure that
 // should be highlighted in red. Bash non-zero exits are detected by the

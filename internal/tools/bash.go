@@ -394,3 +394,8 @@ func scrubbedEnv() []string {
 func BashResult(content string) Result {
 	return Result{Kind: KindBash, Content: content}
 }
+
+// NativeResult constructs a native read-only tool result.
+func NativeResult(content string) Result {
+	return Result{Kind: KindNative, Content: content}
+}
