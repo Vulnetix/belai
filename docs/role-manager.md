@@ -596,7 +596,7 @@ state.
 | `passes` | Passes run so far; reported as `Result.Passes`. |
 | `list` / `hasList` | The shared todo list (`internal/todos`). |
 | `todoChanged` | The pass that just ended moved at least one item's state. |
-| `partialStreak` | Consecutive no-progress `GOAL_PARTIAL` verdicts. A todo transition resets it to 0. |
+| `partialStreak` | Consecutive no-progress `GOAL_PARTIAL` verdicts. A todo transition resets it to 0. Reaching `goalStallPartial` (`2 × goalVerifyEvery`) injects a progression directive and resets the streak to start a new agentic evaluation loop. |
 | `verificationPasses` | Finished verification passes; gates `GOAL_COMPLETE`. |
 | `malformedStreak` | Consecutive malformed evaluator replies. A clean reply resets it. |
 | `surveyedLastPass` | The pass that just ended ran on forced-survey findings. |
@@ -623,7 +623,7 @@ be exactly one token.
 | Goal met | `GOAL_COMPLETE` **and** `verificationPasses ≥ 1` | Success; todo list marked complete; reply is the pass's last assistant text |
 | Natural exit | A pass ends with no tool calls | Success; the model's reply is returned unchanged |
 | Verification gate | `GOAL_COMPLETE` with `verificationPasses == 0` | Downgraded: arm one verification pass and continue. Harness logic — the model cannot talk its way past it |
-| Stall | `partialStreak ≥ 4` (`2 × goalVerifyEvery`) | Error: *N consecutive passes without todo progress* |
+| Progression reset | `partialStreak ≥ 4` (`2 × goalVerifyEvery`) in `GOAL_PARTIAL` or at the verification gate | A progression directive with session context is injected and `partialStreak` is reset, starting a new agentic evaluation loop; the loop does not abort for stall |
 | Unproductive pass | A pass executed no non-withheld tool result | Error: *pass N executed no tools*. Truncation repair burns iterations without doing work and must not buy another pass |
 | Broken evaluator | 2 consecutive malformed evaluator replies | Error: *N consecutive malformed evaluator replies* |
 | Evaluator transport failure | `Classify` returns an error | Terminal. An unknown verdict must not grant compute |
@@ -664,6 +664,7 @@ something it wrote or read. Three mechanisms do that together:
 | Planning | `GOAL_NOT_STARTED` — write a numbered plan under a `Plan:` header, then start step 1 |
 | Verification | An armed verification pass — re-check completed items against disk before continuing |
 | Continuation | `GOAL_PARTIAL` — continue from the rendered todo list state |
+| Progression | `partialStreak` reaches `goalStallPartial` — review session context, rendered todo list, and identify the single most concrete next step forward; reset the streak and start a new agentic evaluation loop |
 
 ### Forced survey
 
@@ -737,14 +738,16 @@ flowchart TD
     Eval -->|GOAL_NOT_STARTED| Survey[Forced survey once + planning directive]
     Survey --> Pass
     Eval -->|GOAL_PARTIAL| Stall{4 passes without progress?}
-    Stall -->|yes| StopStall[Stop: no todo progress]
+    Stall -->|yes| Progress[Progression directive + reset streak]
+    Progress --> Pass
     Stall -->|no| Verify{Every 2nd no-progress pass?}
     Verify -->|yes| VerifyPass[Verification directive]
     Verify -->|no| Continue[Continuation directive]
     VerifyPass --> Pass
     Continue --> Pass
     Eval -->|GOAL_COMPLETE| Gate{Verification pass run?}
-    Gate -->|no| VerifyPass
+    Gate -->|no| VerifyGate[Verification directive]
+    VerifyGate --> Pass
     Gate -->|yes| Done[Goal met: mark todos done, return]
 ```
 
@@ -948,7 +951,8 @@ skill-less, and agent-less for every attempt.
 | Goal-classified prompt exceeds length limit | Default agent + warning | — |
 | Goal evaluator returns malformed output | `GOAL_PARTIAL` (never completion); 2 in a row stops the loop | — |
 | Goal evaluator transport error | Stop the loop — an unknown verdict grants no compute | — |
-| `GOAL_COMPLETE` before any verification pass | Downgraded; one verification pass is forced | — |
+| `GOAL_COMPLETE` before any verification pass | Downgraded; one verification pass is forced (or progression directive if the loop has stalled) | — |
+| No todo progress for `goalStallPartial` passes | Progression directive with session context is injected; streak is reset; new agentic evaluation loop starts | — |
 | Goal pass executes no tools | Stop the loop — no evidence, no further pass | — |
 | Agent-loop evaluator malformed or unreachable | `PAUSE` — stop spending, wait for the user | — |
 | Supervised agent receives `CONTINUE` | `PAUSE` — autonomy is an explicit opt-in | — |

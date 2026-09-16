@@ -325,18 +325,80 @@ func TestGoalPassLoopHonoursMaxPassesCeiling(t *testing.T) {
 	}
 }
 
-func TestGoalPassLoopUnboundedByDefault(t *testing.T) {
-	// Without a ceiling the stall detector is what stops a stuck loop, not a
-	// pass count: four no-progress partials terminate it.
+func TestGoalPassLoopStallTriggersProgression(t *testing.T) {
+	// When the loop has not seen todo progress for goalStallPartial passes,
+	// it should inject a progression directive and start a new agentic loop
+	// instead of aborting. Without a ceiling a stuck loop would now run
+	// forever, so we use a small max-passes ceiling to prove the loop
+	// survived past the old stall boundary.
 	srv, _, _ := goalPassServer(t, goalPassOpts{eval: []string{"GOAL_PARTIAL"}})
 	defer srv.Close()
-	sess := newGoalPassSession(t, srv, true, 2)
+
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
+	sess, err := NewSession(Options{
+		Cfg:           run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"},
+		Client:        srv.Client(),
+		Registry:      tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}),
+		Posture:       posture.Defaults(),
+		AllowExplore:  true,
+		AllowPassLoop: true,
+		MaxIterations: 2,
+		Settings:      config.Settings{Resilience: &config.ResilienceSettings{MaxPasses: 5}},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
 
 	res, err := sess.Run(context.Background(), "ship the thing")
-	if err == nil || !strings.Contains(err.Error(), "without todo progress") {
-		t.Fatalf("expected stall termination, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "max passes (5) reached") {
+		t.Fatalf("expected max-pass ceiling after progression reset, got %v", err)
 	}
-	if res.Passes <= 2 {
-		t.Fatalf("Passes = %d, want more than the default ceiling would allow", res.Passes)
+	if res.Passes != 5 {
+		t.Fatalf("Passes = %d, want 5 (loop should continue past the old stall boundary)", res.Passes)
+	}
+}
+
+func TestPassLedgerProgressionDirective(t *testing.T) {
+	l := passLedger{goalText: "ship the thing"}
+	got := l.progressionDirective()
+	if !strings.Contains(got, "no todo list is tracked yet") {
+		t.Fatalf("progression directive without a list should prompt planning, got:\n%s", got)
+	}
+	if !strings.Contains(got, "progress has stalled") {
+		t.Fatalf("progression directive should mention the stall, got:\n%s", got)
+	}
+
+	l.list = todos.New("ship the thing", []string{"alpha", "beta"})
+	l.hasList = true
+	got = l.progressionDirective()
+	if !strings.Contains(got, "alpha") || !strings.Contains(got, "beta") {
+		t.Fatalf("progression directive with a list should include rendered list, got:\n%s", got)
+	}
+	if !strings.Contains(got, "[DONE:n]") {
+		t.Fatalf("progression directive should remind model to use todo markers, got:\n%s", got)
+	}
+}
+
+func TestPassLedgerNotePartialResets(t *testing.T) {
+	l := passLedger{goalText: "g"}
+	for i := 0; i < goalStallPartial-1; i++ {
+		if l.notePartial() {
+			t.Fatalf("notePartial should not trigger on iteration %d", i)
+		}
+	}
+	if !l.notePartial() {
+		t.Fatal("notePartial should trigger after goalStallPartial no-progress partials")
+	}
+	if l.partialStreak != goalStallPartial {
+		t.Fatalf("partialStreak = %d, want %d", l.partialStreak, goalStallPartial)
+	}
+	// A todo transition resets the streak.
+	l.advanceTodos("Plan:\n1. one\n2. two\n")
+	if l.notePartial() {
+		t.Fatal("notePartial should not trigger immediately after a todo transition")
+	}
+	if l.partialStreak != 0 {
+		t.Fatalf("partialStreak = %d, want 0 after reset", l.partialStreak)
 	}
 }

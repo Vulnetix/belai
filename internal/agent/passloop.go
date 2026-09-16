@@ -32,8 +32,11 @@ const (
 	// GOAL_COMPLETE is only accepted after at least one such pass ran.
 	goalVerifyEvery = 2
 	// goalStallPartial: consecutive GOAL_PARTIAL verdicts without a
-	// todo-state transition that terminate the loop. The model is busy but
-	// not advancing; two full verification cycles buy nothing.
+	// todo-state transition before the loop provides session context and
+	// resets progression tracking. The model is busy but not advancing;
+	// two full verification cycles buy nothing, so the harness injects a
+	// stronger progression directive and starts a new agentic evaluation
+	// loop rather than aborting.
 	goalStallPartial = 2 * goalVerifyEvery
 	// compactThresholdPct: compact at the pass boundary when the estimated
 	// context exceeds this share of the model window.
@@ -120,7 +123,9 @@ func (l *passLedger) advanceTodos(passAssistantText string) {
 
 // notePartial records one no-progress PARTIAL verdict for stall detection.
 // A todo-state transition resets the streak, so a progressing model can loop
-// indefinitely; a stuck one terminates.
+// indefinitely; a stuck one receives a stronger progression directive and a
+// reset of the streak, starting a new agentic evaluation loop instead of
+// aborting.
 func (l *passLedger) notePartial() bool {
 	if l.todoChanged {
 		l.partialStreak = 0
@@ -274,8 +279,12 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 
 		case rolemanager.GoalPartial:
 			if l.notePartial() {
-				return run.Result{Passes: l.passes, GoalSentinel: sentinel},
-					fmt.Errorf("goal pass loop stopped: %d consecutive passes without todo progress", l.partialStreak)
+				// Stall detected. Provide session context, reset progression
+				// tracking, and start a new agentic evaluation loop rather
+				// than aborting.
+				l.partialStreak = 0
+				turns = append(turns, directiveTurns(l.progressionDirective())...)
+				continue
 			}
 			if l.partialStreak%goalVerifyEvery == 0 {
 				// Every Nth no-progress partial pass is a verification pass.
@@ -292,8 +301,12 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 				// harness logic, not model logic — the model cannot talk its
 				// way past it. Downgrade to PARTIAL and run exactly one.
 				if l.notePartial() {
-					return run.Result{Passes: l.passes, GoalSentinel: sentinel},
-						fmt.Errorf("goal pass loop stopped: %d consecutive passes without todo progress", l.partialStreak)
+					// Stall detected even though the model claims completion.
+					// Provide session context, reset progression tracking, and
+					// start a new agentic evaluation loop rather than aborting.
+					l.partialStreak = 0
+					turns = append(turns, directiveTurns(l.progressionDirective())...)
+					continue
 				}
 				l.verificationArmed = true
 				turns = append(turns, directiveTurns(verificationDirective)...)
@@ -330,6 +343,19 @@ func (l *passLedger) partialDirective() string {
 			"\n\nMark steps complete with [DONE:n] in your reply as you finish them."
 	}
 	return "The goal is partially complete but no todo list is tracked yet. Write a planning todo list under a 'Plan:' header (numbered steps), then continue. Mark each step complete with [DONE:n] in your reply as you finish it."
+}
+
+// progressionDirective builds the directive injected when the pass loop has
+// not seen todo progress for goalStallPartial consecutive passes. It provides
+// session context and asks the model to identify the single most concrete next
+// step, creating a new agentic evaluation loop rather than aborting.
+func (l *passLedger) progressionDirective() string {
+	if l.hasList {
+		return "The goal is partially complete but progress has stalled — the todo list has not advanced for several passes. Review the conversation history above and the current todo list state, identify the single most concrete next step that will move the goal forward, and execute it. If you are blocked, state the blocker explicitly.\n\n" +
+			l.list.Render() +
+			"\n\nMark steps complete with [DONE:n] in your reply as you finish them."
+	}
+	return "The goal is partially complete but progress has stalled — no todo list is tracked yet. Review the conversation history above, write a planning todo list under a 'Plan:' header (numbered steps), then execute the first step. If you are blocked, state the blocker explicitly. Mark each step complete with [DONE:n] in your reply as you finish it."
 }
 
 // directiveTurns frames one harness continuation instruction: a user turn
