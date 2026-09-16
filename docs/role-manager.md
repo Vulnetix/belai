@@ -38,6 +38,7 @@ The architecture overview lives in [architecture.md](architecture.md).
 | Session store | `internal/session` | Append-only JSONL; TUI owns a live session; /compact forks | Live |
 | Context metering | `internal/transcript` + `internal/modelinfo` | Hybrid usage accounting with context-window registry | Live |
 | Streaming tool calls | `internal/tui` | Render tool-use deltas in the TUI stream | Live |
+| Working indicator | `internal/tui` | Role Manager activity pill plus generic working label in the Ask composer | Live |
 | File attachments | `internal/tui` | Parse `@file` references, seal SAFE contents as `<attachment>` blocks | Live |
 | Inline shell | `internal/tui` | Execute `!cmd` and round-trip output under the debug profile | Live |
 | Agent builder classifier | `internal/agentprofile` | LLM-driven profile generator with schema-validation loop and max-attempts bounding | Live |
@@ -191,6 +192,23 @@ sequenceDiagram
         A->>U: warn / refuse
     end
 ```
+
+### TUI activity signal
+
+While a prompt is in flight, the TUI Ask composer distinguishes Role Manager
+activity from generic I/O:
+
+| Activity | Signal | Status |
+| -------- | ------ | ------ |
+| Pre-prompt admission, mode selection, steering admission, tool-result classification | Filled `role manager` pill plus a sub-phase caption (`pre-prompt processing`, `classifying steering`, `classifying tool result`) | Live |
+| Model streaming, tool execution, retry back-off | Plain `working` label (amber) | Live |
+
+The user prompt is echoed to the transcript as a `user prompt` the instant
+Enter is pressed — before admission and before any provider I/O — so the
+indicator always refers to work the user cannot otherwise see. The agent
+emits `EventRoleManagerKind` with the sub-phase at every classification point;
+model and tool events drive the generic phase. `esc` in the pre-send window
+(echoed but not yet classified) cancels the turn without sending.
 
 ## Pipeline
 

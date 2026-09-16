@@ -201,7 +201,9 @@ guidance when `caveman` is on.
 `internal/tui` is a Bubble Tea app laid out Codex-style: a scrolling transcript
 viewport, Pix banner, streaming assistant/tool output, slash-command editor
 with autocomplete, `/model` provider/model/effort picker, `/settings` browser,
-`/permissions` editor, and a two-line status footer.
+`/permissions` editor, and a two-line status footer. The Ask composer doubles
+as the working indicator: it shows a Role Manager pill while classification
+runs and a generic `working` label for plain I/O (see below).
 
 ### Status bar
 
@@ -218,6 +220,36 @@ Context usage has three degraded renderings:
 - a coloured percentage — only when anchored and fresh; `≥50%` green,
   `≥20%` amber, `<20%` red.
 
+### Submit flow and working indicator
+
+Pressing Enter in the Ask prompt echoes the text into the transcript as a
+`user prompt` panel **instantly** — before mode classification and before any
+provider I/O — and the composer's top edge switches to a working state:
+
+- **Role Manager phases** (teal). While the Role Manager is classifying
+  content, a filled `role manager` pill carries a sub-phase caption:
+  *pre-prompt processing* (mode classification, prompt admission, and mode
+  selection before the first model turn), *classifying steering*, or
+  *classifying tool result*.
+- **Generic working** (amber). Plain `working` is used only for disk or
+  network I/O without a Role Manager signal: model streaming, tool execution,
+  and retry back-off.
+
+The agent emits `EventRoleManagerKind` (with the sub-phase) at every Role
+Manager classification point; model and tool events switch the composer to the
+generic phase, and done/error return it to idle. In the pre-send window — the
+prompt is echoed but classification is still running — Enter is held with a
+"still preparing" hint and `esc` cancels the turn without sending. While a
+turn is running, Enter instead queues the text as a `user steering` prompt:
+steered turns pass through the same Role Manager admission as the original
+prompt, and a full queue drops the newest message.
+
+Provider-streamed reasoning renders in a dim `reasoning` panel (toggle with
+`ctrl+r`, `ui.show_reasoning`); tool rows toggle with `ctrl+t`
+(`ui.show_tool_calls`). The transcript auto-follows the tail; scrolling up
+(mouse wheel or `pgup`/`shift+up`) detaches and returns to the bottom
+re-attach. Mouse capture is on by default (`ui.mouse`).
+
 ### Keybindings
 
 | Key | Behaviour |
@@ -225,14 +257,18 @@ Context usage has three degraded renderings:
 | `ctrl+c` | Copy the current prompt to the clipboard (native, then OSC 52) |
 | `ctrl+d` | Quit, unconditionally |
 | `shift+tab` | Cycle mode: agent → plan → goal |
-| `esc` | Close any full-screen view (nested views pop to their parent); cancels a held submit |
+| `esc` | Close any full-screen view (nested views pop to their parent); cancels a held submit or an in-flight pre-send |
 | `ctrl+l` | Clear the transcript *view* — the session is kept |
+| `ctrl+o` | Toggle full output for all truncated turns and tool results |
+| `ctrl+r` / `ctrl+t` | Toggle reasoning-panel / tool-row display for the session |
 | `ctrl+j` / `alt+enter` | Insert a newline in the prompt editor |
 | `shift+enter` | Insert a newline on terminals that support the kitty keyboard protocol |
 | `up` / `down` | Cycle prompt history and prompt library (type to filter) |
 | `alt+s` | Save the current prompt to the project prompt library |
 | `tab` | Cycle slash-command autocomplete hints |
 | `right` | Accept the first slash-command autocomplete hint |
+| `enter` (while working) | Steer the running turn with a new user message |
+| mouse wheel / `pgup` / `pgdown` / `shift+up` / `shift+down` | Scroll the transcript (detaches auto-follow) |
 
 `ctrl+l` clears the transcript view; `/clear` (or `/new`) starts a *new* session.
 They are deliberately different: one is cosmetic, the other changes what is
@@ -301,8 +337,9 @@ global `settings.json`, project `settings.json`, environment, then CLI flags.
 `/settings` shows the effective value and provenance for each key. Settings
 include `provider`, `model`, `effort`, `caveman`, `bash_readonly`,
 `permissions` (structured `allow`/`ask`/`deny`), `session_retention_days`,
-`ui.banner`, `ui.status_bar`, `show_session_names` (default on),
-`context_windows`, `providers`, and `allow_project_providers`. Permission
+`ui.banner`, `ui.status_bar`, `ui.spinner`, `ui.show_reasoning`,
+`ui.show_tool_calls`, `ui.mouse` (all default on), `show_session_names`
+(default on), `context_windows`, `providers`, and `allow_project_providers`. Permission
 rules merge by union — a project file can add rules but never remove a
 global rule. Provider profiles merge key-by-key the same way.
 
