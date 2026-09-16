@@ -1,11 +1,15 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"github.com/alecthomas/chroma/v2/lexers"
 )
 
 // Read is the file-read tool.
@@ -119,5 +123,22 @@ func (r *Read) Execute(ctx context.Context, args map[string]any) (Result, error)
 		}
 	}
 
-	return ReadResult(string(buf[:n])), nil
+	// Compute start_line for partial reads so the TUI can number them.
+	startLine := 1
+	if offset > 0 && offset <= 1024*1024 {
+		prefix := make([]byte, offset)
+		if pn, err := f.ReadAt(prefix, 0); err == nil || err == io.EOF || err == io.ErrUnexpectedEOF {
+			startLine = bytes.Count(prefix[:pn], []byte{'\n'}) + 1
+		}
+	}
+
+	meta := map[string]any{"path": rel}
+	if startLine > 1 {
+		meta["start_line"] = startLine
+	}
+	if l := lexers.Match(filepath.Base(rel)); l != nil {
+		meta["lang"] = l.Config().Name
+	}
+
+	return ReadResultMeta(string(buf[:n]), meta), nil
 }

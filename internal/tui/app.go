@@ -1719,6 +1719,19 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			}
 		}
 		return a.nextAgent()
+	case agent.EventToolMetaKind:
+		a.setPhaseWorking()
+		// Render-only metadata (e.g. Read start_line) that the TUI needs for
+		// line numbering but never enters the conversation.
+		if m.ToolCallID != "" && len(m.Meta) > 0 {
+			for i := len(a.messages) - 1; i >= 0; i-- {
+				if a.messages[i].Role == "tool" && a.messages[i].ToolCallID == m.ToolCallID {
+					a.messages[i].Meta = m.Meta
+					break
+				}
+			}
+		}
+		return a.nextAgent()
 	case agent.EventToolProgressKind:
 		a.setPhaseWorking()
 		// Render-only: the live tail never enters a.messages' content and so

@@ -195,7 +195,7 @@ func TestToolRowReadPreviewIsHeadAnchored(t *testing.T) {
 // TestReadRowOmitsNumbersOnPartialRead: Read's offset is a byte count, so a
 // partial read gives no way to know which line it landed on. Numbering it
 // anyway would print confident, wrong line numbers.
-func TestReadRowOmitsNumbersOnPartialRead(t *testing.T) {
+func TestReadRowOmitsNumbersOnPartialReadWithoutMeta(t *testing.T) {
 	msg := Message{
 		Role:     "tool",
 		ToolName: "Read",
@@ -206,11 +206,33 @@ func TestReadRowOmitsNumbersOnPartialRead(t *testing.T) {
 	out, _ := toolRow(msg, 80, true)
 	for _, line := range strings.Split(out, "\n")[1:] {
 		if strings.HasPrefix(strings.TrimLeft(line, " "), "1 ") {
-			t.Fatalf("partial read must not be numbered:\n%s", out)
+			t.Fatalf("partial read without meta must not be numbered:\n%s", out)
 		}
 	}
 	if !strings.Contains(out, "one") {
 		t.Fatalf("content missing:\n%s", out)
+	}
+}
+
+func TestReadRowNumbersPartialReadWithMetaStartLine(t *testing.T) {
+	msg := Message{
+		Role:     "tool",
+		ToolName: "Read",
+		ToolArgs: `{"path":"main.go","offset":4096}`,
+		Content:  "one\ntwo\nthree",
+		Status:   "✓",
+		Meta:     map[string]any{"start_line": 42},
+	}
+	out, _ := toolRow(msg, 80, true)
+	plain := ansi.Strip(out)
+	if !strings.Contains(plain, "42 one") {
+		t.Fatalf("expected line 42 to be numbered:\n%s", plain)
+	}
+	if !strings.Contains(plain, "43 two") {
+		t.Fatalf("expected line 43 to be numbered:\n%s", plain)
+	}
+	if !strings.Contains(plain, "44 three") {
+		t.Fatalf("expected line 44 to be numbered:\n%s", plain)
 	}
 }
 

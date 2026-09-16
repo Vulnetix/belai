@@ -82,6 +82,10 @@ type Message struct {
 	progress  []string
 	progressN int
 
+	// Meta carries render-only metadata emitted by the tool (e.g. Read's
+	// start_line). It never enters the conversation and keys the render cache.
+	Meta map[string]any
+
 	// rc memoises the last rendered text and line map for this message. The
 	// key covers every field that affects the render, so any change (a
 	// streaming tail, an appended tool call, a new status, a width change)
@@ -113,6 +117,9 @@ type renderKey struct {
 	// diffSeq changes when a diff is attached, which happens after the row has
 	// already been rendered once.
 	diffSeq int
+	// metaLen changes when Meta is attached, so a late-arriving start_line
+	// causes a re-render.
+	metaLen int
 }
 
 // renderCache is the memoised render of one message.
@@ -144,6 +151,7 @@ func renderKeyFor(m *Message, width int, expandAll bool) renderKey {
 		toolCallsN: len(m.ToolCalls),
 		started:    running,
 		diffSeq:    m.diffSeq,
+		metaLen:    len(m.Meta),
 	}
 }
 

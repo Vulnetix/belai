@@ -64,6 +64,11 @@ func ReadResult(content string) Result {
 	return Result{Kind: KindRead, Content: content}
 }
 
+// ReadResultMeta constructs a Read tool result with attached metadata.
+func ReadResultMeta(content string, meta map[string]any) Result {
+	return Result{Kind: KindRead, Content: content, Meta: meta}
+}
+
 // WebFetchResult constructs an untrusted WebFetch tool result.
 func WebFetchResult(content string) Result {
 	return Result{Kind: KindWebFetch, Content: content}

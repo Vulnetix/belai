@@ -59,6 +59,11 @@ const (
 	// is superseded by the EventToolResult that follows. A tool that produces
 	// no progress emits none, and a consumer may ignore the kind entirely.
 	EventToolProgressKind
+	// EventToolMetaKind carries metadata from a tool result, keyed by
+	// ToolCallID. Render-only: it never enters the conversation and never
+	// reaches a model. Currently used by Read to communicate start_line so
+	// partial reads can be numbered correctly.
+	EventToolMetaKind
 )
 
 // Role Manager sub-phases carried by EventRoleManagerKind.
@@ -101,6 +106,9 @@ type Event struct {
 	// Diff carries what a mutating tool changed, on EventToolDiffKind.
 	// Render-only.
 	Diff *filediff.Change
+
+	// Meta carries tool metadata on EventToolMetaKind. Render-only.
+	Meta map[string]any
 
 	// AskName / AskSubject carry EventPermissionAsk.
 	AskName    string

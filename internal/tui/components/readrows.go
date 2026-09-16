@@ -51,16 +51,22 @@ func readArgs(argsJSON string) (path string, offset int) {
 // output would be content: it would cost tokens on every replay of the
 // transcript, and it would end up in every copy.
 //
-// The consequence is that numbering is only correct when the read started at
-// the beginning of the file. A partial read gets no numbers, because the byte
-// offset does not tell us which line it landed on, and a wrong number is worse
-// than none.
+// Numbering is correct when the read started at the beginning of the file
+// (offset == 0). For partial reads the tool emits Meta["start_line"], which
+// this function uses so the visible lines are still numbered correctly.
+// Without that metadata a partial read is left unnumbered rather than numbered
+// wrongly.
 //
 // Syntax highlighting is applied only when the row is expanded. Collapsed, a
 // Read row is three lines, and colour there would compete with the diff and
 // status colours that actually carry meaning.
 func readToolRow(msg Message, width int, expand bool) (string, LineMap) {
 	path, offset := readArgs(msg.ToolArgs)
+	if path == "" && msg.Meta != nil {
+		if p, ok := msg.Meta["path"].(string); ok {
+			path = p
+		}
+	}
 
 	// Tabs are expanded before anything measures, highlights or slices the
 	// text. Seg text is tab-free by construction, so expanding later would be
@@ -85,11 +91,24 @@ func readToolRow(msg Message, width int, expand bool) (string, LineMap) {
 	icol := visibleLen(indent)
 	inner := max(width-icol, 8)
 
+	startLine := 1
+	hasStartLine := false
+	if msg.Meta != nil {
+		if sl, ok := msg.Meta["start_line"].(int); ok && sl > 0 {
+			startLine = sl
+			hasStartLine = true
+		} else if sl, ok := msg.Meta["start_line"].(float64); ok && sl > 0 {
+			startLine = int(sl)
+			hasStartLine = true
+		}
+	}
+
 	// The gutter is sized for the whole file, not the visible slice, so the
 	// body does not shift sideways when the row is expanded.
 	gutter := 0
-	if offset == 0 && inner >= readGutterMinInner {
-		gutter = min(len(strconv.Itoa(len(lines))), readGutterMaxDigits) + 1
+	if (offset == 0 || hasStartLine) && inner >= readGutterMinInner {
+		maxLine := startLine + len(lines) - 1
+		gutter = min(len(strconv.Itoa(maxLine)), readGutterMaxDigits) + 1
 	}
 
 	var segs [][]Seg
@@ -101,7 +120,7 @@ func readToolRow(msg Message, width int, expand bool) (string, LineMap) {
 	for i, line := range shown {
 		r := Row{Gutter: icol + gutter, Segs: []Seg{NewSeg(indent, nil)}}
 		if gutter > 0 {
-			num := strconv.Itoa(i + 1)
+			num := strconv.Itoa(startLine + i)
 			if len(num) > gutter-1 {
 				num = strings.Repeat("›", gutter-1)
 			}

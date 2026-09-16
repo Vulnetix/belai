@@ -1060,3 +1060,61 @@ func TestConcurrentReadOnlyToolsPreserveOrder(t *testing.T) {
 		}
 	}
 }
+
+func TestRunEmitsToolMetaForRead(t *testing.T) {
+	root := t.TempDir()
+	content := "line1\nline2\nline3\n"
+	_ = os.WriteFile(filepath.Join(root, "data.txt"), []byte(content), 0o600)
+
+	srv := mockSecurityServer("Read", `{"path":"data.txt","offset":6}`, "done")
+	defer srv.Close()
+
+	cfg := run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"}
+	reg := tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024})
+	sess, err := NewSession(Options{
+		Cfg:      cfg,
+		Client:   srv.Client(),
+		Registry: reg,
+		Posture:  posture.Defaults(),
+		Workdir:  root,
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	var events []Event
+	_, err = sess.run(context.Background(), nil, TurnInput{Prompt: "read partial"}, false, func(e Event) {
+		events = append(events, e)
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	var metaEvent *Event
+	for i := range events {
+		if events[i].Kind == EventToolMetaKind {
+			metaEvent = &events[i]
+			break
+		}
+	}
+	if metaEvent == nil {
+		t.Fatal("expected EventToolMetaKind")
+	}
+	if metaEvent.ToolName != "Read" {
+		t.Fatalf("tool name = %q", metaEvent.ToolName)
+	}
+	if metaEvent.Meta == nil {
+		t.Fatal("expected Meta")
+	}
+	if metaEvent.Meta["path"] != "data.txt" {
+		t.Fatalf("path = %q", metaEvent.Meta["path"])
+	}
+	sl, ok := metaEvent.Meta["start_line"].(int)
+	if !ok {
+		t.Fatalf("start_line type = %T", metaEvent.Meta["start_line"])
+	}
+	// offset 6 lands in "line2\n" (bytes 0-5 = line1\n, 6-11 = line2\n)
+	if sl != 2 {
+		t.Fatalf("start_line = %d, want 2", sl)
+	}
+}

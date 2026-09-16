@@ -540,6 +540,12 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 		return fmt.Sprintf("tool result withheld: execution error for %q: %v", call.Name, err)
 	}
 
+	// Render-only metadata (e.g. Read start_line) that does not enter the
+	// conversation but the TUI needs for line numbering.
+	if len(res.Meta) > 0 {
+		emit(Event{Kind: EventToolMetaKind, ToolName: call.Name, ToolCallID: call.ID, Meta: res.Meta})
+	}
+
 	if s.posture.Level(posture.ToolResultUnsafe) == posture.Ignore {
 		return delimiters.Egress(res.Content, s.pool)
 	}
