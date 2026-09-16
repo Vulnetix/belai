@@ -63,7 +63,12 @@ type Session struct {
 	hooks          []*hooks.Hook
 	hookRunner     *hooks.Runner
 	toolMethod     run.ToolMethod
+	steer          chan string
 }
+
+// steerBuffer is the steering queue capacity. A full queue drops the newest
+// message rather than stalling the UI or the loop.
+const steerBuffer = 8
 
 // NewSession builds a session from options.
 func NewSession(o Options) (*Session, error) {
@@ -125,6 +130,7 @@ func NewSession(o Options) (*Session, error) {
 		hooks:          hs,
 		hookRunner:     runner,
 		toolMethod:     method,
+		steer:          make(chan string, steerBuffer),
 	}, nil
 }
 
@@ -219,6 +225,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	turns = append(turns, run.Turn{Role: "user", Content: clean, Attachments: in.Attachments})
 
 	for i := 0; i < s.maxIter; i++ {
+		turns = append(turns, s.drainSteer(ctx, pipe, emit)...)
 		assistant, err := s.streamTurnRetry(ctx, system, turns, streaming, emit)
 		if err != nil {
 			return run.Result{SanitizedPrompt: clean, SecuritySentinel: dec.Sentinel, ModeDecision: modeDec}, err
@@ -303,6 +310,49 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 
 // PlanMode reports whether the session runs with plan-mode tool restrictions.
 func (s *Session) PlanMode() bool { return s.planMode }
+
+// Steer queues an extra user turn for the next loop iteration. It returns
+// false when the queue is full, in which case the caller drops the message
+// rather than blocking the UI. Empty steering is rejected.
+func (s *Session) Steer(text string) bool {
+	if strings.TrimSpace(text) == "" {
+		return false
+	}
+	select {
+	case s.steer <- text:
+		return true
+	default:
+		return false
+	}
+}
+
+// drainSteer non-blockingly pulls every queued steered turn and runs each
+// through the same admission path as the original prompt (sanitize then
+// Admit). Steering is user input entering a running loop, so it must not
+// bypass the Role Manager. Refused or malformed items are dropped and emit an
+// EventErrorKind carrying the refusal so the TUI can explain why. Accepted
+// items become plain user turns, matching how the initial prompt is appended.
+func (s *Session) drainSteer(ctx context.Context, pipe *rolemanager.Pipeline, emit func(Event)) []run.Turn {
+	var out []run.Turn
+	for {
+		select {
+		case text := <-s.steer:
+			clean := sanitize.Sanitize(text)
+			dec, err := pipe.Admit(ctx, clean, s.posture)
+			if err != nil {
+				emit(Event{Kind: EventErrorKind, Err: err})
+				continue
+			}
+			if dec.Action != rolemanager.ActionProceed {
+				emit(Event{Kind: EventErrorKind, Err: &rolemanager.RefusalError{Sentinel: dec.Sentinel}})
+				continue
+			}
+			out = append(out, run.Turn{Role: "user", Content: clean})
+		default:
+			return out
+		}
+	}
+}
 
 // ToolMethod returns the session's tool calling method.
 func (s *Session) ToolMethod() run.ToolMethod { return s.toolMethod }

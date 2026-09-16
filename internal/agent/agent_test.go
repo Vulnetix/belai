@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/vulnetix/signet/internal/modes"
@@ -550,5 +551,147 @@ func TestMaybeCompactOverflow(t *testing.T) {
 	}
 	if err := maybeCompact(nil); err != nil {
 		t.Fatalf("expected nil")
+	}
+}
+
+func TestSteerQueueFullReturnsFalse(t *testing.T) {
+	sess := &Session{steer: make(chan string, steerBuffer)}
+	for i := 0; i < steerBuffer; i++ {
+		if !sess.Steer(fmt.Sprintf("turn %d", i)) {
+			t.Fatalf("Steer %d should succeed", i)
+		}
+	}
+	if sess.Steer("overflow") {
+		t.Fatal("Steer on a full queue should return false without blocking")
+	}
+	if sess.Steer("   ") {
+		t.Fatal("Steer of blank text should be rejected")
+	}
+}
+
+func TestDrainSteerAdmitsAndRefuses(t *testing.T) {
+	classifier := rolemanager.ClassifierFunc(func(_ context.Context, p rolemanager.ClassifierPayload) (string, error) {
+		if strings.Contains(p.User, "bad") {
+			return "PROMPT_INJECTION", nil
+		}
+		return "SAFE", nil
+	})
+	pipe := rolemanager.NewPipeline(classifier)
+	sess := &Session{steer: make(chan string, steerBuffer), posture: posture.Defaults()}
+	sess.Steer("good turn")
+	sess.Steer("bad turn")
+
+	var errCount int
+	turns := sess.drainSteer(context.Background(), pipe, func(e Event) {
+		if e.Kind == EventErrorKind {
+			errCount++
+			if _, ok := e.Err.(*rolemanager.RefusalError); !ok {
+				t.Fatalf("expected RefusalError, got %T", e.Err)
+			}
+		}
+	})
+	if errCount != 1 {
+		t.Fatalf("expected 1 refusal event, got %d", errCount)
+	}
+	if len(turns) != 1 || turns[0].Role != "user" || turns[0].Content != "good turn" {
+		t.Fatalf("turns = %+v", turns)
+	}
+}
+
+func TestSteerReachesNextIteration(t *testing.T) {
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
+
+	var mu sync.Mutex
+	providerCalls := 0
+	var secondCallUserContents []string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var req struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		var system string
+		for _, m := range req.Messages {
+			if m.Role == "system" {
+				system = m.Content
+			}
+		}
+		switch {
+		case strings.Contains(system, "security classifier"):
+			writeChatJSON(w, "SAFE")
+		case strings.Contains(system, "operating-mode classifier"):
+			writeChatJSON(w, "AGENT")
+		default:
+			mu.Lock()
+			providerCalls++
+			call := providerCalls
+			if call == 2 {
+				for _, m := range req.Messages {
+					if m.Role == "user" {
+						secondCallUserContents = append(secondCallUserContents, m.Content)
+					}
+				}
+			}
+			mu.Unlock()
+			if call == 1 {
+				writeToolCallJSON(w, "Read", `{"path":"f.txt"}`)
+			} else {
+				writeChatJSON(w, "done")
+			}
+		}
+	}))
+	defer srv.Close()
+
+	cfg := run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"}
+	sess, err := NewSession(Options{
+		Cfg:           cfg,
+		Client:        srv.Client(),
+		Registry:      tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}),
+		Posture:       posture.Defaults(),
+		MaxIterations: 4,
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	steered := false
+	emit := func(e Event) {
+		if e.Kind == EventToolStartKind && !steered {
+			steered = true
+			if !sess.Steer("more detail") {
+				t.Fatalf("Steer should succeed mid-loop")
+			}
+		}
+	}
+
+	res, err := sess.run(context.Background(), nil, TurnInput{Prompt: "read the file"}, false, emit)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if res.Reply != "done" {
+		t.Fatalf("expected final reply 'done', got %q", res.Reply)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if providerCalls != 2 {
+		t.Fatalf("expected 2 provider turns, got %d", providerCalls)
+	}
+	found := false
+	for _, c := range secondCallUserContents {
+		if strings.Contains(c, "more detail") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("steered turn not present in iteration 2; user contents = %q", secondCallUserContents)
 	}
 }

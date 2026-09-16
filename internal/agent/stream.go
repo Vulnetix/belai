@@ -22,6 +22,9 @@ const (
 	EventPermissionAskKind
 	EventDoneKind
 	EventErrorKind
+	// EventReasoningKind carries a streamed reasoning delta (chain-of-thought
+	// or thinking blocks) for rendering in a dim, toggleable panel.
+	EventReasoningKind
 	// EventRetryKind is emitted before each L2 turn retry. It carries the
 	// retry attempt number and delay, but no execution authority.
 	EventRetryKind
@@ -34,6 +37,9 @@ type Event struct {
 
 	// Text carries EventText deltas.
 	Text string
+
+	// Reasoning carries EventReasoning deltas.
+	Reasoning string
 
 	// ToolDelta carries render-only tool-call fragments (EventToolCallDelta).
 	ToolDelta *run.ToolCallDelta
@@ -156,6 +162,9 @@ func (s *Session) streamTurn(ctx context.Context, system string, turns []run.Tur
 		if c.Text != "" {
 			text += c.Text
 			emit(Event{Kind: EventTextKind, Text: c.Text})
+		}
+		if c.Reasoning != "" {
+			emit(Event{Kind: EventReasoningKind, Reasoning: c.Reasoning})
 		}
 		if c.ToolCall != nil {
 			emit(Event{Kind: EventToolCallDeltaKind, ToolDelta: c.ToolCall})
