@@ -181,13 +181,61 @@ func TestToolRowReadPreviewIsHeadAnchored(t *testing.T) {
 	if len(lines) != 4 {
 		t.Fatalf("want header + 3 head lines, got %d:\n%s", len(lines), out)
 	}
-	for i, want := range []string{"one", "two"} {
+	// Read rows are numbered source, so each line carries its file line number.
+	for i, want := range []string{"1 one", "2 two"} {
 		if strings.TrimSpace(lines[1+i]) != want {
 			t.Fatalf("line %d = %q, want %q:\n%s", 1+i, lines[1+i], want, out)
 		}
 	}
 	if !strings.Contains(lines[3], "2 more lines") {
 		t.Fatalf("want the hint on the last shown line, got:\n%s", out)
+	}
+}
+
+// TestReadRowOmitsNumbersOnPartialRead: Read's offset is a byte count, so a
+// partial read gives no way to know which line it landed on. Numbering it
+// anyway would print confident, wrong line numbers.
+func TestReadRowOmitsNumbersOnPartialRead(t *testing.T) {
+	msg := Message{
+		Role:     "tool",
+		ToolName: "Read",
+		ToolArgs: `{"path":"main.go","offset":4096}`,
+		Content:  "one\ntwo\nthree",
+		Status:   "✓",
+	}
+	out, _ := toolRow(msg, 80, true)
+	for _, line := range strings.Split(out, "\n")[1:] {
+		if strings.HasPrefix(strings.TrimLeft(line, " "), "1 ") {
+			t.Fatalf("partial read must not be numbered:\n%s", out)
+		}
+	}
+	if !strings.Contains(out, "one") {
+		t.Fatalf("content missing:\n%s", out)
+	}
+}
+
+// TestReadRowGutterIsStableAcrossExpansion: the gutter is sized for the whole
+// file, so expanding a row must not shift the code sideways.
+func TestReadRowGutterIsStableAcrossExpansion(t *testing.T) {
+	var b strings.Builder
+	for i := 1; i <= 120; i++ {
+		b.WriteString("line\n")
+	}
+	msg := Message{
+		Role: "tool", ToolName: "Read", ToolArgs: `{"path":"main.go"}`,
+		Content: strings.TrimRight(b.String(), "\n"), Status: "✓",
+	}
+
+	collapsed, _ := toolRow(msg, 80, false)
+	expanded, _ := toolRow(msg, 80, true)
+
+	col := func(out string) int {
+		line := strings.Split(out, "\n")[1]
+		return strings.Index(line, "line")
+	}
+	if col(collapsed) != col(expanded) {
+		t.Fatalf("code column moved on expand: %d then %d\n%s\n---\n%s",
+			col(collapsed), col(expanded), collapsed, expanded)
 	}
 }
 

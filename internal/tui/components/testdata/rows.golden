@@ -1,21 +1,21 @@
 === tool_short w=32
 ⌁ Read  internal/tui/app.go    ✓
-  package tui
+  1 package tui
 === tool_short w=41
 ⌁ Read  internal/tui/app.go             ✓
-  package tui
+  1 package tui
 === tool_short w=53
 ⌁ Read  internal/tui/app.go                         ✓
-  package tui
+  1 package tui
 === tool_short w=60
 ⌁ Read  internal/tui/app.go                                ✓
-  package tui
+  1 package tui
 === tool_short w=80
 ⌁ Read  internal/tui/app.go                                                    ✓
-  package tui
+  1 package tui
 === tool_short w=120
 ⌁ Read  internal/tui/app.go                                                                                            ✓
-  package tui
+  1 package tui
 === tool_wrapping w=32
 ⌁ Bash  go build ./...         ✓
   a single very long line of

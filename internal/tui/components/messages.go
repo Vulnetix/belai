@@ -508,6 +508,13 @@ func toolRow(msg Message, width int, expandAll bool) (string, LineMap) {
 		return statusLine + "\n" + rendered, append(lm, contentLm...)
 	}
 
+	// Read results are source, not prose: they get line numbers, and syntax
+	// colours once expanded.
+	if msg.ToolName == "Read" && !isErr {
+		rendered, contentLm := readToolRow(msg, width, expand)
+		return statusLine + "\n" + rendered, append(lm, contentLm...)
+	}
+
 	preview, trunc := previewOf(content, msg.ToolName, expand)
 	rendered, contentLm := renderToolContent(preview, width, isErr, trunc)
 	return statusLine + "\n" + rendered, append(lm, contentLm...)
