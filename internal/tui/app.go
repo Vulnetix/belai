@@ -26,6 +26,8 @@ import (
 	"github.com/vulnetix/signet/internal/credentials"
 	"github.com/vulnetix/signet/internal/gitinfo"
 	"github.com/vulnetix/signet/internal/httpclient"
+	"github.com/vulnetix/signet/internal/localinfer"
+	"github.com/vulnetix/signet/internal/machineprobe"
 	"github.com/vulnetix/signet/internal/modelinfo"
 	"github.com/vulnetix/signet/internal/models"
 	"github.com/vulnetix/signet/internal/modes"
@@ -137,6 +139,10 @@ type gitInfoMsg struct {
 	info gitinfo.Info
 	ok   bool
 }
+
+// localModelReportMsg carries the result of the /local-model machine and
+// server assessment, rendered as a system notice.
+type localModelReportMsg struct{ text string }
 
 const (
 	editorMinHeight = 3
@@ -1088,6 +1094,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.refreshFooter()
 		return a, nil
 
+	case localModelReportMsg:
+		a.addSystem(m.text)
+		return a, nil
+
 	case codeReviewDoneMsg:
 		return a, a.handleCodeReviewDone(m)
 
@@ -1674,6 +1684,19 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			ToolCallID: m.Tool.ID,
 			StartedAt:  time.Now(),
 		})
+		return a.nextAgent()
+	case agent.EventToolDiffKind:
+		a.setPhaseWorking()
+		// Render-only, like progress: observed around the tool rather than
+		// returned by it, and never part of the transcript sent to a model.
+		if m.ToolCallID != "" && m.Diff != nil {
+			for i := len(a.messages) - 1; i >= 0; i-- {
+				if a.messages[i].Role == "tool" && a.messages[i].ToolCallID == m.ToolCallID {
+					a.messages[i].SetDiff(m.Diff)
+					break
+				}
+			}
+		}
 		return a.nextAgent()
 	case agent.EventToolProgressKind:
 		a.setPhaseWorking()
@@ -2336,6 +2359,48 @@ func (a *App) applyGitInfo(info gitinfo.Info, ok bool) {
 	if !a.gitOK {
 		a.gitOK = true
 		a.footerW = -1
+	}
+}
+
+// localModelReportCmd runs the machine probe and server detection off the
+// render goroutine and returns a plain-language report. It is the
+// /local-model command body.
+func (a *App) localModelReportCmd() tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+
+		rep := machineprobe.Probe(ctx)
+		bin, haveBin := localinfer.Detect()
+		running := localinfer.ProbeRunning(ctx, localBases())
+
+		var b strings.Builder
+		if running != "" {
+			fmt.Fprintf(&b, "local inference server running at %s\n", running)
+		} else if haveBin {
+			fmt.Fprintf(&b, "local server binary found: %s (%s)\n", bin.Path, bin.Name)
+		} else {
+			b.WriteString("no local inference server found (llama-server, ollama, or vllm)\n")
+		}
+		fmt.Fprintf(&b, "machine: %d CPUs, %d MiB RAM (%d free), %d MiB disk free\n",
+			rep.CPUs, rep.RAMTotalMiB, rep.RAMFreeMiB, rep.DiskFreeMiB)
+		for _, g := range rep.GPUs {
+			fmt.Fprintf(&b, "gpu: %s %d MiB\n", g.Backend, g.VRAMMiB)
+		}
+		v := rep.Assess("12B Q4_K_M", 7000)
+		fmt.Fprintf(&b, "%s\n", v.Reason)
+		b.WriteString("configure classifier.provider=ollama and OLLAMA_HOST=http://127.0.0.1:18080 to route the classifier locally")
+		return localModelReportMsg{text: b.String()}
+	}
+}
+
+// localBases are the common local inference base URLs, probed for a running
+// server.
+func localBases() []string {
+	return []string{
+		"http://127.0.0.1:11434/v1",
+		"http://127.0.0.1:18080/v1",
+		"http://127.0.0.1:8000/v1",
 	}
 }
 
