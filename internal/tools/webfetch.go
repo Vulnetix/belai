@@ -77,11 +77,11 @@ func (w *WebFetch) Execute(ctx context.Context, args map[string]any) (Result, er
 		client = http.DefaultClient
 	}
 	if client.CheckRedirect == nil {
-		client = new(http.Client)
-		*client = *w.Client
-		if client == nil {
-			client = &http.Client{}
-		}
+		// Copy the resolved client (w.Client or http.DefaultClient) before
+		// installing the redirect guard. Copying a nil w.Client here would
+		// panic; the base must be the client we actually resolved above.
+		base := *client
+		client = &base
 		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {
 				return fmt.Errorf("too many redirects")

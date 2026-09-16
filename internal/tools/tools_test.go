@@ -266,6 +266,23 @@ func TestWebFetchSubject(t *testing.T) {
 	}
 }
 
+// TestWebFetchDefaultClientNoPanic pins the crash fixed in the redirect-guard
+// setup: the default registry registers &WebFetch{} with a nil Client, and a
+// fetch that reaches the redirect guard must derive its guarded client from
+// the resolved base (http.DefaultClient), never by dereferencing the nil
+// Client. A public literal IP passes the SSRF guard without a DNS round-trip,
+// and the pre-cancelled context makes client.Do fail before any dial, so the
+// test needs no network. Before the fix this panicked.
+func TestWebFetchDefaultClientNoPanic(t *testing.T) {
+	wf := &WebFetch{} // nil Client, exactly what tools.Default registers
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := wf.Execute(ctx, map[string]any{"url": "http://192.0.2.1/"})
+	if err == nil {
+		t.Fatal("expected a pre-dial error from the cancelled context, got nil")
+	}
+}
+
 func TestWebSearchSubject(t *testing.T) {
 	ws := &WebSearch{}
 	if ws.Subject(map[string]any{"query": "q"}) != "q" {
