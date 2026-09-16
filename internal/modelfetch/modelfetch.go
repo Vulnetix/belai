@@ -27,8 +27,8 @@ type Target struct {
 }
 
 // List fetches the live model catalogue for the target and returns it as
-// []models.Model. Static-only targets (cloudflare-ai-gateway) return an empty
-// list with no error.
+// []models.Model. Static-only targets (cloudflare-ai-gateway) return an
+// empty list with no error.
 func List(ctx context.Context, t Target, client *http.Client) ([]models.Model, error) {
 	endpoint, err := endpointFor(t)
 	if err != nil {
@@ -75,7 +75,14 @@ func endpointFor(t Target) (string, error) {
 		return base + "/v1/models", nil
 	case "cloudflare-workers-ai":
 		return base + "/ai/models/search", nil
-	case "openai", "openrouter", "google-gemini", "ollama", "github-copilot", "huggingface":
+	case "huggingface":
+		// HuggingFace serves chat completions under /hf-inference/v1 but the
+		// OpenAI-compatible model list lives at the root /v1/models path.
+		if strings.HasSuffix(base, "/hf-inference/v1") {
+			return strings.TrimSuffix(base, "/hf-inference/v1") + "/v1/models", nil
+		}
+		return base + "/models", nil
+	case "openai", "openrouter", "google-gemini", "ollama", "github-copilot":
 		return base + "/models", nil
 	default:
 		// Custom provider: choose by surface.
