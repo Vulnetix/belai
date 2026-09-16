@@ -247,3 +247,40 @@ func TestHighlightMapFrameMismatchIsSafe(t *testing.T) {
 		t.Fatalf("out-of-sync map must return the input, got %q", got)
 	}
 }
+
+func TestHighlightRestoresWashAfterSelection(t *testing.T) {
+	old := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(old) })
+
+	// A washed row: background open, then text, then background close.
+	row := Row{
+		Segs: []Seg{NewSeg("hello world", nil)},
+		BG:   ColorDiffAddBg,
+		Pad:  true,
+	}
+	rendered, sl := row.Render(20)
+	lm := LineMap{sl}
+
+	// A selection over the middle cells [2,9).
+	high := Highlight(rendered, lm, Pos{0, 2}, Pos{0, 9}, 0, 1)
+
+	// After the selection's full reset, the wash must be restored so the
+	// right fragment is not bare. The background sequence should appear
+	// again after the mid span.
+	bg := bgSeq(ColorDiffAddBg)
+	if bg == "" {
+		t.Fatal("expected a background sequence under TrueColor")
+	}
+	idxReset := strings.Index(high, "\x1b[0m")
+	if idxReset < 0 {
+		t.Fatal("expected a full reset from SelectionStyle")
+	}
+	afterReset := high[idxReset+len("\x1b[0m"):]
+	if !strings.HasPrefix(afterReset, "\x1b[39m\x1b[49m") {
+		t.Fatalf("expected 39/49 clear after reset, got: %q", afterReset)
+	}
+	if !strings.Contains(afterReset, bg) {
+		t.Fatalf("wash not restored after selection: %q", afterReset)
+	}
+}

@@ -173,10 +173,18 @@ func (r Row) Render(width int) (string, SourceLine) {
 
 	bg := bgSeq(r.BG)
 
+	// Reopen captures the SGR state at the start of the rendered line so
+	// Highlight can restore it after a mid-line selection reset.
+	var reopen strings.Builder
+	reopen.WriteString(bg)
+
 	var b strings.Builder
 	b.WriteString(bg)
 	for _, s := range kept {
 		b.WriteString(s.render())
+		if reopen.Len() == len(bg) && s.Text != "" {
+			reopen.WriteString(fgSeq(s.FG))
+		}
 	}
 	if r.Pad {
 		if n := width - lipgloss.Width(plain); n > 0 {
@@ -196,9 +204,10 @@ func (r Row) Render(width int) (string, SourceLine) {
 
 	gutter := min(r.Gutter, lipgloss.Width(trimmed))
 	sl := SourceLine{
-		Col:   gutter,
-		Width: max(lipgloss.Width(trimmed)-gutter, 0),
-		Text:  ansi.Cut(trimmed, gutter, lipgloss.Width(trimmed)),
+		Col:    gutter,
+		Width:  max(lipgloss.Width(trimmed)-gutter, 0),
+		Text:   ansi.Cut(trimmed, gutter, lipgloss.Width(trimmed)),
+		Reopen: reopen.String(),
 	}
 	if r.MarkerWidth > 0 {
 		sl.MarkerCol, sl.MarkerWidth, sl.Hidden = r.MarkerCol, r.MarkerWidth, r.Hidden

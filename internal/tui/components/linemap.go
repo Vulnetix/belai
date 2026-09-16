@@ -33,6 +33,11 @@ type SourceLine struct {
 	MarkerCol, MarkerWidth int
 	Hidden                 string
 
+	// Reopen is the SGR prefix that restores the row's original styling
+	// after a mid-line reset. It is used by Highlight so a selection over a
+	// washed or syntax-coloured row does not leave the remainder bare.
+	Reopen string
+
 	// Chrome marks pure frame (panel edges, blank separators). Chrome lines
 	// contribute a blank to copies and are never highlighted.
 	Chrome bool
@@ -198,7 +203,10 @@ func Highlight(rendered string, lm LineMap, from, to Pos, topLine, height int) s
 		left := ansi.Cut(line, 0, lo)
 		mid := SelectionStyle.Render(ansi.Strip(ansi.Cut(line, lo, hi)))
 		right := ansi.Cut(line, hi, visibleLen(ansi.Strip(line)))
-		lines[i] = left + mid + right
+		// The mid span closes with a full reset, so we restore the row's
+		// original SGR state before the right fragment so the remainder is not
+		// left bare — critical for washed diff rows.
+		lines[i] = left + mid + "\x1b[39m\x1b[49m" + sl.Reopen + right
 	}
 	return strings.Join(lines, "\n")
 }
