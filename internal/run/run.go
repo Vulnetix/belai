@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/delimiters"
 	"github.com/vulnetix/signet/internal/guardrails"
 	"github.com/vulnetix/signet/internal/models"
@@ -41,6 +42,118 @@ type Config struct {
 	// (zero) means detect. It is resolved once per session and carried on
 	// every request so the model's method is not re-checked per turn.
 	ToolMethod ToolMethod
+	// MaxTokens overrides the completion cap. Zero means the surface default.
+	// The classifier sets a small cap because its reply is one sentinel token.
+	MaxTokens int
+	// Classifier holds the resolved classifier config. When zero (no provider
+	// and no model), NewClassifier derives it from this config with reasoning
+	// off.
+	Classifier ClassifierConfig
+}
+
+// ClassifierConfig is a provider/model/credentials tuple scoped to the
+// security classifier. The classifier emits a single sentinel token, so its
+// effort defaults to "none" (reasoning off) and its completion is capped.
+type ClassifierConfig struct {
+	Provider  string
+	BaseURL   string
+	APIKey    string
+	Model     string
+	Effort    string
+	API       wire.Surface
+	Auth      provider.Auth
+	MaxTokens int
+	Chunk     ChunkConfig
+}
+
+// ChunkConfig bounds the chunked classify-all path for oversized payloads.
+type ChunkConfig struct {
+	MaxBytes    int
+	Concurrency int
+}
+
+// ClassifierMaxTokens caps a classifier completion. The classifier prompt
+// demands exactly one sentinel token; a larger cap only widens the worst-case
+// latency without improving the answer.
+const ClassifierMaxTokens = 16
+
+// config converts a classifier config back to a plain request Config.
+func (c ClassifierConfig) config() Config {
+	return Config{
+		Provider:  c.Provider,
+		BaseURL:   c.BaseURL,
+		APIKey:    c.APIKey,
+		Model:     c.Model,
+		Effort:    c.Effort,
+		API:       c.API,
+		Auth:      c.Auth,
+		MaxTokens: c.MaxTokens,
+	}
+}
+
+// ResolveClassifier derives the classifier config from the main config and an
+// optional classifier settings block. Unset fields fall back to the main
+// config; effort defaults to "none" so the sentinel call never pays for
+// extended thinking. A classifier provider that differs from the main provider
+// is resolved through src (nil means environment only).
+func ResolveClassifier(main Config, cls *config.ClassifierSettings, src CredentialSource) (ClassifierConfig, error) {
+	out := ClassifierConfig{
+		Provider:  main.Provider,
+		BaseURL:   main.BaseURL,
+		APIKey:    main.APIKey,
+		Model:     main.Model,
+		Effort:    "none",
+		API:       main.API,
+		Auth:      main.Auth,
+		MaxTokens: ClassifierMaxTokens,
+		Chunk:     ChunkConfig{MaxBytes: 1 << 20, Concurrency: 4},
+	}
+	if cls == nil {
+		return out, nil
+	}
+	if cls.Effort != "" {
+		out.Effort = cls.Effort
+	}
+	if cls.Model != "" {
+		out.Model = cls.Model
+	}
+	if cls.Chunk.MaxBytesOr() > 0 {
+		out.Chunk.MaxBytes = cls.Chunk.MaxBytesOr()
+	}
+	if cls.Chunk.ConcurrencyOr() > 0 {
+		out.Chunk.Concurrency = cls.Chunk.ConcurrencyOr()
+	}
+	if cls.Provider != "" && cls.Provider != main.Provider {
+		cfg, status := Prepare(cls.Model, cls.Provider, src)
+		if !status.Configured {
+			var envHints []string
+			return ClassifierConfig{}, &NotConfiguredError{
+				Provider: cfg.Provider,
+				Missing:  status.Missing,
+				EnvHints: envHints,
+				Searched: []string{"environment", "settings classifiers block"},
+			}
+		}
+		out.Provider = cfg.Provider
+		out.BaseURL = cfg.BaseURL
+		out.APIKey = cfg.APIKey
+		out.API = cfg.API
+		out.Auth = cfg.Auth
+		if cls.Model == "" {
+			out.Model = cfg.Model
+		}
+	}
+	return out, nil
+}
+
+// ClassifierOrDefault returns the resolved classifier config, deriving one
+// from the main config when none was stored.
+func (c Config) ClassifierOrDefault() ClassifierConfig {
+	if c.Classifier.Provider == "" && c.Classifier.Model == "" {
+		cc, _ := ResolveClassifier(c, nil, nil)
+		return cc
+	}
+	return c.Classifier
 }
 
 func (c Config) String() string {
@@ -101,6 +214,23 @@ func newProviderError(op string, cfg Config, resp *http.Response, body []byte, r
 // aborts the turn.
 func parseRetryAfter(header string) time.Duration {
 	return resilience.ParseRetryAfter(header, time.Now())
+}
+
+// reasoningEnabled reports whether an effort value should attach a
+// reasoning_effort hint. "none" is the classifier's default: the sentinel call
+// must not pay for extended thinking, and OpenAI rejects "none" as a
+// reasoning_effort value, so it is omitted rather than sent verbatim.
+func reasoningEnabled(effort string) bool {
+	e := strings.ToLower(strings.TrimSpace(effort))
+	return e != "" && e != "none"
+}
+
+// maxTokensOr returns v when positive, else the surface default.
+func maxTokensOr(v, def int) int {
+	if v > 0 {
+		return v
+	}
+	return def
 }
 
 // Attachment is user-referenced content that has already been sanitised and
@@ -493,10 +623,13 @@ func doChatWithPool(ctx context.Context, cfg Config, system string, turns []Turn
 	return a.Text, nil
 }
 
-// NewClassifier returns a rolemanager.Classifier backed by the configured provider.
+// NewClassifier returns a rolemanager.Classifier backed by the configured
+// provider. The classifier uses cfg.Classifier when one was resolved, else the
+// main config with reasoning off.
 func NewClassifier(cfg Config, client *http.Client) rolemanager.Classifier {
+	cc := cfg.ClassifierOrDefault()
 	return rolemanager.ClassifierFunc(func(ctx context.Context, p rolemanager.ClassifierPayload) (string, error) {
-		return chat(ctx, cfg, p.System, p.User, client)
+		return chat(ctx, cc.config(), p.System, p.User, client)
 	})
 }
 
@@ -570,7 +703,7 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 		}
 
 		var reasoningEffort string
-		if d.effort && cfg.Effort != "" {
+		if d.effort && reasoningEnabled(cfg.Effort) {
 			reasoningEffort = strings.ToLower(strings.TrimSpace(cfg.Effort))
 		}
 		var thinking *wire.AnthropicThinking
@@ -592,14 +725,15 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 		switch d.kind {
 		case kindWorkersAI:
 			return p.NewWorkersAIRequest(cfg.Model, wire.WorkersAIRequest{
-				Messages: buildOpenAIMessages(system, turns, d.method),
-				Stream:   stream,
-				Tools:    openAITools,
+				Messages:  buildOpenAIMessages(system, turns, d.method),
+				Stream:    stream,
+				MaxTokens: cfg.MaxTokens,
+				Tools:     openAITools,
 			})
 		case kindAnthropicMessages:
 			return d.messagesRequest(p, wire.AnthropicMessagesRequest{
 				Model:      cfg.Model,
-				MaxTokens:  4096,
+				MaxTokens:  maxTokensOr(cfg.MaxTokens, 4096),
 				System:     system,
 				Messages:   buildAnthropicMessages(turns),
 				Stream:     stream,
@@ -612,6 +746,7 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 				Model:           cfg.Model,
 				Messages:        buildOpenAIMessages(system, turns, d.method),
 				Stream:          stream,
+				MaxTokens:       cfg.MaxTokens,
 				Tools:           openAITools,
 				ToolChoice:      "auto",
 				ReasoningEffort: reasoningEffort,

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/provider"
 	"github.com/vulnetix/signet/internal/resilience"
 	"github.com/vulnetix/signet/internal/rolemanager"
@@ -981,5 +982,115 @@ func TestEmptyAssistantMessageSkipped(t *testing.T) {
 	msgs := buildOpenAIMessages("sys", []Turn{{Role: "assistant", Content: ""}}, wire.ToolMethodString)
 	if len(msgs) != 1 || msgs[0].Role != "system" {
 		t.Fatalf("empty assistant should be skipped: %+v", msgs)
+	}
+}
+
+func TestResolveClassifierDefaultsToReasoningOff(t *testing.T) {
+	main := Config{Provider: "openai", BaseURL: "https://api.openai.com/v1", APIKey: "k", Model: "gpt-5", Effort: "high"}
+	cc, err := ResolveClassifier(main, nil, nil)
+	if err != nil {
+		t.Fatalf("ResolveClassifier: %v", err)
+	}
+	if cc.Provider != "openai" || cc.Model != "gpt-5" || cc.APIKey != "k" || cc.BaseURL != main.BaseURL {
+		t.Fatalf("default classifier = %+v, want main provider/model/creds", cc)
+	}
+	if cc.Effort != "none" {
+		t.Fatalf("default classifier effort = %q, want none (reasoning off)", cc.Effort)
+	}
+	if cc.MaxTokens != ClassifierMaxTokens {
+		t.Fatalf("MaxTokens = %d, want %d", cc.MaxTokens, ClassifierMaxTokens)
+	}
+	if cc.Chunk.MaxBytes != 1<<20 || cc.Chunk.Concurrency != 4 {
+		t.Fatalf("chunk defaults = %+v", cc.Chunk)
+	}
+}
+
+func TestResolveClassifierOverridesModelEffortChunk(t *testing.T) {
+	main := Config{Provider: "openai", BaseURL: "https://api.openai.com/v1", APIKey: "k", Model: "gpt-5"}
+	cls := &config.ClassifierSettings{
+		Model:  "gpt-5-mini",
+		Effort: "low",
+		Chunk:  config.ClassifierChunkSettings{MaxBytes: 500, Concurrency: 2},
+	}
+	cc, err := ResolveClassifier(main, cls, nil)
+	if err != nil {
+		t.Fatalf("ResolveClassifier: %v", err)
+	}
+	if cc.Provider != "openai" || cc.APIKey != "k" || cc.BaseURL != main.BaseURL {
+		t.Fatalf("same-provider classifier should reuse main creds: %+v", cc)
+	}
+	if cc.Model != "gpt-5-mini" || cc.Effort != "low" {
+		t.Fatalf("override = %+v, want model gpt-5-mini effort low", cc)
+	}
+	if cc.Chunk.MaxBytes != 500 || cc.Chunk.Concurrency != 2 {
+		t.Fatalf("chunk = %+v", cc.Chunk)
+	}
+}
+
+func TestResolveClassifierSeparateProvider(t *testing.T) {
+	main := Config{Provider: "openai", BaseURL: "https://api.openai.com/v1", APIKey: "k", Model: "gpt-5"}
+	cls := &config.ClassifierSettings{Provider: "cloudflare-workers-ai", Model: "@cf/meta/llama-4-scout-17b-16e-instruct"}
+	env := envMap(map[string]string{"CLOUDFLARE_API_KEY": "cfk", "CLOUDFLARE_ACCOUNT_ID": "acct"})
+	cc, err := ResolveClassifier(main, cls, EnvSource(env))
+	if err != nil {
+		t.Fatalf("ResolveClassifier: %v", err)
+	}
+	if cc.Provider != "cloudflare-workers-ai" || cc.APIKey != "cfk" {
+		t.Fatalf("separate provider = %+v", cc)
+	}
+	if cc.BaseURL != "https://api.cloudflare.com/client/v4/accounts/acct" {
+		t.Fatalf("BaseURL = %q", cc.BaseURL)
+	}
+	if cc.Model != "@cf/meta/llama-4-scout-17b-16e-instruct" || cc.Effort != "none" {
+		t.Fatalf("model/effort = %q/%q", cc.Model, cc.Effort)
+	}
+}
+
+func TestResolveClassifierSeparateProviderMissingCreds(t *testing.T) {
+	main := Config{Provider: "openai", BaseURL: "https://api.openai.com/v1", APIKey: "k", Model: "gpt-5"}
+	cls := &config.ClassifierSettings{Provider: "cloudflare-workers-ai"}
+	if _, err := ResolveClassifier(main, cls, EnvSource(envMap(nil))); err == nil {
+		t.Fatal("expected NotConfiguredError for a classifier provider without credentials")
+	}
+}
+
+func TestClassifierOrDefault(t *testing.T) {
+	cfg := Config{Provider: "anthropic", Model: "claude-sonnet-4-5", Effort: "high"}
+	cc := cfg.ClassifierOrDefault()
+	if cc.Effort != "none" || cc.Provider != "anthropic" || cc.Model != "claude-sonnet-4-5" {
+		t.Fatalf("derived classifier = %+v", cc)
+	}
+	// An explicitly stored classifier wins over derivation.
+	cfg.Classifier = ClassifierConfig{Provider: "openai", Model: "gpt-5-mini", Effort: "low"}
+	if got := cfg.ClassifierOrDefault(); got.Provider != "openai" || got.Model != "gpt-5-mini" {
+		t.Fatalf("stored classifier not honoured: %+v", got)
+	}
+}
+
+func TestReasoningEnabled(t *testing.T) {
+	cases := []struct {
+		effort string
+		want   bool
+	}{
+		{"high", true},
+		{"LOW", true},
+		{" medium ", true},
+		{"none", false},
+		{"NONE", false},
+		{"", false},
+	}
+	for _, c := range cases {
+		if got := reasoningEnabled(c.effort); got != c.want {
+			t.Fatalf("reasoningEnabled(%q) = %v, want %v", c.effort, got, c.want)
+		}
+	}
+}
+
+func TestMaxTokensOr(t *testing.T) {
+	if maxTokensOr(0, 4096) != 4096 {
+		t.Fatal("maxTokensOr(0, 4096) != 4096")
+	}
+	if maxTokensOr(16, 4096) != 16 {
+		t.Fatal("maxTokensOr(16, 4096) != 16")
 	}
 }

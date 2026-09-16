@@ -60,6 +60,9 @@ func main() {
 	dangerouslyYolo := flag.Bool("dangerously-yolo-everything", false, "ignore every posture gate")
 	enableTools := flag.Bool("tools", false, "enable tool execution")
 	effort := flag.String("effort", "", "thinking effort level: low, medium, or high")
+	classifierProvider := flag.String("classifier-provider", "", "security-classifier provider (default: the main provider)")
+	classifierModel := flag.String("classifier-model", "", "security-classifier model (default: the main model)")
+	classifierEffort := flag.String("classifier-effort", "", "security-classifier thinking effort (default: none)")
 	caveman := flag.Bool("caveman", false, "enable caveman voice rewrite for this run")
 	sessionRetentionDays := flag.Int("session-retention-days", 0, "idle session retention in days (default 28)")
 	noPrune := flag.Bool("no-prune", false, "never prune idle sessions")
@@ -82,6 +85,14 @@ func main() {
 	}
 	if *effort != "" {
 		settings.Effort = *effort
+	}
+	if *classifierProvider != "" || *classifierModel != "" || *classifierEffort != "" {
+		if settings.Classifier == nil {
+			settings.Classifier = &config.ClassifierSettings{}
+		}
+		settings.Classifier.Provider = *classifierProvider
+		settings.Classifier.Model = *classifierModel
+		settings.Classifier.Effort = *classifierEffort
 	}
 	if *caveman {
 		t := true
@@ -184,6 +195,22 @@ func isCharDevice(f *os.File) bool {
 	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }
 
+// withClassifier resolves the classifier config from settings (including any
+// -classifier-* flags folded in by main) and stores it on cfg. A nil settings
+// classifier yields the default: the main provider/model with reasoning off.
+func withClassifier(cfg run.Config, settings config.Settings, resolver *credentials.Resolver) (run.Config, error) {
+	var src run.CredentialSource
+	if resolver != nil {
+		src = resolver
+	}
+	cc, err := run.ResolveClassifier(cfg, settings.Classifier, src)
+	if err != nil {
+		return cfg, err
+	}
+	cfg.Classifier = cc
+	return cfg, nil
+}
+
 func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, detectMode, verbose bool, workdir string, pol posture.Policy, enableTools, planMode bool, settings config.Settings) error {
 	resolver, err := credentials.NewResolver(workdir)
 	if err != nil {
@@ -198,6 +225,10 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 			return tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Prompt: prompt, Provider: providerName, Model: model, Settings: &settings, Posture: pol, PlanMode: planMode})
 		}
 		// Without a TTY, fail closed naming every location searched.
+		return err
+	}
+	cfg, err = withClassifier(cfg, settings, resolver)
+	if err != nil {
 		return err
 	}
 
@@ -273,6 +304,10 @@ func runAgentCreate(ctx context.Context, description, model, providerName, workd
 	if err != nil {
 		return err
 	}
+	cfg, err = withClassifier(cfg, settings, resolver)
+	if err != nil {
+		return err
+	}
 	classifier := run.NewClassifier(cfg, http.DefaultClient)
 	b := agentprofile.Builder{Classifier: classifier, MaxAttempts: 3}
 	profile, err := b.Build(ctx, description)
@@ -293,6 +328,10 @@ func runAgentForeground(ctx context.Context, name, model, providerName, workdir 
 		return err
 	}
 	cfg, err := run.ResolveWithSource(model, providerName, os.Getenv, resolver)
+	if err != nil {
+		return err
+	}
+	cfg, err = withClassifier(cfg, settings, resolver)
 	if err != nil {
 		return err
 	}

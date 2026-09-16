@@ -68,6 +68,11 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 		Provider: firstNonEmpty(env("SIGNET_PROVIDER"), env("PI_PROVIDER")),
 		Model:    env("SIGNET_MODEL"),
 		Effort:   env("SIGNET_EFFORT"),
+		Classifier: &ClassifierSettings{
+			Provider: env("SIGNET_CLASSIFIER_PROVIDER"),
+			Model:    env("SIGNET_CLASSIFIER_MODEL"),
+			Effort:   env("SIGNET_CLASSIFIER_EFFORT"),
+		},
 	}, SourceEnv)
 
 	// 5. CLI flags.
@@ -143,6 +148,13 @@ func (e *Effective) apply(s Settings, src Source) {
 	if s.ShowSessionNames != nil {
 		e.Settings.ShowSessionNames = s.ShowSessionNames
 		e.Origin["show_session_names"] = src
+	}
+	if s.Classifier != nil && !s.Classifier.IsZero() {
+		if e.Settings.Classifier == nil {
+			e.Settings.Classifier = &ClassifierSettings{}
+		}
+		e.Settings.Classifier.merge(s.Classifier)
+		e.Origin["classifier"] = src
 	}
 }
 
