@@ -210,8 +210,7 @@ func (a *App) modelView() string {
 	head.WriteString(a.modelSearchLine() + "\n")
 
 	// Post-list chrome: effort, scope, error and the help bar. The counter/
-	// overflow line under the list is always exactly one row, so it is reserved
-	// separately in the row budget below.
+	// overflow line is rendered below the list as metaLine, outside this chunk.
 	var tail strings.Builder
 	tail.WriteString("\n" + components.MutedStyle.Render("effort  "))
 	if len(efforts) == 0 {
@@ -242,7 +241,6 @@ func (a *App) modelView() string {
 	rows := fallbackRows
 	if a.height > 0 {
 		rows = a.height - lipgloss.Height(head.String()) - lipgloss.Height(tail.String()) - 2 // Padding(1) top+bottom
-		rows -= 1                                                                             // the counter/overflow line under the list
 	}
 	if rows < 3 {
 		rows = 3

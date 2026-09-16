@@ -778,6 +778,32 @@ Enter to save the current editor text to the **project** library
 required`, and Esc cancels. Saving always writes the project file; the global
 file is edited by hand.
 
+### Model picker
+
+`/model` shows provider tabs, a windowed model list, the effort chips and the
+write scope. The list's row budget is *measured*, never guessed: the pre-list
+chrome (header, tabs, search line), the post-list chrome (effort, scope, any
+error, help bar), the one-row counter/overflow line under the list, and the
+frame's one-cell padding are each subtracted from the terminal height, and the
+remainder is how many model rows are drawn. The view therefore fills the
+terminal exactly — a row short would waste a model row, a row over would scroll
+the help bar off the bottom. With no `WindowSizeMsg` yet (height 0) it falls
+back to 10 rows, and it never draws fewer than 3.
+
+Business rules:
+
+- **The window follows the cursor** (`windowStart`): moving below the last
+  visible row scrolls by one, moving above the first scrolls back, and wrapping
+  from the last id to the first (or back) re-anchors the window at that end.
+- **The counter is always shown**, as `<cursor>/<total>`, with `↑ N more` and
+  `↓ N more` added only when there is something off-screen in that direction.
+- **`/` filters** the catalogue by case-insensitive substring; the counter then
+  reads `<cursor>/<matches> (of <total>)`, `esc` clears the filter rather than
+  leaving the view, and committing selects from the *filtered* list — the row
+  under the cursor is the row that is saved.
+- **An empty catalogue** renders `no models in this profile — type or import a
+  model id` instead of a list, and the counter line is omitted with it.
+
 ### Slash commands
 
 | Command | Description |
