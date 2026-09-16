@@ -36,9 +36,11 @@ func kittyEnabled(s *config.Settings) bool {
 	return true
 }
 
-// mouseEnabled reports whether the TUI captures the mouse for transcript
-// wheel scrolling. Default true; most terminals still select with shift+drag
-// while capture is on.
+// mouseEnabled reports whether the TUI captures the mouse. Default true.
+// With capture on the terminal's own selection is unavailable, so the TUI
+// implements its own: left-button press-drag-release over the transcript
+// selects a character range and copies the clean underlying text on release
+// (see internal/tui/selection.go). shift+drag is not an escape hatch.
 func mouseEnabled(s *config.Settings) bool {
 	if s != nil && s.UI != nil && s.UI.Mouse != nil {
 		return *s.UI.Mouse

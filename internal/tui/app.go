@@ -226,6 +226,13 @@ type App struct {
 	vp     viewport.Model
 	follow bool // autoscroll: keep the transcript pinned to the tail
 
+	// drag-selection state (see selection.go). lastFrame is the geometry and
+	// provenance of the last rendered transcript frame; lastBody is its
+	// unhighlighted text, the single compare that clears a stale selection.
+	sel       selection
+	lastFrame frame
+	lastBody  string
+
 	// expandAll disables truncation and shows every message in full.
 	expandAll bool
 
@@ -458,13 +465,22 @@ func (a *App) footerHeight() int {
 }
 
 // chromeHeight is the total height consumed by everything except the viewport.
-// The "\n" written after the banner, viewport, suggestions, attach strip, and
-// composer are line terminators, not blank rows, so they cost nothing here.
-func (a *App) chromeHeight() int {
-	h := 2 // top+bottom padding from the outer lipgloss frame
+// headerHeight is the rows above the viewport — the outer frame's top
+// padding plus the banner. It is also the screen row of the viewport's first
+// line, which is what the mouse hit-testing in selection.go needs.
+func (a *App) headerHeight() int {
+	h := 1 // top padding from the outer lipgloss frame
 	if a.bannerVisible() {
 		h += a.bannerHeight()
 	}
+	return h
+}
+
+// belowViewportHeight is the rows below the viewport — the outer frame's
+// bottom padding, the autocomplete and attachment strips, the todo panel, the
+// composer and the footer.
+func (a *App) belowViewportHeight() int {
+	h := 1 // bottom padding from the outer lipgloss frame
 	if len(a.autocomplete) > 0 {
 		h++
 	}
@@ -474,6 +490,16 @@ func (a *App) chromeHeight() int {
 	h += a.footerHeight()
 	return h
 }
+
+// The "\n" written after the banner, viewport, suggestions, attach strip, and
+// composer are line terminators, not blank rows, so they cost nothing here.
+func (a *App) chromeHeight() int {
+	return a.headerHeight() + a.belowViewportHeight()
+}
+
+// contentLeft is the screen column of content column 0: the outer Padding(1)
+// left column.
+func (a *App) contentLeft() int { return 1 }
 
 // fitEditor clamps the editor height to [editorMinHeight, editorMaxHeight]
 // based on its logical line count. It returns true if the height changed.
@@ -743,6 +769,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.width = m.Width
 		a.height = m.Height
 		a.relayout()
+		// A height-only change leaves the rendered body identical, so the
+		// content compare in chatView cannot catch it: clear the selection
+		// explicitly, or it would highlight stale rows.
+		a.sel = selection{}
 		return a, nil
 
 	case tickMsg:
@@ -788,10 +818,52 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.handleModeClassified(m)
 
 	case tea.MouseMsg:
-		var vpCmd tea.Cmd
+		var vpCmd, copyCmd tea.Cmd
 		if a.view == viewChat {
-			a.vp, vpCmd = a.vp.Update(m)
-			a.follow = a.vp.AtBottom()
+			// Branch order is load-bearing:
+			//   1. wheel — wheel events are Action==Press with a wheel button;
+			//      this must precede the press branch or every tick re-anchors
+			//      the selection. It also works mid-drag: the selection is
+			//      stored in content coordinates, so scrolling never invalidates
+			//      it — press, wheel, keep dragging, release.
+			//   2. release — X10 reports release with Button==None while SGR
+			//      keeps Left, so the button is never tested here.
+			//   3. motion / 4. left press. Press, motion and release are not
+			//      forwarded to a.vp: viewport v1.0.0 discards them anyway.
+			switch {
+			case tea.MouseEvent(m).IsWheel():
+				a.vp, vpCmd = a.vp.Update(m)
+				a.follow = a.vp.AtBottom()
+			case m.Action == tea.MouseActionRelease && a.sel.dragging:
+				a.sel.dragging = false
+				if a.sel.empty() {
+					// A release at the anchor cell (bare click) clears the
+					// selection and copies nothing.
+					a.sel.active = false
+				} else {
+					a.sel.active = true
+					copyCmd = a.copySelection()
+				}
+			case m.Action == tea.MouseActionMotion && a.sel.dragging:
+				a.sel.cursor = clampPos(m.X, m.Y, a.lastFrame)
+				a.sel.active = !a.sel.empty()
+			case m.Action == tea.MouseActionPress && m.Button == tea.MouseButtonLeft:
+				if p, ok := contentPos(m.X, m.Y, a.lastFrame); ok {
+					a.sel.anchor = p
+					a.sel.cursor = p
+					a.sel.dragging = true
+					a.sel.active = true
+				} else {
+					// A press outside the viewport clears the selection and
+					// copies nothing.
+					a.sel = selection{}
+				}
+			default:
+				// Anything else (right/middle press, stray motion) keeps today's
+				// behaviour.
+				a.vp, vpCmd = a.vp.Update(m)
+				a.follow = a.vp.AtBottom()
+			}
 		}
 		cmd := a.editor.Update(m)
 		a.autocomplete = a.registry.Complete(a.editor.Value())
@@ -803,7 +875,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			workCmd = nil
 		}
 		a.relayout()
-		return a, tea.Batch(vpCmd, cmd, spinCmd, workCmd)
+		return a, tea.Batch(vpCmd, copyCmd, cmd, spinCmd, workCmd)
 
 	case tea.KeyMsg:
 		// Global keys work on every screen.
@@ -887,6 +959,13 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		a.follow = true
 		return nil
 	case "esc":
+		// A live selection is cleared first, ahead of the existing esc
+		// behaviour: the first esc dismisses the highlight, the second does
+		// whatever esc would have done (cancel the request, drop pre-send…).
+		if a.sel.active || a.sel.dragging {
+			a.sel = selection{}
+			return nil
+		}
 		if a.pendingInput != "" {
 			a.pendingInput = ""
 			return a.submitInput(strings.TrimSpace(a.editor.Value()))
@@ -1409,15 +1488,38 @@ func (a *App) View() string {
 
 func (a *App) chatView() string {
 	a.relayout()
-	a.vp.SetContent(components.MessageList{
+	body, lm := components.MessageList{
 		Messages:      a.messages,
 		Width:         a.contentWidth(),
 		ExpandAll:     a.expandAll,
 		ShowReasoning: a.reasoningVisible(),
 		ShowTools:     a.toolCallsVisible(),
-	}.View())
+	}.Render()
+	// The one content compare replaces an enumerated clear list: new message,
+	// streaming delta, ctrl+l, ctrl+o, ctrl+r, ctrl+t and width changes all
+	// clear a stale selection for free.
+	if body != a.lastBody {
+		a.sel = selection{}
+		a.lastBody = body
+	}
+	if a.sel.active {
+		// Highlighting happens before SetContent, so the selection looks like
+		// a content change and self-clears on the next message.
+		from, to := components.Order(a.sel.anchor, a.sel.cursor)
+		body = components.Highlight(body, lm, from, to, a.vp.YOffset, a.vp.Height)
+	}
+	a.vp.SetContent(body)
 	if a.follow {
 		a.vp.GotoBottom()
+	}
+	// The frame snapshot must come after GotoBottom, which mutates YOffset.
+	a.lastFrame = frame{
+		lines:   lm,
+		top:     a.headerHeight(),
+		left:    a.contentLeft(),
+		width:   a.vp.Width,
+		height:  a.vp.Height,
+		yOffset: a.vp.YOffset,
 	}
 
 	var sb strings.Builder
@@ -1730,6 +1832,36 @@ func (a *App) copyPrompt() tea.Cmd {
 			return copiedMsg{text: "copy failed: " + err.Error()}
 		}
 		return copiedMsg{text: "copied prompt to clipboard (" + method + ")"}
+	}
+}
+
+// copySelection puts the selected clean text on the clipboard through the
+// same copiedMsg path as copyPrompt. The text comes from lastFrame.lines —
+// the frame the user was looking at, with borders, prefixes and ANSI already
+// removed by the renderers and truncation markers expanded to their hidden
+// remainder.
+//
+// The resulting copiedMsg calls addSystem, which changes the body and so
+// clears the highlight on the next frame. That is the intended "copied,
+// done" feel — do not "fix" it.
+func (a *App) copySelection() tea.Cmd {
+	text := a.lastFrame.lines.Text(a.sel.anchor, a.sel.cursor)
+	if text == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		method, err := clipboard.Copy(text)
+		if err != nil {
+			return copiedMsg{text: "copy failed: " + err.Error()}
+		}
+		note := ""
+		// OSC 52 is a silent-drop risk for large payloads (xterm's
+		// maxStringParseSize, tmux without set-clipboard on); say so.
+		if method == "osc52" && len(text) > 8*1024 {
+			note = " — large payload, terminal may have dropped it"
+		}
+		lines := strings.Count(text, "\n") + 1
+		return copiedMsg{text: fmt.Sprintf("copied %d lines to clipboard (%s)%s", lines, method, note)}
 	}
 }
 

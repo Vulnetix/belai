@@ -315,7 +315,9 @@ Provider-streamed reasoning renders in a dim `reasoning` panel (toggle with
 `ctrl+r`, `ui.show_reasoning`); tool rows toggle with `ctrl+t`
 (`ui.show_tool_calls`). The transcript auto-follows the tail; scrolling up
 (mouse wheel or `pgup`/`shift+up`) detaches and returns to the bottom
-re-attach. Mouse capture is on by default (`ui.mouse`).
+re-attach. Mouse capture is on by default (`ui.mouse`); with capture on the
+terminal's own selection is unavailable, so the TUI implements its own (see
+below). With `ui.mouse` off no mouse events arrive and the feature is inert.
 
 ### Rendered-line provenance
 
@@ -340,6 +342,43 @@ whose map length does not match — a desynced map must never corrupt the frame.
 Slicing is by terminal cell, never by rune index, so CJK and emoji stay on
 cluster boundaries.
 
+### Transcript selection
+
+Left-button press-drag-release over the transcript selects a character range
+and copies the clean underlying text on release: no borders, no ANSI, no `⌁`
+tool-row prefix, no right-aligned status word, and `… N more lines` markers
+expanded to their hidden remainder (`LineMap.Text` substitutes the `Hidden`
+text whenever the selection overlaps the marker cells).
+
+Business rules:
+
+- **Content coordinates.** The selection is stored in content lines, not
+  screen rows, so it survives scrolling — and the wheel works *mid-drag*
+  (press, wheel, keep dragging, release). Edge auto-scroll is not implemented;
+  the wheel is the documented gesture.
+- **One content compare clears.** A selection is cleared whenever the rendered
+  body changes — new message, streaming delta, `ctrl+l`, `ctrl+o`, `ctrl+r`,
+  `ctrl+t`, or a width change — because the line map can shift underneath it.
+  A height-only `WindowSizeMsg` leaves the body identical, so it clears the
+  selection explicitly.
+- **Bare click clears.** A press outside the viewport, or a release at the
+  anchor cell, clears the selection and copies nothing. Release never tests
+  the button (X10 reports `Button==None`; SGR keeps `Left`), and wheel events
+  are checked before press (a wheel tick is `Action==Press`) or every tick
+  would re-anchor the selection.
+- **`esc` clears first.** With a live selection, `esc` dismisses the highlight
+  and nothing else; a second `esc` does the usual cancel/pre-send work.
+- **Copy feedback.** Release runs the same `clipboard.Copy` path as `ctrl+c`
+  and reports `copied N lines to clipboard (method)` through the footer. That
+  notice changes the body, so the highlight clears on the next frame — that is
+  the intended “copied, done” feel. For large OSC 52 payloads a caveat is
+  appended, because xterm's `maxStringParseSize` and tmux without
+  `set-clipboard on` drop them silently.
+- **Highlight is visible-window only.** `Highlight` rewrites at most the
+  viewport's height of lines (off-screen rows are re-rendered every frame
+  anyway) and must never change a line's visible characters or cell width —
+  a width change would trip the viewport's `MaxWidth` and shift the frame.
+
 ### Keybindings
 
 | Key | Behaviour |
@@ -359,6 +398,8 @@ cluster boundaries.
 | `right` | Accept the first slash-command autocomplete hint |
 | `enter` (while working) | Steer the running turn with a new user message |
 | mouse wheel / `pgup` / `pgdown` / `shift+up` / `shift+down` | Scroll the transcript (detaches auto-follow) |
+| left drag over the transcript | Select a character range (highlighted live); release copies the clean text |
+| `esc` (with a live selection) | Clear the selection first; a second `esc` cancels/pre-send as usual |
 
 `ctrl+l` clears the transcript view; `/clear` (or `/new`) starts a *new* session.
 They are deliberately different: one is cosmetic, the other changes what is

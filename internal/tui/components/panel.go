@@ -120,7 +120,9 @@ func (p Panel) Render() (string, LineMap) {
 			line += spaces(inner - w)
 		}
 		b.WriteString(bar + " " + line + " " + bar + "\n")
-		plain := ansi.Strip(line)
+		// Trailing padding is decoration, not text: the selectable region ends
+		// where the content ends, so a drag over the gutter copies nothing.
+		plain := strings.TrimRight(ansi.Strip(line), " ")
 		sl := SourceLine{Col: barCol, Width: visibleLen(plain), Text: plain}
 		if i == markerIdx {
 			sl.MarkerCol = sl.Col

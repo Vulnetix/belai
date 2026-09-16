@@ -103,12 +103,15 @@ func (lm LineMap) Text(from, to Pos) string {
 				// then the hidden remainder. The marker text itself never
 				// reaches the copy.
 				end := sl.clampCell(sl.MarkerCol)
+				var pre string
 				if end > lo {
-					text = strings.TrimRight(ansi.Cut(sl.Text, lo-sl.Col, end-sl.Col), " ")
-				} else {
-					text = ""
+					pre = strings.TrimRight(ansi.Cut(sl.Text, lo-sl.Col, end-sl.Col), " ")
 				}
-				text += "\n" + sl.Hidden
+				if pre == "" {
+					text = sl.Hidden
+				} else {
+					text = pre + "\n" + sl.Hidden
+				}
 			}
 		}
 		out = append(out, text)
@@ -138,7 +141,7 @@ func collapseBlanks(lines []string) string {
 			prevBlank = true
 			continue
 		}
-		if b.Len() > 0 {
+		if b.Len() > 0 && !prevBlank {
 			b.WriteString("\n")
 		}
 		b.WriteString(lines[i])
