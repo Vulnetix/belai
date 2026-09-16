@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -130,5 +131,39 @@ func TestDownloadChecksumMismatchRemovesPartial(t *testing.T) {
 	entries, _ := os.ReadDir(dir)
 	if len(entries) != 0 {
 		t.Fatalf("partial files not cleaned up: %v", entries)
+	}
+}
+
+func TestDownloadResumesPartial(t *testing.T) {
+	payload := "0123456789abcdef"
+	sum := sha256.Sum256([]byte(payload))
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rng := r.Header.Get("range")
+		if rng == "bytes=4-" {
+			w.WriteHeader(http.StatusPartialContent)
+			_, _ = w.Write([]byte(payload[4:]))
+			return
+		}
+		_, _ = w.Write([]byte(payload))
+	}))
+	defer srv.Close()
+	t.Setenv("SIGNET_HF_BASE_URL", srv.URL)
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "model.gguf.part"), []byte("0123"), 0o600); err != nil {
+		t.Fatalf("seed partial: %v", err)
+	}
+
+	dest, err := Download(context.Background(), "org/model", ModelFile{
+		Name:   "model.gguf",
+		SHA256: hex.EncodeToString(sum[:]),
+	}, "", dir)
+	if err != nil {
+		t.Fatalf("Download: %v", err)
+	}
+	got, err := os.ReadFile(dest)
+	if err != nil || string(got) != payload {
+		t.Fatalf("resumed download = %q err=%v, want %q", got, err, payload)
 	}
 }

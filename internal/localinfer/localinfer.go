@@ -179,21 +179,28 @@ func ModelsDir() (string, error) {
 	return filepath.Join(dir, "models"), nil
 }
 
-// Download fetches one model file into dir, streaming to a temp file, verifying
-// its SHA-256 when the metadata carried one, and renaming into place
-// atomically. A partial file is removed on any failure. SIGNET_HF_BASE_URL
-// overrides the host for tests and proxies.
+// Download fetches one model file into dir, resuming an existing partial file
+// via HTTP range requests, verifying its SHA-256 when the metadata carried one,
+// and renaming into place atomically. A partial file is removed on any
+// failure. SIGNET_HF_BASE_URL overrides the host for tests and proxies.
 func Download(ctx context.Context, repo string, mf ModelFile, token, dir string) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
 	dest := filepath.Join(dir, mf.Name)
-	tmp, err := os.CreateTemp(dir, ".download-*.part")
+	part := dest + ".part"
+	defer func() {
+		// On any non-nil return the partial is removed; on success the rename
+		// has already moved it.
+		if _, err := os.Stat(part); err == nil {
+			_ = os.Remove(part)
+		}
+	}()
+
+	offset, err := resumeOffset(part)
 	if err != nil {
 		return "", err
 	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
 
 	base := strings.TrimRight(os.Getenv("SIGNET_HF_BASE_URL"), "/")
 	if base == "" {
@@ -202,47 +209,89 @@ func Download(ctx context.Context, repo string, mf ModelFile, token, dir string)
 	url := base + "/" + repo + "/resolve/main/" + mf.Name
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		tmp.Close()
 		return "", err
 	}
 	if token != "" {
 		req.Header.Set("authorization", "Bearer "+token)
 	}
+	if offset > 0 {
+		req.Header.Set("range", fmt.Sprintf("bytes=%d-", offset))
+	}
 	resp, err := httpclient.Default().Do(req)
 	if err != nil {
-		tmp.Close()
 		return "", err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		tmp.Close()
+
+	// A resumed request must answer 206; a 200 means the server ignored the
+	// range and the partial must be restarted.
+	restart := false
+	switch resp.StatusCode {
+	case http.StatusOK:
+		restart = offset > 0
+	case http.StatusPartialContent:
+	default:
 		return "", fmt.Errorf("download %s/%s: status %d", repo, mf.Name, resp.StatusCode)
 	}
 
-	h := sha256.New()
-	if _, err := io.Copy(io.MultiWriter(tmp, h), resp.Body); err != nil {
-		tmp.Close()
+	flags := os.O_CREATE | os.O_WRONLY
+	if restart {
+		flags |= os.O_TRUNC
+		offset = 0
+	} else {
+		flags |= os.O_APPEND
+	}
+	f, err := os.OpenFile(part, flags, 0o600)
+	if err != nil {
 		return "", err
 	}
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		f.Close()
+		return "", err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		return "", err
+	}
+
 	if mf.SHA256 != "" {
-		got := hex.EncodeToString(h.Sum(nil))
-		if !strings.EqualFold(got, mf.SHA256) {
-			tmp.Close()
-			return "", fmt.Errorf("checksum mismatch for %s: got %s want %s", mf.Name, got, mf.SHA256)
+		if err := verifyChecksum(part, mf.SHA256); err != nil {
+			return "", err
 		}
 	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return "", err
-	}
-	if err := tmp.Close(); err != nil {
-		return "", err
-	}
-	if err := os.Chmod(tmpName, 0o600); err != nil {
-		return "", err
-	}
-	if err := os.Rename(tmpName, dest); err != nil {
+	if err := os.Rename(part, dest); err != nil {
 		return "", err
 	}
 	return dest, nil
+}
+
+func resumeOffset(part string) (int64, error) {
+	fi, err := os.Stat(part)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	return fi.Size(), nil
+}
+
+func verifyChecksum(path, want string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return err
+	}
+	got := hex.EncodeToString(h.Sum(nil))
+	if !strings.EqualFold(got, want) {
+		return fmt.Errorf("checksum mismatch: got %s want %s", got, want)
+	}
+	return nil
 }
