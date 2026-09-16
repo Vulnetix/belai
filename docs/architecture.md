@@ -1006,7 +1006,7 @@ Supporting pieces:
 - The HuggingFace token resolves as provider `huggingface` (`HF_TOKEN` /
   `HUGGINGFACE_TOKEN`) through the same credential stack as providers.
 - `huggingface` is also a built-in chat provider using the OpenAI-compatible
-  Serverless Inference API at `https://api-inference.huggingface.co/v1`,
+  Serverless Inference API at `https://router.huggingface.co/hf-inference/v1`,
   authenticated with the same token.
 - The TUI exposes this through `/local-model` (assess the machine and server),
   `/local-model download <repo>` (resumable, checksummed download with live

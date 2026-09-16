@@ -526,7 +526,7 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 		} else {
 			status.Missing = append(status.Missing, "api_key")
 		}
-		cfg.BaseURL = "https://api-inference.huggingface.co/v1"
+		cfg.BaseURL = "https://router.huggingface.co/hf-inference/v1"
 	default:
 		// Custom path: an unknown name must resolve to a configured profile.
 		// Built-in arms are reached first, so a profile named "openai" is never

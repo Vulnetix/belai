@@ -84,10 +84,24 @@ func TestListGatewayStaticOnly(t *testing.T) {
 	}
 }
 
-func TestListHuggingFaceStaticOnly(t *testing.T) {
-	models, err := List(context.Background(), Target{Name: "huggingface", BaseURL: "https://x", APIKey: "k"}, nil)
-	if err != nil || models != nil {
-		t.Fatalf("huggingface should return nil models with no error, got %v, %v", models, err)
+func TestListHuggingFace(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{
+			map[string]any{"id": "Qwen/Qwen2.5-72B-Instruct"},
+			map[string]any{"id": "meta-llama/Llama-3.3-70B-Instruct"},
+		}})
+	}))
+	defer srv.Close()
+
+	models, err := List(context.Background(), Target{Name: "huggingface", BaseURL: srv.URL, APIKey: "k"}, srv.Client())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(models) != 2 || models[0].ID != "Qwen/Qwen2.5-72B-Instruct" || models[1].ID != "meta-llama/Llama-3.3-70B-Instruct" {
+		t.Fatalf("models = %+v", models)
 	}
 }
 

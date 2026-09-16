@@ -830,7 +830,7 @@ func TestPrepareHuggingFaceBaseURL(t *testing.T) {
 	if !status.Configured {
 		t.Fatalf("expected configured, missing=%v", status.Missing)
 	}
-	if cfg.BaseURL != "https://api-inference.huggingface.co/v1" {
+	if cfg.BaseURL != "https://router.huggingface.co/hf-inference/v1" {
 		t.Fatalf("BaseURL = %q", cfg.BaseURL)
 	}
 	if cfg.Model != "Qwen/Qwen2.5-72B-Instruct" {
