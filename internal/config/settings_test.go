@@ -474,3 +474,20 @@ func TestUIOverrideCarriesShowTodos(t *testing.T) {
 		t.Fatal("Override mutated the receiver")
 	}
 }
+
+func TestCavemanEnabledDefaults(t *testing.T) {
+	var zero Settings
+	if zero.CavemanEnabled() {
+		t.Fatal("unset caveman should default to off")
+	}
+	on := true
+	onSettings := Settings{Caveman: &on}
+	if !onSettings.CavemanEnabled() {
+		t.Fatal("caveman=true should be enabled")
+	}
+	off := false
+	offSettings := Settings{Caveman: &off}
+	if offSettings.CavemanEnabled() {
+		t.Fatal("caveman=false should be disabled")
+	}
+}

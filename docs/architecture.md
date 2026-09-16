@@ -132,9 +132,9 @@ permission-allowed, and read-only runs concurrently, capped at 4 in flight —
 unbounded fan-out against a rate-limited provider produces 429s, which is
 worse than sequential. Anything else ends the run:
 
-- `Bash` — the sole mutating kind (there is no Edit/Write tool; all mutation
-  goes through Bash). A `Read` after a `Bash` that wrote the file must
-  observe the write, so nothing reorders across a Bash call.
+- a mutating kind — `Bash` (full mode), `Write`, or `Edit`: anything outside
+  the read-only allowlist. A `Read` after a mutating tool that wrote the file
+  must observe the write, so nothing reorders across a mutating call.
 - A permission ask — two concurrent asks would race the UI, so the run stops
   at the first one and the tail runs sequentially with the ask.
 - Malformed arguments or an unknown tool name — the call is answered
@@ -145,11 +145,45 @@ out-of-order completion from the concurrent group lands on its own row
 rather than the newest tool row; legacy events without a call id fall back
 to the last tool row.
 
+### Write and Edit tools
+
+`Write` and `Edit` are first-class mutating tools, alongside full-mode `Bash`.
+Both confine paths to the workdir: `Write` resolves the deepest existing
+ancestor and re-appends the new tail (`SanitizeNewPath`, so a file that does
+not exist yet can still be written), while `Edit` requires the file to already
+exist (`SanitizePath`). `Write` is bounded to 1 MiB, `Edit` to 1 MiB of file
+content, and both write atomically (temp file + rename), so a failure never
+leaves a half-written file. Results are terse confirmations —
+`wrote src/x.go (412 bytes, 18 lines)` or `edited src/x.go (2 replacements)` —
+and never echo file content back into the classifier round-trip.
+
+`Edit` fails closed, in order: missing file; file over the size bound; binary
+file (a NUL byte, matching `Read`); `old_string == new_string`; zero matches
+(`old_string not found in <path>`); and multiple matches without
+`replace_all=true` (`old_string appears N times in <path>; pass
+replace_all=true or include more surrounding context to make it unique`). The
+match is exact bytes with no whitespace or line-ending normalisation, and the
+file is left byte-identical on every failure. This is deliberate: silent
+normalisation is the classic source of "the edit landed somewhere else", so
+the tool refuses rather than guess.
+
+Every mutating call asks before it touches disk. In the TUI this is the
+approval view (`viewPermissionAsk`): it shows the tool name, the normalised
+subject path, and the diff the call would make (`filediff.Preview`, a pure
+function over the row builder). Allow-once runs it, allow-always writes a
+scoped `permissions.allow` rule first so the next matching call short-circuits,
+and deny (or Esc) withholds without cancelling the turn. An explicit
+`permissions.allow` rule skips the prompt; an explicit deny still blocks before
+it. With no approver (the CLI, subagents) the existing
+`permission_ask_no_tty` posture applies: enforce withholds naming
+`-allow-ask-without-tty`, warn/ignore falls through to allow.
+
 ### Plan mode (read-only)
 
 Mirrors Pi's plan-mode extension:
 
-- Built-in edit/write tools are disabled; other tools remain active.
+- Built-in edit/write tools (`Write`, `Edit`, and the denylisted family
+  `apply_patch`/`patch`/…) are disabled; other tools remain active.
 - `Bash` is registered by default and restricted to a read-only allowlist
   (`cat`, `grep`, `find`, `ls`, read-only `git` subcommands such as
   `status`/`log`/`diff`, `uname`, etc.).
@@ -309,13 +343,18 @@ agents installed but holding no importable key are listed with the reason.
 
 `internal/prompt` assembles the system prompt. It carries exactly one context
 block at a time (active plan, goal, or profile) and rewrites assistant voice
-guidance when `caveman` is on.
+guidance when `caveman` is on. Caveman is off by default (`nil` or `false`).
+Toggling it from the chat view with `ctrl+alt+c` persists the setting to the
+current scope (project by default), invalidates the cached agent session so
+the next turn picks up the new system prompt, and emits a `caveman: on/off`
+system message for immediate feedback.
 
 ## TUI
 
 `internal/tui` is a Bubble Tea app laid out Codex-style: a scrolling transcript
 viewport, Pix banner, streaming assistant/tool output, slash-command editor
-with autocomplete, the agent picker, `/model` provider/model/effort picker,
+with autocomplete, the agent picker, `/model` provider/model/effort picker (a
+windowed list that scrolls with the cursor and a `/` search filter),
 `/settings` browser, `/permissions` editor, and a two-line status footer. The Ask composer doubles
 as the working indicator: it shows a Role Manager pill while classification
 runs and a generic `working` label for plain I/O (see below).
@@ -324,11 +363,12 @@ runs and a generic `working` label for plain I/O (see below).
 
 The footer is a two-line status bar:
 - Line 1: cwd (home collapsed to `~`) and git branch (`⎇ main`).
-- Line 2: provider·model, mode chip (colored), session (name or short id),
-  context-usage progress bar and remaining percentage. The mode chip carries
-  the engaged agent when there is one and the mode is agent — `agent ·
-  reviewer` — so what is carrying the turn is visible without opening
-  anything.
+- Line 2: provider·model·`caveman: on/off`, mode chip (colored), session (name
+  or short id), context-usage progress bar and remaining percentage. The mode
+  chip carries the engaged agent when there is one and the mode is agent —
+  `agent · reviewer` — so what is carrying the turn is visible without opening
+  anything. The caveman segment renders in muted style and is always present
+  so the voice-rewrite state cannot be mistaken.
 - Segments are never truncated or wrapped: when the terminal is narrower
   than the content, the padding between the mode chip and the right-hand
   segments clamps to one cell and the line overflows instead.
@@ -491,16 +531,17 @@ and status colours are the whole signal.
 
 ### Diffs
 
-There is no Edit or Write tool, so a diff cannot be reported by the tool that
-made the change; `internal/filediff` observes it around the call instead.
-Inside a git repository discovery is by `git status`, which sees what happened
-however it happened — `sed`, a heredoc, a formatter, `make`, a test that
-rewrites its own fixtures. Outside one it falls back to inferring targets from
-the command, and refuses far more than it accepts: reporting "nothing changed"
-for a command that changed everything would be worse than showing nothing.
+`Write` and `Edit` report their targets through `tools.Targeter`, so
+`internal/filediff` snapshots exactly those paths via `BeforePaths` around the
+call. `Bash`'s changes are still observed rather than reported: inside a git
+repository discovery is by `git status`, which sees what happened however it
+happened — `sed`, a heredoc, a formatter, `make`, a test that rewrites its own
+fixtures. Outside one it falls back to inferring targets from the command, and
+refuses far more than it accepts: reporting "nothing changed" for a command
+that changed everything would be worse than showing nothing.
 
-The recorder hooks `executeCall` around Bash only (the sole mutating tool,
-which always runs on the sequential path, so no locking is needed) and emits
+The recorder hooks `executeCall` around every mutating tool (which always runs
+on the sequential path, so no locking is needed) and emits
 `EventToolDiffKind`. Like `EventToolProgressKind` it is render-only: neither
 enters the conversation nor reaches a model, and tests assert the
 provider-facing turns are unchanged by their presence.
@@ -570,6 +611,7 @@ Business rules:
 | `ctrl+l` | Clear the transcript *view* — the session is kept |
 | `ctrl+o` | Toggle full output for all truncated turns and tool results |
 | `ctrl+r` / `ctrl+t` | Toggle reasoning-panel / tool-row display for the session |
+| `ctrl+alt+c` | Toggle the caveman voice rewrite, persisting to the scoped settings file |
 | `ctrl+alt+p` | Cycle mode and re-sync plan mode, from any screen |
 | `ctrl+home` / `ctrl+end` | Jump the transcript to the top / bottom |
 | `ctrl+j` / `alt+enter` | Insert a newline in the prompt editor |
@@ -609,7 +651,7 @@ binding needs a line there as well as in this document.
 - `@path` or `@"path with spaces"` attaches the contents of a file after
   classification. Use `@agent:name` to engage a named agent instead.
 - `!cmd` executes a local `Bash` command (full shell by default; read-only
-  in plan mode, or whenever `bash_readonly` is set) and sends the output to
+  in plan mode, or whenever `read_only` is set) and sends the output to
   the model under the `signet:debug` profile.
 
 ### Agent picker
@@ -691,25 +733,28 @@ Enter to save the current editor text to the project library. Esc cancels.
 
 | Command | Description |
 | ------- | ----------- |
-| `/help` | Show the commands and every keyboard shortcut |
-| `/model` | Show current provider and model |
+| `/profile` | Switch agent profile |
+| `/local-model` | Assess, download, launch, or stop a local classifier model |
+| `/model` | Pick provider and model |
 | `/mode` | Show or set operating mode (e.g. `/mode plan`) |
+| `/todos` | Show plan progress |
+| `/execute` | Leave plan mode and execute the plan |
+| `/refine` | Refine the extracted plan |
+| `/code-review` | Run a Vulnetix code review |
 | `/settings` | View and edit settings |
 | `/credentials` | Manage provider credentials |
 | `/permissions` | Edit tool permissions |
-| `/profile` | Switch agent profile |
-| `/clear` (or `/new`) | Start a new session |
+| `/help` | Show the commands and every keyboard shortcut |
+| `/clear` | Start a new session |
 | `/compact` | Summarise the session into a new one |
-| `/rename` | Rename the current session |
-| `/todos` | Show progress of the tracked todo list |
+| `/rename` | Rename this session |
 | `/agent` | Manage background agents (`create`, `list`, `edit <name>`, `start`, `stop`, `pause`, `resume`, `log`) |
-| `/execute` | Leave plan mode and execute the extracted plan |
-| `/refine` | Refine the extracted plan without leaving plan mode |
-| `/code-review` | Run a Vulnetix code review over the working tree |
-| `/local-model` | Assess, download, launch, or stop a local classifier model |
 
-The table is the whole set registered by `internal/tui.NewRegistry`; `/new` is
-an alias of `/clear` rather than a separate entry.
+The table is the whole set registered by `internal/tui.NewRegistry`. Two
+aliases exist but are not table rows: `/new` is a visible alias of `/clear`
+(`RegisterAlias`, appears in `Names()` and autocomplete), and `/provider` is a
+hidden alias of `/model` (`RegisterHiddenAlias`, dispatchable but absent from
+`Names()` and autocomplete).
 
 ### Startup credential message
 
@@ -733,13 +778,16 @@ renders `(?)` until a fresh assistant response lands.
 The effective settings view merges, lowest to highest: defaults, `state.json`,
 global `settings.json`, project `settings.json`, environment, then CLI flags.
 `/settings` shows the effective value and provenance for each key. Settings
-include `provider`, `model`, `effort`, `caveman`, `bash_readonly`,
+include `provider`, `model`, `effort`, `caveman`, `read_only`,
 `permissions` (structured `allow`/`ask`/`deny`), `session_retention_days`,
 `ui.banner`, `ui.status_bar`, `ui.spinner`, `ui.show_reasoning`,
-`ui.show_tool_calls`, `ui.show_todos`, `ui.mouse` (default on; `ui.show_reasoning` defaults off),
-`ui.colors`, `ui.kitty_keyboard`,
+`ui.show_tool_calls`, `ui.show_todos`, `ui.mouse`, `ui.colors`,
+`ui.kitty_keyboard` (all default on when unset except `ui.show_reasoning`,
+which defaults off unless explicitly true; `ui.kitty_keyboard` is overridden
+off by `SIGNET_NO_KITTY=1`),
 `show_session_names` (default on), `context_windows`,
 `resilience` (`max_attempts`, `max_iterations`, `max_passes`, `max_clarify_rounds`), `providers`,
+`caveman` (default off; toggled from any screen with `ctrl+alt+c`),
 `allow_project_providers`, and the `classifier` block
 (`provider`, `model`, `effort`, `chunk.max_bytes`, `chunk.concurrency`) covered
 in the Security classifier section above. That enumeration is the whole
@@ -752,12 +800,13 @@ tighten a budget but never raise one.
 Tool availability defaults to allow: a call matching no permission rule
 proceeds (unregistered tool names are still rejected by the agent's registry
 check first). Opt-outs, in order of strength: a `permissions.deny` rule
-always blocks; `bash_readonly: true` (settings file or the `/settings` "bash
-read-only" toggle) confines Bash to its read-only allowlist; and
-`postures: {permission_no_match: enforce}` in `preferences.yaml` restores the
-legacy no-match-block. Bash otherwise runs full shell commands via `sh -c`
-(timeout, env scrubbing, and output truncation still apply); plan mode keeps
-Bash read-only regardless of `bash_readonly`.
+always blocks; `read_only: true` (settings file or the `/settings` "read-only
+tools" toggle) removes every mutating tool from the registry — `Write`,
+`Edit`, and full `Bash` are not registered, though a read-only `Bash` remains
+for inspection; and `postures: {permission_no_match: enforce}` in
+`preferences.yaml` restores the legacy no-match-block. `Bash` otherwise runs
+full shell commands via `sh -c` (timeout, env scrubbing, and output truncation
+still apply); plan mode keeps `Bash` read-only regardless of `read_only`.
 ## Local inference
 
 The classifier can run against a local model through the existing `ollama`
@@ -804,7 +853,7 @@ The TUI's perceived-latency path is tuned at several layers:
   running tool rows re-render; everything else renders once per change.
 - **Concurrent read-only tools**: a leading run of read-only, permission-allowed
   tool calls executes concurrently (bounded by 4), never reordering across a
-  Bash call, and results re-enter in call order keyed by `ToolCallID`.
+  mutating call, and results re-enter in call order keyed by `ToolCallID`.
 - **Shared HTTP client**: one tuned `httpclient.Default()` transport
   (`MaxIdleConnsPerHost: 16`, `ResponseHeaderTimeout: 30s`, no blanket
   `Client.Timeout`) serves provider, tool, credential and catalogue I/O. SSE

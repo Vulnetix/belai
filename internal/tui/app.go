@@ -1265,6 +1265,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.cycleMode()
 			a.syncPlanMode()
 			return a, nil
+		case "ctrl+alt+c":
+			return a, a.toggleCaveman()
 		}
 		if a.view != viewChat {
 			if h, ok := viewHandlers[a.view]; ok {
@@ -2277,6 +2279,17 @@ func (a *App) cycleMode() {
 	a.saveMode()
 }
 
+func (a *App) toggleCaveman() tea.Cmd {
+	next := !a.settings.CavemanEnabled()
+	if err := a.mutateSetting(func(s *config.Settings) { s.Caveman = &next }); err != nil {
+		a.addSystem("caveman toggle failed: " + err.Error())
+		return nil
+	}
+	a.invalidateAgentSession()
+	a.addSystem("caveman: " + boolLabel(next))
+	return nil
+}
+
 func (a *App) saveMode() {
 	a.state.LastMode = a.mode
 	_ = config.SaveState(a.state)
@@ -2457,6 +2470,7 @@ func (a *App) refreshFooter() {
 	// picker and settings view both write there, and refreshProvider copies
 	// the value into cfg for the agent session.
 	a.footer.Effort = a.settings.Effort
+	a.footer.Caveman = a.settings.CavemanEnabled()
 	if a.gitOK {
 		a.footer.Branch = a.gitInfo.Branch
 		a.footer.Cwd = a.workdir

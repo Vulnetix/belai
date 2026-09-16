@@ -2,6 +2,8 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -231,5 +233,91 @@ func TestPlanModeWriteWithheldAndUntouched(t *testing.T) {
 	}
 	if !sawWithheld {
 		t.Fatal("expected a plan-mode withheld result")
+	}
+}
+
+// TestClassifierModePlanLatchesPerTurn pins 7.3: a session built PlanMode
+// false, whose classifier returns ModePlan, must withhold a Write for that
+// turn, leave the file untouched, and restore PlanMode() to false afterwards.
+func TestClassifierModePlanLatchesPerTurn(t *testing.T) {
+	root := t.TempDir()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		var system string
+		for _, m := range req.Messages {
+			if m.Role == "system" {
+				system = m.Content
+			}
+		}
+		switch {
+		case contains(system, "security classifier"):
+			writeChatJSON(w, "SAFE")
+		case contains(system, "operating-mode classifier"):
+			writeChatJSON(w, "PLAN")
+		default:
+			hasToolResult := false
+			for _, m := range req.Messages {
+				if m.Role == "tool" {
+					hasToolResult = true
+				}
+			}
+			msg := map[string]any{"role": "assistant", "content": ""}
+			if !hasToolResult {
+				msg["tool_calls"] = []any{map[string]any{
+					"id":       "call_1",
+					"type":     "function",
+					"function": map[string]any{"name": "Write", "arguments": writeArgs()},
+				}}
+			} else {
+				msg["content"] = "done"
+			}
+			b, _ := json.Marshal(map[string]any{
+				"id":     "x",
+				"object": "chat.completion",
+				"choices": []any{map[string]any{
+					"index":         0,
+					"message":       msg,
+					"finish_reason": "stop",
+				}},
+			})
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(b)
+		}
+	}))
+	defer srv.Close()
+
+	cfg := run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"}
+	sess, err := NewSession(Options{
+		Cfg:      cfg,
+		Client:   srv.Client(),
+		Registry: tools.NewRegistry(&tools.Write{Root: root}),
+		Posture:  posture.Defaults(),
+		Workdir:  root,
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if sess.PlanMode() {
+		t.Fatal("precondition: PlanMode should start false")
+	}
+
+	res, err := sess.Run(nil, "plan a change then write it")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Reply != "done" {
+		t.Fatalf("reply = %q", res.Reply)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "x.txt")); !os.IsNotExist(statErr) {
+		t.Fatalf("file must not be written in classifier-inferred plan mode, stat err = %v", statErr)
+	}
+	if sess.PlanMode() {
+		t.Fatal("PlanMode should be restored to false after the turn")
 	}
 }

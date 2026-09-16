@@ -314,6 +314,12 @@ func (s Settings) AllowProjectProvidersEnabled() bool {
 	return s.AllowProjectProviders != nil && *s.AllowProjectProviders
 }
 
+// CavemanEnabled reports whether the caveman voice rewrite is active. The
+// default (nil or false) is off.
+func (s Settings) CavemanEnabled() bool {
+	return s.Caveman != nil && *s.Caveman
+}
+
 // ReadOnlyEnabled reports whether the master read-only switch is on. The
 // default (nil or false) is off: the full tool set, including mutating tools.
 func (s Settings) ReadOnlyEnabled() bool {

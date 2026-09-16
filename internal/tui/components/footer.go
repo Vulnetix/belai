@@ -9,11 +9,14 @@ import (
 )
 
 // Footer shows session, context usage (number and progress bar), model with
-// optional effort, provider, and mode status.
+// optional effort, caveman status, provider, and mode status.
 type Footer struct {
 	Session string
 	Tokens  int
 	Model   string
+
+	// Caveman reports whether the caveman voice rewrite is active.
+	Caveman bool
 
 	// Effort is the model's reasoning effort (e.g. "low", "medium", "high",
 	// "none"). Rendered subtly next to the model when set; empty means the
@@ -87,6 +90,7 @@ func (f *Footer) View() string {
 		}
 		parts = append(parts, modelPart)
 	}
+	parts = append(parts, MutedStyle.Render("caveman: "+onOff(f.Caveman)))
 	rightParts := []string{}
 	rightParts = append(rightParts, MutedStyle.Render(f.sessionSegment()))
 	rightParts = append(rightParts, f.contextSegment())
@@ -266,4 +270,12 @@ func truncateRunes(s string, max int) string {
 		return s
 	}
 	return string(runes[:max-1]) + "…"
+}
+
+// onOff renders a boolean as "on" or "off".
+func onOff(v bool) string {
+	if v {
+		return "on"
+	}
+	return "off"
 }

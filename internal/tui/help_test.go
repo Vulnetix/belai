@@ -55,7 +55,7 @@ func TestKeySectionsWellFormed(t *testing.T) {
 func TestHelpTextListsGlobalAndChatKeys(t *testing.T) {
 	got := helpText(NewRegistry(t.TempDir()))
 	for _, want := range []string{
-		"ctrl+c", "ctrl+d", "ctrl+r", "ctrl+t", "ctrl+alt+p",
+		"ctrl+c", "ctrl+d", "ctrl+r", "ctrl+t", "ctrl+alt+c", "ctrl+alt+p",
 		"shift+tab", "ctrl+l", "ctrl+o", "alt+s", "ctrl+j",
 		"pgup", "ctrl+home", "ctrl+end", "shift+up", "shift+down",
 	} {

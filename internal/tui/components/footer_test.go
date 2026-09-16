@@ -77,6 +77,23 @@ func TestFooterRendersTwoLines(t *testing.T) {
 	}
 }
 
+func TestFooterCavemanIndicator(t *testing.T) {
+	t.Run("enabled", func(t *testing.T) {
+		f := Footer{Model: "gpt-5", Provider: "openai", Mode: "agent", Caveman: true, Width: 100}
+		v := f.View()
+		if !strings.Contains(v, "caveman: on") {
+			t.Fatalf("footer should show caveman on: %q", v)
+		}
+	})
+	t.Run("disabled", func(t *testing.T) {
+		f := Footer{Model: "gpt-5", Provider: "openai", Mode: "agent", Caveman: false, Width: 100}
+		v := f.View()
+		if !strings.Contains(v, "caveman: off") {
+			t.Fatalf("footer should show caveman off: %q", v)
+		}
+	})
+}
+
 func TestContextBarFilledAndEmpty(t *testing.T) {
 	// 50% usage: 5 of 10 cells filled.
 	f := Footer{Tokens: 50000, ContextLimit: 100000}
@@ -218,12 +235,15 @@ func TestFooterEffortRendering(t *testing.T) {
 		}
 	})
 	t.Run("empty effort renders nothing", func(t *testing.T) {
-		f := Footer{Model: "gpt-5", Effort: "", Mode: "agent", Width: 100}
+		f := Footer{Model: "gpt-5", Effort: "", Mode: "agent", Caveman: false, Width: 100}
 		v := f.View()
 		lines := strings.Split(v, "\n")
 		line2 := lines[len(lines)-1]
-		if strings.Contains(line2, "gpt-5 ·") {
-			t.Fatalf("empty effort must not render a separator: %q", line2)
+		if strings.Contains(line2, "gpt-5 · high") || strings.Contains(line2, "gpt-5 · none") {
+			t.Fatalf("empty effort must not render an effort value: %q", line2)
+		}
+		if !strings.Contains(line2, "caveman: off") {
+			t.Fatalf("caveman status should still render when effort is empty: %q", line2)
 		}
 	})
 	t.Run("effort without a model renders nothing", func(t *testing.T) {

@@ -29,6 +29,7 @@ func keySections() []keySection {
 			{"ctrl+d", "quit"},
 			{"ctrl+r", "cycle reasoning display: auto, on, off"},
 			{"ctrl+t", "cycle tool-call display: auto, on, off"},
+			{"ctrl+alt+c", "toggle caveman voice rewrite"},
 			{"ctrl+alt+p", "cycle operating mode"},
 		}},
 		{"chat", []keyBinding{
@@ -75,12 +76,13 @@ func keySections() []keySection {
 		{"/model", []keyBinding{
 			{"left, right", "previous provider, next provider"},
 			{"up, down", "previous model, next model"},
+			{"/", "filter the model list"},
 			{"e", "cycle reasoning effort"},
 			{"s", "cycle scope: session, global, project"},
 			{"r", "refetch the model catalogue"},
 			{"c", "open credentials"},
 			{"enter", "use this model"},
-			{"esc", "back"},
+			{"esc", "clear the filter, then back"},
 		}},
 		{"/credentials", []keyBinding{
 			{"up, down", "change provider"},

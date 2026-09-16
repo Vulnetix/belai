@@ -700,3 +700,94 @@ func TestEgressTurnsMemoisedAcrossCalls(t *testing.T) {
 		t.Fatalf("memoised egress reserved new nonces: active %d -> %d", activeAfterFirst, pool.Active())
 	}
 }
+
+// TestStreamDrainsToolCallsOnNonToolFinish pins the streaming-drop fix: an
+// OpenAI-shaped stream that closes with stop/length (or a bare [DONE]) must
+// still surface its accumulated tool calls, not silently drop them.
+func TestStreamDrainsToolCallsOnNonToolFinish(t *testing.T) {
+	cases := []struct {
+		name        string
+		finishChunk string // "" means no finish chunk at all
+	}{
+		{"stop", `data: {"choices":[{"finish_reason":"stop"}]}` + "\n\n"},
+		{"length", `data: {"choices":[{"finish_reason":"length"}]}` + "\n\n"},
+		{"none", ""},
+		{"tool_calls", `data: {"choices":[{"finish_reason":"tool_calls"}]}` + "\n\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				flusher, _ := w.(http.Flusher)
+				fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"Read\",\"arguments\":\"{\\\"path\\\":\\\"\"}}]}}]}\n\n")
+				fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"a.go\\\"}\"}}]}}]}\n\n")
+				if tc.finishChunk != "" {
+					fmt.Fprint(w, tc.finishChunk)
+				}
+				fmt.Fprint(w, "data: [DONE]\n\n")
+				flusher.Flush()
+			}))
+			defer srv.Close()
+
+			cfg := Config{Provider: "openai", BaseURL: srv.URL, APIKey: "sk", Model: "gpt-5"}
+			ch, err := Stream(context.Background(), cfg, []Turn{{Role: "user", Content: "hi"}}, srv.Client())
+			if err != nil {
+				t.Fatalf("Stream: %v", err)
+			}
+			var done *Assistant
+			for c := range ch {
+				if c.Err != nil {
+					t.Fatalf("stream error: %v", c.Err)
+				}
+				if c.Done {
+					done = c.Assistant
+					break
+				}
+			}
+			if done == nil || len(done.ToolCalls) != 1 {
+				t.Fatalf("expected exactly one tool call, got %+v", done)
+			}
+			if done.ToolCalls[0].ID != "call_1" || done.ToolCalls[0].Name != "Read" || done.ToolCalls[0].RawArgs != `{"path":"a.go"}` {
+				t.Fatalf("tool call = %+v", done.ToolCalls[0])
+			}
+		})
+	}
+}
+
+// TestStreamAnthropicToolCallCountUnchanged pins the regression guard for the
+// Anthropic shape: content_block_stop already completes the call, so the
+// unconditional [DONE]-drain must not double-count it.
+func TestStreamAnthropicToolCallCountUnchanged(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		fmt.Fprint(w, "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"Read\"}}\n\n")
+		fmt.Fprint(w, "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"path\\\":\\\"\"}}\n\n")
+		fmt.Fprint(w, "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"a.go\\\"}\"}}\n\n")
+		fmt.Fprint(w, "data: {\"type\":\"content_block_stop\",\"index\":0}\n\n")
+		flusher.Flush()
+	}))
+	defer srv.Close()
+
+	cfg := Config{Provider: "anthropic", BaseURL: srv.URL, APIKey: "sk", Model: "claude-opus-4"}
+	ch, err := Stream(context.Background(), cfg, []Turn{{Role: "user", Content: "hi"}}, srv.Client())
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	var done *Assistant
+	for c := range ch {
+		if c.Err != nil {
+			t.Fatalf("stream error: %v", c.Err)
+		}
+		if c.Done {
+			done = c.Assistant
+			break
+		}
+	}
+	if done == nil || len(done.ToolCalls) != 1 {
+		t.Fatalf("expected exactly one tool call, got %+v", done)
+	}
+	if done.ToolCalls[0].RawArgs != `{"path":"a.go"}` {
+		t.Fatalf("tool call = %+v", done.ToolCalls[0])
+	}
+}

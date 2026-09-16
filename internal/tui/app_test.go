@@ -75,6 +75,95 @@ func TestNewAppView(t *testing.T) {
 	}
 }
 
+func TestToggleCavemanShortcut(t *testing.T) {
+	a := New(Options{Workdir: t.TempDir()})
+	if a.settings.CavemanEnabled() {
+		t.Fatal("caveman should default to off")
+	}
+
+	// Simulate a cached session: toggling caveman must drop it so the next
+	// turn picks up the new system prompt.
+	a.agent = &agent.Session{}
+
+	cmd := a.toggleCaveman()
+	if cmd != nil {
+		t.Fatalf("toggleCaveman returned a command: %v", cmd)
+	}
+	if !a.settings.CavemanEnabled() {
+		t.Fatal("caveman should be enabled after toggle")
+	}
+	if a.agent != nil {
+		t.Fatal("caveman toggle should invalidate the cached agent session")
+	}
+	last := a.messages[len(a.messages)-1]
+	if !strings.Contains(last.Text(), "caveman: on") {
+		t.Fatalf("expected system message caveman: on, got %q", last.Text())
+	}
+
+	cmd = a.toggleCaveman()
+	if cmd != nil {
+		t.Fatalf("toggleCaveman returned a command: %v", cmd)
+	}
+	if a.settings.CavemanEnabled() {
+		t.Fatal("caveman should be disabled after second toggle")
+	}
+	last = a.messages[len(a.messages)-1]
+	if !strings.Contains(last.Text(), "caveman: off") {
+		t.Fatalf("expected system message caveman: off, got %q", last.Text())
+	}
+}
+
+func TestToggleCavemanPersistsToProjectSettings(t *testing.T) {
+	workdir := t.TempDir()
+	a := New(Options{Workdir: workdir})
+
+	// Toggle on writes to the default (project) scope.
+	_ = a.toggleCaveman()
+	proj, err := config.LoadProject(workdir)
+	if err != nil {
+		t.Fatalf("LoadProject: %v", err)
+	}
+	if proj.Caveman == nil || !*proj.Caveman {
+		t.Fatalf("project settings must have caveman=true after toggle, got %+v", proj.Caveman)
+	}
+
+	// Toggle off writes false so a global true is explicitly overridden.
+	_ = a.toggleCaveman()
+	proj, err = config.LoadProject(workdir)
+	if err != nil {
+		t.Fatalf("LoadProject: %v", err)
+	}
+	if proj.Caveman == nil || *proj.Caveman {
+		t.Fatalf("project settings must have caveman=false after second toggle, got %+v", proj.Caveman)
+	}
+}
+
+func TestToggleCavemanOverridesGlobalDefault(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	workdir := t.TempDir()
+
+	on := true
+	_ = config.SaveGlobal(config.Settings{Caveman: &on})
+
+	a := New(Options{Workdir: workdir})
+	if !a.settings.CavemanEnabled() {
+		t.Fatal("effective settings should inherit global caveman=true")
+	}
+
+	_ = a.toggleCaveman() // writes false to project
+	if a.settings.CavemanEnabled() {
+		t.Fatal("caveman should be disabled after project-level toggle")
+	}
+
+	proj, err := config.LoadProject(workdir)
+	if err != nil {
+		t.Fatalf("LoadProject: %v", err)
+	}
+	if proj.Caveman == nil || *proj.Caveman {
+		t.Fatalf("project settings must explicitly set caveman=false to shadow global true")
+	}
+}
+
 func TestClassifyModeSelectsPlan(t *testing.T) {
 	a := NewApp(t.TempDir(), "")
 	a.SetClassifier(&fakeClassifier{raw: "PLAN"})
