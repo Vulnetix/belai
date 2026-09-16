@@ -258,15 +258,15 @@ runs and a generic `working` label for plain I/O (see below).
 The footer is a two-line status bar:
 - Line 1: cwd (home collapsed to `~`) and git branch (`⎇ main`).
 - Line 2: provider·model, mode chip (colored), session (name or short id),
-  context usage with remaining percentage, cost.
-- Truncates per segment, dropping cost then session before wrapping.
+  context-usage progress bar and remaining percentage.
+- Truncates per segment, dropping the context bar then session before wrapping.
 
 Context usage has three degraded renderings:
 - `~` prefix — pure `chars/4` estimate (no provider usage anchor yet).
 - `(?)` instead of a percentage — the window is unknown, or the anchor predates
-  a `/compact` (stale).
-- a coloured percentage — only when anchored and fresh; `≥50%` green,
-  `≥20%` amber, `<20%` red.
+  a `/compact` (stale), so the context bar is empty and muted.
+- a coloured bar and percentage — only when anchored and fresh; `<20%`
+  remaining reads red, `<50%` remaining reads amber, otherwise teal.
 
 ### Submit flow and working indicator
 

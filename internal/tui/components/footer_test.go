@@ -67,10 +67,56 @@ func TestSessionSegmentNameVsID(t *testing.T) {
 }
 
 func TestFooterRendersTwoLines(t *testing.T) {
-	f := Footer{Session: "abcd1234", Tokens: 42, Cost: "$0.00", Model: "gpt-5", Provider: "openai", Mode: "agent", Width: 80, Cwd: "/tmp", Branch: "main"}
+	f := Footer{Session: "abcd1234", Tokens: 42, Model: "gpt-5", Provider: "openai", Mode: "agent", Width: 80, Cwd: "/tmp", Branch: "main"}
 	v := f.View()
 	lines := strings.Split(strings.TrimSpace(v), "\n")
 	if len(lines) < 2 {
 		t.Fatalf("footer should be two lines: %q", v)
+	}
+}
+
+func TestContextBarFilledAndEmpty(t *testing.T) {
+	// 50% usage: 5 of 10 cells filled.
+	f := Footer{Tokens: 50000, ContextLimit: 100000}
+	bar := f.contextBar()
+	filled := strings.Count(bar, "█")
+	empty := strings.Count(bar, "░")
+	if filled != 5 {
+		t.Fatalf("expected 5 filled cells at 50%%, got %d in %q", filled, bar)
+	}
+	if filled+empty != barWidth {
+		t.Fatalf("bar should be %d cells, got %d in %q", barWidth, filled+empty, bar)
+	}
+}
+
+func TestContextBarEmptyWhenUnknown(t *testing.T) {
+	f := Footer{Tokens: 50000, ContextLimit: 0}
+	bar := f.contextBar()
+	if strings.Contains(bar, "█") || strings.Contains(bar, "▏") {
+		t.Fatalf("unknown window should render empty bar, got %q", bar)
+	}
+	if !strings.Contains(bar, "░") {
+		t.Fatalf("unknown window should render empty placeholders, got %q", bar)
+	}
+}
+
+func TestContextBarEmptyWhenStale(t *testing.T) {
+	f := Footer{Tokens: 50000, ContextLimit: 100000, ContextStale: true}
+	bar := f.contextBar()
+	if strings.Contains(bar, "█") {
+		t.Fatalf("stale context should render empty bar, got %q", bar)
+	}
+}
+
+func TestBarColourThresholds(t *testing.T) {
+	f := Footer{}
+	if f.barColour(80) != ColorTeal {
+		t.Fatal("80% remaining should be teal")
+	}
+	if f.barColour(40) != ColorAmber {
+		t.Fatal("40% remaining should be amber")
+	}
+	if f.barColour(10) != ColorDanger {
+		t.Fatal("10% remaining should be red")
 	}
 }

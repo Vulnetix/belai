@@ -162,6 +162,7 @@ type App struct {
 
 	// mode classification (optional; nil skips auto-detection)
 	classifier  rolemanager.Classifier
+	cache       *rolemanager.Cache
 	namedAgent  string
 	modeWarning string
 
@@ -360,11 +361,12 @@ func New(opts Options) *App {
 	}
 
 	store, _ := session.NewStore()
+	cache, _ := rolemanager.LoadCache(rolemanager.DefaultCachePath())
 
 	a := &App{
 		registry:          NewRegistry(workdir),
 		editor:            components.NewEditor(),
-		footer:            components.Footer{Session: "new", Model: initial.Model, Cost: "$0.00"},
+		footer:            components.Footer{Session: "new", Model: initial.Model},
 		mode:              mode,
 		ctx:               context.Background(),
 		cfg:               initial,
@@ -373,6 +375,7 @@ func New(opts Options) *App {
 		resolver:          opts.Resolver,
 		posture:           pol,
 		planMode:          mode == "plan",
+		cache:             cache,
 		pending:           opts.Prompt,
 		requestedProvider: name,
 		workdir:           workdir,
@@ -2136,7 +2139,6 @@ func (a *App) refreshFooter() {
 	a.footer.Mode = a.mode
 	a.footer.Provider = a.cfg.Provider
 	a.footer.Model = a.cfg.Model
-	a.footer.Cost = "$0.00"
 	if a.gitOK {
 		a.footer.Branch = a.gitInfo.Branch
 		a.footer.Cwd = a.workdir

@@ -37,7 +37,7 @@ The architecture overview lives in [architecture.md](architecture.md).
 | Carrier resolution | `internal/agent` | Resolve active plan/goal/profile into prompt.Options | Live |
 | Credential resolution | `internal/credentials` | Detect configured providers and select the right default | Live |
 | Mode cycling | `internal/tui` | shift+tab cycles agent → plan → goal with persistence | Live |
-| Status bar | `internal/tui` | Provider·model, mode chip, cwd, git branch, context usage, cost | Live |
+| Status bar | `internal/tui` | Provider·model, mode chip, cwd, git branch, context-usage bar + percentage | Live |
 | Banner | `internal/tui` | Pix owl rendered with half-blocks, ASCII fallback | Live |
 | Settings UI | `internal/tui` | /settings browser (write-through) + /permissions editor | Live |
 | Model picker | `internal/tui` | /model provider tabs, model list, effort, scope | Live |
@@ -261,6 +261,39 @@ sequenceDiagram
         H->>H: warn; do not promote
     end
 ```
+
+### Chunked classification
+
+Oversized content (above `classifier.chunk.max_bytes`) is classified in
+overlapping chunks rather than rejected. The pipeline splits the sanitized
+content into chunks aligned to rune boundaries; adjacent chunks overlap by one
+eighth of the chunk size so an injection straddling a chunk boundary is still
+seen whole by at least one chunk. The chunks classify concurrently, capped by
+`classifier.chunk.concurrency`.
+
+The per-chunk verdicts fold fail-closed:
+
+| Condition | Result |
+| --------- | ------ |
+| Any chunk returns a non-`SAFE` sentinel | The whole content is that sentinel |
+| Any chunk returns malformed output | The whole content is malformed |
+| Every chunk returns `SAFE` | The whole content is `SAFE` |
+
+### Verdict cache
+
+The pipeline optionally memoises classifier verdicts keyed by the SHA-256 of
+the sanitized content.
+
+| Verdict type | Storage | Lifetime |
+| ------------ | ------- | -------- |
+| `SAFE` | In-memory session LRU | Session only; bounded by `defaultSafeCacheSize` |
+| Non-`SAFE` | Persistent bad-hash set (caller-supplied path) | Until the file is removed or overwritten |
+
+The cache is fail-open: a missing or corrupt bad-hash file simply costs a
+reclassification. Non-`SAFE` hashes persist so a previously refused payload is
+refused again without a classifier round trip. The caller wires the cache
+into the pipeline; when no cache is provided the pipeline classifies every
+payload fresh.
 
 ## Withheld-result rule
 

@@ -8,11 +8,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Footer shows session, token/cost, model, provider, and mode status.
+// Footer shows session, context usage (number and progress bar), model with
+// optional effort, provider, and mode status.
 type Footer struct {
 	Session  string
 	Tokens   int
-	Cost     string
 	Model    string
 	Provider string
 	Mode     string
@@ -71,9 +71,7 @@ func (f *Footer) View() string {
 	rightParts := []string{}
 	rightParts = append(rightParts, MutedStyle.Render(f.sessionSegment()))
 	rightParts = append(rightParts, f.contextSegment())
-	if f.Cost != "" {
-		rightParts = append(rightParts, MutedStyle.Render("cost: "+f.Cost))
-	}
+	rightParts = append(rightParts, f.contextBar())
 
 	left := strings.Join(parts, MutedStyle.Render(" · "))
 	right := strings.Join(rightParts, MutedStyle.Render("  ·  "))
@@ -139,6 +137,77 @@ func (f *Footer) contextSegment() string {
 	return fmt.Sprintf("tokens: ~%s (?)", tokens)
 }
 
+// barWidth is the cell width of the footer's context progress bar. Ten cells
+// at eighth-cell resolution resolve in 2% steps, and the width fits the slot
+// the old "cost:" label occupied.
+const barWidth = 10
+
+// barEighths renders a partially filled cell: entry i is (i+1)/8 full.
+var barEighths = [8]rune{'▏', '▎', '▍', '▌', '▋', '▊', '▉'}
+
+// contextBar renders the context window as a fixed-width progress bar in the
+// slot the cost label used to hold. Business rules:
+//
+//   - Fill is tokens/contextLimit clamped to [0, 1], rendered at
+//     eighth-cell resolution so a 10-cell bar steps in 2% increments.
+//   - Fill colour follows the same remaining-percentage thresholds as the
+//     text segment (barColour), so bar and number can never disagree.
+//   - When the window is unknown (ContextLimit == 0) or the usage predates a
+//     compaction (ContextStale), the bar is empty and muted: the harness
+//     draws no fill it cannot stand behind. The "(?)" lives in the text
+//     segment.
+//   - An unanchored (Estimated) token count fills the bar normally; the "~"
+//     prefix in the text segment is what marks the estimate.
+func (f *Footer) contextBar() string {
+	w := barWidth
+	full, eighth := 0, 0
+	if f.ContextLimit > 0 && !f.ContextStale {
+		frac := float64(f.Tokens) / float64(f.ContextLimit)
+		if frac < 0 {
+			frac = 0
+		}
+		if frac > 1 {
+			frac = 1
+		}
+		cells := frac * float64(w)
+		full = int(cells) // floor for non-negative cells
+		eighth = int((cells-float64(full))*8 + 0.5)
+		if eighth > 7 {
+			full++
+			eighth = 0
+		}
+	}
+	r := make([]rune, 0, w)
+	for i := 0; i < w; i++ {
+		switch {
+		case i < full:
+			r = append(r, '█')
+		case i == full && eighth > 0:
+			r = append(r, barEighths[eighth-1])
+		default:
+			r = append(r, '░')
+		}
+	}
+	if pct, ok := f.percentRemaining(); ok {
+		return lipgloss.NewStyle().Foreground(f.barColour(pct)).Render(string(r))
+	}
+	return MutedStyle.Render(string(r))
+}
+
+// barColour applies the footer's pressure thresholds to a remaining
+// percentage: <20% remaining reads red, <50% amber, otherwise teal. The text
+// percentage and the bar share this one rule.
+func (f *Footer) barColour(remainingPct int) lipgloss.TerminalColor {
+	switch {
+	case remainingPct < 20:
+		return ColorDanger
+	case remainingPct < 50:
+		return ColorAmber
+	default:
+		return ColorTeal
+	}
+}
+
 func (f *Footer) percentRemaining() (int, bool) {
 	if f.ContextLimit <= 0 || f.ContextStale {
 		return 0, false
@@ -150,14 +219,7 @@ func (f *Footer) percentRemaining() (int, bool) {
 }
 
 func (f *Footer) colourPct(pct int) string {
-	var colour lipgloss.TerminalColor = ColorTeal
-	switch {
-	case pct < 20:
-		colour = ColorDanger
-	case pct < 50:
-		colour = ColorAmber
-	}
-	return lipgloss.NewStyle().Foreground(colour).Render(fmt.Sprintf("%d%%", pct))
+	return lipgloss.NewStyle().Foreground(f.barColour(pct)).Render(fmt.Sprintf("%d%%", pct))
 }
 
 // formatTokens renders a token count compactly: 842, 12.4k, 1.2M.
