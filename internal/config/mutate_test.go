@@ -126,3 +126,40 @@ func TestSettingsFileNameAndMode(t *testing.T) {
 		t.Fatalf("settings file mode = %o, want 600", fi.Mode().Perm())
 	}
 }
+
+func TestWriteFileAtomicCreatesAtomicFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "x", "file.json")
+	if err := writeFileAtomic(path, []byte("hello"), 0o755); err != nil {
+		t.Fatalf("writeFileAtomic: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(data) != "hello" {
+		t.Fatalf("content = %q, want hello", data)
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if fi.Mode().Perm() != 0o600 {
+		t.Fatalf("file mode = %o, want 600", fi.Mode().Perm())
+	}
+}
+
+func TestWriteGlobalFileAtomicCreatesGlobalDir(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	path, err := GlobalDir()
+	if err != nil {
+		t.Fatalf("GlobalDir: %v", err)
+	}
+	path = filepath.Join(path, "runtime.json")
+	if err := WriteGlobalFileAtomic(path, []byte("{}")); err != nil {
+		t.Fatalf("WriteGlobalFileAtomic: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("file not created: %v", err)
+	}
+}

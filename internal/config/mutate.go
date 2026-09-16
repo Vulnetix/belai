@@ -134,32 +134,45 @@ func writeSettingsFile(path string, data []byte) error {
 	if gd, err := GlobalDir(); err == nil && filepath.Dir(path) == gd {
 		mode = 0o700
 	}
+	return writeFileAtomic(path, data, mode)
+}
+
+// WriteGlobalFileAtomic writes data atomically at 0600 under the global
+// directory (created 0700). It is the shared helper for global runtime files
+// (state.json's sibling stores such as the classifier verdict cache).
+func WriteGlobalFileAtomic(path string, data []byte) error {
+	return writeFileAtomic(path, data, 0o700)
+}
+
+// writeFileAtomic writes data to path via a temp file + rename so a crash
+// never leaves a half-written file.
+func writeFileAtomic(path string, data []byte, dirMode os.FileMode) error {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, mode); err != nil {
-		return fmt.Errorf("create settings dir: %w", err)
+	if err := os.MkdirAll(dir, dirMode); err != nil {
+		return fmt.Errorf("create dir: %w", err)
 	}
-	tmp, err := os.CreateTemp(dir, ".settings-*.tmp")
+	tmp, err := os.CreateTemp(dir, ".tmp-*.tmp")
 	if err != nil {
-		return fmt.Errorf("create temp settings file: %w", err)
+		return fmt.Errorf("create temp file: %w", err)
 	}
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
 	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
-		return fmt.Errorf("write temp settings file: %w", err)
+		return fmt.Errorf("write temp file: %w", err)
 	}
 	if err := tmp.Sync(); err != nil {
 		tmp.Close()
-		return fmt.Errorf("sync temp settings file: %w", err)
+		return fmt.Errorf("sync temp file: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close temp settings file: %w", err)
+		return fmt.Errorf("close temp file: %w", err)
 	}
 	if err := os.Chmod(tmpName, 0o600); err != nil {
-		return fmt.Errorf("chmod settings file: %w", err)
+		return fmt.Errorf("chmod file: %w", err)
 	}
 	if err := os.Rename(tmpName, path); err != nil {
-		return fmt.Errorf("rename settings file: %w", err)
+		return fmt.Errorf("rename file: %w", err)
 	}
 	return nil
 }
