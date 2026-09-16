@@ -179,6 +179,14 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 		emit(Event{Kind: EventPassKind, Pass: l.passes, Explored: l.surveyPending})
 		l.surveyPending = false
 
+		// Proactive compaction: at this structurally clean boundary, compact
+		// when the estimated context exceeds the threshold — before an overflow
+		// fails a pass and pays a retry backoff. compactBoundary is a no-op
+		// below the threshold, so the common path is one cheap estimate.
+		if compacted, ok := s.compactBoundary(ctx, pipe, turns); ok {
+			turns = compacted
+		}
+
 		start := len(turns)
 		out, turns, err := s.pass(ctx, pipe, system, turns, streaming, emit)
 		if err != nil {

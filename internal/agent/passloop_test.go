@@ -402,3 +402,161 @@ func TestPassLedgerNotePartialResets(t *testing.T) {
 		t.Fatalf("partialStreak = %d, want 0 after reset", l.partialStreak)
 	}
 }
+
+func TestCompactBoundaryThreshold(t *testing.T) {
+	summary := "## Goal\nship\n## Next Steps\n1. build\n## Critical Context\npath=/x"
+	classifier := rolemanager.ClassifierFunc(func(_ context.Context, p rolemanager.ClassifierPayload) (string, error) {
+		if strings.Contains(p.System, "summarization") {
+			return summary, nil
+		}
+		return "SAFE", nil
+	})
+	pipe := rolemanager.NewPipeline(classifier)
+
+	s := &Session{
+		cfg:      run.Config{Model: "test"},
+		settings: config.Settings{ContextWindows: map[string]int{"test": 1000}},
+		posture:  posture.Defaults(),
+	}
+	long := strings.Repeat("a", 8000) // ~2000 estimated tokens
+	turns := []run.Turn{
+		{Role: "user", Content: "do the thing"},
+		{Role: "assistant", Content: long},
+		{Role: "tool", Content: long, ToolCallID: "c1", ToolName: "Read"},
+	}
+
+	compacted, ok := s.compactBoundary(context.Background(), pipe, turns)
+	if !ok {
+		t.Fatalf("expected compaction above the 70%% threshold")
+	}
+	if len(compacted) != 2 {
+		t.Fatalf("compacted turns = %d, want 2 (summary user + ack assistant)", len(compacted))
+	}
+
+	// Below threshold: no compaction.
+	bigWindow := &Session{
+		cfg:      run.Config{Model: "test"},
+		settings: config.Settings{ContextWindows: map[string]int{"test": 1 << 20}},
+		posture:  posture.Defaults(),
+	}
+	if _, ok := bigWindow.compactBoundary(context.Background(), pipe, turns); ok {
+		t.Fatalf("expected no compaction below the threshold")
+	}
+}
+
+// compactBoundary is best-effort: every failure leaves the turns untouched and
+// lets the next boundary try again. The cases below are the documented skips
+// in docs/role-manager.md, "Compaction at the boundary".
+func TestCompactBoundarySkipsOnFailure(t *testing.T) {
+	const summary = "## Goal\nship\n## Next Steps\n1. build\n## Critical Context\npath=/x"
+	isCompaction := func(p rolemanager.ClassifierPayload) bool {
+		return strings.Contains(p.System, "summarization")
+	}
+	long := strings.Repeat("a", 8000) // ~2000 estimated tokens
+	turns := []run.Turn{
+		{Role: "user", Content: "do the thing"},
+		{Role: "assistant", Content: long},
+		{Role: "tool", Content: long, ToolCallID: "c1", ToolName: "Read"},
+	}
+
+	cases := []struct {
+		name       string
+		window     map[string]int
+		classifier rolemanager.ClassifierFunc
+	}{
+		{
+			name:   "unknown context window",
+			window: nil,
+			classifier: func(_ context.Context, p rolemanager.ClassifierPayload) (string, error) {
+				if isCompaction(p) {
+					return summary, nil
+				}
+				return "SAFE", nil
+			},
+		},
+		{
+			name:   "classifier transport error",
+			window: map[string]int{"test": 1000},
+			classifier: func(_ context.Context, p rolemanager.ClassifierPayload) (string, error) {
+				return "", errors.New("provider returned 500")
+			},
+		},
+		{
+			name:   "summary missing required headings",
+			window: map[string]int{"test": 1000},
+			classifier: func(_ context.Context, p rolemanager.ClassifierPayload) (string, error) {
+				if isCompaction(p) {
+					return "just a sentence", nil
+				}
+				return "SAFE", nil
+			},
+		},
+		{
+			name:   "summary refused by the Role Manager",
+			window: map[string]int{"test": 1000},
+			classifier: func(_ context.Context, p rolemanager.ClassifierPayload) (string, error) {
+				if isCompaction(p) {
+					return summary, nil
+				}
+				return "PROMPT_INJECTION", nil
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &Session{
+				cfg:      run.Config{Model: "test"},
+				settings: config.Settings{ContextWindows: tc.window},
+				posture:  posture.Defaults(),
+			}
+			got, ok := s.compactBoundary(context.Background(), rolemanager.NewPipeline(tc.classifier), turns)
+			if ok {
+				t.Fatalf("compactBoundary compacted anyway: %+v", got)
+			}
+			if got != nil {
+				t.Fatalf("compactBoundary returned turns on failure: %+v", got)
+			}
+		})
+	}
+}
+
+// A successful compaction replaces the whole turn list with the wrapped
+// summary and its acknowledgement.
+func TestCompactBoundaryReplacesTurnsWithSummary(t *testing.T) {
+	const summary = "## Goal\nship\n## Next Steps\n1. build\n## Critical Context\npath=/x"
+	classifier := rolemanager.ClassifierFunc(func(_ context.Context, p rolemanager.ClassifierPayload) (string, error) {
+		if strings.Contains(p.System, "summarization") {
+			return summary, nil
+		}
+		return "SAFE", nil
+	})
+	s := &Session{
+		cfg:      run.Config{Model: "test"},
+		settings: config.Settings{ContextWindows: map[string]int{"test": 1000}},
+		posture:  posture.Defaults(),
+	}
+	long := strings.Repeat("a", 8000)
+	turns := []run.Turn{
+		{Role: "user", Content: "do the thing"},
+		{Role: "assistant", Content: long},
+	}
+
+	got, ok := s.compactBoundary(context.Background(), rolemanager.NewPipeline(classifier), turns)
+	if !ok {
+		t.Fatalf("expected compaction above the threshold")
+	}
+	if len(got) != 2 {
+		t.Fatalf("compacted turns = %d, want 2", len(got))
+	}
+	if got[0].Role != "user" || !strings.Contains(got[0].Content, summary) {
+		t.Fatalf("first turn = %+v, want the summary as a user turn", got[0])
+	}
+	if !strings.HasPrefix(got[0].Content, rolemanager.SummaryPrefix) ||
+		!strings.HasSuffix(got[0].Content, rolemanager.SummarySuffix) {
+		t.Fatalf("summary turn is not wrapped: %q", got[0].Content)
+	}
+	if got[1].Role != "assistant" || got[1].Content != rolemanager.SummaryAck {
+		t.Fatalf("second turn = %+v, want the summary acknowledgement", got[1])
+	}
+}

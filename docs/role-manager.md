@@ -759,15 +759,30 @@ through the same Role Manager admission as the original prompt.
 
 ### Compaction at the boundary
 
-A `ClassOverflow` error escaping a pass is recovered **once** per prompt:
-compact at the pass boundary, then re-run the pass. A second overflow is
-terminal.
+Compaction runs at a pass boundary on two triggers:
+
+- **Proactive.** Before each pass starts, `compactBoundary` estimates the
+  context and compacts when it exceeds `compactThresholdPct` (70 %) of the
+  resolved model window. Below the threshold the check is one cheap estimate
+  and nothing else happens, so the common path pays a comparison, not a round
+  trip. Compacting here avoids an overflow that would fail a pass and pay a
+  retry backoff first.
+- **Reactive.** A `ClassOverflow` error escaping a pass is still recovered
+  **once** per prompt: compact at the boundary, then re-run the pass. A second
+  overflow is terminal.
 
 Compaction only ever runs at a pass boundary. Mid-pass, `turns` may hold an
 assistant turn with `tool_calls` whose matching tool turns are not yet
 appended; truncating there would orphan `tool_call_id`s and providers reject
-the payload. It triggers when the estimated context exceeds
-`compactThresholdPct` (70 %) of the resolved model window.
+the payload.
+
+The proactive check gives up silently — leaving `turns` untouched — on every
+edge: a model whose context window `modelinfo.Resolve` does not know, an
+estimate under the threshold, a classifier transport error, a summary that
+fails `ValidateSummary`, or a summary the Role Manager does not admit. When it
+succeeds, the whole turn list is replaced by exactly two turns: the admitted
+summary wrapped in `SummaryPrefix`/`SummarySuffix`, and a fixed assistant
+acknowledgement.
 
 The summary is model output derived from tool results, so it is admitted
 through the Role Manager before re-injection — the same fail-closed rule as
