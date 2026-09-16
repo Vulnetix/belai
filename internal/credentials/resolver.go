@@ -196,7 +196,9 @@ func (r *Resolver) Resolve(provider string) Set {
 				continue
 			}
 		}
-		set.Missing = append(set.Missing, f.Name)
+		if !f.Optional {
+			set.Missing = append(set.Missing, f.Name)
+		}
 	}
 	return set
 }

@@ -31,13 +31,14 @@ import (
 
 // Config is a resolved provider + model + credentials.
 type Config struct {
-	Provider string
-	BaseURL  string
-	APIKey   string
-	Model    string
-	Effort   string        // empty means provider default thinking level
-	API      wire.Surface  // empty for built-ins; custom providers carry their surface
-	Auth     provider.Auth // empty for built-ins; custom providers carry their auth style
+	Provider       string
+	BaseURL        string
+	APIKey         string
+	UpstreamAPIKey string // secondary key for pass-through gateways (e.g. cloudflare-ai-gateway)
+	Model          string
+	Effort         string        // empty means provider default thinking level
+	API            wire.Surface  // empty for built-ins; custom providers carry their surface
+	Auth           provider.Auth // empty for built-ins; custom providers carry their auth style
 	// ToolMethod is the session-stored tool calling method; ToolMethodNone
 	// (zero) means detect. It is resolved once per session and carried on
 	// every request so the model's method is not re-checked per turn.
@@ -56,15 +57,16 @@ type Config struct {
 // security classifier. The classifier emits a single sentinel token, so its
 // effort defaults to "none" (reasoning off) and its completion is capped.
 type ClassifierConfig struct {
-	Provider  string
-	BaseURL   string
-	APIKey    string
-	Model     string
-	Effort    string
-	API       wire.Surface
-	Auth      provider.Auth
-	MaxTokens int
-	Chunk     ChunkConfig
+	Provider       string
+	BaseURL        string
+	APIKey         string
+	UpstreamAPIKey string // secondary key for pass-through gateways
+	Model          string
+	Effort         string
+	API            wire.Surface
+	Auth           provider.Auth
+	MaxTokens      int
+	Chunk          ChunkConfig
 }
 
 // ChunkConfig bounds the chunked classify-all path for oversized payloads.
@@ -87,14 +89,15 @@ const ClassifierMaxTokens = 1024
 // config converts a classifier config back to a plain request Config.
 func (c ClassifierConfig) config() Config {
 	return Config{
-		Provider:  c.Provider,
-		BaseURL:   c.BaseURL,
-		APIKey:    c.APIKey,
-		Model:     c.Model,
-		Effort:    c.Effort,
-		API:       c.API,
-		Auth:      c.Auth,
-		MaxTokens: c.MaxTokens,
+		Provider:       c.Provider,
+		BaseURL:        c.BaseURL,
+		APIKey:         c.APIKey,
+		UpstreamAPIKey: c.UpstreamAPIKey,
+		Model:          c.Model,
+		Effort:         c.Effort,
+		API:            c.API,
+		Auth:           c.Auth,
+		MaxTokens:      c.MaxTokens,
 	}
 }
 
@@ -105,15 +108,16 @@ func (c ClassifierConfig) config() Config {
 // is resolved through src (nil means environment only).
 func ResolveClassifier(main Config, cls *config.ClassifierSettings, src CredentialSource) (ClassifierConfig, error) {
 	out := ClassifierConfig{
-		Provider:  main.Provider,
-		BaseURL:   main.BaseURL,
-		APIKey:    main.APIKey,
-		Model:     main.Model,
-		Effort:    "none",
-		API:       main.API,
-		Auth:      main.Auth,
-		MaxTokens: ClassifierMaxTokens,
-		Chunk:     ChunkConfig{MaxBytes: 1 << 20, Concurrency: 4},
+		Provider:       main.Provider,
+		BaseURL:        main.BaseURL,
+		APIKey:         main.APIKey,
+		UpstreamAPIKey: main.UpstreamAPIKey,
+		Model:          main.Model,
+		Effort:         "none",
+		API:            main.API,
+		Auth:           main.Auth,
+		MaxTokens:      ClassifierMaxTokens,
+		Chunk:          ChunkConfig{MaxBytes: 1 << 20, Concurrency: 4},
 	}
 	if cls == nil {
 		return out, nil
@@ -144,6 +148,7 @@ func ResolveClassifier(main Config, cls *config.ClassifierSettings, src Credenti
 		out.Provider = cfg.Provider
 		out.BaseURL = cfg.BaseURL
 		out.APIKey = cfg.APIKey
+		out.UpstreamAPIKey = cfg.UpstreamAPIKey
 		out.API = cfg.API
 		out.Auth = cfg.Auth
 		if cls.Model == "" {
@@ -330,6 +335,13 @@ func (f EnvSource) Lookup(provider, field string) (value, origin string, ok bool
 		if v := f("CLOUDFLARE_API_KEY"); v != "" {
 			return v, "$CLOUDFLARE_API_KEY", true
 		}
+	case "cloudflare-ai-gateway:upstream_api_key":
+		if v := f("UPSTREAM_API_KEY"); v != "" {
+			return v, "$UPSTREAM_API_KEY", true
+		}
+		if v := f("OPENAI_API_KEY"); v != "" {
+			return v, "$OPENAI_API_KEY", true
+		}
 	case "cloudflare-ai-gateway:account_id":
 		if v := f("CLOUDFLARE_ACCOUNT_ID"); v != "" {
 			return v, "$CLOUDFLARE_ACCOUNT_ID", true
@@ -459,6 +471,10 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 			status.Origins["api_key"] = origin
 		} else {
 			status.Missing = append(status.Missing, "api_key")
+		}
+		if up, origin, ok := src.Lookup(name, "upstream_api_key"); ok {
+			cfg.UpstreamAPIKey = up
+			status.Origins["upstream_api_key"] = origin
 		}
 		if a, origin, ok := src.Lookup(name, "account_id"); ok {
 			acct = a
@@ -768,7 +784,12 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 			key = token.Value
 		}
 		var p *provider.Provider
-		if cfg.API != "" {
+		if cfg.Provider == "cloudflare-ai-gateway" && cfg.UpstreamAPIKey != "" {
+			// Pass-through gateway: forward the upstream provider key via
+			// standard Bearer auth rather than the gateway token.
+			key = cfg.UpstreamAPIKey
+			p, err = provider.NewWithAuth(cfg.Provider, cfg.BaseURL, key, provider.AuthBearer)
+		} else if cfg.API != "" {
 			p, err = provider.NewFromProfile(cfg.Provider, provider.Profile{BaseURL: cfg.BaseURL, API: cfg.API, Auth: cfg.Auth}, key)
 		} else {
 			p, err = provider.New(cfg.Provider, cfg.BaseURL, key)

@@ -57,6 +57,24 @@ func TestResolveCloudflareAIGateway(t *testing.T) {
 	}
 }
 
+func TestResolveCloudflareAIGatewayUpstreamKey(t *testing.T) {
+	cfg, err := Resolve("claude-sonnet-4-5", "cloudflare-ai-gateway", envMap(map[string]string{
+		"CLOUDFLARE_API_KEY":    "cf-key",
+		"CLOUDFLARE_ACCOUNT_ID": "acct",
+		"CLOUDFLARE_GATEWAY_ID": "gw",
+		"UPSTREAM_API_KEY":      "upstream-key",
+	}))
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if cfg.APIKey != "cf-key" {
+		t.Fatalf("APIKey = %q, want cf-key", cfg.APIKey)
+	}
+	if cfg.UpstreamAPIKey != "upstream-key" {
+		t.Fatalf("UpstreamAPIKey = %q, want upstream-key", cfg.UpstreamAPIKey)
+	}
+}
+
 func TestResolvePiProviderFallback(t *testing.T) {
 	cfg, err := Resolve("", "", envMap(map[string]string{
 		"PI_PROVIDER":           "cloudflare-workers-ai",
@@ -535,6 +553,26 @@ func TestBuildRequestURLsUnchanged(t *testing.T) {
 				t.Fatalf("URL = %q, want %q", req.URL.String(), tc.want)
 			}
 		})
+	}
+}
+
+func TestBuildRequestGatewayUpstreamKeyUsesBearerAuth(t *testing.T) {
+	cfg := Config{
+		Provider:       "cloudflare-ai-gateway",
+		BaseURL:        "https://gateway.ai.cloudflare.com/v1/acct/gw",
+		APIKey:         "cf-key",
+		UpstreamAPIKey: "upstream-key",
+		Model:          "gpt-5",
+	}
+	req, _, err := buildRequest(context.Background(), cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, false, nil, nil)
+	if err != nil {
+		t.Fatalf("buildRequest: %v", err)
+	}
+	if auth := req.Header.Get("Authorization"); auth != "Bearer upstream-key" {
+		t.Fatalf("Authorization = %q", auth)
+	}
+	if cfAuth := req.Header.Get("cf-aig-authorization"); cfAuth != "" {
+		t.Fatalf("cf-aig-authorization should not be set when upstream key is present, got %q", cfAuth)
 	}
 }
 

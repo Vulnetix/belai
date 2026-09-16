@@ -97,7 +97,7 @@ Every posture gate also has a flag (`-allow-unsafe-tool-result`,
 | `openai` (and any unrecognised provider) | `gpt-5` |
 | `anthropic` | `claude-opus-4-5` |
 | `cloudflare-workers-ai` | `@cf/moonshotai/kimi-k2.6` |
-| `cloudflare-ai-gateway` | (inherits from selected upstream; default static list shows Workers AI models) |
+| `cloudflare-ai-gateway` | (set via gateway or via `UPSTREAM_API_KEY`/`OPENAI_API_KEY`) |
 | `openrouter` | `openrouter/auto` |
 | `google-gemini` | `gemini-2.5-flash` |
 | `ollama` | `llama3` |
@@ -140,7 +140,7 @@ Credentials resolve in this order, first hit wins:
 | `openai` | `OPENAI_API_KEY` |
 | `anthropic` | `ANTHROPIC_API_KEY` |
 | `cloudflare-workers-ai` | `CLOUDFLARE_API_KEY`, `CLOUDFLARE_ACCOUNT_ID` |
-| `cloudflare-ai-gateway` | `CLOUDFLARE_API_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_GATEWAY_ID` |
+| `cloudflare-ai-gateway` | `CLOUDFLARE_API_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_GATEWAY_ID`. Optional: `UPSTREAM_API_KEY` (or `OPENAI_API_KEY`) when the gateway forwards the upstream provider key instead of storing it in the gateway config. |
 | `openrouter` | `OPENROUTER_API_KEY` |
 | `google-gemini` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` |
 | `ollama` | none (local; honours `OLLAMA_HOST`) |

@@ -60,6 +60,8 @@ func (a *App) credentialView() string {
 			if ok {
 				status = components.AccentStyle.Width(16).Render("● configured")
 				from = components.MutedStyle.Render(string(v.Source))
+			} else if f.Optional {
+				status = components.MutedStyle.Width(16).Render("○ optional")
 			}
 			marker := "    "
 			if providerSelected && j == a.credentialState.fieldIdx {

@@ -22,9 +22,10 @@ const (
 
 // Field is one credential a provider requires.
 type Field struct {
-	Name    string   // "api_key", "account_id", "gateway_id"
-	EnvVars []string // ordered
-	Secret  bool     // api_key true; account_id and gateway_id false
+	Name     string   // "api_key", "account_id", "gateway_id"
+	EnvVars  []string // ordered
+	Secret   bool     // api_key true; account_id and gateway_id false
+	Optional bool     // when true, absence does not make the provider unconfigured
 }
 
 // Host returns the canonical host name for netrc lookups.
@@ -43,6 +44,7 @@ func Spec(provider string) []Field {
 	case "cloudflare-ai-gateway":
 		return []Field{
 			{Name: "api_key", EnvVars: []string{"CLOUDFLARE_API_KEY"}, Secret: true},
+			{Name: "upstream_api_key", EnvVars: []string{"UPSTREAM_API_KEY", "OPENAI_API_KEY"}, Secret: true, Optional: true},
 			{Name: "account_id", EnvVars: []string{"CLOUDFLARE_ACCOUNT_ID"}, Secret: false},
 			{Name: "gateway_id", EnvVars: []string{"CLOUDFLARE_GATEWAY_ID"}, Secret: false},
 		}

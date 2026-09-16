@@ -61,6 +61,9 @@ var builtins = []struct {
 	{"openai", AuthBearer},
 	{"anthropic", AuthXAPIKey},
 	{"cloudflare-workers-ai", AuthBearer},
+	// Cloudflare AI Gateway defaults to gateway-token auth
+	// (cf-aig-authorization). When an upstream_api_key is supplied, inference
+	// falls back to standard Bearer auth for pass-through gateways.
 	{"cloudflare-ai-gateway", AuthCFAIG},
 	{"openrouter", AuthBearer},
 	{"google-gemini", AuthBearer},
@@ -124,6 +127,16 @@ type Provider struct {
 	baseURL string
 	apiKey  string
 	auth    Auth
+}
+
+// New validates and returns a Provider for a built-in name. baseURL must be a
+// valid http(s) URL; apiKey must be non-empty.
+// NewWithAuth is like New but allows the caller to override the compiled-in
+// auth style. It is used when a built-in provider can be reached through more
+// than one authentication path (e.g., cloudflare-ai-gateway as either a
+// gateway-token endpoint or an upstream-key pass-through).
+func NewWithAuth(name, baseURL, apiKey string, auth Auth) (*Provider, error) {
+	return newProvider(name, baseURL, apiKey, auth)
 }
 
 // New validates and returns a Provider for a built-in name. baseURL must be a

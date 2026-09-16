@@ -929,7 +929,16 @@ Provider-specific edge cases:
   (`https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}`) and
   queries the Cloudflare v4 API at
   `https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/models/search`,
-  using the same `CF_API_KEY` with standard `Authorization: Bearer` auth.
+  using the Cloudflare `CF_API_KEY` with standard `Authorization: Bearer` auth.
+  For inference, the gateway can operate in two modes:
+  1. **Gateway-token mode** — the upstream provider key is stored in the
+     gateway configuration; Signet sends `cf-aig-authorization: Bearer CF_API_KEY`
+     and the gateway injects its own upstream key.
+  2. **Pass-through mode** — the gateway forwards the upstream provider key.
+     Set the optional `UPSTREAM_API_KEY` (or `OPENAI_API_KEY`) credential.
+     When present, Signet sends `Authorization: Bearer UPSTREAM_API_KEY` and
+     the request reaches the upstream provider directly. If `UPSTREAM_API_KEY` is
+     absent, Signet falls back to gateway-token mode.
   Production gateway hosts are mapped to `api.cloudflare.com`; hosts other than
   `gateway.ai.cloudflare.com` are followed as-is so tests and private gateways
   can be mocked.
