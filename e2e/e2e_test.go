@@ -13,7 +13,9 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
+	"time"
 )
 
 var signetBin string
@@ -745,4 +747,131 @@ func TestWorkersAIToolLoop(t *testing.T) {
 	os.Unsetenv("CLOUDFLARE_API_KEY")
 	os.Unsetenv("CLOUDFLARE_ACCOUNT_ID")
 	os.Unsetenv("SIGNET_BASE_URL")
+}
+
+// goalPassMock records goal-evaluator calls and scripts the evaluator sentinel
+// sequence for the goal-mode pass loop e2e tests. The main model always issues
+// a Bash tool call so the loop exhausts its iteration budget and reaches a
+// pass boundary.
+type goalPassMock struct {
+	mu            sync.Mutex
+	goalEvalCalls int
+	chatCalls     int
+}
+
+func newGoalPassE2EServer(t *testing.T, evalSentinels []string) (*httptest.Server, *goalPassMock) {
+	t.Helper()
+	gm := &goalPassMock{}
+	var mu sync.Mutex
+	idx := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var system string
+		for _, m := range req.Messages {
+			if m.Role == "system" {
+				system = m.Content
+			}
+		}
+		switch {
+		case strings.Contains(system, "security classifier"):
+			writeChat(w, "SAFE")
+		case strings.Contains(system, "operating-mode classifier"):
+			writeChat(w, "GOAL")
+		case strings.Contains(system, "goal-progress evaluator"):
+			mu.Lock()
+			i := idx
+			idx++
+			mu.Unlock()
+			gm.mu.Lock()
+			gm.goalEvalCalls++
+			gm.mu.Unlock()
+			if i < len(evalSentinels) {
+				writeChat(w, evalSentinels[i])
+			} else {
+				writeChat(w, "GOAL_PARTIAL")
+			}
+		default:
+			gm.mu.Lock()
+			gm.chatCalls++
+			gm.mu.Unlock()
+			writeToolCallChat(w, "Bash", map[string]any{"command": "echo hi"})
+		}
+	}))
+	return srv, gm
+}
+
+// TestGoalModePassLoopCompletes pins the end-to-end contract: a goal-mode
+// prompt whose scripted evaluator answers PARTIAL, PARTIAL, COMPLETE finishes
+// without a "max iterations" error — the pass loop re-checks the goal instead
+// of treating budget exhaustion as failure.
+func TestGoalModePassLoopCompletes(t *testing.T) {
+	srv, gm := newGoalPassE2EServer(t, []string{"GOAL_PARTIAL", "GOAL_PARTIAL", "GOAL_COMPLETE"})
+	defer srv.Close()
+
+	dir := t.TempDir()
+	global := `{"resilience":{"max_iterations":2}}`
+	out, errOut, code := runSignetDirWithGlobal(t, dir, srv.URL, global,
+		"-tools", "-provider", "openai", "-model", "test", "-prompt", "ship the thing")
+	if code != 0 {
+		t.Fatalf("exit = %d (stderr %q)", code, errOut)
+	}
+	if strings.Contains(errOut, "max iterations") {
+		t.Fatalf("goal loop surfaced the max-iterations error: %q", errOut)
+	}
+	gm.mu.Lock()
+	defer gm.mu.Unlock()
+	if gm.goalEvalCalls != 3 {
+		t.Fatalf("goal evaluator calls = %d, want 3 (PARTIAL, PARTIAL, COMPLETE)", gm.goalEvalCalls)
+	}
+	_ = out
+}
+
+// TestGoalModePassLoopSIGINT pins the unbounded loop's cancel path: a single
+// SIGINT cancels the root context and the process exits non-zero without a
+// panic — no session entry is lost to a bare kill, and no half-applied edit
+// is left on disk.
+func TestGoalModePassLoopSIGINT(t *testing.T) {
+	// No sentinel sequence: the evaluator answers PARTIAL forever, so the loop
+	// runs until the signal arrives.
+	srv, _ := newGoalPassE2EServer(t, nil)
+	defer srv.Close()
+
+	dir := t.TempDir()
+	global := `{"resilience":{"max_iterations":2}}`
+
+	cmd := exec.Command(signetBin, "-tools", "-provider", "openai", "-model", "test", "-prompt", "ship the thing")
+	cmd.Dir = dir
+	home := filepath.Join(t.TempDir(), "signet-home")
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		t.Fatalf("mkdir home: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "settings.json"), []byte(global), 0o600); err != nil {
+		t.Fatalf("write settings: %v", err)
+	}
+	cmd.Env = append(os.Environ(), "SIGNET_BASE_URL="+srv.URL, "OPENAI_API_KEY=test", "SIGNET_HOME="+home)
+	var errb bytes.Buffer
+	cmd.Stderr = &errb
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	time.Sleep(time.Second)
+	if err := cmd.Process.Signal(syscall.SIGINT); err != nil {
+		t.Fatalf("signal: %v", err)
+	}
+	err := cmd.Wait()
+	if err == nil {
+		t.Fatal("expected a non-zero exit after SIGINT")
+	}
+	if strings.Contains(errb.String(), "panic") {
+		t.Fatalf("SIGINT caused a panic: %q", errb.String())
+	}
 }
