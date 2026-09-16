@@ -66,6 +66,9 @@ just ask anthropic claude-sonnet-4-5 "review this diff" -detect-mode -verbose
 | `-provider` | `openai`, `anthropic`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`, `github-copilot`, or a custom name from `settings.json` |
 | `-model` | model id; defaults are `gpt-5`, `claude-sonnet-4-5`, `@cf/moonshotai/kimi-k2.6` |
 | `-effort` | thinking-effort level: `low`, `medium`, or `high` |
+| `-classifier-provider` | security-classifier provider (default: the main provider) |
+| `-classifier-model` | security-classifier model (default: the main model) |
+| `-classifier-effort` | security-classifier thinking effort (default: `none`) |
 | `-caveman` | enable caveman voice rewrite for this run |
 | `-session-retention-days` | idle session retention in days (default 28) |
 | `-detect-mode` | run the operating-mode classifier and report the decision (`agent`, `plan`, `goal`) |
@@ -76,6 +79,11 @@ just ask anthropic claude-sonnet-4-5 "review this diff" -detect-mode -verbose
 | `-version` | print the version and exit |
 
 Runtime flag values override the settings file for the current run but are never persisted.
+
+The classifier mirrors the main provider flags through `-classifier-*` and
+`SIGNET_CLASSIFIER_PROVIDER/MODEL/EFFORT`; `SIGNET_CLASSIFIER_CHUNK_BYTES` /
+`SIGNET_CLASSIFIER_CHUNK_CONCURRENCY` are not yet env-wired (the `classifier`
+settings block sets them).
 
 Every non-TUI entry point (`-prompt`, `-agent`, `-agent-create`) runs under a
 `signal.NotifyContext` root. Goal mode's pass loop is unbounded by design, so an
@@ -152,7 +160,7 @@ just detect-mode "add a retry to the HTTP client"   # agent
 just detect-mode "how does the nonce sealing work"  # plan
 ```
 
-**TUI smoke test.** `just tui`, then exercise slash-command autocomplete (`/p` → `/permissions`, `/plan`, `/profile`), `/credentials`, `/settings`, `/permissions`, `/help`, `/model`, `/compact`, `/clear`, `/rename`, `/agent list`, and streaming output. Confirm `shift+tab` cycles the mode chip, `ctrl+d` quits, `ctrl+c` copies the prompt (native or OSC 52), and `esc` escapes every full-screen view — including permissions back to settings. In the Ask prompt, confirm Enter echoes the prompt into the transcript as a `user prompt` instantly, that the composer shows the filled `role manager` pill with a `pre-prompt processing` caption while the classifier runs and a plain `working` label only for model/tool I/O, and that Enter while a turn is running queues a `user steering` message. In `/settings`, confirm the **bash read-only** toggle renders `off` by default, that `space` flips it on and persists it to the scoped settings file, and that `x` clears it. In `/permissions` with no rules, confirm the empty state reads "every tool call is allowed" and that a `Read x` preview shows the allowed-by-default wording (or blocked when `preferences.yaml` sets `permission_no_match: enforce`).
+**TUI smoke test.** `just tui`, then exercise slash-command autocomplete (`/p` → `/permissions`, `/plan`, `/profile`), `/credentials`, `/settings`, `/permissions`, `/help`, `/model`, `/compact`, `/clear`, `/rename`, `/agent list`, `/local-model`, and streaming output. Confirm `shift+tab` cycles the mode chip, `ctrl+d` quits, `ctrl+c` copies the prompt (native or OSC 52), and `esc` escapes every full-screen view — including permissions back to settings. In the Ask prompt, confirm Enter echoes the prompt into the transcript as a `user prompt` instantly, that the composer shows the filled `role manager` pill with a `pre-prompt processing` caption while the classifier runs and a plain `working` label only for model/tool I/O, and that Enter while a turn is running queues a `user steering` message. In `/settings`, confirm the **bash read-only** toggle renders `off` by default, that `space` flips it on and persists it to the scoped settings file, and that `x` clears it. In `/permissions` with no rules, confirm the empty state reads "every tool call is allowed" and that a `Read x` preview shows the allowed-by-default wording (or blocked when `preferences.yaml` sets `permission_no_match: enforce`).
 
 **Release parity.** `just build-all` cross-compiles all six release targets into `bin/` with the same ldflags the release workflow uses, and writes `bin/checksums.txt`. Run the host binary and check `-version` reports the git description.
 
