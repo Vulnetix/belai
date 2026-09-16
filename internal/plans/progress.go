@@ -26,12 +26,29 @@ func (p *Progress) MarkDone(n int) {
 
 var doneRe = regexp.MustCompile(`\[DONE:(\d+)\]`)
 
+// ParseDoneMarkers returns the step numbers named by [DONE:n] markers in text,
+// in the order they appear. It is the single definition of the marker syntax:
+// every consumer (plan state, todo lists) calls this rather than carrying its
+// own copy of the pattern.
+//
+// The caller decides what text is eligible. Only model-authored assistant text
+// should ever be passed in — a marker read out of a tool result or a file would
+// let repository content mark work complete.
+func ParseDoneMarkers(text string) []int {
+	matches := doneRe.FindAllStringSubmatch(text, -1)
+	out := make([]int, 0, len(matches))
+	for _, m := range matches {
+		if n, err := strconv.Atoi(m[1]); err == nil {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
 // Apply scans text for [DONE:n] markers and marks those steps complete.
 func (p *Progress) Apply(text string) {
-	for _, m := range doneRe.FindAllStringSubmatch(text, -1) {
-		if n, err := strconv.Atoi(m[1]); err == nil {
-			p.MarkDone(n)
-		}
+	for _, n := range ParseDoneMarkers(text) {
+		p.MarkDone(n)
 	}
 }
 

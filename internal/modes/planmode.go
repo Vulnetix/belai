@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/vulnetix/signet/internal/plans"
@@ -91,15 +89,14 @@ func (s PlanState) Progress() *plans.Progress {
 	return p
 }
 
-// ApplyMarkers scans text for [DONE:n] markers and writes completion back into
-// s.Todos[i].Done, mutating the PlanState so the write is not discarded when
-// Progress() is rebuilt on the next call.
-func (s *PlanState) ApplyMarkers(text string) {
-	for _, m := range doneMarkerRe.FindAllStringSubmatch(text, -1) {
-		n, err := strconv.Atoi(m[1])
-		if err != nil {
-			continue
-		}
+// ApplyMarkers scans assistant text for [DONE:n] markers and writes completion
+// back into s.Todos[i].Done, mutating the PlanState so the write is not
+// discarded when Progress() is rebuilt on the next call.
+//
+// Pass only model-authored assistant text. A marker appearing in a tool result
+// or a repository file must never advance the plan.
+func (s *PlanState) ApplyMarkers(assistantText string) {
+	for _, n := range plans.ParseDoneMarkers(assistantText) {
 		for i := range s.Todos {
 			if s.Todos[i].N == n {
 				s.Todos[i].Done = true
@@ -107,8 +104,6 @@ func (s *PlanState) ApplyMarkers(text string) {
 		}
 	}
 }
-
-var doneMarkerRe = regexp.MustCompile(`\[DONE:(\d+)\]`)
 
 // writeTools are built-in edit/write tools disabled in plan mode.
 var writeTools = map[string]bool{
