@@ -171,3 +171,73 @@ func TestPrintBanner(t *testing.T) {
 	p := Defaults().Override(Policy{ToolResultUnsafe: Warn})
 	PrintBanner(p, os.Stderr)
 }
+
+// The gate/default table is documented in docs/role-manager.md; this keeps the
+// two from drifting. Every gate defaults to enforce except permission_no_match
+// (the permission layer allows unmatched calls) and guardrails_required.
+func TestGateDefaultsMatchDocumentedTable(t *testing.T) {
+	want := map[Gate]Level{
+		ToolResultUnsafe:    Enforce,
+		ToolResultMalformed: Enforce,
+		PromptUnsafe:        Enforce,
+		PromptMalformed:     Enforce,
+		ToolCallMismatch:    Enforce,
+		PermissionNoMatch:   Ignore,
+		PermissionAskNoTTY:  Enforce,
+		SkillInvalid:        Enforce,
+		HookInvalid:         Enforce,
+		GuardrailsRequired:  Warn,
+	}
+	if len(AllGates) != len(want) {
+		t.Fatalf("AllGates has %d gates, documented table has %d", len(AllGates), len(want))
+	}
+	for _, g := range AllGates {
+		w, ok := want[g]
+		if !ok {
+			t.Fatalf("gate %q is not in the documented table", g)
+		}
+		if got := DefaultLevel(g); got != w {
+			t.Fatalf("DefaultLevel(%q) = %q, want %q", g, got, w)
+		}
+	}
+}
+
+// The banner is one line naming every downgraded gate, and nothing at all when
+// the policy is at or above its defaults.
+func TestPrintBannerWritesOneDowngradeLine(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "banner")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	PrintBanner(Defaults().Override(Policy{ToolResultUnsafe: Warn, SkillInvalid: Ignore}), f)
+	f.Close()
+
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	got := string(b)
+	want := "signet: posture downgrades: tool_result_unsafe=warn, skill_invalid=ignore\n"
+	if got != want {
+		t.Fatalf("banner = %q, want %q", got, want)
+	}
+}
+
+func TestPrintBannerSilentAtDefaults(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "banner")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	PrintBanner(Defaults(), f)
+	f.Close()
+
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(b) != 0 {
+		t.Fatalf("banner at defaults = %q, want no output", b)
+	}
+}

@@ -2,6 +2,7 @@ package agentprofile
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -103,4 +104,20 @@ func resetDir(t *testing.T) {
 	}
 	_ = os.RemoveAll(d)
 	t.Cleanup(func() { _ = os.RemoveAll(d) })
+}
+
+// Agent profiles live under the global directory, not the legacy ~/.signet
+// path, and SIGNET_HOME moves them with everything else.
+func TestDirUnderGlobalDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("SIGNET_HOME", home)
+
+	got, err := Dir()
+	if err != nil {
+		t.Fatalf("Dir: %v", err)
+	}
+	want := filepath.Join(home, "profiles", "agents")
+	if got != want {
+		t.Fatalf("Dir() = %q, want %q", got, want)
+	}
 }

@@ -1,9 +1,13 @@
 # Agent Profiles
 
 Agent profiles are named, reusable agent definitions stored on disk under
-`~/.signet/profiles/agents/`. They are richer than the flat prompt profiles
-used by `/profile`: each profile defines a system prompt, a tool allow-list,
-an operating mode, and an autonomy level.
+`~/.vulnetix/signet/profiles/agents/`. They are richer than the flat prompt
+profiles used by `/profile`: each profile defines a system prompt, a tool
+allow-list, an operating mode, and an autonomy level.
+
+The directory is `agentprofile.Dir()` — `config.GlobalDir()/profiles/agents`,
+where `GlobalDir()` honours `SIGNET_HOME` and otherwise resolves to
+`~/.vulnetix/signet`.
 
 ## Profile schema
 
@@ -35,7 +39,7 @@ an operating mode, and an autonomy level.
 | `monitor_condition` | No | string | Human-readable trigger condition (used when `mode` is `monitor`). |
 | `reflection` | No | bool | When true, the model is asked to emit `<thinking>` or a `reflection` field before acting. |
 | `max_iterations` | No | int | Per-run iteration bound; defaults to the global `resilience.max_iterations` setting (10). |
-| `autonomy` | No | string | `supervised` (default) or `autonomous`. Supervised agents surface events in the TUI but do not execute tools without user confirmation. Autonomous mode requires an explicit posture opt-in. |
+| `autonomy` | No | string | `supervised` (default) or `autonomous`. Both execute tools during a turn; the field decides only what happens when a `loop`-mode agent exhausts `max_iterations` and the evaluator returns `CONTINUE`. An autonomous profile resets the budget and continues; a supervised one is paused instead, so unattended unbounded tool use needs the explicit opt-in. |
 
 ### Validation rules
 
@@ -55,12 +59,18 @@ stateDiagram-v2
     Running --> Paused : Manager.Pause()
     Paused --> Running : Manager.Resume()
     Running --> Done : single turn finished
-    Running --> Done : max_iterations reached
+    Running --> Evaluating : max_iterations reached (loop mode)
+    Evaluating --> Running : CONTINUE (autonomous only)
+    Evaluating --> Paused : PAUSE, evaluator error, or CONTINUE on a supervised profile
+    Evaluating --> Running : SLEEP, after the schedule interval
+    Evaluating --> Done : STOP
     Running --> Done : explicit cancel
-    Done --> Idle : Manager.Reset()
     Idle --> [*] : Manager.Stop()
     Done --> [*] : Manager.Stop()
 ```
+
+`Manager` exposes exactly `Start`, `Stop`, `Pause`, `Resume`, `List`, and
+`Lookup`. There is no reset: a finished agent is stopped and started again.
 
 ### State descriptions
 
@@ -152,9 +162,10 @@ never blocked. Events are forwarded into the TUI update loop through
 
 ## Storage namespace
 
-User-built agents live under `~/.signet/profiles/agents/` to avoid clashing
-with the flat `profiles/` namespace used by `/profile`. The two namespaces
-are disjoint; no migration is required.
+User-built agents live under `~/.vulnetix/signet/profiles/agents/` to avoid
+clashing with the flat `profiles/` namespace used by `/profile`. The two
+namespaces are disjoint; no migration is required. Setting `SIGNET_HOME` moves
+both.
 
 ## Hermes-style builder
 

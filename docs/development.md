@@ -6,7 +6,7 @@ Local development, build, and QA workflows for Signet.
 
 | Tool | Version | Why |
 | --- | --- | --- |
-| [Go](https://go.dev/dl/) | 1.24.2 or newer (see `go.mod`) | build and test |
+| [Go](https://go.dev/dl/) | 1.25 (see `go.mod`) | build and test |
 | [just](https://just.systems) | 1.11 or newer | task runner |
 | git | any | version stamping via `git describe` |
 
@@ -64,7 +64,7 @@ just ask anthropic claude-sonnet-4-5 "review this diff" -detect-mode -verbose
 | --- | --- |
 | `-prompt` | send one turn noninteractively, print the reply, exit |
 | `-provider` | `openai`, `anthropic`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`, `github-copilot`, or a custom name from `settings.json` |
-| `-model` | model id; defaults are `gpt-5`, `claude-sonnet-4-5`, `@cf/moonshotai/kimi-k2.6` |
+| `-model` | model id; defaults come from `run.DefaultModel` (see the table below) |
 | `-effort` | thinking-effort level: `low`, `medium`, or `high` |
 | `-classifier-provider` | security-classifier provider (default: the main provider) |
 | `-classifier-model` | security-classifier model (default: the main model) |
@@ -75,8 +75,36 @@ just ask anthropic claude-sonnet-4-5 "review this diff" -detect-mode -verbose
 | `-tools` | enable tool execution (noninteractive agent mode) |
 | `-agent` | start a background agent by name in foreground mode |
 | `-agent-create` | create an agent profile from a description and save to disk |
+| `-no-prune` | never prune idle sessions (overrides `-session-retention-days`) |
+| `-plan` | start in plan mode: read-only tools only, no mutation |
 | `-verbose` | print Role Manager decisions and the security sentinel to stderr |
 | `-version` | print the version and exit |
+
+Every posture gate also has a flag (`-allow-unsafe-tool-result`,
+`-allow-malformed-tool-result`, `-allow-unsafe-prompt`,
+`-allow-malformed-prompt`, `-tool-call-mismatch`, `-allow-unpermitted-tools`,
+`-allow-ask-without-tty`, `-allow-invalid-skills`, `-allow-invalid-hooks`,
+`-dangerously-yolo-everything`). They are documented with their gates in
+[role-manager.md](role-manager.md#posture-gates).
+
+### Model defaults
+
+`-model` is optional. When it is empty the provider decides
+(`run.DefaultModel`):
+
+| Provider | Default model |
+| --- | --- |
+| `openai` (and any unrecognised provider) | `gpt-5` |
+| `anthropic` | `claude-opus-4-5` |
+| `cloudflare-workers-ai` | `@cf/moonshotai/kimi-k2.6` |
+| `cloudflare-ai-gateway` | `claude-sonnet-4-5` |
+| `openrouter` | `openrouter/auto` |
+| `google-gemini` | `gemini-2.5-flash` |
+| `ollama` | `llama3` |
+| `github-copilot` | `gpt-4o` |
+
+A custom provider from `settings.json` falls through to the `gpt-5` default, so
+a custom entry should carry its own model.
 
 Runtime flag values override the settings file for the current run but are never persisted.
 

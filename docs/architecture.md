@@ -617,11 +617,14 @@ Enter to save the current editor text to the project library. Esc cancels.
 | `/rename` | Rename the current session |
 | `/todos` | Show progress of the tracked todo list |
 | `/agent` | Manage background agents (`create`, `list`, `start`, `stop`, `pause`, `resume`, `log`) |
+| `/execute` | Leave plan mode and execute the extracted plan |
+| `/stay` | Stay in plan mode after a plan is proposed |
+| `/refine` | Refine the extracted plan without leaving plan mode |
+| `/code-review` | Run a Vulnetix code review over the working tree |
+| `/local-model` | Assess, download, launch, or stop a local classifier model |
 
-> **Inconsistency (doc vs code):** the registered command set
-> (`internal/tui.NewRegistry`) also includes `/execute`, `/stay`, `/refine`,
-> `/code-review`, and `/local-model`; this table omits them. Remaining work:
-> add the missing rows (or mark the table as a subset).
+The table is the whole set registered by `internal/tui.NewRegistry`; `/new` is
+an alias of `/clear` rather than a separate entry.
 
 ### Startup credential message
 
@@ -649,19 +652,17 @@ include `provider`, `model`, `effort`, `caveman`, `bash_readonly`,
 `permissions` (structured `allow`/`ask`/`deny`), `session_retention_days`,
 `ui.banner`, `ui.status_bar`, `ui.spinner`, `ui.show_reasoning`,
 `ui.show_tool_calls`, `ui.show_todos`, `ui.mouse` (default on; `ui.show_reasoning` defaults off),
+`ui.colors`, `ui.kitty_keyboard`,
 `show_session_names` (default on), `context_windows`,
 `resilience` (`max_attempts`, `max_iterations`, `max_passes`, `max_clarify_rounds`), `providers`,
-and `allow_project_providers`. Permission
+`allow_project_providers`, and the `classifier` block
+(`provider`, `model`, `effort`, `chunk.max_bytes`, `chunk.concurrency`) covered
+in the Security classifier section above. That enumeration is the whole
+`config.Settings` struct. Permission
 rules merge by union — a project file can add rules but never remove a
 global rule. Provider profiles merge key-by-key the same way. Resilience
 budgets merge to the *minimum* of global and project, so a project file can
 tighten a budget but never raise one.
-
-> **Inconsistency (doc vs code):** this settings list is incomplete vs
-> `internal/config.Settings` — it omits `ui.colors`, `ui.kitty_keyboard`, and
-> the `classifier` block (the latter is documented in the Security classifier
-> section above). `resilience.max_clarify_rounds` was also missing and is added
-> above. Remaining work: reconcile this enumeration with the `Settings` struct.
 
 Tool availability defaults to allow: a call matching no permission rule
 proceeds (unregistered tool names are still rejected by the agent's registry

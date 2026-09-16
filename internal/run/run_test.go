@@ -1143,3 +1143,27 @@ func TestEnvSourceHuggingFace(t *testing.T) {
 		t.Fatalf("Lookup = %q %q %v", v, origin, ok)
 	}
 }
+
+// The per-provider default model table is documented in docs/development.md.
+// An unrecognised provider — including a custom one from settings.json — falls
+// through to the OpenAI default, which is why a custom provider profile should
+// carry its own model.
+func TestDefaultModelTable(t *testing.T) {
+	cases := map[string]string{
+		"openai":                "gpt-5",
+		"anthropic":             "claude-opus-4-5",
+		"cloudflare-workers-ai": "@cf/moonshotai/kimi-k2.6",
+		"cloudflare-ai-gateway": "claude-sonnet-4-5",
+		"openrouter":            "openrouter/auto",
+		"google-gemini":         "gemini-2.5-flash",
+		"ollama":                "llama3",
+		"github-copilot":        "gpt-4o",
+		"my-custom-provider":    "gpt-5",
+		"":                      "gpt-5",
+	}
+	for provider, want := range cases {
+		if got := DefaultModel(provider); got != want {
+			t.Fatalf("DefaultModel(%q) = %q, want %q", provider, got, want)
+		}
+	}
+}
