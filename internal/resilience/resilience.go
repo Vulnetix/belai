@@ -54,9 +54,18 @@ type Policy struct {
 	Base        time.Duration // default 500ms
 	Cap         time.Duration // default 8s — caps the exponential term
 	Ceiling     time.Duration // default 60s — absolute cap; also bounds Retry-After
-	Jitter      float64       // default 0.25, downward only
+	Jitter      float64       // 0 means none, downward only; Signet's policies use 0.25
 	Rand        func() float64
 	Sleep       func(context.Context, time.Duration) error
+}
+
+// WithDefaults returns a copy of p with every zero field replaced by its
+// default, including the Rand and Sleep hooks. Do and Delay normalise
+// internally; any caller that reads Policy fields directly must normalise
+// first, or a zero-valued Rand/Sleep panics on call.
+func (p Policy) WithDefaults() Policy {
+	p.defaults()
+	return p
 }
 
 func (p *Policy) defaults() {

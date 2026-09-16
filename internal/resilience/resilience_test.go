@@ -203,3 +203,73 @@ type statusErr struct {
 
 func (e *statusErr) Error() string   { return "status" }
 func (e *statusErr) StatusCode() int { return e.code }
+
+func TestWithDefaultsFillsEveryZeroField(t *testing.T) {
+	p := Policy{}.WithDefaults()
+
+	if p.MaxAttempts != 3 {
+		t.Fatalf("MaxAttempts = %d, want 3", p.MaxAttempts)
+	}
+	if p.Base != 500*time.Millisecond {
+		t.Fatalf("Base = %v, want 500ms", p.Base)
+	}
+	if p.Cap != 8*time.Second {
+		t.Fatalf("Cap = %v, want 8s", p.Cap)
+	}
+	if p.Ceiling != 60*time.Second {
+		t.Fatalf("Ceiling = %v, want 60s", p.Ceiling)
+	}
+	// Jitter is the one field with no non-zero default: zero means "no
+	// jitter", and each call site opts in (Signet's policies use 0.25).
+	if p.Jitter != 0 {
+		t.Fatalf("Jitter = %v, want 0", p.Jitter)
+	}
+	// Callers outside the package read these directly; a nil func panics.
+	if p.Rand == nil {
+		t.Fatal("Rand is nil after WithDefaults")
+	}
+	if p.Sleep == nil {
+		t.Fatal("Sleep is nil after WithDefaults")
+	}
+	if r := p.Rand(); r < 0 || r >= 1 {
+		t.Fatalf("Rand() = %v, want [0,1)", r)
+	}
+}
+
+func TestWithDefaultsKeepsExplicitValues(t *testing.T) {
+	sentinel := func() float64 { return 0.5 }
+	p := Policy{
+		MaxAttempts: 7,
+		Base:        time.Millisecond,
+		Cap:         2 * time.Millisecond,
+		Ceiling:     3 * time.Millisecond,
+		Jitter:      0.75,
+		Rand:        sentinel,
+	}.WithDefaults()
+
+	if p.MaxAttempts != 7 || p.Base != time.Millisecond || p.Cap != 2*time.Millisecond ||
+		p.Ceiling != 3*time.Millisecond || p.Jitter != 0.75 {
+		t.Fatalf("WithDefaults overwrote explicit values: %+v", p)
+	}
+	if p.Rand() != 0.5 {
+		t.Fatal("WithDefaults replaced an explicit Rand")
+	}
+}
+
+func TestWithDefaultsClampsJitter(t *testing.T) {
+	if got := (Policy{Jitter: -1}).WithDefaults().Jitter; got != 0 {
+		t.Fatalf("Jitter = %v, want 0", got)
+	}
+	if got := (Policy{Jitter: 5}).WithDefaults().Jitter; got != 1 {
+		t.Fatalf("Jitter = %v, want 1", got)
+	}
+}
+
+func TestWithDefaultsSleepHonoursContext(t *testing.T) {
+	p := Policy{}.WithDefaults()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := p.Sleep(ctx, time.Hour); err == nil {
+		t.Fatal("expected cancelled context to end the sleep")
+	}
+}
