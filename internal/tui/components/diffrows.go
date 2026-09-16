@@ -130,11 +130,17 @@ func fileDiffRows(fc filediff.FileChange, rows []filediff.Row, indent string, ic
 
 // diffHighlights lexes each side of the file once, so a line is coloured in
 // the context it actually had rather than as a standalone fragment.
+//
+// Both sides come from Expanded, not from Old and New: the rows have already
+// had their tabs expanded, and highlighting the raw text would measure the
+// indentation in different cells, shifting every column — and with it every
+// intra-line emphasis span.
 func diffHighlights(fc filediff.FileChange, expand bool) (oldSegs, newSegs [][]Seg) {
 	if !expand || fc.Binary || fc.Truncated {
 		return nil, nil
 	}
-	return Highlighted(fc.Path, fc.Old), Highlighted(fc.Path, fc.New)
+	old, new := fc.Expanded()
+	return Highlighted(fc.Path, old), Highlighted(fc.Path, new)
 }
 
 // diffRow renders one line of a diff.

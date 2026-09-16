@@ -11,6 +11,7 @@ import (
 
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/delimiters"
+	"github.com/vulnetix/signet/internal/filediff"
 	"github.com/vulnetix/signet/internal/hooks"
 	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/nonce"
@@ -87,6 +88,9 @@ type Session struct {
 	toolMethod     run.ToolMethod
 	steer          chan string
 	trace          *trace.Writer
+	// diffs observes what a mutating command changed. Nil disables the
+	// feature; it is consulted only around Bash, the one mutating tool.
+	diffs *filediff.Recorder
 }
 
 // steerBuffer is the steering queue capacity. A full queue drops the newest
@@ -166,6 +170,7 @@ func NewSession(o Options) (*Session, error) {
 		toolMethod:     method,
 		steer:          make(chan string, steerBuffer),
 		trace:          trace.Env(),
+		diffs:          filediff.NewRecorder(o.Workdir),
 	}, nil
 }
 
@@ -512,7 +517,25 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 		// warn/ignore fall through to allow
 	}
 
+	// Observe what the command changes. Bash is the only mutating tool, and it
+	// always runs on the sequential path in pass, so this never races the
+	// concurrent read-only fan-out and needs no locking.
+	var snap *filediff.Snapshot
+	if s.diffs != nil && tool.Kind() == tools.KindBash {
+		snap = s.diffs.Before(ctx, tool.Subject(call.Args))
+	}
+
 	res, err := runTool(ctx, tool, call, emit)
+
+	// Emitted before the Role Manager classifies the result, so the diff
+	// appears while that is still running. It is render-only and is not part
+	// of the tool result.
+	if snap != nil {
+		if ch := snap.After(ctx); !ch.Empty() {
+			emit(Event{Kind: EventToolDiffKind, ToolName: call.Name, ToolCallID: call.ID, Diff: &ch})
+		}
+	}
+
 	if err != nil {
 		return fmt.Sprintf("tool result withheld: execution error for %q: %v", call.Name, err)
 	}

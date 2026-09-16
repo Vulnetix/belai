@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/vulnetix/signet/internal/agent"
+	"github.com/vulnetix/signet/internal/filediff"
 	"github.com/vulnetix/signet/internal/tui/components"
 )
 
@@ -91,6 +92,38 @@ func TestToolProgressNeverReachesTheModel(t *testing.T) {
 	for _, turn := range after {
 		if strings.Contains(turn.Content, "compiling") {
 			t.Fatalf("streamed output leaked into a provider turn: %+v", turn)
+		}
+	}
+}
+
+// TestToolDiffNeverReachesTheModel: a diff is observed around a tool rather
+// than returned by it, so it must not alter the provider-facing transcript.
+func TestToolDiffNeverReachesTheModel(t *testing.T) {
+	before := appWithRunningTool("call-1").buildTurns()
+
+	a := appWithRunningTool("call-1")
+	a.handleAgentEvent(agentEventMsg{
+		Kind: agent.EventToolResultKind, ToolCallID: "call-1", ToolName: "Bash", ToolResult: "",
+	})
+	a.handleAgentEvent(agentEventMsg{
+		Kind: agent.EventToolDiffKind, ToolCallID: "call-1",
+		Diff: &filediff.Change{Files: []filediff.FileChange{{
+			Path: "secret.go", Old: "before\n", New: "after\n",
+		}}},
+	})
+
+	row := toolRowFor(t, a, "call-1")
+	if row.Diff() == nil {
+		t.Fatal("diff did not land on the row")
+	}
+
+	after := a.buildTurns()
+	if len(before) != len(after) {
+		t.Fatalf("diff changed the turn count: %d then %d", len(before), len(after))
+	}
+	for _, turn := range after {
+		if strings.Contains(turn.Content, "secret.go") || strings.Contains(turn.Content, "after") {
+			t.Fatalf("diff leaked into a provider turn: %+v", turn)
 		}
 	}
 }

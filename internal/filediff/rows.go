@@ -28,6 +28,16 @@ const (
 	maxWordDiffTokens = 256
 )
 
+// Expanded returns the two sides as Rows presents them, with tabs expanded.
+//
+// Anything that wants to colour a side — a syntax highlighter, say — has to
+// work from these rather than from Old and New directly, or its output will be
+// measured in different cells than Row.Text and every column will be off by
+// the width of the indentation.
+func (fc FileChange) Expanded() (old, new string) {
+	return expandTabsLines(fc.Old), expandTabsLines(fc.New)
+}
+
 // Rows renders one file change as a flat sequence of rows.
 func (fc FileChange) Rows() []Row {
 	if fc.Binary || fc.Truncated {

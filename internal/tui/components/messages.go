@@ -522,32 +522,40 @@ func toolRow(msg Message, width int, expandAll bool) (string, LineMap) {
 
 	expand := expandAll || msg.Expanded
 
-	content := strings.TrimRight(msg.Text(), "\n")
-	if content == "" {
-		// Still running. Show the live output tail if the tool has reported
-		// any, so a long command is legible while it works rather than a bare
-		// header with a ticking clock.
-		if !msg.HasProgress() {
-			return statusLine, lm
-		}
+	out := statusLine
+
+	// The body: the result if it has arrived, the live tail if the tool is
+	// still running, and nothing at all if neither.
+	switch content := strings.TrimRight(msg.Text(), "\n"); {
+	case content == "" && msg.HasProgress():
+		// Still running. Showing the tail keeps a long command legible while
+		// it works, rather than a bare header with a ticking clock.
 		preview, trunc := progressPreview(msg, expand)
 		rendered, contentLm := renderToolContent(preview, width, false, trunc)
-		return statusLine + "\n" + rendered, append(lm, contentLm...)
-	}
+		out += "\n" + rendered
+		lm = append(lm, contentLm...)
 
-	// Read results are source, not prose: they get line numbers, and syntax
-	// colours once expanded.
-	if msg.ToolName == "Read" && !isErr {
+	case content == "":
+		// Nothing to show yet.
+
+	case msg.ToolName == "Read" && !isErr:
+		// Read results are source, not prose: they get line numbers, and
+		// syntax colours once expanded.
 		rendered, contentLm := readToolRow(msg, width, expand)
-		return statusLine + "\n" + rendered, append(lm, contentLm...)
-	}
+		out += "\n" + rendered
+		lm = append(lm, contentLm...)
 
-	preview, trunc := previewOf(content, msg.ToolName, expand)
-	rendered, contentLm := renderToolContent(preview, width, isErr, trunc)
-	out, lm := statusLine+"\n"+rendered, append(lm, contentLm...)
+	default:
+		preview, trunc := previewOf(content, msg.ToolName, expand)
+		rendered, contentLm := renderToolContent(preview, width, isErr, trunc)
+		out += "\n" + rendered
+		lm = append(lm, contentLm...)
+	}
 
 	// What the command changed goes beneath its output, where it reads as the
-	// consequence of the command rather than a separate event.
+	// consequence of the command rather than a separate event. It is rendered
+	// whether or not the command printed anything: a silent `sed -i` is
+	// precisely the case where the diff is the only evidence of what happened.
 	if msg.hasDiff() {
 		if diffText, diffLm := diffToolRow(msg, width, expand); diffText != "" {
 			out += "\n" + diffText
