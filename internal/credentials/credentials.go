@@ -70,6 +70,11 @@ func Spec(provider string) []Field {
 		return []Field{
 			{Name: "oauth_token", EnvVars: []string{"GITHUB_COPILOT_TOKEN", "GH_TOKEN"}, Secret: true},
 		}
+	case "huggingface":
+		// Used for gated model downloads, not as a chat provider.
+		return []Field{
+			{Name: "api_key", EnvVars: []string{"HF_TOKEN", "HUGGINGFACE_TOKEN"}, Secret: true},
+		}
 	default:
 		// An unknown name is a custom provider, never a fallback to OpenAI.
 		// The derived variable is the fail-closed default; a profile's
@@ -187,6 +192,10 @@ func providerHost(provider string) string {
 		return "openrouter.ai"
 	case "google-gemini":
 		return "generativelanguage.googleapis.com"
+	case "github-copilot":
+		return "api.githubcopilot.com"
+	case "huggingface":
+		return "huggingface.co"
 	default:
 		return ""
 	}

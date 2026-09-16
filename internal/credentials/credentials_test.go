@@ -82,3 +82,13 @@ func TestSpecOllamaHasNoRequiredFields(t *testing.T) {
 		t.Fatalf("ollama should have no required fields, got %+v", got)
 	}
 }
+
+func TestSpecHuggingFace(t *testing.T) {
+	spec := Spec("huggingface")
+	if len(spec) != 1 || spec[0].Name != "api_key" || !spec[0].Secret {
+		t.Fatalf("huggingface spec = %+v", spec)
+	}
+	if spec[0].EnvVars[0] != "HF_TOKEN" {
+		t.Fatalf("huggingface env = %v", spec[0].EnvVars)
+	}
+}

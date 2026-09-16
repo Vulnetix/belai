@@ -1094,3 +1094,52 @@ func TestMaxTokensOr(t *testing.T) {
 		t.Fatal("maxTokensOr(16, 4096) != 16")
 	}
 }
+
+func TestElideToolResultsKeepsRecentIterations(t *testing.T) {
+	long := strings.Repeat("x", 3000)
+	turns := []Turn{
+		{Role: "user", Content: "go"},
+		{Role: "assistant", Content: "", ToolCalls: []rolemanager.ToolCall{{ID: "c1", Name: "Read"}}},
+		{Role: "tool", Content: long, ToolCallID: "c1", ToolName: "Read"},
+		{Role: "assistant", Content: "", ToolCalls: []rolemanager.ToolCall{{ID: "c2", Name: "Read"}}},
+		{Role: "tool", Content: long, ToolCallID: "c2", ToolName: "Read"},
+		{Role: "assistant", Content: "", ToolCalls: []rolemanager.ToolCall{{ID: "c3", Name: "Read"}}},
+		{Role: "tool", Content: long, ToolCallID: "c3", ToolName: "Read"},
+		{Role: "assistant", Content: "", ToolCalls: []rolemanager.ToolCall{{ID: "c4", Name: "Read"}}},
+		{Role: "tool", Content: long, ToolCallID: "c4", ToolName: "Read"},
+	}
+	out := elideToolResults(turns)
+	// The first iteration's tool result (c1) is old and elided; the last three
+	// stay full.
+	if out[2].Content == long {
+		t.Fatalf("old tool result should be elided")
+	}
+	if !strings.Contains(out[2].Content, "truncated") {
+		t.Fatalf("old tool result should carry a truncation marker: %q", out[2].Content)
+	}
+	for _, i := range []int{4, 6, 8} {
+		if out[i].Content != long {
+			t.Fatalf("recent tool result at %d should stay full", i)
+		}
+	}
+}
+
+func TestElideToolResultsFewIterationsUntouched(t *testing.T) {
+	long := strings.Repeat("y", 3000)
+	turns := []Turn{
+		{Role: "assistant", Content: "", ToolCalls: []rolemanager.ToolCall{{ID: "c1", Name: "Read"}}},
+		{Role: "tool", Content: long, ToolCallID: "c1", ToolName: "Read"},
+	}
+	out := elideToolResults(turns)
+	if out[1].Content != long {
+		t.Fatalf("single recent tool result must not be elided")
+	}
+}
+
+func TestEnvSourceHuggingFace(t *testing.T) {
+	src := EnvSource(envMap(map[string]string{"HF_TOKEN": "hf-secret"}))
+	v, origin, ok := src.Lookup("huggingface", "api_key")
+	if !ok || v != "hf-secret" || origin != "$HF_TOKEN" {
+		t.Fatalf("Lookup = %q %q %v", v, origin, ok)
+	}
+}

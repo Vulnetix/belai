@@ -43,7 +43,8 @@ type Config struct {
 	// every request so the model's method is not re-checked per turn.
 	ToolMethod ToolMethod
 	// MaxTokens overrides the completion cap. Zero means the surface default.
-	// The classifier sets a small cap because its reply is one sentinel token.
+	// The classifier sets a bounded cap sized for its reply: a single sentinel
+	// token for sentinel calls, or larger for structured-output calls.
 	MaxTokens int
 	// Classifier holds the resolved classifier config. When zero (no provider
 	// and no model), NewClassifier derives it from this config with reasoning
@@ -72,10 +73,16 @@ type ChunkConfig struct {
 	Concurrency int
 }
 
-// ClassifierMaxTokens caps a classifier completion. The classifier prompt
-// demands exactly one sentinel token; a larger cap only widens the worst-case
-// latency without improving the answer.
-const ClassifierMaxTokens = 16
+// ClassifierMaxTokens caps a single-token sentinel classifier completion
+// (security, mode, goal-evaluation, agent-evaluation). The reply itself is one
+// token, but reasoning models spend output tokens on reasoning_content before
+// they emit the final sentinel in content. A 16-token cap starved reasoning
+// models mid-thought, leaving content empty and the verdict malformed, so the
+// budget is large enough for a short reasoning preamble plus the token.
+// Non-reasoning models still stop after the single token, so the wider cap
+// costs them nothing. Structured-output builders (compaction, clarification,
+// agent profiles) override this with ClassifierStructuredMaxTokens.
+const ClassifierMaxTokens = 1024
 
 // config converts a classifier config back to a plain request Config.
 func (c ClassifierConfig) config() Config {
@@ -348,6 +355,13 @@ func (f EnvSource) Lookup(provider, field string) (value, origin string, ok bool
 		}
 		if v := f("GH_TOKEN"); v != "" {
 			return v, "$GH_TOKEN", true
+		}
+	case "huggingface:api_key":
+		if v := f("HF_TOKEN"); v != "" {
+			return v, "$HF_TOKEN", true
+		}
+		if v := f("HUGGINGFACE_TOKEN"); v != "" {
+			return v, "$HUGGINGFACE_TOKEN", true
 		}
 	default:
 		// Custom providers resolve from their derived variable; EnvSource
@@ -635,7 +649,11 @@ func doChatWithPool(ctx context.Context, cfg Config, system string, turns []Turn
 func NewClassifier(cfg Config, client *http.Client) rolemanager.Classifier {
 	cc := cfg.ClassifierOrDefault()
 	return rolemanager.ClassifierFunc(func(ctx context.Context, p rolemanager.ClassifierPayload) (string, error) {
-		return chat(ctx, cc.config(), p.System, p.User, client)
+		c := cc.config()
+		if p.MaxTokens > 0 {
+			c.MaxTokens = p.MaxTokens
+		}
+		return chat(ctx, c, p.System, p.User, client)
 	})
 }
 
@@ -737,6 +755,9 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 		// tool result in the stored transcript. Synthetic results are added to
 		// the outbound payload only and are never written to session storage.
 		turns = synthesizeDanglingToolResults(turns)
+		// Bound the context cost: keep the last few iterations' tool results in
+		// full and elide older ones to a short head.
+		turns = elideToolResults(turns)
 
 		switch d.kind {
 		case kindWorkersAI:
@@ -978,6 +999,45 @@ func synthesizeDanglingToolResults(turns []Turn) []Turn {
 					ToolName:   tc.Name,
 				})
 			}
+		}
+	}
+	return out
+}
+
+// keepRecentToolIterations is how many trailing tool-result iterations stay in
+// full on the outbound request. Older tool results are elided to a short head,
+// which is the largest token-cost centre in long sessions.
+const keepRecentToolIterations = 3
+
+// elideToolResults returns a copy of turns with tool results older than the
+// last keepRecentToolIterations iterations truncated to
+// transcript.DefaultMaxToolResultChars. An iteration boundary is an assistant
+// turn that carried tool calls; the tool turns following it belong to that
+// iteration. Elision runs per request (not memoised like egress) because a
+// turn's position shifts as the conversation grows.
+func elideToolResults(turns []Turn) []Turn {
+	if len(turns) == 0 {
+		return turns
+	}
+	keepFrom := 0
+	iterations := 0
+	for i := len(turns) - 1; i >= 0; i-- {
+		if turns[i].Role == "assistant" && len(turns[i].ToolCalls) > 0 {
+			iterations++
+			if iterations >= keepRecentToolIterations {
+				keepFrom = i
+				break
+			}
+		}
+	}
+	if keepFrom == 0 {
+		return turns
+	}
+	out := make([]Turn, len(turns))
+	copy(out, turns)
+	for i := 0; i < keepFrom; i++ {
+		if out[i].Role == "tool" {
+			out[i].Content = transcript.TruncateRunes(out[i].Content, transcript.DefaultMaxToolResultChars)
 		}
 	}
 	return out
