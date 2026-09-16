@@ -616,10 +616,10 @@ Business rules:
 | `ctrl+home` / `ctrl+end` | Jump the transcript to the top / bottom |
 | `ctrl+j` / `alt+enter` | Insert a newline in the prompt editor |
 | `shift+enter` | Insert a newline on terminals that support the kitty keyboard protocol |
-| `up` / `down` | Browse prompt history and prompt library (type to filter; any edit key leaves the browse cycle) |
+| `up` / `down` | Browse prompt history and prompt library. Library entries come first and their names show as a chip strip above the composer: `tab` cycles the named prompts, `right` accepts the loaded one into the composer, `enter` sends it. Typing — like any edit key — leaves the browse cycle and edits the loaded prompt |
 | `alt+s` | Save the current prompt to the project prompt library |
-| `tab` | Move the highlight through the slash-command hints, or — with no `/` popup, in agent mode — through the agent picker. It never writes into the prompt |
-| `right` / `enter` | Accept the highlighted hint (or the first, for `right` with nothing highlighted); in the agent picker, engage the highlighted agent. Without a highlight, `right` is the cursor key and `enter` sends |
+| `tab` | Move the highlight through the slash-command hints, or — with no `/` popup, in agent mode — through the agent picker. It never writes into the prompt. While browsing the prompt library it loads the next named prompt instead |
+| `right` / `enter` | Accept the highlighted hint (or the first, for `right` with nothing highlighted); in the agent picker, engage the highlighted agent; while browsing the prompt library, accept the loaded prompt into the composer (`right`) or send it (`enter`). Without a highlight, `right` is the cursor key and `enter` sends |
 | `ctrl+g` | Start the highlighted `↻` background-agent definition as a background agent |
 | `esc` (with a highlight) | Drop the highlight, keeping the popup or strip on screen |
 | `enter` (while working) | Steer the running turn with a new user message |
@@ -703,31 +703,71 @@ foreground.
 ### Prompt library
 
 Named prompts live in a library that merges a global file
-(`~/.vulnetix/signet/prompts.json`) with a project override
-(`<workdir>/.vulnetix/prompts.json`). Project entries win by name.
+(`~/.vulnetix/signet/prompts.json`, `config.GlobalPromptsPath`) with a project
+override (`<workdir>/.vulnetix/prompts.json`, `config.ProjectPromptsPath`).
+Project entries win by name, and the merge keeps the global file's order for
+names it already had, appending project-only names after it. A missing file is
+an empty library, not an error: the library is chrome, and a fresh checkout has
+no reason to fail the composer.
 
-Library entries are ranked before session history when cycling with the Up
-arrow. Typing while cycling filters both sources case-insensitively (name
-and prompt text), with library matches appearing first.
+Browsing is entered with `up`. The result list is built once, when the cycle
+starts:
+
+1. every library entry matching the composer text, project overrides applied;
+2. then this workdir's session-history prompts, newest first, that match the
+   same text and are not already in the list by identical prompt text.
+
+The composer's text at the moment `up` is pressed is the filter — a partial
+prompt narrows what browsing offers — and the match is a case-insensitive
+substring test against both the entry name and the prompt text
+(`promptlib.Match`). The list is **not** rebuilt mid-cycle; the filter is fixed
+for the life of the cycle.
+
+Because library entries lead the list, the named ones are always a prefix of
+it, and the TUI draws that prefix as a chip strip above the composer — the
+agent picker's sibling, one chip per prompt *name*, the loaded one highlighted.
+The strip is what replaced a "type to search" hint: typing during a cycle
+never appeared in the composer (the loaded prompt occupied it), so the filter
+it was narrowing was invisible. Names are visible, and `tab` walks them.
 
 Browsing and editing are distinct states, and every key resolves to exactly
 one of them:
 
 | Key | While browsing |
 | --- | -------------- |
-| `up` / `down` | Move through results. `down` past the newest result restores the text you had before browsing |
-| printable characters, space | Narrow the filter and reload the first match |
-| `enter` | Accept the loaded prompt (submits it) |
+| `up` / `down` | Move through **all** results, library entries then session history. `down` past the newest result restores the text you had before browsing |
+| `tab` | Load the next **named** prompt, wrapping at the end of the named prefix. With no library match the strip is absent and `tab` does nothing |
+| `right` | Accept the loaded prompt into the composer and leave the cycle, cursor at the end |
+| `enter` | Accept the loaded prompt and send it (`/command` and `!shell` text dispatches as usual; while a turn runs it steers) |
 | `esc` | Cancel: restore the text you had before browsing |
-| anything else (`backspace`, `←`/`→`, `home`, `delete`, …) | Leave the browse cycle **keeping the loaded prompt**, and apply the key as an ordinary edit |
+| anything else (printable characters, `backspace`, `←`, `home`, `delete`, …) | Leave the browse cycle **keeping the loaded prompt**, and apply the key as an ordinary edit |
 
-The last row is what makes a recalled prompt editable: backspace deletes one
-character of it rather than clearing the composer, and the arrow keys move the
-cursor through it. The trade-off is that backspace no longer walks the filter
-back — narrowing is forward-only.
+The last row is what makes a recalled prompt editable: typing appends to it and
+backspace deletes one character of it rather than clearing the composer. `right`
+is the only edit-adjacent key with a browse meaning of its own, because
+accepting and leaving is what the cursor key would have done anyway at the end
+of the line.
+
+Edge cases:
+
+- **No results** — the cycle still opens with the typed text intact and
+  `historyIndex` at `-1`; `up` and `tab` have nothing to move to, and `esc`
+  or an edit key leaves the text as it was.
+- **Duplicate prompt text** — a session-history prompt identical to a library
+  prompt is dropped, so a saved prompt is offered once, under its name.
+- **An unnamed entry is loaded** — `up` can walk past the named prefix into
+  session history, where no chip is highlighted; `tab` returns to the first
+  named prompt rather than continuing into the unnamed tail.
+- **Composer hint** — the meta line reads `↑↓ cycle · tab name · → accept ·
+  ⏎ use · esc cancel`, dropping the `tab name` segment when the library
+  contributed nothing to this cycle.
 
 `alt+s` in the chat composer enters a naming mode: type a name and press
-Enter to save the current editor text to the project library. Esc cancels.
+Enter to save the current editor text to the **project** library
+(`promptlib.Add`, which replaces an entry of the same name in place and stamps
+`created_at` when it is zero). An empty name cancels with `save cancelled: name
+required`, and Esc cancels. Saving always writes the project file; the global
+file is edited by hand.
 
 ### Slash commands
 

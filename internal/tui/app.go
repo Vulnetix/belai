@@ -287,7 +287,7 @@ type App struct {
 	historyQuery    string
 	historyOriginal string
 	historyIndex    int
-	historyResults  []string
+	historyResults  []historyItem
 
 	// autocomplete cycling; noAutocompleteSelection means nothing is
 	// highlighted yet, so the first tab lands on the first candidate.
@@ -1472,6 +1472,14 @@ func (a *App) forwardToEditor(m tea.KeyMsg) tea.Cmd {
 // Prompt history / library cycling
 // ---------------------------------------------------------------------------
 
+// historyItem is one browsable prompt. Name is the library name when the
+// prompt came from the prompt library, and empty for a plain session-history
+// prompt, which nobody named.
+type historyItem struct {
+	Name   string
+	Prompt string
+}
+
 func (a *App) startHistoryCycle() tea.Cmd {
 	a.historyQuery = strings.TrimSpace(a.editor.Value())
 	a.historyOriginal = a.editor.Value()
@@ -1479,7 +1487,7 @@ func (a *App) startHistoryCycle() tea.Cmd {
 	a.historyActive = true
 	if len(a.historyResults) > 0 {
 		a.historyIndex = 0
-		a.editor.SetValue(a.historyResults[0])
+		a.editor.SetValue(a.historyResults[0].Prompt)
 		a.editor.CursorEnd()
 	} else {
 		a.historyIndex = -1
@@ -1489,8 +1497,8 @@ func (a *App) startHistoryCycle() tea.Cmd {
 	return nil
 }
 
-func (a *App) buildHistoryResults(query string) []string {
-	var results []string
+func (a *App) buildHistoryResults(query string) []historyItem {
+	var results []historyItem
 	seen := make(map[string]bool)
 
 	globalLib, _ := promptlib.LoadGlobal()
@@ -1499,7 +1507,7 @@ func (a *App) buildHistoryResults(query string) []string {
 	for _, e := range lib.Filter(query) {
 		if !seen[e.Prompt] {
 			seen[e.Prompt] = true
-			results = append(results, e.Prompt)
+			results = append(results, historyItem{Name: e.Name, Prompt: e.Prompt})
 		}
 	}
 
@@ -1508,7 +1516,7 @@ func (a *App) buildHistoryResults(query string) []string {
 		for _, p := range prompts {
 			if !seen[p] && promptlib.Match(promptlib.Entry{Name: "", Prompt: p}, query) {
 				seen[p] = true
-				results = append(results, p)
+				results = append(results, historyItem{Prompt: p})
 			}
 		}
 	}
@@ -1516,23 +1524,91 @@ func (a *App) buildHistoryResults(query string) []string {
 	return results
 }
 
+// namedHistoryCount is the number of leading results that carry a library
+// name. buildHistoryResults puts every library entry first, so the named
+// prompts are always the prefix of the list and the strip can index into it
+// directly.
+func (a *App) namedHistoryCount() int {
+	n := 0
+	for _, it := range a.historyResults {
+		if it.Name == "" {
+			break
+		}
+		n++
+	}
+	return n
+}
+
+// promptPickerVisible reports whether the named-prompt strip has anything to
+// draw: the browse cycle is open and the library contributed at least one
+// entry to it.
+func (a *App) promptPickerVisible() bool {
+	return a.historyActive && a.namedHistoryCount() > 0
+}
+
+// cyclePromptName moves the highlight to the next named prompt, wrapping at
+// the end. It is deliberately confined to the named prefix: tab picks a
+// library entry by name, while up/down still walk the whole list including
+// the unnamed session history.
+func (a *App) cyclePromptName() tea.Cmd {
+	named := a.namedHistoryCount()
+	if named == 0 {
+		return nil
+	}
+	next := a.historyIndex + 1
+	if next < 0 || next >= named {
+		next = 0
+	}
+	a.historyIndex = next
+	a.editor.SetValue(a.historyResults[next].Prompt)
+	a.editor.CursorEnd()
+	return nil
+}
+
+// renderPromptPicker draws the library names as a chip row above the composer,
+// the same shape as the agent picker. It is what the browse cycle offers in
+// place of an invisible search: the names are the thing worth reading, and the
+// prompt text is already in the composer.
+func (a *App) renderPromptPicker() string {
+	named := a.namedHistoryCount()
+	parts := make([]string, 0, named)
+	for i := range named {
+		name := a.historyResults[i].Name
+		if i == a.historyIndex {
+			parts = append(parts, components.Chip(name, components.ColorTealSoft))
+			continue
+		}
+		parts = append(parts, components.KeyStyle.Render(name))
+	}
+	line := components.MutedStyle.Render("✎ ") + strings.Join(parts, components.MutedStyle.Render("  ·  "))
+	return lipgloss.NewStyle().MaxWidth(a.contentWidth()).Render(line)
+}
+
 func (a *App) handleHistoryKey(m tea.KeyMsg) tea.Cmd {
 	switch m.String() {
 	case "up":
 		if a.historyIndex < len(a.historyResults)-1 {
 			a.historyIndex++
-			a.editor.SetValue(a.historyResults[a.historyIndex])
+			a.editor.SetValue(a.historyResults[a.historyIndex].Prompt)
 			a.editor.CursorEnd()
 		}
 		return nil
 	case "down":
 		if a.historyIndex > 0 {
 			a.historyIndex--
-			a.editor.SetValue(a.historyResults[a.historyIndex])
+			a.editor.SetValue(a.historyResults[a.historyIndex].Prompt)
 			a.editor.CursorEnd()
 		} else {
 			a.exitHistoryCycle(false)
 		}
+		return nil
+	case "tab":
+		return a.cyclePromptName()
+	case "right":
+		// Accept the loaded prompt into the composer and leave the cycle, so
+		// the next keystroke edits it instead of browsing away from it.
+		a.exitHistoryCycle(true)
+		a.editor.CursorEnd()
 		return nil
 	case "enter":
 		a.exitHistoryCycle(true)
@@ -1576,30 +1652,14 @@ func (a *App) handleHistoryKey(m tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
-	switch m.Type {
-	case tea.KeyRunes:
-		a.historyQuery += string(m.Runes)
-	case tea.KeySpace:
-		a.historyQuery += " "
-	default:
-		// Any other key — backspace, cursor motion, delete — means the user is
-		// done browsing and wants to edit the prompt that was loaded. Leave the
-		// cycle with the loaded text intact and hand the key to the editor so it
-		// performs its normal edit instead of clearing the composer.
-		a.exitHistoryCycle(true)
-		return a.forwardToEditor(m)
-	}
-
-	a.historyResults = a.buildHistoryResults(a.historyQuery)
-	if len(a.historyResults) > 0 {
-		a.historyIndex = 0
-		a.editor.SetValue(a.historyResults[0])
-		a.editor.CursorEnd()
-	} else {
-		a.historyIndex = -1
-		a.editor.SetValue(a.historyQuery)
-	}
-	return nil
+	// Any other key — a rune, backspace, cursor motion, delete — means the user
+	// is done browsing and wants to edit the prompt that was loaded. Leave the
+	// cycle with the loaded text intact and hand the key to the editor so it
+	// performs its normal edit instead of clearing the composer. Typing used to
+	// re-filter the results invisibly, which read as the composer eating
+	// keystrokes; the named-prompt strip replaces that with tab.
+	a.exitHistoryCycle(true)
+	return a.forwardToEditor(m)
 }
 
 // exitHistoryCycle leaves the browse cycle. accept keeps whatever prompt is
@@ -2123,6 +2183,10 @@ func (a *App) chatView() string {
 		sb.WriteString(a.renderAgentPicker())
 		sb.WriteString("\n")
 	}
+	if a.promptPickerVisible() {
+		sb.WriteString(a.renderPromptPicker())
+		sb.WriteString("\n")
+	}
 	if len(a.attachments) > 0 {
 		sb.WriteString(a.renderAttachStrip())
 		sb.WriteString("\n")
@@ -2170,7 +2234,11 @@ func (a *App) renderComposer() string {
 		title, accent, meta = "name prompt", lipgloss.TerminalColor(components.ColorAmber), "⏎ save · esc cancel"
 	}
 	if a.historyActive {
-		meta = "↑↓ cycle · type to search · esc cancel"
+		if a.promptPickerVisible() {
+			meta = "↑↓ cycle · tab name · → accept · ⏎ use · esc cancel"
+		} else {
+			meta = "↑↓ cycle · → accept · ⏎ use · esc cancel"
+		}
 	}
 	if a.phase == phaseRoleManager {
 		// Role Manager activity gets its own branded signal: a filled

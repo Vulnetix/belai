@@ -1084,26 +1084,116 @@ func TestHistoryCycleEscCancels(t *testing.T) {
 	}
 }
 
-func TestHistoryCycleTypingFilters(t *testing.T) {
+// The composer text seeds the browse cycle, so a partial prompt still narrows
+// what up offers; it is only mid-cycle typing that no longer re-filters.
+func TestHistoryCycleSeedsFromComposer(t *testing.T) {
 	workdir := t.TempDir()
 	t.Setenv("SIGNET_HOME", t.TempDir())
 
 	st, _ := session.NewStore()
 	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "how to deploy"})
-	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "how to test"})
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "unrelated"})
 
 	a := New(Options{Workdir: workdir})
 	a.store = st
 	a.editor.SetValue("how to")
 
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
-	if a.editor.Value() != "how to test" {
-		t.Fatalf("expected 'how to test' first, got %q", a.editor.Value())
+	if a.editor.Value() != "how to deploy" {
+		t.Fatalf("expected 'how to deploy', got %q", a.editor.Value())
+	}
+	if len(a.historyResults) != 1 {
+		t.Fatalf("expected the seed to narrow the results, got %+v", a.historyResults)
+	}
+}
+
+// Typing mid-cycle used to re-filter invisibly; it now leaves the cycle and
+// edits the loaded prompt, which is what the composer already looked like it
+// was doing.
+func TestHistoryCycleTypingEditsLoadedPrompt(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	st, _ := session.NewStore()
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "how to deploy"})
+
+	a := New(Options{Workdir: workdir})
+	a.store = st
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'!'}})
+
+	if a.historyActive {
+		t.Fatalf("expected typing to leave the browse cycle")
+	}
+	if a.editor.Value() != "how to deploy!" {
+		t.Fatalf("editor = %q, want the loaded prompt with the typed rune", a.editor.Value())
+	}
+}
+
+func TestHistoryCycleTabCyclesNamedPrompts(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	_ = promptlib.SaveGlobal(promptlib.Library{Entries: []promptlib.Entry{
+		{Name: "deploy", Prompt: "deploy the app"},
+		{Name: "review", Prompt: "review the diff"},
+	}})
+
+	st, _ := session.NewStore()
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "unnamed history"})
+
+	a := New(Options{Workdir: workdir})
+	a.store = st
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+	if !a.promptPickerVisible() {
+		t.Fatalf("expected the named-prompt strip to show")
+	}
+	if a.namedHistoryCount() != 2 {
+		t.Fatalf("namedHistoryCount = %d, want 2", a.namedHistoryCount())
+	}
+	if a.editor.Value() != "deploy the app" {
+		t.Fatalf("editor = %q, want the first named prompt", a.editor.Value())
 	}
 
-	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' ', 'd', 'e'}})
-	if !strings.Contains(a.editor.Value(), "deploy") {
-		t.Fatalf("expected filter to narrow to deploy, got %q", a.editor.Value())
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+	if a.editor.Value() != "review the diff" {
+		t.Fatalf("editor = %q, want the second named prompt", a.editor.Value())
+	}
+
+	// Tab wraps inside the named prefix rather than walking into the unnamed
+	// session history, which up/down still reaches.
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+	if a.editor.Value() != "deploy the app" {
+		t.Fatalf("editor = %q, want tab to wrap to the first named prompt", a.editor.Value())
+	}
+
+	strip := a.renderPromptPicker()
+	if !strings.Contains(strip, "deploy") || !strings.Contains(strip, "review") {
+		t.Fatalf("strip missing prompt names: %q", strip)
+	}
+}
+
+func TestHistoryCycleRightAccepts(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	_ = promptlib.SaveGlobal(promptlib.Library{Entries: []promptlib.Entry{
+		{Name: "deploy", Prompt: "deploy the app"},
+	}})
+
+	a := New(Options{Workdir: workdir})
+	a.editor.SetValue("")
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRight})
+
+	if a.historyActive {
+		t.Fatalf("expected right to leave the browse cycle")
+	}
+	if a.editor.Value() != "deploy the app" {
+		t.Fatalf("editor = %q, want the accepted prompt", a.editor.Value())
 	}
 }
 
@@ -1369,6 +1459,197 @@ func TestLibraryProjectOverridesGlobal(t *testing.T) {
 
 	if a.editor.Value() != "project x" {
 		t.Fatalf("expected project override, got %q", a.editor.Value())
+	}
+}
+
+// The result list is library entries first, then session history, and a
+// history prompt identical to a library prompt is dropped so a saved prompt is
+// offered once, under its name.
+func TestHistoryResultsRankLibraryFirstAndDedupe(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	_ = promptlib.SaveGlobal(promptlib.Library{Entries: []promptlib.Entry{
+		{Name: "deploy", Prompt: "deploy the app"},
+	}})
+
+	st, _ := session.NewStore()
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "deploy the app"})
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "something else"})
+
+	a := New(Options{Workdir: workdir})
+	a.store = st
+
+	got := a.buildHistoryResults("")
+	want := []historyItem{
+		{Name: "deploy", Prompt: "deploy the app"},
+		{Prompt: "something else"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("results = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("results[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+// A library entry matches on its name as well as its prompt text, so the
+// composer seed can name the prompt it wants.
+func TestHistoryResultsMatchOnName(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	_ = promptlib.SaveGlobal(promptlib.Library{Entries: []promptlib.Entry{
+		{Name: "deploy", Prompt: "ship it"},
+		{Name: "review", Prompt: "read the diff"},
+	}})
+
+	a := New(Options{Workdir: workdir})
+	got := a.buildHistoryResults("DEPLOY")
+	if len(got) != 1 || got[0].Prompt != "ship it" {
+		t.Fatalf("results = %+v, want the entry named deploy", got)
+	}
+}
+
+// With no library entry in the results there is no strip to draw, and the
+// composer hint drops the tab segment rather than advertising a key that does
+// nothing.
+func TestPromptPickerHiddenWithoutNamedPrompts(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	st, _ := session.NewStore()
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "plain history"})
+
+	a := New(Options{Workdir: workdir})
+	a.store = st
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+
+	if a.promptPickerVisible() {
+		t.Fatalf("strip should be hidden with no named prompts")
+	}
+	meta := a.renderComposer()
+	if strings.Contains(meta, "tab name") {
+		t.Fatalf("composer hint should not advertise tab: %q", meta)
+	}
+	if !strings.Contains(meta, "esc cancel") {
+		t.Fatalf("composer hint should still show the browse keys: %q", meta)
+	}
+
+	// Tab has nothing to cycle and must leave the loaded prompt alone.
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+	if a.editor.Value() != "plain history" {
+		t.Fatalf("editor = %q, want the loaded history prompt", a.editor.Value())
+	}
+}
+
+func TestPromptPickerHintShownWithNamedPrompts(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	_ = promptlib.SaveGlobal(promptlib.Library{Entries: []promptlib.Entry{
+		{Name: "deploy", Prompt: "deploy the app"},
+	}})
+
+	a := New(Options{Workdir: workdir})
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+
+	if !strings.Contains(a.renderComposer(), "tab name") {
+		t.Fatalf("composer hint should advertise tab while a strip is showing")
+	}
+	if !strings.Contains(a.View(), "deploy") {
+		t.Fatalf("frame should carry the named-prompt strip")
+	}
+}
+
+// up walks past the named prefix into unnamed session history; tab returns to
+// the first named prompt rather than continuing into the unnamed tail.
+func TestHistoryTabReturnsFromUnnamedTail(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	_ = promptlib.SaveGlobal(promptlib.Library{Entries: []promptlib.Entry{
+		{Name: "deploy", Prompt: "deploy the app"},
+	}})
+
+	st, _ := session.NewStore()
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "unnamed history"})
+
+	a := New(Options{Workdir: workdir})
+	a.store = st
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+	if a.editor.Value() != "unnamed history" {
+		t.Fatalf("editor = %q, want the unnamed history entry", a.editor.Value())
+	}
+	if a.historyIndex != 1 {
+		t.Fatalf("historyIndex = %d, want 1", a.historyIndex)
+	}
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+	if a.editor.Value() != "deploy the app" {
+		t.Fatalf("editor = %q, want tab to return to the first named prompt", a.editor.Value())
+	}
+}
+
+// An empty result set still opens the cycle with the typed text intact, and
+// esc restores it untouched.
+func TestHistoryCycleNoResultsKeepsTypedText(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	a := New(Options{Workdir: workdir})
+	a.editor.SetValue("nothing matches this")
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+	if !a.historyActive {
+		t.Fatalf("expected the cycle to open even with no results")
+	}
+	if a.historyIndex != -1 {
+		t.Fatalf("historyIndex = %d, want -1", a.historyIndex)
+	}
+	if a.editor.Value() != "nothing matches this" {
+		t.Fatalf("editor = %q, want the typed text", a.editor.Value())
+	}
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+	if a.editor.Value() != "nothing matches this" {
+		t.Fatalf("editor = %q, want the typed text untouched", a.editor.Value())
+	}
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEscape})
+	if a.historyActive || a.editor.Value() != "nothing matches this" {
+		t.Fatalf("esc should restore the typed text, got %q", a.editor.Value())
+	}
+}
+
+// The filter is fixed for the life of a cycle: the composer seed narrows the
+// results, and nothing rebuilds them until the cycle is re-entered.
+func TestHistoryCycleFilterIsFixedForTheCycle(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	st, _ := session.NewStore()
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "how to deploy"})
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "unrelated"})
+
+	a := New(Options{Workdir: workdir})
+	a.store = st
+	a.editor.SetValue("how to")
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+	if len(a.historyResults) != 1 {
+		t.Fatalf("results = %+v, want only the seeded match", a.historyResults)
+	}
+	// up past the end holds on the last result rather than wrapping or
+	// reloading the unfiltered list.
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+	if a.editor.Value() != "how to deploy" {
+		t.Fatalf("editor = %q, want the single match held", a.editor.Value())
 	}
 }
 

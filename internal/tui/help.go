@@ -65,9 +65,11 @@ func keySections() []keySection {
 		}},
 		{"prompt history (after up)", []keyBinding{
 			{"up, down", "older result, newer result"},
-			{"type", "filter the results"},
+			{"tab", "load the next named prompt from the strip, wrapping at the end"},
+			{"right", "accept the loaded prompt into the composer, leaving the cycle"},
 			{"enter", "accept and send"},
 			{"esc", "cancel and restore what you typed"},
+			{"type", "leave the cycle and edit the loaded prompt"},
 		}},
 		{"save prompt (after alt+s)", []keyBinding{
 			{"enter", "save under the typed name; empty cancels"},

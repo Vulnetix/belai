@@ -118,6 +118,20 @@ func TestAddReplacesDuplicateName(t *testing.T) {
 	}
 }
 
+// Add stamps CreatedAt only when it is zero, so re-saving an imported or
+// hand-edited entry does not rewrite when it was first created.
+func TestAddPreservesExplicitCreatedAt(t *testing.T) {
+	lib := Library{}
+	lib.Add(Entry{Name: "a", Prompt: "a", CreatedAt: 42})
+	if lib.Entries[0].CreatedAt != 42 {
+		t.Fatalf("CreatedAt = %d, want 42", lib.Entries[0].CreatedAt)
+	}
+	lib.Add(Entry{Name: "a", Prompt: "b", CreatedAt: 42})
+	if len(lib.Entries) != 1 || lib.Entries[0].CreatedAt != 42 {
+		t.Fatalf("replace lost CreatedAt: %+v", lib.Entries)
+	}
+}
+
 func TestAddAppendsNewName(t *testing.T) {
 	lib := Library{Entries: []Entry{{Name: "a", Prompt: "a"}}}
 	lib.Add(Entry{Name: "b", Prompt: "b"})

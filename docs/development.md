@@ -72,7 +72,7 @@ just ask anthropic claude-sonnet-4-5 "review this diff" -detect-mode -verbose
 | `-caveman` | enable caveman voice rewrite for this run |
 | `-session-retention-days` | idle session retention in days (default 28) |
 | `-detect-mode` | run the operating-mode classifier and report the decision (`agent`, `plan`, `goal`) |
-| `-tools` | enable tool execution (noninteractive agent mode) |
+| `-tools` | enable tool execution in the noninteractive agent path; **on by default**, pass `-tools=false` to disable. `-detect-mode` reports the classifier decision without executing anything whatever this is set to |
 | `-agent` | start a background agent by name in foreground mode |
 | `-agent-create` | create an agent profile from a description and save to disk |
 | `-no-prune` | never prune idle sessions (overrides `-session-retention-days`) |
@@ -206,6 +206,18 @@ strip disappears, and that returning to agent mode brings both back.
 **Slash completion.** Type `/c`, then `tab` several times, and confirm the
 highlight cycles through every match instead of sticking on the second one —
 the prompt text must not change until `enter` or `right` accepts.
+
+**Prompt library.** Type a prompt, press `alt+s`, name it, and confirm the
+system line reports it saved to the project library and that the name appears
+in `.vulnetix/prompts.json`. Press `up` and confirm the named prompt loads into
+the composer, a chip strip of prompt *names* appears above it, and the meta line
+reads `↑↓ cycle · tab name · → accept · ⏎ use · esc cancel`. Confirm `tab` walks
+the names and wraps; `up`/`down` walk the whole list including unnamed session
+history (where no chip is highlighted); `right` accepts the loaded prompt and
+leaves the cycle with the cursor at the end; typing any character leaves the
+cycle and edits the loaded prompt rather than clearing the composer; `esc`
+restores what you had typed. With no saved prompts, confirm `up` still browses
+session history and the strip is absent.
 
 **Release parity.** `just build-all` cross-compiles all six release targets into `bin/` with the same ldflags the release workflow uses, and writes `bin/checksums.txt`. Run the host binary and check `-version` reports the git description.
 
