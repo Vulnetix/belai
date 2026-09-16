@@ -2431,12 +2431,20 @@ func localBases() []string {
 func (a *App) localModelDownloadCmd(repo string) tea.Cmd {
 	ch := make(chan downloadProgressMsg, 16)
 	a.downloadCh = ch
+	resolver := a.resolver
 	go func() {
 		defer close(ch)
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
 
-		token, _, _ := run.EnvSource(os.Getenv).Lookup("huggingface", "api_key")
+		// The HF token resolves through the full credential stack (env, files,
+		// netrc, keychain) when a resolver is present, else environment only.
+		var token string
+		if resolver != nil {
+			token, _, _ = resolver.Lookup("huggingface", "api_key")
+		} else {
+			token, _, _ = run.EnvSource(os.Getenv).Lookup("huggingface", "api_key")
+		}
 		dir, err := localinfer.ModelsDir()
 		if err != nil {
 			ch <- downloadProgressMsg{err: err, final: true}
