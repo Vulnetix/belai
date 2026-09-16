@@ -908,13 +908,21 @@ than the last, and the merged list is de-duplicated by model id:
    and commit it.
 
 Live fetch is available for `openai`, `anthropic`, `cloudflare-workers-ai`,
-`openrouter`, `google-gemini`, `ollama`, `github-copilot`, `huggingface`, and
+`openrouter`, `google-gemini`, `ollama`, `github-copilot`, and
 `cloudflare-ai-gateway`. `r` clears the cache and re-fetches for the selected
 provider; fetch errors are rendered under the list as `✗ fetch: ...` so silent
 failures are visible.
 
 Provider-specific edge cases:
 
+- **`huggingface`** does **not** live-fetch. Although HuggingFace's routing
+  layer exposes `GET https://router.huggingface.co/v1/models`, the response
+  lists more models than the free `hf-inference` serverless provider can
+  actually run, so presenting it causes users to select models that immediately
+  fail with `400 Model not supported by provider hf-inference`. Instead,
+  Signet ships a small, conservative static catalog of models that are widely
+  available on the free Serverless Inference API. Users can still type and
+  commit any model id if their token tier supports it.
 - **`cloudflare-ai-gateway`** has no gateway-side `/models` endpoint, but every
   gateway can run any Workers AI model. Signet extracts the `account_id` from
   the configured gateway base URL
@@ -925,13 +933,6 @@ Provider-specific edge cases:
   Production gateway hosts are mapped to `api.cloudflare.com`; hosts other than
   `gateway.ai.cloudflare.com` are followed as-is so tests and private gateways
   can be mocked.
-- **`huggingface`** serves chat completions at
-  `https://router.huggingface.co/hf-inference/v1/chat/completions` (the
-  configured base URL) but the OpenAI-compatible model list lives at the root
-  `https://router.huggingface.co/v1/models`. The fetcher strips `/hf-inference`
-  from the base path when constructing the model-discovery URL. If the base
-  URL has a different host (e.g., a local test server), it falls back to
-  `{base}/models` so the code path stays testable.
 
 ### Slash commands
 

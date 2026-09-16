@@ -65,7 +65,7 @@ func TestCatalogHuggingFace(t *testing.T) {
 			t.Fatalf("huggingface catalog has incomplete model %+v", m)
 		}
 	}
-	if got := Label("huggingface", "meta-llama/Llama-3.1-8B-Instruct"); got != "Llama 3.1 8B" {
+	if got := Label("huggingface", "meta-llama/Llama-3.2-3B-Instruct"); got != "Llama 3.2 3B" {
 		t.Fatalf("label = %q", got)
 	}
 }

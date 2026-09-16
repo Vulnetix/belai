@@ -102,7 +102,7 @@ Every posture gate also has a flag (`-allow-unsafe-tool-result`,
 | `google-gemini` | `gemini-2.5-flash` |
 | `ollama` | `llama3` |
 | `github-copilot` | `gpt-4o` |
-| `huggingface` | `meta-llama/Llama-3.1-8B-Instruct` |
+| `huggingface` | `meta-llama/Llama-3.2-3B-Instruct` |
 
 A custom provider from `settings.json` falls through to the `gpt-5` default, so
 a custom entry should carry its own model.
@@ -166,7 +166,7 @@ Manual passes worth running before a release, in addition to `just check`.
 just ask openai gpt-5 "reply with the single word OK"
 just ask anthropic claude-sonnet-4-5 "reply with the single word OK"
 just ask cloudflare-workers-ai '@cf/moonshotai/kimi-k2.6' "reply with the single word OK"
-just ask huggingface 'meta-llama/Llama-3.1-8B-Instruct' "reply with the single word OK"
+just ask huggingface 'meta-llama/Llama-3.2-3B-Instruct' "reply with the single word OK"
 ```
 
 **Missing-credential path.** With a TTY, Signet should offer the credential manager; without one it must fail closed and name every location it searched:
@@ -191,7 +191,7 @@ just detect-mode "add a retry to the HTTP client"   # agent
 just detect-mode "how does the nonce sealing work"  # plan
 ```
 
-**TUI smoke test.** `just tui`, then exercise slash-command autocomplete (`/p` → `/permissions`, `/profile`), `/credentials`, `/settings`, `/permissions`, `/help`, `/model`, `/compact`, `/clear`, `/rename`, `/agent list`, `/local-model`, and streaming output. Confirm `shift+tab` cycles the mode chip, `ctrl+d` quits, `ctrl+c` copies the prompt (native or OSC 52), and `esc` escapes every full-screen view — including permissions back to settings. On a provider with a long model catalogue, confirm the `/model` list is windowed (chrome stays visible, `↓ N more` marks the overflow) and that `/` narrows the list by substring while `esc` clears the filter. Press `r` on providers with live model lists (`openai`, `anthropic`, etc.) to force a refresh; for `huggingface` and `cloudflare-ai-gateway` the list is static/fallback and `r` should not surface a fetch error. In the Ask prompt, confirm Enter echoes the prompt into the transcript as a `user prompt` instantly, that the composer shows the filled `role manager` pill with a `pre-prompt processing` caption while the classifier runs and a plain `working` label only for model/tool I/O, and that Enter while a turn is running queues a `user steering` message. In `/settings`, confirm the **read-only tools** toggle renders `off` by default, that `space` flips it on and persists it to the scoped settings file, and that `x` clears it. Confirm the **caveman** toggle also shows `off` by default and that `ctrl+alt+c` from the chat view flips it on, emits a `caveman: on` system message, and immediately updates the footer indicator; a second press returns it to `off`. In `/permissions` with no rules, confirm the empty state reads "every tool call is allowed" and that a `Read x` preview shows the allowed-by-default wording (or blocked when `preferences.yaml` sets `permission_no_match: enforce`).
+**TUI smoke test.** `just tui`, then exercise slash-command autocomplete (`/p` → `/permissions`, `/profile`), `/credentials`, `/settings`, `/permissions`, `/help`, `/model`, `/compact`, `/clear`, `/rename`, `/agent list`, `/local-model`, and streaming output. Confirm `shift+tab` cycles the mode chip, `ctrl+d` quits, `ctrl+c` copies the prompt (native or OSC 52), and `esc` escapes every full-screen view — including permissions back to settings. On a provider with a long model catalogue, confirm the `/model` list is windowed (chrome stays visible, `↓ N more` marks the overflow) and that `/` narrows the list by substring while `esc` clears the filter. Press `r` on providers with live model lists (`openai`, `anthropic`, etc.) to force a refresh; for `huggingface` the list is a conservative static catalog and `r` should not surface a fetch error, while `cloudflare-ai-gateway` refreshes from the Workers AI model-search API. In the Ask prompt, confirm Enter echoes the prompt into the transcript as a `user prompt` instantly, that the composer shows the filled `role manager` pill with a `pre-prompt processing` caption while the classifier runs and a plain `working` label only for model/tool I/O, and that Enter while a turn is running queues a `user steering` message. In `/settings`, confirm the **read-only tools** toggle renders `off` by default, that `space` flips it on and persists it to the scoped settings file, and that `x` clears it. Confirm the **caveman** toggle also shows `off` by default and that `ctrl+alt+c` from the chat view flips it on, emits a `caveman: on` system message, and immediately updates the footer indicator; a second press returns it to `off`. In `/permissions` with no rules, confirm the empty state reads "every tool call is allowed" and that a `Read x` preview shows the allowed-by-default wording (or blocked when `preferences.yaml` sets `permission_no_match: enforce`).
 
 **Agent picker.** In the TUI in agent mode, confirm the strip above the prompt
 lists your profiles, the `↻` background-agent definitions, and the `◈`

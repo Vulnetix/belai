@@ -109,46 +109,10 @@ func TestListCloudflareAIGateway(t *testing.T) {
 	}
 }
 
-func TestListHuggingFaceFallback(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/models" {
-			t.Fatalf("path = %q", r.URL.Path)
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{
-			map[string]any{"id": "meta-llama/Llama-3.1-8B-Instruct"},
-		}})
-	}))
-	defer srv.Close()
-
-	models, err := List(context.Background(), Target{Name: "huggingface", BaseURL: srv.URL, APIKey: "k"}, srv.Client())
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(models) != 1 || models[0].ID != "meta-llama/Llama-3.1-8B-Instruct" {
-		t.Fatalf("models = %+v", models)
-	}
-}
-
-func TestListHuggingFaceRouterPath(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/models" {
-			t.Fatalf("path = %q", r.URL.Path)
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{
-			map[string]any{"id": "mistralai/Mistral-7B-Instruct-v0.3"},
-		}})
-	}))
-	defer srv.Close()
-
-	// When the configured chat base URL sits under /hf-inference/v1, the model
-	// list must be fetched from the sibling /v1/models path.
-	baseURL := srv.URL + "/hf-inference/v1"
-	models, err := List(context.Background(), Target{Name: "huggingface", BaseURL: baseURL, APIKey: "k"}, srv.Client())
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(models) != 1 || models[0].ID != "mistralai/Mistral-7B-Instruct-v0.3" {
-		t.Fatalf("models = %+v", models)
+func TestListHuggingFaceStaticOnly(t *testing.T) {
+	models, err := List(context.Background(), Target{Name: "huggingface", BaseURL: "https://router.huggingface.co/hf-inference/v1", APIKey: "k"}, nil)
+	if err != nil || models != nil {
+		t.Fatalf("huggingface should return nil models with no error, got %v, %v", models, err)
 	}
 }
 
