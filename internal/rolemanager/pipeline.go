@@ -3,6 +3,8 @@ package rolemanager
 import (
 	"context"
 	"fmt"
+	"sync"
+	"unicode/utf8"
 
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/sanitize"
@@ -47,6 +49,26 @@ func (f ClassifierFunc) Classify(ctx context.Context, p ClassifierPayload) (stri
 // executes tools during classification.
 type Pipeline struct {
 	Classifier Classifier
+	// Chunk bounds the chunked classify-all path for oversized payloads. A
+	// zero MaxBytes disables chunking (everything classifies in one call).
+	Chunk ChunkConfig
+	// Cache, when non-nil, memoises verdicts by the SHA-256 of the sanitized
+	// content (session-scoped for SAFE, persisted for non-SAFE).
+	Cache *Cache
+}
+
+// ChunkConfig bounds chunked classification of oversized content. Content over
+// MaxBytes is split into overlapping chunks and classified concurrently; any
+// non-SAFE (or malformed) chunk fails the whole content closed.
+type ChunkConfig struct {
+	// MaxBytes is the size over which content is chunked. Zero disables.
+	MaxBytes int
+	// Concurrency caps how many chunks classify in parallel. Zero means 4.
+	Concurrency int
+	// Overlap is the byte window each adjacent chunk shares, so an injection
+	// straddling a boundary is still seen whole by one chunk. Zero means a
+	// default overlap (1/8 of MaxBytes).
+	Overlap int
 }
 
 // NewPipeline returns a Pipeline using the given classifier.
@@ -54,9 +76,35 @@ func NewPipeline(c Classifier) *Pipeline {
 	return &Pipeline{Classifier: c}
 }
 
+// NewPipelineWithChunk returns a Pipeline using the given classifier and
+// chunk configuration.
+func NewPipelineWithChunk(c Classifier, chunk ChunkConfig) *Pipeline {
+	return &Pipeline{Classifier: c, Chunk: chunk}
+}
+
 // run performs sanitize -> classify -> parse and returns the raw result.
+// Content over the chunk threshold is classified in overlapping, concurrent
+// chunks and folded fail-closed.
 func (p *Pipeline) run(ctx context.Context, content string) (clean string, s Sentinel, parsed bool, err error) {
 	clean = sanitize.Sanitize(content)
+	if p.Cache != nil {
+		key := Key(clean)
+		if cached, ok := p.Cache.Get(key); ok {
+			return clean, cached, true, nil
+		}
+	}
+
+	if p.Chunk.MaxBytes > 0 && len(clean) > p.Chunk.MaxBytes {
+		s, parsed, err := p.classifyChunked(ctx, clean)
+		if err != nil {
+			return clean, "", false, err
+		}
+		if parsed && p.Cache != nil {
+			_ = p.Cache.Put(Key(clean), s)
+		}
+		return clean, s, parsed, nil
+	}
+
 	payload := BuildClassifierPayload(clean)
 
 	raw, err := p.Classifier.Classify(ctx, payload)
@@ -68,7 +116,117 @@ func (p *Pipeline) run(ctx context.Context, content string) (clean string, s Sen
 	if err != nil {
 		return clean, "", false, nil
 	}
+	if p.Cache != nil {
+		_ = p.Cache.Put(Key(clean), s)
+	}
 	return clean, s, true, nil
+}
+
+// classifyChunked classifies oversized content in overlapping chunks and folds
+// the verdicts fail-closed: any non-SAFE sentinel makes the whole content
+// unsafe, and any malformed classifier reply makes the whole result malformed.
+func (p *Pipeline) classifyChunked(ctx context.Context, content string) (Sentinel, bool, error) {
+	chunks := splitChunks(content, p.Chunk.MaxBytes, p.Chunk.Overlap)
+	concurrency := p.Chunk.Concurrency
+	if concurrency <= 0 {
+		concurrency = 4
+	}
+
+	type result struct {
+		s      Sentinel
+		parsed bool
+	}
+	results := make([]result, len(chunks))
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+	var errMu sync.Mutex
+	var firstErr error
+	for i, chunk := range chunks {
+		wg.Add(1)
+		go func(i int, chunk string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			raw, err := p.Classifier.Classify(ctx, BuildClassifierPayload(chunk))
+			if err != nil {
+				errMu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				errMu.Unlock()
+				return
+			}
+			s, err := ParseSentinel(raw)
+			results[i] = result{s: s, parsed: err == nil}
+		}(i, chunk)
+	}
+	wg.Wait()
+	if firstErr != nil {
+		return "", false, firstErr
+	}
+
+	var nonSafe Sentinel
+	allParsed := true
+	for _, r := range results {
+		if !r.parsed {
+			allParsed = false
+			continue
+		}
+		if !r.s.IsSafe() && nonSafe == "" {
+			nonSafe = r.s
+		}
+	}
+	if !allParsed {
+		return "", false, nil
+	}
+	if nonSafe != "" {
+		return nonSafe, true, nil
+	}
+	return SentinelSafe, true, nil
+}
+
+// splitChunks splits content into overlapping byte chunks no larger than
+// maxBytes. Boundaries are aligned to rune starts so no chunk begins or ends
+// mid-rune. Adjacent chunks overlap by overlap bytes (defaulting to 1/8 of
+// maxBytes when zero) so an injection straddling a boundary is still seen
+// whole by at least one chunk.
+func splitChunks(content string, maxBytes, overlap int) []string {
+	if maxBytes <= 0 {
+		maxBytes = 1 << 20
+	}
+	if overlap <= 0 {
+		overlap = maxBytes / 8
+	}
+	if overlap >= maxBytes {
+		overlap = maxBytes / 8
+	}
+	if len(content) <= maxBytes {
+		return []string{content}
+	}
+
+	var chunks []string
+	for start := 0; start < len(content); {
+		end := start + maxBytes
+		if end >= len(content) {
+			chunks = append(chunks, content[start:])
+			break
+		}
+		for end < len(content) && !utf8.RuneStart(content[end]) {
+			end++
+		}
+		chunks = append(chunks, content[start:end])
+
+		next := end - overlap
+		if next <= start {
+			next = start + 1
+		}
+		for next > 0 && next < len(content) && !utf8.RuneStart(content[next]) {
+			next--
+		}
+		start = next
+	}
+	return chunks
 }
 
 // Process runs a tool result through sanitize -> classifier -> sentinel.

@@ -633,9 +633,17 @@ func NewClassifier(cfg Config, client *http.Client) rolemanager.Classifier {
 	})
 }
 
-// classifier is the internal alias for NewClassifier.
-func classifier(cfg Config, client *http.Client) rolemanager.Classifier {
-	return NewClassifier(cfg, client)
+// NewPipeline builds a rolemanager.Pipeline from the resolved classifier
+// config: the classifier (reasoning off by default) plus the chunked
+// classify-all bounds and an optional verdict cache.
+func NewPipeline(cfg Config, client *http.Client, cache *rolemanager.Cache) *rolemanager.Pipeline {
+	cc := cfg.ClassifierOrDefault()
+	p := rolemanager.NewPipelineWithChunk(NewClassifier(cfg, client), rolemanager.ChunkConfig{
+		MaxBytes:    cc.Chunk.MaxBytes,
+		Concurrency: cc.Chunk.Concurrency,
+	})
+	p.Cache = cache
+	return p
 }
 
 // SealSystem builds and seals the system prompt from trusted harness blocks.
@@ -1117,7 +1125,7 @@ func EngageWithPosture(ctx context.Context, cfg Config, prompt string, detectMod
 	clean := sanitize.Sanitize(prompt)
 	res := Result{SanitizedPrompt: clean}
 
-	pipe := rolemanager.NewPipeline(classifier(cfg, client))
+	pipe := NewPipeline(cfg, client, nil)
 	dec, err := pipe.Admit(ctx, clean, pol)
 	if err != nil {
 		return res, err

@@ -49,6 +49,10 @@ type Options struct {
 	// the unbounded pass loop, which would spawn recursive unbounded subagents.
 	// Default false; only top-level session construction sets it true.
 	AllowPassLoop bool
+	// Cache is the session-scoped classifier verdict cache (SAFE LRU plus
+	// persisted bad hashes). nil means no caching. A subagent inherits the
+	// parent's cache so verdicts are shared across the fan-out.
+	Cache *rolemanager.Cache
 	Workdir       string
 	State         config.State
 	Settings      config.Settings
@@ -66,6 +70,7 @@ type Session struct {
 	allowClarify   bool
 	allowPassLoop  bool
 	maxIter        int
+	cache          *rolemanager.Cache
 	opts           prompt.Options
 	workdir        string
 	state          config.State
@@ -125,6 +130,10 @@ func NewSession(o Options) (*Session, error) {
 			return nil, fmt.Errorf("detect tool method: %w", err)
 		}
 	}
+	cache := o.Cache
+	if cache == nil {
+		cache, _ = rolemanager.LoadCache(rolemanager.DefaultCachePath())
+	}
 	return &Session{
 		cfg:            o.Cfg,
 		client:         o.Client,
@@ -136,6 +145,7 @@ func NewSession(o Options) (*Session, error) {
 		allowClarify:   o.AllowClarify,
 		allowPassLoop:  o.AllowPassLoop,
 		maxIter:        maxIter,
+		cache:          cache,
 		opts:           o.PromptOptions,
 		workdir:        o.Workdir,
 		state:          o.State,
@@ -186,7 +196,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 
 	clean := sanitize.Sanitize(in.Prompt)
 
-	pipe := rolemanager.NewPipeline(run.NewClassifier(s.cfg, s.client))
+	pipe := run.NewPipeline(s.cfg, s.client, s.cache)
 	// The Role Manager is working before any model I/O: admission and mode
 	// selection are pre-prompt classification. Emit the signal so a UI can
 	// show a dedicated indicator rather than a generic working label.
@@ -449,7 +459,7 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 	}
 
 	emit(Event{Kind: EventRoleManagerKind, Phase: RoleManagerPhaseToolResult})
-	pipe := rolemanager.NewPipeline(run.NewClassifier(s.cfg, s.client))
+	pipe := run.NewPipeline(s.cfg, s.client, s.cache)
 	cStart := time.Now()
 	dec, err := pipe.Process(ctx, res)
 	s.trace.Event("agent", "tool_result_classify", time.Since(cStart))

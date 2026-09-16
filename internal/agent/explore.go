@@ -83,6 +83,7 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task) string {
 		Workdir:       s.workdir,
 		Settings:      s.settings,
 		PromptOptions: s.opts,
+		Cache:         s.cache, // share the session verdict cache across fan-out
 	})
 	if err != nil {
 		return ""
@@ -110,7 +111,7 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task) string {
 	}
 
 	// Model output is untrusted: classify it under the parent posture.
-	pipe := rolemanager.NewPipeline(run.NewClassifier(s.cfg, s.client))
+	pipe := run.NewPipeline(s.cfg, s.client, s.cache)
 	dec, err := pipe.Process(ctx, tools.Result{Kind: tools.KindExplore, Content: reply})
 	if err != nil || dec.Action != rolemanager.ActionProceed {
 		return ""

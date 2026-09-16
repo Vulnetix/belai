@@ -240,14 +240,21 @@ turn.
 sequenceDiagram
     participant H as Harness
     participant S as Sanitizer
+    participant Ca as Cache
     participant C as Classifier model
     participant B as Boundary
 
     H->>S: tool result (untrusted)
     S-->>H: sanitized content
-    H->>C: classifier payload (no tools / skills / agent)
-    C-->>H: single sentinel token
-    H->>H: ParseSentinel (strict)
+    H->>Ca: lookup by content hash
+    alt cache hit
+        Ca-->>H: cached sentinel
+    else cache miss
+        H->>C: classifier payload (no tools / skills / agent)
+        C-->>H: single sentinel token
+        H->>H: ParseSentinel (strict)
+        H->>Ca: store verdict
+    end
     alt SAFE
         H->>B: promote as verified-safe
     else other sentinel or malformed
