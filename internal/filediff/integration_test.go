@@ -176,3 +176,83 @@ func TestNonRepoFallsBackToCommandParsing(t *testing.T) {
 		t.Fatalf("sides wrong: %+v", ch.Files[0])
 	}
 }
+
+// runObservedTool mirrors executeCall's diff seam for a named-target tool:
+// Write and Edit report their targets through tools.Targeter, so the recorder
+// snapshots exactly those paths via BeforePaths.
+func runObservedTool(t *testing.T, dir string, tool tools.Tool, args map[string]any) filediff.Change {
+	t.Helper()
+	rec := filediff.NewRecorder(dir)
+	ctx := context.Background()
+
+	var snap *filediff.Snapshot
+	if tt, ok := tool.(tools.Targeter); ok {
+		snap = rec.BeforePaths(ctx, tt.Targets(args)...)
+	} else {
+		snap = rec.Before(ctx, tool.Subject(args))
+	}
+	if _, err := tool.Execute(ctx, args); err != nil {
+		t.Fatalf("tool %s: %v", tool.Definition().Name, err)
+	}
+	return snap.After(ctx)
+}
+
+// TestWriteProducesCreationDiff covers the new BeforePaths seam outside a git
+// repository: a file creation must produce a Created change even though the
+// path did not exist when it was snapshotted.
+func TestWriteProducesCreationDiff(t *testing.T) {
+	dir := t.TempDir()
+	if filediff.NewRecorder(dir).RepoRoot != "" {
+		t.Skip("temp dir is inside a git repository")
+	}
+
+	ch := runObservedTool(t, dir, &tools.Write{Root: dir}, map[string]any{
+		"path": "notes.md", "content": "hello\n",
+	})
+
+	if len(ch.Files) != 1 || ch.Files[0].Path != "notes.md" {
+		t.Fatalf("files = %+v (%q)", ch.Files, ch.Unavailable)
+	}
+	if !ch.Files[0].Created {
+		t.Fatalf("expected a creation: %+v", ch.Files[0])
+	}
+	if ch.Files[0].Old != "" || ch.Files[0].New != "hello\n" {
+		t.Fatalf("sides wrong: %+v", ch.Files[0])
+	}
+}
+
+// TestEditProducesReplaceDiff covers the Edit seam: the recorder must capture
+// the exact before and after bytes.
+func TestEditProducesReplaceDiff(t *testing.T) {
+	dir := t.TempDir()
+	if filediff.NewRecorder(dir).RepoRoot != "" {
+		t.Skip("temp dir is inside a git repository")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "f.txt"), []byte("before\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	ch := runObservedTool(t, dir, &tools.Edit{Root: dir}, map[string]any{
+		"path": "f.txt", "old_string": "before", "new_string": "after",
+	})
+
+	if len(ch.Files) != 1 || ch.Files[0].Path != "f.txt" {
+		t.Fatalf("files = %+v (%q)", ch.Files, ch.Unavailable)
+	}
+	if ch.Files[0].Old != "before\n" || ch.Files[0].New != "after\n" {
+		t.Fatalf("sides wrong: %+v", ch.Files[0])
+	}
+}
+
+// TestWriteEditDiffInGitRepo covers the git path: inside a repository the
+// recorder still reports Write and Edit changes via git status.
+func TestWriteEditDiffInGitRepo(t *testing.T) {
+	dir := repoWithFile(t, "main.go", "package main\n")
+
+	ch := runObservedTool(t, dir, &tools.Write{Root: dir}, map[string]any{
+		"path": "notes.md", "content": "hello\n",
+	})
+	if len(ch.Files) != 1 || ch.Files[0].Path != "notes.md" || !ch.Files[0].Created {
+		t.Fatalf("write files = %+v (%q)", ch.Files, ch.Unavailable)
+	}
+}

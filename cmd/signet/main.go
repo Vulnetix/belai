@@ -59,7 +59,7 @@ func main() {
 	allowInvalidSkills := flag.Bool("allow-invalid-skills", false, "ignore invalid skill validation")
 	allowInvalidHooks := flag.Bool("allow-invalid-hooks", false, "ignore invalid hook validation")
 	dangerouslyYolo := flag.Bool("dangerously-yolo-everything", false, "ignore every posture gate")
-	enableTools := flag.Bool("tools", false, "enable tool execution")
+	enableTools := flag.Bool("tools", true, "enable tool execution; pass -tools=false to disable")
 	effort := flag.String("effort", "", "thinking effort level: low, medium, or high")
 	classifierProvider := flag.String("classifier-provider", "", "security-classifier provider (default: the main provider)")
 	classifierModel := flag.String("classifier-model", "", "security-classifier model (default: the main model)")
@@ -234,10 +234,10 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 	}
 
 	var res run.Result
-	if enableTools {
-		res, err = runAgent(ctx, cfg, prompt, httpclient.Default(), pol, workdir, settings, planMode)
-	} else {
+	if detectMode || !enableTools {
 		res, err = run.EngageWithPosture(ctx, cfg, prompt, detectMode, httpclient.Default(), pol)
+	} else {
+		res, err = runAgent(ctx, cfg, prompt, httpclient.Default(), pol, workdir, settings, planMode)
 	}
 	if err != nil {
 		return err

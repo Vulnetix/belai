@@ -32,7 +32,7 @@ Before emitting the final JSON, reason through your choices inside a <thinking> 
 Rules:
 - Output ONLY valid JSON. No Markdown fences, no prose outside the JSON, no trailing text.
 - name must be [a-zA-Z0-9._-]+.
-- tools must only contain known names: Read, Bash, Grep, Glob, WebFetch, WebSearch.
+- tools must only contain known names: Read, Write, Edit, Bash, Grep, Glob, WebFetch, WebSearch. Write and Edit mutate the workspace; only grant them when the agent's task genuinely needs to change files, and justify that grant explicitly.
 - mode must be exactly one of the four allowed strings.
 - autonomy must be "supervised" or "autonomous".`
 

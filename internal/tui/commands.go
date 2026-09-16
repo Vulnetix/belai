@@ -379,7 +379,7 @@ func (r *Registry) Names() []string {
 }
 
 // Complete returns slash-command completions for a partial input such as
-// "/pro" (command name) or "/goal al" (argument completion). It returns nil
+// "/pro" (command name) or "/agent st" (argument completion). It returns nil
 // when there is nothing to suggest.
 func (r *Registry) Complete(input string) []string {
 	if !strings.HasPrefix(input, "/") {

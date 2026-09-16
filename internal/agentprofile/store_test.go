@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/vulnetix/signet/internal/tools"
 )
 
 func TestSaveLoadRoundTrip(t *testing.T) {
@@ -119,5 +121,22 @@ func TestDirUnderGlobalDir(t *testing.T) {
 	want := filepath.Join(home, "profiles", "agents")
 	if got != want {
 		t.Fatalf("Dir() = %q, want %q", got, want)
+	}
+}
+
+// TestKnownToolNamesMatchesDefaultRegistry pins the hardcoded allowlist against
+// the live default registry, so adding a tool can never silently strand a
+// profile from it.
+func TestKnownToolNamesMatchesDefaultRegistry(t *testing.T) {
+	reg := tools.Default(t.TempDir(), false)
+	for _, name := range reg.Names() {
+		if !knownToolNames[name] {
+			t.Fatalf("default registry tool %q missing from knownToolNames", name)
+		}
+	}
+	for name := range knownToolNames {
+		if _, ok := reg.Find(name); !ok {
+			t.Fatalf("knownToolNames contains %q not in the default registry", name)
+		}
 	}
 }

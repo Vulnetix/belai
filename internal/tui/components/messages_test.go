@@ -451,6 +451,8 @@ func TestFormatToolInvocation(t *testing.T) {
 		{"Glob pattern", "Glob", `{"pattern":"*.go"}`, "*.go"},
 		{"WebSearch query", "WebSearch", `{"query":"golang"}`, "golang"},
 		{"WebFetch url", "WebFetch", `{"url":"https://example.com"}`, "https://example.com"},
+		{"Write path", "Write", `{"path":"x.go","content":"package x"}`, "x.go"},
+		{"Edit path", "Edit", `{"path":"x.go","old_string":"a","new_string":"b"}`, "x.go"},
 		{"Unknown args", "Other", `{"foo":"bar"}`, "bar"},
 		{"Invalid JSON", "Bash", `not json`, "not json"},
 	}
@@ -461,6 +463,20 @@ func TestFormatToolInvocation(t *testing.T) {
 				t.Fatalf("formatToolInvocation(%q, %q) = %q, want %q", tc.tool, tc.args, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestFormatToolInvocationNeverPreviewsWriteContent pins the preview key order:
+// a Write or Edit row must preview the path, never the entire file body.
+func TestFormatToolInvocationNeverPreviewsWriteContent(t *testing.T) {
+	for _, name := range []string{"Write", "Edit"} {
+		got := formatToolInvocation(name, `{"path":"x.go","content":"package x"}`)
+		if got != "x.go" {
+			t.Fatalf("formatToolInvocation(%q) = %q, want path x.go", name, got)
+		}
+		if strings.Contains(got, "package x") {
+			t.Fatalf("formatToolInvocation(%q) leaked file content: %q", name, got)
+		}
 	}
 }
 

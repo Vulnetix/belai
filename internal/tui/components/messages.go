@@ -749,6 +749,8 @@ func formatToolInvocation(name, argsJSON string) string {
 	keyOrder := map[string][]string{
 		"Bash":      {"command", "cmd"},
 		"Read":      {"path", "file"},
+		"Write":     {"path"},
+		"Edit":      {"path"},
 		"Grep":      {"pattern", "query"},
 		"Glob":      {"pattern", "query"},
 		"WebSearch": {"query", "q"},
