@@ -1,0 +1,380 @@
+=== tool_short w=32
+⌁ Read  internal/tui/app.go    ✓
+  package tui
+=== tool_short w=41
+⌁ Read  internal/tui/app.go             ✓
+  package tui
+=== tool_short w=53
+⌁ Read  internal/tui/app.go                         ✓
+  package tui
+=== tool_short w=60
+⌁ Read  internal/tui/app.go                                ✓
+  package tui
+=== tool_short w=80
+⌁ Read  internal/tui/app.go                                                    ✓
+  package tui
+=== tool_short w=120
+⌁ Read  internal/tui/app.go                                                                                            ✓
+  package tui
+=== tool_wrapping w=32
+⌁ Bash  go build ./...         ✓
+  a single very long line of
+  output that has to wrap
+  several times before it runs
+  out of things to say
+=== tool_wrapping w=41
+⌁ Bash  go build ./...                  ✓
+  a single very long line of output that
+  has to wrap several times before it
+  runs out of things to say
+=== tool_wrapping w=53
+⌁ Bash  go build ./...                              ✓
+  a single very long line of output that has to wrap
+  several times before it runs out of things to say
+=== tool_wrapping w=60
+⌁ Bash  go build ./...                                     ✓
+  a single very long line of output that has to wrap several
+  times before it runs out of things to say
+=== tool_wrapping w=80
+⌁ Bash  go build ./...                                                         ✓
+  a single very long line of output that has to wrap several times before it
+  runs out of things to say
+=== tool_wrapping w=120
+⌁ Bash  go build ./...                                                                                                 ✓
+  a single very long line of output that has to wrap several times before it runs out of things to say
+=== tool_error w=32
+⌁ Bash  go test ./...          ✗
+  FAIL
+  github.com/vulnetix/signet/int
+  ernal/run    0.2s
+  exit status 1
+=== tool_error w=41
+⌁ Bash  go test ./...                   ✗
+  FAIL
+  github.com/vulnetix/signet/internal/run
+  0.2s
+  exit status 1
+=== tool_error w=53
+⌁ Bash  go test ./...                               ✗
+  FAIL    github.com/vulnetix/signet/internal/run
+  0.2s
+  exit status 1
+=== tool_error w=60
+⌁ Bash  go test ./...                                      ✗
+  FAIL    github.com/vulnetix/signet/internal/run    0.2s
+  exit status 1
+=== tool_error w=80
+⌁ Bash  go test ./...                                                          ✗
+  FAIL    github.com/vulnetix/signet/internal/run    0.2s
+  exit status 1
+=== tool_error w=120
+⌁ Bash  go test ./...                                                                                                  ✗
+  FAIL    github.com/vulnetix/signet/internal/run    0.2s
+  exit status 1
+=== tool_collapsed_marker w=32
+⌁ Bash  ls -la                 ✓
+  … 2 earlier lines
+  third
+  fourth
+  fifth
+=== tool_collapsed_marker w=41
+⌁ Bash  ls -la                          ✓
+  … 2 earlier lines
+  third
+  fourth
+  fifth
+=== tool_collapsed_marker w=53
+⌁ Bash  ls -la                                      ✓
+  … 2 earlier lines
+  third
+  fourth
+  fifth
+=== tool_collapsed_marker w=60
+⌁ Bash  ls -la                                             ✓
+  … 2 earlier lines
+  third
+  fourth
+  fifth
+=== tool_collapsed_marker w=80
+⌁ Bash  ls -la                                                                 ✓
+  … 2 earlier lines
+  third
+  fourth
+  fifth
+=== tool_collapsed_marker w=120
+⌁ Bash  ls -la                                                                                                         ✓
+  … 2 earlier lines
+  third
+  fourth
+  fifth
+=== tool_expanded w=32
+⌁ Bash  ls -la                 ✓
+  first
+  second
+  third
+  fourth
+  fifth
+=== tool_expanded w=41
+⌁ Bash  ls -la                          ✓
+  first
+  second
+  third
+  fourth
+  fifth
+=== tool_expanded w=53
+⌁ Bash  ls -la                                      ✓
+  first
+  second
+  third
+  fourth
+  fifth
+=== tool_expanded w=60
+⌁ Bash  ls -la                                             ✓
+  first
+  second
+  third
+  fourth
+  fifth
+=== tool_expanded w=80
+⌁ Bash  ls -la                                                                 ✓
+  first
+  second
+  third
+  fourth
+  fifth
+=== tool_expanded w=120
+⌁ Bash  ls -la                                                                                                         ✓
+  first
+  second
+  third
+  fourth
+  fifth
+=== tool_blank_interior_line w=32
+⌁ Bash  cat notes              ✓
+  head
+  
+  tail
+=== tool_blank_interior_line w=41
+⌁ Bash  cat notes                       ✓
+  head
+  
+  tail
+=== tool_blank_interior_line w=53
+⌁ Bash  cat notes                                   ✓
+  head
+  
+  tail
+=== tool_blank_interior_line w=60
+⌁ Bash  cat notes                                          ✓
+  head
+  
+  tail
+=== tool_blank_interior_line w=80
+⌁ Bash  cat notes                                                              ✓
+  head
+  
+  tail
+=== tool_blank_interior_line w=120
+⌁ Bash  cat notes                                                                                                      ✓
+  head
+  
+  tail
+=== tool_withheld w=32
+⌁ WebFetch  https://ex  withheld
+  tool result withheld: provider
+  error  … 1 more lines
+=== tool_withheld w=41
+⌁ WebFetch  https://example.com  withheld
+  tool result withheld: provider error
+  … 1 more lines
+=== tool_withheld w=53
+⌁ WebFetch  https://example.com              withheld
+  tool result withheld: provider error
+  … 1 more lines
+=== tool_withheld w=60
+⌁ WebFetch  https://example.com                     withheld
+  tool result withheld: provider error  … 1 more lines
+=== tool_withheld w=80
+⌁ WebFetch  https://example.com                                         withheld
+  tool result withheld: provider error  … 1 more lines
+=== tool_withheld w=120
+⌁ WebFetch  https://example.com                                                                                 withheld
+  tool result withheld: provider error  … 1 more lines
+=== system_short w=32
+│ retrying (2/3) after 800ms —
+│ rate limited
+=== system_short w=41
+│ retrying (2/3) after 800ms — rate
+│ limited
+=== system_short w=53
+│ retrying (2/3) after 800ms — rate limited
+=== system_short w=60
+│ retrying (2/3) after 800ms — rate limited
+=== system_short w=80
+│ retrying (2/3) after 800ms — rate limited
+=== system_short w=120
+│ retrying (2/3) after 800ms — rate limited
+=== system_wrapping w=32
+│ a system notice long enough
+│ that it has to wrap onto a
+│ second and probably a third
+│ line at narrow widths
+=== system_wrapping w=41
+│ a system notice long enough that it has
+│ to wrap onto a second and probably a
+│ third line at narrow widths
+=== system_wrapping w=53
+│ a system notice long enough that it has to wrap
+│ onto a second and probably a third line at narrow
+│ widths
+=== system_wrapping w=60
+│ a system notice long enough that it has to wrap onto a
+│ second and probably a third line at narrow widths
+=== system_wrapping w=80
+│ a system notice long enough that it has to wrap onto a second and probably a
+│ third line at narrow widths
+=== system_wrapping w=120
+│ a system notice long enough that it has to wrap onto a second and probably a third line at narrow widths
+=== mixed w=32
+╭─ user prompt ────────────────╮
+│ fix the failing test in the  │
+│ wire package                 │
+╰──────────────────────────────╯
+
+╭─ signet ─────────────────────╮
+│ Plan:                        │
+│ 1. reproduce                 │
+│ 2. patch                     │
+│ 3. verify                    │
+│ … 3 more lines               │
+╰──────────────────────────────╯
+
+╭─ reasoning ──────────────────╮
+│ thinking about the root      │
+│ cause here                   │
+╰──────────────────────────────╯
+
+⌁ Bash  go test ./...   withheld
+  … 1 earlier lines
+  second line
+  third line
+  fourth line
+│ retrying (2/3) after 800ms —
+│ rate limited
+=== mixed w=41
+╭─ user prompt ─────────────────────────╮
+│ fix the failing test in the wire      │
+│ package                               │
+╰───────────────────────────────────────╯
+
+╭─ signet ──────────────────────────────╮
+│ Plan:                                 │
+│ 1. reproduce                          │
+│ 2. patch                              │
+│ 3. verify                             │
+│ … 3 more lines                        │
+╰───────────────────────────────────────╯
+
+╭─ reasoning ───────────────────────────╮
+│ thinking about the root cause here    │
+╰───────────────────────────────────────╯
+
+⌁ Bash  go test ./...            withheld
+  … 1 earlier lines
+  second line
+  third line
+  fourth line
+│ retrying (2/3) after 800ms — rate
+│ limited
+=== mixed w=53
+╭─ user prompt ─────────────────────────────────────╮
+│ fix the failing test in the wire package          │
+╰───────────────────────────────────────────────────╯
+
+╭─ signet ──────────────────────────────────────────╮
+│ Plan:                                             │
+│ 1. reproduce                                      │
+│ 2. patch                                          │
+│ 3. verify                                         │
+│ … 3 more lines                                    │
+╰───────────────────────────────────────────────────╯
+
+╭─ reasoning ───────────────────────────────────────╮
+│ thinking about the root cause here                │
+╰───────────────────────────────────────────────────╯
+
+⌁ Bash  go test ./...                        withheld
+  … 1 earlier lines
+  second line
+  third line
+  fourth line
+│ retrying (2/3) after 800ms — rate limited
+=== mixed w=60
+╭─ user prompt ────────────────────────────────────────────╮
+│ fix the failing test in the wire package                 │
+╰──────────────────────────────────────────────────────────╯
+
+╭─ signet ─────────────────────────────────────────────────╮
+│ Plan:                                                    │
+│ 1. reproduce                                             │
+│ 2. patch                                                 │
+│ 3. verify                                                │
+│ … 3 more lines                                           │
+╰──────────────────────────────────────────────────────────╯
+
+╭─ reasoning ──────────────────────────────────────────────╮
+│ thinking about the root cause here                       │
+╰──────────────────────────────────────────────────────────╯
+
+⌁ Bash  go test ./...                               withheld
+  … 1 earlier lines
+  second line
+  third line
+  fourth line
+│ retrying (2/3) after 800ms — rate limited
+=== mixed w=80
+╭─ user prompt ────────────────────────────────────────────────────────────────╮
+│ fix the failing test in the wire package                                     │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭─ signet ─────────────────────────────────────────────────────────────────────╮
+│ Plan:                                                                        │
+│ 1. reproduce                                                                 │
+│ 2. patch                                                                     │
+│ 3. verify                                                                    │
+│ … 3 more lines                                                               │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭─ reasoning ──────────────────────────────────────────────────────────────────╮
+│ thinking about the root cause here                                           │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+⌁ Bash  go test ./...                                                   withheld
+  … 1 earlier lines
+  second line
+  third line
+  fourth line
+│ retrying (2/3) after 800ms — rate limited
+=== mixed w=120
+╭─ user prompt ────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ fix the failing test in the wire package                                                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+╭─ signet ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Plan:                                                                                                                │
+│ 1. reproduce                                                                                                         │
+│ 2. patch                                                                                                             │
+│ 3. verify                                                                                                            │
+│ … 3 more lines                                                                                                       │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+╭─ reasoning ──────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ thinking about the root cause here                                                                                   │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+⌁ Bash  go test ./...                                                                                           withheld
+  … 1 earlier lines
+  second line
+  third line
+  fourth line
+│ retrying (2/3) after 800ms — rate limited

@@ -21,6 +21,13 @@ var (
 	// Chrome that must stay legible on both light and dark terminals.
 	ColorMuted = lipgloss.AdaptiveColor{Light: "#5C6E6B", Dark: "#7D918D"}
 	ColorLine  = lipgloss.AdaptiveColor{Light: "#C6D5D2", Dark: "#2F4340"}
+
+	// Diff row washes. Desaturated derivatives of the accent and danger hues,
+	// dark enough on a dark terminal (and light enough on a light one) to sit
+	// under body text without fighting it. These are backgrounds only: the
+	// palette above is all foreground-weight and unreadable behind text.
+	ColorDiffAddBg = lipgloss.AdaptiveColor{Light: "#DFF1E6", Dark: "#11301F"}
+	ColorDiffDelBg = lipgloss.AdaptiveColor{Light: "#F9E2E0", Dark: "#3A1917"}
 )
 
 var (

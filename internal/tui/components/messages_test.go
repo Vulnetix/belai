@@ -130,22 +130,80 @@ func TestToolRowExtractsInvocationForRead(t *testing.T) {
 	}
 }
 
-func TestToolRowShowsFirstLineAndHint(t *testing.T) {
+// TestToolRowBashPreviewIsTailAnchored pins the collapsed shape of a Bash row:
+// the last three lines, because that is where a command's verdict is, and a
+// hint above them for what scrolled past.
+func TestToolRowBashPreviewIsTailAnchored(t *testing.T) {
 	msg := Message{
 		Role:     "tool",
 		ToolName: "Bash",
-		ToolArgs: `{"command":"seq 3"}`,
-		Content:  "1\n2\n3",
+		ToolArgs: `{"command":"seq 6"}`,
+		Content:  "1\n2\n3\n4\n5\n6",
+		Status:   "✓",
+	}
+	out, lm := toolRow(msg, 80, false)
+	lines := strings.Split(out, "\n")
+	if len(lines) != 5 {
+		t.Fatalf("want header + hint + 3 tail lines, got %d:\n%s", len(lines), out)
+	}
+	if !strings.Contains(lines[1], "3 earlier lines") {
+		t.Fatalf("want the hint above the tail, got:\n%s", out)
+	}
+	for i, want := range []string{"4", "5", "6"} {
+		if strings.TrimSpace(lines[2+i]) != want {
+			t.Fatalf("line %d = %q, want %q:\n%s", 2+i, lines[2+i], want, out)
+		}
+	}
+	// Selecting the hint must still copy everything it stands for.
+	var hidden string
+	for _, sl := range lm {
+		if sl.MarkerWidth > 0 {
+			hidden = sl.Hidden
+		}
+	}
+	if hidden != "1\n2\n3" {
+		t.Fatalf("hint hides %q, want the three earlier lines", hidden)
+	}
+}
+
+// TestToolRowReadPreviewIsHeadAnchored: a file's head is what identifies it,
+// so Read truncates from the bottom and puts its hint below.
+func TestToolRowReadPreviewIsHeadAnchored(t *testing.T) {
+	msg := Message{
+		Role:     "tool",
+		ToolName: "Read",
+		ToolArgs: `{"path":"main.go"}`,
+		Content:  "one\ntwo\nthree\nfour\nfive",
 		Status:   "✓",
 	}
 	out, _ := toolRow(msg, 80, false)
 	lines := strings.Split(out, "\n")
-	if len(lines) < 2 {
-		t.Fatalf("expected preview line, got:\n%s", out)
+	if len(lines) != 4 {
+		t.Fatalf("want header + 3 head lines, got %d:\n%s", len(lines), out)
 	}
-	preview := lines[1]
-	if !strings.HasPrefix(strings.TrimSpace(preview), "1") {
-		t.Fatalf("expected preview to start with first output line, got:\n%s", out)
+	for i, want := range []string{"one", "two"} {
+		if strings.TrimSpace(lines[1+i]) != want {
+			t.Fatalf("line %d = %q, want %q:\n%s", 1+i, lines[1+i], want, out)
+		}
+	}
+	if !strings.Contains(lines[3], "2 more lines") {
+		t.Fatalf("want the hint on the last shown line, got:\n%s", out)
+	}
+}
+
+// TestToolRowOtherToolsStayAtOneLine: a Grep or Glob result is already a
+// summary, so it keeps the single-line preview.
+func TestToolRowOtherToolsStayAtOneLine(t *testing.T) {
+	msg := Message{
+		Role:     "tool",
+		ToolName: "Grep",
+		ToolArgs: `{"pattern":"func"}`,
+		Content:  "a.go:1:func a\nb.go:2:func b\nc.go:3:func c",
+		Status:   "✓",
+	}
+	out, _ := toolRow(msg, 80, false)
+	if lines := strings.Split(out, "\n"); len(lines) != 2 {
+		t.Fatalf("want header + 1 preview line, got %d:\n%s", len(lines), out)
 	}
 	if !strings.Contains(out, "2 more lines") {
 		t.Fatalf("expected hidden-line hint, got:\n%s", out)

@@ -1,11 +1,13 @@
 package components
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 // mixedTranscript covers every renderer: a user turn, a truncated assistant
@@ -27,57 +29,114 @@ func mixedTranscript() MessageList {
 	}
 }
 
+// renderProfiles are the colour profiles every render-invariant assertion must
+// hold under. Without a TTY lipgloss degrades every style to plain text, so an
+// Ascii-only run asserts nothing at all about ANSI handling — the "no ANSI in
+// Text" and cell-width checks below only have teeth under TrueColor.
+var renderProfiles = []termenv.Profile{termenv.Ascii, termenv.TrueColor}
+
+// profileName gives a colour profile a readable name for subtest output.
+func profileName(p termenv.Profile) string {
+	switch p {
+	case termenv.TrueColor:
+		return "truecolor"
+	case termenv.ANSI256:
+		return "ansi256"
+	case termenv.ANSI:
+		return "ansi"
+	default:
+		return "ascii"
+	}
+}
+
+// withProfile runs fn with the given colour profile installed, restoring the
+// previous one afterwards.
+func withProfile(t *testing.T, p termenv.Profile, fn func()) {
+	t.Helper()
+	old := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(p)
+	defer lipgloss.SetColorProfile(old)
+	fn()
+}
+
+// assertLineMapInvariant checks every contract the selection feature rests on
+// for one rendered frame: one map entry per rendered line, the documented
+// Cut/Strip invariant per selectable line, no decoration or ANSI in Text, no
+// line wider than the frame, and markers carrying their hidden remainder. It
+// returns the number of marker lines it saw.
+func assertLineMapInvariant(t *testing.T, label, rendered string, lm LineMap, width int) int {
+	t.Helper()
+	lines := strings.Split(rendered, "\n")
+
+	if len(lm) != len(lines) {
+		t.Fatalf("%s: map %d entries vs %d rendered lines", label, len(lm), len(lines))
+	}
+	if len(lm) != lipgloss.Height(rendered) {
+		t.Fatalf("%s: map %d != height %d", label, len(lm), lipgloss.Height(rendered))
+	}
+
+	var markerCount int
+	for i, sl := range lm {
+		if w := lipgloss.Width(lines[i]); w > width {
+			t.Fatalf("%s line %d: rendered width %d exceeds frame width %d: %q",
+				label, i, w, width, lines[i])
+		}
+		if sl.Chrome {
+			continue
+		}
+		got := ansi.Cut(ansi.Strip(lines[i]), sl.Col, sl.Col+sl.Width)
+		if got != sl.Text {
+			t.Fatalf("%s line %d: invariant violated: Cut=%q Text=%q (line=%q)",
+				label, i, got, sl.Text, lines[i])
+		}
+		for _, bad := range []string{"│", "╭", "╮", "╰", "╯", "⌁"} {
+			if strings.Contains(sl.Text, bad) {
+				t.Fatalf("%s line %d: decoration %q in Text: %q", label, i, bad, sl.Text)
+			}
+		}
+		if strings.ContainsRune(sl.Text, 0x1b) {
+			t.Fatalf("%s line %d: ANSI in Text: %q", label, i, sl.Text)
+		}
+		if sl.MarkerWidth > 0 {
+			markerCount++
+			if sl.Hidden == "" {
+				t.Fatalf("%s line %d: marker without hidden text", label, i)
+			}
+		}
+	}
+	return markerCount
+}
+
 // TestMessageListRenderLineMapMatchesRender pins the contract the whole
-// selection feature rests on, over a mixed transcript at several widths:
-// one map entry per rendered line, the invariant per selectable line, no
-// border glyphs or ANSI in Text, and the marker line carrying its hidden
-// remainder.
+// selection feature rests on, over a mixed transcript at every width the
+// transcript can be asked to render at, under both colour profiles.
 func TestMessageListRenderLineMapMatchesRender(t *testing.T) {
-	for _, width := range []int{40, 80, 120} {
-		ml := mixedTranscript()
-		ml.Width = width
-		rendered, lm := ml.Render()
-		lines := strings.Split(rendered, "\n")
+	for _, profile := range renderProfiles {
+		for width := 30; width <= 140; width++ {
+			name := fmt.Sprintf("%s/w%03d", profileName(profile), width)
+			t.Run(name, func(t *testing.T) {
+				withProfile(t, profile, func() {
+					ml := mixedTranscript()
+					ml.Width = width
+					rendered, lm := ml.Render()
 
-		if len(lm) != len(lines) {
-			t.Fatalf("width %d: map %d entries vs %d rendered lines", width, len(lm), len(lines))
-		}
-		if len(lm) != lipgloss.Height(rendered) {
-			t.Fatalf("width %d: map %d != height %d", width, len(lm), lipgloss.Height(rendered))
-		}
-		if ml.View() != rendered {
-			t.Fatalf("width %d: View() and Render() diverge", width)
-		}
+					// Render clamps to messageMinWidth, so that — not the
+					// requested width — is the frame lines must fit inside.
+					frame := max(width, messageMinWidth)
 
-		var markerCount int
-		for i, sl := range lm {
-			if sl.Chrome {
-				continue
-			}
-			got := ansi.Cut(ansi.Strip(lines[i]), sl.Col, sl.Col+sl.Width)
-			if got != sl.Text {
-				t.Fatalf("width %d line %d: invariant violated: Cut=%q Text=%q (line=%q)",
-					width, i, got, sl.Text, lines[i])
-			}
-			for _, bad := range []string{"│", "╭", "╮", "╰", "╯", "⌁"} {
-				if strings.Contains(sl.Text, bad) {
-					t.Fatalf("width %d line %d: decoration %q in Text: %q", width, i, bad, sl.Text)
-				}
-			}
-			if strings.ContainsRune(sl.Text, 0x1b) {
-				t.Fatalf("width %d line %d: ANSI in Text: %q", width, i, sl.Text)
-			}
-			if sl.MarkerWidth > 0 {
-				markerCount++
-				if sl.Hidden == "" {
-					t.Fatalf("width %d line %d: marker without hidden text", width, i)
-				}
-			}
-		}
-		// The truncated assistant turn and the multi-line tool row must both
-		// carry a marker at every width.
-		if markerCount < 2 {
-			t.Fatalf("width %d: want at least 2 marker lines (truncated turn, tool row), got %d", width, markerCount)
+					if ml.View() != rendered {
+						t.Fatalf("View() and Render() diverge")
+					}
+					markerCount := assertLineMapInvariant(t, name, rendered, lm, frame)
+
+					// The truncated assistant turn and the multi-line tool row
+					// must both carry a marker at every width.
+					if markerCount < 2 {
+						t.Fatalf("want at least 2 marker lines (truncated turn, tool row), got %d",
+							markerCount)
+					}
+				})
+			})
 		}
 	}
 }
