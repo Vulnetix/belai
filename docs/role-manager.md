@@ -40,6 +40,7 @@ The architecture overview lives in [architecture.md](architecture.md).
 | Streaming tool calls | `internal/tui` | Render tool-use deltas in the TUI stream | Live |
 | File attachments | `internal/tui` | Parse `@file` references, seal SAFE contents as `<attachment>` blocks | Live |
 | Inline shell | `internal/tui` | Execute `!cmd` and round-trip output under the debug profile | Live |
+| Agent builder classifier | `internal/agentprofile` | LLM-driven profile generator with schema-validation loop and max-attempts bounding | Live |
 | Explore-agent launch | `internal/explore` + `internal/agent` | Auto-launch read-only explore subagents for PLAN / GOAL with references | Live |
 
 ## Trust model
@@ -532,6 +533,40 @@ content.
 | Egress — nil checker | A nil `NonceChecker` skips nonce validation entirely | Live |
 | Provider nonces | `GET {base_url}/v1/nonces`; fallback only on `ErrUnsupported` (HTTP 401/403/404) | Live |
 | NonceURL | Strips a trailing `/v1` before appending `/v1/nonces` | Live |
+
+## Agent builder classifier
+
+The agent builder (`/agent create`) reuses the `rolemanager.Classifier`
+interface so it works with any configured provider. The builder sends a
+dedicated system prompt (the "agent designer") plus the user's natural-language
+request, expecting the model to reply with valid JSON matching the
+`AgentProfile` schema.
+
+### Builder system prompt invariants
+
+The agent-designer system prompt instructs the model to:
+1. Emit structured reasoning (`<thinking>` or a JSON `reflection` field) before
+the final profile, encouraging explicit tool-allowlist justification and
+self-correction.
+2. Emit **only** valid JSON matching the `AgentProfile` schema.
+3. Include no Markdown fences, no prose outside the JSON, and no trailing text.
+
+### Schema-validation loop
+
+| Step | Rule |
+| ---- | ---- |
+| 1. Build payload | Agent-designer system prompt + user request → classifier (no tools / skills / agent) |
+| 2. Parse reply | Attempt strict JSON parse into `AgentProfile` |
+| 3. Validate | Run `AgentProfile.Validate()` — checks required fields, known modes, valid tool names, autonomy enum |
+| 4. Retry on failure | Append validation errors as a user turn and re-send; fail closed after `MaxAttempts` |
+| 5. Sanitize feedback | Validation error text is sanitized (`sanitize.Sanitize`) before being appended to the conversation |
+
+### Max-attempts bounding
+
+`Builder.MaxAttempts` defaults to 3. If the model has not produced a valid
+profile after `MaxAttempts` attempts, the builder returns an error and the
+profile is **not** saved to disk. The classifier turn remains tool-less,
+skill-less, and agent-less for every attempt.
 
 ## Fail-closed summary
 
