@@ -163,6 +163,10 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	clean := sanitize.Sanitize(in.Prompt)
 
 	pipe := rolemanager.NewPipeline(run.NewClassifier(s.cfg, s.client))
+	// The Role Manager is working before any model I/O: admission and mode
+	// selection are pre-prompt classification. Emit the signal so a UI can
+	// show a dedicated indicator rather than a generic working label.
+	emit(Event{Kind: EventRoleManagerKind, Phase: RoleManagerPhasePrePrompt})
 	dec, err := pipe.Admit(ctx, clean, s.posture)
 	if err != nil {
 		return run.Result{SanitizedPrompt: clean}, maybeCompact(err)
@@ -171,6 +175,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		return run.Result{SanitizedPrompt: clean}, &rolemanager.RefusalError{Sentinel: dec.Sentinel}
 	}
 
+	emit(Event{Kind: EventRoleManagerKind, Phase: RoleManagerPhasePrePrompt})
 	modeDec, err := rolemanager.Select(ctx, pipe.Classifier, rolemanager.ModeInput{Prompt: clean, GoalLimit: rolemanager.DefaultGoalPromptLengthLimit, HasReferences: in.HasReferences})
 	if err != nil {
 		return run.Result{SanitizedPrompt: clean, SecuritySentinel: dec.Sentinel}, maybeCompact(err)
@@ -293,7 +298,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 			}
 			callCopy := call
 			callCopy.Args = args
-			toolResult := s.executeCall(ctx, callCopy)
+			toolResult := s.executeCall(ctx, callCopy, emit)
 			emit(Event{Kind: EventToolResultKind, ToolName: call.Name, ToolResult: toolResult})
 			turns = append(turns, run.Turn{
 				Role:       "tool",
@@ -338,6 +343,7 @@ func (s *Session) drainSteer(ctx context.Context, pipe *rolemanager.Pipeline, em
 		select {
 		case text := <-s.steer:
 			clean := sanitize.Sanitize(text)
+			emit(Event{Kind: EventRoleManagerKind, Phase: RoleManagerPhaseSteer})
 			dec, err := pipe.Admit(ctx, clean, s.posture)
 			if err != nil {
 				emit(Event{Kind: EventErrorKind, Err: err})
@@ -441,7 +447,7 @@ func (s *Session) decidePermission(tool, subject string) (permissions.Decision, 
 	return dec, rule
 }
 
-func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall) string {
+func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, emit func(Event)) string {
 	tool, ok := s.registry.Find(call.Name)
 	if !ok {
 		return fmt.Sprintf("tool result withheld: %q is not registered", call.Name)
@@ -471,6 +477,7 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall) st
 		return delimiters.Egress(res.Content, s.pool)
 	}
 
+	emit(Event{Kind: EventRoleManagerKind, Phase: RoleManagerPhaseToolResult})
 	pipe := rolemanager.NewPipeline(run.NewClassifier(s.cfg, s.client))
 	dec, err := pipe.Process(ctx, res)
 	if err != nil {

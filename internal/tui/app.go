@@ -79,6 +79,27 @@ type agentBuilderDoneMsg struct {
 	err     error
 }
 
+// modeClassifiedMsg carries the async mode-classification outcome plus the
+// prompt to send once the decision lands.
+type modeClassifiedMsg struct {
+	input     string
+	atts      []run.Attachment
+	firstUser bool
+	decision  rolemanager.ModeDecision
+	err       error
+}
+
+// workingPhase describes what the in-flight prompt is doing so the composer
+// can show a specific signal instead of a bare "working": either the Role
+// Manager is classifying content, or it is generic provider/disk I/O.
+type workingPhase int
+
+const (
+	phaseIdle        workingPhase = iota // no prompt in flight
+	phaseRoleManager                     // Role Manager is classifying (admission, mode, tool result, steering)
+	phaseWorking                         // generic network/disk I/O with no specific signal
+)
+
 // bgAgentEventMsg carries one background-agent event into the TUI loop.
 type bgAgentEventMsg bgagent.Event
 
@@ -109,6 +130,11 @@ type App struct {
 	classifier  rolemanager.Classifier
 	namedAgent  string
 	modeWarning string
+
+	// working indicator
+	phase   workingPhase // current activity; phaseIdle when no prompt is in flight
+	rmPhase string       // Role Manager sub-phase (agent.RoleManagerPhase*) for the caption
+	preSend bool         // prompt echoed, awaiting the async mode classification
 
 	// provider & streaming state
 	ctx      context.Context
@@ -515,19 +541,18 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 		a.cancel()
 	}
 	a.ctx, a.cancel = context.WithCancel(context.Background())
+	a.setPhaseRoleManager(agent.RoleManagerPhasePrePrompt)
 	a.events = sess.RunStream(a.ctx, history, in)
 	a.messages = append(a.messages, components.Message{Role: "assistant"})
 	return tea.Batch(a.nextAgent(), a.workSpin.Tick)
 }
 
 // submitInput finalises one user prompt, including any SAFE attachments, and
-// starts the agent turn.
+// starts the agent turn. The prompt is echoed to the transcript the instant
+// Enter is pressed — before mode classification and any provider I/O — and
+// the composer shows the Role Manager indicator while the pre-prompt
+// classifier runs.
 func (a *App) submitInput(input string) tea.Cmd {
-	if !a.modeExplicit {
-		a.classifyMode(input)
-	}
-	a.modeExplicit = false
-
 	var safe []run.Attachment
 	for _, id := range a.attachOrder {
 		att := a.attachments[id]
@@ -542,11 +567,99 @@ func (a *App) submitInput(input string) tea.Cmd {
 	a.autocomplete = nil
 
 	firstUser := !a.hasUserMessage()
+
+	// Instant echo: the prompt becomes a "User prompt" in the transcript and
+	// a session entry before any classification or provider I/O.
+	a.echoUser(input)
+	a.setPhaseRoleManager(agent.RoleManagerPhasePrePrompt)
+
+	if a.modeExplicit || a.classifier == nil {
+		a.modeExplicit = false
+		return a.sendTurn(firstUser, input, safe)
+	}
+	a.modeExplicit = false
+	a.preSend = true
+	return a.classifyAndSend(input, safe, firstUser)
+}
+
+// echoUser appends a submitted prompt to the transcript and persists it as a
+// user entry.
+func (a *App) echoUser(input string) {
+	a.messages = append(a.messages, components.Message{Role: "user", Content: input})
+	a.appendEntry(session.Entry{Type: "user", Role: "user", Content: input})
+}
+
+// sendTurnNoEcho starts the agent turn for a prompt already echoed to the
+// transcript. The echoed prompt is the transcript's last user message, so the
+// validated attachments are folded into it rather than appending a duplicate
+// turn.
+func (a *App) sendTurnNoEcho(input string, atts []run.Attachment) tea.Cmd {
+	turns := a.buildTurns()
+	if n := len(turns); n > 0 && turns[n-1].Role == "user" {
+		turns[n-1].Attachments = atts
+		return a.send(turns)
+	}
+	turns = append(turns, run.Turn{Role: "user", Content: input, Attachments: atts})
+	return a.send(turns)
+}
+
+// sendTurn starts the agent turn and, for the session's first prompt, also
+// kicks off the async session-naming call.
+func (a *App) sendTurn(firstUser bool, input string, atts []run.Attachment) tea.Cmd {
+	a.preSend = false
+	cmd := a.sendTurnNoEcho(input, atts)
 	if firstUser && a.shouldAutoName() {
 		a.nameRequested = true
-		return tea.Batch(a.sendWithAttachments(input, safe), a.nameSessionCmd(input))
+		return tea.Batch(cmd, a.nameSessionCmd(input))
 	}
-	return a.sendWithAttachments(input, safe)
+	return cmd
+}
+
+// classifyAndSend runs the mode classifier in a goroutine and sends the turn
+// when the decision lands. By the time this command starts, the prompt is
+// already echoed and the Role Manager indicator is up.
+func (a *App) classifyAndSend(input string, atts []run.Attachment, firstUser bool) tea.Cmd {
+	c := a.classifier
+	ctx := a.ctx
+	return func() tea.Msg {
+		d, err := rolemanager.Select(ctx, c, rolemanager.ModeInput{Prompt: input})
+		return modeClassifiedMsg{input: input, atts: atts, firstUser: firstUser, decision: d, err: err}
+	}
+}
+
+// handleModeClassified applies the mode decision and starts the agent turn.
+// A prompt cancelled with esc during classification is dropped.
+func (a *App) handleModeClassified(m modeClassifiedMsg) tea.Cmd {
+	if !a.preSend {
+		return nil
+	}
+	a.applyModeDecision(m.decision, m.err)
+	return a.sendTurn(m.firstUser, m.input, m.atts)
+}
+
+// setPhaseRoleManager marks the Role Manager as the active signal, with the
+// sub-phase used for the composer caption.
+func (a *App) setPhaseRoleManager(subphase string) {
+	a.phase = phaseRoleManager
+	a.rmPhase = subphase
+}
+
+// setPhaseWorking marks generic I/O with no Role Manager signal.
+func (a *App) setPhaseWorking() { a.phase = phaseWorking }
+
+// endPhase marks the in-flight prompt finished.
+func (a *App) endPhase() { a.phase = phaseIdle }
+
+// rmCaption is the sub-phase caption shown beside the role manager pill.
+func (a *App) rmCaption() string {
+	switch a.rmPhase {
+	case agent.RoleManagerPhaseToolResult:
+		return "classifying tool result"
+	case agent.RoleManagerPhaseSteer:
+		return "classifying steering"
+	default:
+		return "pre-prompt processing"
+	}
 }
 
 func (a *App) nextAgent() tea.Cmd {
@@ -650,6 +763,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case shellDoneMsg:
 		return a, a.handleShellDone(m)
 
+	case modeClassifiedMsg:
+		return a, a.handleModeClassified(m)
+
 	case tea.MouseMsg:
 		var vpCmd tea.Cmd
 		if a.view == viewChat {
@@ -662,7 +778,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.attachSpin = spin
 		workSpin, workCmd := a.workSpin.Update(m)
 		a.workSpin = workSpin
-		if !a.working() {
+		if a.phase == phaseIdle {
 			workCmd = nil
 		}
 		a.relayout()
@@ -703,7 +819,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	a.attachSpin = spin
 	workSpin, workCmd := a.workSpin.Update(msg)
 	a.workSpin = workSpin
-	if !a.working() {
+	if a.phase == phaseIdle {
 		workCmd = nil
 	}
 	a.relayout()
@@ -754,9 +870,18 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 			a.pendingInput = ""
 			return a.submitInput(strings.TrimSpace(a.editor.Value()))
 		}
+		if a.preSend {
+			// Cancel the in-flight pre-send: mode classification is still
+			// running; the turn is dropped when the decision lands.
+			a.preSend = false
+			a.endPhase()
+			a.addSystem("request cancelled")
+			return nil
+		}
 		if a.cancel != nil {
 			a.cancel()
 			a.cancel = nil
+			a.endPhase()
 			a.addSystem("request cancelled")
 		}
 		return nil
@@ -785,6 +910,12 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 			a.editor.Reset()
 			a.autocomplete = nil
 			a.autocompleteIndex = 0
+			return nil
+		}
+		if a.preSend {
+			// The previous prompt is still in pre-send classification; the
+			// model has not started, so there is nothing to steer yet.
+			a.addSystem("still preparing the previous prompt — one moment")
 			return nil
 		}
 		cmd := a.syncAttachments()
@@ -1041,6 +1172,8 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 	switch m.Kind {
 	case agent.EventErrorKind:
 		a.cancel = nil
+		a.preSend = false
+		a.endPhase()
 		// Drop a trailing empty assistant bubble so an aborted turn does not
 		// leave a bare frame above the error row.
 		if last := len(a.messages) - 1; last >= 0 && a.messages[last].Role == "assistant" &&
@@ -1050,18 +1183,21 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		a.addSystem("agent error: " + m.Err.Error())
 		return nil
 	case agent.EventTextKind:
+		a.setPhaseWorking()
 		if len(a.messages) == 0 || a.messages[len(a.messages)-1].Role != "assistant" {
 			a.messages = append(a.messages, components.Message{Role: "assistant"})
 		}
 		a.messages[len(a.messages)-1].Content += m.Text
 		return a.nextAgent()
 	case agent.EventReasoningKind:
+		a.setPhaseWorking()
 		if len(a.messages) == 0 || a.messages[len(a.messages)-1].Role != "reasoning" {
 			a.messages = append(a.messages, components.Message{Role: "reasoning"})
 		}
 		a.messages[len(a.messages)-1].Content += m.Reasoning
 		return a.nextAgent()
 	case agent.EventToolCallDeltaKind:
+		a.setPhaseWorking()
 		// Render-only; no execution authority. The live fragment updates the
 		// pending tool row if one is present.
 		if len(a.messages) > 0 && a.messages[len(a.messages)-1].Role == "tool" {
@@ -1069,6 +1205,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		}
 		return a.nextAgent()
 	case agent.EventToolStartKind:
+		a.setPhaseWorking()
 		last := len(a.messages) - 1
 		if last >= 0 && a.messages[last].Role == "assistant" {
 			a.messages[last].ToolCalls = append(a.messages[last].ToolCalls, components.AgentToolCall{
@@ -1100,7 +1237,14 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 	case agent.EventPermissionAskKind:
 		a.addSystem("permission ask required for " + m.AskName)
 		return a.nextAgent()
+	case agent.EventRoleManagerKind:
+		// The Role Manager is actively classifying (admission, mode selection,
+		// steering, or a tool result): show the dedicated indicator instead of
+		// the generic working label.
+		a.setPhaseRoleManager(m.Phase)
+		return a.nextAgent()
 	case agent.EventRetryKind:
+		a.setPhaseWorking()
 		// Dim the current assistant bubble so the user knows it is partial and
 		// will not be replayed into context when the retry starts. Start a
 		// fresh assistant bubble for the retry output.
@@ -1112,6 +1256,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		return a.nextAgent()
 	case agent.EventDoneKind:
 		a.cancel = nil
+		a.endPhase()
 		if len(a.messages) > 0 && a.messages[len(a.messages)-1].Role == "assistant" {
 			a.messages[len(a.messages)-1].Usage = m.Result.Usage
 		}
@@ -1270,8 +1415,20 @@ func (a *App) renderComposer() string {
 	if a.historyActive {
 		meta = "↑↓ cycle · type to search · esc cancel"
 	}
-	if a.working() {
-		title = a.workSpin.View() + " working"
+	if a.phase == phaseRoleManager {
+		// Role Manager activity gets its own branded signal: a filled
+		// "role manager" pill plus a sub-phase caption. The generic working
+		// label is reserved for I/O without this signal.
+		pill := components.Chip("role manager", components.ColorTeal)
+		title = a.spinMark() + " " + pill + " " + components.MutedStyle.Render(a.rmCaption())
+		accent = lipgloss.TerminalColor(components.ColorTeal)
+		if a.preSend {
+			meta = "preparing · esc cancel"
+		} else {
+			meta = "⏎ steer · esc cancel"
+		}
+	} else if a.phase == phaseWorking {
+		title = a.spinMark() + " working"
 		accent = lipgloss.TerminalColor(components.ColorAmber)
 		meta = "⏎ steer · esc cancel"
 	}
@@ -1283,6 +1440,15 @@ func (a *App) renderComposer() string {
 		Accent: accent,
 		Raw:    true,
 	}.View()
+}
+
+// spinMark is the working-indicator spinner, or a static dot when the
+// ui.spinner setting is off.
+func (a *App) spinMark() string {
+	if !a.settings.SpinnerEnabled() {
+		return "•"
+	}
+	return a.workSpin.View()
 }
 
 // renderFieldEditor frames the shared editor for an inline field edit inside a
@@ -1387,6 +1553,12 @@ func (a *App) classifyMode(input string) {
 		return
 	}
 	d, err := rolemanager.Select(a.ctx, a.classifier, rolemanager.ModeInput{Prompt: input})
+	a.applyModeDecision(d, err)
+}
+
+// applyModeDecision records a mode decision (or its error) on the session: the
+// mode chip, the engaged named agent, and warning lines.
+func (a *App) applyModeDecision(d rolemanager.ModeDecision, err error) {
 	if err != nil {
 		a.mode = "agent"
 		a.modeWarning = "mode classifier error: " + err.Error()

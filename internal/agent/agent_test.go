@@ -695,3 +695,152 @@ func TestSteerReachesNextIteration(t *testing.T) {
 		t.Fatalf("steered turn not present in iteration 2; user contents = %q", secondCallUserContents)
 	}
 }
+
+func TestRunEmitsRoleManagerPhases(t *testing.T) {
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "hello.txt"), []byte("world"), 0o600)
+
+	srv := mockSecurityServer("Read", `{"path":"hello.txt"}`, "done")
+	defer srv.Close()
+
+	cfg := run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"}
+	reg := tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024})
+
+	sess, err := NewSession(Options{
+		Cfg:      cfg,
+		Client:   srv.Client(),
+		Registry: reg,
+		Posture:  posture.Defaults(),
+		Workdir:  root,
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	var events []Event
+	res, err := sess.run(context.Background(), nil, TurnInput{Prompt: "read the file"}, false, func(e Event) {
+		events = append(events, e)
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if res.Reply != "done" {
+		t.Fatalf("expected reply 'done', got %q", res.Reply)
+	}
+	if len(events) == 0 {
+		t.Fatal("no events emitted")
+	}
+
+	// The very first signal is the Role Manager working pre-prompt: admission.
+	if events[0].Kind != EventRoleManagerKind || events[0].Phase != RoleManagerPhasePrePrompt {
+		t.Fatalf("first event = %+v, want RoleManager pre-prompt", events[0])
+	}
+
+	prePrompt, lastPrePrompt := 0, -1
+	toolStart, toolResult, toolResultRM := -1, -1, -1
+	for i, e := range events {
+		switch e.Kind {
+		case EventRoleManagerKind:
+			if e.Phase == RoleManagerPhasePrePrompt {
+				prePrompt++
+				lastPrePrompt = i
+			}
+			if e.Phase == RoleManagerPhaseToolResult {
+				toolResultRM = i
+			}
+		case EventToolStartKind:
+			if toolStart == -1 {
+				toolStart = i
+			}
+		case EventToolResultKind:
+			toolResult = i
+		}
+	}
+	// Admission plus mode selection both signal pre-prompt, before any model
+	// turn starts.
+	if prePrompt < 2 {
+		t.Fatalf("expected admission and mode-selection RM signals, got %d pre-prompt events", prePrompt)
+	}
+	if lastPrePrompt >= toolStart {
+		t.Fatalf("pre-prompt RM signals must precede the first model turn (rm=%d, toolStart=%d)", lastPrePrompt, toolStart)
+	}
+	if toolResult == -1 {
+		t.Fatalf("expected a tool result event, got kinds %v", eventKinds(events))
+	}
+	// Tool-result classification signals after execution and before the
+	// result is emitted.
+	if toolResultRM == -1 || toolResultRM <= toolStart || toolResultRM >= toolResult {
+		t.Fatalf("tool-result RM signal out of order (start=%d, rm=%d, result=%d)", toolStart, toolResultRM, toolResult)
+	}
+}
+
+func TestSteerEmitsRoleManagerPhase(t *testing.T) {
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
+
+	srv := mockSecurityServer("Read", `{"path":"f.txt"}`, "done")
+	defer srv.Close()
+
+	cfg := run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"}
+	sess, err := NewSession(Options{
+		Cfg:      cfg,
+		Client:   srv.Client(),
+		Registry: tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}),
+		Posture:  posture.Defaults(),
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	var events []Event
+	steered := false
+	emit := func(e Event) {
+		events = append(events, e)
+		if e.Kind == EventToolStartKind && !steered {
+			steered = true
+			if !sess.Steer("more detail") {
+				t.Fatalf("Steer should succeed mid-loop")
+			}
+		}
+	}
+	res, err := sess.run(context.Background(), nil, TurnInput{Prompt: "read the file"}, false, emit)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if res.Reply != "done" {
+		t.Fatalf("expected reply 'done', got %q", res.Reply)
+	}
+
+	steerRM, toolResult, firstText := -1, -1, -1
+	for i, e := range events {
+		switch e.Kind {
+		case EventRoleManagerKind:
+			if e.Phase == RoleManagerPhaseSteer && steerRM == -1 {
+				steerRM = i
+			}
+		case EventToolResultKind:
+			toolResult = i
+		case EventTextKind:
+			if firstText == -1 {
+				firstText = i
+			}
+		}
+	}
+	if steerRM == -1 {
+		t.Fatalf("expected a steer RoleManager phase event, got kinds %v", eventKinds(events))
+	}
+	if toolResult == -1 || steerRM <= toolResult {
+		t.Fatalf("steer RM signal must follow the first tool result (steer=%d, result=%d)", steerRM, toolResult)
+	}
+	if firstText != -1 && steerRM >= firstText {
+		t.Fatalf("steer RM signal must precede the next model turn (steer=%d, text=%d)", steerRM, firstText)
+	}
+}
+
+func eventKinds(events []Event) []EventKind {
+	out := make([]EventKind, len(events))
+	for i, e := range events {
+		out[i] = e.Kind
+	}
+	return out
+}

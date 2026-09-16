@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/vulnetix/signet/internal/agent"
+	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
 	"github.com/vulnetix/signet/internal/promptlib"
 	"github.com/vulnetix/signet/internal/rolemanager"
@@ -1236,5 +1237,248 @@ func TestEnterWhileWorkingSteers(t *testing.T) {
 	}
 	if a.editor.Value() != "" {
 		t.Fatalf("editor should reset after steering, got %q", a.editor.Value())
+	}
+}
+
+// --- instant echo and the Role Manager working indicator ------------------
+
+func TestSubmitInputEchoesPromptInstantly(t *testing.T) {
+	a := New(Options{})
+	a.SetClassifier(&fakeClassifier{raw: "AGENT"})
+	a.editor.SetValue("hello world")
+
+	cmd := a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected the async classify command")
+	}
+	var echoed bool
+	for _, m := range a.messages {
+		if m.Role == "user" && m.Content == "hello world" {
+			echoed = true
+		}
+	}
+	if !echoed {
+		t.Fatalf("expected an instant 'user prompt' echo, got %+v", a.messages)
+	}
+	if a.phase != phaseRoleManager {
+		t.Fatalf("phase = %d, want phaseRoleManager while the classifier runs", a.phase)
+	}
+	if !a.preSend {
+		t.Fatal("expected preSend to be set while the classifier runs")
+	}
+	for _, m := range a.messages {
+		if m.Role == "assistant" {
+			t.Fatal("no assistant bubble may appear before the turn starts")
+		}
+	}
+	if a.editor.Value() != "" {
+		t.Fatalf("editor should be cleared on submit, got %q", a.editor.Value())
+	}
+}
+
+func TestSubmitInputClassifiesAsyncThenSends(t *testing.T) {
+	srv := newAgentSSEServer(t, "pong")
+	defer srv.Close()
+
+	src := &fakeCredentialSource{vals: map[string]string{"openai:api_key": "sk-test"}}
+	cfg, status := run.Prepare("gpt-5", "openai", src)
+	if !status.Configured {
+		t.Fatalf("expected configured")
+	}
+	cfg.BaseURL = srv.URL
+	a := New(Options{Client: srv.Client(), Provider: "openai", Model: "gpt-5"})
+	a.cfg = cfg
+	a.status = status
+	a.SetClassifier(&fakeClassifier{raw: "PLAN"})
+	a.sessionName = "named" // skip the auto-naming side channel
+	a.editor.SetValue("refactor the parser")
+
+	cmd := a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected the async classify command")
+	}
+	msg := cmd()
+	if _, ok := msg.(modeClassifiedMsg); !ok {
+		t.Fatalf("classify command produced %T, want modeClassifiedMsg", msg)
+	}
+	m, next := a.Update(msg)
+	a = m.(*App)
+	if a.mode != "plan" {
+		t.Fatalf("mode = %q, want plan", a.mode)
+	}
+	if a.preSend {
+		t.Fatal("preSend must clear once the decision lands")
+	}
+	if next == nil {
+		t.Fatal("expected the send command once the decision lands")
+	}
+	a = drainAgent(t, a, next)
+	if a.phase != phaseIdle {
+		t.Fatalf("phase = %d after done, want phaseIdle", a.phase)
+	}
+	userCount, assistantCount := 0, 0
+	for _, m := range a.messages {
+		switch m.Role {
+		case "user":
+			userCount++
+		case "assistant":
+			if strings.TrimSpace(m.Content) != "" {
+				assistantCount++
+			}
+		}
+	}
+	if userCount != 1 {
+		t.Fatalf("user messages = %d, want 1 (echoed once, not duplicated)", userCount)
+	}
+	if assistantCount != 1 || a.messages[len(a.messages)-1].Content != "pong" {
+		t.Fatalf("expected one 'pong' assistant reply, got %+v", a.messages)
+	}
+}
+
+func TestEscCancelsPreSend(t *testing.T) {
+	a := New(Options{})
+	a.SetClassifier(&fakeClassifier{raw: "AGENT"})
+	a.editor.SetValue("hello")
+	cmd := a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected the async classify command")
+	}
+
+	m, cancelCmd := a.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	a = m.(*App)
+	if cancelCmd != nil {
+		t.Fatalf("esc during pre-send must not start work, got %v", cancelCmd)
+	}
+	if a.preSend {
+		t.Fatal("esc must clear preSend")
+	}
+	if a.phase != phaseIdle {
+		t.Fatalf("phase = %d, want phaseIdle", a.phase)
+	}
+	// The late classification result must not send the turn.
+	m, sendCmd := a.Update(cmd())
+	a = m.(*App)
+	if sendCmd != nil {
+		t.Fatalf("late classification must not send, got %v", sendCmd)
+	}
+	if a.working() {
+		t.Fatal("a cancelled pre-send must not start a turn")
+	}
+}
+
+func TestEnterDuringPreSendDoesNotSendOrSteer(t *testing.T) {
+	a := New(Options{})
+	a.SetClassifier(&fakeClassifier{raw: "AGENT"})
+	a.editor.SetValue("first")
+	if cmd := a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter}); cmd == nil {
+		t.Fatal("expected the async classify command")
+	}
+	before := len(a.messages)
+
+	a.editor.SetValue("second")
+	if again := a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter}); again != nil {
+		t.Fatalf("enter during pre-send must not start work, got %v", again)
+	}
+	if len(a.messages) != before+1 {
+		t.Fatalf("expected exactly one hint line, got %+v", a.messages)
+	}
+	hint := a.messages[before]
+	if hint.Role != "system" || !strings.Contains(hint.Content, "still preparing") {
+		t.Fatalf("expected a 'still preparing' system hint, got %+v", hint)
+	}
+}
+
+func TestComposerRoleManagerIndicator(t *testing.T) {
+	a := New(Options{})
+	a.width, a.height = 100, 30
+	a.setPhaseRoleManager(agent.RoleManagerPhasePrePrompt)
+
+	view := a.renderComposer()
+	if !strings.Contains(view, "role manager") {
+		t.Fatalf("composer must carry the role manager signal:\n%s", view)
+	}
+	if !strings.Contains(view, "pre-prompt processing") {
+		t.Fatalf("composer must caption the sub-phase:\n%s", view)
+	}
+	if strings.Contains(view, "working") {
+		t.Fatalf("the generic 'working' label must not appear for Role Manager activity:\n%s", view)
+	}
+}
+
+func TestComposerWorkingLabelForGenericIO(t *testing.T) {
+	a := New(Options{})
+	a.width, a.height = 100, 30
+	a.setPhaseWorking()
+
+	view := a.renderComposer()
+	if !strings.Contains(view, "working") {
+		t.Fatalf("composer must show the generic working label for plain I/O:\n%s", view)
+	}
+	if strings.Contains(view, "role manager") {
+		t.Fatalf("the role manager signal must not appear for generic I/O:\n%s", view)
+	}
+}
+
+func TestRMCaptionSubPhases(t *testing.T) {
+	a := New(Options{})
+	cases := []struct {
+		phase, want string
+	}{
+		{agent.RoleManagerPhasePrePrompt, "pre-prompt processing"},
+		{agent.RoleManagerPhaseToolResult, "classifying tool result"},
+		{agent.RoleManagerPhaseSteer, "classifying steering"},
+		{"", "pre-prompt processing"},
+	}
+	for _, c := range cases {
+		a.setPhaseRoleManager(c.phase)
+		if got := a.rmCaption(); got != c.want {
+			t.Fatalf("rmCaption(%q) = %q, want %q", c.phase, got, c.want)
+		}
+	}
+}
+
+func TestAgentEventsDriveWorkingPhase(t *testing.T) {
+	a := New(Options{})
+	a.setPhaseRoleManager(agent.RoleManagerPhasePrePrompt)
+
+	step := func(m tea.Msg) {
+		t.Helper()
+		var next tea.Cmd
+		var mm tea.Model
+		mm, next = a.Update(m)
+		a = mm.(*App)
+		_ = next
+	}
+	step(agentEventMsg{Kind: agent.EventRoleManagerKind, Phase: agent.RoleManagerPhaseToolResult})
+	if a.phase != phaseRoleManager || a.rmPhase != agent.RoleManagerPhaseToolResult {
+		t.Fatalf("RM event must keep the role manager phase, got %d/%q", a.phase, a.rmPhase)
+	}
+	step(agentEventMsg{Kind: agent.EventTextKind, Text: "hi"})
+	if a.phase != phaseWorking {
+		t.Fatalf("streaming text must switch to the generic working phase, got %d", a.phase)
+	}
+	step(agentEventMsg{Kind: agent.EventToolStartKind, Tool: &rolemanager.ToolCall{Name: "Read"}})
+	if a.phase != phaseWorking {
+		t.Fatalf("tool execution must be generic working I/O, got %d", a.phase)
+	}
+	step(agentEventMsg{Kind: agent.EventRoleManagerKind, Phase: agent.RoleManagerPhaseToolResult})
+	if a.phase != phaseRoleManager {
+		t.Fatalf("tool-result classification must re-enter the role manager phase, got %d", a.phase)
+	}
+	step(agentEventMsg{Kind: agent.EventDoneKind})
+	if a.phase != phaseIdle {
+		t.Fatalf("done must clear the phase, got %d", a.phase)
+	}
+}
+
+func TestSpinMarkHonoursSpinnerSetting(t *testing.T) {
+	a := New(Options{})
+	if got := a.spinMark(); got == "•" {
+		t.Fatal("spinner default-on must render the spinner frame, not the static dot")
+	}
+	f := false
+	a.settings.UI = &config.UISettings{Spinner: &f}
+	if got := a.spinMark(); got != "•" {
+		t.Fatalf("spinner off must render the static dot, got %q", got)
 	}
 }

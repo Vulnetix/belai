@@ -28,6 +28,18 @@ const (
 	// EventRetryKind is emitted before each L2 turn retry. It carries the
 	// retry attempt number and delay, but no execution authority.
 	EventRetryKind
+	// EventRoleManagerKind signals that the Role Manager is actively
+	// classifying content. It carries no execution authority; it exists so a
+	// UI can show a dedicated "Role Manager" indicator instead of the generic
+	// working label.
+	EventRoleManagerKind
+)
+
+// Role Manager sub-phases carried by EventRoleManagerKind.
+const (
+	RoleManagerPhasePrePrompt  = "pre-prompt"  // admission plus mode selection before the first model turn
+	RoleManagerPhaseToolResult = "tool-result" // classification of a tool result before promotion
+	RoleManagerPhaseSteer      = "steer"       // admission of a mid-loop steering message
 )
 
 // Event is one streaming agent event. Only the fields for the event's Kind are
@@ -59,6 +71,9 @@ type Event struct {
 	RetryAttempt int
 	RetryDelay   time.Duration
 	RetryReason  string
+
+	// Phase carries the Role Manager sub-phase for EventRoleManagerKind.
+	Phase string
 
 	// Err carries EventError.
 	Err error
