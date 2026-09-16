@@ -94,6 +94,18 @@ var (
 	attrRe     = regexp.MustCompile(`([a-zA-Z][a-zA-Z0-9_-]*)="([^"]*)"`)
 )
 
+// closeTagRes is a precompiled close-tag regexp per known kind. Egress runs on
+// every turn of every request, and compiling a regexp per tag occurrence there
+// was measurable CPU in front of every egress. KnownKinds is a fixed set, so
+// the regexps are built once at init.
+var closeTagRes = func() map[string]*regexp.Regexp {
+	m := make(map[string]*regexp.Regexp, len(KnownKinds))
+	for kind := range KnownKinds {
+		m[kind] = regexp.MustCompile(`</` + regexp.QuoteMeta(kind) + `>`)
+	}
+	return m
+}()
+
 // Egress validates every harness delimiter block in text and strips invalid
 // ones. A block is valid iff it has a nonce, the nonce is accepted by the
 // checker (when non-nil), and — when an integrity attribute is present — the
@@ -127,7 +139,7 @@ func Egress(text string, checker NonceChecker) string {
 			continue
 		}
 
-		closeRe := regexp.MustCompile(`</` + regexp.QuoteMeta(kind) + `>`)
+		closeRe := closeTagRes[kind]
 		closeLoc := closeRe.FindStringIndex(text[openEnd:])
 		if closeLoc == nil {
 			// Opening tag with no matching close: drop the opening tag.
