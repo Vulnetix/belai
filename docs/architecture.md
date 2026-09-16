@@ -467,10 +467,15 @@ is in a different place:
 A tail-anchored preview puts its hint *above* the content, since the hint
 summarises what came before it. `ctrl+o` expands everything.
 
-Read rows are numbered at render time, never by the Read tool: the tool's
-`offset` is a byte count, so a model that read a line number out of the output
-and passed it back would silently get the wrong region. A partial read
-(`offset > 0`) is therefore left unnumbered rather than numbered wrongly.
+Read rows are numbered at render time, never by the Read tool itself: the
+tool's `offset` is a byte count, so a model that read a line number out of the
+output and passed it back as an offset would silently get the wrong region.
+For a partial read (`offset > 0`) the Read tool emits `Result.Meta` with
+`start_line`, derived by counting newlines in the `[0, offset)` prefix up to
+1 MiB. The TUI receives this via `EventToolMetaKind` and numbers the visible
+lines starting from `start_line`. Without the metadata the partial read is
+left unnumbered rather than numbered wrongly.
+
 Syntax highlighting (chroma, mapped onto the palette in `theme.go`, lexer
 chosen by filename only) applies to expanded rows alone — collapsed, the diff
 and status colours are the whole signal.
@@ -493,10 +498,19 @@ provider-facing turns are unchanged by their presence.
 
 Collapsed diff rows are foreground-only. Expanded rows carry a background wash
 instead, which marks the row without using the foreground — freeing it for
-syntax colour, so a changed line reads as code rather than as a stripe. Costs
-are bounded throughout: a git timeout latches the feature off for the session
-rather than being paid per command, plus per-file byte caps and a file count
-cap.
+syntax colour, so a changed line reads as code rather than as a stripe.
+
+Selection highlight (`Highlight` in `linemap.go`) wraps the selected cells in
+reverse video. Because `ansi.Cut` strips every escape sequence before the cut
+point, the right-hand fragment of a partially-selected washed row would be left
+bare after the selection's full reset. Each `SourceLine` therefore carries a
+`Reopen` string — the SGR prefix that restores the row's original background
+(and the first segment's foreground) — which is inserted between the reset and
+the right fragment.
+
+Costs are bounded throughout: a git timeout latches the feature off for the
+session rather than being paid per command, plus per-file byte caps and a file
+count cap.
 
 ### Transcript selection
 
