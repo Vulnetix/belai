@@ -26,6 +26,12 @@ import (
 // endpoint (or has it disabled), signalling callers to mint locally.
 var ErrUnsupported = errors.New("nonce endpoint unsupported or not enabled")
 
+// unsupportedURLs negative-caches base URLs whose nonce endpoint is known to
+// be unsupported (401/403/404). A provider that does not implement
+// GET /v1/nonces must not be re-probed on every session invalidation; the
+// answer is stable for the process lifetime.
+var unsupportedURLs sync.Map
+
 // Pool holds available and active nonces. Only reserved nonces are considered
 // valid: an available (unreserved) nonce has not yet sealed any content.
 type Pool struct {
@@ -166,9 +172,13 @@ type NonceResponse struct {
 
 // FetchNonces GETs {base_url}/v1/nonces. apiKey, when non-empty, is sent as a
 // Bearer token. A 401/403/404 is reported as ErrUnsupported so callers fall
-// back to local generation. The request is bounded by a 3s deadline so a
-// hanging provider cannot freeze session construction.
+// back to local generation, and is negative-cached per base URL for the
+// process lifetime. The request is bounded by a 3s deadline so a hanging
+// provider cannot freeze session construction.
 func FetchNonces(client *http.Client, baseURL, apiKey string) ([]string, error) {
+	if _, ok := unsupportedURLs.Load(baseURL); ok {
+		return nil, ErrUnsupported
+	}
 	if client == nil {
 		client = httpclient.Default()
 	}
@@ -189,6 +199,7 @@ func FetchNonces(client *http.Client, baseURL, apiKey string) ([]string, error) 
 	defer resp.Body.Close()
 	switch resp.StatusCode {
 	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound:
+		unsupportedURLs.Store(baseURL, true)
 		return nil, ErrUnsupported
 	case http.StatusOK:
 		// ok

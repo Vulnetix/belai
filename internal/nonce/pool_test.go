@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -199,5 +200,24 @@ func TestSeedFromProviderSuccess(t *testing.T) {
 	}
 	if p.Available() != 2 {
 		t.Fatalf("avail = %d", p.Available())
+	}
+}
+
+func TestFetchNoncesUnsupportedIsNegativeCached(t *testing.T) {
+	var calls int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	for i := 0; i < 3; i++ {
+		_, err := FetchNonces(server.Client(), server.URL, "")
+		if !strings.Contains(err.Error(), "unsupported") {
+			t.Fatalf("expected unsupported, got %v", err)
+		}
+	}
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Fatalf("nonce endpoint probed %d times, want 1 (negative cached)", got)
 	}
 }

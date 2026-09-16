@@ -84,6 +84,7 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task) string {
 		Settings:      s.settings,
 		PromptOptions: s.opts,
 		Cache:         s.cache, // share the session verdict cache across fan-out
+		SkipNonceSeed: true,    // the subagent re-seeds locally below
 	})
 	if err != nil {
 		return ""

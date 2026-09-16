@@ -52,10 +52,14 @@ type Options struct {
 	// Cache is the session-scoped classifier verdict cache (SAFE LRU plus
 	// persisted bad hashes). nil means no caching. A subagent inherits the
 	// parent's cache so verdicts are shared across the fan-out.
-	Cache    *rolemanager.Cache
-	Workdir  string
-	State    config.State
-	Settings config.Settings
+	Cache *rolemanager.Cache
+	// SkipNonceSeed skips the SeedFromProvider GET and seeds the pool locally.
+	// A subagent sets this: it discards the provider-seeded pool one line later
+	// in favour of a fresh local pool, so the GET is a wasted round trip.
+	SkipNonceSeed bool
+	Workdir       string
+	State         config.State
+	Settings      config.Settings
 }
 
 // Session executes the tool loop for a single user prompt.
@@ -96,7 +100,11 @@ func NewSession(o Options) (*Session, error) {
 		maxIter = o.Settings.Resilience.MaxIterationsOr(10)
 	}
 	pool := nonce.New()
-	if err := pool.SeedFromProvider(o.Client, o.Cfg.BaseURL, o.Cfg.APIKey, 16); err != nil {
+	if o.SkipNonceSeed {
+		if err := pool.Seed(16); err != nil {
+			return nil, fmt.Errorf("seed nonce pool: %w", err)
+		}
+	} else if err := pool.SeedFromProvider(o.Client, o.Cfg.BaseURL, o.Cfg.APIKey, 16); err != nil {
 		if err := pool.Seed(16); err != nil {
 			return nil, fmt.Errorf("seed nonce pool: %w", err)
 		}
