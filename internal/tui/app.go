@@ -712,6 +712,9 @@ func (a *App) agentSession() (*agent.Session, error) {
 		// Top-level session: explore subagents may fan out from here. A
 		// subagent sets this false so it can never fan out again.
 		AllowExplore: true,
+		// Top-level goal-mode prompts may run the unbounded pass loop; a
+		// subagent never does.
+		AllowPassLoop: true,
 	})
 	if err != nil {
 		return nil, err
