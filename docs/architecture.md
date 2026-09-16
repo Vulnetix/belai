@@ -516,6 +516,15 @@ is in a different place:
 A tail-anchored preview puts its hint *above* the content, since the hint
 summarises what came before it. `ctrl+o` expands everything.
 
+The invocation line next to a tool name is one argument, chosen per tool by
+`formatToolInvocation`'s key order: `Bash` shows `command`, `Read`/`Write`/`Edit`
+show `path`, `Grep`/`Glob` show `pattern`, `WebSearch` shows `query`, `WebFetch`
+shows `url`, and anything unlisted tries `command`, `path`, `pattern`, `query`,
+`url`, `args` in that order. `Write` and `Edit` deliberately list `path` alone,
+so a row shows what was written to and never the file body, the `old_string`, or
+the `new_string`. The value is clipped to 120 runes (60 for args that would not
+parse as JSON).
+
 Read rows are numbered at render time, never by the Read tool itself: the
 tool's `offset` is a byte count, so a model that read a line number out of the
 output and passed it back as an offset would silently get the wrong region.
@@ -831,7 +840,17 @@ off by `SIGNET_NO_KITTY=1`),
 `allow_project_providers`, and the `classifier` block
 (`provider`, `model`, `effort`, `chunk.max_bytes`, `chunk.concurrency`) covered
 in the Security classifier section above. That enumeration is the whole
-`config.Settings` struct. Permission
+`config.Settings` struct, plus two keys that are accepted on read and never
+written back:
+
+- `bash_readonly` — the deprecated alias for `read_only`. `Settings.UnmarshalJSON`
+  folds it into `read_only` only when the canonical key is absent, then clears
+  it, so a file Signet rewrites emits `read_only` alone and a file carrying both
+  keys resolves to the canonical one.
+- the legacy flat `permissions` map (`{"Bash": "deny"}`) — accepted and
+  converted to the structured `allow`/`ask`/`deny` shape on read, never written.
+
+Permission
 rules merge by union — a project file can add rules but never remove a
 global rule. Provider profiles merge key-by-key the same way. Resilience
 budgets merge to the *minimum* of global and project, so a project file can

@@ -53,6 +53,16 @@ func TestDecodeUnknownBucketError(t *testing.T) {
 	}
 }
 
+// A rule value that is neither an array nor a string is neither form, so it
+// fails the decode loudly instead of being silently dropped — a permissions
+// block that half-loaded would enable or block tools the user never chose.
+func TestDecodeUnsupportedRuleValueError(t *testing.T) {
+	var s Settings
+	if err := json.Unmarshal([]byte(`{"permissions":{"Bash":3}}`), &s); err == nil {
+		t.Fatalf("an unsupported rule value must error")
+	}
+}
+
 func TestMarshalSelfUpgrades(t *testing.T) {
 	var s Settings
 	if err := json.Unmarshal([]byte(`{"permissions":{"bash":"ask","rm":"block"}}`), &s); err != nil {

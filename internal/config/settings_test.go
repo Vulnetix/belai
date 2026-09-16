@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -162,6 +163,25 @@ func TestBashReadOnlyAliasDecodes(t *testing.T) {
 	}
 	if got.ReadOnly == nil || !*got.ReadOnly {
 		t.Fatalf("read_only = %+v", got.ReadOnly)
+	}
+}
+
+// A file carrying both keys resolves to the canonical one: the alias is only
+// consulted when read_only is absent, so a migrated file that kept its old key
+// around cannot flip the switch back.
+func TestReadOnlyWinsOverBashReadOnlyAlias(t *testing.T) {
+	var s Settings
+	if err := json.Unmarshal([]byte(`{"read_only": false, "bash_readonly": true}`), &s); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if s.ReadOnly == nil || *s.ReadOnly {
+		t.Fatalf("read_only = %+v, want an explicit false", s.ReadOnly)
+	}
+	if s.BashReadOnly != nil {
+		t.Fatalf("alias must be cleared after decode, got %+v", s.BashReadOnly)
+	}
+	if s.ReadOnlyEnabled() {
+		t.Fatal("ReadOnlyEnabled should follow the canonical key")
 	}
 }
 
