@@ -172,6 +172,11 @@ type App struct {
 	agent    *agent.Session
 	events   <-chan agent.Event
 	pending  string // pending prompt to send once configured
+	// pendingEvent holds one lookahead agent event read while coalescing a run
+	// of text/reasoning deltas but belonging to a different kind, so it is
+	// replayed by the next nextAgent call instead of being dropped.
+	pendingEvent    agent.Event
+	pendingEventSet bool
 
 	// session display overrides (ctrl+r / ctrl+t), shadowing the resolved
 	// settings without rewriting the settings file.
@@ -780,14 +785,72 @@ func (a *App) rmCaption() string {
 	}
 }
 
+// nextEvent reads one agent event, replaying a coalescing lookahead first.
+func (a *App) nextEvent() (agent.Event, bool) {
+	if a.pendingEventSet {
+		a.pendingEventSet = false
+		return a.pendingEvent, true
+	}
+	e, ok := <-a.events
+	return e, ok
+}
+
+// nextAgent drains the agent event channel with coalescing. Consecutive
+// text (or reasoning) deltas are concatenated into a single event so Bubble
+// Tea updates — and therefore full transcript re-renders — happen once per
+// drain, not once per streamed token. The loop stops at the first event of a
+// different kind (which is stashed as a lookahead and replayed next) or at an
+// empty channel, so nothing is dropped and ordering is preserved.
 func (a *App) nextAgent() tea.Cmd {
 	return func() tea.Msg {
-		e, ok := <-a.events
+		e, ok := a.nextEvent()
 		if !ok {
 			return agentEventMsg{Kind: agent.EventDoneKind}
 		}
-		return agentEventMsg(e)
+		if e.Kind != agent.EventTextKind && e.Kind != agent.EventReasoningKind {
+			return agentEventMsg(e)
+		}
+
+		var b strings.Builder
+		if e.Kind == agent.EventTextKind {
+			b.WriteString(e.Text)
+		} else {
+			b.WriteString(e.Reasoning)
+		}
+		for {
+			var next agent.Event
+			select {
+			case n, ok2 := <-a.events:
+				if !ok2 {
+					return agentEventMsg(coalesced(e, b.String()))
+				}
+				next = n
+			default:
+				return agentEventMsg(coalesced(e, b.String()))
+			}
+			if next.Kind != e.Kind {
+				a.pendingEvent = next
+				a.pendingEventSet = true
+				return agentEventMsg(coalesced(e, b.String()))
+			}
+			if e.Kind == agent.EventTextKind {
+				b.WriteString(next.Text)
+			} else {
+				b.WriteString(next.Reasoning)
+			}
+		}
 	}
+}
+
+// coalesced folds a run of same-kind deltas accumulated in b back into the
+// first event's text (or reasoning) field.
+func coalesced(first agent.Event, acc string) agent.Event {
+	if first.Kind == agent.EventTextKind {
+		first.Text = acc
+	} else {
+		first.Reasoning = acc
+	}
+	return first
 }
 
 // agentSession builds (or reuses) the agent session for the current

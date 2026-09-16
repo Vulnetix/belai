@@ -72,7 +72,7 @@ func StreamTurnsWithTools(ctx context.Context, cfg Config, system string, turns 
 // SendTurnsStreamed adapts the blocking sender to the same Chunk channel so a
 // caller can consume both transports through one interface.
 func SendTurnsStreamed(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, pool *nonce.Pool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) <-chan Chunk {
-	ch := make(chan Chunk)
+	ch := make(chan Chunk, 256)
 	go func() {
 		defer close(ch)
 		if pool == nil {
@@ -282,7 +282,7 @@ func streamTurns(ctx context.Context, cfg Config, system string, turns []Turn, c
 	if err != nil {
 		return nil, err
 	}
-	ch := make(chan Chunk)
+	ch := make(chan Chunk, 256)
 	go drainStream(ctx, ch, resp, d)
 	return ch, nil
 }

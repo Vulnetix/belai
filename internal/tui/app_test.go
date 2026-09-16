@@ -1608,3 +1608,38 @@ func TestContextEstimateMemoised(t *testing.T) {
 		t.Fatalf("estimate did not grow with content: %+v <= %+v", second, first)
 	}
 }
+
+// TestNextAgentCoalescesDeltas pins the drain-with-coalesce contract: a run of
+// same-kind text (or reasoning) deltas arrives as one event, a different-kind
+// event is stashed as lookahead and replayed in order, and a closed channel
+// synthesises the done event.
+func TestNextAgentCoalescesDeltas(t *testing.T) {
+	a := New(Options{})
+	ch := make(chan agent.Event, 8)
+	a.events = ch
+
+	ch <- agent.Event{Kind: agent.EventTextKind, Text: "hello "}
+	ch <- agent.Event{Kind: agent.EventTextKind, Text: "world"}
+	ch <- agent.Event{Kind: agent.EventReasoningKind, Reasoning: "thi"}
+	ch <- agent.Event{Kind: agent.EventReasoningKind, Reasoning: "nking"}
+	ch <- agent.Event{Kind: agent.EventToolStartKind}
+	close(ch)
+
+	next := func() agent.Event {
+		cmd := a.nextAgent()
+		return agent.Event(cmd().(agentEventMsg))
+	}
+
+	if e := next(); e.Kind != agent.EventTextKind || e.Text != "hello world" {
+		t.Fatalf("first = %+v, want text 'hello world'", e)
+	}
+	if e := next(); e.Kind != agent.EventReasoningKind || e.Reasoning != "thinking" {
+		t.Fatalf("second = %+v, want reasoning 'thinking'", e)
+	}
+	if e := next(); e.Kind != agent.EventToolStartKind {
+		t.Fatalf("third = %+v, want tool start", e)
+	}
+	if e := next(); e.Kind != agent.EventDoneKind {
+		t.Fatalf("fourth = %+v, want done", e)
+	}
+}

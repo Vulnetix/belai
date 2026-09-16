@@ -114,7 +114,7 @@ func (s *Session) RunStream(ctx context.Context, history []run.Turn, in TurnInpu
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	ch := make(chan Event)
+	ch := make(chan Event, 256)
 	go func() {
 		defer close(ch)
 		res, err := s.run(ctx, history, in, true, func(e Event) {
