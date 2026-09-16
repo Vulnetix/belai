@@ -560,3 +560,42 @@ func TestMessageStreamingBuffer(t *testing.T) {
 		t.Fatalf("Materialise = %q buf=%v, want finalagain nil", m.Content, m.buf)
 	}
 }
+
+func TestRenderMemoisesAndInvalidates(t *testing.T) {
+	ml := mixedTranscript()
+	ml.Width = 80
+
+	first, _ := ml.Render()
+	if ml.Messages[0].rc.text == "" {
+		t.Fatalf("unchanged message should be memoised after render")
+	}
+
+	second, _ := ml.Render()
+	if first != second {
+		t.Fatalf("identical render differs on second pass:\n%s\n---\n%s", first, second)
+	}
+
+	// A content mutation clears the memo, so the next render reflects it.
+	ml.Messages[0].AppendText(" (updated)")
+	if ml.Messages[0].rc.text != "" {
+		t.Fatalf("AppendText must clear the render cache, got %q", ml.Messages[0].rc.text)
+	}
+	third, _ := ml.Render()
+	if third == first {
+		t.Fatalf("render did not change after AppendText")
+	}
+}
+
+func TestRunningToolRowNotMemoised(t *testing.T) {
+	ml := MessageList{
+		Width:     80,
+		ShowTools: true,
+		Messages: []Message{
+			{Role: "tool", ToolName: "Bash", ToolArgs: `{"command":"sleep 10"}`, StartedAt: time.Now().Add(-time.Second)},
+		},
+	}
+	ml.Render()
+	if ml.Messages[0].rc.text != "" {
+		t.Fatalf("running tool row must re-render every frame (live elapsed), got cached %q", ml.Messages[0].rc.text)
+	}
+}

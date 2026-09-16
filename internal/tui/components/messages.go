@@ -62,6 +62,66 @@ type Message struct {
 	// Content += delta over a long reply. It is written and read only on the
 	// Bubble Tea goroutine.
 	buf *strings.Builder
+
+	// rc memoises the last rendered text and line map for this message. The
+	// key covers every field that affects the render, so any change (a
+	// streaming tail, an appended tool call, a new status, a width change)
+	// misses and re-renders. AppendText/SetContent/Materialise clear it.
+	rc renderCache
+}
+
+// renderKey identifies everything that affects one message's rendered output.
+// Content is keyed by length, not value: the only content mutators
+// (AppendText/SetContent) clear the cache, so on an otherwise-unchanged
+// message a length match means unchanged content. Comparing a length is O(1)
+// where comparing a 200 KiB tool result is O(n) — the point of the memo.
+type renderKey struct {
+	role       string
+	contentLen int
+	toolName   string
+	toolArgs   string
+	status     string
+	width      int
+	expand     bool
+	expanded   bool
+	partial    bool
+	steering   bool
+	usageTotal int
+	toolCallsN int
+	// started marks a running tool row: its live elapsed label changes every
+	// frame, so it is never cached.
+	started bool
+}
+
+// renderCache is the memoised render of one message.
+type renderCache struct {
+	key  renderKey
+	text string
+	lm   LineMap
+}
+
+// renderKeyFor computes the cache key for one message at a given width.
+func renderKeyFor(m *Message, width int, expandAll bool) renderKey {
+	running := m.Role == "tool" && !m.StartedAt.IsZero() && m.Text() == ""
+	usage := 0
+	if m.Usage != nil {
+		usage = m.Usage.Total()
+	}
+	return renderKey{
+		role:       m.Role,
+		contentLen: len(m.Text()),
+		toolName:   m.ToolName,
+		toolArgs:   m.ToolArgs,
+		status:     m.Status,
+		width:      width,
+		expand:     expandAll,
+		expanded:   m.Expanded,
+		partial:    m.Partial,
+		steering:   m.Steering,
+		usageTotal: usage,
+		toolCallsN: len(m.ToolCalls),
+		started:    running,
+	}
 }
 
 // AppendText appends a streamed delta to an in-flight message. Any existing
@@ -71,6 +131,7 @@ func (m *Message) AppendText(s string) {
 	if s == "" {
 		return
 	}
+	m.rc = renderCache{}
 	if m.buf == nil {
 		m.buf = &strings.Builder{}
 		if m.Content != "" {
@@ -95,6 +156,7 @@ func (m Message) Text() string {
 func (m *Message) SetContent(s string) {
 	m.Content = s
 	m.buf = nil
+	m.rc = renderCache{}
 }
 
 // Materialise flushes the streaming buffer into Content and drops it, so the
@@ -103,6 +165,7 @@ func (m *Message) Materialise() {
 	if m.buf != nil {
 		m.Content = m.buf.String()
 		m.buf = nil
+		m.rc = renderCache{}
 	}
 }
 
@@ -137,50 +200,66 @@ func (m MessageList) View() string {
 // Render renders the transcript and returns the per-line provenance of every
 // row it emits. The text is byte-identical to what View returns today; the
 // map is the side channel drag-selection uses for hit-testing and copying.
+//
+// Per-message output is memoised: a message whose cache key is unchanged
+// reuses its rendered text and line map instead of re-splitting and
+// re-joining its (possibly large) content. The streaming tail and running tool
+// rows miss on every frame and re-render; everything else renders once per
+// change.
 func (m MessageList) Render() (string, LineMap) {
 	width := max(m.Width, messageMinWidth)
 
 	type entry struct {
-		msg    Message
+		idx    int
 		framed bool
 	}
 	var entries []entry
-	for _, msg := range m.Messages {
+	for i := range m.Messages {
+		msg := &m.Messages[i]
 		switch msg.Role {
 		case "reasoning":
 			if !m.ShowReasoning {
 				continue
 			}
-			entries = append(entries, entry{msg, true})
+			entries = append(entries, entry{i, true})
 		case "tool":
 			if !m.ShowTools {
 				continue
 			}
-			entries = append(entries, entry{msg, false})
+			entries = append(entries, entry{i, false})
 		case "system":
-			entries = append(entries, entry{msg, false})
+			entries = append(entries, entry{i, false})
 		default:
 			if strings.TrimSpace(msg.Text()) == "" && len(msg.ToolCalls) == 0 {
 				continue
 			}
-			entries = append(entries, entry{msg, true})
+			entries = append(entries, entry{i, true})
 		}
 	}
 
 	var b strings.Builder
 	var lm LineMap
 	for i, e := range entries {
+		msg := &m.Messages[e.idx]
+		key := renderKeyFor(msg, width, m.ExpandAll)
 		var s string
 		var sub LineMap
-		switch e.msg.Role {
-		case "tool":
-			s, sub = toolRow(e.msg, width, m.ExpandAll)
-		case "system":
-			s, sub = systemRow(e.msg.Text(), width)
-		case "reasoning":
-			s, sub = reasoningPanel(e.msg, width, m.ExpandAll)
-		default:
-			s, sub = turnPanel(e.msg, width, m.ExpandAll)
+		if !key.started && msg.rc.key == key {
+			s, sub = msg.rc.text, msg.rc.lm
+		} else {
+			switch msg.Role {
+			case "tool":
+				s, sub = toolRow(*msg, width, m.ExpandAll)
+			case "system":
+				s, sub = systemRow(msg.Text(), width)
+			case "reasoning":
+				s, sub = reasoningPanel(*msg, width, m.ExpandAll)
+			default:
+				s, sub = turnPanel(*msg, width, m.ExpandAll)
+			}
+			if !key.started {
+				msg.rc = renderCache{key: key, text: s, lm: sub}
+			}
 		}
 		b.WriteString(s)
 		lm = append(lm, sub...)
