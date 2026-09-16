@@ -1094,6 +1094,41 @@ func TestClassifierOrDefault(t *testing.T) {
 	}
 }
 
+// TestNewClassifierWithRetryEmitsRetryEvents verifies that the classifier path
+// surfaces every L1 backoff through the onRetry callback, so the TUI can show
+// retry progress for classifier calls as it does for main model calls.
+func TestNewClassifierWithRetryEmitsRetryEvents(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls < 2 {
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":"rate limited"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"SAFE"},"finish_reason":"stop"}]}`))
+	}))
+	defer srv.Close()
+
+	cfg := Config{Provider: "openai", BaseURL: srv.URL, APIKey: "sk", Model: "test"}
+	var attempts []resilience.Attempt
+	c := NewClassifierWithRetry(cfg, srv.Client(), func(a resilience.Attempt) {
+		attempts = append(attempts, a)
+	})
+	_, err := c.Classify(context.Background(), rolemanager.ClassifierPayload{System: "sys", User: "content"})
+	if err != nil {
+		t.Fatalf("Classify: %v", err)
+	}
+	if len(attempts) != 1 {
+		t.Fatalf("expected 1 retry event, got %d", len(attempts))
+	}
+	if attempts[0].Delay != 1*time.Second {
+		t.Fatalf("delay = %v, want 1s", attempts[0].Delay)
+	}
+}
+
 func TestReasoningEnabled(t *testing.T) {
 	cases := []struct {
 		effort string

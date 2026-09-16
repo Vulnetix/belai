@@ -311,17 +311,21 @@ func TestClassifierErrorEmitsWarningNotStderr(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
 
 	var securityCalls int
-	base := mockSecurityServer("Read", `{"path":"f.txt"}`, "done")
-	defer base.Close()
-	mux := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		r.Body = io.NopCloser(bytes.NewReader(body))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
+				Role      string `json:"role"`
+				Content   string `json:"content"`
+				ToolCalls []struct {
+					ID       string `json:"id"`
+					Function struct {
+						Name      string `json:"name"`
+						Arguments string `json:"arguments"`
+					} `json:"function"`
+				} `json:"tool_calls,omitempty"`
 			} `json:"messages"`
 		}
+		body, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(body, &req)
 		var system string
 		for _, m := range req.Messages {
@@ -330,24 +334,50 @@ func TestClassifierErrorEmitsWarningNotStderr(t *testing.T) {
 			}
 		}
 
-		if strings.Contains(system, "security classifier") {
+		switch {
+		case strings.Contains(system, "security classifier"):
 			securityCalls++
-			// The second security classification is the tool-result classification;
-			// force it to fail with a 429 so executeCall emits a warning.
 			if securityCalls == 2 {
-				w.WriteHeader(http.StatusTooManyRequests)
-				_, _ = w.Write([]byte(`{"errors":[{"message":"rate limiting: inference request per min rate reached","code":3021}],"success":false,"result":{},"messages":[]}`))
+				// A non-retryable classifier failure: the tool-result
+				// classification must surface as a warning, never stderr.
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = w.Write([]byte(`{"error":"internal classifier failure"}`))
 				return
 			}
+			writeChatJSON(w, "SAFE")
+		case strings.Contains(system, "operating-mode classifier"):
+			writeChatJSON(w, "AGENT")
+		default:
+			hasToolResult := false
+			for _, m := range req.Messages {
+				if m.Role == "tool" {
+					hasToolResult = true
+				}
+			}
+			msg := map[string]any{"role": "assistant", "content": ""}
+			if !hasToolResult {
+				msg["tool_calls"] = []any{map[string]any{
+					"id":       "call_1",
+					"type":     "function",
+					"function": map[string]any{"name": "Read", "arguments": `{"path":"f.txt"}`},
+				}}
+			} else {
+				msg["content"] = "done"
+			}
+			b, _ := json.Marshal(map[string]any{
+				"id":      "x",
+				"object":  "chat.completion",
+				"choices": []any{map[string]any{"index": 0, "message": msg, "finish_reason": "stop"}},
+			})
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(b)
 		}
-		// Forward everything else to the default mock server.
-		base.Config.Handler.ServeHTTP(w, r)
 	}))
-	defer mux.Close()
+	defer srv.Close()
 
-	cfg := run.Config{Provider: "openai", BaseURL: mux.URL, APIKey: "test-key", Model: "test"}
+	cfg := run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"}
 	reg := tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024})
-	sess, err := NewSession(Options{Cfg: cfg, Client: mux.Client(), Registry: reg, Posture: posture.Defaults(), Workdir: root})
+	sess, err := NewSession(Options{Cfg: cfg, Client: srv.Client(), Registry: reg, Posture: posture.Defaults(), Workdir: root})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
@@ -359,15 +389,11 @@ func TestClassifierErrorEmitsWarningNotStderr(t *testing.T) {
 	defer func() { os.Stderr = oldStderr }()
 
 	var warnings []Event
-	var allEvents []EventKind
-	ch := sess.RunStream(context.Background(), nil, TurnInput{Prompt: "read the file"})
-	for ev := range ch {
-		allEvents = append(allEvents, ev.Kind)
-		if ev.Kind == EventWarningKind {
-			warnings = append(warnings, ev)
+	_, err = sess.run(context.Background(), nil, TurnInput{Prompt: "read the file"}, false, func(e Event) {
+		if e.Kind == EventWarningKind {
+			warnings = append(warnings, e)
 		}
-	}
-	t.Logf("securityCalls=%d events=%v", securityCalls, allEvents)
+	})
 	_ = pw.Close()
 	stderr, _ := io.ReadAll(pr)
 
@@ -375,7 +401,7 @@ func TestClassifierErrorEmitsWarningNotStderr(t *testing.T) {
 		t.Fatalf("classifier error wrote to stderr: %q", string(stderr))
 	}
 	if len(warnings) == 0 {
-		t.Fatal("expected EventWarningKind for classifier failure")
+		t.Fatalf("expected EventWarningKind for classifier failure (run err=%v)", err)
 	}
 	if !strings.Contains(warnings[0].Warning, "classifier error for \"Read\"") {
 		t.Fatalf("warning = %q, want classifier error for Read", warnings[0].Warning)
