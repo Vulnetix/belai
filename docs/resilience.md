@@ -24,14 +24,34 @@ Classification is fail-closed:
 2. Denylist text (`quota`, `billing`, `invalid_api_key` …) → `ClassFatal`.
 3. Overflow text (`context length`, `token limit` …) → `ClassOverflow`,
    never retried; the user is told to `/compact`.
-4. `StatusCoder` with 408/409/429/≥500 → `ClassRetryable`; 400/401/403/404/422
+4. Explicit `Retry-After` header (seconds or HTTP-date) → `ClassRetryable`,
+   delay clamped to the policy ceiling.
+5. Rate-limit signalling without `Retry-After` (HTTP 429 or text such as
+   `rate limit`, `too many requests`, `throttled`, `requests per minute` …)
+   → `ClassRetryable` with a low-pressure 60 s default backoff, also clamped
+   to the policy ceiling.
+6. `StatusCoder` with 408/409/≥500 → `ClassRetryable`; 400/401/403/404/422
    → `ClassFatal`.
-5. Retryable text (`ended without`, `connection reset` …) → `ClassRetryable`.
-6. Anything else → `ClassFatal`.
+7. Retryable text (`ended without`, `connection reset` …) → `ClassRetryable`.
+8. Anything else → `ClassFatal`.
 
-Backoff honors a `Retry-After` header (seconds or HTTP-date), clamps to the
-policy ceiling, then falls back to `min(0.5·2ⁿ, 8) s` with up to 25 % downward
-jitter. Sleep is a first-class seam so tests never wait.
+Backoff honors an explicit `Retry-After` header first, then the rate-limit
+default when rate limiting is detected but no header is supplied, and finally
+falls back to `min(0.5·2ⁿ, 8) s` with up to 25 % downward jitter. Sleep is a
+first-class seam so tests never wait.
+
+### Rate-limit edge cases
+
+- A `Retry-After` value of `0` is treated as absent: Signet falls back to the
+  rate-limit default or exponential backoff rather than retrying immediately.
+- A missing `Retry-After` header on a 429 does **not** mean "retry instantly";
+  the 60 s default gives per-minute inference limits time to clear. If that is
+  longer than a configured ceiling, the ceiling wins.
+- Denylist text such as `insufficient_quota` overrides the 429 or rate-limit
+  text and remains fatal, because retrying a billing or key problem only burns
+  budget.
+- Overflow text is checked before rate-limit text, so a `context length
+  exceeded` response is never mistaken for a rate limit.
 
 ### Policy defaults
 

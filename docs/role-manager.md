@@ -350,7 +350,9 @@ provider detail flattened to a single line and clipped to
 `classifierErrorMaxRunes` (180) with a trailing ellipsis, because a rejection
 body can be kilobytes of JSON wrapping a server-side stack trace — text that
 would otherwise enter both the model's context and the transcript. The
-unabridged error goes to stderr instead.
+unabridged error is surfaced through the agent event stream as an
+`EventWarningKind` so the TUI can display it as a system line; it never writes
+to stderr, which would corrupt a Bubble Tea terminal layout.
 
 ### Empty content
 
@@ -663,11 +665,20 @@ The agent loop is bounded to prevent infinite tool-call loops. The default
 maximum is 10 iterations; each provider turn counts as one iteration. One run
 of that bounded loop is a **pass**.
 
+Explore subagents get their own, deeper budget from
+`resilience.max_explore_iterations` (default 8, where the pre-catalogue
+subagents used a hard 4), so an explore subagent actually runs `rg`/`find`/
+`git`/`jq` before reporting findings.
+
 Outside goal mode — and for every subagent, whatever its mode — exactly one
 pass runs, and exhausting the iteration budget returns
-`max iterations (N) reached`. A top-level goal-mode prompt instead enters the
-goal pass loop below, where exhausting the budget is a question ("is the goal
-met?") rather than an answer.
+`max iterations (N) reached`. **Reset-on-steer** is the one exception: an
+explore subagent that exhausts its budget does not return that error if new
+steering arrived; the steering restarts the budget and the subagent keeps
+investigating. Only when no new steering exists does exhaustion surface. A
+top-level goal-mode prompt instead enters the goal pass loop below, where
+exhausting the budget is a question ("is the goal met?") rather than an
+answer.
 
 ## Goal pass loop
 
@@ -898,10 +909,13 @@ autonomous operation stays an explicit opt-in that a classifier cannot grant.
 After the initial read-only explore wave finishes, ambiguous plan-mode prompts
 enter an interactive clarification round before planning. The loop is gated by
 `resilience.max_clarify_rounds` (default 3; 0 means default; negative disables
-it). The loop only runs when both the engaged mode requests exploration and
-the session was built with `AllowClarify` — only the interactive TUI sets that
-flag; subagents and the non-interactive CLI leave it false so they never block
-on a user reply.
+it). The loop only runs when **all three** hold: the engaged mode requests
+exploration, the session was built with `AllowClarify` (only the interactive
+TUI sets that; subagents and the non-interactive CLI leave it false), **and
+exploration actually produced non-empty findings**. A zero-findings wave no
+longer triggers a questionnaire — the clarifier is a *planner* classifier that
+is asked, after exploration, whether it can proceed or still needs the user;
+an empty questionnaire means proceed to planning with the evidence at hand.
 
 ### Schema
 
@@ -943,10 +957,12 @@ A questionnaire contains 1–6 groups. Each group has one context sentence and
 
 ```mermaid
 flowchart TD
-    Explore[Initial explore wave] --> Digest[Sanitized findings digest]
-    Digest --> Ask[Clarifier questionnaire]
+    Explore[Initial explore wave] --> Found{Findings non-empty?}
+    Found -->|no| Plan[Proceed to planning]
+    Found -->|yes| Digest[Sanitized findings digest]
+    Digest --> Ask[Planner-classifier questionnaire]
     Ask --> Empty{Empty?}
-    Empty -->|yes| Plan[Proceed to planning]
+    Empty -->|yes| Plan
     Empty -->|no| UI[Present questionnaire to user]
     UI --> Answer{User answers?}
     Answer -->|esc / cancel| Plan

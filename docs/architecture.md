@@ -150,6 +150,49 @@ out-of-order completion from the concurrent group lands on its own row
 rather than the newest tool row; legacy events without a call id fall back
 to the last tool row.
 
+### Native tool catalogue
+
+`internal/tools/catalog.go` replaces the growing read-only Bash allowlist with
+a library of first-class native tools. Each is a `tools.Native` whose
+`Definition()` is sent to the model exactly like `Read` or `Bash`, but whose
+execution is a **fixed command shape**, not an arbitrary command string:
+
+- Local utilities — `Cat`, `Head`, `Tail`, `LS`, `Find`, `File`, `Strings`,
+  `Git`, `JQ`, `YQ`, `Sed`, `Awk`, `Cut`, `Sort`, `Uniq`, `WC`, `Tr`,
+  `Paste`, `Join`, `Echo`, `Date`, `Pwd`, `Env`, `Diff`, `Cmp` — are
+  read-only by construction. `Grep` and `Glob` already existed and stay as
+  their own kinds.
+- Cloud/SaaS CLIs — `GH`, `AWS`, `AZ`, `GCloud`, `Kubectl`, `Terraform`,
+  `Pulumi`, `Heroku`, `Fly`, `Vercel`, `Netlify`, `Doctl`, `Glab`, `Stripe`,
+  `OnePassword`, `Bitwarden` — are offered only when capability detection
+  finds the CLI installed **and** its read-only auth probe exits cleanly.
+  Only read-only subcommands are offered: each CLI carries a prefix allowlist
+  and anything outside it is rejected.
+
+Security rules for native tools:
+
+- Every tool is **read-only by construction** (`KindNative`), so it survives
+  the read-only master switch and may run in the concurrent read-only fan-out.
+- Arguments are Go `string`/`[]string` slices passed straight to
+  `exec.Command(name, args...)` — never through a shell, so pipes,
+  redirections, and `$` expansion are impossible.
+- Path arguments go through `tools.SanitizePath` and cannot escape the
+  working directory.
+- Query-language arguments (`jq`/`yq` filters, `sed`/`awk` programs, `tr`
+  sets) are data, not shell text; they are control-character gated and never
+  interpolated into a shell `-c`.
+- Output is capped (64 KiB default) and run through the normal classifier
+  pipeline as untrusted content.
+
+`internal/tools/capabilities.go` performs detection at session construction:
+local utilities by `$PATH`, cloud CLIs by `$PATH` plus a short, read-only auth
+probe (`aws sts get-caller-identity`, `gh auth status`, `gcloud config
+  get-value account`, …). Detection is cheap, non-mutating, bounded (probes run
+concurrently under one timeout), and silent: an unverifiable tool is simply
+not offered. `tools.DefaultWithCaps` builds the registry from the detected
+`tools.Capabilities`; `tools.Default` (no native tools) remains for the
+profiles/permission-editor name lists.
+
 ### Write and Edit tools
 
 `Write` and `Edit` are first-class mutating tools, alongside full-mode `Bash`.
@@ -205,6 +248,46 @@ Mirrors Pi's plan-mode extension:
     back as a user message while staying in plan mode.
 - Plan-mode state (enabled/executing/todos) is persisted as session entries so
   it survives resume.
+
+### Agentic exploration (plan-mode explore subagents)
+
+When a plan-mode (or referenced goal-mode) prompt engages exploration, the
+parent session runs a **grounding probe** first, then fans out **explore
+subagents** that investigate with the native read-only tool catalogue before
+any clarification questionnaire is shown.
+
+The grounding probe (`internal/agent/grounding.go`) attaches always-useful,
+read-only evidence: `git status`/branch/recent commits, a bounded top-level
+directory listing, `AGENTS.md`, and the single-shot background agents that
+are not scheduled/loop/monitor definitions. This evidence is untrusted — it
+re-enters as part of each subagent prompt and is admitted through the Role
+Manager like any user content, never promoted into a system/agent block.
+
+Each explore subagent:
+
+- receives the original prompt, the grounding evidence, and an investigation
+  angle derived from the prompt's `@references` (or a codebase survey for
+  goal mode);
+- has its own read-only `agent.Session` (`PlanMode`, no further fan-out) with
+  a dedicated iteration budget from `resilience.max_explore_iterations`
+  (default 8, deeper than the historical 4), and a system-prompt preamble
+  telling it to discover facts with the native tools rather than ask;
+- runs read-only tools (`rg`/`Grep`, `find`/`Find`, `git`/`Git`, `cat`,
+  `jq`, …) to investigate, returning a findings report;
+- has its findings classified and, if SAFE, sealed as an `<exploration>`
+  block that re-enters the parent as an untrusted user turn.
+
+Subagents run in parallel bounded by `exploreConcurrency` (3) and
+`explore.MaxTasks` (5). **Reset-on-steer**: an explore subagent that exhausts
+its iteration budget does not hard-fail when new steering arrives — the
+steering message is broadcast to the running subagents and each one restarts
+its budget and keeps investigating. Only when no new steering exists does the
+budget exhaustion surface.
+
+Clarification is now **gated on findings**: the clarify loop runs only when
+exploration produced non-empty findings and the planner classifier returns a
+non-empty questionnaire. A zero-findings wave no longer triggers a
+questionnaire.
 
 ### Goal mode
 
