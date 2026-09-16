@@ -43,7 +43,7 @@ func TestCompleteAlias(t *testing.T) {
 func TestCompleteAgentSubcommands(t *testing.T) {
 	r := NewRegistry(t.TempDir())
 	got := r.Complete("/agent ")
-	want := []string{"/agent create", "/agent list", "/agent log", "/agent start", "/agent stop"}
+	want := []string{"/agent create", "/agent list", "/agent log", "/agent pause", "/agent resume", "/agent start", "/agent stop"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Complete(/agent ) = %v, want %v", got, want)
 	}

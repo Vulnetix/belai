@@ -26,7 +26,9 @@ Harness-generated blocks use tags such as:
   (`internal/nonce`). Only *reserved* nonces are valid; the pool supports
   reserve/release/rotate and falls back to local generation.
 - **Known kinds**: `system`, `agent`, `plan`, `goal`, `tools`, `skills`,
-  `hooks`, and `attachment` (for `@file` / `!shell` contents).
+  `hooks`, `attachment` (for `@file` / `!shell` contents), `exploration`
+  (explore-subagent findings), and `directive` (harness continuation
+  instructions injected into a running loop).
 - **Integrity**: `integrity` is the lowercase hex SHA-256 of the enclosed
   content.
 - **Egress verification** (`internal/delimiters`): before any payload leaves
@@ -106,6 +108,41 @@ Reads and writes goals under `.vulnetix/goals/`. The "memorise" action saves a
 goal; memorised goals are surfaced later through slash-command autocomplete
 (replay).
 
+A goal-mode prompt at the top level runs a **pass loop** instead of a single
+bounded tool loop: when a pass exhausts its iteration budget, a goal evaluator
+decides whether the work advanced, and the loop continues while it does. The
+loop is unbounded by design — it is stopped by a stall, not a counter — and
+`esc` (or `SIGINT` outside the TUI) returns the partial result cleanly. The
+normative rules, including the verification gate and every termination
+condition, are in [role-manager.md](role-manager.md), "Goal pass loop".
+
+A prompt the classifier routes to goal mode carries the prompt itself as the
+goal carrier. `CarrierOptions` only knows how to load a *memorised* goal, so
+without this a classifier-routed goal would reach the evaluator with nothing to
+evaluate against.
+
+Subagents never enter the pass loop: `AllowPassLoop` is a separate authority
+from `AllowExplore` and only top-level session construction sets it, so an
+unbounded loop can never spawn recursively.
+
+### Todo list
+
+`internal/todos` owns the single todo list a session tracks, whatever mode
+produced it — goal mode, plan pursual, and agent loops all write into the same
+structure, so the TUI has one thing to render and resume has one thing to
+rehydrate.
+
+- Items are 1-indexed and stable, because `[DONE:n]` markers refer to them.
+  Exactly one not-done item is `active` at a time.
+- `plans.ParseDoneMarkers` is the single definition of the marker syntax.
+  Markers are applied **only** to model-authored assistant text; a `[DONE:1]`
+  in a tool result or a repository file must never mark work complete.
+- An empty list is not complete. "Nothing to do" is not "finished", and
+  treating it as finished would let a goal loop stop before it wrote a plan.
+- Lists persist as append-only `todo_list` session entries, latest wins — the
+  same shape `modes.PlanState` uses. Completing a list does not delete it; a
+  later entry supersedes it and the old one stays readable in the JSONL.
+
 ### Background agents
 
 `internal/bgagent` runs named, reusable agents defined by `internal/agentprofile`
@@ -115,8 +152,15 @@ allow-list, operating mode (`single`, `loop`, `scheduled`, `monitor`), and
 autonomy level (`supervised` or `autonomous`).
 
 The TUI integrates background agents via `/agent create`, `/agent start`,
-`/agent stop`, and `/agent list`. Events stream into the main transcript as
-system lines so the user's session is never blocked.
+`/agent pause`, `/agent resume`, `/agent stop`, `/agent list`, and
+`/agent log`. Events stream into the main transcript as system lines so the
+user's session is never blocked.
+
+`loop` mode treats `max_iterations` as an *inner* budget: when it is exhausted,
+an agent-loop evaluator decides whether to continue, pause, sleep one schedule
+interval, or stop. Supervised profiles are paused rather than continued, and a
+malformed or unreachable evaluator fails closed to pause. See
+[agent-profiles.md](agent-profiles.md).
 
 ## Session store
 
@@ -134,10 +178,14 @@ session name or short id. Entry types:
 | `assistant` | `assistant` | the reply, with `prompt_tokens` / `completion_tokens` / `total_tokens` / `model` / `provider` in `meta` |
 | `session_name` | *(empty)* | the name; append-only, latest wins, empty clears |
 | `summary` | *(empty)* | a compaction summary; `meta.parent_session` links the source session |
+| `todo_list` | *(empty)* | the tracked todo list as JSON; append-only, latest wins, `cleared` marks a superseded list |
 
 `/compact` creates a **new** session whose root entry is the summary and links
 the old id via `meta.parent_session`; the old file is never mutated, truncated,
-or deleted. Naming is append-only: the last `session_name` entry wins.
+or deleted. Naming is append-only: the last `session_name` entry wins. A
+tracked todo list is re-appended under the new session id so the panel and the
+new session file agree. `/clear` drops the list instead: it belongs to the
+session that produced it.
 
 ## Credentials
 
@@ -244,11 +292,53 @@ turn is running, Enter instead queues the text as a `user steering` prompt:
 steered turns pass through the same Role Manager admission as the original
 prompt, and a full queue drops the newest message.
 
+### Todo panel
+
+When a session is tracking a todo list, a flat `todo` panel sits between the
+transcript and the composer showing a three-item window: the last completed
+item, the current one (highlighted), the next one, and `… N more` for the
+remainder. The counts never include the shown items, so `+N more` is always
+literally true, and a finished list still shows the item it finished on rather
+than rendering blank.
+
+The agent owns the list and emits it (`EventTodosKind`, and at pass
+boundaries); the TUI renders and persists it. `setTodos` is the single write
+path, so a list change is never rendered without being durable. Toggle with
+`ui.show_todos` (default on); an empty list renders nothing either way.
+
+Mode is cycled with `shift+tab`. An explicitly chosen mode is carried into the
+agent session as `ForceMode` and is not re-classified — suppressing the TUI's
+own classification is not enough, because the session classifies again
+internally.
+
 Provider-streamed reasoning renders in a dim `reasoning` panel (toggle with
 `ctrl+r`, `ui.show_reasoning`); tool rows toggle with `ctrl+t`
 (`ui.show_tool_calls`). The transcript auto-follows the tail; scrolling up
 (mouse wheel or `pgup`/`shift+up`) detaches and returns to the bottom
 re-attach. Mouse capture is on by default (`ui.mouse`).
+
+### Rendered-line provenance
+
+`Panel.Render` returns the rendered string *and* a `LineMap`: one `SourceLine`
+per emitted row recording the clean text, the screen column it starts at, its
+cell width, and whether the row is pure chrome. `Panel.View` is the string-only
+half.
+
+This exists so hit-testing and copying can recover clean text without
+pattern-matching rendered output — the `│` panel bar and the `│` system-row
+marker are the same glyph, and only the renderer knows which columns are
+decoration. The invariant each entry guarantees is
+`ansi.Cut(ansi.Strip(line), Col, Col+Width) == Text`, and the map is always the
+same length as the frame's line count.
+
+A line may also carry a truncation marker (`… N more lines`) plus the `Hidden`
+text it stands for, so a selection overlapping the marker copies the hidden
+remainder instead of the hint. `Highlight` reverse-videos a cell range without
+changing any line's visible characters or width, and refuses to touch a frame
+whose map length does not match — a desynced map must never corrupt the frame.
+
+Slicing is by terminal cell, never by rune index, so CJK and emoji stay on
+cluster boundaries.
 
 ### Keybindings
 
@@ -263,7 +353,7 @@ re-attach. Mouse capture is on by default (`ui.mouse`).
 | `ctrl+r` / `ctrl+t` | Toggle reasoning-panel / tool-row display for the session |
 | `ctrl+j` / `alt+enter` | Insert a newline in the prompt editor |
 | `shift+enter` | Insert a newline on terminals that support the kitty keyboard protocol |
-| `up` / `down` | Cycle prompt history and prompt library (type to filter) |
+| `up` / `down` | Browse prompt history and prompt library (type to filter; any edit key leaves the browse cycle) |
 | `alt+s` | Save the current prompt to the project prompt library |
 | `tab` | Cycle slash-command autocomplete hints |
 | `right` | Accept the first slash-command autocomplete hint |
@@ -292,6 +382,22 @@ Library entries are ranked before session history when cycling with the Up
 arrow. Typing while cycling filters both sources case-insensitively (name
 and prompt text), with library matches appearing first.
 
+Browsing and editing are distinct states, and every key resolves to exactly
+one of them:
+
+| Key | While browsing |
+| --- | -------------- |
+| `up` / `down` | Move through results. `down` past the newest result restores the text you had before browsing |
+| printable characters, space | Narrow the filter and reload the first match |
+| `enter` | Accept the loaded prompt (submits it) |
+| `esc` | Cancel: restore the text you had before browsing |
+| anything else (`backspace`, `←`/`→`, `home`, `delete`, …) | Leave the browse cycle **keeping the loaded prompt**, and apply the key as an ordinary edit |
+
+The last row is what makes a recalled prompt editable: backspace deletes one
+character of it rather than clearing the composer, and the arrow keys move the
+cursor through it. The trade-off is that backspace no longer walks the filter
+back — narrowing is forward-only.
+
 `alt+s` in the chat composer enters a naming mode: type a name and press
 Enter to save the current editor text to the project library. Esc cancels.
 
@@ -311,7 +417,8 @@ Enter to save the current editor text to the project library. Esc cancels.
 | `/clear` (or `/new`) | Start a new session |
 | `/compact` | Summarise the session into a new one |
 | `/rename` | Rename the current session |
-| `/todos` | Show plan progress |
+| `/todos` | Show progress of the tracked todo list |
+| `/agent` | Manage background agents (`create`, `list`, `start`, `stop`, `pause`, `resume`, `log`) |
 
 ### Startup credential message
 
@@ -338,10 +445,14 @@ global `settings.json`, project `settings.json`, environment, then CLI flags.
 include `provider`, `model`, `effort`, `caveman`, `bash_readonly`,
 `permissions` (structured `allow`/`ask`/`deny`), `session_retention_days`,
 `ui.banner`, `ui.status_bar`, `ui.spinner`, `ui.show_reasoning`,
-`ui.show_tool_calls`, `ui.mouse` (all default on), `show_session_names`
-(default on), `context_windows`, `providers`, and `allow_project_providers`. Permission
+`ui.show_tool_calls`, `ui.show_todos`, `ui.mouse` (all default on),
+`show_session_names` (default on), `context_windows`,
+`resilience` (`max_attempts`, `max_iterations`, `max_passes`), `providers`,
+and `allow_project_providers`. Permission
 rules merge by union — a project file can add rules but never remove a
-global rule. Provider profiles merge key-by-key the same way.
+global rule. Provider profiles merge key-by-key the same way. Resilience
+budgets merge to the *minimum* of global and project, so a project file can
+tighten a budget but never raise one.
 
 Tool availability defaults to allow: a call matching no permission rule
 proceeds (unregistered tool names are still rejected by the agent's registry

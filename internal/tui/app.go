@@ -38,6 +38,7 @@ import (
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/session"
+	"github.com/vulnetix/signet/internal/todos"
 	"github.com/vulnetix/signet/internal/tools"
 	"github.com/vulnetix/signet/internal/transcript"
 	"github.com/vulnetix/signet/internal/tui/components"
@@ -230,6 +231,10 @@ type App struct {
 
 	// background agent manager
 	bgManager *bgagent.Manager
+
+	// todos is the shared goal/plan todo list rendered in the chat chrome and
+	// persisted to the session. The agent emits it; the TUI owns persistence.
+	todos *todos.List
 }
 
 type tickMsg time.Time
@@ -464,6 +469,7 @@ func (a *App) chromeHeight() int {
 		h++
 	}
 	h += a.attachStripHeight()
+	h += a.todoPanelHeight()
 	h += a.editor.Height() + 2 // composer frame (top and bottom edges)
 	h += a.footerHeight()
 	return h
@@ -1270,6 +1276,27 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		a.messages = append(a.messages, components.Message{Role: "assistant"})
 		a.addSystem(fmt.Sprintf("retrying (%d/%d) after %s — %s", m.RetryAttempt, 10, m.RetryDelay.Round(time.Millisecond), m.RetryReason))
 		return a.nextAgent()
+	case agent.EventPassKind:
+		// A new goal-mode pass started. The agent owns the todo list; it is
+		// carried here so the panel renders live without the TUI re-deriving
+		// it from transcript text.
+		if m.Todos != nil {
+			a.setTodos(m.Todos)
+		}
+		return a.nextAgent()
+	case agent.EventTodosKind:
+		if m.Todos != nil {
+			a.setTodos(m.Todos)
+		}
+		return a.nextAgent()
+	case agent.EventGoalEvalKind:
+		if m.Todos != nil {
+			a.setTodos(m.Todos)
+		}
+		if m.GoalSentinel != "" {
+			a.addSystem(fmt.Sprintf("goal evaluator: %s (pass %d)", m.GoalSentinel, m.Pass))
+		}
+		return a.nextAgent()
 	case agent.EventDoneKind:
 		a.cancel = nil
 		a.endPhase()
@@ -1298,8 +1325,16 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 				}
 				a.appendEntry(ps.ToEntry(a.lastEntryID))
 				a.lastPlanText = strings.Join(steps, "\n")
+				l := todos.New(m.Result.SanitizedPrompt, steps)
+				a.setTodos(&l)
 				a.addSystem(fmt.Sprintf("plan: %d steps extracted — /execute, /stay, or /refine", len(steps)))
 			}
+		}
+		// Advance the shared todo list from [DONE:n] markers in the assistant
+		// reply. Only assistant text is passed — tool results never reach this.
+		if a.todos != nil && m.Result.Reply != "" {
+			a.todos.ApplyMarkers(m.Result.Reply)
+			a.appendEntry(a.todos.ToEntry(""))
 		}
 		a.refreshFooter()
 		return nil
@@ -1400,6 +1435,10 @@ func (a *App) chatView() string {
 	}
 	if len(a.attachments) > 0 {
 		sb.WriteString(a.renderAttachStrip())
+		sb.WriteString("\n")
+	}
+	if a.todosVisible() {
+		sb.WriteString(a.renderTodoPanel())
 		sb.WriteString("\n")
 	}
 	sb.WriteString(a.renderComposer())
@@ -1780,6 +1819,9 @@ func (a *App) startNewSession() {
 	a.summary = ""
 	a.usage = nil
 	a.usageStale = false
+	// The todo list belongs to the session that produced it. Carrying it into
+	// a fresh one would render stale work and write it back under the new id.
+	a.todos = nil
 	a.saveSession()
 	a.refreshFooter()
 }
@@ -1925,6 +1967,12 @@ func (a *App) applyCompaction(summary string) tea.Cmd {
 	})
 	if oldName != "" {
 		a.appendEntry(session.Entry{Type: session.EntryTypeSessionName, Role: "", Content: oldName, Meta: map[string]any{"source": "inherited"}})
+	}
+	// Compaction forks the session; the todo list survives it. Re-appending it
+	// under the new id keeps the in-memory panel and the new session file in
+	// agreement, so rehydrating the compacted session restores the same list.
+	if a.todos != nil && len(a.todos.Items) > 0 {
+		a.appendEntry(a.todos.ToEntry(""))
 	}
 
 	a.sessionName = oldName

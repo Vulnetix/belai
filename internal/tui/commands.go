@@ -12,7 +12,6 @@ import (
 	"github.com/vulnetix/signet/internal/commands"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/goals"
-	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/profiles"
 	"github.com/vulnetix/signet/internal/sanitize"
 	"github.com/vulnetix/signet/internal/vulnetixcli"
@@ -115,11 +114,11 @@ func NewRegistry(workdir string) *Registry {
 		return nil
 	})
 	r.Register("todos", "show plan progress", nil, func(a *App, arg string) tea.Cmd {
-		p := modes.PlanState{}.Progress()
-		if p.Total == 0 {
+		if a.todos == nil || len(a.todos.Items) == 0 {
 			a.addSystem("todos: no plan tracked yet")
 			return nil
 		}
+		p := a.todos.Progress()
 		a.addSystem(fmt.Sprintf("todos: %d/%d done", p.Completed(), p.Total))
 		return nil
 	})
