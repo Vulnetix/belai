@@ -892,6 +892,47 @@ Business rules:
 - **An empty catalogue** renders `no models in this profile — type or import a
   model id` instead of a list, and the counter line is omitted with it.
 
+#### Catalogue sources
+
+The `/model` list is built by merging three sources, each one lower priority
+than the last, and the merged list is de-duplicated by model id:
+
+1. **Live fetch** — when the provider exposes a model-list endpoint, Signet
+   queries it on first entry and caches the result per session. The provider
+   tab shows `⊙ loading` while a fetch is in flight. Live fetched models are
+   not persisted; the cache is an in-memory map keyed by provider name.
+2. **Profile models** — custom or saved models declared in the provider profile
+   (`settings.json`) are merged next.
+3. **Static fallback** — a hard-coded default catalogue for built-ins that have
+   no endpoint or when the live fetch fails. Users can still type any model id
+   and commit it.
+
+Live fetch is available for `openai`, `anthropic`, `cloudflare-workers-ai`,
+`openrouter`, `google-gemini`, `ollama`, `github-copilot`, `huggingface`, and
+`cloudflare-ai-gateway`. `r` clears the cache and re-fetches for the selected
+provider; fetch errors are rendered under the list as `✗ fetch: ...` so silent
+failures are visible.
+
+Provider-specific edge cases:
+
+- **`cloudflare-ai-gateway`** has no gateway-side `/models` endpoint, but every
+  gateway can run any Workers AI model. Signet extracts the `account_id` from
+  the configured gateway base URL
+  (`https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}`) and
+  queries the Cloudflare v4 API at
+  `https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/models/search`,
+  using the same `CF_API_KEY` with standard `Authorization: Bearer` auth.
+  Production gateway hosts are mapped to `api.cloudflare.com`; hosts other than
+  `gateway.ai.cloudflare.com` are followed as-is so tests and private gateways
+  can be mocked.
+- **`huggingface`** serves chat completions at
+  `https://router.huggingface.co/hf-inference/v1/chat/completions` (the
+  configured base URL) but the OpenAI-compatible model list lives at the root
+  `https://router.huggingface.co/v1/models`. The fetcher strips `/hf-inference`
+  from the base path when constructing the model-discovery URL. If the base
+  URL has a different host (e.g., a local test server), it falls back to
+  `{base}/models` so the code path stays testable.
+
 ### Slash commands
 
 | Command | Description |

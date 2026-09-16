@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/vulnetix/signet/internal/httpclient"
@@ -45,6 +46,13 @@ func List(ctx context.Context, t Target, client *http.Client) ([]models.Model, e
 	if err != nil && t.API != "" {
 		p, err = provider.NewFromProfile(t.Name, provider.Profile{BaseURL: t.BaseURL, API: t.API, Auth: t.Auth}, t.APIKey)
 	}
+	if t.Name == "cloudflare-ai-gateway" && err == nil {
+		// The gateway itself has no discoverable model list, but every
+		// gateway can run Workers AI models. Query the account's Workers AI
+		// catalog, which requires the standard Cloudflare v4 Bearer auth rather
+		// than the gateway's cf-aig-authorization style.
+		p, err = provider.New("cloudflare-workers-ai", t.BaseURL, t.APIKey)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +78,22 @@ func endpointFor(t Target) (string, error) {
 	base := strings.TrimRight(t.BaseURL, "/")
 	switch t.Name {
 	case "cloudflare-ai-gateway":
-		return "", nil // passthrough: no discoverable model list
+		// The gateway is a passthrough with no model list endpoint. Reuse the
+		// account's Workers AI catalog (Cloudflare v4 API). The gateway base
+		// URL embeds the account id: https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}.
+		u, err := url.Parse(base)
+		if err != nil {
+			return "", fmt.Errorf("cloudflare-ai-gateway base URL: %w", err)
+		}
+		parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+		if len(parts) < 2 || parts[0] != "v1" || parts[1] == "" {
+			return "", fmt.Errorf("cloudflare-ai-gateway base URL %q missing account_id", t.BaseURL)
+		}
+		host := u.Host
+		if host == "gateway.ai.cloudflare.com" {
+			host = "api.cloudflare.com"
+		}
+		return fmt.Sprintf("%s://%s/client/v4/accounts/%s/ai/models/search", u.Scheme, host, parts[1]), nil
 	case "anthropic":
 		return base + "/v1/models", nil
 	case "cloudflare-workers-ai":
@@ -131,7 +154,7 @@ func parseModels(t Target, resp *http.Response) ([]models.Model, error) {
 		}
 		return out, nil
 
-	case "cloudflare-workers-ai":
+	case "cloudflare-workers-ai", "cloudflare-ai-gateway":
 		var r struct {
 			Result []struct {
 				Name string `json:"name"`

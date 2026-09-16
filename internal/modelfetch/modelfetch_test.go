@@ -77,10 +77,35 @@ func TestListCloudflareWorkersAI(t *testing.T) {
 	}
 }
 
-func TestListGatewayStaticOnly(t *testing.T) {
-	models, err := List(context.Background(), Target{Name: "cloudflare-ai-gateway", BaseURL: "https://x", APIKey: "k"}, nil)
-	if err != nil || models != nil {
-		t.Fatalf("gateway should return nil models with no error, got %v, %v", models, err)
+func TestListCloudflareAIGatewayMissingAccount(t *testing.T) {
+	_, err := List(context.Background(), Target{Name: "cloudflare-ai-gateway", BaseURL: "https://gateway.ai.cloudflare.com/v1", APIKey: "k"}, nil)
+	if err == nil {
+		t.Fatal("expected error for gateway URL missing account_id")
+	}
+}
+
+func TestListCloudflareAIGateway(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/client/v4/accounts/test-account-id/ai/models/search" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		if auth := r.Header.Get("Authorization"); auth != "Bearer test-token" {
+			t.Fatalf("Authorization = %q", auth)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"result": []any{
+			map[string]any{"name": "@cf/meta/llama-3.1-8b-instruct"},
+		}})
+	}))
+	defer srv.Close()
+
+	// Non-production hosts are followed so tests can mock the Cloudflare v4 API.
+	baseURL := srv.URL + "/v1/test-account-id/test-gateway-id"
+	modelList, err := List(context.Background(), Target{Name: "cloudflare-ai-gateway", BaseURL: baseURL, APIKey: "test-token"}, srv.Client())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(modelList) != 1 || modelList[0].ID != "@cf/meta/llama-3.1-8b-instruct" {
+		t.Fatalf("models = %+v", modelList)
 	}
 }
 
