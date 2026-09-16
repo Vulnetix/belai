@@ -117,18 +117,28 @@ func (a *App) credentialFieldCount() int {
 	return len(credentials.Spec(a.credentialState.providers[a.credentialState.selectedIdx]))
 }
 
-// initCredentialState populates the credential view state.
+// initCredentialState populates the credential view state. The keychain
+// default is applied later, once async credential resolution lands: probing the
+// host keychain takes a DBus round trip with a 5s timeout and must not delay
+// the first frame.
 func (a *App) initCredentialState() {
 	a.credentialState = credentialViewState{
 		providers: a.providerNames(),
 		backend:   credentials.SourceUserFile,
 	}
-	if a.resolver != nil {
-		for _, be := range a.resolver.Backends() {
-			if be.Name == "keychain" && be.Available {
-				a.credentialState.backend = credentials.SourceKeychain
-				break
-			}
+}
+
+// setCredentialBackendDefault prefers the keychain as the default backend when
+// it is available. It runs after the async credential resolution already
+// probed the keychain (so Backends() is a cached read here, not a DBus call).
+func (a *App) setCredentialBackendDefault() {
+	if a.resolver == nil || a.credentialState.backend != credentials.SourceUserFile {
+		return
+	}
+	for _, be := range a.resolver.Backends() {
+		if be.Name == "keychain" && be.Available {
+			a.credentialState.backend = credentials.SourceKeychain
+			return
 		}
 	}
 }

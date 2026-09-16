@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -1669,5 +1670,45 @@ func TestHandleAgentReadySurfacesBuildError(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected build error surfaced as system message, got %v", a.messages)
+	}
+}
+
+func TestResolveCredentialsCmdUsesResolver(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("SIGNET_HOME", home)
+	workdir := t.TempDir()
+
+	userPath, err := config.UserCredentialsPath()
+	if err != nil {
+		t.Fatalf("UserCredentialsPath: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(userPath), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(userPath, []byte(`{"version":1,"providers":{"openai":{"api_key":{"source":"inline","value":"sk-resolved"}}}}`), 0o600); err != nil {
+		t.Fatalf("write user credentials: %v", err)
+	}
+
+	resolver, err := credentials.NewResolver(workdir)
+	if err != nil {
+		t.Fatalf("NewResolver: %v", err)
+	}
+	a := New(Options{Workdir: workdir, Resolver: resolver})
+	a.requestedProvider = "openai"
+
+	msg := a.resolveCredentialsCmd()()
+	rm, ok := msg.(credentialsResolvedMsg)
+	if !ok {
+		t.Fatalf("resolveCredentialsCmd = %T, want credentialsResolvedMsg", msg)
+	}
+	if !rm.status.Configured || rm.cfg.APIKey != "sk-resolved" {
+		t.Fatalf("resolved cfg = %+v status=%+v, want configured with sk-resolved", rm.cfg, rm.status)
+	}
+
+	if cmd := a.handleCredentialsResolved(rm); cmd != nil {
+		t.Fatalf("handleCredentialsResolved returned cmd %v for no pending prompt", cmd)
+	}
+	if !a.status.Configured || a.cfg.APIKey != "sk-resolved" {
+		t.Fatalf("app not configured after resolution: %+v", a.status)
 	}
 }

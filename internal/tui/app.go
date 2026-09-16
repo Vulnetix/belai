@@ -75,6 +75,14 @@ type agentReadyMsg struct {
 	err     error
 }
 
+// credentialsResolvedMsg carries the result of async credential resolution.
+// Resolving a provider may probe the host keychain (DBus with a 5s timeout),
+// so the first frame paints from the env-only resolution and this lands later.
+type credentialsResolvedMsg struct {
+	cfg    run.Config
+	status run.Status
+}
+
 // copiedMsg reports the result of a clipboard copy.
 type copiedMsg struct{ text string }
 
@@ -182,6 +190,10 @@ type App struct {
 	agent    *agent.Session
 	events   <-chan agent.Event
 	pending  string // pending prompt to send once configured
+	// requestedProvider is the provider name from settings/state/env/flags
+	// before any sole-configured-provider fallback. Empty means none was
+	// configured; the async credential resolution may then pick a sole provider.
+	requestedProvider string
 	// pendingEvent holds one lookahead agent event read while coalescing a run
 	// of text/reasoning deltas but belonging to a different kind, so it is
 	// replayed by the next nextAgent call instead of being dropped.
@@ -324,21 +336,13 @@ func New(opts Options) *App {
 		mode = "agent"
 	}
 
-	// Provider fallback: a sole configured provider beats the openai default.
+	// The provider name is read from the merged settings; a sole-configured
+	// provider fallback is deferred to the async credential resolution because
+	// it walks every provider and (before caching) probed the keychain per
+	// field. The first frame therefore paints from an env-only resolution.
 	name := eff.Settings.Provider
-	if name == "" && opts.Resolver != nil {
-		configured := opts.Resolver.ConfiguredProviders()
-		if len(configured) == 1 {
-			name = configured[0]
-		}
-	}
-
-	src := run.CredentialSource(run.EnvSource(os.Getenv))
-	if opts.Resolver != nil {
-		src = opts.Resolver
-	}
-	cfg, status := run.Prepare(eff.Settings.Model, name, src)
-	cfg.Effort = eff.Settings.Effort
+	initial, initialStatus := run.Prepare(eff.Settings.Model, name, run.EnvSource(os.Getenv))
+	initial.Effort = eff.Settings.Effort
 
 	pol := opts.Posture
 	if len(pol) == 0 {
@@ -353,48 +357,53 @@ func New(opts Options) *App {
 	store, _ := session.NewStore()
 
 	a := &App{
-		registry:    NewRegistry(workdir),
-		editor:      components.NewEditor(),
-		footer:      components.Footer{Session: "new", Model: cfg.Model, Cost: "$0.00"},
-		mode:        mode,
-		ctx:         context.Background(),
-		cfg:         cfg,
-		status:      status,
-		client:      client,
-		resolver:    opts.Resolver,
-		posture:     pol,
-		planMode:    mode == "plan",
-		pending:     opts.Prompt,
-		workdir:     workdir,
-		settings:    eff.Settings,
-		eff:         eff,
-		flags:       flags,
-		state:       st,
-		vp:          viewport.New(80, 24),
-		store:       store,
-		sessionID:   session.MustID(),
-		attachments: map[int]*attachment{},
-		attachSpin:  spinner.New(),
-		workSpin:    spinner.New(spinner.WithSpinner(spinner.MiniDot)),
-		follow:      true,
-		bannerW:     -1,
-		footerW:     -1,
-		trace:       trace.Env(),
+		registry:          NewRegistry(workdir),
+		editor:            components.NewEditor(),
+		footer:            components.Footer{Session: "new", Model: initial.Model, Cost: "$0.00"},
+		mode:              mode,
+		ctx:               context.Background(),
+		cfg:               initial,
+		status:            initialStatus,
+		client:            client,
+		resolver:          opts.Resolver,
+		posture:           pol,
+		planMode:          mode == "plan",
+		pending:           opts.Prompt,
+		requestedProvider: name,
+		workdir:           workdir,
+		settings:          eff.Settings,
+		eff:               eff,
+		flags:             flags,
+		state:             st,
+		vp:                viewport.New(80, 24),
+		store:             store,
+		sessionID:         session.MustID(),
+		attachments:       map[int]*attachment{},
+		attachSpin:        spinner.New(),
+		workSpin:          spinner.New(spinner.WithSpinner(spinner.MiniDot)),
+		follow:            true,
+		bannerW:           -1,
+		footerW:           -1,
+		trace:             trace.Env(),
 	}
-	if a.status.Configured {
-		a.SetClassifier(run.NewClassifier(a.cfg, a.client))
-		a.bgManager = bgagent.NewManager(workdir, a.cfg, a.client, a.settings, a.posture)
+	if initialStatus.Configured {
+		a.SetClassifier(run.NewClassifier(initial, a.client))
+		a.bgManager = bgagent.NewManager(workdir, initial, a.client, a.settings, a.posture)
 	}
 	a.applyGitInfo(gitinfo.Detect(a.workdir))
 	_ = a.editor.Focus()
 
 	if startErr != "" {
 		a.addSystem("settings error: " + startErr)
-	} else if !status.Configured {
-		a.showCredentialMessage(cfg.Provider, opts.Resolver)
+	} else if !initialStatus.Configured && opts.Resolver == nil {
+		// No resolver means no async credential resolution will land, so the
+		// hint is emitted here. With a resolver it is deferred to
+		// handleCredentialsResolved so the keychain probe stays off the first
+		// frame.
+		a.showCredentialMessage(initial.Provider, nil)
 	}
 
-	if opts.Prompt != "" && status.Configured {
+	if opts.Prompt != "" {
 		a.messages = append(a.messages, components.Message{Role: "user", Content: opts.Prompt})
 	}
 
@@ -493,6 +502,11 @@ func (a *App) SetClassifier(c rolemanager.Classifier) {
 // Init implements tea.Model.
 func (a *App) Init() tea.Cmd {
 	cmds := []tea.Cmd{tickCmd()}
+	// Credential resolution can probe the host keychain; run it off the first
+	// frame so the TUI paints from the env-only resolution immediately.
+	if a.resolver != nil {
+		cmds = append(cmds, a.resolveCredentialsCmd())
+	}
 	if a.pending != "" && a.status.Configured {
 		cmds = append(cmds, a.sendPending())
 	}
@@ -998,6 +1012,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case agentReadyMsg:
 		return a, a.handleAgentReady(m)
+
+	case credentialsResolvedMsg:
+		return a, a.handleCredentialsResolved(m)
 
 	case copiedMsg:
 		a.addSystem(m.text)
@@ -1998,6 +2015,57 @@ func (a *App) applyModeDecision(d rolemanager.ModeDecision, err error) {
 	if d.Warning != "" {
 		a.addSystem(d.Warning)
 	}
+}
+
+// resolveCredentialsCmd re-prepares provider configuration with the resolver
+// (which may probe the host keychain) on a background command. It is the async
+// half of the first-frame paint: New resolved from environment only, and this
+// lands the richer resolver answer once it is ready.
+func (a *App) resolveCredentialsCmd() tea.Cmd {
+	resolver := a.resolver
+	model := a.settings.Model
+	effort := a.settings.Effort
+	name := a.requestedProvider
+	return func() tea.Msg {
+		src := run.CredentialSource(run.EnvSource(os.Getenv))
+		if resolver != nil {
+			src = resolver
+			// Sole-provider fallback: when no provider was configured, a single
+			// configured provider beats the openai default.
+			if name == "" {
+				if configured := resolver.ConfiguredProviders(); len(configured) == 1 {
+					name = configured[0]
+				}
+			}
+		}
+		cfg, status := run.Prepare(model, name, src)
+		cfg.Effort = effort
+		return credentialsResolvedMsg{cfg: cfg, status: status}
+	}
+}
+
+// handleCredentialsResolved adopts the resolver-based configuration. A pending
+// seed prompt that only the resolver could configure is sent now; a still
+// unconfigured provider surfaces the credential hint.
+func (a *App) handleCredentialsResolved(m credentialsResolvedMsg) tea.Cmd {
+	a.cfg = m.cfg
+	a.status = m.status
+	a.classifier = nil
+	a.invalidateAgentSession()
+	if m.status.Configured {
+		a.SetClassifier(run.NewClassifier(m.cfg, a.client))
+		if a.bgManager == nil {
+			a.bgManager = bgagent.NewManager(a.workdir, m.cfg, a.client, a.settings, a.posture)
+		}
+	} else {
+		a.showCredentialMessage(m.cfg.Provider, a.resolver)
+	}
+	a.setCredentialBackendDefault()
+	a.refreshFooter()
+	if a.pending != "" && m.status.Configured {
+		return a.sendPending()
+	}
+	return nil
 }
 
 // refreshProvider re-prepares from the resolver, rebuilds the classifier only

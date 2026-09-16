@@ -18,6 +18,23 @@ type Resolver struct {
 	projFile *fileStore
 	netrc    *netrcStore
 	keychain Keychain
+
+	// keychainAvail memoises the keychain availability probe. Available()
+	// performs a real DBus/Secret-Service round trip with a 5s timeout, and
+	// Resolve/Lookup/Backends all used to re-probe it per field per provider.
+	// The answer is constant for a Resolver's lifetime, so it is cached.
+	keychainAvail    bool
+	keychainAvailSet bool
+}
+
+// keychainAvailable reports whether the host keychain is reachable, probing
+// once and caching the result.
+func (r *Resolver) keychainAvailable() bool {
+	if !r.keychainAvailSet {
+		r.keychainAvailSet = true
+		r.keychainAvail = r.keychain.Available()
+	}
+	return r.keychainAvail
 }
 
 // BackendInfo describes one credential backend.
@@ -167,7 +184,7 @@ func (r *Resolver) Resolve(provider string) Set {
 			r.netrc.notes = nil
 		}
 		// 5. Keychain
-		if r.keychain.Available() {
+		if r.keychainAvailable() {
 			account := provider + ":" + f.Name
 			val, err := r.keychain.Get(account)
 			if err == nil {
@@ -214,7 +231,7 @@ func (r *Resolver) Lookup(provider, field string) (value, origin string, ok bool
 		}
 	}
 	// Keychain.
-	if r.keychain.Available() {
+	if r.keychainAvailable() {
 		account := provider + ":" + field
 		val, err := r.keychain.Get(account)
 		if err == nil {
@@ -228,7 +245,7 @@ func (r *Resolver) Lookup(provider, field string) (value, origin string, ok bool
 func (r *Resolver) Store(provider, field, secret string, backend Source) error {
 	switch backend {
 	case SourceKeychain:
-		if !r.keychain.Available() {
+		if !r.keychainAvailable() {
 			return fmt.Errorf("keychain is not available")
 		}
 		return r.keychain.Set(provider+":"+field, secret)
@@ -262,7 +279,7 @@ func (r *Resolver) StoreEnvRef(provider, field, envName string, backend Source) 
 func (r *Resolver) Clear(provider, field string, backend Source) error {
 	switch backend {
 	case SourceKeychain:
-		if !r.keychain.Available() {
+		if !r.keychainAvailable() {
 			return fmt.Errorf("keychain is not available")
 		}
 		return r.keychain.Delete(provider + ":" + field)
@@ -288,7 +305,7 @@ func (r *Resolver) Backends() []BackendInfo {
 
 	out = append(out, BackendInfo{Name: "netrc", Writable: false, Available: r.netrc.exists()})
 
-	kcAvail := r.keychain.Available()
+	kcAvail := r.keychainAvailable()
 	reason := ""
 	if !kcAvail {
 		if kb, ok := r.keychain.(*keyringBackend); ok {

@@ -184,3 +184,34 @@ func TestRedactScrubsProviderErrorBody(t *testing.T) {
 		t.Fatalf("redaction failed: %q", got)
 	}
 }
+
+// countingKeychain records how many times Available is probed.
+type countingKeychain struct {
+	fakeKeychain
+	calls int
+}
+
+func (c *countingKeychain) Available() bool {
+	c.calls++
+	return true
+}
+
+func TestKeychainAvailabilityProbedOnce(t *testing.T) {
+	kc := &countingKeychain{}
+	r := &Resolver{
+		env:      func(string) string { return "" },
+		workdir:  t.TempDir(),
+		userFile: newFileStore(filepath.Join(t.TempDir(), "user.json"), false),
+		projFile: newFileStore(filepath.Join(t.TempDir(), "proj.json"), true),
+		netrc:    &netrcStore{path: filepath.Join(t.TempDir(), "no-netrc")},
+		keychain: kc,
+	}
+	// Resolve, Lookup and Backends all touch the keychain path.
+	_ = r.Resolve("openai")
+	_, _, _ = r.Lookup("anthropic", "api_key")
+	_ = r.Backends()
+
+	if kc.calls != 1 {
+		t.Fatalf("keychain.Available called %d times, want 1", kc.calls)
+	}
+}
