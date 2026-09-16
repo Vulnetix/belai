@@ -1103,6 +1103,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case attachValidatedMsg:
 		return a, a.handleAttachValidated(m)
 
+	case shellProgressMsg:
+		return a, a.handleShellProgress(m)
+
 	case shellDoneMsg:
 		return a, a.handleShellDone(m)
 
