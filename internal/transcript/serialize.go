@@ -68,3 +68,9 @@ func truncateRunes(s string, max int) string {
 	cut := string(runes[:max])
 	return cut + fmt.Sprintf("… (truncated, %d chars total)", len(runes))
 }
+
+// TruncateRunes truncates s at a rune boundary, appending an explicit marker
+// naming the total rune count so elision is visible.
+func TruncateRunes(s string, max int) string {
+	return truncateRunes(s, max)
+}
