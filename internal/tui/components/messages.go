@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/vulnetix/signet/internal/filediff"
 	"github.com/vulnetix/signet/internal/transcript"
 )
 
@@ -63,6 +64,13 @@ type Message struct {
 	// Bubble Tea goroutine.
 	buf *strings.Builder
 
+	// diff is what a mutating tool changed on disk, observed around the tool
+	// rather than returned by it. Render-only: it never reaches buildTurns and
+	// so never reaches a model. diffSeq keys the render cache, since the diff
+	// arrives after the row already exists.
+	diff    *filediff.Change
+	diffSeq int
+
 	// progress is a bounded tail of a still-running tool's output, and
 	// progressN counts every line ever seen so the row can say how much
 	// scrolled past. Only the tail is kept: a running command's earlier output
@@ -102,6 +110,9 @@ type renderKey struct {
 	// started marks a running tool row: its live elapsed label changes every
 	// frame, so it is never cached.
 	started bool
+	// diffSeq changes when a diff is attached, which happens after the row has
+	// already been rendered once.
+	diffSeq int
 }
 
 // renderCache is the memoised render of one message.
@@ -132,6 +143,7 @@ func renderKeyFor(m *Message, width int, expandAll bool) renderKey {
 		usageTotal: usage,
 		toolCallsN: len(m.ToolCalls),
 		started:    running,
+		diffSeq:    m.diffSeq,
 	}
 }
 
@@ -215,6 +227,21 @@ func (m Message) ProgressTail(n int) (lines []string, earlier int) {
 
 // HasProgress reports whether a running tool row has live output to show.
 func (m Message) HasProgress() bool { return len(m.progress) > 0 }
+
+// SetDiff attaches what a tool changed on disk.
+func (m *Message) SetDiff(c *filediff.Change) {
+	m.diff = c
+	m.diffSeq++
+	m.rc = renderCache{}
+}
+
+// Diff returns the attached change, or nil.
+func (m Message) Diff() *filediff.Change { return m.diff }
+
+// hasDiff reports whether the row has a change worth drawing.
+func (m Message) hasDiff() bool {
+	return m.diff != nil && (len(m.diff.Files) > 0 || m.diff.Unavailable != "")
+}
 
 // Materialise flushes the streaming buffer into Content and drops it, so the
 // message is a plain value again (used when a turn ends).
@@ -517,7 +544,17 @@ func toolRow(msg Message, width int, expandAll bool) (string, LineMap) {
 
 	preview, trunc := previewOf(content, msg.ToolName, expand)
 	rendered, contentLm := renderToolContent(preview, width, isErr, trunc)
-	return statusLine + "\n" + rendered, append(lm, contentLm...)
+	out, lm := statusLine+"\n"+rendered, append(lm, contentLm...)
+
+	// What the command changed goes beneath its output, where it reads as the
+	// consequence of the command rather than a separate event.
+	if msg.hasDiff() {
+		if diffText, diffLm := diffToolRow(msg, width, expand); diffText != "" {
+			out += "\n" + diffText
+			lm = append(lm, diffLm...)
+		}
+	}
+	return out, lm
 }
 
 // progressPreview renders the tail of a running tool's output. Only a bounded
