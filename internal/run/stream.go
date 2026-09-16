@@ -96,10 +96,31 @@ func SendTurnsStreamed(ctx context.Context, cfg Config, system string, turns []T
 // attachments into the same turn after the sanitise pass. Tool-call metadata
 // is preserved so the tool round-trip survives. Sanitise/Egress are idempotent
 // on already-processed content.
+//
+// Attachment nonces are reserved per call and deliberately not released: a
+// previously sealed block must still verify if Egress runs over the same
+// content again, which is what the idempotency guarantee above rests on. The
+// cost is that pool.active grows by one per attachment per provider call for
+// the life of the session. Attachments are per-prompt and few, so the bound is
+// small — but it is a real bound, not zero.
 func egressTurns(turns []Turn, pool *nonce.Pool) []Turn {
 	out := make([]Turn, len(turns))
 	for i, t := range turns {
 		content := sanitize.Sanitize(t.Content)
+		// The directive is sealed first so it reads as the framing for whatever
+		// follows in the same turn.
+		if t.Directive != "" {
+			if nonceVal, err := pool.Reserve(); err == nil {
+				sealed := delimiters.Wrap(delimiters.KindDirective, nonceVal, sanitize.Sanitize(t.Directive))
+				if content == "" {
+					content = sealed
+				} else {
+					content = sealed + "\n" + content
+				}
+			}
+			// Fail closed: a directive we cannot seal is dropped rather than
+			// sent as bare prose the model could mistake for user instruction.
+		}
 		for _, att := range t.Attachments {
 			nonceVal, err := pool.Reserve()
 			if err != nil {

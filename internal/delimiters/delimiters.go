@@ -24,6 +24,15 @@ const KindAttachment = "attachment"
 // forged one is stripped whole.
 const KindExploration = "exploration"
 
+// KindDirective is the delimiter kind for harness-authored continuation
+// instructions injected into a running loop (for example "the goal is not yet
+// met, keep going"). A directive re-enters the conversation as a user turn, so
+// the model must be able to tell it apart from something it wrote or read.
+// Sealing is what provides that: a forged directive carries no reserved nonce
+// and is stripped at egress, and a genuine one that round-trips back through
+// any untrusted path is stripped by the sanitizer.
+const KindDirective = "directive"
+
 // KnownKinds is the set of harness block kinds the engine manages. Tags with
 // any other kind (e.g. arbitrary HTML in user content) are left untouched.
 var KnownKinds = map[string]bool{
@@ -36,6 +45,7 @@ var KnownKinds = map[string]bool{
 	"hooks":         true,
 	KindAttachment:  true,
 	KindExploration: true,
+	KindDirective:   true,
 }
 
 // NonceChecker reports whether a nonce is currently valid (present in the
@@ -147,10 +157,12 @@ func stripStrayCloses(s string) string {
 	})
 }
 
-// valid applies the three fail-closed checks to one block. Attachment
-// blocks must carry an integrity attribute because they wrap untrusted
-// content; other kinds retain their historical "nonce only is enough"
-// behaviour for backward compatibility.
+// valid applies the three fail-closed checks to one block. Attachment and
+// directive blocks must carry an integrity attribute — attachments because
+// they wrap untrusted content, directives because they carry harness authority
+// and a nonce alone would let a replayed block have its body swapped. Other
+// kinds retain their historical "nonce only is enough" behaviour for backward
+// compatibility.
 func valid(attrs, content string, checker NonceChecker, kind string) bool {
 	parsed := parseAttrs(attrs)
 	nonce, ok := parsed["nonce"]
@@ -161,7 +173,7 @@ func valid(attrs, content string, checker NonceChecker, kind string) bool {
 		return false
 	}
 	integ, present := parsed["integrity"]
-	if kind == KindAttachment {
+	if kind == KindAttachment || kind == KindDirective {
 		if !present || integ == "" {
 			return false
 		}
