@@ -921,7 +921,7 @@ func TestSendTurnsRetriesRetryableStatus(t *testing.T) {
 
 	policy := resilience.Policy{MaxAttempts: 3, Base: time.Millisecond, Cap: time.Millisecond, Jitter: 0}
 	cfg := Config{Provider: "openai", BaseURL: srv.URL, APIKey: "sk", Model: "gpt-5"}
-	out, err := sendTurnsWithTools(context.Background(), cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, srv.Client(), nil, nil)
+	out, err := sendTurnsWithTools(context.Background(), cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, srv.Client(), nil, nil, nil)
 	_ = policy
 	if err != nil {
 		t.Fatalf("sendTurnsWithTools: %v", err)
@@ -944,7 +944,7 @@ func TestSendTurnsDoesNotRetryFatalStatus(t *testing.T) {
 	defer srv.Close()
 
 	cfg := Config{Provider: "openai", BaseURL: srv.URL, APIKey: "sk", Model: "gpt-5"}
-	_, err := sendTurnsWithTools(context.Background(), cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, srv.Client(), nil, nil)
+	_, err := sendTurnsWithTools(context.Background(), cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, srv.Client(), nil, nil, nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}

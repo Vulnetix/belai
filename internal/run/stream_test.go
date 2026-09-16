@@ -673,3 +673,30 @@ func TestIdleWatchdogTearsDownAfterGap(t *testing.T) {
 		t.Fatal("watchdog should have fired")
 	}
 }
+
+func TestEgressTurnsMemoisedAcrossCalls(t *testing.T) {
+	pool := nonce.New()
+	if err := pool.Seed(16); err != nil {
+		t.Fatalf("Seed: %v", err)
+	}
+	turns := []Turn{
+		{Role: "user", Content: "hello", Attachments: []Attachment{{Kind: "file", Label: "@f", Body: "file body"}}},
+	}
+
+	first := egressTurns(turns, pool)
+	if first[0].Content == turns[0].Content {
+		t.Fatalf("first egress did not seal/egress content: %q", first[0].Content)
+	}
+	if turns[0].egrossed == "" {
+		t.Fatal("memo not written back to the input turn")
+	}
+	activeAfterFirst := pool.Active()
+
+	second := egressTurns(turns, pool)
+	if second[0].Content != first[0].Content {
+		t.Fatalf("memoised egress differs:\n%q\n---\n%q", first[0].Content, second[0].Content)
+	}
+	if pool.Active() != activeAfterFirst {
+		t.Fatalf("memoised egress reserved new nonces: active %d -> %d", activeAfterFirst, pool.Active())
+	}
+}

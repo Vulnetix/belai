@@ -198,10 +198,18 @@ func (s *Session) streamTurn(ctx context.Context, system string, turns []run.Tur
 		ch  <-chan run.Chunk
 		err error
 	)
+	onRetry := func(a resilience.Attempt) {
+		emit(Event{
+			Kind:         EventRetryKind,
+			RetryAttempt: a.Attempt,
+			RetryDelay:   a.Delay,
+			RetryReason:  a.Reason,
+		})
+	}
 	if streaming {
-		ch, err = run.StreamTurnsWithTools(turnCtx, s.cfg, system, turns, s.client, s.pool, s.openAITools, s.anthropicTools)
+		ch, err = run.StreamTurnsWithTools(turnCtx, s.cfg, system, turns, s.client, s.pool, s.openAITools, s.anthropicTools, onRetry)
 	} else {
-		ch = run.SendTurnsStreamed(turnCtx, s.cfg, system, turns, s.client, s.pool, s.openAITools, s.anthropicTools)
+		ch = run.SendTurnsStreamed(turnCtx, s.cfg, system, turns, s.client, s.pool, s.openAITools, s.anthropicTools, onRetry)
 	}
 	if err != nil {
 		return run.Assistant{}, err

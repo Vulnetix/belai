@@ -55,26 +55,26 @@ func StreamWithPool(ctx context.Context, cfg Config, turns []Turn, client *http.
 		return nil, err
 	}
 
-	return streamTurns(ctx, cfg, verifiedSystem, turns, client, pool, nil, nil)
+	return streamTurns(ctx, cfg, verifiedSystem, turns, client, pool, nil, nil, nil)
 }
 
 // StreamTurnsWithTools streams a conversation with tool definitions, taking an
 // already-sealed system prompt. Sealing happens once, before the first
 // connect; re-sealing each iteration would mint fresh nonces and invalidate
 // the sealed system block mid-conversation.
-func StreamTurnsWithTools(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, pool *nonce.Pool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (<-chan Chunk, error) {
+func StreamTurnsWithTools(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, pool *nonce.Pool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef, onRetry func(resilience.Attempt)) (<-chan Chunk, error) {
 	if client == nil {
 		client = httpclient.Default()
 	}
 	if pool == nil {
 		pool = nonce.New()
 	}
-	return streamTurns(ctx, cfg, system, turns, client, pool, openAITools, anthropicTools)
+	return streamTurns(ctx, cfg, system, turns, client, pool, openAITools, anthropicTools, onRetry)
 }
 
 // SendTurnsStreamed adapts the blocking sender to the same Chunk channel so a
 // caller can consume both transports through one interface.
-func SendTurnsStreamed(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, pool *nonce.Pool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) <-chan Chunk {
+func SendTurnsStreamed(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, pool *nonce.Pool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef, onRetry func(resilience.Attempt)) <-chan Chunk {
 	ch := make(chan Chunk, 256)
 	go func() {
 		defer close(ch)
@@ -82,7 +82,7 @@ func SendTurnsStreamed(ctx context.Context, cfg Config, system string, turns []T
 			pool = nonce.New()
 		}
 		turns = egressTurns(turns, pool)
-		a, err := sendTurnsWithTools(ctx, cfg, system, turns, client, openAITools, anthropicTools)
+		a, err := sendTurnsWithTools(ctx, cfg, system, turns, client, openAITools, anthropicTools, onRetry)
 		if err != nil {
 			ch <- Chunk{Err: err, Done: true}
 			return
@@ -108,7 +108,18 @@ func SendTurnsStreamed(ctx context.Context, cfg Config, system string, turns []T
 // small — but it is a real bound, not zero.
 func egressTurns(turns []Turn, pool *nonce.Pool) []Turn {
 	out := make([]Turn, len(turns))
-	for i, t := range turns {
+	for i := range turns {
+		// Memoised: the turn was already sanitised, sealed and verified. The
+		// input slice shares its backing array with the caller's conversation,
+		// so the memo is written back for the next request.
+		if turns[i].egrossed != "" {
+			out[i] = turns[i]
+			// Content on the input slice is still raw; the memo holds the
+			// sanitised+sealed form that must actually be sent.
+			out[i].Content = turns[i].egrossed
+			continue
+		}
+		t := &turns[i]
 		content := sanitize.Sanitize(t.Content)
 		// The directive is sealed first so it reads as the framing for whatever
 		// follows in the same turn.
@@ -133,13 +144,17 @@ func egressTurns(turns []Turn, pool *nonce.Pool) []Turn {
 			body := sanitize.Sanitize(att.Kind + ":" + att.Label + "\n" + att.Body)
 			content += "\n" + delimiters.Wrap(delimiters.KindAttachment, nonceVal, body)
 		}
+		egressed := delimiters.Egress(content, pool)
 		out[i] = Turn{
 			Role:       t.Role,
-			Content:    delimiters.Egress(content, pool),
+			Content:    egressed,
 			ToolCalls:  t.ToolCalls,
 			ToolCallID: t.ToolCallID,
 			ToolName:   t.ToolName,
+			egrossed:   egressed,
 		}
+		// Write the memo back so the next request reuses it.
+		t.egrossed = egressed
 	}
 	return out
 }
@@ -148,7 +163,7 @@ func egressTurns(turns []Turn, pool *nonce.Pool) []Turn {
 // the retryable, pre-first-byte half of the streaming path: a failed
 // attempt drains and closes the response body before returning so the
 // backoff sleep does not hold a live connection.
-func openStream(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (*http.Response, dialect, error) {
+func openStream(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef, onRetry func(resilience.Attempt)) (*http.Response, dialect, error) {
 	factory, d, err := newRequestFactory(cfg, system, turns, true, openAITools, anthropicTools)
 	if err != nil {
 		return nil, d, err
@@ -175,7 +190,7 @@ func openStream(ctx context.Context, cfg Config, system string, turns []Turn, cl
 		return resp, nil
 	}
 
-	resp, err := resilience.Do(ctx, defaultRetryPolicy, resilience.DefaultClassifier{}, do, nil)
+	resp, err := resilience.Do(ctx, defaultRetryPolicy, resilience.DefaultClassifier{}, do, onRetry)
 	return resp, d, err
 }
 
@@ -327,9 +342,9 @@ func (w *idleWatchdog) fired() bool { return w.firedFlag.Load() }
 // streamTurns sends one streaming request with an already-sealed system prompt
 // and drains it into Chunks. The retryable openStream call happens in the
 // caller's goroutine so an error return means the final attempt failed.
-func streamTurns(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, pool *nonce.Pool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (<-chan Chunk, error) {
+func streamTurns(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, pool *nonce.Pool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef, onRetry func(resilience.Attempt)) (<-chan Chunk, error) {
 	sanitized := egressTurns(turns, pool)
-	resp, d, err := openStream(ctx, cfg, system, sanitized, client, openAITools, anthropicTools)
+	resp, d, err := openStream(ctx, cfg, system, sanitized, client, openAITools, anthropicTools, onRetry)
 	if err != nil {
 		return nil, err
 	}

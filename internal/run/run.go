@@ -257,6 +257,12 @@ type Turn struct {
 	// known harness kind — before sealing, so a directive written into Content
 	// would be silently deleted on its way to the provider.
 	Directive string
+	// egrossed memoises the sanitised, sealed and egress-verified content for
+	// this turn. Turns are immutable once appended to a conversation and the
+	// nonce pool never rotates mid-session, so the memo stays valid. Empty
+	// means not yet computed. It is unexported so it never reaches the wire
+	// shape.
+	egrossed string
 }
 
 // ErrNotConfigured is returned when provider credentials are missing.
@@ -802,7 +808,7 @@ func SendTurnsWithTools(ctx context.Context, cfg Config, system string, turns []
 		pool = nonce.New()
 	}
 	turns = egressTurns(turns, pool)
-	return sendTurnsWithTools(ctx, cfg, system, turns, client, openAITools, anthropicTools)
+	return sendTurnsWithTools(ctx, cfg, system, turns, client, openAITools, anthropicTools, nil)
 }
 
 // httpResult is the minimal per-attempt output for the retry loop.
@@ -824,7 +830,7 @@ var defaultRetryPolicy = resilience.Policy{
 // must already have sanitised and egress-verified turns. L1 retry wraps the
 // request factory plus roundTrip so pre-first-byte failures (status and
 // transport) are retried without consuming the iteration budget.
-func sendTurnsWithTools(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef) (Assistant, error) {
+func sendTurnsWithTools(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef, onRetry func(resilience.Attempt)) (Assistant, error) {
 	if client == nil {
 		client = httpclient.Default()
 	}
@@ -848,7 +854,7 @@ func sendTurnsWithTools(ctx context.Context, cfg Config, system string, turns []
 		return httpResult{body: body, status: status}, nil
 	}
 
-	res, err := resilience.Do(ctx, defaultRetryPolicy, resilience.DefaultClassifier{}, do, nil)
+	res, err := resilience.Do(ctx, defaultRetryPolicy, resilience.DefaultClassifier{}, do, onRetry)
 	if err != nil {
 		return Assistant{}, err
 	}
