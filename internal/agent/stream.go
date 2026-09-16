@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/signet/internal/clarify"
+	"github.com/vulnetix/signet/internal/filediff"
 	"github.com/vulnetix/signet/internal/permissions"
 	"github.com/vulnetix/signet/internal/resilience"
 	"github.com/vulnetix/signet/internal/rolemanager"
@@ -47,6 +48,11 @@ const (
 	// advanced). It carries the list; the TUI renders and persists it, the
 	// agent never touches the session store.
 	EventTodosKind
+	// EventToolDiffKind carries what a mutating tool changed on disk, keyed by
+	// ToolCallID. Render-only, like EventToolProgressKind: it is observed
+	// around the tool rather than returned by it, never enters the
+	// conversation and never reaches a model.
+	EventToolDiffKind
 	// EventToolProgressKind carries partial output from a tool that is still
 	// running, keyed by ToolCallID. It is render-only and carries no execution
 	// authority: it never enters the conversation, never reaches a model, and
@@ -91,6 +97,10 @@ type Event struct {
 	// ToolProgress carries whole lines of output from a still-running tool on
 	// EventToolProgressKind, keyed by ToolCallID. Render-only.
 	ToolProgress string
+
+	// Diff carries what a mutating tool changed, on EventToolDiffKind.
+	// Render-only.
+	Diff *filediff.Change
 
 	// AskName / AskSubject carry EventPermissionAsk.
 	AskName    string
