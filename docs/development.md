@@ -63,7 +63,7 @@ just ask anthropic claude-sonnet-4-5 "review this diff" -detect-mode -verbose
 | Flag | Meaning |
 | --- | --- |
 | `-prompt` | send one turn noninteractively, print the reply, exit |
-| `-provider` | `openai`, `anthropic`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`, `github-copilot`, or a custom name from `settings.json` |
+| `-provider` | `openai`, `anthropic`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`, `github-copilot`, `huggingface`, or a custom name from `settings.json` |
 | `-model` | model id; defaults come from `run.DefaultModel` (see the table below) |
 | `-effort` | thinking-effort level: `low`, `medium`, or `high` |
 | `-classifier-provider` | security-classifier provider (default: the main provider) |
@@ -102,6 +102,7 @@ Every posture gate also has a flag (`-allow-unsafe-tool-result`,
 | `google-gemini` | `gemini-2.5-flash` |
 | `ollama` | `llama3` |
 | `github-copilot` | `gpt-4o` |
+| `huggingface` | `Qwen/Qwen2.5-72B-Instruct` |
 
 A custom provider from `settings.json` falls through to the `gpt-5` default, so
 a custom entry should carry its own model.
@@ -144,6 +145,7 @@ Credentials resolve in this order, first hit wins:
 | `google-gemini` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` |
 | `ollama` | none (local; honours `OLLAMA_HOST`) |
 | `github-copilot` | `GITHUB_COPILOT_TOKEN` or `GH_TOKEN` (exchanged for a session token) |
+| `huggingface` | `HF_TOKEN` or `HUGGINGFACE_TOKEN` |
 
 For a throwaway QA shell, export into the environment so nothing is written to disk:
 
@@ -164,6 +166,7 @@ Manual passes worth running before a release, in addition to `just check`.
 just ask openai gpt-5 "reply with the single word OK"
 just ask anthropic claude-sonnet-4-5 "reply with the single word OK"
 just ask cloudflare-workers-ai '@cf/moonshotai/kimi-k2.6' "reply with the single word OK"
+just ask huggingface 'Qwen/Qwen2.5-72B-Instruct' "reply with the single word OK"
 ```
 
 **Missing-credential path.** With a TTY, Signet should offer the credential manager; without one it must fail closed and name every location it searched:

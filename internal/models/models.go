@@ -70,6 +70,12 @@ func Catalog(provider string) []Model {
 			{ID: "claude-sonnet-4-5", Label: "Claude Sonnet 4.5", Efforts: defaultEfforts},
 			{ID: "o3-mini", Label: "o3 Mini", Efforts: defaultEfforts},
 		}
+	case "huggingface":
+		return []Model{
+			{ID: "Qwen/Qwen2.5-72B-Instruct", Label: "Qwen 2.5 72B", Efforts: defaultEfforts},
+			{ID: "meta-llama/Llama-3.3-70B-Instruct", Label: "Llama 3.3 70B", Efforts: defaultEfforts},
+			{ID: "mistralai/Mistral-7B-Instruct-v0.3", Label: "Mistral 7B", Efforts: defaultEfforts},
+		}
 	default:
 		// Unknown names are custom providers; their catalogue comes from the
 		// profile, never the OpenAI list.

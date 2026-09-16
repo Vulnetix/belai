@@ -112,6 +112,11 @@ non-streaming request/response shapes live in `internal/wire`.
 `internal/guardrails` auto-discovers the Vulnetix ai-firewall configuration and
 writes the provider entry (base URL + key source) with no custom headers.
 
+Compiled-in providers are: `openai`, `anthropic`, `cloudflare-workers-ai`,
+`cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`,
+`github-copilot`, and `huggingface`. Custom provider profiles can speak any of
+the three surfaces with `bearer`, `x-api-key`, or `cf-aig` auth.
+
 ## Modes
 
 `internal/modes` defines three modes; agent is the default.
@@ -917,6 +922,9 @@ Supporting pieces:
   `<GlobalDir>/models/`.
 - The HuggingFace token resolves as provider `huggingface` (`HF_TOKEN` /
   `HUGGINGFACE_TOKEN`) through the same credential stack as providers.
+- `huggingface` is also a built-in chat provider using the OpenAI-compatible
+  Serverless Inference API at `https://api-inference.huggingface.co/v1`,
+  authenticated with the same token.
 - The TUI exposes this through `/local-model` (assess the machine and server),
   `/local-model download <repo>` (resumable, checksummed download with live
   progress), `/local-model launch <repo>` (launch llama-server with the default

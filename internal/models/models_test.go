@@ -54,3 +54,18 @@ func TestCatalogOllamaIsEmpty(t *testing.T) {
 		t.Fatalf("ollama catalog should be empty, got %+v", cat)
 	}
 }
+
+func TestCatalogHuggingFace(t *testing.T) {
+	cat := Catalog("huggingface")
+	if len(cat) == 0 {
+		t.Fatal("huggingface catalog should not be empty")
+	}
+	for _, m := range cat {
+		if m.ID == "" || m.Label == "" || len(m.Efforts) == 0 {
+			t.Fatalf("huggingface catalog has incomplete model %+v", m)
+		}
+	}
+	if got := Label("huggingface", "Qwen/Qwen2.5-72B-Instruct"); got != "Qwen 2.5 72B" {
+		t.Fatalf("label = %q", got)
+	}
+}

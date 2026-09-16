@@ -400,6 +400,8 @@ func DefaultModel(providerName string) string {
 		return "llama3"
 	case "github-copilot":
 		return "gpt-4o"
+	case "huggingface":
+		return "Qwen/Qwen2.5-72B-Instruct"
 	default:
 		return "gpt-5"
 	}
@@ -517,6 +519,14 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 		}
 		cfg.BaseURL = "https://api.githubcopilot.com"
 		cfg.Auth = provider.AuthCopilot
+	case "huggingface":
+		if key, origin, ok := src.Lookup(name, "api_key"); ok {
+			cfg.APIKey = key
+			status.Origins["api_key"] = origin
+		} else {
+			status.Missing = append(status.Missing, "api_key")
+		}
+		cfg.BaseURL = "https://api-inference.huggingface.co/v1"
 	default:
 		// Custom path: an unknown name must resolve to a configured profile.
 		// Built-in arms are reached first, so a profile named "openai" is never
@@ -604,6 +614,8 @@ func ResolveWithSource(model, providerName string, env func(string) string, src 
 				envHints = append(envHints, "GEMINI_API_KEY", "GOOGLE_API_KEY")
 			case "github-copilot:oauth_token":
 				envHints = append(envHints, "GITHUB_COPILOT_TOKEN", "GH_TOKEN")
+			case "huggingface:api_key":
+				envHints = append(envHints, "HF_TOKEN", "HUGGINGFACE_TOKEN")
 			default:
 				if m == "api_key" {
 					envHints = append(envHints, envVarForProvider(cfg.Provider))

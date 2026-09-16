@@ -71,7 +71,8 @@ func Spec(provider string) []Field {
 			{Name: "oauth_token", EnvVars: []string{"GITHUB_COPILOT_TOKEN", "GH_TOKEN"}, Secret: true},
 		}
 	case "huggingface":
-		// Used for gated model downloads, not as a chat provider.
+		// Used for gated model downloads and as a chat provider via the
+		// Hugging Face OpenAI-compatible Serverless Inference API.
 		return []Field{
 			{Name: "api_key", EnvVars: []string{"HF_TOKEN", "HUGGINGFACE_TOKEN"}, Secret: true},
 		}

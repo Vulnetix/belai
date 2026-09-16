@@ -88,7 +88,7 @@ signet -provider anthropic -model claude-sonnet-4-5 -prompt "review this diff"
 | Flag | Meaning |
 | --- | --- |
 | `-prompt` | send one turn, print the reply, exit |
-| `-provider` | `openai`, `anthropic`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`, `github-copilot`, or a custom name from `settings.json` |
+| `-provider` | `openai`, `anthropic`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`, `github-copilot`, `huggingface`, or a custom name from `settings.json` |
 | `-model` | model id; each provider has a default |
 | `-effort` | thinking-effort level: `low`, `medium`, or `high` |
 | `-caveman` | enable caveman voice rewrite for this run |
@@ -114,6 +114,7 @@ Set the API key for your provider and Signet picks it up:
 | `google-gemini` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` |
 | `ollama` | none (local; honours `OLLAMA_HOST`) |
 | `github-copilot` | `GITHUB_COPILOT_TOKEN` or `GH_TOKEN` (OAuth, exchanged for a session token) |
+| `huggingface` | `HF_TOKEN` or `HUGGINGFACE_TOKEN` |
 
 A custom provider defined in `settings.json` resolves its key from its
 `api_key_env` variable or `SIGNET_<NAME>_API_KEY`.

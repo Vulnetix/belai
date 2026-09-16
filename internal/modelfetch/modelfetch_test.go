@@ -84,6 +84,13 @@ func TestListGatewayStaticOnly(t *testing.T) {
 	}
 }
 
+func TestListHuggingFaceStaticOnly(t *testing.T) {
+	models, err := List(context.Background(), Target{Name: "huggingface", BaseURL: "https://x", APIKey: "k"}, nil)
+	if err != nil || models != nil {
+		t.Fatalf("huggingface should return nil models with no error, got %v, %v", models, err)
+	}
+}
+
 func TestListCustomSurface(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" {

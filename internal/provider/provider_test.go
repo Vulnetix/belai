@@ -212,6 +212,7 @@ func TestNewAssignsBuiltinAuth(t *testing.T) {
 		"anthropic":             AuthXAPIKey,
 		"cloudflare-workers-ai": AuthBearer,
 		"cloudflare-ai-gateway": AuthCFAIG,
+		"huggingface":           AuthBearer,
 	}
 	for name, want := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -252,6 +253,11 @@ func TestHeadersGoldenForBuiltins(t *testing.T) {
 			"content-type":         "application/json",
 			"user-agent":           ua,
 			"cf-aig-authorization": "Bearer sk",
+		}},
+		{"huggingface", map[string]string{
+			"content-type":  "application/json",
+			"user-agent":    ua,
+			"authorization": "Bearer sk",
 		}},
 	}
 	for _, tc := range cases {
@@ -354,6 +360,7 @@ func TestNewAssignsAuthForNewBuiltins(t *testing.T) {
 		"openrouter":    AuthBearer,
 		"google-gemini": AuthBearer,
 		"ollama":        AuthBearer,
+		"huggingface":   AuthBearer,
 	} {
 		t.Run(name, func(t *testing.T) {
 			p, err := New(name, "https://x.example/v1", "k")

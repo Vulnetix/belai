@@ -66,6 +66,7 @@ var builtins = []struct {
 	{"google-gemini", AuthBearer},
 	{"ollama", AuthBearer},
 	{"github-copilot", AuthCopilot},
+	{"huggingface", AuthBearer},
 }
 
 // Names returns the supported provider names in a stable order.

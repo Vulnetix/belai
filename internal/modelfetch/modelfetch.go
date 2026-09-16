@@ -69,7 +69,7 @@ func List(ctx context.Context, t Target, client *http.Client) ([]models.Model, e
 func endpointFor(t Target) (string, error) {
 	base := strings.TrimRight(t.BaseURL, "/")
 	switch t.Name {
-	case "cloudflare-ai-gateway":
+	case "cloudflare-ai-gateway", "huggingface":
 		return "", nil // passthrough: no discoverable model list
 	case "anthropic":
 		return base + "/v1/models", nil

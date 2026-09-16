@@ -825,6 +825,32 @@ func TestPrepareOllamaHonoursOllamaHost(t *testing.T) {
 	}
 }
 
+func TestPrepareHuggingFaceBaseURL(t *testing.T) {
+	cfg, status := Prepare("", "huggingface", fakeSource{vals: map[string]string{"huggingface:api_key": "hf-secret"}})
+	if !status.Configured {
+		t.Fatalf("expected configured, missing=%v", status.Missing)
+	}
+	if cfg.BaseURL != "https://api-inference.huggingface.co/v1" {
+		t.Fatalf("BaseURL = %q", cfg.BaseURL)
+	}
+	if cfg.Model != "Qwen/Qwen2.5-72B-Instruct" {
+		t.Fatalf("Model = %q, want Qwen/Qwen2.5-72B-Instruct", cfg.Model)
+	}
+	if cfg.APIKey != "hf-secret" {
+		t.Fatalf("APIKey = %q", cfg.APIKey)
+	}
+}
+
+func TestPrepareHuggingFaceRequiresAPIKey(t *testing.T) {
+	_, status := Prepare("", "huggingface", fakeSource{})
+	if status.Configured {
+		t.Fatal("expected not configured without an api_key")
+	}
+	if !sliceEqual(status.Missing, []string{"api_key"}) {
+		t.Fatalf("missing = %v, want [api_key]", status.Missing)
+	}
+}
+
 func TestPrepareCopilotRequiresOAuthToken(t *testing.T) {
 	_, status := Prepare("", "github-copilot", fakeSource{})
 	if status.Configured {
@@ -1159,6 +1185,7 @@ func TestDefaultModelTable(t *testing.T) {
 		"google-gemini":         "gemini-2.5-flash",
 		"ollama":                "llama3",
 		"github-copilot":        "gpt-4o",
+		"huggingface":           "Qwen/Qwen2.5-72B-Instruct",
 		"my-custom-provider":    "gpt-5",
 		"":                      "gpt-5",
 	}
