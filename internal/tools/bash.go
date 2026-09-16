@@ -1,12 +1,14 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -110,10 +112,19 @@ func (b *Bash) Subject(args map[string]any) string {
 	return ""
 }
 
-// Execute runs the command, confining it to Root and scrubbing credential
+// Execute runs the command and returns its output when it finishes.
+func (b *Bash) Execute(ctx context.Context, args map[string]any) (Result, error) {
+	return b.ExecuteStream(ctx, args, nil)
+}
+
+// ExecuteStream runs the command, confining it to Root and scrubbing credential
 // env vars from the subprocess. In ReadOnly mode the no-shell metacharacter
 // gate and read-only allowlist apply; otherwise the command runs via `sh -c`.
-func (b *Bash) Execute(ctx context.Context, args map[string]any) (Result, error) {
+//
+// When sink is non-nil it receives whole lines of combined output as the
+// process writes them. Execute is this function with a nil sink, so there is
+// one implementation of the command construction and hardening rules.
+func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink) (Result, error) {
 	cmd, ok := args["command"].(string)
 	if !ok || strings.TrimSpace(cmd) == "" {
 		return Result{}, fmt.Errorf("missing command argument")
@@ -154,19 +165,156 @@ func (b *Bash) Execute(ctx context.Context, args map[string]any) (Result, error)
 		b.MaxBytes = 64 * 1024
 	}
 
-	out, err := ec.CombinedOutput()
-	content := string(out)
-	if len(out) > b.MaxBytes {
-		content = string(out[:b.MaxBytes]) + fmt.Sprintf("\n… truncated at %d bytes", b.MaxBytes)
+	// One writer for both streams. os/exec guarantees that when Stdout and
+	// Stderr are the same comparable value it serialises writes through it, so
+	// the two streams interleave exactly as the process emitted them — which is
+	// what CombinedOutput does internally. Separate StdoutPipe/StderrPipe with
+	// two scanners would reorder the output of anything that writes to both.
+	tw := &tailWriter{sink: sink, max: b.MaxBytes, flushEvery: progressFlushInterval}
+	ec.Stdout = tw
+	ec.Stderr = tw
+
+	// Without WaitDelay, Wait blocks until every writer closes: a process that
+	// spawns a background child inheriting the pipe would hang the caller
+	// indefinitely, even after the parent exits and the context is cancelled.
+	ec.WaitDelay = 2 * time.Second
+	setProcessGroup(ec)
+
+	if err := ec.Start(); err != nil {
+		return Result{}, err
+	}
+	err := ec.Wait()
+	tw.Flush()
+
+	content := tw.Content()
+	if ctx.Err() == context.DeadlineExceeded {
+		// Keep whatever the command managed to produce. Returning an error
+		// here would discard it: executeCall drops the Result when err is
+		// non-nil, so a timed-out command used to report nothing at all, which
+		// is the least useful moment to have no output.
+		return BashResult(content + fmt.Sprintf("\n… command timed out after %s", b.Timeout)), nil
 	}
 	if err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
-			return Result{}, fmt.Errorf("command timed out after %s", b.Timeout)
-		}
 		content += fmt.Sprintf("\nexit status %d", exitCode(err))
 	}
 
 	return BashResult(content), nil
+}
+
+// progressFlushInterval bounds how often a running command can wake the UI.
+// Without it, output like `find /` produces an event per line and floods the
+// agent's event channel with work the terminal cannot draw anyway.
+const progressFlushInterval = 50 * time.Millisecond
+
+// progressFlushLines flushes early when a burst arrives faster than the
+// interval, so a fast command still streams rather than arriving all at once.
+const progressFlushLines = 64
+
+// tailWriter accumulates a command's combined output, caps it at max bytes,
+// and reports whole lines to a sink as they arrive.
+//
+// It is written to by the goroutine os/exec uses to copy from the process, and
+// read by the caller after Wait returns; the mutex covers that handover. The
+// sink is called with the lock released — it may block, and blocking it must
+// not also block Content.
+type tailWriter struct {
+	sink       Sink
+	max        int
+	flushEvery time.Duration
+
+	mu        sync.Mutex
+	buf       []byte // full output, capped at max
+	truncated bool
+	partial   []byte // bytes since the last newline
+	pending   []string
+	lastFlush time.Time
+}
+
+func (w *tailWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+
+	if !w.truncated {
+		if room := w.max - len(w.buf); room > 0 {
+			if len(p) <= room {
+				w.buf = append(w.buf, p...)
+			} else {
+				w.buf = append(w.buf, p[:room]...)
+				w.truncated = true
+			}
+		} else {
+			w.truncated = true
+		}
+	}
+
+	if w.sink == nil {
+		w.mu.Unlock()
+		return len(p), nil
+	}
+
+	w.partial = append(w.partial, p...)
+	for {
+		i := bytes.IndexByte(w.partial, '\n')
+		if i < 0 {
+			break
+		}
+		w.pending = append(w.pending, string(bytes.TrimRight(w.partial[:i], "\r")))
+		w.partial = w.partial[i+1:]
+	}
+
+	ready := w.takeLocked(false)
+	w.mu.Unlock()
+
+	w.emit(ready)
+	return len(p), nil
+}
+
+// Flush reports any buffered lines, including a trailing line with no newline,
+// which is how a prompt or a progress line without a terminator still reaches
+// the UI.
+func (w *tailWriter) Flush() {
+	w.mu.Lock()
+	if len(w.partial) > 0 {
+		w.pending = append(w.pending, string(bytes.TrimRight(w.partial, "\r")))
+		w.partial = nil
+	}
+	ready := w.takeLocked(true)
+	w.mu.Unlock()
+	w.emit(ready)
+}
+
+// takeLocked returns the buffered lines when they are due to be sent. Callers
+// hold w.mu.
+func (w *tailWriter) takeLocked(force bool) []string {
+	if len(w.pending) == 0 {
+		return nil
+	}
+	if !force && w.flushEvery > 0 &&
+		len(w.pending) < progressFlushLines &&
+		time.Since(w.lastFlush) < w.flushEvery {
+		return nil
+	}
+	out := w.pending
+	w.pending = nil
+	w.lastFlush = time.Now()
+	return out
+}
+
+func (w *tailWriter) emit(lines []string) {
+	if len(lines) == 0 || w.sink == nil {
+		return
+	}
+	w.sink(Progress{Stream: "stdout", Text: strings.Join(lines, "\n")})
+}
+
+// Content returns the captured output, with the truncation notice appended if
+// the cap was reached.
+func (w *tailWriter) Content() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.truncated {
+		return string(w.buf) + fmt.Sprintf("\n… truncated at %d bytes", w.max)
+	}
+	return string(w.buf)
 }
 
 func exitCode(err error) int {

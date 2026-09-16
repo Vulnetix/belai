@@ -63,6 +63,17 @@ type Message struct {
 	// Bubble Tea goroutine.
 	buf *strings.Builder
 
+	// progress is a bounded tail of a still-running tool's output, and
+	// progressN counts every line ever seen so the row can say how much
+	// scrolled past. Only the tail is kept: a running command's earlier output
+	// is superseded by the authoritative result that lands when it finishes,
+	// so retaining all of it would double the memory for no gain.
+	//
+	// Written and read only on the Bubble Tea goroutine. Cleared by SetContent
+	// when the real result arrives.
+	progress  []string
+	progressN int
+
 	// rc memoises the last rendered text and line map for this message. The
 	// key covers every field that affects the render, so any change (a
 	// streaming tail, an appended tool call, a new status, a width change)
@@ -153,11 +164,57 @@ func (m Message) Text() string {
 }
 
 // SetContent replaces the whole content and drops any streaming buffer.
+//
+// The live progress tail goes with it: once the authoritative result is here,
+// the partial view of it is noise.
 func (m *Message) SetContent(s string) {
 	m.Content = s
 	m.buf = nil
+	m.progress = nil
+	m.progressN = 0
 	m.rc = renderCache{}
 }
+
+// progressRingLines is how much of a running tool's output is kept. It only
+// has to cover the largest preview an expanded row will show before the real
+// result lands, so a small ring is enough and bounds the memory a runaway
+// command can cost.
+const progressRingLines = 32
+
+// AppendProgress adds whole lines of live output from a still-running tool,
+// keeping only the most recent progressRingLines of them.
+//
+// s holds one or more newline-separated lines, matching what the agent's
+// progress event carries.
+func (m *Message) AppendProgress(s string) {
+	if s == "" {
+		return
+	}
+	m.rc = renderCache{}
+	for _, line := range strings.Split(s, "\n") {
+		m.progress = append(m.progress, line)
+		m.progressN++
+	}
+	if n := len(m.progress) - progressRingLines; n > 0 {
+		m.progress = append(m.progress[:0], m.progress[n:]...)
+	}
+}
+
+// ProgressTail returns the last n lines of live output and how many lines came
+// before them. The count is what the row's hint reports, and it counts every
+// line seen rather than every line kept.
+func (m Message) ProgressTail(n int) (lines []string, earlier int) {
+	if len(m.progress) == 0 || n <= 0 {
+		return nil, 0
+	}
+	if n >= len(m.progress) {
+		return m.progress, m.progressN - len(m.progress)
+	}
+	return m.progress[len(m.progress)-n:], m.progressN - n
+}
+
+// HasProgress reports whether a running tool row has live output to show.
+func (m Message) HasProgress() bool { return len(m.progress) > 0 }
 
 // Materialise flushes the streaming buffer into Content and drops it, so the
 // message is a plain value again (used when a turn ends).
@@ -184,7 +241,6 @@ type MessageList struct {
 const (
 	messageMinWidth       = 32
 	assistantPreviewLines = 4
-	toolPreviewLines      = 1
 )
 
 // View renders the transcript: conversational turns as flat titled panels,
@@ -437,24 +493,91 @@ func toolRow(msg Message, width int, expandAll bool) (string, LineMap) {
 		Text:  ansi.Cut(statusPlain, prefixCol, headEnd),
 	}}
 
+	expand := expandAll || msg.Expanded
+
 	content := strings.TrimRight(msg.Text(), "\n")
 	if content == "" {
-		return statusLine, lm
+		// Still running. Show the live output tail if the tool has reported
+		// any, so a long command is legible while it works rather than a bare
+		// header with a ticking clock.
+		if !msg.HasProgress() {
+			return statusLine, lm
+		}
+		preview, trunc := progressPreview(msg, expand)
+		rendered, contentLm := renderToolContent(preview, width, false, trunc)
+		return statusLine + "\n" + rendered, append(lm, contentLm...)
 	}
 
-	expand := expandAll || msg.Expanded
-	var hidden string
-	preview := content
-	if !expand {
-		lines := strings.Split(content, "\n")
-		preview = lines[0]
-		if len(lines) > toolPreviewLines {
-			hidden = strings.Join(lines[toolPreviewLines:], "\n")
-			preview += "  " + MutedStyle.Render("… "+strconv.Itoa(len(lines)-toolPreviewLines)+" more lines")
+	preview, trunc := previewOf(content, msg.ToolName, expand)
+	rendered, contentLm := renderToolContent(preview, width, isErr, trunc)
+	return statusLine + "\n" + rendered, append(lm, contentLm...)
+}
+
+// progressPreview renders the tail of a running tool's output. Only a bounded
+// tail is retained, so an expanded row shows everything still held rather than
+// everything ever produced — the full output arrives with the result.
+func progressPreview(msg Message, expand bool) (string, truncation) {
+	n := previewLines(msg.ToolName)
+	if expand {
+		n = progressRingLines
+	}
+	lines, earlier := msg.ProgressTail(n)
+	preview := strings.Join(lines, "\n")
+	if earlier <= 0 {
+		return preview, truncation{}
+	}
+	// The hidden text is not recoverable — it was dropped to bound memory — so
+	// the hint stands for a count only and copying it yields what is left.
+	return preview, truncation{
+		hidden: preview,
+		label:  "… " + strconv.Itoa(earlier) + " earlier lines",
+		atTop:  true,
+	}
+}
+
+// previewLines is how many lines of a tool result to show while the transcript
+// is collapsed. Bash gets three because a command's verdict is usually in its
+// last few lines, and one line of a running command says nothing at all. Read
+// gets three for the same reason in reverse: one line of a file is not enough
+// to recognise it. Everything else stays at one — a Grep or Glob row is
+// already a summary, and a WebFetch row's first line is its title.
+func previewLines(toolName string) int {
+	switch toolName {
+	case "Bash", "Read":
+		return 3
+	default:
+		return 1
+	}
+}
+
+// tailAnchored reports whether a collapsed preview shows the end of a result
+// rather than its start. A command's tail is where its verdict is; a file's
+// head is where its identity is.
+func tailAnchored(toolName string) bool { return toolName == "Bash" }
+
+// previewOf reduces a tool result to what the collapsed transcript shows, plus
+// the truncation that stands for the rest.
+func previewOf(content, toolName string, expand bool) (string, truncation) {
+	if expand {
+		return content, truncation{}
+	}
+	n := previewLines(toolName)
+	lines := strings.Split(content, "\n")
+	if len(lines) <= n {
+		return content, truncation{}
+	}
+	if tailAnchored(toolName) {
+		cut := len(lines) - n
+		return strings.Join(lines[cut:], "\n"), truncation{
+			hidden: strings.Join(lines[:cut], "\n"),
+			label:  "… " + strconv.Itoa(cut) + " earlier lines",
+			atTop:  true,
 		}
 	}
-	rendered, contentLm := renderToolContent(preview, width, isErr, hidden)
-	return statusLine + "\n" + rendered, append(lm, contentLm...)
+	return strings.Join(lines[:n], "\n"), truncation{
+		hidden: strings.Join(lines[n:], "\n"),
+		label:  "… " + strconv.Itoa(len(lines)-n) + " more lines",
+	}
 }
 
 // alignStatus right-aligns the status on the same line as the tool header,
@@ -474,57 +597,79 @@ func alignStatus(head, plain, status string, width int) string {
 	return head + spaces(pad) + statusStyle(status).Render(status)
 }
 
-// renderToolContent indents and wraps a tool result line. When hidden is
-// non-empty, the preview carries an inline "… N more lines" hint and hidden
-// is the remainder it hides; the hint's position is located in the rendered
-// line (the wrap decides where it lands — the logical string is not
-// consulted), so a selection over it copies the full remainder.
-func renderToolContent(content string, width int, isErr bool, hidden string) (string, LineMap) {
+// truncation describes the part of a tool result a collapsed row is not
+// showing, and the on-screen hint that stands for it. atTop puts the hint
+// above the content, which is what a tail-anchored preview needs: the hint
+// summarises what came before, so it reads wrongly underneath.
+type truncation struct {
+	hidden string
+	label  string
+	atTop  bool
+}
+
+// renderToolContent indents and wraps a tool result. When trunc is non-empty a
+// hint is placed after wrapping — above the body, or on the last body line
+// when it fits there, or on a line of its own. Placing it post-wrap is what
+// makes its cell range exactly known: a hint folded into the wrap could be
+// split across two lines, leaving the marker unlocatable and the remainder
+// uncopyable.
+//
+// The body is wrapped and measured unstyled and only then styled, so every
+// SourceLine.Text stays free of ANSI as linemap.go:16-23 requires.
+func renderToolContent(content string, width int, isErr bool, trunc truncation) (string, LineMap) {
 	prefix := "  "
-	inner := max(width-visibleLen(prefix), 8)
-	body := content
-	if isErr {
-		body = DangerStyle.Render(body)
-	}
-	rendered := lipgloss.NewStyle().Width(inner).Render(body)
-
 	pcol := visibleLen(prefix)
+	inner := max(width-pcol, 8)
+
+	wrapped := lipgloss.NewStyle().Width(inner).Render(content)
 	plainLines := make([]string, 0)
-	for _, line := range strings.Split(rendered, "\n") {
-		plainLines = append(plainLines, ansi.Strip(prefix+strings.TrimRight(line, " ")))
+	for _, line := range strings.Split(wrapped, "\n") {
+		plainLines = append(plainLines, strings.TrimRight(line, " "))
 	}
 
-	markerLine, markerIdx := -1, -1
-	if hidden != "" {
-		hint := "… " + strconv.Itoa(strings.Count(hidden, "\n")+1) + " more lines"
-		// The hint is what the caller appended at the end, so the last
-		// rendered line holding it is the marker's line.
-		for i := len(plainLines) - 1; i >= 0; i-- {
-			if idx := strings.LastIndex(plainLines[i], hint); idx >= 0 {
-				markerLine, markerIdx = i, idx
-				break
-			}
+	// Place the hint. markerCol is a cell offset within the body; the prefix
+	// is accounted for when the row is built.
+	markerLine, markerCol := -1, 0
+	hint := trunc.label
+	switch {
+	case trunc.hidden == "":
+	case trunc.atTop:
+		markerLine, markerCol = 0, 0
+		plainLines = append([]string{""}, plainLines...)
+	default:
+		last := len(plainLines) - 1
+		if w := visibleLen(plainLines[last]); w > 0 && w+2+visibleLen(hint) <= inner {
+			markerLine, markerCol = last, w+2
+		} else {
+			markerLine, markerCol = len(plainLines), 0
+			plainLines = append(plainLines, "")
 		}
 	}
 
-	var b strings.Builder
-	var lm LineMap
-	first := true
+	var fg lipgloss.TerminalColor
+	if isErr {
+		fg = ColorDanger
+	}
+
+	rows := make([]Row, 0, len(plainLines))
 	for i, line := range plainLines {
-		if !first {
-			b.WriteString("\n")
+		r := Row{Gutter: pcol, Segs: []Seg{NewSeg(prefix, nil)}}
+		if line != "" {
+			r.Segs = append(r.Segs, NewSeg(line, fg))
 		}
-		first = false
-		b.WriteString(line)
-		sl := SourceLine{Col: pcol, Width: visibleLen(line) - pcol, Text: line[pcol:]}
-		if i == markerLine && markerIdx >= 0 {
-			sl.MarkerCol = pcol + visibleLen(line[:markerIdx])
-			sl.MarkerWidth = visibleLen(line) - sl.MarkerCol
-			sl.Hidden = hidden
+		// The hint stays muted even on an error row: it is chrome, not output.
+		if i == markerLine {
+			if gap := markerCol - visibleLen(line); gap > 0 {
+				r.Segs = append(r.Segs, NewSeg(spaces(gap), nil))
+			}
+			r.Segs = append(r.Segs, NewSeg(hint, ColorMuted))
+			r.MarkerCol = pcol + markerCol
+			r.MarkerWidth = visibleLen(hint)
+			r.Hidden = trunc.hidden
 		}
-		lm = append(lm, sl)
+		rows = append(rows, r)
 	}
-	return b.String(), lm
+	return renderRows(rows, width)
 }
 
 // formatToolInvocation extracts the most descriptive argument from a tool's
@@ -585,25 +730,26 @@ func toolResultIsError(name, content string) bool {
 
 // systemRow renders a system notice as a dim, marked line. The "│ " marker
 // is two cells, so the selectable text starts at column 2.
+// The body is wrapped unstyled and styled one line at a time: wrapping
+// pre-styled text would leave escape bytes in SourceLine.Text, which
+// linemap.go:16-23 forbids and LineMap.Text would then slice as if they were
+// visible cells.
 func systemRow(content string, width int) (string, LineMap) {
 	body := strings.TrimRight(content, "\n")
-	marker := MutedStyle.Render("│ ")
-	wrapped := lipgloss.NewStyle().Foreground(ColorMuted).Width(max(width-2, 8)).Render(body)
+	marker := "│ "
+	wrapped := lipgloss.NewStyle().Width(max(width-visibleLen(marker), 8)).Render(body)
 
-	var b strings.Builder
-	var lm LineMap
-	mcol := visibleLen("│ ")
-	first := true
+	var rows []Row
 	for _, line := range strings.Split(wrapped, "\n") {
-		line = strings.TrimRight(line, " ")
-		if !first {
-			b.WriteString("\n")
-		}
-		first = false
-		b.WriteString(marker + line)
-		lm = append(lm, SourceLine{Col: mcol, Width: visibleLen(line), Text: line})
+		rows = append(rows, Row{
+			Gutter: visibleLen(marker),
+			Segs: []Seg{
+				NewSeg(marker, ColorMuted),
+				NewSeg(strings.TrimRight(line, " "), ColorMuted),
+			},
+		})
 	}
-	return b.String(), lm
+	return renderRows(rows, width)
 }
 
 func statusStyle(status string) lipgloss.Style {

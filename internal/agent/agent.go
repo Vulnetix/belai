@@ -463,6 +463,34 @@ func (s *Session) decidePermission(tool, subject string) (permissions.Decision, 
 	return dec, rule
 }
 
+// runTool executes a tool, streaming its partial output to the UI when the
+// tool supports it. A tool that does not implement StreamingTool runs exactly
+// as before.
+//
+// The sink runs on the goroutine os/exec uses to copy the subprocess's output,
+// not on the agent goroutine. That is safe without a mutex: emit is a select
+// send on a buffered channel (see RunStream), which is already called
+// concurrently by the read-only tool fan-out in pass. Do not add locking here.
+//
+// Blocking in the sink is deliberate. When the event channel fills, the sink
+// blocks, which blocks the writer, which blocks the subprocess's own write to
+// the pipe — so a command producing output faster than the terminal can draw
+// it throttles itself instead of growing an unbounded queue.
+func runTool(ctx context.Context, tool tools.Tool, call rolemanager.ToolCall, emit func(Event)) (tools.Result, error) {
+	st, ok := tool.(tools.StreamingTool)
+	if !ok {
+		return tool.Execute(ctx, call.Args)
+	}
+	return st.ExecuteStream(ctx, call.Args, func(p tools.Progress) {
+		emit(Event{
+			Kind:         EventToolProgressKind,
+			ToolName:     call.Name,
+			ToolCallID:   call.ID,
+			ToolProgress: p.Text,
+		})
+	})
+}
+
 func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, emit func(Event)) string {
 	tool, ok := s.registry.Find(call.Name)
 	if !ok {
@@ -484,7 +512,7 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 		// warn/ignore fall through to allow
 	}
 
-	res, err := tool.Execute(ctx, call.Args)
+	res, err := runTool(ctx, tool, call, emit)
 	if err != nil {
 		return fmt.Sprintf("tool result withheld: execution error for %q: %v", call.Name, err)
 	}

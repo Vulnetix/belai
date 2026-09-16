@@ -47,6 +47,12 @@ const (
 	// advanced). It carries the list; the TUI renders and persists it, the
 	// agent never touches the session store.
 	EventTodosKind
+	// EventToolProgressKind carries partial output from a tool that is still
+	// running, keyed by ToolCallID. It is render-only and carries no execution
+	// authority: it never enters the conversation, never reaches a model, and
+	// is superseded by the EventToolResult that follows. A tool that produces
+	// no progress emits none, and a consumer may ignore the kind entirely.
+	EventToolProgressKind
 )
 
 // Role Manager sub-phases carried by EventRoleManagerKind.
@@ -81,6 +87,10 @@ type Event struct {
 	// it. Tool results may now arrive out of order (concurrent read-only
 	// tools), so the TUI must match on this rather than the last tool row.
 	ToolCallID string
+
+	// ToolProgress carries whole lines of output from a still-running tool on
+	// EventToolProgressKind, keyed by ToolCallID. Render-only.
+	ToolProgress string
 
 	// AskName / AskSubject carry EventPermissionAsk.
 	AskName    string

@@ -863,27 +863,24 @@ func (a *App) nextEvent() (agent.Event, bool) {
 }
 
 // nextAgent drains the agent event channel with coalescing. Consecutive
-// text (or reasoning) deltas are concatenated into a single event so Bubble
-// Tea updates — and therefore full transcript re-renders — happen once per
-// drain, not once per streamed token. The loop stops at the first event of a
-// different kind (which is stashed as a lookahead and replayed next) or at an
-// empty channel, so nothing is dropped and ordering is preserved.
+// text, reasoning, or tool-progress deltas are concatenated into a single
+// event so Bubble Tea updates — and therefore full transcript re-renders —
+// happen once per drain, not once per streamed token or output line. The loop
+// stops at the first event that cannot join the run (which is stashed as a
+// lookahead and replayed next) or at an empty channel, so nothing is dropped
+// and ordering is preserved.
 func (a *App) nextAgent() tea.Cmd {
 	return func() tea.Msg {
 		e, ok := a.nextEvent()
 		if !ok {
 			return agentEventMsg{Kind: agent.EventDoneKind}
 		}
-		if e.Kind != agent.EventTextKind && e.Kind != agent.EventReasoningKind {
+		if !coalescable(e.Kind) {
 			return agentEventMsg(e)
 		}
 
 		var b strings.Builder
-		if e.Kind == agent.EventTextKind {
-			b.WriteString(e.Text)
-		} else {
-			b.WriteString(e.Reasoning)
-		}
+		b.WriteString(eventDelta(e))
 		for {
 			var next agent.Event
 			select {
@@ -895,26 +892,65 @@ func (a *App) nextAgent() tea.Cmd {
 			default:
 				return agentEventMsg(coalesced(e, b.String()))
 			}
-			if next.Kind != e.Kind {
+			if !joinsRun(e, next) {
 				a.pendingEvent = next
 				a.pendingEventSet = true
 				return agentEventMsg(coalesced(e, b.String()))
 			}
-			if e.Kind == agent.EventTextKind {
-				b.WriteString(next.Text)
-			} else {
-				b.WriteString(next.Reasoning)
+			if e.Kind == agent.EventToolProgressKind {
+				// Progress deltas are whole lines; text deltas are mid-word.
+				b.WriteString("\n")
 			}
+			b.WriteString(eventDelta(next))
 		}
 	}
 }
 
-// coalesced folds a run of same-kind deltas accumulated in b back into the
-// first event's text (or reasoning) field.
+// coalescable reports whether a run of events of this kind can be folded into
+// one.
+func coalescable(k agent.EventKind) bool {
+	switch k {
+	case agent.EventTextKind, agent.EventReasoningKind, agent.EventToolProgressKind:
+		return true
+	}
+	return false
+}
+
+// joinsRun reports whether next can be folded into the run started by first.
+// Progress additionally has to be for the same tool call: two tools running
+// concurrently would otherwise have their output spliced into one row.
+func joinsRun(first, next agent.Event) bool {
+	if next.Kind != first.Kind {
+		return false
+	}
+	if first.Kind == agent.EventToolProgressKind {
+		return next.ToolCallID == first.ToolCallID
+	}
+	return true
+}
+
+// eventDelta is the accumulating payload for a coalescable event.
+func eventDelta(e agent.Event) string {
+	switch e.Kind {
+	case agent.EventTextKind:
+		return e.Text
+	case agent.EventReasoningKind:
+		return e.Reasoning
+	case agent.EventToolProgressKind:
+		return e.ToolProgress
+	}
+	return ""
+}
+
+// coalesced folds a run of deltas accumulated in acc back into the first
+// event's payload field.
 func coalesced(first agent.Event, acc string) agent.Event {
-	if first.Kind == agent.EventTextKind {
+	switch first.Kind {
+	case agent.EventTextKind:
 		first.Text = acc
-	} else {
+	case agent.EventToolProgressKind:
+		first.ToolProgress = acc
+	default:
 		first.Reasoning = acc
 	}
 	return first
@@ -1635,6 +1671,23 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			ToolCallID: m.Tool.ID,
 			StartedAt:  time.Now(),
 		})
+		return a.nextAgent()
+	case agent.EventToolProgressKind:
+		a.setPhaseWorking()
+		// Render-only: the live tail never enters a.messages' content and so
+		// never reaches buildTurns or a model. It is replaced wholesale when
+		// the authoritative result lands.
+		if m.ToolCallID != "" {
+			for i := len(a.messages) - 1; i >= 0; i-- {
+				if a.messages[i].Role == "tool" && a.messages[i].ToolCallID == m.ToolCallID {
+					a.messages[i].AppendProgress(m.ToolProgress)
+					break
+				}
+			}
+			if a.follow {
+				a.vp.GotoBottom()
+			}
+		}
 		return a.nextAgent()
 	case agent.EventToolResultKind:
 		a.setPhaseWorking()
