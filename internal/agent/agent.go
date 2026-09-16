@@ -550,7 +550,8 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 	dec, err := pipe.Process(ctx, res)
 	s.trace.Event("agent", "tool_result_classify", time.Since(cStart))
 	if err != nil {
-		return fmt.Sprintf("tool result withheld: classifier error for %q: %v", call.Name, err)
+		fmt.Fprintf(os.Stderr, "signet: classifier error for %s: %v\n", call.Name, err)
+		return classifierWithheld(call.Name, err)
 	}
 
 	if dec.Action == rolemanager.ActionProceed {
@@ -567,6 +568,24 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 	// placeholder and continues; the strict abort is handled by refusing to
 	// promote the unsafe content, which is what a placeholder does.
 	return fmt.Sprintf("tool result withheld: classified %s", dec.Sentinel)
+}
+
+// classifierErrorMaxRunes bounds the provider detail carried in a withheld
+// placeholder. A rejection body can be kilobytes of JSON wrapping a server-side
+// stack trace; the head of it names the status and the reason, and the rest is
+// noise the model cannot act on.
+const classifierErrorMaxRunes = 180
+
+// classifierWithheld renders the placeholder that stands in for a tool result
+// the classifier could not verify. The placeholder enters the model's context
+// and the transcript, so the provider detail is flattened to a single line and
+// clipped; the full error goes to stderr at the call site.
+func classifierWithheld(name string, err error) string {
+	detail := strings.Join(strings.Fields(err.Error()), " ")
+	if runes := []rune(detail); len(runes) > classifierErrorMaxRunes {
+		detail = strings.TrimRight(string(runes[:classifierErrorMaxRunes]), " ") + "…"
+	}
+	return fmt.Sprintf("tool result withheld: classifier error for %q: %s", name, detail)
 }
 
 // runHooks executes every hook registered for event against the tool call.

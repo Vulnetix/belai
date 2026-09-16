@@ -327,7 +327,42 @@ missing, and the `tool_call_id` is still answered so the provider does not
 reject the follow-up turn.
 
 Permission-denied and execution errors likewise receive harness placeholder
-turns.
+turns. Every placeholder starts with `tool result withheld:` — the TUI keys the
+`withheld` status off that prefix — and the full list is:
+
+| Placeholder | Cause |
+| ----------- | ----- |
+| `… is not registered` | The model called a tool the registry does not know |
+| `… is not allowed in plan mode` | Plan mode refused a mutating tool |
+| `permission denied for …` | A `permissions.deny` rule, or `permission_no_match` under `enforce` |
+| `permission ask required for …` | A rule asked, with no TTY to ask on, under `enforce` |
+| `arguments may be truncated …` | Tool-call arguments arrived incomplete |
+| `malformed arguments for …` | Tool-call arguments failed to parse |
+| `execution error for …` | The tool itself returned an error |
+| `classifier error for …` | The classifier could not produce a verdict |
+| `classified <SENTINEL>` | The content classified non-`SAFE`, or classified malformed |
+
+### Classifier-error placeholders
+
+A classifier failure is an infrastructure failure, not a verdict, and it still
+fails closed: the tool output is not promoted. The placeholder carries the
+provider detail flattened to a single line and clipped to
+`classifierErrorMaxRunes` (180) with a trailing ellipsis, because a rejection
+body can be kilobytes of JSON wrapping a server-side stack trace — text that
+would otherwise enter both the model's context and the transcript. The
+unabridged error goes to stderr instead.
+
+### Empty content
+
+Content that is empty or whitespace-only after sanitization is `SAFE` without a
+classifier call. A shell command that printed nothing carries nothing to
+classify, and the round trip would cost latency on every silent command. It
+also never reaches the wire as a message with no content field, which
+OpenAI-compatible servers reject with a 400 (the request fails the
+content-bearing schema, then fails a fallback schema that forbids the role).
+`wire.OpenAIChatMessage.MarshalJSON` is the second line of defence: it always
+emits a content field, except on an assistant turn carrying tool calls, where
+providers require its absence.
 
 ## Posture system
 
