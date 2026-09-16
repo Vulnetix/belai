@@ -46,9 +46,9 @@ type FileChange struct {
 	Path     string // relative to the workdir, for display
 	Old, New string // "" when the file did not exist on that side
 
-	Created  bool
-	Deleted  bool
-	Binary   bool // no text diff is possible
+	Created   bool
+	Deleted   bool
+	Binary    bool // no text diff is possible
 	Truncated bool // too large to diff
 }
 
