@@ -37,6 +37,11 @@ func TestResolveDialectBuiltins(t *testing.T) {
 			cfg:  Config{Provider: "openai"},
 			want: dialect{kind: kindOpenAIChat, route: routeNative, effort: true, usage: true, method: wire.ToolMethodString},
 		},
+		{
+			name: "huggingface",
+			cfg:  Config{Provider: "huggingface"},
+			want: dialect{kind: kindOpenAIChat, route: routeNative, method: wire.ToolMethodString},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -84,7 +89,7 @@ func TestResolveDialectUnknownProviderErrors(t *testing.T) {
 }
 
 func TestResolveDialectNewBuiltinsOpenAIChat(t *testing.T) {
-	for _, name := range []string{"openrouter", "google-gemini", "ollama"} {
+	for _, name := range []string{"openrouter", "google-gemini", "ollama", "huggingface"} {
 		t.Run(name, func(t *testing.T) {
 			d, err := resolveDialect(Config{Provider: name})
 			if err != nil {
