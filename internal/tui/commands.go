@@ -106,7 +106,10 @@ func NewRegistry(workdir string) *Registry {
 		a.addSystem("profile: " + p.Name)
 		return nil
 	})
-	r.Register("local-model", "assess a local inference server for the classifier", nil, func(a *App, arg string) tea.Cmd {
+	r.Register("local-model", "assess or download a local classifier model", nil, func(a *App, arg string) tea.Cmd {
+		if repo, ok := strings.CutPrefix(arg, "download "); ok && strings.TrimSpace(repo) != "" {
+			return a.localModelDownloadCmd(strings.TrimSpace(repo))
+		}
 		return a.localModelReportCmd()
 	})
 	r.Register("model", "pick provider and model", nil, func(a *App, arg string) tea.Cmd {

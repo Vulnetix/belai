@@ -182,8 +182,10 @@ func ModelsDir() (string, error) {
 // Download fetches one model file into dir, resuming an existing partial file
 // via HTTP range requests, verifying its SHA-256 when the metadata carried one,
 // and renaming into place atomically. A partial file is removed on any
-// failure. SIGNET_HF_BASE_URL overrides the host for tests and proxies.
-func Download(ctx context.Context, repo string, mf ModelFile, token, dir string) (string, error) {
+// failure. SIGNET_HF_BASE_URL overrides the host for tests and proxies. An
+// optional progress callback receives (downloaded bytes, total bytes) as the
+// body streams.
+func Download(ctx context.Context, repo string, mf ModelFile, token, dir string, progress ...func(downloaded, total int64)) (string, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
@@ -245,7 +247,11 @@ func Download(ctx context.Context, repo string, mf ModelFile, token, dir string)
 	if err != nil {
 		return "", err
 	}
-	if _, err := io.Copy(f, resp.Body); err != nil {
+	src := io.Reader(resp.Body)
+	if len(progress) > 0 && progress[0] != nil {
+		src = &progressReader{r: resp.Body, got: offset, total: mf.Size, fn: progress[0]}
+	}
+	if _, err := io.Copy(f, src); err != nil {
 		f.Close()
 		return "", err
 	}
@@ -277,6 +283,23 @@ func resumeOffset(part string) (int64, error) {
 		return 0, err
 	}
 	return fi.Size(), nil
+}
+
+// progressReader reports download progress on every read.
+type progressReader struct {
+	r     io.Reader
+	got   int64
+	total int64
+	fn    func(int64, int64)
+}
+
+func (p *progressReader) Read(b []byte) (int, error) {
+	n, err := p.r.Read(b)
+	p.got += int64(n)
+	if p.fn != nil {
+		p.fn(p.got, p.total)
+	}
+	return n, err
 }
 
 func verifyChecksum(path, want string) error {

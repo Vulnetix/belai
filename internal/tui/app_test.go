@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1721,5 +1722,45 @@ func TestResolveCredentialsCmdUsesResolver(t *testing.T) {
 	}
 	if !a.status.Configured || a.cfg.APIKey != "sk-resolved" {
 		t.Fatalf("app not configured after resolution: %+v", a.status)
+	}
+}
+
+// TestLocalModelDownloadCommand pins the /local-model download flow end to end:
+// metadata resolution, checksummed download with progress, and a completion
+// system notice.
+func TestLocalModelDownloadCommand(t *testing.T) {
+	payload := []byte("gguf-payload")
+	sum := sha256.Sum256(payload)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/models/org/model":
+			fmt.Fprintf(w, `{"siblings":[{"filename":"model.gguf","size":%d,"sha256":"%x"}]}`, len(payload), sum)
+		case r.URL.Path == "/org/model/resolve/main/model.gguf":
+			_, _ = w.Write(payload)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	t.Setenv("SIGNET_HF_BASE_URL", srv.URL)
+
+	a := New(Options{})
+	cmd := a.localModelDownloadCmd("org/model")
+	for steps := 0; cmd != nil && steps < 200; steps++ {
+		msg := cmd()
+		m, next := a.Update(msg)
+		a = m.(*App)
+		cmd = next
+	}
+
+	found := false
+	for _, m := range a.messages {
+		if m.Role == "system" && strings.Contains(m.Text(), "model download complete") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("download completion not reported; messages = %v", a.messages)
 	}
 }

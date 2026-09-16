@@ -167,3 +167,31 @@ func TestDownloadResumesPartial(t *testing.T) {
 		t.Fatalf("resumed download = %q err=%v, want %q", got, err, payload)
 	}
 }
+
+func TestDownloadReportsProgress(t *testing.T) {
+	payload := strings.Repeat("x", 4096)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(payload))
+	}))
+	defer srv.Close()
+	t.Setenv("SIGNET_HF_BASE_URL", srv.URL)
+
+	dir := t.TempDir()
+	var sawFinal bool
+	_, err := Download(context.Background(), "org/model", ModelFile{
+		Name: "model.gguf", Size: int64(len(payload)),
+	}, "", dir, func(done, total int64) {
+		if total != int64(len(payload)) {
+			t.Fatalf("total = %d, want %d", total, len(payload))
+		}
+		if done >= total {
+			sawFinal = true
+		}
+	})
+	if err != nil {
+		t.Fatalf("Download: %v", err)
+	}
+	if !sawFinal {
+		t.Fatal("progress callback never reached completion")
+	}
+}

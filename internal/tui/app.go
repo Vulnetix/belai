@@ -144,6 +144,15 @@ type gitInfoMsg struct {
 // server assessment, rendered as a system notice.
 type localModelReportMsg struct{ text string }
 
+// downloadProgressMsg carries one model-download progress update. final is set
+// on the terminal update (success or error).
+type downloadProgressMsg struct {
+	done  int64
+	total int64
+	err   error
+	final bool
+}
+
 const (
 	editorMinHeight = 3
 	editorMaxHeight = 12
@@ -314,6 +323,10 @@ type App struct {
 	// todos is the shared goal/plan todo list rendered in the chat chrome and
 	// persisted to the session. The agent emits it; the TUI owns persistence.
 	todos *todos.List
+
+	// downloadCh carries progress updates from the in-flight local model
+	// download started by /local-model download. nil when no download runs.
+	downloadCh chan downloadProgressMsg
 }
 
 type tickMsg time.Time
@@ -1097,6 +1110,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case localModelReportMsg:
 		a.addSystem(m.text)
 		return a, nil
+
+	case downloadProgressMsg:
+		return a, a.handleDownloadProgress(m)
 
 	case codeReviewDoneMsg:
 		return a, a.handleCodeReviewDone(m)
@@ -2381,6 +2397,7 @@ func (a *App) localModelReportCmd() tea.Cmd {
 			fmt.Fprintf(&b, "local server binary found: %s (%s)\n", bin.Path, bin.Name)
 		} else {
 			b.WriteString("no local inference server found (llama-server, ollama, or vllm)\n")
+			b.WriteString("see https://github.com/ggerganov/llama.cpp to get started\n")
 		}
 		fmt.Fprintf(&b, "machine: %d CPUs, %d MiB RAM (%d free), %d MiB disk free\n",
 			rep.CPUs, rep.RAMTotalMiB, rep.RAMFreeMiB, rep.DiskFreeMiB)
@@ -2402,6 +2419,77 @@ func localBases() []string {
 		"http://127.0.0.1:18080/v1",
 		"http://127.0.0.1:8000/v1",
 	}
+}
+
+// localModelDownloadCmd resolves and downloads a HuggingFace GGUF model for the
+// local classifier, streaming progress to the transcript until it completes.
+func (a *App) localModelDownloadCmd(repo string) tea.Cmd {
+	ch := make(chan downloadProgressMsg, 16)
+	a.downloadCh = ch
+	go func() {
+		defer close(ch)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		defer cancel()
+
+		token, _, _ := run.EnvSource(os.Getenv).Lookup("huggingface", "api_key")
+		dir, err := localinfer.ModelsDir()
+		if err != nil {
+			ch <- downloadProgressMsg{err: err, final: true}
+			return
+		}
+		mf, err := localinfer.ResolveModel(ctx, repo, token)
+		if err != nil {
+			ch <- downloadProgressMsg{err: err, final: true}
+			return
+		}
+		_, err = localinfer.Download(ctx, repo, mf, token, dir, func(done, total int64) {
+			select {
+			case ch <- downloadProgressMsg{done: done, total: total}:
+			default:
+			}
+		})
+		if err != nil {
+			ch <- downloadProgressMsg{err: err, final: true}
+			return
+		}
+		ch <- downloadProgressMsg{total: mf.Size, final: true}
+	}()
+	return a.watchDownload(ch)
+}
+
+// watchDownload drains one progress update and re-arms until the final one.
+func (a *App) watchDownload(ch chan downloadProgressMsg) tea.Cmd {
+	return func() tea.Msg {
+		m, ok := <-ch
+		if !ok {
+			return downloadProgressMsg{final: true}
+		}
+		return m
+	}
+}
+
+// handleDownloadProgress renders one download update and re-arms the watcher
+// until the download finishes.
+func (a *App) handleDownloadProgress(m downloadProgressMsg) tea.Cmd {
+	if m.final {
+		a.downloadCh = nil
+		if m.err != nil {
+			a.addSystem("model download failed: " + m.err.Error())
+		} else {
+			a.addSystem(fmt.Sprintf("model download complete (%s)", formatMiB(m.total)))
+		}
+		return nil
+	}
+	if a.downloadCh != nil {
+		a.addSystem(fmt.Sprintf("downloading model… %s / %s", formatMiB(m.done), formatMiB(m.total)))
+		return a.watchDownload(a.downloadCh)
+	}
+	return nil
+}
+
+// formatMiB renders a byte count in MiB with one decimal.
+func formatMiB(n int64) string {
+	return fmt.Sprintf("%.1f MiB", float64(n)/(1024*1024))
 }
 
 func (a *App) copyPrompt() tea.Cmd {
