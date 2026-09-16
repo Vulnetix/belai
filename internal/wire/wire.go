@@ -15,6 +15,10 @@ const (
 	SurfaceOpenAIChat        Surface = "openai-chat"
 	SurfaceOpenAIResponses   Surface = "openai-responses"
 	SurfaceAnthropicMessages Surface = "anthropic-messages"
+	// SurfaceWorkersAI describes the Workers AI /ai/run/{model} SSE shape.
+	// It is an internal decode surface only: custom provider profiles cannot
+	// select it, so Path has no case for it and validSurface rejects it.
+	SurfaceWorkersAI Surface = "workers-ai"
 )
 
 // Path returns the URL path appended to a base URL for this surface.
@@ -44,11 +48,12 @@ func BuildURL(baseURL string, s Surface) string {
 
 // OpenAIChatMessage is a single message in a chat/completions request.
 type OpenAIChatMessage struct {
-	Role       string           `json:"role"`
-	Content    string           `json:"content,omitempty"`
-	ToolCalls  []OpenAIToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string           `json:"tool_call_id,omitempty"`
-	Name       string           `json:"name,omitempty"`
+	Role             string           `json:"role"`
+	Content          string           `json:"content,omitempty"`
+	ToolCalls        []OpenAIToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string           `json:"tool_call_id,omitempty"`
+	Name             string           `json:"name,omitempty"`
+	ReasoningContent string           `json:"reasoning_content,omitempty"`
 }
 
 // OpenAIChatRequest is the body of a chat/completions call.
@@ -97,9 +102,11 @@ type OpenAIChatUsage struct {
 type OpenAIChatStreamChunk struct {
 	Choices []struct {
 		Delta struct {
-			Role      string                `json:"role,omitempty"`
-			Content   string                `json:"content,omitempty"`
-			ToolCalls []OpenAIToolCallDelta `json:"tool_calls,omitempty"`
+			Role             string                `json:"role,omitempty"`
+			Content          string                `json:"content,omitempty"`
+			ReasoningContent string                `json:"reasoning_content,omitempty"`
+			Reasoning        string                `json:"reasoning,omitempty"`
+			ToolCalls        []OpenAIToolCallDelta `json:"tool_calls,omitempty"`
 		} `json:"delta"`
 		FinishReason string `json:"finish_reason,omitempty"`
 	} `json:"choices"`
@@ -201,11 +208,12 @@ type AnthropicThinking struct {
 
 // AnthropicContentBlock is a content block in a messages response.
 type AnthropicContentBlock struct {
-	Type  string         `json:"type"`
-	Text  string         `json:"text,omitempty"`
-	ID    string         `json:"id,omitempty"`
-	Name  string         `json:"name,omitempty"`
-	Input map[string]any `json:"input,omitempty"`
+	Type     string         `json:"type"`
+	Text     string         `json:"text,omitempty"`
+	Thinking string         `json:"thinking,omitempty"`
+	ID       string         `json:"id,omitempty"`
+	Name     string         `json:"name,omitempty"`
+	Input    map[string]any `json:"input,omitempty"`
 }
 
 // AnthropicMessagesResponse is the non-streaming messages response.
@@ -239,6 +247,7 @@ type AnthropicStreamEvent struct {
 	Delta struct {
 		Type        string `json:"type,omitempty"`
 		Text        string `json:"text,omitempty"`
+		Thinking    string `json:"thinking,omitempty"`
 		StopReason  string `json:"stop_reason,omitempty"`
 		PartialJSON string `json:"partial_json,omitempty"`
 	} `json:"delta"`
@@ -269,6 +278,17 @@ type WorkersAIRequest struct {
 type WorkersAIError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+}
+
+// WorkersAIStreamChunk is one SSE `data:` payload from /ai/run/{model}.
+// Workers AI emits {"response":"…","p":"…"} for most models and an
+// OpenAI-shaped {"choices":[…]} for gateway-compatible ones, so both are
+// decoded from the same payload and the caller takes whichever is populated.
+type WorkersAIStreamChunk struct {
+	Response         string                `json:"response,omitempty"`
+	ReasoningContent string                `json:"reasoning_content,omitempty"`
+	ToolCalls        []OpenAIToolCallDelta `json:"tool_calls,omitempty"`
+	Usage            *OpenAIChatUsage      `json:"usage,omitempty"`
 }
 
 // WorkersAIResponse is the non-streaming Workers AI response. Chat models

@@ -115,8 +115,11 @@ func upperSnake(s string) string {
 // streamSurface returns the wire surface whose SSE events this dialect
 // decodes.
 func (d dialect) streamSurface() wire.Surface {
-	if d.kind == kindAnthropicMessages {
+	switch d.kind {
+	case kindAnthropicMessages:
 		return wire.SurfaceAnthropicMessages
+	case kindWorkersAI:
+		return wire.SurfaceWorkersAI
 	}
 	return wire.SurfaceOpenAIChat
 }

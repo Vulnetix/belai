@@ -92,37 +92,205 @@ func TestStreamAnthropicDeltas(t *testing.T) {
 }
 
 func TestStreamWorkersAI(t *testing.T) {
+	t.Run("native response shape", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			flusher, _ := w.(http.Flusher)
+			fmt.Fprint(w, "data: {\"response\":\"workers-reply\"}\n\n")
+			fmt.Fprint(w, "data: [DONE]\n\n")
+			flusher.Flush()
+		}))
+		defer srv.Close()
+
+		cfg := Config{Provider: "cloudflare-workers-ai", BaseURL: srv.URL, APIKey: "sk", Model: "@cf/moonshotai/kimi-k2.6"}
+		ch, err := Stream(context.Background(), cfg, []Turn{{Role: "user", Content: "hi"}}, srv.Client())
+		if err != nil {
+			t.Fatalf("Stream: %v", err)
+		}
+		var out strings.Builder
+		for c := range ch {
+			if c.Err != nil {
+				t.Fatalf("stream error: %v", c.Err)
+			}
+			if c.Done {
+				break
+			}
+			out.WriteString(c.Text)
+		}
+		if out.String() != "workers-reply" {
+			t.Fatalf("got %q", out.String())
+		}
+	})
+
+	t.Run("openai shaped gateway variant", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			flusher, _ := w.(http.Flusher)
+			chunk, _ := json.Marshal(map[string]any{
+				"choices": []any{map[string]any{
+					"delta": map[string]any{"content": "gateway-reply"},
+				}},
+			})
+			fmt.Fprintf(w, "data: %s\n\n", chunk)
+			fmt.Fprint(w, "data: [DONE]\n\n")
+			flusher.Flush()
+		}))
+		defer srv.Close()
+
+		cfg := Config{Provider: "cloudflare-workers-ai", BaseURL: srv.URL, APIKey: "sk", Model: "@cf/meta/llama-4"}
+		ch, err := Stream(context.Background(), cfg, []Turn{{Role: "user", Content: "hi"}}, srv.Client())
+		if err != nil {
+			t.Fatalf("Stream: %v", err)
+		}
+		var out strings.Builder
+		for c := range ch {
+			if c.Err != nil {
+				t.Fatalf("stream error: %v", c.Err)
+			}
+			if c.Done {
+				break
+			}
+			out.WriteString(c.Text)
+		}
+		if out.String() != "gateway-reply" {
+			t.Fatalf("got %q", out.String())
+		}
+	})
+
+	t.Run("tool calls complete on done", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			flusher, _ := w.(http.Flusher)
+			fmt.Fprint(w, "data: {\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"Read\",\"arguments\":\"{\\\"path\\\":\\\"a.go\\\"}\"}}]}\n\n")
+			fmt.Fprint(w, "data: [DONE]\n\n")
+			flusher.Flush()
+		}))
+		defer srv.Close()
+
+		cfg := Config{Provider: "cloudflare-workers-ai", BaseURL: srv.URL, APIKey: "sk", Model: "@cf/deepseek-ai/deepseek-v4-pro-0813"}
+		ch, err := Stream(context.Background(), cfg, []Turn{{Role: "user", Content: "hi"}}, srv.Client())
+		if err != nil {
+			t.Fatalf("Stream: %v", err)
+		}
+		var done *Assistant
+		for c := range ch {
+			if c.Err != nil {
+				t.Fatalf("stream error: %v", c.Err)
+			}
+			if c.Done {
+				done = c.Assistant
+				break
+			}
+		}
+		if done == nil || len(done.ToolCalls) != 1 {
+			t.Fatalf("expected one completed tool call, got %+v", done)
+		}
+		if done.ToolCalls[0].ID != "call_1" || done.ToolCalls[0].Name != "Read" || done.ToolCalls[0].RawArgs != `{"path":"a.go"}` {
+			t.Fatalf("tool call = %+v", done.ToolCalls[0])
+		}
+	})
+}
+
+func TestStreamWorkersAIReasoning(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher, _ := w.(http.Flusher)
-		chunk, _ := json.Marshal(map[string]any{
-			"choices": []any{map[string]any{
-				"delta": map[string]any{"content": "workers-reply"},
-			}},
-		})
-		fmt.Fprintf(w, "data: %s\n\n", chunk)
+		fmt.Fprint(w, "data: {\"reasoning_content\":\"thinking through the request\"}\n\n")
+		fmt.Fprint(w, "data: {\"response\":\"answer\"}\n\n")
 		fmt.Fprint(w, "data: [DONE]\n\n")
 		flusher.Flush()
 	}))
 	defer srv.Close()
 
-	cfg := Config{Provider: "cloudflare-workers-ai", BaseURL: srv.URL, APIKey: "sk", Model: "@cf/moonshotai/kimi-k2.6"}
+	cfg := Config{Provider: "cloudflare-workers-ai", BaseURL: srv.URL, APIKey: "sk", Model: "@cf/deepseek-ai/deepseek-v4-pro-0813"}
 	ch, err := Stream(context.Background(), cfg, []Turn{{Role: "user", Content: "hi"}}, srv.Client())
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
-	var out strings.Builder
+	var reasoning strings.Builder
+	var done *Assistant
 	for c := range ch {
 		if c.Err != nil {
 			t.Fatalf("stream error: %v", c.Err)
 		}
+		reasoning.WriteString(c.Reasoning)
 		if c.Done {
+			done = c.Assistant
 			break
 		}
-		out.WriteString(c.Text)
 	}
-	if out.String() != "workers-reply" {
-		t.Fatalf("got %q", out.String())
+	if reasoning.String() != "thinking through the request" {
+		t.Fatalf("reasoning chunks = %q", reasoning.String())
+	}
+	if done == nil || done.Reasoning != "thinking through the request" {
+		t.Fatalf("done assistant reasoning = %+v", done)
+	}
+}
+
+func TestStreamOpenAIReasoningContent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"step one\"}}]}\n\n")
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"answer\"}}]}\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	defer srv.Close()
+
+	cfg := Config{Provider: "openai", BaseURL: srv.URL, APIKey: "sk", Model: "gpt-5"}
+	ch, err := Stream(context.Background(), cfg, []Turn{{Role: "user", Content: "hi"}}, srv.Client())
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	var reasoning strings.Builder
+	var done *Assistant
+	for c := range ch {
+		if c.Err != nil {
+			t.Fatalf("stream error: %v", c.Err)
+		}
+		reasoning.WriteString(c.Reasoning)
+		if c.Done {
+			done = c.Assistant
+			break
+		}
+	}
+	if reasoning.String() != "step one" || done == nil || done.Reasoning != "step one" {
+		t.Fatalf("reasoning = %q, done = %+v", reasoning.String(), done)
+	}
+}
+
+func TestStreamAnthropicThinking(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		fmt.Fprint(w, "data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"thinking\"}}\n\n")
+		fmt.Fprint(w, "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"thinking_delta\",\"thinking\":\"pondering\"}}\n\n")
+		fmt.Fprint(w, "data: {\"type\":\"content_block_stop\",\"index\":0}\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	defer srv.Close()
+
+	cfg := Config{Provider: "anthropic", BaseURL: srv.URL, APIKey: "sk", Model: "claude-opus-4"}
+	ch, err := Stream(context.Background(), cfg, []Turn{{Role: "user", Content: "hi"}}, srv.Client())
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	var reasoning strings.Builder
+	var done *Assistant
+	for c := range ch {
+		if c.Err != nil {
+			t.Fatalf("stream error: %v", c.Err)
+		}
+		reasoning.WriteString(c.Reasoning)
+		if c.Done {
+			done = c.Assistant
+			break
+		}
+	}
+	if reasoning.String() != "pondering" || done == nil || done.Reasoning != "pondering" {
+		t.Fatalf("reasoning = %q, done = %+v", reasoning.String(), done)
 	}
 }
 

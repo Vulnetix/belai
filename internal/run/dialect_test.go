@@ -61,6 +61,22 @@ func TestResolveDialectGatewayClaudePrefixIsCaseInsensitive(t *testing.T) {
 	}
 }
 
+func TestStreamSurface(t *testing.T) {
+	cases := []struct {
+		kind kind
+		want wire.Surface
+	}{
+		{kindOpenAIChat, wire.SurfaceOpenAIChat},
+		{kindAnthropicMessages, wire.SurfaceAnthropicMessages},
+		{kindWorkersAI, wire.SurfaceWorkersAI},
+	}
+	for _, tc := range cases {
+		if got := (dialect{kind: tc.kind}).streamSurface(); got != tc.want {
+			t.Fatalf("streamSurface(kind %d) = %q, want %q", tc.kind, got, tc.want)
+		}
+	}
+}
+
 func TestResolveDialectUnknownProviderErrors(t *testing.T) {
 	if _, err := resolveDialect(Config{Provider: "gemini"}); err == nil {
 		t.Fatal("expected error for unknown provider")

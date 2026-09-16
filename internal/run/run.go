@@ -631,6 +631,7 @@ func buildRequest(ctx context.Context, cfg Config, system string, turns []Turn, 
 // Assistant is the structured result from a model turn.
 type Assistant struct {
 	Text       string
+	Reasoning  string
 	ToolCalls  []rolemanager.ToolCall
 	Stop       bool
 	Usage      *transcript.Usage // provider-reported usage, when available
@@ -729,7 +730,7 @@ func parseWorkersAI(body []byte, status int, redact func(string) string) (Assist
 			}
 			calls = append(calls, rolemanager.ToolCall{ID: tc.ID, Name: tc.Function.Name, Args: args})
 		}
-		return Assistant{Text: msg.Content, ToolCalls: calls}, nil
+		return Assistant{Text: msg.Content, Reasoning: msg.ReasoningContent, ToolCalls: calls}, nil
 	}
 	return Assistant{Text: wr.Result.Response}, nil
 }
@@ -761,7 +762,7 @@ func parseOpenAIChat(body []byte, status int, redact func(string) string) (Assis
 			TotalTokens:      cr.Usage.TotalTokens,
 		}
 	}
-	return Assistant{Text: msg.Content, ToolCalls: calls, Stop: stop, Usage: usage, StopReason: cr.Choices[0].FinishReason}, nil
+	return Assistant{Text: msg.Content, Reasoning: msg.ReasoningContent, ToolCalls: calls, Stop: stop, Usage: usage, StopReason: cr.Choices[0].FinishReason}, nil
 }
 
 func parseAnthropic(body []byte, status int, redact func(string) string) (Assistant, error) {
@@ -771,9 +772,15 @@ func parseAnthropic(body []byte, status int, redact func(string) string) (Assist
 		return Assistant{}, fmt.Errorf("decode anthropic response (%d): %w", status, err)
 	}
 	var b strings.Builder
+	var reasoning strings.Builder
 	var calls []rolemanager.ToolCall
 	for _, c := range ar.Content {
-		b.WriteString(c.Text)
+		switch c.Type {
+		case "thinking":
+			reasoning.WriteString(c.Thinking)
+		default:
+			b.WriteString(c.Text)
+		}
 		if c.Type == "tool_use" {
 			calls = append(calls, rolemanager.ToolCall{
 				ID:   c.ID,
@@ -786,7 +793,7 @@ func parseAnthropic(body []byte, status int, redact func(string) string) (Assist
 		PromptTokens:     ar.Usage.InputTokens + ar.Usage.CacheReadInputTokens + ar.Usage.CacheCreationInputTokens,
 		CompletionTokens: ar.Usage.OutputTokens,
 	}
-	return Assistant{Text: b.String(), ToolCalls: calls, Usage: usage, StopReason: ar.StopReason}, nil
+	return Assistant{Text: b.String(), Reasoning: reasoning.String(), ToolCalls: calls, Usage: usage, StopReason: ar.StopReason}, nil
 }
 
 // synthesizeDanglingToolResults inserts synthetic "No result provided"

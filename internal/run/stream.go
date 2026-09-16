@@ -24,6 +24,7 @@ import (
 // Chunk is one piece of a streamed response.
 type Chunk struct {
 	Text      string
+	Reasoning string
 	ToolCall  *ToolCallDelta // render-only; never carries execution authority
 	Err       error
 	Done      bool
@@ -164,6 +165,7 @@ func drainStream(ctx context.Context, ch chan<- Chunk, resp *http.Response, d di
 
 	acc := newToolAccumulator()
 	var text strings.Builder
+	var reasoning strings.Builder
 	var usage *transcript.Usage
 	var calls []rolemanager.ToolCall
 	var stopReason string
@@ -178,7 +180,12 @@ func drainStream(ctx context.Context, ch chan<- Chunk, resp *http.Response, d di
 	}
 
 	sendDone := func() {
-		send(Chunk{Done: true, Usage: usage, Assistant: &Assistant{Text: text.String(), ToolCalls: calls, Usage: usage, StopReason: stopReason}})
+		if d.kind == kindWorkersAI && len(acc.calls) > 0 {
+			if completed, err := acc.completeAll(); err == nil {
+				calls = append(calls, completed...)
+			}
+		}
+		send(Chunk{Done: true, Usage: usage, Assistant: &Assistant{Text: text.String(), Reasoning: reasoning.String(), ToolCalls: calls, Usage: usage, StopReason: stopReason}})
 	}
 
 	for scan.Scan() {
@@ -209,6 +216,12 @@ func drainStream(ctx context.Context, ch chan<- Chunk, resp *http.Response, d di
 		if delta.text != "" {
 			text.WriteString(delta.text)
 			if !send(Chunk{Text: delta.text}) {
+				return
+			}
+		}
+		if delta.reasoning != "" {
+			reasoning.WriteString(delta.reasoning)
+			if !send(Chunk{Reasoning: delta.reasoning}) {
 				return
 			}
 		}

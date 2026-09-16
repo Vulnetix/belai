@@ -86,6 +86,29 @@ func (a *toolAccumulator) complete(index int) (rolemanager.ToolCall, error) {
 // openedKind returns the kind of the block opened at index, if any.
 func (a *toolAccumulator) openedKind(index int) string { return a.openKinds[index] }
 
+// completeAll materialises every accumulated call in index order and empties
+// the accumulator. Workers AI has no finish_reason: "tool_calls" on its native
+// response shape, so the stream drains open calls on [DONE] instead.
+func (a *toolAccumulator) completeAll() ([]rolemanager.ToolCall, error) {
+	if len(a.calls) == 0 {
+		return nil, nil
+	}
+	idxs := make([]int, 0, len(a.calls))
+	for idx := range a.calls {
+		idxs = append(idxs, idx)
+	}
+	sort.Ints(idxs)
+	out := make([]rolemanager.ToolCall, 0, len(idxs))
+	for _, idx := range idxs {
+		call, err := a.complete(idx)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, call)
+	}
+	return out, nil
+}
+
 // drop removes any partial builder at index, used when a non-tool content
 // block (e.g. text) stops so the accumulator does not confuse it with a tool
 // call.
@@ -97,6 +120,7 @@ func (a *toolAccumulator) drop(index int) {
 // streamDelta is the decoded result of one SSE payload.
 type streamDelta struct {
 	text       string
+	reasoning  string
 	usage      *transcript.Usage
 	toolDelta  *ToolCallDelta
 	completed  []rolemanager.ToolCall
@@ -106,8 +130,11 @@ type streamDelta struct {
 // decodeStreamEvent decodes one SSE payload per dialect, updating the
 // accumulator and returning any render-only delta or completed calls.
 func decodeStreamEvent(d dialect, data string, acc *toolAccumulator) (streamDelta, error) {
-	if d.kind == kindAnthropicMessages {
+	switch d.kind {
+	case kindAnthropicMessages:
 		return decodeAnthropicEvent(data, acc)
+	case kindWorkersAI:
+		return decodeWorkersAIEvent(data, acc)
 	}
 	return decodeOpenAIEvent(data, acc)
 }
@@ -130,6 +157,10 @@ func decodeOpenAIEvent(data string, acc *toolAccumulator) (streamDelta, error) {
 	}
 	choice := chunk.Choices[0]
 	out.text = choice.Delta.Content
+	out.reasoning = choice.Delta.ReasoningContent
+	if out.reasoning == "" {
+		out.reasoning = choice.Delta.Reasoning
+	}
 	if choice.FinishReason != "" {
 		out.stopReason = choice.FinishReason
 	}
@@ -167,6 +198,49 @@ func decodeOpenAIEvent(data string, acc *toolAccumulator) (streamDelta, error) {
 	return out, nil
 }
 
+// decodeWorkersAIEvent decodes one Workers AI SSE payload. OpenAI-shaped
+// gateway payloads delegate to decodeOpenAIEvent; the native
+// {"response":"…"} shape maps Response to text, tool_calls to the
+// accumulator, and usage to the delta.
+func decodeWorkersAIEvent(data string, acc *toolAccumulator) (streamDelta, error) {
+	var chunk wire.OpenAIChatStreamChunk
+	if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+		return streamDelta{}, err
+	}
+	if len(chunk.Choices) > 0 {
+		return decodeOpenAIEvent(data, acc)
+	}
+
+	var wc wire.WorkersAIStreamChunk
+	if err := json.Unmarshal([]byte(data), &wc); err != nil {
+		return streamDelta{}, err
+	}
+	var out streamDelta
+	out.text = wc.Response
+	out.reasoning = wc.ReasoningContent
+	if wc.Usage != nil && wc.Usage.TotalTokens > 0 {
+		out.usage = &transcript.Usage{
+			PromptTokens:     wc.Usage.PromptTokens,
+			CompletionTokens: wc.Usage.CompletionTokens,
+			TotalTokens:      wc.Usage.TotalTokens,
+		}
+	}
+	for _, tc := range wc.ToolCalls {
+		if acc != nil {
+			acc.open(tc.Index, tc.ID, tc.Function.Name, "")
+			acc.appendArgs(tc.Index, tc.Function.Arguments)
+		}
+		out.toolDelta = &ToolCallDelta{
+			Index: tc.Index,
+			ID:    tc.ID,
+			Name:  tc.Function.Name,
+			Args:  tc.Function.Arguments,
+		}
+	}
+	// A payload that populates neither Response nor ToolCalls is a keepalive.
+	return out, nil
+}
+
 func decodeAnthropicEvent(data string, acc *toolAccumulator) (streamDelta, error) {
 	var ev wire.AnthropicStreamEvent
 	if err := json.Unmarshal([]byte(data), &ev); err != nil {
@@ -190,6 +264,8 @@ func decodeAnthropicEvent(data string, acc *toolAccumulator) (streamDelta, error
 		switch ev.Delta.Type {
 		case "text_delta":
 			out.text = ev.Delta.Text
+		case "thinking_delta":
+			out.reasoning = ev.Delta.Thinking
 		case "input_json_delta":
 			if acc != nil {
 				acc.appendArgs(idx, ev.Delta.PartialJSON)
