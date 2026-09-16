@@ -58,8 +58,35 @@ func TestTurnPanelEmptyBodyStillRendersFrame(t *testing.T) {
 func TestTurnPanelUserTitle(t *testing.T) {
 	msg := Message{Role: "user", Content: "hi"}
 	out := turnPanel(msg, 40, false)
-	if !strings.Contains(out, "you") {
-		t.Fatalf("expected user title, got:\n%s", out)
+	if !strings.Contains(out, "user prompt") {
+		t.Fatalf("expected user prompt title, got:\n%s", out)
+	}
+}
+
+func TestTurnPanelSteeringTitle(t *testing.T) {
+	msg := Message{Role: "user", Content: "keep going", Steering: true}
+	out := turnPanel(msg, 40, false)
+	if !strings.Contains(out, "user steering") {
+		t.Fatalf("expected user steering title, got:\n%s", out)
+	}
+}
+
+func TestTurnPanelEmptyWithToolCallsRendersSummary(t *testing.T) {
+	msg := Message{
+		Role:    "assistant",
+		Content: "",
+		ToolCalls: []AgentToolCall{
+			{ID: "1", Name: "Grep"},
+			{ID: "2", Name: "Read"},
+			{ID: "3", Name: "Grep"},
+		},
+	}
+	out := turnPanel(msg, 60, false)
+	if !strings.Contains(out, "requested 2 tools") {
+		t.Fatalf("expected tool summary, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Grep, Read") {
+		t.Fatalf("expected deduped tool names, got:\n%s", out)
 	}
 }
 
@@ -262,5 +289,71 @@ func TestFormatToolInvocation(t *testing.T) {
 				t.Fatalf("formatToolInvocation(%q, %q) = %q, want %q", tc.tool, tc.args, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestMessageListSkipsEmptyAssistantFrame(t *testing.T) {
+	list := MessageList{
+		Messages: []Message{
+			{Role: "user", Content: "hi"},
+			{Role: "assistant", Content: ""},
+			{Role: "system", Content: "done"},
+		},
+		Width:     60,
+		ShowTools: true,
+	}
+	out := list.View()
+	if strings.Contains(out, "signet") {
+		t.Fatalf("empty assistant frame should be skipped, got:\n%s", out)
+	}
+	if !strings.Contains(out, "done") {
+		t.Fatalf("system row should still render, got:\n%s", out)
+	}
+}
+
+func TestMessageListNoBlankLineBetweenToolRows(t *testing.T) {
+	tool := Message{Role: "tool", ToolName: "Grep", ToolArgs: `{"pattern":"x"}`, Status: "✓"}
+	list := MessageList{
+		Messages:  []Message{tool, tool},
+		Width:     60,
+		ShowTools: true,
+	}
+	out := list.View()
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	// A blank line between two tool rows would surface as an empty line; the
+	// two rows must be on adjacent lines.
+	for _, l := range lines {
+		if strings.TrimSpace(l) == "" {
+			t.Fatalf("expected no blank line between tool rows, got:\n%s", out)
+		}
+	}
+}
+
+func TestMessageListReasoningPanelGated(t *testing.T) {
+	list := MessageList{
+		Messages: []Message{{Role: "reasoning", Content: "private thought"}},
+		Width:    60,
+	}
+	if strings.Contains(list.View(), "private thought") {
+		t.Fatalf("reasoning must be hidden by default")
+	}
+	list.ShowReasoning = true
+	if !strings.Contains(list.View(), "private thought") {
+		t.Fatalf("reasoning should render when enabled")
+	}
+	if !strings.Contains(list.View(), "reasoning") {
+		t.Fatalf("reasoning panel title missing")
+	}
+}
+
+func TestMessageListShowToolsGated(t *testing.T) {
+	tool := Message{Role: "tool", ToolName: "Grep", ToolArgs: `{"pattern":"x"}`, Status: "✓"}
+	list := MessageList{Messages: []Message{tool}, Width: 60}
+	if strings.Contains(list.View(), "Grep") {
+		t.Fatalf("tool rows must be hidden when ShowTools is false")
+	}
+	list.ShowTools = true
+	if !strings.Contains(list.View(), "Grep") {
+		t.Fatalf("tool rows should render when ShowTools is true")
 	}
 }

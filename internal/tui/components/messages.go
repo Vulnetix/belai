@@ -44,6 +44,9 @@ type Message struct {
 	// meaningful when Role == "assistant"; it lets buildTurns preserve the
 	// tool-call metadata across rounds.
 	ToolCalls []AgentToolCall
+
+	// Steering marks a user turn injected mid-loop while the agent is running.
+	Steering bool
 }
 
 // MessageList renders the transcript.
@@ -51,6 +54,11 @@ type MessageList struct {
 	Messages  []Message
 	Width     int
 	ExpandAll bool // when true, render every message in full
+
+	// ShowReasoning and ShowTools gate the dim reasoning panel and tool rows,
+	// mirroring the ctrl+r / ctrl+t toggles resolved by the caller.
+	ShowReasoning bool
+	ShowTools     bool
 }
 
 const (
@@ -60,23 +68,78 @@ const (
 )
 
 // View renders the transcript: conversational turns as flat titled panels,
-// tool calls and system notices as single-line rows between them.
+// tool calls and system notices as single-line rows between them. Empty
+// assistant/user frames with no tool calls are skipped so a tool-calls-only
+// turn never renders a bare box. Framed panels are separated by a blank line;
+// consecutive flat rows sit on adjacent lines.
 func (m MessageList) View() string {
 	width := max(m.Width, messageMinWidth)
 
-	var b strings.Builder
+	type entry struct {
+		msg    Message
+		framed bool
+	}
+	var entries []entry
 	for _, msg := range m.Messages {
 		switch msg.Role {
+		case "reasoning":
+			if !m.ShowReasoning {
+				continue
+			}
+			entries = append(entries, entry{msg, true})
 		case "tool":
-			b.WriteString(toolRow(msg, width, m.ExpandAll))
+			if !m.ShowTools {
+				continue
+			}
+			entries = append(entries, entry{msg, false})
 		case "system":
-			b.WriteString(systemRow(msg.Content, width))
+			entries = append(entries, entry{msg, false})
 		default:
-			b.WriteString(turnPanel(msg, width, m.ExpandAll))
+			if strings.TrimSpace(msg.Content) == "" && len(msg.ToolCalls) == 0 {
+				continue
+			}
+			entries = append(entries, entry{msg, true})
 		}
-		b.WriteString("\n\n")
+	}
+
+	var b strings.Builder
+	for i, e := range entries {
+		switch e.msg.Role {
+		case "tool":
+			b.WriteString(toolRow(e.msg, width, m.ExpandAll))
+		case "system":
+			b.WriteString(systemRow(e.msg.Content, width))
+		case "reasoning":
+			b.WriteString(reasoningPanel(e.msg, width, m.ExpandAll))
+		default:
+			b.WriteString(turnPanel(e.msg, width, m.ExpandAll))
+		}
+		if i == len(entries)-1 {
+			break
+		}
+		if e.framed || entries[i+1].framed {
+			b.WriteString("\n\n")
+		} else {
+			b.WriteString("\n")
+		}
 	}
 	return b.String()
+}
+
+// reasoningPanel renders streamed chain-of-thought as a dim, unbordered
+// sibling of the assistant panel, truncated like any other turn.
+func reasoningPanel(msg Message, width int, expandAll bool) string {
+	body := strings.TrimRight(msg.Content, "\n")
+	if !expandAll && !msg.Expanded {
+		body = truncateBody(body, assistantPreviewLines)
+	}
+	body = MutedStyle.Render(body)
+	return Panel{
+		Title:  "reasoning",
+		Body:   body,
+		Width:  width,
+		Accent: lipgloss.TerminalColor(ColorMuted),
+	}.View()
 }
 
 // turnPanel renders a user or assistant turn. When the turn is longer than
@@ -85,7 +148,10 @@ func (m MessageList) View() string {
 func turnPanel(msg Message, width int, expandAll bool) string {
 	title, accent := "signet", lipgloss.TerminalColor(ColorTeal)
 	if msg.Role == "user" {
-		title, accent = "you", lipgloss.TerminalColor(ColorTealSoft)
+		title, accent = "user prompt", lipgloss.TerminalColor(ColorTealSoft)
+		if msg.Steering {
+			title, accent = "user steering", lipgloss.TerminalColor(ColorAmber)
+		}
 	} else if msg.Role != "assistant" {
 		title, accent = msg.Role, lipgloss.TerminalColor(ColorMuted)
 	}
@@ -101,6 +167,9 @@ func turnPanel(msg Message, width int, expandAll bool) string {
 	}
 
 	body := strings.TrimRight(msg.Content, "\n")
+	if strings.TrimSpace(body) == "" && len(msg.ToolCalls) > 0 {
+		body = toolCallSummary(msg.ToolCalls, width)
+	}
 	if !expandAll && !msg.Expanded {
 		body = truncateBody(body, assistantPreviewLines)
 	}
@@ -116,6 +185,28 @@ func turnPanel(msg Message, width int, expandAll bool) string {
 		Width:  width,
 		Accent: accent,
 	}.View()
+}
+
+// toolCallSummary renders a muted one-line substitute for an assistant turn
+// whose only output was tool calls. Tool names are deduped, order preserved,
+// and the line is truncated to the panel's inner width.
+func toolCallSummary(calls []AgentToolCall, width int) string {
+	seen := map[string]bool{}
+	var names []string
+	for _, c := range calls {
+		if c.Name == "" || seen[c.Name] {
+			continue
+		}
+		seen[c.Name] = true
+		names = append(names, c.Name)
+	}
+	label := "requested " + strconv.Itoa(len(names)) + " tools"
+	if len(names) == 0 {
+		label = "requested tools"
+	}
+	line := label + " · " + strings.Join(names, ", ")
+	inner := max(width-4, 8)
+	return MutedStyle.Render(truncateRunes(line, inner))
 }
 
 // truncateBody keeps up to maxLines of body and appends a muted hint when
@@ -154,7 +245,7 @@ func toolRow(msg Message, width int, expandAll bool) string {
 		}
 	}
 
-	head := WarnStyle.Render("⌁ ") + EmphStyle.Render(msg.ToolName)
+	head := MutedStyle.Render("⌁ " + msg.ToolName)
 	plain := "⌁ " + msg.ToolName
 
 	if invocation := formatToolInvocation(msg.ToolName, msg.ToolArgs); invocation != "" {
@@ -202,7 +293,7 @@ func alignStatus(head, plain, status string, width int) string {
 // renderToolContent indents and wraps a tool result line.
 func renderToolContent(content string, width int, isErr bool) string {
 	prefix := "  "
-	inner := max(width-visibleLen(prefix)-2, 8)
+	inner := max(width-visibleLen(prefix), 8)
 	body := content
 	if isErr {
 		body = DangerStyle.Render(body)
