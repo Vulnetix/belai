@@ -121,6 +121,12 @@ type Turn struct {
 	ToolCallID  string
 	ToolName    string
 	Attachments []Attachment
+	// Directive is a harness-authored continuation instruction sealed into this
+	// turn at egress as a <directive> block. It is a separate field rather than
+	// part of Content because egressTurns sanitizes Content — which strips every
+	// known harness kind — before sealing, so a directive written into Content
+	// would be silently deleted on its way to the provider.
+	Directive string
 }
 
 // ErrNotConfigured is returned when provider credentials are missing.
@@ -953,6 +959,10 @@ type Result struct {
 	ModeDecision     rolemanager.ModeDecision
 	Reply            string
 	Usage            *transcript.Usage // provider-reported usage on the final turn
+	// GoalSentinel is how a goal-mode pass loop ended (empty in agent/plan
+	// mode). Passes is how many passes the loop ran.
+	GoalSentinel rolemanager.GoalSentinel
+	Passes       int
 }
 
 // Engage runs the full noninteractive Role Manager pipeline: sanitize, then

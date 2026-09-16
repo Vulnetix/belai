@@ -4,7 +4,7 @@ import "testing"
 
 // TestClassifierPayloadsAreToolSkillAgentFree pins the invariant that every
 // classifier turn stays tool-less, skill-less, and agent-less. Adding a skills
-// carrier to prompt.Options must not leak into any of these four builders.
+// carrier to prompt.Options must not leak into any of these builders.
 func TestClassifierPayloadsAreToolSkillAgentFree(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -14,6 +14,8 @@ func TestClassifierPayloadsAreToolSkillAgentFree(t *testing.T) {
 		{"mode", BuildModeClassifierPayload("classify my prompt")},
 		{"session name", BuildSessionNamePayload("first user message")},
 		{"compaction", BuildCompactionPayload("<conversation>")},
+		{"goal evaluator", BuildGoalEvalPayload(GoalEvalInput{Goal: "g", Todos: "t", Evidence: "e"})},
+		{"agent loop evaluator", BuildAgentEvalPayload("goals", "output")},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
