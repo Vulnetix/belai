@@ -2,8 +2,11 @@ package localinfer
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -78,4 +81,54 @@ func TestDetectFindsOrReportsAbsent(t *testing.T) {
 	_, ok := Detect()
 	// Either a binary is present (ok) or none is (false); both are valid.
 	_ = ok
+}
+
+func TestDownloadChecksumVerifiedAndAtomic(t *testing.T) {
+	payload := "gguf-bytes"
+	sum := sha256.Sum256([]byte(payload))
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(payload))
+	}))
+	defer srv.Close()
+	t.Setenv("SIGNET_HF_BASE_URL", srv.URL)
+
+	dir := t.TempDir()
+	dest, err := Download(context.Background(), "org/model", ModelFile{
+		Name:   "model.gguf",
+		SHA256: hex.EncodeToString(sum[:]),
+	}, "", dir)
+	if err != nil {
+		t.Fatalf("Download: %v", err)
+	}
+	got, err := os.ReadFile(dest)
+	if err != nil || string(got) != payload {
+		t.Fatalf("downloaded = %q err=%v", got, err)
+	}
+	// No .part temp files left behind.
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".part") {
+			t.Fatalf("temp file left behind: %s", e.Name())
+		}
+	}
+}
+
+func TestDownloadChecksumMismatchRemovesPartial(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("wrong"))
+	}))
+	defer srv.Close()
+	t.Setenv("SIGNET_HF_BASE_URL", srv.URL)
+
+	dir := t.TempDir()
+	if _, err := Download(context.Background(), "org/model", ModelFile{
+		Name:   "model.gguf",
+		SHA256: strings.Repeat("a", 64),
+	}, "", dir); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Fatalf("expected checksum mismatch, got %v", err)
+	}
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 0 {
+		t.Fatalf("partial files not cleaned up: %v", entries)
+	}
 }

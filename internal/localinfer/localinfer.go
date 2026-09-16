@@ -8,8 +8,11 @@ package localinfer
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -174,4 +177,72 @@ func ModelsDir() (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, "models"), nil
+}
+
+// Download fetches one model file into dir, streaming to a temp file, verifying
+// its SHA-256 when the metadata carried one, and renaming into place
+// atomically. A partial file is removed on any failure. SIGNET_HF_BASE_URL
+// overrides the host for tests and proxies.
+func Download(ctx context.Context, repo string, mf ModelFile, token, dir string) (string, error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	dest := filepath.Join(dir, mf.Name)
+	tmp, err := os.CreateTemp(dir, ".download-*.part")
+	if err != nil {
+		return "", err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+
+	base := strings.TrimRight(os.Getenv("SIGNET_HF_BASE_URL"), "/")
+	if base == "" {
+		base = "https://huggingface.co"
+	}
+	url := base + "/" + repo + "/resolve/main/" + mf.Name
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		tmp.Close()
+		return "", err
+	}
+	if token != "" {
+		req.Header.Set("authorization", "Bearer "+token)
+	}
+	resp, err := httpclient.Default().Do(req)
+	if err != nil {
+		tmp.Close()
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		tmp.Close()
+		return "", fmt.Errorf("download %s/%s: status %d", repo, mf.Name, resp.StatusCode)
+	}
+
+	h := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(tmp, h), resp.Body); err != nil {
+		tmp.Close()
+		return "", err
+	}
+	if mf.SHA256 != "" {
+		got := hex.EncodeToString(h.Sum(nil))
+		if !strings.EqualFold(got, mf.SHA256) {
+			tmp.Close()
+			return "", fmt.Errorf("checksum mismatch for %s: got %s want %s", mf.Name, got, mf.SHA256)
+		}
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(tmpName, 0o600); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tmpName, dest); err != nil {
+		return "", err
+	}
+	return dest, nil
 }
