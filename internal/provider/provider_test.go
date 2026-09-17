@@ -100,6 +100,29 @@ func TestOpenAIResponsesRequest(t *testing.T) {
 	}
 }
 
+func TestGatewayChatRequestUsesCompatEndpoint(t *testing.T) {
+	p, err := New("cloudflare-ai-gateway", "https://gateway.ai.cloudflare.com/v1/acct/default/compat", "aig-token")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	req, err := p.NewGatewayChatRequest(wire.OpenAIChatRequest{
+		Model:    "@cf/deepseek-ai/deepseek-v4-pro-0813",
+		Messages: []wire.OpenAIChatMessage{{Role: "user", Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("NewGatewayChatRequest: %v", err)
+	}
+	// The gateway compatibility surface accepts the OpenAI SDK-style path
+	// /v1/chat/completions; /openai/chat/completions is rejected with
+	// "Compatibility endpoint: openai/chat/completions is not supported".
+	if got, want := req.URL.String(), "https://gateway.ai.cloudflare.com/v1/acct/default/compat/v1/chat/completions"; got != want {
+		t.Fatalf("URL = %q, want %q", got, want)
+	}
+	if got, want := req.Header.Get("cf-aig-authorization"), "Bearer aig-token"; got != want {
+		t.Fatalf("cf-aig-authorization = %q, want %q", got, want)
+	}
+}
+
 func TestAnthropicMessagesRequest(t *testing.T) {
 	p, err := New("anthropic", "https://api.anthropic.com", "sk-ant-test")
 	if err != nil {

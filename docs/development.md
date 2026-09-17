@@ -154,11 +154,15 @@ Business rules and edge cases:
   Workers AI backend (`workers-ai/@cf/...`). Already-prefixed ids are not
   double-prefixed. The TUI footer shows this prefixed (wire) form so the
   effective model name is visible next to the provider.
-- **Gateway authentication** — `cloudflare-ai-gateway` authenticates with a
-  gateway token via `cf-aig-authorization: Bearer`. Set `CF_AIG_TOKEN`, plus
-  `CF_ACCOUNT_ID` (or `CLOUDFLARE_ACCOUNT_ID`). The default base URL is
+- **Gateway authentication & endpoint** — `cloudflare-ai-gateway`
+  authenticates with a gateway token via `cf-aig-authorization: Bearer`. Set
+  `CF_AIG_TOKEN`, plus `CF_ACCOUNT_ID` (or `CLOUDFLARE_ACCOUNT_ID`). The
+  default base URL is
   `https://gateway.ai.cloudflare.com/v1/{CF_ACCOUNT_ID}/default/compat`; use
-  `CF_AIG_URL` to override it when your account has multiple gateways.
+  `CF_AIG_URL` to override it when your account has multiple gateways (it must
+  end in `/compat`). Chat is sent to the compatibility surface by appending
+  `/v1/chat/completions` — the `/openai/chat/completions` form is rejected
+  with `Compatibility endpoint: openai/chat/completions is not supported`.
 - **HuggingFace enablement** — the router's `/v1/models` list is live-fetched
   and may include models from third-party Inference Providers the account has
   not enabled. Selecting an un-enabled model returns `model_not_supported`

@@ -16,9 +16,11 @@ func (p *Provider) NewWorkersAIRequest(model string, body wire.WorkersAIRequest)
 }
 
 // NewGatewayChatRequest builds an OpenAI chat/completions request routed
-// through the Cloudflare AI Gateway /openai passthrough.
+// through the Cloudflare AI Gateway compatibility endpoint. The base URL ends
+// in /compat, so the OpenAI SDK-style /v1/chat/completions path is appended;
+// the /openai/chat/completions form is not a supported compatibility endpoint.
 func (p *Provider) NewGatewayChatRequest(body wire.OpenAIChatRequest) (*http.Request, error) {
-	return p.newRequest(p.gatewayURL("/openai/chat/completions"), body)
+	return p.newRequest(p.gatewayURL("/v1/chat/completions"), body)
 }
 
 // NewGatewayResponsesRequest builds an OpenAI responses request routed through

@@ -539,7 +539,7 @@ func TestBuildRequestURLsUnchanged(t *testing.T) {
 		{"anthropic", Config{Provider: "anthropic", BaseURL: "https://api.anthropic.com", APIKey: "sk", Model: "claude-opus-4-5"}, "https://api.anthropic.com/v1/messages"},
 		{"workers", Config{Provider: "cloudflare-workers-ai", BaseURL: "https://api.cloudflare.com/client/v4/accounts/acct", APIKey: "sk", Model: "@cf/moonshotai/kimi-k2.6"}, "https://api.cloudflare.com/client/v4/accounts/acct/ai/run/@cf/moonshotai/kimi-k2.6"},
 		{"gateway claude", Config{Provider: "cloudflare-ai-gateway", BaseURL: "https://gateway.ai.cloudflare.com/v1/acct/gw", APIKey: "sk", Model: "claude-sonnet-4-5"}, "https://gateway.ai.cloudflare.com/v1/acct/gw/anthropic/v1/messages"},
-		{"gateway openai", Config{Provider: "cloudflare-ai-gateway", BaseURL: "https://gateway.ai.cloudflare.com/v1/acct/gw", APIKey: "sk", Model: "gpt-5"}, "https://gateway.ai.cloudflare.com/v1/acct/gw/openai/chat/completions"},
+		{"gateway openai", Config{Provider: "cloudflare-ai-gateway", BaseURL: "https://gateway.ai.cloudflare.com/v1/acct/gw", APIKey: "sk", Model: "gpt-5"}, "https://gateway.ai.cloudflare.com/v1/acct/gw/v1/chat/completions"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

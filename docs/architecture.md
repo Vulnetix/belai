@@ -1099,8 +1099,14 @@ Provider-specific edge cases:
   catalogue. For inference it authenticates with a gateway token via
   `cf-aig-authorization: Bearer <CF_AIG_TOKEN>`. Set `CF_AIG_TOKEN` and
   `CF_ACCOUNT_ID` (or `CLOUDFLARE_ACCOUNT_ID`); the default base URL is
-  `https://gateway.ai.cloudflare.com/v1/{account_id}/default/compat`. Set
-  `CF_AIG_URL` to point at another gateway under the same account.
+  `https://gateway.ai.cloudflare.com/v1/{account_id}/default/compat`. The
+  chat request is sent to the **compatibility** surface by appending the
+  OpenAI SDK path `/v1/chat/completions` (the final URL is
+  `…/default/compat/v1/chat/completions`); the
+  `…/compat/openai/chat/completions` form is rejected with
+  `Compatibility endpoint: openai/chat/completions is not supported`. Set
+  `CF_AIG_URL` to point at another gateway under the same account (it must
+  end in `/compat` for the same reason).
 
 ### Slash commands
 
