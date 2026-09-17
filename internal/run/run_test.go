@@ -576,6 +576,40 @@ func TestBuildRequestGatewayUpstreamKeyUsesBearerAuth(t *testing.T) {
 	}
 }
 
+func TestBuildRequestGatewayWorkersAIModelPrefixing(t *testing.T) {
+	cfg := Config{
+		Provider: "cloudflare-ai-gateway",
+		BaseURL:  "https://gateway.ai.cloudflare.com/v1/acct/gw",
+		APIKey:   "cf-key",
+		Model:    "@cf/qwen/qwen3.8-27b",
+	}
+	req, _, err := buildRequest(context.Background(), cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, false, nil, nil)
+	if err != nil {
+		t.Fatalf("buildRequest: %v", err)
+	}
+	b, _ := io.ReadAll(req.Body)
+	var body map[string]any
+	if err := json.Unmarshal(b, &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	if body["model"] != "workers-ai/@cf/qwen/qwen3.8-27b" {
+		t.Fatalf("model = %q, want workers-ai/@cf/qwen/qwen3.8-27b", body["model"])
+	}
+	// Already-prefixed models must not be double-prefixed.
+	cfg.Model = "workers-ai/@cf/meta/llama-3"
+	req, _, err = buildRequest(context.Background(), cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, false, nil, nil)
+	if err != nil {
+		t.Fatalf("buildRequest: %v", err)
+	}
+	b, _ = io.ReadAll(req.Body)
+	if err := json.Unmarshal(b, &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	if body["model"] != "workers-ai/@cf/meta/llama-3" {
+		t.Fatalf("model = %q, want workers-ai/@cf/meta/llama-3", body["model"])
+	}
+}
+
 func TestBuildRequestStreamOptionsOnlyForNativeOpenAI(t *testing.T) {
 	req, _, err := buildRequest(context.Background(), Config{Provider: "openai", BaseURL: "https://api.openai.com/v1", APIKey: "sk", Model: "gpt-5"}, "sys", nil, true, nil, nil)
 	if err != nil {

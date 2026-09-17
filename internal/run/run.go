@@ -943,8 +943,12 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 				Thinking:   thinking,
 			})
 		default:
+			model := cfg.Model
+			if cfg.Provider == "cloudflare-ai-gateway" && strings.HasPrefix(model, "@cf/") {
+				model = "workers-ai/" + model
+			}
 			return d.chatRequest(p, wire.OpenAIChatRequest{
-				Model:           cfg.Model,
+				Model:           model,
 				Messages:        buildOpenAIMessages(system, turns, d.method),
 				Stream:          stream,
 				MaxTokens:       cfg.MaxTokens,
