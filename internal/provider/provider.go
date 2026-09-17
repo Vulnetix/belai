@@ -61,10 +61,12 @@ var builtins = []struct {
 	{"openai", AuthBearer},
 	{"anthropic", AuthXAPIKey},
 	{"cloudflare-workers-ai", AuthBearer},
-	// Cloudflare AI Gateway defaults to gateway-token auth
-	// (cf-aig-authorization). When an upstream_api_key is supplied, inference
-	// falls back to standard Bearer auth for pass-through gateways.
-	{"cloudflare-ai-gateway", AuthCFAIG},
+	// Cloudflare AI Gateway authenticates with the standard Cloudflare API
+	// token via Authorization: Bearer, the same token used for Workers AI.
+	// Upstream pass-through mode swaps in the upstream provider key when
+	// configured; a gateway-specific token can be used through a custom
+	// provider profile with auth set to "cf-aig".
+	{"cloudflare-ai-gateway", AuthBearer},
 	{"openrouter", AuthBearer},
 	{"google-gemini", AuthBearer},
 	{"ollama", AuthBearer},

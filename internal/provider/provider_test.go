@@ -211,7 +211,7 @@ func TestNewAssignsBuiltinAuth(t *testing.T) {
 		"openai":                AuthBearer,
 		"anthropic":             AuthXAPIKey,
 		"cloudflare-workers-ai": AuthBearer,
-		"cloudflare-ai-gateway": AuthCFAIG,
+		"cloudflare-ai-gateway": AuthBearer,
 		"huggingface":           AuthBearer,
 	}
 	for name, want := range cases {
@@ -250,9 +250,9 @@ func TestHeadersGoldenForBuiltins(t *testing.T) {
 			"authorization": "Bearer sk",
 		}},
 		{"cloudflare-ai-gateway", map[string]string{
-			"content-type":         "application/json",
-			"user-agent":           ua,
-			"cf-aig-authorization": "Bearer sk",
+			"content-type":  "application/json",
+			"user-agent":    ua,
+			"authorization": "Bearer sk",
 		}},
 		{"huggingface", map[string]string{
 			"content-type":  "application/json",
@@ -357,11 +357,12 @@ func TestNewFromProfileValidatesBaseURLAndKey(t *testing.T) {
 
 func TestNewAssignsAuthForNewBuiltins(t *testing.T) {
 	for name, want := range map[string]Auth{
-		"openrouter":    AuthBearer,
-		"google-gemini": AuthBearer,
-		"ollama":        AuthBearer,
-		"llama":         AuthBearer,
-		"huggingface":   AuthBearer,
+		"openrouter":            AuthBearer,
+		"google-gemini":         AuthBearer,
+		"cloudflare-ai-gateway": AuthBearer,
+		"ollama":                AuthBearer,
+		"llama":                 AuthBearer,
+		"huggingface":           AuthBearer,
 	} {
 		t.Run(name, func(t *testing.T) {
 			p, err := New(name, "https://x.example/v1", "k")
