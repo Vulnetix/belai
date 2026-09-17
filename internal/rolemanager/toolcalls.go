@@ -1,6 +1,9 @@
 package rolemanager
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // ToolCall is a model-emitted tool invocation.
 type ToolCall struct {
@@ -47,8 +50,29 @@ func CheckToolCalls(calls []ToolCall, promptTools []string, policy ToolCallMisma
 		case PolicyIgnore:
 			out = append(out, c)
 		default:
+			closest := closestTool(c.Name, promptTools)
+			if closest != "" {
+				return nil, fmt.Errorf("tool call %q is not present in prompt tools (policy=abort; closest available: %s)", c.Name, closest)
+			}
 			return nil, fmt.Errorf("tool call %q is not present in prompt tools (policy=abort)", c.Name)
 		}
 	}
 	return out, nil
+}
+
+// closestTool returns the registered tool name that case-insensitively
+// prefixes the requested name, or vice versa. A model truncating "GCloud" as
+// "GC" gets the hint "closest available: GCloud".
+func closestTool(name string, promptTools []string) string {
+	n := strings.ToLower(name)
+	var best string
+	for _, t := range promptTools {
+		lt := strings.ToLower(t)
+		if strings.HasPrefix(n, lt) || strings.HasPrefix(lt, n) {
+			if len(lt) > len(best) {
+				best = t
+			}
+		}
+	}
+	return best
 }

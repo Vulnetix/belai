@@ -36,6 +36,11 @@ type Options struct {
 	// preamble that tells the subagent to investigate with read-only tools
 	// rather than ask the user for clarification.
 	Explore bool
+	// ExploreTools is the detected registry the preamble names. It is data,
+	// not prose: the preamble must only promise tools the registry actually
+	// advertises, or the default abort policy rejects a hallucinated call and
+	// aborts the whole turn. Empty means "the read-only tools listed below".
+	ExploreTools []string
 	// Provider and Model name the two identities the harness does not own.
 	// Empty values are omitted rather than guessed at.
 	Provider string
@@ -79,8 +84,13 @@ const cavemanVoice = "Voice guidance: talk like caveman. Short words. No long wo
 // explorePreamble is the harness-authored guidance attached to a plan-mode
 // explore subagent's system prompt. It is trusted harness text (SourceHarness
 // provenance via SealSystem), never model output.
-const explorePreamble = `You are in plan-mode exploration. You may use the read-only tools listed below to investigate the repository. Prefer to discover facts yourself with the native read-only tools (Grep, Glob, Find, Git, Cat, Head, Tail, JQ, YQ, LS, File, Diff, and the others) rather than asking questions. Only ask the user a clarifying question when you have exhausted the available evidence and the decision genuinely requires user judgment. Produce a concise findings report as your final reply.
-`
+func explorePreamble(tools []string) string {
+	list := strings.Join(tools, ", ")
+	if strings.TrimSpace(list) == "" {
+		list = "the read-only tools listed below"
+	}
+	return "You are in plan-mode exploration. You may use the read-only tools listed below to investigate the repository. Prefer to discover facts yourself with the available read-only tools (" + list + ") rather than asking questions. Only ask the user a clarifying question when you have exhausted the available evidence and the decision genuinely requires user judgment. Produce a concise findings report as your final reply.\n"
+}
 
 // System renders the system prompt. Exactly one carrier may be active: if
 // Carrier is set, only that carrier's text may be non-empty; if Carrier is
@@ -106,7 +116,7 @@ func System(opts Options) (string, error) {
 		b.WriteString(opts.ExploreNote + "\n")
 	}
 	if opts.Explore {
-		b.WriteString(explorePreamble)
+		b.WriteString(explorePreamble(opts.ExploreTools))
 	}
 	if opts.Caveman {
 		b.WriteString(cavemanVoice)

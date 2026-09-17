@@ -1,6 +1,9 @@
 package rolemanager
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestCheckToolCallsAllKnown(t *testing.T) {
 	calls := []ToolCall{
@@ -20,6 +23,17 @@ func TestCheckToolCallsMismatchAbort(t *testing.T) {
 	calls := []ToolCall{{ID: "1", Name: "unknown_tool", Args: nil}}
 	if _, err := CheckToolCalls(calls, []string{"read"}, PolicyAbort); err == nil {
 		t.Fatalf("expected abort error for mismatched tool call")
+	}
+}
+
+func TestCheckToolCallsMismatchAbortSuggestsClosest(t *testing.T) {
+	calls := []ToolCall{{ID: "1", Name: "GC", Args: nil}}
+	_, err := CheckToolCalls(calls, []string{"Read", "GCloud", "Git"}, PolicyAbort)
+	if err == nil {
+		t.Fatal("expected abort error")
+	}
+	if !strings.Contains(err.Error(), "closest available: GCloud") {
+		t.Fatalf("error = %q, want closest available: GCloud", err.Error())
 	}
 }
 

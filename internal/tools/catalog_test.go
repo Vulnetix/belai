@@ -198,3 +198,81 @@ func TestNativeSubjectExtraction(t *testing.T) {
 		t.Fatal("JQ subject should be its filter")
 	}
 }
+
+// catalogueCommand returns the named native command from the local catalogue,
+// failing the test when it is absent.
+func catalogueCommand(t *testing.T, name string) nativeCommand {
+	t.Helper()
+	for _, c := range localCatalog() {
+		if c.name == name {
+			return c
+		}
+	}
+	t.Fatalf("no native command %q", name)
+	return nativeCommand{}
+}
+
+// TestArgumentlessNativeToolsExecute pins that an empty argv is legal: Pwd,
+// Env, and a bare Paste/Sort/Uniq invoke their binary with no arguments.
+func TestArgumentlessNativeToolsExecute(t *testing.T) {
+	cases := []struct {
+		name   string
+		binary string
+		input  string
+	}{
+		{"Pwd", "pwd", ""},
+		{"Env", "env", ""},
+		{"Paste", "paste", "a\nb\n"},
+		{"Sort", "sort", "c\na\nb\n"},
+		{"Uniq", "uniq", "a\na\nb\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := exec.LookPath(tc.binary); err != nil {
+				t.Skipf("%s not available", tc.binary)
+			}
+			n := &Native{Root: t.TempDir(), cmd: catalogueCommand(t, tc.name)}
+			args := map[string]any{}
+			if tc.input != "" {
+				args["input"] = tc.input
+			}
+			res, err := n.Execute(context.Background(), args)
+			if err != nil {
+				t.Fatalf("%s Execute: %v", tc.name, err)
+			}
+			if strings.TrimSpace(res.Content) == "" {
+				t.Fatalf("%s returned empty output", tc.name)
+			}
+		})
+	}
+}
+
+// TestInputSourcePrefersPathWhenInputBlank pins the input:"" fix.
+func TestInputSourcePrefersPathWhenInputBlank(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "d.json"), []byte(`{"a":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := inputSource(root, map[string]any{"input": "", "path": "d.json"})
+	if err != nil {
+		t.Fatalf("inputSource: %v", err)
+	}
+	if !strings.Contains(got, `{"a":1}`) {
+		t.Fatalf("blank input shadowed path; got %q", got)
+	}
+	got, err = inputSource(root, map[string]any{"input": "direct", "path": "d.json"})
+	if err != nil || got != "direct" {
+		t.Fatalf("non-blank input must win; got %q, %v", got, err)
+	}
+}
+
+// TestJQRejectsNonJSONInput pins early JSON validation before jq runs.
+func TestJQRejectsNonJSONInput(t *testing.T) {
+	n := &Native{Root: t.TempDir(), cmd: catalogueCommand(t, "JQ")}
+	if _, err := n.Execute(context.Background(), map[string]any{"filter": ".a", "input": "not json"}); err == nil || !strings.Contains(err.Error(), "not valid JSON") {
+		t.Fatalf("non-JSON input: got %v, want not-valid-JSON error", err)
+	}
+	if _, err := n.Execute(context.Background(), map[string]any{"filter": ".a"}); err == nil || !strings.Contains(err.Error(), "no input") {
+		t.Fatalf("empty input: got %v, want no-input error", err)
+	}
+}

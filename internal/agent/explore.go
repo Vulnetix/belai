@@ -120,7 +120,8 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task, steerCh chan 
 	}
 
 	opts := s.opts
-	opts.Explore = true // plan-mode exploration preamble
+	opts.Explore = true             // plan-mode exploration preamble
+	opts.ExploreTools = reg.Names() // promise only the tools actually registered
 
 	sub, err := NewSession(Options{
 		Cfg:           s.cfg,

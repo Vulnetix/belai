@@ -163,8 +163,18 @@ func TestSystemExplorePreamble(t *testing.T) {
 	if !strings.Contains(on, "plan-mode exploration") {
 		t.Fatalf("explore preamble missing:\n%s", on)
 	}
-	if !strings.Contains(on, "Grep") || !strings.Contains(on, "Git") {
-		t.Fatalf("explore preamble should name the native tools:\n%s", on)
+	if !strings.Contains(on, "the read-only tools listed below") {
+		t.Fatalf("empty tool list should fall back to the generic phrase:\n%s", on)
+	}
+	on, err = System(Options{Explore: true, ExploreTools: []string{"Grep", "Git", "JQ"}})
+	if err != nil {
+		t.Fatalf("System(Explore, tools): %v", err)
+	}
+	if !strings.Contains(on, "Grep, Git, JQ") {
+		t.Fatalf("preamble should name exactly the detected tools:\n%s", on)
+	}
+	if strings.Contains(on, "YQ") {
+		t.Fatalf("preamble must not promise a tool that is not in the list:\n%s", on)
 	}
 
 	off, err := System(Options{})

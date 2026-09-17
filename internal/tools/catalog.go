@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -73,9 +74,6 @@ func (n *Native) Execute(ctx context.Context, args map[string]any) (Result, erro
 	argv, stdin, err := n.cmd.build(n.Root, args)
 	if err != nil {
 		return Result{}, err
-	}
-	if len(argv) == 0 {
-		return Result{}, fmt.Errorf("native tool %s produced no command", n.cmd.name)
 	}
 
 	binary := n.cmd.binary
@@ -164,7 +162,7 @@ func nativeOptionalPath(root, raw string) (string, error) {
 // inputSource resolves the stdin data for transformer tools: the explicit
 // input argument wins, then a file path, then empty stdin.
 func inputSource(root string, args map[string]any) (string, error) {
-	if in, ok := argString(args, "input"); ok {
+	if in, ok := argString(args, "input"); ok && strings.TrimSpace(in) != "" {
 		return in, nil
 	}
 	if p, ok := argString(args, "path"); ok && strings.TrimSpace(p) != "" {
@@ -401,9 +399,9 @@ type transformSpec struct {
 func transformTools() []nativeCommand {
 	specs := []transformSpec{
 		{
-			name: "JQ", desc: "Transform JSON using a jq filter. Pass JSON via input or path.",
+			name: "JQ", desc: "Transform JSON using a jq filter (single line). Pass JSON via input or path.",
 			props: map[string]Property{
-				"filter": stringProp("The jq filter expression"),
+				"filter": stringProp("The jq filter expression (single line)"),
 				"input":  stringProp("JSON text to transform (takes precedence over path)"),
 				"path":   stringProp("Optional file holding JSON to transform"),
 			},
@@ -416,16 +414,23 @@ func transformTools() []nativeCommand {
 				if err := gateQuery(f); err != nil {
 					return nil, "", err
 				}
+				if strings.TrimSpace(stdin) == "" {
+					return nil, "", fmt.Errorf("JQ: no input supplied (pass input or path)")
+				}
+				if !json.Valid([]byte(stdin)) {
+					return nil, "", fmt.Errorf("JQ: input is not valid JSON (did you mean to pass a path?)")
+				}
 				return []string{"-r", f}, stdin, nil
 			},
 			subject: func(args map[string]any) string { s, _ := argString(args, "filter"); return s },
 		},
 		{
-			name: "YQ", desc: "Transform YAML/JSON using a yq expression. Pass data via input or path.",
+			name: "YQ", desc: "Transform YAML/JSON using a yq expression (single line). Pass data via input or path.",
 			props: map[string]Property{
-				"filter": stringProp("The yq expression"),
+				"filter": stringProp("The yq expression (single line)"),
 				"input":  stringProp("YAML text to transform (takes precedence over path)"),
 				"path":   stringProp("Optional file holding YAML to transform"),
+				"output": stringProp("Optional output format for -o, e.g. json or yaml"),
 			},
 			required: []string{"filter"},
 			argv: func(_ string, args map[string]any, stdin string) ([]string, string, error) {
@@ -436,7 +441,13 @@ func transformTools() []nativeCommand {
 				if err := gateQuery(f); err != nil {
 					return nil, "", err
 				}
-				return []string{"-r", f}, stdin, nil
+				if strings.TrimSpace(stdin) == "" {
+					return nil, "", fmt.Errorf("YQ: no input supplied (pass input or path)")
+				}
+				if out, ok := argString(args, "output"); ok && strings.TrimSpace(out) != "" {
+					return []string{"-o", out, f}, stdin, nil
+				}
+				return []string{f}, stdin, nil
 			},
 			subject: func(args map[string]any) string { s, _ := argString(args, "filter"); return s },
 		},
