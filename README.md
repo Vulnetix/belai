@@ -109,7 +109,7 @@ Set the API key for your provider and Signet picks it up:
 | `openai` | `OPENAI_API_KEY` |
 | `anthropic` | `ANTHROPIC_API_KEY` |
 | `cloudflare-workers-ai` | `CLOUDFLARE_API_KEY`, `CLOUDFLARE_ACCOUNT_ID` |
-| `cloudflare-ai-gateway` | `CLOUDFLARE_API_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_GATEWAY_ID` |
+| `cloudflare-ai-gateway` | `CF_AIG_TOKEN`, `CF_ACCOUNT_ID` (or `CLOUDFLARE_ACCOUNT_ID`). Optional: `CF_AIG_URL` |
 | `openrouter` | `OPENROUTER_API_KEY` |
 | `google-gemini` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` |
 | `ollama` | none (local; honours `OLLAMA_HOST`) |

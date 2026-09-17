@@ -913,8 +913,9 @@ than the last, and the merged list is de-duplicated by model id:
    and commit it.
 
 Live fetch is available for `anthropic`, `cloudflare-workers-ai`, `openrouter`,
-`google-gemini`, `ollama`, `llama-server`, `github-copilot`, and
-`cloudflare-ai-gateway`. `r` clears the cache and re-fetches for the selected
+`google-gemini`, `ollama`, `llama-server`, and `github-copilot`.
+`cloudflare-ai-gateway` uses a static catalogue; `r` clears the cache and
+re-fetches for the selected
 provider; fetch errors are rendered under the list as `✗ fetch: ...` so silent
 failures are visible.
 
@@ -929,31 +930,12 @@ Provider-specific edge cases:
   `model_not_supported` from the router.  The picker does not pre-filter
   because the router exposes no enabled-only list.  Users can still type and
   commit any model id directly.
-- **`cloudflare-ai-gateway`** has no gateway-side `/models` endpoint, but every
-  gateway can run any Workers AI model. Signet extracts the `account_id` from
-  the configured gateway base URL
-  (`https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}`) and
-  queries the Cloudflare v4 API at
-  `https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/models/search`,
-  using the Cloudflare `CF_API_KEY` with standard `Authorization: Bearer` auth.
-  For inference, the gateway authenticates in one of three ways:
-  1. **Managed gateway** (default) — the gateway is created in the dashboard
-     and authenticated with the standard Cloudflare API token:
-     `Authorization: Bearer CF_API_KEY`. The token must carry the **AI
-     Gateway** account permission — the **Workers AI** permission alone is
-     not enough, which is why a token that works for `cloudflare-workers-ai`
-     can still return `401 Unauthorized` against the gateway.
-  2. **Universal gateway** — a gateway created via API uses a gateway-specific
-     token. Set the optional `CLOUDFLARE_GATEWAY_TOKEN` (or `CF_AIG_TOKEN`)
-     credential; Signet then sends `cf-aig-authorization: Bearer <gateway
-     token>` instead of the Cloudflare API token.
-  3. **Pass-through mode** — the gateway forwards the upstream provider key.
-     Set the optional `UPSTREAM_API_KEY` (or `OPENAI_API_KEY`) credential.
-     When present, Signet sends `Authorization: Bearer UPSTREAM_API_KEY` and
-     the request reaches the upstream provider directly.
-  Production gateway hosts are mapped to `api.cloudflare.com`; hosts other than
-  `gateway.ai.cloudflare.com` are followed as-is so tests and private gateways
-  can be mocked.
+- **`cloudflare-ai-gateway`** uses a static catalogue. For inference it
+  authenticates with a gateway token via
+  `cf-aig-authorization: Bearer <CF_AIG_TOKEN>`. Set `CF_AIG_TOKEN` and
+  `CF_ACCOUNT_ID` (or `CLOUDFLARE_ACCOUNT_ID`); the default base URL is
+  `https://gateway.ai.cloudflare.com/v1/{account_id}/default/compat`. Set
+  `CF_AIG_URL` to point at another gateway under the same account.
 
 ### Slash commands
 

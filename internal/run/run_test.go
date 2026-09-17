@@ -45,33 +45,31 @@ func TestResolveCloudflareWorkersAI(t *testing.T) {
 
 func TestResolveCloudflareAIGateway(t *testing.T) {
 	cfg, err := Resolve("claude-sonnet-4-5", "cloudflare-ai-gateway", envMap(map[string]string{
-		"CLOUDFLARE_API_KEY":    "k",
-		"CLOUDFLARE_ACCOUNT_ID": "acct",
-		"CLOUDFLARE_GATEWAY_ID": "gw",
+		"CF_AIG_TOKEN":  "tok",
+		"CF_ACCOUNT_ID": "acct",
 	}))
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if cfg.BaseURL != "https://gateway.ai.cloudflare.com/v1/acct/gw" {
+	if cfg.BaseURL != "https://gateway.ai.cloudflare.com/v1/acct/default/compat" {
 		t.Fatalf("BaseURL = %q", cfg.BaseURL)
+	}
+	if cfg.APIKey != "tok" {
+		t.Fatalf("APIKey = %q, want tok", cfg.APIKey)
 	}
 }
 
-func TestResolveCloudflareAIGatewayUpstreamKey(t *testing.T) {
+func TestResolveCloudflareAIGatewayWithBaseURLOverride(t *testing.T) {
 	cfg, err := Resolve("claude-sonnet-4-5", "cloudflare-ai-gateway", envMap(map[string]string{
-		"CLOUDFLARE_API_KEY":    "cf-key",
-		"CLOUDFLARE_ACCOUNT_ID": "acct",
-		"CLOUDFLARE_GATEWAY_ID": "gw",
-		"UPSTREAM_API_KEY":      "upstream-key",
+		"CF_AIG_TOKEN":  "tok",
+		"CF_ACCOUNT_ID": "acct",
+		"CF_AIG_URL":    "https://gateway.ai.cloudflare.com/v1/acct/custom/compat",
 	}))
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if cfg.APIKey != "cf-key" {
-		t.Fatalf("APIKey = %q, want cf-key", cfg.APIKey)
-	}
-	if cfg.UpstreamAPIKey != "upstream-key" {
-		t.Fatalf("UpstreamAPIKey = %q, want upstream-key", cfg.UpstreamAPIKey)
+	if cfg.BaseURL != "https://gateway.ai.cloudflare.com/v1/acct/custom/compat" {
+		t.Fatalf("BaseURL = %q", cfg.BaseURL)
 	}
 }
 
@@ -97,7 +95,7 @@ func TestResolveErrors(t *testing.T) {
 	}{
 		{"workers ai missing key", "cloudflare-workers-ai", map[string]string{"CLOUDFLARE_ACCOUNT_ID": "a"}},
 		{"workers ai missing account", "cloudflare-workers-ai", map[string]string{"CLOUDFLARE_API_KEY": "k"}},
-		{"gateway missing gateway", "cloudflare-ai-gateway", map[string]string{"CLOUDFLARE_API_KEY": "k", "CLOUDFLARE_ACCOUNT_ID": "a"}},
+		{"gateway missing account", "cloudflare-ai-gateway", map[string]string{"CF_AIG_TOKEN": "t"}},
 		{"openai missing key", "", map[string]string{}},
 		{"anthropic missing key", "anthropic", map[string]string{}},
 	}
@@ -213,7 +211,7 @@ func TestPrepareReportsMissingWithoutError(t *testing.T) {
 		{"openai", map[string]string{}, []string{"api_key"}},
 		{"anthropic", map[string]string{}, []string{"api_key"}},
 		{"cloudflare-workers-ai", map[string]string{"CLOUDFLARE_API_KEY": "k"}, []string{"account_id"}},
-		{"cloudflare-ai-gateway", map[string]string{"CLOUDFLARE_API_KEY": "k", "CLOUDFLARE_ACCOUNT_ID": "a"}, []string{"gateway_id"}},
+		{"cloudflare-ai-gateway", map[string]string{"CF_AIG_TOKEN": "t"}, []string{"account_id"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.provider, func(t *testing.T) {
@@ -556,26 +554,6 @@ func TestBuildRequestURLsUnchanged(t *testing.T) {
 	}
 }
 
-func TestBuildRequestGatewayUpstreamKeyUsesBearerAuth(t *testing.T) {
-	cfg := Config{
-		Provider:       "cloudflare-ai-gateway",
-		BaseURL:        "https://gateway.ai.cloudflare.com/v1/acct/gw",
-		APIKey:         "cf-key",
-		UpstreamAPIKey: "upstream-key",
-		Model:          "gpt-5",
-	}
-	req, _, err := buildRequest(context.Background(), cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, false, nil, nil)
-	if err != nil {
-		t.Fatalf("buildRequest: %v", err)
-	}
-	if auth := req.Header.Get("Authorization"); auth != "Bearer upstream-key" {
-		t.Fatalf("Authorization = %q", auth)
-	}
-	if cfAuth := req.Header.Get("cf-aig-authorization"); cfAuth != "" {
-		t.Fatalf("cf-aig-authorization should not be set when upstream key is present, got %q", cfAuth)
-	}
-}
-
 func TestWireModel(t *testing.T) {
 	cases := []struct {
 		provider, model, want string
@@ -642,13 +620,12 @@ func TestBuildRequestGatewayWorkersAIModelPrefixing(t *testing.T) {
 	}
 }
 
-func TestBuildRequestGatewayTokenUsesCFAIGAuth(t *testing.T) {
+func TestBuildRequestGatewayUsesCFAIGAuth(t *testing.T) {
 	cfg := Config{
-		Provider:     "cloudflare-ai-gateway",
-		BaseURL:      "https://gateway.ai.cloudflare.com/v1/acct/gw",
-		APIKey:       "cf-key",
-		GatewayToken: "gateway-token",
-		Model:        "gpt-5",
+		Provider: "cloudflare-ai-gateway",
+		BaseURL:  "https://gateway.ai.cloudflare.com/v1/acct/gw",
+		APIKey:   "gateway-token",
+		Model:    "gpt-5",
 	}
 	req, _, err := buildRequest(context.Background(), cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, false, nil, nil)
 	if err != nil {
@@ -658,7 +635,7 @@ func TestBuildRequestGatewayTokenUsesCFAIGAuth(t *testing.T) {
 		t.Fatalf("cf-aig-authorization = %q", auth)
 	}
 	if auth := req.Header.Get("Authorization"); auth != "" {
-		t.Fatalf("Authorization should not be set when gateway token is present, got %q", auth)
+		t.Fatalf("Authorization should not be set for gateway token auth, got %q", auth)
 	}
 }
 
@@ -1411,6 +1388,41 @@ func TestEnvSourceHuggingFace(t *testing.T) {
 	if !ok || v != "hf-secret" || origin != "$HF_TOKEN" {
 		t.Fatalf("Lookup = %q %q %v", v, origin, ok)
 	}
+}
+
+func TestEnvSourceCloudflareAIGateway(t *testing.T) {
+	cases := []struct {
+		field, env, want string
+	}{
+		{"token", "CF_AIG_TOKEN", "tok"},
+		{"account_id", "CF_ACCOUNT_ID", "acct-cf"},
+		{"account_id", "CLOUDFLARE_ACCOUNT_ID", "acct-cf"},
+		{"base_url", "CF_AIG_URL", "https://gw.example/v1/acct/custom"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.field+"/"+tc.env, func(t *testing.T) {
+			m := map[string]string{tc.env: tc.want}
+			src := EnvSource(envMap(m))
+			v, origin, ok := src.Lookup("cloudflare-ai-gateway", tc.field)
+			if !ok || v != tc.want {
+				t.Fatalf("Lookup = %q, %q, %v; want %q from $%s", v, origin, ok, tc.want, tc.env)
+			}
+			if !strings.Contains(origin, "$") {
+				t.Fatalf("origin = %q, want env reference", origin)
+			}
+		})
+	}
+
+	t.Run("CF_ACCOUNT_ID preferred over CLOUDFLARE_ACCOUNT_ID", func(t *testing.T) {
+		src := EnvSource(envMap(map[string]string{
+			"CF_ACCOUNT_ID":         "preferred",
+			"CLOUDFLARE_ACCOUNT_ID": "fallback",
+		}))
+		v, origin, ok := src.Lookup("cloudflare-ai-gateway", "account_id")
+		if !ok || v != "preferred" || origin != "$CF_ACCOUNT_ID" {
+			t.Fatalf("Lookup = %q, %q, %v", v, origin, ok)
+		}
+	})
 }
 
 // The per-provider default model table is documented in docs/development.md.

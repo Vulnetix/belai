@@ -72,35 +72,15 @@ func TestListCloudflareWorkersAI(t *testing.T) {
 	}
 }
 
-func TestListCloudflareAIGatewayMissingAccount(t *testing.T) {
-	_, err := List(context.Background(), Target{Name: "cloudflare-ai-gateway", BaseURL: "https://gateway.ai.cloudflare.com/v1", APIKey: "k"}, nil)
-	if err == nil {
-		t.Fatal("expected error for gateway URL missing account_id")
-	}
-}
-
-func TestListCloudflareAIGateway(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/client/v4/accounts/test-account-id/ai/models/search" {
-			t.Fatalf("path = %q", r.URL.Path)
-		}
-		if auth := r.Header.Get("Authorization"); auth != "Bearer test-token" {
-			t.Fatalf("Authorization = %q", auth)
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"result": []any{
-			map[string]any{"name": "@cf/meta/llama-3.1-8b-instruct"},
-		}})
-	}))
-	defer srv.Close()
-
-	// Non-production hosts are followed so tests can mock the Cloudflare v4 API.
-	baseURL := srv.URL + "/v1/test-account-id/test-gateway-id"
-	modelList, err := List(context.Background(), Target{Name: "cloudflare-ai-gateway", BaseURL: baseURL, APIKey: "test-token"}, srv.Client())
+func TestListCloudflareAIGatewayIsStatic(t *testing.T) {
+	// The gateway has no reachable model-list endpoint with only a gateway
+	// token; the catalogue comes from the static models.Catalog list.
+	models, err := List(context.Background(), Target{Name: "cloudflare-ai-gateway", BaseURL: "https://gateway.ai.cloudflare.com/v1/acct/default/compat", APIKey: "k"}, nil)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(modelList) != 1 || modelList[0].ID != "@cf/meta/llama-3.1-8b-instruct" {
-		t.Fatalf("models = %+v", modelList)
+	if len(models) != 0 {
+		t.Fatalf("expected empty live-fetch list for cloudflare-ai-gateway, got %+v", models)
 	}
 }
 

@@ -97,7 +97,7 @@ Every posture gate also has a flag (`-allow-unsafe-tool-result`,
 | `openai` (and any unrecognised provider) | `gpt-5` |
 | `anthropic` | `claude-opus-4-5` |
 | `cloudflare-workers-ai` | `@cf/moonshotai/kimi-k2.6` |
-| `cloudflare-ai-gateway` | (set via gateway or via `UPSTREAM_API_KEY`/`OPENAI_API_KEY`) |
+| `cloudflare-ai-gateway` | `claude-sonnet-4-5` |
 | `openrouter` | `openrouter/auto` |
 | `google-gemini` | `gemini-2.5-flash` |
 | `ollama` | `llama3` |
@@ -124,7 +124,7 @@ The TUI model picker (`e model`) shows a catalogue per provider. Sources are:
 | --- | --- |
 | `anthropic` | ✅ `/v1/models` |
 | `cloudflare-workers-ai` | ✅ v4 API search |
-| `cloudflare-ai-gateway` | ✅ reuses the account's Workers AI catalogue |
+| `cloudflare-ai-gateway` | ❌ static catalogue only |
 | `google-gemini` | ✅ `/models` |
 | `ollama` | ✅ `/models` |
 | `llama-server` | ✅ `/models` |
@@ -141,14 +141,11 @@ Business rules and edge cases:
   Workers AI backend (`workers-ai/@cf/...`). Already-prefixed ids are not
   double-prefixed. The TUI footer shows this prefixed (wire) form so the
   effective model name is visible next to the provider.
-- **Gateway authentication** — `cloudflare-ai-gateway` defaults to
-  `Authorization: Bearer` with the Cloudflare API token (managed gateways);
-  the token needs the **AI Gateway** permission (Workers AI alone is not
-  enough). Universal (API-created) gateways authenticate with a gateway token
-  instead: set `CLOUDFLARE_GATEWAY_TOKEN` (or `CF_AIG_TOKEN`) and the harness
-  switches to `cf-aig-authorization: Bearer`. Pass-through mode
-  (`UPSTREAM_API_KEY`) keeps standard Bearer auth with the upstream provider
-  key.
+- **Gateway authentication** — `cloudflare-ai-gateway` authenticates with a
+  gateway token via `cf-aig-authorization: Bearer`. Set `CF_AIG_TOKEN`, plus
+  `CF_ACCOUNT_ID` (or `CLOUDFLARE_ACCOUNT_ID`). The default base URL is
+  `https://gateway.ai.cloudflare.com/v1/{CF_ACCOUNT_ID}/default/compat`; use
+  `CF_AIG_URL` to override it when your account has multiple gateways.
 - **HuggingFace enablement** — the router's `/v1/models` list is live-fetched
   and may include models from third-party Inference Providers the account has
   not enabled. Selecting an un-enabled model returns `model_not_supported`
@@ -195,7 +192,7 @@ Credentials resolve in this order, first hit wins:
 | `openai` | `OPENAI_API_KEY` |
 | `anthropic` | `ANTHROPIC_API_KEY` |
 | `cloudflare-workers-ai` | `CLOUDFLARE_API_KEY`, `CLOUDFLARE_ACCOUNT_ID` |
-| `cloudflare-ai-gateway` | `CLOUDFLARE_API_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_GATEWAY_ID`. Optional: `CLOUDFLARE_GATEWAY_TOKEN` (or `CF_AIG_TOKEN`) for universal gateways (cf-aig auth); `UPSTREAM_API_KEY` (or `OPENAI_API_KEY`) when the gateway forwards the upstream provider key instead of storing it in the gateway config. |
+| `cloudflare-ai-gateway` | `CF_AIG_TOKEN`, `CF_ACCOUNT_ID` (or `CLOUDFLARE_ACCOUNT_ID`). Optional: `CF_AIG_URL` to override the default base URL. |
 | `openrouter` | `OPENROUTER_API_KEY` |
 | `google-gemini` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` |
 | `ollama` | none (local; honours `OLLAMA_HOST`, or host/port/protocol managed in `/credentials`) |

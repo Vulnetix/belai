@@ -30,15 +30,13 @@ import (
 
 // Config is a resolved provider + model + credentials.
 type Config struct {
-	Provider       string
-	BaseURL        string
-	APIKey         string
-	UpstreamAPIKey string // secondary key for pass-through gateways (e.g. cloudflare-ai-gateway)
-	GatewayToken   string // gateway-specific token for cf-aig-authorization auth
-	Model          string
-	Effort         string        // empty means provider default thinking level
-	API            wire.Surface  // empty for built-ins; custom providers carry their surface
-	Auth           provider.Auth // empty for built-ins; custom providers carry their auth style
+	Provider string
+	BaseURL  string
+	APIKey   string
+	Model    string
+	Effort   string        // empty means provider default thinking level
+	API      wire.Surface  // empty for built-ins; custom providers carry their surface
+	Auth     provider.Auth // empty for built-ins; custom providers carry their auth style
 	// ToolMethod is the session-stored tool calling method; ToolMethodNone
 	// (zero) means detect. It is resolved once per session and carried on
 	// every request so the model's method is not re-checked per turn.
@@ -57,17 +55,15 @@ type Config struct {
 // security classifier. The classifier emits a single sentinel token, so its
 // effort defaults to "none" (reasoning off) and its completion is capped.
 type ClassifierConfig struct {
-	Provider       string
-	BaseURL        string
-	APIKey         string
-	UpstreamAPIKey string // secondary key for pass-through gateways
-	GatewayToken   string // gateway-specific token for cf-aig-authorization auth
-	Model          string
-	Effort         string
-	API            wire.Surface
-	Auth           provider.Auth
-	MaxTokens      int
-	Chunk          ChunkConfig
+	Provider  string
+	BaseURL   string
+	APIKey    string
+	Model     string
+	Effort    string
+	API       wire.Surface
+	Auth      provider.Auth
+	MaxTokens int
+	Chunk     ChunkConfig
 }
 
 // ChunkConfig bounds the chunked classify-all path for oversized payloads.
@@ -90,16 +86,14 @@ const ClassifierMaxTokens = 1024
 // config converts a classifier config back to a plain request Config.
 func (c ClassifierConfig) config() Config {
 	return Config{
-		Provider:       c.Provider,
-		BaseURL:        c.BaseURL,
-		APIKey:         c.APIKey,
-		UpstreamAPIKey: c.UpstreamAPIKey,
-		GatewayToken:   c.GatewayToken,
-		Model:          c.Model,
-		Effort:         c.Effort,
-		API:            c.API,
-		Auth:           c.Auth,
-		MaxTokens:      c.MaxTokens,
+		Provider:  c.Provider,
+		BaseURL:   c.BaseURL,
+		APIKey:    c.APIKey,
+		Model:     c.Model,
+		Effort:    c.Effort,
+		API:       c.API,
+		Auth:      c.Auth,
+		MaxTokens: c.MaxTokens,
 	}
 }
 
@@ -110,17 +104,15 @@ func (c ClassifierConfig) config() Config {
 // is resolved through src (nil means environment only).
 func ResolveClassifier(main Config, cls *config.ClassifierSettings, src CredentialSource) (ClassifierConfig, error) {
 	out := ClassifierConfig{
-		Provider:       main.Provider,
-		BaseURL:        main.BaseURL,
-		APIKey:         main.APIKey,
-		UpstreamAPIKey: main.UpstreamAPIKey,
-		GatewayToken:   main.GatewayToken,
-		Model:          main.Model,
-		Effort:         "none",
-		API:            main.API,
-		Auth:           main.Auth,
-		MaxTokens:      ClassifierMaxTokens,
-		Chunk:          ChunkConfig{MaxBytes: 1 << 20, Concurrency: 4},
+		Provider:  main.Provider,
+		BaseURL:   main.BaseURL,
+		APIKey:    main.APIKey,
+		Model:     main.Model,
+		Effort:    "none",
+		API:       main.API,
+		Auth:      main.Auth,
+		MaxTokens: ClassifierMaxTokens,
+		Chunk:     ChunkConfig{MaxBytes: 1 << 20, Concurrency: 4},
 	}
 	if cls == nil {
 		return out, nil
@@ -151,8 +143,6 @@ func ResolveClassifier(main Config, cls *config.ClassifierSettings, src Credenti
 		out.Provider = cfg.Provider
 		out.BaseURL = cfg.BaseURL
 		out.APIKey = cfg.APIKey
-		out.UpstreamAPIKey = cfg.UpstreamAPIKey
-		out.GatewayToken = cfg.GatewayToken
 		out.API = cfg.API
 		out.Auth = cfg.Auth
 		if cls.Model == "" {
@@ -216,7 +206,7 @@ func newProviderError(op string, cfg Config, resp *http.Response, body []byte, r
 		msg = redact(msg)
 	}
 	if cfg.Provider == "cloudflare-ai-gateway" && resp.StatusCode == http.StatusUnauthorized {
-		msg += " (hint: the Cloudflare API token needs the AI Gateway permission, or CLOUDFLARE_GATEWAY_ID names a nonexistent gateway; for a universal gateway set CLOUDFLARE_GATEWAY_TOKEN)"
+		msg += " (hint: CF_AIG_TOKEN may be invalid or the gateway base URL may not exist)"
 	}
 	retryAfter := parseRetryAfter(resp.Header.Get("retry-after"))
 	return &ProviderError{
@@ -351,31 +341,20 @@ func (f EnvSource) Lookup(provider, field string) (value, origin string, ok bool
 		if v := f("CLOUDFLARE_ACCOUNT_ID"); v != "" {
 			return v, "$CLOUDFLARE_ACCOUNT_ID", true
 		}
-	case "cloudflare-ai-gateway:api_key":
-		if v := f("CLOUDFLARE_API_KEY"); v != "" {
-			return v, "$CLOUDFLARE_API_KEY", true
-		}
-	case "cloudflare-ai-gateway:upstream_api_key":
-		if v := f("UPSTREAM_API_KEY"); v != "" {
-			return v, "$UPSTREAM_API_KEY", true
-		}
-		if v := f("OPENAI_API_KEY"); v != "" {
-			return v, "$OPENAI_API_KEY", true
-		}
-	case "cloudflare-ai-gateway:gateway_token":
-		if v := f("CLOUDFLARE_GATEWAY_TOKEN"); v != "" {
-			return v, "$CLOUDFLARE_GATEWAY_TOKEN", true
-		}
+	case "cloudflare-ai-gateway:token":
 		if v := f("CF_AIG_TOKEN"); v != "" {
 			return v, "$CF_AIG_TOKEN", true
 		}
 	case "cloudflare-ai-gateway:account_id":
+		if v := f("CF_ACCOUNT_ID"); v != "" {
+			return v, "$CF_ACCOUNT_ID", true
+		}
 		if v := f("CLOUDFLARE_ACCOUNT_ID"); v != "" {
 			return v, "$CLOUDFLARE_ACCOUNT_ID", true
 		}
-	case "cloudflare-ai-gateway:gateway_id":
-		if v := f("CLOUDFLARE_GATEWAY_ID"); v != "" {
-			return v, "$CLOUDFLARE_GATEWAY_ID", true
+	case "cloudflare-ai-gateway:base_url":
+		if v := f("CF_AIG_URL"); v != "" {
+			return v, "$CF_AIG_URL", true
 		}
 	case "openrouter:api_key":
 		if v := f("OPENROUTER_API_KEY"); v != "" {
@@ -550,32 +529,25 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 			status.Missing = append(status.Missing, "account_id")
 		}
 	case "cloudflare-ai-gateway":
-		var acct string
-		if key, origin, ok := src.Lookup(name, "api_key"); ok {
-			cfg.APIKey = key
-			status.Origins["api_key"] = origin
+		if tok, origin, ok := src.Lookup(name, "token"); ok {
+			cfg.APIKey = tok
+			status.Origins["token"] = origin
 		} else {
-			status.Missing = append(status.Missing, "api_key")
+			status.Missing = append(status.Missing, "token")
 		}
-		if up, origin, ok := src.Lookup(name, "upstream_api_key"); ok {
-			cfg.UpstreamAPIKey = up
-			status.Origins["upstream_api_key"] = origin
-		}
-		if gt, origin, ok := src.Lookup(name, "gateway_token"); ok {
-			cfg.GatewayToken = gt
-			status.Origins["gateway_token"] = origin
-		}
+		var acct string
 		if a, origin, ok := src.Lookup(name, "account_id"); ok {
 			acct = a
 			status.Origins["account_id"] = origin
 		} else {
 			status.Missing = append(status.Missing, "account_id")
 		}
-		if gw, origin, ok := src.Lookup(name, "gateway_id"); ok {
-			cfg.BaseURL = "https://gateway.ai.cloudflare.com/v1/" + acct + "/" + gw
-			status.Origins["gateway_id"] = origin
-		} else {
-			status.Missing = append(status.Missing, "gateway_id")
+		if base, origin, ok := src.Lookup(name, "base_url"); ok {
+			cfg.BaseURL = base
+			status.Origins["base_url"] = origin
+		} else if acct != "" {
+			cfg.BaseURL = "https://gateway.ai.cloudflare.com/v1/" + acct + "/default/compat"
+			status.Origins["base_url"] = "default"
 		}
 	case "anthropic":
 		if key, origin, ok := src.Lookup(name, "api_key"); ok {
@@ -752,12 +724,16 @@ func ResolveWithSource(model, providerName string, env func(string) string, src 
 				envHints = append(envHints, "OPENAI_API_KEY")
 			case "anthropic:api_key":
 				envHints = append(envHints, "ANTHROPIC_API_KEY")
-			case "cloudflare-workers-ai:api_key", "cloudflare-ai-gateway:api_key":
+			case "cloudflare-workers-ai:api_key":
 				envHints = append(envHints, "CLOUDFLARE_API_KEY")
-			case "cloudflare-workers-ai:account_id", "cloudflare-ai-gateway:account_id":
+			case "cloudflare-ai-gateway:token":
+				envHints = append(envHints, "CF_AIG_TOKEN")
+			case "cloudflare-workers-ai:account_id":
 				envHints = append(envHints, "CLOUDFLARE_ACCOUNT_ID")
-			case "cloudflare-ai-gateway:gateway_id":
-				envHints = append(envHints, "CLOUDFLARE_GATEWAY_ID")
+			case "cloudflare-ai-gateway:account_id":
+				envHints = append(envHints, "CF_ACCOUNT_ID", "CLOUDFLARE_ACCOUNT_ID")
+			case "cloudflare-ai-gateway:base_url":
+				envHints = append(envHints, "CF_AIG_URL")
 			case "openrouter:api_key":
 				envHints = append(envHints, "OPENROUTER_API_KEY")
 			case "google-gemini:api_key":
@@ -918,17 +894,7 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 			key = token.Value
 		}
 		var p *provider.Provider
-		if cfg.Provider == "cloudflare-ai-gateway" && cfg.GatewayToken != "" {
-			// Universal gateway: authenticate with the gateway-specific token
-			// via cf-aig-authorization instead of the Cloudflare API token.
-			key = cfg.GatewayToken
-			p, err = provider.NewWithAuth(cfg.Provider, cfg.BaseURL, key, provider.AuthCFAIG)
-		} else if cfg.Provider == "cloudflare-ai-gateway" && cfg.UpstreamAPIKey != "" {
-			// Pass-through gateway: swap the Cloudflare API key for the
-			// upstream provider key (both use standard Bearer auth).
-			key = cfg.UpstreamAPIKey
-			p, err = provider.NewWithAuth(cfg.Provider, cfg.BaseURL, key, provider.AuthBearer)
-		} else if cfg.API != "" {
+		if cfg.API != "" {
 			p, err = provider.NewFromProfile(cfg.Provider, provider.Profile{BaseURL: cfg.BaseURL, API: cfg.API, Auth: cfg.Auth}, key)
 		} else {
 			p, err = provider.New(cfg.Provider, cfg.BaseURL, key)
