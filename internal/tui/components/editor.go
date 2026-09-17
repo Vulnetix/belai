@@ -33,9 +33,11 @@ func NewEditor() Editor {
 	ta.BlurredStyle.Base = lipgloss.NewStyle()
 	ta.BlurredStyle.Placeholder = MutedStyle
 	ta.BlurredStyle.Text = MutedStyle
-	// Newline is ctrl+j only. shift+enter reaches here as ctrl+j too, because
-	// the CSI-u translator folds every modified enter onto it; alt+enter is
-	// deliberately absent, since Signet binds no alt chord anywhere.
+	// Newline is ctrl+j. shift+enter reaches it two ways, both handled in
+	// Update: under the kitty protocol the CSI-u translator folds every
+	// modified enter onto ctrl+j, and without it the terminal sends ESC+CR,
+	// which decodes as enter carrying the alt flag. Neither is an alt chord a
+	// user types, so no alt keycap is bound here.
 	ta.KeyMap.InsertNewline = key.NewBinding(
 		key.WithKeys("ctrl+j"),
 		key.WithHelp("ctrl+j", "newline"),
@@ -88,6 +90,16 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 		case tea.KeyCtrlRight:
 			e.WordRight()
 			return nil
+		case tea.KeyEnter:
+			// bubbletea has no shift+enter key type. A terminal without the
+			// kitty protocol sends shift+enter as ESC+CR, which decodes as
+			// enter with the alt flag set — a terminal encoding, not a chord
+			// anyone presses, so it is accepted here rather than bound as an
+			// alt keycap. Plain enter is left alone: it is the submit key, and
+			// the App handles it before the composer ever sees it.
+			if k.Alt {
+				msg = tea.KeyMsg{Type: tea.KeyCtrlJ}
+			}
 		}
 	}
 	m, cmd := e.textarea.Update(msg)

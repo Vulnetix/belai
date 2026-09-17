@@ -272,6 +272,13 @@ while the caveman slot stays put. `f6` is the exception: it is chat-scoped and
 must do nothing from a full-screen view. If a terminal or multiplexer swallows
 a function key, `/settings`, `/yolo` and `/mode` are the equivalent paths.
 
+**Newline keys.** Confirm `ctrl+j` and `shift+enter` both insert a newline
+rather than sending, and that plain `enter` still sends. `shift+enter` has no
+key type of its own, so it reaches the composer either as `ctrl+j` (kitty
+protocol) or as ESC+CR (without it) — test it in a terminal of each kind, or
+force the second path with `SIGNET_NO_KITTY=1`, because a change that handles
+only one encoding looks correct in the terminal you happen to use.
+
 **Composer cursor motion.** Type `foo.bar baz_qux (a, b)` into the prompt and
 walk it with `ctrl+left` / `ctrl+right`. Confirm each press crosses exactly one
 run: the dot in `foo.bar` is its own stop, `(a` stops after the paren, and

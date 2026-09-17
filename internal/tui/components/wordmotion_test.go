@@ -280,3 +280,48 @@ func TestEditorWordMotionRequiresFocus(t *testing.T) {
 		t.Fatalf("a blurred editor moved from %d to %d", before, got)
 	}
 }
+
+// shift+enter must insert a newline on both encodings a terminal can use for
+// it. bubbletea has no shift+enter key type, so it arrives either as ctrl+j
+// (the CSI-u translator folds every modified enter onto it under the kitty
+// protocol) or as enter carrying the alt flag (ESC+CR, what a terminal without
+// the protocol sends). Neither is an alt chord a user presses.
+func TestEditorShiftEnterInsertsNewline(t *testing.T) {
+	cases := []struct {
+		name string
+		key  tea.KeyMsg
+	}{
+		{"kitty protocol folds it onto ctrl+j", tea.KeyMsg{Type: tea.KeyCtrlJ}},
+		{"without the protocol it is ESC+CR", tea.KeyMsg{Type: tea.KeyEnter, Alt: true}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := NewEditor()
+			e.Focus()
+			e.SetValue("first")
+			e.CursorEnd()
+
+			e.Update(tc.key)
+			if got := e.Value(); got != "first\n" {
+				t.Fatalf("value = %q, want a trailing newline", got)
+			}
+			if e.LineCount() != 2 {
+				t.Fatalf("line count = %d, want 2", e.LineCount())
+			}
+		})
+	}
+}
+
+// Plain enter is the submit key and belongs to the App, so the composer must
+// not turn it into a newline on its way past.
+func TestEditorPlainEnterIsNotANewline(t *testing.T) {
+	e := NewEditor()
+	e.Focus()
+	e.SetValue("first")
+	e.CursorEnd()
+
+	e.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if got := e.Value(); got != "first" {
+		t.Fatalf("plain enter changed the value to %q", got)
+	}
+}

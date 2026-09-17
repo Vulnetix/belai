@@ -790,6 +790,15 @@ global is claimed by the prompt editor (`ctrl+a`, `ctrl+e`, `ctrl+f`, `ctrl+b`,
 from the editor would cost a text-editing key for every user in exchange for a
 toggle most reach through `/settings` or `/yolo` anyway.
 
+**An alt *chord* is banned; an alt *flag* is not.** The rule above is about
+keys a user presses. Several terminals encode an unrelated keypress in a form
+bubbletea decodes with `Alt: true` — ESC+CR for `shift+enter`, urxvt's
+`\x1b[Od` and xterm's `\x1b[1;7D` for `ctrl+left`. Those are accepted, matched
+on the bubbletea key **type** so the stray flag is ignored, rather than bound
+as an `"alt+…"` keycap that `String()` would have to produce. The test guard
+enforces the keycap ban, which is why it scans for string literals and not for
+the `Alt` field.
+
 `f2`–`f5` are handled in the global `tea.KeyMsg` switch, before view
 dispatch, so they work on **every** screen — including inside `/model`,
 `/settings` and the clarify questionnaire. `f6` is chat-scoped: it is handled
@@ -813,7 +822,7 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 | `ctrl+j` | Insert a newline in the prompt editor |
 | `ctrl+left` / `ctrl+right` | Move the cursor one word left / right, crossing into the neighbouring line at a line boundary |
 | `home` / `end` | Jump to the start / end of the logical line (`fn+left` / `fn+right` on a laptop keyboard) |
-| `shift+enter` | Insert a newline on terminals that support the kitty keyboard protocol |
+| `shift+enter` | Insert a newline. bubbletea has no shift+enter key type, so it arrives one of two ways and `Editor.Update` accepts both: under the kitty protocol the CSI-u translator folds every modified enter onto `ctrl+j`, and without it the terminal sends ESC+CR, which decodes as `enter` carrying the alt flag. That flag is a terminal encoding, not a chord anyone presses, so it is matched by key type rather than bound as an alt keycap |
 | `up` / `down` | Browse prompt history and prompt library. Library entries come first and their names show as a chip strip above the composer: `tab` cycles the named prompts, `right` accepts the loaded one into the composer, `enter` sends it. Typing — like any edit key — leaves the browse cycle and edits the loaded prompt |
 | `f6` | Save the current prompt to the project prompt library |
 | `tab` | Move the highlight through the slash-command hints, or — with no `/` popup, in agent mode — through the agent picker. It never writes into the prompt. While browsing the prompt library it loads the next named prompt instead |
