@@ -37,6 +37,8 @@ func keySections() []keySection {
 		{"chat", []keyBinding{
 			{"enter", "send; also runs !shell and /commands, or steers a running turn"},
 			{"ctrl+j, shift+enter", "newline"},
+			{"ctrl+left, ctrl+right", "move the cursor one word left or right"},
+			{"home, end", "jump to the start or end of the line (fn+left, fn+right)"},
 			{"esc", "clear the selection, then cancel the request"},
 			{"shift+tab", "cycle mode: agent, plan, goal"},
 			{"up", "browse prompt history and the prompt library"},

@@ -811,6 +811,8 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 | `f5` | Cycle mode and re-sync plan mode, from any screen |
 | `ctrl+home` / `ctrl+end` | Jump the transcript to the top / bottom |
 | `ctrl+j` | Insert a newline in the prompt editor |
+| `ctrl+left` / `ctrl+right` | Move the cursor one word left / right, crossing into the neighbouring line at a line boundary |
+| `home` / `end` | Jump to the start / end of the logical line (`fn+left` / `fn+right` on a laptop keyboard) |
 | `shift+enter` | Insert a newline on terminals that support the kitty keyboard protocol |
 | `up` / `down` | Browse prompt history and prompt library. Library entries come first and their names show as a chip strip above the composer: `tab` cycles the named prompts, `right` accepts the loaded one into the composer, `enter` sends it. Typing — like any edit key — leaves the browse cycle and edits the loaded prompt |
 | `f6` | Save the current prompt to the project prompt library |
@@ -895,6 +897,63 @@ allow-list narrows the foreground session's registry the same way
 `bgagent.buildSession` narrows it. Its `mode`, `schedule` and
 `max_iterations` are background-loop settings and do not apply in the
 foreground.
+
+### Cursor motion in the composer
+
+`components.Editor` wraps a bubbles textarea, which supplies character motion,
+line motion (`home`/`end`, reached as `fn+left`/`fn+right` on a laptop
+keyboard) and the readline-style editing keys. Word motion is Signet's own,
+handled in `Editor.Update` *before* the message reaches the textarea.
+
+It is handled at the Editor rather than in the `App` key switch so that every
+text-entry context gets it — the composer, the credential fields, the agent
+editor — rather than chat alone. The textarea's own `WordForward`/
+`WordBackward` bindings are cleared in `NewEditor`: they were bound to alt
+chords that never arrive, and their boundaries are whitespace-only, so leaving
+them would mean two word motions that disagree.
+
+**Boundary rules.** The motion matches the Pi coding agent's editor, which
+segments a line and then splits word-like segments again at internal
+punctuation. The observable result is a three-class model, and that is what
+`wordmotion.go` implements: runs of whitespace, runs of word runes (letters,
+digits, marks and `_`), and runs of everything else. One motion skips any
+whitespace in its path and then crosses exactly **one** run:
+
+| Line | From | `ctrl+right` | Why |
+| ---- | ---- | ------------ | --- |
+| `hello world` | 0 | 5 | to the end of the word, not the start of the next |
+| `hello world` | 5 | 11 | the gap is skipped, then one word is crossed |
+| `foo.bar` | 0 | 3 | the dot is a different class, so the word stops there |
+| `foo();` | 3 | 6 | `();` is one run, so one hop |
+| `foo_bar` | 0 | 7 | `_` is a word rune: one identifier |
+| `3.14` | 0 | 1 | the point is punctuation here too |
+
+`ctrl+left` is the mirror image: it skips whitespace behind the cursor and
+crosses one run, landing on the *start* of a word where `ctrl+right` lands on
+the *end*. That asymmetry is deliberate and matches both Pi and readline.
+
+**Edge cases.**
+
+- **Line boundaries.** `ctrl+left` at column 0 steps to the end of the
+  previous line; `ctrl+right` at the end of a line steps to the start of the
+  next. Holding the key therefore walks the whole prompt instead of stalling
+  at a newline. At the very start or end of the text the cursor stays put — it
+  never wraps around.
+- **Soft wrap.** The textarea tracks its column against the wrapped grid, so
+  the logical column is rebuilt as `LineInfo.StartColumn + ColumnOffset`. Word
+  motion is defined on logical lines; a soft-wrapped row is not a boundary.
+- **Focus.** A blurred textarea ignores every key, so word motion is gated on
+  focus too. Otherwise these two keys would drive a cursor nothing else can.
+- **Terminal encodings.** The match is on the bubbletea key *type*, not on
+  `String()`. Several terminals encode ctrl+arrow in a form that decodes with
+  the alt flag set (urxvt's `\x1b[Od`, xterm's `\x1b[1;7D`), which `String()`
+  renders as an alt chord that no case would catch. A stray alt bit on these
+  two keys is treated as noise.
+- **Indices are runes, not bytes**, so the motion cannot land inside a
+  multi-byte character.
+- **Scripts without spaces.** A run of CJK is one word here, where Pi's
+  segmenter would find boundaries inside it. Go's standard library has no word
+  segmenter, and a coarse boundary beats a wrong one.
 
 ### Prompt library
 

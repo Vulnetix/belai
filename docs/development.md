@@ -272,6 +272,17 @@ while the caveman slot stays put. `f6` is the exception: it is chat-scoped and
 must do nothing from a full-screen view. If a terminal or multiplexer swallows
 a function key, `/settings`, `/yolo` and `/mode` are the equivalent paths.
 
+**Composer cursor motion.** Type `foo.bar baz_qux (a, b)` into the prompt and
+walk it with `ctrl+left` / `ctrl+right`. Confirm each press crosses exactly one
+run: the dot in `foo.bar` is its own stop, `(a` stops after the paren, and
+`baz_qux` is a single word. Confirm `ctrl+right` lands on the *end* of a word
+and `ctrl+left` on the *start*. Then add a second line and confirm `ctrl+left`
+at column 0 steps to the end of the line above, `ctrl+right` at the end of a
+line steps to the start of the one below, and that neither wraps around at the
+very start or end of the text. Confirm `home`/`end` (`fn+left`/`fn+right`)
+still jump to the ends of the logical line, and that a long soft-wrapped line
+is walked by word without the wrap points acting as boundaries.
+
 **Agent picker.** In the TUI in agent mode, confirm the strip above the prompt
 lists your profiles, the `↻` background-agent definitions, and the `◈`
 built-ins. Press `tab` repeatedly and confirm the highlight walks every
