@@ -215,6 +215,9 @@ func newProviderError(op string, cfg Config, resp *http.Response, body []byte, r
 	if redact != nil {
 		msg = redact(msg)
 	}
+	if cfg.Provider == "cloudflare-ai-gateway" && resp.StatusCode == http.StatusUnauthorized {
+		msg += " (hint: the Cloudflare API token needs the AI Gateway permission, or CLOUDFLARE_GATEWAY_ID names a nonexistent gateway; for a universal gateway set CLOUDFLARE_GATEWAY_TOKEN)"
+	}
 	retryAfter := parseRetryAfter(resp.Header.Get("retry-after"))
 	return &ProviderError{
 		Provider:   cfg.Provider,

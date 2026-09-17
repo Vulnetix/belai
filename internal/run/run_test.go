@@ -1096,6 +1096,28 @@ func TestBuildAnthropicMessagesToolRoundTrip(t *testing.T) {
 	}
 }
 
+func TestProviderErrorGateway401Hint(t *testing.T) {
+	resp := &http.Response{
+		StatusCode: http.StatusUnauthorized,
+		Body:       io.NopCloser(strings.NewReader(`{"error":"Unauthorized"}`)),
+	}
+	cfg := Config{Provider: "cloudflare-ai-gateway", APIKey: "cf-key"}
+	err := newProviderError("test", cfg, resp, []byte(`{"error":"Unauthorized"}`), nil)
+	if !strings.Contains(err.Error(), "hint:") {
+		t.Fatalf("expected actionable hint for gateway 401, got: %v", err)
+	}
+
+	// Other providers must not get the gateway-specific hint.
+	resp2 := &http.Response{
+		StatusCode: http.StatusUnauthorized,
+		Body:       io.NopCloser(strings.NewReader(`invalid key`)),
+	}
+	err2 := newProviderError("test", Config{Provider: "openai", APIKey: "sk"}, resp2, []byte(`invalid key`), nil)
+	if strings.Contains(err2.Error(), "hint:") {
+		t.Fatalf("openai 401 must not carry the gateway hint: %v", err2)
+	}
+}
+
 func TestProviderErrorRedactsKeyAndPreservesStatus(t *testing.T) {
 	body := []byte(`error: sk-secret is invalid`)
 	resp := &http.Response{
