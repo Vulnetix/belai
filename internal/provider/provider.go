@@ -70,7 +70,7 @@ var builtins = []struct {
 	{"openrouter", AuthBearer},
 	{"google-gemini", AuthBearer},
 	{"ollama", AuthBearer},
-	{"llama", AuthBearer},
+	{"llama-server", AuthBearer},
 	{"github-copilot", AuthCopilot},
 	{"huggingface", AuthBearer},
 }

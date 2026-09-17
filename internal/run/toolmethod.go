@@ -48,7 +48,7 @@ func DetectToolMethod(cfg Config) (ToolMethod, error) {
 			return ToolMethodBlocks, nil
 		}
 		return ToolMethodString, nil
-	case "openai", "openrouter", "google-gemini", "ollama", "llama", "github-copilot", "huggingface":
+	case "openai", "openrouter", "google-gemini", "ollama", "llama-server", "github-copilot", "huggingface":
 		// The OpenAI string convention.
 		return ToolMethodString, nil
 	default:

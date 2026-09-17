@@ -55,9 +55,9 @@ func TestCatalogOllamaIsEmpty(t *testing.T) {
 	}
 }
 
-func TestCatalogLlamaIsEmpty(t *testing.T) {
-	if cat := Catalog("llama"); cat != nil {
-		t.Fatalf("llama catalog should be empty, got %+v", cat)
+func TestCatalogLlamaServerIsEmpty(t *testing.T) {
+	if cat := Catalog("llama-server"); cat != nil {
+		t.Fatalf("llama-server catalog should be empty, got %+v", cat)
 	}
 }
 

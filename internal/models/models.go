@@ -64,7 +64,7 @@ func Catalog(provider string) []Model {
 		// Ollama's model list is host-specific and unknowable offline: the
 		// catalogue is empty and the model id is typed or imported.
 		return nil
-	case "llama":
+	case "llama-server":
 		// llama.cpp loads a single model at startup; the model id is whatever
 		// the server was started with and is typed directly.
 		return nil

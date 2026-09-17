@@ -110,16 +110,16 @@ Anthropic base URLs carry no `/v1`; OpenAI-style base URLs do. Streaming and
 non-streaming request/response shapes live in `internal/wire`.
 
 Compiled-in providers are: `openai`, `anthropic`, `cloudflare-workers-ai`,
-`cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`, `llama`,
+`cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`, `llama-server`,
 `github-copilot`, and `huggingface`. Custom provider profiles can speak any of
 the three surfaces with `bearer`, `x-api-key`, or `cf-aig` auth.
 
-Both `ollama` and `llama` are local providers that need no API key. `ollama`
-speaks the Ollama native endpoint (default `http://localhost:11434/v1`) and
-`llama` speaks a llama-server / llama.cpp OpenAI-compatible endpoint (default
-`http://localhost:8080/v1`). Each resolves from a single `base_url` environment
-variable (`OLLAMA_HOST` and `SIGNET_LLAMA_HOST` respectively) or from
-individually-managed host, port, and protocol fields in `/credentials`.
+Both `ollama` and `llama-server` are local providers that need no API key.
+`ollama` speaks the Ollama native endpoint (default `http://localhost:11434/v1`)
+and `llama-server` speaks a llama-server / llama.cpp OpenAI-compatible endpoint
+(default `http://localhost:8080/v1`). Each resolves from a single `base_url`
+environment variable (`OLLAMA_HOST` and `SIGNET_LLAMA_HOST` respectively) or
+from individually-managed host, port, and protocol fields in `/credentials`.
 
 ## Modes
 
@@ -1041,7 +1041,7 @@ provider seam: set `classifier.provider` to `ollama`, `classifier.model` to the
 local model id, and `OLLAMA_HOST` to the server's base URL
 (`http://127.0.0.1:18080/v1`). Routing is all-or-nothing: once a local
 classifier is configured it handles every classification. The same applies to
-the `llama` provider for a `llama-server` endpoint (default
+the `llama-server` provider for a `llama-server` endpoint (default
 `http://localhost:8080/v1`), configured via `SIGNET_LLAMA_HOST` or the
 per-field host/port/protocol managed in `/credentials`.
 

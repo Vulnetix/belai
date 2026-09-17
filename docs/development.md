@@ -63,7 +63,7 @@ just ask anthropic claude-sonnet-4-5 "review this diff" -detect-mode -verbose
 | Flag | Meaning |
 | --- | --- |
 | `-prompt` | send one turn noninteractively, print the reply, exit |
-| `-provider` | `openai`, `anthropic`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`, `llama`, `github-copilot`, `huggingface`, or a custom name from `settings.json` |
+| `-provider` | `openai`, `anthropic`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`, `llama-server`, `github-copilot`, `huggingface`, or a custom name from `settings.json` |
 | `-model` | model id; defaults come from `run.DefaultModel` (see the table below) |
 | `-effort` | thinking-effort level: `low`, `medium`, or `high` |
 | `-classifier-provider` | security-classifier provider (default: the main provider) |
@@ -101,7 +101,7 @@ Every posture gate also has a flag (`-allow-unsafe-tool-result`,
 | `openrouter` | `openrouter/auto` |
 | `google-gemini` | `gemini-2.5-flash` |
 | `ollama` | `llama3` |
-| `llama` | `default` (the server was started with a single model) |
+| `llama-server` | `default` (the server was started with a single model) |
 | `github-copilot` | `gpt-4o` |
 | `huggingface` | none (user must type a model id; requires enabled providers in HuggingFace dashboard) |
 
@@ -145,7 +145,7 @@ Credentials resolve in this order, first hit wins:
 | `openrouter` | `OPENROUTER_API_KEY` |
 | `google-gemini` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` |
 | `ollama` | none (local; honours `OLLAMA_HOST`, or host/port/protocol managed in `/credentials`) |
-| `llama` | none (local; honours `SIGNET_LLAMA_HOST/PATH/PROTOCOL` or host/port/protocol managed in `/credentials`) |
+| `llama-server` | none (local; honours `SIGNET_LLAMA_HOST/PATH/PROTOCOL` or host/port/protocol managed in `/credentials`) |
 | `github-copilot` | `GITHUB_COPILOT_TOKEN` or `GH_TOKEN` (exchanged for a session token) |
 | `huggingface` | `HF_TOKEN` or `HUGGINGFACE_TOKEN` |
 

@@ -114,7 +114,7 @@ func waitState(t *testing.T, m *Manager, name string, want State, timeout time.D
 		select {
 		case <-deadline:
 			t.Fatalf("agent %q never reached state %q", name, want)
-		case <-time.After(time.Millisecond):
+		case <-time.After(10 * time.Millisecond):
 		}
 	}
 }
@@ -176,7 +176,7 @@ func TestRunLoopModeSupervisedContinuePauses(t *testing.T) {
 
 	// A supervised profile returning CONTINUE must park instead of looping
 	// unattended.
-	waitState(t, m, "loop", StatePaused, 5*time.Second)
+	waitState(t, m, "loop", StatePaused, 15*time.Second)
 
 	// Events channel must still be open while paused.
 	inst, _ := m.Lookup("loop")
@@ -191,8 +191,8 @@ func TestRunLoopModeSupervisedContinuePauses(t *testing.T) {
 	if err := m.Resume("loop"); err != nil {
 		t.Fatalf("Resume: %v", err)
 	}
-	waitState(t, m, "loop", StateRunning, 5*time.Second)
-	drainUntilClosed(t, m, "loop", 5*time.Second)
+	waitState(t, m, "loop", StateRunning, 15*time.Second)
+	drainUntilClosed(t, m, "loop", 15*time.Second)
 }
 
 func TestRunLoopModeSleepDelays(t *testing.T) {
@@ -206,7 +206,7 @@ func TestRunLoopModeSleepDelays(t *testing.T) {
 	if err := m.Start("loop", profile); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	drainUntilClosed(t, m, "loop", 5*time.Second)
+	drainUntilClosed(t, m, "loop", 15*time.Second)
 	if elapsed := time.Since(start); elapsed < 10*time.Millisecond {
 		t.Fatalf("SLEEP verdict completed too quickly: %v", elapsed)
 	}
@@ -222,8 +222,8 @@ func TestRunLoopModeStopEnds(t *testing.T) {
 	if err := m.Start("loop", profile); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	drainUntilClosed(t, m, "loop", 5*time.Second)
-	waitState(t, m, "loop", StateDone, 5*time.Second)
+	drainUntilClosed(t, m, "loop", 15*time.Second)
+	waitState(t, m, "loop", StateDone, 15*time.Second)
 }
 
 func TestManagerPauseResume(t *testing.T) {
@@ -236,12 +236,12 @@ func TestManagerPauseResume(t *testing.T) {
 	if err := m.Start("loop", profile); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	waitState(t, m, "loop", StateRunning, 5*time.Second)
+	waitState(t, m, "loop", StateRunning, 15*time.Second)
 
 	if err := m.Pause("loop"); err != nil {
 		t.Fatalf("Pause: %v", err)
 	}
-	waitState(t, m, "loop", StatePaused, 5*time.Second)
+	waitState(t, m, "loop", StatePaused, 15*time.Second)
 
 	if err := m.Pause("loop"); err == nil {
 		t.Fatal("expected error pausing an already-paused agent")

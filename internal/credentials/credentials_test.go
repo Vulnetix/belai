@@ -93,10 +93,10 @@ func TestSpecOllamaFields(t *testing.T) {
 	}
 }
 
-func TestSpecLlamaFields(t *testing.T) {
-	got := Spec("llama")
+func TestSpecLlamaServerFields(t *testing.T) {
+	got := Spec("llama-server")
 	if len(got) != 3 {
-		t.Fatalf("llama should have 3 fields, got %+v", got)
+		t.Fatalf("llama-server should have 3 fields, got %+v", got)
 	}
 	want := []string{"host", "port", "protocol"}
 	for i, w := range want {

@@ -361,7 +361,7 @@ func TestNewAssignsAuthForNewBuiltins(t *testing.T) {
 		"google-gemini":         AuthBearer,
 		"cloudflare-ai-gateway": AuthBearer,
 		"ollama":                AuthBearer,
-		"llama":                 AuthBearer,
+		"llama-server":          AuthBearer,
 		"huggingface":           AuthBearer,
 	} {
 		t.Run(name, func(t *testing.T) {

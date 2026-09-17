@@ -386,15 +386,15 @@ func (f EnvSource) Lookup(provider, field string) (value, origin string, ok bool
 		if v := f("SIGNET_OLLAMA_PROTOCOL"); v != "" {
 			return v, "$SIGNET_OLLAMA_PROTOCOL", true
 		}
-	case "llama:host":
+	case "llama-server:host":
 		if v := f("SIGNET_LLAMA_HOST"); v != "" {
 			return v, "$SIGNET_LLAMA_HOST", true
 		}
-	case "llama:port":
+	case "llama-server:port":
 		if v := f("SIGNET_LLAMA_PORT"); v != "" {
 			return v, "$SIGNET_LLAMA_PORT", true
 		}
-	case "llama:protocol":
+	case "llama-server:protocol":
 		if v := f("SIGNET_LLAMA_PROTOCOL"); v != "" {
 			return v, "$SIGNET_LLAMA_PROTOCOL", true
 		}
@@ -433,7 +433,7 @@ func DefaultModel(providerName string) string {
 		return "gemini-2.5-flash"
 	case "ollama":
 		return "llama3"
-	case "llama":
+	case "llama-server":
 		return "default"
 	case "github-copilot":
 		return "gpt-4o"
@@ -602,7 +602,7 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 			cfg.BaseURL = ollamaBaseURL()
 			status.Origins["base_url"] = "$OLLAMA_HOST"
 		}
-	case "llama":
+	case "llama-server":
 		// llama.cpp / llama-server uses an OpenAI-compatible local endpoint.
 		// A placeholder key keeps provider.New happy.
 		cfg.APIKey = "llama"

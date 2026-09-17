@@ -100,7 +100,7 @@ func endpointFor(t Target) (string, error) {
 		return base + "/ai/models/search", nil
 	case "huggingface":
 		return base + "/models", nil
-	case "openai", "openrouter", "google-gemini", "ollama", "llama", "github-copilot":
+	case "openai", "openrouter", "google-gemini", "ollama", "llama-server", "github-copilot":
 		return base + "/models", nil
 	default:
 		// Custom provider: choose by surface.

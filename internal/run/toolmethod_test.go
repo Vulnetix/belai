@@ -20,7 +20,7 @@ func TestDetectToolMethodBuiltins(t *testing.T) {
 		{"openrouter", Config{Provider: "openrouter"}, ToolMethodString},
 		{"google-gemini", Config{Provider: "google-gemini"}, ToolMethodString},
 		{"ollama", Config{Provider: "ollama"}, ToolMethodString},
-		{"llama", Config{Provider: "llama"}, ToolMethodString},
+		{"llama-server", Config{Provider: "llama-server"}, ToolMethodString},
 		{"github-copilot", Config{Provider: "github-copilot"}, ToolMethodString},
 		{"huggingface", Config{Provider: "huggingface"}, ToolMethodString},
 	}

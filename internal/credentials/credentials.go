@@ -70,7 +70,7 @@ func Spec(provider string) []Field {
 			{Name: "port", EnvVars: []string{"SIGNET_OLLAMA_PORT"}, Secret: false, Optional: true},
 			{Name: "protocol", EnvVars: []string{"SIGNET_OLLAMA_PROTOCOL"}, Secret: false, Optional: true},
 		}
-	case "llama":
+	case "llama-server":
 		return []Field{
 			{Name: "host", EnvVars: []string{"SIGNET_LLAMA_HOST"}, Secret: false, Optional: true},
 			{Name: "port", EnvVars: []string{"SIGNET_LLAMA_PORT"}, Secret: false, Optional: true},
@@ -209,7 +209,7 @@ func providerHost(provider string) string {
 		return "huggingface.co"
 	case "ollama":
 		return "localhost"
-	case "llama":
+	case "llama-server":
 		return "localhost"
 	default:
 		return ""

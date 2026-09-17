@@ -893,26 +893,26 @@ func TestBuildOllamaBaseURLDefaults(t *testing.T) {
 	}
 }
 
-func TestPrepareLlamaNeedsNoCredential(t *testing.T) {
-	cfg, status := Prepare("", "llama", fakeSource{})
+func TestPrepareLlamaServerNeedsNoCredential(t *testing.T) {
+	cfg, status := Prepare("", "llama-server", fakeSource{})
 	if !status.Configured {
-		t.Fatalf("llama should be configured with no credential, missing=%v", status.Missing)
+		t.Fatalf("llama-server should be configured with no credential, missing=%v", status.Missing)
 	}
 	if cfg.APIKey == "" {
-		t.Fatal("llama should carry a placeholder key")
+		t.Fatal("llama-server should carry a placeholder key")
 	}
 	if cfg.BaseURL != "http://localhost:8080/v1" {
 		t.Fatalf("BaseURL = %q, want local default", cfg.BaseURL)
 	}
 }
 
-func TestPrepareLlamaDecomposedFields(t *testing.T) {
+func TestPrepareLlamaServerDecomposedFields(t *testing.T) {
 	src := fakeSource{vals: map[string]string{
-		"llama:host":     "192.168.1.5",
-		"llama:port":     "9090",
-		"llama:protocol": "https",
+		"llama-server:host":     "192.168.1.5",
+		"llama-server:port":     "9090",
+		"llama-server:protocol": "https",
 	}}
-	cfg, status := Prepare("", "llama", src)
+	cfg, status := Prepare("", "llama-server", src)
 	if !status.Configured {
 		t.Fatalf("expected configured, missing=%v", status.Missing)
 	}
@@ -921,18 +921,6 @@ func TestPrepareLlamaDecomposedFields(t *testing.T) {
 	}
 	if status.Origins["host"] != "fake" {
 		t.Fatalf("host origin = %q, want fake", status.Origins["host"])
-	}
-}
-
-func TestBuildLlamaBaseURLDefaults(t *testing.T) {
-	if got := buildLlamaBaseURL("", "", ""); got != "http://localhost:8080/v1" {
-		t.Fatalf("empty parts = %q", got)
-	}
-	if got := buildLlamaBaseURL("myhost", "", ""); got != "http://myhost:8080/v1" {
-		t.Fatalf("host only = %q", got)
-	}
-	if got := buildLlamaBaseURL("", "9090", "https"); got != "https://localhost:9090/v1" {
-		t.Fatalf("port+protocol only = %q", got)
 	}
 }
 

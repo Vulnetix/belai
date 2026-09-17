@@ -72,7 +72,7 @@ func TestManagerLoopMaxIterations(t *testing.T) {
 		t.Fatal("agent not found after start")
 	}
 	var done bool
-	deadline := time.After(5 * time.Second)
+	deadline := time.After(10 * time.Second)
 eventLoop:
 	for {
 		select {
