@@ -87,7 +87,7 @@ Every posture gate also has a flag (`-allow-unsafe-tool-result`,
 `-allow-malformed-prompt`, `-tool-call-mismatch`, `-allow-unpermitted-tools`,
 `-allow-ask-without-tty`, `-allow-invalid-skills`, `-allow-invalid-hooks`,
 `-dangerously-yolo-everything`). They are documented with their gates in
-[role-manager.md](role-manager.md#posture-gates).
+[role-manager.md](role-manager.md#gates-and-defaults).
 
 Precedence between the three blanket switches, since they overlap:
 `-dangerously-yolo-everything` turns **both** gates off and short-circuits the
