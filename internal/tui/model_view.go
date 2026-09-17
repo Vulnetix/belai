@@ -84,7 +84,7 @@ func (a *App) fetchCatalogCmd(name string) tea.Cmd {
 		// browsing previewed providers still fetches from the right endpoint.
 		cfg, _ := run.Prepare("", name, src)
 		target := modelfetch.Target{Name: name, BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Auth: cfg.Auth, API: cfg.API}
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		m, err := modelfetch.List(ctx, target, client)
 		return modelsFetchedMsg{provider: name, models: m, err: err}
@@ -262,9 +262,12 @@ func (a *App) modelView() string {
 	// The windowed list, plus the counter/overflow affordance under it.
 	var body strings.Builder
 	metaLine := ""
-	if len(catalog) == 0 {
+	switch {
+	case a.catalogLoading[name]:
+		body.WriteString(components.AccentStyle.Render("  ○ Fetching models…") + "\n")
+	case len(catalog) == 0:
 		body.WriteString(components.MutedStyle.Render("  no models in this profile — type or import a model id") + "\n")
-	} else {
+	default:
 		a.modelState.scroll = windowStart(a.modelState.scroll, midx, len(catalog), rows)
 		start := a.modelState.scroll
 		end := start + rows

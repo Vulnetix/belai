@@ -227,3 +227,19 @@ func TestModelCommitUsesFilteredSelection(t *testing.T) {
 		t.Fatalf("committed the unfiltered index 1 instead of the filtered row")
 	}
 }
+
+func TestModelViewShowsLoadingState(t *testing.T) {
+	a := newModelPickerApp(t, []string{"m1"})
+	// Simulate an in-flight fetch by flagging the provider as loading.
+	a.catalogLoading = map[string]bool{"my-llm": true}
+	a.height = 0
+
+	view := a.modelView()
+	if !strings.Contains(view, "Fetching models") {
+		t.Fatalf("expected loading indicator in view, got:\n%s", view)
+	}
+	// When loading the empty-catalog hint must not appear.
+	if strings.Contains(view, "no models in this profile") {
+		t.Fatalf("loading state must suppress empty hint, got:\n%s", view)
+	}
+}
