@@ -99,10 +99,7 @@ func endpointFor(t Target) (string, error) {
 	case "cloudflare-workers-ai":
 		return base + "/ai/models/search", nil
 	case "huggingface":
-		// HuggingFace exposes /v1/models, but it lists more models than the free
-		// hf-inference serverless provider can run, so selecting from it produces
-		// 400s. The curated static catalog is safer; return empty here.
-		return "", nil
+		return base + "/models", nil
 	case "openai", "openrouter", "google-gemini", "ollama", "llama", "github-copilot":
 		return base + "/models", nil
 	default:

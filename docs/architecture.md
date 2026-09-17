@@ -919,14 +919,13 @@ failures are visible.
 
 Provider-specific edge cases:
 
-- **`huggingface`** does **not** live-fetch. Although HuggingFace's routing
-  layer exposes `GET https://router.huggingface.co/v1/models`, the response
-  lists more models than the free `hf-inference` serverless provider can
-  actually run, so presenting it causes users to select models that immediately
-  fail with `400 Model not supported by provider hf-inference`. Instead,
-  Signet ships a small, conservative static catalog of models that are widely
-  available on the free Serverless Inference API. Users can still type and
-  commit any model id if their token tier supports it.
+- **`huggingface`** live-fetches from `https://router.huggingface.co/v1/models`.
+  HuggingFace no longer runs its own `hf-inference` serverless provider;
+  inference is now routed through third-party providers (deepinfra, novita,
+  etc.) and users must enable the desired providers in their HuggingFace
+  dashboard before a model can be called.  The static catalog is removed
+  because every model's availability depends on the user's enabled-provider
+  set.  Users can still type and commit any model id directly.
 - **`cloudflare-ai-gateway`** has no gateway-side `/models` endpoint, but every
   gateway can run any Workers AI model. Signet extracts the `account_id` from
   the configured gateway base URL

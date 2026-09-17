@@ -438,7 +438,9 @@ func DefaultModel(providerName string) string {
 	case "github-copilot":
 		return "gpt-4o"
 	case "huggingface":
-		return "meta-llama/Llama-3.2-3B-Instruct"
+		// No reliable default: every model requires an enabled third-party
+		// provider in the user's HuggingFace dashboard.
+		return ""
 	default:
 		return "gpt-5"
 	}
@@ -643,7 +645,10 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 		} else {
 			status.Missing = append(status.Missing, "api_key")
 		}
-		cfg.BaseURL = "https://router.huggingface.co/hf-inference/v1"
+		// The HuggingFace router endpoint (not the defunct hf-inference
+		// provider).  Users must enable third-party providers in their
+		// HuggingFace dashboard; the router then picks from those providers.
+		cfg.BaseURL = "https://router.huggingface.co/v1"
 	default:
 		// Custom path: an unknown name must resolve to a configured profile.
 		// Built-in arms are reached first, so a profile named "openai" is never
@@ -882,8 +887,8 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 		}
 		var p *provider.Provider
 		if cfg.Provider == "cloudflare-ai-gateway" && cfg.UpstreamAPIKey != "" {
-			// Pass-through gateway: forward the upstream provider key via
-			// standard Bearer auth rather than the gateway token.
+			// Pass-through gateway: swap the Cloudflare API key for the
+			// upstream provider key (both use standard Bearer auth).
 			key = cfg.UpstreamAPIKey
 			p, err = provider.NewWithAuth(cfg.Provider, cfg.BaseURL, key, provider.AuthBearer)
 		} else if cfg.API != "" {

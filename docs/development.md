@@ -103,7 +103,7 @@ Every posture gate also has a flag (`-allow-unsafe-tool-result`,
 | `ollama` | `llama3` |
 | `llama` | `default` (the server was started with a single model) |
 | `github-copilot` | `gpt-4o` |
-| `huggingface` | `meta-llama/Llama-3.2-3B-Instruct` |
+| `huggingface` | none (user must type a model id; requires enabled providers in HuggingFace dashboard) |
 
 A custom provider from `settings.json` falls through to the `gpt-5` default, so
 a custom entry should carry its own model.

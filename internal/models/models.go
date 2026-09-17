@@ -75,15 +75,10 @@ func Catalog(provider string) []Model {
 			{ID: "o3-mini", Label: "o3 Mini", Efforts: defaultEfforts},
 		}
 	case "huggingface":
-		// These smaller models are widely available on the free HuggingFace
-		// Serverless Inference API. Larger or newer checkpoints often return
-		// "Model not supported by provider hf-inference", so the list is kept
-		// conservative. Users may still type any model id and commit it.
-		return []Model{
-			{ID: "meta-llama/Llama-3.2-3B-Instruct", Label: "Llama 3.2 3B", Efforts: defaultEfforts},
-			{ID: "meta-llama/Llama-3.2-1B-Instruct", Label: "Llama 3.2 1B", Efforts: defaultEfforts},
-			{ID: "mistralai/Mistral-7B-Instruct-v0.3", Label: "Mistral 7B", Efforts: defaultEfforts},
-		}
+		// HuggingFace hosts thousands of models; the only reliable catalogue
+		// is the live /v1/models endpoint.  Users can still type any model
+		// id directly and commit it.
+		return nil
 	default:
 		// Unknown names are custom providers; their catalogue comes from the
 		// profile, never the OpenAI list.

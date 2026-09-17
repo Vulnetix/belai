@@ -61,17 +61,12 @@ func TestCatalogLlamaIsEmpty(t *testing.T) {
 	}
 }
 
-func TestCatalogHuggingFace(t *testing.T) {
-	cat := Catalog("huggingface")
-	if len(cat) == 0 {
-		t.Fatal("huggingface catalog should not be empty")
+func TestCatalogHuggingFaceIsEmpty(t *testing.T) {
+	if cat := Catalog("huggingface"); cat != nil {
+		t.Fatalf("huggingface catalog should be nil (live-fetched only), got %+v", cat)
 	}
-	for _, m := range cat {
-		if m.ID == "" || m.Label == "" || len(m.Efforts) == 0 {
-			t.Fatalf("huggingface catalog has incomplete model %+v", m)
-		}
-	}
-	if got := Label("huggingface", "meta-llama/Llama-3.2-3B-Instruct"); got != "Llama 3.2 3B" {
-		t.Fatalf("label = %q", got)
+	// Label falls back to the raw model ID when there is no static catalog.
+	if got := Label("huggingface", "meta-llama/Llama-3.2-3B-Instruct"); got != "meta-llama/Llama-3.2-3B-Instruct" {
+		t.Fatalf("label = %q, want model ID fallback", got)
 	}
 }
