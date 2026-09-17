@@ -608,6 +608,21 @@ func TestBuildRequestGatewayWorkersAIModelPrefixing(t *testing.T) {
 	if body["model"] != "workers-ai/@cf/meta/llama-3" {
 		t.Fatalf("model = %q, want workers-ai/@cf/meta/llama-3", body["model"])
 	}
+	// Non-Workers-AI models routed to an upstream provider must NOT be
+	// prefixed: only the @cf/ Workers AI namespace gets the workers-ai/
+	// gateway prefix.
+	cfg.Model = "gpt-5"
+	req, _, err = buildRequest(context.Background(), cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, false, nil, nil)
+	if err != nil {
+		t.Fatalf("buildRequest: %v", err)
+	}
+	b, _ = io.ReadAll(req.Body)
+	if err := json.Unmarshal(b, &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	if body["model"] != "gpt-5" {
+		t.Fatalf("model = %q, want gpt-5 (no workers-ai/ prefix)", body["model"])
+	}
 }
 
 func TestBuildRequestGatewayTokenUsesCFAIGAuth(t *testing.T) {
