@@ -86,7 +86,9 @@ func EvaluateGoal(ctx context.Context, c Classifier, in GoalEvalInput) (GoalSent
 	}
 	s, err := ParseGoalSentinel(raw)
 	if err != nil {
+		record("goal_eval", string(GoalPartial), "", "malformed", 0)
 		return GoalPartial, ErrMalformedGoalEval
 	}
+	record("goal_eval", string(s), "", "", 0)
 	return s, nil
 }

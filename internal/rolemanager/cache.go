@@ -85,9 +85,11 @@ func (c *Cache) Get(key string) (Sentinel, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if s, ok := c.bad[key]; ok {
+		record("verdict_cache_bad", string(s), "", key[:min(12, len(key))], 0)
 		return s, true
 	}
 	if _, ok := c.safe[key]; ok {
+		record("verdict_cache_hit", string(SentinelSafe), "", key[:min(12, len(key))], 0)
 		return SentinelSafe, true
 	}
 	return "", false

@@ -9,6 +9,9 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
+
+	"github.com/vulnetix/signet/internal/trace"
 )
 
 // Decision is the permission decision for a tool invocation.
@@ -87,10 +90,24 @@ func ValidateRule(rule string) error {
 	return nil
 }
 
+var (
+	permTraceOnce sync.Once
+	permTrace     *trace.Writer
+)
+
 // Explain returns the decision for a tool invocation against a rule subject,
 // plus the rule that decided it ("" when no rule matched and the default
 // allow applies).
 func (s Settings) Explain(tool, subject string) (Decision, string) {
+	dec, rule := s.explain(tool, subject)
+	permTraceOnce.Do(func() { permTrace = trace.Env() })
+	if permTrace != nil {
+		permTrace.Record(trace.Record{Phase: "permissions", Event: "permission", Verdict: string(dec), Tool: tool, Detail: rule})
+	}
+	return dec, rule
+}
+
+func (s Settings) explain(tool, subject string) (Decision, string) {
 	for _, r := range append(append([]string{}, s.Deny...), s.Block...) {
 		if matchRule(r, tool, subject) {
 			return DecisionBlock, r

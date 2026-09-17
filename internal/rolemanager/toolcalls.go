@@ -50,6 +50,7 @@ func CheckToolCalls(calls []ToolCall, promptTools []string, policy ToolCallMisma
 		case PolicyIgnore:
 			out = append(out, c)
 		default:
+			record("tool_call_mismatch", string(PolicyAbort), c.Name, "abort", 0)
 			closest := closestTool(c.Name, promptTools)
 			if closest != "" {
 				return nil, fmt.Errorf("tool call %q is not present in prompt tools (policy=abort; closest available: %s)", c.Name, closest)

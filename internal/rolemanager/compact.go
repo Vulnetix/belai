@@ -46,6 +46,7 @@ var ErrIncompleteSummary = errors.New("compaction summary is incomplete")
 func ValidateSummary(raw string) (string, error) {
 	s := strings.TrimSpace(raw)
 	if s == "" {
+		record("compaction_summary", "invalid", "", "empty", 0)
 		return "", ErrIncompleteSummary
 	}
 	if !strings.Contains(s, "## Goal") ||
@@ -53,6 +54,7 @@ func ValidateSummary(raw string) (string, error) {
 		!strings.Contains(s, "## Critical Context") {
 		return "", ErrIncompleteSummary
 	}
+	record("compaction_summary", "valid", "", "", 0)
 	return sanitize.Sanitize(s), nil
 }
 

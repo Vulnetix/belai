@@ -98,6 +98,7 @@ func (p *Pipeline) run(ctx context.Context, content string) (clean string, s Sen
 	if p.Cache != nil {
 		key := Key(clean)
 		if cached, ok := p.Cache.Get(key); ok {
+			record("verdict_cache_hit", string(cached), "", "", 0)
 			return clean, cached, true, nil
 		}
 	}
@@ -122,8 +123,10 @@ func (p *Pipeline) run(ctx context.Context, content string) (clean string, s Sen
 
 	s, err = ParseSentinel(raw)
 	if err != nil {
+		record("security_sentinel_malformed", "", "", "", 0)
 		return clean, "", false, nil
 	}
+	record("security_sentinel", string(s), "", "", 0)
 	if p.Cache != nil {
 		_ = p.Cache.Put(Key(clean), s)
 	}
