@@ -1278,15 +1278,21 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.toolCallsOverride = nextBoolPtr(a.toolCallsOverride)
 			a.addSystem("tool-call display: " + boolLabel(a.toolCallsVisible()))
 			return a, nil
-		case "ctrl+alt+p":
+		// The four session toggles sit on the function-key row rather than on
+		// ctrl+<letter>. Every free ctrl+<letter> is already spoken for by the
+		// prompt editor (ctrl+a/e/k/u/w/n/p/v and friends), and ctrl+alt+<key>
+		// cannot be used at all: under the kitty keyboard protocol Signet
+		// pushes, a ctrl+<letter> event collapses to a legacy control code that
+		// carries no alt bit, so those chords never reached this switch.
+		case "f5":
 			a.cycleMode()
 			a.syncPlanMode()
 			return a, nil
-		case "ctrl+alt+c":
+		case "f2":
 			return a, a.toggleCaveman()
-		case "ctrl+alt+g":
+		case "f3":
 			return a, a.toggleGuardrails()
-		case "ctrl+alt+a":
+		case "f4":
 			return a, a.toggleAsk()
 		}
 		if a.view != viewChat {
@@ -1441,7 +1447,7 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		return a.submitInput(input)
 	case "up":
 		return a.startHistoryCycle()
-	case "alt+s":
+	case "f6":
 		return a.startSavePrompt()
 	}
 

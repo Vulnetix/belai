@@ -244,7 +244,20 @@ just detect-mode "add a retry to the HTTP client"   # agent
 just detect-mode "how does the nonce sealing work"  # plan
 ```
 
-**TUI smoke test.** `just tui`, then exercise slash-command autocomplete (`/p` → `/permissions`, `/profile`), `/credentials`, `/settings`, `/permissions`, `/help`, `/model`, `/compact`, `/clear`, `/rename`, `/agent list`, `/local-model`, and streaming output. Confirm `shift+tab` cycles the mode chip, `ctrl+d` quits, `ctrl+c` copies the prompt (native or OSC 52), and `esc` escapes every full-screen view — including permissions back to settings. On a provider with a long model catalogue, confirm the `/model` list is windowed (chrome stays visible, `↓ N more` marks the overflow) and that `/` narrows the list by substring while `esc` clears the filter. Press `r` on providers with live model lists (`anthropic`, `openrouter`, `huggingface`, etc.) to force a refresh; for `openai` the list is a conservative static catalog and `r` should not surface a fetch error, while `cloudflare-ai-gateway` refreshes from the Workers AI model-search API. In the Ask prompt, confirm Enter echoes the prompt into the transcript as a `user prompt` instantly, that the composer shows the filled `role manager` pill with a `pre-prompt processing` caption while the classifier runs and a plain `working` label only for model/tool I/O, and that Enter while a turn is running queues a `user steering` message. In `/settings`, confirm the **read-only tools** toggle renders `off` by default, that `space` flips it on and persists it to the scoped settings file, and that `x` clears it. Confirm the **caveman** toggle also shows `off` by default and that `ctrl+alt+c` from the chat view flips it on, emits a `caveman: on` system message, and immediately updates the footer indicator; a second press returns it to `off`. In `/permissions` with no rules, confirm the empty state reads "every tool call is allowed" and that a `Read x` preview shows the allowed-by-default wording (or blocked when `preferences.yaml` sets `permission_no_match: enforce`).
+**TUI smoke test.** `just tui`, then exercise slash-command autocomplete (`/p` → `/permissions`, `/profile`), `/credentials`, `/settings`, `/permissions`, `/help`, `/model`, `/compact`, `/clear`, `/rename`, `/agent list`, `/local-model`, and streaming output. Confirm `shift+tab` cycles the mode chip, `ctrl+d` quits, `ctrl+c` copies the prompt (native or OSC 52), and `esc` escapes every full-screen view — including permissions back to settings. On a provider with a long model catalogue, confirm the `/model` list is windowed (chrome stays visible, `↓ N more` marks the overflow) and that `/` narrows the list by substring while `esc` clears the filter. Press `r` on providers with live model lists (`anthropic`, `openrouter`, `huggingface`, etc.) to force a refresh; for `openai` the list is a conservative static catalog and `r` should not surface a fetch error, while `cloudflare-ai-gateway` refreshes from the Workers AI model-search API. In the Ask prompt, confirm Enter echoes the prompt into the transcript as a `user prompt` instantly, that the composer shows the filled `role manager` pill with a `pre-prompt processing` caption while the classifier runs and a plain `working` label only for model/tool I/O, and that Enter while a turn is running queues a `user steering` message. In `/settings`, confirm the **read-only tools** toggle renders `off` by default, that `space` flips it on and persists it to the scoped settings file, and that `x` clears it. Confirm the **caveman** toggle also shows `off` by default and that `f2` from the chat view flips it on, emits a `caveman: on` system message, and immediately updates the footer indicator; a second press returns it to `off`. In `/permissions` with no rules, confirm the empty state reads "every tool call is allowed" and that a `Read x` preview shows the allowed-by-default wording (or blocked when `preferences.yaml` sets `permission_no_match: enforce`).
+
+**Operator toggles.** These live on the function-key row precisely because
+`ctrl+alt+<key>` never reaches the TUI (see the Keybindings section of
+[architecture.md](architecture.md)), so the smoke test is the only place the
+terminal's own handling gets exercised. From the chat view *and* from inside
+`/settings`, confirm `f2` flips caveman, `f3` flips guardrails, `f4` flips ask,
+and `f5` cycles the mode chip — all four are global and must fire on a
+full-screen view, not just in chat. Confirm the footer reflects each in the
+same frame: `caveman: on|off` always shows, `guardrails`/`ask` show as two
+chips, and turning *both* gates off collapses them into one gold `YOLO` chip
+while the caveman slot stays put. `f6` is the exception: it is chat-scoped and
+must do nothing from a full-screen view. If a terminal or multiplexer swallows
+a function key, `/settings`, `/yolo` and `/mode` are the equivalent paths.
 
 **Agent picker.** In the TUI in agent mode, confirm the strip above the prompt
 lists your profiles, the `↻` background-agent definitions, and the `◈`
@@ -263,7 +276,7 @@ strip disappears, and that returning to agent mode brings both back.
 highlight cycles through every match instead of sticking on the second one —
 the prompt text must not change until `enter` or `right` accepts.
 
-**Prompt library.** Type a prompt, press `alt+s`, name it, and confirm the
+**Prompt library.** Type a prompt, press `f6`, name it, and confirm the
 system line reports it saved to the project library and that the name appears
 in `.vulnetix/prompts.json`. Press `up` and confirm the named prompt loads into
 the composer, a chip strip of prompt *names* appears above it, and the meta line

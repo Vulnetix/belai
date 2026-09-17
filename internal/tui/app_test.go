@@ -1355,7 +1355,7 @@ func TestSavePromptMode(t *testing.T) {
 	a := New(Options{Workdir: workdir})
 	a.editor.SetValue("my favourite prompt")
 
-	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}, Alt: true})
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyF6})
 	if !a.savePromptMode {
 		t.Fatalf("expected savePromptMode")
 	}

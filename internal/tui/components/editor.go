@@ -33,8 +33,11 @@ func NewEditor() Editor {
 	ta.BlurredStyle.Base = lipgloss.NewStyle()
 	ta.BlurredStyle.Placeholder = MutedStyle
 	ta.BlurredStyle.Text = MutedStyle
+	// Newline is ctrl+j only. shift+enter reaches here as ctrl+j too, because
+	// the CSI-u translator folds every modified enter onto it; alt+enter is
+	// deliberately absent, since Signet binds no alt chord anywhere.
 	ta.KeyMap.InsertNewline = key.NewBinding(
-		key.WithKeys("ctrl+j", "alt+enter"),
+		key.WithKeys("ctrl+j"),
 		key.WithHelp("ctrl+j", "newline"),
 	)
 	return Editor{textarea: ta}

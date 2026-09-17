@@ -55,8 +55,8 @@ func TestKeySectionsWellFormed(t *testing.T) {
 func TestHelpTextListsGlobalAndChatKeys(t *testing.T) {
 	got := helpText(NewRegistry(t.TempDir()))
 	for _, want := range []string{
-		"ctrl+c", "ctrl+d", "ctrl+r", "ctrl+t", "ctrl+alt+c", "ctrl+alt+p",
-		"shift+tab", "ctrl+l", "ctrl+o", "alt+s", "ctrl+j",
+		"ctrl+c", "ctrl+d", "ctrl+r", "ctrl+t", "f2", "f3", "f4", "f5",
+		"shift+tab", "ctrl+l", "ctrl+o", "f6", "ctrl+j",
 		"pgup", "ctrl+home", "ctrl+end", "shift+up", "shift+down",
 	} {
 		if !strings.Contains(got, want) {
@@ -68,7 +68,10 @@ func TestHelpTextListsGlobalAndChatKeys(t *testing.T) {
 // keyCase matches the key literals the Update switches dispatch on. Anything a
 // handler reacts to should be documented, so this is the drift guard: add a
 // binding to a switch without adding it to keySections and this fails.
-var keyCase = regexp.MustCompile(`case "([a-z+ ,"]+)":`)
+var keyCase = regexp.MustCompile(`case "([a-z0-9+ ,"]+)":`)
+
+// fKey matches the function-key names f1…f20 that bubbletea reports.
+var fKey = regexp.MustCompile(`^f([1-9]|1[0-9]|20)$`)
 
 // isKeyName reports whether a switch case is a key name rather than one of the
 // other short strings the package switches on, such as a settings key or a
@@ -80,6 +83,9 @@ func isKeyName(s string) bool {
 	switch s {
 	case "esc", "enter", "tab", "space", "up", "down", "left", "right",
 		"pgup", "pgdown", "home", "end", "backspace", "delete", "insert":
+		return true
+	}
+	if fKey.MatchString(s) {
 		return true
 	}
 	return len(s) == 1 && s[0] >= 'a' && s[0] <= 'z'

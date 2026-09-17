@@ -23,7 +23,7 @@ func TestGuardrailsAskOverrides(t *testing.T) {
 
 	a.toggleGuardrails()
 	if !a.guardrailsEnabled() {
-		t.Fatal("ctrl+alt+g must flip guardrails back on")
+		t.Fatal("f3 must flip guardrails back on")
 	}
 	if a.askEnabled() {
 		t.Fatal("toggling guardrails must not change ask")
@@ -31,7 +31,7 @@ func TestGuardrailsAskOverrides(t *testing.T) {
 
 	a.toggleAsk()
 	if !a.askEnabled() {
-		t.Fatal("ctrl+alt+a must flip ask back on")
+		t.Fatal("f4 must flip ask back on")
 	}
 
 	a.setYolo(false)

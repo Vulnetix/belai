@@ -436,7 +436,7 @@ agents installed but holding no importable key are listed with the reason.
 `internal/prompt` assembles the system prompt. It carries exactly one context
 block at a time (active plan, goal, or profile) and rewrites assistant voice
 guidance when `caveman` is on. Caveman is off by default (`nil` or `false`).
-Toggling it from the chat view with `ctrl+alt+c` persists the setting to the
+Toggling it from the chat view with `f2` persists the setting to the
 current scope (project by default), invalidates the cached agent session so
 the next turn picks up the new system prompt, and emits a `caveman: on/off`
 system message for immediate feedback.
@@ -702,6 +702,30 @@ Business rules:
 
 ### Keybindings
 
+**No binding uses `alt`, and none ever will.** Two independent reasons:
+
+1. Under the kitty keyboard protocol Signet pushes (`ui.kitty_keyboard`,
+   default on), `internal/tui/keys.Translate` maps a `ctrl`-modified letter
+   onto the legacy `tea.KeyCtrlA…KeyCtrlZ` constants. Those constants carry no
+   alt bit, so `ctrl+alt+x` and `ctrl+x` are indistinguishable by the time the
+   `switch m.String()` in `app.go` sees them — a `ctrl+alt+…` case is dead
+   code that can never match.
+2. Without the kitty protocol, `alt` is an ESC prefix, which is ambiguous
+   against a real `esc` press and is swallowed or remapped by many terminals,
+   tmux and macOS Terminal among them.
+
+The session toggles therefore live on the **function-key row** (`f2`–`f6`)
+rather than on `ctrl+<letter>`. Every `ctrl+<letter>` that is not already a
+global is claimed by the prompt editor (`ctrl+a`, `ctrl+e`, `ctrl+f`, `ctrl+b`,
+`ctrl+k`, `ctrl+u`, `ctrl+w`, `ctrl+n`, `ctrl+p`, `ctrl+v`), and taking one
+from the editor would cost a text-editing key for every user in exchange for a
+toggle most reach through `/settings` or `/yolo` anyway.
+
+`f2`–`f5` are handled in the global `tea.KeyMsg` switch, before view
+dispatch, so they work on **every** screen — including inside `/model`,
+`/settings` and the clarify questionnaire. `f6` is chat-scoped: it is handled
+in `handleChatKey`, so it does nothing on a full-screen view.
+
 | Key | Behaviour |
 | --- | --------- |
 | `ctrl+c` | Copy the current prompt to the clipboard (native, then OSC 52) |
@@ -712,13 +736,15 @@ Business rules:
 | `ctrl+l` | Clear the transcript *view* — the session is kept |
 | `ctrl+o` | Toggle full output for all truncated turns and tool results |
 | `ctrl+r` / `ctrl+t` | Toggle reasoning-panel / tool-row display for the session |
-| `ctrl+alt+c` | Toggle the caveman voice rewrite, persisting to the scoped settings file |
-| `ctrl+alt+p` | Cycle mode and re-sync plan mode, from any screen |
+| `f2` | Toggle the caveman voice rewrite, persisting to the scoped settings file; the footer `caveman:` slot updates in the same frame |
+| `f3` | Toggle guardrails (the posture gates), from any screen |
+| `f4` | Toggle the permission-ask gate, from any screen |
+| `f5` | Cycle mode and re-sync plan mode, from any screen |
 | `ctrl+home` / `ctrl+end` | Jump the transcript to the top / bottom |
-| `ctrl+j` / `alt+enter` | Insert a newline in the prompt editor |
+| `ctrl+j` | Insert a newline in the prompt editor |
 | `shift+enter` | Insert a newline on terminals that support the kitty keyboard protocol |
 | `up` / `down` | Browse prompt history and prompt library. Library entries come first and their names show as a chip strip above the composer: `tab` cycles the named prompts, `right` accepts the loaded one into the composer, `enter` sends it. Typing — like any edit key — leaves the browse cycle and edits the loaded prompt |
-| `alt+s` | Save the current prompt to the project prompt library |
+| `f6` | Save the current prompt to the project prompt library |
 | `tab` | Move the highlight through the slash-command hints, or — with no `/` popup, in agent mode — through the agent picker. It never writes into the prompt. While browsing the prompt library it loads the next named prompt instead |
 | `right` / `enter` | Accept the highlighted hint (or the first, for `right` with nothing highlighted); in the agent picker, engage the highlighted agent; while browsing the prompt library, accept the loaded prompt into the composer (`right`) or send it (`enter`). Without a highlight, `right` is the cursor key and `enter` sends |
 | `ctrl+g` | Start the highlighted `↻` background-agent definition as a background agent |
@@ -863,7 +889,7 @@ Edge cases:
   ⏎ use · esc cancel`, dropping the `tab name` segment when the library
   contributed nothing to this cycle.
 
-`alt+s` in the chat composer enters a naming mode: type a name and press
+`f6` in the chat composer enters a naming mode: type a name and press
 Enter to save the current editor text to the **project** library
 (`promptlib.Add`, which replaces an entry of the same name in place and stamps
 `created_at` when it is zero). An empty name cancels with `save cancelled: name
