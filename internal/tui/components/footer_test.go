@@ -77,17 +77,69 @@ func TestFooterRendersTwoLines(t *testing.T) {
 	}
 }
 
+// The caveman slot is the only standing statement of whether replies are being
+// rewritten, so it renders in both states and never collapses away.
 func TestFooterCavemanIndicator(t *testing.T) {
 	t.Run("enabled", func(t *testing.T) {
-		f := Footer{Model: "gpt-5", Provider: "openai", Mode: "agent", Guardrails: true, Ask: true, Width: 100}
-		v := f.View()
-		if strings.Contains(v, "caveman") {
-			t.Fatalf("footer must not render a caveman slot: %q", v)
+		f := Footer{Model: "gpt-5", Provider: "openai", Mode: "agent", Guardrails: true, Ask: true, Caveman: true, Width: 120}
+		if v := f.View(); !strings.Contains(v, "caveman: on") {
+			t.Fatalf("footer must render caveman: on, got %q", v)
 		}
 	})
 	t.Run("disabled", func(t *testing.T) {
-
+		f := Footer{Model: "gpt-5", Provider: "openai", Mode: "agent", Guardrails: true, Ask: true, Width: 120}
+		if v := f.View(); !strings.Contains(v, "caveman: off") {
+			t.Fatalf("footer must render caveman: off, got %q", v)
+		}
 	})
+	t.Run("renders under YOLO too", func(t *testing.T) {
+		// Both gates off collapses the permission chips into one YOLO chip;
+		// the caveman slot is independent of that collapse.
+		f := Footer{Model: "gpt-5", Provider: "openai", Mode: "agent", Caveman: true, Width: 120}
+		v := f.View()
+		if !strings.Contains(v, "YOLO") {
+			t.Fatalf("both gates off must collapse to YOLO, got %q", v)
+		}
+		if !strings.Contains(v, "caveman: on") {
+			t.Fatalf("caveman slot must survive the YOLO collapse, got %q", v)
+		}
+	})
+	t.Run("zero-value footer still states it", func(t *testing.T) {
+		// A footer with nothing configured yet must not read as silence on a
+		// setting that changes every reply.
+		var f Footer
+		if v := f.View(); !strings.Contains(v, "caveman: off") {
+			t.Fatalf("zero footer must render caveman: off, got %q", v)
+		}
+	})
+}
+
+// The permission chips and the caveman slot are separate rules: the chips
+// collapse when both gates are off, the caveman slot never collapses.
+func TestFooterPermissionChips(t *testing.T) {
+	cases := []struct {
+		guardrails, ask bool
+		want, absent    []string
+	}{
+		{true, true, []string{"guardrails: on", "ask: on"}, []string{"YOLO"}},
+		{true, false, []string{"guardrails: on", "ask: off"}, []string{"YOLO"}},
+		{false, true, []string{"guardrails: off", "ask: on"}, []string{"YOLO"}},
+		{false, false, []string{"YOLO"}, []string{"guardrails:", "ask:"}},
+	}
+	for _, tc := range cases {
+		f := Footer{Guardrails: tc.guardrails, Ask: tc.ask, Width: 120}
+		got := f.permissionChips()
+		for _, w := range tc.want {
+			if !strings.Contains(got, w) {
+				t.Errorf("guardrails=%v ask=%v: chips %q missing %q", tc.guardrails, tc.ask, got, w)
+			}
+		}
+		for _, a := range tc.absent {
+			if strings.Contains(got, a) {
+				t.Errorf("guardrails=%v ask=%v: chips %q must not contain %q", tc.guardrails, tc.ask, got, a)
+			}
+		}
+	}
 }
 
 func TestContextBarFilledAndEmpty(t *testing.T) {

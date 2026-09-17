@@ -453,17 +453,37 @@ runs and a generic `working` label for plain I/O (see below).
 
 ### Status bar
 
-The footer is a two-line status bar:
-- Line 1: cwd (home collapsed to `~`) and git branch (`⎇ main`).
-- Line 2: provider·model·`caveman: on/off`, mode chip (colored), session (name
-  or short id), context-usage progress bar and remaining percentage. The mode
-  chip carries the engaged agent when there is one and the mode is agent —
+The footer is a rule plus two lines:
+- Line 1: the mode chip (coloured — teal for agent, soft teal for plan, amber
+  for goal), cwd (home collapsed to `~`) and git branch (`⎇ main`), joined by
+  `·`. The mode chip carries the engaged agent when there is one —
   `agent · reviewer` — so what is carrying the turn is visible without opening
-  anything. The caveman segment renders in muted style and is always present
-  so the voice-rewrite state cannot be mistaken.
-- Segments are never truncated or wrapped: when the terminal is narrower
-  than the content, the padding between the mode chip and the right-hand
-  segments clamps to one cell and the line overflows instead.
+  anything. cwd and branch are omitted entirely when unset, so a non-git
+  directory shows the chip alone.
+- Line 2, left: provider · model (with effort) · the permission chips ·
+  `caveman: on|off`.
+- Line 2, right: session (name or short id), the context-usage text segment,
+  and the context progress bar.
+- Only the **session** segment is truncated, rune-safely with an ellipsis, to
+  a budget computed from the width left over after the left group, the context
+  segment and the bar. The budget floors at 12 cells, so a very narrow
+  terminal overflows rather than erasing the session id.
+- Nothing else is truncated or wrapped: when the terminal is narrower than the
+  content, the padding between left and right clamps to one cell and the line
+  overflows instead.
+
+**Permission chips.** Guardrails and ask render as two chips, `guardrails:
+on|off` and `ask: on|off`, teal when on and red when off. When *both* are off
+they collapse into a single amber `YOLO` chip — one unmissable marker beats two
+red ones. Any other combination renders the pair.
+
+**Caveman slot.** `caveman: on|off` always renders, on and off alike: the
+rewrite silently changes how every reply is written, and the footer is the only
+standing statement of that. It does not collapse the way the permission chips
+do, and it is not a chip — the label is muted and only the value goes teal when
+on, so the safety chips keep the visual lead. `f2` and the `/settings` toggle
+both flow through `App.refreshFooter`, so the slot updates in the same frame as
+the `caveman: on/off` system message.
 
 A mode decision writes a transcript line only when it changes something: a
 classifier result that lands on the mode already selected repeats what the

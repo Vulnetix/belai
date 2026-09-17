@@ -2628,6 +2628,7 @@ func (a *App) refreshFooter() {
 	a.footer.Effort = a.settings.Effort
 	a.footer.Guardrails = a.guardrailsEnabled()
 	a.footer.Ask = a.askEnabled()
+	a.footer.Caveman = a.settings.CavemanEnabled()
 	if a.gitOK {
 		a.footer.Branch = a.gitInfo.Branch
 		a.footer.Cwd = a.workdir

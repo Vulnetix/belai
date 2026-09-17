@@ -9,7 +9,8 @@ import (
 )
 
 // Footer shows session, context usage (number and progress bar), model with
-// optional effort, permission controls, provider, and mode status.
+// optional effort, permission controls, the caveman voice status, provider,
+// and mode status.
 type Footer struct {
 	Session string
 	Tokens  int
@@ -39,6 +40,11 @@ type Footer struct {
 	// golden YOLO chip; otherwise the two chips render individually.
 	Guardrails bool
 	Ask        bool
+
+	// Caveman reports whether the caveman voice rewrite is active. It always
+	// renders, on and off alike, because it silently changes how every reply
+	// is written and the footer is the only place that says so.
+	Caveman bool
 
 	// Session naming.
 	SessionName string
@@ -98,6 +104,7 @@ func (f *Footer) View() string {
 	if chips := f.permissionChips(); chips != "" {
 		parts = append(parts, chips)
 	}
+	parts = append(parts, f.cavemanSegment())
 	left := strings.Join(parts, MutedStyle.Render(" · "))
 
 	ctxSeg := f.contextSegment()
@@ -147,6 +154,17 @@ func (f Footer) permissionChips() string {
 	guardrails := Chip("guardrails: "+onOff(f.Guardrails), onOffColor(f.Guardrails))
 	ask := Chip("ask: "+onOff(f.Ask), onOffColor(f.Ask))
 	return guardrails + MutedStyle.Render(" ") + ask
+}
+
+// cavemanSegment renders the caveman voice-rewrite status. Unlike the
+// permission chips it never collapses away: off is as much a fact as on, so
+// both render. The value is teal when on and muted when off, while the label
+// stays muted either way so the safety chips keep the visual lead.
+func (f Footer) cavemanSegment() string {
+	if f.Caveman {
+		return MutedStyle.Render("caveman: ") + lipgloss.NewStyle().Foreground(ColorTeal).Render("on")
+	}
+	return MutedStyle.Render("caveman: off")
 }
 
 func onOffColor(on bool) lipgloss.TerminalColor {
