@@ -635,7 +635,7 @@ func (f fakeProfileSource) Profile(name string) (provider.Profile, bool) {
 }
 
 func TestPrepareUnknownProviderFailsClosed(t *testing.T) {
-	cfg, status := Prepare("", "llama", EnvSource(envMap(map[string]string{})))
+	cfg, status := Prepare("", "unknownprovider", EnvSource(envMap(map[string]string{})))
 	if status.Configured {
 		t.Fatal("expected not configured")
 	}
@@ -860,6 +860,79 @@ func TestPrepareOllamaHonoursOllamaHost(t *testing.T) {
 	cfg, _ = Prepare("", "ollama", fakeSource{})
 	if cfg.BaseURL != "http://host:1234/v1" {
 		t.Fatalf("BaseURL = %q, want normalised", cfg.BaseURL)
+	}
+}
+
+func TestPrepareOllamaDecomposedFields(t *testing.T) {
+	src := fakeSource{vals: map[string]string{
+		"ollama:host":     "192.168.1.5",
+		"ollama:port":     "8080",
+		"ollama:protocol": "https",
+	}}
+	cfg, status := Prepare("", "ollama", src)
+	if !status.Configured {
+		t.Fatalf("expected configured, missing=%v", status.Missing)
+	}
+	if cfg.BaseURL != "https://192.168.1.5:8080/v1" {
+		t.Fatalf("BaseURL = %q, want decomposed URL", cfg.BaseURL)
+	}
+	if status.Origins["host"] != "fake" {
+		t.Fatalf("host origin = %q, want fake", status.Origins["host"])
+	}
+}
+
+func TestBuildOllamaBaseURLDefaults(t *testing.T) {
+	if got := buildOllamaBaseURL("", "", ""); got != "http://localhost:11434/v1" {
+		t.Fatalf("empty parts = %q", got)
+	}
+	if got := buildOllamaBaseURL("myhost", "", ""); got != "http://myhost:11434/v1" {
+		t.Fatalf("host only = %q", got)
+	}
+	if got := buildOllamaBaseURL("", "8080", "https"); got != "https://localhost:8080/v1" {
+		t.Fatalf("port+protocol only = %q", got)
+	}
+}
+
+func TestPrepareLlamaNeedsNoCredential(t *testing.T) {
+	cfg, status := Prepare("", "llama", fakeSource{})
+	if !status.Configured {
+		t.Fatalf("llama should be configured with no credential, missing=%v", status.Missing)
+	}
+	if cfg.APIKey == "" {
+		t.Fatal("llama should carry a placeholder key")
+	}
+	if cfg.BaseURL != "http://localhost:8080/v1" {
+		t.Fatalf("BaseURL = %q, want local default", cfg.BaseURL)
+	}
+}
+
+func TestPrepareLlamaDecomposedFields(t *testing.T) {
+	src := fakeSource{vals: map[string]string{
+		"llama:host":     "192.168.1.5",
+		"llama:port":     "9090",
+		"llama:protocol": "https",
+	}}
+	cfg, status := Prepare("", "llama", src)
+	if !status.Configured {
+		t.Fatalf("expected configured, missing=%v", status.Missing)
+	}
+	if cfg.BaseURL != "https://192.168.1.5:9090/v1" {
+		t.Fatalf("BaseURL = %q, want decomposed URL", cfg.BaseURL)
+	}
+	if status.Origins["host"] != "fake" {
+		t.Fatalf("host origin = %q, want fake", status.Origins["host"])
+	}
+}
+
+func TestBuildLlamaBaseURLDefaults(t *testing.T) {
+	if got := buildLlamaBaseURL("", "", ""); got != "http://localhost:8080/v1" {
+		t.Fatalf("empty parts = %q", got)
+	}
+	if got := buildLlamaBaseURL("myhost", "", ""); got != "http://myhost:8080/v1" {
+		t.Fatalf("host only = %q", got)
+	}
+	if got := buildLlamaBaseURL("", "9090", "https"); got != "https://localhost:9090/v1" {
+		t.Fatalf("port+protocol only = %q", got)
 	}
 }
 

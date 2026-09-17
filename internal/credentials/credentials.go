@@ -65,9 +65,17 @@ func Spec(provider string) []Field {
 			{Name: "api_key", EnvVars: []string{"GEMINI_API_KEY", "GOOGLE_API_KEY"}, Secret: true},
 		}
 	case "ollama":
-		// Ollama is local and needs no credential; a missing key is not a
-		// misconfiguration.
-		return nil
+		return []Field{
+			{Name: "host", EnvVars: []string{"SIGNET_OLLAMA_HOST"}, Secret: false, Optional: true},
+			{Name: "port", EnvVars: []string{"SIGNET_OLLAMA_PORT"}, Secret: false, Optional: true},
+			{Name: "protocol", EnvVars: []string{"SIGNET_OLLAMA_PROTOCOL"}, Secret: false, Optional: true},
+		}
+	case "llama":
+		return []Field{
+			{Name: "host", EnvVars: []string{"SIGNET_LLAMA_HOST"}, Secret: false, Optional: true},
+			{Name: "port", EnvVars: []string{"SIGNET_LLAMA_PORT"}, Secret: false, Optional: true},
+			{Name: "protocol", EnvVars: []string{"SIGNET_LLAMA_PROTOCOL"}, Secret: false, Optional: true},
+		}
 	case "github-copilot":
 		return []Field{
 			{Name: "oauth_token", EnvVars: []string{"GITHUB_COPILOT_TOKEN", "GH_TOKEN"}, Secret: true},
@@ -199,6 +207,10 @@ func providerHost(provider string) string {
 		return "api.githubcopilot.com"
 	case "huggingface":
 		return "huggingface.co"
+	case "ollama":
+		return "localhost"
+	case "llama":
+		return "localhost"
 	default:
 		return ""
 	}

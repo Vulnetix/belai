@@ -103,7 +103,7 @@ func endpointFor(t Target) (string, error) {
 		// hf-inference serverless provider can run, so selecting from it produces
 		// 400s. The curated static catalog is safer; return empty here.
 		return "", nil
-	case "openai", "openrouter", "google-gemini", "ollama", "github-copilot":
+	case "openai", "openrouter", "google-gemini", "ollama", "llama", "github-copilot":
 		return base + "/models", nil
 	default:
 		// Custom provider: choose by surface.
@@ -167,7 +167,7 @@ func parseModels(t Target, resp *http.Response) ([]models.Model, error) {
 		}
 		return out, nil
 
-	default: // openai, google-gemini, ollama, custom openai-chat
+	default: // openai, google-gemini, ollama, llama, custom openai-chat
 		var r struct {
 			Data []struct {
 				ID string `json:"id"`

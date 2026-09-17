@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -146,6 +147,21 @@ func (a *App) setCredentialBackendDefault() {
 }
 
 // handleCredentialKey is the key handler for the credential manager view.
+func validOllamaPort(s string) bool {
+	if s == "" {
+		return true
+	}
+	n, err := strconv.Atoi(s)
+	return err == nil && n > 0 && n <= 65535
+}
+
+func validOllamaProtocol(s string) bool {
+	if s == "" {
+		return true
+	}
+	return s == "http" || s == "https"
+}
+
 func (a *App) handleCredentialKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if a.credentialState.setMode || a.credentialState.envMode {
 		switch m.String() {
@@ -164,6 +180,14 @@ func (a *App) handleCredentialKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			if len(spec) > 0 && a.resolver != nil {
 				f := spec[a.credentialState.fieldIdx]
+				if p == "ollama" {
+					if f.Name == "port" && !validOllamaPort(val) {
+						return a, nil
+					}
+					if f.Name == "protocol" && !validOllamaProtocol(val) {
+						return a, nil
+					}
+				}
 				if a.credentialState.envMode {
 					_ = a.resolver.StoreEnvRef(p, f.Name, val, a.credentialState.backend)
 				} else {

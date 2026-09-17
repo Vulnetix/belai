@@ -63,7 +63,7 @@ func TestSpecMatchesRunResolve(t *testing.T) {
 }
 
 func TestSpecUnknownProviderDoesNotUseOpenAIKey(t *testing.T) {
-	spec := Spec("llama")
+	spec := Spec("myprovider")
 	if len(spec) != 1 {
 		t.Fatalf("expected 1 field, got %d", len(spec))
 	}
@@ -72,14 +72,40 @@ func TestSpecUnknownProviderDoesNotUseOpenAIKey(t *testing.T) {
 			t.Fatalf("unknown provider must not resolve from OPENAI_API_KEY")
 		}
 	}
-	if len(spec[0].EnvVars) == 0 || spec[0].EnvVars[0] != "SIGNET_LLAMA_API_KEY" {
-		t.Fatalf("EnvVars = %v, want [SIGNET_LLAMA_API_KEY]", spec[0].EnvVars)
+	if len(spec[0].EnvVars) == 0 || spec[0].EnvVars[0] != "SIGNET_MYPROVIDER_API_KEY" {
+		t.Fatalf("EnvVars = %v, want [SIGNET_MYPROVIDER_API_KEY]", spec[0].EnvVars)
 	}
 }
 
-func TestSpecOllamaHasNoRequiredFields(t *testing.T) {
-	if got := Spec("ollama"); len(got) != 0 {
-		t.Fatalf("ollama should have no required fields, got %+v", got)
+func TestSpecOllamaFields(t *testing.T) {
+	got := Spec("ollama")
+	if len(got) != 3 {
+		t.Fatalf("ollama should have 3 fields, got %+v", got)
+	}
+	want := []string{"host", "port", "protocol"}
+	for i, w := range want {
+		if got[i].Name != w {
+			t.Fatalf("field %d = %q, want %q", i, got[i].Name, w)
+		}
+		if !got[i].Optional {
+			t.Fatalf("field %q should be optional", got[i].Name)
+		}
+	}
+}
+
+func TestSpecLlamaFields(t *testing.T) {
+	got := Spec("llama")
+	if len(got) != 3 {
+		t.Fatalf("llama should have 3 fields, got %+v", got)
+	}
+	want := []string{"host", "port", "protocol"}
+	for i, w := range want {
+		if got[i].Name != w {
+			t.Fatalf("field %d = %q, want %q", i, got[i].Name, w)
+		}
+		if !got[i].Optional {
+			t.Fatalf("field %q should be optional", got[i].Name)
+		}
 	}
 }
 

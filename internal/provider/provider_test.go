@@ -360,6 +360,7 @@ func TestNewAssignsAuthForNewBuiltins(t *testing.T) {
 		"openrouter":    AuthBearer,
 		"google-gemini": AuthBearer,
 		"ollama":        AuthBearer,
+		"llama":         AuthBearer,
 		"huggingface":   AuthBearer,
 	} {
 		t.Run(name, func(t *testing.T) {

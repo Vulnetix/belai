@@ -374,6 +374,30 @@ func (f EnvSource) Lookup(provider, field string) (value, origin string, ok bool
 		if v := f("HUGGINGFACE_TOKEN"); v != "" {
 			return v, "$HUGGINGFACE_TOKEN", true
 		}
+	case "ollama:host":
+		if v := f("SIGNET_OLLAMA_HOST"); v != "" {
+			return v, "$SIGNET_OLLAMA_HOST", true
+		}
+	case "ollama:port":
+		if v := f("SIGNET_OLLAMA_PORT"); v != "" {
+			return v, "$SIGNET_OLLAMA_PORT", true
+		}
+	case "ollama:protocol":
+		if v := f("SIGNET_OLLAMA_PROTOCOL"); v != "" {
+			return v, "$SIGNET_OLLAMA_PROTOCOL", true
+		}
+	case "llama:host":
+		if v := f("SIGNET_LLAMA_HOST"); v != "" {
+			return v, "$SIGNET_LLAMA_HOST", true
+		}
+	case "llama:port":
+		if v := f("SIGNET_LLAMA_PORT"); v != "" {
+			return v, "$SIGNET_LLAMA_PORT", true
+		}
+	case "llama:protocol":
+		if v := f("SIGNET_LLAMA_PROTOCOL"); v != "" {
+			return v, "$SIGNET_LLAMA_PROTOCOL", true
+		}
 	default:
 		// Custom providers resolve from their derived variable; EnvSource
 		// fails closed rather than falling back to an unrelated provider's key.
@@ -409,6 +433,8 @@ func DefaultModel(providerName string) string {
 		return "gemini-2.5-flash"
 	case "ollama":
 		return "llama3"
+	case "llama":
+		return "default"
 	case "github-copilot":
 		return "gpt-4o"
 	case "huggingface":
@@ -437,6 +463,36 @@ func ollamaBaseURL() string {
 		host = "http://" + host
 	}
 	return strings.TrimRight(host, "/") + "/v1"
+}
+
+// buildOllamaBaseURL constructs an Ollama base URL from decomposed host, port,
+// and protocol. Empty values default to localhost, 11434, and http.
+func buildOllamaBaseURL(host, port, protocol string) string {
+	if protocol == "" {
+		protocol = "http"
+	}
+	if host == "" {
+		host = "localhost"
+	}
+	if port == "" {
+		port = "11434"
+	}
+	return protocol + "://" + host + ":" + port + "/v1"
+}
+
+// buildLlamaBaseURL constructs a llama.cpp base URL from decomposed host,
+// port, and protocol. Empty values default to localhost, 8080, and http.
+func buildLlamaBaseURL(host, port, protocol string) string {
+	if protocol == "" {
+		protocol = "http"
+	}
+	if host == "" {
+		host = "localhost"
+	}
+	if port == "" {
+		port = "8080"
+	}
+	return protocol + "://" + host + ":" + port + "/v1"
 }
 
 // Prepare resolves a provider configuration from a CredentialSource.
@@ -520,11 +576,57 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 		}
 		cfg.BaseURL = "https://generativelanguage.googleapis.com/v1beta/openai"
 	case "ollama":
-		// Ollama is local and needs no credential. provider.New still requires
-		// a non-empty key, so pass a fixed placeholder rather than loosening
-		// that validation for everyone.
 		cfg.APIKey = "ollama"
-		cfg.BaseURL = ollamaBaseURL()
+		var hasHost, hasPort, hasProto bool
+		var host, port, protocol string
+		if h, origin, ok := src.Lookup(name, "host"); ok {
+			host = h
+			hasHost = true
+			status.Origins["host"] = origin
+		}
+		if p, origin, ok := src.Lookup(name, "port"); ok {
+			port = p
+			hasPort = true
+			status.Origins["port"] = origin
+		}
+		if pr, origin, ok := src.Lookup(name, "protocol"); ok {
+			protocol = pr
+			hasProto = true
+			status.Origins["protocol"] = origin
+		}
+		if hasHost || hasPort || hasProto {
+			cfg.BaseURL = buildOllamaBaseURL(host, port, protocol)
+		} else {
+			cfg.BaseURL = ollamaBaseURL()
+			status.Origins["base_url"] = "$OLLAMA_HOST"
+		}
+	case "llama":
+		// llama.cpp / llama-server uses an OpenAI-compatible local endpoint.
+		// A placeholder key keeps provider.New happy.
+		cfg.APIKey = "llama"
+		var hasHost, hasPort, hasProto bool
+		var host, port, protocol string
+		if h, origin, ok := src.Lookup(name, "host"); ok {
+			host = h
+			hasHost = true
+			status.Origins["host"] = origin
+		}
+		if p, origin, ok := src.Lookup(name, "port"); ok {
+			port = p
+			hasPort = true
+			status.Origins["port"] = origin
+		}
+		if pr, origin, ok := src.Lookup(name, "protocol"); ok {
+			protocol = pr
+			hasProto = true
+			status.Origins["protocol"] = origin
+		}
+		if hasHost || hasPort || hasProto {
+			cfg.BaseURL = buildLlamaBaseURL(host, port, protocol)
+		} else {
+			cfg.BaseURL = "http://localhost:8080/v1"
+			status.Origins["base_url"] = "default"
+		}
 	case "github-copilot":
 		if oauth, origin, ok := src.Lookup(name, "oauth_token"); ok {
 			cfg.APIKey = oauth
@@ -578,6 +680,7 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 		cfg.BaseURL = override
 		status.Origins["base_url"] = "$SIGNET_BASE_URL"
 	}
+
 	return cfg, status
 }
 

@@ -155,14 +155,48 @@ func TestCredentialViewMarksSelectedField(t *testing.T) {
 	}
 }
 
-func TestCredentialSetKeysIgnoredForFieldlessProvider(t *testing.T) {
+func TestCredentialSetKeysWorkForOllama(t *testing.T) {
 	a := credentialApp(t, "ollama")
 	a.Update(runeKey('s'))
-	if a.credentialState.setMode {
-		t.Fatalf("'s' must not enter set mode for a provider with no fields")
+	if !a.credentialState.setMode {
+		t.Fatalf("'s' must enter set mode for ollama")
 	}
+	a.Update(tea.KeyMsg{Type: tea.KeyEscape})
 	a.Update(runeKey('e'))
-	if a.credentialState.envMode {
-		t.Fatalf("'e' must not enter env mode for a provider with no fields")
+	if !a.credentialState.envMode {
+		t.Fatalf("'e' must enter env mode for ollama")
+	}
+}
+
+func TestCredentialOllamaPortValidation(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	workdir := t.TempDir()
+	resolver, err := credentials.NewResolver(workdir)
+	if err != nil {
+		t.Fatalf("NewResolver: %v", err)
+	}
+	a := New(Options{Workdir: workdir, Resolver: resolver})
+	a.view = viewCredentials
+	a.credentialState.providers = []string{"ollama"}
+	a.credentialState.backend = credentials.SourceUserFile
+
+	// enter set mode for host (first field)
+	a.Update(runeKey('l')) // move to port
+	a.Update(runeKey('s'))
+	a.editor.SetValue("abc")
+	m, _ := a.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	a = m.(*App)
+	if !a.credentialState.setMode {
+		t.Fatalf("invalid port should keep editor open")
+	}
+	if _, _, ok := resolver.Lookup("ollama", "port"); ok {
+		t.Fatalf("invalid port must not be stored")
+	}
+
+	a.editor.SetValue("8080")
+	m, _ = a.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	a = m.(*App)
+	if v, _, ok := resolver.Lookup("ollama", "port"); !ok || v != "8080" {
+		t.Fatalf("valid port should be stored, got %q", v)
 	}
 }
