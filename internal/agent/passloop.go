@@ -60,6 +60,10 @@ const (
 	// continuationDirective is injected when a bounded pass spends its whole
 	// iteration budget. Budget exhaustion is a turn boundary, not a failure.
 	continuationDirective = "The tool budget for this turn was reached. Report the work done so far and what remains. If more tool calls are needed to finish the work, make them now; otherwise give the final answer."
+	// goalAckDirective is injected on the first goal pass so the model
+	// acknowledges the objective before working: restate it as concrete
+	// deliverables, name the verification surface, and list the first actions.
+	goalAckDirective = "Restate the objective as concrete deliverables, name how completion will be verified, and list the first actions you will take."
 )
 
 // passLedger is the loop-local decision state of one goal pass loop. Pass
@@ -199,6 +203,8 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 	gs := goals.NewGoalState(goalText)
 	goalStart := time.Now()
 	totalTokens := 0
+	turns = append(turns, directiveTurns(goalAckDirective)...)
+	emit(Event{Kind: EventGoalStateKind, GoalState: &gs})
 	for {
 		// Cancellation is the only ceiling, and it must not read as an error:
 		// a deliberate esc returns the partial result, never raw
