@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/agent"
 	"github.com/vulnetix/signet/internal/agentprofile"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/posture"
@@ -71,31 +70,27 @@ func TestManagerLoopMaxIterations(t *testing.T) {
 	if !ok {
 		t.Fatal("agent not found after start")
 	}
-	var done bool
-	deadline := time.After(10 * time.Second)
-eventLoop:
+	// Each loop iteration emits its own EventDoneKind, so breaking on the
+	// first one races the second iteration under -race. Instead wait until the
+	// loop settles out of Running — paused by the supervised evaluator, or
+	// done — which only happens after the iteration budget is exhausted.
+	deadline := time.After(15 * time.Second)
 	for {
-		select {
-		case e, ok := <-inst.Events:
-			if !ok {
-				break eventLoop
+		inst.mu.Lock()
+		state := inst.State
+		iter := inst.iteration
+		inst.mu.Unlock()
+		if state == StatePaused || state == StateDone {
+			if iter != 2 {
+				t.Fatalf("iteration = %d, want 2", iter)
 			}
-			if e.Kind == agent.EventDoneKind {
-				done = true
-				break eventLoop
-			}
-		case <-deadline:
-			break eventLoop
+			break
 		}
-	}
-	if !done {
-		t.Fatal("agent did not complete within timeout")
-	}
-	inst.mu.Lock()
-	iter := inst.iteration
-	inst.mu.Unlock()
-	if iter != 2 {
-		t.Fatalf("iteration = %d, want 2", iter)
+		select {
+		case <-deadline:
+			t.Fatalf("agent did not settle within timeout (state=%s, iteration=%d)", state, iter)
+		case <-time.After(10 * time.Millisecond):
+		}
 	}
 	_ = m.Stop("loop-bot")
 }
