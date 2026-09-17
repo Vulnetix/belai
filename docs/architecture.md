@@ -903,29 +903,31 @@ than the last, and the merged list is de-duplicated by model id:
 
 1. **Live fetch** — when the provider exposes a model-list endpoint, Signet
    queries it on first entry and caches the result per session. The provider
-   tab shows `⊙ loading` while a fetch is in flight. Live fetched models are
-   not persisted; the cache is an in-memory map keyed by provider name.
+   tab shows `○ Fetching models from GET <url>…` while a fetch is in flight.
+   Live fetched models are not persisted; the cache is an in-memory map keyed
+   by provider name.
 2. **Profile models** — custom or saved models declared in the provider profile
    (`settings.json`) are merged next.
 3. **Static fallback** — a hard-coded default catalogue for built-ins that have
    no endpoint or when the live fetch fails. Users can still type any model id
    and commit it.
 
-Live fetch is available for `openai`, `anthropic`, `cloudflare-workers-ai`,
-`openrouter`, `google-gemini`, `ollama`, `github-copilot`, and
+Live fetch is available for `anthropic`, `cloudflare-workers-ai`, `openrouter`,
+`google-gemini`, `ollama`, `llama-server`, `github-copilot`, and
 `cloudflare-ai-gateway`. `r` clears the cache and re-fetches for the selected
 provider; fetch errors are rendered under the list as `✗ fetch: ...` so silent
 failures are visible.
 
 Provider-specific edge cases:
 
-- **`huggingface`** live-fetches from `https://router.huggingface.co/v1/models`.
-  HuggingFace no longer runs its own `hf-inference` serverless provider;
-  inference is now routed through third-party providers (deepinfra, novita,
-  etc.) and users must enable the desired providers in their HuggingFace
-  dashboard before a model can be called.  The static catalog is removed
-  because every model's availability depends on the user's enabled-provider
-  set.  Users can still type and commit any model id directly.
+- **`huggingface`** does not live-fetch. The router's `/v1/models` endpoint
+  lists every Inference Provider model, almost none of which are enabled on a
+  given account, so a fetched list would be full of unusable ids that fail at
+  request time with `model_not_supported`. HuggingFace no longer runs its own
+  `hf-inference` serverless provider; inference is routed through third-party
+  providers (deepinfra, novita, etc.) and users must enable the desired
+  providers in their HuggingFace dashboard before a model can be called.  The
+  catalogue is therefore empty and the model id is typed or imported.
 - **`cloudflare-ai-gateway`** has no gateway-side `/models` endpoint, but every
   gateway can run any Workers AI model. Signet extracts the `account_id` from
   the configured gateway base URL
@@ -933,15 +935,18 @@ Provider-specific edge cases:
   queries the Cloudflare v4 API at
   `https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/models/search`,
   using the Cloudflare `CF_API_KEY` with standard `Authorization: Bearer` auth.
-  For inference, the gateway can operate in two modes:
-  1. **Gateway-token mode** — the upstream provider key is stored in the
-     gateway configuration; Signet sends `cf-aig-authorization: Bearer CF_API_KEY`
-     and the gateway injects its own upstream key.
-  2. **Pass-through mode** — the gateway forwards the upstream provider key.
+  For inference, the gateway authenticates in one of three ways:
+  1. **Managed gateway** (default) — the gateway is created in the dashboard
+     and authenticated with the standard Cloudflare API token:
+     `Authorization: Bearer CF_API_KEY`.
+  2. **Universal gateway** — a gateway created via API uses a gateway-specific
+     token. Set the optional `CLOUDFLARE_GATEWAY_TOKEN` (or `CF_AIG_TOKEN`)
+     credential; Signet then sends `cf-aig-authorization: Bearer <gateway
+     token>` instead of the Cloudflare API token.
+  3. **Pass-through mode** — the gateway forwards the upstream provider key.
      Set the optional `UPSTREAM_API_KEY` (or `OPENAI_API_KEY`) credential.
      When present, Signet sends `Authorization: Bearer UPSTREAM_API_KEY` and
-     the request reaches the upstream provider directly. If `UPSTREAM_API_KEY` is
-     absent, Signet falls back to gateway-token mode.
+     the request reaches the upstream provider directly.
   Production gateway hosts are mapped to `api.cloudflare.com`; hosts other than
   `gateway.ai.cloudflare.com` are followed as-is so tests and private gateways
   can be mocked.
@@ -1063,7 +1068,7 @@ Supporting pieces:
 - The HuggingFace token resolves as provider `huggingface` (`HF_TOKEN` /
   `HUGGINGFACE_TOKEN`) through the same credential stack as providers.
 - `huggingface` is also a built-in chat provider using the OpenAI-compatible
-  Serverless Inference API at `https://router.huggingface.co/hf-inference/v1`,
+  Serverless Inference API at `https://router.huggingface.co/v1`,
   authenticated with the same token.
 - The TUI exposes this through `/local-model` (assess the machine and server),
   `/local-model download <repo>` (resumable, checksummed download with live

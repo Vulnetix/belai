@@ -116,9 +116,9 @@ The TUI model picker (`e model`) shows a catalogue per provider. Sources are:
   no live endpoint or where live fetch is disabled for quality reasons.
 - **Live fetch** — on first entry to a provider tab the harness contacts the
   provider's `/models` endpoint (or equivalent) and caches the result for the
-  session. A `○ Fetching models…` indicator is shown while the request is in
-  flight. The request timeout is 30 seconds so slow networks or large
-  catalogues have room to complete.
+  session. A `○ Fetching models from GET <url>…` indicator is shown while the
+  request is in flight. The request timeout is 30 seconds so slow networks or
+  large catalogues have room to complete.
 
 | Provider | Live fetch |
 | --- | --- |
@@ -126,12 +126,12 @@ The TUI model picker (`e model`) shows a catalogue per provider. Sources are:
 | `cloudflare-workers-ai` | ✅ v4 API search |
 | `cloudflare-ai-gateway` | ✅ reuses the account's Workers AI catalogue |
 | `google-gemini` | ✅ `/models` |
-| `huggingface` | ✅ `router.huggingface.co/v1/models` (requires `HF_TOKEN`) |
 | `ollama` | ✅ `/models` |
 | `llama-server` | ✅ `/models` |
 | `openrouter` | ✅ `/models` |
 | `github-copilot` | ✅ `/models` |
 | `openai` | ❌ disabled — `/v1/models` includes deprecated, preview and internal identifiers that confuse the picker and fail at request time; only the curated static catalogue is shown |
+| `huggingface` | ❌ disabled — the router lists every Inference Provider model, most of which are not enabled on the account and fail with `model_not_supported`; the model id is typed or imported |
 
 Business rules and edge cases:
 - **Workers AI through the gateway** — when a model id from the
@@ -140,6 +140,12 @@ Business rules and edge cases:
   `workers-ai/` in the outbound request so the gateway routes it to the
   Workers AI backend (`workers-ai/@cf/...`). Already-prefixed ids are not
   double-prefixed.
+- **Gateway authentication** — `cloudflare-ai-gateway` defaults to
+  `Authorization: Bearer` with the Cloudflare API token (managed gateways).
+  Universal (API-created) gateways authenticate with a gateway token instead:
+  set `CLOUDFLARE_GATEWAY_TOKEN` (or `CF_AIG_TOKEN`) and the harness switches
+  to `cf-aig-authorization: Bearer`. Pass-through mode (`UPSTREAM_API_KEY`)
+  keeps standard Bearer auth with the upstream provider key.
 - **Empty live fetch** — if the live request fails or returns nothing, the
   picker silently falls back to the static catalogue (when one exists) and
   still allows typing any model id directly.
@@ -180,7 +186,7 @@ Credentials resolve in this order, first hit wins:
 | `openai` | `OPENAI_API_KEY` |
 | `anthropic` | `ANTHROPIC_API_KEY` |
 | `cloudflare-workers-ai` | `CLOUDFLARE_API_KEY`, `CLOUDFLARE_ACCOUNT_ID` |
-| `cloudflare-ai-gateway` | `CLOUDFLARE_API_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_GATEWAY_ID`. Optional: `UPSTREAM_API_KEY` (or `OPENAI_API_KEY`) when the gateway forwards the upstream provider key instead of storing it in the gateway config. |
+| `cloudflare-ai-gateway` | `CLOUDFLARE_API_KEY`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_GATEWAY_ID`. Optional: `CLOUDFLARE_GATEWAY_TOKEN` (or `CF_AIG_TOKEN`) for universal gateways (cf-aig auth); `UPSTREAM_API_KEY` (or `OPENAI_API_KEY`) when the gateway forwards the upstream provider key instead of storing it in the gateway config. |
 | `openrouter` | `OPENROUTER_API_KEY` |
 | `google-gemini` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` |
 | `ollama` | none (local; honours `OLLAMA_HOST`, or host/port/protocol managed in `/credentials`) |
@@ -232,7 +238,7 @@ just detect-mode "add a retry to the HTTP client"   # agent
 just detect-mode "how does the nonce sealing work"  # plan
 ```
 
-**TUI smoke test.** `just tui`, then exercise slash-command autocomplete (`/p` → `/permissions`, `/profile`), `/credentials`, `/settings`, `/permissions`, `/help`, `/model`, `/compact`, `/clear`, `/rename`, `/agent list`, `/local-model`, and streaming output. Confirm `shift+tab` cycles the mode chip, `ctrl+d` quits, `ctrl+c` copies the prompt (native or OSC 52), and `esc` escapes every full-screen view — including permissions back to settings. On a provider with a long model catalogue, confirm the `/model` list is windowed (chrome stays visible, `↓ N more` marks the overflow) and that `/` narrows the list by substring while `esc` clears the filter. Press `r` on providers with live model lists (`openai`, `anthropic`, etc.) to force a refresh; for `huggingface` the list is a conservative static catalog and `r` should not surface a fetch error, while `cloudflare-ai-gateway` refreshes from the Workers AI model-search API. In the Ask prompt, confirm Enter echoes the prompt into the transcript as a `user prompt` instantly, that the composer shows the filled `role manager` pill with a `pre-prompt processing` caption while the classifier runs and a plain `working` label only for model/tool I/O, and that Enter while a turn is running queues a `user steering` message. In `/settings`, confirm the **read-only tools** toggle renders `off` by default, that `space` flips it on and persists it to the scoped settings file, and that `x` clears it. Confirm the **caveman** toggle also shows `off` by default and that `ctrl+alt+c` from the chat view flips it on, emits a `caveman: on` system message, and immediately updates the footer indicator; a second press returns it to `off`. In `/permissions` with no rules, confirm the empty state reads "every tool call is allowed" and that a `Read x` preview shows the allowed-by-default wording (or blocked when `preferences.yaml` sets `permission_no_match: enforce`).
+**TUI smoke test.** `just tui`, then exercise slash-command autocomplete (`/p` → `/permissions`, `/profile`), `/credentials`, `/settings`, `/permissions`, `/help`, `/model`, `/compact`, `/clear`, `/rename`, `/agent list`, `/local-model`, and streaming output. Confirm `shift+tab` cycles the mode chip, `ctrl+d` quits, `ctrl+c` copies the prompt (native or OSC 52), and `esc` escapes every full-screen view — including permissions back to settings. On a provider with a long model catalogue, confirm the `/model` list is windowed (chrome stays visible, `↓ N more` marks the overflow) and that `/` narrows the list by substring while `esc` clears the filter. Press `r` on providers with live model lists (`anthropic`, `openrouter`, etc.) to force a refresh; for `openai` and `huggingface` the lists are conservative static catalogs and `r` should not surface a fetch error, while `cloudflare-ai-gateway` refreshes from the Workers AI model-search API. In the Ask prompt, confirm Enter echoes the prompt into the transcript as a `user prompt` instantly, that the composer shows the filled `role manager` pill with a `pre-prompt processing` caption while the classifier runs and a plain `working` label only for model/tool I/O, and that Enter while a turn is running queues a `user steering` message. In `/settings`, confirm the **read-only tools** toggle renders `off` by default, that `space` flips it on and persists it to the scoped settings file, and that `x` clears it. Confirm the **caveman** toggle also shows `off` by default and that `ctrl+alt+c` from the chat view flips it on, emits a `caveman: on` system message, and immediately updates the footer indicator; a second press returns it to `off`. In `/permissions` with no rules, confirm the empty state reads "every tool call is allowed" and that a `Read x` preview shows the allowed-by-default wording (or blocked when `preferences.yaml` sets `permission_no_match: enforce`).
 
 **Agent picker.** In the TUI in agent mode, confirm the strip above the prompt
 lists your profiles, the `↻` background-agent definitions, and the `◈`
