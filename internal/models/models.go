@@ -75,9 +75,10 @@ func Catalog(provider string) []Model {
 			{ID: "o3-mini", Label: "o3 Mini", Efforts: defaultEfforts},
 		}
 	case "huggingface":
-		// HuggingFace's router exposes thousands of Inference Provider models,
-		// almost none of which are enabled on a given account.  The catalogue
-		// is deliberately empty: the user types an explicitly-enabled model id.
+		// The catalogue is live-fetched from the router's /v1/models endpoint;
+		// there is no static fallback because model availability depends on the
+		// Inference Providers the user has enabled in their HuggingFace
+		// dashboard. Users can still type any model id directly.
 		return nil
 	default:
 		// Unknown names are custom providers; their catalogue comes from the

@@ -28,9 +28,9 @@ type Target struct {
 }
 
 // List fetches the live model catalogue for the target and returns it as
-// []models.Model. Static-only targets (openai, huggingface) return an empty
-// list with no error: their live endpoints expose identifiers that cannot be
-// used as-is.
+// []models.Model. Static-only targets (openai only) return an empty list with
+// no error: OpenAI's live endpoint exposes deprecated and internal identifiers
+// that cannot be used as-is.
 func List(ctx context.Context, t Target, client *http.Client) ([]models.Model, error) {
 	endpoint, err := EndpointFor(t)
 	if err != nil {
@@ -104,11 +104,12 @@ func EndpointFor(t Target) (string, error) {
 	case "cloudflare-workers-ai":
 		return base + "/ai/models/search", nil
 	case "huggingface":
-		// Do not live-fetch: the router's /v1/models lists every Inference
-		// Provider model, most of which are not enabled on the user's account
-		// and fail at request time with model_not_supported. The model id is
-		// typed or imported.
-		return "", nil
+		// Live-fetch the router's catalogue. Models from third-party Inference
+		// Providers that the user has not enabled in their HuggingFace
+		// dashboard fail at request time with model_not_supported; that is an
+		// account-configuration concern, not something the harness can know
+		// ahead of time.
+		return base + "/models", nil
 	case "openrouter", "google-gemini", "ollama", "llama-server", "github-copilot":
 		return base + "/models", nil
 	case "openai":
