@@ -51,6 +51,18 @@ A JSON object with a numbered list of nonces:
 - `nonces` — array of nonce strings (opaque, hex-encoded random values).
 - `count` — number of nonces in the list.
 
+`nonces` is authoritative: `count` is decoded but never enforced, so a
+response whose `count` disagrees with the array length is accepted and the
+array wins. A `200` carrying an empty `nonces` array is also accepted as-is —
+it seeds nothing and does **not** fall back to local minting, because the
+provider answered successfully and claiming otherwise would be a guess.
+
+Fetched nonces are *appended* to the pool's available list rather than
+replacing it, so seeding from a provider never discards nonces the pool
+already holds. Only `Rotate` discards.
+
+Every request carries Signet's `user-agent`.
+
 ## Unsupported / not enabled
 
 When a provider does not implement the endpoint, or has it disabled, it returns
@@ -63,6 +75,15 @@ repeated session construction and pool invalidation never re-hit the
 401/403/404. Only the three "absent" statuses poison the cache — a `200`
 response, any other status (5xx et al.), and transport errors including the
 3-second timeout are all re-tried next time.
+
+Unsupported is the **only** answer that falls back to local minting. Any
+other failure — a 5xx, a transport error, the 3-second timeout, or a `200`
+whose body is not valid JSON — propagates to the caller and fails pool
+seeding rather than silently substituting local nonces. The distinction is
+deliberate: "this provider does not offer nonces" is a known state to degrade
+from, while "the nonce provider is broken right now" is not, and quietly
+minting locally would hide a gateway outage from an operator who chose to
+have nonces supplied.
 
 Subagents skip the GET entirely. They discard the provider-seeded pool for a
 fresh local one immediately after construction, so they seed locally and the

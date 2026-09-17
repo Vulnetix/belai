@@ -221,3 +221,124 @@ func TestFetchNoncesUnsupportedIsNegativeCached(t *testing.T) {
 		t.Fatalf("nonce endpoint probed %d times, want 1 (negative cached)", got)
 	}
 }
+
+// Unsupported is the only answer that falls back to local minting. Every other
+// failure propagates, so a broken gateway fails loudly instead of quietly
+// substituting local nonces for the provider-supplied ones an operator asked
+// for.
+func TestSeedFromProviderPropagatesNonUnsupportedFailures(t *testing.T) {
+	cases := []struct {
+		name    string
+		handler http.HandlerFunc
+	}{
+		{"server error", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}},
+		{"bad gateway", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadGateway)
+		}},
+		{"invalid json", func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte("not json"))
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(tc.handler)
+			defer server.Close()
+			p := New()
+			if err := p.SeedFromProvider(server.Client(), server.URL, "", 3); err == nil {
+				t.Fatal("a non-unsupported failure must propagate, not fall back")
+			}
+			if p.Available() != 0 {
+				t.Fatalf("a failed seed must not mint locally; avail = %d", p.Available())
+			}
+		})
+	}
+}
+
+// A 200 with an empty list is a successful answer: seed nothing, and do not
+// fall back. The provider spoke, so guessing on its behalf would be wrong.
+func TestSeedFromProviderEmptyListSeedsNothing(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(NonceResponse{Nonces: nil, Count: 0})
+	}))
+	defer server.Close()
+	p := New()
+	if err := p.SeedFromProvider(server.Client(), server.URL, "", 3); err != nil {
+		t.Fatalf("an empty list is a success, got %v", err)
+	}
+	if p.Available() != 0 {
+		t.Fatalf("avail = %d, want 0 — an empty 200 must not trigger the fallback", p.Available())
+	}
+}
+
+// nonces is authoritative; count is decoded but never enforced.
+func TestFetchNoncesIgnoresCountMismatch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"nonces":["aa","bb","cc"],"count":99}`))
+	}))
+	defer server.Close()
+	got, err := FetchNonces(server.Client(), server.URL, "")
+	if err != nil {
+		t.Fatalf("FetchNonces: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %d nonces, want the 3 actually in the array", len(got))
+	}
+}
+
+// Seeding from a provider appends to the available pool rather than replacing
+// it: only Rotate discards.
+func TestSeedFromProviderAppends(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(NonceResponse{Nonces: []string{"p1", "p2"}, Count: 2})
+	}))
+	defer server.Close()
+
+	p := New()
+	if err := p.Seed(2); err != nil {
+		t.Fatalf("Seed: %v", err)
+	}
+	if err := p.SeedFromProvider(server.Client(), server.URL, "", 3); err != nil {
+		t.Fatalf("SeedFromProvider: %v", err)
+	}
+	if p.Available() != 4 {
+		t.Fatalf("avail = %d, want 4 (2 local + 2 provider)", p.Available())
+	}
+
+	if err := p.Rotate(1); err != nil {
+		t.Fatalf("Rotate: %v", err)
+	}
+	if p.Available() != 1 {
+		t.Fatalf("Rotate must discard everything; avail = %d", p.Available())
+	}
+}
+
+// The Bearer token is only sent when an api key is supplied, and the request
+// always identifies itself.
+func TestFetchNoncesHeaders(t *testing.T) {
+	var gotAuth, gotUA string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("authorization")
+		gotUA = r.Header.Get("user-agent")
+		_ = json.NewEncoder(w).Encode(NonceResponse{Nonces: []string{"a"}, Count: 1})
+	}))
+	defer server.Close()
+
+	if _, err := FetchNonces(server.Client(), server.URL, "secret-key"); err != nil {
+		t.Fatalf("FetchNonces: %v", err)
+	}
+	if gotAuth != "Bearer secret-key" {
+		t.Fatalf("authorization = %q", gotAuth)
+	}
+	if gotUA == "" {
+		t.Fatal("the request must carry a user-agent")
+	}
+
+	if _, err := FetchNonces(server.Client(), server.URL+"/other", ""); err != nil {
+		t.Fatalf("FetchNonces: %v", err)
+	}
+	if gotAuth != "" {
+		t.Fatalf("no api key must send no authorization header, got %q", gotAuth)
+	}
+}
