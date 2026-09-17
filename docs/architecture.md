@@ -313,6 +313,55 @@ Subagents never enter the pass loop: `AllowPassLoop` is a separate authority
 from `AllowExplore` and only top-level session construction sets it, so an
 unbounded loop can never spawn recursively.
 
+#### Run-time goal state
+
+Two different things are called "goal state", and they live in different
+places:
+
+- **Memorised goals** — `internal/goals`, files under
+  `<workdir>/.vulnetix/goals/<name>.md`. A name is slugged to
+  `[a-zA-Z0-9._-]`, runs of anything else collapse to `_`, and leading or
+  trailing `.`, `_`, `-` are trimmed; a name that slugs to nothing is
+  rejected rather than written. These survive across sessions and feed
+  slash-command autocomplete.
+- **Run-time goal state** — `goals.GoalState`, persisted as a `goal_state`
+  **session entry** (`EntryTypeGoalState`), mirroring how `plan_state` is
+  stored. It belongs to one run of the pass loop and is rebuilt per turn.
+
+`passloop` creates a `GoalState` when the loop starts (`NewGoalState`:
+version 1, a fresh session id, status `active`, `createdAt`/`updatedAt` in
+unix millis) and re-emits it at **every pass boundary**, after the pass
+returns and after the todo list is advanced, carrying `passes`, cumulative
+`tokensUsed`, and `timeUsedSeconds` measured from loop start. The TUI turns
+each `EventGoalStateKind` into a session entry via `ToEntry`, which stamps a
+fresh `updatedAt` and a fresh entry id — so the session log holds the whole
+history of the goal, not just its last value, and `LatestGoalState` reads the
+**last** parsable `goal_state` entry back.
+
+Business rules and edge cases:
+
+- **Progress is reported at pass boundaries only.** A pass that fails and is
+  retried after a compaction emits one state for the pass, not two, because
+  the emit sits after the retry.
+- **A cancelled or errored loop emits no terminal state.** `esc` returns the
+  partial result immediately; the last `goal_state` entry is therefore the
+  one from the final completed pass, and its status stays `active`. Reading
+  `active` back does not mean the loop is still running.
+- **`complete` is written twice over, deliberately** — once on the natural
+  exit after the verification pass, and once on the exhausted-budget path
+  that reaches the same verdict. Both go through the same `ToEntry`, so a
+  reader only ever sees the last one.
+- **Unparsable entries are skipped, not fatal.** `LatestGoalState` ignores
+  any `goal_state` entry whose JSON does not parse and keeps scanning, so one
+  corrupt line cannot hide an earlier good state.
+- **`tokenBudget`, `paused` and `budget_limited` are reserved.** They exist to
+  match the pi-goal contract and are never written by this implementation;
+  `tokenBudget` omits itself from the JSON when nil (unbounded), which is
+  always. Do not branch on them yet.
+- **`tokensUsed` counts only passes that reported usage.** A provider that
+  returns no usage block contributes zero rather than an estimate — the field
+  is an anchored count, not a guess.
+
 ### Todo list
 
 `internal/todos` owns the single todo list a session tracks, whatever mode
@@ -1042,8 +1091,12 @@ include `provider`, `model`, `effort`, `caveman`, `read_only`,
 which defaults off unless explicitly true; `ui.kitty_keyboard` is overridden
 off by `SIGNET_NO_KITTY=1`),
 `show_session_names` (default on), `context_windows`,
-`resilience` (`max_attempts`, `max_iterations`, `max_passes`, `max_clarify_rounds`), `providers`,
-`caveman` (default off; toggled from any screen with `ctrl+alt+c`),
+`resilience` (`max_attempts`, `max_iterations`, `max_passes`,
+`max_clarify_rounds`, `max_explore_iterations`), `providers`,
+`caveman` (default off; toggled from any screen with `f2`),
+`guardrails` and `ask_permission` (both default on; toggled with `f3` and
+`f4`, or together with `/yolo` — the project layer may only tighten them,
+never loosen a global `true` back to `false`),
 `allow_project_providers`, and the `classifier` block
 (`provider`, `model`, `effort`, `chunk.max_bytes`, `chunk.concurrency`) covered
 in the Security classifier section above. That enumeration is the whole
