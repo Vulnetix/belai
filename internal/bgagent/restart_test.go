@@ -148,7 +148,7 @@ func TestRunLoopModeContinueRestartsAndStops(t *testing.T) {
 	if err := m.Start("loop", profile); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	drainUntilClosed(t, m, "loop", 5*time.Second)
+	waitState(t, m, "loop", StateDone, 10*time.Second)
 
 	inst, _ := m.Lookup("loop")
 	inst.mu.Lock()
