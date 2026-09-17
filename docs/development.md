@@ -108,6 +108,45 @@ Every posture gate also has a flag (`-allow-unsafe-tool-result`,
 A custom provider from `settings.json` falls through to the `gpt-5` default, so
 a custom entry should carry its own model.
 
+### Model catalog and live fetch
+
+The TUI model picker (`e model`) shows a catalogue per provider. Sources are:
+
+- **Static fallback** — a hard-coded default catalogue for built-ins that have
+  no live endpoint or where live fetch is disabled for quality reasons.
+- **Live fetch** — on first entry to a provider tab the harness contacts the
+  provider's `/models` endpoint (or equivalent) and caches the result for the
+  session. A `○ Fetching models…` indicator is shown while the request is in
+  flight. The request timeout is 30 seconds so slow networks or large
+  catalogues have room to complete.
+
+| Provider | Live fetch |
+| --- | --- |
+| `anthropic` | ✅ `/v1/models` |
+| `cloudflare-workers-ai` | ✅ v4 API search |
+| `cloudflare-ai-gateway` | ✅ reuses the account's Workers AI catalogue |
+| `google-gemini` | ✅ `/models` |
+| `huggingface` | ✅ `router.huggingface.co/v1/models` (requires `HF_TOKEN`) |
+| `ollama` | ✅ `/models` |
+| `llama-server` | ✅ `/models` |
+| `openrouter` | ✅ `/models` |
+| `github-copilot` | ✅ `/models` |
+| `openai` | ❌ disabled — `/v1/models` includes deprecated, preview and internal identifiers that confuse the picker and fail at request time; only the curated static catalogue is shown |
+
+Business rules and edge cases:
+- **Workers AI through the gateway** — when a model id from the
+  `cloudflare-workers-ai` family (starting with `@cf/`) is selected on the
+  `cloudflare-ai-gateway` provider, the model is automatically prefixed with
+  `workers-ai/` in the outbound request so the gateway routes it to the
+  Workers AI backend (`workers-ai/@cf/...`). Already-prefixed ids are not
+  double-prefixed.
+- **Empty live fetch** — if the live request fails or returns nothing, the
+  picker silently falls back to the static catalogue (when one exists) and
+  still allows typing any model id directly.
+- **Custom providers** — a custom provider from `settings.json` whose `api`
+  field is `anthropic-messages` uses `/v1/models`; every other surface uses
+  `/models`.
+
 Runtime flag values override the settings file for the current run but are never persisted.
 
 The classifier mirrors the main provider flags through `-classifier-*` and
