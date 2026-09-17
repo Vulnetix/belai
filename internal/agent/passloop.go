@@ -256,9 +256,47 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 		}
 
 		if !out.exhausted {
-			// Natural exit — unchanged from today: return the reply. A goal is
-			// only re-checked when the model burns the whole budget.
-			return run.Result{Reply: out.reply, Usage: out.usage, Passes: l.passes}, nil
+			// Natural exit: a no-tool-call reply is a claim of completion, not
+			// proof. Re-check the goal sentinel against the reply text itself
+			// once before trusting it. A non-complete verdict injects the
+			// continuation directive and loops; the existing stall detectors
+			// still bound a loop that is not advancing.
+			sentinel, evalErr := rolemanager.EvaluateGoal(ctx, pipe.Classifier, rolemanager.GoalEvalInput{
+				Goal:     l.goalText,
+				Todos:    l.list.Render(),
+				Evidence: sanitize.Sanitize(out.reply),
+			})
+			if evalErr != nil {
+				if !errors.Is(evalErr, rolemanager.ErrMalformedGoalEval) {
+					return run.Result{Passes: l.passes}, evalErr
+				}
+				l.malformedStreak++
+				if l.malformedStreak >= 2 {
+					return run.Result{Passes: l.passes, GoalSentinel: sentinel},
+						fmt.Errorf("goal pass loop stopped: %d consecutive malformed evaluator replies", l.malformedStreak)
+				}
+			}
+			emit(Event{Kind: EventGoalEvalKind, Pass: l.passes, GoalSentinel: sentinel})
+			if sentinel == rolemanager.GoalComplete {
+				if l.verificationPasses == 0 {
+					l.verificationArmed = true
+					turns = append(turns, directiveTurns(verificationDirective)...)
+					continue
+				}
+				if l.hasList {
+					l.list.MarkAllDone()
+					list := l.list
+					emit(Event{Kind: EventTodosKind, Todos: &list})
+				}
+				return run.Result{Reply: out.reply, Usage: out.usage, GoalSentinel: sentinel, Passes: l.passes}, nil
+			}
+			if l.notePartial() {
+				l.partialStreak = 0
+				turns = append(turns, directiveTurns(l.progressionDirective())...)
+				continue
+			}
+			turns = append(turns, directiveTurns(continuationDirective)...)
+			continue
 		}
 
 		// Steering outranks the evaluator: explicit user intent beats a
