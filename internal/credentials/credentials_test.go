@@ -47,7 +47,7 @@ func TestSpecMatchesRunResolve(t *testing.T) {
 		"openai":                {"api_key"},
 		"anthropic":             {"api_key"},
 		"cloudflare-workers-ai": {"api_key", "account_id"},
-		"cloudflare-ai-gateway": {"api_key", "upstream_api_key", "account_id", "gateway_id"},
+		"cloudflare-ai-gateway": {"api_key", "gateway_token", "upstream_api_key", "account_id", "gateway_id"},
 	}
 	for provider, want := range cases {
 		got := Spec(provider)

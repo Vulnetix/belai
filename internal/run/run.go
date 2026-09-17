@@ -34,6 +34,7 @@ type Config struct {
 	BaseURL        string
 	APIKey         string
 	UpstreamAPIKey string // secondary key for pass-through gateways (e.g. cloudflare-ai-gateway)
+	GatewayToken   string // gateway-specific token for cf-aig-authorization auth
 	Model          string
 	Effort         string        // empty means provider default thinking level
 	API            wire.Surface  // empty for built-ins; custom providers carry their surface
@@ -60,6 +61,7 @@ type ClassifierConfig struct {
 	BaseURL        string
 	APIKey         string
 	UpstreamAPIKey string // secondary key for pass-through gateways
+	GatewayToken   string // gateway-specific token for cf-aig-authorization auth
 	Model          string
 	Effort         string
 	API            wire.Surface
@@ -92,6 +94,7 @@ func (c ClassifierConfig) config() Config {
 		BaseURL:        c.BaseURL,
 		APIKey:         c.APIKey,
 		UpstreamAPIKey: c.UpstreamAPIKey,
+		GatewayToken:   c.GatewayToken,
 		Model:          c.Model,
 		Effort:         c.Effort,
 		API:            c.API,
@@ -111,6 +114,7 @@ func ResolveClassifier(main Config, cls *config.ClassifierSettings, src Credenti
 		BaseURL:        main.BaseURL,
 		APIKey:         main.APIKey,
 		UpstreamAPIKey: main.UpstreamAPIKey,
+		GatewayToken:   main.GatewayToken,
 		Model:          main.Model,
 		Effort:         "none",
 		API:            main.API,
@@ -148,6 +152,7 @@ func ResolveClassifier(main Config, cls *config.ClassifierSettings, src Credenti
 		out.BaseURL = cfg.BaseURL
 		out.APIKey = cfg.APIKey
 		out.UpstreamAPIKey = cfg.UpstreamAPIKey
+		out.GatewayToken = cfg.GatewayToken
 		out.API = cfg.API
 		out.Auth = cfg.Auth
 		if cls.Model == "" {
@@ -341,6 +346,13 @@ func (f EnvSource) Lookup(provider, field string) (value, origin string, ok bool
 		if v := f("OPENAI_API_KEY"); v != "" {
 			return v, "$OPENAI_API_KEY", true
 		}
+	case "cloudflare-ai-gateway:gateway_token":
+		if v := f("CLOUDFLARE_GATEWAY_TOKEN"); v != "" {
+			return v, "$CLOUDFLARE_GATEWAY_TOKEN", true
+		}
+		if v := f("CF_AIG_TOKEN"); v != "" {
+			return v, "$CF_AIG_TOKEN", true
+		}
 	case "cloudflare-ai-gateway:account_id":
 		if v := f("CLOUDFLARE_ACCOUNT_ID"); v != "" {
 			return v, "$CLOUDFLARE_ACCOUNT_ID", true
@@ -532,6 +544,10 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 		if up, origin, ok := src.Lookup(name, "upstream_api_key"); ok {
 			cfg.UpstreamAPIKey = up
 			status.Origins["upstream_api_key"] = origin
+		}
+		if gt, origin, ok := src.Lookup(name, "gateway_token"); ok {
+			cfg.GatewayToken = gt
+			status.Origins["gateway_token"] = origin
 		}
 		if a, origin, ok := src.Lookup(name, "account_id"); ok {
 			acct = a
@@ -886,7 +902,12 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 			key = token.Value
 		}
 		var p *provider.Provider
-		if cfg.Provider == "cloudflare-ai-gateway" && cfg.UpstreamAPIKey != "" {
+		if cfg.Provider == "cloudflare-ai-gateway" && cfg.GatewayToken != "" {
+			// Universal gateway: authenticate with the gateway-specific token
+			// via cf-aig-authorization instead of the Cloudflare API token.
+			key = cfg.GatewayToken
+			p, err = provider.NewWithAuth(cfg.Provider, cfg.BaseURL, key, provider.AuthCFAIG)
+		} else if cfg.Provider == "cloudflare-ai-gateway" && cfg.UpstreamAPIKey != "" {
 			// Pass-through gateway: swap the Cloudflare API key for the
 			// upstream provider key (both use standard Bearer auth).
 			key = cfg.UpstreamAPIKey

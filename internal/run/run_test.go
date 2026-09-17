@@ -610,6 +610,26 @@ func TestBuildRequestGatewayWorkersAIModelPrefixing(t *testing.T) {
 	}
 }
 
+func TestBuildRequestGatewayTokenUsesCFAIGAuth(t *testing.T) {
+	cfg := Config{
+		Provider:     "cloudflare-ai-gateway",
+		BaseURL:      "https://gateway.ai.cloudflare.com/v1/acct/gw",
+		APIKey:       "cf-key",
+		GatewayToken: "gateway-token",
+		Model:        "gpt-5",
+	}
+	req, _, err := buildRequest(context.Background(), cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, false, nil, nil)
+	if err != nil {
+		t.Fatalf("buildRequest: %v", err)
+	}
+	if auth := req.Header.Get("cf-aig-authorization"); auth != "Bearer gateway-token" {
+		t.Fatalf("cf-aig-authorization = %q", auth)
+	}
+	if auth := req.Header.Get("Authorization"); auth != "" {
+		t.Fatalf("Authorization should not be set when gateway token is present, got %q", auth)
+	}
+}
+
 func TestBuildRequestStreamOptionsOnlyForNativeOpenAI(t *testing.T) {
 	req, _, err := buildRequest(context.Background(), Config{Provider: "openai", BaseURL: "https://api.openai.com/v1", APIKey: "sk", Model: "gpt-5"}, "sys", nil, true, nil, nil)
 	if err != nil {

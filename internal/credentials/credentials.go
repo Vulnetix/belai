@@ -44,6 +44,7 @@ func Spec(provider string) []Field {
 	case "cloudflare-ai-gateway":
 		return []Field{
 			{Name: "api_key", EnvVars: []string{"CLOUDFLARE_API_KEY"}, Secret: true},
+			{Name: "gateway_token", EnvVars: []string{"CLOUDFLARE_GATEWAY_TOKEN", "CF_AIG_TOKEN"}, Secret: true, Optional: true},
 			{Name: "upstream_api_key", EnvVars: []string{"UPSTREAM_API_KEY", "OPENAI_API_KEY"}, Secret: true, Optional: true},
 			{Name: "account_id", EnvVars: []string{"CLOUDFLARE_ACCOUNT_ID"}, Secret: false},
 			{Name: "gateway_id", EnvVars: []string{"CLOUDFLARE_GATEWAY_ID"}, Secret: false},
