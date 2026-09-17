@@ -722,6 +722,14 @@ state.
 | `surveyedLastPass` | The pass that just ended ran on forced-survey findings. |
 | `overflowRetried` | A context overflow has already been recovered once this prompt. |
 
+The ledger is loop-local and dies with the loop. What *is* persisted is the
+separate `goals.GoalState`, emitted at every pass boundary and written to the
+session as a `goal_state` entry: the objective, status, pass count, cumulative
+tokens and elapsed seconds. It is a progress report for the UI and for
+resume — never an input to the decisions above, which is what keeps the trust
+boundary intact. Its rules and edge cases are in
+[architecture.md](architecture.md#run-time-goal-state).
+
 ### Goal evaluator
 
 At each pass boundary the evaluator is shown the goal, the rendered todo list,
