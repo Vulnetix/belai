@@ -8,6 +8,7 @@ import (
 
 	"github.com/vulnetix/signet/internal/clarify"
 	"github.com/vulnetix/signet/internal/filediff"
+	"github.com/vulnetix/signet/internal/goals"
 	"github.com/vulnetix/signet/internal/permissions"
 	"github.com/vulnetix/signet/internal/resilience"
 	"github.com/vulnetix/signet/internal/rolemanager"
@@ -57,6 +58,9 @@ const (
 	// advanced). It carries the list; the TUI renders and persists it, the
 	// agent never touches the session store.
 	EventTodosKind
+	// EventGoalStateKind reports an update to the run-time goal state; the TUI
+	// persists it as a goal_state session entry.
+	EventGoalStateKind
 	// EventToolDiffKind carries what a mutating tool changed on disk, keyed by
 	// ToolCallID. Render-only, like EventToolProgressKind: it is observed
 	// around the tool rather than returned by it, never enters the
@@ -155,6 +159,9 @@ type Event struct {
 	// Todos carries the goal-mode todo list when it changes, so the TUI can
 	// render and persist it without the agent touching the session store.
 	Todos *todos.List
+
+	// GoalState carries an updated run-time goal state on EventGoalStateKind.
+	GoalState *goals.GoalState
 
 	// Err carries EventError.
 	Err error

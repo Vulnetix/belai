@@ -2024,6 +2024,11 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			a.setTodos(m.Todos)
 		}
 		return a.nextAgent()
+	case agent.EventGoalStateKind:
+		if m.GoalState != nil {
+			a.appendEntry(m.GoalState.ToEntry(a.lastEntryID))
+		}
+		return a.nextAgent()
 	case agent.EventGoalEvalKind:
 		if m.Todos != nil {
 			a.setTodos(m.Todos)

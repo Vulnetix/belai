@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/vulnetix/signet/internal/goals"
 	"github.com/vulnetix/signet/internal/modelinfo"
 	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/plans"
@@ -193,6 +196,9 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 	maxPasses := s.settings.Resilience.MaxPassesOr()
 
 	l := passLedger{goalText: goalText}
+	gs := goals.NewGoalState(goalText)
+	goalStart := time.Now()
+	totalTokens := 0
 	for {
 		// Cancellation is the only ceiling, and it must not read as an error:
 		// a deliberate esc returns the partial result, never raw
@@ -254,6 +260,13 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 			list := l.list
 			emit(Event{Kind: EventTodosKind, Todos: &list})
 		}
+		if out.usage != nil {
+			totalTokens += out.usage.Total()
+		}
+		gs.Passes = l.passes
+		gs.TokensUsed = totalTokens
+		gs.TimeUsedSeconds = int(time.Since(goalStart).Seconds())
+		emit(Event{Kind: EventGoalStateKind, GoalState: &gs})
 
 		if !out.exhausted {
 			// Natural exit: a no-tool-call reply is a claim of completion, not
@@ -288,6 +301,8 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 					list := l.list
 					emit(Event{Kind: EventTodosKind, Todos: &list})
 				}
+				gs.Status = string(goals.StatusComplete)
+				emit(Event{Kind: EventGoalStateKind, GoalState: &gs})
 				return run.Result{Reply: out.reply, Usage: out.usage, GoalSentinel: sentinel, Passes: l.passes}, nil
 			}
 			if l.notePartial() {
@@ -313,11 +328,31 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 			return run.Result{Passes: l.passes}, fmt.Errorf("goal pass loop stopped: pass %d executed no tools", l.passes)
 		}
 
-		sentinel, evalErr := rolemanager.EvaluateGoal(ctx, pipe.Classifier, rolemanager.GoalEvalInput{
-			Goal:     l.goalText,
-			Todos:    l.list.Render(),
-			Evidence: sanitize.Sanitize(evidenceDigest(turns[start:])),
-		})
+		// The goal evaluator and the progress-report turn run concurrently
+		// against the same pass evidence. The sentinel alone drives control
+		// flow; the report is assistant text appended to turns and shown in
+		// the TUI.
+		var sentinel rolemanager.GoalSentinel
+		var evalErr error
+		var report string
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			sentinel, evalErr = rolemanager.EvaluateGoal(ctx, pipe.Classifier, rolemanager.GoalEvalInput{
+				Goal:     l.goalText,
+				Todos:    l.list.Render(),
+				Evidence: sanitize.Sanitize(evidenceDigest(turns[start:])),
+			})
+		}()
+		go func() {
+			defer wg.Done()
+			report = s.progressReport(ctx, system, turns, l.goalText, streaming, emit)
+		}()
+		wg.Wait()
+		if report != "" {
+			turns = append(turns, run.Turn{Role: "assistant", Content: report})
+		}
 		if evalErr != nil {
 			if !errors.Is(evalErr, rolemanager.ErrMalformedGoalEval) {
 				// Transport failure: terminal. The verdict is unknown, and an
@@ -395,6 +430,8 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 				list := l.list
 				emit(Event{Kind: EventTodosKind, Todos: &list})
 			}
+			gs.Status = string(goals.StatusComplete)
+			emit(Event{Kind: EventGoalStateKind, GoalState: &gs})
 			return run.Result{
 				Reply:        out.lastText,
 				Usage:        out.usage,
@@ -454,6 +491,20 @@ func (s *Session) agentContinuations(ctx context.Context, pipe *rolemanager.Pipe
 	}
 	emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("turn budget reached; returning the work so far after %d continuation pass(es)", continuations)})
 	return run.Result{Reply: out.lastText, Usage: out.usage, Passes: continuations}, nil
+}
+
+// progressReport asks the main model, at a pass boundary, for a concise
+// work-done-this-pass / next-actions report. It is a normal model turn (never
+// a classifier payload) and runs beside the evaluator; any tool calls it emits
+// are ignored — only its text is returned.
+func (s *Session) progressReport(ctx context.Context, system string, turns []run.Turn, goalText string, streaming bool, emit func(Event)) string {
+	prompt := run.Turn{Role: "user", Content: "Report concisely for the harness: the work completed this pass and the concrete next actions. Goal: " + goalText}
+	rp := append(append([]run.Turn{}, turns...), prompt)
+	assistant, err := s.streamTurnRetry(ctx, system, rp, streaming, emit)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(assistant.Text)
 }
 
 // partialDirective builds the continuation instruction for a PARTIAL verdict:
