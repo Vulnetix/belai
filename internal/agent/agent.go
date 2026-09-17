@@ -51,6 +51,10 @@ type Options struct {
 	// It is a distinct authority from AllowClarify: only the interactive TUI
 	// sets it true, and it is never inherited by subagents.
 	AllowAsk bool
+	// AskDisabled disables the permission-ask gate entirely: an "ask" decision
+	// resolves to allow and mutating calls run without a prompt. It is the
+	// operator's explicit ask-off choice (guardrails/ask controls).
+	AskDisabled bool
 	// AllowPassLoop gates the goal-mode pass loop. It is a distinct authority
 	// from AllowExplore: a subagent may explore (or not) but must never enter
 	// the unbounded pass loop, which would spawn recursive unbounded subagents.
@@ -84,6 +88,7 @@ type Session struct {
 	allowExplore   bool
 	allowClarify   bool
 	allowAsk       bool
+	askDisabled    bool
 	allowPassLoop  bool
 	maxIter        int
 	cache          *rolemanager.Cache
@@ -180,6 +185,7 @@ func NewSession(o Options) (*Session, error) {
 		allowExplore:   o.AllowExplore,
 		allowClarify:   o.AllowClarify,
 		allowAsk:       o.AllowAsk,
+		askDisabled:    o.AskDisabled,
 		allowPassLoop:  o.AllowPassLoop,
 		maxIter:        maxIter,
 		cache:          cache,
@@ -592,9 +598,11 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 	}
 
 	// Every mutating call asks, unless an explicit Allow rule matched. An
-	// explicit Deny already blocked above; an Ask decision always asks.
+	// explicit Deny already blocked above; an Ask decision always asks — unless
+	// the operator disabled asking, in which case both an Ask decision and the
+	// mutating-default ask resolve to allow with no prompt.
 	mutates := tools.Mutates(tool)
-	if perm == permissions.DecisionAsk || (mutates && !matched) {
+	if !s.askDisabled && (perm == permissions.DecisionAsk || (mutates && !matched)) {
 		if !s.allowAsk {
 			// Non-TTY policy: fall back to today's PermissionAskNoTTY posture.
 			// Enforce withholds naming the flag; warn/ignore falls through to

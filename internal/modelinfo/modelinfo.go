@@ -43,7 +43,7 @@ func init() {
 	register(128_000, 16_384, "gpt-4o", "gpt-4o-mini", "gpt-4-turbo")
 	register(200_000, 100_000, "o1", "o1-pro", "o3", "o3-mini", "o3-pro", "o4-mini")
 
-	register(262_144, 256_000, "@cf/moonshotai/kimi-k2.6")
+	register(262_144, 256_000, "@cf/moonshotai/kimi-k2.6", "@cf/moonshotai/kimi-k2.7", "@cf/moonshotai/kimi-k2.7-code")
 	register(128_000, 16_384, "@cf/openai/gpt-oss-120b", "@cf/openai/gpt-20b", "@cf/openai/gpt-oss-20b")
 	register(131_000, 16_384, "@cf/meta/llama-4-scout-17b-16e-instruct")
 	register(32_768, 32_768, "@cf/qwen/qwen3-30b-a3b-fp8")
@@ -105,11 +105,21 @@ func Lookup(model string) (Info, bool) {
 // Resolve applies a user override before falling back to the registry.
 // overrides is config.Settings.ContextWindows; exact ids only, nil-safe.
 func Resolve(model string, overrides map[string]int) (int, bool) {
+	return ResolveWith(model, overrides, 0)
+}
+
+// ResolveWith is Resolve with an explicit catalogue/profile fallback inserted
+// between the user override and the built-in registry: user override ->
+// catalogue/profile -> built-in registry. The registry stays the last resort.
+func ResolveWith(model string, overrides map[string]int, fallback int) (int, bool) {
 	if v, ok := overrides[model]; ok {
 		return v, true
 	}
 	if v, ok := overrides[normalize(model)]; ok {
 		return v, true
+	}
+	if fallback > 0 {
+		return fallback, true
 	}
 	info, ok := Lookup(model)
 	if !ok {

@@ -221,9 +221,11 @@ type App struct {
 
 	// session display overrides (ctrl+r / ctrl+t), shadowing the resolved
 	// settings without rewriting the settings file.
-	reasoningOverride *bool
-	toolCallsOverride *bool
-	lastPlanText      string
+	reasoningOverride  *bool
+	toolCallsOverride  *bool
+	guardrailsOverride *bool
+	askOverride        *bool
+	lastPlanText       string
 
 	// attachments state
 	attachments  map[int]*attachment
@@ -1014,6 +1016,8 @@ type sessionBuildParams struct {
 	posture      posture.Policy
 	planMode     bool
 	allowClarify bool
+	guardrails   bool
+	ask          bool
 	// toolAllow restricts the registry to an engaged background definition's
 	// tools. Empty means every registered tool.
 	toolAllow []string
@@ -1028,6 +1032,8 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 		posture:      a.posture,
 		planMode:     a.planMode,
 		allowClarify: true,
+		guardrails:   a.guardrailsEnabled(),
+		ask:          a.askEnabled(),
 		toolAllow:    a.engagedAgentTools(),
 	}
 }
@@ -1051,6 +1057,13 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		reg = tools.NewRegistry(filtered...)
 	}
 	perms := permissions.From(p.settings.Permissions.Allow, p.settings.Permissions.Ask, p.settings.Permissions.Deny)
+	pol := p.posture
+	if !p.guardrails {
+		pol = posture.Policy{}
+		for _, g := range posture.AllGates {
+			pol[g] = posture.Ignore
+		}
+	}
 	var promptOpts prompt.Options
 	if p.settings.Caveman != nil && *p.settings.Caveman {
 		promptOpts.Caveman = true
@@ -1060,12 +1073,13 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		Client:        p.client,
 		Registry:      reg,
 		Perms:         perms,
-		Posture:       p.posture,
+		Posture:       pol,
 		PlanMode:      p.planMode,
 		Workdir:       p.workdir,
 		Settings:      p.settings,
 		PromptOptions: promptOpts,
 		Caps:          caps,
+		AskDisabled:   !p.ask,
 		// Top-level session: explore subagents may fan out from here. A
 		// subagent sets this false so it can never fan out again.
 		AllowExplore: true,
@@ -1270,6 +1284,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		case "ctrl+alt+c":
 			return a, a.toggleCaveman()
+		case "ctrl+alt+g":
+			return a, a.toggleGuardrails()
+		case "ctrl+alt+a":
+			return a, a.toggleAsk()
 		}
 		if a.view != viewChat {
 			if h, ok := viewHandlers[a.view]; ok {
@@ -2373,6 +2391,50 @@ func (a *App) toggleCaveman() tea.Cmd {
 	return nil
 }
 
+func (a *App) toggleGuardrails() tea.Cmd {
+	next := !a.guardrailsEnabled()
+	a.guardrailsOverride = &next
+	a.invalidateAgentSession()
+	a.traceRecord("guardrails_toggle", boolLabel(next), "", "", 0)
+	a.addSystem("guardrails: " + boolLabel(next))
+	return nil
+}
+
+func (a *App) toggleAsk() tea.Cmd {
+	next := !a.askEnabled()
+	a.askOverride = &next
+	a.invalidateAgentSession()
+	a.traceRecord("ask_toggle", boolLabel(next), "", "", 0)
+	a.addSystem("ask: " + boolLabel(next))
+	return nil
+}
+
+func (a *App) setYolo(on bool) tea.Cmd {
+	if on {
+		v := false
+		a.guardrailsOverride = &v
+		a.askOverride = &v
+	} else {
+		a.guardrailsOverride = nil
+		a.askOverride = nil
+	}
+	a.invalidateAgentSession()
+	label := "off"
+	if on {
+		label = "on"
+	}
+	a.traceRecord("yolo", label, "", "", 0)
+	a.addSystem("yolo: " + label)
+	return nil
+}
+
+func (a *App) traceRecord(event, verdict, tool, detail string, pass int) {
+	if a.trace == nil {
+		return
+	}
+	a.trace.Record(trace.Record{Phase: "tui", Event: event, Verdict: verdict, Tool: tool, Pass: pass, Detail: detail})
+}
+
 func (a *App) saveMode() {
 	a.state.LastMode = a.mode
 	_ = config.SaveState(a.state)
@@ -2553,7 +2615,8 @@ func (a *App) refreshFooter() {
 	// picker and settings view both write there, and refreshProvider copies
 	// the value into cfg for the agent session.
 	a.footer.Effort = a.settings.Effort
-	a.footer.Caveman = a.settings.CavemanEnabled()
+	a.footer.Guardrails = a.guardrailsEnabled()
+	a.footer.Ask = a.askEnabled()
 	if a.gitOK {
 		a.footer.Branch = a.gitInfo.Branch
 		a.footer.Cwd = a.workdir
@@ -2566,11 +2629,36 @@ func (a *App) refreshFooter() {
 	a.footer.Tokens = est.Tokens
 	a.footer.Estimated = est.LastUsageIndex < 0
 	a.footer.ContextStale = a.usageStale
-	if limit, ok := modelinfo.Resolve(a.cfg.Model, a.settings.ContextWindows); ok {
+	if limit, ok := modelinfo.ResolveWith(a.cfg.Model, a.settings.ContextWindows, a.selectedModelWindow()); ok {
 		a.footer.ContextLimit = limit
 	} else {
 		a.footer.ContextLimit = 0
 	}
+}
+
+// selectedModelWindow returns the context window the selected model declares
+// in the live-fetched or profile catalogue (or the static one), 0 when none.
+func (a *App) selectedModelWindow() int {
+	for _, m := range a.catalogFor(a.cfg.Provider) {
+		if m.ID == a.cfg.Model {
+			return m.ContextWindow
+		}
+	}
+	return 0
+}
+
+func (a *App) guardrailsEnabled() bool {
+	if a.guardrailsOverride != nil {
+		return *a.guardrailsOverride
+	}
+	return a.settings.GuardrailsEnabled()
+}
+
+func (a *App) askEnabled() bool {
+	if a.askOverride != nil {
+		return *a.askOverride
+	}
+	return a.settings.AskPermissionEnabled()
 }
 
 func (a *App) sessionDisplay() string {

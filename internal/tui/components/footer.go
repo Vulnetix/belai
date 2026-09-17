@@ -9,14 +9,11 @@ import (
 )
 
 // Footer shows session, context usage (number and progress bar), model with
-// optional effort, caveman status, provider, and mode status.
+// optional effort, permission controls, provider, and mode status.
 type Footer struct {
 	Session string
 	Tokens  int
 	Model   string
-
-	// Caveman reports whether the caveman voice rewrite is active.
-	Caveman bool
 
 	// Effort is the model's reasoning effort (e.g. "low", "medium", "high",
 	// "none"). Rendered subtly next to the model when set; empty means the
@@ -37,6 +34,12 @@ type Footer struct {
 	ContextStale bool // usage predates a compaction
 	Estimated    bool // no provider usage anchor yet; Tokens is an estimate
 
+	// Guardrails reports whether the posture gates are at their defaults.
+	// Ask reports whether the permission-ask gate is on. Both off renders one
+	// golden YOLO chip; otherwise the two chips render individually.
+	Guardrails bool
+	Ask        bool
+
 	// Session naming.
 	SessionName string
 	ShowName    bool
@@ -53,13 +56,22 @@ func modeColor(mode string) lipgloss.TerminalColor {
 	}
 }
 
-// View renders the footer as two lines.
+// View renders the footer as two lines: line 1 carries the mode chip, cwd and
+// branch; line 2 carries provider/model/effort/permission controls on the left
+// and session/context/bar on the right.
 func (f *Footer) View() string {
 	if f.Width <= 0 {
 		f.Width = 80
 	}
 
+	modeLabel := f.Mode
+	if f.Agent != "" {
+		modeLabel += " · " + f.Agent
+	}
+	modeChip := Chip(modeLabel, modeColor(f.Mode))
+
 	var line1Parts []string
+	line1Parts = append(line1Parts, modeChip)
 	if f.Cwd != "" {
 		cwd := f.Cwd
 		if home, _ := os.UserHomeDir(); home != "" && strings.HasPrefix(cwd, home) {
@@ -72,11 +84,6 @@ func (f *Footer) View() string {
 	}
 	line1 := strings.Join(line1Parts, MutedStyle.Render("  ·  "))
 
-	modeLabel := f.Mode
-	if f.Agent != "" {
-		modeLabel += " · " + f.Agent
-	}
-	modeChip := Chip(modeLabel, modeColor(f.Mode))
 	parts := []string{}
 	if f.Provider != "" {
 		parts = append(parts, MutedStyle.Render(f.Provider))
@@ -84,35 +91,43 @@ func (f *Footer) View() string {
 	if f.Model != "" {
 		modelPart := lipgloss.NewStyle().Foreground(ColorCream).Render(f.Model)
 		if f.Effort != "" {
-			// Effort sits directly against the model in muted style: present
-			// but secondary to the model id itself.
 			modelPart += MutedStyle.Render(" · " + f.Effort)
 		}
 		parts = append(parts, modelPart)
 	}
-	parts = append(parts, MutedStyle.Render("caveman: "+onOff(f.Caveman)))
-	rightParts := []string{}
-	rightParts = append(rightParts, MutedStyle.Render(f.sessionSegment()))
-	rightParts = append(rightParts, f.contextSegment())
-	rightParts = append(rightParts, f.contextBar())
-
+	if chips := f.permissionChips(); chips != "" {
+		parts = append(parts, chips)
+	}
 	left := strings.Join(parts, MutedStyle.Render(" · "))
-	right := strings.Join(rightParts, MutedStyle.Render("  ·  "))
+
+	ctxSeg := f.contextSegment()
+	ctxBar := f.contextBar()
+	sep := MutedStyle.Render("  ·  ")
+	sepW := visibleLen("  ·  ")
+
+	budget := f.Width - visibleLen(left) - visibleLen(ctxSeg) - visibleLen(ctxBar) - 2*sepW - 1
+	if budget < 12 {
+		budget = 12
+	}
+	session := f.sessionSegment(budget)
+
+	rightParts := []string{}
+	if session != "" {
+		rightParts = append(rightParts, MutedStyle.Render(session))
+	}
+	if ctxSeg != "" {
+		rightParts = append(rightParts, ctxSeg)
+	}
+	rightParts = append(rightParts, ctxBar)
+	right := strings.Join(rightParts, sep)
 
 	line2 := left
 	if right != "" {
-		pad := f.Width - lipgloss.Width(left) - lipgloss.Width(right) - lipgloss.Width(modeChip) - 2
+		pad := f.Width - lipgloss.Width(left) - lipgloss.Width(right)
 		if pad < 1 {
 			pad = 1
 		}
-		line2 = left + strings.Repeat(" ", pad) + modeChip
-		extraPad := f.Width - lipgloss.Width(line2) - lipgloss.Width(right)
-		if extraPad < 1 {
-			extraPad = 1
-		}
-		line2 = line2 + strings.Repeat(" ", extraPad) + right
-	} else {
-		line2 = left + " " + modeChip
+		line2 = left + strings.Repeat(" ", pad) + right
 	}
 
 	rule := Rule(f.Width)
@@ -122,20 +137,43 @@ func (f *Footer) View() string {
 	return rule + "\n" + line2
 }
 
-// sessionSegment renders the session name (when shown) or the short id.
-func (f *Footer) sessionSegment() string {
+// permissionChips renders the permission controls. Both off collapses to a
+// single golden YOLO chip; otherwise guardrails and ask render as two chips,
+// teal when on and red when off.
+func (f Footer) permissionChips() string {
+	if !f.Guardrails && !f.Ask {
+		return Chip("YOLO", ColorAmber)
+	}
+	guardrails := Chip("guardrails: "+onOff(f.Guardrails), onOffColor(f.Guardrails))
+	ask := Chip("ask: "+onOff(f.Ask), onOffColor(f.Ask))
+	return guardrails + MutedStyle.Render(" ") + ask
+}
+
+func onOffColor(on bool) lipgloss.TerminalColor {
+	if on {
+		return ColorTeal
+	}
+	return ColorDanger
+}
+
+// sessionSegment renders the session name (when shown) or the short id,
+// truncated to the budget rune-safely.
+func (f *Footer) sessionSegment(budget int) string {
+	if budget < 1 {
+		budget = 12
+	}
 	if f.ShowName && f.SessionName != "" {
-		return "session: " + truncateRunes(f.SessionName, 24)
+		return "session: " + truncateRunes(f.SessionName, budget-len("session: "))
 	}
 	if f.Session != "" {
-		return "session: " + f.Session
+		return "session: " + truncateRunes(f.Session, budget-len("session: "))
 	}
 	return ""
 }
 
 // contextSegment renders the context-window pressure with its three degraded
-// renderings: a leading ~ for an estimate, (?) for a stale or unknown window,
-// and a coloured remaining percentage only when it is safe to show one.
+// renderings: a leading ~ for an estimate, (?) for a stale window, and a
+// coloured remaining percentage only when it is safe to show one.
 func (f *Footer) contextSegment() string {
 	tokens := formatTokens(f.Tokens)
 
@@ -154,33 +192,19 @@ func (f *Footer) contextSegment() string {
 		}
 		return fmt.Sprintf("tokens: %s%s/%s (%s)", prefix, tokens, limit, f.colourPct(pct))
 	}
-	if f.ContextStale || !f.Estimated {
-		return fmt.Sprintf("tokens: %s (?)", tokens)
+	if f.Estimated {
+		return fmt.Sprintf("tokens: ~%s / unknown", tokens)
 	}
-	return fmt.Sprintf("tokens: ~%s (?)", tokens)
+	return fmt.Sprintf("tokens: %s / unknown", tokens)
 }
 
-// barWidth is the cell width of the footer's context progress bar. Ten cells
-// at eighth-cell resolution resolve in 2% steps, and the width fits the slot
-// the old "cost:" label occupied.
 const barWidth = 10
 
-// barEighths renders a partially filled cell: entry i is (i+1)/8 full.
 var barEighths = [8]rune{'▏', '▎', '▍', '▌', '▋', '▊', '▉'}
 
-// contextBar renders the context window as a fixed-width progress bar in the
-// slot the cost label used to hold. Business rules:
-//
-//   - Fill is tokens/contextLimit clamped to [0, 1], rendered at
-//     eighth-cell resolution so a 10-cell bar steps in 2% increments.
-//   - Fill colour follows the same remaining-percentage thresholds as the
-//     text segment (barColour), so bar and number can never disagree.
-//   - When the window is unknown (ContextLimit == 0) or the usage predates a
-//     compaction (ContextStale), the bar is empty and muted: the harness
-//     draws no fill it cannot stand behind. The "(?)" lives in the text
-//     segment.
-//   - An unanchored (Estimated) token count fills the bar normally; the "~"
-//     prefix in the text segment is what marks the estimate.
+// contextBar renders the context window as a fixed-width progress bar. An
+// unknown window renders a dotted muted trough with no fill claim; a stale
+// window renders an empty muted bar as before.
 func (f *Footer) contextBar() string {
 	w := barWidth
 	full, eighth := 0, 0
@@ -193,7 +217,7 @@ func (f *Footer) contextBar() string {
 			frac = 1
 		}
 		cells := frac * float64(w)
-		full = int(cells) // floor for non-negative cells
+		full = int(cells)
 		eighth = int((cells-float64(full))*8 + 0.5)
 		if eighth > 7 {
 			full++
@@ -208,7 +232,11 @@ func (f *Footer) contextBar() string {
 		case i == full && eighth > 0:
 			r = append(r, barEighths[eighth-1])
 		default:
-			r = append(r, '░')
+			if f.ContextLimit <= 0 {
+				r = append(r, '·')
+			} else {
+				r = append(r, '░')
+			}
 		}
 	}
 	if pct, ok := f.percentRemaining(); ok {
@@ -217,9 +245,6 @@ func (f *Footer) contextBar() string {
 	return MutedStyle.Render(string(r))
 }
 
-// barColour applies the footer's pressure thresholds to a remaining
-// percentage: <20% remaining reads red, <50% amber, otherwise teal. The text
-// percentage and the bar share this one rule.
 func (f *Footer) barColour(remainingPct int) lipgloss.TerminalColor {
 	switch {
 	case remainingPct < 20:
@@ -245,15 +270,12 @@ func (f *Footer) colourPct(pct int) string {
 	return lipgloss.NewStyle().Foreground(f.barColour(pct)).Render(fmt.Sprintf("%d%%", pct))
 }
 
-// formatTokens renders a token count compactly: 842, 12.4k, 1.2M.
 func formatTokens(n int) string {
 	switch {
 	case n >= 1_000_000:
-		v := float64(n) / 1_000_000
-		return trimFloat(v) + "M"
+		return trimFloat(float64(n)/1_000_000) + "M"
 	case n >= 10_000:
-		v := float64(n) / 1_000
-		return trimFloat(v) + "k"
+		return trimFloat(float64(n)/1_000) + "k"
 	default:
 		return fmt.Sprintf("%d", n)
 	}
@@ -272,7 +294,6 @@ func truncateRunes(s string, max int) string {
 	return string(runes[:max-1]) + "…"
 }
 
-// onOff renders a boolean as "on" or "off".
 func onOff(v bool) string {
 	if v {
 		return "on"

@@ -58,6 +58,8 @@ func main() {
 	allowInvalidSkills := flag.Bool("allow-invalid-skills", false, "ignore invalid skill validation")
 	allowInvalidHooks := flag.Bool("allow-invalid-hooks", false, "ignore invalid hook validation")
 	dangerouslyYolo := flag.Bool("dangerously-yolo-everything", false, "ignore every posture gate")
+	guardrails := flag.Bool("guardrails", true, "enable the posture guardrails; -guardrails=false is the guardrails-off half of YOLO")
+	askPermission := flag.Bool("ask-permission", true, "enable the permission-ask gate; -ask-permission=false resolves asks to allow")
 	enableTools := flag.Bool("tools", true, "enable tool execution; pass -tools=false to disable")
 	effort := flag.String("effort", "", "thinking effort level: low, medium, or high")
 	classifierProvider := flag.String("classifier-provider", "", "security-classifier provider (default: the main provider)")
@@ -98,6 +100,20 @@ func main() {
 		t := true
 		settings.Caveman = &t
 	}
+	if *dangerouslyYolo {
+		f := false
+		settings.Guardrails = &f
+		settings.AskPermission = &f
+	} else {
+		if !*guardrails {
+			f := false
+			settings.Guardrails = &f
+		}
+		if !*askPermission {
+			f := false
+			settings.AskPermission = &f
+		}
+	}
 	if *sessionRetentionDays > 0 {
 		settings.SessionRetentionDays = sessionRetentionDays
 	}
@@ -121,6 +137,12 @@ func main() {
 	cliPol := fs.ToPolicy()
 	projectPol, _ := posture.Load(workdir)
 	pol := posture.Defaults().Override(projectPol).Override(cliPol)
+	if !*guardrails {
+		pol = posture.Policy{}
+		for _, g := range posture.AllGates {
+			pol[g] = posture.Ignore
+		}
+	}
 	posture.PrintBanner(pol, os.Stderr)
 
 	if *agentCreate != "" {
@@ -273,6 +295,7 @@ func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *ht
 		Settings:      settings,
 		PromptOptions: promptOpts,
 		Caps:          caps,
+		AskDisabled:   !settings.AskPermissionEnabled(),
 		// Top-level session: explore subagents may fan out from here. A
 		// subagent sets this false so it can never fan out again.
 		AllowExplore: true,

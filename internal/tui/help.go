@@ -30,6 +30,8 @@ func keySections() []keySection {
 			{"ctrl+r", "cycle reasoning display: auto, on, off"},
 			{"ctrl+t", "cycle tool-call display: auto, on, off"},
 			{"ctrl+alt+c", "toggle caveman voice rewrite"},
+			{"ctrl+alt+g", "toggle guardrails"},
+			{"ctrl+alt+a", "toggle ask permission"},
 			{"ctrl+alt+p", "cycle operating mode"},
 		}},
 		{"chat", []keyBinding{

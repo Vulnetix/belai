@@ -123,3 +123,14 @@ func Label(provider, modelID string) string {
 	}
 	return modelID
 }
+
+// ContextWindowFor returns the declared context window for a model in the
+// static catalog, or 0 when the model is unknown there.
+func ContextWindowFor(provider, modelID string) int {
+	for _, m := range Catalog(provider) {
+		if m.ID == modelID {
+			return m.ContextWindow
+		}
+	}
+	return 0
+}

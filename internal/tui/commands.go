@@ -176,6 +176,19 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("permissions", "edit tool permissions", nil, func(a *App, arg string) tea.Cmd {
 		return a.push(viewPermissions)
 	})
+	r.Register("yolo", "toggle guardrails and ask together", func() []string {
+		return []string{"on", "off"}
+	}, func(a *App, arg string) tea.Cmd {
+		switch strings.TrimSpace(arg) {
+		case "on":
+			return a.setYolo(true)
+		case "off":
+			return a.setYolo(false)
+		default:
+			a.addSystem("yolo: on turns both guardrails and ask off; off restores the settings-file values")
+			return nil
+		}
+	})
 	r.Register("help", "show commands and keyboard shortcuts", nil, func(a *App, arg string) tea.Cmd {
 		a.addSystem(helpText(a.registry))
 		return nil

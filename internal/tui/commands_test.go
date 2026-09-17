@@ -7,7 +7,7 @@ import (
 
 func TestRegistryNames(t *testing.T) {
 	r := NewRegistry(t.TempDir())
-	want := []string{"agent", "clear", "code-review", "compact", "credentials", "execute", "help", "local-model", "mode", "model", "new", "permissions", "profile", "refine", "rename", "settings", "todos"}
+	want := []string{"agent", "clear", "code-review", "compact", "credentials", "execute", "help", "local-model", "mode", "model", "new", "permissions", "profile", "refine", "rename", "settings", "todos", "yolo"}
 	if !reflect.DeepEqual(r.Names(), want) {
 		t.Fatalf("Names = %v, want %v", r.Names(), want)
 	}

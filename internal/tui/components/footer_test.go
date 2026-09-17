@@ -38,8 +38,8 @@ func TestContextSegmentStale(t *testing.T) {
 
 func TestContextSegmentUnknownWindow(t *testing.T) {
 	f := Footer{Tokens: 12400, Estimated: true, Width: 120}
-	if !strings.Contains(f.contextSegment(), "(?)") {
-		t.Fatalf("unknown window = %q", f.contextSegment())
+	if !strings.Contains(f.contextSegment(), "/ unknown") {
+		t.Fatalf("unknown window = %q, want an explicit unknown denominator", f.contextSegment())
 	}
 }
 
@@ -54,16 +54,16 @@ func TestFormatTokens(t *testing.T) {
 
 func TestSessionSegmentNameVsID(t *testing.T) {
 	f := Footer{Session: "abcd1234", SessionName: "My Session", ShowName: true}
-	if got := f.sessionSegment(); got != "session: My Session" {
+	if got := f.sessionSegment(40); got != "session: My Session" {
 		t.Fatalf("session segment = %q", got)
 	}
 	f.ShowName = false
-	if got := f.sessionSegment(); got != "session: abcd1234" {
+	if got := f.sessionSegment(40); got != "session: abcd1234" {
 		t.Fatalf("session segment = %q", got)
 	}
 	f.ShowName = true
 	f.SessionName = ""
-	if got := f.sessionSegment(); got != "session: abcd1234" {
+	if got := f.sessionSegment(40); got != "session: abcd1234" {
 		t.Fatalf("session segment = %q", got)
 	}
 }
@@ -79,18 +79,14 @@ func TestFooterRendersTwoLines(t *testing.T) {
 
 func TestFooterCavemanIndicator(t *testing.T) {
 	t.Run("enabled", func(t *testing.T) {
-		f := Footer{Model: "gpt-5", Provider: "openai", Mode: "agent", Caveman: true, Width: 100}
+		f := Footer{Model: "gpt-5", Provider: "openai", Mode: "agent", Guardrails: true, Ask: true, Width: 100}
 		v := f.View()
-		if !strings.Contains(v, "caveman: on") {
-			t.Fatalf("footer should show caveman on: %q", v)
+		if strings.Contains(v, "caveman") {
+			t.Fatalf("footer must not render a caveman slot: %q", v)
 		}
 	})
 	t.Run("disabled", func(t *testing.T) {
-		f := Footer{Model: "gpt-5", Provider: "openai", Mode: "agent", Caveman: false, Width: 100}
-		v := f.View()
-		if !strings.Contains(v, "caveman: off") {
-			t.Fatalf("footer should show caveman off: %q", v)
-		}
+
 	})
 }
 
@@ -114,8 +110,8 @@ func TestContextBarEmptyWhenUnknown(t *testing.T) {
 	if strings.Contains(bar, "█") || strings.Contains(bar, "▏") {
 		t.Fatalf("unknown window should render empty bar, got %q", bar)
 	}
-	if !strings.Contains(bar, "░") {
-		t.Fatalf("unknown window should render empty placeholders, got %q", bar)
+	if !strings.Contains(bar, "·") {
+		t.Fatalf("unknown window should render a dotted trough, got %q", bar)
 	}
 }
 
@@ -164,7 +160,7 @@ func TestContextBarEighthResolution(t *testing.T) {
 		{"negative tokens clamp to zero", Footer{Tokens: -5, ContextLimit: 1000}, dots},
 		{"estimated still fills", Footer{Tokens: 900, ContextLimit: 1000, Estimated: true}, strings.Repeat("█", 9) + "░"},
 		{"stale renders empty despite usage", Footer{Tokens: 900, ContextLimit: 1000, ContextStale: true}, dots},
-		{"unknown window renders empty", Footer{Tokens: 900}, dots},
+		{"unknown window renders dotted", Footer{Tokens: 900}, strings.Repeat("·", barWidth)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -235,15 +231,15 @@ func TestFooterEffortRendering(t *testing.T) {
 		}
 	})
 	t.Run("empty effort renders nothing", func(t *testing.T) {
-		f := Footer{Model: "gpt-5", Effort: "", Mode: "agent", Caveman: false, Width: 100}
+		f := Footer{Model: "gpt-5", Effort: "", Mode: "agent", Guardrails: true, Ask: true, Width: 100}
 		v := f.View()
 		lines := strings.Split(v, "\n")
 		line2 := lines[len(lines)-1]
 		if strings.Contains(line2, "gpt-5 · high") || strings.Contains(line2, "gpt-5 · none") {
 			t.Fatalf("empty effort must not render an effort value: %q", line2)
 		}
-		if !strings.Contains(line2, "caveman: off") {
-			t.Fatalf("caveman status should still render when effort is empty: %q", line2)
+		if !strings.Contains(line2, "guardrails: on") {
+			t.Fatalf("permission chips should render when effort is empty: %q", line2)
 		}
 	})
 	t.Run("effort without a model renders nothing", func(t *testing.T) {

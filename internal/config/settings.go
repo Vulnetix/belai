@@ -21,6 +21,13 @@ type Settings struct {
 	Effort string `json:"effort,omitempty"`
 	// Caveman, when non-nil, toggles the caveman voice rewrite.
 	Caveman *bool `json:"caveman,omitempty"`
+	// Guardrails, when non-nil and false, disables the posture gates. Default
+	// true. The project layer may only tighten (turn them back on).
+	Guardrails *bool `json:"guardrails,omitempty"`
+	// AskPermission, when non-nil and false, disables the permission-ask gate:
+	// an "ask" decision resolves to allow with no prompt. Default true. The
+	// project layer may only tighten.
+	AskPermission *bool `json:"ask_permission,omitempty"`
 	// ReadOnly, when non-nil and true, is the master read-only switch:
 	// mutating tools (Bash, Write, Edit) are not registered at all. nil or
 	// false (the default) registers the full tool set.
@@ -334,6 +341,16 @@ func (s Settings) CavemanEnabled() bool {
 	return s.Caveman != nil && *s.Caveman
 }
 
+// GuardrailsEnabled reports whether the posture gates are on. Default on.
+func (s Settings) GuardrailsEnabled() bool {
+	return s.Guardrails == nil || *s.Guardrails
+}
+
+// AskPermissionEnabled reports whether the permission-ask gate is on. Default on.
+func (s Settings) AskPermissionEnabled() bool {
+	return s.AskPermission == nil || *s.AskPermission
+}
+
 // ReadOnlyEnabled reports whether the master read-only switch is on. The
 // default (nil or false) is off: the full tool set, including mutating tools.
 func (s Settings) ReadOnlyEnabled() bool {
@@ -361,6 +378,14 @@ func (s Settings) Override(proj Settings) Settings {
 	}
 	if proj.Caveman != nil {
 		out.Caveman = proj.Caveman
+	}
+	if proj.Guardrails != nil && *proj.Guardrails {
+		t := true
+		out.Guardrails = &t
+	}
+	if proj.AskPermission != nil && *proj.AskPermission {
+		t := true
+		out.AskPermission = &t
 	}
 	if proj.BashReadOnly != nil || proj.ReadOnly != nil {
 		if proj.ReadOnly != nil {
