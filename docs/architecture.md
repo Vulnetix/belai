@@ -939,7 +939,10 @@ Provider-specific edge cases:
   For inference, the gateway authenticates in one of three ways:
   1. **Managed gateway** (default) — the gateway is created in the dashboard
      and authenticated with the standard Cloudflare API token:
-     `Authorization: Bearer CF_API_KEY`.
+     `Authorization: Bearer CF_API_KEY`. The token must carry the **AI
+     Gateway** account permission — the **Workers AI** permission alone is
+     not enough, which is why a token that works for `cloudflare-workers-ai`
+     can still return `401 Unauthorized` against the gateway.
   2. **Universal gateway** — a gateway created via API uses a gateway-specific
      token. Set the optional `CLOUDFLARE_GATEWAY_TOKEN` (or `CF_AIG_TOKEN`)
      credential; Signet then sends `cf-aig-authorization: Bearer <gateway

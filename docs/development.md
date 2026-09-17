@@ -139,13 +139,16 @@ Business rules and edge cases:
   `cloudflare-ai-gateway` provider, the model is automatically prefixed with
   `workers-ai/` in the outbound request so the gateway routes it to the
   Workers AI backend (`workers-ai/@cf/...`). Already-prefixed ids are not
-  double-prefixed.
+  double-prefixed. The TUI footer shows this prefixed (wire) form so the
+  effective model name is visible next to the provider.
 - **Gateway authentication** — `cloudflare-ai-gateway` defaults to
-  `Authorization: Bearer` with the Cloudflare API token (managed gateways).
-  Universal (API-created) gateways authenticate with a gateway token instead:
-  set `CLOUDFLARE_GATEWAY_TOKEN` (or `CF_AIG_TOKEN`) and the harness switches
-  to `cf-aig-authorization: Bearer`. Pass-through mode (`UPSTREAM_API_KEY`)
-  keeps standard Bearer auth with the upstream provider key.
+  `Authorization: Bearer` with the Cloudflare API token (managed gateways);
+  the token needs the **AI Gateway** permission (Workers AI alone is not
+  enough). Universal (API-created) gateways authenticate with a gateway token
+  instead: set `CLOUDFLARE_GATEWAY_TOKEN` (or `CF_AIG_TOKEN`) and the harness
+  switches to `cf-aig-authorization: Bearer`. Pass-through mode
+  (`UPSTREAM_API_KEY`) keeps standard Bearer auth with the upstream provider
+  key.
 - **HuggingFace enablement** — the router's `/v1/models` list is live-fetched
   and may include models from third-party Inference Providers the account has
   not enabled. Selecting an un-enabled model returns `model_not_supported`
