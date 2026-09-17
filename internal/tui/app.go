@@ -2541,7 +2541,7 @@ func (a *App) refreshFooter() {
 	a.footer.Mode = a.mode
 	a.footer.Agent = a.engagedAgent()
 	a.footer.Provider = a.cfg.Provider
-	a.footer.Model = a.cfg.Model
+	a.footer.Model = run.WireModel(a.cfg.Provider, a.cfg.Model)
 	// The effective settings are the UI's canonical effort source: the model
 	// picker and settings view both write there, and refreshProvider copies
 	// the value into cfg for the agent session.

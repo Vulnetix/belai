@@ -249,6 +249,19 @@ func maxTokensOr(v, def int) int {
 	return def
 }
 
+// WireModel returns the model id as it is sent on the wire for a provider.
+// Workers AI models (the @cf/ namespace) routed through the Cloudflare AI
+// Gateway are prefixed with "workers-ai/" so the gateway dispatches them to
+// the Workers AI backend; other providers and other gateway-routed models are
+// sent verbatim. This is the single source of truth shared by request
+// construction and the TUI footer so the two can never disagree.
+func WireModel(provider, model string) string {
+	if provider == "cloudflare-ai-gateway" && strings.HasPrefix(model, "@cf/") {
+		return "workers-ai/" + model
+	}
+	return model
+}
+
 // Attachment is user-referenced content that has already been sanitised and
 // classified SAFE by the caller. It is sealed into its turn at egress, with a
 // nonce from the live pool, so the seal survives the sanitise pass every turn
@@ -964,12 +977,8 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 				Thinking:   thinking,
 			})
 		default:
-			model := cfg.Model
-			if cfg.Provider == "cloudflare-ai-gateway" && strings.HasPrefix(model, "@cf/") {
-				model = "workers-ai/" + model
-			}
 			return d.chatRequest(p, wire.OpenAIChatRequest{
-				Model:           model,
+				Model:           WireModel(cfg.Provider, cfg.Model),
 				Messages:        buildOpenAIMessages(system, turns, d.method),
 				Stream:          stream,
 				MaxTokens:       cfg.MaxTokens,

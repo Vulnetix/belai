@@ -576,6 +576,23 @@ func TestBuildRequestGatewayUpstreamKeyUsesBearerAuth(t *testing.T) {
 	}
 }
 
+func TestWireModel(t *testing.T) {
+	cases := []struct {
+		provider, model, want string
+	}{
+		{"cloudflare-ai-gateway", "@cf/qwen/qwen3.8-27b", "workers-ai/@cf/qwen/qwen3.8-27b"},
+		{"cloudflare-ai-gateway", "gpt-5", "gpt-5"},
+		{"cloudflare-ai-gateway", "claude-sonnet-4-5", "claude-sonnet-4-5"},
+		{"cloudflare-workers-ai", "@cf/qwen/qwen3.8-27b", "@cf/qwen/qwen3.8-27b"},
+		{"openai", "@cf/whatever", "@cf/whatever"},
+	}
+	for _, c := range cases {
+		if got := WireModel(c.provider, c.model); got != c.want {
+			t.Errorf("WireModel(%q, %q) = %q, want %q", c.provider, c.model, got, c.want)
+		}
+	}
+}
+
 func TestBuildRequestGatewayWorkersAIModelPrefixing(t *testing.T) {
 	cfg := Config{
 		Provider: "cloudflare-ai-gateway",
