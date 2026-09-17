@@ -1116,3 +1116,74 @@ func TestPlanModeExploresWithToolsBeforeReplying(t *testing.T) {
 		t.Fatalf("parent never saw the explore finding; parent users = %q", em.parentChatUsers)
 	}
 }
+
+// -guardrails=false replaces the whole resolved posture policy with every gate
+// ignored, which the posture banner reports on stderr. This pins the three
+// blanket switches against each other: guardrails off ignores every gate,
+// -dangerously-yolo-everything does the same, and the default run downgrades
+// nothing.
+func TestGuardrailsFlagIgnoresEveryGate(t *testing.T) {
+	srv, _ := newMockServer(t)
+	defer srv.Close()
+
+	countIgnored := func(stderr string) int {
+		line := ""
+		for _, l := range strings.Split(stderr, "\n") {
+			if strings.HasPrefix(l, "signet: posture downgrades:") {
+				line = l
+			}
+		}
+		if line == "" {
+			return 0
+		}
+		return strings.Count(line, "=ignore")
+	}
+
+	t.Run("default downgrades nothing", func(t *testing.T) {
+		_, errOut, code := runSignet(t, srv.URL,
+			"-tools=false", "-provider", "openai", "-model", "test", "-prompt", "hello")
+		if code != 0 {
+			t.Fatalf("exit = %d (stderr %q)", code, errOut)
+		}
+		if strings.Contains(errOut, "posture downgrades:") {
+			t.Fatalf("a default run must downgrade nothing, got %q", errOut)
+		}
+	})
+
+	t.Run("guardrails=false ignores every gate", func(t *testing.T) {
+		_, errOut, code := runSignet(t, srv.URL, "-guardrails=false",
+			"-tools=false", "-provider", "openai", "-model", "test", "-prompt", "hello")
+		if code != 0 {
+			t.Fatalf("exit = %d (stderr %q)", code, errOut)
+		}
+		if got := countIgnored(errOut); got == 0 {
+			t.Fatalf("-guardrails=false must ignore every gate, got %q", errOut)
+		}
+	})
+
+	t.Run("yolo matches guardrails=false", func(t *testing.T) {
+		_, guardOut, _ := runSignet(t, srv.URL, "-guardrails=false",
+			"-tools=false", "-provider", "openai", "-model", "test", "-prompt", "hello")
+		_, yoloOut, code := runSignet(t, srv.URL, "-dangerously-yolo-everything",
+			"-tools=false", "-provider", "openai", "-model", "test", "-prompt", "hello")
+		if code != 0 {
+			t.Fatalf("exit = %d (stderr %q)", code, yoloOut)
+		}
+		if countIgnored(yoloOut) != countIgnored(guardOut) {
+			t.Fatalf("-dangerously-yolo-everything and -guardrails=false must ignore the same gates:\nyolo:  %q\nguard: %q", yoloOut, guardOut)
+		}
+	})
+
+	t.Run("a per-gate flag cannot survive guardrails=false", func(t *testing.T) {
+		// -tool-call-mismatch=abort is the strictest setting for its gate.
+		// With guardrails off there is nothing left for it to tighten.
+		_, errOut, code := runSignet(t, srv.URL, "-guardrails=false", "-tool-call-mismatch=abort",
+			"-tools=false", "-provider", "openai", "-model", "test", "-prompt", "hello")
+		if code != 0 {
+			t.Fatalf("exit = %d (stderr %q)", code, errOut)
+		}
+		if !strings.Contains(errOut, "tool_call_mismatch=ignore") {
+			t.Fatalf("guardrails=false must flatten a per-gate flag too, got %q", errOut)
+		}
+	})
+}

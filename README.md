@@ -103,6 +103,8 @@ signet -provider anthropic -model claude-sonnet-4-5 -prompt "review this diff"
 | `-model` | model id; each provider has a default |
 | `-effort` | thinking-effort level: `low`, `medium`, or `high` |
 | `-caveman` | enable caveman voice rewrite for this run |
+| `-guardrails` | posture guardrails (default on); `-guardrails=false` turns every gate off for this run |
+| `-ask-permission` | the permission-ask gate (default on); `-ask-permission=false` resolves asks to allow |
 | `-tools` | enable tool execution for this run |
 | `-session-retention-days` | idle session retention in days (default 28) |
 | `-detect-mode` | report which operating mode the prompt selects |

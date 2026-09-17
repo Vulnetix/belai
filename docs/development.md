@@ -70,6 +70,8 @@ just ask anthropic claude-sonnet-4-5 "review this diff" -detect-mode -verbose
 | `-classifier-model` | security-classifier model (default: the main model) |
 | `-classifier-effort` | security-classifier thinking effort (default: `none`) |
 | `-caveman` | enable caveman voice rewrite for this run |
+| `-guardrails` | posture guardrails, **on by default**; `-guardrails=false` forces every gate to `ignore` for this run, overriding both the project `preferences.yaml` and any per-gate flag |
+| `-ask-permission` | the permission-ask gate, **on by default**; `-ask-permission=false` resolves every `ask` decision to allow with no prompt |
 | `-session-retention-days` | idle session retention in days (default 28) |
 | `-detect-mode` | run the operating-mode classifier and report the decision (`agent`, `plan`, `goal`) |
 | `-tools` | enable tool execution in the noninteractive agent path; **on by default**, pass `-tools=false` to disable. `-detect-mode` reports the classifier decision without executing anything whatever this is set to |
@@ -86,6 +88,17 @@ Every posture gate also has a flag (`-allow-unsafe-tool-result`,
 `-allow-ask-without-tty`, `-allow-invalid-skills`, `-allow-invalid-hooks`,
 `-dangerously-yolo-everything`). They are documented with their gates in
 [role-manager.md](role-manager.md#posture-gates).
+
+Precedence between the three blanket switches, since they overlap:
+`-dangerously-yolo-everything` turns **both** gates off and short-circuits the
+per-flag branch entirely, so `-dangerously-yolo-everything -ask-permission`
+still leaves ask off. Otherwise `-guardrails=false` and `-ask-permission=false`
+act independently. `-guardrails=false` is applied twice over: once to the
+settings the TUI reads, and once to the posture policy itself, where it
+replaces the whole resolved policy — defaults, project `preferences.yaml` and
+per-gate CLI flags alike — with every gate set to `ignore`. Passing
+`-guardrails=false` alongside a per-gate flag is therefore not a conflict; the
+per-gate flag simply has nothing left to affect.
 
 ### Model defaults
 
