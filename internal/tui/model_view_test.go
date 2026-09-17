@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/wire"
 )
 
@@ -225,6 +226,46 @@ func TestModelCommitUsesFilteredSelection(t *testing.T) {
 	}
 	if a.cfg.Model == "m01" {
 		t.Fatalf("committed the unfiltered index 1 instead of the filtered row")
+	}
+}
+
+func TestCatalogTargetGatewayReusesWorkersAI(t *testing.T) {
+	src := run.CredentialSource(run.EnvSource(func(k string) string {
+		switch k {
+		case "CF_AIG_TOKEN":
+			return "gateway-token"
+		case "CF_ACCOUNT_ID", "CLOUDFLARE_ACCOUNT_ID":
+			return "acct"
+		case "CLOUDFLARE_API_KEY":
+			return "cf-key"
+		}
+		return ""
+	}))
+	target := catalogTarget("cloudflare-ai-gateway", src)
+	if target.Name != "cloudflare-workers-ai" {
+		t.Fatalf("target.Name = %q, want cloudflare-workers-ai", target.Name)
+	}
+	if target.BaseURL != "https://api.cloudflare.com/client/v4/accounts/acct" {
+		t.Fatalf("target.BaseURL = %q", target.BaseURL)
+	}
+	if target.APIKey != "cf-key" {
+		t.Fatalf("target.APIKey = %q, want the Workers AI key", target.APIKey)
+	}
+}
+
+func TestCatalogTargetGatewayFallsBackWithoutWorkersAI(t *testing.T) {
+	src := run.CredentialSource(run.EnvSource(func(k string) string {
+		switch k {
+		case "CF_AIG_TOKEN":
+			return "gateway-token"
+		case "CF_ACCOUNT_ID":
+			return "acct"
+		}
+		return ""
+	}))
+	target := catalogTarget("cloudflare-ai-gateway", src)
+	if target.Name != "cloudflare-ai-gateway" {
+		t.Fatalf("target.Name = %q, want cloudflare-ai-gateway (fallback)", target.Name)
 	}
 }
 

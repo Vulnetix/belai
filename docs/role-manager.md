@@ -663,15 +663,24 @@ Explore subagents get their own, deeper budget from
 subagents used a hard 4), so an explore subagent actually runs `rg`/`find`/
 `git`/`jq` before reporting findings.
 
-Outside goal mode — and for every subagent, whatever its mode — exactly one
-pass runs, and exhausting the iteration budget returns
-`max iterations (N) reached`. **Reset-on-steer** is the one exception: an
-explore subagent that exhausts its budget does not return that error if new
-steering arrived; the steering restarts the budget and the subagent keeps
-investigating. Only when no new steering exists does exhaustion surface. A
-top-level goal-mode prompt instead enters the goal pass loop below, where
-exhausting the budget is a question ("is the goal met?") rather than an
-answer.
+Outside goal mode — and for every subagent, whatever its mode — a spent
+iteration budget is a **turn boundary, not an error**. The harness injects a
+sealed continuation directive ("report work done so far and what remains; if
+more tool calls are needed, make them now") and runs one more bounded pass
+with a fresh tool budget:
+
+- a pass that keeps emitting tool calls counts as a continuation and loops
+  again;
+- a pass that ends with text only is the turn's normal answer;
+- the loop is capped by `resilience.max_passes` (0 falls back to
+  `defaultAgentContinuations` = 5 in agent/plan mode), and reaching the cap
+  returns the last assistant text with a system note — still not an error.
+
+**Reset-on-steer** still outranks the continuation directive: an explore
+subagent that exhausts its budget does not continue if new steering arrived;
+the steering restarts the budget first. A top-level goal-mode prompt instead
+enters the goal pass loop below, where exhausting the budget is a question
+("is the goal met?") rather than an answer.
 
 ## Goal pass loop
 
@@ -732,7 +741,7 @@ be exactly one token.
 | Rule | Condition | Outcome |
 | ---- | --------- | ------- |
 | Goal met | `GOAL_COMPLETE` **and** `verificationPasses ≥ 1` | Success; todo list marked complete; reply is the pass's last assistant text |
-| Natural exit | A pass ends with no tool calls | Success; the model's reply is returned unchanged |
+| Natural exit | A pass ends with no tool calls | Re-checked, not trusted: the reply is fed back to the evaluator once. `GOAL_COMPLETE` (past the verification gate) returns it as the answer; `GOAL_COMPLETE` before the gate arms a verification pass; otherwise a continuation directive is injected and the loop keeps going |
 | Verification gate | `GOAL_COMPLETE` with `verificationPasses == 0` | Downgraded: arm one verification pass and continue. Harness logic — the model cannot talk its way past it |
 | Progression reset | `partialStreak ≥ 4` (`2 × goalVerifyEvery`) in `GOAL_PARTIAL` or at the verification gate | A progression directive with session context is injected and `partialStreak` is reset, starting a new agentic evaluation loop; the loop does not abort for stall |
 | Unproductive pass | A pass executed no non-withheld tool result | Error: *pass N executed no tools*. Truncation repair burns iterations without doing work and must not buy another pass |
@@ -1091,3 +1100,29 @@ skill-less, and agent-less for every attempt.
 | `[DONE:n]` marker in a tool result or file | Ignored — only assistant text advances a todo list | — |
 | Compaction summary empty or missing required headings | Refuse compaction, keep session | — |
 | Session-name classifier returns malformed output | Leave session unnamed | — |
+
+## Debugging and audit trail
+
+Signet writes **no application log by default**. There is no `log`/`slog`/zerolog
+call anywhere in the codebase. The only durable observability surface is the
+opt-in trace writer: set `SIGNET_TRACE=<path>` and every role-manager decision
+is appended as one JSON line.
+
+```bash
+SIGNET_TRACE=/tmp/signet.jsonl signet -prompt "plan the migration"
+jq -r '.phase' /tmp/signet.jsonl | sort -u   # agent, rolemanager, permissions, tui
+```
+
+Each record carries `ts`, `phase`, `event`, and bounded decision metadata —
+`verdict` (sentinel/decision token), `tool`, `pass`, and `detail`. Records
+carry verdicts, tool names and hashes, **never** untrusted content and never
+credentials. `Detail` is bounded and must not be fed classified payload text.
+
+The role manager records one decision per event: security sentinel (per chunk
+and folded), mode classification, goal/agent evaluator verdicts, tool-call
+mismatch policy and the offending tool, boundary seal/verify failures,
+compaction/clarification/session-name results, verdict-cache hits (keyed by a
+12-char hash prefix), and every permission `Explain` decision. The agent loop
+records pass start, exhaustion, continuation, verification gate, and
+progression reset. Tracing is best-effort: an unset or unopenable path disables
+it and never fails a session.

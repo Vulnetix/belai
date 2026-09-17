@@ -124,7 +124,7 @@ The TUI model picker (`e model`) shows a catalogue per provider. Sources are:
 | --- | --- |
 | `anthropic` | ✅ `/v1/models` |
 | `cloudflare-workers-ai` | ✅ v4 API search |
-| `cloudflare-ai-gateway` | ❌ static catalogue only |
+| `cloudflare-ai-gateway` | ✅ reuses the account's Workers AI catalogue (fetched with `CLOUDFLARE_API_KEY`/`CLOUDFLARE_ACCOUNT_ID`); falls back to the static catalogue without Workers AI credentials |
 | `google-gemini` | ✅ `/models` |
 | `ollama` | ✅ `/models` |
 | `llama-server` | ✅ `/models` |

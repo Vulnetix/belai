@@ -913,9 +913,8 @@ than the last, and the merged list is de-duplicated by model id:
    and commit it.
 
 Live fetch is available for `anthropic`, `cloudflare-workers-ai`, `openrouter`,
-`google-gemini`, `ollama`, `llama-server`, and `github-copilot`.
-`cloudflare-ai-gateway` uses a static catalogue; `r` clears the cache and
-re-fetches for the selected
+`google-gemini`, `ollama`, `llama-server`, `github-copilot`, and
+`cloudflare-ai-gateway`. `r` clears the cache and re-fetches for the selected
 provider; fetch errors are rendered under the list as `✗ fetch: ...` so silent
 failures are visible.
 
@@ -930,8 +929,11 @@ Provider-specific edge cases:
   `model_not_supported` from the router.  The picker does not pre-filter
   because the router exposes no enabled-only list.  Users can still type and
   commit any model id directly.
-- **`cloudflare-ai-gateway`** uses a static catalogue. For inference it
-  authenticates with a gateway token via
+- **`cloudflare-ai-gateway`** reuses the account's Workers AI catalogue for
+  its model list, fetched with the Workers AI credentials
+  (`CLOUDFLARE_API_KEY` + `CLOUDFLARE_ACCOUNT_ID`) rather than the gateway
+  token. If Workers AI credentials are absent it falls back to the static
+  catalogue. For inference it authenticates with a gateway token via
   `cf-aig-authorization: Bearer <CF_AIG_TOKEN>`. Set `CF_AIG_TOKEN` and
   `CF_ACCOUNT_ID` (or `CLOUDFLARE_ACCOUNT_ID`); the default base URL is
   `https://gateway.ai.cloudflare.com/v1/{account_id}/default/compat`. Set

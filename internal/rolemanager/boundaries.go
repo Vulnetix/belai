@@ -41,6 +41,7 @@ type Noncer interface {
 func VerifyTrustedBlocks(blocks []SystemBlock) error {
 	for _, b := range blocks {
 		if !isTrusted(b.Source) {
+			record("boundary_verify_failure", "", "", string(b.Source), 0)
 			return fmt.Errorf("block from source %q may not enter system/agent blocks", b.Source)
 		}
 	}
@@ -58,6 +59,7 @@ func BuildSystemPrompt(blocks []SystemBlock, noncer Noncer) (string, error) {
 	if noncer == nil {
 		return "", fmt.Errorf("noncer is required")
 	}
+	record("boundary_seal", "", "", fmt.Sprintf("blocks=%d", len(blocks)), 0)
 	var b strings.Builder
 	for _, blk := range blocks {
 		nonce, err := noncer.Reserve()

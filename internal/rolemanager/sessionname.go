@@ -25,7 +25,13 @@ func BuildSessionNamePayload(firstUserMessage string) ClassifierPayload {
 // malformed reply leaves the session unnamed rather than taking a mangled or
 // attacker-chosen title.
 func ParseSessionName(raw string) (string, error) {
-	return sanitizeName(raw, true)
+	s, err := sanitizeName(raw, true)
+	if err != nil {
+		record("session_name", "invalid", "", "", 0)
+		return "", err
+	}
+	record("session_name", "valid", "", "", 0)
+	return s, nil
 }
 
 // SanitizeSessionName normalises a user-supplied name from /rename using the

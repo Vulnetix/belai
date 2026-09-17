@@ -72,7 +72,9 @@ cd ~/code/my-project
 signet
 ```
 
-Inside the UI, `/` opens slash-command autocomplete — `/credentials` to configure providers, `/model` to pick provider/model/effort, `/settings` to edit settings, `/permissions` to edit tool rules, `/mode` to set the operating mode, `/todos`, `/profile`, `/agent` to create, edit, and run background agents, `/code-review`, `/compact` to summarise a long session into a new one, `/clear` (or `/new`) to start a fresh session, and `/rename` to name the session. `/help` lists every command and keyboard shortcut.
+Inside the UI, `/` opens slash-command autocomplete — `/credentials` to configure providers, `/model` to pick provider/model/effort, `/settings` to edit settings, `/permissions` to edit tool rules, `/mode` to set the operating mode, `/todos`, `/profile`, `/agent` to create, edit, and run background agents, `/code-review`, `/compact` to summarise a long session into a new one, `/clear` (or `/new`) to start a fresh session, `/yolo` to turn guardrails and the ask gate off together (`/yolo off` restores the settings-file values), and `/rename` to name the session. `/help` lists every command and keyboard shortcut.
+
+Operator safety controls live in the footer: `guardrails: on|off` (posture gates) and `ask: on|off` (the permission-ask gate). `ctrl+alt+g` toggles guardrails, `ctrl+alt+a` toggles ask, and when both are off the two chips collapse into a single gold `YOLO`. These are explicit opt-ins: turning them off is announced in the transcript and traced under `SIGNET_TRACE`.
 
 In agent mode a strip above the prompt lists the agents that can carry your turns — your own profiles, the background-agent definitions (`↻`), and the built-ins (`◈`). `tab` moves the highlight, `enter` engages, `ctrl+g` starts a `↻` definition in the background instead, and typing `@name` filters the strip. The engaged agent shows in the footer chip and carries every turn until you pick another or `(none)`. It applies to agent mode only: plan and goal mode run Signet's own logic and cannot be steered by an agent.
 

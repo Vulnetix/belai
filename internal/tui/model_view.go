@@ -60,6 +60,24 @@ type modelsFetchedMsg struct {
 	err      error
 }
 
+// catalogTarget resolves the modelfetch target for a provider's live model
+// catalogue. The Cloudflare AI Gateway has no model-list endpoint of its own:
+// its catalogue is the account's Workers AI model list, fetched with the
+// Workers AI credentials (the Cloudflare API token) rather than the gateway
+// token used for inference. When Workers AI credentials are absent the target
+// falls back to the gateway name so the picker degrades to the static
+// catalogue.
+func catalogTarget(name string, src run.CredentialSource) modelfetch.Target {
+	cfg, _ := run.Prepare("", name, src)
+	target := modelfetch.Target{Name: name, BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Auth: cfg.Auth, API: cfg.API}
+	if name == "cloudflare-ai-gateway" {
+		if wcfg, wstatus := run.Prepare("", "cloudflare-workers-ai", src); wstatus.Configured {
+			target = modelfetch.Target{Name: "cloudflare-workers-ai", BaseURL: wcfg.BaseURL, APIKey: wcfg.APIKey, Auth: wcfg.Auth, API: wcfg.API}
+		}
+	}
+	return target
+}
+
 // fetchCatalogCmd fetches the live model catalogue for a provider off the UI
 // thread, caching the result.
 func (a *App) fetchCatalogCmd(name string) tea.Cmd {
@@ -82,8 +100,7 @@ func (a *App) fetchCatalogCmd(name string) tea.Cmd {
 	}
 	// Resolve the target provider (not the currently-committed one) so
 	// browsing previewed providers still fetches from the right endpoint.
-	cfg, _ := run.Prepare("", name, src)
-	target := modelfetch.Target{Name: name, BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Auth: cfg.Auth, API: cfg.API}
+	target := catalogTarget(name, src)
 	endpoint, err := modelfetch.EndpointFor(target)
 	if err != nil {
 		// Unresolvable target (e.g. gateway without account_id): surface the
