@@ -174,7 +174,7 @@ func TestPrintBanner(t *testing.T) {
 
 // The gate/default table is documented in docs/role-manager.md; this keeps the
 // two from drifting. Every gate defaults to enforce except permission_no_match
-// (the permission layer allows unmatched calls) and guardrails_required.
+// (the permission layer allows unmatched calls).
 func TestGateDefaultsMatchDocumentedTable(t *testing.T) {
 	want := map[Gate]Level{
 		ToolResultUnsafe:    Enforce,
@@ -186,7 +186,6 @@ func TestGateDefaultsMatchDocumentedTable(t *testing.T) {
 		PermissionAskNoTTY:  Enforce,
 		SkillInvalid:        Enforce,
 		HookInvalid:         Enforce,
-		GuardrailsRequired:  Warn,
 	}
 	if len(AllGates) != len(want) {
 		t.Fatalf("AllGates has %d gates, documented table has %d", len(AllGates), len(want))

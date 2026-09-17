@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/guardrails"
 	"github.com/vulnetix/signet/internal/httpclient"
 	"github.com/vulnetix/signet/internal/models"
 	"github.com/vulnetix/signet/internal/nonce"
@@ -578,11 +577,6 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 		}
 		cfg.BaseURL = override
 		status.Origins["base_url"] = "$SIGNET_BASE_URL"
-	} else if g, err := guardrails.Load(); err == nil && string(g.Provider) == name {
-		// Guardrails is a fallback base-URL source, below SIGNET_BASE_URL, and
-		// only for the provider it serves.
-		cfg.BaseURL = g.BaseURL
-		status.Origins["base_url"] = "guardrails (" + g.KeySource + ")"
 	}
 	return cfg, status
 }

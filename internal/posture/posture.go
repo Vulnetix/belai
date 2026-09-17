@@ -36,7 +36,6 @@ const (
 	PermissionAskNoTTY  Gate = "permission_ask_no_tty"
 	SkillInvalid        Gate = "skill_invalid"
 	HookInvalid         Gate = "hook_invalid"
-	GuardrailsRequired  Gate = "guardrails_required"
 )
 
 // AllGates is every posture gate, in deterministic order.
@@ -50,7 +49,6 @@ var AllGates = []Gate{
 	PermissionAskNoTTY,
 	SkillInvalid,
 	HookInvalid,
-	GuardrailsRequired,
 }
 
 // Policy maps gates to their configured level.
@@ -62,8 +60,7 @@ type Policy map[Gate]Level
 // `postures: {permission_no_match: enforce}` in preferences.yaml restores the
 // legacy fail-closed block.
 var gateDefaultLevel = map[Gate]Level{
-	PermissionNoMatch:  Ignore,
-	GuardrailsRequired: Warn,
+	PermissionNoMatch: Ignore,
 }
 
 // DefaultLevel returns the default posture level for a gate.

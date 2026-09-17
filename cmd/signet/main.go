@@ -18,7 +18,6 @@ import (
 	"github.com/vulnetix/signet/internal/bgagent"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
-	"github.com/vulnetix/signet/internal/guardrails"
 	"github.com/vulnetix/signet/internal/httpclient"
 	"github.com/vulnetix/signet/internal/permissions"
 	"github.com/vulnetix/signet/internal/posture"
@@ -123,15 +122,6 @@ func main() {
 	projectPol, _ := posture.Load(workdir)
 	pol := posture.Defaults().Override(projectPol).Override(cliPol)
 	posture.PrintBanner(pol, os.Stderr)
-
-	// Discover the guardrails provider when credentials are present and no
-	// explicit provider or base URL was given.
-	if *provider == "" && os.Getenv("SIGNET_BASE_URL") == "" &&
-		os.Getenv("VULNETIX_API_KEY") != "" && os.Getenv("VULNETIX_ORG") != "" {
-		if _, err := guardrails.Configure(os.Getenv); err != nil {
-			fmt.Fprintln(os.Stderr, "signet: guardrails discovery:", err)
-		}
-	}
 
 	if *agentCreate != "" {
 		if err := runAgentCreate(ctx, *agentCreate, *model, *provider, workdir, pol, settings); err != nil {

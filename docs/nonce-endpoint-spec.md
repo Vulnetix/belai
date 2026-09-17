@@ -23,7 +23,6 @@ Examples:
 | Base URL                                   | Nonce endpoint                                            |
 | ------------------------------------------ | --------------------------------------------------------- |
 | `https://api.openai.com/v1`                | `https://api.openai.com/v1/nonces`                        |
-| `https://guardrails.vulnetix.com/openai/acme/v1` | `https://guardrails.vulnetix.com/openai/acme/v1/nonces` |
 | `https://api.anthropic.com`                | `https://api.anthropic.com/v1/nonces`                     |
 
 ## Request

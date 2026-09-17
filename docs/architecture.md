@@ -109,9 +109,6 @@ ai-firewall surfaces:
 Anthropic base URLs carry no `/v1`; OpenAI-style base URLs do. Streaming and
 non-streaming request/response shapes live in `internal/wire`.
 
-`internal/guardrails` auto-discovers the Vulnetix ai-firewall configuration and
-writes the provider entry (base URL + key source) with no custom headers.
-
 Compiled-in providers are: `openai`, `anthropic`, `cloudflare-workers-ai`,
 `cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`,
 `github-copilot`, and `huggingface`. Custom provider profiles can speak any of

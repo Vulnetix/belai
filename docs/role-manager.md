@@ -389,13 +389,6 @@ Every safety gate has three postures:
 | `permission_ask_no_tty` | `enforce` | `--allow-ask-without-tty` |
 | `skill_invalid` | `enforce` | `--allow-invalid-skills` |
 | `hook_invalid` | `enforce` | `--allow-invalid-hooks` |
-| `guardrails_required` | `warn` | none (`preferences.yaml` only) |
-
-`guardrails_required` is the one gate with no flag and no call site yet: it is
-declared in `posture.AllGates` with a `warn` default so a policy can be
-expressed and carried, but no code path consults it. It still participates in
-`AllGates`, so `--dangerously-yolo-everything` and `Downgrades()` both include
-it.
 
 Precedence: CLI flag > project `preferences.yaml` > global `preferences.yaml` >
 safe default. `--dangerously-yolo-everything` maps every gate in `AllGates` to
