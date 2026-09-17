@@ -41,6 +41,10 @@ const (
 	// compactThresholdPct: compact at the pass boundary when the estimated
 	// context exceeds this share of the model window.
 	compactThresholdPct = 70
+	// defaultAgentContinuations bounds budget-exhaustion wrap-up passes in
+	// agent and plan mode when resilience.max_passes is unset (0). Goal mode
+	// treats 0 as unbounded by design; agent/plan mode must not inherit that.
+	defaultAgentContinuations = 5
 )
 
 // Harness-injected continuation instructions for the pass boundary. The body
@@ -50,6 +54,9 @@ const (
 const (
 	planDirective         = "The goal has not started yet. Write a planning todo list under a 'Plan:' header (numbered steps), then begin the first step. Mark each step complete with [DONE:n] in your reply as you finish it."
 	verificationDirective = "Before doing any further work, verify the completed items in the todo list against the files on disk (read-only). Confirm each marked-done item is actually true; if one is not, correct the list and the work. Only continue new work after the check."
+	// continuationDirective is injected when a bounded pass spends its whole
+	// iteration budget. Budget exhaustion is a turn boundary, not a failure.
+	continuationDirective = "The tool budget for this turn was reached. Report the work done so far and what remains. If more tool calls are needed to finish the work, make them now; otherwise give the final answer."
 )
 
 // passLedger is the loop-local decision state of one goal pass loop. Pass
@@ -175,7 +182,9 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 			}
 		}
 
-		return run.Result{}, fmt.Errorf("max iterations (%d) reached", s.maxIter)
+		// Budget exhaustion is a turn boundary, not an error: inject a wrap-up
+		// directive and grant continuation passes with fresh budgets.
+		return s.agentContinuations(ctx, pipe, system, turns, streaming, emit, out)
 	}
 
 	// maxPasses is an opt-in ceiling (0 = unbounded, the default). The loop's
@@ -361,6 +370,52 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 			return run.Result{Passes: l.passes}, fmt.Errorf("goal pass loop: unknown verdict %q", sentinel)
 		}
 	}
+}
+
+// agentContinuations runs the budget-exhaustion wrap-up passes for agent and
+// plan mode (and subagents). Each exhausted pass injects a sealed continuation
+// directive and grants one more bounded pass with a fresh tool budget: a pass
+// that keeps emitting tool calls loops again; a pass that ends with text only
+// is the turn's normal answer. Capped by resilience.max_passes (0 falls back
+// to defaultAgentContinuations). Reaching the cap returns the last assistant
+// text, never an error.
+func (s *Session) agentContinuations(ctx context.Context, pipe *rolemanager.Pipeline, system string, turns []run.Turn, streaming bool, emit func(Event), out passOutcome) (run.Result, error) {
+	maxCont := s.settings.Resilience.MaxPassesOr()
+	if maxCont <= 0 {
+		maxCont = defaultAgentContinuations
+	}
+	continuations := 0
+	for continuations < maxCont {
+		if steer := s.drainSteer(ctx, pipe, emit); len(steer) > 0 {
+			turns = append(turns, steer...)
+			var err error
+			out, turns, err = s.pass(ctx, pipe, system, turns, streaming, emit)
+			if err != nil {
+				return run.Result{}, err
+			}
+			if !out.exhausted {
+				return run.Result{Reply: out.reply, Usage: out.usage, Passes: continuations}, nil
+			}
+			continue
+		}
+		continuations++
+		s.traceRecord("continuation", "", "", fmt.Sprintf("continuation=%d cap=%d", continuations, maxCont), continuations)
+		emit(Event{Kind: EventContinuationKind, Pass: continuations, MaxPasses: maxCont})
+		turns = append(turns, directiveTurns(continuationDirective)...)
+		var err error
+		out, turns, err = s.pass(ctx, pipe, system, turns, streaming, emit)
+		if err != nil {
+			return run.Result{}, err
+		}
+		if !out.exhausted {
+			return run.Result{Reply: out.reply, Usage: out.usage, Passes: continuations}, nil
+		}
+		if out.productive == 0 {
+			break
+		}
+	}
+	emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("turn budget reached; returning the work so far after %d continuation pass(es)", continuations)})
+	return run.Result{Reply: out.lastText, Usage: out.usage, Passes: continuations}, nil
 }
 
 // partialDirective builds the continuation instruction for a PARTIAL verdict:

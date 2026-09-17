@@ -48,6 +48,11 @@ const (
 	// EventPassKind reports that a new goal-mode pass started. It carries the
 	// pass number and whether a forced explore ran for it.
 	EventPassKind
+	// EventContinuationKind reports that a bounded agent/plan pass exhausted
+	// its tool budget and a continuation pass is about to run. It carries the
+	// continuation number and the cap; the TUI renders it as a normal system
+	// line, never an error.
+	EventContinuationKind
 	// EventTodosKind reports a change to the shared todo list (created or
 	// advanced). It carries the list; the TUI renders and persists it, the
 	// agent never touches the session store.
@@ -140,6 +145,9 @@ type Event struct {
 
 	// Pass carries the pass number for EventPassKind / EventGoalEvalKind.
 	Pass int
+
+	// MaxPasses carries the continuation cap for EventContinuationKind.
+	MaxPasses int
 
 	// Explored reports whether a forced explore ran for EventPassKind.
 	Explored bool

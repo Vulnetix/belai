@@ -18,9 +18,14 @@ import (
 // Record is one JSONL trace event. Duration is a Go duration string so the
 // file stays human-readable while remaining unambiguous.
 type Record struct {
+	TS       string `json:"ts,omitempty"`
 	Phase    string `json:"phase"`
 	Event    string `json:"event"`
-	Duration string `json:"duration"`
+	Duration string `json:"duration,omitempty"`
+	Verdict  string `json:"verdict,omitempty"`
+	Tool     string `json:"tool,omitempty"`
+	Pass     int    `json:"pass,omitempty"`
+	Detail   string `json:"detail,omitempty"`
 }
 
 // Writer appends one JSON line per event to an opt-in trace file.
@@ -56,17 +61,25 @@ func Env() *Writer {
 	return w
 }
 
-// Event appends one record. It is a no-op on a nil writer.
-func (w *Writer) Event(phase, event string, d time.Duration) {
+// Record appends one record. It is a no-op on a nil writer.
+func (w *Writer) Record(r Record) {
 	if w == nil {
 		return
+	}
+	if r.TS == "" {
+		r.TS = time.Now().UTC().Format(time.RFC3339Nano)
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.f == nil {
 		return
 	}
-	_ = w.enc.Encode(Record{Phase: phase, Event: event, Duration: d.String()})
+	_ = w.enc.Encode(r)
+}
+
+// Event appends one record. It is a no-op on a nil writer.
+func (w *Writer) Event(phase, event string, d time.Duration) {
+	w.Record(Record{Phase: phase, Event: event, Duration: d.String()})
 }
 
 // Close flushes and closes the file. It is a no-op on a nil writer.

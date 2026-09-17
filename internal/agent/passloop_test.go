@@ -203,14 +203,15 @@ func TestGoalPassLoopZeroProductiveDoesNotLoop(t *testing.T) {
 	}
 }
 
-func TestGoalPassLoopDisabledReturnsMaxIterations(t *testing.T) {
+func TestGoalPassLoopDisabledStillContinues(t *testing.T) {
 	srv, _, _ := goalPassServer(t, goalPassOpts{eval: []string{"GOAL_COMPLETE"}})
 	defer srv.Close()
 	sess := newGoalPassSession(t, srv, false, 3)
+	sess.settings = config.Settings{Resilience: &config.ResilienceSettings{MaxPasses: 1}}
 
 	_, err := sess.Run(context.Background(), "ship the thing")
-	if err == nil || !strings.Contains(err.Error(), "max iterations (3) reached") {
-		t.Fatalf("expected max iterations error with pass loop disabled, got %v", err)
+	if err != nil {
+		t.Fatalf("budget exhaustion with the pass loop disabled must not be an error, got %v", err)
 	}
 }
 

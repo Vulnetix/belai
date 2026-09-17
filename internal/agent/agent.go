@@ -512,6 +512,15 @@ func parseToolArgs(call rolemanager.ToolCall) (map[string]any, error) {
 	return args, nil
 }
 
+// traceRecord writes one agent-loop decision to the opt-in trace writer.
+// verdict/tool/detail are bounded metadata, never untrusted content.
+func (s *Session) traceRecord(event, verdict, tool, detail string, pass int) {
+	if s.trace == nil {
+		return
+	}
+	s.trace.Record(trace.Record{Phase: "agent", Event: event, Verdict: verdict, Tool: tool, Pass: pass, Detail: detail})
+}
+
 // maybeCompact rewrites context-length errors into a message that directs the
 // user to the /compact command. It is invoked on terminal errors so callers do
 // not retry overflow conditions.

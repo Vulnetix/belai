@@ -1994,6 +1994,13 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			a.setTodos(m.Todos)
 		}
 		return a.nextAgent()
+	case agent.EventContinuationKind:
+		if m.MaxPasses > 0 {
+			a.addSystem(fmt.Sprintf("turn budget reached — continuing (%d/%d)", m.Pass, m.MaxPasses))
+		} else {
+			a.addSystem(fmt.Sprintf("turn budget reached — continuing (%d)", m.Pass))
+		}
+		return a.nextAgent()
 	case agent.EventTodosKind:
 		if m.Todos != nil {
 			a.setTodos(m.Todos)

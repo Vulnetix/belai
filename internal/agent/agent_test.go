@@ -14,6 +14,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/rolemanager"
@@ -408,12 +409,14 @@ func TestClassifierErrorEmitsWarningNotStderr(t *testing.T) {
 	}
 }
 
-// TestRunMaxIterationsBound pins invariant 3: the shared loop keeps its
-// iteration bound even through the streaming transport.
+// TestRunMaxIterationsBound pins the budget-bound invariant in its new form:
+// a spent iteration budget is a turn boundary (a continuation pass), not an
+// agent error. The loop still terminates — here by the max_passes cap.
 func TestRunMaxIterationsBound(t *testing.T) {
 	root := t.TempDir()
 	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
 
+	var calls int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusNotFound)
@@ -438,6 +441,7 @@ func TestRunMaxIterationsBound(t *testing.T) {
 		case strings.Contains(system, "operating-mode classifier"):
 			writeChatJSON(w, "AGENT")
 		default:
+			calls++
 			writeToolCallJSON(w, "Read", `{"path":"f.txt"}`)
 		}
 	}))
@@ -450,13 +454,17 @@ func TestRunMaxIterationsBound(t *testing.T) {
 		Registry:      tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}),
 		Posture:       posture.Defaults(),
 		MaxIterations: 3,
+		SkipNonceSeed: true,
+		Settings:      config.Settings{Resilience: &config.ResilienceSettings{MaxPasses: 1}},
 	})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	_, err = sess.Run(context.Background(), "hello")
-	if err == nil || !strings.Contains(err.Error(), "max iterations") {
-		t.Fatalf("expected max iterations error, got %v", err)
+	if _, err = sess.Run(context.Background(), "hello"); err != nil {
+		t.Fatalf("budget exhaustion must not be an error, got %v", err)
+	}
+	if calls != 6 {
+		t.Fatalf("expected 6 model calls (initial pass + one continuation), got %d", calls)
 	}
 }
 

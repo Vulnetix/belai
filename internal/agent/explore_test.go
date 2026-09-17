@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/vulnetix/signet/internal/agentprofile"
+	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/rolemanager"
@@ -123,6 +124,7 @@ func TestExploreSubagentResetsOnSteer(t *testing.T) {
 			Posture:       posture.Defaults(),
 			MaxIterations: 2,
 			SkipNonceSeed: true,
+			Settings:      config.Settings{Resilience: &config.ResilienceSettings{MaxPasses: 1}},
 		})
 		if err != nil {
 			return nil, err
@@ -139,12 +141,12 @@ func TestExploreSubagentResetsOnSteer(t *testing.T) {
 		t.Fatalf("NewSession: %v", err)
 	}
 	_, err = sessA.run(context.Background(), nil, TurnInput{Prompt: "read it", Mode: rolemanager.ModeDecision{Mode: modes.ModeAgent}}, false, func(Event) {})
-	if err == nil || !strings.Contains(err.Error(), "max iterations (2) reached") {
-		t.Fatalf("case A: expected max iterations error, got %v", err)
+	if err != nil {
+		t.Fatalf("case A: budget exhaustion must not be an error, got %v", err)
 	}
 	srvA.Close()
-	if *callsA != 2 {
-		t.Fatalf("case A: expected 2 model calls (one pass), got %d", *callsA)
+	if *callsA != 4 {
+		t.Fatalf("case A: expected 4 model calls (initial pass + one continuation), got %d", *callsA)
 	}
 
 	// Case B: steering arrives only after the first pass exhausts — the
@@ -162,14 +164,14 @@ func TestExploreSubagentResetsOnSteer(t *testing.T) {
 		t.Fatalf("NewSession: %v", err)
 	}
 	_, err = sessB.run(context.Background(), nil, TurnInput{Prompt: "read it", Mode: rolemanager.ModeDecision{Mode: modes.ModeAgent}}, false, func(Event) {})
-	if err == nil || !strings.Contains(err.Error(), "max iterations (2) reached") {
-		t.Fatalf("case B: expected final max iterations error, got %v", err)
+	if err != nil {
+		t.Fatalf("case B: budget exhaustion must not be an error, got %v", err)
 	}
 	srvB.Close()
 	if !steered {
 		t.Fatal("case B: steering source was never drained")
 	}
-	if *callsB != 4 {
-		t.Fatalf("case B: expected 4 model calls (two passes after reset), got %d", *callsB)
+	if *callsB != 6 {
+		t.Fatalf("case B: expected 6 model calls (initial + steer reset + one continuation), got %d", *callsB)
 	}
 }
