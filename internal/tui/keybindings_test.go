@@ -143,3 +143,51 @@ func TestCavemanToggleFromSettingsViewPersists(t *testing.T) {
 		t.Fatal("the toggle must announce itself in the transcript")
 	}
 }
+
+// kitty_keyboard decides whether Signet pushes the keyboard-enhancement flag,
+// which is what makes shift+enter distinguishable and what makes ctrl+alt
+// indistinguishable. Default on, an explicit setting wins, and SIGNET_NO_KITTY=1
+// beats both — it is the escape hatch for a terminal that mishandles the
+// protocol, so nothing in the settings file may override it.
+func TestKittyEnabled(t *testing.T) {
+	off, on := false, true
+
+	t.Run("default on", func(t *testing.T) {
+		t.Setenv("SIGNET_NO_KITTY", "")
+		if !kittyEnabled(nil) {
+			t.Fatal("nil settings must default kitty on")
+		}
+		if !kittyEnabled(&config.Settings{}) {
+			t.Fatal("empty settings must default kitty on")
+		}
+		if !kittyEnabled(&config.Settings{UI: &config.UISettings{}}) {
+			t.Fatal("a UI block with no kitty key must default on")
+		}
+	})
+
+	t.Run("explicit setting wins", func(t *testing.T) {
+		t.Setenv("SIGNET_NO_KITTY", "")
+		if kittyEnabled(&config.Settings{UI: &config.UISettings{KittyKeyboard: &off}}) {
+			t.Fatal("explicit false must disable kitty")
+		}
+		if !kittyEnabled(&config.Settings{UI: &config.UISettings{KittyKeyboard: &on}}) {
+			t.Fatal("explicit true must enable kitty")
+		}
+	})
+
+	t.Run("SIGNET_NO_KITTY=1 overrides an explicit true", func(t *testing.T) {
+		t.Setenv("SIGNET_NO_KITTY", "1")
+		if kittyEnabled(&config.Settings{UI: &config.UISettings{KittyKeyboard: &on}}) {
+			t.Fatal("SIGNET_NO_KITTY=1 must win over the settings file")
+		}
+	})
+
+	t.Run("only the exact value 1 disables it", func(t *testing.T) {
+		for _, v := range []string{"0", "true", "yes", "2", " 1"} {
+			t.Setenv("SIGNET_NO_KITTY", v)
+			if !kittyEnabled(nil) {
+				t.Errorf("SIGNET_NO_KITTY=%q must not disable kitty; only \"1\" does", v)
+			}
+		}
+	})
+}
