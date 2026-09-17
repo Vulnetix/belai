@@ -99,7 +99,11 @@ func endpointFor(t Target) (string, error) {
 	case "cloudflare-workers-ai":
 		return base + "/ai/models/search", nil
 	case "huggingface":
-		return base + "/models", nil
+		// Do not live-fetch: the router's /v1/models lists every Inference
+		// Provider model, most of which are not enabled on the user's account
+		// and fail at request time with model_not_supported. The model id is
+		// typed or imported.
+		return "", nil
 	case "openrouter", "google-gemini", "ollama", "llama-server", "github-copilot":
 		return base + "/models", nil
 	case "openai":

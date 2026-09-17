@@ -104,20 +104,16 @@ func TestListCloudflareAIGateway(t *testing.T) {
 	}
 }
 
-func TestListHuggingFace(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/models" {
-			t.Fatalf("path = %q", r.URL.Path)
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"id": "m1"}}})
-	}))
-	t.Cleanup(srv.Close)
-	models, err := List(context.Background(), Target{Name: "huggingface", BaseURL: srv.URL + "/v1", APIKey: "k"}, srv.Client())
+func TestListHuggingFaceNoLiveFetch(t *testing.T) {
+	// The router's /v1/models lists every Inference Provider model, most of
+	// which are not enabled on the account and fail with model_not_supported.
+	// HuggingFace is therefore static-only: the model id is typed or imported.
+	models, err := List(context.Background(), Target{Name: "huggingface", BaseURL: "https://router.huggingface.co/v1", APIKey: "k"}, nil)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(models) != 1 || models[0].ID != "m1" {
-		t.Fatalf("models = %+v", models)
+	if len(models) != 0 {
+		t.Fatalf("expected empty live-fetch list for huggingface, got %+v", models)
 	}
 }
 
