@@ -123,7 +123,7 @@ func (b Banner) pixView() string {
 	right := []string{
 		"",
 		lipgloss.NewStyle().Foreground(ColorCream).Bold(true).Render("S I G N E T"),
-		MutedStyle.Render("injection-safe coding harness"),
+		MutedStyle.Render("A safer coding harness | vulnetix.com"),
 		b.versionLine(),
 		"",
 		MutedStyle.Render("type ") + KeyStyle.Render("/help") + MutedStyle.Render(" for commands and shortcuts"),
