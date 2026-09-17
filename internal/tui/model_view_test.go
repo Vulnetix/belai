@@ -232,11 +232,12 @@ func TestModelViewShowsLoadingState(t *testing.T) {
 	a := newModelPickerApp(t, []string{"m1"})
 	// Simulate an in-flight fetch by flagging the provider as loading.
 	a.catalogLoading = map[string]bool{"my-llm": true}
+	a.catalogURLs = map[string]string{"my-llm": "https://llm.example/v1/models"}
 	a.height = 0
 
 	view := a.modelView()
-	if !strings.Contains(view, "Fetching models") {
-		t.Fatalf("expected loading indicator in view, got:\n%s", view)
+	if !strings.Contains(view, "Fetching models from GET https://llm.example/v1/models") {
+		t.Fatalf("expected loading indicator with URL in view, got:\n%s", view)
 	}
 	// When loading the empty-catalog hint must not appear.
 	if strings.Contains(view, "no models in this profile") {

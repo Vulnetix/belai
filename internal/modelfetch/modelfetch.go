@@ -28,10 +28,11 @@ type Target struct {
 }
 
 // List fetches the live model catalogue for the target and returns it as
-// []models.Model. Static-only targets (cloudflare-ai-gateway, huggingface)
-// return an empty list with no error.
+// []models.Model. Static-only targets (openai, huggingface) return an empty
+// list with no error: their live endpoints expose identifiers that cannot be
+// used as-is.
 func List(ctx context.Context, t Target, client *http.Client) ([]models.Model, error) {
-	endpoint, err := endpointFor(t)
+	endpoint, err := EndpointFor(t)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +75,11 @@ func List(ctx context.Context, t Target, client *http.Client) ([]models.Model, e
 	return parseModels(t, resp)
 }
 
-func endpointFor(t Target) (string, error) {
+// EndpointFor returns the URL the harness would GET to discover a target's
+// live catalogue, or the empty string when the target is static-only (no live
+// fetch). It is exported so the TUI can show the exact URL while a fetch is
+// in flight.
+func EndpointFor(t Target) (string, error) {
 	base := strings.TrimRight(t.BaseURL, "/")
 	switch t.Name {
 	case "cloudflare-ai-gateway":

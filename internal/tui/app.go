@@ -249,6 +249,7 @@ type App struct {
 	catalogCache   map[string][]models.Model
 	catalogErr     map[string]string
 	catalogLoading map[string]bool
+	catalogURLs    map[string]string // in-flight fetch URL per provider
 
 	// workdir and git
 	workdir string

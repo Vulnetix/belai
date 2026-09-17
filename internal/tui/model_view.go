@@ -69,21 +69,35 @@ func (a *App) fetchCatalogCmd(name string) tea.Cmd {
 	if a.catalogLoading == nil {
 		a.catalogLoading = map[string]bool{}
 	}
+	if a.catalogURLs == nil {
+		a.catalogURLs = map[string]string{}
+	}
 	if _, ok := a.catalogCache[name]; ok || a.catalogLoading[name] {
 		return nil
 	}
+
+	src := run.CredentialSource(run.EnvSource(os.Getenv))
+	if a.resolver != nil {
+		src = a.resolver
+	}
+	// Resolve the target provider (not the currently-committed one) so
+	// browsing previewed providers still fetches from the right endpoint.
+	cfg, _ := run.Prepare("", name, src)
+	target := modelfetch.Target{Name: name, BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Auth: cfg.Auth, API: cfg.API}
+	endpoint, err := modelfetch.EndpointFor(target)
+	if err != nil {
+		// Unresolvable target (e.g. gateway without account_id): surface the
+		// error on the picker rather than pretending a fetch is in flight.
+		return func() tea.Msg { return modelsFetchedMsg{provider: name, err: err} }
+	}
+	if endpoint == "" {
+		return nil // static-only: catalogue comes from the curated list/profile
+	}
+
 	a.catalogLoading[name] = true
+	a.catalogURLs[name] = endpoint
 	client := a.client
-	resolver := a.resolver
 	return func() tea.Msg {
-		src := run.CredentialSource(run.EnvSource(os.Getenv))
-		if resolver != nil {
-			src = resolver
-		}
-		// Resolve the target provider (not the currently-committed one) so
-		// browsing previewed providers still fetches from the right endpoint.
-		cfg, _ := run.Prepare("", name, src)
-		target := modelfetch.Target{Name: name, BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Auth: cfg.Auth, API: cfg.API}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		m, err := modelfetch.List(ctx, target, client)
@@ -100,6 +114,7 @@ func (a *App) handleModelsFetched(m modelsFetchedMsg) tea.Cmd {
 		a.catalogErr = map[string]string{}
 	}
 	delete(a.catalogLoading, m.provider)
+	delete(a.catalogURLs, m.provider)
 	if m.err != nil {
 		a.catalogErr[m.provider] = m.err.Error()
 		return nil
@@ -264,7 +279,11 @@ func (a *App) modelView() string {
 	metaLine := ""
 	switch {
 	case a.catalogLoading[name]:
-		body.WriteString(components.AccentStyle.Render("  ○ Fetching models…") + "\n")
+		if url := a.catalogURLs[name]; url != "" {
+			body.WriteString(components.AccentStyle.Render("  ○ Fetching models from GET "+url+"…") + "\n")
+		} else {
+			body.WriteString(components.AccentStyle.Render("  ○ Fetching models…") + "\n")
+		}
 	case len(catalog) == 0:
 		body.WriteString(components.MutedStyle.Render("  no models in this profile — type or import a model id") + "\n")
 	default:
