@@ -920,14 +920,15 @@ failures are visible.
 
 Provider-specific edge cases:
 
-- **`huggingface`** does not live-fetch. The router's `/v1/models` endpoint
-  lists every Inference Provider model, almost none of which are enabled on a
-  given account, so a fetched list would be full of unusable ids that fail at
-  request time with `model_not_supported`. HuggingFace no longer runs its own
-  `hf-inference` serverless provider; inference is routed through third-party
-  providers (deepinfra, novita, etc.) and users must enable the desired
-  providers in their HuggingFace dashboard before a model can be called.  The
-  catalogue is therefore empty and the model id is typed or imported.
+- **`huggingface`** live-fetches from `https://router.huggingface.co/v1/models`.
+  HuggingFace no longer runs its own `hf-inference` serverless provider;
+  inference is routed through third-party providers (deepinfra, novita, etc.)
+  and users must enable the desired providers in their HuggingFace dashboard
+  before a model can be called.  The fetched list may therefore include models
+  whose provider is not enabled on the account; selecting one returns
+  `model_not_supported` from the router.  The picker does not pre-filter
+  because the router exposes no enabled-only list.  Users can still type and
+  commit any model id directly.
 - **`cloudflare-ai-gateway`** has no gateway-side `/models` endpoint, but every
   gateway can run any Workers AI model. Signet extracts the `account_id` from
   the configured gateway base URL
