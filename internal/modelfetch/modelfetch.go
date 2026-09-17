@@ -100,8 +100,12 @@ func endpointFor(t Target) (string, error) {
 		return base + "/ai/models/search", nil
 	case "huggingface":
 		return base + "/models", nil
-	case "openai", "openrouter", "google-gemini", "ollama", "llama-server", "github-copilot":
+	case "openrouter", "google-gemini", "ollama", "llama-server", "github-copilot":
 		return base + "/models", nil
+	case "openai":
+		// Do not live-fetch: OpenAI /v1/models includes deprecated, preview and
+		// internal identifiers that confuse the picker and fail at request time.
+		return "", nil
 	default:
 		// Custom provider: choose by surface.
 		switch t.API {

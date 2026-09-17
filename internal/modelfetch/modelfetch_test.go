@@ -11,21 +11,16 @@ import (
 	"github.com/vulnetix/signet/internal/wire"
 )
 
-func TestListOpenAI(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/models" {
-			t.Fatalf("path = %q", r.URL.Path)
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"id": "gpt-5"}}})
-	}))
-	defer srv.Close()
-
-	models, err := List(context.Background(), Target{Name: "openai", BaseURL: srv.URL, APIKey: "k"}, srv.Client())
+func TestListOpenAINoLiveFetch(t *testing.T) {
+	// OpenAI is excluded from live fetching because /v1/models returns
+	// deprecated, preview and internal identifiers that confuse the picker
+	// and fail at request time.  Only the curated static catalogue is shown.
+	models, err := List(context.Background(), Target{Name: "openai", BaseURL: "http://example.com", APIKey: "k"}, nil)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(models) != 1 || models[0].ID != "gpt-5" {
-		t.Fatalf("models = %+v", models)
+	if len(models) != 0 {
+		t.Fatalf("expected empty live-fetch list for openai, got %+v", models)
 	}
 }
 
