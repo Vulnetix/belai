@@ -205,3 +205,57 @@ func TestGuardrailsAndAskTightenOnly(t *testing.T) {
 		t.Fatal("caveman is not tighten-only; the project layer must be able to turn it off")
 	}
 }
+
+// A project file may disable clarification with a negative value: the merge
+// takes the minimum, so negative always wins over any global budget. That is a
+// tightening, which the project layer is allowed to do.
+func TestProjectCanDisableClarification(t *testing.T) {
+	global := Settings{Resilience: &ResilienceSettings{MaxClarifyRounds: 3}}
+	merged := global.Override(Settings{Resilience: &ResilienceSettings{MaxClarifyRounds: -1}})
+	if got := merged.Resilience.MaxClarifyRoundsOr(3); got != -1 {
+		t.Fatalf("merged clarify rounds = %d, want -1", got)
+	}
+
+	// With no global block at all the project value is taken outright.
+	fresh := Settings{}.Override(Settings{Resilience: &ResilienceSettings{MaxClarifyRounds: -1}})
+	if got := fresh.Resilience.MaxClarifyRoundsOr(3); got != -1 {
+		t.Fatalf("clarify rounds with no global block = %d, want -1", got)
+	}
+}
+
+// A project file cannot widen any budget: every field takes the minimum of the
+// two when both are set. The table is the guard against a new budget being
+// added to the struct with the merge step forgotten.
+func TestProjectCannotWidenAnyResilienceBudget(t *testing.T) {
+	global := Settings{Resilience: &ResilienceSettings{
+		MaxAttempts:          2,
+		MaxIterations:        5,
+		MaxPasses:            4,
+		MaxClarifyRounds:     1,
+		MaxExploreIterations: 3,
+	}}
+	merged := global.Override(Settings{Resilience: &ResilienceSettings{
+		MaxAttempts:          99,
+		MaxIterations:        99,
+		MaxPasses:            99,
+		MaxClarifyRounds:     99,
+		MaxExploreIterations: 99,
+	}})
+
+	r := merged.Resilience
+	for _, tc := range []struct {
+		name string
+		got  int
+		want int
+	}{
+		{"max_attempts", r.MaxAttemptsOr(3), 2},
+		{"max_iterations", r.MaxIterationsOr(10), 5},
+		{"max_passes", r.MaxPassesOr(), 4},
+		{"max_clarify_rounds", r.MaxClarifyRoundsOr(3), 1},
+		{"max_explore_iterations", r.MaxExploreIterationsOr(8), 3},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("%s = %d, want the global (lower) value %d", tc.name, tc.got, tc.want)
+		}
+	}
+}

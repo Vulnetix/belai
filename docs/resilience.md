@@ -113,11 +113,25 @@ Retry budgets are configurable via `config.Settings.Resilience`:
   loop's own stall detectors are what normally stop it; this exists for CI and
   for anyone who wants a hard bound on spend. When it is reached the loop
   returns `goal pass loop stopped: max passes (N) reached`.
+- `max_clarify_rounds`: bounds the explore→clarify→explore loop (default 3).
+  A **negative** value is the documented way to disable clarification
+  entirely: the accessor passes the sign through unclamped and
+  `clarifyRounds` returns immediately on it. Zero is not a disable — zero
+  means "use the default", like every other budget here.
+- `max_explore_iterations`: the tool-loop budget of a single explore subagent
+  (default 8, raised from a historical 4 so a subagent actually runs
+  `rg`/`find`/`git` before clarifying, while keeping the fan-out bounded).
+
+Zero always means "unset, use the default" — which is why `max_passes` needs
+its own rule below, and why a budget genuinely cannot be set to zero.
 
 Project-level values are constrained to the *minimum* of the global and project
-values, so a cloned project file cannot raise a budget. For `max_passes` an
-unset global (0, unbounded) takes the project value: there is no ceiling to
-lower, and adding one is a tightening, not a relaxation.
+values, so a cloned project file cannot raise a budget. Every budget follows
+that rule, including `max_clarify_rounds` and `max_explore_iterations`. For
+`max_passes` an unset global (0, unbounded) takes the project value: there is
+no ceiling to lower, and adding one is a tightening, not a relaxation. The
+same "unset global takes the project value" step applies to the others, where
+it is a relaxation only against a default the global file never stated.
 
 ## Overflow surfacing
 
