@@ -157,9 +157,42 @@ func TestSkippingTheClassifierStillSanitises(t *testing.T) {
 	}
 }
 
-// Bash still classifies: it is the one tool whose command the harness did not
-// shape, so its output is the one that has to be checked.
+// Bash classifies when the command is not one a builtin already covers: `nl`
+// is in the read-only allowlist but has no first-class tool behind it, so
+// what it prints is output the harness did not shape.
 func TestBashResultStillClassified(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "f.txt"), []byte("body"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	srv, probe := newClassifyProbeServer("Bash", `{"command":"nl f.txt"}`)
+	defer srv.Close()
+
+	sess, err := NewSession(Options{
+		Cfg:      run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "test"},
+		Client:   srv.Client(),
+		Registry: tools.NewRegistry(&tools.Bash{Root: root, ReadOnly: true, Timeout: 5 * time.Second, MaxBytes: 1024}),
+		Posture:  posture.Defaults(),
+		Workdir:  root,
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if _, err := sess.Run(context.Background(), "show the file"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	calls, _ := probe.snapshot()
+	if calls < 2 {
+		t.Fatalf("security classifier called %d times, want admission plus the Bash result", calls)
+	}
+}
+
+// `cat f.txt` through Bash returns the bytes Cat would have returned, so it
+// is treated the same way. Classifying one spelling and not the other would
+// make the same file trusted or distrusted depending on which the model
+// happened to pick.
+func TestBashDuplicatingABuiltinIsNotClassified(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "f.txt"), []byte("body"), 0o600); err != nil {
 		t.Fatalf("write: %v", err)
@@ -181,8 +214,58 @@ func TestBashResultStillClassified(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
+	calls, results := probe.snapshot()
+	if calls != 1 {
+		t.Errorf("security classifier called %d times, want 1 (admission only)", calls)
+	}
+	if len(results) != 1 || !strings.Contains(results[0], "body") {
+		t.Fatalf("tool result did not reach the model: %q", results)
+	}
+}
+
+// stubWeb stands in for WebFetch. The real tool refuses a loopback address,
+// which is exactly what an httptest server is, so the kind is what matters
+// here rather than the transport.
+type stubWeb struct{ body string }
+
+func (s *stubWeb) Definition() tools.Definition {
+	return tools.Definition{
+		Name:        "WebFetch",
+		Description: "Fetch a web page by URL and return its text content.",
+		Properties:  map[string]tools.Property{"url": {Type: "string", Description: "URL"}},
+		Required:    []string{"url"},
+	}
+}
+func (s *stubWeb) Kind() tools.Kind                   { return tools.KindWebFetch }
+func (s *stubWeb) Subject(args map[string]any) string { u, _ := args["url"].(string); return u }
+func (s *stubWeb) Execute(context.Context, map[string]any) (tools.Result, error) {
+	return tools.WebFetchResult(s.body), nil
+}
+
+// Web results always classify, whatever else is exempt: a page is written by
+// someone outside this machine with no relationship to the task, which is the
+// shape a prompt injection takes.
+func TestWebResultIsAlwaysClassified(t *testing.T) {
+	root := t.TempDir()
+	srv, probe := newClassifyProbeServer("WebFetch", `{"url":"https://example.test/x"}`)
+	defer srv.Close()
+
+	sess, err := NewSession(Options{
+		Cfg:      run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "test"},
+		Client:   srv.Client(),
+		Registry: tools.NewRegistry(&stubWeb{body: "a perfectly ordinary page"}),
+		Posture:  posture.Defaults(),
+		Workdir:  root,
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if _, err := sess.Run(context.Background(), "fetch the page"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
 	calls, _ := probe.snapshot()
 	if calls < 2 {
-		t.Fatalf("security classifier called %d times, want admission plus the Bash result", calls)
+		t.Fatalf("security classifier called %d times, want admission plus the web result", calls)
 	}
 }

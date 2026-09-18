@@ -361,7 +361,7 @@ func TestClassifierErrorEmitsWarningNotStderr(t *testing.T) {
 				msg["tool_calls"] = []any{map[string]any{
 					"id":       "call_1",
 					"type":     "function",
-					"function": map[string]any{"name": "Bash", "arguments": `{"command":"cat f.txt"}`},
+					"function": map[string]any{"name": "Bash", "arguments": `{"command":"nl f.txt"}`},
 				}}
 			} else {
 				msg["content"] = "done"
@@ -821,7 +821,7 @@ func TestRunEmitsRoleManagerPhases(t *testing.T) {
 
 	// Bash is the one kind whose result still goes through the classifier, so
 	// it is the tool that produces a tool-result Role Manager phase at all.
-	srv := mockSecurityServer("Bash", `{"command":"cat hello.txt"}`, "done")
+	srv := mockSecurityServer("Bash", `{"command":"nl hello.txt"}`, "done")
 	defer srv.Close()
 
 	cfg := run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"}

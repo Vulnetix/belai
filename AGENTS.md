@@ -21,13 +21,19 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
 - **Untrusted content stays untrusted.** Every tool result is sanitized
   (delimiter markup removed) before it can be promoted, and none of them ever
   enters a system/agent/tools block.
-- **Bash results are classified; the other builtins are shaped.** `Bash` is
-  the only tool whose argument is an arbitrary command string, so it is the
-  only kind whose result goes through the tool-less classifier. Every other
-  builtin is driven through a fixed argument shape by the harness — a
-  confined path, a pattern, a URL, a filter — so its output is sanitized and
-  promoted without the round trip. Adding a tool that takes free-form input
-  means adding its kind to `tools.classifierKinds`.
+- **Web results always go through the classifier.** `WebFetch` and
+  `WebSearch` return content written off this machine, so they classify
+  unconditionally. Do not add an exemption for them.
+- **`Bash` classifies unless a builtin already covers the command.** `cat x`
+  returns what `Cat` would have returned, so it is treated the same way;
+  anything else — a pipeline, a build, a binary the catalogue does not cover
+  — is an arbitrary command and classifies. `tools.BuiltinEquivalent` fails
+  closed on shell metacharacters, on `git`/`find`/`env` invocations the
+  natives would reject, and on unrecognised binaries. The cloud catalogue
+  (`gh`, `aws`, …) is deliberately not exempt.
+- **Harness-shaped calls are sanitized only.** `Read`, `Grep`, `Glob`,
+  `Write`, `Edit`, and the local native catalogue are built by the harness
+  from a fixed argument shape, so they skip the round trip.
 - **Plan mode has no Bash.** Plan mode advertises and enforces the same
   narrowed surface (`Registry.Plan` and `modes.ToolAllowed`): no mutating
   tools, and no `Bash` at all, read-only or otherwise.
