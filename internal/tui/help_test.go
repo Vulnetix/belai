@@ -55,8 +55,8 @@ func TestKeySectionsWellFormed(t *testing.T) {
 func TestHelpTextListsGlobalAndChatKeys(t *testing.T) {
 	got := helpText(NewRegistry(t.TempDir()))
 	for _, want := range []string{
-		"ctrl+c", "ctrl+d", "ctrl+r", "ctrl+t", "f2", "f3", "f4", "f5",
-		"shift+tab", "ctrl+l", "ctrl+o", "f6", "ctrl+j",
+		"ctrl+c", "ctrl+d", "ctrl+r", "ctrl+t", "f2", "f3", "f4", "f5", "f6",
+		"shift+tab", "ctrl+l", "ctrl+o", "f7", "ctrl+j",
 		"pgup", "ctrl+home", "ctrl+end", "shift+up", "shift+down",
 	} {
 		if !strings.Contains(got, want) {
@@ -150,5 +150,15 @@ func TestHelpCommandAddsOneSystemMessage(t *testing.T) {
 	}
 	if !strings.Contains(last.Text(), "commands:") || !strings.Contains(last.Text(), "shift+tab") {
 		t.Fatalf("help message lacks commands or keys:\n%s", last.Text())
+	}
+}
+
+// TestHelpTextListsPlanReviewKeys pins the plan-review bindings.
+func TestHelpTextListsPlanReviewKeys(t *testing.T) {
+	got := helpText(NewRegistry(t.TempDir()))
+	for _, want := range []string{"plan review", "approve, refine", "pgup", "ctrl+home", "wheel"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("helpText is missing %q", want)
+		}
 	}
 }

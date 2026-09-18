@@ -271,3 +271,24 @@ func TestPermissionsPreviewDefaultAllowRespectsPosture(t *testing.T) {
 		t.Fatalf("enforce posture should preview block for unmatched calls:\n%s", v)
 	}
 }
+
+// TestPlanModeStickySurvivesClassifierRegression verifies that when the user
+// explicitly picks plan mode the classifier cannot silently switch to goal mode
+// on a later turn.
+func TestPlanModeStickySurvivesClassifierRegression(t *testing.T) {
+	workdir := t.TempDir()
+	a := New(Options{Workdir: workdir})
+	a.handleCommand("/mode plan")
+	if a.mode != "plan" || !a.modeSticky {
+		t.Fatalf("setup: mode=%q sticky=%v", a.mode, a.modeSticky)
+	}
+
+	// A stub classifier that always answers "goal" must be ignored.
+	a.SetClassifier(&fakeClassifier{raw: "GOAL"})
+	for i := 0; i < 3; i++ {
+		a.classifyMode("prompt")
+		if a.mode != "plan" {
+			t.Fatalf("turn %d: classifier overrode sticky plan mode to %q", i+1, a.mode)
+		}
+	}
+}

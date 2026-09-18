@@ -33,6 +33,7 @@ func keySections() []keySection {
 			{"f3", "toggle guardrails"},
 			{"f4", "toggle ask permission"},
 			{"f5", "cycle operating mode"},
+			{"f6", "cycle reasoning effort"},
 		}},
 		{"chat", []keyBinding{
 			{"enter", "send; also runs !shell and /commands, or steers a running turn"},
@@ -42,7 +43,7 @@ func keySections() []keySection {
 			{"esc", "clear the selection, then cancel the request"},
 			{"shift+tab", "cycle mode: agent, plan, goal"},
 			{"up", "browse prompt history and the prompt library"},
-			{"f6", "save the prompt to the library"},
+			{"f7", "save the prompt to the library"},
 			{"ctrl+l", "clear the transcript view; the session is kept"},
 			{"ctrl+o", "expand or collapse every truncated output"},
 			{"ctrl+s", "save the hovered file panel to a path you type"},
@@ -94,7 +95,7 @@ func keySections() []keySection {
 			{"esc", "cancel and restore what you typed"},
 			{"type", "leave the cycle and edit the loaded prompt"},
 		}},
-		{"save prompt (after f6)", []keyBinding{
+		{"save prompt (after f7)", []keyBinding{
 			{"enter", "save under the typed name; empty cancels"},
 			{"esc", "cancel"},
 		}},

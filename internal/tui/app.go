@@ -1419,6 +1419,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, nil
 			}
 			return a, a.toggleAsk()
+		case "f6":
+			if a.view == viewPlanReview {
+				return a, nil
+			}
+			return a, a.cycleEffort()
 		}
 		if a.view != viewChat {
 			if h, ok := viewHandlers[a.view]; ok {
@@ -1600,7 +1605,7 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		return a.submitInput(input)
 	case "up":
 		return a.startHistoryCycle()
-	case "f6":
+	case "f7":
 		return a.startSavePrompt()
 	}
 
@@ -2601,6 +2606,45 @@ func (a *App) toggleCaveman() tea.Cmd {
 	return nil
 }
 
+// cycleEffort cycles the session reasoning-effort level through
+// default → low → medium → high → default. The new value is written to
+// session state only, never to settings.json.
+func (a *App) cycleEffort() tea.Cmd {
+	provider, model := a.cfg.Provider, a.cfg.Model
+	levels := models.Efforts(provider, model)
+	if len(levels) == 0 {
+		levels = models.DefaultEfforts()
+	}
+
+	// Build the cycle: "" (default) followed by the provider/model levels.
+	cycle := append([]string{""}, levels...)
+	current := a.settings.Effort
+	idx := 0
+	for i, v := range cycle {
+		if v == current {
+			idx = i
+			break
+		}
+	}
+	next := cycle[(idx+1)%len(cycle)]
+
+	a.state.Effort = next
+	_ = config.SaveState(a.state)
+	a.settings.Effort = next
+	a.invalidateAgentSession()
+	label := next
+	if label == "" {
+		label = "default"
+	}
+	d := run.ResolveDialect(run.Config{Provider: provider, Model: model})
+	if !d.UsesEffort() {
+		a.addSystem(fmt.Sprintf("reasoning effort: %s (ignored by %s)", label, provider))
+	} else {
+		a.addSystem("reasoning effort: " + label)
+	}
+	return a.refreshProvider()
+}
+
 func (a *App) toggleGuardrails() tea.Cmd {
 	next := !a.guardrailsEnabled()
 	a.guardrailsOverride = &next
@@ -2865,8 +2909,13 @@ func (a *App) refreshFooter() {
 	a.footer.Model = run.WireModel(a.cfg.Provider, a.cfg.Model)
 	// The effective settings are the UI's canonical effort source: the model
 	// picker and settings view both write there, and refreshProvider copies
-	// the value into cfg for the agent session.
+	// the value into cfg for the agent session. If the active provider does
+	// not transmit effort on the wire, render it as "default" so we never
+	// advertise a value that silently never ships.
 	a.footer.Effort = a.settings.Effort
+	if !run.ResolveDialect(a.cfg).UsesEffort() {
+		a.footer.Effort = ""
+	}
 	a.footer.Guardrails = a.guardrailsEnabled()
 	a.footer.Ask = a.askEnabled()
 	a.footer.Caveman = a.settings.CavemanEnabled()
