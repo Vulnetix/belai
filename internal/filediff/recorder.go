@@ -432,6 +432,34 @@ func detectRepoRoot(dir string) string {
 }
 
 // displayPath renders an absolute path relative to the working directory.
+// WorktreeChange returns what the worktree holds for path that the index does
+// not. Outside a repo, for an untracked path, or when the two agree, the
+// Change is empty.
+func (r *Recorder) WorktreeChange(ctx context.Context, path, current string) Change {
+	if r == nil || r.RepoRoot == "" {
+		return Change{}
+	}
+	abs := path
+	if !filepath.IsAbs(abs) {
+		abs = filepath.Join(r.Root, abs)
+	}
+	repoRel, err := filepath.Rel(r.RepoRoot, abs)
+	if err != nil {
+		return Change{}
+	}
+	repoRel = filepath.ToSlash(repoRel)
+	index, ok := r.gitShowIndex(ctx, repoRel)
+	if !ok {
+		// No index baseline means the file is untracked; report no diff so
+		// attaching a new file does not render the whole file as a change.
+		return Change{}
+	}
+	if current == index {
+		return Change{}
+	}
+	return Preview(r.displayPath(abs), index, current)
+}
+
 func (r *Recorder) displayPath(abs string) string {
 	if rel, err := filepath.Rel(r.Root, abs); err == nil && !strings.HasPrefix(rel, "..") {
 		return rel

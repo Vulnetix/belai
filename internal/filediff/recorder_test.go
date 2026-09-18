@@ -306,3 +306,56 @@ func TestNilSnapshotIsSafe(t *testing.T) {
 		t.Fatal("nil recorder should yield a nil snapshot")
 	}
 }
+
+func TestWorktreeChangeEmptyOutsideRepo(t *testing.T) {
+	r := NewRecorder(t.TempDir())
+	if r.RepoRoot != "" {
+		t.Fatalf("expected no repo root")
+	}
+	got := r.WorktreeChange(context.Background(), "file.go", "current")
+	if !got.Empty() {
+		t.Fatalf("expected empty change outside a repo, got %+v", got)
+	}
+}
+
+func TestWorktreeChangeEmptyForUntracked(t *testing.T) {
+	dir := gitRepo(t)
+	r := NewRecorder(dir)
+	if r.RepoRoot == "" {
+		t.Fatalf("expected repo root")
+	}
+	write(t, filepath.Join(dir, "untracked.go"), "package main\n")
+	got := r.WorktreeChange(context.Background(), "untracked.go", "package main\n")
+	if !got.Empty() {
+		t.Fatalf("expected empty change for an untracked file, got %+v", got)
+	}
+}
+
+func TestWorktreeChangeEmptyForUnmodified(t *testing.T) {
+	dir := gitRepo(t)
+	r := NewRecorder(dir)
+	got := r.WorktreeChange(context.Background(), "tracked.go", "package main\n\nfunc main() {}\n")
+	if !got.Empty() {
+		t.Fatalf("expected empty change for a clean file, got %+v", got)
+	}
+}
+
+func TestWorktreeChangeDetectsDirtyFile(t *testing.T) {
+	dir := gitRepo(t)
+	write(t, filepath.Join(dir, "tracked.go"), "package main\n\nfunc main() { println(1) }\n")
+	r := NewRecorder(dir)
+	current := "package main\n\nfunc main() { println(1) }\n"
+	got := r.WorktreeChange(context.Background(), "tracked.go", current)
+	if got.Empty() {
+		t.Fatalf("expected a change for a dirty file")
+	}
+	if len(got.Files) != 1 || got.Files[0].Path != "tracked.go" {
+		t.Fatalf("files = %+v", got.Files)
+	}
+	if !strings.Contains(got.Files[0].Old, "func main() {}") {
+		t.Fatalf("old side wrong: %q", got.Files[0].Old)
+	}
+	if got.Files[0].New != current {
+		t.Fatalf("new side wrong: %q", got.Files[0].New)
+	}
+}
