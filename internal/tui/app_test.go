@@ -832,6 +832,7 @@ func TestAutoNamingMarksRequested(t *testing.T) {
 	a := New(Options{})
 	a.SetClassifier(&fakeClassifier{raw: "My Session"})
 	a.modeExplicit = true
+	a.namedAgent = "signet:debug" // agent mode requires an engaged agent
 	a.editor.SetValue("hello world")
 	m, cmd := a.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	a = m.(*App)

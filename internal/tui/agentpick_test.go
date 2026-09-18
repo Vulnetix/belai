@@ -18,27 +18,24 @@ func saveProfile(t *testing.T, name string) {
 	}
 }
 
-// The picker offers the user's profiles and the built-ins, and marks which is
-// which so a harness profile is never mistaken for a file the user wrote.
-func TestAgentPickerListsProfilesAndBuiltins(t *testing.T) {
+// The picker offers built-ins first (signet:debug at index 0), then the
+// user's profiles, and marks which is which so a harness profile is never
+// mistaken for a file the user wrote.
+func TestAgentPickerListsBuiltinsFirstThenProfiles(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 	saveProfile(t, "reviewer")
 
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
 
-	var user, builtin int
-	for _, c := range a.agents {
-		if c.Builtin {
-			builtin++
-			continue
-		}
-		user++
+	if len(a.agents) < 2 {
+		t.Fatalf("agents = %+v, want at least two", a.agents)
 	}
-	if user != 1 || builtin == 0 {
-		t.Fatalf("agents = %+v, want 1 user profile and at least one built-in", a.agents)
+	if a.agents[0].Name != profiles.DebugProfile {
+		t.Fatalf("first agent = %q, want %q", a.agents[0].Name, profiles.DebugProfile)
 	}
-	a.editor.SetValue("@agent:")
+
+	a.openAgentPicker()
 	if !a.agentPickerVisible() {
 		t.Fatalf("expected the picker to show in agent mode")
 	}
@@ -53,11 +50,13 @@ func TestAgentPickerListsProfilesAndBuiltins(t *testing.T) {
 }
 
 // The picker is agent-mode chrome, and it yields the strip — and tab — to the
-// slash popup when both could show.
+// slash popup when both could show. It is also hidden while a file @-prefix is
+// active.
 func TestAgentPickerHiddenOutsideAgentModeAndUnderSlashPopup(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
+	a.openAgentPicker()
 
 	a.mode = "plan"
 	if a.agentPickerVisible() {
@@ -70,6 +69,33 @@ func TestAgentPickerHiddenOutsideAgentModeAndUnderSlashPopup(t *testing.T) {
 	if a.agentPickerVisible() {
 		t.Fatalf("expected the slash popup to win")
 	}
+
+	a.clearAutocomplete()
+	a.autocompleteIndex = noAutocompleteSelection
+	a.editor.SetValue("@go")
+	a.editor.CursorEnd()
+	setFileList(a, "foo.go")
+	if !a.filePickerVisible() {
+		t.Fatalf("expected the file chooser to show for @go")
+	}
+	if a.agentPickerVisible() {
+		t.Fatalf("expected the file chooser to hide the agent picker")
+	}
+}
+
+// Typing @agent: does not open the agent picker; it is now a file-chooser
+// prefix (or a prompt-level directive handled by the classifier).
+func TestAgentPickerNotOpenedByAtPrefix(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	saveProfile(t, "reviewer")
+	a := New(Options{Workdir: t.TempDir()})
+	a.loadAgents()
+	a.editor.SetValue("@agent:")
+	a.editor.CursorEnd()
+
+	if a.agentPickerVisible() {
+		t.Fatalf("@agent: should not open the agent picker")
+	}
 }
 
 // Tab walks every candidate and then the (none) entry, wrapping back to the
@@ -79,7 +105,8 @@ func TestAgentPickerTabCyclesThroughNone(t *testing.T) {
 	saveProfile(t, "reviewer")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
-	a.editor.SetValue("@agent:")
+	a.openAgentPicker()
+	a.agentIndex = noAgentSelection // start cold, the way a fresh /agent behaves
 	original := a.editor.Value()
 	want := a.agents
 
@@ -104,14 +131,15 @@ func TestAgentPickerTabCyclesThroughNone(t *testing.T) {
 	}
 }
 
-// Enter on a highlighted agent engages it instead of sending the turn, and the
-// engaged name reaches the footer chip.
+// Enter on a highlighted agent engages it instead of sending the turn, and
+// the picker closes.
 func TestAgentPickerEnterEngagesProfile(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 	saveProfile(t, "reviewer")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
-	a.editor.SetValue("fix the flaky test @agent:")
+	a.openAgentPicker()
+	a.editor.SetValue("fix the flaky test")
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
 	want, _ := a.agentSelection()
 
@@ -120,8 +148,11 @@ func TestAgentPickerEnterEngagesProfile(t *testing.T) {
 	if a.namedAgent != want.Name {
 		t.Fatalf("namedAgent = %q, want %q", a.namedAgent, want.Name)
 	}
-	if strings.TrimSpace(a.editor.Value()) != "fix the flaky test" {
+	if a.editor.Value() != "fix the flaky test" {
 		t.Fatalf("prompt = %q, want the typed text kept", a.editor.Value())
+	}
+	if a.agentPickerOpen {
+		t.Fatalf("picker should be closed after accepting")
 	}
 	a.refreshFooter()
 	if a.footer.Agent != want.Name {
@@ -132,21 +163,6 @@ func TestAgentPickerEnterEngagesProfile(t *testing.T) {
 	}
 }
 
-// Without a highlight, enter still submits: the picker must not swallow the
-// key it shares with sending a prompt.
-func TestAgentPickerEnterWithoutHighlightStillSends(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
-	a := New(Options{Workdir: t.TempDir()})
-	a.loadAgents()
-	a.editor.SetValue("hello @agent:")
-
-	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
-
-	if a.editor.Value() != "" {
-		t.Fatalf("prompt = %q, want it submitted and cleared", a.editor.Value())
-	}
-}
-
 // Right accepts like enter, but only once something is highlighted — otherwise
 // it is the editor's cursor key.
 func TestAgentPickerRightIsCursorUntilHighlighted(t *testing.T) {
@@ -154,7 +170,9 @@ func TestAgentPickerRightIsCursorUntilHighlighted(t *testing.T) {
 	saveProfile(t, "reviewer")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
-	a.editor.SetValue("abc @agent:")
+	a.openAgentPicker()
+	a.agentIndex = noAgentSelection // no default highlight
+	a.editor.SetValue("abc")
 
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRight})
 	if a.namedAgent != "" {
@@ -168,42 +186,104 @@ func TestAgentPickerRightIsCursorUntilHighlighted(t *testing.T) {
 	}
 }
 
-// Typing `@name` filters the strip, and accepting removes the filter text so
-// it is not sent as prose.
-func TestAgentPickerAtPrefixFiltersAndIsConsumed(t *testing.T) {
+// Enter in agent mode with no agent engaged opens the picker rather than
+// sending. The default signet:debug profile is selected.
+func TestEnterInAgentModeWithoutAgentOpensPicker(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
-	saveProfile(t, "reviewer")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
-	a.editor.SetValue("check this @agent:rev")
+	a.mode = "agent"
+	a.editor.SetValue("hello")
 
-	cands := a.agentCandidates()
-	if len(cands) != 1 || cands[0].Name != "reviewer" {
-		t.Fatalf("candidates = %+v, want only reviewer", cands)
-	}
-
-	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
 
-	if a.namedAgent != "reviewer" {
-		t.Fatalf("namedAgent = %q, want reviewer", a.namedAgent)
+	if !a.agentPickerOpen {
+		t.Fatalf("expected the agent picker to open")
 	}
-	if a.editor.Value() != "check this" {
-		t.Fatalf("prompt = %q, want the @filter removed", a.editor.Value())
+	if got, _ := a.agentSelection(); got.Name != profiles.DebugProfile {
+		t.Fatalf("selection = %q, want %q", got.Name, profiles.DebugProfile)
+	}
+	if a.editor.Value() != "hello" {
+		t.Fatalf("prompt should not be cleared, got %q", a.editor.Value())
 	}
 }
 
-// The `@agent:name` form the mode classifier already understands filters too.
-func TestAgentPickerAtAgentSchemeFilters(t *testing.T) {
+// The /agent command with no argument opens the agent picker.
+func TestAgentCommandOpensPicker(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
-	saveProfile(t, "reviewer")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
-	a.editor.SetValue("@agent:review")
+	a.handleCommand("/agent")
 
-	cands := a.agentCandidates()
-	if len(cands) != 1 || cands[0].Name != "reviewer" {
-		t.Fatalf("candidates = %+v, want only reviewer", cands)
+	if !a.agentPickerOpen {
+		t.Fatalf("expected /agent to open the picker")
+	}
+	if got, _ := a.agentSelection(); got.Name != profiles.DebugProfile {
+		t.Fatalf("selection = %q, want %q", got.Name, profiles.DebugProfile)
+	}
+}
+
+// /agent tolerates trailing whitespace and still opens the picker.
+func TestAgentCommandWithTrailingSpaceOpensPicker(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	a.loadAgents()
+	a.handleCommand("/agent   ")
+
+	if !a.agentPickerOpen {
+		t.Fatalf("expected '/agent   ' to open the picker")
+	}
+}
+
+// /agent with a subcommand still dispatches to background-agent management.
+func TestAgentCommandWithSubcommandDoesNotOpenPicker(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	a.loadAgents()
+	a.handleCommand("/agent list")
+
+	if a.agentPickerOpen {
+		t.Fatalf("expected /agent list to dispatch, not open the picker")
+	}
+	if a.view != viewAgent {
+		t.Fatalf("view = %q, want agent list view", a.view)
+	}
+}
+
+// Esc closes the picker and leaves the composer untouched.
+func TestAgentPickerEscCloses(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	a.loadAgents()
+	a.openAgentPicker()
+	a.editor.SetValue("question")
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEsc})
+
+	if a.agentPickerOpen {
+		t.Fatalf("expected esc to close the picker")
+	}
+	if a.editor.Value() != "question" {
+		t.Fatalf("prompt = %q, want it untouched", a.editor.Value())
+	}
+}
+
+// When the picker is open, ordinary typing preserves the highlighted agent
+// rather than resetting it, so the selection stays stable while the user
+// edits the prompt.
+func TestAgentPickerTypingPreservesHighlight(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	a.loadAgents()
+	a.openAgentPicker()
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+
+	if !a.agentPickerOpen {
+		t.Fatalf("expected the picker to stay open while typing")
+	}
+	if got, _ := a.agentSelection(); got.Name != profiles.DebugProfile {
+		t.Fatalf("selection = %q, want it preserved", got.Name)
 	}
 }
 
@@ -213,7 +293,7 @@ func TestAgentPickerNoneClearsSelection(t *testing.T) {
 	saveProfile(t, "reviewer")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
-	a.editor.SetValue("@agent:")
+	a.openAgentPicker()
 	a.namedAgent = "reviewer"
 	a.agentIndex = len(a.agentCandidates()) // the (none) slot
 
@@ -231,8 +311,7 @@ func TestEngagedAgentReachesTurnInput(t *testing.T) {
 	saveProfile(t, "reviewer")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
-	a.editor.SetValue("@agent:")
-	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+	a.openAgentPicker()
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
 
 	if a.namedAgent == "" {
@@ -337,8 +416,14 @@ func TestAgentPickerEngagingBackgroundDefinitionAppliesTools(t *testing.T) {
 
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
-	a.editor.SetValue("@agent:nightly")
-	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+	a.openAgentPicker()
+	for {
+		c, _ := a.agentSelection()
+		if c.Name == "nightly-audit" {
+			break
+		}
+		a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+	}
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
 
 	if a.namedAgent != "nightly-audit" {
@@ -360,7 +445,7 @@ func TestAgentPickerCtrlGStartsOnlyBackgroundDefinitions(t *testing.T) {
 
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
-	a.editor.SetValue("@agent:")
+	a.openAgentPicker()
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
 	if got, _ := a.agentSelection(); got.Name != "reviewer" {
 		t.Fatalf("selection = %+v, want reviewer", got)
@@ -385,8 +470,14 @@ func TestEngagedAgentIsDormantOutsideAgentMode(t *testing.T) {
 	saveBackgroundAgent(t, "nightly-audit", "Read")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
-	a.editor.SetValue("@agent:nightly")
-	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+	a.openAgentPicker()
+	for {
+		c, _ := a.agentSelection()
+		if c.Name == "nightly-audit" {
+			break
+		}
+		a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+	}
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if a.engagedAgent() != "nightly-audit" {
 		t.Fatalf("engagedAgent = %q, want it engaged in agent mode", a.engagedAgent())

@@ -60,8 +60,9 @@ func TestFilePrefixSkipsAgentScheme(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected a file prefix for the trailing token")
 	}
-	// The prefix returned is the raw text after '@'; the picker itself filters
-	// the agent: scheme out.
+	// The prefix returned is the raw text after '@'; the file chooser uses it
+	// as a literal filter. @agent: is no longer a special agent-picker prefix
+	// in the TUI, but it is still reserved from attachment parsing.
 	if prefix != "agent:security" {
 		t.Fatalf("prefix = %q, want agent:security", prefix)
 	}
@@ -170,18 +171,17 @@ func TestFilePickerEscDismissesAndTypingReopens(t *testing.T) {
 	}
 }
 
-func TestFilePickerAgentSchemeShowsAgentsNotFiles(t *testing.T) {
+func TestFilePickerAgentSchemeIsNotAgentPicker(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 	a := NewApp(t.TempDir(), "")
 	a.mode = "agent"
 	setFileList(a, "internal/agent/agent.go")
 	a.editor.SetValue("@agent:")
 	a.editor.CursorEnd()
-	if a.filePickerVisible() {
-		t.Fatalf("file picker should not show for @agent:")
-	}
-	if !a.agentPickerVisible() {
-		t.Fatalf("agent picker should show for @agent:")
+	// @agent: no longer opens the agent picker; it is an ordinary file-chooser
+	// prefix that happens not to match any file here.
+	if a.agentPickerVisible() {
+		t.Fatalf("agent picker should not show for @agent:")
 	}
 }
 
