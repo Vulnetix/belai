@@ -24,11 +24,15 @@ type Write struct {
 // Definition returns the static tool metadata.
 func (w *Write) Definition() Definition {
 	return Definition{
-		Name:        "Write",
-		Description: "Write the full content of a file at a given relative path, creating parent directories as needed. The existing file, if any, is replaced atomically.",
+		Name: "Write",
+		Description: "Write a whole file under the working directory, creating parent directories as needed. " +
+			"There is no append or partial-write mode: content replaces the file entirely, so pass the complete new contents. " +
+			"The write is atomic (temp file plus rename), so a failure never leaves a half-written file, and the path is confined to the working directory. " +
+			"Content is bounded to 1 MiB. Prefer Edit for a change to an existing file; Write is for a new file or a full rewrite. " +
+			"Mutating, so it asks for approval unless an explicit allow rule matches, and it is unavailable in plan mode.",
 		Properties: map[string]Property{
-			"path":    {Type: "string", Description: "Relative path to the file to write"},
-			"content": {Type: "string", Description: "The exact bytes to write"},
+			"path":    {Type: "string", Description: "Path to the file to write, relative to the working directory; it need not exist yet"},
+			"content": {Type: "string", Description: "The exact and complete bytes to write; this replaces the whole file"},
 		},
 		Required: []string{"path", "content"},
 	}

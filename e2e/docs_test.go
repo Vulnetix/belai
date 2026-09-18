@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/vulnetix/signet/internal/tools"
 )
 
 // docFiles returns every markdown file the repository ships, paired with its
@@ -178,6 +180,58 @@ func TestDocsAdvertiseNoAltBindings(t *testing.T) {
 			for _, m := range matches {
 				t.Errorf("%s advertises the alt keycap %s; alt chords never reach the TUI", name, m)
 			}
+		}
+	}
+}
+
+// Every builtin tool the default registry ships must be named in the agent
+// profile schema's allowed-tool list, and that list must not name one the
+// registry does not have. The list is what `agentprofile.Validate` accepts, so
+// a tool missing from the docs is a tool nobody can put in a profile.
+func TestDocsListEveryBuiltinTool(t *testing.T) {
+	docs := docFiles(t)
+	body, ok := docs["docs/agent-profiles.md"]
+	if !ok {
+		t.Fatal("docs/agent-profiles.md not found")
+	}
+
+	for _, name := range tools.Default(t.TempDir(), false).Names() {
+		if !strings.Contains(body, "`"+name+"`") {
+			t.Errorf("docs/agent-profiles.md does not name the builtin tool %q", name)
+		}
+	}
+}
+
+// Plan mode drops Bash, and the docs have to say so rather than describing
+// the read-only allowlist that plan mode no longer consults. The allowlist
+// itself still exists for the read-only Bash tool, so the check is that the
+// three docs which describe plan mode state the removal.
+func TestDocsSayPlanModeHasNoBash(t *testing.T) {
+	docs := docFiles(t)
+	for _, name := range []string{"README.md", "AGENTS.md", "docs/architecture.md", "docs/development.md"} {
+		body, ok := docs[name]
+		if !ok {
+			t.Fatalf("%s not found", name)
+		}
+		// Backticks are dropped first: the docs write the tool as `Bash` in
+		// most places and as Bash in a few, and the claim is the same either
+		// way.
+		lower := strings.ToLower(strings.ReplaceAll(body, "`", ""))
+		if !strings.Contains(lower, "plan mode") {
+			continue
+		}
+		said := false
+		for _, phrase := range []string{
+			"no bash", "bash is not available", "unavailable in plan mode",
+			"bash is gone", "plan mode has no bash",
+		} {
+			if strings.Contains(lower, phrase) {
+				said = true
+				break
+			}
+		}
+		if !said {
+			t.Errorf("%s describes plan mode without saying Bash is unavailable there", name)
 		}
 	}
 }

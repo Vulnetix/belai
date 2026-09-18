@@ -346,15 +346,36 @@ it. With no approver (the CLI, subagents) the existing
 
 ### Plan mode (read-only)
 
-Mirrors Pi's plan-mode extension:
+Plan mode narrows the tool surface in two places that must agree:
 
-- Built-in edit/write tools (`Write`, `Edit`, and the denylisted family
-  `apply_patch`/`patch`/…) are disabled; other tools remain active.
-- `Bash` is registered by default and restricted to a read-only allowlist
-  (`cat`, `grep`, `find`, `ls`, read-only `git` subcommands such as
-  `status`/`log`/`diff`, `uname`, etc.).
-  Mutating commands (`rm`, `mv`, `cp`, `mkdir`, `touch`, `git add/commit/push`,
-  package installs, `sudo`/`kill`, editors) are blocked.
+- `Registry.Plan()` is the **advertisement** half. It removes every mutating
+  tool and then removes `Bash` as well, so the request the model receives
+  does not list a tool it may not call.
+- `modes.ToolAllowed` is the **enforcement** half. It refuses the write-tool
+  denylist (`write`, `edit`, `apply_patch`, `patch`, …) and refuses `Bash`
+  outright, case-folded, whatever the command says.
+
+Business rules and edge cases:
+
+- **`Bash` is gone, not restricted.** Read-only `Bash` is not mutating, so
+  `Registry.ReadOnly()` keeps it; `Registry.Plan()` does not. An arbitrary
+  command string is the one tool call whose effect cannot be read off the
+  call itself, and its read-only guarantee rests on a command allowlist
+  rather than on the tool's shape. Everything plan mode needs is covered by
+  tools whose argument shape is fixed, so the exception is not worth its
+  blast radius. `cat x` is refused there alongside `rm -rf /`.
+- **`modes.BashAllowed` is still exported** — the read-only `Bash` tool and
+  the `Git` native gate on it — but plan mode no longer consults it.
+- **The surface follows the turn, not the session.** The mode classifier can
+  route a single prompt to plan mode inside a session constructed in agent
+  mode. Both tool surfaces are built once at session construction and
+  `Session.toolSurface` picks per turn, so the advertised list, the sealed
+  `<tools>` block, and the execution gate all move together.
+- **Explore subagents build the plan surface directly**
+  (`DefaultWithCaps(...).Plan()`) rather than relying on the gate alone, so
+  the exploration preamble cannot promise a `Bash` the gate will refuse.
+- Investigation in plan mode goes through `Read`, `Grep`, `Glob`, `Cd`, and
+  the native read-only catalogue (`Cat`, `LS`, `Find`, `Git`, `JQ`, …).
 - Toggle via `/mode plan`, `Ctrl+Alt+P`, or `--plan`; `/todos` shows progress.
 - After the agent emits a numbered plan under a `Plan:` header, the steps are
   extracted (`internal/plans/extract.go`) and the user is prompted with two
@@ -598,7 +619,9 @@ agents installed but holding no importable key are listed with the reason.
 
 `internal/prompt` assembles the system prompt. It carries exactly one context
 block at a time (active plan, goal, or profile) and rewrites assistant voice
-guidance when `caveman` is on. Caveman is off by default (`nil` or `false`).
+guidance when `caveman` is on. `run.SealSystem` seals it as a `<system>` block
+and, when the turn carries tools, seals the tool briefing beside it as its own
+`<tools>` block — see [The sealed tools block](#the-sealed-tools-block). Caveman is off by default (`nil` or `false`).
 Toggling it from the chat view with `f2` persists the setting to the
 current scope (project by default), invalidates the cached agent session so
 the next turn picks up the new system prompt, and emits a `caveman: on/off`

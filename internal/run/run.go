@@ -853,7 +853,20 @@ func SealSystem(cfg Config, pool *nonce.Pool, opts prompt.Options) (string, erro
 	if err != nil {
 		return "", fmt.Errorf("build system prompt: %w", err)
 	}
-	sealed, err := rolemanager.BuildSystemPrompt([]rolemanager.SystemBlock{{Source: rolemanager.SourceHarness, Content: sysText}}, pool)
+	blocks := []rolemanager.SystemBlock{{Source: rolemanager.SourceHarness, Content: sysText}}
+	// The tool briefing is sealed as its own <tools> block. It is harness
+	// text like the system block, but it describes a surface the harness
+	// enforces elsewhere (the registry and the plan-mode gate), so keeping it
+	// separately sealed means a forged tool list cannot ride in on the
+	// system block's integrity hash.
+	if toolsText := prompt.ToolsBlock(opts.Tools); toolsText != "" {
+		blocks = append(blocks, rolemanager.SystemBlock{
+			Source:  rolemanager.SourceHarness,
+			Content: toolsText,
+			Kind:    "tools",
+		})
+	}
+	sealed, err := rolemanager.BuildSystemPrompt(blocks, pool)
 	if err != nil {
 		return "", fmt.Errorf("seal system prompt: %w", err)
 	}

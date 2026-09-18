@@ -192,6 +192,48 @@ boundary may still be seconds away.
 
 With no `-prompt` and a TTY on both stdin and stdout, Signet starts the TUI. Set `SIGNET_NO_TUI=1` (or `CI=1`) to force the noninteractive path — useful when piping output or reproducing a CI failure locally.
 
+## Tool surface
+
+The tools the model is offered are built by `tools.Default` /
+`tools.DefaultWithCaps` and narrowed per mode. The narrowing happens in two
+places that must agree — `Registry.Plan()` decides what is *advertised*,
+`modes.ToolAllowed` decides what is *executed* — and both are exercised by
+`internal/tools` and `internal/modes` tests.
+
+Business rules and edge cases:
+
+- **Plan mode has no `Bash`.** Not "restricted `Bash`": the tool is absent
+  from the plan-mode registry, and the gate refuses it whatever the command
+  says. Read-only `Bash` survives the read-only master switch
+  (`Registry.ReadOnly()`) but not the plan narrowing. Investigation there
+  goes through `Read`, `Grep`, `Glob`, `Cd`, and the native read-only
+  catalogue.
+- **The surface follows the turn.** The mode classifier can route a single
+  prompt to plan mode inside an agent-mode session. Both tool surfaces are
+  built at session construction and `Session.toolSurface` picks per turn, so
+  the advertised list, the sealed `<tools>` block, and the execution gate
+  never disagree.
+- **Descriptions are the model's only manual.** Each builtin's `Description`
+  opens with a one-sentence summary — `prompt.Summarise` takes exactly that
+  sentence for the `<tools>` index — and then states its bounds, its failure
+  modes, and which sibling tool to prefer. Keep that shape when adding one.
+- **`Glob` matches in-process.** `fd` only enumerates; `matchGlob` applies the
+  pattern. Handing `fd` a pattern containing `/` makes it error out, which is
+  what made every recursive glob return nothing. See
+  [architecture.md](architecture.md#search-and-file-location-tools).
+- **Only `Bash` results are classified.** Every result is sanitized; only
+  `Bash` continues to the classifier, because it is the only tool whose
+  argument is an arbitrary command string. Adding a tool that takes free-form
+  input means adding its kind to `tools.classifierKinds` — a kind absent from
+  the set is sanitize-only. See
+  [architecture.md](architecture.md#tool-result-trust).
+- **`Cd` moves the spelling, not the reach.** The session root stays the
+  confinement boundary; the working directory moves inside it. A path
+  starting with `/` is root-relative, anything else is relative to the
+  working directory, and a refused move leaves the working directory exactly
+  where it was. See
+  [architecture.md](architecture.md#working-directory-cd).
+
 ## Credentials for QA
 
 Provider selection order: the `-provider` flag, then `$SIGNET_PROVIDER`, then `$PI_PROVIDER`, then a default of `openai`. `$SIGNET_BASE_URL` overrides the provider base URL, which is how you point a QA run at a mock or a proxy.
@@ -322,6 +364,24 @@ leaves the cycle with the cursor at the end; typing any character leaves the
 cycle and edits the loaded prompt rather than clearing the composer; `esc`
 restores what you had typed. With no saved prompts, confirm `up` still browses
 session history and the strip is absent.
+
+**Plan-mode tool surface.** `shift+tab` to plan mode and ask for something
+that would tempt a shell (for example, "what does CI run on push?"). Confirm
+the model reaches for `Read`/`Grep`/`Glob`/`Git` rather than `Bash`, and that
+it does not announce a `Bash` call being refused — if it does, the sealed
+`<tools>` block and the advertised registry have drifted apart.
+
+**Glob.** In the TUI, ask for "every Go file under internal" and confirm the
+result is a non-empty list. Then run the same thing with `fd` off `$PATH`
+(`env PATH=/usr/bin:/bin` with `fd` elsewhere, or temporarily rename it) and
+confirm the answer is identical — the two enumerators must not disagree.
+
+**Working directory.** Ask the agent to move into a subdirectory and read a
+file by its short name. Confirm one `working directory: /…` line appears in
+the thread, the footer's first line follows it, and that asking it to leave
+the repository (`cd ..` past the root) is refused without moving. Change the
+model or toggle a mode to force a session rebuild and confirm the footer
+returns to the session root.
 
 **Release parity.** `just build-all` cross-compiles all six release targets into `bin/` with the same ldflags the release workflow uses, and writes `bin/checksums.txt`. Run the host binary and check `-version` reports the git description.
 

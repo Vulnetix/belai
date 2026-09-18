@@ -23,6 +23,12 @@ const (
 type SystemBlock struct {
 	Source  TrustedSource
 	Content string
+	// Kind is the delimiter kind the block is sealed as. Empty means
+	// "system", which is what every block was before the field existed. A
+	// non-empty kind must be a known harness kind: an unknown one would be
+	// left untouched by Egress and so would reach the provider unsealed,
+	// which is the one thing this boundary exists to prevent.
+	Kind string
 }
 
 // isTrusted reports whether a source may enter system/agent blocks.
@@ -36,7 +42,8 @@ type Noncer interface {
 	Valid(string) bool
 }
 
-// VerifyTrustedBlocks rejects any block not from a trusted source. This is the
+// VerifyTrustedBlocks rejects any block not from a trusted source, and any
+// block naming a delimiter kind the engine does not manage. This is the
 // boundary that guarantees untrusted text never enters system or agent blocks.
 func VerifyTrustedBlocks(blocks []SystemBlock) error {
 	for _, b := range blocks {
@@ -44,8 +51,20 @@ func VerifyTrustedBlocks(blocks []SystemBlock) error {
 			record("boundary_verify_failure", "", "", string(b.Source), 0)
 			return fmt.Errorf("block from source %q may not enter system/agent blocks", b.Source)
 		}
+		if b.Kind != "" && !delimiters.KnownKinds[b.Kind] {
+			record("boundary_verify_failure", "", "", b.Kind, 0)
+			return fmt.Errorf("unknown delimiter kind %q", b.Kind)
+		}
 	}
 	return nil
+}
+
+// blockKind resolves a block's delimiter kind, defaulting to "system".
+func blockKind(b SystemBlock) string {
+	if b.Kind == "" {
+		return "system"
+	}
+	return b.Kind
 }
 
 // BuildSystemPrompt assembles the system/agent prompt from trusted blocks only.
@@ -66,7 +85,7 @@ func BuildSystemPrompt(blocks []SystemBlock, noncer Noncer) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("reserve nonce: %w", err)
 		}
-		wrapped := delimiters.Wrap("system", nonce, blk.Content)
+		wrapped := delimiters.Wrap(blockKind(blk), nonce, blk.Content)
 		b.WriteString(wrapped)
 		b.WriteString("\n")
 	}

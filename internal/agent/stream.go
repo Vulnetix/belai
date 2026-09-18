@@ -292,10 +292,13 @@ func (s *Session) streamTurn(ctx context.Context, system string, turns []run.Tur
 			RetryReason:  a.Reason,
 		})
 	}
+	// The advertised surface follows the mode this turn is running in, so a
+	// plan-mode turn never offers a tool executeCall would refuse.
+	_, openAITools, anthropicTools := s.toolSurface()
 	if streaming {
-		ch, err = run.StreamTurnsWithTools(turnCtx, s.cfg, system, turns, s.client, s.pool, s.openAITools, s.anthropicTools, onRetry)
+		ch, err = run.StreamTurnsWithTools(turnCtx, s.cfg, system, turns, s.client, s.pool, openAITools, anthropicTools, onRetry)
 	} else {
-		ch = run.SendTurnsStreamed(turnCtx, s.cfg, system, turns, s.client, s.pool, s.openAITools, s.anthropicTools, onRetry)
+		ch = run.SendTurnsStreamed(turnCtx, s.cfg, system, turns, s.client, s.pool, openAITools, anthropicTools, onRetry)
 	}
 	if err != nil {
 		return run.Assistant{}, err

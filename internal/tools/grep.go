@@ -23,11 +23,14 @@ type Grep struct {
 // Definition returns the static tool metadata.
 func (g *Grep) Definition() Definition {
 	return Definition{
-		Name:        "Grep",
-		Description: "Search files under the working directory for a literal or regex pattern.",
+		Name: "Grep",
+		Description: "Search file contents under the working directory for a regular expression. " +
+			"Returns matching lines as `path:line:text`, sorted by path then line number, with long lines clipped and the total capped (200 matches by default) — a broad pattern is silently truncated, so narrow it rather than paging. " +
+			"The search is recursive from `path` (or the working directory) and confined to it. " +
+			"Use Grep to find where something is written; use Glob to find files by name.",
 		Properties: map[string]Property{
-			"pattern": {Type: "string", Description: "The pattern to search for"},
-			"path":    {Type: "string", Description: "Optional subdirectory or file to search"},
+			"pattern": {Type: "string", Description: "The regular expression to search for; a literal string is also a valid pattern"},
+			"path":    {Type: "string", Description: "Optional subdirectory or single file to search, relative to the working directory. Defaults to the working directory."},
 		},
 		Required: []string{"pattern"},
 	}

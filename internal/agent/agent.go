@@ -100,11 +100,15 @@ type Session struct {
 	pool           *nonce.Pool
 	openAITools    []wire.OpenAITool
 	anthropicTools []wire.AnthropicToolDef
-	hooks          []*hooks.Hook
-	hookRunner     *hooks.Runner
-	toolMethod     run.ToolMethod
-	steer          chan string
-	trace          *trace.Writer
+	// plan*Tools is the same registry narrowed by Registry.Plan: no mutating
+	// tools and no Bash. A plan-mode turn advertises these instead.
+	planOpenAITools    []wire.OpenAITool
+	planAnthropicTools []wire.AnthropicToolDef
+	hooks              []*hooks.Hook
+	hookRunner         *hooks.Runner
+	toolMethod         run.ToolMethod
+	steer              chan string
+	trace              *trace.Writer
 	// exploreBridge fans steering to explore subagents while a fan-out runs.
 	// It is nil/empty outside explore; the pointer form keeps Steer (called
 	// from the UI goroutine) race-free with the fan-out's lifecycle.
@@ -126,6 +130,51 @@ type Session struct {
 // message rather than stalling the UI or the loop.
 const steerBuffer = 8
 
+// wireTools renders a registry as both provider tool-definition dialects.
+func wireTools(reg *tools.Registry) ([]wire.OpenAITool, []wire.AnthropicToolDef) {
+	defs := reg.Definitions()
+	openAI := make([]wire.OpenAITool, 0, len(defs))
+	anthropic := make([]wire.AnthropicToolDef, 0, len(defs))
+	for _, d := range defs {
+		openAI = append(openAI, d.OpenAITool())
+		anthropic = append(anthropic, d.AnthropicTool())
+	}
+	if len(defs) == 0 {
+		// A registry with no tools must advertise no tools, not an empty
+		// array: some providers reject `"tools": []`.
+		return nil, nil
+	}
+	return openAI, anthropic
+}
+
+// toolDocs renders the current mode's tool surface as the sealed briefing the
+// system prompt carries.
+func (s *Session) toolDocs() prompt.ToolsOptions {
+	reg, _, _ := s.toolSurface()
+	defs := reg.Definitions()
+	docs := make([]prompt.ToolDoc, 0, len(defs))
+	for _, d := range defs {
+		docs = append(docs, prompt.ToolDoc{Name: d.Name, Summary: prompt.Summarise(d.Description)})
+	}
+	// The briefing names where relative paths actually resolve from, which is
+	// the working directory rather than the session root once a Cd has run.
+	workdir := s.workdir
+	if dir := s.registry.Cwd().Dir(); dir != "" {
+		workdir = dir
+	}
+	return prompt.ToolsOptions{Tools: docs, PlanMode: s.planMode, Workdir: workdir}
+}
+
+// toolSurface returns the tool definitions and the registry the current mode
+// actually permits. Plan mode narrows both together, so what the request
+// advertises and what executeCall will run can never diverge.
+func (s *Session) toolSurface() (*tools.Registry, []wire.OpenAITool, []wire.AnthropicToolDef) {
+	if s.planMode {
+		return s.registry.Plan(), s.planOpenAITools, s.planAnthropicTools
+	}
+	return s.registry, s.openAITools, s.anthropicTools
+}
+
 // NewSession builds a session from options.
 func NewSession(o Options) (*Session, error) {
 	maxIter := o.MaxIterations
@@ -142,16 +191,16 @@ func NewSession(o Options) (*Session, error) {
 			return nil, fmt.Errorf("seed nonce pool: %w", err)
 		}
 	}
-	var openAITools []wire.OpenAITool
-	var anthropicTools []wire.AnthropicToolDef
 	reg := o.Registry
 	if reg == nil {
 		reg = tools.NewRegistry()
 	}
-	for _, d := range reg.Definitions() {
-		openAITools = append(openAITools, d.OpenAITool())
-		anthropicTools = append(anthropicTools, d.AnthropicTool())
-	}
+	// Both surfaces are built up front because plan mode is decided per turn:
+	// the classifier can route a single prompt to plan mode inside a session
+	// that was constructed in agent mode, and the request must then advertise
+	// the plan-mode surface rather than the one the session started with.
+	openAITools, anthropicTools := wireTools(reg)
+	planOpenAITools, planAnthropicTools := wireTools(reg.Plan())
 
 	// Load validated hooks for the six declared events. Discovery fails closed:
 	// an unreadable dir yields no hooks, never an error.
@@ -176,33 +225,35 @@ func NewSession(o Options) (*Session, error) {
 		cache, _ = rolemanager.LoadCache(rolemanager.DefaultCachePath())
 	}
 	return &Session{
-		cfg:            o.Cfg,
-		client:         o.Client,
-		registry:       reg,
-		perms:          o.Perms,
-		posture:        o.Posture,
-		planMode:       o.PlanMode,
-		allowExplore:   o.AllowExplore,
-		allowClarify:   o.AllowClarify,
-		allowAsk:       o.AllowAsk,
-		askDisabled:    o.AskDisabled,
-		allowPassLoop:  o.AllowPassLoop,
-		maxIter:        maxIter,
-		cache:          cache,
-		caps:           o.Caps,
-		opts:           o.PromptOptions,
-		workdir:        o.Workdir,
-		state:          o.State,
-		settings:       o.Settings,
-		pool:           pool,
-		openAITools:    openAITools,
-		anthropicTools: anthropicTools,
-		hooks:          hs,
-		hookRunner:     runner,
-		toolMethod:     method,
-		steer:          make(chan string, steerBuffer),
-		trace:          trace.Env(),
-		diffs:          filediff.NewRecorder(o.Workdir),
+		cfg:                o.Cfg,
+		client:             o.Client,
+		registry:           reg,
+		perms:              o.Perms,
+		posture:            o.Posture,
+		planMode:           o.PlanMode,
+		allowExplore:       o.AllowExplore,
+		allowClarify:       o.AllowClarify,
+		allowAsk:           o.AllowAsk,
+		askDisabled:        o.AskDisabled,
+		allowPassLoop:      o.AllowPassLoop,
+		maxIter:            maxIter,
+		cache:              cache,
+		caps:               o.Caps,
+		opts:               o.PromptOptions,
+		workdir:            o.Workdir,
+		state:              o.State,
+		settings:           o.Settings,
+		pool:               pool,
+		openAITools:        openAITools,
+		anthropicTools:     anthropicTools,
+		planOpenAITools:    planOpenAITools,
+		planAnthropicTools: planAnthropicTools,
+		hooks:              hs,
+		hookRunner:         runner,
+		toolMethod:         method,
+		steer:              make(chan string, steerBuffer),
+		trace:              trace.Env(),
+		diffs:              filediff.NewRecorder(o.Workdir),
 	}, nil
 }
 
@@ -368,6 +419,11 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 			}
 		}
 	}
+
+	// The sealed <tools> block describes the same narrowed surface the
+	// request advertises, so the briefing cannot promise a tool the model
+	// will not be given.
+	opts.Tools = s.toolDocs()
 
 	system, err := run.SealSystem(s.cfg, s.pool, opts)
 	if err != nil {

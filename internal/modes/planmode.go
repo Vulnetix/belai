@@ -127,13 +127,26 @@ var writeTools = map[string]bool{
 func IsWriteTool(name string) bool { return writeTools[strings.ToLower(name)] }
 
 // BashAllowed reports whether a bash command is within the read-only allowlist.
-// It forwards to internal/tools, the single source of truth; plan mode and the
-// read-only Bash tool share one parser and one word list.
+// It forwards to internal/tools, the single source of truth; the read-only
+// Bash tool and the read-only Git native share one parser and one word list.
+//
+// Plan mode no longer consults it: Bash is absent from the plan-mode tool
+// surface entirely, so there is no command there to allow. It remains
+// exported because the read-only Bash tool and the Git native still gate on
+// it, and because callers outside plan mode ask the same question.
 func BashAllowed(command string) bool { return tools.BashAllowed(command) }
 
 // ToolAllowed reports whether a tool call may proceed. In plan mode write
-// tools are disabled and bash is restricted to the read-only allowlist; other
-// tools remain active. Names are case-folded.
+// tools are disabled and Bash is disabled outright — read-only or not — so
+// investigation goes through the tools whose argument shape is fixed (Read,
+// Grep, Glob, and the native read-only catalogue). Other tools remain active.
+// Names are case-folded, so a registered "Bash" cannot slip past a lowercase
+// comparison.
+//
+// This is the enforcement half of the plan-mode surface; Registry.Plan is the
+// advertisement half. They must agree: a tool the registry still offers but
+// this function refuses produces a call the model cannot understand being
+// denied.
 func ToolAllowed(name string, args map[string]any, planEnabled bool) bool {
 	if !planEnabled {
 		return true
@@ -141,9 +154,5 @@ func ToolAllowed(name string, args map[string]any, planEnabled bool) bool {
 	if IsWriteTool(name) {
 		return false
 	}
-	if strings.EqualFold(name, "bash") {
-		cmd, _ := args["command"].(string)
-		return BashAllowed(cmd)
-	}
-	return true
+	return !strings.EqualFold(name, "bash")
 }

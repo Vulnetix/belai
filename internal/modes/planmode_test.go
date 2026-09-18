@@ -19,10 +19,15 @@ func TestToolAllowed(t *testing.T) {
 		{"write blocked in plan", "write", nil, true, false},
 		{"edit blocked in plan", "edit", nil, true, false},
 		{"read allowed in plan", "read", nil, true, true},
-		{"bash cat allowed in plan", "bash", map[string]any{"command": "cat x"}, true, true},
+		{"grep allowed in plan", "grep", map[string]any{"pattern": "x"}, true, true},
+		// Bash is off in plan mode whatever the command says: a read-only
+		// command is refused alongside a mutating one, because the surface
+		// does not carry the tool at all.
+		{"bash cat blocked in plan", "bash", map[string]any{"command": "cat x"}, true, false},
 		{"bash rm blocked in plan", "bash", map[string]any{"command": "rm x"}, true, false},
-		{"bash git status allowed in plan", "bash", map[string]any{"command": "git status"}, true, true},
+		{"bash git status blocked in plan", "bash", map[string]any{"command": "git status"}, true, false},
 		{"bash git push blocked in plan", "bash", map[string]any{"command": "git push"}, true, false},
+		{"bash with no args blocked in plan", "bash", nil, true, false},
 		{"bash allowed when not plan", "bash", map[string]any{"command": "rm x"}, false, true},
 	}
 	for _, tc := range cases {
@@ -122,11 +127,14 @@ func TestPlanStateProgress(t *testing.T) {
 }
 
 func TestToolAllowedCaseFold(t *testing.T) {
-	if !ToolAllowed("Bash", map[string]any{"command": "cat x"}, true) {
-		t.Fatal("Bash cat should be allowed in plan mode")
+	if ToolAllowed("Bash", map[string]any{"command": "cat x"}, true) {
+		t.Fatal("Bash should be blocked in plan mode whatever the command")
 	}
-	if ToolAllowed("Bash", map[string]any{"command": "rm x"}, true) {
-		t.Fatal("Bash rm should be blocked in plan mode")
+	if ToolAllowed("BASH", map[string]any{"command": "cat x"}, true) {
+		t.Fatal("a differently-cased Bash must not bypass the plan-mode gate")
+	}
+	if !ToolAllowed("Bash", map[string]any{"command": "rm x"}, false) {
+		t.Fatal("Bash should be allowed outside plan mode")
 	}
 	if ToolAllowed("Write", nil, true) {
 		t.Fatal("Write should be blocked in plan mode")

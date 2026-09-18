@@ -45,6 +45,12 @@ type Options struct {
 	// Empty values are omitted rather than guessed at.
 	Provider string
 	Model    string
+	// Tools describes the tool surface the model will receive. It is rendered
+	// as its own sealed <tools> block rather than as part of the system text,
+	// so the briefing and the tool list it describes can be verified — and
+	// stripped — independently. A zero value renders no block, which is what
+	// a tool-less turn (the classifier) requires.
+	Tools ToolsOptions
 }
 
 // identity tells the model which of the three identities in a session is its

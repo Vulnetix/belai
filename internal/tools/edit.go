@@ -20,13 +20,16 @@ type Edit struct {
 // Definition returns the static tool metadata.
 func (e *Edit) Definition() Definition {
 	return Definition{
-		Name:        "Edit",
-		Description: "Edit a file by replacing an exact byte string. No whitespace or line-ending normalisation is performed: old_string must match exactly, including indentation. Pass replace_all=true to replace every occurrence when the string is not unique.",
+		Name: "Edit",
+		Description: "Edit an existing file under the working directory by replacing an exact byte string. " +
+			"No whitespace or line-ending normalisation is performed: old_string must match the file byte for byte, including indentation. Read the file first. " +
+			"The call fails, leaving the file byte-identical, when the file does not exist, is binary, is over 1 MiB, when old_string equals new_string, when old_string is not found, or when it appears more than once without replace_all=true. " +
+			"The write is atomic. Mutating, so it asks for approval unless an explicit allow rule matches, and it is unavailable in plan mode.",
 		Properties: map[string]Property{
-			"path":        {Type: "string", Description: "Relative path to the file to edit"},
-			"old_string":  {Type: "string", Description: "The exact bytes to replace"},
-			"new_string":  {Type: "string", Description: "The replacement bytes"},
-			"replace_all": {Type: "boolean", Description: "Replace every occurrence instead of the unique one (default false)"},
+			"path":        {Type: "string", Description: "Path to the file to edit, relative to the working directory; the file must already exist"},
+			"old_string":  {Type: "string", Description: "The exact bytes to replace; include surrounding context to make it unique"},
+			"new_string":  {Type: "string", Description: "The replacement bytes; must differ from old_string"},
+			"replace_all": {Type: "boolean", Description: "Replace every occurrence instead of requiring a unique match (default false)"},
 		},
 		Required: []string{"path", "old_string", "new_string"},
 	}

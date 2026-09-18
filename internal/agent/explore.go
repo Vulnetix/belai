@@ -111,7 +111,12 @@ func (s *Session) goalSurveyTurns(ctx context.Context, goalText string) []run.Tu
 // resilience.max_explore_iterations and may reset that budget when steering
 // arrives through the steer channel.
 func (s *Session) runSubagent(ctx context.Context, t explore.Task, steerCh chan string) string {
-	reg := tools.DefaultWithCaps(s.workdir, true, s.caps) // read-only native + base tools
+	// The subagent runs in plan mode, so it gets the plan-mode surface:
+	// read-only native and base tools with Bash removed. Building it with
+	// .Plan() rather than relying on PlanMode alone keeps the advertised
+	// list and the enforced list the same, so the preamble below cannot
+	// promise a Bash the gate will refuse.
+	reg := tools.DefaultWithCaps(s.workdir, true, s.caps).Plan()
 
 	grounding := s.groundingProbe(ctx).digest()
 	promptText := t.Prompt

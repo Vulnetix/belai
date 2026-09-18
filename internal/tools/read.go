@@ -21,12 +21,16 @@ type Read struct {
 // Definition returns the static tool metadata.
 func (r *Read) Definition() Definition {
 	return Definition{
-		Name:        "Read",
-		Description: "Read the contents of a file at a given path.",
+		Name: "Read",
+		Description: "Read the contents of a text file under the working directory. " +
+			"Returns the file's bytes verbatim, with no line numbers added. " +
+			"The path is confined to the working directory: a path escaping it, a directory, or a binary file (one containing a NUL byte) is an error rather than a partial answer. " +
+			"Reads are bounded (64 KiB by default); a larger file comes back truncated, so page through it with offset and limit. " +
+			"Read a file before editing it — Edit matches exact bytes and will fail on a guess.",
 		Properties: map[string]Property{
-			"path":   {Type: "string", Description: "Relative path to the file"},
-			"offset": {Type: "integer", Description: "Optional byte offset to start reading"},
-			"limit":  {Type: "integer", Description: "Optional maximum bytes to read"},
+			"path":   {Type: "string", Description: "Path to the file, relative to the working directory"},
+			"offset": {Type: "integer", Description: "Optional byte (not line) offset to start reading from; omit to start at the beginning"},
+			"limit":  {Type: "integer", Description: "Optional maximum number of bytes to read; values above the tool's own cap are clamped to it"},
 		},
 		Required: []string{"path"},
 	}

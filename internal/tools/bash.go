@@ -131,15 +131,25 @@ type Bash struct {
 // Definition returns the static tool metadata. The description branches on
 // the mode so the model knows which execution model it has.
 func (b *Bash) Definition() Definition {
-	desc := "Run a local shell command. The full shell is available (pipes, redirections, and command chaining)."
+	desc := "Run a shell command in the working directory. " +
+		"The full shell is available: pipes, redirections, chaining, and substitutions all work. " +
+		"Output is the command's stdout and stderr interleaved, capped at 64 KiB and truncated beyond that, with a non-zero exit reported as a trailing `exit status N` line. " +
+		"The command is killed after 30 seconds, and whatever it printed up to that point is still returned. " +
+		"Provider credentials are stripped from the environment, so a command cannot read or forward them. " +
+		"Mutating, so it asks for approval unless an explicit allow rule matches, and it is unavailable in plan mode — use Read, Grep, Glob, and the read-only command tools there instead."
+	arg := "The command to run, e.g. \"go test ./... | tail -20\" or \"git commit -m msg\""
 	if b.ReadOnly {
-		desc = "Run a read-only local shell command: a single command from the read-only allowlist (no pipes, redirections, or command chaining)."
+		desc = "Run one read-only shell command in the working directory. " +
+			"It does not run through a shell, so pipes, redirections, chaining, substitutions, and newlines are rejected rather than escaped — send a single command with its arguments. " +
+			"Only commands on the read-only allowlist are permitted (inspection utilities such as `cat`, `ls`, `head`, `find`, `wc`, `sort`, and read-only `git` subcommands: status, log, diff, show, rev-parse, ls-files, grep, describe); anything that could write, delete, or execute is refused. " +
+			"Output is capped at 64 KiB, the command is killed after 30 seconds, and provider credentials are stripped from the environment."
+		arg = "The single command to run, e.g. \"git status\" or \"ls -la internal\" — no pipes, redirections, or chaining"
 	}
 	return Definition{
 		Name:        "Bash",
 		Description: desc,
 		Properties: map[string]Property{
-			"command": {Type: "string", Description: "The command to run, e.g. \"git status\" or \"ls -la\""},
+			"command": {Type: "string", Description: arg},
 		},
 		Required: []string{"command"},
 	}
