@@ -240,3 +240,36 @@ func TestPrintBannerSilentAtDefaults(t *testing.T) {
 		t.Fatalf("banner at defaults = %q, want no output", b)
 	}
 }
+
+// AllIgnore is the one definition of "the operator turned guardrails off", so
+// it has to cover every gate — including any gate added later. A gate missing
+// from it is a gate that keeps enforcing after the switch is off.
+func TestAllIgnoreCoversEveryGate(t *testing.T) {
+	p := AllIgnore()
+	if len(p) != len(AllGates) {
+		t.Fatalf("AllIgnore has %d entries, want %d (one per gate)", len(p), len(AllGates))
+	}
+	for _, g := range AllGates {
+		if got := p.Level(g); got != Ignore {
+			t.Errorf("AllIgnore gate %q = %q, want ignore", g, got)
+		}
+	}
+}
+
+// It returns a fresh map each time: a caller that mutates one policy must not
+// change what the next caller gets.
+func TestAllIgnoreIsNotShared(t *testing.T) {
+	a := AllIgnore()
+	a[ToolResultUnsafe] = Enforce
+	if AllIgnore().Level(ToolResultUnsafe) != Ignore {
+		t.Fatal("AllIgnore returned a shared map")
+	}
+}
+
+// Every gate off is a downgrade of every gate that defaults to enforce, so the
+// startup banner has something to report.
+func TestAllIgnoreReportsDowngrades(t *testing.T) {
+	if len(AllIgnore().Downgrades()) == 0 {
+		t.Fatal("AllIgnore reported no downgrades")
+	}
+}

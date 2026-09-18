@@ -11,6 +11,7 @@ import (
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/signet/internal/sanitize"
 	"github.com/vulnetix/signet/internal/session"
 	"github.com/vulnetix/signet/internal/tools"
 	"github.com/vulnetix/signet/internal/tui/components"
@@ -175,7 +176,7 @@ func (a *App) validateAttachmentCmd(id int, rel string) tea.Cmd {
 	cfg := a.cfg
 	client := a.client
 	workdir := a.workdir
-	pol := a.posture
+	pol := a.effectivePosture()
 	return func() tea.Msg {
 		ctx := context.Background()
 		read := &tools.Read{Root: workdir, MaxBytes: 64 * 1024}
@@ -183,17 +184,19 @@ func (a *App) validateAttachmentCmd(id int, rel string) tea.Cmd {
 		if err != nil {
 			return attachValidatedMsg{id: id, err: err, sentinel: rolemanager.SentinelMalformed}
 		}
+		// With the gate ignored the verdict cannot change the outcome, so the
+		// classifier is not called at all. Calling it and then discarding the
+		// answer would spend a round trip per attachment and send the file to
+		// the provider's classifier turn, which is the opposite of what
+		// turning guardrails off asks for. Sanitising still runs.
+		if pol.Level(posture.ToolResultUnsafe) == posture.Ignore {
+			return attachValidatedMsg{id: id, body: sanitize.Sanitize(res.Content), sentinel: rolemanager.SentinelSafe}
+		}
 		pipe := run.NewPipeline(cfg, client, a.cache)
 		dec, perr := pipe.Process(ctx, res)
 		body := res.Content
 		if perr == nil && dec.Action == rolemanager.ActionProceed {
 			body = dec.Content
-		}
-		// If the posture ignores unsafe tool results, pass the attachment
-		// through anyway.
-		if perr == nil && dec.Action != rolemanager.ActionProceed && pol.Level(posture.ToolResultUnsafe) == posture.Ignore {
-			body = dec.Content
-			dec.Action = rolemanager.ActionProceed
 		}
 		return attachValidatedMsg{id: id, body: body, err: perr, sentinel: dec.Sentinel}
 	}
@@ -213,7 +216,7 @@ func (a *App) handleAttachValidated(m attachValidatedMsg) tea.Cmd {
 	if m.err != nil {
 		att.state = attachRejected
 		att.reason = m.err.Error()
-	} else if m.sentinel.IsSafe() || a.posture.Level(posture.ToolResultUnsafe) == posture.Ignore {
+	} else if m.sentinel.IsSafe() || a.effectivePosture().Level(posture.ToolResultUnsafe) == posture.Ignore {
 		att.body = m.body
 		att.state = attachSafe
 	} else {

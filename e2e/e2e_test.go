@@ -1243,3 +1243,41 @@ func TestShapedToolResultSkipsTheClassifier(t *testing.T) {
 		t.Fatalf("shaped tool result was withheld: %q", tm.toolUsers)
 	}
 }
+
+// `"guardrails": false` in a settings file must reach the CLI exactly as
+// -guardrails=false does. It did not: main read only the flag, so a settings
+// file that turned guardrails off left every gate enforcing on the CLI path
+// while the TUI honoured it.
+func TestGuardrailsSettingIgnoresEveryGate(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "safe.txt"), []byte("hello world"), 0o600); err != nil {
+		t.Fatalf("write safe.txt: %v", err)
+	}
+	srv, tm := newToolMockServer(t, "safe.txt")
+	defer srv.Close()
+
+	out, errOut, code := runSignetDirWithGlobal(t, dir, srv.URL, `{"guardrails":false,"permissions":{"allow":["Read"]}}`,
+		"-tools", "-provider", "openai", "-model", "test", "-prompt", "read the file")
+	if code != 0 {
+		t.Fatalf("exit = %d (stderr %q)", code, errOut)
+	}
+	if !strings.Contains(out, "done") {
+		t.Fatalf("stdout = %q, want done", out)
+	}
+	if !strings.Contains(errOut, "=ignore") {
+		t.Fatalf("guardrails:false in settings must ignore every gate, got %q", errOut)
+	}
+
+	// And with every gate ignored the classifier is not called at all: not for
+	// admission, not for the Read result. A verdict that cannot change an
+	// outcome is pure latency, and asking for it would send the prompt and the
+	// file to the classifier turn anyway.
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+	if len(tm.securityUsers) != 0 {
+		t.Fatalf("guardrails off made %d classifier calls: %q", len(tm.securityUsers), tm.securityUsers)
+	}
+	if len(tm.toolUsers) == 0 || !strings.Contains(tm.toolUsers[0], "hello world") {
+		t.Fatalf("tool result did not reach the model: %q", tm.toolUsers)
+	}
+}

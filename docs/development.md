@@ -96,9 +96,15 @@ still leaves ask off. Otherwise `-guardrails=false` and `-ask-permission=false`
 act independently. `-guardrails=false` is applied twice over: once to the
 settings the TUI reads, and once to the posture policy itself, where it
 replaces the whole resolved policy — defaults, project `preferences.yaml` and
-per-gate CLI flags alike — with every gate set to `ignore`. Passing
-`-guardrails=false` alongside a per-gate flag is therefore not a conflict; the
-per-gate flag simply has nothing left to affect.
+per-gate CLI flags alike — with every gate set to `ignore` (`posture.AllIgnore`).
+Passing `-guardrails=false` alongside a per-gate flag is therefore not a
+conflict; the per-gate flag simply has nothing left to affect.
+
+The switch is read from the **settings**, not the flag, so
+`"guardrails": false` written into a `settings.json` turns the gates off on the
+CLI path too. The flag is folded into those settings first, so it still works;
+reading the flag alone used to mean a settings file that disabled guardrails
+was honoured by the TUI and ignored by the CLI.
 
 ### Model defaults
 
@@ -319,6 +325,16 @@ chips, and turning *both* gates off collapses them into one gold `YOLO` chip
 while the caveman slot stays put. `f6` is the exception: it is chat-scoped and
 must do nothing from a full-screen view. If a terminal or multiplexer swallows
 a function key, `/settings`, `/yolo` and `/mode` are the equivalent paths.
+
+**Guardrails actually off.** With `SIGNET_TRACE` set, press `f3` to turn
+guardrails off and send a prompt that reads a file. Confirm the trace shows no
+`security_sentinel` records and the composer never shows the `role manager`
+pill — off means the classifier is not called, not called and ignored. Repeat
+with `!ls` and with an `@file` reference and confirm the same. Turn guardrails
+back on and confirm the classifier reappears on all three. Start a background
+agent, toggle `f3` while it runs, and confirm its *next* turn follows the new
+setting. See
+[architecture.md](architecture.md#the-guardrails-switch).
 
 **Newline keys.** Confirm `ctrl+j` and `shift+enter` both insert a newline
 rather than sending, and that plain `enter` still sends. `shift+enter` has no

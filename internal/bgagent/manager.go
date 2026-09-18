@@ -88,6 +88,24 @@ func NewManager(workdir string, cfg run.Config, client *http.Client, settings co
 	}
 }
 
+// SetPosture replaces the policy future agent sessions are built with. The
+// operator's guardrails switch can flip while agents are running, and a
+// manager that kept the policy it was constructed with would go on enforcing
+// gates the footer says are off. Agents already mid-turn keep the policy their
+// session was built with; the next turn picks this up.
+func (m *Manager) SetPosture(p posture.Policy) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.posture = p
+}
+
+// Posture returns the policy future agent sessions will be built with.
+func (m *Manager) Posture() posture.Policy {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.posture
+}
+
 // Start launches a background agent by name.
 func (m *Manager) Start(name string, profile agentprofile.AgentProfile) error {
 	m.mu.Lock()

@@ -91,6 +91,20 @@ func Defaults() Policy {
 	return p
 }
 
+// AllIgnore returns a policy with every gate set to Ignore. It is what the
+// operator's guardrails switch means when it is off, and it exists as one
+// function so every surface that honours that switch — the agent session, the
+// inline `!shell` round trip, `@file` attachment admission, background agents
+// — turns the same gates off. A second, hand-rolled copy of this loop is how
+// a surface ends up quietly still enforcing.
+func AllIgnore() Policy {
+	p := make(Policy, len(AllGates))
+	for _, g := range AllGates {
+		p[g] = Ignore
+	}
+	return p
+}
+
 // Override merges q over p; non-empty values in q win.
 func (p Policy) Override(q Policy) Policy {
 	out := make(Policy, len(p)+len(q))

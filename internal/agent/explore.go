@@ -7,8 +7,10 @@ import (
 	"github.com/vulnetix/signet/internal/delimiters"
 	"github.com/vulnetix/signet/internal/explore"
 	"github.com/vulnetix/signet/internal/nonce"
+	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/signet/internal/sanitize"
 	"github.com/vulnetix/signet/internal/tools"
 )
 
@@ -16,8 +18,9 @@ const exploreConcurrency = 3
 
 // exploreTurns launches bounded-parallel read-only subagents and returns their
 // findings as user turns, in task index order. Each finding is model output,
-// therefore untrusted: it is classified, and only SAFE findings are sealed as
-// <exploration> blocks. It is never SourceHarness.
+// therefore untrusted: unless the parent's posture ignores the unsafe-result
+// gate, it is classified and only SAFE findings are sealed as <exploration>
+// blocks. It is never SourceHarness.
 func (s *Session) exploreTurns(ctx context.Context, decision rolemanager.ModeDecision, clean string) []run.Turn {
 	if !s.allowExplore {
 		return nil
@@ -175,16 +178,25 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task, steerCh chan 
 		return ""
 	}
 
-	// Model output is untrusted: classify it under the parent posture.
-	pipe := run.NewPipeline(s.cfg, s.client, s.cache)
-	dec, err := pipe.Process(ctx, tools.Result{Kind: tools.KindExplore, Content: reply})
-	if err != nil || dec.Action != rolemanager.ActionProceed {
-		return ""
+	// Model output is untrusted, so the finding is classified before it is
+	// sealed — but under the parent's posture, not unconditionally. The
+	// comment used to say "under the parent posture" while the code consulted
+	// no posture at all, which meant a session with guardrails off still paid
+	// a round trip per subagent and still silently dropped a finding the
+	// classifier disliked.
+	body := sanitize.Sanitize(reply)
+	if s.posture.Level(posture.ToolResultUnsafe) != posture.Ignore {
+		pipe := run.NewPipeline(s.cfg, s.client, s.cache)
+		dec, err := pipe.Process(ctx, tools.Result{Kind: tools.KindExplore, Content: reply})
+		if err != nil || dec.Action != rolemanager.ActionProceed {
+			return ""
+		}
+		body = dec.Content
 	}
 
 	nonceVal, err := s.pool.Reserve()
 	if err != nil {
 		return ""
 	}
-	return delimiters.Egress(delimiters.Wrap(delimiters.KindExploration, nonceVal, dec.Content), s.pool)
+	return delimiters.Egress(delimiters.Wrap(delimiters.KindExploration, nonceVal, body), s.pool)
 }

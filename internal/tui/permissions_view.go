@@ -125,7 +125,7 @@ func (a *App) permissionsView() string {
 			tool, subject := splitPreview(a.permState.previewSubject)
 			dec, rule := permissions.From(a.settings.Permissions.Allow, a.settings.Permissions.Ask, a.settings.Permissions.Deny).Explain(tool, subject)
 			if rule == "" {
-				if a.posture != nil && a.posture.Level(posture.PermissionNoMatch) == posture.Enforce {
+				if a.effectivePosture().Level(posture.PermissionNoMatch) == posture.Enforce {
 					b.WriteString(components.DangerStyle.Render("         blocked (no rule matches; permission_no_match=enforce)") + "\n")
 				} else {
 					b.WriteString(components.AccentStyle.Render("         allowed (no rule matches — default)") + "\n")

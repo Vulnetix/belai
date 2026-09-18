@@ -137,11 +137,13 @@ func main() {
 	cliPol := fs.ToPolicy()
 	projectPol, _ := posture.Load(workdir)
 	pol := posture.Defaults().Override(projectPol).Override(cliPol)
-	if !*guardrails {
-		pol = posture.Policy{}
-		for _, g := range posture.AllGates {
-			pol[g] = posture.Ignore
-		}
+	// settings.GuardrailsEnabled rather than the flag alone: the flag has
+	// already been folded into settings above, and the setting can also come
+	// from a settings.json the operator wrote or from the TUI's own toggle.
+	// Reading only the flag here meant `"guardrails": false` on disk left
+	// every gate enforcing on the CLI path while the TUI honoured it.
+	if !settings.GuardrailsEnabled() {
+		pol = posture.AllIgnore()
 	}
 	posture.PrintBanner(pol, os.Stderr)
 

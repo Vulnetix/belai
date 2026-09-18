@@ -12,6 +12,7 @@ import (
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/signet/internal/sanitize"
 	"github.com/vulnetix/signet/internal/tools"
 	"github.com/vulnetix/signet/internal/tui/components"
 )
@@ -83,7 +84,7 @@ func (a *App) handleShell(input string) tea.Cmd {
 	client := a.client
 	workdir := a.workdir
 	bashReadOnly := a.settings.ReadOnlyEnabled()
-	pol := a.posture
+	pol := a.effectivePosture()
 
 	// Render `!cmd` as a real tool row rather than a system notice. It then
 	// gets the same live tail, tail-anchored preview and ctrl+o expansion as a
@@ -126,15 +127,19 @@ func (a *App) handleShell(input string) tea.Cmd {
 		if err != nil {
 			return shellDoneMsg{command: cmd, callID: callID, err: err}
 		}
+		// With the gate ignored the verdict cannot change the outcome, so the
+		// classifier is not called at all. Calling it and then discarding the
+		// answer would spend a round trip per `!cmd` and send the command's
+		// output to the provider's classifier turn, which is the opposite of
+		// what turning guardrails off asks for. Sanitising still runs.
+		if pol.Level(posture.ToolResultUnsafe) == posture.Ignore {
+			return shellDoneMsg{command: cmd, callID: callID, body: sanitize.Sanitize(res.Content), sentinel: rolemanager.SentinelSafe}
+		}
 		body := res.Content
 		pipe := run.NewPipeline(cfg, client, a.cache)
 		dec, perr := pipe.Process(ctx, res)
 		if perr == nil && dec.Action == rolemanager.ActionProceed {
 			body = dec.Content
-		}
-		if perr == nil && dec.Action != rolemanager.ActionProceed && pol.Level(posture.ToolResultUnsafe) == posture.Ignore {
-			body = dec.Content
-			dec.Action = rolemanager.ActionProceed
 		}
 		return shellDoneMsg{command: cmd, callID: callID, body: body, sentinel: dec.Sentinel, err: perr}
 	}
@@ -155,7 +160,7 @@ func (a *App) handleShellDone(m shellDoneMsg) tea.Cmd {
 	// row's preview policy decides how much to show.
 	a.setShellResult(m.callID, m.body, toolResultStatus("Bash", m.body))
 
-	if m.sentinel.IsSafe() || a.posture.Level(posture.ToolResultUnsafe) == posture.Ignore {
+	if m.sentinel.IsSafe() || a.effectivePosture().Level(posture.ToolResultUnsafe) == posture.Ignore {
 		input := fmt.Sprintf("Output of `%s` is attached.", m.command)
 		return a.sendWithAttachments(input, []run.Attachment{
 			{Kind: "shell", Label: m.command, Body: m.body},

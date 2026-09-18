@@ -211,6 +211,51 @@ Business rules and edge cases:
   output, not tool output, and is classified explicitly in
   `internal/agent/explore.go` regardless of this rule.
 
+### The guardrails switch
+
+`guardrails` is the operator's blanket control over the posture gates. Off, it
+replaces the whole resolved policy with `posture.AllIgnore()` — every gate in
+`posture.AllGates` set to `ignore`, defaults, project `preferences.yaml`, and
+per-gate flags alike.
+
+There is one definition of "off" (`posture.AllIgnore`) and one place the TUI
+derives it (`App.effectivePosture`). That matters because the switch has to
+reach several surfaces that each used to hold their own copy of the policy:
+
+| Surface | How it gets the switch |
+| ------- | ---------------------- |
+| Agent session | `sessionBuildParams.posture` is *already* the effective policy; the async build does not re-derive it |
+| Inline `!cmd` shell | `App.effectivePosture()` read per command |
+| `@file` attachment admission | `App.effectivePosture()` read per attachment |
+| Background agents | `Manager.SetPosture`, pushed by `App.syncPosture` whenever the switch moves |
+| `/permissions` preview | `App.effectivePosture()`, so the preview matches what would actually happen |
+| CLI | `settings.GuardrailsEnabled()` in `cmd/signet`, which the `-guardrails` flag folds into first |
+
+Business rules and edge cases:
+
+- **Off means the classifier is not called, not called-and-ignored.** Every
+  gated path checks the level *before* the round trip. Calling the classifier
+  and then discarding its verdict would spend a request per prompt, per
+  attachment, per `!cmd` and per tool result, and would send that content to
+  the classifier turn anyway — the opposite of what turning guardrails off
+  asks for. With every gate ignored a whole turn makes **zero**
+  security-classifier calls.
+- **Off never disables sanitising.** Delimiter markup and nonce/integrity
+  attributes are stripped on every path regardless, and egress verification
+  still runs. The switch turns off model-based judgement, not the structural
+  guarantee that a tool result cannot forge a harness block.
+- **A running background agent follows the switch.** The manager keeps a
+  policy for the sessions it builds, so `App.syncPosture` hands it the new one
+  on every toggle (`f3`, `/yolo`). An agent already mid-turn finishes under
+  the policy its session was built with; the next turn picks the new one up.
+- **The setting counts, not just the flag.** `"guardrails": false` in a
+  settings file is honoured on the CLI path as well as in the TUI.
+- **The project layer may only tighten it.** A project settings file can turn
+  guardrails back *on* over a global `false`, never off over a global `true`.
+- **Explore findings are gated too.** A subagent's report is classified under
+  the parent's posture; with the gate ignored the finding is sanitised and
+  sealed rather than dropped on a verdict nobody asked for.
+
 ### The sealed tools block
 
 The tool surface is described to the model in its own sealed `<tools>` block,
@@ -759,6 +804,10 @@ The footer is a rule plus two lines:
 on|off` and `ask: on|off`, teal when on and red when off. When *both* are off
 they collapse into a single amber `YOLO` chip — one unmissable marker beats two
 red ones. Any other combination renders the pair.
+
+The guardrails chip is a statement about behaviour, not a decoration — see
+[The guardrails switch](#the-guardrails-switch) for what it actually turns
+off and how it reaches every surface.
 
 **Caveman slot.** `caveman: on|off` always renders, on and off alike: the
 rewrite silently changes how every reply is written, and the footer is the only

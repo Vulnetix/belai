@@ -41,6 +41,15 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   model cannot widen its own advertised tool surface by writing one.
 - **Classifier turns are tool-less.** The classifier payload carries no tools,
   no skills, and no agent block.
+- **The guardrails switch reaches every surface.** Off means
+  `posture.AllIgnore()` everywhere — agent session, inline `!cmd`, `@file`
+  admission, background agents, and the CLI. Derive it from
+  `App.effectivePosture()` in the TUI or `settings.GuardrailsEnabled()` in
+  `cmd/signet`; never read `a.posture` directly and never hand-roll the
+  all-ignore loop. A gated path checks the level **before** calling the
+  classifier, never after — a verdict that cannot change the outcome is a
+  request nobody asked for and sends the content anyway. Sanitising is not
+  part of the switch and always runs.
 - **Tool-call mismatch defaults to abort.** Stripping or ignoring mismatches
   requires explicit user opt-in.
 - **Skills and hooks validate first.** Skills load only after strict

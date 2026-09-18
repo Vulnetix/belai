@@ -443,7 +443,7 @@ func New(opts Options) *App {
 	}
 	if initialStatus.Configured {
 		a.SetClassifier(run.NewClassifier(initial, a.client))
-		a.bgManager = bgagent.NewManager(workdir, initial, a.client, a.settings, a.posture)
+		a.bgManager = bgagent.NewManager(workdir, initial, a.client, a.settings, a.effectivePosture())
 	}
 	a.applyGitInfo(gitinfo.Detect(a.workdir))
 	a.loadAgents()
@@ -1015,14 +1015,17 @@ func coalesced(first agent.Event, acc string) agent.Event {
 // build reads. It is captured on the Bubble Tea goroutine so the async build
 // goroutine never races a config change.
 type sessionBuildParams struct {
-	workdir      string
-	settings     config.Settings
-	cfg          run.Config
-	client       *http.Client
+	workdir  string
+	settings config.Settings
+	cfg      run.Config
+	client   *http.Client
+	// posture is already the *effective* policy: App.effectivePosture has
+	// applied the operator's guardrails switch to it. The switch is not
+	// carried separately, so there is no second place that could forget to
+	// apply it.
 	posture      posture.Policy
 	planMode     bool
 	allowClarify bool
-	guardrails   bool
 	ask          bool
 	// toolAllow restricts the registry to an engaged background definition's
 	// tools. Empty means every registered tool.
@@ -1035,10 +1038,9 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 		settings:     a.settings,
 		cfg:          a.cfg,
 		client:       a.client,
-		posture:      a.posture,
+		posture:      a.effectivePosture(),
 		planMode:     a.planMode,
 		allowClarify: true,
-		guardrails:   a.guardrailsEnabled(),
 		ask:          a.askEnabled(),
 		toolAllow:    a.engagedAgentTools(),
 	}
@@ -1064,12 +1066,6 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 	}
 	perms := permissions.From(p.settings.Permissions.Allow, p.settings.Permissions.Ask, p.settings.Permissions.Deny)
 	pol := p.posture
-	if !p.guardrails {
-		pol = posture.Policy{}
-		for _, g := range posture.AllGates {
-			pol[g] = posture.Ignore
-		}
-	}
 	var promptOpts prompt.Options
 	if p.settings.Caveman != nil && *p.settings.Caveman {
 		promptOpts.Caveman = true
@@ -2426,9 +2422,22 @@ func (a *App) toggleGuardrails() tea.Cmd {
 	next := !a.guardrailsEnabled()
 	a.guardrailsOverride = &next
 	a.invalidateAgentSession()
+	a.syncPosture()
 	a.traceRecord("guardrails_toggle", boolLabel(next), "", "", 0)
 	a.addSystem("guardrails: " + boolLabel(next))
 	return nil
+}
+
+// syncPosture pushes the effective policy to the surfaces that hold their own
+// copy of it. The agent session is rebuilt from a fresh snapshot, and the
+// inline shell and attachment paths read it per call, but a running background
+// agent manager keeps whatever it was constructed with — so the switch has to
+// be handed to it explicitly or background agents go on enforcing gates the
+// footer says are off.
+func (a *App) syncPosture() {
+	if a.bgManager != nil {
+		a.bgManager.SetPosture(a.effectivePosture())
+	}
 }
 
 func (a *App) toggleAsk() tea.Cmd {
@@ -2450,6 +2459,7 @@ func (a *App) setYolo(on bool) tea.Cmd {
 		a.askOverride = nil
 	}
 	a.invalidateAgentSession()
+	a.syncPosture()
 	label := "off"
 	if on {
 		label = "on"
@@ -2605,7 +2615,7 @@ func (a *App) handleCredentialsResolved(m credentialsResolvedMsg) tea.Cmd {
 	if m.status.Configured {
 		a.SetClassifier(run.NewClassifier(m.cfg, a.client))
 		if a.bgManager == nil {
-			a.bgManager = bgagent.NewManager(a.workdir, m.cfg, a.client, a.settings, a.posture)
+			a.bgManager = bgagent.NewManager(a.workdir, m.cfg, a.client, a.settings, a.effectivePosture())
 		}
 	} else {
 		a.showCredentialMessage(m.cfg.Provider, a.resolver)
@@ -2717,6 +2727,18 @@ func (a *App) guardrailsEnabled() bool {
 		return *a.guardrailsOverride
 	}
 	return a.settings.GuardrailsEnabled()
+}
+
+// effectivePosture is the policy every surface must consult, rather than
+// a.posture. The configured posture is what preferences and flags asked for;
+// this is what the operator's guardrails switch leaves of it. Reading
+// a.posture directly is how a surface keeps enforcing after the footer says
+// guardrails are off.
+func (a *App) effectivePosture() posture.Policy {
+	if !a.guardrailsEnabled() {
+		return posture.AllIgnore()
+	}
+	return a.posture
 }
 
 func (a *App) askEnabled() bool {

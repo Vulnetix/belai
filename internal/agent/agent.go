@@ -716,8 +716,12 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 		emit(Event{Kind: EventToolMetaKind, ToolName: call.Name, ToolCallID: call.ID, Meta: res.Meta})
 	}
 
+	// Guardrails off: the verdict could not change the outcome, so the
+	// classifier is not called at all rather than called and discarded.
+	// Sanitising still runs — turning the gates off means skipping the model
+	// round trip, not letting a tool result forge a harness block.
 	if s.posture.Level(posture.ToolResultUnsafe) == posture.Ignore {
-		return delimiters.Egress(res.Content, s.pool)
+		return delimiters.Egress(sanitize.Sanitize(res.Content), s.pool)
 	}
 
 	// Bash, the web tools, and Read return arbitrary content, so they go to
