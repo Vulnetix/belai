@@ -2,10 +2,15 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/vulnetix/signet/internal/agent"
+	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/signet/internal/modelinfo"
+	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/session"
 	"github.com/vulnetix/signet/internal/transcript"
 )
@@ -101,8 +106,11 @@ func (a *App) resumeSession(key session.Key, sessionID string) tea.Cmd {
 	a.rehydrateTodos(entries)
 	a.persistedUpTo = len(a.messages)
 
-	// 9. Model/provider/mode restore is applied in a later phase; the current
-	// configuration and mode remain in force for now.
+	// 9. Restore model/provider/effort (CLI flag > session record > state >
+	// settings/env), the recorded mode, and plan/goal carrier state.
+	a.restoreModelProvider(r)
+	a.restoreMode(r)
+	a.restorePlanGoal(r, crossProject)
 
 	// 10. Persist the active session id so the footer and state.json agree.
 	a.saveSession()
@@ -116,10 +124,10 @@ func (a *App) resumeSession(key session.Key, sessionID string) tea.Cmd {
 	// 12. Report.
 	a.reportResume(r, id, crossProject)
 
-	// 13. The compaction offer is wired in a later phase; for now resume just
-	// refreshes the footer.
+	// 13. Offer compaction when the resumed transcript crosses the threshold,
+	// then refresh the footer.
 	a.refreshFooter()
-	return nil
+	return a.offerCompactionCmd()
 }
 
 // resumeByID resolves a full or partial id, preferring the current project and
@@ -198,6 +206,156 @@ func (a *App) isSchema1(entries []session.Entry) bool {
 		}
 	}
 	return true
+}
+
+// restoreModelProvider applies the recorded provider/model/effort with the
+// precedence: explicit CLI flag > session record > config.State >
+// settings/env. A recorded provider that no longer resolves to a configured
+// status is kept current (and warned) so a resumed session never becomes
+// unsendable.
+func (a *App) restoreModelProvider(r rehydrated) {
+	provider, model, effort := a.cfg.Provider, a.cfg.Model, a.settings.Effort
+
+	if a.flags.Provider == "" {
+		if r.Provider != "" {
+			provider = r.Provider
+		} else if a.state.Provider != "" {
+			provider = a.state.Provider
+		}
+	}
+	if a.flags.Model == "" {
+		if r.Model != "" {
+			model = r.Model
+		} else if a.state.Model != "" {
+			model = a.state.Model
+		}
+	}
+	if a.flags.Effort == "" {
+		if r.Effort != "" {
+			effort = r.Effort
+		} else if a.state.Effort != "" {
+			effort = a.state.Effort
+		}
+	}
+
+	if provider == a.cfg.Provider && model == a.cfg.Model && effort == a.settings.Effort {
+		return
+	}
+
+	src := run.CredentialSource(run.EnvSource(os.Getenv))
+	if a.resolver != nil {
+		src = a.resolver
+	}
+	if _, status := run.Prepare(model, provider, src); !status.Configured {
+		a.addSystem(fmt.Sprintf("recorded provider %q is not configured; keeping %q", provider, a.cfg.Provider))
+		return
+	}
+	a.applyModelProvider(provider, model, effort)
+}
+
+// restoreMode restores the recorded operating mode (the session's own record,
+// not state.LastMode, which is the last mode of any session).
+func (a *App) restoreMode(r rehydrated) {
+	if r.Mode == "" {
+		return
+	}
+	a.mode = r.Mode
+	a.modeSticky = true
+	a.syncPlanMode()
+}
+
+// restorePlanGoal restores plan-mode stickiness and the active plan/goal/
+// profile names. Execution is deliberately not re-armed: pendingPlanExecute is
+// a one-shot consumed by the next send, and silently executing a plan because a
+// previous process died mid-execution is the wrong default.
+func (a *App) restorePlanGoal(r rehydrated, crossProject bool) {
+	if r.Plan != nil && r.Plan.Enabled {
+		a.mode = "plan"
+		a.modeSticky = true
+		var texts []string
+		for _, td := range r.Plan.Todos {
+			texts = append(texts, td.Text)
+		}
+		a.lastPlanText = strings.Join(texts, "\n")
+		a.syncPlanMode()
+	}
+
+	plan := r.Meta.ActivePlan
+	goal := r.Meta.ActiveGoal
+	profile := r.Meta.ActiveProfile
+	if crossProject {
+		// Plans and goals live under the origin workdir; a forked session's
+		// recorded names point at files that do not exist here.
+		if plan != "" || goal != "" {
+			a.addSystem("plan/goal names from the origin project are not available here")
+		}
+		plan, goal = "", ""
+	}
+	a.state.ActivePlan = plan
+	a.state.ActiveGoal = goal
+	a.state.ActiveProfile = profile
+	a.namedAgent = profile
+	_ = config.SaveState(a.state)
+}
+
+const (
+	// resumeCompactFraction is the share of the model's context window that,
+	// once crossed by the resumed estimate, triggers the compaction offer.
+	resumeCompactFraction = 0.5
+	// resumeCompactFallbackTokens is the offer threshold when the model's
+	// context window is unknown.
+	resumeCompactFallbackTokens = 40_000
+)
+
+// offerCompactionCmd shows the post-resume compaction offer when the restored
+// transcript crosses the context threshold. It reuses the footer's window
+// resolution and the shared transcript estimate rather than inventing new
+// machinery.
+func (a *App) offerCompactionCmd() tea.Cmd {
+	if a.classifier == nil {
+		return nil
+	}
+	msgs := a.transcriptMessages()
+	if !hasUserAndAssistant(msgs) {
+		return nil
+	}
+	est := transcript.EstimateContext(msgs)
+	window, ok := modelinfo.ResolveWith(a.cfg.Model, a.settings.ContextWindows, a.selectedModelWindow())
+	threshold := resumeCompactFallbackTokens
+	if ok {
+		threshold = int(float64(window) * resumeCompactFraction)
+	}
+	if est.Tokens <= threshold {
+		return nil
+	}
+	a.push(viewResumeCompact)
+	return nil
+}
+
+func hasUserAndAssistant(msgs []transcript.Message) bool {
+	user, assistant := false, false
+	for _, m := range msgs {
+		if m.Role == "user" {
+			user = true
+		}
+		if m.Role == "assistant" {
+			assistant = true
+		}
+	}
+	return user && assistant
+}
+
+// persistCarrierMeta appends a partial session_meta entry reflecting the
+// current active carrier. LatestMeta's merge semantics mean later one-field
+// updates layer over earlier ones rather than replacing them.
+func (a *App) persistCarrierMeta() {
+	a.appendEntry(session.Meta{
+		Schema:        session.SchemaVersion,
+		Mode:          a.mode,
+		ActivePlan:    a.state.ActivePlan,
+		ActiveGoal:    a.state.ActiveGoal,
+		ActiveProfile: a.state.ActiveProfile,
+	}.ToEntry(a.lastEntryID))
 }
 
 // reportResume adds the resume system lines.

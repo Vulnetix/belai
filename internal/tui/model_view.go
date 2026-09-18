@@ -560,9 +560,19 @@ func (a *App) commitModel() tea.Cmd {
 		}
 	}
 
-	a.cfg.Provider = p
-	a.cfg.Model = model
 	a.pop()
+	return a.applyModelProvider(p, model, effort)
+}
+
+// applyModelProvider commits a provider/model/effort to the running session
+// without touching settings files (the picker's "session" scope). It is the
+// shared tail of the model picker and resume restore so the two cannot drift.
+func (a *App) applyModelProvider(provider, model, effort string) tea.Cmd {
+	a.cfg.Provider = provider
+	a.cfg.Model = model
+	if effort != "" {
+		a.settings.Effort = effort
+	}
 	return a.refreshProvider()
 }
 

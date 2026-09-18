@@ -208,6 +208,7 @@ func (a *App) submitPlanApprove() tea.Cmd {
 	a.planExecuteName = a.planReview.name
 	a.syncPlanMode()
 	a.saveMode()
+	a.persistCarrierMeta()
 
 	a.pop()
 	a.addSystem("plan approved: " + a.planReview.path + " — executing")

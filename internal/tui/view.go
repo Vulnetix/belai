@@ -20,6 +20,7 @@ const (
 	viewClassifier
 	viewPlanReview
 	viewResume
+	viewResumeCompact
 )
 
 // viewHandler is one full-screen view. Chat is the base state and lives
@@ -45,6 +46,7 @@ func init() {
 	viewHandlers[viewClassifier] = viewHandler{name: "classifier", enter: (*App).enterClassifier, key: (*App).handleClassifierKey, render: (*App).classifierView}
 	viewHandlers[viewPlanReview] = viewHandler{name: "plan-review", enter: (*App).enterPlanReview, key: (*App).handlePlanReviewKey, render: (*App).planReviewView}
 	viewHandlers[viewResume] = viewHandler{name: "resume", enter: (*App).enterResume, key: (*App).handleResumeKey, render: (*App).resumeView}
+	viewHandlers[viewResumeCompact] = viewHandler{name: "resume-compact", key: (*App).handleResumeCompactKey, render: (*App).resumeCompactView}
 }
 
 // push navigates to a full-screen view, remembering the current one on the
