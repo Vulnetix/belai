@@ -229,6 +229,54 @@ Business rules and edge cases:
   output, not tool output, and is classified explicitly in
   `internal/agent/explore.go` regardless of this rule.
 
+### File attachments (`@path`)
+
+The TUI composer accepts files with `@path` (`internal/tui/attach.go`). A
+scrolling, filterable file chooser (`internal/tui/filepick.go`) appears when
+the user types `@` in chat view; typing narrows the list, and `up`/`down`
+move the highlight while `right`/`tab`/`enter` insert the highlighted path.
+`esc` or `left` closes the chooser; the next keystroke reopens it. `@agent:`
+in agent mode opens the agent picker instead.
+
+Attachment admission pipeline:
+
+1. **Path confinement** — `tools.SanitizePath` resolves the token against
+   `App.workdir`; a traversal outside the workdir is rejected.
+2. **Read** — `tools.Read` fetches the bytes (up to 64 KiB) and rejects binary
+   files on NUL bytes.
+3. **Guardrails gate** — `App.effectivePosture()` is checked **before** the
+   classifier. With guardrails off, the file is admitted with no classifier
+   round trip; sanitisation still runs.
+4. **Classifier** — for `KindRead` the classifier runs unconditionally (an
+   arbitrary repository file can carry an injection exactly like a web page).
+5. **Decision** — SAFE files become `run.Attachment{Kind:"file"}`; rejected
+   files are withheld from the model, and a sealed `<directive>` in the same
+   user turn tells the model which tokens were withheld, why, and how to
+   proceed.
+
+Transcript preview rows are appended at submit time, immediately before the
+user prompt echo, so they do not have to be removed if the user deletes the
+`@token` before sending. A SAFE attachment renders as a `Read` tool row with a
+`✓` status, line numbers, and syntax highlighting when expanded; if the
+worktree copy differs from the git index, a diff row renders beneath it via
+`filediff.WorktreeChange`. A rejected attachment renders as a red `withheld`
+row with its sentinel.
+
+Business rules and edge cases:
+
+- **Rejected attachments never reach the model.** Neither their bytes nor a
+  description of their contents is sent; only the harness-authored directive
+  is sealed into the turn.
+- **Images are not listed** in this round. `filepick.go` drops common image
+  extensions; see `docs/image-attachments.md` for the deferred design.
+- **Quoted paths** — paths containing spaces are inserted as `@"path with spaces" `,
+  the same syntax `parseTokens` already accepts.
+- **Guardrails off is all-ignore, not all-trust.** Sanitisation and egress
+  verification still run; the file is simply not sent to the classifier.
+- **Diffs are computed in the validation goroutine.** `filediff.NewRecorder`
+  is created per attachment and `WorktreeChange` runs git against the index
+  outside the Update loop, so the UI never blocks on a subprocess.
+
 ### The guardrails switch
 
 `guardrails` is the operator's blanket control over the posture gates. Off, it
