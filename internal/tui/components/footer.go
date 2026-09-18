@@ -49,6 +49,12 @@ type Footer struct {
 	// Session naming.
 	SessionName string
 	ShowName    bool
+
+	// Hint is the hover hint rendered on a dedicated third content line. It is
+	// always emitted (empty when there is nothing to show) so the footer's
+	// height never changes with the pointer, which would shift the viewport
+	// under a stationary mouse. The caller styles it (HelpBar).
+	Hint string
 }
 
 func modeColor(mode string) lipgloss.TerminalColor {
@@ -62,9 +68,10 @@ func modeColor(mode string) lipgloss.TerminalColor {
 	}
 }
 
-// View renders the footer as two lines: line 1 carries the mode chip, cwd and
-// branch; line 2 carries provider/model/effort/permission controls on the left
-// and session/context/bar on the right.
+// View renders the footer as three content lines plus the rule: line 1
+// carries the mode chip, cwd and branch; line 2 carries provider/model/effort/
+// permission controls on the left and session/context/bar on the right; line 3
+// is the hover hint (empty unless the pointer is over an actionable region).
 func (f *Footer) View() string {
 	if f.Width <= 0 {
 		f.Width = 80
@@ -139,9 +146,9 @@ func (f *Footer) View() string {
 
 	rule := Rule(f.Width)
 	if line1 != "" {
-		return rule + "\n" + line1 + "\n" + line2
+		return rule + "\n" + line1 + "\n" + line2 + "\n" + MutedStyle.Render(f.Hint)
 	}
-	return rule + "\n" + line2
+	return rule + "\n" + line2 + "\n" + MutedStyle.Render(f.Hint)
 }
 
 // permissionChips renders the permission controls. Both off collapses to a

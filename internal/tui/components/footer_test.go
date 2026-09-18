@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestContextSegmentAnchoredFresh(t *testing.T) {
@@ -264,6 +265,27 @@ func TestFooterHasNoCostLabel(t *testing.T) {
 	}
 }
 
+// TestFooterHintLine pins the hover hint contract: the hint renders on its
+// own line, an empty hint still reserves that line (so the footer height
+// never changes with the pointer), and a non-empty hint is the last line.
+func TestFooterHintLine(t *testing.T) {
+	f := Footer{Session: "abcd1234", Mode: "agent", Width: 80}
+	empty := f.View()
+	if lipgloss.Height(empty) != 4 {
+		t.Fatalf("footer without hint should reserve 4 lines, got %d (%q)", lipgloss.Height(empty), empty)
+	}
+
+	f.Hint = "ctrl+o expand all"
+	v := f.View()
+	if lipgloss.Height(v) != 4 {
+		t.Fatalf("a hint must not change footer height, got %d", lipgloss.Height(v))
+	}
+	lines := strings.Split(v, "\n")
+	if !strings.Contains(ansi.Strip(lines[len(lines)-1]), "ctrl+o") {
+		t.Fatalf("hint line missing the keycap: %q", v)
+	}
+}
+
 // TestFooterEffortRendering pins the subtle effort display: effort renders
 // muted, directly next to the model id, and only when both a model and an
 // effort value are present.
@@ -286,7 +308,8 @@ func TestFooterEffortRendering(t *testing.T) {
 		f := Footer{Model: "gpt-5", Effort: "", Mode: "agent", Guardrails: true, Ask: true, Width: 100}
 		v := f.View()
 		lines := strings.Split(v, "\n")
-		line2 := lines[len(lines)-1]
+		// The hint line is the footer's last line; line 2 is the one before it.
+		line2 := lines[len(lines)-2]
 		if strings.Contains(line2, "gpt-5 · high") || strings.Contains(line2, "gpt-5 · none") {
 			t.Fatalf("empty effort must not render an effort value: %q", line2)
 		}

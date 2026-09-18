@@ -352,6 +352,7 @@ func (m MessageList) Render() (string, LineMap) {
 				msg.rc = renderCache{key: key, text: s, lm: sub}
 			}
 		}
+		tagProvenance(sub, e.idx, *msg)
 		b.WriteString(s)
 		lm = append(lm, sub...)
 		if i == len(entries)-1 {
@@ -359,12 +360,35 @@ func (m MessageList) Render() (string, LineMap) {
 		}
 		if e.framed || entries[i+1].framed {
 			b.WriteString("\n\n")
-			lm = append(lm, SourceLine{Chrome: true})
+			lm = append(lm, SourceLine{Chrome: true, Owner: -1})
 		} else {
 			b.WriteString("\n")
 		}
 	}
 	return b.String(), lm
+}
+
+// hasTruncation reports whether a rendered message carries a truncation hint,
+// i.e. it is collapsed with hidden content that ctrl+o would reveal.
+func hasTruncation(lm LineMap) bool {
+	for _, l := range lm {
+		if l.MarkerWidth > 0 && l.Hidden != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// tagProvenance stamps every line of one message's render with the message
+// index that produced it and whether that message is currently collapsed. It
+// runs after every render — including cache hits — so the cache never needs
+// to know about provenance, and an expand can never leave a stale flag behind.
+func tagProvenance(lm LineMap, owner int, msg Message) {
+	collapsed := hasTruncation(lm)
+	for i := range lm {
+		lm[i].Owner = owner
+		lm[i].Collapsed = collapsed
+	}
 }
 
 // reasoningPanel renders streamed chain-of-thought as a dim, unbordered

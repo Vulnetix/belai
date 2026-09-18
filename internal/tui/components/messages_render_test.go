@@ -191,3 +191,61 @@ func TestMessageListExpandAllChangesNoMarkers(t *testing.T) {
 		}
 	}
 }
+
+// TestMessageListRenderTagsProvenance pins the per-line provenance hover
+// hit-testing depends on: every line carries the index of the message that
+// rendered it and the collapsed flag for truncated panels, while separator
+// chrome carries Owner -1.
+func TestMessageListRenderTagsProvenance(t *testing.T) {
+	ml := MessageList{
+		Width:     80,
+		ShowTools: true,
+		Messages: []Message{
+			// Truncated turn: collapsed.
+			{Role: "assistant", Content: "l1\nl2\nl3\nl4\nl5"},
+			// Read with more than the 3-line preview: collapsed.
+			{Role: "tool", ToolName: "Read", ToolArgs: `{"path":"main.go"}`,
+				Meta:    map[string]any{"path": "main.go"},
+				Content: "package main\n\nimport \"fmt\"\n\nfunc main() {}"},
+			// Short Read: not collapsed.
+			{Role: "tool", ToolName: "Read", ToolArgs: `{"path":"a.md"}`,
+				Meta: map[string]any{"path": "a.md"}, Content: "# hi\n"},
+			// System row: not collapsed.
+			{Role: "system", Content: "done"},
+		},
+	}
+	_, lm := ml.Render()
+
+	ownerSeen := map[int]int{}
+	separators := 0
+	for i, sl := range lm {
+		if sl.Owner < 0 {
+			if !sl.Chrome {
+				t.Fatalf("line %d has Owner -1 but is not chrome: %+v", i, sl)
+			}
+			separators++
+			continue
+		}
+		if sl.Owner >= len(ml.Messages) {
+			t.Fatalf("line %d owner %d out of range", i, sl.Owner)
+		}
+		ownerSeen[sl.Owner]++
+		// Collapsed follows the truncation marker the renderer placed: the
+		// 5-line turn and the 5-line Read are collapsed, the rest is not.
+		wantCollapsed := sl.Owner == 0 || sl.Owner == 1
+		if sl.Collapsed != wantCollapsed {
+			t.Fatalf("line %d (owner %d) Collapsed=%v, want %v", i, sl.Owner, sl.Collapsed, wantCollapsed)
+		}
+	}
+	if separators == 0 {
+		t.Fatal("expected at least one separator chrome line with Owner -1")
+	}
+	for i := range ml.Messages {
+		if ownerSeen[i] == 0 {
+			t.Fatalf("message %d rendered no lines", i)
+		}
+	}
+	if !lm[0].Collapsed {
+		t.Fatal("the 5-line turn must be collapsed")
+	}
+}

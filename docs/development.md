@@ -366,6 +366,14 @@ very start or end of the text. Confirm `home`/`end` (`fn+left`/`fn+right`)
 still jump to the ends of the logical line, and that a long soft-wrapped line
 is walked by word without the wrap points acting as boundaries.
 
+**Collapsed-panel hover hint.** With `ui.mouse` on, hover a truncated turn or
+tool row and confirm the footer's third line shows `ctrl+o expand all`. Press
+`ctrl+o` and confirm every truncated panel expands, the hint clears (the panel
+is no longer collapsed), and a second `ctrl+o` collapses them again. Scroll
+the transcript while hovering a panel and confirm the hint re-derives from the
+frame rather than sticking to a stale target. With `ui.mouse` off, confirm no
+hint appears.
+
 **Agent picker.** In the TUI in agent mode, press `enter` while no agent is
 engaged and confirm the strip above the prompt opens with `signet:debug`
 selected. Confirm `/agent` (no argument) also opens it. The strip lists

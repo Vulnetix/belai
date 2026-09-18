@@ -41,6 +41,16 @@ type SourceLine struct {
 	// Chrome marks pure frame (panel edges, blank separators). Chrome lines
 	// contribute a blank to copies and are never highlighted.
 	Chrome bool
+
+	// Owner is the index of the MessageList.Message that rendered this line,
+	// or -1 for separator chrome between messages. Hover hit-testing uses it
+	// to recover which panel the pointer is over.
+	Owner int
+
+	// Collapsed marks a line belonging to a panel that is currently truncated
+	// (it carries a "… N more lines" hint). Hovering such a panel offers
+	// ctrl+o to expand every truncated panel.
+	Collapsed bool
 }
 
 // LineMap is the per-line provenance of one rendered transcript frame.

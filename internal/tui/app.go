@@ -352,6 +352,14 @@ type App struct {
 	lastFrame frame
 	lastBody  string
 
+	// hover state: the last mouse position plus the target derived from it,
+	// re-derived every frame in chatView so the footer hint can never point at
+	// a panel the frame no longer shows. mousePresent is false until the first
+	// mouse event, which keeps the feature inert when mouse capture is off.
+	mouseX, mouseY int
+	mousePresent   bool
+	hover          hoverTarget
+
 	// expandAll disables truncation and shows every message in full.
 	expandAll bool
 
@@ -1249,6 +1257,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.handleModeClassified(m)
 
 	case tea.MouseMsg:
+		// Record the pointer for hover hinting regardless of what the event
+		// does: the transcript re-derives the hover target from this position
+		// every frame, and a non-chat view has no panels to hint at.
+		a.mousePresent = a.view == viewChat
+		a.mouseX, a.mouseY = m.X, m.Y
 		var vpCmd, copyCmd tea.Cmd
 		if a.view == viewChat {
 			// Branch order is load-bearing:
@@ -2295,6 +2308,10 @@ func (a *App) chatView() string {
 		height:  a.vp.Height,
 		yOffset: a.vp.YOffset,
 	}
+	// Derive the hover target from the frame that is about to be drawn, so the
+	// footer hint always matches the panel under the pointer — including after
+	// ctrl+o or a streaming delta, which arrive without a new mouse event.
+	a.recomputeHover()
 
 	var sb strings.Builder
 	if a.bannerVisible() {
@@ -2777,6 +2794,7 @@ func (a *App) refreshFooter() {
 	a.footer.Session = a.sessionDisplay()
 	a.footer.SessionName = a.sessionName
 	a.footer.ShowName = a.settings.SessionNamesVisible()
+	a.footer.Hint = a.hoverHint()
 
 	est := a.contextEstimate()
 	a.footer.Tokens = est.Tokens
@@ -3189,6 +3207,8 @@ func (a *App) startNewSession() {
 	a.namedAgent = ""
 	a.namedAgentTools = nil
 	a.agentPickerOpen = false
+	a.hover = hoverTarget{}
+	a.mousePresent = false
 	a.loadAgents()
 	a.saveSession()
 	a.refreshFooter()

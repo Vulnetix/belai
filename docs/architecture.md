@@ -911,13 +911,13 @@ system message for immediate feedback.
 viewport, Pix banner, streaming assistant/tool output, slash-command editor
 with autocomplete, the agent picker, `/model` provider/model/effort picker (a
 windowed list that scrolls with the cursor and a `/` search filter),
-`/settings` browser, `/permissions` editor, and a two-line status footer. The Ask composer doubles
+`/settings` browser, `/permissions` editor, and a status footer. The Ask composer doubles
 as the working indicator: it shows a Role Manager pill while classification
 runs and a generic `working` label for plain I/O (see below).
 
 ### Status bar
 
-The footer is a rule plus two lines:
+The footer is a rule plus three content lines:
 - Line 1: the mode chip (coloured — teal for agent, soft teal for plan, amber
   for goal), cwd (home collapsed to `~`) and git branch (`⎇ main`), joined by
   `·`. The mode chip carries the engaged agent when there is one —
@@ -941,6 +941,11 @@ The footer is a rule plus two lines:
 - Nothing else is truncated or wrapped: when the terminal is narrower than the
   content, the padding between left and right clamps to one cell and the line
   overflows instead.
+- Line 3 is the hover-hint line. It is always emitted (empty when the pointer
+  is over nothing actionable) so the footer's height never changes with the
+  mouse; a height change would shift the viewport under a stationary pointer
+  and could make the hint oscillate. When the pointer is over a truncated
+  panel it shows `ctrl+o expand all` (see [Mouse hover hints](#mouse-hover-hints)).
 
 **Permission chips.** Guardrails and ask render as two chips, `guardrails:
 on|off` and `ask: on|off`, teal when on and red when off. When *both* are off
@@ -1056,6 +1061,16 @@ text it stands for, so a selection overlapping the marker copies the hidden
 remainder instead of the hint. `Highlight` reverse-videos a cell range without
 changing any line's visible characters or width, and refuses to touch a frame
 whose map length does not match — a desynced map must never corrupt the frame.
+
+Every line also carries hover provenance, stamped after every render (cache
+hits included) by `tagProvenance`:
+- `Owner` is the index of the message that rendered the line, or `-1` for the
+  blank separator between framed panels.
+- `Collapsed` marks a line whose panel is currently truncated, i.e. it carries
+  a `… N more lines` marker. Hovering it offers `ctrl+o`.
+
+These flags are derived, not stored: `tagProvenance` reads the marker shape,
+so an expand can never leave a stale `Collapsed` behind.
 
 Slicing is by terminal cell, never by rune index, so CJK and emoji stay on
 cluster boundaries.
@@ -1193,6 +1208,24 @@ Business rules:
   viewport's height of lines (off-screen rows are re-rendered every frame
   anyway) and must never change a line's visible characters or cell width —
   a width change would trip the viewport's `MaxWidth` and shift the frame.
+
+### Mouse hover hints
+
+The transcript is hover hit-tested, and the footer's third content line
+advertises what the pointer can do. The target is re-derived every frame
+(`App.recomputeHover`) from the last mouse position and the rendered frame's
+provenance, not stored on mouse motion, so it can never point at a panel the
+frame no longer shows: expanding with `ctrl+o`, clearing with `ctrl+l`, or a
+streaming delta all re-derive the target without another mouse event. With
+`ui.mouse` off no mouse events arrive, so the feature is inert — the same gate
+as drag-selection.
+
+- **Collapsed panel** — any truncated turn, reasoning panel, or tool row.
+  Hovering shows `ctrl+o expand all`; the key is the same global toggle that
+  collapses again when already expanded.
+
+The footer's height is constant (rule + two info lines + hint line), so
+showing or hiding a hint never shifts the viewport.
 
 ### Keybindings
 
