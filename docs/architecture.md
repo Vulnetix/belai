@@ -1801,6 +1801,7 @@ Provider-specific edge cases:
 | `/help` | Show the commands and every keyboard shortcut |
 | `/clear` | Start a new session |
 | `/compact` | Summarise the session into a new one |
+| `/resume` | Resume a session by id, or browse every session on disk |
 | `/rename` | Rename this session |
 | `/agent` | Manage background agents (`create`, `list`, `edit <name>`, `start`, `stop`, `pause`, `resume`, `log`) |
 

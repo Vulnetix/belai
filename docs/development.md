@@ -79,6 +79,7 @@ just ask anthropic claude-sonnet-4-5 "review this diff" -detect-mode -verbose
 | `-agent-create` | create an agent profile from a description and save to disk |
 | `-no-prune` | never prune idle sessions (overrides `-session-retention-days`) |
 | `-plan` | start in plan mode: read-only tools only, no mutation |
+| `-resume`, `-r` | resume a session by id or unique id prefix in the interactive TUI |
 | `-verbose` | print Role Manager decisions and the security sentinel to stderr |
 | `-version` | print the version and exit |
 
