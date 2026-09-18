@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/vulnetix/signet/internal/provider"
@@ -313,13 +314,13 @@ func TestListGoogleGemini(t *testing.T) {
 }
 
 func TestListOllamaEnrichesContextWindow(t *testing.T) {
-	var showCalls int
+	var showCalls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/models":
 			_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"id": "llama3.1"}, map[string]any{"id": "phi4"}}})
 		case "/api/show":
-			showCalls++
+			showCalls.Add(1)
 			var body map[string]string
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			info := map[string]any{
@@ -350,7 +351,7 @@ func TestListOllamaEnrichesContextWindow(t *testing.T) {
 	if len(models) != 2 {
 		t.Fatalf("models = %+v", models)
 	}
-	if showCalls == 0 {
+	if showCalls.Load() == 0 {
 		t.Fatal("expected /api/show enrichment calls")
 	}
 	want := map[string]int{"llama3.1": 131072, "phi4": 16384}
