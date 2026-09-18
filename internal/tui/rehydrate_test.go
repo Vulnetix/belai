@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -165,6 +168,36 @@ func TestRehydrateRestoresState(t *testing.T) {
 	if len(r.Messages) != 2 {
 		t.Fatalf("messages = %d, want 2: %+v", len(r.Messages), r.Messages)
 	}
+}
+
+// TestRehydrateSchema1Fixture is the standing guard over a copy of a real
+// pre-tool-persistence session file: it must rehydrate text-only and satisfy
+// the pairing post-conditions.
+func TestRehydrateSchema1Fixture(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "schema1.jsonl"))
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	var entries []session.Entry
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var e session.Entry
+		if err := json.Unmarshal([]byte(line), &e); err != nil {
+			t.Fatalf("parse fixture: %v", err)
+		}
+		entries = append(entries, e)
+	}
+	r := rehydrateSession(entries)
+	if !r.TextOnly {
+		t.Fatal("real schema-1 fixture should rehydrate text-only")
+	}
+	if len(r.Messages) < 4 {
+		t.Fatalf("fixture messages = %d, want >= 4", len(r.Messages))
+	}
+	assertPairing(t, r.Messages)
 }
 
 func TestRehydrateSkipsMalformedPlanState(t *testing.T) {
