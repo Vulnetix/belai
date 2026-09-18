@@ -109,6 +109,7 @@ type agentBuilderDoneMsg struct {
 type modeClassifiedMsg struct {
 	input     string
 	atts      []run.Attachment
+	directive string
 	firstUser bool
 	decision  rolemanager.ModeDecision
 	err       error
@@ -313,6 +314,14 @@ type App struct {
 	// namedAgentTools is the engaged background definition's tool allowlist,
 	// applied to the session it carries. Empty means every registered tool.
 	namedAgentTools []string
+
+	// file picker: the @ file chooser above the composer.
+	files         []string  // workspace listing, slash paths relative to workdir
+	filesLoadedAt time.Time // 30s TTL, mirrors availability.go
+	filesLoading  bool      // an async listing is in flight
+	fileIndex     int       // highlight; -1 = none
+	fileScroll    int       // window start over fileCandidates
+	fileDismissed string    // the @token esc/left closed on; cleared when it changes
 
 	// save to library
 	savePromptMode  bool
@@ -629,6 +638,10 @@ func (a *App) belowViewportHeight() int {
 	if a.agentPickerVisible() {
 		h++
 	}
+	if a.promptPickerVisible() {
+		h++
+	}
+	h += a.filePickHeight()
 	h += a.attachStripHeight()
 	h += a.todoPanelHeight()
 	h += a.editor.Height() + 2 // composer frame (top and bottom edges)
@@ -709,6 +722,7 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 	}
 	if n := len(turns); n > 0 && turns[n-1].Role == "user" {
 		in.Attachments = turns[n-1].Attachments
+		in.Directive = turns[n-1].Directive
 		in.HasReferences = len(in.Attachments) > 0
 		for _, att := range turns[n-1].Attachments {
 			if att.Kind == "shell" {
@@ -750,6 +764,9 @@ func (a *App) startAgent(sess *agent.Session, history []run.Turn, in agent.TurnI
 // the composer shows the Role Manager indicator while the pre-prompt
 // classifier runs.
 func (a *App) submitInput(input string) tea.Cmd {
+	previews, directive := a.attachmentPreviews()
+	a.messages = append(a.messages, previews...)
+
 	var safe []run.Attachment
 	for _, id := range a.attachOrder {
 		att := a.attachments[id]
@@ -775,11 +792,11 @@ func (a *App) submitInput(input string) tea.Cmd {
 			a.forceMode = modes.Mode(a.mode)
 		}
 		a.modeExplicit = false
-		return a.sendTurn(firstUser, input, safe)
+		return a.sendTurn(firstUser, input, safe, directive)
 	}
 	a.modeExplicit = false
 	a.preSend = true
-	return a.classifyAndSend(input, safe, firstUser)
+	return a.classifyAndSend(input, safe, directive, firstUser)
 }
 
 // echoUser appends a submitted prompt to the transcript and persists it as a
@@ -793,21 +810,22 @@ func (a *App) echoUser(input string) {
 // transcript. The echoed prompt is the transcript's last user message, so the
 // validated attachments are folded into it rather than appending a duplicate
 // turn.
-func (a *App) sendTurnNoEcho(input string, atts []run.Attachment) tea.Cmd {
+func (a *App) sendTurnNoEcho(input string, atts []run.Attachment, directive string) tea.Cmd {
 	turns := a.buildTurns()
 	if n := len(turns); n > 0 && turns[n-1].Role == "user" {
 		turns[n-1].Attachments = atts
+		turns[n-1].Directive = directive
 		return a.send(turns)
 	}
-	turns = append(turns, run.Turn{Role: "user", Content: input, Attachments: atts})
+	turns = append(turns, run.Turn{Role: "user", Content: input, Attachments: atts, Directive: directive})
 	return a.send(turns)
 }
 
 // sendTurn starts the agent turn and, for the session's first prompt, also
 // kicks off the async session-naming call.
-func (a *App) sendTurn(firstUser bool, input string, atts []run.Attachment) tea.Cmd {
+func (a *App) sendTurn(firstUser bool, input string, atts []run.Attachment, directive string) tea.Cmd {
 	a.preSend = false
-	cmd := a.sendTurnNoEcho(input, atts)
+	cmd := a.sendTurnNoEcho(input, atts, directive)
 	if firstUser && a.shouldAutoName() {
 		a.nameRequested = true
 		return tea.Batch(cmd, a.nameSessionCmd(input))
@@ -818,7 +836,7 @@ func (a *App) sendTurn(firstUser bool, input string, atts []run.Attachment) tea.
 // classifyAndSend runs the mode classifier in a goroutine and sends the turn
 // when the decision lands. By the time this command starts, the prompt is
 // already echoed and the Role Manager indicator is up.
-func (a *App) classifyAndSend(input string, atts []run.Attachment, firstUser bool) tea.Cmd {
+func (a *App) classifyAndSend(input string, atts []run.Attachment, directive string, firstUser bool) tea.Cmd {
 	c := a.classifier
 	ctx := a.ctx
 	return func() tea.Msg {
@@ -827,7 +845,7 @@ func (a *App) classifyAndSend(input string, atts []run.Attachment, firstUser boo
 			GoalLimit:     rolemanager.DefaultGoalPromptLengthLimit,
 			HasReferences: len(atts) > 0,
 		})
-		return modeClassifiedMsg{input: input, atts: atts, firstUser: firstUser, decision: d, err: err}
+		return modeClassifiedMsg{input: input, atts: atts, directive: directive, firstUser: firstUser, decision: d, err: err}
 	}
 }
 
@@ -838,7 +856,7 @@ func (a *App) handleModeClassified(m modeClassifiedMsg) tea.Cmd {
 		return nil
 	}
 	a.applyModeDecision(m.decision, m.err)
-	return a.sendTurn(m.firstUser, m.input, m.atts)
+	return a.sendTurn(m.firstUser, m.input, m.atts, m.directive)
 }
 
 // handleAgentReady starts the streaming turn once the async session build
@@ -1176,6 +1194,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case availabilityMsg:
 		return a, a.handleAvailability(m)
 
+	case filesLoadedMsg:
+		return a, a.handleFilesLoaded(m)
+
 	case copiedMsg:
 		a.addSystem(m.text)
 		return a, nil
@@ -1351,6 +1372,12 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		return a.handleHistoryKey(m)
 	}
 
+	if a.filePickerVisible() {
+		if cmd, handled := a.handleFilePickKey(m); handled {
+			return cmd
+		}
+	}
+
 	switch m.String() {
 	case "pgup", "pgdown", "shift+up", "shift+down", "ctrl+home", "ctrl+end":
 		switch m.String() {
@@ -1511,10 +1538,21 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 func (a *App) forwardToEditor(m tea.KeyMsg) tea.Cmd {
 	cmd := a.editor.Update(m)
 	// Typing re-filters the agent strip, so a highlight from the old list
-	// would point at a name that is no longer under it.
+	// would point at a name that is no longer under it. The same is true for
+	// the file chooser, and a dismissed chooser reopens once the user types
+	// again.
 	a.agentIndex = noAgentSelection
+	a.fileIndex = noFileSelection
+	a.fileScroll = 0
+	a.fileDismissed = ""
 	a.refreshAutocomplete()
 	a.relayout()
+	// Lazily load the workspace listing the first time the file chooser could
+	// appear. Returning the command alongside the editor update lets the
+	// current keystroke take effect while the listing fills in the background.
+	if loadCmd := a.fileListIfStale(); loadCmd != nil {
+		return tea.Batch(cmd, loadCmd)
+	}
 	return cmd
 }
 
@@ -2266,6 +2304,10 @@ func (a *App) chatView() string {
 	}
 	if a.promptPickerVisible() {
 		sb.WriteString(a.renderPromptPicker())
+		sb.WriteString("\n")
+	}
+	if a.filePickerVisible() {
+		sb.WriteString(a.renderFilePicker())
 		sb.WriteString("\n")
 	}
 	if len(a.attachments) > 0 {

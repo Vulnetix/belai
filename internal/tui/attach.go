@@ -8,6 +8,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/vulnetix/signet/internal/filediff"
+
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
@@ -29,12 +31,14 @@ const (
 
 // attachment is one parsed @file reference.
 type attachment struct {
-	id     int
-	text   string // the literal "@path" the user typed, used as join key
-	raw    string // path part after sanitisation
-	body   string // file contents after successful validation
-	state  attachState
-	reason string
+	id       int
+	text     string // the literal "@path" the user typed, used as join key
+	raw      string // path part after sanitisation
+	body     string // file contents after successful validation
+	state    attachState
+	reason   string
+	diff     filediff.Change // worktree-vs-index change, computed on validation
+	sentinel rolemanager.Sentinel
 }
 
 // token is one candidate attachment parsed from editor text.
@@ -51,6 +55,7 @@ type attachValidatedMsg struct {
 	body     string
 	err      error
 	sentinel rolemanager.Sentinel
+	diff     filediff.Change
 }
 
 // reservedAttachSchemes lists prefixes that look like schemes but must not be
@@ -184,13 +189,17 @@ func (a *App) validateAttachmentCmd(id int, rel string) tea.Cmd {
 		if err != nil {
 			return attachValidatedMsg{id: id, err: err, sentinel: rolemanager.SentinelMalformed}
 		}
+		// Compute the worktree-vs-index diff on the validation goroutine so the
+		// Update loop never shells out to git.
+		rec := filediff.NewRecorder(workdir)
+		diff := rec.WorktreeChange(ctx, rel, res.Content)
 		// With the gate ignored the verdict cannot change the outcome, so the
 		// classifier is not called at all. Calling it and then discarding the
 		// answer would spend a round trip per attachment and send the file to
 		// the provider's classifier turn, which is the opposite of what
 		// turning guardrails off asks for. Sanitising still runs.
 		if pol.Level(posture.ToolResultUnsafe) == posture.Ignore {
-			return attachValidatedMsg{id: id, body: sanitize.Sanitize(res.Content), sentinel: rolemanager.SentinelSafe}
+			return attachValidatedMsg{id: id, body: sanitize.Sanitize(res.Content), sentinel: rolemanager.SentinelSafe, diff: diff}
 		}
 		pipe := run.NewPipeline(cfg, client, a.cache)
 		dec, perr := pipe.Process(ctx, res)
@@ -198,7 +207,7 @@ func (a *App) validateAttachmentCmd(id int, rel string) tea.Cmd {
 		if perr == nil && dec.Action == rolemanager.ActionProceed {
 			body = dec.Content
 		}
-		return attachValidatedMsg{id: id, body: body, err: perr, sentinel: dec.Sentinel}
+		return attachValidatedMsg{id: id, body: body, err: perr, sentinel: dec.Sentinel, diff: diff}
 	}
 }
 
@@ -213,6 +222,8 @@ func (a *App) handleAttachValidated(m attachValidatedMsg) tea.Cmd {
 		delete(a.attachments, m.id)
 		return nil
 	}
+	att.sentinel = m.sentinel
+	att.diff = m.diff
 	if m.err != nil {
 		att.state = attachRejected
 		att.reason = m.err.Error()
@@ -228,7 +239,8 @@ func (a *App) handleAttachValidated(m attachValidatedMsg) tea.Cmd {
 }
 
 // flushPendingSubmit sends a held prompt once every attachment is safe.
-// Rejected attachments are skipped (the literal @token remains in the prompt).
+// Rejected attachments are skipped (the literal @token remains in the prompt)
+// and reported to the model through a sealed directive.
 func (a *App) flushPendingSubmit() tea.Cmd {
 	if a.pendingInput == "" {
 		return nil
@@ -241,6 +253,8 @@ func (a *App) flushPendingSubmit() tea.Cmd {
 	}
 	input := a.pendingInput
 	a.pendingInput = ""
+	previews, directive := a.attachmentPreviews()
+	a.messages = append(a.messages, previews...)
 	var atts []run.Attachment
 	for _, id := range a.attachOrder {
 		att := a.attachments[id]
@@ -252,15 +266,60 @@ func (a *App) flushPendingSubmit() tea.Cmd {
 	a.attachOrder = nil
 	a.editor.Reset()
 	a.clearAutocomplete()
-	return a.sendWithAttachments(input, atts)
+	return a.sendWithAttachments(input, atts, directive)
 }
 
-func (a *App) sendWithAttachments(input string, atts []run.Attachment) tea.Cmd {
+func (a *App) sendWithAttachments(input string, atts []run.Attachment, directive string) tea.Cmd {
 	turns := a.buildTurns()
-	turns = append(turns, run.Turn{Role: "user", Content: input, Attachments: atts})
+	turns = append(turns, run.Turn{Role: "user", Content: input, Attachments: atts, Directive: directive})
 	a.messages = append(a.messages, components.Message{Role: "user", Content: input})
 	a.appendEntry(session.Entry{Type: "user", Role: "user", Content: input})
 	return a.send(turns)
+}
+
+// attachmentPreviews builds the transcript rows that preview every attachment
+// and the directive that tells the model about rejected ones. Safe attachments
+// render as Read tool rows with an optional worktree diff; rejected ones
+// render as red "withheld" rows.
+func (a *App) attachmentPreviews() ([]components.Message, string) {
+	var previews []components.Message
+	var withheld []string
+	for _, id := range a.attachOrder {
+		att := a.attachments[id]
+		switch att.state {
+		case attachSafe:
+			msg := components.Message{
+				Role:     "tool",
+				ToolName: "Read",
+				ToolArgs: `{"path":"` + att.raw + `"}`,
+				Content:  att.body,
+				Meta:     map[string]any{"path": att.raw, "start_line": 1},
+				Status:   "✓",
+			}
+			if !att.diff.Empty() {
+				msg.SetDiff(&att.diff)
+			}
+			previews = append(previews, msg)
+		case attachRejected:
+			previews = append(previews, components.Message{
+				Role:     "tool",
+				ToolName: "Read",
+				ToolArgs: `{"path":"` + att.raw + `"}`,
+				Content:  "tool result withheld: attachment " + att.text + " classified " + string(att.sentinel),
+			})
+			if att.text != "" {
+				withheld = append(withheld, fmt.Sprintf("%s (classified %s)", att.text, att.sentinel))
+			}
+		}
+	}
+	var directive string
+	if len(withheld) > 0 {
+		directive = "Files the user referenced with @ were not admitted: " +
+			strings.Join(withheld, "; ") +
+			". Their contents are withheld and are not in this turn. Do not ask for them again. " +
+			"Answer from what is present, or tell the user what alternative would let you proceed."
+	}
+	return previews, directive
 }
 
 // hasPendingAttachments reports whether any attachment has not yet resolved.

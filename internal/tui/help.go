@@ -52,13 +52,21 @@ func keySections() []keySection {
 			{"right", "put the highlighted completion, or the first one, in the prompt"},
 			{"esc", "drop the highlight, keeping the popup"},
 		}},
+		{"file chooser (@, above the prompt)", []keyBinding{
+			{"@", "open the file chooser in any mode"},
+			{"type", "filter the file list; the @prefix is the filter"},
+			{"up, down", "move the highlight, wrapping"},
+			{"right, tab, enter", "insert the highlighted path and close the chooser"},
+			{"esc, left", "close the chooser; typing reopens it"},
+		}},
 		{"agent picker (agent mode, above the prompt)", []keyBinding{
+			{"@agent:", "open the agent picker; bare @ opens files"},
 			{"tab", "highlight the next agent, ending on (none)"},
 			{"enter", "engage the highlighted agent for the following agent-mode turns"},
 			{"right", "engage the highlighted agent"},
 			{"ctrl+g", "start the highlighted ↻ definition as a background agent"},
 			{"esc", "drop the highlight, keeping the strip"},
-			{"@name", "filter the strip; the text is consumed when you engage"},
+			{"@agent:name", "filter the strip; the text is consumed when you engage"},
 		}},
 		{"transcript", []keyBinding{
 			{"pgup, pgdown", "page up, page down"},

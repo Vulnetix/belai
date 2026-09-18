@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -920,6 +921,38 @@ func TestEditorHeightClamps(t *testing.T) {
 	a.relayout()
 	if a.editor.Height() > editorMaxHeight {
 		t.Fatalf("editor height %d exceeds max %d", a.editor.Height(), editorMaxHeight)
+	}
+}
+
+func TestBelowViewportHeightAccountsForFileAndPromptPickers(t *testing.T) {
+	a := New(Options{})
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	base := a.belowViewportHeight()
+
+	// File picker visible.
+	a.files = []string{"a.go", "b.go"}
+	a.filesLoadedAt = time.Now()
+	a.editor.SetValue("@")
+	a.editor.CursorEnd()
+	if !a.filePickerVisible() {
+		t.Fatalf("file picker should be visible")
+	}
+	withFile := a.belowViewportHeight()
+	if withFile <= base {
+		t.Fatalf("belowViewportHeight with file picker (%d) should exceed base (%d)", withFile, base)
+	}
+
+	// Prompt picker visible.
+	a = New(Options{})
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	a.historyActive = true
+	a.historyResults = []historyItem{{Name: "deploy", Prompt: "deploy the app"}}
+	if !a.promptPickerVisible() {
+		t.Fatalf("prompt picker should be visible")
+	}
+	withPrompt := a.belowViewportHeight()
+	if withPrompt <= base {
+		t.Fatalf("belowViewportHeight with prompt picker (%d) should exceed base (%d)", withPrompt, base)
 	}
 }
 

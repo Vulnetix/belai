@@ -167,7 +167,7 @@ func (a *App) handleShellDone(m shellDoneMsg) tea.Cmd {
 		input := fmt.Sprintf("Output of `%s` is attached.", m.command)
 		return a.sendWithAttachments(input, []run.Attachment{
 			{Kind: "shell", Label: m.command, Body: m.body},
-		})
+		}, "")
 	}
 
 	a.addSystem(fmt.Sprintf("shell output classified %s and not sent", m.sentinel))

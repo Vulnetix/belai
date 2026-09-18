@@ -38,6 +38,7 @@ func TestAgentPickerListsProfilesAndBuiltins(t *testing.T) {
 	if user != 1 || builtin == 0 {
 		t.Fatalf("agents = %+v, want 1 user profile and at least one built-in", a.agents)
 	}
+	a.editor.SetValue("@agent:")
 	if !a.agentPickerVisible() {
 		t.Fatalf("expected the picker to show in agent mode")
 	}
@@ -78,6 +79,8 @@ func TestAgentPickerTabCyclesThroughNone(t *testing.T) {
 	saveProfile(t, "reviewer")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
+	a.editor.SetValue("@agent:")
+	original := a.editor.Value()
 	want := a.agents
 
 	for i := range want {
@@ -86,7 +89,7 @@ func TestAgentPickerTabCyclesThroughNone(t *testing.T) {
 		if !ok || got.Name != want[i].Name {
 			t.Fatalf("tab %d: selection = %+v (ok=%v), want %q", i+1, got, ok, want[i].Name)
 		}
-		if a.editor.Value() != "" {
+		if a.editor.Value() != original {
 			t.Fatalf("tab %d: prompt = %q, want it untouched", i+1, a.editor.Value())
 		}
 	}
@@ -108,7 +111,7 @@ func TestAgentPickerEnterEngagesProfile(t *testing.T) {
 	saveProfile(t, "reviewer")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
-	a.editor.SetValue("fix the flaky test")
+	a.editor.SetValue("fix the flaky test @agent:")
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
 	want, _ := a.agentSelection()
 
@@ -117,7 +120,7 @@ func TestAgentPickerEnterEngagesProfile(t *testing.T) {
 	if a.namedAgent != want.Name {
 		t.Fatalf("namedAgent = %q, want %q", a.namedAgent, want.Name)
 	}
-	if a.editor.Value() != "fix the flaky test" {
+	if strings.TrimSpace(a.editor.Value()) != "fix the flaky test" {
 		t.Fatalf("prompt = %q, want the typed text kept", a.editor.Value())
 	}
 	a.refreshFooter()
@@ -135,7 +138,7 @@ func TestAgentPickerEnterWithoutHighlightStillSends(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
-	a.editor.SetValue("hello")
+	a.editor.SetValue("hello @agent:")
 
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
 
@@ -151,7 +154,7 @@ func TestAgentPickerRightIsCursorUntilHighlighted(t *testing.T) {
 	saveProfile(t, "reviewer")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
-	a.editor.SetValue("abc")
+	a.editor.SetValue("abc @agent:")
 
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRight})
 	if a.namedAgent != "" {
@@ -172,7 +175,7 @@ func TestAgentPickerAtPrefixFiltersAndIsConsumed(t *testing.T) {
 	saveProfile(t, "reviewer")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
-	a.editor.SetValue("check this @rev")
+	a.editor.SetValue("check this @agent:rev")
 
 	cands := a.agentCandidates()
 	if len(cands) != 1 || cands[0].Name != "reviewer" {
@@ -210,6 +213,7 @@ func TestAgentPickerNoneClearsSelection(t *testing.T) {
 	saveProfile(t, "reviewer")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
+	a.editor.SetValue("@agent:")
 	a.namedAgent = "reviewer"
 	a.agentIndex = len(a.agentCandidates()) // the (none) slot
 
@@ -227,6 +231,7 @@ func TestEngagedAgentReachesTurnInput(t *testing.T) {
 	saveProfile(t, "reviewer")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
+	a.editor.SetValue("@agent:")
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
 
@@ -332,7 +337,7 @@ func TestAgentPickerEngagingBackgroundDefinitionAppliesTools(t *testing.T) {
 
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
-	a.editor.SetValue("@nightly")
+	a.editor.SetValue("@agent:nightly")
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
 
@@ -355,6 +360,7 @@ func TestAgentPickerCtrlGStartsOnlyBackgroundDefinitions(t *testing.T) {
 
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
+	a.editor.SetValue("@agent:")
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
 	if got, _ := a.agentSelection(); got.Name != "reviewer" {
 		t.Fatalf("selection = %+v, want reviewer", got)
@@ -379,7 +385,7 @@ func TestEngagedAgentIsDormantOutsideAgentMode(t *testing.T) {
 	saveBackgroundAgent(t, "nightly-audit", "Read")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
-	a.editor.SetValue("@nightly")
+	a.editor.SetValue("@agent:nightly")
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if a.engagedAgent() != "nightly-audit" {

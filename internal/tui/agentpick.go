@@ -100,24 +100,26 @@ func (a *App) startAgentChoice(c agentChoice) tea.Cmd {
 // agentPrefix returns the profile-name prefix the user is typing, if any. A
 // trailing `@word` filters the strip the way `/word` filters the command
 // popup; `@agent:name` — the syntax the mode classifier already understands —
-// filters on the name after the scheme.
-func (a *App) agentPrefix() (string, bool) {
+// filters on the name after the scheme. The first result is the raw token
+// after the `@` (so callers can test for the `agent:` scheme); the second is
+// the name filter with the scheme removed.
+func (a *App) agentPrefix() (string, string, bool) {
 	value := a.editor.Value()
 	at := strings.LastIndex(value, "@")
 	if at < 0 {
-		return "", false
+		return "", "", false
 	}
 	word := value[at+1:]
 	if strings.ContainsAny(word, " \t\n") {
-		return "", false
+		return "", "", false
 	}
-	return strings.TrimPrefix(word, "agent:"), true
+	return word, strings.TrimPrefix(word, "agent:"), true
 }
 
 // agentCandidates returns the profiles the strip is currently offering: every
 // profile, or the ones matching the `@` prefix being typed.
 func (a *App) agentCandidates() []agentChoice {
-	prefix, ok := a.agentPrefix()
+	_, prefix, ok := a.agentPrefix()
 	if !ok || prefix == "" {
 		return a.agents
 	}
@@ -134,9 +136,19 @@ func (a *App) agentCandidates() []agentChoice {
 
 // agentPickerVisible reports whether the strip has anything to draw. The slash
 // popup wins when both could show: two strips competing for tab would make
-// neither predictable.
+// neither predictable. Bare "@" now opens the file chooser in every mode;
+// only the literal "@agent:" scheme engages the agent picker.
 func (a *App) agentPickerVisible() bool {
 	if a.view != viewChat || a.mode != "agent" || len(a.autocomplete) > 0 {
+		return false
+	}
+	raw, _, ok := a.agentPrefix()
+	if !ok {
+		return false
+	}
+	// Bare "@" now opens the file chooser in every mode; only the literal
+	// "@agent:" scheme engages the agent picker.
+	if !strings.HasPrefix(raw, "agent:") {
 		return false
 	}
 	return len(a.agentCandidates()) > 0
@@ -232,7 +244,7 @@ func (a *App) acceptAgent() tea.Cmd {
 
 // clearAgentPrefix removes the trailing `@word` the picker was filtered by.
 func (a *App) clearAgentPrefix() {
-	if _, ok := a.agentPrefix(); !ok {
+	if _, _, ok := a.agentPrefix(); !ok {
 		return
 	}
 	value := a.editor.Value()
