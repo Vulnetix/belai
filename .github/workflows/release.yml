@@ -42,11 +42,10 @@ jobs:
           echo "Releasing $VERSION"
 
   # Signet is pure Go (CGO_ENABLED=0), so every target cross-compiles from one
-  # Linux box. That box is the org's self-hosted x64 pool
-  # (github-runner-aws): [self-hosted, Linux, X64, vulnetix-local].
+  # Linux box.
   build:
     needs: version
-    runs-on: [self-hosted, Linux, X64, vulnetix-local]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
