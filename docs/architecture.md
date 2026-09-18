@@ -1709,15 +1709,46 @@ failures are visible.
 
 Provider-specific edge cases:
 
+- **`anthropic`** returns `max_input_tokens` (and, on newer endpoints,
+  `max_tokens`) in the `/v1/models` response. The parser also accepts a
+  legacy `context_window` key so a proxy or forwarded response still works;
+  the first non-zero value is used.
+- **`github-copilot`** uses its own parser that reads
+  `capabilities.limits.max_context_window_tokens`, then
+  `capabilities.limits.max_prompt_tokens`, then top-level `context_length`;
+  first non-zero wins. Copilot previously shared the OpenRouter branch and
+  always returned 0 because Copilot does not emit a top-level
+  `context_length`.
+- **`openrouter`** prefers `top_provider.context_length` over the top-level
+  `context_length`; the top-provider value is the real limit of the endpoint
+  requests actually route to.
+- **`google-gemini`** does not expose limits on the OpenAI-compatible
+  surface, so Signet trims a trailing `/openai` and calls the native
+  `/models` endpoint with `x-goog-api-key` instead of a Bearer token. The
+  parser keeps only entries whose `supportedGenerationMethods` contains
+  `generateContent`; embedding models are excluded.
+- **`cloudflare-workers-ai`** parses `/ai/models/search` result properties.
+  The `context_window` property is preferred and falls back to
+  `max_total_tokens`; values are strings and parse failures are ignored, so
+  an unknown window stays 0 rather than failing the list.
+- **`ollama`** enriches the OpenAI-compatible `/models` list with a `POST
+  /api/show` call per model, reading `<arch>.context_length` from
+  `model_info`. This is the trained window, not the served `num_ctx`;
+  enrichment failure is ignored so a missing endpoint never breaks the list.
+- **`llama-server`** enriches `/v1/models` with `GET /props` (base URL minus
+  trailing `/v1`), taking `default_generation_settings.n_ctx`. The runtime
+  window overrides `meta.n_ctx_train` when present and applies to every model
+  in the list.
 - **`huggingface`** live-fetches from `https://router.huggingface.co/v1/models`.
   HuggingFace no longer runs its own `hf-inference` serverless provider;
   inference is routed through third-party providers (deepinfra, novita, etc.)
   and users must enable the desired providers in their HuggingFace dashboard
   before a model can be called.  The fetched list may therefore include models
   whose provider is not enabled on the account; selecting one returns
-  `model_not_supported` from the router.  The picker does not pre-filter
-  because the router exposes no enabled-only list.  Users can still type and
-  commit any model id directly.
+  `model_not_supported` from the router.  The parser reads
+  `providers[].context_length` and uses the largest value reported. The picker
+  does not pre-filter because the router exposes no enabled-only list. Users
+  can still type and commit any model id directly.
 - **`cloudflare-ai-gateway`** reuses the account's Workers AI catalogue for
   its model list, fetched with the Workers AI credentials
   (`CLOUDFLARE_API_KEY` + `CLOUDFLARE_ACCOUNT_ID`) rather than the gateway
@@ -1773,11 +1804,13 @@ credentials are missing. When nothing is configured, it says so clearly.
 `internal/transcript` implements hybrid token accounting with no tokenizer
 dependency: anchor on the last assistant message carrying provider-reported
 usage, then add a conservative `chars/4` estimate only for messages after that
-anchor. `internal/modelinfo` maps model ids to context-window sizes; unlisted
-models render `(?)` rather than a guessed denominator. The `context_windows`
-setting overrides the registry for models Signet does not know. After
-`/compact` the anchor describes the pre-compaction conversation, so the footer
-renders `(?)` until a fresh assistant response lands.
+anchor. The denominator is resolved by `internal/modelinfo.ResolveWith`:
+user-provided `context_windows` overrides take precedence, then any
+live-fetched window from the selected model, then the built-in registry.
+`internal/modelinfo` therefore stays as an offline fallback rather than the
+sole source of truth, and unlisted models render `(?)` rather than a guessed
+denominator. After `/compact` the anchor describes the pre-compaction
+conversation, so the footer renders `(?)` until a fresh assistant response lands.
 
 ### Settings
 

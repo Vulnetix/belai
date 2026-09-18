@@ -175,6 +175,38 @@ Business rules and edge cases:
   from HuggingFace; enable the corresponding provider in the HuggingFace
   dashboard before calling it. The picker does not pre-filter because the
   router exposes no enabled-only list.
+- **Anthropic context fields** — the parser reads `max_input_tokens` and
+  falls back to `max_tokens` and the legacy `context_window` key. Any proxy
+  that emits the older spelling still works; the first non-zero value wins.
+- **GitHub Copilot capabilities** — the response declares context limits under
+  `capabilities.limits`. `max_context_window_tokens` is preferred, then
+  `max_prompt_tokens`, then top-level `context_length`; first non-zero wins.
+- **OpenRouter top-provider limit** — `top_provider.context_length` is
+  preferred over the top-level `context_length` because it is the real limit
+  of the endpoint requests route to.
+- **Google Gemini native endpoint** — the OpenAI-compatible `/models` carries
+  no window, so Signet calls the native `v1beta/models` endpoint by stripping
+  a trailing `/openai` from the base URL and authenticates with
+  `x-goog-api-key` rather than a Bearer token. Only models whose
+  `supportedGenerationMethods` contains `generateContent` are kept; embedding
+  models are filtered out.
+- **Cloudflare Workers AI properties** — `/ai/models/search` returns limits as
+  `properties` pairs. `context_window` is preferred and falls back to
+  `max_total_tokens`; values arrive as strings and parse failures are ignored
+  (the window stays unknown).
+- **Ollama enrichment** — the OpenAI-compatible `/models` list carries no
+  window, so each entry is enriched with `POST /api/show`, reading
+  `<arch>.context_length` from `model_info`. `context_length` is the model's
+  trained window, not the served `num_ctx`. Enrichment runs with bounded
+  concurrency and failures are ignored so a missing `/api/show` endpoint
+  never breaks the list.
+- **llama-server runtime window** — the `/v1/models` list is enriched by
+  calling `GET /props` (base URL minus trailing `/v1`), which returns the
+  runtime `default_generation_settings.n_ctx`. That value overrides
+  `meta.n_ctx_train` when present and applies to every model in the list.
+- **Static registry fallback** — `internal/modelinfo` stays unchanged. It is
+  used for `openai` and `cloudflare-ai-gateway`, offline use, and whenever a
+  live fetch fails or returns no window.
 - **Empty live fetch** — if the live request fails or returns nothing, the
   picker silently falls back to the static catalogue (when one exists) and
   still allows typing any model id directly.

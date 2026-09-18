@@ -44,6 +44,14 @@ type dialect struct {
 // gateway relaying a claude model does not, despite both being
 // kindAnthropicMessages. Collapsing them would silently change the gateway's
 // behaviour.
+// ResolveDialect returns the wire dialect for a provider/model pair, ignoring
+// any error and returning a zero dialect instead. It is exported for callers
+// that only need feature predicates such as UsesEffort.
+func ResolveDialect(cfg Config) dialect {
+	d, _ := resolveDialect(cfg)
+	return d
+}
+
 func resolveDialect(cfg Config) (dialect, error) {
 	if cfg.API != "" {
 		return customDialect(cfg.API)
@@ -88,6 +96,13 @@ func customDialect(s wire.Surface) (dialect, error) {
 // gateway. The prefix test is case-insensitive.
 func isClaudeModel(model string) bool {
 	return strings.HasPrefix(strings.ToLower(model), "claude")
+}
+
+// UsesEffort reports whether this dialect actually emits the reasoning_effort
+// or thinking.budget_tokens fields. When false, the UI should warn that the
+// chosen effort level is not sent on the wire for this provider.
+func (d dialect) UsesEffort() bool {
+	return d.thinking || d.effort
 }
 
 // envVarForProvider returns the conventional environment variable holding a
