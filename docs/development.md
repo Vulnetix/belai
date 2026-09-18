@@ -366,14 +366,22 @@ very start or end of the text. Confirm `home`/`end` (`fn+left`/`fn+right`)
 still jump to the ends of the logical line, and that a long soft-wrapped line
 is walked by word without the wrap points acting as boundaries.
 
-**Collapsed-panel hover hint.** With `ui.mouse` on, hover a truncated turn or
-tool row and confirm the footer's third line shows `ctrl+o expand all`. Press
-`ctrl+o` and confirm every truncated panel expands, the hint clears (the panel
-is no longer collapsed), and a second `ctrl+o` collapses them again. Scroll
-the transcript while hovering a panel and confirm the hint re-derives from the
-frame rather than sticking to a stale target. Hover the footer's `session: …`
-text and confirm the hint shows `ctrl+x copy session id`; press `ctrl+x` and
-confirm the feedback copies the session id. With `ui.mouse` off, confirm no
+**Mouse hover hints.** With `ui.mouse` on, ask the agent to `Read` a source
+file and hover over the resulting `⌁ Read` row. Confirm the footer's third
+line shows `ctrl+s save <name> · ctrl+c copy`. Press `ctrl+c` and confirm the
+feedback says it copied the *file*, not the prompt; press `ctrl+s` and confirm
+the composer relabels `save file` with `⏎ save · esc cancel`. Type a relative
+path, press `enter`, and confirm the file is written under the working
+directory; repeat with an absolute path and confirm it is honoured. Confirm an
+empty path and `esc` both cancel without writing. Hover the footer's
+`session: …` text and confirm the hint shows `ctrl+x copy session id`; press
+`ctrl+x` and confirm the feedback copies the session id. Hover a truncated
+turn or tool row and confirm the hint shows `ctrl+o expand all`; press `ctrl+o`
+and confirm every truncated panel expands, the hint clears (the panel is no
+longer collapsed), and a second `ctrl+o` collapses them again. Confirm a
+collapsed `Read` row shows save, copy, *and* expand all together. Scroll the
+transcript while hovering a panel and confirm the hint re-derives from the
+frame rather than sticking to a stale target. With `ui.mouse` off, confirm no
 hint appears.
 
 **Agent picker.** In the TUI in agent mode, press `enter` while no agent is

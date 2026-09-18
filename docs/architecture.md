@@ -944,8 +944,9 @@ The footer is a rule plus three content lines:
 - Line 3 is the hover-hint line. It is always emitted (empty when the pointer
   is over nothing actionable) so the footer's height never changes with the
   mouse; a height change would shift the viewport under a stationary pointer
-  and could make the hint oscillate. When the pointer is over a truncated
-  panel it shows `ctrl+o expand all` (see [Mouse hover hints](#mouse-hover-hints)).
+  and could make the hint oscillate. When the pointer is over an actionable
+  region it shows a `HelpBar` of keycap/action pairs (see
+  [Mouse hover hints](#mouse-hover-hints)).
 
 **Permission chips.** Guardrails and ask render as two chips, `guardrails:
 on|off` and `ask: on|off`, teal when on and red when off. When *both* are off
@@ -1066,11 +1067,14 @@ Every line also carries hover provenance, stamped after every render (cache
 hits included) by `tagProvenance`:
 - `Owner` is the index of the message that rendered the line, or `-1` for the
   blank separator between framed panels.
+- `File` marks a line whose panel is a `Read` result carrying a path — the
+  thread has output a file, and hovering it offers save and copy.
 - `Collapsed` marks a line whose panel is currently truncated, i.e. it carries
   a `… N more lines` marker. Hovering it offers `ctrl+o`.
 
-These flags are derived, not stored: `tagProvenance` reads the marker shape,
-so an expand can never leave a stale `Collapsed` behind.
+These three are derived, not stored: `tagProvenance` reads the message and the
+marker shape, so a late-arriving path or an expand can never leave a stale
+flag behind.
 
 Slicing is by terminal cell, never by rune index, so CJK and emoji stay on
 cluster boundaries.
@@ -1220,12 +1224,26 @@ with `ctrl+l`, or a streaming delta all re-derive the target without another
 mouse event. With `ui.mouse` off no mouse events arrive, so the feature is
 inert — the same gate as drag-selection.
 
-- **Collapsed panel** — any truncated turn, reasoning panel, or tool row.
-  Hovering shows `ctrl+o expand all`; the key is the same global toggle that
-  collapses again when already expanded.
+Three regions are actionable:
+
+- **File panel** — a `Read` tool row whose `Meta` (or, failing that, its
+  `path` argument) carries a path. Its content is a file the thread has
+  output. Hovering shows `ctrl+s save <name> · ctrl+c copy`. `ctrl+s` turns
+  the composer into a destination-path prompt (`save file`, `⏎ save · esc
+  cancel`) and enter writes the displayed content; a relative path resolves
+  against the working directory, an absolute one is used as-is, and the path
+  is deliberately not confined because the *user*, not the model, chose it.
+  Empty input cancels with `save cancelled: path required`. `ctrl+c` over a
+  file panel copies the file's content instead of the prompt; elsewhere it
+  keeps its prompt-copy meaning. A partial or truncated `Read` saves exactly
+  the bytes shown, not the whole file.
 - **Session segment** — the footer's `session: …` text (name when shown, else
   the short id). Hovering shows `ctrl+x copy session id`, and `ctrl+x` copies
   the full id from the chat view whether or not the pointer is there.
+- **Collapsed panel** — any truncated turn, reasoning panel, or tool row.
+  Hovering shows `ctrl+o expand all`; the key is the same global toggle that
+  collapses again when already expanded. A collapsed file panel shows all
+  three offers together (`save`, `copy`, `expand all`).
 
 The session hit-test is exact: `Footer.SessionSpan` mirrors the same layout
 math `Footer.View` uses, so the column range it reports is the rendered
@@ -1252,7 +1270,10 @@ rather than on `ctrl+<letter>`. Every `ctrl+<letter>` that is not already a
 global is claimed by the prompt editor (`ctrl+a`, `ctrl+e`, `ctrl+f`, `ctrl+b`,
 `ctrl+k`, `ctrl+u`, `ctrl+w`, `ctrl+n`, `ctrl+p`, `ctrl+v`), and taking one
 from the editor would cost a text-editing key for every user in exchange for a
-toggle most reach through `/settings` or `/yolo` anyway.
+toggle most reach through `/settings` or `/yolo` anyway. The two hover keys
+are exceptions that follow the same rule in reverse: `ctrl+s` and `ctrl+x` are
+not editor keys, so they are free for the hover actions, and binding them
+costs nothing a text editor needs.
 
 **An alt *chord* is banned; an alt *flag* is not.** The rule above is about
 keys a user presses. Several terminals encode an unrelated keypress in a form
@@ -1270,13 +1291,14 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 
 | Key | Behaviour |
 | --- | --------- |
-| `ctrl+c` | Copy the current prompt to the clipboard (native, then OSC 52) |
+| `ctrl+c` | Copy the current prompt to the clipboard (native, then OSC 52); over a hovered file panel, copies the file's content instead |
 | `ctrl+d` | Quit, unconditionally |
 | `shift+tab` | Cycle mode: agent → plan → goal |
 | `esc` | Close any full-screen view (nested views pop to their parent); cancels a held submit or an in-flight pre-send |
 | `space` / `n` / `s` / `enter` | Use in the **Clarify** questionnaire view: select, add a note, skip the question, submit |
 | `ctrl+l` | Clear the transcript *view* — the session is kept |
 | `ctrl+o` | Toggle full output for all truncated turns and tool results |
+| `ctrl+s` | Over a hovered file panel, save its content to a path typed into the composer |
 | `ctrl+x` | Copy the session id to the clipboard (hinted when hovering the footer's session segment) |
 | `ctrl+r` / `ctrl+t` | Toggle reasoning-panel / tool-row display for the session |
 | `f2` | Toggle the caveman voice rewrite, persisting to the scoped settings file; the footer `caveman:` slot updates in the same frame |

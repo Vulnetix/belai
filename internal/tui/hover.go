@@ -1,6 +1,11 @@
 package tui
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/vulnetix/signet/internal/clipboard"
@@ -13,9 +18,10 @@ import (
 // would: expanding with ctrl+o or streaming a delta re-derives the target
 // without another mouse event.
 type hoverTarget struct {
+	file      bool // a Read result carrying a path — save and copy offered
 	collapsed bool // a truncated panel — ctrl+o offered
 	session   bool // the footer's session segment — ctrl+x offered
-	msg       int  // message index for the target
+	msg       int  // message index for file/collapsed targets
 }
 
 // recomputeHover re-derives a.hover from the last mouse position, the current
@@ -40,6 +46,7 @@ func (a *App) recomputeHover() {
 		return
 	}
 	a.hover.msg = line.Owner
+	a.hover.file = line.File
 	a.hover.collapsed = line.Collapsed
 }
 
@@ -68,6 +75,10 @@ func (a *App) hitSession(x, y int) bool {
 // is under the pointer.
 func (a *App) hoverHint() string {
 	var pairs []string
+	if a.hover.file {
+		pairs = append(pairs, "ctrl+s", "save "+a.hoverFileName())
+		pairs = append(pairs, "ctrl+c", "copy")
+	}
 	if a.hover.collapsed {
 		pairs = append(pairs, "ctrl+o", "expand all")
 	}
@@ -78,6 +89,56 @@ func (a *App) hoverHint() string {
 		return ""
 	}
 	return components.HelpBar(pairs...)
+}
+
+// hoverFileName returns the base name of the hovered file panel's path,
+// truncated so a long name cannot overflow the footer hint line.
+func (a *App) hoverFileName() string {
+	path := a.filePanelPath(a.hover.msg)
+	if path == "" {
+		return ""
+	}
+	name := filepath.Base(path)
+	const maxLen = 40
+	runes := []rune(name)
+	if len(runes) > maxLen {
+		return string(runes[:maxLen-1]) + "…"
+	}
+	return name
+}
+
+// filePanelPath returns the hovered message's file path, or "" when the index
+// is out of range or the message is not a file panel.
+func (a *App) filePanelPath(idx int) string {
+	if idx < 0 || idx >= len(a.messages) {
+		return ""
+	}
+	return a.messages[idx].FilePath()
+}
+
+// copyHoveredFile puts the hovered file panel's content on the clipboard. It
+// shares the copiedMsg path with copyPrompt and copySelection.
+func (a *App) copyHoveredFile(idx int) tea.Cmd {
+	if idx < 0 || idx >= len(a.messages) {
+		return nil
+	}
+	text := a.messages[idx].Text()
+	if text == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		method, err := clipboard.Copy(text)
+		if err != nil {
+			return copiedMsg{text: "copy failed: " + err.Error()}
+		}
+		note := ""
+		// OSC 52 is a silent-drop risk for large payloads (xterm's
+		// maxStringParseSize, tmux without set-clipboard on); say so.
+		if method == "osc52" && len(text) > 8*1024 {
+			note = " — large payload, terminal may have dropped it"
+		}
+		return copiedMsg{text: fmt.Sprintf("copied file to clipboard (%s)%s", method, note)}
+	}
 }
 
 // copySessionID puts the full session id on the clipboard.
@@ -93,4 +154,71 @@ func (a *App) copySessionID() tea.Cmd {
 		}
 		return copiedMsg{text: "copied session id to clipboard (" + method + ")"}
 	}
+}
+
+// startSaveFile opens the save-file flow for a hovered file panel: the
+// composer becomes a destination-path prompt, and enter writes the panel's
+// content there.
+func (a *App) startSaveFile(idx int) tea.Cmd {
+	if a.filePanelPath(idx) == "" {
+		return nil
+	}
+	a.saveFileMsg = idx
+	a.saveFileMode = true
+	a.editor.Reset()
+	a.clearAutocomplete()
+	return nil
+}
+
+// handleSaveFileKey routes keys while the save-file path prompt is open.
+func (a *App) handleSaveFileKey(m tea.KeyMsg) tea.Cmd {
+	switch m.String() {
+	case "enter":
+		path := strings.TrimSpace(a.editor.Value())
+		if path == "" {
+			a.addSystem("save cancelled: path required")
+			a.cancelSaveFile()
+			return nil
+		}
+		return a.finishSaveFile(path)
+	case "esc":
+		a.cancelSaveFile()
+		a.addSystem("save cancelled")
+		return nil
+	}
+	return a.editor.Update(m)
+}
+
+// finishSaveFile writes the hovered file's content to path. Relative paths
+// resolve against the working directory; absolute paths are used as-is. The
+// user is the actor here, not the model, so the path is deliberately not
+// confined to the working directory.
+func (a *App) finishSaveFile(path string) tea.Cmd {
+	var content string
+	if a.saveFileMsg >= 0 && a.saveFileMsg < len(a.messages) {
+		content = a.messages[a.saveFileMsg].Text()
+	}
+	full := path
+	if !filepath.IsAbs(full) {
+		full = filepath.Join(a.workdir, full)
+	}
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		a.addSystem("save failed: " + err.Error())
+		a.cancelSaveFile()
+		return nil
+	}
+	if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+		a.addSystem("save failed: " + err.Error())
+	} else {
+		a.addSystem(fmt.Sprintf("saved %s (%d bytes)", path, len(content)))
+	}
+	a.cancelSaveFile()
+	return nil
+}
+
+// cancelSaveFile leaves the save-file flow without writing anything.
+func (a *App) cancelSaveFile() {
+	a.saveFileMode = false
+	a.saveFileMsg = -1
+	a.editor.Reset()
 }

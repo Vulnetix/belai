@@ -47,6 +47,11 @@ type SourceLine struct {
 	// to recover which panel the pointer is over.
 	Owner int
 
+	// File marks a line belonging to a file panel: a Read result that carries
+	// a path, whose content is a file the thread has output. Hovering such a
+	// panel offers save-to-disk and copy-to-clipboard.
+	File bool
+
 	// Collapsed marks a line belonging to a panel that is currently truncated
 	// (it carries a "… N more lines" hint). Hovering such a panel offers
 	// ctrl+o to expand every truncated panel.

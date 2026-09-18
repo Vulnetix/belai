@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -30,16 +32,16 @@ func renderFrame(t *testing.T, a *App) {
 	}
 }
 
-// hoverLine finds the first selectable line with the given owner and collapsed
-// flag and returns its content-line index.
-func hoverLine(t *testing.T, a *App, owner int, collapsed bool) int {
+// hoverLine finds the first selectable line with the given owner and flags and
+// returns its content-line index.
+func hoverLine(t *testing.T, a *App, owner int, file, collapsed bool) int {
 	t.Helper()
 	for i, l := range a.lastFrame.lines {
-		if l.Owner == owner && l.Collapsed == collapsed && !l.Chrome && l.Width > 0 {
+		if l.Owner == owner && l.File == file && l.Collapsed == collapsed && !l.Chrome && l.Width > 0 {
 			return i
 		}
 	}
-	t.Fatalf("no line with owner %d collapsed=%v in %+v", owner, collapsed, a.lastFrame.lines)
+	t.Fatalf("no line with owner %d file=%v collapsed=%v in %+v", owner, file, collapsed, a.lastFrame.lines)
 	return 0
 }
 
@@ -51,6 +53,32 @@ func pointAt(a *App, line int) {
 	a.mousePresent = true
 }
 
+func TestRecomputeHoverFilePanel(t *testing.T) {
+	a := New(Options{Workdir: t.TempDir()})
+	a.width = 120
+	a.height = 40
+	a.messages = []components.Message{
+		{Role: "tool", ToolName: "Read", ToolArgs: `{"path":"main.go"}`,
+			Meta: map[string]any{"path": "main.go"}, Content: "package main\n\nfunc main() {}\n"},
+	}
+	renderFrame(t, a)
+	pointAt(a, hoverLine(t, a, 0, true, false))
+	a.recomputeHover()
+
+	if !a.hover.file || a.hover.msg != 0 {
+		t.Fatalf("hover = %+v, want file panel 0", a.hover)
+	}
+	if a.hover.collapsed || a.hover.session {
+		t.Fatalf("hover = %+v, want file only", a.hover)
+	}
+	hint := a.hoverHint()
+	for _, want := range []string{"ctrl+s", "save main.go", "ctrl+c", "copy"} {
+		if !strings.Contains(hint, want) {
+			t.Fatalf("hint %q missing %q", hint, want)
+		}
+	}
+}
+
 func TestRecomputeHoverCollapsedPanel(t *testing.T) {
 	a := New(Options{Workdir: t.TempDir()})
 	a.width = 120
@@ -59,51 +87,41 @@ func TestRecomputeHoverCollapsedPanel(t *testing.T) {
 		{Role: "assistant", Content: "l1\nl2\nl3\nl4\nl5"},
 	}
 	renderFrame(t, a)
-	pointAt(a, hoverLine(t, a, 0, true))
+	pointAt(a, hoverLine(t, a, 0, false, true))
 	a.recomputeHover()
 
 	if !a.hover.collapsed || a.hover.msg != 0 {
 		t.Fatalf("hover = %+v, want collapsed panel 0", a.hover)
+	}
+	if a.hover.file || a.hover.session {
+		t.Fatalf("hover = %+v, want collapsed only", a.hover)
 	}
 	if hint := a.hoverHint(); !strings.Contains(hint, "ctrl+o") || !strings.Contains(hint, "expand all") {
 		t.Fatalf("hint = %q, want ctrl+o expand all", hint)
 	}
 }
 
-func TestRecomputeHoverNone(t *testing.T) {
-	a := New(Options{Workdir: t.TempDir()})
-	a.width = 120
-	a.height = 40
-	a.messages = []components.Message{{Role: "system", Content: "done"}}
-	renderFrame(t, a)
-	pointAt(a, hoverLine(t, a, 0, false))
-	a.recomputeHover()
-
-	if a.hover != (hoverTarget{}) {
-		t.Fatalf("hover = %+v, want none", a.hover)
-	}
-	if a.hoverHint() != "" {
-		t.Fatalf("hint = %q, want empty", a.hoverHint())
-	}
-}
-
-func TestRecomputeHoverExpandedPanelShowsNoHint(t *testing.T) {
+func TestRecomputeHoverCollapsedFilePanelOffersBoth(t *testing.T) {
 	a := New(Options{Workdir: t.TempDir()})
 	a.width = 120
 	a.height = 40
 	a.messages = []components.Message{
-		{Role: "assistant", Content: "l1\nl2\nl3\nl4\nl5"},
+		{Role: "tool", ToolName: "Read", ToolArgs: `{"path":"main.go"}`,
+			Meta:    map[string]any{"path": "main.go"},
+			Content: "package main\n\nimport \"fmt\"\n\nfunc main() {}\n"},
 	}
-	a.expandAll = true
 	renderFrame(t, a)
-	pointAt(a, hoverLine(t, a, 0, false))
+	pointAt(a, hoverLine(t, a, 0, true, true))
 	a.recomputeHover()
 
-	if a.hover != (hoverTarget{}) {
-		t.Fatalf("hover = %+v, want none after expand", a.hover)
+	if !a.hover.file || !a.hover.collapsed {
+		t.Fatalf("hover = %+v, want file and collapsed", a.hover)
 	}
-	if a.hoverHint() != "" {
-		t.Fatalf("hint = %q, want empty after expand", a.hoverHint())
+	hint := a.hoverHint()
+	for _, want := range []string{"ctrl+s", "ctrl+c", "ctrl+o"} {
+		if !strings.Contains(hint, want) {
+			t.Fatalf("hint %q missing %q", hint, want)
+		}
 	}
 }
 
@@ -132,6 +150,23 @@ func TestRecomputeHoverSession(t *testing.T) {
 	}
 }
 
+func TestRecomputeHoverNone(t *testing.T) {
+	a := New(Options{Workdir: t.TempDir()})
+	a.width = 120
+	a.height = 40
+	a.messages = []components.Message{{Role: "system", Content: "done"}}
+	renderFrame(t, a)
+	pointAt(a, hoverLine(t, a, 0, false, false))
+	a.recomputeHover()
+
+	if a.hover != (hoverTarget{}) {
+		t.Fatalf("hover = %+v, want none", a.hover)
+	}
+	if a.hoverHint() != "" {
+		t.Fatalf("hint = %q, want empty", a.hoverHint())
+	}
+}
+
 func TestHitSessionGeometry(t *testing.T) {
 	a := New(Options{Workdir: t.TempDir()})
 	a.width = 120
@@ -156,6 +191,133 @@ func TestHitSessionGeometry(t *testing.T) {
 	}
 	if a.hitSession(a.contentLeft()+col, a.height-1) {
 		t.Fatalf("hitSession outside the footer should miss")
+	}
+}
+
+// hoverFileApp builds a chat app with one Read message and hover over it.
+func hoverFileApp(t *testing.T) *App {
+	t.Helper()
+	a := New(Options{Workdir: t.TempDir()})
+	a.width = 120
+	a.height = 40
+	a.messages = []components.Message{
+		{Role: "tool", ToolName: "Read", ToolArgs: `{"path":"main.go"}`,
+			Meta: map[string]any{"path": "main.go"}, Content: "package main\n\nfunc main() {}\n"},
+	}
+	renderFrame(t, a)
+	pointAt(a, hoverLine(t, a, 0, true, false))
+	a.recomputeHover()
+	return a
+}
+
+func TestCtrlSStartsSaveFileOnlyWhenHoveringFile(t *testing.T) {
+	a := hoverFileApp(t)
+	if cmd := a.handleChatKey(tea.KeyMsg{Type: tea.KeyCtrlS}); cmd != nil {
+		t.Fatalf("ctrl+s returned %#v, want nil", cmd)
+	}
+	if !a.saveFileMode || a.saveFileMsg != 0 {
+		t.Fatalf("ctrl+s should open save-file flow: mode=%v msg=%d", a.saveFileMode, a.saveFileMsg)
+	}
+
+	b := New(Options{Workdir: t.TempDir()})
+	if cmd := b.handleChatKey(tea.KeyMsg{Type: tea.KeyCtrlS}); cmd != nil {
+		t.Fatalf("ctrl+s without a hover returned %#v", cmd)
+	}
+	if b.saveFileMode {
+		t.Fatal("ctrl+s without a hover must not open the save-file flow")
+	}
+}
+
+func TestSaveFileWritesRelativePath(t *testing.T) {
+	a := hoverFileApp(t)
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyCtrlS})
+	a.editor.SetValue("out/main.go")
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if a.saveFileMode {
+		t.Fatal("save-file flow should be closed after enter")
+	}
+	got, err := os.ReadFile(filepath.Join(a.workdir, "out", "main.go"))
+	if err != nil {
+		t.Fatalf("read saved file: %v", err)
+	}
+	if string(got) != "package main\n\nfunc main() {}\n" {
+		t.Fatalf("saved content = %q", got)
+	}
+}
+
+func TestSaveFileWritesAbsolutePath(t *testing.T) {
+	a := hoverFileApp(t)
+	dest := filepath.Join(t.TempDir(), "saved.go")
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyCtrlS})
+	a.editor.SetValue(dest)
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	got, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("read absolute saved file: %v", err)
+	}
+	if string(got) != "package main\n\nfunc main() {}\n" {
+		t.Fatalf("saved content = %q", got)
+	}
+}
+
+func TestSaveFileEmptyPathCancels(t *testing.T) {
+	a := hoverFileApp(t)
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyCtrlS})
+	a.editor.SetValue("   ")
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if a.saveFileMode {
+		t.Fatal("empty path must cancel the save-file flow")
+	}
+	last := a.messages[len(a.messages)-1]
+	if !strings.Contains(last.Text(), "path required") {
+		t.Fatalf("last system message = %q, want path required", last.Text())
+	}
+}
+
+func TestSaveFileEscCancels(t *testing.T) {
+	a := hoverFileApp(t)
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyCtrlS})
+	a.editor.SetValue("out/main.go")
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEsc})
+
+	if a.saveFileMode {
+		t.Fatal("esc must cancel the save-file flow")
+	}
+	if _, err := os.Stat(filepath.Join(a.workdir, "out", "main.go")); !os.IsNotExist(err) {
+		t.Fatalf("esc must not write the file: %v", err)
+	}
+}
+
+func TestCtrlCOnFileCopiesFileNotPrompt(t *testing.T) {
+	a := hoverFileApp(t)
+	a.editor.SetValue("the prompt")
+	_, cmd := a.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if cmd == nil {
+		t.Fatal("ctrl+c over a file panel should copy")
+	}
+	msg := cmd()
+	copied, ok := msg.(copiedMsg)
+	if !ok {
+		t.Fatalf("ctrl+c produced %#v, want copiedMsg", msg)
+	}
+	if !strings.Contains(copied.text, "copied file to clipboard") {
+		t.Fatalf("copy feedback = %q, want file copy", copied.text)
+	}
+}
+
+func TestCtrlCWithoutFileStillCopiesPrompt(t *testing.T) {
+	a := New(Options{})
+	a.editor.SetValue("hello")
+	_, cmd := a.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if cmd == nil {
+		t.Fatal("ctrl+c should copy the prompt")
+	}
+	msg := cmd()
+	if _, ok := msg.(copiedMsg); !ok {
+		t.Fatalf("ctrl+c produced %#v, want copiedMsg", msg)
 	}
 }
 

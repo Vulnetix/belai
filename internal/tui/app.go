@@ -331,6 +331,11 @@ type App struct {
 	savePromptMode  bool
 	savePromptValue string
 
+	// save-file flow: ctrl+s on a hovered file panel turns the composer into a
+	// destination-path prompt that writes the panel's content on enter.
+	saveFileMode bool
+	saveFileMsg  int // message index of the file being saved; -1 = none
+
 	// layout
 	vp     viewport.Model
 	follow bool // autoscroll: keep the transcript pinned to the tail
@@ -464,6 +469,7 @@ func New(opts Options) *App {
 		autocompleteIndex: noAutocompleteSelection,
 		agentIndex:        noAgentSelection,
 		agentPickerOpen:   false,
+		saveFileMsg:       -1,
 		bannerW:           -1,
 		footerW:           -1,
 		trace:             trace.Env(),
@@ -1259,7 +1265,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		// Record the pointer for hover hinting regardless of what the event
 		// does: the transcript re-derives the hover target from this position
-		// every frame, and a non-chat view has no panels to hint at.
+		// every frame, and a non-chat view has no footer or panels to hint at.
 		a.mousePresent = a.view == viewChat
 		a.mouseX, a.mouseY = m.X, m.Y
 		var vpCmd, copyCmd tea.Cmd
@@ -1328,6 +1334,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Global keys work on every screen.
 		switch m.String() {
 		case "ctrl+c":
+			// Context-sensitive: over a hovered file panel, ctrl+c copies the
+			// file's content; everywhere else it keeps copying the prompt.
+			if a.view == viewChat && a.hover.file {
+				return a, a.copyHoveredFile(a.hover.msg)
+			}
 			return a, a.copyPrompt()
 		case "ctrl+d":
 			a.stopLocalServer()
@@ -1383,6 +1394,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
+	if a.saveFileMode {
+		return a.handleSaveFileKey(m)
+	}
 	if a.savePromptMode {
 		return a.handleSavePromptKey(m)
 	}
@@ -1426,6 +1440,13 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		// re-attach to the tail so the reflow lands somewhere sensible.
 		a.expandAll = !a.expandAll
 		a.follow = true
+		return nil
+	case "ctrl+s":
+		// Save the hovered file panel's content to a user-chosen path. It is
+		// inert otherwise: ctrl+s is not a composer key.
+		if a.hover.file {
+			return a.startSaveFile(a.hover.msg)
+		}
 		return nil
 	case "ctrl+x":
 		// Copy the full session id. The hint is shown on the footer's session
@@ -2391,6 +2412,9 @@ func (a *App) renderComposer() string {
 	if a.savePromptMode {
 		title, accent, meta = "name prompt", lipgloss.TerminalColor(components.ColorAmber), "⏎ save · esc cancel"
 	}
+	if a.saveFileMode {
+		title, accent, meta = "save file", lipgloss.TerminalColor(components.ColorAmber), "⏎ save · esc cancel"
+	}
 	if a.historyActive {
 		if a.promptPickerVisible() {
 			meta = "↑↓ cycle · tab name · → accept · ⏎ use · esc cancel"
@@ -3213,6 +3237,8 @@ func (a *App) startNewSession() {
 	a.agentPickerOpen = false
 	a.hover = hoverTarget{}
 	a.mousePresent = false
+	a.saveFileMode = false
+	a.saveFileMsg = -1
 	a.loadAgents()
 	a.saveSession()
 	a.refreshFooter()

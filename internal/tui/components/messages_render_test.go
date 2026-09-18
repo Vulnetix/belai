@@ -194,23 +194,26 @@ func TestMessageListExpandAllChangesNoMarkers(t *testing.T) {
 
 // TestMessageListRenderTagsProvenance pins the per-line provenance hover
 // hit-testing depends on: every line carries the index of the message that
-// rendered it and the collapsed flag for truncated panels, while separator
-// chrome carries Owner -1.
+// rendered it, the file-panel flag for Read results with a path, and the
+// collapsed flag for truncated panels. Separator chrome carries Owner -1.
 func TestMessageListRenderTagsProvenance(t *testing.T) {
 	ml := MessageList{
 		Width:     80,
 		ShowTools: true,
 		Messages: []Message{
-			// Truncated turn: collapsed.
+			// Truncated turn: collapsed, not a file.
 			{Role: "assistant", Content: "l1\nl2\nl3\nl4\nl5"},
-			// Read with more than the 3-line preview: collapsed.
+			// Read with a path and more than the 3-line preview: file AND collapsed.
 			{Role: "tool", ToolName: "Read", ToolArgs: `{"path":"main.go"}`,
 				Meta:    map[string]any{"path": "main.go"},
 				Content: "package main\n\nimport \"fmt\"\n\nfunc main() {}"},
-			// Short Read: not collapsed.
+			// Short Read with a path: file but not collapsed.
 			{Role: "tool", ToolName: "Read", ToolArgs: `{"path":"a.md"}`,
 				Meta: map[string]any{"path": "a.md"}, Content: "# hi\n"},
-			// System row: not collapsed.
+			// Errored Bash: not a file, not collapsed (single line result).
+			{Role: "tool", ToolName: "Bash", ToolArgs: `{"command":"false"}`,
+				Content: "tool result withheld: denied", Status: "withheld"},
+			// System row: not a file, not collapsed.
 			{Role: "system", Content: "done"},
 		},
 	}
@@ -230,8 +233,13 @@ func TestMessageListRenderTagsProvenance(t *testing.T) {
 			t.Fatalf("line %d owner %d out of range", i, sl.Owner)
 		}
 		ownerSeen[sl.Owner]++
+		msg := ml.Messages[sl.Owner]
+		wantFile := msg.Role == "tool" && msg.ToolName == "Read"
+		if sl.File != wantFile {
+			t.Fatalf("line %d (owner %d) File=%v, want %v", i, sl.Owner, sl.File, wantFile)
+		}
 		// Collapsed follows the truncation marker the renderer placed: the
-		// 5-line turn and the 5-line Read are collapsed, the rest is not.
+		// 5-line turn and the 5-line Read are collapsed, everything else is not.
 		wantCollapsed := sl.Owner == 0 || sl.Owner == 1
 		if sl.Collapsed != wantCollapsed {
 			t.Fatalf("line %d (owner %d) Collapsed=%v, want %v", i, sl.Owner, sl.Collapsed, wantCollapsed)
@@ -245,6 +253,8 @@ func TestMessageListRenderTagsProvenance(t *testing.T) {
 			t.Fatalf("message %d rendered no lines", i)
 		}
 	}
+	// A file panel that is also collapsed carries both flags on every one of
+	// its lines, so the hint can offer save/copy and ctrl+o together.
 	if !lm[0].Collapsed {
 		t.Fatal("the 5-line turn must be collapsed")
 	}

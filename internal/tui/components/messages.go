@@ -368,6 +368,24 @@ func (m MessageList) Render() (string, LineMap) {
 	return b.String(), lm
 }
 
+// FilePath returns the path of a successful Read result, from the render-only
+// Meta first (the resolved, confined path the tool actually opened) and then
+// from the tool arguments. It is empty for anything that is not a Read with a
+// known path, which is what makes a row a file panel: its content is a file
+// the thread has output.
+func (m Message) FilePath() string {
+	if m.Role != "tool" || m.ToolName != "Read" {
+		return ""
+	}
+	if m.Meta != nil {
+		if p, ok := m.Meta["path"].(string); ok && p != "" {
+			return p
+		}
+	}
+	path, _ := readArgs(m.ToolArgs)
+	return path
+}
+
 // hasTruncation reports whether a rendered message carries a truncation hint,
 // i.e. it is collapsed with hidden content that ctrl+o would reveal.
 func hasTruncation(lm LineMap) bool {
@@ -380,13 +398,17 @@ func hasTruncation(lm LineMap) bool {
 }
 
 // tagProvenance stamps every line of one message's render with the message
-// index that produced it and whether that message is currently collapsed. It
-// runs after every render — including cache hits — so the cache never needs
-// to know about provenance, and an expand can never leave a stale flag behind.
+// index that produced it and the two hover-relevant facts about that message:
+// whether it is a file panel and whether it is currently collapsed. It runs
+// after every render — including cache hits — so the cache never needs to know
+// about provenance, and a late-arriving path or expansion cannot leave stale
+// tags behind.
 func tagProvenance(lm LineMap, owner int, msg Message) {
+	file := msg.FilePath() != ""
 	collapsed := hasTruncation(lm)
 	for i := range lm {
 		lm[i].Owner = owner
+		lm[i].File = file
 		lm[i].Collapsed = collapsed
 	}
 }
