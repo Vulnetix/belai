@@ -16,6 +16,11 @@ import (
 	"github.com/vulnetix/signet/internal/config"
 )
 
+// maxListBytes is the largest session file SessionsIn will parse for its
+// listing fields. Above this the file is still listed (with a fallback
+// display name) but not read, so a pathological session cannot stall /resume.
+const maxListBytes = 32 << 20
+
 // Prune removes session files older than maxAge, best-effort per file.
 func (s *Store) Prune(maxAge time.Duration) (removed int, err error) {
 	if _, err := os.Stat(s.Root); err != nil {
@@ -43,7 +48,7 @@ func (s *Store) Prune(maxAge time.Duration) (removed int, err error) {
 // directory maps to its own sub-directory, and each session is a single
 // append-only .jsonl file of Entry records.
 type Store struct {
-	// Root is the absolute path holding one sub-directory per workdir.
+	// Root is the absolute path holding one sub-directory per project key.
 	Root string
 }
 
@@ -79,33 +84,45 @@ type SessionInfo struct {
 	DisplayName string
 	Path        string
 	ModTime     int64
+
+	// Key and Workdir address the project the session belongs to. Workdir is
+	// "" when the recorded cwd cannot be recovered or verified (legacy files).
+	Key     Key
+	Workdir string
+
+	// Turns counts the user prompts in the session; the listing uses it as a
+	// cheap size signal without parsing provider-shaped transcript.
+	Turns     int
+	Model     string
+	Provider  string
+	Compacted bool // the session begins from a compaction summary
+	HasTools  bool // the session recorded at least one tool entry
 }
 
-// dirFor returns the per-workdir directory under Root.
-func (s *Store) dirFor(workdir string) (string, error) {
-	abs, err := filepath.Abs(workdir)
-	if err != nil {
-		return "", fmt.Errorf("resolve workdir: %w", err)
-	}
-	return filepath.Join(s.Root, WorkdirKey(abs)), nil
+// dirForKey returns the per-key directory under Root.
+func (s *Store) dirForKey(k Key) string { return filepath.Join(s.Root, string(k)) }
+
+// keyFor derives a Key from a workdir.
+func keyFor(workdir string) (Key, error) { return KeyFor(workdir) }
+
+// sessionPathForKey returns the .jsonl path for a fully-resolved session id.
+func (s *Store) sessionPathForKey(k Key, sessionID string) string {
+	return filepath.Join(s.dirForKey(k), sessionID+".jsonl")
 }
 
-// sessionPath returns the .jsonl path for a fully-resolved session id.
+// sessionPath is the workdir-addressed form, kept for the public wrappers.
 func (s *Store) sessionPath(workdir, sessionID string) (string, error) {
-	dir, err := s.dirFor(workdir)
+	k, err := keyFor(workdir)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, sessionID+".jsonl"), nil
+	return s.sessionPathForKey(k, sessionID), nil
 }
 
-// lookup returns candidate session ids for an exact-or-prefix match. It does
-// not error when nothing matches.
-func (s *Store) lookup(workdir, idOrPrefix string) ([]string, error) {
-	dir, err := s.dirFor(workdir)
-	if err != nil {
-		return nil, err
-	}
+// lookupIn returns candidate session ids for an exact-or-prefix match under
+// one key. It does not error when nothing matches.
+func (s *Store) lookupIn(k Key, idOrPrefix string) ([]string, error) {
+	dir := s.dirForKey(k)
 	exact := filepath.Join(dir, idOrPrefix+".jsonl")
 	if _, err := os.Stat(exact); err == nil {
 		return []string{idOrPrefix}, nil
@@ -130,13 +147,12 @@ func (s *Store) lookup(workdir, idOrPrefix string) ([]string, error) {
 	return matches, nil
 }
 
-// Resolve maps a full or partial session id to a full id. A partial id must
-// match exactly one stored session.
-func (s *Store) Resolve(workdir, idOrPrefix string) (string, error) {
+// resolveIn maps a full or partial session id to a full id under one key.
+func (s *Store) resolveIn(k Key, idOrPrefix string) (string, error) {
 	if idOrPrefix == "" {
 		return "", errors.New("session id is empty")
 	}
-	matches, err := s.lookup(workdir, idOrPrefix)
+	matches, err := s.lookupIn(k, idOrPrefix)
 	if err != nil {
 		return "", err
 	}
@@ -150,13 +166,13 @@ func (s *Store) Resolve(workdir, idOrPrefix string) (string, error) {
 	}
 }
 
-// resolveForAppend is like Resolve but treats a non-matching id as a brand-new
-// session id (append-only stores create on demand).
-func (s *Store) resolveForAppend(workdir, idOrPrefix string) (string, error) {
+// resolveForAppendIn is like resolveIn but treats a non-matching id as a
+// brand-new session id (append-only stores create on demand).
+func (s *Store) resolveForAppendIn(k Key, idOrPrefix string) (string, error) {
 	if idOrPrefix == "" {
 		return "", errors.New("session id is empty")
 	}
-	matches, err := s.lookup(workdir, idOrPrefix)
+	matches, err := s.lookupIn(k, idOrPrefix)
 	if err != nil {
 		return "", err
 	}
@@ -170,10 +186,43 @@ func (s *Store) resolveForAppend(workdir, idOrPrefix string) (string, error) {
 	}
 }
 
+// Resolve maps a full or partial session id to a full id for a workdir.
+func (s *Store) Resolve(workdir, idOrPrefix string) (string, error) {
+	k, err := keyFor(workdir)
+	if err != nil {
+		return "", err
+	}
+	return s.ResolveIn(k, idOrPrefix)
+}
+
+// ResolveIn maps a full or partial session id to a full id for a key.
+func (s *Store) ResolveIn(k Key, idOrPrefix string) (string, error) {
+	return s.resolveIn(k, idOrPrefix)
+}
+
+// resolveForAppend is like Resolve but treats a non-matching id as a brand-new
+// session id (append-only stores create on demand).
+func (s *Store) resolveForAppend(workdir, idOrPrefix string) (string, error) {
+	k, err := keyFor(workdir)
+	if err != nil {
+		return "", err
+	}
+	return s.resolveForAppendIn(k, idOrPrefix)
+}
+
 // Append appends one entry to a session, creating the session file on first
 // use. The entry ID and timestamp are filled in when absent.
 func (s *Store) Append(workdir, sessionID string, e Entry) error {
-	id, err := s.resolveForAppend(workdir, sessionID)
+	k, err := keyFor(workdir)
+	if err != nil {
+		return err
+	}
+	return s.AppendTo(k, sessionID, e)
+}
+
+// AppendTo is the key-addressed Append.
+func (s *Store) AppendTo(k Key, sessionID string, e Entry) error {
+	id, err := s.resolveForAppendIn(k, sessionID)
 	if err != nil {
 		return err
 	}
@@ -186,10 +235,7 @@ func (s *Store) Append(workdir, sessionID string, e Entry) error {
 	if e.Timestamp == 0 {
 		e.Timestamp = time.Now().UnixMilli()
 	}
-	path, err := s.sessionPath(workdir, id)
-	if err != nil {
-		return err
-	}
+	path := s.sessionPathForKey(k, id)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create session dir: %w", err)
 	}
@@ -208,20 +254,14 @@ func (s *Store) Append(workdir, sessionID string, e Entry) error {
 	return nil
 }
 
-// Read returns all entries of a session in append order.
-func (s *Store) Read(workdir, sessionID string) ([]Entry, error) {
-	id, err := s.Resolve(workdir, sessionID)
-	if err != nil {
-		return nil, err
-	}
-	path, err := s.sessionPath(workdir, id)
-	if err != nil {
-		return nil, err
-	}
+// readEntriesFile reads and parses one session file into append-ordered
+// entries. It is the single scanner for Read/ReadFrom/SessionsIn so the three
+// can never drift on buffer limits or blank-line handling.
+func readEntriesFile(path string) ([]Entry, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("session %q not found", sessionID)
+			return nil, fmt.Errorf("session file %s not found", path)
 		}
 		return nil, err
 	}
@@ -246,17 +286,50 @@ func (s *Store) Read(workdir, sessionID string) ([]Entry, error) {
 	return out, nil
 }
 
+// Read returns all entries of a session in append order, for a workdir.
+func (s *Store) Read(workdir, sessionID string) ([]Entry, error) {
+	k, err := keyFor(workdir)
+	if err != nil {
+		return nil, err
+	}
+	return s.ReadFrom(k, sessionID)
+}
+
+// ReadFrom is the key-addressed Read.
+func (s *Store) ReadFrom(k Key, sessionID string) ([]Entry, error) {
+	id, err := s.resolveIn(k, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	path := s.sessionPathForKey(k, id)
+	entries, err := readEntriesFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("session %q not found", sessionID)
+		}
+		return nil, err
+	}
+	return entries, nil
+}
+
 // Fork copies a parent session's history into a new session id so the two can
 // diverge. The new session must not already exist.
 func (s *Store) Fork(workdir, parentSessionID, newSessionID string) error {
-	entries, err := s.Read(workdir, parentSessionID)
+	k, err := keyFor(workdir)
 	if err != nil {
 		return err
 	}
-	path, err := s.sessionPath(workdir, newSessionID)
+	return s.ForkAcross(k, parentSessionID, k, newSessionID)
+}
+
+// ForkAcross copies a parent session's history from src into a new session id
+// under dst. The destination must not already exist (O_EXCL, matching Fork).
+func (s *Store) ForkAcross(src Key, srcID string, dst Key, dstID string) error {
+	entries, err := s.ReadFrom(src, srcID)
 	if err != nil {
 		return err
 	}
+	path := s.sessionPathForKey(dst, dstID)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("create session dir: %w", err)
 	}
@@ -280,10 +353,19 @@ func (s *Store) Fork(workdir, parentSessionID, newSessionID string) error {
 
 // Sessions lists stored sessions for a workdir, most recently modified first.
 func (s *Store) Sessions(workdir string) ([]SessionInfo, error) {
-	dir, err := s.dirFor(workdir)
+	k, err := keyFor(workdir)
 	if err != nil {
 		return nil, err
 	}
+	return s.SessionsIn(k)
+}
+
+// SessionsIn lists stored sessions for a key, most recently modified first.
+// It parses each file once via readEntriesFile (the path it already holds),
+// avoiding the O(n²) Read-per-file re-resolution. Oversized files are listed
+// without parsing.
+func (s *Store) SessionsIn(k Key) ([]SessionInfo, error) {
+	dir := s.dirForKey(k)
 	des, err := os.ReadDir(dir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -302,16 +384,14 @@ func (s *Store) Sessions(workdir string) ([]SessionInfo, error) {
 		if err != nil {
 			return nil, err
 		}
-		entries, err := s.Read(workdir, id)
-		if err != nil {
-			return nil, err
+		var entries []Entry
+		if fi.Size() <= maxListBytes {
+			entries, err = readEntriesFile(path)
+			if err != nil {
+				return nil, err
+			}
 		}
-		infos = append(infos, SessionInfo{
-			ID:          id,
-			DisplayName: DisplayName(entries, id),
-			Path:        path,
-			ModTime:     fi.ModTime().UnixMilli(),
-		})
+		infos = append(infos, sessionInfoFromEntries(entries, id, path, fi.ModTime().UnixMilli(), k))
 	}
 	sort.Slice(infos, func(i, j int) bool {
 		if infos[i].ModTime != infos[j].ModTime {
@@ -320,6 +400,63 @@ func (s *Store) Sessions(workdir string) ([]SessionInfo, error) {
 		return infos[i].ID < infos[j].ID
 	})
 	return infos, nil
+}
+
+// sessionInfoFromEntries builds a SessionInfo from parsed entries (nil for an
+// oversized file, which degrades to a fallback display name).
+func sessionInfoFromEntries(entries []Entry, id, path string, modTime int64, k Key) SessionInfo {
+	info := SessionInfo{ID: id, Path: path, ModTime: modTime, Key: k}
+	if len(entries) == 0 {
+		info.DisplayName = shortSessionID(id)
+		return info
+	}
+	info.DisplayName = DisplayName(entries, id)
+	for _, e := range entries {
+		if e.Type == "user" || e.Role == "user" {
+			info.Turns++
+		}
+		if e.Type == "summary" {
+			info.Compacted = true
+		}
+		if e.Type == "tool" {
+			info.HasTools = true
+		}
+		if e.Type == "assistant" && e.Meta != nil {
+			if v, ok := e.Meta["model"].(string); ok && info.Model == "" {
+				info.Model = v
+			}
+			if v, ok := e.Meta["provider"].(string); ok && info.Provider == "" {
+				info.Provider = v
+			}
+		}
+	}
+	return info
+}
+
+func shortSessionID(id string) string {
+	if len(id) >= 8 {
+		return id[:8]
+	}
+	return id
+}
+
+// Keys lists every project-key directory under Root.
+func (s *Store) Keys() ([]Key, error) {
+	des, err := os.ReadDir(s.Root)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var keys []Key
+	for _, de := range des {
+		if de.IsDir() {
+			keys = append(keys, Key(de.Name()))
+		}
+	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	return keys, nil
 }
 
 // UserPrompts returns all unique user-typed prompts across every stored

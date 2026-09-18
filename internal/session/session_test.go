@@ -1,6 +1,7 @@
 package session
 
 import (
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -211,6 +212,73 @@ func TestNameExplicit(t *testing.T) {
 	}
 	if got := DisplayName(entries, "sess-id"); got != "review PR #42" {
 		t.Fatalf("DisplayName should prefer explicit name, got %q", got)
+	}
+}
+
+func TestKeyForAndProject(t *testing.T) {
+	workdir := t.TempDir()
+	k, err := KeyFor(workdir)
+	if err != nil {
+		t.Fatalf("KeyFor: %v", err)
+	}
+	if string(k) != WorkdirKey(workdir) {
+		t.Fatalf("KeyFor = %q, WorkdirKey = %q", k, WorkdirKey(workdir))
+	}
+	base := filepath.Base(workdir)
+	if got := k.Project(); got != base {
+		t.Fatalf("Project() = %q, want basename %q", got, base)
+	}
+}
+
+func TestMetaRoundTripAndMerge(t *testing.T) {
+	m1 := Meta{Schema: 1, Cwd: "/a", Version: "v1", CreatedAt: 1, Mode: "agent", ActivePlan: "p1"}
+	e1 := m1.ToEntry("")
+	if e1.Type != EntryTypeSessionMeta {
+		t.Fatalf("ToEntry type = %q", e1.Type)
+	}
+	got1, err := MetaFromEntry(e1)
+	if err != nil {
+		t.Fatalf("MetaFromEntry: %v", err)
+	}
+	if got1.Schema == 0 || got1.Cwd != "/a" || got1.ActivePlan != "p1" {
+		t.Fatalf("round trip mismatch: %+v", got1)
+	}
+
+	// Merge: later non-zero fields win, earlier retained otherwise.
+	m2 := Meta{Schema: 2, ActiveGoal: "g1"}
+	entries := []Entry{m1.ToEntry(""), m2.ToEntry("")}
+	merged, ok := LatestMeta(entries)
+	if !ok {
+		t.Fatal("LatestMeta not found")
+	}
+	if merged.Cwd != "/a" || merged.Schema != 2 || merged.ActivePlan != "p1" || merged.ActiveGoal != "g1" || merged.Version != "v1" {
+		t.Fatalf("merge mismatch: %+v", merged)
+	}
+}
+
+func TestLatestMetaSkipsMalformed(t *testing.T) {
+	good := Meta{Schema: 2, Cwd: "/a"}.ToEntry("")
+	malformed := Entry{ID: "x", Type: EntryTypeSessionMeta, Content: "{not json"}
+	merged, ok := LatestMeta([]Entry{malformed, good})
+	if !ok {
+		t.Fatal("LatestMeta should skip malformed and find good")
+	}
+	if merged.Cwd != "/a" {
+		t.Fatalf("malformed entry was fatal or overwrote: %+v", merged)
+	}
+}
+
+func TestMetaToEntryDefaults(t *testing.T) {
+	e := (Meta{}).ToEntry("")
+	m, err := MetaFromEntry(e)
+	if err != nil {
+		t.Fatalf("MetaFromEntry: %v", err)
+	}
+	if m.Schema != SchemaVersion {
+		t.Fatalf("Schema defaulted to %d, want %d", m.Schema, SchemaVersion)
+	}
+	if m.CreatedAt == 0 {
+		t.Fatal("CreatedAt not defaulted")
 	}
 }
 
