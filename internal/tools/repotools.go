@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -9,45 +10,81 @@ import (
 	"github.com/vulnetix/signet/internal/repoindex"
 )
 
-// repoTools builds the three repository-native tools when the local index is
-// non-empty. A tool that cannot work is never offered, so an empty index
-// yields no tools.
+// repoTools builds the two repository tools that shell out (RepoFiles: git,
+// RepoRead: cat) when the local index is non-empty. A tool that cannot work
+// is never offered, so an empty index yields no tools. The index listing
+// itself is the in-process RepoList tool, which needs no binary at all.
 func repoTools(ix repoindex.Index) []nativeCommand {
 	if ix.Empty() {
 		return nil
 	}
 	return []nativeCommand{
-		repoListTool(ix),
 		repoFilesTool(ix),
 		repoReadTool(ix),
 	}
 }
 
-// repoListTool renders the local repository index.
-func repoListTool(ix repoindex.Index) nativeCommand {
-	return nativeCommand{
-		name: "Repos",
-		desc: "List locally available git repositories. Use this first to discover which repositories exist on this machine before calling RepoFiles or RepoRead.",
-		props: map[string]Property{
+// RepoList renders the local repository index in-process.
+//
+// It is the one native tool with no binary: its content is computed from the
+// in-memory index, so there is no argv to build, no subprocess to start, and
+// no capability to detect. It exists as a standalone Tool because the
+// catalogue's Native type can only express "shell out to a fixed binary" —
+// modelling the listing as a binary-less nativeCommand made the executor
+// resolve an empty binary to the lower-cased name and run
+// exec.Command("repos"), which fails on every machine and pipes the
+// rendered listing to nothing.
+type RepoList struct {
+	ix repoindex.Index
+}
+
+// Definition returns the static tool metadata.
+func (r *RepoList) Definition() Definition {
+	return Definition{
+		Name:        "Repos",
+		Description: "List locally available git repositories. Use this first to discover which repositories exist on this machine before calling RepoFiles or RepoRead.",
+		Properties: map[string]Property{
 			"owner": stringProp("Optional remote owner to filter by (e.g. \"Vulnetix\")."),
 		},
-		build: func(_ string, args map[string]any) ([]string, string, error) {
-			owner, _ := argString(args, "owner")
-			var entries []repoindex.Entry
-			if owner != "" {
-				entries = ix.Owner(owner)
-			} else {
-				entries = ix.Entries()
-			}
-			sort.Slice(entries, func(i, j int) bool { return entries[i].String() < entries[j].String() })
-			var b strings.Builder
-			for _, e := range entries {
-				b.WriteString(e.String() + "\n")
-			}
-			return nil, b.String(), nil
-		},
-		subject: func(args map[string]any) string { s, _ := argString(args, "owner"); return s },
 	}
+}
+
+// Kind returns the native read-only kind. The listing is harness-composed
+// from the index — a list of "host/owner/name path" lines — so it is shaped,
+// controlled output that is sanitised like Grep/Glob/LS results rather than
+// classified like arbitrary file bytes.
+func (r *RepoList) Kind() Kind { return KindNative }
+
+// Subject returns the permission-rule subject: the owner filter, when given.
+func (r *RepoList) Subject(args map[string]any) string {
+	s, _ := argString(args, "owner")
+	return s
+}
+
+// Execute renders the index: every entry, or the entries of one owner,
+// sorted by their rendered form. A filter that matches nothing says so
+// explicitly, because an empty answer would read as "no repositories at
+// all" rather than "none for this owner".
+func (r *RepoList) Execute(_ context.Context, args map[string]any) (Result, error) {
+	owner, _ := argString(args, "owner")
+	var entries []repoindex.Entry
+	if owner != "" {
+		entries = r.ix.Owner(owner)
+	} else {
+		entries = r.ix.Entries()
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].String() < entries[j].String() })
+	if len(entries) == 0 {
+		if owner != "" {
+			return NativeResult(fmt.Sprintf("no repositories owned by %q in the local index", owner)), nil
+		}
+		return NativeResult("no repositories in the local index"), nil
+	}
+	var b strings.Builder
+	for _, e := range entries {
+		b.WriteString(e.String() + "\n")
+	}
+	return NativeResult(b.String()), nil
 }
 
 // repoFilesTool lists files in a local checkout using git ls-files.

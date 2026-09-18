@@ -857,7 +857,9 @@ func CatalogueNames() []string {
 
 // NativeTools builds the native tools present in caps for the given root. Only
 // tools whose binary was detected are returned, so the model can never call a
-// tool that is not installed (or, for cloud CLIs, not configured).
+// tool that is not installed (or, for cloud CLIs, not configured) — except the
+// in-process index listing (Repos), which needs no binary and is offered
+// whenever the local index is non-empty.
 //
 // cwd may be nil, in which case every path resolves against root directly.
 // ix supplies the local repoindex for the three repo-native tools; a zero
@@ -873,6 +875,12 @@ func NativeTools(root string, caps Capabilities, cwd *Cwd, ix repoindex.Index) [
 		if caps.Has(c.name) {
 			out = append(out, &Native{Root: root, Timeout: 30 * time.Second, cmd: c, Cwd: cwd})
 		}
+	}
+	// The index listing runs in-process and needs no binary, so it is offered
+	// whenever the index has anything to say; the two repo tools that shell
+	// out are built from the same index.
+	if !ix.Empty() {
+		out = append(out, &RepoList{ix: ix})
 	}
 	for _, c := range repoTools(ix) {
 		out = append(out, &Native{Root: root, Timeout: 30 * time.Second, cmd: c, Cwd: cwd})

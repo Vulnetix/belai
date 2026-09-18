@@ -377,7 +377,14 @@ execution is a **fixed command shape**, not an arbitrary command string:
   resolve a repository name (e.g. `Vulnetix/vdb-site`) to a local path, list
   files with `git ls-files`, or read a file directly. They never fetch or
   clone; a miss lists the locally available repositories so the model can
-  fall through to `GH` only when necessary.
+  fall through to `GH` only when necessary. `Repos` is the one native tool
+  with no binary: it renders the in-memory index in-process (a standalone
+  `tools.RepoList`, not a `tools.Native`), so it starts no subprocess and is
+  offered whenever the index is non-empty, regardless of capability
+  detection. `RepoFiles` and `RepoRead` shell out to `git` and `cat`.
+  An owner filter that matches nothing answers explicitly ("no repositories
+  owned by …") rather than returning an empty listing that would read as
+  "no repositories at all".
 - Cloud/SaaS CLIs — `GH`, `AWS`, `AZ`, `GCloud`, `Kubectl`, `Terraform`,
   `Pulumi`, `Heroku`, `Fly`, `Vercel`, `Netlify`, `Doctl`, `Glab`, `Stripe`,
   `OnePassword`, `Bitwarden` — are offered only when capability detection
@@ -400,6 +407,11 @@ Security rules for native tools:
   comments, file contents), so they report `KindRemote`. Like `Read`,
   `WebFetch`, `WebSearch`, and `Bash`, `KindRemote` results go through the
   classifier before promotion. `RepoRead` is `KindRead` for the same reason.
+- The `Repos` listing is harness-composed from the index — one
+  `host/owner/name path` line per checkout — so it is shaped, controlled
+  output on the sanitize-only side with `Grep`, `Glob`, and `LS`; the
+  classifier round trip is reserved for the arbitrary bytes `RepoRead`
+  returns.
 - Arguments are Go `string`/`[]string` slices passed straight to
   `exec.Command(name, args...)` — never through a shell, so pipes,
   redirections, and `$` expansion are impossible.

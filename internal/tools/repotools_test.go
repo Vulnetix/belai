@@ -166,3 +166,72 @@ func TestCatalogueNamesIncludesRepoTools(t *testing.T) {
 		}
 	}
 }
+
+// The Repos listing runs in-process: no binary, no capabilities, no
+// subprocess. This is the case that used to exec.Command("repos") and fail
+// with "executable file not found in $PATH".
+func TestReposExecutesInProcess(t *testing.T) {
+	dir := t.TempDir()
+	repo := filepath.Join(dir, "signet")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initRepo(t, repo)
+	ix := repoindex.Scan(context.Background(), filepath.Join(dir, "other"))
+	reg := DefaultWithCaps(t.TempDir(), true, Capabilities{}, ix)
+	tool, ok := reg.Find("Repos")
+	if !ok {
+		t.Fatal("Repos not registered")
+	}
+	res, err := tool.Execute(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Repos: %v", err)
+	}
+	if res.Kind != KindNative {
+		t.Fatalf("Repos kind = %q, want %q", res.Kind, KindNative)
+	}
+	if !strings.Contains(res.Content, "Vulnetix/signet") || !strings.Contains(res.Content, repo) {
+		t.Fatalf("Repos listing missing the indexed repo:\n%s", res.Content)
+	}
+	if got := tool.Subject(map[string]any{"owner": "Vulnetix"}); got != "Vulnetix" {
+		t.Fatalf("Repos subject = %q, want Vulnetix", got)
+	}
+}
+
+func TestReposOwnerFilter(t *testing.T) {
+	dir := t.TempDir()
+	repo := filepath.Join(dir, "signet")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initRepo(t, repo)
+	ix := repoindex.Scan(context.Background(), filepath.Join(dir, "other"))
+	reg := DefaultWithCaps(t.TempDir(), true, Capabilities{}, ix)
+	tool, _ := reg.Find("Repos")
+
+	res, err := tool.Execute(context.Background(), map[string]any{"owner": "Vulnetix"})
+	if err != nil {
+		t.Fatalf("Repos(owner): %v", err)
+	}
+	if !strings.Contains(res.Content, "Vulnetix/signet") {
+		t.Fatalf("owner filter dropped the matching repo:\n%s", res.Content)
+	}
+
+	// A filter that matches nothing must say so, not return an empty answer
+	// that reads as "no repositories at all".
+	res, err = tool.Execute(context.Background(), map[string]any{"owner": "Nobody"})
+	if err != nil {
+		t.Fatalf("Repos(no match): %v", err)
+	}
+	want := `no repositories owned by "Nobody" in the local index`
+	if res.Content != want {
+		t.Fatalf("no-match listing = %q, want %q", res.Content, want)
+	}
+}
+
+func TestReposAbsentWhenIndexEmpty(t *testing.T) {
+	reg := DefaultWithCaps(t.TempDir(), true, Capabilities{}, repoindex.Index{})
+	if _, ok := reg.Find("Repos"); ok {
+		t.Fatal("Repos must not be offered for an empty index")
+	}
+}
