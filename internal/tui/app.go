@@ -2356,7 +2356,7 @@ func (a *App) buildTurns() []run.Turn {
 			})
 		}
 	}
-	return turns
+	return normaliseTurns(turns)
 }
 
 // View implements tea.Model.

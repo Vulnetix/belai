@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/vulnetix/signet/internal/permissions"
+	"github.com/vulnetix/signet/internal/session"
 	"github.com/vulnetix/signet/internal/tools"
 )
 
@@ -110,6 +111,25 @@ func TestPlanStateRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(want, got) {
 		t.Fatalf("round-trip mismatch:\n want=%+v\n  got=%+v", want, got)
+	}
+}
+
+func TestLatestPlanStateSkipsMalformedAndTakesLatest(t *testing.T) {
+	entries := []session.Entry{
+		{ID: "bad", Type: "plan_state", Content: "{not json"},
+		{ID: "e1", Type: "plan_state", Content: `{"enabled":true,"todos":[{"n":1,"text":"first"}]}`},
+		{ID: "e2", Type: "plan_state", Content: `{"enabled":false,"todos":[{"n":1,"text":"second"}]}`},
+	}
+	got, ok := LatestPlanState(entries)
+	if !ok {
+		t.Fatal("LatestPlanState not found")
+	}
+	if got.Enabled || len(got.Todos) != 1 || got.Todos[0].Text != "second" {
+		t.Fatalf("LatestPlanState = %+v", got)
+	}
+
+	if _, ok := LatestPlanState([]session.Entry{{ID: "x", Type: "user"}}); ok {
+		t.Fatal("LatestPlanState should be false with no plan_state entry")
 	}
 }
 

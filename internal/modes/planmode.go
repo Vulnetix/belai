@@ -78,6 +78,25 @@ func PlanStateFromEntry(e session.Entry) (PlanState, error) {
 	return s, nil
 }
 
+// LatestPlanState returns the last plan_state entry, or ok=false when none.
+// A malformed entry is skipped, mirroring goals.LatestGoalState.
+func LatestPlanState(entries []session.Entry) (PlanState, bool) {
+	var out PlanState
+	found := false
+	for _, e := range entries {
+		if e.Type != "plan_state" {
+			continue
+		}
+		ps, err := PlanStateFromEntry(e)
+		if err != nil {
+			continue
+		}
+		out = ps
+		found = true
+	}
+	return out, found
+}
+
 // Progress builds a plans.Progress from the tracked todos.
 func (s PlanState) Progress() *plans.Progress {
 	p := plans.NewProgress(len(s.Todos))
