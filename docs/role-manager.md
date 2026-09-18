@@ -240,7 +240,7 @@ flowchart TD
     Start[Untrusted content] --> San[sanitize.Sanitize]
     San --> Payload[BuildClassifierPayload<br/>no tools / skills / agent]
     Payload --> Classify[Classifier model call]
-    Classify --> Parse{ParseSentinel strict}
+    Classify --> Parse{ParseSentinel (normalized token)}
     Parse -->|SAFE| Proceed[Proceed: verified-safe]
     Parse -->|PROMPT_INJECTION| Warn[Warn: do not promote]
     Parse -->|JAILBREAK| Warn
@@ -277,7 +277,7 @@ sequenceDiagram
     A->>A: sanitize.Sanitize
     A->>C: classifier payload (no tools / skills / agent)
     C-->>A: single sentinel token
-    A->>A: ParseSentinel (strict)
+    A->>A: ParseSentinel (normalized)
     alt SAFE
         A->>U: proceed to model
     else other sentinel or malformed
@@ -367,7 +367,7 @@ sequenceDiagram
     else cache miss
         H->>C: classifier payload (no tools / skills / agent)
         C-->>H: single sentinel token
-        H->>H: ParseSentinel (strict)
+        H->>H: ParseSentinel (normalized)
         H->>Ca: store verdict
     end
     alt SAFE
