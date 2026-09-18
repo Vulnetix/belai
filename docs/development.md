@@ -331,12 +331,16 @@ just detect-mode "how does the nonce sealing work"  # plan
 terminal's own handling gets exercised. From the chat view *and* from inside
 `/settings`, confirm `f2` flips caveman, `f3` flips guardrails, `f4` flips ask,
 and `f5` cycles the mode chip — all four are global and must fire on a
-full-screen view, not just in chat. Confirm the footer reflects each in the
-same frame: `caveman: on|off` always shows, `guardrails`/`ask` show as two
-chips, and turning *both* gates off collapses them into one gold `YOLO` chip
-while the caveman slot stays put. `f6` is the exception: it is chat-scoped and
-must do nothing from a full-screen view. If a terminal or multiplexer swallows
-a function key, `/settings`, `/yolo` and `/mode` are the equivalent paths.
+full-screen view, not just in chat. `f6` also works from any screen: it cycles
+reasoning effort default → low → medium → high → default and writes the choice
+to session state, not to the settings file. Confirm the footer reflects each
+toggle in the same frame: `caveman: on|off` always shows, `guardrails`/`ask`
+show as two chips, turning *both* gates off collapses them into one gold
+`YOLO` chip while the caveman slot stays put, and the effort segment reads
+`default` when empty and cycles through `low`/`medium`/`high` when set.
+`f7` is the exception: it is chat-scoped and must do nothing from a
+full-screen view. If a terminal or multiplexer swallows a function key,
+`/settings`, `/yolo`, `/model` and `/mode` are the equivalent paths.
 
 **Guardrails actually off.** With `SIGNET_TRACE` set, press `f3` to turn
 guardrails off and send a prompt that reads a file. Confirm the trace shows no
@@ -403,7 +407,7 @@ and the strip disappears, and that returning to agent mode brings both back.
 highlight cycles through every match instead of sticking on the second one —
 the prompt text must not change until `enter` or `right` accepts.
 
-**Prompt library.** Type a prompt, press `f6`, name it, and confirm the
+**Prompt library.** Type a prompt, press `f7`, name it, and confirm the
 system line reports it saved to the project library and that the name appears
 in `.vulnetix/prompts.json`. Press `up` and confirm the named prompt loads into
 the composer, a chip strip of prompt *names* appears above it, and the meta line

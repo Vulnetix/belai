@@ -315,9 +315,10 @@ func TestFooterHintLine(t *testing.T) {
 	}
 }
 
-// TestFooterEffortRendering pins the subtle effort display: effort renders
-// muted, directly next to the model id, and only when both a model and an
-// effort value are present.
+// TestFooterEffortRendering pins the effort segment: it always renders when
+// a model is shown, with an explicit value taking precedence and "default"
+// shown when the value is empty so the operator can see the provider-default
+// state.
 func TestFooterEffortRendering(t *testing.T) {
 	t.Run("effort shown next to model", func(t *testing.T) {
 		f := Footer{Model: "gpt-5", Effort: "high", Provider: "openai", Mode: "agent", Width: 100}
@@ -333,17 +334,17 @@ func TestFooterEffortRendering(t *testing.T) {
 			t.Fatalf("explicit none should render: %q", v)
 		}
 	})
-	t.Run("empty effort renders nothing", func(t *testing.T) {
+	t.Run("empty effort renders default", func(t *testing.T) {
 		f := Footer{Model: "gpt-5", Effort: "", Mode: "agent", Guardrails: true, Ask: true, Width: 100}
 		v := f.View()
 		lines := strings.Split(v, "\n")
 		// The hint line is the footer's last line; line 2 is the one before it.
 		line2 := lines[len(lines)-2]
-		if strings.Contains(line2, "gpt-5 · high") || strings.Contains(line2, "gpt-5 · none") {
-			t.Fatalf("empty effort must not render an effort value: %q", line2)
+		if !strings.Contains(line2, "gpt-5 · default") {
+			t.Fatalf("empty effort should render as default: %q", line2)
 		}
 		if !strings.Contains(line2, "guardrails: on") {
-			t.Fatalf("permission chips should render when effort is empty: %q", line2)
+			t.Fatalf("permission chips should still render: %q", line2)
 		}
 	})
 	t.Run("effort without a model renders nothing", func(t *testing.T) {

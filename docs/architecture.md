@@ -1309,9 +1309,9 @@ as an `"alt+…"` keycap that `String()` would have to produce. The test guard
 enforces the keycap ban, which is why it scans for string literals and not for
 the `Alt` field.
 
-`f2`–`f5` are handled in the global `tea.KeyMsg` switch, before view
+`f2`–`f6` are handled in the global `tea.KeyMsg` switch, before view
 dispatch, so they work on **every** screen — including inside `/model`,
-`/settings` and the clarify questionnaire. `f6` is chat-scoped: it is handled
+`/settings` and the clarify questionnaire. `f7` is chat-scoped: it is handled
 in `handleChatKey`, so it does nothing on a full-screen view.
 
 | Key | Behaviour |
@@ -1330,13 +1330,15 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 | `f3` | Toggle guardrails (the posture gates), from any screen |
 | `f4` | Toggle the permission-ask gate, from any screen |
 | `f5` | Cycle mode and re-sync plan mode, from any screen |
+| `f6` | Cycle reasoning effort: default → low → medium → high → default, from any screen |
+| `f7` | Save the current prompt to the project prompt library, from the chat view |
 | `ctrl+home` / `ctrl+end` | Jump the transcript to the top / bottom |
 | `ctrl+j` | Insert a newline in the prompt editor |
 | `ctrl+left` / `ctrl+right` | Move the cursor one word left / right, crossing into the neighbouring line at a line boundary |
 | `home` / `end` | Jump to the start / end of the logical line (`fn+left` / `fn+right` on a laptop keyboard) |
 | `shift+enter` | Insert a newline. bubbletea has no shift+enter key type, so it arrives one of two ways and `Editor.Update` accepts both: under the kitty protocol the CSI-u translator folds every modified enter onto `ctrl+j`, and without it the terminal sends ESC+CR, which decodes as `enter` carrying the alt flag. That flag is a terminal encoding, not a chord anyone presses, so it is matched by key type rather than bound as an alt keycap |
 | `up` / `down` | Browse prompt history and prompt library. Library entries come first and their names show as a chip strip above the composer: `tab` cycles the named prompts, `right` accepts the loaded one into the composer, `enter` sends it. Typing — like any edit key — leaves the browse cycle and edits the loaded prompt |
-| `f6` | Save the current prompt to the project prompt library |
+| `f7` | Save the current prompt to the project prompt library |
 | `tab` | Move the highlight through the slash-command hints, or — when the agent picker is open in agent mode — through the agent candidates. It never writes into the prompt. While browsing the prompt library it loads the next named prompt instead |
 | `right` / `enter` | Accept the highlighted hint (or the first, for `right` with nothing highlighted); when the agent picker is open, engage the highlighted agent; while browsing the prompt library, accept the loaded prompt into the composer (`right`) or send it (`enter`). Without a highlight, `right` is the cursor key and `enter` sends, or opens the agent picker in agent mode if no agent is engaged |
 | `ctrl+g` | Start the highlighted `↻` background-agent definition as a background agent |
@@ -1570,7 +1572,7 @@ Edge cases:
   ⏎ use · esc cancel`, dropping the `tab name` segment when the library
   contributed nothing to this cycle.
 
-`f6` in the chat composer enters a naming mode: type a name and press
+`f7` in the chat composer enters a naming mode: type a name and press
 Enter to save the current editor text to the **project** library
 (`promptlib.Add`, which replaces an entry of the same name in place and stamps
 `created_at` when it is zero). An empty name cancels with `save cancelled: name

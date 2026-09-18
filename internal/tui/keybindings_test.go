@@ -101,22 +101,59 @@ func TestModeCycleKeyFromAnyView(t *testing.T) {
 	}
 }
 
-// f6 is deliberately chat-scoped: it opens the save-prompt naming mode from
+// f7 is deliberately chat-scoped: it opens the save-prompt naming mode from
 // the composer and does nothing on a full-screen view.
 func TestSavePromptKeyIsChatScoped(t *testing.T) {
 	a := New(Options{Workdir: t.TempDir()})
 	a.editor.SetValue("remember this")
-	a.Update(tea.KeyMsg{Type: tea.KeyF6})
+	a.Update(tea.KeyMsg{Type: tea.KeyF7})
 	if !a.savePromptMode {
-		t.Fatal("f6 must start the save-prompt flow from chat")
+		t.Fatal("f7 must start the save-prompt flow from chat")
 	}
 
 	b := New(Options{Workdir: t.TempDir()})
 	b.view = viewSettings
 	b.editor.SetValue("remember this")
-	b.Update(tea.KeyMsg{Type: tea.KeyF6})
+	b.Update(tea.KeyMsg{Type: tea.KeyF7})
 	if b.savePromptMode {
-		t.Fatal("f6 must not start the save-prompt flow from a full-screen view")
+		t.Fatal("f7 must not start the save-prompt flow from a full-screen view")
+	}
+}
+
+// f6 cycles reasoning effort from any screen and writes the choice to session
+// state, not to the settings file.
+func TestCycleEffortKeyIsGlobal(t *testing.T) {
+	a := New(Options{Workdir: t.TempDir()})
+	if a.settings.Effort != "" {
+		t.Fatalf("initial effort = %q, want empty/default", a.settings.Effort)
+	}
+
+	// From a full-screen view the global handler must win.
+	a.view = viewSettings
+	a.Update(tea.KeyMsg{Type: tea.KeyF6})
+	if a.settings.Effort != "low" {
+		t.Fatalf("after first f6 effort = %q, want low", a.settings.Effort)
+	}
+
+	// Keep cycling.
+	a.Update(tea.KeyMsg{Type: tea.KeyF6})
+	if a.settings.Effort != "medium" {
+		t.Fatalf("after second f6 effort = %q, want medium", a.settings.Effort)
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyF6})
+	if a.settings.Effort != "high" {
+		t.Fatalf("after third f6 effort = %q, want high", a.settings.Effort)
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyF6})
+	if a.settings.Effort != "" {
+		t.Fatalf("after fourth f6 effort = %q, want default", a.settings.Effort)
+	}
+
+	// It must also work from the chat view.
+	b := New(Options{Workdir: t.TempDir()})
+	b.Update(tea.KeyMsg{Type: tea.KeyF6})
+	if b.settings.Effort != "low" {
+		t.Fatalf("f6 from chat effort = %q, want low", b.settings.Effort)
 	}
 }
 

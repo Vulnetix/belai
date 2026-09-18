@@ -123,9 +123,11 @@ func (f *Footer) line2Layout() (left string, pad int, right string, sessionCol, 
 	}
 	if f.Model != "" {
 		modelPart := lipgloss.NewStyle().Foreground(ColorCream).Render(f.Model)
-		if f.Effort != "" {
-			modelPart += MutedStyle.Render(" · " + f.Effort)
+		effort := f.Effort
+		if effort == "" {
+			effort = "default"
 		}
+		modelPart += MutedStyle.Render(" · " + effort)
 		parts = append(parts, modelPart)
 	}
 	if chips := f.permissionChips(); chips != "" {
