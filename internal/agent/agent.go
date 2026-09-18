@@ -285,7 +285,11 @@ type TurnInput struct {
 	Prompt        string
 	Attachments   []run.Attachment
 	HasReferences bool
-	ForceAgent    string
+	// Directive is a harness-authored continuation instruction for the user
+	// turn. It is sealed into the turn as a <directive> block rather than part
+	// of Content, so it survives sanitization.
+	Directive  string
+	ForceAgent string
 	// ForceMode engages an explicitly chosen operating mode instead of the one
 	// the classifier infers. A user who cycles to goal mode with shift+tab has
 	// stated their intent; a classifier guess must not override it.
@@ -458,7 +462,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		turns = append(turns, exploreTurns...)
 		turns = append(turns, run.Turn{Role: "assistant", Content: rolemanager.SummaryAck})
 	}
-	turns = append(turns, run.Turn{Role: "user", Content: clean, Attachments: in.Attachments})
+	turns = append(turns, run.Turn{Role: "user", Content: clean, Attachments: in.Attachments, Directive: in.Directive})
 
 	// Plan mode's pass loop contacts the evaluator with the exploration
 	// context the explore agents gathered, not with a goal definition (plan
