@@ -177,9 +177,12 @@ func TestPlanPassLoopZeroProductiveDoesNotLoop(t *testing.T) {
 	defer srv.Close()
 	sess := newPlanPassSession(t, srv, true, 2)
 
-	_, err := sess.Run(context.Background(), "write me a plan")
-	if err == nil || !strings.Contains(err.Error(), "no tools") {
-		t.Fatalf("expected zero-productive termination, got %v", err)
+	res, err := sess.Run(context.Background(), "write me a plan")
+	if err != nil {
+		t.Fatalf("expected zero-productive turn boundary, got error: %v", err)
+	}
+	if res.PlanSentinel != "PLAN_PARTIAL" {
+		t.Fatalf("PlanSentinel = %q, want PLAN_PARTIAL", res.PlanSentinel)
 	}
 }
 

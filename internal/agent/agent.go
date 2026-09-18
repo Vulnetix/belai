@@ -182,7 +182,7 @@ func (s *Session) toolSurface() (*tools.Registry, []wire.OpenAITool, []wire.Anth
 	if s.planMode {
 		return s.registry.PlanWith(s.planSurface), s.planOpenAITools, s.planAnthropicTools
 	}
-	return s.registry, s.openAITools, s.anthropicTools
+	return s.registry.WithoutPlanOnly(), s.openAITools, s.anthropicTools
 }
 
 // toolsPlanSurface combines caller-provided plan surface with the session
@@ -218,7 +218,7 @@ func NewSession(o Options) (*Session, error) {
 	// that was constructed in agent mode, and the request must then advertise
 	// the plan-mode surface rather than the one the session started with.
 	planSurface := toolsPlanSurface(o.Perms, o.PlanSurface)
-	openAITools, anthropicTools := wireTools(reg)
+	openAITools, anthropicTools := wireTools(reg.WithoutPlanOnly())
 	planOpenAITools, planAnthropicTools := wireTools(reg.PlanWith(planSurface))
 
 	// Load validated hooks for the six declared events. Discovery fails closed:

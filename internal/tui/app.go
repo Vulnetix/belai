@@ -171,6 +171,11 @@ type App struct {
 	height       int
 	mode         string
 	modeExplicit bool // a manual mode choice suppresses classification this turn
+	// modeSticky is set when the user picks a mode by hand (/mode, shift+tab,
+	// f5, --plan, or the plan review pane). It holds that mode for every
+	// following turn until the user picks again: the classifier must never
+	// silently reroute a plan session into the unbounded goal loop.
+	modeSticky bool
 	// forceMode carries that manual choice into the agent session. Suppressing
 	// the TUI's own classification is not enough: Session.run classifies again
 	// internally, so without this the user's explicit mode is discarded.
@@ -443,6 +448,7 @@ func New(opts Options) *App {
 		editor:            components.NewEditor(),
 		footer:            components.Footer{Session: "new", Model: initial.Model},
 		mode:              mode,
+		modeSticky:        opts.PlanMode || mode == "plan",
 		ctx:               context.Background(),
 		cfg:               initial,
 		status:            initialStatus,
@@ -806,10 +812,8 @@ func (a *App) submitInput(input string) tea.Cmd {
 	a.echoUser(input)
 	a.setPhaseRoleManager(agent.RoleManagerPhasePrePrompt)
 
-	if a.modeExplicit || a.classifier == nil {
-		if a.modeExplicit {
-			a.forceMode = modes.Mode(a.mode)
-		}
+	if a.modeSticky || a.modeExplicit || a.classifier == nil {
+		a.forceMode = modes.Mode(a.mode)
 		a.modeExplicit = false
 		return a.sendTurn(firstUser, input, safe, directive)
 	}
@@ -2524,6 +2528,7 @@ func (a *App) cycleMode() {
 		a.addSystem("agent mode on")
 	}
 	a.modeExplicit = true
+	a.modeSticky = true
 	a.modeDecision = rolemanager.ModeDecision{}
 	a.syncPlanMode()
 	a.saveMode()
@@ -2663,7 +2668,9 @@ func (a *App) classifyMode(input string) {
 // mode chip, the engaged named agent, and warning lines.
 func (a *App) applyModeDecision(d rolemanager.ModeDecision, err error) {
 	if err != nil {
-		a.mode = "agent"
+		if !a.modeSticky {
+			a.mode = "agent"
+		}
 		a.modeDecision = rolemanager.ModeDecision{}
 		a.modeWarning = "mode classifier error: " + err.Error()
 		a.addSystem(a.modeWarning)
@@ -2671,10 +2678,12 @@ func (a *App) applyModeDecision(d rolemanager.ModeDecision, err error) {
 		return
 	}
 	previous := a.mode
-	a.mode = string(d.Mode)
 	a.namedAgent = d.AgentName
 	a.modeDecision = d
 	a.modeWarning = d.Warning
+	if !a.modeSticky {
+		a.mode = string(d.Mode)
+	}
 	a.syncPlanMode()
 	switch {
 	case d.AgentName != "":

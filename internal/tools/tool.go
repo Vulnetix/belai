@@ -120,6 +120,20 @@ func (r *Registry) ReadOnly() *Registry {
 	return r.withCwd(NewRegistry(list...))
 }
 
+// WithoutPlanOnly returns a registry that drops tools marked as plan-only so
+// they are not advertised to agent-mode or goal-mode turns. Plan mode keeps
+// them because they are the model's way of declaring the plan complete.
+func (r *Registry) WithoutPlanOnly() *Registry {
+	var list []Tool
+	for _, t := range r.tools {
+		if po, ok := t.(PlanOnly); ok && po.PlanOnly() {
+			continue
+		}
+		list = append(list, t)
+	}
+	return r.withCwd(NewRegistry(list...))
+}
+
 // PlanSurface is how far the plan-mode registry may relax. The zero value
 // is the fail-closed surface: no write tools, no Bash.
 type PlanSurface struct {

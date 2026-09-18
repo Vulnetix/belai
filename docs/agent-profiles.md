@@ -33,7 +33,7 @@ where `GlobalDir()` honours `SIGNET_HOME` and otherwise resolves to
 | `name` | Yes | string | Unique identifier, used with `/agent start <name>`. |
 | `description` | Yes | string | Human-readable purpose, shown in `/agent list`. |
 | `system_prompt` | Yes | string | The system prompt sent to the model on every turn. |
-| `tools` | No | string[] | Allowed tool names; empty means the full default registry. Validated against the built-in set: `Bash`, `Cd`, `Edit`, `Glob`, `Grep`, `Read`, `WebFetch`, `WebSearch`, `Write`. |
+| `tools` | No | string[] | Allowed tool names; empty means the full default registry. Validated against the built-in set: `Bash`, `Cd`, `Edit`, `ExitPlanMode`, `Glob`, `Grep`, `Read`, `WebFetch`, `WebSearch`, `Write`. |
 | `mode` | Yes | string | One of `single`, `loop`, `scheduled`, `monitor`. |
 | `schedule` | No | string | Cron-like schedule expression (used when `mode` is `scheduled`). |
 | `monitor_condition` | No | string | Human-readable trigger condition (used when `mode` is `monitor`). |

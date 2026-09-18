@@ -53,15 +53,16 @@ var validAutonomy = map[string]bool{
 
 // knownToolNames is the conservative built-in set used by Validate.
 var knownToolNames = map[string]bool{
-	"Bash":      true,
-	"Cd":        true,
-	"Edit":      true,
-	"Glob":      true,
-	"Grep":      true,
-	"Read":      true,
-	"WebFetch":  true,
-	"WebSearch": true,
-	"Write":     true,
+	"Bash":         true,
+	"Cd":           true,
+	"Edit":         true,
+	"ExitPlanMode": true,
+	"Glob":         true,
+	"Grep":         true,
+	"Read":         true,
+	"WebFetch":     true,
+	"WebSearch":    true,
+	"Write":        true,
 }
 
 var unsafeName = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)

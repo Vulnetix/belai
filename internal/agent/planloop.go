@@ -174,6 +174,23 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 			emit(Event{Kind: EventTodosKind, Todos: &list})
 		}
 
+		// Model-declared completion: a direct ExitPlanMode call overrides the
+		// evaluator, saving a model round-trip and letting the planning model
+		// finish its own turn.
+		if out.planExit {
+			if l.hasList {
+				l.list.MarkAllDone()
+				list := l.list
+				emit(Event{Kind: EventTodosKind, Todos: &list})
+			}
+			return run.Result{
+				Reply:        out.lastText,
+				Usage:        out.usage,
+				PlanSentinel: rolemanager.PlanComplete,
+				Passes:       l.passes,
+			}, nil
+		}
+
 		// Natural exit: a no-tool-call reply is a claim of completion, not
 		// proof, so it is re-checked against the reply text itself. An
 		// exhausted pass is evaluated against the pass's turn digest.
@@ -184,6 +201,20 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 			evidence = evidenceDigest(turns[start:])
 		}
 
+		// Natural-exit fast path: if the assistant produced a plan with steps
+		// and every tracked step is already marked done, treat the plan as
+		// complete without consulting the evaluator.
+		if !out.exhausted {
+			if steps, err := plans.ExtractSteps(out.reply); err == nil && len(steps) > 0 && l.hasList && l.list.Complete() {
+				return run.Result{
+					Reply:        out.lastText,
+					Usage:        out.usage,
+					PlanSentinel: rolemanager.PlanComplete,
+					Passes:       l.passes,
+				}, nil
+			}
+		}
+
 		// Steering outranks the evaluator: explicit user intent beats a
 		// classifier, and skipping the call saves a model round-trip.
 		if out.exhausted {
@@ -192,9 +223,12 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 				continue
 			}
 			// A zero-productive pass burns its budget without doing any work;
-			// it produces no evidence and must not buy another pass.
+			// it produces no evidence and must not buy another pass. In plan
+			// mode this is a turn boundary: return the plan gathered so far so
+			// the harness can write it to disk for review.
 			if out.productive == 0 {
-				return run.Result{Passes: l.passes}, fmt.Errorf("plan pass loop stopped: pass %d executed no tools", l.passes)
+				emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("plan pass loop stopped: pass %d executed no tools; returning the plan so far", l.passes)})
+				return run.Result{Reply: l.lastText, Passes: l.passes, PlanSentinel: rolemanager.PlanPartial}, nil
 			}
 		}
 

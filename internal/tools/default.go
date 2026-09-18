@@ -27,6 +27,7 @@ func Default(workdir string, readOnly bool) *Registry {
 	list = append(list, &Grep{Root: workdir, MaxMatches: 200, MaxLineLen: 200, Cwd: cwd})
 	list = append(list, &Glob{Root: workdir, MaxResults: 200, Cwd: cwd})
 	list = append(list, &Cd{Cwd: cwd})
+	list = append(list, ExitPlanMode{})
 
 	base := NewRegistry(list...)
 	base.cwd = cwd

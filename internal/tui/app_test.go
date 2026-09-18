@@ -1813,6 +1813,8 @@ func TestEnterWhileWorkingSteers(t *testing.T) {
 
 func TestSubmitInputEchoesPromptInstantly(t *testing.T) {
 	a := New(Options{})
+	a.mode = "goal" // avoid the agent-picker gate during pre-send tests
+	a.modeSticky = false
 	a.SetClassifier(&fakeClassifier{raw: "AGENT"})
 	a.editor.SetValue("hello world")
 
@@ -1856,6 +1858,8 @@ func TestSubmitInputClassifiesAsyncThenSends(t *testing.T) {
 	}
 	cfg.BaseURL = srv.URL
 	a := New(Options{Client: srv.Client(), Provider: "openai", Model: "gpt-5"})
+	a.mode = "goal" // avoid the agent-picker gate during pre-send tests
+	a.modeSticky = false
 	a.cfg = cfg
 	a.status = status
 	a.SetClassifier(&fakeClassifier{raw: "PLAN"})
@@ -1914,6 +1918,8 @@ func TestSubmitInputClassifiesAsyncThenSends(t *testing.T) {
 
 func TestEscCancelsPreSend(t *testing.T) {
 	a := New(Options{})
+	a.mode = "goal" // avoid the agent-picker gate during pre-send tests
+	a.modeSticky = false
 	a.SetClassifier(&fakeClassifier{raw: "AGENT"})
 	a.editor.SetValue("hello")
 	cmd := a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
@@ -1945,6 +1951,8 @@ func TestEscCancelsPreSend(t *testing.T) {
 
 func TestEnterDuringPreSendDoesNotSendOrSteer(t *testing.T) {
 	a := New(Options{})
+	a.mode = "goal" // avoid the agent-picker gate during pre-send tests
+	a.modeSticky = false
 	a.SetClassifier(&fakeClassifier{raw: "AGENT"})
 	a.editor.SetValue("first")
 	if cmd := a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter}); cmd == nil {

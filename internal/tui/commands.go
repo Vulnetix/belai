@@ -98,6 +98,7 @@ func NewRegistry(workdir string) *Registry {
 		a.namedAgent = p.Name
 		a.mode = "agent"
 		a.modeExplicit = true
+		a.modeSticky = true
 		// Re-resolve the carrier and reseal the system prompt on the next send.
 		a.syncPlanMode()
 		a.addSystem("profile: " + p.Name)
@@ -130,6 +131,7 @@ func NewRegistry(workdir string) *Registry {
 		if arg != "" {
 			a.mode = arg
 			a.modeExplicit = true
+			a.modeSticky = true
 			a.syncPlanMode()
 			a.saveMode()
 			a.addSystem("mode: " + arg)
@@ -150,6 +152,7 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("execute", "leave plan mode and execute the plan", nil, func(a *App, arg string) tea.Cmd {
 		a.mode = "agent"
 		a.modeExplicit = true
+		a.modeSticky = true
 		a.syncPlanMode()
 		a.saveMode()
 		a.addSystem("plan mode off — executing")

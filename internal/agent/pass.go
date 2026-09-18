@@ -51,6 +51,14 @@ type passOutcome struct {
 	// doing any work, so a pass can exhaust itself entirely on truncation
 	// repair; productive==0 must not buy another pass.
 	productive int
+	// withheld counts consecutive iterations where every tool result was
+	// withheld (plan mode denies writes). Two in a row injects a directive
+	// explaining that the plan must be produced as reply text; three breaks
+	// the pass to stop the spin.
+	withheld int
+	// planExit is set when the model called ExitPlanMode. The caller treats
+	// this as a clean completion signal rather than a normal no-tool exit.
+	planExit bool
 }
 
 // callUnit is one parsed, permission-checked tool call, used to decide the
@@ -69,6 +77,7 @@ type callUnit struct {
 // the mutated turns — tool results accumulate in it across passes.
 func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system string, turns []run.Turn, streaming bool, emit func(Event)) (passOutcome, []run.Turn, error) {
 	var productive int
+	var withheld int
 	var text string
 	var lastText string
 	for i := 0; i < s.maxIter; i++ {
@@ -165,6 +174,8 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		}
 
 		productiveIter := false
+		allWithheld := len(units) > 0
+		planExited := false
 		for i := 0; i < len(units); i++ {
 			u := units[i]
 			if i >= concurrentEnd {
@@ -185,14 +196,35 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 				ToolCallID: u.call.ID,
 				ToolName:   u.call.Name,
 			})
-			if !strings.HasPrefix(toolResult, "tool result withheld:") {
+			switch {
+			case toolResult == tools.ExitPlanModeSentinel:
+				planExited = true
+			case !strings.HasPrefix(toolResult, "tool result withheld:"):
 				productiveIter = true
+				allWithheld = false
+			default:
+				allWithheld = allWithheld && true
 			}
 		}
 		if productiveIter {
 			productive++
 		}
+		if allWithheld {
+			withheld++
+		} else {
+			withheld = 0
+		}
+		if planExited {
+			return passOutcome{reply: assistant.Text, usage: assistant.Usage, text: text, lastText: lastText, productive: productive, planExit: true}, turns, nil
+		}
+		if withheld == 2 {
+			turns = append(turns, directiveTurns("Writes are unavailable in plan mode. Put the plan in your reply text, then call ExitPlanMode to finish.")...)
+			continue
+		}
+		if withheld >= 3 {
+			return passOutcome{exhausted: true, text: text, lastText: lastText, productive: productive, withheld: withheld}, turns, nil
+		}
 	}
 
-	return passOutcome{exhausted: true, text: text, lastText: lastText, productive: productive}, turns, nil
+	return passOutcome{exhausted: true, text: text, lastText: lastText, productive: productive, withheld: withheld}, turns, nil
 }
