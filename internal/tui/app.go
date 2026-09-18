@@ -295,12 +295,15 @@ type App struct {
 	state    config.State
 
 	// session persistence
-	store         *session.Store
-	sessionID     string
-	sessionName   string
-	lastEntryID   string // ParentID for the next append
-	nameRequested bool   // auto-naming already attempted for this session
-	storeDisabled bool   // a store error was reported; degrade to memory-only
+	store          *session.Store
+	sessionID      string
+	sessionName    string
+	sessionKey     session.Key // project key for the live session (resume-aware)
+	sessionWorkdir string      // the project path this session was resolved from
+	lastEntryID    string      // ParentID for the next append
+	persistedUpTo  int         // count of leading a.messages already written
+	nameRequested  bool        // auto-naming already attempted for this session
+	storeDisabled  bool        // a store error was reported; degrade to memory-only
 
 	// context metering
 	summary       string            // compaction carrier; "" in a normal session
@@ -861,6 +864,9 @@ func (a *App) submitInput(input string) tea.Cmd {
 func (a *App) echoUser(input string) {
 	a.messages = append(a.messages, components.Message{Role: "user", Content: input})
 	a.appendEntry(session.Entry{Type: "user", Role: "user", Content: input})
+	// The user turn is already on disk; advance the persistence cursor past
+	// it so persistTail never double-writes it.
+	a.persistedUpTo = len(a.messages)
 }
 
 // sendTurnNoEcho starts the agent turn for a prompt already echoed to the
@@ -2008,7 +2014,7 @@ func (a *App) handleStreamChunk(m streamChunkMsg) tea.Cmd {
 		a.messages[len(a.messages)-1].Usage = m.Usage
 		a.messages[len(a.messages)-1].Materialise()
 	}
-	a.appendAssistant(m.Usage)
+	a.persistTail()
 	a.refreshFooter()
 	return nil
 }
@@ -2140,6 +2146,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 				if a.messages[i].Role == "tool" && a.messages[i].ToolCallID == m.ToolCallID {
 					a.messages[i].SetContent(m.ToolResult)
 					a.messages[i].Status = toolResultStatus(m.ToolName, m.ToolResult)
+					a.persistTail() // mid-turn durability: the settled pair is now complete
 					return a.nextAgent()
 				}
 			}
@@ -2148,6 +2155,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		if len(a.messages) > 0 && a.messages[len(a.messages)-1].Role == "tool" {
 			a.messages[len(a.messages)-1].SetContent(m.ToolResult)
 			a.messages[len(a.messages)-1].Status = toolResultStatus(m.ToolName, m.ToolResult)
+			a.persistTail()
 		}
 		return a.nextAgent()
 	case agent.EventPermissionAskKind:
@@ -2258,7 +2266,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			a.usage = m.Result.Usage
 			a.usageStale = false
 		}
-		a.appendAssistant(m.Result.Usage)
+		a.persistTail()
 		// In plan mode, extract a numbered plan out of the reply and persist it
 		// so /todos and a later resume can rebuild progress. The review pane
 		// (triggered by EventPlanFileKind) replaces the old /execute / /refine
@@ -3309,30 +3317,13 @@ func (a *App) trailingAssistant() int {
 	return -1
 }
 
-func (a *App) appendAssistant(usage *transcript.Usage) {
-	last := a.trailingAssistant()
-	if last < 0 {
-		return
-	}
-	content := a.messages[last].Text()
-	if strings.TrimSpace(content) == "" {
-		return
-	}
-	meta := map[string]any{"model": a.cfg.Model, "provider": a.cfg.Provider}
-	if usage != nil {
-		meta["prompt_tokens"] = usage.PromptTokens
-		meta["completion_tokens"] = usage.CompletionTokens
-		meta["total_tokens"] = usage.Total()
-	}
-	a.appendEntry(session.Entry{Type: "assistant", Role: "assistant", Content: content, Meta: meta})
-}
-
 // startNewSession resets to a brand-new, unnamed session. The previous
 // session's file is left untouched; nothing is written until the next user
 // message.
 func (a *App) startNewSession() {
 	a.sessionID = session.MustID()
 	a.lastEntryID = ""
+	a.persistedUpTo = 0
 	a.sessionName = ""
 	a.parentSession = ""
 	a.nameRequested = false
@@ -3487,6 +3478,7 @@ func (a *App) applyCompaction(summary string) tea.Cmd {
 
 	a.sessionID = session.MustID()
 	a.lastEntryID = ""
+	a.persistedUpTo = 0
 	a.parentSession = old
 
 	a.appendEntry(session.Entry{
