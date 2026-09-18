@@ -62,6 +62,12 @@ type Options struct {
 	Settings *config.Settings // nil means load from disk
 	Posture  posture.Policy   // posture gates; defaults to posture.Defaults()
 	PlanMode bool
+
+	// ResumeKey and ResumeSession load an existing session instead of minting
+	// a fresh one. ResumeSession is a fully-resolved id; ResumeKey addresses
+	// its project. Both are set by the CLI --resume flag.
+	ResumeKey     session.Key
+	ResumeSession string
 }
 
 // streamChunkMsg wraps one chunk from the streaming channel (legacy text path).
@@ -215,7 +221,8 @@ type App struct {
 	planMode bool
 	agent    *agent.Session
 	events   <-chan agent.Event
-	pending  string // pending prompt to send once configured
+	pending  string  // pending prompt to send once configured
+	initCmd  tea.Cmd // resume command batched into Init(), set by New
 	// requestedProvider is the provider name from settings/state/env/flags
 	// before any sole-configured-provider fallback. Empty means none was
 	// configured; the async credential resolution may then pick a sole provider.
@@ -458,6 +465,7 @@ func New(opts Options) *App {
 	}
 
 	store, _ := session.NewStore()
+	sessionKey, _ := session.KeyFor(workdir)
 	cache, _ := rolemanager.LoadCache(rolemanager.DefaultCachePath())
 
 	a := &App{
@@ -485,6 +493,8 @@ func New(opts Options) *App {
 		vp:                viewport.New(80, 24),
 		store:             store,
 		sessionID:         session.MustID(),
+		sessionKey:        sessionKey,
+		sessionWorkdir:    workdir,
 		attachments:       map[int]*attachment{},
 		attachSpin:        spinner.New(),
 		workSpin:          spinner.New(spinner.WithSpinner(spinner.MiniDot)),
@@ -521,6 +531,10 @@ func New(opts Options) *App {
 
 	a.initCredentialState()
 	a.refreshFooter()
+
+	if opts.ResumeSession != "" {
+		a.initCmd = a.resumeSession(opts.ResumeKey, opts.ResumeSession)
+	}
 	return a
 }
 
@@ -614,6 +628,9 @@ func (a *App) SetClassifier(c rolemanager.Classifier) {
 // Init implements tea.Model.
 func (a *App) Init() tea.Cmd {
 	cmds := []tea.Cmd{tickCmd()}
+	if a.initCmd != nil {
+		cmds = append(cmds, a.initCmd)
+	}
 	// Credential resolution can probe the host keychain; run it off the first
 	// frame so the TUI paints from the env-only resolution immediately.
 	if a.resolver != nil {
@@ -3289,7 +3306,7 @@ func (a *App) appendEntry(e session.Entry) {
 	if e.ParentID == "" {
 		e.ParentID = a.lastEntryID
 	}
-	if err := a.store.Append(a.workdir, a.sessionID, e); err != nil {
+	if err := a.store.AppendTo(a.sessionKey, a.sessionID, e); err != nil {
 		a.disableStore("session store error: " + err.Error())
 		return
 	}

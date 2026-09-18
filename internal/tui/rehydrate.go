@@ -5,6 +5,7 @@ import (
 	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/session"
 	"github.com/vulnetix/signet/internal/todos"
+	"github.com/vulnetix/signet/internal/transcript"
 	"github.com/vulnetix/signet/internal/tui/components"
 )
 
@@ -150,7 +151,11 @@ func messagesFromEntries(entries []session.Entry) ([]components.Message, int) {
 			if e.Content == "" && len(kept) == 0 {
 				continue
 			}
-			msgs = append(msgs, components.Message{Role: "assistant", Content: e.Content, ToolCalls: kept})
+			msg := components.Message{Role: "assistant", Content: e.Content, ToolCalls: kept}
+			if u := usageFromMeta(e.Meta); u != nil {
+				msg.Usage = u
+			}
+			msgs = append(msgs, msg)
 		case "tool":
 			id := metaString(e.Meta, "tool_call_id")
 			if id == "" || !live[id] {
@@ -207,4 +212,32 @@ func metaString(meta map[string]any, key string) string {
 		return v
 	}
 	return ""
+}
+
+// usageFromMeta rebuilds a provider usage report from a persisted assistant
+// entry's token meta, so the context estimate has an anchor immediately after
+// rehydration.
+func usageFromMeta(meta map[string]any) *transcript.Usage {
+	if meta == nil {
+		return nil
+	}
+	prompt, _ := metaInt(meta, "prompt_tokens")
+	completion, _ := metaInt(meta, "completion_tokens")
+	total, _ := metaInt(meta, "total_tokens")
+	if prompt == 0 && completion == 0 && total == 0 {
+		return nil
+	}
+	return &transcript.Usage{PromptTokens: prompt, CompletionTokens: completion, TotalTokens: total}
+}
+
+func metaInt(meta map[string]any, key string) (int, bool) {
+	switch v := meta[key].(type) {
+	case float64:
+		return int(v), true
+	case int:
+		return v, true
+	case int64:
+		return int(v), true
+	}
+	return 0, false
 }

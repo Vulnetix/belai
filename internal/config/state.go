@@ -24,8 +24,9 @@ type State struct {
 	ActiveGoal string `json:"active_goal,omitempty"`
 	// ActiveProfile is the currently selected agent profile.
 	ActiveProfile string `json:"active_profile,omitempty"`
-	// ActiveSession is the last active session id, written for a future
-	// /resume. Each launch mints a new session regardless.
+	// ActiveSession is the last active session id, kept up to date by the TUI
+	// on every session change (new, compact, resume) and read back by future
+	// launches so the last session is addressable through /resume.
 	ActiveSession string `json:"active_session,omitempty"`
 }
 
