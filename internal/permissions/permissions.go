@@ -136,6 +136,31 @@ func (s Settings) Evaluate(tool, subject string) Decision {
 	return d
 }
 
+// ExplicitlyAllows reports whether a rule the user wrote allows this call.
+// Unlike Evaluate it never answers yes by default: it is the question a
+// relaxation asks, and a relaxation must be opted into, not fallen into.
+func (s Settings) ExplicitlyAllows(tool, subject string) bool {
+	for _, r := range s.Allow {
+		if matchRule(r, tool, subject) {
+			return true
+		}
+	}
+	return false
+}
+
+// HasAllowRule reports whether the user wrote any allow rule for the named
+// tool, regardless of subject. It is used to decide whether to advertise the
+// read-only Bash surface in plan mode.
+func (s Settings) HasAllowRule(tool string) bool {
+	for _, r := range s.Allow {
+		rt, _, _ := parseRule(r)
+		if strings.EqualFold(rt, tool) {
+			return true
+		}
+	}
+	return false
+}
+
 // matchRule matches one rule against a tool name and subject. Tool names are
 // matched case-insensitively so a rule written "read" still applies to the
 // canonical "Read" tool; subjects remain case-sensitive.

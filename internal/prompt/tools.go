@@ -32,6 +32,43 @@ type ToolsOptions struct {
 	Workdir string
 }
 
+// toolNamesSet returns the lower-cased tool names in opts for quick lookups.
+func (opts ToolsOptions) toolNamesSet() map[string]bool {
+	set := make(map[string]bool, len(opts.Tools))
+	for _, d := range opts.Tools {
+		set[strings.ToLower(d.Name)] = true
+	}
+	return set
+}
+
+// planWriteToolNames are the canonical mutating tools plan mode disables by
+// default. The briefing uses them to describe the surface accurately.
+var planWriteToolNames = map[string]bool{
+	"write": true, "edit": true, "apply_patch": true, "patch": true,
+	"create_file": true, "delete_file": true, "rename_file": true,
+	"move_file": true, "copy_file": true, "replace": true, "remove": true,
+	"notebook_edit": true, "insert": true,
+}
+
+// planSurfaceFromTools infers what plan-mode surface is advertised from the
+// tool list itself, so the briefing never contradicts the registry.
+func (opts ToolsOptions) planSurfaceFromTools() (hasBash bool, hasWrite bool) {
+	if !opts.PlanMode {
+		return false, false
+	}
+	set := opts.toolNamesSet()
+	if set["bash"] {
+		hasBash = true
+	}
+	for name := range planWriteToolNames {
+		if set[name] {
+			hasWrite = true
+			break
+		}
+	}
+	return hasBash, hasWrite
+}
+
 // Summarise reduces a full tool description to its first sentence, which is
 // the line the index carries. Descriptions are written with the summary
 // first for exactly this reason.
@@ -64,9 +101,19 @@ func ToolsBlock(opts ToolsOptions) string {
 	}
 
 	if opts.PlanMode {
-		b.WriteString("\nMode: plan. This is a read-only mode:\n")
-		b.WriteString("- Bash is not available. Neither are Write, Edit, or any other tool that changes the workspace; they are not in the list below and calling one is refused.\n")
-		b.WriteString("- Investigate with the read-only tools below and answer with a plan. Do not describe a change as made — describe the change you would make.\n")
+		hasBash, hasWrite := opts.planSurfaceFromTools()
+		b.WriteString("\nMode: plan. ")
+		switch {
+		case hasWrite:
+			b.WriteString("Guardrails are off; the full tool surface is available, including tools that change the workspace and full Bash. You may edit while planning.\n")
+		case hasBash:
+			b.WriteString("Bash is available in read-only form only. Write, Edit, and other tools that change the workspace are not in the list below and calling one is refused.\n")
+			b.WriteString("- Investigate with the read-only tools below and answer with a plan. Do not describe a change as made — describe the change you would make.\n")
+		default:
+			b.WriteString("This is a read-only mode:\n")
+			b.WriteString("- Bash is not available. Neither are Write, Edit, or any other tool that changes the workspace; they are not in the list below and calling one is refused.\n")
+			b.WriteString("- Investigate with the read-only tools below and answer with a plan. Do not describe a change as made — describe the change you would make.\n")
+		}
 	}
 
 	b.WriteString("\nTools:\n")

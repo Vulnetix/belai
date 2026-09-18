@@ -85,7 +85,10 @@ func identity(provider, model string) string {
 
 const normalVoice = "Voice guidance: respond clearly and professionally.\n"
 
-const cavemanVoice = "Voice guidance: talk like caveman. Short words. No long words. 'Me fix now.'\n"
+// CavemanVoice is the caveman voice-guidance line. It is exported so the
+// classifier's prose payload builders share one wording with the agent's own
+// system prompt.
+const CavemanVoice = "Voice guidance: talk like caveman. Short words. No long words. 'Me fix now.'\n"
 
 // explorePreamble is the harness-authored guidance attached to a plan-mode
 // explore subagent's system prompt. It is trusted harness text (SourceHarness
@@ -95,7 +98,9 @@ func explorePreamble(tools []string) string {
 	if strings.TrimSpace(list) == "" {
 		list = "the read-only tools listed below"
 	}
-	return "You are in plan-mode exploration. You may use the read-only tools listed below to investigate the repository. Prefer to discover facts yourself with the available read-only tools (" + list + ") rather than asking questions. Only ask the user a clarifying question when you have exhausted the available evidence and the decision genuinely requires user judgment. Produce a concise findings report as your final reply.\n"
+	return "You are in plan-mode exploration. You may use the read-only tools listed below to investigate the repository. Prefer to discover facts yourself with the available read-only tools (" + list + ") rather than asking questions. " +
+		"When a task mentions a remote repository, check the local index first — call Repos to see which checkouts are on this machine, then RepoFiles/RepoRead for one that is. Only use GH for a repository that is not available locally. " +
+		"Only ask the user a clarifying question when you have exhausted the available evidence and the decision genuinely requires user judgment. Produce a concise findings report as your final reply.\n"
 }
 
 // System renders the system prompt. Exactly one carrier may be active: if
@@ -125,7 +130,7 @@ func System(opts Options) (string, error) {
 		b.WriteString(explorePreamble(opts.ExploreTools))
 	}
 	if opts.Caveman {
-		b.WriteString(cavemanVoice)
+		b.WriteString(CavemanVoice)
 	} else {
 		b.WriteString(normalVoice)
 	}

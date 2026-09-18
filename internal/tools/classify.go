@@ -19,11 +19,16 @@ package tools
 //   - Read returns whatever is in a file. The call is confined, but the bytes
 //     are not: a repository can carry a poisoned file exactly as a web page
 //     can carry a poisoned paragraph.
+//   - KindRemote natives run a shaped argv, but the bytes they bring back are
+//     written by a third party on a hosting platform (PR bodies, issue
+//     comments, file contents). They carry the same prompt-injection risk as
+//     a web fetch, so they classify too.
 //
 // Every other kind is both shaped and controlled: Grep returns matching lines
 // for a pattern the harness passed as one argument, Glob returns paths, Write
-// and Edit return a terse confirmation the harness wrote itself, and a native
-// runs a fixed argv the harness built. Those are sanitised and promoted.
+// and Edit return a terse confirmation the harness wrote itself, and a local
+// native runs a fixed argv the harness built. Those are sanitised and
+// promoted.
 //
 // A kind absent from this map is sanitise-only, which is the cheap default,
 // so adding a tool whose content is arbitrary means adding its kind here
@@ -33,6 +38,7 @@ var classifierKinds = map[Kind]bool{
 	KindWebFetch:  true,
 	KindWebSearch: true,
 	KindRead:      true,
+	KindRemote:    true,
 }
 
 // NeedsClassifier reports whether a result of this kind must go through the

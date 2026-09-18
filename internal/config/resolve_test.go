@@ -156,6 +156,94 @@ func TestClassifierSettingsIsZero(t *testing.T) {
 	if (&ClassifierSettings{Model: "m"}).IsZero() {
 		t.Fatal("ClassifierSettings with model should not be zero")
 	}
+	// A caveman-only block must not report zero: Effective.apply gates the
+	// whole block on IsZero, so a zero verdict would drop the setting.
+	if (&ClassifierSettings{Caveman: boolPtr(false)}).IsZero() {
+		t.Fatal("ClassifierSettings with caveman false should not be zero")
+	}
+	if (&ClassifierSettings{Caveman: boolPtr(true)}).IsZero() {
+		t.Fatal("ClassifierSettings with caveman true should not be zero")
+	}
+}
+
+func TestClassifierCavemanMergeAndAccessor(t *testing.T) {
+	cases := []struct {
+		name string
+		base *ClassifierSettings
+		from *ClassifierSettings
+		want *bool
+	}{
+		{"nil over nil", &ClassifierSettings{}, &ClassifierSettings{}, nil},
+		{"true over nil", &ClassifierSettings{}, &ClassifierSettings{Caveman: boolPtr(true)}, boolPtr(true)},
+		{"false over true", &ClassifierSettings{Caveman: boolPtr(true)}, &ClassifierSettings{Caveman: boolPtr(false)}, boolPtr(false)},
+		{"nil keeps true", &ClassifierSettings{Caveman: boolPtr(true)}, &ClassifierSettings{Model: "m"}, boolPtr(true)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.base.merge(tc.from)
+			got := tc.base.Caveman
+			switch {
+			case tc.want == nil && got != nil:
+				t.Fatalf("caveman = %v, want nil", *got)
+			case tc.want != nil && got == nil:
+				t.Fatalf("caveman = nil, want %v", *tc.want)
+			case tc.want != nil && *got != *tc.want:
+				t.Fatalf("caveman = %v, want %v", *got, *tc.want)
+			}
+			s := Settings{Classifier: tc.base}
+			want := tc.want != nil && *tc.want
+			if got := s.ClassifierCavemanEnabled(); got != want {
+				t.Fatalf("ClassifierCavemanEnabled = %v, want %v", got, want)
+			}
+		})
+	}
+	if (Settings{}).ClassifierCavemanEnabled() {
+		t.Fatal("no classifier block should mean caveman off")
+	}
+	if (Settings{Classifier: &ClassifierSettings{}}).ClassifierCavemanEnabled() {
+		t.Fatal("nil caveman should mean caveman off")
+	}
+}
+
+func TestResolveClassifierCavemanEnv(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	workdir := t.TempDir()
+
+	env := func(k string) string {
+		if k == "SIGNET_CLASSIFIER_CAVEMAN" {
+			return "true"
+		}
+		return ""
+	}
+	eff, err := Resolve(workdir, env, Settings{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if !eff.Settings.ClassifierCavemanEnabled() {
+		t.Fatal("SIGNET_CLASSIFIER_CAVEMAN=true should enable classifier caveman")
+	}
+	if eff.Origin["classifier"] != SourceEnv {
+		t.Fatalf("classifier origin = %q, want env", eff.Origin["classifier"])
+	}
+
+	// An unset or unparseable variable must not claim provenance.
+	for _, val := range []string{"", "yes-ish"} {
+		eff, err := Resolve(workdir, func(k string) string {
+			if k == "SIGNET_CLASSIFIER_CAVEMAN" {
+				return val
+			}
+			return ""
+		}, Settings{})
+		if err != nil {
+			t.Fatalf("Resolve(%q): %v", val, err)
+		}
+		if eff.Settings.ClassifierCavemanEnabled() {
+			t.Fatalf("SIGNET_CLASSIFIER_CAVEMAN=%q enabled caveman", val)
+		}
+		if _, ok := eff.Origin["classifier"]; ok {
+			t.Fatalf("SIGNET_CLASSIFIER_CAVEMAN=%q claimed classifier provenance", val)
+		}
+	}
 }
 
 func TestClassifierChunkDefaults(t *testing.T) {

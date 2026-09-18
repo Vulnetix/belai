@@ -14,9 +14,10 @@ const MaxSessionNameRunes = 48
 
 // BuildSessionNamePayload constructs the naming request. Tools, Skills, and
 // Agent are always empty; the model sees only the user's first message.
-func BuildSessionNamePayload(firstUserMessage string) ClassifierPayload {
+// caveman voices the title; ParseSessionName's rules apply either way.
+func BuildSessionNamePayload(firstUserMessage string, caveman bool) ClassifierPayload {
 	return ClassifierPayload{
-		System: sessionNameSystemPrompt,
+		System: withCavemanVoice(sessionNameSystemPrompt, caveman),
 		User:   firstUserMessage,
 	}
 }

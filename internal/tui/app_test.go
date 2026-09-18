@@ -430,6 +430,10 @@ func newAgentSSEServer(t *testing.T, finalReply string) *httptest.Server {
 			reply = "SAFE"
 		} else if strings.Contains(system, "operating-mode classifier") {
 			reply = "AGENT"
+		} else if strings.Contains(system, "goal-progress evaluator") {
+			reply = "GOAL_COMPLETE"
+		} else if strings.Contains(system, "plan-progress evaluator") {
+			reply = "PLAN_COMPLETE"
 		}
 		if req.Stream {
 			w.Header().Set("Content-Type", "text/event-stream")
@@ -1861,8 +1865,16 @@ func TestSubmitInputClassifiesAsyncThenSends(t *testing.T) {
 	if userCount != 1 {
 		t.Fatalf("user messages = %d, want 1 (echoed once, not duplicated)", userCount)
 	}
-	if assistantCount != 1 || a.messages[len(a.messages)-1].Content != "pong" {
+	if assistantCount != 1 {
+		t.Fatalf("assistant messages = %d, want 1, got %+v", assistantCount, a.messages)
+	}
+	last := a.trailingAssistant()
+	if last < 0 || a.messages[last].Content != "pong" {
 		t.Fatalf("expected one 'pong' assistant reply, got %+v", a.messages)
+	}
+	// Plan mode presents its own evaluator verdict, not a goal evaluator.
+	if !strings.Contains(a.messages[len(a.messages)-1].Content, "plan evaluator: PLAN_COMPLETE") {
+		t.Fatalf("expected a plan evaluator verdict after the reply, got %+v", a.messages)
 	}
 }
 

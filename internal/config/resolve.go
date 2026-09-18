@@ -2,6 +2,8 @@ package config
 
 import (
 	"os"
+	"strconv"
+	"strings"
 )
 
 // Source is the provenance of a setting value, ordered lowest to highest
@@ -72,6 +74,7 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 			Provider: env("SIGNET_CLASSIFIER_PROVIDER"),
 			Model:    env("SIGNET_CLASSIFIER_MODEL"),
 			Effort:   env("SIGNET_CLASSIFIER_EFFORT"),
+			Caveman:  envBool(env("SIGNET_CLASSIFIER_CAVEMAN")),
 		},
 	}, SourceEnv)
 
@@ -165,6 +168,17 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.Classifier.merge(s.Classifier)
 		e.Origin["classifier"] = src
 	}
+}
+
+// envBool parses a boolean environment variable into a tri-state pointer: nil
+// when the variable is unset or unparseable, so an absent variable never
+// claims provenance over a stored setting.
+func envBool(v string) *bool {
+	b, err := strconv.ParseBool(strings.TrimSpace(v))
+	if err != nil {
+		return nil
+	}
+	return &b
 }
 
 func firstNonEmpty(vals ...string) string {

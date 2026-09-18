@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/vulnetix/signet/internal/permissions"
 	"github.com/vulnetix/signet/internal/tools"
 )
 
@@ -13,26 +14,29 @@ func TestToolAllowed(t *testing.T) {
 		tool        string
 		args        map[string]any
 		planEnabled bool
+		surface     tools.PlanSurface
 		want        bool
 	}{
-		{"write allowed when not plan", "write", nil, false, true},
-		{"write blocked in plan", "write", nil, true, false},
-		{"edit blocked in plan", "edit", nil, true, false},
-		{"read allowed in plan", "read", nil, true, true},
-		{"grep allowed in plan", "grep", map[string]any{"pattern": "x"}, true, true},
-		// Bash is off in plan mode whatever the command says: a read-only
-		// command is refused alongside a mutating one, because the surface
-		// does not carry the tool at all.
-		{"bash cat blocked in plan", "bash", map[string]any{"command": "cat x"}, true, false},
-		{"bash rm blocked in plan", "bash", map[string]any{"command": "rm x"}, true, false},
-		{"bash git status blocked in plan", "bash", map[string]any{"command": "git status"}, true, false},
-		{"bash git push blocked in plan", "bash", map[string]any{"command": "git push"}, true, false},
-		{"bash with no args blocked in plan", "bash", nil, true, false},
-		{"bash allowed when not plan", "bash", map[string]any{"command": "rm x"}, false, true},
+		{"write allowed when not plan", "write", nil, false, tools.PlanSurface{}, true},
+		{"write blocked in plan", "write", nil, true, tools.PlanSurface{}, false},
+		{"edit blocked in plan", "edit", nil, true, tools.PlanSurface{}, false},
+		{"read allowed in plan", "read", nil, true, tools.PlanSurface{}, true},
+		{"grep allowed in plan", "grep", map[string]any{"pattern": "x"}, true, tools.PlanSurface{}, true},
+		// Bash is off in plan mode by default.
+		{"bash cat blocked in plan", "bash", map[string]any{"command": "cat x"}, true, tools.PlanSurface{}, false},
+		{"bash rm blocked in plan", "bash", map[string]any{"command": "rm x"}, true, tools.PlanSurface{}, false},
+		{"bash with no args blocked in plan", "bash", nil, true, tools.PlanSurface{}, false},
+		{"bash allowed when not plan", "bash", map[string]any{"command": "rm x"}, false, tools.PlanSurface{}, true},
+		// Guardrails off relaxes everything in plan mode.
+		{"bash allowed when guardrails off", "bash", map[string]any{"command": "rm -rf /"}, true, tools.PlanSurface{GuardrailsOff: true}, true},
+		{"write allowed when guardrails off", "write", nil, true, tools.PlanSurface{GuardrailsOff: true}, true},
+		// A Bash allow rule keeps read-only Bash available.
+		{"bash read-only allowed with rule", "bash", map[string]any{"command": "cat x"}, true, tools.PlanSurface{Perms: permissions.From([]string{"Bash(cat *)"}, nil, nil)}, true},
+		{"bash mutating still blocked with rule", "bash", map[string]any{"command": "rm x"}, true, tools.PlanSurface{Perms: permissions.From([]string{"Bash(cat *)"}, nil, nil)}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := ToolAllowed(tc.tool, tc.args, tc.planEnabled); got != tc.want {
+			if got := ToolAllowed(tc.tool, tc.args, tc.planEnabled, tc.surface); got != tc.want {
 				t.Fatalf("ToolAllowed(%s) = %v, want %v", tc.tool, got, tc.want)
 			}
 		})
@@ -127,19 +131,20 @@ func TestPlanStateProgress(t *testing.T) {
 }
 
 func TestToolAllowedCaseFold(t *testing.T) {
-	if ToolAllowed("Bash", map[string]any{"command": "cat x"}, true) {
+	closed := tools.PlanSurface{}
+	if ToolAllowed("Bash", map[string]any{"command": "cat x"}, true, closed) {
 		t.Fatal("Bash should be blocked in plan mode whatever the command")
 	}
-	if ToolAllowed("BASH", map[string]any{"command": "cat x"}, true) {
+	if ToolAllowed("BASH", map[string]any{"command": "cat x"}, true, closed) {
 		t.Fatal("a differently-cased Bash must not bypass the plan-mode gate")
 	}
-	if !ToolAllowed("Bash", map[string]any{"command": "rm x"}, false) {
+	if !ToolAllowed("Bash", map[string]any{"command": "rm x"}, false, closed) {
 		t.Fatal("Bash should be allowed outside plan mode")
 	}
-	if ToolAllowed("Write", nil, true) {
+	if ToolAllowed("Write", nil, true, closed) {
 		t.Fatal("Write should be blocked in plan mode")
 	}
-	if !ToolAllowed("Write", nil, false) {
+	if !ToolAllowed("Write", nil, false, closed) {
 		t.Fatal("Write should be allowed outside plan mode")
 	}
 }
@@ -147,11 +152,12 @@ func TestToolAllowedCaseFold(t *testing.T) {
 // TestToolAllowedBlocksCanonicalWriteEdit pins the dormant denylist: the
 // canonical Write and Edit tools are blocked by their case-folded names.
 func TestToolAllowedBlocksCanonicalWriteEdit(t *testing.T) {
+	closed := tools.PlanSurface{}
 	for _, name := range []string{"Write", "Edit", "write", "edit"} {
-		if ToolAllowed(name, map[string]any{"path": "x"}, true) {
+		if ToolAllowed(name, map[string]any{"path": "x"}, true, closed) {
 			t.Fatalf("ToolAllowed(%q) = true in plan mode, want false", name)
 		}
-		if !ToolAllowed(name, map[string]any{"path": "x"}, false) {
+		if !ToolAllowed(name, map[string]any{"path": "x"}, false, closed) {
 			t.Fatalf("ToolAllowed(%q) = false outside plan mode, want true", name)
 		}
 	}

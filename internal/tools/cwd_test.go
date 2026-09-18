@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"os"
+
+	"github.com/vulnetix/signet/internal/repoindex"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -331,7 +333,7 @@ func TestRegistryNarrowingKeepsTheTracker(t *testing.T) {
 	if reg.Plan().Cwd() != reg.Cwd() {
 		t.Error("Plan dropped the tracker")
 	}
-	if DefaultWithCaps(cwdTree(t), false, Capabilities{}).Cwd() == nil {
+	if DefaultWithCaps(cwdTree(t), false, Capabilities{}, repoindex.Index{}).Cwd() == nil {
 		t.Error("DefaultWithCaps built a registry with no tracker")
 	}
 }
@@ -345,7 +347,7 @@ func TestNativeToolsFollowWorkingDirectory(t *testing.T) {
 		t.Fatalf("Change: %v", err)
 	}
 	caps := Capabilities{local: map[string]bool{"Cat": true, "LS": true}}
-	natives := NativeTools(root, caps, c)
+	natives := NativeTools(root, caps, c, repoindex.Index{})
 	byName := map[string]Tool{}
 	for _, n := range natives {
 		byName[n.Definition().Name] = n

@@ -28,9 +28,11 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 
 // BuildCompactionPayload constructs the summarisation request for an
 // already-serialized conversation. Tools, Skills, and Agent are always empty.
-func BuildCompactionPayload(conversation string) ClassifierPayload {
+// caveman voices the summary; the heading contract ValidateSummary enforces is
+// preserved either way.
+func BuildCompactionPayload(conversation string, caveman bool) ClassifierPayload {
 	return ClassifierPayload{
-		System:    compactionSystemPrompt,
+		System:    withCavemanVoice(compactionSystemPrompt, caveman),
 		User:      conversation,
 		MaxTokens: ClassifierStructuredMaxTokens,
 	}

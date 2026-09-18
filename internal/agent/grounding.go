@@ -3,13 +3,13 @@ package agent
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/vulnetix/signet/internal/agentprofile"
+	"github.com/vulnetix/signet/internal/repoindex"
 	"github.com/vulnetix/signet/internal/sanitize"
 )
 
@@ -24,6 +24,7 @@ type Grounding struct {
 	Layout        string
 	AgentsMD      string
 	AgentNames    []string
+	SiblingRepos  []repoindex.Entry
 }
 
 const (
@@ -38,12 +39,13 @@ const (
 // (the field stays empty) rather than aborting exploration.
 func (s *Session) groundingProbe(ctx context.Context) Grounding {
 	g := Grounding{
-		GitStatus:     runProbe(ctx, s.workdir, "git", "status", "--short"),
-		Branch:        runProbe(ctx, s.workdir, "git", "rev-parse", "--abbrev-ref", "HEAD"),
-		RecentCommits: runProbe(ctx, s.workdir, "git", "log", "--oneline", "-5"),
+		GitStatus:     repoindex.RunProbe(ctx, s.workdir, "git", "status", "--short"),
+		Branch:        repoindex.RunProbe(ctx, s.workdir, "git", "rev-parse", "--abbrev-ref", "HEAD"),
+		RecentCommits: repoindex.RunProbe(ctx, s.workdir, "git", "log", "--oneline", "-5"),
 		Layout:        listLayout(s.workdir),
 		AgentsMD:      readAgentsMD(s.workdir),
 		AgentNames:    relevantAgents(),
+		SiblingRepos:  s.repoIndex.Entries(),
 	}
 	return g
 }
@@ -74,56 +76,16 @@ func (g Grounding) digest() string {
 	if len(g.AgentNames) > 0 {
 		b.WriteString("Available background agents:\n" + strings.Join(g.AgentNames, ", ") + "\n")
 	}
+	if len(g.SiblingRepos) > 0 {
+		b.WriteString("\nLocally available repositories (read these from disk with Repos/RepoFiles/RepoRead rather than calling GH):\n")
+		for _, e := range g.SiblingRepos {
+			b.WriteString("  " + e.String() + "\n")
+		}
+	}
 	if b.Len() == 0 {
 		return ""
 	}
 	return sanitize.Sanitize(b.String())
-}
-
-// runProbe runs one read-only grounding command with a timeout and output cap.
-// An absent binary or a non-zero exit yields "".
-func runProbe(ctx context.Context, dir, name string, args ...string) string {
-	if _, err := exec.LookPath(name); err != nil {
-		return ""
-	}
-	pctx, cancel := context.WithTimeout(ctx, groundingTimeout)
-	defer cancel()
-	ec := exec.CommandContext(pctx, name, args...)
-	ec.Dir = dir
-	ec.Env = scrubbedEnvForProbe()
-	out, err := ec.Output()
-	if err != nil {
-		return ""
-	}
-	return capProbe(out)
-}
-
-func capProbe(out []byte) string {
-	if len(out) == 0 {
-		return ""
-	}
-	if len(out) > groundingMaxBytes {
-		out = out[:groundingMaxBytes]
-	}
-	return strings.TrimRight(string(out), "\n")
-}
-
-// scrubbedEnvForProbe reuses the tools scrubber so probe output can never
-// exfiltrate a credential. It keeps the bare environment minus secrets.
-func scrubbedEnvForProbe() []string {
-	var out []string
-	for _, e := range os.Environ() {
-		key, _, _ := strings.Cut(e, "=")
-		upper := strings.ToUpper(key)
-		if strings.HasPrefix(upper, "OPENAI_") || strings.HasPrefix(upper, "ANTHROPIC_") ||
-			strings.HasPrefix(upper, "CLOUDFLARE_") || strings.HasPrefix(upper, "SIGNET_") ||
-			strings.HasSuffix(upper, "_API_KEY") || strings.HasSuffix(upper, "_TOKEN") ||
-			strings.HasSuffix(upper, "_SECRET") {
-			continue
-		}
-		out = append(out, e)
-	}
-	return out
 }
 
 // listLayout returns a bounded top-level directory listing, one entry per

@@ -16,10 +16,15 @@ const (
 	KindWrite     Kind = "write"
 	KindEdit      Kind = "edit"
 	// KindNative identifies the first-class read-only command tools from the
-	// native catalogue (Cat, Find, Git, JQ, cloud CLIs, …). Every native tool
-	// shells out to a fixed command with a fixed argument shape, so the kind is
-	// read-only by construction.
+	// local catalogue (Cat, Find, Git, JQ, …). Every native tool shells out
+	// to a fixed command with a fixed argument shape, so the kind is read-only
+	// by construction.
 	KindNative Kind = "native"
+	// KindRemote identifies first-class read-only tools whose output is text
+	// written off this machine (GH, Glab). It is read-only like KindNative but
+	// its results are arbitrary third-party content, so they are classified
+	// before promotion.
+	KindRemote Kind = "remote"
 )
 
 // AllKinds is every registered Kind, in declaration order. Tests iterate it to
@@ -27,7 +32,7 @@ const (
 // mutating kind into the concurrent read-only fan-out.
 var AllKinds = []Kind{
 	KindRead, KindWebSearch, KindWebFetch, KindBash, KindGrep, KindGlob,
-	KindExplore, KindWrite, KindEdit, KindNative,
+	KindExplore, KindWrite, KindEdit, KindNative, KindRemote,
 }
 
 // readOnlyKinds is the closed allowlist of kinds that only read. A Kind absent
@@ -42,6 +47,7 @@ var readOnlyKinds = map[Kind]bool{
 	KindGlob:      true,
 	KindExplore:   true,
 	KindNative:    true,
+	KindRemote:    true,
 }
 
 // ReadOnly reports whether a tool of this kind only reads and never mutates

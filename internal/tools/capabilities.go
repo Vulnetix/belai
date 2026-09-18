@@ -156,6 +156,14 @@ type cloudSpec struct {
 	desc     string
 	probe    []string
 	prefixes []string
+	// gate is an optional second check, run after a prefix match. It exists
+	// for CLIs where the prefix names the family but not whether the call
+	// reads or writes — `gh api` is the same prefix for a GET and for a POST.
+	gate func(cmd string) error
+	// classify marks a CLI whose output is text written off this machine, so
+	// its results go through the security classifier rather than being
+	// sanitised only.
+	classify bool
 }
 
 // cloudSpecs is the capability-detection table for network-reachable CLIs.
@@ -175,7 +183,10 @@ var cloudSpecs = []cloudSpec{
 			"run list", "run view", "run log",
 			"search prs", "search issues", "search repos", "search code",
 			"api graphql",
+			"api",
 		},
+		gate:     ghAPIGate,
+		classify: true,
 	},
 	{
 		name: "AWS", binary: "aws",
@@ -290,6 +301,7 @@ var cloudSpecs = []cloudSpec{
 			"auth status", "mr list", "mr view", "issue list", "issue view",
 			"pipeline list", "release list",
 		},
+		classify: true,
 	},
 	{
 		name: "Stripe", binary: "stripe",
@@ -337,10 +349,11 @@ func cloudCatalog() []nativeCommand {
 // read-only subcommand matching an allowed prefix; it is passed straight to
 // exec.Command as argv, never through a shell.
 func cloudNative(cs cloudSpec) nativeCommand {
-	return nativeCommand{
+	cmd := nativeCommand{
 		name:   cs.name,
 		binary: cs.binary,
 		desc:   cs.desc,
+		kind:   KindNative,
 		props: map[string]Property{
 			"command": stringProp("The read-only " + cs.binary + " command to run"),
 		},
@@ -357,6 +370,11 @@ func cloudNative(cs cloudSpec) nativeCommand {
 			if !cloudAllowed(cs, cmd) {
 				return nil, "", fmt.Errorf("command not in the read-only %s allowlist: %s", cs.binary, cmd)
 			}
+			if cs.gate != nil {
+				if err := cs.gate(cmd); err != nil {
+					return nil, "", fmt.Errorf("command failed the read-only gate for %s: %w", cs.binary, err)
+				}
+			}
 			return strings.Fields(cmd), "", nil
 		},
 		subject: func(args map[string]any) string {
@@ -364,6 +382,10 @@ func cloudNative(cs cloudSpec) nativeCommand {
 			return s
 		},
 	}
+	if cs.classify {
+		cmd.kind = KindRemote
+	}
+	return cmd
 }
 
 // cloudAllowed reports whether cmd is one of the spec's read-only prefixes.

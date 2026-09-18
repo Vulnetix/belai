@@ -142,6 +142,11 @@ func (r *Resolver) Resolve(provider string) Set {
 	}
 	resolved := map[string]bool{}
 
+	// The netrc file is read once up front: its contents do not change during
+	// one Resolve, and a single read keeps the world-readable warning
+	// de-duplicated and race-free when Resolve runs concurrently.
+	netrcValues, netrcNotes, _ := r.netrc.read(providerHost(provider))
+
 	for _, f := range spec {
 		if resolved[f.Name] {
 			continue
@@ -169,19 +174,13 @@ func (r *Resolver) Resolve(provider string) Set {
 			set.Notes = append(set.Notes, note)
 		}
 		// 4. Netrc
-		if m, ok := r.netrc.read(providerHost(provider)); ok {
-			if val, ok := m[f.Name]; ok {
-				set.Values[f.Name] = Value{
-					Field: f.Name, Location: "~/.netrc", Source: SourceNetrc, Secret: f.Secret,
-					value: val,
-				}
-				resolved[f.Name] = true
-				continue
+		if val, ok := netrcValues[f.Name]; ok {
+			set.Values[f.Name] = Value{
+				Field: f.Name, Location: "~/.netrc", Source: SourceNetrc, Secret: f.Secret,
+				value: val,
 			}
-		}
-		if len(r.netrc.notes) > 0 {
-			set.Notes = append(set.Notes, r.netrc.notes...)
-			r.netrc.notes = nil
+			resolved[f.Name] = true
+			continue
 		}
 		// 5. Keychain
 		if r.keychainAvailable() {
@@ -199,6 +198,9 @@ func (r *Resolver) Resolve(provider string) Set {
 		if !f.Optional {
 			set.Missing = append(set.Missing, f.Name)
 		}
+	}
+	if len(netrcNotes) > 0 {
+		set.Notes = append(set.Notes, netrcNotes...)
 	}
 	return set
 }
@@ -227,7 +229,7 @@ func (r *Resolver) Lookup(provider, field string) (value, origin string, ok bool
 		return v.Reveal(), v.Location, true
 	}
 	// Netrc.
-	if m, ok := r.netrc.read(providerHost(provider)); ok {
+	if m, _, ok := r.netrc.read(providerHost(provider)); ok {
 		if val, ok := m[field]; ok {
 			return val, "~/.netrc", true
 		}

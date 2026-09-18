@@ -39,6 +39,7 @@ import (
 	"github.com/vulnetix/signet/internal/prompt"
 	"github.com/vulnetix/signet/internal/promptlib"
 	"github.com/vulnetix/signet/internal/provider"
+	"github.com/vulnetix/signet/internal/repoindex"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/session"
@@ -246,6 +247,10 @@ type App struct {
 	clarifyState    clarifyViewState
 	permAskState    permissionAskViewState
 	agentState      agentViewState
+	classifierState classifierViewState
+
+	// which providers the pickers may offer, filled by an async probe
+	avail providerAvailability
 
 	// live model catalogue cache (on-demand fetch)
 	catalogCache   map[string][]models.Model
@@ -561,7 +566,7 @@ func (a *App) Init() tea.Cmd {
 	// Credential resolution can probe the host keychain; run it off the first
 	// frame so the TUI paints from the env-only resolution immediately.
 	if a.resolver != nil {
-		cmds = append(cmds, a.resolveCredentialsCmd())
+		cmds = append(cmds, a.resolveCredentialsCmd(), a.probeAvailabilityCmd())
 	}
 	if a.pending != "" && a.status.Configured {
 		cmds = append(cmds, a.sendPending())
@@ -1051,7 +1056,8 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 // Tea goroutine.
 func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 	caps := tools.DetectDefault()
-	reg := tools.DefaultWithCaps(p.workdir, p.settings.ReadOnlyEnabled(), caps)
+	ix := repoindex.Scan(context.Background(), p.workdir)
+	reg := tools.DefaultWithCaps(p.workdir, p.settings.ReadOnlyEnabled(), caps, ix)
 	if len(p.toolAllow) > 0 {
 		// An engaged background definition brings its allowlist with it, the
 		// same narrowing internal/bgagent applies when it runs the definition
@@ -1081,6 +1087,8 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		Settings:      p.settings,
 		PromptOptions: promptOpts,
 		Caps:          caps,
+		RepoIndex:     ix,
+		PlanSurface:   tools.PlanSurface{GuardrailsOff: !p.settings.GuardrailsEnabled(), Perms: perms},
 		AskDisabled:   !p.ask,
 		// Top-level session: explore subagents may fan out from here. A
 		// subagent sets this false so it can never fan out again.
@@ -1164,6 +1172,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case credentialsResolvedMsg:
 		return a, a.handleCredentialsResolved(m)
+
+	case availabilityMsg:
+		return a, a.handleAvailability(m)
 
 	case copiedMsg:
 		a.addSystem(m.text)
@@ -2059,25 +2070,35 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			a.addSystem(fmt.Sprintf("goal evaluator: %s (pass %d)", m.GoalSentinel, m.Pass))
 		}
 		return a.nextAgent()
+	case agent.EventPlanEvalKind:
+		if m.Todos != nil {
+			a.setTodos(m.Todos)
+		}
+		if m.PlanSentinel != "" {
+			a.addSystem(fmt.Sprintf("plan evaluator: %s (pass %d)", m.PlanSentinel, m.Pass))
+		}
+		return a.nextAgent()
 	case agent.EventDoneKind:
 		if !a.phaseStartedAt.IsZero() {
 			a.trace.Event("tui", "turn_total", time.Since(a.phaseStartedAt))
 		}
 		a.cancel = nil
 		a.endPhase()
-		if len(a.messages) > 0 && a.messages[len(a.messages)-1].Role == "assistant" {
-			a.messages[len(a.messages)-1].Usage = m.Result.Usage
+		if last := a.trailingAssistant(); last >= 0 {
+			a.messages[last].Usage = m.Result.Usage
 		}
 		// Backfill the final reply into the trailing assistant bubble so a
 		// turn that streamed only tool calls or arrived as one final chunk is
-		// never persisted (or rendered) as an empty frame.
-		if last := len(a.messages) - 1; last >= 0 && a.messages[last].Role == "assistant" &&
+		// never persisted (or rendered) as an empty frame. The trailing
+		// assistant bubble is found past any informational system lines (a
+		// pass-loop evaluator verdict lands after the reply).
+		if last := a.trailingAssistant(); last >= 0 &&
 			strings.TrimSpace(a.messages[last].Text()) == "" && m.Result.Reply != "" {
 			a.messages[last].SetContent(m.Result.Reply)
 		}
 		// The turn is over: flush any streamed builder back into Content so the
 		// message is a plain value for the persistence and rebuild paths.
-		if last := len(a.messages) - 1; last >= 0 && a.messages[last].Role == "assistant" {
+		if last := a.trailingAssistant(); last >= 0 {
 			a.messages[last].Materialise()
 		}
 		if m.Result.Usage != nil {
@@ -2620,6 +2641,7 @@ func (a *App) handleCredentialsResolved(m credentialsResolvedMsg) tea.Cmd {
 	} else {
 		a.showCredentialMessage(m.cfg.Provider, a.resolver)
 	}
+	a.invalidateAvailability()
 	a.setCredentialBackendDefault()
 	a.refreshFooter()
 	if a.pending != "" && m.status.Configured {
@@ -3059,11 +3081,25 @@ func (a *App) disableStore(msg string) {
 	a.addSystem(msg + " (continuing without persistence)")
 }
 
+// trailingAssistant returns the index of the last assistant message in the
+// transcript, or -1. A pass-loop evaluator appends an informational system
+// line after the assistant reply, so the trailing assistant bubble is not
+// always the very last message; completion must still find and finalise it.
+func (a *App) trailingAssistant() int {
+	for i := len(a.messages) - 1; i >= 0; i-- {
+		if a.messages[i].Role == "assistant" {
+			return i
+		}
+	}
+	return -1
+}
+
 func (a *App) appendAssistant(usage *transcript.Usage) {
-	if len(a.messages) == 0 || a.messages[len(a.messages)-1].Role != "assistant" {
+	last := a.trailingAssistant()
+	if last < 0 {
 		return
 	}
-	content := a.messages[len(a.messages)-1].Text()
+	content := a.messages[last].Text()
 	if strings.TrimSpace(content) == "" {
 		return
 	}
@@ -3107,8 +3143,9 @@ func (a *App) shouldAutoName() bool {
 
 func (a *App) nameSessionCmd(firstUserMessage string) tea.Cmd {
 	c := a.classifier
+	caveman := a.settings.ClassifierCavemanEnabled()
 	return func() tea.Msg {
-		raw, err := c.Classify(a.ctx, rolemanager.BuildSessionNamePayload(firstUserMessage))
+		raw, err := c.Classify(a.ctx, rolemanager.BuildSessionNamePayload(firstUserMessage, caveman))
 		if err != nil {
 			return sessionNamedMsg{err: err}
 		}
@@ -3203,8 +3240,9 @@ func (a *App) compactCmd() tea.Cmd {
 	}
 	doc := transcript.Serialize(msgs, transcript.SerializeOptions{Nonce: nonceHex()})
 	c := a.classifier
+	caveman := a.settings.ClassifierCavemanEnabled()
 	return func() tea.Msg {
-		raw, err := c.Classify(a.ctx, rolemanager.BuildCompactionPayload(doc))
+		raw, err := c.Classify(a.ctx, rolemanager.BuildCompactionPayload(doc, caveman))
 		if err != nil {
 			return compactDoneMsg{err: err}
 		}

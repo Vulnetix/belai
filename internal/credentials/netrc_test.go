@@ -18,7 +18,7 @@ machine api.anthropic.com password anthropic-key
 		t.Fatalf("write netrc: %v", err)
 	}
 	ns := &netrcStore{path: path}
-	m, ok := ns.read("api.openai.com")
+	m, _, ok := ns.read("api.openai.com")
 	if !ok {
 		t.Fatalf("expected openai entry")
 	}
@@ -26,7 +26,7 @@ machine api.anthropic.com password anthropic-key
 		t.Fatalf("unexpected api_key: %q", m["api_key"])
 	}
 
-	m2, ok := ns.read("api.anthropic.com")
+	m2, _, ok := ns.read("api.anthropic.com")
 	if !ok {
 		t.Fatalf("expected anthropic entry")
 	}
@@ -45,7 +45,7 @@ machine default password default-key
 		t.Fatalf("write netrc: %v", err)
 	}
 	ns := &netrcStore{path: path}
-	m, ok := ns.read("api.openai.com")
+	m, _, ok := ns.read("api.openai.com")
 	if !ok {
 		t.Fatalf("expected entry")
 	}
@@ -53,7 +53,7 @@ machine default password default-key
 		t.Fatalf("expected machine entry to win, got %q", m["api_key"])
 	}
 
-	m2, ok := ns.read("unknown.host")
+	m2, _, ok := ns.read("unknown.host")
 	if !ok {
 		t.Fatalf("expected default fallback")
 	}
@@ -75,7 +75,7 @@ machine api.openai.com password after-macdef
 		t.Fatalf("write netrc: %v", err)
 	}
 	ns := &netrcStore{path: path}
-	m, ok := ns.read("api.openai.com")
+	m, _, ok := ns.read("api.openai.com")
 	if !ok {
 		t.Fatalf("expected entry")
 	}
@@ -97,7 +97,7 @@ split-key
 		t.Fatalf("write netrc: %v", err)
 	}
 	ns := &netrcStore{path: path}
-	m, ok := ns.read("api.openai.com")
+	m, _, ok := ns.read("api.openai.com")
 	if !ok {
 		t.Fatalf("expected entry")
 	}
@@ -108,7 +108,7 @@ split-key
 
 func TestNetrcMissingFileYieldsNoEntries(t *testing.T) {
 	ns := &netrcStore{path: filepath.Join(t.TempDir(), "no-such-netrc")}
-	m, ok := ns.read("api.openai.com")
+	m, _, ok := ns.read("api.openai.com")
 	if ok {
 		t.Fatalf("expected no entry for missing file")
 	}
@@ -136,7 +136,7 @@ func TestNetrcParsedPasswordRedacts(t *testing.T) {
 		t.Fatalf("write netrc: %v", err)
 	}
 	ns := &netrcStore{path: path}
-	m, ok := ns.read("api.openai.com")
+	m, _, ok := ns.read("api.openai.com")
 	if !ok {
 		t.Fatalf("expected entry")
 	}
@@ -155,7 +155,7 @@ func TestNetrcLoginMapsToAccountID(t *testing.T) {
 		t.Fatalf("write netrc: %v", err)
 	}
 	ns := &netrcStore{path: path}
-	m, ok := ns.read("api.cloudflare.com")
+	m, _, ok := ns.read("api.cloudflare.com")
 	if !ok {
 		t.Fatalf("expected entry")
 	}
@@ -176,7 +176,7 @@ func TestNetrcAccountOverridesLogin(t *testing.T) {
 		t.Fatalf("write netrc: %v", err)
 	}
 	ns := &netrcStore{path: path}
-	m, ok := ns.read("api.cloudflare.com")
+	m, _, ok := ns.read("api.cloudflare.com")
 	if !ok {
 		t.Fatalf("expected entry")
 	}

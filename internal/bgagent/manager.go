@@ -15,6 +15,7 @@ import (
 	"github.com/vulnetix/signet/internal/permissions"
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/prompt"
+	"github.com/vulnetix/signet/internal/repoindex"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/tools"
@@ -438,7 +439,8 @@ func (m *Manager) executeTurn(ctx context.Context, inst *AgentInstance) {
 
 func (m *Manager) buildSession(profile agentprofile.AgentProfile) (*agent.Session, error) {
 	caps := tools.DetectDefault()
-	reg := tools.DefaultWithCaps(m.workdir, m.settings.ReadOnlyEnabled(), caps)
+	ix := repoindex.Scan(context.Background(), m.workdir)
+	reg := tools.DefaultWithCaps(m.workdir, m.settings.ReadOnlyEnabled(), caps, ix)
 	if len(profile.Tools) > 0 {
 		var filtered []tools.Tool
 		for _, name := range profile.Tools {
@@ -464,6 +466,8 @@ func (m *Manager) buildSession(profile agentprofile.AgentProfile) (*agent.Sessio
 		PromptOptions: promptOpts,
 		MaxIterations: 1,
 		Caps:          caps,
+		RepoIndex:     ix,
+		PlanSurface:   tools.PlanSurface{GuardrailsOff: !m.settings.GuardrailsEnabled(), Perms: perms},
 	})
 }
 

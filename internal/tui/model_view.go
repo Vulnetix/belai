@@ -31,7 +31,7 @@ type modelViewState struct {
 }
 
 func (a *App) enterModel() tea.Cmd {
-	providers := a.providerNames()
+	providers := a.modelProviders()
 	pidx := indexOfString(providers, a.cfg.Provider)
 	if pidx < 0 {
 		pidx = 0
@@ -50,7 +50,7 @@ func (a *App) enterModel() tea.Cmd {
 		eidx = 0
 	}
 	a.modelState = modelViewState{providerIdx: pidx, modelIdx: midx, effortIdx: eidx, scope: "project"}
-	return a.fetchCatalogCmd(providers[pidx])
+	return tea.Batch(a.fetchCatalogCmd(providers[pidx]), a.availabilityCmdIfStale())
 }
 
 // modelsFetchedMsg carries the result of an async live-catalogue fetch.
@@ -163,8 +163,16 @@ func filterModels(catalog []models.Model, q string) []models.Model {
 // Render, cursor movement and commit must all read this so the model index
 // always refers to the same (filtered) slice — commitModel indexing an
 // unfiltered catalogue would set the wrong model whenever a filter is active.
+// modelProviders is the provider list the picker offers: only those actually
+// usable, plus the committed provider so a picker can never silently move the
+// user off their own model. Every site in this view reads it, so the tab
+// strip, the cursor and commitModel always index the same slice.
+func (a *App) modelProviders() []string {
+	return a.availableProviders(a.cfg.Provider)
+}
+
 func (a *App) modelCatalog() (string, []models.Model) {
-	providers := a.providerNames()
+	providers := a.modelProviders()
 	pidx := clampIdx(a.modelState.providerIdx, len(providers))
 	name := providers[pidx]
 	return name, filterModels(a.catalogFor(name), a.modelState.filter)
@@ -223,11 +231,11 @@ func (a *App) modelHelpBar() string {
 	return components.HelpBar(
 		"←→", "provider", "↑↓", "model", "/", "filter",
 		"e", "effort", "s", "scope", "c", "credentials",
-		"enter", "set", "esc", "cancel")
+		"g", "classifier", "enter", "set", "esc", "cancel")
 }
 
 func (a *App) modelView() string {
-	providers := a.providerNames()
+	providers := a.modelProviders()
 	pidx := clampIdx(a.modelState.providerIdx, len(providers))
 	name, catalog := a.modelCatalog()
 	midx := clampIdx(a.modelState.modelIdx, len(catalog))
@@ -240,15 +248,34 @@ func (a *App) modelView() string {
 	var head strings.Builder
 	head.WriteString(components.SectionHeader("Model & Provider", "esc cancel", w))
 
+	// A provider is in this list either because it is available or because it
+	// is the committed one; the amber chip marks the second case so an
+	// unusable pinned provider is visible rather than silently broken.
 	var tabs []string
+	var unavailable []string
 	for i, name := range providers {
-		if i == pidx {
-			tabs = append(tabs, components.Chip(name, components.ColorTeal))
-			continue
+		usable := a.providerAvailable(name)
+		if !usable {
+			unavailable = append(unavailable, name)
 		}
-		tabs = append(tabs, components.MutedStyle.Render(" "+name+" "))
+		switch {
+		case i == pidx && usable:
+			tabs = append(tabs, components.Chip(name, components.ColorTeal))
+		case i == pidx:
+			tabs = append(tabs, components.Chip(name, components.ColorAmber))
+		default:
+			tabs = append(tabs, components.MutedStyle.Render(" "+name+" "))
+		}
 	}
-	head.WriteString(strings.Join(tabs, " ") + "\n\n")
+	head.WriteString(strings.Join(tabs, " ") + "\n")
+	switch {
+	case a.avail.note != "":
+		head.WriteString(components.MutedStyle.Render(a.avail.note) + "\n")
+	case len(unavailable) > 0:
+		head.WriteString(components.WarnStyle.Render(
+			"! "+strings.Join(unavailable, ", ")+" unavailable — press c to configure credentials") + "\n")
+	}
+	head.WriteString("\n")
 	head.WriteString(a.modelSearchLine() + "\n")
 
 	// Post-list chrome: effort, scope, error and the help bar. The counter/
@@ -357,19 +384,21 @@ func (a *App) handleModelKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.pop()
 		return a, nil
 	case "left", "h":
-		a.modelState.providerIdx = (a.modelState.providerIdx - 1 + len(a.providerNames())) % len(a.providerNames())
+		providers := a.modelProviders()
+		a.modelState.providerIdx = (a.modelState.providerIdx - 1 + len(providers)) % len(providers)
 		a.modelState.modelIdx = 0
 		a.modelState.effortIdx = 0
 		a.modelState.scroll = 0
 		a.modelState.filter = ""
-		return a, a.fetchCatalogCmd(a.providerNames()[a.modelState.providerIdx])
+		return a, a.fetchCatalogCmd(providers[a.modelState.providerIdx])
 	case "right", "l":
-		a.modelState.providerIdx = (a.modelState.providerIdx + 1) % len(a.providerNames())
+		providers := a.modelProviders()
+		a.modelState.providerIdx = (a.modelState.providerIdx + 1) % len(providers)
 		a.modelState.modelIdx = 0
 		a.modelState.effortIdx = 0
 		a.modelState.scroll = 0
 		a.modelState.filter = ""
-		return a, a.fetchCatalogCmd(a.providerNames()[a.modelState.providerIdx])
+		return a, a.fetchCatalogCmd(providers[a.modelState.providerIdx])
 	case "/":
 		a.modelState.filtering = true
 		return a, nil
@@ -413,12 +442,18 @@ func (a *App) handleModelKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		name, _ := a.modelCatalog()
 		delete(a.catalogCache, name)
 		delete(a.catalogErr, name)
-		return a, a.fetchCatalogCmd(name)
+		return a, tea.Batch(a.fetchCatalogCmd(name), a.probeAvailabilityCmd())
 	case "c":
-		if a.modelState.providerIdx < len(a.credentialState.providers) {
-			a.credentialState.selectedIdx = a.modelState.providerIdx
+		// Match by name, not by index: /credentials lists every provider
+		// while this picker lists only the available ones, so the two
+		// positions no longer correspond.
+		name, _ := a.modelCatalog()
+		if i := indexOfString(a.credentialState.providers, name); i >= 0 {
+			a.credentialState.selectedIdx = i
 		}
 		return a, a.push(viewCredentials)
+	case "g":
+		return a, a.push(viewClassifier)
 	case "enter":
 		return a, a.commitModel()
 	}

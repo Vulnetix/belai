@@ -22,6 +22,7 @@ import (
 	"github.com/vulnetix/signet/internal/permissions"
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/prompt"
+	"github.com/vulnetix/signet/internal/repoindex"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/session"
 	"github.com/vulnetix/signet/internal/tools"
@@ -277,7 +278,8 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 
 func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool) (run.Result, error) {
 	caps := tools.DetectDefault()
-	reg := tools.DefaultWithCaps(workdir, settings.ReadOnlyEnabled(), caps)
+	ix := repoindex.Scan(ctx, workdir)
+	reg := tools.DefaultWithCaps(workdir, settings.ReadOnlyEnabled(), caps, ix)
 
 	perms := permissions.From(settings.Permissions.Allow, settings.Permissions.Ask, settings.Permissions.Deny)
 
@@ -297,6 +299,8 @@ func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *ht
 		Settings:      settings,
 		PromptOptions: promptOpts,
 		Caps:          caps,
+		RepoIndex:     ix,
+		PlanSurface:   tools.PlanSurface{GuardrailsOff: !settings.GuardrailsEnabled(), Perms: perms},
 		AskDisabled:   !settings.AskPermissionEnabled(),
 		// Top-level session: explore subagents may fan out from here. A
 		// subagent sets this false so it can never fan out again.
@@ -327,7 +331,7 @@ func runAgentCreate(ctx context.Context, description, model, providerName, workd
 		return err
 	}
 	classifier := run.NewClassifier(cfg, httpclient.Default())
-	b := agentprofile.Builder{Classifier: classifier, MaxAttempts: 3}
+	b := agentprofile.Builder{Classifier: classifier, MaxAttempts: 3, Caveman: settings.ClassifierCavemanEnabled()}
 	profile, err := b.Build(ctx, description)
 	if err != nil {
 		return err

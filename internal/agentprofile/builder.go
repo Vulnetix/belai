@@ -41,6 +41,9 @@ Rules:
 type Builder struct {
 	Classifier  rolemanager.Classifier
 	MaxAttempts int
+	// Caveman voices the designer prompt. The JSON contract is unaffected:
+	// parseBuilderReply still requires valid JSON and Validate still runs.
+	Caveman bool
 }
 
 // Build runs the agent-designer loop, failing closed after MaxAttempts.
@@ -53,7 +56,7 @@ func (b *Builder) Build(ctx context.Context, userRequest string) (AgentProfile, 
 		maxAttempts = 3
 	}
 
-	system := builderSystemPrompt
+	system := rolemanager.CavemanProse(builderSystemPrompt, b.Caveman)
 	turns := []builderTurn{{Role: "user", Content: sanitize.Sanitize(userRequest)}}
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {

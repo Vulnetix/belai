@@ -64,10 +64,13 @@ func Args(repo string, port int) []string {
 }
 
 // ProbeRunning returns the first base URL that answers GET /v1/models. It is
-// how an already-running server is found.
+// how an already-running server is found. A base is accepted with or without
+// its /v1 suffix — callers hold the OpenAI-surface base URL (".../v1"), and
+// appending a second /v1 would probe a path no server serves. The returned
+// value is the caller's base, spelled exactly as it was passed.
 func ProbeRunning(ctx context.Context, bases []string) string {
 	for _, base := range bases {
-		url := strings.TrimRight(base, "/") + "/v1/models"
+		url := strings.TrimSuffix(strings.TrimRight(base, "/"), "/v1") + "/v1/models"
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			continue

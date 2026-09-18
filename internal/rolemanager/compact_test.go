@@ -6,7 +6,7 @@ import (
 )
 
 func TestBuildCompactionPayloadIsToolLess(t *testing.T) {
-	p := BuildCompactionPayload("conversation")
+	p := BuildCompactionPayload("conversation", false)
 	if p.Tools != nil || p.Skills != nil || p.Agent != "" {
 		t.Fatalf("compaction payload must be tool-less: %+v", p)
 	}
@@ -19,7 +19,7 @@ func TestBuildCompactionPayloadIsToolLess(t *testing.T) {
 }
 
 func TestBuildSessionNamePayloadIsToolLess(t *testing.T) {
-	p := BuildSessionNamePayload("first message")
+	p := BuildSessionNamePayload("first message", false)
 	if p.Tools != nil || p.Skills != nil || p.Agent != "" {
 		t.Fatalf("session-name payload must be tool-less: %+v", p)
 	}

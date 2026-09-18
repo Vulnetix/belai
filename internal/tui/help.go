@@ -87,8 +87,16 @@ func keySections() []keySection {
 			{"s", "cycle scope: session, global, project"},
 			{"r", "refetch the model catalogue"},
 			{"c", "open credentials"},
+			{"g", "open the classifier model page"},
 			{"enter", "use this model"},
 			{"esc", "clear the filter, then back"},
+		}},
+		{"/classifier", []keyBinding{
+			{"up, down", "move"},
+			{"space, enter", "change the value, or open the model picker"},
+			{"x", "unset"},
+			{"s", "toggle scope: global, project"},
+			{"esc", "close the model picker, then back"},
 		}},
 		{"/credentials", []keyBinding{
 			{"up, down", "change provider"},

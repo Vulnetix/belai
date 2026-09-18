@@ -189,11 +189,23 @@ The classifier mirrors the main provider flags through `-classifier-*` and
 `SIGNET_CLASSIFIER_CHUNK_CONCURRENCY` are not yet env-wired (the `classifier`
 settings block sets them).
 
+`SIGNET_CLASSIFIER_CAVEMAN` and `classifier.caveman` voice the classifier's
+**prose** payloads only — the compaction summary, the session name, and the
+agent-profile designer. Sentinel payloads are never voiced: their replies are
+matched exactly, so a voice rewrite would break the parse. It is independent of
+the agent's own `caveman` setting.
+
+In the TUI the whole `classifier` block is editable from `/classifier` (also
+reachable with `g` from `/model`), which writes to the global or project
+settings file — never to session state, because which model guards tool output
+is a decision that stays visible and provenanced.
+
 Every non-TUI entry point (`-prompt`, `-agent`, `-agent-create`) runs under a
-`signal.NotifyContext` root. Goal mode's pass loop is unbounded by design, so an
-interruptible context is the only thing that can stop it: the first `SIGINT` or
-`SIGTERM` cancels it and the loop unwinds at its next pass boundary, returning
-the partial result. A second signal hard-exits with status 130, because that
+`signal.NotifyContext` root. Goal mode's pass loop is unbounded by design, and
+plan mode's pass loop is bounded but still multi-pass, so an interruptible
+context is what stops either of them cleanly: the first `SIGINT` or `SIGTERM`
+cancels the loop and it unwinds at its next pass boundary, returning the
+partial result. A second signal hard-exits with status 130, because that
 boundary may still be seconds away.
 
 With no `-prompt` and a TTY on both stdin and stdout, Signet starts the TUI. Set `SIGNET_NO_TUI=1` (or `CI=1`) to force the noninteractive path — useful when piping output or reproducing a CI failure locally.
@@ -311,7 +323,7 @@ just detect-mode "add a retry to the HTTP client"   # agent
 just detect-mode "how does the nonce sealing work"  # plan
 ```
 
-**TUI smoke test.** `just tui`, then exercise slash-command autocomplete (`/p` → `/permissions`, `/profile`), `/credentials`, `/settings`, `/permissions`, `/help`, `/model`, `/compact`, `/clear`, `/rename`, `/agent list`, `/local-model`, and streaming output. Confirm `shift+tab` cycles the mode chip, `ctrl+d` quits, `ctrl+c` copies the prompt (native or OSC 52), and `esc` escapes every full-screen view — including permissions back to settings. On a provider with a long model catalogue, confirm the `/model` list is windowed (chrome stays visible, `↓ N more` marks the overflow) and that `/` narrows the list by substring while `esc` clears the filter. Press `r` on providers with live model lists (`anthropic`, `openrouter`, `huggingface`, etc.) to force a refresh; for `openai` the list is a conservative static catalog and `r` should not surface a fetch error, while `cloudflare-ai-gateway` refreshes from the Workers AI model-search API. In the Ask prompt, confirm Enter echoes the prompt into the transcript as a `user prompt` instantly, that the composer shows the filled `role manager` pill with a `pre-prompt processing` caption while the classifier runs and a plain `working` label only for model/tool I/O, and that Enter while a turn is running queues a `user steering` message. In `/settings`, confirm the **read-only tools** toggle renders `off` by default, that `space` flips it on and persists it to the scoped settings file, and that `x` clears it. Confirm the **caveman** toggle also shows `off` by default and that `f2` from the chat view flips it on, emits a `caveman: on` system message, and immediately updates the footer indicator; a second press returns it to `off`. In `/permissions` with no rules, confirm the empty state reads "every tool call is allowed" and that a `Read x` preview shows the allowed-by-default wording (or blocked when `preferences.yaml` sets `permission_no_match: enforce`).
+**TUI smoke test.** `just tui`, then exercise slash-command autocomplete (`/p` → `/permissions`, `/profile`), `/credentials`, `/settings`, `/permissions`, `/help`, `/model`, `/compact`, `/clear`, `/rename`, `/agent list`, `/local-model`, and streaming output. Confirm `shift+tab` cycles the mode chip, `ctrl+d` quits, `ctrl+c` copies the prompt (native or OSC 52), and `esc` escapes every full-screen view — including permissions back to settings. On a provider with a long model catalogue, confirm the `/model` list is windowed (chrome stays visible, `↓ N more` marks the overflow) and that `/` narrows the list by substring while `esc` clears the filter. Press `r` on providers with live model lists (`anthropic`, `openrouter`, `huggingface`, etc.) to force a refresh; for `openai` the list is a conservative static catalog and `r` should not surface a fetch error, while `cloudflare-ai-gateway` refreshes from the Workers AI model-search API. In the Ask prompt, confirm Enter echoes the prompt into the transcript as a `user prompt` instantly, that the composer shows the filled `role manager` pill with a `pre-prompt processing` caption while the classifier runs and a plain `working` label only for model/tool I/O, and that Enter while a turn is running queues a `user steering` message. In `/settings`, confirm the **read-only tools** toggle renders `off` by default, that `space` flips it on and persists it to the scoped settings file, and that `x` clears it. Confirm the **caveman** toggle also shows `off` by default and that `f2` from the chat view flips it on, emits a `caveman: on` system message, and immediately updates the footer indicator; a second press returns it to `off`. In `/permissions` with no rules, confirm the empty state reads "every tool call is allowed" and that a `Read x` preview shows the allowed-by-default wording (or blocked when `preferences.yaml` sets `permission_no_match: enforce`). In `/model`, confirm the provider tabs list only providers whose credentials resolve — with a local server stopped, `ollama` and `llama-server` drop out of `/model` but stay in `/credentials`, and a committed-but-unavailable provider stays on screen with an amber chip and an `unavailable` note rather than disappearing. Press `g` (or run `/classifier`) and confirm the classifier page opens with the security warning, that the **reasoning** toggle greys the effort row and writes `classifier.effort: none`, that toggling it back restores the previous effort, that `space` on **model** opens a picker over the classifier's own provider catalogue, that **caveman** persists and is labelled *prose payloads only*, and that `x` on every row removes the `classifier` block entirely so the classifier follows the main model again.
 
 **Operator toggles.** These live on the function-key row precisely because
 `ctrl+alt+<key>` never reaches the TUI (see the Keybindings section of

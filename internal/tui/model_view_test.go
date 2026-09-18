@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -283,5 +284,93 @@ func TestModelViewShowsLoadingState(t *testing.T) {
 	// When loading the empty-catalog hint must not appear.
 	if strings.Contains(view, "no models in this profile") {
 		t.Fatalf("loading state must suppress empty hint, got:\n%s", view)
+	}
+}
+
+// TestModelPickerListsOnlyAvailableProviders pins that /model offers what is
+// usable — /credentials is where every provider stays browsable.
+func TestModelPickerListsOnlyAvailableProviders(t *testing.T) {
+	a := newModelPickerApp(t, []string{"m1"})
+	a.resolver = newTestResolver(t, a.workdir)
+	a.cfg.Provider = "my-llm"
+	a.avail = providerAvailability{
+		configured: map[string]bool{"openai": true, "llama-server": true},
+		local:      map[string]bool{"llama-server": false},
+		probedAt:   time.Now(),
+	}
+
+	got := a.modelProviders()
+	want := map[string]bool{"openai": true, "my-llm": true} // my-llm is committed
+	if len(got) != len(want) {
+		t.Fatalf("modelProviders = %v, want exactly %v", got, want)
+	}
+	for _, name := range got {
+		if !want[name] {
+			t.Fatalf("modelProviders offered %q, want only %v", name, want)
+		}
+	}
+	// /credentials keeps the full list.
+	if len(a.credentialState.providers) <= len(got) {
+		t.Fatalf("/credentials list (%d) must stay longer than the /model list (%d)",
+			len(a.credentialState.providers), len(got))
+	}
+}
+
+// TestModelCredentialsJumpMatchesByName is the regression test for the
+// positional jump: the two lists no longer line up, so 'c' must select the
+// provider by name.
+func TestModelCredentialsJumpMatchesByName(t *testing.T) {
+	a := newModelPickerApp(t, []string{"m1"})
+	a.resolver = newTestResolver(t, a.workdir)
+	a.cfg.Provider = "my-llm"
+	a.avail = providerAvailability{
+		configured: map[string]bool{"openai": true},
+		local:      map[string]bool{},
+		probedAt:   time.Now(),
+	}
+
+	providers := a.modelProviders()
+	idx := indexOfString(providers, "my-llm")
+	if idx < 0 {
+		t.Fatalf("committed provider missing from %v", providers)
+	}
+	a.modelState.providerIdx = idx
+
+	a.handleModelKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+
+	if a.view != viewCredentials {
+		t.Fatalf("view = %v, want credentials", a.view)
+	}
+	got := a.credentialState.providers[a.credentialState.selectedIdx]
+	if got != "my-llm" {
+		t.Fatalf("/credentials selected %q, want my-llm", got)
+	}
+}
+
+func TestModelKeyGOpensClassifier(t *testing.T) {
+	a := newModelPickerApp(t, []string{"m1"})
+	a.handleModelKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
+	if a.view != viewClassifier {
+		t.Fatalf("view = %v, want classifier", a.view)
+	}
+}
+
+// TestModelViewMarksUnavailablePinnedProvider keeps a dead committed provider
+// visible as dead rather than silently broken.
+func TestModelViewMarksUnavailablePinnedProvider(t *testing.T) {
+	a := newModelPickerApp(t, []string{"m1"})
+	a.resolver = newTestResolver(t, a.workdir)
+	a.cfg.Provider = "my-llm"
+	a.avail = providerAvailability{
+		configured: map[string]bool{"openai": true},
+		local:      map[string]bool{},
+		probedAt:   time.Now(),
+	}
+	a.modelState.providerIdx = indexOfString(a.modelProviders(), "my-llm")
+	a.width, a.height = 120, 40
+
+	view := a.modelView()
+	if !strings.Contains(view, "unavailable") {
+		t.Fatalf("expected an unavailable marker for the pinned provider, got:\n%s", view)
 	}
 }

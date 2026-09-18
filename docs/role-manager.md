@@ -22,6 +22,8 @@ The architecture overview lives in [architecture.md](architecture.md).
 | Forced mode | `internal/rolemanager` | Build the decision for a mode the user chose explicitly, bypassing the classifier | Live |
 | Goal evaluator | `internal/rolemanager` | Single-token verdict on goal progress at a pass boundary | Live |
 | Goal pass loop | `internal/agent` | Grant further passes while a goal measurably advances | Live |
+| Plan evaluator | `internal/rolemanager` | Single-token verdict on plan progress at a plan-mode pass boundary (`PLAN_*`, never `GOAL_*`) | Live |
+| Plan pass loop | `internal/agent` | Plan-mode pass loop: bounded, contacts the plan evaluator with the exploration context, never a goal definition | Live |
 | Agent-loop evaluator | `internal/rolemanager` | Single-token verdict on a background loop agent at its budget boundary | Live |
 | Directive framing | `internal/rolemanager` + `internal/run` | Seal harness continuation instructions into `<directive>` blocks | Live |
 | Todo list | `internal/todos` | One tracked plan per session, advanced from assistant text only | Live |
@@ -126,7 +128,25 @@ and agent-less. The invariant holds for all eight builders:
 | Skills | Always empty | Live |
 | Agent block | Always empty | Live |
 | User content | Only the single untrusted blob under test | Live |
-| System prompt | The specialised classifier prompt only | Live |
+| System prompt | The specialised classifier prompt, plus the caveman voice on prose builders only | Live |
+
+#### Prose payloads versus sentinel payloads
+
+Three builders produce **prose** a human reads — the compaction summary, the
+session name, and the generated agent profile. Those three, and only those
+three, accept the caveman voice (`classifier.caveman` /
+`SIGNET_CLASSIFIER_CAVEMAN`, edited from `/classifier`). The voice always rides
+with a structure guard telling the model to keep every required heading, path
+and identifier verbatim, because the replies are still parsed:
+`ValidateSummary` requires `## Goal`, `## Next Steps` and `## Critical Context`,
+`ParseSessionName` requires a single printable line, and the agent profile must
+still be valid JSON.
+
+Every other builder is a **sentinel** payload whose reply is matched exactly —
+`SAFE`, `PROMPT_INJECTION`, a mode token, a JSON questionnaire. None of them may
+ever be voiced: a rewritten reply fails the strict parse and refuses benign
+content for the wrong reason. `TestSentinelBuildersNeverCarryCavemanVoice` pins
+this.
 
 ### Attachment admission
 
@@ -699,24 +719,87 @@ Explore subagents get their own, deeper budget from
 subagents used a hard 4), so an explore subagent actually runs `rg`/`find`/
 `git`/`jq` before reporting findings.
 
-Outside goal mode — and for every subagent, whatever its mode — a spent
-iteration budget is a **turn boundary, not an error**. The harness injects a
-sealed continuation directive ("report work done so far and what remains; if
-more tool calls are needed, make them now") and runs one more bounded pass
-with a fresh tool budget:
+Agent mode — and every subagent, whatever its mode — keeps this bounded
+continuation behaviour: a spent iteration budget is a **turn boundary, not an
+error**. The harness injects a sealed continuation directive ("report work
+done so far and what remains; if more tool calls are needed, make them now")
+and runs one more bounded pass with a fresh tool budget:
 
 - a pass that keeps emitting tool calls counts as a continuation and loops
   again;
 - a pass that ends with text only is the turn's normal answer;
 - the loop is capped by `resilience.max_passes` (0 falls back to
-  `defaultAgentContinuations` = 5 in agent/plan mode), and reaching the cap
+  `defaultAgentContinuations` = 5 in agent mode), and reaching the cap
   returns the last assistant text with a system note — still not an error.
 
 **Reset-on-steer** still outranks the continuation directive: an explore
 subagent that exhausts its budget does not continue if new steering arrived;
-the steering restarts the budget first. A top-level goal-mode prompt instead
-enters the goal pass loop below, where exhausting the budget is a question
-("is the goal met?") rather than an answer.
+the steering restarts the budget first. A top-level plan-mode prompt instead
+enters the **plan pass loop** below, and a top-level goal-mode prompt enters
+the **goal pass loop** below — in both, exhausting the budget is a question
+("is the plan/goal met?") rather than an answer.
+
+## Plan pass loop
+
+Plan mode is read-only and ends by handing a plan to the user for review, so
+its pass loop is **bounded**, and its boundary contact is a **plan evaluator**,
+never the goal evaluator. A plan-mode pass that exhausts its iteration budget
+— or ends naturally with a text-only reply — is re-checked by the plan
+evaluator, which is shown the exploration context the explore agents gathered
+for the session (never a goal definition: plan mode has none), the rendered
+plan todo list, and the pass evidence. Its verdicts are `PLAN_*` sentinels, not
+`GOAL_*` ones, and the TUI renders them as "plan evaluator", never "goal
+evaluator".
+
+### Entry conditions
+
+All must hold, or the bounded continuation path runs instead:
+
+| Condition | Why |
+| --------- | --- |
+| `Options.AllowPassLoop` is true | Only top-level session construction sets it. A subagent must never enter the loop. |
+| The engaged mode is `plan` | Agent mode keeps the bounded continuation path; goal mode runs the goal pass loop below. |
+| The pass exhausted its budget or ended naturally | Exhausting the budget is a question ("is the plan done?") rather than an answer; a natural exit is a claim of completion that is re-checked once. |
+
+### Bounded ceiling
+
+`resilience.max_passes` (0 falls back to `defaultPlanContinuations` = 5) caps
+the loop. Reaching the cap returns the plan so far with a system note — a turn
+boundary, not an error. Plan mode never inherits goal mode's
+unbounded-by-default behaviour, and it has no verification gate: the goal
+loop's disk re-check exists because goal mode mutates files, while plan mode
+is read-only and the user reviews the plan before executing it.
+
+### Plan evaluator
+
+| Sentinel | Meaning | Loop response |
+| -------- | ------- | ------------- |
+| `PLAN_COMPLETE` | The plan is researched and ready to execute | Mark the plan list complete and return the reply |
+| `PLAN_PARTIAL` | The plan advanced but is not ready | Grant another pass with the plan continuation directive |
+| `PLAN_NOT_STARTED` | No meaningful planning work yet | Inject the planning directive (the explore wave already ran, so there is no forced survey) |
+| _malformed output_ | — | Fails closed to `PLAN_PARTIAL`; two consecutive malformed replies stop the loop |
+
+### Input, not goal
+
+The plan evaluator is shown the exploration context (`exploreContextDigest` of
+the explore findings) as its context field, plus the plan todo list and the
+sanitized pass evidence. It never names a goal, and a leftover memorised goal
+from an earlier session has no path into this payload.
+
+### Termination rules
+
+| Rule | Condition | Outcome |
+| ---- | --------- | ------- |
+| Plan complete | `PLAN_COMPLETE` | Success; plan list marked complete; reply is the pass's last assistant text |
+| Ceiling | `max_passes` reached | Return the plan so far with a system note — not an error |
+| Unproductive pass | A pass executed no non-withheld tool result | Error: *plan pass loop stopped: pass N executed no tools* |
+| Broken evaluator | 2 consecutive malformed evaluator replies | Error: *plan pass loop stopped: N consecutive malformed evaluator replies* |
+| Evaluator transport failure | `Classify` returns an error | Terminal |
+| Cancellation | `ctx` cancelled (`esc`, `SIGINT`) | `ErrPlanLoopCancelled` with the partial result — never a raw `context.Canceled` |
+
+Steering precedence and boundary compaction run identically to the goal loop
+below: steering outranks the evaluator, and compaction is proactive before each
+pass and reactive once on a `ClassOverflow`.
 
 ## Goal pass loop
 
@@ -736,7 +819,7 @@ All three must hold, or a single bounded pass runs instead:
 | Condition | Why |
 | --------- | --- |
 | `Options.AllowPassLoop` is true | Only top-level session construction sets it. A subagent must never enter the loop, which would spawn recursive unbounded subagents. It is a distinct authority from `AllowExplore`. |
-| The engaged mode is `goal` | Agent and plan mode keep today's bounded behaviour verbatim. |
+| The engaged mode is `goal` | Agent mode keeps the bounded continuation path; plan mode runs the plan pass loop above. |
 | The pass exhausted its iteration budget | A pass that ends with a plain reply returns it. A goal is only re-checked when the model burns the whole budget. |
 
 ### Pass ledger
@@ -1138,6 +1221,10 @@ skill-less, and agent-less for every attempt.
 | `GOAL_COMPLETE` before any verification pass | Downgraded; one verification pass is forced (or progression directive if the loop has stalled) | — |
 | No todo progress for `goalStallPartial` passes | Progression directive with session context is injected; streak is reset; new agentic evaluation loop starts | — |
 | Goal pass executes no tools | Stop the loop — no evidence, no further pass | — |
+| Plan evaluator returns malformed output | `PLAN_PARTIAL` (never completion); 2 in a row stops the loop | — |
+| Plan evaluator transport error | Stop the loop — an unknown verdict grants no compute | — |
+| Plan pass executes no tools | Stop the loop — no evidence, no further pass | — |
+| Plan pass loop reaches `max_passes` | Return the plan so far with a system note — a turn boundary, not an error | — |
 | Agent-loop evaluator malformed or unreachable | `PAUSE` — stop spending, wait for the user | — |
 | Supervised agent receives `CONTINUE` | `PAUSE` — autonomy is an explicit opt-in | — |
 | Directive cannot be sealed | Dropped, never sent as bare prose | — |
@@ -1163,7 +1250,7 @@ carry verdicts, tool names and hashes, **never** untrusted content and never
 credentials. `Detail` is bounded and must not be fed classified payload text.
 
 The role manager records one decision per event: security sentinel (per chunk
-and folded), mode classification, goal/agent evaluator verdicts, tool-call
+and folded), mode classification, goal/plan/agent evaluator verdicts, tool-call
 mismatch policy and the offending tool, boundary seal/verify failures,
 compaction/clarification/session-name results, verdict-cache hits (keyed by a
 12-char hash prefix), and every permission `Explain` decision. The agent loop

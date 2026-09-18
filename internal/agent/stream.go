@@ -46,6 +46,10 @@ const (
 	// EventGoalEvalKind reports a goal-evaluator verdict at a pass boundary.
 	// It carries the sentinel and the pass number, no execution authority.
 	EventGoalEvalKind
+	// EventPlanEvalKind reports a plan-evaluator verdict at a plan-mode pass
+	// boundary. It carries the plan sentinel and the pass number, no execution
+	// authority, and is never rendered with goal-mode wording.
+	EventPlanEvalKind
 	// EventPassKind reports that a new goal-mode pass started. It carries the
 	// pass number and whether a forced explore ran for it.
 	EventPassKind
@@ -157,6 +161,9 @@ type Event struct {
 
 	// GoalSentinel carries EventGoalEvalKind verdicts.
 	GoalSentinel rolemanager.GoalSentinel
+
+	// PlanSentinel carries EventPlanEvalKind verdicts.
+	PlanSentinel rolemanager.PlanSentinel
 
 	// Pass carries the pass number for EventPassKind / EventGoalEvalKind.
 	Pass int

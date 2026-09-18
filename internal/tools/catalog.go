@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/vulnetix/signet/internal/repoindex"
 )
 
 // This file implements the native tool catalogue: first-class read-only tools
@@ -27,6 +29,10 @@ type nativeCommand struct {
 	binary string
 	// desc is the tool description sent to the model.
 	desc string
+	// kind is the result kind; zero means KindNative. It exists so cloud
+	// CLIs whose output is arbitrary third-party text can report KindRemote
+	// while the local catalogue stays KindNative.
+	kind Kind
 	// props is the JSON-schema property set for the tool.
 	props map[string]Property
 	// required lists the required argument names.
@@ -57,8 +63,14 @@ func (n *Native) Definition() Definition {
 	}
 }
 
-// Kind returns the native read-only kind.
-func (n *Native) Kind() Kind { return KindNative }
+// Kind returns the native read-only kind, or the command's specific kind
+// when one is set.
+func (n *Native) Kind() Kind {
+	if n.cmd.kind != "" {
+		return n.cmd.kind
+	}
+	return KindNative
+}
 
 // Subject returns the permission-rule subject for the arguments. Path
 // arguments are rebased onto the working directory first, so a permission
@@ -161,13 +173,17 @@ func (n *Native) Execute(ctx context.Context, args map[string]any) (Result, erro
 	tw.Flush()
 
 	content := tw.Content()
+	kind := n.cmd.kind
+	if kind == "" {
+		kind = KindNative
+	}
 	if ctx.Err() == context.DeadlineExceeded {
-		return NativeResult(content + fmt.Sprintf("\n… command timed out after %s", n.Timeout)), nil
+		return Result{Kind: kind, Content: content + fmt.Sprintf("\n… command timed out after %s", n.Timeout)}, nil
 	}
 	if err != nil {
 		content += fmt.Sprintf("\nexit status %d", exitCode(err))
 	}
-	return NativeResult(content), nil
+	return Result{Kind: kind, Content: content}, nil
 }
 
 // queryMetacharacters are the bytes rejected in query-language arguments
@@ -825,7 +841,7 @@ func localCatalog() []nativeCommand {
 	return out
 }
 
-// CatalogueNames returns every native tool name (local and cloud) in
+// CatalogueNames returns every native tool name (local, cloud, and repo) in
 // catalogue order. It is hermetic: no capability detection is performed.
 func CatalogueNames() []string {
 	var names []string
@@ -835,6 +851,7 @@ func CatalogueNames() []string {
 	for _, c := range cloudCatalog() {
 		names = append(names, c.name)
 	}
+	names = append(names, "Repos", "RepoFiles", "RepoRead")
 	return names
 }
 
@@ -843,7 +860,9 @@ func CatalogueNames() []string {
 // tool that is not installed (or, for cloud CLIs, not configured).
 //
 // cwd may be nil, in which case every path resolves against root directly.
-func NativeTools(root string, caps Capabilities, cwd *Cwd) []Tool {
+// ix supplies the local repoindex for the three repo-native tools; a zero
+// value means no locally discovered repositories.
+func NativeTools(root string, caps Capabilities, cwd *Cwd, ix repoindex.Index) []Tool {
 	var out []Tool
 	for _, c := range localCatalog() {
 		if caps.Has(c.name) {
@@ -855,6 +874,9 @@ func NativeTools(root string, caps Capabilities, cwd *Cwd) []Tool {
 			out = append(out, &Native{Root: root, Timeout: 30 * time.Second, cmd: c, Cwd: cwd})
 		}
 	}
+	for _, c := range repoTools(ix) {
+		out = append(out, &Native{Root: root, Timeout: 30 * time.Second, cmd: c, Cwd: cwd})
+	}
 	return out
 }
 
@@ -863,9 +885,9 @@ func NativeTools(root string, caps Capabilities, cwd *Cwd) []Tool {
 // native tools are read-only by construction and always survive the switch.
 // The natives share the base registry's working-directory tracker, so a Cd
 // moves them along with everything else.
-func DefaultWithCaps(workdir string, readOnly bool, caps Capabilities) *Registry {
+func DefaultWithCaps(workdir string, readOnly bool, caps Capabilities, ix repoindex.Index) *Registry {
 	base := Default(workdir, readOnly)
-	extras := NativeTools(workdir, caps, base.Cwd())
+	extras := NativeTools(workdir, caps, base.Cwd(), ix)
 	if len(extras) == 0 {
 		return base
 	}

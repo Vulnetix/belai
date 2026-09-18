@@ -110,6 +110,34 @@ func TestMutateCreatesFile(t *testing.T) {
 	}
 }
 
+// TestMutateClassifierCavemanRoundTrip proves a stored false survives the
+// file: *bool with omitempty must not be dropped, and the classifier block
+// must not be pruned as unset.
+func TestMutateClassifierCavemanRoundTrip(t *testing.T) {
+	workdir := t.TempDir()
+	for _, want := range []bool{false, true} {
+		if err := Mutate(ScopeProject, workdir, func(s *Settings) error {
+			if s.Classifier == nil {
+				s.Classifier = &ClassifierSettings{}
+			}
+			s.Classifier.Caveman = boolPtr(want)
+			return nil
+		}); err != nil {
+			t.Fatalf("Mutate(%v): %v", want, err)
+		}
+		got, err := LoadProject(workdir)
+		if err != nil {
+			t.Fatalf("LoadProject: %v", err)
+		}
+		if got.Classifier == nil || got.Classifier.Caveman == nil {
+			t.Fatalf("classifier caveman dropped for %v: %+v", want, got.Classifier)
+		}
+		if *got.Classifier.Caveman != want {
+			t.Fatalf("caveman = %v, want %v", *got.Classifier.Caveman, want)
+		}
+	}
+}
+
 func TestSettingsFileNameAndMode(t *testing.T) {
 	workdir := t.TempDir()
 	if err := Mutate(ScopeProject, workdir, func(s *Settings) error {

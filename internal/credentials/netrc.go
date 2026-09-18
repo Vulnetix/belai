@@ -18,8 +18,7 @@ type netrcEntry struct {
 }
 
 type netrcStore struct {
-	path  string
-	notes []string
+	path string
 }
 
 func newNetrcStore() *netrcStore {
@@ -34,24 +33,26 @@ func netrcPath() string {
 	return home + "/.netrc"
 }
 
-func (n *netrcStore) read(host string) (map[string]string, bool) {
-	n.notes = nil
-	entries, err := n.parse()
+// read returns the credential map for host, plus any warnings observed while
+// parsing the netrc file. It mutates no shared state, so concurrent reads on
+// the same store are safe.
+func (n *netrcStore) read(host string) (map[string]string, []string, bool) {
+	entries, notes, err := n.parse()
 	if err != nil {
-		return nil, false
+		return nil, notes, false
 	}
 	for _, e := range entries {
 		if e.machine == host {
-			return n.toMap(e), true
+			return n.toMap(e), notes, true
 		}
 	}
 	// Fallback to default.
 	for _, e := range entries {
 		if e.machine == "default" {
-			return n.toMap(e), true
+			return n.toMap(e), notes, true
 		}
 	}
-	return nil, false
+	return nil, notes, false
 }
 
 func (n *netrcStore) toMap(e netrcEntry) map[string]string {
@@ -67,27 +68,28 @@ func (n *netrcStore) toMap(e netrcEntry) map[string]string {
 	return m
 }
 
-func (n *netrcStore) parse() ([]netrcEntry, error) {
+func (n *netrcStore) parse() ([]netrcEntry, []string, error) {
+	var notes []string
 	if n.path == "" {
-		return nil, nil
+		return nil, notes, nil
 	}
 	info, err := os.Stat(n.path)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+		return nil, notes, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, notes, err
 	}
 	if info.Size() > maxNetrcBytes {
-		return nil, fmt.Errorf("netrc too large")
+		return nil, notes, fmt.Errorf("netrc too large")
 	}
 	if info.Mode().Perm()&0o077 != 0 {
-		n.notes = append(n.notes, fmt.Sprintf("~/.netrc mode is %04o (world-readable)", info.Mode().Perm()))
+		notes = append(notes, fmt.Sprintf("~/.netrc mode is %04o (world-readable)", info.Mode().Perm()))
 	}
 
 	f, err := os.Open(n.path)
 	if err != nil {
-		return nil, err
+		return nil, notes, err
 	}
 	defer f.Close()
 
@@ -140,7 +142,7 @@ func (n *netrcStore) parse() ([]netrcEntry, error) {
 	if cur != nil {
 		entries = append(entries, *cur)
 	}
-	return entries, nil
+	return entries, notes, nil
 }
 
 func tokenize(r *os.File) []string {

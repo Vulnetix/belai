@@ -24,10 +24,14 @@ type settingsViewState struct {
 type settingsRow struct {
 	key   string
 	label string
-	kind  string   // toggle | choose | text | submenu
+	kind  string   // toggle | choose | text | submenu | pick
 	opts  []string // choose options
 	value string   // rendered effective value
 	src   string   // provenance label
+	// disabled greys the row out and makes space/enter skip it. It is how a
+	// row that only means something under another row's setting — an effort
+	// with reasoning off — stays visible without being changeable.
+	disabled bool
 }
 
 func (a *App) settingsView() string {

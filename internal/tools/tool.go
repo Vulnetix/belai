@@ -6,6 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"github.com/vulnetix/signet/internal/permissions"
 )
 
 // Property is a JSON-schema property for a tool definition.
@@ -117,25 +120,55 @@ func (r *Registry) ReadOnly() *Registry {
 	return r.withCwd(NewRegistry(list...))
 }
 
-// Plan returns the registry as plan mode offers it: every mutating tool
-// removed, and Bash removed as well.
-//
-// Read-only Bash is not mutating, so ReadOnly alone would keep it. Plan mode
-// drops it anyway: an arbitrary command string is the one tool whose effect
-// cannot be read off the call, so the read-only guarantee there rests on a
-// command allowlist rather than on the tool's shape. Everything plan mode
-// needs — reading, listing, searching, git state, transforms — is covered by
-// tools whose argument shape is fixed, so the exception is not worth its
-// blast radius. Investigation in plan mode goes through those instead.
-func (r *Registry) Plan() *Registry {
-	var list []Tool
-	for _, t := range r.ReadOnly().tools {
-		if t.Kind() == KindBash {
-			continue
-		}
-		list = append(list, t)
+// PlanSurface is how far the plan-mode registry may relax. The zero value
+// is the fail-closed surface: no write tools, no Bash.
+type PlanSurface struct {
+	GuardrailsOff bool
+	Perms         permissions.Settings
+}
+
+// Plan returns the registry as plan mode offers it with the zero (fail-closed)
+// surface. It exists so callers that do not need a configurable surface (most
+// explore subagents and existing tests) keep working without change.
+func (r *Registry) Plan() *Registry { return r.PlanWith(PlanSurface{}) }
+
+// PlanWith returns the registry as plan mode offers it for the given surface.
+// Guardrails off yields the full surface. Otherwise mutating tools are removed.
+// When the user has written a Bash allow rule, a read-only Bash is offered;
+// otherwise Bash is dropped entirely.
+func (r *Registry) PlanWith(surface PlanSurface) *Registry {
+	if surface.GuardrailsOff {
+		return r
 	}
-	return r.withCwd(NewRegistry(list...))
+	base := r.ReadOnly()
+	if surface.Perms.HasAllowRule("Bash") {
+		// Ensure a read-only Bash is advertised. The registry may have been
+		// built in full mode, in which case ReadOnly removed Bash entirely.
+		var hasBash bool
+		for _, t := range base.tools {
+			if strings.EqualFold(t.Definition().Name, "bash") {
+				hasBash = true
+				break
+			}
+		}
+		if !hasBash {
+			cwd := base.Cwd()
+			root := ""
+			if cwd != nil {
+				root = cwd.Dir()
+			}
+			bash := &Bash{Root: root, ReadOnly: true, Timeout: 30 * time.Second, MaxBytes: 64 * 1024, Cwd: cwd}
+			base = base.withCwd(NewRegistry(append(base.tools, bash)...))
+		}
+		return base
+	}
+	var list []Tool
+	for _, t := range base.tools {
+		if !strings.EqualFold(t.Definition().Name, "bash") {
+			list = append(list, t)
+		}
+	}
+	return base.withCwd(NewRegistry(list...))
 }
 
 // Targeter is implemented by mutating tools that can name the concrete paths

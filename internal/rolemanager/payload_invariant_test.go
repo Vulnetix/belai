@@ -12,9 +12,12 @@ func TestClassifierPayloadsAreToolSkillAgentFree(t *testing.T) {
 	}{
 		{"security", BuildClassifierPayload("untrusted tool output")},
 		{"mode", BuildModeClassifierPayload("classify my prompt")},
-		{"session name", BuildSessionNamePayload("first user message")},
-		{"compaction", BuildCompactionPayload("<conversation>")},
+		{"session name", BuildSessionNamePayload("first user message", false)},
+		{"session name caveman", BuildSessionNamePayload("first user message", true)},
+		{"compaction", BuildCompactionPayload("<conversation>", false)},
+		{"compaction caveman", BuildCompactionPayload("<conversation>", true)},
 		{"goal evaluator", BuildGoalEvalPayload(GoalEvalInput{Goal: "g", Todos: "t", Evidence: "e"})},
+		{"plan evaluator", BuildPlanEvalPayload(PlanEvalInput{Context: "c", Todos: "t", Evidence: "e"})},
 		{"agent loop evaluator", BuildAgentEvalPayload("goals", "output")},
 		{"clarify", BuildClarifyPayload(ClarifyInput{Prompt: "p", Findings: "f", Round: "1"})},
 	}

@@ -123,6 +123,9 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("model", "pick provider and model", nil, func(a *App, arg string) tea.Cmd {
 		return a.push(viewModel)
 	})
+	r.Register("classifier", "pick the role manager's classifier model", nil, func(a *App, arg string) tea.Cmd {
+		return a.push(viewClassifier)
+	})
 	r.Register("mode", "show or set operating mode", nil, func(a *App, arg string) tea.Cmd {
 		if arg != "" {
 			a.mode = arg
@@ -220,7 +223,7 @@ func NewRegistry(workdir string) *Registry {
 				return nil
 			}
 			return func() tea.Msg {
-				b := agentprofile.Builder{Classifier: a.classifier, MaxAttempts: 3}
+				b := agentprofile.Builder{Classifier: a.classifier, MaxAttempts: 3, Caveman: a.settings.ClassifierCavemanEnabled()}
 				p, err := b.Build(context.Background(), desc)
 				if err != nil {
 					return agentBuilderDoneMsg{err: err}

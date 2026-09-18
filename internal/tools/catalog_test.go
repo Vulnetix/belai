@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"os"
+
+	"github.com/vulnetix/signet/internal/repoindex"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -12,6 +14,8 @@ import (
 // TestNativeToolsAreReadOnly pins the catalogue invariant: every native tool
 // (local and cloud) is read-only by construction, so the read-only master
 // switch can never strip one and the concurrent read-only fan-out can run it.
+// Cloud CLIs whose output is third-party text report KindRemote instead of
+// KindNative, but they remain read-only.
 func TestNativeToolsAreReadOnly(t *testing.T) {
 	var commands []nativeCommand
 	commands = append(commands, localCatalog()...)
@@ -21,8 +25,8 @@ func TestNativeToolsAreReadOnly(t *testing.T) {
 	}
 	for _, c := range commands {
 		n := &Native{Root: t.TempDir(), cmd: c}
-		if n.Kind() != KindNative {
-			t.Fatalf("%s kind = %q, want %q", c.name, n.Kind(), KindNative)
+		if n.Kind() != KindNative && n.Kind() != KindRemote {
+			t.Fatalf("%s kind = %q, want %q or %q", c.name, n.Kind(), KindNative, KindRemote)
 		}
 		if !n.Kind().ReadOnly() {
 			t.Fatalf("%s must be read-only", c.name)
@@ -33,6 +37,26 @@ func TestNativeToolsAreReadOnly(t *testing.T) {
 		if n.Definition().Name != c.name {
 			t.Fatalf("%s definition name = %q", c.name, n.Definition().Name)
 		}
+	}
+}
+
+// TestCloudCLIsReportRemoteKindAndClassify pins that GH and Glab results are
+// treated as arbitrary third-party content and sent to the classifier, while
+// shaped local natives like LS stay sanitise-only.
+func TestCloudCLIsReportRemoteKindAndClassify(t *testing.T) {
+	gh := cloudNative(cloudSpecs[0])
+	if gh.kind != KindRemote {
+		t.Fatalf("GH kind = %q, want %q", gh.kind, KindRemote)
+	}
+	if !KindRemote.NeedsClassifier() {
+		t.Fatal("KindRemote result must be classified")
+	}
+	ls := localCatalog()[0]
+	if ls.kind != "" && ls.kind != KindNative {
+		t.Fatalf("local native kind = %q, want zero or %q", ls.kind, KindNative)
+	}
+	if KindNative.NeedsClassifier() {
+		t.Fatal("KindNative result must not be classified")
 	}
 }
 
@@ -132,7 +156,7 @@ func TestJQTransformsStdin(t *testing.T) {
 // and the read-only switch keeps native tools while stripping mutating ones.
 func TestNativeToolsBuiltFromCaps(t *testing.T) {
 	caps := Capabilities{local: map[string]bool{"Cat": true, "Head": true}, cloud: map[string]bool{"GH": true}}
-	tools := NativeTools(t.TempDir(), caps, nil)
+	tools := NativeTools(t.TempDir(), caps, nil, repoindex.Index{})
 	names := map[string]bool{}
 	for _, tool := range tools {
 		names[tool.Definition().Name] = true
@@ -146,8 +170,8 @@ func TestNativeToolsBuiltFromCaps(t *testing.T) {
 		t.Fatal("undetected JQ must be absent")
 	}
 
-	full := DefaultWithCaps(t.TempDir(), false, caps)
-	ro := DefaultWithCaps(t.TempDir(), true, caps)
+	full := DefaultWithCaps(t.TempDir(), false, caps, repoindex.Index{})
+	ro := DefaultWithCaps(t.TempDir(), true, caps, repoindex.Index{})
 	if _, ok := ro.Find("Cat"); !ok {
 		t.Fatal("read-only registry must keep native Cat")
 	}

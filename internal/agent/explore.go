@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	"github.com/vulnetix/signet/internal/delimiters"
@@ -26,6 +27,20 @@ func (s *Session) exploreTurns(ctx context.Context, decision rolemanager.ModeDec
 		return nil
 	}
 	return s.runExploreTasks(ctx, explore.Plan(clean, decision))
+}
+
+// exploreContextDigest renders exploration findings as the plain-text context
+// the plan evaluator is shown. The findings have already been classified and
+// admitted as SAFE before they were sealed, and the evaluator call sanitizes
+// them again, so this is never a new trust question.
+func exploreContextDigest(turns []run.Turn) string {
+	parts := make([]string, 0, len(turns))
+	for _, t := range turns {
+		if c := strings.TrimSpace(t.Content); c != "" {
+			parts = append(parts, c)
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 // steerBridge fans one steering message out to every explore subagent running
@@ -119,7 +134,7 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task, steerCh chan 
 	// .Plan() rather than relying on PlanMode alone keeps the advertised
 	// list and the enforced list the same, so the preamble below cannot
 	// promise a Bash the gate will refuse.
-	reg := tools.DefaultWithCaps(s.workdir, true, s.caps).Plan()
+	reg := tools.DefaultWithCaps(s.workdir, true, s.caps, s.repoIndex).Plan()
 
 	grounding := s.groundingProbe(ctx).digest()
 	promptText := t.Prompt
@@ -143,6 +158,7 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task, steerCh chan 
 		Settings:      s.settings,
 		PromptOptions: opts,
 		Caps:          s.caps,
+		RepoIndex:     s.repoIndex,
 		Cache:         s.cache, // share the session verdict cache across fan-out
 		SkipNonceSeed: true,    // the subagent re-seeds locally below
 	})

@@ -369,7 +369,7 @@ func TestForbiddenIP(t *testing.T) {
 
 func TestKindReadOnly(t *testing.T) {
 	readOnly := map[Kind]bool{
-		KindRead: true, KindWebSearch: true, KindWebFetch: true, KindGrep: true, KindGlob: true, KindExplore: true, KindNative: true,
+		KindRead: true, KindWebSearch: true, KindWebFetch: true, KindGrep: true, KindGlob: true, KindExplore: true, KindNative: true, KindRemote: true,
 		KindBash: false, KindWrite: false, KindEdit: false,
 	}
 	for k, want := range readOnly {
@@ -383,7 +383,7 @@ func TestKindReadOnly(t *testing.T) {
 // a newly added Kind must be explicitly classified read-only or mutating.
 func TestKindReadOnlyClassification(t *testing.T) {
 	want := map[Kind]bool{
-		KindRead: true, KindWebSearch: true, KindWebFetch: true, KindGrep: true, KindGlob: true, KindExplore: true, KindNative: true,
+		KindRead: true, KindWebSearch: true, KindWebFetch: true, KindGrep: true, KindGlob: true, KindExplore: true, KindNative: true, KindRemote: true,
 		KindBash: false, KindWrite: false, KindEdit: false,
 	}
 	seen := map[Kind]bool{}

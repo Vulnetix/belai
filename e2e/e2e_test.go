@@ -1092,6 +1092,9 @@ func newExploreMockServer(t *testing.T, toolPath string) (*httptest.Server, *exp
 			} else {
 				writeChat(w, "found: repo has "+toolPath)
 			}
+		case strings.Contains(system, "plan-progress evaluator"):
+			// Plan-mode pass boundary: the plan is complete on the first pass.
+			writeChat(w, "PLAN_COMPLETE")
 		default:
 			// Parent final model turn.
 			em.parentChatUsers = append(em.parentChatUsers, userContents...)

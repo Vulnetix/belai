@@ -25,12 +25,15 @@ chain: default < state < global < project < env < flag):
   "provider": "ollama",          // omit → main provider
   "model":    "qwen2.5-7b-instruct-q4_k_m",
   "effort":   "none",             // default: reasoning OFF
+  "caveman":  false,              // voices PROSE payloads only
   "chunk": { "max_bytes": 1048576, "concurrency": 4 }
 }
 ```
 
 Flags `-classifier-provider`, `-classifier-model`, `-classifier-effort`, and
-env vars `SIGNET_CLASSIFIER_PROVIDER/MODEL/EFFORT` set the same fields.
+env vars `SIGNET_CLASSIFIER_PROVIDER/MODEL/EFFORT/CAVEMAN` set the same fields.
+The whole block is also editable from the TUI's `/classifier` page (see
+"Classifier picker").
 
 Business rules:
 
@@ -58,6 +61,21 @@ Business rules:
   persist to `<GlobalDir>/bad-hashes.json` (written atomically) and load at
   session start. The bad-hash set stays small: memory is bounded and I/O is
   one read at startup plus an append per new bad verdict.
+- **Caveman is prose-only**: `classifier.caveman` voices the three payloads a
+  human reads — the compaction summary, the session name, and the generated
+  agent profile — and nothing else. Sentinel payloads (security, mode, goal,
+  plan, agent-loop) and the strict-JSON clarify payload are never voiced,
+  because their replies are matched exactly and a rewritten reply would fail
+  the parse and refuse benign content. The voice always ships with a structure
+  guard telling the model to keep every heading, path and identifier verbatim,
+  so `ValidateSummary`'s heading contract and the profile's JSON contract
+  survive it. It is independent of the agent's own `caveman` setting: either
+  can be on without the other.
+- **Tri-state**: `classifier.caveman` is a `*bool`. Unset means off and claims
+  no provenance, so `SIGNET_CLASSIFIER_CAVEMAN` unset or unparseable never
+  overrides a stored value, and a stored `false` survives a round trip through
+  the settings file rather than being pruned as empty. `ClassifierSettings.
+  IsZero` counts the field, so a caveman-only block still merges.
 
 ## Delimiter, nonce, and integrity model
 
@@ -268,9 +286,12 @@ full argument schema; the block carries what a schema cannot say.
   from the same narrowed registry the request is built from
   (`Session.toolSurface`), so the briefing can never name a tool the model
   will not be given.
-- **What is missing.** In plan mode the block states that `Bash`, `Write`,
-  and `Edit` are unavailable. A schema can only describe tools that are
-  present; a model never told what was removed keeps reaching for it.
+- **What is missing.** By default, plan mode states that `Bash`, `Write`,
+  and `Edit` are unavailable. When the user has turned guardrails off, the
+  plan-mode surface is the full surface and the block says so. When the user
+  has written a `Bash(...)` allow rule, a read-only `Bash` is advertised
+  instead. A schema can only describe tools that are present; a model never
+  told what was removed keeps reaching for it.
 - **The working directory.** The absolute directory relative paths resolve
   from — the session working directory, which is the root until a `Cd` moves
   it.
@@ -303,28 +324,45 @@ execution is a **fixed command shape**, not an arbitrary command string:
   `Paste`, `Join`, `Echo`, `Date`, `Pwd`, `Env`, `Diff`, `Cmp` — are
   read-only by construction. `Grep`, `Glob`, and `Cd` stay as their own
   tools.
+- Local repository tools — `Repos`, `RepoFiles`, `RepoRead` — are offered
+  only when a sibling-directory scan finds at least one git checkout. They
+  resolve a repository name (e.g. `Vulnetix/vdb-site`) to a local path, list
+  files with `git ls-files`, or read a file directly. They never fetch or
+  clone; a miss lists the locally available repositories so the model can
+  fall through to `GH` only when necessary.
 - Cloud/SaaS CLIs — `GH`, `AWS`, `AZ`, `GCloud`, `Kubectl`, `Terraform`,
   `Pulumi`, `Heroku`, `Fly`, `Vercel`, `Netlify`, `Doctl`, `Glab`, `Stripe`,
   `OnePassword`, `Bitwarden` — are offered only when capability detection
   finds the CLI installed **and** its read-only auth probe exits cleanly.
   Only read-only subcommands are offered: each CLI carries a prefix allowlist
   and anything outside it is rejected.
+- `GH` has a second gate for `gh api`: only provable GET/HEAD requests to
+  allowed path families (`repos/`, `orgs/`, `users/`, `user`, `search/`,
+  `rate_limit`, `meta`, `gitignore/`, `licenses/`) are permitted, `graphql`
+  must not begin with a `mutation`, and any write flag (`-f`, `-F`, `--field`,
+  `--raw-field`, `--input`, `-X POST`) is refused. This is the gate that
+  makes `gh api repos/OWNER/REPO/contents/...` available in plan mode.
 
 Security rules for native tools:
 
-- Every tool is **read-only by construction** (`KindNative`), so it survives
-  the read-only master switch and may run in the concurrent read-only fan-out.
+- Every local tool is **read-only by construction** (`KindNative`), so it
+  survives the read-only master switch and may run in the concurrent read-only
+  fan-out.
+- `GH` and `Glab` return arbitrary third-party text (PR bodies, issue
+  comments, file contents), so they report `KindRemote`. Like `Read`,
+  `WebFetch`, `WebSearch`, and `Bash`, `KindRemote` results go through the
+  classifier before promotion. `RepoRead` is `KindRead` for the same reason.
 - Arguments are Go `string`/`[]string` slices passed straight to
   `exec.Command(name, args...)` — never through a shell, so pipes,
   redirections, and `$` expansion are impossible.
 - Path arguments go through `tools.SanitizePath` and cannot escape the
-  working directory.
+  working directory. Repository tools confine paths to the resolved checkout.
 - Query-language arguments (`jq`/`yq` filters, `sed`/`awk` programs, `tr`
   sets) are data, not shell text; they are control-character gated and never
   interpolated into a shell `-c`.
 - Output is capped (64 KiB default) and sanitized as untrusted content. A
-  native's argv is built by the harness from a fixed shape, so it is on the
-  sanitize-only side of [Tool-result trust](#tool-result-trust).
+  local native's argv is built by the harness from a fixed shape, so it is on
+  the sanitize-only side of [Tool-result trust](#tool-result-trust).
 
 ### Search and file-location tools
 
@@ -523,6 +561,16 @@ Business rules and edge cases:
     back as a user message while staying in plan mode.
 - Plan-mode state (enabled/executing/todos) is persisted as session entries so
   it survives resume.
+- A top-level plan-mode prompt runs a **plan pass loop** instead of the
+  bounded continuation path: when a pass exhausts its iteration budget — or
+  ends naturally — a **plan evaluator** decides whether the plan is ready to
+  execute. It is shown the exploration context the explore agents gathered
+  for the session (never a goal definition: plan mode has none), the plan
+  todo list, and the pass evidence, and it answers with `PLAN_*` sentinels,
+  never `GOAL_*` ones. The loop is bounded by `resilience.max_passes`
+  (default `defaultPlanContinuations` = 5) and returns the plan so far at the
+  ceiling. The normative rules are in [role-manager.md](role-manager.md),
+  "Plan pass loop".
 
 ### Agentic exploration (plan-mode explore subagents)
 
@@ -580,9 +628,9 @@ condition, are in [role-manager.md](role-manager.md), "Goal pass loop".
 A prompt the classifier routes to goal mode carries the prompt itself as the
 goal carrier, so a goal-mode turn always has something to evaluate against.
 
-Subagents never enter the pass loop: `AllowPassLoop` is a separate authority
-from `AllowExplore` and only top-level session construction sets it, so an
-unbounded loop can never spawn recursively.
+Subagents never enter a pass loop — plan or goal: `AllowPassLoop` is a
+separate authority from `AllowExplore` and only top-level session
+construction sets it, so an unbounded loop can never spawn recursively.
 
 #### Run-time goal state
 
@@ -1341,6 +1389,86 @@ Business rules:
   under the cursor is the row that is saved.
 - **An empty catalogue** renders `no models in this profile — type or import a
   model id` instead of a list, and the counter line is omitted with it.
+- **Only available providers are offered.** The tab strip lists providers whose
+  credentials resolve, never the full built-in list — `/credentials` is where
+  every provider stays browsable and configurable. `g` opens the classifier
+  picker; `c` opens `/credentials` **matched by name**, because the two lists
+  no longer share indices.
+
+#### Provider availability
+
+`availableProviders` answers which providers a picker may offer. It is a UX
+affordance, not a security boundary: `run.Prepare` and `credentials.Resolve`
+remain the fail-closed gate on actually using a provider, so this filter
+degrades *open* rather than closed.
+
+Business rules:
+
+- **Availability = credentials resolve.** The answer comes from
+  `Resolver.ConfiguredProviders()`, so a provider with a missing required field
+  is dropped.
+- **Local providers need a live server, not a key.** `ollama` and
+  `llama-server` declare every credential field optional, so they always report
+  configured. They are therefore additionally probed with a bare
+  `GET {base}/v1/models` (`localinfer.ProbeRunning`, no credentials, no
+  content, 5s ceiling) and dropped when nothing answers.
+- **Pinned names always survive.** The committed agent provider and the
+  committed classifier provider stay in the list even when unavailable, so a
+  picker can never silently move the user off their own model. An unavailable
+  pinned provider renders as an amber chip with an `unavailable` note instead
+  of vanishing.
+- **The list is never empty.** With no resolver (the non-interactive
+  construction path), with no probe result yet, or with nothing available, the
+  full provider list is returned together with a note explaining why —
+  `checking providers…` or `no configured providers — showing all`. The picker
+  indexes into this slice, so an empty one would be a panic and a dead end.
+- **Canonical order is preserved.** The filtered list is a subsequence of
+  `providerNames()`, which is what keeps the tab strip, the cursor and the
+  by-name `/credentials` jump consistent.
+- **Caching.** One probe fills the cache; it is re-run when older than 30s, and
+  never twice concurrently (an in-flight guard). Any credential mutation —
+  store, clear, or import — invalidates it through `refreshCredentials`, and
+  `r` in `/model` forces a fresh probe. The probe runs on a `tea.Cmd`, never in
+  the Update loop, and captures the resolver into a local rather than touching
+  `*App` from the goroutine.
+
+### Classifier picker
+
+`/classifier` (also `g` from `/model`) is the only screen that edits the
+`classifier` settings block: provider, model, reasoning, effort, and caveman.
+It opens with a standing warning that the classifier is the security gate for
+tool output, because choosing a weaker model here weakens detection everywhere.
+
+Business rules:
+
+- **Rows are declarative**, reusing the `/settings` row table
+  (`settingsRow`), with one addition: a `disabled` row renders greyed and is
+  inert — `space`/`enter` on it does nothing and writes nothing.
+- **Reasoning drives effort.** There is no separate reasoning key. Toggling
+  reasoning off writes `classifier.effort: "none"` and greys the effort row;
+  toggling it back on restores the previously selected chip rather than the
+  head of the list. `ResolveClassifier` already treats `""` and `"none"`
+  identically, so the literal is written for provenance, not behaviour.
+- **Effort options** come from the selected classifier model's catalogue when
+  it advertises any, else `low/medium/high` — a custom provider's profile
+  carries no effort list.
+- **Changing provider clears the model.** A model id is only meaningful to its
+  own provider; carrying one across would resolve to nothing. The provider
+  cycle includes an *unset* stop, and landing on it with no other field set
+  drops the whole block, which is the documented fallback to the main model.
+- **Unset (`x`)** clears one field; clearing them all leaves no `classifier`
+  key in the file (`Document.Save` prunes a block that marshals empty).
+- **Scope is `global` or `project` only** — never session. `config.State`
+  carries just model/provider/effort, and a transient, unprovenanced override
+  of which model guards tool output is exactly what the settings model exists
+  to prevent. Every row shows the block's provenance (`Origin["classifier"]`).
+- **Changes take effect immediately.** Each successful write re-resolves the
+  classifier and reinstalls it, so the next turn uses it. A resolve failure
+  (for example an unconfigured classifier provider) is reported on the page
+  instead of silently falling back to the main model, which is what
+  `refreshProvider` alone would do.
+- **The provider list is the availability list**, pinned with both the agent's
+  and the classifier's committed providers.
 
 #### Catalogue sources
 
@@ -1398,6 +1526,7 @@ Provider-specific edge cases:
 | `/profile` | Switch agent profile |
 | `/local-model` | Assess, download, launch, or stop a local classifier model |
 | `/model` | Pick provider and model |
+| `/classifier` | Pick the role manager's classifier provider, model, reasoning, effort and caveman |
 | `/mode` | Show or set operating mode (e.g. `/mode plan`) |
 | `/todos` | Show plan progress |
 | `/execute` | Leave plan mode and execute the plan |
@@ -1514,6 +1643,15 @@ Supporting pieces:
 - `huggingface` is also a built-in chat provider using the OpenAI-compatible
   Serverless Inference API at `https://router.huggingface.co/v1`,
   authenticated with the same token.
+- Probe base URLs are accepted with or without their `/v1` suffix:
+  `ProbeRunning` trims a trailing `/v1` before appending `/v1/models`. Every
+  in-tree caller holds the OpenAI-surface base (`run.Prepare` returns
+  `…/v1`, and `localBases()` lists `…/v1`), so appending unconditionally
+  probed `/v1/v1/models` — a path no server serves, which made both the
+  already-running probe and `Launch`'s health check fail.
+- The provider-availability filter behind `/model` and `/classifier` uses the
+  same probe: a configured-but-unreachable local provider is hidden from the
+  pickers while staying visible in `/credentials`.
 - The TUI exposes this through `/local-model` (assess the machine and server),
   `/local-model download <repo>` (resumable, checksummed download with live
   progress), `/local-model launch <repo>` (launch llama-server with the default

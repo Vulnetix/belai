@@ -92,6 +92,13 @@ type ClassifierSettings struct {
 	Model string `json:"model,omitempty"`
 	// Effort is the classifier's reasoning effort; empty means "none".
 	Effort string `json:"effort,omitempty"`
+	// Caveman, when non-nil and true, applies the caveman voice to the
+	// classifier's prose payloads only — the compaction summary, the session
+	// name, and the agent-profile designer. Sentinel payloads are never
+	// voiced: their replies are parsed strictly, and a voice rewrite would
+	// break the parse. It is independent of Settings.Caveman, which governs
+	// the agent's own voice.
+	Caveman *bool `json:"caveman,omitempty"`
 	// Chunk bounds the chunked classify-all path for oversized payloads.
 	Chunk ClassifierChunkSettings `json:"chunk,omitempty"`
 }
@@ -121,6 +128,9 @@ func (c *ClassifierSettings) merge(from *ClassifierSettings) {
 	if from.Effort != "" {
 		c.Effort = from.Effort
 	}
+	if from.Caveman != nil {
+		c.Caveman = from.Caveman
+	}
 	if from.Chunk.MaxBytes != 0 {
 		c.Chunk.MaxBytes = from.Chunk.MaxBytes
 	}
@@ -135,6 +145,7 @@ func (c *ClassifierSettings) IsZero() bool {
 		return true
 	}
 	return c.Provider == "" && c.Model == "" && c.Effort == "" &&
+		c.Caveman == nil &&
 		c.Chunk.MaxBytes == 0 && c.Chunk.Concurrency == 0
 }
 
@@ -339,6 +350,15 @@ func (s Settings) AllowProjectProvidersEnabled() bool {
 // default (nil or false) is off.
 func (s Settings) CavemanEnabled() bool {
 	return s.Caveman != nil && *s.Caveman
+}
+
+// ClassifierCavemanEnabled reports whether the classifier's prose payloads —
+// the compaction summary, the session name, and the agent-profile designer —
+// use the caveman voice. The default (nil or false) is off. It is independent
+// of CavemanEnabled, which governs the agent's own voice, and it never reaches
+// a sentinel payload.
+func (s Settings) ClassifierCavemanEnabled() bool {
+	return s.Classifier != nil && s.Classifier.Caveman != nil && *s.Classifier.Caveman
 }
 
 // GuardrailsEnabled reports whether the posture gates are on. Default on.

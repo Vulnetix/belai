@@ -20,6 +20,7 @@ import (
 	"github.com/vulnetix/signet/internal/permissions"
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/prompt"
+	"github.com/vulnetix/signet/internal/repoindex"
 	"github.com/vulnetix/signet/internal/resilience"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
@@ -68,6 +69,13 @@ type Options struct {
 	// catalogue for this session and its explore subagents. A zero value means
 	// no native tools (the pre-catalogue behaviour).
 	Caps tools.Capabilities
+	// RepoIndex is the locally discovered repository index used to offer the
+	// three repo-native tools (Repos, RepoFiles, RepoRead). A zero value means
+	// no local checkouts were found.
+	RepoIndex repoindex.Index
+	// PlanSurface is the plan-mode relaxation surface. The zero value is the
+	// fail-closed surface: no write tools, no Bash.
+	PlanSurface tools.PlanSurface
 	// SkipNonceSeed skips the SeedFromProvider GET and seeds the pool locally.
 	// A subagent sets this: it discards the provider-seeded pool one line later
 	// in favour of a fresh local pool, so the GET is a wasted round trip.
@@ -93,6 +101,8 @@ type Session struct {
 	maxIter        int
 	cache          *rolemanager.Cache
 	caps           tools.Capabilities
+	repoIndex      repoindex.Index
+	planSurface    tools.PlanSurface
 	opts           prompt.Options
 	workdir        string
 	state          config.State
@@ -170,9 +180,17 @@ func (s *Session) toolDocs() prompt.ToolsOptions {
 // advertises and what executeCall will run can never diverge.
 func (s *Session) toolSurface() (*tools.Registry, []wire.OpenAITool, []wire.AnthropicToolDef) {
 	if s.planMode {
-		return s.registry.Plan(), s.planOpenAITools, s.planAnthropicTools
+		return s.registry.PlanWith(s.planSurface), s.planOpenAITools, s.planAnthropicTools
 	}
 	return s.registry, s.openAITools, s.anthropicTools
+}
+
+// toolsPlanSurface combines caller-provided plan surface with the session
+// permissions. Perms always comes from Options.Perms so enforcement and
+// advertisement agree.
+func toolsPlanSurface(perms permissions.Settings, surface tools.PlanSurface) tools.PlanSurface {
+	surface.Perms = perms
+	return surface
 }
 
 // NewSession builds a session from options.
@@ -199,8 +217,9 @@ func NewSession(o Options) (*Session, error) {
 	// the classifier can route a single prompt to plan mode inside a session
 	// that was constructed in agent mode, and the request must then advertise
 	// the plan-mode surface rather than the one the session started with.
+	planSurface := toolsPlanSurface(o.Perms, o.PlanSurface)
 	openAITools, anthropicTools := wireTools(reg)
-	planOpenAITools, planAnthropicTools := wireTools(reg.Plan())
+	planOpenAITools, planAnthropicTools := wireTools(reg.PlanWith(planSurface))
 
 	// Load validated hooks for the six declared events. Discovery fails closed:
 	// an unreadable dir yields no hooks, never an error.
@@ -239,6 +258,8 @@ func NewSession(o Options) (*Session, error) {
 		maxIter:            maxIter,
 		cache:              cache,
 		caps:               o.Caps,
+		repoIndex:          o.RepoIndex,
+		planSurface:        planSurface,
 		opts:               o.PromptOptions,
 		workdir:            o.Workdir,
 		state:              o.State,
@@ -439,7 +460,12 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	}
 	turns = append(turns, run.Turn{Role: "user", Content: clean, Attachments: in.Attachments})
 
-	res, err := s.passLoop(ctx, pipe, system, turns, modeDec, opts.GoalText, streaming, emit)
+	// Plan mode's pass loop contacts the evaluator with the exploration
+	// context the explore agents gathered, not with a goal definition (plan
+	// mode has none). Digest the findings here; they are already classified
+	// and admitted as SAFE, and the evaluator call sanitizes them again.
+	planContext := exploreContextDigest(exploreTurns)
+	res, err := s.passLoop(ctx, pipe, system, turns, modeDec, opts.GoalText, planContext, streaming, emit)
 	res.SanitizedPrompt = clean
 	res.SecuritySentinel = dec.Sentinel
 	res.ModeDecision = modeDec
@@ -644,7 +670,7 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 		return fmt.Sprintf("tool result withheld: %q is not registered", call.Name)
 	}
 
-	if !modes.ToolAllowed(call.Name, call.Args, s.planMode) {
+	if !modes.ToolAllowed(call.Name, call.Args, s.planMode, s.planSurface) {
 		return fmt.Sprintf("tool result withheld: %q is not allowed in plan mode", call.Name)
 	}
 

@@ -158,7 +158,15 @@ func (l *passLedger) notePartial() bool {
 // Guard: when the session may not run a pass loop (subagent) or the mode is
 // not goal, exactly one pass runs and today's max-iterations error is
 // preserved verbatim. Only a top-level goal-mode prompt enters the loop.
-func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, system string, turns []run.Turn, modeDec rolemanager.ModeDecision, goalText string, streaming bool, emit func(Event)) (run.Result, error) {
+func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, system string, turns []run.Turn, modeDec rolemanager.ModeDecision, goalText, planContext string, streaming bool, emit func(Event)) (run.Result, error) {
+	// Plan mode has its own pass loop: the harness contacts the model at a
+	// pass boundary like goal mode does, but with the exploration context
+	// gathered for the session and PLAN_* sentinels — never a goal definition
+	// and never GOAL_* presentation.
+	if s.allowPassLoop && modeDec.Mode == modes.ModePlan {
+		return s.planPassLoop(ctx, pipe, system, turns, planContext, streaming, emit)
+	}
+
 	if !s.allowPassLoop || modeDec.Mode != modes.ModeGoal {
 		out, turns, err := s.pass(ctx, pipe, system, turns, streaming, emit)
 		if err != nil {
@@ -600,7 +608,7 @@ func (s *Session) compactBoundary(ctx context.Context, pipe *rolemanager.Pipelin
 		return nil, false
 	}
 	conv := transcript.Serialize(msgs, transcript.SerializeOptions{})
-	raw, err := pipe.Classifier.Classify(ctx, rolemanager.BuildCompactionPayload(conv))
+	raw, err := pipe.Classifier.Classify(ctx, rolemanager.BuildCompactionPayload(conv, s.settings.ClassifierCavemanEnabled()))
 	if err != nil {
 		return nil, false
 	}

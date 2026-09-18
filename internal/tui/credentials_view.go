@@ -288,4 +288,8 @@ func (a *App) handleCredentialKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (a *App) refreshCredentials() {
 	a.credentialState.sets = nil
+	// Storing, clearing or importing a credential changes which providers the
+	// pickers may offer, so the availability answer goes stale with the view's
+	// own cache.
+	a.invalidateAvailability()
 }

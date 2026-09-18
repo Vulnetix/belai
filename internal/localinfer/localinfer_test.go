@@ -28,6 +28,32 @@ func TestProbeRunningFindsHealthyServer(t *testing.T) {
 	}
 }
 
+// TestProbeRunningAcceptsV1SuffixedBase pins that a base already carrying the
+// OpenAI surface suffix probes /v1/models, not /v1/v1/models — every in-tree
+// caller holds the suffixed form.
+func TestProbeRunningAcceptsV1SuffixedBase(t *testing.T) {
+	var probed []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		probed = append(probed, r.URL.Path)
+		if r.URL.Path == "/v1/models" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	base := srv.URL + "/v1"
+	if got := ProbeRunning(context.Background(), []string{base}); got != base {
+		t.Fatalf("ProbeRunning = %q, want %q", got, base)
+	}
+	for _, p := range probed {
+		if p != "/v1/models" {
+			t.Fatalf("probed %q, want /v1/models", p)
+		}
+	}
+}
+
 func TestProbeRunningNoServer(t *testing.T) {
 	got := ProbeRunning(context.Background(), []string{"http://127.0.0.1:1"})
 	if got != "" {

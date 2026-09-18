@@ -149,3 +149,37 @@ func TestQuestionMarkMatchesOneRune(t *testing.T) {
 		t.Fatalf("? should not match two chars, want default allow, got %q", got)
 	}
 }
+
+func TestExplicitlyAllowsDefaultsToFalse(t *testing.T) {
+	s := Settings{}
+	if s.ExplicitlyAllows("Bash", "git status") {
+		t.Fatal("empty settings should not explicitly allow")
+	}
+	s = Settings{Allow: []string{"Read"}}
+	if s.ExplicitlyAllows("Bash", "anything") {
+		t.Fatal("Read rule should not allow Bash")
+	}
+}
+
+func TestExplicitlyAllowsMatchesSubject(t *testing.T) {
+	s := Settings{Allow: []string{"Bash(git status)", "Read"}}
+	if !s.ExplicitlyAllows("Bash", "git status") {
+		t.Fatal("exact Bash rule should explicitly allow")
+	}
+	if s.ExplicitlyAllows("Bash", "rm -rf /") {
+		t.Fatal("non-matching Bash command should not be explicitly allowed")
+	}
+}
+
+func TestHasAllowRuleReportsAnyAllowForTool(t *testing.T) {
+	s := Settings{Allow: []string{"Bash(git status)", "Read"}}
+	if !s.HasAllowRule("Bash") {
+		t.Fatal("expected HasAllowRule(Bash) = true")
+	}
+	if !s.HasAllowRule("Read") {
+		t.Fatal("expected HasAllowRule(Read) = true")
+	}
+	if s.HasAllowRule("Write") {
+		t.Fatal("expected HasAllowRule(Write) = false")
+	}
+}

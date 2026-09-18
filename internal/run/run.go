@@ -1353,6 +1353,10 @@ type Result struct {
 	// GoalSentinel is how a goal-mode pass loop ended (empty in agent/plan
 	// mode). Passes is how many passes the loop ran.
 	GoalSentinel rolemanager.GoalSentinel
+	// PlanSentinel is how a plan-mode pass loop ended (empty in agent/goal
+	// mode). It is kept separate from GoalSentinel so the two modes' verdicts
+	// never share a field or a presentation.
+	PlanSentinel rolemanager.PlanSentinel
 	Passes       int
 }
 

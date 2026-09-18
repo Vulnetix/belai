@@ -129,30 +129,46 @@ func IsWriteTool(name string) bool { return writeTools[strings.ToLower(name)] }
 // BashAllowed reports whether a bash command is within the read-only allowlist.
 // It forwards to internal/tools, the single source of truth; the read-only
 // Bash tool and the read-only Git native share one parser and one word list.
-//
-// Plan mode no longer consults it: Bash is absent from the plan-mode tool
-// surface entirely, so there is no command there to allow. It remains
-// exported because the read-only Bash tool and the Git native still gate on
-// it, and because callers outside plan mode ask the same question.
 func BashAllowed(command string) bool { return tools.BashAllowed(command) }
 
-// ToolAllowed reports whether a tool call may proceed. In plan mode write
-// tools are disabled and Bash is disabled outright — read-only or not — so
-// investigation goes through the tools whose argument shape is fixed (Read,
-// Grep, Glob, and the native read-only catalogue). Other tools remain active.
-// Names are case-folded, so a registered "Bash" cannot slip past a lowercase
-// comparison.
+// ToolAllowed reports whether a tool call may proceed. The order is:
+//   - outside plan mode: allow;
+//   - guardrails off: allow everything, including write tools and Bash;
+//   - write tools: deny;
+//   - Bash: allow only when the user's permission rules explicitly allow it
+//     AND the command is read-only;
+//   - everything else: allow.
 //
-// This is the enforcement half of the plan-mode surface; Registry.Plan is the
-// advertisement half. They must agree: a tool the registry still offers but
-// this function refuses produces a call the model cannot understand being
+// This is the enforcement half of the plan-mode surface; Registry.PlanWith is
+// the advertisement half. They must agree: a tool the registry still offers
+// but this function refuses produces a call the model cannot understand being
 // denied.
-func ToolAllowed(name string, args map[string]any, planEnabled bool) bool {
+func ToolAllowed(name string, args map[string]any, planEnabled bool, s tools.PlanSurface) bool {
 	if !planEnabled {
+		return true
+	}
+	if s.GuardrailsOff {
 		return true
 	}
 	if IsWriteTool(name) {
 		return false
 	}
-	return !strings.EqualFold(name, "bash")
+	if strings.EqualFold(name, "bash") {
+		cmd, _ := toolsArgString(args, "command")
+		return s.Perms.ExplicitlyAllows("Bash", cmd) && tools.BashAllowed(cmd)
+	}
+	return true
+}
+
+// toolsArgString extracts a string argument from a tool call.
+func toolsArgString(args map[string]any, key string) (string, bool) {
+	if args == nil {
+		return "", false
+	}
+	v, ok := args[key]
+	if !ok {
+		return "", false
+	}
+	s, ok := v.(string)
+	return s, ok
 }

@@ -11,7 +11,8 @@ func TestStructuredPayloadsOverrideClassifierBudget(t *testing.T) {
 		name    string
 		payload ClassifierPayload
 	}{
-		{"compaction", BuildCompactionPayload("<conversation>")},
+		{"compaction", BuildCompactionPayload("<conversation>", false)},
+		{"compaction caveman", BuildCompactionPayload("<conversation>", true)},
 		{"clarify", BuildClarifyPayload(ClarifyInput{Prompt: "p", Findings: "f", Round: "1"})},
 	}
 	for _, tc := range cases {
@@ -28,11 +29,15 @@ func TestStructuredPayloadsOverrideClassifierBudget(t *testing.T) {
 // default (run.ClassifierMaxTokens) applies.
 func TestSentinelPayloadsUseDefaultClassifierBudget(t *testing.T) {
 	cases := map[string]ClassifierPayload{
-		"security":     BuildClassifierPayload("untrusted tool output"),
-		"mode":         BuildModeClassifierPayload("classify my prompt"),
-		"session name": BuildSessionNamePayload("first user message"),
+		"security":             BuildClassifierPayload("untrusted tool output"),
+		"mode":                 BuildModeClassifierPayload("classify my prompt"),
+		"session name":         BuildSessionNamePayload("first user message", false),
+		"session name caveman": BuildSessionNamePayload("first user message", true),
 		"goal evaluator": BuildGoalEvalPayload(GoalEvalInput{
 			Goal: "g", Todos: "t", Evidence: "e",
+		}),
+		"plan evaluator": BuildPlanEvalPayload(PlanEvalInput{
+			Context: "c", Todos: "t", Evidence: "e",
 		}),
 		"agent loop evaluator": BuildAgentEvalPayload("goals", "output"),
 	}

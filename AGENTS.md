@@ -22,18 +22,21 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   (delimiter markup removed) before it can be promoted, and none of them ever
   enters a system/agent/tools block.
 - **Arbitrary content goes through the classifier.** `Bash` (an arbitrary
-  command), `WebFetch` and `WebSearch` (text written off this machine), and
-  `Read` (a file's bytes) all classify, unconditionally. Do not add an
-  exemption for any of them.
+  command), `WebFetch` and `WebSearch` (text written off this machine),
+  `Read` (a file's bytes), `GH`/`Glab` results (`KindRemote`, third-party
+  repository text), and `RepoRead` (`KindRead`) all classify,
+  unconditionally. Do not add an exemption for any of them.
 - **Shaped, controlled results are sanitized only.** `Grep`, `Glob`, `Write`,
   `Edit`, and the native catalogue return output whose shape the harness
   knows — `path:line:text`, a list of paths, a confirmation it composed
   itself, a fixed argv's output — so they skip the round trip. A kind absent
   from `tools.classifierKinds` is sanitize-only, so adding a tool whose
   content is arbitrary means adding its kind there.
-- **Plan mode has no Bash.** Plan mode advertises and enforces the same
-  narrowed surface (`Registry.Plan` and `modes.ToolAllowed`): no mutating
-  tools, and no `Bash` at all, read-only or otherwise.
+- **Plan mode has no Bash by default.** Plan mode advertises and enforces
+  the fail-closed surface (`Registry.PlanWith` and `modes.ToolAllowed`):
+  no mutating tools and no `Bash`. A read-only `Bash` returns only when an
+  explicit permission allow rule opts into it, and guardrails off restores the
+  full surface.
 - **Delimiters are sealed.** Every harness delimiter carries a random nonce
   plus a SHA-256 integrity hash of its enclosed content. On egress, any block
   lacking a nonce, carrying an unknown nonce, or failing its integrity hash is

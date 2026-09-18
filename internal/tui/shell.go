@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/vulnetix/signet/internal/modes"
+	"github.com/vulnetix/signet/internal/permissions"
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
@@ -75,7 +76,9 @@ func (a *App) handleShell(input string) tea.Cmd {
 		return nil
 	}
 
-	if !modes.ToolAllowed("bash", map[string]any{"command": cmd}, a.mode == "plan") {
+	perms := permissions.From(a.settings.Permissions.Allow, a.settings.Permissions.Ask, a.settings.Permissions.Deny)
+	surface := tools.PlanSurface{GuardrailsOff: !a.guardrailsEnabled(), Perms: perms}
+	if !modes.ToolAllowed("bash", map[string]any{"command": cmd}, a.mode == "plan", surface) {
 		a.addSystem("shell command not allowed in plan mode: " + cmd)
 		return nil
 	}
