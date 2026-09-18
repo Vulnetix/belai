@@ -235,8 +235,10 @@ The TUI composer accepts files with `@path` (`internal/tui/attach.go`). A
 scrolling, filterable file chooser (`internal/tui/filepick.go`) appears when
 the user types `@` in chat view; typing narrows the list, and `up`/`down`
 move the highlight while `right`/`tab`/`enter` insert the highlighted path.
-`esc` or `left` closes the chooser; the next keystroke reopens it. `@agent:`
-in agent mode opens the agent picker instead.
+`esc` or `left` closes the chooser; the next keystroke reopens it. `@` is
+now reserved for file references in the TUI, so `@agent:` is filtered like any
+other prefix and is only interpreted as a named-agent directive by the role
+manager when it appears in the submitted prompt.
 
 Attachment admission pipeline:
 
@@ -1248,10 +1250,10 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 | `shift+enter` | Insert a newline. bubbletea has no shift+enter key type, so it arrives one of two ways and `Editor.Update` accepts both: under the kitty protocol the CSI-u translator folds every modified enter onto `ctrl+j`, and without it the terminal sends ESC+CR, which decodes as `enter` carrying the alt flag. That flag is a terminal encoding, not a chord anyone presses, so it is matched by key type rather than bound as an alt keycap |
 | `up` / `down` | Browse prompt history and prompt library. Library entries come first and their names show as a chip strip above the composer: `tab` cycles the named prompts, `right` accepts the loaded one into the composer, `enter` sends it. Typing — like any edit key — leaves the browse cycle and edits the loaded prompt |
 | `f6` | Save the current prompt to the project prompt library |
-| `tab` | Move the highlight through the slash-command hints, or — with no `/` popup, in agent mode — through the agent picker. It never writes into the prompt. While browsing the prompt library it loads the next named prompt instead |
-| `right` / `enter` | Accept the highlighted hint (or the first, for `right` with nothing highlighted); in the agent picker, engage the highlighted agent; while browsing the prompt library, accept the loaded prompt into the composer (`right`) or send it (`enter`). Without a highlight, `right` is the cursor key and `enter` sends |
+| `tab` | Move the highlight through the slash-command hints, or — when the agent picker is open in agent mode — through the agent candidates. It never writes into the prompt. While browsing the prompt library it loads the next named prompt instead |
+| `right` / `enter` | Accept the highlighted hint (or the first, for `right` with nothing highlighted); when the agent picker is open, engage the highlighted agent; while browsing the prompt library, accept the loaded prompt into the composer (`right`) or send it (`enter`). Without a highlight, `right` is the cursor key and `enter` sends, or opens the agent picker in agent mode if no agent is engaged |
 | `ctrl+g` | Start the highlighted `↻` background-agent definition as a background agent |
-| `esc` (with a highlight) | Drop the highlight, keeping the popup or strip on screen |
+| `esc` (with a highlight) | Drop the highlight, keeping the popup on screen; close the agent picker |
 | `enter` (while working) | Steer the running turn with a new user message |
 | mouse wheel / `pgup` / `pgdown` / `shift+up` / `shift+down` | Scroll the transcript (detaches auto-follow) |
 | left drag over the transcript | Select a character range (highlighted live); release copies the clean text |
@@ -1279,31 +1281,42 @@ binding needs a line there as well as in this document.
 ### Prompt syntax
 
 - `@path` or `@"path with spaces"` attaches the contents of a file after
-  classification. Use `@agent:name` to engage a named agent instead.
+  classification. `@agent:name` in the submitted prompt is interpreted by
+  the role manager as a named-agent directive; it no longer opens the TUI
+  agent picker.
 - `!cmd` executes a local `Bash` command (full shell by default; read-only
   in plan mode, or whenever `read_only` is set) and sends the output to
   the model under the `signet:debug` profile.
 
 ### Agent picker
 
-In agent mode the composer carries a strip of the agents that can carry the
+In agent mode the composer can show a strip of the agents that can carry the
 turn, drawn from both trees:
 
 | Row | Source | Marker |
 | --- | ------ | ------ |
+| built-in | embedded `signet:` profile | `◈`, muted |
 | user profile | `internal/profiles` (flat `Name`/`Content`) | none, keycap bright |
 | background definition | `internal/agentprofile` | `↻`, amber |
-| built-in | embedded `signet:` profile | `◈`, muted |
 
-A flat profile owns a shared name — it is what `CarrierOptions` resolves
-first — so a background definition of the same name is not offered twice.
+`signet:debug` is the default agent and is selected first whenever the picker
+opens. A flat profile owns a shared name — it is what `CarrierOptions`
+resolves first — so a background definition of the same name is not offered
+twice.
 
-The strip is the slash popup's sibling and shares its keys: `tab` highlights
+The picker is opened in two ways:
+
+- Type `/agent` with no argument and press `enter`.
+- Press `enter` in agent mode while no agent is engaged.
+
+Once open, the strip behaves like the slash popup's sibling: `tab` highlights
 the next candidate (ending on a `(none)` entry that clears the selection),
-`enter` or `right` engages the highlighted one, `esc` drops the highlight.
-Typing `@name` — or `@agent:name` — filters the strip, and the filter text is
-removed from the prompt when a candidate is engaged. The slash popup wins the
-strip and `tab` whenever both could show.
+`enter` or `right` engages the highlighted one, `esc` closes the picker.
+Typing no longer filters the strip; `@` in the composer belongs to the file
+chooser, so pressing `enter` with no agent engaged opens the picker instead
+of sending a turn without a carrier. The slash popup wins the strip and
+`tab` whenever both could show, and the file chooser wins whenever an
+`@` prefix is active.
 
 `ctrl+g` is the second verb, and only background definitions answer it: it
 starts the highlighted definition as a background agent (`bgagent.Manager`),
@@ -1319,16 +1332,37 @@ engaged agent from plan mode would silently drop the mode the user picked.
 Outside agent mode the selection goes dormant rather than being discarded
 (`App.engagedAgent`, `App.engagedAgentTools` both return nothing): the footer
 hides it, the picker hides, the tool allow-list does not apply, and cycling
-`agent → plan → goal → agent` gets it back. `/profile <name>` engages the
-same field. The system prompt keeps its shape — the engaged text is the
-single carrier block (`prompt.CarrierProfile`), so the identity block naming
-Signet, the provider and the model still opens the prompt. For a background
-definition the carrier text is its `system_prompt`, resolved by
+`agent → plan → goal → agent` gets it back. `/profile <name>` and `/agent`
+engage the same field. The system prompt keeps its shape — the engaged text
+is the single carrier block (`prompt.CarrierProfile`), so the identity block
+naming Signet, the provider and the model still opens the prompt. For a
+background definition the carrier text is its `system_prompt`, resolved by
 `CarrierOptions` falling back to `agentprofile.Load`, and its `tools`
 allow-list narrows the foreground session's registry the same way
 `bgagent.buildSession` narrows it. Its `mode`, `schedule` and
 `max_iterations` are background-loop settings and do not apply in the
 foreground.
+
+**Edge cases and business rules.**
+
+- The picker is only visible in agent mode, only on the chat view, and only
+  when no slash-completion popup or file chooser is active. An active `@`
+  prefix hides the agent picker because the file chooser owns `@`.
+- Opening the picker sets the highlight to `signet:debug` when it exists; if
+  the default built-in is missing, the first available candidate is selected.
+- Tab from a cold state (no highlight) lands on the first candidate; tab from
+  the last candidate lands on `(none)`; tab again wraps to the first
+  candidate. `(none)` only renders once an agent is engaged, or after the
+  user has tabbed onto it.
+- Accepting an agent closes the picker and leaves the prompt text untouched;
+  a second `enter` sends the turn. Accepting `(none)` clears an engaged agent
+  but leaves the picker closed.
+- If the picker is open and the user keeps typing, the highlight is preserved
+  so the selection is stable. The picker only closes on `esc`, on accepting a
+  candidate, or when the file chooser takes precedence.
+- `loadAgents` reloads the candidate list from disk; a new user profile or
+  background definition appears the next time the picker opens, or
+  immediately after `/clear` starts a new session.
 
 ### Cursor motion in the composer
 

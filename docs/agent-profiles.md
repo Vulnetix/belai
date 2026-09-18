@@ -126,6 +126,7 @@ second time. A bounded loop hid that; a restarting one compounds it every pass.
 
 | Command | Effect |
 | ------- | ------ |
+| `/agent` | Open the agent picker to choose a profile for agent-mode turns |
 | `/agent create <description>` | Build and save a new agent profile |
 | `/agent edit <name>` | Open an existing profile in the agent editor |
 | `/agent list` | Show every discovered profile, its file path, and any running state |
@@ -187,9 +188,14 @@ trees, marking definitions from this one with `↻`, and offers two verbs:
 | `enter` / `right` | Engage the definition for the session's agent-mode turns: its `system_prompt` becomes the system prompt's carrier block and its `tools` allow-list narrows the session registry, the same narrowing `Manager.buildSession` applies. `mode`, `schedule`, `monitor_condition`, `reflection` and `max_iterations` are loop settings and do not apply in the foreground. |
 | `ctrl+g` | Start it as a background agent, exactly as `/agent start <name>` does. It does not touch the prompt in the composer. |
 
+The picker is opened with `/agent` (no argument) or by pressing `enter` in
+agent mode while no agent is engaged. `@agent:<name>` no longer opens the
+picker in the TUI; it is now a prompt-level directive interpreted by the role
+manager, or a literal file-chooser filter if typed at the end of a line.
+
 Engaging resolves through `agent.CarrierOptions`, which tries
 `profiles.Load` first and falls back to `agentprofile.Load` — so
-`@agent:<name>` and `/profile <name>` reach these definitions too. A flat
+`@agent:<name>` and `/profile <name>` still reach these definitions. A flat
 profile owns a shared name, and the picker drops the shadowed definition
 rather than offering a row that would engage the other file.
 

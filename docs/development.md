@@ -366,18 +366,20 @@ very start or end of the text. Confirm `home`/`end` (`fn+left`/`fn+right`)
 still jump to the ends of the logical line, and that a long soft-wrapped line
 is walked by word without the wrap points acting as boundaries.
 
-**Agent picker.** In the TUI in agent mode, confirm the strip above the prompt
-lists your profiles, the `↻` background-agent definitions, and the `◈`
-built-ins. Press `tab` repeatedly and confirm the highlight walks every
+**Agent picker.** In the TUI in agent mode, press `enter` while no agent is
+engaged and confirm the strip above the prompt opens with `signet:debug`
+selected. Confirm `/agent` (no argument) also opens it. The strip lists
+built-ins first (`◈`), then user profiles, then `↻` background-agent
+definitions. Press `tab` repeatedly and confirm the highlight walks every
 candidate, ends on `(none)`, wraps, and never writes into the prompt; that
 `enter` engages the highlighted one and shows it in the footer chip rather
-than sending the turn; that `enter` with nothing highlighted still sends; and
-that `right` moves the cursor until something is highlighted. Type `@` and a
-partial name to filter, engage, and confirm the `@…` text is removed from the
-prompt. Press `ctrl+g` on a `↻` row and confirm the agent starts in the
-background; on a flat profile, confirm it says so instead. Then `shift+tab`
-into plan and goal mode and confirm the chip drops the agent name and the
-strip disappears, and that returning to agent mode brings both back.
+than sending the turn; and that `right` moves the cursor until something is
+highlighted. Type `@` and confirm the file chooser opens instead of the agent
+picker; type `@agent:` and confirm it is treated as a file-chooser filter,
+not as the agent picker. Press `ctrl+g` on a `↻` row and confirm the agent
+starts in the background; on a flat profile, confirm it says so instead. Then
+`shift+tab` into plan and goal mode and confirm the chip drops the agent name
+and the strip disappears, and that returning to agent mode brings both back.
 
 **Slash completion.** Type `/c`, then `tab` several times, and confirm the
 highlight cycles through every match instead of sticking on the second one —
