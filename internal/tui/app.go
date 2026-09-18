@@ -275,6 +275,7 @@ type App struct {
 	agentState      agentViewState
 	classifierState classifierViewState
 	planReview      planReviewState
+	resumeState     resumeViewState
 
 	// which providers the pickers may offer, filled by an async probe
 	avail providerAvailability
@@ -1305,6 +1306,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case modelsFetchedMsg:
 		return a, a.handleModelsFetched(m)
+
+	case sessionsScannedMsg:
+		return a, a.handleSessionsScanned(m)
 
 	case attachValidatedMsg:
 		return a, a.handleAttachValidated(m)

@@ -215,6 +215,12 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("compact", "summarise the session into a new one", nil, func(a *App, arg string) tea.Cmd {
 		return a.compactCmd()
 	})
+	r.Register("resume", "resume a session by id or browse sessions on disk", nil, func(a *App, arg string) tea.Cmd {
+		if strings.TrimSpace(arg) != "" {
+			return a.resumeByID(arg)
+		}
+		return a.push(viewResume)
+	})
 	r.Register("rename", "rename this session", nil, func(a *App, arg string) tea.Cmd {
 		return a.renameSession(arg)
 	})
