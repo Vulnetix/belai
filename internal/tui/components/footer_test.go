@@ -265,6 +265,35 @@ func TestFooterHasNoCostLabel(t *testing.T) {
 	}
 }
 
+// TestFooterSessionSpan pins the geometry the TUI hit-tests: the session
+// segment's column range on line 2 must slice the rendered line to exactly
+// the plain session text.
+func TestFooterSessionSpan(t *testing.T) {
+	f := Footer{Session: "abcd1234", Tokens: 42, Model: "gpt-5", Provider: "openai", Mode: "agent", Width: 120}
+	col, width, ok := f.SessionSpan()
+	if !ok {
+		t.Fatal("expected a session segment")
+	}
+	v := f.View()
+	lines := strings.Split(v, "\n")
+	if len(lines) < 3 {
+		t.Fatalf("footer should have a line 2: %q", v)
+	}
+	line := ansi.Strip(lines[2])
+	if got := ansi.Cut(line, col, col+width); got != "session: abcd1234" {
+		t.Fatalf("session span slices to %q, want %q (line %q)", got, "session: abcd1234", line)
+	}
+}
+
+// TestFooterSessionSpanOff confirms the span is reported only when a session
+// segment renders.
+func TestFooterSessionSpanOff(t *testing.T) {
+	f := Footer{Session: "", SessionName: "", Width: 80}
+	if _, _, ok := f.SessionSpan(); ok {
+		t.Fatal("no session text should report no span")
+	}
+}
+
 // TestFooterHintLine pins the hover hint contract: the hint renders on its
 // own line, an empty hint still reserves that line (so the footer height
 // never changes with the pointer), and a non-empty hint is the last line.

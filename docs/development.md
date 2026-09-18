@@ -371,7 +371,9 @@ tool row and confirm the footer's third line shows `ctrl+o expand all`. Press
 `ctrl+o` and confirm every truncated panel expands, the hint clears (the panel
 is no longer collapsed), and a second `ctrl+o` collapses them again. Scroll
 the transcript while hovering a panel and confirm the hint re-derives from the
-frame rather than sticking to a stale target. With `ui.mouse` off, confirm no
+frame rather than sticking to a stale target. Hover the footer's `session: …`
+text and confirm the hint shows `ctrl+x copy session id`; press `ctrl+x` and
+confirm the feedback copies the session id. With `ui.mouse` off, confirm no
 hint appears.
 
 **Agent picker.** In the TUI in agent mode, press `enter` while no agent is

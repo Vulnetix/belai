@@ -1211,21 +1211,27 @@ Business rules:
 
 ### Mouse hover hints
 
-The transcript is hover hit-tested, and the footer's third content line
-advertises what the pointer can do. The target is re-derived every frame
-(`App.recomputeHover`) from the last mouse position and the rendered frame's
-provenance, not stored on mouse motion, so it can never point at a panel the
-frame no longer shows: expanding with `ctrl+o`, clearing with `ctrl+l`, or a
-streaming delta all re-derive the target without another mouse event. With
-`ui.mouse` off no mouse events arrive, so the feature is inert — the same gate
-as drag-selection.
+The transcript and the footer's session segment are hover hit-tested, and the
+footer's third content line advertises what the pointer can do. The target is
+re-derived every frame (`App.recomputeHover`) from the last mouse position and
+the rendered frame's provenance, not stored on mouse motion, so it can never
+point at a panel the frame no longer shows: expanding with `ctrl+o`, clearing
+with `ctrl+l`, or a streaming delta all re-derive the target without another
+mouse event. With `ui.mouse` off no mouse events arrive, so the feature is
+inert — the same gate as drag-selection.
 
 - **Collapsed panel** — any truncated turn, reasoning panel, or tool row.
   Hovering shows `ctrl+o expand all`; the key is the same global toggle that
   collapses again when already expanded.
+- **Session segment** — the footer's `session: …` text (name when shown, else
+  the short id). Hovering shows `ctrl+x copy session id`, and `ctrl+x` copies
+  the full id from the chat view whether or not the pointer is there.
 
-The footer's height is constant (rule + two info lines + hint line), so
-showing or hiding a hint never shifts the viewport.
+The session hit-test is exact: `Footer.SessionSpan` mirrors the same layout
+math `Footer.View` uses, so the column range it reports is the rendered
+segment, right-aligned on footer line 2. The footer's height is constant
+(rule + two info lines + hint line), so showing or hiding a hint never shifts
+the viewport.
 
 ### Keybindings
 
@@ -1271,6 +1277,7 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 | `space` / `n` / `s` / `enter` | Use in the **Clarify** questionnaire view: select, add a note, skip the question, submit |
 | `ctrl+l` | Clear the transcript *view* — the session is kept |
 | `ctrl+o` | Toggle full output for all truncated turns and tool results |
+| `ctrl+x` | Copy the session id to the clipboard (hinted when hovering the footer's session segment) |
 | `ctrl+r` / `ctrl+t` | Toggle reasoning-panel / tool-row display for the session |
 | `f2` | Toggle the caveman voice rewrite, persisting to the scoped settings file; the footer `caveman:` slot updates in the same frame |
 | `f3` | Toggle guardrails (the posture gates), from any screen |

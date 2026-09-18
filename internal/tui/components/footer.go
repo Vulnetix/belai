@@ -97,6 +97,26 @@ func (f *Footer) View() string {
 	}
 	line1 := strings.Join(line1Parts, MutedStyle.Render("  ·  "))
 
+	left, pad, right, _, _, _ := f.line2Layout()
+	line2 := left
+	if right != "" {
+		line2 = left + strings.Repeat(" ", pad) + right
+	}
+
+	rule := Rule(f.Width)
+	if line1 != "" {
+		return rule + "\n" + line1 + "\n" + line2 + "\n" + MutedStyle.Render(f.Hint)
+	}
+	return rule + "\n" + line2 + "\n" + MutedStyle.Render(f.Hint)
+}
+
+// line2Layout computes the footer's second content line. It returns the
+// rendered left group, the padding inserted before the right group, the
+// rendered right group, and the column range of the session segment within
+// that line (for hover hit-testing; ok is false when no session segment
+// renders). The session segment is always the first token of the right group,
+// so its column is width(left)+pad and its width is the plain segment width.
+func (f *Footer) line2Layout() (left string, pad int, right string, sessionCol, sessionWidth int, sessionOK bool) {
 	parts := []string{}
 	if f.Provider != "" {
 		parts = append(parts, MutedStyle.Render(f.Provider))
@@ -112,7 +132,7 @@ func (f *Footer) View() string {
 		parts = append(parts, chips)
 	}
 	parts = append(parts, f.cavemanSegment())
-	left := strings.Join(parts, MutedStyle.Render(" · "))
+	left = strings.Join(parts, MutedStyle.Render(" · "))
 
 	ctxSeg := f.contextSegment()
 	ctxBar := f.contextBar()
@@ -123,32 +143,39 @@ func (f *Footer) View() string {
 	if budget < 12 {
 		budget = 12
 	}
-	session := f.sessionSegment(budget)
+	sessionPlain := f.sessionSegment(budget)
 
 	rightParts := []string{}
-	if session != "" {
-		rightParts = append(rightParts, MutedStyle.Render(session))
+	if sessionPlain != "" {
+		rightParts = append(rightParts, MutedStyle.Render(sessionPlain))
+		sessionOK = true
 	}
 	if ctxSeg != "" {
 		rightParts = append(rightParts, ctxSeg)
 	}
 	rightParts = append(rightParts, ctxBar)
-	right := strings.Join(rightParts, sep)
+	right = strings.Join(rightParts, sep)
 
-	line2 := left
+	pad = 1
 	if right != "" {
-		pad := f.Width - lipgloss.Width(left) - lipgloss.Width(right)
+		pad = f.Width - lipgloss.Width(left) - lipgloss.Width(right)
 		if pad < 1 {
 			pad = 1
 		}
-		line2 = left + strings.Repeat(" ", pad) + right
 	}
+	if sessionOK {
+		sessionCol = lipgloss.Width(left) + pad
+		sessionWidth = visibleLen(sessionPlain)
+	}
+	return left, pad, right, sessionCol, sessionWidth, sessionOK
+}
 
-	rule := Rule(f.Width)
-	if line1 != "" {
-		return rule + "\n" + line1 + "\n" + line2 + "\n" + MutedStyle.Render(f.Hint)
-	}
-	return rule + "\n" + line2 + "\n" + MutedStyle.Render(f.Hint)
+// SessionSpan reports the column range of the session segment on the footer's
+// second content line (footer-internal line index 2), for mouse hit-testing.
+// ok is false when no session segment renders.
+func (f *Footer) SessionSpan() (col, width int, ok bool) {
+	_, _, _, col, width, ok = f.line2Layout()
+	return col, width, ok
 }
 
 // permissionChips renders the permission controls. Both off collapses to a

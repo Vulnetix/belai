@@ -1427,6 +1427,10 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		a.expandAll = !a.expandAll
 		a.follow = true
 		return nil
+	case "ctrl+x":
+		// Copy the full session id. The hint is shown on the footer's session
+		// segment, but the key works from the chat view without a hover too.
+		return a.copySessionID()
 	case "esc":
 		// A live selection is cleared first, ahead of the existing esc
 		// behaviour: the first esc dismisses the highlight, the second does

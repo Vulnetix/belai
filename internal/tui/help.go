@@ -45,6 +45,7 @@ func keySections() []keySection {
 			{"f6", "save the prompt to the library"},
 			{"ctrl+l", "clear the transcript view; the session is kept"},
 			{"ctrl+o", "expand or collapse every truncated output"},
+			{"ctrl+x", "copy the session id to the clipboard"},
 		}},
 		{"slash completions (while the / popup is open)", []keyBinding{
 			{"tab", "highlight the next completion, wrapping at the end"},
