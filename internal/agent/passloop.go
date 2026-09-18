@@ -62,8 +62,10 @@ const (
 	continuationDirective = "The tool budget for this turn was reached. Report the work done so far and what remains. If more tool calls are needed to finish the work, make them now; otherwise give the final answer."
 	// goalAckDirective is injected on the first goal pass so the model
 	// acknowledges the objective before working: restate it as concrete
-	// deliverables, name the verification surface, and list the first actions.
-	goalAckDirective = "Restate the objective as concrete deliverables, name how completion will be verified, and list the first actions you will take."
+	// deliverables, name the verification surface, and list the first actions,
+	// then start tracking and working in the same pass rather than spending it
+	// on an acknowledgement alone.
+	goalAckDirective = "Restate the objective as concrete deliverables, name how completion will be verified, and list the first actions you will take. Write a planning todo list under a 'Plan:' header (numbered steps), then begin the first step. Mark each step complete with [DONE:n] in your reply as you finish it."
 )
 
 // passLedger is the loop-local decision state of one goal pass loop. Pass
@@ -295,17 +297,19 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 				Todos:    l.list.Render(),
 				Evidence: sanitize.Sanitize(out.reply),
 			})
+			malformed := false
 			if evalErr != nil {
 				if !errors.Is(evalErr, rolemanager.ErrMalformedGoalEval) {
 					return run.Result{Passes: l.passes}, evalErr
 				}
+				malformed = true
 				l.malformedStreak++
 				if l.malformedStreak >= 2 {
 					return run.Result{Passes: l.passes, GoalSentinel: sentinel},
 						fmt.Errorf("goal pass loop stopped: %d consecutive malformed evaluator replies", l.malformedStreak)
 				}
 			}
-			emit(Event{Kind: EventGoalEvalKind, Pass: l.passes, GoalSentinel: sentinel})
+			emit(Event{Kind: EventGoalEvalKind, Pass: l.passes, GoalSentinel: sentinel, Malformed: malformed})
 			if sentinel == rolemanager.GoalComplete {
 				if l.verificationPasses == 0 {
 					l.verificationArmed = true
@@ -378,7 +382,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 			// Malformed output fails closed to GOAL_PARTIAL (one garbled reply
 			// is noise); two in a row is a broken evaluator.
 			l.malformedStreak++
-			emit(Event{Kind: EventGoalEvalKind, Pass: l.passes, GoalSentinel: sentinel})
+			emit(Event{Kind: EventGoalEvalKind, Pass: l.passes, GoalSentinel: sentinel, Malformed: true})
 			if l.malformedStreak >= 2 {
 				return run.Result{Passes: l.passes, GoalSentinel: sentinel},
 					fmt.Errorf("goal pass loop stopped: %d consecutive malformed evaluator replies", l.malformedStreak)

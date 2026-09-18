@@ -40,6 +40,11 @@ func TestParseSentinelValid(t *testing.T) {
 	}{
 		{"SAFE", SentinelSafe},
 		{"  SAFE\n", SentinelSafe},
+		{"SAFE.", SentinelSafe},
+		{"**SAFE**", SentinelSafe},
+		{"`SAFE`", SentinelSafe},
+		{"```\nSAFE\n```", SentinelSafe},
+		{"<thinking>…</thinking>\nSAFE", SentinelSafe},
 		{"PROMPT_INJECTION", SentinelPromptInjection},
 		{"JAILBREAK", SentinelJailbreak},
 		{"DATA_EXTRACTION", SentinelDataExtraction},
@@ -61,7 +66,6 @@ func TestParseSentinelRejectsMalformed(t *testing.T) {
 		"",
 		"safe",
 		"sAfE",
-		"SAFE.",
 		"yes",
 		"the content is safe",
 		"SAFE PROMPT_INJECTION",
@@ -70,6 +74,35 @@ func TestParseSentinelRejectsMalformed(t *testing.T) {
 	for _, in := range bad {
 		if _, err := ParseSentinel(in); err == nil {
 			t.Fatalf("ParseSentinel(%q) expected error", in)
+		}
+	}
+}
+
+// The shared normalizer/matcher accepts only reasoning wrappers and markdown
+// around an otherwise-standalone token. A token inside prose, or ambiguity,
+// still fails closed.
+func TestMatchSentinelNormalizationTable(t *testing.T) {
+	allowed := []string{"SAFE", "GOAL_PARTIAL", "GOAL_COMPLETE"}
+	cases := []struct {
+		raw  string
+		want string
+		ok   bool
+	}{
+		{"<thinking>…</thinking>\nGOAL_PARTIAL", "GOAL_PARTIAL", true},
+		{"**GOAL_PARTIAL**", "GOAL_PARTIAL", true},
+		{"```\nSAFE\n```", "SAFE", true},
+		{"GOAL_PARTIAL or GOAL_COMPLETE", "", false},
+		{"maybe SAFE?", "", false},
+		{"<thinking>unterminated", "", false},
+	}
+	for _, c := range cases {
+		got, err := matchSentinel(c.raw, allowed)
+		if c.ok {
+			if err != nil || got != c.want {
+				t.Fatalf("matchSentinel(%q) = %q, %v; want %q", c.raw, got, err, c.want)
+			}
+		} else if err == nil {
+			t.Fatalf("matchSentinel(%q) = %q, want error", c.raw, got)
 		}
 	}
 }

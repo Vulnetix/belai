@@ -176,17 +176,44 @@ func TestGoalPassLoopCompleteDowngradedWithoutVerification(t *testing.T) {
 	}
 }
 
+// A reasoning-wrapped sentinel is a real verdict, not a malformed reply:
+// the evaluator normalizes away the thinking block and reads GOAL_COMPLETE.
+func TestGoalPassLoopAcceptsReasoningWrappedSentinel(t *testing.T) {
+	srv, _, _ := goalPassServer(t, goalPassOpts{eval: []string{"<thinking>…</thinking>GOAL_COMPLETE", "GOAL_COMPLETE"}})
+	defer srv.Close()
+	sess := newGoalPassSession(t, srv, true, 2)
+
+	res, err := sess.Run(context.Background(), "ship the thing")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.GoalSentinel != "GOAL_COMPLETE" {
+		t.Fatalf("GoalSentinel = %q, want GOAL_COMPLETE", res.GoalSentinel)
+	}
+	if res.Passes != 2 {
+		t.Fatalf("Passes = %d, want 2", res.Passes)
+	}
+}
+
 func TestGoalPassLoopTwoMalformedEvaluationsTerminate(t *testing.T) {
 	srv, _, _ := goalPassServer(t, goalPassOpts{eval: []string{"garbage", "also garbage"}})
 	defer srv.Close()
 	sess := newGoalPassSession(t, srv, true, 2)
 
-	_, err := sess.Run(context.Background(), "ship the thing")
+	var sawMalformed bool
+	_, err := sess.run(context.Background(), nil, TurnInput{Prompt: "ship the thing"}, false, func(e Event) {
+		if e.Kind == EventGoalEvalKind && e.Malformed {
+			sawMalformed = true
+		}
+	})
 	if err == nil {
 		t.Fatal("expected an error after two consecutive malformed evaluations")
 	}
 	if !strings.Contains(err.Error(), "malformed") {
 		t.Fatalf("error = %v, want consecutive-malformed termination", err)
+	}
+	if !sawMalformed {
+		t.Fatal("the malformed evaluator reply must be reported with Malformed set on the event")
 	}
 }
 

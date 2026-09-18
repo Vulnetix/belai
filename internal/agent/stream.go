@@ -168,6 +168,10 @@ type Event struct {
 	// PlanSentinel carries EventPlanEvalKind verdicts.
 	PlanSentinel rolemanager.PlanSentinel
 
+	// Malformed reports that the evaluator reply did not parse; the carried
+	// sentinel is the fail-closed substitute, not a verdict the model gave.
+	Malformed bool
+
 	// Pass carries the pass number for EventPassKind / EventGoalEvalKind.
 	Pass int
 

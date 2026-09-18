@@ -59,3 +59,37 @@ func TestNewClassifierHonorsPayloadMaxTokens(t *testing.T) {
 		t.Fatalf("override max_tokens = %d, want %d", maxTokens[1], rolemanager.ClassifierStructuredMaxTokens)
 	}
 }
+
+// TestClassifierReasoningFallback pins the reasoning-model contract: a reply
+// whose content is empty but whose reasoning_content holds the sentinel is
+// read from reasoning when AllowReasoningFallback is set (the sentinel
+// evaluators), and stays empty when it is not (the security classifier keeps
+// content-only parsing).
+func TestClassifierReasoningFallback(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"x","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"","reasoning_content":"GOAL_COMPLETE"},"finish_reason":"stop"}]}`)
+	}))
+	defer srv.Close()
+
+	cfg := Config{Provider: "openai", BaseURL: srv.URL, APIKey: "sk", Model: "test"}
+	c := NewClassifier(cfg, srv.Client())
+
+	got, err := c.Classify(context.Background(), rolemanager.ClassifierPayload{
+		System: "s", User: "u", AllowReasoningFallback: true,
+	})
+	if err != nil {
+		t.Fatalf("Classify with fallback: %v", err)
+	}
+	if got != "GOAL_COMPLETE" {
+		t.Fatalf("fallback verdict = %q, want GOAL_COMPLETE from reasoning", got)
+	}
+
+	got, err = c.Classify(context.Background(), rolemanager.ClassifierPayload{System: "s", User: "u"})
+	if err != nil {
+		t.Fatalf("Classify without fallback: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("security path must keep content-only parsing, got %q", got)
+	}
+}

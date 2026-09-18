@@ -30,6 +30,12 @@ type ClassifierPayload struct {
 	// builders (compaction, clarification, agent-profile generation) set a
 	// larger budget because their replies are multi-token JSON or summaries.
 	MaxTokens int
+	// AllowReasoningFallback reports that the reply is a single sentinel, so
+	// when a reasoning model returns empty content the sentinel may be read
+	// from the reasoning text instead. It is set by the sentinel builders
+	// (goal/plan/mode/agent evaluators) and left false for security and the
+	// structured builders, which keep content-only parsing.
+	AllowReasoningFallback bool
 }
 
 // ClassifierStructuredMaxTokens is the completion budget for classifier calls

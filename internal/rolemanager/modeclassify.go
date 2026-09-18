@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"regexp"
-	"strings"
 )
 
 // ModeSentinel is the strict single-token output of the operating-mode
@@ -19,16 +18,19 @@ const (
 )
 
 // ParseModeSentinel maps a raw classifier output to a ModeSentinel. It accepts
-// only an exact token (surrounding whitespace is trimmed) and rejects anything
-// else.
+// a token that stands alone after normalizing away reasoning blocks and
+// markdown wrappers, and rejects anything else.
 func ParseModeSentinel(raw string) (ModeSentinel, error) {
-	s := ModeSentinel(strings.TrimSpace(raw))
-	switch s {
-	case ModeAgent, ModePlan, ModeGoal, ModeUndetermined:
-		return s, nil
-	default:
+	s, err := matchSentinel(raw, []string{
+		string(ModeAgent),
+		string(ModePlan),
+		string(ModeGoal),
+		string(ModeUndetermined),
+	})
+	if err != nil {
 		return "", fmt.Errorf("malformed mode classifier output %q", raw)
 	}
+	return ModeSentinel(s), nil
 }
 
 // modeClassifierSystemPrompt instructs the classifier to answer with exactly
@@ -47,8 +49,9 @@ Reply with exactly one of these tokens:
 // block, no attachment contents, no referenced files.
 func BuildModeClassifierPayload(prompt string) ClassifierPayload {
 	return ClassifierPayload{
-		System: modeClassifierSystemPrompt,
-		User:   prompt,
+		System:                 modeClassifierSystemPrompt,
+		User:                   prompt,
+		AllowReasoningFallback: true,
 	}
 }
 
@@ -62,7 +65,7 @@ func ClassifyMode(ctx context.Context, c Classifier, prompt string) (ModeSentine
 	}
 	s, err := ParseModeSentinel(raw)
 	if err != nil {
-		record("mode_classify", string(ModeUndetermined), "", "malformed", 0)
+		record("mode_classify", string(ModeUndetermined), "", "malformed: "+traceSnippet(raw), 0)
 		return ModeUndetermined, nil
 	}
 	record("mode_classify", string(s), "", "", 0)

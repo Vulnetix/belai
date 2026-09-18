@@ -72,8 +72,9 @@ harness on behalf of the user, so they are harness-owned and legitimately
 
 Untrusted content is sent to a classifier model with a specialised system
 prompt and **no tools, no skills, and no agent block**. The classifier must
-answer with exactly one sentinel token. The sentinel is parsed strictly:
-anything that is not an exact token fails closed.
+answer with exactly one sentinel token. Parsing normalizes away reasoning
+wrappers and Markdown before matching: the token must still stand alone on a
+line, and anything else fails closed. See [Sentinel parsing](#sentinel-parsing).
 
 ### Security sentinels
 
@@ -85,6 +86,35 @@ anything that is not an exact token fails closed.
 | `DATA_EXTRACTION` | Training-data extraction / membership inference | **Warn** — do not promote | Live |
 | `MODEL_EXTRACTION` | Model extraction / model stealing | **Warn** — do not promote | Live |
 | _anything else_ | Malformed output (not one token) | **Warn** — fail closed | Live |
+
+### Sentinel parsing
+
+Every sentinel parser — security, mode, goal evaluator, plan evaluator, and
+agent-loop evaluator — shares one normalizer (`normalizeSentinelReply`) and one
+matcher (`matchSentinel`). A reasoning model that answers with a
+` thinking… response` block, a bolded token, or a fenced token is now read as
+the verdict it meant; a token mentioned inside prose is still rejected.
+
+| Input | Result |
+| ----- | ------ |
+| `<thinking>…</thinking>\nGOAL_PARTIAL` | `GOAL_PARTIAL` |
+| `**GOAL_PARTIAL**` | `GOAL_PARTIAL` |
+| `` ```\nSAFE\n``` `` | `SAFE` |
+| `SAFE.` | `SAFE` (trailing punctuation stripped) |
+| `GOAL_PARTIAL or GOAL_COMPLETE` | malformed — no standalone token |
+| `maybe SAFE?` | malformed — `maybe SAFE` is not a standalone token |
+| unterminated `<thinking>` | malformed — the unclosed block truncates the rest |
+
+Rules:
+
+- **Reasoning blocks** — ` thinking`, `<thinking>`, and `<reasoning>` blocks
+  are stripped; an unterminated block truncates the rest of the reply, so a
+  sentinel inside unclosed reasoning text is never read as a verdict.
+- **Standalone only** — after normalization a token is accepted only when it
+  equals a whole line. A chatty reply that mentions `SAFE` in prose is not a
+  verdict.
+- **Ambiguity fails closed** — zero tokens, or two different tokens on
+  separate lines, is an error. Two identical tokens collapse to one.
 
 ### Completion budget
 
@@ -103,8 +133,11 @@ into `content`. A 16-token cap consumed the whole budget mid-reasoning, leaving
 prompt as `MALFORMED`. The budget is large enough for a short reasoning
 preamble plus the token. Non-reasoning models still stop after the single
 token, so the wider budget costs them nothing. If a model still truncates
-(`finish_reason: length` with empty `content`), the strict parse fails closed
-to `MALFORMED` — refusal, never a forced verdict.
+(`finish_reason: length` with empty `content`), the sentinel evaluators
+(goal/plan/mode/agent) fall back to `reasoning_content` via
+`ClassifierPayload.AllowReasoningFallback`; the security classifier keeps
+content-only parsing, so an empty `content` there stays malformed — refusal,
+never a forced verdict.
 
 ### Classifier payload invariants
 
@@ -781,7 +814,7 @@ is read-only and the user reviews the plan before executing it.
 | `PLAN_COMPLETE` | The plan is researched and ready to execute | Mark the plan list complete and return the reply |
 | `PLAN_PARTIAL` | The plan advanced but is not ready | Grant another pass with the plan continuation directive |
 | `PLAN_NOT_STARTED` | No meaningful planning work yet | Inject the planning directive (the explore wave already ran, so there is no forced survey) |
-| _malformed output_ | — | Fails closed to `PLAN_PARTIAL`; two consecutive malformed replies stop the loop |
+| _malformed output_ | — | Fails closed to `PLAN_PARTIAL`; the TUI reports `plan evaluator: malformed reply (pass N)`; two consecutive malformed replies stop the loop |
 
 There are two completion paths that do not consult the evaluator:
 
@@ -887,7 +920,7 @@ be exactly one token.
 | `GOAL_COMPLETE` | Every todo item is done and the goal is achieved | Accepted only past the verification gate; otherwise downgraded to a verification pass |
 | `GOAL_PARTIAL` | Work advanced but the goal is not met | Grant another pass with a continuation directive |
 | `GOAL_NOT_STARTED` | No meaningful work has happened yet | Force a codebase survey (once), then inject the planning directive |
-| _malformed output_ | — | Fails closed to `GOAL_PARTIAL`; the streak is counted |
+| _malformed output_ | — | Fails closed to `GOAL_PARTIAL`; the TUI reports `goal evaluator: malformed reply (pass N)`; the streak is counted |
 
 ### Termination rules
 
@@ -934,6 +967,7 @@ something it wrote or read. Three mechanisms do that together:
 
 | Directive | Injected when |
 | --------- | ------------- |
+| Goal acknowledgement | The first goal pass — restate the objective as deliverables, name the verification surface, then write the plan under a `Plan:` header and begin step 1 in the same pass |
 | Planning | `GOAL_NOT_STARTED` — write a numbered plan under a `Plan:` header, then start step 1 |
 | Verification | An armed verification pass — re-check completed items against disk before continuing |
 | Continuation | `GOAL_PARTIAL` — continue from the rendered todo list state |

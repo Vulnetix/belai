@@ -519,10 +519,10 @@ relative path changes. That is the whole reason the move is allowed.
 
 `tools.Cwd` is the tracker. `tools.Default` builds one per registry and hands
 the same pointer to every path-taking tool, and `Registry.Cwd()` exposes it;
-every narrowing (`ReadOnly`, `Plan`, an agent profile's allowlist) carries the
-same pointer forward, because two trackers would mean two answers to "where am
-I". It is mutex-guarded, since read-only tools resolve paths from the
-concurrent fan-out.
+every narrowing (`ReadOnly`, `Plan`, an agent profile's allowlist via
+`Registry.Only`) carries the same pointer forward, because two trackers would
+mean two answers to "where am I". It is mutex-guarded, since read-only tools
+resolve paths from the concurrent fan-out.
 
 **Resolution rule**, which the `Cd` description states to the model:
 

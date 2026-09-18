@@ -2215,7 +2215,9 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		if m.Todos != nil {
 			a.setTodos(m.Todos)
 		}
-		if m.GoalSentinel != "" {
+		if m.Malformed {
+			a.addSystem(fmt.Sprintf("goal evaluator: malformed reply (pass %d) — continuing as %s", m.Pass, m.GoalSentinel))
+		} else if m.GoalSentinel != "" {
 			a.addSystem(fmt.Sprintf("goal evaluator: %s (pass %d)", m.GoalSentinel, m.Pass))
 		}
 		return a.nextAgent()
@@ -2223,7 +2225,9 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		if m.Todos != nil {
 			a.setTodos(m.Todos)
 		}
-		if m.PlanSentinel != "" {
+		if m.Malformed {
+			a.addSystem(fmt.Sprintf("plan evaluator: malformed reply (pass %d) — continuing as %s", m.Pass, m.PlanSentinel))
+		} else if m.PlanSentinel != "" {
 			a.addSystem(fmt.Sprintf("plan evaluator: %s (pass %d)", m.PlanSentinel, m.Pass))
 		}
 		return a.nextAgent()

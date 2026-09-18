@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 )
 
 // AgentVerdict is the strict single-token output of the agent-loop evaluator.
@@ -22,17 +21,20 @@ const (
 )
 
 // ParseAgentVerdict maps a raw evaluator output to an AgentVerdict. It accepts
-// only an exact token (surrounding whitespace is trimmed) and rejects anything
-// else. Malformed output fails closed to AgentPause — stop spending tokens,
-// wait for the user.
+// a token that stands alone after normalizing away reasoning blocks and
+// markdown wrappers, and rejects anything else. Malformed output fails closed
+// to AgentPause — stop spending tokens, wait for the user.
 func ParseAgentVerdict(raw string) (AgentVerdict, error) {
-	s := AgentVerdict(strings.TrimSpace(raw))
-	switch s {
-	case AgentContinue, AgentPause, AgentSleep, AgentStop:
-		return s, nil
-	default:
+	s, err := matchSentinel(raw, []string{
+		string(AgentContinue),
+		string(AgentPause),
+		string(AgentSleep),
+		string(AgentStop),
+	})
+	if err != nil {
 		return "", fmt.Errorf("malformed agent evaluator output %q: want a single verdict token", raw)
 	}
+	return AgentVerdict(s), nil
 }
 
 // agentEvalSystemPrompt instructs the loop evaluator to answer with exactly
@@ -51,8 +53,9 @@ Reply with exactly one of these tokens:
 func BuildAgentEvalPayload(profileGoals, recentOutput string) ClassifierPayload {
 	user := "Agent goals:\n" + profileGoals + "\n\nMost recent output:\n" + recentOutput
 	return ClassifierPayload{
-		System: agentEvalSystemPrompt,
-		User:   user,
+		System:                 agentEvalSystemPrompt,
+		User:                   user,
+		AllowReasoningFallback: true,
 	}
 }
 
@@ -73,7 +76,7 @@ func EvaluateAgent(ctx context.Context, c Classifier, profileGoals, recentOutput
 	}
 	s, err := ParseAgentVerdict(raw)
 	if err != nil {
-		record("agent_eval", string(AgentPause), "", "malformed", 0)
+		record("agent_eval", string(AgentPause), "", "malformed: "+traceSnippet(raw), 0)
 		return AgentPause, ErrMalformedAgentEval
 	}
 	record("agent_eval", string(s), "", "", 0)

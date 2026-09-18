@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 )
 
 // GoalSentinel is the strict single-token output of the goal evaluator.
@@ -22,18 +21,21 @@ const (
 )
 
 // ParseGoalSentinel maps a raw evaluator output to a GoalSentinel. It accepts
-// only an exact token (surrounding whitespace is trimmed) and rejects anything
-// else. A malformed reply is never treated as completion: the fail-closed
-// mapping is decided by the caller, which resolves a parse error to
-// GoalPartial so completion can never be claimed by accident.
+// a token that stands alone after normalizing away reasoning blocks and
+// markdown wrappers, and rejects anything else. A malformed reply is never
+// treated as completion: the fail-closed mapping is decided by the caller,
+// which resolves a parse error to GoalPartial so completion can never be
+// claimed by accident.
 func ParseGoalSentinel(raw string) (GoalSentinel, error) {
-	s := GoalSentinel(strings.TrimSpace(raw))
-	switch s {
-	case GoalComplete, GoalPartial, GoalNotStarted:
-		return s, nil
-	default:
+	s, err := matchSentinel(raw, []string{
+		string(GoalComplete),
+		string(GoalPartial),
+		string(GoalNotStarted),
+	})
+	if err != nil {
 		return "", fmt.Errorf("malformed goal evaluator output %q: want a single sentinel token", raw)
 	}
+	return GoalSentinel(s), nil
 }
 
 // GoalEvalInput is the untrusted evidence the goal evaluator is shown.
@@ -62,8 +64,9 @@ Reply with exactly one of these tokens:
 func BuildGoalEvalPayload(in GoalEvalInput) ClassifierPayload {
 	user := "Goal:\n" + in.Goal + "\n\nTodo list:\n" + in.Todos + "\n\nPass evidence digest:\n" + in.Evidence
 	return ClassifierPayload{
-		System: goalEvalSystemPrompt,
-		User:   user,
+		System:                 goalEvalSystemPrompt,
+		User:                   user,
+		AllowReasoningFallback: true,
 	}
 }
 
@@ -86,7 +89,7 @@ func EvaluateGoal(ctx context.Context, c Classifier, in GoalEvalInput) (GoalSent
 	}
 	s, err := ParseGoalSentinel(raw)
 	if err != nil {
-		record("goal_eval", string(GoalPartial), "", "malformed", 0)
+		record("goal_eval", string(GoalPartial), "", "malformed: "+traceSnippet(raw), 0)
 		return GoalPartial, ErrMalformedGoalEval
 	}
 	record("goal_eval", string(s), "", "", 0)

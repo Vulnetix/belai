@@ -246,7 +246,7 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 			// Malformed output fails closed to PLAN_PARTIAL (one garbled reply
 			// is noise); two in a row is a broken evaluator.
 			l.malformedStreak++
-			emit(Event{Kind: EventPlanEvalKind, Pass: l.passes, PlanSentinel: sentinel})
+			emit(Event{Kind: EventPlanEvalKind, Pass: l.passes, PlanSentinel: sentinel, Malformed: true})
 			if l.malformedStreak >= 2 {
 				return run.Result{Passes: l.passes, PlanSentinel: sentinel},
 					fmt.Errorf("plan pass loop stopped: %d consecutive malformed evaluator replies", l.malformedStreak)

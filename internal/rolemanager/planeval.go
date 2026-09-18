@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 )
 
 // PlanSentinel is the strict single-token output of the plan evaluator. It is
@@ -25,18 +24,21 @@ const (
 )
 
 // ParsePlanSentinel maps a raw evaluator output to a PlanSentinel. It accepts
-// only an exact token (surrounding whitespace is trimmed) and rejects anything
-// else. A malformed reply is never treated as completion: the fail-closed
-// mapping is decided by the caller, which resolves a parse error to
-// PlanPartial so completion can never be claimed by accident.
+// a token that stands alone after normalizing away reasoning blocks and
+// markdown wrappers, and rejects anything else. A malformed reply is never
+// treated as completion: the fail-closed mapping is decided by the caller,
+// which resolves a parse error to PlanPartial so completion can never be
+// claimed by accident.
 func ParsePlanSentinel(raw string) (PlanSentinel, error) {
-	s := PlanSentinel(strings.TrimSpace(raw))
-	switch s {
-	case PlanComplete, PlanPartial, PlanNotStarted:
-		return s, nil
-	default:
+	s, err := matchSentinel(raw, []string{
+		string(PlanComplete),
+		string(PlanPartial),
+		string(PlanNotStarted),
+	})
+	if err != nil {
 		return "", fmt.Errorf("malformed plan evaluator output %q: want a single sentinel token", raw)
 	}
+	return PlanSentinel(s), nil
 }
 
 // PlanEvalInput is the evidence the plan evaluator is shown.
@@ -69,8 +71,9 @@ Reply with exactly one of these tokens:
 func BuildPlanEvalPayload(in PlanEvalInput) ClassifierPayload {
 	user := "Session exploration context:\n" + in.Context + "\n\nPlan todo list:\n" + in.Todos + "\n\nPass evidence digest:\n" + in.Evidence
 	return ClassifierPayload{
-		System: planEvalSystemPrompt,
-		User:   user,
+		System:                 planEvalSystemPrompt,
+		User:                   user,
+		AllowReasoningFallback: true,
 	}
 }
 
@@ -93,7 +96,7 @@ func EvaluatePlan(ctx context.Context, c Classifier, in PlanEvalInput) (PlanSent
 	}
 	s, err := ParsePlanSentinel(raw)
 	if err != nil {
-		record("plan_eval", string(PlanPartial), "", "malformed", 0)
+		record("plan_eval", string(PlanPartial), "", "malformed: "+traceSnippet(raw), 0)
 		return PlanPartial, ErrMalformedPlanEval
 	}
 	record("plan_eval", string(s), "", "", 0)

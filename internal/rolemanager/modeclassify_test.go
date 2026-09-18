@@ -13,6 +13,7 @@ func TestParseModeSentinelValid(t *testing.T) {
 		want ModeSentinel
 	}{
 		{"AGENT", ModeAgent},
+		{"AGENT.", ModeAgent},
 		{"  PLAN\n", ModePlan},
 		{"GOAL", ModeGoal},
 		{"UNDETERMINED", ModeUndetermined},
@@ -29,7 +30,7 @@ func TestParseModeSentinelValid(t *testing.T) {
 }
 
 func TestParseModeSentinelRejectsMalformed(t *testing.T) {
-	for _, in := range []string{"", "agent", "AGENT.", "plan goal", "SAFE"} {
+	for _, in := range []string{"", "agent", "plan goal", "SAFE"} {
 		if _, err := ParseModeSentinel(in); err == nil {
 			t.Fatalf("ParseModeSentinel(%q) expected error", in)
 		}

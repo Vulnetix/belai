@@ -798,24 +798,32 @@ func NewClassifierWithRetry(cfg Config, client *http.Client, onRetry func(resili
 		if p.MaxTokens > 0 {
 			c.MaxTokens = p.MaxTokens
 		}
-		return chatWithRetry(ctx, c, p.System, p.User, client, onRetry)
+		a, err := chatWithRetryAssistant(ctx, c, p.System, p.User, client, onRetry)
+		if err != nil {
+			return "", err
+		}
+		text := a.Text
+		if p.AllowReasoningFallback && strings.TrimSpace(text) == "" {
+			text = a.Reasoning
+		}
+		return text, nil
 	})
 }
 
-func chatWithRetry(ctx context.Context, cfg Config, system, user string, client *http.Client, onRetry func(resilience.Attempt)) (string, error) {
+func chatWithRetryAssistant(ctx context.Context, cfg Config, system, user string, client *http.Client, onRetry func(resilience.Attempt)) (Assistant, error) {
 	return doChatWithPoolRetry(ctx, cfg, system, []Turn{{Role: "user", Content: user}}, client, nil, onRetry)
 }
 
-func doChatWithPoolRetry(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, pool *nonce.Pool, onRetry func(resilience.Attempt)) (string, error) {
+func doChatWithPoolRetry(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, pool *nonce.Pool, onRetry func(resilience.Attempt)) (Assistant, error) {
 	if pool == nil {
 		pool = nonce.New()
 	}
 	turns = egressTurns(turns, pool)
 	a, err := sendTurnsWithTools(ctx, cfg, system, turns, client, nil, nil, onRetry)
 	if err != nil {
-		return "", err
+		return Assistant{}, err
 	}
-	return a.Text, nil
+	return a, nil
 }
 
 // NewPipeline builds a rolemanager.Pipeline from the resolved classifier
