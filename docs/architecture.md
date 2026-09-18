@@ -185,8 +185,53 @@ Security rules for native tools:
 - Query-language arguments (`jq`/`yq` filters, `sed`/`awk` programs, `tr`
   sets) are data, not shell text; they are control-character gated and never
   interpolated into a shell `-c`.
-- Output is capped (64 KiB default) and run through the normal classifier
-  pipeline as untrusted content.
+- Output is capped (64 KiB default) and sanitized as untrusted content. It is
+  not classified: a native's argv is built by the harness from a fixed shape,
+  so it is on the sanitize-only side of
+  [Tool-result trust](#tool-result-trust).
+
+### Search and file-location tools
+
+`Grep` searches file **contents**; `Glob` finds files by **path**. Both report
+paths relative to the session root so a result can be handed straight back to
+`Read`, both are recursive from the search base, and both are capped (200
+matches or paths by default) with the cap applied after sorting so the
+truncated head is stable.
+
+`Glob` has two enumerators but one matcher. `fd` enumerates when it is
+installed and an in-process `filepath.WalkDir` does otherwise, but the pattern
+is always applied by the in-house `matchGlob` — `*`, `?`, and `[…]` inside one
+segment, `**` spanning zero or more segments.
+
+That split is not an optimisation, it is the fix for a bug that made **every
+recursive Glob return nothing**. `fd --glob` matches a separator-free pattern
+against the file *name* and rejects a pattern containing `/` outright:
+
+```
+[fd error]: The search pattern '**/*.go' contains a path-separation character
+and will not lead to any search results.
+```
+
+`fd` then exited non-zero, the error was swallowed, and the empty match list
+looked like a legitimate "no matches". Keeping the matcher in-process means
+the two backends cannot disagree about what a pattern means.
+
+Business rules and edge cases:
+
+- **The enumerators are made to agree.** `fd` runs with `--hidden`,
+  `--no-ignore`, and `--exclude .git`, so it enumerates exactly what the walk
+  enumerates. Without `--no-ignore` the same pattern would answer differently
+  depending on whether `fd` happened to be installed.
+- **`.git` is never enumerated** by either backend.
+- **`fd` failing falls back to the walk** — not installed, killed, or
+  erroring on this tree — so a real match can never be turned into an empty
+  answer. An empty tree is distinguished from a failure and is not re-walked.
+- **`path` scopes the pattern, not the report.** The pattern is matched
+  relative to `path`; the results are still reported relative to the session
+  root. With no `path`, the base is the current working directory.
+- **A `path` that escapes the root is an error**, not a silently clamped
+  search of the parent.
+- The `backend` meta field (`fd` or `walk`) records which enumerator ran.
 
 `internal/tools/capabilities.go` performs detection at session construction:
 local utilities by `$PATH`, cloud CLIs by `$PATH` plus a short, read-only auth

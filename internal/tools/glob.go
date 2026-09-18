@@ -11,23 +11,37 @@ import (
 	"strings"
 )
 
-// Glob lists files matching a glob pattern, preferring fd and falling back to
-// an in-process filepath.WalkDir with an in-house ** matcher (no new
-// dependency).
+// Glob lists files matching a glob pattern.
+//
+// Two enumerators exist — `fd` when it is installed, and an in-process
+// filepath.WalkDir otherwise — but only one matcher. fd is used purely to
+// enumerate candidate files; the pattern is applied by matchGlob in-process
+// for both backends. That split is deliberate: fd's own --glob matches a
+// pattern with no separator against the file name and rejects one that
+// contains "/" outright ("The search pattern '**/*.go' contains a
+// path-separation character and will not lead to any search results"), which
+// silently turned every recursive pattern into an empty result. Keeping the
+// matcher in-process means the two backends cannot disagree.
 type Glob struct {
 	Root       string
 	MaxResults int
 	fdPath     string // cached; "" when fd is unavailable
+	fdLooked   bool   // fd lookup already attempted
 }
 
 // Definition returns the static tool metadata.
 func (g *Glob) Definition() Definition {
 	return Definition{
-		Name:        "Glob",
-		Description: "List files matching a glob pattern (supports ** for recursion).",
+		Name: "Glob",
+		Description: "Find files by path pattern under the working directory. " +
+			"Returns matching file paths, one per line, relative to the working directory and sorted. " +
+			"Matches whole path segments: `*` and `?` and `[…]` match within one segment, `**` spans zero or more segments. " +
+			"The pattern is matched against the path relative to `path` when `path` is given, and relative to the working directory otherwise. " +
+			"Directories are never returned, `.git` is never searched, and the result is capped (200 paths by default). " +
+			"Use Glob to locate files by name or extension; use Grep to search file contents.",
 		Properties: map[string]Property{
-			"pattern": {Type: "string", Description: `Glob pattern, e.g. "**/*.go" or "*.md"`},
-			"path":    {Type: "string", Description: "Optional base directory"},
+			"pattern": {Type: "string", Description: `Glob pattern, e.g. "**/*.go" (every Go file at any depth), "*.md" (Markdown at the top level), or "internal/**/*_test.go"`},
+			"path":    {Type: "string", Description: "Optional base directory to search, relative to the working directory; the pattern is then matched relative to it. Defaults to the working directory."},
 		},
 		Required: []string{"pattern"},
 	}
@@ -62,16 +76,30 @@ func (g *Glob) Execute(ctx context.Context, args map[string]any) (Result, error)
 	if max <= 0 {
 		max = 200
 	}
-	if g.fdPath == "" {
+	if !g.fdLooked {
 		g.fdPath, _ = exec.LookPath("fd")
+		g.fdLooked = true
 	}
+
 	backend := "walk"
-	var matches []string
+	var candidates []candidate
 	if g.fdPath != "" {
 		backend = "fd"
-		matches = g.runFd(ctx, pattern, sub)
-	} else {
-		matches = g.walk(pattern, sub)
+		candidates = g.enumerateFd(ctx, sub)
+	}
+	// fd failing (not installed, killed, or erroring on this tree) must not
+	// turn a real match into an empty answer, so the walk is the fallback in
+	// every case rather than only when fd is absent.
+	if candidates == nil {
+		backend = "walk"
+		candidates = g.enumerateWalk(sub)
+	}
+
+	var matches []string
+	for _, c := range candidates {
+		if matchGlob(pattern, c.match) {
+			matches = append(matches, c.rel)
+		}
 	}
 	sort.Strings(matches)
 	if len(matches) > max {
@@ -80,37 +108,63 @@ func (g *Glob) Execute(ctx context.Context, args map[string]any) (Result, error)
 	return GlobResult(strings.Join(matches, "\n"), backend), nil
 }
 
-func (g *Glob) runFd(ctx context.Context, pattern, sub string) []string {
-	args := []string{"--type", "f", "--glob", pattern}
+// candidate is one enumerated file: rel is the slash path relative to Root
+// (what the model is shown), match is the slash path the pattern is applied
+// to — relative to the search base, so a pattern is written against the
+// directory the caller asked about rather than the repository root.
+type candidate struct {
+	rel   string
+	match string
+}
+
+// enumerateFd lists every file under the search base using fd, which honours
+// no ignore files here: --no-ignore and --hidden make it enumerate exactly
+// what the walk enumerates, so the two backends return identical results. It
+// returns nil when fd cannot answer, which makes the caller fall back.
+func (g *Glob) enumerateFd(ctx context.Context, sub string) []candidate {
+	base := g.Root
 	if sub != "" {
-		args = append(args, sub)
-	} else {
-		args = append(args, ".")
+		base = filepath.Join(g.Root, filepath.FromSlash(sub))
+	}
+	// Paths are printed relative to fd's working directory and joined to base
+	// here rather than asked for with --absolute-path: fd resolves its own
+	// working directory, so an absolute path comes back with symlinks already
+	// resolved (a temp dir under /var prints as /private/var on macOS) and is
+	// no longer relative to Root.
+	args := []string{
+		"--type", "f",
+		"--hidden", "--no-ignore",
+		"--exclude", ".git",
+		".",
 	}
 	ec := exec.CommandContext(ctx, g.fdPath, args...)
-	ec.Dir = g.Root
+	ec.Dir = base
 	ec.Env = scrubbedEnv()
 	out, err := ec.Output()
 	if err != nil {
 		return nil
 	}
-	var rel []string
-	for _, ln := range strings.Split(strings.TrimRight(string(out), "\n"), "\n") {
+	body := strings.TrimRight(string(out), "\n")
+	if body == "" {
+		// An empty tree is a legitimate answer, not a failure; return a
+		// non-nil empty slice so the caller does not re-walk it.
+		return []candidate{}
+	}
+	var list []candidate
+	for _, ln := range strings.Split(body, "\n") {
 		if ln == "" {
 			continue
 		}
-		r, err := filepath.Rel(g.Root, filepath.Join(g.Root, ln))
-		if err != nil {
-			continue
-		}
-		rel = append(rel, r)
+		list = append(list, g.candidateFor(filepath.Join(base, filepath.FromSlash(ln)), base))
 	}
-	return rel
+	return list
 }
 
-func (g *Glob) walk(pattern, sub string) []string {
-	base := filepath.Join(g.Root, sub)
-	var out []string
+// enumerateWalk lists every file under the search base in-process, skipping
+// .git exactly as the fd enumerator does.
+func (g *Glob) enumerateWalk(sub string) []candidate {
+	base := filepath.Join(g.Root, filepath.FromSlash(sub))
+	list := []candidate{}
 	_ = filepath.WalkDir(base, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
@@ -121,23 +175,26 @@ func (g *Glob) walk(pattern, sub string) []string {
 			}
 			return nil
 		}
-		rel, err := filepath.Rel(g.Root, p)
-		if err != nil {
-			return nil
-		}
-		// Match the pattern against the path relative to the search base
-		// (sub), mirroring fd, which applies the glob inside the search root;
-		// the result is still reported relative to Root so both backends agree.
-		matchRel := rel
-		if sub != "" {
-			matchRel, _ = filepath.Rel(base, p)
-		}
-		if matchGlob(pattern, filepath.ToSlash(matchRel)) {
-			out = append(out, filepath.ToSlash(rel))
-		}
+		list = append(list, g.candidateFor(p, base))
 		return nil
 	})
-	return out
+	return list
+}
+
+// candidateFor renders one absolute path as a candidate: reported relative to
+// Root, matched relative to base.
+func (g *Glob) candidateFor(abs, base string) candidate {
+	rel, err := filepath.Rel(g.Root, abs)
+	if err != nil {
+		rel = abs
+	}
+	match := rel
+	if base != g.Root {
+		if m, err := filepath.Rel(base, abs); err == nil {
+			match = m
+		}
+	}
+	return candidate{rel: filepath.ToSlash(rel), match: filepath.ToSlash(match)}
 }
 
 // matchGlob matches a slash-separated pattern against a slash-separated path.
