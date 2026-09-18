@@ -137,17 +137,14 @@ func (a *App) fileCandidates() []string {
 }
 
 // filePickerVisible reports whether the chooser has anything to draw. The slash
-// popup wins when both could show, and the literal "@agent:" token engages
-// the agent picker instead.
+// popup wins when both could show; the agent picker is hidden while an @-prefix
+// is active because @ is now reserved for file references.
 func (a *App) filePickerVisible() bool {
 	if a.view != viewChat || len(a.autocomplete) > 0 {
 		return false
 	}
 	_, prefix, ok := a.filePrefix()
 	if !ok {
-		return false
-	}
-	if a.agentPickerVisible() || strings.HasPrefix(prefix, "agent:") {
 		return false
 	}
 	if a.fileDismissed != "" && prefix == a.fileDismissed {

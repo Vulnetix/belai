@@ -308,9 +308,13 @@ type App struct {
 	autocompleteIndex int
 
 	// agent picker: the profiles offered above the composer in agent mode,
-	// and the highlighted one (noAgentSelection when none is).
-	agents     []agentChoice
-	agentIndex int
+	// the highlighted one (noAgentSelection when none is), and whether the
+	// strip is currently open. The picker is opened explicitly by /agent or by
+	// pressing enter in agent mode when no agent is engaged; it is never
+	// triggered by typing @.
+	agents          []agentChoice
+	agentIndex      int
+	agentPickerOpen bool
 	// namedAgentTools is the engaged background definition's tool allowlist,
 	// applied to the session it carries. Empty means every registered tool.
 	namedAgentTools []string
@@ -451,6 +455,7 @@ func New(opts Options) *App {
 		follow:            true,
 		autocompleteIndex: noAutocompleteSelection,
 		agentIndex:        noAgentSelection,
+		agentPickerOpen:   false,
 		bannerW:           -1,
 		footerW:           -1,
 		trace:             trace.Env(),
@@ -1418,13 +1423,14 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 		// A highlighted completion is dropped before esc reaches the request:
-		// the popup is the thing the user is looking at. The agent picker's
-		// highlight is dismissed the same way.
+		// the popup is the thing the user is looking at. The agent picker is
+		// closed entirely by esc.
 		if _, ok := a.autocompleteSelection(); ok {
 			a.autocompleteIndex = noAutocompleteSelection
 			return nil
 		}
-		if a.agentIndex != noAgentSelection {
+		if a.agentPickerOpen {
+			a.agentPickerOpen = false
 			a.agentIndex = noAgentSelection
 			return nil
 		}
@@ -1459,6 +1465,13 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 			if _, ok := a.agentSelection(); ok {
 				return a.acceptAgent()
 			}
+		}
+		// In agent mode with no agent engaged, enter opens the picker rather
+		// than sending a turn that has no carrier.
+		if a.mode == "agent" && a.namedAgent == "" && !a.agentPickerOpen {
+			a.openAgentPicker()
+			a.relayout()
+			return nil
 		}
 		input := strings.TrimSpace(a.editor.Value())
 		if input == "" {
@@ -1537,11 +1550,12 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 // depends on its contents.
 func (a *App) forwardToEditor(m tea.KeyMsg) tea.Cmd {
 	cmd := a.editor.Update(m)
-	// Typing re-filters the agent strip, so a highlight from the old list
-	// would point at a name that is no longer under it. The same is true for
-	// the file chooser, and a dismissed chooser reopens once the user types
-	// again.
-	a.agentIndex = noAgentSelection
+	// The agent picker is explicit state now, so its highlight persists while
+	// the user types; the file chooser is re-filtered on every keystroke, so
+	// its highlight and dismissed token reset.
+	if !a.agentPickerOpen {
+		a.agentIndex = noAgentSelection
+	}
 	a.fileIndex = noFileSelection
 	a.fileScroll = 0
 	a.fileDismissed = ""
@@ -3174,6 +3188,7 @@ func (a *App) startNewSession() {
 	// a profile was written while this session ran.
 	a.namedAgent = ""
 	a.namedAgentTools = nil
+	a.agentPickerOpen = false
 	a.loadAgents()
 	a.saveSession()
 	a.refreshFooter()

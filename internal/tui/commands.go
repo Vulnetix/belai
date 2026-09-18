@@ -207,11 +207,11 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("rename", "rename this session", nil, func(a *App, arg string) tea.Cmd {
 		return a.renameSession(arg)
 	})
-	r.Register("agent", "manage background agents", func() []string {
+	r.Register("agent", "pick an agent profile or manage background agents", func() []string {
 		return []string{"create", "list", "edit", "start", "stop", "pause", "resume", "log"}
 	}, func(a *App, arg string) tea.Cmd {
-		if arg == "" {
-			a.addSystem("agent: subcommands: create, list, edit <name>, start <name>, stop <name>, pause <name>, resume <name>, log <name>")
+		if strings.TrimSpace(arg) == "" {
+			a.openAgentPicker()
 			return nil
 		}
 		sub, rest, _ := strings.Cut(arg, " ")

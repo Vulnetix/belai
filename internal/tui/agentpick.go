@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"slices"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -12,11 +12,15 @@ import (
 	"github.com/vulnetix/signet/internal/tui/components"
 )
 
-// The agent picker is the slash-completion popup's sibling: a strip above the
-// composer listing the agent profiles that can carry this turn's system
+// The agent picker is the slash-completion popup's sibling: a strip above
+// the composer listing the agent profiles that can carry this turn's system
 // prompt. It shows in agent mode, where a profile is the thing that changes
 // what the turn does, and is driven by the same three keys — tab highlights,
 // right accepts, enter selects.
+//
+// The picker is opened explicitly by the /agent command or by pressing enter
+// in agent mode while no agent is engaged. It is no longer driven by typing @
+// or @agent:, which now belongs to the file chooser.
 //
 // The names come from internal/profiles (the flat Name/Content profiles that
 // reach the system prompt as a carrier), not from internal/agentprofile, which
@@ -51,24 +55,64 @@ type agentChoice struct {
 // not a turn.
 func (a *App) loadAgents() {
 	a.agentIndex = noAgentSelection
-	var choices []agentChoice
+	var builtins, users []agentChoice
 	if list, err := profiles.List(); err == nil {
 		for _, p := range list {
-			choices = append(choices, agentChoice{Name: p.Name, Builtin: p.Builtin})
+			c := agentChoice{Name: p.Name, Builtin: p.Builtin}
+			if p.Builtin {
+				builtins = append(builtins, c)
+			} else {
+				users = append(users, c)
+			}
 		}
 	}
+
+	// Built-ins first: signet:debug is the default agent and always sits at
+	// index 0. User profiles follow, then background-agent definitions.
+	sort.Slice(builtins, func(i, j int) bool { return builtins[i].Name < builtins[j].Name })
+	for i, c := range builtins {
+		if c.Name == profiles.DebugProfile {
+			builtins[0], builtins[i] = builtins[i], builtins[0]
+			break
+		}
+	}
+	sort.Slice(users, func(i, j int) bool { return users[i].Name < users[j].Name })
+
+	choices := make([]agentChoice, 0, len(builtins)+len(users))
+	choices = append(choices, builtins...)
+	choices = append(choices, users...)
+
+	names := make(map[string]struct{}, len(choices))
+	for _, c := range choices {
+		names[c.Name] = struct{}{}
+	}
 	if list, err := agentprofile.List(); err == nil {
+		sort.Slice(list, func(i, j int) bool { return list[i].Name < list[j].Name })
 		for _, p := range list {
 			// A flat profile owns the name: it is the one CarrierOptions
 			// resolves first, so offering a shadowed definition would engage
 			// something other than the row the user picked.
-			if slices.ContainsFunc(choices, func(c agentChoice) bool { return c.Name == p.Name }) {
+			if _, ok := names[p.Name]; ok {
 				continue
 			}
 			choices = append(choices, agentChoice{Name: p.Name, Background: true, Tools: p.Tools})
 		}
 	}
+
 	a.agents = choices
+}
+
+// openAgentPicker shows the agent strip above the composer and selects the
+// default signet:debug profile when it is available.
+func (a *App) openAgentPicker() {
+	a.agentPickerOpen = true
+	a.agentIndex = 0
+	for i, c := range a.agents {
+		if c.Name == profiles.DebugProfile {
+			a.agentIndex = i
+			return
+		}
+	}
 }
 
 // startAgentChoice runs a background-agent definition as a background agent,
@@ -97,61 +141,22 @@ func (a *App) startAgentChoice(c agentChoice) tea.Cmd {
 	return nil
 }
 
-// agentPrefix returns the profile-name prefix the user is typing, if any. A
-// trailing `@word` filters the strip the way `/word` filters the command
-// popup; `@agent:name` — the syntax the mode classifier already understands —
-// filters on the name after the scheme. The first result is the raw token
-// after the `@` (so callers can test for the `agent:` scheme); the second is
-// the name filter with the scheme removed.
-func (a *App) agentPrefix() (string, string, bool) {
-	value := a.editor.Value()
-	at := strings.LastIndex(value, "@")
-	if at < 0 {
-		return "", "", false
-	}
-	word := value[at+1:]
-	if strings.ContainsAny(word, " \t\n") {
-		return "", "", false
-	}
-	return word, strings.TrimPrefix(word, "agent:"), true
-}
-
-// agentCandidates returns the profiles the strip is currently offering: every
-// profile, or the ones matching the `@` prefix being typed.
+// agentCandidates returns the profiles the strip is currently offering.
 func (a *App) agentCandidates() []agentChoice {
-	_, prefix, ok := a.agentPrefix()
-	if !ok || prefix == "" {
-		return a.agents
-	}
-	lower := strings.ToLower(prefix)
-	var out []agentChoice
-	for _, c := range a.agents {
-		name := strings.ToLower(c.Name)
-		if strings.Contains(name, lower) || strings.Contains(strings.TrimPrefix(name, profiles.BuiltinPrefix), lower) {
-			out = append(out, c)
-		}
-	}
-	return out
+	return a.agents
 }
 
 // agentPickerVisible reports whether the strip has anything to draw. The slash
-// popup wins when both could show: two strips competing for tab would make
-// neither predictable. Bare "@" now opens the file chooser in every mode;
-// only the literal "@agent:" scheme engages the agent picker.
+// popup wins when both could show, and the file chooser wins when an @-prefix
+// is being typed, because @ is now reserved for file references.
 func (a *App) agentPickerVisible() bool {
 	if a.view != viewChat || a.mode != "agent" || len(a.autocomplete) > 0 {
 		return false
 	}
-	raw, _, ok := a.agentPrefix()
-	if !ok {
+	if a.filePickerVisible() {
 		return false
 	}
-	// Bare "@" now opens the file chooser in every mode; only the literal
-	// "@agent:" scheme engages the agent picker.
-	if !strings.HasPrefix(raw, "agent:") {
-		return false
-	}
-	return len(a.agentCandidates()) > 0
+	return a.agentPickerOpen && len(a.agents) > 0
 }
 
 // engagedAgent returns the agent carrying turns right now, which is nothing
@@ -196,7 +201,11 @@ func (a *App) cycleAgent() tea.Cmd {
 	if len(cands) == 0 {
 		return nil
 	}
-	a.agentIndex++
+	if a.agentIndex < 0 {
+		a.agentIndex = 0
+	} else {
+		a.agentIndex++
+	}
 	// len(cands) is the (none) slot; one past it wraps to the first name.
 	if a.agentIndex > len(cands) {
 		a.agentIndex = 0
@@ -205,14 +214,13 @@ func (a *App) cycleAgent() tea.Cmd {
 }
 
 // acceptAgent engages the highlighted profile for every following turn — or
-// clears the engaged one on (none) — and drops the `@` prefix that filtered
-// the strip, which has done its job and would otherwise be sent as prose.
+// clears the engaged one on (none) — and closes the picker.
 func (a *App) acceptAgent() tea.Cmd {
 	choice, ok := a.agentSelection()
 	if !ok {
 		return nil
 	}
-	a.clearAgentPrefix()
+	a.agentPickerOpen = false
 	a.agentIndex = noAgentSelection
 	if choice.Name == agentNoneLabel {
 		if a.namedAgent == "" {
@@ -240,17 +248,6 @@ func (a *App) acceptAgent() tea.Cmd {
 	a.refreshFooter()
 	a.relayout()
 	return nil
-}
-
-// clearAgentPrefix removes the trailing `@word` the picker was filtered by.
-func (a *App) clearAgentPrefix() {
-	if _, _, ok := a.agentPrefix(); !ok {
-		return
-	}
-	value := a.editor.Value()
-	at := strings.LastIndex(value, "@")
-	a.editor.SetValue(strings.TrimRight(value[:at], " \t"))
-	a.editor.CursorEnd()
 }
 
 // renderAgentPicker draws the candidates as a chip row, highlighting the

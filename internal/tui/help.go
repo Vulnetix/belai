@@ -60,13 +60,13 @@ func keySections() []keySection {
 			{"esc, left", "close the chooser; typing reopens it"},
 		}},
 		{"agent picker (agent mode, above the prompt)", []keyBinding{
-			{"@agent:", "open the agent picker; bare @ opens files"},
+			{"/agent", "open the agent picker; bare @ opens files"},
+			{"enter", "open the picker in agent mode when no agent is engaged"},
 			{"tab", "highlight the next agent, ending on (none)"},
 			{"enter", "engage the highlighted agent for the following agent-mode turns"},
 			{"right", "engage the highlighted agent"},
 			{"ctrl+g", "start the highlighted ↻ definition as a background agent"},
-			{"esc", "drop the highlight, keeping the strip"},
-			{"@agent:name", "filter the strip; the text is consumed when you engage"},
+			{"esc", "close the picker"},
 		}},
 		{"transcript", []keyBinding{
 			{"pgup, pgdown", "page up, page down"},
