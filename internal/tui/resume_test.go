@@ -248,6 +248,59 @@ func TestResumeWritesActiveSession(t *testing.T) {
 	}
 }
 
+func TestResumeABAConsistentFiles(t *testing.T) {
+	workdir := t.TempDir()
+	a := newResumeApp(t, workdir)
+	key, _ := session.KeyFor(workdir)
+
+	mk := func(id, content string) []session.Entry {
+		entries := []session.Entry{
+			{ID: "u-" + id, Type: "user", Role: "user", Content: content},
+			{ID: "a-" + id, ParentID: "u-" + id, Type: "assistant", Role: "assistant", Content: "reply-" + content},
+		}
+		entries = append(entries, session.Meta{Schema: 2, Cwd: workdir}.ToEntry("a-"+id))
+		return entries
+	}
+	seedEntries(t, a, key, "sess-a", mk("a", "first"))
+	seedEntries(t, a, key, "sess-b", mk("b", "second"))
+
+	beforeA, _ := os.ReadFile(filepath.Join(a.store.Root, string(key), "sess-a.jsonl"))
+	beforeB, _ := os.ReadFile(filepath.Join(a.store.Root, string(key), "sess-b.jsonl"))
+
+	a.resumeSession(key, "sess-a")
+	if a.sessionID != "sess-a" {
+		t.Fatalf("after resume A: %q", a.sessionID)
+	}
+	a.resumeSession(key, "sess-b")
+	if a.sessionID != "sess-b" {
+		t.Fatalf("after resume B: %q", a.sessionID)
+	}
+	a.resumeSession(key, "sess-a")
+	if a.sessionID != "sess-a" {
+		t.Fatalf("after resume A again: %q", a.sessionID)
+	}
+
+	afterA, _ := os.ReadFile(filepath.Join(a.store.Root, string(key), "sess-a.jsonl"))
+	afterB, _ := os.ReadFile(filepath.Join(a.store.Root, string(key), "sess-b.jsonl"))
+	if string(beforeA) != string(afterA) {
+		t.Fatal("session A mutated by A→B→A resume cycle")
+	}
+	if string(beforeB) != string(afterB) {
+		t.Fatal("session B mutated by A→B→A resume cycle")
+	}
+
+	des, _ := os.ReadDir(filepath.Join(a.store.Root, string(key)))
+	n := 0
+	for _, de := range des {
+		if strings.HasSuffix(de.Name(), ".jsonl") {
+			n++
+		}
+	}
+	if n != 2 {
+		t.Fatalf("jsonl files = %d, want 2 (no stray forks)", n)
+	}
+}
+
 func TestNewWithResumeSessionLoadsTranscript(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 	workdir := t.TempDir()
