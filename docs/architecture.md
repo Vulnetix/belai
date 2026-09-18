@@ -616,12 +616,17 @@ it. With no approver (the CLI, subagents) the existing
 
 Plan mode narrows the tool surface in two places that must agree:
 
-- `Registry.Plan()` is the **advertisement** half. It removes every mutating
-  tool and then removes `Bash` as well, so the request the model receives
-  does not list a tool it may not call.
+- `Registry.PlanWith` is the **advertisement** half. It removes every
+  mutating tool and then removes `Bash` as well, so the request the model
+  receives does not list a tool it may not call. The plan-only
+  `ExitPlanMode` tool is registered in the base registry but filtered out
+  of non-plan briefings by `Registry.WithoutPlanOnly()`, so agent and goal
+  mode never see a tool that only makes sense during planning.
 - `modes.ToolAllowed` is the **enforcement** half. It refuses the write-tool
   denylist (`write`, `edit`, `apply_patch`, `patch`, …) and refuses `Bash`
-  outright, case-folded, whatever the command says.
+  outright, case-folded, whatever the command says. The advertisement and
+  enforcement surfaces agree: a tool promised to the model is a tool the
+  harness will run.
 
 Business rules and edge cases:
 
@@ -639,22 +644,40 @@ Business rules and edge cases:
   mode. Both tool surfaces are built once at session construction and
   `Session.toolSurface` picks per turn, so the advertised list, the sealed
   `<tools>` block, and the execution gate all move together.
+- **Mode choices are sticky.** Any explicit user mode choice (`/mode`,
+  `shift+tab`, `f5`, `--plan`, or Approve/Refine/Cancel in the plan review
+  pane) holds for every following turn until the user explicitly chooses
+  again. The classifier must not silently reroute a plan session into the
+  unbounded goal loop.
 - **Explore subagents build the plan surface directly**
   (`DefaultWithCaps(...).Plan()`) rather than relying on the gate alone, so
   the exploration preamble cannot promise a `Bash` the gate will refuse.
 - Investigation in plan mode goes through `Read`, `Grep`, `Glob`, `Cd`, and
   the native read-only catalogue (`Cat`, `LS`, `Find`, `Git`, `JQ`, …).
-- Toggle via `/mode plan`, `Ctrl+Alt+P`, or `--plan`; `/todos` shows progress.
-- After the agent emits a numbered plan under a `Plan:` header, the steps are
-  extracted (`internal/plans/extract.go`) and the user is prompted with two
-  options:
-  - **Execute the plan** — `/execute` leaves plan mode (full tools restored);
-    `[DONE:n]` markers advance the progress widget
-    (`internal/plans/progress.go`).
-  - **Refine the plan** — `/refine` opens the editor and sends the revision
-    back as a user message while staying in plan mode.
+- Toggle via `/mode plan`, `shift+tab`, `f5`, or `--plan`; `/todos` shows
+  progress.
+- After the agent emits a numbered plan, a full-screen review pane opens.
+  It shows the persisted markdown file by absolute path and offers three
+  actions:
+  - **Approve** — sets `State.ActivePlan`, leaves plan mode, and immediately
+    starts executing the plan with the full agent-mode tool surface. The
+    approved plan text is loaded into the system prompt as the execution
+    carrier.
+  - **Refine** — stays in plan mode, sends the user's notes back to the
+    planner, and writes a new revision (`<name>-rN.md`) of the plan file.
+  - **Cancel** (or `esc`) — keeps the file on disk, does not set
+    `State.ActivePlan`, and stays in plan mode.
+- The three actions all route through `modes.RoutePlanOption` so `/execute`,
+  `/refine`, and the pane agree on the resulting mode and action.
+- Every plan-mode turn writes the model's full reply verbatim (after
+  `sanitize.Sanitize`) to `<workdir>/.vulnetix/plans/<name>.md` at `0o600`.
+  The file is written by the harness, not by a model tool call, because
+  plan mode denies all write tools. The sanitized content is what can later
+  re-enter the system prompt via `prompt.CarrierPlan` after a human approves
+  it.
 - Plan-mode state (enabled/executing/todos) is persisted as session entries so
-  it survives resume.
+  it survives resume. `rehydrateTodos` falls back to the latest `plan_state`
+  entry when no `todo_list` entry exists.
 - A top-level plan-mode prompt runs a **plan pass loop** instead of the
   bounded continuation path: when a pass exhausts its iteration budget — or
   ends naturally — a **plan evaluator** decides whether the plan is ready to
@@ -663,7 +686,9 @@ Business rules and edge cases:
   todo list, and the pass evidence, and it answers with `PLAN_*` sentinels,
   never `GOAL_*` ones. The loop is bounded by `resilience.max_passes`
   (default `defaultPlanContinuations` = 5) and returns the plan so far at the
-  ceiling. The normative rules are in [role-manager.md](role-manager.md),
+  ceiling. The planning model can also declare completion by calling the
+  read-only `ExitPlanMode` tool, which short-circuits the evaluator.
+  The normative rules are in [role-manager.md](role-manager.md),
   "Plan pass loop".
 
 ### Agentic exploration (plan-mode explore subagents)

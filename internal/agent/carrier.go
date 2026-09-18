@@ -18,9 +18,22 @@ import (
 // CarrierOptions resolves the active plan, goal, or agent profile and maps
 // the mode decision to prompt options. On any load failure it returns a bare
 // prompt.Options so that a missing carrier file never hard-errors a session.
-func CarrierOptions(workdir string, d rolemanager.ModeDecision, st config.State, set config.Settings) (prompt.Options, error) {
+//
+// When executePlan is true the named plan is loaded as the carrier regardless
+// of d.Mode, so an approved plan can be executed in the same session without
+// waiting for state persistence to propagate.
+func CarrierOptions(workdir string, d rolemanager.ModeDecision, executePlan bool, planName string, st config.State, set config.Settings) (prompt.Options, error) {
 	var planText, goalText, profileText string
 	var loadErr error
+
+	if executePlan && planName != "" {
+		p, err := plans.Load(workdir, planName)
+		if err == nil {
+			planText = p.Content
+		} else {
+			loadErr = fmt.Errorf("load plan %q: %w", planName, err)
+		}
+	}
 
 	switch d.Mode {
 	case modes.ModeGoal:
@@ -58,6 +71,12 @@ func CarrierOptions(workdir string, d rolemanager.ModeDecision, st config.State,
 	}
 
 	opts := d.PromptOptions(planText, goalText, profileText)
+	if executePlan && planName != "" {
+		// Executing an approved plan runs with the full agent-mode tool surface
+		// but carries the approved plan text in the system prompt.
+		opts.Carrier = prompt.CarrierPlan
+		opts.PlanText = planText
+	}
 	opts.Caveman = set.Caveman != nil && *set.Caveman
 
 	if loadErr != nil {

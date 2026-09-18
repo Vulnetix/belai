@@ -18,6 +18,7 @@ const (
 	viewClarify
 	viewPermissionAsk
 	viewClassifier
+	viewPlanReview
 )
 
 // viewHandler is one full-screen view. Chat is the base state and lives
@@ -41,6 +42,7 @@ func init() {
 	viewHandlers[viewClarify] = viewHandler{name: "clarify", key: (*App).handleClarifyKey, render: (*App).clarifyView}
 	viewHandlers[viewPermissionAsk] = viewHandler{name: "permission-ask", key: (*App).handlePermissionAskKey, render: (*App).permissionAskView}
 	viewHandlers[viewClassifier] = viewHandler{name: "classifier", enter: (*App).enterClassifier, key: (*App).handleClassifierKey, render: (*App).classifierView}
+	viewHandlers[viewPlanReview] = viewHandler{name: "plan-review", enter: (*App).enterPlanReview, key: (*App).handlePlanReviewKey, render: (*App).planReviewView}
 }
 
 // push navigates to a full-screen view, remembering the current one on the

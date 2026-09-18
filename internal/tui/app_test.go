@@ -1857,7 +1857,7 @@ func TestSubmitInputClassifiesAsyncThenSends(t *testing.T) {
 		t.Fatalf("expected configured")
 	}
 	cfg.BaseURL = srv.URL
-	a := New(Options{Client: srv.Client(), Provider: "openai", Model: "gpt-5"})
+	a := New(Options{Client: srv.Client(), Provider: "openai", Model: "gpt-5", Workdir: t.TempDir()})
 	a.mode = "goal" // avoid the agent-picker gate during pre-send tests
 	a.modeSticky = false
 	a.cfg = cfg
@@ -1911,8 +1911,21 @@ func TestSubmitInputClassifiesAsyncThenSends(t *testing.T) {
 		t.Fatalf("expected one 'pong' assistant reply, got %+v", a.messages)
 	}
 	// Plan mode presents its own evaluator verdict, not a goal evaluator.
-	if !strings.Contains(a.messages[len(a.messages)-1].Content, "plan evaluator: PLAN_COMPLETE") {
-		t.Fatalf("expected a plan evaluator verdict after the reply, got %+v", a.messages)
+	var hasPlanEval bool
+	var hasPlanFile bool
+	for _, m := range a.messages {
+		if strings.Contains(m.Content, "plan evaluator: PLAN_COMPLETE") {
+			hasPlanEval = true
+		}
+		if strings.Contains(m.Content, ".vulnetix/plans/") {
+			hasPlanFile = true
+		}
+	}
+	if !hasPlanEval {
+		t.Fatalf("expected a plan evaluator verdict, got %+v", a.messages)
+	}
+	if !hasPlanFile {
+		t.Fatalf("expected a plan file system message, got %+v", a.messages)
 	}
 }
 

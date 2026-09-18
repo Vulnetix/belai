@@ -77,6 +77,15 @@ func keySections() []keySection {
 			{"wheel", "scroll and detach from the tail"},
 			{"drag", "select text; release copies it"},
 		}},
+		{"plan review (after a plan-mode turn)", []keyBinding{
+			{"up, down", "move between approve, refine and cancel"},
+			{"enter", "confirm the highlighted action"},
+			{"pgup, pgdown", "page the plan up, page down"},
+			{"shift+up, shift+down", "scroll the plan one line"},
+			{"ctrl+home, ctrl+end", "jump to the top, bottom of the plan"},
+			{"wheel", "scroll the plan"},
+			{"esc", "cancel; the plan file is kept"},
+		}},
 		{"prompt history (after up)", []keyBinding{
 			{"up, down", "older result, newer result"},
 			{"tab", "load the next named prompt from the strip, wrapping at the end"},

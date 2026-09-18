@@ -150,18 +150,26 @@ func NewRegistry(workdir string) *Registry {
 		return nil
 	})
 	r.Register("execute", "leave plan mode and execute the plan", nil, func(a *App, arg string) tea.Cmd {
-		a.mode = "agent"
-		a.modeExplicit = true
-		a.modeSticky = true
-		a.syncPlanMode()
-		a.saveMode()
-		a.addSystem("plan mode off — executing")
-		return nil
+		if a.planReview.name == "" || a.planReview.path == "" {
+			a.mode = "agent"
+			a.modeExplicit = true
+			a.modeSticky = true
+			a.syncPlanMode()
+			a.saveMode()
+			a.addSystem("plan mode off — executing")
+			return nil
+		}
+		return a.submitPlanApprove()
 	})
 	r.Register("refine", "refine the extracted plan", nil, func(a *App, arg string) tea.Cmd {
-		a.editor.SetValue(a.lastPlanText)
-		a.addSystem("refine the plan, then submit")
-		return nil
+		if a.planReview.name == "" || a.planReview.path == "" {
+			a.editor.SetValue(a.lastPlanText)
+			a.addSystem("refine the plan, then submit")
+			return nil
+		}
+		a.editor.SetValue("")
+		a.planReview.selected = planReviewRefine
+		return a.submitPlanRefine("")
 	})
 	r.Register("code-review", "run Vulnetix code review", nil, func(a *App, arg string) tea.Cmd {
 		return func() tea.Msg {

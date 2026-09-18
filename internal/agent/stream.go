@@ -65,6 +65,9 @@ const (
 	// EventGoalStateKind reports an update to the run-time goal state; the TUI
 	// persists it as a goal_state session entry.
 	EventGoalStateKind
+	// EventPlanFileKind reports that the harness has written a plan file for
+	// a plan-mode turn. It carries the plan name and absolute path.
+	EventPlanFileKind
 	// EventToolDiffKind carries what a mutating tool changed on disk, keyed by
 	// ToolCallID. Render-only, like EventToolProgressKind: it is observed
 	// around the tool rather than returned by it, never enters the
@@ -180,6 +183,11 @@ type Event struct {
 
 	// GoalState carries an updated run-time goal state on EventGoalStateKind.
 	GoalState *goals.GoalState
+
+	// PlanPath and PlanName carry the recorded plan file for
+	// EventPlanFileKind.
+	PlanPath string
+	PlanName string
 
 	// Err carries EventError.
 	Err error

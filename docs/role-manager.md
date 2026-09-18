@@ -783,6 +783,15 @@ is read-only and the user reviews the plan before executing it.
 | `PLAN_NOT_STARTED` | No meaningful planning work yet | Inject the planning directive (the explore wave already ran, so there is no forced survey) |
 | _malformed output_ | — | Fails closed to `PLAN_PARTIAL`; two consecutive malformed replies stop the loop |
 
+There are two completion paths that do not consult the evaluator:
+
+1. The planning model calls the read-only `ExitPlanMode` tool. The harness
+   treats this as a direct completion signal and returns immediately with
+   `PLAN_COMPLETE`.
+2. A natural exit (no tool calls in the pass) produces a reply with
+   extractable numbered steps **and** every tracked step is already marked
+   done. The harness accepts `PLAN_COMPLETE` without an evaluator round-trip.
+
 ### Input, not goal
 
 The plan evaluator is shown the exploration context (`exploreContextDigest` of
@@ -794,12 +803,25 @@ from an earlier session has no path into this payload.
 
 | Rule | Condition | Outcome |
 | ---- | --------- | ------- |
-| Plan complete | `PLAN_COMPLETE` | Success; plan list marked complete; reply is the pass's last assistant text |
+| Plan complete | `PLAN_COMPLETE` (evaluator or fast path) | Success; plan list marked complete; reply is the pass's last assistant text |
 | Ceiling | `max_passes` reached | Return the plan so far with a system note — not an error |
-| Unproductive pass | A pass executed no non-withheld tool result | Error: *plan pass loop stopped: pass N executed no tools* |
+| Unproductive pass | A pass executed no non-withheld tool result | Return the plan so far with a warning — plan mode must always produce a file |
 | Broken evaluator | 2 consecutive malformed evaluator replies | Error: *plan pass loop stopped: N consecutive malformed evaluator replies* |
 | Evaluator transport failure | `Classify` returns an error | Terminal |
 | Cancellation | `ctx` cancelled (`esc`, `SIGINT`) | `ErrPlanLoopCancelled` with the partial result — never a raw `context.Canceled` |
+
+### Plan file
+
+Every plan-mode turn writes a file, even on partial, ceiling, cancelled, or
+unproductive exit. The content is the model's full final reply, sanitized
+before it is written. The file lives at
+`<workdir>/.vulnetix/plans/<name>.md` with mode `0o600`. Writing is harness
+I/O, not a model tool call, because plan mode denies every write tool.
+
+`State.ActivePlan` is set only when the user presses **Approve** in the
+review pane. Until then the sanitized plan text is on disk but never loaded
+into the system prompt. **Refine** writes a new revision (`<name>-rN.md`)
+rather than overwriting the reviewed file.
 
 Steering precedence and boundary compaction run identically to the goal loop
 below: steering outranks the evaluator, and compaction is proactive before each

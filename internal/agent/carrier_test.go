@@ -24,7 +24,7 @@ func TestEngagedProfileCarriesTheSystemPrompt(t *testing.T) {
 	}
 
 	d := rolemanager.ModeDecision{Mode: modes.ModeAgent, AgentName: "reviewer", AppendCarrier: true}
-	opts, err := CarrierOptions(t.TempDir(), d, config.State{}, config.Settings{})
+	opts, err := CarrierOptions(t.TempDir(), d, false, "", config.State{}, config.Settings{})
 	if err != nil {
 		t.Fatalf("CarrierOptions: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestNoEngagedProfileLeavesTheDefaultPrompt(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 
 	d := rolemanager.ModeDecision{Mode: modes.ModeAgent}
-	opts, err := CarrierOptions(t.TempDir(), d, config.State{}, config.Settings{})
+	opts, err := CarrierOptions(t.TempDir(), d, false, "", config.State{}, config.Settings{})
 	if err != nil {
 		t.Fatalf("CarrierOptions: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestBackgroundDefinitionCarriesTheSystemPrompt(t *testing.T) {
 	}
 
 	d := rolemanager.ModeDecision{Mode: modes.ModeAgent, AgentName: "nightly-audit", AppendCarrier: true}
-	opts, err := CarrierOptions(t.TempDir(), d, config.State{}, config.Settings{})
+	opts, err := CarrierOptions(t.TempDir(), d, false, "", config.State{}, config.Settings{})
 	if err != nil {
 		t.Fatalf("CarrierOptions: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestFlatProfileWinsOverBackgroundDefinition(t *testing.T) {
 	}
 
 	d := rolemanager.ModeDecision{Mode: modes.ModeAgent, AgentName: "reviewer", AppendCarrier: true}
-	opts, err := CarrierOptions(t.TempDir(), d, config.State{}, config.Settings{})
+	opts, err := CarrierOptions(t.TempDir(), d, false, "", config.State{}, config.Settings{})
 	if err != nil {
 		t.Fatalf("CarrierOptions: %v", err)
 	}

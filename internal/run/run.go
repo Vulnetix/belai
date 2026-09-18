@@ -1357,7 +1357,13 @@ type Result struct {
 	// mode). It is kept separate from GoalSentinel so the two modes' verdicts
 	// never share a field or a presentation.
 	PlanSentinel rolemanager.PlanSentinel
-	Passes       int
+	// PlanPath is the absolute filesystem path of the recorded plan file for
+	// a plan-mode turn. Empty in agent/goal mode or when recording failed.
+	PlanPath string
+	// PlanName is the plan slug recorded from the prompt. Empty in agent/goal
+	// mode or when recording failed.
+	PlanName string
+	Passes   int
 }
 
 // Engage runs the full noninteractive Role Manager pipeline: sanitize, then

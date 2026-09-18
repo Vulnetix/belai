@@ -61,6 +61,10 @@ type Options struct {
 	// the unbounded pass loop, which would spawn recursive unbounded subagents.
 	// Default false; only top-level session construction sets it true.
 	AllowPassLoop bool
+	// PlanRevision is the revision number to use when recording a plan file
+	// for this turn. Zero means "auto" (compute the next available revision).
+	// It lets the plan review pane request a refined plan as -rN.
+	PlanRevision int
 	// Cache is the session-scoped classifier verdict cache (SAFE LRU plus
 	// persisted bad hashes). nil means no caching. A subagent inherits the
 	// parent's cache so verdicts are shared across the fan-out.
@@ -134,6 +138,9 @@ type Session struct {
 	// diffs observes what a mutating command changed. Nil disables the
 	// feature; it is consulted around every mutating tool (Bash, Write, Edit).
 	diffs *filediff.Recorder
+	// planRevision is the requested plan-file revision for this turn. Zero
+	// means compute the next available revision when recording.
+	planRevision int
 }
 
 // steerBuffer is the steering queue capacity. A full queue drops the newest
@@ -260,6 +267,7 @@ func NewSession(o Options) (*Session, error) {
 		caps:               o.Caps,
 		repoIndex:          o.RepoIndex,
 		planSurface:        planSurface,
+		planRevision:       o.PlanRevision,
 		opts:               o.PromptOptions,
 		workdir:            o.Workdir,
 		state:              o.State,
@@ -299,6 +307,18 @@ type TurnInput struct {
 	// Select call, since the caller's decision would otherwise be re-run and
 	// discarded. It is not "forced": an empty Mode still classifies.
 	Mode rolemanager.ModeDecision
+	// ExecutePlan, when true, tells the agent to load the named plan as the
+	// execution carrier regardless of the classifier's mode. Used by the TUI
+	// immediately after a plan is approved so the same-session execute turn
+	// does not keep using a stale in-memory session snapshot.
+	ExecutePlan bool
+	// PlanName is the plan to load when ExecutePlan is true.
+	PlanName string
+	// PlanRevision is the revision number to use when recording the plan file.
+	// Zero means "compute next available". The plan review pane sets this when
+	// refining so the new plan file is named -rN rather than starting a new
+	// timestamped sequence.
+	PlanRevision int
 }
 
 // Result is the outcome of a session run.
@@ -415,7 +435,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		exploreTurns = append(exploreTurns, s.clarifyRounds(ctx, pipe, modeDec, clean, exploreTurns, emit)...)
 	}
 
-	opts, _ := CarrierOptions(s.workdir, modeDec, s.state, s.settings)
+	opts, _ := CarrierOptions(s.workdir, modeDec, in.ExecutePlan, in.PlanName, s.state, s.settings)
 	switch {
 	case opts.Carrier != "":
 		opts.Caveman = s.opts.Caveman
@@ -469,7 +489,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	// mode has none). Digest the findings here; they are already classified
 	// and admitted as SAFE, and the evaluator call sanitizes them again.
 	planContext := exploreContextDigest(exploreTurns)
-	res, err := s.passLoop(ctx, pipe, system, turns, modeDec, opts.GoalText, planContext, streaming, emit)
+	res, err := s.passLoop(ctx, pipe, system, turns, modeDec, opts.GoalText, planContext, clean, streaming, emit)
 	res.SanitizedPrompt = clean
 	res.SecuritySentinel = dec.Sentinel
 	res.ModeDecision = modeDec

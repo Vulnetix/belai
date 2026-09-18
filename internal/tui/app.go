@@ -233,6 +233,19 @@ type App struct {
 	guardrailsOverride *bool
 	askOverride        *bool
 	lastPlanText       string
+	// pendingPlanExecute/planExecuteName are set by the plan review pane
+	// when the user approves a plan. The next send consumes them and tells
+	// the agent to load the plan as the execution carrier.
+	pendingPlanExecute bool
+	planExecuteName    string
+	// pendingPlanRevision is the revision number requested for the next
+	// plan-mode recording. Zero means "compute next available". Set by
+	// submitPlanRefine so a refined plan is written as -rN.
+	pendingPlanRevision int
+	// pendingDirective is an explicit harness directive for the next user
+	// turn. Non-empty values override the attachment-derived directive and
+	// are consumed in submitInput.
+	pendingDirective string
 
 	// attachments state
 	attachments  map[int]*attachment
@@ -254,6 +267,7 @@ type App struct {
 	permAskState    permissionAskViewState
 	agentState      agentViewState
 	classifierState classifierViewState
+	planReview      planReviewState
 
 	// which providers the pickers may offer, filled by an async probe
 	avail providerAvailability
@@ -739,6 +753,14 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 	}
 	in := agent.TurnInput{Prompt: promptText, ForceMode: a.forceMode, Mode: a.modeDecision}
 	a.forceMode = ""
+	if a.pendingPlanExecute {
+		in.ExecutePlan = true
+		in.PlanName = a.planExecuteName
+		a.pendingPlanExecute = false
+		a.planExecuteName = ""
+	}
+	in.PlanRevision = a.pendingPlanRevision
+	a.pendingPlanRevision = 0
 	// Only agent mode carries an agent: ForceAgent also forces the mode, so
 	// sending an engaged agent from plan or goal mode would silently leave the
 	// mode the user chose.
@@ -783,6 +805,17 @@ func (a *App) startAgent(sess *agent.Session, history []run.Turn, in agent.TurnI
 	return tea.Batch(a.nextAgent(), a.workSpin.Tick)
 }
 
+// consumeDirective returns any pending directive and clears it. If no
+// pending directive exists, it returns the attachment-derived directive.
+func (a *App) consumeDirective(fallback string) string {
+	if a.pendingDirective != "" {
+		d := a.pendingDirective
+		a.pendingDirective = ""
+		return d
+	}
+	return fallback
+}
+
 // submitInput finalises one user prompt, including any SAFE attachments, and
 // starts the agent turn. The prompt is echoed to the transcript the instant
 // Enter is pressed — before mode classification and any provider I/O — and
@@ -790,6 +823,7 @@ func (a *App) startAgent(sess *agent.Session, history []run.Turn, in agent.TurnI
 // classifier runs.
 func (a *App) submitInput(input string) tea.Cmd {
 	previews, directive := a.attachmentPreviews()
+	directive = a.consumeDirective(directive)
 	a.messages = append(a.messages, previews...)
 
 	var safe []run.Attachment
@@ -1318,6 +1352,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.vp, vpCmd = a.vp.Update(m)
 				a.follow = a.vp.AtBottom()
 			}
+		} else if a.view == viewPlanReview && tea.MouseEvent(m).IsWheel() {
+			a.planReview.vp, vpCmd = a.planReview.vp.Update(m)
 		}
 		cmd := a.editor.Update(m)
 		a.refreshAutocomplete()
@@ -1362,14 +1398,26 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// pushes, a ctrl+<letter> event collapses to a legacy control code that
 		// carries no alt bit, so those chords never reached this switch.
 		case "f5":
+			if a.view == viewPlanReview {
+				return a, nil
+			}
 			a.cycleMode()
 			a.syncPlanMode()
 			return a, nil
 		case "f2":
+			if a.view == viewPlanReview {
+				return a, nil
+			}
 			return a, a.toggleCaveman()
 		case "f3":
+			if a.view == viewPlanReview {
+				return a, nil
+			}
 			return a, a.toggleGuardrails()
 		case "f4":
+			if a.view == viewPlanReview {
+				return a, nil
+			}
 			return a, a.toggleAsk()
 		}
 		if a.view != viewChat {
@@ -2109,6 +2157,13 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		}
 		a.permAskState = newPermissionAskState(m.Ask, m.AskReply)
 		return a.push(viewPermissionAsk)
+	case agent.EventPlanFileKind:
+		a.planReview = newPlanReviewState(m.PlanName, m.PlanPath)
+		a.addSystem("plan written: " + m.PlanPath)
+		// Keep draining the stream: the plan review pane is non-blocking and
+		// the turn still needs to finish cleanly (EventDoneKind).
+		cmd := a.push(viewPlanReview)
+		return tea.Batch(cmd, a.nextAgent())
 	case agent.EventClarifyAskKind:
 		q := *m.Clarify
 		a.clarifyState = newClarifyState(q, m.Reply)
@@ -2201,7 +2256,9 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		}
 		a.appendAssistant(m.Result.Usage)
 		// In plan mode, extract a numbered plan out of the reply and persist it
-		// so /todos and a later resume can rebuild progress.
+		// so /todos and a later resume can rebuild progress. The review pane
+		// (triggered by EventPlanFileKind) replaces the old /execute / /refine
+		// prompt, so this block only records state.
 		if a.planMode && m.Result.Reply != "" {
 			if steps, err := plans.ExtractSteps(m.Result.Reply); err == nil && len(steps) > 0 {
 				ps := modes.PlanState{Enabled: true, Executing: false}
@@ -2212,7 +2269,6 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 				a.lastPlanText = strings.Join(steps, "\n")
 				l := todos.New(m.Result.SanitizedPrompt, steps)
 				a.setTodos(&l)
-				a.addSystem(fmt.Sprintf("plan: %d steps extracted — /execute or /refine", len(steps)))
 			}
 		}
 		// Advance the shared todo list from [DONE:n] markers in the assistant
