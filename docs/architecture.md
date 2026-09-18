@@ -855,8 +855,10 @@ session name or short id. Entry types:
 | Type | Role | Content |
 | ---- | ---- | ------- |
 | `user` | `user` | the prompt |
-| `assistant` | `assistant` | the reply, with `prompt_tokens` / `completion_tokens` / `total_tokens` / `model` / `provider` in `meta` |
+| `assistant` | `assistant` | the reply, with `prompt_tokens` / `completion_tokens` / `total_tokens` / `model` / `provider` / `mode` / `effort` / `tool_calls` in `meta` |
+| `tool` | `tool` | a tool result, with `tool_call_id` / `tool_name` / `tool_args` / `status` in `meta` |
 | `session_name` | *(empty)* | the name; append-only, latest wins, empty clears |
+| `session_meta` | *(empty)* | per-session JSON: `schema`, `cwd`, `version`, `createdAt`, `resumedFrom`, `originCwd`, `activePlan`, `activeGoal`, `activeProfile`, `mode` |
 | `summary` | *(empty)* | a compaction summary; `meta.parent_session` links the source session |
 | `todo_list` | *(empty)* | the tracked todo list as JSON; append-only, latest wins, `cleared` marks a superseded list |
 
@@ -866,6 +868,21 @@ or deleted. Naming is append-only: the last `session_name` entry wins. A
 tracked todo list is re-appended under the new session id so the panel and the
 new session file agree. `/clear` drops the list instead: it belongs to the
 session that produced it.
+
+Resume reads a session back into the running TUI in place: `signet -r <id>`
+opens the transcript, todos, plan/goal state and model, and `/resume` browses
+every session on disk (current project first). Tool turns are persisted as
+they happen so a resumed history keeps its tool activity; assistant `tool_calls`
+and `tool` result entries pair by id on rehydrate, and unpaired records are
+dropped rather than sent to a provider. A session's project is addressed by a
+`Key` (`<basename>-<8 hex sha256>`), distinct from a workdir, and the recorded
+`session_meta.cwd` is trusted only when it hashes back to that key. Same-project
+resume appends in place; cross-project resume rehydrates the origin read-only
+and forks the continuation into the current project, recording `resumedFrom`
+and `originCwd`, because `App.workdir` is the tool-confinement boundary and
+must never be silently widened to another tree. Legacy schema-1 files rehydrate
+text-only (tool history predates persistence) and gain a backfilled
+`session_meta` on first same-key resume.
 
 ## Credentials
 

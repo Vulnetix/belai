@@ -110,6 +110,7 @@ signet -provider anthropic -model claude-sonnet-4-5 -prompt "review this diff"
 | `-tools` | enable tool execution for this run |
 | `-session-retention-days` | idle session retention in days (default 28) |
 | `-detect-mode` | report which operating mode the prompt selects |
+| `-resume`, `-r` | resume a session by id or unique id prefix in the interactive TUI |
 | `-verbose` | print mode and security decisions to stderr |
 | `-version` | print the version and exit |
 

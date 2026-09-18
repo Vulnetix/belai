@@ -22,16 +22,27 @@ import (
 const maxListBytes = 32 << 20
 
 // Prune removes session files older than maxAge, best-effort per file.
-func (s *Store) Prune(maxAge time.Duration) (removed int, err error) {
+// skipPaths lists exact session files to protect regardless of age (e.g. the
+// session just resumed via --resume).
+func (s *Store) Prune(maxAge time.Duration, skipPaths ...string) (removed int, err error) {
 	if _, err := os.Stat(s.Root); err != nil {
 		if os.IsNotExist(err) {
 			return 0, nil
 		}
 		return 0, err
 	}
+	skip := make(map[string]bool, len(skipPaths))
+	for _, p := range skipPaths {
+		if p != "" {
+			skip[p] = true
+		}
+	}
 	cutoff := time.Now().Add(-maxAge)
 	_ = filepath.Walk(s.Root, func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || !strings.HasSuffix(info.Name(), ".jsonl") {
+			return nil
+		}
+		if skip[path] {
 			return nil
 		}
 		if info.ModTime().Before(cutoff) {

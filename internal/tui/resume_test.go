@@ -248,6 +248,49 @@ func TestResumeWritesActiveSession(t *testing.T) {
 	}
 }
 
+func TestNewWithResumeSessionLoadsTranscript(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	workdir := t.TempDir()
+	st, err := session.NewStore()
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	key, _ := session.KeyFor(workdir)
+	if err := st.AppendTo(key, "sess-1", session.Entry{ID: "u1", Type: "user", Role: "user", Content: "hello"}); err != nil {
+		t.Fatalf("append user: %v", err)
+	}
+	if err := st.AppendTo(key, "sess-1", session.Entry{ID: "a1", ParentID: "u1", Type: "assistant", Role: "assistant", Content: "hi"}); err != nil {
+		t.Fatalf("append assistant: %v", err)
+	}
+
+	a := New(Options{Provider: "openai", Model: "gpt-5", Workdir: workdir, ResumeKey: key, ResumeSession: "sess-1"})
+	if a.sessionID != "sess-1" {
+		t.Fatalf("sessionID = %q, want sess-1", a.sessionID)
+	}
+	if len(a.messages) < 2 || a.messages[0].Content != "hello" || a.messages[1].Content != "hi" {
+		t.Fatalf("transcript not loaded: %+v", a.messages)
+	}
+}
+
+func TestNewWithBadResumeSessionFallsBack(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	workdir := t.TempDir()
+	key, _ := session.KeyFor(workdir)
+	a := New(Options{Provider: "openai", Model: "gpt-5", Workdir: workdir, ResumeKey: key, ResumeSession: "does-not-exist"})
+	if a.sessionID == "does-not-exist" {
+		t.Fatal("bad resume id should leave a fresh session")
+	}
+	found := false
+	for _, m := range a.messages {
+		if m.Role == "system" && strings.Contains(m.Text(), "resume:") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected a resume error system line")
+	}
+}
+
 func TestResumePlanStateRestored(t *testing.T) {
 	workdir := t.TempDir()
 	a := newResumeApp(t, workdir)

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -72,11 +73,18 @@ func main() {
 	planMode := flag.Bool("plan", false, "start in plan mode (read-only)")
 	agentName := flag.String("agent", "", "start a background agent by name in foreground mode")
 	agentCreate := flag.String("agent-create", "", "create an agent profile from a description and save to disk")
+	resume := flag.String("resume", "", "resume a session by id or unique id prefix")
+	flag.StringVar(resume, "r", "", "shorthand for -resume")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Println(version.Version)
 		os.Exit(0)
+	}
+
+	if *resume != "" && *prompt != "" {
+		fmt.Fprintln(os.Stderr, "signet: -resume requires the interactive TUI (not supported with -prompt)")
+		os.Exit(1)
 	}
 
 	workdir, _ := os.Getwd()
@@ -119,10 +127,6 @@ func main() {
 		settings.SessionRetentionDays = sessionRetentionDays
 	}
 
-	if !*noPrune {
-		go pruneSessions(settings)
-	}
-
 	fs := posture.FlagSet{
 		AllowUnsafeToolResult:    allowUnsafeToolResult,
 		AllowMalformedToolResult: allowMalformedToolResult,
@@ -147,6 +151,28 @@ func main() {
 		pol = posture.AllIgnore()
 	}
 	posture.PrintBanner(pol, os.Stderr)
+
+	// Resolve --resume before the TUI starts so a bad id exits non-zero with a
+	// message instead of dropping the user into a TUI to discover the failure.
+	var resumeKey session.Key
+	var resumeID string
+	if *resume != "" {
+		store, err := session.NewStore()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "signet:", err)
+			os.Exit(1)
+		}
+		cur, _ := session.KeyFor(workdir)
+		resumeKey, resumeID, err = store.ResolveAnywhere(cur, *resume)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "signet:", err)
+			os.Exit(1)
+		}
+	}
+
+	if !*noPrune {
+		go pruneSessions(settings, resumeKey, resumeID)
+	}
 
 	if *agentCreate != "" {
 		if err := runAgentCreate(ctx, *agentCreate, *model, *provider, workdir, pol, settings); err != nil {
@@ -178,7 +204,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "signet:", err)
 			os.Exit(1)
 		}
-		if err := tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Provider: *provider, Model: *model, Settings: &settings, Posture: pol, PlanMode: *planMode}); err != nil {
+		if err := tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Provider: *provider, Model: *model, Settings: &settings, Posture: pol, PlanMode: *planMode, ResumeKey: resumeKey, ResumeSession: resumeID}); err != nil {
 			fmt.Fprintln(os.Stderr, "signet:", err)
 			os.Exit(1)
 		}
@@ -378,10 +404,14 @@ func runAgentForeground(ctx context.Context, name, model, providerName, workdir 
 	return nil
 }
 
-func pruneSessions(settings config.Settings) {
+func pruneSessions(settings config.Settings, skipKey session.Key, skipID string) {
 	store, err := session.NewStore()
 	if err != nil {
 		return
 	}
-	_, _ = store.Prune(time.Duration(settings.SessionRetention()) * 24 * time.Hour)
+	var skip string
+	if skipKey != "" && skipID != "" {
+		skip = filepath.Join(store.Root, string(skipKey), skipID+".jsonl")
+	}
+	_, _ = store.Prune(time.Duration(settings.SessionRetention())*24*time.Hour, skip)
 }
