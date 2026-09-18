@@ -124,3 +124,22 @@ func TestFooterRendersMovedDirectory(t *testing.T) {
 		t.Fatalf("footer does not show the moved directory:\n%s", a.footer.View())
 	}
 }
+
+// A session built under an engaged agent's tool allowlist narrows with
+// Registry.Only, which keeps the shared working-directory tracker. The
+// hand-rolled filter loop that preceded it rebuilt the registry without the
+// tracker, so a Cd in an allowlisted session never reached the footer.
+func TestAllowlistedSessionKeepsCwdTracker(t *testing.T) {
+	root := t.TempDir()
+	a := New(Options{Workdir: root})
+	params := a.sessionBuildParams()
+	params.toolAllow = []string{"Read", "Cd"}
+
+	sess, err := buildAgentSession(params)
+	if err != nil {
+		t.Fatalf("buildAgentSession: %v", err)
+	}
+	if sess.Cwd() == nil {
+		t.Fatal("an allowlisted session must keep the working-directory tracker")
+	}
+}

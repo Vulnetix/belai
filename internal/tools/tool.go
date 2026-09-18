@@ -134,6 +134,20 @@ func (r *Registry) WithoutPlanOnly() *Registry {
 	return r.withCwd(NewRegistry(list...))
 }
 
+// Only returns a registry holding just the named tools, in the order the
+// names are given, carrying the same working-directory tracker. Unknown
+// names are skipped: an allowlist naming a tool this build does not have
+// narrows, it does not fail.
+func (r *Registry) Only(names ...string) *Registry {
+	var list []Tool
+	for _, name := range names {
+		if t, ok := r.Find(name); ok {
+			list = append(list, t)
+		}
+	}
+	return r.withCwd(NewRegistry(list...))
+}
+
 // PlanSurface is how far the plan-mode registry may relax. The zero value
 // is the fail-closed surface: no write tools, no Bash.
 type PlanSurface struct {

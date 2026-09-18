@@ -1136,14 +1136,9 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 	if len(p.toolAllow) > 0 {
 		// An engaged background definition brings its allowlist with it, the
 		// same narrowing internal/bgagent applies when it runs the definition
-		// on its own.
-		var filtered []tools.Tool
-		for _, name := range p.toolAllow {
-			if t, ok := reg.Find(name); ok {
-				filtered = append(filtered, t)
-			}
-		}
-		reg = tools.NewRegistry(filtered...)
+		// on its own. Only keeps the shared working-directory tracker, so a
+		// Cd in an allowlisted session still reaches the footer.
+		reg = reg.Only(p.toolAllow...)
 	}
 	perms := permissions.From(p.settings.Permissions.Allow, p.settings.Permissions.Ask, p.settings.Permissions.Deny)
 	pol := p.posture

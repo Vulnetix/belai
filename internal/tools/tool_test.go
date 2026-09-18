@@ -54,3 +54,37 @@ func TestRegistryNamesAndDefinitions(t *testing.T) {
 		t.Fatal("expected not to find Missing")
 	}
 }
+
+// Only narrows to the named tools and keeps the shared working-directory
+// tracker, so an allowlisted session still moves the footer on a Cd.
+func TestRegistryOnlyCarriesCwd(t *testing.T) {
+	root := t.TempDir()
+	base := Default(root, false)
+
+	got := base.Only("Read", "Cd")
+	if got.Cwd() == nil {
+		t.Fatal("Only dropped the shared working-directory tracker")
+	}
+	if got.Cwd() != base.Cwd() {
+		t.Fatal("Only must carry the same tracker pointer, not a copy")
+	}
+}
+
+// Only preserves the allowlist order and skips unknown names: an allowlist
+// naming a tool this build does not have narrows, it does not fail.
+func TestRegistryOnlyPreservesOrderAndSkipsUnknown(t *testing.T) {
+	root := t.TempDir()
+	base := Default(root, false)
+
+	got := base.Only("Glob", "no-such-tool", "Read", "Grep")
+	want := []string{"Glob", "Read", "Grep"}
+	names := got.Names()
+	if len(names) != len(want) {
+		t.Fatalf("Only names = %v, want %v", names, want)
+	}
+	for i := range want {
+		if names[i] != want[i] {
+			t.Fatalf("Only names = %v, want %v (order not preserved)", names, want)
+		}
+	}
+}

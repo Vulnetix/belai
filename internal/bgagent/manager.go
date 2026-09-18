@@ -442,13 +442,7 @@ func (m *Manager) buildSession(profile agentprofile.AgentProfile) (*agent.Sessio
 	ix := repoindex.Scan(context.Background(), m.workdir)
 	reg := tools.DefaultWithCaps(m.workdir, m.settings.ReadOnlyEnabled(), caps, ix)
 	if len(profile.Tools) > 0 {
-		var filtered []tools.Tool
-		for _, name := range profile.Tools {
-			if t, ok := reg.Find(name); ok {
-				filtered = append(filtered, t)
-			}
-		}
-		reg = tools.NewRegistry(filtered...)
+		reg = reg.Only(profile.Tools...)
 	}
 	perms := permissions.From(m.settings.Permissions.Allow, m.settings.Permissions.Ask, m.settings.Permissions.Deny)
 	var promptOpts prompt.Options

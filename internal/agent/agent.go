@@ -164,6 +164,12 @@ func wireTools(reg *tools.Registry) ([]wire.OpenAITool, []wire.AnthropicToolDef)
 	return openAI, anthropic
 }
 
+// Cwd returns the shared working-directory tracker the session's registry
+// carries. A top-level session is always built with one; the accessor exists
+// so the TUI (and its tests) can verify an allowlist narrowing did not drop
+// it.
+func (s *Session) Cwd() *tools.Cwd { return s.registry.Cwd() }
+
 // toolDocs renders the current mode's tool surface as the sealed briefing the
 // system prompt carries.
 func (s *Session) toolDocs() prompt.ToolsOptions {
