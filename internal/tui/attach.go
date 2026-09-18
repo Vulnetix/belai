@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -34,11 +36,12 @@ type attachment struct {
 	id       int
 	text     string // the literal "@path" the user typed, used as join key
 	raw      string // path part after sanitisation
-	body     string // file contents after successful validation
+	body     string // file contents (or directory listing) after successful validation
 	state    attachState
 	reason   string
 	diff     filediff.Change // worktree-vs-index change, computed on validation
 	sentinel rolemanager.Sentinel
+	isDir    bool // the target is a directory: listed, not read
 }
 
 // token is one candidate attachment parsed from editor text.
@@ -56,6 +59,7 @@ type attachValidatedMsg struct {
 	err      error
 	sentinel rolemanager.Sentinel
 	diff     filediff.Change
+	isDir    bool
 }
 
 // reservedAttachSchemes lists prefixes that look like schemes but must not be
@@ -184,6 +188,18 @@ func (a *App) validateAttachmentCmd(id int, rel string) tea.Cmd {
 	pol := a.effectivePosture()
 	return func() tea.Msg {
 		ctx := context.Background()
+		// A directory is listed, not read — the answer an Ls call would give.
+		// Entry names are shaped, harness-known output (one per line), so the
+		// listing is sanitised and admitted without a classifier round trip,
+		// exactly like an LS result: it carries no file content to classify.
+		abs := filepath.Join(workdir, rel)
+		if info, err := os.Stat(abs); err == nil && info.IsDir() {
+			body, err := listDirForAttachment(abs)
+			if err != nil {
+				return attachValidatedMsg{id: id, err: err, sentinel: rolemanager.SentinelMalformed, isDir: true}
+			}
+			return attachValidatedMsg{id: id, body: sanitize.Sanitize(body), sentinel: rolemanager.SentinelSafe, isDir: true}
+		}
 		read := &tools.Read{Root: workdir, MaxBytes: 64 * 1024}
 		res, err := read.Execute(ctx, map[string]any{"path": rel})
 		if err != nil {
@@ -211,6 +227,43 @@ func (a *App) validateAttachmentCmd(id int, rel string) tea.Cmd {
 	}
 }
 
+// attachListCap bounds a directory listing at the native tools' output cap,
+// so a ten-thousand-entry directory cannot flood the turn.
+const attachListCap = 64 * 1024
+
+// listDirForAttachment renders one directory the way the model should see it:
+// entries sorted by name, one per line, subdirectories marked with a trailing
+// slash. Past the cap the listing stops at a line boundary with a marker
+// rather than cutting a name mid-string. An empty directory answers
+// explicitly, because a zero-byte attachment would be dropped from the turn
+// while its preview row still promised a listing.
+func listDirForAttachment(dir string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", err
+	}
+	if len(entries) == 0 {
+		return "(empty directory)\n", nil
+	}
+	var b strings.Builder
+	truncated := false
+	for _, e := range entries {
+		line := e.Name()
+		if e.IsDir() {
+			line += "/"
+		}
+		if b.Len()+len(line)+1 > attachListCap {
+			truncated = true
+			break
+		}
+		b.WriteString(line + "\n")
+	}
+	if truncated {
+		b.WriteString("… (truncated)\n")
+	}
+	return b.String(), nil
+}
+
 // handleAttachValidated applies the async validation result, drops stale
 // results, and flushes any pending submit once everything is resolved.
 func (a *App) handleAttachValidated(m attachValidatedMsg) tea.Cmd {
@@ -224,6 +277,7 @@ func (a *App) handleAttachValidated(m attachValidatedMsg) tea.Cmd {
 	}
 	att.sentinel = m.sentinel
 	att.diff = m.diff
+	att.isDir = m.isDir
 	if m.err != nil {
 		att.state = attachRejected
 		att.reason = m.err.Error()
@@ -259,7 +313,11 @@ func (a *App) flushPendingSubmit() tea.Cmd {
 	for _, id := range a.attachOrder {
 		att := a.attachments[id]
 		if att.state == attachSafe && att.body != "" {
-			atts = append(atts, run.Attachment{Kind: "file", Label: att.text, Body: att.body})
+			kind := "file"
+			if att.isDir {
+				kind = "directory"
+			}
+			atts = append(atts, run.Attachment{Kind: kind, Label: att.text, Body: att.body})
 		}
 	}
 	a.attachments = map[int]*attachment{}
@@ -286,24 +344,32 @@ func (a *App) attachmentPreviews() ([]components.Message, string) {
 	var withheld []string
 	for _, id := range a.attachOrder {
 		att := a.attachments[id]
+		toolName := "Read"
+		if att.isDir {
+			toolName = "Ls"
+		}
 		switch att.state {
 		case attachSafe:
+			meta := map[string]any{"path": att.raw}
+			if !att.isDir {
+				meta["start_line"] = 1
+			}
 			msg := components.Message{
 				Role:     "tool",
-				ToolName: "Read",
+				ToolName: toolName,
 				ToolArgs: `{"path":"` + att.raw + `"}`,
 				Content:  att.body,
-				Meta:     map[string]any{"path": att.raw, "start_line": 1},
+				Meta:     meta,
 				Status:   "✓",
 			}
-			if !att.diff.Empty() {
+			if !att.isDir && !att.diff.Empty() {
 				msg.SetDiff(&att.diff)
 			}
 			previews = append(previews, msg)
 		case attachRejected:
 			previews = append(previews, components.Message{
 				Role:     "tool",
-				ToolName: "Read",
+				ToolName: toolName,
 				ToolArgs: `{"path":"` + att.raw + `"}`,
 				Content:  "tool result withheld: attachment " + att.text + " classified " + string(att.sentinel),
 			})

@@ -242,27 +242,43 @@ Attachment admission pipeline:
 
 1. **Path confinement** — `tools.SanitizePath` resolves the token against
    `App.workdir`; a traversal outside the workdir is rejected.
-2. **Read** — `tools.Read` fetches the bytes (up to 64 KiB) and rejects binary
-   files on NUL bytes.
+2. **Read, or list for directories** — a file is fetched by `tools.Read`
+   (up to 64 KiB, binary rejected on NUL bytes). A directory is not read —
+   it is listed in-process, entries sorted, one per line, subdirectories
+   marked with a trailing slash, capped at 64 KiB with a truncation marker.
+   That is the answer an `Ls` call would give, and a directory is never
+   withheld as a malformed read.
 3. **Guardrails gate** — `App.effectivePosture()` is checked **before** the
    classifier. With guardrails off, the file is admitted with no classifier
    round trip; sanitisation still runs.
-4. **Classifier** — for `KindRead` the classifier runs unconditionally (an
-   arbitrary repository file can carry an injection exactly like a web page).
-5. **Decision** — SAFE files become `run.Attachment{Kind:"file"}`; rejected
-   files are withheld from the model, and a sealed `<directive>` in the same
-   user turn tells the model which tokens were withheld, why, and how to
-   proceed.
+4. **Classifier** — for `KindRead` file bytes the classifier runs
+   unconditionally (an arbitrary repository file can carry an injection
+   exactly like a web page). A directory listing is never classified: entry
+   names are shaped, harness-known output (like `Grep`/`Glob`/`LS` results),
+   so it is sanitised and admitted directly, with guardrails on or off.
+5. **Decision** — safe attachments become `run.Attachment{Kind:"file"}`
+   (directories: `Kind:"directory"`); rejected files are withheld from the
+   model, and a sealed `<directive>` in the same user turn tells the model
+   which tokens were withheld, why, and how to proceed.
 
 Transcript preview rows are appended at submit time, immediately before the
 user prompt echo, so they do not have to be removed if the user deletes the
-`@token` before sending. A SAFE attachment renders as a `Read` tool row with a
-`✓` status, line numbers, and syntax highlighting when expanded; if the
+`@token` before sending. A safe file renders as a `Read` tool row with a `✓`
+status, line numbers, and syntax highlighting when expanded; a safe
+directory renders as an `Ls` tool row with the listing; if a file's
 worktree copy differs from the git index, a diff row renders beneath it via
-`filediff.WorktreeChange`. A rejected attachment renders as a red `withheld`
-row with its sentinel.
+`filediff.WorktreeChange` (directories have no diff). A rejected attachment
+renders as a red `withheld` row with its sentinel.
 
 Business rules and edge cases:
+
+- **A directory is listed, not read.** `@docs/` produces a sorted entry
+  listing rendered as an `Ls` row — it is the one attachment that never goes
+  to the classifier, because it contains no file content, only names the
+  harness can account for.
+- **An empty directory answers "(empty directory)"** rather than a
+  zero-byte body that would be dropped from the model's turn while its
+  preview row still promised a listing.
 
 - **Rejected attachments never reach the model.** Neither their bytes nor a
   description of their contents is sent; only the harness-authored directive

@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -9,6 +11,117 @@ import (
 	"github.com/vulnetix/signet/internal/filediff"
 	"github.com/vulnetix/signet/internal/rolemanager"
 )
+
+// A directory attached with @ is listed, not read: the validation command
+// must admit it in-process (no provider round trip) and the transcript row
+// must be an Ls tool row, not a Read row that withheld as MALFORMED.
+func TestAttachmentDirectoryLists(t *testing.T) {
+	workdir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workdir, "docs", "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workdir, "docs", "a.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	a := New(Options{Workdir: workdir})
+	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	a.editor.SetValue("list @docs/ ")
+	cmd := a.syncAttachments()
+	if cmd == nil {
+		t.Fatal("syncAttachments returned no validation command")
+	}
+	a.Update(cmd())
+
+	if len(a.attachments) != 1 {
+		t.Fatalf("attachments = %d, want 1", len(a.attachments))
+	}
+	for _, att := range a.attachments {
+		if att.state != attachSafe {
+			t.Fatalf("directory attachment state = %d (reason %q), want safe", att.state, att.reason)
+		}
+		if !att.isDir {
+			t.Fatal("directory attachment must be marked isDir")
+		}
+		if !strings.Contains(att.body, "a.md") || !strings.Contains(att.body, "sub/") {
+			t.Fatalf("listing missing entries:\n%s", att.body)
+		}
+	}
+
+	previews, directive := a.attachmentPreviews()
+	if len(previews) != 1 {
+		t.Fatalf("previews = %d, want 1", len(previews))
+	}
+	if previews[0].ToolName != "Ls" {
+		t.Fatalf("preview tool = %q, want Ls", previews[0].ToolName)
+	}
+	if previews[0].Status != "✓" {
+		t.Fatalf("preview status = %q, want ✓", previews[0].Status)
+	}
+	if !strings.Contains(previews[0].Content, "a.md") {
+		t.Fatalf("preview content missing listing:\n%s", previews[0].Content)
+	}
+	if directive != "" {
+		t.Fatalf("a safe directory must not raise a directive, got %q", directive)
+	}
+}
+
+// An empty directory still gets a row and a body: a zero-byte attachment
+// would be dropped from the model's turn while the transcript promised a
+// listing.
+func TestAttachmentEmptyDirectoryLists(t *testing.T) {
+	workdir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workdir, "empty"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	a := New(Options{Workdir: workdir})
+	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	a.editor.SetValue("list @empty/ ")
+	cmd := a.syncAttachments()
+	a.Update(cmd())
+
+	for _, att := range a.attachments {
+		if att.state != attachSafe {
+			t.Fatalf("empty directory state = %d (reason %q), want safe", att.state, att.reason)
+		}
+		if att.body != "(empty directory)\n" {
+			t.Fatalf("empty directory body = %q, want the explicit marker", att.body)
+		}
+	}
+}
+
+// Subdirectories are marked with a trailing slash, so the model can tell
+// where to point a follow-up @token without a second round trip.
+func TestAttachmentDirectoryListingMarksSubdirs(t *testing.T) {
+	got, err := listDirForAttachment(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "(empty directory)\n" {
+		t.Fatalf("empty listing = %q", got)
+	}
+
+	dir := t.TempDir()
+	for _, name := range []string{"a.md", "b.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"adir", "zdir"} {
+		if err := os.MkdirAll(filepath.Join(dir, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err = listDirForAttachment(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "a.md\nadir/\nb.txt\nzdir/\n"
+	if got != want {
+		t.Fatalf("listing = %q, want %q", got, want)
+	}
+}
 
 func TestParseTokens(t *testing.T) {
 	cases := []struct {

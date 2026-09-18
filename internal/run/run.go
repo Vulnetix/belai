@@ -260,7 +260,7 @@ func WireModel(provider, model string) string {
 // nonce from the live pool, so the seal survives the sanitise pass every turn
 // body goes through.
 type Attachment struct {
-	Kind  string // "file" | "shell"
+	Kind  string // "file" | "directory" | "shell"
 	Label string // the @path the user typed, or the ! command
 	Body  string
 }
