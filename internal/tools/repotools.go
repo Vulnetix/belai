@@ -119,17 +119,20 @@ func repoFilesTool(ix repoindex.Index) nativeCommand {
 
 // repoReadTool reads a file from a local checkout. It shells out to cat with
 // a sanitised absolute path so the result can be marked KindRead, signalling
-// that it carries arbitrary file bytes that must be classified.
+// that it carries arbitrary file bytes that must be classified. The path
+// argument is relative to the checkout, not to the session working directory,
+// so it is exempt from the Cd rebase.
 func repoReadTool(ix repoindex.Index) nativeCommand {
 	return nativeCommand{
-		name:     "RepoRead",
-		binary:   "cat",
-		kind:     KindRead,
-		desc:     "Read a file from a locally available git repository. Resolve the repository name with Repos first.",
-		required: []string{"repo", "path"},
+		name:         "RepoRead",
+		binary:       "cat",
+		kind:         KindRead,
+		noPathRebase: true,
+		desc:         "Read a file from a locally available git repository. Resolve the repository name with Repos first.",
+		required:     []string{"repo", "path"},
 		props: map[string]Property{
 			"repo": {Type: "string", Description: "Repository reference: \"owner/repo\" or a bare \"repo\" name when unique."},
-			"path": {Type: "string", Description: "File path inside the repository (e.g. \".github/workflows/ci.yml\")."},
+			"path": {Type: "string", Description: "File path inside the repository (e.g. \".github/workflows/ci.yml\"). Relative to the repository checkout, not the session working directory."},
 		},
 		build: func(_ string, args map[string]any) ([]string, string, error) {
 			entry, err := lookupRepo(ix, args)

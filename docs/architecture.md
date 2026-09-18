@@ -533,6 +533,14 @@ Business rules and edge cases:
 - **Permission subjects are root-relative.** A path argument is rebased onto
   the working directory *before* the permission rule is matched, so a rule
   written against `secrets/**` keeps matching after a `Cd` into `secrets`.
+- **`RepoRead`'s path is the exception to the rebase.** Its `path` is
+  relative to the repository *checkout* — a different location on the
+  machine — not to the session working directory. Joining it with the
+  working directory after a `Cd` would read a file the model did not name, so
+  the rebase skips tools whose path resolves against its own base (marked
+  `noPathRebase` in the catalogue). The checkout-relative spelling, and the
+  permission subject derived from it, are unchanged by a move, and a `..`
+  escape is still refused — against the checkout, not the working directory.
 - **An omitted optional path means "here".** `Grep` and `Glob` with no `path`
   search the working directory; a native listing (`LS`) with no `path` lists
   it. Results stay relative to the root either way.

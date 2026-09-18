@@ -42,6 +42,12 @@ type nativeCommand struct {
 	build func(root string, args map[string]any) (argv []string, stdin string, err error)
 	// subject extracts the permission-rule subject from the arguments.
 	subject func(args map[string]any) string
+	// noPathRebase marks tools whose "path" argument is not relative to the
+	// session working directory. RepoRead's path is relative to the
+	// repository checkout, so joining it with the working directory after a
+	// Cd would read a file the model did not name; rebase leaves such an
+	// argument for the build function to resolve against its own base.
+	noPathRebase bool
 }
 
 // Native is a first-class read-only tool backed by a fixed command shape.
@@ -100,6 +106,9 @@ func (n *Native) rebase(args map[string]any) map[string]any {
 		out[k] = v
 	}
 	for _, key := range nativePathArgs {
+		if n.cmd.noPathRebase && key == "path" {
+			continue
+		}
 		s, ok := argString(out, key)
 		if !ok || strings.TrimSpace(s) == "" {
 			continue
@@ -108,10 +117,13 @@ func (n *Native) rebase(args map[string]any) map[string]any {
 	}
 	// An omitted optional path means "here". Without this, a listing would
 	// default to the root after a move, which reads as the move having been
-	// ignored.
+	// ignored. (Skipped for noPathRebase tools: their path is relative to a
+	// different base, where "here" is meaningless.)
 	if s, ok := argString(out, "path"); !ok || strings.TrimSpace(s) == "" {
-		if _, declared := n.cmd.props["path"]; declared && !n.requiresPath() {
-			out["path"] = n.Cwd.Rel()
+		if !n.cmd.noPathRebase {
+			if _, declared := n.cmd.props["path"]; declared && !n.requiresPath() {
+				out["path"] = n.Cwd.Rel()
+			}
 		}
 	}
 	return out

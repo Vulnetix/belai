@@ -277,3 +277,47 @@ func TestReposAbsentWhenIndexEmpty(t *testing.T) {
 		t.Fatal("Repos must not be offered for an empty index")
 	}
 }
+
+// A RepoRead path is relative to the repository checkout, not to the
+// session working directory. The rebase that rewrites path arguments after a
+// Cd must leave it untouched: joining a checkout-relative path with the
+// local working directory would read a file the model did not name (or fail
+// to find one at all).
+func TestRepoReadPathSurvivesCd(t *testing.T) {
+	dir := t.TempDir()
+	repo := filepath.Join(dir, "signet")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initRepo(t, repo)
+	ix := repoindex.Scan(context.Background(), filepath.Join(dir, "other"))
+
+	workdir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(workdir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	reg := DefaultWithCaps(workdir, true, repoTestCaps(), ix)
+	if _, err := reg.Cwd().Change("sub"); err != nil {
+		t.Fatalf("Cd: %v", err)
+	}
+	tool, ok := reg.Find("RepoRead")
+	if !ok {
+		t.Fatal("RepoRead not registered")
+	}
+	res, err := tool.Execute(context.Background(), map[string]any{"repo": "Vulnetix/signet", "path": "file.txt"})
+	if err != nil {
+		t.Fatalf("RepoRead after Cd: %v", err)
+	}
+	if res.Content != "hello" {
+		t.Fatalf("RepoRead content after Cd = %q, want hello", res.Content)
+	}
+	// The permission subject stays checkout-relative as well: it is the path
+	// the model named, not a local working-directory join.
+	if got := tool.Subject(map[string]any{"path": "file.txt"}); got != "file.txt" {
+		t.Fatalf("RepoRead subject after Cd = %q, want file.txt", got)
+	}
+	// An escape is still refused after the move, against the checkout.
+	if _, err := tool.Execute(context.Background(), map[string]any{"repo": "Vulnetix/signet", "path": "../outside.txt"}); err == nil {
+		t.Fatal("path escape after Cd must be rejected")
+	}
+}
