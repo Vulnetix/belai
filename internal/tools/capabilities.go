@@ -24,6 +24,27 @@ func (c Capabilities) Has(name string) bool {
 	return c.local[name] || c.cloud[name]
 }
 
+// HasBinary reports whether a detected local utility is backed by the named
+// binary. The repo-native tools have no capability entry of their own — they
+// borrow a local utility's binary (RepoFiles: git, RepoRead: cat) — so they
+// gate on the binary rather than on a tool name: a tool that cannot work is
+// never offered.
+func (c Capabilities) HasBinary(bin string) bool {
+	if bin == "" {
+		return false
+	}
+	for _, cmd := range localCatalog() {
+		b := cmd.binary
+		if b == "" {
+			b = strings.ToLower(cmd.name)
+		}
+		if b == bin && c.local[cmd.name] {
+			return true
+		}
+	}
+	return false
+}
+
 // IsEmpty reports whether no native tool was detected.
 func (c Capabilities) IsEmpty() bool { return len(c.local) == 0 && len(c.cloud) == 0 }
 

@@ -114,3 +114,28 @@ func TestCloudReadOnlyPrefixes(t *testing.T) {
 		}
 	}
 }
+
+// TestCapabilitiesHasBinary pins the gate the repo-native tools use: the
+// answer follows the binary of a *detected* local utility, not the mere
+// presence of the tool name in the catalogue.
+func TestCapabilitiesHasBinary(t *testing.T) {
+	caps := Capabilities{local: map[string]bool{"Git": true, "Cat": true}}
+	if !caps.HasBinary("git") {
+		t.Fatal("git must be available through the detected Git tool")
+	}
+	if !caps.HasBinary("cat") {
+		t.Fatal("cat must be available through the detected Cat tool")
+	}
+	// jq is in the catalogue but was not detected: its binary is not
+	// available even though a tool named JQ exists.
+	if caps.HasBinary("jq") {
+		t.Fatal("an undetected tool's binary must report false")
+	}
+	if caps.HasBinary("repos") || caps.HasBinary("") {
+		t.Fatal("unknown or empty binaries must report false")
+	}
+	empty := Capabilities{}
+	if empty.HasBinary("git") {
+		t.Fatal("an empty capability set must report nothing available")
+	}
+}

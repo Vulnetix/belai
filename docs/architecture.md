@@ -381,7 +381,10 @@ execution is a **fixed command shape**, not an arbitrary command string:
   with no binary: it renders the in-memory index in-process (a standalone
   `tools.RepoList`, not a `tools.Native`), so it starts no subprocess and is
   offered whenever the index is non-empty, regardless of capability
-  detection. `RepoFiles` and `RepoRead` shell out to `git` and `cat`.
+  detection. `RepoFiles` and `RepoRead` shell out to `git` and `cat` and are
+  offered only when that binary was detected: they carry no capability entry
+  of their own, so a machine without `git` never sees a `RepoFiles` it cannot
+  run.
   An owner filter that matches nothing answers explicitly ("no repositories
   owned by …") rather than returning an empty listing that would read as
   "no repositories at all".
@@ -474,7 +477,12 @@ probe (`aws sts get-caller-identity`, `gh auth status`, `gcloud config
 concurrently under one timeout), and silent: an unverifiable tool is simply
 not offered. `tools.DefaultWithCaps` builds the registry from the detected
 `tools.Capabilities`; `tools.Default` (no native tools) remains for the
-profiles/permission-editor name lists.
+profiles/permission-editor name lists. The repository tools are the one
+exception to "tool name → detection entry": `RepoFiles` and `RepoRead` have
+no entry of their own and gate on `Capabilities.HasBinary`, offered only when
+the binary they shell out to (`git`, `cat`) was detected as a local utility;
+the in-process `Repos` listing needs no binary and is offered whenever the
+index is non-empty.
 
 ### Working directory (`Cd`)
 

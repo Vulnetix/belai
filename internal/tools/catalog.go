@@ -883,6 +883,11 @@ func NativeTools(root string, caps Capabilities, cwd *Cwd, ix repoindex.Index) [
 		out = append(out, &RepoList{ix: ix})
 	}
 	for _, c := range repoTools(ix) {
+		// Repo-native tools have no capability entry of their own; they are
+		// offered only when the binary they shell out to was detected.
+		if !caps.HasBinary(c.binary) {
+			continue
+		}
 		out = append(out, &Native{Root: root, Timeout: 30 * time.Second, cmd: c, Cwd: cwd})
 	}
 	return out

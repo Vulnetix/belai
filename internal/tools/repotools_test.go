@@ -12,6 +12,12 @@ import (
 	"github.com/vulnetix/signet/internal/repoindex"
 )
 
+// repoTestCaps is the capability set that offers every repo tool: RepoFiles
+// shells out to git and RepoRead to cat, and both gate on their binary.
+func repoTestCaps() Capabilities {
+	return Capabilities{local: map[string]bool{"Git": true, "Cat": true}}
+}
+
 func initRepo(t *testing.T, dir string) {
 	t.Helper()
 	cmd := exec.Command("git", "init", "-q")
@@ -61,10 +67,46 @@ func TestRepoToolsPresentWhenIndexNonEmpty(t *testing.T) {
 	if ix.Empty() {
 		t.Fatal("expected index to find the repo")
 	}
-	reg := DefaultWithCaps(t.TempDir(), true, Capabilities{}, ix)
+	reg := DefaultWithCaps(t.TempDir(), true, repoTestCaps(), ix)
 	for _, name := range []string{"Repos", "RepoFiles", "RepoRead"} {
 		if _, ok := reg.Find(name); !ok {
 			t.Errorf("%q should be registered with a non-empty index", name)
+		}
+	}
+}
+
+// The repo tools that shell out fail closed when their binary was not
+// detected; the in-process listing is unaffected, because it needs no
+// binary at all.
+func TestRepoToolsGatedOnBinaries(t *testing.T) {
+	dir := t.TempDir()
+	repo := filepath.Join(dir, "signet")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	initRepo(t, repo)
+	ix := repoindex.Scan(context.Background(), filepath.Join(dir, "other"))
+
+	cases := []struct {
+		caps    Capabilities
+		wantGit bool // RepoFiles
+		wantCat bool // RepoRead
+	}{
+		{Capabilities{}, false, false},
+		{Capabilities{local: map[string]bool{"Git": true}}, true, false},
+		{Capabilities{local: map[string]bool{"Cat": true}}, false, true},
+		{repoTestCaps(), true, true},
+	}
+	for _, tc := range cases {
+		reg := DefaultWithCaps(t.TempDir(), true, tc.caps, ix)
+		if _, ok := reg.Find("Repos"); !ok {
+			t.Fatal("Repos must be offered regardless of capabilities")
+		}
+		if _, ok := reg.Find("RepoFiles"); ok != tc.wantGit {
+			t.Errorf("RepoFiles offered = %v, want %v (caps %v)", ok, tc.wantGit, tc.caps.LocalNames())
+		}
+		if _, ok := reg.Find("RepoRead"); ok != tc.wantCat {
+			t.Errorf("RepoRead offered = %v, want %v (caps %v)", ok, tc.wantCat, tc.caps.LocalNames())
 		}
 	}
 }
@@ -77,7 +119,7 @@ func TestRepoReadConfinesToCheckout(t *testing.T) {
 	}
 	initRepo(t, repo)
 	ix := repoindex.Scan(context.Background(), filepath.Join(dir, "other"))
-	reg := DefaultWithCaps(t.TempDir(), true, Capabilities{}, ix)
+	reg := DefaultWithCaps(t.TempDir(), true, repoTestCaps(), ix)
 	tool, ok := reg.Find("RepoRead")
 	if !ok {
 		t.Fatal("RepoRead not registered")
@@ -103,7 +145,7 @@ func TestRepoReadRejectsEscape(t *testing.T) {
 	}
 	initRepo(t, repo)
 	ix := repoindex.Scan(context.Background(), filepath.Join(dir, "other-dir"))
-	reg := DefaultWithCaps(t.TempDir(), true, Capabilities{}, ix)
+	reg := DefaultWithCaps(t.TempDir(), true, repoTestCaps(), ix)
 	tool, _ := reg.Find("RepoRead")
 	_, err := tool.Execute(context.Background(), map[string]any{"repo": "Vulnetix/signet", "path": "../other.txt"})
 	if err == nil {
@@ -119,7 +161,7 @@ func TestRepoFilesListsFiles(t *testing.T) {
 	}
 	initRepo(t, repo)
 	ix := repoindex.Scan(context.Background(), filepath.Join(dir, "other"))
-	reg := DefaultWithCaps(t.TempDir(), true, Capabilities{}, ix)
+	reg := DefaultWithCaps(t.TempDir(), true, repoTestCaps(), ix)
 	tool, ok := reg.Find("RepoFiles")
 	if !ok {
 		t.Fatal("RepoFiles not registered")
@@ -144,7 +186,7 @@ func TestRepoFilesMissListsAvailable(t *testing.T) {
 	}
 	initRepo(t, repo)
 	ix := repoindex.Scan(context.Background(), filepath.Join(dir, "other"))
-	reg := DefaultWithCaps(t.TempDir(), true, Capabilities{}, ix)
+	reg := DefaultWithCaps(t.TempDir(), true, repoTestCaps(), ix)
 	tool, _ := reg.Find("RepoFiles")
 	_, err := tool.Execute(context.Background(), map[string]any{"repo": "Unknown/Repo"})
 	if err == nil {
