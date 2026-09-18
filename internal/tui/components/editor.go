@@ -63,6 +63,63 @@ func (e *Editor) SetValue(s string) { e.textarea.SetValue(s) }
 // CursorEnd moves the cursor to the end of the text.
 func (e *Editor) CursorEnd() { e.textarea.CursorEnd() }
 
+// CursorOffset returns the cursor position as a rune offset into Value().
+func (e *Editor) CursorOffset() int {
+	lines, row, col := e.cursor()
+	off := 0
+	for i := 0; i < row && i < len(lines); i++ {
+		off += len(lines[i]) + 1 // newline
+	}
+	off += col
+	if off < 0 {
+		off = 0
+	}
+	return off
+}
+
+// ReplaceRange replaces the rune range [from, to) in Value() with s and leaves
+// the cursor just past the inserted text.
+func (e *Editor) ReplaceRange(from, to int, s string) {
+	value := e.Value()
+	runes := []rune(value)
+	if from < 0 {
+		from = 0
+	}
+	if to > len(runes) {
+		to = len(runes)
+	}
+	if from > to {
+		from = to
+	}
+	newRunes := append([]rune(nil), runes[:from]...)
+	newRunes = append(newRunes, []rune(s)...)
+	newRunes = append(newRunes, runes[to:]...)
+	newValue := string(newRunes)
+
+	// SetValue parks the cursor at the end; walk it back to the target row and
+	// column in the new value.
+	targetOff := from + len([]rune(s))
+	targetRow, targetCol := 0, 0
+	for i, r := range newRunes {
+		if i == targetOff {
+			break
+		}
+		if r == '\n' {
+			targetRow++
+			targetCol = 0
+		} else {
+			targetCol++
+		}
+	}
+
+	e.textarea.SetValue(newValue)
+	e.textarea.CursorEnd()
+	for e.textarea.Line() > targetRow && e.textarea.Line() > 0 {
+		e.textarea.CursorUp()
+	}
+	e.textarea.SetCursor(targetCol)
+}
+
 // Reset clears the editor.
 func (e *Editor) Reset() { e.textarea.Reset() }
 
