@@ -13,6 +13,7 @@ import (
 
 // Read is the file-read tool.
 type Read struct {
+	Cwd      *Cwd
 	Root     string
 	MaxBytes int64
 }
@@ -34,10 +35,11 @@ func (r *Read) Definition() Definition {
 // Kind returns the tool kind.
 func (r *Read) Kind() Kind { return KindRead }
 
-// Subject returns the permission-rule subject (the path argument).
+// Subject returns the permission-rule subject: the path argument resolved
+// through the working directory, so a rule keeps matching after a move.
 func (r *Read) Subject(args map[string]any) string {
 	if s, ok := args["path"].(string); ok {
-		return s
+		return subjectPath(r.Root, r.Cwd, s)
 	}
 	return ""
 }
@@ -48,7 +50,7 @@ func (r *Read) Execute(ctx context.Context, args map[string]any) (Result, error)
 	if !ok || pathArg == "" {
 		return Result{}, fmt.Errorf("missing path argument")
 	}
-	rel, err := SanitizePath(r.Root, pathArg)
+	rel, err := resolvePath(r.Root, r.Cwd, pathArg)
 	if err != nil {
 		return Result{}, err
 	}

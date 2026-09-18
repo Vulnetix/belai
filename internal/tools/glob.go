@@ -23,6 +23,7 @@ import (
 // silently turned every recursive pattern into an empty result. Keeping the
 // matcher in-process means the two backends cannot disagree.
 type Glob struct {
+	Cwd        *Cwd
 	Root       string
 	MaxResults int
 	fdPath     string // cached; "" when fd is unavailable
@@ -66,11 +67,16 @@ func (g *Glob) Execute(ctx context.Context, args map[string]any) (Result, error)
 	}
 	sub := ""
 	if s, ok := args["path"].(string); ok && s != "" {
-		rel, err := SanitizePath(g.Root, s)
+		rel, err := resolvePath(g.Root, g.Cwd, s)
 		if err != nil {
 			return Result{}, err
 		}
 		sub = rel
+	} else {
+		// No path argument means "here", and "here" is the working directory.
+		// Results stay relative to the root so a match can be handed straight
+		// back to Read.
+		sub = g.Cwd.Rel()
 	}
 	max := g.MaxResults
 	if max <= 0 {

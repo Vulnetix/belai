@@ -13,6 +13,7 @@ import (
 // back to POSIX grep. Both backends are normalised to one output shape:
 // path:line:text.
 type Grep struct {
+	Cwd        *Cwd
 	Root       string
 	MaxMatches int
 	MaxLineLen int
@@ -51,11 +52,16 @@ func (g *Grep) Execute(ctx context.Context, args map[string]any) (Result, error)
 	}
 	sub := ""
 	if s, ok := args["path"].(string); ok && s != "" {
-		rel, err := SanitizePath(g.Root, s)
+		rel, err := resolvePath(g.Root, g.Cwd, s)
 		if err != nil {
 			return Result{}, err
 		}
 		sub = rel
+	} else {
+		// No path argument means "here", and "here" is the working directory.
+		// The search still runs from the root so the reported paths stay
+		// root-relative and can be handed straight back to Read.
+		sub = g.Cwd.Rel()
 	}
 	if g.rgPath == "" {
 		g.rgPath, _ = exec.LookPath("rg")

@@ -132,7 +132,7 @@ func TestJQTransformsStdin(t *testing.T) {
 // and the read-only switch keeps native tools while stripping mutating ones.
 func TestNativeToolsBuiltFromCaps(t *testing.T) {
 	caps := Capabilities{local: map[string]bool{"Cat": true, "Head": true}, cloud: map[string]bool{"GH": true}}
-	tools := NativeTools(t.TempDir(), caps)
+	tools := NativeTools(t.TempDir(), caps, nil)
 	names := map[string]bool{}
 	for _, tool := range tools {
 		names[tool.Definition().Name] = true

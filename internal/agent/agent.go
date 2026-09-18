@@ -628,7 +628,18 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 		}
 	}
 
+	// A tool may move the session's working directory (Cd does). The move is
+	// observed around the call rather than reported by it, so a future tool
+	// that also moves is covered without teaching this function about it.
+	cwdBefore := s.registry.Cwd().Rel()
+
 	res, err := runTool(ctx, tool, call, emit)
+
+	if cwd := s.registry.Cwd(); cwd != nil {
+		if after := cwd.Rel(); after != cwdBefore {
+			emit(Event{Kind: EventCwdKind, Cwd: after, CwdDir: cwd.Dir()})
+		}
+	}
 
 	// Emitted before the Role Manager classifies the result, so the diff
 	// appears while that is still running. It is render-only and is not part

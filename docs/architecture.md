@@ -164,8 +164,8 @@ execution is a **fixed command shape**, not an arbitrary command string:
 - Local utilities — `Cat`, `Head`, `Tail`, `LS`, `Find`, `File`, `Strings`,
   `Git`, `JQ`, `YQ`, `Sed`, `Awk`, `Cut`, `Sort`, `Uniq`, `WC`, `Tr`,
   `Paste`, `Join`, `Echo`, `Date`, `Pwd`, `Env`, `Diff`, `Cmp` — are
-  read-only by construction. `Grep` and `Glob` already existed and stay as
-  their own kinds.
+  read-only by construction. `Grep`, `Glob`, and `Cd` stay as their own
+  tools.
 - Cloud/SaaS CLIs — `GH`, `AWS`, `AZ`, `GCloud`, `Kubectl`, `Terraform`,
   `Pulumi`, `Heroku`, `Fly`, `Vercel`, `Netlify`, `Doctl`, `Glab`, `Stripe`,
   `OnePassword`, `Bitwarden` — are offered only when capability detection
@@ -241,6 +241,75 @@ concurrently under one timeout), and silent: an unverifiable tool is simply
 not offered. `tools.DefaultWithCaps` builds the registry from the detected
 `tools.Capabilities`; `tools.Default` (no native tools) remains for the
 profiles/permission-editor name lists.
+
+### Working directory (`Cd`)
+
+Two directories are in play and they are not the same thing:
+
+- The **session root** is the confinement boundary. It is fixed for the life
+  of the session and nothing moves it. Every path a tool touches resolves
+  inside it or the call is refused.
+- The **working directory** is where relative paths are interpreted from. It
+  starts at the root and moves within it, so an agent working in a subtree
+  can name files the way someone standing in that subtree would.
+
+Moving the working directory is therefore **not a widening of authority**: the
+set of reachable files is identical before and after, only the spelling of a
+relative path changes. That is the whole reason the move is allowed.
+
+`tools.Cwd` is the tracker. `tools.Default` builds one per registry and hands
+the same pointer to every path-taking tool, and `Registry.Cwd()` exposes it;
+every narrowing (`ReadOnly`, `Plan`, an agent profile's allowlist) carries the
+same pointer forward, because two trackers would mean two answers to "where am
+I". It is mutex-guarded, since read-only tools resolve paths from the
+concurrent fan-out.
+
+**Resolution rule**, which the `Cd` description states to the model:
+
+- a path beginning with `/` is relative to the **session root**;
+- any other path is relative to the **current working directory**;
+- there is no third case. An absolute filesystem path outside the root has no
+  spelling here.
+
+The `Cd` tool takes one `path` and reports where it landed
+(`working directory: /internal/tools`, or `working directory: / (session
+root)`). It reads nothing and writes nothing, so it is `KindNative` —
+read-only by construction — and survives both the read-only master switch and
+plan mode: an agent that may only look still needs to be able to look
+somewhere else.
+
+Business rules and edge cases:
+
+- **A refused move changes nothing.** The target must exist and be a
+  directory; a file, a missing path, a blank path, or a traversal out of the
+  root all leave the working directory exactly where it was. A half-applied
+  move would silently change what every following relative path means.
+- **No sequence of moves escapes the root.** `..` from the root, `/..`, and an
+  absolute path elsewhere on the filesystem are all refused.
+- **Confinement is unchanged after a move.** A path argument that escapes the
+  root is still refused; the move changed the spelling, never the reach.
+- **Permission subjects are root-relative.** A path argument is rebased onto
+  the working directory *before* the permission rule is matched, so a rule
+  written against `secrets/**` keeps matching after a `Cd` into `secrets`.
+- **An omitted optional path means "here".** `Grep` and `Glob` with no `path`
+  search the working directory; a native listing (`LS`) with no `path` lists
+  it. Results stay relative to the root either way.
+- **A required path is never filled in.** A native that declares `path` as
+  required and is called without one still reports the missing argument
+  rather than being handed the working directory.
+- **A nil tracker is the old behaviour.** A tool constructed without one
+  resolves against the root directly, so nothing built by hand in a test
+  changes meaning.
+- **A new agent session starts at the root.** Rebuilding the session (a
+  config, posture, mode, or profile change) builds a fresh tracker, and the
+  TUI's displayed directory returns to the root with it.
+
+The TUI follows the move: `EventCwdKind` is emitted after the tool call that
+moved it, carrying the new location both root-relative and absolute. The
+footer's first line shows the directory, and one informational system line
+(`working directory: /internal/tools`) lands in the thread, so a reader
+scrolling back can tell which directory the relative paths around it were
+resolved against. A move to where the session already is is not announced.
 
 ### Write and Edit tools
 
@@ -553,7 +622,13 @@ The footer is a rule plus two lines:
   `·`. The mode chip carries the engaged agent when there is one —
   `agent · reviewer` — so what is carrying the turn is visible without opening
   anything. cwd and branch are omitted entirely when unset, so a non-git
-  directory shows the chip alone.
+  directory shows the chip alone — until the agent moves, at which point the
+  directory renders even outside a repository, because a footer that
+  disagreed with the paths in the transcript would be worse than no footer.
+  The cwd shown is the live [working directory](#working-directory-cd), not
+  the directory the session started in; it returns to the root whenever the
+  agent session is rebuilt. The footer's memoised height is invalidated on a
+  move, since line 1 appears or disappears with the directory.
 - Line 2, left: provider · model (with effort) · the permission chips ·
   `caveman: on|off`.
 - Line 2, right: session (name or short id), the context-usage text segment,

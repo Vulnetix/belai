@@ -34,11 +34,32 @@ type Tool interface {
 // Registry holds an ordered list of registered tools.
 type Registry struct {
 	tools []Tool
+	// cwd is the working directory the registry's tools share. It is carried
+	// on the registry rather than passed around because every narrowing
+	// (ReadOnly, Plan, an agent profile's allowlist) produces a new registry
+	// over the same tools, and all of them must keep pointing at the same
+	// tracker — two trackers would mean two answers to "where am I".
+	cwd *Cwd
 }
 
 // NewRegistry builds a registry from the provided tools.
 func NewRegistry(tools ...Tool) *Registry {
 	return &Registry{tools: tools}
+}
+
+// Cwd returns the shared working-directory tracker, or nil when the registry
+// was built without one.
+func (r *Registry) Cwd() *Cwd {
+	if r == nil {
+		return nil
+	}
+	return r.cwd
+}
+
+// withCwd returns a registry carrying the same tracker as r.
+func (r *Registry) withCwd(reg *Registry) *Registry {
+	reg.cwd = r.cwd
+	return reg
 }
 
 // Names returns every registered tool name.
@@ -93,7 +114,28 @@ func (r *Registry) ReadOnly() *Registry {
 			list = append(list, t)
 		}
 	}
-	return NewRegistry(list...)
+	return r.withCwd(NewRegistry(list...))
+}
+
+// Plan returns the registry as plan mode offers it: every mutating tool
+// removed, and Bash removed as well.
+//
+// Read-only Bash is not mutating, so ReadOnly alone would keep it. Plan mode
+// drops it anyway: an arbitrary command string is the one tool whose effect
+// cannot be read off the call, so the read-only guarantee there rests on a
+// command allowlist rather than on the tool's shape. Everything plan mode
+// needs — reading, listing, searching, git state, transforms — is covered by
+// tools whose argument shape is fixed, so the exception is not worth its
+// blast radius. Investigation in plan mode goes through those instead.
+func (r *Registry) Plan() *Registry {
+	var list []Tool
+	for _, t := range r.ReadOnly().tools {
+		if t.Kind() == KindBash {
+			continue
+		}
+		list = append(list, t)
+	}
+	return r.withCwd(NewRegistry(list...))
 }
 
 // Targeter is implemented by mutating tools that can name the concrete paths

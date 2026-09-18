@@ -40,6 +40,7 @@ type nativeCommand struct {
 
 // Native is a first-class read-only tool backed by a fixed command shape.
 type Native struct {
+	Cwd      *Cwd
 	Root     string
 	MaxBytes int
 	Timeout  time.Duration
@@ -59,19 +60,68 @@ func (n *Native) Definition() Definition {
 // Kind returns the native read-only kind.
 func (n *Native) Kind() Kind { return KindNative }
 
-// Subject returns the permission-rule subject for the arguments.
+// Subject returns the permission-rule subject for the arguments. Path
+// arguments are rebased onto the working directory first, so a permission
+// rule written against a root-relative path keeps matching after a move.
 func (n *Native) Subject(args map[string]any) string {
 	if n.cmd.subject == nil {
 		return ""
 	}
-	return n.cmd.subject(args)
+	return n.cmd.subject(n.rebase(args))
+}
+
+// nativePathArgs are the argument names across the catalogue that carry a
+// path. They are rewritten to root-relative form before a command is built,
+// which is what lets the build functions keep taking a plain root: there is
+// one place that knows about the working directory rather than thirty.
+var nativePathArgs = [...]string{"path", "a", "b"}
+
+// rebase rewrites a call's path arguments from working-directory-relative to
+// root-relative. It returns args unchanged when there is nothing to do, so
+// the common case allocates nothing.
+func (n *Native) rebase(args map[string]any) map[string]any {
+	if n.Cwd == nil || n.Cwd.Rel() == "" {
+		return args
+	}
+	out := make(map[string]any, len(args)+1)
+	for k, v := range args {
+		out[k] = v
+	}
+	for _, key := range nativePathArgs {
+		s, ok := argString(out, key)
+		if !ok || strings.TrimSpace(s) == "" {
+			continue
+		}
+		out[key] = n.Cwd.join(s)
+	}
+	// An omitted optional path means "here". Without this, a listing would
+	// default to the root after a move, which reads as the move having been
+	// ignored.
+	if s, ok := argString(out, "path"); !ok || strings.TrimSpace(s) == "" {
+		if _, declared := n.cmd.props["path"]; declared && !n.requiresPath() {
+			out["path"] = n.Cwd.Rel()
+		}
+	}
+	return out
+}
+
+// requiresPath reports whether the command declares path as required. A
+// required path that is missing must stay missing so the build function can
+// report it, rather than being silently filled in with the working directory.
+func (n *Native) requiresPath() bool {
+	for _, r := range n.cmd.required {
+		if r == "path" {
+			return true
+		}
+	}
+	return false
 }
 
 // Execute runs the fixed command, confining it to Root, capping output, and
 // returning a native result. Arguments are validated and shaped by the
 // command's build function before execution.
 func (n *Native) Execute(ctx context.Context, args map[string]any) (Result, error) {
-	argv, stdin, err := n.cmd.build(n.Root, args)
+	argv, stdin, err := n.cmd.build(n.Root, n.rebase(args))
 	if err != nil {
 		return Result{}, err
 	}
@@ -88,7 +138,7 @@ func (n *Native) Execute(ctx context.Context, args map[string]any) (Result, erro
 	}
 
 	ec := exec.CommandContext(ctx, binary, argv...)
-	ec.Dir = n.Root
+	ec.Dir = baseDir(n.Root, n.Cwd)
 	ec.Env = scrubbedEnv()
 	if stdin != "" {
 		ec.Stdin = strings.NewReader(stdin)
@@ -791,16 +841,18 @@ func CatalogueNames() []string {
 // NativeTools builds the native tools present in caps for the given root. Only
 // tools whose binary was detected are returned, so the model can never call a
 // tool that is not installed (or, for cloud CLIs, not configured).
-func NativeTools(root string, caps Capabilities) []Tool {
+//
+// cwd may be nil, in which case every path resolves against root directly.
+func NativeTools(root string, caps Capabilities, cwd *Cwd) []Tool {
 	var out []Tool
 	for _, c := range localCatalog() {
 		if caps.Has(c.name) {
-			out = append(out, &Native{Root: root, Timeout: 30 * time.Second, cmd: c})
+			out = append(out, &Native{Root: root, Timeout: 30 * time.Second, cmd: c, Cwd: cwd})
 		}
 	}
 	for _, c := range cloudCatalog() {
 		if caps.Has(c.name) {
-			out = append(out, &Native{Root: root, Timeout: 30 * time.Second, cmd: c})
+			out = append(out, &Native{Root: root, Timeout: 30 * time.Second, cmd: c, Cwd: cwd})
 		}
 	}
 	return out
@@ -809,15 +861,17 @@ func NativeTools(root string, caps Capabilities) []Tool {
 // DefaultWithCaps builds the default tool registry plus every native tool
 // present in caps. readOnly removes mutating tools exactly as Default does;
 // native tools are read-only by construction and always survive the switch.
+// The natives share the base registry's working-directory tracker, so a Cd
+// moves them along with everything else.
 func DefaultWithCaps(workdir string, readOnly bool, caps Capabilities) *Registry {
 	base := Default(workdir, readOnly)
-	extras := NativeTools(workdir, caps)
+	extras := NativeTools(workdir, caps, base.Cwd())
 	if len(extras) == 0 {
 		return base
 	}
 	list := append([]Tool{}, base.tools...)
 	list = append(list, extras...)
-	reg := NewRegistry(list...)
+	reg := base.withCwd(NewRegistry(list...))
 	if readOnly {
 		return reg.ReadOnly()
 	}

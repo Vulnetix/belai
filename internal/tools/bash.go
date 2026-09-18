@@ -121,6 +121,7 @@ func findReadOnly(fields []string) bool {
 // default) it runs through `sh -c` with full shell syntax (pipes,
 // redirections, chaining).
 type Bash struct {
+	Cwd      *Cwd
 	Root     string
 	ReadOnly bool
 	Timeout  time.Duration
@@ -205,7 +206,7 @@ func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink
 		// hardening below still apply.
 		ec = exec.CommandContext(ctx, "sh", "-c", cmd)
 	}
-	ec.Dir = b.Root
+	ec.Dir = baseDir(b.Root, b.Cwd)
 	ec.Env = scrubbedEnv()
 
 	if b.MaxBytes <= 0 {

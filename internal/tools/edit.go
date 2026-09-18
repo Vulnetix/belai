@@ -12,6 +12,7 @@ import (
 // Edit is the file-edit tool. It replaces an exact byte string, with no
 // whitespace or line-ending normalisation: the old_string must match exactly.
 type Edit struct {
+	Cwd      *Cwd
 	Root     string
 	MaxBytes int64
 }
@@ -40,13 +41,13 @@ func (e *Edit) Mutates() bool { return true }
 // Subject returns the permission-rule subject (the lexical cleaned path).
 func (e *Edit) Subject(args map[string]any) string {
 	path, _ := argString(args, "path")
-	return SubjectPath(e.Root, path)
+	return subjectPath(e.Root, e.Cwd, path)
 }
 
 // Targets returns the sanitised target path for the diff recorder.
 func (e *Edit) Targets(args map[string]any) []string {
 	path, _ := argString(args, "path")
-	rel, err := SanitizePath(e.Root, path)
+	rel, err := resolvePath(e.Root, e.Cwd, path)
 	if err != nil {
 		return nil
 	}
@@ -68,7 +69,7 @@ func (e *Edit) Preview(args map[string]any) (path, old, new string, ok bool) {
 	if !ok1 || !ok2 {
 		return "", "", "", false
 	}
-	rel, err := SanitizePath(e.Root, pathArg)
+	rel, err := resolvePath(e.Root, e.Cwd, pathArg)
 	if err != nil {
 		return "", "", "", false
 	}
@@ -98,7 +99,7 @@ func (e *Edit) Execute(ctx context.Context, args map[string]any) (Result, error)
 	}
 	replaceAll, _ := argBool(args, "replace_all")
 
-	rel, err := SanitizePath(e.Root, pathArg)
+	rel, err := resolvePath(e.Root, e.Cwd, pathArg)
 	if err != nil {
 		return Result{}, err
 	}

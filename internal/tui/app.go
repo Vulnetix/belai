@@ -255,6 +255,11 @@ type App struct {
 
 	// workdir and git
 	workdir string
+	// cwd is where the agent's relative paths currently resolve from. It
+	// starts at workdir and follows the session's working directory as the
+	// agent moves around inside it; workdir itself never moves, because it is
+	// the confinement boundary everything else is measured against.
+	cwd     string
 	gitInfo gitinfo.Info
 	gitOK   bool
 
@@ -418,6 +423,7 @@ func New(opts Options) *App {
 		pending:           opts.Prompt,
 		requestedProvider: name,
 		workdir:           workdir,
+		cwd:               workdir,
 		settings:          eff.Settings,
 		eff:               eff,
 		flags:             flags,
@@ -1113,8 +1119,18 @@ func (a *App) agentSession() (*agent.Session, error) {
 
 // invalidateAgentSession drops the cached agent session so the next send
 // re-resolves the carrier and reseals the system prompt.
+//
+// The next session is built with a fresh working-directory tracker rooted at
+// the workdir, so the displayed directory returns there too. Leaving the
+// footer pointing at the old directory would be a lie the very next tool call
+// would expose.
 func (a *App) invalidateAgentSession() {
 	a.agent = nil
+	if a.cwd != a.workdir {
+		a.cwd = a.workdir
+		a.footerW = -1
+		a.refreshFooter()
+	}
 }
 
 // syncPlanMode keeps the agent session's plan mode in lockstep with the mode
@@ -1931,6 +1947,10 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			}
 		}
 		return a.nextAgent()
+	case agent.EventCwdKind:
+		a.setPhaseWorking()
+		a.applyCwd(m.CwdDir, m.Cwd)
+		return a.nextAgent()
 	case agent.EventToolMetaKind:
 		a.setPhaseWorking()
 		// Render-only metadata (e.g. Read start_line) that the TUI needs for
@@ -2474,6 +2494,29 @@ func (a *App) addSystem(text string) {
 	a.messages = append(a.messages, components.Message{Role: "system", Content: text})
 }
 
+// applyCwd records a working-directory move: the footer follows it and the
+// thread gets one informational line, so a reader scrolling back can tell
+// which directory the relative paths around it were resolved against.
+//
+// dir is the absolute location and rel is the same place relative to the
+// session root ("" for the root itself). A move to where we already are is
+// ignored rather than announced twice.
+func (a *App) applyCwd(dir, rel string) {
+	if dir == "" || dir == a.cwd {
+		return
+	}
+	a.cwd = dir
+	// The footer grows or loses its first line with the directory, so the
+	// memoised height has to go with it.
+	a.footerW = -1
+	label := "/" + rel
+	if rel == "" {
+		label = "/ (session root)"
+	}
+	a.addSystem("working directory: " + label)
+	a.refreshFooter()
+}
+
 // classifyMode runs the operating-mode classifier on a user prompt that did
 // not explicitly specify a mode. The classifier sees only the prompt text.
 func (a *App) classifyMode(input string) {
@@ -2629,9 +2672,19 @@ func (a *App) refreshFooter() {
 	a.footer.Guardrails = a.guardrailsEnabled()
 	a.footer.Ask = a.askEnabled()
 	a.footer.Caveman = a.settings.CavemanEnabled()
-	if a.gitOK {
+	// The footer shows where relative paths currently resolve from, which is
+	// the session's working directory rather than the root it started at.
+	// Outside a repository the directory is still worth showing once the
+	// agent has moved: without it the footer would silently disagree with
+	// every path in the transcript.
+	switch {
+	case a.gitOK:
 		a.footer.Branch = a.gitInfo.Branch
-		a.footer.Cwd = a.workdir
+		a.footer.Cwd = a.cwd
+	case a.cwd != "" && a.cwd != a.workdir:
+		a.footer.Cwd = a.cwd
+	default:
+		a.footer.Cwd = ""
 	}
 	a.footer.Session = a.sessionDisplay()
 	a.footer.SessionName = a.sessionName

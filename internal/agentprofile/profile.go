@@ -54,6 +54,7 @@ var validAutonomy = map[string]bool{
 // knownToolNames is the conservative built-in set used by Validate.
 var knownToolNames = map[string]bool{
 	"Bash":      true,
+	"Cd":        true,
 	"Edit":      true,
 	"Glob":      true,
 	"Grep":      true,

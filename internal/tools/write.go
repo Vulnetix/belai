@@ -16,6 +16,7 @@ const MaxWriteBytes = 1 << 20
 // Write is the file-write tool. It writes whole files; there is no truncation
 // or partial-write mode.
 type Write struct {
+	Cwd      *Cwd
 	Root     string
 	MaxBytes int64
 }
@@ -42,13 +43,13 @@ func (w *Write) Mutates() bool { return true }
 // Subject returns the permission-rule subject (the lexical cleaned path).
 func (w *Write) Subject(args map[string]any) string {
 	path, _ := argString(args, "path")
-	return SubjectPath(w.Root, path)
+	return subjectPath(w.Root, w.Cwd, path)
 }
 
 // Targets returns the sanitised destination path for the diff recorder.
 func (w *Write) Targets(args map[string]any) []string {
 	path, _ := argString(args, "path")
-	rel, err := SanitizeNewPath(w.Root, path)
+	rel, err := resolveNewPath(w.Root, w.Cwd, path)
 	if err != nil {
 		return nil
 	}
@@ -66,7 +67,7 @@ func (w *Write) Preview(args map[string]any) (path, old, new string, ok bool) {
 	if !ok {
 		return "", "", "", false
 	}
-	rel, err := SanitizeNewPath(w.Root, pathArg)
+	rel, err := resolveNewPath(w.Root, w.Cwd, pathArg)
 	if err != nil {
 		return "", "", "", false
 	}
@@ -92,7 +93,7 @@ func (w *Write) Execute(ctx context.Context, args map[string]any) (Result, error
 	if int64(len(content)) > max {
 		return Result{}, fmt.Errorf("content exceeds %d bytes", max)
 	}
-	rel, err := SanitizeNewPath(w.Root, pathArg)
+	rel, err := resolveNewPath(w.Root, w.Cwd, pathArg)
 	if err != nil {
 		return Result{}, err
 	}

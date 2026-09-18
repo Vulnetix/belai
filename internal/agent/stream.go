@@ -72,6 +72,11 @@ const (
 	// is superseded by the EventToolResult that follows. A tool that produces
 	// no progress emits none, and a consumer may ignore the kind entirely.
 	EventToolProgressKind
+	// EventCwdKind reports that the session's working directory moved. It is
+	// emitted after the tool call that moved it and carries the new location
+	// both root-relative and absolute. Informational: it changes nothing the
+	// model can see, it tells the UI where later relative paths now point.
+	EventCwdKind
 	// EventToolMetaKind carries metadata from a tool result, keyed by
 	// ToolCallID. Render-only: it never enters the conversation and never
 	// reaches a model. Currently used by Read to communicate start_line so
@@ -122,6 +127,12 @@ type Event struct {
 
 	// Meta carries tool metadata on EventToolMetaKind. Render-only.
 	Meta map[string]any
+
+	// Cwd carries the new working directory on EventCwdKind, relative to the
+	// session root and slash-separated; "" means the root itself. CwdDir is
+	// the same location as an absolute path, for the footer.
+	Cwd    string
+	CwdDir string
 
 	// AskName / AskSubject carry EventPermissionAsk.
 	AskName    string
