@@ -720,6 +720,15 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 		return delimiters.Egress(res.Content, s.pool)
 	}
 
+	// Only Bash results reach the classifier. Every other builtin tool is
+	// driven through a fixed argument shape by the harness, so its output is
+	// sanitised — delimiter markup stripped, exactly as the classifier path
+	// does first — and promoted without the model round trip. See
+	// tools.Kind.NeedsClassifier for why the line is drawn there.
+	if !res.Kind.NeedsClassifier() {
+		return delimiters.Egress(sanitize.Sanitize(res.Content), s.pool)
+	}
+
 	emit(Event{Kind: EventRoleManagerKind, Phase: RoleManagerPhaseToolResult})
 	pipe := run.NewPipelineWithRetry(s.cfg, s.client, s.cache, func(a resilience.Attempt) {
 		emit(Event{Kind: EventRetryKind, RetryAttempt: a.Attempt, RetryDelay: a.Delay, RetryReason: a.Reason})

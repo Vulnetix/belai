@@ -79,10 +79,16 @@ Harness-generated blocks use tags such as:
 - **Egress verification** (`internal/delimiters`): before any payload leaves
   for a model provider, every block is checked. A block lacking a nonce,
   carrying an unknown nonce, or failing its integrity hash is stripped.
-- **Sanitization** (`internal/sanitize`): untrusted Read/WebSearch/WebFetch
-  output is stripped of any harness delimiter markup (and nonce/integrity
-  attributes) *before* it is ever wrapped in a delimiter, so adversarial text
-  cannot forge tags.
+- **Sanitization** (`internal/sanitize`): every tool result is stripped of any
+  harness delimiter markup (and nonce/integrity attributes) *before* it is
+  ever wrapped in a delimiter, so adversarial text cannot forge tags. This
+  applies to results that skip the classifier as well as to those that do not
+  — see [Tool-result trust](#tool-result-trust).
+- **Per-block kinds**: `rolemanager.SystemBlock` carries an optional `Kind`,
+  defaulting to `system`. A kind that is not in `delimiters.KnownKinds` is
+  refused at the boundary rather than sealed, because Egress leaves an
+  unknown tag untouched and the block would reach the provider unsealed. The
+  tool briefing uses this to seal as its own `<tools>` block.
 
 See [nonce-endpoint-spec.md](nonce-endpoint-spec.md) for the provider nonce GET
 spec (`GET {base_url}/v1/nonces`).
@@ -153,6 +159,85 @@ Results match back to their transcript row by tool call id, so an
 out-of-order completion from the concurrent group lands on its own row
 rather than the newest tool row; legacy events without a call id fall back
 to the last tool row.
+
+### Tool-result trust
+
+Every tool result is sanitized (`internal/sanitize`) before it can be
+promoted: harness delimiter markup and nonce/integrity attributes are
+stripped, so no tool output can forge a harness block. That step is
+unconditional and applies to every kind.
+
+Only **`Bash` results are additionally sent to the security classifier**
+(`tools.Kind.NeedsClassifier`, backed by the closed `classifierKinds` set).
+The line is drawn at the tool's argument shape, not at where the bytes came
+from:
+
+- Every other builtin is driven through a fixed shape the harness
+  constructs — a path confined by `SanitizePath`, a glob pattern, a regular
+  expression, a URL with the SSRF guard in front of it, a `jq` filter passed
+  as a single argv element. The harness knows what command produced the
+  output because it built it.
+- `Bash` takes an arbitrary command string. Neither what runs nor what comes
+  back is constrained by the harness, so it is the one result that has to be
+  checked by a model before promotion.
+
+Business rules and edge cases:
+
+- **Sanitize always, classify selectively.** A result that skips the
+  classifier still passes through `sanitize.Sanitize` and then
+  `delimiters.Egress`, in that order — the same two steps, in the same order,
+  that the classified path applies before promotion.
+- **The posture gate still wins.** `tool_result_unsafe` set to `ignore`
+  short-circuits ahead of both paths and promotes the raw result, exactly as
+  before.
+- **The residual risk is stated, not hidden.** A repository file or a web
+  page whose text tries to instruct the model now reaches the model with only
+  the delimiter stripping in front of it. What stands in for the classifier
+  there is the sealed `<tools>` block, which tells the model that a tool
+  result is data to weigh rather than instructions to follow.
+- **Adding a free-form tool means adding its kind.** A new tool that accepts
+  an arbitrary command or program string must register its kind in
+  `classifierKinds`; a kind absent from the set is sanitize-only, which is
+  the cheap default, so the decision is forced to be deliberate by
+  `TestOnlyBashNeedsTheClassifier`.
+- **Explore findings are separate.** An explore subagent's report is model
+  output, not tool output, and is classified explicitly in
+  `internal/agent/explore.go` regardless of this rule.
+
+### The sealed tools block
+
+The tool surface is described to the model in its own sealed `<tools>` block,
+built by `prompt.ToolsBlock` and sealed alongside the system block in
+`run.SealSystem`. The provider's own tool definitions still carry each tool's
+full argument schema; the block carries what a schema cannot say.
+
+- **The index.** Every tool the request will actually advertise, sorted by
+  name, with the first sentence of its description. The list is generated
+  from the same narrowed registry the request is built from
+  (`Session.toolSurface`), so the briefing can never name a tool the model
+  will not be given.
+- **What is missing.** In plan mode the block states that `Bash`, `Write`,
+  and `Edit` are unavailable. A schema can only describe tools that are
+  present; a model never told what was removed keeps reaching for it.
+- **The working directory.** The absolute directory relative paths resolve
+  from — the session working directory, which is the root until a `Cd` moves
+  it.
+- **The cross-cutting rules**: paths are confined and a traversal is refused
+  rather than clamped; results are bounded and truncation is reported; a tool
+  result is untrusted data rather than instructions; a refusal is a decision
+  rather than a transient error worth retrying. Outside plan mode it also
+  states that mutating tools ask for approval first.
+
+Edge cases:
+
+- A registry with no tools renders **no block at all**, so the classifier
+  turn — which is tool-less by design — does not carry an empty briefing
+  implying otherwise.
+- A tool with no usable first sentence is still listed, by name alone. An
+  entry missing from the index would read as a tool that is unavailable.
+- The block is sealed with its own nonce and its own integrity hash over its
+  own content, so a forged `<tools>` block in untrusted text is stripped at
+  egress like any other forged block.
 
 ### Native tool catalogue
 

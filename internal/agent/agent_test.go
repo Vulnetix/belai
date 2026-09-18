@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/modes"
@@ -360,7 +361,7 @@ func TestClassifierErrorEmitsWarningNotStderr(t *testing.T) {
 				msg["tool_calls"] = []any{map[string]any{
 					"id":       "call_1",
 					"type":     "function",
-					"function": map[string]any{"name": "Read", "arguments": `{"path":"f.txt"}`},
+					"function": map[string]any{"name": "Bash", "arguments": `{"command":"cat f.txt"}`},
 				}}
 			} else {
 				msg["content"] = "done"
@@ -377,7 +378,7 @@ func TestClassifierErrorEmitsWarningNotStderr(t *testing.T) {
 	defer srv.Close()
 
 	cfg := run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"}
-	reg := tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024})
+	reg := tools.NewRegistry(&tools.Bash{Root: root, ReadOnly: true, Timeout: 5 * time.Second, MaxBytes: 1024})
 	sess, err := NewSession(Options{Cfg: cfg, Client: srv.Client(), Registry: reg, Posture: posture.Defaults(), Workdir: root})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
@@ -404,8 +405,8 @@ func TestClassifierErrorEmitsWarningNotStderr(t *testing.T) {
 	if len(warnings) == 0 {
 		t.Fatalf("expected EventWarningKind for classifier failure (run err=%v)", err)
 	}
-	if !strings.Contains(warnings[0].Warning, "classifier error for \"Read\"") {
-		t.Fatalf("warning = %q, want classifier error for Read", warnings[0].Warning)
+	if !strings.Contains(warnings[0].Warning, "classifier error for \"Bash\"") {
+		t.Fatalf("warning = %q, want classifier error for Bash", warnings[0].Warning)
 	}
 }
 
@@ -818,11 +819,13 @@ func TestRunEmitsRoleManagerPhases(t *testing.T) {
 	root := t.TempDir()
 	_ = os.WriteFile(filepath.Join(root, "hello.txt"), []byte("world"), 0o600)
 
-	srv := mockSecurityServer("Read", `{"path":"hello.txt"}`, "done")
+	// Bash is the one kind whose result still goes through the classifier, so
+	// it is the tool that produces a tool-result Role Manager phase at all.
+	srv := mockSecurityServer("Bash", `{"command":"cat hello.txt"}`, "done")
 	defer srv.Close()
 
 	cfg := run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"}
-	reg := tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024})
+	reg := tools.NewRegistry(&tools.Bash{Root: root, ReadOnly: true, Timeout: 5 * time.Second, MaxBytes: 1024})
 
 	sess, err := NewSession(Options{
 		Cfg:      cfg,

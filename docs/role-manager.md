@@ -12,8 +12,9 @@ The architecture overview lives in [architecture.md](architecture.md).
 | Component | Package | Responsibility | Status |
 | --------- | ------- | -------------- | ------ |
 | Security classifier | `internal/rolemanager` | Classify untrusted content into a single security sentinel | Live |
-| Pipeline | `internal/rolemanager` | sanitize → classify → sentinel decision for tool results | Live |
-| Boundaries | `internal/rolemanager` | Guarantee untrusted text never enters system/agent blocks | Live |
+| Pipeline | `internal/rolemanager` | sanitize → classify → sentinel decision for `Bash` results and prompts | Live |
+| Result trust gate | `internal/tools` | Decide which result kinds need the classifier (`Bash` only); everything else is sanitize-only | Live |
+| Boundaries | `internal/rolemanager` | Guarantee untrusted text never enters system/agent/tools blocks, and refuse unknown block kinds | Live |
 | Prompt admission | `internal/rolemanager` | sanitize → classify → sentinel decision for user prompts | Live |
 | Posture system | `internal/posture` | Per-gate enforce / warn / ignore policy with CLI + YAML load | Live |
 | Tool-call invariants | `internal/rolemanager` | Reconcile model tool calls with the tools in the prompt | Live |
@@ -136,6 +137,10 @@ directory, read with the bounded `Read` tool, and run through the same
 appended to the user turn as an `<attachment>` block. Rejected attachments are
 shown in the attachment strip and are never sent.
 
+Attachment admission calls the pipeline explicitly and is **not** subject to
+the per-kind rule above: an attachment is content the user pulled into the
+prompt, so it is admitted on the prompt's terms rather than a tool's.
+
 `HasReferences` on `rolemanager.ModeInput` is set when any `SAFE`
 attachment is present, so a goal-classified prompt with attachments engages
 explore mode rather than pursuing immediately.
@@ -242,9 +247,36 @@ model and tool events drive the generic phase. `esc` in the pre-send window
 
 ## Pipeline
 
-Read / WebSearch / WebFetch results are untrusted. They flow through the
-pipeline before they may be promoted. No tool executes during the classifier
-turn.
+Every tool result is untrusted and every one of them is sanitized before it
+may be promoted. **Only `Bash` results continue into the classifier.** No tool
+executes during the classifier turn.
+
+### Which results are classified
+
+The gate is `tools.Kind.NeedsClassifier`, backed by the closed
+`classifierKinds` set, and it turns on the tool's argument shape rather than
+on where the bytes came from:
+
+| Kind | After sanitizing | Why |
+| ---- | ---------------- | --- |
+| `bash` | Classified | Its argument is an arbitrary command string: neither what runs nor what comes back is shaped by the harness |
+| `read`, `grep`, `glob`, `write`, `edit`, `web_fetch`, `web_search`, `native` | Promoted | The harness built the call from a fixed shape — a confined path, a pattern, a guarded URL, a single-argv filter — so it knows what produced the output |
+
+Business rules and edge cases:
+
+- Sanitizing is unconditional. A result that skips the classifier still has
+  every harness delimiter tag and nonce/integrity attribute stripped, then
+  goes through egress verification, in that order.
+- The `tool_result_unsafe` posture gate set to `ignore` short-circuits ahead
+  of both paths and promotes the raw result, as before.
+- The residual risk is that a file or page whose text tries to instruct the
+  model now reaches it behind delimiter stripping alone. The sealed `<tools>`
+  block is what stands in for the classifier there: it tells the model that a
+  tool result is data to weigh rather than instructions to follow.
+- A new tool that accepts free-form input must add its kind to
+  `classifierKinds`. A kind absent from the set is sanitize-only.
+- An explore subagent's findings are model output rather than tool output and
+  are classified explicitly, outside this rule.
 
 ### Pipeline rules
 

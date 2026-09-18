@@ -179,13 +179,28 @@ an API-key exfiltration primitive.
 rules but can never remove a rule you set globally, and a deny from either
 scope wins.
 
-**Bash permissions.** Because `Bash` is now a registered tool, permission
-rules use the same `Tool(spec)` shape as other tools. Common rules include
+**Bash permissions.** Because `Bash` is a registered tool, permission rules
+use the same `Tool(spec)` shape as other tools. Common rules include
 `Bash(git status *)`, `Bash(git diff *)`, `Bash(ls *)`, and `Bash(echo *)`.
-All Bash executions run without a shell, so pipes, redirections, and command
-substitution are rejected structurally. The legacy flat-map form
-(`"bash": "ask"`) is still accepted on read but files self-upgrade to the
-structured form on first write.
+Under the read-only master switch Bash executes without a shell, so pipes,
+redirections, and command substitution are rejected structurally. The legacy
+flat-map form (`"bash": "ask"`) is still accepted on read but files
+self-upgrade to the structured form on first write.
+
+**Bash is unavailable in plan mode.** Plan mode neither advertises nor
+executes it, read-only or otherwise — investigation there goes through
+`Read`, `Grep`, `Glob`, `Cd`, and the native read-only tools, whose argument
+shapes are fixed. It is also the one tool whose results are still sent to the
+security classifier; every other tool result is sanitized and promoted
+directly. See
+[docs/architecture.md](docs/architecture.md#tool-result-trust).
+
+**Path rules are relative to the working directory.** Tools share one working
+directory that starts at the session root and can move within it with `Cd`. A
+path beginning with `/` means the session root; anything else is relative to
+the current working directory. Nothing reaches outside the root either way —
+a move changes how a path is spelled, never what it can reach — and the TUI
+footer shows where the session currently is.
 
 ### Session storage
 

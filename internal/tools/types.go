@@ -50,6 +50,36 @@ func (k Kind) ReadOnly() bool {
 	return readOnlyKinds[k]
 }
 
+// classifierKinds is the closed set of result kinds that are sent to the
+// security classifier before they may be promoted into the conversation.
+//
+// Only Bash is on it. Every other builtin tool has a fixed argument shape and
+// a fixed output shape: a path that is confined and sanitised, a pattern, a
+// URL, a filter. What the harness gets back is the output of a command the
+// harness itself constructed, so the call cannot be steered into producing
+// something other than what it names. Bash is the exception, and the only
+// one: its argument is an arbitrary command string, so neither what runs nor
+// what comes back is constrained by the harness at all.
+//
+// Sanitising still happens for every kind — delimiter markup is stripped from
+// every tool result, so nothing a tool returns can forge a harness block.
+// What a non-Bash kind skips is the model round trip, not the scrubbing.
+//
+// The trade this makes, stated plainly: a file or a web page whose text tries
+// to instruct the model now reaches the model with only the delimiter
+// stripping in front of it. The sealed <tools> block tells the model that
+// tool results are data rather than instructions, and that is what stands in
+// for the classifier on those paths.
+var classifierKinds = map[Kind]bool{
+	KindBash: true,
+}
+
+// NeedsClassifier reports whether a result of this kind must go through the
+// classifier before promotion. A kind absent from the set is sanitised only.
+func (k Kind) NeedsClassifier() bool {
+	return classifierKinds[k]
+}
+
 // Result is a tool output.
 type Result struct {
 	Kind    Kind
