@@ -720,11 +720,12 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 		return delimiters.Egress(res.Content, s.pool)
 	}
 
-	// Web results always classify; a Bash command that duplicates a builtin
-	// tool does not, and neither does a call the harness shaped itself.
-	// Sanitising — delimiter markup stripped, exactly as the classifier path
-	// does first — happens either way. See tools.NeedsClassifier.
-	if !tools.NeedsClassifier(res.Kind, tool.Subject(call.Args)) {
+	// Bash, the web tools, and Read return arbitrary content, so they go to
+	// the classifier. The rest are shaped and controlled: their result is
+	// sanitised — delimiter markup stripped, exactly as the classifier path
+	// does first — and promoted without the round trip. See
+	// tools.Kind.NeedsClassifier.
+	if !res.Kind.NeedsClassifier() {
 		return delimiters.Egress(sanitize.Sanitize(res.Content), s.pool)
 	}
 

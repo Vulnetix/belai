@@ -21,19 +21,16 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
 - **Untrusted content stays untrusted.** Every tool result is sanitized
   (delimiter markup removed) before it can be promoted, and none of them ever
   enters a system/agent/tools block.
-- **Web results always go through the classifier.** `WebFetch` and
-  `WebSearch` return content written off this machine, so they classify
-  unconditionally. Do not add an exemption for them.
-- **`Bash` classifies unless a builtin already covers the command.** `cat x`
-  returns what `Cat` would have returned, so it is treated the same way;
-  anything else — a pipeline, a build, a binary the catalogue does not cover
-  — is an arbitrary command and classifies. `tools.BuiltinEquivalent` fails
-  closed on shell metacharacters, on `git`/`find`/`env` invocations the
-  natives would reject, and on unrecognised binaries. The cloud catalogue
-  (`gh`, `aws`, …) is deliberately not exempt.
-- **Harness-shaped calls are sanitized only.** `Read`, `Grep`, `Glob`,
-  `Write`, `Edit`, and the local native catalogue are built by the harness
-  from a fixed argument shape, so they skip the round trip.
+- **Arbitrary content goes through the classifier.** `Bash` (an arbitrary
+  command), `WebFetch` and `WebSearch` (text written off this machine), and
+  `Read` (a file's bytes) all classify, unconditionally. Do not add an
+  exemption for any of them.
+- **Shaped, controlled results are sanitized only.** `Grep`, `Glob`, `Write`,
+  `Edit`, and the native catalogue return output whose shape the harness
+  knows — `path:line:text`, a list of paths, a confirmation it composed
+  itself, a fixed argv's output — so they skip the round trip. A kind absent
+  from `tools.classifierKinds` is sanitize-only, so adding a tool whose
+  content is arbitrary means adding its kind there.
 - **Plan mode has no Bash.** Plan mode advertises and enforces the same
   narrowed surface (`Registry.Plan` and `modes.ToolAllowed`): no mutating
   tools, and no `Bash` at all, read-only or otherwise.

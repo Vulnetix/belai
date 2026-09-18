@@ -221,13 +221,13 @@ Business rules and edge cases:
   pattern. Handing `fd` a pattern containing `/` makes it error out, which is
   what made every recursive glob return nothing. See
   [architecture.md](architecture.md#search-and-file-location-tools).
-- **Web always classifies; `Bash` classifies unless a builtin covers it.**
-  Every result is sanitized. On top of that, `WebFetch`/`WebSearch` always go
-  to the classifier, and a `Bash` command does unless
-  `tools.BuiltinEquivalent` recognises it as a single, metacharacter-free
-  invocation of a binary the local catalogue already provides. The exempt set
-  is derived from that catalogue, so adding a native widens it automatically;
-  the cloud CLIs are excluded on purpose. See
+- **Arbitrary content classifies; shaped output does not.** Every result is
+  sanitized. On top of that, `Bash`, `WebFetch`, `WebSearch`, and `Read` go to
+  the classifier, because a command's output, a page, and a file's bytes are
+  all content the harness cannot predict the shape of. `Grep`, `Glob`,
+  `Write`, `Edit`, and the natives are sanitize-only. A kind absent from
+  `tools.classifierKinds` is sanitize-only, so a new arbitrary-content tool
+  has to add its kind there. See
   [architecture.md](architecture.md#tool-result-trust).
 - **`Cd` moves the spelling, not the reach.** The session root stays the
   confinement boundary; the working directory moves inside it. A path

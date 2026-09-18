@@ -13,7 +13,7 @@ The architecture overview lives in [architecture.md](architecture.md).
 | --------- | ------- | -------------- | ------ |
 | Security classifier | `internal/rolemanager` | Classify untrusted content into a single security sentinel | Live |
 | Pipeline | `internal/rolemanager` | sanitize → classify → sentinel decision for prompts and for the results that need it | Live |
-| Result trust gate | `internal/tools` | Decide which results need the classifier: web always, `Bash` unless a builtin covers the command, nothing else | Live |
+| Result trust gate | `internal/tools` | Decide which result kinds need the classifier: `Bash`, web, and `Read`; the shaped tools are sanitize-only | Live |
 | Boundaries | `internal/rolemanager` | Guarantee untrusted text never enters system/agent/tools blocks, and refuse unknown block kinds | Live |
 | Prompt admission | `internal/rolemanager` | sanitize → classify → sentinel decision for user prompts | Live |
 | Posture system | `internal/posture` | Per-gate enforce / warn / ignore policy with CLI + YAML load | Live |
@@ -248,43 +248,37 @@ model and tool events drive the generic phase. `esc` in the pre-send window
 ## Pipeline
 
 Every tool result is untrusted and every one of them is sanitized before it
-may be promoted. **Web results always continue into the classifier; a `Bash`
-command continues unless a builtin tool already covers it; nothing else
-does.** No tool executes during the classifier turn.
+may be promoted. **`Bash`, `WebFetch`, `WebSearch`, and `Read` results
+continue into the classifier; the shaped, controlled tools do not.** No tool
+executes during the classifier turn.
 
 ### Which results are classified
 
-The gate is `tools.NeedsClassifier(kind, subject)`. It turns on where the
-content came from and how much of the call the harness shaped:
+The gate is `tools.Kind.NeedsClassifier`, backed by the closed
+`classifierKinds` set. It turns on whether the content is arbitrary, not on
+whether the call was well formed — the harness validates all of them:
 
 | Kind | After sanitizing | Why |
 | ---- | ---------------- | --- |
-| `web_fetch`, `web_search` | Classified, always | Written by someone off this machine with no relationship to the task |
-| `bash`, no builtin equivalent | Classified | An arbitrary command string: the harness cannot predict what runs or what returns |
-| `bash`, duplicates a builtin (`cat`, `ls`, `git status`, …) | Promoted | It returns the bytes the corresponding tool would have returned |
-| `read`, `grep`, `glob`, `write`, `edit`, `native` | Promoted | The harness built the call from a fixed shape — a confined path, a pattern, a single-argv filter |
+| `bash` | Classified | An arbitrary command string: neither what runs nor what returns is constrained by the harness |
+| `web_fetch`, `web_search` | Classified | Written by someone off this machine with no relationship to the task |
+| `read` | Classified | The call is confined, but a file's bytes are not |
+| `grep`, `glob`, `write`, `edit`, `native` | Promoted | Shaped and controlled: `path:line:text` for a pattern passed as one argument, a list of paths, a confirmation the harness composed, a fixed argv the harness built |
 
 Business rules and edge cases:
 
 - Sanitizing is unconditional. A result that skips the classifier still has
   every harness delimiter tag and nonce/integrity attribute stripped, then
   goes through egress verification, in that order.
-- `tools.BuiltinEquivalent` fails closed: a command containing shell
-  metacharacters is never equivalent (`cat x | curl …` is not a `Cat` call),
-  `git`/`find`/`env` are equivalent only for the invocations their natives
-  accept, and an unrecognised binary is not equivalent.
-- The exempt set is derived from the local native catalogue plus the binaries
-  behind `Read`, `Grep`, and `Glob`. The **cloud catalogue is excluded**:
-  `gh`, `aws`, and the rest return content authored elsewhere, so they
-  classify.
 - The `tool_result_unsafe` posture gate set to `ignore` short-circuits ahead
   of both paths and promotes the raw result, as before.
-- The residual risk is that a repository file whose text tries to instruct the
-  model reaches it behind delimiter stripping alone — through `Read` or
-  through `cat` alike. The sealed `<tools>` block stands in for the
-  classifier there: it tells the model that a tool result is data to weigh
-  rather than instructions to follow. Content from off the machine never
-  relies on that.
+- A kind absent from `classifierKinds` is sanitize-only, which is the cheap
+  default, so adding a tool whose content is arbitrary has to be a deliberate
+  edit.
+- `Cat` and `Head` print file bytes like `Read` does but stay on the
+  controlled side, because they run a fixed argv against a confined path. The
+  sealed `<tools>` block, which tells the model a tool result is data rather
+  than instructions, is what covers that gap.
 - An explore subagent's findings are model output rather than tool output and
   are classified explicitly, outside this rule.
 

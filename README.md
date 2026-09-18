@@ -193,13 +193,11 @@ executes it, read-only or otherwise — investigation there goes through
 shapes are fixed.
 
 **What goes to the security classifier.** Every tool result is sanitized.
-`WebFetch` and `WebSearch` results are always classified on top of that, since
-a page is written off your machine. A `Bash` result is classified unless the
-command duplicates a tool Signet already provides — `cat x` returns what `Cat`
-would have returned, so it is treated the same way, while a pipeline, a build,
-or anything the catalogue does not cover is classified. Harness-shaped calls
-(`Read`, `Grep`, `Glob`, `Write`, `Edit`, the local native tools) are
-sanitized and promoted directly. See
+Results whose content is arbitrary are classified on top of that: `Bash` (an
+arbitrary command), `WebFetch` and `WebSearch` (text written off your
+machine), and `Read` (a file's bytes). The tools whose output shape the
+harness already knows — `Grep`, `Glob`, `Write`, `Edit`, and the native
+read-only tools — are sanitized and promoted directly. See
 [docs/architecture.md](docs/architecture.md#tool-result-trust).
 
 **Path rules are relative to the working directory.** Tools share one working
