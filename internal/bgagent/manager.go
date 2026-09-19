@@ -60,6 +60,7 @@ type AgentInstance struct {
 	History    []run.Turn
 	iteration  int
 	lastOutput string
+	workdir    string
 	// resume wakes a paused loop-mode agent. Buffered size 1 so Resume never
 	// blocks the UI; the loop re-checks State after waking.
 	resume chan struct{}
@@ -107,8 +108,16 @@ func (m *Manager) Posture() posture.Policy {
 	return m.posture
 }
 
-// Start launches a background agent by name.
+// Start launches a background agent by name in the manager's default workdir.
 func (m *Manager) Start(name string, profile agentprofile.AgentProfile) error {
+	return m.StartIn(m.workdir, name, profile)
+}
+
+// StartIn launches a background agent rooted at workdir. The workdir is used
+// for repository indexing, the tool registry confinement root, and the agent
+// session's working directory, so the agent operates in project B while the
+// TUI session remains in project A.
+func (m *Manager) StartIn(workdir, name string, profile agentprofile.AgentProfile) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, exists := m.agents[name]; exists {
@@ -121,6 +130,7 @@ func (m *Manager) Start(name string, profile agentprofile.AgentProfile) error {
 		Events:  make(chan Event, 64),
 		Cancel:  cancel,
 		resume:  make(chan struct{}, 1),
+		workdir: workdir,
 	}
 	m.agents[name] = inst
 	go m.runLoop(ctx, inst)
@@ -393,7 +403,7 @@ func (m *Manager) runMonitor(ctx context.Context, inst *AgentInstance) {
 }
 
 func (m *Manager) executeTurn(ctx context.Context, inst *AgentInstance) {
-	sess, err := m.buildSession(inst.Profile)
+	sess, err := m.buildSession(inst)
 	if err != nil {
 		inst.pushEvent(Event{AgentName: inst.Profile.Name, Kind: agent.EventErrorKind, Err: err})
 		return
@@ -437,10 +447,15 @@ func (m *Manager) executeTurn(ctx context.Context, inst *AgentInstance) {
 	inst.mu.Unlock()
 }
 
-func (m *Manager) buildSession(profile agentprofile.AgentProfile) (*agent.Session, error) {
+func (m *Manager) buildSession(inst *AgentInstance) (*agent.Session, error) {
+	workdir := inst.workdir
+	if workdir == "" {
+		workdir = m.workdir
+	}
+	profile := inst.Profile
 	caps := tools.DetectDefault()
-	ix := repoindex.Scan(context.Background(), m.workdir)
-	reg := tools.DefaultWithCaps(m.workdir, m.settings.ReadOnlyEnabled(), caps, ix)
+	ix := repoindex.Scan(context.Background(), workdir)
+	reg := tools.DefaultWithCaps(workdir, m.settings.ReadOnlyEnabled(), caps, ix)
 	if len(profile.Tools) > 0 {
 		reg = reg.Only(profile.Tools...)
 	}
@@ -449,13 +464,15 @@ func (m *Manager) buildSession(profile agentprofile.AgentProfile) (*agent.Sessio
 	if m.settings.Caveman != nil && *m.settings.Caveman {
 		promptOpts.Caveman = true
 	}
+
+	posture := choosePosture(m.posture, workdir)
 	return agent.NewSession(agent.Options{
 		Cfg:           m.cfg,
 		Client:        m.client,
 		Registry:      reg,
 		Perms:         perms,
-		Posture:       m.posture,
-		Workdir:       m.workdir,
+		Posture:       posture,
+		Workdir:       workdir,
 		Settings:      m.settings,
 		PromptOptions: promptOpts,
 		MaxIterations: 1,
@@ -463,6 +480,31 @@ func (m *Manager) buildSession(profile agentprofile.AgentProfile) (*agent.Sessio
 		RepoIndex:     ix,
 		PlanSurface:   tools.PlanSurface{GuardrailsOff: !m.settings.GuardrailsEnabled(), Perms: perms},
 	})
+}
+
+// choosePosture returns the stricter of the manager's current posture and the
+// project posture of the target workdir. Stricter means Enforce > Warn >
+// Ignore.
+func choosePosture(managerPosture posture.Policy, workdir string) posture.Policy {
+	proj, err := posture.Load(workdir)
+	if err != nil {
+		return managerPosture
+	}
+	out := make(posture.Policy, len(posture.AllGates))
+	for _, g := range posture.AllGates {
+		out[g] = stricterLevel(managerPosture.Level(g), proj.Level(g))
+	}
+	return out
+}
+
+func stricterLevel(a, b posture.Level) posture.Level {
+	if a == posture.Enforce || b == posture.Enforce {
+		return posture.Enforce
+	}
+	if a == posture.Warn || b == posture.Warn {
+		return posture.Warn
+	}
+	return posture.Ignore
 }
 
 func (m *Manager) wrapEvent(name string, e agent.Event) Event {

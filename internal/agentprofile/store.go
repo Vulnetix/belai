@@ -20,10 +20,14 @@ func Dir() (string, error) {
 	return filepath.Join(gd, "profiles", "agents"), nil
 }
 
-// Save writes a profile and returns its path.
+// Save writes a profile and returns its path. It rejects names that would
+// overwrite a built-in profile once sanitised.
 func Save(p AgentProfile) (string, error) {
 	if err := p.Validate(); err != nil {
 		return "", err
+	}
+	if !p.Builtin && collidesWithBuiltin(p) {
+		return "", fmt.Errorf("profile name %q collides with a built-in profile", p.Name)
 	}
 	dir, err := Dir()
 	if err != nil {
@@ -43,13 +47,22 @@ func Save(p AgentProfile) (string, error) {
 	return path, nil
 }
 
-// Load reads a profile by name.
+// Load reads a profile by name. Built-in names resolve from the embedded set
+// and never touch disk, so a user file named signet_triage-vulns.json cannot
+// shadow signet:triage-vulns.
 func Load(name string) (AgentProfile, error) {
-	p := AgentProfile{Name: name}
+	if IsBuiltin(name) {
+		p, ok := builtinProfiles[name]
+		if !ok {
+			return AgentProfile{}, fmt.Errorf("unknown built-in profile %q", name)
+		}
+		return p, nil
+	}
 	dir, err := Dir()
 	if err != nil {
 		return AgentProfile{}, err
 	}
+	p := AgentProfile{Name: name}
 	data, err := os.ReadFile(filepath.Join(dir, p.FileName()))
 	if err != nil {
 		return AgentProfile{}, err
@@ -63,7 +76,7 @@ func Load(name string) (AgentProfile, error) {
 	return p, nil
 }
 
-// List returns all stored agent profiles, sorted by name.
+// List returns all stored agent profiles plus built-ins, sorted by name.
 func List() ([]AgentProfile, error) {
 	dir, err := Dir()
 	if err != nil {
@@ -86,15 +99,35 @@ func List() ([]AgentProfile, error) {
 		out = append(out, p)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	// Append built-ins after user profiles so they are selectable but cannot be
+	// clobbered on disk.
+	for _, n := range builtinNames() {
+		out = append(out, builtinProfiles[n])
+	}
 	return out, nil
 }
 
-// Delete removes a profile by name.
+// Delete removes a profile by name. Built-in profiles cannot be deleted.
 func Delete(name string) error {
-	p := AgentProfile{Name: name}
+	if IsBuiltin(name) {
+		return fmt.Errorf("cannot delete built-in profile %q", name)
+	}
 	dir, err := Dir()
 	if err != nil {
 		return err
 	}
+	p := AgentProfile{Name: name}
 	return os.Remove(filepath.Join(dir, p.FileName()))
+}
+
+// collidesWithBuiltin reports whether the sanitised filename of p matches a
+// built-in's sanitised filename.
+func collidesWithBuiltin(p AgentProfile) bool {
+	fn := p.FileName()
+	for _, n := range builtinNames() {
+		if builtinFileName(n) == fn {
+			return true
+		}
+	}
+	return false
 }

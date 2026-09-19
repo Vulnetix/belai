@@ -5,9 +5,12 @@
 package agentprofile
 
 import (
+	"embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -23,6 +26,8 @@ type AgentProfile struct {
 	Reflection       bool     `json:"reflection,omitempty"`
 	MaxIterations    int      `json:"max_iterations,omitempty"`
 	Autonomy         string   `json:"autonomy,omitempty"`
+	// Builtin is true for embedded profiles and never persisted to disk.
+	Builtin bool `json:"-"`
 }
 
 // Mode values.
@@ -67,6 +72,56 @@ var knownToolNames = map[string]bool{
 
 var unsafeName = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
 
+// BuiltinPrefix identifies harness-supplied agent profiles.
+const BuiltinPrefix = "signet:"
+
+//go:embed builtin/*.json
+var builtinFS embed.FS
+
+var builtinProfiles = loadBuiltins()
+
+// IsBuiltin reports whether name is a built-in profile name.
+func IsBuiltin(name string) bool {
+	return strings.HasPrefix(name, BuiltinPrefix)
+}
+
+// builtinNames returns all builtin profile names.
+func builtinNames() []string {
+	names := make([]string, 0, len(builtinProfiles))
+	for n := range builtinProfiles {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func loadBuiltins() map[string]AgentProfile {
+	files, err := builtinFS.ReadDir("builtin")
+	if err != nil {
+		return map[string]AgentProfile{}
+	}
+	m := make(map[string]AgentProfile, len(files))
+	for _, f := range files {
+		if f.IsDir() || !strings.HasSuffix(f.Name(), ".json") {
+			continue
+		}
+		data, err := builtinFS.ReadFile("builtin/" + f.Name())
+		if err != nil {
+			continue
+		}
+		var p AgentProfile
+		if err := json.Unmarshal(data, &p); err != nil {
+			continue
+		}
+		p.Builtin = true
+		if err := p.Validate(); err != nil {
+			continue
+		}
+		m[p.Name] = p
+	}
+	return m
+}
+
 // Validate checks a profile's required fields and known values.
 func (p AgentProfile) Validate() error {
 	if strings.TrimSpace(p.Name) == "" {
@@ -90,9 +145,12 @@ func (p AgentProfile) Validate() error {
 	if p.Autonomy != "" && !validAutonomy[p.Autonomy] {
 		return fmt.Errorf("invalid autonomy %q (want supervised or autonomous)", p.Autonomy)
 	}
-	clean := strings.Trim(unsafeName.ReplaceAllString(p.Name, "_"), "._-")
+	clean := strings.Trim(unsafeName.ReplaceAllString(p.Name, "_"), ".-_")
 	if clean == "" {
 		return fmt.Errorf("invalid profile name %q", p.Name)
+	}
+	if !p.Builtin && IsBuiltin(p.Name) {
+		return fmt.Errorf("profile name %q is reserved for built-in profiles", p.Name)
 	}
 	for _, t := range p.Tools {
 		if !knownToolNames[t] {
@@ -121,6 +179,13 @@ func (p AgentProfile) ValidateWithRegistry(names []string) error {
 
 // FileName returns the on-disk filename for this profile.
 func (p AgentProfile) FileName() string {
-	clean := strings.Trim(unsafeName.ReplaceAllString(p.Name, "_"), "._-")
+	clean := strings.Trim(unsafeName.ReplaceAllString(p.Name, "_"), ".-_")
 	return clean + ".json"
+}
+
+// builtinFileName returns the on-disk filename a user profile would collide
+// with if it sanitises to the same name as a builtin.
+func builtinFileName(name string) string {
+	p := AgentProfile{Name: name}
+	return p.FileName()
 }

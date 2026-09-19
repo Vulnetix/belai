@@ -77,13 +77,15 @@ func TestListAndDeleteOrdering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
-	if len(list) != 3 {
-		t.Fatalf("len(List) = %d, want 3", len(list))
+	if len(list) < 3 {
+		t.Fatalf("len(List) = %d, want at least 3", len(list))
 	}
+	// The first three should be user profiles sorted by name; built-ins are
+	// appended at the end.
 	want := []string{"alpha", "mango", "zebra"}
-	for i, p := range list {
-		if p.Name != want[i] {
-			t.Fatalf("List[%d].Name = %q, want %q", i, p.Name, want[i])
+	for i := 0; i < len(want); i++ {
+		if list[i].Name != want[i] {
+			t.Fatalf("List[%d].Name = %q, want %q", i, list[i].Name, want[i])
 		}
 	}
 	if err := Delete("mango"); err != nil {
@@ -93,8 +95,8 @@ func TestListAndDeleteOrdering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List after delete: %v", err)
 	}
-	if len(list) != 2 {
-		t.Fatalf("len(List) after delete = %d, want 2", len(list))
+	if len(list) < 2 {
+		t.Fatalf("len(List) after delete = %d, want at least 2", len(list))
 	}
 }
 
