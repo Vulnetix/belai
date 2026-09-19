@@ -158,6 +158,7 @@ func (a *App) clearForResume() {
 	a.namedAgent = ""
 	a.namedAgentTools = nil
 	a.agentPickerOpen = false
+	a.agentPickerSubmit = false
 	a.hover = hoverTarget{}
 	a.mousePresent = false
 	a.saveFileMode = false

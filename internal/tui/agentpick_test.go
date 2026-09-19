@@ -529,3 +529,56 @@ func TestCyclingModeStopsSendingTheEngagedAgent(t *testing.T) {
 		t.Fatalf("plan mode would still send %q as ForceAgent", a.engagedAgent())
 	}
 }
+
+// Enter opens the picker, and the next enter engages the highlighted agent
+// AND sends the prompt that was waiting in the composer. Without this the
+// submit is swallowed twice with no feedback: the prompt sits in the editor
+// while the user waits for a turn that never started.
+func TestAcceptingAgentSendsThePromptThatOpenedThePicker(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	a.loadAgents()
+	a.mode = "agent"
+	a.editor.SetValue("hello")
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter}) // opens the picker
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter}) // engages, and must send
+
+	if a.namedAgent != profiles.DebugProfile {
+		t.Fatalf("namedAgent = %q, want %q", a.namedAgent, profiles.DebugProfile)
+	}
+	if a.editor.Value() != "" {
+		t.Fatalf("prompt not submitted, editor still holds %q", a.editor.Value())
+	}
+	var sent bool
+	for _, m := range a.messages {
+		if m.Role == "user" && m.Text() == "hello" {
+			sent = true
+		}
+	}
+	if !sent {
+		t.Fatalf("prompt was never echoed as a user turn: %+v", a.messages)
+	}
+}
+
+// The picker opened by /agent is not a pending submit: engaging an agent
+// there must not send whatever happens to be in the composer.
+func TestAgentCommandPickerDoesNotSendComposerText(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	a.loadAgents()
+	a.mode = "agent"
+	a.editor.SetValue("draft I am still writing")
+
+	a.handleCommand("/agent")
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if a.editor.Value() != "draft I am still writing" {
+		t.Fatalf("composer was consumed, got %q", a.editor.Value())
+	}
+	for _, m := range a.messages {
+		if m.Role == "user" {
+			t.Fatalf("unexpected user turn: %+v", a.messages)
+		}
+	}
+}

@@ -222,6 +222,11 @@ func (a *App) acceptAgent() tea.Cmd {
 	}
 	a.agentPickerOpen = false
 	a.agentIndex = noAgentSelection
+	// A picker opened by a submit attempt owes that submit an answer. (none)
+	// leaves agent mode without a carrier, so the prompt stays in the composer
+	// rather than starting a turn the picker exists to prevent.
+	pendingSubmit := a.agentPickerSubmit
+	a.agentPickerSubmit = false
 	if choice.Name == agentNoneLabel {
 		if a.namedAgent == "" {
 			return nil
@@ -247,6 +252,11 @@ func (a *App) acceptAgent() tea.Cmd {
 	a.addSystem(msg)
 	a.refreshFooter()
 	a.relayout()
+	if pendingSubmit {
+		if input := strings.TrimSpace(a.editor.Value()); input != "" {
+			return a.submitInput(input)
+		}
+	}
 	return nil
 }
 

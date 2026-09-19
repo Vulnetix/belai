@@ -345,6 +345,10 @@ type App struct {
 	agents          []agentChoice
 	agentIndex      int
 	agentPickerOpen bool
+	// agentPickerSubmit marks a picker that a submit attempt opened, so
+	// choosing an agent finishes that submit. Without it the prompt stays in
+	// the composer and two enters produce no turn at all.
+	agentPickerSubmit bool
 	// namedAgentTools is the engaged background definition's tool allowlist,
 	// applied to the session it carries. Empty means every registered tool.
 	namedAgentTools []string
@@ -1548,6 +1552,7 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		}
 		if a.agentPickerOpen {
 			a.agentPickerOpen = false
+			a.agentPickerSubmit = false
 			a.agentIndex = noAgentSelection
 			return nil
 		}
@@ -1584,9 +1589,11 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 			}
 		}
 		// In agent mode with no agent engaged, enter opens the picker rather
-		// than sending a turn that has no carrier.
+		// than sending a turn that has no carrier. The submit is deferred, not
+		// dropped: acceptAgent finishes it once a carrier exists.
 		if a.mode == "agent" && a.namedAgent == "" && !a.agentPickerOpen {
 			a.openAgentPicker()
+			a.agentPickerSubmit = strings.TrimSpace(a.editor.Value()) != ""
 			a.relayout()
 			return nil
 		}
@@ -3360,6 +3367,7 @@ func (a *App) startNewSession() {
 	a.namedAgent = ""
 	a.namedAgentTools = nil
 	a.agentPickerOpen = false
+	a.agentPickerSubmit = false
 	a.hover = hoverTarget{}
 	a.mousePresent = false
 	a.saveFileMode = false
