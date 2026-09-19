@@ -1,0 +1,16 @@
+AUTH STATE
+[FAIL] Authenticated: [unauthenticated]
+Plan: [COMMUNITY]
+Org ID:
+
+CREDENTIAL SOURCES
+[FAIL] VULNETIX_API_TOKEN environment variable not set
+[FAIL] VULNETIX_API_KEY environment variable not set
+[FAIL] VVD_ORG/VVD_SECRET environment variables not set
+[FAIL] project credentials file not found
+[FAIL] home credentials file not found
+[FAIL] keyring not configured
+[FAIL] netrc entry not found
+
+PACKAGE FIREWALL
+No package firewall configured

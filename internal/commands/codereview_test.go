@@ -16,7 +16,21 @@ func writeReviewVulnetix(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "vulnetix")
-	script := "#!/bin/sh\nsub=\"$1\"\necho \"fake $sub output\"\nmkdir -p .vulnetix\nprintf 'result for %s\\n' \"$sub\" > \".vulnetix/$sub.txt\"\n"
+	script := `#!/bin/sh
+# consume hardening flags
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--no-banner|--no-progress|--no-analytics|--disable-memory) shift ;;
+		--) shift; break ;;
+		-*) shift ;;
+		*) break ;;
+	esac
+done
+sub="$1"
+echo "fake $sub output"
+mkdir -p .vulnetix
+printf 'result for %s\n' "$sub" > ".vulnetix/$sub.txt"
+`
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatalf("write fake vulnetix: %v", err)
 	}

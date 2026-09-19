@@ -6,11 +6,27 @@ import (
 	"testing"
 )
 
-func writeFakeVulnetix(t *testing.T) string {
+// fakeScript emits a shell stub that recognises the hardening flags Signet
+// prepends and responds to the real subcommand. This keeps existing tests
+// honest about the new --no-banner/--no-progress/--no-analytics/--disable-memory
+// surface without requiring a real vulnetix binary.
+func fakeScript(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "vulnetix")
-	script := "#!/bin/sh\nsub=\"$1\"\necho \"fake $sub output\"\n"
+	script := `#!/bin/sh
+# consume hardening flags
+while [ $# -gt 0 ]; do
+	case "$1" in
+		--no-banner|--no-progress|--no-analytics|--disable-memory) shift ;;
+		--) shift; break ;;
+		-*) shift ;;
+		*) break ;;
+	esac
+done
+sub="$1"
+echo "fake ${sub:-} output"
+`
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatalf("write fake vulnetix: %v", err)
 	}
@@ -23,7 +39,7 @@ func setPathTo(t *testing.T, dir string) {
 }
 
 func TestDetectFindsVulnetix(t *testing.T) {
-	setPathTo(t, writeFakeVulnetix(t))
+	setPathTo(t, fakeScript(t))
 	c, err := Detect()
 	if err != nil {
 		t.Fatalf("Detect: %v", err)
@@ -41,7 +57,7 @@ func TestDetectNotFound(t *testing.T) {
 }
 
 func TestRun(t *testing.T) {
-	setPathTo(t, writeFakeVulnetix(t))
+	setPathTo(t, fakeScript(t))
 	c, err := Detect()
 	if err != nil {
 		t.Fatalf("Detect: %v", err)
@@ -56,7 +72,7 @@ func TestRun(t *testing.T) {
 }
 
 func TestInstallAgentAssets(t *testing.T) {
-	setPathTo(t, writeFakeVulnetix(t))
+	setPathTo(t, fakeScript(t))
 	c, err := Detect()
 	if err != nil {
 		t.Fatalf("Detect: %v", err)
