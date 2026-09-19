@@ -1,0 +1,219 @@
+package tui
+
+import (
+	"fmt"
+	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/vulnetix/signet/internal/agent"
+	"github.com/vulnetix/signet/internal/tui/components"
+)
+
+// The subagent roster lives here: insertion-ordered chips that persist across
+// turns, key handling for the f8 strip, and transcript filtering. app.go keeps
+// only the wiring (the event handlers, the f8 global key, and refreshFooter).
+
+// upsertSubagent inserts or updates one roster chip in insertion order. Chips
+// are removed only by an explicit dismiss; terminal chips stay until then.
+func (a *App) upsertSubagent(u agent.SubagentUpdate) {
+	if u.ID == "" {
+		return
+	}
+	if a.subagentIdx == nil {
+		a.subagentIdx = map[string]int{}
+	}
+	idx, ok := a.subagentIdx[u.ID]
+	if !ok {
+		idx = len(a.subagents)
+		a.subagents = append(a.subagents, components.SubagentChip{ID: u.ID, Label: u.Label, State: u.State})
+		a.subagentIdx[u.ID] = idx
+		return
+	}
+	if u.Label != "" {
+		a.subagents[idx].Label = u.Label
+	}
+	a.subagents[idx].State = u.State
+}
+
+// handleSubagentUpdate applies one roster delta and, for lifecycle states,
+// writes a system line so a reader can see the fan-out's progress.
+func (a *App) handleSubagentUpdate(u agent.SubagentUpdate) {
+	a.upsertSubagent(u)
+	switch u.State {
+	case "queued", "running", "done", "cancelled", "failed":
+		a.addSystem(fmt.Sprintf("subagent %s: %s", subagentDisplayLabel(u), u.State))
+	}
+}
+
+// subagentDisplayLabel renders a stable, human-facing label for a subagent:
+// the ID plus, when it differs, the reference it is investigating.
+func subagentDisplayLabel(u agent.SubagentUpdate) string {
+	if u.Label == "" || u.Label == u.ID {
+		return u.ID
+	}
+	return fmt.Sprintf("%s (%s)", u.ID, u.Label)
+}
+
+// subagentGutterLabel maps a subagent ID to the dim transcript gutter label:
+// e→explore, g→survey, c→clarify, bg:→background agent name.
+func subagentGutterLabel(id string) string {
+	switch {
+	case strings.HasPrefix(id, "bg:"):
+		return strings.TrimPrefix(id, "bg:")
+	case strings.HasPrefix(id, "e"):
+		return "explore " + strings.TrimPrefix(id, "e")
+	case strings.HasPrefix(id, "g"):
+		return "survey " + strings.TrimPrefix(id, "g")
+	case strings.HasPrefix(id, "c"):
+		return "clarify " + strings.TrimPrefix(id, "c")
+	default:
+		return id
+	}
+}
+
+// hasLiveSubagents reports whether any roster chip is queued or running.
+func (a *App) hasLiveSubagents() bool {
+	for _, c := range a.subagents {
+		if c.State == "queued" || c.State == "running" {
+			return true
+		}
+	}
+	return false
+}
+
+// exploringSummary reports the explore-phase counters: how many subagents are
+// terminal, the fan-out total, and the reference of the first running one.
+func (a *App) exploringSummary() (done, total int, ref string) {
+	total = len(a.subagents)
+	for _, c := range a.subagents {
+		switch c.State {
+		case "done", "cancelled", "failed":
+			done++
+		case "running":
+			if ref == "" {
+				ref = c.Label
+			}
+		}
+	}
+	return done, total, ref
+}
+
+// cancelSubagent cancels a running/queued subagent through the shared pool. The
+// roster flips to cancelled when the pool's terminal delta lands.
+func (a *App) cancelSubagent(id string) {
+	if a.agentPool != nil {
+		a.agentPool.Cancel(id)
+	}
+}
+
+// dismissSubagent removes a terminal chip and clears the transcript filter if
+// it pointed at that subagent.
+func (a *App) dismissSubagent(id string) {
+	idx, ok := a.subagentIdx[id]
+	if !ok {
+		return
+	}
+	a.subagents = append(a.subagents[:idx], a.subagents[idx+1:]...)
+	delete(a.subagentIdx, id)
+	for i, c := range a.subagents {
+		a.subagentIdx[c.ID] = i
+	}
+	if a.threadFilter == id {
+		a.threadFilter = ""
+	}
+	if a.stripSel > len(a.subagents) {
+		a.stripSel = len(a.subagents)
+	}
+}
+
+// handleSubagentStripKey routes keys while the f8 roster strip has focus. The
+// composer's keys are untouched while focus is not on the strip.
+func (a *App) handleSubagentStripKey(m tea.KeyMsg) tea.Cmd {
+	switch m.String() {
+	case "left":
+		if a.stripSel > 0 {
+			a.stripSel--
+		}
+	case "right":
+		if a.stripSel < len(a.subagents) {
+			a.stripSel++
+		}
+	case "enter":
+		if a.stripSel == 0 {
+			a.threadFilter = ""
+		} else if idx := a.stripSel - 1; idx < len(a.subagents) {
+			a.threadFilter = a.subagents[idx].ID
+		}
+	case "x":
+		if a.stripSel > 0 {
+			idx := a.stripSel - 1
+			if idx < len(a.subagents) {
+				chip := a.subagents[idx]
+				if chip.State == "queued" || chip.State == "running" {
+					a.cancelSubagent(chip.ID)
+				} else {
+					a.dismissSubagent(chip.ID)
+				}
+			}
+		}
+	case "esc":
+		a.stripFocus = false
+	}
+	return nil
+}
+
+// filteredMessages returns the transcript rows for the current thread filter:
+// every message when unfiltered, otherwise only rows whose SubagentID matches,
+// plus a leading banner naming the filter.
+func (a *App) filteredMessages() []components.Message {
+	if a.threadFilter == "" {
+		return a.messages
+	}
+	var out []components.Message
+	out = append(out, components.Message{
+		Role:    "system",
+		Content: "filtered: " + subagentGutterLabel(a.threadFilter) + " · enter main to clear",
+	})
+	for _, m := range a.messages {
+		if m.SubagentID == a.threadFilter {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// rebuildSubagentsFromMessages reconstructs the roster chips from rehydrated
+// subagent activity rows so /resume brings finished chips (and their filtered
+// threads) back. Every subagent is terminal after resume, so they all load as
+// done.
+func (a *App) rebuildSubagentsFromMessages() {
+	a.subagents = nil
+	a.subagentIdx = map[string]int{}
+	for _, m := range a.messages {
+		if m.SubagentID == "" {
+			continue
+		}
+		if _, ok := a.subagentIdx[m.SubagentID]; ok {
+			continue
+		}
+		a.subagentIdx[m.SubagentID] = len(a.subagents)
+		a.subagents = append(a.subagents, components.SubagentChip{
+			ID:    m.SubagentID,
+			Label: m.SubagentID,
+			State: "done",
+		})
+	}
+}
+
+// subagentHint returns the footer's subagent key hint, or "" when the roster
+// is empty.
+func (a *App) subagentHint() string {
+	if len(a.subagents) == 0 {
+		return ""
+	}
+	if a.stripFocus {
+		return components.HelpBar("← →", "cycle", "⏎", "filter", "x", "cancel", "esc", "back")
+	}
+	return components.HelpBar("f8", "subagents")
+}

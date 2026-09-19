@@ -293,6 +293,7 @@ activity from generic I/O:
 | Activity | Signal | Status |
 | -------- | ------ | ------ |
 | Pre-prompt admission, mode selection, steering admission, tool-result classification | Filled `role manager` pill plus a sub-phase caption (`pre-prompt processing`, `classifying steering`, `classifying tool result`) | Live |
+| Explore subagent fan-out | `explore` pill plus `exploring N/M · <reference>` — **not** a Role Manager signal: it is a separate `phaseExploring` state that stays up until a real parent stream event lands | Live |
 | Model streaming, tool execution, retry back-off | Plain `working` label (amber) | Live |
 
 The user prompt is echoed to the transcript as a `user prompt` the instant
@@ -301,6 +302,15 @@ indicator always refers to work the user cannot otherwise see. The agent
 emits `EventRoleManagerKind` with the sub-phase at every classification point;
 model and tool events drive the generic phase. `esc` in the pre-send window
 (echoed but not yet classified) cancels the turn without sending.
+
+The Role Manager also owns the FIFO fan-out queue: `rolemanager.Pipeline.Pool`
+is an `agentpool.Pool` constructed alongside the session, and both explore
+subagents and background-agent turns acquire a lease through
+`Pipeline.AcquireAgent`, so queue admission is traced with the same
+`rolemanager.record` helper as every other Role Manager decision — not a new
+trace channel. The explore pill is *not* a Role Manager signal: it is a
+separate composer phase, because the fan-out emits only subagent events and
+never parent text.
 
 ## Pipeline
 

@@ -34,6 +34,7 @@ func keySections() []keySection {
 			{"f4", "toggle ask permission"},
 			{"f5", "cycle operating mode"},
 			{"f6", "cycle reasoning effort"},
+			{"f8", "focus the subagent roster strip (chat)"},
 		}},
 		{"chat", []keyBinding{
 			{"enter", "send; also runs !shell and /commands, or steers a running turn"},
@@ -77,6 +78,12 @@ func keySections() []keySection {
 			{"ctrl+home, ctrl+end", "jump to the top, jump to the bottom"},
 			{"wheel", "scroll and detach from the tail"},
 			{"drag", "select text; release copies it"},
+		}},
+		{"subagent strip (after f8)", []keyBinding{
+			{"left, right", "cycle main and the subagent chips"},
+			{"enter", "filter the transcript to the selected subagent; main clears"},
+			{"x", "cancel a running subagent, or dismiss a finished chip"},
+			{"esc", "return focus to the composer"},
 		}},
 		{"plan review (after a plan-mode turn)", []keyBinding{
 			{"up, down", "move between approve, refine and cancel"},

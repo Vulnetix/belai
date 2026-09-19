@@ -300,13 +300,13 @@ func TestFooterSessionSpanOff(t *testing.T) {
 func TestFooterHintLine(t *testing.T) {
 	f := Footer{Session: "abcd1234", Mode: "agent", Width: 80}
 	empty := f.View()
-	if lipgloss.Height(empty) != 4 {
-		t.Fatalf("footer without hint should reserve 4 lines, got %d (%q)", lipgloss.Height(empty), empty)
+	if lipgloss.Height(empty) != 5 {
+		t.Fatalf("footer without hint should reserve 5 lines, got %d (%q)", lipgloss.Height(empty), empty)
 	}
 
 	f.Hint = "ctrl+o expand all"
 	v := f.View()
-	if lipgloss.Height(v) != 4 {
+	if lipgloss.Height(v) != 5 {
 		t.Fatalf("a hint must not change footer height, got %d", lipgloss.Height(v))
 	}
 	lines := strings.Split(v, "\n")
@@ -338,8 +338,9 @@ func TestFooterEffortRendering(t *testing.T) {
 		f := Footer{Model: "gpt-5", Effort: "", Mode: "agent", Guardrails: true, Ask: true, Width: 100}
 		v := f.View()
 		lines := strings.Split(v, "\n")
-		// The hint line is the footer's last line; line 2 is the one before it.
-		line2 := lines[len(lines)-2]
+		// The model/effort line is the second content line (index 2), ahead of
+		// the subagent strip and the hint.
+		line2 := lines[2]
 		if !strings.Contains(line2, "gpt-5 · default") {
 			t.Fatalf("empty effort should render as default: %q", line2)
 		}
@@ -354,4 +355,56 @@ func TestFooterEffortRendering(t *testing.T) {
 			t.Fatalf("effort must not render without a model: %q", v)
 		}
 	})
+}
+
+func TestSubagentChipStates(t *testing.T) {
+	f := Footer{Width: 120, Subagents: []SubagentChip{
+		{ID: "e1", Label: "one", State: "queued"},
+		{ID: "e2", Label: "two", State: "running"},
+		{ID: "e3", Label: "three", State: "done"},
+		{ID: "e4", Label: "four", State: "cancelled"},
+	}}
+	v := ansi.Strip(f.View())
+	if !strings.Contains(v, "three ✓") {
+		t.Fatalf("done chip should carry a check: %q", v)
+	}
+	if !strings.Contains(v, "one") || !strings.Contains(v, "two") || !strings.Contains(v, "four") {
+		t.Fatalf("all chips should render: %q", v)
+	}
+	if !strings.Contains(v, "main") {
+		t.Fatalf("the main chip should lead the strip: %q", v)
+	}
+}
+
+func TestFooterSubagentFocusHighlight(t *testing.T) {
+	f := Footer{Width: 120, MainFocused: true, Subagents: []SubagentChip{{ID: "e1", Label: "one", State: "done"}}}
+	if !strings.Contains(f.View(), "main") {
+		t.Fatal("main chip must render")
+	}
+	f.MainFocused = false
+	f.Subagents[0].Focused = true
+	if !strings.Contains(f.View(), "one ✓") {
+		t.Fatal("focused subagent chip must still render its label and state")
+	}
+}
+
+func TestFooterSubagentOverflowCollapses(t *testing.T) {
+	f := Footer{Width: 30, Subagents: []SubagentChip{
+		{ID: "e1", Label: "alpha", State: "done"},
+		{ID: "e2", Label: "beta", State: "done"},
+		{ID: "e3", Label: "gamma", State: "done"},
+		{ID: "e4", Label: "delta", State: "done"},
+	}}
+	v := ansi.Strip(f.View())
+	if !strings.Contains(v, "→") {
+		t.Fatalf("overflow should collapse to a marker: %q", v)
+	}
+}
+
+func TestFooterSubagentLineConstantHeight(t *testing.T) {
+	empty := Footer{Width: 80}
+	roster := Footer{Width: 80, Subagents: []SubagentChip{{ID: "e1", Label: "one", State: "done"}}}
+	if lipgloss.Height(empty.View()) != lipgloss.Height(roster.View()) {
+		t.Fatalf("roster must not change footer height: empty=%d roster=%d", lipgloss.Height(empty.View()), lipgloss.Height(roster.View()))
+	}
 }

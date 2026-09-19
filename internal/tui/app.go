@@ -20,6 +20,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/vulnetix/signet/internal/agent"
+	"github.com/vulnetix/signet/internal/agentpool"
 	"github.com/vulnetix/signet/internal/agentprofile"
 	"github.com/vulnetix/signet/internal/bgagent"
 	"github.com/vulnetix/signet/internal/clipboard"
@@ -157,6 +158,7 @@ const (
 	phaseIdle        workingPhase = iota // no prompt in flight
 	phaseRoleManager                     // Role Manager is classifying (admission, mode, tool result, steering)
 	phaseWorking                         // generic network/disk I/O with no specific signal
+	phaseExploring                       // explore fan-out subagents are running
 )
 
 // bgAgentEventMsg carries one background-agent event into the TUI loop.
@@ -227,6 +229,11 @@ type App struct {
 	phase   workingPhase // current activity; phaseIdle when no prompt is in flight
 	rmPhase string       // Role Manager sub-phase (agent.RoleManagerPhase*) for the caption
 	preSend bool         // prompt echoed, awaiting the async mode classification
+	// exploreDone/exploreTotal/exploreRef drive the phaseExploring composer
+	// caption: N/M completed plus the reference currently being explored.
+	exploreDone  int
+	exploreTotal int
+	exploreRef   string
 	// phaseStartedAt is when the in-flight turn (or pre-send classification)
 	// began. It drives the live "working · N.Ns" elapsed label and is zeroed
 	// when the turn ends.
@@ -435,6 +442,20 @@ type App struct {
 	// background agent manager
 	bgManager *bgagent.Manager
 
+	// agentPool caps every fan-out subagent (explore plus background agents)
+	// behind one settings-backed FIFO queue. The Role Manager owns it through
+	// the session pipeline; the TUI owns the instance so explore and background
+	// agents share the same ceiling.
+	agentPool *agentpool.Pool
+
+	// subagent roster (Phase 4): chips persist across turns and are removed
+	// only on an explicit dismiss.
+	subagents    []components.SubagentChip // insertion order
+	subagentIdx  map[string]int
+	stripFocus   bool   // f8 moved focus off the composer
+	stripSel     int    // 0 == "main"
+	threadFilter string // "" == main (unfiltered)
+
 	// todos is the shared goal/plan todo list rendered in the chat chrome and
 	// persisted to the session. The agent emits it; the TUI owns persistence.
 	todos *todos.List
@@ -540,11 +561,14 @@ func New(opts Options) *App {
 		saveFileMsg:       -1,
 		bannerW:           -1,
 		footerW:           -1,
+		agentPool:         agentpool.New(eff.Settings.Resilience.MaxAgentsOr(3)),
+		subagentIdx:       map[string]int{},
 		trace:             trace.Env(),
 	}
 	if initialStatus.Configured {
 		a.SetClassifier(run.NewClassifier(initial, a.client))
 		a.bgManager = bgagent.NewManager(workdir, initial, a.client, a.settings, a.effectivePosture())
+		a.bgManager.SetPool(a.agentPool)
 	}
 	a.applyGitInfo(gitinfo.Detect(a.workdir))
 	a.loadAgents()
@@ -848,10 +872,10 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 		return a.startAgent(a.agent, history, in)
 	}
 	params := a.sessionBuildParams()
-	return func() tea.Msg {
+	return tea.Batch(func() tea.Msg {
 		sess, err := buildAgentSession(params)
 		return agentReadyMsg{sess: sess, history: history, in: in, err: err}
-	}
+	}, a.workSpin.Tick)
 }
 
 // startAgent begins the streaming turn on an already-built session.
@@ -908,7 +932,7 @@ func (a *App) submitInput(input string) tea.Cmd {
 	}
 	a.modeExplicit = false
 	a.preSend = true
-	return a.classifyAndSend(input, safe, directive, firstUser)
+	return tea.Batch(a.classifyAndSend(input, safe, directive, firstUser), a.workSpin.Tick)
 }
 
 // echoUser appends a submitted prompt to the transcript and persists it as a
@@ -1003,6 +1027,17 @@ func (a *App) setPhaseRoleManager(subphase string) {
 func (a *App) setPhaseWorking() {
 	a.startPhase()
 	a.phase = phaseWorking
+}
+
+// setPhaseExploring marks the explore fan-out phase with its progress counter
+// and the reference currently being explored. It calls startPhase so the
+// elapsed clock still counts from Enter.
+func (a *App) setPhaseExploring(done, total int, ref string) {
+	a.startPhase()
+	a.phase = phaseExploring
+	a.exploreDone = done
+	a.exploreTotal = total
+	a.exploreRef = ref
 }
 
 // startPhase stamps the turn-start time once per in-flight turn. A turn runs
@@ -1168,6 +1203,9 @@ type sessionBuildParams struct {
 	// toolAllow restricts the registry to an engaged background definition's
 	// tools. Empty means every registered tool.
 	toolAllow []string
+	// agentPool is the shared FIFO fan-out ceiling the session's explore
+	// subagents acquire a lease from.
+	agentPool *agentpool.Pool
 }
 
 func (a *App) sessionBuildParams() sessionBuildParams {
@@ -1181,6 +1219,7 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 		allowClarify: true,
 		ask:          a.askEnabled(),
 		toolAllow:    a.engagedAgentTools(),
+		agentPool:    a.agentPool,
 	}
 }
 
@@ -1231,6 +1270,8 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		// Top-level goal-mode prompts may run the unbounded pass loop; a
 		// subagent never does.
 		AllowPassLoop: true,
+		// Explore fan-out is capped by the shared FIFO pool the TUI owns.
+		AgentPool: p.agentPool,
 	})
 }
 
@@ -1492,6 +1533,16 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, nil
 			}
 			return a, a.cycleEffort()
+		case "f8":
+			// Focus the subagent roster strip. No-op outside chat or with an
+			// empty roster (there is nothing to cycle or cancel).
+			if a.view == viewChat && len(a.subagents) > 0 {
+				a.stripFocus = !a.stripFocus
+				if a.stripFocus {
+					a.stripSel = 0
+				}
+			}
+			return a, nil
 		}
 		if a.view != viewChat {
 			if h, ok := viewHandlers[a.view]; ok {
@@ -1527,6 +1578,12 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 	}
 	if a.historyActive {
 		return a.handleHistoryKey(m)
+	}
+
+	// The f8 subagent strip owns the composer's enter/x/esc while focused; the
+	// composer's own keys are untouched when focus is not on the strip.
+	if a.stripFocus {
+		return a.handleSubagentStripKey(m)
 	}
 
 	if a.filePickerVisible() {
@@ -2206,6 +2263,46 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			}
 		}
 		return a.nextAgent()
+	case agent.EventSubagentKind:
+		// Roster delta. Do not call setPhaseWorking: the composer keeps the
+		// exploring indicator until a real parent stream event lands.
+		if m.Subagent != nil {
+			a.handleSubagentUpdate(*m.Subagent)
+			done, total, ref := a.exploringSummary()
+			a.setPhaseExploring(done, total, ref)
+		}
+		return a.nextAgent()
+	case agent.EventSubagentActivityKind:
+		// One forwarded tool start/result from a subagent. Render-only; the
+		// row is tagged with the subagent's ID and never enters buildTurns.
+		if m.Err != nil {
+			a.addSystem(fmt.Sprintf("[%s] error: %s", subagentGutterLabel(m.SubagentID), m.Err))
+			return a.nextAgent()
+		}
+		found := false
+		if m.ToolCallID != "" {
+			for i := len(a.messages) - 1; i >= 0; i-- {
+				mm := a.messages[i]
+				if mm.SubagentID == m.SubagentID && mm.ToolCallID == m.ToolCallID {
+					mm.SetContent(m.ToolResult)
+					mm.Status = toolResultStatus(m.ToolName, m.ToolResult)
+					a.messages[i] = mm
+					found = true
+					break
+				}
+			}
+		}
+		if !found {
+			a.messages = append(a.messages, components.Message{
+				Role:       "tool",
+				SubagentID: m.SubagentID,
+				ToolName:   m.ToolName,
+				ToolArgs:   m.ToolArgs,
+				ToolCallID: m.ToolCallID,
+				StartedAt:  time.Now(),
+			})
+		}
+		return a.nextAgent()
 	case agent.EventToolResultKind:
 		a.setPhaseWorking()
 		// Key by ToolCallID: concurrent read-only tools may complete out of
@@ -2399,6 +2496,11 @@ func (a *App) buildTurns() []run.Turn {
 		)
 	}
 	for _, m := range a.messages {
+		// Subagent activity rows are render-only. Promoting one would push raw,
+		// unclassified child tool output into the parent conversation.
+		if m.SubagentID != "" {
+			continue
+		}
 		if m.Partial {
 			continue
 		}
@@ -2443,7 +2545,7 @@ func (a *App) chatView() string {
 	renderStart := time.Now()
 	a.relayout()
 	body, lm := components.MessageList{
-		Messages:      a.messages,
+		Messages:      a.filteredMessages(),
 		Width:         a.contentWidth(),
 		ExpandAll:     a.expandAll,
 		ShowReasoning: a.reasoningVisible(),
@@ -2576,6 +2678,17 @@ func (a *App) renderComposer() string {
 		} else {
 			meta = "⏎ steer · esc cancel"
 		}
+	} else if a.phase == phaseExploring {
+		// Explore fan-out: the composer keeps the exploring indicator until a
+		// real parent stream event lands.
+		pill := components.Chip("explore", components.ColorTealSoft)
+		progress := fmt.Sprintf("exploring %d/%d", a.exploreDone, a.exploreTotal)
+		if a.exploreRef != "" {
+			progress += " · " + a.exploreRef
+		}
+		title = a.spinMark() + " " + pill + " " + components.MutedStyle.Render(progress+a.elapsedLabel())
+		accent = lipgloss.TerminalColor(components.ColorTealSoft)
+		meta = "⏎ steer · esc cancel"
 	} else if a.phase == phaseWorking {
 		title = a.spinMark() + " working" + a.elapsedLabel()
 		accent = lipgloss.TerminalColor(components.ColorAmber)
@@ -2924,6 +3037,7 @@ func (a *App) handleCredentialsResolved(m credentialsResolvedMsg) tea.Cmd {
 		a.SetClassifier(run.NewClassifier(m.cfg, a.client))
 		if a.bgManager == nil {
 			a.bgManager = bgagent.NewManager(a.workdir, m.cfg, a.client, a.settings, a.effectivePosture())
+			a.bgManager.SetPool(a.agentPool)
 		}
 	} else {
 		a.showCredentialMessage(m.cfg.Provider, a.resolver)
@@ -2972,6 +3086,9 @@ func (a *App) reloadSettings() error {
 	}
 	a.settings = eff.Settings
 	a.eff = eff
+	if a.agentPool != nil {
+		a.agentPool.SetSize(a.settings.Resilience.MaxAgentsOr(3))
+	}
 	a.refreshFooter()
 	return nil
 }
@@ -3014,6 +3131,20 @@ func (a *App) refreshFooter() {
 	a.footer.SessionName = a.sessionName
 	a.footer.ShowName = a.settings.SessionNamesVisible()
 	a.footer.Hint = a.hoverHint()
+	// The subagent strip: chips carry their focus state, and the f8 hint rides
+	// the existing Hint line.
+	for i := range a.subagents {
+		a.subagents[i].Focused = a.stripFocus && a.stripSel == i+1
+	}
+	a.footer.Subagents = a.subagents
+	a.footer.MainFocused = a.stripFocus && a.stripSel == 0
+	if sub := a.subagentHint(); sub != "" {
+		if a.footer.Hint == "" {
+			a.footer.Hint = sub
+		} else {
+			a.footer.Hint = sub + components.MutedStyle.Render("  ·  ") + a.footer.Hint
+		}
+	}
 
 	est := a.contextEstimate()
 	a.footer.Tokens = est.Tokens
@@ -3414,6 +3545,11 @@ func (a *App) startNewSession() {
 	a.mousePresent = false
 	a.saveFileMode = false
 	a.saveFileMsg = -1
+	a.subagents = nil
+	a.subagentIdx = map[string]int{}
+	a.stripFocus = false
+	a.stripSel = 0
+	a.threadFilter = ""
 	a.loadAgents()
 	a.saveSession()
 	a.refreshFooter()
@@ -3528,6 +3664,12 @@ func (a *App) handleBgAgentEvent(m bgAgentEventMsg) tea.Cmd {
 		a.addSystem(fmt.Sprintf("[agent:%s] tool: %s", name, m.ToolName))
 	case agent.EventToolResultKind:
 		a.addSystem(fmt.Sprintf("[agent:%s] result: %s", name, m.ToolResult))
+	case agent.EventSubagentKind:
+		// Background agents share the roster through the same SubagentUpdate
+		// shape. It does not drive the explore phase indicator.
+		if m.Subagent != nil {
+			a.handleSubagentUpdate(*m.Subagent)
+		}
 	case agent.EventDoneKind:
 		a.addSystem(fmt.Sprintf("[agent:%s] done", name))
 	}
@@ -3623,6 +3765,11 @@ func (a *App) applyCompaction(summary string) tea.Cmd {
 	a.messages = nil
 	a.usage = nil
 	a.usageStale = true
+	a.subagents = nil
+	a.subagentIdx = map[string]int{}
+	a.stripFocus = false
+	a.stripSel = 0
+	a.threadFilter = ""
 
 	a.addSystem(fmt.Sprintf("compacted %s into %s", shortID(old), shortID(a.sessionID)))
 	a.saveSession()

@@ -104,6 +104,7 @@ func (a *App) resumeSession(key session.Key, sessionID string) tea.Cmd {
 	a.summary = r.Summary
 	a.parentSession = r.Parent
 	a.rehydrateTodos(entries)
+	a.rebuildSubagentsFromMessages()
 	a.persistedUpTo = len(a.messages)
 
 	// 9. Restore model/provider/effort (CLI flag > session record > state >
@@ -164,6 +165,13 @@ func (a *App) clearForResume() {
 	a.saveFileMode = false
 	a.saveFileMsg = -1
 	a.loadAgents()
+
+	// Subagent roster and thread filter are session state, not global state.
+	a.subagents = nil
+	a.subagentIdx = map[string]int{}
+	a.stripFocus = false
+	a.stripSel = 0
+	a.threadFilter = ""
 
 	// Context metering.
 	a.est = transcript.Estimate{}

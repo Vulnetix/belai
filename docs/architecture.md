@@ -719,12 +719,17 @@ Each explore subagent:
 - has its findings classified and, if SAFE, sealed as an `<exploration>`
   block that re-enters the parent as an untrusted user turn.
 
-Subagents run in parallel bounded by `exploreConcurrency` (3) and
-`explore.MaxTasks` (5). **Reset-on-steer**: an explore subagent that exhausts
-its iteration budget does not hard-fail when new steering arrives — the
-steering message is broadcast to the running subagents and each one restarts
-its budget and keeps investigating. Only when no new steering exists does the
-budget exhaustion surface.
+Subagents run in parallel bounded by the shared FIFO agent pool
+(`resilience.max_agents`, default 3 — today's historical `exploreConcurrency`)
+and `explore.MaxTasks` (5). The pool is a `container/list` FIFO queue, not a
+buffered-channel semaphore, so waiters are admitted in arrival order; `esc`
+drops queued work at once and `x` on a running chip cancels it through the
+pool. `resilience.plan_explore: false` skips the survey entirely so plan mode
+starts planning immediately. **Reset-on-steer**: an explore subagent that
+exhausts its iteration budget does not hard-fail when new steering arrives —
+the steering message is broadcast to the running subagents and each one
+restarts its budget and keeps investigating. Only when no new steering exists
+does the budget exhaustion surface.
 
 Clarification is now **gated on findings**: the clarify loop runs only when
 exploration produced non-empty findings and the planner classifier returns a
@@ -1048,6 +1053,10 @@ provider I/O — and the composer's top edge switches to a working state:
 - **Generic working** (amber). Plain `working` is used only for disk or
   network I/O without a Role Manager signal: model streaming, tool execution,
   and retry back-off.
+- **Exploring** (teal-soft). While explore subagents fan out, the composer
+  reads `exploring N/M · <reference>` with a live spinner. The explore pill is
+  *not* a Role Manager signal — it stays up until a real parent stream event
+  lands, because the fan-out emits only subagent events, never parent text.
 
 The agent emits `EventRoleManagerKind` (with the sub-phase) at every Role
 Manager classification point; model and tool events switch the composer to the
@@ -1057,6 +1066,25 @@ prompt is echoed but classification is still running — Enter is held with a
 turn is running, Enter instead queues the text as a `user steering` prompt:
 steered turns pass through the same Role Manager admission as the original
 prompt, and a full queue drops the newest message.
+
+### Subagent roster and the f8 strip
+
+Every fan-out subagent the harness launches — explore tasks and background
+agents — has a chip in a footer strip: `[main] [chip…]`. `f8` moves focus onto
+the strip (a no-op with an empty roster); `←`/`→` cycle over main and the
+chips, `⏎` filters the transcript to the selected subagent (main clears the
+filter), `x` cancels a running chip or dismisses a finished one, and `esc`
+returns focus to the composer. Chips persist across turns and are removed only
+by an explicit dismiss; running chips are never removed automatically.
+
+The fan-out is capped by one settings-backed FIFO pool
+(`resilience.max_agents`, default 3) that the Role Manager owns and reaches
+through `rolemanager.Pipeline`. Explore subagents and background-agent turns
+alike acquire a lease; queued work shows a muted chip, running a teal chip,
+done a teal-soft `✓`, and cancelled/failed an amber chip. Subagent tool
+activity streams into the transcript as render-only rows tagged with a dim
+`explore N` gutter; those rows never enter `buildTurns`, so raw subagent
+output can never be promoted into the parent conversation.
 
 ### Todo panel
 
@@ -1864,7 +1892,8 @@ which defaults off unless explicitly true; `ui.kitty_keyboard` is overridden
 off by `SIGNET_NO_KITTY=1`),
 `show_session_names` (default on), `context_windows`,
 `resilience` (`max_attempts`, `max_iterations`, `max_passes`,
-`max_clarify_rounds`, `max_explore_iterations`), `providers`,
+`max_clarify_rounds`, `max_explore_iterations`, `max_agents`,
+`plan_explore`), `providers`,
 `caveman` (default off; toggled from any screen with `f2`),
 `guardrails` and `ask_permission` (both default on; toggled with `f3` and
 `f4`, or together with `/yolo` — the project layer may only tighten them,

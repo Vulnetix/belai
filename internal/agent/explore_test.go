@@ -175,3 +175,120 @@ func TestExploreSubagentResetsOnSteer(t *testing.T) {
 		t.Fatalf("case B: expected 6 model calls (initial + steer reset + one continuation), got %d", *callsB)
 	}
 }
+
+// TestPlanExploreLifecycleEvents pins the Phase 3 contract: a forced plan-mode
+// fan-out emits one lifecycle event per survey task with the right Index/Total,
+// activity events carry the subagent's ID, and every subagent event precedes
+// the first parent text delta.
+func TestPlanExploreLifecycleEvents(t *testing.T) {
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
+
+	srv := mockSecurityServer("Read", `{"path":"f.txt"}`, "finding")
+	defer srv.Close()
+
+	sess, err := NewSession(Options{
+		Cfg:           run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "test"},
+		Client:        srv.Client(),
+		Registry:      tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}),
+		Posture:       posture.Defaults(),
+		SkipNonceSeed: true,
+		AllowExplore:  true,
+		Settings:      config.Settings{Resilience: &config.ResilienceSettings{MaxExploreIterations: 2}},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	var events []Event
+	_, err = sess.run(context.Background(), nil, TurnInput{Prompt: "survey the repo", ForceMode: modes.ModePlan}, false, func(e Event) {
+		events = append(events, e)
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	lifecycle := map[string][]string{} // id -> ordered states
+	activityIDs := map[string]bool{}
+	firstParentText := -1
+	lastSubagent := -1
+	for i, e := range events {
+		switch e.Kind {
+		case EventSubagentKind:
+			if e.Subagent == nil {
+				t.Fatalf("subagent event without update: %+v", e)
+			}
+			if e.Subagent.Total != 3 {
+				t.Fatalf("subagent %s Total = %d, want 3", e.Subagent.ID, e.Subagent.Total)
+			}
+			lifecycle[e.Subagent.ID] = append(lifecycle[e.Subagent.ID], e.Subagent.State)
+			lastSubagent = i
+		case EventSubagentActivityKind:
+			activityIDs[e.SubagentID] = true
+			lastSubagent = i
+		case EventTextKind:
+			if firstParentText == -1 {
+				firstParentText = i
+			}
+		}
+	}
+
+	// One queued, running and done event for each of the three survey tasks.
+	for _, id := range []string{"e1", "e2", "e3"} {
+		got := lifecycle[id]
+		if len(got) != 3 || got[0] != "queued" || got[1] != "running" || got[2] != "done" {
+			t.Fatalf("subagent %s lifecycle = %v, want [queued running done]", id, got)
+		}
+	}
+	if len(lifecycle) != 3 {
+		t.Fatalf("expected exactly 3 subagents, got %d", len(lifecycle))
+	}
+	if !activityIDs["e1"] || !activityIDs["e2"] || !activityIDs["e3"] {
+		t.Fatalf("activity events missing a subagent ID: %v", activityIDs)
+	}
+	if firstParentText == -1 {
+		t.Fatal("expected a parent text event")
+	}
+	if lastSubagent >= firstParentText {
+		t.Fatalf("a subagent event (%d) landed after the first parent text (%d)", lastSubagent, firstParentText)
+	}
+}
+
+// TestPlanExploreDisabledSkipsFanOut pins the resilience.plan_explore: false
+// gate: a forced plan-mode turn goes straight to planning with no subagent
+// events and no clarify.
+func TestPlanExploreDisabledSkipsFanOut(t *testing.T) {
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
+
+	srv := mockSecurityServer("Read", `{"path":"f.txt"}`, "plan ready")
+	defer srv.Close()
+
+	f := false
+	sess, err := NewSession(Options{
+		Cfg:           run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "test"},
+		Client:        srv.Client(),
+		Registry:      tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}),
+		Posture:       posture.Defaults(),
+		SkipNonceSeed: true,
+		AllowExplore:  true,
+		Settings:      config.Settings{Resilience: &config.ResilienceSettings{PlanExplore: &f}},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	var events []Event
+	_, err = sess.run(context.Background(), nil, TurnInput{Prompt: "plan the refactor", ForceMode: modes.ModePlan}, false, func(e Event) {
+		events = append(events, e)
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	for _, e := range events {
+		if e.Kind == EventSubagentKind || e.Kind == EventSubagentActivityKind || e.Kind == EventClarifyAskKind {
+			t.Fatalf("plan_explore: false must produce no fan-out or clarify, got %v", e.Kind)
+		}
+	}
+}

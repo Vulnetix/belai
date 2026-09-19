@@ -7,6 +7,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"github.com/vulnetix/signet/internal/agentpool"
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/sanitize"
 	"github.com/vulnetix/signet/internal/tools"
@@ -56,6 +57,11 @@ type Pipeline struct {
 	// Cache, when non-nil, memoises verdicts by the SHA-256 of the sanitized
 	// content (session-scoped for SAFE, persisted for non-SAFE).
 	Cache *Cache
+	// Pool is the shared FIFO fan-out pool the Role Manager owns. Explore
+	// subagents and background agents acquire a lease through AcquireAgent so
+	// admission is traced with the rolemanager record helper. nil means no
+	// shared ceiling.
+	Pool *agentpool.Pool
 }
 
 // ChunkConfig bounds chunked classification of oversized content. Content over
@@ -256,6 +262,36 @@ func (p *Pipeline) Process(ctx context.Context, r tools.Result) (Decision, error
 		action = ActionProceed
 	}
 	return Decision{Kind: r.Kind, Action: action, Sentinel: s, Content: clean}, nil
+}
+
+// AcquireAgent admits one fan-out item through the shared FIFO pool and traces
+// the admission with the rolemanager record helper. A nil Pool returns a nil
+// lease and nil error so callers can run unbounded when no ceiling is set.
+func (p *Pipeline) AcquireAgent(ctx context.Context, h agentpool.Handle) (*agentpool.Lease, error) {
+	if p.Pool == nil {
+		return nil, nil
+	}
+	lease, err := p.Pool.Acquire(ctx, h)
+	if err == nil {
+		record("agent_pool_admit", string(h.State), "", fmt.Sprintf("kind=%s id=%s slot=%d", h.Kind, h.ID, h.Index), 0)
+	}
+	return lease, err
+}
+
+// SnapshotAgents returns the pool's current roster, or nil when no pool is set.
+func (p *Pipeline) SnapshotAgents() []agentpool.Handle {
+	if p.Pool == nil {
+		return nil
+	}
+	return p.Pool.Snapshot()
+}
+
+// CancelAgent cancels one fan-out item by id. A nil Pool reports false.
+func (p *Pipeline) CancelAgent(id string) bool {
+	if p.Pool == nil {
+		return false
+	}
+	return p.Pool.Cancel(id)
 }
 
 // Admit classifies an arbitrary piece of content (e.g. a user prompt) and

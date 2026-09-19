@@ -51,7 +51,7 @@ func (s *Session) clarifyRounds(ctx context.Context, pipe *rolemanager.Pipeline,
 		}
 
 		out = append(out, turn)
-		next := s.runExploreTasks(ctx, explore.PlanClarified(clean, q, ans))
+		next := s.runExploreTasks(ctx, explore.PlanClarified(clean, q, ans), "clarify-explore", pipe, emit)
 		out = append(out, next...)
 		findings = digestClarifyFindings(next)
 	}
@@ -62,7 +62,7 @@ func (s *Session) clarifyRounds(ctx context.Context, pipe *rolemanager.Pipeline,
 // context is cancelled. It is the only agent→UI round-trip in the codebase:
 // everything else is fire-and-forget.
 func (s *Session) askUser(ctx context.Context, q clarify.Questionnaire, emit func(Event)) (clarify.Answers, bool) {
-	reply := make(chan clarify.Answers)
+	reply := make(chan clarify.Answers, 1)
 	emit(Event{Kind: EventClarifyAskKind, Clarify: &q, Reply: reply})
 	select {
 	case a := <-reply:

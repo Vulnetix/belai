@@ -86,6 +86,12 @@ type Message struct {
 	// start_line). It never enters the conversation and keys the render cache.
 	Meta map[string]any
 
+	// SubagentID keys a subagent activity row to its subagent ("" for the main
+	// thread). Subagent rows are render-only: they carry tool activity forwarded
+	// from a subagent, never enter buildTurns, and render with a dim gutter
+	// naming the subagent.
+	SubagentID string
+
 	// rc memoises the last rendered text and line map for this message. The
 	// key covers every field that affects the render, so any change (a
 	// streaming tail, an appended tool call, a new status, a width change)
@@ -120,6 +126,8 @@ type renderKey struct {
 	// metaLen changes when Meta is attached, so a late-arriving start_line
 	// causes a re-render.
 	metaLen int
+	// subagentID distinguishes subagent activity rows (render-only gutter).
+	subagentID string
 }
 
 // renderCache is the memoised render of one message.
@@ -152,6 +160,7 @@ func renderKeyFor(m *Message, width int, expandAll bool) renderKey {
 		started:    running,
 		diffSeq:    m.diffSeq,
 		metaLen:    len(m.Meta),
+		subagentID: m.SubagentID,
 	}
 }
 
@@ -547,6 +556,15 @@ func toolRow(msg Message, width int, expandAll bool) (string, LineMap) {
 	head := toolNameStyle(msg.ToolName).Render("⌁ " + msg.ToolName)
 	plain := "⌁ " + msg.ToolName
 
+	// Subagent activity rows carry a dim gutter naming their subagent, so a
+	// reader can tell a forwarded subagent tool call from the parent's own.
+	gutterPlain := ""
+	if msg.SubagentID != "" {
+		gutterPlain = subagentLabel(msg.SubagentID) + "  "
+		head = MutedStyle.Render(gutterPlain) + head
+		plain = gutterPlain + plain
+	}
+
 	if invocation := formatToolInvocation(msg.ToolName, msg.ToolArgs); invocation != "" {
 		head += "  " + MutedStyle.Render(invocation)
 		plain += "  " + invocation
@@ -560,6 +578,10 @@ func toolRow(msg Message, width int, expandAll bool) (string, LineMap) {
 	// right-aligned status and its padding. The prefix glyph, the padding and
 	// the ✓/✗/withheld glyph all stay out of copies.
 	prefixCol := visibleLen("⌁ ")
+	if gutterPlain != "" {
+		// The gutter is chrome: the copyable region still starts at the "⌁ ".
+		prefixCol = visibleLen(gutterPlain) + visibleLen("⌁ ")
+	}
 	statusPlain := ansi.Strip(statusLine)
 	headEnd := visibleLen(statusPlain)
 	if status != "" {
@@ -894,6 +916,23 @@ var nativeToolNames = map[string]bool{
 }
 
 func isNativeTool(name string) bool { return nativeToolNames[name] }
+
+// subagentLabel renders a human-facing gutter label from a subagent ID. The
+// ID prefix encodes the kind: e→explore, g→survey, c→clarify, bg:→background.
+func subagentLabel(id string) string {
+	switch {
+	case strings.HasPrefix(id, "bg:"):
+		return strings.TrimPrefix(id, "bg:")
+	case strings.HasPrefix(id, "e"):
+		return "explore " + strings.TrimPrefix(id, "e")
+	case strings.HasPrefix(id, "g"):
+		return "survey " + strings.TrimPrefix(id, "g")
+	case strings.HasPrefix(id, "c"):
+		return "clarify " + strings.TrimPrefix(id, "c")
+	default:
+		return id
+	}
+}
 
 // toolResultIsError reports whether a tool result represents a failure that
 // should be highlighted in red. Bash non-zero exits are detected by the

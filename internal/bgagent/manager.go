@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/signet/internal/agent"
+	"github.com/vulnetix/signet/internal/agentpool"
 	"github.com/vulnetix/signet/internal/agentprofile"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/permissions"
@@ -40,6 +41,10 @@ type Event struct {
 	ToolResult string
 	Warning    string
 	Err        error
+	// Subagent carries a roster delta for background agents, sharing the
+	// same SubagentUpdate shape the explore fan-out emits.
+	Subagent   *agent.SubagentUpdate
+	SubagentID string
 }
 
 // AgentStatus is a snapshot of one agent for the UI.
@@ -76,6 +81,9 @@ type Manager struct {
 	client   *http.Client
 	settings config.Settings
 	posture  posture.Policy
+	// pool caps every background-agent turn against the shared FIFO fan-out
+	// ceiling. nil means no shared ceiling.
+	pool *agentpool.Pool
 }
 
 // NewManager creates a Manager.
@@ -106,6 +114,14 @@ func (m *Manager) Posture() posture.Policy {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.posture
+}
+
+// SetPool attaches the shared FIFO fan-out pool so background-agent turns
+// count against the same ceiling as explore subagents. A nil pool detaches it.
+func (m *Manager) SetPool(p *agentpool.Pool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.pool = p
 }
 
 // Start launches a background agent by name in the manager's default workdir.
@@ -250,7 +266,12 @@ func (m *Manager) runSingle(ctx context.Context, inst *AgentInstance) {
 	inst.mu.Lock()
 	inst.State = StateRunning
 	inst.mu.Unlock()
-	m.executeTurn(ctx, inst)
+	runCtx, lease, ok := m.acquireLease(ctx, inst)
+	if !ok {
+		return // dropped while queued (cancelled)
+	}
+	defer m.releaseLease(inst, lease)
+	m.executeTurn(runCtx, inst)
 }
 
 func (m *Manager) runLoopMode(ctx context.Context, inst *AgentInstance) {
@@ -275,7 +296,12 @@ func (m *Manager) runLoopMode(ctx context.Context, inst *AgentInstance) {
 		inst.State = StateRunning
 		inst.iteration++
 		inst.mu.Unlock()
-		m.executeTurn(ctx, inst)
+		runCtx, lease, ok := m.acquireLease(ctx, inst)
+		if !ok {
+			return // dropped while queued (cancelled)
+		}
+		m.executeTurn(runCtx, inst)
+		m.releaseLease(inst, lease)
 
 		select {
 		case <-ctx.Done():
@@ -402,6 +428,56 @@ func (m *Manager) runMonitor(ctx context.Context, inst *AgentInstance) {
 	}
 }
 
+// acquireLease admits a background-agent turn through the shared FIFO pool,
+// emitting roster deltas through the events bridge so background agents share
+// the same SubagentUpdate shape as the explore fan-out. ok is false when the
+// turn was dropped while queued (cancelled); the caller must return.
+func (m *Manager) acquireLease(ctx context.Context, inst *AgentInstance) (runCtx context.Context, lease *agentpool.Lease, ok bool) {
+	m.mu.RLock()
+	pool := m.pool
+	m.mu.RUnlock()
+	if pool == nil {
+		return ctx, nil, true
+	}
+
+	id := "bg:" + inst.Profile.Name
+	update := func(state agentpool.State) {
+		inst.pushEvent(Event{
+			AgentName: inst.Profile.Name,
+			Kind:      agent.EventSubagentKind,
+			Subagent:  &agent.SubagentUpdate{ID: id, Label: inst.Profile.Name, Kind: "background", State: string(state)},
+		})
+	}
+
+	update(agentpool.StateQueued)
+	lease, err := pool.Acquire(ctx, agentpool.Handle{ID: id, Label: inst.Profile.Name, Kind: "background"})
+	if err != nil {
+		update(agentpool.StateCancelled)
+		return ctx, nil, false
+	}
+	update(agentpool.StateRunning)
+	return lease.Context(), lease, true
+}
+
+// releaseLease releases a background-agent turn's slot and emits the terminal
+// roster delta. A cancelled lease context forces the cancelled state.
+func (m *Manager) releaseLease(inst *AgentInstance, lease *agentpool.Lease) {
+	if lease == nil {
+		return
+	}
+	state := agentpool.StateDone
+	if lease.Context().Err() != nil {
+		state = agentpool.StateCancelled
+	}
+	lease.Done(state, "")
+	id := "bg:" + inst.Profile.Name
+	inst.pushEvent(Event{
+		AgentName: inst.Profile.Name,
+		Kind:      agent.EventSubagentKind,
+		Subagent:  &agent.SubagentUpdate{ID: id, Label: inst.Profile.Name, Kind: "background", State: string(state)},
+	})
+}
+
 func (m *Manager) executeTurn(ctx context.Context, inst *AgentInstance) {
 	sess, err := m.buildSession(inst)
 	if err != nil {
@@ -508,7 +584,7 @@ func stricterLevel(a, b posture.Level) posture.Level {
 }
 
 func (m *Manager) wrapEvent(name string, e agent.Event) Event {
-	return Event{AgentName: name, Kind: e.Kind, Text: e.Text, ToolName: e.ToolName, ToolResult: e.ToolResult, Warning: e.Warning, Err: e.Err}
+	return Event{AgentName: name, Kind: e.Kind, Text: e.Text, ToolName: e.ToolName, ToolResult: e.ToolResult, Warning: e.Warning, Err: e.Err, Subagent: e.Subagent, SubagentID: e.SubagentID}
 }
 
 func (m *Manager) evaluateMonitor(ctx context.Context, condition string) (bool, error) {

@@ -433,6 +433,73 @@ func TestMaxExploreIterationsOrDefaults(t *testing.T) {
 	}
 }
 
+func TestMaxAgentsOrDefaults(t *testing.T) {
+	var nilSettings *ResilienceSettings
+	if got := nilSettings.MaxAgentsOr(3); got != 3 {
+		t.Fatalf("nil MaxAgentsOr = %d, want 3", got)
+	}
+	if got := (&ResilienceSettings{}).MaxAgentsOr(3); got != 3 {
+		t.Fatalf("unset MaxAgentsOr = %d, want 3", got)
+	}
+	if got := (&ResilienceSettings{MaxAgents: 1}).MaxAgentsOr(3); got != 1 {
+		t.Fatalf("MaxAgentsOr = %d, want 1", got)
+	}
+}
+
+func TestResilienceOverrideTakesMinimumMaxAgents(t *testing.T) {
+	global := Settings{Resilience: &ResilienceSettings{MaxAgents: 3}}
+	got := global.Override(Settings{Resilience: &ResilienceSettings{MaxAgents: 10}})
+	if got.Resilience.MaxAgents != 3 {
+		t.Fatalf("project cannot raise max_agents: got %d", got.Resilience.MaxAgents)
+	}
+	got = global.Override(Settings{Resilience: &ResilienceSettings{MaxAgents: 1}})
+	if got.Resilience.MaxAgents != 1 {
+		t.Fatalf("project can lower max_agents: got %d", got.Resilience.MaxAgents)
+	}
+	got = Settings{Resilience: &ResilienceSettings{}}.Override(Settings{Resilience: &ResilienceSettings{MaxAgents: 2}})
+	if got.Resilience.MaxAgents != 2 {
+		t.Fatalf("unset global should take project max_agents: got %d", got.Resilience.MaxAgents)
+	}
+}
+
+func TestPlanExploreEnabledTriState(t *testing.T) {
+	if got := (Settings{}).PlanExploreEnabled(); !got {
+		t.Fatal("unset plan_explore must default on")
+	}
+	if got := (Settings{Resilience: &ResilienceSettings{}}).PlanExploreEnabled(); !got {
+		t.Fatal("empty resilience must default plan_explore on")
+	}
+	f := false
+	if got := (Settings{Resilience: &ResilienceSettings{PlanExplore: &f}}).PlanExploreEnabled(); got {
+		t.Fatal("explicit false must be honoured")
+	}
+	tr := true
+	if got := (Settings{Resilience: &ResilienceSettings{PlanExplore: &tr}}).PlanExploreEnabled(); !got {
+		t.Fatal("explicit true must be honoured")
+	}
+}
+
+func TestPlanExploreOverridePrecedence(t *testing.T) {
+	// Project overrides global (last wins), like the UI tri-state toggles.
+	f := false
+	global := Settings{Resilience: &ResilienceSettings{PlanExplore: &f}}
+	got := global.Override(Settings{})
+	if got.Resilience.PlanExplore == nil || *got.Resilience.PlanExplore {
+		t.Fatalf("project absent must keep global false: got %+v", got.Resilience.PlanExplore)
+	}
+
+	tr := true
+	got = global.Override(Settings{Resilience: &ResilienceSettings{PlanExplore: &tr}})
+	if got.Resilience.PlanExplore == nil || !*got.Resilience.PlanExplore {
+		t.Fatal("project true must override global false")
+	}
+
+	got = Settings{}.Override(Settings{Resilience: &ResilienceSettings{PlanExplore: &f}})
+	if got.Resilience.PlanExplore == nil || *got.Resilience.PlanExplore {
+		t.Fatal("project false must override global default")
+	}
+}
+
 func TestResilienceOverrideTakesMinimumExploreIterations(t *testing.T) {
 	global := Settings{Resilience: &ResilienceSettings{MaxExploreIterations: 8}}
 	got := global.Override(Settings{Resilience: &ResilienceSettings{MaxExploreIterations: 20}})

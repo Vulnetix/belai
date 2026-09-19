@@ -277,6 +277,14 @@ type ResilienceSettings struct {
 	// historical 4 so a subagent actually runs rg/find/git before clarifying,
 	// while still keeping the fan-out bounded. Zero means the default (8).
 	MaxExploreIterations int `json:"max_explore_iterations,omitempty"`
+	// MaxAgents caps how many fan-out subagents (explore plus background
+	// agents) run at once across the whole session. It defaults to 3, today's
+	// exploreConcurrency, and backs the single FIFO agent pool. Zero means the
+	// default (3).
+	MaxAgents int `json:"max_agents,omitempty"`
+	// PlanExplore, when non-nil, toggles the plan-mode repository survey. nil
+	// means on (the default), so false is honoured as an explicit opt-out.
+	PlanExplore *bool `json:"plan_explore,omitempty"`
 }
 
 // MaxAttemptsOr returns MaxAttempts or the provided default.
@@ -321,6 +329,15 @@ func (r *ResilienceSettings) MaxExploreIterationsOr(def int) int {
 	return r.MaxExploreIterations
 }
 
+// MaxAgentsOr returns MaxAgents or the provided default. Zero means "use the
+// default"; callers should pass the built-in default (3).
+func (r *ResilienceSettings) MaxAgentsOr(def int) int {
+	if r == nil || r.MaxAgents == 0 {
+		return def
+	}
+	return r.MaxAgents
+}
+
 // ColorsEnabled reports whether role colours are on. Default true.
 func (s Settings) ColorsEnabled() bool {
 	return s.UI == nil || s.UI.Colors == nil || *s.UI.Colors
@@ -330,6 +347,13 @@ func (s Settings) ColorsEnabled() bool {
 // true.
 func (s Settings) SpinnerEnabled() bool {
 	return s.UI == nil || s.UI.Spinner == nil || *s.UI.Spinner
+}
+
+// PlanExploreEnabled reports whether plan-mode's repository survey runs.
+// Default true; only an explicit false disables it, so false is honoured as a
+// deliberate opt-out rather than lost to the nil-means-default convention.
+func (s Settings) PlanExploreEnabled() bool {
+	return s.Resilience == nil || s.Resilience.PlanExplore == nil || *s.Resilience.PlanExplore
 }
 
 // ReasoningVisible reports whether reasoning deltas render. Default false.
@@ -528,6 +552,16 @@ func (s Settings) Override(proj Settings) Settings {
 			} else {
 				merged.MaxExploreIterations = min(merged.MaxExploreIterations, proj.Resilience.MaxExploreIterations)
 			}
+		}
+		if proj.Resilience.MaxAgents != 0 {
+			if merged.MaxAgents == 0 {
+				merged.MaxAgents = proj.Resilience.MaxAgents
+			} else {
+				merged.MaxAgents = min(merged.MaxAgents, proj.Resilience.MaxAgents)
+			}
+		}
+		if proj.Resilience.PlanExplore != nil {
+			merged.PlanExplore = proj.Resilience.PlanExplore
 		}
 		out.Resilience = merged
 	}

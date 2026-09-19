@@ -122,6 +122,6 @@ func (a *App) persistMessage(i int) {
 			meta["orig_len"] = len(content)
 			content = content[:maxToolResultBytes]
 		}
-		a.appendEntry(session.Entry{Type: "tool", Role: "tool", Content: content, Meta: meta})
+		a.appendEntry(session.Entry{Type: "tool", Role: "tool", Content: content, Meta: meta, SubagentID: m.SubagentID})
 	}
 }

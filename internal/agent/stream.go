@@ -89,6 +89,15 @@ const (
 	// reaches a model. Currently used by Read to communicate start_line so
 	// partial reads can be numbered correctly.
 	EventToolMetaKind
+	// EventSubagentKind carries a subagent lifecycle delta (queued → running
+	// → done/cancelled/failed). Render-only: it never enters the conversation,
+	// never reaches a model, and carries no execution authority.
+	EventSubagentKind
+	// EventSubagentActivityKind carries one forwarded tool start or result
+	// from a subagent, keyed to that subagent by SubagentID. Render-only: the
+	// strings on this path are sanitized before they leave the child, and the
+	// finding itself still takes the existing classify route.
+	EventSubagentActivityKind
 )
 
 // Role Manager sub-phases carried by EventRoleManagerKind.
@@ -119,6 +128,11 @@ type Event struct {
 	// ToolName / ToolResult carry EventToolResult.
 	ToolName   string
 	ToolResult string
+	// ToolArgs carries the serialized arguments of an EventSubagentActivityKind
+	// tool start (render-only). The parent EventToolStartKind carries the same
+	// data in Tool.Args; subagent activity flattens it here because the child
+	// session is not exposed to the parent emitter.
+	ToolArgs string
 	// ToolCallID keys a tool result back to the assistant call that requested
 	// it. Tool results may now arrive out of order (concurrent read-only
 	// tools), so the TUI must match on this rather than the last tool row.
@@ -201,6 +215,25 @@ type Event struct {
 
 	// Result carries EventDone.
 	Result run.Result
+
+	// Subagent carries the roster delta on EventSubagentKind. Render-only.
+	Subagent *SubagentUpdate
+	// SubagentID keys an EventSubagentActivityKind event (and the render-only
+	// ToolName/ToolArgs/ToolResult/ToolCallID it reuses) to its subagent.
+	SubagentID string
+}
+
+// SubagentUpdate carries the roster delta on EventSubagentKind. Render-only:
+// it never enters the conversation, never reaches a model, and carries no
+// execution authority.
+type SubagentUpdate struct {
+	ID      string
+	Label   string
+	Kind    string
+	State   string
+	Index   int
+	Total   int
+	Outcome string
 }
 
 // PermissionAskReply is the UI's answer to a tool-permission ask.

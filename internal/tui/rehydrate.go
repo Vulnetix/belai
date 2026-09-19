@@ -173,6 +173,7 @@ func messagesFromEntries(entries []session.Entry) ([]components.Message, int) {
 				ToolArgs:   metaString(e.Meta, "tool_args"),
 				Status:     metaString(e.Meta, "status"),
 				ToolCallID: id,
+				SubagentID: e.SubagentID,
 			})
 		}
 	}

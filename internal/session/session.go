@@ -17,6 +17,10 @@ type Entry struct {
 	Content   string         `json:"content,omitempty"`
 	Timestamp int64          `json:"timestamp,omitempty"`
 	Meta      map[string]any `json:"meta,omitempty"`
+	// SubagentID keys a persisted subagent activity row to its subagent. Empty
+	// means a main-thread row, so sessions written before this field shipped
+	// still load as main-thread rows.
+	SubagentID string `json:"subagent_id,omitempty"`
 }
 
 // EntryTypeSessionName is the entry type carrying an explicit session name.

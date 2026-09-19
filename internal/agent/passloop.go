@@ -398,7 +398,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 				// A forced explore must survey the repository, not re-ask the
 				// original question: a goal-mode prompt usually has no
 				// @references, so the ordinary plan would just repeat it.
-				if survey := s.goalSurveyTurns(ctx, l.goalText); len(survey) > 0 {
+				if survey := s.goalSurveyTurns(ctx, l.goalText, pipe, emit); len(survey) > 0 {
 					turns = append(turns, survey...)
 					turns = append(turns, run.Turn{Role: "assistant", Content: rolemanager.SummaryAck})
 					l.surveyPending = true

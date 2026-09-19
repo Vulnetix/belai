@@ -121,6 +121,11 @@ func (a *App) settingsRows() []settingsRow {
 	mouseVal := boolLabel(s.MouseEnabled())
 	showNamesVal := boolLabel(s.SessionNamesVisible())
 	permsVal := fmt.Sprintf("%d allow · %d ask · %d deny", len(s.Permissions.Allow), len(s.Permissions.Ask), len(s.Permissions.Deny))
+	maxAgentsVal := "3"
+	if s.Resilience != nil && s.Resilience.MaxAgents != 0 {
+		maxAgentsVal = strconv.Itoa(s.Resilience.MaxAgents)
+	}
+	planExploreVal := boolLabel(s.PlanExploreEnabled())
 
 	return []settingsRow{
 		{key: "provider", label: "provider", kind: "text", value: providerVal, src: sourceLabel(origin["provider"])},
@@ -137,6 +142,8 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "show_todos", label: "todo panel", kind: "toggle", value: todosVal, src: sourceLabel(origin["ui"])},
 		{key: "mouse", label: "mouse capture", kind: "toggle", value: mouseVal, src: sourceLabel(origin["ui"])},
 		{key: "show_session_names", label: "session names", kind: "toggle", value: showNamesVal, src: sourceLabel(origin["show_session_names"])},
+		{key: "max_agents", label: "max agents", kind: "text", value: maxAgentsVal, src: sourceLabel(origin["resilience"])},
+		{key: "plan_explore", label: "plan explore", kind: "toggle", value: planExploreVal, src: sourceLabel(origin["resilience"])},
 		{key: "permissions", label: "permissions", kind: "submenu", value: permsVal, src: sourceLabel(origin["permissions"])},
 	}
 }
@@ -267,6 +274,11 @@ func (a *App) rawValue(key string) string {
 			return strconv.Itoa(*a.settings.SessionRetentionDays)
 		}
 		return ""
+	case "max_agents":
+		if a.settings.Resilience != nil && a.settings.Resilience.MaxAgents != 0 {
+			return strconv.Itoa(a.settings.Resilience.MaxAgents)
+		}
+		return ""
 	}
 	return ""
 }
@@ -293,6 +305,20 @@ func (a *App) commitTextRow(row settingsRow, raw string) error {
 			return fmt.Errorf("session retention must be a positive integer")
 		}
 		return a.mutateSetting(func(s *config.Settings) { s.SessionRetentionDays = &n })
+	case "max_agents":
+		if val == "" {
+			return a.unsetSetting("max_agents")
+		}
+		n, err := strconv.Atoi(val)
+		if err != nil || n <= 0 {
+			return fmt.Errorf("max agents must be a positive integer")
+		}
+		return a.mutateSetting(func(s *config.Settings) {
+			if s.Resilience == nil {
+				s.Resilience = &config.ResilienceSettings{}
+			}
+			s.Resilience.MaxAgents = n
+		})
 	}
 	return fmt.Errorf("cannot edit %q", row.key)
 }
@@ -341,6 +367,11 @@ func (a *App) cycleToggle(key string) error {
 			s.UI.Mouse = nextBool(s.UI.Mouse)
 		case "show_session_names":
 			s.ShowSessionNames = nextBool(s.ShowSessionNames)
+		case "plan_explore":
+			if s.Resilience == nil {
+				s.Resilience = &config.ResilienceSettings{}
+			}
+			s.Resilience.PlanExplore = nextBool(s.Resilience.PlanExplore)
 		}
 	})
 }
@@ -407,6 +438,14 @@ func (a *App) unsetSetting(key string) error {
 			}
 		case "show_session_names":
 			s.ShowSessionNames = nil
+		case "plan_explore":
+			if s.Resilience != nil {
+				s.Resilience.PlanExplore = nil
+			}
+		case "max_agents":
+			if s.Resilience != nil {
+				s.Resilience.MaxAgents = 0
+			}
 		}
 	})
 }

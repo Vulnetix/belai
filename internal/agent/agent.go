@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/vulnetix/signet/internal/agentpool"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/delimiters"
 	"github.com/vulnetix/signet/internal/filediff"
@@ -87,6 +88,11 @@ type Options struct {
 	Workdir       string
 	State         config.State
 	Settings      config.Settings
+	// AgentPool caps how many fan-out subagents run at once across the whole
+	// session (explore fan-out plus background agents). It is the shared FIFO
+	// pool reached through rolemanager.Pipeline; nil means no ceiling beyond
+	// the caller's own bounds.
+	AgentPool *agentpool.Pool
 }
 
 // Session executes the tool loop for a single user prompt.
@@ -138,6 +144,9 @@ type Session struct {
 	// diffs observes what a mutating command changed. Nil disables the
 	// feature; it is consulted around every mutating tool (Bash, Write, Edit).
 	diffs *filediff.Recorder
+	// agentPool is the shared FIFO fan-out ceiling. Explore subagents acquire
+	// a lease from it; nil means no shared ceiling.
+	agentPool *agentpool.Pool
 	// planRevision is the requested plan-file revision for this turn. Zero
 	// means compute the next available revision when recording.
 	planRevision int
@@ -289,6 +298,7 @@ func NewSession(o Options) (*Session, error) {
 		steer:              make(chan string, steerBuffer),
 		trace:              trace.Env(),
 		diffs:              filediff.NewRecorder(o.Workdir),
+		agentPool:          o.AgentPool,
 	}, nil
 }
 
@@ -331,12 +341,23 @@ type TurnInput struct {
 // (Kept as a type alias so callers continue to see run.Result.)
 // Run executes the full pipeline including the tool loop, using the blocking
 // transport. It is the CLI path and is byte-identical in behaviour to a
-// drained RunStream.
+// drained RunStream. It discards every event.
 func (s *Session) Run(ctx context.Context, userPrompt string) (run.Result, error) {
+	return s.RunObserved(ctx, userPrompt, func(Event) {})
+}
+
+// RunObserved is Run with a live emitter. It is the blocking-transport sibling
+// of RunStream: the same run body, but the caller observes every event instead
+// of draining a channel. Explore subagents use it so their tool activity can be
+// forwarded to the parent transcript.
+func (s *Session) RunObserved(ctx context.Context, userPrompt string, emit func(Event)) (run.Result, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return s.run(ctx, nil, TurnInput{Prompt: userPrompt}, false, func(Event) {})
+	if emit == nil {
+		emit = func(Event) {}
+	}
+	return s.run(ctx, nil, TurnInput{Prompt: userPrompt}, false, emit)
 }
 
 // run is the shared loop body for both transports. Order is identical to the
@@ -352,6 +373,9 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		emit(Event{Kind: EventRetryKind, RetryAttempt: a.Attempt, RetryDelay: a.Delay, RetryReason: a.Reason})
 	}
 	pipe := run.NewPipelineWithRetry(s.cfg, s.client, s.cache, onClassifierRetry)
+	// The Role Manager owns the FIFO fan-out pool and reaches it through the
+	// pipeline so queue admission is traced with the rolemanager record helper.
+	pipe.Pool = s.agentPool
 	// The Role Manager is working before any model I/O: admission and mode
 	// selection are pre-prompt classification. Emit the signal so a UI can
 	// show a dedicated indicator rather than a generic working label.
@@ -431,7 +455,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	// classified findings re-enter as untrusted user turns ahead of the prompt.
 	var exploreTurns []run.Turn
 	if modeDec.Explore {
-		exploreTurns = s.exploreTurns(ctx, modeDec, clean)
+		exploreTurns = s.exploreTurns(ctx, modeDec, clean, pipe, emit)
 	}
 
 	// Clarify round loop: only when exploration actually produced findings, and

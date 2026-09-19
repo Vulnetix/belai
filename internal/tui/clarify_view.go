@@ -254,6 +254,13 @@ func (a *App) handleClarifyKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.cancel = nil
 			a.endPhase()
 			a.events = nil
+		} else if a.clarifyState.reply != nil {
+			// Unconditional drop: with no turn to cancel, answer the (buffered)
+			// channel so the agent's askUser unblocks instead of parking forever.
+			select {
+			case a.clarifyState.reply <- clarify.Answers{}:
+			default:
+			}
 		}
 		return a, nil
 	case "up", "k":

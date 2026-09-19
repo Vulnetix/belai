@@ -166,6 +166,8 @@ its provenance for every key.
 | `context_windows` | per-model context-window overrides, in tokens |
 | `providers` | custom provider profiles (see below) |
 | `allow_project_providers` | opt in to project-layer `providers` (default off) |
+| `resilience.max_agents` | fan-out ceiling for explore subagents + background agents (default 3) |
+| `resilience.plan_explore` | plan-mode repository survey on/off (default on) |
 
 **Custom providers.** A `providers` block defines a provider by name, with
 `base_url`, `api` (`openai-chat`, `openai-responses`, or

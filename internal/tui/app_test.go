@@ -19,6 +19,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/vulnetix/signet/internal/agent"
+	"github.com/vulnetix/signet/internal/agentpool"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
 	"github.com/vulnetix/signet/internal/promptlib"
@@ -469,6 +470,12 @@ func drainAgent(t *testing.T, a *App, cmd tea.Cmd) *App {
 			var cmds []tea.Cmd
 			for _, c := range batch {
 				m := c()
+				if nested, ok := m.(tea.BatchMsg); ok {
+					// A command returned another batch (e.g. startAgent inside a
+					// cold-send batch); flatten it so no command is dropped.
+					cmds = append(cmds, nested...)
+					continue
+				}
 				mm, next := a.Update(m)
 				a = mm.(*App)
 				cmds = append(cmds, next)
@@ -1870,11 +1877,27 @@ func TestSubmitInputClassifiesAsyncThenSends(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected the async classify command")
 	}
-	msg := cmd()
-	if _, ok := msg.(modeClassifiedMsg); !ok {
-		t.Fatalf("classify command produced %T, want modeClassifiedMsg", msg)
+	// submitInput batches the classify command with the work-spinner tick;
+	// find the classify message among them.
+	raw := cmd()
+	var classified modeClassifiedMsg
+	switch msg := raw.(type) {
+	case modeClassifiedMsg:
+		classified = msg
+	case tea.BatchMsg:
+		for _, c := range msg {
+			if m := c(); m != nil {
+				if cm, ok := m.(modeClassifiedMsg); ok {
+					classified = cm
+					break
+				}
+			}
+		}
 	}
-	m, next := a.Update(msg)
+	if classified.input == "" {
+		t.Fatalf("classify command produced %T, want modeClassifiedMsg", raw)
+	}
+	m, next := a.Update(classified)
 	a = m.(*App)
 	if a.mode != "plan" {
 		t.Fatalf("mode = %q, want plan", a.mode)
@@ -2078,6 +2101,158 @@ func TestSpinMarkHonoursSpinnerSetting(t *testing.T) {
 	a.settings.UI = &config.UISettings{Spinner: &f}
 	if got := a.spinMark(); got != "•" {
 		t.Fatalf("spinner off must render the static dot, got %q", got)
+	}
+}
+
+func TestComposerExploringIndicator(t *testing.T) {
+	a := New(Options{})
+	a.width, a.height = 100, 30
+	a.setPhaseExploring(1, 3, "repository structure")
+
+	view := a.renderComposer()
+	if !strings.Contains(view, "explore") {
+		t.Fatalf("composer must carry the explore pill:\n%s", view)
+	}
+	if !strings.Contains(view, "exploring 1/3") {
+		t.Fatalf("composer must caption the exploring progress:\n%s", view)
+	}
+	if strings.Contains(view, "role manager") {
+		t.Fatalf("explore is not a Role Manager signal:\n%s", view)
+	}
+	if strings.Contains(view, "working") {
+		t.Fatalf("explore must not use the generic working label:\n%s", view)
+	}
+}
+
+func TestF8TogglesSubagentStripFocus(t *testing.T) {
+	a := New(Options{})
+	a.subagents = []components.SubagentChip{{ID: "e1", Label: "x", State: "done"}}
+	a.subagentIdx = map[string]int{"e1": 0}
+
+	a.Update(tea.KeyMsg{Type: tea.KeyF8})
+	if !a.stripFocus {
+		t.Fatal("f8 must focus the strip when a roster exists")
+	}
+	if a.stripSel != 0 {
+		t.Fatalf("stripSel = %d, want 0 (main)", a.stripSel)
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyF8})
+	if a.stripFocus {
+		t.Fatal("f8 must toggle the strip focus off")
+	}
+}
+
+func TestF8NoopWithEmptyRoster(t *testing.T) {
+	a := New(Options{})
+	a.Update(tea.KeyMsg{Type: tea.KeyF8})
+	if a.stripFocus {
+		t.Fatal("f8 must be a no-op with an empty roster")
+	}
+}
+
+func TestSubagentStripCyclesAndFilters(t *testing.T) {
+	a := New(Options{})
+	a.subagents = []components.SubagentChip{{ID: "e1", Label: "x", State: "done"}, {ID: "e2", Label: "y", State: "done"}}
+	a.subagentIdx = map[string]int{"e1": 0, "e2": 1}
+	a.stripFocus = true
+	a.stripSel = 0
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRight})
+	if a.stripSel != 1 {
+		t.Fatalf("right = %d, want 1 (e1)", a.stripSel)
+	}
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRight})
+	if a.stripSel != 2 {
+		t.Fatalf("right = %d, want 2 (e2)", a.stripSel)
+	}
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRight}) // clamped at the end
+	if a.stripSel != 2 {
+		t.Fatalf("right past the end must clamp, got %d", a.stripSel)
+	}
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyLeft})
+	if a.stripSel != 1 {
+		t.Fatalf("left = %d, want 1", a.stripSel)
+	}
+
+	// enter on e1 filters the transcript.
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if a.threadFilter != "e1" {
+		t.Fatalf("threadFilter = %q, want e1", a.threadFilter)
+	}
+
+	// enter on main clears the filter.
+	a.stripSel = 0
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if a.threadFilter != "" {
+		t.Fatalf("threadFilter = %q, want cleared", a.threadFilter)
+	}
+}
+
+func TestSubagentStripXCancelsAndDismisses(t *testing.T) {
+	a := New(Options{})
+	a.agentPool = agentpool.New(1)
+	a.subagents = []components.SubagentChip{{ID: "e1", Label: "x", State: "running"}}
+	a.subagentIdx = map[string]int{"e1": 0}
+	a.stripFocus = true
+	a.stripSel = 1
+
+	// x on a running chip cancels but never removes it.
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	if len(a.subagents) != 1 {
+		t.Fatal("running chip must not be dismissed")
+	}
+	if _, ok := a.subagentIdx["e1"]; !ok {
+		t.Fatal("running chip must keep its roster entry")
+	}
+
+	// x on a terminal chip dismisses it.
+	a.subagents[0].State = "done"
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	if len(a.subagents) != 0 {
+		t.Fatalf("terminal chip must be dismissed, got %d", len(a.subagents))
+	}
+	if _, ok := a.subagentIdx["e1"]; ok {
+		t.Fatal("dismissed chip must lose its index entry")
+	}
+}
+
+func TestFilteredViewHidesMainRows(t *testing.T) {
+	a := New(Options{})
+	a.messages = []components.Message{
+		{Role: "user", Content: "prompt"},
+		{Role: "tool", SubagentID: "e1", ToolName: "Read", Content: "subagent output"},
+		{Role: "assistant", Content: "reply"},
+	}
+	a.threadFilter = "e1"
+
+	msgs := a.filteredMessages()
+	if len(msgs) != 2 {
+		t.Fatalf("filtered messages = %d, want banner + one subagent row", len(msgs))
+	}
+	if msgs[0].Role != "system" || !strings.Contains(msgs[0].Content, "filtered") {
+		t.Fatalf("first row must be the filter banner, got %+v", msgs[0])
+	}
+	if msgs[1].SubagentID != "e1" {
+		t.Fatalf("surviving row must be the filtered subagent's, got %+v", msgs[1])
+	}
+}
+
+func TestBuildTurnsDropsSubagentRows(t *testing.T) {
+	a := New(Options{})
+	a.messages = []components.Message{
+		{Role: "user", Content: "prompt"},
+		{Role: "tool", SubagentID: "e1", ToolName: "Read", ToolCallID: "c1", Content: "raw subagent output"},
+		{Role: "assistant", Content: "reply"},
+	}
+
+	turns := a.buildTurns()
+	if len(turns) != 2 {
+		t.Fatalf("turns = %d, want 2 (user + assistant)", len(turns))
+	}
+	for _, tn := range turns {
+		if strings.Contains(tn.Content, "raw subagent output") {
+			t.Fatalf("subagent row leaked into provider turns: %+v", turns)
+		}
 	}
 }
 

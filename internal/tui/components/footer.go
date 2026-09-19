@@ -55,6 +55,21 @@ type Footer struct {
 	// height never changes with the pointer, which would shift the viewport
 	// under a stationary mouse. The caller styles it (HelpBar).
 	Hint string
+
+	// Subagents is the subagent roster rendered on a dedicated line. The line
+	// always renders (empty when the roster is empty) so the footer height stays
+	// constant as chips appear and disappear. MainFocused reports whether the
+	// [main] chip is the selected roster entry.
+	Subagents   []SubagentChip
+	MainFocused bool
+}
+
+// SubagentChip is one roster entry in the footer's subagent strip.
+type SubagentChip struct {
+	ID      string
+	Label   string
+	State   string
+	Focused bool
 }
 
 func modeColor(mode string) lipgloss.TerminalColor {
@@ -105,9 +120,63 @@ func (f *Footer) View() string {
 
 	rule := Rule(f.Width)
 	if line1 != "" {
-		return rule + "\n" + line1 + "\n" + line2 + "\n" + MutedStyle.Render(f.Hint)
+		return rule + "\n" + line1 + "\n" + line2 + "\n" + f.subagentLine() + "\n" + MutedStyle.Render(f.Hint)
 	}
-	return rule + "\n" + line2 + "\n" + MutedStyle.Render(f.Hint)
+	return rule + "\n" + line2 + "\n" + f.subagentLine() + "\n" + MutedStyle.Render(f.Hint)
+}
+
+// subagentLine renders the subagent roster as one line. It returns "" when
+// the roster is empty (still emitting the dedicated footer line), otherwise
+// [main] leads the strip, chips follow in insertion order, and overflow
+// collapses to a "→ N more" marker matching the /model windowed-list idiom.
+func (f *Footer) subagentLine() string {
+	if len(f.Subagents) == 0 {
+		return ""
+	}
+	parts := []string{renderSubagentChip(SubagentChip{ID: "", Label: "main", State: "main", Focused: f.MainFocused})}
+	used := lipgloss.Width(parts[0])
+	const sep = 2
+	for i, c := range f.Subagents {
+		rendered := renderSubagentChip(c)
+		w := lipgloss.Width(rendered)
+		if used+w+sep > f.Width {
+			parts = append(parts, MutedStyle.Render(fmt.Sprintf("→ %d more", len(f.Subagents)-i)))
+			break
+		}
+		parts = append(parts, rendered)
+		used += w + sep
+	}
+	return strings.Join(parts, MutedStyle.Render("  "))
+}
+
+// renderSubagentChip renders one roster chip with its state colour. queued is
+// muted, running is teal, done is teal-soft with a check, cancelled/failed is
+// amber, and the focused chip renders inverse.
+func renderSubagentChip(c SubagentChip) string {
+	var colour lipgloss.TerminalColor
+	label := c.Label
+	if c.ID == "" {
+		colour = ColorTealSoft
+	} else {
+		switch c.State {
+		case "queued":
+			colour = ColorMuted
+		case "running":
+			colour = ColorTeal
+		case "done":
+			label = c.Label + " ✓"
+			colour = ColorTealSoft
+		case "cancelled", "failed":
+			colour = ColorAmber
+		default:
+			colour = ColorMuted
+		}
+	}
+	chip := Chip(label, colour)
+	if c.Focused {
+		chip = lipgloss.NewStyle().Reverse(true).Render(chip)
+	}
+	return chip
 }
 
 // line2Layout computes the footer's second content line. It returns the
