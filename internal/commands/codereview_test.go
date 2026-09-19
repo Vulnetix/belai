@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -37,7 +38,7 @@ printf 'result for %s\n' "$sub" > ".vulnetix/$sub.txt"
 	return dir
 }
 
-func TestCodeReviewWritesArtifacts(t *testing.T) {
+func TestCodeReviewRunsSubcommandsAndWritesArtifacts(t *testing.T) {
 	bin := writeReviewVulnetix(t)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
@@ -47,15 +48,15 @@ func TestCodeReviewWritesArtifacts(t *testing.T) {
 	}
 
 	workdir := t.TempDir()
-	rep, err := (CodeReview{CLI: cli, Workdir: workdir}).Run()
+	rep, err := (CodeReview{CLI: cli, Workdir: workdir}).Run(context.Background())
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if !strings.Contains(rep.Summary, "fake scan output") {
+	if !strings.Contains(rep.Summary, "vulnetix scan: ok") {
 		t.Fatalf("summary = %q", rep.Summary)
 	}
 
-	dir := config.ProjectDir(workdir)
+	dir := config.ProjectSignetDir(workdir)
 	if _, err := os.Stat(filepath.Join(dir, "code-review-summary.md")); err != nil {
 		t.Fatalf("summary file missing: %v", err)
 	}
@@ -75,7 +76,29 @@ func TestCodeReviewWritesArtifacts(t *testing.T) {
 }
 
 func TestCodeReviewRequiresCLI(t *testing.T) {
-	if _, err := (CodeReview{CLI: nil, Workdir: t.TempDir()}).Run(); err == nil {
+	if _, err := (CodeReview{CLI: nil, Workdir: t.TempDir()}).Run(context.Background()); err == nil {
 		t.Fatalf("expected error without CLI")
+	}
+}
+
+func TestCodeReviewRejectsUnknownSubcommand(t *testing.T) {
+	bin := writeReviewVulnetix(t)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	cli, err := vulnetixcli.Detect()
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	_, err = (CodeReview{CLI: cli, Workdir: t.TempDir(), Subcommands: []string{"scan", "pwn"}}).Run(context.Background())
+	if err == nil {
+		t.Fatal("expected error for unknown subcommand")
+	}
+}
+
+func TestStatusText(t *testing.T) {
+	r := CodeReview{}
+	cap := vulnetixcli.Capabilities{Present: true, Version: vulnetixcli.Version{Major: 3, Minor: 107, Patch: 2}, Install: vulnetixcli.InstallBrew, InstallPrefix: "/homebrew", Auth: vulnetixcli.AuthState{Authenticated: false, Plan: vulnetixcli.PlanCommunity}}
+	txt := r.StatusText(cap)
+	if !strings.Contains(txt, "vulnetix CLI: v3.107.2") {
+		t.Fatalf("status text = %q", txt)
 	}
 }

@@ -2,65 +2,102 @@
 package commands
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
+	"time"
 
 	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/signet/internal/scanartifacts"
 	"github.com/vulnetix/signet/internal/vulnetixcli"
 )
 
-// subcommands are the Vulnetix CLI subcommands run by /code-review.
-var subcommands = []string{"scan", "malscan", "license", "bom", "package-firewall", "ai-firewall"}
+// DefaultSubcommands are the Vulnetix CLI subcommands run by bare /code-review.
+var DefaultSubcommands = []string{"scan", "malscan", "license", "bom", "package-firewall", "ai-firewall"}
 
-// Report is the result of a code review.
+// AllowedSubcommands is the hard allowlist for configured subcommands. It is
+// the same set as the default; only these names may be persisted or executed.
+var AllowedSubcommands = map[string]bool{
+	"scan": true, "malscan": true, "license": true, "bom": true,
+	"package-firewall": true, "ai-firewall": true,
+}
+
+// CodeReviewSettings are persisted per-project settings for /code-review.
+// Fields are intentionally typed; no free-form flags are ever stored.
+type CodeReviewSettings struct {
+	Subcommands     []string `json:"subcommands,omitempty"`
+	Timeout         string   `json:"timeout,omitempty"`
+	ContinueOnError *bool    `json:"continue_on_error,omitempty"`
+	OrgID           string   `json:"org_id,omitempty"`
+}
+
+// Report is the result of a code review run or status query.
 type Report struct {
 	Summary  string
 	Manifest []string
+	// Status is a plain-text rendering of CodeReviewStatus for /code-review status.
+	Status string
+}
+
+// SubcommandResult captures one subcommand outcome.
+type SubcommandResult struct {
+	Name   string
+	Output string
+	Err    error
 }
 
 // CodeReview runs the Vulnetix CLI review subcommands for a workdir.
 type CodeReview struct {
 	CLI     *vulnetixcli.CLI
 	Workdir string
+	// Subcommands overrides the default list.
+	Subcommands []string
+	// Timeout overrides the CLI's default timeout for scans.
+	Timeout time.Duration
 }
 
-// Run executes each subcommand, marks its output as trusted internal content
-// via the Role Manager boundary, and writes a summary plus a manifest of the
-// resulting files under .vulnetix/.
-func (r CodeReview) Run() (Report, error) {
+// Run executes each configured subcommand, never promotes arbitrary repository
+// bytes to the model, and writes a summary plus a manifest under
+// .vulnetix/signet/.
+func (r CodeReview) Run(ctx context.Context) (Report, error) {
 	if r.CLI == nil {
 		return Report{}, fmt.Errorf("vulnetix CLI not available")
 	}
-	r.CLI.Dir = r.Workdir
+	if r.Workdir == "" {
+		return Report{}, fmt.Errorf("workdir is required")
+	}
+	subs := r.Subcommands
+	if len(subs) == 0 {
+		subs = DefaultSubcommands
+	}
 
-	var blocks []rolemanager.SystemBlock
-	for _, sub := range subcommands {
-		out, err := r.CLI.Run(sub)
-		if err != nil {
-			return Report{}, err
+	timeout := r.CLI.Timeout
+	if r.Timeout > 0 {
+		timeout = r.Timeout
+	}
+	cli := *r.CLI
+	cli.Timeout = timeout
+
+	for _, sub := range subs {
+		if !AllowedSubcommands[sub] {
+			return Report{}, fmt.Errorf("subcommand %q is not in the allowlist", sub)
 		}
-		blocks = append(blocks, rolemanager.SystemBlock{
-			Source:  rolemanager.SourceTool,
-			Content: fmt.Sprintf("--- vulnetix %s ---\n%s", sub, out),
+	}
+
+	var results []SubcommandResult
+	for _, sub := range subs {
+		res, err := cli.ExecIn(ctx, r.Workdir, sub)
+		results = append(results, SubcommandResult{
+			Name:   sub,
+			Output: res.Stdout,
+			Err:    err,
 		})
 	}
 
-	// Role Manager boundary: only trusted internal content is promoted.
-	if err := rolemanager.VerifyTrustedBlocks(blocks); err != nil {
-		return Report{}, err
-	}
-	var b strings.Builder
-	for _, blk := range blocks {
-		b.WriteString(blk.Content)
-		b.WriteString("\n")
-	}
-	summary := b.String()
-
+	summary := buildSummary(results)
 	manifest, err := r.collectManifest()
 	if err != nil {
 		return Report{}, err
@@ -71,36 +108,37 @@ func (r CodeReview) Run() (Report, error) {
 	return Report{Summary: summary, Manifest: manifest}, nil
 }
 
-// collectManifest lists the files under .vulnetix/ produced by the CLI.
+func buildSummary(results []SubcommandResult) string {
+	var b strings.Builder
+	for _, r := range results {
+		status := "ok"
+		if r.Err != nil {
+			status = "failed"
+		}
+		fmt.Fprintf(&b, "vulnetix %s: %s\n", r.Name, status)
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// collectManifest lists artifacts produced by the CLI, excluding signet's own state.
 func (r CodeReview) collectManifest() ([]string, error) {
-	root := config.ProjectDir(r.Workdir)
-	var out []string
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			if os.IsNotExist(err) {
-				return nil
-			}
-			return err
-		}
-		if info.IsDir() {
-			return nil
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		out = append(out, rel)
-		return nil
-	})
+	dir := config.ProjectDir(r.Workdir)
+	arts, err := scanartifacts.Enumerate(dir)
 	if err != nil {
 		return nil, err
 	}
-	sort.Strings(out)
+	var out []string
+	for _, a := range arts {
+		if a.Kind == scanartifacts.KindSignet {
+			continue
+		}
+		out = append(out, a.Rel)
+	}
 	return out, nil
 }
 
 func (r CodeReview) writeArtifacts(summary string, manifest []string) error {
-	dir := config.ProjectDir(r.Workdir)
+	dir := config.ProjectSignetDir(r.Workdir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -112,4 +150,21 @@ func (r CodeReview) writeArtifacts(summary string, manifest []string) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, "code-review-manifest.json"), data, 0o600)
+}
+
+// StatusText returns a plain-text rendering of CLI capabilities.
+func (r CodeReview) StatusText(cap vulnetixcli.Capabilities) string {
+	var b strings.Builder
+	if !cap.Present {
+		b.WriteString("vulnetix CLI: not installed\n")
+		return b.String()
+	}
+	fmt.Fprintf(&b, "vulnetix CLI: %s\n", cap.Version)
+	fmt.Fprintf(&b, "  path:      %s\n", cap.Path)
+	if cap.Install != "" {
+		fmt.Fprintf(&b, "  install:   %s (%s)\n", cap.Install, cap.InstallPrefix)
+	}
+	fmt.Fprintf(&b, "  auth:      %v\n", cap.Auth.Authenticated)
+	fmt.Fprintf(&b, "  plan:      %s\n", cap.Auth.Plan)
+	return b.String()
 }
