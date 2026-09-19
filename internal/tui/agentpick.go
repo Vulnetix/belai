@@ -142,22 +142,159 @@ func (a *App) startAgentChoice(c agentChoice) tea.Cmd {
 	return nil
 }
 
-// agentCandidates returns the profiles the strip is currently offering.
+// agentCandidates returns the profiles the strip is currently offering: the
+// names valid for a /agent argument while one is being typed, otherwise every
+// carrier the session can engage.
 func (a *App) agentCandidates() []agentChoice {
+	if a.agentArgSub != "" {
+		return a.agentArgCands
+	}
 	return a.agents
+}
+
+// agentArgVerbs are the /agent subcommands that take a <name>, mapped to the
+// tree that name has to come from: true means an agent the background manager
+// is already running, false a profile on disk.
+var agentArgVerbs = map[string]bool{
+	"start":  false,
+	"edit":   false,
+	"stop":   true,
+	"pause":  true,
+	"resume": true,
+	"log":    true,
+}
+
+// parseAgentArg splits a composer line into the /agent subcommand and the
+// partial name typed after it. The space following the verb is required: until
+// it is there the line is still completing the subcommand itself, which the
+// slash chips handle.
+func parseAgentArg(line string) (sub, prefix string, ok bool) {
+	body, found := strings.CutPrefix(line, "/agent ")
+	if !found {
+		return "", "", false
+	}
+	sub, prefix, found = strings.Cut(body, " ")
+	if !found {
+		return "", "", false
+	}
+	if _, known := agentArgVerbs[sub]; !known {
+		return "", "", false
+	}
+	// A profile name holds no whitespace, so a second word means the line has
+	// moved past the argument the picker can complete.
+	if strings.ContainsAny(prefix, " \t") {
+		return "", "", false
+	}
+	return sub, prefix, true
+}
+
+// refreshAgentArgPicker opens, narrows, or closes the argument picker for the
+// current composer line. Nothing is highlighted until tab is pressed: enter on
+// a fully typed line must run the name the user wrote, never a prefix sibling
+// the strip happened to list first.
+func (a *App) refreshAgentArgPicker() {
+	sub, prefix, ok := parseAgentArg(a.editor.Value())
+	if !ok {
+		a.closeAgentArgPicker()
+		return
+	}
+	cands := a.agentArgCandidates(sub, prefix)
+	if len(cands) == 0 {
+		a.closeAgentArgPicker()
+		return
+	}
+	if sub != a.agentArgSub || !sameAgentNames(cands, a.agentArgCands) {
+		a.agentIndex = noAgentSelection
+	}
+	a.agentArgSub = sub
+	a.agentArgCands = cands
+	a.agentPickerOpen = true
+	a.agentPickerSubmit = false
+}
+
+// agentArgCandidates returns the names valid for one /agent subcommand,
+// narrowed to prefix.
+func (a *App) agentArgCandidates(sub, prefix string) []agentChoice {
+	var out []agentChoice
+	if agentArgVerbs[sub] {
+		if a.bgManager == nil {
+			return nil
+		}
+		live := a.bgManager.List()
+		sort.Slice(live, func(i, j int) bool { return live[i].Name < live[j].Name })
+		for _, s := range live {
+			if strings.HasPrefix(s.Name, prefix) {
+				out = append(out, agentChoice{Name: s.Name, Background: true})
+			}
+		}
+		return out
+	}
+	for _, c := range a.agents {
+		if strings.HasPrefix(c.Name, prefix) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// closeAgentArgPicker returns the strip to its carrier role. It is a no-op
+// outside argument mode, so it never closes a picker /agent or enter opened.
+func (a *App) closeAgentArgPicker() {
+	if a.agentArgSub == "" {
+		return
+	}
+	a.agentArgSub = ""
+	a.agentArgCands = nil
+	a.agentPickerOpen = false
+	a.agentIndex = noAgentSelection
+}
+
+// sameAgentNames reports whether two candidate lists offer the same names in
+// the same order, which is what decides whether a highlight can survive.
+func sameAgentNames(a, b []agentChoice) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Name != b[i].Name {
+			return false
+		}
+	}
+	return true
+}
+
+// acceptAgentArg completes the composer line with the highlighted name and
+// runs it. This is not a carrier choice: nothing is engaged, and the command
+// does whatever it does to the agent that was named.
+func (a *App) acceptAgentArg() tea.Cmd {
+	choice, ok := a.agentSelection()
+	if !ok {
+		return nil
+	}
+	line := "/agent " + a.agentArgSub + " " + choice.Name
+	a.closeAgentArgPicker()
+	a.editor.Reset()
+	a.clearAutocomplete()
+	return a.handleCommand(line)
 }
 
 // agentPickerVisible reports whether the strip has anything to draw. The slash
 // popup wins when both could show, and the file chooser wins when an @-prefix
 // is being typed, because @ is now reserved for file references.
 func (a *App) agentPickerVisible() bool {
-	if a.view != viewChat || a.mode != "agent" || len(a.autocomplete) > 0 {
+	if a.view != viewChat || len(a.autocomplete) > 0 {
+		return false
+	}
+	// Naming an agent for a /agent subcommand is not choosing a carrier, so
+	// the argument picker shows in every mode; the carrier picker belongs to
+	// agent mode, where a profile is what changes the turn.
+	if a.agentArgSub == "" && a.mode != "agent" {
 		return false
 	}
 	if a.filePickerVisible() {
 		return false
 	}
-	return a.agentPickerOpen && len(a.agents) > 0
+	return a.agentPickerOpen && len(a.agentCandidates()) > 0
 }
 
 // engagedAgent returns the agent carrying turns right now, which is nothing
@@ -190,6 +327,11 @@ func (a *App) agentSelection() (agentChoice, bool) {
 		return agentChoice{}, false
 	}
 	if a.agentIndex == len(cands) {
+		// (none) clears the engaged carrier. As a command argument it is not
+		// a name, so argument mode stops one row short of it.
+		if a.agentArgSub != "" {
+			return agentChoice{}, false
+		}
 		return agentChoice{Name: agentNoneLabel}, true
 	}
 	return cands[a.agentIndex], true
@@ -208,7 +350,12 @@ func (a *App) cycleAgent() tea.Cmd {
 		a.agentIndex++
 	}
 	// len(cands) is the (none) slot; one past it wraps to the first name.
-	if a.agentIndex > len(cands) {
+	// Argument mode has no (none) row, so it wraps a row earlier.
+	last := len(cands)
+	if a.agentArgSub != "" {
+		last = len(cands) - 1
+	}
+	if a.agentIndex > last {
 		a.agentIndex = 0
 	}
 	return nil
@@ -217,6 +364,9 @@ func (a *App) cycleAgent() tea.Cmd {
 // acceptAgent engages the highlighted profile for every following turn — or
 // clears the engaged one on (none) — and closes the picker.
 func (a *App) acceptAgent() tea.Cmd {
+	if a.agentArgSub != "" {
+		return a.acceptAgentArg()
+	}
 	choice, ok := a.agentSelection()
 	if !ok {
 		return nil
@@ -290,7 +440,7 @@ func (a *App) renderAgentPicker() string {
 			parts = append(parts, components.KeyStyle.Render(label))
 		}
 	}
-	if a.namedAgent != "" || a.agentIndex == len(cands) {
+	if a.agentArgSub == "" && (a.namedAgent != "" || a.agentIndex == len(cands)) {
 		none := components.MutedStyle.Render(agentNoneLabel)
 		if a.agentIndex == len(cands) {
 			none = components.Chip(agentNoneLabel, components.ColorTealSoft)

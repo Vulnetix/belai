@@ -428,3 +428,36 @@ func TestListLlamaServerFallsBackToMeta(t *testing.T) {
 		t.Fatalf("models = %+v", models)
 	}
 }
+
+// Workers AI property values are not all strings: `languages` is an array and
+// numeric limits arrive unquoted. A single non-string value must not fail the
+// whole catalogue decode.
+func TestListCloudflareWorkersAIMixedPropertyValues(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"result": []any{
+			map[string]any{"name": "@cf/meta/llama-3.1-8b-instruct", "properties": []any{
+				map[string]any{"property_id": "languages", "value": []any{"en", "de"}},
+				map[string]any{"property_id": "lora", "value": []any{map[string]any{"name": "x"}}},
+				map[string]any{"property_id": "context_window", "value": "8192"},
+			}},
+			map[string]any{"name": "@cf/meta/llama-3.3-70b-instruct", "properties": []any{
+				map[string]any{"property_id": "max_total_tokens", "value": 24000},
+			}},
+		}})
+	}))
+	t.Cleanup(srv.Close)
+
+	got, err := List(context.Background(), Target{Name: "cloudflare-workers-ai", BaseURL: srv.URL, APIKey: "k"}, srv.Client())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("expected 2 models, got %+v", got)
+	}
+	if got[0].ContextWindow != 8192 {
+		t.Fatalf("string value: want 8192, got %d", got[0].ContextWindow)
+	}
+	if got[1].ContextWindow != 24000 {
+		t.Fatalf("number value: want 24000, got %d", got[1].ContextWindow)
+	}
+}

@@ -110,13 +110,16 @@ func Enumerate(dir string) ([]Artifact, error) {
 // signetPaths precomputes known signet-owned paths inside dir.
 func signetPaths(dir string) map[string]bool {
 	m := map[string]bool{
-		"settings.json":             true,
+		"settings.json": true,
+		// prompts.json is a tombstone: the old two-file prompt library. It is
+		// still skipped so a leftover file from before the directory format is
+		// never reclassified as a scannable artifact.
 		"prompts.json":              true,
 		"credentials.json":          true,
 		"code-review-summary.md":    true,
 		"code-review-manifest.json": true,
 	}
-	for _, base := range []string{"signet", "plans", "goals"} {
+	for _, base := range []string{"signet", "plans", "goals", "prompts"} {
 		_ = filepath.WalkDir(filepath.Join(dir, base), func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return nil
@@ -131,9 +134,10 @@ func signetPaths(dir string) map[string]bool {
 
 // signet-owned directories by name.
 var signetDirs = map[string]bool{
-	"signet": true,
-	"plans":  true,
-	"goals":  true,
+	"signet":  true,
+	"plans":   true,
+	"goals":   true,
+	"prompts": true,
 }
 
 func isSignetDir(rel string) bool {
@@ -145,8 +149,12 @@ func isSignetDir(rel string) bool {
 func isSignetPath(rel string) bool {
 	base := filepath.Base(rel)
 	switch base {
-	case "settings.json", "prompts.json", "credentials.json",
+	case "settings.json", "credentials.json",
 		"code-review-summary.md", "code-review-manifest.json":
+		return true
+	case "prompts.json":
+		// Tombstone: a leftover prompts.json from the old library is still
+		// signet-owned, never a scannable artifact.
 		return true
 	}
 	return false

@@ -111,6 +111,14 @@ func (a *App) fetchCatalogCmd(name string) tea.Cmd {
 		return nil // static-only: catalogue comes from the curated list/profile
 	}
 
+	return a.startCatalogFetch(name, target, endpoint)
+}
+
+// startCatalogFetch marks the provider as in flight and returns the command
+// that performs the HTTP fetch. Both the picker's fetch and the startup
+// prefetch funnel through here so the loading flag, the displayed URL and the
+// resulting message are identical either way.
+func (a *App) startCatalogFetch(name string, target modelfetch.Target, endpoint string) tea.Cmd {
 	a.catalogLoading[name] = true
 	a.catalogURLs[name] = endpoint
 	client := a.client
@@ -120,6 +128,65 @@ func (a *App) fetchCatalogCmd(name string) tea.Cmd {
 		m, err := modelfetch.List(ctx, target, client)
 		return modelsFetchedMsg{provider: name, models: m, err: err}
 	}
+}
+
+// catalogTargetMsg carries a background-resolved fetch target back to the UI
+// thread.
+type catalogTargetMsg struct {
+	provider string
+	target   modelfetch.Target
+	endpoint string
+	err      error
+}
+
+// prefetchCatalogCmd warms a provider's live catalogue without opening the
+// model picker. The footer's context meter needs the selected model's context
+// window, which only the live catalogue carries for most providers, so the TUI
+// fetches it on startup. Credential resolution can probe the host keychain, so
+// it happens inside the command rather than on the UI thread; the resolved
+// target comes back as a catalogTargetMsg.
+func (a *App) prefetchCatalogCmd(name string) tea.Cmd {
+	if name == "" {
+		return nil
+	}
+	if _, ok := a.catalogCache[name]; ok || a.catalogLoading[name] {
+		return nil
+	}
+	src := run.CredentialSource(run.EnvSource(os.Getenv))
+	if a.resolver != nil {
+		src = a.resolver
+	}
+	return func() tea.Msg {
+		target := catalogTarget(name, src)
+		endpoint, err := modelfetch.EndpointFor(target)
+		return catalogTargetMsg{provider: name, target: target, endpoint: endpoint, err: err}
+	}
+}
+
+// handleCatalogTarget starts the prefetch for a resolved target. It is silent:
+// an unresolvable target or a static-only provider leaves the transcript
+// untouched, and the error is recorded for the picker to show.
+func (a *App) handleCatalogTarget(m catalogTargetMsg) tea.Cmd {
+	if m.err != nil {
+		if a.catalogErr == nil {
+			a.catalogErr = map[string]string{}
+		}
+		a.catalogErr[m.provider] = m.err.Error()
+		return nil
+	}
+	if m.endpoint == "" {
+		return nil // static-only: the curated list already covers it
+	}
+	if _, ok := a.catalogCache[m.provider]; ok || a.catalogLoading[m.provider] {
+		return nil
+	}
+	if a.catalogLoading == nil {
+		a.catalogLoading = map[string]bool{}
+	}
+	if a.catalogURLs == nil {
+		a.catalogURLs = map[string]string{}
+	}
+	return a.startCatalogFetch(m.provider, m.target, m.endpoint)
 }
 
 // handleModelsFetched fills the catalogue cache.
@@ -138,6 +205,9 @@ func (a *App) handleModelsFetched(m modelsFetchedMsg) tea.Cmd {
 	}
 	delete(a.catalogErr, m.provider)
 	a.catalogCache[m.provider] = m.models
+	// The catalogue carries the context window the footer meter scales to,
+	// so the footer must re-read it the moment a fetch lands.
+	a.refreshFooter()
 	return nil
 }
 

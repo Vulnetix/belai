@@ -73,6 +73,12 @@ func keySections() []keySection {
 			{"ctrl+g", "start the highlighted ↻ definition as a background agent"},
 			{"esc", "close the picker"},
 		}},
+		{"agent name completion (/agent start … and friends)", []keyBinding{
+			{"/agent start ", "list the profiles that can be started; stop, pause, resume and log list the agents already running"},
+			{"type", "narrow the list to names with that prefix"},
+			{"tab", "highlight the next name; nothing is highlighted until you press it"},
+			{"enter, right", "complete the line with the highlighted name and run it"},
+		}},
 		{"transcript", []keyBinding{
 			{"pgup, pgdown", "page up, page down"},
 			{"shift+up, shift+down", "scroll one line"},

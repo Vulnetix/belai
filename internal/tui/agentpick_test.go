@@ -7,7 +7,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/vulnetix/signet/internal/agentprofile"
+	"github.com/vulnetix/signet/internal/bgagent"
 	"github.com/vulnetix/signet/internal/profiles"
+	"github.com/vulnetix/signet/internal/run"
 )
 
 // saveProfile writes a user profile into the test's SIGNET_HOME.
@@ -744,5 +746,190 @@ func TestShellInputRunsOnTheFirstEnterInAgentMode(t *testing.T) {
 	}
 	if a.editor.Value() != "" {
 		t.Fatalf("composer still holds %q", a.editor.Value())
+	}
+}
+
+// hasAgentName reports whether the picker is currently offering name.
+func hasAgentName(a *App, name string) bool {
+	for _, c := range a.agentCandidates() {
+		if c.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// `/agent start ` is a name argument, so the picker takes over from the
+// subcommand chips and lists the profiles that can be started.
+func TestAgentStartArgumentOpensThePickerWithProfileNames(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	saveProfile(t, "reviewer")
+	a := New(Options{Workdir: t.TempDir()})
+	a.loadAgents()
+	a.editor.SetValue("/agent start ")
+	a.refreshAutocomplete()
+
+	if !a.agentPickerVisible() {
+		t.Fatalf("picker not visible for a /agent start argument")
+	}
+	if !hasAgentName(a, profiles.DebugProfile) || !hasAgentName(a, "reviewer") {
+		t.Fatalf("candidates = %+v, want the profiles on disk", a.agentCandidates())
+	}
+	if _, ok := a.agentSelection(); ok {
+		t.Fatalf("a name was highlighted before tab was pressed")
+	}
+}
+
+// Typing narrows the list: the strip must show what the prefix can still
+// become, not every profile on disk.
+func TestAgentArgumentPickerFiltersByTypedPrefix(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	saveProfile(t, "reviewer")
+	a := New(Options{Workdir: t.TempDir()})
+	a.loadAgents()
+	a.editor.SetValue("/agent start rev")
+	a.refreshAutocomplete()
+
+	cands := a.agentCandidates()
+	if len(cands) == 0 {
+		t.Fatalf("prefix matched nothing")
+	}
+	for _, c := range cands {
+		if !strings.HasPrefix(c.Name, "rev") {
+			t.Fatalf("candidate %q does not match the typed prefix", c.Name)
+		}
+	}
+}
+
+// (none) clears the engaged carrier; as a command argument it is not a name
+// and must never be offered or reachable by tab.
+func TestAgentArgumentPickerNeverOffersTheNoneRow(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	a.loadAgents()
+	a.editor.SetValue("/agent start ")
+	a.refreshAutocomplete()
+
+	seen := map[string]bool{}
+	for i := 0; i < len(a.agentCandidates())+2; i++ {
+		a.cycleAgent()
+		c, ok := a.agentSelection()
+		if !ok {
+			t.Fatalf("tab %d left nothing highlighted", i)
+		}
+		if c.Name == agentNoneLabel {
+			t.Fatalf("tab reached the (none) row in argument mode")
+		}
+		seen[c.Name] = true
+	}
+	if len(seen) != len(a.agentCandidates()) {
+		t.Fatalf("tab visited %d names, want %d", len(seen), len(a.agentCandidates()))
+	}
+	if strings.Contains(a.renderAgentPicker(), agentNoneLabel) {
+		t.Fatalf("(none) rendered in argument mode")
+	}
+}
+
+// Naming an agent for /agent stop is not choosing a carrier, so the argument
+// picker shows outside agent mode too.
+func TestAgentArgumentPickerShowsOutsideAgentMode(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	a.loadAgents()
+	a.mode = "plan"
+	a.editor.SetValue("/agent start ")
+	a.refreshAutocomplete()
+
+	if !a.agentPickerVisible() {
+		t.Fatalf("argument picker hidden in plan mode")
+	}
+}
+
+// Tab highlights, enter dispatches: the highlighted name completes the line
+// and runs it in one press.
+func TestAcceptingAgentArgumentRunsTheCommand(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	a.loadAgents()
+	a.editor.SetValue("/agent start ")
+	a.refreshAutocomplete()
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+	choice, ok := a.agentSelection()
+	if !ok {
+		t.Fatalf("tab highlighted nothing")
+	}
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if a.editor.Value() != "" {
+		t.Fatalf("composer still holds %q", a.editor.Value())
+	}
+	if a.agentPickerOpen {
+		t.Fatalf("picker stayed open after accepting a name")
+	}
+	if a.namedAgent != "" {
+		t.Fatalf("accepting an argument engaged %q as a carrier", a.namedAgent)
+	}
+	// No background manager is configured in this harness, so the command
+	// reports that rather than starting anything — proof it was dispatched
+	// with the highlighted name.
+	var dispatched bool
+	for _, m := range a.messages {
+		if strings.Contains(m.Text(), "no background manager") {
+			dispatched = true
+		}
+	}
+	if !dispatched {
+		t.Fatalf("/agent start %s was never dispatched: %+v", choice.Name, a.messages)
+	}
+}
+
+// Verbs that act on a live agent complete from the agents actually running,
+// not from every profile on disk.
+func TestAgentStopArgumentListsRunningAgentsOnly(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	saveProfile(t, "reviewer")
+	a := New(Options{Workdir: t.TempDir()})
+	a.loadAgents()
+
+	a.editor.SetValue("/agent stop ")
+	a.refreshAutocomplete()
+	if a.agentPickerVisible() {
+		t.Fatalf("picker offered names with nothing running: %+v", a.agentCandidates())
+	}
+
+	a.bgManager = bgagent.NewManager(a.workdir, run.Config{}, nil, a.settings, a.effectivePosture())
+	if err := a.bgManager.Start("nightly", agentprofile.AgentProfile{Name: "nightly", Mode: "single"}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { _ = a.bgManager.Stop("nightly") })
+
+	a.refreshAutocomplete()
+	if !hasAgentName(a, "nightly") {
+		t.Fatalf("running agent missing from candidates: %+v", a.agentCandidates())
+	}
+	if hasAgentName(a, "reviewer") {
+		t.Fatalf("/agent stop offered a profile that is not running")
+	}
+}
+
+// The picker follows the line: editing away from the argument closes it.
+func TestAgentArgumentPickerClosesWhenTheLineChanges(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	a.loadAgents()
+	a.editor.SetValue("/agent start ")
+	a.refreshAutocomplete()
+	if !a.agentPickerVisible() {
+		t.Fatalf("picker not visible to begin with")
+	}
+
+	a.editor.SetValue("/agent sta")
+	a.refreshAutocomplete()
+	if a.agentPickerVisible() {
+		t.Fatalf("picker still visible while completing the subcommand")
+	}
+	if a.agentPickerOpen {
+		t.Fatalf("picker left open after the argument went away")
 	}
 }

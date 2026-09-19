@@ -240,12 +240,16 @@ func parseModels(ctx context.Context, t Target, client *http.Client, endpoint st
 		return out, nil
 
 	case "cloudflare-workers-ai":
+		// Property values are heterogeneous: a quoted number for the token
+		// limits, a bare number on some models, an array for `languages` and
+		// `lora`. Decode them raw so one array-valued property cannot fail
+		// the whole catalogue.
 		var r struct {
 			Result []struct {
 				Name       string `json:"name"`
 				Properties []struct {
-					PropertyID string `json:"property_id"`
-					Value      string `json:"value"`
+					PropertyID string          `json:"property_id"`
+					Value      json.RawMessage `json:"value"`
 				} `json:"properties"`
 			} `json:"result"`
 		}
@@ -258,7 +262,7 @@ func parseModels(ctx context.Context, t Target, client *http.Client, endpoint st
 			for _, prop := range m.Properties {
 				switch prop.PropertyID {
 				case "context_window", "max_total_tokens":
-					if v, err := strconv.Atoi(prop.Value); err == nil && v > cw {
+					if v, ok := jsonTokenCount(prop.Value); ok && v > cw {
 						cw = v
 					}
 				}
@@ -398,6 +402,28 @@ func firstNonZero(values ...int) int {
 		}
 	}
 	return 0
+}
+
+// jsonTokenCount reads a token count out of a raw JSON value that a provider
+// may encode as either a number or a quoted number. Anything else — an array,
+// an object, null, a non-numeric string — reports false.
+func jsonTokenCount(raw json.RawMessage) (int, bool) {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return 0, false
+	}
+	if trimmed[0] == '"' {
+		var s string
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return 0, false
+		}
+		trimmed = strings.TrimSpace(s)
+	}
+	v, err := strconv.ParseFloat(trimmed, 64)
+	if err != nil {
+		return 0, false
+	}
+	return int(v), true
 }
 
 func contains(list []string, s string) bool {

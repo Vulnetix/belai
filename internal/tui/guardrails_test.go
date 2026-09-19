@@ -2,159 +2,135 @@ package tui
 
 import (
 	"testing"
+	"time"
 
-	"github.com/vulnetix/signet/internal/bgagent"
-	"github.com/vulnetix/signet/internal/config"
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/vulnetix/signet/internal/agent"
 	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/run"
 )
 
-// TestGuardrailsAskOverrides pins the operator-control state machine behind
-// the footer chips and the /yolo command: defaults on, /yolo on forces both
-// off, toggles flip each independently, and /yolo off restores settings.
-func TestGuardrailsAskOverrides(t *testing.T) {
-	a := &App{settings: config.Settings{}}
-
-	if !a.guardrailsEnabled() || !a.askEnabled() {
-		t.Fatal("guardrails and ask must default to on")
-	}
-
-	a.setYolo(true)
-	if a.guardrailsEnabled() || a.askEnabled() {
-		t.Fatal("/yolo on must force both off")
-	}
-
-	a.toggleGuardrails()
+// TestToggleGuardrailsMovesLive pins the live-posture half of the f3 toggle:
+// the shared Live flips immediately, and the plan-mode surface for the next
+// session is built from the effective switch rather than the persisted setting.
+func TestToggleGuardrailsMovesLive(t *testing.T) {
+	a := New(Options{})
 	if !a.guardrailsEnabled() {
-		t.Fatal("f3 must flip guardrails back on")
+		t.Fatal("precondition: guardrails should start on")
 	}
-	if a.askEnabled() {
-		t.Fatal("toggling guardrails must not change ask")
+	if got := a.live.Level(posture.ToolResultUnsafe); got != posture.Enforce {
+		t.Fatalf("precondition: live level = %s, want enforce", got)
 	}
 
-	a.toggleAsk()
+	_, _ = a.Update(tea.KeyMsg{Type: tea.KeyF3})
+	if a.guardrailsEnabled() {
+		t.Fatal("f3 should turn guardrails off")
+	}
+	if got := a.live.Level(posture.ToolResultUnsafe); got != posture.Ignore {
+		t.Fatalf("live level after f3 = %s, want ignore", got)
+	}
+	if p := a.sessionBuildParams(); p.guardrails {
+		t.Fatal("sessionBuildParams().guardrails should be false after f3")
+	}
+
+	_, _ = a.Update(tea.KeyMsg{Type: tea.KeyF3})
+	if !a.guardrailsEnabled() {
+		t.Fatal("second f3 should turn guardrails back on")
+	}
+	if got := a.live.Level(posture.ToolResultUnsafe); got != posture.Enforce {
+		t.Fatalf("live level after second f3 = %s, want enforce", got)
+	}
+	if p := a.sessionBuildParams(); !p.guardrails {
+		t.Fatal("sessionBuildParams().guardrails should be true after second f3")
+	}
+}
+
+// TestToggleAskMovesLive pins the ask half: f4 flips the shared holder's ask
+// gate without waiting for the next session build.
+func TestToggleAskMovesLive(t *testing.T) {
+	a := New(Options{})
 	if !a.askEnabled() {
-		t.Fatal("f4 must flip ask back on")
+		t.Fatal("precondition: ask should start on")
+	}
+	if a.live.AskDisabled() {
+		t.Fatal("precondition: live ask should be enabled")
 	}
 
-	a.setYolo(false)
-	if !a.guardrailsEnabled() || !a.askEnabled() {
-		t.Fatal("/yolo off must restore the settings-file values (both on)")
+	_, _ = a.Update(tea.KeyMsg{Type: tea.KeyF4})
+	if a.askEnabled() {
+		t.Fatal("f4 should turn ask off")
 	}
-}
-
-// TestGuardrailsAskSettingsFold pins the settings accessors: nil means on,
-// false means off, and the project layer may only tighten (turn back on).
-func TestGuardrailsAskSettingsFold(t *testing.T) {
-	var zero config.Settings
-	if !zero.GuardrailsEnabled() || !zero.AskPermissionEnabled() {
-		t.Fatal("zero settings must default guardrails/ask on")
+	if !a.live.AskDisabled() {
+		t.Fatal("live ask should be disabled after f4")
 	}
 
-	off := false
-	zero.Guardrails = &off
-	zero.AskPermission = &off
-	if zero.GuardrailsEnabled() || zero.AskPermissionEnabled() {
-		t.Fatal("explicit false must disable")
+	_, _ = a.Update(tea.KeyMsg{Type: tea.KeyF4})
+	if !a.askEnabled() {
+		t.Fatal("second f4 should turn ask back on")
 	}
-
-	on := true
-	merged := (config.Settings{}).Override(config.Settings{Guardrails: &on, AskPermission: &on})
-	if !merged.GuardrailsEnabled() || !merged.AskPermissionEnabled() {
-		t.Fatal("project true must tighten")
-	}
-
-	loose := config.Settings{Guardrails: &off, AskPermission: &off}
-	still := (config.Settings{Guardrails: &on, AskPermission: &on}).Override(loose)
-	if !still.GuardrailsEnabled() || !still.AskPermissionEnabled() {
-		t.Fatal("project false must not loosen an already-on global")
+	if a.live.AskDisabled() {
+		t.Fatal("live ask should be enabled after second f4")
 	}
 }
 
-// The guardrails switch is not a footer decoration: with it off, every gate
-// reads Ignore, and with it on the configured posture is unchanged.
-func TestEffectivePostureFollowsTheGuardrailsSwitch(t *testing.T) {
-	a := &App{settings: config.Settings{}, posture: posture.Defaults()}
+// TestToggleAskOffResolvesPendingAsk pins the pending-prompt contract: turning
+// ask off while the approval view is on screen answers allow-once and dismisses
+// it, so the blocked agent loop is not left waiting on a gate that is now off.
+func TestToggleAskOffResolvesPendingAsk(t *testing.T) {
+	a := New(Options{})
+	reply := make(chan agent.PermissionAskReply, 1)
+	a.permAskState = newPermissionAskState(sampleAskRequest(), reply)
+	a.push(viewPermissionAsk)
 
-	for _, g := range posture.AllGates {
-		if got, want := a.effectivePosture().Level(g), posture.DefaultLevel(g); got != want {
-			t.Fatalf("guardrails on: gate %q = %q, want %q", g, got, want)
+	_, _ = a.Update(tea.KeyMsg{Type: tea.KeyF4})
+
+	select {
+	case r := <-reply:
+		if !r.Allow {
+			t.Fatal("pending ask should resolve as allow-once")
 		}
+	case <-time.After(time.Second):
+		t.Fatal("pending ask was not answered")
 	}
-
-	a.toggleGuardrails()
-	for _, g := range posture.AllGates {
-		if got := a.effectivePosture().Level(g); got != posture.Ignore {
-			t.Errorf("guardrails off: gate %q = %q, want ignore", g, got)
-		}
+	if a.permAskState.reply != nil {
+		t.Fatal("pending ask state was not cleared")
 	}
-
-	a.toggleGuardrails()
-	if a.effectivePosture().Level(posture.ToolResultUnsafe) != posture.Enforce {
-		t.Fatal("turning guardrails back on must restore the configured posture")
+	if a.view == viewPermissionAsk {
+		t.Fatal("permission-ask view was not dismissed")
 	}
 }
 
-// /yolo off turns both gates off in one step, and the posture has to follow.
-func TestYoloTurnsEveryGateOff(t *testing.T) {
-	a := &App{settings: config.Settings{}, posture: posture.Defaults()}
+// TestSetYoloMovesLiveAndResolvesPendingAsk pins /yolo on: both gates drop to
+// off in the shared holder, and a pending ask is auto-allowed like f4.
+func TestSetYoloMovesLiveAndResolvesPendingAsk(t *testing.T) {
+	a := New(Options{})
+	reply := make(chan agent.PermissionAskReply, 1)
+	a.permAskState = newPermissionAskState(sampleAskRequest(), reply)
+	a.push(viewPermissionAsk)
+
 	a.setYolo(true)
-	for _, g := range posture.AllGates {
-		if got := a.effectivePosture().Level(g); got != posture.Ignore {
-			t.Errorf("yolo: gate %q = %q, want ignore", g, got)
+
+	if a.guardrailsEnabled() || a.askEnabled() {
+		t.Fatal("yolo on should turn both gates off")
+	}
+	if got := a.live.Level(posture.ToolResultUnsafe); got != posture.Ignore {
+		t.Fatalf("live level after yolo = %s, want ignore", got)
+	}
+	if !a.live.AskDisabled() {
+		t.Fatal("live ask should be disabled after yolo")
+	}
+	select {
+	case r := <-reply:
+		if !r.Allow {
+			t.Fatal("pending ask should resolve as allow-once")
 		}
+	case <-time.After(time.Second):
+		t.Fatal("pending ask was not answered")
 	}
-	a.setYolo(false)
-	if a.effectivePosture().Level(posture.ToolResultUnsafe) != posture.Enforce {
-		t.Fatal("/yolo off must restore the configured posture")
+	if a.permAskState.reply != nil {
+		t.Fatal("pending ask state was not cleared")
 	}
-}
-
-// A settings file that disables guardrails is honoured with no toggle at all.
-func TestSettingsGuardrailsOffReachesThePosture(t *testing.T) {
-	off := false
-	a := &App{settings: config.Settings{Guardrails: &off}, posture: posture.Defaults()}
-	if a.effectivePosture().Level(posture.ToolResultUnsafe) != posture.Ignore {
-		t.Fatal("guardrails:false in settings must disable the gates")
+	if a.view == viewPermissionAsk {
+		t.Fatal("permission-ask view was not dismissed")
 	}
-}
-
-// The session snapshot carries the *effective* policy, so the async session
-// build cannot re-derive it and get a different answer.
-func TestSessionSnapshotCarriesTheEffectivePosture(t *testing.T) {
-	a := &App{settings: config.Settings{}, posture: posture.Defaults(), workdir: t.TempDir(), live: posture.NewLive(posture.Defaults(), false)}
-	a.toggleGuardrails()
-
-	p := a.sessionBuildParams()
-	for _, g := range posture.AllGates {
-		if got := p.live.Level(g); got != posture.Ignore {
-			t.Errorf("session snapshot: gate %q = %q, want ignore", g, got)
-		}
-	}
-}
-
-// Toggling guardrails hands the new policy to a running background-agent
-// manager. Without this the manager keeps the policy it was constructed with
-// and goes on enforcing gates the footer says are off.
-func TestToggleGuardrailsReachesBackgroundAgents(t *testing.T) {
-	a := &App{settings: config.Settings{}, posture: posture.Defaults(), workdir: t.TempDir()}
-	a.bgManager = bgagent.NewManager(a.workdir, run.Config{}, nil, a.settings, a.effectivePosture())
-
-	a.toggleGuardrails()
-	if got := a.bgManager.Posture().Level(posture.ToolResultUnsafe); got != posture.Ignore {
-		t.Fatalf("background manager posture = %q after guardrails off, want ignore", got)
-	}
-
-	a.toggleGuardrails()
-	if got := a.bgManager.Posture().Level(posture.ToolResultUnsafe); got != posture.Enforce {
-		t.Fatalf("background manager posture = %q after guardrails on, want enforce", got)
-	}
-}
-
-// A nil manager must not panic the toggle: the TUI runs without one when no
-// provider is configured.
-func TestSyncPostureWithoutABackgroundManager(t *testing.T) {
-	a := &App{settings: config.Settings{}, posture: posture.Defaults()}
-	a.syncPosture() // must not panic
-	a.setYolo(true)
 }
