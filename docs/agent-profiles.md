@@ -185,13 +185,20 @@ trees, marking definitions from this one with `↻`, and offers two verbs:
 
 | Key | Effect |
 | --- | ------ |
-| `enter` / `right` | Engage the definition for the session's agent-mode turns: its `system_prompt` becomes the system prompt's carrier block and its `tools` allow-list narrows the session registry, the same narrowing `Manager.buildSession` applies. `mode`, `schedule`, `monitor_condition`, `reflection` and `max_iterations` are loop settings and do not apply in the foreground. |
+| `enter` / `right` | Engage the definition for the session's agent-mode turns: its `system_prompt` becomes the system prompt's carrier block and its `tools` allow-list narrows the session registry, the same narrowing `Manager.buildSession` applies. `mode`, `schedule`, `monitor_condition`, `reflection` and `max_iterations` are loop settings and do not apply in the foreground. When `enter` had opened the picker over a non-empty composer, engaging also sends that prompt. |
 | `ctrl+g` | Start it as a background agent, exactly as `/agent start <name>` does. It does not touch the prompt in the composer. |
 
 The picker is opened with `/agent` (no argument) or by pressing `enter` in
 agent mode while no agent is engaged. `@agent:<name>` no longer opens the
 picker in the TUI; it is now a prompt-level directive interpreted by the role
 manager, or a literal file-chooser filter if typed at the end of a line.
+
+The two openings differ in one way only: the `enter` opening carries a
+**pending submit**, so choosing a carrier finishes the turn the user asked
+for. The `/agent` opening never does — a prompt being drafted in the composer
+is not a submit, so engaging an agent there leaves it alone. Choosing
+`(none)`, or pressing `esc`, discards the pending submit rather than sending
+a turn with no carrier.
 
 Engaging resolves through `agent.CarrierOptions`, which tries
 `profiles.Load` first and falls back to `agentprofile.Load` — so

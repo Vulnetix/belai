@@ -427,9 +427,14 @@ selected. Confirm `/agent` (no argument) also opens it. The strip lists
 built-ins first (`◈`), then user profiles, then `↻` background-agent
 definitions. Press `tab` repeatedly and confirm the highlight walks every
 candidate, ends on `(none)`, wraps, and never writes into the prompt; that
-`enter` engages the highlighted one and shows it in the footer chip rather
-than sending the turn; and that `right` moves the cursor until something is
-highlighted. Type `@` and confirm the file chooser opens instead of the agent
+`enter` engages the highlighted one and shows it in the footer chip; and that
+`right` moves the cursor until something is highlighted. With a prompt typed
+in the composer, confirm that two keystrokes send it: the first `enter` opens
+the picker, the second engages the highlighted agent **and** starts the turn,
+clearing the composer. Confirm the same second `enter` on `(none)` does not
+send, that `esc` on an open picker leaves the prompt unsent in the composer,
+and that a picker opened by `/agent` never sends a half-written prompt. Type
+`@` and confirm the file chooser opens instead of the agent
 picker; type `@agent:` and confirm it is treated as a file-chooser filter,
 not as the agent picker. Press `ctrl+g` on a `↻` row and confirm the agent
 starts in the background; on a flat profile, confirm it says so instead. Then

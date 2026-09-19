@@ -1357,7 +1357,7 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 | `up` / `down` | Browse prompt history and prompt library. Library entries come first and their names show as a chip strip above the composer: `tab` cycles the named prompts, `right` accepts the loaded one into the composer, `enter` sends it. Typing — like any edit key — leaves the browse cycle and edits the loaded prompt |
 | `f7` | Save the current prompt to the project prompt library |
 | `tab` | Move the highlight through the slash-command hints, or — when the agent picker is open in agent mode — through the agent candidates. It never writes into the prompt. While browsing the prompt library it loads the next named prompt instead |
-| `right` / `enter` | Accept the highlighted hint (or the first, for `right` with nothing highlighted); when the agent picker is open, engage the highlighted agent; while browsing the prompt library, accept the loaded prompt into the composer (`right`) or send it (`enter`). Without a highlight, `right` is the cursor key and `enter` sends, or opens the agent picker in agent mode if no agent is engaged |
+| `right` / `enter` | Accept the highlighted hint (or the first, for `right` with nothing highlighted); when the agent picker is open, engage the highlighted agent — and also send the prompt when it was a submit that opened the picker; while browsing the prompt library, accept the loaded prompt into the composer (`right`) or send it (`enter`). Without a highlight, `right` is the cursor key and `enter` sends, or opens the agent picker in agent mode if no agent is engaged |
 | `ctrl+g` | Start the highlighted `↻` background-agent definition as a background agent |
 | `esc` (with a highlight) | Drop the highlight, keeping the popup on screen; close the agent picker |
 | `enter` (while working) | Steer the running turn with a new user message |
@@ -1424,6 +1424,15 @@ of sending a turn without a carrier. The slash popup wins the strip and
 `tab` whenever both could show, and the file chooser wins whenever an
 `@` prefix is active.
 
+A submit that opens the picker is **deferred, not dropped**. `App`
+records `agentPickerSubmit` when `enter` opened the picker over a non-empty
+composer, and `acceptAgent` finishes that submit once a carrier exists. Two
+keystrokes therefore send the turn — the first chooses the carrier the picker
+exists to demand, the second engages it and sends — rather than three. Without
+the flag both keystrokes return `nil`, the prompt sits in the composer, and
+the user waits on a turn that was never started: no classification runs, no
+session name is derived, and nothing appears in the transcript.
+
 `ctrl+g` is the second verb, and only background definitions answer it: it
 starts the highlighted definition as a background agent (`bgagent.Manager`),
 exactly as `/agent start <name>` does. Starting a loop does not answer the
@@ -1460,9 +1469,20 @@ foreground.
   the last candidate lands on `(none)`; tab again wraps to the first
   candidate. `(none)` only renders once an agent is engaged, or after the
   user has tabbed onto it.
-- Accepting an agent closes the picker and leaves the prompt text untouched;
-  a second `enter` sends the turn. Accepting `(none)` clears an engaged agent
-  but leaves the picker closed.
+- Accepting an agent closes the picker. When the picker was opened by a
+  submit attempt over a non-empty composer, accepting also sends that prompt;
+  otherwise the prompt text is left untouched and a later `enter` sends it.
+- A picker opened by `/agent` is never a pending submit, so engaging an agent
+  there leaves a half-written prompt in the composer alone.
+- `(none)` clears an engaged agent and leaves the picker closed. It never
+  sends a pending submit: agent mode with no agent has no carrier, which is
+  the exact state the picker exists to prevent, so the prompt stays in the
+  composer and the next `enter` reopens the picker.
+- `esc` on an open picker cancels the pending submit along with the
+  highlight; the prompt stays in the composer and is not sent later.
+- `/clear` and `/resume` drop the pending submit with the rest of the
+  session's picker state, so a prompt left unsent in one session can never be
+  sent into another.
 - If the picker is open and the user keeps typing, the highlight is preserved
   so the selection is stable. The picker only closes on `esc`, on accepting a
   candidate, or when the file chooser takes precedence.
