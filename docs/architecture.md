@@ -308,10 +308,10 @@ reach several surfaces that each used to hold their own copy of the policy:
 
 | Surface | How it gets the switch |
 | ------- | ---------------------- |
-| Agent session | `sessionBuildParams.posture` is *already* the effective policy; the async build does not re-derive it |
+| Agent session | A shared `posture.Live` held by `App` for the process, read at every gate (`s.live.Level` / `s.live.Policy` / `s.live.AskDisabled`) — a toggle mid-turn lands on the next gate check |
 | Inline `!cmd` shell | `App.effectivePosture()` read per command |
 | `@file` attachment admission | `App.effectivePosture()` read per attachment |
-| Background agents | `Manager.SetPosture`, pushed by `App.syncPosture` whenever the switch moves |
+| Background agents | `Manager.SetPosture`, pushed by `App.syncPosture` whenever the switch moves; each running instance's own `posture.Live` is updated in place |
 | `/permissions` preview | `App.effectivePosture()`, so the preview matches what would actually happen |
 | CLI | `settings.GuardrailsEnabled()` in `cmd/signet`, which the `-guardrails` flag folds into first |
 
@@ -328,10 +328,28 @@ Business rules and edge cases:
   attributes are stripped on every path regardless, and egress verification
   still runs. The switch turns off model-based judgement, not the structural
   guarantee that a tool result cannot forge a harness block.
-- **A running background agent follows the switch.** The manager keeps a
-  policy for the sessions it builds, so `App.syncPosture` hands it the new one
-  on every toggle (`f3`, `/yolo`). An agent already mid-turn finishes under
-  the policy its session was built with; the next turn picks the new one up.
+- **A running session follows the switch.** `posture.Live` replaces the
+  value snapshot `Session` used to take at construction. Posture gates, the
+  permission-ask gate, and the explore subagents' gates read the holder at
+  each check, so `f3`/`f4`/`/yolo` land on the next gate inside the running
+  loop — foreground session, its explore fan-out, and live background agents
+  alike.
+- **The advertised tool surface stays frozen for the in-flight turn.**
+  `Registry.PlanWith` and the sealed `<tools>` block are the advertisement
+  half of the "advertisement and enforcement surfaces agree" invariant.
+  Re-deriving them mid-turn would leave the model's already-sent briefing
+  disagreeing with `modes.ToolAllowed`. The wider surface arrives on the next
+  send, which `invalidateAgentSession` already rebuilds.
+- **A pending approval prompt follows the ask switch.** Turning ask off (`f4`
+  or `/yolo`) while the approval view is on screen resolves it as allow-once
+  and dismisses it, so the blocked agent loop is not left waiting on a gate
+  that is now off.
+- **A running background agent follows the switch.** Each instance carries its
+  own `posture.Live`, seeded with `choosePosture` (manager posture
+  stricter-of-merged with the project `preferences.yaml`). `App.syncPosture`
+  walks live instances on every toggle, so a gate check inside a running
+  background agent reads the new value at the next check, not the next
+  session.
 - **The setting counts, not just the flag.** `"guardrails": false` in a
   settings file is honoured on the CLI path as well as in the TUI.
 - **The project layer may only tighten it.** A project settings file can turn
