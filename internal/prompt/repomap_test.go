@@ -41,3 +41,30 @@ func TestRepoMapBlockNeverCarriesProse(t *testing.T) {
 		t.Fatal("repo map block must not carry repository prose")
 	}
 }
+
+// TestAssembledSystemPromptCarriesOnlyMapFacts pins the security spot-check:
+// the assembled system prompt renders the repo-map facts into the system text
+// but must never carry a repository file's prose alongside them.
+func TestAssembledSystemPromptCarriesOnlyMapFacts(t *testing.T) {
+	m := repomap.Map{
+		Module:      "/repo",
+		Branch:      "main",
+		Head:        "abc1234",
+		Commands:    repomap.Commands{Build: []string{"go build ./..."}, Test: []string{"go test ./..."}},
+		AgentsFiles: []repomap.AgentsFile{{Name: "AGENTS.md", Size: 42}},
+	}
+	sys, err := System(Options{RepoMap: RepoMapBlock(m), Provider: "openai", Model: "m"})
+	if err != nil {
+		t.Fatalf("System: %v", err)
+	}
+	for _, want := range []string{"Repository map", "/repo", "abc1234", "go build ./...", "go test ./...", "AGENTS.md(42B)"} {
+		if !strings.Contains(sys, want) {
+			t.Fatalf("system prompt missing map fact %q:\n%s", want, sys)
+		}
+	}
+	for _, prose := range []string{"# Project Readme", "DO NOT USE IN PRODUCTION", "some repository prose"} {
+		if strings.Contains(sys, prose) {
+			t.Fatalf("system prompt carried repository prose %q:\n%s", prose, sys)
+		}
+	}
+}

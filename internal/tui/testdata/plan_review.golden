@@ -1,0 +1,123 @@
+=== plain
+                                                                                                                             
+ ◈ Review plan                                                                         esc cancel                            
+ ────────────────────────────────────────────────────────────────────────────────────────────────                            
+                                                                                                                             
+ file: /tmp/golden-plan.md                                                                                                   
+ # Refactor the parser                                                                                                       
+                                                                                                                             
+ ## Summary                                                                                                                  
+                                                                                                                             
+ Split the parser into a lexer and a grammar.                                                                                
+                                                                                                                             
+ ## Steps                                                                                                                    
+                                                                                                                             
+ 1. Extract a tokeniser module                                                                                               
+    - Files: parser/lex.go                                                                                                   
+    - Files: parser/lex_test.go                                                                                              
+    - Verify: go test ./parser                                                                                               
+ 2. Rewrite the grammar in terms of tokens                                                                                   
+    - Files: parser/grammar.go                                                                                               
+    - Verify: go test ./parser                                                                                               
+                                                                                                                             
+ ## Test Plan                                                                                                                
+                                                                                                                             
+ - go test ./...                                                                                                             
+ - go vet ./...                                                                                                              
+                                                                                                                             
+ ## Assumptions                                                                                                              
+                                                                                                                             
+ - The token vocabulary is stable.                                                                                           
+                                                                                                                             
+ ## Risks                                                                                                                    
+ ● approve — execute here                                                                                                    
+ ○ approve — execute in a new session                                                                                        
+ ○ edit — open in $EDITOR, then approve                                                                                      
+ ○ refine — send notes back to the planner                                                                                   
+ ○ cancel — keep the file and stay in plan mode                                                                              
+                                                                                                                             
+ ↑↓ move  ·  enter confirm  ·  pgup/pgdn page  ·  shift+↑↓ line  ·  ctrl+home/end top/bottom  ·  wheel scroll  ·  esc cancel 
+                                                                                                                             
+                                                                                                                             
+=== edited
+                                                                                                                             
+ ◈ Review plan                                                                         esc cancel                            
+ ────────────────────────────────────────────────────────────────────────────────────────────────                            
+                                                                                                                             
+ file: /tmp/golden-plan.md  ·  (edited by user)                                                                              
+ # Refactor the parser                                                                                                       
+                                                                                                                             
+ ## Summary                                                                                                                  
+                                                                                                                             
+ Split the parser into a lexer and a grammar.                                                                                
+                                                                                                                             
+ ## Steps                                                                                                                    
+                                                                                                                             
+ 1. Extract a tokeniser module                                                                                               
+    - Files: parser/lex.go                                                                                                   
+    - Files: parser/lex_test.go                                                                                              
+    - Verify: go test ./parser                                                                                               
+ 2. Rewrite the grammar in terms of tokens                                                                                   
+    - Files: parser/grammar.go                                                                                               
+    - Verify: go test ./parser                                                                                               
+                                                                                                                             
+ ## Test Plan                                                                                                                
+                                                                                                                             
+ - go test ./...                                                                                                             
+ - go vet ./...                                                                                                              
+                                                                                                                             
+ ## Assumptions                                                                                                              
+                                                                                                                             
+ - The token vocabulary is stable.                                                                                           
+                                                                                                                             
+ ## Risks                                                                                                                    
+ ● approve — execute here                                                                                                    
+ ○ approve — execute in a new session                                                                                        
+ ○ edit — open in $EDITOR, then approve                                                                                      
+ ○ refine — send notes back to the planner                                                                                   
+ ○ cancel — keep the file and stay in plan mode                                                                              
+                                                                                                                             
+ ↑↓ move  ·  enter confirm  ·  pgup/pgdn page  ·  shift+↑↓ line  ·  ctrl+home/end top/bottom  ·  wheel scroll  ·  esc cancel 
+                                                                                                                             
+                                                                                                                             
+=== diff
+                                                                                                                                        
+ ◈ Review plan                                                                         esc cancel                                       
+ ────────────────────────────────────────────────────────────────────────────────────────────────                                       
+                                                                                                                                        
+ file: /tmp/golden-plan.md                                                                                                              
+   plan  +1 −1                                                                                                                          
+     5 Split the parser into a lexer and a grammar.                                                                                     
+     6                                                                                                                                  
+     7 ## Steps                                                                                                                         
+     8                                                                                                                                  
+   − 9 1. Extract a tokeniser package                                                                                                   
+   + 9 1. Extract a tokeniser module                                                                                                    
+    10    - Files: parser/lex.go                                                                                                        
+    11    - Files: parser/lex_test.go                                                                                                   
+    12    - Verify: go test ./parser                                                                                                    
+    13 2. Rewrite the grammar in terms of tokens                                                                                        
+                                                                                                                                        
+                                                                                                                                        
+                                                                                                                                        
+                                                                                                                                        
+                                                                                                                                        
+                                                                                                                                        
+                                                                                                                                        
+                                                                                                                                        
+                                                                                                                                        
+                                                                                                                                        
+                                                                                                                                        
+                                                                                                                                        
+                                                                                                                                        
+                                                                                                                                        
+                                                                                                                                        
+ ● approve — execute here                                                                                                               
+ ○ approve — execute in a new session                                                                                                   
+ ○ edit — open in $EDITOR, then approve                                                                                                 
+ ○ refine — send notes back to the planner                                                                                              
+ ○ cancel — keep the file and stay in plan mode                                                                                         
+                                                                                                                                        
+ ↑↓ move  ·  enter confirm  ·  pgup/pgdn page  ·  shift+↑↓ line  ·  ctrl+home/end top/bottom  ·  wheel scroll  ·  d diff  ·  esc cancel 
+                                                                                                                                        
+                                                                                                                                        
