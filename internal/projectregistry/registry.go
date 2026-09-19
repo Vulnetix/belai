@@ -86,6 +86,11 @@ type Registry struct {
 	mu   sync.Mutex
 }
 
+// mutateMu serialises in-process Mutate calls, so fifty concurrent Observe
+// goroutines cannot lose updates through the file-lock's read-modify-write
+// window. The advisory lockfile remains the cross-process serialisation point.
+var mutateMu sync.Mutex
+
 // registryPath returns the path to projects.json. It is computed each call so
 // tests can vary $SIGNET_HOME between subtests.
 func registryPath() (string, error) {
@@ -154,7 +159,12 @@ func (r *Registry) All() []Entry {
 
 // Mutate is the only write path. It re-reads the file under an advisory lock
 // before applying fn, so concurrent in-process writers see each other's work.
+// An in-process mutex serialises first, then the advisory lockfile serialises
+// across processes.
 func Mutate(fn func(*Registry) error) error {
+	mutateMu.Lock()
+	defer mutateMu.Unlock()
+
 	unlock, err := acquireLock()
 	if err != nil {
 		return err
