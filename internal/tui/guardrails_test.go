@@ -122,12 +122,12 @@ func TestSettingsGuardrailsOffReachesThePosture(t *testing.T) {
 // The session snapshot carries the *effective* policy, so the async session
 // build cannot re-derive it and get a different answer.
 func TestSessionSnapshotCarriesTheEffectivePosture(t *testing.T) {
-	a := &App{settings: config.Settings{}, posture: posture.Defaults(), workdir: t.TempDir()}
+	a := &App{settings: config.Settings{}, posture: posture.Defaults(), workdir: t.TempDir(), live: posture.NewLive(posture.Defaults(), false)}
 	a.toggleGuardrails()
 
 	p := a.sessionBuildParams()
 	for _, g := range posture.AllGates {
-		if got := p.posture.Level(g); got != posture.Ignore {
+		if got := p.live.Level(g); got != posture.Ignore {
 			t.Errorf("session snapshot: gate %q = %q, want ignore", g, got)
 		}
 	}

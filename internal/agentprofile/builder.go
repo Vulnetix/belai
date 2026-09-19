@@ -24,7 +24,12 @@ Reply with ONLY a JSON object matching this schema:
   "monitor_condition": "human-readable trigger when mode is monitor, optional otherwise",
   "reflection": true or false (optional),
   "max_iterations": integer (optional),
-  "autonomy": "supervised or autonomous (optional, default supervised)"
+  "autonomy": "supervised or autonomous (optional, default supervised)",
+  "provider": "provider name to use, or omit to inherit from the session",
+  "model": "model id to use, or omit to inherit from the session provider",
+  "effort": "low, medium, high, or none (optional)",
+  "guardrails": true or false or omit to inherit from settings (default inherit)",
+  "ask_permission": true or false or omit to inherit from settings (default inherit)"
 }
 
 Before emitting the final JSON, reason through your choices inside a <thinking> block. Justify the tool allowlist explicitly. If the user request is vague, make reasonable defaults and note them in the description.

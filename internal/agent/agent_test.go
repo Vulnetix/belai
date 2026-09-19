@@ -696,7 +696,7 @@ func TestDrainSteerAdmitsAndRefuses(t *testing.T) {
 		return "SAFE", nil
 	})
 	pipe := rolemanager.NewPipeline(classifier)
-	sess := &Session{steer: make(chan string, steerBuffer), posture: posture.Defaults()}
+	sess := &Session{steer: make(chan string, steerBuffer), live: posture.NewLive(posture.Defaults(), false)}
 	sess.Steer("good turn")
 	sess.Steer("bad turn")
 

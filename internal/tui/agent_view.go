@@ -237,6 +237,24 @@ func (a *App) buildAgentFields(p agentprofile.AgentProfile) []agentField {
 			}
 			return nil
 		}},
+		{key: "provider", label: "provider", kind: "choose", opts: append([]string{""}, a.providerNames()...), value: p.Provider, set: func(dst *agentprofile.AgentProfile, v string) error {
+			dst.Provider = v
+			return nil
+		}},
+		{key: "model", label: "model", kind: "choose", opts: a.agentModelOpts(p.Provider), value: p.Model, set: func(dst *agentprofile.AgentProfile, v string) error {
+			dst.Model = v
+			return nil
+		}},
+		{key: "effort", label: "effort", kind: "choose", opts: append([]string{""}, defaultClassifierEfforts...), value: p.Effort, set: func(dst *agentprofile.AgentProfile, v string) error {
+			dst.Effort = v
+			return nil
+		}},
+		{key: "guardrails", label: "guardrails", kind: "choose", opts: []string{"inherit", "on", "off"}, value: boolPtrLabel(p.Guardrails), set: func(dst *agentprofile.AgentProfile, v string) error {
+			return setBoolPtrFromChoice(&dst.Guardrails, v)
+		}},
+		{key: "ask", label: "ask", kind: "choose", opts: []string{"inherit", "on", "off"}, value: boolPtrLabel(p.AskPermission), set: func(dst *agentprofile.AgentProfile, v string) error {
+			return setBoolPtrFromChoice(&dst.AskPermission, v)
+		}},
 		{key: "system_prompt", label: "system prompt", kind: "text", value: p.SystemPrompt, set: func(dst *agentprofile.AgentProfile, v string) error {
 			dst.SystemPrompt = strings.TrimSpace(v)
 			return nil
@@ -376,4 +394,42 @@ func nextChoice(opts []string, current string) string {
 		}
 	}
 	return opts[(idx+1)%len(opts)]
+}
+
+// agentModelOpts returns the selectable model IDs for an agent profile's
+// chosen provider, plus an empty "inherit" stop.
+func (a *App) agentModelOpts(provider string) []string {
+	opts := []string{""}
+	for _, m := range a.catalogFor(provider) {
+		opts = append(opts, m.ID)
+	}
+	return opts
+}
+
+// boolPtrLabel renders a *bool as a three-state label.
+func boolPtrLabel(p *bool) string {
+	if p == nil {
+		return "inherit"
+	}
+	if *p {
+		return "on"
+	}
+	return "off"
+}
+
+// setBoolPtrFromChoice updates a *bool from the three-state UI labels.
+func setBoolPtrFromChoice(dst **bool, v string) error {
+	switch v {
+	case "inherit":
+		*dst = nil
+	case "on":
+		b := true
+		*dst = &b
+	case "off":
+		b := false
+		*dst = &b
+	default:
+		return fmt.Errorf("choice must be inherit, on, or off")
+	}
+	return nil
 }

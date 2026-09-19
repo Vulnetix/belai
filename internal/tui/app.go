@@ -7,10 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -179,18 +182,9 @@ type gitInfoMsg struct {
 	ok   bool
 }
 
-// localModelReportMsg carries the result of the /local-model machine and
-// server assessment, rendered as a system notice.
+// localModelReportMsg carries the result of a /local-model subcommand,
+// rendered as a system notice.
 type localModelReportMsg struct{ text string }
-
-// downloadProgressMsg carries one model-download progress update. final is set
-// on the terminal update (success or error).
-type downloadProgressMsg struct {
-	done  int64
-	total int64
-	err   error
-	final bool
-}
 
 const (
 	editorMinHeight = 3
@@ -253,6 +247,10 @@ type App struct {
 	client   *http.Client
 	resolver *credentials.Resolver
 	posture  posture.Policy
+	// live is the process-wide shared posture/ask holder. Every session (the
+	// running one and the next one) shares this pointer, so a toggle pressed
+	// mid-turn lands on the next gate check instead of the next prompt.
+	live     *posture.Live
 	planMode bool
 	agent    *agent.Session
 	events   <-chan agent.Event
@@ -474,14 +472,6 @@ type App struct {
 	// todos is the shared goal/plan todo list rendered in the chat chrome and
 	// persisted to the session. The agent emits it; the TUI owns persistence.
 	todos *todos.List
-
-	// downloadCh carries progress updates from the in-flight local model
-	// download started by /local-model download. nil when no download runs.
-	downloadCh chan downloadProgressMsg
-
-	// localServerStop stops the locally launched inference server, when one was
-	// started by /local-model launch. nil when no local server is managed.
-	localServerStop func() error
 }
 
 type tickMsg time.Time
@@ -584,6 +574,8 @@ func New(opts Options) *App {
 		subagentIdx:       map[string]int{},
 		trace:             trace.Env(),
 	}
+	// One Live for the process: the running session and the next one share it.
+	a.live = posture.NewLive(a.effectivePosture(), !a.askEnabled())
 	if initialStatus.Configured {
 		a.SetClassifier(run.NewClassifier(initial, a.client))
 		a.bgManager = bgagent.NewManager(workdir, initial, a.client, a.settings, a.effectivePosture())
@@ -1211,14 +1203,18 @@ type sessionBuildParams struct {
 	settings config.Settings
 	cfg      run.Config
 	client   *http.Client
-	// posture is already the *effective* policy: App.effectivePosture has
-	// applied the operator's guardrails switch to it. The switch is not
-	// carried separately, so there is no second place that could forget to
-	// apply it.
-	posture      posture.Policy
+	// live is the shared posture/ask holder the session consults at each gate.
+	// It is not snapshotted: the running session and the next one share it, so
+	// a toggle pressed mid-turn lands on the next gate check.
+	live *posture.Live
+	// guardrails is the operator's current switch, so the plan-mode surface is
+	// built from the effective value rather than the raw persisted setting.
+	guardrails   bool
 	planMode     bool
 	allowClarify bool
-	ask          bool
+	// profile is the engaged agent definition, if any. Its provider/model/
+	// effort overrides are applied to cfg before the session is built.
+	profile agentprofile.AgentProfile
 	// toolAllow restricts the registry to an engaged background definition's
 	// tools. Empty means every registered tool.
 	toolAllow []string
@@ -1228,15 +1224,17 @@ type sessionBuildParams struct {
 }
 
 func (a *App) sessionBuildParams() sessionBuildParams {
+	p, _ := a.engagedProfile()
 	return sessionBuildParams{
 		workdir:      a.workdir,
 		settings:     a.settings,
 		cfg:          a.cfg,
 		client:       a.client,
-		posture:      a.effectivePosture(),
+		live:         a.live,
+		guardrails:   a.guardrailsEnabled(),
 		planMode:     a.planMode,
 		allowClarify: true,
-		ask:          a.askEnabled(),
+		profile:      p,
 		toolAllow:    a.engagedAgentTools(),
 		agentPool:    a.agentPool,
 	}
@@ -1257,25 +1255,35 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		reg = reg.Only(p.toolAllow...)
 	}
 	perms := permissions.From(p.settings.Permissions.Allow, p.settings.Permissions.Ask, p.settings.Permissions.Deny)
-	pol := p.posture
 	var promptOpts prompt.Options
 	if p.settings.Caveman != nil && *p.settings.Caveman {
 		promptOpts.Caveman = true
 	}
+	cfg := p.cfg
+	if p.profile.Provider != "" {
+		cfg.Provider = p.profile.Provider
+	}
+	if p.profile.Model != "" {
+		cfg.Model = p.profile.Model
+	} else if p.profile.Provider != "" && p.cfg.Provider != p.profile.Provider {
+		cfg.Model = run.DefaultModel(p.profile.Provider)
+	}
+	if p.profile.Effort != "" {
+		cfg.Effort = p.profile.Effort
+	}
 	return agent.NewSession(agent.Options{
-		Cfg:           p.cfg,
+		Cfg:           cfg,
 		Client:        p.client,
 		Registry:      reg,
 		Perms:         perms,
-		Posture:       pol,
+		Live:          p.live,
 		PlanMode:      p.planMode,
 		Workdir:       p.workdir,
 		Settings:      p.settings,
 		PromptOptions: promptOpts,
 		Caps:          caps,
 		RepoIndex:     ix,
-		PlanSurface:   tools.PlanSurface{GuardrailsOff: !p.settings.GuardrailsEnabled(), Perms: perms},
-		AskDisabled:   !p.ask,
+		PlanSurface:   tools.PlanSurface{GuardrailsOff: !p.guardrails, Perms: perms},
 		// Top-level session: explore subagents may fan out from here. A
 		// subagent sets this false so it can never fan out again.
 		AllowExplore: true,
@@ -1388,9 +1396,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case localModelReportMsg:
 		a.addSystem(m.text)
 		return a, nil
-
-	case downloadProgressMsg:
-		return a, a.handleDownloadProgress(m)
 
 	case codeReviewDoneMsg:
 		return a, a.handleCodeReviewDone(m)
@@ -1512,7 +1517,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, a.copyPrompt()
 		case "ctrl+d":
-			a.stopLocalServer()
+			a.stopLocalServers()
 			return a, tea.Quit
 		case "ctrl+r":
 			a.reasoningOverride = nextBoolPtr(a.reasoningOverride)
@@ -1719,19 +1724,10 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 				return a.acceptAgent()
 			}
 		}
-		// In agent mode with no agent engaged, enter opens the picker rather
-		// than sending a turn that has no carrier. The submit is deferred, not
-		// dropped: acceptAgent finishes it once a carrier exists.
-		if a.mode == "agent" && a.namedAgent == "" && !a.agentPickerOpen {
-			a.openAgentPicker()
-			a.agentPickerSubmit = strings.TrimSpace(a.editor.Value()) != ""
-			a.relayout()
-			return nil
-		}
 		input := strings.TrimSpace(a.editor.Value())
-		if input == "" {
-			return nil
-		}
+		// A slash command and a `!cmd` are local acts, not model turns: they
+		// need no carrier, so they run on this enter rather than falling into
+		// the agent picker below and costing the user a second press.
 		if isShellInput(input) {
 			a.editor.Reset()
 			a.clearAutocomplete()
@@ -1741,6 +1737,18 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 			a.editor.Reset()
 			a.clearAutocomplete()
 			return a.handleCommand(input)
+		}
+		// In agent mode with no agent engaged, enter opens the picker rather
+		// than sending a turn that has no carrier. The submit is deferred, not
+		// dropped: acceptAgent finishes it once a carrier exists.
+		if a.mode == "agent" && a.namedAgent == "" && !a.agentPickerOpen {
+			a.openAgentPicker()
+			a.agentPickerSubmit = input != ""
+			a.relayout()
+			return nil
+		}
+		if input == "" {
+			return nil
 		}
 		if a.working() {
 			a.messages = append(a.messages, components.Message{Role: "user", Content: input, Steering: true})
@@ -2887,13 +2895,13 @@ func (a *App) toggleGuardrails() tea.Cmd {
 	return nil
 }
 
-// syncPosture pushes the effective policy to the surfaces that hold their own
-// copy of it. The agent session is rebuilt from a fresh snapshot, and the
-// inline shell and attachment paths read it per call, but a running background
-// agent manager keeps whatever it was constructed with — so the switch has to
-// be handed to it explicitly or background agents go on enforcing gates the
-// footer says are off.
+// syncPosture pushes the effective policy and ask gate to every surface that
+// holds its own copy of them: the shared Live every session reads at each gate,
+// and the background-agent manager. A toggle pressed mid-turn therefore lands
+// on the next gate check in the running session, its explore subagents, and
+// any background agent already running, instead of only on the next send.
 func (a *App) syncPosture() {
+	a.live.Set(a.effectivePosture(), !a.askEnabled())
 	if a.bgManager != nil {
 		a.bgManager.SetPosture(a.effectivePosture())
 	}
@@ -2903,6 +2911,13 @@ func (a *App) toggleAsk() tea.Cmd {
 	next := !a.askEnabled()
 	a.askOverride = &next
 	a.invalidateAgentSession()
+	a.syncPosture()
+	// Turning ask off while an approval prompt is on screen resolves it as
+	// allow-once and dismisses it, rather than leaving the view up against a
+	// gate that is now off.
+	if !next {
+		a.resolvePendingAsk(true)
+	}
 	a.traceRecord("ask_toggle", boolLabel(next), "", "", 0)
 	a.addSystem("ask: " + boolLabel(next))
 	return nil
@@ -2913,6 +2928,7 @@ func (a *App) setYolo(on bool) tea.Cmd {
 		v := false
 		a.guardrailsOverride = &v
 		a.askOverride = &v
+		a.resolvePendingAsk(true)
 	} else {
 		a.guardrailsOverride = nil
 		a.askOverride = nil
@@ -2926,6 +2942,31 @@ func (a *App) setYolo(on bool) tea.Cmd {
 	a.traceRecord("yolo", label, "", "", 0)
 	a.addSystem("yolo: " + label)
 	return nil
+}
+
+// announceProfileGateDrops emits a system message when an engaged agent's
+// profile lowers guardrails or ask below the current settings. Silence is not
+// allowed for this class of posture drop.
+func (a *App) announceProfileGateDrops(name string) {
+	p, err := agentprofile.Load(name)
+	if err != nil {
+		return
+	}
+	baseGuardrails := a.settings.GuardrailsEnabled()
+	baseAsk := a.settings.AskPermissionEnabled()
+	if (p.Guardrails != nil && !*p.Guardrails && baseGuardrails) ||
+		(p.AskPermission != nil && !*p.AskPermission && baseAsk) {
+		var dropped []string
+		if p.Guardrails != nil && !*p.Guardrails && baseGuardrails {
+			dropped = append(dropped, "guardrails")
+		}
+		if p.AskPermission != nil && !*p.AskPermission && baseAsk {
+			dropped = append(dropped, "ask")
+		}
+		msg := fmt.Sprintf("agent profile %s lowers %s", p.Name, strings.Join(dropped, " and "))
+		a.addSystem(msg)
+		a.traceRecord("profile_posture_drop", strings.Join(dropped, ","), "", p.Name, 0)
+	}
 }
 
 func (a *App) traceRecord(event, verdict, tool, detail string, pass int) {
@@ -3017,6 +3058,9 @@ func (a *App) applyModeDecision(d rolemanager.ModeDecision, err error) {
 		a.mode = string(d.Mode)
 	}
 	a.syncPlanMode()
+	if d.AgentName != "" {
+		a.announceProfileGateDrops(d.AgentName)
+	}
 	switch {
 	case d.AgentName != "":
 		a.addSystem("engaged agent: " + d.AgentName)
@@ -3131,6 +3175,9 @@ func (a *App) reloadSettings() error {
 	if a.agentPool != nil {
 		a.agentPool.SetSize(a.settings.Resilience.MaxAgentsOr(3))
 	}
+	// A /settings edit of guardrails or ask_permission lands live through the
+	// shared holder, exactly like the f3/f4 toggles.
+	a.syncPosture()
 	a.refreshFooter()
 	return nil
 }
@@ -3214,7 +3261,22 @@ func (a *App) guardrailsEnabled() bool {
 	if a.guardrailsOverride != nil {
 		return *a.guardrailsOverride
 	}
+	if p, ok := a.engagedProfile(); ok && p.Guardrails != nil {
+		return *p.Guardrails
+	}
 	return a.settings.GuardrailsEnabled()
+}
+
+// engagedProfile returns the currently engaged agent definition, if any.
+func (a *App) engagedProfile() (agentprofile.AgentProfile, bool) {
+	if a.namedAgent == "" {
+		return agentprofile.AgentProfile{}, false
+	}
+	p, err := agentprofile.Load(a.namedAgent)
+	if err != nil {
+		return agentprofile.AgentProfile{}, false
+	}
+	return p, true
 }
 
 // effectivePosture is the policy every surface must consult, rather than
@@ -3232,6 +3294,9 @@ func (a *App) effectivePosture() posture.Policy {
 func (a *App) askEnabled() bool {
 	if a.askOverride != nil {
 		return *a.askOverride
+	}
+	if p, ok := a.engagedProfile(); ok && p.AskPermission != nil {
+		return *p.AskPermission
 	}
 	return a.settings.AskPermissionEnabled()
 }
@@ -3293,17 +3358,26 @@ func (a *App) applyGitInfo(info gitinfo.Info, ok bool) {
 	}
 }
 
+// probeLocalBases returns the preferred local inference base URLs for an
+// already-running server.
+func probeLocalBases() []string {
+	var bases []string
+	for _, port := range localinfer.PreferredPorts() {
+		bases = append(bases, localinfer.BaseURL("127.0.0.1", port))
+	}
+	return bases
+}
+
 // localModelReportCmd runs the machine probe and server detection off the
-// render goroutine and returns a plain-language report. It is the
-// /local-model command body.
-func (a *App) localModelReportCmd() tea.Cmd {
+// render goroutine and returns a plain-language report.
+func (a *App) localModelReportCmd(repo string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
 
 		rep := machineprobe.Probe(ctx)
 		bin, haveBin := localinfer.Detect()
-		running := localinfer.ProbeRunning(ctx, localBases())
+		running := localinfer.ProbeRunning(ctx, probeLocalBases())
 
 		var b strings.Builder
 		if running != "" {
@@ -3319,129 +3393,285 @@ func (a *App) localModelReportCmd() tea.Cmd {
 		for _, g := range rep.GPUs {
 			fmt.Fprintf(&b, "gpu: %s %d MiB\n", g.Backend, g.VRAMMiB)
 		}
-		v := rep.Assess("12B Q4_K_M", 7000)
+
+		modelRepo := repo
+		if modelRepo == "" {
+			modelRepo = "12B Q4_K_M"
+		}
+		v := rep.Assess(modelRepo, 7000)
 		fmt.Fprintf(&b, "%s\n", v.Reason)
-		b.WriteString("configure classifier.provider=ollama and OLLAMA_HOST=http://127.0.0.1:18080 to route the classifier locally")
+
+		if binary, ok := localinfer.HFBinary(); ok {
+			fmt.Fprintf(&b, "hf CLI: %s\n", binary)
+			if user, ok := localinfer.HFWhoami(ctx, binary); ok {
+				fmt.Fprintf(&b, "hf auth: %s\n", user)
+			}
+		} else {
+			b.WriteString("hf CLI: not found (install with 'pip install huggingface-hub' or 'cargo install hf')\n")
+		}
+
+		models, _ := localinfer.HFCacheScan(ctx, "")
+		if len(models) > 0 {
+			b.WriteString("cached models:\n")
+			for _, m := range models {
+				fmt.Fprintf(&b, "  %s  (%s)\n", m.File, filepath.Base(m.Path))
+			}
+		}
+
+		if !haveBin {
+			b.WriteString("a local server is required to serve the model; llama-server is recommended\n")
+		}
 		return localModelReportMsg{text: b.String()}
 	}
 }
 
-// localBases are the common local inference base URLs, probed for a running
-// server.
-func localBases() []string {
-	return []string{
-		"http://127.0.0.1:11434/v1",
-		"http://127.0.0.1:18080/v1",
-		"http://127.0.0.1:8000/v1",
-	}
-}
-
-// localModelDownloadCmd resolves and downloads a HuggingFace GGUF model for the
-// local classifier, streaming progress to the transcript until it completes.
-func (a *App) localModelDownloadCmd(repo string) tea.Cmd {
-	ch := make(chan downloadProgressMsg, 16)
-	a.downloadCh = ch
-	resolver := a.resolver
-	go func() {
-		defer close(ch)
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-		defer cancel()
-
-		// The HF token resolves through the full credential stack (env, files,
-		// netrc, keychain) when a resolver is present, else environment only.
-		var token string
-		if resolver != nil {
-			token, _, _ = resolver.Lookup("huggingface", "api_key")
-		} else {
-			token, _, _ = run.EnvSource(os.Getenv).Lookup("huggingface", "api_key")
-		}
-		dir, err := localinfer.ModelsDir()
-		if err != nil {
-			ch <- downloadProgressMsg{err: err, final: true}
-			return
-		}
-		mf, err := localinfer.ResolveModel(ctx, repo, token)
-		if err != nil {
-			ch <- downloadProgressMsg{err: err, final: true}
-			return
-		}
-		_, err = localinfer.Download(ctx, repo, mf, token, dir, func(done, total int64) {
-			select {
-			case ch <- downloadProgressMsg{done: done, total: total}:
-			default:
-			}
-		})
-		if err != nil {
-			ch <- downloadProgressMsg{err: err, final: true}
-			return
-		}
-		ch <- downloadProgressMsg{total: mf.Size, final: true}
-	}()
-	return a.watchDownload(ch)
-}
-
-// watchDownload drains one progress update and re-arms until the final one.
-func (a *App) watchDownload(ch chan downloadProgressMsg) tea.Cmd {
+// localModelStatusCmd reports every managed local inference server.
+func (a *App) localModelStatusCmd() tea.Cmd {
 	return func() tea.Msg {
-		m, ok := <-ch
-		if !ok {
-			return downloadProgressMsg{final: true}
-		}
-		return m
-	}
-}
-
-// handleDownloadProgress renders one download update and re-arms the watcher
-// until the download finishes.
-func (a *App) handleDownloadProgress(m downloadProgressMsg) tea.Cmd {
-	if m.final {
-		a.downloadCh = nil
-		if m.err != nil {
-			a.addSystem("model download failed: " + m.err.Error())
+		var b strings.Builder
+		srvs := a.runningLocalServers()
+		if len(srvs) == 0 {
+			b.WriteString("no managed local inference server running\n")
 		} else {
-			a.addSystem(fmt.Sprintf("model download complete (%s)", formatMiB(m.total)))
+			b.WriteString("managed local inference servers:\n")
+			for _, s := range srvs {
+				fmt.Fprintf(&b, "  port %d  %s  pid %d  %s\n", s.port, s.baseURL, s.pid, s.state)
+			}
 		}
-		return nil
+		origin := "not configured"
+		if a.resolver != nil {
+			if v, src, ok := a.resolver.Lookup("llama-server", "port"); ok {
+				origin = v + " (" + string(src) + ")"
+			}
+		}
+		fmt.Fprintf(&b, "persisted llama-server port credential: %s", origin)
+		return localModelReportMsg{text: b.String()}
 	}
-	if a.downloadCh != nil {
-		a.addSystem(fmt.Sprintf("downloading model… %s / %s", formatMiB(m.done), formatMiB(m.total)))
-		return a.watchDownload(a.downloadCh)
-	}
-	return nil
 }
 
-// formatMiB renders a byte count in MiB with one decimal.
-func formatMiB(n int64) string {
-	return fmt.Sprintf("%.1f MiB", float64(n)/(1024*1024))
+type localServerInfo struct {
+	port    int
+	baseURL string
+	pid     int
+	state   string
 }
 
-// localModelLaunchCmd launches a local llama-server for the given HF repo and
-// health-checks it. The stop function is stored so quitting Signet tears the
-// server down.
-func (a *App) localModelLaunchCmd(repo string) tea.Cmd {
+// runningLocalServers returns the llama-server activities from the registry.
+func (a *App) runningLocalServers() []localServerInfo {
+	var out []localServerInfo
+	if a.activity == nil {
+		return out
+	}
+	for _, act := range a.activity.List() {
+		if act.Kind != activity.KindShell || act.Label != "llama-server" {
+			continue
+		}
+		info := localServerInfo{state: string(act.State)}
+		if len(act.Argv) > 0 {
+			for i, arg := range act.Argv {
+				if arg == "--port" && i+1 < len(act.Argv) {
+					if n, err := strconv.Atoi(act.Argv[i+1]); err == nil {
+						info.port = n
+						info.baseURL = localinfer.BaseURL("127.0.0.1", n)
+					}
+				}
+			}
+		}
+		out = append(out, info)
+	}
+	return out
+}
+
+// localModelLaunchCmd launches a local llama-server for the given HF repo,
+// persists the port credential, registers the process, and lands on the
+// credential view.
+func (a *App) localModelLaunchCmd(repo, portArg, quant string) tea.Cmd {
 	return func() tea.Msg {
 		bin, ok := localinfer.Detect()
 		if !ok || bin.Name != "llama-server" {
 			return localModelReportMsg{text: "launch requires the llama-server binary (llama.cpp); see https://github.com/ggerganov/llama.cpp"}
 		}
-		baseURL := "http://127.0.0.1:18080/v1"
+
+		token := a.hfToken()
+		var modelPath string
+		if hfBin, ok := localinfer.HFBinary(); ok {
+			a.addSystem("downloading model with hf CLI...")
+			path, err := localinfer.HFDownload(context.Background(), hfBin, repo, quant, token, func(line string) {
+				a.addSystem(line)
+			})
+			if err != nil {
+				return localModelReportMsg{text: "download failed: " + err.Error()}
+			}
+			modelPath = path
+		}
+
+		port, err := a.pickLocalServerPort(portArg)
+		if err != nil {
+			return localModelReportMsg{text: "port allocation failed: " + err.Error()}
+		}
+		baseURL := localinfer.BaseURL("127.0.0.1", port)
+
+		opts := localinfer.ArgsOptions{Port: port, Quant: quant}
+		if modelPath != "" {
+			opts.ModelPath = modelPath
+		} else {
+			opts.Repo = repo
+		}
+		args := localinfer.Args(opts)
+
 		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 		defer cancel()
-		stop, err := localinfer.Launch(ctx, bin, localinfer.Args(repo, 18080), baseURL)
+
+		stop, err := localinfer.Launch(ctx, bin, args, baseURL, localinfer.LaunchOptions{
+			Deadline: 30 * time.Second,
+			HFToken:  token,
+			Registry: a.activity,
+			Pidfile:  a.localServerPidfile(port),
+			OnLine: func(line string) {
+				a.addSystem(line)
+			},
+		})
 		if err != nil {
 			return localModelReportMsg{text: "launch failed: " + err.Error()}
 		}
-		a.localServerStop = stop
-		return localModelReportMsg{text: fmt.Sprintf("local classifier server running at %s (set classifier.provider=ollama and OLLAMA_HOST=%s)", baseURL, baseURL)}
+
+		if err := a.persistLocalServerCredentials(port); err != nil {
+			_ = stop()
+			return localModelReportMsg{text: "credential persistence failed: " + err.Error()}
+		}
+		a.invalidateAvailability()
+
+		// Land on the credential view with llama-server selected.
+		a.initCredentialState()
+		for i, p := range a.credentialState.providers {
+			if p == "llama-server" {
+				a.credentialState.selectedIdx = i
+				break
+			}
+		}
+		return a.push(viewCredentials)()
 	}
 }
 
-// stopLocalServer stops the managed local inference server, if any.
-func (a *App) stopLocalServer() {
-	if a.localServerStop != nil {
-		_ = a.localServerStop()
-		a.localServerStop = nil
+// localModelDownloadCmd downloads a model with the HF CLI. When the CLI is
+// absent it reports that the model will be fetched at launch.
+func (a *App) localModelDownloadCmd(repo, quant string) tea.Cmd {
+	return func() tea.Msg {
+		bin, ok := localinfer.HFBinary()
+		if !ok {
+			return localModelReportMsg{text: "hf CLI not found; the model will be downloaded by llama-server at launch"}
+		}
+		path, err := localinfer.HFDownload(context.Background(), bin, repo, quant, a.hfToken(), func(line string) {
+			a.addSystem(line)
+		})
+		if err != nil {
+			return localModelReportMsg{text: "download failed: " + err.Error()}
+		}
+		return localModelReportMsg{text: "downloaded: " + path}
 	}
+}
+
+// localModelStopCmd stops managed local inference servers.
+func (a *App) localModelStopCmd(portArg string) tea.Cmd {
+	return func() tea.Msg {
+		count := 0
+		for _, s := range a.runningLocalServers() {
+			if portArg != "" && strconv.Itoa(s.port) != portArg {
+				continue
+			}
+			for _, act := range a.activity.List() {
+				if act.Kind == activity.KindShell && act.Label == "llama-server" {
+					_ = a.activity.Kill(act.ID)
+					count++
+				}
+			}
+		}
+		return localModelReportMsg{text: fmt.Sprintf("stopped %d local server(s)", count)}
+	}
+}
+
+// stopLocalServers stops every managed llama-server on quit.
+func (a *App) stopLocalServers() {
+	for _, act := range a.activity.List() {
+		if act.Kind == activity.KindShell && act.Label == "llama-server" {
+			_ = a.activity.Kill(act.ID)
+		}
+	}
+}
+
+// hfToken resolves the HuggingFace token through the full credential stack.
+func (a *App) hfToken() string {
+	if a.resolver != nil {
+		if token, _, ok := a.resolver.Lookup("huggingface", "api_key"); ok {
+			return token
+		}
+	}
+	if token, _, ok := run.EnvSource(os.Getenv).Lookup("huggingface", "api_key"); ok {
+		return token
+	}
+	return ""
+}
+
+// pickLocalServerPort applies the allocation order: explicit argument, then
+// the persisted llama-server credential if it is free or already serving this
+// repo, then a fresh free port.
+func (a *App) pickLocalServerPort(portArg string) (int, error) {
+	if portArg != "" {
+		return strconv.Atoi(portArg)
+	}
+	if a.resolver != nil {
+		if v, _, ok := a.resolver.Lookup("llama-server", "port"); ok && v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				if a.portFreeOrServing(n) {
+					return n, nil
+				}
+			}
+		}
+	}
+	return localinfer.FreePort()
+}
+
+// portFreeOrServing reports whether a port is open or already answering as a
+// local inference server.
+func (a *App) portFreeOrServing(port int) bool {
+	base := localinfer.BaseURL("127.0.0.1", port)
+	if localinfer.ProbeRunning(context.Background(), []string{base}) != "" {
+		return true
+	}
+	ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	if err != nil {
+		return false
+	}
+	_ = ln.Close()
+	return true
+}
+
+// persistLocalServerCredentials writes host/port/protocol for the freshly
+// launched server. These are non-secret optional fields.
+func (a *App) persistLocalServerCredentials(port int) error {
+	if a.resolver == nil {
+		return nil
+	}
+	backend := credentials.SourceUserFile
+	if a.credentialState.backend != "" {
+		backend = a.credentialState.backend
+	}
+	if err := a.resolver.Store("llama-server", "host", "127.0.0.1", backend); err != nil {
+		return err
+	}
+	if err := a.resolver.Store("llama-server", "port", strconv.Itoa(port), backend); err != nil {
+		return err
+	}
+	return a.resolver.Store("llama-server", "protocol", "http", backend)
+}
+
+// localServerPidfile returns the pidfile path for a launched server.
+func (a *App) localServerPidfile(port int) string {
+	dir, err := config.GlobalDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "llama-server-"+strconv.Itoa(port)+".pid")
 }
 
 func (a *App) copyPrompt() tea.Cmd {

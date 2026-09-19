@@ -699,3 +699,50 @@ func assertNoUserTurn(t *testing.T, a *App) {
 		}
 	}
 }
+
+// A slash command is not a model turn, so it must not wait on a carrier: the
+// picker gate used to swallow the first enter, leaving the command in the
+// composer and forcing a second press.
+func TestSlashCommandRunsOnTheFirstEnterInAgentMode(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	a.loadAgents()
+	a.mode = "agent"
+	a.editor.SetValue("/definitely-not-a-command")
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if a.agentPickerOpen {
+		t.Fatalf("slash command opened the agent picker")
+	}
+	if a.editor.Value() != "" {
+		t.Fatalf("composer still holds %q", a.editor.Value())
+	}
+	var dispatched bool
+	for _, m := range a.messages {
+		if strings.Contains(m.Text(), "unknown command: /definitely-not-a-command") {
+			dispatched = true
+		}
+	}
+	if !dispatched {
+		t.Fatalf("command was never dispatched: %+v", a.messages)
+	}
+}
+
+// `!cmd` is local execution, not a turn, and takes the same first enter.
+func TestShellInputRunsOnTheFirstEnterInAgentMode(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	a.loadAgents()
+	a.mode = "agent"
+	a.editor.SetValue("!echo hi")
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if a.agentPickerOpen {
+		t.Fatalf("shell input opened the agent picker")
+	}
+	if a.editor.Value() != "" {
+		t.Fatalf("composer still holds %q", a.editor.Value())
+	}
+}

@@ -115,6 +115,22 @@ func (a *App) answerPermissionAsk(allow bool) {
 	}
 }
 
+// resolvePendingAsk answers and dismisses a live permission-ask prompt, if one
+// is on screen. It is the shared answer-and-dismiss half of the approval view,
+// factored out so the ask-off toggle can resolve the pending prompt exactly as
+// the view's own keys do: send once on the reply channel the agent loop is
+// blocked on, then pop back to the parent view.
+func (a *App) resolvePendingAsk(allow bool) {
+	if a.permAskState.reply == nil {
+		return
+	}
+	a.answerPermissionAsk(allow)
+	a.permAskState = permissionAskViewState{}
+	if a.view == viewPermissionAsk {
+		a.pop()
+	}
+}
+
 // allowAlwaysRule writes a scoped Allow rule before answering, so the next
 // matching call short-circuits the prompt.
 func (a *App) allowAlwaysRule(name, subject string) {

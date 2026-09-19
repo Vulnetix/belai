@@ -178,3 +178,62 @@ func TestAgentEditCommandOpensView(t *testing.T) {
 		t.Fatal("expected editMode")
 	}
 }
+
+func TestAgentFieldsIncludeProviderModelEffortGates(t *testing.T) {
+	agentTestHome(t)
+	writeAgentProfile(t, "fields-bot", agentprofile.AgentProfile{
+		Provider:      "openai",
+		Model:         "gpt-5",
+		Effort:        "low",
+		Guardrails:    boolPtr(false),
+		AskPermission: boolPtr(false),
+	})
+
+	a := New(Options{})
+	a.push(viewAgent)
+	a.handleAgentKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+
+	keys := map[string]bool{}
+	for _, f := range a.agentState.fields {
+		keys[f.key] = true
+	}
+	for _, want := range []string{"provider", "model", "effort", "guardrails", "ask"} {
+		if !keys[want] {
+			t.Fatalf("missing field %q in edit rows", want)
+		}
+	}
+
+	// Cycle guardrails through inherit/on/off and verify the pointer state.
+	idx := -1
+	for i, f := range a.agentState.fields {
+		if f.key == "guardrails" {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		t.Fatal("guardrails field not found")
+	}
+	a.agentState.fieldSel = idx
+	cycles := []struct {
+		wantValue string
+		wantBool  *bool
+	}{
+		{"inherit", nil},
+		{"on", boolPtr(true)},
+		{"off", boolPtr(false)},
+	}
+	for _, c := range cycles {
+		a.handleAgentKey(tea.KeyMsg{Type: tea.KeySpace})
+		p := a.selectedAgentProfile()
+		if p == nil {
+			t.Fatal("profile disappeared after space")
+		}
+		if a.agentState.fields[idx].value != c.wantValue {
+			t.Fatalf("guardrails value = %q, want %q", a.agentState.fields[idx].value, c.wantValue)
+		}
+		if (p.Guardrails == nil) != (c.wantBool == nil) || (p.Guardrails != nil && *p.Guardrails != *c.wantBool) {
+			t.Fatalf("guardrails pointer mismatch after value %q", c.wantValue)
+		}
+	}
+}

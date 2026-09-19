@@ -1962,17 +1962,34 @@ full shell commands via `sh -c` (timeout, env scrubbing, and output truncation
 still apply); plan mode keeps `Bash` read-only regardless of `read_only`.
 ## Local inference
 
-The classifier can run against a local model through the existing `ollama`
-provider seam: set `classifier.provider` to `ollama`, `classifier.model` to the
-local model id, and `OLLAMA_HOST` to the server's base URL
-(`http://127.0.0.1:18080/v1`). Routing is all-or-nothing: once a local
-classifier is configured it handles every classification. The same applies to
-the `llama-server` provider for a `llama-server` endpoint (default
-`http://localhost:8080/v1`), configured via `SIGNET_LLAMA_HOST` or the
-per-field host/port/protocol managed in `/credentials`.
+Local inference is served by `llama-server` from llama.cpp. Signet treats the
+local server as a first-class provider: `/local-model launch <repo>` allocates a
+port, downloads the GGUF through the Hugging Face CLI when it is present (or
+lets `llama-server` fetch it when the CLI is absent), launches the server,
+health-checks `GET {base}/v1/models`, persists host/port/protocol under the
+`llama-server` credential, registers the process in the activity registry, and
+lands on `/credentials` with `llama-server` selected. From there `/model` and
+`/classifier` list the provider once availability re-probes.
+
+Port allocation order is: an explicit `--port N` argument; the persisted
+`llama-server:port` credential if that port is free or already serving a local
+model; otherwise a fresh port returned by `net.Listen("tcp", "127.0.0.1:0")`.
+`internal/localinfer.BaseURL` is the single source of truth for the
+OpenAI-surface base URL, so the probe, the launch, and the stored credential
+can never disagree. The old hard-coded `18080` and duplicate port lists are
+gone.
 
 Supporting pieces:
 
+- `internal/localinfer/port.go` owns port allocation and base-URL spelling.
+- `internal/localinfer/hfcli.go` wraps the `hf` / `huggingface-cli` binary:
+  `HFBinary`, `HFDownload`, `HFCacheScan`, and `HFWhoami`. The token is passed
+  through the child environment (`HF_TOKEN`) and never through argv.
+- `internal/localinfer` launches the server through `proc.SetProcessGroup` and
+  `proc.NewLineTee`, registers it in `internal/activity`, writes a pidfile
+  under `GlobalDir()`, and stops gracefully with SIGTERM followed by SIGKILL
+  after a short grace. Killing the TUI leaves the pidfile so a restart can
+  detect and adopt or report the orphan.
 - `internal/machineprobe` measures CPU threads, RAM, GPU backend/VRAM (via
   `llama-server --list-devices`), and free disk, then produces a plain-language
   suitability verdict. The verdict states the iGPU prefill caveat honestly:
@@ -1980,12 +1997,6 @@ Supporting pieces:
   classifier — prefill-bound on large tool results — may classify *slower*
   than a small frontier model despite free VRAM. Chunked classification is what
   makes this tolerable.
-- `internal/localinfer` detects a launchable server (`llama-server`, `ollama`,
-  `vllm`), probes common ports (`11434`, `18080`, `8000`) for an already-running
-  server, launches with the default args for this device, health-checks
-  `GET {base}/v1/models`, and resolves HuggingFace model metadata (largest GGUF
-  file, size, sha256) for download. Models download under
-  `<GlobalDir>/models/`.
 - The HuggingFace token resolves as provider `huggingface` (`HF_TOKEN` /
   `HUGGINGFACE_TOKEN`) through the same credential stack as providers.
 - `huggingface` is also a built-in chat provider using the OpenAI-compatible
@@ -1994,17 +2005,18 @@ Supporting pieces:
 - Probe base URLs are accepted with or without their `/v1` suffix:
   `ProbeRunning` trims a trailing `/v1` before appending `/v1/models`. Every
   in-tree caller holds the OpenAI-surface base (`run.Prepare` returns
-  `…/v1`, and `localBases()` lists `…/v1`), so appending unconditionally
-  probed `/v1/v1/models` — a path no server serves, which made both the
-  already-running probe and `Launch`'s health check fail.
+  `…/v1`), so appending unconditionally probed `/v1/v1/models` — a path no
+  server serves, which made both the already-running probe and `Launch`'s
+  health check fail.
 - The provider-availability filter behind `/model` and `/classifier` uses the
   same probe: a configured-but-unreachable local provider is hidden from the
   pickers while staying visible in `/credentials`.
-- The TUI exposes this through `/local-model` (assess the machine and server),
-  `/local-model download <repo>` (resumable, checksummed download with live
-  progress), `/local-model launch <repo>` (launch llama-server with the default
-  args and health-check `/v1/models`), and `/local-model stop`. Quitting the TUI
-  stops a launched server.
+- The TUI exposes this through `/local-model` (report), `/local-model status`
+  (running servers and persisted port), `/local-model launch <repo>
+  [--port N] [--quant Q]` (download/launch/persist/land on credentials),
+  `/local-model download <repo> [--quant Q]` (download with `hf`), and
+  `/local-model stop [--port N]` (graceful stop via the activity registry).
+  Quitting the TUI stops every managed `llama-server`.
 
 ## Performance
 

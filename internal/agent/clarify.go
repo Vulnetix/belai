@@ -78,7 +78,7 @@ func (s *Session) askUser(ctx context.Context, q clarify.Questionnaire, emit fun
 func (s *Session) admitAnswers(ctx context.Context, pipe *rolemanager.Pipeline, text string, emit func(Event)) (run.Turn, bool) {
 	clean := sanitize.Sanitize(text)
 	emit(Event{Kind: EventRoleManagerKind, Phase: RoleManagerPhaseSteer})
-	dec, err := pipe.Admit(ctx, clean, s.posture)
+	dec, err := pipe.Admit(ctx, clean, s.live.Policy())
 	if err != nil {
 		emit(Event{Kind: EventErrorKind, Err: err})
 		return run.Turn{}, false

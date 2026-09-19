@@ -241,7 +241,7 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task, steerCh chan 
 		Cfg:           s.cfg,
 		Client:        s.client,
 		Registry:      reg,
-		Posture:       s.posture,
+		Live:          s.live,
 		PlanMode:      true,  // read-only even if the registry grows
 		AllowExplore:  false, // a subagent must not fan out again
 		MaxIterations: s.settings.Resilience.MaxExploreIterationsOr(8),
@@ -314,7 +314,7 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task, steerCh chan 
 	// a round trip per subagent and still silently dropped a finding the
 	// classifier disliked.
 	body := sanitize.Sanitize(reply)
-	if s.posture.Level(posture.ToolResultUnsafe) != posture.Ignore {
+	if s.live.Level(posture.ToolResultUnsafe) != posture.Ignore {
 		pipe := run.NewPipeline(s.cfg, s.client, s.cache)
 		dec, err := pipe.Process(ctx, tools.Result{Kind: tools.KindExplore, Content: reply})
 		if err != nil || dec.Action != rolemanager.ActionProceed {

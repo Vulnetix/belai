@@ -28,7 +28,7 @@ func enforceNoMatchPolicy() posture.Policy {
 }
 
 func TestDecidePermissionNoRulesDefaultAllows(t *testing.T) {
-	s := &Session{perms: permissions.Settings{}, posture: posture.Defaults()}
+	s := &Session{perms: permissions.Settings{}, live: posture.NewLive(posture.Defaults(), false)}
 	dec, rule, _ := s.decidePermission("Read", "hello.txt")
 	if dec != permissions.DecisionAllow || rule != "" {
 		t.Fatalf("decidePermission = %q/%q, want allow/\"\"", dec, rule)
@@ -36,7 +36,7 @@ func TestDecidePermissionNoRulesDefaultAllows(t *testing.T) {
 }
 
 func TestDecidePermissionNoRulesEnforceBlocks(t *testing.T) {
-	s := &Session{perms: permissions.Settings{}, posture: enforceNoMatchPolicy()}
+	s := &Session{perms: permissions.Settings{}, live: posture.NewLive(enforceNoMatchPolicy(), false)}
 	dec, rule, _ := s.decidePermission("Read", "hello.txt")
 	if dec != permissions.DecisionBlock || rule != "" {
 		t.Fatalf("decidePermission = %q/%q, want block/\"\"", dec, rule)
@@ -49,7 +49,7 @@ func TestDecidePermissionDenyAlwaysBlocks(t *testing.T) {
 		"default": posture.Defaults(),
 		"enforce": enforceNoMatchPolicy(),
 	} {
-		s := &Session{perms: perms, posture: pol}
+		s := &Session{perms: perms, live: posture.NewLive(pol, false)}
 		dec, rule, _ := s.decidePermission("Read", "hello.txt")
 		if dec != permissions.DecisionBlock || rule != "Read" {
 			t.Fatalf("%s posture: decidePermission = %q/%q, want block/\"Read\"", name, dec, rule)
@@ -61,7 +61,7 @@ func TestDecidePermissionDenyAlwaysBlocks(t *testing.T) {
 // applies to calls that match no rule.
 func TestDecidePermissionAllowRuleBeatsEnforceGate(t *testing.T) {
 	perms := permissions.From([]string{"Read"}, nil, nil)
-	s := &Session{perms: perms, posture: enforceNoMatchPolicy()}
+	s := &Session{perms: perms, live: posture.NewLive(enforceNoMatchPolicy(), false)}
 	dec, rule, _ := s.decidePermission("Read", "hello.txt")
 	if dec != permissions.DecisionAllow || rule != "Read" {
 		t.Fatalf("decidePermission = %q/%q, want allow/\"Read\"", dec, rule)

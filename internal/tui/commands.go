@@ -106,22 +106,33 @@ func NewRegistry(workdir string) *Registry {
 		a.addSystem("profile: " + p.Name)
 		return nil
 	})
-	r.Register("local-model", "assess, download, launch, or stop a local classifier model", nil, func(a *App, arg string) tea.Cmd {
-		switch {
-		case arg == "stop":
-			a.stopLocalServer()
-			a.addSystem("local classifier server stopped")
+	r.Register("local-model", "assess, download, launch, or stop a local classifier model", func() []string {
+		return []string{"status", "launch", "download", "stop"}
+	}, func(a *App, arg string) tea.Cmd {
+		sub, flags := parseLocalModelArgs(arg)
+		switch sub {
+		case "", "report":
+			return a.localModelReportCmd(flags.repo)
+		case "status":
+			return a.localModelStatusCmd()
+		case "launch":
+			if flags.repo == "" {
+				a.addSystem("usage: /local-model launch <repo> [--port N] [--quant Q]")
+				return nil
+			}
+			return a.localModelLaunchCmd(flags.repo, flags.port, flags.quant)
+		case "download":
+			if flags.repo == "" {
+				a.addSystem("usage: /local-model download <repo> [--quant Q]")
+				return nil
+			}
+			return a.localModelDownloadCmd(flags.repo, flags.quant)
+		case "stop":
+			return a.localModelStopCmd(flags.port)
+		default:
+			a.addSystem("unknown /local-model subcommand: " + sub)
 			return nil
-		case strings.HasPrefix(arg, "download "):
-			if repo := strings.TrimSpace(strings.TrimPrefix(arg, "download ")); repo != "" {
-				return a.localModelDownloadCmd(repo)
-			}
-		case strings.HasPrefix(arg, "launch "):
-			if repo := strings.TrimSpace(strings.TrimPrefix(arg, "launch ")); repo != "" {
-				return a.localModelLaunchCmd(repo)
-			}
 		}
-		return a.localModelReportCmd()
 	})
 	r.Register("model", "pick provider and model", nil, func(a *App, arg string) tea.Cmd {
 		return a.push(viewModel)

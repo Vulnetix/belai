@@ -34,11 +34,18 @@ import (
 
 // Options configures a new agent session.
 type Options struct {
-	Cfg           run.Config
-	Client        *http.Client
-	Registry      *tools.Registry
-	Perms         permissions.Settings
-	Posture       posture.Policy
+	Cfg      run.Config
+	Client   *http.Client
+	Registry *tools.Registry
+	Perms    permissions.Settings
+	Posture  posture.Policy
+	// Live, when set, is the shared atomically-read posture/ask holder the
+	// session consults at each gate. The TUI owns one instance for the
+	// process so a toggle pressed mid-turn lands on the next gate check. When
+	// nil the session wraps Posture and AskDisabled in a fixed Live that never
+	// changes, which is what the one-shot CLI and hand-built test sessions
+	// want.
+	Live          *posture.Live
 	PlanMode      bool
 	MaxIterations int
 	PromptOptions prompt.Options
@@ -101,12 +108,11 @@ type Session struct {
 	client         *http.Client
 	registry       *tools.Registry
 	perms          permissions.Settings
-	posture        posture.Policy
+	live           *posture.Live
 	planMode       bool
 	allowExplore   bool
 	allowClarify   bool
 	allowAsk       bool
-	askDisabled    bool
 	allowPassLoop  bool
 	maxIter        int
 	cache          *rolemanager.Cache
@@ -235,6 +241,13 @@ func NewSession(o Options) (*Session, error) {
 	if reg == nil {
 		reg = tools.NewRegistry()
 	}
+	// The shared holder carries the effective posture and ask gate; when the
+	// caller supplied none the session wraps the snapshot options in a fixed
+	// holder that never changes.
+	live := o.Live
+	if live == nil {
+		live = posture.NewLive(o.Posture, o.AskDisabled)
+	}
 	// Both surfaces are built up front because plan mode is decided per turn:
 	// the classifier can route a single prompt to plan mode inside a session
 	// that was constructed in agent mode, and the request must then advertise
@@ -248,7 +261,7 @@ func NewSession(o Options) (*Session, error) {
 	var hs []*hooks.Hook
 	var runner *hooks.Runner
 	if dir, err := config.GlobalHooksDir(); err == nil {
-		if loaded, err := hooks.LoadDir(dir, o.Posture); err == nil && len(loaded) > 0 {
+		if loaded, err := hooks.LoadDir(dir, live.Policy()); err == nil && len(loaded) > 0 {
 			hs = loaded
 			runner = &hooks.Runner{Root: dir, Timeout: 5 * time.Second, MaxBytes: 64 * 1024}
 		}
@@ -270,12 +283,11 @@ func NewSession(o Options) (*Session, error) {
 		client:             o.Client,
 		registry:           reg,
 		perms:              o.Perms,
-		posture:            o.Posture,
+		live:               live,
 		planMode:           o.PlanMode,
 		allowExplore:       o.AllowExplore,
 		allowClarify:       o.AllowClarify,
 		allowAsk:           o.AllowAsk,
-		askDisabled:        o.AskDisabled,
 		allowPassLoop:      o.AllowPassLoop,
 		maxIter:            maxIter,
 		cache:              cache,
@@ -408,7 +420,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		}()
 	}
 
-	dec, err := pipe.Admit(ctx, clean, s.posture)
+	dec, err := pipe.Admit(ctx, clean, s.live.Policy())
 	if err != nil {
 		return run.Result{SanitizedPrompt: clean}, maybeCompact(err)
 	}
@@ -488,7 +500,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	// Harness-loaded skills enter the system prompt (SourceHarness provenance).
 	// The skill bodies are read only on invocation and are untrusted then.
 	if dir, err := config.GlobalSkillsDir(); err == nil {
-		if manifests, err := skills.LoadDir(dir, s.posture); err == nil {
+		if manifests, err := skills.LoadDir(dir, s.live.Policy()); err == nil {
 			for _, m := range manifests {
 				opts.Skills = append(opts.Skills, m.Name+": "+m.Description)
 			}
@@ -581,7 +593,7 @@ func (s *Session) drainSteer(ctx context.Context, pipe *rolemanager.Pipeline, em
 		}
 		clean := sanitize.Sanitize(text)
 		emit(Event{Kind: EventRoleManagerKind, Phase: RoleManagerPhaseSteer})
-		dec, err := pipe.Admit(ctx, clean, s.posture)
+		dec, err := pipe.Admit(ctx, clean, s.live.Policy())
 		if err != nil {
 			emit(Event{Kind: EventErrorKind, Err: err})
 			continue
@@ -614,7 +626,7 @@ func (s *Session) applyToolMethod(m run.ToolMethod) bool {
 
 // mismatchPolicy maps the tool_call_mismatch gate to a mismatch policy.
 func (s *Session) mismatchPolicy() rolemanager.ToolCallMismatchPolicy {
-	switch s.posture.Level(posture.ToolCallMismatch) {
+	switch s.live.Level(posture.ToolCallMismatch) {
 	case posture.Warn:
 		return rolemanager.PolicyStrip
 	case posture.Ignore:
@@ -684,7 +696,7 @@ func maybeCompact(err error) error {
 // always allows. matched reports whether an explicit rule decided the call.
 func (s *Session) decidePermission(tool, subject string) (dec permissions.Decision, rule string, matched bool) {
 	dec, rule = s.perms.Explain(tool, subject)
-	if rule == "" && s.posture.Level(posture.PermissionNoMatch) == posture.Enforce {
+	if rule == "" && s.live.Level(posture.PermissionNoMatch) == posture.Enforce {
 		return permissions.DecisionBlock, "", false
 	}
 	return dec, rule, rule != ""
@@ -738,12 +750,12 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 	// the operator disabled asking, in which case both an Ask decision and the
 	// mutating-default ask resolve to allow with no prompt.
 	mutates := tools.Mutates(tool)
-	if !s.askDisabled && (perm == permissions.DecisionAsk || (mutates && !matched)) {
+	if !s.live.AskDisabled() && (perm == permissions.DecisionAsk || (mutates && !matched)) {
 		if !s.allowAsk {
 			// Non-TTY policy: fall back to today's PermissionAskNoTTY posture.
 			// Enforce withholds naming the flag; warn/ignore falls through to
 			// allow.
-			if s.posture.Level(posture.PermissionAskNoTTY) == posture.Enforce {
+			if s.live.Level(posture.PermissionAskNoTTY) == posture.Enforce {
 				return fmt.Sprintf("tool result withheld: permission ask required for %q (pass -allow-ask-without-tty to allow without a TTY)", call.Name)
 			}
 		} else if !s.gateMutation(ctx, call, tool, emit) {
@@ -800,7 +812,7 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 	// classifier is not called at all rather than called and discarded.
 	// Sanitising still runs — turning the gates off means skipping the model
 	// round trip, not letting a tool result forge a harness block.
-	if s.posture.Level(posture.ToolResultUnsafe) == posture.Ignore {
+	if s.live.Level(posture.ToolResultUnsafe) == posture.Ignore {
 		return delimiters.Egress(sanitize.Sanitize(res.Content), s.pool)
 	}
 
@@ -832,7 +844,7 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 		return delimiters.Egress(dec.Content, s.pool)
 	}
 
-	if s.posture.Level(posture.ToolResultUnsafe) == posture.Warn {
+	if s.live.Level(posture.ToolResultUnsafe) == posture.Warn {
 		return fmt.Sprintf("tool result withheld: classified %s", dec.Sentinel)
 	}
 

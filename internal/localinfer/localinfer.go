@@ -1,32 +1,20 @@
-// Package localinfer manages a local inference server for the security
-// classifier: detect a running server or a launchable binary, launch it with a
-// health check, resolve HuggingFace model metadata, and shut the server down
-// with Signet. The classifier routes to the local server through the existing
-// "ollama" provider seam: set classifier.provider to ollama and OLLAMA_HOST to
-// the server's base URL.
 package localinfer
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/signet/internal/activity"
 	"github.com/vulnetix/signet/internal/httpclient"
+	"github.com/vulnetix/signet/internal/proc"
 )
-
-// DefaultPorts are the common local inference ports, probed for an
-// already-running server.
-var DefaultPorts = []int{11434, 18080, 8000}
 
 // Binary is a launchable local inference server.
 type Binary struct {
@@ -45,22 +33,70 @@ func Detect() (Binary, bool) {
 	return Binary{}, false
 }
 
-// Args returns the launch args for llama-server serving one HuggingFace GGUF
-// repo on 127.0.0.1:port. It is the default command for this device.
-func Args(repo string, port int) []string {
-	return []string{
-		"-hf", repo + ":Q4_K_M",
+// ArgsOptions controls how llama-server argv is built.
+type ArgsOptions struct {
+	Repo      string // HuggingFace repo id; used with Quant when ModelPath is empty
+	Quant     string // quantisation suffix, e.g. Q4_K_M
+	Port      int    // TCP port to bind
+	ModelPath string // local GGUF path; wins over Repo/Quant
+	HFRepo    string // alias for Repo; do not set both
+	CtxSize   int
+	NGL       int
+}
+
+// Args returns the launch args for llama-server. Exactly one of ModelPath or
+// a HuggingFace repo may be supplied; ModelPath wins. Defaults keep today's
+// sampling and performance settings: --jinja, loopback host, and the same
+// sampling flags.
+func Args(opts ArgsOptions) []string {
+	port := opts.Port
+	if port <= 0 {
+		port = 8080
+	}
+	quant := opts.Quant
+	if quant == "" {
+		quant = "Q4_K_M"
+	}
+	repo := firstNonEmpty(opts.HFRepo, opts.Repo)
+
+	ctx := opts.CtxSize
+	if ctx <= 0 {
+		ctx = 16384
+	}
+	ngl := opts.NGL
+	if ngl <= 0 {
+		ngl = 99
+	}
+
+	args := []string{
 		"--jinja",
 		"--temp", "1.0",
 		"--top-p", "0.95",
 		"--top-k", "64",
 		"--host", "127.0.0.1",
-		"--port", fmt.Sprintf("%d", port),
+		"--port", strconv.Itoa(port),
 		"--no-mmap",
 		"-fa", "on",
-		"--n-gpu-layers", "99",
-		"--ctx-size", "16384",
+		"--n-gpu-layers", strconv.Itoa(ngl),
+		"--ctx-size", strconv.Itoa(ctx),
 	}
+
+	if opts.ModelPath != "" {
+		args = append([]string{"-m", opts.ModelPath}, args...)
+	} else if repo != "" {
+		args = append([]string{"-hf", repo + ":" + quant}, args...)
+	}
+	return args
+}
+
+// firstNonEmpty returns the first non-empty string.
+func firstNonEmpty(ss ...string) string {
+	for _, s := range ss {
+		if s != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 // ProbeRunning returns the first base URL that answers GET /v1/models. It is
@@ -87,21 +123,67 @@ func ProbeRunning(ctx context.Context, bases []string) string {
 	return ""
 }
 
+// LaunchOptions controls the supervision of a freshly launched server.
+type LaunchOptions struct {
+	Deadline time.Duration // health-check timeout; zero uses 30s
+	HFToken  string        // passed to the child environment, never argv
+	Registry *activity.Registry
+	Pidfile  string
+	OnLine   func(string) // optional sink for stdout/stderr lines
+}
+
 // Launch starts the server and waits for {baseURL}/v1/models to answer. It
-// returns a stop function that kills the process and waits for it.
-func Launch(ctx context.Context, bin Binary, args []string, baseURL string) (stop func() error, err error) {
-	cmd := exec.CommandContext(ctx, bin.Path, args...)
-	if err := cmd.Start(); err != nil {
-		return nil, err
+// uses process groups, tees llama-server's output, registers the process in
+// the activity registry, and returns a stop function that SIGTERMs the group
+// then SIGKILLs after a short grace period.
+func Launch(ctx context.Context, bin Binary, args []string, baseURL string, opts LaunchOptions) (stop func() error, err error) {
+	if bin.Path == "" {
+		return nil, errors.New("no server binary")
 	}
-	stop = func() error {
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
-		return cmd.Wait()
+	if opts.Deadline <= 0 {
+		opts.Deadline = 30 * time.Second
 	}
 
-	deadline := time.Now().Add(30 * time.Second)
+	cmd := exec.CommandContext(ctx, bin.Path, args...)
+	proc.SetProcessGroup(cmd)
+
+	var handle *activity.Handle
+	if opts.Registry != nil {
+		handle = opts.Registry.Add(activity.Activity{
+			Kind:  activity.KindShell,
+			Label: bin.Name,
+			Argv:  append([]string{bin.Path}, args...),
+			State: activity.StateRunning,
+		}, func() {
+			if stop != nil {
+				_ = stop()
+			}
+		})
+	}
+
+	if opts.HFToken != "" {
+		cmd.Env = append(os.Environ(), "HF_TOKEN="+opts.HFToken)
+	}
+
+	tee := proc.NewLineTee(0, opts.OnLine)
+	cmd.Stdout = tee
+	cmd.Stderr = tee
+
+	if err := cmd.Start(); err != nil {
+		if handle != nil {
+			handle.Finish(0, false, err)
+		}
+		return nil, fmt.Errorf("start llama-server: %w", err)
+	}
+
+	pid := cmd.Process.Pid
+	if opts.Pidfile != "" {
+		_ = os.WriteFile(opts.Pidfile, []byte(strconv.Itoa(pid)), 0o600)
+	}
+
+	stop = makeStop(cmd, handle, opts.Pidfile)
+
+	deadline := time.Now().Add(opts.Deadline)
 	for time.Now().Before(deadline) {
 		if ProbeRunning(ctx, []string{baseURL}) == baseURL {
 			return stop, nil
@@ -113,211 +195,8 @@ func Launch(ctx context.Context, bin Binary, args []string, baseURL string) (sto
 		case <-time.After(250 * time.Millisecond):
 		}
 	}
+
+	tee.Flush()
 	_ = stop()
-	return nil, fmt.Errorf("local server did not become healthy at %s", baseURL)
-}
-
-// ModelFile is one downloadable file of a HuggingFace model.
-type ModelFile struct {
-	Name   string `json:"filename"`
-	Size   int64  `json:"size"`
-	SHA256 string `json:"sha256"`
-	IsGGUF bool
-}
-
-// ResolveModel fetches the HuggingFace model metadata and returns the largest
-// GGUF file plus its size and checksum. hfToken, when non-empty, is sent as a
-// Bearer token (gated models). SIGNET_HF_BASE_URL overrides the API host for
-// tests and proxies.
-func ResolveModel(ctx context.Context, repo, hfToken string) (ModelFile, error) {
-	base := strings.TrimRight(os.Getenv("SIGNET_HF_BASE_URL"), "/")
-	if base == "" {
-		base = "https://huggingface.co"
-	}
-	url := base + "/api/models/" + repo
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return ModelFile{}, err
-	}
-	if hfToken != "" {
-		req.Header.Set("authorization", "Bearer "+hfToken)
-	}
-	resp, err := httpclient.Default().Do(req)
-	if err != nil {
-		return ModelFile{}, fmt.Errorf("resolve model: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return ModelFile{}, fmt.Errorf("resolve model %s: status %d", repo, resp.StatusCode)
-	}
-	var meta struct {
-		Siblings []ModelFile `json:"siblings"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&meta); err != nil {
-		return ModelFile{}, fmt.Errorf("decode model metadata: %w", err)
-	}
-
-	var best ModelFile
-	for _, f := range meta.Siblings {
-		if !strings.HasSuffix(strings.ToLower(f.Name), ".gguf") {
-			continue
-		}
-		if f.Size > best.Size {
-			best = f
-			best.IsGGUF = true
-		}
-	}
-	if best.Name == "" {
-		return ModelFile{}, fmt.Errorf("no GGUF file found for %s", repo)
-	}
-	return best, nil
-}
-
-// ModelsDir returns <GlobalDir>/models, the download destination.
-func ModelsDir() (string, error) {
-	dir, err := config.GlobalDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "models"), nil
-}
-
-// Download fetches one model file into dir, resuming an existing partial file
-// via HTTP range requests, verifying its SHA-256 when the metadata carried one,
-// and renaming into place atomically. A partial file is removed on any
-// failure. SIGNET_HF_BASE_URL overrides the host for tests and proxies. An
-// optional progress callback receives (downloaded bytes, total bytes) as the
-// body streams.
-func Download(ctx context.Context, repo string, mf ModelFile, token, dir string, progress ...func(downloaded, total int64)) (string, error) {
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", err
-	}
-	dest := filepath.Join(dir, mf.Name)
-	part := dest + ".part"
-	defer func() {
-		// On any non-nil return the partial is removed; on success the rename
-		// has already moved it.
-		if _, err := os.Stat(part); err == nil {
-			_ = os.Remove(part)
-		}
-	}()
-
-	offset, err := resumeOffset(part)
-	if err != nil {
-		return "", err
-	}
-
-	base := strings.TrimRight(os.Getenv("SIGNET_HF_BASE_URL"), "/")
-	if base == "" {
-		base = "https://huggingface.co"
-	}
-	url := base + "/" + repo + "/resolve/main/" + mf.Name
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return "", err
-	}
-	if token != "" {
-		req.Header.Set("authorization", "Bearer "+token)
-	}
-	if offset > 0 {
-		req.Header.Set("range", fmt.Sprintf("bytes=%d-", offset))
-	}
-	resp, err := httpclient.Default().Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	// A resumed request must answer 206; a 200 means the server ignored the
-	// range and the partial must be restarted.
-	restart := false
-	switch resp.StatusCode {
-	case http.StatusOK:
-		restart = offset > 0
-	case http.StatusPartialContent:
-	default:
-		return "", fmt.Errorf("download %s/%s: status %d", repo, mf.Name, resp.StatusCode)
-	}
-
-	flags := os.O_CREATE | os.O_WRONLY
-	if restart {
-		flags |= os.O_TRUNC
-		offset = 0
-	} else {
-		flags |= os.O_APPEND
-	}
-	f, err := os.OpenFile(part, flags, 0o600)
-	if err != nil {
-		return "", err
-	}
-	src := io.Reader(resp.Body)
-	if len(progress) > 0 && progress[0] != nil {
-		src = &progressReader{r: resp.Body, got: offset, total: mf.Size, fn: progress[0]}
-	}
-	if _, err := io.Copy(f, src); err != nil {
-		f.Close()
-		return "", err
-	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		return "", err
-	}
-	if err := f.Close(); err != nil {
-		return "", err
-	}
-
-	if mf.SHA256 != "" {
-		if err := verifyChecksum(part, mf.SHA256); err != nil {
-			return "", err
-		}
-	}
-	if err := os.Rename(part, dest); err != nil {
-		return "", err
-	}
-	return dest, nil
-}
-
-func resumeOffset(part string) (int64, error) {
-	fi, err := os.Stat(part)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return 0, nil
-		}
-		return 0, err
-	}
-	return fi.Size(), nil
-}
-
-// progressReader reports download progress on every read.
-type progressReader struct {
-	r     io.Reader
-	got   int64
-	total int64
-	fn    func(int64, int64)
-}
-
-func (p *progressReader) Read(b []byte) (int, error) {
-	n, err := p.r.Read(b)
-	p.got += int64(n)
-	if p.fn != nil {
-		p.fn(p.got, p.total)
-	}
-	return n, err
-}
-
-func verifyChecksum(path, want string) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return err
-	}
-	got := hex.EncodeToString(h.Sum(nil))
-	if !strings.EqualFold(got, want) {
-		return fmt.Errorf("checksum mismatch: got %s want %s", got, want)
-	}
-	return nil
+	return nil, fmt.Errorf("local server did not become healthy at %s\n%s", baseURL, tee.Content())
 }

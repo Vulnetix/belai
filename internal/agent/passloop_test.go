@@ -444,7 +444,7 @@ func TestCompactBoundaryThreshold(t *testing.T) {
 	s := &Session{
 		cfg:      run.Config{Model: "test"},
 		settings: config.Settings{ContextWindows: map[string]int{"test": 1000}},
-		posture:  posture.Defaults(),
+		live:     posture.NewLive(posture.Defaults(), false),
 	}
 	long := strings.Repeat("a", 8000) // ~2000 estimated tokens
 	turns := []run.Turn{
@@ -465,7 +465,7 @@ func TestCompactBoundaryThreshold(t *testing.T) {
 	bigWindow := &Session{
 		cfg:      run.Config{Model: "test"},
 		settings: config.Settings{ContextWindows: map[string]int{"test": 1 << 20}},
-		posture:  posture.Defaults(),
+		live:     posture.NewLive(posture.Defaults(), false),
 	}
 	if _, ok := bigWindow.compactBoundary(context.Background(), pipe, turns); ok {
 		t.Fatalf("expected no compaction below the threshold")
@@ -536,7 +536,7 @@ func TestCompactBoundarySkipsOnFailure(t *testing.T) {
 			s := &Session{
 				cfg:      run.Config{Model: "test"},
 				settings: config.Settings{ContextWindows: tc.window},
-				posture:  posture.Defaults(),
+				live:     posture.NewLive(posture.Defaults(), false),
 			}
 			got, ok := s.compactBoundary(context.Background(), rolemanager.NewPipeline(tc.classifier), turns)
 			if ok {
@@ -562,7 +562,7 @@ func TestCompactBoundaryReplacesTurnsWithSummary(t *testing.T) {
 	s := &Session{
 		cfg:      run.Config{Model: "test"},
 		settings: config.Settings{ContextWindows: map[string]int{"test": 1000}},
-		posture:  posture.Defaults(),
+		live:     posture.NewLive(posture.Defaults(), false),
 	}
 	long := strings.Repeat("a", 8000)
 	turns := []run.Turn{

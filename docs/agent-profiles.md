@@ -22,7 +22,12 @@ where `GlobalDir()` honours `SIGNET_HOME` and otherwise resolves to
   "monitor_condition": "git status shows uncommitted changes",
   "reflection": true,
   "max_iterations": 5,
-  "autonomy": "supervised"
+  "autonomy": "supervised",
+  "provider": "llama-server",
+  "model": "default",
+  "effort": "low",
+  "guardrails": true,
+  "ask_permission": false
 }
 ```
 
@@ -40,6 +45,11 @@ where `GlobalDir()` honours `SIGNET_HOME` and otherwise resolves to
 | `reflection` | No | bool | When true, the model is asked to emit `<thinking>` or a `reflection` field before acting. |
 | `max_iterations` | No | int | Per-run iteration bound; defaults to the global `resilience.max_iterations` setting (10). |
 | `autonomy` | No | string | `supervised` (default) or `autonomous`. Both execute tools during a turn; the field decides only what happens when a `loop`-mode agent exhausts `max_iterations` and the evaluator returns `CONTINUE`. An autonomous profile resets the budget and continues; a supervised one is paused instead, so unattended unbounded tool use needs the explicit opt-in. |
+| `provider` | No | string | Model provider to use for this agent. Must be a built-in provider name or a configured custom-provider name. Omitted means inherit the session provider. A profile may only *name* a provider; it may never define one (no API key exfiltration). |
+| `model` | No | string | Model id to use for this agent. Applies to `provider` when set, otherwise to the session provider. Omitted means inherit the session/model default (`run.DefaultModel`). |
+| `effort` | No | string | Reasoning-effort hint: one of `low`, `medium`, `high`, `none`. Ignored by providers that do not support effort. Omitted means inherit the session setting. |
+| `guardrails` | No | bool | When set, overrides the guardrails switch for this agent. `true` enforces the default posture; `false` ignores every gate. Omitted means inherit `settings.guardrails`. |
+| `ask_permission` | No | bool | When set, overrides the permission-ask gate for this agent. `true` asks before mutating; `false` treats every permission decision as allow. Omitted means inherit `settings.ask_permission`. |
 
 ### Validation rules
 
@@ -49,6 +59,9 @@ where `GlobalDir()` honours `SIGNET_HOME` and otherwise resolves to
 - `autonomy` must be `supervised` or `autonomous`.
 - `schedule` is required when `mode` is `scheduled`; ignored otherwise.
 - `monitor_condition` is required when `mode` is `monitor`; ignored otherwise.
+- `effort` must be one of `low`, `medium`, `high`, `none` when set.
+- `provider` must be a built-in provider name or a valid custom-provider name when set; profiles may *name* providers but never define them.
+- A profile that sets `guardrails: false`, `autonomy: autonomous`, a looping mode (`loop`, `scheduled`, `monitor`), and omits `max_iterations` is rejected. Unattended, unbounded, and unguarded is three relaxations stacked, which is too many for a single definition.
 
 ## Background agent lifecycle
 
@@ -138,7 +151,8 @@ second time. A bounded loop hid that; a restarting one compounds it every pass.
 
 In the list view, `↑`/`↓` selects a profile, `enter` or `e` opens the editor, and
 `esc` returns to chat. The editor exposes the description, mode, schedule,
-monitor condition, autonomy, max iterations, reflection, and system prompt.
+monitor condition, autonomy, max iterations, reflection, provider, model, effort,
+guardrails, ask permission, and system prompt.
 Toggles and choose fields are cycled with `space` or `enter`; text fields open
 an inline editor and commit with `enter`. After `/agent create` the new profile
 is selected and the editor opens automatically.
@@ -199,6 +213,30 @@ for. The `/agent` opening never does — a prompt being drafted in the composer
 is not a submit, so engaging an agent there leaves it alone. Choosing
 `(none)`, or pressing `esc`, discards the pending submit rather than sending
 a turn with no carrier.
+
+## Per-agent defaults and precedence
+
+An agent profile is the third layer of the posture and model configuration
+stack. Highest precedence wins:
+
+```
+CLI flag  >  live TUI toggle (f3/f4, /yolo)  >  agent profile  >  settings.json  >  state.json  >  defaults
+```
+
+- **CLI flags** (`--guardrails`, `--ask-permission`, `--provider`, `--model`,
+  `--effort`) override everything.
+- **Live toggles** (`f3`, `f4`, `/yolo`) override the profile and settings.
+- **Agent profile** fields (`provider`, `model`, `effort`, `guardrails`,
+  `ask_permission`) override `settings.json` and `state.json` for the running
+  agent session, but they are themselves overridden by any explicit operator
+  toggle or CLI flag.
+- For posture, the project posture floor is applied after the profile value,
+  so a profile can loosen settings but cannot loosen the project's own
+  `postures:` preference.
+
+A profile that lowers `guardrails` or `ask_permission` is announced in the
+transcript and traced under `SIGNET_TRACE` (`profile_posture_drop`) so an
+unattended posture drop is never silent.
 
 Engaging resolves through `agent.CarrierOptions`, which tries
 `profiles.Load` first and falls back to `agentprofile.Load` — so

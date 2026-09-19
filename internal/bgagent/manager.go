@@ -66,6 +66,12 @@ type AgentInstance struct {
 	iteration  int
 	lastOutput string
 	workdir    string
+	// live is this instance's own posture holder, seeded from the manager's
+	// current policy stricter-of-merged with the project. It is set once at
+	// StartIn and then only mutated through Set (atomic), so the field itself
+	// never races; SetPosture updates it mid-turn and the next gate check in
+	// the running session reads the new value.
+	live *posture.Live
 	// resume wakes a paused loop-mode agent. Buffered size 1 so Resume never
 	// blocks the UI; the loop re-checks State after waking.
 	resume chan struct{}
@@ -98,15 +104,19 @@ func NewManager(workdir string, cfg run.Config, client *http.Client, settings co
 	}
 }
 
-// SetPosture replaces the policy future agent sessions are built with. The
-// operator's guardrails switch can flip while agents are running, and a
-// manager that kept the policy it was constructed with would go on enforcing
-// gates the footer says are off. Agents already mid-turn keep the policy their
-// session was built with; the next turn picks this up.
+// SetPosture replaces the policy future agent sessions are built with and
+// pushes it into every running instance's Live, so a guardrails toggle lands on
+// the next gate check inside an agent already mid-turn rather than only on its
+// next session. The project layer still only tightens (choosePosture).
 func (m *Manager) SetPosture(p posture.Policy) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.posture = p
+	for _, inst := range m.agents {
+		if inst.live != nil {
+			inst.live.Set(choosePosture(p, inst.workdir), false)
+		}
+	}
 }
 
 // Posture returns the policy future agent sessions will be built with.
@@ -147,6 +157,7 @@ func (m *Manager) StartIn(workdir, name string, profile agentprofile.AgentProfil
 		Cancel:  cancel,
 		resume:  make(chan struct{}, 1),
 		workdir: workdir,
+		live:    posture.NewLive(choosePosture(m.posture, workdir), false),
 	}
 	m.agents[name] = inst
 	go m.runLoop(ctx, inst)
@@ -541,20 +552,51 @@ func (m *Manager) buildSession(inst *AgentInstance) (*agent.Session, error) {
 		promptOpts.Caveman = true
 	}
 
-	posture := choosePosture(m.posture, workdir)
+	base := m.posture
+	if profile.Guardrails != nil {
+		if *profile.Guardrails {
+			base = posture.Defaults()
+		} else {
+			base = posture.AllIgnore()
+		}
+	}
+	pol := choosePosture(base, workdir)
+	live := inst.live
+	if live == nil {
+		live = posture.NewLive(pol, true)
+	}
+
+	cfg := m.cfg
+	if profile.Provider != "" {
+		cfg.Provider = profile.Provider
+	}
+	if profile.Model != "" {
+		cfg.Model = profile.Model
+	} else if profile.Provider != "" && m.cfg.Provider != profile.Provider {
+		cfg.Model = run.DefaultModel(profile.Provider)
+	}
+	if profile.Effort != "" {
+		cfg.Effort = profile.Effort
+	}
+
 	return agent.NewSession(agent.Options{
-		Cfg:           m.cfg,
+		Cfg:           cfg,
 		Client:        m.client,
 		Registry:      reg,
 		Perms:         perms,
-		Posture:       posture,
+		Live:          live,
 		Workdir:       workdir,
 		Settings:      m.settings,
 		PromptOptions: promptOpts,
 		MaxIterations: 1,
 		Caps:          caps,
 		RepoIndex:     ix,
-		PlanSurface:   tools.PlanSurface{GuardrailsOff: !m.settings.GuardrailsEnabled(), Perms: perms},
+		// The plan-mode surface is frozen for this session: GuardrailsOff reads
+		// the persisted setting, which the TUI's guardrails override does not
+		// touch. Re-deriving it mid-turn would break the advertisement/
+		// enforcement agreement, so it stays as-built; the wider surface lands
+		// on the next turn through SetPosture + a fresh session.
+		PlanSurface: tools.PlanSurface{GuardrailsOff: !m.settings.GuardrailsEnabled(), Perms: perms},
 	})
 }
 

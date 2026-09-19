@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/vulnetix/signet/internal/provider"
 )
 
 // AgentProfile is a named, reusable background-agent definition.
@@ -26,6 +28,11 @@ type AgentProfile struct {
 	Reflection       bool     `json:"reflection,omitempty"`
 	MaxIterations    int      `json:"max_iterations,omitempty"`
 	Autonomy         string   `json:"autonomy,omitempty"`
+	Provider         string   `json:"provider,omitempty"`
+	Model            string   `json:"model,omitempty"`
+	Effort           string   `json:"effort,omitempty"`
+	Guardrails       *bool    `json:"guardrails,omitempty"`
+	AskPermission    *bool    `json:"ask_permission,omitempty"`
 	// Builtin is true for embedded profiles and never persisted to disk.
 	Builtin bool `json:"-"`
 }
@@ -51,9 +58,21 @@ var validModes = map[string]bool{
 	ModeMonitor:   true,
 }
 
+// isLoopMode reports whether a mode repeats unattended.
+func isLoopMode(mode string) bool {
+	return mode == ModeLoop || mode == ModeScheduled || mode == ModeMonitor
+}
+
 var validAutonomy = map[string]bool{
 	AutonomySupervised: true,
 	AutonomyAutonomous: true,
+}
+
+var validEfforts = map[string]bool{
+	"low":    true,
+	"medium": true,
+	"high":   true,
+	"none":   true,
 }
 
 // knownToolNames is the conservative built-in set used by Validate.
@@ -144,6 +163,19 @@ func (p AgentProfile) Validate() error {
 	}
 	if p.Autonomy != "" && !validAutonomy[p.Autonomy] {
 		return fmt.Errorf("invalid autonomy %q (want supervised or autonomous)", p.Autonomy)
+	}
+	if p.Effort != "" && !validEfforts[p.Effort] {
+		return fmt.Errorf("invalid effort %q (want low, medium, high, or none)", p.Effort)
+	}
+	if p.Provider != "" && !provider.Builtin(p.Provider) && !provider.ValidCustomName(p.Provider) {
+		return fmt.Errorf("invalid provider %q (not a built-in or valid custom-provider name)", p.Provider)
+	}
+	// Fail-closed: unattended, unbounded, and unguarded is three relaxations
+	// stacked, which is too many for a single profile.
+	if p.Guardrails != nil && !*p.Guardrails &&
+		p.Autonomy == AutonomyAutonomous && isLoopMode(p.Mode) &&
+		p.MaxIterations <= 0 {
+		return errors.New("guardrails: off with autonomy: autonomous and a looping mode requires max_iterations")
 	}
 	clean := strings.Trim(unsafeName.ReplaceAllString(p.Name, "_"), ".-_")
 	if clean == "" {

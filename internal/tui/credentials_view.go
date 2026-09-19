@@ -180,7 +180,7 @@ func (a *App) handleCredentialKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			if len(spec) > 0 && a.resolver != nil {
 				f := spec[a.credentialState.fieldIdx]
-				if p == "ollama" {
+				if p == "ollama" || p == "llama-server" {
 					if f.Name == "port" && !validOllamaPort(val) {
 						return a, nil
 					}
