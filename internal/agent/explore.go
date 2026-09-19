@@ -35,7 +35,16 @@ func (s *Session) exploreTurns(ctx context.Context, decision rolemanager.ModeDec
 	if decision.Mode == modes.ModePlan && !s.settings.PlanExploreEnabled() {
 		return nil
 	}
-	return s.runExploreTasks(ctx, explore.Plan(clean, decision), "explore", pipe, emit)
+	tasks := explore.Plan(clean, decision)
+	if decision.Mode == modes.ModePlan && s.repoMap != nil && len(s.repoMap.Entrypoints) > 0 {
+		// Enrich the no-reference survey with the concrete entrypoints the
+		// repo map already computed, so the subagent investigates real files
+		// rather than rediscovering them.
+		if len(tasks) > 0 && tasks[0].Reference == "repository structure" {
+			tasks = explore.PlanSurveyWithEntrypoints(clean, s.repoMap.Entrypoints)
+		}
+	}
+	return s.runExploreTasks(ctx, tasks, "explore", pipe, emit)
 }
 
 // exploreContextDigest renders exploration findings as the plain-text context

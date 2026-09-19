@@ -274,12 +274,27 @@ func PlanGoalSurvey(goalText string) []Task {
 // PlanSurvey is the plan-mode twin of PlanGoalSurvey: it surveys the
 // repository when the prompt gives the model nothing to hold onto.
 func PlanSurvey(promptText string) []Task {
+	return planSurvey(promptText, nil)
+}
+
+// PlanSurveyWithEntrypoints is PlanSurvey enriched with the concrete
+// entrypoints from the repository map, so the "entry points" survey task names
+// real files instead of asking the model to rediscover them.
+func PlanSurveyWithEntrypoints(promptText string, entrypoints []string) []Task {
+	return planSurvey(promptText, entrypoints)
+}
+
+func planSurvey(promptText string, entrypoints []string) []Task {
+	entryPrompt := "Identify the entry points and the modules most relevant to the goal. Goal: " + promptText
+	if len(entrypoints) > 0 {
+		entryPrompt = fmt.Sprintf("Investigate these entry points: %s. Report how they are wired and which is most relevant to: %s", strings.Join(entrypoints, ", "), promptText)
+	}
 	surveys := []struct {
 		reference string
 		prompt    string
 	}{
 		{"repository structure", "Survey the repository structure: list the top-level directories, the main packages, and how they relate. Also list any locally available related repositories. Goal: " + promptText},
-		{"entry points", "Identify the entry points and the modules most relevant to the goal. Goal: " + promptText},
+		{"entry points", entryPrompt},
 		{"tests and docs", "Find the existing tests and documentation that bear on the goal, and report their locations. Goal: " + promptText},
 	}
 	tasks := make([]Task, 0, len(surveys))
