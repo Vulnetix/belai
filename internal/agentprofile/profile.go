@@ -87,6 +87,7 @@ var knownToolNames = map[string]bool{
 	"WebFetch":     true,
 	"WebSearch":    true,
 	"Write":        true,
+	"update_plan":  true,
 }
 
 var unsafeName = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)

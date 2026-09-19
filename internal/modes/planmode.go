@@ -14,9 +14,10 @@ import (
 type PlanOption string
 
 const (
-	PlanExecute PlanOption = "execute"
-	PlanStay    PlanOption = "stay"
-	PlanRefine  PlanOption = "refine"
+	PlanExecute    PlanOption = "execute"
+	PlanExecuteNew PlanOption = "execute_new"
+	PlanStay       PlanOption = "stay"
+	PlanRefine     PlanOption = "refine"
 )
 
 // PlanRoute is the outcome of routing a plan option.
@@ -29,8 +30,8 @@ type PlanRoute struct {
 // plan mode (full tools restored); Stay and Refine remain in plan mode.
 func RoutePlanOption(opt PlanOption) (PlanRoute, error) {
 	switch opt {
-	case PlanExecute:
-		return PlanRoute{Mode: ModeAgent, Action: "execute"}, nil
+	case PlanExecute, PlanExecuteNew:
+		return PlanRoute{Mode: ModeAgent, Action: string(opt)}, nil
 	case PlanStay:
 		return PlanRoute{Mode: ModePlan, Action: "stay"}, nil
 	case PlanRefine:

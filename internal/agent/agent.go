@@ -22,6 +22,7 @@ import (
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/prompt"
 	"github.com/vulnetix/signet/internal/repoindex"
+	"github.com/vulnetix/signet/internal/repomap"
 	"github.com/vulnetix/signet/internal/resilience"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
@@ -88,6 +89,10 @@ type Options struct {
 	// PlanSurface is the plan-mode relaxation surface. The zero value is the
 	// fail-closed surface: no write tools, no Bash.
 	PlanSurface tools.PlanSurface
+	// RepoMap is the harness-computed repository map for this session's
+	// workdir. It enters the system block as facts only (paths, counts,
+	// commands, sizes) — never repository prose.
+	RepoMap *repomap.Map
 	// SkipNonceSeed skips the SeedFromProvider GET and seeds the pool locally.
 	// A subagent sets this: it discards the provider-seeded pool one line later
 	// in favour of a fresh local pool, so the GET is a wasted round trip.
@@ -119,6 +124,7 @@ type Session struct {
 	caps           tools.Capabilities
 	repoIndex      repoindex.Index
 	planSurface    tools.PlanSurface
+	repoMap        *repomap.Map
 	opts           prompt.Options
 	workdir        string
 	state          config.State
@@ -294,6 +300,7 @@ func NewSession(o Options) (*Session, error) {
 		caps:               o.Caps,
 		repoIndex:          o.RepoIndex,
 		planSurface:        planSurface,
+		repoMap:            o.RepoMap,
 		planRevision:       o.PlanRevision,
 		opts:               o.PromptOptions,
 		workdir:            o.Workdir,
@@ -511,6 +518,9 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	// request advertises, so the briefing cannot promise a tool the model
 	// will not be given.
 	opts.Tools = s.toolDocs()
+	if s.repoMap != nil {
+		opts.RepoMap = prompt.RepoMapBlock(*s.repoMap)
+	}
 
 	system, err := run.SealSystem(s.cfg, s.pool, opts)
 	if err != nil {

@@ -71,13 +71,19 @@ func NextRevision(workdir, base string) int {
 	return revision + 1
 }
 
-// Record writes a plan file containing the model's reply verbatim (after
-// sanitization) and returns the recorded plan metadata, absolute path, and
-// any error. The sanitization step is required because approved plan text
-// can re-enter the system prompt via prompt.CarrierPlan.
+// Record writes a plan file and returns the recorded plan metadata, absolute
+// path, and any error. The content is sanitised (mandatory: approved plan text
+// can re-enter the system prompt via prompt.CarrierPlan). When the content
+// parses as a structured plan document (it has numbered steps), it is
+// canonicalised through Doc.Render so every recorded plan has one stable shape
+// regardless of how the model formatted it; unstructured fallback replies are
+// recorded verbatim after sanitisation.
 func Record(workdir, prompt, reply string, at time.Time, revision int) (Plan, string, error) {
 	name := RecordName(prompt, at, revision)
 	content := sanitize.Sanitize(reply)
+	if doc, err := ParseDoc(content); err == nil {
+		content = doc.Render()
+	}
 	path, err := Save(workdir, Plan{Name: name, Content: content})
 	if err != nil {
 		return Plan{}, "", err

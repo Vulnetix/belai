@@ -9,6 +9,7 @@ import (
 	"github.com/vulnetix/signet/internal/permissions"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/signet/internal/todos"
 	"github.com/vulnetix/signet/internal/tools"
 	"github.com/vulnetix/signet/internal/transcript"
 )
@@ -57,8 +58,49 @@ type passOutcome struct {
 	// the pass to stop the spin.
 	withheld int
 	// planExit is set when the model called ExitPlanMode. The caller treats
-	// this as a clean completion signal rather than a normal no-tool exit.
+	// planExit is true when the pass called ExitPlanMode with a valid plan.
+	// The pass loop treats this as a clean completion signal rather than a
+	// normal no-tool exit.
 	planExit bool
+	// planText is the plan argument the model handed to ExitPlanMode. It is
+	// threaded to the plan file so the recorded artifact is the deliberately
+	// authored plan, not the latest assistant reply.
+	planText string
+	// updatePlan is a checklist the model reported through the update_plan
+	// tool. When non-nil the pass loop adopts it into the shared todo list.
+	updatePlan *todos.List
+}
+
+// updatePlanFromArgs reconstructs the shared todo list from an update_plan
+// call's arguments, mirroring tools.UpdatePlan.Execute so the pass loop can
+// adopt the model's reported checklist into the ledger without a second write
+// path.
+func updatePlanFromArgs(args map[string]any) (todos.List, bool) {
+	raw, ok := args["plan"].([]any)
+	if !ok || len(raw) == 0 {
+		return todos.List{}, false
+	}
+	var items []todos.Item
+	for i, r := range raw {
+		m, ok := r.(map[string]any)
+		if !ok {
+			return todos.List{}, false
+		}
+		step, _ := m["step"].(string)
+		status, _ := m["status"].(string)
+		if step == "" {
+			return todos.List{}, false
+		}
+		st := todos.StatusPending
+		switch status {
+		case "in_progress":
+			st = todos.StatusActive
+		case "completed":
+			st = todos.StatusDone
+		}
+		items = append(items, todos.Item{N: i + 1, Text: step, Status: st})
+	}
+	return todos.List{Items: items}, true
 }
 
 // callUnit is one parsed, permission-checked tool call, used to decide the
@@ -80,7 +122,9 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 	var withheld int
 	var text string
 	var lastText string
+	var updatePlan *todos.List
 	for i := 0; i < s.maxIter; i++ {
+		updatePlan = nil
 		turns = append(turns, s.drainSteer(ctx, pipe, emit)...)
 		assistant, err := s.streamTurnRetry(ctx, system, turns, streaming, emit)
 		if err != nil {
@@ -176,6 +220,7 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		productiveIter := false
 		allWithheld := len(units) > 0
 		planExited := false
+		planText := ""
 		for i := 0; i < len(units); i++ {
 			u := units[i]
 			if i >= concurrentEnd {
@@ -199,6 +244,13 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 			switch {
 			case toolResult == tools.ExitPlanModeSentinel:
 				planExited = true
+				if p, ok := u.args["plan"].(string); ok {
+					planText = p
+				}
+			case u.call.Name == "update_plan":
+				if l, ok := updatePlanFromArgs(u.args); ok {
+					updatePlan = &l
+				}
 			case !strings.HasPrefix(toolResult, "tool result withheld:"):
 				productiveIter = true
 				allWithheld = false
@@ -215,16 +267,16 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 			withheld = 0
 		}
 		if planExited {
-			return passOutcome{reply: assistant.Text, usage: assistant.Usage, text: text, lastText: lastText, productive: productive, planExit: true}, turns, nil
+			return passOutcome{reply: assistant.Text, usage: assistant.Usage, text: text, lastText: lastText, productive: productive, planExit: true, planText: planText, updatePlan: updatePlan}, turns, nil
 		}
 		if withheld == 2 {
 			turns = append(turns, directiveTurns("Writes are unavailable in plan mode. Put the plan in your reply text, then call ExitPlanMode to finish.")...)
 			continue
 		}
 		if withheld >= 3 {
-			return passOutcome{exhausted: true, text: text, lastText: lastText, productive: productive, withheld: withheld}, turns, nil
+			return passOutcome{exhausted: true, text: text, lastText: lastText, productive: productive, withheld: withheld, updatePlan: updatePlan}, turns, nil
 		}
 	}
 
-	return passOutcome{exhausted: true, text: text, lastText: lastText, productive: productive, withheld: withheld}, turns, nil
+	return passOutcome{exhausted: true, text: text, lastText: lastText, productive: productive, withheld: withheld, updatePlan: updatePlan}, turns, nil
 }

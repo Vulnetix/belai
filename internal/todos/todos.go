@@ -86,6 +86,16 @@ func (l *List) syncActive() {
 	}
 }
 
+// Adopt replaces the list's items with a model-reported checklist (from the
+// update_plan tool) and re-syncs the active item.
+func (l *List) Adopt(items []Item) {
+	if l.Cleared {
+		return
+	}
+	l.Items = items
+	l.syncActive()
+}
+
 // ApplyMarkers advances the list from [DONE:n] markers in model-authored
 // assistant text.
 //

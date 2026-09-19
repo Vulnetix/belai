@@ -24,6 +24,7 @@ import (
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/prompt"
 	"github.com/vulnetix/signet/internal/repoindex"
+	"github.com/vulnetix/signet/internal/repomap"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/session"
 	"github.com/vulnetix/signet/internal/tools"
@@ -327,6 +328,7 @@ func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *ht
 	reg := tools.DefaultWithCaps(workdir, settings.ReadOnlyEnabled(), caps, ix)
 
 	perms := permissions.From(settings.Permissions.Allow, settings.Permissions.Ask, settings.Permissions.Deny)
+	repoMap := repomap.Scan(ctx, workdir)
 
 	var promptOpts prompt.Options
 	if settings.Caveman != nil && *settings.Caveman {
@@ -353,6 +355,7 @@ func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *ht
 		// Top-level goal-mode prompts may run the unbounded pass loop; a
 		// subagent never does.
 		AllowPassLoop: true,
+		RepoMap:       &repoMap,
 	})
 	if err != nil {
 		return run.Result{}, err

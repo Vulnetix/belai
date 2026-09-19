@@ -13,8 +13,11 @@ import (
 
 // Property is a JSON-schema property for a tool definition.
 type Property struct {
-	Type        string `json:"type"`
-	Description string `json:"description,omitempty"`
+	Type        string              `json:"type"`
+	Description string              `json:"description,omitempty"`
+	Items       *Property           `json:"items,omitempty"`
+	Properties  map[string]Property `json:"properties,omitempty"`
+	Required    []string            `json:"required,omitempty"`
 }
 
 // Definition is the static metadata exposed to the model for a tool.

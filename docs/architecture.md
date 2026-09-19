@@ -670,6 +670,30 @@ Business rules and edge cases:
 - **Explore subagents build the plan surface directly**
   (`DefaultWithCaps(...).Plan()`) rather than relying on the gate alone, so
   the exploration preamble cannot promise a `Bash` the gate will refuse.
+
+**The plan is a structured document.** `ExitPlanMode` takes a required `plan`
+argument — the full plan in markdown with `## Summary`, `## Steps` (numbered,
+with optional `- Files:` and `- Verify:` sub-bullets), `## Test Plan`,
+`## Assumptions`, and `## Risks`. The tool sanitises it, parses it with
+`plans.ParseDoc` (which fails closed on an empty or zero-step plan), and only
+then returns the sentinel; the pass loop threads the plan text to
+`plans.Record`, which canonicalises it through `Doc.Render` so the file on
+ disk has one stable shape regardless of the model's formatting. `update_plan`
+(the Codex checklist tool, accepted here in plan mode too) drives the
+planning todo list; the `[DONE:n]` marker convention remains as a fallback.
+
+### Repository map
+
+Every session's system prompt may carry a **harness-computed repository map**
+(`internal/repomap`), scanned once at startup. It holds facts only — module
+root, branch, HEAD, dirty flag, remotes, language counts by extension,
+detected build/test/fmt/lint commands from a fixed file table
+(`justfile`, `Makefile`, `go.mod`, `package.json`, `Cargo.toml`,
+`pyproject.toml`), entrypoints, top-level layout, and the presence/size of
+`AGENTS.md`/`CLAUDE.md` — and never repository file contents. That is the
+invariant that lets the map enter the system block: repository prose still
+reaches the model only through `RepoRead`/`Read`, which classify. The map is
+an accelerant, never a gate; a failed or empty scan renders nothing.
 - Investigation in plan mode goes through `Read`, `Grep`, `Glob`, `Cd`, and
   the native read-only catalogue (`Cat`, `LS`, `Find`, `Git`, `JQ`, …).
 - Toggle via `/mode plan`, `shift+tab`, `f5`, or `--plan`; `/todos` shows

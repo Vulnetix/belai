@@ -18,7 +18,15 @@ func (s *Session) recordPlan(res run.Result, prompt string, emit func(Event)) ru
 	if !s.allowPassLoop || res.PlanSentinel == "" {
 		return res
 	}
-	if res.Reply == "" {
+	// The deliberately authored plan (the ExitPlanMode plan argument) is the
+	// authoritative artifact. When the turn exited through the evaluator with
+	// no ExitPlanMode call, fall back to the latest reply so no path loses its
+	// artifact.
+	content := res.PlanText
+	if content == "" {
+		content = res.Reply
+	}
+	if content == "" {
 		// Nothing to record.
 		return res
 	}
@@ -31,7 +39,7 @@ func (s *Session) recordPlan(res run.Result, prompt string, emit func(Event)) ru
 	} else {
 		rev = plans.NextRevision(s.workdir, base)
 	}
-	plan, path, err := plans.Record(s.workdir, prompt, res.Reply, now, rev)
+	plan, path, err := plans.Record(s.workdir, prompt, content, now, rev)
 	if err != nil {
 		emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("plan file not recorded: %v", err)})
 		return res

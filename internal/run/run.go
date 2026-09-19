@@ -1371,6 +1371,10 @@ type Result struct {
 	// PlanName is the plan slug recorded from the prompt. Empty in agent/goal
 	// mode or when recording failed.
 	PlanName string
+	// PlanText is the plan the model deliberately authored via the ExitPlanMode
+	// plan argument. Empty when the turn exited plan mode through the
+	// evaluator rather than an explicit ExitPlanMode call.
+	PlanText string
 	Passes   int
 }
 

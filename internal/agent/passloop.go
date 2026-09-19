@@ -274,6 +274,15 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 		// Maintain the shared todo list from assistant text only, then tell
 		// the TUI when it changed so it can render and persist it.
 		l.advanceTodos(out.text)
+		if out.updatePlan != nil {
+			if !l.hasList {
+				l.list = todos.New(l.goalText, nil)
+				l.hasList = true
+			}
+			l.list.Adopt(out.updatePlan.Items)
+			list := l.list
+			emit(Event{Kind: EventTodosKind, Todos: &list})
+		}
 		if l.todoChanged && l.hasList {
 			list := l.list
 			emit(Event{Kind: EventTodosKind, Todos: &list})

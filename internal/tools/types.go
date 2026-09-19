@@ -15,6 +15,9 @@ const (
 	KindExplore   Kind = "explore"
 	KindWrite     Kind = "write"
 	KindEdit      Kind = "edit"
+	// KindUpdatePlan is the shaped, harness-composed result of the update_plan
+	// checklist-progress tool. It is read-only and sanitise-only.
+	KindUpdatePlan Kind = "update_plan"
 	// KindNative identifies the first-class read-only command tools from the
 	// local catalogue (Cat, Find, Git, JQ, …). Every native tool shells out
 	// to a fixed command with a fixed argument shape, so the kind is read-only
@@ -32,7 +35,7 @@ const (
 // mutating kind into the concurrent read-only fan-out.
 var AllKinds = []Kind{
 	KindRead, KindWebSearch, KindWebFetch, KindBash, KindGrep, KindGlob,
-	KindExplore, KindWrite, KindEdit, KindNative, KindRemote,
+	KindExplore, KindWrite, KindEdit, KindNative, KindRemote, KindUpdatePlan,
 }
 
 // readOnlyKinds is the closed allowlist of kinds that only read. A Kind absent
@@ -40,14 +43,15 @@ var AllKinds = []Kind{
 // kind without registering it here makes it run on the sequential path rather
 // than racing the concurrent read-only fan-out.
 var readOnlyKinds = map[Kind]bool{
-	KindRead:      true,
-	KindWebSearch: true,
-	KindWebFetch:  true,
-	KindGrep:      true,
-	KindGlob:      true,
-	KindExplore:   true,
-	KindNative:    true,
-	KindRemote:    true,
+	KindRead:       true,
+	KindWebSearch:  true,
+	KindWebFetch:   true,
+	KindGrep:       true,
+	KindGlob:       true,
+	KindExplore:    true,
+	KindNative:     true,
+	KindRemote:     true,
+	KindUpdatePlan: true,
 }
 
 // ReadOnly reports whether a tool of this kind only reads and never mutates

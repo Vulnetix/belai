@@ -32,6 +32,11 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   itself, a fixed argv's output — so they skip the round trip. A kind absent
   from `tools.classifierKinds` is sanitize-only, so adding a tool whose
   content is arbitrary means adding its kind there.
+- **The repo map is harness-computed facts only.** It may contain paths,
+  counts, detected commands, git metadata and file sizes, and never repository
+  file contents. Repository prose reaching the model stays on the
+  `RepoRead`/`Read` path, which classifies. This is what permits the map in the
+  system block.
 - **Plan mode has no Bash by default.** Plan mode advertises and enforces
   the fail-closed surface (`Registry.PlanWith` and `modes.ToolAllowed`):
   no mutating tools and no `Bash`. A read-only `Bash` returns only when an
@@ -86,3 +91,9 @@ than `string()` or `%s` on the sentinel value.
 - Fail closed by default; relaxation is an explicit user opt-in.
 - Every new package gets a package doc comment and unit tests.
 - Keep package boundaries narrow; reuse `internal/config` for paths and state.
+- **Align tool names and schemas to existing harnesses.** Models are trained
+  on `ExitPlanMode`, `update_plan`, `Read`, `Grep`, `WebFetch`. A trained name
+  with a trained argument shape is obeyed more reliably than an equivalent
+  invented one, so a new tool takes the established name and schema unless no
+  equivalent exists. Document any deliberate divergence in the tool description
+  (as `update_plan`-in-plan-mode does).

@@ -31,7 +31,7 @@ func TestPlanReviewViewContainsPathAndOptions(t *testing.T) {
 	if !strings.Contains(v, "/tmp/plan-fix.md") {
 		t.Fatalf("view missing plan path:\n%s", v)
 	}
-	for _, want := range []string{"approve", "refine", "cancel"} {
+	for _, want := range []string{"approve", "new session", "edit", "refine", "cancel"} {
 		if !strings.Contains(v, want) {
 			t.Fatalf("view missing option %q:\n%s", want, v)
 		}
@@ -45,6 +45,14 @@ func TestPlanReviewKeyNavigation(t *testing.T) {
 	a.viewStack = []viewState{viewPlanReview}
 	a.planReview = newPlanReviewState("plan", "/tmp/plan.md")
 
+	a.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if a.planReview.selected != planReviewApproveNew {
+		t.Fatalf("down: selected = %d, want approve-new", a.planReview.selected)
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if a.planReview.selected != planReviewEdit {
+		t.Fatalf("down: selected = %d, want edit", a.planReview.selected)
+	}
 	a.Update(tea.KeyMsg{Type: tea.KeyDown})
 	if a.planReview.selected != planReviewRefine {
 		t.Fatalf("down: selected = %d, want refine", a.planReview.selected)

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/vulnetix/signet/internal/plans"
+	"github.com/vulnetix/signet/internal/prompt"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/sanitize"
@@ -150,6 +151,10 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 		}
 
 		start := len(turns)
+		// The planning contract rides a hidden harness directive, sealed at
+		// egress and never rendered in the transcript: full on pass 1 and
+		// every fifth pass, a one-line reminder in between.
+		turns = append(turns, directiveTurns(prompt.PlanDirective(l.passes))...)
 		out, turns, err := s.pass(ctx, pipe, system, turns, streaming, emit)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -169,6 +174,15 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 
 		l.advancePlan(out.text)
 		l.lastText = out.lastText
+		if out.updatePlan != nil {
+			if !l.hasList {
+				l.list = todos.New(l.context, nil)
+				l.hasList = true
+			}
+			l.list.Adopt(out.updatePlan.Items)
+			list := l.list
+			emit(Event{Kind: EventTodosKind, Todos: &list})
+		}
 		if l.todoChanged && l.hasList {
 			list := l.list
 			emit(Event{Kind: EventTodosKind, Todos: &list})
@@ -187,6 +201,7 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 				Reply:        out.lastText,
 				Usage:        out.usage,
 				PlanSentinel: rolemanager.PlanComplete,
+				PlanText:     out.planText,
 				Passes:       l.passes,
 			}, nil
 		}

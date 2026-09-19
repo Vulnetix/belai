@@ -51,6 +51,9 @@ type Options struct {
 	// stripped — independently. A zero value renders no block, which is what
 	// a tool-less turn (the classifier) requires.
 	Tools ToolsOptions
+	// RepoMap is the rendered harness-computed repository map block. It holds
+	// facts only (paths, counts, commands, sizes), never repository prose.
+	RepoMap string
 }
 
 // identity tells the model which of the three identities in a session is its
@@ -128,6 +131,9 @@ func System(opts Options) (string, error) {
 	}
 	if opts.Explore {
 		b.WriteString(explorePreamble(opts.ExploreTools))
+	}
+	if opts.RepoMap != "" {
+		b.WriteString(opts.RepoMap + "\n")
 	}
 	if opts.Caveman {
 		b.WriteString(CavemanVoice)

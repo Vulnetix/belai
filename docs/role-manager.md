@@ -1119,7 +1119,12 @@ an empty questionnaire means proceed to planning with the evidence at hand.
 ### Schema
 
 A questionnaire contains 1–6 groups. Each group has one context sentence and
-2–4 options. `multi` is optional and defaults to false.
+2–4 options. `multi` is optional and defaults to false. The prompt-level
+contract asks the clarifier to prefer exactly one question and never exceed
+three groups, to put the recommended option first with its label suffixed
+`(Recommended)`, to never ask what a read-only tool could already answer from
+the findings, and to never emit an "Other" option — the UI provides the
+free-form path itself.
 
 ```json
 {

@@ -47,6 +47,7 @@ import (
 	"github.com/vulnetix/signet/internal/promptlib"
 	"github.com/vulnetix/signet/internal/provider"
 	"github.com/vulnetix/signet/internal/repoindex"
+	"github.com/vulnetix/signet/internal/repomap"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/scanartifacts"
@@ -500,6 +501,11 @@ type App struct {
 	// a seam so tests exercise the reload path without spawning vi.
 	execEditor func(*exec.Cmd, tea.ExecCallback) tea.Cmd
 
+	// repoMap is the harness-computed repository map for the current workdir,
+	// scanned once at startup. It enters every session's system block as facts
+	// only (paths, counts, commands, sizes) — never repository prose.
+	repoMap repomap.Map
+
 	// startedAt marks when the current session began (or was resumed). It
 	// drives the exit card's duration fact and is reset by startNewSession.
 	startedAt time.Time
@@ -697,6 +703,10 @@ func New(opts Options) *App {
 	// banner re-render is stable. startedAt seeds the exit card's duration.
 	a.bannerTip = components.PickTip(a.sessionID)
 	a.startedAt = time.Now()
+	// The repo map is an accelerant, never a gate: scan it once, best-effort.
+	if _, ok := gitinfo.Detect(workdir); ok {
+		a.repoMap = repomap.Scan(context.Background(), workdir)
+	}
 	if initialStatus.Configured {
 		a.SetClassifier(run.NewClassifier(initial, a.client))
 		a.bgManager = bgagent.NewManager(workdir, initial, a.client, a.settings, a.effectivePosture())
@@ -1379,6 +1389,9 @@ type sessionBuildParams struct {
 	// agentPool is the shared FIFO fan-out ceiling the session's explore
 	// subagents acquire a lease from.
 	agentPool *agentpool.Pool
+	// repoMap is the harness-computed repository map handed to the session's
+	// system block.
+	repoMap repomap.Map
 }
 
 func (a *App) sessionBuildParams() sessionBuildParams {
@@ -1395,6 +1408,7 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 		profile:      p,
 		toolAllow:    a.engagedAgentTools(),
 		agentPool:    a.agentPool,
+		repoMap:      a.repoMap,
 	}
 }
 
@@ -1457,6 +1471,7 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		AllowPassLoop: true,
 		// Explore fan-out is capped by the shared FIFO pool the TUI owns.
 		AgentPool: p.agentPool,
+		RepoMap:   &p.repoMap,
 	})
 }
 
@@ -1553,6 +1568,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.applyGitInfo(m.info, m.ok)
 		a.refreshFooter()
 		return a, nil
+
+	case planEditedMsg:
+		return a, a.handlePlanEdited(m)
 
 	case localModelReportMsg:
 		a.addSystem(m.text)
