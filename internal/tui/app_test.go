@@ -1526,8 +1526,11 @@ func TestHistoryResultsRankLibraryFirstAndDedupe(t *testing.T) {
 		t.Fatalf("results = %+v, want %+v", got, want)
 	}
 	for i := range want {
-		if got[i] != want[i] {
+		if got[i].Name != want[i].Name || got[i].Prompt != want[i].Prompt {
 			t.Fatalf("results[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+		if got[i].Name != "" && got[i].Entry == nil {
+			t.Fatalf("results[%d] should carry its library entry", i)
 		}
 	}
 }
