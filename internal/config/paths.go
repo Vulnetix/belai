@@ -75,7 +75,24 @@ func ProjectSignetDir(workdir string) string {
 	return filepath.Join(ProjectDir(workdir), "signet")
 }
 
-// GlobalPromptsPath returns <GlobalDir>/prompts.json.
+// GlobalPromptsDir returns <GlobalDir>/prompts, the directory of named
+// prompt files that make up the global prompt library.
+func GlobalPromptsDir() (string, error) {
+	dir, err := GlobalDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "prompts"), nil
+}
+
+// ProjectPromptsDir returns <workdir>/.vulnetix/prompts, the directory of
+// named prompt files that make up the project-local prompt library.
+func ProjectPromptsDir(workdir string) string {
+	return filepath.Join(ProjectDir(workdir), "prompts")
+}
+
+// GlobalPromptsPath returns <GlobalDir>/prompts.json, the global prompt
+// library file.
 func GlobalPromptsPath() (string, error) {
 	dir, err := GlobalDir()
 	if err != nil {
@@ -84,7 +101,8 @@ func GlobalPromptsPath() (string, error) {
 	return filepath.Join(dir, "prompts.json"), nil
 }
 
-// ProjectPromptsPath returns <workdir>/.vulnetix/prompts.json.
+// ProjectPromptsPath returns <workdir>/.vulnetix/prompts.json, the project
+// prompt library file.
 func ProjectPromptsPath(workdir string) string {
 	return filepath.Join(ProjectDir(workdir), "prompts.json")
 }

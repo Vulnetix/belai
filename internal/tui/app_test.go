@@ -2476,7 +2476,12 @@ func TestResolveCredentialsCmdUsesResolver(t *testing.T) {
 	}
 
 	if cmd := a.handleCredentialsResolved(rm); cmd != nil {
-		t.Fatalf("handleCredentialsResolved returned cmd %v for no pending prompt", cmd)
+		// A returned command is now expected: it may warm the live catalogue
+		// in the background. It must not send a pending prompt.
+		_ = cmd()
+	}
+	if a.pending != "" {
+		t.Fatalf("handleCredentialsResolved sent a pending prompt without one pending")
 	}
 	if !a.status.Configured || a.cfg.APIKey != "sk-resolved" {
 		t.Fatalf("app not configured after resolution: %+v", a.status)
