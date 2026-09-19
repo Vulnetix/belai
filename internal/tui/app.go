@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -191,6 +192,10 @@ const (
 	editorMaxHeight = 12
 )
 
+// promptsViewState is a placeholder for the /prompts manager view; it is
+// defined here to keep the App struct compiling until the view is wired up.
+type promptsViewState struct{}
+
 // App is the Bubble Tea model for the Signet TUI.
 type App struct {
 	registry     *Registry
@@ -312,6 +317,7 @@ type App struct {
 	codeReviewConfigState    codeReviewConfigState
 	codeReviewListState      codeReviewListState
 	codeReviewArtifactsState codeReviewArtifactsState
+	promptsState             promptsViewState
 
 	// which providers the pickers may offer, filled by an async probe
 	avail providerAvailability
@@ -385,6 +391,13 @@ type App struct {
 	// choosing an agent finishes that submit. Without it the prompt stays in
 	// the composer and two enters produce no turn at all.
 	agentPickerSubmit bool
+	// agentArgSub is the /agent subcommand whose <name> argument the picker is
+	// completing ("start", "stop", …). Empty means the picker is doing its
+	// other job: choosing the carrier for the next turn.
+	agentArgSub string
+	// agentArgCands are the names offered for that argument, already narrowed
+	// to what has been typed.
+	agentArgCands []agentChoice
 	// namedAgentTools is the engaged background definition's tool allowlist,
 	// applied to the session it carries. Empty means every registered tool.
 	namedAgentTools []string
@@ -400,6 +413,13 @@ type App struct {
 	// save to library
 	savePromptMode  bool
 	savePromptValue string
+
+	// prompt-library state. loadedPrompt is the library file the composer's
+	// text came from, so ctrl+s overwrites the right file in the right scope;
+	// it is dropped the moment the composer stops representing that entry.
+	loadedPrompt  *promptlib.Entry
+	promptAction  bool   // ctrl+s action bar is open
+	promptConfirm string // "" | "overwrite" | "delete"
 
 	// save-file flow: ctrl+s on a hovered file panel turns the composer into a
 	// destination-path prompt that writes the panel's content on enter.
@@ -472,6 +492,10 @@ type App struct {
 	// todos is the shared goal/plan todo list rendered in the chat chrome and
 	// persisted to the session. The agent emits it; the TUI owns persistence.
 	todos *todos.List
+
+	// execEditor runs $VISUAL/$EDITOR for the /prompts manager's e key. It is
+	// a seam so tests exercise the reload path without spawning vi.
+	execEditor func(*exec.Cmd, tea.ExecCallback) tea.Cmd
 }
 
 type tickMsg time.Time
@@ -572,6 +596,7 @@ func New(opts Options) *App {
 		activityAnnounced: map[string]bool{},
 		activityFinished:  map[string]bool{},
 		subagentIdx:       map[string]int{},
+		execEditor:        tea.ExecProcess,
 		trace:             trace.Env(),
 	}
 	// One Live for the process: the running session and the next one share it.
@@ -705,6 +730,12 @@ func (a *App) Init() tea.Cmd {
 	// frame so the TUI paints from the env-only resolution immediately.
 	if a.resolver != nil {
 		cmds = append(cmds, a.resolveCredentialsCmd(), a.probeAvailabilityCmd())
+	} else if cmd := a.prefetchCatalogCmd(a.cfg.Provider); cmd != nil {
+		// Without a resolver the env-only provider is final, so the footer's
+		// context meter can start warming its catalogue now. With one, the
+		// provider can still change, so the prefetch waits for
+		// credentialsResolvedMsg.
+		cmds = append(cmds, cmd)
 	}
 	if a.pending != "" && a.status.Configured {
 		cmds = append(cmds, a.sendPending())
@@ -1418,6 +1449,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case bgAgentEventMsg:
 		return a, a.handleBgAgentEvent(m)
 
+	case catalogTargetMsg:
+		return a, a.handleCatalogTarget(m)
+
 	case modelsFetchedMsg:
 		return a, a.handleModelsFetched(m)
 
@@ -1687,6 +1721,7 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 		if a.agentPickerOpen {
+			a.closeAgentArgPicker()
 			a.agentPickerOpen = false
 			a.agentPickerSubmit = false
 			a.agentIndex = noAgentSelection
@@ -1866,10 +1901,10 @@ func (a *App) buildHistoryResults(query string) []historyItem {
 	var results []historyItem
 	seen := make(map[string]bool)
 
-	globalLib, _ := promptlib.LoadGlobal()
-	projLib, _ := promptlib.LoadProject(a.workdir)
-	lib := promptlib.Merge(globalLib, projLib)
-	for _, e := range lib.Filter(query) {
+	globalLib, _ := promptlib.Load(config.ScopeGlobal, "")
+	projLib, _ := promptlib.Load(config.ScopeProject, a.workdir)
+	merged := promptlib.Merge(globalLib.Entries, projLib.Entries)
+	for _, e := range promptlib.Filter(merged, query) {
 		if !seen[e.Prompt] {
 			seen[e.Prompt] = true
 			results = append(results, historyItem{Name: e.Name, Prompt: e.Prompt})
@@ -2099,6 +2134,10 @@ func (a *App) refreshAutocomplete() {
 		a.autocompleteIndex = noAutocompleteSelection
 	}
 	a.autocomplete = next
+	// The chips stop at the subcommand; the agent picker takes over for the
+	// <name> that follows it. The two never overlap: Complete returns nothing
+	// once a second word is being typed.
+	a.refreshAgentArgPicker()
 }
 
 // clearAutocomplete dismisses the popup and drops the highlight.
@@ -2143,9 +2182,21 @@ func (a *App) handleSavePromptKey(m tea.KeyMsg) tea.Cmd {
 }
 
 func (a *App) finishSavePrompt(name string) tea.Cmd {
-	lib, _ := promptlib.LoadProject(a.workdir)
-	lib.Add(promptlib.Entry{Name: name, Prompt: a.savePromptValue})
-	if err := promptlib.SaveProject(a.workdir, lib); err != nil {
+	listing, _ := promptlib.Load(config.ScopeProject, a.workdir)
+	var existing *promptlib.Entry
+	for i := range listing.Entries {
+		if listing.Entries[i].Name == name {
+			existing = &listing.Entries[i]
+			break
+		}
+	}
+	var err error
+	if existing != nil {
+		_, err = promptlib.Update(*existing, a.savePromptValue)
+	} else {
+		_, err = promptlib.Create(config.ScopeProject, a.workdir, name, a.savePromptValue)
+	}
+	if err != nil {
 		a.addSystem("save failed: " + err.Error())
 	} else {
 		a.addSystem("saved prompt to project library: " + name)
@@ -3131,10 +3182,20 @@ func (a *App) handleCredentialsResolved(m credentialsResolvedMsg) tea.Cmd {
 	a.invalidateAvailability()
 	a.setCredentialBackendDefault()
 	a.refreshFooter()
-	if a.pending != "" && m.status.Configured {
-		return a.sendPending()
+	// Warm the live catalogue in the background: the footer's context meter
+	// scales to the selected model's context window, which most providers
+	// only declare in their live catalogue.
+	cmds := []tea.Cmd{}
+	if cmd := a.prefetchCatalogCmd(m.cfg.Provider); cmd != nil {
+		cmds = append(cmds, cmd)
 	}
-	return nil
+	if a.pending != "" && m.status.Configured {
+		cmds = append(cmds, a.sendPending())
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
 }
 
 // refreshProvider re-prepares from the resolver, rebuilds the classifier only

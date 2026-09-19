@@ -1,71 +1,144 @@
 package promptlib
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/vulnetix/signet/internal/config"
 )
 
 func TestLoadMissingReturnsEmpty(t *testing.T) {
-	lib, err := load(filepath.Join(t.TempDir(), "no-such-prompts.json"))
+	listing, err := Load(config.ScopeGlobal, t.TempDir())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(lib.Entries) != 0 {
-		t.Fatalf("expected empty library, got %d entries", len(lib.Entries))
+	if len(listing.Entries) != 0 {
+		t.Fatalf("expected empty library, got %d entries", len(listing.Entries))
 	}
 }
 
-func TestRoundTrip(t *testing.T) {
+func TestCreateAndLoad(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "prompts.json")
-	lib := Library{Entries: []Entry{
-		{Name: "hello", Prompt: "say hello", CreatedAt: 42},
-	}}
-	if err := save(path, lib); err != nil {
-		t.Fatalf("save: %v", err)
+	e, err := Create(config.ScopeProject, dir, "hello", "say hello")
+	if err != nil {
+		t.Fatalf("create: %v", err)
 	}
-	got, err := load(path)
+	if e.Name != "hello" {
+		t.Fatalf("slug = %q, want hello", e.Name)
+	}
+	if !e.Enabled {
+		t.Fatal("new entry should be enabled")
+	}
+
+	listing, err := Load(config.ScopeProject, dir)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if len(got.Entries) != 1 || got.Entries[0].Name != "hello" {
-		t.Fatalf("got %+v", got.Entries)
+	if len(listing.Entries) != 1 || listing.Entries[0].Prompt != "say hello" {
+		t.Fatalf("got %+v", listing.Entries)
+	}
+}
+
+func TestCreateDuplicateReturnsErrNameExists(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Create(config.ScopeProject, dir, "hello", "one"); err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	_, err := Create(config.ScopeProject, dir, "hello", "two")
+	if !errors.Is(err, ErrNameExists) {
+		t.Fatalf("expected ErrNameExists, got %v", err)
+	}
+}
+
+func TestUpdate(t *testing.T) {
+	dir := t.TempDir()
+	e, err := Create(config.ScopeProject, dir, "hello", "one")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	updated, err := Update(e, "two")
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if updated.Prompt != "two" {
+		t.Fatalf("prompt = %q, want two", updated.Prompt)
+	}
+	listing, _ := Load(config.ScopeProject, dir)
+	if len(listing.Entries) != 1 || listing.Entries[0].Prompt != "two" {
+		t.Fatalf("got %+v", listing.Entries)
+	}
+}
+
+func TestDelete(t *testing.T) {
+	dir := t.TempDir()
+	e, err := Create(config.ScopeProject, dir, "hello", "say hello")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := Delete(e); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if _, err := os.Stat(e.Path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected file to be removed: %v", err)
+	}
+}
+
+func TestSetEnabled(t *testing.T) {
+	dir := t.TempDir()
+	e, err := Create(config.ScopeProject, dir, "hello", "say hello")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	disabled, err := SetEnabled(e, false)
+	if err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	if disabled.Enabled {
+		t.Fatal("expected disabled entry")
+	}
+	if filepath.Base(disabled.Path)[0] != '_' {
+		t.Fatalf("expected leading underscore in %q", disabled.Path)
+	}
+	re, err := SetEnabled(disabled, true)
+	if err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	if !re.Enabled {
+		t.Fatal("expected re-enabled entry")
 	}
 }
 
 func TestMergeProjectOverridesGlobal(t *testing.T) {
-	global := Library{Entries: []Entry{
+	global := []Entry{
 		{Name: "a", Prompt: "global a"},
 		{Name: "b", Prompt: "global b"},
-	}}
-	project := Library{Entries: []Entry{
+	}
+	project := []Entry{
 		{Name: "b", Prompt: "project b"},
 		{Name: "c", Prompt: "project c"},
-	}}
+	}
 	merged := Merge(global, project)
-	if len(merged.Entries) != 3 {
-		t.Fatalf("expected 3 entries, got %d", len(merged.Entries))
+	if len(merged) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(merged))
 	}
-	order := []string{}
-	for _, e := range merged.Entries {
-		order = append(order, e.Name+":"+e.Prompt)
+	byName := map[string]string{}
+	for _, e := range merged {
+		byName[e.Name] = e.Prompt
 	}
-	want := []string{"a:global a", "b:project b", "c:project c"}
-	for i := range want {
-		if i >= len(order) || order[i] != want[i] {
-			t.Fatalf("order = %v, want %v", order, want)
-		}
+	if byName["a"] != "global a" || byName["b"] != "project b" || byName["c"] != "project c" {
+		t.Fatalf("got %+v", byName)
 	}
 }
 
 func TestFilterCaseInsensitive(t *testing.T) {
-	lib := Library{Entries: []Entry{
+	entries := []Entry{
 		{Name: "Deploy", Prompt: "how to deploy"},
 		{Name: "Test", Prompt: "run unit tests"},
 		{Name: "deploy-prod", Prompt: "ship it"},
-	}}
-	results := lib.Filter("deploy")
+	}
+	results := Filter(entries, "deploy")
 	if len(results) != 2 {
 		t.Fatalf("expected 2 results, got %d", len(results))
 	}
@@ -75,11 +148,11 @@ func TestFilterCaseInsensitive(t *testing.T) {
 }
 
 func TestFilterEmptyQueryReturnsAll(t *testing.T) {
-	lib := Library{Entries: []Entry{
+	entries := []Entry{
 		{Name: "a", Prompt: "a"},
 		{Name: "b", Prompt: "b"},
-	}}
-	results := lib.Filter("")
+	}
+	results := Filter(entries, "")
 	if len(results) != 2 {
 		t.Fatalf("expected 2 results, got %d", len(results))
 	}
@@ -102,78 +175,35 @@ func TestPromptsExtractsStrings(t *testing.T) {
 	}
 }
 
-func TestAddReplacesDuplicateName(t *testing.T) {
-	lib := Library{Entries: []Entry{
-		{Name: "a", Prompt: "old"},
-	}}
-	lib.Add(Entry{Name: "a", Prompt: "new"})
-	if len(lib.Entries) != 1 {
-		t.Fatalf("expected 1 entry, got %d", len(lib.Entries))
+func TestSlug(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"Deploy App", "deploy-app"},
+		{"_underscored! name ", "underscored-name"},
+		{"123", "123"},
 	}
-	if lib.Entries[0].Prompt != "new" {
-		t.Fatalf("prompt = %q", lib.Entries[0].Prompt)
-	}
-	if lib.Entries[0].CreatedAt == 0 {
-		t.Fatalf("CreatedAt should be set")
-	}
-}
-
-// Add stamps CreatedAt only when it is zero, so re-saving an imported or
-// hand-edited entry does not rewrite when it was first created.
-func TestAddPreservesExplicitCreatedAt(t *testing.T) {
-	lib := Library{}
-	lib.Add(Entry{Name: "a", Prompt: "a", CreatedAt: 42})
-	if lib.Entries[0].CreatedAt != 42 {
-		t.Fatalf("CreatedAt = %d, want 42", lib.Entries[0].CreatedAt)
-	}
-	lib.Add(Entry{Name: "a", Prompt: "b", CreatedAt: 42})
-	if len(lib.Entries) != 1 || lib.Entries[0].CreatedAt != 42 {
-		t.Fatalf("replace lost CreatedAt: %+v", lib.Entries)
+	for _, c := range cases {
+		got, err := Slug(c.in)
+		if err != nil {
+			t.Fatalf("Slug(%q): %v", c.in, err)
+		}
+		if got != c.want {
+			t.Fatalf("Slug(%q) = %q, want %q", c.in, got, c.want)
+		}
 	}
 }
 
-func TestAddAppendsNewName(t *testing.T) {
-	lib := Library{Entries: []Entry{{Name: "a", Prompt: "a"}}}
-	lib.Add(Entry{Name: "b", Prompt: "b"})
-	if len(lib.Entries) != 2 {
-		t.Fatalf("expected 2 entries, got %d", len(lib.Entries))
+func TestParseFileName(t *testing.T) {
+	order, slug, enabled, ok := ParseFileName("010-hello-world.md")
+	if !ok || order != 10 || slug != "hello-world" || !enabled {
+		t.Fatalf("got %d/%q/%v/%v", order, slug, enabled, ok)
 	}
-}
-
-func TestRemove(t *testing.T) {
-	lib := Library{Entries: []Entry{
-		{Name: "a", Prompt: "a"},
-		{Name: "b", Prompt: "b"},
-	}}
-	if !lib.Remove("a") {
-		t.Fatalf("expected Remove to return true")
+	order, slug, enabled, ok = ParseFileName("_010-hello-world.md")
+	if !ok || enabled {
+		t.Fatalf("expected disabled entry")
 	}
-	if len(lib.Entries) != 1 || lib.Entries[0].Name != "b" {
-		t.Fatalf("got %+v", lib.Entries)
-	}
-	if lib.Remove("x") {
-		t.Fatalf("expected Remove to return false")
-	}
-}
-
-func TestSaveCreatesDirectories(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "deep", "nested")
-	path := filepath.Join(dir, "prompts.json")
-	lib := Library{Entries: []Entry{{Name: "x", Prompt: "x"}}}
-	if err := save(path, lib); err != nil {
-		t.Fatalf("save: %v", err)
-	}
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("file not created: %v", err)
-	}
-}
-
-func TestMatchAgainstPrompt(t *testing.T) {
-	e := Entry{Name: "x", Prompt: "deploy to production"}
-	if !Match(e, "production") {
-		t.Fatalf("expected match against prompt text")
-	}
-	if Match(e, "staging") {
-		t.Fatalf("expected no match")
+	if _, _, _, ok := ParseFileName("bad.md"); ok {
+		t.Fatal("expected bad.md to fail")
 	}
 }

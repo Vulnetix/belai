@@ -29,6 +29,13 @@ import (
 	"github.com/vulnetix/signet/internal/tui/components"
 )
 
+func createTestPrompt(t *testing.T, scope config.Scope, workdir, name, prompt string) {
+	t.Helper()
+	if _, err := promptlib.Create(scope, workdir, name, prompt); err != nil {
+		t.Fatalf("create %s prompt %q: %v", scope, name, err)
+	}
+}
+
 func TestMain(m *testing.M) {
 	tmp, err := os.MkdirTemp("", "signet-tui-test")
 	if err != nil {
@@ -1182,11 +1189,8 @@ func TestHistoryCycleTabCyclesNamedPrompts(t *testing.T) {
 	workdir := t.TempDir()
 	t.Setenv("SIGNET_HOME", t.TempDir())
 
-	_ = promptlib.SaveGlobal(promptlib.Library{Entries: []promptlib.Entry{
-		{Name: "deploy", Prompt: "deploy the app"},
-		{Name: "review", Prompt: "review the diff"},
-	}})
-
+	createTestPrompt(t, config.ScopeGlobal, "", "deploy", "deploy the app")
+	createTestPrompt(t, config.ScopeGlobal, "", "review", "review the diff")
 	st, _ := session.NewStore()
 	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "unnamed history"})
 
@@ -1226,10 +1230,7 @@ func TestHistoryCycleRightAccepts(t *testing.T) {
 	workdir := t.TempDir()
 	t.Setenv("SIGNET_HOME", t.TempDir())
 
-	_ = promptlib.SaveGlobal(promptlib.Library{Entries: []promptlib.Entry{
-		{Name: "deploy", Prompt: "deploy the app"},
-	}})
-
+	createTestPrompt(t, config.ScopeGlobal, "", "deploy", "deploy the app")
 	a := New(Options{Workdir: workdir})
 	a.editor.SetValue("")
 
@@ -1248,10 +1249,7 @@ func TestLibraryRankedBeforeHistory(t *testing.T) {
 	workdir := t.TempDir()
 	t.Setenv("SIGNET_HOME", t.TempDir())
 
-	lib := promptlib.Library{Entries: []promptlib.Entry{
-		{Name: "deploy", Prompt: "deploy the app"},
-	}}
-	_ = promptlib.SaveGlobal(lib)
+	createTestPrompt(t, config.ScopeGlobal, "", "deploy", "deploy the app")
 
 	st, _ := session.NewStore()
 	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "deploy the app"})
@@ -1416,7 +1414,7 @@ func TestSavePromptMode(t *testing.T) {
 		t.Fatalf("save mode should exit after Enter")
 	}
 
-	lib, err := promptlib.LoadProject(workdir)
+	lib, err := promptlib.Load(config.ScopeProject, workdir)
 	if err != nil {
 		t.Fatalf("load project library: %v", err)
 	}
@@ -1494,13 +1492,8 @@ func TestLibraryProjectOverridesGlobal(t *testing.T) {
 	workdir := t.TempDir()
 	t.Setenv("SIGNET_HOME", t.TempDir())
 
-	_ = promptlib.SaveGlobal(promptlib.Library{Entries: []promptlib.Entry{
-		{Name: "x", Prompt: "global x"},
-	}})
-	_ = promptlib.SaveProject(workdir, promptlib.Library{Entries: []promptlib.Entry{
-		{Name: "x", Prompt: "project x"},
-	}})
-
+	createTestPrompt(t, config.ScopeGlobal, "", "x", "global x")
+	createTestPrompt(t, config.ScopeProject, workdir, "x", "project x")
 	a := New(Options{Workdir: workdir})
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
 
@@ -1516,10 +1509,7 @@ func TestHistoryResultsRankLibraryFirstAndDedupe(t *testing.T) {
 	workdir := t.TempDir()
 	t.Setenv("SIGNET_HOME", t.TempDir())
 
-	_ = promptlib.SaveGlobal(promptlib.Library{Entries: []promptlib.Entry{
-		{Name: "deploy", Prompt: "deploy the app"},
-	}})
-
+	createTestPrompt(t, config.ScopeGlobal, "", "deploy", "deploy the app")
 	st, _ := session.NewStore()
 	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "deploy the app"})
 	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "something else"})
@@ -1548,11 +1538,8 @@ func TestHistoryResultsMatchOnName(t *testing.T) {
 	workdir := t.TempDir()
 	t.Setenv("SIGNET_HOME", t.TempDir())
 
-	_ = promptlib.SaveGlobal(promptlib.Library{Entries: []promptlib.Entry{
-		{Name: "deploy", Prompt: "ship it"},
-		{Name: "review", Prompt: "read the diff"},
-	}})
-
+	createTestPrompt(t, config.ScopeGlobal, "", "deploy", "ship it")
+	createTestPrompt(t, config.ScopeGlobal, "", "review", "read the diff")
 	a := New(Options{Workdir: workdir})
 	got := a.buildHistoryResults("DEPLOY")
 	if len(got) != 1 || got[0].Prompt != "ship it" {
@@ -1596,10 +1583,7 @@ func TestPromptPickerHintShownWithNamedPrompts(t *testing.T) {
 	workdir := t.TempDir()
 	t.Setenv("SIGNET_HOME", t.TempDir())
 
-	_ = promptlib.SaveGlobal(promptlib.Library{Entries: []promptlib.Entry{
-		{Name: "deploy", Prompt: "deploy the app"},
-	}})
-
+	createTestPrompt(t, config.ScopeGlobal, "", "deploy", "deploy the app")
 	a := New(Options{Workdir: workdir})
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
 
@@ -1617,10 +1601,7 @@ func TestHistoryTabReturnsFromUnnamedTail(t *testing.T) {
 	workdir := t.TempDir()
 	t.Setenv("SIGNET_HOME", t.TempDir())
 
-	_ = promptlib.SaveGlobal(promptlib.Library{Entries: []promptlib.Entry{
-		{Name: "deploy", Prompt: "deploy the app"},
-	}})
-
+	createTestPrompt(t, config.ScopeGlobal, "", "deploy", "deploy the app")
 	st, _ := session.NewStore()
 	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "unnamed history"})
 

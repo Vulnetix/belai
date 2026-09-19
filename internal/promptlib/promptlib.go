@@ -1,116 +1,389 @@
-// Package promptlib manages named prompt libraries. It supports a global
-// library, a project-local override, and merge semantics where project
-// entries win by name.
+// Package promptlib manages named prompt libraries as directories of
+// plain-text files. Metadata (order and enabled state) is encoded in the
+// filename: "NNN-slug.md" is an enabled entry at order NNN and "_NNN-slug.md"
+// is a disabled one. A global library and a project-local library merge so
+// project entries win by name, and a project entry sharing a global name
+// takes the global entry's slot while keeping its own (project) identity.
 package promptlib
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
-	"time"
 
 	"github.com/vulnetix/signet/internal/config"
 )
 
-// Entry is one named prompt in the library.
+// Entry is one named prompt in a library.
 type Entry struct {
-	Name      string `json:"name"`
-	Prompt    string `json:"prompt"`
-	CreatedAt int64  `json:"created_at,omitempty"`
+	Name    string       // the on-disk slug, verbatim: "deploy-app"
+	Prompt  string       // file body
+	Order   int          // the NNN prefix, 1..999
+	Enabled bool         // false when the basename starts with "_"
+	Scope   config.Scope // global or project
+	Path    string       // absolute path; the entry's identity
 }
 
-// Library holds named prompts.
-type Library struct {
-	Entries []Entry `json:"entries"`
+// Listing is the result of loading one scope's directory. Strays are
+// basenames that do not parse as prompt files and are never read or touched.
+type Listing struct {
+	Entries []Entry  // sorted by (Order, Name)
+	Strays  []string // sorted basenames
 }
 
-// LoadGlobal reads the global prompts file. A missing file returns an empty
-// library with no error.
-func LoadGlobal() (Library, error) {
-	path, err := config.GlobalPromptsPath()
-	if err != nil {
-		return Library{}, err
+// ErrNameExists is returned by Create when the slug already exists in the
+// target scope. The caller confirms and then calls Update.
+var ErrNameExists = errors.New("prompt name already exists")
+
+// ErrLibraryFull is returned by Create when the scope already holds 999
+// entries, the most the three-digit filename grammar can address.
+var ErrLibraryFull = errors.New("prompt library is full")
+
+// promptFileRe is the strict filename grammar: an optional disabled marker,
+// exactly three digits, then a lowercase alnum slug with single interior
+// hyphens, then the .md extension.
+var promptFileRe = regexp.MustCompile(`^(_?)(\d{3})-([a-z0-9]+(?:-[a-z0-9]+)*)\.md$`)
+
+// maxSlugRunes caps the slug length so the NNN prefix and ".md" suffix never
+// overflow the filesystem-friendly filename width.
+const maxSlugRunes = 64
+
+// Dir returns the prompt-library directory for a scope.
+func Dir(scope config.Scope, workdir string) (string, error) {
+	switch scope {
+	case config.ScopeGlobal:
+		return config.GlobalPromptsDir()
+	case config.ScopeProject:
+		return config.ProjectPromptsDir(workdir), nil
+	default:
+		return "", fmt.Errorf("unknown prompt scope %q", scope)
 	}
-	return load(path)
 }
 
-// LoadProject reads the project-local prompts file. A missing file returns
-// an empty library with no error.
-func LoadProject(workdir string) (Library, error) {
-	return load(config.ProjectPromptsPath(workdir))
-}
-
-// SaveGlobal writes the global prompts file.
-func SaveGlobal(lib Library) error {
-	path, err := config.GlobalPromptsPath()
+// Load reads one scope's directory. A missing directory is an empty library,
+// not an error. Files that do not parse — README.md, editor swap files,
+// sub-directories, crashed-renumber temps — are collected as strays and never
+// read, renamed, or deleted.
+func Load(scope config.Scope, workdir string) (Listing, error) {
+	dir, err := Dir(scope, workdir)
 	if err != nil {
-		return err
+		return Listing{}, err
 	}
-	return save(path, lib)
-}
-
-// SaveProject writes the project-local prompts file.
-func SaveProject(workdir string, lib Library) error {
-	return save(config.ProjectPromptsPath(workdir), lib)
-}
-
-func load(path string) (Library, error) {
-	data, err := os.ReadFile(path)
+	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
-		return Library{}, nil
+		return Listing{}, nil
 	}
 	if err != nil {
-		return Library{}, fmt.Errorf("read prompts %s: %w", path, err)
+		return Listing{}, fmt.Errorf("read prompts dir %s: %w", dir, err)
 	}
-	var lib Library
-	if err := json.Unmarshal(data, &lib); err != nil {
-		return Library{}, fmt.Errorf("parse prompts %s: %w", path, err)
+	var l Listing
+	for _, de := range entries {
+		name := de.Name()
+		if de.IsDir() || !de.Type().IsRegular() {
+			l.Strays = append(l.Strays, name)
+			continue
+		}
+		order, slug, enabled, ok := ParseFileName(name)
+		if !ok {
+			l.Strays = append(l.Strays, name)
+			continue
+		}
+		path := filepath.Join(dir, name)
+		body, err := readPrompt(path)
+		if err != nil {
+			return Listing{}, fmt.Errorf("read prompt %s: %w", path, err)
+		}
+		l.Entries = append(l.Entries, Entry{
+			Name:    slug,
+			Prompt:  body,
+			Order:   order,
+			Enabled: enabled,
+			Scope:   scope,
+			Path:    path,
+		})
 	}
-	return lib, nil
+	sortEntries(l.Entries)
+	sort.Strings(l.Strays)
+	return l, nil
 }
 
-func save(path string, lib Library) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create prompts dir: %w", err)
+// Slug converts a user-supplied name into the lowercase alnum-with-hyphens
+// form the filename grammar demands. Underscores and every other non-alnum
+// rune become a single interior hyphen, so a produced slug never contains "_"
+// and cannot collide with the disabled marker.
+func Slug(name string) (string, error) {
+	var b strings.Builder
+	prevDash := true // suppress a leading hyphen
+	for _, r := range strings.ToLower(strings.TrimSpace(name)) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			prevDash = false
+		} else if !prevDash {
+			b.WriteByte('-')
+			prevDash = true
+		}
 	}
-	data, err := json.MarshalIndent(lib, "", "  ")
+	slug := strings.Trim(b.String(), "-")
+	if slug == "" {
+		return "", fmt.Errorf("invalid prompt name %q: no letters or digits", name)
+	}
+	if len([]rune(slug)) > maxSlugRunes {
+		return "", fmt.Errorf("invalid prompt name %q: slug longer than %d characters", name, maxSlugRunes)
+	}
+	return slug, nil
+}
+
+// FileName renders a prompt filename for the given order, slug and enabled
+// state. The leading underscore is the disabled marker.
+func FileName(order int, slug string, enabled bool) string {
+	prefix := ""
+	if !enabled {
+		prefix = "_"
+	}
+	return fmt.Sprintf("%s%03d-%s.md", prefix, order, slug)
+}
+
+// ParseFileName parses a basename against the strict filename grammar. It
+// rejects anything that does not parse, including four-digit orders, order
+// zero, underscores inside the slug, uppercase slugs, and other extensions.
+func ParseFileName(base string) (order int, slug string, enabled, ok bool) {
+	m := promptFileRe.FindStringSubmatch(base)
+	if m == nil {
+		return 0, "", false, false
+	}
+	order, err := strconv.Atoi(m[2])
+	if err != nil || order < 1 || order > 999 {
+		return 0, "", false, false
+	}
+	slug = m[3]
+	if len([]rune(slug)) > maxSlugRunes {
+		return 0, "", false, false
+	}
+	return order, slug, m[1] == "", true
+}
+
+// Create writes a new entry into a scope at order last+10, clamped to 999. A
+// slug already present in that scope returns ErrNameExists rather than
+// silently replacing it. When the next slot would overflow, the scope is
+// renumbered first; a scope that already holds 999 entries returns
+// ErrLibraryFull.
+func Create(scope config.Scope, workdir, name, prompt string) (Entry, error) {
+	slug, err := Slug(name)
 	if err != nil {
-		return fmt.Errorf("marshal prompts: %w", err)
+		return Entry{}, err
 	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return fmt.Errorf("write prompts %s: %w", path, err)
+	dir, err := Dir(scope, workdir)
+	if err != nil {
+		return Entry{}, err
 	}
-	return nil
+	listing, err := Load(scope, workdir)
+	if err != nil {
+		return Entry{}, err
+	}
+	for _, e := range listing.Entries {
+		if e.Name == slug {
+			return Entry{}, ErrNameExists
+		}
+	}
+	if len(listing.Entries) >= 999 {
+		return Entry{}, ErrLibraryFull
+	}
+
+	entries := listing.Entries
+	order := 10
+	if len(entries) > 0 {
+		order = entries[len(entries)-1].Order + 10
+	}
+	if order > 999 {
+		// Collapse gaps and reserve one slot's headroom so the new entry fits.
+		step := renumberStep(len(entries) + 1)
+		entries, err = renumber(scope, workdir, entries, step)
+		if err != nil {
+			return Entry{}, err
+		}
+		if len(entries) > 0 {
+			order = entries[len(entries)-1].Order + step
+		} else {
+			order = step
+		}
+	}
+	if order > 999 {
+		return Entry{}, ErrLibraryFull
+	}
+
+	path := filepath.Join(dir, FileName(order, slug, true))
+	if err := writePrompt(path, prompt, fileMode(scope)); err != nil {
+		return Entry{}, err
+	}
+	return Entry{Name: slug, Prompt: prompt, Order: order, Enabled: true, Scope: scope, Path: path}, nil
 }
 
-// Merge overlays project entries onto global entries by name: a project
-// entry with the same name as a global entry wins.
-func Merge(global, project Library) Library {
-	byName := make(map[string]Entry, len(global.Entries))
-	for _, e := range global.Entries {
-		byName[e.Name] = e
+// Update overwrites an entry's body in place, preserving its path, order,
+// enabled state and scope. A global entry stays global.
+func Update(e Entry, prompt string) (Entry, error) {
+	if err := writePrompt(e.Path, prompt, fileMode(e.Scope)); err != nil {
+		return Entry{}, err
 	}
-	for _, e := range project.Entries {
-		byName[e.Name] = e
+	e.Prompt = prompt
+	return e, nil
+}
+
+// SetEnabled toggles the disabled marker by renaming the file, leaving the
+// body byte-identical. It refuses to overwrite an unrelated file already at
+// the target name.
+func SetEnabled(e Entry, enabled bool) (Entry, error) {
+	if e.Enabled == enabled {
+		return e, nil
 	}
-	merged := make([]Entry, 0, len(byName))
-	seen := make(map[string]bool, len(byName))
-	for _, e := range global.Entries {
-		if !seen[e.Name] {
-			seen[e.Name] = true
-			merged = append(merged, byName[e.Name])
+	dir := filepath.Dir(e.Path)
+	target := filepath.Join(dir, FileName(e.Order, e.Name, enabled))
+	if _, err := os.Lstat(target); err == nil {
+		return Entry{}, fmt.Errorf("rename target %s already exists", target)
+	} else if !os.IsNotExist(err) {
+		return Entry{}, err
+	}
+	if err := os.Rename(e.Path, target); err != nil {
+		return Entry{}, err
+	}
+	e.Enabled = enabled
+	e.Path = target
+	return e, nil
+}
+
+// Delete removes an entry's file.
+func Delete(e Entry) error {
+	return os.Remove(e.Path)
+}
+
+// Reorder moves the entry at index from to index to within a scope's sorted
+// entries, then renumbers the whole scope to a fresh collision-free grid. It
+// returns the renumbered entries. Hand-picked order numbers are lost on the
+// first reorder — the grid is what makes moves collision-free.
+func Reorder(scope config.Scope, workdir string, entries []Entry, from, to int) ([]Entry, error) {
+	if from < 0 || from >= len(entries) || to < 0 || to >= len(entries) {
+		return nil, fmt.Errorf("reorder index out of range")
+	}
+	dir, err := Dir(scope, workdir)
+	if err != nil {
+		return nil, err
+	}
+
+	moved := make([]Entry, len(entries))
+	copy(moved, entries)
+	e := moved[from]
+	moved = append(moved[:from], moved[from+1:]...)
+	moved = append(moved[:to], append([]Entry{e}, moved[to:]...)...)
+
+	step := renumberStep(len(moved))
+	for i := range moved {
+		order := (i + 1) * step
+		if order > 999 {
+			order = 999
+		}
+		moved[i].Order = order
+	}
+
+	origs := make([]string, len(entries))
+	temps := make([]string, len(moved))
+	finals := make([]string, len(moved))
+	for i := range entries {
+		origs[i] = entries[i].Path
+	}
+	for i := range moved {
+		temps[i] = filepath.Join(dir, fmt.Sprintf(".signet-tmp-%d-%s.md", i, moved[i].Name))
+		finals[i] = filepath.Join(dir, FileName(moved[i].Order, moved[i].Name, moved[i].Enabled))
+	}
+
+	// Phase 1: every source moves to a dot-prefixed temp name so a swap never
+	// collides in a single pass. On failure, restore what already moved.
+	if err := renameAll(origs, temps); err != nil {
+		_ = renameAll(temps[:len(origs)], origs)
+		return nil, err
+	}
+
+	// Phase 2 guard: every final target must be clear before any rename.
+	// os.Rename overwrites silently on POSIX, so this check happens first and
+	// aborts the whole reorder, rolling phase 1 back, if anything is there.
+	for _, f := range finals {
+		if _, err := os.Lstat(f); err == nil {
+			_ = renameAll(temps, origs)
+			return nil, fmt.Errorf("reorder collision at %s", f)
+		} else if !os.IsNotExist(err) {
+			_ = renameAll(temps, origs)
+			return nil, err
 		}
 	}
-	for _, e := range project.Entries {
-		if !seen[e.Name] {
-			seen[e.Name] = true
-			merged = append(merged, byName[e.Name])
+	if err := renameAll(temps, finals); err != nil {
+		// Best effort rollback: finals already written stay; report the error.
+		return nil, err
+	}
+	for i := range moved {
+		moved[i].Path = finals[i]
+	}
+	return moved, nil
+}
+
+// Merge overlays project entries onto global entries. Each scope is already
+// sorted; the merged list is the global block in global order, then
+// project-only names in project order. A project entry sharing a global name
+// replaces the global entry's content but keeps the global slot — and keeps
+// its own project identity, so a disabled project entry still vetoes the
+// global one after Enabled filtering.
+func Merge(global, project []Entry) []Entry {
+	projectByName := make(map[string]Entry, len(project))
+	for _, e := range project {
+		projectByName[e.Name] = e
+	}
+	seen := make(map[string]bool, len(global)+len(project))
+	out := make([]Entry, 0, len(global)+len(project))
+	for _, g := range global {
+		if p, ok := projectByName[g.Name]; ok {
+			out = append(out, p)
+		} else {
+			out = append(out, g)
+		}
+		seen[g.Name] = true
+	}
+	for _, p := range project {
+		if !seen[p.Name] {
+			out = append(out, p)
 		}
 	}
-	return Library{Entries: merged}
+	return out
+}
+
+// Enabled returns the enabled entries, preserving order. It runs after Merge
+// so a disabled project entry vetoes the global entry it shadows.
+func Enabled(entries []Entry) []Entry {
+	out := make([]Entry, 0, len(entries))
+	for _, e := range entries {
+		if e.Enabled {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// Filter returns the entries whose name or prompt contains the query. An
+// empty query returns a copy of the slice.
+func Filter(entries []Entry, query string) []Entry {
+	if query == "" {
+		out := make([]Entry, len(entries))
+		copy(out, entries)
+		return out
+	}
+	var out []Entry
+	for _, e := range entries {
+		if Match(e, query) {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // Match reports whether an entry matches a query. The match is
@@ -119,22 +392,6 @@ func Match(e Entry, query string) bool {
 	q := strings.ToLower(query)
 	return strings.Contains(strings.ToLower(e.Name), q) ||
 		strings.Contains(strings.ToLower(e.Prompt), q)
-}
-
-// Filter returns library entries whose name or prompt contains the query.
-func (l Library) Filter(query string) []Entry {
-	if query == "" {
-		out := make([]Entry, len(l.Entries))
-		copy(out, l.Entries)
-		return out
-	}
-	var out []Entry
-	for _, e := range l.Entries {
-		if Match(e, query) {
-			out = append(out, e)
-		}
-	}
-	return out
 }
 
 // Prompts returns just the prompt strings from a slice of entries.
@@ -146,29 +403,141 @@ func Prompts(entries []Entry) []string {
 	return out
 }
 
-// Add inserts a new entry, replacing an existing one with the same name.
-// It sets CreatedAt when zero.
-func (l *Library) Add(e Entry) {
-	if e.CreatedAt == 0 {
-		e.CreatedAt = time.Now().Unix()
+// readPrompt reads a prompt file, trimming exactly one trailing newline (and
+// a CR before it, so CRLF files round-trip too). The whole file is the
+// prompt, verbatim; .md is for editor syntax highlighting only.
+func readPrompt(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
 	}
-	for i, existing := range l.Entries {
-		if existing.Name == e.Name {
-			l.Entries[i] = e
-			return
-		}
-	}
-	l.Entries = append(l.Entries, e)
+	body := strings.TrimSuffix(string(data), "\n")
+	body = strings.TrimSuffix(body, "\r")
+	return body, nil
 }
 
-// Remove deletes the entry with the given name. It returns true when an
-// entry was removed.
-func (l *Library) Remove(name string) bool {
-	for i, e := range l.Entries {
-		if e.Name == name {
-			l.Entries = append(l.Entries[:i], l.Entries[i+1:]...)
-			return true
+// writePrompt writes a prompt file atomically: temp file in the same
+// directory, fsync, chmod, rename. The directory is created 0755 and the file
+// gets the scope's mode (0600 global, 0644 project).
+func writePrompt(path string, body string, mode os.FileMode) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create prompts dir: %w", err)
+	}
+	tmp, err := os.CreateTemp(dir, ".tmp-prompt-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if _, err := tmp.WriteString(body + "\n"); err != nil {
+		tmp.Close()
+		return fmt.Errorf("write temp file: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return fmt.Errorf("sync temp file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp file: %w", err)
+	}
+	if err := os.Chmod(tmpName, mode); err != nil {
+		return fmt.Errorf("chmod file: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("rename file: %w", err)
+	}
+	return nil
+}
+
+// fileMode returns the file mode for a scope: personal (0600) for global,
+// team-readable (0644) for project, which is meant to be committed.
+func fileMode(scope config.Scope) os.FileMode {
+	if scope == config.ScopeGlobal {
+		return 0o600
+	}
+	return 0o644
+}
+
+// renumberStep returns the spacing used to renumber n entries. Small scopes
+// keep the human-friendly 010/020/030 grid; larger scopes tighten the spacing
+// so every order stays a three-digit 001..999 prefix.
+func renumberStep(n int) int {
+	if n <= 99 {
+		return 10
+	}
+	if s := 999 / n; s >= 1 {
+		return s
+	}
+	return 1
+}
+
+// renumber renames the entries of one scope onto a fresh grid with the given
+// step, two phases so a swap never collides. The caller has already confirmed
+// the targets are clear.
+func renumber(scope config.Scope, workdir string, entries []Entry, step int) ([]Entry, error) {
+	dir, err := Dir(scope, workdir)
+	if err != nil {
+		return nil, err
+	}
+	for i := range entries {
+		order := (i + 1) * step
+		if order > 999 {
+			order = 999
+		}
+		entries[i].Order = order
+	}
+	origs := make([]string, len(entries))
+	temps := make([]string, len(entries))
+	finals := make([]string, len(entries))
+	for i := range entries {
+		origs[i] = entries[i].Path
+		temps[i] = filepath.Join(dir, fmt.Sprintf(".signet-tmp-%d-%s.md", i, entries[i].Name))
+		finals[i] = filepath.Join(dir, FileName(entries[i].Order, entries[i].Name, entries[i].Enabled))
+	}
+	if err := renameAll(origs, temps); err != nil {
+		_ = renameAll(temps, origs)
+		return nil, err
+	}
+	for _, f := range finals {
+		if _, err := os.Lstat(f); err == nil {
+			_ = renameAll(temps, origs)
+			return nil, fmt.Errorf("reorder collision at %s", f)
+		} else if !os.IsNotExist(err) {
+			_ = renameAll(temps, origs)
+			return nil, err
 		}
 	}
-	return false
+	if err := renameAll(temps, finals); err != nil {
+		return nil, err
+	}
+	for i := range entries {
+		entries[i].Path = finals[i]
+	}
+	return entries, nil
+}
+
+// renameAll renames srcs[i] to dsts[i] in order, stopping at the first error.
+func renameAll(srcs, dsts []string) error {
+	n := len(srcs)
+	if len(dsts) < n {
+		n = len(dsts)
+	}
+	for i := 0; i < n; i++ {
+		if err := os.Rename(srcs[i], dsts[i]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// sortEntries orders a slice by (Order, Name) so the merge and the manager
+// always see a stable, collision-free sequence.
+func sortEntries(entries []Entry) {
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].Order != entries[j].Order {
+			return entries[i].Order < entries[j].Order
+		}
+		return entries[i].Name < entries[j].Name
+	})
 }
