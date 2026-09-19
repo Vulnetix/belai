@@ -174,7 +174,7 @@ func (a *App) handleShellDone(m shellDoneMsg) tea.Cmd {
 		}, "")
 	}
 
-	a.addSystem(fmt.Sprintf("shell output classified %s and not sent", m.sentinel))
+	a.addSystem(fmt.Sprintf("shell output classified: %s", m.sentinel.Label()))
 	return nil
 }
 

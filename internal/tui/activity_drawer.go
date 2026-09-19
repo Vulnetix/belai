@@ -164,7 +164,7 @@ func (a *App) roundTripActivityOutput(act activity.Activity) tea.Cmd {
 		pipe := run.NewPipeline(a.cfg, a.client, a.cache)
 		dec, err := pipe.Process(a.ctx, tools.Result{Kind: tools.KindBash, Content: raw})
 		if err != nil || dec.Action != rolemanager.ActionProceed {
-			a.addSystem(fmt.Sprintf("%s output classified %s and not sent", act.Label, dec.Sentinel))
+			a.addSystem(fmt.Sprintf("%s output classified: %s", act.Label, dec.Sentinel.Label()))
 			return nil
 		}
 		body = dec.Content

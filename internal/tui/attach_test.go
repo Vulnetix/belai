@@ -197,15 +197,16 @@ func TestAttachmentPreviewForRejectedFile(t *testing.T) {
 	if msg.Role != "tool" || msg.ToolName != "Read" {
 		t.Fatalf("preview = %+v, want Read tool row", msg)
 	}
-	want := "tool result withheld: attachment @doc.md classified PROMPT_INJECTION"
+	want := "tool result withheld: attachment @doc.md classified " + rolemanager.SentinelPromptInjection.Label()
 	if msg.Content != want {
 		t.Fatalf("content = %q, want %q", msg.Content, want)
 	}
 	if directive == "" {
 		t.Fatalf("expected a non-empty directive for rejected attachments")
 	}
-	if !strings.Contains(directive, "@doc.md") || !strings.Contains(directive, "PROMPT_INJECTION") {
-		t.Fatalf("directive = %q, want it to name the withheld file and sentinel", directive)
+	label := rolemanager.SentinelPromptInjection.Label()
+	if !strings.Contains(directive, "@doc.md") || !strings.Contains(directive, label) {
+		t.Fatalf("directive = %q, want it to name the withheld file and sentinel label %q", directive, label)
 	}
 }
 

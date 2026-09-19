@@ -336,5 +336,5 @@ type RefusalError struct {
 
 // Error contains the sentinel token so that callers can assert on it.
 func (e *RefusalError) Error() string {
-	return fmt.Sprintf("refusing prompt: classified as %s", e.Sentinel)
+	return fmt.Sprintf("refusing prompt: %s", e.Sentinel.Label())
 }

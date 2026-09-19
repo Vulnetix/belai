@@ -91,22 +91,6 @@ func ProjectPromptsDir(workdir string) string {
 	return filepath.Join(ProjectDir(workdir), "prompts")
 }
 
-// GlobalPromptsPath returns <GlobalDir>/prompts.json, the global prompt
-// library file.
-func GlobalPromptsPath() (string, error) {
-	dir, err := GlobalDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "prompts.json"), nil
-}
-
-// ProjectPromptsPath returns <workdir>/.vulnetix/prompts.json, the project
-// prompt library file.
-func ProjectPromptsPath(workdir string) string {
-	return filepath.Join(ProjectDir(workdir), "prompts.json")
-}
-
 // ProjectSettingsPath returns <workdir>/.vulnetix/settings.json.
 func ProjectSettingsPath(workdir string) string {
 	return filepath.Join(ProjectDir(workdir), "settings.json")

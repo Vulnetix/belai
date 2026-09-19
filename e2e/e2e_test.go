@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/vulnetix/signet/internal/rolemanager"
 )
 
 var signetBin string
@@ -222,8 +224,8 @@ func TestInjectionRefused(t *testing.T) {
 	if code == 0 {
 		t.Fatalf("expected nonzero exit for injection")
 	}
-	if !strings.Contains(errOut, "PROMPT_INJECTION") {
-		t.Fatalf("stderr = %q, want PROMPT_INJECTION", errOut)
+	if !strings.Contains(errOut, rolemanager.SentinelPromptInjection.Label()) {
+		t.Fatalf("stderr = %q, want prompt-injection label %q", errOut, rolemanager.SentinelPromptInjection.Label())
 	}
 
 	mp.mu.Lock()
@@ -956,8 +958,8 @@ func TestInjectionRefusedSlopinator(t *testing.T) {
 	if code == 0 {
 		t.Fatalf("expected nonzero exit for injection")
 	}
-	if !strings.Contains(errOut, "PROMPT_INJECTION") {
-		t.Fatalf("stderr = %q, want PROMPT_INJECTION", errOut)
+	if !strings.Contains(errOut, rolemanager.SentinelPromptInjection.Label()) {
+		t.Fatalf("stderr = %q, want prompt-injection label %q", errOut, rolemanager.SentinelPromptInjection.Label())
 	}
 	if len(mp.chatUser) != 0 {
 		t.Fatalf("no chat should happen after refusal, got %v", mp.chatUser)
@@ -988,8 +990,8 @@ func TestInjectionChunkedRefused(t *testing.T) {
 	if code == 0 {
 		t.Fatalf("expected nonzero exit for chunked injection")
 	}
-	if !strings.Contains(errOut, "PROMPT_INJECTION") {
-		t.Fatalf("stderr = %q, want PROMPT_INJECTION", errOut)
+	if !strings.Contains(errOut, rolemanager.SentinelPromptInjection.Label()) {
+		t.Fatalf("stderr = %q, want prompt-injection label %q", errOut, rolemanager.SentinelPromptInjection.Label())
 	}
 
 	mp.mu.Lock()

@@ -66,6 +66,21 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
 - `e2e/` — end-to-end tests that drive the built binary.
 - `docs/` — architecture, specs, and the development workflow.
 
+## Sentinel values
+
+`internal/rolemanager` defines the strict single-token outputs for the
+security classifier, mode classifier, plan evaluator, and goal evaluator.
+Each sentinel has a corresponding human-readable label used by the TUI:
+
+- **Security sentinels:** `internal/rolemanager/labels.go` — `SentinelLabels`
+- **Plan sentinels:** `internal/rolemanager/labels.go` — `PlanSentinelLabels`
+- **Goal sentinels:** `internal/rolemanager/labels.go` — `GoalSentinelLabels`
+
+When adding or editing a sentinel constant, update the matching label map and
+its `Label()` method test in `internal/rolemanager/labels_test.go` so the
+TUI never falls back to the raw token. The TUI should call `.Label()` rather
+than `string()` or `%s` on the sentinel value.
+
 ## Conventions
 
 - Fail closed by default; relaxation is an explicit user opt-in.

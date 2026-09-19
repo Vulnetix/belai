@@ -2482,9 +2482,9 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			a.setTodos(m.Todos)
 		}
 		if m.Malformed {
-			a.addSystem(fmt.Sprintf("goal evaluator: malformed reply (pass %d) — continuing as %s", m.Pass, m.GoalSentinel))
+			a.addSystem(fmt.Sprintf("goal evaluator: malformed reply (pass %d) — continuing as %s", m.Pass, m.GoalSentinel.Label()))
 		} else if m.GoalSentinel != "" {
-			a.addSystem(fmt.Sprintf("goal evaluator: %s (pass %d)", m.GoalSentinel, m.Pass))
+			a.addSystem(fmt.Sprintf("goal evaluator: %s (pass %d)", m.GoalSentinel.Label(), m.Pass))
 		}
 		return a.nextAgent()
 	case agent.EventPlanEvalKind:
@@ -2492,9 +2492,9 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			a.setTodos(m.Todos)
 		}
 		if m.Malformed {
-			a.addSystem(fmt.Sprintf("plan evaluator: malformed reply (pass %d) — continuing as %s", m.Pass, m.PlanSentinel))
+			a.addSystem(fmt.Sprintf("plan evaluator: malformed reply (pass %d) — continuing as %s", m.Pass, m.PlanSentinel.Label()))
 		} else if m.PlanSentinel != "" {
-			a.addSystem(fmt.Sprintf("plan evaluator: %s (pass %d)", m.PlanSentinel, m.Pass))
+			a.addSystem(fmt.Sprintf("plan evaluator: %s (pass %d)", m.PlanSentinel.Label(), m.Pass))
 		}
 		return a.nextAgent()
 	case agent.EventDoneKind:

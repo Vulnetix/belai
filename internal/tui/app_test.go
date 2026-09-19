@@ -1917,7 +1917,7 @@ func TestSubmitInputClassifiesAsyncThenSends(t *testing.T) {
 	var hasPlanEval bool
 	var hasPlanFile bool
 	for _, m := range a.messages {
-		if strings.Contains(m.Content, "plan evaluator: PLAN_COMPLETE") {
+		if strings.Contains(m.Content, "plan evaluator: plan is complete") {
 			hasPlanEval = true
 		}
 		if strings.Contains(m.Content, ".vulnetix/plans/") {

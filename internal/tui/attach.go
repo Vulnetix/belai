@@ -286,7 +286,7 @@ func (a *App) handleAttachValidated(m attachValidatedMsg) tea.Cmd {
 		att.state = attachSafe
 	} else {
 		att.state = attachRejected
-		att.reason = fmt.Sprintf("%s: classified %s", att.text, m.sentinel)
+		att.reason = fmt.Sprintf("%s: classified %s", att.text, m.sentinel.Label())
 	}
 	a.relayout()
 	return a.flushPendingSubmit()
@@ -371,10 +371,10 @@ func (a *App) attachmentPreviews() ([]components.Message, string) {
 				Role:     "tool",
 				ToolName: toolName,
 				ToolArgs: `{"path":"` + att.raw + `"}`,
-				Content:  "tool result withheld: attachment " + att.text + " classified " + string(att.sentinel),
+				Content:  "tool result withheld: attachment " + att.text + " classified " + att.sentinel.Label(),
 			})
 			if att.text != "" {
-				withheld = append(withheld, fmt.Sprintf("%s (classified %s)", att.text, att.sentinel))
+				withheld = append(withheld, fmt.Sprintf("%s (%s)", att.text, att.sentinel.Label()))
 			}
 		}
 	}
