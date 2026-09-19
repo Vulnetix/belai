@@ -1286,3 +1286,113 @@ func TestGuardrailsSettingIgnoresEveryGate(t *testing.T) {
 		t.Fatalf("tool result did not reach the model: %q", tm.toolUsers)
 	}
 }
+
+// TestPlanModeExitPlanModeRecordsStructuredFile pins the end-to-end A1 contract:
+// a plan-mode turn that calls ExitPlanMode with markdown produces a structured
+// .vulnetix/plans/*.md file (canonicalised through plans.Doc.Render).
+func TestPlanModeExitPlanModeRecordsStructuredFile(t *testing.T) {
+	dir := t.TempDir()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		var system string
+		hasTool := false
+		for _, m := range req.Messages {
+			switch m.Role {
+			case "system":
+				system = m.Content
+			case "tool":
+				hasTool = true
+			}
+		}
+		switch {
+		case strings.Contains(system, "operating-mode classifier"):
+			writeChat(w, "PLAN")
+		case strings.Contains(system, "security classifier"):
+			writeChat(w, "SAFE")
+		default:
+			if hasTool {
+				writeChat(w, "done")
+			} else {
+				writeToolCallChat(w, "ExitPlanMode", map[string]any{
+					"plan": "# Refactor the parser\n\n## Summary\n\nSplit it.\n\n## Steps\n\n1. Extract a lexer\n   - Files: parser/lex.go\n   - Verify: go test ./parser\n\n## Test Plan\n\n- go test ./...\n",
+				})
+			}
+		}
+	}))
+	defer srv.Close()
+
+	_, errOut, code := runSignetDir(t, dir, srv.URL,
+		"-provider", "openai", "-model", "test", "-prompt", "plan the refactor")
+	if code != 0 {
+		t.Fatalf("exit = %d (stderr %q)", code, errOut)
+	}
+
+	plansDir := filepath.Join(dir, ".vulnetix", "plans")
+	entries, err := os.ReadDir(plansDir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("plan files = %v, %v; want exactly one", entries, err)
+	}
+	data, err := os.ReadFile(filepath.Join(plansDir, entries[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"# Refactor the parser", "## Summary", "## Steps", "1. Extract a lexer", "- Files: parser/lex.go", "- Verify: go test ./parser", "## Test Plan"} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("plan file missing %q:\n%s", want, data)
+		}
+	}
+}
+
+// TestPlanModeExitPlanModeEmptyPlanErrors pins the fail-closed half: an empty
+// plan argument is a tool error, so no plan file is recorded.
+func TestPlanModeExitPlanModeEmptyPlanErrors(t *testing.T) {
+	dir := t.TempDir()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		var system string
+		hasTool := false
+		for _, m := range req.Messages {
+			switch m.Role {
+			case "system":
+				system = m.Content
+			case "tool":
+				hasTool = true
+			}
+		}
+		switch {
+		case strings.Contains(system, "operating-mode classifier"):
+			writeChat(w, "PLAN")
+		case strings.Contains(system, "security classifier"):
+			writeChat(w, "SAFE")
+		default:
+			if hasTool {
+				writeChat(w, "done")
+			} else {
+				writeToolCallChat(w, "ExitPlanMode", map[string]any{"plan": "   "})
+			}
+		}
+	}))
+	defer srv.Close()
+
+	_, _, code := runSignetDir(t, dir, srv.URL,
+		"-provider", "openai", "-model", "test", "-prompt", "plan the refactor")
+	if code == 0 {
+		t.Fatal("empty plan should fail the turn, got exit 0")
+	}
+	entries, _ := os.ReadDir(filepath.Join(dir, ".vulnetix", "plans"))
+	if len(entries) != 0 {
+		t.Fatalf("empty plan must not record a file, got %v", entries)
+	}
+}
