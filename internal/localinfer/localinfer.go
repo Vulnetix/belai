@@ -136,6 +136,11 @@ type LaunchOptions struct {
 // uses process groups, tees llama-server's output, registers the process in
 // the activity registry, and returns a stop function that SIGTERMs the group
 // then SIGKILLs after a short grace period.
+//
+// If the server fails to bind because its port is already in use, Launch
+// retries up to three times with a freshly allocated port. This covers the
+// advisory nature of FreePort: a collision between closing the probe socket
+// and the server binding it is rare but possible.
 func Launch(ctx context.Context, bin Binary, args []string, baseURL string, opts LaunchOptions) (stop func() error, err error) {
 	if bin.Path == "" {
 		return nil, errors.New("no server binary")
@@ -144,6 +149,37 @@ func Launch(ctx context.Context, bin Binary, args []string, baseURL string, opts
 		opts.Deadline = 30 * time.Second
 	}
 
+	for attempt := 1; attempt <= 3; attempt++ {
+		if attempt > 1 {
+			port, err := FreePort()
+			if err != nil {
+				return nil, fmt.Errorf("free port for retry: %w", err)
+			}
+			args = replacePortInArgs(args, port)
+			baseURL = BaseURL("127.0.0.1", port)
+			if opts.Pidfile != "" {
+				_ = os.Remove(opts.Pidfile)
+			}
+		}
+
+		stop, healthy, addrInUse, err := tryLaunch(ctx, bin, args, baseURL, opts)
+		if healthy {
+			return stop, nil
+		}
+		if stop != nil {
+			_ = stop()
+		}
+		if !addrInUse {
+			return nil, err
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+	}
+	return nil, fmt.Errorf("local server failed to bind after retries")
+}
+
+func tryLaunch(ctx context.Context, bin Binary, args []string, baseURL string, opts LaunchOptions) (stop func() error, healthy, addrInUse bool, err error) {
 	cmd := exec.CommandContext(ctx, bin.Path, args...)
 	proc.SetProcessGroup(cmd)
 
@@ -173,7 +209,7 @@ func Launch(ctx context.Context, bin Binary, args []string, baseURL string, opts
 		if handle != nil {
 			handle.Finish(0, false, err)
 		}
-		return nil, fmt.Errorf("start llama-server: %w", err)
+		return nil, false, isAddrInUse(err.Error()), fmt.Errorf("start llama-server: %w", err)
 	}
 
 	pid := cmd.Process.Pid
@@ -186,17 +222,42 @@ func Launch(ctx context.Context, bin Binary, args []string, baseURL string, opts
 	deadline := time.Now().Add(opts.Deadline)
 	for time.Now().Before(deadline) {
 		if ProbeRunning(ctx, []string{baseURL}) == baseURL {
-			return stop, nil
+			return stop, true, false, nil
+		}
+		tee.Flush()
+		if output := tee.Content(); isAddrInUse(output) {
+			return stop, false, true, fmt.Errorf("llama-server could not bind: %s", output)
 		}
 		select {
 		case <-ctx.Done():
-			_ = stop()
-			return nil, ctx.Err()
+			return stop, false, false, ctx.Err()
 		case <-time.After(250 * time.Millisecond):
 		}
 	}
 
 	tee.Flush()
-	_ = stop()
-	return nil, fmt.Errorf("local server did not become healthy at %s\n%s", baseURL, tee.Content())
+	output := tee.Content()
+	return stop, false, isAddrInUse(output), fmt.Errorf("local server did not become healthy at %s\n%s", baseURL, output)
+}
+
+// replacePortInArgs returns a copy of args with the value following --port
+// replaced by port. If no --port flag exists, args is returned unchanged.
+func replacePortInArgs(args []string, port int) []string {
+	out := append([]string(nil), args...)
+	for i := 0; i < len(out)-1; i++ {
+		if out[i] == "--port" {
+			out[i+1] = strconv.Itoa(port)
+			return out
+		}
+	}
+	return out
+}
+
+// isAddrInUse is a best-effort heuristic for the bind failure that should
+// trigger a port retry.
+func isAddrInUse(output string) bool {
+	lower := strings.ToLower(output)
+	return strings.Contains(lower, "address already in use") ||
+		strings.Contains(lower, "bind failed") ||
+		strings.Contains(lower, "eaddrinuse")
 }

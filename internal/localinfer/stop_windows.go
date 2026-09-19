@@ -22,6 +22,15 @@ func makeStop(cmd *exec.Cmd, handle *activity.Handle, pidfile string) func() err
 			return nil
 		}
 		stopped = true
+		if cmd.ProcessState != nil {
+			if handle != nil {
+				handle.Finish(cmd.ProcessState.ExitCode(), false, nil)
+			}
+			if pidfile != "" {
+				_ = os.Remove(pidfile)
+			}
+			return nil
+		}
 		if cmd.Process != nil {
 			_ = cmd.Process.Kill()
 			_, _ = cmd.Process.Wait()

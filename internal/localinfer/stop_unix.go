@@ -27,6 +27,17 @@ func makeStop(cmd *exec.Cmd, handle *activity.Handle, pidfile string) func() err
 			return nil
 		}
 		stopped = true
+		// If the process already exited, Wait has been called and
+		// ProcessState is populated. Re-waiting races and is unnecessary.
+		if cmd.ProcessState != nil {
+			if handle != nil {
+				handle.Finish(cmd.ProcessState.ExitCode(), false, nil)
+			}
+			if pidfile != "" {
+				_ = os.Remove(pidfile)
+			}
+			return nil
+		}
 		_ = syscall.Kill(-pid, syscall.SIGTERM)
 		done := make(chan struct{})
 		go func() {

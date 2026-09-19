@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -277,6 +278,66 @@ func TestHFWhoami(t *testing.T) {
 	who, ok := HFWhoami(context.Background(), binary)
 	if !ok || who != "user" {
 		t.Fatalf("HFWhoami = %q, %v", who, ok)
+	}
+}
+
+func TestReplacePortInArgs(t *testing.T) {
+	args := []string{"llama-server", "--port", "1234", "--host", "127.0.0.1"}
+	got := replacePortInArgs(args, 5678)
+	want := []string{"llama-server", "--port", "5678", "--host", "127.0.0.1"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("replacePortInArgs = %v, want %v", got, want)
+	}
+}
+
+func TestIsAddrInUse(t *testing.T) {
+	for _, tc := range []string{
+		"error: bind failed: Address already in use",
+		"EADDRINUSE",
+		"bind failed",
+	} {
+		if !isAddrInUse(tc) {
+			t.Fatalf("isAddrInUse(%q) = false, want true", tc)
+		}
+	}
+	if isAddrInUse("some other error") {
+		t.Fatal("isAddrInUse returned true for unrelated error")
+	}
+}
+
+func TestLaunchRetriesOnAddressInUse(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "server.sh")
+	serverScript := `#!/bin/sh
+PORT=$2
+if [ -f "$3/failed" ]; then
+  python3 -c "import sys, http.server, socketserver
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self): self.send_response(200); self.end_headers()
+    def log_message(self,*a): pass
+p=int(sys.argv[1]); s=socketserver.TCPServer(('127.0.0.1',p), H); s.serve_forever()" "$PORT" &
+  sleep 60
+else
+  touch "$3/failed"
+  echo 'error: bind failed: Address already in use' >&2
+  exit 1
+fi
+`
+	if err := os.WriteFile(script, []byte(serverScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bin := Binary{Name: "server", Path: script}
+	args := []string{"--port", "12345", dir}
+	baseURL := BaseURL("127.0.0.1", 12345)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stop, err := Launch(ctx, bin, args, baseURL, LaunchOptions{Deadline: 2 * time.Second})
+	if err != nil {
+		t.Fatalf("launch failed: %v", err)
+	}
+	if stop != nil {
+		_ = stop()
 	}
 }
 
