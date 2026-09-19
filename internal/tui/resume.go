@@ -394,6 +394,7 @@ func (a *App) persistCarrierMeta() {
 		ActivePlan:    a.state.ActivePlan,
 		ActiveGoal:    a.state.ActiveGoal,
 		ActiveProfile: a.state.ActiveProfile,
+		RepoMapHead:   a.repoMap.Head,
 	}.ToEntry(a.lastEntryID))
 }
 

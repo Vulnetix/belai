@@ -28,6 +28,9 @@ type Meta struct {
 	ActiveGoal    string `json:"activeGoal,omitempty"`
 	ActiveProfile string `json:"activeProfile,omitempty"`
 	Mode          string `json:"mode,omitempty"`
+	// RepoMapHead is the repository HEAD the session already consulted for its
+	// repo map, so a resumed session knows whether to re-check the registry.
+	RepoMapHead string `json:"repoMapHead,omitempty"`
 }
 
 // ToEntry renders Meta as a session entry. Schema defaults to the current
@@ -104,6 +107,9 @@ func LatestMeta(entries []Entry) (Meta, bool) {
 		}
 		if m.Mode != "" {
 			out.Mode = m.Mode
+		}
+		if m.RepoMapHead != "" {
+			out.RepoMapHead = m.RepoMapHead
 		}
 		found = true
 	}
