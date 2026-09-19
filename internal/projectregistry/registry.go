@@ -4,6 +4,7 @@
 package projectregistry
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,11 +16,12 @@ import (
 
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/gitinfo"
+	"github.com/vulnetix/signet/internal/repomap"
 	"github.com/vulnetix/signet/internal/session"
 )
 
 // CurrentVersion is the on-disk format version.
-const CurrentVersion = 1
+const CurrentVersion = 2
 
 // Source identifies how an entry was discovered. Higher values win during merge.
 type Source string
@@ -61,6 +63,14 @@ type Entry struct {
 	Source       Source    `json:"source"`
 	Missing      bool      `json:"missing"`
 	Pinned       bool      `json:"pinned"`
+	// RepoMap holds the harness-computed repository map for the project's
+	// current HEAD, when one has been computed and stored. Older files read
+	// the missing fields as "absent".
+	RepoMap      repomap.Map `json:"repo_map,omitempty"`
+	RepoMapHead  string      `json:"repo_map_head,omitempty"`
+	RepoMapState string      `json:"repo_map_state,omitempty"` // absent|running|ready|failed
+	RepoMapOwner string      `json:"repo_map_owner,omitempty"` // session id that claimed it
+	RepoMapAt    time.Time   `json:"repo_map_at,omitempty"`
 }
 
 // File is the on-disk JSON shape.
@@ -318,4 +328,107 @@ func entryKey(workdir string) string {
 		abs = workdir
 	}
 	return session.WorkdirKey(abs)
+}
+
+// RepoMap states.
+const (
+	RepoMapAbsent  = "absent"
+	RepoMapRunning = "running"
+	RepoMapReady   = "ready"
+	RepoMapFailed  = "failed"
+)
+
+// RepoMapStaleAfter is how old a running claim must be before another process
+// may reclaim it, so a killed process cannot wedge the repo permanently.
+const RepoMapStaleAfter = 5 * time.Minute
+
+// ClaimRepoMap atomically claims the repo-map scan for a project's HEAD. It
+// returns true when this caller won the claim and should run the scan.
+func ClaimRepoMap(workdir, head, owner string) (bool, error) {
+	claimed := false
+	err := Mutate(func(r *Registry) error {
+		r.observe(workdir, SourceWorkdir)
+		e := r.entryByKey(entryKey(workdir))
+		if e == nil {
+			return nil
+		}
+		if e.RepoMapState == RepoMapReady && e.RepoMapHead == head {
+			return nil
+		}
+		if e.RepoMapState == RepoMapRunning && time.Since(e.RepoMapAt) < RepoMapStaleAfter {
+			return nil
+		}
+		e.RepoMapState = RepoMapRunning
+		e.RepoMapHead = head
+		e.RepoMapOwner = owner
+		e.RepoMapAt = time.Now()
+		claimed = true
+		return nil
+	})
+	return claimed, err
+}
+
+// StoreRepoMap stores a scanned map for a project's HEAD.
+func StoreRepoMap(workdir string, m repomap.Map) error {
+	return Mutate(func(r *Registry) error {
+		r.observe(workdir, SourceWorkdir)
+		e := r.entryByKey(entryKey(workdir))
+		if e == nil {
+			return nil
+		}
+		e.RepoMap = m
+		e.RepoMapHead = m.Head
+		e.RepoMapState = RepoMapReady
+		e.RepoMapAt = time.Now()
+		return nil
+	})
+}
+
+// MarkRepoMapFailed records a failed scan so a later caller may retry.
+func MarkRepoMapFailed(workdir string) error {
+	return Mutate(func(r *Registry) error {
+		r.observe(workdir, SourceWorkdir)
+		e := r.entryByKey(entryKey(workdir))
+		if e == nil {
+			return nil
+		}
+		e.RepoMapState = RepoMapFailed
+		e.RepoMapAt = time.Now()
+		return nil
+	})
+}
+
+// WaitRepoMap blocks until a ready repo map exists for the project's current
+// HEAD, or the timeout elapses. It returns ok=false on timeout — the map is an
+// accelerant, never a gate. A zero timeout performs a single non-blocking read.
+func WaitRepoMap(ctx context.Context, workdir, head string, timeout time.Duration) (repomap.Map, bool) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	deadline := time.Now().Add(timeout)
+	for {
+		if reg, err := Load(); err == nil {
+			if e := reg.entryByKey(entryKey(workdir)); e != nil && e.RepoMapState == RepoMapReady && e.RepoMapHead == head {
+				return e.RepoMap, true
+			}
+		}
+		if time.Now().After(deadline) || ctx.Err() != nil {
+			return repomap.Map{}, false
+		}
+		select {
+		case <-ctx.Done():
+			return repomap.Map{}, false
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+}
+
+// entryByKey returns the registry entry for a key, or nil.
+func (r *Registry) entryByKey(key string) *Entry {
+	for i := range r.file.Entries {
+		if r.file.Entries[i].Key == key {
+			return &r.file.Entries[i]
+		}
+	}
+	return nil
 }

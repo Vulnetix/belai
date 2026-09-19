@@ -703,9 +703,30 @@ func New(opts Options) *App {
 	// banner re-render is stable. startedAt seeds the exit card's duration.
 	a.bannerTip = components.PickTip(a.sessionID)
 	a.startedAt = time.Now()
-	// The repo map is an accelerant, never a gate: scan it once, best-effort.
-	if _, ok := gitinfo.Detect(workdir); ok {
-		a.repoMap = repomap.Scan(context.Background(), workdir)
+	// The repo map is an accelerant, never a gate: claim, reuse, or scan it
+	// best-effort. A ready map for this HEAD is reused; a running claim from
+	// another process is waited on briefly; otherwise this process claims and
+	// scans once, storing the result for the next process.
+	if info, ok := gitinfo.Detect(workdir); ok {
+		head := info.Head
+		if head == "" {
+			head = repoindex.RunProbe(context.Background(), info.Root, "git", "rev-parse", "--short", "HEAD")
+		}
+		if m, ok := projectregistry.WaitRepoMap(context.Background(), workdir, head, 0); ok {
+			a.repoMap = m
+		} else if claimed, _ := projectregistry.ClaimRepoMap(workdir, head, a.sessionID); claimed {
+			m := repomap.Scan(context.Background(), workdir)
+			a.repoMap = m
+			if m.Head != "" {
+				_ = projectregistry.StoreRepoMap(workdir, m)
+			} else {
+				_ = projectregistry.MarkRepoMapFailed(workdir)
+			}
+		} else if m, ok := projectregistry.WaitRepoMap(context.Background(), workdir, head, 2*time.Second); ok {
+			a.repoMap = m
+		} else {
+			a.repoMap = repomap.Scan(context.Background(), workdir)
+		}
 	}
 	if initialStatus.Configured {
 		a.SetClassifier(run.NewClassifier(initial, a.client))
