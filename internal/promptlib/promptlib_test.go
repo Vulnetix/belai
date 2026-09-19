@@ -88,9 +88,10 @@ func TestCreateLibraryFull(t *testing.T) {
 	// addresses 001..999. Fill the directory directly rather than through
 	// Create, which would need 999 round trips.
 	dir := t.TempDir()
+	pd := promptsDir(t, dir)
 	for i := 1; i <= 999; i++ {
 		name := fmt.Sprintf("e%d", i)
-		if err := writePrompt(filepath.Join(dir, FileName(i, name, true)), "x", 0o644); err != nil {
+		if err := writePrompt(filepath.Join(pd, FileName(i, name, true)), "x", 0o644); err != nil {
 			t.Fatalf("write %d: %v", i, err)
 		}
 	}
@@ -211,8 +212,9 @@ func TestSetEnabledPreservesBodyByteForByte(t *testing.T) {
 
 func TestStraysCollectedNotLoaded(t *testing.T) {
 	dir := t.TempDir()
+	pd := promptsDir(t, dir)
 	write := func(name, content string) {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(pd, name), []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -220,7 +222,7 @@ func TestStraysCollectedNotLoaded(t *testing.T) {
 	write("README.md", "readme")
 	write("deploy.md", "no order")
 	write("010-good.md.swp", "swap")
-	if err := os.Mkdir(filepath.Join(dir, "010-sub.md"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(pd, "010-sub.md"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -455,10 +457,10 @@ func TestReorderRenumbersAndLeavesNoTemps(t *testing.T) {
 			t.Fatalf("reloaded[%d] = %+v, want %+v", i, reloaded.Entries[i], want[i])
 		}
 	}
-	if _, err := os.Stat(filepath.Join(dir, "010-a.md")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(promptsDir(t, dir), "010-a.md")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("old 010-a.md should be gone")
 	}
-	if temps, _ := filepath.Glob(filepath.Join(dir, ".signet-tmp-*")); len(temps) != 0 {
+	if temps, _ := filepath.Glob(filepath.Join(promptsDir(t, dir), ".signet-tmp-*")); len(temps) != 0 {
 		t.Fatalf("temps left behind: %v", temps)
 	}
 }
@@ -475,10 +477,11 @@ func TestReorderAbortsOnCollisionLeavingDirectoryUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	listing, _ := Load(config.ScopeProject, dir)
+	pd := promptsDir(t, dir)
 
 	// A directory squats on a final target name (020-c.md) that is not a
 	// current source; it reads as a stray and must abort the reorder.
-	collision := filepath.Join(dir, "020-c.md")
+	collision := filepath.Join(pd, "020-c.md")
 	if err := os.Mkdir(collision, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -487,11 +490,11 @@ func TestReorderAbortsOnCollisionLeavingDirectoryUnchanged(t *testing.T) {
 		t.Fatal("expected a collision error")
 	}
 	for _, name := range []string{"010-a.md", "020-b.md", "030-c.md"} {
-		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+		if _, err := os.Stat(filepath.Join(pd, name)); err != nil {
 			t.Fatalf("%s should be untouched: %v", name, err)
 		}
 	}
-	if temps, _ := filepath.Glob(filepath.Join(dir, ".signet-tmp-*")); len(temps) != 0 {
+	if temps, _ := filepath.Glob(filepath.Join(pd, ".signet-tmp-*")); len(temps) != 0 {
 		t.Fatalf("temps left behind after abort: %v", temps)
 	}
 }
@@ -530,7 +533,7 @@ func TestAtomicWriteLeavesNoTemp(t *testing.T) {
 	if _, err := Create(config.ScopeProject, dir, "x", "x"); err != nil {
 		t.Fatal(err)
 	}
-	if temps, _ := filepath.Glob(filepath.Join(dir, "*.tmp")); len(temps) != 0 {
+	if temps, _ := filepath.Glob(filepath.Join(promptsDir(t, dir), "*.tmp")); len(temps) != 0 {
 		t.Fatalf("atomic temp left behind: %v", temps)
 	}
 }
@@ -552,4 +555,14 @@ func stringsContainsRune(s string, r rune) bool {
 		}
 	}
 	return false
+}
+
+// promptsDir returns the project prompt directory for a workdir, created.
+func promptsDir(t *testing.T, workdir string) string {
+	t.Helper()
+	d := filepath.Join(workdir, ".vulnetix", "prompts")
+	if err := os.MkdirAll(d, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return d
 }

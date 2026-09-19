@@ -84,7 +84,16 @@ func Load(scope config.Scope, workdir string) (Listing, error) {
 	var l Listing
 	for _, de := range entries {
 		name := de.Name()
-		if de.IsDir() || !de.Type().IsRegular() {
+		isReg := de.Type().IsRegular()
+		if !isReg {
+			// Some filesystems report DT_UNKNOWN for freshly created files;
+			// fall back to Info rather than treating them as strays.
+			info, err := de.Info()
+			if err == nil {
+				isReg = info.Mode().IsRegular()
+			}
+		}
+		if de.IsDir() || !isReg {
 			l.Strays = append(l.Strays, name)
 			continue
 		}

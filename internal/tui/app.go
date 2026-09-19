@@ -420,6 +420,9 @@ type App struct {
 	loadedPrompt  *promptlib.Entry
 	promptAction  bool   // ctrl+s action bar is open
 	promptConfirm string // "" | "overwrite" | "delete"
+	// promptLegacyNoticed stops the prompts.json migration notice repeating
+	// every time a session touches the prompt library.
+	promptLegacyNoticed bool
 
 	// save-file flow: ctrl+s on a hovered file panel turns the composer into a
 	// destination-path prompt that writes the panel's content on enter.
@@ -1636,6 +1639,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
+	// The ctrl+s action bar swallows every key it does not handle, so y/n/d
+	// can never reach the editor while a destructive confirm is on screen.
+	if a.promptAction {
+		return a.handlePromptActionKey(m)
+	}
 	if a.saveFileMode {
 		return a.handleSaveFileKey(m)
 	}
@@ -1695,12 +1703,16 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		a.follow = true
 		return nil
 	case "ctrl+s":
-		// Save the hovered file panel's content to a user-chosen path. It is
-		// inert otherwise: ctrl+s is not a composer key.
+		// Hover keeps priority: it is the older, narrower binding and needs a
+		// live mouse position. Then a loaded library entry gets the action
+		// bar; otherwise ctrl+s is save-as, the same shape as f7.
 		if a.hover.text {
 			return a.startSaveFile(a.hover.msg)
 		}
-		return nil
+		if a.loadedPrompt != nil {
+			return a.openPromptAction()
+		}
+		return a.startSavePrompt()
 	case "ctrl+x":
 		// Copy the full session id. The hint is shown on the footer's session
 		// segment, but the key works from the chat view without a hover too.
@@ -2211,6 +2223,23 @@ func (a *App) cancelSavePrompt() {
 	a.savePromptMode = false
 	a.savePromptValue = ""
 	a.editor.Reset()
+}
+
+// openPromptAction is a stub for the loaded-prompt action bar. It is defined
+// here so the ctrl+s path in handleChatKey compiles; the full prompt manager
+// view is being built out of session.
+func (a *App) openPromptAction() tea.Cmd {
+	a.promptAction = true
+	return nil
+}
+
+// handlePromptActionKey is the stub companion to openPromptAction. It only
+// recognises esc, leaving every other key swallowed while the bar is open.
+func (a *App) handlePromptActionKey(m tea.KeyMsg) tea.Cmd {
+	if m.String() == "esc" {
+		a.promptAction = false
+	}
+	return nil
 }
 
 func (a *App) handleStreamChunk(m streamChunkMsg) tea.Cmd {
