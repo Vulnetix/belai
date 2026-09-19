@@ -582,3 +582,120 @@ func TestAgentCommandPickerDoesNotSendComposerText(t *testing.T) {
 		}
 	}
 }
+
+// (none) leaves agent mode without a carrier — the exact state the picker
+// exists to prevent — so it must never send the pending submit.
+func TestNoneSelectionDoesNotSendPendingSubmit(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	a.loadAgents()
+	a.mode = "agent"
+	a.editor.SetValue("hello")
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter}) // opens the picker
+	a.agentIndex = len(a.agentCandidates())         // highlight (none)
+	if got, _ := a.agentSelection(); got.Name != agentNoneLabel {
+		t.Fatalf("selection = %q, want %q", got.Name, agentNoneLabel)
+	}
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if a.namedAgent != "" {
+		t.Fatalf("namedAgent = %q, want none engaged", a.namedAgent)
+	}
+	if a.editor.Value() != "hello" {
+		t.Fatalf("prompt was consumed, editor holds %q", a.editor.Value())
+	}
+	assertNoUserTurn(t, a)
+}
+
+// esc cancels the pending submit along with the highlight: the prompt stays
+// in the composer and must not be sent by a later, unrelated engage.
+func TestEscapeCancelsThePendingSubmit(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	a.loadAgents()
+	a.mode = "agent"
+	a.editor.SetValue("hello")
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter}) // opens the picker
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEsc})   // cancels it
+	if a.agentPickerSubmit {
+		t.Fatalf("esc left the submit pending")
+	}
+
+	a.handleCommand("/agent") // an unrelated opening
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if a.namedAgent == "" {
+		t.Fatalf("expected the agent to engage")
+	}
+	if a.editor.Value() != "hello" {
+		t.Fatalf("prompt was consumed, editor holds %q", a.editor.Value())
+	}
+	assertNoUserTurn(t, a)
+}
+
+// A prompt left unsent in one session must never be sent into another, so
+// starting a new session drops the pending submit with the picker state.
+func TestNewSessionDropsThePendingSubmit(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	a.loadAgents()
+	a.mode = "agent"
+	a.editor.SetValue("hello")
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter}) // opens the picker
+	a.startNewSession()
+
+	if a.agentPickerSubmit {
+		t.Fatalf("a new session kept the pending submit")
+	}
+	if a.agentPickerOpen {
+		t.Fatalf("a new session kept the picker open")
+	}
+}
+
+// Resuming another session drops the pending submit for the same reason.
+func TestResumeDropsThePendingSubmit(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	a.loadAgents()
+	a.mode = "agent"
+	a.editor.SetValue("hello")
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter}) // opens the picker
+	a.clearForResume()
+
+	if a.agentPickerSubmit {
+		t.Fatalf("resume kept the pending submit")
+	}
+}
+
+// An empty composer is not a submit: enter opens the picker to choose a
+// carrier, and engaging one must not start a turn with no prompt.
+func TestEmptyComposerNeverArmsThePendingSubmit(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	a.loadAgents()
+	a.mode = "agent"
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter}) // opens the picker
+	if a.agentPickerSubmit {
+		t.Fatalf("an empty composer armed a submit")
+	}
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if a.namedAgent == "" {
+		t.Fatalf("expected the agent to engage")
+	}
+	assertNoUserTurn(t, a)
+}
+
+func assertNoUserTurn(t *testing.T, a *App) {
+	t.Helper()
+	for _, m := range a.messages {
+		if m.Role == "user" {
+			t.Fatalf("unexpected user turn: %+v", a.messages)
+		}
+	}
+}
