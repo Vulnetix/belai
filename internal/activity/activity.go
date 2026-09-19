@@ -56,6 +56,10 @@ type Activity struct {
 	ExitCode    int
 	TimedOut    bool
 	Targets     []string // artifact rel paths produced (vulnetix only)
+	// Silent marks an internal harness job whose output must never be
+	// round-tripped to the model (e.g. the repo-map scan). It still appears in
+	// the drawer's honest register.
+	Silent bool
 }
 
 // ErrNotFound is returned by Kill for an unknown id.

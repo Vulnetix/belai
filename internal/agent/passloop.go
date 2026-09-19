@@ -68,6 +68,15 @@ const (
 	goalAckDirective = "Restate the objective as concrete deliverables, name how completion will be verified, and list the first actions you will take. Write a planning todo list under a 'Plan:' header (numbered steps), then begin the first step. Mark each step complete with [DONE:n] in your reply as you finish it."
 )
 
+// goalAckDirective returns the first-pass goal directive, naming the detected
+// test command as the default verification surface when the repo map knows it.
+func (s *Session) goalAckDirective() string {
+	if s.repoMap == nil || len(s.repoMap.Commands.Test) == 0 {
+		return goalAckDirective
+	}
+	return goalAckDirective + " The default verification surface is: " + strings.Join(s.repoMap.Commands.Test, "; ") + "."
+}
+
 // passLedger is the loop-local decision state of one goal pass loop. Pass
 // index, verification-pass count and sentinel history live here — never in
 // turns and never re-parsed out of transcript text. If any of this were
@@ -215,7 +224,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 	gs := goals.NewGoalState(goalText)
 	goalStart := time.Now()
 	totalTokens := 0
-	turns = append(turns, directiveTurns(goalAckDirective)...)
+	turns = append(turns, directiveTurns(s.goalAckDirective())...)
 	emit(Event{Kind: EventGoalStateKind, GoalState: &gs})
 	for {
 		// Cancellation is the only ceiling, and it must not read as an error:

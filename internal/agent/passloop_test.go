@@ -14,6 +14,7 @@ import (
 
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/posture"
+	"github.com/vulnetix/signet/internal/repomap"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/todos"
@@ -586,5 +587,34 @@ func TestCompactBoundaryReplacesTurnsWithSummary(t *testing.T) {
 	}
 	if got[1].Role != "assistant" || got[1].Content != rolemanager.SummaryAck {
 		t.Fatalf("second turn = %+v, want the summary acknowledgement", got[1])
+	}
+}
+
+func TestGoalAckDirectiveNamesDefaultVerificationSurface(t *testing.T) {
+	// A session with no repo map keeps the bare directive.
+	bare, err := NewSession(Options{Cfg: run.Config{Provider: "openai", Model: "test"}, Client: http.DefaultClient})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if got := bare.goalAckDirective(); got != goalAckDirective {
+		t.Fatalf("bare directive = %q, want the const", got)
+	}
+
+	// A repo map with test commands names them as the default verification
+	// surface.
+	m := repomap.Map{Commands: repomap.Commands{Test: []string{"just check", "go test ./..."}}}
+	sess, err := NewSession(Options{
+		Cfg:     run.Config{Provider: "openai", Model: "test"},
+		Client:  http.DefaultClient,
+		RepoMap: &m,
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	got := sess.goalAckDirective()
+	for _, want := range []string{"default verification surface", "just check", "go test ./..."} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("directive missing %q:\n%s", want, got)
+		}
 	}
 }

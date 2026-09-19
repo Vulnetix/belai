@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/signet/internal/plans"
 )
 
 func TestPlanReviewHeightFloor(t *testing.T) {
@@ -107,6 +108,36 @@ func TestPlanReviewApproveSetsActivePlan(t *testing.T) {
 		t.Fatalf("ActivePlan = %q, want approved", st.ActivePlan)
 	}
 	// Reset state so later tests are not affected.
+	st.ActivePlan = ""
+	_ = config.SaveState(st)
+}
+
+func TestPlanReviewApproveSeedsExecutionTodos(t *testing.T) {
+	workdir := t.TempDir()
+	a := New(Options{Workdir: workdir})
+	a.status.Configured = true
+	a.mode = "plan"
+	a.modeSticky = true
+	a.view = viewPlanReview
+	a.viewStack = []viewState{viewPlanReview}
+	a.planReview = newPlanReviewState("approved", "/tmp/approved.md")
+	a.planReview.doc = plans.Doc{
+		Title: "Refactor",
+		Steps: []plans.Step{{N: 1, Text: "Extract lexer"}, {N: 2, Text: "Rewrite grammar"}},
+	}
+
+	_, cmd := a.handlePlanReviewKey(tea.KeyMsg{Type: tea.KeyEnter}) // Approve here
+	if cmd == nil {
+		t.Fatal("Approve should submit a turn")
+	}
+	if a.todos == nil || len(a.todos.Items) != 2 {
+		t.Fatalf("todos = %+v, want 2 seeded steps", a.todos)
+	}
+	if a.todos.Items[0].Text != "Extract lexer" || a.todos.Items[1].Text != "Rewrite grammar" {
+		t.Fatalf("seeded todos = %+v", a.todos.Items)
+	}
+	// Reset state so later tests are not affected.
+	st, _ := config.LoadState()
 	st.ActivePlan = ""
 	_ = config.SaveState(st)
 }

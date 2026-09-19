@@ -90,7 +90,9 @@ func (a *App) handleActivityEvent(m activityEventMsg) tea.Cmd {
 		if !a.activityFinished[act.ID] {
 			a.activityFinished[act.ID] = true
 			a.addSystem(a.activityFinishLine(act))
-			cmd = a.roundTripActivityOutput(act)
+			if !act.Silent {
+				cmd = a.roundTripActivityOutput(act)
+			}
 		}
 	}
 	return tea.Batch(cmd, a.watchActivityEvents())

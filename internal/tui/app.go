@@ -715,17 +715,16 @@ func New(opts Options) *App {
 		if m, ok := projectregistry.WaitRepoMap(context.Background(), workdir, head, 0); ok {
 			a.repoMap = m
 		} else if claimed, _ := projectregistry.ClaimRepoMap(workdir, head, a.sessionID); claimed {
-			m := repomap.Scan(context.Background(), workdir)
-			a.repoMap = m
-			if m.Head != "" {
-				_ = projectregistry.StoreRepoMap(workdir, m)
+			a.repoMap = a.scanRepoMap(context.Background(), workdir)
+			if a.repoMap.Head != "" {
+				_ = projectregistry.StoreRepoMap(workdir, a.repoMap)
 			} else {
 				_ = projectregistry.MarkRepoMapFailed(workdir)
 			}
 		} else if m, ok := projectregistry.WaitRepoMap(context.Background(), workdir, head, 2*time.Second); ok {
 			a.repoMap = m
 		} else {
-			a.repoMap = repomap.Scan(context.Background(), workdir)
+			a.repoMap = a.scanRepoMap(context.Background(), workdir)
 		}
 	}
 	if initialStatus.Configured {
@@ -898,6 +897,28 @@ func (a *App) bannerView() string {
 		Resumed:       a.bannerResumed,
 		RestoredTurns: a.bannerRestoredTurns,
 	}.View()
+}
+
+// scanRepoMap runs the repo-map scan and registers it in the activity drawer
+// as a silent internal job, so the honest register shows the scan like every
+// other harness launch without round-tripping its (empty) output to the model.
+func (a *App) scanRepoMap(ctx context.Context, workdir string) repomap.Map {
+	var h *activity.Handle
+	if a.activity != nil {
+		h = a.activity.Add(activity.Activity{
+			Kind:   activity.KindShell,
+			Label:  "repo map scan",
+			Argv:   []string{"repomap.Scan", workdir},
+			Dir:    workdir,
+			State:  activity.StateRunning,
+			Silent: true,
+		}, nil)
+	}
+	m := repomap.Scan(ctx, workdir)
+	if h != nil {
+		h.Finish(0, false, nil)
+	}
+	return m
 }
 
 // prependBanner prepends the rendered banner plus one blank separator row to

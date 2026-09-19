@@ -17,6 +17,7 @@ import (
 	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/plans"
 	"github.com/vulnetix/signet/internal/session"
+	"github.com/vulnetix/signet/internal/todos"
 	"github.com/vulnetix/signet/internal/tui/components"
 )
 
@@ -272,6 +273,16 @@ func (a *App) submitPlanApproveNew() tea.Cmd {
 	a.sessionID = newID
 	a.lastEntryID = ""
 	a.persistedUpTo = 0
+	// Planning passes stay in the parent: the child begins a fresh transcript.
+	// The fork keeps the history on disk for provenance; the live transcript
+	// starts at the execute turn.
+	a.messages = nil
+	a.todos = nil
+	a.subagents = nil
+	a.subagentIdx = map[string]int{}
+	a.stripFocus = false
+	a.stripSel = 0
+	a.threadFilter = ""
 	a.saveSession()
 	return a.executeApprovedPlan(modes.PlanExecuteNew)
 }
@@ -295,6 +306,17 @@ func (a *App) executeApprovedPlan(opt modes.PlanOption) tea.Cmd {
 	a.syncPlanMode()
 	a.saveMode()
 	a.persistCarrierMeta()
+
+	// Execution tracks the approved plan's steps, not the planning checklist:
+	// the approved Doc.Steps seed a fresh todo list for the execute turn.
+	if len(a.planReview.doc.Steps) > 0 {
+		steps := make([]string, len(a.planReview.doc.Steps))
+		for i, st := range a.planReview.doc.Steps {
+			steps[i] = st.Text
+		}
+		l := todos.New(a.planReview.doc.Title, steps)
+		a.setTodos(&l)
+	}
 
 	a.pop()
 	a.addSystem("plan approved: " + a.planReview.path + " — executing")
