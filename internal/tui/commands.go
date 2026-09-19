@@ -174,14 +174,35 @@ func NewRegistry(workdir string) *Registry {
 		a.planReview.selected = planReviewRefine
 		return a.submitPlanRefine("")
 	})
-	r.Register("code-review", "run Vulnetix code review", nil, func(a *App, arg string) tea.Cmd {
+	r.Register("code-review", "run Vulnetix code review", func() []string {
+		return []string{"run", "configure", "list", "status", "help"}
+	}, func(a *App, arg string) tea.Cmd {
 		return func() tea.Msg {
-			cli, err := vulnetixcli.Detect()
+			inv, err := commands.ParseInvocation(arg)
 			if err != nil {
 				return codeReviewDoneMsg{err: err}
 			}
-			rep, err := commands.CodeReview{CLI: cli, Workdir: a.workdir}.Run()
-			return codeReviewDoneMsg{report: rep, err: err}
+			switch inv.Action {
+			case commands.ActionConfigure:
+				return a.push(viewCodeReviewConfig)()
+			case commands.ActionList:
+				return a.push(viewCodeReviewList)()
+			case commands.ActionStatus:
+				cli, err := vulnetixcli.Detect()
+				if err != nil {
+					return codeReviewDoneMsg{err: err}
+				}
+				return codeReviewDoneMsg{report: commands.Report{Status: commands.CodeReview{}.StatusText(vulnetixcli.Probe(context.Background(), *cli, vulnetixcli.ProbeOptions{}))}}
+			case commands.ActionHelp:
+				return codeReviewDoneMsg{report: commands.Report{Status: "/code-review run | configure | list | status"}}
+			default:
+				cli, err := vulnetixcli.Detect()
+				if err != nil {
+					return codeReviewDoneMsg{err: err}
+				}
+				rep, err := commands.CodeReview{CLI: cli, Workdir: a.workdir}.Run(context.Background())
+				return codeReviewDoneMsg{report: rep, err: err}
+			}
 		}
 	})
 	r.Register("settings", "view and edit settings", nil, func(a *App, arg string) tea.Cmd {

@@ -25,15 +25,6 @@ var AllowedSubcommands = map[string]bool{
 	"package-firewall": true, "ai-firewall": true,
 }
 
-// CodeReviewSettings are persisted per-project settings for /code-review.
-// Fields are intentionally typed; no free-form flags are ever stored.
-type CodeReviewSettings struct {
-	Subcommands     []string `json:"subcommands,omitempty"`
-	Timeout         string   `json:"timeout,omitempty"`
-	ContinueOnError *bool    `json:"continue_on_error,omitempty"`
-	OrgID           string   `json:"org_id,omitempty"`
-}
-
 // Report is the result of a code review run or status query.
 type Report struct {
 	Summary  string

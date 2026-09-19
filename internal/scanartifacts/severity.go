@@ -172,6 +172,10 @@ func UniqueKeys(items []FindingKey) []FindingKey {
 
 // Format returns a compact human-readable summary.
 func (s Summary) Format() string {
-	u := s.Union
-	return fmt.Sprintf("%d critical · %d high · %d medium · %d low · %d unknown", u.Critical, u.High, u.Medium, u.Low, u.Unknown)
+	return s.Union.Format()
+}
+
+// Format returns a compact human-readable summary of counts.
+func (c Counts) Format() string {
+	return fmt.Sprintf("%d critical · %d high · %d medium · %d low · %d unknown", c.Critical, c.High, c.Medium, c.Low, c.Unknown)
 }

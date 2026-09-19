@@ -36,12 +36,14 @@ import (
 	"github.com/vulnetix/signet/internal/plans"
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/profiles"
+	"github.com/vulnetix/signet/internal/projectregistry"
 	"github.com/vulnetix/signet/internal/prompt"
 	"github.com/vulnetix/signet/internal/promptlib"
 	"github.com/vulnetix/signet/internal/provider"
 	"github.com/vulnetix/signet/internal/repoindex"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/signet/internal/scanartifacts"
 	"github.com/vulnetix/signet/internal/session"
 	"github.com/vulnetix/signet/internal/todos"
 	"github.com/vulnetix/signet/internal/tools"
@@ -49,6 +51,7 @@ import (
 	"github.com/vulnetix/signet/internal/transcript"
 	"github.com/vulnetix/signet/internal/tui/components"
 	"github.com/vulnetix/signet/internal/version"
+	"github.com/vulnetix/signet/internal/vulnetixcli"
 )
 
 // Options configures a new TUI app.
@@ -119,6 +122,30 @@ type modeClassifiedMsg struct {
 	firstUser bool
 	decision  rolemanager.ModeDecision
 	err       error
+}
+
+// vulnetixProbeMsg carries the result of probing the local Vulnetix CLI.
+type vulnetixProbeMsg struct {
+	cap vulnetixcli.Capabilities
+	err error
+}
+
+// projectsLoadedMsg carries the project registry listing.
+type projectsLoadedMsg struct {
+	entries []projectregistry.Entry
+	err     error
+}
+
+// sweepFoundMsg reports how many projects the sweep discovered.
+type sweepFoundMsg struct {
+	found int
+	err   error
+}
+
+// artifactsLoadedMsg carries the artifact summary for the current project.
+type artifactsLoadedMsg struct {
+	summary scanartifacts.Summary
+	err     error
 }
 
 // workingPhase describes what the in-flight prompt is doing so the composer
@@ -263,19 +290,22 @@ type App struct {
 	pendingInput string // prompt held while attachments validate
 
 	// view state
-	view            viewState
-	viewStack       []viewState
-	credentialState credentialViewState
-	settingsState   settingsViewState
-	modelState      modelViewState
-	permState       permissionsViewState
-	importState     importViewState
-	clarifyState    clarifyViewState
-	permAskState    permissionAskViewState
-	agentState      agentViewState
-	classifierState classifierViewState
-	planReview      planReviewState
-	resumeState     resumeViewState
+	view                     viewState
+	viewStack                []viewState
+	credentialState          credentialViewState
+	settingsState            settingsViewState
+	modelState               modelViewState
+	permState                permissionsViewState
+	importState              importViewState
+	clarifyState             clarifyViewState
+	permAskState             permissionAskViewState
+	agentState               agentViewState
+	classifierState          classifierViewState
+	planReview               planReviewState
+	resumeState              resumeViewState
+	codeReviewConfigState    codeReviewConfigState
+	codeReviewListState      codeReviewListState
+	codeReviewArtifactsState codeReviewArtifactsState
 
 	// which providers the pickers may offer, filled by an async probe
 	avail providerAvailability
@@ -1301,6 +1331,18 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case codeReviewDoneMsg:
 		return a, a.handleCodeReviewDone(m)
+
+	case vulnetixProbeMsg:
+		return a, a.handleVulnetixProbe(m)
+
+	case projectsLoadedMsg:
+		return a, a.handleProjectsLoaded(m)
+
+	case sweepFoundMsg:
+		return a, a.handleSweepFound(m)
+
+	case artifactsLoadedMsg:
+		return a, a.handleArtifactsLoaded(m)
 
 	case agentBuilderDoneMsg:
 		return a, a.handleAgentBuilderDone(m)
@@ -3410,9 +3452,52 @@ func (a *App) handleCodeReviewDone(m codeReviewDoneMsg) tea.Cmd {
 		a.addSystem("code-review failed: " + m.err.Error())
 		return nil
 	}
+	if m.report.Status != "" {
+		a.addSystem("code-review status:\n" + m.report.Status)
+		return nil
+	}
 	if m.report.Summary != "" {
 		a.addSystem("code-review:\n" + m.report.Summary)
 	}
+	return a.push(viewCodeReviewArtifacts)
+}
+
+func (a *App) handleVulnetixProbe(m vulnetixProbeMsg) tea.Cmd {
+	a.codeReviewConfigState.cap = m.cap
+	a.codeReviewConfigState.loading = false
+	if m.err != nil {
+		a.codeReviewConfigState.errorMsg = m.err.Error()
+	}
+	return nil
+}
+
+func (a *App) handleProjectsLoaded(m projectsLoadedMsg) tea.Cmd {
+	a.codeReviewListState.loading = false
+	if m.err != nil {
+		a.codeReviewListState.errorMsg = m.err.Error()
+		return nil
+	}
+	a.codeReviewListState.entries = m.entries
+	a.codeReviewListState.rows = flattenCodeReviewRows(m.entries)
+	return nil
+}
+
+func (a *App) handleSweepFound(m sweepFoundMsg) tea.Cmd {
+	if m.err != nil {
+		a.codeReviewListState.errorMsg = m.err.Error()
+		return nil
+	}
+	// Reload the registry after the sweep batch is done.
+	return a.loadCodeReviewProjectsCmd()
+}
+
+func (a *App) handleArtifactsLoaded(m artifactsLoadedMsg) tea.Cmd {
+	a.codeReviewArtifactsState.loading = false
+	if m.err != nil {
+		a.codeReviewArtifactsState.errorMsg = m.err.Error()
+		return nil
+	}
+	a.codeReviewArtifactsState.summary = m.summary
 	return nil
 }
 

@@ -133,7 +133,7 @@ func relevantAgents() []string {
 	}
 	var names []string
 	for _, p := range profiles {
-		if p.Mode == agentprofile.ModeSingle {
+		if !p.Builtin && p.Mode == agentprofile.ModeSingle {
 			names = append(names, p.Name)
 		}
 	}

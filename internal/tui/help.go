@@ -170,6 +170,25 @@ func keySections() []keySection {
 			{"enter, e", "edit the selected agent"},
 			{"esc", "back"},
 		}},
+		{"/code-review configure", []keyBinding{
+			{"r", "re-probe the CLI"},
+			{"l", "open scan history"},
+			{"esc", "back"},
+		}},
+		{"/code-review list", []keyBinding{
+			{"↑↓", "move"},
+			{"/", "filter"},
+			{"enter", "open artifacts for selected project"},
+			{"r", "re-sweep"},
+			{"c", "configure"},
+			{"esc", "back"},
+		}},
+		{"/code-review artifacts", []keyBinding{
+			{"↑↓", "move"},
+			{"t", "start triage agent"},
+			{"l", "open history"},
+			{"esc", "back"},
+		}},
 		{"agent editor", []keyBinding{
 			{"up, down", "move"},
 			{"space, enter", "cycle or edit the field"},

@@ -126,6 +126,12 @@ func Load() (Registry, error) {
 	return Registry{file: f}, nil
 }
 
+// LastSweep returns the timestamp of the last full sweep.
+func (r *Registry) LastSweep() time.Time { return r.file.LastSweep }
+
+// SetLastSweep updates the last-sweep timestamp.
+func (r *Registry) SetLastSweep(t time.Time) { r.file.LastSweep = t }
+
 // All returns entries sorted by LastSeen desc.
 func (r *Registry) All() []Entry {
 	out := make([]Entry, len(r.file.Entries))

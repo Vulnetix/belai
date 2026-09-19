@@ -60,6 +60,32 @@ type Settings struct {
 	// Classifier configures the security classifier separately from the main
 	// agent model. nil means reuse the main provider/model with reasoning off.
 	Classifier *ClassifierSettings `json:"classifier,omitempty"`
+	// Sweep enables the background filesystem sweep for .vulnetix projects.
+	VulnetixSweepEnabled *bool `json:"vulnetix_sweep_enabled,omitempty"`
+	// SweepRoots restricts the sweep to a list of paths. Empty means $HOME and
+	// the current workdir's parent.
+	VulnetixSweepRoots []string `json:"vulnetix_sweep_roots,omitempty"`
+	// CodeReview holds per-project /code-review configuration. It is typed and
+	// allowlisted so arbitrary argv can never be persisted here.
+	CodeReview *CodeReviewSettings `json:"code_review,omitempty"`
+}
+
+// CodeReviewSettings is the per-project /code-review configuration.
+type CodeReviewSettings struct {
+	Subcommands     []string `json:"subcommands,omitempty"`
+	Timeout         string   `json:"timeout,omitempty"`
+	ContinueOnError *bool    `json:"continue_on_error,omitempty"`
+	OrgID           string   `json:"org_id,omitempty"`
+}
+
+// SweepEnabled reports whether the vulnetix sweep is on. Default true.
+func (s Settings) SweepEnabled() bool {
+	return s.VulnetixSweepEnabled == nil || *s.VulnetixSweepEnabled
+}
+
+// SweepRoots returns the configured sweep roots, or nil for defaults.
+func (s Settings) SweepRoots() []string {
+	return s.VulnetixSweepRoots
 }
 
 // UnmarshalJSON accepts read_only (canonical) and bash_readonly (deprecated
