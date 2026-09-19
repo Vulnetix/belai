@@ -407,17 +407,19 @@ func hasTruncation(lm LineMap) bool {
 }
 
 // tagProvenance stamps every line of one message's render with the message
-// index that produced it and the two hover-relevant facts about that message:
-// whether it is a file panel and whether it is currently collapsed. It runs
-// after every render — including cache hits — so the cache never needs to know
-// about provenance, and a late-arriving path or expansion cannot leave stale
-// tags behind.
+// index that produced it and the hover-relevant facts about that message:
+// whether it is a file panel, whether it has text to hand out, and whether it
+// is currently collapsed. It runs after every render — including cache hits —
+// so the cache never needs to know about provenance, and a late-arriving path
+// or expansion cannot leave stale tags behind.
 func tagProvenance(lm LineMap, owner int, msg Message) {
 	file := msg.FilePath() != ""
+	copyable := strings.TrimSpace(msg.Text()) != ""
 	collapsed := hasTruncation(lm)
 	for i := range lm {
 		lm[i].Owner = owner
 		lm[i].File = file
+		lm[i].Copyable = copyable
 		lm[i].Collapsed = collapsed
 	}
 }

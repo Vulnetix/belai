@@ -1485,8 +1485,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			// Context-sensitive: over a hovered file panel, ctrl+c copies the
 			// file's content; everywhere else it keeps copying the prompt.
-			if a.view == viewChat && a.hover.file {
-				return a, a.copyHoveredFile(a.hover.msg)
+			if a.view == viewChat && a.hover.text {
+				return a, a.copyHoveredPanel(a.hover.msg)
 			}
 			return a, a.copyPrompt()
 		case "ctrl+d":
@@ -1626,7 +1626,7 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 	case "ctrl+s":
 		// Save the hovered file panel's content to a user-chosen path. It is
 		// inert otherwise: ctrl+s is not a composer key.
-		if a.hover.file {
+		if a.hover.text {
 			return a.startSaveFile(a.hover.msg)
 		}
 		return nil

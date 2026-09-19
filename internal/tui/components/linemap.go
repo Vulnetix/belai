@@ -52,6 +52,11 @@ type SourceLine struct {
 	// panel offers save-to-disk and copy-to-clipboard.
 	File bool
 
+	// Copyable marks a line belonging to a panel that has text to hand out.
+	// Hovering such a panel offers copy-to-clipboard and save-to-disk. File
+	// panels are the subset whose save hint names a real file.
+	Copyable bool
+
 	// Collapsed marks a line belonging to a panel that is currently truncated
 	// (it carries a "… N more lines" hint). Hovering such a panel offers
 	// ctrl+o to expand every truncated panel.

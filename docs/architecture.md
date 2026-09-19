@@ -1296,23 +1296,27 @@ inert — the same gate as drag-selection.
 
 Three regions are actionable:
 
-- **File panel** — a `Read` tool row whose `Meta` (or, failing that, its
-  `path` argument) carries a path. Its content is a file the thread has
-  output. Hovering shows `ctrl+s save <name> · ctrl+c copy`. `ctrl+s` turns
-  the composer into a destination-path prompt (`save file`, `⏎ save · esc
-  cancel`) and enter writes the displayed content; a relative path resolves
-  against the working directory, an absolute one is used as-is, and the path
-  is deliberately not confined because the *user*, not the model, chose it.
-  Empty input cancels with `save cancelled: path required`. `ctrl+c` over a
-  file panel copies the file's content instead of the prompt; elsewhere it
-  keeps its prompt-copy meaning. A partial or truncated `Read` saves exactly
-  the bytes shown, not the whole file.
+- **Any panel with text** — user, assistant, reasoning, system, and non-Read
+  tool rows alike. Hovering shows `ctrl+s save <name> · ctrl+c copy`. A `Read`
+  file panel names its real file's basename; everything else gets a generated
+  default name `signet-<short-id>-<idx>.<ext>` (`.md` for text panels, `.txt`
+  for tool results; the short-id segment is dropped when no session id
+  exists). The name is truncated at 40 runes. `ctrl+s` turns the composer into
+  a destination-path prompt (`save file`, `⏎ save · esc cancel`) pre-filled
+  with that name, and enter writes the panel's *full* content — a collapsed
+  panel saves the hidden remainder too, not just what is on screen. A relative
+  path resolves against the working directory, an absolute one is used as-is,
+  and the path is deliberately not confined because the *user*, not the model,
+  chose it. Empty input cancels with `save cancelled: path required`. `ctrl+c`
+  over a panel copies its content instead of the prompt; with the pointer off
+  the transcript it keeps its prompt-copy meaning. A running tool row with no
+  output yet has no text and stays un-hoverable.
 - **Session segment** — the footer's `session: …` text (name when shown, else
   the short id). Hovering shows `ctrl+x copy session id`, and `ctrl+x` copies
   the full id from the chat view whether or not the pointer is there.
 - **Collapsed panel** — any truncated turn, reasoning panel, or tool row.
   Hovering shows `ctrl+o expand all`; the key is the same global toggle that
-  collapses again when already expanded. A collapsed file panel shows all
+  collapses again when already expanded. A collapsed text panel shows all
   three offers together (`save`, `copy`, `expand all`).
 
 The session hit-test is exact: `Footer.SessionSpan` mirrors the same layout
@@ -1361,14 +1365,14 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 
 | Key | Behaviour |
 | --- | --------- |
-| `ctrl+c` | Copy the current prompt to the clipboard (native, then OSC 52); over a hovered file panel, copies the file's content instead |
+| `ctrl+c` | Copy the current prompt to the clipboard (native, then OSC 52); over a hovered panel, copies the panel's content instead |
 | `ctrl+d` | Quit, unconditionally |
 | `shift+tab` | Cycle mode: agent → plan → goal |
 | `esc` | Close any full-screen view (nested views pop to their parent); cancels a held submit or an in-flight pre-send |
 | `space` / `n` / `s` / `enter` | Use in the **Clarify** questionnaire view: select, add a note, skip the question, submit |
 | `ctrl+l` | Clear the transcript *view* — the session is kept |
 | `ctrl+o` | Toggle full output for all truncated turns and tool results |
-| `ctrl+s` | Over a hovered file panel, save its content to a path typed into the composer |
+| `ctrl+s` | Over a hovered panel with text, save its content to a path typed into the composer |
 | `ctrl+x` | Copy the session id to the clipboard (hinted when hovering the footer's session segment) |
 | `ctrl+r` / `ctrl+t` | Toggle reasoning-panel / tool-row display for the session |
 | `f2` | Toggle the caveman voice rewrite, persisting to the scoped settings file; the footer `caveman:` slot updates in the same frame |

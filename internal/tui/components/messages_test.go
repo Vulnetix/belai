@@ -743,3 +743,19 @@ func TestRunningToolRowNotMemoised(t *testing.T) {
 		t.Fatalf("running tool row must re-render every frame (live elapsed), got cached %q", ml.Messages[0].rc.text)
 	}
 }
+
+func TestTagProvenanceSetsCopyable(t *testing.T) {
+	textMsg := Message{Role: "assistant", Content: "hello"}
+	lm := LineMap{{Text: "hello", Col: 0, Width: 5}}
+	tagProvenance(lm, 0, textMsg)
+	if !lm[0].Copyable {
+		t.Fatal("a text-bearing message must mark its lines copyable")
+	}
+
+	emptyMsg := Message{Role: "tool", ToolName: "Read"}
+	lm2 := LineMap{{Text: "", Col: 0, Width: 2}}
+	tagProvenance(lm2, 0, emptyMsg)
+	if lm2[0].Copyable {
+		t.Fatal("an empty message must not mark its lines copyable")
+	}
+}

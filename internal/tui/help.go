@@ -25,7 +25,7 @@ type keySection struct {
 func keySections() []keySection {
 	return []keySection{
 		{"anywhere", []keyBinding{
-			{"ctrl+c", "copy the prompt — or the hovered file panel — to the clipboard"},
+			{"ctrl+c", "copy the prompt — or the hovered panel — to the clipboard"},
 			{"ctrl+d", "quit"},
 			{"ctrl+r", "cycle reasoning display: auto, on, off"},
 			{"ctrl+t", "cycle tool-call display: auto, on, off"},
@@ -47,7 +47,7 @@ func keySections() []keySection {
 			{"f7", "save the prompt to the library"},
 			{"ctrl+l", "clear the transcript view; the session is kept"},
 			{"ctrl+o", "expand or collapse every truncated output"},
-			{"ctrl+s", "save the hovered file panel to a path you type"},
+			{"ctrl+s", "save the hovered panel to a path you type"},
 			{"ctrl+x", "copy the session id to the clipboard"},
 		}},
 		{"slash completions (while the / popup is open)", []keyBinding{

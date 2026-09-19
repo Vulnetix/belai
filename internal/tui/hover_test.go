@@ -154,13 +154,14 @@ func TestRecomputeHoverNone(t *testing.T) {
 	a := New(Options{Workdir: t.TempDir()})
 	a.width = 120
 	a.height = 40
-	a.messages = []components.Message{{Role: "system", Content: "done"}}
+	// A tool row with no output yet has no text to hand out.
+	a.messages = []components.Message{{Role: "tool", ToolName: "Read"}}
 	renderFrame(t, a)
 	pointAt(a, hoverLine(t, a, 0, false, false))
 	a.recomputeHover()
 
-	if a.hover != (hoverTarget{}) {
-		t.Fatalf("hover = %+v, want none", a.hover)
+	if a.hover.text {
+		t.Fatalf("hover = %+v, want no copyable text", a.hover)
 	}
 	if a.hoverHint() != "" {
 		t.Fatalf("hint = %q, want empty", a.hoverHint())
@@ -210,7 +211,7 @@ func hoverFileApp(t *testing.T) *App {
 	return a
 }
 
-func TestCtrlSStartsSaveFileOnlyWhenHoveringFile(t *testing.T) {
+func TestCtrlSStartsSaveFileOnlyWhenHoveringPanel(t *testing.T) {
 	a := hoverFileApp(t)
 	if cmd := a.handleChatKey(tea.KeyMsg{Type: tea.KeyCtrlS}); cmd != nil {
 		t.Fatalf("ctrl+s returned %#v, want nil", cmd)
@@ -219,12 +220,34 @@ func TestCtrlSStartsSaveFileOnlyWhenHoveringFile(t *testing.T) {
 		t.Fatalf("ctrl+s should open save-file flow: mode=%v msg=%d", a.saveFileMode, a.saveFileMsg)
 	}
 
+	// An assistant panel with text enters the flow too.
 	b := New(Options{Workdir: t.TempDir()})
+	b.width = 120
+	b.height = 40
+	b.messages = []components.Message{{Role: "assistant", Content: "a long reply"}}
+	renderFrame(t, b)
+	pointAt(b, hoverLine(t, b, 0, false, false))
+	b.recomputeHover()
 	if cmd := b.handleChatKey(tea.KeyMsg{Type: tea.KeyCtrlS}); cmd != nil {
-		t.Fatalf("ctrl+s without a hover returned %#v", cmd)
+		t.Fatalf("ctrl+s over an assistant panel returned %#v", cmd)
 	}
-	if b.saveFileMode {
-		t.Fatal("ctrl+s without a hover must not open the save-file flow")
+	if !b.saveFileMode {
+		t.Fatal("ctrl+s over an assistant panel must open the save-file flow")
+	}
+
+	// A running tool row with no output does not.
+	c := New(Options{Workdir: t.TempDir()})
+	c.width = 120
+	c.height = 40
+	c.messages = []components.Message{{Role: "tool", ToolName: "Read"}}
+	renderFrame(t, c)
+	pointAt(c, hoverLine(t, c, 0, false, false))
+	c.recomputeHover()
+	if cmd := c.handleChatKey(tea.KeyMsg{Type: tea.KeyCtrlS}); cmd != nil {
+		t.Fatalf("ctrl+s over an empty tool row returned %#v", cmd)
+	}
+	if c.saveFileMode {
+		t.Fatal("ctrl+s over an empty tool row must not open the save-file flow")
 	}
 }
 
@@ -305,6 +328,87 @@ func TestCtrlCOnFileCopiesFileNotPrompt(t *testing.T) {
 	}
 	if !strings.Contains(copied.text, "copied file to clipboard") {
 		t.Fatalf("copy feedback = %q, want file copy", copied.text)
+	}
+}
+
+// hoverAssistantApp builds a chat app with one assistant reply and hover over
+// it.
+func hoverAssistantApp(t *testing.T) *App {
+	t.Helper()
+	a := New(Options{Workdir: t.TempDir()})
+	a.width = 120
+	a.height = 40
+	a.messages = []components.Message{{Role: "assistant", Content: "the full reply"}}
+	renderFrame(t, a)
+	pointAt(a, hoverLine(t, a, 0, false, false))
+	a.recomputeHover()
+	return a
+}
+
+func TestCtrlCOnAssistantCopiesReplyNotPrompt(t *testing.T) {
+	a := hoverAssistantApp(t)
+	a.editor.SetValue("the prompt")
+	_, cmd := a.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if cmd == nil {
+		t.Fatal("ctrl+c over an assistant panel should copy")
+	}
+	msg := cmd()
+	copied, ok := msg.(copiedMsg)
+	if !ok {
+		t.Fatalf("ctrl+c produced %#v, want copiedMsg", msg)
+	}
+	if !strings.Contains(copied.text, "copied file to clipboard") {
+		t.Fatalf("copy feedback = %q, want panel copy", copied.text)
+	}
+}
+
+func TestHoverHintOverAssistantPanel(t *testing.T) {
+	a := hoverAssistantApp(t)
+	hint := a.hoverHint()
+	for _, want := range []string{"ctrl+s", "ctrl+c", "copy"} {
+		if !strings.Contains(hint, want) {
+			t.Fatalf("hint %q missing %q", hint, want)
+		}
+	}
+}
+
+func TestHoverSaveName(t *testing.T) {
+	a := hoverFileApp(t)
+	if got := a.hoverSaveName(); got != "main.go" {
+		t.Fatalf("file panel save name = %q, want main.go", got)
+	}
+
+	b := hoverAssistantApp(t)
+	b.sessionID = "abcd1234abcd1234"
+	if got := b.hoverSaveName(); got != "signet-abcd1234-0.md" {
+		t.Fatalf("assistant save name = %q, want signet-abcd1234-0.md", got)
+	}
+
+	// Tool panels use .txt.
+	c := New(Options{Workdir: t.TempDir()})
+	c.width = 120
+	c.height = 40
+	c.sessionID = "abcd1234abcd1234"
+	c.messages = []components.Message{{Role: "tool", ToolName: "Bash", Content: "output"}}
+	renderFrame(t, c)
+	pointAt(c, hoverLine(t, c, 0, false, false))
+	c.recomputeHover()
+	if got := c.hoverSaveName(); got != "signet-abcd1234-0.txt" {
+		t.Fatalf("tool save name = %q, want signet-abcd1234-0.txt", got)
+	}
+
+	// No session id drops the segment.
+	d := hoverAssistantApp(t)
+	d.sessionID = ""
+	if got := d.hoverSaveName(); got != "signet-0.md" {
+		t.Fatalf("no-session save name = %q, want signet-0.md", got)
+	}
+
+	// Long names truncate at 40 runes.
+	e := hoverAssistantApp(t)
+	e.sessionID = "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz"
+	if got := e.hoverSaveName(); len([]rune(got)) > 40 {
+		t.Fatalf("save name too long: %q", got)
 	}
 }
 

@@ -19,9 +19,10 @@ import (
 // without another mouse event.
 type hoverTarget struct {
 	file      bool // a Read result carrying a path — save and copy offered
+	text      bool // any panel with text — save and copy offered
 	collapsed bool // a truncated panel — ctrl+o offered
 	session   bool // the footer's session segment — ctrl+x offered
-	msg       int  // message index for file/collapsed targets
+	msg       int  // message index for file/collapsed/text targets
 }
 
 // recomputeHover re-derives a.hover from the last mouse position, the current
@@ -47,6 +48,7 @@ func (a *App) recomputeHover() {
 	}
 	a.hover.msg = line.Owner
 	a.hover.file = line.File
+	a.hover.text = line.Copyable
 	a.hover.collapsed = line.Collapsed
 }
 
@@ -75,8 +77,8 @@ func (a *App) hitSession(x, y int) bool {
 // is under the pointer.
 func (a *App) hoverHint() string {
 	var pairs []string
-	if a.hover.file {
-		pairs = append(pairs, "ctrl+s", "save "+a.hoverFileName())
+	if a.hover.text {
+		pairs = append(pairs, "ctrl+s", "save "+a.hoverSaveName())
 		pairs = append(pairs, "ctrl+c", "copy")
 	}
 	if a.hover.collapsed {
@@ -91,14 +93,31 @@ func (a *App) hoverHint() string {
 	return components.HelpBar(pairs...)
 }
 
-// hoverFileName returns the base name of the hovered file panel's path,
-// truncated so a long name cannot overflow the footer hint line.
-func (a *App) hoverFileName() string {
-	path := a.filePanelPath(a.hover.msg)
-	if path == "" {
-		return ""
+// hoverSaveName returns the suggested file name for saving the hovered panel:
+// the basename for a Read file panel, otherwise a generated
+// signet-<session>-<idx>.<ext> name. The name is unqualified (no directory) —
+// finishSaveFile joins a relative path against the workdir.
+func (a *App) hoverSaveName() string {
+	if path := a.filePanelPath(a.hover.msg); path != "" {
+		name := filepath.Base(path)
+		return truncateSaveName(name)
 	}
-	name := filepath.Base(path)
+	ext := ".md"
+	if a.hover.msg >= 0 && a.hover.msg < len(a.messages) {
+		if a.messages[a.hover.msg].Role == "tool" {
+			ext = ".txt"
+		}
+	}
+	base := fmt.Sprintf("signet-%s-%d%s", a.sessionDisplay(), a.hover.msg, ext)
+	if a.sessionDisplay() == "" {
+		base = fmt.Sprintf("signet-%d%s", a.hover.msg, ext)
+	}
+	return truncateSaveName(base)
+}
+
+// truncateSaveName truncates a save name to 40 runes, mirroring the old
+// hoverFileName cap.
+func truncateSaveName(name string) string {
 	const maxLen = 40
 	runes := []rune(name)
 	if len(runes) > maxLen {
@@ -116,9 +135,9 @@ func (a *App) filePanelPath(idx int) string {
 	return a.messages[idx].FilePath()
 }
 
-// copyHoveredFile puts the hovered file panel's content on the clipboard. It
+// copyHoveredPanel puts the hovered panel's content on the clipboard. It
 // shares the copiedMsg path with copyPrompt and copySelection.
-func (a *App) copyHoveredFile(idx int) tea.Cmd {
+func (a *App) copyHoveredPanel(idx int) tea.Cmd {
 	if idx < 0 || idx >= len(a.messages) {
 		return nil
 	}
@@ -156,17 +175,23 @@ func (a *App) copySessionID() tea.Cmd {
 	}
 }
 
-// startSaveFile opens the save-file flow for a hovered file panel: the
-// composer becomes a destination-path prompt, and enter writes the panel's
-// content there.
+// startSaveFile opens the save-file flow for a hovered panel: the composer
+// becomes a destination-path prompt pre-filled with the suggested name, and
+// enter writes the panel's content there. It is inert for a panel with no
+// text.
 func (a *App) startSaveFile(idx int) tea.Cmd {
-	if a.filePanelPath(idx) == "" {
+	if idx < 0 || idx >= len(a.messages) {
+		return nil
+	}
+	if a.messages[idx].Text() == "" {
 		return nil
 	}
 	a.saveFileMsg = idx
 	a.saveFileMode = true
 	a.editor.Reset()
 	a.clearAutocomplete()
+	a.editor.SetValue(a.hoverSaveName())
+	a.editor.CursorEnd()
 	return nil
 }
 
