@@ -35,6 +35,7 @@ func keySections() []keySection {
 			{"f5", "cycle operating mode"},
 			{"f6", "cycle reasoning effort"},
 			{"f8", "focus the subagent roster strip (chat)"},
+			{"f9", "toggle the activity drawer (chat)"},
 		}},
 		{"chat", []keyBinding{
 			{"enter", "send; also runs !shell and /commands, or steers a running turn"},
@@ -83,6 +84,14 @@ func keySections() []keySection {
 			{"left, right", "cycle main and the subagent chips"},
 			{"enter", "filter the transcript to the selected subagent; main clears"},
 			{"x", "cancel a running subagent, or dismiss a finished chip"},
+			{"esc", "return focus to the composer"},
+		}},
+		{"activity drawer (after f9)", []keyBinding{
+			{"up, down", "select an activity"},
+			{"enter", "send the selected activity's output to the model"},
+			{"x", "kill the selected activity"},
+			{"t", "start the triage agent on the selected activity's project"},
+			{"pgup, pgdown", "scroll the selected activity's output"},
 			{"esc", "return focus to the composer"},
 		}},
 		{"plan review (after a plan-mode turn)", []keyBinding{

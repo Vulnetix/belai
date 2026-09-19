@@ -64,6 +64,19 @@ union counts plus separate licence, suppressed, and risk-accepted tallies.
 Keys: `↑↓` move, `t` start the built-in `signet:triage-vulns` agent for that
 project, `l` history, `esc` back.
 
+## Activity drawer
+
+Every `/code-review` subcommand — and every CLI probe behind `configure` and
+`status` — registers in the right-side activity drawer (`f9`). The drawer shows
+what argv ran, live stdout/stderr, and exit state. `x` on a running or queued
+row kills the whole process group; a killed subcommand stops the run so the
+remaining subcommands never execute. `t` starts `signet:triage-vulns` on the
+selected activity's project, keyed per project basename so two projects do not
+collide on the instance name. `enter` round-trips the finished output to the
+model exactly like a `!shell` result: it classifies first (unless guardrails
+are off), seals as a shell attachment, and queues until the transcript is idle
+when a turn is in flight.
+
 ## Severity parsing
 
 CycloneDX `ratings[]` can mix CVSS, EPSS, SSVC, Coalition ESS, and licence

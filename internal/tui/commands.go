@@ -192,7 +192,7 @@ func NewRegistry(workdir string) *Registry {
 				if err != nil {
 					return codeReviewDoneMsg{err: err}
 				}
-				return codeReviewDoneMsg{report: commands.Report{Status: commands.CodeReview{}.StatusText(vulnetixcli.Probe(context.Background(), *cli, vulnetixcli.ProbeOptions{}))}}
+				return codeReviewDoneMsg{report: commands.Report{Status: commands.CodeReview{}.StatusText(vulnetixcli.Probe(context.Background(), *cli, vulnetixcli.ProbeOptions{Observer: a}))}}
 			case commands.ActionHelp:
 				return codeReviewDoneMsg{report: commands.Report{Status: "/code-review run | configure | list | status"}}
 			default:
@@ -200,7 +200,7 @@ func NewRegistry(workdir string) *Registry {
 				if err != nil {
 					return codeReviewDoneMsg{err: err}
 				}
-				rep, err := commands.CodeReview{CLI: cli, Workdir: a.workdir}.Run(context.Background())
+				rep, err := commands.CodeReview{CLI: cli, Workdir: a.workdir, Observer: a}.Run(context.Background())
 				return codeReviewDoneMsg{report: rep, err: err}
 			}
 		}
@@ -308,6 +308,7 @@ func NewRegistry(workdir string) *Registry {
 				a.addSystem("agent start: " + err.Error())
 				return nil
 			}
+			a.registerAgentActivity(name, name, a.workdir)
 			a.addSystem("agent started: " + name)
 			return a.watchAgentEvents(name)
 		case "stop":

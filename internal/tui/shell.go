@@ -102,6 +102,7 @@ func (a *App) handleShell(input string) tea.Cmd {
 		StartedAt:  time.Now(),
 	})
 	a.follow = true
+	a.registerShellActivity(callID, cmd, workdir)
 
 	// Buffered so a short command does not block on a UI that has not armed
 	// its watcher yet; beyond that, a full channel throttles the subprocess,
@@ -153,6 +154,9 @@ func (a *App) handleShell(input string) tea.Cmd {
 // handleShellDone routes the classified shell output into the transcript and,
 // when safe, back to the model under the debug profile.
 func (a *App) handleShellDone(m shellDoneMsg) tea.Cmd {
+	if a.activity != nil {
+		a.activity.Finish(m.callID, 0, false, m.err)
+	}
 	if m.err != nil {
 		a.setShellResult(m.callID, fmt.Sprintf("failed: %v", m.err), "✗")
 		return nil

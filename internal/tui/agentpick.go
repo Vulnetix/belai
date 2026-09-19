@@ -136,6 +136,7 @@ func (a *App) startAgentChoice(c agentChoice) tea.Cmd {
 		a.addSystem("agent start failed: " + err.Error())
 		return nil
 	}
+	a.registerAgentActivity(c.Name, c.Name, a.workdir)
 	a.agentIndex = noAgentSelection
 	a.addSystem("agent started in the background: " + c.Name)
 	return nil

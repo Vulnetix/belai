@@ -92,6 +92,10 @@ func argv(args []string) []string {
 	return append(out, args...)
 }
 
+// HardenedArgs returns the final argument list with hardening flags, matching
+// exactly what ExecIn/ExecStreamIn exec.
+func HardenedArgs(args ...string) []string { return argv(args) }
+
 // Exec executes the vulnetix binary with the given arguments and returns stdout,
 // stderr, and exit state. The context governs cancellation; c.Timeout is
 // applied on top when the caller does not set a deadline.
@@ -101,6 +105,15 @@ func (c CLI) Exec(ctx context.Context, args ...string) (Result, error) {
 
 // ExecIn executes the vulnetix binary in dir, overriding c.Dir when non-empty.
 func (c CLI) ExecIn(ctx context.Context, dir string, args ...string) (Result, error) {
+	return c.ExecStreamIn(ctx, dir, nil, args...)
+}
+
+// ExecStreamIn executes the vulnetix binary in dir with optional live-output
+// streaming. A nil sink keeps the byte-identical separate stdout/stderr capture
+// of ExecIn; a non-nil sink receives whole combined lines as the process
+// writes them, through proc.LineTee (the same streaming writer tools.Bash
+// uses).
+func (c CLI) ExecStreamIn(ctx context.Context, dir string, sink func(string), args ...string) (Result, error) {
 	if c.Path == "" {
 		return Result{}, fmt.Errorf("vulnetix CLI path is empty")
 	}
@@ -127,21 +140,37 @@ func (c CLI) ExecIn(ctx context.Context, dir string, args ...string) (Result, er
 	proc.SetProcessGroup(ec)
 
 	t0 := time.Now()
-	stdout := &cappedWriter{max: MaxOutputBytes}
-	stderr := &cappedWriter{max: MaxOutputBytes}
-	ec.Stdout = stdout
-	ec.Stderr = stderr
+	var stdout, stderr *cappedWriter
+	var tee *proc.LineTee
+	if sink == nil {
+		stdout = &cappedWriter{max: MaxOutputBytes}
+		stderr = &cappedWriter{max: MaxOutputBytes}
+		ec.Stdout = stdout
+		ec.Stderr = stderr
+	} else {
+		tee = proc.NewLineTee(MaxOutputBytes, sink)
+		ec.Stdout = tee
+		ec.Stderr = tee
+	}
 
 	if err := ec.Start(); err != nil {
 		return Result{Duration: time.Since(t0)}, fmt.Errorf("start vulnetix %s: %w", strings.Join(args, " "), err)
 	}
 
 	err := ec.Wait()
+	if tee != nil {
+		tee.Flush()
+	}
+
 	res := Result{
-		Stdout:   stdout.String(),
-		Stderr:   stderr.String(),
 		Duration: time.Since(t0),
 		TimedOut: ctx.Err() == context.DeadlineExceeded,
+	}
+	if tee != nil {
+		res.Stdout = tee.Content()
+	} else {
+		res.Stdout = stdout.String()
+		res.Stderr = stderr.String()
 	}
 	if err != nil {
 		res.ExitCode = exitCode(err)

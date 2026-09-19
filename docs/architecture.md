@@ -1086,6 +1086,33 @@ activity streams into the transcript as render-only rows tagged with a dim
 `explore N` gutter; those rows never enter `buildTurns`, so raw subagent
 output can never be promoted into the parent conversation.
 
+### Activity drawer
+
+Signet runs the Vulnetix CLI, `!shell` commands and background agents on the
+user's behalf; the right-side activity drawer is the honest register of every
+one of those processes. `f9` cycles closed → open-and-focused → closed. Closed
+is a thin 3-column rail, lit teal while something runs and dim when idle; open
+is roughly 90 % of the width (clamped so the chat column keeps at least 12
+columns). Each row shows the activity's state glyph, label, elapsed/exit code,
+and artifact count; the selected row's live output streams in a second
+viewport beneath the list.
+
+Keys while focused: `↑`/`↓` select, `pgup`/`pgdown` scroll the output, `x`
+kills the selected activity (running or queued), `t` starts
+`signet:triage-vulns` on its project, `enter` sends its output to the model,
+and `esc` returns focus to the composer. While the drawer is open the
+transcript hover/selection frame is zeroed, because the one-column provenance
+was never valid for a fraction-width transcript.
+
+The register is `internal/activity`, a process-agnostic FIFO registry with no
+TUI imports. Subprocess output is arbitrary content, so it classifies
+unconditionally before a finished activity's output round-trips to the model —
+skipping the classifier only when the guardrails gate is ignored (sanitising
+still runs) — and a non-SAFE sentinel is shown locally and not sent. The output
+seals as a `Kind: "shell"` attachment, which forces the `signet:debug` profile
+exactly like a `!shell` result. When a turn is already in flight the finished
+activity queues and flushes as one batched turn once the transcript is idle.
+
 ### Todo panel
 
 When a session is tracking a todo list, a flat `todo` panel sits between the
@@ -1381,6 +1408,8 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 | `f5` | Cycle mode and re-sync plan mode, from any screen |
 | `f6` | Cycle reasoning effort: default → low → medium → high → default, from any screen |
 | `f7` | Save the current prompt to the project prompt library, from the chat view |
+| `f8` | Focus the subagent roster strip (chat) |
+| `f9` | Toggle the activity drawer (chat) |
 | `ctrl+home` / `ctrl+end` | Jump the transcript to the top / bottom |
 | `ctrl+j` | Insert a newline in the prompt editor |
 | `ctrl+left` / `ctrl+right` | Move the cursor one word left / right, crossing into the neighbouring line at a line boundary |

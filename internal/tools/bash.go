@@ -1,15 +1,15 @@
 package tools
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/vulnetix/signet/internal/proc"
 )
 
 // ShellMetacharacters are shell syntax that would let a command escape a
@@ -228,7 +228,11 @@ func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink
 	// the two streams interleave exactly as the process emitted them — which is
 	// what CombinedOutput does internally. Separate StdoutPipe/StderrPipe with
 	// two scanners would reorder the output of anything that writes to both.
-	tw := &tailWriter{sink: sink, max: b.MaxBytes, flushEvery: progressFlushInterval}
+	var lineSink func(string)
+	if sink != nil {
+		lineSink = func(line string) { sink(Progress{Stream: "stdout", Text: line}) }
+	}
+	tw := proc.NewLineTee(b.MaxBytes, lineSink)
 	ec.Stdout = tw
 	ec.Stderr = tw
 
@@ -257,122 +261,6 @@ func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink
 	}
 
 	return BashResult(content), nil
-}
-
-// progressFlushInterval bounds how often a running command can wake the UI.
-// Without it, output like `find /` produces an event per line and floods the
-// agent's event channel with work the terminal cannot draw anyway.
-const progressFlushInterval = 50 * time.Millisecond
-
-// progressFlushLines flushes early when a burst arrives faster than the
-// interval, so a fast command still streams rather than arriving all at once.
-const progressFlushLines = 64
-
-// tailWriter accumulates a command's combined output, caps it at max bytes,
-// and reports whole lines to a sink as they arrive.
-//
-// It is written to by the goroutine os/exec uses to copy from the process, and
-// read by the caller after Wait returns; the mutex covers that handover. The
-// sink is called with the lock released — it may block, and blocking it must
-// not also block Content.
-type tailWriter struct {
-	sink       Sink
-	max        int
-	flushEvery time.Duration
-
-	mu        sync.Mutex
-	buf       []byte // full output, capped at max
-	truncated bool
-	partial   []byte // bytes since the last newline
-	pending   []string
-	lastFlush time.Time
-}
-
-func (w *tailWriter) Write(p []byte) (int, error) {
-	w.mu.Lock()
-
-	if !w.truncated {
-		if room := w.max - len(w.buf); room > 0 {
-			if len(p) <= room {
-				w.buf = append(w.buf, p...)
-			} else {
-				w.buf = append(w.buf, p[:room]...)
-				w.truncated = true
-			}
-		} else {
-			w.truncated = true
-		}
-	}
-
-	if w.sink == nil {
-		w.mu.Unlock()
-		return len(p), nil
-	}
-
-	w.partial = append(w.partial, p...)
-	for {
-		i := bytes.IndexByte(w.partial, '\n')
-		if i < 0 {
-			break
-		}
-		w.pending = append(w.pending, string(bytes.TrimRight(w.partial[:i], "\r")))
-		w.partial = w.partial[i+1:]
-	}
-
-	ready := w.takeLocked(false)
-	w.mu.Unlock()
-
-	w.emit(ready)
-	return len(p), nil
-}
-
-// Flush reports any buffered lines, including a trailing line with no newline,
-// which is how a prompt or a progress line without a terminator still reaches
-// the UI.
-func (w *tailWriter) Flush() {
-	w.mu.Lock()
-	if len(w.partial) > 0 {
-		w.pending = append(w.pending, string(bytes.TrimRight(w.partial, "\r")))
-		w.partial = nil
-	}
-	ready := w.takeLocked(true)
-	w.mu.Unlock()
-	w.emit(ready)
-}
-
-// takeLocked returns the buffered lines when they are due to be sent. Callers
-// hold w.mu.
-func (w *tailWriter) takeLocked(force bool) []string {
-	if len(w.pending) == 0 {
-		return nil
-	}
-	if !force && w.flushEvery > 0 &&
-		len(w.pending) < progressFlushLines &&
-		time.Since(w.lastFlush) < w.flushEvery {
-		return nil
-	}
-	out := w.pending
-	w.pending = nil
-	w.lastFlush = time.Now()
-	return out
-}
-
-func (w *tailWriter) emit(lines []string) {
-	if len(lines) == 0 || w.sink == nil {
-		return
-	}
-	w.sink(Progress{Stream: "stdout", Text: strings.Join(lines, "\n")})
-}
-
-// Content returns the captured output, with the truncation notice appended if
-// the cap was reached.
-func (w *tailWriter) Content() string {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.truncated {
-		return string(w.buf) + fmt.Sprintf("\n… truncated at %d bytes", w.max)
-	}
-	return string(w.buf)
 }
 
 func exitCode(err error) int {

@@ -12,7 +12,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/vulnetix/signet/internal/agentprofile"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/projectregistry"
 	"github.com/vulnetix/signet/internal/scanartifacts"
@@ -64,6 +63,7 @@ func (a *App) probeVulnetixCmd() tea.Cmd {
 		cap := vulnetixcli.Probe(context.Background(), *cli, vulnetixcli.ProbeOptions{
 			Client:      a.client,
 			SkipNetwork: false,
+			Observer:    a,
 		})
 		return vulnetixProbeMsg{cap: cap}
 	}
@@ -420,18 +420,8 @@ func (a *App) handleCodeReviewArtifactsKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.addSystem("triage: no background manager")
 			return a, nil
 		}
-		profile, err := agentprofile.Load("signet:triage-vulns")
-		if err != nil {
-			a.addSystem("triage: " + err.Error())
-			return a, nil
-		}
 		projectRoot := filepath.Dir(a.codeReviewArtifactsState.summary.Dir)
-		if err := a.bgManager.StartIn(projectRoot, "signet:triage-vulns", profile); err != nil {
-			a.addSystem("triage: " + err.Error())
-			return a, nil
-		}
-		a.addSystem("triage started for " + projectRoot)
-		return a, a.watchAgentEvents("signet:triage-vulns")
+		return a, a.startTriage(projectRoot)
 	}
 	return a, nil
 }

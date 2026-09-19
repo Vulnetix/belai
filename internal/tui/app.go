@@ -19,6 +19,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/vulnetix/signet/internal/activity"
 	"github.com/vulnetix/signet/internal/agent"
 	"github.com/vulnetix/signet/internal/agentpool"
 	"github.com/vulnetix/signet/internal/agentprofile"
@@ -456,6 +457,20 @@ type App struct {
 	stripSel     int    // 0 == "main"
 	threadFilter string // "" == main (unfiltered)
 
+	// activity drawer: the honest register of every process Signet launches.
+	activity      *activity.Registry
+	activityOpen  bool // drawer open (wide) vs closed (thin rail)
+	activityFocus bool // drawer owns the keyboard
+	activitySel   int  // selected activity index (into activity.List())
+	activityVP    viewport.Model
+	// activityAnnounced/activityFinished dedupe the thread start/finish lines
+	// driven by the registry event stream.
+	activityAnnounced map[string]bool
+	activityFinished  map[string]bool
+	// pendingActivitySends are finished-activity attachments waiting for the
+	// in-flight turn to go idle before they flush as one turn.
+	pendingActivitySends []activitySend
+
 	// todos is the shared goal/plan todo list rendered in the chat chrome and
 	// persisted to the session. The agent emits it; the TUI owns persistence.
 	todos *todos.List
@@ -562,6 +577,10 @@ func New(opts Options) *App {
 		bannerW:           -1,
 		footerW:           -1,
 		agentPool:         agentpool.New(eff.Settings.Resilience.MaxAgentsOr(3)),
+		activity:          activity.NewRegistry(),
+		activityVP:        viewport.New(80, 24),
+		activityAnnounced: map[string]bool{},
+		activityFinished:  map[string]bool{},
 		subagentIdx:       map[string]int{},
 		trace:             trace.Env(),
 	}
@@ -686,7 +705,7 @@ func (a *App) SetClassifier(c rolemanager.Classifier) {
 
 // Init implements tea.Model.
 func (a *App) Init() tea.Cmd {
-	cmds := []tea.Cmd{tickCmd()}
+	cmds := []tea.Cmd{tickCmd(), a.watchActivityEvents()}
 	if a.initCmd != nil {
 		cmds = append(cmds, a.initCmd)
 	}
@@ -802,7 +821,7 @@ func (a *App) relayout() {
 		// Two border cells and one column of padding on each side.
 		a.editor.SetWidth(a.width - 6)
 	}
-	a.vp.Width = a.contentWidth()
+	a.vp.Width = a.chatWidth()
 	vpHeight := a.height - a.chromeHeight()
 	if vpHeight < 5 {
 		vpHeight = 5
@@ -1336,6 +1355,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case agentEventMsg:
 		return a, a.handleAgentEvent(m)
 
+	case activityEventMsg:
+		return a, a.handleActivityEvent(m)
+
 	case agentReadyMsg:
 		return a, a.handleAgentReady(m)
 
@@ -1543,6 +1565,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			return a, nil
+		case "f9":
+			if a.view == viewChat {
+				a.toggleActivityDrawer()
+			}
+			return a, nil
 		}
 		if a.view != viewChat {
 			if h, ok := viewHandlers[a.view]; ok {
@@ -1578,6 +1605,11 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 	}
 	if a.historyActive {
 		return a.handleHistoryKey(m)
+	}
+
+	// The activity drawer owns the composer's keys while focused.
+	if a.activityFocus {
+		return a.handleActivityKey(m)
 	}
 
 	// The f8 subagent strip owns the composer's enter/x/esc while focused; the
@@ -2457,7 +2489,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			a.appendEntry(a.todos.ToEntry(""))
 		}
 		a.refreshFooter()
-		return nil
+		return a.flushPendingActivitySends()
 	}
 	return nil
 }
@@ -2546,7 +2578,7 @@ func (a *App) chatView() string {
 	a.relayout()
 	body, lm := components.MessageList{
 		Messages:      a.filteredMessages(),
-		Width:         a.contentWidth(),
+		Width:         a.chatWidth(),
 		ExpandAll:     a.expandAll,
 		ShowReasoning: a.reasoningVisible(),
 		ShowTools:     a.toolCallsVisible(),
@@ -2576,6 +2608,12 @@ func (a *App) chatView() string {
 		width:   a.vp.Width,
 		height:  a.vp.Height,
 		yOffset: a.vp.YOffset,
+	}
+	if a.activityOpen {
+		// With the drawer open the transcript is a fraction of the width and the
+		// frame provenance is stale; make hover and drag-selection inert rather
+		// than subtly wrong.
+		a.lastFrame = frame{}
 	}
 	// Derive the hover target from the frame that is about to be drawn, so the
 	// footer hint always matches the panel under the pointer — including after
@@ -2634,7 +2672,11 @@ func (a *App) chatView() string {
 		a.trace.Event("tui", "render", el)
 	}
 
-	return lipgloss.NewStyle().Padding(1).Render(sb.String())
+	chatCol := lipgloss.NewStyle().Padding(1).Render(sb.String())
+	if a.activityOpen {
+		return lipgloss.JoinHorizontal(lipgloss.Top, chatCol, a.renderActivityDrawer())
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, chatCol, a.renderActivityRail())
 }
 
 // contentWidth is the width available inside the outer one-column padding.

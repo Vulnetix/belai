@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vulnetix/signet/internal/proc"
 	"github.com/vulnetix/signet/internal/repoindex"
 )
 
@@ -174,7 +175,7 @@ func (n *Native) Execute(ctx context.Context, args map[string]any) (Result, erro
 	if maxBytes <= 0 {
 		maxBytes = 64 * 1024
 	}
-	tw := &tailWriter{max: maxBytes, flushEvery: progressFlushInterval}
+	tw := proc.NewLineTee(maxBytes, nil)
 	ec.Stdout = tw
 	ec.Stderr = tw
 

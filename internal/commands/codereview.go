@@ -40,6 +40,16 @@ type SubcommandResult struct {
 	Err    error
 }
 
+// RunObserver is an optional activity-register seam. commands must not import
+// the TUI, so the TUI injects this to register each subcommand run and stream
+// its live output.
+type RunObserver interface {
+	// Start registers one run and returns its live-output sink and a terminal
+	// callback. The returned context is not exposed; the caller cancels it by
+	// calling cancel.
+	Start(name string, argv []string, dir string, cancel context.CancelFunc) (sink func(string), done func(exitCode int, timedOut bool, err error))
+}
+
 // CodeReview runs the Vulnetix CLI review subcommands for a workdir.
 type CodeReview struct {
 	CLI     *vulnetixcli.CLI
@@ -48,6 +58,8 @@ type CodeReview struct {
 	Subcommands []string
 	// Timeout overrides the CLI's default timeout for scans.
 	Timeout time.Duration
+	// Observer, when non-nil, receives per-subcommand activity registration.
+	Observer RunObserver
 }
 
 // Run executes each configured subcommand, never promotes arbitrary repository
@@ -80,12 +92,24 @@ func (r CodeReview) Run(ctx context.Context) (Report, error) {
 
 	var results []SubcommandResult
 	for _, sub := range subs {
-		res, err := cli.ExecIn(ctx, r.Workdir, sub)
-		results = append(results, SubcommandResult{
-			Name:   sub,
-			Output: res.Stdout,
-			Err:    err,
-		})
+		if r.Observer == nil {
+			res, err := cli.ExecIn(ctx, r.Workdir, sub)
+			results = append(results, SubcommandResult{Name: sub, Output: res.Stdout, Err: err})
+			continue
+		}
+
+		subCtx, cancel := context.WithCancel(ctx)
+		argv := append([]string{cli.Path}, vulnetixcli.HardenedArgs(sub)...)
+		sink, done := r.Observer.Start("vulnetix "+sub, argv, r.Workdir, cancel)
+		res, err := cli.ExecStreamIn(subCtx, r.Workdir, sink, sub)
+		done(res.ExitCode, res.TimedOut, err)
+		cancel()
+		results = append(results, SubcommandResult{Name: sub, Output: res.Stdout, Err: err})
+
+		if err != nil && subCtx.Err() == context.Canceled {
+			// A killed subcommand stops the run: the remainder never executes.
+			break
+		}
 	}
 
 	summary := buildSummary(results)

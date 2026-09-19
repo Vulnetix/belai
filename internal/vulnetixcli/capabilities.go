@@ -38,6 +38,16 @@ type ProbeOptions struct {
 	Now          func() time.Time
 	Getenv       func(string) string
 	ReleaseCache *ReleaseCache
+	// Observer, when non-nil, receives an activity registration per probe
+	// subprocess so /code-review configure and status can stream their probes.
+	Observer RunObserver
+}
+
+// RunObserver is the optional activity-register seam for CLI executions. The
+// TUI injects it; the interface is structural, so the same concrete observer
+// satisfies commands.RunObserver too.
+type RunObserver interface {
+	Start(name string, argv []string, dir string, cancel context.CancelFunc) (sink func(string), done func(exitCode int, timedOut bool, err error))
 }
 
 // APIState describes reachability and credential validity independently.
@@ -102,7 +112,7 @@ func Probe(ctx context.Context, c CLI, opts ProbeOptions) Capabilities {
 	wg.Add(3)
 	go func() {
 		defer wg.Done()
-		res, err := c.ExecIn(ctx, "", "version")
+		res, err := execObserved(ctx, c, opts.Observer, "vulnetix version", "", "version")
 		if err == nil {
 			versionErr = nil
 		} else {
@@ -112,7 +122,7 @@ func Probe(ctx context.Context, c CLI, opts ProbeOptions) Capabilities {
 	}()
 	go func() {
 		defer wg.Done()
-		res, err := c.ExecIn(ctx, "", "env")
+		res, err := execObserved(ctx, c, opts.Observer, "vulnetix env", "", "env")
 		if err == nil {
 			envText = res.Stdout
 		} else {
@@ -121,7 +131,7 @@ func Probe(ctx context.Context, c CLI, opts ProbeOptions) Capabilities {
 	}()
 	go func() {
 		defer wg.Done()
-		res, err := c.ExecIn(ctx, "", "auth", "status")
+		res, err := execObserved(ctx, c, opts.Observer, "vulnetix auth status", "", "auth", "status")
 		if err == nil {
 			authText = res.Stdout
 		} else {
@@ -237,6 +247,20 @@ func checkReachability(ctx context.Context, client *http.Client, url string) boo
 	}
 	defer resp.Body.Close()
 	return resp.StatusCode < 500
+}
+
+// execObserved runs one CLI execution through the optional observer, streaming
+// when one is present and falling back to ExecIn when not.
+func execObserved(ctx context.Context, c CLI, obs RunObserver, name, dir string, args ...string) (Result, error) {
+	if obs == nil {
+		return c.ExecIn(ctx, dir, args...)
+	}
+	subCtx, cancel := context.WithCancel(ctx)
+	sink, done := obs.Start(name, append([]string{c.Path}, HardenedArgs(args...)...), dir, cancel)
+	res, err := c.ExecStreamIn(subCtx, dir, sink, args...)
+	done(res.ExitCode, res.TimedOut, err)
+	cancel()
+	return res, err
 }
 
 // checkCredentialValidity runs `vulnetix auth verify` and returns whether the
