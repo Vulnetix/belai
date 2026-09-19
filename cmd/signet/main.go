@@ -75,6 +75,8 @@ func main() {
 	agentCreate := flag.String("agent-create", "", "create an agent profile from a description and save to disk")
 	resume := flag.String("resume", "", "resume a session by id or unique id prefix")
 	flag.StringVar(resume, "r", "", "shorthand for -resume")
+	continueLast := flag.String("continue", "", "continue the most recent session for this project")
+	flag.StringVar(continueLast, "c", "", "shorthand for -continue")
 	flag.Parse()
 
 	if *showVersion {
@@ -84,6 +86,14 @@ func main() {
 
 	if *resume != "" && *prompt != "" {
 		fmt.Fprintln(os.Stderr, "signet: -resume requires the interactive TUI (not supported with -prompt)")
+		os.Exit(1)
+	}
+	if *continueLast != "" && *resume != "" {
+		fmt.Fprintln(os.Stderr, "signet: -continue cannot be combined with -resume")
+		os.Exit(1)
+	}
+	if *continueLast != "" && *prompt != "" {
+		fmt.Fprintln(os.Stderr, "signet: -continue requires the interactive TUI (not supported with -prompt)")
 		os.Exit(1)
 	}
 
@@ -152,21 +162,30 @@ func main() {
 	}
 	posture.PrintBanner(pol, os.Stderr)
 
-	// Resolve --resume before the TUI starts so a bad id exits non-zero with a
-	// message instead of dropping the user into a TUI to discover the failure.
+	// Resolve --resume / --continue before the TUI starts so a bad id (or an
+	// empty project) exits non-zero with a message instead of dropping the user
+	// into a TUI to discover the failure.
 	var resumeKey session.Key
 	var resumeID string
-	if *resume != "" {
+	if *resume != "" || *continueLast != "" {
 		store, err := session.NewStore()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "signet:", err)
 			os.Exit(1)
 		}
 		cur, _ := session.KeyFor(workdir)
-		resumeKey, resumeID, err = store.ResolveAnywhere(cur, *resume)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "signet:", err)
-			os.Exit(1)
+		if *resume != "" {
+			resumeKey, resumeID, err = store.ResolveAnywhere(cur, *resume)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "signet:", err)
+				os.Exit(1)
+			}
+		} else {
+			resumeKey, resumeID, err = continueLatest(store, cur)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "signet:", err)
+				os.Exit(1)
+			}
 		}
 	}
 
@@ -414,4 +433,24 @@ func pruneSessions(settings config.Settings, skipKey session.Key, skipID string)
 		skip = filepath.Join(store.Root, string(skipKey), skipID+".jsonl")
 	}
 	_, _ = store.Prune(time.Duration(settings.SessionRetention())*24*time.Hour, skip)
+}
+
+// continueLatest resolves the most recent session for the current project, the
+// -continue / -c entry point. AllSessions sorts each group's sessions by
+// ModTime desc, so the first entry of the current group is the newest.
+func continueLatest(store *session.Store, cur session.Key) (session.Key, string, error) {
+	groups, err := store.AllSessions(cur)
+	if err != nil {
+		return "", "", err
+	}
+	for _, g := range groups {
+		if g.Key != cur {
+			continue
+		}
+		if len(g.Sessions) == 0 {
+			return "", "", errors.New("no sessions to continue for this project")
+		}
+		return g.Key, g.Sessions[0].ID, nil
+	}
+	return "", "", errors.New("no sessions to continue for this project")
 }

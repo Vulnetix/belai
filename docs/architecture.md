@@ -1417,7 +1417,7 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 | `space` / `n` / `s` / `enter` | Use in the **Clarify** questionnaire view: select, add a note, skip the question, submit |
 | `ctrl+l` | Clear the transcript *view* — the session is kept |
 | `ctrl+o` | Toggle full output for all truncated turns and tool results |
-| `ctrl+s` | Over a hovered panel with text, save its content to a path typed into the composer |
+| `ctrl+s` | Over a hovered panel with text, save its content to a path typed into the composer; with a loaded library prompt, open the overwrite/delete action bar; otherwise save the prompt to the library |
 | `ctrl+x` | Copy the session id to the clipboard (hinted when hovering the footer's session segment) |
 | `ctrl+r` / `ctrl+t` | Toggle reasoning-panel / tool-row display for the session |
 | `f2` | Toggle the caveman voice rewrite, persisting to the scoped settings file; the footer `caveman:` slot updates in the same frame |
@@ -1425,7 +1425,7 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 | `f4` | Toggle the permission-ask gate, from any screen |
 | `f5` | Cycle mode and re-sync plan mode, from any screen |
 | `f6` | Cycle reasoning effort: default → low → medium → high → default, from any screen |
-| `f7` | Save the current prompt to the project prompt library, from the chat view |
+| `f7` | Save the current prompt to the project prompt library, from the chat view — a save-as alias of `ctrl+s` with no loaded entry |
 | `f8` | Focus the subagent roster strip (chat) |
 | `f9` | Toggle the activity drawer (chat) |
 | `ctrl+home` / `ctrl+end` | Jump the transcript to the top / bottom |
@@ -1434,7 +1434,7 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 | `home` / `end` | Jump to the start / end of the logical line (`fn+left` / `fn+right` on a laptop keyboard) |
 | `shift+enter` | Insert a newline. bubbletea has no shift+enter key type, so it arrives one of two ways and `Editor.Update` accepts both: under the kitty protocol the CSI-u translator folds every modified enter onto `ctrl+j`, and without it the terminal sends ESC+CR, which decodes as `enter` carrying the alt flag. That flag is a terminal encoding, not a chord anyone presses, so it is matched by key type rather than bound as an alt keycap |
 | `up` / `down` | Browse prompt history and prompt library. Library entries come first and their names show as a chip strip above the composer: `tab` cycles the named prompts, `right` accepts the loaded one into the composer, `enter` sends it. Typing — like any edit key — leaves the browse cycle and edits the loaded prompt |
-| `f7` | Save the current prompt to the project prompt library |
+| `f7` | Save the current prompt to the project prompt library — a save-as alias of `ctrl+s` with no loaded entry |
 | `tab` | Move the highlight through the slash-command hints, or — when the agent picker is open in agent mode — through the agent candidates. It never writes into the prompt. While browsing the prompt library it loads the next named prompt instead |
 | `right` / `enter` | Accept the highlighted hint (or the first, for `right` with nothing highlighted); when the agent picker is open, engage the highlighted agent — and also send the prompt when it was a submit that opened the picker; while browsing the prompt library, accept the loaded prompt into the composer (`right`) or send it (`enter`). Without a highlight, `right` is the cursor key and `enter` sends, or opens the agent picker in agent mode if no agent is engaged |
 | `ctrl+g` | Start the highlighted `↻` background-agent definition as a background agent |
@@ -1628,36 +1628,48 @@ the *end*. That asymmetry is deliberate and matches both Pi and readline.
 
 ### Prompt library
 
-Named prompts live in a library that merges a global file
-(`~/.vulnetix/signet/prompts.json`, `config.GlobalPromptsPath`) with a project
-override (`<workdir>/.vulnetix/prompts.json`, `config.ProjectPromptsPath`).
-Project entries win by name, and the merge keeps the global file's order for
-names it already had, appending project-only names after it. A missing file is
-an empty library, not an error: the library is chrome, and a fresh checkout has
-no reason to fail the composer.
+Named prompts live in a directory of plain-text `.md` files, not a JSON blob.
+Metadata is encoded in the filename: `NNN-slug.md` is an enabled entry at order
+`NNN`, `_NNN-slug.md` is a disabled one. The global directory is
+`~/.vulnetix/signet/prompts` (`config.GlobalPromptsDir`) and the project
+override is `<workdir>/.vulnetix/prompts` (`config.ProjectPromptsDir`). The old
+`prompts.json` format is abandoned outright — not read, not migrated, not
+deleted. A leftover `prompts.json` is a one-line system notice (once per
+session) telling the user the library moved; nothing ever touches the file.
+
+**Filename grammar.** One strict regexp:
+`^(_?)(\d{3})-([a-z0-9]+(?:-[a-z0-9]+)*)\.md$`. Exactly three digits
+`001`–`999`; the slug is lowercase alnum with single interior hyphens, ≤64
+runes. `_` is never legal inside a slug — slugging uses `-` as the separator,
+not `_`, so a slug can never collide with the disabled marker. Anything that
+does not parse — `README.md`, `.swp` files, sub-directories, crashed-renumber
+temps — goes into `Listing.Strays` and is never read, renamed, or deleted:
+fail closed, do not guess. The whole file is the prompt, verbatim; one trailing
+newline is trimmed on read and appended on write, and `.md` is for editor
+syntax highlighting only.
 
 Browsing is entered with `up`. The result list is built once, when the cycle
-starts:
+starts: load both scopes, `promptlib.Merge` them, then `promptlib.Enabled`
+(disabled entries never reach the cycle), then `promptlib.Filter`; then this
+workdir's session-history prompts, newest first, that match the same text and
+are not already in the list by identical prompt text. The composer's text at
+the moment `up` is pressed is the filter, and the match is a case-insensitive
+substring test against name and prompt (`promptlib.Match`). The list is **not**
+rebuilt mid-cycle.
 
-1. every library entry matching the composer text, project overrides applied;
-2. then this workdir's session-history prompts, newest first, that match the
-   same text and are not already in the list by identical prompt text.
-
-The composer's text at the moment `up` is pressed is the filter — a partial
-prompt narrows what browsing offers — and the match is a case-insensitive
-substring test against both the entry name and the prompt text
-(`promptlib.Match`). The list is **not** rebuilt mid-cycle; the filter is fixed
-for the life of the cycle.
+**Merge ordering.** Each scope sorts by `(Order, Name)`. The merged list is the
+global block in global order, then project-only names in project order. A
+project entry sharing a global name replaces the global entry's *content* but
+keeps the **global slot** — and keeps its own project identity, so a disabled
+project `_020-deploy.md` vetoes an enabled global `010-deploy.md` for that
+workdir (enabled filtering runs after merge). A project entry shadowing a
+global name is marked `override` in the manager, because the shadowing is
+otherwise invisible in the `up` cycle.
 
 Because library entries lead the list, the named ones are always a prefix of
-it, and the TUI draws that prefix as a chip strip above the composer — the
-agent picker's sibling, one chip per prompt *name*, the loaded one highlighted.
-The strip is what replaced a "type to search" hint: typing during a cycle
-never appeared in the composer (the loaded prompt occupied it), so the filter
-it was narrowing was invisible. Names are visible, and `tab` walks them.
-
-Browsing and editing are distinct states, and every key resolves to exactly
-one of them:
+it, and the TUI draws that prefix as a chip strip above the composer — one chip
+per prompt *name*, the loaded one highlighted. `tab` walks the named prefix;
+`up`/`down` walk the whole list including unnamed session history.
 
 | Key | While browsing |
 | --- | -------------- |
@@ -1668,32 +1680,73 @@ one of them:
 | `esc` | Cancel: restore the text you had before browsing |
 | anything else (printable characters, `backspace`, `←`, `home`, `delete`, …) | Leave the browse cycle **keeping the loaded prompt**, and apply the key as an ordinary edit |
 
-The last row is what makes a recalled prompt editable: typing appends to it and
-backspace deletes one character of it rather than clearing the composer. `right`
-is the only edit-adjacent key with a browse meaning of its own, because
-accepting and leaving is what the cursor key would have done anyway at the end
-of the line.
+**The composer badge.** When the loaded text came from a library entry, the
+composer title carries a `✎ <name>` chip — with a `g` marker for a global
+entry and a `*` dirty marker when the editor text differs from the entry's
+body. `App.loadedPrompt` outlives the browse cycle and survives subsequent
+edits, so `ctrl+s` always overwrites the right file in the right scope; it is
+dropped the moment the composer stops representing that entry (submit, steer,
+`!shell`, `/command`, save-as, cancel-save-file, new session, resume, and
+`push()`/`pop()`, which reset the editor).
 
-Edge cases:
+**`ctrl+s`** is the one guarded key that overwrites or deletes the entry
+currently loaded. Hover wins first (save-file needs a live mouse position);
+then a loaded entry opens the action bar; otherwise it is save-as, the same
+shape as `f7`. The action bar reads `⏎ overwrite · d delete · esc cancel`;
+the destructive confirm puts the question in the title (`overwrite existing
+prompt 'deploy'?` / `delete prompt 'deploy'?`) with `y/N` in the meta, amber for
+overwrite and red for delete. Overwrite calls `promptlib.Update` in place — a
+global entry stays global, which fixes the old `f7` bug where re-saving a
+global prompt minted a project entry. Delete removes the file. Belt and braces:
+`ctrl+s` re-checks `loadedPrompt != nil`, `os.Stat(Path)` and a non-empty
+composer before acting.
 
-- **No results** — the cycle still opens with the typed text intact and
-  `historyIndex` at `-1`; `up` and `tab` have nothing to move to, and `esc`
-  or an edit key leaves the text as it was.
-- **Duplicate prompt text** — a session-history prompt identical to a library
-  prompt is dropped, so a saved prompt is offered once, under its name.
-- **An unnamed entry is loaded** — `up` can walk past the named prefix into
-  session history, where no chip is highlighted; `tab` returns to the first
-  named prompt rather than continuing into the unnamed tail.
-- **Composer hint** — the meta line reads `↑↓ cycle · tab name · → accept ·
-  ⏎ use · esc cancel`, dropping the `tab name` segment when the library
-  contributed nothing to this cycle.
+`f7` survives unchanged as a save-as alias (project scope): type a name and
+Enter saves. `promptlib.Create` returns `ErrNameExists` rather than silently
+upserting, and the TUI routes that into a `overwrite existing prompt 'deploy'?
+y/N` confirm instead of quiet data loss. `Create` assigns `order = last + 10`,
+clamped to 999, renumbering the scope first if the next slot would overflow; a
+999-entry scope returns `ErrLibraryFull`.
 
-`f7` in the chat composer enters a naming mode: type a name and press
-Enter to save the current editor text to the **project** library
-(`promptlib.Add`, which replaces an entry of the same name in place and stamps
-`created_at` when it is zero). An empty name cancels with `save cancelled: name
-required`, and Esc cancels. Saving always writes the project file; the global
-file is edited by hand.
+**The `/prompts` manager** is a full-screen list over one scope (`s` toggles
+global/project). Rows derive from `promptlib.Load` on entry and after every
+mutation, so no cached slice drifts from the filesystem. Keys: `↑`/`k`,
+`↓`/`j` move · `space` toggle · `J`/`K` reorder · `e` edit in `$VISUAL`/
+`$EDITOR` · `a` new (ask a name, create the file empty, hand it straight to the
+editor) · `d` delete (confirm) · `s` scope · `esc` leaves the sub-mode, else
+back. Disabled rows get a muted style **plus an explicit `○` marker** — grey
+alone is not a signal on a monochrome terminal. A muted footnote reports the
+stray count.
+
+**Reorder** renumbers the whole scope to `010, 020, 030…` after each move
+(`step = max(1, 999/n)` past 99 entries): one pass, no gap arithmetic, and it
+self-heals a directory hand-edited into collisions. Hand-picked numbers are
+lost on the first `J` — the grid is what makes moves collision-free. Per-scope
+only; the cross-scope order falls out of the merge rule. Renames are two-phase
+(everything moving goes to a dot-prefixed `.signet-tmp-<i>-<slug>.md`, which
+reads as a stray, then to its final name) because a swap collides in one phase;
+`os.Lstat` every target before phase two and abort the whole reorder if
+anything is there, since `os.Rename` overwrites silently on POSIX. A crashed
+renumber therefore reads short, never wrong, and the stray count shows the
+debris.
+
+**`$EDITOR` hand-off.** `e` (and `a`) resolve `$VISUAL` then `$EDITOR`, split
+on spaces so `code -w` and `emacsclient -nw` work, and resolve the binary with
+`exec.LookPath` — never through `sh -c`. Empty or missing binary falls back to
+the in-TUI field editor (`⏎ save · ctrl+j newline · esc cancel`). The hand-off
+runs through `tea.ExecProcess` (a test seam on `App`), refuses while a turn
+runs, and on return re-lists and re-finds the selection by `Path`. Two
+non-obvious requirements: **restore the mouse** — `Program.exec` releases the
+terminal and `RestoreTerminal` does not re-enable it, so the handler batches
+`tea.EnableMouseCellMotion` gated on `mouseEnabled` (or it turns capture on for
+a user who deliberately turned it off); and an editor that does not block
+(`code` without `-w`) reloads a half-written file — documented, not defended
+against.
+
+Writes are atomic (temp file in the same directory + `os.Rename`), closing the
+truncate-on-crash hole in the old JSON save. Directories are `0o755`; files
+`0o600` in the global scope (personal) and `0o644` in the project scope
+(committed, team-readable).
 
 ### Model picker
 

@@ -12,6 +12,21 @@ func testStore(t *testing.T, workdir string) *Store {
 	return NewStoreAt(t.TempDir())
 }
 
+func TestSessionPathAccessor(t *testing.T) {
+	st := NewStoreAt(t.TempDir())
+	k, err := KeyFor(t.TempDir())
+	if err != nil {
+		t.Fatalf("KeyFor: %v", err)
+	}
+	got := st.SessionPath(k, "sess-1")
+	if got != st.sessionPathForKey(k, "sess-1") {
+		t.Fatalf("SessionPath = %q, want %q", got, st.sessionPathForKey(k, "sess-1"))
+	}
+	if !strings.HasSuffix(got, filepath.Join(string(k), "sess-1.jsonl")) {
+		t.Fatalf("SessionPath = %q, want a .jsonl path under the key", got)
+	}
+}
+
 func TestAppendAndReadRoundTrip(t *testing.T) {
 	st := testStore(t, t.TempDir())
 	workdir := t.TempDir()

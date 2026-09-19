@@ -2,6 +2,7 @@
 package components
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -52,6 +53,15 @@ type Banner struct {
 	Version string
 	Commit  string
 	Built   string
+	// Tip is the one-line shortcut hint on the banner's last row. It is
+	// chosen once by the caller (stable across renders); empty falls back to
+	// the default /help line so the six-row height invariant is never at risk.
+	Tip string
+	// Resumed, when set, replaces the subtitle row with a resumed-session
+	// variant: "resumed <name> · N turns restored". RestoredTurns is the turn
+	// count shown next to it.
+	Resumed       string
+	RestoredTurns int
 }
 
 // View returns the banner. In ASCII/NO_COLOR mode it falls back to plain text.
@@ -120,13 +130,24 @@ func (b Banner) pixView() string {
 	// the banner to six rows and leaves the transcript more of the screen.
 	// Six rows, always: the owl is six rows tall, and an unstamped build must
 	// not change the banner's height and reflow the transcript under it.
+	subtitle := "A safer coding harness | vulnetix.com"
+	if b.Resumed != "" {
+		subtitle = "resumed " + b.Resumed
+		if b.RestoredTurns > 0 {
+			subtitle += fmt.Sprintf(" · %d turns restored", b.RestoredTurns)
+		}
+	}
+	tip := b.Tip
+	if tip == "" {
+		tip = "type " + KeyStyle.Render("/help") + " for commands and shortcuts"
+	}
 	right := []string{
 		"",
 		lipgloss.NewStyle().Foreground(ColorCream).Bold(true).Render("S I G N E T"),
-		MutedStyle.Render("A safer coding harness | vulnetix.com"),
+		MutedStyle.Render(subtitle),
 		b.versionLine(),
 		"",
-		MutedStyle.Render("type ") + KeyStyle.Render("/help") + MutedStyle.Render(" for commands and shortcuts"),
+		MutedStyle.Render(tip),
 	}
 
 	block := lipgloss.NewStyle().PaddingLeft(3).Render(strings.Join(right, "\n"))

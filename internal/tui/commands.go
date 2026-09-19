@@ -225,6 +225,9 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("permissions", "edit tool permissions", nil, func(a *App, arg string) tea.Cmd {
 		return a.push(viewPermissions)
 	})
+	r.Register("prompts", "manage the prompt library", nil, func(a *App, arg string) tea.Cmd {
+		return a.push(viewPrompts)
+	})
 	r.Register("yolo", "toggle guardrails and ask together", func() []string {
 		return []string{"on", "off"}
 	}, func(a *App, arg string) tea.Cmd {
@@ -247,6 +250,13 @@ func NewRegistry(workdir string) *Registry {
 		return nil
 	})
 	r.RegisterAlias("new", "clear")
+	r.Register("exit", "quit and print the resume card", nil, func(a *App, arg string) tea.Cmd {
+		// Typing a whole command is confirmation enough: no two-press arm, and
+		// the exit card prints exactly as it does after the armed ctrl+d.
+		a.stopLocalServers()
+		return tea.Quit
+	})
+	r.RegisterAlias("quit", "exit")
 	r.Register("compact", "summarise the session into a new one", nil, func(a *App, arg string) tea.Cmd {
 		return a.compactCmd()
 	})

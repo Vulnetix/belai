@@ -19,10 +19,10 @@ found on this machine.
   `<workdir>/.vulnetix/signet/` so they stay outside `@file` admission and
   Vulnetix's own scans.
 - **Signet's own files are excluded from the manifest.** The manifest uses
-  `scanartifacts.Enumerate`, which classifies `settings.json`, `prompts.json`,
-  `credentials.json`, `code-review-summary.md`, `code-review-manifest.json`,
-  and anything under `signet/`, `plans/`, or `goals/` as `KindSignet` and
-  skips them.
+  `scanartifacts.Enumerate`, which classifies `settings.json`, `prompts.json`
+  (a tombstone for the old library), `credentials.json`,
+  `code-review-summary.md`, `code-review-manifest.json`, and anything under
+  `signet/`, `plans/`, `goals/`, or `prompts/` as `KindSignet` and skips them.
 - **Global cache, never inside the project.** `scanartifacts.Refresh` writes to
   `<GlobalDir>/scan-cache/<WorkdirKey>.json`. Invalidation is stat-only: a
   fingerprint over `(rel, size, mtime)` plus a schema version.

@@ -192,9 +192,7 @@ const (
 	editorMaxHeight = 12
 )
 
-// promptsViewState is a placeholder for the /prompts manager view; it is
-// defined here to keep the App struct compiling until the view is wired up.
-type promptsViewState struct{}
+// promptsViewState is declared in prompts_view.go, alongside the manager.
 
 // App is the Bubble Tea model for the Signet TUI.
 type App struct {
@@ -411,8 +409,10 @@ type App struct {
 	fileDismissed string    // the @token esc/left closed on; cleared when it changes
 
 	// save to library
-	savePromptMode  bool
-	savePromptValue string
+	savePromptMode    bool
+	savePromptValue   string
+	savePromptConfirm bool   // naming mode found a duplicate; y/N gate open
+	savePromptName    string // the slugged name being confirmed for overwrite
 
 	// prompt-library state. loadedPrompt is the library file the composer's
 	// text came from, so ctrl+s overwrites the right file in the right scope;
@@ -499,6 +499,30 @@ type App struct {
 	// execEditor runs $VISUAL/$EDITOR for the /prompts manager's e key. It is
 	// a seam so tests exercise the reload path without spawning vi.
 	execEditor func(*exec.Cmd, tea.ExecCallback) tea.Cmd
+
+	// startedAt marks when the current session began (or was resumed). It
+	// drives the exit card's duration fact and is reset by startNewSession.
+	startedAt time.Time
+	// tokensTotal is the cumulative provider token usage for the session,
+	// accumulated wherever a.usage is assigned and seeded on resume by summing
+	// usageFromMeta. It drives the exit card's token fact.
+	tokensTotal int
+	// bannerTip is the stable rotating tip shown on the banner's last row,
+	// chosen once in New from the session id so a per-frame re-render cannot
+	// strobe between tips.
+	bannerTip string
+	// bannerResumed/bannerRestoredTurns render the resumed-session banner
+	// variant. Populated by the resume path and cleared by startNewSession.
+	bannerResumed       string
+	bannerRestoredTurns int
+
+	// armed is the two-press key arm for quit (ctrl+d) and composer clear
+	// (esc esc). A pressed key arms its kind for ~2s; the same key again (or
+	// esc for quit) fires it, and any other key disarms.
+	armed struct {
+		kind  armKind
+		until time.Time
+	}
 }
 
 type tickMsg time.Time
@@ -507,6 +531,71 @@ func tickCmd() tea.Cmd {
 	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
+}
+
+// armKind identifies which two-press key action is armed.
+type armKind int
+
+const (
+	armNone armKind = iota
+	armQuit
+	armClear
+)
+
+// armWindow is how long a two-press arm stays live. A second press after the
+// window lapses is treated as a fresh first press.
+const armWindow = 2 * time.Second
+
+// arm arms kind and stamps the expiry, refreshing the footer hint.
+func (a *App) arm(k armKind) {
+	a.armed.kind = k
+	a.armed.until = time.Now().Add(armWindow)
+	a.refreshArmed()
+}
+
+// disarm clears any armed key and its footer hint.
+func (a *App) disarm() {
+	a.armed.kind = armNone
+	a.armed.until = time.Time{}
+	a.refreshArmed()
+}
+
+// isArmed reports whether kind is armed and unexpired. An expired arm is
+// disarmed in place.
+func (a *App) isArmed(k armKind) bool {
+	if a.armed.kind != k {
+		return false
+	}
+	if time.Now().After(a.armed.until) {
+		a.disarm()
+		return false
+	}
+	return true
+}
+
+// armKeyMatches reports whether m is the trigger key for the currently armed
+// kind, so the global "any other key disarms" rule never disarms a second
+// press of the trigger itself.
+func (a *App) armKeyMatches(m tea.KeyMsg) bool {
+	switch a.armed.kind {
+	case armQuit:
+		return m.String() == "ctrl+d"
+	case armClear:
+		return m.String() == "esc"
+	}
+	return false
+}
+
+// refreshArmed renders the armed state into the footer's transient hint line.
+func (a *App) refreshArmed() {
+	switch a.armed.kind {
+	case armQuit:
+		a.footer.Armed = "press ctrl+d again to exit · esc cancels"
+	case armClear:
+		a.footer.Armed = "press esc again to clear the composer"
+	default:
+		a.footer.Armed = ""
+	}
 }
 
 // New builds a TUI app from Options. It never writes session files: those are
@@ -604,6 +693,10 @@ func New(opts Options) *App {
 	}
 	// One Live for the process: the running session and the next one share it.
 	a.live = posture.NewLive(a.effectivePosture(), !a.askEnabled())
+	// The banner tip is chosen once from the session id, so the per-frame
+	// banner re-render is stable. startedAt seeds the exit card's duration.
+	a.bannerTip = components.PickTip(a.sessionID)
+	a.startedAt = time.Now()
 	if initialStatus.Configured {
 		a.SetClassifier(run.NewClassifier(initial, a.client))
 		a.bgManager = bgagent.NewManager(workdir, initial, a.client, a.settings, a.effectivePosture())
@@ -725,6 +818,7 @@ func (a *App) SetClassifier(c rolemanager.Classifier) {
 
 // Init implements tea.Model.
 func (a *App) Init() tea.Cmd {
+	a.maybeNoticeLegacyPrompts()
 	cmds := []tea.Cmd{tickCmd(), a.watchActivityEvents()}
 	if a.initCmd != nil {
 		cmds = append(cmds, a.initCmd)
@@ -756,14 +850,44 @@ func (a *App) bannerHeight() int {
 	if a.bannerW == a.width {
 		return a.bannerH
 	}
-	a.bannerH = lipgloss.Height(components.Banner{
-		Width:   a.width,
-		Version: version.Version,
-		Commit:  version.Commit,
-		Built:   version.BuildDate,
-	}.View())
+	a.bannerH = lipgloss.Height(a.bannerView())
 	a.bannerW = a.width
 	return a.bannerH
+}
+
+// bannerView renders the banner with the session's stable tip and, when set,
+// the resumed-session variant.
+func (a *App) bannerView() string {
+	return components.Banner{
+		Width:         a.width,
+		Version:       version.Version,
+		Commit:        version.Commit,
+		Built:         version.BuildDate,
+		Tip:           a.bannerTip,
+		Resumed:       a.bannerResumed,
+		RestoredTurns: a.bannerRestoredTurns,
+	}.View()
+}
+
+// prependBanner prepends the rendered banner plus one blank separator row to
+// the transcript body and its line map. Each prepended row becomes a Chrome
+// provenance entry (never highlighted, contributes a blank to copies), and the
+// prefix carries one newline per entry so the invariant
+// len(lm) == strings.Count(body, "\n")+1 is preserved exactly.
+func (a *App) prependBanner(body string, lm components.LineMap) (string, components.LineMap) {
+	if !a.bannerVisible() {
+		return body, lm
+	}
+	banner := a.bannerView()
+	// banner has H rows (H-1 newlines); the blank separator row adds one more
+	// newline, so the prefix carries H+1 newlines and H+1 chrome entries.
+	nPrefix := strings.Count(banner, "\n") + 2
+	body = banner + "\n\n" + body
+	chrome := make(components.LineMap, nPrefix)
+	for i := range chrome {
+		chrome[i] = components.SourceLine{Chrome: true, Owner: -1}
+	}
+	return body, append(chrome, lm...)
 }
 
 // footerHeight returns the rendered height of the current footer, memoised per
@@ -783,11 +907,10 @@ func (a *App) footerHeight() int {
 // padding plus the banner. It is also the screen row of the viewport's first
 // line, which is what the mouse hit-testing in selection.go needs.
 func (a *App) headerHeight() int {
-	h := 1 // top padding from the outer lipgloss frame
-	if a.bannerVisible() {
-		h += a.bannerHeight()
-	}
-	return h
+	// Only the outer frame's top padding. The banner is the first entry of the
+	// scrollable transcript now, so it does not contribute to the chrome
+	// height and the viewport gains its rows back.
+	return 1
 }
 
 // belowViewportHeight is the rows below the viewport — the outer frame's
@@ -1389,6 +1512,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tickMsg:
+		if a.armed.kind != armNone && time.Now().After(a.armed.until) {
+			a.disarm()
+		}
 		a.refreshFooter()
 		return a, tea.Batch(tickCmd(), a.refreshGitInfoCmd())
 
@@ -1431,6 +1557,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case localModelReportMsg:
 		a.addSystem(m.text)
 		return a, nil
+
+	case promptEditedMsg:
+		return a, a.handlePromptEdited(m)
 
 	case codeReviewDoneMsg:
 		return a, a.handleCodeReviewDone(m)
@@ -1545,6 +1674,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Batch(vpCmd, copyCmd, cmd, spinCmd, workCmd)
 
 	case tea.KeyMsg:
+		// Any key other than the trigger disarms a two-press arm, so a stray
+		// keypress never leaves a latent "press again" hanging over the next
+		// keystroke.
+		if a.armed.kind != armNone && !a.armKeyMatches(m) {
+			a.disarm()
+		}
 		// Global keys work on every screen.
 		switch m.String() {
 		case "ctrl+c":
@@ -1555,8 +1690,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, a.copyPrompt()
 		case "ctrl+d":
-			a.stopLocalServers()
-			return a, tea.Quit
+			// Two-press armed exit. The first press arms; the second (within
+			// the window) tears down and quits, printing the exit card.
+			if a.isArmed(armQuit) {
+				a.disarm()
+				a.stopLocalServers()
+				return a, tea.Quit
+			}
+			a.arm(armQuit)
+			return a, nil
 		case "ctrl+r":
 			a.reasoningOverride = nextBoolPtr(a.reasoningOverride)
 			a.addSystem("reasoning display: " + boolLabel(a.reasoningVisible()))
@@ -1719,6 +1861,13 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		// segment, but the key works from the chat view without a hover too.
 		return a.copySessionID()
 	case "esc":
+		// First step of the cascade: esc is the explicit cancel of a two-press
+		// quit arm. The composer-clear arm is the last step, so its second esc
+		// still reaches the clear below.
+		if a.isArmed(armQuit) {
+			a.disarm()
+			return nil
+		}
 		// A live selection is cleared first, ahead of the existing esc
 		// behaviour: the first esc dismisses the highlight, the second does
 		// whatever esc would have done (cancel the request, drop pre-send…).
@@ -1757,6 +1906,20 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 			a.cancel = nil
 			a.endPhase()
 			a.addSystem("request cancelled")
+			return nil
+		}
+		// Last step of the cascade: composer clear is two-press armed. Every
+		// earlier esc step (selection → completion → picker → pending input →
+		// pre-send → cancel request) has already taken precedence, so a draft
+		// is only touched once nothing else is waiting.
+		if strings.TrimSpace(a.editor.Value()) != "" {
+			if a.isArmed(armClear) {
+				a.disarm()
+				a.editor.Reset()
+				a.clearAutocomplete()
+			} else {
+				a.arm(armClear)
+			}
 		}
 		return nil
 	case "enter":
@@ -2184,12 +2347,24 @@ func (a *App) startSavePrompt() tea.Cmd {
 	}
 	a.savePromptValue = val
 	a.savePromptMode = true
+	a.savePromptConfirm = false
+	a.savePromptName = ""
+	a.clearLoadedPrompt()
 	a.editor.Reset()
 	a.clearAutocomplete()
 	return nil
 }
 
 func (a *App) handleSavePromptKey(m tea.KeyMsg) tea.Cmd {
+	if a.savePromptConfirm {
+		switch m.String() {
+		case "y":
+			return a.confirmSavePromptOverwrite()
+		case "n", "esc":
+			a.cancelSavePrompt()
+		}
+		return nil
+	}
 	switch m.String() {
 	case "enter":
 		name := strings.TrimSpace(a.editor.Value())
@@ -2208,58 +2383,176 @@ func (a *App) handleSavePromptKey(m tea.KeyMsg) tea.Cmd {
 }
 
 func (a *App) finishSavePrompt(name string) tea.Cmd {
-	listing, _ := promptlib.Load(config.ScopeProject, a.workdir)
-	var existing *promptlib.Entry
-	for i := range listing.Entries {
-		if listing.Entries[i].Name == name {
-			existing = &listing.Entries[i]
-			break
+	e, err := promptlib.Create(config.ScopeProject, a.workdir, name, a.savePromptValue)
+	if errors.Is(err, promptlib.ErrNameExists) {
+		// Route into the confirm gate rather than silently replacing.
+		slug, serr := promptlib.Slug(name)
+		if serr != nil {
+			a.addSystem("save failed: " + serr.Error())
+			a.cancelSavePrompt()
+			return nil
 		}
-	}
-	var err error
-	if existing != nil {
-		_, err = promptlib.Update(*existing, a.savePromptValue)
-	} else {
-		_, err = promptlib.Create(config.ScopeProject, a.workdir, name, a.savePromptValue)
+		a.savePromptConfirm = true
+		a.savePromptName = slug
+		return nil
 	}
 	if err != nil {
 		a.addSystem("save failed: " + err.Error())
 	} else {
-		a.addSystem("saved prompt to project library: " + name)
+		a.addSystem("saved prompt to project library: " + e.Name)
 	}
-	a.savePromptMode = false
-	a.savePromptValue = ""
-	a.editor.Reset()
+	a.cancelSavePrompt()
+	return nil
+}
+
+// confirmSavePromptOverwrite overwrites the entry the user just named rather
+// than silently replacing it. If the entry vanished between confirm and save
+// (two instances), it falls back to creating it.
+func (a *App) confirmSavePromptOverwrite() tea.Cmd {
+	listing, err := promptlib.Load(config.ScopeProject, a.workdir)
+	if err != nil {
+		a.addSystem("save failed: " + err.Error())
+		a.cancelSavePrompt()
+		return nil
+	}
+	for i := range listing.Entries {
+		if listing.Entries[i].Name == a.savePromptName {
+			if _, err := promptlib.Update(listing.Entries[i], a.savePromptValue); err != nil {
+				a.addSystem("save failed: " + err.Error())
+			} else {
+				a.addSystem("saved prompt to project library: " + a.savePromptName)
+			}
+			a.cancelSavePrompt()
+			return nil
+		}
+	}
+	if _, err := promptlib.Create(config.ScopeProject, a.workdir, a.savePromptName, a.savePromptValue); err != nil {
+		a.addSystem("save failed: " + err.Error())
+	} else {
+		a.addSystem("saved prompt to project library: " + a.savePromptName)
+	}
+	a.cancelSavePrompt()
 	return nil
 }
 
 func (a *App) cancelSavePrompt() {
 	a.savePromptMode = false
 	a.savePromptValue = ""
+	a.savePromptConfirm = false
+	a.savePromptName = ""
 	a.editor.Reset()
 }
 
-// clearLoadedPrompt drops a history-loaded library prompt so it is not
-// re-applied or offered for action after the user switches to a shell
-// command, slash command, or steering input.
+// clearLoadedPrompt drops the loaded library entry and closes the action bar.
+// The composer stops representing the entry the moment it is submitted,
+// steered, routed to a shell/command, cancelled, or a view resets the editor.
 func (a *App) clearLoadedPrompt() {
 	a.loadedPrompt = nil
+	a.promptAction = false
+	a.promptConfirm = ""
 }
 
-// openPromptAction is a stub for the loaded-prompt action bar. It is defined
-// here so the ctrl+s path in handleChatKey compiles; the full prompt manager
-// view is being built out of session.
+// openPromptAction opens the ctrl+s action bar for the loaded entry, after a
+// belt-and-braces re-check: the entry still points at a file and the composer
+// is non-empty.
 func (a *App) openPromptAction() tea.Cmd {
+	if a.loadedPrompt == nil {
+		return nil
+	}
+	if _, err := os.Stat(a.loadedPrompt.Path); err != nil {
+		a.clearLoadedPrompt()
+		a.addSystem("prompt file no longer exists")
+		return nil
+	}
+	if strings.TrimSpace(a.editor.Value()) == "" {
+		a.clearLoadedPrompt()
+		a.addSystem("nothing to overwrite; the prompt is empty")
+		return nil
+	}
 	a.promptAction = true
+	a.promptConfirm = ""
 	return nil
 }
 
-// handlePromptActionKey is the stub companion to openPromptAction. It only
-// recognises esc, leaving every other key swallowed while the bar is open.
+// handlePromptActionKey drives the ctrl+s action bar. It swallows every key it
+// does not handle so y/n/d can never reach the editor while a destructive
+// confirm is on screen.
 func (a *App) handlePromptActionKey(m tea.KeyMsg) tea.Cmd {
-	if m.String() == "esc" {
+	if a.loadedPrompt == nil {
 		a.promptAction = false
+		a.promptConfirm = ""
+		return nil
 	}
+	switch a.promptConfirm {
+	case "":
+		switch m.String() {
+		case "enter":
+			a.promptConfirm = "overwrite"
+		case "d":
+			a.promptConfirm = "delete"
+		case "esc":
+			a.promptAction = false
+		}
+		return nil
+	case "overwrite":
+		switch m.String() {
+		case "y":
+			return a.confirmOverwritePrompt()
+		case "n", "esc":
+			a.promptConfirm = ""
+		}
+		return nil
+	case "delete":
+		switch m.String() {
+		case "y":
+			return a.confirmDeletePrompt()
+		case "n", "esc":
+			a.promptConfirm = ""
+		}
+		return nil
+	}
+	return nil
+}
+
+// confirmOverwritePrompt writes the composer over the loaded entry in place,
+// preserving its path, order, enabled state and scope. A global entry stays
+// global — this is the f7 bug fixed.
+func (a *App) confirmOverwritePrompt() tea.Cmd {
+	if a.loadedPrompt == nil || strings.TrimSpace(a.editor.Value()) == "" {
+		a.clearLoadedPrompt()
+		return nil
+	}
+	if _, err := os.Stat(a.loadedPrompt.Path); err != nil {
+		a.clearLoadedPrompt()
+		a.addSystem("prompt file no longer exists")
+		return nil
+	}
+	updated, err := promptlib.Update(*a.loadedPrompt, a.editor.Value())
+	if err != nil {
+		a.addSystem("overwrite failed: " + err.Error())
+		a.clearLoadedPrompt()
+		return nil
+	}
+	a.loadedPrompt.Prompt = updated.Prompt
+	a.promptAction = false
+	a.promptConfirm = ""
+	a.addSystem(fmt.Sprintf("updated prompt %s (%s)", updated.Name, updated.Scope))
+	return nil
+}
+
+// confirmDeletePrompt deletes the loaded entry's file and drops the badge.
+func (a *App) confirmDeletePrompt() tea.Cmd {
+	if a.loadedPrompt == nil {
+		a.clearLoadedPrompt()
+		return nil
+	}
+	e := *a.loadedPrompt
+	if err := promptlib.Delete(e); err != nil {
+		a.addSystem("delete failed: " + err.Error())
+	} else {
+		a.addSystem("deleted prompt " + e.Name)
+	}
+	a.clearLoadedPrompt()
 	return nil
 }
 
@@ -2274,6 +2567,7 @@ func (a *App) handleStreamChunk(m streamChunkMsg) tea.Cmd {
 	if m.Usage != nil {
 		a.usage = m.Usage
 		a.usageStale = false
+		a.tokensTotal += m.Usage.TotalTokens
 	}
 	if !m.Done {
 		return nil
@@ -2573,6 +2867,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		if m.Result.Usage != nil {
 			a.usage = m.Result.Usage
 			a.usageStale = false
+			a.tokensTotal += m.Result.Usage.TotalTokens
 		}
 		a.persistTail()
 		// In plan mode, extract a numbered plan out of the reply and persist it
@@ -2692,6 +2987,12 @@ func (a *App) chatView() string {
 		ShowReasoning: a.reasoningVisible(),
 		ShowTools:     a.toolCallsVisible(),
 	}.Render()
+	// The banner is the first entry of the scrollable transcript. Prepending it
+	// here — before the content compare, Highlight and SetContent — keeps the
+	// line map aligned: each prepended screen row gets a Chrome provenance
+	// entry, so hover and drag-selection never misattribute a transcript row
+	// to the banner.
+	body, lm = a.prependBanner(body, lm)
 	// The one content compare replaces an enumerated clear list: new message,
 	// streaming delta, ctrl+l, ctrl+o, ctrl+r, ctrl+t and width changes all
 	// clear a stale selection for free.
@@ -2730,15 +3031,6 @@ func (a *App) chatView() string {
 	a.recomputeHover()
 
 	var sb strings.Builder
-	if a.bannerVisible() {
-		sb.WriteString(components.Banner{
-			Width:   a.width,
-			Version: version.Version,
-			Commit:  version.Commit,
-			Built:   version.BuildDate,
-		}.View())
-		sb.WriteString("\n")
-	}
 	sb.WriteString(a.vp.View())
 	sb.WriteString("\n")
 	if len(a.autocomplete) > 0 {
@@ -2805,7 +3097,11 @@ func (a *App) renderComposer() string {
 		title, accent, meta = "secret", lipgloss.TerminalColor(components.ColorAmber), "input hidden · ⏎ save"
 	}
 	if a.savePromptMode {
-		title, accent, meta = "name prompt", lipgloss.TerminalColor(components.ColorAmber), "⏎ save · esc cancel"
+		if a.savePromptConfirm {
+			title, accent, meta = "overwrite existing prompt '"+a.savePromptName+"'?", lipgloss.TerminalColor(components.ColorAmber), "y/N · esc cancel"
+		} else {
+			title, accent, meta = "name prompt", lipgloss.TerminalColor(components.ColorAmber), "⏎ save · esc cancel"
+		}
 	}
 	if a.saveFileMode {
 		title, accent, meta = "save file", lipgloss.TerminalColor(components.ColorAmber), "⏎ save · esc cancel"
@@ -2816,6 +3112,19 @@ func (a *App) renderComposer() string {
 		} else {
 			meta = "↑↓ cycle · → accept · ⏎ use · esc cancel"
 		}
+	}
+	// The composer badge: when the text came from a library entry, say which
+	// one. The dirty marker is honest about whether an overwrite would change
+	// anything; `g` marks a global entry rather than a second colour.
+	if a.loadedPrompt != nil && !a.promptAction {
+		name := a.loadedPrompt.Name
+		if a.loadedPrompt.Scope == config.ScopeGlobal {
+			name += " g"
+		}
+		if a.editor.Value() != a.loadedPrompt.Prompt {
+			name += "*"
+		}
+		title = "ask " + components.Chip("✎ "+name, components.ColorTealSoft)
 	}
 	if a.phase == phaseRoleManager {
 		// Role Manager activity gets its own branded signal: a filled
@@ -2844,6 +3153,25 @@ func (a *App) renderComposer() string {
 		title = a.spinMark() + " working" + a.elapsedLabel()
 		accent = lipgloss.TerminalColor(components.ColorAmber)
 		meta = "⏎ steer · esc cancel"
+	}
+	// The ctrl+s action bar: overwrite or delete the loaded entry. The confirm
+	// question goes in Title (Meta is dropped at narrow widths, unacceptable
+	// for a destructive confirm); amber for overwrite, red for delete.
+	if a.promptAction && a.loadedPrompt != nil {
+		switch a.promptConfirm {
+		case "overwrite":
+			title = "overwrite existing prompt '" + a.loadedPrompt.Name + "'?"
+			accent = lipgloss.TerminalColor(components.ColorAmber)
+			meta = "y/N · esc cancel"
+		case "delete":
+			title = "delete prompt '" + a.loadedPrompt.Name + "'?"
+			accent = lipgloss.TerminalColor(components.ColorDanger)
+			meta = "y/N · esc cancel"
+		default:
+			title = "ask " + components.Chip("✎ "+a.loadedPrompt.Name, components.ColorTealSoft)
+			accent = lipgloss.TerminalColor(components.ColorTealSoft)
+			meta = "⏎ overwrite · d delete · esc cancel"
+		}
 	}
 	return components.Panel{
 		Title:  title,
@@ -2901,7 +3229,7 @@ func (a *App) bannerVisible() bool {
 	if a.settings.UI != nil && a.settings.UI.Banner != nil {
 		return *a.settings.UI.Banner
 	}
-	return len(a.messages) < 3
+	return true
 }
 
 // handleCommand dispatches a slash command, resolving aliases first.
@@ -3103,6 +3431,38 @@ func (a *App) saveSession() {
 
 func (a *App) addSystem(text string) {
 	a.messages = append(a.messages, components.Message{Role: "system", Content: text})
+}
+
+// maybeNoticeLegacyPrompts emits a one-line notice the first time a session
+// sees a leftover prompts.json from the old two-file library while the new
+// prompts/ directory does not exist. A notice, not a migration: nothing reads
+// or touches the old file.
+func (a *App) maybeNoticeLegacyPrompts() {
+	if a.promptLegacyNoticed {
+		return
+	}
+	a.promptLegacyNoticed = true
+
+	legacy := func(jsonPath, dirPath string) bool {
+		if _, err := os.Stat(jsonPath); err != nil {
+			return false
+		}
+		if _, err := os.Stat(dirPath); err == nil {
+			return false
+		}
+		return true
+	}
+
+	if gd, err := config.GlobalDir(); err == nil {
+		if gpd, err := config.GlobalPromptsDir(); err == nil &&
+			legacy(filepath.Join(gd, "prompts.json"), gpd) {
+			a.addSystem("prompt library moved to prompts/ under the signet home; prompts.json is no longer read")
+			return
+		}
+	}
+	if legacy(filepath.Join(a.workdir, ".vulnetix", "prompts.json"), config.ProjectPromptsDir(a.workdir)) {
+		a.addSystem("prompt library moved to .vulnetix/prompts/; prompts.json is no longer read")
+	}
 }
 
 // applyCwd records a working-directory move: the footer follows it and the
@@ -3417,6 +3777,95 @@ func (a *App) sessionDisplay() string {
 		return a.sessionID[:8]
 	}
 	return a.sessionID
+}
+
+// exitCard assembles the branded session-end card printed after the TUI exits.
+// It is the bookend to the banner: same owl, same facts, plus the resume
+// command that returns to this session.
+func (a *App) exitCard() components.ExitCard {
+	return components.ExitCard{
+		Name:      a.sessionName,
+		SessionID: a.sessionID,
+		ResumeArg: a.resumeArg(),
+		Turns:     userTurnCount(a.messages),
+		Duration:  formatDuration(time.Since(a.startedAt)),
+		Tokens:    formatTokensForExit(a.tokensTotal),
+		Model:     a.cfg.Model,
+		Provider:  a.cfg.Provider,
+		Path:      a.store.SessionPath(a.sessionKey, a.sessionID),
+	}
+}
+
+// resumeArg returns the argument the printed exit command should carry: the
+// 8-char prefix when it resolves uniquely, otherwise the full uuid.
+func (a *App) resumeArg() string {
+	prefix := shortID(a.sessionID)
+	cur, _ := session.KeyFor(a.workdir)
+	if _, _, err := a.store.ResolveAnywhere(cur, prefix); err == nil {
+		return prefix
+	}
+	return a.sessionID
+}
+
+// userTurnCount counts the user prompts in the transcript.
+func userTurnCount(msgs []components.Message) int {
+	n := 0
+	for _, m := range msgs {
+		if m.Role == "user" {
+			n++
+		}
+	}
+	return n
+}
+
+// formatDuration renders a session duration as compact clock text.
+func formatDuration(d time.Duration) string {
+	d = d.Round(time.Second)
+	if d < time.Second {
+		return ""
+	}
+	m := int(d.Minutes())
+	s := int(d.Seconds()) % 60
+	if m > 0 {
+		return fmt.Sprintf("%dm %ds", m, s)
+	}
+	return fmt.Sprintf("%ds", s)
+}
+
+// formatTokensForExit renders a token total for the exit card's fact line.
+func formatTokensForExit(n int) string {
+	switch {
+	case n >= 1_000_000:
+		return fmt.Sprintf("~%.1fM tokens", float64(n)/1_000_000)
+	case n >= 10_000:
+		return fmt.Sprintf("~%.1fk tokens", float64(n)/1_000)
+	case n > 0:
+		return fmt.Sprintf("%d tokens", n)
+	}
+	return ""
+}
+
+// ensureSessionName persists a durable session name before the exit card
+// prints. A short session can quit before the async classifier auto-name
+// lands, which would leave the card and every future /resume row showing a
+// bare uuid. The fallback is the first user prompt, the same rule DisplayName
+// uses at read time, persisted through the existing rename path so the name
+// survives rather than being reconstructed on every listing.
+func (a *App) ensureSessionName() {
+	if a.sessionName != "" {
+		return
+	}
+	for _, m := range a.messages {
+		if m.Role != "user" {
+			continue
+		}
+		first := strings.Join(strings.Fields(m.Text()), " ")
+		if first == "" {
+			continue
+		}
+		a.renameSession(first)
+		return
+	}
 }
 
 // contextEstimate memoises the footer's context-window estimate. refreshFooter
@@ -3915,6 +4364,13 @@ func (a *App) startNewSession() {
 	a.summary = ""
 	a.usage = nil
 	a.usageStale = false
+	// The banner tip, exit-card stats and resumed variant are all session
+	// bookend state: a fresh session restarts the clock and re-picks the tip.
+	a.bannerTip = components.PickTip(a.sessionID)
+	a.bannerResumed = ""
+	a.bannerRestoredTurns = 0
+	a.startedAt = time.Now()
+	a.tokensTotal = 0
 	// The todo list belongs to the session that produced it. Carrying it into
 	// a fresh one would render stale work and write it back under the new id.
 	a.todos = nil
@@ -3928,6 +4384,7 @@ func (a *App) startNewSession() {
 	a.mousePresent = false
 	a.saveFileMode = false
 	a.saveFileMsg = -1
+	a.clearLoadedPrompt()
 	a.subagents = nil
 	a.subagentIdx = map[string]int{}
 	a.stripFocus = false

@@ -80,6 +80,7 @@ just ask anthropic claude-sonnet-4-5 "review this diff" -detect-mode -verbose
 | `-no-prune` | never prune idle sessions (overrides `-session-retention-days`) |
 | `-plan` | start in plan mode: read-only tools only, no mutation |
 | `-resume`, `-r` | resume a session by id or unique id prefix in the interactive TUI |
+| `-continue`, `-c` | continue the most recent session for the current project; rejected with `-resume` or `-prompt` |
 | `-verbose` | print Role Manager decisions and the security sentinel to stderr |
 | `-version` | print the version and exit |
 
@@ -450,16 +451,27 @@ highlight cycles through every match instead of sticking on the second one —
 the prompt text must not change until `enter` or `right` accepts.
 
 **Prompt library.** Type a prompt, press `f7`, name it, and confirm the
-system line reports it saved to the project library and that the name appears
-in `.vulnetix/prompts.json`. Press `up` and confirm the named prompt loads into
-the composer, a chip strip of prompt *names* appears above it, and the meta line
-reads `↑↓ cycle · tab name · → accept · ⏎ use · esc cancel`. Confirm `tab` walks
-the names and wraps; `up`/`down` walk the whole list including unnamed session
-history (where no chip is highlighted); `right` accepts the loaded prompt and
-leaves the cycle with the cursor at the end; typing any character leaves the
-cycle and edits the loaded prompt rather than clearing the composer; `esc`
-restores what you had typed. With no saved prompts, confirm `up` still browses
-session history and the strip is absent.
+system line reports it saved to the project library and that a file named
+`NNN-<name>.md` appears in `.vulnetix/prompts/`. Press `up` and confirm the
+named prompt loads into the composer, a chip strip of prompt *names* appears
+above it, and the meta line reads `↑↓ cycle · tab name · → accept · ⏎ use ·
+esc cancel`. Confirm `tab` walks the names and wraps; `up`/`down` walk the
+whole list including unnamed session history (where no chip is highlighted);
+`right` accepts the loaded prompt and leaves the cycle with the cursor at the
+end; typing any character leaves the cycle and edits the loaded prompt rather
+than clearing the composer; `esc` restores what you had typed. With no saved
+prompts, confirm `up` still browses session history and the strip is absent.
+Confirm the composer badge shows `✎ <name>` (with a `g` marker for a global
+entry and a `*` dirty marker after an edit); then press `ctrl+s`, confirm the
+action bar (`⏎ overwrite · d delete · esc cancel`), press `enter` then `y`, and
+confirm the file on disk was overwritten in place — a global entry stays
+global. Open `/prompts`, confirm the list shows both scopes (`s` toggles),
+`space` toggles an entry off (an explicit `○` marker appears), `J`/`K` reorder,
+`e` opens `$VISUAL`/`$EDITOR`, `a` asks for a name and opens the new file in the
+editor, `d` deletes with a confirm, and `esc` returns to chat. **After the
+editor exits, confirm the mouse still works** (hover hints reappear and
+drag-select copies). With `$VISUAL` and `$EDITOR` unset, confirm `e` falls back
+to the in-TUI editor (`⏎ save · ctrl+j newline · esc cancel`).
 
 **Plan-mode tool surface.** `shift+tab` to plan mode and ask for something
 that would tempt a shell (for example, "what does CI run on push?"). Confirm

@@ -55,9 +55,11 @@ func TestEnumerateSkipsSignetFiles(t *testing.T) {
 		}
 	}
 	mkdir("signet")
+	mkdir("prompts")
 	write("settings.json", "{}")
 	write("prompts.json", "{}")
 	write("signet/credentials.json", "{}")
+	write("prompts/010-deploy.md", "deploy")
 	write("sbom.cdx.json", `{}`)
 	write("memory.yaml", "last_scan:\n")
 
@@ -69,7 +71,7 @@ func TestEnumerateSkipsSignetFiles(t *testing.T) {
 	for i, a := range arts {
 		rels[i] = a.Rel
 	}
-	for _, bad := range []string{"settings.json", "prompts.json", "signet/credentials.json"} {
+	for _, bad := range []string{"settings.json", "prompts.json", "signet/credentials.json", "prompts/010-deploy.md"} {
 		if slices.Contains(rels, bad) {
 			t.Fatalf("signet file %q should be skipped", bad)
 		}

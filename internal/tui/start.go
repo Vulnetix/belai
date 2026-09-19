@@ -22,7 +22,15 @@ func Start(opts Options) error {
 		defer os.Stdout.WriteString(keys.Pop)
 	}
 	p := tea.NewProgram(New(opts), progOpts...)
-	_, err := p.Run()
+	model, err := p.Run()
+	// Only a clean exit prints the card. On an error path main.go keeps its
+	// stderr-and-exit-1 behaviour; nothing is written to stdout then.
+	if err == nil {
+		if a, ok := model.(*App); ok {
+			a.ensureSessionName()
+			_, _ = os.Stdout.WriteString(a.exitCard().View() + "\n")
+		}
+	}
 	return err
 }
 

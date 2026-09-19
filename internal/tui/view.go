@@ -24,6 +24,7 @@ const (
 	viewCodeReviewConfig
 	viewCodeReviewList
 	viewCodeReviewArtifacts
+	viewPrompts
 )
 
 // viewHandler is one full-screen view. Chat is the base state and lives
@@ -53,6 +54,7 @@ func init() {
 	viewHandlers[viewCodeReviewConfig] = viewHandler{name: "code-review-config", enter: (*App).enterCodeReviewConfig, key: (*App).handleCodeReviewConfigKey, render: (*App).codeReviewConfigView}
 	viewHandlers[viewCodeReviewList] = viewHandler{name: "code-review-list", enter: (*App).enterCodeReviewList, key: (*App).handleCodeReviewListKey, render: (*App).codeReviewListView}
 	viewHandlers[viewCodeReviewArtifacts] = viewHandler{name: "code-review-artifacts", key: (*App).handleCodeReviewArtifactsKey, render: (*App).codeReviewArtifactsView}
+	viewHandlers[viewPrompts] = viewHandler{name: "prompts", enter: (*App).enterPrompts, key: (*App).handlePromptsKey, render: (*App).promptsView}
 }
 
 // push navigates to a full-screen view, remembering the current one on the
@@ -62,6 +64,7 @@ func (a *App) push(v viewState) tea.Cmd {
 	a.view = v
 	a.editor.Reset()
 	a.editor.Masked = false
+	a.clearLoadedPrompt()
 	if h, ok := viewHandlers[v]; ok && h.enter != nil {
 		return h.enter(a)
 	}
@@ -83,4 +86,5 @@ func (a *App) pop() {
 	}
 	a.editor.Reset()
 	a.editor.Masked = false
+	a.clearLoadedPrompt()
 }

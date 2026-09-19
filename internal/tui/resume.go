@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -106,6 +107,22 @@ func (a *App) resumeSession(key session.Key, sessionID string) tea.Cmd {
 	a.rehydrateTodos(entries)
 	a.rebuildSubagentsFromMessages()
 	a.persistedUpTo = len(a.messages)
+	// Seed the exit card's token fact from the persisted usage meta so the
+	// resumed session reports the whole conversation, not only what happens
+	// after this point.
+	a.tokensTotal = 0
+	for _, e := range entries {
+		if u := usageFromMeta(e.Meta); u != nil {
+			a.tokensTotal += u.TotalTokens
+		}
+	}
+	// Seed the resumed banner variant and the exit-card clock.
+	a.bannerResumed = r.Name
+	if a.bannerResumed == "" {
+		a.bannerResumed = shortID(a.sessionID)
+	}
+	a.bannerRestoredTurns = restoredTurnCount(entries)
+	a.startedAt = time.Now()
 
 	// 9. Restore model/provider/effort (CLI flag > session record > state >
 	// settings/env), the recorded mode, and plan/goal carrier state.
@@ -164,6 +181,7 @@ func (a *App) clearForResume() {
 	a.mousePresent = false
 	a.saveFileMode = false
 	a.saveFileMsg = -1
+	a.clearLoadedPrompt()
 	a.loadAgents()
 
 	// Subagent roster and thread filter are session state, not global state.
@@ -352,6 +370,18 @@ func hasUserAndAssistant(msgs []transcript.Message) bool {
 		}
 	}
 	return user && assistant
+}
+
+// restoredTurnCount counts the user entries in a resumed session, the same
+// rule sessionInfoFromEntries uses for its cheap Turns signal.
+func restoredTurnCount(entries []session.Entry) int {
+	n := 0
+	for _, e := range entries {
+		if e.Type == "user" || e.Role == "user" {
+			n++
+		}
+	}
+	return n
 }
 
 // persistCarrierMeta appends a partial session_meta entry reflecting the

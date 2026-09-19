@@ -107,12 +107,11 @@ func TestChromeHeightDecomposition(t *testing.T) {
 			if got, want := a.headerHeight()+a.belowViewportHeight(), a.chromeHeight(); got != want {
 				t.Fatalf("decomposition: %d != %d", got, want)
 			}
-			wantHeader := 1
-			if a.bannerVisible() {
-				wantHeader += a.bannerHeight()
-			}
-			if a.headerHeight() != wantHeader {
-				t.Fatalf("headerHeight = %d, want %d", a.headerHeight(), wantHeader)
+			// The banner is now the first entry of the scrollable transcript, so
+			// headerHeight is just the outer frame's top padding and no longer
+			// grows with the banner.
+			if a.headerHeight() != 1 {
+				t.Fatalf("headerHeight = %d, want 1", a.headerHeight())
 			}
 		})
 	}
@@ -130,10 +129,11 @@ func seededChatApp(t *testing.T, needle string) (*App, int) {
 	}
 	a.View() // populates lastFrame
 
-	ml := components.MessageList{Messages: a.messages, Width: a.contentWidth()}
-	_, lm := ml.Render()
+	// Search the frame the TUI actually painted. lastFrame.lines includes the
+	// banner chrome prefix prepended to the viewport content, so a fresh
+	// MessageList render would report a different (banner-less) index.
 	idx := -1
-	for i, sl := range lm {
+	for i, sl := range a.lastFrame.lines {
 		if !sl.Chrome && strings.Contains(sl.Text, needle) {
 			idx = i
 			break
@@ -147,9 +147,7 @@ func seededChatApp(t *testing.T, needle string) (*App, int) {
 
 func TestMouseDragSelectsAndCopies(t *testing.T) {
 	a, idx := seededChatApp(t, "hello selection world")
-	ml := components.MessageList{Messages: a.messages, Width: a.contentWidth()}
-	_, lm := ml.Render()
-	sl := lm[idx]
+	sl := a.lastFrame.lines[idx]
 
 	x := a.lastFrame.left + sl.Col + 2
 	y := a.lastFrame.top + (idx - a.lastFrame.yOffset)
@@ -183,7 +181,7 @@ func TestMouseDragSelectsAndCopies(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("release of a non-empty selection must return a copy cmd")
 	}
-	want := lm.Text(a.sel.anchor, a.sel.cursor)
+	want := a.lastFrame.lines.Text(a.sel.anchor, a.sel.cursor)
 	if want != "llo" {
 		t.Fatalf("copied text = %q, want %q", want, "llo")
 	}

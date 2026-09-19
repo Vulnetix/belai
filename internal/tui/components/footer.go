@@ -56,6 +56,12 @@ type Footer struct {
 	// under a stationary mouse. The caller styles it (HelpBar).
 	Hint string
 
+	// Armed is a transient operator prompt (e.g. "press ctrl+d again to exit ·
+	// esc cancels") rendered in place of Hint while a two-press key is armed.
+	// Like Hint it occupies the same fixed line, so the footer height never
+	// changes when it appears or clears.
+	Armed string
+
 	// Subagents is the subagent roster rendered on a dedicated line. The line
 	// always renders (empty when the roster is empty) so the footer height stays
 	// constant as chips appear and disappear. MainFocused reports whether the
@@ -119,10 +125,14 @@ func (f *Footer) View() string {
 	}
 
 	rule := Rule(f.Width)
-	if line1 != "" {
-		return rule + "\n" + line1 + "\n" + line2 + "\n" + f.subagentLine() + "\n" + MutedStyle.Render(f.Hint)
+	hint := f.Hint
+	if f.Armed != "" {
+		hint = f.Armed
 	}
-	return rule + "\n" + line2 + "\n" + f.subagentLine() + "\n" + MutedStyle.Render(f.Hint)
+	if line1 != "" {
+		return rule + "\n" + line1 + "\n" + line2 + "\n" + f.subagentLine() + "\n" + MutedStyle.Render(hint)
+	}
+	return rule + "\n" + line2 + "\n" + f.subagentLine() + "\n" + MutedStyle.Render(hint)
 }
 
 // subagentLine renders the subagent roster as one line. It returns "" when

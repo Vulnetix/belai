@@ -26,7 +26,7 @@ func keySections() []keySection {
 	return []keySection{
 		{"anywhere", []keyBinding{
 			{"ctrl+c", "copy the prompt — or the hovered panel — to the clipboard"},
-			{"ctrl+d", "quit"},
+			{"ctrl+d", "exit — press twice; esc cancels"},
 			{"ctrl+r", "cycle reasoning display: auto, on, off"},
 			{"ctrl+t", "cycle tool-call display: auto, on, off"},
 			{"f2", "toggle caveman voice rewrite"},
@@ -42,13 +42,13 @@ func keySections() []keySection {
 			{"ctrl+j, shift+enter", "newline"},
 			{"ctrl+left, ctrl+right", "move the cursor one word left or right"},
 			{"home, end", "jump to the start or end of the line (fn+left, fn+right)"},
-			{"esc", "clear the selection, then cancel the request"},
+			{"esc", "clear the selection, then cancel the request; esc esc clears the composer"},
 			{"shift+tab", "cycle mode: agent, plan, goal"},
 			{"up", "browse prompt history and the prompt library"},
 			{"f7", "save the prompt to the library"},
 			{"ctrl+l", "clear the transcript view; the session is kept"},
 			{"ctrl+o", "expand or collapse every truncated output"},
-			{"ctrl+s", "save the hovered panel to a path you type"},
+			{"ctrl+s", "save the hovered panel to a path, overwrite/delete a loaded library prompt, or save the prompt to the library"},
 			{"ctrl+x", "copy the session id to the clipboard"},
 		}},
 		{"slash completions (while the / popup is open)", []keyBinding{
@@ -178,6 +178,22 @@ func keySections() []keySection {
 			{"s", "toggle scope: global, project"},
 			{"p", "preview which rule matches a subject"},
 			{"esc", "back"},
+		}},
+		{"prompt library (/prompts)", []keyBinding{
+			{"up, down", "move (also k, j)"},
+			{"space", "toggle the selected prompt on or off"},
+			{"J, K", "reorder the selected prompt later or earlier"},
+			{"e", "open the selected prompt in $VISUAL/$EDITOR"},
+			{"a", "create a new prompt and open it in the editor"},
+			{"d", "delete the selected prompt (confirm)"},
+			{"s", "toggle scope: global, project"},
+			{"esc", "back"},
+		}},
+		{"prompt action bar (after ctrl+s on a loaded prompt)", []keyBinding{
+			{"enter", "overwrite the loaded prompt (confirm)"},
+			{"d", "delete the loaded prompt (confirm)"},
+			{"y, n", "confirm or cancel an overwrite or delete"},
+			{"esc", "close the action bar"},
 		}},
 		{"clarifying questions", []keyBinding{
 			{"up, down", "move"},

@@ -121,6 +121,13 @@ func (s *Store) sessionPathForKey(k Key, sessionID string) string {
 	return filepath.Join(s.dirForKey(k), sessionID+".jsonl")
 }
 
+// SessionPath returns the on-disk .jsonl path for a session under a project
+// key. It is the exported form of sessionPathForKey, used by the exit card to
+// print the durable location of a finished session.
+func (s *Store) SessionPath(k Key, sessionID string) string {
+	return s.sessionPathForKey(k, sessionID)
+}
+
 // sessionPath is the workdir-addressed form, kept for the public wrappers.
 func (s *Store) sessionPath(workdir, sessionID string) (string, error) {
 	k, err := keyFor(workdir)

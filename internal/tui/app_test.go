@@ -565,14 +565,41 @@ func TestAssistantTurnsAccumulate(t *testing.T) {
 // Plan 1 regression tests
 // ---------------------------------------------------------------------------
 
-func TestCtrlDQuits(t *testing.T) {
+func TestCtrlDQuitsAfterTwoPresses(t *testing.T) {
 	a := New(Options{})
+	// First press arms and must not quit.
 	_, cmd := a.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	if cmd != nil {
+		t.Fatalf("first ctrl+d must not quit, got %#v", cmd)
+	}
+	if !a.isArmed(armQuit) {
+		t.Fatal("first ctrl+d must arm quit")
+	}
+	if a.footer.Armed == "" {
+		t.Fatal("first ctrl+d must show the armed hint")
+	}
+	// Second press quits.
+	_, cmd = a.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
 	if cmd == nil {
-		t.Fatalf("ctrl+d must quit")
+		t.Fatal("second ctrl+d must quit")
 	}
 	if msg, ok := cmd().(tea.QuitMsg); !ok {
-		t.Fatalf("ctrl+d cmd = %#v, want quit", msg)
+		t.Fatalf("second ctrl+d cmd = %#v, want quit", msg)
+	}
+}
+
+func TestCtrlDEscDisarms(t *testing.T) {
+	a := New(Options{})
+	a.Update(tea.KeyMsg{Type: tea.KeyCtrlD})
+	if !a.isArmed(armQuit) {
+		t.Fatal("precondition: ctrl+d must arm quit")
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if a.isArmed(armQuit) {
+		t.Fatal("esc must disarm the quit arm")
+	}
+	if a.footer.Armed != "" {
+		t.Fatal("the armed hint must clear after esc")
 	}
 }
 

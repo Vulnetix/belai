@@ -246,4 +246,5 @@ func (a *App) cancelSaveFile() {
 	a.saveFileMode = false
 	a.saveFileMsg = -1
 	a.editor.Reset()
+	a.clearLoadedPrompt()
 }

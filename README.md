@@ -79,13 +79,13 @@ cd ~/code/my-project
 signet
 ```
 
-Inside the UI, `/` opens slash-command autocomplete — `/credentials` to configure providers, `/model` to pick provider/model/effort, `/classifier` to pick the role manager's own classifier model, `/settings` to edit settings, `/permissions` to edit tool rules, `/mode` to set the operating mode, `/todos`, `/profile`, `/agent` to create, edit, and run background agents, `/code-review` (with `run`, `configure`, `list`, and `status` subcommands), `/compact` to summarise a long session into a new one, `/clear` (or `/new`) to start a fresh session, `/yolo` to turn guardrails and the ask gate off together (`/yolo off` restores the settings-file values), and `/rename` to name the session. `/help` lists every command and keyboard shortcut.
+Inside the UI, `/` opens slash-command autocomplete — `/credentials` to configure providers, `/model` to pick provider/model/effort, `/classifier` to pick the role manager's own classifier model, `/settings` to edit settings, `/permissions` to edit tool rules, `/prompts` to manage the prompt library, `/mode` to set the operating mode, `/todos`, `/profile`, `/agent` to create, edit, and run background agents, `/code-review` (with `run`, `configure`, `list`, and `status` subcommands), `/compact` to summarise a long session into a new one, `/clear` (or `/new`) to start a fresh session, `/yolo` to turn guardrails and the ask gate off together (`/yolo off` restores the settings-file values), and `/rename` to name the session. `/help` lists every command and keyboard shortcut.
 
 Operator safety controls live in the footer: `guardrails: on|off` (posture gates) and `ask: on|off` (the permission-ask gate). `f3` toggles guardrails, `f4` toggles ask, and when both are off the two chips collapse into a single gold `YOLO`. These are explicit opt-ins: turning them off is announced in the transcript and traced under `SIGNET_TRACE`. Guardrails off sets every posture gate to `ignore` across every surface — the agent loop, inline `!cmd`, `@file` attachments, background agents and the CLI — and the classifier is then not called at all rather than called and ignored, so a turn costs no extra requests. Sanitising is not part of the switch: delimiter markup is stripped either way. Next to them the footer always states `caveman: on|off`, so the voice rewrite (`f2`) can never be on without saying so.
 
 In the composer, `ctrl+left` and `ctrl+right` move the cursor by word, crossing into the neighbouring line at a line boundary, and `home`/`end` (`fn+left`/`fn+right`) jump to the ends of the line. A word stops at punctuation, so `foo.bar` is three hops and `foo_bar` is one.
 
-Shortcuts use `ctrl`, `shift` and the function-key row — never `alt`. `alt` chords are unreliable across terminals, and under the kitty keyboard protocol a `ctrl+alt+<key>` press is indistinguishable from `ctrl+<key>` by the time it reaches the UI, so it could never have worked. The session toggles are `f2` caveman, `f3` guardrails, `f4` ask, `f5` cycle mode, and `f6` cycle reasoning effort — all five from any screen — and `f7` saves the prompt to the library from the composer. If your terminal eats a function key, `/settings`, `/yolo`, `/model` and `/mode` do the same jobs.
+Shortcuts use `ctrl`, `shift` and the function-key row — never `alt`. `alt` chords are unreliable across terminals, and under the kitty keyboard protocol a `ctrl+alt+<key>` press is indistinguishable from `ctrl+<key>` by the time it reaches the UI, so it could never have worked. The session toggles are `f2` caveman, `f3` guardrails, `f4` ask, `f5` cycle mode, and `f6` cycle reasoning effort — all five from any screen — `f7` saves the prompt to the library from the composer, and `ctrl+s` saves the hovered panel, overwrites/deletes a loaded library prompt, or saves the prompt. If your terminal eats a function key, `/settings`, `/yolo`, `/model` and `/mode` do the same jobs.
 
 In agent mode a strip above the prompt lists the agents that can carry your turns — your own profiles, the background-agent definitions (`↻`), and the built-ins (`◈`). `tab` moves the highlight, `enter` engages, `ctrl+g` starts a `↻` definition in the background instead, and typing `@name` filters the strip. The engaged agent shows in the footer chip and carries every turn until you pick another or `(none)`. It applies to agent mode only: plan and goal mode run Signet's own logic and cannot be steered by an agent.
 
@@ -111,6 +111,7 @@ signet -provider anthropic -model claude-sonnet-4-5 -prompt "review this diff"
 | `-session-retention-days` | idle session retention in days (default 28) |
 | `-detect-mode` | report which operating mode the prompt selects |
 | `-resume`, `-r` | resume a session by id or unique id prefix in the interactive TUI |
+| `-continue`, `-c` | continue the most recent session for the current project |
 | `-verbose` | print mode and security decisions to stderr |
 | `-version` | print the version and exit |
 
@@ -217,6 +218,12 @@ The TUI writes an append-only JSONL session per workdir under
 writes a new session whose root entry links `meta.parent_session` to the old
 id, and carries the old name forward. `/clear` starts a new session and leaves
 the previous one on disk untouched.
+
+Quitting (`ctrl+d` twice, or `/exit`) prints a branded exit card below the
+restored shell prompt: the session's display name, turn/duration/token facts,
+its on-disk path, and the exact `signet --resume <id>` command that returns to
+it. `signet --continue` (`-c`) reopens the most recent session for the current
+project without remembering an id.
 
 ## Documentation
 
