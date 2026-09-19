@@ -961,6 +961,7 @@ func (a *App) submitInput(input string) tea.Cmd {
 	a.attachOrder = nil
 	a.pendingInput = ""
 	a.editor.Reset()
+	a.clearLoadedPrompt()
 	a.clearAutocomplete()
 
 	firstUser := !a.hasUserMessage()
@@ -1777,11 +1778,13 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		// the agent picker below and costing the user a second press.
 		if isShellInput(input) {
 			a.editor.Reset()
+			a.clearLoadedPrompt()
 			a.clearAutocomplete()
 			return a.handleShell(input)
 		}
 		if strings.HasPrefix(input, "/") {
 			a.editor.Reset()
+			a.clearLoadedPrompt()
 			a.clearAutocomplete()
 			return a.handleCommand(input)
 		}
@@ -1803,6 +1806,7 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 				a.addSystem("steering queue full — message dropped")
 			}
 			a.editor.Reset()
+			a.clearLoadedPrompt()
 			a.clearAutocomplete()
 			return nil
 		}
@@ -1886,10 +1890,12 @@ func (a *App) forwardToEditor(m tea.KeyMsg) tea.Cmd {
 
 // historyItem is one browsable prompt. Name is the library name when the
 // prompt came from the prompt library, and empty for a plain session-history
-// prompt, which nobody named.
+// prompt, which nobody named. Entry is the library file the prompt came from,
+// nil for plain session history.
 type historyItem struct {
 	Name   string
 	Prompt string
+	Entry  *promptlib.Entry
 }
 
 func (a *App) startHistoryCycle() tea.Cmd {
@@ -1898,15 +1904,23 @@ func (a *App) startHistoryCycle() tea.Cmd {
 	a.historyResults = a.buildHistoryResults(a.historyQuery)
 	a.historyActive = true
 	if len(a.historyResults) > 0 {
-		a.historyIndex = 0
-		a.editor.SetValue(a.historyResults[0].Prompt)
-		a.editor.CursorEnd()
+		a.setHistoryResult(0)
 	} else {
 		a.historyIndex = -1
 		a.editor.SetValue(a.historyQuery)
+		a.loadedPrompt = nil
 	}
 	a.clearAutocomplete()
 	return nil
+}
+
+// setHistoryResult loads one browse result into the composer and records the
+// library file it came from, so ctrl+s overwrites the right entry.
+func (a *App) setHistoryResult(i int) {
+	a.historyIndex = i
+	a.editor.SetValue(a.historyResults[i].Prompt)
+	a.editor.CursorEnd()
+	a.loadedPrompt = a.historyResults[i].Entry
 }
 
 func (a *App) buildHistoryResults(query string) []historyItem {
@@ -1916,10 +1930,11 @@ func (a *App) buildHistoryResults(query string) []historyItem {
 	globalLib, _ := promptlib.Load(config.ScopeGlobal, "")
 	projLib, _ := promptlib.Load(config.ScopeProject, a.workdir)
 	merged := promptlib.Merge(globalLib.Entries, projLib.Entries)
-	for _, e := range promptlib.Filter(merged, query) {
+	for _, e := range promptlib.Filter(promptlib.Enabled(merged), query) {
 		if !seen[e.Prompt] {
 			seen[e.Prompt] = true
-			results = append(results, historyItem{Name: e.Name, Prompt: e.Prompt})
+			entry := e
+			results = append(results, historyItem{Name: e.Name, Prompt: e.Prompt, Entry: &entry})
 		}
 	}
 
@@ -1972,8 +1987,7 @@ func (a *App) cyclePromptName() tea.Cmd {
 		next = 0
 	}
 	a.historyIndex = next
-	a.editor.SetValue(a.historyResults[next].Prompt)
-	a.editor.CursorEnd()
+	a.setHistoryResult(next)
 	return nil
 }
 
@@ -2000,16 +2014,12 @@ func (a *App) handleHistoryKey(m tea.KeyMsg) tea.Cmd {
 	switch m.String() {
 	case "up":
 		if a.historyIndex < len(a.historyResults)-1 {
-			a.historyIndex++
-			a.editor.SetValue(a.historyResults[a.historyIndex].Prompt)
-			a.editor.CursorEnd()
+			a.setHistoryResult(a.historyIndex + 1)
 		}
 		return nil
 	case "down":
 		if a.historyIndex > 0 {
-			a.historyIndex--
-			a.editor.SetValue(a.historyResults[a.historyIndex].Prompt)
-			a.editor.CursorEnd()
+			a.setHistoryResult(a.historyIndex - 1)
 		} else {
 			a.exitHistoryCycle(false)
 		}
@@ -2030,11 +2040,13 @@ func (a *App) handleHistoryKey(m tea.KeyMsg) tea.Cmd {
 		}
 		if isShellInput(input) {
 			a.editor.Reset()
+			a.clearLoadedPrompt()
 			a.clearAutocomplete()
 			return a.handleShell(input)
 		}
 		if strings.HasPrefix(input, "/") {
 			a.editor.Reset()
+			a.clearLoadedPrompt()
 			a.clearAutocomplete()
 			return a.handleCommand(input)
 		}
@@ -2044,6 +2056,7 @@ func (a *App) handleHistoryKey(m tea.KeyMsg) tea.Cmd {
 				a.addSystem("steering queue full — message dropped")
 			}
 			a.editor.Reset()
+			a.clearLoadedPrompt()
 			a.clearAutocomplete()
 			return nil
 		}
@@ -2080,6 +2093,7 @@ func (a *App) exitHistoryCycle(accept bool) {
 	a.historyActive = false
 	if !accept {
 		a.editor.SetValue(a.historyOriginal)
+		a.clearLoadedPrompt()
 	}
 	a.historyResults = nil
 	a.historyIndex = 0
@@ -2223,6 +2237,13 @@ func (a *App) cancelSavePrompt() {
 	a.savePromptMode = false
 	a.savePromptValue = ""
 	a.editor.Reset()
+}
+
+// clearLoadedPrompt drops a history-loaded library prompt so it is not
+// re-applied or offered for action after the user switches to a shell
+// command, slash command, or steering input.
+func (a *App) clearLoadedPrompt() {
+	a.loadedPrompt = nil
 }
 
 // openPromptAction is a stub for the loaded-prompt action bar. It is defined
