@@ -363,6 +363,49 @@ func TestCustomProviderFromProjectSettings(t *testing.T) {
 	}
 }
 
+func TestFirewallOnRoutesThroughStubGateway(t *testing.T) {
+	srv, mp := newMockServer(t)
+	defer srv.Close()
+
+	home := filepath.Join(t.TempDir(), "signet-home")
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		t.Fatalf("mkdir home: %v", err)
+	}
+
+	var out, errb bytes.Buffer
+	cmd := exec.Command(signetBin,
+		"-provider", "openai", "-model", "test", "-prompt", "firewall on", "--firewall")
+	cmd.Env = append(os.Environ(),
+		"SIGNET_BASE_URL="+srv.URL,
+		"OPENAI_API_KEY=provider-key",
+		"VULNETIX_API_KEY=vulnetix-key",
+		"VULNETIX_ORG_ID=00000000-0000-0000-0000-000000000001",
+		"SIGNET_HOME="+home,
+	)
+	cmd.Stdout = &out
+	cmd.Stderr = &errb
+	code := 0
+	if err := cmd.Run(); err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			code = ee.ExitCode()
+		} else {
+			t.Fatalf("run signet: %v", err)
+		}
+	}
+	if code != 0 {
+		t.Fatalf("exit = %d\nstderr: %s", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "mock reply") {
+		t.Fatalf("stdout = %q, want mock reply", out.String())
+	}
+
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+	if len(mp.chatUser) != 1 || mp.chatUser[0] != "firewall on" {
+		t.Fatalf("chat user = %v, want [firewall on]", mp.chatUser)
+	}
+}
+
 func writeToolCallChat(w http.ResponseWriter, name string, args map[string]any) {
 	argsJSON, _ := json.Marshal(args)
 	b, _ := json.Marshal(map[string]any{
