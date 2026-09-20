@@ -351,9 +351,11 @@ func (a *App) modelRows() []modelRow {
 	}
 	cavemanVal := boolLabel(a.settings.ClassifierCavemanEnabled()) + "  (prose payloads only)"
 	var chunkVal string
-	{
-		c := a.settings.Classifier.Chunk
+	if cls != nil {
+		c := cls.Chunk
 		chunkVal = fmt.Sprintf("%s ×%d", humanizeBytes(c.MaxBytesOr()), c.ConcurrencyOr())
+	} else {
+		chunkVal = fmt.Sprintf("%s ×%d", humanizeBytes(config.ClassifierChunkSettings{}.MaxBytesOr()), config.ClassifierChunkSettings{}.ConcurrencyOr())
 	}
 	clsScope := a.modelState.classifierScope
 	if clsScope == "" {
