@@ -3,7 +3,6 @@ import SealedSection from '../seal/SealedSection.astro';
 import ShotCarousel from '../ui/ShotCarousel.tsx';
 
 import planMode from '../../assets/concepts/plan-mode-surface.svg?raw';
-import goalLoop from '../../assets/concepts/goal-pass-loop.svg?raw';
 import cdConfine from '../../assets/concepts/cd-confinement.svg?raw';
 import permMerge from '../../assets/concepts/permission-merge.svg?raw';
 import guardSwitch from '../../assets/concepts/guardrails-switch.svg?raw';
@@ -20,27 +19,33 @@ import modelPickerShot from '../../assets/shots/model-picker.svg';
 import localModelShot from '../../assets/shots/local-model.svg';
 ---
 
-<SealedSection label="modes" sealText="Modes: plan mode advertises a fail-closed surface with Bash absent, not restricted. The goal loop is stopped by a stall detector, not a counter. Explicit mode choices are sticky." id="modes">
+<SealedSection label="modes" sealText="Modes: agent for general coding, plan for read-only investigation with Bash absent, and goal for one tracked objective. Explicit choices are sticky and never re-classified." id="modes">
   <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
     <div class="order-2 lg:order-1 space-y-4">
       <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={planMode} /></div>
-      <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={goalLoop} /></div>
     </div>
     <div class="prose-measure order-1 lg:order-2">
       <h2 class="text-3xl font-bold text-vx-ink">Modes.</h2>
       <p class="mt-4 text-vx-ink/80">
-        Plan mode advertises and enforces a fail-closed surface with <code class="mono">Bash</code> absent, not
-        present-but-gated. A model cannot call what is not advertised. A read-only
-        <code class="mono">Bash</code> returns only under an explicit permission allow rule.
+        Three modes, one fail-closed surface. Signet classifies a mode-less prompt into agent, plan,
+        or goal, and an explicit choice is never re-guessed.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        The goal loop stops on a stall. No new evidence and no re-plan after an attempt means it
-        reports the stall with the evidence gathered. It does not fire a counter that runs past
-        the answer.
+        <strong>Agent</strong> is the default for general coding. The full tool surface sits behind the
+        permission gates, and the security classifier runs on every untrusted result.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        Modes are sticky: an explicit choice is never silently re-classified, and
-        <code class="mono">-detect-mode</code> tells you what it <em>would</em> do.
+        <strong>Plan</strong> reads before it changes. The surface is fail-closed with <code class="mono">Bash</code> absent,
+        not present-but-gated: a model cannot call what is not advertised. A read-only
+        <code class="mono">Bash</code> returns only under an explicit allow rule, and the plan is a structured,
+        persisted document you approve.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        <strong>Goal</strong> pursues one named objective to completion. A todo list built only from assistant
+        text tracks the work, and the loop keeps going while the objective advances.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        Not sure what it would pick? <code class="mono">-detect-mode</code> prints the decision without acting on it.
       </p>
     </div>
   </div>

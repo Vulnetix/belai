@@ -76,7 +76,7 @@ const ROWS: Row[] = [
     gemini: 'unknown',
   },
   {
-    feature: 'goal loop stopped by a stall, not a counter',
+    feature: 'goal loop stops when blocked, not after a turn count',
     signet: 'internal/agent/passloop.go',
     signetCell: 'yes',
     claude: 'no',
