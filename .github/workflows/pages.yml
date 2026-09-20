@@ -1,0 +1,83 @@
+name: Deploy Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never cancel a Pages deploy mid-flight: two overlapping deploys would race on
+# the single Pages artifact, and a cancelled one can leave the custom domain
+# pointing at a half-built site.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  # Force JS actions to Node 24 so deprecated Node 20 runs stop firing.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  build:
+    # ubuntu-latest rather than a self-hosted runner: Pages must publish without
+    # anyone being at a desk, and the self-hosted queue stalls silently when the
+    # machine is down.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: site/.nvmrc
+          cache: yarn
+          cache-dependency-path: site/yarn.lock
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Install
+        working-directory: site
+        run: yarn install --immutable
+
+      - name: Build
+        working-directory: site
+        run: yarn build
+
+      # public/CNAME is what binds the custom domain. If it goes missing, Pages
+      # silently unbinds signet.vulnetix.com and starts serving on
+      # vulnetix.github.io/signet instead, a failure that looks like DNS but is
+      # not. This check exists because the Terraform record and the file must
+      # never disagree.
+      - name: Verify the custom domain survived the build
+        working-directory: site
+        run: |
+          test -f dist/CNAME || { echo "dist/CNAME missing: Pages would unbind the custom domain"; exit 1; }
+          grep -qx 'signet.vulnetix.com' dist/CNAME || {
+            echo "dist/CNAME does not match the Terraform-managed record:"; cat dist/CNAME; exit 1;
+          }
+
+      - name: Check internal links
+        working-directory: site
+        run: node scripts/check-links.mjs dist
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
