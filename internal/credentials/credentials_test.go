@@ -48,6 +48,15 @@ func TestSpecMatchesRunResolve(t *testing.T) {
 		"anthropic":             {"api_key"},
 		"cloudflare-workers-ai": {"api_key", "account_id"},
 		"cloudflare-ai-gateway": {"token", "account_id", "base_url"},
+		"groq":                  {"api_key", "base_url"},
+		"deepseek":              {"api_key", "base_url"},
+		"fireworks":             {"api_key", "base_url"},
+		"mistral":               {"api_key", "base_url"},
+		"together":              {"api_key", "base_url"},
+		"xai":                   {"api_key", "base_url"},
+		"moonshot":              {"api_key", "base_url"},
+		"minimax":               {"api_key", "base_url"},
+		"alibaba":               {"api_key", "base_url"},
 	}
 	for provider, want := range cases {
 		got := Spec(provider)

@@ -269,6 +269,48 @@ func TestModeDetection(t *testing.T) {
 	}
 }
 
+func TestWorkDisciplineInSystemPrompt(t *testing.T) {
+	cases := []struct {
+		name           string
+		args           []string
+		wantDiscipline bool
+	}{
+		{
+			name:           "agent mode with tools uses work discipline",
+			args:           []string{"-provider", "openai", "-model", "test", "-prompt", "hello"},
+			wantDiscipline: true,
+		},
+		{
+			name: "plan mode does not use work discipline",
+			// -tools=false exercises the noninteractive Engage path; even so,
+			// plan mode must not be told to start editing.
+			args:           []string{"-tools=false", "-provider", "openai", "-model", "test", "-prompt", "plan the migration"},
+			wantDiscipline: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, mp := newMockServer(t)
+			defer srv.Close()
+
+			_, errOut, code := runSignet(t, srv.URL, tc.args...)
+			if code != 0 {
+				t.Fatalf("exit = %d (stderr %q)", code, errOut)
+			}
+
+			mp.mu.Lock()
+			defer mp.mu.Unlock()
+			if len(mp.chatSys) != 1 {
+				t.Fatalf("expected one chat system prompt, got %d", len(mp.chatSys))
+			}
+			has := strings.Contains(mp.chatSys[0], "Work discipline.")
+			if has != tc.wantDiscipline {
+				t.Fatalf("Work discipline present = %v, want %v; system = %q", has, tc.wantDiscipline, mp.chatSys[0])
+			}
+		})
+	}
+}
+
 func TestPlanModeNonInteractiveDoesNotClarify(t *testing.T) {
 	srv, mp := newMockServer(t)
 	defer srv.Close()
@@ -406,7 +448,11 @@ func TestFirewallOnRoutesThroughStubGateway(t *testing.T) {
 	}
 }
 
-func writeToolCallChat(w http.ResponseWriter, name string, args map[string]any) {
+func writeToolCallChat(w http.ResponseWriter, name string, args map[string]any, content ...string) {
+	msgContent := ""
+	if len(content) > 0 {
+		msgContent = content[0]
+	}
 	argsJSON, _ := json.Marshal(args)
 	b, _ := json.Marshal(map[string]any{
 		"id":     "x",
@@ -415,7 +461,7 @@ func writeToolCallChat(w http.ResponseWriter, name string, args map[string]any) 
 			"index": 0,
 			"message": map[string]any{
 				"role":    "assistant",
-				"content": "",
+				"content": msgContent,
 				"tool_calls": []any{map[string]any{
 					"id":       "call_1",
 					"type":     "function",
@@ -914,7 +960,10 @@ func newGoalPassE2EServer(t *testing.T, evalSentinels []string) (*httptest.Serve
 			gm.mu.Lock()
 			gm.chatCalls++
 			gm.mu.Unlock()
-			writeToolCallChat(w, "Bash", map[string]any{"command": "echo hi"})
+			// Include a todo list with a completed item so verification has
+			// real work to check; an all-pending list would skip the
+			// verification pass and change the pass-loop timing under test.
+			writeToolCallChat(w, "Bash", map[string]any{"command": "echo hi"}, "Plan:\n1. Ship the release\n[DONE:1]\n")
 		}
 	}))
 	return srv, gm
@@ -1437,5 +1486,29 @@ func TestPlanModeExitPlanModeEmptyPlanErrors(t *testing.T) {
 	entries, _ := os.ReadDir(filepath.Join(dir, ".vulnetix", "plans"))
 	if len(entries) != 0 {
 		t.Fatalf("empty plan must not record a file, got %v", entries)
+	}
+}
+
+// TestCustomProviderGroqViaBaseURL proves a registry provider can be driven
+// through the mock using SIGNET_BASE_URL, just like a custom provider.
+func TestCustomProviderGroqViaBaseURL(t *testing.T) {
+	t.Setenv("GROQ_API_KEY", "groq-test-key")
+	srv, mp := newMockServer(t)
+	defer srv.Close()
+
+	out, errOut, code := runSignet(t, srv.URL,
+		"-provider", "groq", "-model", "test", "-prompt", "hi",
+	)
+	if code != 0 {
+		t.Fatalf("exit = %d (stderr %q)", code, errOut)
+	}
+	if !strings.Contains(out, "mock reply") {
+		t.Fatalf("expected mock reply, got stdout %q stderr %q", out, errOut)
+	}
+
+	mp.mu.Lock()
+	defer mp.mu.Unlock()
+	if len(mp.chatUser) < 1 {
+		t.Fatalf("expected chat request to groq, got none")
 	}
 }

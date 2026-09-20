@@ -216,6 +216,141 @@ var registry = map[string]Descriptor{
 		ListPath:     "/models",
 		Local:        true,
 	},
+	"groq": {
+		Name: "groq", Auth: AuthBearer,
+		Fields: []Field{
+			{Name: "api_key", EnvVars: []string{"GROQ_API_KEY"}, Secret: true},
+			{Name: "base_url", EnvVars: []string{"SIGNET_GROQ_BASE_URL"}, Secret: false, Optional: true},
+		},
+		BaseURL: "https://api.groq.com/openai/v1", NetrcHost: "api.groq.com",
+		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
+		DefaultModel: "llama-3.3-70b-versatile",
+		Models: []ModelSpec{
+			{ID: "llama-3.3-70b-versatile", Label: "Llama 3.3 70B"},
+			{ID: "llama-3.1-8b-instant", Label: "Llama 3.1 8B"},
+		},
+		ListPath: "/models",
+	},
+	"deepseek": {
+		Name: "deepseek", Auth: AuthBearer,
+		Fields: []Field{
+			{Name: "api_key", EnvVars: []string{"DEEPSEEK_API_KEY"}, Secret: true},
+			{Name: "base_url", EnvVars: []string{"SIGNET_DEEPSEEK_BASE_URL"}, Secret: false, Optional: true},
+		},
+		BaseURL: "https://api.deepseek.com/v1", NetrcHost: "api.deepseek.com",
+		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
+		DefaultModel: "deepseek-chat",
+		Models: []ModelSpec{
+			{ID: "deepseek-chat", Label: "DeepSeek Chat"},
+			{ID: "deepseek-reasoner", Label: "DeepSeek Reasoner"},
+		},
+		ListPath: "/models",
+	},
+	"fireworks": {
+		Name: "fireworks", Auth: AuthBearer,
+		Fields: []Field{
+			{Name: "api_key", EnvVars: []string{"FIREWORKS_API_KEY"}, Secret: true},
+			{Name: "base_url", EnvVars: []string{"SIGNET_FIREWORKS_BASE_URL"}, Secret: false, Optional: true},
+		},
+		BaseURL: "https://api.fireworks.ai/inference/v1", NetrcHost: "api.fireworks.ai",
+		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
+		DefaultModel: "accounts/fireworks/models/llama-v3p3-70b-instruct",
+		Models: []ModelSpec{
+			{ID: "accounts/fireworks/models/llama-v3p3-70b-instruct", Label: "Llama 3.3 70B Instruct"},
+			{ID: "accounts/fireworks/models/qwen3-235b-a22b", Label: "Qwen3 235B A22B"},
+		},
+		ListPath: "/models",
+	},
+	"mistral": {
+		Name: "mistral", Auth: AuthBearer,
+		Fields: []Field{
+			{Name: "api_key", EnvVars: []string{"MISTRAL_API_KEY"}, Secret: true},
+			{Name: "base_url", EnvVars: []string{"SIGNET_MISTRAL_BASE_URL"}, Secret: false, Optional: true},
+		},
+		BaseURL: "https://api.mistral.ai/v1", NetrcHost: "api.mistral.ai",
+		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
+		DefaultModel: "mistral-large-latest",
+		Models: []ModelSpec{
+			{ID: "mistral-large-latest", Label: "Mistral Large"},
+			{ID: "mistral-small-latest", Label: "Mistral Small"},
+		},
+		ListPath: "/models",
+	},
+	"together": {
+		Name: "together", Auth: AuthBearer,
+		Fields: []Field{
+			{Name: "api_key", EnvVars: []string{"TOGETHER_API_KEY"}, Secret: true},
+			{Name: "base_url", EnvVars: []string{"SIGNET_TOGETHER_BASE_URL"}, Secret: false, Optional: true},
+		},
+		BaseURL: "https://api.together.xyz/v1", NetrcHost: "api.together.xyz",
+		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
+		DefaultModel: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+		Models: []ModelSpec{
+			{ID: "meta-llama/Llama-3.3-70B-Instruct-Turbo", Label: "Llama 3.3 70B"},
+			{ID: "deepseek-ai/DeepSeek-V3", Label: "DeepSeek V3"},
+		},
+		ListPath: "/models",
+	},
+	"xai": {
+		Name: "xai", Auth: AuthBearer,
+		Fields: []Field{
+			{Name: "api_key", EnvVars: []string{"XAI_API_KEY"}, Secret: true},
+			{Name: "base_url", EnvVars: []string{"SIGNET_XAI_BASE_URL"}, Secret: false, Optional: true},
+		},
+		BaseURL: "https://api.x.ai/v1", NetrcHost: "api.x.ai",
+		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
+		Effort:       true,
+		DefaultModel: "grok-3-latest",
+		Models: []ModelSpec{
+			{ID: "grok-3-latest", Label: "Grok 3"},
+			{ID: "grok-3-mini-latest", Label: "Grok 3 Mini"},
+		},
+		ListPath: "/models",
+	},
+	"moonshot": {
+		Name: "moonshot", Auth: AuthBearer,
+		Fields: []Field{
+			{Name: "api_key", EnvVars: []string{"MOONSHOT_API_KEY"}, Secret: true},
+			{Name: "base_url", EnvVars: []string{"SIGNET_MOONSHOT_BASE_URL"}, Secret: false, Optional: true},
+		},
+		BaseURL: "https://api.moonshot.ai/v1", NetrcHost: "api.moonshot.ai",
+		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
+		DefaultModel: "kimi-k2-0711",
+		Models: []ModelSpec{
+			{ID: "kimi-k2-0711", Label: "Kimi K2"},
+			{ID: "moonshot-v1-128k", Label: "Moonshot V1 128k"},
+		},
+		ListPath: "/models",
+	},
+	"minimax": {
+		Name: "minimax", Auth: AuthBearer,
+		Fields: []Field{
+			{Name: "api_key", EnvVars: []string{"MINIMAX_API_KEY"}, Secret: true},
+			{Name: "base_url", EnvVars: []string{"SIGNET_MINIMAX_BASE_URL"}, Secret: false, Optional: true},
+		},
+		BaseURL: "https://api.minimax.io/v1", NetrcHost: "api.minimax.io",
+		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
+		DefaultModel: "minimax-text-01",
+		Models: []ModelSpec{
+			{ID: "minimax-text-01", Label: "MiniMax Text 01"},
+		},
+		ListPath: "/models",
+	},
+	"alibaba": {
+		Name: "alibaba", Auth: AuthBearer,
+		Fields: []Field{
+			{Name: "api_key", EnvVars: []string{"DASHSCOPE_API_KEY", "ALIBABA_API_KEY"}, Secret: true},
+			{Name: "base_url", EnvVars: []string{"SIGNET_ALIBABA_BASE_URL"}, Secret: false, Optional: true},
+		},
+		BaseURL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", NetrcHost: "dashscope-intl.aliyuncs.com",
+		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
+		DefaultModel: "qwen3-30b-a3b",
+		Models: []ModelSpec{
+			{ID: "qwen3-30b-a3b", Label: "Qwen3 30B A3B"},
+			{ID: "qwen3-235b-a22b", Label: "Qwen3 235B A22B"},
+		},
+		ListPath: "/models",
+	},
 	"github-copilot": {
 		Name: "github-copilot", Auth: AuthCopilot,
 		Fields: []Field{

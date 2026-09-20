@@ -1639,3 +1639,39 @@ func TestPrepareFirewallNotEnabled(t *testing.T) {
 		t.Fatalf("expected direct provider URL, got %q", cfg.BaseURL)
 	}
 }
+
+func TestPrepareNewOpenAICompatibleProviders(t *testing.T) {
+	cases := map[string]struct {
+		key      string
+		baseURL  string
+		fallback string
+	}{
+		"groq":      {key: "GROQ_API_KEY", baseURL: "https://api.groq.com/openai/v1", fallback: "llama-3.3-70b-versatile"},
+		"deepseek":  {key: "DEEPSEEK_API_KEY", baseURL: "https://api.deepseek.com/v1", fallback: "deepseek-chat"},
+		"fireworks": {key: "FIREWORKS_API_KEY", baseURL: "https://api.fireworks.ai/inference/v1", fallback: "accounts/fireworks/models/llama-v3p3-70b-instruct"},
+		"mistral":   {key: "MISTRAL_API_KEY", baseURL: "https://api.mistral.ai/v1", fallback: "mistral-large-latest"},
+		"together":  {key: "TOGETHER_API_KEY", baseURL: "https://api.together.xyz/v1", fallback: "meta-llama/Llama-3.3-70B-Instruct-Turbo"},
+		"xai":       {key: "XAI_API_KEY", baseURL: "https://api.x.ai/v1", fallback: "grok-3-latest"},
+		"moonshot":  {key: "MOONSHOT_API_KEY", baseURL: "https://api.moonshot.ai/v1", fallback: "kimi-k2-0711"},
+		"minimax":   {key: "MINIMAX_API_KEY", baseURL: "https://api.minimax.io/v1", fallback: "minimax-text-01"},
+		"alibaba":   {key: "DASHSCOPE_API_KEY", baseURL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", fallback: "qwen3-30b-a3b"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			src := fakeSource{vals: map[string]string{name + ":api_key": "secret"}}
+			cfg, status := Prepare("", name, src)
+			if !status.Configured {
+				t.Fatalf("expected configured, missing=%v", status.Missing)
+			}
+			if cfg.BaseURL != tc.baseURL {
+				t.Fatalf("BaseURL = %q, want %q", cfg.BaseURL, tc.baseURL)
+			}
+			if cfg.Model != tc.fallback {
+				t.Fatalf("Model = %q, want %q", cfg.Model, tc.fallback)
+			}
+			if cfg.APIKey != "secret" {
+				t.Fatalf("APIKey = %q", cfg.APIKey)
+			}
+		})
+	}
+}

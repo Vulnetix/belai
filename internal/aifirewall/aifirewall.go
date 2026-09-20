@@ -6,6 +6,7 @@ package aifirewall
 import (
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 )
 
@@ -25,6 +26,9 @@ var slugs = map[string]string{
 	"xai":        "xai",
 	"together":   "together",
 	"fireworks":  "fireworks",
+	"alibaba":    "alibaba",
+	"moonshot":   "moonshot",
+	"minimax":    "minimax",
 }
 
 // Slug returns the gateway provider segment for the given Signet provider, and
@@ -32,6 +36,16 @@ var slugs = map[string]string{
 func Slug(signetProvider string) (string, bool) {
 	s, ok := slugs[strings.ToLower(signetProvider)]
 	return s, ok
+}
+
+// Providers returns the gateway-routable provider names, sorted.
+func Providers() []string {
+	out := make([]string, 0, len(slugs))
+	for name := range slugs {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // BaseURL builds the gateway base URL for a provider slug and org. It appends

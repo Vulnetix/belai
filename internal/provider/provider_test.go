@@ -236,6 +236,15 @@ func TestNewAssignsBuiltinAuth(t *testing.T) {
 		"cloudflare-workers-ai": AuthBearer,
 		"cloudflare-ai-gateway": AuthCFAIG,
 		"huggingface":           AuthBearer,
+		"groq":                  AuthBearer,
+		"deepseek":              AuthBearer,
+		"fireworks":             AuthBearer,
+		"mistral":               AuthBearer,
+		"together":              AuthBearer,
+		"xai":                   AuthBearer,
+		"moonshot":              AuthBearer,
+		"minimax":               AuthBearer,
+		"alibaba":               AuthBearer,
 	}
 	for name, want := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -278,6 +287,51 @@ func TestHeadersGoldenForBuiltins(t *testing.T) {
 			"cf-aig-authorization": "Bearer sk",
 		}},
 		{"huggingface", map[string]string{
+			"content-type":  "application/json",
+			"user-agent":    ua,
+			"authorization": "Bearer sk",
+		}},
+		{"groq", map[string]string{
+			"content-type":  "application/json",
+			"user-agent":    ua,
+			"authorization": "Bearer sk",
+		}},
+		{"deepseek", map[string]string{
+			"content-type":  "application/json",
+			"user-agent":    ua,
+			"authorization": "Bearer sk",
+		}},
+		{"fireworks", map[string]string{
+			"content-type":  "application/json",
+			"user-agent":    ua,
+			"authorization": "Bearer sk",
+		}},
+		{"mistral", map[string]string{
+			"content-type":  "application/json",
+			"user-agent":    ua,
+			"authorization": "Bearer sk",
+		}},
+		{"together", map[string]string{
+			"content-type":  "application/json",
+			"user-agent":    ua,
+			"authorization": "Bearer sk",
+		}},
+		{"xai", map[string]string{
+			"content-type":  "application/json",
+			"user-agent":    ua,
+			"authorization": "Bearer sk",
+		}},
+		{"moonshot", map[string]string{
+			"content-type":  "application/json",
+			"user-agent":    ua,
+			"authorization": "Bearer sk",
+		}},
+		{"minimax", map[string]string{
+			"content-type":  "application/json",
+			"user-agent":    ua,
+			"authorization": "Bearer sk",
+		}},
+		{"alibaba", map[string]string{
 			"content-type":  "application/json",
 			"user-agent":    ua,
 			"authorization": "Bearer sk",
@@ -386,6 +440,15 @@ func TestNewAssignsAuthForNewBuiltins(t *testing.T) {
 		"ollama":                AuthBearer,
 		"llama-server":          AuthBearer,
 		"huggingface":           AuthBearer,
+		"groq":                  AuthBearer,
+		"deepseek":              AuthBearer,
+		"fireworks":             AuthBearer,
+		"mistral":               AuthBearer,
+		"together":              AuthBearer,
+		"xai":                   AuthBearer,
+		"moonshot":              AuthBearer,
+		"minimax":               AuthBearer,
+		"alibaba":               AuthBearer,
 	} {
 		t.Run(name, func(t *testing.T) {
 			p, err := New(name, "https://x.example/v1", "k")

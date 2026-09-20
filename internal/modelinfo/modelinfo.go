@@ -43,6 +43,29 @@ func init() {
 	register(128_000, 16_384, "gpt-4o", "gpt-4o-mini", "gpt-4-turbo")
 	register(200_000, 100_000, "o1", "o1-pro", "o3", "o3-mini", "o3-pro", "o4-mini")
 
+	// New OpenAI-compatible providers.
+	register(128_000, 32_768,
+		"llama-3.3-70b-versatile", "llama-3.1-8b-instant",
+		"deepseek-chat", "deepseek-reasoner",
+		"mistral-large-latest", "mistral-small-latest",
+		"grok-3-latest", "grok-3-mini-latest",
+		"kimi-k2-0711", "moonshot-v1-128k",
+		"minimax-text-01",
+	)
+	register(128_000, 32_768,
+		"accounts/fireworks/models/llama-v3p3-70b-instruct",
+		"accounts/fireworks/models/qwen3-235b-a22b",
+	)
+	register(128_000, 32_768,
+		"meta-llama/Llama-3.3-70B-Instruct-Turbo",
+		"deepseek-ai/DeepSeek-V3",
+	)
+	register(128_000, 32_768, "qwen3-30b-a3b", "qwen3-235b-a22b")
+
+	registerPrefix("grok-", 128_000, 32_768)
+	registerPrefix("kimi-", 128_000, 32_768)
+	registerPrefix("qwen3-", 128_000, 32_768)
+
 	register(262_144, 256_000, "@cf/moonshotai/kimi-k2.6", "@cf/moonshotai/kimi-k2.7", "@cf/moonshotai/kimi-k2.7-code")
 	register(128_000, 16_384, "@cf/openai/gpt-oss-120b", "@cf/openai/gpt-20b", "@cf/openai/gpt-oss-20b")
 	register(131_000, 16_384, "@cf/meta/llama-4-scout-17b-16e-instruct")

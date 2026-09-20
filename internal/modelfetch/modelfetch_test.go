@@ -461,3 +461,42 @@ func TestListCloudflareWorkersAIMixedPropertyValues(t *testing.T) {
 		t.Fatalf("number value: want 24000, got %d", got[1].ContextWindow)
 	}
 }
+
+// TestListNewOpenAICompatibleProviders verifies that the nine new providers
+// introduced in the registry fall through to the default OpenAI /models
+// parser, returning model ids and assigning the default effort set.
+func TestListNewOpenAICompatibleProviders(t *testing.T) {
+	providers := []string{"groq", "deepseek", "fireworks", "mistral", "together", "xai", "moonshot", "minimax", "alibaba"}
+	for _, name := range providers {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/models" {
+					t.Fatalf("path = %q, want /models", r.URL.Path)
+				}
+				_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"id": name + "/m1"}}})
+			}))
+			t.Cleanup(srv.Close)
+
+			models, err := List(context.Background(), Target{Name: name, BaseURL: srv.URL, APIKey: "k"}, srv.Client())
+			if err != nil {
+				t.Fatalf("List: %v", err)
+			}
+			if len(models) != 1 || models[0].ID != name+"/m1" {
+				t.Fatalf("models = %+v", models)
+			}
+			if len(models[0].Efforts) == 0 {
+				t.Fatalf("model %q has no Efforts", models[0].ID)
+			}
+		})
+	}
+}
+
+func TestListNewProviderEndpoint(t *testing.T) {
+	endpoint, err := EndpointFor(Target{Name: "groq", BaseURL: "https://api.groq.com/openai/v1"})
+	if err != nil {
+		t.Fatalf("EndpointFor: %v", err)
+	}
+	if want := "https://api.groq.com/openai/v1/models"; endpoint != want {
+		t.Fatalf("endpoint = %q, want %q", endpoint, want)
+	}
+}
