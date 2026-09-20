@@ -27,5 +27,8 @@ provider "cloudflare" {
 }
 
 provider "github" {
+  # The repository lives in the Vulnetix org, not the authenticating user's
+  # account; pin the owner so repository names resolve there.
+  owner = "Vulnetix"
   token = var.github_token
 }

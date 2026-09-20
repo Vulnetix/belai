@@ -12,10 +12,6 @@
 # disagree, Pages unbinds the custom domain on the next deploy — which is why
 # .github/workflows/pages.yml asserts the file after every build.
 
-data "cloudflare_zone" "vulnetix" {
-  zone_id = var.cloudflare_zone_id
-}
-
 resource "cloudflare_dns_record" "signet" {
   zone_id = var.cloudflare_zone_id
   name    = "signet" # label, not FQDN

@@ -1,6 +1,6 @@
 output "site_url" {
   description = "Public URL of the marketing site."
-  value       = "https://${cloudflare_dns_record.signet.name}.${data.cloudflare_zone.vulnetix.name}/"
+  value       = "https://signet.vulnetix.com/"
 }
 
 output "site_record" {
