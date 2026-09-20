@@ -181,7 +181,7 @@ func parseLink(rs []rune, i int) ([]Seg, int, bool) {
 		return parseInline(text), j + 1, true
 	}
 	depth = 0
-	m := k
+	m := k + 1 // skip the opening '(', which the url starts after
 	for m < len(rs) {
 		if rs[m] == '\\' {
 			m += 2

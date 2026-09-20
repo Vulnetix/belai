@@ -319,8 +319,10 @@ func mergeLinks(words []mdWord) []mdWord {
 	for _, w := range words {
 		if w.link && len(out) > 0 {
 			last := &out[len(out)-1]
+			// dropFrom is the text's end: the droppable tail runs from there to
+			// the url's end, including the space between them.
+			last.dropFrom = last.to
 			last.to = w.to
-			last.dropFrom = w.from
 			continue
 		}
 		out = append(out, w)
@@ -338,35 +340,29 @@ func layoutWords(words []mdWord, width int) [][2]int {
 		start, end = -1, 0
 	}
 	for _, w := range words {
+		if start < 0 {
+			start, end = w.from, w.from
+		}
 		if w.dropFrom > 0 {
-			textLen := w.dropFrom - w.from
-			urlLen := w.to - w.dropFrom
-			if start < 0 {
-				start, end = w.from, w.from
-			}
-			used := end - start
-			if used+textLen > width {
-				if used > 0 {
+			// Link word: text [from, dropFrom) then a droppable url tail.
+			if w.dropFrom-start > width {
+				if end > start {
 					flush()
 					start, end = w.from, w.from
-					used = 0
 				}
-				if textLen > width {
+				if w.dropFrom-w.from > width {
 					hardBreak(&lines, w.from, w.dropFrom, width)
 					start, end = -1, 0
 					continue
 				}
 			}
 			end = w.dropFrom
-			if urlLen > 0 && end-start+urlLen <= width {
+			if w.to-start <= width {
 				end = w.to
 			}
 			continue
 		}
-		if start < 0 {
-			start, end = w.from, w.from
-		}
-		if end-start+w.to-w.from > width {
+		if w.to-start > width {
 			if end > start {
 				flush()
 				start, end = w.from, w.from

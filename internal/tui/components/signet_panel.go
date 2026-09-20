@@ -7,83 +7,109 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// signetPanel renders a coalesced group of system notices as one signet panel.
-// Each notice becomes one body line. Long groups are truncated to
-// signetPreviewLines with a marker whose selection copies the hidden notices.
-func signetPanel(messages []Message, idxs []int, width int, expandAll bool) (string, LineMap, []int) {
-	var parts []string
+// signetPanel renders a coalesced run of adjacent system notices as one framed
+// panel titled signet: one body line per notice with a muted · gutter, bodies
+// muted, the frame's edges in the line colour and the title in the brand
+// accent. It truncates like any other panel via signetPreviewLines and returns
+// a per-body-line owner index so provenance can point each line back to the
+// notice that produced it.
+func signetPanel(msgs []Message, idxs []int, width int, expandAll bool) (string, LineMap, []int) {
+	inner := max(width-4, 8)
+	icol := visibleLen("· ")
+
+	var rows []Row
+	var owners []int
 	for _, idx := range idxs {
-		text := strings.TrimRight(messages[idx].Text(), "\n")
-		parts = append(parts, text)
-	}
-	body := strings.Join(parts, "\n")
-	marker, hidden := "", ""
-	if !expandAll {
-		var m string
-		body, m, hidden = truncateSignetBody(body, signetPreviewLines)
-		marker = m
+		text := strings.TrimRight(msgs[idx].Text(), "\n")
+		phys := strings.Split(text, "\n")
+		if len(phys) == 0 {
+			phys = []string{""}
+		}
+		first := true
+		for _, pline := range phys {
+			pline = strings.ReplaceAll(pline, "\t", " ")
+			lines := wrapTextLines(pline, max(inner-icol, 1))
+			if len(lines) == 0 {
+				lines = []string{""}
+			}
+			for j, line := range lines {
+				r := Row{Gutter: icol}
+				if first && j == 0 {
+					r.Segs = []Seg{NewSeg("· ", ColorMuted), NewSeg(line, ColorMuted)}
+				} else {
+					r.Segs = []Seg{NewSeg(spaces(icol), nil), NewSeg(line, ColorMuted)}
+				}
+				rows = append(rows, r)
+				owners = append(owners, idx)
+			}
+			first = false
+		}
 	}
 
-	s, lm := Panel{
-		Title:  "signet",
-		Body:   MutedStyle.Render(body),
-		Width:  width,
-		Accent: lipgloss.TerminalColor(ColorMuted),
-		Marker: marker,
-		Hidden: hidden,
-	}.Render()
-
-	owners := make([]int, len(lm))
-	for i := range lm {
-		if lm[i].Chrome {
-			owners[i] = -1
-			continue
-		}
-		if marker != "" && lm[i].MarkerWidth > 0 {
-			owners[i] = -1
-			continue
-		}
-		if len(idxs) > 0 {
-			owners[i] = idxs[0]
-		}
+	if !expandAll && len(rows) > signetPreviewLines {
+		hidden := signetHidden(msgs, owners, signetPreviewLines)
+		marker := "… " + strconv.Itoa(len(rows)-signetPreviewLines) + " more lines"
+		firstHidden := owners[signetPreviewLines]
+		rows = append(rows[:signetPreviewLines], Row{
+			Segs:        []Seg{NewSeg(marker, ColorMuted)},
+			MarkerCol:   0,
+			MarkerWidth: visibleLen(marker),
+			Hidden:      hidden,
+		})
+		owners = append(owners[:signetPreviewLines], firstHidden)
 	}
+
+	p := Panel{
+		Title:       "signet",
+		TitleAccent: lipgloss.TerminalColor(ColorTeal),
+		Accent:      lipgloss.TerminalColor(ColorLine),
+		Width:       width,
+		BodyRows:    rows,
+	}
+	s, lm := p.Render()
 	return s, lm, owners
 }
 
-// truncateSignetBody keeps the first maxLines raw lines and returns a muted
-// marker plus the hidden remainder.
-func truncateSignetBody(body string, maxLines int) (out, marker, hidden string) {
-	lines := strings.Split(body, "\n")
-	keep := maxLines
-	if keep < 1 {
-		keep = 1
+// signetHidden joins the raw text of the notices whose rows were hidden,
+// deduplicating so a notice that still has visible rows is not duplicated in a
+// selection over the hint.
+func signetHidden(msgs []Message, owners []int, from int) string {
+	var parts []string
+	seen := map[int]bool{}
+	for _, o := range owners[from:] {
+		if !seen[o] {
+			seen[o] = true
+			parts = append(parts, strings.TrimRight(msgs[o].Text(), "\n"))
+		}
 	}
-	if len(lines) <= keep {
-		return body, "", ""
-	}
-	kept := strings.Join(lines[:keep], "\n")
-	hidden = strings.Join(lines[keep:], "\n")
-	marker = "… " + strconv.Itoa(len(lines)-keep) + " more lines"
-	return kept + "\n" + MutedStyle.Render(marker), marker, hidden
+	return strings.Join(parts, "\n")
 }
 
-// tagGroupProvenance marks the line map of a coalesced system group so each
-// line carries the message that owns it, when signetPanel produced a 1:1
-// owners slice. Chrome and marker lines keep the sentinel owner.
-func tagGroupProvenance(lm LineMap, owners []int, messages []Message) {
-	for i := range lm {
-		if i < len(owners) {
-			lm[i].Owner = owners[i]
+// tagGroupProvenance stamps a coalesced system group's lines: per-line owner
+// from the owners slice (consumed in order for each non-chrome body line), and
+// group-level Copyable (any member has text) and Collapsed (from the group's
+// own truncation). File stays false — notices are never file panels.
+func tagGroupProvenance(lm LineMap, owners []int, msgs []Message) {
+	copyable := false
+	for _, o := range owners {
+		if o >= 0 && o < len(msgs) && strings.TrimSpace(msgs[o].Text()) != "" {
+			copyable = true
 		}
+	}
+	collapsed := hasTruncation(lm)
+	j := 0
+	for i := range lm {
 		if lm[i].Chrome {
 			lm[i].Owner = -1
 			continue
 		}
-		owner := lm[i].Owner
-		if owner >= 0 && owner < len(messages) {
-			msg := messages[owner]
-			lm[i].File = msg.FilePath() != ""
-			lm[i].Copyable = strings.TrimSpace(msg.Text()) != ""
+		if j < len(owners) {
+			lm[i].Owner = owners[j]
+			j++
+		} else {
+			lm[i].Owner = -1
 		}
+		lm[i].Copyable = copyable
+		lm[i].Collapsed = collapsed
 	}
 }
