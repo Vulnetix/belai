@@ -607,3 +607,31 @@ func TestCavemanEnabledDefaults(t *testing.T) {
 		t.Fatal("caveman=false should be disabled")
 	}
 }
+
+func TestFirewallEnabledDefaultsOff(t *testing.T) {
+	if (Settings{}).FirewallEnabled() {
+		t.Fatal("firewall must default off")
+	}
+	on := true
+	if !(Settings{Vulnetix: &VulnetixSettings{FirewallEnabled: &on}}).FirewallEnabled() {
+		t.Fatal("firewall=true must be enabled")
+	}
+}
+
+func TestFirewallProjectMayTurnOffNeverOn(t *testing.T) {
+	on := true
+	off := false
+	global := Settings{Vulnetix: &VulnetixSettings{FirewallEnabled: &on}}
+
+	// Project turning it off must win.
+	got := global.Override(Settings{Vulnetix: &VulnetixSettings{FirewallEnabled: &off}})
+	if got.FirewallEnabled() {
+		t.Fatal("project settings must be able to turn the firewall off")
+	}
+
+	// Project turning it on must not win.
+	got = (Settings{}).Override(Settings{Vulnetix: &VulnetixSettings{FirewallEnabled: &on}})
+	if got.FirewallEnabled() {
+		t.Fatal("project settings must not be able to turn the firewall on")
+	}
+}

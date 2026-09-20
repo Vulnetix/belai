@@ -318,6 +318,12 @@ type ProviderSource interface {
 	Profile(name string) (provider.Profile, bool)
 }
 
+// FirewallSource is implemented by a CredentialSource that can route a
+// provider through the Vulnetix AI Firewall gateway.
+type FirewallSource interface {
+	Firewall(provider string) (baseURL, apiKey string, ok bool)
+}
+
 // EnvSource adapts an environment-lookup function to CredentialSource.
 type EnvSource func(string) string
 
@@ -682,6 +688,18 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 	}
 
 	status.Configured = len(status.Missing) == 0
+	if fw, ok := src.(FirewallSource); ok {
+		if base, key, on := fw.Firewall(name); on {
+			cfg.BaseURL = base
+			cfg.APIKey = key
+			cfg.Auth = provider.AuthBearer
+			status.Origins["base_url"] = "vulnetix-firewall"
+			status.Origins["api_key"] = "vulnetix-firewall"
+			status.Missing = nil
+			status.Notes = append(status.Notes, "routed through the Vulnetix AI Firewall")
+		}
+	}
+
 	if override := strings.TrimSpace(os.Getenv("SIGNET_BASE_URL")); override != "" {
 		if cfg.BaseURL != "" && cfg.BaseURL != override {
 			status.Notes = append(status.Notes, fmt.Sprintf("SIGNET_BASE_URL overrides the base URL for %s", name))

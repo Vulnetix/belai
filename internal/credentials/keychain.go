@@ -27,17 +27,24 @@ const keyringTimeout = 5 * time.Second
 
 // keyringBackend wraps zalando/go-keyring with timeouts.
 type keyringBackend struct {
-	reason string // human-readable unavailable reason
+	service string
+	reason  string // human-readable unavailable reason
+}
+
+// NewKeyringBackend creates a keyring-backed Keychain for the named service.
+// The package default still uses "signet" so existing callers are unchanged.
+func NewKeyringBackend(service string) Keychain {
+	return &keyringBackend{service: service}
 }
 
 func newKeyringBackend() Keychain {
-	return &keyringBackend{}
+	return NewKeyringBackend(keyringService)
 }
 
 func (k *keyringBackend) Name() string { return "keychain" }
 
 func (k *keyringBackend) Available() bool {
-	_, err := k.Get("signet:available-probe")
+	_, err := k.Get(k.service + ":available-probe")
 	if err == nil || errors.Is(err, ErrNotFound) {
 		return true
 	}
@@ -58,7 +65,7 @@ func (k *keyringBackend) Get(account string) (string, error) {
 		err error
 	}, 1)
 	go func() {
-		v, err := keyring.Get(keyringService, account)
+		v, err := keyring.Get(k.service, account)
 		if errors.Is(err, keyring.ErrNotFound) {
 			ch <- struct {
 				val string
@@ -82,7 +89,7 @@ func (k *keyringBackend) Get(account string) (string, error) {
 func (k *keyringBackend) Set(account, secret string) error {
 	ch := make(chan error, 1)
 	go func() {
-		ch <- keyring.Set(keyringService, account, secret)
+		ch <- keyring.Set(k.service, account, secret)
 	}()
 	select {
 	case err := <-ch:
@@ -95,7 +102,7 @@ func (k *keyringBackend) Set(account, secret string) error {
 func (k *keyringBackend) Delete(account string) error {
 	ch := make(chan error, 1)
 	go func() {
-		ch <- keyring.Delete(keyringService, account)
+		ch <- keyring.Delete(k.service, account)
 	}()
 	select {
 	case err := <-ch:

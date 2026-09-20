@@ -63,6 +63,7 @@ func main() {
 	dangerouslyYolo := flag.Bool("dangerously-yolo-everything", false, "ignore every posture gate")
 	guardrails := flag.Bool("guardrails", true, "enable the posture guardrails; -guardrails=false is the guardrails-off half of YOLO")
 	askPermission := flag.Bool("ask-permission", true, "enable the permission-ask gate; -ask-permission=false resolves asks to allow")
+	firewall := flag.Bool("firewall", false, "route LLM traffic through the Vulnetix AI Firewall")
 	enableTools := flag.Bool("tools", true, "enable tool execution; pass -tools=false to disable")
 	effort := flag.String("effort", "", "thinking effort level: low, medium, or high")
 	classifierProvider := flag.String("classifier-provider", "", "security-classifier provider (default: the main provider)")
@@ -133,6 +134,13 @@ func main() {
 			f := false
 			settings.AskPermission = &f
 		}
+	}
+	if *firewall || os.Getenv("SIGNET_FIREWALL") == "1" || os.Getenv("SIGNET_FIREWALL") == "true" {
+		if settings.Vulnetix == nil {
+			settings.Vulnetix = &config.VulnetixSettings{}
+		}
+		t := true
+		settings.Vulnetix.FirewallEnabled = &t
 	}
 	if *sessionRetentionDays > 0 {
 		settings.SessionRetentionDays = sessionRetentionDays
