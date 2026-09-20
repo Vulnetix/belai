@@ -280,9 +280,12 @@ func (a *App) submitPlanApproveNew() tea.Cmd {
 	a.todos = nil
 	a.subagents = nil
 	a.subagentIdx = map[string]int{}
-	a.stripFocus = false
-	a.stripSel = 0
 	a.threadFilter = ""
+	a.runsOpen = false
+	a.runsFocus = false
+	a.runsTab = tabActivity
+	a.runsSel = 0
+	a.runsScroll = 0
 	a.saveSession()
 	return a.executeApprovedPlan(modes.PlanExecuteNew)
 }
