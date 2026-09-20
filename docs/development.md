@@ -412,7 +412,7 @@ the composer relabels `save file` with `⏎ save · esc cancel`. Type a relative
 path, press `enter`, and confirm the file is written under the working
 directory; repeat with an absolute path and confirm it is honoured. Confirm an
 empty path and `esc` both cancel without writing. Hover a long assistant
-reply (`signet` panel) and confirm the same `ctrl+s save
+reply (`model` panel) and confirm the same `ctrl+s save
 signet-<short-id>-<n>.md · ctrl+c copy` hint appears; `ctrl+c` copies the full
 reply (including the part hidden behind `… N more lines`), and `ctrl+s` opens
 the save prompt pre-filled with the generated name. Hover the footer's

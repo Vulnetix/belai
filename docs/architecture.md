@@ -1208,11 +1208,11 @@ cell width, and whether the row is pure chrome. `Panel.View` is the string-only
 half.
 
 This exists so hit-testing and copying can recover clean text without
-pattern-matching rendered output — the `│` panel bar and the `│` system-row
-marker are the same glyph, and only the renderer knows which columns are
-decoration. The invariant each entry guarantees is
-`ansi.Cut(ansi.Strip(line), Col, Col+Width) == Text`, and the map is always the
-same length as the frame's line count.
+pattern-matching rendered output — the `│` panel bar, the `·` signet gutter
+and the list/blockquote markers are all glyphs that also appear as content,
+and only the renderer knows which columns are decoration. The invariant each
+entry guarantees is `ansi.Cut(ansi.Strip(line), Col, Col+Width) == Text`, and
+the map is always the same length as the frame's line count.
 
 A line may also carry a truncation marker (`… N more lines`) plus the `Hidden`
 text it stands for, so a selection overlapping the marker copies the hidden
@@ -1300,6 +1300,56 @@ Syntax highlighting (chroma, mapped onto the palette in `theme.go`, lexer
 chosen by filename only) applies to expanded rows alone — collapsed, the diff
 and status colours are the whole signal.
 
+### Transcript panels and markdown
+
+Every framed panel is titled by its speaker, never by the harness:
+
+- **`model`** — assistant turns. The body is rendered as markdown (see below),
+  teal-accented.
+- **`user prompt`** / **`user steering`** — the user's turns; steering is
+  amber.
+- **`model · reasoning`** — streamed chain-of-thought, dim and plain (shown
+  only when `ctrl+r` reasoning is on).
+- **`signet`** — Signet's own notices. Adjacent system entries coalesce into
+  one panel, one body line per notice with a muted `·` gutter, the frame's
+  edges in the line colour and the title in the brand accent.
+
+Assistant bodies go through `RenderMarkdown` (`markdown.go`, `markdown_inline.go`,
+`markdown_table.go`), a hand-rolled, line-oriented, single-pass renderer with
+no new dependency. It covers ATX headings, wrapped paragraphs with hard breaks,
+bullet/ordered/task lists (nested, hanging-indented, ordered items renumbered),
+blockquotes, fenced and indented code blocks (chroma-highlighted by language
+name via `HighlightedLang`), thematic breaks, and GFM pipe tables (alignment
+from the `:---:` row, box-drawn, over-wide columns shrink and wrap, below the
+minimum they fall back to plain rows). `` ```mermaid `` fences render as a
+labelled, unhighlighted block behind a `mermaidRenderer` hook so an external
+renderer can be dropped in without touching the parser.
+
+Rendering markdown is done against the existing `Seg`/`Row`/`renderRows`
+primitives rather than a string-emitting library, because rendered lines must
+keep the `LineMap` invariant above. Wrapping happens on the plain concatenation
+and segments are re-sliced with `ansi.Cut`, so no segment is ever measured with
+escapes in it — and `NewSeg`'s escape sanitising still applies to `Read`
+contents, which are untrusted file bytes. Inline spans map to the palette:
+bold is cream, italic teal-soft, both add reverse video, `code` is amber,
+strikethrough carries its own SGR span, and links render their text teal with
+the URL muted and dropped when it cannot share the text's line. Unterminated
+fences run to end of input so a streaming reply never flickers.
+
+Truncation moves to rendered rows: `truncateMarkdown` keeps the first
+`assistantPreviewLines` rows and sets the hint's hidden remainder to the raw
+markdown source from the first dropped row's `MD.Src` line, so a fence or table
+spanning many source lines but few screen rows truncates cleanly, and a
+selection over the hint still copies the original markdown. The signet panel
+truncates at `signetPreviewLines` (6) like any other panel — a deliberate
+change from the old never-truncated system rows — and recovers the hidden
+notices from the per-line owner slice.
+
+`Read` results whose path has a markdown extension (`.md`, `.markdown`, `.mdx`)
+render through the same renderer once expanded, instead of the numbered-source
+path. Collapsed `Read` rows keep the numbered three-line head, matching the
+highlight-only-when-expanded rule.
+
 ### Diffs
 
 `Write` and `Edit` report their targets through `tools.Targeter`, so
@@ -1383,7 +1433,7 @@ inert — the same gate as drag-selection.
 
 Three regions are actionable:
 
-- **Any panel with text** — user, assistant, reasoning, system, and non-Read
+- **Any panel with text** — user, assistant, reasoning, signet, and non-Read
   tool rows alike. Hovering shows `ctrl+s save <name> · ctrl+c copy`. A `Read`
   file panel names its real file's basename; everything else gets a generated
   default name `signet-<short-id>-<idx>.<ext>` (`.md` for text panels, `.txt`

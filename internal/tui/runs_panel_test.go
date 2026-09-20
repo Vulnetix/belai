@@ -1,9 +1,12 @@
 package tui
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/vulnetix/signet/internal/activity"
 	"github.com/vulnetix/signet/internal/run"
@@ -124,5 +127,40 @@ func TestRunsPanelDoesNotOpenOnTinyFrames(t *testing.T) {
 	a.Update(tea.KeyMsg{Type: tea.KeyF9})
 	if a.runsOpen {
 		t.Fatalf("panel opened on height %d", a.height)
+	}
+}
+
+func TestRunsPanelFrameDoesNotOverflow(t *testing.T) {
+	a := New(Options{})
+	a.activity = activity.NewRegistry()
+	label := strings.Repeat("very-long-activity-label-", 10)
+	for i := 0; i < 30; i++ {
+		a.activity.Add(activity.Activity{Kind: activity.KindShell, Label: fmt.Sprintf("!cmd-%d %s", i, label), State: activity.StateDone}, func() {})
+	}
+
+	for _, w := range []int{40, 80, 120} {
+		for _, h := range []int{24, 60} {
+			a.width, a.height = w, h
+			a.Update(tea.KeyMsg{Type: tea.KeyF9})
+			if !a.runsOpen {
+				continue
+			}
+			if h >= 60 {
+				view := a.View()
+				gotH := lipgloss.Height(view)
+				if gotH > h {
+					t.Fatalf("size %dx%d: view height %d exceeds frame", w, h, gotH)
+				}
+			}
+			// The panel is the component that previously grew unbounded; assert
+			// its rendered width is clamped to the content width.
+			panel := a.renderRunsPanel()
+			if pw := lipgloss.Width(panel); pw > a.contentWidth()+1 {
+				t.Fatalf("size %dx%d: panel width %d exceeds content width %d", w, h, pw, a.contentWidth())
+			}
+			if ph := a.runsPanelHeight(); h >= 12 && ph > h/3 {
+				t.Fatalf("size %dx%d: panel height %d > h/3", w, h, ph)
+			}
+		}
 	}
 }
