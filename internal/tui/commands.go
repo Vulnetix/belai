@@ -201,11 +201,14 @@ func NewRegistry(workdir string) *Registry {
 		return a.push(viewSettings)
 	})
 	r.Register("providers", "manage providers, credentials and local models", func() []string {
-		return []string{"status", "launch", "download", "stop"}
+		return []string{"report", "status", "launch", "download", "stop"}
 	}, func(a *App, arg string) tea.Cmd {
 		sub, flags := parseLocalModelArgs(arg)
 		switch sub {
-		case "", "report":
+		case "":
+			// Bare /providers opens the provider management screen.
+			return a.push(viewProviders)
+		case "report":
 			return a.localModelReportCmd(flags.repo)
 		case "status":
 			return tea.Batch(a.push(viewProviders), a.localModelStatusCmd())

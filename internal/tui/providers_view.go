@@ -17,11 +17,13 @@ import (
 
 // providersViewState tracks the /providers master list.
 type providersViewState struct {
-	filter    string
-	filtering bool
-	cursor    int
-	scroll    int
-	rows      []providerRow
+	filter        string
+	filtering     bool
+	cursor        int
+	scroll        int
+	rows          []providerRow
+	report        string
+	reportPending bool
 }
 
 // providerRow is one rendered line in the master list.
@@ -43,11 +45,22 @@ type providerDetailViewState struct {
 	modelScroll        int
 	setMode            bool
 	envMode            bool
+	repoMode           bool
+	repoAction         repoAction
 	backend            credentials.Source
 	sets               map[string]credentials.Set
 	localReport        string
 	localReportPending bool
 }
+
+// repoAction selects which local-model command the server-tab editor commits.
+type repoAction int
+
+const (
+	repoActionNone repoAction = iota
+	repoActionLaunch
+	repoActionDownload
+)
 
 const (
 	providerTabCredentials = iota
@@ -215,12 +228,18 @@ func (a *App) providersView() string {
 		b.WriteString("\n" + components.MutedStyle.Render(a.avail.note) + "\n")
 	}
 
+	if a.providersState.reportPending {
+		b.WriteString("\n" + components.AccentStyle.Render("○ probing…") + "\n")
+	} else if a.providersState.report != "" {
+		b.WriteString("\n" + a.providersState.report + "\n")
+	}
+
 	if a.providersState.filtering {
 		b.WriteString("\n" + components.HelpBar("type", "filter", "enter", "accept", "esc", "clear") + "\n")
 	} else {
 		b.WriteString("\n" + components.HelpBar(
 			"↑↓", "provider", "/", "filter", "enter", "open",
-			"i", "import", "r", "refetch", "esc", "back") + "\n")
+			"p", "local report", "i", "import", "r", "refetch", "esc", "back") + "\n")
 	}
 
 	return lipgloss.NewStyle().Padding(1).Render(b.String())
@@ -344,6 +363,9 @@ func (a *App) handleProvidersKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		a.openProviderDetail(r.name)
 		return a, a.push(viewProviderDetail)
+	case "p":
+		a.providersState.reportPending = true
+		return a, a.localModelReportCmd("")
 	case "i":
 		return a, a.push(viewImport)
 	case "r":
@@ -469,6 +491,30 @@ func (a *App) providerDetailCredentials(w int) string {
 		b.WriteString("\n" + a.renderFieldEditor(title, w) + "\n")
 	}
 
+	if a.resolver != nil {
+		b.WriteString("\nstoring to  " +
+			components.Chip(string(a.providerDetailState.backend), components.ColorTealSoft) + "\n")
+		var backendParts []string
+		for _, be := range a.resolver.Backends() {
+			glyph, style := "●", components.AccentStyle
+			if !be.Available {
+				glyph, style = "○", components.MutedStyle
+			}
+			label := be.Name
+			if be.Writable {
+				label += " writable"
+			} else {
+				label += " read-only"
+			}
+			if !be.Available && be.Reason != "" {
+				label += " (" + be.Reason + ")"
+			}
+			backendParts = append(backendParts, style.Render(glyph+" "+label))
+		}
+		b.WriteString(components.MutedStyle.Render("backends  ") +
+			strings.Join(backendParts, components.MutedStyle.Render("  ·  ")) + "\n")
+	}
+
 	b.WriteString("\n" + components.HelpBar(
 		"←→", "tab", "↑↓", "field", "s", "set", "e", "env ref",
 		"c", "clear", "b", "backend", "i", "import", "esc", "back") + "\n")
@@ -543,6 +589,11 @@ func (a *App) providerDetailModels(w int) string {
 
 func (a *App) providerDetailServer(w int) string {
 	var b strings.Builder
+	if a.providerDetailState.repoMode {
+		b.WriteString(a.renderFieldEditor("repo [--port N] [--quant Q]", w) + "\n")
+		b.WriteString("\n" + components.HelpBar("enter", "commit", "esc", "cancel") + "\n")
+		return b.String()
+	}
 	if a.providerDetailState.localReportPending {
 		b.WriteString(components.AccentStyle.Render("○ probing…") + "\n")
 	} else if a.providerDetailState.localReport != "" {
@@ -556,11 +607,13 @@ func (a *App) providerDetailServer(w int) string {
 }
 
 func (a *App) handleProviderDetailKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if a.providerDetailState.setMode || a.providerDetailState.envMode {
+	if a.providerDetailState.setMode || a.providerDetailState.envMode || a.providerDetailState.repoMode {
 		switch m.String() {
 		case "esc":
 			a.providerDetailState.setMode = false
 			a.providerDetailState.envMode = false
+			a.providerDetailState.repoMode = false
+			a.providerDetailState.repoAction = repoActionNone
 			a.editor.Masked = false
 			a.editor.Reset()
 			return a, nil
@@ -609,9 +662,14 @@ func (a *App) handleProviderDetailKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "left", "h":
 		a.providerDetailCycleTab(-1)
 		return a, nil
-	case "right", "l":
+	case "right":
 		a.providerDetailCycleTab(1)
 		return a, nil
+	case "l":
+		if a.providerDetailState.tab != providerTabServer {
+			a.providerDetailCycleTab(1)
+			return a, nil
+		}
 	}
 
 	switch a.providerDetailState.tab {
@@ -698,6 +756,10 @@ func (a *App) handleProviderDetailCredentialsKey(m tea.KeyMsg) (tea.Model, tea.C
 }
 
 func (a *App) providerDetailCommitField() (tea.Model, tea.Cmd) {
+	if a.providerDetailState.repoMode {
+		return a.providerDetailCommitRepo()
+	}
+
 	val := strings.TrimSpace(a.editor.Value())
 	p := a.providerDetailState.provider
 	spec := credentials.Spec(p)
@@ -739,6 +801,34 @@ func (a *App) providerDetailCommitField() (tea.Model, tea.Cmd) {
 	a.providerDetailState.envMode = false
 	a.refreshProviderDetail()
 	return a, a.refreshProvider()
+}
+
+// providerDetailCommitRepo parses the shared inline editor's value as a
+// local-model repo line and dispatches launch or download.
+func (a *App) providerDetailCommitRepo() (tea.Model, tea.Cmd) {
+	val := strings.TrimSpace(a.editor.Value())
+	a.editor.Reset()
+	a.editor.Masked = false
+	action := a.providerDetailState.repoAction
+	a.providerDetailState.repoMode = false
+	a.providerDetailState.repoAction = repoActionNone
+
+	prefix := "launch"
+	if action == repoActionDownload {
+		prefix = "download"
+	}
+	_, flags := parseLocalModelArgs(prefix + " " + val)
+	if flags.repo == "" {
+		a.providerDetailState.localReport = "usage: /providers " + prefix + " <repo> [--port N] [--quant Q]"
+		return a, nil
+	}
+	switch action {
+	case repoActionLaunch:
+		return a, a.localModelLaunchCmd(flags.repo, flags.port, flags.quant)
+	case repoActionDownload:
+		return a, a.localModelDownloadCmd(flags.repo, flags.quant)
+	}
+	return a, nil
 }
 
 func (a *App) providerDetailClearField() (tea.Model, tea.Cmd) {
@@ -888,11 +978,18 @@ func (a *App) assignProviderModelToClassifier(provider string) tea.Cmd {
 func (a *App) handleProviderDetailServerKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.String() {
 	case "d":
-		// download requires a repo argument; show usage inline.
-		a.providerDetailState.localReport = "usage: /providers launch <repo> [--port N] [--quant Q]\n       /providers download <repo> [--quant Q]"
+		a.providerDetailState.repoMode = true
+		a.providerDetailState.repoAction = repoActionDownload
+		a.editor.Masked = false
+		a.editor.Reset()
+		_ = a.editor.Focus()
 		return a, nil
 	case "l":
-		a.providerDetailState.localReport = "usage: /providers launch <repo> [--port N] [--quant Q]"
+		a.providerDetailState.repoMode = true
+		a.providerDetailState.repoAction = repoActionLaunch
+		a.editor.Masked = false
+		a.editor.Reset()
+		_ = a.editor.Focus()
 		return a, nil
 	case "x":
 		return a, a.localModelStopCmd("")

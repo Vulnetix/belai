@@ -75,6 +75,15 @@ func TestEveryCommandHasHandler(t *testing.T) {
 	}
 }
 
+func TestProvidersCompletionIncludesReport(t *testing.T) {
+	r := NewRegistry(t.TempDir())
+	got := r.Complete("/providers ")
+	want := []string{"/providers download", "/providers launch", "/providers report", "/providers status", "/providers stop"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Complete(/providers ) = %v, want %v", got, want)
+	}
+}
+
 func TestAliasCanonical(t *testing.T) {
 	r := NewRegistry(t.TempDir())
 	if got := r.Canonical("new"); got != "clear" {

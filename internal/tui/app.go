@@ -1670,10 +1670,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.handlePlanEdited(m)
 
 	case localModelReportMsg:
-		if a.view == viewProviderDetail {
+		switch a.view {
+		case viewProviderDetail:
 			a.providerDetailState.localReport = m.text
 			a.providerDetailState.localReportPending = false
-		} else {
+		case viewProviders:
+			a.providersState.report = m.text
+			a.providersState.reportPending = false
+		default:
 			a.addSystem(m.text)
 		}
 		return a, nil
