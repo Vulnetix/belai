@@ -1,0 +1,160 @@
+---
+import '@fontsource/geist-mono/400.css';
+import '@fontsource/geist-mono/500.css';
+import '@fontsource/geist-mono/700.css';
+import '../styles/brand.css';
+
+interface Props {
+  title: string;
+  description: string;
+}
+
+const { title, description } = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site);
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <meta name="generator" content={Astro.generator} />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Signet" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <script type="application/ld+json" set:html={JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'SoftwareApplication',
+      name: 'Signet',
+      applicationCategory: 'DeveloperApplication',
+      operatingSystem: 'macOS, Linux, Windows',
+      url: 'https://signet.vulnetix.com',
+      description,
+      license: 'https://www.apache.org/licenses/LICENSE-2.0',
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+    })} />
+  </head>
+
+  <body>
+    <slot />
+
+    <script>
+      // Sealed-block integrity verify. Each `.sealed` section carries the
+      // nonce and the SHA-256 digest its payload was sealed with at build
+      // time. When the section scrolls into view, recompute the digest from
+      // the payload actually present in the DOM and flip the badge only if it
+      // matches. This is the page demonstrating its own trust model: nothing
+      // is trusted on sight, everything is verified.
+      const sealDigest = async (text) => {
+        const data = new TextEncoder().encode(text);
+        const buf = await crypto.subtle.digest('SHA-256', data);
+        return Array.from(new Uint8Array(buf))
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join('');
+      };
+
+      const verifySeal = async (section) => {
+        const nonce = section.dataset.nonce;
+        const expected = section.dataset.sha;
+        const payload = section.querySelector('.seal-payload');
+        if (!nonce || !expected || !payload) return;
+        const actual = await sealDigest(nonce + '\n' + payload.textContent);
+        if (actual === expected) {
+          section.classList.add('is-verified');
+        }
+      };
+
+      const sealObserver = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) {
+              verifySeal(entry.target);
+              sealObserver.unobserve(entry.target);
+            }
+          }
+        },
+        { threshold: 0.35 },
+      );
+      for (const section of document.querySelectorAll('.sealed')) {
+        sealObserver.observe(section);
+      }
+    </script>
+
+    <script>
+      // Status rail tracking: highlight the section currently in view. The
+      // rail mirrors Signet's three-line status footer — current section,
+      // mode, guardrails — and updates as the reader scrolls.
+      const railItems = Array.from(document.querySelectorAll('[data-rail]'));
+      if (railItems.length > 0) {
+        const sections = railItems
+          .map((item) => document.getElementById(item.dataset.rail))
+          .filter(Boolean);
+
+        const activate = (id) => {
+          for (const item of railItems) {
+            item.classList.toggle('is-active', item.dataset.rail === id);
+          }
+        };
+
+        const railObserver = new IntersectionObserver(
+          (entries) => {
+            const visible = entries
+              .filter((e) => e.isIntersecting)
+              .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+            if (visible.length > 0) {
+              activate(visible[0].target.id);
+            }
+          },
+          { rootMargin: '-20% 0px -60% 0px', threshold: 0 },
+        );
+        for (const section of sections) railObserver.observe(section);
+      }
+    </script>
+  </body>
+</html>
+
+<style is:global>
+  @font-face {
+    font-family: 'Geist';
+    src: url('/fonts/Geist-Regular.otf') format('opentype');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: 'Geist';
+    src: url('/fonts/Geist-Medium.otf') format('opentype');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: 'Geist';
+    src: url('/fonts/Geist-SemiBold.otf') format('opentype');
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+  }
+  @font-face {
+    font-family: 'Geist';
+    src: url('/fonts/Geist-Bold.otf') format('opentype');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+  }
+</style>

@@ -817,3 +817,154 @@ func TestTagProvenanceSetsCopyable(t *testing.T) {
 		t.Fatal("an empty message must not mark its lines copyable")
 	}
 }
+
+// TestMessageListStreamingAssistantHoistsPrecedingSignet pins the rule that
+// a signet notice emitted before the model panel starts streaming must not
+// interrupt the model panel; it is hoisted to render after the streaming
+// assistant so the panel can keep streaming characters.
+func TestMessageListStreamingAssistantHoistsPrecedingSignet(t *testing.T) {
+	streaming := Message{Role: "assistant"}
+	streaming.AppendText("hello")
+	if !streaming.IsStreaming() {
+		t.Fatal("test setup should produce a streaming assistant")
+	}
+
+	list := MessageList{
+		Width:    60,
+		Messages: []Message{{Role: "system", Content: "classifying"}, streaming},
+	}
+	out := list.View()
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	var modelIdx, signetIdx int
+	for i, l := range lines {
+		if strings.Contains(l, "model") {
+			modelIdx = i
+		}
+		if strings.Contains(l, "signet") {
+			signetIdx = i
+		}
+	}
+	if modelIdx == 0 && signetIdx == 0 {
+		t.Fatalf("could not locate model and signet panels in:\n%s", out)
+	}
+	if signetIdx < modelIdx {
+		t.Fatalf("signet panel should render after the streaming model panel, got:\n%s", out)
+	}
+	if !strings.Contains(out, "classifying") {
+		t.Fatalf("signet notice should still render, got:\n%s", out)
+	}
+}
+
+// TestMessageListStreamingSignetAfterModel keeps the normal order when the
+// signet notice already follows the streaming model panel in the transcript.
+func TestMessageListStreamingSignetAfterModel(t *testing.T) {
+	streaming := Message{Role: "assistant"}
+	streaming.AppendText("hello")
+	list := MessageList{
+		Width:    60,
+		Messages: []Message{streaming, {Role: "system", Content: "warning"}},
+	}
+	out := list.View()
+	if !strings.Contains(out, "hello") || !strings.Contains(out, "warning") {
+		t.Fatalf("both model content and notice should render, got:\n%s", out)
+	}
+	modelLines := strings.Count(out, "model")
+	signetLines := strings.Count(out, "signet")
+	if modelLines < 1 || signetLines != 1 {
+		t.Fatalf("expected one streaming model panel and one signet panel, got model=%d signet=%d:\n%s", modelLines, signetLines, out)
+	}
+}
+
+// TestMessageListStreamingCoalescesPhaseSignets checks that notices both
+// before and after a streaming model panel are gathered into one trailing
+// signet panel rather than splitting them around the model panel.
+func TestMessageListStreamingCoalescesPhaseSignets(t *testing.T) {
+	streaming := Message{Role: "assistant"}
+	streaming.AppendText("hello")
+	list := MessageList{
+		Width: 60,
+		Messages: []Message{
+			{Role: "system", Content: "first notice"},
+			streaming,
+			{Role: "system", Content: "second notice"},
+		},
+	}
+	out := list.View()
+	if strings.Count(out, "signet") != 1 {
+		t.Fatalf("want exactly one trailing signet panel, got:\n%s", out)
+	}
+	if !strings.Contains(out, "first notice") || !strings.Contains(out, "second notice") {
+		t.Fatalf("both notices should render in the trailing signet panel, got:\n%s", out)
+	}
+}
+
+// TestMessageListRetrySignetsFollowStreamingModel pins the retry case: a
+// warning before the fresh streaming assistant and a retry notice after the
+// fresh streaming assistant both end up in one signet panel after the model
+// panel that is still streaming.
+func TestMessageListRetrySignetsFollowStreamingModel(t *testing.T) {
+	partial := Message{Role: "assistant", Content: "partial output", Partial: true}
+	retrying := Message{Role: "assistant"}
+	retrying.AppendText("retry output")
+	list := MessageList{
+		Width: 60,
+		Messages: []Message{
+			partial,
+			{Role: "system", Content: "retrying (1/10) after 800ms"},
+			retrying,
+			{Role: "system", Content: "retrying (2/10) after 1.2s"},
+		},
+	}
+	out := list.View()
+	if strings.Count(out, "model") != 2 {
+		t.Fatalf("expected two model panels, got:\n%s", out)
+	}
+	if strings.Count(out, "signet") != 1 {
+		t.Fatalf("expected one trailing signet panel for retry notices, got:\n%s", out)
+	}
+	// The signet panel must come after both model panels.
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	lastModel, lastSignet := -1, -1
+	for i, l := range lines {
+		if strings.Contains(l, "model") {
+			lastModel = i
+		}
+		if strings.Contains(l, "signet") {
+			lastSignet = i
+		}
+	}
+	if lastSignet < lastModel {
+		t.Fatalf("signet panel should follow the last model panel, got:\n%s", out)
+	}
+}
+
+// TestMessageListCompletedAssistantKeepsPrecedingSignet ensures the hoisting
+// only applies while a model panel is actively streaming; once the assistant
+// has materialised, a preceding signet notice stays where it was.
+func TestMessageListCompletedAssistantKeepsPrecedingSignet(t *testing.T) {
+	list := MessageList{
+		Width: 60,
+		Messages: []Message{
+			{Role: "system", Content: "classified"},
+			{Role: "assistant", Content: "hello"},
+		},
+	}
+	out := list.View()
+	if strings.Count(out, "signet") != 1 {
+		t.Fatalf("expected one signet panel, got:\n%s", out)
+	}
+
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	var signetIdx, modelIdx int
+	for i, l := range lines {
+		if strings.Contains(l, "signet") {
+			signetIdx = i
+		}
+		if strings.Contains(l, "model") {
+			modelIdx = i
+		}
+	}
+	if signetIdx > modelIdx {
+		t.Fatalf("preceding signet should stay before a completed assistant, got:\n%s", out)
+	}
+}

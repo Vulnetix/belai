@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 340" width="640" height="340" role="img" aria-label="Concurrent read-only fan-out: one orchestrator spawning multiple read-only agents and merging their results">
+  <style>
+    .box { fill: #FFF8ED; stroke: #001614; stroke-width: 2; }
+    .lbl { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; fill: #001614; }
+    .sub { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 10.5px; fill: #009484; }
+    .mono { font-family: 'Geist Mono', ui-monospace, monospace; }
+    .token { animation: fan 2.6s ease-in-out infinite; }
+    @keyframes fan { 0%{ transform: translate(0,0); opacity:0 } 15%{ opacity:1 } 85%{ opacity:1 } 100%{ transform: translate(var(--tx), var(--ty)); opacity:0 } }
+    .t1 { --tx: 96px; --ty: -60px; }
+    .t2 { --tx: 96px; --ty: 0px; animation-delay: .65s; }
+    .t3 { --tx: 96px; --ty: 60px; animation-delay: 1.3s; }
+    @media (prefers-reduced-motion: reduce){ .token{ animation:none; opacity:.8 } }
+  </style>
+  <rect x="0" y="0" width="640" height="340" rx="18" class="box"/>
+  <text x="24" y="36" class="lbl" font-weight="bold">concurrent read-only fan-out</text>
+
+  <!-- orchestrator -->
+  <g transform="translate(24 96)">
+    <rect width="150" height="148" rx="10" class="box"/>
+    <text x="14" y="30" class="lbl" font-weight="bold">orchestrator</text>
+    <text x="14" y="52" class="sub">splits the question</text>
+    <text x="14" y="68" class="sub">read-only probes</text>
+    <text x="14" y="84" class="sub">merges verdicts</text>
+  </g>
+
+  <!-- agents -->
+  <g font-family="'Geist Mono',ui-monospace,monospace" font-size="12" fill="#001614">
+    <rect x="230" y="60" width="190" height="46" rx="8" class="box"/><text x="14" y="28">agent: Read · Grep</text>
+    <rect x="230" y="126" width="190" height="46" rx="8" class="box"/><text x="14" y="28">agent: Glob · Read</text>
+    <rect x="230" y="192" width="190" height="46" rx="8" class="box"/><text x="14" y="28">agent: WebFetch</text>
+  </g>
+
+  <!-- merge -->
+  <g transform="translate(460 96)">
+    <rect width="156" height="148" rx="10" fill="#001614"/>
+    <text x="14" y="30" class="mono" font-size="12" fill="#66DCC8">merge</text>
+    <rect x="14" y="44" width="128" height="12" rx="3" fill="#66DCC8" opacity="0.2"/>
+    <rect x="14" y="62" width="128" height="12" rx="3" fill="#66DCC8" opacity="0.14"/>
+    <rect x="14" y="80" width="128" height="12" rx="3" fill="#66DCC8" opacity="0.08"/>
+  </g>
+
+  <!-- flowing tokens -->
+  <circle class="token t1" cx="174" cy="170" r="7" fill="#66DCC8" stroke="#001614" stroke-width="2"/>
+  <circle class="token t2" cx="174" cy="170" r="7" fill="#66DCC8" stroke="#001614" stroke-width="2"/>
+  <circle class="token t3" cx="174" cy="170" r="7" fill="#66DCC8" stroke="#001614" stroke-width="2"/>
+
+  <path d="M420 83 L 456 130 M420 149 L 456 149 M420 215 L 456 168" stroke="#009484" stroke-width="2" fill="none" stroke-dasharray="4 4"/>
+  <text x="24" y="288" class="sub">every fan-out branch is read-only — the surface a branch sees is the surface it can touch.</text>
+</svg>

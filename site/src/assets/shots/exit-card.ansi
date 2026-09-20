@@ -1,0 +1,5 @@
+SIGNET · session ended
+seal-demo · a1b2c3d4
+14 turns · 9m 41s · 48,102 · anthropic/claude-sonnet-4-5
+signet --resume seal-demo
+/home/chris/GitHub/signet

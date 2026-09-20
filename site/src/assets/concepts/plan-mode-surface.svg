@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 340" width="640" height="340" role="img" aria-label="Plan-mode surface: Read, Grep, Glob and the plan tools available, Bash visibly absent and marked not-restricted">
+  <style>
+    .box { fill: #FFF8ED; stroke: #001614; stroke-width: 2; }
+    .lbl { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; fill: #001614; }
+    .sub { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 10.5px; fill: #009484; }
+    .mono { font-family: 'Geist Mono', ui-monospace, monospace; }
+    .absent { animation: blink 1.6s steps(1) infinite; }
+    @keyframes blink { 0%,55%{ opacity:.25 } 56%,100%{ opacity:1 } }
+    @media (prefers-reduced-motion: reduce){ .absent{ animation:none } }
+  </style>
+  <rect x="0" y="0" width="640" height="340" rx="18" class="box"/>
+  <text x="24" y="36" class="lbl" font-weight="bold">plan mode — Bash absent, not restricted</text>
+
+  <!-- available tools -->
+  <g font-family="'Geist Mono',ui-monospace,monospace" font-size="12" fill="#001614">
+    <rect x="24" y="64" width="120" height="40" rx="8" class="box"/><text x="14" y="26">Read</text>
+    <rect x="154" y="64" width="120" height="40" rx="8" class="box"/><text x="14" y="26">Grep</text>
+    <rect x="284" y="64" width="120" height="40" rx="8" class="box"/><text x="14" y="26">Glob</text>
+    <rect x="414" y="64" width="160" height="40" rx="8" class="box"/><text x="14" y="26">ExitPlanMode</text>
+  </g>
+  <text x="24" y="128" class="sub">the fail-closed surface — read-only tools, no mutating tools</text>
+
+  <!-- Bash: absent -->
+  <g transform="translate(24 150)">
+    <rect width="260" height="88" rx="10" class="box" stroke="#FA5C57" stroke-dasharray="6 4"/>
+    <g class="absent">
+      <text x="16" y="32" class="mono" font-size="16" fill="#FA5C57">Bash</text>
+      <text x="16" y="54" class="mono" font-size="12" fill="#001614">not present in the surface</text>
+      <text x="16" y="74" class="sub">a model cannot call what is not advertised</text>
+    </g>
+  </g>
+
+  <!-- restricted, for contrast -->
+  <g transform="translate(310 150)">
+    <rect width="306" height="88" rx="10" class="box"/>
+    <text x="16" y="32" class="mono" font-size="16" fill="#FCA326">Bash (restricted) ✕</text>
+    <text x="16" y="54" class="mono" font-size="12" fill="#001614">the weaker design: present but gated</text>
+    <text x="16" y="74" class="sub">still advertised, still attemptable, still a surface</text>
+  </g>
+
+  <g transform="translate(24 264)">
+    <rect width="592" height="52" rx="8" fill="#001614"/>
+    <text x="16" y="32" class="mono" font-size="13" fill="#66DCC8">read-only Bash returns only under an explicit permission allow rule</text>
+  </g>
+</svg>

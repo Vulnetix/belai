@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 340" width="640" height="340" role="img" aria-label="Cd confinement: a session root and a working directory, with file access confined inside the session root">
+  <style>
+    .box { fill: #FFF8ED; stroke: #001614; stroke-width: 2; }
+    .lbl { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; fill: #001614; }
+    .sub { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 10.5px; fill: #009484; }
+    .mono { font-family: 'Geist Mono', ui-monospace, monospace; }
+    .inside { animation: inside 2.8s ease-in-out infinite; }
+    @keyframes inside { 0%,100%{ opacity:.5 } 50%{ opacity:1 } }
+    .outside { animation: outside 2.8s ease-in-out infinite; }
+    @keyframes outside { 0%,100%{ opacity:1 } 50%{ opacity:.3 } }
+    @media (prefers-reduced-motion: reduce){ .inside,.outside{ animation:none; opacity:.85 } }
+  </style>
+  <rect x="0" y="0" width="640" height="340" rx="18" class="box"/>
+  <text x="24" y="36" class="lbl" font-weight="bold">Cd confinement — session root vs working directory</text>
+
+  <!-- session root -->
+  <g transform="translate(24 60)">
+    <rect width="380" height="220" rx="12" fill="#FFF8ED" stroke="#009484" stroke-width="2.5"/>
+    <text x="16" y="28" class="lbl" font-weight="bold">session root</text>
+    <text x="16" y="46" class="sub">/home/chris/GitHub/signet</text>
+
+    <!-- working directory -->
+    <rect x="24" y="70" width="200" height="64" rx="8" class="box inside"/>
+    <text x="38" y="96" class="mono" font-size="12">working directory</text>
+    <text x="38" y="116" class="sub">cd …/signet/site</text>
+
+    <!-- file access confined -->
+    <rect x="24" y="150" width="332" height="46" rx="8" fill="#001614"/>
+    <text x="38" y="178" class="mono" font-size="12" fill="#66DCC8">Read · Write · Edit — confined to the root</text>
+  </g>
+
+  <!-- outside -->
+  <g transform="translate(440 60)">
+    <rect width="176" height="120" rx="12" class="box outside" stroke="#FA5C57" stroke-width="2.5"/>
+    <text x="16" y="28" class="mono" font-size="12" fill="#FA5C57">outside the root</text>
+    <text x="16" y="50" class="sub">../../../etc or /home/chris/other</text>
+    <text x="16" y="72" class="sub">✕ path traversal blocked</text>
+    <text x="16" y="92" class="sub">✕ sibling repos out of reach</text>
+  </g>
+  <path d="M404 120 L 436 120" stroke="#FA5C57" stroke-width="2" stroke-dasharray="4 4"/>
+  <text x="420" y="112" text-anchor="middle" class="mono" font-size="22" fill="#FA5C57">✕</text>
+
+  <text x="24" y="306" class="sub">the working directory moves inside the session root; the root does not widen.</text>
+</svg>

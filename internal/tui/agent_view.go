@@ -25,6 +25,7 @@ type agentViewState struct {
 	editMode           bool
 	fieldEdit          bool // inline single-line / multiline editor open
 	toolEdit           bool // tool multi-select sub-mode
+	confirmDelete      bool // destructive delete confirmation in the editor
 	fields             []agentField
 	fieldSel           int
 	fieldScroll        int // window offset for the field grid
@@ -78,6 +79,7 @@ func (a *App) enterAgentView() tea.Cmd {
 	a.agentState.editMode = false
 	a.agentState.fieldEdit = false
 	a.agentState.toolEdit = false
+	a.agentState.confirmDelete = false
 	a.agentState.fieldSel = 0
 	a.agentState.fieldScroll = 0
 	a.agentState.toolSel = 0
@@ -106,6 +108,7 @@ func (a *App) enterAgentEdit(i int) {
 	a.agentState.editMode = true
 	a.agentState.fieldEdit = false
 	a.agentState.toolEdit = false
+	a.agentState.confirmDelete = false
 	a.agentState.fields = a.buildAgentFields(*p)
 	a.agentState.fieldSel = 0
 	a.agentState.fieldScroll = 0
@@ -271,12 +274,20 @@ func (a *App) agentEditView(w int) string {
 		if f.key == "monitor_condition" && p.Mode == agentprofile.ModeMonitor && p.MonitorCondition == "" {
 			marker = components.MutedStyle.Render(" required")
 		}
+		if f.key == "mode" && agentModeIsDerived(*p) {
+			marker = components.MutedStyle.Render(" auto")
+		}
 		b.WriteString(components.Cursor(selected) + label + "  " + value + marker + "\n")
 	}
 	if end < len(a.agentState.fields) {
 		b.WriteString(components.MutedStyle.Render(fmt.Sprintf("↓%d more", len(a.agentState.fields)-end)) + "\n")
 	}
-	b.WriteString("\n" + components.HelpBar("↑↓", "move", "←/→", "cycle", "space/enter", "edit", "n", "new", "d", "duplicate", "esc", "back") + "\n")
+	if a.agentState.confirmDelete {
+		b.WriteString("\n" + components.DangerStyle.Render(fmt.Sprintf("Delete profile %q?", p.Name)) + "\n")
+		b.WriteString(components.HelpBar("y", "delete", "n/esc", "cancel") + "\n")
+	} else {
+		b.WriteString("\n" + components.HelpBar("↑↓", "move", "←/→", "cycle", "space/enter", "edit", "n", "new", "d", "duplicate", "x", "delete", "esc", "back") + "\n")
+	}
 	return lipgloss.NewStyle().Padding(1).Render(b.String())
 }
 
@@ -340,6 +351,10 @@ func (a *App) buildAgentFields(p agentprofile.AgentProfile) []agentField {
 	if len(p.Tools) > 0 {
 		toolsValue = fmt.Sprintf("%s (%d/%d)", strings.Join(p.Tools, " · "), len(p.Tools), len(agentprofile.KnownTools()))
 	}
+	// Mode is derived from schedule/monitor_condition when either is set:
+	// schedule makes the profile scheduled, monitor_condition makes it monitor,
+	// otherwise the user toggles between single and loop.
+	modeValue := agentDerivedMode(p)
 	return []agentField{
 		{key: "name", label: "name", section: "identity", kind: "text", value: p.Name, set: func(dst *agentprofile.AgentProfile, v string) error {
 			v = strings.TrimSpace(v)
@@ -374,16 +389,37 @@ func (a *App) buildAgentFields(p agentprofile.AgentProfile) []agentField {
 			}
 			return nil
 		}},
-		{key: "mode", label: "mode", section: "behaviour", kind: "choose", opts: []string{agentprofile.ModeSingle, agentprofile.ModeLoop, agentprofile.ModeScheduled, agentprofile.ModeMonitor}, value: p.Mode, set: func(dst *agentprofile.AgentProfile, v string) error {
-			dst.Mode = v
+		{key: "mode", label: "mode", section: "behaviour", kind: "choose", opts: []string{agentprofile.ModeSingle, agentprofile.ModeLoop}, value: modeValue, set: func(dst *agentprofile.AgentProfile, v string) error {
+			if dst.Schedule != "" {
+				return fmt.Errorf("clear schedule before changing mode")
+			}
+			if dst.MonitorCondition != "" {
+				return fmt.Errorf("clear monitor_condition before changing mode")
+			}
+			switch v {
+			case agentprofile.ModeSingle, agentprofile.ModeLoop:
+				dst.Mode = v
+			default:
+				return fmt.Errorf("invalid mode %q", v)
+			}
 			return nil
 		}},
 		{key: "schedule", label: "schedule", section: "behaviour", kind: "text", value: p.Schedule, set: func(dst *agentprofile.AgentProfile, v string) error {
 			dst.Schedule = strings.TrimSpace(v)
+			if dst.Schedule != "" {
+				dst.Mode = agentprofile.ModeScheduled
+			} else if dst.Mode == agentprofile.ModeScheduled {
+				dst.Mode = agentprofile.ModeSingle
+			}
 			return nil
 		}},
 		{key: "monitor_condition", label: "monitor condition", section: "behaviour", kind: "text", value: p.MonitorCondition, set: func(dst *agentprofile.AgentProfile, v string) error {
 			dst.MonitorCondition = strings.TrimSpace(v)
+			if dst.MonitorCondition != "" {
+				dst.Mode = agentprofile.ModeMonitor
+			} else if dst.Mode == agentprofile.ModeMonitor {
+				dst.Mode = agentprofile.ModeSingle
+			}
 			return nil
 		}},
 		{key: "provider", label: "provider", section: "model", kind: "choose", opts: append([]string{""}, a.providerNames()...), value: p.Provider, set: func(dst *agentprofile.AgentProfile, v string) error {
@@ -482,11 +518,28 @@ func (a *App) handleAgentKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) handleAgentEditKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if a.agentState.confirmDelete {
+		switch m.String() {
+		case "y":
+			if err := a.deleteAgent(); err != nil {
+				a.agentState.errorMsg = err.Error()
+				a.agentState.confirmDelete = false
+			}
+			return a, nil
+		case "n", "esc":
+			a.agentState.confirmDelete = false
+			a.agentState.errorMsg = ""
+			return a, nil
+		}
+		return a, nil
+	}
+
 	switch m.String() {
 	case "esc":
 		a.agentState.editMode = false
 		a.agentState.fieldEdit = false
 		a.agentState.toolEdit = false
+		a.agentState.confirmDelete = false
 		a.agentState.fieldSel = 0
 		a.agentState.fieldScroll = 0
 		a.agentState.errorMsg = ""
@@ -509,12 +562,26 @@ func (a *App) handleAgentEditKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "d":
 		a.duplicateAgent()
 		return a, nil
+	case "x":
+		if a.selectedAgentIsBuiltin() {
+			a.agentState.errorMsg = "built-in profile is read-only — d duplicates it"
+			return a, nil
+		}
+		a.agentState.confirmDelete = true
+		a.agentState.errorMsg = ""
+		return a, nil
 	case "left", "right":
 		if a.selectedAgentIsBuiltin() {
 			a.agentState.errorMsg = "built-in profile is read-only — d duplicates it"
 			return a, nil
 		}
 		row := &a.agentState.fields[a.agentState.fieldSel]
+		if row.key == "mode" {
+			if p := a.selectedAgentProfile(); p != nil && agentModeIsDerived(*p) {
+				a.agentState.errorMsg = "mode is set by schedule/monitor condition"
+				return a, nil
+			}
+		}
 		var next string
 		switch row.kind {
 		case "choose":
@@ -556,6 +623,12 @@ func (a *App) handleAgentEditKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 				a.agentState.errorMsg = ""
 			}
 		case "choose":
+			if row.key == "mode" {
+				if p := a.selectedAgentProfile(); p != nil && agentModeIsDerived(*p) {
+					a.agentState.errorMsg = "mode is set by schedule/monitor condition"
+					return a, nil
+				}
+			}
 			next := nextChoice(row.opts, row.value)
 			if err := a.applyAgentFieldChange(*row, next); err != nil {
 				a.agentState.errorMsg = err.Error()
@@ -841,6 +914,26 @@ func (a *App) agentModelOpts(provider string) []string {
 	return opts
 }
 
+// agentDerivedMode returns the effective display mode for a profile. When a
+// schedule or monitor condition is present, mode is forced to the matching
+// derived value regardless of the stored Mode field, so the UI always shows
+// the profile as scheduled/monitor while those fields are set.
+func agentDerivedMode(p agentprofile.AgentProfile) string {
+	if p.Schedule != "" {
+		return agentprofile.ModeScheduled
+	}
+	if p.MonitorCondition != "" {
+		return agentprofile.ModeMonitor
+	}
+	return p.Mode
+}
+
+// agentModeIsDerived reports whether the mode is currently controlled by the
+// schedule or monitor_condition field rather than by the mode toggle.
+func agentModeIsDerived(p agentprofile.AgentProfile) bool {
+	return p.Schedule != "" || p.MonitorCondition != ""
+}
+
 func (a *App) agentEditWindowHeight() int {
 	h := a.height - 10
 	if h < 1 {
@@ -938,6 +1031,28 @@ func (a *App) reloadAgentProfilesAndSelect(name string) {
 		}
 	}
 	a.agentState.errorMsg = "profile saved but could not be selected"
+}
+
+// deleteAgent removes the selected non-built-in profile from disk, clears the
+// editor, and reloads the profile list. Built-ins are rejected.
+func (a *App) deleteAgent() error {
+	p := a.selectedAgentProfile()
+	if p == nil {
+		return fmt.Errorf("no agent selected")
+	}
+	if p.Builtin || agentprofile.IsBuiltin(p.Name) {
+		return fmt.Errorf("built-in profile cannot be deleted")
+	}
+	if err := agentprofile.Delete(p.Name); err != nil {
+		return err
+	}
+	a.agentState.editMode = false
+	a.agentState.fieldEdit = false
+	a.agentState.toolEdit = false
+	a.agentState.confirmDelete = false
+	a.loadAgentProfiles()
+	a.agentState.selected = 0
+	return nil
 }
 
 func (a *App) uniqueAgentName(base string) string {

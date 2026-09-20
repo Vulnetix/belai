@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 340" width="640" height="340" role="img" aria-label="The guardrails switch reaching every surface: agent session, inline commands, at-file admission, background agents, and the CLI">
+  <style>
+    .box { fill: #FFF8ED; stroke: #001614; stroke-width: 2; }
+    .lbl { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; fill: #001614; }
+    .sub { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 10.5px; fill: #009484; }
+    .mono { font-family: 'Geist Mono', ui-monospace, monospace; }
+    .switch { animation: flick 3s steps(1) infinite; }
+    @keyframes flick { 0%,60%{ transform: translateX(0) } 61%,100%{ transform: translateX(26px) } }
+    .flow { stroke-dasharray: 5 5; animation: dash 1.4s linear infinite; }
+    @keyframes dash { to { stroke-dashoffset: -20; } }
+    @media (prefers-reduced-motion: reduce){ .switch,.flow{ animation:none } }
+  </style>
+  <rect x="0" y="0" width="640" height="340" rx="18" class="box"/>
+  <text x="24" y="36" class="lbl" font-weight="bold">guardrails: one switch, every surface</text>
+
+  <!-- the switch -->
+  <g transform="translate(24 58)">
+    <rect width="88" height="44" rx="22" fill="#001614" stroke="#FCA326" stroke-width="3"/>
+    <g class="switch">
+      <circle cx="22" cy="22" r="16" fill="#FCA326" stroke="#001614" stroke-width="3"/>
+    </g>
+    <text x="104" y="28" class="mono" font-size="13" fill="#001614">guardrails: on / off</text>
+  </g>
+
+  <!-- fan-out to surfaces -->
+  <g stroke="#009484" stroke-width="2" fill="none">
+    <path class="flow" d="M112 80 C 200 80 200 96 270 96"/>
+    <path class="flow" d="M112 80 C 200 80 200 152 270 152"/>
+    <path class="flow" d="M112 80 C 200 80 200 208 270 208"/>
+    <path class="flow" d="M112 80 C 200 80 200 264 270 264"/>
+  </g>
+
+  <g font-family="'Geist Mono',ui-monospace,monospace" font-size="12" fill="#001614">
+    <rect x="270" y="72" width="200" height="42" rx="8" class="box"/><text x="284" y="98">agent session</text>
+    <rect x="270" y="128" width="200" height="42" rx="8" class="box"/><text x="284" y="154">inline !cmd</text>
+    <rect x="270" y="184" width="200" height="42" rx="8" class="box"/><text x="284" y="210">@file admission</text>
+    <rect x="270" y="240" width="200" height="42" rx="8" class="box"/><text x="284" y="266">background agents</text>
+  </g>
+  <g transform="translate(500 72)">
+    <rect width="116" height="42" rx="8" class="box"/><text x="12" y="26" class="mono" font-size="12">CLI</text>
+  </g>
+  <text x="24" y="316" class="sub">fail-closed everywhere — a gated path checks the level before calling the classifier, never after.</text>
+</svg>

@@ -1,0 +1,241 @@
+/* Signet marketing site — brand tokens and Tailwind v4 theme.
+ *
+ * Token values are ported verbatim from Vulnetix/website/src/styles/_brand.scss
+ * (the hex table in the plan) so captured TUI frames sit natively on the page.
+ * Tailwind v4 is CSS-first: every @theme entry generates a utility class
+ * (bg-vx-cream, text-vx-mint-strong, font-mono, …). */
+
+@import "tailwindcss";
+
+@theme {
+  /* Brand core palette */
+  --color-vx-cream: #FFF8ED;
+  --color-vx-ink: #001614;
+  --color-vx-ink-2: #002E29;
+  --color-vx-mint: #66DCC8;
+  --color-vx-mint-strong: #009484;
+  --color-vx-mint-light: #5FED83;
+  --color-vx-sand: #FDE0B5;
+  --color-vx-sand-amber: #FCA326;
+  --color-vx-bone: #E8E7E3;
+  --color-vx-coral: #FA5C57;
+
+  /* TUI palette (internal/tui/components/theme.go) — used by shot SVGs and
+     any inline chrome that must read as terminal output. */
+  --color-tui-ink: #1C3431;
+  --color-tui-teal: #3AC4B4;
+  --color-tui-teal-soft: #76E0CD;
+  --color-tui-cream: #F6EED6;
+  --color-tui-amber: #E8912B;
+  --color-tui-danger: #E2564E;
+
+  --font-sans: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "JetBrains Mono", "SFMono-Regular",
+    "Courier New", monospace;
+
+  --radius-seal: 18px;
+
+  /* Motion */
+  --ease-brand: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* ----------------------------------------------------------------------------
+ * Base
+ * ------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-vx-cream);
+  color: var(--color-vx-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Prose measure: 66–72ch, left-aligned, never justified. */
+.prose-measure {
+  max-width: 72ch;
+}
+
+/* Mono chrome: delimiters, tool names, sentinels, status chips. */
+.mono {
+  font-family: var(--font-mono);
+  font-feature-settings: "ss01", "cv01";
+}
+
+/* ----------------------------------------------------------------------------
+ * The sealed block — the page's signature device.
+ *
+ * Each section is framed as a harness block: a real mono header whose sha256
+ * was computed at build time from the section's sealed payload, and a footer
+ * that closes it. Scrolling a section into view runs a verify tick (see
+ * inline script in Base.astro) which recomputes the digest from the payload in
+ * the DOM and flips the badge from `sealed` to `verified`.
+ * ------------------------------------------------------------------------- */
+.sealed {
+  border: 1px solid var(--color-vx-ink);
+  border-radius: var(--radius-seal);
+  background: var(--color-vx-cream);
+  overflow: clip;
+}
+
+.seal-head,
+.seal-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  padding: 0.625rem 1rem;
+  background: var(--color-vx-ink);
+  color: var(--color-vx-mint);
+  letter-spacing: 0.02em;
+}
+
+.seal-head {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.seal-foot {
+  border-top: 1px solid var(--color-vx-ink);
+}
+
+.seal-badge {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  color: var(--color-vx-sand-amber);
+  background: rgba(252, 163, 38, 0.12);
+  white-space: nowrap;
+  transition: color 250ms var(--ease-brand), border-color 250ms var(--ease-brand),
+    background-color 250ms var(--ease-brand);
+}
+
+.sealed.is-verified .seal-badge {
+  color: var(--color-vx-mint);
+  border-color: var(--color-vx-mint);
+  background: rgba(102, 220, 200, 0.12);
+}
+
+.seal-payload {
+  /* The sealed payload is real content, present in the DOM so the verify tick
+     can recompute its digest. It is visually hidden but not display:none, so
+     it remains discoverable to assistive tech and text extraction. */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ----------------------------------------------------------------------------
+ * Hero boot sequence — one orchestrated page-load, then stillness.
+ * ------------------------------------------------------------------------- */
+@keyframes boot-draw {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes nonce-mint {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.boot-stage {
+  opacity: 0;
+  animation: boot-draw 500ms var(--ease-brand) forwards;
+}
+
+.boot-stage-1 { animation-delay: 0ms; }
+.boot-stage-2 { animation-delay: 420ms; }
+.boot-stage-3 { animation-delay: 720ms; }
+.boot-stage-4 { animation-delay: 980ms; }
+
+/* Status rail fill (left-to-right) */
+@keyframes rail-fill {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+.rail-fill {
+  transform-origin: left center;
+  animation: rail-fill 900ms var(--ease-brand) 300ms both;
+}
+
+/* ----------------------------------------------------------------------------
+ * Status rail (sticky left column, ≥1120px)
+ * ------------------------------------------------------------------------- */
+.status-rail {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  display: none;
+}
+
+@media (min-width: 1120px) {
+  .status-rail {
+    display: flex;
+  }
+}
+
+.status-rail__item {
+  transition: color 250ms var(--ease-brand);
+}
+
+.status-rail__item.is-active {
+  color: var(--color-vx-mint-strong);
+}
+
+/* ----------------------------------------------------------------------------
+ * Reduced motion — every animated element is listed explicitly.
+ * ------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .boot-stage,
+  .rail-fill {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .seal-badge {
+    transition: none;
+  }
+}
+
+/* ----------------------------------------------------------------------------
+ * Focus visibility — every interactive element gets a visible ring.
+ * ------------------------------------------------------------------------- */
+:focus-visible {
+  outline: 2px solid var(--color-vx-mint-strong);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ----------------------------------------------------------------------------
+ * Comparison table: scrolls within its own container on narrow screens.
+ * ------------------------------------------------------------------------- */
+.comparison-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}

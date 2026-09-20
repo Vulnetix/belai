@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 340" width="640" height="340" role="img" aria-label="The trust pipeline: sanitize then classify then decide, with a sanitize-only lane for shaped results">
+  <style>
+    .box { fill: #FFF8ED; stroke: #001614; stroke-width: 2; }
+    .lbl { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; fill: #001614; }
+    .sub { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 10.5px; fill: #009484; }
+    .token { animation: flow 3.2s ease-in-out infinite; }
+    .token2 { animation: flow 3.2s ease-in-out infinite; animation-delay: 1.6s; }
+    @keyframes flow { 0%{ transform: translateX(0); opacity:0 } 12%{ opacity:1 } 88%{ opacity:1 } 100%{ transform: translateX(300px); opacity:0 } }
+    .dash { stroke-dasharray: 4 4; animation: dash 1.2s linear infinite; }
+    @keyframes dash { to { stroke-dashoffset: -16; } }
+    @media (prefers-reduced-motion: reduce){ .token,.token2,.dash{ animation:none } .token,.token2{ opacity:.9 } }
+  </style>
+  <rect x="0" y="0" width="640" height="340" rx="18" class="box"/>
+  <text x="24" y="36" class="lbl" font-weight="bold">trust pipeline</text>
+
+  <!-- sanitize -->
+  <g transform="translate(24 66)">
+    <rect width="120" height="64" rx="10" class="box"/>
+    <text x="12" y="28" class="lbl">sanitize</text>
+    <text x="12" y="46" class="sub">strip delimiter</text>
+    <text x="12" y="58" class="sub">markup</text>
+  </g>
+
+  <!-- classify -->
+  <g transform="translate(200 66)">
+    <rect width="120" height="64" rx="10" class="box"/>
+    <text x="12" y="28" class="lbl">classify</text>
+    <text x="12" y="46" class="sub">security verdict</text>
+    <text x="12" y="58" class="sub">single token</text>
+  </g>
+
+  <!-- decide -->
+  <g transform="translate(376 66)">
+    <rect width="120" height="64" rx="10" class="box"/>
+    <text x="12" y="28" class="lbl">decide</text>
+    <text x="12" y="46" class="sub">allow / quarantine</text>
+    <text x="12" y="58" class="sub">fail closed</text>
+  </g>
+
+  <!-- main flow arrows -->
+  <path d="M144 98 H 196" class="dash" stroke="#001614" stroke-width="2" fill="none"/>
+  <path d="M320 98 H 372" class="dash" stroke="#001614" stroke-width="2" fill="none"/>
+  <circle class="token" cx="150" cy="98" r="6" fill="#66DCC8" stroke="#001614" stroke-width="2"/>
+  <circle class="token2" cx="150" cy="98" r="6" fill="#FCA326" stroke="#001614" stroke-width="2"/>
+
+  <!-- sanitize-only lane -->
+  <path d="M84 130 L 84 268 L 436 268 L 436 138" fill="none" stroke="#009484" stroke-width="2" stroke-dasharray="6 5"/>
+  <g transform="translate(206 244)">
+    <rect width="150" height="44" rx="8" fill="#E8F6F2" stroke="#009484" stroke-width="2"/>
+    <text x="12" y="19" class="sub">sanitize-only lane</text>
+    <text x="12" y="33" class="sub">shaped results</text>
+  </g>
+  <text x="248" y="210" class="sub">Grep · Glob · Write · Edit — no classifier round trip</text>
+</svg>

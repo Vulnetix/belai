@@ -281,6 +281,13 @@ func (m *Message) Materialise() {
 	}
 }
 
+// IsStreaming reports whether the message is an assistant turn that is still
+// receiving streamed text deltas. Once Materialise or SetContent runs, the
+// buffer is gone and the turn is no longer streaming.
+func (m Message) IsStreaming() bool {
+	return m.Role == "assistant" && m.buf != nil
+}
+
 // MessageList renders the transcript.
 type MessageList struct {
 	Messages  []Message
@@ -291,6 +298,14 @@ type MessageList struct {
 	// mirroring the ctrl+r / ctrl+t toggles resolved by the caller.
 	ShowReasoning bool
 	ShowTools     bool
+}
+
+// renderEntry is one visual unit in the transcript layout. Most entries
+// correspond to a single message; system entries carry every adjacent system
+// notice or tool result index so they can be rendered as one signet panel.
+type renderEntry struct {
+	idxs []int  // message indices in this entry
+	kind string // "turn", "system", "reasoning"
 }
 
 const (
@@ -306,11 +321,11 @@ func assistantMarkdown(m Message) bool {
 	return m.Role == "assistant" && !m.Partial && strings.TrimSpace(m.Text()) != ""
 }
 
-// View renders the transcript: conversational turns as flat titled panels,
-// tool calls and system notices as single-line rows between them. Empty
-// assistant/user frames with no tool calls are skipped so a tool-calls-only
-// turn never renders a bare box. Framed panels are separated by a blank line;
-// consecutive flat rows sit on adjacent lines.
+// View renders the transcript: conversational turns, reasoning and signet
+// activity as flat titled panels. Tool results and system notices are nested
+// inside the signet panel. Empty assistant/user frames with no tool calls are
+// skipped so a tool-calls-only turn never renders a bare box. Framed panels
+// are separated by a blank line.
 func (m MessageList) View() string {
 	s, _ := m.Render()
 	return s
@@ -328,11 +343,7 @@ func (m MessageList) View() string {
 func (m MessageList) Render() (string, LineMap) {
 	width := max(m.Width, messageMinWidth)
 
-	type entry struct {
-		idxs []int  // message indices in this entry (one, except system groups)
-		kind string // "turn", "tool", "system", "reasoning"
-	}
-	var entries []entry
+	var entries []renderEntry
 	for i := range m.Messages {
 		msg := &m.Messages[i]
 		switch msg.Role {
@@ -340,25 +351,36 @@ func (m MessageList) Render() (string, LineMap) {
 			if !m.ShowReasoning {
 				continue
 			}
-			entries = append(entries, entry{idxs: []int{i}, kind: "reasoning"})
+			entries = append(entries, renderEntry{idxs: []int{i}, kind: "reasoning"})
 		case "tool":
 			if !m.ShowTools {
 				continue
 			}
-			entries = append(entries, entry{idxs: []int{i}, kind: "tool"})
+			if n := len(entries); n > 0 && entries[n-1].kind == "system" {
+				entries[n-1].idxs = append(entries[n-1].idxs, i)
+			} else {
+				entries = append(entries, renderEntry{idxs: []int{i}, kind: "system"})
+			}
 		case "system":
 			if n := len(entries); n > 0 && entries[n-1].kind == "system" {
 				entries[n-1].idxs = append(entries[n-1].idxs, i)
 			} else {
-				entries = append(entries, entry{idxs: []int{i}, kind: "system"})
+				entries = append(entries, renderEntry{idxs: []int{i}, kind: "system"})
 			}
 		default:
 			if strings.TrimSpace(msg.Text()) == "" && len(msg.ToolCalls) == 0 {
 				continue
 			}
-			entries = append(entries, entry{idxs: []int{i}, kind: "turn"})
+			entries = append(entries, renderEntry{idxs: []int{i}, kind: "turn"})
 		}
 	}
+
+	// If a model panel is actively streaming, do not let signet panels
+	// interrupt it. Hoist any signet messages from the same streaming phase
+	// (between the previous non-system entry and the streaming turn) into a
+	// single trailing signet panel rendered after the model panel, so the
+	// model panel can keep streaming characters without visual interruption.
+	entries = hoistStreamingPhaseSystems(entries, m.Messages)
 
 	var b strings.Builder
 	var lm LineMap
@@ -366,9 +388,7 @@ func (m MessageList) Render() (string, LineMap) {
 		var s string
 		var sub LineMap
 		if e.kind == "system" {
-			var owners []int
-			s, sub, owners = m.renderSystemGroup(e.idxs, width)
-			tagGroupProvenance(sub, owners, m.Messages)
+			s, sub, _ = m.renderSystemGroup(e.idxs, width)
 		} else {
 			msg := &m.Messages[e.idxs[0]]
 			key := renderKeyFor(msg, width, m.ExpandAll)
@@ -376,8 +396,6 @@ func (m MessageList) Render() (string, LineMap) {
 				s, sub = msg.rc.text, msg.rc.lm
 			} else {
 				switch msg.Role {
-				case "tool":
-					s, sub = toolRow(*msg, width, m.ExpandAll)
 				case "reasoning":
 					s, sub = reasoningPanel(*msg, width, m.ExpandAll)
 				default:
@@ -394,17 +412,72 @@ func (m MessageList) Render() (string, LineMap) {
 		if i == len(entries)-1 {
 			break
 		}
-		// Tool rows sit on adjacent lines; everything else is framed and
-		// separated by a blank line.
-		if e.kind == "tool" && entries[i+1].kind == "tool" {
-			b.WriteString("\n")
-			lm = append(lm, SourceLine{Chrome: true, Owner: -1})
-		} else {
-			b.WriteString("\n\n")
-			lm = append(lm, SourceLine{Chrome: true, Owner: -1})
-		}
+		// Framed panels are separated by a blank line.
+		b.WriteString("\n\n")
+		lm = append(lm, SourceLine{Chrome: true, Owner: -1})
 	}
 	return b.String(), lm
+}
+
+// findStreamingAssistant returns the index of the last turn entry whose
+// assistant message is still receiving streamed text deltas, or -1 when no
+// model panel is actively streaming.
+func findStreamingAssistant(entries []renderEntry, msgs []Message) int {
+	for i := len(entries) - 1; i >= 0; i-- {
+		e := entries[i]
+		if e.kind != "turn" || len(e.idxs) == 0 {
+			continue
+		}
+		msg := &msgs[e.idxs[0]]
+		if msg.IsStreaming() {
+			return i
+		}
+	}
+	return -1
+}
+
+// hoistStreamingPhaseSystems moves signet messages from the current streaming
+// phase so they render after the streaming model panel. The streaming phase
+// is the run of entries from the previous non-system entry up to the end of
+// the transcript; every system entry inside that run is gathered into one
+// trailing signet panel placed immediately after the streaming turn. This
+// keeps the streaming model panel visually contiguous while still surfacing
+// notices below it.
+func hoistStreamingPhaseSystems(entries []renderEntry, msgs []Message) []renderEntry {
+	si := findStreamingAssistant(entries, msgs)
+	if si < 0 {
+		return entries
+	}
+
+	phaseStart := 0
+	for j := si - 1; j >= 0; j-- {
+		if entries[j].kind != "system" {
+			phaseStart = j + 1
+			break
+		}
+	}
+
+	var hoisted []int
+	for j := phaseStart; j < si; j++ {
+		hoisted = append(hoisted, entries[j].idxs...)
+	}
+	var after []renderEntry
+	for j := si + 1; j < len(entries); j++ {
+		if entries[j].kind == "system" {
+			hoisted = append(hoisted, entries[j].idxs...)
+		} else {
+			after = append(after, entries[j])
+		}
+	}
+
+	out := make([]renderEntry, 0, len(entries))
+	out = append(out, entries[:phaseStart]...)
+	out = append(out, entries[si])
+	if len(hoisted) > 0 {
+		out = append(out, renderEntry{kind: "system", idxs: hoisted})
+	}
+	out = append(out, after...)
+	return out
 }
 
 // renderSystemGroup renders a coalesced run of adjacent system notices as one

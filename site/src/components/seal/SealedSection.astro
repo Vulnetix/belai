@@ -1,0 +1,45 @@
+---
+import { createHash } from 'node:crypto';
+
+interface Props {
+  /** The section label used in the opening/closing delimiter tags. */
+  label: string;
+  /** Canonical plain-text payload the seal covers. This is the section's own
+   *  rendered prose in stable, single-line form so the digest is reproducible
+   *  at build time and verifiable in the browser. */
+  sealText: string;
+  /** Stable nonce. Defaults to a deterministic value derived from the label. */
+  nonce?: string;
+  id?: string;
+}
+
+const { label, sealText, nonce, id } = Astro.props;
+
+// Nonces are stable across builds so the rendered delimiters diff cleanly and
+// the verify tick has a fixed, human-legible value to show.
+const resolvedNonce =
+  nonce ?? createHash('sha256').update('nonce:' + label).digest('hex').slice(0, 8);
+
+// The digest covers nonce + newline + payload, exactly as the browser
+// recomputes it (see Base.astro).
+const digest = createHash('sha256')
+  .update(resolvedNonce + '\n' + sealText)
+  .digest('hex');
+---
+
+<section class="sealed" data-nonce={resolvedNonce} data-sha={digest} id={id}>
+  <header class="seal-head">
+    <code>&lt;{label} nonce={resolvedNonce} sha256={digest.slice(0, 8)}…&gt;</code>
+    <span class="seal-badge">sealed</span>
+  </header>
+
+  <div class="seal-body px-6 py-8 md:px-10 md:py-12">
+    <slot />
+  </div>
+
+  <span class="seal-payload">{sealText}</span>
+
+  <footer class="seal-foot">
+    <code>&lt;/{label}&gt;</code>
+  </footer>
+</section>

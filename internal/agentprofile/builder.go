@@ -32,11 +32,14 @@ Reply with ONLY a JSON object matching this schema:
   "ask_permission": true or false or omit to inherit from settings (default inherit)"
 }
 
-Before emitting the final JSON, reason through your choices inside a <thinking> block. Justify the tool allowlist explicitly. If the user request is vague, make reasonable defaults and note them in the description.
+Before emitting the final JSON, reason through your choices inside a <thinking> block. Justify the tool allowlist explicitly.
+
+The description and system_prompt must be meaningful and derived from the agent's name, even if the user only supplied a name. Infer the intended purpose from the name: describe what the agent does in one sentence, and write a system_prompt that defines its role, tone, scope, and default behavior for that inferred purpose. Avoid generic text such as "You are a helpful assistant"; tailor the prompt to the name.
 
 Rules:
 - Output ONLY valid JSON. No Markdown fences, no prose outside the JSON, no trailing text.
 - name must be [a-zA-Z0-9._-]+.
+- description and system_prompt must be specific and meaningful; derive them from the agent name when no other context is given.
 - tools must only contain known names: Read, Write, Edit, Bash, Grep, Glob, WebFetch, WebSearch. Write and Edit mutate the workspace; only grant them when the agent's task genuinely needs to change files, and justify that grant explicitly.
 - mode must be exactly one of the four allowed strings.
 - autonomy must be "supervised" or "autonomous".`

@@ -117,11 +117,7 @@ func TestAgentViewEditDescription(t *testing.T) {
 
 func TestAgentViewCycleMode(t *testing.T) {
 	agentTestHome(t)
-	writeAgentProfile(t, "mode-bot", agentprofile.AgentProfile{
-		Mode:             agentprofile.ModeSingle,
-		Schedule:         "0 * * * *",
-		MonitorCondition: "file changes",
-	})
+	writeAgentProfile(t, "mode-bot", agentprofile.AgentProfile{Mode: agentprofile.ModeSingle})
 
 	a := New(Options{})
 	a.width = 200
@@ -134,12 +130,41 @@ func TestAgentViewCycleMode(t *testing.T) {
 	}
 	a.agentState.fieldSel = idx
 
-	for _, want := range []string{agentprofile.ModeLoop, agentprofile.ModeScheduled, agentprofile.ModeMonitor, agentprofile.ModeSingle} {
+	for _, want := range []string{agentprofile.ModeLoop, agentprofile.ModeSingle, agentprofile.ModeLoop} {
 		a.handleAgentKey(tea.KeyMsg{Type: tea.KeySpace})
 		got := a.agentState.fields[idx].value
 		if got != want {
 			t.Fatalf("mode after space = %q, want %q", got, want)
 		}
+	}
+}
+
+// When a schedule or monitor condition is present, mode is derived and the
+// toggle is disabled so it can no longer get stuck on scheduled/monitor.
+func TestAgentViewModeDisabledWhenDerived(t *testing.T) {
+	agentTestHome(t)
+	writeAgentProfile(t, "derived-bot", agentprofile.AgentProfile{
+		Mode:     agentprofile.ModeSingle,
+		Schedule: "0 * * * *",
+	})
+
+	a := New(Options{})
+	a.width = 200
+	a.push(viewAgent)
+	a.handleAgentKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+
+	idx := fieldIdx(a, "mode")
+	a.agentState.fieldSel = idx
+	if a.agentState.fields[idx].value != agentprofile.ModeScheduled {
+		t.Fatalf("expected derived mode scheduled, got %q", a.agentState.fields[idx].value)
+	}
+
+	a.handleAgentKey(tea.KeyMsg{Type: tea.KeySpace})
+	if a.agentState.fields[idx].value != agentprofile.ModeScheduled {
+		t.Fatalf("mode should stay scheduled when derived, got %q", a.agentState.fields[idx].value)
+	}
+	if !strings.Contains(a.agentState.errorMsg, "mode is set by schedule") {
+		t.Fatalf("expected disabled-mode error, got %q", a.agentState.errorMsg)
 	}
 }
 
@@ -326,21 +351,19 @@ func TestAgentFieldsCoverEveryProfileField(t *testing.T) {
 
 func TestEveryAgentFieldPersists(t *testing.T) {
 	base := agentprofile.AgentProfile{
-		Name:             "every-bot",
-		Description:      "d",
-		SystemPrompt:     "sp",
-		Tools:            []string{"Read"},
-		Mode:             agentprofile.ModeSingle,
-		Schedule:         "x",
-		MonitorCondition: "y",
-		Provider:         "openai",
-		Model:            "gpt-5",
-		Effort:           "low",
-		Autonomy:         agentprofile.AutonomySupervised,
-		Guardrails:       boolPtr(true),
-		AskPermission:    boolPtr(true),
-		Reflection:       false,
-		MaxIterations:    3,
+		Name:          "every-bot",
+		Description:   "d",
+		SystemPrompt:  "sp",
+		Tools:         []string{"Read"},
+		Mode:          agentprofile.ModeSingle,
+		Provider:      "openai",
+		Model:         "gpt-5",
+		Effort:        "low",
+		Autonomy:      agentprofile.AutonomySupervised,
+		Guardrails:    boolPtr(true),
+		AskPermission: boolPtr(true),
+		Reflection:    false,
+		MaxIterations: 3,
 	}
 	cases := []struct {
 		key  string
@@ -376,10 +399,16 @@ func TestEveryAgentFieldPersists(t *testing.T) {
 			if p.Schedule != "0 * * * *" {
 				t.Fatalf("Schedule = %q", p.Schedule)
 			}
+			if p.Mode != agentprofile.ModeScheduled {
+				t.Fatalf("Mode = %q, want scheduled when schedule is set", p.Mode)
+			}
 		}},
 		{"monitor_condition", "changes", func(t *testing.T, p agentprofile.AgentProfile) {
 			if p.MonitorCondition != "changes" {
 				t.Fatalf("MonitorCondition = %q", p.MonitorCondition)
+			}
+			if p.Mode != agentprofile.ModeMonitor {
+				t.Fatalf("Mode = %q, want monitor when monitor_condition is set", p.Mode)
 			}
 		}},
 		{"provider", "", func(t *testing.T, p agentprofile.AgentProfile) {
@@ -595,6 +624,63 @@ func TestAgentBuiltinIsReadOnlyAndDuplicate(t *testing.T) {
 		t.Fatalf("duplicate load = %+v", loaded)
 	}
 	_ = builtinName
+}
+
+func TestAgentDeleteProfileInEditor(t *testing.T) {
+	agentTestHome(t)
+	writeAgentProfile(t, "delete-bot", agentprofile.AgentProfile{})
+
+	a := New(Options{})
+	a.width, a.height = 200, 40
+	a.push(viewAgent)
+	a.enterAgentEdit(0)
+
+	a.handleAgentKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	if !a.agentState.confirmDelete {
+		t.Fatal("x should initiate delete confirmation")
+	}
+
+	a.handleAgentKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if a.agentState.confirmDelete {
+		t.Fatal("n should cancel delete confirmation")
+	}
+	if !a.agentState.editMode {
+		t.Fatal("editor should stay open after cancel")
+	}
+
+	a.handleAgentKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	a.handleAgentKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if a.agentState.editMode {
+		t.Fatal("editor should close after delete")
+	}
+	if _, err := agentprofile.Load("delete-bot"); err == nil {
+		t.Fatal("delete-bot should have been deleted")
+	}
+}
+
+func TestAgentDeleteBuiltinRejectedInEditor(t *testing.T) {
+	agentTestHome(t)
+	a := New(Options{})
+	a.push(viewAgent)
+
+	idx := -1
+	for i, p := range a.agentState.profiles {
+		if p.Builtin {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		t.Fatal("no built-in profile discovered")
+	}
+	a.enterAgentEdit(idx)
+	a.handleAgentKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	if a.agentState.confirmDelete {
+		t.Fatal("x must not initiate delete for built-ins")
+	}
+	if !strings.Contains(a.agentState.errorMsg, "read-only") {
+		t.Fatalf("expected read-only error, got %q", a.agentState.errorMsg)
+	}
 }
 
 func TestNextChoiceNilOpts(t *testing.T) {

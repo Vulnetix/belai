@@ -105,6 +105,49 @@ func AllIgnore() Policy {
 	return p
 }
 
+// stronger returns the stronger (stricter) of two posture levels.
+func stronger(a, b Level) Level {
+	rank := map[Level]int{Ignore: 0, Warn: 1, Enforce: 2}
+	if rank[a] >= rank[b] {
+		return a
+	}
+	return b
+}
+
+// Stricter returns a policy whose level for every gate is the stricter of
+// the corresponding levels in a and b.
+func Stricter(a, b Policy) Policy {
+	out := make(Policy, len(AllGates))
+	for _, g := range AllGates {
+		out[g] = stronger(a.Level(g), b.Level(g))
+	}
+	return out
+}
+
+// ForDirs returns the strictest policy across the primary workdir and the
+// additional workspace directories. Each directory may carry its own
+// preferences.yaml; this is the trust-split point: the overall posture is the
+// strongest (most restrictive) of all selected policies, never the weakest.
+func ForDirs(primary string, dirs []string) (Policy, error) {
+	base, err := Load(primary)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{primary: true}
+	for _, d := range dirs {
+		if seen[d] {
+			continue
+		}
+		seen[d] = true
+		q, err := Load(d)
+		if err != nil {
+			return nil, err
+		}
+		base = Stricter(base, q)
+	}
+	return base, nil
+}
+
 // Override merges q over p; non-empty values in q win.
 func (p Policy) Override(q Policy) Policy {
 	out := make(Policy, len(p)+len(q))

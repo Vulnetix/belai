@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 340" width="640" height="340" role="img" aria-label="Chunked classification with overlap: a long document split into overlapping windows so no boundary evidence is lost">
+  <style>
+    .box { fill: #FFF8ED; stroke: #001614; stroke-width: 2; }
+    .lbl { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; fill: #001614; }
+    .sub { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 10.5px; fill: #009484; }
+    .chunk { animation: sweep 3.6s ease-in-out infinite; }
+    @keyframes sweep { 0%,100%{ opacity:.35 } 25%,75%{ opacity:.9 } }
+    .chunk2 { animation: sweep 3.6s ease-in-out infinite; animation-delay: 1.8s; }
+    @media (prefers-reduced-motion: reduce){ .chunk,.chunk2{ animation:none; opacity:.85 } }
+  </style>
+  <rect x="0" y="0" width="640" height="340" rx="18" class="box"/>
+  <text x="24" y="36" class="lbl" font-weight="bold">chunked classification with overlap</text>
+
+  <!-- document strip -->
+  <g transform="translate(24 90)">
+    <rect width="592" height="80" rx="8" class="box"/>
+    <g fill="#001614" opacity="0.85">
+      <rect x="14" y="16" width="560" height="6" rx="3"/>
+      <rect x="14" y="30" width="520" height="6" rx="3"/>
+      <rect x="14" y="44" width="544" height="6" rx="3"/>
+      <rect x="14" y="58" width="500" height="6" rx="3"/>
+    </g>
+  </g>
+
+  <!-- overlapping windows -->
+  <g fill="#66DCC8" opacity="0.35" stroke="#009484" stroke-width="2">
+    <rect class="chunk" x="40" y="96" width="200" height="66" rx="6"/>
+    <rect class="chunk2" x="200" y="96" width="200" height="66" rx="6"/>
+    <rect class="chunk" x="360" y="96" width="200" height="66" rx="6"/>
+  </g>
+
+  <g transform="translate(40 96)" class="chunk"><rect x="160" y="0" width="40" height="66" fill="#FCA326" opacity="0.7"/></g>
+  <g transform="translate(360 96)" class="chunk2"><rect x="0" y="0" width="40" height="66" fill="#FCA326" opacity="0.7"/></g>
+
+  <text x="24" y="200" class="sub">window size bounded · overlap carries boundary evidence into the next chunk</text>
+  <text x="24" y="216" class="sub">verdict is the strictest across all chunks, not the first or the average</text>
+
+  <!-- strictest verdict -->
+  <g transform="translate(24 244)">
+    <rect width="592" height="52" rx="8" fill="#001614"/>
+    <text x="16" y="32" class="mono" font-size="13" fill="#66DCC8">decide: strictest verdict wins</text>
+  </g>
+</svg>

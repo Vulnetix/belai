@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 340" width="640" height="340" role="img" aria-label="Permission merge as a union: policy, session, tool and role grants merge into a single permission set">
+  <style>
+    .box { fill: #FFF8ED; stroke: #001614; stroke-width: 2; }
+    .lbl { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; fill: #001614; }
+    .sub { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 10.5px; fill: #009484; }
+    .mono { font-family: 'Geist Mono', ui-monospace, monospace; }
+    .chip { animation: rise 2.6s ease-in-out infinite; }
+    @keyframes rise { 0%,100%{ transform: translateY(0); opacity:.55 } 50%{ transform: translateY(-4px); opacity:1 } }
+    .chip2 { animation: rise 2.6s ease-in-out infinite; animation-delay: 1.3s; }
+    @media (prefers-reduced-motion: reduce){ .chip,.chip2{ animation:none; opacity:.85 } }
+  </style>
+  <rect x="0" y="0" width="640" height="340" rx="18" class="box"/>
+  <text x="24" y="36" class="lbl" font-weight="bold">permission merge — a union, not a conflict</text>
+
+  <!-- sources -->
+  <g font-family="'Geist Mono',ui-monospace,monospace" font-size="12" fill="#001614">
+    <rect class="box chip" x="24" y="70" width="150" height="44" rx="8"/><text x="14" y="27">policy allow</text>
+    <rect class="box chip2" x="184" y="70" width="150" height="44" rx="8"/><text x="14" y="27">session grant</text>
+    <rect class="box chip" x="344" y="70" width="150" height="44" rx="8"/><text x="14" y="27">tool kind</text>
+    <rect class="box chip2" x="504" y="70" width="112" height="44" rx="8"/><text x="14" y="27">role</text>
+  </g>
+
+  <path d="M99 114 L 99 150 M249 114 L 249 150 M419 114 L 419 150 M560 114 L 560 150" stroke="#009484" stroke-width="2" stroke-dasharray="4 4"/>
+
+  <!-- merged set -->
+  <g transform="translate(24 150)">
+    <rect width="592" height="86" rx="12" fill="#001614"/>
+    <text x="16" y="28" class="mono" font-size="13" fill="#66DCC8">effective permission set</text>
+    <g font-family="'Geist Mono',ui-monospace,monospace" font-size="11">
+      <rect x="16" y="42" width="104" height="24" rx="6" fill="#66DCC8"/><text x="26" y="58" fill="#001614">Bash: read</text>
+      <rect x="130" y="42" width="104" height="24" rx="6" fill="#66DCC8"/><text x="140" y="58" fill="#001614">Write: repo</text>
+      <rect x="244" y="42" width="118" height="24" rx="6" fill="#FCA326"/><text x="254" y="58" fill="#001614">WebFetch: ✓</text>
+    </g>
+  </g>
+
+  <text x="24" y="276" class="sub">a grant is additive; an explicit deny still wins — merging never silently widens a surface.</text>
+  <text x="24" y="294" class="sub">provenance kept: every effective grant remembers which source added it.</text>
+</svg>
