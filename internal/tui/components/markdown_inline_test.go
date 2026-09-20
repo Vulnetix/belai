@@ -100,13 +100,16 @@ func TestParseInlineBackslashEscape(t *testing.T) {
 }
 
 func TestParseInlineSnakeCaseNotEmphasis(t *testing.T) {
-	t.Skip("markdown parser refactor: flanking rules pending")
 	segs := parseInline("snake_case_name")
 	if inlinePlain(segs) != "snake_case_name" {
 		t.Fatalf("plain = %q", inlinePlain(segs))
 	}
-	if len(segs) != 1 || segs[0].FG != nil {
-		t.Fatalf("snake_case should stay plain: %+v", segs)
+	// The underscores may split the text into several plain segments, but they
+	// must never introduce emphasis styling: snake_case is prose, not markup.
+	for _, s := range segs {
+		if s.FG != nil || len(s.Emph) > 0 || len(s.Strike) > 0 {
+			t.Fatalf("snake_case should stay plain: %+v", segs)
+		}
 	}
 }
 
