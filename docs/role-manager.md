@@ -1242,11 +1242,12 @@ content.
 
 ## Agent builder classifier
 
-The agent builder (`/agent create`) reuses the `rolemanager.Classifier`
+The agent builder (`/agent create <name>`) reuses the `rolemanager.Classifier`
 interface so it works with any configured provider. The builder sends a
-dedicated system prompt (the "agent designer") plus the user's natural-language
-request, expecting the model to reply with valid JSON matching the
-`AgentProfile` schema.
+dedicated system prompt (the "agent designer") seeded with the requested name,
+expecting the model to reply with valid JSON matching the `AgentProfile`
+schema. The TUI forces the requested name back onto the result before save, so
+the model designs the fields but never renames the profile.
 
 ### Builder system prompt invariants
 
@@ -1271,8 +1272,10 @@ self-correction.
 
 `Builder.MaxAttempts` defaults to 3. If the model has not produced a valid
 profile after `MaxAttempts` attempts, the builder returns an error and the
-profile is **not** saved to disk. The classifier turn remains tool-less,
-skill-less, and agent-less for every attempt.
+builder itself does not save to disk. The TUI's `/agent create` handler then
+falls back to a valid `agentprofile.Stub` and opens the editor on it, so the
+user is never dropped back to chat with nothing. The classifier turn remains
+tool-less, skill-less, and agent-less for every attempt.
 
 ## Fail-closed summary
 
