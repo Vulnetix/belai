@@ -65,17 +65,31 @@ type Settings struct {
 	// SweepRoots restricts the sweep to a list of paths. Empty means $HOME and
 	// the current workdir's parent.
 	VulnetixSweepRoots []string `json:"vulnetix_sweep_roots,omitempty"`
-	// CodeReview holds per-project /code-review configuration. It is typed and
+	// Vulnetix holds per-project /vulnetix configuration. It is typed and
 	// allowlisted so arbitrary argv can never be persisted here.
-	CodeReview *CodeReviewSettings `json:"code_review,omitempty"`
+	Vulnetix *VulnetixSettings `json:"vulnetix,omitempty"`
 }
 
-// CodeReviewSettings is the per-project /code-review configuration.
-type CodeReviewSettings struct {
+// VulnetixSettings is the per-project /vulnetix configuration.
+type VulnetixSettings struct {
 	Subcommands     []string `json:"subcommands,omitempty"`
 	Timeout         string   `json:"timeout,omitempty"`
 	ContinueOnError *bool    `json:"continue_on_error,omitempty"`
 	OrgID           string   `json:"org_id,omitempty"`
+	// GatewayURL overrides the default Vulnetix AI Firewall host for self-hosted
+	// deployments. Empty means https://guardrails.vulnetix.com.
+	GatewayURL string `json:"gateway_url,omitempty"`
+	// FirewallEnabled routes the session's LLM traffic through the Vulnetix AI
+	// Firewall gateway. Default false.
+	FirewallEnabled *bool `json:"firewall_enabled,omitempty"`
+}
+
+// GatewayURLOrDefault returns the configured gateway URL, or the default.
+func (s VulnetixSettings) GatewayURLOrDefault() string {
+	if s.GatewayURL != "" {
+		return s.GatewayURL
+	}
+	return "https://guardrails.vulnetix.com"
 }
 
 // SweepEnabled reports whether the vulnetix sweep is on. Default true.
@@ -421,6 +435,12 @@ func (s Settings) AskPermissionEnabled() bool {
 	return s.AskPermission == nil || *s.AskPermission
 }
 
+// FirewallEnabled reports whether the Vulnetix AI Firewall is turned on.
+// Default false: routing prompts to a third-party gateway is opt-in.
+func (s Settings) FirewallEnabled() bool {
+	return s.Vulnetix != nil && s.Vulnetix.FirewallEnabled != nil && *s.Vulnetix.FirewallEnabled
+}
+
 // ReadOnlyEnabled reports whether the master read-only switch is on. The
 // default (nil or false) is off: the full tool set, including mutating tools.
 func (s Settings) ReadOnlyEnabled() bool {
@@ -456,6 +476,16 @@ func (s Settings) Override(proj Settings) Settings {
 	if proj.AskPermission != nil && *proj.AskPermission {
 		t := true
 		out.AskPermission = &t
+	}
+	// A project-layer settings file may turn the firewall off but never on.
+	// A repo must not be able to redirect prompts to a gateway by shipping a
+	// .vulnetix/signet/settings.json.
+	if proj.Vulnetix != nil && proj.Vulnetix.FirewallEnabled != nil && !*proj.Vulnetix.FirewallEnabled {
+		f := false
+		if out.Vulnetix == nil {
+			out.Vulnetix = &VulnetixSettings{}
+		}
+		out.Vulnetix.FirewallEnabled = &f
 	}
 	if proj.BashReadOnly != nil || proj.ReadOnly != nil {
 		if proj.ReadOnly != nil {

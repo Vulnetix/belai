@@ -1,6 +1,6 @@
-# `/code-review` — Vulnetix configure + scan-history screens
+# `/vulnetix` — Vulnetix configure + scan-history screens
 
-`/code-review` is the Signet entry point for the Vulnetix CLI. It runs scans,
+`/vulnetix` is the Signet entry point for the Vulnetix CLI. It runs scans,
 displays the local CLI capability state, and keeps a history of the projects
 found on this machine.
 
@@ -11,7 +11,7 @@ found on this machine.
   metadata (subcommand status, exit state, artifact counts) into the system
   transcript. Full artifact content is shown in the TUI but is never sent as a
   trusted system block without sanitisation and classification.
-- **Subcommands are allowlisted.** `CodeReviewSettings.Subcommands` is validated
+- **Subcommands are allowlisted.** `VulnetixSettings.Subcommands` is validated
   at save time and at run time against `AllowedSubcommands`. No user-supplied
   flags reach `exec.Command`.
 - **Artifacts live under `.vulnetix/`, summary state under `.vulnetix/signet/`.**
@@ -31,21 +31,21 @@ found on this machine.
 
 | Input | Effect |
 | --- | --- |
-| `/code-review` | Run the configured subcommands, then open the artifacts screen |
-| `/code-review run` | Same as bare `/code-review` |
-| `/code-review configure` | Open the CLI capability screen |
-| `/code-review list` | Open the project history screen |
-| `/code-review status` | Print CLI capabilities as plain text |
-| `/code-review help` | Show the available subcommands |
+| `/vulnetix` | Run the configured subcommands, then open the artifacts screen |
+| `/vulnetix run` | Same as bare `/vulnetix` |
+| `/vulnetix configure` | Open the CLI capability screen |
+| `/vulnetix list` | Open the project history screen |
+| `/vulnetix status` | Print CLI capabilities as plain text |
+| `/vulnetix help` | Show the available subcommands |
 
-## Capability screen (`/code-review configure`)
+## Capability screen (`/vulnetix configure`)
 
 Shows path, resolved symlinks, version, install method, update availability,
 authentication state, plan, org ID, API reachability, and web URLs.
 
 Keys: `r` re-probe, `l` history, `esc` back.
 
-## History screen (`/code-review list`)
+## History screen (`/vulnetix list`)
 
 Lists projects from `internal/projectregistry`. Projects are merged from
 session observations, completed reviews, manual pins, and an async TTL-gated
@@ -55,7 +55,7 @@ directories (`node_modules`, `vendor`, ...), dot-directories, and system paths.
 Keys: `↑↓` move, `/` filter, `enter` load artifacts, `r` re-sweep, `c`
 configure, `esc` back.
 
-## Artifacts screen (`/code-review artifacts`)
+## Artifacts screen (`/vulnetix artifacts`)
 
 Lists classified artifacts with per-file counts. Superseded timestamp or branch
 variants are marked but excluded from the active summary. The header shows the
@@ -66,7 +66,7 @@ project, `l` history, `esc` back.
 
 ## Activity drawer
 
-Every `/code-review` subcommand — and every CLI probe behind `configure` and
+Every `/vulnetix` subcommand — and every CLI probe behind `configure` and
 `status` — registers in the right-side activity drawer (`f9`). The drawer shows
 what argv ran, live stdout/stderr, and exit state. `x` on a running or queued
 row kills the whole process group; a killed subcommand stops the run so the

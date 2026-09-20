@@ -28,8 +28,8 @@ type Command struct {
 	Hidden  bool    // hidden commands dispatch but are absent from Names/Complete
 }
 
-// codeReviewDoneMsg carries the result of an async /code-review run.
-type codeReviewDoneMsg struct {
+// vulnetixDoneMsg carries the result of an async /vulnetix run.
+type vulnetixDoneMsg struct {
 	report commands.Report
 	err    error
 }
@@ -185,34 +185,36 @@ func NewRegistry(workdir string) *Registry {
 		a.planReview.selected = planReviewRefine
 		return a.submitPlanRefine("")
 	})
-	r.Register("code-review", "run Vulnetix code review", func() []string {
-		return []string{"run", "configure", "list", "status", "help"}
+	r.Register("vulnetix", "Vulnetix code review and firewall", func() []string {
+		return []string{"review", "configure", "list", "status", "firewall", "help"}
 	}, func(a *App, arg string) tea.Cmd {
 		return func() tea.Msg {
 			inv, err := commands.ParseInvocation(arg)
 			if err != nil {
-				return codeReviewDoneMsg{err: err}
+				return vulnetixDoneMsg{err: err}
 			}
 			switch inv.Action {
 			case commands.ActionConfigure:
-				return a.push(viewCodeReviewConfig)()
+				return a.push(viewVulnetixConfig)()
 			case commands.ActionList:
-				return a.push(viewCodeReviewList)()
+				return a.push(viewVulnetixList)()
 			case commands.ActionStatus:
 				cli, err := vulnetixcli.Detect()
 				if err != nil {
-					return codeReviewDoneMsg{err: err}
+					return vulnetixDoneMsg{err: err}
 				}
-				return codeReviewDoneMsg{report: commands.Report{Status: commands.CodeReview{}.StatusText(vulnetixcli.Probe(context.Background(), *cli, vulnetixcli.ProbeOptions{Observer: a}))}}
+				return vulnetixDoneMsg{report: commands.Report{Status: commands.Vulnetix{}.StatusText(vulnetixcli.Probe(context.Background(), *cli, vulnetixcli.ProbeOptions{Observer: a}))}}
+			case commands.ActionFirewall:
+				return a.toggleFirewall()
 			case commands.ActionHelp:
-				return codeReviewDoneMsg{report: commands.Report{Status: "/code-review run | configure | list | status"}}
+				return vulnetixDoneMsg{report: commands.Report{Status: "/vulnetix review | configure | list | status | firewall"}}
 			default:
 				cli, err := vulnetixcli.Detect()
 				if err != nil {
-					return codeReviewDoneMsg{err: err}
+					return vulnetixDoneMsg{err: err}
 				}
-				rep, err := commands.CodeReview{CLI: cli, Workdir: a.workdir, Observer: a}.Run(context.Background())
-				return codeReviewDoneMsg{report: rep, err: err}
+				rep, err := commands.Vulnetix{CLI: cli, Workdir: a.workdir, Observer: a}.Run(context.Background())
+				return vulnetixDoneMsg{report: rep, err: err}
 			}
 		}
 	})

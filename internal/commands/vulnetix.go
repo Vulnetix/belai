@@ -15,7 +15,7 @@ import (
 	"github.com/vulnetix/signet/internal/vulnetixcli"
 )
 
-// DefaultSubcommands are the Vulnetix CLI subcommands run by bare /code-review.
+// DefaultSubcommands are the Vulnetix CLI subcommands run by bare /vulnetix.
 var DefaultSubcommands = []string{"scan", "malscan", "license", "bom", "package-firewall", "ai-firewall"}
 
 // AllowedSubcommands is the hard allowlist for configured subcommands. It is
@@ -25,11 +25,11 @@ var AllowedSubcommands = map[string]bool{
 	"package-firewall": true, "ai-firewall": true,
 }
 
-// Report is the result of a code review run or status query.
+// Report is the result of a /vulnetix run or status query.
 type Report struct {
 	Summary  string
 	Manifest []string
-	// Status is a plain-text rendering of CodeReviewStatus for /code-review status.
+	// Status is a plain-text rendering of CLI capabilities for /vulnetix status.
 	Status string
 }
 
@@ -50,8 +50,8 @@ type RunObserver interface {
 	Start(name string, argv []string, dir string, cancel context.CancelFunc) (sink func(string), done func(exitCode int, timedOut bool, err error))
 }
 
-// CodeReview runs the Vulnetix CLI review subcommands for a workdir.
-type CodeReview struct {
+// Vulnetix runs the Vulnetix CLI review subcommands for a workdir.
+type Vulnetix struct {
 	CLI     *vulnetixcli.CLI
 	Workdir string
 	// Subcommands overrides the default list.
@@ -65,7 +65,7 @@ type CodeReview struct {
 // Run executes each configured subcommand, never promotes arbitrary repository
 // bytes to the model, and writes a summary plus a manifest under
 // .vulnetix/signet/.
-func (r CodeReview) Run(ctx context.Context) (Report, error) {
+func (r Vulnetix) Run(ctx context.Context) (Report, error) {
 	if r.CLI == nil {
 		return Report{}, fmt.Errorf("vulnetix CLI not available")
 	}
@@ -136,7 +136,7 @@ func buildSummary(results []SubcommandResult) string {
 }
 
 // collectManifest lists artifacts produced by the CLI, excluding signet's own state.
-func (r CodeReview) collectManifest() ([]string, error) {
+func (r Vulnetix) collectManifest() ([]string, error) {
 	dir := config.ProjectDir(r.Workdir)
 	arts, err := scanartifacts.Enumerate(dir)
 	if err != nil {
@@ -152,7 +152,7 @@ func (r CodeReview) collectManifest() ([]string, error) {
 	return out, nil
 }
 
-func (r CodeReview) writeArtifacts(summary string, manifest []string) error {
+func (r Vulnetix) writeArtifacts(summary string, manifest []string) error {
 	dir := config.ProjectSignetDir(r.Workdir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -168,7 +168,7 @@ func (r CodeReview) writeArtifacts(summary string, manifest []string) error {
 }
 
 // StatusText returns a plain-text rendering of CLI capabilities.
-func (r CodeReview) StatusText(cap vulnetixcli.Capabilities) string {
+func (r Vulnetix) StatusText(cap vulnetixcli.Capabilities) string {
 	var b strings.Builder
 	if !cap.Present {
 		b.WriteString("vulnetix CLI: not installed\n")

@@ -38,7 +38,7 @@ printf 'result for %s\n' "$sub" > ".vulnetix/$sub.txt"
 	return dir
 }
 
-func TestCodeReviewRunsSubcommandsAndWritesArtifacts(t *testing.T) {
+func TestVulnetixRunsSubcommandsAndWritesArtifacts(t *testing.T) {
 	bin := writeReviewVulnetix(t)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 
@@ -48,7 +48,7 @@ func TestCodeReviewRunsSubcommandsAndWritesArtifacts(t *testing.T) {
 	}
 
 	workdir := t.TempDir()
-	rep, err := (CodeReview{CLI: cli, Workdir: workdir}).Run(context.Background())
+	rep, err := (Vulnetix{CLI: cli, Workdir: workdir}).Run(context.Background())
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -75,27 +75,27 @@ func TestCodeReviewRunsSubcommandsAndWritesArtifacts(t *testing.T) {
 	}
 }
 
-func TestCodeReviewRequiresCLI(t *testing.T) {
-	if _, err := (CodeReview{CLI: nil, Workdir: t.TempDir()}).Run(context.Background()); err == nil {
+func TestVulnetixRequiresCLI(t *testing.T) {
+	if _, err := (Vulnetix{CLI: nil, Workdir: t.TempDir()}).Run(context.Background()); err == nil {
 		t.Fatalf("expected error without CLI")
 	}
 }
 
-func TestCodeReviewRejectsUnknownSubcommand(t *testing.T) {
+func TestVulnetixRejectsUnknownSubcommand(t *testing.T) {
 	bin := writeReviewVulnetix(t)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	cli, err := vulnetixcli.Detect()
 	if err != nil {
 		t.Fatalf("Detect: %v", err)
 	}
-	_, err = (CodeReview{CLI: cli, Workdir: t.TempDir(), Subcommands: []string{"scan", "pwn"}}).Run(context.Background())
+	_, err = (Vulnetix{CLI: cli, Workdir: t.TempDir(), Subcommands: []string{"scan", "pwn"}}).Run(context.Background())
 	if err == nil {
 		t.Fatal("expected error for unknown subcommand")
 	}
 }
 
 func TestStatusText(t *testing.T) {
-	r := CodeReview{}
+	r := Vulnetix{}
 	cap := vulnetixcli.Capabilities{Present: true, Version: vulnetixcli.Version{Major: 3, Minor: 107, Patch: 2}, Install: vulnetixcli.InstallBrew, InstallPrefix: "/homebrew", Auth: vulnetixcli.AuthState{Authenticated: false, Plan: vulnetixcli.PlanCommunity}}
 	txt := r.StatusText(cap)
 	if !strings.Contains(txt, "vulnetix CLI: v3.107.2") {

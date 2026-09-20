@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/vulnetix/signet/internal/aifirewall"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/projectregistry"
 	"github.com/vulnetix/signet/internal/scanartifacts"
@@ -19,15 +20,15 @@ import (
 	"github.com/vulnetix/signet/internal/vulnetixcli"
 )
 
-type codeReviewConfigState struct {
+type vulnetixConfigState struct {
 	cap      vulnetixcli.Capabilities
 	loading  bool
 	errorMsg string
 }
 
-type codeReviewListState struct {
+type vulnetixListState struct {
 	entries   []projectregistry.Entry
-	rows      []codeReviewListRow
+	rows      []vulnetixListRow
 	cursor    int
 	scroll    int
 	filtering bool
@@ -36,13 +37,13 @@ type codeReviewListState struct {
 	errorMsg  string
 }
 
-type codeReviewListRow struct {
+type vulnetixListRow struct {
 	entry   projectregistry.Entry
 	label   string
 	details string
 }
 
-type codeReviewArtifactsState struct {
+type vulnetixArtifactsState struct {
 	summary  scanartifacts.Summary
 	cursor   int
 	scroll   int
@@ -69,7 +70,7 @@ func (a *App) probeVulnetixCmd() tea.Cmd {
 	}
 }
 
-func (a *App) loadCodeReviewProjectsCmd() tea.Cmd {
+func (a *App) loadVulnetixProjectsCmd() tea.Cmd {
 	return func() tea.Msg {
 		reg, err := projectregistry.Load()
 		if err != nil {
@@ -127,23 +128,23 @@ func (a *App) loadArtifactsCmd(workdir string) tea.Cmd {
 // Config view
 // ---------------------------------------------------------------------------
 
-func (a *App) enterCodeReviewConfig() tea.Cmd {
-	a.codeReviewConfigState = codeReviewConfigState{loading: true}
+func (a *App) enterVulnetixConfig() tea.Cmd {
+	a.vulnetixConfigState = vulnetixConfigState{loading: true}
 	return a.probeVulnetixCmd()
 }
 
-func (a *App) codeReviewConfigView() string {
+func (a *App) vulnetixConfigView() string {
 	w := a.contentWidth()
 	var b strings.Builder
 	b.WriteString(components.SectionHeader("code review", "configure", w))
-	if a.codeReviewConfigState.loading {
+	if a.vulnetixConfigState.loading {
 		b.WriteString(components.AccentStyle.Render("  ○ Probing Vulnetix CLI…") + "\n")
 		return b.String()
 	}
-	cap := a.codeReviewConfigState.cap
+	cap := a.vulnetixConfigState.cap
 	if !cap.Present {
 		b.WriteString(components.DangerStyle.Render("  ✗ Vulnetix CLI not found") + "\n")
-		b.WriteString(components.MutedStyle.Render("  install it to enable /code-review"))
+		b.WriteString(components.MutedStyle.Render("  install it to enable /vulnetix"))
 		return b.String()
 	}
 	b.WriteString(renderLabelValue("Path", cap.Path, w))
@@ -153,9 +154,33 @@ func (a *App) codeReviewConfigView() string {
 	b.WriteString(renderLabelValue("Auth", authLabel(cap.Auth), w))
 	b.WriteString(renderLabelValue("Plan", string(cap.Auth.Plan), w))
 	b.WriteString(renderLabelValue("Org ID", cap.Auth.OrgID, w))
+	if a.firewallEnabled() || a.firewallAvailable() {
+		state := "off"
+		if a.firewallEnabled() {
+			state = "on"
+		}
+		var host, orgUUID string
+		if a.resolver != nil {
+			if base, _, ok := a.resolver.Firewall(a.cfg.Provider); ok {
+				host = aifirewall.HostOf(base)
+				orgUUID = aifirewall.URLPathUUID(base)
+			}
+		}
+		if a.firewallEnabled() && host == "" {
+			state = "on (no credential)"
+		}
+		b.WriteString(renderLabelValue("Firewall", state, w))
+		if host != "" {
+			b.WriteString(renderLabelValue("Gateway", host, w))
+			b.WriteString(renderLabelValue("Org", orgUUID, w))
+			if slug, ok := aifirewall.Slug(a.cfg.Provider); ok {
+				b.WriteString(renderLabelValue("Wire", slug, w))
+			}
+		}
+	}
 	b.WriteString(renderLabelValue("API", fmt.Sprintf("reachable=%v", cap.API.Reachable), w))
-	if a.codeReviewConfigState.errorMsg != "" {
-		b.WriteString("\n" + components.DangerStyle.Render("✗ "+a.codeReviewConfigState.errorMsg) + "\n")
+	if a.vulnetixConfigState.errorMsg != "" {
+		b.WriteString("\n" + components.DangerStyle.Render("✗ "+a.vulnetixConfigState.errorMsg) + "\n")
 	}
 	b.WriteString("\n" + components.HelpBar("r", "re-probe", "l", "history", "esc", "back") + "\n")
 	return b.String()
@@ -179,16 +204,16 @@ func renderLabelValue(label, value string, width int) string {
 	return truncateLine(line, width) + "\n"
 }
 
-func (a *App) handleCodeReviewConfigKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (a *App) handleVulnetixConfigKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.String() {
 	case "esc":
 		a.pop()
 		return a, nil
 	case "r":
-		a.codeReviewConfigState.loading = true
+		a.vulnetixConfigState.loading = true
 		return a, a.probeVulnetixCmd()
 	case "l":
-		return a, a.push(viewCodeReviewList)
+		return a, a.push(viewVulnetixList)
 	}
 	return a, nil
 }
@@ -197,33 +222,33 @@ func (a *App) handleCodeReviewConfigKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 // List view
 // ---------------------------------------------------------------------------
 
-func flattenCodeReviewRows(entries []projectregistry.Entry) []codeReviewListRow {
-	rows := make([]codeReviewListRow, 0, len(entries))
+func flattenVulnetixRows(entries []projectregistry.Entry) []vulnetixListRow {
+	rows := make([]vulnetixListRow, 0, len(entries))
 	for _, e := range entries {
 		label := e.Name
 		if label == "" {
 			label = filepath.Base(e.Path)
 		}
 		details := fmt.Sprintf("%d artifacts · %s", 0, ageLabel(e.LastSeen.UnixMilli()))
-		rows = append(rows, codeReviewListRow{entry: e, label: label, details: details})
+		rows = append(rows, vulnetixListRow{entry: e, label: label, details: details})
 	}
 	return rows
 }
 
-func (a *App) enterCodeReviewList() tea.Cmd {
-	a.codeReviewListState = codeReviewListState{loading: true}
-	return tea.Batch(a.loadCodeReviewProjectsCmd(), a.sweepProjectsCmd())
+func (a *App) enterVulnetixList() tea.Cmd {
+	a.vulnetixListState = vulnetixListState{loading: true}
+	return tea.Batch(a.loadVulnetixProjectsCmd(), a.sweepProjectsCmd())
 }
 
-func (a *App) codeReviewListView() string {
+func (a *App) vulnetixListView() string {
 	w := a.contentWidth()
 	var b strings.Builder
 	b.WriteString(components.SectionHeader("code review", "history", w))
-	if a.codeReviewListState.loading {
+	if a.vulnetixListState.loading {
 		b.WriteString(components.AccentStyle.Render("  ○ Loading projects…") + "\n")
 		return b.String()
 	}
-	rows := filterCodeReviewRows(a.codeReviewListState.rows, a.codeReviewListState.filter)
+	rows := filterVulnetixRows(a.vulnetixListState.rows, a.vulnetixListState.filter)
 	if len(rows) == 0 {
 		b.WriteString(components.MutedStyle.Render("  no projects registered") + "\n")
 	}
@@ -234,32 +259,32 @@ func (a *App) codeReviewListView() string {
 	if nrows < 3 {
 		nrows = 3
 	}
-	a.codeReviewListState.scroll = windowStart(a.codeReviewListState.scroll, a.codeReviewListState.cursor, len(rows), nrows)
-	start := a.codeReviewListState.scroll
+	a.vulnetixListState.scroll = windowStart(a.vulnetixListState.scroll, a.vulnetixListState.cursor, len(rows), nrows)
+	start := a.vulnetixListState.scroll
 	end := min(start+nrows, len(rows))
 	for i := start; i < end; i++ {
 		r := rows[i]
 		name := r.label
-		if i == a.codeReviewListState.cursor {
+		if i == a.vulnetixListState.cursor {
 			name = components.EmphStyle.Render(name)
 		}
-		line := components.Cursor(i == a.codeReviewListState.cursor) + name
+		line := components.Cursor(i == a.vulnetixListState.cursor) + name
 		line += "  " + components.MutedStyle.Render(r.details)
 		b.WriteString(line + "\n")
 	}
-	if a.codeReviewListState.errorMsg != "" {
-		b.WriteString("\n" + components.DangerStyle.Render("✗ "+a.codeReviewListState.errorMsg) + "\n")
+	if a.vulnetixListState.errorMsg != "" {
+		b.WriteString("\n" + components.DangerStyle.Render("✗ "+a.vulnetixListState.errorMsg) + "\n")
 	}
 	b.WriteString("\n" + components.HelpBar("↑↓", "move", "enter", "artifacts", "r", "sweep", "c", "configure", "esc", "back") + "\n")
 	return b.String()
 }
 
-func filterCodeReviewRows(rows []codeReviewListRow, q string) []codeReviewListRow {
+func filterVulnetixRows(rows []vulnetixListRow, q string) []vulnetixListRow {
 	if q == "" {
 		return rows
 	}
 	lower := strings.ToLower(q)
-	var out []codeReviewListRow
+	var out []vulnetixListRow
 	for _, r := range rows {
 		if strings.Contains(strings.ToLower(r.label), lower) || strings.Contains(strings.ToLower(r.entry.Path), lower) {
 			out = append(out, r)
@@ -268,65 +293,65 @@ func filterCodeReviewRows(rows []codeReviewListRow, q string) []codeReviewListRo
 	return out
 }
 
-func (a *App) handleCodeReviewListKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if a.codeReviewListState.filtering {
-		return a.handleCodeReviewListFilterKey(m)
+func (a *App) handleVulnetixListKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if a.vulnetixListState.filtering {
+		return a.handleVulnetixListFilterKey(m)
 	}
-	rows := filterCodeReviewRows(a.codeReviewListState.rows, a.codeReviewListState.filter)
+	rows := filterVulnetixRows(a.vulnetixListState.rows, a.vulnetixListState.filter)
 	switch m.String() {
 	case "esc":
-		if a.codeReviewListState.filter != "" {
-			a.codeReviewListState.filter = ""
-			a.codeReviewListState.scroll = 0
+		if a.vulnetixListState.filter != "" {
+			a.vulnetixListState.filter = ""
+			a.vulnetixListState.scroll = 0
 			return a, nil
 		}
 		a.pop()
 		return a, nil
 	case "up", "k":
-		a.codeReviewListState.cursor = max(a.codeReviewListState.cursor-1, 0)
+		a.vulnetixListState.cursor = max(a.vulnetixListState.cursor-1, 0)
 		return a, nil
 	case "down", "j":
-		a.codeReviewListState.cursor = min(a.codeReviewListState.cursor+1, len(rows)-1)
+		a.vulnetixListState.cursor = min(a.vulnetixListState.cursor+1, len(rows)-1)
 		return a, nil
 	case "/":
-		a.codeReviewListState.filtering = true
+		a.vulnetixListState.filtering = true
 		return a, nil
 	case "r":
-		a.codeReviewListState.loading = true
-		return a, tea.Batch(a.loadCodeReviewProjectsCmd(), a.sweepProjectsCmd())
+		a.vulnetixListState.loading = true
+		return a, tea.Batch(a.loadVulnetixProjectsCmd(), a.sweepProjectsCmd())
 	case "c":
-		return a, a.push(viewCodeReviewConfig)
+		return a, a.push(viewVulnetixConfig)
 	case "enter":
-		if len(rows) == 0 || a.codeReviewListState.cursor >= len(rows) {
+		if len(rows) == 0 || a.vulnetixListState.cursor >= len(rows) {
 			return a, nil
 		}
-		workdir := rows[a.codeReviewListState.cursor].entry.Path
+		workdir := rows[a.vulnetixListState.cursor].entry.Path
 		return a, a.loadArtifactsCmd(workdir)
 	}
 	return a, nil
 }
 
-func (a *App) handleCodeReviewListFilterKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (a *App) handleVulnetixListFilterKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.Type {
 	case tea.KeyEsc:
-		a.codeReviewListState.filtering = false
-		a.codeReviewListState.filter = ""
-		a.codeReviewListState.scroll = 0
+		a.vulnetixListState.filtering = false
+		a.vulnetixListState.filter = ""
+		a.vulnetixListState.scroll = 0
 		return a, nil
 	case tea.KeyEnter:
-		a.codeReviewListState.filtering = false
+		a.vulnetixListState.filtering = false
 		return a, nil
 	case tea.KeyRunes:
-		a.codeReviewListState.filter += string(m.Runes)
-		a.codeReviewListState.scroll = 0
+		a.vulnetixListState.filter += string(m.Runes)
+		a.vulnetixListState.scroll = 0
 		return a, nil
 	case tea.KeySpace:
-		a.codeReviewListState.filter += " "
-		a.codeReviewListState.scroll = 0
+		a.vulnetixListState.filter += " "
+		a.vulnetixListState.scroll = 0
 		return a, nil
 	case tea.KeyBackspace:
-		a.codeReviewListState.filter = trimLastRune(a.codeReviewListState.filter)
-		a.codeReviewListState.scroll = 0
+		a.vulnetixListState.filter = trimLastRune(a.vulnetixListState.filter)
+		a.vulnetixListState.scroll = 0
 		return a, nil
 	}
 	return a, nil
@@ -336,15 +361,15 @@ func (a *App) handleCodeReviewListFilterKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 // Artifacts view
 // ---------------------------------------------------------------------------
 
-func (a *App) codeReviewArtifactsView() string {
+func (a *App) vulnetixArtifactsView() string {
 	w := a.contentWidth()
 	var b strings.Builder
 	b.WriteString(components.SectionHeader("code review", "artifacts", w))
-	if a.codeReviewArtifactsState.loading {
+	if a.vulnetixArtifactsState.loading {
 		b.WriteString(components.AccentStyle.Render("  ○ Loading artifacts…") + "\n")
 		return b.String()
 	}
-	s := a.codeReviewArtifactsState.summary
+	s := a.vulnetixArtifactsState.summary
 	if s.Dir == "" {
 		b.WriteString(components.MutedStyle.Render("  no artifact summary loaded") + "\n")
 		return b.String()
@@ -360,16 +385,16 @@ func (a *App) codeReviewArtifactsView() string {
 	if nrows < 3 {
 		nrows = 3
 	}
-	a.codeReviewArtifactsState.scroll = windowStart(a.codeReviewArtifactsState.scroll, a.codeReviewArtifactsState.cursor, len(arts), nrows)
-	start := a.codeReviewArtifactsState.scroll
+	a.vulnetixArtifactsState.scroll = windowStart(a.vulnetixArtifactsState.scroll, a.vulnetixArtifactsState.cursor, len(arts), nrows)
+	start := a.vulnetixArtifactsState.scroll
 	end := min(start+nrows, len(arts))
 	for i := start; i < end; i++ {
 		art := arts[i]
 		name := art.Rel
-		if i == a.codeReviewArtifactsState.cursor {
+		if i == a.vulnetixArtifactsState.cursor {
 			name = components.EmphStyle.Render(name)
 		}
-		line := components.Cursor(i == a.codeReviewArtifactsState.cursor) + name
+		line := components.Cursor(i == a.vulnetixArtifactsState.cursor) + name
 		if art.Superseded {
 			line += components.MutedStyle.Render(" (superseded)")
 		}
@@ -401,26 +426,26 @@ func visibleArtifacts(arts []scanartifacts.Artifact) []scanartifacts.Artifact {
 	return out
 }
 
-func (a *App) handleCodeReviewArtifactsKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
-	arts := visibleArtifacts(a.codeReviewArtifactsState.summary.Artifacts)
+func (a *App) handleVulnetixArtifactsKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
+	arts := visibleArtifacts(a.vulnetixArtifactsState.summary.Artifacts)
 	switch m.String() {
 	case "esc":
 		a.pop()
 		return a, nil
 	case "up", "k":
-		a.codeReviewArtifactsState.cursor = max(a.codeReviewArtifactsState.cursor-1, 0)
+		a.vulnetixArtifactsState.cursor = max(a.vulnetixArtifactsState.cursor-1, 0)
 		return a, nil
 	case "down", "j":
-		a.codeReviewArtifactsState.cursor = min(a.codeReviewArtifactsState.cursor+1, len(arts)-1)
+		a.vulnetixArtifactsState.cursor = min(a.vulnetixArtifactsState.cursor+1, len(arts)-1)
 		return a, nil
 	case "l":
-		return a, a.push(viewCodeReviewList)
+		return a, a.push(viewVulnetixList)
 	case "t":
 		if a.bgManager == nil {
 			a.addSystem("triage: no background manager")
 			return a, nil
 		}
-		projectRoot := filepath.Dir(a.codeReviewArtifactsState.summary.Dir)
+		projectRoot := filepath.Dir(a.vulnetixArtifactsState.summary.Dir)
 		return a, a.startTriage(projectRoot)
 	}
 	return a, nil
