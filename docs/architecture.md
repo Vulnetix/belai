@@ -1878,10 +1878,12 @@ truncate-on-crash hole in the old JSON save. Directories are `0o755`; files
 
 ### Model roles
 
-`/model` is the role screen: it shows two independent rows of settings, one
-for the **agent** role and one for the **classifier** role. The classifier
-block carries a standing warning that it is the security gate for tool
-output, because a weaker classifier weakens detection everywhere.
+`/model` is the role screen: it shows two labelled groups of settings, one
+for the **agent** role and one for the **classifier** role. Each group has
+its own scope badge (`session`, `global` or `project`), so the header never
+rewrites itself when the cursor moves between roles. The classifier group
+also carries a standing warning that it is the security gate for tool output,
+because a weaker classifier weakens detection everywhere.
 
 Rows reuse the `/settings` declarative row table (`settingsRow`). The
 selected row is highlighted; `⏎` edits it, `s` cycles scope for the active
@@ -2129,12 +2131,15 @@ Supporting pieces:
 - The provider-availability filter behind `/model` and `/providers` uses the
   same probe: a configured-but-unreachable local provider is hidden from the
   pickers while staying visible in `/providers`.
-- The TUI exposes this through `/providers` (report), `/providers status`
-  (running servers and persisted port), `/providers launch <repo>
-  [--port N] [--quant Q]` (download/launch/persist/land on credentials),
+- The TUI exposes this through `/providers` (the provider-management screen),
+  `/providers report` (probe the machine and list running servers),
+  `/providers status` (running servers and persisted port), `/providers launch
+  <repo> [--port N] [--quant Q]` (download/launch/persist/land on credentials),
   `/providers download <repo> [--quant Q]` (download with `hf`), and
   `/providers stop [--port N]` (graceful stop via the activity registry).
-  Quitting the TUI stops every managed `llama-server`.
+  The same controls are reachable from the provider detail screen: `p` probes,
+  `l` launches, `d` downloads and `x` stops. Quitting the TUI stops every
+  managed `llama-server`.
 
 ## Performance
 
