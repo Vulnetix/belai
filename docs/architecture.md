@@ -1128,23 +1128,23 @@ activity streams into the transcript as render-only rows tagged with a dim
 `explore N` gutter; those rows never enter `buildTurns`, so raw subagent
 output can never be promoted into the parent conversation.
 
-### Activity drawer
+### Runs panel
 
 Signet runs the Vulnetix CLI, `!shell` commands and background agents on the
-user's behalf; the right-side activity drawer is the honest register of every
-one of those processes. `f9` cycles closed → open-and-focused → closed. Closed
-is a thin 3-column rail, lit teal while something runs and dim when idle; open
-is roughly 90 % of the width (clamped so the chat column keeps at least 12
-columns). Each row shows the activity's state glyph, label, elapsed/exit code,
-and artifact count; the selected row's live output streams in a second
-viewport beneath the list.
+user's behalf; the bottom **runs panel** is the honest register of those
+processes plus the roster of subagents pinned to the conversation. `f8` opens
+and focuses the panel on the **subagents** tab, and `f9` opens it on the
+**activity** tab. The panel is bounded: it never consumes more than one third
+of the terminal height and refuses to open when fewer than six rows are
+available, so the chat composer always remains usable. Each row is truncated
+to fit the width of the panel; a full-screen **output view** (`v` or `enter`) is
+used to read long activity output.
 
-Keys while focused: `↑`/`↓` select, `pgup`/`pgdown` scroll the output, `x`
-kills the selected activity (running or queued), `t` starts
-`signet:triage-vulns` on its project, `enter` sends its output to the model,
-and `esc` returns focus to the composer. While the drawer is open the
-transcript hover/selection frame is zeroed, because the one-column provenance
-was never valid for a fraction-width transcript.
+Keys while focused: `↑`/`↓` select, `tab` switches between the activity and
+subagent tabs, `x` kills the selected activity (running or queued), `t` starts
+`signet:triage-vulns` on its project, `enter` on an activity sends its output
+to the model (or on a subagent filters the conversation to that subagent),
+and `esc` returns focus to the composer.
 
 The register is `internal/activity`, a process-agnostic FIFO registry with no
 TUI imports. Subprocess output is arbitrary content, so it classifies
@@ -1154,6 +1154,24 @@ still runs) — and a non-SAFE sentinel is shown locally and not sent. The outpu
 seals as a `Kind: "shell"` attachment, which forces the `signet:debug` profile
 exactly like a `!shell` result. When a turn is already in flight the finished
 activity queues and flushes as one batched turn once the transcript is idle.
+
+### Vulnetix AI Firewall
+
+When the user toggles it on (`F10`, `/vulnetix firewall`, or
+`SIGNET_FIREWALL=1`), Signet routes eligible provider traffic through the
+Vulnetix AI Firewall gateway. The toggle is fail-closed: `run.Prepare` asks
+`credentials.Resolver` for the firewall source via `internal/aifirewall`, which
+maps the provider to a gateway slug and constructs
+`<gateway>/<slug>/<org>/v1`. The resolver also loads the Vulnetix CLI
+credential through `internal/vulnetixcreds`. If credentials are missing or the
+provider has no gateway slug, the on-toggle is remembered but the run falls
+back to the native provider.
+
+The project-level `vulnetix.firewall_enabled` setting overrides the global
+profile value; the CLI flag/environment variable overrides the project value.
+`SIGNET_BASE_URL` overrides the gateway URL for any single run, which lets
+tests and local gateways observe the routing without contacting the live
+gateway.
 
 ### Todo panel
 
@@ -1450,8 +1468,9 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 | `f5` | Cycle mode and re-sync plan mode, from any screen |
 | `f6` | Cycle reasoning effort: default → low → medium → high → default, from any screen |
 | `f7` | Save the current prompt to the project prompt library, from the chat view — a save-as alias of `ctrl+s` with no loaded entry |
-| `f8` | Focus the subagent roster strip (chat) |
-| `f9` | Toggle the activity drawer (chat) |
+| `f8` | Open and focus the bottom runs panel on the subagents tab (chat) |
+| `f9` | Open and focus the bottom runs panel on the activity tab (chat) |
+| `f10` | Toggle the Vulnetix AI Firewall from any screen |
 | `ctrl+home` / `ctrl+end` | Jump the transcript to the top / bottom |
 | `ctrl+j` | Insert a newline in the prompt editor |
 | `ctrl+left` / `ctrl+right` | Move the cursor one word left / right, crossing into the neighbouring line at a line boundary |
@@ -1970,7 +1989,7 @@ Provider-specific edge cases:
 | `/todos` | Show plan progress |
 | `/execute` | Leave plan mode and execute the plan |
 | `/refine` | Refine the extracted plan |
-| `/vulnetix` | Vulnetix code review and firewall (`run`, `configure`, `list`, `status`) |
+| `/vulnetix` | Vulnetix code review and firewall (`review`, `configure`, `list`, `status`, `firewall`, `help`) |
 | `/settings` | View and edit settings |
 | `/credentials` | Manage provider credentials |
 | `/permissions` | Edit tool permissions |
