@@ -30,7 +30,7 @@ func TestResolveDialectBuiltins(t *testing.T) {
 		{
 			name: "anthropic",
 			cfg:  Config{Provider: "anthropic"},
-			want: dialect{kind: kindAnthropicMessages, route: routeNative, thinking: true},
+			want: dialect{kind: kindAnthropicMessages, route: routeNative, thinking: true, method: wire.ToolMethodBlocks},
 		},
 		{
 			name: "openai",

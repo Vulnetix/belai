@@ -3,6 +3,7 @@ package run
 import (
 	"fmt"
 
+	"github.com/vulnetix/signet/internal/provider"
 	"github.com/vulnetix/signet/internal/wire"
 )
 
@@ -36,22 +37,17 @@ func DetectToolMethod(cfg Config) (ToolMethod, error) {
 		}
 		return ToolMethodNone, fmt.Errorf("provider surface %q has no known tool method", cfg.API)
 	}
-	switch cfg.Provider {
-	case "anthropic":
-		return ToolMethodBlocks, nil
-	case "cloudflare-workers-ai":
-		// Workers AI /ai/run accepts the OpenAI chat shape but requires
-		// function.arguments as a JSON object, not a JSON string.
-		return ToolMethodObject, nil
-	case "cloudflare-ai-gateway":
+	d, ok := provider.Lookup(cfg.Provider)
+	if !ok {
+		return ToolMethodNone, fmt.Errorf("unknown provider %q", cfg.Provider)
+	}
+	// Cloudflare AI Gateway's surface depends on the upstream model, so its
+	// tool method is resolved here instead of in the descriptor.
+	if cfg.Provider == "cloudflare-ai-gateway" {
 		if isClaudeModel(cfg.Model) {
 			return ToolMethodBlocks, nil
 		}
 		return ToolMethodString, nil
-	case "openai", "openrouter", "google-gemini", "ollama", "llama-server", "github-copilot", "huggingface":
-		// The OpenAI string convention.
-		return ToolMethodString, nil
-	default:
-		return ToolMethodNone, fmt.Errorf("unknown provider %q", cfg.Provider)
 	}
+	return d.ToolMethod, nil
 }

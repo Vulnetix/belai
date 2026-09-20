@@ -1016,6 +1016,7 @@ func TestCredentialViewSetsEnvReference(t *testing.T) {
 	}
 	a := New(Options{Workdir: workdir, Resolver: resolver})
 	a.view = viewCredentials
+	a.credentialState.selectedIdx = indexOfString(a.credentialState.providers, "openai")
 	a.credentialState.backend = credentials.SourceUserFile
 	a.credentialState.envMode = true
 	a.editor.SetValue("MY_KEY")
@@ -2476,6 +2477,47 @@ func TestResolveCredentialsCmdUsesResolver(t *testing.T) {
 	}
 	if !a.status.Configured || a.cfg.APIKey != "sk-resolved" {
 		t.Fatalf("app not configured after resolution: %+v", a.status)
+	}
+}
+
+// TestSendRetriesCredentialResolutionOnStartup pins the bug where sending a
+// message immediately after launch failed with "credentials missing" even
+// though valid credentials were available in the resolver-backed store. The
+// initial app construction resolves from env only; send must retry with the
+// resolver before giving up.
+func TestSendRetriesCredentialResolutionOnStartup(t *testing.T) {
+	workdir := t.TempDir()
+
+	userPath, err := config.UserCredentialsPath()
+	if err != nil {
+		t.Fatalf("UserCredentialsPath: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(userPath), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(userPath, []byte(`{"version":1,"providers":{"openai":{"api_key":{"source":"inline","value":"sk-resolved"}}}}`), 0o600); err != nil {
+		t.Fatalf("write user credentials: %v", err)
+	}
+
+	resolver, err := credentials.NewResolver(workdir)
+	if err != nil {
+		t.Fatalf("NewResolver: %v", err)
+	}
+	a := New(Options{Workdir: workdir, Resolver: resolver, Provider: "openai", Model: "gpt-5"})
+	if a.status.Configured {
+		t.Fatal("expected env-only startup to be unconfigured when credentials are in file")
+	}
+
+	cmd := a.send([]run.Turn{{Role: "user", Content: "hello"}})
+	if cmd == nil {
+		t.Fatal("send returned no command")
+	}
+	msg := cmd()
+	if _, ok := msg.(agentEventMsg); ok {
+		t.Fatalf("send should have resolved credentials synchronously instead of returning an error: %+v", msg)
+	}
+	if !a.status.Configured || a.cfg.APIKey != "sk-resolved" {
+		t.Fatalf("send did not adopt resolved credentials: status=%+v cfg=%+v", a.status, a.cfg)
 	}
 }
 

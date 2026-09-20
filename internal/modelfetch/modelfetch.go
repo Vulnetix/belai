@@ -85,27 +85,18 @@ func List(ctx context.Context, t Target, client *http.Client) ([]models.Model, e
 // in flight.
 func EndpointFor(t Target) (string, error) {
 	base := strings.TrimRight(t.BaseURL, "/")
+
+	// A few providers need name-specific list-endpoint handling that the
+	// generic ListPath cannot capture (base URL transformation or conditional
+	// fetching). These exceptions are preserved from the pre-registry code.
 	switch t.Name {
 	case "cloudflare-ai-gateway":
 		// The gateway uses a static catalogue from models.Catalog; there is no
 		// gateway-side model list endpoint reachable with only a gateway token.
 		return "", nil
-	case "anthropic":
-		return base + "/v1/models", nil
-	case "cloudflare-workers-ai":
-		return base + "/ai/models/search", nil
-	case "huggingface":
-		// Live-fetch the router's catalogue. Models from third-party Inference
-		// Providers that the user has not enabled in their HuggingFace
-		// dashboard fail at request time with model_not_supported; that is an
-		// account-configuration concern, not something the harness can know
-		// ahead of time.
-		return base + "/models", nil
 	case "google-gemini":
 		// The OpenAI-compatible surface omits limits; use the native endpoint.
 		base = strings.TrimSuffix(base, "/openai")
-		return base + "/models", nil
-	case "openrouter", "ollama", "llama-server", "github-copilot":
 		return base + "/models", nil
 	case "openai":
 		// Do not live-fetch from OpenAI directly: their /v1/models list
@@ -116,14 +107,21 @@ func EndpointFor(t Target) (string, error) {
 			return base + "/models", nil
 		}
 		return "", nil
-	default:
-		// Custom provider: choose by surface.
-		switch t.API {
-		case wire.SurfaceAnthropicMessages:
-			return base + "/v1/models", nil
-		default:
-			return base + "/models", nil
+	}
+
+	if d, ok := provider.Lookup(t.Name); ok {
+		if d.ListPath == "" {
+			return "", nil
 		}
+		return base + d.ListPath, nil
+	}
+
+	// Custom provider: choose by surface.
+	switch t.API {
+	case wire.SurfaceAnthropicMessages:
+		return base + "/v1/models", nil
+	default:
+		return base + "/models", nil
 	}
 }
 

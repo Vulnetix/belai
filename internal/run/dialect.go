@@ -56,25 +56,44 @@ func resolveDialect(cfg Config) (dialect, error) {
 	if cfg.API != "" {
 		return customDialect(cfg.API)
 	}
-	switch cfg.Provider {
-	case "cloudflare-workers-ai":
+	d, ok := provider.Lookup(cfg.Provider)
+	if !ok {
+		return dialect{}, fmt.Errorf("unknown provider %q", cfg.Provider)
+	}
+	out := dialect{
+		kind:     surfaceKind(d.Surface),
+		route:    routeNative,
+		thinking: d.Thinking,
+		effort:   d.Effort,
+		usage:    d.Usage,
+		method:   d.ToolMethod,
+	}
+	// Workers AI has its own route and requires tool arguments as objects.
+	if cfg.Provider == "cloudflare-workers-ai" {
 		return dialect{kind: kindWorkersAI, route: routeWorkersAI, method: wire.ToolMethodObject}, nil
-	case "cloudflare-ai-gateway":
+	}
+	// Cloudflare AI Gateway switches surface based on the upstream model.
+	// This split is intentionally retained here rather than encoded in the
+	// descriptor so the gateway's Anthropic branch does not pick up the
+	// native Anthropic thinking feature.
+	if cfg.Provider == "cloudflare-ai-gateway" {
 		if isClaudeModel(cfg.Model) {
 			return dialect{kind: kindAnthropicMessages, route: routeGateway}, nil
 		}
-		return dialect{kind: kindOpenAIChat, route: routeGateway, method: wire.ToolMethodString}, nil
-	case "anthropic":
-		return dialect{kind: kindAnthropicMessages, route: routeNative, thinking: true}, nil
-	case "openai":
-		return dialect{kind: kindOpenAIChat, route: routeNative, effort: true, usage: true, method: wire.ToolMethodString}, nil
-	case "openrouter", "google-gemini", "ollama", "llama-server", "github-copilot", "huggingface":
-		// OpenAI-compatible surfaces without native reasoning_effort or
-		// stream_options.include_usage: those stay openai-only.
-		return dialect{kind: kindOpenAIChat, route: routeNative, method: wire.ToolMethodString}, nil
-	default:
-		return dialect{}, fmt.Errorf("unknown provider %q", cfg.Provider)
+		return dialect{kind: kindOpenAIChat, route: routeGateway, method: out.method}, nil
 	}
+	return out, nil
+}
+
+// surfaceKind maps a descriptor surface to the internal wire kind.
+func surfaceKind(s wire.Surface) kind {
+	switch s {
+	case wire.SurfaceAnthropicMessages:
+		return kindAnthropicMessages
+	case wire.SurfaceWorkersAI:
+		return kindWorkersAI
+	}
+	return kindOpenAIChat
 }
 
 // customDialect maps a custom profile's wire surface onto a dialect. It

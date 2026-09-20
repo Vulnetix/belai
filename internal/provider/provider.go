@@ -10,37 +10,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 
 	"github.com/vulnetix/signet/internal/version"
 	"github.com/vulnetix/signet/internal/wire"
 )
-
-// Auth names one wire authentication style. It is independent of the wire
-// surface a provider speaks: a custom provider may, for example, speak the
-// Anthropic surface with a bearer token.
-//
-// AuthXAPIKey additionally carries an anthropic-version header. That header is
-// conceptually a surface concern, but bundling it here preserves today's bytes
-// exactly and is correct in practice; do not thread the surface into Provider
-// to split it.
-type Auth string
-
-const (
-	AuthBearer  Auth = "bearer"    // authorization: Bearer <key>
-	AuthXAPIKey Auth = "x-api-key" // x-api-key + anthropic-version: 2023-06-01
-	AuthCFAIG   Auth = "cf-aig"    // cf-aig-authorization: Bearer <key>
-	AuthCopilot Auth = "copilot"   // Bearer + Editor-Version + Copilot-Integration-Id
-)
-
-// Valid reports whether a is a known auth style.
-func (a Auth) Valid() bool {
-	switch a {
-	case AuthBearer, AuthXAPIKey, AuthCFAIG, AuthCopilot:
-		return true
-	}
-	return false
-}
 
 // Profile describes a provider that is not compiled in: where it lives, which
 // wire surface it speaks, how it authenticates, and which models it offers.
@@ -51,46 +26,26 @@ type Profile struct {
 	Models  []string
 }
 
-// builtins is the single source of truth for the compiled-in providers: their
-// canonical name and their auth style. New's whitelist, Builtin, and Names all
-// derive from it so they cannot drift.
-var builtins = []struct {
-	name string
-	auth Auth
-}{
-	{"openai", AuthBearer},
-	{"anthropic", AuthXAPIKey},
-	{"cloudflare-workers-ai", AuthBearer},
-	// Cloudflare AI Gateway authenticates with a gateway-specific token via
-	// the cf-aig-authorization header. The default base URL is built from
-	// the account id; a custom base URL override can be set per gateway.
-	{"cloudflare-ai-gateway", AuthCFAIG},
-	{"openrouter", AuthBearer},
-	{"google-gemini", AuthBearer},
-	{"ollama", AuthBearer},
-	{"llama-server", AuthBearer},
-	{"github-copilot", AuthCopilot},
-	{"huggingface", AuthBearer},
+// Lookup returns the descriptor for a compiled-in provider, if any.
+func Lookup(name string) (Descriptor, bool) {
+	d, ok := registry[strings.ToLower(strings.TrimSpace(name))]
+	return d, ok
 }
 
 // Names returns the supported provider names in a stable order.
 func Names() []string {
-	out := make([]string, len(builtins))
-	for i, b := range builtins {
-		out[i] = b.name
+	out := make([]string, 0, len(registry))
+	for name := range registry {
+		out = append(out, name)
 	}
+	sort.Strings(out)
 	return out
 }
 
 // Builtin reports whether name is one of the compiled-in provider names.
 func Builtin(name string) bool {
-	n := strings.ToLower(strings.TrimSpace(name))
-	for _, b := range builtins {
-		if b.name == n {
-			return true
-		}
-	}
-	return false
+	_, ok := Lookup(name)
+	return ok
 }
 
 // ValidCustomName reports whether name is a safe custom-provider name. The
@@ -130,8 +85,6 @@ type Provider struct {
 	auth    Auth
 }
 
-// New validates and returns a Provider for a built-in name. baseURL must be a
-// valid http(s) URL; apiKey must be non-empty.
 // NewWithAuth is like New but allows the caller to override the compiled-in
 // auth style. It is used when a built-in provider can be reached through more
 // than one authentication path (e.g., cloudflare-ai-gateway as either a
@@ -143,20 +96,11 @@ func NewWithAuth(name, baseURL, apiKey string, auth Auth) (*Provider, error) {
 // New validates and returns a Provider for a built-in name. baseURL must be a
 // valid http(s) URL; apiKey must be non-empty.
 func New(name, baseURL, apiKey string) (*Provider, error) {
-	n := strings.ToLower(strings.TrimSpace(name))
-	var auth Auth
-	found := false
-	for _, b := range builtins {
-		if b.name == n {
-			auth = b.auth
-			found = true
-			break
-		}
-	}
-	if !found {
+	d, ok := Lookup(name)
+	if !ok {
 		return nil, fmt.Errorf("unsupported provider %q (want %s)", name, strings.Join(Names(), ", "))
 	}
-	return newProvider(n, baseURL, apiKey, auth)
+	return newProvider(name, baseURL, apiKey, d.Auth)
 }
 
 // NewFromProfile validates and returns a Provider from a custom profile. It
@@ -175,6 +119,11 @@ func NewFromProfile(name string, prof Profile, apiKey string) (*Provider, error)
 	}
 	if !validSurface(prof.API) {
 		return nil, fmt.Errorf("unknown api surface %q", prof.API)
+	}
+	// Copilot auth is deliberately reserved for the built-in provider so a
+	// custom profile cannot impersonate GitHub Copilot.
+	if prof.Auth == AuthCopilot {
+		return nil, fmt.Errorf("auth style %q is reserved for the built-in github-copilot provider", prof.Auth)
 	}
 	return newProvider(name, prof.BaseURL, apiKey, prof.Auth)
 }
@@ -217,6 +166,7 @@ func (p *Provider) Auth() Auth { return p.auth }
 // Headers returns the auth headers for the provider. Cloudflare AI Gateway
 // authenticates with cf-aig-authorization; Anthropic with x-api-key; OpenAI
 // and Cloudflare Workers AI with a Bearer token — matching Pi's provider auth.
+
 func (p *Provider) Headers() map[string]string {
 	h := map[string]string{
 		"content-type": "application/json",

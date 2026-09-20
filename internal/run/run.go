@@ -327,97 +327,29 @@ type FirewallSource interface {
 // EnvSource adapts an environment-lookup function to CredentialSource.
 type EnvSource func(string) string
 
-// Lookup implements CredentialSource.
-func (f EnvSource) Lookup(provider, field string) (value, origin string, ok bool) {
-	key := provider + ":" + field
-	switch key {
-	case "openai:api_key":
-		if v := f("OPENAI_API_KEY"); v != "" {
-			return v, "$OPENAI_API_KEY", true
-		}
-	case "anthropic:api_key":
-		if v := f("ANTHROPIC_API_KEY"); v != "" {
-			return v, "$ANTHROPIC_API_KEY", true
-		}
-	case "cloudflare-workers-ai:api_key":
-		if v := f("CLOUDFLARE_API_KEY"); v != "" {
-			return v, "$CLOUDFLARE_API_KEY", true
-		}
-	case "cloudflare-workers-ai:account_id":
-		if v := f("CLOUDFLARE_ACCOUNT_ID"); v != "" {
-			return v, "$CLOUDFLARE_ACCOUNT_ID", true
-		}
-	case "cloudflare-ai-gateway:token":
-		if v := f("CF_AIG_TOKEN"); v != "" {
-			return v, "$CF_AIG_TOKEN", true
-		}
-	case "cloudflare-ai-gateway:account_id":
-		if v := f("CF_ACCOUNT_ID"); v != "" {
-			return v, "$CF_ACCOUNT_ID", true
-		}
-		if v := f("CLOUDFLARE_ACCOUNT_ID"); v != "" {
-			return v, "$CLOUDFLARE_ACCOUNT_ID", true
-		}
-	case "cloudflare-ai-gateway:base_url":
-		if v := f("CF_AIG_URL"); v != "" {
-			return v, "$CF_AIG_URL", true
-		}
-	case "openrouter:api_key":
-		if v := f("OPENROUTER_API_KEY"); v != "" {
-			return v, "$OPENROUTER_API_KEY", true
-		}
-	case "google-gemini":
-		if v := f("GEMINI_API_KEY"); v != "" {
-			return v, "$GEMINI_API_KEY", true
-		}
-		if v := f("GOOGLE_API_KEY"); v != "" {
-			return v, "$GOOGLE_API_KEY", true
-		}
-	case "github-copilot:oauth_token":
-		if v := f("GITHUB_COPILOT_TOKEN"); v != "" {
-			return v, "$GITHUB_COPILOT_TOKEN", true
-		}
-		if v := f("GH_TOKEN"); v != "" {
-			return v, "$GH_TOKEN", true
-		}
-	case "huggingface:api_key":
-		if v := f("HF_TOKEN"); v != "" {
-			return v, "$HF_TOKEN", true
-		}
-		if v := f("HUGGINGFACE_TOKEN"); v != "" {
-			return v, "$HUGGINGFACE_TOKEN", true
-		}
-	case "ollama:host":
-		if v := f("SIGNET_OLLAMA_HOST"); v != "" {
-			return v, "$SIGNET_OLLAMA_HOST", true
-		}
-	case "ollama:port":
-		if v := f("SIGNET_OLLAMA_PORT"); v != "" {
-			return v, "$SIGNET_OLLAMA_PORT", true
-		}
-	case "ollama:protocol":
-		if v := f("SIGNET_OLLAMA_PROTOCOL"); v != "" {
-			return v, "$SIGNET_OLLAMA_PROTOCOL", true
-		}
-	case "llama-server:host":
-		if v := f("SIGNET_LLAMA_HOST"); v != "" {
-			return v, "$SIGNET_LLAMA_HOST", true
-		}
-	case "llama-server:port":
-		if v := f("SIGNET_LLAMA_PORT"); v != "" {
-			return v, "$SIGNET_LLAMA_PORT", true
-		}
-	case "llama-server:protocol":
-		if v := f("SIGNET_LLAMA_PROTOCOL"); v != "" {
-			return v, "$SIGNET_LLAMA_PROTOCOL", true
-		}
-	default:
-		// Custom providers resolve from their derived variable; EnvSource
-		// fails closed rather than falling back to an unrelated provider's key.
-		if field == "api_key" {
-			if v := f(envVarForProvider(provider)); v != "" {
-				return v, "$" + envVarForProvider(provider), true
+// Lookup implements CredentialSource. It derives the environment-variable
+// list for each field from the provider registry so the table cannot drift
+// from the run-time resolution path.
+func (f EnvSource) Lookup(providerName, field string) (value, origin string, ok bool) {
+	if d, ok := provider.Lookup(providerName); ok {
+		for _, fld := range d.Fields {
+			if fld.Name != field {
+				continue
 			}
+			for _, ev := range fld.EnvVars {
+				if v := f(ev); v != "" {
+					return v, "$" + ev, true
+				}
+			}
+			break
+		}
+		return "", "", false
+	}
+	// Custom providers resolve from their derived variable; EnvSource
+	// fails closed rather than falling back to an unrelated provider's key.
+	if field == "api_key" {
+		if v := f(envVarForProvider(providerName)); v != "" {
+			return v, "$" + envVarForProvider(providerName), true
 		}
 	}
 	return "", "", false
@@ -433,30 +365,14 @@ type Status struct {
 
 // DefaultModel returns a sensible model for a provider when none is given.
 func DefaultModel(providerName string) string {
-	switch providerName {
-	case "cloudflare-workers-ai":
-		return "@cf/moonshotai/kimi-k2.6"
-	case "cloudflare-ai-gateway":
-		return "claude-sonnet-4-5"
-	case "anthropic":
-		return "claude-opus-4-5"
-	case "openrouter":
-		return "openrouter/auto"
-	case "google-gemini":
-		return "gemini-2.5-flash"
-	case "ollama":
-		return "llama3"
-	case "llama-server":
-		return "default"
-	case "github-copilot":
-		return "gpt-4o"
-	case "huggingface":
-		// No reliable default: every model requires an enabled third-party
-		// provider in the user's HuggingFace dashboard.
-		return ""
-	default:
-		return "gpt-5"
+	name := strings.ToLower(strings.TrimSpace(providerName))
+	if name == "" {
+		name = "openai"
 	}
+	if d, ok := provider.Lookup(name); ok {
+		return d.DefaultModel
+	}
+	return "gpt-5"
 }
 
 func normalizeProvider(providerName string) string {
@@ -465,49 +381,6 @@ func normalizeProvider(providerName string) string {
 		return "openai"
 	}
 	return name
-}
-
-// ollamaBaseURL returns the Ollama base URL: OLLAMA_HOST when set, normalised
-// to include a scheme and the /v1 suffix, otherwise the local default.
-func ollamaBaseURL() string {
-	host := strings.TrimSpace(os.Getenv("OLLAMA_HOST"))
-	if host == "" {
-		return "http://localhost:11434/v1"
-	}
-	if !strings.Contains(host, "://") {
-		host = "http://" + host
-	}
-	return strings.TrimRight(host, "/") + "/v1"
-}
-
-// buildOllamaBaseURL constructs an Ollama base URL from decomposed host, port,
-// and protocol. Empty values default to localhost, 11434, and http.
-func buildOllamaBaseURL(host, port, protocol string) string {
-	if protocol == "" {
-		protocol = "http"
-	}
-	if host == "" {
-		host = "localhost"
-	}
-	if port == "" {
-		port = "11434"
-	}
-	return protocol + "://" + host + ":" + port + "/v1"
-}
-
-// buildLlamaBaseURL constructs a llama.cpp base URL from decomposed host,
-// port, and protocol. Empty values default to localhost, 8080, and http.
-func buildLlamaBaseURL(host, port, protocol string) string {
-	if protocol == "" {
-		protocol = "http"
-	}
-	if host == "" {
-		host = "localhost"
-	}
-	if port == "" {
-		port = "8080"
-	}
-	return protocol + "://" + host + ":" + port + "/v1"
 }
 
 // Prepare resolves a provider configuration from a CredentialSource.
@@ -520,170 +393,30 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 	cfg := Config{Provider: name, Model: model}
 	status := Status{Origins: map[string]string{}}
 
-	switch name {
-	case "cloudflare-workers-ai":
-		if key, origin, ok := src.Lookup(name, "api_key"); ok {
-			cfg.APIKey = key
-			status.Origins["api_key"] = origin
-		} else {
-			status.Missing = append(status.Missing, "api_key")
-		}
-		if acct, origin, ok := src.Lookup(name, "account_id"); ok {
-			cfg.BaseURL = "https://api.cloudflare.com/client/v4/accounts/" + acct
-			status.Origins["account_id"] = origin
-		} else {
-			status.Missing = append(status.Missing, "account_id")
-		}
-	case "cloudflare-ai-gateway":
-		if tok, origin, ok := src.Lookup(name, "token"); ok {
-			cfg.APIKey = tok
-			status.Origins["token"] = origin
-		} else {
-			status.Missing = append(status.Missing, "token")
-		}
-		var acct string
-		if a, origin, ok := src.Lookup(name, "account_id"); ok {
-			acct = a
-			status.Origins["account_id"] = origin
-		} else {
-			status.Missing = append(status.Missing, "account_id")
-		}
-		if base, origin, ok := src.Lookup(name, "base_url"); ok {
-			cfg.BaseURL = base
-			status.Origins["base_url"] = origin
-		} else if acct != "" {
-			cfg.BaseURL = "https://gateway.ai.cloudflare.com/v1/" + acct + "/default/compat"
-			status.Origins["base_url"] = "default"
-		}
-	case "anthropic":
-		if key, origin, ok := src.Lookup(name, "api_key"); ok {
-			cfg.APIKey = key
-			status.Origins["api_key"] = origin
-		} else {
-			status.Missing = append(status.Missing, "api_key")
-		}
-		cfg.BaseURL = "https://api.anthropic.com"
-	case "openai":
-		if key, origin, ok := src.Lookup(name, "api_key"); ok {
-			cfg.APIKey = key
-			status.Origins["api_key"] = origin
-		} else {
-			status.Missing = append(status.Missing, "api_key")
-		}
-		cfg.BaseURL = "https://api.openai.com/v1"
-	case "openrouter":
-		if key, origin, ok := src.Lookup(name, "api_key"); ok {
-			cfg.APIKey = key
-			status.Origins["api_key"] = origin
-		} else {
-			status.Missing = append(status.Missing, "api_key")
-		}
-		cfg.BaseURL = "https://openrouter.ai/api/v1"
-	case "google-gemini":
-		if key, origin, ok := src.Lookup(name, "api_key"); ok {
-			cfg.APIKey = key
-			status.Origins["api_key"] = origin
-		} else {
-			status.Missing = append(status.Missing, "api_key")
-		}
-		cfg.BaseURL = "https://generativelanguage.googleapis.com/v1beta/openai"
-	case "ollama":
-		cfg.APIKey = "ollama"
-		var hasHost, hasPort, hasProto bool
-		var host, port, protocol string
-		if h, origin, ok := src.Lookup(name, "host"); ok {
-			host = h
-			hasHost = true
-			status.Origins["host"] = origin
-		}
-		if p, origin, ok := src.Lookup(name, "port"); ok {
-			port = p
-			hasPort = true
-			status.Origins["port"] = origin
-		}
-		if pr, origin, ok := src.Lookup(name, "protocol"); ok {
-			protocol = pr
-			hasProto = true
-			status.Origins["protocol"] = origin
-		}
-		if hasHost || hasPort || hasProto {
-			cfg.BaseURL = buildOllamaBaseURL(host, port, protocol)
-		} else {
-			cfg.BaseURL = ollamaBaseURL()
-			status.Origins["base_url"] = "$OLLAMA_HOST"
-		}
-	case "llama-server":
-		// llama.cpp / llama-server uses an OpenAI-compatible local endpoint.
-		// A placeholder key keeps provider.New happy.
-		cfg.APIKey = "llama"
-		var hasHost, hasPort, hasProto bool
-		var host, port, protocol string
-		if h, origin, ok := src.Lookup(name, "host"); ok {
-			host = h
-			hasHost = true
-			status.Origins["host"] = origin
-		}
-		if p, origin, ok := src.Lookup(name, "port"); ok {
-			port = p
-			hasPort = true
-			status.Origins["port"] = origin
-		}
-		if pr, origin, ok := src.Lookup(name, "protocol"); ok {
-			protocol = pr
-			hasProto = true
-			status.Origins["protocol"] = origin
-		}
-		if hasHost || hasPort || hasProto {
-			cfg.BaseURL = buildLlamaBaseURL(host, port, protocol)
-		} else {
-			cfg.BaseURL = "http://localhost:8080/v1"
-			status.Origins["base_url"] = "default"
-		}
-	case "github-copilot":
-		if oauth, origin, ok := src.Lookup(name, "oauth_token"); ok {
-			cfg.APIKey = oauth
-			status.Origins["oauth_token"] = origin
-		} else {
-			status.Missing = append(status.Missing, "oauth_token")
-		}
-		cfg.BaseURL = "https://api.githubcopilot.com"
-		cfg.Auth = provider.AuthCopilot
-	case "huggingface":
-		if key, origin, ok := src.Lookup(name, "api_key"); ok {
-			cfg.APIKey = key
-			status.Origins["api_key"] = origin
-		} else {
-			status.Missing = append(status.Missing, "api_key")
-		}
-		// The HuggingFace router endpoint (not the defunct hf-inference
-		// provider).  Users must enable third-party providers in their
-		// HuggingFace dashboard; the router then picks from those providers.
-		cfg.BaseURL = "https://router.huggingface.co/v1"
-	default:
+	if d, ok := provider.Lookup(name); ok {
+		resolveBuiltin(&cfg, &status, d, src)
+	} else {
 		// Custom path: an unknown name must resolve to a configured profile.
-		// Built-in arms are reached first, so a profile named "openai" is never
+		// Built-in lookup is checked first, so a profile named "openai" is never
 		// consulted — the second layer of the shadowing defence.
 		ps, ok := src.(ProviderSource)
 		if !ok {
 			status.Missing = append(status.Missing, "provider")
-			break
-		}
-		prof, ok := ps.Profile(name)
-		if !ok {
+		} else if prof, ok := ps.Profile(name); !ok {
 			status.Missing = append(status.Missing, "provider")
-			break
-		}
-		cfg.BaseURL = prof.BaseURL
-		cfg.API = prof.API
-		cfg.Auth = prof.Auth
-		if cfg.Model == "" && len(prof.Models) > 0 {
-			cfg.Model = prof.Models[0]
-		}
-		if key, origin, ok := src.Lookup(name, "api_key"); ok {
-			cfg.APIKey = key
-			status.Origins["api_key"] = origin
 		} else {
-			status.Missing = append(status.Missing, "api_key")
+			cfg.BaseURL = prof.BaseURL
+			cfg.API = prof.API
+			cfg.Auth = prof.Auth
+			if cfg.Model == "" && len(prof.Models) > 0 {
+				cfg.Model = prof.Models[0]
+			}
+			if key, origin, ok := src.Lookup(name, "api_key"); ok {
+				cfg.APIKey = key
+				status.Origins["api_key"] = origin
+			} else {
+				status.Missing = append(status.Missing, "api_key")
+			}
 		}
 	}
 
@@ -709,6 +442,68 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 	}
 
 	return cfg, status
+}
+
+// resolveBuiltin fills cfg and status from the descriptor table. It keeps
+// the exact origins and missing-field behavior of the previous switch arms.
+func resolveBuiltin(cfg *Config, status *Status, d provider.Descriptor, src CredentialSource) {
+	// cfg.API stays empty for built-in providers; only custom profiles carry
+	// their surface so that request construction picks provider.New.
+	cfg.Auth = d.Auth
+
+	resolved := make(map[string]string, len(d.Fields))
+	for _, f := range d.Fields {
+		if v, origin, ok := src.Lookup(cfg.Provider, f.Name); ok {
+			resolved[f.Name] = v
+			status.Origins[f.Name] = origin
+		} else if !f.Optional {
+			status.Missing = append(status.Missing, f.Name)
+		}
+	}
+
+	cfg.BaseURL = d.BaseURL
+	if d.BaseURLBuilder != nil {
+		cfg.BaseURL = d.BaseURLBuilder(resolved)
+	}
+	if d.BaseURLField != "" {
+		if override, ok := resolved[d.BaseURLField]; ok && override != "" {
+			cfg.BaseURL = override
+			status.Origins["base_url"] = status.Origins[d.BaseURLField]
+		} else if cfg.Provider == "cloudflare-ai-gateway" && cfg.BaseURL != "" {
+			status.Origins["base_url"] = "default"
+		}
+	}
+
+	// Preserve legacy base_url origins for local servers.
+	switch cfg.Provider {
+	case "ollama":
+		if resolved["host"] == "" && resolved["port"] == "" && resolved["protocol"] == "" {
+			status.Origins["base_url"] = "$OLLAMA_HOST"
+		}
+	case "llama-server":
+		if resolved["host"] == "" && resolved["port"] == "" && resolved["protocol"] == "" {
+			status.Origins["base_url"] = "default"
+		}
+	}
+
+	// The first secret field is the provider's API key; local servers use a
+	// placeholder because they do not authenticate over the wire.
+	for _, f := range d.Fields {
+		if f.Secret {
+			cfg.APIKey = resolved[f.Name]
+			break
+		}
+	}
+	switch cfg.Provider {
+	case "ollama":
+		if cfg.APIKey == "" {
+			cfg.APIKey = "ollama"
+		}
+	case "llama-server":
+		if cfg.APIKey == "" {
+			cfg.APIKey = "llama"
+		}
+	}
 }
 
 // Resolve reads provider configuration from environment variables, mirroring
@@ -779,6 +574,51 @@ func ResolveWithSource(model, providerName string, env func(string) string, src 
 	}
 
 	return cfg, nil
+}
+
+// ollamaBaseURL returns the effective Ollama base URL from the environment,
+// or the localhost default. It is kept as a test seam.
+func ollamaBaseURL() string {
+	host := strings.TrimSpace(os.Getenv("OLLAMA_HOST"))
+	if host == "" {
+		return "http://localhost:11434/v1"
+	}
+	if !strings.Contains(host, "://") {
+		host = "http://" + host
+	}
+	return strings.TrimRight(host, "/") + "/v1"
+}
+
+// buildOllamaBaseURL constructs an Ollama base URL from decomposed host, port,
+// and protocol. Empty values default to localhost, 11434, and http. It is
+// kept as a test seam.
+func buildOllamaBaseURL(host, port, protocol string) string {
+	if protocol == "" {
+		protocol = "http"
+	}
+	if host == "" {
+		host = "localhost"
+	}
+	if port == "" {
+		port = "11434"
+	}
+	return protocol + "://" + host + ":" + port + "/v1"
+}
+
+// buildLlamaBaseURL constructs a llama.cpp base URL from decomposed host,
+// port, and protocol. Empty values default to localhost, 8080, and http. It
+// is kept as a test seam.
+func buildLlamaBaseURL(host, port, protocol string) string {
+	if protocol == "" {
+		protocol = "http"
+	}
+	if host == "" {
+		host = "localhost"
+	}
+	if port == "" {
+		port = "8080"
+	}
+	return protocol + "://" + host + ":" + port + "/v1"
 }
 
 // chat sends a raw system+user exchange and returns the assistant reply text.
@@ -933,7 +773,7 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 			key = token.Value
 		}
 		var p *provider.Provider
-		if cfg.API != "" {
+		if cfg.API != "" && !provider.Builtin(cfg.Provider) {
 			p, err = provider.NewFromProfile(cfg.Provider, provider.Profile{BaseURL: cfg.BaseURL, API: cfg.API, Auth: cfg.Auth}, key)
 		} else {
 			p, err = provider.New(cfg.Provider, cfg.BaseURL, key)

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"github.com/vulnetix/signet/internal/provider"
 )
 
 // Source identifies where a credential came from.
@@ -33,65 +35,30 @@ func (f Field) Host(provider string) string {
 	return providerHost(provider)
 }
 
+// convertField maps a provider descriptor field into a credentials.Field.
+func convertField(f provider.Field) Field {
+	return Field{
+		Name:     f.Name,
+		EnvVars:  f.EnvVars,
+		Secret:   f.Secret,
+		Optional: f.Optional,
+	}
+}
+
 // Spec returns the required fields for a provider.
-func Spec(provider string) []Field {
-	switch provider {
-	case "cloudflare-workers-ai":
-		return []Field{
-			{Name: "api_key", EnvVars: []string{"CLOUDFLARE_API_KEY"}, Secret: true},
-			{Name: "account_id", EnvVars: []string{"CLOUDFLARE_ACCOUNT_ID"}, Secret: false},
+func Spec(providerName string) []Field {
+	if d, ok := provider.Lookup(providerName); ok {
+		out := make([]Field, len(d.Fields))
+		for i, f := range d.Fields {
+			out[i] = convertField(f)
 		}
-	case "cloudflare-ai-gateway":
-		return []Field{
-			{Name: "token", EnvVars: []string{"CF_AIG_TOKEN"}, Secret: true},
-			{Name: "account_id", EnvVars: []string{"CF_ACCOUNT_ID", "CLOUDFLARE_ACCOUNT_ID"}, Secret: false},
-			{Name: "base_url", EnvVars: []string{"CF_AIG_URL"}, Secret: false, Optional: true},
-		}
-	case "anthropic":
-		return []Field{
-			{Name: "api_key", EnvVars: []string{"ANTHROPIC_API_KEY"}, Secret: true},
-		}
-	case "openai":
-		return []Field{
-			{Name: "api_key", EnvVars: []string{"OPENAI_API_KEY"}, Secret: true},
-		}
-	case "openrouter":
-		return []Field{
-			{Name: "api_key", EnvVars: []string{"OPENROUTER_API_KEY"}, Secret: true},
-		}
-	case "google-gemini":
-		return []Field{
-			{Name: "api_key", EnvVars: []string{"GEMINI_API_KEY", "GOOGLE_API_KEY"}, Secret: true},
-		}
-	case "ollama":
-		return []Field{
-			{Name: "host", EnvVars: []string{"SIGNET_OLLAMA_HOST"}, Secret: false, Optional: true},
-			{Name: "port", EnvVars: []string{"SIGNET_OLLAMA_PORT"}, Secret: false, Optional: true},
-			{Name: "protocol", EnvVars: []string{"SIGNET_OLLAMA_PROTOCOL"}, Secret: false, Optional: true},
-		}
-	case "llama-server":
-		return []Field{
-			{Name: "host", EnvVars: []string{"SIGNET_LLAMA_HOST"}, Secret: false, Optional: true},
-			{Name: "port", EnvVars: []string{"SIGNET_LLAMA_PORT"}, Secret: false, Optional: true},
-			{Name: "protocol", EnvVars: []string{"SIGNET_LLAMA_PROTOCOL"}, Secret: false, Optional: true},
-		}
-	case "github-copilot":
-		return []Field{
-			{Name: "oauth_token", EnvVars: []string{"GITHUB_COPILOT_TOKEN", "GH_TOKEN"}, Secret: true},
-		}
-	case "huggingface":
-		// Used for gated model downloads and as a chat provider via the
-		// Hugging Face OpenAI-compatible Serverless Inference API.
-		return []Field{
-			{Name: "api_key", EnvVars: []string{"HF_TOKEN", "HUGGINGFACE_TOKEN"}, Secret: true},
-		}
-	default:
-		// An unknown name is a custom provider, never a fallback to OpenAI.
-		// The derived variable is the fail-closed default; a profile's
-		// api_key_env is prepended by the resolver when one is configured.
-		return []Field{
-			{Name: "api_key", EnvVars: []string{EnvVarForProvider(provider)}, Secret: true},
-		}
+		return out
+	}
+	// An unknown name is a custom provider, never a fallback to OpenAI.
+	// The derived variable is the fail-closed default; a profile's
+	// api_key_env is prepended by the resolver when one is configured.
+	return []Field{
+		{Name: "api_key", EnvVars: []string{EnvVarForProvider(providerName)}, Secret: true},
 	}
 }
 
@@ -188,29 +155,9 @@ func Redact(text string, secrets []string) string {
 	return text
 }
 
-func providerHost(provider string) string {
-	switch provider {
-	case "openai":
-		return "api.openai.com"
-	case "anthropic":
-		return "api.anthropic.com"
-	case "cloudflare-workers-ai":
-		return "api.cloudflare.com"
-	case "cloudflare-ai-gateway":
-		return "gateway.ai.cloudflare.com"
-	case "openrouter":
-		return "openrouter.ai"
-	case "google-gemini":
-		return "generativelanguage.googleapis.com"
-	case "github-copilot":
-		return "api.githubcopilot.com"
-	case "huggingface":
-		return "huggingface.co"
-	case "ollama":
-		return "localhost"
-	case "llama-server":
-		return "localhost"
-	default:
-		return ""
+func providerHost(providerName string) string {
+	if d, ok := provider.Lookup(providerName); ok {
+		return d.NetrcHost
 	}
+	return ""
 }

@@ -2,7 +2,11 @@
 // ids per provider, their effort levels, and the thinking-budget mapping.
 package models
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/vulnetix/signet/internal/provider"
+)
 
 // Model is one selectable model in a provider's catalog.
 type Model struct {
@@ -20,71 +24,28 @@ var defaultEfforts = []string{"low", "medium", "high"}
 func DefaultEfforts() []string { return defaultEfforts }
 
 // Catalog returns the selectable models for a provider, in display order.
-func Catalog(provider string) []Model {
-	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "anthropic":
-		return []Model{
-			{ID: "claude-opus-4-5", Label: "Claude Opus 4.5", Efforts: defaultEfforts},
-			{ID: "claude-sonnet-4-5", Label: "Claude Sonnet 4.5", Efforts: defaultEfforts},
-			{ID: "claude-haiku-4-5", Label: "Claude Haiku 4.5", Efforts: defaultEfforts},
+func Catalog(providerName string) []Model {
+	if d, ok := provider.Lookup(providerName); ok {
+		if len(d.Models) == 0 {
+			return nil
 		}
-	case "cloudflare-workers-ai":
-		return []Model{
-			{ID: "@cf/moonshotai/kimi-k2.6", Label: "Kimi K2.6", Efforts: defaultEfforts},
-			{ID: "@cf/openai/gpt-oss-120b", Label: "GPT-OSS 120B", Efforts: defaultEfforts},
-			{ID: "@cf/meta/llama-4-scout-17b-16e-instruct", Label: "Llama 4 Scout", Efforts: defaultEfforts},
-			{ID: "@cf/qwen/qwen3-30b-a3b-fp8", Label: "Qwen3 30B", Efforts: defaultEfforts},
+		out := make([]Model, len(d.Models))
+		for i, m := range d.Models {
+			out[i] = Model{
+				ID:            m.ID,
+				Label:         m.Label,
+				Efforts:       m.Efforts,
+				ContextWindow: m.ContextWindow,
+			}
+			if len(out[i].Efforts) == 0 {
+				out[i].Efforts = defaultEfforts
+			}
 		}
-	case "cloudflare-ai-gateway":
-		return []Model{
-			{ID: "claude-sonnet-4-5", Label: "Claude Sonnet 4.5", Efforts: defaultEfforts},
-			{ID: "claude-opus-4-5", Label: "Claude Opus 4.5", Efforts: defaultEfforts},
-			{ID: "gpt-5", Label: "GPT-5", Efforts: defaultEfforts},
-		}
-	case "openai":
-		return []Model{
-			{ID: "gpt-5", Label: "GPT-5", Efforts: defaultEfforts},
-			{ID: "gpt-5-mini", Label: "GPT-5 Mini", Efforts: defaultEfforts},
-			{ID: "gpt-4.1", Label: "GPT-4.1", Efforts: defaultEfforts},
-		}
-	case "openrouter":
-		return []Model{
-			{ID: "openrouter/auto", Label: "OpenRouter Auto", Efforts: defaultEfforts},
-			{ID: "openai/gpt-4o", Label: "GPT-4o", Efforts: defaultEfforts},
-			{ID: "anthropic/claude-3.5-sonnet", Label: "Claude 3.5 Sonnet", Efforts: defaultEfforts},
-			{ID: "google/gemini-2.5-flash", Label: "Gemini 2.5 Flash", Efforts: defaultEfforts},
-		}
-	case "google-gemini":
-		return []Model{
-			{ID: "gemini-2.5-flash", Label: "Gemini 2.5 Flash", Efforts: defaultEfforts},
-			{ID: "gemini-2.5-pro", Label: "Gemini 2.5 Pro", Efforts: defaultEfforts},
-			{ID: "gemini-2.0-flash", Label: "Gemini 2.0 Flash", Efforts: defaultEfforts},
-		}
-	case "ollama":
-		// Ollama's model list is host-specific and unknowable offline: the
-		// catalogue is empty and the model id is typed or imported.
-		return nil
-	case "llama-server":
-		// llama.cpp loads a single model at startup; the model id is whatever
-		// the server was started with and is typed directly.
-		return nil
-	case "github-copilot":
-		return []Model{
-			{ID: "gpt-4o", Label: "GPT-4o", Efforts: defaultEfforts},
-			{ID: "claude-sonnet-4-5", Label: "Claude Sonnet 4.5", Efforts: defaultEfforts},
-			{ID: "o3-mini", Label: "o3 Mini", Efforts: defaultEfforts},
-		}
-	case "huggingface":
-		// The catalogue is live-fetched from the router's /v1/models endpoint;
-		// there is no static fallback because model availability depends on the
-		// Inference Providers the user has enabled in their HuggingFace
-		// dashboard. Users can still type any model id directly.
-		return nil
-	default:
-		// Unknown names are custom providers; their catalogue comes from the
-		// profile, never the OpenAI list.
-		return nil
+		return out
 	}
+	// Unknown names are custom providers; their catalogue comes from the
+	// profile, never the OpenAI list.
+	return nil
 }
 
 // Efforts returns the effort levels for a model, falling back to the default

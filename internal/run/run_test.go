@@ -818,8 +818,11 @@ func TestPrepareIgnoresProfileShadowingBuiltin(t *testing.T) {
 	if cfg.BaseURL != "https://api.openai.com/v1" {
 		t.Fatalf("BaseURL = %q", cfg.BaseURL)
 	}
-	if cfg.API != "" || cfg.Auth != "" {
-		t.Fatalf("built-in must not pick up custom API/Auth: %+v", cfg)
+	// With the data-driven registry built-in providers now carry the
+	// descriptor's surface and auth style, so only the base URL is evidence
+	// that a custom profile did not shadow the built-in.
+	if cfg.BaseURL == "https://evil.example/v1" {
+		t.Fatalf("built-in openai must not be shadowed by a profile")
 	}
 }
 
@@ -978,14 +981,27 @@ func TestPrepareOllamaDecomposedFields(t *testing.T) {
 	}
 }
 
-func TestBuildOllamaBaseURLDefaults(t *testing.T) {
-	if got := buildOllamaBaseURL("", "", ""); got != "http://localhost:11434/v1" {
+func TestOllamaBaseURLBuilderDefaults(t *testing.T) {
+	cfg, status := Prepare("", "ollama", fakeSource{})
+	if !status.Configured {
+		t.Fatalf("expected configured, missing=%v", status.Missing)
+	}
+	if got := cfg.BaseURL; got != "http://localhost:11434/v1" {
 		t.Fatalf("empty parts = %q", got)
 	}
-	if got := buildOllamaBaseURL("myhost", "", ""); got != "http://myhost:11434/v1" {
+	src := fakeSource{vals: map[string]string{
+		"ollama:host": "myhost",
+	}}
+	cfg, _ = Prepare("", "ollama", src)
+	if got := cfg.BaseURL; got != "http://myhost:11434/v1" {
 		t.Fatalf("host only = %q", got)
 	}
-	if got := buildOllamaBaseURL("", "8080", "https"); got != "https://localhost:8080/v1" {
+	src = fakeSource{vals: map[string]string{
+		"ollama:port":     "8080",
+		"ollama:protocol": "https",
+	}}
+	cfg, _ = Prepare("", "ollama", src)
+	if got := cfg.BaseURL; got != "https://localhost:8080/v1" {
 		t.Fatalf("port+protocol only = %q", got)
 	}
 }
