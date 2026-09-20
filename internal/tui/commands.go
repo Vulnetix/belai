@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -204,7 +205,15 @@ func NewRegistry(workdir string) *Registry {
 				if err != nil {
 					return vulnetixDoneMsg{err: err}
 				}
-				return vulnetixDoneMsg{report: commands.Report{Status: commands.Vulnetix{}.StatusText(vulnetixcli.Probe(context.Background(), *cli, vulnetixcli.ProbeOptions{Observer: a}))}}
+				if !a.vulnetixConfigState.probedAt.IsZero() && time.Since(a.vulnetixConfigState.probedAt) < 5*time.Minute {
+					return vulnetixDoneMsg{report: commands.Report{Status: commands.Vulnetix{}.StatusText(a.vulnetixConfigState.cap)}}
+				}
+				return func() tea.Msg {
+					cap := vulnetixcli.Probe(context.Background(), *cli, vulnetixcli.ProbeOptions{
+						Observer: quietObserver{a},
+					})
+					return vulnetixDoneMsg{report: commands.Report{Status: commands.Vulnetix{}.StatusText(cap)}}
+				}
 			case commands.ActionFirewall:
 				return a.toggleFirewall()
 			case commands.ActionHelp:
@@ -277,6 +286,13 @@ func NewRegistry(workdir string) *Registry {
 			a.addSystem("yolo: on turns both guardrails and ask off; off restores the settings-file values")
 			return nil
 		}
+	})
+	r.Register("add-dir", "add a directory to the current workspace", nil, func(a *App, arg string) tea.Cmd {
+		arg = strings.TrimSpace(arg)
+		if arg == "" {
+			return a.push(viewAddDir)
+		}
+		return a.addWorkspaceDirCmd(arg)
 	})
 	r.Register("help", "show commands and keyboard shortcuts", nil, func(a *App, arg string) tea.Cmd {
 		a.addSystem(helpText(a.registry))

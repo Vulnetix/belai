@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -71,6 +72,9 @@ type Entry struct {
 	RepoMapState string      `json:"repo_map_state,omitempty"` // absent|running|ready|failed
 	RepoMapOwner string      `json:"repo_map_owner,omitempty"` // session id that claimed it
 	RepoMapAt    time.Time   `json:"repo_map_at,omitempty"`
+	// WorkspaceDirs are additional directories added to the session with
+	// /add-dir and persisted globally for this project.
+	WorkspaceDirs []string `json:"workspace_dirs,omitempty"`
 }
 
 // File is the on-disk JSON shape.
@@ -376,6 +380,122 @@ func ClaimRepoMap(workdir, head, owner string) (bool, error) {
 		return nil
 	})
 	return claimed, err
+}
+
+// AddWorkspaceDir persists dir as an additional workspace directory for
+// workdir. It resolves symlinks, requires a directory, and rejects roots
+// that overlap an existing workspace root for the same project so one path
+// is never resolvable two ways.
+func AddWorkspaceDir(workdir, dir string) error {
+	return Mutate(func(r *Registry) error {
+		return r.addWorkspaceDir(workdir, dir)
+	})
+}
+
+func (r *Registry) addWorkspaceDir(workdir, dir string) error {
+	r.observe(workdir, SourceWorkdir)
+	key := entryKey(workdir)
+	e := r.entryByKey(key)
+	if e == nil {
+		return fmt.Errorf("no registry entry for %s", workdir)
+	}
+
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return err
+	}
+	abs, err = filepath.EvalSymlinks(abs)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("not a directory: %s", dir)
+	}
+
+	for _, existing := range e.WorkspaceDirs {
+		if abs == existing || strings.HasPrefix(abs, existing+string(filepath.Separator)) || strings.HasPrefix(existing, abs+string(filepath.Separator)) {
+			return fmt.Errorf("workspace directory overlaps an existing root")
+		}
+	}
+	e.WorkspaceDirs = append(e.WorkspaceDirs, abs)
+	return nil
+}
+
+// WorkspaceDirs returns the persisted additional workspace directories for
+// workdir, in insertion order.
+func WorkspaceDirs(workdir string) []string {
+	reg, err := Load()
+	if err != nil {
+		return nil
+	}
+	if e := reg.entryByKey(entryKey(workdir)); e != nil {
+		out := make([]string, len(e.WorkspaceDirs))
+		copy(out, e.WorkspaceDirs)
+		return out
+	}
+	return nil
+}
+
+// SetWorkspaceDirs replaces the stored workspace directories for workdir.
+// It is used after a project-layer allowlist filters out blocked entries.
+func SetWorkspaceDirs(workdir string, dirs []string) error {
+	return Mutate(func(r *Registry) error {
+		r.observe(workdir, SourceWorkdir)
+		e := r.entryByKey(entryKey(workdir))
+		if e == nil {
+			return nil
+		}
+		copy := make([]string, len(dirs))
+		for i, d := range dirs {
+			copy[i] = d
+		}
+		e.WorkspaceDirs = copy
+		return nil
+	})
+}
+
+// ResolveWorkspaceDirs returns the workspace directories that should be
+// attached to a session for workdir. It trusts the registry's persisted
+// list, but when allowed is non-empty it filters the list to members of
+// allowed. Blocked entries are removed from the registry.
+func ResolveWorkspaceDirs(workdir string, allowed []string) ([]string, error) {
+	reg := WorkspaceDirs(workdir)
+	if len(allowed) == 0 {
+		return reg, nil
+	}
+
+	allowedSet := make(map[string]bool, len(allowed))
+	for _, d := range allowed {
+		abs, err := filepath.Abs(d)
+		if err != nil {
+			abs = d
+		}
+		abs, err = filepath.EvalSymlinks(abs)
+		if err != nil {
+			abs = d
+		}
+		allowedSet[abs] = true
+	}
+
+	var filtered []string
+	var blocked []string
+	for _, d := range reg {
+		if allowedSet[d] {
+			filtered = append(filtered, d)
+		} else {
+			blocked = append(blocked, d)
+		}
+	}
+	if len(blocked) > 0 {
+		if err := SetWorkspaceDirs(workdir, filtered); err != nil {
+			return nil, err
+		}
+	}
+	return filtered, nil
 }
 
 // StoreRepoMap stores a scanned map for a project's HEAD.

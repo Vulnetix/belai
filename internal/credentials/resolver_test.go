@@ -3,8 +3,12 @@ package credentials
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/signet/internal/vulnetixcreds"
 )
 
 func TestResolveOrderEnvWins(t *testing.T) {
@@ -213,5 +217,70 @@ func TestKeychainAvailabilityProbedOnce(t *testing.T) {
 
 	if kc.calls != 1 {
 		t.Fatalf("keychain.Available called %d times, want 1", kc.calls)
+	}
+}
+
+func TestFirewallStateOffStillAvailable(t *testing.T) {
+	r := &Resolver{
+		env:              func(string) string { return "" },
+		settings:         config.Settings{},
+		vulnetixKeychain: &fakeKeychain{},
+		keychain:         &fakeKeychain{},
+	}
+	// Pre-seed a valid credential so availability comes down to the
+	// provider slug, not the credential load.
+	r.vulnetixCredOnce.Do(func() {})
+	r.vulnetixCred = vulnetixcreds.Credential{OrgUUID: "org-123", APIKey: "vk"}
+	st := r.FirewallState("anthropic")
+	if st.Reason != "" {
+		t.Fatalf("expected available with firewall off, got %q", st.Reason)
+	}
+	if !st.Routable || !st.HasCred || st.BaseURL == "" {
+		t.Fatalf("state = %+v", st)
+	}
+	if _, _, ok := r.Firewall("anthropic"); ok {
+		t.Fatal("Firewall() must stay off when settings flag is false")
+	}
+}
+
+func TestFirewallStateUnroutableProviderNamesSet(t *testing.T) {
+	r := &Resolver{
+		env:              func(string) string { return "" },
+		settings:         config.Settings{},
+		vulnetixKeychain: &fakeKeychain{},
+		keychain:         &fakeKeychain{},
+	}
+	r.vulnetixCredOnce.Do(func() {})
+	r.vulnetixCred = vulnetixcreds.Credential{OrgUUID: "org", APIKey: "k"}
+	st := r.FirewallState("cloudflare-ai-gateway")
+	if st.Reason == "" {
+		t.Fatal("expected reason for unroutable provider")
+	}
+	want := "cloudflare-ai-gateway"
+	if strings.Contains(st.Reason, want) && strings.Contains(st.Reason, "routable providers:") {
+		// good
+	} else {
+		t.Fatalf("reason = %q", st.Reason)
+	}
+}
+
+func TestFirewallEnabledOverrideFlipsWithoutRebuild(t *testing.T) {
+	r := &Resolver{
+		env:              func(string) string { return "" },
+		settings:         config.Settings{},
+		vulnetixKeychain: &fakeKeychain{},
+		keychain:         &fakeKeychain{},
+	}
+	r.vulnetixCredOnce.Do(func() {})
+	r.vulnetixCred = vulnetixcreds.Credential{OrgUUID: "org", APIKey: "k"}
+	on := true
+	r.SetFirewallEnabled(&on)
+	if _, _, ok := r.Firewall("anthropic"); !ok {
+		t.Fatal("override on should enable firewall")
+	}
+	off := false
+	r.SetFirewallEnabled(&off)
+	if _, _, ok := r.Firewall("anthropic"); ok {
+		t.Fatal("override off should disable firewall")
 	}
 }

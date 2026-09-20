@@ -128,6 +128,7 @@ func keySections() []keySection {
 			{"c", "open credentials"},
 			{"g", "open the classifier model page"},
 			{"enter", "use this model"},
+			{"backspace", "delete a filter character"},
 			{"esc", "clear the filter, then back"},
 		}},
 		{"/classifier", []keyBinding{

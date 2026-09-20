@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/vulnetix/signet/internal/aifirewall"
@@ -36,6 +37,10 @@ type Resolver struct {
 	vulnetixCred     vulnetixcreds.Credential
 	vulnetixCredErr  error
 	vulnetixKeychain Keychain
+
+	// firewallEnabledOverride lets the TUI toggle the firewall flag for this
+	// process without rewriting the settings file. nil means use settings.
+	firewallEnabledOverride *bool
 }
 
 // keychainAvailable reports whether the host keychain is reachable, probing
@@ -158,26 +163,93 @@ func (r *Resolver) loadVulnetixCred() (vulnetixcreds.Credential, error) {
 	return r.vulnetixCred, r.vulnetixCredErr
 }
 
+// FirewallState describes why the AI Firewall can or cannot route a provider
+// independently of the enabled flag.
+type FirewallState struct {
+	Routable bool // provider has a gateway slug
+	Slug     string
+	HasCred  bool // a gateway credential resolved
+	OrgUUID  string
+	Gateway  string // resolved gateway host
+	BaseURL  string // populated only when Routable && HasCred
+	APIKey   string
+	Reason   string // empty when Routable && HasCred
+}
+
+// FirewallState returns the reasoned firewall availability for provider without
+// consulting the firewall enabled flag. It is the source of truth for honest
+// availability messages.
+func (r *Resolver) FirewallState(provider string) FirewallState {
+	st := FirewallState{}
+	slug, ok := aifirewall.Slug(provider)
+	st.Routable = ok
+	st.Slug = slug
+	if !ok {
+		st.Reason = fmt.Sprintf("provider %q cannot be routed through the gateway — routable providers: %s", provider, strings.Join(aifirewall.Providers(), ", "))
+		return st
+	}
+	cred, err := r.loadVulnetixCred()
+	if err != nil {
+		st.Reason = err.Error()
+		return st
+	}
+	if cred.OrgUUID == "" || cred.APIKey == "" {
+		errNoCred := vulnetixcreds.ErrNoGatewayCredential
+		if errNoCred != nil {
+			st.Reason = errNoCred.Error()
+		} else {
+			st.Reason = "no Vulnetix credential found"
+		}
+		return st
+	}
+	st.HasCred = true
+	st.OrgUUID = cred.OrgUUID
+	st.APIKey = cred.APIKey
+	st.Gateway = aifirewall.DefaultGateway
+	if r.settings.Vulnetix != nil {
+		st.Gateway = r.settings.Vulnetix.GatewayURLOrDefault()
+	}
+	st.BaseURL = aifirewall.BaseURL(st.Gateway, slug, cred.OrgUUID)
+	return st
+}
+
 // Firewall implements run.FirewallSource. It returns ok=true when the firewall
 // setting is on, a usable Vulnetix credential exists, and the provider can be
 // routed through the gateway.
 func (r *Resolver) Firewall(provider string) (baseURL, apiKey string, ok bool) {
-	if !r.settings.FirewallEnabled() {
+	if !r.firewallEnabled() {
 		return "", "", false
 	}
-	cred, err := r.loadVulnetixCred()
-	if err != nil || cred.OrgUUID == "" || cred.APIKey == "" {
+	st := r.FirewallState(provider)
+	if st.Reason != "" {
 		return "", "", false
 	}
-	slug, ok := aifirewall.Slug(provider)
-	if !ok {
-		return "", "", false
+	return st.BaseURL, st.APIKey, true
+}
+
+// firewallEnabled reads the override first, then the settings file.
+func (r *Resolver) firewallEnabled() bool {
+	if r.firewallEnabledOverride != nil {
+		return *r.firewallEnabledOverride
 	}
-	gateway := aifirewall.DefaultGateway
-	if r.settings.Vulnetix != nil {
-		gateway = r.settings.Vulnetix.GatewayURLOrDefault()
-	}
-	return aifirewall.BaseURL(gateway, slug, cred.OrgUUID), cred.APIKey, true
+	return r.settings.FirewallEnabled()
+}
+
+// SetSettings replaces the resolver's settings snapshot after a live edit.
+func (r *Resolver) SetSettings(s config.Settings) {
+	r.settings = s
+}
+
+// SetFirewallEnabled overrides the settings-file firewall flag. Pass nil to
+// restore the settings-file value.
+func (r *Resolver) SetFirewallEnabled(on *bool) {
+	r.firewallEnabledOverride = on
+}
+
+// RefreshVulnetixCred resets the cached Vulnetix credential so the next
+// Firewall/FirewallState call re-reads it from disk/keyring.
+func (r *Resolver) RefreshVulnetixCred() {
+	r.vulnetixCredOnce = sync.Once{}
 }
 
 // Resolve returns a Set containing every known value and every missing field.

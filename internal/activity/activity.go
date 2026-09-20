@@ -60,6 +60,10 @@ type Activity struct {
 	// round-tripped to the model (e.g. the repo-map scan). It still appears in
 	// the drawer's honest register.
 	Silent bool
+	// Quiet suppresses the transcript start/finish lines. The activity still
+	// appears in the runs panel (f9). Silent already suppresses the model
+	// round-trip; Quiet suppresses the chat noise.
+	Quiet bool
 }
 
 // ErrNotFound is returned by Kill for an unknown id.

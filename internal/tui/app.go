@@ -324,8 +324,17 @@ type App struct {
 	vulnetixArtifactsState vulnetixArtifactsState
 	promptsState           promptsViewState
 
+	// dirPickState drives the /add-dir directory picker.
+	dirPickState dirPickState
+
 	// which providers the pickers may offer, filled by an async probe
 	avail providerAvailability
+
+	// workspaceDirs are additional directories added to the session with
+	// /add-dir; they widen the tool confinement boundary.
+	workspaceDirs []string
+	// workspaceMaps hold the harness-computed repo maps for workspaceDirs.
+	workspaceMaps []repomap.Map
 
 	// live model catalogue cache (on-demand fetch)
 	catalogCache   map[string][]models.Model
@@ -743,6 +752,7 @@ func New(opts Options) *App {
 	}
 	a.applyGitInfo(gitinfo.Detect(a.workdir))
 	a.loadAgents()
+	a.loadWorkspaceDirs()
 	_ = a.editor.Focus()
 
 	if startErr != "" {
@@ -876,6 +886,9 @@ func (a *App) Init() tea.Cmd {
 	if a.pending != "" && a.status.Configured {
 		cmds = append(cmds, a.sendPending())
 	}
+	// Discover the Vulnetix CLI quietly on startup so the footer and
+	// /vulnetix configure view have fresh capabilities from the first frame.
+	cmds = append(cmds, a.probeVulnetixSilentCmd())
 	return tea.Batch(cmds...)
 }
 
@@ -1436,7 +1449,11 @@ type sessionBuildParams struct {
 	live *posture.Live
 	// guardrails is the operator's current switch, so the plan-mode surface is
 	// built from the effective value rather than the raw persisted setting.
-	guardrails   bool
+	guardrails bool
+	// posture is the effective policy for this session, computed as the
+	// strictest policy across the primary workdir and any added workspace
+	// directories.
+	posture      posture.Policy
 	planMode     bool
 	allowClarify bool
 	// profile is the engaged agent definition, if any. Its provider/model/
@@ -1451,23 +1468,40 @@ type sessionBuildParams struct {
 	// repoMap is the harness-computed repository map handed to the session's
 	// system block.
 	repoMap repomap.Map
+	// workspaceDirs are additional directories added to the session with
+	// /add-dir; they widen the tool confinement boundary.
+	workspaceDirs []string
+	// workspaceMaps hold the harness-computed repo maps for workspaceDirs.
+	workspaceMaps []repomap.Map
 }
 
 func (a *App) sessionBuildParams() sessionBuildParams {
 	p, _ := a.engagedProfile()
+	pol := a.posture
+	if a.guardrailsEnabled() {
+		merged, err := posture.ForDirs(a.workdir, a.workspaceDirs)
+		if err == nil {
+			pol = merged
+		}
+	} else {
+		pol = posture.AllIgnore()
+	}
 	return sessionBuildParams{
-		workdir:      a.workdir,
-		settings:     a.settings,
-		cfg:          a.cfg,
-		client:       a.client,
-		live:         a.live,
-		guardrails:   a.guardrailsEnabled(),
-		planMode:     a.planMode,
-		allowClarify: true,
-		profile:      p,
-		toolAllow:    a.engagedAgentTools(),
-		agentPool:    a.agentPool,
-		repoMap:      a.repoMap,
+		workdir:       a.workdir,
+		settings:      a.settings,
+		cfg:           a.cfg,
+		client:        a.client,
+		live:          a.live,
+		guardrails:    a.guardrailsEnabled(),
+		posture:       pol,
+		planMode:      a.planMode,
+		allowClarify:  true,
+		profile:       p,
+		toolAllow:     a.engagedAgentTools(),
+		agentPool:     a.agentPool,
+		repoMap:       a.repoMap,
+		workspaceDirs: a.workspaceDirs,
+		workspaceMaps: a.workspaceMaps,
 	}
 }
 
@@ -1529,8 +1563,9 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		// subagent never does.
 		AllowPassLoop: true,
 		// Explore fan-out is capped by the shared FIFO pool the TUI owns.
-		AgentPool: p.agentPool,
-		RepoMap:   &p.repoMap,
+		AgentPool:     p.agentPool,
+		RepoMap:       &p.repoMap,
+		WorkspaceMaps: p.workspaceMaps,
 	})
 }
 
@@ -1657,6 +1692,19 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case artifactsLoadedMsg:
 		return a, a.handleArtifactsLoaded(m)
+
+	case dirPickLoadedMsg:
+		a.handleDirPickLoaded(m)
+		return a, nil
+
+	case workspaceDirAddedMsg:
+		return a, a.handleWorkspaceDirAdded(m)
+
+	case workspaceMapReadyMsg:
+		if m.err == nil && m.m.Head != "" {
+			a.workspaceMaps = append(a.workspaceMaps, m.m)
+		}
+		return a, nil
 
 	case agentBuilderDoneMsg:
 		return a, a.handleAgentBuilderDone(m)
@@ -3749,6 +3797,10 @@ func (a *App) reloadSettings() error {
 	}
 	a.settings = eff.Settings
 	a.eff = eff
+	if a.resolver != nil {
+		a.resolver.SetSettings(a.settings)
+		a.resolver.SetFirewallEnabled(a.firewallOverride)
+	}
 	if a.agentPool != nil {
 		a.agentPool.SetSize(a.settings.Resilience.MaxAgentsOr(3))
 	}
@@ -3847,19 +3899,14 @@ func (a *App) firewallEnabled() bool {
 	return a.settings.FirewallEnabled()
 }
 
-// firewallAvailable reports whether a Vulnetix credential can be resolved for
-// the configured provider. The result is cached in a.session-level memo.
+// firewallAvailable reports whether the AI Firewall can route the current
+// provider, independently of the enabled flag. The resolver's reasoned state
+// is the single source of truth.
 func (a *App) firewallAvailable() bool {
-	if !a.firewallEnabled() {
-		// Even when off we can still tell whether the CLI/credential is
-		// present by trying to resolve it.
-	}
 	if a.resolver == nil {
 		return false
 	}
-	base, _, ok := a.resolver.Firewall(a.cfg.Provider)
-	_ = base
-	return ok
+	return a.resolver.FirewallState(a.cfg.Provider).Reason == ""
 }
 
 // engagedProfile returns the currently engaged agent definition, if any.
@@ -3875,14 +3922,22 @@ func (a *App) engagedProfile() (agentprofile.AgentProfile, bool) {
 }
 
 // toggleFirewall flips the firewall override, persists it through the
-// settings mutation seam, and refreshes the footer. When the Vulnetix
-// credential is not available it prints a pointer and leaves state unchanged.
+// settings mutation seam, and refreshes the footer. Turning on when the
+// firewall is unavailable prints the real reason and leaves state unchanged;
+// turning off is never blocked.
 func (a *App) toggleFirewall() tea.Cmd {
-	if !a.firewallAvailable() {
-		a.addSystem("Vulnetix CLI is not configured — run /vulnetix configure to use the Firewall")
+	on := !a.firewallEnabled()
+	if on && !a.firewallAvailable() {
+		if a.resolver != nil {
+			st := a.resolver.FirewallState(a.cfg.Provider)
+			if st.Reason != "" {
+				a.addSystem("Vulnetix AI Firewall: " + st.Reason)
+				return nil
+			}
+		}
+		a.addSystem("Vulnetix AI Firewall: unavailable")
 		return nil
 	}
-	on := !a.firewallEnabled()
 	a.firewallOverride = &on
 	if err := a.mutateSetting(func(s *config.Settings) {
 		if s.Vulnetix == nil {
@@ -3893,7 +3948,10 @@ func (a *App) toggleFirewall() tea.Cmd {
 		a.addSystem("firewall toggle failed: " + err.Error())
 		return nil
 	}
-	// reloadSettings was called by mutateSetting; refresh cfg and footer.
+	// reloadSettings was called by mutateSetting; push override and refresh.
+	if a.resolver != nil {
+		a.resolver.SetFirewallEnabled(a.firewallOverride)
+	}
 	if cfg, err := a.resolveConfig(); err == nil {
 		a.cfg = cfg
 	}
@@ -3917,9 +3975,10 @@ func (a *App) resolveConfig() (run.Config, error) {
 func (a *App) firewallOnMessage() string {
 	var gateway, org string
 	if a.resolver != nil {
-		if base, _, ok := a.resolver.Firewall(a.cfg.Provider); ok {
-			gateway = aifirewall.HostOf(base)
-			org = aifirewall.URLPathUUID(base)
+		st := a.resolver.FirewallState(a.cfg.Provider)
+		if st.Reason == "" {
+			gateway = aifirewall.HostOf(st.BaseURL)
+			org = aifirewall.URLPathUUID(st.BaseURL)
 		}
 	}
 	msg := "Vulnetix AI Firewall on"
@@ -4627,6 +4686,7 @@ func (a *App) handleVulnetixDone(m vulnetixDoneMsg) tea.Cmd {
 func (a *App) handleVulnetixProbe(m vulnetixProbeMsg) tea.Cmd {
 	a.vulnetixConfigState.cap = m.cap
 	a.vulnetixConfigState.loading = false
+	a.vulnetixConfigState.probedAt = time.Now()
 	if m.err != nil {
 		a.vulnetixConfigState.errorMsg = m.err.Error()
 	}

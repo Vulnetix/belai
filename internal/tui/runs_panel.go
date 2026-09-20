@@ -437,12 +437,12 @@ func (a *App) handleActivityEvent(m activityEventMsg) tea.Cmd {
 	var cmd tea.Cmd
 	switch act.State {
 	case activity.StateRunning:
-		if !a.activityAnnounced[act.ID] {
+		if !a.activityAnnounced[act.ID] && !act.Quiet {
 			a.activityAnnounced[act.ID] = true
 			a.addSystem("▸ " + act.Label + " started — f9 for output")
 		}
 	case activity.StateDone, activity.StateFailed, activity.StateKilled:
-		if !a.activityFinished[act.ID] {
+		if !a.activityFinished[act.ID] && !act.Quiet {
 			a.activityFinished[act.ID] = true
 			a.addSystem(a.activityFinishLine(act))
 			if !act.Silent {
@@ -473,6 +473,13 @@ func (a *App) activityFinishLine(act activity.Activity) string {
 // callback. It never mutates App state (it runs on the exec goroutine); the TUI
 // reacts to the registry event stream instead.
 func (a *App) Start(name string, argv []string, dir string, cancel context.CancelFunc) (func(string), func(int, bool, error)) {
+	return a.startActivity(name, argv, dir, cancel, false, false)
+}
+
+// startActivity registers an activity with optional silent/quiet flags and
+// returns its output callbacks. Quiet suppresses transcript announcements and
+// the model round-trip; the activity still appears in the runs panel.
+func (a *App) startActivity(name string, argv []string, dir string, cancel context.CancelFunc, silent, quiet bool) (func(string), func(int, bool, error)) {
 	if a.activity == nil {
 		return func(string) {}, func(int, bool, error) {}
 	}
@@ -483,11 +490,23 @@ func (a *App) Start(name string, argv []string, dir string, cancel context.Cance
 		Dir:         dir,
 		ProjectRoot: dir,
 		State:       activity.StateRunning,
+		Silent:      silent,
+		Quiet:       quiet,
 	}, cancel)
 	return func(line string) { h.Append(line) }, func(exitCode int, timedOut bool, err error) {
 		h.SetTargets(a.vulnetixTargets(dir))
 		h.Finish(exitCode, timedOut, err)
 	}
+}
+
+// quietObserver registers probe subprocesses in the runs panel without
+// announcing them or round-tripping their output to the model. The probe's
+// argv is fixed and its rendering is harness-composed, so it takes the quiet
+// path. No classification exemption is added anywhere.
+type quietObserver struct{ a *App }
+
+func (q quietObserver) Start(name string, argv []string, dir string, cancel context.CancelFunc) (func(string), func(int, bool, error)) {
+	return q.a.startActivity(name, argv, dir, cancel, false, true)
 }
 
 // vulnetixTargets enumerates the artifacts a run produced, excluding signet's

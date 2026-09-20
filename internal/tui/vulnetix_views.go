@@ -24,6 +24,7 @@ type vulnetixConfigState struct {
 	cap      vulnetixcli.Capabilities
 	loading  bool
 	errorMsg string
+	probedAt time.Time
 }
 
 type vulnetixListState struct {
@@ -65,6 +66,25 @@ func (a *App) probeVulnetixCmd() tea.Cmd {
 			Client:      a.client,
 			SkipNetwork: false,
 			Observer:    a,
+		})
+		return vulnetixProbeMsg{cap: cap}
+	}
+}
+
+const vulnetixProbeTTL = 5 * time.Minute
+
+// probeVulnetixSilentCmd probes the Vulnetix CLI without adding transcript
+// noise. It is used for startup discovery and /vulnetix status.
+func (a *App) probeVulnetixSilentCmd() tea.Cmd {
+	return func() tea.Msg {
+		cli, err := vulnetixcli.Detect()
+		if err != nil {
+			return vulnetixProbeMsg{err: err}
+		}
+		cap := vulnetixcli.Probe(context.Background(), *cli, vulnetixcli.ProbeOptions{
+			Client:      a.client,
+			SkipNetwork: false,
+			Observer:    quietObserver{a},
 		})
 		return vulnetixProbeMsg{cap: cap}
 	}
@@ -129,6 +149,11 @@ func (a *App) loadArtifactsCmd(workdir string) tea.Cmd {
 // ---------------------------------------------------------------------------
 
 func (a *App) enterVulnetixConfig() tea.Cmd {
+	// Reuse a fresh-enough probe so opening the configure view is instant.
+	if !a.vulnetixConfigState.probedAt.IsZero() && time.Since(a.vulnetixConfigState.probedAt) < vulnetixProbeTTL {
+		a.vulnetixConfigState.loading = false
+		return nil
+	}
 	a.vulnetixConfigState = vulnetixConfigState{loading: true}
 	return a.probeVulnetixCmd()
 }
@@ -154,28 +179,31 @@ func (a *App) vulnetixConfigView() string {
 	b.WriteString(renderLabelValue("Auth", authLabel(cap.Auth), w))
 	b.WriteString(renderLabelValue("Plan", string(cap.Auth.Plan), w))
 	b.WriteString(renderLabelValue("Org ID", cap.Auth.OrgID, w))
-	if a.firewallEnabled() || a.firewallAvailable() {
-		state := "off"
-		if a.firewallEnabled() {
-			state = "on"
+	// Always render a Firewall row using the resolver's reasoned state so
+	// the user sees the real blocker instead of a misleading CLI message.
+	firewallState := "off"
+	if a.firewallEnabled() {
+		firewallState = "on"
+	}
+	var host, orgUUID, unavailableReason string
+	if a.resolver != nil {
+		st := a.resolver.FirewallState(a.cfg.Provider)
+		if st.Reason != "" {
+			unavailableReason = st.Reason
+		} else {
+			host = aifirewall.HostOf(st.BaseURL)
+			orgUUID = aifirewall.URLPathUUID(st.BaseURL)
 		}
-		var host, orgUUID string
-		if a.resolver != nil {
-			if base, _, ok := a.resolver.Firewall(a.cfg.Provider); ok {
-				host = aifirewall.HostOf(base)
-				orgUUID = aifirewall.URLPathUUID(base)
-			}
-		}
-		if a.firewallEnabled() && host == "" {
-			state = "on (no credential)"
-		}
-		b.WriteString(renderLabelValue("Firewall", state, w))
-		if host != "" {
-			b.WriteString(renderLabelValue("Gateway", host, w))
-			b.WriteString(renderLabelValue("Org", orgUUID, w))
-			if slug, ok := aifirewall.Slug(a.cfg.Provider); ok {
-				b.WriteString(renderLabelValue("Wire", slug, w))
-			}
+	}
+	if unavailableReason != "" {
+		firewallState = "unavailable — " + unavailableReason
+	}
+	b.WriteString(renderLabelValue("Firewall", firewallState, w))
+	if host != "" {
+		b.WriteString(renderLabelValue("Gateway", host, w))
+		b.WriteString(renderLabelValue("Org", orgUUID, w))
+		if slug, ok := aifirewall.Slug(a.cfg.Provider); ok {
+			b.WriteString(renderLabelValue("Wire", slug, w))
 		}
 	}
 	b.WriteString(renderLabelValue("API", fmt.Sprintf("reachable=%v", cap.API.Reachable), w))
@@ -211,6 +239,9 @@ func (a *App) handleVulnetixConfigKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case "r":
 		a.vulnetixConfigState.loading = true
+		if a.resolver != nil {
+			a.resolver.RefreshVulnetixCred()
+		}
 		return a, a.probeVulnetixCmd()
 	case "l":
 		return a, a.push(viewVulnetixList)

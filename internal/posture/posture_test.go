@@ -167,6 +167,43 @@ func TestLoadPreferencesPathInvalidYAML(t *testing.T) {
 	}
 }
 
+func TestStricterTakesStrongestLevel(t *testing.T) {
+	a := Defaults().Override(Policy{ToolResultUnsafe: Ignore})
+	b := Defaults().Override(Policy{ToolResultUnsafe: Warn, PromptUnsafe: Warn})
+	p := Stricter(a, b)
+	if p.Level(ToolResultUnsafe) != Warn {
+		t.Fatalf("ToolResultUnsafe = %q, want warn", p.Level(ToolResultUnsafe))
+	}
+	if p.Level(PromptUnsafe) != Enforce {
+		t.Fatalf("PromptUnsafe = %q, want enforce", p.Level(PromptUnsafe))
+	}
+	if p.Level(PromptMalformed) != Enforce {
+		t.Fatalf("PromptMalformed = %q, want enforce", p.Level(PromptMalformed))
+	}
+}
+
+func TestForDirsStricterThanPrimary(t *testing.T) {
+	dir := t.TempDir()
+	projDir := filepath.Join(dir, "project")
+	extraDir := filepath.Join(dir, "extra")
+	_ = os.MkdirAll(filepath.Join(projDir, ".signet"), 0o755)
+	_ = os.MkdirAll(filepath.Join(extraDir, ".signet"), 0o755)
+
+	// Primary is at defaults; extra directory forces tool_result_unsafe to warn.
+	_ = os.WriteFile(filepath.Join(extraDir, ".signet", preferencesFile), []byte("postures:\n  tool_result_unsafe: warn\n"), 0o600)
+
+	p, err := ForDirs(projDir, []string{extraDir})
+	if err != nil {
+		t.Fatalf("ForDirs: %v", err)
+	}
+	if p.Level(ToolResultUnsafe) != Enforce {
+		t.Fatalf("ToolResultUnsafe = %q, want enforce", p.Level(ToolResultUnsafe))
+	}
+}
+
+func TestForDirs(t *testing.T) {
+}
+
 func TestPrintBanner(t *testing.T) {
 	p := Defaults().Override(Policy{ToolResultUnsafe: Warn})
 	PrintBanner(p, os.Stderr)
