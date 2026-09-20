@@ -121,18 +121,20 @@ func TestParseInlineUnmatchedDelimiterStaysLiteral(t *testing.T) {
 }
 
 func TestParseInlineNestedEmphasis(t *testing.T) {
-	t.Skip("markdown parser refactor: nested emphasis styling pending")
 	segs := parseInline("**bold *and em* text**")
 	if inlinePlain(segs) != "bold and em text" {
 		t.Fatalf("plain = %q", inlinePlain(segs))
 	}
-	var sawCream, sawTealSoft bool
+	// "and em" sits inside both ** and *, so it composes to bold+em: cream
+	// plus reverse video, not flattened to the outer bold alone.
+	var sawBoth bool
 	for _, s := range segs {
-		sawCream = sawCream || s.FG == ColorCream
-		sawTealSoft = sawTealSoft || s.FG == ColorTealSoft
+		if strings.Contains(s.Text, "and em") && s.FG == ColorCream && len(s.Emph) > 0 {
+			sawBoth = true
+		}
 	}
-	if !sawCream || !sawTealSoft {
-		t.Fatalf("nested emphasis lost a colour: %+v", segs)
+	if !sawBoth {
+		t.Fatalf("nested emphasis lost the composed bold+em style: %+v", segs)
 	}
 }
 

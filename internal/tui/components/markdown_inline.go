@@ -316,13 +316,22 @@ func parseEmph(rs []rune, i int) ([]Seg, int, bool) {
 	return nil, i, false
 }
 
-// styleSegs applies an emphasis style to already-parsed inner segments.
+// styleSegs applies an emphasis style to already-parsed inner segments,
+// composing with any emphasis already present (detected by colour) so a nested
+// *em* inside **bold** reads as bold+em instead of being flattened to bold.
 func styleSegs(segs []Seg, style int) []Seg {
 	for i := range segs {
 		if style&styleStrike != 0 {
 			segs[i].Strike = append(segs[i].Strike, Span{From: 0, To: lipgloss.Width(segs[i].Text)})
 		}
-		switch style & (styleBold | styleEm) {
+		em := style & (styleBold | styleEm)
+		switch segs[i].FG {
+		case ColorCream:
+			em |= styleBold
+		case ColorTealSoft:
+			em |= styleEm
+		}
+		switch em {
 		case styleBold:
 			segs[i].FG = ColorCream
 		case styleEm:

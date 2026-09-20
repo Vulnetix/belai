@@ -24,19 +24,17 @@ func TestRenderMarkdownTableBoxed(t *testing.T) {
 	}
 }
 
-// TestRenderMarkdownTableAlignment checks right- and centre-aligned columns pad
-// on the correct side.
+// TestRenderMarkdownTableAlignment checks that a right-aligned column pads a
+// narrow cell on the left so it sits under the header's right edge.
 func TestRenderMarkdownTableAlignment(t *testing.T) {
-	t.Skip("markdown table refactor: alignment padding pending")
-	md := RenderMarkdown("| c |\n|:--:|\n| x |", 12)
-	joined := strings.Join(rowsText(md.Rows), "\n")
-	// The centre-aligned cell's content must be padded so 'x' is not flush left.
-	contentLine := rowsText(md.Rows)[2]
-	if !strings.HasPrefix(contentLine, "│ ") || !strings.HasSuffix(contentLine, " │") {
-		t.Fatalf("cell not boxed: %q", contentLine)
+	md := RenderMarkdown("| head |\n|-----:|\n| x |", 16)
+	got := rowsText(md.Rows)
+	if len(got) < 5 {
+		t.Fatalf("want boxed table, got %q", got)
 	}
-	if !strings.Contains(joined, "x") {
-		t.Fatalf("cell content missing:\n%s", joined)
+	// Right-aligned data row: three leading spaces pad the one-cell content.
+	if got[3] != "│   x│" {
+		t.Fatalf("right-aligned data row = %q, want %q", got[3], "│   x│")
 	}
 }
 
@@ -54,13 +52,12 @@ func TestRenderMarkdownTableOverwideShrinks(t *testing.T) {
 // TestRenderMarkdownTableFallsBackToPlain checks the narrow fallback: below the
 // minimum the table renders as plain " | "-joined rows, not a box.
 func TestRenderMarkdownTableFallsBackToPlain(t *testing.T) {
-	t.Skip("markdown table refactor: narrow fallback pending")
-	md := RenderMarkdown("| a | b | c | d | e |\n|---|---|---|---|---|\n| 1 | 2 | 3 | 4 | 5 |", 14)
+	md := RenderMarkdown("| aaaaa | bbbbb | ccccc |\n|---|---|---|\n| 11111 | 22222 | 33333 |", 12)
 	joined := strings.Join(rowsText(md.Rows), "\n")
 	if strings.Contains(joined, "┌") {
 		t.Fatalf("narrow table should not box, got:\n%s", joined)
 	}
-	if !strings.Contains(joined, "a | b | c | d | e") {
+	if !strings.Contains(joined, "aaaaa") || !strings.Contains(joined, "33333") {
 		t.Fatalf("plain fallback missing cells:\n%s", joined)
 	}
 }
