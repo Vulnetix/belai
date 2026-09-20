@@ -9,7 +9,7 @@
     @media (prefers-reduced-motion: reduce){ .absent{ animation:none } }
   </style>
   <rect x="0" y="0" width="640" height="340" rx="18" class="box"/>
-  <text x="24" y="36" class="lbl" font-weight="bold">plan mode — Bash absent, not restricted</text>
+  <text x="24" y="36" class="lbl" font-weight="bold">plan mode: Bash absent, not restricted</text>
 
   <!-- available tools -->
   <g font-family="'Geist Mono',ui-monospace,monospace" font-size="12" fill="#001614">
@@ -18,7 +18,7 @@
     <rect x="284" y="64" width="120" height="40" rx="8" class="box"/><text x="14" y="26">Glob</text>
     <rect x="414" y="64" width="160" height="40" rx="8" class="box"/><text x="14" y="26">ExitPlanMode</text>
   </g>
-  <text x="24" y="128" class="sub">the fail-closed surface — read-only tools, no mutating tools</text>
+  <text x="24" y="128" class="sub">the fail-closed surface: read-only tools, no mutating tools</text>
 
   <!-- Bash: absent -->
   <g transform="translate(24 150)">

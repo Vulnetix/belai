@@ -1,6 +1,7 @@
 ---
 import Base from '../layouts/Base.astro';
 import Hero from '../components/sections/Hero.astro';
+import Trust from '../components/sections/Trust.astro';
 import SealedBlock from '../components/sections/SealedBlock.astro';
 import Beliefs from '../components/sections/Beliefs.astro';
 import Labs from '../components/sections/Labs.astro';
@@ -11,10 +12,10 @@ import Install from '../components/sections/Install.astro';
 
 const rail = [
   ['hero', 'hero'],
+  ['trust', 'trust'],
   ['sealed', 'sealed'],
   ['beliefs', 'beliefs'],
   ['labs', 'labs'],
-  ['trust', 'trust'],
   ['modes', 'modes'],
   ['tools', 'tools'],
   ['permissions', 'permissions'],
@@ -29,11 +30,11 @@ const rail = [
 ---
 
 <Base
-  title="Signet — a safer LLM coding harness"
+  title="Signet: a safer LLM coding harness"
   description="Signet is a safer LLM coding harness: sealed delimiters, a security classifier, fail-closed posture gates, a prompt library, a repo map, and role/mode determinism. Free and open source."
 >
-  <div class="mx-auto flex max-w-[1280px] gap-10 px-6 py-10">
-    <aside class="status-rail w-56 shrink-0 flex-col justify-between" aria-label="Page sections">
+  <div class="flex w-full gap-8 px-4 py-8 sm:px-6 lg:gap-10 lg:px-10 lg:py-10">
+    <aside class="status-rail w-52 shrink-0 flex-col justify-between xl:w-56" aria-label="Page sections">
       <div>
         <p class="mono text-sm font-bold text-vx-ink">▌ signet</p>
         <nav aria-label="On this page">
@@ -61,6 +62,7 @@ const rail = [
 
     <main class="min-w-0 flex-1 space-y-8">
       <Hero />
+      <Trust />
       <SealedBlock />
       <Beliefs />
       <Labs />

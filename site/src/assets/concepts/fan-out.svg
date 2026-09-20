@@ -45,5 +45,5 @@
   <circle class="token t3" cx="174" cy="170" r="7" fill="#66DCC8" stroke="#001614" stroke-width="2"/>
 
   <path d="M420 83 L 456 130 M420 149 L 456 149 M420 215 L 456 168" stroke="#009484" stroke-width="2" fill="none" stroke-dasharray="4 4"/>
-  <text x="24" y="288" class="sub">every fan-out branch is read-only — the surface a branch sees is the surface it can touch.</text>
+  <text x="24" y="288" class="sub">every fan-out branch is read-only. The surface a branch sees is the surface it can touch.</text>
 </svg>

@@ -270,7 +270,7 @@
       <path id="jaw" d="M240 236 L272 236 L256 260 Z" fill="rgb(196,116,18)" stroke="rgb(150,88,14)" stroke-width="4" stroke-linejoin="round"/>
     </g>
 
-    <!-- ===================== cybernetic WING — folded, claw raised to make a point ===================== -->
+    <!-- ===================== cybernetic WING: folded, claw raised to make a point ===================== -->
     <g id="cyberwing">
       <!-- folded primary feathers tucked, hanging down-right from the elbow -->
       <path d="M398 246 Q 434 280 458 306" fill="none" stroke="rgb(0,22,20)" stroke-width="26" stroke-linecap="round"/>

@@ -268,7 +268,7 @@
       <path id="jaw" d="M240 236 L272 236 L256 260 Z" fill="rgb(196,116,18)" stroke="rgb(150,88,14)" stroke-width="4" stroke-linejoin="round"/>
     </g>
 
-    <!-- ===================== cybernetic WING — YOLO chip, thrown switch, thrusters ===================== -->
+    <!-- ===================== cybernetic WING: YOLO chip, thrown switch, thrusters ===================== -->
     <g id="cyberwing">
       <!-- armature root + folded upper arm -->
       <path d="M334 272 C 332 254 352 246 370 252 C 388 258 392 280 386 298 C 380 314 356 318 342 310 C 332 304 336 288 334 272 Z"

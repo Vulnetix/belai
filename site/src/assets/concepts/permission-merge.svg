@@ -10,7 +10,7 @@
     @media (prefers-reduced-motion: reduce){ .chip,.chip2{ animation:none; opacity:.85 } }
   </style>
   <rect x="0" y="0" width="640" height="340" rx="18" class="box"/>
-  <text x="24" y="36" class="lbl" font-weight="bold">permission merge — a union, not a conflict</text>
+  <text x="24" y="36" class="lbl" font-weight="bold">permission merge: a union, not a conflict</text>
 
   <!-- sources -->
   <g font-family="'Geist Mono',ui-monospace,monospace" font-size="12" fill="#001614">
@@ -33,6 +33,6 @@
     </g>
   </g>
 
-  <text x="24" y="276" class="sub">a grant is additive; an explicit deny still wins — merging never silently widens a surface.</text>
+  <text x="24" y="276" class="sub">a grant is additive; an explicit deny still wins. Merging never silently widens a surface.</text>
   <text x="24" y="294" class="sub">provenance kept: every effective grant remembers which source added it.</text>
 </svg>

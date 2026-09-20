@@ -50,5 +50,5 @@
     <text x="12" y="19" class="sub">sanitize-only lane</text>
     <text x="12" y="33" class="sub">shaped results</text>
   </g>
-  <text x="248" y="210" class="sub">Grep · Glob · Write · Edit — no classifier round trip</text>
+  <text x="248" y="210" class="sub">Grep · Glob · Write · Edit: no classifier round trip</text>
 </svg>

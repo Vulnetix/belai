@@ -97,8 +97,8 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
 
     <script>
       // Status rail tracking: highlight the section currently in view. The
-      // rail mirrors Signet's three-line status footer — current section,
-      // mode, guardrails — and updates as the reader scrolls.
+      // rail mirrors Signet's three-line status footer. It shows the current
+      // section, mode, and guardrails, and updates as the reader scrolls.
       const railItems = Array.from(document.querySelectorAll('[data-rail]'));
       if (railItems.length > 0) {
         const sections = railItems

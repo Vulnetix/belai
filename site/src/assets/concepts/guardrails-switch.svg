@@ -39,5 +39,5 @@
   <g transform="translate(500 72)">
     <rect width="116" height="42" rx="8" class="box"/><text x="12" y="26" class="mono" font-size="12">CLI</text>
   </g>
-  <text x="24" y="316" class="sub">fail-closed everywhere — a gated path checks the level before calling the classifier, never after.</text>
+  <text x="24" y="316" class="sub">fail-closed everywhere. A gated path checks the level before calling the classifier, never after.</text>
 </svg>

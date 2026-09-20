@@ -79,10 +79,20 @@ body {
  * the DOM and flips the badge from `sealed` to `verified`.
  * ------------------------------------------------------------------------- */
 .sealed {
+  position: relative;
   border: 1px solid var(--color-vx-ink);
   border-radius: var(--radius-seal);
   background: var(--color-vx-cream);
   overflow: clip;
+}
+
+/* Inlined SVGs (Pix poses, concept diagrams) carry fixed width/height
+   attributes. Without this they overflow their columns and overlap the prose
+   beside them. */
+.sealed svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
 }
 
 .seal-head,

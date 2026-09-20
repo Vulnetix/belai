@@ -4,24 +4,24 @@ import ComparisonTable from '../ui/ComparisonTable.tsx';
 import pixFacepalm from '../../assets/pix/pix-facepalm.svg?raw';
 
 const sealText =
-  'Where the labs stopped: a feature-presence comparison naming Claude Code, Codex, Cursor and Gemini CLI. Every row is a checkable fact, never a quality judgement — the models are the good part.';
+  'Where the labs stopped: a feature-presence comparison naming Claude Code, Codex, Cursor and Gemini CLI. Every row is a checkable fact, never a quality judgement. The models are the good part.';
 ---
 
 <SealedSection label="labs" sealText={sealText} id="labs">
   <div class="rounded-xl bg-vx-ink p-6 text-vx-cream md:p-10">
     <div class="grid gap-10 md:grid-cols-[minmax(0,1fr)_220px] md:items-start">
-      <div>
+      <div class="min-w-0">
         <h2 class="text-3xl font-bold text-vx-cream">Where the labs stopped.</h2>
         <p class="mt-4 max-w-[72ch] text-vx-cream/80">
-          Claude Code, Codex, Cursor, Gemini CLI. The big labs build excellent models and put
-          them behind harnesses that leak, over-trust tool output, and ship nothing you did not
-          hack into a <code class="mono">skills.md</code> yourself. The models are the good part — this
-          page is not a verdict on them.
+          Claude Code, Codex, Cursor, Gemini CLI. The big labs build excellent models and put them
+          behind harnesses that leak, over-trust tool output, and ship nothing you did not hack into
+          a <code class="mono">skills.md</code> yourself. The models are the good part. This page is not a verdict on
+          them.
         </p>
         <p class="mt-3 max-w-[72ch] text-vx-cream/80">
-          The table is scoped strictly to <strong>feature presence</strong>. Every row is a checkable
-          fact, never a quality judgement. Signet&rsquo;s column traces to a file in this repository;
-          a &mdash; means there is no public, checkable source at time of writing.
+          The table is scoped strictly to <strong>feature presence</strong>. Every row is a checkable fact, never
+          a quality judgement. Signet&rsquo;s column traces to a file in this repository. A dot means
+          there is no public, checkable source at time of writing.
         </p>
 
         <div class="mt-8">

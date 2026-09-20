@@ -1,0 +1,42 @@
+---
+import SealedSection from '../seal/SealedSection.astro';
+import ShotCarousel from '../ui/ShotCarousel.tsx';
+
+import trustPipeline from '../../assets/concepts/trust-pipeline.svg?raw';
+import chunked from '../../assets/concepts/chunked-classification.svg?raw';
+import agentTurnShot from '../../assets/shots/agent-turn.svg';
+
+const sealText =
+  'Trust pipeline: every untrusted tool result is sanitized, classified, then decided. Shaped results take a sanitize-only lane with no classifier round trip.';
+---
+
+<SealedSection label="trust" sealText={sealText} id="trust">
+  <div class="grid gap-10 md:grid-cols-2 md:items-center">
+    <div class="prose-measure">
+      <h2 class="text-3xl font-bold text-vx-ink">Trust pipeline.</h2>
+      <p class="mt-4 text-vx-ink/80">
+        Every untrusted result goes through <strong>sanitize, classify, decide</strong>, fail closed.
+        <code class="mono">Bash</code>, <code class="mono">WebFetch</code>, <code class="mono">WebSearch</code>, <code class="mono">Read</code>,
+        and third-party repository text all classify, unconditionally. Shaped results whose shape the
+        harness knows, like <code class="mono">Grep</code>, <code class="mono">Glob</code>, <code class="mono">Write</code>, and
+        <code class="mono">Edit</code>, take a sanitize-only lane and skip the round trip.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        Long documents are classified in bounded chunks with overlap. The verdict is the strictest
+        across all chunks, not the first and not the average.
+      </p>
+    </div>
+    <div class="space-y-4">
+      <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={trustPipeline} /></div>
+      <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={chunked} /></div>
+    </div>
+  </div>
+  <div class="mt-10 max-w-[72ch]">
+    <ShotCarousel
+      client:load
+      shots={[
+        { src: agentTurnShot.src, alt: 'A streaming agent turn with a collapsed Bash preview', caption: 'streaming turn, collapsed Bash preview' },
+      ]}
+    />
+  </div>
+</SealedSection>

@@ -3,7 +3,7 @@ import SealedSection from '../seal/SealedSection.astro';
 import delimiterSeal from '../../assets/concepts/delimiter-seal.svg?raw';
 
 const sealText =
-  'Every block of context carries a random nonce and a SHA-256 integrity hash of its enclosed content; anything unsealed is stripped at egress. The page you are reading is built out of the same device — each section header hashes its own sealed payload.';
+  'Every block of context carries a random nonce and a SHA-256 integrity hash of its enclosed content. Anything unsealed is stripped at egress. The page you are reading is built out of the same device: each section header hashes its own sealed payload.';
 ---
 
 <SealedSection label="sealed" sealText={sealText} id="sealed">
@@ -11,20 +11,18 @@ const sealText =
     <div class="prose-measure">
       <h2 class="text-3xl font-bold text-vx-ink">The sealed block, explained.</h2>
       <p class="mt-4 text-vx-ink/80">
-        Every block of context carries a random nonce and a SHA-256 integrity hash of its
-        enclosed content. On the way out, any block with a missing nonce, an unknown nonce,
-        or a failing hash is stripped before it reaches transport.
+        Every block of context carries a random nonce and a SHA-256 integrity hash of its enclosed
+        content. On the way out, any block with a missing nonce, an unknown nonce, or a failing hash
+        is stripped before it reaches transport.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        The real claim, stated plainly: <strong>a model cannot widen its own advertised tool
-        surface</strong> by writing a forged <code class="mono">&lt;tools&gt;</code> block. The markup
-        is verified, not trusted.
+        The real claim: <strong>a model cannot widen its own advertised tool surface</strong> by writing a
+        forged <code class="mono">&lt;tools&gt;</code> block. The markup is verified, not trusted.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        This page is built out of the same device. Each section is framed as a harness block
-        whose header hash is computed at build time from that section&rsquo;s own sealed payload.
-        Scroll one into view and its integrity badge runs a verify tick — nothing here is
-        trusted on sight.
+        This page is built out of the same device. Each section is framed as a harness block whose
+        header hash is computed at build time from that section&rsquo;s own sealed payload. Scroll one
+        into view and its integrity badge runs a verify tick. Nothing here is trusted on sight.
       </p>
     </div>
     <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true">

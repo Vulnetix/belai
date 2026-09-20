@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 /**
  * The lab comparison, scoped strictly to feature presence. Signet's column
  * traces to files in this repository (the trace column). Competitor cells use
- * ✓ / ✗ / — where — means "no public, checkable source at time of writing",
+ * ✓ / ✗ / · where · means "no public, checkable source at time of writing",
  * never a quality judgement. The framing line (rendered by the parent) is
  * explicit that the models are the good part.
  */
@@ -149,7 +149,7 @@ const FILTERS = [
 type Filter = (typeof FILTERS)[number]['id'];
 
 function cellChar(c: Cell): string {
-  return c === 'yes' ? '✓' : c === 'no' ? '✗' : '—';
+  return c === 'yes' ? '✓' : c === 'no' ? '✗' : '·';
 }
 
 function cellClass(c: Cell, signet: boolean): string {

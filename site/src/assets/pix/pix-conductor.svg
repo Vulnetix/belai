@@ -270,7 +270,7 @@
       <path id="jaw" d="M240 236 L272 236 L256 260 Z" fill="rgb(196,116,18)" stroke="rgb(150,88,14)" stroke-width="4" stroke-linejoin="round"/>
     </g>
 
-    <!-- ===================== cybernetic WING — spread wide, conducting a fan of tool chips ===================== -->
+    <!-- ===================== cybernetic WING: spread wide, conducting a fan of tool chips ===================== -->
     <g id="cyberwing">
       <!-- right cyber wing spread wide -->
       <g id="wing">

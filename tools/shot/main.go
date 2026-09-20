@@ -268,7 +268,7 @@ func settings() string {
 		kv("voice", "default", "config file"),
 	)
 	rows = append(rows, components.Rule(width))
-	rows = append(rows, components.MutedStyle.Render("every value shows its provenance — who set it, where, and when."))
+	rows = append(rows, components.MutedStyle.Render("every value shows its provenance: who set it, where, and when."))
 	return head + strings.Join(rows, "\n") + "\n\n" +
 		components.HelpBar("↑/↓", "select", "enter", "edit", "esc", "back")
 }
@@ -285,7 +285,7 @@ func permissions() string {
 	rows = append(rows, perm("Glob", "allow", components.ColorTeal))
 	rows = append(rows, perm("WebFetch", "deny", components.ColorDanger))
 	rows = append(rows, components.Rule(width))
-	rows = append(rows, components.MutedStyle.Render("the surface is a union of policy, session, tool kind and role — provenance kept per grant."))
+	rows = append(rows, components.MutedStyle.Render("the surface is a union of policy, session, tool kind and role. Provenance is kept per grant."))
 	return head + strings.Join(rows, "\n") + "\n\n" +
 		components.HelpBar("↑/↓", "select", "tab", "cycle", "esc", "back")
 }
@@ -314,7 +314,7 @@ func modelPicker() string {
 	rows = append(rows, modelRow("llama-3.3-70b", "local · ollama", false))
 	rows = append(rows, modelRow("qwen3-32b", "local · ollama", false))
 	rows = append(rows, components.Rule(width))
-	rows = append(rows, components.MutedStyle.Render("two local providers ship in the box — no cloud required."))
+	rows = append(rows, components.MutedStyle.Render("two local providers ship in the box, no cloud required."))
 	return head + strings.Join(rows, "\n") + "\n\n" +
 		components.HelpBar("↑/↓", "select", "enter", "choose", "esc", "back")
 }

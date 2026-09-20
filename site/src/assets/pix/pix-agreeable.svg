@@ -269,7 +269,7 @@
       <path id="jaw" d="M240 236 L272 236 L256 260 Z" fill="rgb(196,116,18)" stroke="rgb(150,88,14)" stroke-width="4" stroke-linejoin="round"/>
     </g>
 
-    <!-- ===================== cybernetic WING — lowered & spread open (agreeable) ===================== -->
+    <!-- ===================== cybernetic WING: lowered & spread open (agreeable) ===================== -->
     <g id="cyberwing">
       <!-- solid membrane behind the blades -->
       <path d="M356 276 Q 420 264 486 262 Q 496 306 476 348 Q 456 380 440 388 Q 396 352 372 314 Q 354 296 356 276 Z"
