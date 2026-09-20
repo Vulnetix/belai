@@ -23,6 +23,9 @@ func TestToolAllowed(t *testing.T) {
 		{"edit blocked in plan", "edit", nil, true, tools.PlanSurface{}, false},
 		{"read allowed in plan", "read", nil, true, tools.PlanSurface{}, true},
 		{"grep allowed in plan", "grep", map[string]any{"pattern": "x"}, true, tools.PlanSurface{}, true},
+		{"searchsessions allowed in plan", "searchsessions", map[string]any{"regex": "x"}, true, tools.PlanSurface{}, true},
+		{"readsession allowed in plan", "readsession", map[string]any{"agent": "claude-code", "session_id": "x"}, true, tools.PlanSurface{}, true},
+		{"searchmemory allowed in plan", "searchmemory", map[string]any{"regex": "x"}, true, tools.PlanSurface{}, true},
 		// Bash is off in plan mode by default.
 		{"bash cat blocked in plan", "bash", map[string]any{"command": "cat x"}, true, tools.PlanSurface{}, false},
 		{"bash rm blocked in plan", "bash", map[string]any{"command": "rm x"}, true, tools.PlanSurface{}, false},

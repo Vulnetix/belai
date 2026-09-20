@@ -24,9 +24,11 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
 - **Arbitrary content goes through the classifier.** `Bash` (an arbitrary
   command), `WebFetch` and `WebSearch` (text written off this machine),
   `Read` (a file's bytes), `GH`/`Glab` results (`KindRemote`, third-party
-  repository text), `RepoRead` (`KindRead`), `SubAgentLog` (`KindProcess`)
-  and the recovery subagent's process-tail briefing all classify,
-  unconditionally. Do not add an exemption for any of them.
+  repository text), `RepoRead` (`KindRead`), `SubAgentLog` (`KindProcess`),
+  `SearchSessions`/`ReadSession`/`SearchMemory` (`KindAgentStore`, other
+  agents' transcript and memory text) and the recovery subagent's
+  process-tail briefing all classify, unconditionally. Do not add an
+  exemption for any of them.
 - **Shaped, controlled results are sanitized only.** `Grep`, `Glob`, `Write`,
   `Edit`, and the native catalogue return output whose shape the harness
   knows — `path:line:text`, a list of paths, a confirmation it composed
@@ -38,6 +40,13 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   file contents. Repository prose reaching the model stays on the
   `RepoRead`/`Read` path, which classifies. This is what permits the map in the
   system block.
+- **Agent-store search is path-free.** `SearchSessions`, `ReadSession` and
+  `SearchMemory` read other agents' transcript and memory stores outside the
+  confinement root set. They take no path argument: every path comes from the
+  static registry in `internal/agentstore`, so they cannot be used as a general
+  read primitive. Their content is written by other models, so `KindAgentStore`
+  is in `tools.classifierKinds` unconditionally. Do not add a path argument and
+  do not add an exemption.
 - **The confinement boundary is a fixed root set unless the user widens it.**
   The primary working directory is the default confinement root. The only way
   to add roots is an explicit `/add-dir` command confirmed by the user.
