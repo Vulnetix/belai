@@ -127,7 +127,17 @@ func TestProcessStartAndRecovery(t *testing.T) {
 
 	cmd := exec.Command(signetBin, "-provider", "openai", "-model", "test")
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
+	// The TUI is skipped when CI is set (cmd/signet/main.go's interactive()
+	// gate), and GitHub Actions sets CI=true. Strip it — and SIGNET_NO_TUI —
+	// so the PTY actually starts the TUI, then add the test's own overrides.
+	env := make([]string, 0, len(os.Environ())+4)
+	for _, e := range os.Environ() {
+		if strings.HasPrefix(e, "CI=") || strings.HasPrefix(e, "SIGNET_NO_TUI=") {
+			continue
+		}
+		env = append(env, e)
+	}
+	cmd.Env = append(env,
 		"SIGNET_BASE_URL="+srv.URL,
 		"OPENAI_API_KEY=test",
 		"SIGNET_HOME="+home,
