@@ -873,15 +873,22 @@ profiles in the background. Profiles are stored under
 allow-list, operating mode (`single`, `loop`, `scheduled`, `monitor`), and
 autonomy level (`supervised` or `autonomous`).
 
-The TUI integrates background agents via `/agent create`, `/agent edit`,
+The TUI integrates background agents via `/agent create <name>`, `/agent edit`,
 `/agent start`, `/agent pause`, `/agent resume`, `/agent stop`, `/agent list`,
 and `/agent log`. `/agent list` discovers every stored profile, shows the
-file path for each, and highlights running instances; pressing `e` opens an
-editor where the profile's description, mode, schedule, monitor condition,
-autonomy, max iterations, reflection, and system prompt can be changed. After
-a successful `/agent create`, the new profile is selected and the editor is
-opened automatically. Events stream into the main transcript as system lines
-so the user's session is never blocked.
+file path for each, and highlights running instances; pressing `e` (or `enter`)
+opens a sectioned editor covering the full `AgentProfile` schema — name, file
+name, description, system prompt, tools, mode, schedule, monitor condition,
+provider, model, effort, autonomy, guardrails, ask permission, reflection, and
+max iterations. `n` creates a valid stub, `d` duplicates (and thereby makes an
+editable copy of a read-only built-in), and `esc` returns to the list.
+`/agent create <name>` is name-first: the name is validated locally, the
+designer runs visibly behind a `Silent` activity row and a composer phase, and
+after the builder returns the profile's `Name` is forced back to the requested
+name before save. On success the new profile is selected and the editor opens
+automatically; on failure a valid stub is saved and the editor still opens.
+Events stream into the main transcript as system lines so the user's session
+is never blocked.
 
 `loop` mode treats `max_iterations` as an *inner* budget: when it is exhausted,
 an agent-loop evaluator decides whether to continue, pause, sleep one schedule

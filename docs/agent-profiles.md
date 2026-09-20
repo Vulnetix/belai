@@ -36,6 +36,7 @@ where `GlobalDir()` honours `SIGNET_HOME` and otherwise resolves to
 | Field | Required | Type | Description |
 | ----- | -------- | ---- | ----------- |
 | `name` | Yes | string | Unique identifier, used with `/agent start <name>`. |
+| *(file name)* | No | string | The on-disk filename (e.g. `triage-deps.json`), independent of `name`. It is never serialised — the file's own name is the record. Empty means derive it from `name`. The editor exposes it as its own field; renaming via `name` moves the file only while the file name is still derived. |
 | `description` | Yes | string | Human-readable purpose, shown in `/agent list`. |
 | `system_prompt` | Yes | string | The system prompt sent to the model on every turn. |
 | `tools` | No | string[] | Allowed tool names; empty means the full default registry. Validated against the built-in set: `Bash`, `Cd`, `Edit`, `ExitPlanMode`, `Glob`, `Grep`, `Read`, `update_plan`, `WebFetch`, `WebSearch`, `Write`. |
@@ -54,6 +55,7 @@ where `GlobalDir()` honours `SIGNET_HOME` and otherwise resolves to
 ### Validation rules
 
 - `name` must be non-empty and filesystem-safe (`[a-zA-Z0-9._-]+`).
+- A non-empty file name must be a safe basename: non-empty, ending in `.json`, with no path separators, and with a stem unchanged by the name sanitiser. It may not collide with a built-in's on-disk file name.
 - `mode` must be one of the four known values.
 - Every entry in `tools` must exist in the default tool registry.
 - `autonomy` must be `supervised` or `autonomous`.
@@ -140,7 +142,7 @@ second time. A bounded loop hid that; a restarting one compounds it every pass.
 | Command | Effect |
 | ------- | ------ |
 | `/agent` | Open the agent picker to choose a profile for agent-mode turns |
-| `/agent create <description>` | Build and save a new agent profile |
+| `/agent create <name>` | Design and save a new agent profile named `<name>`; the builder runs visibly behind an activity row and a composer phase |
 | `/agent edit <name>` | Open an existing profile in the agent editor |
 | `/agent list` | Show every discovered profile, its file path, and any running state |
 | `/agent start <name>` | Start the agent and stream its events into the transcript |
@@ -149,13 +151,25 @@ second time. A bounded loop hid that; a restarting one compounds it every pass.
 | `/agent stop <name>` | Cancel the agent's context and close it out |
 | `/agent log <name>` | Show the agent's recent events |
 
-In the list view, `↑`/`↓` selects a profile, `enter` or `e` opens the editor, and
-`esc` returns to chat. The editor exposes the description, mode, schedule,
-monitor condition, autonomy, max iterations, reflection, provider, model, effort,
-guardrails, ask permission, and system prompt.
-Toggles and choose fields are cycled with `space` or `enter`; text fields open
-an inline editor and commit with `enter`. After `/agent create` the new profile
-is selected and the editor opens automatically.
+In the list view, `↑`/`↓` selects a profile, `enter` or `e` opens the editor, `n`
+creates a new agent from a valid stub, `d` duplicates the selected agent, and
+`esc` returns to chat. The editor exposes every `AgentProfile` field — name,
+file name, description, system prompt, tools, mode, schedule, monitor condition,
+provider, model, effort, autonomy, guardrails, ask permission, reflection, and
+max iterations — grouped into identity, behaviour, model and safety sections.
+
+Choose and toggle fields are cycled with `space`, `enter`, `←` or `→`; text
+fields open an inline editor and commit with `enter`; the system prompt is a
+multiline editor (`ctrl+j` inserts a newline, `e` opens `$VISUAL`/`$EDITOR`);
+and tools opens a multi-select picker (`space` toggles, `a` all, `n` none,
+`enter` commits the sorted selection). `schedule` and `monitor condition` show
+a muted `required` marker when the current mode demands them.
+
+Built-in `signet:` profiles are read-only in the editor; any mutating key shows
+`built-in profile is read-only — d duplicates it`. Pressing `d` strips the
+`signet:` prefix, clears the built-in and file-name state, saves an editable
+copy, and opens it. After `/agent create` the new profile is selected and the
+editor opens automatically.
 
 ## Event flow
 
@@ -256,3 +270,13 @@ The builder feeds validation errors back to the model in a retry loop bounded
 by `MaxAttempts`. Validation errors are sanitized before being sent back. The
 classifier turn carries no tools, skills, or agent block, preserving existing
 security invariants.
+
+`/agent create <name>` is name-first: the name is validated locally before any
+classifier round trip, the design work runs behind a `Silent` activity row
+(`agent design: <name>` in f9, cancelled with `x`) and a composer phase with a
+live spinner, and the builder's `OnAttempt` progress is appended to the activity
+so f9 shows `attempt 2/3: validation error: …`. After `Build` returns, the
+profile's `Name` is forced back to the requested name before save, so the LLM
+can design the fields but never rename the user's profile. On failure a valid
+stub is saved and the editor still opens, so the user is never dropped back to
+chat with nothing.
