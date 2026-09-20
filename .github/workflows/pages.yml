@@ -36,9 +36,11 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version-file: site/.nvmrc
-          cache: yarn
-          cache-dependency-path: site/yarn.lock
 
+      # Enable corepack so the yarn@4.14.1 pinned in package.json is the yarn
+      # that runs. Do not ask setup-node for `cache: yarn`: that probes `yarn
+      # cache dir` with the runner's yarn 1.x before corepack is enabled and
+      # fails on the packageManager pin.
       - name: Enable corepack
         run: corepack enable
 
