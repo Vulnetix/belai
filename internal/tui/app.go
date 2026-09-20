@@ -307,6 +307,8 @@ type App struct {
 	view                   viewState
 	viewStack              []viewState
 	credentialState        credentialViewState
+	providersState         providersViewState
+	providerDetailState    providerDetailViewState
 	settingsState          settingsViewState
 	modelState             modelViewState
 	permState              permissionsViewState
@@ -1047,6 +1049,13 @@ func (a *App) sendPending() tea.Cmd {
 // send starts a streaming request with the given conversation turns.
 func (a *App) send(turns []run.Turn) tea.Cmd {
 	if !a.status.Configured {
+		// The initial async credential resolution may not have landed yet, or
+		// a transient resolver/keychain failure left us unconfigured. Retry
+		// synchronously once before failing so that valid credentials are
+		// used as soon as a message is actually sent.
+		a.reResolveCredentials()
+	}
+	if !a.status.Configured {
 		return func() tea.Msg {
 			return agentEventMsg{Kind: agent.EventErrorKind, Err: fmt.Errorf("%s credentials missing (%s). Type /credentials to configure.", a.cfg.Provider, strings.Join(a.status.Missing, ", "))}
 		}
@@ -1623,7 +1632,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.handlePlanEdited(m)
 
 	case localModelReportMsg:
-		a.addSystem(m.text)
+		if a.view == viewProviderDetail {
+			a.providerDetailState.localReport = m.text
+			a.providerDetailState.localReportPending = false
+		} else {
+			a.addSystem(m.text)
+		}
 		return a, nil
 
 	case promptEditedMsg:
@@ -3696,6 +3710,35 @@ func (a *App) refreshProvider() tea.Cmd {
 		return a.sendPending()
 	}
 	return nil
+}
+
+// reResolveCredentials is the synchronous half of refreshProvider. It is used
+// by send as a last-ditch retry when the async initial credential check has
+// not landed or failed spuriously. If credentials resolve, it adopts the new
+// config and rebuilds the classifier.
+func (a *App) reResolveCredentials() bool {
+	if a.resolver == nil {
+		return false
+	}
+	src := run.CredentialSource(run.EnvSource(os.Getenv))
+	if a.resolver != nil {
+		src = a.resolver
+	}
+	cfg, status := run.Prepare(a.cfg.Model, a.cfg.Provider, src)
+	if !status.Configured {
+		return false
+	}
+	cfg.Effort = a.settings.Effort
+	if cc, err := run.ResolveClassifier(cfg, a.settings.Classifier, src); err == nil {
+		cfg.Classifier = cc
+	}
+	a.cfg = cfg
+	a.status = status
+	a.classifier = nil
+	a.invalidateAgentSession()
+	a.SetClassifier(run.NewClassifier(cfg, a.client))
+	a.refreshFooter()
+	return true
 }
 
 // reloadSettings recomputes the merged settings view after a mutation.

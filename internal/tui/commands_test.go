@@ -7,7 +7,7 @@ import (
 
 func TestRegistryNames(t *testing.T) {
 	r := NewRegistry(t.TempDir())
-	want := []string{"agent", "classifier", "clear", "compact", "credentials", "execute", "exit", "help", "local-model", "mode", "model", "new", "permissions", "profile", "prompts", "quit", "refine", "rename", "resume", "settings", "todos", "vulnetix", "yolo"}
+	want := []string{"agent", "classifier", "clear", "compact", "credentials", "execute", "exit", "help", "local-model", "mode", "model", "new", "permissions", "profile", "prompts", "providers", "quit", "refine", "rename", "resume", "settings", "todos", "vulnetix", "yolo"}
 	if !reflect.DeepEqual(r.Names(), want) {
 		t.Fatalf("Names = %v, want %v", r.Names(), want)
 	}
@@ -17,7 +17,7 @@ func TestCompleteCommandPrefix(t *testing.T) {
 	r := NewRegistry(t.TempDir())
 
 	got := r.Complete("/p")
-	want := []string{"/permissions", "/profile", "/prompts"}
+	want := []string{"/permissions", "/profile", "/prompts", "/providers"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Complete(/p) = %v, want %v", got, want)
 	}
@@ -80,8 +80,8 @@ func TestAliasCanonical(t *testing.T) {
 	if got := r.Canonical("new"); got != "clear" {
 		t.Fatalf("Canonical(new) = %q, want clear", got)
 	}
-	if got := r.Canonical("provider"); got != "model" {
-		t.Fatalf("Canonical(provider) = %q, want model", got)
+	if got := r.Canonical("provider"); got != "providers" {
+		t.Fatalf("Canonical(provider) = %q, want providers", got)
 	}
 	if got := r.Canonical("agent"); got != "agent" {
 		t.Fatalf("Canonical(agent) = %q, want agent", got)
@@ -94,9 +94,6 @@ func TestHiddenProviderAbsentFromNames(t *testing.T) {
 		if n == "provider" {
 			t.Fatalf("hidden provider alias must not appear in Names()")
 		}
-	}
-	if got := r.Complete("/prov"); got != nil {
-		t.Fatalf("Complete(/prov) = %v, want nil (hidden)", got)
 	}
 	// It still dispatches.
 	if _, ok := r.Command(r.Canonical("provider")); !ok {

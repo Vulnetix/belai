@@ -11,6 +11,7 @@ import (
 	"github.com/vulnetix/signet/internal/agentprofile"
 	"github.com/vulnetix/signet/internal/commands"
 	"github.com/vulnetix/signet/internal/profiles"
+	"github.com/vulnetix/signet/internal/provider"
 	"github.com/vulnetix/signet/internal/vulnetixcli"
 )
 
@@ -224,6 +225,40 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("credentials", "manage provider credentials", nil, func(a *App, arg string) tea.Cmd {
 		return a.push(viewCredentials)
 	})
+	r.Register("providers", "manage providers, credentials and local models", func() []string {
+		return []string{"status", "launch", "download", "stop"}
+	}, func(a *App, arg string) tea.Cmd {
+		sub, flags := parseLocalModelArgs(arg)
+		switch sub {
+		case "", "report":
+			return a.localModelReportCmd(flags.repo)
+		case "status":
+			return tea.Batch(a.push(viewProviders), a.localModelStatusCmd())
+		case "launch":
+			if flags.repo == "" {
+				a.addSystem("usage: /providers launch <repo> [--port N] [--quant Q]")
+				return nil
+			}
+			return tea.Batch(a.push(viewProviders), a.localModelLaunchCmd(flags.repo, flags.port, flags.quant))
+		case "download":
+			if flags.repo == "" {
+				a.addSystem("usage: /providers download <repo> [--quant Q]")
+				return nil
+			}
+			return tea.Batch(a.push(viewProviders), a.localModelDownloadCmd(flags.repo, flags.quant))
+		case "stop":
+			return tea.Batch(a.push(viewProviders), a.localModelStopCmd(flags.port))
+		default:
+			// Deep-link to a provider detail page.
+			_, hasProfile := a.settings.Providers[sub]
+			if provider.Builtin(sub) || hasProfile {
+				a.openProviderDetail(sub)
+				return a.push(viewProviderDetail)
+			}
+			a.addSystem("unknown /providers subcommand: " + sub)
+			return nil
+		}
+	})
 	r.Register("permissions", "edit tool permissions", nil, func(a *App, arg string) tea.Cmd {
 		return a.push(viewPermissions)
 	})
@@ -315,7 +350,7 @@ func NewRegistry(workdir string) *Registry {
 			}
 
 			buildCmd := func() tea.Msg {
-				prompt := fmt.Sprintf("Design an agent profile named %q.", name)
+				prompt := fmt.Sprintf("Design an agent profile named %q. Infer a meaningful description and a tailored system prompt from the name.", name)
 				p, err := b.Build(ctx, prompt)
 				if err != nil {
 					return agentBuilderDoneMsg{name: name, handle: handle, err: err}
@@ -438,7 +473,7 @@ func NewRegistry(workdir string) *Registry {
 		}
 	})
 	// Hidden alias: dispatchable, absent from Names() and autocomplete.
-	r.RegisterHiddenAlias("provider", "model")
+	r.RegisterHiddenAlias("provider", "providers")
 	return r
 }
 

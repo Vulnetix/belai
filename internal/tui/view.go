@@ -10,6 +10,8 @@ type viewState int
 const (
 	viewChat viewState = iota
 	viewCredentials
+	viewProviders
+	viewProviderDetail
 	viewSettings
 	viewPermissions
 	viewModel
@@ -41,6 +43,8 @@ var viewHandlers = map[viewState]viewHandler{}
 
 func init() {
 	viewHandlers[viewCredentials] = viewHandler{name: "credentials", key: (*App).handleCredentialKey, render: (*App).credentialView}
+	viewHandlers[viewProviders] = viewHandler{name: "providers", key: (*App).handleProvidersKey, render: (*App).providersView}
+	viewHandlers[viewProviderDetail] = viewHandler{name: "provider-detail", key: (*App).handleProviderDetailKey, render: (*App).providerDetailView}
 	viewHandlers[viewSettings] = viewHandler{name: "settings", key: (*App).handleSettingsKey, render: (*App).settingsView}
 	viewHandlers[viewPermissions] = viewHandler{name: "permissions", key: (*App).handlePermissionsKey, render: (*App).permissionsView}
 	viewHandlers[viewModel] = viewHandler{name: "model", enter: (*App).enterModel, key: (*App).handleModelKey, render: (*App).modelView}
