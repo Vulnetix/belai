@@ -59,13 +59,11 @@ const (
 	verificationDirective = "Before doing any further work, verify the completed items in the todo list against the files on disk (read-only). Confirm each marked-done item is actually true; if one is not, correct the list and the work. Only continue new work after the check."
 	// continuationDirective is injected when a bounded pass spends its whole
 	// iteration budget. Budget exhaustion is a turn boundary, not a failure.
-	continuationDirective = "The tool budget for this turn was reached. Report the work done so far and what remains. If more tool calls are needed to finish the work, make them now; otherwise give the final answer."
-	// goalAckDirective is injected on the first goal pass so the model
-	// acknowledges the objective before working: restate it as concrete
-	// deliverables, name the verification surface, and list the first actions,
-	// then start tracking and working in the same pass rather than spending it
-	// on an acknowledgement alone.
-	goalAckDirective = "Restate the objective as concrete deliverables, name how completion will be verified, and list the first actions you will take. Write a planning todo list under a 'Plan:' header (numbered steps), then begin the first step. Mark each step complete with [DONE:n] in your reply as you finish it."
+	continuationDirective = "The tool budget for this turn was reached. If more tool calls are needed to finish the work, make them now; otherwise give the final answer. Either way, say briefly what was done and what remains."
+	// goalAckDirective is injected on the first goal pass so the model writes
+	// a todo list and begins the first step in the same pass rather than
+	// spending the pass on an acknowledgement alone.
+	goalAckDirective = "Write a planning todo list under a 'Plan:' header (numbered steps), then carry out the first step in this same pass — the list and the first step's work belong in one pass, not two. Mark each step complete with [DONE:n] in your reply as you finish it. Keep any restatement of the objective to a single line naming the deliverable and how completion will be verified."
 )
 
 // goalAckDirective returns the first-pass goal directive, naming the detected
@@ -146,6 +144,21 @@ func (l *passLedger) advanceTodos(passAssistantText string) {
 	}
 }
 
+// hasVerifiableWork reports whether the tracked list has anything a
+// verification pass could check. Arming verification against an all-pending
+// list spends a read-only pass confirming nothing.
+func (l *passLedger) hasVerifiableWork() bool {
+	if !l.hasList {
+		return false
+	}
+	for _, it := range l.list.Items {
+		if it.Status == todos.StatusDone {
+			return true
+		}
+	}
+	return false
+}
+
 // notePartial records one no-progress PARTIAL verdict for stall detection.
 // A todo-state transition resets the streak, so a progressing model can loop
 // indefinitely; a stuck one receives a stronger progression directive and a
@@ -158,6 +171,16 @@ func (l *passLedger) notePartial() bool {
 	}
 	l.partialStreak++
 	return l.partialStreak >= goalStallPartial
+}
+
+// partialDirectiveTurn selects the directive for a GOAL_PARTIAL step. It
+// arms verification only when the tracked list has completed work to check;
+// an all-pending list would spend the pass confirming nothing.
+func (l *passLedger) partialDirectiveTurn() (body string, arm bool) {
+	if l.partialStreak%goalVerifyEvery == 0 && l.hasVerifiableWork() {
+		return verificationDirective, true
+	}
+	return l.partialDirective(), false
 }
 
 // passLoop is the pass driver. Everything from sanitize through SealSystem
@@ -436,13 +459,11 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 				turns = append(turns, directiveTurns(l.progressionDirective())...)
 				continue
 			}
-			if l.partialStreak%goalVerifyEvery == 0 {
-				// Every Nth no-progress partial pass is a verification pass.
+			body, arm := l.partialDirectiveTurn()
+			if arm {
 				l.verificationArmed = true
-				turns = append(turns, directiveTurns(verificationDirective)...)
-			} else {
-				turns = append(turns, directiveTurns(l.partialDirective())...)
 			}
+			turns = append(turns, directiveTurns(body)...)
 
 		case rolemanager.GoalComplete:
 			if l.verificationPasses == 0 {

@@ -41,6 +41,11 @@ type Options struct {
 	// advertises, or the default abort policy rejects a hallucinated call and
 	// aborts the whole turn. Empty means "the read-only tools listed below".
 	ExploreTools []string
+	// WorkDiscipline is agent/goal-mode guidance that tells the model to
+	// start editing as soon as the change is clear and to interleave further
+	// exploration with the edits. Plan mode must never set this: plan mode has
+	// its own read-only contract and must not be told to start editing.
+	WorkDiscipline bool
 	// Provider and Model name the two identities the harness does not own.
 	// Empty values are omitted rather than guessed at.
 	Provider string
@@ -54,6 +59,9 @@ type Options struct {
 	// RepoMap is the rendered harness-computed repository map block. It holds
 	// facts only (paths, counts, commands, sizes), never repository prose.
 	RepoMap string
+	// WorkspaceBlock is the rendered harness-computed repo-map block for any
+	// additional workspace directories added with /add-dir.
+	WorkspaceBlock string
 }
 
 // identity tells the model which of the three identities in a session is its
@@ -92,6 +100,17 @@ const normalVoice = "Voice guidance: respond clearly and professionally.\n"
 // classifier's prose payload builders share one wording with the agent's own
 // system prompt.
 const CavemanVoice = "Voice guidance: talk like caveman. Short words. No long words. 'Me fix now.'\n"
+
+// workDiscipline is the agent/goal-mode guidance section that tells the
+// model to start writing as soon as a change is clear. It is trusted harness
+// text, rendered only when WorkDiscipline is requested and Explore is not.
+func workDiscipline() string {
+	return "Work discipline. When the change to make is already clear, make it — do not spend the turn on exploration you do not need.\n" +
+		"- Read the exact bytes you are about to edit, then edit. Nothing more is owed before a write.\n" +
+		"- Batch read-only calls: emit the reads, greps and globs you need together, ahead of any write. The leading run of read-only calls executes in parallel, so one batched round trip costs about what one call costs.\n" +
+		"- Land the parts you are sure of first, then investigate what remains. Work on disk beats a finished survey with nothing written.\n" +
+		"- Do not narrate a plan you are about to carry out in the same turn; carry it out and report what changed.\n"
+}
 
 // explorePreamble is the harness-authored guidance attached to a plan-mode
 // explore subagent's system prompt. It is trusted harness text (SourceHarness
@@ -134,6 +153,12 @@ func System(opts Options) (string, error) {
 	}
 	if opts.RepoMap != "" {
 		b.WriteString(opts.RepoMap + "\n")
+	}
+	if opts.WorkspaceBlock != "" {
+		b.WriteString(opts.WorkspaceBlock + "\n")
+	}
+	if opts.WorkDiscipline && !opts.Explore {
+		b.WriteString(workDiscipline())
 	}
 	if opts.Caveman {
 		b.WriteString(CavemanVoice)

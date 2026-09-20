@@ -977,10 +977,10 @@ something it wrote or read. Three mechanisms do that together:
 
 | Directive | Injected when |
 | --------- | ------------- |
-| Goal acknowledgement | The first goal pass — restate the objective as deliverables, name the verification surface, then write the plan under a `Plan:` header and begin step 1 in the same pass |
+| Goal acknowledgement | The first goal pass — write a `Plan:` todo list and carry out step 1 in the same pass; any restatement of the objective is a single line naming the deliverable and how completion will be verified |
 | Planning | `GOAL_NOT_STARTED` — write a numbered plan under a `Plan:` header, then start step 1 |
-| Verification | An armed verification pass — re-check completed items against disk before continuing |
-| Continuation | `GOAL_PARTIAL` — continue from the rendered todo list state |
+| Verification | Armed when the tracked list has at least one completed item (`hasVerifiableWork`) — re-check completed items against disk before continuing |
+| Continuation | Budget exhaustion or a non-complete natural exit — if more tool calls are needed, make them now; otherwise give the final answer. Either way, say briefly what was done and what remains |
 | Progression | `partialStreak` reaches `goalStallPartial` — review session context, rendered todo list, and identify the single most concrete next step forward; reset the streak and start a new agentic evaluation loop |
 
 ### Forced survey

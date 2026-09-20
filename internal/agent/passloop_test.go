@@ -86,7 +86,14 @@ func goalPassServer(t *testing.T, opts goalPassOpts) (*httptest.Server, *sync.Mu
 			case "reply":
 				writeChatJSON(w, opts.reply)
 			default:
-				writeToolCallJSON(w, "Read", `{"path":"f.txt"}`)
+				// Include a completed todo item in the assistant text so
+				// verification has work to check; an all-pending list would
+				// skip the verification pass and change pass-loop timing.
+				if opts.main == "tool-nocontent" {
+					writeToolCallJSON(w, "Read", `{"path":"f.txt"}`)
+				} else {
+					writeToolCallWithContentJSON(w, "Read", `{"path":"f.txt"}`, "Plan:\n1. Ship the release\n[DONE:1]\n")
+				}
 			}
 		}
 	}))
@@ -273,7 +280,7 @@ func TestPassTextExcludesToolResults(t *testing.T) {
 	root := t.TempDir()
 	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("[DONE:1] [DONE:2]"), 0o600)
 
-	srv, _, _ := goalPassServer(t, goalPassOpts{})
+	srv, _, _ := goalPassServer(t, goalPassOpts{main: "tool-nocontent"})
 	defer srv.Close()
 
 	cfg := run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"}
@@ -587,6 +594,61 @@ func TestCompactBoundaryReplacesTurnsWithSummary(t *testing.T) {
 	}
 	if got[1].Role != "assistant" || got[1].Content != rolemanager.SummaryAck {
 		t.Fatalf("second turn = %+v, want the summary acknowledgement", got[1])
+	}
+}
+
+func TestPassLedgerHasVerifiableWork(t *testing.T) {
+	cases := []struct {
+		name     string
+		hasList  bool
+		statuses []todos.Status
+		want     bool
+	}{
+		{"no list", false, nil, false},
+		{"all pending", true, []todos.Status{todos.StatusActive, todos.StatusPending}, false},
+		{"one done", true, []todos.Status{todos.StatusActive, todos.StatusDone}, true},
+		{"all done", true, []todos.Status{todos.StatusDone, todos.StatusDone}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			l := passLedger{goalText: "g", hasList: tc.hasList}
+			if tc.hasList {
+				items := make([]todos.Item, len(tc.statuses))
+				for i, st := range tc.statuses {
+					items[i] = todos.Item{N: i + 1, Text: "step", Status: st}
+				}
+				l.list = todos.List{Items: items}
+			}
+			if got := l.hasVerifiableWork(); got != tc.want {
+				t.Fatalf("hasVerifiableWork() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPassLedgerPartialDirectiveTurnSkipsVerificationWhenNoWorkDone(t *testing.T) {
+	// An all-pending list at the verification boundary should not arm
+	// verification, because there is nothing completed to verify.
+	l := passLedger{goalText: "g", hasList: true, partialStreak: 2}
+	l.list = todos.New("g", []string{"alpha", "beta"})
+	body, arm := l.partialDirectiveTurn()
+	if arm {
+		t.Fatalf("verification should not arm for an all-pending list, got body %q", body)
+	}
+	want := l.partialDirective()
+	if body != want {
+		t.Fatalf("body = %q, want partialDirective() = %q", body, want)
+	}
+
+	// A list with at least one completed item at the boundary arms
+	// verification.
+	l.list.Items[0].Status = todos.StatusDone
+	body, arm = l.partialDirectiveTurn()
+	if !arm {
+		t.Fatalf("verification should arm when a completed item exists, got body %q", body)
+	}
+	if body != verificationDirective {
+		t.Fatalf("body = %q, want verificationDirective", body)
 	}
 }
 

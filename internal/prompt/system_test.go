@@ -155,6 +155,44 @@ func TestSystemOmitsUnknownProviderAndModel(t *testing.T) {
 
 // TestSystemExplorePreamble pins the plan-mode explore guidance: it only
 // appears when Explore is set, and never appears in a normal prompt.
+func TestSystemWorkDiscipline(t *testing.T) {
+	on, err := System(Options{WorkDiscipline: true})
+	if err != nil {
+		t.Fatalf("System(WorkDiscipline): %v", err)
+	}
+	if !strings.Contains(on, "Work discipline.") {
+		t.Fatalf("work discipline missing:\n%s", on)
+	}
+	if !strings.Contains(on, "Batch read-only calls") {
+		t.Fatalf("parallel-batching guidance missing:\n%s", on)
+	}
+	// It must land before the voice line so normal/caveman voice assertions
+	// remain the final word.
+	workIdx := strings.Index(on, "Work discipline.")
+	voiceIdx := strings.Index(on, "Voice guidance:")
+	if workIdx == -1 || voiceIdx == -1 || workIdx >= voiceIdx {
+		t.Fatalf("work discipline must appear before voice guidance:\n%s", on)
+	}
+
+	off, err := System(Options{WorkDiscipline: false})
+	if err != nil {
+		t.Fatalf("System: %v", err)
+	}
+	if strings.Contains(off, "Work discipline.") {
+		t.Fatalf("work discipline must not render when disabled:\n%s", off)
+	}
+
+	// A plan-mode explore subagent already receives the explore preamble and
+	// must not also be told to edit.
+	explore, err := System(Options{WorkDiscipline: true, Explore: true})
+	if err != nil {
+		t.Fatalf("System(WorkDiscipline, Explore): %v", err)
+	}
+	if strings.Contains(explore, "Work discipline.") {
+		t.Fatalf("work discipline must not render during explore subagent runs:\n%s", explore)
+	}
+}
+
 func TestSystemExplorePreamble(t *testing.T) {
 	on, err := System(Options{Explore: true})
 	if err != nil {

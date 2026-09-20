@@ -157,6 +157,11 @@ Interactive default. Profiles (`internal/profiles`, stored under
 profile (`signet:debug`) is automatically engaged for `!cmd` inline-shell
 round-trips. User files cannot shadow a built-in name.
 
+Agent and goal mode carry a short *work-discipline* section in the system
+prompt that tells the model to start editing as soon as the change is clear and
+to interleave exploration with the edits. Plan mode deliberately omits it: plan
+mode has a read-only contract and must not be told to start editing.
+
 ### Tool execution
 
 Within one pass, tool calls execute in the order the model emitted them, with
@@ -243,7 +248,8 @@ manager when it appears in the submitted prompt.
 Attachment admission pipeline:
 
 1. **Path confinement** — `tools.SanitizePath` resolves the token against
-   `App.workdir`; a traversal outside the workdir is rejected.
+   `App.workdir` and any workspace directories added with `/add-dir`; a
+   traversal outside every root is rejected.
 2. **Read, or list for directories** — a file is fetched by `tools.Read`
    (up to 64 KiB, binary rejected on NUL bytes). A directory is not read —
    it is listed in-process, entries sorted, one per line, subdirectories
@@ -544,10 +550,19 @@ resolve paths from the concurrent fan-out.
 
 **Resolution rule**, which the `Cd` description states to the model:
 
-- a path beginning with `/` is relative to the **session root**;
+- a path beginning with `/` is matched against the primary session root; if
+  it does not prefix-match an added workspace root, `/` still means relative
+  to the primary root. A path under an added root resolves against that root.
 - any other path is relative to the **current working directory**;
-- there is no third case. An absolute filesystem path outside the root has no
-  spelling here.
+- there is no third case. An absolute filesystem path outside every root has
+  no spelling here.
+
+The session root set can be widened during a session with `/add-dir`. A
+confirmed added directory becomes an additional workspace root: absolute
+paths that prefix-match it resolve there, and the tool briefing lists the
+extra roots so the model knows the boundary. `Cd` still moves only inside
+the primary root; added roots are reached by naming absolute paths. This is
+a deliberate, user-confirmed relaxation of the default single-root invariant.
 
 The `Cd` tool takes one `path` and reports where it landed
 (`working directory: /internal/tools`, or `working directory: / (session
@@ -793,6 +808,9 @@ condition, are in [role-manager.md](role-manager.md), "Goal pass loop".
 
 A prompt the classifier routes to goal mode carries the prompt itself as the
 goal carrier, so a goal-mode turn always has something to evaluate against.
+
+The first goal pass is a work pass, not an acknowledgement pass: the directive
+asks for a `Plan:` todo list and the first step's execution in the same pass.
 
 Subagents never enter a pass loop — plan or goal: `AllowPassLoop` is a
 separate authority from `AllowExplore` and only top-level session

@@ -1,6 +1,7 @@
 package credentials
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -40,7 +41,7 @@ func TestEnvRefAllowedInProjectFile(t *testing.T) {
 		t.Fatalf("env reference should be allowed in a project file")
 	}
 	if v.Reveal() != "project-ref-val" {
-		t.Fatalf("value = %q", v.Reveal())
+		t.Fatalf("value = %q, want project-ref-val", v.Reveal())
 	}
 }
 
@@ -60,6 +61,27 @@ func TestStoreEnvRefValidatesName(t *testing.T) {
 	}
 	if err := r.StoreEnvRef("openai", "api_key", "GOOD_NAME", SourceUserFile); err != nil {
 		t.Fatalf("valid env name rejected: %v", err)
+	}
+}
+
+func TestResolverFindsBuiltInGroqEnvKey(t *testing.T) {
+	t.Setenv("GROQ_API_KEY", "groq-test-key")
+	r := &Resolver{
+		env:      os.Getenv,
+		userFile: newFileStore(filepath.Join(t.TempDir(), "creds.json"), false),
+		projFile: newFileStore(filepath.Join(t.TempDir(), "proj.json"), true),
+		netrc:    newNetrcStore(),
+		keychain: &fakeKeychain{},
+	}
+	v, origin, ok := r.Lookup("groq", "api_key")
+	if !ok {
+		t.Fatal("expected groq api_key to resolve from GROQ_API_KEY")
+	}
+	if v != "groq-test-key" {
+		t.Fatalf("value = %q, want groq-test-key", v)
+	}
+	if origin != "env $GROQ_API_KEY" {
+		t.Fatalf("origin = %q, want env $GROQ_API_KEY", origin)
 	}
 }
 

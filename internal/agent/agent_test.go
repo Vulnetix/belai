@@ -616,6 +616,10 @@ func TestAttachmentsReachTheUserTurn(t *testing.T) {
 }
 
 func writeToolCallJSON(w http.ResponseWriter, name, args string) {
+	writeToolCallWithContentJSON(w, name, args, "")
+}
+
+func writeToolCallWithContentJSON(w http.ResponseWriter, name, args, content string) {
 	b, _ := json.Marshal(map[string]any{
 		"id":     "x",
 		"object": "chat.completion",
@@ -623,7 +627,7 @@ func writeToolCallJSON(w http.ResponseWriter, name, args string) {
 			"index": 0,
 			"message": map[string]any{
 				"role":    "assistant",
-				"content": "",
+				"content": content,
 				"tool_calls": []any{map[string]any{
 					"id":       "call_1",
 					"type":     "function",
