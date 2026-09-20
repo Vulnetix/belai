@@ -9,9 +9,11 @@ func TestParseInvocation(t *testing.T) {
 	}{
 		{"", ActionRun},
 		{"run", ActionRun},
+		{"review", ActionRun},
 		{"configure", ActionConfigure},
 		{"list", ActionList},
 		{"status", ActionStatus},
+		{"firewall", ActionFirewall},
 		{"help", ActionHelp},
 		{"RUN extra", ActionRun},
 	}
