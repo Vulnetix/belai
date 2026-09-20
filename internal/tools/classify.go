@@ -23,6 +23,10 @@ package tools
 //     written by a third party on a hosting platform (PR bodies, issue
 //     comments, file contents). They carry the same prompt-injection risk as
 //     a web fetch, so they classify too.
+//   - KindAgentStore reads other agents' transcript and memory stores. The
+//     call is confined to the static registry, but the bytes are written by
+//     other models — the textbook prompt-injection carrier — so they classify
+//     too.
 //
 // Every other kind is both shaped and controlled: Grep returns matching lines
 // for a pattern the harness passed as one argument, Glob returns paths, Write
@@ -34,11 +38,13 @@ package tools
 // so adding a tool whose content is arbitrary means adding its kind here
 // deliberately.
 var classifierKinds = map[Kind]bool{
-	KindBash:      true,
-	KindWebFetch:  true,
-	KindWebSearch: true,
-	KindRead:      true,
-	KindRemote:    true,
+	KindBash:       true,
+	KindWebFetch:   true,
+	KindWebSearch:  true,
+	KindRead:       true,
+	KindRemote:     true,
+	KindProcess:    true,
+	KindAgentStore: true,
 }
 
 // NeedsClassifier reports whether a result of this kind must go through the

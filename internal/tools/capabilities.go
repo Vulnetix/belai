@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/vulnetix/signet/internal/proc"
 )
 
 // Capabilities is the set of native tools detected at session construction.
@@ -84,7 +86,7 @@ func defaultProbe() CapabilityProbe {
 		},
 		Run: func(ctx context.Context, name string, args ...string) bool {
 			ec := exec.CommandContext(ctx, name, args...)
-			ec.Env = scrubbedEnv()
+			ec.Env = proc.ScrubbedEnv()
 			return ec.Run() == nil
 		},
 	}

@@ -300,6 +300,10 @@ type ResilienceSettings struct {
 	// historical 4 so a subagent actually runs rg/find/git before clarifying,
 	// while still keeping the fan-out bounded. Zero means the default (8).
 	MaxExploreIterations int `json:"max_explore_iterations,omitempty"`
+	// MaxProcessRecoveries bounds how many times a supervised process may be
+	// restarted by the recovery subagent before it is marked failed. Zero
+	// means the default (3).
+	MaxProcessRecoveries int `json:"max_process_recoveries,omitempty"`
 	// MaxAgents caps how many fan-out subagents (explore plus background
 	// agents) run at once across the whole session. It defaults to 3, today's
 	// exploreConcurrency, and backs the single FIFO agent pool. Zero means the
@@ -350,6 +354,15 @@ func (r *ResilienceSettings) MaxExploreIterationsOr(def int) int {
 		return def
 	}
 	return r.MaxExploreIterations
+}
+
+// MaxProcessRecoveriesOr returns MaxProcessRecoveries or the provided default.
+// Zero means "use the default"; callers should pass the built-in default (3).
+func (r *ResilienceSettings) MaxProcessRecoveriesOr(def int) int {
+	if r == nil || r.MaxProcessRecoveries == 0 {
+		return def
+	}
+	return r.MaxProcessRecoveries
 }
 
 // MaxAgentsOr returns MaxAgents or the provided default. Zero means "use the
@@ -596,6 +609,13 @@ func (s Settings) Override(proj Settings) Settings {
 				merged.MaxExploreIterations = proj.Resilience.MaxExploreIterations
 			} else {
 				merged.MaxExploreIterations = min(merged.MaxExploreIterations, proj.Resilience.MaxExploreIterations)
+			}
+		}
+		if proj.Resilience.MaxProcessRecoveries != 0 {
+			if merged.MaxProcessRecoveries == 0 {
+				merged.MaxProcessRecoveries = proj.Resilience.MaxProcessRecoveries
+			} else {
+				merged.MaxProcessRecoveries = min(merged.MaxProcessRecoveries, proj.Resilience.MaxProcessRecoveries)
 			}
 		}
 		if proj.Resilience.MaxAgents != 0 {

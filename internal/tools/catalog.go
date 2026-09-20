@@ -164,12 +164,12 @@ func (n *Native) Execute(ctx context.Context, args map[string]any) (Result, erro
 
 	ec := exec.CommandContext(ctx, binary, argv...)
 	ec.Dir = baseDir(n.Root, n.Cwd)
-	ec.Env = scrubbedEnv()
+	ec.Env = proc.ScrubbedEnv()
 	if stdin != "" {
 		ec.Stdin = strings.NewReader(stdin)
 	}
 	ec.WaitDelay = 2 * time.Second
-	setProcessGroup(ec)
+	proc.SetProcessGroup(ec)
 
 	maxBytes := n.MaxBytes
 	if maxBytes <= 0 {

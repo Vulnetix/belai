@@ -1,0 +1,3 @@
+{"id":"e1","type":"session_meta","content":"{\"schema\":2,\"cwd\":\"/home/u/proj/signet\"}","timestamp":1783998487488}
+{"id":"e2","parentId":"e1","type":"user","role":"user","content":"where is the nonce","timestamp":1783998488488}
+{"id":"e3","parentId":"e2","type":"assistant","role":"assistant","content":"the nonce lives in delimiters","timestamp":1783998489488,"meta":{"model":"test-model"}}

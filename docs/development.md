@@ -508,6 +508,8 @@ returns to the session root.
 
 **Release parity.** `just build-all` cross-compiles all six release targets into `bin/` with the same ldflags the release workflow uses, and writes `bin/checksums.txt`. Run the host binary and check `-version` reports the git description.
 
+**Supervised processes.** In a temp directory, type `!!sleep 30` and confirm a `Process` tool row appears, the footer activity strip shows it, and no model turn is sent. Check `.vulnetix/processes/010-sleep.sh` holds `sleep 30` verbatim and `/processes` lists it enabled in the project scope. Press `x` to stop it; the row should turn into a stopped state. Run `!!false` and confirm the recovery subagent fires once (a `role manager` pill and a `ProcessRestart` tool row), then the process is marked `failed` after the configured max recoveries. Restart Signet in the same directory and confirm enabled entries auto-start.
+
 ## Tests
 
 | Command | Does |

@@ -308,6 +308,13 @@ type modelRow struct {
 
 var defaultModelEfforts = []string{"low", "medium", "high"}
 
+// scopeOptions lists the storage scopes each role may cycle through. The agent
+// role can stay session-only; the classifier is global or project only.
+var (
+	agentScopeOptions      = []string{"session", "global", "project"}
+	classifierScopeOptions = []string{"global", "project"}
+)
+
 // modelRows builds the declarative row table for both roles.
 func (a *App) modelRows() []modelRow {
 	origin := a.eff.Origin
@@ -330,7 +337,7 @@ func (a *App) modelRows() []modelRow {
 	}})
 	rows = append(rows, modelRow{roleAgent, settingsRow{
 		key: "scope", label: "scope", kind: "choose",
-		opts:  []string{"session", "global", "project"},
+		opts:  agentScopeOptions,
 		value: a.modelState.agentScope,
 	}})
 
@@ -390,7 +397,7 @@ func (a *App) modelRows() []modelRow {
 	}})
 	rows = append(rows, modelRow{roleClassifier, settingsRow{
 		key: "scope", label: "scope", kind: "choose",
-		opts:  []string{"global", "project"},
+		opts:  classifierScopeOptions,
 		value: clsScope,
 	}})
 
@@ -654,17 +661,21 @@ func (a *App) handleModelPickerKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
+// cycleScope advances the storage scope for the selected role. It reads the
+// role's own scope options, never the selected row's options: the row is
+// whatever the cursor happens to be on (provider, model, effort, …), and its
+// opts are provider names or effort chips, not scopes. Using them here let a
+// press of `s` on the provider row write a provider name into the scope field.
 func (a *App) cycleScope() tea.Cmd {
 	row := safeRow(a.modelState.rows, a.modelState.selected)
-	opts := row.opts
-	if len(opts) == 0 {
-		return nil
-	}
+	var opts []string
 	var cur string
 	switch row.role {
 	case roleAgent:
+		opts = agentScopeOptions
 		cur = a.modelState.agentScope
 	case roleClassifier:
+		opts = classifierScopeOptions
 		cur = a.modelState.classifierScope
 	}
 	next := opts[(indexOfString(opts, cur)+1)%len(opts)]
@@ -717,7 +728,10 @@ func (a *App) unsetModelRow() tea.Cmd {
 		case "model":
 			return a.mutateAgent(func(s *config.Settings) { s.Model = "" }, func() { a.cfg.Model = "" })
 		case "effort":
-			return a.mutateAgent(func(s *config.Settings) { s.Effort = "" }, func() { a.cfg.Effort = "" })
+			return a.mutateAgent(func(s *config.Settings) { s.Effort = "" }, func() {
+				a.cfg.Effort = ""
+				a.settings.Effort = ""
+			})
 		case "provider":
 			return a.mutateAgent(func(s *config.Settings) {
 				s.Provider = ""
@@ -727,6 +741,7 @@ func (a *App) unsetModelRow() tea.Cmd {
 				a.cfg.Provider = ""
 				a.cfg.Model = ""
 				a.cfg.Effort = ""
+				a.settings.Effort = ""
 			})
 		}
 	case roleClassifier:
@@ -890,7 +905,10 @@ func (a *App) cycleAgentEffort(opts []string) tea.Cmd {
 	}
 	cur := a.cfg.Effort
 	next := opts[(indexOfString(opts, cur)+1)%len(opts)]
-	return a.mutateAgent(func(s *config.Settings) { s.Effort = next }, func() { a.cfg.Effort = next })
+	return a.mutateAgent(func(s *config.Settings) { s.Effort = next }, func() {
+		a.cfg.Effort = next
+		a.settings.Effort = next
+	})
 }
 
 func (a *App) cycleClassifierProvider(opts []string) tea.Cmd {
@@ -954,6 +972,12 @@ func (a *App) unsetClassifierRow(key string) tea.Cmd {
 }
 
 // mutateAgent applies a settings change according to the agent role scope.
+// fn mutates the settings structure (written for global/project scope);
+// sessionFn mirrors the change onto the running config. Every path ends in
+// refreshProvider: a provider or model edit must re-resolve the base URL and
+// API key, otherwise the session keeps sending to the previous provider's
+// endpoint (an openrouter edit after a gateway provider kept routing to the
+// gateway, and a llama-server edit kept routing its model id to the gateway).
 func (a *App) mutateAgent(fn func(*config.Settings), sessionFn func()) tea.Cmd {
 	scope := a.modelState.agentScope
 	if scope == "" {
@@ -963,8 +987,13 @@ func (a *App) mutateAgent(fn func(*config.Settings), sessionFn func()) tea.Cmd {
 		if sessionFn != nil {
 			sessionFn()
 		}
+		a.state.Provider = a.cfg.Provider
+		a.state.Model = a.cfg.Model
+		a.state.Effort = a.settings.Effort
+		a.state.LastMode = a.mode
+		_ = config.SaveState(a.state)
 		a.modelState.errorMsg = ""
-		return nil
+		return a.refreshProvider()
 	}
 	cfgScope := config.ScopeProject
 	if scope == "global" {
@@ -981,8 +1010,13 @@ func (a *App) mutateAgent(fn func(*config.Settings), sessionFn func()) tea.Cmd {
 		a.modelState.errorMsg = err.Error()
 		return nil
 	}
+	// reloadSettings refreshes a.settings but not a.cfg; mirror the persisted
+	// change onto the running config before re-resolving the wire settings.
+	if sessionFn != nil {
+		sessionFn()
+	}
 	a.modelState.errorMsg = ""
-	return nil
+	return a.refreshProvider()
 }
 
 // mutateClassifier applies fn to the classifier block in the page's scope,

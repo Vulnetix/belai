@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -17,9 +16,6 @@ import (
 
 // noFileSelection is the fileIndex value meaning "no candidate is highlighted".
 const noFileSelection = -1
-
-// filePickRows is the maximum number of candidate rows shown at once.
-const filePickRows = 5
 
 // fileListTTL bounds how stale the workspace listing may be before it is
 // re-enumerated. A file can be created or deleted between keystrokes, so the
@@ -137,15 +133,13 @@ func (a *App) fileCandidates() []string {
 	if !ok {
 		return nil
 	}
-	lower := strings.ToLower(prefix)
+	cands := filterCandidates(a.files, prefix)
 	var out []string
-	for _, p := range a.files {
+	for _, p := range cands {
 		if imageExtensions[strings.ToLower(strings.TrimPrefix(filepath.Ext(p), "."))] {
 			continue
 		}
-		if strings.Contains(strings.ToLower(p), lower) {
-			out = append(out, p)
-		}
+		out = append(out, p)
 	}
 	return out
 }
@@ -154,7 +148,7 @@ func (a *App) fileCandidates() []string {
 // popup wins when both could show; the agent picker is hidden while an @-prefix
 // is active because @ is now reserved for file references.
 func (a *App) filePickerVisible() bool {
-	if a.view != viewChat || len(a.autocomplete) > 0 {
+	if a.view != viewChat || len(a.autocomplete) > 0 || a.dirPickState.open {
 		return false
 	}
 	_, prefix, ok := a.filePrefix()
@@ -178,32 +172,13 @@ func (a *App) filePickHeight() int {
 
 // cycleFile moves the highlight up or down through the candidate list.
 func (a *App) cycleFile(delta int) tea.Cmd {
-	cands := a.fileCandidates()
-	if len(cands) == 0 {
-		return nil
-	}
-	if a.fileIndex < 0 {
-		a.fileIndex = 0
-	} else {
-		a.fileIndex += delta
-	}
-	for a.fileIndex < 0 {
-		a.fileIndex += len(cands)
-	}
-	for a.fileIndex >= len(cands) {
-		a.fileIndex -= len(cands)
-	}
-	a.fileScroll = windowStart(a.fileScroll, a.fileIndex, len(cands), filePickRows)
+	cyclePicker(a.fileCandidates(), &a.fileIndex, delta)
 	return nil
 }
 
 // selectedFile returns the currently highlighted candidate, if any.
 func (a *App) selectedFile() (string, bool) {
-	cands := a.fileCandidates()
-	if a.fileIndex < 0 || a.fileIndex >= len(cands) {
-		return "", false
-	}
-	return cands[a.fileIndex], true
+	return selectedCandidate(a.fileCandidates(), a.fileIndex)
 }
 
 // acceptFilePick replaces the @-prefix with the chosen path and triggers an
@@ -281,33 +256,8 @@ func (a *App) fileSearchLine() string {
 // renderFilePicker draws the scrolling, filtered file list.
 func (a *App) renderFilePicker() string {
 	cands := a.fileCandidates()
-	if len(cands) == 0 {
-		return ""
-	}
-	idx := a.fileIndex
-	if idx < 0 {
-		idx = 0
-	}
-	start := windowStart(a.fileScroll, idx, len(cands), filePickRows)
-	a.fileScroll = start
-
-	var lines []string
-	lines = append(lines, a.fileSearchLine())
-	for i := start; i < start+filePickRows && i < len(cands); i++ {
-		selected := i == a.fileIndex
-		style := components.MutedStyle
-		if selected {
-			style = components.EmphStyle
-		}
-		lines = append(lines, components.Cursor(selected)+style.Render(cands[i]))
-	}
-
-	meta := strconv.Itoa(idx+1) + "/" + strconv.Itoa(len(cands))
-	return components.Panel{
-		Title:  "files",
-		Meta:   meta,
-		Body:   strings.Join(lines, "\n"),
-		Width:  a.contentWidth(),
-		Accent: lipgloss.TerminalColor(components.ColorTeal),
-	}.View()
+	meta := pickerCounter(a.fileIndex, len(cands))
+	rendered, newScroll := renderPicker("files", meta, a.contentWidth(), cands, a.fileIndex, a.fileScroll, []string{a.fileSearchLine()}, lipgloss.TerminalColor(components.ColorTeal))
+	a.fileScroll = newScroll
+	return rendered
 }

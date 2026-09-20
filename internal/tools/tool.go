@@ -151,6 +151,14 @@ func (r *Registry) Only(names ...string) *Registry {
 	return r.withCwd(NewRegistry(list...))
 }
 
+// With returns a registry holding r's tools followed by extra, carrying the
+// same working-directory tracker.
+func (r *Registry) With(extra ...Tool) *Registry {
+	list := append([]Tool{}, r.tools...)
+	list = append(list, extra...)
+	return r.withCwd(NewRegistry(list...))
+}
+
 // PlanSurface is how far the plan-mode registry may relax. The zero value
 // is the fail-closed surface: no write tools, no Bash.
 type PlanSurface struct {

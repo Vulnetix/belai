@@ -2141,6 +2141,48 @@ Supporting pieces:
   `l` launches, `d` downloads and `x` stops. Quitting the TUI stops every
   managed `llama-server`.
 
+## Supervised processes
+
+The composer accepts `!!cmd` to start a **supervised process**. Unlike the
+one-shot `!cmd` path, `!!cmd` runs the command through `sh -c` with **no
+output cap and no timeout**, so it is suitable for long-lived servers, dev
+servers, and watchers. The process gets its own process group, runs with a
+credential-scrubbed environment (`proc.ScrubbedEnv`), and streams output to a
+live tool row and a log file under `<GlobalDir>/proc-logs` without contacting
+the model while it runs.
+
+When a supervised process exits without the user having stopped it, Signet
+dispatches a **recovery subagent** with the command, the exit code, the run
+duration, the attempt count, and the tail of the log. The subagent's registry
+is intentionally narrow: the read-only plan surface plus `SubAgentLog` (to
+search the process log) and `ProcessRestart` (to restart the process). It
+has no other tools, may not fan out, may not clarify, and may not ask the user.
+`ProcessRestart` accepts an amended command only when `argv[0]` matches the
+original binary basename; the model may fix flags, but it may not swap the
+executable. Deny permission rules are evaluated against the effective
+command, and each restart call consumes one
+`resilience.max_process_recoveries` slot (default 3).
+
+The recovery subagent's tail input is untrusted and is classified when
+guardrails are enabled. If the classifier declines it, recovery proceeds from
+the harness-owned facts alone. The subagent's prose result is sanitised and
+classified before it reaches the transcript. Success is determined by whether
+the restarted process is still alive 10 seconds later, not by a sentinel, so
+no new role-manager label is needed.
+
+## Process library
+
+Supervised processes share the prompt library's file-backed library shape via
+`internal/filelib`: global and project scopes, filename grammar
+`NNN-slug.sh` / `_NNN-slug.sh` for enabled/disabled, global entries overlayed
+by project entries of the same name. The whole file body is the command,
+verbatim. `!!cmd` writes the command to the project scope with a slug derived
+from `argv[0]` and starts it. The manager screen (`/processes`) allows the
+user to toggle auto-start, reorder, edit in `$VISUAL/$EDITOR`, create, delete,
+run, stop, and view the log tail. Enabled entries auto-start when Signet
+opens the workdir; a lock file per `(workdir-hash, slug)` prevents a second
+Signet instance from launching a duplicate copy.
+
 ## Performance
 
 The TUI's perceived-latency path is tuned at several layers:

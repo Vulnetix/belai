@@ -2,10 +2,14 @@ package tui
 
 import (
 	"context"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -15,16 +19,35 @@ import (
 	"github.com/vulnetix/signet/internal/tui/components"
 )
 
-// dirPickState drives the /add-dir directory picker.
+// noDirSelection is the selected value meaning "no directory is highlighted",
+// mirroring noFileSelection in the @ file chooser.
+const noDirSelection = -1
+
+// dirPickState drives the inline /add-dir directory chooser. It lives in the
+// chat view, exactly like the @ file chooser: the composer text is the filter,
+// up/down move the highlight, enter confirms the highlighted directory, and
+// esc cancels.
 type dirPickState struct {
-	path        string
-	entries     []os.DirEntry
+	open        bool
+	dirs        []string // candidate directory paths, absolute
+	filter      string   // mirrors the composer text while the picker is open
 	selected    int
+	scroll      int
 	loading     bool
 	err         error
 	confirming  bool
 	confirmPath string
+	gen         uint64 // incremented on each open/close; stale loads are ignored
 }
+
+const (
+	// dirPickMaxResults keeps the picker responsive on large trees.
+	dirPickMaxResults = 2000
+	// dirPickMaxDepth limits how far below the root we enumerate.
+	dirPickMaxDepth = 5
+	// dirPickBudget caps the time we spend scanning directories.
+	dirPickBudget = 3 * time.Second
+)
 
 // workspaceMapReadyMsg carries the result of a background repo-map scan for
 // an added workspace directory.
@@ -32,6 +55,13 @@ type workspaceMapReadyMsg struct {
 	dir string
 	m   repomap.Map
 	err error
+}
+
+// dirPickLoadedMsg carries the result of scanning directories for the picker.
+type dirPickLoadedMsg struct {
+	dirs []string
+	err  error
+	gen  uint64
 }
 
 // loadWorkspaceDirs restores persisted workspace directories and returns a set
@@ -58,126 +88,198 @@ func (a *App) workspaceMapScanCmd(dir string) tea.Cmd {
 	}
 }
 
-// enterAddDir opens the directory picker rooted at the user's home directory.
-func (a *App) enterAddDir() tea.Cmd {
+// openAddDirPicker opens the inline directory chooser rooted at the user's
+// home directory. The composer becomes the filter input, so the @ chooser's
+// type-to-filter, up/down, enter, esc behaviour is reused unchanged.
+func (a *App) openAddDirPicker() tea.Cmd {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		home = a.workdir
 	}
-	a.dirPickState = dirPickState{path: home}
-	return a.refreshDirPick()
+	st := &a.dirPickState
+	st.open = true
+	st.dirs = nil
+	st.filter = ""
+	st.selected = noDirSelection
+	st.scroll = 0
+	st.loading = true
+	st.err = nil
+	st.confirming = false
+	st.confirmPath = ""
+	st.gen++
+	a.editor.Reset()
+	a.editor.Masked = false
+	a.clearLoadedPrompt()
+	a.clearAutocomplete()
+	a.relayout()
+	return a.loadDirPickCmd(home)
 }
 
-// refreshDirPick reloads the listing for the current picker path.
-func (a *App) refreshDirPick() tea.Cmd {
+// closeAddDirPicker closes the inline chooser and returns the composer to an
+// empty, normal prompt.
+func (a *App) closeAddDirPicker() {
 	st := &a.dirPickState
-	st.loading = true
-	path := st.path
+	st.open = false
+	st.filter = ""
+	st.selected = noDirSelection
+	st.scroll = 0
+	st.loading = false
+	st.err = nil
+	st.confirming = false
+	st.confirmPath = ""
+	st.gen++
+	a.editor.Reset()
+	a.editor.Masked = false
+	a.clearAutocomplete()
+	a.relayout()
+}
+
+// loadDirPickCmd starts a background scan of directories under root.
+func (a *App) loadDirPickCmd(root string) tea.Cmd {
+	gen := a.dirPickState.gen
 	return func() tea.Msg {
-		entries, err := os.ReadDir(path)
-		return dirPickLoadedMsg{path: path, entries: entries, err: err}
+		dirs, err := listDirectories(root)
+		return dirPickLoadedMsg{dirs: dirs, err: err, gen: gen}
 	}
 }
 
-// dirPickLoadedMsg carries the result of reading one directory.
-type dirPickLoadedMsg struct {
-	path    string
-	entries []os.DirEntry
-	err     error
+// listDirectories walks root and returns a sorted list of absolute directory
+// paths. It skips system directories, hidden directories, dependency/output
+// directories, and symlinked directories, and it is bounded by depth, result
+// count, and a time budget. Once a bound is hit the walk stops entirely, so
+// the picker can never hang enumerating a large home tree.
+func listDirectories(root string) ([]string, error) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	info, err := os.Stat(absRoot)
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("not a directory: %s", root)
+	}
+
+	deadline := time.Now().Add(dirPickBudget)
+	skip := map[string]bool{}
+	for _, d := range projectregistry.DefaultSkipDirs {
+		skip[d] = true
+	}
+
+	hardSkip := map[string]bool{}
+	if runtime.GOOS != "windows" {
+		for _, p := range []string{"/proc", "/sys", "/dev", "/run"} {
+			hardSkip[p] = true
+		}
+		home, _ := os.UserHomeDir()
+		if home != "" {
+			hardSkip[filepath.Join(home, "Library")] = true
+			hardSkip[filepath.Join(home, ".Trash")] = true
+			hardSkip[filepath.Join(home, "snap")] = true
+		}
+	}
+
+	var dirs []string
+	_ = filepath.WalkDir(absRoot, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if len(dirs) >= dirPickMaxResults || time.Now().After(deadline) {
+			return fs.SkipAll
+		}
+		if !d.IsDir() {
+			return nil
+		}
+		if hardSkip[path] {
+			return fs.SkipDir
+		}
+
+		rel, _ := filepath.Rel(absRoot, path)
+		depth := 0
+		if rel != "." {
+			depth = len(strings.Split(rel, string(filepath.Separator)))
+		}
+		if depth > dirPickMaxDepth {
+			return fs.SkipDir
+		}
+
+		name := d.Name()
+		if rel != "." && strings.HasPrefix(name, ".") {
+			return fs.SkipDir
+		}
+		if skip[name] {
+			return fs.SkipDir
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return fs.SkipDir
+		}
+
+		dirs = append(dirs, path)
+		return nil
+	})
+	sort.Strings(dirs)
+	return dirs, nil
 }
 
-// handleDirPickLoaded installs a fresh directory listing.
+// handleDirPickLoaded installs a scanned directory listing.
 func (a *App) handleDirPickLoaded(m dirPickLoadedMsg) {
 	st := &a.dirPickState
+	if m.gen != st.gen {
+		return
+	}
 	st.loading = false
 	if m.err != nil {
 		st.err = m.err
-		st.entries = nil
+		st.dirs = nil
+		a.relayout()
 		return
 	}
 	st.err = nil
-	st.entries = filterAndSortEntries(m.entries)
-	st.selected = 0
+	st.dirs = m.dirs
+	st.selected = noDirSelection
+	st.scroll = 0
+	a.relayout()
 }
 
-// filterAndSortEntries puts directories first, then files, each alphabetical.
-func filterAndSortEntries(entries []os.DirEntry) []os.DirEntry {
-	var dirs, files []os.DirEntry
-	for _, e := range entries {
-		if e.IsDir() {
-			dirs = append(dirs, e)
-		} else {
-			files = append(files, e)
-		}
-	}
-	sort.Slice(dirs, func(i, j int) bool { return dirs[i].Name() < dirs[j].Name() })
-	sort.Slice(files, func(i, j int) bool { return files[i].Name() < files[j].Name() })
-	return append(dirs, files...)
+// filtered returns the directories that match the current filter.
+func (st *dirPickState) filtered() []string {
+	return filterCandidates(st.dirs, st.filter)
 }
 
-// selectedDirPickEntry returns the currently highlighted entry, if it exists.
-func (st *dirPickState) selectedEntry() (os.DirEntry, bool) {
-	if st.selected < 0 || st.selected >= len(st.entries) {
-		return nil, false
-	}
-	return st.entries[st.selected], true
+// setFilter replaces the filter and clamps the selection.
+func (st *dirPickState) setFilter(filter string) {
+	st.filter = filter
+	st.clampSelected()
 }
 
-// selectedDirPickPath returns the full path of the highlighted entry.
-func (st *dirPickState) selectedPath() string {
-	if e, ok := st.selectedEntry(); ok {
-		return filepath.Join(st.path, e.Name())
+// clampSelected keeps the selection inside the filtered list.
+func (st *dirPickState) clampSelected() {
+	n := len(st.filtered())
+	if n == 0 {
+		st.selected = noDirSelection
+		return
 	}
-	return ""
+	if st.selected < 0 {
+		st.selected = 0
+	} else if st.selected >= n {
+		st.selected = n - 1
+	}
 }
 
-// handleAddDirKey routes keys while the directory picker is open.
-func (a *App) handleAddDirKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
-	st := &a.dirPickState
-	if st.confirming {
-		switch strings.ToLower(m.String()) {
-		case "y":
-			st.confirming = false
-			return a, a.addSelectedWorkspaceDir()
-		case "n", "esc", "left":
-			st.confirming = false
-			return a, nil
-		}
-		return a, nil
-	}
-	switch m.String() {
-	case "up":
-		if st.selected > 0 {
-			st.selected--
-		}
-	case "down":
-		if st.selected < len(st.entries)-1 {
-			st.selected++
-		}
-	case "right", "enter":
-		if e, ok := st.selectedEntry(); ok && e.IsDir() {
-			st.path = filepath.Join(st.path, e.Name())
-			return a, a.refreshDirPick()
-		}
-	case "left":
-		parent := filepath.Dir(st.path)
-		if parent != st.path && parent != "" {
-			st.path = parent
-			return a, a.refreshDirPick()
-		}
-	case "a":
-		if e, ok := st.selectedEntry(); ok && e.IsDir() {
-			st.confirming = true
-			st.confirmPath = filepath.Join(st.path, e.Name())
-		}
-	case "esc":
-		a.pop()
-	}
-	return a, nil
+// selectedDir returns the currently highlighted directory, if any.
+func (st *dirPickState) selectedDir() (string, bool) {
+	return selectedCandidate(st.filtered(), st.selected)
+}
+
+// cycle moves the selection up or down through the filtered directories.
+func (st *dirPickState) cycle(delta int) {
+	cyclePicker(st.filtered(), &st.selected, delta)
 }
 
 // addWorkspaceDirCmd persists an absolute or relative path as a workspace
-// directory. It is the direct /add-dir <path> path, bypassing the picker.
+// directory. The repo-map scan is started by handleWorkspaceDirAdded, so the
+// persistence command itself stays fast and the chooser can close immediately.
 func (a *App) addWorkspaceDirCmd(arg string) tea.Cmd {
 	dir := arg
 	if !filepath.IsAbs(dir) {
@@ -187,26 +289,13 @@ func (a *App) addWorkspaceDirCmd(arg string) tea.Cmd {
 		if err := projectregistry.AddWorkspaceDir(a.workdir, dir); err != nil {
 			return workspaceDirAddedMsg{err: err}
 		}
-		repomap.Scan(context.Background(), dir)
 		return workspaceDirAddedMsg{dir: dir}
 	}
 }
 
-// addSelectedWorkspaceDir persists the selected directory and updates the
-// running session's confinement.
+// addSelectedWorkspaceDir persists the currently highlighted directory.
 func (a *App) addSelectedWorkspaceDir() tea.Cmd {
-	st := &a.dirPickState
-	dir := st.confirmPath
-	if dir == "" {
-		return nil
-	}
-	return func() tea.Msg {
-		if err := projectregistry.AddWorkspaceDir(a.workdir, dir); err != nil {
-			return workspaceDirAddedMsg{err: err}
-		}
-		repomap.Scan(context.Background(), dir)
-		return workspaceDirAddedMsg{dir: dir}
-	}
+	return a.addWorkspaceDirCmd(a.dirPickState.confirmPath)
 }
 
 // workspaceDirAddedMsg reports the result of adding a workspace directory.
@@ -220,12 +309,13 @@ type workspaceDirAddedMsg struct {
 func (a *App) handleWorkspaceDirAdded(m workspaceDirAddedMsg) tea.Cmd {
 	if m.err != nil {
 		a.addSystem("add-dir: " + m.err.Error())
+		a.closeAddDirPicker()
 		return nil
 	}
 	// Idempotently extend the live list.
 	for _, d := range a.workspaceDirs {
 		if d == m.dir {
-			a.pop()
+			a.closeAddDirPicker()
 			a.addSystem("workspace directory already added: " + m.dir)
 			return nil
 		}
@@ -236,48 +326,113 @@ func (a *App) handleWorkspaceDirAdded(m workspaceDirAddedMsg) tea.Cmd {
 	}
 	a.invalidateAgentSession()
 	a.addSystem("added workspace directory: " + m.dir)
-	a.pop()
+	a.closeAddDirPicker()
 	return a.workspaceMapScanCmd(m.dir)
 }
 
-// renderAddDirView draws the directory picker and optional confirmation pane.
-func (a *App) renderAddDirView() string {
+// handleAddDirKey routes keys while the inline directory chooser is open. It
+// claims navigation, accept, confirm and cancel; every other key falls through
+// to the composer so typing continues to filter the list, exactly like the @
+// file chooser.
+func (a *App) handleAddDirKey(m tea.KeyMsg) (tea.Cmd, bool) {
+	st := &a.dirPickState
+	if st.confirming {
+		switch strings.ToLower(m.String()) {
+		case "y":
+			st.confirming = false
+			return a.addSelectedWorkspaceDir(), true
+		case "n", "esc":
+			st.confirming = false
+			return nil, true
+		}
+		return nil, true
+	}
+
+	switch m.String() {
+	case "up":
+		st.cycle(-1)
+		return nil, true
+	case "down":
+		st.cycle(1)
+		return nil, true
+	case "enter":
+		if dir, ok := st.selectedDir(); ok {
+			st.confirming = true
+			st.confirmPath = dir
+		}
+		return nil, true
+	case "esc":
+		a.closeAddDirPicker()
+		return nil, true
+	}
+	return nil, false
+}
+
+// dirPickVisible reports whether the inline chooser has anything to draw.
+func (a *App) dirPickVisible() bool {
+	return a.view == viewChat && a.dirPickState.open
+}
+
+// addDirPickHeight returns the rendered height of the chooser when visible.
+func (a *App) addDirPickHeight() int {
+	if !a.dirPickVisible() {
+		return 0
+	}
+	return lipgloss.Height(a.renderAddDirPicker())
+}
+
+// renderAddDirPicker draws the inline directory chooser and its optional
+// confirmation pane, reusing renderPicker from the @ file chooser.
+func (a *App) renderAddDirPicker() string {
 	st := &a.dirPickState
 	width := a.contentWidth()
-
-	var lines []string
-	lines = append(lines, components.MutedStyle.Render("navigation: ↑↓  enter: open  a: add selected  esc: cancel"))
-	lines = append(lines, components.MutedStyle.Render("path: "+st.path))
-	if st.err != nil {
-		lines = append(lines, "error: "+st.err.Error())
-	} else if st.loading {
-		lines = append(lines, components.MutedStyle.Render("loading..."))
-	} else {
-		for i, e := range st.entries {
-			selected := i == st.selected
-			style := components.MutedStyle
-			if selected {
-				style = components.EmphStyle
-			}
-			icon := "📄 "
-			if e.IsDir() {
-				icon = "📁 "
-			}
-			lines = append(lines, components.Cursor(selected)+style.Render(icon+e.Name()))
-		}
-	}
-	body := ""
-	if len(lines) > 0 {
-		body = strings.Join(lines, "\n")
-	}
+	title := "add workspace directory"
 
 	var panels []string
-	panels = append(panels, components.Panel{
-		Title:  "add workspace directory",
-		Body:   body,
-		Width:  width,
-		Accent: lipgloss.TerminalColor(components.ColorTeal),
-	}.View())
+
+	switch {
+	case st.loading:
+		panels = append(panels, components.Panel{
+			Title:  title,
+			Body:   components.MutedStyle.Render("loading..."),
+			Width:  width,
+			Accent: lipgloss.TerminalColor(components.ColorTeal),
+		}.View())
+	case st.err != nil:
+		panels = append(panels, components.Panel{
+			Title:  title,
+			Body:   "error: " + st.err.Error(),
+			Width:  width,
+			Accent: lipgloss.TerminalColor(components.ColorTeal),
+		}.View())
+	default:
+		cands := st.filtered()
+		meta := pickerCounter(st.selected, len(cands))
+		help := components.MutedStyle.Render("type: filter  ↑↓: move  enter: add  esc: cancel")
+		filterLine := components.MutedStyle.Render("filter  ") +
+			components.EmphStyle.Render(st.filter+"▌")
+		picker, newScroll := renderPicker(
+			title,
+			meta,
+			width,
+			cands,
+			st.selected,
+			st.scroll,
+			[]string{help, filterLine},
+			lipgloss.TerminalColor(components.ColorTeal),
+		)
+		st.scroll = newScroll
+		if picker != "" {
+			panels = append(panels, picker)
+		} else {
+			panels = append(panels, components.Panel{
+				Title:  title,
+				Body:   components.MutedStyle.Render("no directories match"),
+				Width:  width,
+				Accent: lipgloss.TerminalColor(components.ColorTeal),
+			}.View())
+		}
+	}
 
 	if st.confirming {
 		panels = append(panels, "")

@@ -1,0 +1,3 @@
+{"type":"session","version":3,"id":"cccc1111-2222-3333-4444-555566667777","timestamp":"2026-09-08T22:31:00Z","cwd":"/home/u/proj/signet"}
+{"type":"message","id":"m1","timestamp":"2026-09-08T22:31:01Z","message":{"role":"user","content":[{"type":"text","text":"where is the nonce"}]}}
+{"type":"message","id":"m2","timestamp":"2026-09-08T22:31:02Z","message":{"role":"assistant","content":[{"type":"text","text":"the nonce lives in delimiters"}]}}

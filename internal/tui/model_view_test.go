@@ -153,6 +153,108 @@ func TestModelViewGroupsRolesWithPerRoleBadges(t *testing.T) {
 	}
 }
 
+func TestModelAgentProviderChangeReResolvesConfig(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("OPENAI_API_KEY", "sk-openai")
+	t.Setenv("OPENROUTER_API_KEY", "or-key")
+	workdir := t.TempDir()
+	a := New(Options{Workdir: workdir})
+	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	_ = a.enterModel()
+	a.modelState.agentScope = "session"
+
+	if a.cfg.Provider != "openai" {
+		t.Fatalf("initial provider = %q, want openai", a.cfg.Provider)
+	}
+	startBase := a.cfg.BaseURL
+
+	// Cycle the agent provider row until openrouter is selected. Changing the
+	// provider must re-resolve the base URL and API key, not just the name.
+	providers := a.modelProviders()
+	for i := 0; i <= len(providers); i++ {
+		_ = a.cycleAgentProvider(providers)
+		if a.cfg.Provider == "openrouter" {
+			break
+		}
+	}
+	if a.cfg.Provider != "openrouter" {
+		t.Fatalf("provider = %q, want openrouter", a.cfg.Provider)
+	}
+	if a.cfg.BaseURL == startBase || !strings.Contains(a.cfg.BaseURL, "openrouter.ai") {
+		t.Fatalf("base URL = %q, want re-resolved openrouter URL (stale base URL %q)", a.cfg.BaseURL, startBase)
+	}
+	if a.cfg.APIKey != "or-key" {
+		t.Fatalf("api key = %q, want or-key", a.cfg.APIKey)
+	}
+}
+
+func TestModelAgentProviderChangeGlobalScopeReResolvesConfig(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("OPENROUTER_API_KEY", "or-key")
+	workdir := t.TempDir()
+	a := New(Options{Workdir: workdir})
+	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	_ = a.enterModel()
+	a.modelState.agentScope = "global"
+
+	providers := a.modelProviders()
+	for i := 0; i <= len(providers); i++ {
+		_ = a.cycleAgentProvider(providers)
+		if a.cfg.Provider == "openrouter" {
+			break
+		}
+	}
+	if a.cfg.Provider != "openrouter" {
+		t.Fatalf("provider = %q, want openrouter", a.cfg.Provider)
+	}
+	if !strings.Contains(a.cfg.BaseURL, "openrouter.ai") {
+		t.Fatalf("base URL = %q, want re-resolved openrouter URL", a.cfg.BaseURL)
+	}
+	if a.cfg.APIKey != "or-key" {
+		t.Fatalf("api key = %q, want or-key", a.cfg.APIKey)
+	}
+	if a.settings.Provider != "openrouter" {
+		t.Fatalf("settings provider = %q, want openrouter persisted", a.settings.Provider)
+	}
+}
+
+func TestModelScopeKeyCyclesRoleScopeNotRowOptions(t *testing.T) {
+	a := New(Options{})
+	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	_ = a.enterModel()
+	a.modelState.agentScope = "session"
+	a.modelState.classifierScope = "project"
+	a.modelState.rows = a.modelRows()
+
+	// Press scope on the agent provider row, whose opts are provider names.
+	// The scope must cycle through role scopes, never provider names.
+	a.modelState.selected = 0
+	_ = a.cycleScope()
+	if a.modelState.agentScope != "global" {
+		t.Fatalf("agent scope = %q, want global", a.modelState.agentScope)
+	}
+	_ = a.cycleScope()
+	if a.modelState.agentScope != "project" {
+		t.Fatalf("agent scope = %q, want project", a.modelState.agentScope)
+	}
+	_ = a.cycleScope()
+	if a.modelState.agentScope != "session" {
+		t.Fatalf("agent scope = %q, want session", a.modelState.agentScope)
+	}
+
+	// Same for the classifier provider row.
+	a.modelState.selected = 4
+	a.modelState.classifierScope = "project"
+	_ = a.cycleScope()
+	if a.modelState.classifierScope != "global" {
+		t.Fatalf("classifier scope = %q, want global", a.modelState.classifierScope)
+	}
+	_ = a.cycleScope()
+	if a.modelState.classifierScope != "project" {
+		t.Fatalf("classifier scope = %q, want project", a.modelState.classifierScope)
+	}
+}
+
 func TestModelClassifierScopeWritesGlobalSettings(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 	workdir := t.TempDir()

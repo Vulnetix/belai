@@ -10,7 +10,7 @@ import (
 // bytes the harness did not write, and a remote CLI result carrying
 // third-party repository text.
 func TestArbitraryContentKindsClassify(t *testing.T) {
-	for _, k := range []Kind{KindBash, KindWebFetch, KindWebSearch, KindRead, KindRemote} {
+	for _, k := range []Kind{KindBash, KindWebFetch, KindWebSearch, KindRead, KindRemote, KindProcess, KindAgentStore} {
 		if !k.NeedsClassifier() {
 			t.Errorf("%q result skipped the classifier", k)
 		}
@@ -22,7 +22,7 @@ func TestArbitraryContentKindsClassify(t *testing.T) {
 // Edit return a confirmation the harness wrote itself, and a local native
 // runs a fixed argv the harness built.
 func TestShapedKindsDoNotClassify(t *testing.T) {
-	for _, k := range []Kind{KindGrep, KindGlob, KindWrite, KindEdit, KindNative} {
+	for _, k := range []Kind{KindGrep, KindGlob, KindWrite, KindEdit, KindNative, KindProcessCtl} {
 		if k.NeedsClassifier() {
 			t.Errorf("%q result asked for the classifier", k)
 		}
@@ -52,7 +52,16 @@ func TestClassifierKindsAreRegisteredKinds(t *testing.T) {
 // new kind cannot be added to either side without this test being updated on
 // purpose.
 func TestClassifierKindsIsExactlyTheArbitraryContentSet(t *testing.T) {
-	want := map[Kind]bool{KindBash: true, KindWebFetch: true, KindWebSearch: true, KindRead: true, KindRemote: true}
+	want := map[Kind]bool{
+		KindBash:       true,
+		KindWebFetch:   true,
+		KindWebSearch:  true,
+		KindRead:       true,
+		KindRemote:     true,
+		KindProcess:    true,
+		KindProcessCtl: false,
+		KindAgentStore: true,
+	}
 	for _, k := range AllKinds {
 		if got := k.NeedsClassifier(); got != want[k] {
 			t.Errorf("Kind(%q).NeedsClassifier() = %v, want %v", k, got, want[k])

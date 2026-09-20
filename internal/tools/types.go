@@ -28,6 +28,18 @@ const (
 	// its results are arbitrary third-party content, so they are classified
 	// before promotion.
 	KindRemote Kind = "remote"
+	// KindProcess is a supervised process's own arbitrary stdout/stderr,
+	// read back by SubAgentLog. It classifies because the bytes are exactly as
+	// unconstrained as KindBash.
+	KindProcess Kind = "process"
+	// KindProcessCtl is the harness-composed confirmation from ProcessRestart.
+	// It is mutating and sanitise-only.
+	KindProcessCtl Kind = "process_ctl"
+	// KindAgentStore identifies the read-only SearchSessions, ReadSession and
+	// SearchMemory tools. Their content is other agents' transcript and memory
+	// text — arbitrary content written by other models — so the kind is
+	// read-only but classifies before promotion.
+	KindAgentStore Kind = "agent_store"
 )
 
 // AllKinds is every registered Kind, in declaration order. Tests iterate it to
@@ -36,6 +48,7 @@ const (
 var AllKinds = []Kind{
 	KindRead, KindWebSearch, KindWebFetch, KindBash, KindGrep, KindGlob,
 	KindExplore, KindWrite, KindEdit, KindNative, KindRemote, KindUpdatePlan,
+	KindProcess, KindProcessCtl, KindAgentStore,
 }
 
 // readOnlyKinds is the closed allowlist of kinds that only read. A Kind absent
@@ -52,6 +65,8 @@ var readOnlyKinds = map[Kind]bool{
 	KindNative:     true,
 	KindRemote:     true,
 	KindUpdatePlan: true,
+	KindProcess:    true,
+	KindAgentStore: true,
 }
 
 // ReadOnly reports whether a tool of this kind only reads and never mutates

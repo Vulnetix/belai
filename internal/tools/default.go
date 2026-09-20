@@ -1,6 +1,10 @@
 package tools
 
-import "time"
+import (
+	"time"
+
+	"github.com/vulnetix/signet/internal/agentstore"
+)
 
 // Default builds the default tool registry for a working directory: Read
 // (bounded to 64 KiB), Write, Edit, WebFetch, WebSearch when a search backend
@@ -29,6 +33,10 @@ func Default(workdir string, readOnly bool) *Registry {
 	list = append(list, &Cd{Cwd: cwd})
 	list = append(list, UpdatePlan{})
 	list = append(list, ExitPlanMode{})
+	// The three agent-store tools read other agents' stores through the
+	// static registry. Probing is lazy (first use), not at startup, so a
+	// registry built here costs nothing until a call is made.
+	list = append(list, NewAgentStoreTools(agentstore.New("", workdir), workdir)...)
 
 	base := NewRegistry(list...)
 	base.cwd = cwd

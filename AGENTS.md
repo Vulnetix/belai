@@ -24,7 +24,8 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
 - **Arbitrary content goes through the classifier.** `Bash` (an arbitrary
   command), `WebFetch` and `WebSearch` (text written off this machine),
   `Read` (a file's bytes), `GH`/`Glab` results (`KindRemote`, third-party
-  repository text), and `RepoRead` (`KindRead`) all classify,
+  repository text), `RepoRead` (`KindRead`), `SubAgentLog` (`KindProcess`)
+  and the recovery subagent's process-tail briefing all classify,
   unconditionally. Do not add an exemption for any of them.
 - **Shaped, controlled results are sanitized only.** `Grep`, `Glob`, `Write`,
   `Edit`, and the native catalogue return output whose shape the harness
@@ -67,6 +68,13 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   part of the switch and always runs.
 - **Tool-call mismatch defaults to abort.** Stripping or ignoring mismatches
   requires explicit user opt-in.
+- **Recovery subagent authority is bounded.** The recovery subagent sees the
+  read-only plan surface plus `SubAgentLog` and `ProcessRestart`; it has no
+  other tools. `ProcessRestart` may only change flags, not the binary, so the
+  `argv[0]` basename is pinned to the original command. Every restart call
+  consumes one `resilience.max_process_recoveries` slot and Deny rules still
+  apply. When the cap is reached the process is marked `failed` with no
+  further model calls.
 - **Skills and hooks validate first.** Skills load only after strict
   front-matter schema validation; hooks load only after schema validation with
   no arbitrary code-path injection.

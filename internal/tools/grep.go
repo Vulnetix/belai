@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/vulnetix/signet/internal/proc"
 )
 
 // Grep searches files under Root for a pattern, preferring ripgrep and falling
@@ -104,7 +106,7 @@ func (g *Grep) runRg(ctx context.Context, pattern, sub, dir string) ([]byte, err
 	}
 	ec := exec.CommandContext(ctx, g.rgPath, args...)
 	ec.Dir = dir
-	ec.Env = scrubbedEnv()
+	ec.Env = proc.ScrubbedEnv()
 	return ec.Output()
 }
 
@@ -115,7 +117,7 @@ func (g *Grep) runGrep(ctx context.Context, pattern, sub, dir string) ([]byte, e
 	}
 	ec := exec.CommandContext(ctx, "grep", args...)
 	ec.Dir = dir
-	ec.Env = scrubbedEnv()
+	ec.Env = proc.ScrubbedEnv()
 	return ec.Output()
 }
 

@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -217,7 +216,7 @@ func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink
 		ec = exec.CommandContext(ctx, "sh", "-c", cmd)
 	}
 	ec.Dir = baseDir(b.Root, b.Cwd)
-	ec.Env = scrubbedEnv()
+	ec.Env = proc.ScrubbedEnv()
 
 	if b.MaxBytes <= 0 {
 		b.MaxBytes = 64 * 1024
@@ -240,7 +239,7 @@ func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink
 	// spawns a background child inheriting the pipe would hang the caller
 	// indefinitely, even after the parent exits and the context is cancelled.
 	ec.WaitDelay = 2 * time.Second
-	setProcessGroup(ec)
+	proc.SetProcessGroup(ec)
 
 	if err := ec.Start(); err != nil {
 		return Result{}, err
@@ -268,25 +267,6 @@ func exitCode(err error) int {
 		return exitErr.ExitCode()
 	}
 	return 1
-}
-
-// scrubbedEnv returns a minimal environment with provider credentials and
-// Signet config stripped so subprocess output cannot accidentally exfiltrate
-// them to a model.
-func scrubbedEnv() []string {
-	var out []string
-	for _, e := range os.Environ() {
-		key, _, _ := strings.Cut(e, "=")
-		upper := strings.ToUpper(key)
-		if strings.HasPrefix(upper, "OPENAI_") || strings.HasPrefix(upper, "ANTHROPIC_") ||
-			strings.HasPrefix(upper, "CLOUDFLARE_") || strings.HasPrefix(upper, "SIGNET_") ||
-			strings.HasSuffix(upper, "_API_KEY") || strings.HasSuffix(upper, "_TOKEN") ||
-			strings.HasSuffix(upper, "_SECRET") {
-			continue
-		}
-		out = append(out, e)
-	}
-	return out
 }
 
 // BashResult constructs a Bash tool result.

@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/vulnetix/signet/internal/proc"
 )
 
 // Glob lists files matching a glob pattern.
@@ -153,7 +155,7 @@ func (g *Glob) enumerateFd(ctx context.Context, sub, root string) []candidate {
 	}
 	ec := exec.CommandContext(ctx, g.fdPath, args...)
 	ec.Dir = base
-	ec.Env = scrubbedEnv()
+	ec.Env = proc.ScrubbedEnv()
 	out, err := ec.Output()
 	if err != nil {
 		return nil

@@ -21,6 +21,7 @@ const (
 	KindVulnetix Kind = "vulnetix"
 	KindShell    Kind = "shell"
 	KindAgent    Kind = "agent"
+	KindProcess  Kind = "process"
 )
 
 // State is one activity lifecycle state.

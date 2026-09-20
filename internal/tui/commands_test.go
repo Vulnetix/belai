@@ -7,7 +7,7 @@ import (
 
 func TestRegistryNames(t *testing.T) {
 	r := NewRegistry(t.TempDir())
-	want := []string{"add-dir", "agent", "clear", "compact", "execute", "exit", "help", "mode", "model", "new", "permissions", "profile", "prompts", "providers", "quit", "refine", "rename", "resume", "settings", "todos", "vulnetix", "yolo"}
+	want := []string{"add-dir", "agent", "clear", "compact", "execute", "exit", "help", "mode", "model", "new", "permissions", "process", "processes", "profile", "prompts", "providers", "quit", "refine", "rename", "resume", "settings", "todos", "vulnetix", "yolo"}
 	if !reflect.DeepEqual(r.Names(), want) {
 		t.Fatalf("Names = %v, want %v", r.Names(), want)
 	}
@@ -17,7 +17,7 @@ func TestCompleteCommandPrefix(t *testing.T) {
 	r := NewRegistry(t.TempDir())
 
 	got := r.Complete("/p")
-	want := []string{"/permissions", "/profile", "/prompts", "/providers"}
+	want := []string{"/permissions", "/process", "/processes", "/profile", "/prompts", "/providers"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Complete(/p) = %v, want %v", got, want)
 	}

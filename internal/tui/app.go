@@ -29,6 +29,7 @@ import (
 	"github.com/vulnetix/signet/internal/agentprofile"
 	"github.com/vulnetix/signet/internal/aifirewall"
 	"github.com/vulnetix/signet/internal/bgagent"
+	"github.com/vulnetix/signet/internal/bgproc"
 	"github.com/vulnetix/signet/internal/clipboard"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
@@ -438,6 +439,10 @@ type App struct {
 	// every time a session touches the prompt library.
 	promptLegacyNoticed bool
 
+	// process-library state. mirrors promptsState and is managed from
+	// /processes.
+	processesState processesViewState
+
 	// save-file flow: ctrl+s on a hovered file panel turns the composer into a
 	// destination-path prompt that writes the panel's content on enter.
 	saveFileMode bool
@@ -477,12 +482,17 @@ type App struct {
 
 	// background agent manager
 	bgManager *bgagent.Manager
+	// supervised-process manager
+	procManager *bgproc.Manager
 
 	// agentPool caps every fan-out subagent (explore plus background agents)
 	// behind one settings-backed FIFO queue. The Role Manager owns it through
 	// the session pipeline; the TUI owns the instance so explore and background
 	// agents share the same ceiling.
 	agentPool *agentpool.Pool
+	// caps caches detected native-tool capabilities so the supervised-process
+	// manager and the session use the same catalogue.
+	caps tools.Capabilities
 
 	// subagent roster (Phase 4): chips persist across turns and are removed
 	// only on an explicit dismiss.
@@ -748,6 +758,8 @@ func New(opts Options) *App {
 		a.bgManager = bgagent.NewManager(workdir, initial, a.client, a.settings, a.effectivePosture())
 		a.bgManager.SetPool(a.agentPool)
 	}
+	a.procManager = bgproc.NewManager(workdir, initial, a.client, a.settings, a.effectivePosture(), a.caps)
+	a.autoStartProcesses()
 	a.applyGitInfo(gitinfo.Detect(a.workdir))
 	a.loadAgents()
 	scanCmds := a.loadWorkspaceDirs()
@@ -872,6 +884,9 @@ func (a *App) SetClassifier(c rolemanager.Classifier) {
 func (a *App) Init() tea.Cmd {
 	a.maybeNoticeLegacyPrompts()
 	cmds := []tea.Cmd{tickCmd(), a.watchActivityEvents()}
+	if a.procManager != nil {
+		cmds = append(cmds, a.watchProcessEvents())
+	}
 	if a.initCmd != nil {
 		cmds = append(cmds, a.initCmd)
 	}
@@ -1004,6 +1019,7 @@ func (a *App) belowViewportHeight() int {
 	if a.promptPickerVisible() {
 		h++
 	}
+	h += a.addDirPickHeight()
 	h += a.filePickHeight()
 	h += a.attachStripHeight()
 	h += a.todoPanelHeight()
@@ -1231,7 +1247,15 @@ func (a *App) sendTurn(firstUser bool, input string, atts []run.Attachment, dire
 // already echoed and the Role Manager indicator is up.
 func (a *App) classifyAndSend(input string, atts []run.Attachment, directive string, firstUser bool) tea.Cmd {
 	c := a.classifier
-	ctx := a.ctx
+	// Use a fresh context rather than a.ctx: a.ctx is the *previous* turn's
+	// context at this point (the current turn's context is only created once
+	// the decision lands in send), and a previous esc/resume leaves it
+	// canceled. Capturing it here made the next mode classification fail with
+	// "context canceled" against an otherwise healthy provider. A fresh
+	// context is still bounded by the shared transport's 30s
+	// ResponseHeaderTimeout, and esc during pre-send drops the result via the
+	// preSend flag, so nothing depends on this goroutine being cancelable.
+	ctx := context.Background()
 	return func() tea.Msg {
 		d, err := rolemanager.Select(ctx, c, rolemanager.ModeInput{
 			Prompt:        input,
@@ -1476,6 +1500,10 @@ type sessionBuildParams struct {
 	workspaceDirs []string
 	// workspaceMaps hold the harness-computed repo maps for workspaceDirs.
 	workspaceMaps []repomap.Map
+	// procManager exposes the supervised-process log to the main agent.
+	procManager *bgproc.Manager
+	// caps caches detected native-tool capabilities.
+	caps tools.Capabilities
 }
 
 func (a *App) sessionBuildParams() sessionBuildParams {
@@ -1505,6 +1533,8 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 		repoMap:       a.repoMap,
 		workspaceDirs: a.workspaceDirs,
 		workspaceMaps: a.workspaceMaps,
+		procManager:   a.procManager,
+		caps:          a.caps,
 	}
 }
 
@@ -1512,7 +1542,10 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 // is the pure construction half of agentSession, safe to run off the Bubble
 // Tea goroutine.
 func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
-	caps := tools.DetectDefault()
+	caps := p.caps
+	if caps.IsEmpty() {
+		caps = tools.DetectDefault()
+	}
 	ix := repoindex.Scan(context.Background(), p.workdir)
 	reg := tools.DefaultWithCaps(p.workdir, p.settings.ReadOnlyEnabled(), caps, ix)
 	if len(p.toolAllow) > 0 {
@@ -1521,6 +1554,9 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		// on its own. Only keeps the shared working-directory tracker, so a
 		// Cd in an allowlisted session still reaches the footer.
 		reg = reg.Only(p.toolAllow...)
+	}
+	if p.procManager != nil {
+		reg = reg.With(&tools.SubAgentLog{Logs: p.procManager})
 	}
 	perms := permissions.From(p.settings.Permissions.Allow, p.settings.Permissions.Ask, p.settings.Permissions.Deny)
 	var promptOpts prompt.Options
@@ -1685,6 +1721,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case promptEditedMsg:
 		return a, a.handlePromptEdited(m)
 
+	case processEditedMsg:
+		return a, a.handleProcessEdited(m)
+
 	case vulnetixDoneMsg:
 		return a, a.handleVulnetixDone(m)
 
@@ -1733,6 +1772,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case attachValidatedMsg:
 		return a, a.handleAttachValidated(m)
+
+	case processEventMsg:
+		return a, a.handleProcessEvent(m)
 
 	case shellProgressMsg:
 		return a, a.handleShellProgress(m)
@@ -1835,6 +1877,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.isArmed(armQuit) {
 				a.disarm()
 				a.stopLocalServers()
+				if a.procManager != nil {
+					a.procManager.Shutdown()
+				}
 				return a, tea.Quit
 			}
 			a.arm(armQuit)
@@ -1944,6 +1989,14 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 	// The runs panel owns the composer's keys while focused.
 	if a.runsFocus {
 		return a.handleRunsPanelKey(m)
+	}
+
+	// The /add-dir chooser owns navigation and accept while open; every other
+	// key falls through to the composer so typing filters the directory list.
+	if a.dirPickState.open {
+		if cmd, handled := a.handleAddDirKey(m); handled {
+			return cmd
+		}
 	}
 
 	if a.filePickerVisible() {
@@ -2074,9 +2127,14 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 			}
 		}
 		input := strings.TrimSpace(a.editor.Value())
-		// A slash command and a `!cmd` are local acts, not model turns: they
-		// need no carrier, so they run on this enter rather than falling into
-		// the agent picker below and costing the user a second press.
+		// A slash command and a `!cmd` / `!!cmd` are local acts, not model
+		// turns: they need no carrier, so they run on this enter.
+		if isProcessInput(input) {
+			a.editor.Reset()
+			a.clearLoadedPrompt()
+			a.clearAutocomplete()
+			return a.handleProcess(input)
+		}
 		if isShellInput(input) {
 			a.editor.Reset()
 			a.clearLoadedPrompt()
@@ -2174,13 +2232,21 @@ func (a *App) forwardToEditor(m tea.KeyMsg) tea.Cmd {
 	a.fileIndex = noFileSelection
 	a.fileScroll = 0
 	a.fileDismissed = ""
+	// While the /add-dir chooser is open the composer text is the directory
+	// filter, not a prompt: keep the picker narrowed to it and suppress slash
+	// autocomplete.
+	if a.dirPickState.open {
+		a.dirPickState.setFilter(a.editor.Value())
+	}
 	a.refreshAutocomplete()
 	a.relayout()
 	// Lazily load the workspace listing the first time the file chooser could
 	// appear. Returning the command alongside the editor update lets the
 	// current keystroke take effect while the listing fills in the background.
-	if loadCmd := a.fileListIfStale(); loadCmd != nil {
-		return tea.Batch(cmd, loadCmd)
+	if !a.dirPickState.open {
+		if loadCmd := a.fileListIfStale(); loadCmd != nil {
+			return tea.Batch(cmd, loadCmd)
+		}
 	}
 	return cmd
 }
@@ -2339,6 +2405,12 @@ func (a *App) handleHistoryKey(m tea.KeyMsg) tea.Cmd {
 		if input == "" {
 			return nil
 		}
+		if isProcessInput(input) {
+			a.editor.Reset()
+			a.clearLoadedPrompt()
+			a.clearAutocomplete()
+			return a.handleProcess(input)
+		}
 		if isShellInput(input) {
 			a.editor.Reset()
 			a.clearLoadedPrompt()
@@ -2456,6 +2528,11 @@ func (a *App) autocompleteSelection() (string, bool) {
 // The highlight survives only while the candidate list is unchanged, so a
 // stale index can never point at a different command than the chip row showed.
 func (a *App) refreshAutocomplete() {
+	if a.dirPickState.open {
+		a.autocomplete = nil
+		a.autocompleteIndex = noAutocompleteSelection
+		return
+	}
 	next := a.registry.Complete(a.editor.Value())
 	if !slices.Equal(next, a.autocomplete) {
 		a.autocompleteIndex = noAutocompleteSelection
@@ -3177,6 +3254,10 @@ func (a *App) chatView() string {
 		sb.WriteString(a.renderPromptPicker())
 		sb.WriteString("\n")
 	}
+	if a.dirPickVisible() {
+		sb.WriteString(a.renderAddDirPicker())
+		sb.WriteString("\n")
+	}
 	if a.filePickerVisible() {
 		sb.WriteString(a.renderFilePicker())
 		sb.WriteString("\n")
@@ -3466,6 +3547,9 @@ func (a *App) syncPosture() {
 	if a.bgManager != nil {
 		a.bgManager.SetPosture(a.effectivePosture())
 	}
+	if a.procManager != nil {
+		a.procManager.SetPosture(a.effectivePosture())
+	}
 }
 
 func (a *App) toggleAsk() tea.Cmd {
@@ -3721,12 +3805,21 @@ func (a *App) handleCredentialsResolved(m credentialsResolvedMsg) tea.Cmd {
 	} else {
 		a.showCredentialMessage(m.cfg.Provider, a.resolver)
 	}
+	var newProcWatcher tea.Cmd
+	if a.procManager == nil {
+		a.procManager = bgproc.NewManager(a.workdir, m.cfg, a.client, a.settings, a.effectivePosture(), a.caps)
+		a.autoStartProcesses()
+		newProcWatcher = a.watchProcessEvents()
+	}
 	a.invalidateAvailability()
 	a.refreshFooter()
 	// Warm the live catalogue in the background: the footer's context meter
 	// scales to the selected model's context window, which most providers
 	// only declare in their live catalogue.
 	cmds := []tea.Cmd{}
+	if newProcWatcher != nil {
+		cmds = append(cmds, newProcWatcher)
+	}
 	if cmd := a.prefetchCatalogCmd(m.cfg.Provider); cmd != nil {
 		cmds = append(cmds, cmd)
 	}

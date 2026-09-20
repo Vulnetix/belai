@@ -1,0 +1,179 @@
+// Supervised-process composer and event handling. `!!cmd` starts a process
+// that lives as long as Signet; its output streams to a log and the UI, and
+// if it exits unexpectedly a recovery subagent is dispatched.
+package tui
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/vulnetix/signet/internal/activity"
+	"github.com/vulnetix/signet/internal/bgproc"
+	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/signet/internal/modes"
+	"github.com/vulnetix/signet/internal/permissions"
+	"github.com/vulnetix/signet/internal/processlib"
+	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/signet/internal/tui/components"
+)
+
+// processEventMsg carries one supervised-process lifecycle event.
+type processEventMsg bgproc.Event
+
+// processProgressMsg carries one batch of live supervised-process output.
+// It mirrors shellProgressMsg so the same append/re-arm pattern works.
+type processProgressMsg struct {
+	id   string
+	text string
+	done bool
+}
+
+func isProcessInput(s string) bool { return strings.HasPrefix(s, "!!") }
+
+// handleProcess starts a supervised process from the composer. It persists an
+// entry in the project process library and returns a live tool row. No model
+// is contacted while the process runs.
+func (a *App) handleProcess(input string) tea.Cmd {
+	cmd := strings.TrimSpace(strings.TrimPrefix(input, "!!"))
+	if cmd == "" {
+		return nil
+	}
+
+	perms := permissions.From(a.settings.Permissions.Allow, a.settings.Permissions.Ask, a.settings.Permissions.Deny)
+	surface := tools.PlanSurface{GuardrailsOff: !a.guardrailsEnabled(), Perms: perms}
+	if !modes.ToolAllowed("bash", map[string]any{"command": cmd}, a.mode == "plan", surface) {
+		a.addSystem("process command not allowed in plan mode: " + cmd)
+		return nil
+	}
+
+	entry, err := processlib.CreateUnique(config.ScopeProject, a.workdir, cmd)
+	if err != nil {
+		a.addSystem(fmt.Sprintf("process library: %v", err))
+		return nil
+	}
+
+	proc, err := a.procManager.Start(entry.Name, cmd)
+	if err != nil {
+		a.addSystem(fmt.Sprintf("process start failed: %v", err))
+		return nil
+	}
+
+	callID := "proc-" + proc.ID
+	a.messages = append(a.messages, components.Message{
+		Role:       "tool",
+		ToolName:   "Process",
+		ToolArgs:   toolArgsString(map[string]any{"command": cmd}),
+		ToolCallID: callID,
+		StartedAt:  time.Now(),
+	})
+	a.follow = true
+	a.registerProcessActivity(callID, cmd, a.workdir)
+
+	a.addSystem(fmt.Sprintf("process %s started: %s", proc.ID, cmd))
+	return a.watchProcessEvents()
+}
+
+// handleProcessProgress appends live output to the running process row.
+func (a *App) handleProcessProgress(m processProgressMsg) tea.Cmd {
+	if m.done {
+		return nil
+	}
+	for i := len(a.messages) - 1; i >= 0; i-- {
+		if a.messages[i].Role == "tool" && a.messages[i].ToolCallID == "proc-"+m.id {
+			a.messages[i].AppendProgress(m.text)
+			break
+		}
+	}
+	if a.follow {
+		a.vp.GotoBottom()
+	}
+	return a.watchProcessEvents()
+}
+
+// handleProcessEvent routes process lifecycle events to the transcript and
+// updates the live row. It always re-arms the watcher.
+func (a *App) handleProcessEvent(m processEventMsg) tea.Cmd {
+	switch m.Kind {
+	case "progress":
+		return a.handleProcessProgress(processProgressMsg{id: m.ID, text: m.Text})
+	case "start":
+		// Row was already added by handleProcess.
+	case "exit", "stop", "fail":
+		callID := "proc-" + m.ID
+		if a.activity != nil {
+			code := 0
+			timedOut := false
+			if m.Err != nil {
+				code = m.Process.ExitCode
+			}
+			a.activity.Finish(callID, code, timedOut, m.Err)
+		}
+		for i := len(a.messages) - 1; i >= 0; i-- {
+			if a.messages[i].Role == "tool" && a.messages[i].ToolCallID == callID {
+				a.messages[i].SetContent(m.Process.State.Label())
+				a.messages[i].Status = toolResultStatus("Process", m.Process.State.Label())
+				break
+			}
+		}
+		if m.Kind == "fail" {
+			a.addSystem(fmt.Sprintf("process %s failed after %d recovery attempts", m.ID, m.Process.Attempts))
+		}
+	case "restart":
+		a.addSystem(fmt.Sprintf("process %s restarted", m.ID))
+	case "recover":
+		// Recovery subagent activity is already reflected by its own tool
+		// rows in the main transcript; keep the process row live.
+	}
+	return a.watchProcessEvents()
+}
+
+func (a *App) watchProcessEvents() tea.Cmd {
+	return func() tea.Msg {
+		e, ok := <-a.procManager.Events()
+		if !ok {
+			return processEventMsg{Kind: "closed"}
+		}
+		return processEventMsg(e)
+	}
+}
+
+// registerProcessActivity adds the supervised process to the honest runs
+// panel.
+// autoStartProcesses loads the merged enabled process library and starts
+// any entries that are not already running (the lock file handles races with
+// another Signet instance).
+func (a *App) autoStartProcesses() {
+	if a.procManager == nil {
+		return
+	}
+	global, _ := processlib.Load(config.ScopeGlobal, a.workdir)
+	project, _ := processlib.Load(config.ScopeProject, a.workdir)
+	for _, e := range processlib.Enabled(processlib.Merge(global.Entries, project.Entries)) {
+		if _, err := a.procManager.Start(e.Name, e.Command); err != nil {
+			// Already running or lock conflict; keep going.
+			continue
+		}
+	}
+}
+
+func (a *App) registerProcessActivity(callID, command, workdir string) {
+	if a.activity == nil {
+		return
+	}
+	a.activity.Add(activity.Activity{
+		ID:    callID,
+		Kind:  activity.KindProcess,
+		Label: "!!" + command,
+		Argv:  []string{"!!" + command},
+		Dir:   workdir,
+		State: activity.StateRunning,
+		Quiet: true,
+	}, func() {
+		// Cancel callback: extract process id from callID ("proc-<id>").
+		id := strings.TrimPrefix(callID, "proc-")
+		_ = a.procManager.Stop(id)
+	})
+}

@@ -111,6 +111,32 @@ func ProjectGoalsDir(workdir string) string {
 	return filepath.Join(ProjectDir(workdir), "goals")
 }
 
+// GlobalProcessesDir returns <GlobalDir>/processes, the directory of named
+// process files that make up the global process library.
+func GlobalProcessesDir() (string, error) {
+	dir, err := GlobalDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "processes"), nil
+}
+
+// ProjectProcessesDir returns <workdir>/.vulnetix/processes, the directory of
+// named process files that make up the project-local process library.
+func ProjectProcessesDir(workdir string) string {
+	return filepath.Join(ProjectDir(workdir), "processes")
+}
+
+// ProcessLogsDir returns <GlobalDir>/proc-logs, the directory that holds
+// supervised-process log files.
+func ProcessLogsDir() (string, error) {
+	dir, err := GlobalDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "proc-logs"), nil
+}
+
 // GlobalSkillsDir returns <GlobalDir>/skills.
 func GlobalSkillsDir() (string, error) {
 	dir, err := GlobalDir()

@@ -39,7 +39,7 @@ where `GlobalDir()` honours `SIGNET_HOME` and otherwise resolves to
 | *(file name)* | No | string | The on-disk filename (e.g. `triage-deps.json`), independent of `name`. It is never serialised — the file's own name is the record. Empty means derive it from `name`. The editor exposes it as its own field; renaming via `name` moves the file only while the file name is still derived. |
 | `description` | Yes | string | Human-readable purpose, shown in `/agent list`. |
 | `system_prompt` | Yes | string | The system prompt sent to the model on every turn. |
-| `tools` | No | string[] | Allowed tool names; empty means the full default registry. Validated against the built-in set: `Bash`, `Cd`, `Edit`, `ExitPlanMode`, `Glob`, `Grep`, `Read`, `update_plan`, `WebFetch`, `WebSearch`, `Write`. |
+| `tools` | No | string[] | Allowed tool names; empty means the full default registry. Validated against the built-in set: `Bash`, `Cd`, `Edit`, `ExitPlanMode`, `Glob`, `Grep`, `Read`, `ReadSession`, `SearchMemory`, `SearchSessions`, `SubAgentLog`, `update_plan`, `WebFetch`, `WebSearch`, `Write`. |
 | `mode` | Yes | string | One of `single`, `loop`, `scheduled`, `monitor`. |
 | `schedule` | No | string | Cron-like schedule expression (used when `mode` is `scheduled`). |
 | `monitor_condition` | No | string | Human-readable trigger condition (used when `mode` is `monitor`). |

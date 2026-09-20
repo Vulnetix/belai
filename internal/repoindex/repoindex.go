@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vulnetix/signet/internal/proc"
+
 	"github.com/vulnetix/signet/internal/gitinfo"
 )
 
@@ -283,7 +285,7 @@ func RunProbe(ctx context.Context, dir, name string, args ...string) string {
 	defer cancel()
 	ec := exec.CommandContext(pctx, name, args...)
 	ec.Dir = dir
-	ec.Env = ScrubbedEnv()
+	ec.Env = proc.ScrubbedEnv()
 	out, err := ec.Output()
 	if err != nil {
 		return ""
@@ -301,23 +303,4 @@ func capProbe(out []byte) string {
 		out = out[:probeMaxBytes]
 	}
 	return strings.TrimRight(string(out), "\n")
-}
-
-// ScrubbedEnv returns an environment with credential-like variables removed.
-// It mirrors the scrubbing used for grounding probes so the index cannot
-// exfiltrate secrets through a subprocess environment.
-func ScrubbedEnv() []string {
-	var out []string
-	for _, e := range os.Environ() {
-		key, _, _ := strings.Cut(e, "=")
-		upper := strings.ToUpper(key)
-		if strings.HasPrefix(upper, "OPENAI_") || strings.HasPrefix(upper, "ANTHROPIC_") ||
-			strings.HasPrefix(upper, "CLOUDFLARE_") || strings.HasPrefix(upper, "SIGNET_") ||
-			strings.HasSuffix(upper, "_API_KEY") || strings.HasSuffix(upper, "_TOKEN") ||
-			strings.HasSuffix(upper, "_SECRET") {
-			continue
-		}
-		out = append(out, e)
-	}
-	return out
 }

@@ -282,7 +282,7 @@ func (a *App) acceptAgentArg() tea.Cmd {
 // popup wins when both could show, and the file chooser wins when an @-prefix
 // is being typed, because @ is now reserved for file references.
 func (a *App) agentPickerVisible() bool {
-	if a.view != viewChat || len(a.autocomplete) > 0 {
+	if a.view != viewChat || len(a.autocomplete) > 0 || a.dirPickState.open {
 		return false
 	}
 	// Naming an agent for a /agent subcommand is not choosing a carrier, so

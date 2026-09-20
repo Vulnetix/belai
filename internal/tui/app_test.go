@@ -1893,6 +1893,39 @@ func TestSubmitInputClassifiesAsyncThenSends(t *testing.T) {
 	}
 }
 
+func TestClassifyAndSendUsesFreshContextAfterCancel(t *testing.T) {
+	a := New(Options{Workdir: t.TempDir()})
+	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	// Simulate a previous turn whose context was canceled by esc/resume. The
+	// next mode classification must not inherit that canceled context.
+	a.ctx, a.cancel = context.WithCancel(context.Background())
+	a.cancel()
+	a.cancel = nil
+	if a.ctx.Err() == nil {
+		t.Fatal("setup: previous turn context should be canceled")
+	}
+
+	var seenErr error
+	a.classifier = rolemanager.ClassifierFunc(func(ctx context.Context, _ rolemanager.ClassifierPayload) (string, error) {
+		seenErr = ctx.Err()
+		return "PLAN", nil
+	})
+
+	cmd := a.classifyAndSend("hello", nil, "", false)
+	msg := cmd()
+	cm, ok := msg.(modeClassifiedMsg)
+	if !ok {
+		t.Fatalf("msg = %T, want modeClassifiedMsg", msg)
+	}
+	if cm.err != nil {
+		t.Fatalf("classify err = %v", cm.err)
+	}
+	if seenErr != nil {
+		t.Fatalf("classifier saw a canceled context: %v", seenErr)
+	}
+}
+
 func TestEscCancelsPreSend(t *testing.T) {
 	a := New(Options{})
 	a.mode = "goal" // avoid the agent-picker gate during pre-send tests

@@ -941,7 +941,7 @@ func (a *App) assignProviderModelToAgent(provider string) tea.Cmd {
 		a.providerDetailState.localReport = err.Error()
 		return nil
 	}
-	return tea.Batch(a.applyModelProvider(provider, model, effort), a.refreshProvider())
+	return a.applyModelProvider(provider, model, effort)
 }
 
 func (a *App) assignProviderModelToClassifier(provider string) tea.Cmd {

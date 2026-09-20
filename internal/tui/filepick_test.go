@@ -199,7 +199,7 @@ func TestFilePickerWindowScrollsPastFive(t *testing.T) {
 	if a.fileScroll <= 0 {
 		t.Fatalf("fileScroll = %d, want > 0 when cursor is below the window", a.fileScroll)
 	}
-	visible := a.fileCandidates()[a.fileScroll : a.fileScroll+filePickRows]
+	visible := a.fileCandidates()[a.fileScroll : a.fileScroll+pickerRows]
 	if visible[len(visible)-1] != "a/seven.go" {
 		t.Fatalf("window ends at %q, want a/seven.go", visible[len(visible)-1])
 	}

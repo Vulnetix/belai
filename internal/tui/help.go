@@ -39,7 +39,7 @@ func keySections() []keySection {
 			{"f10", "toggle the Vulnetix AI Firewall (chat)"},
 		}},
 		{"chat", []keyBinding{
-			{"enter", "send; also runs !shell and /commands, or steers a running turn"},
+			{"enter", "send; also runs !shell, !!process, and /commands, or steers a running turn"},
 			{"ctrl+j, shift+enter", "newline"},
 			{"ctrl+left, ctrl+right", "move the cursor one word left or right"},
 			{"home, end", "jump to the start or end of the line (fn+left, fn+right)"},
@@ -64,6 +64,14 @@ func keySections() []keySection {
 			{"up, down", "move the highlight, wrapping"},
 			{"right, tab, enter", "insert the highlighted path and close the chooser"},
 			{"esc, left", "close the chooser; typing reopens it"},
+		}},
+		{"add-dir chooser (/add-dir)", []keyBinding{
+			{"/add-dir", "open the directory chooser; the filter is the prompt"},
+			{"type", "filter the directory list"},
+			{"up, down", "move the highlight, wrapping"},
+			{"enter", "add the highlighted directory"},
+			{"y, n", "confirm or reject the highlighted directory"},
+			{"esc", "cancel and return to the prompt"},
 		}},
 		{"agent picker (agent mode, above the prompt)", []keyBinding{
 			{"/agent", "open the agent picker; bare @ opens files"},
@@ -196,6 +204,19 @@ func keySections() []keySection {
 			{"a", "create a new prompt and open it in the editor"},
 			{"d", "delete the selected prompt (confirm)"},
 			{"s", "toggle scope: global, project"},
+			{"esc", "back"},
+		}},
+		{"process library (/processes)", []keyBinding{
+			{"up, down", "move (also k, j)"},
+			{"space", "toggle the selected process on or off"},
+			{"J, K", "reorder the selected process later or earlier"},
+			{"e", "open the selected process command in $VISUAL/$EDITOR"},
+			{"a", "create a new process and open it in the editor"},
+			{"d", "delete the selected process (confirm)"},
+			{"s", "toggle scope: global, project"},
+			{"r", "run the selected process"},
+			{"x", "stop the selected process"},
+			{"enter", "show the running process log tail"},
 			{"esc", "back"},
 		}},
 		{"prompt action bar (after ctrl+s on a loaded prompt)", []keyBinding{

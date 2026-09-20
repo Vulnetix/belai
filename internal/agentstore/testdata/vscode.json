@@ -1,0 +1,11 @@
+{
+  "sessionId": "ffff1111-2222-3333-4444-555566667777",
+  "requests": [
+    {
+      "requestId": "r1",
+      "message": {"text": "where is the nonce"},
+      "response": [{"kind": "text", "text": "the nonce lives in delimiters"}],
+      "timestamp": "2026-09-08T22:31:00Z"
+    }
+  ]
+}

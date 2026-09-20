@@ -243,6 +243,10 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("prompts", "manage the prompt library", nil, func(a *App, arg string) tea.Cmd {
 		return a.push(viewPrompts)
 	})
+	r.Register("processes", "manage the process library", nil, func(a *App, arg string) tea.Cmd {
+		return a.push(viewProcesses)
+	})
+	r.RegisterAlias("process", "processes")
 	r.Register("yolo", "toggle guardrails and ask together", func() []string {
 		return []string{"on", "off"}
 	}, func(a *App, arg string) tea.Cmd {
@@ -259,7 +263,7 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("add-dir", "add a directory to the current workspace", nil, func(a *App, arg string) tea.Cmd {
 		arg = strings.TrimSpace(arg)
 		if arg == "" {
-			return a.push(viewAddDir)
+			return a.openAddDirPicker()
 		}
 		return a.addWorkspaceDirCmd(arg)
 	})
@@ -276,6 +280,9 @@ func NewRegistry(workdir string) *Registry {
 		// Typing a whole command is confirmation enough: no two-press arm, and
 		// the exit card prints exactly as it does after the armed ctrl+d.
 		a.stopLocalServers()
+		if a.procManager != nil {
+			a.procManager.Shutdown()
+		}
 		return tea.Quit
 	})
 	r.RegisterAlias("quit", "exit")
