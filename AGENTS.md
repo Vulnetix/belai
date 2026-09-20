@@ -37,6 +37,13 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   file contents. Repository prose reaching the model stays on the
   `RepoRead`/`Read` path, which classifies. This is what permits the map in the
   system block.
+- **The confinement boundary is a fixed root set unless the user widens it.**
+  The primary working directory is the default confinement root. The only way
+  to add roots is an explicit `/add-dir` command confirmed by the user.
+  Project-level `workspace_dirs` settings propose directories; they do not
+  activate unless the global `allow_project_workspace_dirs` opt-in is set.
+  A path outside every root is refused outright, and roots cannot overlap so
+  a single path is never resolvable two ways.
 - **Plan mode has no Bash by default.** Plan mode advertises and enforces
   the fail-closed surface (`Registry.PlanWith` and `modes.ToolAllowed`):
   no mutating tools and no `Bash`. A read-only `Bash` returns only when an

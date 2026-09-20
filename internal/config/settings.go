@@ -57,6 +57,10 @@ type Settings struct {
 	// Defaults to false: a project file defining a provider is an API-key
 	// exfiltration primitive, so it requires an explicit user opt-in.
 	AllowProjectProviders *bool `json:"allow_project_providers,omitempty"`
+	// AllowProjectWorkspaceDirs opts in to project-layer workspace directory
+	// proposals. Defaults to false: a cloned repo could otherwise name
+	// sensitive directories and silently widen the sandbox.
+	AllowProjectWorkspaceDirs *bool `json:"allow_project_workspace_dirs,omitempty"`
 	// Classifier configures the security classifier separately from the main
 	// agent model. nil means reuse the main provider/model with reasoning off.
 	Classifier *ClassifierSettings `json:"classifier,omitempty"`
@@ -68,6 +72,11 @@ type Settings struct {
 	// Vulnetix holds per-project /vulnetix configuration. It is typed and
 	// allowlisted so arbitrary argv can never be persisted here.
 	Vulnetix *VulnetixSettings `json:"vulnetix,omitempty"`
+	// WorkspaceDirs is a project-layer allowlist of additional directories that
+	// may be added to sessions started in this project. If non-empty, only
+	// directories in this list (and persisted to the project registry) are
+	// attached; others are filtered out of the registry.
+	WorkspaceDirs []string `json:"workspace_dirs,omitempty"`
 }
 
 // VulnetixSettings is the per-project /vulnetix configuration.
@@ -410,6 +419,12 @@ func (s Settings) AllowProjectProvidersEnabled() bool {
 	return s.AllowProjectProviders != nil && *s.AllowProjectProviders
 }
 
+// AllowProjectWorkspaceDirsEnabled reports whether the global opt-in for
+// project-layer workspace directory proposals is set.
+func (s Settings) AllowProjectWorkspaceDirsEnabled() bool {
+	return s.AllowProjectWorkspaceDirs != nil && *s.AllowProjectWorkspaceDirs
+}
+
 // CavemanEnabled reports whether the caveman voice rewrite is active. The
 // default (nil or false) is off.
 func (s Settings) CavemanEnabled() bool {
@@ -594,6 +609,9 @@ func (s Settings) Override(proj Settings) Settings {
 			merged.PlanExplore = proj.Resilience.PlanExplore
 		}
 		out.Resilience = merged
+	}
+	if proj.WorkspaceDirs != nil {
+		out.WorkspaceDirs = proj.WorkspaceDirs
 	}
 	return out
 }

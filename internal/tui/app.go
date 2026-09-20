@@ -752,7 +752,7 @@ func New(opts Options) *App {
 	}
 	a.applyGitInfo(gitinfo.Detect(a.workdir))
 	a.loadAgents()
-	a.loadWorkspaceDirs()
+	scanCmds := a.loadWorkspaceDirs()
 	_ = a.editor.Focus()
 
 	if startErr != "" {
@@ -764,6 +764,9 @@ func New(opts Options) *App {
 		// frame.
 		a.showCredentialMessage(initial.Provider, nil)
 	}
+	for _, note := range eff.Notes {
+		a.addSystem(note)
+	}
 
 	if opts.Prompt != "" {
 		a.messages = append(a.messages, components.Message{Role: "user", Content: opts.Prompt})
@@ -774,6 +777,9 @@ func New(opts Options) *App {
 
 	if opts.ResumeSession != "" {
 		a.initCmd = a.resumeSession(opts.ResumeKey, opts.ResumeSession)
+	}
+	if len(scanCmds) > 0 {
+		a.initCmd = tea.Batch(a.initCmd, tea.Batch(scanCmds...))
 	}
 	return a
 }

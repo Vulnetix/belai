@@ -28,6 +28,7 @@ const (
 	viewVulnetixArtifacts
 	viewRunsOutput
 	viewPrompts
+	viewAddDir
 )
 
 // viewHandler is one full-screen view. Chat is the base state and lives
@@ -61,6 +62,7 @@ func init() {
 	viewHandlers[viewVulnetixArtifacts] = viewHandler{name: "vulnetix-artifacts", key: (*App).handleVulnetixArtifactsKey, render: (*App).vulnetixArtifactsView}
 	viewHandlers[viewRunsOutput] = viewHandler{name: "runs-output", enter: (*App).enterRunsOutput, key: (*App).handleRunsOutputKey, render: (*App).runsOutputView}
 	viewHandlers[viewPrompts] = viewHandler{name: "prompts", enter: (*App).enterPrompts, key: (*App).handlePromptsKey, render: (*App).promptsView}
+	viewHandlers[viewAddDir] = viewHandler{name: "add-dir", enter: (*App).enterAddDir, key: (*App).handleAddDirKey, render: (*App).renderAddDirView}
 }
 
 // push navigates to a full-screen view, remembering the current one on the

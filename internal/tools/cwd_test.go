@@ -149,12 +149,12 @@ func TestNilCwdBehavesLikeNoTracker(t *testing.T) {
 		t.Fatal("Change on a nil tracker succeeded")
 	}
 	root := cwdTree(t)
-	rel, err := resolvePath(root, nil, "internal/mid.txt")
+	res, err := resolvePath(root, nil, "internal/mid.txt")
 	if err != nil {
 		t.Fatalf("resolvePath: %v", err)
 	}
-	if rel != filepath.Join("internal", "mid.txt") {
-		t.Fatalf("rel = %q", rel)
+	if res.Rel != filepath.Join("internal", "mid.txt") {
+		t.Fatalf("rel = %q", res.Rel)
 	}
 	if got := baseDir(root, nil); got != root {
 		t.Fatalf("baseDir = %q, want %q", got, root)

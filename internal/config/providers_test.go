@@ -183,3 +183,48 @@ func TestProjectProviderBlockAllowedWithOptIn(t *testing.T) {
 		t.Fatalf("project provider should be present with opt-in: %+v", eff.Settings.Providers)
 	}
 }
+
+func TestProjectWorkspaceDirsIgnoredWithoutOptIn(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	workdir := t.TempDir()
+	if err := SaveGlobal(Settings{Model: "gpt-5"}); err != nil {
+		t.Fatalf("SaveGlobal: %v", err)
+	}
+	if err := SaveProject(workdir, Settings{WorkspaceDirs: []string{"/etc"}}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	eff, err := Resolve(workdir, func(string) string { return "" }, Settings{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if len(eff.Settings.WorkspaceDirs) > 0 {
+		t.Fatalf("project workspace_dirs should be ignored without opt-in: %v", eff.Settings.WorkspaceDirs)
+	}
+	found := false
+	for _, n := range eff.Notes {
+		if strings.Contains(n, "allow_project_workspace_dirs") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected an ignore note, got %v", eff.Notes)
+	}
+}
+
+func TestProjectWorkspaceDirsAllowedWithOptIn(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	workdir := t.TempDir()
+	if err := SaveGlobal(Settings{AllowProjectWorkspaceDirs: boolPtr(true)}); err != nil {
+		t.Fatalf("SaveGlobal: %v", err)
+	}
+	if err := SaveProject(workdir, Settings{WorkspaceDirs: []string{"/extra"}}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	eff, err := Resolve(workdir, func(string) string { return "" }, Settings{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if len(eff.Settings.WorkspaceDirs) != 1 || eff.Settings.WorkspaceDirs[0] != "/extra" {
+		t.Fatalf("project workspace_dirs should be present with opt-in: %v", eff.Settings.WorkspaceDirs)
+	}
+}

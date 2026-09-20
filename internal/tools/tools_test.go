@@ -121,28 +121,28 @@ func TestRegistryFindNotFound(t *testing.T) {
 }
 
 func TestGrepNormaliseLines(t *testing.T) {
-	out := normaliseGrepLines([]byte("b:2:x\na:1:y\nc:10:z"), 100, 10)
+	out := normaliseGrepLines([]byte("b:2:x\na:1:y\nc:10:z"), 100, 10, "root", "root")
 	if len(out) != 3 || out[0] != "a:1:y" || out[1] != "b:2:x" || out[2] != "c:10:z" {
 		t.Fatalf("lines = %v", out)
 	}
 }
 
 func TestGrepNormaliseTruncatesLine(t *testing.T) {
-	out := normaliseGrepLines([]byte("a:1:xxxxxxxxxx"), 5, 10)
+	out := normaliseGrepLines([]byte("a:1:xxxxxxxxxx"), 5, 10, "root", "root")
 	if len(out) != 1 || out[0] != "a:1:x…" {
 		t.Fatalf("line = %q", out[0])
 	}
 }
 
 func TestGrepNormaliseBoundsMatches(t *testing.T) {
-	out := normaliseGrepLines([]byte("a:1:x\na:2:x\na:3:x"), 100, 2)
+	out := normaliseGrepLines([]byte("a:1:x\na:2:x\na:3:x"), 100, 2, "root", "root")
 	if len(out) != 2 {
 		t.Fatalf("len = %d", len(out))
 	}
 }
 
 func TestGrepNormaliseSkipsNUL(t *testing.T) {
-	out := normaliseGrepLines([]byte("a:1:x\x00y"), 100, 10)
+	out := normaliseGrepLines([]byte("a:1:x\x00y"), 100, 10, "root", "root")
 	if len(out) != 0 {
 		t.Fatalf("len = %d", len(out))
 	}

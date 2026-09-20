@@ -63,6 +63,13 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 		proj.Providers = nil
 		eff.Notes = append(eff.Notes, "project providers ignored (set allow_project_providers in global settings to use them)")
 	}
+	// Project-layer workspace directory proposals are treated the same way:
+	// a cloned repo must not be able to widen the sandbox by naming sensitive
+	// paths. They are ignored unless the user's global settings opt in.
+	if len(proj.WorkspaceDirs) > 0 && !global.AllowProjectWorkspaceDirsEnabled() {
+		proj.WorkspaceDirs = nil
+		eff.Notes = append(eff.Notes, "project workspace_dirs ignored (set allow_project_workspace_dirs in global settings to use them)")
+	}
 	eff.apply(proj, SourceProject)
 
 	// 4. environment.
@@ -167,6 +174,12 @@ func (e *Effective) apply(s Settings, src Source) {
 		}
 		e.Settings.Classifier.merge(s.Classifier)
 		e.Origin["classifier"] = src
+	}
+	if s.WorkspaceDirs != nil {
+		// Later layers replace, not append, so a project layer can narrow the
+		// set of allowed workspace directories.
+		e.Settings.WorkspaceDirs = s.WorkspaceDirs
+		e.Origin["workspace_dirs"] = src
 	}
 }
 

@@ -7,6 +7,28 @@ import (
 	"github.com/vulnetix/signet/internal/repomap"
 )
 
+// WorkspaceBlock renders a harness-computed repository-map block for each
+// additional workspace directory. Empty maps are skipped; when no map is
+// rendered the function returns "".
+func WorkspaceBlock(maps []repomap.Map) string {
+	var out []string
+	for i, m := range maps {
+		block := RepoMapBlock(m)
+		if block == "" {
+			continue
+		}
+		root := m.Root
+		if root == "" {
+			root = m.Module
+		}
+		out = append(out, fmt.Sprintf("Workspace directory %d (%s):\n%s", i+1, root, block))
+	}
+	if len(out) == 0 {
+		return ""
+	}
+	return "Additional workspace directory maps:\n" + strings.Join(out, "\n")
+}
+
 // RepoMapBlock renders the harness-computed repository map as a fixed-shape
 // block for the system prompt. It contains harness-computed facts only — paths,
 // counts, detected commands, git metadata and file sizes — and never repository

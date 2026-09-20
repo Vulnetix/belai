@@ -53,11 +53,11 @@ func (w *Write) Subject(args map[string]any) string {
 // Targets returns the sanitised destination path for the diff recorder.
 func (w *Write) Targets(args map[string]any) []string {
 	path, _ := argString(args, "path")
-	rel, err := resolveNewPath(w.Root, w.Cwd, path)
+	res, err := resolveNewPath(w.Root, w.Cwd, path)
 	if err != nil {
 		return nil
 	}
-	return []string{rel}
+	return []string{res.Rel}
 }
 
 // Preview returns the before/after contents for the approval diff without
@@ -71,12 +71,12 @@ func (w *Write) Preview(args map[string]any) (path, old, new string, ok bool) {
 	if !ok {
 		return "", "", "", false
 	}
-	rel, err := resolveNewPath(w.Root, w.Cwd, pathArg)
+	res, err := resolveNewPath(w.Root, w.Cwd, pathArg)
 	if err != nil {
 		return "", "", "", false
 	}
-	old, _ = readExisting(filepath.Join(w.Root, rel), w.maxBytes())
-	return rel, old, content, true
+	old, _ = readExisting(res.Abs(), w.maxBytes())
+	return res.Rel, old, content, true
 }
 
 // Execute writes the file, enforcing root confinement, size limits, and an
@@ -97,11 +97,11 @@ func (w *Write) Execute(ctx context.Context, args map[string]any) (Result, error
 	if int64(len(content)) > max {
 		return Result{}, fmt.Errorf("content exceeds %d bytes", max)
 	}
-	rel, err := resolveNewPath(w.Root, w.Cwd, pathArg)
+	res, err := resolveNewPath(w.Root, w.Cwd, pathArg)
 	if err != nil {
 		return Result{}, err
 	}
-	full := filepath.Join(w.Root, rel)
+	full := res.Abs()
 	if fi, err := os.Stat(full); err == nil && fi.IsDir() {
 		return Result{}, fmt.Errorf("path is a directory")
 	}
@@ -112,7 +112,7 @@ func (w *Write) Execute(ctx context.Context, args map[string]any) (Result, error
 	if countLines(content) == 1 {
 		lineWord = "line"
 	}
-	return WriteResult(fmt.Sprintf("wrote %s (%d bytes, %d %s)", rel, len(content), countLines(content), lineWord)), nil
+	return WriteResult(fmt.Sprintf("wrote %s (%d bytes, %d %s)", res.Rel, len(content), countLines(content), lineWord)), nil
 }
 
 func (w *Write) maxBytes() int64 {

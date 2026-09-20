@@ -42,6 +42,24 @@ func TestRepoMapBlockNeverCarriesProse(t *testing.T) {
 	}
 }
 
+func TestWorkspaceBlockRendersEachRoot(t *testing.T) {
+	m1 := repomap.Map{Root: "/other", Module: "/other", Languages: []repomap.LangCount{{Ext: "go", Files: 1}}}
+	m2 := repomap.Map{Root: "/third", Module: "/third"}
+	block := WorkspaceBlock([]repomap.Map{m1, m2})
+	for _, want := range []string{"Additional workspace directory maps", "Workspace directory 1 (/other)", "Workspace directory 2 (/third)"} {
+		if !strings.Contains(block, want) {
+			t.Fatalf("block missing %q:\n%s", want, block)
+		}
+	}
+}
+
+func TestWorkspaceBlockSkipsEmptyMaps(t *testing.T) {
+	block := WorkspaceBlock([]repomap.Map{{Root: "/empty"}})
+	if block != "" {
+		t.Fatalf("expected empty block, got %q", block)
+	}
+}
+
 // TestAssembledSystemPromptCarriesOnlyMapFacts pins the security spot-check:
 // the assembled system prompt renders the repo-map facts into the system text
 // but must never carry a repository file's prose alongside them.

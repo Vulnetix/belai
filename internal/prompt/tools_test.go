@@ -122,3 +122,22 @@ func TestToolsBlockOmitsUnknownWorkdir(t *testing.T) {
 		t.Fatalf("block invented a working directory:\n%s", got)
 	}
 }
+
+// Added workspace directories are named in the briefing and included in the
+// confinement rule.
+func TestToolsBlockNamesExtraRoots(t *testing.T) {
+	got := ToolsBlock(ToolsOptions{
+		Workdir:    "/repo",
+		ExtraRoots: []string{"/other"},
+		Tools:      []ToolDoc{{Name: "Read", Summary: "Read a file."}},
+	})
+	for _, want := range []string{
+		"Working directory: /repo.",
+		"Additional workspace roots: /other",
+		"confined to the working directory and the additional workspace roots listed above",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("block missing %q:\n%s", want, got)
+		}
+	}
+}

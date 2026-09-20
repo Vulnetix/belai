@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -50,11 +49,11 @@ func (e *Edit) Subject(args map[string]any) string {
 // Targets returns the sanitised target path for the diff recorder.
 func (e *Edit) Targets(args map[string]any) []string {
 	path, _ := argString(args, "path")
-	rel, err := resolvePath(e.Root, e.Cwd, path)
+	res, err := resolvePath(e.Root, e.Cwd, path)
 	if err != nil {
 		return nil
 	}
-	return []string{rel}
+	return []string{res.Rel}
 }
 
 // Preview returns the before/after contents for the approval diff without
@@ -72,16 +71,16 @@ func (e *Edit) Preview(args map[string]any) (path, old, new string, ok bool) {
 	if !ok1 || !ok2 {
 		return "", "", "", false
 	}
-	rel, err := resolvePath(e.Root, e.Cwd, pathArg)
+	res, err := resolvePath(e.Root, e.Cwd, pathArg)
 	if err != nil {
 		return "", "", "", false
 	}
-	body, err := os.ReadFile(filepath.Join(e.Root, rel))
+	body, err := os.ReadFile(res.Abs())
 	if err != nil {
 		return "", "", "", false
 	}
 	replaceAll, _ := argBool(args, "replace_all")
-	return rel, string(body), replaceEdit(string(body), oldS, newS, replaceAll), true
+	return res.Rel, string(body), replaceEdit(string(body), oldS, newS, replaceAll), true
 }
 
 // Execute edits the file, failing closed in order: missing file, over
@@ -102,11 +101,11 @@ func (e *Edit) Execute(ctx context.Context, args map[string]any) (Result, error)
 	}
 	replaceAll, _ := argBool(args, "replace_all")
 
-	rel, err := resolvePath(e.Root, e.Cwd, pathArg)
+	res, err := resolvePath(e.Root, e.Cwd, pathArg)
 	if err != nil {
 		return Result{}, err
 	}
-	full := filepath.Join(e.Root, rel)
+	full := res.Abs()
 	body, err := os.ReadFile(full)
 	if err != nil {
 		return Result{}, err
@@ -124,10 +123,10 @@ func (e *Edit) Execute(ctx context.Context, args map[string]any) (Result, error)
 
 	count := strings.Count(string(body), oldS)
 	if count == 0 {
-		return Result{}, fmt.Errorf("old_string not found in %s", rel)
+		return Result{}, fmt.Errorf("old_string not found in %s", res.Rel)
 	}
 	if count > 1 && !replaceAll {
-		return Result{}, fmt.Errorf("old_string appears %d times in %s; pass replace_all=true or include more surrounding context to make it unique", count, rel)
+		return Result{}, fmt.Errorf("old_string appears %d times in %s; pass replace_all=true or include more surrounding context to make it unique", count, res.Rel)
 	}
 
 	replacements := count
@@ -141,7 +140,7 @@ func (e *Edit) Execute(ctx context.Context, args map[string]any) (Result, error)
 	if replacements == 1 {
 		plural = ""
 	}
-	return EditResult(fmt.Sprintf("edited %s (%d replacement%s)", rel, replacements, plural)), nil
+	return EditResult(fmt.Sprintf("edited %s (%d replacement%s)", res.Rel, replacements, plural)), nil
 }
 
 func (e *Edit) maxBytes() int64 {

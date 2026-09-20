@@ -32,6 +32,7 @@ var skipDirs = map[string]bool{
 // Map is the harness-computed repository map for one commit.
 type Map struct {
 	Module, Branch, Head string
+	Root                 string // absolute filesystem root the map was scanned from
 	Dirty                bool
 	Remotes              []Remote
 	Languages            []LangCount
@@ -84,6 +85,7 @@ func Scan(ctx context.Context, workdir string) Map {
 	defer cancel()
 
 	m := Map{ScannedAt: start}
+	m.Root = workdir
 	info, ok := gitinfo.Detect(workdir)
 	if !ok {
 		return Map{}

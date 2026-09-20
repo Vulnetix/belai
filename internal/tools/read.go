@@ -54,11 +54,11 @@ func (r *Read) Execute(ctx context.Context, args map[string]any) (Result, error)
 	if !ok || pathArg == "" {
 		return Result{}, fmt.Errorf("missing path argument")
 	}
-	rel, err := resolvePath(r.Root, r.Cwd, pathArg)
+	res, err := resolvePath(r.Root, r.Cwd, pathArg)
 	if err != nil {
 		return Result{}, err
 	}
-	full := filepath.Join(r.Root, rel)
+	full := res.Abs()
 
 	f, err := os.Open(full)
 	if err != nil {
@@ -119,11 +119,11 @@ func (r *Read) Execute(ctx context.Context, args map[string]any) (Result, error)
 		}
 	}
 
-	meta := map[string]any{"path": rel}
+	meta := map[string]any{"path": res.Rel}
 	if startLine > 1 {
 		meta["start_line"] = startLine
 	}
-	if l := lexers.Match(filepath.Base(rel)); l != nil {
+	if l := lexers.Match(filepath.Base(res.Rel)); l != nil {
 		meta["lang"] = l.Config().Name
 	}
 
