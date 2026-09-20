@@ -1,0 +1,32 @@
+                                                                                     
+ ◈ Background Agents                                                   esc back      
+ ──────────────────────────────────────────────────────────────────────────────      
+                                                                                     
+  Editing golden-bot                                                                 
+  /signet-golden/profiles/agents/golden-bot.json                                     
+                                                                                     
+  ── identity ──                                                                     
+  ▸ name                golden-bot                                                   
+    file name           golden-bot.json                                              
+    description         Golden agent                                                 
+  ── behaviour ──                                                                    
+    system prompt       Line one +2 lines                                            
+    tools               Read · Grep · Glob (3/11)                                    
+    mode                loop                                                         
+    schedule            0 * * * *                                                    
+    monitor condition   changes                                                      
+  ── model ──                                                                        
+    provider            openai                                                       
+    model               gpt-5                                                        
+    effort              low                                                          
+  ── safety ──                                                                       
+    autonomy            supervised                                                   
+    guardrails          on                                                           
+    ask permission      off                                                          
+    reflection          on                                                           
+    max iterations      5                                                            
+                                                                                     
+  ↑↓ move  ·  ←/→ cycle  ·  space/enter edit  ·  n new  ·  d duplicate  ·  esc back  
+                                                                                     
+                                                                                     
+                                                                                     

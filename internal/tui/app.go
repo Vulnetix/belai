@@ -116,8 +116,10 @@ type compactDoneMsg struct {
 
 // agentBuilderDoneMsg carries the result of an async /agent create run.
 type agentBuilderDoneMsg struct {
+	name    string
 	profile agentprofile.AgentProfile
 	path    string
+	handle  *activity.Handle
 	err     error
 }
 
@@ -1644,6 +1646,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case agentBuilderDoneMsg:
 		return a, a.handleAgentBuilderDone(m)
+
+	case agentFieldEditedMsg:
+		return a, a.handleAgentFieldEdited(m)
 
 	case bgAgentEventMsg:
 		return a, a.handleBgAgentEvent(m)
@@ -4617,11 +4622,25 @@ func (a *App) handleArtifactsLoaded(m artifactsLoadedMsg) tea.Cmd {
 
 // handleAgentBuilderDone renders the result of an async /agent create run.
 // After a successful save it opens the agent list with the new profile
-// selected for editing, so the user can review and adjust its properties.
+// selected for editing, so the user can review and adjust its properties. On
+// failure the user is never dropped back to chat empty-handed: a valid stub
+// is saved and the editor still opens on it.
 func (a *App) handleAgentBuilderDone(m agentBuilderDoneMsg) tea.Cmd {
+	a.endPhase()
+	if m.handle != nil {
+		m.handle.Finish(0, false, m.err)
+	}
 	if m.err != nil {
 		a.addSystem("agent builder failed: " + m.err.Error())
-		return nil
+		stub := agentprofile.Stub(m.name)
+		path, err := agentprofile.Save(stub)
+		if err != nil {
+			a.addSystem("agent create fallback failed: " + err.Error())
+			return nil
+		}
+		a.addSystem("agent saved: " + path)
+		a.agentState.pendingEditProfile = m.name
+		return a.push(viewAgent)
 	}
 	a.addSystem("agent saved: " + m.path)
 	a.agentState.pendingEditProfile = m.profile.Name

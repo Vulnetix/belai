@@ -203,6 +203,8 @@ func keySections() []keySection {
 		{"background agents (/agent list)", []keyBinding{
 			{"up, down", "move"},
 			{"enter, e", "edit the selected agent"},
+			{"n", "create a new agent from a valid stub"},
+			{"d", "duplicate the selected agent (built-ins become editable copies)"},
 			{"esc", "back"},
 		}},
 		{"/vulnetix configure", []keyBinding{
@@ -226,8 +228,21 @@ func keySections() []keySection {
 		}},
 		{"agent editor", []keyBinding{
 			{"up, down", "move"},
-			{"space, enter", "cycle or edit the field"},
+			{"left, right", "cycle a choose or toggle value in place"},
+			{"space, enter", "cycle a choose/toggle, open text or system prompt, or open tools"},
+			{"ctrl+j", "insert a newline in the system-prompt editor"},
+			{"e", "edit the system prompt in $VISUAL/$EDITOR"},
+			{"n", "create a new agent from a valid stub"},
+			{"d", "duplicate the selected agent (built-ins become editable copies)"},
 			{"esc", "back"},
+		}},
+		{"agent tools picker", []keyBinding{
+			{"up, down", "move"},
+			{"space", "toggle the selected tool"},
+			{"a", "select all tools"},
+			{"n", "select no tools (inherit)"},
+			{"enter", "commit the sorted selection"},
+			{"esc", "cancel"},
 		}},
 		{"text entry (any prompt, note, or rule field)", []keyBinding{
 			{"enter", "commit"},

@@ -281,23 +281,55 @@ func NewRegistry(workdir string) *Registry {
 		sub, rest, _ := strings.Cut(arg, " ")
 		switch sub {
 		case "create":
-			desc := strings.TrimSpace(rest)
-			if desc == "" {
-				a.addSystem("agent create <description>")
+			name := strings.TrimSpace(rest)
+			if name == "" {
+				a.addSystem("agent create <name>")
 				return nil
 			}
-			return func() tea.Msg {
-				b := agentprofile.Builder{Classifier: a.classifier, MaxAttempts: 3, Caveman: a.settings.ClassifierCavemanEnabled()}
-				p, err := b.Build(context.Background(), desc)
-				if err != nil {
-					return agentBuilderDoneMsg{err: err}
+			// Fail locally before any classifier round trip: the name the user
+			// typed must be the name on disk, so it has to validate first.
+			if err := agentprofile.Stub(name).Validate(); err != nil {
+				a.addSystem("agent create: " + err.Error())
+				return nil
+			}
+			if a.classifier == nil {
+				a.addSystem("agent create: no classifier configured")
+				return nil
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			handle := a.registerAgentDesignActivity(name, cancel)
+			a.setPhaseRoleManager("agent designer")
+
+			b := agentprofile.Builder{Classifier: a.classifier, MaxAttempts: 3, Caveman: a.settings.ClassifierCavemanEnabled()}
+			b.OnAttempt = func(attempt int, note string) {
+				if handle == nil {
+					return
 				}
+				if note == "" {
+					note = fmt.Sprintf("attempt %d/%d", attempt, b.MaxAttempts)
+				} else {
+					note = fmt.Sprintf("attempt %d/%d: %s", attempt, b.MaxAttempts, note)
+				}
+				handle.Append(note)
+			}
+
+			buildCmd := func() tea.Msg {
+				prompt := fmt.Sprintf("Design an agent profile named %q.", name)
+				p, err := b.Build(ctx, prompt)
+				if err != nil {
+					return agentBuilderDoneMsg{name: name, handle: handle, err: err}
+				}
+				// The LLM designs the fields but must never rename the user's
+				// profile: /agent create <name> is name-first.
+				p.Name = name
 				path, err := agentprofile.Save(p)
 				if err != nil {
-					return agentBuilderDoneMsg{err: err}
+					return agentBuilderDoneMsg{name: name, handle: handle, err: err}
 				}
-				return agentBuilderDoneMsg{profile: p, path: path}
+				return agentBuilderDoneMsg{name: name, handle: handle, profile: p, path: path}
 			}
+			return tea.Batch(buildCmd, a.workSpin.Tick)
 		case "list":
 			return a.push(viewAgent)
 		case "edit":

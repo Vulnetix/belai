@@ -589,6 +589,24 @@ func (a *App) registerAgentActivity(key, label, projectRoot string) {
 	}, func() { _ = a.bgManager.Stop(key) })
 }
 
+// registerAgentDesignActivity registers an /agent create design run in the
+// panel. It is Silent because the builder's output is model-generated JSON and
+// must never be round-tripped back to the model; it is still visible in the
+// drawer and readable with f9.
+func (a *App) registerAgentDesignActivity(name string, cancel context.CancelFunc) *activity.Handle {
+	if a.activity == nil {
+		return nil
+	}
+	return a.activity.Add(activity.Activity{
+		Kind:   activity.KindAgent,
+		Label:  "agent design: " + name,
+		Argv:   []string{"agent", "create", name},
+		Dir:    a.workdir,
+		State:  activity.StateRunning,
+		Silent: true,
+	}, cancel)
+}
+
 // registerShellActivity registers one !shell command in the panel.
 func (a *App) registerShellActivity(callID, command, workdir string) {
 	if a.activity == nil {
