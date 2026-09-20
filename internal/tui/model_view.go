@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/modelfetch"
@@ -403,48 +404,76 @@ func safeRow(rows []modelRow, i int) modelRow {
 	return rows[i]
 }
 
+// scopeTarget returns the human-readable storage path for a scope badge.
+func (a *App) scopeTarget(scope string) string {
+	switch scope {
+	case "global":
+		if p, _ := config.GlobalSettingsPath(); p != "" {
+			return p
+		}
+	case "session":
+		return "(session only)"
+	}
+	return config.ProjectSettingsPath(a.workdir)
+}
+
+// modelGroupHeader renders a labelled role group with that role's own scope
+// badge, so moving the cursor between roles cannot rewrite the header.
+func (a *App) modelGroupHeader(role modelRole) string {
+	var scope string
+	switch role {
+	case roleAgent:
+		scope = a.modelState.agentScope
+		if scope == "" {
+			scope = "session"
+		}
+	case roleClassifier:
+		scope = a.modelState.classifierScope
+		if scope == "" {
+			scope = "project"
+		}
+	}
+	name := strings.ToUpper(string(role))
+	b := strings.Builder{}
+	b.WriteString(name)
+	b.WriteString("   ")
+	b.WriteString(components.Chip(scope, components.ColorTealSoft))
+	b.WriteString("  ")
+	b.WriteString(components.MutedStyle.Render(a.scopeTarget(scope)))
+	if role == roleClassifier {
+		b.WriteString("\n")
+		b.WriteString(components.WarnStyle.Render(
+			"! the classifier is the security gate for tool output; a weaker model means weaker detection"))
+	}
+	return b.String()
+}
+
 func (a *App) modelView() string {
 	w := a.contentWidth()
 	rows := a.modelRows()
 	a.modelState.rows = rows
-	row := safeRow(rows, a.modelState.selected)
 
 	var b strings.Builder
 	b.WriteString(components.SectionHeader("Model Roles", "esc back", w))
-	b.WriteString(components.WarnStyle.Render(
-		"! the classifier is the security gate for tool output; a weaker model means weaker detection") + "\n\n")
-
-	scope := a.modelState.agentScope
-	if row.role == roleClassifier {
-		scope = a.modelState.classifierScope
-	}
-	if scope == "" {
-		if row.role == roleAgent {
-			scope = "session"
-		} else {
-			scope = "project"
-		}
-	}
-	path := config.ProjectSettingsPath(a.workdir)
-	if scope == "global" {
-		if p, _ := config.GlobalSettingsPath(); p != "" {
-			path = p
-		}
-	} else if scope == "session" {
-		path = "(session only)"
-	}
-	b.WriteString(components.Chip(scope, components.ColorTealSoft) +
-		"  " + components.MutedStyle.Render(path) + "\n\n")
 
 	if a.modelState.picking {
+		b.WriteString("\n")
 		b.WriteString(a.modelPicker())
 		return lipgloss.NewStyle().Padding(1).Render(b.String())
 	}
 
+	var prev modelRole
 	for i, r := range rows {
+		if r.role != prev {
+			if i > 0 {
+				b.WriteString("\n")
+			}
+			b.WriteString(a.modelGroupHeader(r.role) + "\n")
+			prev = r.role
+		}
 		selected := i == a.modelState.selected
-		label := fmt.Sprintf("%-12s", r.label)
-		value := fmt.Sprintf("%-40s ", r.value)
+		label := fmt.Sprintf("  %-12s", r.label)
+		value := ansi.Truncate(r.value+" ", 41, "…")
 		switch {
 		case r.disabled:
 			label = components.MutedStyle.Render(label)

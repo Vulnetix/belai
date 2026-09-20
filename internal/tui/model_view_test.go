@@ -120,6 +120,39 @@ func TestModelClassifierReasoningToggleDrivesEffort(t *testing.T) {
 	}
 }
 
+func TestModelViewGroupsRolesWithPerRoleBadges(t *testing.T) {
+	a := New(Options{})
+	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	_ = a.enterModel()
+	a.modelState.agentScope = "session"
+	a.modelState.classifierScope = "project"
+
+	// Select an agent row and render.
+	a.modelState.selected = 0
+	viewAgent := a.modelView()
+	if !strings.Contains(viewAgent, "AGENT") {
+		t.Fatal("expected AGENT group header")
+	}
+	if !strings.Contains(viewAgent, "session") {
+		t.Fatal("expected agent session chip")
+	}
+
+	// Select a classifier row and render again.
+	a.modelState.selected = 4
+	viewClassifier := a.modelView()
+	if !strings.Contains(viewClassifier, "CLASSIFIER") {
+		t.Fatal("expected CLASSIFIER group header")
+	}
+	if !strings.Contains(viewClassifier, "project") {
+		t.Fatal("expected classifier project chip")
+	}
+
+	// The agent chip must still be present after moving to the classifier group.
+	if !strings.Contains(viewClassifier, "AGENT") || !strings.Contains(viewClassifier, "session") {
+		t.Fatal("agent scope badge disappeared when cursor moved to classifier")
+	}
+}
+
 func TestModelClassifierScopeWritesGlobalSettings(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 	workdir := t.TempDir()
