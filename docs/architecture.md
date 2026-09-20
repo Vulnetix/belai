@@ -1876,36 +1876,76 @@ truncate-on-crash hole in the old JSON save. Directories are `0o755`; files
 `0o600` in the global scope (personal) and `0o644` in the project scope
 (committed, team-readable).
 
-### Model picker
+### Model roles
 
-`/model` shows provider tabs, a windowed model list, the effort chips and the
-write scope. The list's row budget is *measured*, never guessed: the pre-list
-chrome (header, tabs, search line), the post-list chrome (effort, scope, any
-error, help bar), the one-row counter/overflow line under the list, and the
-frame's one-cell padding are each subtracted from the terminal height, and the
-remainder is how many model rows are drawn. The view therefore fills the
-terminal exactly — a row short would waste a model row, a row over would scroll
-the help bar off the bottom. With no `WindowSizeMsg` yet (height 0) it falls
-back to 10 rows, and it never draws fewer than 3.
+`/model` is the role screen: it shows two independent rows of settings, one
+for the **agent** role and one for the **classifier** role. The classifier
+block carries a standing warning that it is the security gate for tool
+output, because a weaker classifier weakens detection everywhere.
 
-Business rules:
+Rows reuse the `/settings` declarative row table (`settingsRow`). The
+selected row is highlighted; `⏎` edits it, `s` cycles scope for the active
+role, `x` unsets the row, `p` jumps to `/providers`, and `esc` returns to
+chat.
 
-- **The window follows the cursor** (`windowStart`): moving below the last
-  visible row scrolls by one, moving above the first scrolls back, and wrapping
-  from the last id to the first (or back) re-anchors the window at that end.
-- **The counter is always shown**, as `<cursor>/<total>`, with `↑ N more` and
-  `↓ N more` added only when there is something off-screen in that direction.
-- **`/` filters** the catalogue by case-insensitive substring; the counter then
-  reads `<cursor>/<matches> (of <total>)`, `esc` clears the filter rather than
-  leaving the view, and committing selects from the *filtered* list — the row
-  under the cursor is the row that is saved.
-- **An empty catalogue** renders `no models in this profile — type or import a
-  model id` instead of a list, and the counter line is omitted with it.
-- **Only available providers are offered.** The tab strip lists providers whose
-  credentials resolve, never the full built-in list — `/providers` is where
-  every provider stays browsable and configurable. `g` opens the classifier
-  picker; `c` opens `/providers` **matched by name**, because the two lists
-  no longer share indices.
+#### Agent role
+
+The agent role rows are **provider**, **model**, **effort** and **scope**:
+
+- **Provider** cycles through available providers with an unset stop.
+  Changing provider clears the model, because a model id is only meaningful
+  to its own provider.
+- **Model** opens an embedded sub-picker over the selected provider's
+  catalogue.
+- **Effort** cycles the model's advertised effort chips, or
+  `low`/`medium`/`high` when none are advertised.
+- **Scope** is `session`, `global` or `project`. Session writes directly to
+  the running configuration; `global`/`project` mutate the settings file.
+
+#### Classifier role
+
+The classifier role rows are **provider**, **model**, **reasoning**,
+**effort**, **caveman**, **chunk** and **scope**:
+
+- **Reasoning drives effort.** There is no separate reasoning key. Toggling
+  reasoning off writes `classifier.effort: "none"` and greys the effort row;
+  toggling it back on restores the previously selected chip.
+- **Changing provider clears the model.**
+- **Unset (`x`)** clears one field; clearing provider or model drops them both,
+  and clearing every field removes the `classifier` block so the classifier
+  falls back to the main model.
+- **Scope is `global` or `project` only** — never session. `config.State`
+  carries only the agent model/provider/effort, and a transient override of
+  the security gate must be provenanced. Every row shows
+  `Origin["classifier"]`.
+- **Changes take effect immediately.** Each successful write re-resolves the
+  classifier and reinstalls it, so the next turn uses it. A resolve failure
+  (for example an unconfigured classifier provider) is reported on the page
+  instead of silently falling back to the main model.
+
+#### Model sub-picker
+
+The model sub-picker is entered from the **model** row of either role. It
+lists the provider's catalogue with windowing, `/` substring filtering, and a
+`<cursor>/<total>` counter. `enter` selects the model under the cursor and
+`esc` cancels.
+
+The catalogue is built by merging three sources, lower priority last, and
+ de-duplicating by model id:
+
+1. **Live fetch** — when the provider exposes a model-list endpoint, Signet
+   queries it on first entry and caches the result per session. The picker
+   shows `○ Fetching models from GET <url>…` while a fetch is in flight.
+   Live fetched models are not persisted.
+2. **Profile models** — custom or saved models declared in the provider
+   profile (`settings.json`) are merged next.
+3. **Static fallback** — a hard-coded default catalogue for built-ins that
+   have no endpoint or when the live fetch fails. Users can still type any
+   model id and commit it.
+
+`r` in `/providers` (models tab) clears the cache and re-fetches for the
+selected provider; fetch errors render as `✗ fetch: ...` so silent failures
+are visible.
 
 #### Provider availability
 
@@ -1917,150 +1957,31 @@ degrades *open* rather than closed.
 Business rules:
 
 - **Availability = credentials resolve.** The answer comes from
-  `Resolver.ConfiguredProviders()`, so a provider with a missing required field
-  is dropped.
+  `Resolver.ConfiguredProviders()`, so a provider with a missing required
+  field is dropped.
 - **Local providers need a live server, not a key.** `ollama` and
-  `llama-server` declare every credential field optional, so they always report
-  configured. They are therefore additionally probed with a bare
+  `llama-server` declare every credential field optional, so they always
+  report configured. They are therefore additionally probed with a bare
   `GET {base}/v1/models` (`localinfer.ProbeRunning`, no credentials, no
   content, 5s ceiling) and dropped when nothing answers.
 - **Pinned names always survive.** The committed agent provider and the
-  committed classifier provider stay in the list even when unavailable, so a
-  picker can never silently move the user off their own model. An unavailable
-  pinned provider renders as an amber chip with an `unavailable` note instead
-  of vanishing.
-- **The list is never empty.** With no resolver (the non-interactive
-  construction path), with no probe result yet, or with nothing available, the
-  full provider list is returned together with a note explaining why —
-  `checking providers…` or `no configured providers — showing all`. The picker
-  indexes into this slice, so an empty one would be a panic and a dead end.
+  committed classifier provider stay in the list even when unavailable, so
+  a picker can never silently move the user off their own model. An
+  unavailable pinned provider renders as an amber chip with an
+  `unavailable` note instead of vanishing.
+- **The list is never empty.** With no resolver, with no probe result yet, or
+  with nothing available, the full provider list is returned together with a
+  note explaining why — `checking providers…` or
+  `no configured providers — showing all`.
 - **Canonical order is preserved.** The filtered list is a subsequence of
-  `providerNames()`, which is what keeps the tab strip, the cursor and the
-  by-name `/providers` jump consistent.
-- **Caching.** One probe fills the cache; it is re-run when older than 30s, and
-  never twice concurrently (an in-flight guard). Any credential mutation —
-  store, clear, or import — invalidates it through `refreshCredentials`, and
-  `r` in `/model` forces a fresh probe. The probe runs on a `tea.Cmd`, never in
+  `providerNames()`, which keeps the `/model` provider cycles, the
+  `/providers` master list and the by-name `/providers` jump consistent.
+- **Caching.** One probe fills the cache; it is re-run when older than 30s,
+  and never twice concurrently. Any credential mutation — store, clear, or
+  import — invalidates it through `refreshCredentials`, and `r` in
+  `/providers` forces a fresh probe. The probe runs on a `tea.Cmd`, never in
   the Update loop, and captures the resolver into a local rather than touching
   `*App` from the goroutine.
-
-### Classifier picker
-
-`/model` (also `g` from `/model`) is the only screen that edits the
-`classifier` settings block: provider, model, reasoning, effort, and caveman.
-It opens with a standing warning that the classifier is the security gate for
-tool output, because choosing a weaker model here weakens detection everywhere.
-
-Business rules:
-
-- **Rows are declarative**, reusing the `/settings` row table
-  (`settingsRow`), with one addition: a `disabled` row renders greyed and is
-  inert — `space`/`enter` on it does nothing and writes nothing.
-- **Reasoning drives effort.** There is no separate reasoning key. Toggling
-  reasoning off writes `classifier.effort: "none"` and greys the effort row;
-  toggling it back on restores the previously selected chip rather than the
-  head of the list. `ResolveClassifier` already treats `""` and `"none"`
-  identically, so the literal is written for provenance, not behaviour.
-- **Effort options** come from the selected classifier model's catalogue when
-  it advertises any, else `low/medium/high` — a custom provider's profile
-  carries no effort list.
-- **Changing provider clears the model.** A model id is only meaningful to its
-  own provider; carrying one across would resolve to nothing. The provider
-  cycle includes an *unset* stop, and landing on it with no other field set
-  drops the whole block, which is the documented fallback to the main model.
-- **Unset (`x`)** clears one field; clearing them all leaves no `classifier`
-  key in the file (`Document.Save` prunes a block that marshals empty).
-- **Scope is `global` or `project` only** — never session. `config.State`
-  carries just model/provider/effort, and a transient, unprovenanced override
-  of which model guards tool output is exactly what the settings model exists
-  to prevent. Every row shows the block's provenance (`Origin["classifier"]`).
-- **Changes take effect immediately.** Each successful write re-resolves the
-  classifier and reinstalls it, so the next turn uses it. A resolve failure
-  (for example an unconfigured classifier provider) is reported on the page
-  instead of silently falling back to the main model, which is what
-  `refreshProvider` alone would do.
-- **The provider list is the availability list**, pinned with both the agent's
-  and the classifier's committed providers.
-
-#### Catalogue sources
-
-The `/model` list is built by merging three sources, each one lower priority
-than the last, and the merged list is de-duplicated by model id:
-
-1. **Live fetch** — when the provider exposes a model-list endpoint, Signet
-   queries it on first entry and caches the result per session. The provider
-   tab shows `○ Fetching models from GET <url>…` while a fetch is in flight.
-   Live fetched models are not persisted; the cache is an in-memory map keyed
-   by provider name.
-2. **Profile models** — custom or saved models declared in the provider profile
-   (`settings.json`) are merged next.
-3. **Static fallback** — a hard-coded default catalogue for built-ins that have
-   no endpoint or when the live fetch fails. Users can still type any model id
-   and commit it.
-
-Live fetch is available for `anthropic`, `cloudflare-workers-ai`, `openrouter`,
-`google-gemini`, `ollama`, `llama-server`, `github-copilot`, and
-`cloudflare-ai-gateway`. `r` clears the cache and re-fetches for the selected
-provider; fetch errors are rendered under the list as `✗ fetch: ...` so silent
-failures are visible.
-
-Provider-specific edge cases:
-
-- **`anthropic`** returns `max_input_tokens` (and, on newer endpoints,
-  `max_tokens`) in the `/v1/models` response. The parser also accepts a
-  legacy `context_window` key so a proxy or forwarded response still works;
-  the first non-zero value is used.
-- **`github-copilot`** uses its own parser that reads
-  `capabilities.limits.max_context_window_tokens`, then
-  `capabilities.limits.max_prompt_tokens`, then top-level `context_length`;
-  first non-zero wins. Copilot previously shared the OpenRouter branch and
-  always returned 0 because Copilot does not emit a top-level
-  `context_length`.
-- **`openrouter`** prefers `top_provider.context_length` over the top-level
-  `context_length`; the top-provider value is the real limit of the endpoint
-  requests actually route to.
-- **`google-gemini`** does not expose limits on the OpenAI-compatible
-  surface, so Signet trims a trailing `/openai` and calls the native
-  `/models` endpoint with `x-goog-api-key` instead of a Bearer token. The
-  parser keeps only entries whose `supportedGenerationMethods` contains
-  `generateContent`; embedding models are excluded.
-- **`cloudflare-workers-ai`** parses `/ai/models/search` result properties.
-  The `context_window` property is preferred and falls back to
-  `max_total_tokens`; values are strings and parse failures are ignored, so
-  an unknown window stays 0 rather than failing the list.
-- **`ollama`** enriches the OpenAI-compatible `/models` list with a `POST
-  /api/show` call per model, reading `<arch>.context_length` from
-  `model_info`. This is the trained window, not the served `num_ctx`;
-  enrichment failure is ignored so a missing endpoint never breaks the list.
-- **`llama-server`** enriches `/v1/models` with `GET /props` (base URL minus
-  trailing `/v1`), taking `default_generation_settings.n_ctx`. The runtime
-  window overrides `meta.n_ctx_train` when present and applies to every model
-  in the list.
-- **`huggingface`** live-fetches from `https://router.huggingface.co/v1/models`.
-  HuggingFace no longer runs its own `hf-inference` serverless provider;
-  inference is routed through third-party providers (deepinfra, novita, etc.)
-  and users must enable the desired providers in their HuggingFace dashboard
-  before a model can be called.  The fetched list may therefore include models
-  whose provider is not enabled on the account; selecting one returns
-  `model_not_supported` from the router.  The parser reads
-  `providers[].context_length` and uses the largest value reported. The picker
-  does not pre-filter because the router exposes no enabled-only list. Users
-  can still type and commit any model id directly.
-- **`cloudflare-ai-gateway`** reuses the account's Workers AI catalogue for
-  its model list, fetched with the Workers AI credentials
-  (`CLOUDFLARE_API_KEY` + `CLOUDFLARE_ACCOUNT_ID`) rather than the gateway
-  token. If Workers AI credentials are absent it falls back to the static
-  catalogue. For inference it authenticates with a gateway token via
-  `cf-aig-authorization: Bearer <CF_AIG_TOKEN>`. Set `CF_AIG_TOKEN` and
-  `CF_ACCOUNT_ID` (or `CLOUDFLARE_ACCOUNT_ID`); the default base URL is
-  `https://gateway.ai.cloudflare.com/v1/{account_id}/default/compat`. The
-  chat request is sent to the **compatibility** surface by appending the
-  OpenAI SDK path `/v1/chat/completions` (the final URL is
-  `…/default/compat/v1/chat/completions`); the
-  `…/compat/openai/chat/completions` form is rejected with
-  `Compatibility endpoint: openai/chat/completions is not supported`. Set
-  `CF_AIG_URL` to point at another gateway under the same account (it must
-  end in `/compat` for the same reason).
 
 ### Slash commands
 
