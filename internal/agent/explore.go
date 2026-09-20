@@ -13,6 +13,7 @@ import (
 	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/nonce"
 	"github.com/vulnetix/signet/internal/posture"
+	"github.com/vulnetix/signet/internal/repomap"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/sanitize"
@@ -27,6 +28,29 @@ import (
 //
 // Plan mode's repository survey can be switched off with
 // resilience.plan_explore: false, in which case exploration is skipped and
+// allEntrypoints returns the union of repo-map entrypoints across the
+// primary workdir and any added workspace directories.
+func (s *Session) allEntrypoints() []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(m *repomap.Map) {
+		if m == nil {
+			return
+		}
+		for _, e := range m.Entrypoints {
+			if !seen[e] {
+				seen[e] = true
+				out = append(out, e)
+			}
+		}
+	}
+	add(s.repoMap)
+	for i := range s.workspaceMaps {
+		add(&s.workspaceMaps[i])
+	}
+	return out
+}
+
 // planning starts immediately. Goal mode's survey is unaffected.
 func (s *Session) exploreTurns(ctx context.Context, decision rolemanager.ModeDecision, clean string, pipe *rolemanager.Pipeline, emit func(Event)) []run.Turn {
 	if !s.allowExplore {
@@ -36,12 +60,16 @@ func (s *Session) exploreTurns(ctx context.Context, decision rolemanager.ModeDec
 		return nil
 	}
 	tasks := explore.Plan(clean, decision)
-	if decision.Mode == modes.ModePlan && s.repoMap != nil && len(s.repoMap.Entrypoints) > 0 {
-		// Enrich the no-reference survey with the concrete entrypoints the
-		// repo map already computed, so the subagent investigates real files
-		// rather than rediscovering them.
-		if len(tasks) > 0 && tasks[0].Reference == "repository structure" {
-			tasks = explore.PlanSurveyWithEntrypoints(clean, s.repoMap.Entrypoints)
+	if decision.Mode == modes.ModePlan {
+		entrypoints := s.allEntrypoints()
+		if len(entrypoints) > 0 {
+			// Enrich the no-reference survey with the concrete entrypoints the
+			// repo map(s) already computed, so the subagent investigates real
+			// files rather than rediscovering them. Workspace directories are
+			// included so cross-repo entrypoints are covered.
+			if len(tasks) > 0 && tasks[0].Reference == "repository structure" {
+				tasks = explore.PlanSurveyWithEntrypoints(clean, entrypoints)
+			}
 		}
 	}
 	return s.runExploreTasks(ctx, tasks, "explore", pipe, emit)

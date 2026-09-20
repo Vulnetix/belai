@@ -280,6 +280,13 @@ renders as a red `withheld` row with its sentinel.
 
 Business rules and edge cases:
 
+- **`@file` admission tries the primary workdir, then each added workspace
+  directory.** The first root that legally contains the path is used for
+  reading; a path outside every root is rejected.
+- **The file chooser (`@`) searches every root.** Matches in the primary
+  workdir are shown as root-relative paths; matches in an added workspace
+  directory are shown as absolute paths so they can be passed straight back
+  to `Read`.
 - **A directory is listed, not read.** `@docs/` produces a sorted entry
   listing rendered as an `Ls` row — it is the one attachment that never goes
   to the classifier, because it contains no file content, only names the
@@ -758,16 +765,19 @@ any clarification questionnaire is shown.
 The grounding probe (`internal/agent/grounding.go`) attaches always-useful,
 read-only evidence: `git status`/branch/recent commits, a bounded top-level
 directory listing, `AGENTS.md`, and the single-shot background agents that
-are not scheduled/loop/monitor definitions. This evidence is untrusted — it
-re-enters as part of each subagent prompt and is admitted through the Role
-Manager like any user content, never promoted into a system/agent block.
+are not scheduled/loop/monitor definitions. When workspace directories have
+been added, the probe gathers the same evidence from each root. This evidence
+is untrusted — it re-enters as part of each subagent prompt and is admitted
+through the Role Manager like any user content, never promoted into a
+system/agent block.
 
 Each explore subagent:
 
 - receives the original prompt, the grounding evidence, and an investigation
   angle derived from the prompt's `@references` (or a codebase survey for
   goal mode);
-- has its own read-only `agent.Session` (`PlanMode`, no further fan-out) with
+- has its own read-only `agent.Session` (`PlanMode`, no further fan-out) that
+  inherits the parent's added workspace roots, with
   a dedicated iteration budget from `resilience.max_explore_iterations`
   (default 8, deeper than the historical 4), and a system-prompt preamble
   telling it to discover facts with the native tools rather than ask;

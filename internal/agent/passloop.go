@@ -12,6 +12,7 @@ import (
 	"github.com/vulnetix/signet/internal/modelinfo"
 	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/plans"
+	"github.com/vulnetix/signet/internal/repomap"
 	"github.com/vulnetix/signet/internal/resilience"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
@@ -67,12 +68,38 @@ const (
 )
 
 // goalAckDirective returns the first-pass goal directive, naming the detected
-// test command as the default verification surface when the repo map knows it.
+// test commands as the default verification surface when the repo map knows
+// them. Test commands from added workspace directories are unioned in so the
+// verification surface covers every root.
 func (s *Session) goalAckDirective() string {
-	if s.repoMap == nil || len(s.repoMap.Commands.Test) == 0 {
+	cmds := s.allTestCommands()
+	if len(cmds) == 0 {
 		return goalAckDirective
 	}
-	return goalAckDirective + " The default verification surface is: " + strings.Join(s.repoMap.Commands.Test, "; ") + "."
+	return goalAckDirective + " The default verification surface is: " + strings.Join(cmds, "; ") + "."
+}
+
+// allTestCommands returns the union of Commands.Test across the primary repo
+// map and any workspace directory maps.
+func (s *Session) allTestCommands() []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(m *repomap.Map) {
+		if m == nil {
+			return
+		}
+		for _, c := range m.Commands.Test {
+			if !seen[c] {
+				seen[c] = true
+				out = append(out, c)
+			}
+		}
+	}
+	add(s.repoMap)
+	for i := range s.workspaceMaps {
+		add(&s.workspaceMaps[i])
+	}
+	return out
 }
 
 // passLedger is the loop-local decision state of one goal pass loop. Pass
