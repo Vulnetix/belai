@@ -7,7 +7,6 @@ import Beliefs from '../components/sections/Beliefs.astro';
 import Labs from '../components/sections/Labs.astro';
 import Features from '../components/sections/Features.astro';
 import Qol from '../components/sections/Qol.astro';
-import Gaps from '../components/sections/Gaps.astro';
 import Install from '../components/sections/Install.astro';
 
 const rail = [
@@ -20,12 +19,10 @@ const rail = [
   ['tools', 'tools'],
   ['permissions', 'permissions'],
   ['agents', 'agents'],
-  ['sessions', 'sessions'],
   ['providers', 'providers'],
   ['vulnetix', 'vulnetix'],
   ['qol', 'qol'],
-  ['gaps', 'gaps'],
-  ['install', 'install'],
+  ['start', 'getting started'],
 ] as const;
 ---
 
@@ -68,7 +65,6 @@ const rail = [
       <Labs />
       <Features />
       <Qol />
-      <Gaps />
       <Install />
     </main>
   </div>

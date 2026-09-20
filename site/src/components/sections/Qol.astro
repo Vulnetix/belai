@@ -2,49 +2,59 @@
 import SealedSection from '../seal/SealedSection.astro';
 import ShotCarousel from '../ui/ShotCarousel.tsx';
 import settingsShot from '../../assets/shots/settings.svg';
+import exitCardShot from '../../assets/shots/exit-card.svg';
+import footerShot from '../../assets/shots/footer.svg';
 
 const sealText =
-  'Quality of life: the grid of things you used to hack into a skills.md. Prompt library, repo map, work-discipline prompt section, identity block, capability auth probes, diff in the approval prompt, a todo panel that only trusts assistant text, a validated /compact contract, session auto-naming, mid-turn steering, /settings with provenance, no alt bindings ever, /help guarded by a test, caveman mode.';
+  'Quality of life: the details you used to hack into a skills.md. Prompt library, repo map, work-discipline prompt section, identity block, capability auth probes, diff in the approval prompt, a todo panel that only trusts assistant text, sessions and compaction, /settings with provenance, no alt bindings ever, /help guarded by a test, and caveman mode.';
 
-const items = [
-  'prompt library as files',
-  'harness-computed repo map',
-  'work-discipline prompt section',
-  'identity block',
-  'capability auth probes',
-  'diff in the approval prompt',
-  'todo panel that only trusts assistant text',
-  'validated /compact contract',
-  'session auto-naming',
-  'mid-turn steering',
-  '/settings with provenance',
-  'no alt bindings, ever',
-  '/help guarded by a test',
-  'caveman mode',
+const benefits = [
+  ['prompt library as files', 'Prompts are files in the repo, versioned and reviewable, not baked into the binary.'],
+  ['harness-computed repo map', 'Paths, counts, detected commands, git metadata. Never file contents.'],
+  ['work-discipline prompt section', 'The system prompt carries a work-discipline section so the loop stays honest about what it is doing.'],
+  ['identity block', 'The model knows what it is and which tool it is running, every turn.'],
+  ['capability auth probes', 'Cheap probes confirm the model can use a capability before the harness relies on it.'],
+  ['diff in the approval prompt', 'Approvals show the diff, not a bare path.'],
+  ['todo panel that only trusts assistant text', 'The todo list advances from assistant text only, never from tool output.'],
+  ['/settings with provenance', 'Every value shows who set it, where, and when.'],
+  ['no alt bindings, ever', 'No chord is bound to alt, so no terminal swallows a key.'],
+  ['/help guarded by a test', 'The help text is checked by a test, so it cannot drift from the real bindings.'],
+  ['caveman mode', 'A voice rewrite that turns replies into short plain words.'],
 ];
 ---
 
 <SealedSection label="qol" sealText={sealText} id="qol">
-  <div class="grid gap-10 lg:grid-cols-2 lg:items-start">
-    <div class="prose-measure">
-      <h2 class="text-3xl font-bold text-vx-ink">Quality of life.</h2>
-      <p class="mt-4 text-vx-ink/80">
-        The grid of things you used to hack into a <code class="mono">skills.md</code> yourself. Each one is a
-        file or a passing test in this repository, not a paste-in afterthought.
+  <h2 class="text-3xl font-bold text-vx-ink">Quality of life.</h2>
+  <p class="prose-measure mt-4 text-vx-ink/80">
+    The details you used to hack into a <code class="mono">skills.md</code> yourself. Each one is a file or a
+    passing test in this repository, not a paste-in afterthought.
+  </p>
+
+  <div class="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+    {benefits.map(([title, detail]) => (
+      <article class="rounded-lg border border-vx-ink/30 p-5">
+        <h3 class="mono text-sm font-semibold text-vx-ink">{title}</h3>
+        <p class="mt-2 text-sm text-vx-ink/80">{detail}</p>
+      </article>
+    ))}
+  </div>
+
+  <div class="mt-10 grid gap-8 rounded-lg border border-vx-ink/30 p-6 lg:grid-cols-2 lg:items-center">
+    <div>
+      <h3 class="text-xl font-semibold text-vx-ink">Sessions &amp; compaction.</h3>
+      <p class="mt-3 text-vx-ink/80">
+        <code class="mono">/compact</code> runs against a validated contract, not a vibes-based summary.
+        Sessions auto-name from the work they did. Mid-turn steering queues a message onto the
+        running turn. The exit card always carries the resume command back to the finished session.
       </p>
-      <div class="mt-6">
-        <ShotCarousel
-          client:load
-          shots={[{ src: settingsShot.src, alt: 'The settings screen showing provenance per value', caption: '/settings · provenance per value' }]}
-        />
-      </div>
     </div>
-    <ul class="grid list-none gap-2 p-0 md:grid-cols-2">
-      {items.map((item) => (
-        <li class="mono rounded-md border border-vx-ink/30 px-3 py-2 text-sm text-vx-ink">
-          {item}
-        </li>
-      ))}
-    </ul>
+    <ShotCarousel
+      client:load
+      shots={[
+        { src: settingsShot.src, alt: 'The settings screen showing provenance per value', caption: '/settings, provenance per value' },
+        { src: exitCardShot.src, alt: 'The branded session-end card', caption: 'exit card, resume command' },
+        { src: footerShot.src, alt: 'The status footer with chips', caption: 'status footer, guardrails on' },
+      ]}
+    />
   </div>
 </SealedSection>

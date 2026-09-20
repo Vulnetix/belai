@@ -14,10 +14,10 @@
 
   <!-- sources -->
   <g font-family="'Geist Mono',ui-monospace,monospace" font-size="12" fill="#001614">
-    <rect class="box chip" x="24" y="70" width="150" height="44" rx="8"/><text x="14" y="27">policy allow</text>
-    <rect class="box chip2" x="184" y="70" width="150" height="44" rx="8"/><text x="14" y="27">session grant</text>
-    <rect class="box chip" x="344" y="70" width="150" height="44" rx="8"/><text x="14" y="27">tool kind</text>
-    <rect class="box chip2" x="504" y="70" width="112" height="44" rx="8"/><text x="14" y="27">role</text>
+    <rect class="box chip" x="24" y="70" width="150" height="44" rx="8"/><text x="36" y="97">policy allow</text>
+    <rect class="box chip2" x="184" y="70" width="150" height="44" rx="8"/><text x="196" y="97">session grant</text>
+    <rect class="box chip" x="344" y="70" width="150" height="44" rx="8"/><text x="356" y="97">tool kind</text>
+    <rect class="box chip2" x="504" y="70" width="112" height="44" rx="8"/><text x="516" y="97">role</text>
   </g>
 
   <path d="M99 114 L 99 150 M249 114 L 249 150 M419 114 L 419 150 M560 114 L 560 150" stroke="#009484" stroke-width="2" stroke-dasharray="4 4"/>

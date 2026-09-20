@@ -13,7 +13,6 @@ import planReviewShot from '../../assets/shots/plan-review.svg';
 import approvalDiffShot from '../../assets/shots/approval-diff.svg';
 import permissionsShot from '../../assets/shots/permissions.svg';
 import agentsRosterShot from '../../assets/shots/agents-roster.svg';
-import exitCardShot from '../../assets/shots/exit-card.svg';
 import footerShot from '../../assets/shots/footer.svg';
 import modelPickerShot from '../../assets/shots/model-picker.svg';
 import localModelShot from '../../assets/shots/local-model.svg';
@@ -76,7 +75,7 @@ import localModelShot from '../../assets/shots/local-model.svg';
   </div>
 </SealedSection>
 
-<SealedSection label="permissions" sealText="Permissions and approvals: the effective permission set is a union with provenance per grant, and the approval prompt shows the actual diff, not a bare path." id="permissions">
+<SealedSection label="permissions" sealText="Permissions and approvals: allow, deny, or ask per tool, a union with provenance per grant, and an approval prompt that shows the actual diff." id="permissions">
   <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
     <div class="order-2 lg:order-1 space-y-4">
       <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={permMerge} /></div>
@@ -85,14 +84,19 @@ import localModelShot from '../../assets/shots/local-model.svg';
     <div class="prose-measure order-1 lg:order-2">
       <h2 class="text-3xl font-bold text-vx-ink">Permissions &amp; approvals.</h2>
       <p class="mt-4 text-vx-ink/80">
-        The effective permission set is a union of policy, session, tool kind and role. Provenance is
-        kept per grant, so every effective grant remembers which source added it. An explicit deny
-        still wins. Merging never silently widens a surface.
+        Every tool falls into <strong>allow</strong>, <strong>deny</strong>, or <strong>ask</strong>. Ask shows the actual
+        diff before a mutating tool runs, so the approval is about what changed, not a bare path.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        The guardrails switch reaches every surface: agent session, inline <code class="mono">!cmd</code>,
-        <code class="mono">@file</code> admission, background agents, the CLI. A gated path checks the level
-        <em>before</em> calling the classifier, never after.
+        The effective permission set is a union of policy, session, tool kind and role. Provenance is
+        kept per grant, so every effective grant remembers which source added it. An explicit deny
+        still wins, and merging never silently widens a surface.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        No rules yet? Every tool call is allowed, and the <code class="mono">permission_no_match</code> setting flips
+        that default to enforce. The guardrails switch reaches every surface: agent session, inline
+        <code class="mono">!cmd</code>, <code class="mono">@file</code> admission, background agents, the CLI. A gated path checks the
+        level <em>before</em> calling the classifier, never after.
       </p>
     </div>
   </div>
@@ -127,32 +131,7 @@ import localModelShot from '../../assets/shots/local-model.svg';
   </div>
 </SealedSection>
 
-<SealedSection label="sessions" sealText="Sessions and compaction: a validated /compact contract, session auto-naming, mid-turn steering, and an exit card that always carries the resume command." id="sessions">
-  <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
-    <div class="prose-measure order-2 lg:order-1">
-      <h2 class="text-3xl font-bold text-vx-ink">Sessions &amp; compaction.</h2>
-      <p class="mt-4 text-vx-ink/80">
-        <code class="mono">/compact</code> runs against a validated contract, not a vibes-based summary. Sessions
-        auto-name from the work they did, mid-turn steering lands on the running turn, and the exit
-        card always carries the resume command back to the finished session.
-      </p>
-    </div>
-    <div class="order-1 lg:order-2 rounded-lg border border-vx-ink p-2" aria-hidden="true">
-      <img src={footerShot.src} alt="The status footer showing session and context chips" class="block h-auto w-full" loading="lazy" />
-    </div>
-  </div>
-  <div class="mt-10 max-w-[72ch]">
-    <ShotCarousel
-      client:load
-      shots={[
-        { src: exitCardShot.src, alt: 'The branded session-end card', caption: 'exit card, resume command' },
-        { src: footerShot.src, alt: 'The status footer with chips', caption: 'status footer, guardrails on' },
-      ]}
-    />
-  </div>
-</SealedSection>
-
-<SealedSection label="providers" sealText="Providers and local inference: five-layer credential resolution with provenance, two local providers shipped in the box, and /local-model assessment." id="providers">
+<SealedSection label="providers" sealText="Providers and local inference: five-layer credential resolution with provenance, ollama and llama-server in the box, a /local-model assess verdict, and the classifier on a separate local model." id="providers">
   <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
     <div class="prose-measure">
       <h2 class="text-3xl font-bold text-vx-ink">Providers &amp; local inference.</h2>
@@ -162,8 +141,17 @@ import localModelShot from '../../assets/shots/local-model.svg';
         and when.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        Two local providers ship in the box. <code class="mono">/local-model</code> assesses a candidate against
-        the classifier probe before you trust it with a session.
+        Two local providers ship in the box: <code class="mono">ollama</code> and <code class="mono">llama-server</code>. Run a
+        model locally and it appears in <code class="mono">/model</code>. Stop the server and it drops out of the
+        picker but stays in <code class="mono">/credentials</code>, so nothing silently re-picks an unavailable host.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        <code class="mono">/local-model</code> assesses a candidate against the classifier probe before you trust
+        it with a session: fit, notes, and the gap against the hosted baseline.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        The security classifier can run on a separate local model, so untrusted content is judged on
+        hardware you control instead of being sent off the machine.
       </p>
     </div>
     <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={credRes} /></div>
@@ -179,7 +167,7 @@ import localModelShot from '../../assets/shots/local-model.svg';
   </div>
 </SealedSection>
 
-<SealedSection label="vulnetix" sealText="Vulnetix integration: the AI Firewall routes traffic with an availability chip reported from a quiet startup probe, and /vulnetix review, firewall, and status subcommands are built in." id="vulnetix">
+<SealedSection label="vulnetix" sealText="Vulnetix integration: the AI Firewall routes traffic, the code scanner reviews repositories, and /vulnetix review, firewall, and status are built in. Free for everyone." id="vulnetix">
   <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
     <div class="order-2 lg:order-1 rounded-lg border border-vx-ink p-2" aria-hidden="true">
       <img src={footerShot.src} alt="The status footer showing the firewall chip" class="block h-auto w-full" loading="lazy" />
@@ -187,13 +175,23 @@ import localModelShot from '../../assets/shots/local-model.svg';
     <div class="prose-measure order-1 lg:order-2">
       <h2 class="text-3xl font-bold text-vx-ink">Vulnetix integration.</h2>
       <p class="mt-4 text-vx-ink/80">
-        The AI Firewall routes traffic when you opt in, and the status footer reports availability
-        through a quiet probe at startup, not a claim that survives an unreachable gateway.
-        <code class="mono">/vulnetix review</code>, <code class="mono">firewall</code>, and <code class="mono">status</code> are built in.
+        <a class="underline" href="https://www.vulnetix.com/features/ai-firewall">AI Firewall</a> routes
+        your LLM traffic through a guarded gateway, replacing the provider key with the gateway key.
+        It is fail-closed: if any of the four conditions is missing, the run falls back to the native
+        provider. The status footer reports availability through a quiet probe at startup, not a
+        claim that survives an unreachable gateway.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        The Vulnetix scanners and the AI Firewall are free for everyone. The baseline that platforms
-        eventually copy is already public.
+        <a class="underline" href="https://www.vulnetix.com/features/code-scanner">Code Scanner</a>
+        reviews repositories and surfaces findings without promoting raw snippets into the
+        transcript. Artifact content is shown in the TUI, never sent as a trusted system block.
+        <code class="mono">/vulnetix review</code> runs the configured subcommands, <code class="mono">firewall</code> toggles the
+        gateway, and <code class="mono">status</code> prints capabilities.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        The platform also ships an <a class="underline" href="https://www.vulnetix.com/features/mcp-server">MCP server</a>.
+        The scanners, the firewall, and the MCP server are free for everyone. The baseline that
+        platforms eventually copy is already public.
       </p>
     </div>
   </div>

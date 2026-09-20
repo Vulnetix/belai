@@ -13,10 +13,10 @@
 
   <!-- available tools -->
   <g font-family="'Geist Mono',ui-monospace,monospace" font-size="12" fill="#001614">
-    <rect x="24" y="64" width="120" height="40" rx="8" class="box"/><text x="14" y="26">Read</text>
-    <rect x="154" y="64" width="120" height="40" rx="8" class="box"/><text x="14" y="26">Grep</text>
-    <rect x="284" y="64" width="120" height="40" rx="8" class="box"/><text x="14" y="26">Glob</text>
-    <rect x="414" y="64" width="160" height="40" rx="8" class="box"/><text x="14" y="26">ExitPlanMode</text>
+    <rect x="24" y="64" width="120" height="40" rx="8" class="box"/><text x="36" y="90">Read</text>
+    <rect x="154" y="64" width="120" height="40" rx="8" class="box"/><text x="166" y="90">Grep</text>
+    <rect x="284" y="64" width="120" height="40" rx="8" class="box"/><text x="296" y="90">Glob</text>
+    <rect x="414" y="64" width="160" height="40" rx="8" class="box"/><text x="426" y="90">ExitPlanMode</text>
   </g>
   <text x="24" y="128" class="sub">the fail-closed surface: read-only tools, no mutating tools</text>
 
