@@ -21,12 +21,12 @@ import localModelShot from '../../assets/shots/local-model.svg';
 ---
 
 <SealedSection label="modes" sealText="Modes: plan mode advertises a fail-closed surface with Bash absent, not restricted. The goal loop is stopped by a stall detector, not a counter. Explicit mode choices are sticky." id="modes">
-  <div class="grid gap-10 md:grid-cols-2 md:items-center">
-    <div class="order-2 md:order-1 space-y-4">
+  <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
+    <div class="order-2 lg:order-1 space-y-4">
       <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={planMode} /></div>
       <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={goalLoop} /></div>
     </div>
-    <div class="prose-measure order-1 md:order-2">
+    <div class="prose-measure order-1 lg:order-2">
       <h2 class="text-3xl font-bold text-vx-ink">Modes.</h2>
       <p class="mt-4 text-vx-ink/80">
         Plan mode advertises and enforces a fail-closed surface with <code class="mono">Bash</code> absent, not
@@ -53,7 +53,7 @@ import localModelShot from '../../assets/shots/local-model.svg';
 </SealedSection>
 
 <SealedSection label="tools" sealText="Tools first class: a fixed-argv native catalogue of read-only utilities, never a shell. Cd is confined so the working directory moves inside the session root and the root does not widen." id="tools">
-  <div class="grid gap-10 md:grid-cols-2 md:items-center">
+  <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
     <div class="prose-measure">
       <h2 class="text-3xl font-bold text-vx-ink">Tools.</h2>
       <p class="mt-4 text-vx-ink/80">
@@ -72,12 +72,12 @@ import localModelShot from '../../assets/shots/local-model.svg';
 </SealedSection>
 
 <SealedSection label="permissions" sealText="Permissions and approvals: the effective permission set is a union with provenance per grant, and the approval prompt shows the actual diff, not a bare path." id="permissions">
-  <div class="grid gap-10 md:grid-cols-2 md:items-center">
-    <div class="order-2 md:order-1 space-y-4">
+  <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
+    <div class="order-2 lg:order-1 space-y-4">
       <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={permMerge} /></div>
       <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={guardSwitch} /></div>
     </div>
-    <div class="prose-measure order-1 md:order-2">
+    <div class="prose-measure order-1 lg:order-2">
       <h2 class="text-3xl font-bold text-vx-ink">Permissions &amp; approvals.</h2>
       <p class="mt-4 text-vx-ink/80">
         The effective permission set is a union of policy, session, tool kind and role. Provenance is
@@ -103,7 +103,7 @@ import localModelShot from '../../assets/shots/local-model.svg';
 </SealedSection>
 
 <SealedSection label="agents" sealText="Agents and fan-out: the f8 roster spawns concurrent read-only agents, each branch sees only the surface it is allowed to touch, and results merge." id="agents">
-  <div class="grid gap-10 md:grid-cols-2 md:items-center">
+  <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
     <div class="prose-measure">
       <h2 class="text-3xl font-bold text-vx-ink">Agents &amp; fan-out.</h2>
       <p class="mt-4 text-vx-ink/80">
@@ -123,8 +123,8 @@ import localModelShot from '../../assets/shots/local-model.svg';
 </SealedSection>
 
 <SealedSection label="sessions" sealText="Sessions and compaction: a validated /compact contract, session auto-naming, mid-turn steering, and an exit card that always carries the resume command." id="sessions">
-  <div class="grid gap-10 md:grid-cols-2 md:items-center">
-    <div class="prose-measure order-2 md:order-1">
+  <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
+    <div class="prose-measure order-2 lg:order-1">
       <h2 class="text-3xl font-bold text-vx-ink">Sessions &amp; compaction.</h2>
       <p class="mt-4 text-vx-ink/80">
         <code class="mono">/compact</code> runs against a validated contract, not a vibes-based summary. Sessions
@@ -132,7 +132,7 @@ import localModelShot from '../../assets/shots/local-model.svg';
         card always carries the resume command back to the finished session.
       </p>
     </div>
-    <div class="order-1 md:order-2 rounded-lg border border-vx-ink p-2" aria-hidden="true">
+    <div class="order-1 lg:order-2 rounded-lg border border-vx-ink p-2" aria-hidden="true">
       <img src={footerShot.src} alt="The status footer showing session and context chips" class="block h-auto w-full" loading="lazy" />
     </div>
   </div>
@@ -148,7 +148,7 @@ import localModelShot from '../../assets/shots/local-model.svg';
 </SealedSection>
 
 <SealedSection label="providers" sealText="Providers and local inference: five-layer credential resolution with provenance, two local providers shipped in the box, and /local-model assessment." id="providers">
-  <div class="grid gap-10 md:grid-cols-2 md:items-center">
+  <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
     <div class="prose-measure">
       <h2 class="text-3xl font-bold text-vx-ink">Providers &amp; local inference.</h2>
       <p class="mt-4 text-vx-ink/80">
@@ -175,11 +175,11 @@ import localModelShot from '../../assets/shots/local-model.svg';
 </SealedSection>
 
 <SealedSection label="vulnetix" sealText="Vulnetix integration: the AI Firewall routes traffic with an availability chip reported from a quiet startup probe, and /vulnetix review, firewall, and status subcommands are built in." id="vulnetix">
-  <div class="grid gap-10 md:grid-cols-2 md:items-center">
-    <div class="order-2 md:order-1 rounded-lg border border-vx-ink p-2" aria-hidden="true">
+  <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
+    <div class="order-2 lg:order-1 rounded-lg border border-vx-ink p-2" aria-hidden="true">
       <img src={footerShot.src} alt="The status footer showing the firewall chip" class="block h-auto w-full" loading="lazy" />
     </div>
-    <div class="prose-measure order-1 md:order-2">
+    <div class="prose-measure order-1 lg:order-2">
       <h2 class="text-3xl font-bold text-vx-ink">Vulnetix integration.</h2>
       <p class="mt-4 text-vx-ink/80">
         The AI Firewall routes traffic when you opt in, and the status footer reports availability
