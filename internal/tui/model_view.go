@@ -886,10 +886,24 @@ func (a *App) openClassifierModelPicker() tea.Cmd {
 	return a.fetchCatalogCmd(name)
 }
 
+// cycleAgentProvider moves the agent's provider to the next one in the
+// picker's list, wrapping from the last back to the first. The list is
+// exactly what the picker offers (availableProviders, which pins the
+// committed provider), so the cycle reaches every authenticated provider in
+// canonical order and the cursor is never off the ring.
+//
+// There is deliberately no "" (unset) stop in the agent ring: every commit
+// ends in refreshProvider, and run.Prepare normalises an empty provider to
+// the default (openai). An "" stop therefore bounces on the very next wrap,
+// so the cycle only ever traversed the tail of the sorted list starting at
+// the default and providers sorting before the committed one were
+// unreachable. Unsetting is the x key's job.
 func (a *App) cycleAgentProvider(opts []string) tea.Cmd {
-	ring := append([]string{""}, opts...)
+	if len(opts) == 0 {
+		return nil
+	}
 	cur := a.cfg.Provider
-	next := ring[(indexOfString(ring, cur)+1)%len(ring)]
+	next := opts[(indexOfString(opts, cur)+1)%len(opts)]
 	return a.mutateAgent(func(s *config.Settings) {
 		s.Provider = next
 		s.Model = ""

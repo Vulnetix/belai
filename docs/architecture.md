@@ -1894,9 +1894,15 @@ chat.
 
 The agent role rows are **provider**, **model**, **effort** and **scope**:
 
-- **Provider** cycles through available providers with an unset stop.
-  Changing provider clears the model, because a model id is only meaningful
-  to its own provider.
+- **Provider** cycles through the full list of available providers, in
+  canonical order, wrapping from the last back to the first — every
+  authenticated provider is reachable from any starting point. Changing
+  provider clears the model, because a model id is only meaningful to its
+  own provider. There is no unset stop in the agent cycle: the running
+  configuration always carries a concrete provider name (`run.Prepare`
+  normalises an empty provider to the default, so an unset stop would
+  bounce on the next wrap and leave the providers sorting before the
+  default unreachable). Unsetting is the `x` key's job.
 - **Model** opens an embedded sub-picker over the selected provider's
   catalogue.
 - **Effort** cycles the model's advertised effort chips, or
@@ -1909,6 +1915,10 @@ The agent role rows are **provider**, **model**, **effort** and **scope**:
 The classifier role rows are **provider**, **model**, **reasoning**,
 **effort**, **caveman**, **chunk** and **scope**:
 
+- **Provider** cycles with an inherit stop: `— (main: X)` means the
+  classifier follows the main model, which is a stable state for the
+  classifier (unlike the agent, where an empty provider is normalised away
+  on every re-resolve), so the ring includes it and wraps through it.
 - **Reasoning drives effort.** There is no separate reasoning key. Toggling
   reasoning off writes `classifier.effort: "none"` and greys the effort row;
   toggling it back on restores the previously selected chip.
