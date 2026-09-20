@@ -554,7 +554,7 @@ BuildDate = UTC RFC 3339
 
 ## Site
 
-The marketing site lives in `site/` and is documented in [docs/site.md](site.md).
+The marketing site lives at [signet.vulnetix.com](https://signet.vulnetix.com/) (source in `site/`) and is documented in [docs/site.md](site.md).
 Local recipes: `just site-dev` (dev server), `just site-build` (build `site/dist`),
 `just site-check` (build + custom-domain assertion + link check), and `just shots`
 (regenerate the deterministic TUI captures). `just check` stays Go-only and does

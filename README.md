@@ -241,4 +241,4 @@ project without remembering an id.
 - [docs/nonce-endpoint-spec.md](docs/nonce-endpoint-spec.md) — provider nonce GET spec.
 - [docs/development.md](docs/development.md) — local development, build, and QA workflows.
 
-Marketing site: [signet.vulnetix.com](https://signet.vulnetix.com) (source in [site/](site/)).
+Marketing site: [signet.vulnetix.com](https://signet.vulnetix.com/) (source in [site/](site/)).

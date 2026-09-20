@@ -1,6 +1,6 @@
 # Marketing site
 
-The single-scroll marketing site at `signet.vulnetix.com`, built from `site/`.
+The single-scroll marketing site at [signet.vulnetix.com](https://signet.vulnetix.com/), built from `site/`.
 
 ## Stack
 
