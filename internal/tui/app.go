@@ -27,6 +27,7 @@ import (
 	"github.com/vulnetix/signet/internal/agent"
 	"github.com/vulnetix/signet/internal/agentpool"
 	"github.com/vulnetix/signet/internal/agentprofile"
+	"github.com/vulnetix/signet/internal/aifirewall"
 	"github.com/vulnetix/signet/internal/bgagent"
 	"github.com/vulnetix/signet/internal/clipboard"
 	"github.com/vulnetix/signet/internal/config"
@@ -276,6 +277,7 @@ type App struct {
 	toolCallsOverride  *bool
 	guardrailsOverride *bool
 	askOverride        *bool
+	firewallOverride   *bool
 	lastPlanText       string
 	// pendingPlanExecute/planExecuteName are set by the plan review pane
 	// when the user approves a plan. The next send consumes them and tells
@@ -300,23 +302,23 @@ type App struct {
 	pendingInput string // prompt held while attachments validate
 
 	// view state
-	view                     viewState
-	viewStack                []viewState
-	credentialState          credentialViewState
-	settingsState            settingsViewState
-	modelState               modelViewState
-	permState                permissionsViewState
-	importState              importViewState
-	clarifyState             clarifyViewState
-	permAskState             permissionAskViewState
-	agentState               agentViewState
-	classifierState          classifierViewState
-	planReview               planReviewState
-	resumeState              resumeViewState
-	codeReviewConfigState    codeReviewConfigState
-	codeReviewListState      codeReviewListState
-	codeReviewArtifactsState codeReviewArtifactsState
-	promptsState             promptsViewState
+	view                   viewState
+	viewStack              []viewState
+	credentialState        credentialViewState
+	settingsState          settingsViewState
+	modelState             modelViewState
+	permState              permissionsViewState
+	importState            importViewState
+	clarifyState           clarifyViewState
+	permAskState           permissionAskViewState
+	agentState             agentViewState
+	classifierState        classifierViewState
+	planReview             planReviewState
+	resumeState            resumeViewState
+	vulnetixConfigState    vulnetixConfigState
+	vulnetixListState      vulnetixListState
+	vulnetixArtifactsState vulnetixArtifactsState
+	promptsState           promptsViewState
 
 	// which providers the pickers may offer, filled by an async probe
 	avail providerAvailability
@@ -475,16 +477,20 @@ type App struct {
 	// only on an explicit dismiss.
 	subagents    []components.SubagentChip // insertion order
 	subagentIdx  map[string]int
-	stripFocus   bool   // f8 moved focus off the composer
-	stripSel     int    // 0 == "main"
 	threadFilter string // "" == main (unfiltered)
 
-	// activity drawer: the honest register of every process Signet launches.
-	activity      *activity.Registry
-	activityOpen  bool // drawer open (wide) vs closed (thin rail)
-	activityFocus bool // drawer owns the keyboard
-	activitySel   int  // selected activity index (into activity.List())
-	activityVP    viewport.Model
+	// runs panel: unified activity + subagent panel rendered above the composer.
+	runsOpen   bool // panel visible
+	runsFocus  bool // panel owns the keyboard
+	runsTab    int  // 0 == activity, 1 == subagents
+	runsSel    int  // selected item index (into runsItems())
+	runsScroll int  // first visible item when the list is windowed
+
+	// runsOutput is the full-screen reader for one run's output.
+	runsOutput runsOutputState
+
+	// activity registry: the honest register of every process Signet launches.
+	activity *activity.Registry
 	// activityAnnounced/activityFinished dedupe the thread start/finish lines
 	// driven by the registry event stream.
 	activityAnnounced map[string]bool
@@ -690,7 +696,6 @@ func New(opts Options) *App {
 		footerW:           -1,
 		agentPool:         agentpool.New(eff.Settings.Resilience.MaxAgentsOr(3)),
 		activity:          activity.NewRegistry(),
-		activityVP:        viewport.New(80, 24),
 		activityAnnounced: map[string]bool{},
 		activityFinished:  map[string]bool{},
 		subagentIdx:       map[string]int{},
@@ -982,6 +987,7 @@ func (a *App) belowViewportHeight() int {
 	h += a.filePickHeight()
 	h += a.attachStripHeight()
 	h += a.todoPanelHeight()
+	h += a.runsPanelHeight()
 	h += a.editor.Height() + 2 // composer frame (top and bottom edges)
 	h += a.footerHeight()
 	return h
@@ -1022,7 +1028,7 @@ func (a *App) relayout() {
 		// Two border cells and one column of padding on each side.
 		a.editor.SetWidth(a.width - 6)
 	}
-	a.vp.Width = a.chatWidth()
+	a.vp.Width = a.contentWidth()
 	vpHeight := a.height - a.chromeHeight()
 	if vpHeight < 5 {
 		vpHeight = 5
@@ -1621,8 +1627,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case promptEditedMsg:
 		return a, a.handlePromptEdited(m)
 
-	case codeReviewDoneMsg:
-		return a, a.handleCodeReviewDone(m)
+	case vulnetixDoneMsg:
+		return a, a.handleVulnetixDone(m)
 
 	case vulnetixProbeMsg:
 		return a, a.handleVulnetixProbe(m)
@@ -1801,20 +1807,24 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, a.cycleEffort()
 		case "f8":
-			// Focus the subagent roster strip. No-op outside chat or with an
-			// empty roster (there is nothing to cycle or cancel).
-			if a.view == viewChat && len(a.subagents) > 0 {
-				a.stripFocus = !a.stripFocus
-				if a.stripFocus {
-					a.stripSel = 0
-				}
+			// Open the runs panel on the subagents tab.
+			if a.view == viewChat {
+				a.toggleRunsPanel(tabSubagents)
 			}
 			return a, nil
 		case "f9":
+			// Toggle the runs panel on the activity tab.
 			if a.view == viewChat {
-				a.toggleActivityDrawer()
+				a.toggleRunsPanel(tabActivity)
 			}
 			return a, nil
+		case "f10":
+			// Toggle the Vulnetix AI Firewall when the CLI is configured. This
+			// is intentionally global: it works from /vulnetix config too.
+			if a.view == viewPlanReview {
+				return a, nil
+			}
+			return a, a.toggleFirewall()
 		}
 		if a.view != viewChat {
 			if h, ok := viewHandlers[a.view]; ok {
@@ -1857,15 +1867,9 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		return a.handleHistoryKey(m)
 	}
 
-	// The activity drawer owns the composer's keys while focused.
-	if a.activityFocus {
-		return a.handleActivityKey(m)
-	}
-
-	// The f8 subagent strip owns the composer's enter/x/esc while focused; the
-	// composer's own keys are untouched when focus is not on the strip.
-	if a.stripFocus {
-		return a.handleSubagentStripKey(m)
+	// The runs panel owns the composer's keys while focused.
+	if a.runsFocus {
+		return a.handleRunsPanelKey(m)
 	}
 
 	if a.filePickerVisible() {
@@ -3042,7 +3046,7 @@ func (a *App) chatView() string {
 	a.relayout()
 	body, lm := components.MessageList{
 		Messages:      a.filteredMessages(),
-		Width:         a.chatWidth(),
+		Width:         a.contentWidth(),
 		ExpandAll:     a.expandAll,
 		ShowReasoning: a.reasoningVisible(),
 		ShowTools:     a.toolCallsVisible(),
@@ -3079,12 +3083,6 @@ func (a *App) chatView() string {
 		height:  a.vp.Height,
 		yOffset: a.vp.YOffset,
 	}
-	if a.activityOpen {
-		// With the drawer open the transcript is a fraction of the width and the
-		// frame provenance is stale; make hover and drag-selection inert rather
-		// than subtly wrong.
-		a.lastFrame = frame{}
-	}
 	// Derive the hover target from the frame that is about to be drawn, so the
 	// footer hint always matches the panel under the pointer — including after
 	// ctrl+o or a streaming delta, which arrive without a new mouse event.
@@ -3117,6 +3115,10 @@ func (a *App) chatView() string {
 		sb.WriteString(a.renderTodoPanel())
 		sb.WriteString("\n")
 	}
+	if a.runsOpen {
+		sb.WriteString(a.renderRunsPanel())
+		sb.WriteString("\n")
+	}
 	sb.WriteString(a.renderComposer())
 	sb.WriteString("\n")
 	a.refreshFooter()
@@ -3133,11 +3135,7 @@ func (a *App) chatView() string {
 		a.trace.Event("tui", "render", el)
 	}
 
-	chatCol := lipgloss.NewStyle().Padding(1).Render(sb.String())
-	if a.activityOpen {
-		return lipgloss.JoinHorizontal(lipgloss.Top, chatCol, a.renderActivityDrawer())
-	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, chatCol, a.renderActivityRail())
+	return lipgloss.NewStyle().Padding(1).Render(sb.String())
 }
 
 // contentWidth is the width available inside the outer one-column padding.
@@ -3732,6 +3730,7 @@ func (a *App) refreshFooter() {
 	}
 	a.footer.Guardrails = a.guardrailsEnabled()
 	a.footer.Ask = a.askEnabled()
+	a.footer.Firewall = a.firewallEnabled()
 	a.footer.Caveman = a.settings.CavemanEnabled()
 	// The footer shows where relative paths currently resolve from, which is
 	// the session's working directory rather than the root it started at.
@@ -3751,20 +3750,13 @@ func (a *App) refreshFooter() {
 	a.footer.SessionName = a.sessionName
 	a.footer.ShowName = a.settings.SessionNamesVisible()
 	a.footer.Hint = a.hoverHint()
-	// The subagent strip: chips carry their focus state, and the f8 hint rides
-	// the existing Hint line.
+	// The subagent strip is now rendered inside the runs panel; the footer
+	// line stays passive so focus never appears in the footer.
 	for i := range a.subagents {
-		a.subagents[i].Focused = a.stripFocus && a.stripSel == i+1
+		a.subagents[i].Focused = false
 	}
 	a.footer.Subagents = a.subagents
-	a.footer.MainFocused = a.stripFocus && a.stripSel == 0
-	if sub := a.subagentHint(); sub != "" {
-		if a.footer.Hint == "" {
-			a.footer.Hint = sub
-		} else {
-			a.footer.Hint = sub + components.MutedStyle.Render("  ·  ") + a.footer.Hint
-		}
-	}
+	a.footer.MainFocused = false
 
 	est := a.contextEstimate()
 	a.footer.Tokens = est.Tokens
@@ -3798,6 +3790,30 @@ func (a *App) guardrailsEnabled() bool {
 	return a.settings.GuardrailsEnabled()
 }
 
+// firewallEnabled returns the effective firewall state: override first, then
+// the resolved effective settings.
+func (a *App) firewallEnabled() bool {
+	if a.firewallOverride != nil {
+		return *a.firewallOverride
+	}
+	return a.settings.FirewallEnabled()
+}
+
+// firewallAvailable reports whether a Vulnetix credential can be resolved for
+// the configured provider. The result is cached in a.session-level memo.
+func (a *App) firewallAvailable() bool {
+	if !a.firewallEnabled() {
+		// Even when off we can still tell whether the CLI/credential is
+		// present by trying to resolve it.
+	}
+	if a.resolver == nil {
+		return false
+	}
+	base, _, ok := a.resolver.Firewall(a.cfg.Provider)
+	_ = base
+	return ok
+}
+
 // engagedProfile returns the currently engaged agent definition, if any.
 func (a *App) engagedProfile() (agentprofile.AgentProfile, bool) {
 	if a.namedAgent == "" {
@@ -3808,6 +3824,65 @@ func (a *App) engagedProfile() (agentprofile.AgentProfile, bool) {
 		return agentprofile.AgentProfile{}, false
 	}
 	return p, true
+}
+
+// toggleFirewall flips the firewall override, persists it through the
+// settings mutation seam, and refreshes the footer. When the Vulnetix
+// credential is not available it prints a pointer and leaves state unchanged.
+func (a *App) toggleFirewall() tea.Cmd {
+	if !a.firewallAvailable() {
+		a.addSystem("Vulnetix CLI is not configured — run /vulnetix configure to use the Firewall")
+		return nil
+	}
+	on := !a.firewallEnabled()
+	a.firewallOverride = &on
+	if err := a.mutateSetting(func(s *config.Settings) {
+		if s.Vulnetix == nil {
+			s.Vulnetix = &config.VulnetixSettings{}
+		}
+		s.Vulnetix.FirewallEnabled = &on
+	}); err != nil {
+		a.addSystem("firewall toggle failed: " + err.Error())
+		return nil
+	}
+	// reloadSettings was called by mutateSetting; refresh cfg and footer.
+	if cfg, err := a.resolveConfig(); err == nil {
+		a.cfg = cfg
+	}
+	a.refreshFooter()
+	if on {
+		a.addSystem(a.firewallOnMessage())
+	}
+	return nil
+}
+
+// resolveConfig re-resolves the active provider config from current settings.
+func (a *App) resolveConfig() (run.Config, error) {
+	name := a.cfg.Provider
+	if a.requestedProvider != "" {
+		name = a.requestedProvider
+	}
+	return run.ResolveWithSource(a.cfg.Model, name, os.Getenv, a.resolver)
+}
+
+// firewallOnMessage reports what changed when the firewall was just enabled.
+func (a *App) firewallOnMessage() string {
+	var gateway, org string
+	if a.resolver != nil {
+		if base, _, ok := a.resolver.Firewall(a.cfg.Provider); ok {
+			gateway = aifirewall.HostOf(base)
+			org = aifirewall.URLPathUUID(base)
+		}
+	}
+	msg := "Vulnetix AI Firewall on"
+	if gateway != "" {
+		msg += " · gateway " + gateway
+	}
+	if org != "" {
+		msg += " · org " + org
+	}
+	msg += " · provider key is no longer sent"
+	return msg
 }
 
 // effectivePosture is the policy every surface must consult, rather than
@@ -4447,9 +4522,12 @@ func (a *App) startNewSession() {
 	a.clearLoadedPrompt()
 	a.subagents = nil
 	a.subagentIdx = map[string]int{}
-	a.stripFocus = false
-	a.stripSel = 0
 	a.threadFilter = ""
+	a.runsOpen = false
+	a.runsFocus = false
+	a.runsTab = tabActivity
+	a.runsSel = 0
+	a.runsScroll = 0
 	a.loadAgents()
 	a.saveSession()
 	a.refreshFooter()
@@ -4482,58 +4560,58 @@ func (a *App) handleSessionNamed(m sessionNamedMsg) tea.Cmd {
 	return nil
 }
 
-// handleCodeReviewDone renders the result of an async /code-review run.
-func (a *App) handleCodeReviewDone(m codeReviewDoneMsg) tea.Cmd {
+// handleVulnetixDone renders the result of an async /vulnetix run.
+func (a *App) handleVulnetixDone(m vulnetixDoneMsg) tea.Cmd {
 	if m.err != nil {
-		a.addSystem("code-review failed: " + m.err.Error())
+		a.addSystem("vulnetix failed: " + m.err.Error())
 		return nil
 	}
 	if m.report.Status != "" {
-		a.addSystem("code-review status:\n" + m.report.Status)
+		a.addSystem("vulnetix status:\n" + m.report.Status)
 		return nil
 	}
 	if m.report.Summary != "" {
-		a.addSystem("code-review:\n" + m.report.Summary)
+		a.addSystem("vulnetix:\n" + m.report.Summary)
 	}
-	return a.push(viewCodeReviewArtifacts)
+	return a.push(viewVulnetixArtifacts)
 }
 
 func (a *App) handleVulnetixProbe(m vulnetixProbeMsg) tea.Cmd {
-	a.codeReviewConfigState.cap = m.cap
-	a.codeReviewConfigState.loading = false
+	a.vulnetixConfigState.cap = m.cap
+	a.vulnetixConfigState.loading = false
 	if m.err != nil {
-		a.codeReviewConfigState.errorMsg = m.err.Error()
+		a.vulnetixConfigState.errorMsg = m.err.Error()
 	}
 	return nil
 }
 
 func (a *App) handleProjectsLoaded(m projectsLoadedMsg) tea.Cmd {
-	a.codeReviewListState.loading = false
+	a.vulnetixListState.loading = false
 	if m.err != nil {
-		a.codeReviewListState.errorMsg = m.err.Error()
+		a.vulnetixListState.errorMsg = m.err.Error()
 		return nil
 	}
-	a.codeReviewListState.entries = m.entries
-	a.codeReviewListState.rows = flattenCodeReviewRows(m.entries)
+	a.vulnetixListState.entries = m.entries
+	a.vulnetixListState.rows = flattenVulnetixRows(m.entries)
 	return nil
 }
 
 func (a *App) handleSweepFound(m sweepFoundMsg) tea.Cmd {
 	if m.err != nil {
-		a.codeReviewListState.errorMsg = m.err.Error()
+		a.vulnetixListState.errorMsg = m.err.Error()
 		return nil
 	}
 	// Reload the registry after the sweep batch is done.
-	return a.loadCodeReviewProjectsCmd()
+	return a.loadVulnetixProjectsCmd()
 }
 
 func (a *App) handleArtifactsLoaded(m artifactsLoadedMsg) tea.Cmd {
-	a.codeReviewArtifactsState.loading = false
+	a.vulnetixArtifactsState.loading = false
 	if m.err != nil {
-		a.codeReviewArtifactsState.errorMsg = m.err.Error()
+		a.vulnetixArtifactsState.errorMsg = m.err.Error()
 		return nil
 	}
-	a.codeReviewArtifactsState.summary = m.summary
+	a.vulnetixArtifactsState.summary = m.summary
 	return nil
 }
 
@@ -4667,9 +4745,12 @@ func (a *App) applyCompaction(summary string) tea.Cmd {
 	a.usageStale = true
 	a.subagents = nil
 	a.subagentIdx = map[string]int{}
-	a.stripFocus = false
-	a.stripSel = 0
 	a.threadFilter = ""
+	a.runsOpen = false
+	a.runsFocus = false
+	a.runsTab = tabActivity
+	a.runsSel = 0
+	a.runsScroll = 0
 
 	a.addSystem(fmt.Sprintf("compacted %s into %s", shortID(old), shortID(a.sessionID)))
 	a.saveSession()

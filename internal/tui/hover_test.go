@@ -84,7 +84,7 @@ func TestRecomputeHoverCollapsedPanel(t *testing.T) {
 	a.width = 120
 	a.height = 40
 	a.messages = []components.Message{
-		{Role: "assistant", Content: "l1\nl2\nl3\nl4\nl5"},
+		{Role: "tool", ToolName: "Bash", ToolArgs: `{"command":"seq 5"}`, Content: "l1\nl2\nl3\nl4\nl5", Status: "✓"},
 	}
 	renderFrame(t, a)
 	pointAt(a, hoverLine(t, a, 0, false, true))

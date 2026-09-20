@@ -25,10 +25,12 @@ import (
 //
 // Rule for anyone editing this package: inside a Row, never emit \x1b[0m.
 const (
-	fgOff   = "\x1b[39m" // reset foreground only; leaves any background intact
-	bgOff   = "\x1b[49m" // reset background only; leaves any foreground intact
-	emphOn  = "\x1b[7m"  // reverse video: swaps fg and bg, whatever they are
-	emphOff = "\x1b[27m"
+	fgOff     = "\x1b[39m" // reset foreground only; leaves any background intact
+	bgOff     = "\x1b[49m" // reset background only; leaves any foreground intact
+	emphOn    = "\x1b[7m"  // reverse video: swaps fg and bg, whatever they are
+	emphOff   = "\x1b[27m"
+	strikeOn  = "\x1b[9m" // strikethrough
+	strikeOff = "\x1b[29m"
 )
 
 // fgSeq returns the escape sequence that sets c as the foreground, or "" when

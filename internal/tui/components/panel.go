@@ -17,9 +17,18 @@ type Panel struct {
 	Body   string
 	Width  int // total width including both border cells
 	Accent lipgloss.TerminalColor
+	// TitleAccent colours the title separately from the frame. When nil the
+	// frame accent is used, so panels that want one colour for both keep
+	// working unchanged.
+	TitleAccent lipgloss.TerminalColor
 	// Raw keeps the body verbatim (no re-wrapping) for bodies that already
 	// render at the right width, such as the textarea.
 	Raw bool
+
+	// BodyRows takes precedence over Body: pre-built rows rendered at the inner
+	// width, one screen line each, and not re-wrapped. It is how markdown and
+	// grouped notices reach the transcript with their provenance intact.
+	BodyRows []Row
 
 	// Marker names a truncation hint (plain text, e.g. "… 12 more lines")
 	// that occupies a whole body line; Hidden is the text the hint hides.
@@ -53,8 +62,12 @@ func (p Panel) Render() (string, LineMap) {
 	if accent == nil {
 		accent = ColorTeal
 	}
+	titleAccent := p.TitleAccent
+	if titleAccent == nil {
+		titleAccent = accent
+	}
 	edge := lipgloss.NewStyle().Foreground(accent)
-	titleStyle := lipgloss.NewStyle().Foreground(accent).Bold(true)
+	titleStyle := lipgloss.NewStyle().Foreground(titleAccent).Bold(true)
 
 	title := p.Title
 	meta := p.Meta
@@ -87,13 +100,45 @@ func (p Panel) Render() (string, LineMap) {
 	}
 	bottom := edge.Render("╰" + repeatRune('─', width-2) + "╯")
 
+	bar := edge.Render("│")
+	barCol := visibleLen("│ ") // border cell plus its one column of padding
+
+	// Pre-built rows take precedence and skip the string re-wrap: they already
+	// render at the inner width, so wrapping them again would double-wrap
+	// already-laid-out lines and lose per-row markers and reopen state.
+	if p.BodyRows != nil {
+		var b strings.Builder
+		var lm LineMap
+		b.WriteString(top + "\n")
+		lm = append(lm, SourceLine{Chrome: true})
+		for _, r := range p.BodyRows {
+			line, sl := r.Render(inner)
+			if w := lipgloss.Width(line); w < inner {
+				line += spaces(inner - w)
+			}
+			b.WriteString(bar + " " + line + " " + bar + "\n")
+			if sl.Chrome {
+				lm = append(lm, sl)
+				continue
+			}
+			// The row's provenance is in its own coordinate system (left edge
+			// at 0); shift it past the bar and padding so a selection still
+			// matches the full frame line.
+			sl.Col += barCol
+			if sl.MarkerWidth > 0 {
+				sl.MarkerCol += barCol
+			}
+			lm = append(lm, sl)
+		}
+		b.WriteString(bottom)
+		lm = append(lm, SourceLine{Chrome: true})
+		return b.String(), lm
+	}
+
 	body := p.Body
 	if !p.Raw {
 		body = lipgloss.NewStyle().Width(inner).Render(body)
 	}
-
-	bar := edge.Render("│")
-	barCol := visibleLen("│ ") // border cell plus its one column of padding
 
 	// The marker, when set, rides the last body line whose stripped text
 	// equals it; the caller passes truncation info down instead of the panel

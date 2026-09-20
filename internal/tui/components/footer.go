@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Footer shows session, context usage (number and progress bar), model with
@@ -40,6 +41,10 @@ type Footer struct {
 	// golden YOLO chip; otherwise the two chips render individually.
 	Guardrails bool
 	Ask        bool
+
+	// Firewall reports whether traffic is routed through the Vulnetix AI
+	// Firewall. Rendered as a teal chip when on; omitted when off.
+	Firewall bool
 
 	// Caveman reports whether the caveman voice rewrite is active. It always
 	// renders, on and off alike, because it silently changes how every reply
@@ -129,6 +134,7 @@ func (f *Footer) View() string {
 	if f.Armed != "" {
 		hint = f.Armed
 	}
+	hint = ansi.Truncate(hint, f.Width, "")
 	if line1 != "" {
 		return rule + "\n" + line1 + "\n" + line2 + "\n" + f.subagentLine() + "\n" + MutedStyle.Render(hint)
 	}
@@ -261,14 +267,18 @@ func (f *Footer) SessionSpan() (col, width int, ok bool) {
 
 // permissionChips renders the permission controls. Both off collapses to a
 // single golden YOLO chip; otherwise guardrails and ask render as two chips,
-// teal when on and red when off.
+// teal when on and red when off. The firewall chip renders only when on.
 func (f Footer) permissionChips() string {
-	if !f.Guardrails && !f.Ask {
+	if !f.Guardrails && !f.Ask && !f.Firewall {
 		return Chip("YOLO", ColorAmber)
 	}
 	guardrails := Chip("guardrails: "+onOff(f.Guardrails), onOffColor(f.Guardrails))
 	ask := Chip("ask: "+onOff(f.Ask), onOffColor(f.Ask))
-	return guardrails + MutedStyle.Render(" ") + ask
+	out := guardrails + MutedStyle.Render(" ") + ask
+	if f.Firewall {
+		out += MutedStyle.Render(" ") + Chip("firewall: on", ColorTeal)
+	}
+	return out
 }
 
 // cavemanSegment renders the caveman voice-rewrite status. Unlike the

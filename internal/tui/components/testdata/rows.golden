@@ -201,47 +201,72 @@
 ⌁ WebFetch  https://example.com                                                                                 withheld
   tool result withheld: provider error  … 1 more lines
 === system_short w=32
-│ retrying (2/3) after 800ms —
-│ rate limited
+╭─ signet ─────────────────────╮
+│ retrying (2/3) after 800ms — │
+│ rate limited                 │
+╰──────────────────────────────╯
 === system_short w=41
-│ retrying (2/3) after 800ms — rate
-│ limited
+╭─ signet ──────────────────────────────╮
+│ retrying (2/3) after 800ms — rate     │
+│ limited                               │
+╰───────────────────────────────────────╯
 === system_short w=53
-│ retrying (2/3) after 800ms — rate limited
+╭─ signet ──────────────────────────────────────────╮
+│ retrying (2/3) after 800ms — rate limited         │
+╰───────────────────────────────────────────────────╯
 === system_short w=60
-│ retrying (2/3) after 800ms — rate limited
+╭─ signet ─────────────────────────────────────────────────╮
+│ retrying (2/3) after 800ms — rate limited                │
+╰──────────────────────────────────────────────────────────╯
 === system_short w=80
-│ retrying (2/3) after 800ms — rate limited
+╭─ signet ─────────────────────────────────────────────────────────────────────╮
+│ retrying (2/3) after 800ms — rate limited                                    │
+╰──────────────────────────────────────────────────────────────────────────────╯
 === system_short w=120
-│ retrying (2/3) after 800ms — rate limited
+╭─ signet ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ retrying (2/3) after 800ms — rate limited                                                                            │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 === system_wrapping w=32
-│ a system notice long enough
-│ that it has to wrap onto a
-│ second and probably a third
-│ line at narrow widths
+╭─ signet ─────────────────────╮
+│ a system notice long enough  │
+│ that it has to wrap onto a   │
+│ second and probably a third  │
+│ line at narrow widths        │
+╰──────────────────────────────╯
 === system_wrapping w=41
-│ a system notice long enough that it has
-│ to wrap onto a second and probably a
-│ third line at narrow widths
+╭─ signet ──────────────────────────────╮
+│ a system notice long enough that it   │
+│ has to wrap onto a second and         │
+│ probably a third line at narrow       │
+│ widths                                │
+╰───────────────────────────────────────╯
 === system_wrapping w=53
-│ a system notice long enough that it has to wrap
-│ onto a second and probably a third line at narrow
-│ widths
+╭─ signet ──────────────────────────────────────────╮
+│ a system notice long enough that it has to wrap   │
+│ onto a second and probably a third line at narrow │
+│ widths                                            │
+╰───────────────────────────────────────────────────╯
 === system_wrapping w=60
-│ a system notice long enough that it has to wrap onto a
-│ second and probably a third line at narrow widths
+╭─ signet ─────────────────────────────────────────────────╮
+│ a system notice long enough that it has to wrap onto a   │
+│ second and probably a third line at narrow widths        │
+╰──────────────────────────────────────────────────────────╯
 === system_wrapping w=80
-│ a system notice long enough that it has to wrap onto a second and probably a
-│ third line at narrow widths
+╭─ signet ─────────────────────────────────────────────────────────────────────╮
+│ a system notice long enough that it has to wrap onto a second and probably a │
+│ third line at narrow widths                                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
 === system_wrapping w=120
-│ a system notice long enough that it has to wrap onto a second and probably a third line at narrow widths
+╭─ signet ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ a system notice long enough that it has to wrap onto a second and probably a third line at narrow widths             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 === mixed w=32
 ╭─ user prompt ────────────────╮
 │ fix the failing test in the  │
 │ wire package                 │
 ╰──────────────────────────────╯
 
-╭─ signet ─────────────────────╮
+╭─ model ──────────────────────╮
 │ Plan:                        │
 │ 1. reproduce                 │
 │ 2. patch                     │
@@ -249,7 +274,7 @@
 │ … 3 more lines               │
 ╰──────────────────────────────╯
 
-╭─ reasoning ──────────────────╮
+╭─ model · reasoning ──────────╮
 │ thinking about the root      │
 │ cause here                   │
 ╰──────────────────────────────╯
@@ -259,15 +284,18 @@
   second line
   third line
   fourth line
-│ retrying (2/3) after 800ms —
-│ rate limited
+
+╭─ signet ─────────────────────╮
+│ retrying (2/3) after 800ms — │
+│ rate limited                 │
+╰──────────────────────────────╯
 === mixed w=41
 ╭─ user prompt ─────────────────────────╮
 │ fix the failing test in the wire      │
 │ package                               │
 ╰───────────────────────────────────────╯
 
-╭─ signet ──────────────────────────────╮
+╭─ model ───────────────────────────────╮
 │ Plan:                                 │
 │ 1. reproduce                          │
 │ 2. patch                              │
@@ -275,7 +303,7 @@
 │ … 3 more lines                        │
 ╰───────────────────────────────────────╯
 
-╭─ reasoning ───────────────────────────╮
+╭─ model · reasoning ───────────────────╮
 │ thinking about the root cause here    │
 ╰───────────────────────────────────────╯
 
@@ -284,14 +312,17 @@
   second line
   third line
   fourth line
-│ retrying (2/3) after 800ms — rate
-│ limited
+
+╭─ signet ──────────────────────────────╮
+│ retrying (2/3) after 800ms — rate     │
+│ limited                               │
+╰───────────────────────────────────────╯
 === mixed w=53
 ╭─ user prompt ─────────────────────────────────────╮
 │ fix the failing test in the wire package          │
 ╰───────────────────────────────────────────────────╯
 
-╭─ signet ──────────────────────────────────────────╮
+╭─ model ───────────────────────────────────────────╮
 │ Plan:                                             │
 │ 1. reproduce                                      │
 │ 2. patch                                          │
@@ -299,7 +330,7 @@
 │ … 3 more lines                                    │
 ╰───────────────────────────────────────────────────╯
 
-╭─ reasoning ───────────────────────────────────────╮
+╭─ model · reasoning ───────────────────────────────╮
 │ thinking about the root cause here                │
 ╰───────────────────────────────────────────────────╯
 
@@ -308,13 +339,16 @@
   second line
   third line
   fourth line
-│ retrying (2/3) after 800ms — rate limited
+
+╭─ signet ──────────────────────────────────────────╮
+│ retrying (2/3) after 800ms — rate limited         │
+╰───────────────────────────────────────────────────╯
 === mixed w=60
 ╭─ user prompt ────────────────────────────────────────────╮
 │ fix the failing test in the wire package                 │
 ╰──────────────────────────────────────────────────────────╯
 
-╭─ signet ─────────────────────────────────────────────────╮
+╭─ model ──────────────────────────────────────────────────╮
 │ Plan:                                                    │
 │ 1. reproduce                                             │
 │ 2. patch                                                 │
@@ -322,7 +356,7 @@
 │ … 3 more lines                                           │
 ╰──────────────────────────────────────────────────────────╯
 
-╭─ reasoning ──────────────────────────────────────────────╮
+╭─ model · reasoning ──────────────────────────────────────╮
 │ thinking about the root cause here                       │
 ╰──────────────────────────────────────────────────────────╯
 
@@ -331,13 +365,16 @@
   second line
   third line
   fourth line
-│ retrying (2/3) after 800ms — rate limited
+
+╭─ signet ─────────────────────────────────────────────────╮
+│ retrying (2/3) after 800ms — rate limited                │
+╰──────────────────────────────────────────────────────────╯
 === mixed w=80
 ╭─ user prompt ────────────────────────────────────────────────────────────────╮
 │ fix the failing test in the wire package                                     │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
-╭─ signet ─────────────────────────────────────────────────────────────────────╮
+╭─ model ──────────────────────────────────────────────────────────────────────╮
 │ Plan:                                                                        │
 │ 1. reproduce                                                                 │
 │ 2. patch                                                                     │
@@ -345,7 +382,7 @@
 │ … 3 more lines                                                               │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
-╭─ reasoning ──────────────────────────────────────────────────────────────────╮
+╭─ model · reasoning ──────────────────────────────────────────────────────────╮
 │ thinking about the root cause here                                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
@@ -354,13 +391,16 @@
   second line
   third line
   fourth line
-│ retrying (2/3) after 800ms — rate limited
+
+╭─ signet ─────────────────────────────────────────────────────────────────────╮
+│ retrying (2/3) after 800ms — rate limited                                    │
+╰──────────────────────────────────────────────────────────────────────────────╯
 === mixed w=120
 ╭─ user prompt ────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ fix the failing test in the wire package                                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
-╭─ signet ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭─ model ──────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ Plan:                                                                                                                │
 │ 1. reproduce                                                                                                         │
 │ 2. patch                                                                                                             │
@@ -368,7 +408,7 @@
 │ … 3 more lines                                                                                                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
-╭─ reasoning ──────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭─ model · reasoning ──────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ thinking about the root cause here                                                                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
@@ -377,4 +417,7 @@
   second line
   third line
   fourth line
-│ retrying (2/3) after 800ms — rate limited
+
+╭─ signet ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ retrying (2/3) after 800ms — rate limited                                                                            │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

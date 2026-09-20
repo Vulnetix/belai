@@ -1520,3 +1520,106 @@ func TestWorkersAIRequestCarriesWriteEditTools(t *testing.T) {
 		}
 	}
 }
+
+// fakeFirewallSource is a CredentialSource that also implements FirewallSource.
+type fakeFirewallSource struct {
+	values   map[string]string
+	firewall bool
+	gateway  string
+	org      string
+	apiKey   string
+	routable map[string]bool
+}
+
+func (f *fakeFirewallSource) Lookup(provider, field string) (value, origin string, ok bool) {
+	v, ok := f.values[provider+":"+field]
+	return v, "env", ok
+}
+
+func (f *fakeFirewallSource) Firewall(provider string) (baseURL, apiKey string, ok bool) {
+	if !f.firewall || !f.routable[provider] {
+		return "", "", false
+	}
+	slug := provider
+	base := f.gateway + "/" + slug + "/" + f.org
+	if provider != "anthropic" {
+		base += "/v1"
+	}
+	return base, f.apiKey, true
+}
+
+func TestPrepareRoutesThroughFirewall(t *testing.T) {
+	src := &fakeFirewallSource{
+		values:   map[string]string{"anthropic:api_key": "provider-key"},
+		firewall: true,
+		gateway:  "https://guardrails.vulnetix.com",
+		org:      "org-1",
+		apiKey:   "vulnetix-key",
+		routable: map[string]bool{"anthropic": true},
+	}
+	cfg, status := Prepare("claude-sonnet-4", "anthropic", src)
+	if !status.Configured {
+		t.Fatalf("expected configured status, missing %v, notes %v", status.Missing, status.Notes)
+	}
+	if cfg.BaseURL != "https://guardrails.vulnetix.com/anthropic/org-1" {
+		t.Fatalf("base URL = %q, want gateway URL", cfg.BaseURL)
+	}
+	if cfg.APIKey != "vulnetix-key" {
+		t.Fatalf("API key should be Vulnetix key, got %q", cfg.APIKey)
+	}
+	if cfg.Auth != provider.AuthBearer {
+		t.Fatalf("auth = %v, want bearer", cfg.Auth)
+	}
+	if status.Origins["base_url"] != "vulnetix-firewall" || status.Origins["api_key"] != "vulnetix-firewall" {
+		t.Fatalf("origins = %v", status.Origins)
+	}
+}
+
+func TestPrepareFirewallReplacesProviderKey(t *testing.T) {
+	src := &fakeFirewallSource{
+		values:   map[string]string{"anthropic:api_key": "provider-key"},
+		firewall: true,
+		gateway:  "https://guardrails.vulnetix.com",
+		org:      "org-1",
+		apiKey:   "vulnetix-key",
+		routable: map[string]bool{"anthropic": true},
+	}
+	cfg, _ := Prepare("", "anthropic", src)
+	if cfg.APIKey == "provider-key" {
+		t.Fatal("provider key leaked through firewall routing")
+	}
+	if strings.Contains(cfg.BaseURL, "anthropic.com") {
+		t.Fatalf("base URL should not be provider host: %s", cfg.BaseURL)
+	}
+}
+
+func TestPrepareSIGNET_BASE_URLStillWins(t *testing.T) {
+	t.Setenv("SIGNET_BASE_URL", "http://localhost:9999/v1")
+	src := &fakeFirewallSource{
+		values:   map[string]string{"anthropic:api_key": "provider-key"},
+		firewall: true,
+		gateway:  "https://guardrails.vulnetix.com",
+		org:      "org-1",
+		apiKey:   "vulnetix-key",
+		routable: map[string]bool{"anthropic": true},
+	}
+	cfg, _ := Prepare("", "anthropic", src)
+	if cfg.BaseURL != "http://localhost:9999/v1" {
+		t.Fatalf("SIGNET_BASE_URL should override firewall base URL, got %q", cfg.BaseURL)
+	}
+}
+
+func TestPrepareFirewallNotEnabled(t *testing.T) {
+	src := &fakeFirewallSource{
+		values:   map[string]string{"anthropic:api_key": "provider-key"},
+		firewall: false,
+		gateway:  "https://guardrails.vulnetix.com",
+		org:      "org-1",
+		apiKey:   "vulnetix-key",
+		routable: map[string]bool{"anthropic": true},
+	}
+	cfg, _ := Prepare("", "anthropic", src)
+	if cfg.BaseURL != "https://api.anthropic.com" {
+		t.Fatalf("expected direct provider URL, got %q", cfg.BaseURL)
+	}
+}

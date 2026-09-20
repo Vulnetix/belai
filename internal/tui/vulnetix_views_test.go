@@ -11,39 +11,39 @@ import (
 	"github.com/vulnetix/signet/internal/vulnetixcli"
 )
 
-func TestCodeReviewConfigViewSmoke(t *testing.T) {
+func TestVulnetixConfigViewSmoke(t *testing.T) {
 	a := New(Options{Workdir: t.TempDir()})
-	a.codeReviewConfigState = codeReviewConfigState{
+	a.vulnetixConfigState = vulnetixConfigState{
 		cap: vulnetixcli.Capabilities{Present: true, Version: vulnetixcli.Version{Major: 3, Minor: 107, Patch: 2}},
 	}
-	_ = a.codeReviewConfigView()
+	_ = a.vulnetixConfigView()
 }
 
-func TestCodeReviewListViewSmoke(t *testing.T) {
+func TestVulnetixListViewSmoke(t *testing.T) {
 	a := New(Options{Workdir: t.TempDir()})
-	a.codeReviewListState = codeReviewListState{
-		rows: []codeReviewListRow{
+	a.vulnetixListState = vulnetixListState{
+		rows: []vulnetixListRow{
 			{entry: projectregistry.Entry{Name: "signet", Path: "/x/signet", LastSeen: time.Now()}},
 		},
 	}
-	_ = a.codeReviewListView()
+	_ = a.vulnetixListView()
 }
 
-func TestCodeReviewArtifactsViewSmoke(t *testing.T) {
+func TestVulnetixArtifactsViewSmoke(t *testing.T) {
 	a := New(Options{Workdir: t.TempDir()})
-	a.codeReviewArtifactsState = codeReviewArtifactsState{
+	a.vulnetixArtifactsState = vulnetixArtifactsState{
 		summary: scanartifacts.Summary{
 			Dir:       "/x/proj",
 			Artifacts: []scanartifacts.Artifact{{Rel: "sbom.cdx.json"}},
 			PerFile:   map[string]scanartifacts.FileSummary{"sbom.cdx.json": {Counts: scanartifacts.Counts{High: 1}}},
 		},
 	}
-	_ = a.codeReviewArtifactsView()
+	_ = a.vulnetixArtifactsView()
 }
 
-func TestCodeReviewConfigKeyNavigation(t *testing.T) {
+func TestVulnetixConfigKeyNavigation(t *testing.T) {
 	a := New(Options{Workdir: t.TempDir()})
-	a.push(viewCodeReviewConfig)
+	a.push(viewVulnetixConfig)
 	a.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if a.view != viewChat {
 		t.Fatalf("esc should pop to chat, got %v", a.view)

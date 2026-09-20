@@ -2,6 +2,7 @@ package components
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -42,6 +43,17 @@ func readArgs(argsJSON string) (path string, offset int) {
 	return path, offset
 }
 
+// isMarkdownPath reports whether a Read result's path has a markdown
+// extension, which is what makes its expanded content prose to render rather
+// than source to number.
+func isMarkdownPath(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".md", ".markdown", ".mdx":
+		return true
+	}
+	return false
+}
+
 // readToolRow renders a Read result as numbered source.
 //
 // Line numbers are added here rather than by the Read tool itself, for two
@@ -66,6 +78,22 @@ func readToolRow(msg Message, width int, expand bool) (string, LineMap) {
 		if p, ok := msg.Meta["path"].(string); ok {
 			path = p
 		}
+	}
+
+	// Markdown files read as markdown once expanded: a file's prose is meant
+	// to be read, so headings, lists and fences render instead of numbered
+	// source. Collapsed rows keep the numbered head — a file's first lines are
+	// how it is recognised, matching the highlight-only-when-expanded rule.
+	if expand && isMarkdownPath(path) {
+		inner := max(width-2, 8)
+		md := RenderMarkdown(strings.TrimRight(msg.Text(), "\n"), inner)
+		var rows []Row
+		for _, r := range md.Rows {
+			r.Gutter += 2
+			r.Segs = append([]Seg{NewSeg("  ", nil)}, r.Segs...)
+			rows = append(rows, r)
+		}
+		return renderRows(rows, width)
 	}
 
 	// Tabs are expanded before anything measures, highlights or slices the

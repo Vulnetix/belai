@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-
 	"github.com/vulnetix/signet/internal/agent"
 	"github.com/vulnetix/signet/internal/tui/components"
 )
@@ -122,45 +120,6 @@ func (a *App) dismissSubagent(id string) {
 	if a.threadFilter == id {
 		a.threadFilter = ""
 	}
-	if a.stripSel > len(a.subagents) {
-		a.stripSel = len(a.subagents)
-	}
-}
-
-// handleSubagentStripKey routes keys while the f8 roster strip has focus. The
-// composer's keys are untouched while focus is not on the strip.
-func (a *App) handleSubagentStripKey(m tea.KeyMsg) tea.Cmd {
-	switch m.String() {
-	case "left":
-		if a.stripSel > 0 {
-			a.stripSel--
-		}
-	case "right":
-		if a.stripSel < len(a.subagents) {
-			a.stripSel++
-		}
-	case "enter":
-		if a.stripSel == 0 {
-			a.threadFilter = ""
-		} else if idx := a.stripSel - 1; idx < len(a.subagents) {
-			a.threadFilter = a.subagents[idx].ID
-		}
-	case "x":
-		if a.stripSel > 0 {
-			idx := a.stripSel - 1
-			if idx < len(a.subagents) {
-				chip := a.subagents[idx]
-				if chip.State == "queued" || chip.State == "running" {
-					a.cancelSubagent(chip.ID)
-				} else {
-					a.dismissSubagent(chip.ID)
-				}
-			}
-		}
-	case "esc":
-		a.stripFocus = false
-	}
-	return nil
 }
 
 // filteredMessages returns the transcript rows for the current thread filter:
@@ -204,16 +163,4 @@ func (a *App) rebuildSubagentsFromMessages() {
 			State: "done",
 		})
 	}
-}
-
-// subagentHint returns the footer's subagent key hint, or "" when the roster
-// is empty.
-func (a *App) subagentHint() string {
-	if len(a.subagents) == 0 {
-		return ""
-	}
-	if a.stripFocus {
-		return components.HelpBar("← →", "cycle", "⏎", "filter", "x", "cancel", "esc", "back")
-	}
-	return components.HelpBar("f8", "subagents")
 }

@@ -2134,95 +2134,73 @@ func TestComposerExploringIndicator(t *testing.T) {
 	}
 }
 
-func TestF8TogglesSubagentStripFocus(t *testing.T) {
+func TestF8OpensRunsPanelSubagents(t *testing.T) {
 	a := New(Options{})
 	a.subagents = []components.SubagentChip{{ID: "e1", Label: "x", State: "done"}}
 	a.subagentIdx = map[string]int{"e1": 0}
 
 	a.Update(tea.KeyMsg{Type: tea.KeyF8})
-	if !a.stripFocus {
-		t.Fatal("f8 must focus the strip when a roster exists")
-	}
-	if a.stripSel != 0 {
-		t.Fatalf("stripSel = %d, want 0 (main)", a.stripSel)
+	if !a.runsOpen || !a.runsFocus || a.runsTab != tabSubagents {
+		t.Fatal("f8 must open and focus the runs panel on the subagents tab")
 	}
 	a.Update(tea.KeyMsg{Type: tea.KeyF8})
-	if a.stripFocus {
-		t.Fatal("f8 must toggle the strip focus off")
+	if a.runsOpen || a.runsFocus {
+		t.Fatal("second f8 must close the panel")
 	}
 }
 
-func TestF8NoopWithEmptyRoster(t *testing.T) {
+func TestF9OpensRunsPanelActivity(t *testing.T) {
 	a := New(Options{})
-	a.Update(tea.KeyMsg{Type: tea.KeyF8})
-	if a.stripFocus {
-		t.Fatal("f8 must be a no-op with an empty roster")
+	a.Update(tea.KeyMsg{Type: tea.KeyF9})
+	if !a.runsOpen || !a.runsFocus || a.runsTab != tabActivity {
+		t.Fatal("f9 must open and focus the runs panel on the activity tab")
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if a.runsFocus || !a.runsOpen {
+		t.Fatal("esc must unfocus while leaving the panel open")
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyF9})
+	if a.runsOpen {
+		t.Fatal("third f9 must close the panel")
 	}
 }
 
-func TestSubagentStripCyclesAndFilters(t *testing.T) {
+func TestRunsPanelTabSwitches(t *testing.T) {
 	a := New(Options{})
+	a.runsOpen = true
+	a.runsFocus = true
+	a.runsTab = tabActivity
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+	if a.runsTab != tabSubagents {
+		t.Fatalf("tab must switch to subagents, got %d", a.runsTab)
+	}
+}
+
+func TestRunsPanelSubagentsFilterAndDismiss(t *testing.T) {
+	a := New(Options{})
+	a.agentPool = agentpool.New(1)
 	a.subagents = []components.SubagentChip{{ID: "e1", Label: "x", State: "done"}, {ID: "e2", Label: "y", State: "done"}}
 	a.subagentIdx = map[string]int{"e1": 0, "e2": 1}
-	a.stripFocus = true
-	a.stripSel = 0
+	a.runsFocus = true
+	a.runsTab = tabSubagents
+	a.runsSel = 2
 
-	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRight})
-	if a.stripSel != 1 {
-		t.Fatalf("right = %d, want 1 (e1)", a.stripSel)
-	}
-	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRight})
-	if a.stripSel != 2 {
-		t.Fatalf("right = %d, want 2 (e2)", a.stripSel)
-	}
-	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRight}) // clamped at the end
-	if a.stripSel != 2 {
-		t.Fatalf("right past the end must clamp, got %d", a.stripSel)
-	}
-	a.handleChatKey(tea.KeyMsg{Type: tea.KeyLeft})
-	if a.stripSel != 1 {
-		t.Fatalf("left = %d, want 1", a.stripSel)
-	}
-
-	// enter on e1 filters the transcript.
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if a.threadFilter != "e1" {
-		t.Fatalf("threadFilter = %q, want e1", a.threadFilter)
+	if a.threadFilter != "e2" {
+		t.Fatalf("threadFilter = %q, want e2", a.threadFilter)
 	}
 
-	// enter on main clears the filter.
-	a.stripSel = 0
+	a.runsSel = 0
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if a.threadFilter != "" {
 		t.Fatalf("threadFilter = %q, want cleared", a.threadFilter)
 	}
-}
-
-func TestSubagentStripXCancelsAndDismisses(t *testing.T) {
-	a := New(Options{})
-	a.agentPool = agentpool.New(1)
-	a.subagents = []components.SubagentChip{{ID: "e1", Label: "x", State: "running"}}
-	a.subagentIdx = map[string]int{"e1": 0}
-	a.stripFocus = true
-	a.stripSel = 1
-
-	// x on a running chip cancels but never removes it.
-	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
-	if len(a.subagents) != 1 {
-		t.Fatal("running chip must not be dismissed")
-	}
-	if _, ok := a.subagentIdx["e1"]; !ok {
-		t.Fatal("running chip must keep its roster entry")
-	}
 
 	// x on a terminal chip dismisses it.
-	a.subagents[0].State = "done"
+	a.runsSel = 2
 	a.handleChatKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
-	if len(a.subagents) != 0 {
+	if len(a.subagents) != 1 {
 		t.Fatalf("terminal chip must be dismissed, got %d", len(a.subagents))
-	}
-	if _, ok := a.subagentIdx["e1"]; ok {
-		t.Fatal("dismissed chip must lose its index entry")
 	}
 }
 

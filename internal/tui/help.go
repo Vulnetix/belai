@@ -34,8 +34,9 @@ func keySections() []keySection {
 			{"f4", "toggle ask permission"},
 			{"f5", "cycle operating mode"},
 			{"f6", "cycle reasoning effort"},
-			{"f8", "focus the subagent roster strip (chat)"},
-			{"f9", "toggle the activity drawer (chat)"},
+			{"f8", "open the runs panel on the subagents tab (chat)"},
+			{"f9", "toggle the runs panel on the activity tab (chat)"},
+			{"f10", "toggle the Vulnetix AI Firewall (chat)"},
 		}},
 		{"chat", []keyBinding{
 			{"enter", "send; also runs !shell and /commands, or steers a running turn"},
@@ -86,19 +87,15 @@ func keySections() []keySection {
 			{"wheel", "scroll and detach from the tail"},
 			{"drag", "select text; release copies it"},
 		}},
-		{"subagent strip (after f8)", []keyBinding{
-			{"left, right", "cycle main and the subagent chips"},
-			{"enter", "filter the transcript to the selected subagent; main clears"},
-			{"x", "cancel a running subagent, or dismiss a finished chip"},
-			{"esc", "return focus to the composer"},
-		}},
-		{"activity drawer (after f9)", []keyBinding{
-			{"up, down", "select an activity"},
-			{"enter", "send the selected activity's output to the model"},
-			{"x", "kill the selected activity"},
-			{"t", "start the triage agent on the selected activity's project"},
-			{"pgup, pgdown", "scroll the selected activity's output"},
-			{"esc", "return focus to the composer"},
+		{"runs panel (after f8/f9)", []keyBinding{
+			{"tab", "switch between activity and subagents tabs"},
+			{"up, down", "select an item"},
+			{"enter", "activity: send output; subagents: filter transcript"},
+			{"v", "activity: view the selected output full-screen"},
+			{"x", "activity: kill; subagents: cancel or dismiss"},
+			{"t", "activity: start the triage agent on the selected project"},
+			{"esc", "unfocus the panel (panel stays open)"},
+			{"f9", "close the panel"},
 		}},
 		{"plan review (after a plan-mode turn)", []keyBinding{
 			{"up, down", "move between approve, refine and cancel"},
@@ -208,12 +205,12 @@ func keySections() []keySection {
 			{"enter, e", "edit the selected agent"},
 			{"esc", "back"},
 		}},
-		{"/code-review configure", []keyBinding{
+		{"/vulnetix configure", []keyBinding{
 			{"r", "re-probe the CLI"},
 			{"l", "open scan history"},
 			{"esc", "back"},
 		}},
-		{"/code-review list", []keyBinding{
+		{"/vulnetix list", []keyBinding{
 			{"↑↓", "move"},
 			{"/", "filter"},
 			{"enter", "open artifacts for selected project"},
@@ -221,7 +218,7 @@ func keySections() []keySection {
 			{"c", "configure"},
 			{"esc", "back"},
 		}},
-		{"/code-review artifacts", []keyBinding{
+		{"/vulnetix artifacts", []keyBinding{
 			{"↑↓", "move"},
 			{"t", "start triage agent"},
 			{"l", "open history"},

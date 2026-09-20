@@ -187,9 +187,12 @@ func (a *App) clearForResume() {
 	// Subagent roster and thread filter are session state, not global state.
 	a.subagents = nil
 	a.subagentIdx = map[string]int{}
-	a.stripFocus = false
-	a.stripSel = 0
 	a.threadFilter = ""
+	a.runsOpen = false
+	a.runsFocus = false
+	a.runsTab = tabActivity
+	a.runsSel = 0
+	a.runsScroll = 0
 
 	// Context metering.
 	a.est = transcript.Estimate{}

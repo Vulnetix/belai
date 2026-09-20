@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/vulnetix/signet/internal/aifirewall"
 	"github.com/vulnetix/signet/internal/httpclient"
 	"github.com/vulnetix/signet/internal/models"
 	"github.com/vulnetix/signet/internal/provider"
@@ -107,8 +108,13 @@ func EndpointFor(t Target) (string, error) {
 	case "openrouter", "ollama", "llama-server", "github-copilot":
 		return base + "/models", nil
 	case "openai":
-		// Do not live-fetch: OpenAI /v1/models includes deprecated, preview and
-		// internal identifiers that confuse the picker and fail at request time.
+		// Do not live-fetch from OpenAI directly: their /v1/models list
+		// includes deprecated, preview and internal identifiers that confuse
+		// the picker. When the base URL is the Vulnetix gateway, the org's
+		// curated catalogue is worth fetching.
+		if aifirewall.IsGatewayURL("", base) {
+			return base + "/models", nil
+		}
 		return "", nil
 	default:
 		// Custom provider: choose by surface.

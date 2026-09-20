@@ -4,15 +4,19 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"sync"
 
+	"github.com/vulnetix/signet/internal/aifirewall"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/provider"
+	"github.com/vulnetix/signet/internal/vulnetixcreds"
 )
 
 // Resolver resolves provider credentials from a stack of sources.
 type Resolver struct {
 	env      func(string) string
 	workdir  string
+	home     string
 	settings config.Settings
 	userFile *fileStore
 	projFile *fileStore
@@ -25,6 +29,13 @@ type Resolver struct {
 	// The answer is constant for a Resolver's lifetime, so it is cached.
 	keychainAvail    bool
 	keychainAvailSet bool
+
+	// vulnetixCreds are loaded on demand because they may probe a
+	// service-scoped keyring; the result is cached for the resolver lifetime.
+	vulnetixCredOnce sync.Once
+	vulnetixCred     vulnetixcreds.Credential
+	vulnetixCredErr  error
+	vulnetixKeychain Keychain
 }
 
 // keychainAvailable reports whether the host keychain is reachable, probing
@@ -122,15 +133,51 @@ func NewResolver(workdir string) (*Resolver, error) {
 	if err != nil {
 		return nil, err
 	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = ""
+	}
 	return &Resolver{
-		env:      os.Getenv,
-		workdir:  workdir,
-		settings: settings,
-		userFile: newFileStore(userPath, false),
-		projFile: newFileStore(projPath, true),
-		netrc:    newNetrcStore(),
-		keychain: newKeyringBackend(),
+		env:              os.Getenv,
+		workdir:          workdir,
+		home:             home,
+		settings:         settings,
+		userFile:         newFileStore(userPath, false),
+		projFile:         newFileStore(projPath, true),
+		netrc:            newNetrcStore(),
+		keychain:         newKeyringBackend(),
+		vulnetixKeychain: NewKeyringBackend("vulnetix"),
 	}, nil
+}
+
+// loadVulnetixCred resolves the Vulnetix gateway credential once.
+func (r *Resolver) loadVulnetixCred() (vulnetixcreds.Credential, error) {
+	r.vulnetixCredOnce.Do(func() {
+		r.vulnetixCred, r.vulnetixCredErr = vulnetixcreds.Load(r.env, r.home, r.workdir, r.vulnetixKeychain)
+	})
+	return r.vulnetixCred, r.vulnetixCredErr
+}
+
+// Firewall implements run.FirewallSource. It returns ok=true when the firewall
+// setting is on, a usable Vulnetix credential exists, and the provider can be
+// routed through the gateway.
+func (r *Resolver) Firewall(provider string) (baseURL, apiKey string, ok bool) {
+	if !r.settings.FirewallEnabled() {
+		return "", "", false
+	}
+	cred, err := r.loadVulnetixCred()
+	if err != nil || cred.OrgUUID == "" || cred.APIKey == "" {
+		return "", "", false
+	}
+	slug, ok := aifirewall.Slug(provider)
+	if !ok {
+		return "", "", false
+	}
+	gateway := aifirewall.DefaultGateway
+	if r.settings.Vulnetix != nil {
+		gateway = r.settings.Vulnetix.GatewayURLOrDefault()
+	}
+	return aifirewall.BaseURL(gateway, slug, cred.OrgUUID), cred.APIKey, true
 }
 
 // Resolve returns a Set containing every known value and every missing field.

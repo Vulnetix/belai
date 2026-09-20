@@ -1970,7 +1970,7 @@ Provider-specific edge cases:
 | `/todos` | Show plan progress |
 | `/execute` | Leave plan mode and execute the plan |
 | `/refine` | Refine the extracted plan |
-| `/code-review` | Run a Vulnetix code review (`run`, `configure`, `list`, `status`) |
+| `/vulnetix` | Vulnetix code review and firewall (`run`, `configure`, `list`, `status`) |
 | `/settings` | View and edit settings |
 | `/credentials` | Manage provider credentials |
 | `/permissions` | Edit tool permissions |

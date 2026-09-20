@@ -40,6 +40,28 @@ func Highlighted(path, src string) [][]Seg {
 	if lexer == nil {
 		return nil
 	}
+	return highlightedWith(lexer, src)
+}
+
+// HighlightedLang is Highlighted keyed by a language name instead of a
+// filename. Fenced code blocks carry a language, not a path, so the two
+// callers share the lexing, cache, size guards and colour mapping but resolve
+// the lexer differently. Unknown languages still return nil: the no-content-
+// analysis rule applies unchanged.
+func HighlightedLang(lang, src string) [][]Seg {
+	if !syntaxEnabled() || len(src) > syntaxMaxBytes || lang == "" {
+		return nil
+	}
+	lexer := lexers.Get(lang)
+	if lexer == nil {
+		return nil
+	}
+	return highlightedWith(chroma.Coalesce(lexer), src)
+}
+
+// highlightedWith tokenises src with the given lexer, caching the result by
+// content hash so an entry can never be stale.
+func highlightedWith(lexer chroma.Lexer, src string) [][]Seg {
 	key := syntaxKey{lexer: lexer.Config().Name, hash: sha256.Sum256([]byte(src))}
 	if out, ok := syntaxCacheGet(key); ok {
 		return out

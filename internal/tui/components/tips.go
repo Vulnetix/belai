@@ -11,7 +11,7 @@ var tips = []string{
 	"ctrl+o expands truncated output",
 	"/resume returns to an earlier session",
 	"f3 toggles guardrails",
-	"f9 opens the activity drawer",
+	"f9 opens the runs panel",
 	"esc esc clears the composer",
 }
 

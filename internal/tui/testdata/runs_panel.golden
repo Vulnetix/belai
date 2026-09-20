@@ -1,0 +1,6 @@
+[ activity ]  subagents                                  tab switch · f9 close
+▸ !go test ./...  done
+  vulnetix bom  done
+  vulnetix scan  done
+↑↓ select  ·  ⏎ send output  ·  v view  ·  x kill  ·  t triage  ·  esc unfocus
+──────────────────────────────────────────────────────────────────────────────
