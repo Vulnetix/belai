@@ -34,6 +34,10 @@ type activitySend struct {
 type activityEventMsg activity.Activity
 
 const (
+	minRunsPanelOpenHeight = 6
+)
+
+const (
 	tabActivity  = 0
 	tabSubagents = 1
 	tabCount     = 2
@@ -51,21 +55,21 @@ type runsItem struct {
 
 // runsPanelHeight returns the rows the runs panel contributes below the
 // viewport. Zero when the panel is closed. When open it is bounded by
-// max(a.height/3, 4) and always shows at least one content row.
+// a.height/3 and clamped so it never exceeds the available frame.
 func (a *App) runsPanelHeight() int {
 	if !a.runsOpen {
 		return 0
 	}
 	maxRows := a.height/3 - 3
-	if maxRows < 1 {
-		maxRows = 1
+	if maxRows < 0 {
+		maxRows = 0
 	}
 	items := a.runsItems()
 	visible := min(len(items), maxRows)
 	if visible < 1 {
 		visible = 1 // header/help/rule still render one placeholder row
 	}
-	return 3 + visible
+	return min(a.height, 3+visible)
 }
 
 // runsItems returns the items for the current runs tab, with a nil guard on the
@@ -380,6 +384,9 @@ func (a *App) handleRunsSubagentKey(m tea.KeyMsg) tea.Cmd {
 // already open, f9 closes it regardless of focus.
 func (a *App) toggleRunsPanel(tab int) {
 	if !a.runsOpen {
+		if a.height < minRunsPanelOpenHeight {
+			return
+		}
 		a.runsOpen = true
 		a.runsFocus = true
 		a.runsTab = tab

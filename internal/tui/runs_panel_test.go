@@ -19,6 +19,7 @@ func TestRunsPanelHeightClosedZero(t *testing.T) {
 
 func TestF9OpensRunsPanelActivityFromPanelFile(t *testing.T) {
 	a := New(Options{})
+	a.height = 24
 	a.Update(tea.KeyMsg{Type: tea.KeyF9})
 	if !a.runsOpen || !a.runsFocus || a.runsTab != tabActivity {
 		t.Fatal("f9 must open and focus the activity tab")
@@ -95,5 +96,33 @@ func TestRunsPanelSubagentFilter(t *testing.T) {
 	a.handleRunsPanelKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if a.threadFilter != "" {
 		t.Fatalf("enter on main must clear filter, got %q", a.threadFilter)
+	}
+}
+
+func TestRunsPanelFitsSmallFrames(t *testing.T) {
+	for _, h := range []int{6, 9, 10, 24, 80} {
+		a := New(Options{})
+		a.width, a.height = 40, h
+		a.activity = activity.NewRegistry()
+		a.Update(tea.KeyMsg{Type: tea.KeyF9})
+		if !a.runsOpen {
+			t.Fatalf("height %d: f9 did not open panel", h)
+		}
+		got := a.runsPanelHeight()
+		if got > h {
+			t.Fatalf("height %d: panel height %d exceeds frame", h, got)
+		}
+		if h >= 12 && got > h/3 {
+			t.Fatalf("height %d: panel height %d > h/3", h, got)
+		}
+	}
+}
+
+func TestRunsPanelDoesNotOpenOnTinyFrames(t *testing.T) {
+	a := New(Options{})
+	a.width, a.height = 40, 5
+	a.Update(tea.KeyMsg{Type: tea.KeyF9})
+	if a.runsOpen {
+		t.Fatalf("panel opened on height %d", a.height)
 	}
 }

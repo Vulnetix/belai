@@ -2138,6 +2138,7 @@ func TestF8OpensRunsPanelSubagents(t *testing.T) {
 	a := New(Options{})
 	a.subagents = []components.SubagentChip{{ID: "e1", Label: "x", State: "done"}}
 	a.subagentIdx = map[string]int{"e1": 0}
+	a.height = 24
 
 	a.Update(tea.KeyMsg{Type: tea.KeyF8})
 	if !a.runsOpen || !a.runsFocus || a.runsTab != tabSubagents {
@@ -2151,6 +2152,7 @@ func TestF8OpensRunsPanelSubagents(t *testing.T) {
 
 func TestF9OpensRunsPanelActivity(t *testing.T) {
 	a := New(Options{})
+	a.height = 24
 	a.Update(tea.KeyMsg{Type: tea.KeyF9})
 	if !a.runsOpen || !a.runsFocus || a.runsTab != tabActivity {
 		t.Fatal("f9 must open and focus the runs panel on the activity tab")
