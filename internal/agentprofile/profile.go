@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/vulnetix/signet/internal/provider"
 )
@@ -35,6 +36,10 @@ type AgentProfile struct {
 	AskPermission    *bool    `json:"ask_permission,omitempty"`
 	// Builtin is true for embedded profiles and never persisted to disk.
 	Builtin bool `json:"-"`
+	// File is the base filename this profile was loaded from (e.g.
+	// "triage-deps.json"). Empty means derive it from Name. It is never
+	// serialised: the file's own name is the record.
+	File string `json:"-"`
 }
 
 // Mode values.
@@ -147,6 +152,14 @@ func (p AgentProfile) Validate() error {
 	if strings.TrimSpace(p.Name) == "" {
 		return errors.New("name is required")
 	}
+	if p.File != "" {
+		if err := ValidateFileName(p.File); err != nil {
+			return err
+		}
+		if !p.Builtin && collidesWithBuiltinFileName(p) {
+			return fmt.Errorf("file name %q collides with a built-in profile", p.File)
+		}
+	}
 	if strings.TrimSpace(p.Description) == "" {
 		return errors.New("description is required")
 	}
@@ -210,10 +223,72 @@ func (p AgentProfile) ValidateWithRegistry(names []string) error {
 	return nil
 }
 
-// FileName returns the on-disk filename for this profile.
+// FileName returns the on-disk filename for this profile. When File is set it
+// is the record's name; otherwise it is derived from Name.
 func (p AgentProfile) FileName() string {
-	clean := strings.Trim(unsafeName.ReplaceAllString(p.Name, "_"), ".-_")
+	if p.File != "" {
+		return p.File
+	}
+	return deriveFileName(p.Name)
+}
+
+// deriveFileName sanitises a profile name into its default on-disk filename.
+func deriveFileName(name string) string {
+	clean := strings.Trim(unsafeName.ReplaceAllString(name, "_"), ".-_")
 	return clean + ".json"
+}
+
+// ValidateFileName reports whether file is a safe agent-profile filename: a
+// non-empty .json basename with no path separators whose stem is unchanged by
+// the name sanitiser, so the name the user typed is exactly the name on disk.
+func ValidateFileName(file string) error {
+	if file == "" {
+		return errors.New("file name is required")
+	}
+	if !strings.HasSuffix(file, ".json") {
+		return fmt.Errorf("file name %q must end in .json", file)
+	}
+	if strings.ContainsAny(file, `/\`) {
+		return fmt.Errorf("file name %q must not contain path separators", file)
+	}
+	stem := strings.TrimSuffix(file, ".json")
+	if stem == "" {
+		return fmt.Errorf("file name %q must have a non-empty stem", file)
+	}
+	if unsafeName.ReplaceAllString(stem, "_") != stem {
+		return fmt.Errorf("file name %q contains unsafe characters", file)
+	}
+	return nil
+}
+
+// KnownTools returns the sorted tool names Validate accepts. The editor's tool
+// picker must offer exactly this set, not the live registry, or saves would
+// fail on a tool the profile schema does not allow.
+func KnownTools() []string {
+	out := make([]string, 0, len(knownToolNames))
+	for name := range knownToolNames {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// ValidEfforts returns the effort values a profile accepts, including the
+// "none" stop the classifier's own picker omits.
+func ValidEfforts() []string {
+	return []string{"low", "medium", "high", "none"}
+}
+
+// Stub returns a minimal profile that passes Validate, used by the list view's
+// new-agent action and the builder-failure fallback.
+func Stub(name string) AgentProfile {
+	return AgentProfile{
+		Name:         name,
+		Description:  "New agent profile",
+		SystemPrompt: "You are a helpful agent.",
+		Mode:         ModeSingle,
+		Autonomy:     AutonomySupervised,
+	}
 }
 
 // builtinFileName returns the on-disk filename a user profile would collide
@@ -221,4 +296,47 @@ func (p AgentProfile) FileName() string {
 func builtinFileName(name string) string {
 	p := AgentProfile{Name: name}
 	return p.FileName()
+}
+
+var builtinFileNamesOnce sync.Once
+var builtinFileNamesList []string
+
+// builtinFileNames returns the sanitised filenames of the embedded builtins,
+// read directly from the embedded FS so Validate can run while builtinProfiles
+// is still being initialised (avoiding an init cycle through builtinNames).
+func builtinFileNames() []string {
+	builtinFileNamesOnce.Do(func() {
+		files, err := builtinFS.ReadDir("builtin")
+		if err != nil {
+			return
+		}
+		for _, f := range files {
+			if f.IsDir() || !strings.HasSuffix(f.Name(), ".json") {
+				continue
+			}
+			data, err := builtinFS.ReadFile("builtin/" + f.Name())
+			if err != nil {
+				continue
+			}
+			var p AgentProfile
+			if json.Unmarshal(data, &p) != nil {
+				continue
+			}
+			builtinFileNamesList = append(builtinFileNamesList, builtinFileName(p.Name))
+		}
+		sort.Strings(builtinFileNamesList)
+	})
+	return builtinFileNamesList
+}
+
+// collidesWithBuiltinFileName reports whether p's on-disk filename matches a
+// built-in's on-disk filename.
+func collidesWithBuiltinFileName(p AgentProfile) bool {
+	fn := p.FileName()
+	for _, b := range builtinFileNames() {
+		if b == fn {
+			return true
+		}
+	}
+	return false
 }

@@ -56,6 +56,35 @@ func TestBuilderRetriesOnValidationError(t *testing.T) {
 	}
 }
 
+func TestBuilderOnAttemptReportsRetries(t *testing.T) {
+	mock := &mockClassifier{replies: []string{
+		`{"name":"bad","description":"d","system_prompt":"s","mode":"fly"}`,
+		`{"name":"good","description":"d","system_prompt":"s","mode":"single"}`,
+	}}
+	var attempts []struct {
+		n    int
+		note string
+	}
+	b := Builder{Classifier: mock, MaxAttempts: 3, OnAttempt: func(attempt int, note string) {
+		attempts = append(attempts, struct {
+			n    int
+			note string
+		}{attempt, note})
+	}}
+	if _, err := b.Build(context.Background(), "create an agent"); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if len(attempts) != 2 {
+		t.Fatalf("OnAttempt calls = %d, want 2", len(attempts))
+	}
+	if attempts[0].n != 1 || attempts[0].note != "" {
+		t.Fatalf("first attempt = %+v, want empty note", attempts[0])
+	}
+	if attempts[1].n != 2 || !strings.Contains(attempts[1].note, "validation error") {
+		t.Fatalf("second attempt = %+v, want validation note", attempts[1])
+	}
+}
+
 func TestBuilderFailsClosedAfterMaxAttempts(t *testing.T) {
 	mock := &mockClassifier{replies: []string{`bad1`, `bad2`, `bad3`}}
 	b := Builder{Classifier: mock, MaxAttempts: 3}

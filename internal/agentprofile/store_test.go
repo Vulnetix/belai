@@ -126,6 +126,116 @@ func TestDirUnderGlobalDir(t *testing.T) {
 	}
 }
 
+func TestListAndLoadSetFile(t *testing.T) {
+	resetDir(t)
+	p := AgentProfile{
+		Name:         "file-bot",
+		Description:  "d",
+		SystemPrompt: "sp",
+		Mode:         ModeSingle,
+	}
+	if _, err := Save(p); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := Load("file-bot")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.File != "file-bot.json" {
+		t.Fatalf("Load().File = %q, want file-bot.json", loaded.File)
+	}
+	list, err := List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	found := false
+	for _, lp := range list {
+		if lp.Name == "file-bot" {
+			found = true
+			if lp.File != "file-bot.json" {
+				t.Fatalf("List().File = %q, want file-bot.json", lp.File)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("file-bot missing from List")
+	}
+}
+
+func TestLoadFindsProfileAfterFileNameDiverges(t *testing.T) {
+	resetDir(t)
+	p := AgentProfile{
+		Name:         "orig-bot",
+		Description:  "d",
+		SystemPrompt: "sp",
+		Mode:         ModeSingle,
+	}
+	if _, err := Save(p); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	dir, _ := Dir()
+	// Rename the file out from under the profile without changing its Name.
+	if err := os.Rename(filepath.Join(dir, "orig-bot.json"), filepath.Join(dir, "renamed.json")); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	loaded, err := Load("orig-bot")
+	if err != nil {
+		t.Fatalf("Load by name after rename: %v", err)
+	}
+	if loaded.Name != "orig-bot" || loaded.File != "renamed.json" {
+		t.Fatalf("loaded = %+v", loaded)
+	}
+}
+
+func TestSaveMovingWritesNewAndRemovesOld(t *testing.T) {
+	resetDir(t)
+	p := AgentProfile{
+		Name:         "move-bot",
+		Description:  "d",
+		SystemPrompt: "sp",
+		Mode:         ModeSingle,
+	}
+	oldPath, err := Save(p)
+	if err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	p.File = "moved.json"
+	newPath, err := SaveMoving(p, "move-bot.json")
+	if err != nil {
+		t.Fatalf("SaveMoving: %v", err)
+	}
+	if newPath != filepath.Join(filepath.Dir(oldPath), "moved.json") {
+		t.Fatalf("newPath = %q", newPath)
+	}
+	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+		t.Fatalf("old file still exists: %v", err)
+	}
+	if _, err := os.Stat(newPath); err != nil {
+		t.Fatalf("new file missing: %v", err)
+	}
+
+	// Same-name save is a no-op for the removal step.
+	p.File = "moved.json"
+	if _, err := SaveMoving(p, "moved.json"); err != nil {
+		t.Fatalf("same-name SaveMoving: %v", err)
+	}
+	if _, err := os.Stat(newPath); err != nil {
+		t.Fatalf("same-name save removed the file: %v", err)
+	}
+}
+
+func TestSaveRefusesToOverwriteDifferentName(t *testing.T) {
+	resetDir(t)
+	first := AgentProfile{Name: "first", Description: "d", SystemPrompt: "sp", Mode: ModeSingle}
+	if _, err := Save(first); err != nil {
+		t.Fatalf("Save first: %v", err)
+	}
+	second := AgentProfile{Name: "second", Description: "d", SystemPrompt: "sp", Mode: ModeSingle, File: "first.json"}
+	if _, err := Save(second); err == nil || !strings.Contains(err.Error(), "holds profile") {
+		t.Fatalf("Save second = %v, want overwrite refusal", err)
+	}
+}
+
 // TestKnownToolNamesMatchesDefaultRegistry pins the hardcoded allowlist against
 // the live default registry, so adding a tool can never silently strand a
 // profile from it.

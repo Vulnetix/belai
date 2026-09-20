@@ -49,6 +49,10 @@ type Builder struct {
 	// Caveman voices the designer prompt. The JSON contract is unaffected:
 	// parseBuilderReply still requires valid JSON and Validate still runs.
 	Caveman bool
+	// OnAttempt, when non-nil, is called at the top of each design attempt so
+	// callers can surface progress. note carries the previous attempt's
+	// validation error on retries and is empty on the first attempt.
+	OnAttempt func(attempt int, note string)
 }
 
 // Build runs the agent-designer loop, failing closed after MaxAttempts.
@@ -64,7 +68,11 @@ func (b *Builder) Build(ctx context.Context, userRequest string) (AgentProfile, 
 	system := rolemanager.CavemanProse(builderSystemPrompt, b.Caveman)
 	turns := []builderTurn{{Role: "user", Content: sanitize.Sanitize(userRequest)}}
 
+	var note string
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if b.OnAttempt != nil {
+			b.OnAttempt(attempt, note)
+		}
 		payload := rolemanager.ClassifierPayload{
 			System:    system,
 			User:      buildBuilderUserContent(turns),
@@ -84,6 +92,7 @@ func (b *Builder) Build(ctx context.Context, userRequest string) (AgentProfile, 
 			parseErr = validationErr
 		}
 
+		note = sanitize.Sanitize(fmt.Sprintf("validation error: %s", parseErr.Error()))
 		feedback := sanitize.Sanitize(fmt.Sprintf("Validation error: %s. Please fix the profile and return only valid JSON.", parseErr.Error()))
 		turns = append(turns, builderTurn{Role: "assistant", Content: raw})
 		turns = append(turns, builderTurn{Role: "user", Content: feedback})
