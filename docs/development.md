@@ -535,6 +535,15 @@ BuildDate = UTC RFC 3339
 
 - `.github/workflows/ci.yml` runs `go vet`, a `gofmt` check, `go test -race ./...`, and a windows/darwin cross-compile on every push and pull request.
 - `.github/workflows/release.yml` fires on a `v*` tag, cross-compiles the six targets on the self-hosted runner, publishes a GitHub release with `checksums.txt`, then updates the Homebrew tap and Scoop bucket from those checksums.
+- `.github/workflows/pages.yml` builds the marketing site on `site/**` pushes, asserts the custom domain survived, checks links, and deploys to GitHub Pages. See [docs/site.md](site.md).
+
+## Site
+
+The marketing site lives in `site/` and is documented in [docs/site.md](site.md).
+Local recipes: `just site-dev` (dev server), `just site-build` (build `site/dist`),
+`just site-check` (build + custom-domain assertion + link check), and `just shots`
+(regenerate the deterministic TUI captures). `just check` stays Go-only and does
+not gain a Node dependency.
 
 Signet is pure Go with `CGO_ENABLED=0`, so every target cross-compiles from one Linux host. There is no goreleaser step; the release workflow builds directly and is mirrored locally by `just build-all`.
 

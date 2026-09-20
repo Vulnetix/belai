@@ -231,3 +231,5 @@ project without remembering an id.
 - [docs/role-manager.md](docs/role-manager.md) — operating-mode business rules.
 - [docs/nonce-endpoint-spec.md](docs/nonce-endpoint-spec.md) — provider nonce GET spec.
 - [docs/development.md](docs/development.md) — local development, build, and QA workflows.
+
+Marketing site: [signet.vulnetix.com](https://signet.vulnetix.com) (source in [site/](site/)).
