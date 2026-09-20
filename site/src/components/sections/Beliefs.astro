@@ -1,0 +1,54 @@
+---
+import SealedSection from '../seal/SealedSection.astro';
+import pixYolo from '../../assets/pix/pix-yolo.svg?raw';
+import pixProfessor from '../../assets/pix/pix-professor.svg?raw';
+import pixConductor from '../../assets/pix/pix-conductor.svg?raw';
+import pixHomestead from '../../assets/pix/pix-homestead.svg?raw';
+
+const sealText =
+  'Four beliefs: safety above all else and easy to YOLO; roles for determinism with sticky modes; tools first class as a fixed-argv native catalogue; local first, open source, with Apache-2.0, zero telemetry, and two local providers.';
+
+const beliefs = [
+  {
+    title: 'Safety above all else — and easy to YOLO.',
+    body: 'Press f3 and the guardrail switch throws to off: one gold chip, zero classifier calls. Off means not called-and-ignored, simply not called. Flipping back restores the full fail-closed surface everywhere — session, inline commands, file admission, background agents, the CLI.',
+    svg: pixYolo,
+    alt: 'Pix grinning next to a gold YOLO chip with the guardrail switch thrown',
+  },
+  {
+    title: 'Roles for determinism.',
+    body: 'Modes are sticky. An explicit choice is never silently re-classified by the next turn, and -detect-mode tells you what the Role Manager would do without acting on it. A plan session stays a plan session.',
+    svg: pixProfessor,
+    alt: 'Pix raising a wing to make a point',
+  },
+  {
+    title: 'Tools first class.',
+    body: 'A fixed-argv native catalogue of ~25 read-only utilities — Cat, Head, Git, JQ, Find, Diff — each backed by a specific binary and a fixed argument shape, never a shell. Instead of a growing Bash(jq *) allowlist, the verbs themselves are tools.',
+    svg: pixConductor,
+    alt: 'Pix directing a fan of tool chips',
+  },
+  {
+    title: 'Local first, open source, community access.',
+    body: 'Apache-2.0, zero telemetry, zero logging. Two local providers ship in the box, and the Vulnetix scanners and AI Firewall are free for everyone — not just enterprises.',
+    svg: pixHomestead,
+    alt: 'Pix perched beside a local box with a dangling cable',
+  },
+];
+---
+
+<SealedSection label="beliefs" sealText={sealText} id="beliefs">
+  <h2 class="text-3xl font-bold text-vx-ink">Beliefs.</h2>
+  <div class="mt-8 grid gap-6 md:grid-cols-2">
+    {
+      beliefs.map((b) => (
+        <article class="rounded-lg border border-vx-ink/30 p-6">
+          <div class="mx-auto max-w-[160px]" aria-hidden="true">
+            <Fragment set:html={b.svg} />
+          </div>
+          <h3 class="mt-4 text-xl font-semibold text-vx-ink">{b.title}</h3>
+          <p class="mt-3 text-vx-ink/80">{b.body}</p>
+        </article>
+      ))
+    }
+  </div>
+</SealedSection>

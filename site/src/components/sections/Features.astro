@@ -1,0 +1,227 @@
+---
+import SealedSection from '../seal/SealedSection.astro';
+import ShotCarousel from '../ui/ShotCarousel.tsx';
+
+import trustPipeline from '../../assets/concepts/trust-pipeline.svg?raw';
+import chunked from '../../assets/concepts/chunked-classification.svg?raw';
+import planMode from '../../assets/concepts/plan-mode-surface.svg?raw';
+import goalLoop from '../../assets/concepts/goal-pass-loop.svg?raw';
+import cdConfine from '../../assets/concepts/cd-confinement.svg?raw';
+import permMerge from '../../assets/concepts/permission-merge.svg?raw';
+import guardSwitch from '../../assets/concepts/guardrails-switch.svg?raw';
+import fanOut from '../../assets/concepts/fan-out.svg?raw';
+import credRes from '../../assets/concepts/credential-resolution.svg?raw';
+
+import agentTurnShot from '../../assets/shots/agent-turn.svg';
+import planReviewShot from '../../assets/shots/plan-review.svg';
+import approvalDiffShot from '../../assets/shots/approval-diff.svg';
+import permissionsShot from '../../assets/shots/permissions.svg';
+import agentsRosterShot from '../../assets/shots/agents-roster.svg';
+import exitCardShot from '../../assets/shots/exit-card.svg';
+import footerShot from '../../assets/shots/footer.svg';
+import modelPickerShot from '../../assets/shots/model-picker.svg';
+import localModelShot from '../../assets/shots/local-model.svg';
+---
+
+<SealedSection label="trust" sealText="Trust pipeline: every untrusted tool result is sanitized, classified, then decided; shaped results take a sanitize-only lane with no classifier round trip." id="trust">
+  <div class="grid gap-10 md:grid-cols-2 md:items-center">
+    <div class="prose-measure">
+      <h2 class="text-3xl font-bold text-vx-ink">Trust pipeline.</h2>
+      <p class="mt-4 text-vx-ink/80">
+        Every untrusted result goes through <strong>sanitize → classify → decide</strong>, fail closed.
+        <code class="mono">Bash</code>, <code class="mono">WebFetch</code>, <code class="mono">WebSearch</code>, <code class="mono">Read</code>,
+        and third-party repository text all classify, unconditionally. Shaped results whose shape the
+        harness knows — <code class="mono">Grep</code>, <code class="mono">Glob</code>, <code class="mono">Write</code>, <code class="mono">Edit</code> —
+        take a sanitize-only lane and skip the round trip.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        Long documents are classified in bounded chunks with overlap, and the verdict is the
+        strictest across all chunks — not the first, not the average.
+      </p>
+    </div>
+    <div class="space-y-4">
+      <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={trustPipeline} /></div>
+      <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={chunked} /></div>
+    </div>
+  </div>
+  <div class="mt-10 max-w-[72ch]">
+    <ShotCarousel
+      client:load
+      shots={[
+        { src: agentTurnShot.src, alt: 'A streaming agent turn with a collapsed Bash preview', caption: 'streaming turn · collapsed Bash preview' },
+      ]}
+    />
+  </div>
+</SealedSection>
+
+<SealedSection label="modes" sealText="Modes: plan mode advertises a fail-closed surface with Bash absent, not restricted; the goal loop is stopped by a stall detector, not a counter; explicit mode choices are sticky." id="modes">
+  <div class="grid gap-10 md:grid-cols-2 md:items-center">
+    <div class="order-2 md:order-1 space-y-4">
+      <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={planMode} /></div>
+      <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={goalLoop} /></div>
+    </div>
+    <div class="prose-measure order-1 md:order-2">
+      <h2 class="text-3xl font-bold text-vx-ink">Modes.</h2>
+      <p class="mt-4 text-vx-ink/80">
+        Plan mode advertises and enforces a fail-closed surface with <code class="mono">Bash</code> absent — not
+        present-but-gated, <em>absent</em>. A model cannot call what is not advertised. A read-only
+        <code class="mono">Bash</code> returns only under an explicit permission allow rule.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        The goal loop stops on a stall — no new evidence, no re-plan after an attempt — and reports
+        the stall with the evidence gathered. It does not fire a counter that runs past the answer.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        Modes are sticky: an explicit choice is never silently re-classified, and
+        <code class="mono">-detect-mode</code> tells you what it <em>would</em> do.
+      </p>
+    </div>
+  </div>
+  <div class="mt-10 max-w-[72ch]">
+    <ShotCarousel
+      client:load
+      shots={[{ src: planReviewShot.src, alt: 'The plan review pane with Approve, Refine and Cancel', caption: 'plan review pane' }]}
+    />
+  </div>
+</SealedSection>
+
+<SealedSection label="tools" sealText="Tools first class: a fixed-argv native catalogue of read-only utilities, never a shell; Cd is confined so the working directory moves inside the session root and the root does not widen." id="tools">
+  <div class="grid gap-10 md:grid-cols-2 md:items-center">
+    <div class="prose-measure">
+      <h2 class="text-3xl font-bold text-vx-ink">Tools.</h2>
+      <p class="mt-4 text-vx-ink/80">
+        A fixed-argv native catalogue of read-only utilities — <code class="mono">Cat</code>, <code class="mono">Head</code>,
+        <code class="mono">Git</code>, <code class="mono">JQ</code>, <code class="mono">Find</code>, <code class="mono">Diff</code> and ~19 more. Each is backed by a
+        specific binary and a fixed argument shape passed straight to <code class="mono">exec.Command</code> — never
+        through a shell. Arbitrary command strings are rejected.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        <code class="mono">Cd</code> is confined: the working directory moves <em>inside</em> the session root, and the
+        root does not widen. Path traversal to <code class="mono">../../../etc</code> is blocked, not warned about.
+      </p>
+    </div>
+    <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={cdConfine} /></div>
+  </div>
+</SealedSection>
+
+<SealedSection label="permissions" sealText="Permissions and approvals: the effective permission set is a union with provenance per grant, and the approval prompt shows the actual diff, not a bare path." id="permissions">
+  <div class="grid gap-10 md:grid-cols-2 md:items-center">
+    <div class="order-2 md:order-1 space-y-4">
+      <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={permMerge} /></div>
+      <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={guardSwitch} /></div>
+    </div>
+    <div class="prose-measure order-1 md:order-2">
+      <h2 class="text-3xl font-bold text-vx-ink">Permissions &amp; approvals.</h2>
+      <p class="mt-4 text-vx-ink/80">
+        The effective permission set is a union of policy, session, tool kind and role — with provenance
+        kept per grant, so every effective grant remembers which source added it. An explicit deny still
+        wins; merging never silently widens a surface.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        The guardrails switch reaches every surface: agent session, inline <code class="mono">!cmd</code>,
+        <code class="mono">@file</code> admission, background agents, the CLI. A gated path checks the level
+        <em>before</em> calling the classifier — never after.
+      </p>
+    </div>
+  </div>
+  <div class="mt-10 max-w-[72ch]">
+    <ShotCarousel
+      client:load
+      shots={[
+        { src: approvalDiffShot.src, alt: 'The approval prompt showing a diff', caption: 'approval prompt · diff-in-the-prompt' },
+        { src: permissionsShot.src, alt: 'The permissions screen', caption: '/permissions' },
+      ]}
+    />
+  </div>
+</SealedSection>
+
+<SealedSection label="agents" sealText="Agents and fan-out: the f8 roster spawns concurrent read-only agents, each branch sees only the surface it is allowed to touch, and results merge." id="agents">
+  <div class="grid gap-10 md:grid-cols-2 md:items-center">
+    <div class="prose-measure">
+      <h2 class="text-3xl font-bold text-vx-ink">Agents &amp; fan-out.</h2>
+      <p class="mt-4 text-vx-ink/80">
+        The f8 roster splits a question into concurrent read-only probes — each branch sees only the
+        surface it is allowed to touch, and the orchestrator merges the verdicts. A branch that cannot
+        mutate cannot be talked into mutating.
+      </p>
+    </div>
+    <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={fanOut} /></div>
+  </div>
+  <div class="mt-10 max-w-[72ch]">
+    <ShotCarousel
+      client:load
+      shots={[{ src: agentsRosterShot.src, alt: 'The f8 subagent roster and runs panel', caption: 'f8 roster · runs panel' }]}
+    />
+  </div>
+</SealedSection>
+
+<SealedSection label="sessions" sealText="Sessions and compaction: a validated /compact contract, session auto-naming, mid-turn steering, and an exit card that always carries the resume command." id="sessions">
+  <div class="grid gap-10 md:grid-cols-2 md:items-center">
+    <div class="prose-measure order-2 md:order-1">
+      <h2 class="text-3xl font-bold text-vx-ink">Sessions &amp; compaction.</h2>
+      <p class="mt-4 text-vx-ink/80">
+        <code class="mono">/compact</code> runs against a validated contract, not a vibes-based summary. Sessions
+        auto-name from the work they did, mid-turn steering lands on the running turn, and the exit card
+        always carries the resume command back to the finished session.
+      </p>
+    </div>
+    <div class="order-1 md:order-2 rounded-lg border border-vx-ink p-2" aria-hidden="true">
+      <img src={footerShot.src} alt="The status footer showing session and context chips" class="block h-auto w-full" loading="lazy" />
+    </div>
+  </div>
+  <div class="mt-10 max-w-[72ch]">
+    <ShotCarousel
+      client:load
+      shots={[
+        { src: exitCardShot.src, alt: 'The branded session-end card', caption: 'exit card · resume command' },
+        { src: footerShot.src, alt: 'The status footer with chips', caption: 'status footer · guardrails on' },
+      ]}
+    />
+  </div>
+</SealedSection>
+
+<SealedSection label="providers" sealText="Providers and local inference: five-layer credential resolution with provenance, two local providers shipped in the box, and /local-model assessment." id="providers">
+  <div class="grid gap-10 md:grid-cols-2 md:items-center">
+    <div class="prose-measure">
+      <h2 class="text-3xl font-bold text-vx-ink">Providers &amp; local inference.</h2>
+      <p class="mt-4 text-vx-ink/80">
+        Credentials resolve across five layers — command line, environment, config file, agent profile,
+        built-in defaults — and every resolved value carries its provenance: who set it, where, and when.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        Two local providers ship in the box. <code class="mono">/local-model</code> assesses a candidate against
+        the classifier probe before you trust it with a session.
+      </p>
+    </div>
+    <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={credRes} /></div>
+  </div>
+  <div class="mt-10 max-w-[72ch]">
+    <ShotCarousel
+      client:load
+      shots={[
+        { src: modelPickerShot.src, alt: 'The model picker', caption: '/model picker' },
+        { src: localModelShot.src, alt: 'A /local-model assess verdict', caption: '/local-model assess' },
+      ]}
+    />
+  </div>
+</SealedSection>
+
+<SealedSection label="vulnetix" sealText="Vulnetix integration: the AI Firewall routes traffic with an honest availability chip, and /vulnetix review, firewall and status subcommands are free for everyone." id="vulnetix">
+  <div class="grid gap-10 md:grid-cols-2 md:items-center">
+    <div class="order-2 md:order-1 rounded-lg border border-vx-ink p-2" aria-hidden="true">
+      <img src={footerShot.src} alt="The status footer showing the firewall chip" class="block h-auto w-full" loading="lazy" />
+    </div>
+    <div class="prose-measure order-1 md:order-2">
+      <h2 class="text-3xl font-bold text-vx-ink">Vulnetix integration.</h2>
+      <p class="mt-4 text-vx-ink/80">
+        The AI Firewall routes traffic when you opt in, and the status footer reports availability
+        honestly — a quiet probe at startup, not a claim that survives an unreachable gateway.
+        <code class="mono">/vulnetix review</code>, <code class="mono">firewall</code> and <code class="mono">status</code> are built in.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        The Vulnetix scanners and the AI Firewall are free for everyone, not just enterprises — the
+        baseline platforms eventually copy is already public.
+      </p>
+    </div>
+  </div>
+</SealedSection>

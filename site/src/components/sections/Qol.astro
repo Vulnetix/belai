@@ -1,0 +1,50 @@
+---
+import SealedSection from '../seal/SealedSection.astro';
+import ShotCarousel from '../ui/ShotCarousel.tsx';
+import settingsShot from '../../assets/shots/settings.svg';
+
+const sealText =
+  'Quality of life: the grid of things you used to hack into a skills.md — prompt library, repo map, work-discipline prompt section, identity block, capability auth probes, diff-in-the-approval-prompt, a todo panel that only trusts assistant text, a validated /compact contract, session auto-naming, mid-turn steering, /settings with provenance, no alt bindings ever, /help guarded by a test, caveman mode.';
+
+const items = [
+  'prompt library as files',
+  'harness-computed repo map',
+  'work-discipline prompt section',
+  'identity block',
+  'capability auth probes',
+  'diff in the approval prompt',
+  'todo panel that only trusts assistant text',
+  'validated /compact contract',
+  'session auto-naming',
+  'mid-turn steering',
+  '/settings with provenance',
+  'no alt bindings, ever',
+  '/help guarded by a test',
+  'caveman mode',
+];
+---
+
+<SealedSection label="qol" sealText={sealText} id="qol">
+  <div class="grid gap-10 md:grid-cols-2 md:items-start">
+    <div class="prose-measure">
+      <h2 class="text-3xl font-bold text-vx-ink">Quality of life.</h2>
+      <p class="mt-4 text-vx-ink/80">
+        The grid of things you used to hack into a <code class="mono">skills.md</code> yourself. Each one is a
+        file or a passing test in this repository, not a paste-in afterthought.
+      </p>
+      <div class="mt-6">
+        <ShotCarousel
+          client:load
+          shots={[{ src: settingsShot.src, alt: 'The settings screen showing provenance per value', caption: '/settings · provenance per value' }]}
+        />
+      </div>
+    </div>
+    <ul class="grid list-none gap-2 p-0 md:grid-cols-2">
+      {items.map((item) => (
+        <li class="mono rounded-md border border-vx-ink/30 px-3 py-2 text-sm text-vx-ink">
+          {item}
+        </li>
+      ))}
+    </ul>
+  </div>
+</SealedSection>

@@ -1,0 +1,63 @@
+---
+import SealedSection from '../seal/SealedSection.astro';
+import CopyButton from '../ui/CopyButton.tsx';
+
+const sealText =
+  'Install: Homebrew, Scoop, a checksum-verified install.sh, go install, and source, across six platforms — linux and darwin and windows, each amd64 and arm64.';
+
+const installs = [
+  {
+    name: 'Homebrew',
+    cmd: 'brew install vulnetix/tap/signet',
+  },
+  {
+    name: 'Scoop',
+    cmd: 'scoop bucket add vulnetix https://github.com/Vulnetix/scoop-bucket && scoop install signet',
+  },
+  {
+    name: 'install.sh (checksum-verified)',
+    cmd: 'curl -fsSL https://raw.githubusercontent.com/vulnetix/signet/main/install.sh | sh',
+  },
+  {
+    name: 'go install',
+    cmd: 'go install github.com/vulnetix/signet/cmd/signet@latest',
+  },
+  {
+    name: 'source',
+    cmd: 'git clone https://github.com/vulnetix/signet && cd signet && go build ./cmd/signet',
+  },
+];
+---
+
+<SealedSection label="install" sealText={sealText} id="install">
+  <div class="grid gap-10 md:grid-cols-2">
+    <div class="prose-measure">
+      <h2 class="text-3xl font-bold text-vx-ink">Install.</h2>
+      <p class="mt-4 text-vx-ink/80">
+        Six platforms — linux, darwin and windows, each amd64 and arm64. Every release is built by the
+        same workflow that publishes the Homebrew formula and the Scoop manifest, and the installer
+        verifies the binary against the release checksums before it writes anything.
+      </p>
+    </div>
+    <ul class="space-y-3 list-none p-0">
+      {installs.map((i) => (
+        <li class="rounded-md border border-vx-ink/30 p-4">
+          <p class="mono text-sm text-vx-ink/60">{i.name}</p>
+          <div class="mt-2 flex flex-wrap items-center gap-3">
+            <code class="mono block overflow-x-auto text-sm text-vx-ink">{i.cmd}</code>
+            <CopyButton value={i.cmd} label="copy" client:load />
+          </div>
+        </li>
+      ))}
+    </ul>
+  </div>
+
+  <footer class="mt-12 border-t border-vx-ink/30 pt-6 text-vx-ink/70">
+    <p class="mono text-sm">
+      signet · Apache-2.0 · <a class="underline" href="https://github.com/vulnetix/signet">github.com/vulnetix/signet</a>
+    </p>
+    <p class="mt-2 text-sm">
+      Free and open source, alongside Vulnetix&rsquo;s scanners and AI Firewall.
+    </p>
+  </footer>
+</SealedSection>

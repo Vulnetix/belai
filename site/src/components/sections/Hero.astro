@@ -1,0 +1,51 @@
+---
+import SealedSection from '../seal/SealedSection.astro';
+import CopyButton from '../ui/CopyButton.tsx';
+import pixSentinel from '../../assets/pix/pix-sentinel.svg?raw';
+
+const sealText =
+  'Signet is a safer LLM coding harness: sealed delimiters, a security classifier, fail-closed posture gates, a prompt library, a repo map, and role/mode determinism — free and open source, Apache-2.0.';
+---
+
+<SealedSection label="hero" sealText={sealText} id="hero">
+  <div class="grid items-center gap-10 md:grid-cols-[minmax(0,1fr)_280px]">
+    <div class="prose-measure">
+      <p class="boot-stage boot-stage-1 mono text-sm text-vx-mint-strong" aria-hidden="true">
+        <span class="rail-fill inline-block">▌ signet v0.39.16 · sealed</span>
+      </p>
+
+      <h1 class="boot-stage boot-stage-2 mt-4 text-4xl font-bold leading-tight text-vx-ink md:text-5xl">
+        A safer LLM coding harness.
+      </h1>
+
+      <p class="boot-stage boot-stage-3 mt-5 text-lg leading-relaxed text-vx-ink/80">
+        The models are excellent. The harnesses are not — they leak context, over-trust
+        tool output, and ship nothing you didn&rsquo;t hack into a <code class="mono">skills.md</code>
+        yourself. Signet builds those things in: sealed delimiters, a security classifier,
+        fail-closed posture gates, a prompt library, a repo map, and role/mode determinism.
+        Free and open, Apache-2.0.
+      </p>
+
+      <div class="boot-stage boot-stage-4 mt-8 flex flex-wrap items-center gap-4">
+        <code class="mono rounded-md border border-vx-ink bg-vx-ink px-4 py-2.5 text-vx-mint">
+          brew install vulnetix/tap/signet
+        </code>
+        <CopyButton
+          value="brew install vulnetix/tap/signet"
+          label="copy install command"
+          client:load
+        />
+        <a
+          href="https://github.com/vulnetix/signet"
+          class="mono rounded-md border border-vx-ink px-4 py-2.5 text-vx-ink hover:bg-vx-ink hover:text-vx-mint"
+        >
+          github
+        </a>
+      </div>
+    </div>
+
+    <div class="boot-stage boot-stage-1 hidden max-w-[280px] md:block" aria-hidden="true">
+      <Fragment set:html={pixSentinel} />
+    </div>
+  </div>
+</SealedSection>
