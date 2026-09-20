@@ -29,3 +29,16 @@ Thumbs.db
 
 # Project-local state
 .vulnetix/
+
+# Marketing site (site/)
+site/.env
+site/.env.*
+!site/.env.example
+site/node_modules/
+site/dist/
+site/.astro/
+site/.yarn/
+site/terraform/.terraform/
+site/terraform/*.tfstate
+site/terraform/*.tfstate.*
+site/terraform/*.auto.tfvars

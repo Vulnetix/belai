@@ -142,3 +142,25 @@ check: fmt-check vet test-race cross
 clean:
     rm -rf {{ binary }} {{ bin }} coverage.txt
     go clean -testcache
+
+# ----------------------------------------------------------------------------
+# Site
+# ----------------------------------------------------------------------------
+
+# Run the marketing site dev server (http://localhost:4321).
+site-dev:
+    cd site && yarn dev
+
+# Build the marketing site into site/dist.
+site-build:
+    cd site && yarn build
+
+# Build the site, assert the custom domain survived, and check internal links.
+site-check:
+    cd site && yarn build && node scripts/check-links.mjs dist && test -f dist/CNAME && grep -qx 'signet.vulnetix.com' dist/CNAME
+
+# Regenerate the TUI shot captures and their SVGs. Deterministic: a clean-tree
+# run must produce an empty diff (that is what makes the captures CI-reproducible).
+shots:
+    go run ./tools/shot -out site/src/assets/shots
+    cd site && node scripts/ansi-to-svg.mjs
