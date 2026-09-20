@@ -1,0 +1,14 @@
+output "site_url" {
+  description = "Public URL of the marketing site."
+  value       = "https://${cloudflare_dns_record.signet.name}.${data.cloudflare_zone.vulnetix.name}/"
+}
+
+output "site_record" {
+  description = "The managed CNAME, for confirming it matches site/public/CNAME."
+  value = {
+    name    = cloudflare_dns_record.signet.name
+    type    = cloudflare_dns_record.signet.type
+    content = cloudflare_dns_record.signet.content
+    proxied = cloudflare_dns_record.signet.proxied
+  }
+}
