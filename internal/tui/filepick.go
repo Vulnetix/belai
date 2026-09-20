@@ -43,27 +43,41 @@ type filesLoadedMsg struct {
 // workdir into the closure before launching, so it never races the App.
 func (a *App) fileListCmd() tea.Cmd {
 	workdir := a.workdir
+	workspaceDirs := append([]string{}, a.workspaceDirs...)
 	a.filesLoading = true
 	return func() tea.Msg {
 		ctx := context.Background()
-		g := &tools.Glob{
-			Cwd:        tools.NewCwd(workdir),
-			Root:       workdir,
-			MaxResults: 5000,
-		}
-		res, err := g.Execute(ctx, map[string]any{"pattern": "**/*"})
-		if err != nil {
-			return filesLoadedMsg{err: err}
-		}
 		var files []string
-		for _, p := range strings.Split(res.Content, "\n") {
-			if p == "" {
-				continue
+		seen := map[string]bool{}
+		roots := append([]string{workdir}, workspaceDirs...)
+		for i, root := range roots {
+			g := &tools.Glob{
+				Cwd:        tools.NewCwd(root),
+				Root:       root,
+				MaxResults: 5000,
 			}
-			if imageExtensions[strings.ToLower(strings.TrimPrefix(filepath.Ext(p), "."))] {
-				continue
+			res, err := g.Execute(ctx, map[string]any{"pattern": "**/*"})
+			if err != nil {
+				return filesLoadedMsg{err: err}
 			}
-			files = append(files, p)
+			for _, p := range strings.Split(res.Content, "\n") {
+				if p == "" {
+					continue
+				}
+				if imageExtensions[strings.ToLower(strings.TrimPrefix(filepath.Ext(p), "."))] {
+					continue
+				}
+				// The primary root stays relative; extra roots are returned as
+				// absolute paths so they can be handed straight back to Read.
+				if i > 0 && !filepath.IsAbs(p) {
+					p = filepath.Join(root, p)
+				}
+				if seen[p] {
+					continue
+				}
+				seen[p] = true
+				files = append(files, p)
+			}
 		}
 		return filesLoadedMsg{files: files}
 	}

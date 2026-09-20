@@ -232,6 +232,52 @@ func TestAttachmentBodyNotIncludedWhenRejected(t *testing.T) {
 	}
 }
 
+// An attachment whose path lands inside an added workspace directory is
+// resolved and read against that root, not rejected as outside the primary
+// workdir.
+func TestAttachmentResolvesInWorkspaceDir(t *testing.T) {
+	workdir := t.TempDir()
+	extra := t.TempDir()
+	if err := os.WriteFile(filepath.Join(extra, "extra.txt"), []byte("extra content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	a := New(Options{Workdir: workdir})
+	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	// Guardrails off so file bytes are admitted without a real classifier
+	// round trip in this test.
+	off := false
+	a.guardrailsOverride = &off
+	a.syncPosture()
+	a.workspaceDirs = []string{extra}
+	t.Logf("workspaceDirs = %v", a.workspaceDirs)
+	raw := filepath.Join(extra, "extra.txt")
+	t.Logf("raw = %q", raw)
+	root, rel, err := a.resolveAttachmentPath(raw)
+	t.Logf("resolveAttachmentPath = root=%q rel=%q err=%v", root, rel, err)
+	a.editor.SetValue("read @" + raw + " ")
+	cmd := a.syncAttachments()
+	if cmd == nil {
+		for id, att := range a.attachments {
+			t.Logf("att %d: text=%q state=%d reason=%q", id, att.text, att.state, att.reason)
+		}
+		t.Fatal("syncAttachments returned no validation command")
+	}
+	a.Update(cmd())
+
+	for _, att := range a.attachments {
+		if att.state != attachSafe {
+			t.Fatalf("attachment state = %d (reason %q), want safe", att.state, att.reason)
+		}
+		if att.body != "extra content" {
+			t.Fatalf("attachment body = %q, want extra content", att.body)
+		}
+		if att.root != extra {
+			t.Fatalf("attachment root = %q, want %q", att.root, extra)
+		}
+	}
+}
+
 func TestAttachmentRejectedOnPathEscape(t *testing.T) {
 	a := New(Options{})
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})

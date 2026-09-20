@@ -36,6 +36,7 @@ type attachment struct {
 	id       int
 	text     string // the literal "@path" the user typed, used as join key
 	raw      string // path part after sanitisation
+	root     string // confinement root the path resolved against (default workdir)
 	body     string // file contents (or directory listing) after successful validation
 	state    attachState
 	reason   string
@@ -146,15 +147,16 @@ func (a *App) syncAttachments() tea.Cmd {
 			att.state = attachResolving
 			continue
 		}
-		rel, err := tools.SanitizePath(a.workdir, tok.raw)
+		root, rel, err := a.resolveAttachmentPath(tok.raw)
 		if err != nil {
 			att.state = attachRejected
 			att.reason = err.Error()
 			continue
 		}
+		att.root = root
 		att.raw = rel
 		att.state = attachClassifying
-		cmds = append(cmds, a.validateAttachmentCmd(id, rel))
+		cmds = append(cmds, a.validateAttachmentCmd(id, root, rel))
 	}
 	// Compact attachOrder to remove deleted ids.
 	order := a.attachOrder[:0]
@@ -179,12 +181,45 @@ func (a *App) attachmentsByText(text string) (*attachment, bool) {
 	return nil, false
 }
 
+// resolveAttachmentPath resolves an @file path against the primary workdir
+// and any added workspace directories. It returns the matching root and the
+// root-relative path. Absolute paths that prefix-match a root are handled
+// directly; relative paths are sanitized against each root in turn.
+func (a *App) resolveAttachmentPath(raw string) (root, rel string, err error) {
+	roots := append([]string{a.workdir}, a.workspaceDirs...)
+	for _, r := range roots {
+		rel, err = sanitizeAgainstRoot(r, raw)
+		if err == nil {
+			return r, rel, nil
+		}
+	}
+	return "", "", err
+}
+
+// sanitizeAgainstRoot returns the root-relative form of raw, accepting both
+// absolute paths that sit under root and relative paths confined to root.
+func sanitizeAgainstRoot(root, raw string) (string, error) {
+	if filepath.IsAbs(raw) {
+		if raw == root {
+			return ".", nil
+		}
+		sep := string(filepath.Separator)
+		if prefix := root + sep; strings.HasPrefix(raw, prefix) {
+			rel := strings.TrimPrefix(raw, prefix)
+			if rel == "." || rel == "" || strings.Contains(rel, "..") {
+				return "", fmt.Errorf("path escapes root")
+			}
+			return rel, nil
+		}
+	}
+	return tools.SanitizePath(root, raw)
+}
+
 // validateAttachmentCmd reads and classifies one file in a goroutine. It
 // captures TUI-derived values into locals so the closure does not race.
-func (a *App) validateAttachmentCmd(id int, rel string) tea.Cmd {
+func (a *App) validateAttachmentCmd(id int, root, rel string) tea.Cmd {
 	cfg := a.cfg
 	client := a.client
-	workdir := a.workdir
 	pol := a.effectivePosture()
 	return func() tea.Msg {
 		ctx := context.Background()
@@ -192,7 +227,7 @@ func (a *App) validateAttachmentCmd(id int, rel string) tea.Cmd {
 		// Entry names are shaped, harness-known output (one per line), so the
 		// listing is sanitised and admitted without a classifier round trip,
 		// exactly like an LS result: it carries no file content to classify.
-		abs := filepath.Join(workdir, rel)
+		abs := filepath.Join(root, rel)
 		if info, err := os.Stat(abs); err == nil && info.IsDir() {
 			body, err := listDirForAttachment(abs)
 			if err != nil {
@@ -200,14 +235,14 @@ func (a *App) validateAttachmentCmd(id int, rel string) tea.Cmd {
 			}
 			return attachValidatedMsg{id: id, body: sanitize.Sanitize(body), sentinel: rolemanager.SentinelSafe, isDir: true}
 		}
-		read := &tools.Read{Root: workdir, MaxBytes: 64 * 1024}
+		read := &tools.Read{Root: root, MaxBytes: 64 * 1024}
 		res, err := read.Execute(ctx, map[string]any{"path": rel})
 		if err != nil {
 			return attachValidatedMsg{id: id, err: err, sentinel: rolemanager.SentinelMalformed}
 		}
 		// Compute the worktree-vs-index diff on the validation goroutine so the
 		// Update loop never shells out to git.
-		rec := filediff.NewRecorder(workdir)
+		rec := filediff.NewRecorder(root)
 		diff := rec.WorktreeChange(ctx, rel, res.Content)
 		// With the gate ignored the verdict cannot change the outcome, so the
 		// classifier is not called at all. Calling it and then discarding the
