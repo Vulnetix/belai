@@ -12,7 +12,7 @@
 // cannot carry the two-tone foreground/background split that makes the Pix owl.
 
 import { readFileSync, writeFileSync, readdirSync, mkdirSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, basename } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -32,14 +32,14 @@ export const palette = {
   line: '#2F4340',
 };
 
-const CELL_W = 10;
-const CELL_H = 20;
-const FONT_SIZE = 15;
-const BASELINE = 16; // baseline offset within a cell row
+export const CELL_W = 10;
+export const CELL_H = 20;
+export const FONT_SIZE = 15;
+export const BASELINE = 16; // baseline offset within a cell row
 
 // Terminal defaults on the dark canvas.
-const DEFAULT_FG = palette.bone;
-const DEFAULT_BG = palette.ink;
+export const DEFAULT_FG = palette.bone;
+export const DEFAULT_BG = palette.ink;
 
 const SGR_RE = /\x1b\[([0-9;]*)m/g;
 
@@ -50,7 +50,7 @@ function esc(s) {
 // sgrDeltas walks one SGR parameter list and yields state deltas. Handles the
 // sequences the captures emit: reset, bold, truecolour fg/bg, default fg/bg,
 // and reverse video.
-function* sgrDeltas(params) {
+export function* sgrDeltas(params) {
   if (params === '') params = '0';
   const codes = params.split(';').map((n) => Number.parseInt(n, 10));
   let i = 0;
@@ -74,7 +74,7 @@ function* sgrDeltas(params) {
 }
 
 // parseLine splits a raw ANSI line into styled cells: { ch, fg, bg, bold }.
-function parseLine(line) {
+export function parseLine(line) {
   const cells = [];
   let fg = null;
   let bg = null;
@@ -99,10 +99,9 @@ function parseLine(line) {
       case 'bg':
         bg = delta.value;
         break;
-      case 'reverse': {
+      case 'reverse':
         reversed = !reversed;
         break;
-      }
     }
   };
 
@@ -124,7 +123,8 @@ function parseLine(line) {
   return cells;
 }
 
-function renderCell(cell, x, y) {
+// renderCell renders one cell at column x, row y. Exported for tests.
+export function renderCell(cell, x, y) {
   const top = y * CELL_H;
   const out = [];
 
@@ -151,8 +151,9 @@ function renderCell(cell, x, y) {
   return out.join('');
 }
 
-function convert(name) {
-  const ansi = readFileSync(join(shotsDir, name + '.ansi'), 'utf8');
+// renderAnsi converts an ANSI capture string into a full SVG document. Pure:
+// it reads no files, so it is unit-testable.
+export function renderAnsi(ansi, name = 'capture') {
   const rawLines = ansi.replace(/\n$/, '').split('\n');
   const lines = rawLines.map(parseLine);
   const maxWidth = Math.max(0, ...lines.map((l) => l.length));
@@ -169,13 +170,15 @@ function convert(name) {
     }
   }
 
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Signet TUI capture: ${esc(name)}">
-  <rect width="${width}" height="${height}" fill="${DEFAULT_BG}"/>
-  ${body.join('\n  ')}
-</svg>
-`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Signet TUI capture: ${esc(name)}">\n  <rect width="${width}" height="${height}" fill="${DEFAULT_BG}"/>\n  ${body.join('\n  ')}\n</svg>\n`;
+}
+
+function convert(name) {
+  const ansi = readFileSync(join(shotsDir, name + '.ansi'), 'utf8');
+  const svg = renderAnsi(ansi, name);
   writeFileSync(join(shotsDir, name + '.svg'), svg);
-  console.log(`wrote ${join(shotsDir, name + '.svg')} (${width}x${height})`);
+  const m = svg.match(/viewBox="0 0 (\d+) (\d+)"/);
+  console.log(`wrote ${join(shotsDir, name + '.svg')} (${m[1]}x${m[2]})`);
 }
 
 function main() {
@@ -190,4 +193,6 @@ function main() {
   }
 }
 
-main();
+const isMain =
+  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isMain) main();
