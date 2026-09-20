@@ -1,6 +1,7 @@
 package components
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -14,18 +15,17 @@ func TestTurnPanelRendersAssistantContent(t *testing.T) {
 	if !strings.Contains(out, "hello world") {
 		t.Fatalf("expected content in panel, got:\n%s", out)
 	}
-	if !strings.Contains(out, "signet") {
+	if !strings.Contains(out, "model") {
 		t.Fatalf("expected title in panel, got:\n%s", out)
 	}
 }
 
 func TestTurnPanelTruncatesLongAssistantContent(t *testing.T) {
-	lines := []string{"one", "two", "three", "four", "five"}
-	msg := Message{Role: "assistant", Content: strings.Join(lines, "\n")}
+	msg := Message{Role: "assistant", Content: "one\n\ntwo\n\nthree\n\nfour\n\nfive"}
 	out, _ := turnPanel(msg, 40, false)
-	for i := 0; i < assistantPreviewLines; i++ {
-		if !strings.Contains(out, lines[i]) {
-			t.Fatalf("expected line %d %q in truncated panel, got:\n%s", i, lines[i], out)
+	for _, want := range []string{"one", "two", "three", "four"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in truncated panel, got:\n%s", want, out)
 		}
 	}
 	if strings.Contains(out, "five") {
@@ -53,7 +53,7 @@ func TestTurnPanelExpandedShowsAllLines(t *testing.T) {
 func TestTurnPanelEmptyBodyStillRendersFrame(t *testing.T) {
 	msg := Message{Role: "assistant", Content: ""}
 	out, _ := turnPanel(msg, 40, false)
-	if !strings.Contains(out, "signet") {
+	if !strings.Contains(out, "model") {
 		t.Fatalf("expected empty panel to render title, got:\n%s", out)
 	}
 }
@@ -400,9 +400,8 @@ func TestToolRowFallsBackToRawArgsWhenInvalidJSON(t *testing.T) {
 }
 
 func TestMessageListRespectsExpandAll(t *testing.T) {
-	lines := []string{"one", "two", "three", "four", "five"}
 	list := MessageList{
-		Messages: []Message{{Role: "assistant", Content: strings.Join(lines, "\n")}},
+		Messages: []Message{{Role: "assistant", Content: "one\n\ntwo\n\nthree\n\nfour\n\nfive"}},
 		Width:    40,
 	}
 	collapsed := list.View()
@@ -491,7 +490,7 @@ func TestMessageListSkipsEmptyAssistantFrame(t *testing.T) {
 		ShowTools: true,
 	}
 	out := list.View()
-	if strings.Contains(out, "signet") {
+	if strings.Contains(out, "model") {
 		t.Fatalf("empty assistant frame should be skipped, got:\n%s", out)
 	}
 	if !strings.Contains(out, "done") {
@@ -529,8 +528,61 @@ func TestMessageListReasoningPanelGated(t *testing.T) {
 	if !strings.Contains(list.View(), "private thought") {
 		t.Fatalf("reasoning should render when enabled")
 	}
-	if !strings.Contains(list.View(), "reasoning") {
+	if !strings.Contains(list.View(), "model · reasoning") {
 		t.Fatalf("reasoning panel title missing")
+	}
+}
+
+// TestMessageListCoalescesAdjacentSystemNotices pins the signet group: two
+// adjacent system notices render in one signet panel, one line per notice,
+// and never as separate rows.
+func TestMessageListCoalescesAdjacentSystemNotices(t *testing.T) {
+	list := MessageList{
+		Width: 60,
+		Messages: []Message{
+			{Role: "system", Content: "first notice"},
+			{Role: "system", Content: "second notice"},
+		},
+	}
+	out := list.View()
+	if strings.Count(out, "signet") != 1 {
+		t.Fatalf("want exactly one signet title for the group, got:\n%s", out)
+	}
+	if !strings.Contains(out, "first notice") || !strings.Contains(out, "second notice") {
+		t.Fatalf("both notices should render in the panel:\n%s", out)
+	}
+}
+
+// TestSignetPanelTruncatesLongGroup pins the deliberate change from the old
+// untruncated system rows: more than signetPreviewLines notices collapse to a
+// hint whose selection copies the hidden notices.
+func TestSignetPanelTruncatesLongGroup(t *testing.T) {
+	var msgs []Message
+	for i := 0; i < signetPreviewLines+2; i++ {
+		msgs = append(msgs, Message{Role: "system", Content: "notice " + strconv.Itoa(i)})
+	}
+	idxs := make([]int, len(msgs))
+	for i := range idxs {
+		idxs[i] = i
+	}
+	s, lm, owners := signetPanel(msgs, idxs, 60, false)
+	if !strings.Contains(s, "2 more lines") {
+		t.Fatalf("expected truncation hint, got:\n%s", s)
+	}
+	if strings.Contains(s, "notice 6") || strings.Contains(s, "notice 7") {
+		t.Fatalf("hidden notices should not render, got:\n%s", s)
+	}
+	var hidden string
+	for _, sl := range lm {
+		if sl.MarkerWidth > 0 {
+			hidden = sl.Hidden
+		}
+	}
+	if hidden != "notice 6\nnotice 7" {
+		t.Fatalf("hidden = %q, want the two hidden notices", hidden)
+	}
+	if len(owners) != len(lm) {
+		t.Fatalf("owners %d != map %d", len(owners), len(lm))
 	}
 }
 

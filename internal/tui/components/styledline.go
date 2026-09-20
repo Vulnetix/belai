@@ -35,6 +35,16 @@ type Seg struct {
 	// rather than an explicit colour because it composes with a background the
 	// segment cannot see — see sgr.go.
 	Emph []Span
+
+	// Strike marks cell ranges to show struck through. Like Emph it is an SGR
+	// span on a cell range, so it composes with the segment's foreground and
+	// any enclosing background.
+	Strike []Span
+
+	// Link marks a link's URL tail. It is glued to the preceding segment by the
+	// markdown word-wrapper and dropped when the text it follows fills the
+	// line, so a long URL never wraps onto a line of its own.
+	Link bool
 }
 
 // NewSeg builds a segment, sanitising text.
@@ -222,8 +232,13 @@ func (s Seg) render() string {
 		return ""
 	}
 	body := s.Text
-	if len(s.Emph) > 0 && lipgloss.ColorProfile() != termenv.Ascii {
-		body = applyEmph(s.Text, s.Emph)
+	if lipgloss.ColorProfile() != termenv.Ascii {
+		if len(s.Emph) > 0 {
+			body = applySpans(body, s.Emph, emphOn, emphOff)
+		}
+		if len(s.Strike) > 0 {
+			body = applySpans(body, s.Strike, strikeOn, strikeOff)
+		}
 	}
 	fg := fgSeq(s.FG)
 	if fg == "" {
@@ -232,9 +247,9 @@ func (s Seg) render() string {
 	return fg + body + fgOff
 }
 
-// applyEmph wraps each span in reverse video. Spans are cell ranges, so the
-// text is sliced with ansi.Cut rather than by rune index.
-func applyEmph(text string, spans []Span) string {
+// applySpans wraps each span in the given SGR on/off pair. Spans are cell
+// ranges, so the text is sliced with ansi.Cut rather than by rune index.
+func applySpans(text string, spans []Span, on, off string) string {
 	w := lipgloss.Width(text)
 	var b strings.Builder
 	at := 0
@@ -244,9 +259,9 @@ func applyEmph(text string, spans []Span) string {
 			continue
 		}
 		b.WriteString(ansi.Cut(text, at, from))
-		b.WriteString(emphOn)
+		b.WriteString(on)
 		b.WriteString(ansi.Cut(text, from, to))
-		b.WriteString(emphOff)
+		b.WriteString(off)
 		at = to
 	}
 	b.WriteString(ansi.Cut(text, at, w))
@@ -278,18 +293,50 @@ func clipSegs(segs []Seg, width int) ([]Seg, string) {
 	return kept, plain.String()
 }
 
-// clip cuts a segment to n cells, dropping and truncating emphasis spans to
-// match.
+// clip cuts a segment to n cells, dropping and truncating emphasis and strike
+// spans to match.
 func (s Seg) clip(n int) Seg {
 	if n <= 0 {
-		return Seg{FG: s.FG}
+		return Seg{FG: s.FG, Link: s.Link}
 	}
-	out := Seg{Text: ansi.Cut(s.Text, 0, n), FG: s.FG}
+	out := Seg{Text: ansi.Cut(s.Text, 0, n), FG: s.FG, Link: s.Link}
 	for _, sp := range s.Emph {
 		if sp.From >= n {
 			break
 		}
 		out.Emph = append(out.Emph, Span{From: sp.From, To: min(sp.To, n)})
+	}
+	for _, sp := range s.Strike {
+		if sp.From >= n {
+			break
+		}
+		out.Strike = append(out.Strike, Span{From: sp.From, To: min(sp.To, n)})
+	}
+	return out
+}
+
+// slice cuts a segment to the cell range [from, to), rebasing emphasis and
+// strike spans so they stay on the surviving text.
+func (s Seg) slice(from, to int) Seg {
+	if to <= from {
+		return Seg{FG: s.FG, Link: s.Link}
+	}
+	out := Seg{Text: ansi.Cut(s.Text, from, to), FG: s.FG, Link: s.Link}
+	for _, sp := range s.Emph {
+		if sp.From >= to {
+			break
+		}
+		if sp.To > from {
+			out.Emph = append(out.Emph, Span{From: max(sp.From, from) - from, To: min(sp.To, to) - from})
+		}
+	}
+	for _, sp := range s.Strike {
+		if sp.From >= to {
+			break
+		}
+		if sp.To > from {
+			out.Strike = append(out.Strike, Span{From: max(sp.From, from) - from, To: min(sp.To, to) - from})
+		}
 	}
 	return out
 }

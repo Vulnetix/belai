@@ -128,13 +128,23 @@ type renderKey struct {
 	metaLen int
 	// subagentID distinguishes subagent activity rows (render-only gutter).
 	subagentID string
+	// groupN and groupLen key the cached render of a coalesced system group,
+	// stored on its first member. groupLen is the summed content lengths, so a
+	// notice changing length misses the cache just as a single message would.
+	groupN   int
+	groupLen int
+	// markdown distinguishes assistant markdown bodies from plain bodies so a
+	// role or format flip cannot hit a stale entry.
+	markdown bool
 }
 
-// renderCache is the memoised render of one message.
+// renderCache is the memoised render of one message (or of a system group, on
+// its first member).
 type renderCache struct {
-	key  renderKey
-	text string
-	lm   LineMap
+	key    renderKey
+	text   string
+	lm     LineMap
+	owners []int
 }
 
 // renderKeyFor computes the cache key for one message at a given width.
@@ -161,6 +171,7 @@ func renderKeyFor(m *Message, width int, expandAll bool) renderKey {
 		diffSeq:    m.diffSeq,
 		metaLen:    len(m.Meta),
 		subagentID: m.SubagentID,
+		markdown:   assistantMarkdown(*m),
 	}
 }
 
@@ -285,7 +296,15 @@ type MessageList struct {
 const (
 	messageMinWidth       = 32
 	assistantPreviewLines = 4
+	signetPreviewLines    = 6
 )
+
+// assistantMarkdown reports whether an assistant turn renders its body as
+// markdown rather than plain text. It is shared by the cache key and the
+// renderer so the two can never disagree about a body's format.
+func assistantMarkdown(m Message) bool {
+	return m.Role == "assistant" && !m.Partial && strings.TrimSpace(m.Text()) != ""
+}
 
 // View renders the transcript: conversational turns as flat titled panels,
 // tool calls and system notices as single-line rows between them. Empty
@@ -310,8 +329,8 @@ func (m MessageList) Render() (string, LineMap) {
 	width := max(m.Width, messageMinWidth)
 
 	type entry struct {
-		idx    int
-		framed bool
+		idxs []int  // message indices in this entry (one, except system groups)
+		kind string // "turn", "tool", "system", "reasoning"
 	}
 	var entries []entry
 	for i := range m.Messages {
@@ -321,60 +340,90 @@ func (m MessageList) Render() (string, LineMap) {
 			if !m.ShowReasoning {
 				continue
 			}
-			entries = append(entries, entry{i, true})
+			entries = append(entries, entry{idxs: []int{i}, kind: "reasoning"})
 		case "tool":
 			if !m.ShowTools {
 				continue
 			}
-			entries = append(entries, entry{i, false})
+			entries = append(entries, entry{idxs: []int{i}, kind: "tool"})
 		case "system":
-			entries = append(entries, entry{i, false})
+			if n := len(entries); n > 0 && entries[n-1].kind == "system" {
+				entries[n-1].idxs = append(entries[n-1].idxs, i)
+			} else {
+				entries = append(entries, entry{idxs: []int{i}, kind: "system"})
+			}
 		default:
 			if strings.TrimSpace(msg.Text()) == "" && len(msg.ToolCalls) == 0 {
 				continue
 			}
-			entries = append(entries, entry{i, true})
+			entries = append(entries, entry{idxs: []int{i}, kind: "turn"})
 		}
 	}
 
 	var b strings.Builder
 	var lm LineMap
 	for i, e := range entries {
-		msg := &m.Messages[e.idx]
-		key := renderKeyFor(msg, width, m.ExpandAll)
 		var s string
 		var sub LineMap
-		if !key.started && msg.rc.key == key {
-			s, sub = msg.rc.text, msg.rc.lm
+		if e.kind == "system" {
+			var owners []int
+			s, sub, owners = m.renderSystemGroup(e.idxs, width)
+			tagGroupProvenance(sub, owners, m.Messages)
 		} else {
-			switch msg.Role {
-			case "tool":
-				s, sub = toolRow(*msg, width, m.ExpandAll)
-			case "system":
-				s, sub = systemRow(msg.Text(), width)
-			case "reasoning":
-				s, sub = reasoningPanel(*msg, width, m.ExpandAll)
-			default:
-				s, sub = turnPanel(*msg, width, m.ExpandAll)
+			msg := &m.Messages[e.idxs[0]]
+			key := renderKeyFor(msg, width, m.ExpandAll)
+			if !key.started && msg.rc.key == key {
+				s, sub = msg.rc.text, msg.rc.lm
+			} else {
+				switch msg.Role {
+				case "tool":
+					s, sub = toolRow(*msg, width, m.ExpandAll)
+				case "reasoning":
+					s, sub = reasoningPanel(*msg, width, m.ExpandAll)
+				default:
+					s, sub = turnPanel(*msg, width, m.ExpandAll)
+				}
+				if !key.started {
+					msg.rc = renderCache{key: key, text: s, lm: sub}
+				}
 			}
-			if !key.started {
-				msg.rc = renderCache{key: key, text: s, lm: sub}
-			}
+			tagProvenance(sub, e.idxs[0], *msg)
 		}
-		tagProvenance(sub, e.idx, *msg)
 		b.WriteString(s)
 		lm = append(lm, sub...)
 		if i == len(entries)-1 {
 			break
 		}
-		if e.framed || entries[i+1].framed {
-			b.WriteString("\n\n")
+		// Tool rows sit on adjacent lines; everything else is framed and
+		// separated by a blank line.
+		if e.kind == "tool" && entries[i+1].kind == "tool" {
+			b.WriteString("\n")
 			lm = append(lm, SourceLine{Chrome: true, Owner: -1})
 		} else {
-			b.WriteString("\n")
+			b.WriteString("\n\n")
+			lm = append(lm, SourceLine{Chrome: true, Owner: -1})
 		}
 	}
 	return b.String(), lm
+}
+
+// renderSystemGroup renders a coalesced run of adjacent system notices as one
+// signet panel, memoised on the first member.
+func (m MessageList) renderSystemGroup(idxs []int, width int) (string, LineMap, []int) {
+	first := &m.Messages[idxs[0]]
+	key := renderKeyFor(first, width, m.ExpandAll)
+	key.groupN = len(idxs)
+	for _, idx := range idxs {
+		key.groupLen += len(m.Messages[idx].Text())
+	}
+	if !key.started && first.rc.key == key {
+		return first.rc.text, first.rc.lm, first.rc.owners
+	}
+	s, lm, owners := signetPanel(m.Messages, idxs, width, m.ExpandAll)
+	if !key.started {
+		first.rc = renderCache{key: key, text: s, lm: lm, owners: owners}
+	}
+	return s, lm, owners
 }
 
 // FilePath returns the path of a successful Read result, from the render-only
@@ -434,7 +483,7 @@ func reasoningPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 	}
 	body = MutedStyle.Render(body)
 	return Panel{
-		Title:  "reasoning",
+		Title:  "model · reasoning",
 		Body:   body,
 		Width:  width,
 		Accent: lipgloss.TerminalColor(ColorMuted),
@@ -443,11 +492,14 @@ func reasoningPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 	}.Render()
 }
 
-// turnPanel renders a user or assistant turn. When the turn is longer than
-// assistantPreviewLines and the transcript is not expanded, only the first
-// few lines are shown with a trailing count of hidden lines.
+// turnPanel renders a user or assistant turn. Assistant bodies are markdown,
+// rendered into pre-built rows so headings, lists, fences and tables keep
+// their layout and the LineMap stays intact; user and other roles stay plain
+// text. When the turn is longer than assistantPreviewLines and the transcript
+// is not expanded, only the first few lines are shown with a trailing count of
+// hidden lines.
 func turnPanel(msg Message, width int, expandAll bool) (string, LineMap) {
-	title, accent := "signet", lipgloss.TerminalColor(ColorTeal)
+	title, accent := "model", lipgloss.TerminalColor(ColorTeal)
 	if msg.Role == "user" {
 		title, accent = "user prompt", lipgloss.TerminalColor(ColorTealSoft)
 		if msg.Steering {
@@ -471,24 +523,33 @@ func turnPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 	if strings.TrimSpace(body) == "" && len(msg.ToolCalls) > 0 {
 		body = toolCallSummary(msg.ToolCalls, width)
 	}
-	var marker, hidden string
-	if !expandAll && !msg.Expanded {
-		body, marker, hidden = truncateBody(body, assistantPreviewLines)
-	}
 	if msg.Partial {
-		body = MutedStyle.Render(body)
 		title = MutedStyle.Render(title)
 	}
 
-	return Panel{
-		Title:  title,
-		Meta:   meta,
-		Body:   body,
-		Width:  width,
-		Accent: accent,
-		Marker: marker,
-		Hidden: hidden,
-	}.Render()
+	p := Panel{Title: title, Meta: meta, Width: width, Accent: accent}
+
+	if assistantMarkdown(msg) {
+		inner := max(width-4, 8)
+		md := RenderMarkdown(body, inner)
+		rows := md.Rows
+		if !expandAll && !msg.Expanded {
+			rows, _, _ = truncateMarkdown(body, md, assistantPreviewLines)
+		}
+		p.BodyRows = rows
+	} else {
+		var marker, hidden string
+		if !expandAll && !msg.Expanded {
+			body, marker, hidden = truncateBody(body, assistantPreviewLines)
+		}
+		if msg.Partial {
+			body = MutedStyle.Render(body)
+		}
+		p.Body = body
+		p.Marker = marker
+		p.Hidden = hidden
+	}
+	return p.Render()
 }
 
 // toolCallSummary renders a muted one-line substitute for an assistant turn
@@ -530,6 +591,32 @@ func truncateBody(body string, maxLines int) (out, marker, hidden string) {
 	hidden = strings.Join(lines[maxLines:], "\n")
 	marker = "… " + strconv.Itoa(len(lines)-maxLines) + " more lines"
 	return kept + "\n" + MutedStyle.Render(marker), marker, hidden
+}
+
+// truncateMarkdown keeps the first maxLines rendered rows of a markdown body
+// and appends a muted hint whose selection copies the raw markdown remainder.
+// The remainder is recovered from the source line the first dropped row came
+// from, so a fence or table that spans many source lines but few screen lines
+// truncates cleanly instead of cutting its raw lines mid-block.
+func truncateMarkdown(src string, md MD, maxLines int) (rows []Row, marker, hidden string) {
+	if maxLines < 1 || len(md.Rows) <= maxLines {
+		return md.Rows, "", ""
+	}
+	rows = md.Rows[:maxLines]
+	srcLines := strings.Split(src, "\n")
+	first := md.Src[maxLines]
+	if first > len(srcLines) {
+		first = len(srcLines)
+	}
+	hidden = strings.Join(srcLines[first:], "\n")
+	marker = "… " + strconv.Itoa(len(md.Rows)-maxLines) + " more lines"
+	rows = append(rows, Row{
+		Segs:        []Seg{NewSeg(marker, ColorMuted)},
+		MarkerCol:   0,
+		MarkerWidth: visibleLen(marker),
+		Hidden:      hidden,
+	})
+	return rows, marker, hidden
 }
 
 // toolRow renders one tool call as a flat row — tool activity is subordinate
@@ -948,30 +1035,6 @@ func toolResultIsError(name, content string) bool {
 		return true
 	}
 	return false
-}
-
-// systemRow renders a system notice as a dim, marked line. The "│ " marker
-// is two cells, so the selectable text starts at column 2.
-// The body is wrapped unstyled and styled one line at a time: wrapping
-// pre-styled text would leave escape bytes in SourceLine.Text, which
-// linemap.go:16-23 forbids and LineMap.Text would then slice as if they were
-// visible cells.
-func systemRow(content string, width int) (string, LineMap) {
-	body := strings.TrimRight(content, "\n")
-	marker := "│ "
-	wrapped := lipgloss.NewStyle().Width(max(width-visibleLen(marker), 8)).Render(body)
-
-	var rows []Row
-	for _, line := range strings.Split(wrapped, "\n") {
-		rows = append(rows, Row{
-			Gutter: visibleLen(marker),
-			Segs: []Seg{
-				NewSeg(marker, ColorMuted),
-				NewSeg(strings.TrimRight(line, " "), ColorMuted),
-			},
-		})
-	}
-	return renderRows(rows, width)
 }
 
 func statusStyle(status string) lipgloss.Style {

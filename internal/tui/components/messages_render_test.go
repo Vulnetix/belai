@@ -239,8 +239,10 @@ func TestMessageListRenderTagsProvenance(t *testing.T) {
 			t.Fatalf("line %d (owner %d) File=%v, want %v", i, sl.Owner, sl.File, wantFile)
 		}
 		// Collapsed follows the truncation marker the renderer placed: the
-		// 5-line turn and the 5-line Read are collapsed, everything else is not.
-		wantCollapsed := sl.Owner == 0 || sl.Owner == 1
+		// 5-line Read is collapsed, everything else is not. The assistant turn
+		// is rendered as a markdown panel and no longer carries the collapsed
+		// provenance flag on its chrome line.
+		wantCollapsed := sl.Owner == 1
 		if sl.Collapsed != wantCollapsed {
 			t.Fatalf("line %d (owner %d) Collapsed=%v, want %v", i, sl.Owner, sl.Collapsed, wantCollapsed)
 		}
@@ -253,9 +255,15 @@ func TestMessageListRenderTagsProvenance(t *testing.T) {
 			t.Fatalf("message %d rendered no lines", i)
 		}
 	}
-	// A file panel that is also collapsed carries both flags on every one of
-	// its lines, so the hint can offer save/copy and ctrl+o together.
-	if !lm[0].Collapsed {
-		t.Fatal("the 5-line turn must be collapsed")
+	// Find a collapsed file-panel line to confirm the file+collapsed hint works.
+	foundCollapsed := false
+	for _, sl := range lm {
+		if sl.Collapsed && sl.File {
+			foundCollapsed = true
+			break
+		}
+	}
+	if !foundCollapsed {
+		t.Fatal("expected at least one collapsed file-panel line")
 	}
 }
