@@ -202,63 +202,148 @@
   tool result withheld: provider error  … 1 more lines
 === system_short w=32
 ╭─ signet ─────────────────────╮
-│ retrying (2/3) after 800ms — │
-│ rate limited                 │
+│ · retrying (2/3) after 800ms │
+│   — rate limited             │
 ╰──────────────────────────────╯
 === system_short w=41
 ╭─ signet ──────────────────────────────╮
-│ retrying (2/3) after 800ms — rate     │
-│ limited                               │
+│ · retrying (2/3) after 800ms — rate   │
+│   limited                             │
 ╰───────────────────────────────────────╯
 === system_short w=53
 ╭─ signet ──────────────────────────────────────────╮
-│ retrying (2/3) after 800ms — rate limited         │
+│ · retrying (2/3) after 800ms — rate limited       │
 ╰───────────────────────────────────────────────────╯
 === system_short w=60
 ╭─ signet ─────────────────────────────────────────────────╮
-│ retrying (2/3) after 800ms — rate limited                │
+│ · retrying (2/3) after 800ms — rate limited              │
 ╰──────────────────────────────────────────────────────────╯
 === system_short w=80
 ╭─ signet ─────────────────────────────────────────────────────────────────────╮
-│ retrying (2/3) after 800ms — rate limited                                    │
+│ · retrying (2/3) after 800ms — rate limited                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 === system_short w=120
 ╭─ signet ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ retrying (2/3) after 800ms — rate limited                                                                            │
+│ · retrying (2/3) after 800ms — rate limited                                                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 === system_wrapping w=32
 ╭─ signet ─────────────────────╮
-│ a system notice long enough  │
-│ that it has to wrap onto a   │
-│ second and probably a third  │
-│ line at narrow widths        │
+│ · a system notice long       │
+│   enough that it has to wrap │
+│   onto a second and probably │
+│   a third line at narrow     │
+│   widths                     │
 ╰──────────────────────────────╯
 === system_wrapping w=41
 ╭─ signet ──────────────────────────────╮
-│ a system notice long enough that it   │
-│ has to wrap onto a second and         │
-│ probably a third line at narrow       │
-│ widths                                │
+│ · a system notice long enough that it │
+│   has to wrap onto a second and       │
+│   probably a third line at narrow     │
+│   widths                              │
 ╰───────────────────────────────────────╯
 === system_wrapping w=53
 ╭─ signet ──────────────────────────────────────────╮
-│ a system notice long enough that it has to wrap   │
-│ onto a second and probably a third line at narrow │
-│ widths                                            │
+│ · a system notice long enough that it has to wrap │
+│   onto a second and probably a third line at      │
+│   narrow widths                                   │
 ╰───────────────────────────────────────────────────╯
 === system_wrapping w=60
 ╭─ signet ─────────────────────────────────────────────────╮
-│ a system notice long enough that it has to wrap onto a   │
-│ second and probably a third line at narrow widths        │
+│ · a system notice long enough that it has to wrap onto a │
+│   second and probably a third line at narrow widths      │
 ╰──────────────────────────────────────────────────────────╯
 === system_wrapping w=80
 ╭─ signet ─────────────────────────────────────────────────────────────────────╮
-│ a system notice long enough that it has to wrap onto a second and probably a │
-│ third line at narrow widths                                                  │
+│ · a system notice long enough that it has to wrap onto a second and probably │
+│   a third line at narrow widths                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 === system_wrapping w=120
 ╭─ signet ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ a system notice long enough that it has to wrap onto a second and probably a third line at narrow widths             │
+│ · a system notice long enough that it has to wrap onto a second and probably a third line at narrow widths           │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+=== assistant_markdown w=32
+╭─ model ──────────────────────╮
+│ Title                        │
+│ • one                        │
+│ • two                        │
+│ ┌─┬─┐                        │
+│ … 5 more lines               │
+╰──────────────────────────────╯
+=== assistant_markdown w=41
+╭─ model ───────────────────────────────╮
+│ Title                                 │
+│ • one                                 │
+│ • two                                 │
+│ ┌─┬─┐                                 │
+│ … 5 more lines                        │
+╰───────────────────────────────────────╯
+=== assistant_markdown w=53
+╭─ model ───────────────────────────────────────────╮
+│ Title                                             │
+│ • one                                             │
+│ • two                                             │
+│ ┌─┬─┐                                             │
+│ … 5 more lines                                    │
+╰───────────────────────────────────────────────────╯
+=== assistant_markdown w=60
+╭─ model ──────────────────────────────────────────────────╮
+│ Title                                                    │
+│ • one                                                    │
+│ • two                                                    │
+│ ┌─┬─┐                                                    │
+│ … 5 more lines                                           │
+╰──────────────────────────────────────────────────────────╯
+=== assistant_markdown w=80
+╭─ model ──────────────────────────────────────────────────────────────────────╮
+│ Title                                                                        │
+│ • one                                                                        │
+│ • two                                                                        │
+│ ┌─┬─┐                                                                        │
+│ … 5 more lines                                                               │
+╰──────────────────────────────────────────────────────────────────────────────╯
+=== assistant_markdown w=120
+╭─ model ──────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Title                                                                                                                │
+│ • one                                                                                                                │
+│ • two                                                                                                                │
+│ ┌─┬─┐                                                                                                                │
+│ … 5 more lines                                                                                                       │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+=== signet_group w=32
+╭─ signet ─────────────────────╮
+│ · first notice               │
+│ · second notice              │
+│ · third notice               │
+╰──────────────────────────────╯
+=== signet_group w=41
+╭─ signet ──────────────────────────────╮
+│ · first notice                        │
+│ · second notice                       │
+│ · third notice                        │
+╰───────────────────────────────────────╯
+=== signet_group w=53
+╭─ signet ──────────────────────────────────────────╮
+│ · first notice                                    │
+│ · second notice                                   │
+│ · third notice                                    │
+╰───────────────────────────────────────────────────╯
+=== signet_group w=60
+╭─ signet ─────────────────────────────────────────────────╮
+│ · first notice                                           │
+│ · second notice                                          │
+│ · third notice                                           │
+╰──────────────────────────────────────────────────────────╯
+=== signet_group w=80
+╭─ signet ─────────────────────────────────────────────────────────────────────╮
+│ · first notice                                                               │
+│ · second notice                                                              │
+│ · third notice                                                               │
+╰──────────────────────────────────────────────────────────────────────────────╯
+=== signet_group w=120
+╭─ signet ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ · first notice                                                                                                       │
+│ · second notice                                                                                                      │
+│ · third notice                                                                                                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 === mixed w=32
 ╭─ user prompt ────────────────╮
@@ -267,11 +352,11 @@
 ╰──────────────────────────────╯
 
 ╭─ model ──────────────────────╮
-│ Plan:                        │
-│ 1. reproduce                 │
-│ 2. patch                     │
-│ 3. verify                    │
-│ … 3 more lines               │
+│ Plan                         │
+│ reproduce the failure first: │
+│ 1. patch                     │
+│ 2. verify                    │
+│ … 4 more lines               │
 ╰──────────────────────────────╯
 
 ╭─ model · reasoning ──────────╮
@@ -286,8 +371,9 @@
   fourth line
 
 ╭─ signet ─────────────────────╮
-│ retrying (2/3) after 800ms — │
-│ rate limited                 │
+│ · retrying (2/3) after 800ms │
+│   — rate limited             │
+│ · switched provider to mock  │
 ╰──────────────────────────────╯
 === mixed w=41
 ╭─ user prompt ─────────────────────────╮
@@ -296,11 +382,11 @@
 ╰───────────────────────────────────────╯
 
 ╭─ model ───────────────────────────────╮
-│ Plan:                                 │
-│ 1. reproduce                          │
-│ 2. patch                              │
-│ 3. verify                             │
-│ … 3 more lines                        │
+│ Plan                                  │
+│ reproduce the failure first:          │
+│ 1. patch                              │
+│ 2. verify                             │
+│ … 4 more lines                        │
 ╰───────────────────────────────────────╯
 
 ╭─ model · reasoning ───────────────────╮
@@ -314,8 +400,9 @@
   fourth line
 
 ╭─ signet ──────────────────────────────╮
-│ retrying (2/3) after 800ms — rate     │
-│ limited                               │
+│ · retrying (2/3) after 800ms — rate   │
+│   limited                             │
+│ · switched provider to mock           │
 ╰───────────────────────────────────────╯
 === mixed w=53
 ╭─ user prompt ─────────────────────────────────────╮
@@ -323,11 +410,11 @@
 ╰───────────────────────────────────────────────────╯
 
 ╭─ model ───────────────────────────────────────────╮
-│ Plan:                                             │
-│ 1. reproduce                                      │
-│ 2. patch                                          │
-│ 3. verify                                         │
-│ … 3 more lines                                    │
+│ Plan                                              │
+│ reproduce the failure first:                      │
+│ 1. patch                                          │
+│ 2. verify                                         │
+│ … 4 more lines                                    │
 ╰───────────────────────────────────────────────────╯
 
 ╭─ model · reasoning ───────────────────────────────╮
@@ -341,7 +428,8 @@
   fourth line
 
 ╭─ signet ──────────────────────────────────────────╮
-│ retrying (2/3) after 800ms — rate limited         │
+│ · retrying (2/3) after 800ms — rate limited       │
+│ · switched provider to mock                       │
 ╰───────────────────────────────────────────────────╯
 === mixed w=60
 ╭─ user prompt ────────────────────────────────────────────╮
@@ -349,11 +437,11 @@
 ╰──────────────────────────────────────────────────────────╯
 
 ╭─ model ──────────────────────────────────────────────────╮
-│ Plan:                                                    │
-│ 1. reproduce                                             │
-│ 2. patch                                                 │
-│ 3. verify                                                │
-│ … 3 more lines                                           │
+│ Plan                                                     │
+│ reproduce the failure first:                             │
+│ 1. patch                                                 │
+│ 2. verify                                                │
+│ … 4 more lines                                           │
 ╰──────────────────────────────────────────────────────────╯
 
 ╭─ model · reasoning ──────────────────────────────────────╮
@@ -367,7 +455,8 @@
   fourth line
 
 ╭─ signet ─────────────────────────────────────────────────╮
-│ retrying (2/3) after 800ms — rate limited                │
+│ · retrying (2/3) after 800ms — rate limited              │
+│ · switched provider to mock                              │
 ╰──────────────────────────────────────────────────────────╯
 === mixed w=80
 ╭─ user prompt ────────────────────────────────────────────────────────────────╮
@@ -375,11 +464,11 @@
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
 ╭─ model ──────────────────────────────────────────────────────────────────────╮
-│ Plan:                                                                        │
-│ 1. reproduce                                                                 │
-│ 2. patch                                                                     │
-│ 3. verify                                                                    │
-│ … 3 more lines                                                               │
+│ Plan                                                                         │
+│ reproduce the failure first:                                                 │
+│ 1. patch                                                                     │
+│ 2. verify                                                                    │
+│ … 4 more lines                                                               │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
 ╭─ model · reasoning ──────────────────────────────────────────────────────────╮
@@ -393,7 +482,8 @@
   fourth line
 
 ╭─ signet ─────────────────────────────────────────────────────────────────────╮
-│ retrying (2/3) after 800ms — rate limited                                    │
+│ · retrying (2/3) after 800ms — rate limited                                  │
+│ · switched provider to mock                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 === mixed w=120
 ╭─ user prompt ────────────────────────────────────────────────────────────────────────────────────────────────────────╮
@@ -401,11 +491,11 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 ╭─ model ──────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ Plan:                                                                                                                │
-│ 1. reproduce                                                                                                         │
-│ 2. patch                                                                                                             │
-│ 3. verify                                                                                                            │
-│ … 3 more lines                                                                                                       │
+│ Plan                                                                                                                 │
+│ reproduce the failure first:                                                                                         │
+│ 1. patch                                                                                                             │
+│ 2. verify                                                                                                            │
+│ … 4 more lines                                                                                                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 ╭─ model · reasoning ──────────────────────────────────────────────────────────────────────────────────────────────────╮
@@ -419,5 +509,6 @@
   fourth line
 
 ╭─ signet ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ retrying (2/3) after 800ms — rate limited                                                                            │
+│ · retrying (2/3) after 800ms — rate limited                                                                          │
+│ · switched provider to mock                                                                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

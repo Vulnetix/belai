@@ -11,10 +11,11 @@ import (
 	"github.com/muesli/termenv"
 )
 
-// goldenFixtures exercise every shape toolRow and systemRow can produce: a
-// short result, one long enough to wrap, an error body, a collapsed result
-// carrying a marker, an expanded one carrying none, a blank line in the middle
-// of a body, and a system notice.
+// goldenFixtures exercise every shape the transcript renderers can produce: a
+// short tool result, one long enough to wrap, an error body, a collapsed
+// result carrying a marker, an expanded one carrying none, a blank interior
+// line, a system notice, a markdown assistant turn, and a coalesced signet
+// group.
 func goldenFixtures() []struct {
 	name string
 	ml   MessageList
@@ -47,6 +48,12 @@ func goldenFixtures() []struct {
 			{Role: "system", Content: "retrying (2/3) after 800ms — rate limited"}}}},
 		{"system_wrapping", MessageList{Messages: []Message{
 			{Role: "system", Content: "a system notice long enough that it has to wrap onto a second and probably a third line at narrow widths"}}}},
+		{"assistant_markdown", MessageList{Messages: []Message{
+			{Role: "assistant", Content: "## Title\n\n- one\n- two\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```go\nfunc main() {}\n```"}}}},
+		{"signet_group", MessageList{Messages: []Message{
+			{Role: "system", Content: "first notice"},
+			{Role: "system", Content: "second notice"},
+			{Role: "system", Content: "third notice"}}}},
 		{"mixed", mixedTranscript()},
 	}
 }

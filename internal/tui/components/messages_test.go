@@ -581,8 +581,14 @@ func TestSignetPanelTruncatesLongGroup(t *testing.T) {
 	if hidden != "notice 6\nnotice 7" {
 		t.Fatalf("hidden = %q, want the two hidden notices", hidden)
 	}
-	if len(owners) != len(lm) {
-		t.Fatalf("owners %d != map %d", len(owners), len(lm))
+	nonChrome := 0
+	for _, sl := range lm {
+		if !sl.Chrome {
+			nonChrome++
+		}
+	}
+	if len(owners) != nonChrome {
+		t.Fatalf("owners %d != non-chrome body lines %d", len(owners), nonChrome)
 	}
 }
 

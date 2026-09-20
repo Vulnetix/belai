@@ -70,7 +70,6 @@ func TestParseInlineStrike(t *testing.T) {
 }
 
 func TestParseInlineLink(t *testing.T) {
-	t.Skip("markdown parser refactor: parseLink colour/Link marking pending")
 	segs := parseInline("[text](https://example.com)")
 	if len(segs) != 2 {
 		t.Fatalf("want text + url segs, got %d: %+v", len(segs), segs)
@@ -158,7 +157,6 @@ func segPlain(segs []Seg) string {
 }
 
 func TestWrapSegsNeverExceedsWidth(t *testing.T) {
-	t.Skip("markdown parser refactor: wrapSegs width enforcement pending")
 	segs := parseInline("a fairly long paragraph with several words in it")
 	for _, width := range []int{4, 7, 10, 15} {
 		for _, line := range wrapSegs(segs, width) {

@@ -124,3 +124,61 @@ func lastCol(lm LineMap) int {
 	sl := lm[len(lm)-2]
 	return sl.Col + sl.Width
 }
+
+// TestPanelBodyRowsProvenance pins the pre-built rows path: each row renders
+// at the inner width, its provenance columns shift by the bar, and a marker
+// carried by a row survives the shift.
+func TestPanelBodyRowsProvenance(t *testing.T) {
+	rows := []Row{
+		{Segs: []Seg{NewSeg("  ", nil), NewSeg("first", ColorCream)}, Gutter: 2},
+		{Segs: []Seg{NewSeg("  ", nil), NewSeg("second", nil)}, Gutter: 2},
+		{
+			Segs:        []Seg{NewSeg("… 1 more line", ColorMuted)},
+			MarkerCol:   0,
+			MarkerWidth: visibleLen("… 1 more line"),
+			Hidden:      "third",
+		},
+	}
+	p := Panel{Title: "t", BodyRows: rows, Width: 40}
+	rendered, lm := p.Render()
+
+	lines := strings.Split(rendered, "\n")
+	if len(lm) != len(lines) {
+		t.Fatalf("map %d != lines %d", len(lm), len(lines))
+	}
+	if !lm[0].Chrome || !lm[len(lm)-1].Chrome {
+		t.Fatal("top/bottom edges must be chrome")
+	}
+
+	// The first body row's text starts after the bar; its gutter stays intact.
+	first := lm[1]
+	if first.Chrome {
+		t.Fatalf("first body row must be selectable: %+v", first)
+	}
+	if got := ansi.Cut(ansi.Strip(lines[1]), first.Col, first.Col+first.Width); got != first.Text {
+		t.Fatalf("invariant violated: Cut=%q Text=%q", got, first.Text)
+	}
+	if first.Text != "first" {
+		t.Fatalf("first row Text = %q, want first (gutter excluded)", first.Text)
+	}
+	if first.Col != 2+2 {
+		t.Fatalf("first row Col = %d, want bar(2) + gutter(2)", first.Col)
+	}
+
+	// The marker row carries its hidden remainder through the bar shift.
+	var marker *SourceLine
+	for i := range lm {
+		if lm[i].MarkerWidth > 0 {
+			marker = &lm[i]
+		}
+	}
+	if marker == nil {
+		t.Fatal("marker row lost")
+	}
+	if marker.Hidden != "third" {
+		t.Fatalf("marker Hidden = %q", marker.Hidden)
+	}
+	if marker.MarkerCol != 2 {
+		t.Fatalf("marker shifted MarkerCol = %d, want 2", marker.MarkerCol)
+	}
+}

@@ -10,9 +10,10 @@ import (
 	"github.com/muesli/termenv"
 )
 
-// mixedTranscript covers every renderer: a user turn, a truncated assistant
-// turn (marker + hidden remainder), a reasoning panel, an errored multi-line
-// tool row (inline marker) and a system row.
+// mixedTranscript covers every renderer: a user turn, a truncated
+// markdown-heavy assistant turn (heading, emphasis, list, fence, marker +
+// hidden remainder), a reasoning panel, an errored multi-line tool row (inline
+// marker) and a coalesced pair of system notices.
 func mixedTranscript() MessageList {
 	return MessageList{
 		Width:         80,
@@ -20,11 +21,12 @@ func mixedTranscript() MessageList {
 		ShowTools:     true,
 		Messages: []Message{
 			{Role: "user", Content: "fix the failing test in the wire package"},
-			{Role: "assistant", Content: "Plan:\n1. reproduce\n2. patch\n3. verify\n4. ship\n5. tag\n6. announce"},
+			{Role: "assistant", Content: "## Plan\n\nreproduce the **failure** first:\n\n1. patch\n2. verify\n3. ship\n4. tag\n5. announce\n\n```go\nfunc main() {}\n```"},
 			{Role: "reasoning", Content: "thinking about the root cause here"},
 			{Role: "tool", ToolName: "Bash", ToolArgs: `{"command":"go test ./..."}`,
 				Content: "tool result withheld: provider error\nsecond line\nthird line\nfourth line", Status: "withheld"},
 			{Role: "system", Content: "retrying (2/3) after 800ms — rate limited"},
+			{Role: "system", Content: "switched provider to mock"},
 		},
 	}
 }
@@ -157,8 +159,9 @@ func TestMessageListCopyIsCleanEndToEnd(t *testing.T) {
 			t.Fatalf("full copy contains %q:\n%s", bad, full)
 		}
 	}
-	// The truncated assistant turn's hidden remainder must be expanded.
-	if !strings.Contains(full, "5. tag") || !strings.Contains(full, "6. announce") {
+	// The truncated assistant turn's hidden markdown remainder must be
+	// expanded: the raw source lines below the kept rows.
+	if !strings.Contains(full, "3. ship") || !strings.Contains(full, "4. tag") || !strings.Contains(full, "5. announce") {
 		t.Fatalf("hidden assistant lines not expanded:\n%s", full)
 	}
 	// The tool row's hidden remainder must be expanded, and its status word
