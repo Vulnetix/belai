@@ -38,6 +38,20 @@ func (lb *lockedBuffer) String() string {
 	return lb.b.String()
 }
 
+// waitFor polls cond until it returns true or timeout elapses, failing with
+// the captured PTY output on timeout.
+func waitFor(t *testing.T, out *lockedBuffer, timeout time.Duration, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("timed out after %s; captured output:\n%s", timeout, out.String())
+}
+
 // processMock records every chat request and scripts SAFE/AGENT classifier
 // answers so the TUI can start and the recovery subagent can run to exactly one
 // turn.
@@ -140,15 +154,44 @@ func TestProcessStartAndRecovery(t *testing.T) {
 		t.Fatalf("start signet: %v", err)
 	}
 
-	// Wait for the TUI to paint before typing.
+	// Wait for the TUI to render its first frame before typing: on a cold CI
+	// runner startup can outlive a fixed sleep, and input sent before the
+	// reader attaches can have its Enter consumed by a terminal query.
+	waitFor(t, out, 10*time.Second, func() bool {
+		return strings.Contains(out.String(), "\n")
+	})
+	// A short settle after the first output line lets the TUI finish
+	// installing its raw-mode input reader before we type.
 	time.Sleep(500 * time.Millisecond)
-	// Terminal raw mode expects a carriage return for the Enter key.
-	if _, err := pty.Write([]byte("!!false\r")); err != nil {
+
+	// Type the command; keep Enter separate so a dropped carriage return can
+	// be retried without retyping the command.
+	if _, err := pty.Write([]byte("!!false")); err != nil {
 		t.Fatalf("write input: %v", err)
 	}
+	if _, err := pty.Write([]byte("\r")); err != nil {
+		t.Fatalf("write enter: %v", err)
+	}
+
+	// Poll for the project process entry; retry Enter once after a grace
+	// period in case the first was consumed during startup.
+	procDir := filepath.Join(dir, ".vulnetix", "processes")
+	typed := time.Now()
+	retried := false
+	waitFor(t, out, 10*time.Second, func() bool {
+		entries, err := os.ReadDir(procDir)
+		if err == nil && len(entries) == 1 {
+			return true
+		}
+		if !retried && time.Since(typed) > 3*time.Second {
+			retried = true
+			_, _ = pty.Write([]byte("\r"))
+		}
+		return false
+	})
 
 	// Give the process time to exit and the recovery subagent to fire.
-	time.Sleep(4 * time.Second)
+	time.Sleep(3 * time.Second)
 
 	// Ctrl-D starts quit confirmation in the TUI; a second Ctrl-D confirms.
 	if _, err := pty.Write([]byte{0x04}); err != nil {
@@ -177,7 +220,6 @@ func TestProcessStartAndRecovery(t *testing.T) {
 	}
 
 	// The `!!false` command should have created a project process entry.
-	procDir := filepath.Join(dir, ".vulnetix", "processes")
 	entries, err := os.ReadDir(procDir)
 	if err != nil {
 		t.Logf("captured output:\n%s", out.String())
