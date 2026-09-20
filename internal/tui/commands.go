@@ -108,39 +108,8 @@ func NewRegistry(workdir string) *Registry {
 		a.addSystem("profile: " + p.Name)
 		return nil
 	})
-	r.Register("local-model", "assess, download, launch, or stop a local classifier model", func() []string {
-		return []string{"status", "launch", "download", "stop"}
-	}, func(a *App, arg string) tea.Cmd {
-		sub, flags := parseLocalModelArgs(arg)
-		switch sub {
-		case "", "report":
-			return a.localModelReportCmd(flags.repo)
-		case "status":
-			return a.localModelStatusCmd()
-		case "launch":
-			if flags.repo == "" {
-				a.addSystem("usage: /local-model launch <repo> [--port N] [--quant Q]")
-				return nil
-			}
-			return a.localModelLaunchCmd(flags.repo, flags.port, flags.quant)
-		case "download":
-			if flags.repo == "" {
-				a.addSystem("usage: /local-model download <repo> [--quant Q]")
-				return nil
-			}
-			return a.localModelDownloadCmd(flags.repo, flags.quant)
-		case "stop":
-			return a.localModelStopCmd(flags.port)
-		default:
-			a.addSystem("unknown /local-model subcommand: " + sub)
-			return nil
-		}
-	})
-	r.Register("model", "pick provider and model", nil, func(a *App, arg string) tea.Cmd {
+	r.Register("model", "pick provider and model for each role", nil, func(a *App, arg string) tea.Cmd {
 		return a.push(viewModel)
-	})
-	r.Register("classifier", "pick the role manager's classifier model", nil, func(a *App, arg string) tea.Cmd {
-		return a.push(viewClassifier)
 	})
 	r.Register("mode", "show or set operating mode", nil, func(a *App, arg string) tea.Cmd {
 		if arg != "" {
@@ -230,9 +199,6 @@ func NewRegistry(workdir string) *Registry {
 	})
 	r.Register("settings", "view and edit settings", nil, func(a *App, arg string) tea.Cmd {
 		return a.push(viewSettings)
-	})
-	r.Register("credentials", "manage provider credentials", nil, func(a *App, arg string) tea.Cmd {
-		return a.push(viewCredentials)
 	})
 	r.Register("providers", "manage providers, credentials and local models", func() []string {
 		return []string{"status", "launch", "download", "stop"}

@@ -168,7 +168,7 @@ and agent-less. The invariant holds for all eight builders:
 Three builders produce **prose** a human reads — the compaction summary, the
 session name, and the generated agent profile. Those three, and only those
 three, accept the caveman voice (`classifier.caveman` /
-`SIGNET_CLASSIFIER_CAVEMAN`, edited from `/classifier`). The voice always rides
+`SIGNET_CLASSIFIER_CAVEMAN`, edited from `/model`). The voice always rides
 with a structure guard telling the model to keep every required heading, path
 and identifier verbatim, because the replies are still parsed:
 `ValidateSummary` requires `## Goal`, `## Next Steps` and `## Critical Context`,

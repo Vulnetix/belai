@@ -342,26 +342,6 @@ func TestMaskedEditorHidesValue(t *testing.T) {
 	}
 }
 
-func TestSetCredentialClearsEditor(t *testing.T) {
-	a := New(Options{})
-	a.view = viewCredentials
-	a.credentialState.setMode = true
-	a.editor.Masked = true
-	a.editor.SetValue("secret")
-
-	m, _ := a.handleCredentialKey(tea.KeyMsg{Type: tea.KeyEnter})
-	a = m.(*App)
-	if a.credentialState.setMode {
-		t.Fatalf("expected setMode to be false")
-	}
-	if a.editor.Masked {
-		t.Fatalf("expected editor unmasked")
-	}
-	if a.editor.Value() != "" {
-		t.Fatalf("expected editor cleared")
-	}
-}
-
 func TestEnterWithoutCredentialsDoesNotCallProvider(t *testing.T) {
 	called := false
 	transport := &fatalTransport{t: t, called: &called}
@@ -506,26 +486,6 @@ func (f *fakeCredentialSource) Lookup(provider, field string) (value, origin str
 		return v, "fake", true
 	}
 	return "", "", false
-}
-
-func TestCredentialViewShowsProvenanceNotSecret(t *testing.T) {
-	a := New(Options{})
-	a.view = viewCredentials
-	a.credentialState.sets = map[string]credentials.Set{
-		"openai": {
-			Provider: "openai",
-			Values: map[string]credentials.Value{
-				"api_key": {Field: "api_key", Location: "keychain", Source: credentials.SourceKeychain, Secret: true},
-			},
-		},
-	}
-	view := a.credentialView()
-	if !strings.Contains(view, "keychain") {
-		t.Fatalf("view should contain 'keychain'")
-	}
-	if strings.Contains(view, "sk-secret") {
-		t.Fatalf("view should not contain the secret")
-	}
 }
 
 func TestAssistantTurnsAccumulate(t *testing.T) {
@@ -1007,36 +967,6 @@ func TestChromeHeightMatchesRenderedView(t *testing.T) {
 	}
 }
 
-func TestCredentialViewSetsEnvReference(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
-	workdir := t.TempDir()
-	resolver, err := credentials.NewResolver(workdir)
-	if err != nil {
-		t.Fatalf("NewResolver: %v", err)
-	}
-	a := New(Options{Workdir: workdir, Resolver: resolver})
-	a.view = viewCredentials
-	a.credentialState.selectedIdx = indexOfString(a.credentialState.providers, "openai")
-	a.credentialState.backend = credentials.SourceUserFile
-	a.credentialState.envMode = true
-	a.editor.SetValue("MY_KEY")
-
-	m, _ := a.handleCredentialKey(tea.KeyMsg{Type: tea.KeyEnter})
-	a = m.(*App)
-	if a.credentialState.envMode {
-		t.Fatal("envMode should be cleared after enter")
-	}
-
-	t.Setenv("MY_KEY", "secret")
-	v, origin, ok := resolver.Lookup("openai", "api_key")
-	if !ok || v != "secret" {
-		t.Fatalf("lookup = %q, %q, %v; want secret via env ref", v, origin, ok)
-	}
-	if origin != "$MY_KEY" {
-		t.Fatalf("origin = %q, want $MY_KEY", origin)
-	}
-}
-
 func TestBuildTurnsPreservesToolMetadata(t *testing.T) {
 	a := New(Options{})
 	a.messages = []components.Message{
@@ -1296,7 +1226,7 @@ func TestLibraryRankedBeforeHistory(t *testing.T) {
 // on the next refresh, which pinned the cycle to one entry.
 func TestAutocompleteTabCyclesWithoutTouchingThePrompt(t *testing.T) {
 	a := New(Options{})
-	a.editor.SetValue("/c")
+	a.editor.SetValue("/p")
 	a.refreshAutocomplete()
 	want := a.autocomplete
 	if len(want) < 3 {
@@ -1309,7 +1239,7 @@ func TestAutocompleteTabCyclesWithoutTouchingThePrompt(t *testing.T) {
 		if !ok || got != want[i] {
 			t.Fatalf("tab %d: selection = %q (ok=%v), want %q", i+1, got, ok, want[i])
 		}
-		if a.editor.Value() != "/c" {
+		if a.editor.Value() != "/p" {
 			t.Fatalf("tab %d: prompt = %q, want it untouched", i+1, a.editor.Value())
 		}
 		if !slices.Equal(a.autocomplete, want) {

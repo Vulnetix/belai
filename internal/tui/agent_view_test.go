@@ -15,6 +15,8 @@ import (
 	"github.com/vulnetix/signet/internal/agentprofile"
 )
 
+func boolPtr(b bool) *bool { return &b }
+
 func writeAgentProfile(t *testing.T, name string, p agentprofile.AgentProfile) {
 	t.Helper()
 	if p.Name == "" {

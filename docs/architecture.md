@@ -32,7 +32,7 @@ chain: default < state < global < project < env < flag):
 
 Flags `-classifier-provider`, `-classifier-model`, `-classifier-effort`, and
 env vars `SIGNET_CLASSIFIER_PROVIDER/MODEL/EFFORT/CAVEMAN` set the same fields.
-The whole block is also editable from the TUI's `/classifier` page (see
+The whole block is also editable from the TUI's `/model` page (see
 "Classifier picker").
 
 Business rules:
@@ -143,7 +143,7 @@ Both `ollama` and `llama-server` are local providers that need no API key.
 and `llama-server` speaks a llama-server / llama.cpp OpenAI-compatible endpoint
 (default `http://localhost:8080/v1`). Each resolves from a single `base_url`
 environment variable (`OLLAMA_HOST` and `SIGNET_LLAMA_HOST` respectively) or
-from individually-managed host, port, and protocol fields in `/credentials`.
+from individually-managed host, port, and protocol fields in `/providers`.
 
 ## Modes
 
@@ -991,7 +991,7 @@ When `~/.signet` exists and `~/.vulnetix/signet` does not, `config.Migrate()`
 moves the directory on first startup. A cross-filesystem fallback copies
 recursively and leaves a `.migrated` marker; nothing is deleted.
 
-The TUI credential manager (`/credentials`) shows provenance for every field,
+The TUI credential manager (`/providers`) shows provenance for every field,
 accepts `s` to set a value, `e` to set an env reference, `c` to clear, `b` to
 cycle the write backend, and `i` to open the import screen. The default write
 backend is the keychain when available, otherwise the user file with an
@@ -1010,7 +1010,7 @@ is ignored unless the global settings opt in with
 ### Discovery
 
 `internal/agentscan` is read-only credential discovery. It runs only on an
-explicit key press (`i` inside `/credentials`), never at startup. It opens a
+explicit key press (`i` inside `/providers`), never at startup. It opens a
 fixed list of paths for Pi, Codex, Claude Code, Goose, OpenCode, Copilot,
 Gemini, Qwen, Crush, and Aider, caps every read at 1 MiB, honours
 `XDG_CONFIG_HOME`/`XDG_DATA_HOME`, never follows symlinks out of home, and
@@ -1902,9 +1902,9 @@ Business rules:
 - **An empty catalogue** renders `no models in this profile — type or import a
   model id` instead of a list, and the counter line is omitted with it.
 - **Only available providers are offered.** The tab strip lists providers whose
-  credentials resolve, never the full built-in list — `/credentials` is where
+  credentials resolve, never the full built-in list — `/providers` is where
   every provider stays browsable and configurable. `g` opens the classifier
-  picker; `c` opens `/credentials` **matched by name**, because the two lists
+  picker; `c` opens `/providers` **matched by name**, because the two lists
   no longer share indices.
 
 #### Provider availability
@@ -1936,7 +1936,7 @@ Business rules:
   indexes into this slice, so an empty one would be a panic and a dead end.
 - **Canonical order is preserved.** The filtered list is a subsequence of
   `providerNames()`, which is what keeps the tab strip, the cursor and the
-  by-name `/credentials` jump consistent.
+  by-name `/providers` jump consistent.
 - **Caching.** One probe fills the cache; it is re-run when older than 30s, and
   never twice concurrently (an in-flight guard). Any credential mutation —
   store, clear, or import — invalidates it through `refreshCredentials`, and
@@ -1946,7 +1946,7 @@ Business rules:
 
 ### Classifier picker
 
-`/classifier` (also `g` from `/model`) is the only screen that edits the
+`/model` (also `g` from `/model`) is the only screen that edits the
 `classifier` settings block: provider, model, reasoning, effort, and caveman.
 It opens with a standing warning that the classifier is the security gate for
 tool output, because choosing a weaker model here weakens detection everywhere.
@@ -2067,16 +2067,14 @@ Provider-specific edge cases:
 | Command | Description |
 | ------- | ----------- |
 | `/profile` | Switch agent profile |
-| `/local-model` | Assess, download, launch, or stop a local classifier model |
-| `/model` | Pick provider and model |
-| `/classifier` | Pick the role manager's classifier provider, model, reasoning, effort and caveman |
+| `/providers` | Manage providers, credentials and local model servers |
+| `/model` | Pick provider and model for the agent and classifier roles |
 | `/mode` | Show or set operating mode (e.g. `/mode plan`) |
 | `/todos` | Show plan progress |
 | `/execute` | Leave plan mode and execute the plan |
 | `/refine` | Refine the extracted plan |
 | `/vulnetix` | Vulnetix code review and firewall (`review`, `configure`, `list`, `status`, `firewall`, `help`) |
 | `/settings` | View and edit settings |
-| `/credentials` | Manage provider credentials |
 | `/permissions` | Edit tool permissions |
 | `/help` | Show the commands and every keyboard shortcut |
 | `/clear` | Start a new session |
@@ -2088,13 +2086,13 @@ Provider-specific edge cases:
 The table is the whole set registered by `internal/tui.NewRegistry`. Two
 aliases exist but are not table rows: `/new` is a visible alias of `/clear`
 (`RegisterAlias`, appears in `Names()` and autocomplete), and `/provider` is a
-hidden alias of `/model` (`RegisterHiddenAlias`, dispatchable but absent from
-`Names()` and autocomplete).
+hidden alias of `/providers` (`RegisterHiddenAlias`, dispatchable but absent
+from `Names()` and autocomplete).
 
 ### Startup credential message
 
 When the selected provider is unconfigured but other providers are, the TUI
-points the user at `/model` instead of claiming the selected provider's
+points the user at `/providers` instead of claiming the selected provider's
 credentials are missing. When nothing is configured, it says so clearly.
 
 ### Context accounting
@@ -2162,13 +2160,13 @@ still apply); plan mode keeps `Bash` read-only regardless of `read_only`.
 ## Local inference
 
 Local inference is served by `llama-server` from llama.cpp. Signet treats the
-local server as a first-class provider: `/local-model launch <repo>` allocates a
+local server as a first-class provider: `/providers launch <repo>` allocates a
 port, downloads the GGUF through the Hugging Face CLI when it is present (or
 lets `llama-server` fetch it when the CLI is absent), launches the server,
 health-checks `GET {base}/v1/models`, persists host/port/protocol under the
 `llama-server` credential, registers the process in the activity registry, and
-lands on `/credentials` with `llama-server` selected. From there `/model` and
-`/classifier` list the provider once availability re-probes.
+lands on `/providers` with `llama-server` selected. From there `/model` and `/providers`
+list the provider once availability re-probes.
 
 Port allocation order is: an explicit `--port N` argument; the persisted
 `llama-server:port` credential if that port is free or already serving a local
@@ -2207,14 +2205,14 @@ Supporting pieces:
   `…/v1`), so appending unconditionally probed `/v1/v1/models` — a path no
   server serves, which made both the already-running probe and `Launch`'s
   health check fail.
-- The provider-availability filter behind `/model` and `/classifier` uses the
+- The provider-availability filter behind `/model` and `/providers` uses the
   same probe: a configured-but-unreachable local provider is hidden from the
-  pickers while staying visible in `/credentials`.
-- The TUI exposes this through `/local-model` (report), `/local-model status`
-  (running servers and persisted port), `/local-model launch <repo>
+  pickers while staying visible in `/providers`.
+- The TUI exposes this through `/providers` (report), `/providers status`
+  (running servers and persisted port), `/providers launch <repo>
   [--port N] [--quant Q]` (download/launch/persist/land on credentials),
-  `/local-model download <repo> [--quant Q]` (download with `hf`), and
-  `/local-model stop [--port N]` (graceful stop via the activity registry).
+  `/providers download <repo> [--quant Q]` (download with `hf`), and
+  `/providers stop [--port N]` (graceful stop via the activity registry).
   Quitting the TUI stops every managed `llama-server`.
 
 ## Performance

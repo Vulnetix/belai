@@ -159,15 +159,15 @@ func TestImportNotImportableRowCannotBeChosen(t *testing.T) {
 	}
 }
 
-func TestImportEscReturnsToCredentials(t *testing.T) {
+func TestImportEscReturnsToProviders(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	a := New(Options{})
-	a.push(viewCredentials)
+	a.push(viewProviders)
 	a.push(viewImport)
 	m, _ := a.handleImportKey(tea.KeyMsg{Type: tea.KeyEsc})
 	a = m.(*App)
-	if a.view != viewCredentials {
-		t.Fatalf("view = %v, want viewCredentials", a.view)
+	if a.view != viewProviders {
+		t.Fatalf("view = %v, want viewProviders", a.view)
 	}
 }

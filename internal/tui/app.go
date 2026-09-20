@@ -306,7 +306,6 @@ type App struct {
 	// view state
 	view                   viewState
 	viewStack              []viewState
-	credentialState        credentialViewState
 	providersState         providersViewState
 	providerDetailState    providerDetailViewState
 	settingsState          settingsViewState
@@ -316,7 +315,6 @@ type App struct {
 	clarifyState           clarifyViewState
 	permAskState           permissionAskViewState
 	agentState             agentViewState
-	classifierState        classifierViewState
 	planReview             planReviewState
 	resumeState            resumeViewState
 	vulnetixConfigState    vulnetixConfigState
@@ -772,7 +770,6 @@ func New(opts Options) *App {
 		a.messages = append(a.messages, components.Message{Role: "user", Content: opts.Prompt})
 	}
 
-	a.initCredentialState()
 	a.refreshFooter()
 
 	if opts.ResumeSession != "" {
@@ -3721,7 +3718,6 @@ func (a *App) handleCredentialsResolved(m credentialsResolvedMsg) tea.Cmd {
 		a.showCredentialMessage(m.cfg.Provider, a.resolver)
 	}
 	a.invalidateAvailability()
-	a.setCredentialBackendDefault()
 	a.refreshFooter()
 	// Warm the live catalogue in the background: the footer's context meter
 	// scales to the selected model's context window, which most providers
@@ -4349,15 +4345,8 @@ func (a *App) localModelLaunchCmd(repo, portArg, quant string) tea.Cmd {
 		}
 		a.invalidateAvailability()
 
-		// Land on the credential view with llama-server selected.
-		a.initCredentialState()
-		for i, p := range a.credentialState.providers {
-			if p == "llama-server" {
-				a.credentialState.selectedIdx = i
-				break
-			}
-		}
-		return a.push(viewCredentials)()
+		// Land on the providers view so the running server is visible.
+		return a.push(viewProviders)()
 	}
 }
 
@@ -4461,9 +4450,6 @@ func (a *App) persistLocalServerCredentials(port int) error {
 		return nil
 	}
 	backend := credentials.SourceUserFile
-	if a.credentialState.backend != "" {
-		backend = a.credentialState.backend
-	}
 	if err := a.resolver.Store("llama-server", "host", "127.0.0.1", backend); err != nil {
 		return err
 	}

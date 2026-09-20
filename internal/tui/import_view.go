@@ -37,7 +37,7 @@ type importRow struct {
 
 func (a *App) enterImport() tea.Cmd {
 	a.importState = importViewState{
-		backend: a.credentialState.backend,
+		backend: credentials.SourceUserFile,
 		scope:   config.ScopeGlobal,
 		rows:    a.importRows(),
 		scanned: true,

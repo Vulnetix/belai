@@ -229,10 +229,10 @@ agent-profile designer. Sentinel payloads are never voiced: their replies are
 matched exactly, so a voice rewrite would break the parse. It is independent of
 the agent's own `caveman` setting.
 
-In the TUI the whole `classifier` block is editable from `/classifier` (also
-reachable with `g` from `/model`), which writes to the global or project
-settings file — never to session state, because which model guards tool output
-is a decision that stays visible and provenanced.
+In the TUI the whole `classifier` block is editable from `/model` (the second
+role row), which writes to the global or project settings file — never to
+session state, because which model guards tool output is a decision that stays
+visible and provenanced.
 
 Every non-TUI entry point (`-prompt`, `-agent`, `-agent-create`) runs under a
 `signal.NotifyContext` root. Goal mode's pass loop is unbounded by design, and
@@ -295,8 +295,8 @@ Provider selection order: the `-provider` flag, then `$SIGNET_PROVIDER`, then `$
 Credentials resolve in this order, first hit wins:
 
 1. environment
-2. project file — `.vulnetix/signet/credentials.json` in the working directory
-3. user file — `~/.vulnetix/signet/credentials.json`
+2. project file — `.vulnetix/signet/providers.json` in the working directory
+3. user file — `~/.vulnetix/signet/providers.json`
 4. `~/.netrc`
 5. host keychain
 
@@ -308,10 +308,19 @@ Credentials resolve in this order, first hit wins:
 | `cloudflare-ai-gateway` | `CF_AIG_TOKEN`, `CF_ACCOUNT_ID` (or `CLOUDFLARE_ACCOUNT_ID`). Optional: `CF_AIG_URL` to override the default base URL. |
 | `openrouter` | `OPENROUTER_API_KEY` |
 | `google-gemini` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` |
-| `ollama` | none (local; honours `OLLAMA_HOST`, or host/port/protocol managed in `/credentials`) |
-| `llama-server` | none (local; honours `SIGNET_LLAMA_HOST/PATH/PROTOCOL` or host/port/protocol managed in `/credentials`) |
+| `ollama` | none (local; honours `OLLAMA_HOST`, or host/port/protocol managed in `/providers`) |
+| `llama-server` | none (local; honours `SIGNET_LLAMA_HOST/PATH/PROTOCOL` or host/port/protocol managed in `/providers`) |
 | `github-copilot` | `GITHUB_COPILOT_TOKEN` or `GH_TOKEN` (exchanged for a session token) |
 | `huggingface` | `HF_TOKEN` or `HUGGINGFACE_TOKEN` |
+| `groq` | `GROQ_API_KEY` |
+| `deepseek` | `DEEPSEEK_API_KEY` |
+| `fireworks` | `FIREWORKS_API_KEY` |
+| `mistral` | `MISTRAL_API_KEY` |
+| `together` | `TOGETHER_API_KEY` |
+| `xai` | `XAI_API_KEY` |
+| `moonshot` | `MOONSHOT_API_KEY`; optional `base_url` for `.cn` |
+| `minimax` | `MINIMAX_API_KEY`; optional `base_url` for `.cn` |
+| `alibaba` | `DASHSCOPE_API_KEY` or `ALIBABA_API_KEY` |
 
 For a throwaway QA shell, export into the environment so nothing is written to disk:
 
@@ -320,7 +329,11 @@ export CLOUDFLARE_API_KEY=… CLOUDFLARE_ACCOUNT_ID=…
 just ask cloudflare-workers-ai '@cf/moonshotai/kimi-k2.6' "what model is this"
 ```
 
-Inside the TUI, `/credentials` manages stored credentials and shows which backend each value came from. Its keys are `s` set value, `e` set env reference, `c` clear, `b` cycle backend, `i` import, and `esc` back.
+Inside the TUI, `/providers` manages providers, stored credentials and local
+model servers. Its detail tabs expose the credentials keys (`s` set value, `e`
+set env reference, `c` clear, `b` cycle backend), the model list (`r`
+refetch), and the local-server controls (`d` download, `l` launch, `x` stop, `p`
+probe). `esc` returns to the provider master list.
 
 ## QA checklist
 
@@ -357,7 +370,7 @@ just detect-mode "add a retry to the HTTP client"   # agent
 just detect-mode "how does the nonce sealing work"  # plan
 ```
 
-**TUI smoke test.** `just tui`, then exercise slash-command autocomplete (`/p` → `/permissions`, `/profile`), `/credentials`, `/settings`, `/permissions`, `/help`, `/model`, `/compact`, `/clear`, `/rename`, `/agent list`, `/local-model`, and streaming output. Confirm `shift+tab` cycles the mode chip, `ctrl+d` quits, `ctrl+c` copies the prompt (native or OSC 52), and `esc` escapes every full-screen view — including permissions back to settings. On a provider with a long model catalogue, confirm the `/model` list is windowed (chrome stays visible, `↓ N more` marks the overflow) and that `/` narrows the list by substring while `esc` clears the filter. Press `r` on providers with live model lists (`anthropic`, `openrouter`, `huggingface`, etc.) to force a refresh; for `openai` the list is a conservative static catalog and `r` should not surface a fetch error, while `cloudflare-ai-gateway` refreshes from the Workers AI model-search API. In the Ask prompt, confirm Enter echoes the prompt into the transcript as a `user prompt` instantly, that the composer shows the filled `role manager` pill with a `pre-prompt processing` caption while the classifier runs and a plain `working` label only for model/tool I/O, and that Enter while a turn is running queues a `user steering` message. In plan mode with no `@references`, confirm three explore chips appear in the footer, tool rows stream in tagged `explore 1..3`, the composer reads `exploring N/3 · <task>` with a live spinner, `f8` focuses the strip, `←`/`→` cycle, `⏎` filters the transcript to one subagent (and `main` restores), `x` cancels a running chip and dismisses a finished one, and `esc` returns focus to the composer. In `/settings`, confirm the **read-only tools** toggle renders `off` by default, that `space` flips it on and persists it to the scoped settings file, and that `x` clears it. Confirm the **caveman** toggle also shows `off` by default and that `f2` from the chat view flips it on, emits a `caveman: on` system message, and immediately updates the footer indicator; a second press returns it to `off`. Confirm `/settings` shows the two resilience rows **max_agents** and **plan_explore**: setting `max_agents: 1` makes chips 2 and 3 show `queued` and start only as slots free, and setting `plan_explore: false` makes plan mode go straight to planning with no chips and no clarify. In `/permissions` with no rules, confirm the empty state reads "every tool call is allowed" and that a `Read x` preview shows the allowed-by-default wording (or blocked when `preferences.yaml` sets `permission_no_match: enforce`). In `/model`, confirm the provider tabs list only providers whose credentials resolve — with a local server stopped, `ollama` and `llama-server` drop out of `/model` but stay in `/credentials`, and a committed-but-unavailable provider stays on screen with an amber chip and an `unavailable` note rather than disappearing. Press `g` (or run `/classifier`) and confirm the classifier page opens with the security warning, that the **reasoning** toggle greys the effort row and writes `classifier.effort: none`, that toggling it back restores the previous effort, that `space` on **model** opens a picker over the classifier's own provider catalogue, that **caveman** persists and is labelled *prose payloads only*, and that `x` on every row removes the `classifier` block entirely so the classifier follows the main model again.
+**TUI smoke test.** `just tui`, then exercise slash-command autocomplete (`/p` → `/permissions`, `/profile`), `/providers`, `/settings`, `/permissions`, `/help`, `/model`, `/compact`, `/clear`, `/rename`, `/agent list`, `/providers`, and streaming output. Confirm `shift+tab` cycles the mode chip, `ctrl+d` quits, `ctrl+c` copies the prompt (native or OSC 52), and `esc` escapes every full-screen view — including permissions back to settings. On a provider with a long model catalogue, confirm the `/model` list is windowed (chrome stays visible, `↓ N more` marks the overflow) and that `/` narrows the list by substring while `esc` clears the filter. Press `r` on providers with live model lists (`anthropic`, `openrouter`, `huggingface`, etc.) to force a refresh; for `openai` the list is a conservative static catalog and `r` should not surface a fetch error, while `cloudflare-ai-gateway` refreshes from the Workers AI model-search API. In the Ask prompt, confirm Enter echoes the prompt into the transcript as a `user prompt` instantly, that the composer shows the filled `role manager` pill with a `pre-prompt processing` caption while the classifier runs and a plain `working` label only for model/tool I/O, and that Enter while a turn is running queues a `user steering` message. In plan mode with no `@references`, confirm three explore chips appear in the footer, tool rows stream in tagged `explore 1..3`, the composer reads `exploring N/3 · <task>` with a live spinner, `f8` focuses the strip, `←`/`→` cycle, `⏎` filters the transcript to one subagent (and `main` restores), `x` cancels a running chip and dismisses a finished one, and `esc` returns focus to the composer. In `/settings`, confirm the **read-only tools** toggle renders `off` by default, that `space` flips it on and persists it to the scoped settings file, and that `x` clears it. Confirm the **caveman** toggle also shows `off` by default and that `f2` from the chat view flips it on, emits a `caveman: on` system message, and immediately updates the footer indicator; a second press returns it to `off`. Confirm `/settings` shows the two resilience rows **max_agents** and **plan_explore**: setting `max_agents: 1` makes chips 2 and 3 show `queued` and start only as slots free, and setting `plan_explore: false` makes plan mode go straight to planning with no chips and no clarify. In `/permissions` with no rules, confirm the empty state reads "every tool call is allowed" and that a `Read x` preview shows the allowed-by-default wording (or blocked when `preferences.yaml` sets `permission_no_match: enforce`). In `/model`, confirm the provider tabs list only providers whose credentials resolve — with a local server stopped, `ollama` and `llama-server` drop out of `/model` but stay in `/providers`, and a committed-but-unavailable provider stays on screen with an amber chip and an `unavailable` note rather than disappearing. Confirm the classifier page opens with the security warning, that the **reasoning** toggle greys the effort row and writes `classifier.effort: none`, that toggling it back restores the previous effort, that `space` on **model** opens a picker over the classifier's own provider catalogue, that **caveman** persists and is labelled *prose payloads only*, and that `x` on every row removes the `classifier` block entirely so the classifier follows the main model again.
 
 **Operator toggles.** These live on the function-key row precisely because
 `ctrl+alt+<key>` never reaches the TUI (see the Keybindings section of

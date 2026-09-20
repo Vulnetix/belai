@@ -9,7 +9,6 @@ type viewState int
 
 const (
 	viewChat viewState = iota
-	viewCredentials
 	viewProviders
 	viewProviderDetail
 	viewSettings
@@ -19,7 +18,6 @@ const (
 	viewAgent
 	viewClarify
 	viewPermissionAsk
-	viewClassifier
 	viewPlanReview
 	viewResume
 	viewResumeCompact
@@ -43,7 +41,6 @@ type viewHandler struct {
 var viewHandlers = map[viewState]viewHandler{}
 
 func init() {
-	viewHandlers[viewCredentials] = viewHandler{name: "credentials", key: (*App).handleCredentialKey, render: (*App).credentialView}
 	viewHandlers[viewProviders] = viewHandler{name: "providers", key: (*App).handleProvidersKey, render: (*App).providersView}
 	viewHandlers[viewProviderDetail] = viewHandler{name: "provider-detail", key: (*App).handleProviderDetailKey, render: (*App).providerDetailView}
 	viewHandlers[viewSettings] = viewHandler{name: "settings", key: (*App).handleSettingsKey, render: (*App).settingsView}
@@ -53,7 +50,6 @@ func init() {
 	viewHandlers[viewAgent] = viewHandler{name: "agent", enter: (*App).enterAgentView, key: (*App).handleAgentKey, render: (*App).agentView}
 	viewHandlers[viewClarify] = viewHandler{name: "clarify", key: (*App).handleClarifyKey, render: (*App).clarifyView}
 	viewHandlers[viewPermissionAsk] = viewHandler{name: "permission-ask", key: (*App).handlePermissionAskKey, render: (*App).permissionAskView}
-	viewHandlers[viewClassifier] = viewHandler{name: "classifier", enter: (*App).enterClassifier, key: (*App).handleClassifierKey, render: (*App).classifierView}
 	viewHandlers[viewPlanReview] = viewHandler{name: "plan-review", enter: (*App).enterPlanReview, key: (*App).handlePlanReviewKey, render: (*App).planReviewView}
 	viewHandlers[viewResume] = viewHandler{name: "resume", enter: (*App).enterResume, key: (*App).handleResumeKey, render: (*App).resumeView}
 	viewHandlers[viewResumeCompact] = viewHandler{name: "resume-compact", key: (*App).handleResumeCompactKey, render: (*App).resumeCompactView}

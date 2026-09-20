@@ -17,40 +17,54 @@ import (
 	"github.com/vulnetix/signet/internal/tui/components"
 )
 
-// modelViewState tracks the /model picker UI.
-type modelViewState struct {
-	providerIdx int
-	modelIdx    int // index into the FILTERED catalogue
-	effortIdx   int
-	scope       string // session | global | project
-	errorMsg    string
+// modelRole selects which role is being edited on the /model screen.
+type modelRole string
 
-	filtering bool   // search box has focus
-	filter    string // active substring filter
-	scroll    int    // first visible row of the filtered catalogue
+const (
+	roleAgent      modelRole = "agent"
+	roleClassifier modelRole = "classifier"
+)
+
+// modelViewState tracks the /model role screen.
+type modelViewState struct {
+	selected int // row within modelRows()
+	rows     []modelRow
+
+	agentScope      string // session | global | project
+	classifierScope string // global | project
+
+	// classifierLastEffort preserves the effort chip across reasoning off/on.
+	classifierLastEffort string
+
+	// sub-picker state, shared by agent and classifier model rows.
+	picking     bool
+	pickingRole modelRole
+	modelIdx    int
+	filter      string
+	filtering   bool
+	scroll      int
+
+	errorMsg string
 }
 
 func (a *App) enterModel() tea.Cmd {
-	providers := a.modelProviders()
-	pidx := indexOfString(providers, a.cfg.Provider)
-	if pidx < 0 {
-		pidx = 0
+	agentScope := a.modelState.agentScope
+	if agentScope == "" {
+		agentScope = "session"
 	}
-	catalog := a.catalogFor(providers[pidx])
-	midx := indexOfModel(catalog, a.cfg.Model)
-	if midx < 0 {
-		midx = 0
+	clsScope := a.modelState.classifierScope
+	if clsScope == "" {
+		clsScope = "project"
 	}
-	efforts := modelEfforts(catalog, midx)
-	eidx := indexOfString(efforts, a.settings.Effort)
-	if eidx < 0 {
-		eidx = indexOfString(efforts, "medium")
+	last := a.modelState.classifierLastEffort
+	if cls := a.settings.Classifier; cls != nil && reasoningEffort(cls.Effort) {
+		last = cls.Effort
 	}
-	if eidx < 0 {
-		eidx = 0
+	if last == "" {
+		last = "medium"
 	}
-	a.modelState = modelViewState{providerIdx: pidx, modelIdx: midx, effortIdx: eidx, scope: "project"}
-	return tea.Batch(a.fetchCatalogCmd(providers[pidx]), a.availabilityCmdIfStale())
+	a.modelState = modelViewState{agentScope: agentScope, classifierScope: clsScope, classifierLastEffort: last}
+	return tea.Batch(a.fetchCatalogCmd(a.cfg.Provider), a.availabilityCmdIfStale())
 }
 
 // modelsFetchedMsg carries the result of an async live-catalogue fetch.
@@ -241,13 +255,6 @@ func (a *App) modelProviders() []string {
 	return a.availableProviders(a.cfg.Provider)
 }
 
-func (a *App) modelCatalog() (string, []models.Model) {
-	providers := a.modelProviders()
-	pidx := clampIdx(a.modelState.providerIdx, len(providers))
-	name := providers[pidx]
-	return name, filterModels(a.catalogFor(name), a.modelState.filter)
-}
-
 // windowStart clamps off so the cursor stays inside a rows-tall window over n
 // items. rows >= n means everything fits and the window starts at 0; when the
 // cursor is above the window the window jumps up to it, and when it is below
@@ -292,346 +299,409 @@ func (a *App) modelSearchLine() string {
 	}
 }
 
-// modelHelpBar returns the picker's key bar, swapping to the filter box's own
-// keys while the box has focus.
-func (a *App) modelHelpBar() string {
-	if a.modelState.filtering {
-		return components.HelpBar("type", "filter", "↑↓", "model", "enter", "accept", "esc", "clear")
+// modelRow is one editable row belonging to a role.
+type modelRow struct {
+	role modelRole
+	settingsRow
+}
+
+var defaultModelEfforts = []string{"low", "medium", "high"}
+
+// modelRows builds the declarative row table for both roles.
+func (a *App) modelRows() []modelRow {
+	origin := a.eff.Origin
+	var rows []modelRow
+
+	// Agent role.
+	rows = append(rows, modelRow{roleAgent, settingsRow{
+		key: "provider", label: "provider", kind: "choose",
+		opts: a.modelProviders(), value: a.cfg.Provider,
+		src: sourceLabel(origin["provider"]),
+	}})
+	rows = append(rows, modelRow{roleAgent, settingsRow{
+		key: "model", label: "model", kind: "pick",
+		value: a.cfg.Model, src: sourceLabel(origin["model"]),
+	}})
+	rows = append(rows, modelRow{roleAgent, settingsRow{
+		key: "effort", label: "effort", kind: "choose",
+		opts: a.agentEffortOpts(), value: a.cfg.Effort,
+		src: sourceLabel(origin["effort"]),
+	}})
+	rows = append(rows, modelRow{roleAgent, settingsRow{
+		key: "scope", label: "scope", kind: "choose",
+		opts:  []string{"session", "global", "project"},
+		value: a.modelState.agentScope,
+	}})
+
+	// Classifier role.
+	cls := a.settings.Classifier
+	src := sourceLabel(origin["classifier"])
+	providerVal := fmt.Sprintf("— (main: %s)", a.cfg.Provider)
+	if cls != nil && cls.Provider != "" {
+		providerVal = cls.Provider
 	}
-	return components.HelpBar(
-		"←→", "provider", "↑↓", "model", "/", "filter",
-		"e", "effort", "s", "scope", "c", "credentials",
-		"g", "classifier", "enter", "set", "esc", "cancel")
+	modelVal := fmt.Sprintf("— (main: %s)", a.cfg.Model)
+	if cls != nil && cls.Model != "" {
+		modelVal = cls.Model
+	}
+	on := cls != nil && reasoningEffort(cls.Effort)
+	effortVal := "none (reasoning off)"
+	if on {
+		effortVal = cls.Effort
+	}
+	cavemanVal := boolLabel(a.settings.ClassifierCavemanEnabled()) + "  (prose payloads only)"
+	var chunkVal string
+	{
+		c := a.settings.Classifier.Chunk
+		chunkVal = fmt.Sprintf("%s ×%d", humanizeBytes(c.MaxBytesOr()), c.ConcurrencyOr())
+	}
+	clsScope := a.modelState.classifierScope
+	if clsScope == "" {
+		clsScope = "project"
+	}
+
+	rows = append(rows, modelRow{roleClassifier, settingsRow{
+		key: "provider", label: "provider", kind: "choose",
+		opts: a.classifierProviders(), value: providerVal, src: src,
+	}})
+	rows = append(rows, modelRow{roleClassifier, settingsRow{
+		key: "model", label: "model", kind: "pick",
+		value: modelVal, src: src,
+	}})
+	rows = append(rows, modelRow{roleClassifier, settingsRow{
+		key: "reasoning", label: "reasoning", kind: "toggle",
+		value: boolLabel(on), src: src,
+	}})
+	rows = append(rows, modelRow{roleClassifier, settingsRow{
+		key: "effort", label: "effort", kind: "choose",
+		opts: a.classifierEffortOpts(), value: effortVal, src: src,
+		disabled: !on,
+	}})
+	rows = append(rows, modelRow{roleClassifier, settingsRow{
+		key: "caveman", label: "caveman", kind: "toggle",
+		value: cavemanVal, src: src,
+	}})
+	rows = append(rows, modelRow{roleClassifier, settingsRow{
+		key: "chunk", label: "chunk", kind: "text",
+		value: chunkVal, src: src,
+	}})
+	rows = append(rows, modelRow{roleClassifier, settingsRow{
+		key: "scope", label: "scope", kind: "choose",
+		opts:  []string{"global", "project"},
+		value: clsScope,
+	}})
+
+	return rows
+}
+
+func safeRow(rows []modelRow, i int) modelRow {
+	if i < 0 || i >= len(rows) {
+		return modelRow{roleAgent, settingsRow{key: "", kind: "text"}}
+	}
+	return rows[i]
 }
 
 func (a *App) modelView() string {
-	providers := a.modelProviders()
-	pidx := clampIdx(a.modelState.providerIdx, len(providers))
-	name, catalog := a.modelCatalog()
-	midx := clampIdx(a.modelState.modelIdx, len(catalog))
-	efforts := modelEfforts(catalog, midx)
-	eidx := clampIdx(a.modelState.effortIdx, len(efforts))
-
 	w := a.contentWidth()
+	rows := a.modelRows()
+	a.modelState.rows = rows
+	row := safeRow(rows, a.modelState.selected)
 
-	// Pre-list chrome: section header, provider tabs, search line.
-	var head strings.Builder
-	head.WriteString(components.SectionHeader("Model & Provider", "esc cancel", w))
+	var b strings.Builder
+	b.WriteString(components.SectionHeader("Model Roles", "esc back", w))
+	b.WriteString(components.WarnStyle.Render(
+		"! the classifier is the security gate for tool output; a weaker model means weaker detection") + "\n\n")
 
-	// A provider is in this list either because it is available or because it
-	// is the committed one; the amber chip marks the second case so an
-	// unusable pinned provider is visible rather than silently broken.
-	var tabs []string
-	var unavailable []string
-	for i, name := range providers {
-		usable := a.providerAvailable(name)
-		if !usable {
-			unavailable = append(unavailable, name)
-		}
-		switch {
-		case i == pidx && usable:
-			tabs = append(tabs, components.Chip(name, components.ColorTeal))
-		case i == pidx:
-			tabs = append(tabs, components.Chip(name, components.ColorAmber))
-		default:
-			tabs = append(tabs, components.MutedStyle.Render(" "+name+" "))
-		}
+	scope := a.modelState.agentScope
+	if row.role == roleClassifier {
+		scope = a.modelState.classifierScope
 	}
-	head.WriteString(strings.Join(tabs, " ") + "\n")
-	switch {
-	case a.avail.note != "":
-		head.WriteString(components.MutedStyle.Render(a.avail.note) + "\n")
-	case len(unavailable) > 0:
-		head.WriteString(components.WarnStyle.Render(
-			"! "+strings.Join(unavailable, ", ")+" unavailable — press c to configure credentials") + "\n")
-	}
-	head.WriteString("\n")
-	head.WriteString(a.modelSearchLine() + "\n")
-
-	// Post-list chrome: effort, scope, error and the help bar. The counter/
-	// overflow line is rendered below the list as metaLine, outside this chunk.
-	var tail strings.Builder
-	tail.WriteString("\n" + components.MutedStyle.Render("effort  "))
-	if len(efforts) == 0 {
-		tail.WriteString(components.MutedStyle.Render("unavailable (custom provider)") + "\n")
-	} else {
-		var chips []string
-		for i, e := range efforts {
-			if i == eidx {
-				chips = append(chips, components.Chip(e, components.ColorTealSoft))
-				continue
-			}
-			chips = append(chips, components.MutedStyle.Render(" "+e+" "))
-		}
-		tail.WriteString(strings.Join(chips, " ") + "\n")
-	}
-	tail.WriteString(components.MutedStyle.Render("scope   ") +
-		components.Chip(a.modelState.scope, components.ColorAmber) + "\n")
-
-	if a.modelState.errorMsg != "" {
-		tail.WriteString("\n" + components.DangerStyle.Render("✗ "+a.modelState.errorMsg) + "\n")
-	}
-	if errMsg := a.catalogErr[name]; errMsg != "" {
-		tail.WriteString("\n" + components.DangerStyle.Render("✗ fetch: "+errMsg) + "\n")
-	}
-	tail.WriteString("\n" + a.modelHelpBar() + "\n")
-
-	// Available list rows are measured, not guessed, so chrome never scrolls
-	// off screen. Without a WindowSizeMsg yet (height 0) fall back to 10 rows,
-	// mirroring contentWidth's narrow-terminal guard.
-	const fallbackRows = 10
-	rows := fallbackRows
-	if a.height > 0 {
-		rows = a.height - lipgloss.Height(head.String()) - lipgloss.Height(tail.String()) - 2 // Padding(1) top+bottom
-	}
-	if rows < 3 {
-		rows = 3
-	}
-
-	// The windowed list, plus the counter/overflow affordance under it.
-	var body strings.Builder
-	metaLine := ""
-	switch {
-	case a.catalogLoading[name]:
-		if url := a.catalogURLs[name]; url != "" {
-			body.WriteString(components.AccentStyle.Render("  ○ Fetching models from GET "+url+"…") + "\n")
+	if scope == "" {
+		if row.role == roleAgent {
+			scope = "session"
 		} else {
-			body.WriteString(components.AccentStyle.Render("  ○ Fetching models…") + "\n")
+			scope = "project"
 		}
-	case len(catalog) == 0:
-		body.WriteString(components.MutedStyle.Render("  no models in this profile — type or import a model id") + "\n")
-	default:
-		a.modelState.scroll = windowStart(a.modelState.scroll, midx, len(catalog), rows)
-		start := a.modelState.scroll
-		end := start + rows
-		if end > len(catalog) {
-			end = len(catalog)
+	}
+	path := config.ProjectSettingsPath(a.workdir)
+	if scope == "global" {
+		if p, _ := config.GlobalSettingsPath(); p != "" {
+			path = p
 		}
-		for i := start; i < end; i++ {
-			m := catalog[i]
-			selected := i == midx
-			id := m.ID
-			if selected {
-				id = components.EmphStyle.Render(id)
-			}
-			line := components.Cursor(selected) + id
-			if m.ID == a.cfg.Model && name == a.cfg.Provider {
-				line += components.AccentStyle.Render("  ● current")
-			}
-			body.WriteString(line + "\n")
-		}
+	} else if scope == "session" {
+		path = "(session only)"
+	}
+	b.WriteString(components.Chip(scope, components.ColorTealSoft) +
+		"  " + components.MutedStyle.Render(path) + "\n\n")
 
-		var meta []string
-		if a.modelState.scroll > 0 {
-			meta = append(meta, fmt.Sprintf("↑ %d more", a.modelState.scroll))
-		}
-		if end < len(catalog) {
-			meta = append(meta, fmt.Sprintf("↓ %d more", len(catalog)-end))
-		}
-		counter := fmt.Sprintf("%d/%d", midx+1, len(catalog))
-		if a.modelState.filter != "" {
-			counter += fmt.Sprintf(" (of %d)", len(a.catalogFor(name)))
-		}
-		meta = append(meta, counter)
-		metaLine = components.MutedStyle.Render("  "+strings.Join(meta, "  ·  ")) + "\n"
+	if a.modelState.picking {
+		b.WriteString(a.modelPicker())
+		return lipgloss.NewStyle().Padding(1).Render(b.String())
 	}
 
-	return lipgloss.NewStyle().Padding(1).Render(head.String() + body.String() + metaLine + tail.String())
+	for i, r := range rows {
+		selected := i == a.modelState.selected
+		label := fmt.Sprintf("%-12s", r.label)
+		value := fmt.Sprintf("%-40s ", r.value)
+		switch {
+		case r.disabled:
+			label = components.MutedStyle.Render(label)
+			value = components.MutedStyle.Render(value)
+		case selected:
+			label = components.AccentStyle.Bold(true).Render(label)
+			value = components.EmphStyle.Render(value)
+		default:
+			label = components.MutedStyle.Render(label)
+		}
+		b.WriteString(components.Cursor(selected) + label + value +
+			components.MutedStyle.Render(r.src) + "\n")
+	}
+
+	if a.avail.note != "" {
+		b.WriteString("\n" + components.MutedStyle.Render(a.avail.note) + "\n")
+	}
+	if a.modelState.errorMsg != "" {
+		b.WriteString("\n" + components.DangerStyle.Render("✗ "+a.modelState.errorMsg) + "\n")
+	}
+	b.WriteString("\n" + components.HelpBar(
+		"↑↓", "move", "⏎", "edit", "s", "scope", "x", "unset", "p", "providers", "esc", "back") + "\n")
+	return lipgloss.NewStyle().Padding(1).Render(b.String())
+}
+
+// modelPicker renders the embedded model sub-picker.
+func (a *App) modelPicker() string {
+	name, catalog := a.modelPickerCatalog()
+	var b strings.Builder
+	b.WriteString(components.MutedStyle.Render("model for ") + components.Chip(name, components.ColorTeal) + "\n")
+	b.WriteString(a.modelSearchLine() + "\n")
+
+	const rows = 10
+	if len(catalog) == 0 {
+		b.WriteString("\n" + components.MutedStyle.Render("  no catalogue for this provider — esc to cancel") + "\n")
+	} else {
+		midx := clampIdx(a.modelState.modelIdx, len(catalog))
+		start := windowStart(a.modelState.scroll, midx, len(catalog), rows)
+		a.modelState.scroll = start
+		end := min(start+rows, len(catalog))
+		for i := start; i < end; i++ {
+			selected := i == midx
+			line := fmt.Sprintf("%-40s", catalog[i].ID)
+			if selected {
+				line = components.EmphStyle.Render(line)
+			} else {
+				line = components.MutedStyle.Render(line)
+			}
+			b.WriteString(components.Cursor(selected) + line + "\n")
+		}
+		b.WriteString(components.MutedStyle.Render(fmt.Sprintf("  %d/%d", midx+1, len(catalog))) + "\n")
+	}
+
+	if a.modelState.filtering {
+		b.WriteString("\n" + components.HelpBar("type", "filter", "enter", "accept", "esc", "clear") + "\n")
+	} else {
+		b.WriteString("\n" + components.HelpBar("↑↓", "model", "/", "filter", "enter", "set", "esc", "cancel") + "\n")
+	}
+	return b.String()
+}
+
+func (a *App) modelPickerCatalog() (string, []models.Model) {
+	var name string
+	switch a.modelState.pickingRole {
+	case roleAgent:
+		name = a.cfg.Provider
+		if name == "" {
+			if providers := a.modelProviders(); len(providers) > 0 {
+				name = providers[0]
+			}
+		}
+	case roleClassifier:
+		name = a.classifierProvider()
+	}
+	if name == "" {
+		return name, nil
+	}
+	return name, filterModels(a.catalogFor(name), a.modelState.filter)
 }
 
 func (a *App) handleModelKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if a.modelState.filtering {
-		return a.handleModelFilterKey(m)
+	if a.modelState.picking {
+		return a.handleModelPickerKey(m)
 	}
+	rows := a.modelRows()
+	a.modelState.rows = rows
+
 	switch m.String() {
 	case "esc":
-		if a.modelState.filter != "" {
-			a.modelState.filter = ""
-			a.modelState.modelIdx = 0
-			a.modelState.scroll = 0
-			return a, nil
-		}
 		a.pop()
 		return a, nil
-	case "left", "h":
-		providers := a.modelProviders()
-		a.modelState.providerIdx = (a.modelState.providerIdx - 1 + len(providers)) % len(providers)
-		a.modelState.modelIdx = 0
-		a.modelState.effortIdx = 0
-		a.modelState.scroll = 0
-		a.modelState.filter = ""
-		return a, a.fetchCatalogCmd(providers[a.modelState.providerIdx])
-	case "right", "l":
-		providers := a.modelProviders()
-		a.modelState.providerIdx = (a.modelState.providerIdx + 1) % len(providers)
-		a.modelState.modelIdx = 0
-		a.modelState.effortIdx = 0
-		a.modelState.scroll = 0
-		a.modelState.filter = ""
-		return a, a.fetchCatalogCmd(providers[a.modelState.providerIdx])
-	case "/":
-		a.modelState.filtering = true
-		return a, nil
 	case "up", "k":
-		_, cat := a.modelCatalog()
-		if a.modelState.modelIdx > 0 {
-			a.modelState.modelIdx--
-		} else if len(cat) > 0 {
-			a.modelState.modelIdx = len(cat) - 1
+		if a.modelState.selected > 0 {
+			a.modelState.selected--
 		}
-		a.modelState.effortIdx = 0
 		return a, nil
 	case "down", "j":
-		_, cat := a.modelCatalog()
-		if len(cat) > 0 && a.modelState.modelIdx < len(cat)-1 {
-			a.modelState.modelIdx++
-		} else {
-			a.modelState.modelIdx = 0
+		if a.modelState.selected < len(rows)-1 {
+			a.modelState.selected++
 		}
-		a.modelState.effortIdx = 0
 		return a, nil
-	case "e":
-		_, cat := a.modelCatalog()
-		efforts := modelEfforts(cat, a.modelState.modelIdx)
-		if len(efforts) == 0 {
-			return a, nil
-		}
-		a.modelState.effortIdx = (a.modelState.effortIdx + 1) % len(efforts)
-		return a, nil
+	case "p":
+		return a, a.push(viewProviders)
 	case "s":
-		switch a.modelState.scope {
-		case "session":
-			a.modelState.scope = "global"
-		case "global":
-			a.modelState.scope = "project"
-		case "project":
-			a.modelState.scope = "session"
-		}
-		return a, nil
-	case "r":
-		name, _ := a.modelCatalog()
-		delete(a.catalogCache, name)
-		delete(a.catalogErr, name)
-		return a, tea.Batch(a.fetchCatalogCmd(name), a.probeAvailabilityCmd())
-	case "c":
-		// Match by name, not by index: /credentials lists every provider
-		// while this picker lists only the available ones, so the two
-		// positions no longer correspond.
-		name, _ := a.modelCatalog()
-		if i := indexOfString(a.credentialState.providers, name); i >= 0 {
-			a.credentialState.selectedIdx = i
-		}
-		return a, a.push(viewCredentials)
-	case "g":
-		return a, a.push(viewClassifier)
-	case "enter":
-		return a, a.commitModel()
-	}
-
-	cmd := a.editor.Update(m)
-	return a, cmd
-}
-
-// handleModelFilterKey runs the search box's sub-mode. Named keys leave or
-// steer the box; runes, space and backspace accumulate into the filter the way
-// handleHistoryKey does — without the shared editor, which is a 3-line
-// textarea and would eat three rows. Runes are matched by message type so the
-// vim keys stay typeable inside the box instead of moving the cursor.
-func (a *App) handleModelFilterKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch m.Type {
-	case tea.KeyEsc:
-		a.modelState.filtering = false
-		a.modelState.filter = ""
-		a.modelState.modelIdx = 0
-		a.modelState.scroll = 0
-		return a, nil
-	case tea.KeyEnter:
-		a.modelState.filtering = false
-		return a, nil
-	case tea.KeyUp:
-		_, cat := a.modelCatalog()
-		if a.modelState.modelIdx > 0 {
-			a.modelState.modelIdx--
-		} else if len(cat) > 0 {
-			a.modelState.modelIdx = len(cat) - 1
-		}
-		a.modelState.effortIdx = 0
-		return a, nil
-	case tea.KeyDown:
-		_, cat := a.modelCatalog()
-		if len(cat) > 0 && a.modelState.modelIdx < len(cat)-1 {
-			a.modelState.modelIdx++
-		} else {
-			a.modelState.modelIdx = 0
-		}
-		a.modelState.effortIdx = 0
-		return a, nil
-	case tea.KeyRunes:
-		a.modelState.filter += string(m.Runes)
-		a.modelState.modelIdx = 0
-		a.modelState.scroll = 0
-		return a, nil
-	case tea.KeySpace:
-		a.modelState.filter += " "
-		a.modelState.modelIdx = 0
-		a.modelState.scroll = 0
-		return a, nil
-	case tea.KeyBackspace:
-		a.modelState.filter = trimLastRune(a.modelState.filter)
-		a.modelState.modelIdx = 0
-		a.modelState.scroll = 0
-		return a, nil
+		return a, a.cycleScope()
+	case "x":
+		return a, a.unsetModelRow()
+	case " ", "enter":
+		return a, a.changeModelRow()
 	}
 	return a, nil
 }
 
-func (a *App) commitModel() tea.Cmd {
-	p, catalog := a.modelCatalog()
-	midx := clampIdx(a.modelState.modelIdx, len(catalog))
-
-	var model string
-	if len(catalog) == 0 {
-		model = a.cfg.Model
-	} else {
-		model = catalog[midx].ID
-	}
-	efforts := modelEfforts(catalog, midx)
-	eidx := clampIdx(a.modelState.effortIdx, len(efforts))
-	effort := ""
-	if len(efforts) > 0 {
-		effort = efforts[eidx]
-	}
-
-	if a.modelState.scope == "session" {
-		a.state.Model = model
-		a.state.Provider = p
-		a.state.Effort = effort
-		_ = config.SaveState(a.state)
-		a.settings.Provider = p
-		a.settings.Model = model
-		a.settings.Effort = effort
-	} else {
-		scope := config.ScopeProject
-		if a.modelState.scope == "global" {
-			scope = config.ScopeGlobal
+func (a *App) handleModelPickerKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if a.modelState.filtering {
+		switch m.Type {
+		case tea.KeyEsc:
+			a.modelState.filtering = false
+			a.modelState.filter = ""
+			a.modelState.modelIdx = 0
+			a.modelState.scroll = 0
+		case tea.KeyEnter:
+			a.modelState.filtering = false
+		case tea.KeyRunes:
+			a.modelState.filter += string(m.Runes)
+			a.modelState.modelIdx = 0
+			a.modelState.scroll = 0
+		case tea.KeySpace:
+			a.modelState.filter += " "
+			a.modelState.modelIdx = 0
+			a.modelState.scroll = 0
+		case tea.KeyBackspace:
+			a.modelState.filter = trimLastRune(a.modelState.filter)
+			a.modelState.modelIdx = 0
+			a.modelState.scroll = 0
 		}
-		if err := config.Mutate(scope, a.workdir, func(s *config.Settings) error {
-			s.Provider = p
-			s.Model = model
-			s.Effort = effort
-			return nil
-		}); err != nil {
-			a.modelState.errorMsg = err.Error()
-			return nil
-		}
-		if err := a.reloadSettings(); err != nil {
-			a.modelState.errorMsg = err.Error()
-			return nil
-		}
+		return a, nil
 	}
 
-	a.pop()
-	return a.applyModelProvider(p, model, effort)
+	_, catalog := a.modelPickerCatalog()
+	switch m.String() {
+	case "esc":
+		a.modelState.picking = false
+		a.modelState.filter = ""
+		return a, nil
+	case "/":
+		a.modelState.filtering = true
+		return a, nil
+	case "up", "k":
+		if a.modelState.modelIdx > 0 {
+			a.modelState.modelIdx--
+		} else if len(catalog) > 0 {
+			a.modelState.modelIdx = len(catalog) - 1
+		}
+		return a, nil
+	case "down", "j":
+		if len(catalog) > 0 && a.modelState.modelIdx < len(catalog)-1 {
+			a.modelState.modelIdx++
+		} else {
+			a.modelState.modelIdx = 0
+		}
+		return a, nil
+	case " ", "enter":
+		if len(catalog) == 0 {
+			a.modelState.picking = false
+			return a, nil
+		}
+		id := catalog[clampIdx(a.modelState.modelIdx, len(catalog))].ID
+		a.modelState.picking = false
+		a.modelState.filter = ""
+		switch a.modelState.pickingRole {
+		case roleAgent:
+			return a, a.mutateAgent(func(s *config.Settings) { s.Model = id }, func() { a.cfg.Model = id })
+		case roleClassifier:
+			return a, a.mutateClassifier(func(c *config.ClassifierSettings) { c.Model = id })
+		}
+	}
+	return a, nil
+}
+
+func (a *App) cycleScope() tea.Cmd {
+	row := safeRow(a.modelState.rows, a.modelState.selected)
+	opts := row.opts
+	if len(opts) == 0 {
+		return nil
+	}
+	var cur string
+	switch row.role {
+	case roleAgent:
+		cur = a.modelState.agentScope
+	case roleClassifier:
+		cur = a.modelState.classifierScope
+	}
+	next := opts[(indexOfString(opts, cur)+1)%len(opts)]
+	switch row.role {
+	case roleAgent:
+		a.modelState.agentScope = next
+	case roleClassifier:
+		a.modelState.classifierScope = next
+	}
+	return nil
+}
+
+func (a *App) changeModelRow() tea.Cmd {
+	row := safeRow(a.modelState.rows, a.modelState.selected)
+	if row.disabled {
+		return nil
+	}
+	switch row.key {
+	case "provider":
+		if row.role == roleAgent {
+			return a.cycleAgentProvider(row.opts)
+		}
+		return a.cycleClassifierProvider(row.opts)
+	case "model":
+		if row.role == roleAgent {
+			return a.openAgentModelPicker()
+		}
+		return a.openClassifierModelPicker()
+	case "effort":
+		if row.role == roleAgent {
+			return a.cycleAgentEffort(row.opts)
+		}
+		return a.cycleClassifierEffort(row.opts)
+	case "reasoning":
+		return a.toggleClassifierReasoning()
+	case "caveman":
+		on := !a.settings.ClassifierCavemanEnabled()
+		return a.mutateClassifier(func(c *config.ClassifierSettings) { c.Caveman = &on })
+	case "scope":
+		return a.cycleScope()
+	}
+	return nil
+}
+
+func (a *App) unsetModelRow() tea.Cmd {
+	row := safeRow(a.modelState.rows, a.modelState.selected)
+	switch row.role {
+	case roleAgent:
+		switch row.key {
+		case "model":
+			return a.mutateAgent(func(s *config.Settings) { s.Model = "" }, func() { a.cfg.Model = "" })
+		case "effort":
+			return a.mutateAgent(func(s *config.Settings) { s.Effort = "" }, func() { a.cfg.Effort = "" })
+		case "provider":
+			return a.mutateAgent(func(s *config.Settings) {
+				s.Provider = ""
+				s.Model = ""
+				s.Effort = ""
+			}, func() {
+				a.cfg.Provider = ""
+				a.cfg.Model = ""
+				a.cfg.Effort = ""
+			})
+		}
+	case roleClassifier:
+		return a.unsetClassifierRow(row.key)
+	}
+	return nil
 }
 
 // applyModelProvider commits a provider/model/effort to the running session
@@ -690,4 +760,250 @@ func trimLastRune(s string) string {
 		return s
 	}
 	return string(r[:len(r)-1])
+}
+
+// reasoningEffort reports whether an effort string means reasoning is on.
+// ResolveClassifier treats both "" and "none" as off.
+func reasoningEffort(effort string) bool {
+	e := strings.ToLower(strings.TrimSpace(effort))
+	return e != "" && e != "none"
+}
+
+// classifierProvider is the provider the classifier actually uses: its own
+// when set, the main one otherwise.
+func (a *App) classifierProvider() string {
+	if cls := a.settings.Classifier; cls != nil && cls.Provider != "" {
+		return cls.Provider
+	}
+	return a.cfg.Provider
+}
+
+// classifierModel is the model the classifier actually uses.
+func (a *App) classifierModel() string {
+	if cls := a.settings.Classifier; cls != nil && cls.Model != "" {
+		return cls.Model
+	}
+	return a.cfg.Model
+}
+
+// classifierProviders are the providers the classifier page may offer.
+func (a *App) classifierProviders() []string {
+	var pinned string
+	if cls := a.settings.Classifier; cls != nil {
+		pinned = cls.Provider
+	}
+	return a.availableProviders(a.cfg.Provider, pinned)
+}
+
+// classifierEffortOpts returns the effort chips for the classifier's model.
+func (a *App) classifierEffortOpts() []string {
+	catalog := a.catalogFor(a.classifierProvider())
+	if efforts := modelEfforts(catalog, indexOfModel(catalog, a.classifierModel())); len(efforts) > 0 {
+		return efforts
+	}
+	return defaultModelEfforts
+}
+
+// agentEffortOpts returns the effort chips for the agent's model.
+func (a *App) agentEffortOpts() []string {
+	catalog := a.catalogFor(a.cfg.Provider)
+	if efforts := modelEfforts(catalog, indexOfModel(catalog, a.cfg.Model)); len(efforts) > 0 {
+		return efforts
+	}
+	return defaultModelEfforts
+}
+
+func (a *App) openAgentModelPicker() tea.Cmd {
+	a.modelState.picking = true
+	a.modelState.pickingRole = roleAgent
+	name := a.cfg.Provider
+	if name == "" {
+		if providers := a.modelProviders(); len(providers) > 0 {
+			name = providers[0]
+		}
+	}
+	a.modelState.filter = ""
+	a.modelState.filtering = false
+	a.modelState.scroll = 0
+	a.modelState.modelIdx = indexOfModel(a.catalogFor(name), a.cfg.Model)
+	return a.fetchCatalogCmd(name)
+}
+
+func (a *App) openClassifierModelPicker() tea.Cmd {
+	name := a.classifierProvider()
+	a.modelState.picking = true
+	a.modelState.pickingRole = roleClassifier
+	a.modelState.filter = ""
+	a.modelState.filtering = false
+	a.modelState.scroll = 0
+	a.modelState.modelIdx = indexOfModel(a.catalogFor(name), a.classifierModel())
+	return a.fetchCatalogCmd(name)
+}
+
+func (a *App) cycleAgentProvider(opts []string) tea.Cmd {
+	ring := append([]string{""}, opts...)
+	cur := a.cfg.Provider
+	next := ring[(indexOfString(ring, cur)+1)%len(ring)]
+	return a.mutateAgent(func(s *config.Settings) {
+		s.Provider = next
+		s.Model = ""
+	}, func() {
+		a.cfg.Provider = next
+		a.cfg.Model = ""
+	})
+}
+
+func (a *App) cycleAgentEffort(opts []string) tea.Cmd {
+	if len(opts) == 0 {
+		return nil
+	}
+	cur := a.cfg.Effort
+	next := opts[(indexOfString(opts, cur)+1)%len(opts)]
+	return a.mutateAgent(func(s *config.Settings) { s.Effort = next }, func() { a.cfg.Effort = next })
+}
+
+func (a *App) cycleClassifierProvider(opts []string) tea.Cmd {
+	cur := ""
+	if cls := a.settings.Classifier; cls != nil {
+		cur = cls.Provider
+	}
+	ring := append([]string{""}, opts...)
+	next := ring[(indexOfString(ring, cur)+1)%len(ring)]
+	return a.mutateClassifier(func(c *config.ClassifierSettings) {
+		c.Provider = next
+		c.Model = ""
+	})
+}
+
+func (a *App) cycleClassifierEffort(opts []string) tea.Cmd {
+	if len(opts) == 0 {
+		return nil
+	}
+	cur := ""
+	if cls := a.settings.Classifier; cls != nil {
+		cur = cls.Effort
+	}
+	next := opts[(indexOfString(opts, cur)+1)%len(opts)]
+	a.modelState.classifierLastEffort = next
+	return a.mutateClassifier(func(c *config.ClassifierSettings) { c.Effort = next })
+}
+
+// toggleClassifierReasoning drives the effort field: off stores "none", on
+// restores the remembered chip.
+func (a *App) toggleClassifierReasoning() tea.Cmd {
+	cls := a.settings.Classifier
+	if cls != nil && reasoningEffort(cls.Effort) {
+		a.modelState.classifierLastEffort = cls.Effort
+		return a.mutateClassifier(func(c *config.ClassifierSettings) { c.Effort = "none" })
+	}
+	restore := a.modelState.classifierLastEffort
+	if !reasoningEffort(restore) {
+		opts := a.classifierEffortOpts()
+		restore = opts[0]
+	}
+	return a.mutateClassifier(func(c *config.ClassifierSettings) { c.Effort = restore })
+}
+
+// unsetClassifierRow clears one classifier field. Clearing provider/model drops
+// the block.
+func (a *App) unsetClassifierRow(key string) tea.Cmd {
+	return a.mutateClassifier(func(c *config.ClassifierSettings) {
+		switch key {
+		case "provider":
+			c.Provider = ""
+			c.Model = ""
+		case "model":
+			c.Model = ""
+		case "reasoning", "effort":
+			c.Effort = ""
+		case "caveman":
+			c.Caveman = nil
+		}
+	})
+}
+
+// mutateAgent applies a settings change according to the agent role scope.
+func (a *App) mutateAgent(fn func(*config.Settings), sessionFn func()) tea.Cmd {
+	scope := a.modelState.agentScope
+	if scope == "" {
+		scope = "session"
+	}
+	if scope == "session" {
+		if sessionFn != nil {
+			sessionFn()
+		}
+		a.modelState.errorMsg = ""
+		return nil
+	}
+	cfgScope := config.ScopeProject
+	if scope == "global" {
+		cfgScope = config.ScopeGlobal
+	}
+	if err := config.Mutate(cfgScope, a.workdir, func(s *config.Settings) error {
+		fn(s)
+		return nil
+	}); err != nil {
+		a.modelState.errorMsg = err.Error()
+		return nil
+	}
+	if err := a.reloadSettings(); err != nil {
+		a.modelState.errorMsg = err.Error()
+		return nil
+	}
+	a.modelState.errorMsg = ""
+	return nil
+}
+
+// mutateClassifier applies fn to the classifier block in the page's scope,
+// reloads the merged settings, and reinstalls the live classifier.
+func (a *App) mutateClassifier(fn func(*config.ClassifierSettings)) tea.Cmd {
+	scope := a.modelState.classifierScope
+	if scope == "" {
+		scope = "project"
+	}
+	cfgScope := config.ScopeProject
+	if scope == "global" {
+		cfgScope = config.ScopeGlobal
+	}
+	if err := config.Mutate(cfgScope, a.workdir, func(s *config.Settings) error {
+		if s.Classifier == nil {
+			s.Classifier = &config.ClassifierSettings{}
+		}
+		fn(s.Classifier)
+		return nil
+	}); err != nil {
+		a.modelState.errorMsg = err.Error()
+		return nil
+	}
+	if err := a.reloadSettings(); err != nil {
+		a.modelState.errorMsg = err.Error()
+		return nil
+	}
+	return a.applyClassifierChange()
+}
+
+// applyClassifierChange re-resolves the classifier and reports a resolve
+// failure on the page instead of silently falling back.
+func (a *App) applyClassifierChange() tea.Cmd {
+	src := run.CredentialSource(run.EnvSource(os.Getenv))
+	if a.resolver != nil {
+		src = a.resolver
+	}
+	if _, err := run.ResolveClassifier(a.cfg, a.settings.Classifier, src); err != nil {
+		a.modelState.errorMsg = err.Error()
+		return nil
+	}
+	a.modelState.errorMsg = ""
+	return a.refreshProvider()
+}
+
+func humanizeBytes(n int) string {
+	switch {
+	case n >= 1024*1024:
+		return fmt.Sprintf("%d MiB", n/(1024*1024))
+	case n >= 1024:
+		return fmt.Sprintf("%d KiB", n/1024)
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
 }

@@ -79,7 +79,7 @@ cd ~/code/my-project
 signet
 ```
 
-Inside the UI, `/` opens slash-command autocomplete — `/credentials` to configure providers, `/model` to pick provider/model/effort, `/classifier` to pick the role manager's own classifier model, `/settings` to edit settings, `/permissions` to edit tool rules, `/prompts` to manage the prompt library, `/mode` to set the operating mode, `/todos`, `/profile`, `/agent` to create, edit, and run background agents, `/add-dir` to add another directory to the workspace, `/vulnetix` (with `review`, `configure`, `list`, `status`, and `firewall` subcommands), `/compact` to summarise a long session into a new one, `/clear` (or `/new`) to start a fresh session, `/yolo` to turn guardrails and the ask gate off together (`/yolo off` restores the settings-file values), and `/rename` to name the session. `/help` lists every command and keyboard shortcut.
+Inside the UI, `/` opens slash-command autocomplete — `/providers` to manage providers, credentials and local models, `/model` to pick provider/model/effort for the agent and classifier roles, `/settings` to edit settings, `/permissions` to edit tool rules, `/prompts` to manage the prompt library, `/mode` to set the operating mode, `/todos`, `/profile`, `/agent` to create, edit, and run background agents, `/add-dir` to add another directory to the workspace, `/vulnetix` (with `review`, `configure`, `list`, `status`, and `firewall` subcommands), `/compact` to summarise a long session into a new one, `/clear` (or `/new`) to start a fresh session, `/yolo` to turn guardrails and the ask gate off together (`/yolo off` restores the settings-file values), and `/rename` to name the session. `/help` lists every command and keyboard shortcut.
 
 Operator safety controls live in the footer: `guardrails: on|off` (posture gates) and `ask: on|off` (the permission-ask gate). `f3` toggles guardrails, `f4` toggles ask, and when both are off the two chips collapse into a single gold `YOLO`. These are explicit opt-ins: turning them off is announced in the transcript and traced under `SIGNET_TRACE`. Guardrails off sets every posture gate to `ignore` across every surface — the agent loop, inline `!cmd`, `@file` attachments, background agents and the CLI — and the classifier is then not called at all rather than called and ignored, so a turn costs no extra requests. Sanitising is not part of the switch: delimiter markup is stripped either way. Next to them the footer always states `caveman: on|off`, so the voice rewrite (`f2`) can never be on without saying so.
 
@@ -132,11 +132,20 @@ Set the API key for your provider and Signet picks it up:
 | `ollama` | none (local; honours `OLLAMA_HOST`) |
 | `github-copilot` | `GITHUB_COPILOT_TOKEN` or `GH_TOKEN` (OAuth, exchanged for a session token) |
 | `huggingface` | `HF_TOKEN` or `HUGGINGFACE_TOKEN` |
+| `groq` | `GROQ_API_KEY` |
+| `deepseek` | `DEEPSEEK_API_KEY` |
+| `fireworks` | `FIREWORKS_API_KEY` |
+| `mistral` | `MISTRAL_API_KEY` |
+| `together` | `TOGETHER_API_KEY` |
+| `xai` | `XAI_API_KEY` |
+| `moonshot` | `MOONSHOT_API_KEY`; optional `base_url` for `.cn` |
+| `minimax` | `MINIMAX_API_KEY`; optional `base_url` for `.cn` |
+| `alibaba` | `DASHSCOPE_API_KEY` or `ALIBABA_API_KEY` |
 
 A custom provider defined in `settings.json` resolves its key from its
 `api_key_env` variable or `SIGNET_<NAME>_API_KEY`.
 
-`/credentials` in the UI stores them for you instead, in your host keychain or in `~/.vulnetix/signet/credentials.json`. Signet resolves credentials from the environment first, then a project-local `.vulnetix/signet/credentials.json`, then the user file, then `~/.netrc`, then the keychain — and tells you which one each value came from. A credential may be stored as the *name* of an environment variable rather than a value, which is how project credential files stay committable.
+`/providers` in the UI stores them for you instead, in your host keychain or in `~/.vulnetix/signet/credentials.json`. Signet resolves credentials from the environment first, then a project-local `.vulnetix/signet/credentials.json`, then the user file, then `~/.netrc`, then the keychain — and tells you which one each value came from. A credential may be stored as the *name* of an environment variable rather than a value, which is how project credential files stay committable.
 
 Pick a default provider without passing `-provider` every time by setting `SIGNET_PROVIDER`.
 

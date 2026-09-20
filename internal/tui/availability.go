@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"time"
 
@@ -58,6 +59,23 @@ func isLocalProvider(name string) bool {
 		}
 	}
 	return false
+}
+
+// validOllamaPort reports whether s is empty or a valid TCP port.
+func validOllamaPort(s string) bool {
+	if s == "" {
+		return true
+	}
+	n, err := strconv.Atoi(s)
+	return err == nil && n > 0 && n <= 65535
+}
+
+// validOllamaProtocol reports whether s is empty or a valid HTTP scheme.
+func validOllamaProtocol(s string) bool {
+	if s == "" {
+		return true
+	}
+	return s == "http" || s == "https"
 }
 
 // availableProviders returns the providers a picker may offer: those whose
@@ -210,4 +228,10 @@ func (a *App) availabilityCmdIfStale() tea.Cmd {
 // credential mutation changes the answer, so every one of them calls it.
 func (a *App) invalidateAvailability() {
 	a.avail.probedAt = time.Time{}
+}
+
+// refreshCredentials invalidates the availability cache after credentials are
+// imported or edited.
+func (a *App) refreshCredentials() {
+	a.invalidateAvailability()
 }
