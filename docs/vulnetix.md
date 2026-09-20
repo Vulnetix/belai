@@ -1,8 +1,9 @@
-# `/vulnetix` — Vulnetix configure + scan-history screens
+# `/vulnetix` — Vulnetix review + AI Firewall
 
-`/vulnetix` is the Signet entry point for the Vulnetix CLI. It runs scans,
-displays the local CLI capability state, and keeps a history of the projects
-found on this machine.
+`/vulnetix` is the Signet entry point for the Vulnetix CLI and the Vulnetix AI
+Firewall. It runs Vulnetix review subcommands, surfaces CLI capability state,
+keeps a history of projects found on this machine, and toggles the AI Firewall
+for LLM traffic.
 
 ## Business rules
 
@@ -26,16 +27,35 @@ found on this machine.
 - **Global cache, never inside the project.** `scanartifacts.Refresh` writes to
   `<GlobalDir>/scan-cache/<WorkdirKey>.json`. Invalidation is stat-only: a
   fingerprint over `(rel, size, mtime)` plus a schema version.
+- **AI Firewall is fail-closed.** The firewall routes LLM traffic only when
+  four conditions are true: (1) the user toggled it on via `/vulnetix firewall`,
+  the `F10` key, or `SIGNET_FIREWALL=1`; (2) valid Vulnetix gateway credentials
+  are present (`VULNETIX_API_KEY` + `VULNETIX_ORG_ID`, `VVD_ORG` + `VVD_SECRET`,
+  or the logged-in Vulnetix CLI credential); (3) the provider maps to a
+  gateway slug; and (4) resolving the credential succeeded without error. If any
+  condition is missing, the toggle is stored but the run falls back to the
+  native provider. The project-layer setting overrides the global value, and
+  the CLI flag / environment variable overrides the project value.
+- **Gateway routing uses the provider slug, not the URL.** `internal/aifirewall`
+  maps providers (`openai`, `anthropic`, etc.) to gateway paths. The gateway
+  base URL is `<gatewayHost>/<slug>/<org>/v1`. Anthropic chat uses
+  `/v1/messages`; OpenAI-compatible surfaces use `/v1/chat/completions`. The
+  gateway API key replaces the provider key.
+- **`SIGNET_BASE_URL` wins.** If the user sets `SIGNET_BASE_URL`, it overrides
+  the firewall gateway URL for that run. This lets tests and local gateways
+  observe firewall-on traffic without hitting the production gateway.
 
 ## Command surface
 
 | Input | Effect |
 | --- | --- |
-| `/vulnetix` | Run the configured subcommands, then open the artifacts screen |
+| `/vulnetix` | Run the configured review subcommands, then open the artifacts screen |
 | `/vulnetix run` | Same as bare `/vulnetix` |
+| `/vulnetix review` | Same as bare `/vulnetix` |
 | `/vulnetix configure` | Open the CLI capability screen |
 | `/vulnetix list` | Open the project history screen |
 | `/vulnetix status` | Print CLI capabilities as plain text |
+| `/vulnetix firewall` | Toggle the Vulnetix AI Firewall on/off |
 | `/vulnetix help` | Show the available subcommands |
 
 ## Capability screen (`/vulnetix configure`)
@@ -64,18 +84,39 @@ union counts plus separate licence, suppressed, and risk-accepted tallies.
 Keys: `↑↓` move, `t` start the built-in `signet:triage-vulns` agent for that
 project, `l` history, `esc` back.
 
-## Activity drawer
+## AI Firewall (`/vulnetix firewall` and `F10`)
+
+The Vulnetix AI Firewall routes LLM traffic from Signet through the Vulnetix
+AI Firewall gateway. It can be toggled from anywhere with `F10` or with
+`/vulnetix firewall` in chat. The footer shows a shield chip when the firewall
+is on. The toggle is persisted in the active project's `settings.json`
+(`vulnetix.firewall_enabled`) and merged with the global profile setting
+(project overrides global; CLI flag overrides both).
+
+When enabled, `run.Prepare` asks the credential resolver for the firewall
+configuration. The resolver returns the gateway URL and Vulnetix API key;
+`run.Config` then uses those as the provider base URL and API key. The model
+catalog still fetches through the gateway when the user picks a provider.
+
+Keys: `F10` toggle, `esc` or `/vulnetix firewall` to toggle.
+
+## Runs panel
 
 Every `/vulnetix` subcommand — and every CLI probe behind `configure` and
-`status` — registers in the right-side activity drawer (`f9`). The drawer shows
-what argv ran, live stdout/stderr, and exit state. `x` on a running or queued
-row kills the whole process group; a killed subcommand stops the run so the
-remaining subcommands never execute. `t` starts `signet:triage-vulns` on the
-selected activity's project, keyed per project basename so two projects do not
-collide on the instance name. `enter` round-trips the finished output to the
-model exactly like a `!shell` result: it classifies first (unless guardrails
-are off), seals as a shell attachment, and queues until the transcript is idle
+`status` — registers in the bottom runs panel (`f9`). The panel shows what argv
+ran, live stdout/stderr, and exit state. `x` on a running or queued row kills
+the whole process group; a killed subcommand stops the run so the remaining
+subcommands never execute. `t` starts `signet:triage-vulns` on the selected
+activity's project, keyed per project basename so two projects do not collide
+on the instance name. `enter` round-trips the finished output to the model
+exactly like a `!shell` result: it classifies first (unless guardrails are
+off), seals as a shell attachment, and queues until the transcript is idle
 when a turn is in flight.
+
+The panel opens on the **activity** tab by default. `f8` opens it on the
+**subagents** tab. It is bounded: it consumes at most one third of the terminal
+height and refuses to open on terminals shorter than six rows so the chat
+input remains usable.
 
 ## Severity parsing
 
