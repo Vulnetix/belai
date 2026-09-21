@@ -110,7 +110,7 @@
 │   exit status 1                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 === tool_collapsed_marker w=32
-╭─ signet ─────────────────────╮
+╭─ signet ─ ctrl+o expand all ─╮
 │ ⌁ Bash  ls -la             ✓ │
 │   … 2 earlier lines          │
 │   third                      │
@@ -118,7 +118,7 @@
 │   fifth                      │
 ╰──────────────────────────────╯
 === tool_collapsed_marker w=41
-╭─ signet ──────────────────────────────╮
+╭─ signet ────────── ctrl+o expand all ─╮
 │ ⌁ Bash  ls -la                      ✓ │
 │   … 2 earlier lines                   │
 │   third                               │
@@ -126,7 +126,7 @@
 │   fifth                               │
 ╰───────────────────────────────────────╯
 === tool_collapsed_marker w=53
-╭─ signet ──────────────────────────────────────────╮
+╭─ signet ────────────────────── ctrl+o expand all ─╮
 │ ⌁ Bash  ls -la                                  ✓ │
 │   … 2 earlier lines                               │
 │   third                                           │
@@ -134,7 +134,7 @@
 │   fifth                                           │
 ╰───────────────────────────────────────────────────╯
 === tool_collapsed_marker w=60
-╭─ signet ─────────────────────────────────────────────────╮
+╭─ signet ───────────────────────────── ctrl+o expand all ─╮
 │ ⌁ Bash  ls -la                                         ✓ │
 │   … 2 earlier lines                                      │
 │   third                                                  │
@@ -142,7 +142,7 @@
 │   fifth                                                  │
 ╰──────────────────────────────────────────────────────────╯
 === tool_collapsed_marker w=80
-╭─ signet ─────────────────────────────────────────────────────────────────────╮
+╭─ signet ───────────────────────────────────────────────── ctrl+o expand all ─╮
 │ ⌁ Bash  ls -la                                                             ✓ │
 │   … 2 earlier lines                                                          │
 │   third                                                                      │
@@ -150,7 +150,7 @@
 │   fifth                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 === tool_collapsed_marker w=120
-╭─ signet ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭─ signet ───────────────────────────────────────────────────────────────────────────────────────── ctrl+o expand all ─╮
 │ ⌁ Bash  ls -la                                                                                                     ✓ │
 │   … 2 earlier lines                                                                                                  │
 │   third                                                                                                              │
@@ -254,36 +254,36 @@
 │   tail                                                                                                               │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 === tool_withheld w=32
-╭─ signet ─────────────────────╮
+╭─ signet ─ ctrl+o expand all ─╮
 │ ⌁ WebFetch  https:  withheld │
 │   tool result withheld:      │
 │   provider error             │
 │   … 1 more lines             │
 ╰──────────────────────────────╯
 === tool_withheld w=41
-╭─ signet ──────────────────────────────╮
+╭─ signet ────────── ctrl+o expand all ─╮
 │ ⌁ WebFetch  https://example  withheld │
 │   tool result withheld: provider      │
 │   error  … 1 more lines               │
 ╰───────────────────────────────────────╯
 === tool_withheld w=53
-╭─ signet ──────────────────────────────────────────╮
+╭─ signet ────────────────────── ctrl+o expand all ─╮
 │ ⌁ WebFetch  https://example.com          withheld │
 │   tool result withheld: provider error            │
 │   … 1 more lines                                  │
 ╰───────────────────────────────────────────────────╯
 === tool_withheld w=60
-╭─ signet ─────────────────────────────────────────────────╮
+╭─ signet ───────────────────────────── ctrl+o expand all ─╮
 │ ⌁ WebFetch  https://example.com                 withheld │
 │   tool result withheld: provider error  … 1 more lines   │
 ╰──────────────────────────────────────────────────────────╯
 === tool_withheld w=80
-╭─ signet ─────────────────────────────────────────────────────────────────────╮
+╭─ signet ───────────────────────────────────────────────── ctrl+o expand all ─╮
 │ ⌁ WebFetch  https://example.com                                     withheld │
 │   tool result withheld: provider error  … 1 more lines                       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 === tool_withheld w=120
-╭─ signet ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭─ signet ───────────────────────────────────────────────────────────────────────────────────────── ctrl+o expand all ─╮
 │ ⌁ WebFetch  https://example.com                                                                             withheld │
 │   tool result withheld: provider error  … 1 more lines                                                               │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
@@ -451,7 +451,7 @@
 │ cause here                   │
 ╰──────────────────────────────╯
 
-╭─ signet ─────────────────────╮
+╭─ signet ─ ctrl+o expand all ─╮
 │ ⌁ Bash  go test ./  withheld │
 │   … 1 earlier lines          │
 │   second line                │
@@ -462,7 +462,7 @@
 │ · switched provider to mock  │
 ╰──────────────────────────────╯
 === mixed w=41
-╭─ user prompt ─────────────────────────╮
+╭─ user prompt ── 14 tok · ctrl+c copy ─╮
 │ fix the failing test in the wire      │
 │ package                               │
 ╰───────────────────────────────────────╯
@@ -479,7 +479,7 @@
 │ thinking about the root cause here    │
 ╰───────────────────────────────────────╯
 
-╭─ signet ──────────────────────────────╮
+╭─ signet ────────── ctrl+o expand all ─╮
 │ ⌁ Bash  go test ./...        withheld │
 │   … 1 earlier lines                   │
 │   second line                         │
@@ -490,7 +490,7 @@
 │ · switched provider to mock           │
 ╰───────────────────────────────────────╯
 === mixed w=53
-╭─ user prompt ─────────────────────────────────────╮
+╭─ user prompt ────────────── 14 tok · ctrl+c copy ─╮
 │ fix the failing test in the wire package          │
 ╰───────────────────────────────────────────────────╯
 
@@ -506,7 +506,7 @@
 │ thinking about the root cause here                │
 ╰───────────────────────────────────────────────────╯
 
-╭─ signet ──────────────────────────────────────────╮
+╭─ signet ────────────────────── ctrl+o expand all ─╮
 │ ⌁ Bash  go test ./...                    withheld │
 │   … 1 earlier lines                               │
 │   second line                                     │
@@ -516,7 +516,7 @@
 │ · switched provider to mock                       │
 ╰───────────────────────────────────────────────────╯
 === mixed w=60
-╭─ user prompt ────────────────────────────────────────────╮
+╭─ user prompt ───────────────────── 14 tok · ctrl+c copy ─╮
 │ fix the failing test in the wire package                 │
 ╰──────────────────────────────────────────────────────────╯
 
@@ -532,7 +532,7 @@
 │ thinking about the root cause here                       │
 ╰──────────────────────────────────────────────────────────╯
 
-╭─ signet ─────────────────────────────────────────────────╮
+╭─ signet ───────────────────────────── ctrl+o expand all ─╮
 │ ⌁ Bash  go test ./...                           withheld │
 │   … 1 earlier lines                                      │
 │   second line                                            │
@@ -542,7 +542,7 @@
 │ · switched provider to mock                              │
 ╰──────────────────────────────────────────────────────────╯
 === mixed w=80
-╭─ user prompt ────────────────────────────────────────────────────────────────╮
+╭─ user prompt ───────────────────────────────────────── 14 tok · ctrl+c copy ─╮
 │ fix the failing test in the wire package                                     │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
@@ -558,7 +558,7 @@
 │ thinking about the root cause here                                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
-╭─ signet ─────────────────────────────────────────────────────────────────────╮
+╭─ signet ───────────────────────────────────────────────── ctrl+o expand all ─╮
 │ ⌁ Bash  go test ./...                                               withheld │
 │   … 1 earlier lines                                                          │
 │   second line                                                                │
@@ -568,7 +568,7 @@
 │ · switched provider to mock                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 === mixed w=120
-╭─ user prompt ────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭─ user prompt ───────────────────────────────────────────────────────────────────────────────── 14 tok · ctrl+c copy ─╮
 │ fix the failing test in the wire package                                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
@@ -584,7 +584,7 @@
 │ thinking about the root cause here                                                                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
-╭─ signet ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭─ signet ───────────────────────────────────────────────────────────────────────────────────────── ctrl+o expand all ─╮
 │ ⌁ Bash  go test ./...                                                                                       withheld │
 │   … 1 earlier lines                                                                                                  │
 │   second line                                                                                                        │

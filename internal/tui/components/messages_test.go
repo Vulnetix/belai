@@ -96,11 +96,27 @@ func TestTurnPanelAssistantCopyShortcutWithUsage(t *testing.T) {
 	}
 }
 
-func TestTurnPanelUserDoesNotAdvertiseCopyShortcut(t *testing.T) {
+func TestTurnPanelUserAdvertisesCopyShortcut(t *testing.T) {
 	msg := Message{Role: "user", Content: "hi"}
 	out, _ := turnPanel(msg, 60, false)
-	if strings.Contains(out, "ctrl+c") {
-		t.Fatalf("user panel should not advertise ctrl+c copy, got:\n%s", out)
+	if !strings.Contains(out, "ctrl+c") || !strings.Contains(out, "copy") {
+		t.Fatalf("user panel should advertise ctrl+c copy in title bar, got:\n%s", out)
+	}
+}
+
+func TestTurnPanelUserShowsEstimatedTokens(t *testing.T) {
+	msg := Message{Role: "user", Content: "this is a test prompt"}
+	out, _ := turnPanel(msg, 60, false)
+	if !strings.Contains(out, "tok") {
+		t.Fatalf("user panel should show estimated token count, got:\n%s", out)
+	}
+}
+
+func TestTurnPanelReasoningShowsEstimatedTokens(t *testing.T) {
+	msg := Message{Role: "reasoning", Content: "thinking step by step"}
+	out, _ := turnPanel(msg, 60, false)
+	if !strings.Contains(out, "tok") {
+		t.Fatalf("reasoning panel should show estimated token count, got:\n%s", out)
 	}
 }
 

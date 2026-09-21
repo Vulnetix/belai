@@ -606,10 +606,22 @@ func turnPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 	if msg.Partial {
 		meta = "retrying…"
 	}
-	// Assistant panels advertise the copy shortcut in their title bar,
-	// mirroring the helper text the ask/composer frame carries and the
+	// Approximate token counts for user prompts and reasoning panels. Only
+	// assistant turns carry provider-metered Usage, but showing an estimate on
+	// the other copyable panels keeps the title bar useful and consistent.
+	if (msg.Role == "user" || msg.Role == "reasoning") && strings.TrimSpace(msg.Text()) != "" {
+		n := transcript.EstimateTokens(transcript.Message{Role: msg.Role, Content: msg.Text()})
+		if n > 0 {
+			if meta != "" {
+				meta += " · "
+			}
+			meta += formatTokens(n) + " tok"
+		}
+	}
+	// User and assistant panels advertise the copy shortcut in their title
+	// bar, mirroring the helper text the ask/composer frame carries and the
 	// ctrl+o hint shown on collapsed signet panels.
-	if msg.Role == "assistant" && !msg.Partial && strings.TrimSpace(msg.Text()) != "" {
+	if (msg.Role == "assistant" || msg.Role == "user") && !msg.Partial && strings.TrimSpace(msg.Text()) != "" {
 		if meta != "" {
 			meta += " · "
 		}

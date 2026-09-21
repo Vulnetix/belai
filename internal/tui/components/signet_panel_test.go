@@ -53,6 +53,29 @@ func TestSignetPanelExpandedTitleBar(t *testing.T) {
 	}
 }
 
+// TestSignetPanelWithCollapsedToolRow shows the ctrl+o hint even when the
+// panel itself is not truncated, as long as a nested tool row has hidden
+// content that ctrl+o would reveal.
+func TestSignetPanelWithCollapsedToolRow(t *testing.T) {
+	msgs := []Message{
+		{Role: "system", Content: "running command"},
+		{Role: "tool", ToolName: "Bash", ToolArgs: `{"command":"seq 5"}`, Content: "1\n2\n3\n4\n5", Status: "✓"},
+	}
+	idxs := []int{0, 1}
+	s, _, _ := signetPanel(msgs, idxs, 60, false)
+	if !strings.Contains(s, "earlier lines") {
+		t.Fatalf("expected collapsed Bash row, got:\n%s", s)
+	}
+	lines := strings.Split(s, "\n")
+	if len(lines) == 0 {
+		t.Fatal("signet panel rendered no lines")
+	}
+	top := lines[0]
+	if !strings.Contains(top, "ctrl+o") || !strings.Contains(top, "expand all") {
+		t.Fatalf("signet panel with collapsed tool row should advertise ctrl+o, got:\n%s", top)
+	}
+}
+
 // TestSignetPanelTitleBarFitsNarrowWidth confirms the metadata hint is dropped
 // before the title is truncated at very narrow widths, so the frame never
 // breaks even when ctrl+o cannot fit.

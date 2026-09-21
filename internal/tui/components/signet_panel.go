@@ -117,19 +117,25 @@ func renderSignetPanel(msgs []Message, idxs []int, width int, expandAll bool) (s
 	}
 
 	// Apply group-level collapsed state to system lines. Tool lines keep their
-	// own collapsed state as set by tagProvenance.
+	// own collapsed state as set by tagProvenance. Any collapsed content
+	// inside the panel — a truncated system-only group or a collapsed tool
+	// row — is enough to advertise the expand binding on the title bar.
+	hasCollapsedContent := panelCollapsed
 	for i := range bodyLm {
 		bodyLm[i].Copyable = groupCopyable
 		if isSystemLine[i] {
 			bodyLm[i].Collapsed = panelCollapsed
 		}
+		if bodyLm[i].Collapsed {
+			hasCollapsedContent = true
+		}
 	}
 
-	// Build the title bar. When the panel is collapsed, the binding that
-	// expands it is shown in the top-right metadata, mirroring the helper
+	// Build the title bar. When the panel has collapsed content, the binding
+	// that expands it is shown in the top-right metadata, mirroring the helper
 	// text the ask/composer panel carries in its own frame.
 	meta := ""
-	if panelCollapsed {
+	if hasCollapsedContent {
 		meta = "ctrl+o expand all"
 	}
 	top := signetTopEdge(width, titleStyle, edge, meta)

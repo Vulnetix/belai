@@ -1559,21 +1559,25 @@ Three regions are actionable:
   over a panel copies its content instead of the prompt; with the pointer off
   the transcript it keeps its prompt-copy meaning. A running tool row with no
   output yet has no text and stays un-hoverable.
-- **Assistant/model panel** — assistant turns that carry text advertise
-  `ctrl+c copy` in their title bar alongside the token count, mirroring the
-  helper text pattern used by the ask/composer and collapsed signet frames.
-  Hovering the panel still offers the same action in the footer.
+- **User/assistant/model panel** — user prompts, assistant turns and streamed
+  reasoning that carry text advertise `ctrl+c copy` in their title bar.
+  Assistant panels also show the provider-metered token count when available;
+  user and reasoning panels show an estimated token count (`~N tok`) because
+  they are not metered by the provider. The title bar mirrors the helper text
+  pattern used by the ask/composer and collapsed signet frames; hovering the
+  panel still offers the same action in the footer.
 - **Session segment** — the footer's `session: …` text (name when shown, else
   the short id). Hovering shows `ctrl+x copy session id`, and `ctrl+x` copies
   the full id from the chat view whether or not the pointer is there.
 - **Collapsed panel** — any truncated turn, reasoning panel, or tool row.
   Hovering shows `ctrl+o expand all`; the key is the same global toggle that
   collapses again when already expanded. A collapsed text panel shows all
-  three offers together (`save`, `copy`, `expand all`). Collapsed **signet**
-  panels (system notices and tool results that were coalesced and truncated)
-  also advertise the same binding in their title bar, mirroring the helper
-  text the ask/composer frame carries in its own top edge, so the shortcut is
-  visible without moving the pointer.
+  three offers together (`save`, `copy`, `expand all`). **Signet** panels
+  advertise the same binding in their title bar whenever they contain any
+  collapsed content — whether the panel itself truncated a run of system
+  notices or a nested tool row (for example a long `Bash` result) is hiding
+  lines. This mirrors the helper text the ask/composer frame carries in its
+  own top edge, so the shortcut is visible without moving the pointer.
 
 The session hit-test is exact: `Footer.SessionSpan` mirrors the same layout
 math `Footer.View` uses, so the column range it reports is the rendered
