@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -69,6 +70,34 @@ type passOutcome struct {
 	// updatePlan is a checklist the model reported through the update_plan
 	// tool. When non-nil the pass loop adopts it into the shared todo list.
 	updatePlan *todos.List
+	// mutations counts the calls in this pass that the file-diff recorder saw
+	// change at least one file. It is harness-observed, never model-claimed,
+	// and it is the goal pass loop's primary progress signal.
+	mutations int
+	// mutatedPaths are the changed paths, deduplicated and bounded by
+	// maxMutatedPaths. They are harness facts (paths only, never contents).
+	mutatedPaths []string
+}
+
+// maxMutatedPaths bounds the changed-path list carried out of a pass. The list
+// becomes harness-fact evidence for the goal evaluator, so it is capped rather
+// than allowed to grow with a large refactor.
+const maxMutatedPaths = 20
+
+// noteMutation folds one call's observed disk effect into the pass totals.
+func (o *passOutcome) noteMutation(eff callEffect) {
+	if !eff.changed {
+		return
+	}
+	o.mutations++
+	for _, p := range eff.paths {
+		if len(o.mutatedPaths) >= maxMutatedPaths {
+			return
+		}
+		if !slices.Contains(o.mutatedPaths, p) {
+			o.mutatedPaths = append(o.mutatedPaths, p)
+		}
+	}
 }
 
 // updatePlanFromArgs reconstructs the shared todo list from an update_plan
@@ -123,12 +152,20 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 	var text string
 	var lastText string
 	var updatePlan *todos.List
+	// acc carries the pass's harness-observed disk effect across iterations;
+	// finish folds it into whichever outcome the pass returns.
+	var acc passOutcome
+	finish := func(o passOutcome) passOutcome {
+		o.mutations = acc.mutations
+		o.mutatedPaths = acc.mutatedPaths
+		return o
+	}
 	for i := 0; i < s.maxIter; i++ {
 		updatePlan = nil
 		turns = append(turns, s.drainSteer(ctx, pipe, emit)...)
 		assistant, err := s.streamTurnRetry(ctx, system, turns, streaming, emit)
 		if err != nil {
-			return passOutcome{text: text, lastText: lastText}, turns, err
+			return finish(passOutcome{text: text, lastText: lastText}), turns, err
 		}
 
 		if assistant.Text != "" {
@@ -140,13 +177,13 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		}
 
 		if len(assistant.ToolCalls) == 0 {
-			return passOutcome{reply: assistant.Text, usage: assistant.Usage, text: text, lastText: lastText, productive: productive}, turns, nil
+			return finish(passOutcome{reply: assistant.Text, usage: assistant.Usage, text: text, lastText: lastText, productive: productive}), turns, nil
 		}
 
 		mismatchPol := s.mismatchPolicy()
 		filtered, err := rolemanager.CheckToolCalls(assistant.ToolCalls, s.registry.Names(), mismatchPol)
 		if err != nil {
-			return passOutcome{text: text, lastText: lastText}, turns, err
+			return finish(passOutcome{text: text, lastText: lastText}), turns, err
 		}
 
 		// Append assistant turn containing its tool_calls. Use the filtered
@@ -198,6 +235,10 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		concurrentEnd := concurrentEnd(units)
 
 		results := make([]string, len(units))
+		// One effect slot per call: the concurrent fan-out is read-only by
+		// construction, but each goroutine still writes its own slot so the
+		// observation needs no locking.
+		effects := make([]callEffect, len(units))
 		if concurrentEnd > 0 {
 			sem := make(chan struct{}, toolConcurrency)
 			var wg sync.WaitGroup
@@ -211,7 +252,7 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 					defer func() { <-sem }()
 					callCopy := u.call
 					callCopy.Args = u.args
-					results[i] = s.executeCall(ctx, callCopy, emit)
+					results[i] = s.executeCall(ctx, callCopy, emit, &effects[i])
 				}(i, u)
 			}
 			wg.Wait()
@@ -230,9 +271,10 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 				} else {
 					callCopy := u.call
 					callCopy.Args = u.args
-					results[i] = s.executeCall(ctx, callCopy, emit)
+					results[i] = s.executeCall(ctx, callCopy, emit, &effects[i])
 				}
 			}
+			acc.noteMutation(effects[i])
 			toolResult := results[i]
 			emit(Event{Kind: EventToolResultKind, ToolName: u.call.Name, ToolCallID: u.call.ID, ToolResult: toolResult})
 			turns = append(turns, run.Turn{
@@ -267,16 +309,16 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 			withheld = 0
 		}
 		if planExited {
-			return passOutcome{reply: assistant.Text, usage: assistant.Usage, text: text, lastText: lastText, productive: productive, planExit: true, planText: planText, updatePlan: updatePlan}, turns, nil
+			return finish(passOutcome{reply: assistant.Text, usage: assistant.Usage, text: text, lastText: lastText, productive: productive, planExit: true, planText: planText, updatePlan: updatePlan}), turns, nil
 		}
 		if withheld == 2 {
 			turns = append(turns, directiveTurns("Writes are unavailable in plan mode. Put the plan in your reply text, then call ExitPlanMode to finish.")...)
 			continue
 		}
 		if withheld >= 3 {
-			return passOutcome{exhausted: true, text: text, lastText: lastText, productive: productive, withheld: withheld, updatePlan: updatePlan}, turns, nil
+			return finish(passOutcome{exhausted: true, text: text, lastText: lastText, productive: productive, withheld: withheld, updatePlan: updatePlan}), turns, nil
 		}
 	}
 
-	return passOutcome{exhausted: true, text: text, lastText: lastText, productive: productive, withheld: withheld, updatePlan: updatePlan}, turns, nil
+	return finish(passOutcome{exhausted: true, text: text, lastText: lastText, productive: productive, withheld: withheld, updatePlan: updatePlan}), turns, nil
 }

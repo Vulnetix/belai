@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -25,7 +26,7 @@ import (
 type goalPassOpts struct {
 	mode  string   // operating-mode classifier reply (default "GOAL")
 	eval  []string // goal-evaluator sentinel sequence
-	main  string   // main model behaviour: "tool" | "length" | "reply"
+	main  string   // main model behaviour: "tool" | "length" | "reply" | "read"
 	reply string   // main model final reply when main == "reply"
 }
 
@@ -41,6 +42,7 @@ func goalPassServer(t *testing.T, opts goalPassOpts) (*httptest.Server, *sync.Mu
 	}
 	var mu sync.Mutex
 	evalIdx := 0
+	writeIdx := 0
 	mainSystems := map[string]bool{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -89,10 +91,24 @@ func goalPassServer(t *testing.T, opts goalPassOpts) (*httptest.Server, *sync.Mu
 				// Include a completed todo item in the assistant text so
 				// verification has work to check; an all-pending list would
 				// skip the verification pass and change pass-loop timing.
-				if opts.main == "tool-nocontent" {
+				switch opts.main {
+				case "tool-nocontent":
 					writeToolCallJSON(w, "Read", `{"path":"f.txt"}`)
-				} else {
+				case "read":
+					// A pass that only reads: the loop observes no file
+					// change, which is what drives the no-write escalation.
 					writeToolCallWithContentJSON(w, "Read", `{"path":"f.txt"}`, "Plan:\n1. Ship the release\n[DONE:1]\n")
+				default:
+					// The default pass writes a file, because that is what a
+					// goal-mode pass is supposed to do: the pass loop's
+					// progress signal is the file-diff recorder, not the
+					// assistant's prose.
+					mu.Lock()
+					writeIdx++
+					n := writeIdx
+					mu.Unlock()
+					args := fmt.Sprintf(`{"path":"f.txt","content":%q}`, fmt.Sprintf("pass %d\n", n))
+					writeToolCallWithContentJSON(w, "Write", args, "Plan:\n1. Ship the release\n[DONE:1]\n")
 				}
 			}
 		}
@@ -131,10 +147,14 @@ func newGoalPassSession(t *testing.T, srv *httptest.Server, allowPassLoop bool, 
 
 	cfg := run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"}
 	sess, err := NewSession(Options{
-		Cfg:           cfg,
-		Client:        srv.Client(),
-		Registry:      tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}),
-		Posture:       posture.Defaults(),
+		Cfg:      cfg,
+		Client:   srv.Client(),
+		Workdir:  root,
+		Registry: tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}, &tools.Write{Root: root, MaxBytes: tools.MaxWriteBytes, Cwd: tools.NewCwd(root)}),
+		Posture:  posture.Defaults(),
+		// The scripted passes write, and a write without a TTY would
+		// otherwise be withheld by the permission-ask gate.
+		AskDisabled:   true,
 		AllowExplore:  true,
 		AllowPassLoop: allowPassLoop,
 		MaxIterations: maxIter,
@@ -203,25 +223,40 @@ func TestGoalPassLoopAcceptsReasoningWrappedSentinel(t *testing.T) {
 	}
 }
 
-func TestGoalPassLoopTwoMalformedEvaluationsTerminate(t *testing.T) {
-	srv, _, _ := goalPassServer(t, goalPassOpts{eval: []string{"garbage", "also garbage"}})
+// A broken evaluator ends the loop, but it must not throw the work away: the
+// passes that ran produced real changes on disk, and a garbled classifier
+// token is no reason to return an error instead of them. Each malformed reply
+// costs two evaluator calls, because the first is re-asked with the exact
+// syntax it broke before it counts against the streak.
+func TestGoalPassLoopTwoMalformedEvaluationsStopGracefully(t *testing.T) {
+	srv, _, _ := goalPassServer(t, goalPassOpts{eval: []string{"garbage", "still garbage", "more garbage", "garbage again"}})
 	defer srv.Close()
 	sess := newGoalPassSession(t, srv, true, 2)
 
 	var sawMalformed bool
-	_, err := sess.run(context.Background(), nil, TurnInput{Prompt: "ship the thing"}, false, func(e Event) {
+	var warning string
+	res, err := sess.run(context.Background(), nil, TurnInput{Prompt: "ship the thing"}, false, func(e Event) {
 		if e.Kind == EventGoalEvalKind && e.Malformed {
 			sawMalformed = true
 		}
+		if e.Kind == EventWarningKind {
+			warning = e.Warning
+		}
 	})
-	if err == nil {
-		t.Fatal("expected an error after two consecutive malformed evaluations")
+	if err != nil {
+		t.Fatalf("a broken evaluator must return the work so far, not an error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "malformed") {
-		t.Fatalf("error = %v, want consecutive-malformed termination", err)
+	if res.Passes != 2 {
+		t.Fatalf("Passes = %d, want 2 (one pass per malformed verdict)", res.Passes)
+	}
+	if res.GoalSentinel != rolemanager.GoalPartial {
+		t.Fatalf("GoalSentinel = %q, want the fail-closed GOAL_PARTIAL", res.GoalSentinel)
 	}
 	if !sawMalformed {
 		t.Fatal("the malformed evaluator reply must be reported with Malformed set on the event")
+	}
+	if !strings.Contains(warning, "malformed") {
+		t.Fatalf("warning = %q, want the broken-evaluator warning", warning)
 	}
 }
 
@@ -333,7 +368,8 @@ func TestAdvanceTodosBuildsAndAdvancesFromAssistantText(t *testing.T) {
 
 func TestGoalPassLoopHonoursMaxPassesCeiling(t *testing.T) {
 	// GOAL_PARTIAL forever: only the configured ceiling can stop this loop.
-	srv, _, _ := goalPassServer(t, goalPassOpts{eval: []string{"GOAL_PARTIAL"}})
+	// The session below registers Read alone, so the scripted passes read.
+	srv, _, _ := goalPassServer(t, goalPassOpts{main: "read", eval: []string{"GOAL_PARTIAL"}})
 	defer srv.Close()
 
 	root := t.TempDir()
@@ -367,7 +403,7 @@ func TestGoalPassLoopStallTriggersProgression(t *testing.T) {
 	// instead of aborting. Without a ceiling a stuck loop would now run
 	// forever, so we use a small max-passes ceiling to prove the loop
 	// survived past the old stall boundary.
-	srv, _, _ := goalPassServer(t, goalPassOpts{eval: []string{"GOAL_PARTIAL"}})
+	srv, _, _ := goalPassServer(t, goalPassOpts{main: "read", eval: []string{"GOAL_PARTIAL"}})
 	defer srv.Close()
 
 	root := t.TempDir()
@@ -398,11 +434,14 @@ func TestGoalPassLoopStallTriggersProgression(t *testing.T) {
 func TestPassLedgerProgressionDirective(t *testing.T) {
 	l := passLedger{goalText: "ship the thing"}
 	got := l.progressionDirective()
-	if !strings.Contains(got, "no todo list is tracked yet") {
-		t.Fatalf("progression directive without a list should prompt planning, got:\n%s", got)
+	if !strings.Contains(got, "no step list is tracked yet") {
+		t.Fatalf("progression directive without a list should ask for one, got:\n%s", got)
 	}
-	if !strings.Contains(got, "progress has stalled") {
+	if !strings.Contains(got, "Progress has stalled") {
 		t.Fatalf("progression directive should mention the stall, got:\n%s", got)
+	}
+	if !strings.Contains(got, "as an edit") {
+		t.Fatalf("progression directive should demand an edit, not a report, got:\n%s", got)
 	}
 
 	l.list = todos.New("ship the thing", []string{"alpha", "beta"})
@@ -678,5 +717,392 @@ func TestGoalAckDirectiveNamesDefaultVerificationSurface(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("directive missing %q:\n%s", want, got)
 		}
+	}
+}
+
+func TestPassLedgerNoteWrites(t *testing.T) {
+	l := passLedger{goalText: "g"}
+
+	// A pass that changes nothing extends the no-write run.
+	l.noteWrites(passOutcome{})
+	if l.writes != 0 || l.passesSinceWrite != 1 || l.stalledOnWrites() {
+		t.Fatalf("after one read-only pass: writes=%d sinceWrite=%d stalled=%v", l.writes, l.passesSinceWrite, l.stalledOnWrites())
+	}
+	l.noteWrites(passOutcome{})
+	if !l.stalledOnWrites() {
+		t.Fatalf("two read-only passes should stall on writes, sinceWrite=%d", l.passesSinceWrite)
+	}
+
+	// A pass that changes a file resets it and records the path once.
+	l.noteWrites(passOutcome{mutations: 2, mutatedPaths: []string{"a.go", "a.go", "b.go"}})
+	if l.writes != 2 {
+		t.Fatalf("writes = %d, want 2", l.writes)
+	}
+	if l.passesSinceWrite != 0 || l.stalledOnWrites() {
+		t.Fatalf("a mutating pass must clear the no-write run, sinceWrite=%d", l.passesSinceWrite)
+	}
+	if len(l.touched) != 2 || l.touched[0] != "a.go" || l.touched[1] != "b.go" {
+		t.Fatalf("touched = %v, want deduplicated [a.go b.go]", l.touched)
+	}
+}
+
+// The no-write escalation outranks the periodic verification pass: a loop
+// that has not written is behind on writing, and another read-only pass is
+// the last thing it needs.
+func TestPassLedgerPartialDirectiveTurnPrefersNoWriteEscalation(t *testing.T) {
+	l := passLedger{goalText: "g", hasList: true, partialStreak: 2, passesSinceWrite: goalNoWritePasses}
+	l.list = todos.New("g", []string{"alpha", "beta"})
+	l.list.Items[0].Status = todos.StatusDone
+
+	body, arm := l.partialDirectiveTurn()
+	if arm {
+		t.Fatal("verification must not arm while the loop is behind on writes")
+	}
+	if body != l.noWriteDirective() {
+		t.Fatalf("body = %q, want the no-write directive", body)
+	}
+	if !strings.Contains(body, "beta") {
+		t.Fatalf("the no-write directive should name the next step, got:\n%s", body)
+	}
+}
+
+// GOAL_COMPLETE before the verification gate is downgraded either way, but a
+// goal that has changed no file is asked for the edit rather than for a
+// read-only re-check of a repository it never touched.
+func TestPassLedgerGateDirective(t *testing.T) {
+	l := passLedger{goalText: "g", hasList: true}
+	l.list = todos.New("g", []string{"alpha"})
+	if got := l.gateDirective(); got != l.noWriteDirective() {
+		t.Fatalf("gate directive with no writes = %q, want the no-write directive", got)
+	}
+	l.writes = 1
+	if got := l.gateDirective(); got != verificationDirective {
+		t.Fatalf("gate directive after a write = %q, want verificationDirective", got)
+	}
+}
+
+// The harness facts block is what lets the evaluator judge progress from
+// observation rather than from the model's prose. It carries counts and
+// paths only.
+func TestPassLedgerGoalFacts(t *testing.T) {
+	l := passLedger{goalText: "g", passes: 3, passWrites: 1, writes: 4, touched: []string{"internal/a.go"}}
+	got := l.goalFacts()
+	for _, want := range []string{"Pass: 3", "Files changed this pass: 1", "Files changed so far in this goal: 4", "internal/a.go"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("goal facts missing %q:\n%s", want, got)
+		}
+	}
+	empty := passLedger{goalText: "g", passes: 1}
+	if !strings.Contains(empty.goalFacts(), "Paths changed: none") {
+		t.Fatalf("a pass with no changes should say so:\n%s", empty.goalFacts())
+	}
+}
+
+// The first-pass directive is the one chance to set the mode's contract. It
+// must lead with the work, not with a plan document.
+func TestGoalAckDirectiveLeadsWithTheEdit(t *testing.T) {
+	for _, want := range []string{"Start the work in this pass", "update_plan", "make the first real change", "no file changed"} {
+		if !strings.Contains(goalAckDirective, want) {
+			t.Fatalf("goal acknowledgement directive missing %q:\n%s", want, goalAckDirective)
+		}
+	}
+	if strings.Contains(goalAckDirective, "'Plan:' header") {
+		t.Fatal("the goal directive must not ask for a plan document before the work")
+	}
+}
+
+// The loop must not spend a second full model turn per pass on a progress
+// report: one pass is one main-model call per iteration plus one evaluator
+// call at the boundary, and nothing else.
+func TestGoalPassLoopMakesNoProgressReportCall(t *testing.T) {
+	srv, _, _ := goalPassServer(t, goalPassOpts{eval: []string{"GOAL_COMPLETE", "GOAL_COMPLETE"}})
+	defer srv.Close()
+	sess := newGoalPassSession(t, srv, true, 1)
+
+	var mainCalls int
+	res, err := sess.run(context.Background(), nil, TurnInput{Prompt: "ship the thing"}, false, func(e Event) {
+		if e.Kind == EventToolStartKind {
+			mainCalls++
+		}
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Passes != 2 {
+		t.Fatalf("Passes = %d, want 2", res.Passes)
+	}
+	// One iteration per pass (MaxIterations is 1), so one tool call per pass
+	// and no extra turn in between.
+	if mainCalls != 2 {
+		t.Fatalf("tool calls = %d, want 2 (one per pass, no progress-report turn)", mainCalls)
+	}
+}
+
+// Proactive compaction must not switch itself off for a model the built-in
+// registry has never heard of. That is what happened to every custom
+// provider catalogue entry: modelinfo.Resolve returned ok=false and the
+// boundary silently skipped compaction until a request overflowed.
+func TestCompactWindowFallsBackBeyondTheBuiltinRegistry(t *testing.T) {
+	newSess := func(model string, settings config.Settings) *Session {
+		t.Helper()
+		sess, err := NewSession(Options{
+			Cfg:      run.Config{Provider: "cloudflare-ai-gateway", Model: model},
+			Client:   http.DefaultClient,
+			Settings: settings,
+		})
+		if err != nil {
+			t.Fatalf("NewSession: %v", err)
+		}
+		return sess
+	}
+
+	// Unknown everywhere: the conservative default, never zero.
+	if got := newSess("@cf/example/unlisted", config.Settings{}).compactWindow(); got != defaultCompactWindow {
+		t.Fatalf("unknown model window = %d, want %d", got, defaultCompactWindow)
+	}
+	// Known to the provider catalogue but not to the built-in registry.
+	cat := config.Settings{Providers: map[string]config.ProviderProfile{
+		"cloudflare-ai-gateway": {Models: []config.ProviderModel{{ID: "@cf/example/big", ContextWindow: 262_144}}},
+	}}
+	if got := newSess("@cf/example/big", cat).compactWindow(); got != 262_144 {
+		t.Fatalf("catalogue window = %d, want 262144", got)
+	}
+	// An explicit user override still wins.
+	over := config.Settings{ContextWindows: map[string]int{"@cf/example/big": 99_000}, Providers: cat.Providers}
+	if got := newSess("@cf/example/big", over).compactWindow(); got != 99_000 {
+		t.Fatalf("override window = %d, want 99000", got)
+	}
+}
+
+// The changed-path list is harness fact, so it is deduplicated and bounded:
+// a large refactor must not turn the evaluator's evidence into a file
+// listing.
+func TestPassOutcomeNoteMutation(t *testing.T) {
+	var o passOutcome
+	o.noteMutation(callEffect{})
+	if o.mutations != 0 || len(o.mutatedPaths) != 0 {
+		t.Fatalf("a call that changed nothing must not count: %+v", o)
+	}
+	o.noteMutation(callEffect{changed: true, paths: []string{"a.go", "a.go"}})
+	o.noteMutation(callEffect{changed: true, paths: []string{"a.go", "b.go"}})
+	if o.mutations != 2 {
+		t.Fatalf("mutations = %d, want 2", o.mutations)
+	}
+	if len(o.mutatedPaths) != 2 {
+		t.Fatalf("mutatedPaths = %v, want the paths deduplicated", o.mutatedPaths)
+	}
+
+	var big passOutcome
+	for i := 0; i < maxMutatedPaths*2; i++ {
+		big.noteMutation(callEffect{changed: true, paths: []string{fmt.Sprintf("f%d.go", i)}})
+	}
+	if len(big.mutatedPaths) != maxMutatedPaths {
+		t.Fatalf("mutatedPaths = %d, want the list bounded at %d", len(big.mutatedPaths), maxMutatedPaths)
+	}
+}
+
+// The continuation directive names the step the loop expects to be worked on,
+// so "continue" is never an instruction to decide what to do next.
+func TestPassLedgerPartialDirectiveNamesTheNextStep(t *testing.T) {
+	l := passLedger{goalText: "g", hasList: true}
+	l.list = todos.New("g", []string{"alpha", "beta"})
+
+	if got := l.partialDirective(); !strings.Contains(got, "The next action is: alpha") {
+		t.Fatalf("with everything pending the first step is next, got:\n%s", got)
+	}
+	l.list.Items[0].Status = todos.StatusDone
+	l.list.Items[1].Status = todos.StatusActive
+	if got := l.partialDirective(); !strings.Contains(got, "The next action is: beta") {
+		t.Fatalf("an in-progress step outranks a pending one, got:\n%s", got)
+	}
+	if got := l.nextStep(); got != "beta" {
+		t.Fatalf("nextStep = %q, want beta", got)
+	}
+
+	none := passLedger{goalText: "g"}
+	if got := none.partialDirective(); !strings.Contains(got, "update_plan") {
+		t.Fatalf("with no list the directive should ask for update_plan, got:\n%s", got)
+	}
+}
+
+// End to end through the loop: a pass that writes must reach the evaluator as
+// a harness-observed fact. This is the whole chain — filediff snapshot,
+// passOutcome, ledger, evaluator payload — and it is what stops a model
+// talking its way through a goal.
+func TestGoalPassLoopReportsObservedWritesToTheEvaluator(t *testing.T) {
+	var mu sync.Mutex
+	var evalUsers []string
+	evalIdx := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		var system, user string
+		for _, m := range req.Messages {
+			switch m.Role {
+			case "system":
+				system = m.Content
+			case "user":
+				user = m.Content
+			}
+		}
+		switch {
+		case strings.Contains(system, "security classifier"):
+			writeChatJSON(w, "SAFE")
+		case strings.Contains(system, "operating-mode classifier"):
+			writeChatJSON(w, "GOAL")
+		case strings.Contains(system, "goal-progress evaluator"):
+			mu.Lock()
+			evalUsers = append(evalUsers, user)
+			i := evalIdx
+			evalIdx++
+			mu.Unlock()
+			if i == 0 {
+				writeChatJSON(w, "GOAL_COMPLETE")
+				return
+			}
+			writeChatJSON(w, "GOAL_COMPLETE")
+		default:
+			writeToolCallWithContentJSON(w, "Write", `{"path":"f.txt","content":"changed\n"}`, "Plan:\n1. Ship it\n")
+		}
+	}))
+	defer srv.Close()
+
+	sess := newGoalPassSession(t, srv, true, 1)
+	if _, err := sess.Run(context.Background(), "ship the thing"); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(evalUsers) == 0 {
+		t.Fatal("the evaluator was never called")
+	}
+	first := evalUsers[0]
+	if !strings.Contains(first, "Harness-observed facts:") {
+		t.Fatalf("evaluator payload carries no facts block:\n%s", first)
+	}
+	if !strings.Contains(first, "Files changed this pass: 1") {
+		t.Fatalf("the observed write is missing from the facts:\n%s", first)
+	}
+	if !strings.Contains(first, "f.txt") {
+		t.Fatalf("the changed path is missing from the facts:\n%s", first)
+	}
+}
+
+// The forced survey runs at most once per goal. A second one would buy more
+// reading, which is never what a not-started goal is short of.
+func TestGoalPassLoopSurveysAtMostOncePerGoal(t *testing.T) {
+	srv, _, _ := goalPassServer(t, goalPassOpts{main: "read", eval: []string{"GOAL_NOT_STARTED"}})
+	defer srv.Close()
+
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
+	sess, err := NewSession(Options{
+		Cfg:           run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"},
+		Client:        srv.Client(),
+		Workdir:       root,
+		Registry:      tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}),
+		Posture:       posture.Defaults(),
+		AllowExplore:  true,
+		AllowPassLoop: true,
+		MaxIterations: 1,
+		Settings:      config.Settings{Resilience: &config.ResilienceSettings{MaxPasses: 4}},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	var surveyed int
+	_, err = sess.run(context.Background(), nil, TurnInput{Prompt: "ship the thing"}, false, func(e Event) {
+		if e.Kind == EventPassKind && e.Explored {
+			surveyed++
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "max passes (4) reached") {
+		t.Fatalf("expected the ceiling to stop this loop, got %v", err)
+	}
+	if surveyed != 1 {
+		t.Fatalf("forced surveys = %d, want exactly 1 across four GOAL_NOT_STARTED verdicts", surveyed)
+	}
+}
+
+// A clean verdict clears the malformed streak wherever it arrives. Both the
+// exhausted-pass path and the natural-exit path go through this helper, which
+// is what keeps the two in step: the natural-exit branch used to count
+// malformed replies without ever resetting them.
+func TestEvaluateGoalPassStreakAndGracefulStop(t *testing.T) {
+	var reply string
+	pipe := &rolemanager.Pipeline{Classifier: rolemanager.ClassifierFunc(
+		func(_ context.Context, _ rolemanager.ClassifierPayload) (string, error) {
+			return reply, nil
+		})}
+	sess := &Session{}
+	l := passLedger{goalText: "g"}
+
+	// One malformed verdict (re-asked once inside EvaluateGoal) counts but
+	// does not stop the loop.
+	reply = "not a sentinel"
+	got, stop, err := sess.evaluateGoalPass(context.Background(), pipe, &l, "evidence", func(Event) {})
+	if err != nil || stop {
+		t.Fatalf("one malformed reply must not stop the loop: stop=%v err=%v", stop, err)
+	}
+	if got != rolemanager.GoalPartial {
+		t.Fatalf("verdict = %q, want the fail-closed %q", got, rolemanager.GoalPartial)
+	}
+	if l.malformedStreak != 1 {
+		t.Fatalf("malformedStreak = %d, want 1", l.malformedStreak)
+	}
+
+	// A clean verdict resets it.
+	reply = string(rolemanager.GoalPartial)
+	if _, stop, err = sess.evaluateGoalPass(context.Background(), pipe, &l, "evidence", func(Event) {}); err != nil || stop {
+		t.Fatalf("a clean verdict must not stop the loop: stop=%v err=%v", stop, err)
+	}
+	if l.malformedStreak != 0 {
+		t.Fatalf("malformedStreak = %d, want a clean verdict to reset it", l.malformedStreak)
+	}
+
+	// Two malformed verdicts in a row stop the loop gracefully, with a
+	// warning and no error.
+	reply = "still not a sentinel"
+	var warned bool
+	for i := 0; i < maxMalformedEvals; i++ {
+		_, stop, err = sess.evaluateGoalPass(context.Background(), pipe, &l, "evidence", func(e Event) {
+			if e.Kind == EventWarningKind && strings.Contains(e.Warning, "malformed") {
+				warned = true
+			}
+		})
+		if err != nil {
+			t.Fatalf("a malformed reply is not a transport error: %v", err)
+		}
+	}
+	if !stop {
+		t.Fatalf("%d malformed replies in a row must stop the loop", maxMalformedEvals)
+	}
+	if !warned {
+		t.Fatal("the graceful stop must warn the user")
+	}
+}
+
+// A transport failure leaves the verdict unknown, and an unknown verdict must
+// not grant compute: it is terminal, not a graceful stop.
+func TestEvaluateGoalPassTransportFailureIsTerminal(t *testing.T) {
+	pipe := &rolemanager.Pipeline{Classifier: rolemanager.ClassifierFunc(
+		func(_ context.Context, _ rolemanager.ClassifierPayload) (string, error) {
+			return "", context.DeadlineExceeded
+		})}
+	sess := &Session{}
+	l := passLedger{goalText: "g"}
+	_, stop, err := sess.evaluateGoalPass(context.Background(), pipe, &l, "evidence", func(Event) {})
+	if err == nil {
+		t.Fatal("a transport failure must be returned as an error")
+	}
+	if stop {
+		t.Fatal("a transport failure is terminal, not a graceful stop")
 	}
 }

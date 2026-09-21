@@ -756,7 +756,21 @@ func runTool(ctx context.Context, tool tools.Tool, call rolemanager.ToolCall, em
 	})
 }
 
-func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, emit func(Event)) string {
+// callEffect is what one tool call actually did to disk, observed by the
+// harness rather than claimed by the model. It is the goal pass loop's
+// primary progress signal: a pass that changes no file has not advanced the
+// goal, whatever the assistant text says about it.
+type callEffect struct {
+	// changed is true when the file-diff snapshot saw at least one file
+	// change around the call.
+	changed bool
+	// paths are the changed paths, in the order observed.
+	paths []string
+}
+
+// executeCall runs one tool call and returns the string the conversation sees.
+// eff, when non-nil, receives the harness-observed disk effect of the call.
+func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, emit func(Event), eff *callEffect) string {
 	tool, ok := s.registry.Find(call.Name)
 	if !ok {
 		return fmt.Sprintf("tool result withheld: %q is not registered", call.Name)
@@ -820,6 +834,15 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 	// of the tool result.
 	if snap != nil {
 		if ch := snap.After(ctx); !ch.Empty() {
+			// Only a concrete file change counts as a mutation; a Change
+			// carrying nothing but Unavailable means the recorder could not
+			// see, which is not evidence that anything moved.
+			if eff != nil && len(ch.Files) > 0 {
+				eff.changed = true
+				for _, f := range ch.Files {
+					eff.paths = append(eff.paths, f.Path)
+				}
+			}
 			emit(Event{Kind: EventToolDiffKind, ToolName: call.Name, ToolCallID: call.ID, Diff: &ch})
 		}
 	}

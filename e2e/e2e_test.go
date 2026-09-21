@@ -981,8 +981,14 @@ func newGoalPassE2EServer(t *testing.T, evalSentinels []string) (*httptest.Serve
 // prompt whose scripted evaluator answers PARTIAL, PARTIAL, COMPLETE finishes
 // without a "max iterations" error — the pass loop re-checks the goal instead
 // of treating budget exhaustion as failure.
+//
+// The scripted model only runs `echo hi`, so the harness observes no file
+// change for the whole run. That costs one extra pass: the first
+// GOAL_COMPLETE is downgraded at the verification gate and answered with the
+// no-write directive, and only the verdict after it is accepted. A goal that
+// writes reaches the same place in three.
 func TestGoalModePassLoopCompletes(t *testing.T) {
-	srv, gm := newGoalPassE2EServer(t, []string{"GOAL_PARTIAL", "GOAL_PARTIAL", "GOAL_COMPLETE"})
+	srv, gm := newGoalPassE2EServer(t, []string{"GOAL_PARTIAL", "GOAL_PARTIAL", "GOAL_COMPLETE", "GOAL_COMPLETE"})
 	defer srv.Close()
 
 	dir := t.TempDir()
@@ -997,8 +1003,8 @@ func TestGoalModePassLoopCompletes(t *testing.T) {
 	}
 	gm.mu.Lock()
 	defer gm.mu.Unlock()
-	if gm.goalEvalCalls != 3 {
-		t.Fatalf("goal evaluator calls = %d, want 3 (PARTIAL, PARTIAL, COMPLETE)", gm.goalEvalCalls)
+	if gm.goalEvalCalls != 4 {
+		t.Fatalf("goal evaluator calls = %d, want 4 (PARTIAL, PARTIAL, COMPLETE downgraded at the write gate, COMPLETE)", gm.goalEvalCalls)
 	}
 	_ = out
 }

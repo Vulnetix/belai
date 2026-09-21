@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/vulnetix/signet/internal/goals"
@@ -42,9 +42,22 @@ const (
 	// stronger progression directive and starts a new agentic evaluation
 	// loop rather than aborting.
 	goalStallPartial = 2 * goalVerifyEvery
+	// goalNoWritePasses: consecutive passes that changed no file before the
+	// loop injects the no-write directive. Two passes is enough reading to
+	// locate any edit worth making; a third spent read-only is the failure
+	// mode goal mode exists to avoid.
+	goalNoWritePasses = 2
+	// maxMalformedEvals: consecutive malformed evaluator replies (each one
+	// already re-asked once with corrective feedback) before the loop stops
+	// consulting the evaluator and returns the work so far.
+	maxMalformedEvals = 2
 	// compactThresholdPct: compact at the pass boundary when the estimated
 	// context exceeds this share of the model window.
 	compactThresholdPct = 70
+	// defaultCompactWindow is the window compaction assumes when nothing
+	// knows the model's real one. It is deliberately conservative: compacting
+	// early costs one classifier call, never compacting costs the run.
+	defaultCompactWindow = 128_000
 	// defaultAgentContinuations bounds budget-exhaustion wrap-up passes in
 	// agent and plan mode when resilience.max_passes is unset (0). Goal mode
 	// treats 0 as unbounded by design; agent/plan mode must not inherit that.
@@ -56,15 +69,16 @@ const (
 // is wrapped in DirectivePrefix/DirectiveSuffix prose so the model reads the
 // sealed block as context rather than as the question to answer.
 const (
-	planDirective         = "The goal has not started yet. Write a planning todo list under a 'Plan:' header (numbered steps), then begin the first step. Mark each step complete with [DONE:n] in your reply as you finish it."
+	planDirective         = "No work has landed yet. Name the file to change and make the smallest correct edit that advances the goal, in this pass. Record the steps with update_plan (first step in_progress) if you have not already; the list is a side effect of working, not a substitute for it."
 	verificationDirective = "Before doing any further work, verify the completed items in the todo list against the files on disk (read-only). Confirm each marked-done item is actually true; if one is not, correct the list and the work. Only continue new work after the check."
 	// continuationDirective is injected when a bounded pass spends its whole
 	// iteration budget. Budget exhaustion is a turn boundary, not a failure.
 	continuationDirective = "The tool budget for this turn was reached. If more tool calls are needed to finish the work, make them now; otherwise give the final answer. Either way, say briefly what was done and what remains."
-	// goalAckDirective is injected on the first goal pass so the model writes
-	// a todo list and begins the first step in the same pass rather than
-	// spending the pass on an acknowledgement alone.
-	goalAckDirective = "Write a planning todo list under a 'Plan:' header (numbered steps), then carry out the first step in this same pass — the list and the first step's work belong in one pass, not two. Mark each step complete with [DONE:n] in your reply as you finish it. Keep any restatement of the objective to a single line naming the deliverable and how completion will be verified."
+	// goalAckDirective is injected on the first goal pass. Goal mode's whole
+	// point over plan mode is that a clear change is made immediately, so the
+	// directive leads with the edit and treats the checklist as bookkeeping
+	// that happens alongside it.
+	goalAckDirective = "Start the work in this pass. Call update_plan once with the steps you will execute, the first marked in_progress, then make the first real change — read the exact bytes you are about to edit and edit them. A pass that ends with no file changed has not advanced the goal. Mark steps complete with update_plan, or with [DONE:n] in your reply, as you finish them. Keep any restatement of the objective to a single line naming the deliverable and how completion will be verified."
 )
 
 // goalAckDirective returns the first-pass goal directive, naming the detected
@@ -120,10 +134,11 @@ type passLedger struct {
 	// surveyPending: a forced codebase survey was injected before the pass
 	// about to run; carried into that pass's EventPassKind.
 	surveyPending bool
-	// surveyedLastPass: the pass that just ended ran on survey findings, so a
-	// repeat GOAL_NOT_STARTED gets the planning instruction without a second
-	// survey.
-	surveyedLastPass bool
+	// surveyedOnce: the forced codebase survey has already run for this goal,
+	// so a repeat GOAL_NOT_STARTED gets the action directive alone. A second
+	// survey buys more reading, which is never what a not-started goal is
+	// short of.
+	surveyedOnce bool
 
 	// verificationArmed: the pass about to run carries the verification
 	// directive; verificationPasses counts finished verification passes.
@@ -135,6 +150,19 @@ type passLedger struct {
 	// evaluator replies; a clean reply resets it.
 	partialStreak   int
 	malformedStreak int
+
+	// writes is the number of file-changing tool calls observed across the
+	// whole goal; passWrites is the count for the pass that just ended and
+	// passesSinceWrite the run of passes that changed nothing. These are
+	// harness observations from the file-diff recorder, never model claims,
+	// and they are goal mode's primary progress signal: the loop exists to
+	// produce changes on disk, not a finished survey.
+	writes           int
+	passWrites       int
+	passesSinceWrite int
+	// touched are the paths changed so far, deduplicated and bounded. Paths
+	// and counts only — never file contents.
+	touched []string
 
 	// overflowRetried: a ClassOverflow escaping pass is caught once (compact,
 	// re-run the pass); a second overflow is terminal.
@@ -173,7 +201,9 @@ func (l *passLedger) advanceTodos(passAssistantText string) {
 
 // hasVerifiableWork reports whether the tracked list has anything a
 // verification pass could check. Arming verification against an all-pending
-// list spends a read-only pass confirming nothing.
+// list spends a read-only pass confirming nothing. A done item with no write
+// behind it is deliberately still verifiable: that is exactly the claim the
+// verification pass exists to catch.
 func (l *passLedger) hasVerifiableWork() bool {
 	if !l.hasList {
 		return false
@@ -184,6 +214,89 @@ func (l *passLedger) hasVerifiableWork() bool {
 		}
 	}
 	return false
+}
+
+// noteWrites records one pass's harness-observed disk effect.
+func (l *passLedger) noteWrites(out passOutcome) {
+	l.passWrites = out.mutations
+	if out.mutations > 0 {
+		l.writes += out.mutations
+		l.passesSinceWrite = 0
+	} else {
+		l.passesSinceWrite++
+	}
+	for _, p := range out.mutatedPaths {
+		if len(l.touched) >= maxMutatedPaths {
+			break
+		}
+		if !slices.Contains(l.touched, p) {
+			l.touched = append(l.touched, p)
+		}
+	}
+}
+
+// stalledOnWrites reports whether the loop has gone long enough without a
+// file change to stop asking politely. It is deliberately independent of the
+// todo list: a model can keep a checklist moving with prose alone.
+func (l *passLedger) stalledOnWrites() bool {
+	return l.passesSinceWrite >= goalNoWritePasses
+}
+
+// nextStep names the step the loop expects to be worked on: the first
+// in-progress item, else the first pending one. It is used to make the
+// action directives concrete.
+func (l *passLedger) nextStep() string {
+	if !l.hasList {
+		return ""
+	}
+	for _, it := range l.list.Items {
+		if it.Status == todos.StatusActive {
+			return it.Text
+		}
+	}
+	for _, it := range l.list.Items {
+		if it.Status == todos.StatusPending {
+			return it.Text
+		}
+	}
+	return ""
+}
+
+// noWriteDirective is the escalation for a run of passes that changed no
+// file. It is the counterweight to the read-only pull of exploration: goal
+// mode is not finished investigating, it is behind on writing.
+func (l *passLedger) noWriteDirective() string {
+	var b strings.Builder
+	if l.writes == 0 {
+		b.WriteString("No file has changed yet in this goal. Stop investigating and make the smallest correct edit that advances it now")
+	} else {
+		fmt.Fprintf(&b, "The last %d passes changed no files. Stop investigating and make the smallest correct edit that advances the goal now", l.passesSinceWrite)
+	}
+	if step := l.nextStep(); step != "" {
+		fmt.Fprintf(&b, " — the next step is: %s", step)
+	}
+	b.WriteString(". Read the exact bytes you are about to edit, then edit them. If a real blocker prevents any edit, state the blocker in one line and say what you need.")
+	if l.hasList {
+		b.WriteString("\n\n" + l.list.Render())
+	}
+	return b.String()
+}
+
+// goalFacts renders the harness-observed evidence the goal evaluator is shown
+// beside the pass digest: pass number, file changes and the paths involved.
+// Counts and paths are harness-computed facts — the same class the repo map
+// is allowed to carry — never file contents.
+func (l *passLedger) goalFacts() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Pass: %d\n", l.passes)
+	fmt.Fprintf(&b, "Files changed this pass: %d\n", l.passWrites)
+	fmt.Fprintf(&b, "Files changed so far in this goal: %d\n", l.writes)
+	if len(l.touched) > 0 {
+		fmt.Fprintf(&b, "Paths changed: %s\n", strings.Join(l.touched, ", "))
+	} else {
+		b.WriteString("Paths changed: none\n")
+	}
+	return b.String()
 }
 
 // notePartial records one no-progress PARTIAL verdict for stall detection.
@@ -200,14 +313,30 @@ func (l *passLedger) notePartial() bool {
 	return l.partialStreak >= goalStallPartial
 }
 
-// partialDirectiveTurn selects the directive for a GOAL_PARTIAL step. It
-// arms verification only when the tracked list has completed work to check;
-// an all-pending list would spend the pass confirming nothing.
+// partialDirectiveTurn selects the directive for a GOAL_PARTIAL step. A run
+// of passes that changed no file outranks everything else: the loop is behind
+// on writing, and a verification pass would spend another read-only pass.
+// Verification is armed only when the tracked list has completed work to
+// check and something has actually been written.
 func (l *passLedger) partialDirectiveTurn() (body string, arm bool) {
+	if l.stalledOnWrites() {
+		return l.noWriteDirective(), false
+	}
 	if l.partialStreak%goalVerifyEvery == 0 && l.hasVerifiableWork() {
 		return verificationDirective, true
 	}
 	return l.partialDirective(), false
+}
+
+// gateDirective is the body injected when GOAL_COMPLETE arrives before the
+// verification gate has been satisfied. A goal that has changed no file is
+// not verified by re-reading a repository it never touched, so that case gets
+// the no-write directive instead.
+func (l *passLedger) gateDirective() string {
+	if l.writes == 0 {
+		return l.noWriteDirective()
+	}
+	return verificationDirective
 }
 
 // passLoop is the pass driver. Everything from sanitize through SealSystem
@@ -330,6 +459,11 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 			l.verificationArmed = false
 		}
 
+		// Record what the pass did to disk before anything else looks at it:
+		// the write ledger is what the directives and the verification gate
+		// key off.
+		l.noteWrites(out)
+
 		// Maintain the shared todo list from assistant text only, then tell
 		// the TUI when it changed so it can render and persist it.
 		l.advanceTodos(out.text)
@@ -360,28 +494,17 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 			// once before trusting it. A non-complete verdict injects the
 			// continuation directive and loops; the existing stall detectors
 			// still bound a loop that is not advancing.
-			sentinel, evalErr := rolemanager.EvaluateGoal(ctx, pipe.Classifier, rolemanager.GoalEvalInput{
-				Goal:     l.goalText,
-				Todos:    l.list.Render(),
-				Evidence: sanitize.Sanitize(out.reply),
-			})
-			malformed := false
+			sentinel, stop, evalErr := s.evaluateGoalPass(ctx, pipe, &l, sanitize.Sanitize(out.reply), emit)
 			if evalErr != nil {
-				if !errors.Is(evalErr, rolemanager.ErrMalformedGoalEval) {
-					return run.Result{Passes: l.passes}, evalErr
-				}
-				malformed = true
-				l.malformedStreak++
-				if l.malformedStreak >= 2 {
-					return run.Result{Passes: l.passes, GoalSentinel: sentinel},
-						fmt.Errorf("goal pass loop stopped: %d consecutive malformed evaluator replies", l.malformedStreak)
-				}
+				return run.Result{Passes: l.passes}, evalErr
 			}
-			emit(Event{Kind: EventGoalEvalKind, Pass: l.passes, GoalSentinel: sentinel, Malformed: malformed})
+			if stop {
+				return run.Result{Reply: out.reply, Usage: out.usage, GoalSentinel: sentinel, Passes: l.passes}, nil
+			}
 			if sentinel == rolemanager.GoalComplete {
 				if l.verificationPasses == 0 {
 					l.verificationArmed = true
-					turns = append(turns, directiveTurns(verificationDirective)...)
+					turns = append(turns, directiveTurns(l.gateDirective())...)
 					continue
 				}
 				if l.hasList {
@@ -396,6 +519,10 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 			if l.notePartial() {
 				l.partialStreak = 0
 				turns = append(turns, directiveTurns(l.progressionDirective())...)
+				continue
+			}
+			if l.stalledOnWrites() {
+				turns = append(turns, directiveTurns(l.noWriteDirective())...)
 				continue
 			}
 			turns = append(turns, directiveTurns(continuationDirective)...)
@@ -416,64 +543,36 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 			return run.Result{Passes: l.passes}, fmt.Errorf("goal pass loop stopped: pass %d executed no tools", l.passes)
 		}
 
-		// The goal evaluator and the progress-report turn run concurrently
-		// against the same pass evidence. The sentinel alone drives control
-		// flow; the report is assistant text appended to turns and shown in
-		// the TUI.
-		var sentinel rolemanager.GoalSentinel
-		var evalErr error
-		var report string
-		var wg sync.WaitGroup
-		wg.Add(2)
-		go func() {
-			defer wg.Done()
-			sentinel, evalErr = rolemanager.EvaluateGoal(ctx, pipe.Classifier, rolemanager.GoalEvalInput{
-				Goal:     l.goalText,
-				Todos:    l.list.Render(),
-				Evidence: sanitize.Sanitize(evidenceDigest(turns[start:])),
-			})
-		}()
-		go func() {
-			defer wg.Done()
-			report = s.progressReport(ctx, system, turns, l.goalText, streaming, emit)
-		}()
-		wg.Wait()
-		if report != "" {
-			turns = append(turns, run.Turn{Role: "assistant", Content: report})
-		}
+		// The evaluator is the only model call at a pass boundary. An earlier
+		// version also asked the main model for a per-pass progress report;
+		// it cost a second full-context turn every pass, carried its own
+		// prose forward, and taught the model that a pass's deliverable is a
+		// report. The pass's own assistant text is the report, and the next
+		// iteration starts instead.
+		sentinel, stop, evalErr := s.evaluateGoalPass(ctx, pipe, &l, sanitize.Sanitize(evidenceDigest(turns[start:])), emit)
 		if evalErr != nil {
-			if !errors.Is(evalErr, rolemanager.ErrMalformedGoalEval) {
-				// Transport failure: terminal. The verdict is unknown, and an
-				// unknown verdict must not grant compute.
-				return run.Result{Passes: l.passes}, evalErr
-			}
-			// Malformed output fails closed to GOAL_PARTIAL (one garbled reply
-			// is noise); two in a row is a broken evaluator.
-			l.malformedStreak++
-			emit(Event{Kind: EventGoalEvalKind, Pass: l.passes, GoalSentinel: sentinel, Malformed: true})
-			if l.malformedStreak >= 2 {
-				return run.Result{Passes: l.passes, GoalSentinel: sentinel},
-					fmt.Errorf("goal pass loop stopped: %d consecutive malformed evaluator replies", l.malformedStreak)
-			}
-		} else {
-			l.malformedStreak = 0
-			emit(Event{Kind: EventGoalEvalKind, Pass: l.passes, GoalSentinel: sentinel})
+			// Transport failure: terminal. The verdict is unknown, and an
+			// unknown verdict must not grant compute.
+			return run.Result{Passes: l.passes}, evalErr
+		}
+		if stop {
+			return run.Result{Reply: out.lastText, Usage: out.usage, GoalSentinel: sentinel, Passes: l.passes}, nil
 		}
 
 		switch sentinel {
 		case rolemanager.GoalNotStarted:
-			if !l.surveyedLastPass {
-				// A forced explore must survey the repository, not re-ask the
-				// original question: a goal-mode prompt usually has no
-				// @references, so the ordinary plan would just repeat it.
+			// A forced explore must name edit targets, not re-ask the
+			// original question: a goal-mode prompt usually has no
+			// @references, so the ordinary plan would just repeat it. It runs
+			// at most once per goal — a second survey buys reading, and
+			// reading is not what a not-started goal is short of.
+			if !l.surveyedOnce {
 				if survey := s.goalSurveyTurns(ctx, l.goalText, pipe, emit); len(survey) > 0 {
 					turns = append(turns, survey...)
 					turns = append(turns, run.Turn{Role: "assistant", Content: rolemanager.SummaryAck})
 					l.surveyPending = true
 				}
-				l.surveyedLastPass = true
-			} else {
-				l.surveyedLastPass = false
+				l.surveyedOnce = true
 			}
 			turns = append(turns, directiveTurns(planDirective)...)
 
@@ -507,7 +606,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 					continue
 				}
 				l.verificationArmed = true
-				turns = append(turns, directiveTurns(verificationDirective)...)
+				turns = append(turns, directiveTurns(l.gateDirective())...)
 				continue
 			}
 			// Accepted: mark the todo list complete and return.
@@ -579,18 +678,41 @@ func (s *Session) agentContinuations(ctx context.Context, pipe *rolemanager.Pipe
 	return run.Result{Reply: out.lastText, Usage: out.usage, Passes: continuations}, nil
 }
 
-// progressReport asks the main model, at a pass boundary, for a concise
-// work-done-this-pass / next-actions report. It is a normal model turn (never
-// a classifier payload) and runs beside the evaluator; any tool calls it emits
-// are ignored — only its text is returned.
-func (s *Session) progressReport(ctx context.Context, system string, turns []run.Turn, goalText string, streaming bool, emit func(Event)) string {
-	prompt := run.Turn{Role: "user", Content: "Report concisely for the harness: the work completed this pass and the concrete next actions. Goal: " + goalText}
-	rp := append(append([]run.Turn{}, turns...), prompt)
-	assistant, err := s.streamTurnRetry(ctx, system, rp, streaming, emit)
-	if err != nil {
-		return ""
+// evaluateGoalPass runs the goal evaluator for one pass boundary and folds the
+// malformed-reply bookkeeping into the ledger.
+//
+// The returns are: the verdict (always usable — a malformed reply fails closed
+// to GOAL_PARTIAL); stop, meaning the evaluator has failed often enough that
+// the loop must end gracefully with the work so far; and a terminal transport
+// error. A garbled classifier token is not a reason to throw away a long run,
+// so the streak limit returns the work rather than an error — only an unknown
+// verdict from a transport failure is terminal, because an unknown verdict
+// must not grant compute.
+func (s *Session) evaluateGoalPass(ctx context.Context, pipe *rolemanager.Pipeline, l *passLedger, evidence string, emit func(Event)) (rolemanager.GoalSentinel, bool, error) {
+	sentinel, err := rolemanager.EvaluateGoal(ctx, pipe.Classifier, rolemanager.GoalEvalInput{
+		Goal:     l.goalText,
+		Todos:    l.list.Render(),
+		Facts:    l.goalFacts(),
+		Evidence: evidence,
+	})
+	if err == nil {
+		l.malformedStreak = 0
+		emit(Event{Kind: EventGoalEvalKind, Pass: l.passes, GoalSentinel: sentinel})
+		return sentinel, false, nil
 	}
-	return strings.TrimSpace(assistant.Text)
+	if !errors.Is(err, rolemanager.ErrMalformedGoalEval) {
+		return sentinel, false, err
+	}
+	// Malformed output fails closed to GOAL_PARTIAL (one garbled reply is
+	// noise, and the evaluator was already re-asked once with the exact
+	// syntax it broke); two in a row is a broken evaluator.
+	l.malformedStreak++
+	emit(Event{Kind: EventGoalEvalKind, Pass: l.passes, GoalSentinel: sentinel, Malformed: true})
+	if l.malformedStreak >= maxMalformedEvals {
+		emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("goal evaluator returned %d malformed replies in a row; stopping the goal loop and returning the work so far", l.malformedStreak)})
+		return sentinel, true, nil
+	}
+	return sentinel, false, nil
 }
 
 // partialDirective builds the continuation instruction for a PARTIAL verdict:
@@ -598,11 +720,16 @@ func (s *Session) progressReport(ctx context.Context, system string, turns []run
 // tracking one.
 func (l *passLedger) partialDirective() string {
 	if l.hasList {
-		return "The goal is partially complete. Continue from the current todo list state:\n\n" +
-			l.list.Render() +
-			"\n\nMark steps complete with [DONE:n] in your reply as you finish them."
+		body := "Continue."
+		if step := l.nextStep(); step != "" {
+			body += " The next action is: " + step + ". Carry it out with an edit in this pass."
+		} else {
+			body += " Carry out the next action with an edit in this pass."
+		}
+		return body + "\n\n" + l.list.Render() +
+			"\n\nMark steps complete with update_plan, or with [DONE:n] in your reply, as you finish them."
 	}
-	return "The goal is partially complete but no todo list is tracked yet. Write a planning todo list under a 'Plan:' header (numbered steps), then continue. Mark each step complete with [DONE:n] in your reply as you finish it."
+	return "The goal is partially complete and no step list is tracked yet. Call update_plan with the steps you will execute, then carry out the next one with an edit in this pass."
 }
 
 // progressionDirective builds the directive injected when the pass loop has
@@ -611,11 +738,11 @@ func (l *passLedger) partialDirective() string {
 // step, creating a new agentic evaluation loop rather than aborting.
 func (l *passLedger) progressionDirective() string {
 	if l.hasList {
-		return "The goal is partially complete but progress has stalled — the todo list has not advanced for several passes. Review the conversation history above and the current todo list state, identify the single most concrete next step that will move the goal forward, and execute it. If you are blocked, state the blocker explicitly.\n\n" +
+		return "Progress has stalled — the step list has not advanced for several passes. Execute the single most concrete next step now, as an edit; review the conversation history above only as far as that step needs. If you are blocked, state the blocker explicitly.\n\n" +
 			l.list.Render() +
-			"\n\nMark steps complete with [DONE:n] in your reply as you finish them."
+			"\n\nMark steps complete with update_plan, or with [DONE:n] in your reply, as you finish them."
 	}
-	return "The goal is partially complete but progress has stalled — no todo list is tracked yet. Review the conversation history above, write a planning todo list under a 'Plan:' header (numbered steps), then execute the first step. If you are blocked, state the blocker explicitly. Mark each step complete with [DONE:n] in your reply as you finish it."
+	return "Progress has stalled and no step list is tracked yet. Call update_plan with the steps you will execute, then carry out the first one as an edit in this pass. If you are blocked, state the blocker explicitly."
 }
 
 // directiveTurns frames one harness continuation instruction: a user turn
@@ -654,6 +781,23 @@ func isOverflow(err error) bool {
 	return resilience.DefaultClassifier{}.Classify(err).Class == resilience.ClassOverflow
 }
 
+// compactWindow is the context window compaction measures against: the user's
+// override first, then the provider catalogue, then the built-in registry,
+// then a conservative default.
+//
+// The default matters. modelinfo.Resolve alone returns ok=false for any model
+// outside the built-in registry — every custom provider catalogue entry, for
+// instance — and the old code read that as "never compact", so a long goal
+// run against such a model grew until a request overflowed. Guessing low is
+// safe here because the only consequence is compacting sooner; the TUI still
+// reports an unknown window rather than a guessed denominator.
+func (s *Session) compactWindow() int {
+	if w, ok := modelinfo.ResolveWith(s.cfg.Model, s.settings.ContextWindows, s.settings.CatalogWindow(s.cfg.Provider, s.cfg.Model)); ok && w > 0 {
+		return w
+	}
+	return defaultCompactWindow
+}
+
 // compactBoundary rebuilds turns as a validated compaction summary when the
 // estimated context exceeds compactThresholdPct of the model window. It runs
 // only at pass boundaries: mid-pass, turns may hold assistant tool_calls
@@ -667,10 +811,7 @@ func isOverflow(err error) bool {
 // retries. Returns ok=false when compaction was not attempted or did not
 // produce a usable summary.
 func (s *Session) compactBoundary(ctx context.Context, pipe *rolemanager.Pipeline, turns []run.Turn) ([]run.Turn, bool) {
-	window, ok := modelinfo.Resolve(s.cfg.Model, s.settings.ContextWindows)
-	if !ok || window <= 0 {
-		return nil, false
-	}
+	window := s.compactWindow()
 	msgs := make([]transcript.Message, 0, len(turns))
 	for _, t := range turns {
 		msgs = append(msgs, transcript.Message{Role: t.Role, Content: t.Content, ToolName: t.ToolName})
