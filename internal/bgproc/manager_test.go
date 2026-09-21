@@ -191,6 +191,80 @@ func TestLogGrepLineNumbersAndContext(t *testing.T) {
 	}
 }
 
+func TestTailAfterExit(t *testing.T) {
+	m := testManager(t)
+	p, err := m.Start("echo", "echo alpha && echo beta")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	time.Sleep(300 * time.Millisecond)
+
+	// A process that exits unexpectedly stays in the active map in the
+	// recovering state; Tail should still resolve it by name.
+	tail, err := m.Tail("echo", 10)
+	if err != nil {
+		t.Fatalf("Tail: %v", err)
+	}
+	if !strings.Contains(tail, "alpha") || !strings.Contains(tail, "beta") {
+		t.Fatalf("tail = %q, want alpha and beta", tail)
+	}
+	_ = p
+}
+
+func TestHistorySurvivesStop(t *testing.T) {
+	m := testManager(t)
+	p, err := m.Start("echo", "echo alpha && sleep 60")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if err := m.Stop(p.ID); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	time.Sleep(200 * time.Millisecond)
+
+	// Stopped processes are removed from the active map, but their snapshot
+	// and log path are preserved in history under the process name.
+	if _, ok := m.Lookup(p.ID); ok {
+		t.Fatal("stopped process should not be in active map")
+	}
+	hist, ok := m.ProcessByName("echo")
+	if !ok {
+		t.Fatal("expected history entry for echo")
+	}
+	if hist.LogPath == "" {
+		t.Fatal("history must retain the log path")
+	}
+
+	tail, err := m.Tail("echo", 10)
+	if err != nil {
+		t.Fatalf("Tail: %v", err)
+	}
+	if !strings.Contains(tail, "alpha") {
+		t.Fatalf("tail = %q, want alpha", tail)
+	}
+}
+
+func TestTailByIDAndLogDirectory(t *testing.T) {
+	m := testManager(t)
+	// The default log directory should sit under SIGNET_HOME/signet/logs.
+	if !strings.Contains(m.logsDir, string(filepath.Separator)+"logs") {
+		t.Fatalf("logsDir = %q, want .../logs", m.logsDir)
+	}
+	p, err := m.Start("echo", "echo hello log")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	tail, err := m.TailByID(p.ID, 10)
+	if err != nil {
+		t.Fatalf("TailByID: %v", err)
+	}
+	if !strings.Contains(tail, "hello log") {
+		t.Fatalf("tail = %q, want hello log", tail)
+	}
+}
+
 func drainEvents(m *Manager, stop func(Event) bool) {
 	timeout := time.After(2 * time.Second)
 	for {

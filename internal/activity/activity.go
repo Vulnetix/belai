@@ -186,6 +186,18 @@ func (r *Registry) Output(id string) string {
 	return h.Output()
 }
 
+// Append records one line of output for the activity with id. Unknown ids
+// are ignored. This is used by callers that hold the activity ID but not its
+// handle.
+func (r *Registry) Append(id, line string) {
+	r.mu.Lock()
+	h, ok := r.byID[id]
+	r.mu.Unlock()
+	if ok {
+		h.Append(line)
+	}
+}
+
 // SetTargets records the artifact rel paths an activity produced.
 func (h *Handle) SetTargets(targets []string) {
 	h.mu.Lock()

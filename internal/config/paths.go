@@ -127,14 +127,14 @@ func ProjectProcessesDir(workdir string) string {
 	return filepath.Join(ProjectDir(workdir), "processes")
 }
 
-// ProcessLogsDir returns <GlobalDir>/proc-logs, the directory that holds
+// ProcessLogsDir returns <GlobalDir>/logs, the directory that holds
 // supervised-process log files.
 func ProcessLogsDir() (string, error) {
 	dir, err := GlobalDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "proc-logs"), nil
+	return filepath.Join(dir, "logs"), nil
 }
 
 // GlobalSkillsDir returns <GlobalDir>/skills.

@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -98,6 +99,7 @@ const (
 type Manager struct {
 	mu       sync.RWMutex
 	procs    map[string]*processInstance
+	history  map[string]Process
 	nextID   int
 	events   chan Event
 	workdir  string
@@ -154,13 +156,14 @@ func NewManager(workdir string, cfg run.Config, client *http.Client,
 	settings config.Settings, pol posture.Policy, caps tools.Capabilities) *Manager {
 	logsDir, _ := config.ProcessLogsDir()
 	if logsDir == "" {
-		logsDir = filepath.Join(workdir, ".vulnetix", "proc-logs")
+		logsDir = filepath.Join(workdir, ".vulnetix", "logs")
 	}
 	_ = os.MkdirAll(logsDir, 0o700)
 	pruneLogs(logsDir)
 
 	m := &Manager{
 		procs:    make(map[string]*processInstance),
+		history:  make(map[string]Process),
 		events:   make(chan Event, 256),
 		workdir:  workdir,
 		cfg:      cfg,
@@ -366,6 +369,7 @@ func (m *Manager) handleExit(id string, pid, code int) {
 		snap := p.snapshotLocked()
 		p.mu.Unlock()
 		m.releaseLock(p)
+		m.history[snap.Name] = snap
 		delete(m.procs, id)
 		m.mu.Unlock()
 		m.pushEvent(Event{ID: id, Kind: "exit", Process: snap})
@@ -378,6 +382,7 @@ func (m *Manager) handleExit(id string, pid, code int) {
 		snap := p.snapshotLocked()
 		p.mu.Unlock()
 		m.releaseLock(p)
+		m.history[snap.Name] = snap
 		delete(m.procs, id)
 		m.mu.Unlock()
 		m.pushEvent(Event{ID: id, Kind: "fail", Process: snap,
@@ -412,6 +417,7 @@ func (m *Manager) RestartProcess(id, command string) error {
 		snap := p.snapshotLocked()
 		p.mu.Unlock()
 		m.releaseLock(p)
+		m.history[snap.Name] = snap
 		delete(m.procs, id)
 		m.mu.Unlock()
 		m.pushEvent(Event{ID: id, Kind: "fail", Process: snap,
@@ -442,6 +448,30 @@ func (m *Manager) RestartProcess(id, command string) error {
 	return nil
 }
 
+// ProcessByName returns the newest running or historical process record for
+// a library slug. Running processes take precedence over history.
+func (m *Manager) ProcessByName(name string) (Process, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var latest Process
+	var found bool
+	for _, p := range m.procs {
+		if p.name == name {
+			if !found || p.started.After(latest.Started) {
+				latest = p.snapshotLocked()
+				found = true
+			}
+		}
+	}
+	if found {
+		return latest, true
+	}
+	if h, ok := m.history[name]; ok {
+		return h, true
+	}
+	return Process{}, false
+}
+
 // ProcessCommand returns the current command for a process handle.
 func (m *Manager) ProcessCommand(id string) (string, bool) {
 	m.mu.RLock()
@@ -451,6 +481,94 @@ func (m *Manager) ProcessCommand(id string) (string, bool) {
 		return "", false
 	}
 	return p.command, true
+}
+
+// TailByID returns the last n non-empty lines from a process log file looked
+// up by its runtime handle id.
+func (m *Manager) TailByID(id string, n int) (string, error) {
+	m.mu.RLock()
+	p, ok := m.procs[id]
+	m.mu.RUnlock()
+	if !ok {
+		return "", fmt.Errorf("process %q not found", id)
+	}
+	p.log.Flush()
+	return tailFile(p.logPath, n)
+}
+
+// Tail returns the last n non-empty lines from a process log file. It
+// prefers the running or historical record for name and falls back to the
+// newest log file in the logs directory whose name contains the slug.
+func (m *Manager) Tail(name string, n int) (string, error) {
+	p, ok := m.ProcessByName(name)
+	if ok && p.LogPath != "" {
+		return tailFile(p.LogPath, n)
+	}
+	m.mu.RLock()
+	logsDir := m.logsDir
+	m.mu.RUnlock()
+	entries, err := os.ReadDir(logsDir)
+	if err != nil {
+		return "", fmt.Errorf("read logs dir: %w", err)
+	}
+	type candidate struct {
+		path    string
+		modTime time.Time
+	}
+	var candidates []candidate
+	prefix := "-" + name + "-"
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".log") {
+			continue
+		}
+		if !strings.Contains(e.Name(), prefix) {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		candidates = append(candidates, candidate{path: filepath.Join(logsDir, e.Name()), modTime: info.ModTime()})
+	}
+	if len(candidates) == 0 {
+		return "", fmt.Errorf("no log found for %q", name)
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].modTime.After(candidates[j].modTime)
+	})
+	return tailFile(candidates[0].path, n)
+}
+
+func tailFile(path string, n int) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("open log: %w", err)
+	}
+	defer f.Close()
+	if n <= 0 {
+		n = 32
+	}
+	const maxLineLen = 16 * 1024
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 64*1024), maxLineLen)
+	var ring []string
+	for sc.Scan() {
+		line := sc.Text()
+		if line == "" {
+			continue
+		}
+		ring = append(ring, line)
+		if len(ring) > n {
+			ring = ring[1:]
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return "", fmt.Errorf("scan log: %w", err)
+	}
+	if len(ring) == 0 {
+		return "", nil
+	}
+	return strings.Join(ring, "\n"), nil
 }
 
 // LogGrep searches the log file of one process.

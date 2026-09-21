@@ -569,26 +569,27 @@ func (a *App) showSelectedProcessTail() (tea.Model, tea.Cmd) {
 		a.processesState.errorMsg = "process manager not available"
 		return a, nil
 	}
+
+	// Prefer a running process so the F9-style activity output view stays live.
 	var targetID string
 	for _, p := range a.procManager.List() {
-		if p.Name == name {
+		if p.Name == name && p.State == bgproc.StateRunning {
 			targetID = p.ID
 			break
 		}
 	}
-	if targetID == "" {
-		a.addSystem(fmt.Sprintf("process %s is not running", name))
-		return a, nil
+	if targetID != "" {
+		a.runsOutput = runsOutputState{id: "proc-" + targetID}
+		return a, a.push(viewRunsOutput)
 	}
-	tail, err := a.procManager.LogGrep(targetID, ".*", 32, 0)
+
+	// Fall back to the newest log file for this process, whether it is
+	// historical in this session or from a previous Signet run.
+	tail, err := a.procManager.Tail(name, 256)
 	if err != nil {
 		a.processesState.errorMsg = err.Error()
 		return a, nil
 	}
-	if tail == "" {
-		a.addSystem(fmt.Sprintf("process %s: no output yet", name))
-	} else {
-		a.addSystem(fmt.Sprintf("process %s tail:\n%s", name, tail))
-	}
-	return a, nil
+	a.runsOutput = runsOutputState{id: name, content: tail}
+	return a, a.push(viewRunsOutput)
 }

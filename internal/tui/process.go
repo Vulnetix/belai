@@ -76,16 +76,21 @@ func (a *App) handleProcess(input string) tea.Cmd {
 	return a.watchProcessEvents()
 }
 
-// handleProcessProgress appends live output to the running process row.
+// handleProcessProgress appends live output to the running process row and
+// to the activity registry so the F9 runs panel can open the full log.
 func (a *App) handleProcessProgress(m processProgressMsg) tea.Cmd {
 	if m.done {
 		return nil
 	}
+	callID := "proc-" + m.id
 	for i := len(a.messages) - 1; i >= 0; i-- {
-		if a.messages[i].Role == "tool" && a.messages[i].ToolCallID == "proc-"+m.id {
+		if a.messages[i].Role == "tool" && a.messages[i].ToolCallID == callID {
 			a.messages[i].AppendProgress(m.text)
 			break
 		}
+	}
+	if a.activity != nil {
+		a.activity.Append(callID, m.text)
 	}
 	if a.follow {
 		a.vp.GotoBottom()

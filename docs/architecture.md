@@ -2167,7 +2167,7 @@ one-shot `!cmd` path, `!!cmd` runs the command through `sh -c` with **no
 output cap and no timeout**, so it is suitable for long-lived servers, dev
 servers, and watchers. The process gets its own process group, runs with a
 credential-scrubbed environment (`proc.ScrubbedEnv`), and streams output to a
-live tool row and a log file under `<GlobalDir>/proc-logs` without contacting
+live tool row and a log file under `<GlobalDir>/logs` without contacting
 the model while it runs.
 
 When a supervised process exits without the user having stopped it, Signet
@@ -2198,9 +2198,13 @@ by project entries of the same name. The whole file body is the command,
 verbatim. `!!cmd` writes the command to the project scope with a slug derived
 from `argv[0]` and starts it. The manager screen (`/processes`) allows the
 user to toggle auto-start, reorder, edit in `$VISUAL/$EDITOR`, create, delete,
-run, stop, and view the log tail. Enabled entries auto-start when Signet
-opens the workdir; a lock file per `(workdir-hash, slug)` prevents a second
-Signet instance from launching a duplicate copy.
+run, stop, and view the log tail. `enter` on any process opens its full log
+in the same full-screen output reader that the F9 runs panel uses, and rows
+in the F9 runs panel expose `v` to open the live log for the selected process.
+Process output is also appended to the activity registry as it arrives, so the
+reader stays live even when the process is still running. Enabled entries
+auto-start when Signet opens the workdir; a lock file per `(workdir-hash, slug)`
+prevents a second Signet instance from launching a duplicate copy.
 
 ## Performance
 

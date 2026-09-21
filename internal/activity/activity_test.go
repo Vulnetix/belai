@@ -122,3 +122,20 @@ func TestFinishDoesNotOverwriteKilled(t *testing.T) {
 		t.Fatalf("state = %q, want killed (kill wins over finish)", h.Activity.State)
 	}
 }
+
+// TestRegistryAppendByID verifies that callers holding only the activity id
+// can append output without keeping the Add handle.
+func TestRegistryAppendByID(t *testing.T) {
+	r := NewRegistry()
+	h := r.Add(Activity{Kind: KindProcess, Label: "!!sleep 30"}, nil)
+	h.Activity.State = StateRunning
+	r.Append(h.Activity.ID, "first")
+	r.Append(h.Activity.ID, "second")
+	if out := r.Output(h.Activity.ID); !strings.Contains(out, "first") || !strings.Contains(out, "second") {
+		t.Fatalf("output = %q, want both lines", out)
+	}
+	r.Append("unknown-id", "ignored")
+	if out := r.Output(h.Activity.ID); strings.Contains(out, "ignored") {
+		t.Fatalf("unknown id must not append: %q", out)
+	}
+}

@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -91,5 +93,46 @@ func TestProcessProgressAppendsToToolRow(t *testing.T) {
 	lines, _ := a.messages[0].ProgressTail(10)
 	if len(a.messages) != 1 || len(lines) != 2 {
 		t.Fatalf("expected two progress lines on the row, got %d: %+v", len(lines), a.messages[0])
+	}
+}
+
+func TestProcessProgressAppendsToActivityRegistry(t *testing.T) {
+	dir := t.TempDir()
+	a := New(Options{Workdir: dir})
+	cmd := "echo activity line"
+	_ = a.handleProcess("!!" + cmd)()
+	// Find the runtime id from the running process list.
+	list := a.procManager.List()
+	if len(list) != 1 {
+		t.Fatalf("expected 1 running process, got %d", len(list))
+	}
+	pid := list[0].ID
+	a.handleProcessProgress(processProgressMsg{id: pid, text: "hello from process"})
+	out := a.activity.Output("proc-" + pid)
+	if !strings.Contains(out, "hello from process") {
+		t.Fatalf("activity output = %q, want hello from process", out)
+	}
+}
+
+func TestProcessesEnterOpensOutputView(t *testing.T) {
+	dir := t.TempDir()
+	a := New(Options{Workdir: dir})
+	if _, err := processlib.CreateUnique(config.ScopeProject, dir, "echo enter test"); err != nil {
+		t.Fatal(err)
+	}
+	// Run the selected process so the tail view has a live activity id.
+	a.enterProcesses()
+	_, cmd := a.handleProcessesKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if cmd != nil {
+		cmd()
+	}
+	// Give the process time to start and produce output.
+	time.Sleep(200 * time.Millisecond)
+	_, cmd = a.handleProcessesKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		cmd()
+	}
+	if a.view != viewRunsOutput {
+		t.Fatalf("expected viewRunsOutput, got %d", a.view)
 	}
 }

@@ -12,10 +12,12 @@ import (
 
 // runsOutputState tracks the full-screen output reader for a single run or
 // activity. It is modelled on planReviewState but only needs the activity id
-// and a viewport.
+// and a viewport. content, when non-empty, overrides the activity registry and
+// is used for logs that are not tied to a live activity row.
 type runsOutputState struct {
-	id string
-	vp viewport.Model
+	id      string
+	content string
+	vp      viewport.Model
 }
 
 // runsOutputChrome is every non-body row in the output view: padding, header,
@@ -37,9 +39,16 @@ func (a *App) enterRunsOutput() tea.Cmd {
 }
 
 func (s *runsOutputState) setContent(a *App) {
-	output := ""
-	if a.activity != nil && s.id != "" {
+	output := s.content
+	if output == "" && a.activity != nil && s.id != "" {
 		output = a.activity.Output(s.id)
+	}
+	// Process activity rows may open before any progress event has been
+	// promoted. Fall back to the process log file on disk.
+	if output == "" && strings.HasPrefix(s.id, "proc-") && a.procManager != nil {
+		if tail, err := a.procManager.TailByID(strings.TrimPrefix(s.id, "proc-"), 256); err == nil {
+			output = tail
+		}
 	}
 	if output == "" {
 		output = "(no output)"
