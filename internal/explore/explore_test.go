@@ -262,3 +262,24 @@ func slicesEqual(a, b []Task) bool {
 	}
 	return true
 }
+
+// A goal-mode survey exists to point at edits. It must name concrete targets
+// rather than produce the structural tour plan mode wants, and it must stay
+// small: every extra task is another read-only round trip before any work.
+func TestPlanGoalSurveyTargetsEdits(t *testing.T) {
+	tasks := PlanGoalSurvey("add rate limiting")
+	if len(tasks) != 2 {
+		t.Fatalf("goal survey tasks = %d, want 2", len(tasks))
+	}
+	if tasks[0].Reference != "edit targets" || tasks[1].Reference != "verification" {
+		t.Fatalf("goal survey references = %q, %q", tasks[0].Reference, tasks[1].Reference)
+	}
+	if !strings.Contains(tasks[0].Prompt, "path:line") {
+		t.Fatalf("the edit-target task should ask for path:line targets: %q", tasks[0].Prompt)
+	}
+	for _, task := range tasks {
+		if strings.Contains(task.Prompt, "top-level directories") {
+			t.Fatalf("goal survey %q still asks for a structural tour: %q", task.Reference, task.Prompt)
+		}
+	}
+}

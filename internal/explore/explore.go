@@ -251,18 +251,18 @@ func PlanClarified(prompt string, q clarify.Questionnaire, a clarify.Answers) []
 	return tasks
 }
 
-// PlanGoalSurvey derives read-only codebase-survey tasks for a goal prompt
-// that has no @references. A forced explore must not simply re-ask the
-// original question — it has to survey the repository so the goal pass has
-// real evidence to plan from. It is pure and deterministic.
+// PlanGoalSurvey derives read-only survey tasks for a goal prompt that has no
+// @references. A forced explore must not simply re-ask the original question,
+// and in goal mode it must not return a structural essay either: the goal
+// pass is about to edit, so the survey's job is to name the edit targets and
+// the check that will prove them right. It is pure and deterministic.
 func PlanGoalSurvey(goalText string) []Task {
 	surveys := []struct {
 		reference string
 		prompt    string
 	}{
-		{"repository structure", "Survey the repository structure: list the top-level directories, the main packages, and how they relate. Goal: " + goalText},
-		{"entry points", "Identify the entry points and the modules most relevant to the goal. Goal: " + goalText},
-		{"tests and docs", "Find the existing tests and documentation that bear on the goal, and report their locations. Goal: " + goalText},
+		{"edit targets", "Name the exact files and line ranges that must change for this goal. Report concrete path:line targets with a one-line reason each, not a narrative survey. Goal: " + goalText},
+		{"verification", "Name the existing tests, commands and documentation that will verify this goal, and where they live. Goal: " + goalText},
 	}
 	tasks := make([]Task, 0, len(surveys))
 	for i, s := range surveys {
