@@ -93,6 +93,13 @@ const maxMutatedPaths = 20
 // advertised outside plan mode.
 const withheldRepairDirective = "Every tool result in the last two rounds was withheld. The errors are above. Re-issue the calls with corrected arguments — check the path form against the working directory and session roots in the system prompt — or state the blocker in one line. Do not answer with a plan."
 
+// toolRepairDirective is injected at a goal pass boundary when the pass that
+// just ended executed no tool at all: every call it made was rejected before
+// it ran, or it made none. The errors are already in the transcript, so this
+// asks for the corrected call rather than restating them, and it names the
+// edit as the deliverable so the repair pass does not turn into a report.
+const toolRepairDirective = "That pass executed no tool successfully — every call was rejected before it ran. The rejection messages are above and each one names what was wrong with the arguments. Fix the arguments and re-issue the call now, starting with the edit that advances the goal. If a tool cannot be called at all, state which one and what it rejected, in one line."
+
 // noteMutation folds one call's observed disk effect into the pass totals.
 func (o *passOutcome) noteMutation(eff callEffect) {
 	if !eff.changed {
@@ -110,35 +117,15 @@ func (o *passOutcome) noteMutation(eff callEffect) {
 }
 
 // updatePlanFromArgs reconstructs the shared todo list from an update_plan
-// call's arguments, mirroring tools.UpdatePlan.Execute so the pass loop can
-// adopt the model's reported checklist into the ledger without a second write
-// path.
+// call's arguments. It delegates to tools.ParsePlanArg, the single definition
+// of the accepted shape, so the tool and the pass loop can never disagree
+// about whether a call was usable.
 func updatePlanFromArgs(args map[string]any) (todos.List, bool) {
-	raw, ok := args["plan"].([]any)
-	if !ok || len(raw) == 0 {
+	list, err := tools.ParsePlanArg(args)
+	if err != nil {
 		return todos.List{}, false
 	}
-	var items []todos.Item
-	for i, r := range raw {
-		m, ok := r.(map[string]any)
-		if !ok {
-			return todos.List{}, false
-		}
-		step, _ := m["step"].(string)
-		status, _ := m["status"].(string)
-		if step == "" {
-			return todos.List{}, false
-		}
-		st := todos.StatusPending
-		switch status {
-		case "in_progress":
-			st = todos.StatusActive
-		case "completed":
-			st = todos.StatusDone
-		}
-		items = append(items, todos.Item{N: i + 1, Text: step, Status: st})
-	}
-	return todos.List{Items: items}, true
+	return list, true
 }
 
 // callUnit is one parsed, permission-checked tool call, used to decide the
@@ -303,11 +290,17 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 				if p, ok := u.args["plan"].(string); ok {
 					planText = p
 				}
-			case u.call.Name == "update_plan":
-				if l, ok := updatePlanFromArgs(u.args); ok {
-					updatePlan = &l
-				}
 			case !strings.HasPrefix(toolResult, "tool result withheld:"):
+				// A call that ran counts as work, update_plan included. The
+				// checklist is bookkeeping, but an iteration that adopted one
+				// is not an empty iteration: counting it as empty used to fail
+				// the whole goal loop with "pass N executed no tools" even
+				// though the call succeeded.
+				if u.call.Name == "update_plan" {
+					if l, ok := updatePlanFromArgs(u.args); ok {
+						updatePlan = &l
+					}
+				}
 				productiveIter = true
 				allWithheld = false
 			default:

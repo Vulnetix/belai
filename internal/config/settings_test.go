@@ -588,6 +588,19 @@ func TestTodosVisibleDefaultsOn(t *testing.T) {
 	}
 }
 
+func TestUIOverrideCarriesShowEdits(t *testing.T) {
+	off := false
+	base := Settings{UI: &UISettings{}}
+	got := base.Override(Settings{UI: &UISettings{ShowEdits: &off}})
+
+	if got.EditsVisible() {
+		t.Fatal("project ui.show_edits=false did not override")
+	}
+	if base.UI.ShowEdits != nil {
+		t.Fatal("Override mutated the receiver")
+	}
+}
+
 func TestUIOverrideCarriesShowTodos(t *testing.T) {
 	off := false
 	base := Settings{UI: &UISettings{}}

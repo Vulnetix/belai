@@ -28,7 +28,7 @@ func keySections() []keySection {
 			{"ctrl+c", "copy the prompt — or the hovered panel — to the clipboard"},
 			{"ctrl+d", "exit — press twice; esc cancels"},
 			{"ctrl+r", "cycle reasoning display: auto, on, off"},
-			{"ctrl+t", "cycle tool-call display: auto, on, off"},
+			{"ctrl+t", "cycle tool-call display: auto → all → edits only → none"},
 			{"f2", "toggle caveman voice rewrite"},
 			{"f3", "toggle guardrails"},
 			{"f4", "toggle ask permission"},

@@ -2,8 +2,6 @@ package session
 
 import (
 	"bufio"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -79,15 +77,9 @@ func NewStoreAt(root string) *Store {
 
 // WorkdirKey derives a filesystem-safe, deterministic directory name from an
 // absolute working-directory path: "<basename>-<8 hex chars of sha256>".
-func WorkdirKey(abs string) string {
-	clean := filepath.Clean(abs)
-	base := filepath.Base(clean)
-	if base == "." || base == string(filepath.Separator) || base == "" {
-		base = "root"
-	}
-	sum := sha256.Sum256([]byte(clean))
-	return base + "-" + hex.EncodeToString(sum[:4])
-}
+// The body lives in config.WorkdirKey so config-backed per-project stores can
+// reuse the exact same key without importing session (which imports config).
+func WorkdirKey(abs string) string { return config.WorkdirKey(abs) }
 
 // SessionInfo describes a stored session for listing/resume.
 type SessionInfo struct {

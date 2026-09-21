@@ -280,7 +280,7 @@ type App struct {
 	// session display overrides (ctrl+r / ctrl+t), shadowing the resolved
 	// settings without rewriting the settings file.
 	reasoningOverride  *bool
-	toolCallsOverride  *bool
+	toolDisplay        toolDisplay
 	guardrailsOverride *bool
 	askOverride        *bool
 	firewallOverride   *bool
@@ -569,6 +569,17 @@ type App struct {
 		until time.Time
 	}
 }
+
+// toolDisplay is the ctrl+t session override over the resolved
+// ui.show_tool_calls / ui.show_edits settings. Auto means no override.
+type toolDisplay int
+
+const (
+	toolDisplayAuto toolDisplay = iota
+	toolDisplayAll
+	toolDisplayEditsOnly
+	toolDisplayNone
+)
 
 type tickMsg time.Time
 
@@ -1921,8 +1932,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.addSystem("reasoning display: " + boolLabel(a.reasoningVisible()))
 			return a, nil
 		case "ctrl+t":
-			a.toolCallsOverride = nextBoolPtr(a.toolCallsOverride)
-			a.addSystem("tool-call display: " + boolLabel(a.toolCallsVisible()))
+			a.toolDisplay = (a.toolDisplay + 1) % 4
+			a.addSystem(a.toolDisplayNotice())
 			return a, nil
 		// The four session toggles sit on the function-key row rather than on
 		// ctrl+<letter>. Every free ctrl+<letter> is already spoken for by the
@@ -3233,6 +3244,7 @@ func (a *App) chatView() string {
 		ExpandAll:     a.expandAll,
 		ShowReasoning: a.reasoningVisible(),
 		ShowTools:     a.toolCallsVisible(),
+		ShowEdits:     a.editsVisible(),
 	}.Render()
 	// The banner is the first entry of the scrollable transcript. Prepending it
 	// here — before the content compare, Highlight and SetContent — keeps the
@@ -5135,12 +5147,34 @@ func (a *App) reasoningVisible() bool {
 }
 
 // toolCallsVisible reports whether tool-call rows render, honouring the ctrl+t
-// session override over the resolved setting.
+// session override over the resolved setting. Write/Edit rows are gated by
+// editsVisible instead.
 func (a *App) toolCallsVisible() bool {
-	if a.toolCallsOverride != nil {
-		return *a.toolCallsOverride
+	switch a.toolDisplay {
+	case toolDisplayAll:
+		return true
+	case toolDisplayEditsOnly, toolDisplayNone:
+		return false
 	}
 	return a.settings.ToolCallsVisible()
+}
+
+// editsVisible reports whether the Write/Edit file-diff rows render, honouring
+// the ctrl+t session override over the resolved setting.
+func (a *App) editsVisible() bool {
+	switch a.toolDisplay {
+	case toolDisplayAll, toolDisplayEditsOnly:
+		return true
+	case toolDisplayNone:
+		return false
+	}
+	return a.settings.EditsVisible()
+}
+
+// toolDisplayNotice names the resolved pair for the ctrl+t system line.
+func (a *App) toolDisplayNotice() string {
+	return "tool-call display: tools " + boolLabel(a.toolCallsVisible()) +
+		" · edits " + boolLabel(a.editsVisible())
 }
 
 func nextBoolPtr(b *bool) *bool {

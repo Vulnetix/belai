@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -153,6 +155,31 @@ func GlobalHooksDir() (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, "hooks"), nil
+}
+
+// WorkdirKey derives a filesystem-safe, deterministic directory name from an
+// absolute working-directory path: "<basename>-<8 hex chars of sha256>". It
+// is the one key derivation every per-project store uses, so the on-disk key
+// format can never drift between the session store and the project prefs.
+func WorkdirKey(abs string) string {
+	clean := filepath.Clean(abs)
+	base := filepath.Base(clean)
+	if base == "." || base == string(filepath.Separator) || base == "" {
+		base = "root"
+	}
+	sum := sha256.Sum256([]byte(clean))
+	return base + "-" + hex.EncodeToString(sum[:4])
+}
+
+// ProjectPrefsPath returns the per-project user preference file for a working
+// directory: <GlobalDir>/projectprefs/<WorkdirKey(workdir)>.json. It is a
+// distinct directory from projectregistry's <GlobalDir>/projects.json.
+func ProjectPrefsPath(workdir string) (string, error) {
+	dir, err := GlobalDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "projectprefs", WorkdirKey(workdir)+".json"), nil
 }
 
 // Migrate is a one-shot migration from ~/.signet to ~/.vulnetix/signet.

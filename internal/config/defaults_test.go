@@ -32,6 +32,10 @@ func TestSettingsAccessorDefaults(t *testing.T) {
 			func(s *Settings, v *bool) { s.UI = &UISettings{ShowToolCalls: v} }, true,
 		},
 		{
+			"show_edits", Settings.EditsVisible,
+			func(s *Settings, v *bool) { s.UI = &UISettings{ShowEdits: v} }, true,
+		},
+		{
 			"show_todos", Settings.TodosVisible,
 			func(s *Settings, v *bool) { s.UI = &UISettings{ShowTodos: v} }, true,
 		},

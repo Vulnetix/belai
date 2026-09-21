@@ -51,6 +51,11 @@ const (
 	// already re-asked once with corrective feedback) before the loop stops
 	// consulting the evaluator and returns the work so far.
 	maxMalformedEvals = 2
+	// maxUnproductivePasses: consecutive passes that executed no tool at all
+	// before the loop stops. The first one is repaired rather than fatal: a
+	// rejected argument shape costs a pass without meaning the run is over,
+	// and failing the goal there discards every pass that did work.
+	maxUnproductivePasses = 2
 	// compactThresholdPct: compact at the pass boundary when the estimated
 	// context exceeds this share of the model window.
 	compactThresholdPct = 70
@@ -173,6 +178,13 @@ type passLedger struct {
 	// overflowRetried: a ClassOverflow escaping pass is caught once (compact,
 	// re-run the pass); a second overflow is terminal.
 	overflowRetried bool
+
+	// unproductivePasses counts consecutive passes that executed no tool at
+	// all. One such pass is repairable — a rejected argument shape or a
+	// truncation repair costs a pass without meaning the run is over — so the
+	// loop injects a corrective directive and tries again. Two in a row is a
+	// model that cannot call a tool, and the loop stops.
+	unproductivePasses int
 }
 
 // turnState renders the todo list as a state key for progress detection.
@@ -582,11 +594,31 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 		}
 
 		// A zero-productive pass burns its budget without doing any work
-		// (truncation repair, withheld calls). It produces no evidence and
-		// must not buy another pass.
+		// (truncation repair, rejected arguments, withheld calls). It produces
+		// no evidence, so it does not reach the evaluator — but one such pass
+		// is repairable, and discarding a whole goal over a rejected argument
+		// shape throws away the passes that did work. Inject the repair
+		// directive and try once more; a second consecutive empty pass is a
+		// model that cannot call a tool, and the loop stops.
 		if out.productive == 0 {
-			return run.Result{Passes: l.passes}, fmt.Errorf("goal pass loop stopped: pass %d executed no tools", l.passes)
+			l.unproductivePasses++
+			if l.unproductivePasses >= maxUnproductivePasses {
+				// A goal that has already changed files keeps its work: the
+				// edits are on disk either way, and returning an error would
+				// throw away the reply that describes them. A goal that has
+				// written nothing has nothing to return, so the failure is
+				// surfaced as one.
+				if l.writes > 0 {
+					emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("pass %d executed no tools; returning the work so far", l.passes)})
+					return run.Result{Reply: out.lastText, Usage: out.usage, GoalSentinel: rolemanager.GoalPartial, Passes: l.passes}, nil
+				}
+				return run.Result{Passes: l.passes}, fmt.Errorf("goal pass loop stopped: pass %d executed no tools", l.passes)
+			}
+			emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("pass %d executed no tools; asking for corrected tool calls", l.passes)})
+			turns = append(turns, directiveTurns(toolRepairDirective)...)
+			continue
 		}
+		l.unproductivePasses = 0
 
 		// The evaluator is the only model call at a pass boundary. An earlier
 		// version also asked the main model for a per-pass progress report;

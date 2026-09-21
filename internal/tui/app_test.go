@@ -2489,3 +2489,30 @@ func TestSendRetriesCredentialResolutionOnStartup(t *testing.T) {
 // TestLocalModelDownloadCommand pins the /local-model download flow end to end:
 // metadata resolution, checksummed download with progress, and a completion
 // system notice.
+
+// TestCtrlTCyclesToolDisplayStates pins the ctrl+t cycle to its four states and
+// the resolved (toolCallsVisible, editsVisible) pair at each step.
+func TestCtrlTCyclesToolDisplayStates(t *testing.T) {
+	a := New(Options{Workdir: t.TempDir()})
+
+	want := [][2]bool{
+		{true, true},   // auto — settings default both on
+		{true, true},   // all
+		{false, true},  // edits only
+		{false, false}, // none
+		{true, true},   // auto again
+	}
+	for i, w := range want {
+		if got := a.toolCallsVisible(); got != w[0] {
+			t.Fatalf("step %d toolCallsVisible = %v, want %v", i, got, w[0])
+		}
+		if got := a.editsVisible(); got != w[1] {
+			t.Fatalf("step %d editsVisible = %v, want %v", i, got, w[1])
+		}
+		if i == len(want)-1 {
+			break
+		}
+		m, _ := a.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+		a = m.(*App)
+	}
+}

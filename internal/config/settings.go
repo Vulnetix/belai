@@ -260,6 +260,7 @@ type UISettings struct {
 	Spinner       *bool `json:"spinner,omitempty"`
 	ShowReasoning *bool `json:"show_reasoning,omitempty"`
 	ShowToolCalls *bool `json:"show_tool_calls,omitempty"`
+	ShowEdits     *bool `json:"show_edits,omitempty"`
 	ShowTodos     *bool `json:"show_todos,omitempty"`
 	Mouse         *bool `json:"mouse,omitempty"`
 }
@@ -291,6 +292,9 @@ func (u *UISettings) merge(from *UISettings) {
 	}
 	if from.ShowToolCalls != nil {
 		u.ShowToolCalls = from.ShowToolCalls
+	}
+	if from.ShowEdits != nil {
+		u.ShowEdits = from.ShowEdits
 	}
 	if from.ShowTodos != nil {
 		u.ShowTodos = from.ShowTodos
@@ -420,6 +424,13 @@ func (s Settings) ReasoningVisible() bool {
 // ToolCallsVisible reports whether tool-call rows render. Default true.
 func (s Settings) ToolCallsVisible() bool {
 	return s.UI == nil || s.UI.ShowToolCalls == nil || *s.UI.ShowToolCalls
+}
+
+// EditsVisible reports whether Write/Edit rows render. Default true. It is
+// independent of ToolCallsVisible: turning tool chatter off keeps the file
+// diffs, and turning edits off keeps the rest of the tool activity.
+func (s Settings) EditsVisible() bool {
+	return s.UI == nil || s.UI.ShowEdits == nil || *s.UI.ShowEdits
 }
 
 // TodosVisible reports whether the TODO panel renders. Default true.

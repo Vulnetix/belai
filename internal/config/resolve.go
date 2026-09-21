@@ -7,16 +7,17 @@ import (
 )
 
 // Source is the provenance of a setting value, ordered lowest to highest
-// precedence: default < state < global < project < env < flag.
+// precedence: default < state < global < project_prefs < project < env < flag.
 type Source string
 
 const (
-	SourceDefault Source = "default"
-	SourceState   Source = "state"
-	SourceGlobal  Source = "global"
-	SourceProject Source = "project"
-	SourceEnv     Source = "env"
-	SourceFlag    Source = "flag"
+	SourceDefault      Source = "default"
+	SourceState        Source = "state"
+	SourceGlobal       Source = "global"
+	SourceProjectPrefs Source = "project_prefs"
+	SourceProject      Source = "project"
+	SourceEnv          Source = "env"
+	SourceFlag         Source = "flag"
 )
 
 // Effective is the merged view of every setting plus per-key provenance,
@@ -28,8 +29,9 @@ type Effective struct {
 }
 
 // Resolve merges every settings source into one Effective view. Precedence,
-// lowest to highest, is: defaults, state.json, global settings.json, project
-// settings.json, environment, then CLI flags.
+// lowest to highest, is: defaults, state.json, global settings.json, the
+// per-project user preference file, project settings.json, environment, then
+// CLI flags.
 func Resolve(workdir string, env func(string) string, flags Settings) (Effective, error) {
 	if env == nil {
 		env = os.Getenv
@@ -49,6 +51,13 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 		return eff, err
 	}
 	eff.apply(global, SourceGlobal)
+
+	// 2.5. per-project user preferences.
+	prefs, err := LoadProjectPrefs(workdir)
+	if err != nil {
+		return eff, err
+	}
+	eff.apply(prefs.toSettings(), SourceProjectPrefs)
 
 	// 3. project settings.json.
 	proj, err := LoadProject(workdir)
@@ -74,9 +83,12 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 
 	// 4. environment.
 	eff.apply(Settings{
-		Provider: firstNonEmpty(env("SIGNET_PROVIDER"), env("PI_PROVIDER")),
-		Model:    env("SIGNET_MODEL"),
-		Effort:   env("SIGNET_EFFORT"),
+		Provider:      firstNonEmpty(env("SIGNET_PROVIDER"), env("PI_PROVIDER")),
+		Model:         env("SIGNET_MODEL"),
+		Effort:        env("SIGNET_EFFORT"),
+		Guardrails:    envBool(env("SIGNET_GUARDRAILS")),
+		AskPermission: envBool(env("SIGNET_ASK_PERMISSION")),
+		Vulnetix:      &VulnetixSettings{FirewallEnabled: envBool(env("SIGNET_FIREWALL"))},
 		Classifier: &ClassifierSettings{
 			Provider: env("SIGNET_CLASSIFIER_PROVIDER"),
 			Model:    env("SIGNET_CLASSIFIER_MODEL"),
@@ -113,6 +125,33 @@ func (e *Effective) apply(s Settings, src Source) {
 	if s.Caveman != nil {
 		e.Settings.Caveman = s.Caveman
 		e.Origin["caveman"] = src
+	}
+	if s.Guardrails != nil {
+		// The repo-visible project layer may only tighten: a cloned
+		// .vulnetix/settings.json must not be able to disable the gates. Every
+		// other layer, including the user's own project prefs, sets both ways.
+		if *s.Guardrails || src != SourceProject {
+			e.Settings.Guardrails = s.Guardrails
+			e.Origin["guardrails"] = src
+		}
+	}
+	if s.AskPermission != nil {
+		if *s.AskPermission || src != SourceProject {
+			e.Settings.AskPermission = s.AskPermission
+			e.Origin["ask_permission"] = src
+		}
+	}
+	if s.Vulnetix != nil && s.Vulnetix.FirewallEnabled != nil {
+		// Firewall is the mirror image: a repo-visible project layer may only
+		// turn it off, never on, because routing prompts to a gateway must not
+		// be something a cloned repository can opt the user into.
+		if !*s.Vulnetix.FirewallEnabled || src != SourceProject {
+			if e.Settings.Vulnetix == nil {
+				e.Settings.Vulnetix = &VulnetixSettings{}
+			}
+			e.Settings.Vulnetix.FirewallEnabled = s.Vulnetix.FirewallEnabled
+			e.Origin["firewall_enabled"] = src
+		}
 	}
 	if s.ReadOnly != nil || s.BashReadOnly != nil {
 		if s.ReadOnly != nil {

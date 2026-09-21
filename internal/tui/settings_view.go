@@ -117,6 +117,7 @@ func (a *App) settingsRows() []settingsRow {
 	spinnerVal := boolLabel(s.SpinnerEnabled())
 	reasoningVal := boolLabel(s.ReasoningVisible())
 	toolCallsVal := boolLabel(s.ToolCallsVisible())
+	editsVal := boolLabel(s.EditsVisible())
 	todosVal := boolLabel(s.TodosVisible())
 	mouseVal := boolLabel(s.MouseEnabled())
 	showNamesVal := boolLabel(s.SessionNamesVisible())
@@ -140,6 +141,7 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "spinner", label: "spinner", kind: "toggle", value: spinnerVal, src: sourceLabel(origin["ui"])},
 		{key: "show_reasoning", label: "reasoning", kind: "toggle", value: reasoningVal, src: sourceLabel(origin["ui"])},
 		{key: "show_tool_calls", label: "tool calls", kind: "toggle", value: toolCallsVal, src: sourceLabel(origin["ui"])},
+		{key: "show_edits", label: "file edits", kind: "toggle", value: editsVal, src: sourceLabel(origin["ui"])},
 		{key: "show_todos", label: "todo panel", kind: "toggle", value: todosVal, src: sourceLabel(origin["ui"])},
 		{key: "mouse", label: "mouse capture", kind: "toggle", value: mouseVal, src: sourceLabel(origin["ui"])},
 		{key: "show_session_names", label: "session names", kind: "toggle", value: showNamesVal, src: sourceLabel(origin["show_session_names"])},
@@ -357,6 +359,11 @@ func (a *App) cycleToggle(key string) error {
 				s.UI = &config.UISettings{}
 			}
 			s.UI.ShowToolCalls = nextBool(s.UI.ShowToolCalls)
+		case "show_edits":
+			if s.UI == nil {
+				s.UI = &config.UISettings{}
+			}
+			s.UI.ShowEdits = nextBool(s.UI.ShowEdits)
 		case "show_todos":
 			if s.UI == nil {
 				s.UI = &config.UISettings{}
@@ -432,6 +439,10 @@ func (a *App) unsetSetting(key string) error {
 			if s.UI != nil {
 				s.UI.ShowToolCalls = nil
 			}
+		case "show_edits":
+			if s.UI != nil {
+				s.UI.ShowEdits = nil
+			}
 		case "show_todos":
 			if s.UI != nil {
 				s.UI.ShowTodos = nil
@@ -464,6 +475,32 @@ func (a *App) mutateSetting(fn func(*config.Settings)) error {
 		return err
 	}
 	return a.reloadSettings()
+}
+
+// persistPref writes one project preference and reloads, so the next session
+// in this project opens with it. It never touches global settings or the
+// repository's own .vulnetix/settings.json, and it never reaches a session
+// already running in another process — those read their settings at startup.
+func (a *App) persistPref(fn func(*config.ProjectPrefs)) error {
+	if err := config.MutateProjectPrefs(a.workdir, fn); err != nil {
+		return err
+	}
+	return a.reloadSettings()
+}
+
+// prefHonestyNotice returns a system line when a just-toggled project pref did
+// not resolve to the toggled value because a higher-precedence source won,
+// naming that source; it returns "" when the pref stuck. Env, a CLI flag, or
+// an explicit key in .vulnetix/settings.json all outrank the prefs layer.
+func (a *App) prefHonestyNotice(key string, want, got bool) string {
+	if want == got {
+		return ""
+	}
+	src := string(a.eff.Origin[key])
+	if src == "" {
+		src = "default"
+	}
+	return fmt.Sprintf("%s: %s ignored — %s wins", key, boolLabel(want), src)
 }
 
 func nextBool(b *bool) *bool {

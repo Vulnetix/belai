@@ -14,7 +14,6 @@ const FirstRunTip = "new here? sign up at https://openrouter.ai/ — the signup 
 var tips = []string{
 	"ctrl+x copies the session id",
 	"shift+tab cycles mode: agent, plan, goal",
-	"ctrl+o expands truncated output",
 	"/resume returns to an earlier session",
 	"f3 toggles guardrails",
 	"f9 opens the runs panel",
@@ -24,7 +23,7 @@ var tips = []string{
 	"f6 cycles reasoning effort",
 	"f10 toggles the Vulnetix AI Firewall",
 	"ctrl+r cycles reasoning display: auto, on, off",
-	"ctrl+t cycles tool-call display: auto, on, off",
+	"ctrl+t cycles tool display: auto → all → edits only → none",
 	"@ opens the file chooser in any mode",
 	"!cmd runs a shell command; !!cmd runs it as a tracked process",
 	"up browses prompt history; f7 saves the prompt to the library",

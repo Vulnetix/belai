@@ -295,10 +295,21 @@ type MessageList struct {
 	ExpandAll bool // when true, render every message in full
 
 	// ShowReasoning and ShowTools gate the dim reasoning panel and tool rows,
-	// mirroring the ctrl+r / ctrl+t toggles resolved by the caller.
+	// mirroring the ctrl+r / ctrl+t toggles resolved by the caller. ShowEdits
+	// gates the Write/Edit rows independently of ShowTools, so a transcript
+	// can keep the file diffs while hiding the rest of the tool chatter.
 	ShowReasoning bool
 	ShowTools     bool
+	ShowEdits     bool
 }
+
+// editToolNames are the file-mutation tools whose rows ShowEdits governs —
+// the KindWrite/KindEdit tools of internal/tools. A mutating Bash is not one
+// of them: its row stays under ShowTools.
+var editToolNames = map[string]bool{"Write": true, "Edit": true}
+
+// IsEditTool reports whether a tool row is a file mutation.
+func IsEditTool(name string) bool { return editToolNames[name] }
 
 // renderEntry is one visual unit in the transcript layout. Most entries
 // correspond to a single message; system entries carry every adjacent system
@@ -353,7 +364,11 @@ func (m MessageList) Render() (string, LineMap) {
 			}
 			entries = append(entries, renderEntry{idxs: []int{i}, kind: "reasoning"})
 		case "tool":
-			if !m.ShowTools {
+			if IsEditTool(msg.ToolName) {
+				if !m.ShowEdits {
+					continue
+				}
+			} else if !m.ShowTools {
 				continue
 			}
 			if n := len(entries); n > 0 && entries[n-1].kind == "system" {
@@ -590,6 +605,15 @@ func turnPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 	}
 	if msg.Partial {
 		meta = "retrying…"
+	}
+	// Assistant panels advertise the copy shortcut in their title bar,
+	// mirroring the helper text the ask/composer frame carries and the
+	// ctrl+o hint shown on collapsed signet panels.
+	if msg.Role == "assistant" && !msg.Partial && strings.TrimSpace(msg.Text()) != "" {
+		if meta != "" {
+			meta += " · "
+		}
+		meta += "ctrl+c copy"
 	}
 
 	body := strings.TrimRight(msg.Text(), "\n")

@@ -7,6 +7,9 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/signet/internal/transcript"
 )
 
 func TestTurnPanelRendersAssistantContent(t *testing.T) {
@@ -71,6 +74,52 @@ func TestTurnPanelSteeringTitle(t *testing.T) {
 	out, _ := turnPanel(msg, 40, false)
 	if !strings.Contains(out, "user steering") {
 		t.Fatalf("expected user steering title, got:\n%s", out)
+	}
+}
+
+func TestTurnPanelAssistantAdvertisesCopyShortcut(t *testing.T) {
+	msg := Message{Role: "assistant", Content: "hello world"}
+	out, _ := turnPanel(msg, 60, false)
+	if !strings.Contains(out, "ctrl+c") || !strings.Contains(out, "copy") {
+		t.Fatalf("assistant panel should advertise ctrl+c copy in title bar, got:\n%s", out)
+	}
+}
+
+func TestTurnPanelAssistantCopyShortcutWithUsage(t *testing.T) {
+	msg := Message{Role: "assistant", Content: "hello world", Usage: &transcript.Usage{PromptTokens: 5, CompletionTokens: 7}}
+	out, _ := turnPanel(msg, 60, false)
+	if !strings.Contains(out, "ctrl+c") || !strings.Contains(out, "copy") {
+		t.Fatalf("assistant panel should advertise ctrl+c copy alongside token count, got:\n%s", out)
+	}
+	if !strings.Contains(out, "12 tok") {
+		t.Fatalf("token count should still render, got:\n%s", out)
+	}
+}
+
+func TestTurnPanelUserDoesNotAdvertiseCopyShortcut(t *testing.T) {
+	msg := Message{Role: "user", Content: "hi"}
+	out, _ := turnPanel(msg, 60, false)
+	if strings.Contains(out, "ctrl+c") {
+		t.Fatalf("user panel should not advertise ctrl+c copy, got:\n%s", out)
+	}
+}
+
+func TestTurnPanelPartialAssistantDoesNotAdvertiseCopyShortcut(t *testing.T) {
+	msg := Message{Role: "assistant", Content: "partial output", Partial: true}
+	out, _ := turnPanel(msg, 60, false)
+	if strings.Contains(out, "ctrl+c") {
+		t.Fatalf("partial assistant panel should not advertise ctrl+c copy, got:\n%s", out)
+	}
+	if !strings.Contains(out, "retrying") {
+		t.Fatalf("partial panel should show retrying meta, got:\n%s", out)
+	}
+}
+
+func TestTurnPanelEmptyAssistantDoesNotAdvertiseCopyShortcut(t *testing.T) {
+	msg := Message{Role: "assistant", Content: ""}
+	out, _ := turnPanel(msg, 60, false)
+	if strings.Contains(out, "ctrl+c") {
+		t.Fatalf("empty assistant panel should not advertise ctrl+c copy, got:\n%s", out)
 	}
 }
 
@@ -592,6 +641,39 @@ func TestSignetPanelTruncatesLongGroup(t *testing.T) {
 	}
 }
 
+// editToolNames must stay exactly the set of default-registry tools whose
+// Kind is KindWrite/KindEdit, so a renamed file-mutation tool cannot silently
+// fall back to the ShowTools gate.
+func TestEditToolNamesMatchRegistryKinds(t *testing.T) {
+	reg := tools.Default(t.TempDir(), false)
+	seen := map[string]bool{}
+	for _, def := range reg.Definitions() {
+		tool, ok := reg.Find(def.Name)
+		if !ok {
+			t.Fatalf("registry tool %q not findable", def.Name)
+		}
+		switch tool.Kind() {
+		case tools.KindWrite, tools.KindEdit:
+			if !IsEditTool(def.Name) {
+				t.Errorf("tool %q has kind %q but is missing from editToolNames", def.Name, tool.Kind())
+			}
+			seen[def.Name] = true
+		default:
+			if IsEditTool(def.Name) {
+				t.Errorf("tool %q has kind %q but is in editToolNames", def.Name, tool.Kind())
+			}
+		}
+	}
+	if len(seen) != len(editToolNames) {
+		t.Fatalf("editToolNames has %d entries but the registry's write/edit kinds are %v", len(editToolNames), seen)
+	}
+	for name := range editToolNames {
+		if !seen[name] {
+			t.Errorf("editToolNames entry %q does not exist in the default registry with a write/edit kind", name)
+		}
+	}
+}
+
 func TestMessageListShowToolsGated(t *testing.T) {
 	tool := Message{Role: "tool", ToolName: "Grep", ToolArgs: `{"pattern":"x"}`, Status: "✓"}
 	list := MessageList{Messages: []Message{tool}, Width: 60}
@@ -601,6 +683,31 @@ func TestMessageListShowToolsGated(t *testing.T) {
 	list.ShowTools = true
 	if !strings.Contains(list.View(), "Grep") {
 		t.Fatalf("tool rows should render when ShowTools is true")
+	}
+}
+
+func TestMessageListShowEditsGatesOnlyWriteAndEdit(t *testing.T) {
+	write := Message{Role: "tool", ToolName: "Write", ToolArgs: `{"path":"a.txt"}`, Status: "✓"}
+	bash := Message{Role: "tool", ToolName: "Bash", ToolArgs: `{"command":"ls"}`, Status: "✓"}
+
+	// ShowTools off, ShowEdits on: the Write diff renders, Bash chatter does not.
+	list := MessageList{Messages: []Message{write, bash}, Width: 60, ShowTools: false, ShowEdits: true}
+	out := list.View()
+	if !strings.Contains(out, "Write") {
+		t.Fatalf("Write row should render under ShowEdits, got:\n%s", out)
+	}
+	if strings.Contains(out, "Bash") {
+		t.Fatalf("Bash row must stay under ShowTools, got:\n%s", out)
+	}
+
+	// Swapped: edits hidden, other tool rows shown.
+	list = MessageList{Messages: []Message{write, bash}, Width: 60, ShowTools: true, ShowEdits: false}
+	out = list.View()
+	if strings.Contains(out, "Write") {
+		t.Fatalf("Write row must hide when ShowEdits is false, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Bash") {
+		t.Fatalf("Bash row should render under ShowTools, got:\n%s", out)
 	}
 }
 

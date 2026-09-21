@@ -49,24 +49,8 @@ func renderSignetPanel(msgs []Message, idxs []int, width int, expandAll bool) (s
 	barCol := visibleLen("│ ") // border plus padding
 	icol := visibleLen("· ")
 
-	title := "signet"
-	leftPlain := "╭─ " + title + " "
-	rightPlain := "─╮"
-	fill := width - visibleLen(leftPlain) - visibleLen(rightPlain)
-	if fill < 0 {
-		// Drop the closing decoration before truncating the title.
-		rightPlain = "─╮"
-		fill = width - visibleLen(leftPlain) - visibleLen(rightPlain)
-	}
-	if fill < 0 {
-		title = truncateRunes(title, len([]rune(title))+fill)
-		leftPlain = "╭─ " + title + " "
-		fill = max(width-visibleLen(leftPlain)-visibleLen(rightPlain), 0)
-	}
-
 	edge := lipgloss.NewStyle().Foreground(ColorLine)
 	titleStyle := lipgloss.NewStyle().Foreground(ColorTeal).Bold(true)
-	top := edge.Render("╭─ ") + titleStyle.Render(title) + edge.Render(" "+repeatRune('─', fill)) + edge.Render(rightPlain)
 	bottom := edge.Render("╰" + repeatRune('─', width-2) + "╯")
 	bar := edge.Render("│")
 
@@ -140,6 +124,15 @@ func renderSignetPanel(msgs []Message, idxs []int, width int, expandAll bool) (s
 			bodyLm[i].Collapsed = panelCollapsed
 		}
 	}
+
+	// Build the title bar. When the panel is collapsed, the binding that
+	// expands it is shown in the top-right metadata, mirroring the helper
+	// text the ask/composer panel carries in its own frame.
+	meta := ""
+	if panelCollapsed {
+		meta = "ctrl+o expand all"
+	}
+	top := signetTopEdge(width, titleStyle, edge, meta)
 
 	var b strings.Builder
 	var lm LineMap
@@ -230,6 +223,39 @@ func renderSignetToolLines(msg Message, owner, inner int, bar string, barCol int
 		lm = append(lm, sl)
 	}
 	return owners, isSystem, bodyLines, lm
+}
+
+// signetTopEdge renders the panel's top border with an optional right-aligned
+// metadata hint, matching the layout of components.Panel: the title sits on
+// the left, metadata is right-aligned, and if the metadata does not fit it is
+// dropped before the title is truncated.
+func signetTopEdge(width int, titleStyle, edge lipgloss.Style, meta string) string {
+	title := "signet"
+	leftPlain := "╭─ " + title + " "
+	rightPlain := "─╮"
+	if meta != "" {
+		rightPlain = " " + meta + " ─╮"
+	}
+	fill := width - visibleLen(leftPlain) - visibleLen(rightPlain)
+	if fill < 0 && meta != "" {
+		// Drop the metadata before truncating the title.
+		meta = ""
+		rightPlain = "─╮"
+		fill = width - visibleLen(leftPlain) - visibleLen(rightPlain)
+	}
+	if fill < 0 {
+		title = truncateRunes(title, len([]rune(title))+fill)
+		leftPlain = "╭─ " + title + " "
+		fill = max(width-visibleLen(leftPlain)-visibleLen(rightPlain), 0)
+	}
+
+	top := edge.Render("╭─ ") + titleStyle.Render(title) + edge.Render(" "+repeatRune('─', fill))
+	if meta != "" {
+		top += MutedStyle.Render(" "+meta+" ") + edge.Render("─╮")
+	} else {
+		top += edge.Render("─╮")
+	}
+	return top
 }
 
 // signetHidden joins the raw text of the notices whose rows were hidden,

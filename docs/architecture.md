@@ -711,6 +711,23 @@ then returns the sentinel; the pass loop threads the plan text to
 (the Codex checklist tool, accepted here in plan mode too) drives the
 planning todo list; the `[DONE:n]` marker convention remains as a fallback.
 
+**`update_plan` is parsed leniently and counts as executed work.**
+`tools.ParsePlanArg` is the single definition of the accepted shape, shared by
+the tool and by the pass loop that adopts the list, so the two can never
+disagree about whether a call was usable. It is lenient about spelling and
+strict about substance: the checklist may arrive under `plan`, `steps`,
+`todos`, `items`, `tasks` or `checklist` (as an array, or as a JSON string,
+which is how some providers serialise tool arguments); an entry may name its
+text with `step`, `description`, `content`, `text`, `title` and the other
+paraphrases models reach for, or be a bare string; and a status the harness
+cannot read is `pending` rather than a rejection. An entry with no text is
+still an error, because there is nothing to track. A rejected `update_plan`
+costs a whole iteration and teaches the model nothing, and the checklist is
+bookkeeping — progress is measured from files on disk, never from this list.
+A pass whose only successful call was `update_plan` is therefore *not* an
+empty pass: counting it as one used to fail the whole goal loop with
+*pass N executed no tools* even though the call succeeded.
+
 ### Repository map
 
 Every session's system prompt may carry a **harness-computed repository map**
@@ -1538,13 +1555,21 @@ Three regions are actionable:
   over a panel copies its content instead of the prompt; with the pointer off
   the transcript it keeps its prompt-copy meaning. A running tool row with no
   output yet has no text and stays un-hoverable.
+- **Assistant/model panel** — assistant turns that carry text advertise
+  `ctrl+c copy` in their title bar alongside the token count, mirroring the
+  helper text pattern used by the ask/composer and collapsed signet frames.
+  Hovering the panel still offers the same action in the footer.
 - **Session segment** — the footer's `session: …` text (name when shown, else
   the short id). Hovering shows `ctrl+x copy session id`, and `ctrl+x` copies
   the full id from the chat view whether or not the pointer is there.
 - **Collapsed panel** — any truncated turn, reasoning panel, or tool row.
   Hovering shows `ctrl+o expand all`; the key is the same global toggle that
   collapses again when already expanded. A collapsed text panel shows all
-  three offers together (`save`, `copy`, `expand all`).
+  three offers together (`save`, `copy`, `expand all`). Collapsed **signet**
+  panels (system notices and tool results that were coalesced and truncated)
+  also advertise the same binding in their title bar, mirroring the helper
+  text the ask/composer frame carries in its own top edge, so the shortcut is
+  visible without moving the pointer.
 
 The session hit-test is exact: `Footer.SessionSpan` mirrors the same layout
 math `Footer.View` uses, so the column range it reports is the rendered

@@ -204,6 +204,7 @@ func agentTurn() string {
 		Messages:  []components.Message{assistant, toolResult},
 		Width:     width,
 		ShowTools: true,
+		ShowEdits: true,
 	}.View()
 }
 
