@@ -385,10 +385,18 @@ func TestCustomProviderFromProjectSettings(t *testing.T) {
 		t.Fatalf("write credentials: %v", err)
 	}
 
+	// Isolate SIGNET_HOME: without it the run reads the developer's real
+	// global settings, and a global classifier provider there resolves ahead
+	// of the project provider under test and fails on its missing key.
+	home := filepath.Join(t.TempDir(), "signet-home")
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		t.Fatalf("mkdir home: %v", err)
+	}
+
 	var out, errb bytes.Buffer
 	cmd := exec.Command(signetBin, "-provider", "my-llm", "-model", "m1", "-prompt", "hello")
 	cmd.Dir = workdir
-	cmd.Env = append(os.Environ(), "SIGNET_BASE_URL="+srv.URL, "MY_LLM_KEY=test")
+	cmd.Env = append(os.Environ(), "SIGNET_BASE_URL="+srv.URL, "MY_LLM_KEY=test", "SIGNET_HOME="+home)
 	cmd.Stdout = &out
 	cmd.Stderr = &errb
 	if err := cmd.Run(); err != nil {
