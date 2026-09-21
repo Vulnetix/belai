@@ -8,8 +8,12 @@ import (
 
 	"github.com/vulnetix/signet/internal/agentprofile"
 	"github.com/vulnetix/signet/internal/bgagent"
+	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/profiles"
+	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/signet/internal/session"
 )
 
 // saveProfile writes a user profile into the test's SIGNET_HOME.
@@ -932,4 +936,150 @@ func TestAgentArgumentPickerClosesWhenTheLineChanges(t *testing.T) {
 	if a.agentPickerOpen {
 		t.Fatalf("picker left open after the argument went away")
 	}
+}
+
+// An explicit choice outlives a classifier turn that names no agent; the name
+// and its tool allowlist both survive.
+func TestExplicitAgentSurvivesEmptyClassifierDecision(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	saveBackgroundAgent(t, "nightly-audit", "Read", "Grep")
+
+	a := New(Options{Workdir: t.TempDir()})
+	a.agentExplicit = true
+	a.setNamedAgent("nightly-audit")
+	if a.namedAgent != "nightly-audit" || len(a.namedAgentTools) != 2 {
+		t.Fatalf("precondition: name=%q tools=%v", a.namedAgent, a.namedAgentTools)
+	}
+
+	a.applyModeDecision(rolemanager.ModeDecision{Mode: modes.ModeAgent, AgentName: ""}, nil)
+
+	if a.namedAgent != "nightly-audit" {
+		t.Fatalf("namedAgent = %q, want the explicit choice to survive", a.namedAgent)
+	}
+	if len(a.namedAgentTools) != 2 {
+		t.Fatalf("namedAgentTools = %v, want the allowlist to survive", a.namedAgentTools)
+	}
+}
+
+// With no explicit engagement the classifier's proposed agent is taken, and its
+// tool allowlist is loaded with it.
+func TestClassifierProposedAgentLoadsTools(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	saveBackgroundAgent(t, "nightly-audit", "Read", "Grep")
+
+	a := New(Options{Workdir: t.TempDir()})
+	a.applyModeDecision(rolemanager.ModeDecision{Mode: modes.ModeAgent, AgentName: "nightly-audit"}, nil)
+
+	if a.namedAgent != "nightly-audit" {
+		t.Fatalf("namedAgent = %q, want the classifier's name", a.namedAgent)
+	}
+	if len(a.namedAgentTools) != 2 {
+		t.Fatalf("namedAgentTools = %v, want the definition's allowlist", a.namedAgentTools)
+	}
+}
+
+// A picker-chosen agent reaches state.ActiveProfile, the session meta, and the
+// per-project prefs — the three records the next session needs to restore it.
+func TestPickerChosenAgentReachesStateMetaAndPrefs(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	workdir := t.TempDir()
+	saveBackgroundAgent(t, "nightly-audit", "Read", "Grep")
+
+	a := New(Options{Workdir: workdir})
+	a.loadAgents()
+	a.openAgentPicker()
+	for {
+		c, _ := a.agentSelection()
+		if c.Name == "nightly-audit" {
+			break
+		}
+		a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+	}
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if a.namedAgent != "nightly-audit" {
+		t.Fatalf("namedAgent = %q", a.namedAgent)
+	}
+	if a.state.ActiveProfile != "nightly-audit" {
+		t.Fatalf("ActiveProfile = %q", a.state.ActiveProfile)
+	}
+	prefs, err := config.LoadProjectPrefs(workdir)
+	if err != nil {
+		t.Fatalf("LoadProjectPrefs: %v", err)
+	}
+	if prefs.Agent != "nightly-audit" {
+		t.Fatalf("prefs.Agent = %q", prefs.Agent)
+	}
+	entries, err := a.store.ReadFrom(a.sessionKey, a.sessionID)
+	if err != nil {
+		t.Fatalf("ReadFrom: %v", err)
+	}
+	if m, ok := session.LatestMeta(entries); !ok || m.ActiveProfile != "nightly-audit" {
+		t.Fatalf("session meta ActiveProfile not recorded: %+v", m)
+	}
+}
+
+// namedAgent empty must imply namedAgentTools nil after every clearing path, so
+// a stale allowlist can never be applied under no name.
+func TestNamedAgentEmptyImpliesToolsNil(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	saveBackgroundAgent(t, "nightly-audit", "Read", "Grep")
+	saveProfile(t, "reviewer")
+
+	check := func(a *App, path string) {
+		t.Helper()
+		if a.namedAgent == "" && a.namedAgentTools != nil {
+			t.Fatalf("%s: namedAgent empty but tools = %v", path, a.namedAgentTools)
+		}
+	}
+
+	// Fresh session.
+	a := New(Options{Workdir: t.TempDir()})
+	check(a, "new session")
+
+	// /profile engages a flat profile, then the picker's (none) clears it.
+	a.handleCommand("/profile reviewer")
+	if a.namedAgent == "" {
+		t.Fatal("precondition: /profile should engage reviewer")
+	}
+	a.loadAgents()
+	a.openAgentPicker()
+	a.agentIndex = len(a.agentCandidates()) // (none)
+	a.acceptAgent()
+	check(a, "(none)")
+
+	// Picker engagement, then (none) clears it.
+	b := New(Options{Workdir: t.TempDir()})
+	b.loadAgents()
+	b.openAgentPicker()
+	for {
+		c, _ := b.agentSelection()
+		if c.Name == "nightly-audit" {
+			break
+		}
+		b.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+	}
+	b.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if b.namedAgent == "" {
+		t.Fatal("precondition: picker should engage nightly-audit")
+	}
+	b.loadAgents()
+	b.openAgentPicker()
+	b.agentIndex = len(b.agentCandidates()) // (none)
+	b.acceptAgent()
+	check(b, "picker cleared")
+
+	// New session clears the engaged agent.
+	a.startNewSession()
+	check(a, "startNewSession")
+
+	// Resume with no recorded profile clears too.
+	workdir := t.TempDir()
+	r := newResumeApp(t, workdir)
+	key, _ := session.KeyFor(workdir)
+	entries := basicSessionEntries()
+	entries = append(entries, session.Meta{Schema: 2, Cwd: workdir}.ToEntry("a1"))
+	seedEntries(t, r, key, "sess-1", entries)
+	r.resumeSession(key, "sess-1")
+	check(r, "resume with no profile")
 }

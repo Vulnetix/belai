@@ -97,14 +97,13 @@ func NewRegistry(workdir string) *Registry {
 			a.addSystem("profile: " + err.Error())
 			return nil
 		}
-		a.namedAgent = p.Name
-		a.state.ActiveProfile = p.Name
+		a.agentExplicit = true
+		a.setNamedAgent(p.Name)
 		a.mode = "agent"
 		a.modeExplicit = true
 		a.modeSticky = true
 		// Re-resolve the carrier and reseal the system prompt on the next send.
 		a.syncPlanMode()
-		a.persistCarrierMeta()
 		a.addSystem("profile: " + p.Name)
 		return nil
 	})

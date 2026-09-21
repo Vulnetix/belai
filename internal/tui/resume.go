@@ -175,6 +175,7 @@ func (a *App) clearForResume() {
 	a.todos = nil
 	a.namedAgent = ""
 	a.namedAgentTools = nil
+	a.agentExplicit = false
 	a.agentPickerOpen = false
 	a.agentPickerSubmit = false
 	a.hover = hoverTarget{}
@@ -324,7 +325,7 @@ func (a *App) restorePlanGoal(r rehydrated, crossProject bool) {
 	a.state.ActivePlan = plan
 	a.state.ActiveGoal = goal
 	a.state.ActiveProfile = profile
-	a.namedAgent = profile
+	a.setNamedAgent(profile)
 	_ = config.SaveState(a.state)
 }
 

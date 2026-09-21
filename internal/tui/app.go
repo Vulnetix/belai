@@ -225,11 +225,15 @@ type App struct {
 	autocomplete []string
 
 	// mode classification (optional; nil skips auto-detection)
-	classifier   rolemanager.Classifier
-	cache        *rolemanager.Cache
-	namedAgent   string
-	modeDecision rolemanager.ModeDecision
-	modeWarning  string
+	classifier rolemanager.Classifier
+	cache      *rolemanager.Cache
+	namedAgent string
+	// agentExplicit marks an agent the user engaged by hand (picker, /agent,
+	// /profile). While set, the mode classifier may not replace or clear the
+	// engaged name — that wipe was how the footer lost it mid-session.
+	agentExplicit bool
+	modeDecision  rolemanager.ModeDecision
+	modeWarning   string
 
 	// working indicator
 	phase   workingPhase // current activity; phaseIdle when no prompt is in flight
@@ -3866,7 +3870,12 @@ func (a *App) applyModeDecision(d rolemanager.ModeDecision, err error) {
 		return
 	}
 	previous := a.mode
-	a.namedAgent = d.AgentName
+	// The classifier may propose an agent only when the user has not engaged one
+	// itself. An explicit choice outlives a turn whose decision names no agent —
+	// that wipe is why the footer lost the agent name mid-session.
+	if !a.agentExplicit {
+		a.setNamedAgent(d.AgentName)
+	}
 	a.modeDecision = d
 	a.modeWarning = d.Warning
 	if !a.modeSticky {
@@ -4158,8 +4167,44 @@ func (a *App) engagedProfile() (agentprofile.AgentProfile, bool) {
 	return p, true
 }
 
+// setNamedAgent is the one place the engaged agent is set. Name and tool
+// allowlist move together: a profile's allowlist must never outlive the
+// profile it came from. It also records the choice in session meta and in the
+// per-project prefs so the next session in this project reopens with it.
+// agentExplicit is deliberately not managed here — callers decide whether a
+// classifier may later replace the name.
+func (a *App) setNamedAgent(name string) {
+	loaded := name
+	var tools []string
+	if name != "" {
+		// Resolve the allowlist from whichever tree owns the name — flat
+		// profiles first (they win the name in carrier resolution), then
+		// background-agent definitions — so a flat profile stays engageable
+		// and a background definition keeps its allowlist.
+		if p, err := profiles.Load(name); err == nil {
+			loaded = p.Name
+			tools = p.Tools
+		} else if p, err := agentprofile.Load(name); err == nil {
+			loaded = p.Name
+			tools = p.Tools
+		}
+		// On a load failure the name is kept with no allowlist: carrier
+		// resolution reports the fallback at turn time, matching the old
+		// unconditional assignment, and no stale allowlist survives.
+	}
+	if loaded == a.namedAgent && (loaded != "" || a.namedAgentTools == nil) {
+		return
+	}
+	a.namedAgent = loaded
+	a.namedAgentTools = tools
+	a.state.ActiveProfile = loaded
+	a.persistCarrierMeta()
+	_ = a.persistPref(func(p *config.ProjectPrefs) { p.Agent = loaded })
+	a.refreshFooter()
+}
+
 // toggleFirewall flips the firewall override, persists it through the
-// settings mutation seam, and refreshes the footer. Turning on when the
+// project-pref seam, and refreshes the footer. Turning on when the
 // firewall is unavailable prints the real reason and leaves state unchanged;
 // turning off is never blocked.
 func (a *App) toggleFirewall() tea.Cmd {
@@ -4842,6 +4887,7 @@ func (a *App) startNewSession() {
 	// a profile was written while this session ran.
 	a.namedAgent = ""
 	a.namedAgentTools = nil
+	a.agentExplicit = false
 	a.agentPickerOpen = false
 	a.agentPickerSubmit = false
 	a.hover = hoverTarget{}

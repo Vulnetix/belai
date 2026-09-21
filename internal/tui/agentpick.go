@@ -382,18 +382,14 @@ func (a *App) acceptAgent() tea.Cmd {
 		if a.namedAgent == "" {
 			return nil
 		}
-		a.namedAgent = ""
-		a.namedAgentTools = nil
+		a.agentExplicit = false
+		a.setNamedAgent("")
 		a.invalidateAgentSession()
 		a.addSystem("agent cleared")
-		a.refreshFooter()
 		return nil
 	}
-	a.namedAgent = choice.Name
-	// A background definition's tool allowlist follows it into the foreground:
-	// a read-only definition must stay read-only wherever it runs. The tools
-	// are fixed when the session is built, so the cached one has to go.
-	a.namedAgentTools = choice.Tools
+	a.agentExplicit = true
+	a.setNamedAgent(choice.Name)
 	a.invalidateAgentSession()
 	a.mode = "agent"
 	msg := "agent: " + choice.Name
