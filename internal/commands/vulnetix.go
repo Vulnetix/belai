@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/vulnetix/signet/internal/config"
@@ -15,15 +17,45 @@ import (
 	"github.com/vulnetix/signet/internal/vulnetixcli"
 )
 
-// DefaultSubcommands are the Vulnetix CLI subcommands run by bare /vulnetix.
-var DefaultSubcommands = []string{"scan", "malscan", "license", "bom", "package-firewall", "ai-firewall"}
-
-// AllowedSubcommands is the hard allowlist for configured subcommands. It is
-// the same set as the default; only these names may be persisted or executed.
-var AllowedSubcommands = map[string]bool{
-	"scan": true, "malscan": true, "license": true, "bom": true,
-	"package-firewall": true, "ai-firewall": true,
+// Scanner is one fixed review activity. Name is the Vulnetix subcommand, Args
+// the fixed, allowlisted arguments (no user-supplied flag ever reaches
+// exec.Command), Lane the serialisation key, and Artifacts the output files
+// the scanner is expected to write.
+type Scanner struct {
+	Name      string
+	Args      []string
+	Lane      string
+	Artifacts []string
 }
+
+// reviewScanners is the fixed /vulnetix review fan-out. Eight of the nine
+// scanners start concurrently; `sca` and `containers` share the `sbom` lane
+// because both write sbom.cdx.json, so `containers` waits for `sca`. Every
+// scanner except `sca` passes --disable-memory so memory.yaml has a single
+// writer and finding-history/auto-resolve keeps working for SCA. `sbom` is
+// redirected to inventory.cdx.json to avoid contending with `sca`.
+var reviewScanners = []Scanner{
+	{Name: "sca", Args: []string{"sca"}, Lane: "sbom", Artifacts: []string{"sbom.cdx.json"}},
+	{Name: "containers", Args: []string{"containers", "--disable-memory", "-o", ".vulnetix/containers.cdx.json"}, Lane: "sbom", Artifacts: []string{"containers.sarif", "containers.cdx.json"}},
+	{Name: "sast", Args: []string{"sast", "--disable-memory"}, Artifacts: []string{"sast.sarif"}},
+	{Name: "secrets", Args: []string{"secrets", "--disable-memory"}, Artifacts: []string{"secrets.sarif"}},
+	{Name: "iac", Args: []string{"iac", "--disable-memory"}, Artifacts: []string{"iac.sarif"}},
+	{Name: "malscan", Args: []string{"malscan", "--disable-memory"}, Artifacts: []string{"malscan.sarif"}},
+	{Name: "sbom", Args: []string{"sbom", "--output-file", ".vulnetix/inventory.cdx.json"}, Artifacts: []string{"inventory.cdx.json"}},
+	{Name: "aibom", Args: []string{"aibom", "--disable-memory"}, Artifacts: []string{"ai-bom.cdx.json"}},
+	{Name: "cbom", Args: []string{"cbom", "--disable-memory"}, Artifacts: []string{"cbom.cdx.json"}},
+}
+
+// AllowedSubcommands is the hard allowlist for configured subcommands, derived
+// from the fixed scanner table plus the post-scan fix activity. Only these
+// names may be persisted or executed.
+var AllowedSubcommands = func() map[string]bool {
+	m := map[string]bool{"fix": true}
+	for _, sc := range reviewScanners {
+		m[sc.Name] = true
+	}
+	return m
+}()
 
 // Report is the result of a /vulnetix run or status query.
 type Report struct {
@@ -31,6 +63,16 @@ type Report struct {
 	Manifest []string
 	// Status is a plain-text rendering of CLI capabilities for /vulnetix status.
 	Status string
+	// TriageBlocks are the bounded, model-facing report blocks rendered from
+	// the scan artifacts. The TUI classifies each before sending it.
+	TriageBlocks []TriageBlock
+}
+
+// TriageBlock is one bounded report block handed to the model for triage.
+type TriageBlock struct {
+	Scanner string
+	Label   string
+	Body    string
 }
 
 // SubcommandResult captures one subcommand outcome.
@@ -54,17 +96,54 @@ type RunObserver interface {
 type Vulnetix struct {
 	CLI     *vulnetixcli.CLI
 	Workdir string
-	// Subcommands overrides the default list.
+	// Subcommands overrides the default scanner list. Every name must be in
+	// AllowedSubcommands; flags are still taken from the fixed table.
 	Subcommands []string
 	// Timeout overrides the CLI's default timeout for scans.
 	Timeout time.Duration
+	// AutoFix opts into `vulnetix fix --yes`; the default is --dry-run, whose
+	// plan is attached to the triage turn instead of mutating the tree.
+	AutoFix bool
 	// Observer, when non-nil, receives per-subcommand activity registration.
 	Observer RunObserver
 }
 
-// Run executes each configured subcommand, never promotes arbitrary repository
-// bytes to the model, and writes a summary plus a manifest under
-// .vulnetix/signet/.
+// scannerByName returns the fixed scanner entry, or false for the post-scan
+// fix activity (which is not a scanner).
+func scannerByName(name string) (Scanner, bool) {
+	for _, sc := range reviewScanners {
+		if sc.Name == name {
+			return sc, true
+		}
+	}
+	return Scanner{}, false
+}
+
+// scannerList returns the scanners to run: the configured subset when one was
+// given, otherwise the full fixed table.
+func (r Vulnetix) scannerList() ([]Scanner, error) {
+	if len(r.Subcommands) == 0 {
+		return reviewScanners, nil
+	}
+	var out []Scanner
+	for _, name := range r.Subcommands {
+		if !AllowedSubcommands[name] {
+			return nil, fmt.Errorf("subcommand %q is not in the allowlist", name)
+		}
+		sc, ok := scannerByName(name)
+		if !ok {
+			// "fix" is allowed as a configured name but has no scanner of its
+			// own; the post-scan fix activity is always added by Run.
+			continue
+		}
+		out = append(out, sc)
+	}
+	return out, nil
+}
+
+// Run fans the fixed scanner table out with bounded concurrency, never
+// promotes arbitrary repository bytes to the model, and writes a summary plus
+// a manifest under .vulnetix/signet/.
 func (r Vulnetix) Run(ctx context.Context) (Report, error) {
 	if r.CLI == nil {
 		return Report{}, fmt.Errorf("vulnetix CLI not available")
@@ -72,47 +151,26 @@ func (r Vulnetix) Run(ctx context.Context) (Report, error) {
 	if r.Workdir == "" {
 		return Report{}, fmt.Errorf("workdir is required")
 	}
-	subs := r.Subcommands
-	if len(subs) == 0 {
-		subs = DefaultSubcommands
+	scanners, err := r.scannerList()
+	if err != nil {
+		return Report{}, err
 	}
 
 	timeout := r.CLI.Timeout
 	if r.Timeout > 0 {
 		timeout = r.Timeout
 	}
+	// Scans run until they exit or the parent context is cancelled. Probes keep
+	// the 15s default; review scans do not.
 	cli := *r.CLI
-	cli.Timeout = timeout
-
-	for _, sub := range subs {
-		if !AllowedSubcommands[sub] {
-			return Report{}, fmt.Errorf("subcommand %q is not in the allowlist", sub)
-		}
+	cli.Timeout = vulnetixcli.NoTimeout
+	if timeout > 0 {
+		cli.Timeout = timeout
 	}
 
-	var results []SubcommandResult
-	for _, sub := range subs {
-		if r.Observer == nil {
-			res, err := cli.ExecIn(ctx, r.Workdir, sub)
-			results = append(results, SubcommandResult{Name: sub, Output: res.Stdout, Err: err})
-			continue
-		}
+	results := r.fanOut(ctx, cli, scanners)
 
-		subCtx, cancel := context.WithCancel(ctx)
-		argv := append([]string{cli.Path}, vulnetixcli.HardenedArgs(sub)...)
-		sink, done := r.Observer.Start("vulnetix "+sub, argv, r.Workdir, cancel)
-		res, err := cli.ExecStreamIn(subCtx, r.Workdir, sink, sub)
-		done(res.ExitCode, res.TimedOut, err)
-		cancel()
-		results = append(results, SubcommandResult{Name: sub, Output: res.Stdout, Err: err})
-
-		if err != nil && subCtx.Err() == context.Canceled {
-			// A killed subcommand stops the run: the remainder never executes.
-			break
-		}
-	}
-
-	summary := buildSummary(results)
+	summary := r.buildSummary(ctx, results)
 	manifest, err := r.collectManifest()
 	if err != nil {
 		return Report{}, err
@@ -120,17 +178,160 @@ func (r Vulnetix) Run(ctx context.Context) (Report, error) {
 	if err := r.writeArtifacts(summary, manifest); err != nil {
 		return Report{}, err
 	}
-	return Report{Summary: summary, Manifest: manifest}, nil
+	blocks := BuildTriageBlocks(ctx, r.Workdir)
+	return Report{Summary: summary, Manifest: manifest, TriageBlocks: blocks}, nil
 }
 
-func buildSummary(results []SubcommandResult) string {
+// fanOut runs each scanner concurrently except for same-lane scanners, which
+// run in table order, and appends the post-scan `vulnetix fix` activity after
+// `sca` completes. Results are preallocated and indexed by position, so no
+// goroutine ever appends to a shared slice.
+func (r Vulnetix) fanOut(ctx context.Context, cli vulnetixcli.CLI, scanners []Scanner) []SubcommandResult {
+	// result slot layout: one per scanner, then the post-scan fix slot.
+	results := make([]SubcommandResult, len(scanners)+1)
+	done := make([]chan struct{}, len(scanners))
+	for i := range done {
+		done[i] = make(chan struct{})
+	}
+	var wg sync.WaitGroup
+
+	runOne := func(i int, sc Scanner) {
+		defer wg.Done()
+		var res vulnetixcli.Result
+		var err error
+		if r.Observer == nil {
+			res, err = cli.ExecIn(ctx, r.Workdir, sc.Args...)
+		} else {
+			subCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			argv := append([]string{cli.Path}, vulnetixcli.HardenedArgs(sc.Args...)...)
+			sink, finish := r.Observer.Start("vulnetix "+sc.Name, argv, r.Workdir, cancel)
+			res, err = cli.ExecStreamIn(subCtx, r.Workdir, sink, sc.Args...)
+			finish(res.ExitCode, res.TimedOut, err)
+		}
+		results[i] = SubcommandResult{Name: sc.Name, Output: res.Stdout, Err: err}
+		close(done[i])
+	}
+
+	// Free scanners start immediately; same-lane scanners wait for every
+	// earlier member of the lane, so `containers` starts only after `sca`.
+	for i, sc := range scanners {
+		if sc.Lane == "" {
+			wg.Add(1)
+			go runOne(i, sc)
+			continue
+		}
+		wg.Add(1)
+		go func(i int, sc Scanner) {
+			members := laneMembers(scanners, sc.Lane)
+			idx := laneIndex(scanners, sc.Lane, i)
+			for j := 0; j < idx; j++ {
+				<-done[members[j]]
+			}
+			runOne(i, sc)
+		}(i, sc)
+	}
+
+	// Post-scan dependency remediation: run `vulnetix fix` after `sca`. It is
+	// dry-run by default so a review never mutates the tree without an opt-in.
+	scaIdx := -1
+	for i, sc := range scanners {
+		if sc.Name == "sca" {
+			scaIdx = i
+			break
+		}
+	}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if scaIdx >= 0 {
+			<-done[scaIdx]
+		}
+		args := []string{"fix", "--dry-run"}
+		if r.AutoFix {
+			args = []string{"fix", "--yes"}
+		}
+		var res vulnetixcli.Result
+		var err error
+		if r.Observer == nil {
+			res, err = cli.ExecIn(ctx, r.Workdir, args...)
+		} else {
+			subCtx, cancel := context.WithCancel(ctx)
+			defer cancel()
+			argv := append([]string{cli.Path}, vulnetixcli.HardenedArgs(args...)...)
+			sink, finish := r.Observer.Start("vulnetix fix", argv, r.Workdir, cancel)
+			res, err = cli.ExecStreamIn(subCtx, r.Workdir, sink, args...)
+			finish(res.ExitCode, res.TimedOut, err)
+		}
+		results[len(scanners)] = SubcommandResult{Name: "fix", Output: res.Stdout, Err: err}
+	}()
+
+	wg.Wait()
+	return results
+}
+
+func laneMembers(scanners []Scanner, lane string) []int {
+	var out []int
+	for i, sc := range scanners {
+		if sc.Lane == lane {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+func laneIndex(scanners []Scanner, lane string, target int) int {
+	for i, idx := range laneMembers(scanners, lane) {
+		if idx == target {
+			return i
+		}
+	}
+	return 0
+}
+
+// buildSummary renders per-scanner status, exit code, artifact and finding
+// count from the parsed artifacts, then writes the legacy signet summary file.
+func (r Vulnetix) buildSummary(ctx context.Context, results []SubcommandResult) string {
+	dir := config.ProjectDir(r.Workdir)
+	arts, err := scanartifacts.Enumerate(dir)
+	if err != nil {
+		arts = nil
+	}
+	summary := scanartifacts.Summarize(ctx, dir, arts)
+
 	var b strings.Builder
-	for _, r := range results {
+	for _, res := range results {
+		if res.Name == "" {
+			continue
+		}
 		status := "ok"
-		if r.Err != nil {
+		if res.Err != nil {
 			status = "failed"
 		}
-		fmt.Fprintf(&b, "vulnetix %s: %s\n", r.Name, status)
+		sc, ok := scannerByName(res.Name)
+		art := ""
+		findings := 0
+		if ok {
+			for _, rel := range sc.Artifacts {
+				if fs, present := summary.PerFile[rel]; present {
+					if art == "" {
+						art = rel
+					}
+					findings += fs.Counts.Total()
+				}
+			}
+			if art == "" && len(sc.Artifacts) > 0 {
+				art = sc.Artifacts[0]
+			}
+		}
+		line := fmt.Sprintf("vulnetix %s: %s", res.Name, status)
+		if res.Err != nil {
+			line += fmt.Sprintf(" (%v)", res.Err)
+		}
+		if art != "" {
+			line += fmt.Sprintf(" · %s · %d findings", art, findings)
+		}
+		b.WriteString(line + "\n")
 	}
 	return strings.TrimSpace(b.String())
 }
@@ -149,6 +350,7 @@ func (r Vulnetix) collectManifest() ([]string, error) {
 		}
 		out = append(out, a.Rel)
 	}
+	sort.Strings(out)
 	return out, nil
 }
 

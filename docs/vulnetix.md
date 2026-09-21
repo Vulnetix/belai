@@ -7,14 +7,32 @@ for LLM traffic.
 
 ## Business rules
 
-- **Never promote arbitrary repository bytes.** `vulnetix scan` output contains
-  raw snippets and paths from the scanned repository. The runner composes only
-  metadata (subcommand status, exit state, artifact counts) into the system
-  transcript. Full artifact content is shown in the TUI but is never sent as a
-  trusted system block without sanitisation and classification.
-- **Subcommands are allowlisted.** `VulnetixSettings.Subcommands` is validated
-  at save time and at run time against `AllowedSubcommands`. No user-supplied
-  flags reach `exec.Command`.
+- **Never promote arbitrary repository bytes.** SARIF, CycloneDX, and OpenVEX
+  artifacts contain raw snippets and paths from the scanned repository. The
+  runner composes only metadata into the system transcript (status, exit code,
+  artifact, finding count). The bounded report blocks rendered for triage are
+  sanitised and then classified by the Role Manager before they are sent as
+  file attachments, and are dropped unless the classifier returns
+  `ActionProceed`.
+- **Scanners are a fixed, allowlisted table.** The nine review scanners —
+  `sca`, `containers`, `sast`, `secrets`, `iac`, `malscan`, `sbom`, `aibom`,
+  `cbom` — and the post-scan `fix` activity are the only names in
+  `AllowedSubcommands`. `VulnetixSettings.Subcommands` is validated at save time
+  and at run time against that set. Flags come from the fixed table only; no
+  user-supplied flags reach `exec.Command`.
+- **Eight of the nine scanners start concurrently.** `sca` and `containers`
+  share the `sbom` lane because both write `sbom.cdx.json`, so `containers`
+  starts only after `sca` finishes. Every scanner except `sca` passes
+  `--disable-memory` so `memory.yaml` has a single writer and SCA keeps its
+  finding history and auto-resolve. `sbom` is redirected to
+  `inventory.cdx.json` to avoid the other shared file.
+- **Review scans have no timeout.** A scan runs until it exits; `x` in the
+  runs panel kills that row's process group, and cancelling the parent context
+  (esc/quit) cancels every derived subcontext. CLI probes (`version`, `env`,
+  `auth`) keep the 15-second default.
+- **A killed scanner does not stop the run.** The old loop broke on the first
+  non-zero exit; the fan-out lets the remaining scanners finish, and only a
+  parent-context cancellation stops all of them.
 - **Artifacts live under `.vulnetix/`, summary state under `.vulnetix/signet/`.**
   `code-review-summary.md` and `code-review-manifest.json` are written to
   `<workdir>/.vulnetix/signet/` so they stay outside `@file` admission and
@@ -49,7 +67,7 @@ for LLM traffic.
 
 | Input | Effect |
 | --- | --- |
-| `/vulnetix` | Run the configured review subcommands, then open the artifacts screen |
+| `/vulnetix` | Run the nine review scanners plus the post-scan `fix` activity, then open the artifacts screen |
 | `/vulnetix run` | Same as bare `/vulnetix` |
 | `/vulnetix review` | Same as bare `/vulnetix` |
 | `/vulnetix configure` | Open the CLI capability screen |
@@ -80,6 +98,11 @@ configure, `esc` back.
 Lists classified artifacts with per-file counts. Superseded timestamp or branch
 variants are marked but excluded from the active summary. The header shows the
 union counts plus separate licence, suppressed, and risk-accepted tallies.
+After a review, the TUI hands the bounded report blocks to the model as file
+attachments for triage: dependency findings route to `vulnetix fix` (dry-run
+plan by default, `--yes` only when `vulnetix.autofix` is true) and code
+findings (SAST, secrets, IaC, container, malscan) route to the live session
+agent under the normal permission prompts.
 
 Keys: `↑↓` move, `t` start the built-in `signet:triage-vulns` agent for that
 project, `l` history, `esc` back.
@@ -105,13 +128,15 @@ Keys: `F10` toggle, `esc` or `/vulnetix firewall` to toggle.
 Every `/vulnetix` subcommand — and every CLI probe behind `configure` and
 `status` — registers in the bottom runs panel (`f9`). The panel shows what argv
 ran, live stdout/stderr, and exit state. `x` on a running or queued row kills
-the whole process group; a killed subcommand stops the run so the remaining
-subcommands never execute. `t` starts `signet:triage-vulns` on the selected
-activity's project, keyed per project basename so two projects do not collide
-on the instance name. `enter` round-trips the finished output to the model
-exactly like a `!shell` result: it classifies first (unless guardrails are
-off), seals as a shell attachment, and queues until the transcript is idle
-when a turn is in flight.
+that row's process group; killing one scanner never aborts its siblings, and
+only cancelling the whole run (esc/quit) stops all of them. The review scan
+rows are registered quiet so their stdout is not round-tripped: the triage
+turn carries the structured report attachments instead. `t` starts
+`signet:triage-vulns` on the selected activity's project, keyed per project
+basename so two projects do not collide on the instance name. `enter`
+round-trips the finished output to the model exactly like a `!shell` result:
+it classifies first (unless guardrails are off), seals as a shell attachment,
+and queues until the transcript is idle when a turn is in flight.
 
 The panel opens on the **activity** tab by default. `f8` opens it on the
 **subagents** tab. It is bounded: it consumes at most one third of the terminal

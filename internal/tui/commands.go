@@ -192,7 +192,14 @@ func NewRegistry(workdir string) *Registry {
 				if err != nil {
 					return vulnetixDoneMsg{err: err}
 				}
-				rep, err := commands.Vulnetix{CLI: cli, Workdir: a.workdir, Observer: a}.Run(context.Background())
+				autoFix := false
+				if a.settings.Vulnetix != nil {
+					autoFix = a.settings.Vulnetix.AutoFixEnabled()
+				}
+				// The scan rows are shown in the runs panel, but their stdout is
+				// not round-tripped: the triage turn carries structured report
+				// attachments instead of nine pretty-printed terminal tables.
+				rep, err := commands.Vulnetix{CLI: cli, Workdir: a.workdir, Observer: quietObserver{a}, AutoFix: autoFix}.Run(context.Background())
 				return vulnetixDoneMsg{report: rep, err: err}
 			}
 		}

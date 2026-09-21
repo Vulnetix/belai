@@ -19,6 +19,10 @@ import (
 // Default subprocess limits.
 const (
 	DefaultTimeout = 15 * time.Second
+	// NoTimeout disables the default timeout for long-running scans. The
+	// parent context alone governs cancellation, so a scan runs until it
+	// exits or the user cancels it.
+	NoTimeout      = -1
 	ProbeTimeout   = 30 * time.Second
 	MaxOutputBytes = 4 << 20
 )
@@ -35,7 +39,12 @@ type CLI struct {
 }
 
 // timeoutOrDefault returns the configured timeout or the package default.
+// NoTimeout (-1) means "no deadline": it returns 0 so ExecStreamIn skips the
+// context.WithTimeout wrap and the parent context alone governs cancellation.
 func (c CLI) timeoutOrDefault() time.Duration {
+	if c.Timeout == NoTimeout {
+		return 0
+	}
 	if c.Timeout > 0 {
 		return c.Timeout
 	}
@@ -59,16 +68,18 @@ type Result struct {
 	TimedOut       bool
 }
 
-// readOnlyProbes do not require --disable-memory, because the CLI should be
-// allowed to write memory for scans. The probes listed here only read state.
+// readOnlyProbes are read-only commands that must not write memory. The probe
+// path passes --disable-memory explicitly now; this set is kept for the
+// allowed-subcommand tables that still need to know probe names.
 var readOnlyProbes = map[string]bool{
 	"env":     true,
 	"version": true,
 	"auth":    true,
 }
 
-// isReadOnlyProbe reports whether args is a read-only probe that should run
-// with --disable-memory so it never mutates the project's artifacts.
+// isReadOnlyProbe reports whether args names a read-only probe. Probes now
+// pass --disable-memory explicitly (see capabilities.go); argv no longer
+// infers it from this predicate.
 func isReadOnlyProbe(args []string) bool {
 	// The first positional argument is the subcommand; flags precede it.
 	for _, a := range args {
@@ -79,15 +90,15 @@ func isReadOnlyProbe(args []string) bool {
 	return false
 }
 
-// argv builds the final argument list with hardening flags.
+// argv builds the final argument list with hardening flags. It no longer adds
+// --disable-memory: callers pass that flag explicitly, so scans keep memory
+// enabled unless the caller opts out and probes can be read-only without the
+// argv layer guessing.
 func argv(args []string) []string {
 	out := []string{
 		"--no-banner",
 		"--no-progress",
 		"--no-analytics",
-	}
-	if isReadOnlyProbe(args) {
-		out = append(out, "--disable-memory")
 	}
 	return append(out, args...)
 }
@@ -122,8 +133,12 @@ func (c CLI) ExecStreamIn(ctx context.Context, dir string, sink func(string), ar
 		return Result{}, fmt.Errorf("vulnetix binary %q: %w", c.Path, err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, c.timeoutOrDefault())
-	defer cancel()
+	timeout := c.timeoutOrDefault()
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
 
 	tmpDir := dir
 	if tmpDir == "" {

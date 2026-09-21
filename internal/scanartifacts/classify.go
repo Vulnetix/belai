@@ -191,7 +191,7 @@ func Classify(rel string) (Kind, string, time.Time, string) {
 		switch prefix {
 		case "cbom":
 			return KindCycloneDXCBOM, "", time.Time{}, ""
-		case "aibom":
+		case "aibom", "ai-bom":
 			return KindCycloneDXAIBOM, "", time.Time{}, ""
 		default:
 			return KindCycloneDXSBOM, "", time.Time{}, ""
@@ -326,6 +326,13 @@ func markSuperseded(artifacts []Artifact) {
 	groups := map[[2]string][]int{}
 	for i, a := range artifacts {
 		key := [2]string{string(a.Kind), a.Tool}
+		// CycloneDX documents carry no tool label; grouping them by kind alone
+		// would make a distinct inventory.cdx.json look like an older variant
+		// of sbom.cdx.json. Group those by basename so only same-named files
+		// supersede each other.
+		if a.Kind == KindCycloneDXSBOM || a.Kind == KindCycloneDXCBOM || a.Kind == KindCycloneDXAIBOM {
+			key = [2]string{string(a.Kind), filepath.Base(a.Rel)}
+		}
 		groups[key] = append(groups[key], i)
 	}
 	for _, idxs := range groups {

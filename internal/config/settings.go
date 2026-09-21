@@ -77,6 +77,10 @@ type Settings struct {
 	// directories in this list (and persisted to the project registry) are
 	// attached; others are filtered out of the registry.
 	WorkspaceDirs []string `json:"workspace_dirs,omitempty"`
+	// UpdateCheck, when non-nil and false, disables the startup check for a
+	// newer Signet release. Default true. SIGNET_NO_UPDATE_CHECK=1 overrides
+	// it for a single run.
+	UpdateCheck *bool `json:"update_check,omitempty"`
 }
 
 // VulnetixSettings is the per-project /vulnetix configuration.
@@ -88,6 +92,10 @@ type VulnetixSettings struct {
 	// GatewayURL overrides the default Vulnetix AI Firewall host for self-hosted
 	// deployments. Empty means https://guardrails.vulnetix.com.
 	GatewayURL string `json:"gateway_url,omitempty"`
+	// AutoFix opts `/vulnetix review` into `vulnetix fix --yes` after the SCA
+	// scan. Default false: the review attaches a --dry-run plan instead of
+	// mutating the tree without confirmation.
+	AutoFix *bool `json:"autofix,omitempty"`
 	// FirewallEnabled routes the session's LLM traffic through the Vulnetix AI
 	// Firewall gateway. Default false.
 	FirewallEnabled *bool `json:"firewall_enabled,omitempty"`
@@ -99,6 +107,18 @@ func (s VulnetixSettings) GatewayURLOrDefault() string {
 		return s.GatewayURL
 	}
 	return "https://guardrails.vulnetix.com"
+}
+
+// AutoFixEnabled reports whether /vulnetix review may run `vulnetix fix --yes`
+// unattended. Default false: the review attaches a --dry-run plan instead.
+func (s VulnetixSettings) AutoFixEnabled() bool {
+	return s.AutoFix != nil && *s.AutoFix
+}
+
+// UpdateCheckEnabled reports whether the startup release check may run.
+// Default true.
+func (s Settings) UpdateCheckEnabled() bool {
+	return s.UpdateCheck == nil || *s.UpdateCheck
 }
 
 // SweepEnabled reports whether the vulnetix sweep is on. Default true.
@@ -579,6 +599,9 @@ func (s Settings) Override(proj Settings) Settings {
 	}
 	if proj.ShowSessionNames != nil {
 		out.ShowSessionNames = proj.ShowSessionNames
+	}
+	if proj.UpdateCheck != nil {
+		out.UpdateCheck = proj.UpdateCheck
 	}
 	if proj.Classifier != nil {
 		merged := &ClassifierSettings{}

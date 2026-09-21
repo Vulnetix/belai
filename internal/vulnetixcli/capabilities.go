@@ -112,7 +112,7 @@ func Probe(ctx context.Context, c CLI, opts ProbeOptions) Capabilities {
 	wg.Add(3)
 	go func() {
 		defer wg.Done()
-		res, err := execObserved(ctx, c, opts.Observer, "vulnetix version", "", "version")
+		res, err := execObserved(ctx, c, opts.Observer, "vulnetix version", "", "--disable-memory", "version")
 		if err == nil {
 			versionErr = nil
 		} else {
@@ -122,7 +122,7 @@ func Probe(ctx context.Context, c CLI, opts ProbeOptions) Capabilities {
 	}()
 	go func() {
 		defer wg.Done()
-		res, err := execObserved(ctx, c, opts.Observer, "vulnetix env", "", "env")
+		res, err := execObserved(ctx, c, opts.Observer, "vulnetix env", "", "--disable-memory", "env")
 		if err == nil {
 			envText = res.Stdout
 		} else {
@@ -131,7 +131,7 @@ func Probe(ctx context.Context, c CLI, opts ProbeOptions) Capabilities {
 	}()
 	go func() {
 		defer wg.Done()
-		res, err := execObserved(ctx, c, opts.Observer, "vulnetix auth status", "", "auth", "status")
+		res, err := execObserved(ctx, c, opts.Observer, "vulnetix auth status", "", "--disable-memory", "auth", "status")
 		if err == nil {
 			authText = res.Stdout
 		} else {
@@ -203,17 +203,17 @@ func Probe(ctx context.Context, c CLI, opts ProbeOptions) Capabilities {
 // probeVersionSources tries --version, version, env, and finally the path.
 func probeVersionSources(ctx context.Context, c *CLI, realPath string, degraded *[]string) Version {
 	// Fast --version.
-	if res, err := c.ExecIn(ctx, "", "--version"); err == nil && res.Stdout != "" {
+	if res, err := c.ExecIn(ctx, "", "--disable-memory", "--version"); err == nil && res.Stdout != "" {
 		if v, ok := ParseVersion(res.Stdout); ok {
 			return v
 		}
 	}
-	if res, err := c.ExecIn(ctx, "", "version"); err == nil {
+	if res, err := c.ExecIn(ctx, "", "--disable-memory", "version"); err == nil {
 		if v, ok := ParseVersion(res.Stdout); ok {
 			return v
 		}
 	}
-	if res, err := c.ExecIn(ctx, "", "env"); err == nil {
+	if res, err := c.ExecIn(ctx, "", "--disable-memory", "env"); err == nil {
 		secs := sections(stripANSI(res.Stdout))
 		if block, ok := secs["VERSION"]; ok {
 			if v, ok := ParseVersion(block); ok {
@@ -266,7 +266,7 @@ func execObserved(ctx context.Context, c CLI, obs RunObserver, name, dir string,
 // checkCredentialValidity runs `vulnetix auth verify` and returns whether the
 // existing credentials are valid.
 func checkCredentialValidity(ctx context.Context, c CLI, errOut *string) bool {
-	res, err := c.ExecIn(ctx, "", "auth", "verify")
+	res, err := c.ExecIn(ctx, "", "--disable-memory", "auth", "verify")
 	if err != nil {
 		*errOut = err.Error()
 		return false

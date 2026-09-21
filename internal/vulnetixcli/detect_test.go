@@ -1,9 +1,11 @@
 package vulnetixcli
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // fakeScript emits a shell stub that recognises the hardening flags Signet
@@ -68,6 +70,43 @@ func TestRun(t *testing.T) {
 	}
 	if out != "fake scan output\n" {
 		t.Fatalf("Run output = %q", out)
+	}
+}
+
+func TestTimeoutOrDefaultNoTimeoutSkipsDeadline(t *testing.T) {
+	if got := (CLI{Timeout: NoTimeout}).timeoutOrDefault(); got != 0 {
+		t.Fatalf("NoTimeout timeoutOrDefault = %v, want 0", got)
+	}
+	if got := (CLI{Timeout: 0}).timeoutOrDefault(); got != DefaultTimeout {
+		t.Fatalf("zero timeout should mean the default, got %v", got)
+	}
+}
+
+func TestNoTimeoutIsCancelledByParentContext(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "vulnetix")
+	script := `#!/bin/sh
+sleep 1
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake: %v", err)
+	}
+	setPathTo(t, dir)
+	c, err := Detect()
+	if err != nil {
+		t.Fatalf("Detect: %v", err)
+	}
+	c.Timeout = NoTimeout
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err = c.ExecIn(ctx, "", "scan")
+	if err == nil {
+		t.Fatal("expected the parent deadline to cancel the scan")
+	}
+	if time.Since(start) > 500*time.Millisecond {
+		t.Fatalf("parent cancellation was not honoured; took %s", time.Since(start))
 	}
 }
 

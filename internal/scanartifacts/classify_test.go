@@ -18,6 +18,7 @@ func TestClassifyKnownArtifacts(t *testing.T) {
 		{"sbom.cdx.json", KindCycloneDXSBOM, "", ""},
 		{"cbom.cdx.json", KindCycloneDXCBOM, "", ""},
 		{"aibom.cdx.json", KindCycloneDXAIBOM, "", ""},
+		{"ai-bom.cdx.json", KindCycloneDXAIBOM, "", ""},
 		{"sast.sarif", KindSARIF, "sast", ""},
 		{"sast.20260623212031.sarif", KindSARIF, "sast", ""},
 		{"sast.20260805-admin-reviews.sarif", KindSARIF, "sast", "-admin-reviews"},
@@ -78,6 +79,22 @@ func TestEnumerateSkipsSignetFiles(t *testing.T) {
 	}
 	if !slices.Contains(rels, "sbom.cdx.json") {
 		t.Fatalf("expected sbom.cdx.json in %v", rels)
+	}
+}
+
+// inventory.cdx.json is a deliberately distinct SBOM artifact produced by the
+// sbom scanner; it must not be superseded as an older variant of sbom.cdx.json
+// even though both classify as KindCycloneDXSBOM.
+func TestInventorySBOMNotSupersededBySBOM(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	arts := []Artifact{
+		{Path: filepath.Join(dir, "sbom.cdx.json"), Rel: "sbom.cdx.json", Kind: KindCycloneDXSBOM, Tool: "", ModTime: now},
+		{Path: filepath.Join(dir, "inventory.cdx.json"), Rel: "inventory.cdx.json", Kind: KindCycloneDXSBOM, Tool: "", ModTime: now.Add(time.Second)},
+	}
+	markSuperseded(arts)
+	if arts[0].Superseded || arts[1].Superseded {
+		t.Fatal("inventory.cdx.json and sbom.cdx.json must both remain authoritative")
 	}
 }
 

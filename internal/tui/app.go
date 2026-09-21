@@ -31,6 +31,7 @@ import (
 	"github.com/vulnetix/signet/internal/bgagent"
 	"github.com/vulnetix/signet/internal/bgproc"
 	"github.com/vulnetix/signet/internal/clipboard"
+	"github.com/vulnetix/signet/internal/commands"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
 	"github.com/vulnetix/signet/internal/gitinfo"
@@ -52,7 +53,9 @@ import (
 	"github.com/vulnetix/signet/internal/repomap"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/signet/internal/sanitize"
 	"github.com/vulnetix/signet/internal/scanartifacts"
+	"github.com/vulnetix/signet/internal/selfupdate"
 	"github.com/vulnetix/signet/internal/session"
 	"github.com/vulnetix/signet/internal/todos"
 	"github.com/vulnetix/signet/internal/tools"
@@ -351,6 +354,11 @@ type App struct {
 	gitInfo gitinfo.Info
 	gitOK   bool
 
+	// signetUpdate is the startup release check: whether a newer Signet
+	// exists and how to install it on this machine. Zero until the check
+	// answers, and stays zero when it is disabled or fails.
+	signetUpdate selfupdate.Status
+
 	// settings / state persistence
 	settings config.Settings
 	eff      config.Effective
@@ -544,6 +552,10 @@ type App struct {
 	// chosen once in New from the session id so a per-frame re-render cannot
 	// strobe between tips.
 	bannerTip string
+	// firstRun marks an install with nothing persisted and no provider named
+	// anywhere. It swaps the banner's rotating tip for the OpenRouter signup
+	// hint, which is the one fact such a user needs first.
+	firstRun bool
 	// bannerResumed/bannerRestoredTurns render the resumed-session banner
 	// variant. Populated by the resume path and cleared by startNewSession.
 	bannerResumed       string
@@ -725,9 +737,14 @@ func New(opts Options) *App {
 	}
 	// One Live for the process: the running session and the next one share it.
 	a.live = posture.NewLive(a.effectivePosture(), !a.askEnabled())
+	// A brand-new install has nothing persisted and names no provider: the
+	// default provider is OpenRouter's free router, which needs an account
+	// before it answers, so such a user gets the signup hint rather than a
+	// binding they cannot use yet.
+	a.firstRun = st == (config.State{}) && eff.Settings.Provider == "" && eff.Settings.Model == ""
 	// The banner tip is chosen once from the session id, so the per-frame
 	// banner re-render is stable. startedAt seeds the exit card's duration.
-	a.bannerTip = components.PickTip(a.sessionID)
+	a.bannerTip = a.pickBannerTip()
 	a.startedAt = time.Now()
 	// The repo map is an accelerant, never a gate: claim, reuse, or scan it
 	// best-effort. A ready map for this HEAD is reused; a running claim from
@@ -847,14 +864,19 @@ func (a *App) catalogFor(name string) []models.Model {
 	return out
 }
 
+// signupMessage is what a user with no credentials at all is told: the default
+// provider, where an account comes from, and the command that stores the key.
+const signupMessage = "no provider credentials found. " + components.FirstRunTip +
+	". Type /providers to store the key, or /model to pick another provider."
+
 func (a *App) showCredentialMessage(provider string, resolver *credentials.Resolver) {
 	if resolver == nil {
-		a.addSystem("no provider credentials found. Type /credentials to configure.")
+		a.addSystem(signupMessage)
 		return
 	}
 	configured := resolver.ConfiguredProviders()
 	if len(configured) == 0 {
-		a.addSystem("no provider credentials found. Type /credentials to configure.")
+		a.addSystem(signupMessage)
 		return
 	}
 	var others []string
@@ -866,7 +888,7 @@ func (a *App) showCredentialMessage(provider string, resolver *credentials.Resol
 	if len(others) > 0 {
 		a.addSystem(fmt.Sprintf("%s is configured; %s is not. Type /model to switch provider.", strings.Join(others, ", "), provider))
 	} else {
-		a.addSystem(fmt.Sprintf("%s credentials missing (%s). Type /credentials to configure.", provider, strings.Join(a.status.Missing, ", ")))
+		a.addSystem(fmt.Sprintf("%s credentials missing (%s). Type /providers to configure.", provider, strings.Join(a.status.Missing, ", ")))
 	}
 }
 
@@ -907,6 +929,11 @@ func (a *App) Init() tea.Cmd {
 	// Discover the Vulnetix CLI quietly on startup so the footer and
 	// /vulnetix configure view have fresh capabilities from the first frame.
 	cmds = append(cmds, a.probeVulnetixSilentCmd())
+	// Ask GitHub whether a newer Signet exists. Cached for six hours on
+	// disk, so a session that starts often makes at most four requests a day.
+	if cmd := a.checkSignetUpdateCmd(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
 	return tea.Batch(cmds...)
 }
 
@@ -933,6 +960,7 @@ func (a *App) bannerView() string {
 		Version:       version.Version,
 		Commit:        version.Commit,
 		Built:         version.BuildDate,
+		Update:        a.signetUpdate.BannerNote(),
 		Tip:           a.bannerTip,
 		Resumed:       a.bannerResumed,
 		RestoredTurns: a.bannerRestoredTurns,
@@ -1024,6 +1052,7 @@ func (a *App) belowViewportHeight() int {
 	h += a.attachStripHeight()
 	h += a.todoPanelHeight()
 	h += a.runsPanelHeight()
+	h += a.hintHeight()
 	h += a.editor.Height() + 2 // composer frame (top and bottom edges)
 	h += a.footerHeight()
 	return h
@@ -1089,7 +1118,7 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 	}
 	if !a.status.Configured {
 		return func() tea.Msg {
-			return agentEventMsg{Kind: agent.EventErrorKind, Err: fmt.Errorf("%s credentials missing (%s). Type /credentials to configure.", a.cfg.Provider, strings.Join(a.status.Missing, ", "))}
+			return agentEventMsg{Kind: agent.EventErrorKind, Err: fmt.Errorf("%s credentials missing (%s). Type /providers to configure.", a.cfg.Provider, strings.Join(a.status.Missing, ", "))}
 		}
 	}
 	// The last turn is the new user prompt; the rest is history.
@@ -1729,6 +1758,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case vulnetixProbeMsg:
 		return a, a.handleVulnetixProbe(m)
+
+	case signetUpdateMsg:
+		return a, a.handleSignetUpdate(m)
 
 	case projectsLoadedMsg:
 		return a, a.handleProjectsLoaded(m)
@@ -3274,6 +3306,10 @@ func (a *App) chatView() string {
 		sb.WriteString(a.renderRunsPanel())
 		sb.WriteString("\n")
 	}
+	if hint := a.workingHint(); hint != "" {
+		sb.WriteString(hint)
+		sb.WriteString("\n")
+	}
 	sb.WriteString(a.renderComposer())
 	sb.WriteString("\n")
 	a.refreshFooter()
@@ -3394,6 +3430,46 @@ func (a *App) renderComposer() string {
 		Accent: accent,
 		Raw:    true,
 	}.View()
+}
+
+// pickBannerTip is the banner's last row: the fixed signup hint on a first
+// run, otherwise a stable rotating tip seeded by the session id.
+func (a *App) pickBannerTip() string {
+	if a.firstRun {
+		return components.FirstRunTip
+	}
+	return components.PickTip(a.sessionID)
+}
+
+// hintHeight is the row the working hint occupies, counted in the layout so
+// the viewport gives the line back when the turn ends rather than overflowing
+// the frame while one is in flight.
+func (a *App) hintHeight() int {
+	if a.workingHint() == "" {
+		return 0
+	}
+	return 1
+}
+
+// hintRotate is how long each hint holds the line above the composer. It is
+// long enough to read and short enough that a slow turn shows several.
+const hintRotate = 6 * time.Second
+
+// workingHint is the rotating hint line above the composer. It renders only
+// while a turn is in flight — the moment the user is already watching that
+// line — and steps on elapsed time, so one long turn teaches more than one
+// binding. A first run holds the signup hint instead: the turn in flight is
+// probably the one about to fail for want of an account.
+func (a *App) workingHint() string {
+	if a.phase == phaseIdle || a.phaseStartedAt.IsZero() {
+		return ""
+	}
+	tip := components.FirstRunTip
+	if !a.firstRun {
+		tip = components.CycleTip(a.sessionID, int(time.Since(a.phaseStartedAt)/hintRotate))
+	}
+	line := components.MutedStyle.Render("hint · " + tip)
+	return lipgloss.NewStyle().MaxWidth(a.contentWidth()).Render(line)
 }
 
 // spinMark is the working-indicator spinner, or a static dot when the
@@ -4697,7 +4773,7 @@ func (a *App) startNewSession() {
 	a.usageStale = false
 	// The banner tip, exit-card stats and resumed variant are all session
 	// bookend state: a fresh session restarts the clock and re-picks the tip.
-	a.bannerTip = components.PickTip(a.sessionID)
+	a.bannerTip = a.pickBannerTip()
 	a.bannerResumed = ""
 	a.bannerRestoredTurns = 0
 	a.startedAt = time.Now()
@@ -4769,7 +4845,45 @@ func (a *App) handleVulnetixDone(m vulnetixDoneMsg) tea.Cmd {
 	if m.report.Summary != "" {
 		a.addSystem("vulnetix:\n" + m.report.Summary)
 	}
-	return a.push(viewVulnetixArtifacts)
+	return tea.Batch(a.push(viewVulnetixArtifacts), a.sendVulnetixTriage(m.report.TriageBlocks))
+}
+
+// sendVulnetixTriage classifies the bounded report blocks and hands them to
+// the model as file attachments. Report bodies are repository-derived bytes
+// (SARIF carries code snippets and paths), so each one classifies
+// unconditionally when guardrails are on — the same round-trip a shell result
+// takes, and the same fail-closed rule as AGENTS.md.
+func (a *App) sendVulnetixTriage(blocks []commands.TriageBlock) tea.Cmd {
+	if len(blocks) == 0 {
+		return nil
+	}
+	pol := a.effectivePosture()
+	var atts []run.Attachment
+	for _, block := range blocks {
+		raw := block.Body
+		body := sanitize.Sanitize(raw)
+		if pol.Level(posture.ToolResultUnsafe) != posture.Ignore {
+			pipe := run.NewPipeline(a.cfg, a.client, a.cache)
+			dec, err := pipe.Process(a.ctx, tools.Result{Kind: tools.KindRead, Content: raw})
+			if err != nil || dec.Action != rolemanager.ActionProceed {
+				a.addSystem(fmt.Sprintf("vulnetix %s classified: %s", block.Label, dec.Sentinel.Label()))
+				continue
+			}
+			body = dec.Content
+		}
+		atts = append(atts, run.Attachment{Kind: "file", Label: block.Label, Body: body})
+	}
+	if len(atts) == 0 {
+		return nil
+	}
+	if a.working() || a.preSend {
+		for _, att := range atts {
+			a.pendingActivitySends = append(a.pendingActivitySends, activitySend{label: att.Label, atts: []run.Attachment{att}})
+		}
+		return nil
+	}
+	prompt := "Vulnetix review reports are attached. Triage the fixable findings: patch code findings (SAST, secrets, IaC, container, malscan) in the session and treat dependency findings with vulnetix fix. Propose or apply fixes per the normal permission rules."
+	return a.sendWithAttachments(prompt, atts, "")
 }
 
 func (a *App) handleVulnetixProbe(m vulnetixProbeMsg) tea.Cmd {
