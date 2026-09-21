@@ -19,7 +19,9 @@ const (
 )
 
 // GoalState is the run-time goal state persisted as a `goal_state` session
-// entry, mirroring the pi-goal contract.
+// entry: what the UI and a resumed session need to know about a goal in
+// flight. It is a progress report, never an input to the pass loop's
+// decisions.
 type GoalState struct {
 	Version         int    `json:"version"`               // 1
 	ID              string `json:"id"`                    // session-entry id

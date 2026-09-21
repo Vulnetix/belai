@@ -19,10 +19,11 @@ type UpdatePlan struct{}
 func (UpdatePlan) Definition() Definition {
 	return Definition{
 		Name: "update_plan",
-		Description: "Report plan progress against the checklist. Each step carries a " +
-			"status: pending, in_progress, or completed. Unlike Codex this tool is also " +
-			"available in plan mode, where it drives the planning checklist rather than " +
-			"an execution checklist.",
+		Description: "Report progress against the checklist of steps you are executing. " +
+			"Each step carries a status: pending, in_progress, or completed. Keep it " +
+			"current as you work — it tracks work, it does not replace it. " +
+			"(Divergence from Codex: this tool is also accepted in plan mode, where the " +
+			"checklist being tracked is the planning one.)",
 		Properties: map[string]Property{
 			"explanation": {Type: "string", Description: "Optional note about this update."},
 			"plan": {
