@@ -28,11 +28,11 @@ func (r *Read) Definition() Definition {
 			"Reads are bounded (64 KiB by default); a larger file comes back truncated, so page through it with offset and limit. " +
 			"Read a file before editing it — Edit matches exact bytes and will fail on a guess.",
 		Properties: map[string]Property{
-			"path":   {Type: "string", Description: "Path to the file, relative to the working directory"},
-			"offset": {Type: "integer", Description: "Optional byte (not line) offset to start reading from; omit to start at the beginning"},
-			"limit":  {Type: "integer", Description: "Optional maximum number of bytes to read; values above the tool's own cap are clamped to it"},
+			"file_path": {Type: "string", Description: "Path to the file: an absolute filesystem path under one of the session roots, or relative to the working directory; a leading `/` not under any root is relative to the session root"},
+			"offset":    {Type: "integer", Description: "Optional byte (not line) offset to start reading from; omit to start at the beginning"},
+			"limit":     {Type: "integer", Description: "Optional maximum number of bytes to read; values above the tool's own cap are clamped to it"},
 		},
-		Required: []string{"path"},
+		Required: []string{"file_path"},
 	}
 }
 
@@ -42,7 +42,7 @@ func (r *Read) Kind() Kind { return KindRead }
 // Subject returns the permission-rule subject: the path argument resolved
 // through the working directory, so a rule keeps matching after a move.
 func (r *Read) Subject(args map[string]any) string {
-	if s, ok := args["path"].(string); ok {
+	if s, ok := argString(args, "file_path"); ok {
 		return subjectPath(r.Root, r.Cwd, s)
 	}
 	return ""
@@ -50,7 +50,7 @@ func (r *Read) Subject(args map[string]any) string {
 
 // Execute reads the file, enforcing root confinement and size limits.
 func (r *Read) Execute(ctx context.Context, args map[string]any) (Result, error) {
-	pathArg, ok := args["path"].(string)
+	pathArg, ok := argString(args, "file_path")
 	if !ok || pathArg == "" {
 		return Result{}, fmt.Errorf("missing path argument")
 	}

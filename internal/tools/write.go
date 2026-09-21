@@ -31,10 +31,10 @@ func (w *Write) Definition() Definition {
 			"Content is bounded to 1 MiB. Prefer Edit for a change to an existing file; Write is for a new file or a full rewrite. " +
 			"Mutating, so it asks for approval unless an explicit allow rule matches, and it is unavailable in plan mode.",
 		Properties: map[string]Property{
-			"path":    {Type: "string", Description: "Path to the file to write, relative to the working directory; it need not exist yet"},
-			"content": {Type: "string", Description: "The exact and complete bytes to write; this replaces the whole file"},
+			"file_path": {Type: "string", Description: "Path to the file to write: an absolute filesystem path under one of the session roots, or relative to the working directory; it need not exist yet"},
+			"content":   {Type: "string", Description: "The exact and complete bytes to write; this replaces the whole file"},
 		},
-		Required: []string{"path", "content"},
+		Required: []string{"file_path", "content"},
 	}
 }
 
@@ -46,13 +46,13 @@ func (w *Write) Mutates() bool { return true }
 
 // Subject returns the permission-rule subject (the lexical cleaned path).
 func (w *Write) Subject(args map[string]any) string {
-	path, _ := argString(args, "path")
+	path, _ := argString(args, "file_path")
 	return subjectPath(w.Root, w.Cwd, path)
 }
 
 // Targets returns the sanitised destination path for the diff recorder.
 func (w *Write) Targets(args map[string]any) []string {
-	path, _ := argString(args, "path")
+	path, _ := argString(args, "file_path")
 	res, err := resolveNewPath(w.Root, w.Cwd, path)
 	if err != nil {
 		return nil
@@ -63,7 +63,7 @@ func (w *Write) Targets(args map[string]any) []string {
 // Preview returns the before/after contents for the approval diff without
 // touching disk.
 func (w *Write) Preview(args map[string]any) (path, old, new string, ok bool) {
-	pathArg, ok := argString(args, "path")
+	pathArg, ok := argString(args, "file_path")
 	if !ok || strings.TrimSpace(pathArg) == "" {
 		return "", "", "", false
 	}
@@ -82,7 +82,7 @@ func (w *Write) Preview(args map[string]any) (path, old, new string, ok bool) {
 // Execute writes the file, enforcing root confinement, size limits, and an
 // atomic write so a failure never leaves a half-written file.
 func (w *Write) Execute(ctx context.Context, args map[string]any) (Result, error) {
-	pathArg, ok := argString(args, "path")
+	pathArg, ok := argString(args, "file_path")
 	if !ok || strings.TrimSpace(pathArg) == "" {
 		return Result{}, fmt.Errorf("missing path argument")
 	}

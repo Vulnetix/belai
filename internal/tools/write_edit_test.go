@@ -8,6 +8,24 @@ import (
 	"testing"
 )
 
+func TestWriteDefinitionAdvertisesFilePath(t *testing.T) {
+	d := (&Write{}).Definition()
+	if _, ok := d.Properties["file_path"]; !ok {
+		t.Fatalf("Write schema does not advertise file_path: %+v", d.Properties)
+	}
+	if len(d.Required) != 2 || d.Required[0] != "file_path" {
+		t.Fatalf("Write required = %v, want [file_path content]", d.Required)
+	}
+}
+
+func TestWriteAcceptsPathAlias(t *testing.T) {
+	root := t.TempDir()
+	w := &Write{Root: root}
+	if _, err := w.Execute(context.Background(), map[string]any{"path": "a.txt", "content": "x"}); err != nil {
+		t.Fatalf("Write with path alias: %v", err)
+	}
+}
+
 func TestWriteCreatesFile(t *testing.T) {
 	root := t.TempDir()
 	w := &Write{Root: root}
@@ -82,6 +100,32 @@ func TestWriteDirectoryTarget(t *testing.T) {
 	_, err := w.Execute(context.Background(), map[string]any{"path": "dir", "content": "x"})
 	if err == nil || !strings.Contains(err.Error(), "directory") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestEditDefinitionAdvertisesFilePath(t *testing.T) {
+	d := (&Edit{}).Definition()
+	if _, ok := d.Properties["file_path"]; !ok {
+		t.Fatalf("Edit schema does not advertise file_path: %+v", d.Properties)
+	}
+	if len(d.Required) != 3 || d.Required[0] != "file_path" {
+		t.Fatalf("Edit required = %v, want [file_path old_string new_string]", d.Required)
+	}
+}
+
+func TestEditAcceptsPathAlias(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "f.txt")
+	if err := os.WriteFile(path, []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e := &Edit{Root: root}
+	if _, err := e.Execute(context.Background(), map[string]any{"path": "f.txt", "old_string": "a", "new_string": "b"}); err != nil {
+		t.Fatalf("Edit with path alias: %v", err)
+	}
+	body, _ := os.ReadFile(path)
+	if string(body) != "b" {
+		t.Fatalf("body = %q", body)
 	}
 }
 

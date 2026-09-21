@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/permissions"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
@@ -84,6 +85,14 @@ type passOutcome struct {
 // than allowed to grow with a large refactor.
 const maxMutatedPaths = 20
 
+// withheldRepairDirective is injected when an agent/goal-mode pass ends with
+// two consecutive all-withheld iterations. Unlike plan mode — where withheld
+// writes mean the mode is read-only — these modes advertise the full mutating
+// surface, so a withheld streak means the model's calls are failing and must be
+// re-issued with corrected arguments. It never names ExitPlanMode, which is not
+// advertised outside plan mode.
+const withheldRepairDirective = "Every tool result in the last two rounds was withheld. The errors are above. Re-issue the calls with corrected arguments — check the path form against the working directory and session roots in the system prompt — or state the blocker in one line. Do not answer with a plan."
+
 // noteMutation folds one call's observed disk effect into the pass totals.
 func (o *passOutcome) noteMutation(eff callEffect) {
 	if !eff.changed {
@@ -146,7 +155,12 @@ type callUnit struct {
 // pre-pass-loop iteration: drainSteer, streamTurnRetry, tool-call checking,
 // the stop-reason "length" repair, and the per-call execute loop. It returns
 // the mutated turns — tool results accumulate in it across passes.
-func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system string, turns []run.Turn, streaming bool, emit func(Event)) (passOutcome, []run.Turn, error) {
+//
+// mode is the engaged interaction mode. It is threaded explicitly so the
+// withheld-repair directive can tell the model the truth: plan mode has no
+// write tools and its deliverable is prose, while agent/goal mode has the
+// full mutating surface and a withheld streak means the tools are broken.
+func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system string, turns []run.Turn, streaming bool, emit func(Event), mode modes.Mode) (passOutcome, []run.Turn, error) {
 	var productive int
 	var withheld int
 	var text string
@@ -312,7 +326,11 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 			return finish(passOutcome{reply: assistant.Text, usage: assistant.Usage, text: text, lastText: lastText, productive: productive, planExit: true, planText: planText, updatePlan: updatePlan}), turns, nil
 		}
 		if withheld == 2 {
-			turns = append(turns, directiveTurns("Writes are unavailable in plan mode. Put the plan in your reply text, then call ExitPlanMode to finish.")...)
+			if mode == modes.ModePlan {
+				turns = append(turns, directiveTurns("Writes are unavailable in plan mode. Put the plan in your reply text, then call ExitPlanMode to finish.")...)
+			} else {
+				turns = append(turns, directiveTurns(withheldRepairDirective)...)
+			}
 			continue
 		}
 		if withheld >= 3 {

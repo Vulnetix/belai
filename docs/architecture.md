@@ -557,12 +557,19 @@ resolve paths from the concurrent fan-out.
 
 **Resolution rule**, which the `Cd` description states to the model:
 
-- a path beginning with `/` is matched against the primary session root; if
-  it does not prefix-match an added workspace root, `/` still means relative
-  to the primary root. A path under an added root resolves against that root.
+- a path beginning with `/` is matched against the primary session root **and**
+  every added workspace root, longest match first; a path inside the primary
+  root resolves there, and a path inside an added root resolves against that
+  root.
+- a leading `~/` expands to the user's home directory before that match, so
+  `~/src/signet/README.md` is the absolute filesystem path the model meant,
+  not a literal `~` segment.
+- a path beginning with `/` that lands in no root is still session-root-
+  relative (the `/`-is-root convention), so `/internal/tools` keeps meaning
+  the primary root's `internal/tools`.
 - any other path is relative to the **current working directory**;
-- there is no third case. An absolute filesystem path outside every root has
-  no spelling here.
+- there is no fourth case. An absolute filesystem path outside every root has
+  no spelling here and is refused outright.
 
 The session root set can be widened during a session with `/add-dir`. A
 confirmed added directory becomes an additional workspace root: absolute
@@ -716,6 +723,34 @@ detected build/test/fmt/lint commands from a fixed file table
 invariant that lets the map enter the system block: repository prose still
 reaches the model only through `RepoRead`/`Read`, which classify. The map is
 an accelerant, never a gate; a failed or empty scan renders nothing.
+
+### Release check
+
+Alongside the repo map and the Vulnetix CLI probe, startup runs one read-only
+release check (`internal/selfupdate`): a `GET` of
+`/repos/Vulnetix/signet/releases/latest` compared against the `-ldflags`
+version stamp. It never downloads or executes anything — a newer release adds
+an amber note to the banner's version row and one signet-panel notice naming
+both versions, the upgrade command, and the release page.
+
+The command is chosen from how the running binary was installed
+(`vulnetixcli.DetectInstall` over `os.Executable()`): the Homebrew tap, the
+Scoop bucket, `go install`, or the installer script plus the
+`signet-<goos>-<goarch>` release asset. Detection is path-based, so an
+unrecognised path falls back to the installer script and the asset URL rather
+than guessing a package manager.
+
+Three things keep the check quiet. The answer is cached six hours in
+`signet-release.json` under the global config directory, so repeated sessions
+make at most four requests a day. An unstamped build (`dev`) skips the check
+entirely — there is nothing to compare, and telling a source tree to run
+`brew upgrade` would be wrong. A failed fetch is stored and never rendered:
+the banner and panel stay silent when GitHub is unreachable. The check does
+not run at all when `update_check` is false or `SIGNET_NO_UPDATE_CHECK=1` is
+set, so no request leaves the machine.
+
+The release payload never reaches the model: it is harness chrome, rendered
+in the TUI only, like the banner itself.
 - Investigation in plan mode goes through `Read`, `Grep`, `Glob`, `Cd`, and
   the native read-only catalogue (`Cat`, `LS`, `Find`, `Git`, `JQ`, …).
 - Toggle via `/mode plan`, `shift+tab`, `f5`, or `--plan`; `/todos` shows
@@ -816,8 +851,15 @@ loop is unbounded by design — it is stopped by a stall, not a counter — and
 normative rules, including the verification gate and every termination
 condition, are in [role-manager.md](role-manager.md), "Goal pass loop".
 
-A prompt the classifier routes to goal mode carries the prompt itself as the
-goal carrier, so a goal-mode turn always has something to evaluate against.
+A prompt the classifier routes to goal mode drafts a **goal contract** from
+the sanitized prompt and the repo map's detected test commands. The user's
+prompt is kept verbatim as the Objective line, and the drafted sections
+(verification surface, constraints, boundaries, iteration policy, blocked-stop
+condition) are appended beneath it. The draft is sanitized before sealing so
+it cannot forge a harness block; on transport failure, an empty draft, or a
+draft missing the objective, the raw prompt is carried instead and a warning
+is emitted. A memorised goal is user-authored and is carried verbatim — never
+drafted.
 
 The first goal pass is a work pass, not an acknowledgement pass: the directive
 asks for one `update_plan` call and the first real change in the same pass.
@@ -828,7 +870,11 @@ model's prose or its checklist: two consecutive passes with no file change
 inject a directive naming the next step and asking for the smallest correct
 edit, the `GOAL_COMPLETE` verification gate asks for the edit rather than a
 read-only re-check while nothing has been written, and the goal evaluator is
-shown the change counts as harness facts. Nothing else at a pass boundary
+shown the change counts as harness facts. When the pass also ended with every
+tool result withheld, the loop injects the tool-repair directive instead of
+the no-write directive, because a broken path resolver is not fixed by telling
+the model to stop investigating. A goal whose every pass ended all-withheld
+terminates with a tool-failure error rather than looping unbounded.
 costs a model call — the loop evaluates and starts the next pass.
 
 Subagents never enter a pass loop — plan or goal: `AllowPassLoop` is a
@@ -2062,7 +2108,9 @@ include `provider`, `model`, `effort`, `caveman`, `read_only`,
 `ui.kitty_keyboard` (all default on when unset except `ui.show_reasoning`,
 which defaults off unless explicitly true; `ui.kitty_keyboard` is overridden
 off by `SIGNET_NO_KITTY=1`),
-`show_session_names` (default on), `context_windows`,
+`show_session_names` (default on),
+`update_check` (default on; overridden off by `SIGNET_NO_UPDATE_CHECK=1`),
+`context_windows`,
 `resilience` (`max_attempts`, `max_iterations`, `max_passes`,
 `max_clarify_rounds`, `max_explore_iterations`, `max_agents`,
 `plan_explore`), `providers`,

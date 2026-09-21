@@ -87,6 +87,57 @@ func TestCwdLeadingSlashIsRootRelative(t *testing.T) {
 	}
 }
 
+// An absolute filesystem path inside the primary root resolves to that root.
+// Before the fix it fell through to TrimPrefix and became a bogus relative
+// path such as "home/chris/…", which is the exact failure the goal-mode
+// screenshot recorded.
+func TestCwdAbsolutePrimaryRootPathResolves(t *testing.T) {
+	root := cwdTree(t)
+	c := NewCwd(root)
+	if _, err := c.Change("internal/tools"); err != nil {
+		t.Fatalf("Change: %v", err)
+	}
+	res, err := resolvePath(root, c, filepath.Join(root, "top.txt"))
+	if err != nil {
+		t.Fatalf("resolvePath(absolute primary path): %v", err)
+	}
+	if res.Root != root || res.Rel != "top.txt" {
+		t.Fatalf("resolved = %+v, want root=%s rel=top.txt", res, root)
+	}
+
+	r := &Read{Root: root, Cwd: c}
+	got, err := r.Execute(context.Background(), map[string]any{"file_path": filepath.Join(root, "top.txt")})
+	if err != nil {
+		t.Fatalf("Read(absolute primary path): %v", err)
+	}
+	if got.Content != "top" {
+		t.Fatalf("content = %q, want top", got.Content)
+	}
+}
+
+// A leading "~/" expands to the user's home before the root test, so
+// ~/GitHub/signet/x resolves when it lands inside a root.
+func TestCwdExpandsHomeAbsolutePath(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(home, "GitHub", "signet")
+	if err := os.MkdirAll(filepath.Join(root, "internal", "tools"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "top.txt"), []byte("home"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+
+	c := NewCwd(root)
+	res, err := resolvePath(root, c, "~/GitHub/signet/top.txt")
+	if err != nil {
+		t.Fatalf("resolvePath(~): %v", err)
+	}
+	if res.Root != root || res.Rel != "top.txt" {
+		t.Fatalf("resolved = %+v, want root=%s rel=top.txt", res, root)
+	}
+}
+
 func TestCwdDotDotMovesUp(t *testing.T) {
 	root := cwdTree(t)
 	c := NewCwd(root)

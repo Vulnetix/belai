@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/repomap"
 	"github.com/vulnetix/signet/internal/rolemanager"
@@ -165,6 +166,40 @@ func newGoalPassSession(t *testing.T, srv *httptest.Server, allowPassLoop bool, 
 		t.Fatalf("NewSession: %v", err)
 	}
 	return sess
+}
+
+// An all-withheld goal must terminate with the tool failure named, not loop
+// forever or pretend the model is simply not writing.
+func TestGoalPassLoopTerminatesOnAllWithheld(t *testing.T) {
+	srv, _, _ := goalPassServer(t, goalPassOpts{mode: "GOAL", main: "tool"})
+	defer srv.Close()
+
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
+	cwd := tools.NewCwd(root)
+	cfg := run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"}
+	sess, err := NewSession(Options{
+		Cfg:      cfg,
+		Client:   srv.Client(),
+		Workdir:  root,
+		Registry: tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024, Cwd: cwd}, &tools.Write{Root: root, Cwd: cwd}),
+		Posture:  posture.Defaults(),
+		// No AskDisabled: the permission gate withholds the Write, which is
+		// exactly the all-withheld condition this test exercises.
+		AllowPassLoop: true,
+		MaxIterations: 1,
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	_, err = sess.Run(context.Background(), "ship the thing")
+	if err == nil {
+		t.Fatal("expected the all-withheld tool-failure error")
+	}
+	if !strings.Contains(err.Error(), "all tool results withheld") {
+		t.Fatalf("error = %v, want the all-withheld tool failure", err)
+	}
 }
 
 func TestGoalPassLoopPartialPartialComplete(t *testing.T) {
@@ -338,7 +373,7 @@ func TestPassTextExcludesToolResults(t *testing.T) {
 	}
 
 	pipe := rolemanager.NewPipeline(run.NewClassifier(cfg, srv.Client()))
-	out, _, err := sess.pass(context.Background(), pipe, "", nil, false, func(Event) {})
+	out, _, err := sess.pass(context.Background(), pipe, "", nil, false, func(Event) {}, modes.ModeAgent)
 	if err != nil {
 		t.Fatalf("pass: %v", err)
 	}
@@ -792,9 +827,9 @@ func TestPassLedgerGateDirective(t *testing.T) {
 // observation rather than from the model's prose. It carries counts and
 // paths only.
 func TestPassLedgerGoalFacts(t *testing.T) {
-	l := passLedger{goalText: "g", passes: 3, passWrites: 1, writes: 4, touched: []string{"internal/a.go"}}
+	l := passLedger{goalText: "g", passes: 3, passWrites: 1, writes: 4, passWithheld: 2, touched: []string{"internal/a.go"}}
 	got := l.goalFacts()
-	for _, want := range []string{"Pass: 3", "Files changed this pass: 1", "Files changed so far in this goal: 4", "internal/a.go"} {
+	for _, want := range []string{"Pass: 3", "Tool results withheld this pass: 2", "Files changed this pass: 1", "Files changed so far in this goal: 4", "internal/a.go"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("goal facts missing %q:\n%s", want, got)
 		}
@@ -802,6 +837,39 @@ func TestPassLedgerGoalFacts(t *testing.T) {
 	empty := passLedger{goalText: "g", passes: 1}
 	if !strings.Contains(empty.goalFacts(), "Paths changed: none") {
 		t.Fatalf("a pass with no changes should say so:\n%s", empty.goalFacts())
+	}
+}
+
+// A withheld pass must not be told to stop investigating and edit: its tools
+// are failing, and the repair directive is the honest escalation.
+func TestPassLedgerNoWriteOrRepairDirective(t *testing.T) {
+	l := passLedger{goalText: "g", writes: 0, passesSinceWrite: goalNoWritePasses, passWithheld: 0}
+	if got := l.noWriteOrRepairDirective(); got != l.noWriteDirective() {
+		t.Fatalf("no-write directive with no withheld pass = %q, want the ordinary no-write directive", got)
+	}
+	l.passWithheld = 2
+	if got := l.noWriteOrRepairDirective(); got != withheldRepairDirective {
+		t.Fatalf("withheld pass got %q, want the repair directive", got)
+	}
+	if strings.Contains(l.noWriteOrRepairDirective(), "Stop investigating") {
+		t.Fatal("the repair directive must not tell a broken-tool model to stop investigating")
+	}
+}
+
+func TestPassLedgerEveryPassWithheld(t *testing.T) {
+	l := passLedger{goalText: "g", passes: 2, withheldPasses: 2}
+	if !l.everyPassWithheld() {
+		t.Fatal("two passes both withheld should be everyPassWithheld")
+	}
+	l.passes = 3
+	if l.everyPassWithheld() {
+		t.Fatal("three passes with only two withheld must not be everyPassWithheld")
+	}
+	l.withheldPasses = 3
+	l.passes++ // a fourth, clean pass
+	l.noteWithheld(passOutcome{withheld: 0})
+	if l.everyPassWithheld() {
+		t.Fatal("a clean pass must reset the all-withheld claim")
 	}
 }
 

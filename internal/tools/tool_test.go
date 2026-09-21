@@ -55,6 +55,18 @@ func TestRegistryNamesAndDefinitions(t *testing.T) {
 	}
 }
 
+func TestRegistryFindIsCaseInsensitive(t *testing.T) {
+	r := NewRegistry(&Read{Root: "/tmp"})
+	for _, name := range []string{"read", "READ", "Read"} {
+		if _, ok := r.Find(name); !ok {
+			t.Fatalf("Find(%q) did not resolve case-insensitively", name)
+		}
+	}
+	if _, ok := r.Find("read "); ok {
+		t.Fatal("Find must not trim or guess names")
+	}
+}
+
 // Only narrows to the named tools and keeps the shared working-directory
 // tracker, so an allowlisted session still moves the footer on a Cd.
 func TestRegistryOnlyCarriesCwd(t *testing.T) {

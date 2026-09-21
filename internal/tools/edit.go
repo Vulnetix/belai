@@ -25,12 +25,12 @@ func (e *Edit) Definition() Definition {
 			"The call fails, leaving the file byte-identical, when the file does not exist, is binary, is over 1 MiB, when old_string equals new_string, when old_string is not found, or when it appears more than once without replace_all=true. " +
 			"The write is atomic. Mutating, so it asks for approval unless an explicit allow rule matches, and it is unavailable in plan mode.",
 		Properties: map[string]Property{
-			"path":        {Type: "string", Description: "Path to the file to edit, relative to the working directory; the file must already exist"},
+			"file_path":   {Type: "string", Description: "Path to the file to edit: an absolute filesystem path under one of the session roots, or relative to the working directory; the file must already exist"},
 			"old_string":  {Type: "string", Description: "The exact bytes to replace; include surrounding context to make it unique"},
 			"new_string":  {Type: "string", Description: "The replacement bytes; must differ from old_string"},
 			"replace_all": {Type: "boolean", Description: "Replace every occurrence instead of requiring a unique match (default false)"},
 		},
-		Required: []string{"path", "old_string", "new_string"},
+		Required: []string{"file_path", "old_string", "new_string"},
 	}
 }
 
@@ -42,13 +42,13 @@ func (e *Edit) Mutates() bool { return true }
 
 // Subject returns the permission-rule subject (the lexical cleaned path).
 func (e *Edit) Subject(args map[string]any) string {
-	path, _ := argString(args, "path")
+	path, _ := argString(args, "file_path")
 	return subjectPath(e.Root, e.Cwd, path)
 }
 
 // Targets returns the sanitised target path for the diff recorder.
 func (e *Edit) Targets(args map[string]any) []string {
-	path, _ := argString(args, "path")
+	path, _ := argString(args, "file_path")
 	res, err := resolvePath(e.Root, e.Cwd, path)
 	if err != nil {
 		return nil
@@ -62,7 +62,7 @@ func (e *Edit) Targets(args map[string]any) []string {
 // match), because the render-only diff must not be the thing that leaks or
 // writes.
 func (e *Edit) Preview(args map[string]any) (path, old, new string, ok bool) {
-	pathArg, ok := argString(args, "path")
+	pathArg, ok := argString(args, "file_path")
 	if !ok || strings.TrimSpace(pathArg) == "" {
 		return "", "", "", false
 	}
@@ -87,7 +87,7 @@ func (e *Edit) Preview(args map[string]any) (path, old, new string, ok bool) {
 // MaxBytes, NUL (binary), old_string == new_string, zero matches, then
 // multiple matches without replace_all.
 func (e *Edit) Execute(ctx context.Context, args map[string]any) (Result, error) {
-	pathArg, ok := argString(args, "path")
+	pathArg, ok := argString(args, "file_path")
 	if !ok || strings.TrimSpace(pathArg) == "" {
 		return Result{}, fmt.Errorf("missing path argument")
 	}

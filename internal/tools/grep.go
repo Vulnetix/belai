@@ -38,7 +38,7 @@ func (g *Grep) Definition() Definition {
 			"Use Grep to find where something is written; use Glob to find files by name.",
 		Properties: map[string]Property{
 			"pattern": {Type: "string", Description: "The regular expression to search for; a literal string is also a valid pattern"},
-			"path":    {Type: "string", Description: "Optional subdirectory or single file to search, relative to the working directory, or an absolute path inside an added workspace root. Defaults to the working directory."},
+			"path":    {Type: "string", Description: "Optional subdirectory or single file to search: an absolute filesystem path under one of the session roots, or relative to the working directory; a leading `/` not under any root is relative to the session root. Defaults to the working directory."},
 		},
 		Required: []string{"pattern"},
 	}

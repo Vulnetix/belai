@@ -21,6 +21,7 @@ The architecture overview lives in [architecture.md](architecture.md).
 | Mode classifier | `internal/rolemanager` | Classify a mode-less prompt into agent/plan/goal | Live |
 | Forced mode | `internal/rolemanager` | Build the decision for a mode the user chose explicitly, bypassing the classifier | Live |
 | Goal evaluator | `internal/rolemanager` | Single-token verdict on goal progress at a pass boundary | Live |
+| Goal contract | `internal/rolemanager` | Draft the six-part completion contract for a classifier-routed goal prompt (prose, not a sentinel) | Live |
 | Goal pass loop | `internal/agent` | Grant further passes while a goal measurably advances | Live |
 | Plan evaluator | `internal/rolemanager` | Single-token verdict on plan progress at a plan-mode pass boundary (`PLAN_*`, never `GOAL_*`) | Live |
 | Plan pass loop | `internal/agent` | Plan-mode pass loop: bounded, contacts the plan evaluator with the exploration context, never a goal definition | Live |
@@ -918,6 +919,7 @@ state.
 | `verificationPasses` | Finished verification passes; gates `GOAL_COMPLETE`. |
 | `malformedStreak` | Consecutive malformed evaluator replies. A clean reply resets it, on both the exhausted and the natural-exit path. |
 | `writes` / `passWrites` / `passesSinceWrite` | Harness-observed file changes: the goal total, the pass that just ended, and the run of passes that changed nothing. Reaching `goalNoWritePasses` (2) injects the no-write directive. |
+| `passWithheld` / `withheldPasses` | Harness-observed tool withholding: the pass that just ended and how many passes ended with every tool result withheld. Together they distinguish a broken tool surface from a model that is simply not writing. |
 | `touched` | The changed paths, deduplicated and bounded. Paths and counts only — never file contents. |
 | `surveyedOnce` | The forced survey has already run for this goal. It runs at most once: a second survey buys reading, which is not what a not-started goal is short of. |
 | `overflowRetried` | A context overflow has already been recovered once this prompt. |
@@ -933,8 +935,9 @@ boundary intact. Its rules and edge cases are in
 ### Goal evaluator
 
 At each pass boundary the evaluator is shown the goal, the rendered todo list,
-a block of **harness-observed facts** (pass number, files changed this pass,
-files changed so far, the paths involved), and a **sanitized** digest of that
+a block of **harness-observed facts** (pass number, tool results withheld this
+pass, files changed this pass, files changed so far, the paths involved), and
+a **sanitized** digest of that
 pass's turns (`transcript.Serialize`, with tool results bounded by
 `transcript.DefaultMaxToolResultChars`, and the whole digest bounded by
 `rolemanager.MaxGoalEvidenceChars` — the tail is kept, because the end of a
@@ -965,10 +968,11 @@ which fails closed to `GOAL_PARTIAL` like any other malformed one.
 | ---- | --------- | ------- |
 | Goal met | `GOAL_COMPLETE` **and** `verificationPasses ≥ 1` | Success; todo list marked complete; reply is the pass's last assistant text |
 | Natural exit | A pass ends with no tool calls | Re-checked, not trusted: the reply is fed back to the evaluator once. `GOAL_COMPLETE` (past the verification gate) returns it as the answer; `GOAL_COMPLETE` before the gate arms a verification pass; otherwise a continuation directive is injected and the loop keeps going |
-| Verification gate | `GOAL_COMPLETE` with `verificationPasses == 0` | Downgraded: arm one verification pass and continue. Harness logic — the model cannot talk its way past it. When the goal has changed no file (`writes == 0`) the armed pass carries the no-write directive instead, because re-reading a repository the goal never touched verifies nothing |
-| No-write escalation | `passesSinceWrite ≥ goalNoWritePasses` (2) | The no-write directive is injected, naming the next step and asking for the smallest correct edit or an explicit blocker. It outranks the periodic verification pass: a loop behind on writing does not need another read-only pass |
+| Verification gate | `GOAL_COMPLETE` with `verificationPasses == 0` | Downgraded: arm one verification pass and continue. Harness logic — the model cannot talk its way past it. When the goal has changed no file (`writes == 0`) the armed pass carries the no-write directive instead, because re-reading a repository the goal never touched verifies nothing. If the pass also ended with every tool result withheld, the tool-repair directive replaces the no-write directive |
+| No-write escalation | `passesSinceWrite ≥ goalNoWritePasses` (2) | The no-write directive is injected, naming the next step and asking for the smallest correct edit or an explicit blocker. It outranks the periodic verification pass: a loop behind on writing does not need another read-only pass. A pass that also ended all-withheld gets the tool-repair directive instead — a model whose tools are failing must not be told to stop investigating |
 | Progression reset | `partialStreak ≥ 4` (`2 × goalVerifyEvery`) in `GOAL_PARTIAL` or at the verification gate | A progression directive with session context is injected and `partialStreak` is reset, starting a new agentic evaluation loop; the loop does not abort for stall |
 | Unproductive pass | A pass executed no non-withheld tool result | Error: *pass N executed no tools*. Truncation repair burns iterations without doing work and must not buy another pass |
+| All-withheld goal | `writes == 0` and every pass so far ended with every tool result withheld | Error naming the tool failure, rather than granting unbounded passes against a broken resolver |
 | Broken evaluator | 2 consecutive malformed evaluator replies, each already re-asked once | The loop stops and returns the work so far with `GOAL_PARTIAL` and a warning — **not** an error. The passes that ran produced real changes; a garbled classifier token is no reason to discard them |
 | Evaluator transport failure | `Classify` returns an error | Terminal. An unknown verdict must not grant compute |
 | Cancellation | `ctx` cancelled (`esc`, `SIGINT`) | `ErrPassLoopCancelled` with the partial result — never a raw `context.Canceled` |

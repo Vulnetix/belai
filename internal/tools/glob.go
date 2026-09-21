@@ -45,7 +45,7 @@ func (g *Glob) Definition() Definition {
 			"Use Glob to locate files by name or extension; use Grep to search file contents.",
 		Properties: map[string]Property{
 			"pattern": {Type: "string", Description: `Glob pattern, e.g. "**/*.go" (every Go file at any depth), "*.md" (Markdown at the top level), or "internal/**/*_test.go"`},
-			"path":    {Type: "string", Description: "Optional base directory to search, relative to the working directory or an absolute path inside an added workspace root; the pattern is then matched relative to it. Defaults to the working directory."},
+			"path":    {Type: "string", Description: "Optional base directory to search: an absolute filesystem path under one of the session roots, or relative to the working directory; a leading `/` not under any root is relative to the session root. The pattern is then matched relative to it. Defaults to the working directory."},
 		},
 		Required: []string{"pattern"},
 	}

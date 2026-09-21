@@ -33,6 +33,22 @@ func TestSummariseTakesTheFirstSentence(t *testing.T) {
 
 // No tools means no block: the classifier turn carries no tools and must not
 // carry an empty briefing that implies it has some.
+// The global rules carry the path-resolution convention centrally: absolute
+// under a root, relative to the working directory, or session-root-relative
+// when a leading "/" lands in no root.
+func TestToolsBlockStatesPathResolutionRule(t *testing.T) {
+	got := ToolsBlock(ToolsOptions{Workdir: "/repo", Tools: []ToolDoc{{Name: "Read"}}})
+	for _, want := range []string{
+		"absolute filesystem path under one of the roots above",
+		"or relative to the working directory",
+		"A path starting with `/` that is not under any root is read as relative to the session root",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("block missing %q:\n%s", want, got)
+		}
+	}
+}
+
 func TestToolsBlockEmptyWithoutTools(t *testing.T) {
 	if got := ToolsBlock(ToolsOptions{Workdir: "/repo", PlanMode: true}); got != "" {
 		t.Fatalf("ToolsBlock with no tools = %q, want empty", got)

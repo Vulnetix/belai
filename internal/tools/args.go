@@ -10,12 +10,32 @@ import (
 // send every argument as a JSON string, so this is the canonical path for the
 // new tools. A non-string value is treated as absent: fail closed rather than
 // coercing a number into a path.
+//
+// A small alias table is consulted only when the canonical key is absent, so
+// transcripts and e2e fixtures written against the old `path` spelling keep
+// working while the advertised schema names `file_path`. The canonical key
+// wins when both are present.
 func argString(args map[string]any, key string) (string, bool) {
 	if args == nil {
 		return "", false
 	}
-	s, ok := args[key].(string)
-	return s, ok
+	if s, ok := args[key].(string); ok {
+		return s, true
+	}
+	for _, alias := range argAliases[key] {
+		if s, ok := args[alias].(string); ok {
+			return s, true
+		}
+	}
+	return "", false
+}
+
+// argAliases maps a canonical argument name to its accepted aliases. It is
+// deliberately small and symmetric: only the file_path/path rename carries an
+// alias, so nothing else silently changes meaning.
+var argAliases = map[string][]string{
+	"file_path": {"path"},
+	"path":      {"file_path"},
 }
 
 // argBool returns the boolean value at key. It accepts the forms models

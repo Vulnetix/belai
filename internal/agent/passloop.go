@@ -160,6 +160,12 @@ type passLedger struct {
 	writes           int
 	passWrites       int
 	passesSinceWrite int
+	// passWithheld is the withheld count for the pass that just ended and
+	// withheldPasses how many passes ended with every tool result withheld.
+	// Together they let the loop tell a broken tool resolver from a model
+	// that is simply not writing.
+	passWithheld   int
+	withheldPasses int
 	// touched are the paths changed so far, deduplicated and bounded. Paths
 	// and counts only — never file contents.
 	touched []string
@@ -235,6 +241,23 @@ func (l *passLedger) noteWrites(out passOutcome) {
 	}
 }
 
+// noteWithheld records one pass's withheld count and the running tally of
+// passes that ended all-withheld, so a tool outage is visible at the pass
+// boundary rather than being collapsed into "no files changed".
+func (l *passLedger) noteWithheld(out passOutcome) {
+	l.passWithheld = out.withheld
+	if out.withheld > 0 {
+		l.withheldPasses++
+	}
+}
+
+// everyPassWithheld reports whether every pass run so far ended with every
+// tool result withheld. Combined with writes==0 it means the tool surface is
+// broken, not that the model is dawdling.
+func (l *passLedger) everyPassWithheld() bool {
+	return l.passes > 0 && l.withheldPasses == l.passes
+}
+
 // stalledOnWrites reports whether the loop has gone long enough without a
 // file change to stop asking politely. It is deliberately independent of the
 // todo list: a model can keep a checklist moving with prose alone.
@@ -282,6 +305,18 @@ func (l *passLedger) noWriteDirective() string {
 	return b.String()
 }
 
+// noWriteOrRepairDirective picks the boundary escalation for a pass that
+// changed no file. When the pass also ended with every tool result withheld,
+// the failure is the tool surface itself, not a model that stopped editing —
+// the loop must not tell a model whose tools are broken to "stop investigating
+// and edit now".
+func (l *passLedger) noWriteOrRepairDirective() string {
+	if l.passWithheld > 0 {
+		return withheldRepairDirective
+	}
+	return l.noWriteDirective()
+}
+
 // goalFacts renders the harness-observed evidence the goal evaluator is shown
 // beside the pass digest: pass number, file changes and the paths involved.
 // Counts and paths are harness-computed facts — the same class the repo map
@@ -289,6 +324,7 @@ func (l *passLedger) noWriteDirective() string {
 func (l *passLedger) goalFacts() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Pass: %d\n", l.passes)
+	fmt.Fprintf(&b, "Tool results withheld this pass: %d\n", l.passWithheld)
 	fmt.Fprintf(&b, "Files changed this pass: %d\n", l.passWrites)
 	fmt.Fprintf(&b, "Files changed so far in this goal: %d\n", l.writes)
 	if len(l.touched) > 0 {
@@ -334,7 +370,7 @@ func (l *passLedger) partialDirectiveTurn() (body string, arm bool) {
 // the no-write directive instead.
 func (l *passLedger) gateDirective() string {
 	if l.writes == 0 {
-		return l.noWriteDirective()
+		return l.noWriteOrRepairDirective()
 	}
 	return verificationDirective
 }
@@ -360,7 +396,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 	}
 
 	if !s.allowPassLoop || modeDec.Mode != modes.ModeGoal {
-		out, turns, err := s.pass(ctx, pipe, system, turns, streaming, emit)
+		out, turns, err := s.pass(ctx, pipe, system, turns, streaming, emit, modeDec.Mode)
 		if err != nil {
 			return run.Result{}, err
 		}
@@ -376,7 +412,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 			for {
 				if steer := s.drainSteer(ctx, pipe, emit); len(steer) > 0 {
 					turns = append(turns, steer...)
-					out, turns, err = s.pass(ctx, pipe, system, turns, streaming, emit)
+					out, turns, err = s.pass(ctx, pipe, system, turns, streaming, emit, modeDec.Mode)
 					if err != nil {
 						return run.Result{}, err
 					}
@@ -391,7 +427,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 
 		// Budget exhaustion is a turn boundary, not an error: inject a wrap-up
 		// directive and grant continuation passes with fresh budgets.
-		return s.agentContinuations(ctx, pipe, system, turns, streaming, emit, out)
+		return s.agentContinuations(ctx, pipe, system, turns, streaming, emit, out, modeDec.Mode)
 	}
 
 	// maxPasses is an opt-in ceiling (0 = unbounded, the default). The loop's
@@ -431,7 +467,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 		}
 
 		start := len(turns)
-		out, turns, err := s.pass(ctx, pipe, system, turns, streaming, emit)
+		out, turns, err := s.pass(ctx, pipe, system, turns, streaming, emit, modes.ModeGoal)
 		if err != nil {
 			// Cancellation must not read as an error: a deliberate esc returns
 			// the partial result with ErrPassLoopCancelled, never a raw
@@ -447,7 +483,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 				l.overflowRetried = true
 				if compacted, ok := s.compactBoundary(ctx, pipe, turns); ok {
 					turns = compacted
-					out, turns, err = s.pass(ctx, pipe, system, turns, streaming, emit)
+					out, turns, err = s.pass(ctx, pipe, system, turns, streaming, emit, modes.ModeGoal)
 				}
 			}
 			if err != nil {
@@ -463,6 +499,15 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 		// the write ledger is what the directives and the verification gate
 		// key off.
 		l.noteWrites(out)
+		l.noteWithheld(out)
+
+		// A goal whose every pass ended with every tool result withheld has a
+		// broken tool surface, not a lazy model. Terminate with the tool
+		// failure named rather than granting unbounded passes against a
+		// resolver that cannot answer.
+		if l.writes == 0 && l.everyPassWithheld() {
+			return run.Result{Passes: l.passes}, fmt.Errorf("goal pass loop stopped: every pass ended with all tool results withheld; re-check the tool path resolver and provider")
+		}
 
 		// Maintain the shared todo list from assistant text only, then tell
 		// the TUI when it changed so it can render and persist it.
@@ -522,7 +567,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 				continue
 			}
 			if l.stalledOnWrites() {
-				turns = append(turns, directiveTurns(l.noWriteDirective())...)
+				turns = append(turns, directiveTurns(l.noWriteOrRepairDirective())...)
 				continue
 			}
 			turns = append(turns, directiveTurns(continuationDirective)...)
@@ -639,7 +684,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 // is the turn's normal answer. Capped by resilience.max_passes (0 falls back
 // to defaultAgentContinuations). Reaching the cap returns the last assistant
 // text, never an error.
-func (s *Session) agentContinuations(ctx context.Context, pipe *rolemanager.Pipeline, system string, turns []run.Turn, streaming bool, emit func(Event), out passOutcome) (run.Result, error) {
+func (s *Session) agentContinuations(ctx context.Context, pipe *rolemanager.Pipeline, system string, turns []run.Turn, streaming bool, emit func(Event), out passOutcome, mode modes.Mode) (run.Result, error) {
 	maxCont := s.settings.Resilience.MaxPassesOr()
 	if maxCont <= 0 {
 		maxCont = defaultAgentContinuations
@@ -649,7 +694,7 @@ func (s *Session) agentContinuations(ctx context.Context, pipe *rolemanager.Pipe
 		if steer := s.drainSteer(ctx, pipe, emit); len(steer) > 0 {
 			turns = append(turns, steer...)
 			var err error
-			out, turns, err = s.pass(ctx, pipe, system, turns, streaming, emit)
+			out, turns, err = s.pass(ctx, pipe, system, turns, streaming, emit, mode)
 			if err != nil {
 				return run.Result{}, err
 			}
@@ -663,7 +708,7 @@ func (s *Session) agentContinuations(ctx context.Context, pipe *rolemanager.Pipe
 		emit(Event{Kind: EventContinuationKind, Pass: continuations, MaxPasses: maxCont})
 		turns = append(turns, directiveTurns(continuationDirective)...)
 		var err error
-		out, turns, err = s.pass(ctx, pipe, system, turns, streaming, emit)
+		out, turns, err = s.pass(ctx, pipe, system, turns, streaming, emit, mode)
 		if err != nil {
 			return run.Result{}, err
 		}

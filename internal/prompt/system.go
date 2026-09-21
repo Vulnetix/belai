@@ -36,6 +36,10 @@ type Options struct {
 	// preamble that tells the subagent to investigate with read-only tools
 	// rather than ask the user for clarification.
 	Explore bool
+	// ExploreGoal renders the same read-only preamble for a goal-mode forced
+	// edit-target survey, but without claiming the subagent is in plan-mode
+	// exploration — it is gathering edit targets for a goal.
+	ExploreGoal bool
 	// ExploreTools is the detected registry the preamble names. It is data,
 	// not prose: the preamble must only promise tools the registry actually
 	// advertises, or the default abort policy rejects a hallucinated call and
@@ -114,13 +118,19 @@ func workDiscipline() string {
 
 // explorePreamble is the harness-authored guidance attached to a plan-mode
 // explore subagent's system prompt. It is trusted harness text (SourceHarness
-// provenance via SealSystem), never model output.
-func explorePreamble(tools []string) string {
+// provenance via SealSystem), never model output. When goalSurvey is true the
+// opening names the goal survey's job — gathering edit targets for a goal —
+// instead of claiming the subagent is in plan-mode exploration.
+func explorePreamble(tools []string, goalSurvey bool) string {
 	list := strings.Join(tools, ", ")
 	if strings.TrimSpace(list) == "" {
 		list = "the read-only tools listed below"
 	}
-	return "You are in plan-mode exploration. You may use the read-only tools listed below to investigate the repository. Prefer to discover facts yourself with the available read-only tools (" + list + ") rather than asking questions. " +
+	opening := "You are in plan-mode exploration."
+	if goalSurvey {
+		opening = "You are gathering edit targets for a goal."
+	}
+	return opening + " You may use the read-only tools listed below to investigate the repository. Prefer to discover facts yourself with the available read-only tools (" + list + ") rather than asking questions. " +
 		"When a task mentions a remote repository, check the local index first — call Repos to see which checkouts are on this machine, then RepoFiles/RepoRead for one that is. Only use GH for a repository that is not available locally. " +
 		"Only ask the user a clarifying question when you have exhausted the available evidence and the decision genuinely requires user judgment. Produce a concise findings report as your final reply.\n"
 }
@@ -149,7 +159,7 @@ func System(opts Options) (string, error) {
 		b.WriteString(opts.ExploreNote + "\n")
 	}
 	if opts.Explore {
-		b.WriteString(explorePreamble(opts.ExploreTools))
+		b.WriteString(explorePreamble(opts.ExploreTools, opts.ExploreGoal))
 	}
 	if opts.RepoMap != "" {
 		b.WriteString(opts.RepoMap + "\n")

@@ -506,7 +506,23 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		// and the goal evaluator has nothing to evaluate against. The prompt is
 		// harness-owned text already bound for the system prompt, so carrying
 		// it as the goal introduces no new trust question.
-		opts = prompt.Options{Carrier: prompt.CarrierGoal, GoalText: clean, Caveman: s.opts.Caveman}
+		goalText := clean
+		if drafted, err := rolemanager.DraftGoalContract(ctx, pipe.Classifier, rolemanager.GoalDraftInput{
+			Prompt:              clean,
+			VerificationSurface: s.allTestCommands(),
+		}); err == nil {
+			drafted = sanitize.Sanitize(drafted)
+			if strings.TrimSpace(drafted) != "" && strings.Contains(drafted, clean) {
+				goalText = drafted
+			} else {
+				emit(Event{Kind: EventWarningKind, Warning: "goal contract draft was unusable; carrying the raw prompt"})
+			}
+		} else {
+			// Fail open to the raw prompt: a weak drafting model must never
+			// cost the turn.
+			emit(Event{Kind: EventWarningKind, Warning: "goal contract drafting failed; carrying the raw prompt"})
+		}
+		opts = prompt.Options{Carrier: prompt.CarrierGoal, GoalText: goalText, Caveman: s.opts.Caveman}
 	default:
 		opts = s.opts
 	}

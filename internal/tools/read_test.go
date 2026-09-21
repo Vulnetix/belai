@@ -8,6 +8,31 @@ import (
 	"testing"
 )
 
+func TestReadDefinitionAdvertisesFilePath(t *testing.T) {
+	d := (&Read{}).Definition()
+	if _, ok := d.Properties["file_path"]; !ok {
+		t.Fatalf("Read schema does not advertise file_path: %+v", d.Properties)
+	}
+	if len(d.Required) != 1 || d.Required[0] != "file_path" {
+		t.Fatalf("Read required = %v, want [file_path]", d.Required)
+	}
+}
+
+func TestReadAcceptsPathAlias(t *testing.T) {
+	root := t.TempDir()
+	f := filepath.Join(root, "hello.txt")
+	_ = os.WriteFile(f, []byte("world"), 0o600)
+
+	r := &Read{Root: root, MaxBytes: 1024}
+	res, err := r.Execute(context.Background(), map[string]any{"path": "hello.txt"})
+	if err != nil {
+		t.Fatalf("Read with path alias: %v", err)
+	}
+	if res.Content != "world" {
+		t.Fatalf("content = %q", res.Content)
+	}
+}
+
 func TestReadFile(t *testing.T) {
 	root := t.TempDir()
 	f := filepath.Join(root, "hello.txt")

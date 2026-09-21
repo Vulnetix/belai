@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/plans"
 	"github.com/vulnetix/signet/internal/prompt"
 	"github.com/vulnetix/signet/internal/rolemanager"
@@ -155,7 +156,7 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 		// egress and never rendered in the transcript: full on pass 1 and
 		// every fifth pass, a one-line reminder in between.
 		turns = append(turns, directiveTurns(prompt.PlanDirective(l.passes))...)
-		out, turns, err := s.pass(ctx, pipe, system, turns, streaming, emit)
+		out, turns, err := s.pass(ctx, pipe, system, turns, streaming, emit, modes.ModePlan)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return run.Result{Reply: out.lastText, Usage: out.usage, PlanSentinel: rolemanager.PlanPartial, Passes: l.passes}, ErrPlanLoopCancelled
@@ -164,7 +165,7 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 				l.overflowRetried = true
 				if compacted, ok := s.compactBoundary(ctx, pipe, turns); ok {
 					turns = compacted
-					out, turns, err = s.pass(ctx, pipe, system, turns, streaming, emit)
+					out, turns, err = s.pass(ctx, pipe, system, turns, streaming, emit, modes.ModePlan)
 				}
 			}
 			if err != nil {

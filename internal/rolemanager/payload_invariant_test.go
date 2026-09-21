@@ -18,6 +18,7 @@ func TestClassifierPayloadsAreToolSkillAgentFree(t *testing.T) {
 		{"compaction caveman", BuildCompactionPayload("<conversation>", true)},
 		{"goal evaluator", BuildGoalEvalPayload(GoalEvalInput{Goal: "g", Todos: "t", Facts: "f", Evidence: "e"})},
 		{"goal evaluator repair", BuildGoalEvalRepairPayload(GoalEvalInput{Goal: "g", Todos: "t", Facts: "f", Evidence: "e"}, "raw")},
+		{"goal contract", BuildGoalDraftPayload(GoalDraftInput{Prompt: "ship it", VerificationSurface: []string{"go test ./..."}})},
 		{"plan evaluator", BuildPlanEvalPayload(PlanEvalInput{Context: "c", Todos: "t", Evidence: "e"})},
 		{"agent loop evaluator", BuildAgentEvalPayload("goals", "output")},
 		{"clarify", BuildClarifyPayload(ClarifyInput{Prompt: "p", Findings: "f", Round: "1"})},

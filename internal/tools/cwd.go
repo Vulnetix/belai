@@ -109,22 +109,42 @@ func (c *Cwd) AddRoot(dir string) error {
 	return nil
 }
 
-// rootFor reports whether raw (which must begin with "/") lands under one of
-// the extra roots. Extras are checked longest-match first so a nested added
-// directory resolves to the most specific root.
+// expandHome resolves a leading "~/" against the user's home directory so a
+// path like ~/src/signet/README.md is treated as the absolute filesystem path
+// the model meant, rather than as a literal "~" path segment.
+func expandHome(raw string) string {
+	if raw != "~" && !strings.HasPrefix(raw, "~/") {
+		return raw
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return raw
+	}
+	if raw == "~" {
+		return home
+	}
+	return filepath.Join(home, raw[2:])
+}
+
+// rootFor reports whether raw (which must begin with "/", or with "~/" which
+// is expanded first) lands under one of the confinement roots — the primary
+// root or an extra root. Roots are checked longest-match first so a nested
+// added directory resolves to the most specific root.
 func (c *Cwd) rootFor(raw string) (root, rest string, ok bool) {
+	raw = expandHome(raw)
 	if !strings.HasPrefix(raw, "/") {
 		return "", "", false
 	}
 	abs := filepath.Clean(raw)
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+	candidates := append([]string{c.primary}, c.extra...)
+	candidates = sortedRoots(candidates)
 	var best string
-	for _, r := range c.extra {
+	for _, r := range candidates {
 		if abs == r || strings.HasPrefix(abs, r+string(filepath.Separator)) {
-			if len(r) > len(best) {
-				best = r
-			}
+			best = r
+			break
 		}
 	}
 	if best == "" {
@@ -213,6 +233,7 @@ func (c *Cwd) resolveDir(raw string) (string, error) {
 // treated as relative to the primary root. Any other path is relative to the
 // working directory.
 func (c *Cwd) join(raw string) string {
+	raw = expandHome(raw)
 	if strings.HasPrefix(raw, "/") {
 		if _, rest, ok := c.rootFor(raw); ok {
 			return rest

@@ -54,6 +54,14 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   activate unless the global `allow_project_workspace_dirs` opt-in is set.
   A path outside every root is refused outright, and roots cannot overlap so
   a single path is never resolvable two ways.
+- **Path resolution is root-relative, not process-relative.** A path argument
+  may be an absolute filesystem path under any root (primary or added, longest
+  match first), a path relative to the working directory, or — when it starts
+  with `/` and lands in no root — a path relative to the session root. A
+  leading `~/` expands to the user's home before the root match. `Read`,
+  `Glob`, `Grep`, `Cd`, and the native catalogue all share this rule through
+  the one `*Cwd`; do not add an `IsAbs` bypass to `SanitizePath` — the
+  confinement check stays the last word.
 - **Plan mode has no Bash by default.** Plan mode advertises and enforces
   the fail-closed surface (`Registry.PlanWith` and `modes.ToolAllowed`):
   no mutating tools and no `Bash`. A read-only `Bash` returns only when an
@@ -66,6 +74,12 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   model cannot widen its own advertised tool surface by writing one.
 - **Classifier turns are tool-less.** The classifier payload carries no tools,
   no skills, and no agent block.
+- **The goal contract is classifier-drafted but harness-sealed.** The
+  classifier-routed goal path asks the goal-contract role for the five
+  sections beneath the verbatim objective line. The draft is sanitized before
+  sealing, and on any failure the raw user prompt is carried instead — a weak
+  drafting model must never cost the turn. A memorised goal is user-authored
+  and is carried verbatim, never drafted.
 - **The guardrails switch reaches every surface.** Off means
   `posture.AllIgnore()` everywhere — agent session, inline `!cmd`, `@file`
   admission, background agents, and the CLI. Derive it from

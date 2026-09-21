@@ -86,10 +86,13 @@ func (r *Registry) Definitions() []Definition {
 	return out
 }
 
-// Find returns the tool with the given name, if present.
+// Find returns the tool with the given name, if present. Matching is
+// case-insensitive so a model that lower-cases a tool name (`read`, `ls`)
+// resolves to the registered spelling instead of failing as unregistered; the
+// advertised casing is unchanged.
 func (r *Registry) Find(name string) (Tool, bool) {
 	for _, t := range r.tools {
-		if t.Definition().Name == name {
+		if strings.EqualFold(t.Definition().Name, name) {
 			return t, true
 		}
 	}

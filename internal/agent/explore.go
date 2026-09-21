@@ -204,7 +204,7 @@ func (s *Session) runExploreTasks(ctx context.Context, tasks []explore.Task, kin
 				Index: t.Index, Total: len(tasks),
 			}})
 
-			body := s.runSubagent(runCtx, t, bridge.subscribe(), id, forward)
+			body := s.runSubagent(runCtx, t, bridge.subscribe(), id, forward, kind == "goal-survey")
 			results[t.Index] = body
 
 			state := agentpool.StateDone
@@ -256,7 +256,7 @@ func (s *Session) goalSurveyTurns(ctx context.Context, goalText string, pipe *ro
 // EventSubagentActivityKind stamped with the subagent's ID. Every string on
 // that path is sanitized before it leaves the child, and the finding itself
 // still takes the existing sanitize + posture-gated classify route below.
-func (s *Session) runSubagent(ctx context.Context, t explore.Task, steerCh chan string, id string, forward func(Event)) string {
+func (s *Session) runSubagent(ctx context.Context, t explore.Task, steerCh chan string, id string, forward func(Event), goalSurvey bool) string {
 	// The subagent runs in plan mode, so it gets the plan-mode surface:
 	// read-only native and base tools with Bash removed. Building it with
 	// .Plan() rather than relying on PlanMode alone keeps the advertised
@@ -271,7 +271,8 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task, steerCh chan 
 	}
 
 	opts := s.opts
-	opts.Explore = true             // plan-mode exploration preamble
+	opts.Explore = true             // read-only exploration preamble
+	opts.ExploreGoal = goalSurvey   // goal surveys name their own job
 	opts.ExploreTools = reg.Names() // promise only the tools actually registered
 
 	sub, err := NewSession(Options{
