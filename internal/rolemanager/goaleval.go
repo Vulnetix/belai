@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+
+	"github.com/vulnetix/signet/internal/sanitize"
 )
 
 // GoalSentinel is the strict single-token output of the goal evaluator.
@@ -44,9 +47,30 @@ type GoalEvalInput struct {
 	Goal string
 	// Todos is the current todo list rendered as plain text (harness-owned).
 	Todos string
+	// Facts is the harness's own observation of the pass: pass number, how
+	// many files changed, and which paths. Counts and paths are
+	// harness-computed — the same class of fact the repo map carries — never
+	// file contents, so this block is trusted and stands apart from Evidence.
+	Facts string
 	// Evidence is a digest of the pass's tool use. It is untrusted: the
 	// caller sanitizes it before it becomes the classifier's user blob.
 	Evidence string
+}
+
+// MaxGoalEvidenceChars bounds the pass digest handed to the evaluator. A pass
+// that filled its whole iteration budget can serialize to far more than a
+// classifier's context holds, and an evaluator that is shown more than it can
+// read is an evaluator that answers with something other than one token.
+// The tail is kept: the end of a pass is where its outcome is.
+const MaxGoalEvidenceChars = 8000
+
+// truncateHead keeps the last n characters of s, marking the cut so the
+// evaluator does not read a mid-sentence opening as the start of the pass.
+func truncateHead(s string, n int) string {
+	if n <= 0 || len(s) <= n {
+		return s
+	}
+	return "[earlier evidence omitted]\n" + s[len(s)-n:]
 }
 
 // goalEvalSystemPrompt instructs the evaluator to answer with exactly one
@@ -62,12 +86,50 @@ Reply with exactly one of these tokens:
 // and Agent are always empty: the evaluator turn must never expose tools,
 // skills, or an agent block.
 func BuildGoalEvalPayload(in GoalEvalInput) ClassifierPayload {
-	user := "Goal:\n" + in.Goal + "\n\nTodo list:\n" + in.Todos + "\n\nPass evidence digest:\n" + in.Evidence
 	return ClassifierPayload{
 		System:                 goalEvalSystemPrompt,
-		User:                   user,
+		User:                   goalEvalUser(in),
 		AllowReasoningFallback: true,
 	}
+}
+
+// goalEvalUser renders the evaluator's user blob. The harness facts sit
+// between the todo list and the untrusted digest so a verdict can be reached
+// from observation even when the digest is noisy.
+func goalEvalUser(in GoalEvalInput) string {
+	user := "Goal:\n" + in.Goal + "\n\nTodo list:\n" + in.Todos
+	if in.Facts != "" {
+		user += "\n\nHarness-observed facts:\n" + in.Facts
+	}
+	return user + "\n\nPass evidence digest:\n" + truncateHead(in.Evidence, MaxGoalEvidenceChars)
+}
+
+// BuildGoalEvalRepairPayload re-asks the evaluator after a malformed reply,
+// naming the exact syntax it broke. Telling a model what was wrong with its
+// last answer repairs far more replies than asking the same question twice,
+// and it costs one bounded call. Like every classifier payload it carries no
+// tools, no skills, and no agent block.
+func BuildGoalEvalRepairPayload(in GoalEvalInput, raw string) ClassifierPayload {
+	repair := "\n\nYour previous reply was rejected. You replied:\n" +
+		sanitize.Sanitize(truncateTail(strings.TrimSpace(raw), maxRepairEchoChars)) +
+		"\n\nThat is not an accepted answer. Reply with exactly one of these three tokens, on its own, with no explanation, no punctuation, no markdown and no surrounding text:\n" +
+		string(GoalComplete) + "\n" + string(GoalPartial) + "\n" + string(GoalNotStarted)
+	return ClassifierPayload{
+		System:                 goalEvalSystemPrompt,
+		User:                   goalEvalUser(in) + repair,
+		AllowReasoningFallback: true,
+	}
+}
+
+// maxRepairEchoChars bounds the rejected reply echoed back to the evaluator.
+const maxRepairEchoChars = 400
+
+// truncateTail keeps the first n characters of s.
+func truncateTail(s string, n int) string {
+	if n <= 0 || len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
 
 // ErrMalformedGoalEval reports that the goal evaluator returned a non-sentinel
@@ -78,20 +140,40 @@ func BuildGoalEvalPayload(in GoalEvalInput) ClassifierPayload {
 var ErrMalformedGoalEval = errors.New("malformed goal evaluator output")
 
 // EvaluateGoal sends the goal evidence to the evaluator and parses the strict
-// sentinel. A transport error is returned as ("", err). A malformed reply
-// fails closed to (GoalPartial, ErrMalformedGoalEval): the verdict still
-// grants a pass, but the loop driver detects the error to stop a provider
-// that keeps returning garbage.
+// sentinel. A transport error is returned as ("", err).
+//
+// A malformed reply is re-asked exactly once, with the rejected text and the
+// three accepted tokens quoted back, before it is given up on: models break
+// the single-token contract in repairable ways (a leading "Answer:", a code
+// fence, a sentence of reasoning), and one corrective round recovers most of
+// them for the cost of one bounded call. A reply that is still malformed
+// fails closed to (GoalPartial, ErrMalformedGoalEval): the verdict grants a
+// pass, and the loop driver counts the error so a provider returning nothing
+// usable does not go unnoticed.
 func EvaluateGoal(ctx context.Context, c Classifier, in GoalEvalInput) (GoalSentinel, error) {
 	raw, err := c.Classify(ctx, BuildGoalEvalPayload(in))
 	if err != nil {
 		return "", err
 	}
-	s, err := ParseGoalSentinel(raw)
+	s, parseErr := ParseGoalSentinel(raw)
+	if parseErr == nil {
+		record("goal_eval", string(s), "", "", 0)
+		return s, nil
+	}
+	record("goal_eval", string(GoalPartial), "", "malformed: "+traceSnippet(raw), 0)
+
+	repaired, err := c.Classify(ctx, BuildGoalEvalRepairPayload(in, raw))
 	if err != nil {
-		record("goal_eval", string(GoalPartial), "", "malformed: "+traceSnippet(raw), 0)
+		// The first reply was unusable and the repair round did not land. The
+		// verdict is unknown, so fail closed rather than reporting transport
+		// failure: a malformed verdict still grants a pass.
 		return GoalPartial, ErrMalformedGoalEval
 	}
-	record("goal_eval", string(s), "", "", 0)
+	s, parseErr = ParseGoalSentinel(repaired)
+	if parseErr != nil {
+		record("goal_eval_repair", string(GoalPartial), "", "malformed: "+traceSnippet(repaired), 0)
+		return GoalPartial, ErrMalformedGoalEval
+	}
+	record("goal_eval_repair", string(s), "", "repaired", 0)
 	return s, nil
 }
