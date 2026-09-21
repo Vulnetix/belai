@@ -120,23 +120,24 @@ func scannerByName(name string) (Scanner, bool) {
 }
 
 // scannerList returns the scanners to run: the configured subset when one was
-// given, otherwise the full fixed table.
+// given, otherwise the full fixed table. Configured scanners keep the fixed
+// table order so the `sca` → `containers` lane survives any user ordering.
 func (r Vulnetix) scannerList() ([]Scanner, error) {
 	if len(r.Subcommands) == 0 {
 		return reviewScanners, nil
 	}
-	var out []Scanner
+	wanted := map[string]bool{}
 	for _, name := range r.Subcommands {
 		if !AllowedSubcommands[name] {
 			return nil, fmt.Errorf("subcommand %q is not in the allowlist", name)
 		}
-		sc, ok := scannerByName(name)
-		if !ok {
-			// "fix" is allowed as a configured name but has no scanner of its
-			// own; the post-scan fix activity is always added by Run.
-			continue
+		wanted[name] = true
+	}
+	var out []Scanner
+	for _, sc := range reviewScanners {
+		if wanted[sc.Name] {
+			out = append(out, sc)
 		}
-		out = append(out, sc)
 	}
 	return out, nil
 }
