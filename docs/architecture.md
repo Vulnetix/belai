@@ -820,7 +820,16 @@ A prompt the classifier routes to goal mode carries the prompt itself as the
 goal carrier, so a goal-mode turn always has something to evaluate against.
 
 The first goal pass is a work pass, not an acknowledgement pass: the directive
-asks for a `Plan:` todo list and the first step's execution in the same pass.
+asks for one `update_plan` call and the first real change in the same pass.
+
+**A pass that changes no file has not advanced the goal.** The loop's primary
+progress signal is the file-diff recorder's observation of each pass, not the
+model's prose or its checklist: two consecutive passes with no file change
+inject a directive naming the next step and asking for the smallest correct
+edit, the `GOAL_COMPLETE` verification gate asks for the edit rather than a
+read-only re-check while nothing has been written, and the goal evaluator is
+shown the change counts as harness facts. Nothing else at a pass boundary
+costs a model call — the loop evaluates and starts the next pass.
 
 Subagents never enter a pass loop — plan or goal: `AllowPassLoop` is a
 separate authority from `AllowExplore` and only top-level session
@@ -868,9 +877,9 @@ Business rules and edge cases:
   any `goal_state` entry whose JSON does not parse and keeps scanning, so one
   corrupt line cannot hide an earlier good state.
 - **`tokenBudget`, `paused` and `budget_limited` are reserved.** They exist to
-  match the pi-goal contract and are never written by this implementation;
-  `tokenBudget` omits itself from the JSON when nil (unbounded), which is
-  always. Do not branch on them yet.
+  leave room for a budgeted, pausable goal and are never written by this
+  implementation; `tokenBudget` omits itself from the JSON when nil
+  (unbounded), which is always. Do not branch on them yet.
 - **`tokensUsed` counts only passes that reported usage.** A provider that
   returns no usage block contributes zero rather than an estimate — the field
   is an anchored count, not a guess.

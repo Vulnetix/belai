@@ -881,6 +881,16 @@ The loop is **unbounded by design**. Every mechanism below is a stall
 detector, not a ceiling: none of them can stop a loop that is making
 measurable progress.
 
+**Progress means a file changed.** Goal mode's advantage over plan mode is
+that a clear change is made immediately, so the loop's primary progress
+signal is the file-diff recorder's observation of what each pass did to disk,
+not the model's own prose or checklist. Every pass carries
+`passOutcome.mutations` and `passOutcome.mutatedPaths`, which the harness
+observes around each mutating call (`executeCall`) and never takes from the
+model. A run of passes that changes nothing is escalated, and the evaluator
+is shown the counts as harness facts. Nothing else at a pass boundary costs a
+model call: the loop runs the evaluator and starts the next pass.
+
 ### Entry conditions
 
 All three must hold, or a single bounded pass runs instead:
@@ -906,8 +916,10 @@ state.
 | `todoChanged` | The pass that just ended moved at least one item's state. |
 | `partialStreak` | Consecutive no-progress `GOAL_PARTIAL` verdicts. A todo transition resets it to 0. Reaching `goalStallPartial` (`2 × goalVerifyEvery`) injects a progression directive and resets the streak to start a new agentic evaluation loop. |
 | `verificationPasses` | Finished verification passes; gates `GOAL_COMPLETE`. |
-| `malformedStreak` | Consecutive malformed evaluator replies. A clean reply resets it. |
-| `surveyedLastPass` | The pass that just ended ran on forced-survey findings. |
+| `malformedStreak` | Consecutive malformed evaluator replies. A clean reply resets it, on both the exhausted and the natural-exit path. |
+| `writes` / `passWrites` / `passesSinceWrite` | Harness-observed file changes: the goal total, the pass that just ended, and the run of passes that changed nothing. Reaching `goalNoWritePasses` (2) injects the no-write directive. |
+| `touched` | The changed paths, deduplicated and bounded. Paths and counts only — never file contents. |
+| `surveyedOnce` | The forced survey has already run for this goal. It runs at most once: a second survey buys reading, which is not what a not-started goal is short of. |
 | `overflowRetried` | A context overflow has already been recovered once this prompt. |
 
 The ledger is loop-local and dies with the loop. What *is* persisted is the
@@ -921,16 +933,31 @@ boundary intact. Its rules and edge cases are in
 ### Goal evaluator
 
 At each pass boundary the evaluator is shown the goal, the rendered todo list,
-and a **sanitized** digest of that pass's turns (`transcript.Serialize`, with
-tool results bounded by `transcript.DefaultMaxToolResultChars`). Its reply must
-be exactly one token.
+a block of **harness-observed facts** (pass number, files changed this pass,
+files changed so far, the paths involved), and a **sanitized** digest of that
+pass's turns (`transcript.Serialize`, with tool results bounded by
+`transcript.DefaultMaxToolResultChars`, and the whole digest bounded by
+`rolemanager.MaxGoalEvidenceChars` — the tail is kept, because the end of a
+pass is where its outcome is). The facts block is harness-computed, the same
+class of content the repo map carries, which is why it sits apart from the
+untrusted digest. Its reply must be exactly one token.
+
+A malformed reply is **re-asked once**, quoting the rejected text and the
+three accepted tokens back at the evaluator. Models break the single-token
+contract in repairable ways — a leading `Answer:`, a code fence, a sentence
+of reasoning — and one corrective round recovers most of them for one bounded
+call. Only a reply that is still malformed after the repair round counts
+against `malformedStreak`. A transport failure on the *first* call is
+terminal, as it always was; a transport failure on the *repair* call is not,
+because the first reply was already unusable — the verdict is simply unknown,
+which fails closed to `GOAL_PARTIAL` like any other malformed one.
 
 | Sentinel | Meaning | Loop response |
 | -------- | ------- | ------------- |
 | `GOAL_COMPLETE` | Every todo item is done and the goal is achieved | Accepted only past the verification gate; otherwise downgraded to a verification pass |
 | `GOAL_PARTIAL` | Work advanced but the goal is not met | Grant another pass with a continuation directive |
-| `GOAL_NOT_STARTED` | No meaningful work has happened yet | Force a codebase survey (once), then inject the planning directive |
-| _malformed output_ | — | Fails closed to `GOAL_PARTIAL`; the TUI reports `goal evaluator: malformed reply (pass N)`; the streak is counted |
+| `GOAL_NOT_STARTED` | No meaningful work has happened yet | Force an edit-target survey (once per goal), then inject the action directive |
+| _malformed output_ | — | Re-asked once with the rejected text quoted back; if still malformed, fails closed to `GOAL_PARTIAL`, the TUI reports `goal evaluator: malformed reply (pass N)`, and the streak is counted |
 
 ### Termination rules
 
@@ -938,10 +965,11 @@ be exactly one token.
 | ---- | --------- | ------- |
 | Goal met | `GOAL_COMPLETE` **and** `verificationPasses ≥ 1` | Success; todo list marked complete; reply is the pass's last assistant text |
 | Natural exit | A pass ends with no tool calls | Re-checked, not trusted: the reply is fed back to the evaluator once. `GOAL_COMPLETE` (past the verification gate) returns it as the answer; `GOAL_COMPLETE` before the gate arms a verification pass; otherwise a continuation directive is injected and the loop keeps going |
-| Verification gate | `GOAL_COMPLETE` with `verificationPasses == 0` | Downgraded: arm one verification pass and continue. Harness logic — the model cannot talk its way past it |
+| Verification gate | `GOAL_COMPLETE` with `verificationPasses == 0` | Downgraded: arm one verification pass and continue. Harness logic — the model cannot talk its way past it. When the goal has changed no file (`writes == 0`) the armed pass carries the no-write directive instead, because re-reading a repository the goal never touched verifies nothing |
+| No-write escalation | `passesSinceWrite ≥ goalNoWritePasses` (2) | The no-write directive is injected, naming the next step and asking for the smallest correct edit or an explicit blocker. It outranks the periodic verification pass: a loop behind on writing does not need another read-only pass |
 | Progression reset | `partialStreak ≥ 4` (`2 × goalVerifyEvery`) in `GOAL_PARTIAL` or at the verification gate | A progression directive with session context is injected and `partialStreak` is reset, starting a new agentic evaluation loop; the loop does not abort for stall |
 | Unproductive pass | A pass executed no non-withheld tool result | Error: *pass N executed no tools*. Truncation repair burns iterations without doing work and must not buy another pass |
-| Broken evaluator | 2 consecutive malformed evaluator replies | Error: *N consecutive malformed evaluator replies* |
+| Broken evaluator | 2 consecutive malformed evaluator replies, each already re-asked once | The loop stops and returns the work so far with `GOAL_PARTIAL` and a warning — **not** an error. The passes that ran produced real changes; a garbled classifier token is no reason to discard them |
 | Evaluator transport failure | `Classify` returns an error | Terminal. An unknown verdict must not grant compute |
 | Cancellation | `ctx` cancelled (`esc`, `SIGINT`) | `ErrPassLoopCancelled` with the partial result — never a raw `context.Canceled` |
 | Configured ceiling | `resilience.max_passes` reached (0 = unbounded, the default) | Error: *max passes (N) reached* |
@@ -955,6 +983,13 @@ completed todo items against the files on disk, read-only, before doing further
 work. `GOAL_COMPLETE` is accepted only after at least one verification pass has
 finished, so "done" is always claimed at least once *after* an explicit
 re-check.
+
+Two conditions hold it back. An all-pending list is never worth verifying
+(`hasVerifiableWork`) — a done item with no write behind it *is* worth
+verifying, because that claim is exactly what the pass exists to catch. And a
+loop that has gone `goalNoWritePasses` without changing a file gets the
+no-write directive instead: it is behind on writing, and another read-only
+pass is the last thing it needs.
 
 ### Directives
 
@@ -975,24 +1010,33 @@ something it wrote or read. Three mechanisms do that together:
    is dropped rather than sent as bare prose the model could mistake for a user
    instruction.
 
+Every directive below leads with the work. That is deliberate: the injected
+text is most of what the model reads each pass, so a directive stream that
+leads with plan documents produces a planner, whatever the system prompt's
+work-discipline section says.
+
 | Directive | Injected when |
 | --------- | ------------- |
-| Goal acknowledgement | The first goal pass — write a `Plan:` todo list and carry out step 1 in the same pass; any restatement of the objective is a single line naming the deliverable and how completion will be verified |
-| Planning | `GOAL_NOT_STARTED` — write a numbered plan under a `Plan:` header, then start step 1 |
-| Verification | Armed when the tracked list has at least one completed item (`hasVerifiableWork`) — re-check completed items against disk before continuing |
+| Goal acknowledgement | The first goal pass — start the work now: one `update_plan` call with the steps (first `in_progress`), then the first real change in the same pass; any restatement of the objective is a single line naming the deliverable and how completion will be verified |
+| Action | `GOAL_NOT_STARTED` — name the file to change and make the smallest correct edit that advances the goal, in this pass |
+| No-write | `passesSinceWrite` reaches `goalNoWritePasses`, and at the verification gate when nothing has been written — stop investigating, make the smallest correct edit that advances the named next step, or state the blocker in one line |
+| Verification | Armed when the tracked list has at least one completed item (`hasVerifiableWork`) and the loop is not behind on writes — re-check completed items against disk before continuing |
 | Continuation | Budget exhaustion or a non-complete natural exit — if more tool calls are needed, make them now; otherwise give the final answer. Either way, say briefly what was done and what remains |
-| Progression | `partialStreak` reaches `goalStallPartial` — review session context, rendered todo list, and identify the single most concrete next step forward; reset the streak and start a new agentic evaluation loop |
+| Progression | `partialStreak` reaches `goalStallPartial` — execute the single most concrete next step as an edit; reset the streak and start a new agentic evaluation loop |
 
 ### Forced survey
 
-A `GOAL_NOT_STARTED` verdict forces a read-only codebase survey
-(`explore.PlanGoalSurvey`) before the planning directive — repository
-structure, entry points, and tests/docs bearing on the goal. It does **not**
+A `GOAL_NOT_STARTED` verdict forces a read-only survey
+(`explore.PlanGoalSurvey`) before the action directive. It asks two questions
+only — which files and line ranges must change, and what will verify them —
+because the pass that follows is about to edit, and a structural tour of the
+repository is plan mode's deliverable, not goal mode's. It does **not**
 re-ask the original prompt: a goal-mode prompt usually carries no
-`@references`, so the ordinary explore plan would just repeat the question back.
-The survey runs at most once per `GOAL_NOT_STARTED` streak
-(`surveyedLastPass`), and its findings re-enter as untrusted user turns like
-any other explore result.
+`@references`, so the ordinary explore plan would just repeat the question
+back. The survey runs **at most once per goal** (`surveyedOnce`) — a second
+survey buys more reading, which is never what a not-started goal is short of
+— and its findings re-enter as untrusted user turns like any other explore
+result.
 
 ### Todo markers
 
@@ -1021,7 +1065,14 @@ Compaction runs at a pass boundary on two triggers:
   resolved model window. Below the threshold the check is one cheap estimate
   and nothing else happens, so the common path pays a comparison, not a round
   trip. Compacting here avoids an overflow that would fail a pass and pay a
-  retry backoff first.
+  retry backoff first. The window resolves as user override → provider
+  catalogue (`Settings.CatalogWindow`) → built-in `modelinfo` registry →
+  `defaultCompactWindow` (128k). The last step matters: resolving through the
+  registry alone returns "unknown" for every model that lives only in a custom
+  provider catalogue, and an unknown window used to mean *never compact*, so a
+  long goal run against such a model grew until a request overflowed. Guessing
+  low is safe because the only consequence is compacting sooner; the TUI still
+  reports an unknown window rather than a guessed denominator.
 - **Reactive.** A `ClassOverflow` error escaping a pass is still recovered
   **once** per prompt: compact at the boundary, then re-run the pass. A second
   overflow is terminal.

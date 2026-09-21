@@ -151,12 +151,32 @@ Compaction runs only at a pass boundary. Mid-pass, `turns` may hold an
 assistant turn carrying `tool_calls` whose matching tool turns are not yet
 appended; truncating there orphans `tool_call_id`s and providers reject the
 payload. The trigger is an estimated context above 70 % of the resolved model
-window; an unknown window skips compaction entirely rather than guessing.
+window. The window resolves as user override → provider catalogue
+(`Settings.CatalogWindow`) → built-in `modelinfo` registry →
+`defaultCompactWindow` (128k). That last step is load-bearing: the registry
+alone answers "unknown" for any model that exists only in a custom provider
+catalogue, and an unknown window used to mean *never compact*, so a long goal
+run against such a model grew until a request overflowed. Guessing low only
+ever compacts sooner, so compaction guesses; the TUI still reports an unknown
+window rather than a guessed denominator.
 
 The summary re-enters through Role Manager admission (see
 [role-manager.md](role-manager.md), "Compaction at the boundary"), and any
 failure — no window, no summary, refused admission — simply skips compaction
 for that boundary.
+
+A **broken goal evaluator** is recovered rather than fatal. A reply that is
+not a bare sentinel is re-asked once, quoting the rejected text and the three
+accepted tokens back, before it counts as malformed; models break the
+single-token contract in repairable ways (a leading `Answer:`, a code fence, a
+sentence of reasoning). Two malformed verdicts in a row end the loop, but they
+return the work so far with `GOAL_PARTIAL` and a warning — never an error. The
+passes that ran changed real files, and a garbled classifier token is not a
+reason to discard them. An evaluator *transport* failure stays terminal: the
+verdict is unknown, and an unknown verdict must not grant compute. The plan
+pass loop keeps the stricter contract — no repair round, and two malformed
+`PLAN_*` replies are an error — because a plan-mode abort discards a plan,
+not work on disk.
 
 Cancellation is the loop's only true ceiling, and it is not an error: `esc` in
 the TUI or `SIGINT` on the CLI returns the partial result wrapped in
