@@ -246,6 +246,121 @@ func TestResolveClassifierCavemanEnv(t *testing.T) {
 	}
 }
 
+// The per-project user prefs may relax the posture gates; the repo-visible
+// project layer may only tighten. The firewall is the mirror image: prefs may
+// turn it on, the project file may not.
+func TestResolveProjectPrefsGatesDirection(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	off := false
+
+	// Prefs relax both gates and the resolved origin names the layer.
+	workdir := t.TempDir()
+	if err := MutateProjectPrefs(workdir, func(p *ProjectPrefs) {
+		p.Guardrails = &off
+		p.AskPermission = &off
+	}); err != nil {
+		t.Fatalf("MutateProjectPrefs: %v", err)
+	}
+	eff, err := Resolve(workdir, func(string) string { return "" }, Settings{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if eff.Settings.GuardrailsEnabled() {
+		t.Fatal("project prefs guardrails=false must resolve false")
+	}
+	if eff.Origin["guardrails"] != SourceProjectPrefs {
+		t.Fatalf("guardrails origin = %q, want project_prefs", eff.Origin["guardrails"])
+	}
+	if eff.Settings.AskPermissionEnabled() {
+		t.Fatal("project prefs ask_permission=false must resolve false")
+	}
+	if eff.Origin["ask_permission"] != SourceProjectPrefs {
+		t.Fatalf("ask_permission origin = %q, want project_prefs", eff.Origin["ask_permission"])
+	}
+
+	// The identical keys in .vulnetix/settings.json are ignored: a cloned repo
+	// must not be able to disable the gates.
+	projDir := t.TempDir()
+	if err := SaveProject(projDir, Settings{Guardrails: &off, AskPermission: &off}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	eff, err = Resolve(projDir, func(string) string { return "" }, Settings{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if !eff.Settings.GuardrailsEnabled() || !eff.Settings.AskPermissionEnabled() {
+		t.Fatal("project settings must not be able to relax the gates")
+	}
+
+	// Firewall is inverted: prefs may turn it on.
+	on := true
+	prefDir := t.TempDir()
+	if err := MutateProjectPrefs(prefDir, func(p *ProjectPrefs) { p.FirewallEnabled = &on }); err != nil {
+		t.Fatalf("MutateProjectPrefs: %v", err)
+	}
+	eff, err = Resolve(prefDir, func(string) string { return "" }, Settings{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if !eff.Settings.FirewallEnabled() {
+		t.Fatal("project prefs firewall_enabled=true must resolve true")
+	}
+	if eff.Origin["firewall_enabled"] != SourceProjectPrefs {
+		t.Fatalf("firewall_enabled origin = %q, want project_prefs", eff.Origin["firewall_enabled"])
+	}
+
+	// The project file may not turn the firewall on.
+	projDir2 := t.TempDir()
+	if err := SaveProject(projDir2, Settings{Vulnetix: &VulnetixSettings{FirewallEnabled: &on}}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	eff, err = Resolve(projDir2, func(string) string { return "" }, Settings{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if eff.Settings.FirewallEnabled() {
+		t.Fatal("project settings must not be able to enable the firewall")
+	}
+}
+
+// Env and CLI flags outrank the prefs layer, which is what makes the toggle's
+// honesty rule able to name a winning source instead of silently not sticking.
+func TestResolveProjectPrefsLoseToEnvAndFlag(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	workdir := t.TempDir()
+	off := false
+	if err := MutateProjectPrefs(workdir, func(p *ProjectPrefs) { p.Guardrails = &off }); err != nil {
+		t.Fatalf("MutateProjectPrefs: %v", err)
+	}
+
+	eff, err := Resolve(workdir, func(k string) string {
+		if k == "SIGNET_GUARDRAILS" {
+			return "true"
+		}
+		return ""
+	}, Settings{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if !eff.Settings.GuardrailsEnabled() {
+		t.Fatal("env guardrails=true must beat the prefs false")
+	}
+	if eff.Origin["guardrails"] != SourceEnv {
+		t.Fatalf("guardrails origin = %q, want env", eff.Origin["guardrails"])
+	}
+
+	eff, err = Resolve(workdir, func(string) string { return "" }, Settings{Guardrails: boolPtr(true)})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if !eff.Settings.GuardrailsEnabled() {
+		t.Fatal("flag guardrails=true must beat the prefs false")
+	}
+	if eff.Origin["guardrails"] != SourceFlag {
+		t.Fatalf("guardrails origin = %q, want flag", eff.Origin["guardrails"])
+	}
+}
+
 func TestClassifierChunkDefaults(t *testing.T) {
 	if got := (ClassifierChunkSettings{}).MaxBytesOr(); got != 1<<20 {
 		t.Fatalf("MaxBytesOr = %d, want 1MiB", got)

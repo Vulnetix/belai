@@ -671,9 +671,30 @@ func New(opts Options) *App {
 	}
 
 	st, _ := config.LoadState()
-	mode := st.LastMode
+	prefs, _ := config.LoadProjectPrefs(workdir)
+	mode := prefs.Mode
+	if mode == "" {
+		mode = st.LastMode
+	}
 	if mode == "" {
 		mode = "agent"
+	}
+	// A mode restored from this project's preferences is a user choice, so it
+	// is sticky and explicit, matching cycleMode: otherwise the first turn's
+	// classifier overwrites the mode that was just restored.
+	restoredMode := prefs.Mode != ""
+	modeSticky := opts.PlanMode || mode == "plan" || restoredMode
+	modeExplicit := restoredMode
+
+	// The engaged agent name also sticks per project. Seed it (and its tool
+	// allowlist) directly rather than through setNamedAgent, which persists
+	// session meta — New must not write session files yet.
+	namedAgent := prefs.Agent
+	var namedAgentTools []string
+	if namedAgent != "" {
+		if p, err := agentprofile.Load(namedAgent); err == nil {
+			namedAgentTools = p.Tools
+		}
 	}
 
 	// The provider name is read from the merged settings; a sole-configured
@@ -706,7 +727,10 @@ func New(opts Options) *App {
 		editor:            components.NewEditor(),
 		footer:            components.Footer{Session: "new", Model: initial.Model},
 		mode:              mode,
-		modeSticky:        opts.PlanMode || mode == "plan",
+		modeSticky:        modeSticky,
+		modeExplicit:      modeExplicit,
+		namedAgent:        namedAgent,
+		namedAgentTools:   namedAgentTools,
 		ctx:               context.Background(),
 		cfg:               initial,
 		status:            initialStatus,
@@ -3567,12 +3591,15 @@ func (a *App) cycleMode() {
 
 func (a *App) toggleCaveman() tea.Cmd {
 	next := !a.settings.CavemanEnabled()
-	if err := a.mutateSetting(func(s *config.Settings) { s.Caveman = &next }); err != nil {
+	if err := a.persistPref(func(p *config.ProjectPrefs) { p.Caveman = &next }); err != nil {
 		a.addSystem("caveman toggle failed: " + err.Error())
 		return nil
 	}
 	a.invalidateAgentSession()
 	a.addSystem("caveman: " + boolLabel(next))
+	if note := a.prefHonestyNotice("caveman", next, a.settings.CavemanEnabled()); note != "" {
+		a.addSystem(note)
+	}
 	return nil
 }
 
@@ -3618,10 +3645,17 @@ func (a *App) cycleEffort() tea.Cmd {
 func (a *App) toggleGuardrails() tea.Cmd {
 	next := !a.guardrailsEnabled()
 	a.guardrailsOverride = &next
+	if err := a.persistPref(func(p *config.ProjectPrefs) { p.Guardrails = &next }); err != nil {
+		a.addSystem("guardrails toggle failed: " + err.Error())
+		return nil
+	}
 	a.invalidateAgentSession()
 	a.syncPosture()
 	a.traceRecord("guardrails_toggle", boolLabel(next), "", "", 0)
 	a.addSystem("guardrails: " + boolLabel(next))
+	if note := a.prefHonestyNotice("guardrails", next, a.settings.GuardrailsEnabled()); note != "" {
+		a.addSystem(note)
+	}
 	return nil
 }
 
@@ -3643,6 +3677,10 @@ func (a *App) syncPosture() {
 func (a *App) toggleAsk() tea.Cmd {
 	next := !a.askEnabled()
 	a.askOverride = &next
+	if err := a.persistPref(func(p *config.ProjectPrefs) { p.AskPermission = &next }); err != nil {
+		a.addSystem("ask toggle failed: " + err.Error())
+		return nil
+	}
 	a.invalidateAgentSession()
 	a.syncPosture()
 	// Turning ask off while an approval prompt is on screen resolves it as
@@ -3653,6 +3691,9 @@ func (a *App) toggleAsk() tea.Cmd {
 	}
 	a.traceRecord("ask_toggle", boolLabel(next), "", "", 0)
 	a.addSystem("ask: " + boolLabel(next))
+	if note := a.prefHonestyNotice("ask_permission", next, a.settings.AskPermissionEnabled()); note != "" {
+		a.addSystem(note)
+	}
 	return nil
 }
 
@@ -3662,9 +3703,17 @@ func (a *App) setYolo(on bool) tea.Cmd {
 		a.guardrailsOverride = &v
 		a.askOverride = &v
 		a.resolvePendingAsk(true)
+		_ = a.persistPref(func(p *config.ProjectPrefs) {
+			p.Guardrails = &v
+			p.AskPermission = &v
+		})
 	} else {
 		a.guardrailsOverride = nil
 		a.askOverride = nil
+		_ = a.persistPref(func(p *config.ProjectPrefs) {
+			p.Guardrails = nil
+			p.AskPermission = nil
+		})
 	}
 	a.invalidateAgentSession()
 	a.syncPosture()
@@ -3712,6 +3761,7 @@ func (a *App) traceRecord(event, verdict, tool, detail string, pass int) {
 func (a *App) saveMode() {
 	a.state.LastMode = a.mode
 	_ = config.SaveState(a.state)
+	_ = a.persistPref(func(p *config.ProjectPrefs) { p.Mode = a.mode })
 }
 
 func (a *App) saveState() {
@@ -4126,25 +4176,20 @@ func (a *App) toggleFirewall() tea.Cmd {
 		return nil
 	}
 	a.firewallOverride = &on
-	if err := a.mutateSetting(func(s *config.Settings) {
-		if s.Vulnetix == nil {
-			s.Vulnetix = &config.VulnetixSettings{}
-		}
-		s.Vulnetix.FirewallEnabled = &on
-	}); err != nil {
+	if err := a.persistPref(func(p *config.ProjectPrefs) { p.FirewallEnabled = &on }); err != nil {
 		a.addSystem("firewall toggle failed: " + err.Error())
 		return nil
 	}
-	// reloadSettings was called by mutateSetting; push override and refresh.
-	if a.resolver != nil {
-		a.resolver.SetFirewallEnabled(a.firewallOverride)
-	}
+	// reloadSettings was called by persistPref; re-resolve the gateway config.
 	if cfg, err := a.resolveConfig(); err == nil {
 		a.cfg = cfg
 	}
 	a.refreshFooter()
 	if on {
 		a.addSystem(a.firewallOnMessage())
+	}
+	if note := a.prefHonestyNotice("firewall_enabled", on, a.settings.FirewallEnabled()); note != "" {
+		a.addSystem(note)
 	}
 	return nil
 }

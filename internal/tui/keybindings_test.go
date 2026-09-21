@@ -166,15 +166,15 @@ func TestCavemanToggleFromSettingsViewPersists(t *testing.T) {
 	want := !a.settings.CavemanEnabled()
 	a.Update(tea.KeyMsg{Type: tea.KeyF2})
 
-	proj, err := config.LoadProject(workdir)
+	prefs, err := config.LoadProjectPrefs(workdir)
 	if err != nil {
-		t.Fatalf("LoadProject: %v", err)
+		t.Fatalf("LoadProjectPrefs: %v", err)
 	}
-	if proj.Caveman == nil {
-		t.Fatal("f2 from a full-screen view must write an explicit caveman value to the project scope")
+	if prefs.Caveman == nil {
+		t.Fatal("f2 from a full-screen view must write an explicit caveman value to the project prefs")
 	}
-	if *proj.Caveman != want {
-		t.Fatalf("persisted caveman = %v, want %v", *proj.Caveman, want)
+	if *prefs.Caveman != want {
+		t.Fatalf("persisted caveman = %v, want %v", *prefs.Caveman, want)
 	}
 	if a.messages[len(a.messages)-1].Text() == "" {
 		t.Fatal("the toggle must announce itself in the transcript")

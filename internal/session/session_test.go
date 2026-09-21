@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/vulnetix/signet/internal/config"
 )
 
 func testStore(t *testing.T, workdir string) *Store {
@@ -309,6 +311,17 @@ func TestWorkdirKey(t *testing.T) {
 	}
 	if !strings.HasPrefix(a, "proj-") {
 		t.Fatalf("expected basename prefix, got %q", a)
+	}
+}
+
+// The on-disk key is shared by every per-project store. Pin a literal so a
+// refactor of the derivation can never orphan an existing session directory.
+func TestWorkdirKeyLiteral(t *testing.T) {
+	if got, want := WorkdirKey("/home/user/proj"), "proj-7d73bf4f"; got != want {
+		t.Fatalf("WorkdirKey = %q, want %q", got, want)
+	}
+	if got := config.WorkdirKey("/home/user/proj"); got != WorkdirKey("/home/user/proj") {
+		t.Fatalf("config.WorkdirKey = %q, want session.WorkdirKey %q", got, WorkdirKey("/home/user/proj"))
 	}
 }
 

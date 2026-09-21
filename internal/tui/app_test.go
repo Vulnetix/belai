@@ -124,33 +124,34 @@ func TestToggleCavemanShortcut(t *testing.T) {
 	}
 }
 
-func TestToggleCavemanPersistsToProjectSettings(t *testing.T) {
+func TestToggleCavemanPersistsToProjectPrefs(t *testing.T) {
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir})
 
-	// Toggle on writes to the default (project) scope.
+	// Toggle on writes the per-project user preference, not the repository's
+	// .vulnetix/settings.json.
 	_ = a.toggleCaveman()
-	proj, err := config.LoadProject(workdir)
+	prefs, err := config.LoadProjectPrefs(workdir)
 	if err != nil {
-		t.Fatalf("LoadProject: %v", err)
+		t.Fatalf("LoadProjectPrefs: %v", err)
 	}
-	if proj.Caveman == nil || !*proj.Caveman {
-		t.Fatalf("project settings must have caveman=true after toggle, got %+v", proj.Caveman)
+	if prefs.Caveman == nil || !*prefs.Caveman {
+		t.Fatalf("project prefs must have caveman=true after toggle, got %+v", prefs)
 	}
 
 	// Toggle off writes false so a global true is explicitly overridden.
 	_ = a.toggleCaveman()
-	proj, err = config.LoadProject(workdir)
+	prefs, err = config.LoadProjectPrefs(workdir)
 	if err != nil {
-		t.Fatalf("LoadProject: %v", err)
+		t.Fatalf("LoadProjectPrefs: %v", err)
 	}
-	if proj.Caveman == nil || *proj.Caveman {
-		t.Fatalf("project settings must have caveman=false after second toggle, got %+v", proj.Caveman)
+	if prefs.Caveman == nil || *prefs.Caveman {
+		t.Fatalf("project prefs must have caveman=false after second toggle, got %+v", prefs)
 	}
 }
 
 func TestToggleCavemanOverridesGlobalDefault(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	t.Setenv("SIGNET_HOME", t.TempDir())
 	workdir := t.TempDir()
 
 	on := true
@@ -161,17 +162,17 @@ func TestToggleCavemanOverridesGlobalDefault(t *testing.T) {
 		t.Fatal("effective settings should inherit global caveman=true")
 	}
 
-	_ = a.toggleCaveman() // writes false to project
+	_ = a.toggleCaveman() // writes false to the project prefs
 	if a.settings.CavemanEnabled() {
-		t.Fatal("caveman should be disabled after project-level toggle")
+		t.Fatal("caveman should be disabled after project-pref toggle")
 	}
 
-	proj, err := config.LoadProject(workdir)
+	prefs, err := config.LoadProjectPrefs(workdir)
 	if err != nil {
-		t.Fatalf("LoadProject: %v", err)
+		t.Fatalf("LoadProjectPrefs: %v", err)
 	}
-	if proj.Caveman == nil || *proj.Caveman {
-		t.Fatalf("project settings must explicitly set caveman=false to shadow global true")
+	if prefs.Caveman == nil || *prefs.Caveman {
+		t.Fatalf("project prefs must explicitly set caveman=false to shadow global true")
 	}
 }
 

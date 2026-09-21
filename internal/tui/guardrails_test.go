@@ -14,6 +14,7 @@ import (
 // the shared Live flips immediately, and the plan-mode surface for the next
 // session is built from the effective switch rather than the persisted setting.
 func TestToggleGuardrailsMovesLive(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
 	a := New(Options{})
 	if !a.guardrailsEnabled() {
 		t.Fatal("precondition: guardrails should start on")
@@ -48,6 +49,7 @@ func TestToggleGuardrailsMovesLive(t *testing.T) {
 // TestToggleAskMovesLive pins the ask half: f4 flips the shared holder's ask
 // gate without waiting for the next session build.
 func TestToggleAskMovesLive(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
 	a := New(Options{})
 	if !a.askEnabled() {
 		t.Fatal("precondition: ask should start on")
@@ -77,6 +79,7 @@ func TestToggleAskMovesLive(t *testing.T) {
 // ask off while the approval view is on screen answers allow-once and dismisses
 // it, so the blocked agent loop is not left waiting on a gate that is now off.
 func TestToggleAskOffResolvesPendingAsk(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
 	a := New(Options{})
 	reply := make(chan agent.PermissionAskReply, 1)
 	a.permAskState = newPermissionAskState(sampleAskRequest(), reply)
@@ -103,6 +106,7 @@ func TestToggleAskOffResolvesPendingAsk(t *testing.T) {
 // TestSetYoloMovesLiveAndResolvesPendingAsk pins /yolo on: both gates drop to
 // off in the shared holder, and a pending ask is auto-allowed like f4.
 func TestSetYoloMovesLiveAndResolvesPendingAsk(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
 	a := New(Options{})
 	reply := make(chan agent.PermissionAskReply, 1)
 	a.permAskState = newPermissionAskState(sampleAskRequest(), reply)

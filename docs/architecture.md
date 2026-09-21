@@ -18,7 +18,7 @@ live in [role-manager.md](role-manager.md).
 
 The security classifier is configured independently of the main agent model
 through a `classifier` settings block (resolved by the standard precedence
-chain: default < state < global < project < env < flag):
+chain: default < state < global < project prefs < project < env < flag):
 
 ```jsonc
 "classifier": {
@@ -1300,8 +1300,12 @@ own classification is not enough, because the session classifies again
 internally.
 
 Provider-streamed reasoning renders in a dim `reasoning` panel (toggle with
-`ctrl+r`, `ui.show_reasoning`); tool rows toggle with `ctrl+t`
-(`ui.show_tool_calls`). The transcript auto-follows the tail; scrolling up
+`ctrl+r`, `ui.show_reasoning`); tool rows toggle with `ctrl+t`, which cycles
+four states — auto (the resolved settings), all, edits only, none — and names
+the resolved pair in a system line. `ui.show_tool_calls` gates every tool row
+except `Write`/`Edit`; `ui.show_edits` gates the `Write`/`Edit` rows only, so
+hiding tool chatter keeps the file diffs and vice versa. The transcript
+auto-follows the tail; scrolling up
 (mouse wheel or `pgup`/`shift+up`) detaches and returns to the bottom
 re-attach. Mouse capture is on by default (`ui.mouse`); with capture on the
 terminal's own selection is unavailable, so the TUI implements its own (see
@@ -1626,8 +1630,8 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 | `ctrl+o` | Toggle full output for all truncated turns and tool results |
 | `ctrl+s` | Over a hovered panel with text, save its content to a path typed into the composer; with a loaded library prompt, open the overwrite/delete action bar; otherwise save the prompt to the library |
 | `ctrl+x` | Copy the session id to the clipboard (hinted when hovering the footer's session segment) |
-| `ctrl+r` / `ctrl+t` | Toggle reasoning-panel / tool-row display for the session |
-| `f2` | Toggle the caveman voice rewrite, persisting to the scoped settings file; the footer `caveman:` slot updates in the same frame |
+| `ctrl+r` / `ctrl+t` | `ctrl+r` toggles the reasoning panel for the session; `ctrl+t` cycles tool-row display auto → all → edits only → none |
+| `f2` | Toggle the caveman voice rewrite, persisting to the per-project preference file; the footer `caveman:` slot updates in the same frame |
 | `f3` | Toggle guardrails (the posture gates), from any screen |
 | `f4` | Toggle the permission-ask gate, from any screen |
 | `f5` | Cycle mode and re-sync plan mode, from any screen |
@@ -2124,12 +2128,13 @@ conversation, so the footer renders `(?)` until a fresh assistant response lands
 ### Settings
 
 The effective settings view merges, lowest to highest: defaults, `state.json`,
-global `settings.json`, project `settings.json`, environment, then CLI flags.
+global `settings.json`, the per-project user preference file
+(`project_prefs`), project `settings.json`, environment, then CLI flags.
 `/settings` shows the effective value and provenance for each key. Settings
 include `provider`, `model`, `effort`, `caveman`, `read_only`,
 `permissions` (structured `allow`/`ask`/`deny`), `session_retention_days`,
 `ui.banner`, `ui.status_bar`, `ui.spinner`, `ui.show_reasoning`,
-`ui.show_tool_calls`, `ui.show_todos`, `ui.mouse`, `ui.colors`,
+`ui.show_tool_calls`, `ui.show_edits`, `ui.show_todos`, `ui.mouse`, `ui.colors`,
 `ui.kitty_keyboard` (all default on when unset except `ui.show_reasoning`,
 which defaults off unless explicitly true; `ui.kitty_keyboard` is overridden
 off by `SIGNET_NO_KITTY=1`),
@@ -2141,8 +2146,11 @@ off by `SIGNET_NO_KITTY=1`),
 `plan_explore`), `providers`,
 `caveman` (default off; toggled from any screen with `f2`),
 `guardrails` and `ask_permission` (both default on; toggled with `f3` and
-`f4`, or together with `/yolo` — the project layer may only tighten them,
-never loosen a global `true` back to `false`),
+`f4`, or together with `/yolo` — the repo-visible project layer may only
+tighten them, never loosen a global `true` back to `false`; the per-project
+user preference file may set them both ways),
+`vulnetix.firewall_enabled` (default off; toggled with `f10` — the project
+layer may only turn it off, the preference file may turn it on),
 `allow_project_providers`, and the `classifier` block
 (`provider`, `model`, `effort`, `chunk.max_bytes`, `chunk.concurrency`) covered
 in the Security classifier section above. That enumeration is the whole
@@ -2172,6 +2180,46 @@ for inspection; and `postures: {permission_no_match: enforce}` in
 `preferences.yaml` restores the legacy no-match-block. `Bash` otherwise runs
 full shell commands via `sh -c` (timeout, env scrubbing, and output truncation
 still apply); plan mode keeps `Bash` read-only regardless of `read_only`.
+
+### Project-sticky session toggles
+
+The session toggles — `f2` caveman, `f3` guardrails, `f4` ask, `f5`/`shift+tab`
+mode, and `f10` firewall — persist to a **per-project user preference file**
+under `<GlobalDir>/projectprefs/<workdir-key>.json`, never to
+`.vulnetix/settings.json` and never into the repository. A repository can
+therefore never ship a relaxation, but the user's own toggle does stick to the
+project across sessions. Persistence is always on; there is no opt-out.
+
+Business rules:
+
+- **The allowlist is narrow.** The file carries only `guardrails`,
+  `ask_permission`, `firewall_enabled`, `caveman`, `mode`, and `agent`. It can
+  never define a provider, a permission rule, or a workspace directory.
+- **Precedence sits above global, below everything repo-visible.** The merge
+  order is defaults < `state.json` < global < project prefs < project
+  `settings.json` < environment < CLI flags. Provider and model stay in
+  `state.json`, exactly as before — they are global, not project-sticky.
+- **The only-tighten invariant still holds for the repo layer.**
+  `.vulnetix/settings.json` may still only turn `guardrails`/`ask_permission`
+  back on and only turn the firewall off. The user's own prefs set all three
+  both ways. `Settings.Override` and `LoadMerged` are untouched; only the
+  TUI's `config.Resolve` learns the prefs layer.
+- **Env and flags outrank prefs.** `SIGNET_GUARDRAILS`,
+  `SIGNET_ASK_PERMISSION`, `SIGNET_FIREWALL`, and the CLI posture flags beat a
+  persisted pref. When a toggle is outranked, the TUI says so and names the
+  winning source (`a.eff.Origin[...]`) rather than silently appearing not to
+  stick.
+- **`/yolo` off clears the guardrails/ask prefs**, otherwise leaving yolo
+  would re-inherit a stale persisted relaxation.
+- **Mode and the engaged agent restore per project.** A fresh session in the
+  project reopens in the persisted mode (sticky and explicit, so the first
+  turn's classifier cannot overwrite it) and with the persisted agent engaged,
+  including its tool allowlist. The engaged agent name and its tool allowlist
+  are written together in one place (`App.setNamedAgent`), so a profile's
+  allowlist never outlives the profile it came from; an agent the user chose
+  by hand (`/agent` picker, `/profile`) is not wiped by a classifier turn that
+  names no agent.
+
 ## Local inference
 
 Local inference is served by `llama-server` from llama.cpp. Signet treats the
