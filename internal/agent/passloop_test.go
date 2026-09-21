@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/repomap"
 	"github.com/vulnetix/signet/internal/rolemanager"
@@ -339,7 +338,7 @@ func TestPassTextExcludesToolResults(t *testing.T) {
 	}
 
 	pipe := rolemanager.NewPipeline(run.NewClassifier(cfg, srv.Client()))
-	out, _, err := sess.pass(context.Background(), pipe, "", nil, false, func(Event) {}, modes.ModeAgent)
+	out, _, err := sess.pass(context.Background(), pipe, "", nil, false, func(Event) {})
 	if err != nil {
 		t.Fatalf("pass: %v", err)
 	}

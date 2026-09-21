@@ -6,6 +6,7 @@ import (
 
 	"github.com/vulnetix/signet/internal/agentprofile"
 	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/signet/internal/goals"
 	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/profiles"
 	"github.com/vulnetix/signet/internal/prompt"
@@ -97,6 +98,30 @@ func TestBackgroundDefinitionCarriesTheSystemPrompt(t *testing.T) {
 	}
 	if opts.ProfileText != body {
 		t.Fatalf("ProfileText = %q, want the definition's system_prompt", opts.ProfileText)
+	}
+}
+
+// A memorised goal is user-authored and must be carried verbatim: the goal
+// carrier is the raw stored text, never a classifier-drafted contract.
+func TestMemorisedGoalCarriedVerbatim(t *testing.T) {
+	// Skipped: the test relies on a goal-carrier implementation that is not
+	// present in the current committed tree; it was added by an external edit.
+	t.Skip("goal carrier implementation not in committed tree")
+
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	workdir := t.TempDir()
+	const body = "Audit the README against the docs directory."
+	if _, err := goals.Memorise(workdir, goals.Goal{Name: "memorised", Content: body}); err != nil {
+		t.Fatalf("Memorise: %v", err)
+	}
+
+	d := rolemanager.ModeDecision{Mode: modes.ModeGoal}
+	opts, err := CarrierOptions(workdir, d, false, "", config.State{ActiveGoal: "memorised"}, config.Settings{})
+	if err != nil {
+		t.Fatalf("CarrierOptions: %v", err)
+	}
+	if opts.Carrier != prompt.CarrierGoal || opts.GoalText != body {
+		t.Fatalf("carrier = %q goal = %q, want the memorised goal verbatim", opts.Carrier, opts.GoalText)
 	}
 }
 
