@@ -635,3 +635,27 @@ func TestFirewallProjectMayTurnOffNeverOn(t *testing.T) {
 		t.Fatal("project settings must not be able to turn the firewall on")
 	}
 }
+
+func TestCatalogWindow(t *testing.T) {
+	s := Settings{Providers: map[string]ProviderProfile{
+		"cloudflare-ai-gateway": {Models: []ProviderModel{
+			{ID: "@cf/example/model-a", ContextWindow: 262_144},
+			{ID: "@cf/example/model-b"},
+		}},
+	}}
+	if got := s.CatalogWindow("cloudflare-ai-gateway", "@cf/example/model-a"); got != 262_144 {
+		t.Fatalf("CatalogWindow = %d, want 262144", got)
+	}
+	if got := s.CatalogWindow("cloudflare-ai-gateway", "@cf/example/model-b"); got != 0 {
+		t.Fatalf("a model with no declared window = %d, want 0", got)
+	}
+	if got := s.CatalogWindow("cloudflare-ai-gateway", "@cf/example/absent"); got != 0 {
+		t.Fatalf("an unlisted model = %d, want 0", got)
+	}
+	if got := s.CatalogWindow("other", "@cf/example/model-a"); got != 0 {
+		t.Fatalf("an unlisted provider = %d, want 0", got)
+	}
+	if got := (Settings{}).CatalogWindow("p", "m"); got != 0 {
+		t.Fatalf("zero settings = %d, want 0", got)
+	}
+}

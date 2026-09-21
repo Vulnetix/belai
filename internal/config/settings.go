@@ -444,6 +444,24 @@ func (s Settings) CavemanEnabled() bool {
 	return s.Caveman != nil && *s.Caveman
 }
 
+// CatalogWindow returns the context-window size a custom provider profile
+// declares for a model, or 0 when the provider or the model is not in the
+// catalogue. It is the fallback between the user's explicit
+// `context_windows` override and the built-in modelinfo registry, so a model
+// that only exists in a provider profile still has a known window.
+func (s Settings) CatalogWindow(provider, model string) int {
+	prof, ok := s.Providers[provider]
+	if !ok {
+		return 0
+	}
+	for _, m := range prof.Models {
+		if m.ID == model {
+			return m.ContextWindow
+		}
+	}
+	return 0
+}
+
 // ClassifierCavemanEnabled reports whether the classifier's prose payloads —
 // the compaction summary, the session name, and the agent-profile designer —
 // use the caveman voice. The default (nil or false) is off. It is independent
