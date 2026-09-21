@@ -256,9 +256,15 @@ project without remembering an id.
 
 ## Documentation
 
-- [docs/architecture.md](docs/architecture.md) — system design.
-- [docs/role-manager.md](docs/role-manager.md) — operating-mode business rules.
-- [docs/nonce-endpoint-spec.md](docs/nonce-endpoint-spec.md) — provider nonce GET spec.
-- [docs/development.md](docs/development.md) — local development, build, and QA workflows.
+Highlights — full reference in [docs/README.md](docs/README.md):
 
-Marketing site: [signet.vulnetix.com](https://signet.vulnetix.com/) (source in [site/](site/)).
+- [Architecture](docs/architecture.md): [delimiter/nonce integrity model](docs/architecture.md#delimiter-nonce-and-integrity-model), [tool-result trust](docs/architecture.md#tool-result-trust), [TUI keybindings](docs/architecture.md#keybindings)
+- [Role Manager](docs/role-manager.md): [security classification](docs/role-manager.md#security-classification), [posture gates](docs/role-manager.md#gates-and-defaults), [operating-mode classification](docs/role-manager.md#operating-mode-classification)
+- [Resilience](docs/resilience.md): [error classification](docs/resilience.md#error-classification-internalresilience), [provider retries](docs/resilience.md#pre-first-byte-boundary), [semantic repair](docs/resilience.md#semantic-repair)
+- [Development](docs/development.md): prerequisites, `just` recipes, QA checklist, CI/release
+- [Agent Profiles](docs/agent-profiles.md): reusable agent definitions, [schema](docs/agent-profiles.md#profile-schema), [background lifecycle](docs/agent-profiles.md#background-agent-lifecycle), [precedence](docs/agent-profiles.md#per-agent-defaults-and-precedence)
+- [Agent Stores](docs/agent-stores.md): read-only context search with confinement guarantees
+- [Vulnetix](docs/vulnetix.md): review scanners, [AI Firewall](docs/vulnetix.md#ai-firewall-vulnetix-firewall-and-f10), project history
+- [Nonce endpoint](docs/nonce-endpoint-spec.md): provider/gateway `GET /v1/nonces` contract
+- [Image attachments (deferred)](docs/image-attachments.md): multimodal design considerations
+- [Marketing site](docs/site.md): source for signet.vulnetix.com
