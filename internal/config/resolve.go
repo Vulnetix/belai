@@ -168,6 +168,10 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.ShowSessionNames = s.ShowSessionNames
 		e.Origin["show_session_names"] = src
 	}
+	if s.UpdateCheck != nil {
+		e.Settings.UpdateCheck = s.UpdateCheck
+		e.Origin["update_check"] = src
+	}
 	if s.Classifier != nil && !s.Classifier.IsZero() {
 		if e.Settings.Classifier == nil {
 			e.Settings.Classifier = &ClassifierSettings{}

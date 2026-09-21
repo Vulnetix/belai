@@ -103,6 +103,9 @@ func TestModelKeyEnterCyclesAgentProviderAndReResolves(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 	t.Setenv("OPENAI_API_KEY", "sk-openai")
 	t.Setenv("OPENROUTER_API_KEY", "or-key")
+	// openrouter is the default provider, so the starting point this test
+	// cycles away from has to be named explicitly.
+	t.Setenv("SIGNET_PROVIDER", "openai")
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.agentScope = "session"
 
@@ -174,14 +177,15 @@ func TestModelKeyUnsetAgentRows(t *testing.T) {
 		t.Fatalf("effort not cleared: cfg=%q settings=%q", a.cfg.Effort, a.settings.Effort)
 	}
 
-	// Unset provider: the running config re-resolves to the default provider.
+	// Unset provider: the running config re-resolves to the default provider,
+	// which is openrouter's free router on an install that names none.
 	a.modelState.selected = 0
 	_, _ = a.handleModelKey(modelKey("x"))
-	if a.cfg.Provider != "openai" {
-		t.Fatalf("provider = %q, want default openai after unset", a.cfg.Provider)
+	if a.cfg.Provider != "openrouter" {
+		t.Fatalf("provider = %q, want default openrouter after unset", a.cfg.Provider)
 	}
-	if a.cfg.Model != "gpt-5" {
-		t.Fatalf("model = %q, want openai default gpt-5 after unset", a.cfg.Model)
+	if a.cfg.Model != "openrouter/free" {
+		t.Fatalf("model = %q, want default openrouter/free after unset", a.cfg.Model)
 	}
 }
 
@@ -233,6 +237,9 @@ func TestModelKeyUnsetClassifierRows(t *testing.T) {
 func TestModelPickerNavigationAndSelect(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 	t.Setenv("OPENAI_API_KEY", "sk-openai")
+	// The assertions read the openai catalogue, so the app has to be on openai
+	// rather than the openrouter default.
+	t.Setenv("SIGNET_PROVIDER", "openai")
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.agentScope = "session"
 
@@ -302,6 +309,8 @@ func TestModelPickerEmptyCatalogEnterCloses(t *testing.T) {
 func TestModelPickerUpDownWrap(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 	t.Setenv("OPENAI_API_KEY", "sk-openai")
+	// The wrap arithmetic counts the openai catalogue, not the default one.
+	t.Setenv("SIGNET_PROVIDER", "openai")
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.agentScope = "session"
 	a.modelState.picking = true
@@ -501,7 +510,7 @@ func TestModelPickerRenders(t *testing.T) {
 	if !strings.Contains(v, "model for") {
 		t.Fatalf("picker view missing provider chip: %q", v)
 	}
-	if !strings.Contains(v, "gpt-5") {
+	if !strings.Contains(v, run.DefaultModel(a.cfg.Provider)) {
 		t.Fatalf("picker view missing catalogue entries: %q", v)
 	}
 }
@@ -574,8 +583,8 @@ func TestModelKeyUnsetAgentModelRow(t *testing.T) {
 
 	a.modelState.selected = 1 // agent model row
 	_, _ = a.handleModelKey(modelKey("x"))
-	if a.cfg.Model != "gpt-5" {
-		t.Fatalf("model = %q, want openai default gpt-5 after unset", a.cfg.Model)
+	if a.cfg.Model != run.DefaultModel(a.cfg.Provider) {
+		t.Fatalf("model = %q, want the %s default after unset", a.cfg.Model, a.cfg.Provider)
 	}
 }
 

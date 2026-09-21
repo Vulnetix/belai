@@ -157,6 +157,9 @@ func TestModelAgentProviderChangeReResolvesConfig(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 	t.Setenv("OPENAI_API_KEY", "sk-openai")
 	t.Setenv("OPENROUTER_API_KEY", "or-key")
+	// openrouter is the default provider, so the starting point this test
+	// cycles away from has to be named explicitly.
+	t.Setenv("SIGNET_PROVIDER", "openai")
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir})
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})

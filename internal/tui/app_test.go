@@ -307,12 +307,14 @@ func TestNoCredentialsStillRenders(t *testing.T) {
 	}
 	found := false
 	for _, m := range a.messages {
-		if m.Role == "system" && strings.Contains(m.Content, "/credentials") {
+		// A user with no credentials at all is told where an account comes
+		// from, not just which command stores the key.
+		if m.Role == "system" && strings.Contains(m.Content, "/providers") && strings.Contains(m.Content, "https://openrouter.ai/") {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("expected /credentials hint in system messages, got %v", a.messages)
+		t.Fatalf("expected the signup hint in system messages, got %v", a.messages)
 	}
 }
 

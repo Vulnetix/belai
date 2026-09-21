@@ -363,22 +363,30 @@ type Status struct {
 	Notes      []string
 }
 
+// DefaultProvider is the provider a fresh install resolves to when nothing —
+// settings, state, environment or flag — names one. OpenRouter is the default
+// because its free tier is the only one a new user can reach with a signup
+// credit alone; DefaultModel("openrouter") is the zero-cost router.
+const DefaultProvider = "openrouter"
+
 // DefaultModel returns a sensible model for a provider when none is given.
 func DefaultModel(providerName string) string {
 	name := strings.ToLower(strings.TrimSpace(providerName))
 	if name == "" {
-		name = "openai"
+		name = DefaultProvider
 	}
 	if d, ok := provider.Lookup(name); ok {
 		return d.DefaultModel
 	}
-	return "gpt-5"
+	// An unknown name is a custom profile whose model the user names itself;
+	// fall back to the default provider's model rather than a paid one.
+	return DefaultModel(DefaultProvider)
 }
 
 func normalizeProvider(providerName string) string {
 	name := strings.ToLower(strings.TrimSpace(providerName))
 	if name == "" {
-		return "openai"
+		return DefaultProvider
 	}
 	return name
 }

@@ -11,6 +11,9 @@ import (
 
 var versionStyle = lipgloss.NewStyle().Foreground(ColorMuted)
 
+// updateStyle marks the "a newer release exists" note on the version row.
+var updateStyle = lipgloss.NewStyle().Foreground(ColorAmber)
+
 func isVersionSentinel(s string) bool {
 	switch s {
 	case "", "dev", "unknown":
@@ -57,6 +60,10 @@ type Banner struct {
 	// chosen once by the caller (stable across renders); empty falls back to
 	// the default /help line so the six-row height invariant is never at risk.
 	Tip string
+	// Update, when set, is appended to the version line as a highlighted
+	// note (e.g. "update v0.2.0 available"). It shares the version row so
+	// the banner keeps its six-row height.
+	Update string
 	// Resumed, when set, replaces the subtitle row with a resumed-session
 	// variant: "resumed <name> · N turns restored". RestoredTurns is the turn
 	// count shown next to it.
@@ -86,14 +93,20 @@ func (b Banner) versionLine() string {
 	if !isVersionSentinel(b.Built) {
 		parts = append(parts, b.Built)
 	}
-	if len(parts) == 0 {
+	if len(parts) == 0 && b.Update == "" {
 		return ""
 	}
-	line := strings.Join(parts, " · ")
+	line := versionStyle.Render(strings.Join(parts, " · "))
+	if b.Update != "" {
+		note := updateStyle.Render(b.Update)
+		if line == "" {
+			line = note
+		} else {
+			line += versionStyle.Render(" · ") + note
+		}
+	}
 	if b.Width > 0 {
-		line = versionStyle.Copy().MaxWidth(b.Width).Render(line)
-	} else {
-		line = versionStyle.Render(line)
+		line = lipgloss.NewStyle().MaxWidth(b.Width).Render(line)
 	}
 	return line
 }

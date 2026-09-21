@@ -164,8 +164,12 @@ var registry = map[string]Descriptor{
 		},
 		BaseURL: "https://openrouter.ai/api/v1", NetrcHost: "openrouter.ai",
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
-		DefaultModel: "openrouter/auto",
+		// openrouter/free is the harness default for a fresh install: it
+		// routes across OpenRouter's zero-cost models, so a new user with a
+		// signup credit can run Signet before choosing a paid model.
+		DefaultModel: "openrouter/free",
 		Models: []ModelSpec{
+			{ID: "openrouter/free", Label: "OpenRouter Free"},
 			{ID: "openrouter/auto", Label: "OpenRouter Auto"},
 			{ID: "openai/gpt-4o", Label: "GPT-4o"},
 			{ID: "anthropic/claude-3.5-sonnet", Label: "Claude 3.5 Sonnet"},

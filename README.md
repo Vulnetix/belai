@@ -51,6 +51,19 @@ curl -fsSL https://raw.githubusercontent.com/Vulnetix/signet/main/install.sh | s
 
 Pre-built binaries for Linux, macOS, and Windows are available on the [Releases](https://github.com/vulnetix/signet/releases) page.
 
+### Update checks
+
+At startup Signet compares its own version against the newest GitHub release.
+When a newer one exists the banner says so and the signet panel prints the
+upgrade command for how this binary was installed — the Homebrew tap, the
+Scoop bucket, `go install`, or the installer script plus the release asset for
+your OS and architecture. Nothing is downloaded or installed; you run the
+command yourself.
+
+The answer is cached for six hours, an unstamped source build never checks,
+and the check is off with `update_check: false` in settings or
+`SIGNET_NO_UPDATE_CHECK=1` for a single run.
+
 ### Build from source
 
 Signet is pure Go with no cgo, so a clean build needs only a Go toolchain.
@@ -119,6 +132,12 @@ Signet starts the UI only when both stdin and stdout are a terminal, so it is sa
 
 ## Configuration
 
+No provider configured? Signet defaults to OpenRouter's free router
+(`openrouter` / `openrouter/free`). Sign up at <https://openrouter.ai/>, where a
+one-time signup credit unlocks the free model, then store the key with
+`/providers` (or export `OPENROUTER_API_KEY`). If exactly one *other* provider's
+credentials resolve, Signet adopts that provider instead.
+
 Set the API key for your provider and Signet picks it up:
 
 | Provider | Environment |
@@ -173,6 +192,7 @@ its provenance for every key.
 | `session_retention_days` | idle session retention (default 28) |
 | `ui.banner` / `ui.status_bar` | TUI presentation toggles |
 | `show_session_names` | show session names in the status bar (default on) |
+| `update_check` | check GitHub for a newer Signet release at startup (default on) |
 | `context_windows` | per-model context-window overrides, in tokens |
 | `providers` | custom provider profiles (see below) |
 | `allow_project_providers` | opt in to project-layer `providers` (default off) |

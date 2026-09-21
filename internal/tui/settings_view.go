@@ -120,6 +120,7 @@ func (a *App) settingsRows() []settingsRow {
 	todosVal := boolLabel(s.TodosVisible())
 	mouseVal := boolLabel(s.MouseEnabled())
 	showNamesVal := boolLabel(s.SessionNamesVisible())
+	updateCheckVal := boolLabel(s.UpdateCheckEnabled())
 	permsVal := fmt.Sprintf("%d allow · %d ask · %d deny", len(s.Permissions.Allow), len(s.Permissions.Ask), len(s.Permissions.Deny))
 	maxAgentsVal := "3"
 	if s.Resilience != nil && s.Resilience.MaxAgents != 0 {
@@ -142,6 +143,7 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "show_todos", label: "todo panel", kind: "toggle", value: todosVal, src: sourceLabel(origin["ui"])},
 		{key: "mouse", label: "mouse capture", kind: "toggle", value: mouseVal, src: sourceLabel(origin["ui"])},
 		{key: "show_session_names", label: "session names", kind: "toggle", value: showNamesVal, src: sourceLabel(origin["show_session_names"])},
+		{key: "update_check", label: "update check", kind: "toggle", value: updateCheckVal, src: sourceLabel(origin["update_check"])},
 		{key: "max_agents", label: "max agents", kind: "text", value: maxAgentsVal, src: sourceLabel(origin["resilience"])},
 		{key: "plan_explore", label: "plan explore", kind: "toggle", value: planExploreVal, src: sourceLabel(origin["resilience"])},
 		{key: "permissions", label: "permissions", kind: "submenu", value: permsVal, src: sourceLabel(origin["permissions"])},
@@ -367,6 +369,8 @@ func (a *App) cycleToggle(key string) error {
 			s.UI.Mouse = nextBool(s.UI.Mouse)
 		case "show_session_names":
 			s.ShowSessionNames = nextBool(s.ShowSessionNames)
+		case "update_check":
+			s.UpdateCheck = nextBool(s.UpdateCheck)
 		case "plan_explore":
 			if s.Resilience == nil {
 				s.Resilience = &config.ResilienceSettings{}
@@ -438,6 +442,8 @@ func (a *App) unsetSetting(key string) error {
 			}
 		case "show_session_names":
 			s.ShowSessionNames = nil
+		case "update_check":
+			s.UpdateCheck = nil
 		case "plan_explore":
 			if s.Resilience != nil {
 				s.Resilience.PlanExplore = nil

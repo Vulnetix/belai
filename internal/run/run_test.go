@@ -918,8 +918,24 @@ func TestPrepareOpenRouterBaseURL(t *testing.T) {
 	if cfg.BaseURL != "https://openrouter.ai/api/v1" {
 		t.Fatalf("BaseURL = %q", cfg.BaseURL)
 	}
-	if cfg.Model != "openrouter/auto" {
-		t.Fatalf("Model = %q, want openrouter/auto", cfg.Model)
+	if cfg.Model != "openrouter/free" {
+		t.Fatalf("Model = %q, want openrouter/free", cfg.Model)
+	}
+}
+
+// A fresh install names no provider anywhere: settings, state, environment and
+// flags are all empty. That path must land on OpenRouter's free router, which
+// is the only setup a new user can reach with a signup credit alone.
+func TestPrepareEmptyProviderDefaultsToOpenRouterFree(t *testing.T) {
+	cfg, _ := Prepare("", "", fakeSource{vals: map[string]string{"openrouter:api_key": "k"}})
+	if cfg.Provider != "openrouter" {
+		t.Fatalf("Provider = %q, want openrouter", cfg.Provider)
+	}
+	if cfg.Model != "openrouter/free" {
+		t.Fatalf("Model = %q, want openrouter/free", cfg.Model)
+	}
+	if got := DefaultModel(""); got != "openrouter/free" {
+		t.Fatalf("DefaultModel(\"\") = %q, want openrouter/free", got)
 	}
 }
 
@@ -1477,21 +1493,21 @@ func TestEnvSourceCloudflareAIGateway(t *testing.T) {
 
 // The per-provider default model table is documented in docs/development.md.
 // An unrecognised provider — including a custom one from settings.json — falls
-// through to the OpenAI default, which is why a custom provider profile should
-// carry its own model.
+// through to the default provider's model, which is why a custom provider
+// profile should carry its own model. An empty name is the fresh install.
 func TestDefaultModelTable(t *testing.T) {
 	cases := map[string]string{
 		"openai":                "gpt-5",
 		"anthropic":             "claude-opus-4-5",
 		"cloudflare-workers-ai": "@cf/moonshotai/kimi-k2.6",
 		"cloudflare-ai-gateway": "claude-sonnet-4-5",
-		"openrouter":            "openrouter/auto",
+		"openrouter":            "openrouter/free",
 		"google-gemini":         "gemini-2.5-flash",
 		"ollama":                "llama3",
 		"github-copilot":        "gpt-4o",
 		"huggingface":           "",
-		"my-custom-provider":    "gpt-5",
-		"":                      "gpt-5",
+		"my-custom-provider":    "openrouter/free",
+		"":                      "openrouter/free",
 	}
 	for provider, want := range cases {
 		if got := DefaultModel(provider); got != want {

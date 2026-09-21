@@ -108,26 +108,35 @@ CLI path too. The flag is folded into those settings first, so it still works;
 reading the flag alone used to mean a settings file that disabled guardrails
 was honoured by the TUI and ignored by the CLI.
 
-### Model defaults
+### Provider and model defaults
+
+`-provider` is optional too. When nothing — settings, state, environment or
+flag — names a provider, the harness resolves to `openrouter`
+(`run.DefaultProvider`), whose default model is the zero-cost `openrouter/free`
+router. That is the only setup a brand-new user can reach with a signup credit
+alone, which is why a fresh install advertises <https://openrouter.ai/> in the
+banner hint and in the missing-credentials message. A single *configured*
+provider still wins over the default: the TUI's sole-provider fallback adopts it
+when the user's credentials resolve for exactly one provider.
 
 `-model` is optional. When it is empty the provider decides
 (`run.DefaultModel`):
 
 | Provider | Default model |
 | --- | --- |
-| `openai` (and any unrecognised provider) | `gpt-5` |
+| `openai` | `gpt-5` |
 | `anthropic` | `claude-opus-4-5` |
 | `cloudflare-workers-ai` | `@cf/moonshotai/kimi-k2.6` |
 | `cloudflare-ai-gateway` | `claude-sonnet-4-5` |
-| `openrouter` | `openrouter/auto` |
+| `openrouter` (and any unrecognised provider) | `openrouter/free` |
 | `google-gemini` | `gemini-2.5-flash` |
 | `ollama` | `llama3` |
 | `llama-server` | `default` (the server was started with a single model) |
 | `github-copilot` | `gpt-4o` |
 | `huggingface` | none (user must type a model id; requires enabled providers in HuggingFace dashboard) |
 
-A custom provider from `settings.json` falls through to the `gpt-5` default, so
-a custom entry should carry its own model.
+A custom provider from `settings.json` falls through to the `openrouter/free`
+default, so a custom entry should carry its own model.
 
 ### Model catalog and live fetch
 

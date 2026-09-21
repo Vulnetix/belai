@@ -47,7 +47,7 @@ func main() {
 	showVersion := flag.Bool("version", false, "print version and exit")
 	prompt := flag.String("prompt", "", "send a noninteractive prompt and print the reply, then exit")
 	model := flag.String("model", "", "model id (defaults per provider)")
-	provider := flag.String("provider", "", "provider: openai, anthropic, cloudflare-workers-ai, cloudflare-ai-gateway, openrouter, google-gemini, ollama, llama-server, github-copilot, huggingface, or a custom name from settings.json")
+	provider := flag.String("provider", "", "provider (default openrouter): openai, anthropic, cloudflare-workers-ai, cloudflare-ai-gateway, openrouter, google-gemini, ollama, llama-server, github-copilot, huggingface, or a custom name from settings.json")
 	detectMode := flag.Bool("detect-mode", false, "run the operating-mode classifier and report the decision")
 	verbose := flag.Bool("verbose", false, "print role-manager decisions to stderr")
 

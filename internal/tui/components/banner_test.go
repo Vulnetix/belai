@@ -99,3 +99,28 @@ func TestBannerHeightIsStable(t *testing.T) {
 		t.Fatalf("expected banner height 6 with version, got %d", lipgloss.Height(with))
 	}
 }
+
+func TestBannerVersionLineCarriesUpdateNote(t *testing.T) {
+	b := Banner{Width: 80, Version: "0.4.2", Commit: "ab12cd3", Update: "update v0.5.0 available"}
+	line := b.versionLine()
+	if !strings.Contains(line, "v0.4.2") || !strings.Contains(line, "update v0.5.0 available") {
+		t.Fatalf("expected version and update note in %q", line)
+	}
+}
+
+func TestBannerUpdateNoteWithoutStampedBuild(t *testing.T) {
+	b := Banner{Width: 80, Version: "dev", Commit: "unknown", Built: "unknown", Update: "update v0.5.0 available"}
+	if !strings.Contains(b.versionLine(), "update v0.5.0 available") {
+		t.Fatalf("update note dropped on an unstamped build: %q", b.versionLine())
+	}
+}
+
+// The banner is six rows tall and the transcript is laid out under it, so an
+// update note must share the version row rather than add one.
+func TestBannerHeightUnchangedByUpdateNote(t *testing.T) {
+	plain := Banner{Width: 80, Version: "0.4.2"}.View()
+	noted := Banner{Width: 80, Version: "0.4.2", Update: "update v0.5.0 available"}.View()
+	if got, want := lipgloss.Height(noted), lipgloss.Height(plain); got != want {
+		t.Fatalf("height with update note = %d, want %d", got, want)
+	}
+}
