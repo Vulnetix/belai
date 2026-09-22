@@ -71,6 +71,8 @@ type Settings struct {
 	// Classifier configures the security classifier separately from the main
 	// agent model. nil means reuse the main provider/model with reasoning off.
 	Classifier *ClassifierSettings `json:"classifier,omitempty"`
+	// LSP configures language-server diagnostics.
+	LSP *LSPSettings `json:"lsp,omitempty"`
 	// Sweep enables the background filesystem sweep for .vulnetix projects.
 	VulnetixSweepEnabled *bool `json:"vulnetix_sweep_enabled,omitempty"`
 	// SweepRoots restricts the sweep to a list of paths. Empty means $HOME and
@@ -756,6 +758,54 @@ func (s Settings) Override(proj Settings) Settings {
 		}
 		merged.merge(proj.Classifier)
 		out.Classifier = merged
+	}
+	if proj.LSP != nil {
+		merged := &LSPSettings{}
+		if out.LSP != nil {
+			*merged = *out.LSP
+		}
+		// Servers from the project layer are arbitrary code execution; drop
+		// them unconditionally. The global layer has already been merged.
+		if len(proj.LSP.Servers) > 0 {
+			proj.LSP.Servers = nil
+		}
+		// Tighten-only merge for booleans.
+		if proj.LSP.Enabled != nil && !*proj.LSP.Enabled {
+			merged.Enabled = proj.LSP.Enabled
+		}
+		if proj.LSP.Fallback != nil && !*proj.LSP.Fallback {
+			merged.Fallback = proj.LSP.Fallback
+		}
+		if proj.LSP.ClassifyDiagnostics != nil && *proj.LSP.ClassifyDiagnostics {
+			merged.ClassifyDiagnostics = proj.LSP.ClassifyDiagnostics
+		}
+		if proj.LSP.TimeoutMS != 0 {
+			if merged.TimeoutMS == 0 {
+				merged.TimeoutMS = proj.LSP.TimeoutMS
+			} else {
+				merged.TimeoutMS = min(merged.TimeoutMS, proj.LSP.TimeoutMS)
+			}
+		}
+		if proj.LSP.MaxDiagnostics != 0 {
+			if merged.MaxDiagnostics == 0 {
+				merged.MaxDiagnostics = proj.LSP.MaxDiagnostics
+			} else {
+				merged.MaxDiagnostics = min(merged.MaxDiagnostics, proj.LSP.MaxDiagnostics)
+			}
+		}
+		if len(proj.LSP.Languages) > 0 {
+			if merged.Languages == nil {
+				merged.Languages = map[string]bool{}
+			}
+			for k, v := range proj.LSP.Languages {
+				// Only false entries tighten; a project may not opt a language
+				// in because that would run repo-chosen tooling unattended.
+				if !v {
+					merged.Languages[k] = false
+				}
+			}
+		}
+		out.LSP = merged
 	}
 	if proj.Resilience != nil {
 		merged := &ResilienceSettings{}

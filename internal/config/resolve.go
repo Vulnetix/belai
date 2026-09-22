@@ -85,6 +85,10 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 		proj.WorkspaceDirs = nil
 		eff.Notes = append(eff.Notes, "project workspace_dirs ignored (set allow_project_workspace_dirs in global settings to use them)")
 	}
+	if proj.LSP != nil && len(proj.LSP.Servers) > 0 {
+		proj.LSP.Servers = nil
+		eff.Notes = append(eff.Notes, "project lsp.servers ignored (binary paths may only be set in global settings)")
+	}
 	eff.apply(proj, SourceProject)
 
 	// 4. environment.
@@ -118,6 +122,9 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	eff.apply(flags, SourceFlag)
 
 	if err := ValidateProviders(eff.Settings); err != nil {
+		return eff, err
+	}
+	if err := ValidateLSP(eff.Settings); err != nil {
 		return eff, err
 	}
 
@@ -243,6 +250,13 @@ func (e *Effective) apply(s Settings, src Source) {
 		}
 		e.Settings.Classifier.merge(s.Classifier)
 		e.Origin["classifier"] = src
+	}
+	if s.LSP != nil && !s.LSP.IsZero() {
+		if e.Settings.LSP == nil {
+			e.Settings.LSP = &LSPSettings{}
+		}
+		e.Settings.LSP.merge(s.LSP)
+		e.Origin["lsp"] = src
 	}
 	if s.WorkspaceDirs != nil {
 		// Later layers replace, not append, so a project layer can narrow the
