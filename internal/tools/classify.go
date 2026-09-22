@@ -30,7 +30,8 @@ package tools
 //
 // Every other kind is both shaped and controlled: Grep returns matching lines
 // for a pattern the harness passed as one argument, Glob returns paths, Write
-// and Edit return a terse confirmation the harness wrote itself, and a local
+// and Edit return a terse confirmation the harness wrote itself (optionally
+// followed by a sealed diagnostics block from a language server), and a local
 // native runs a fixed argv the harness built. Those are sanitised and
 // promoted.
 //

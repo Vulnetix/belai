@@ -78,6 +78,9 @@ type Options struct {
 	// persisted bad hashes). nil means no caching. A subagent inherits the
 	// parent's cache so verdicts are shared across the fan-out.
 	Cache *rolemanager.Cache
+	// Diagnostics is the post-edit language-server diagnostics gate. The zero
+	// value disables it.
+	Diagnostics rolemanager.DiagnosticsGate
 	// Caps is the capability-detection result used to build the native tool
 	// catalogue for this session and its explore subagents. A zero value means
 	// no native tools (the pre-catalogue behaviour).
@@ -167,6 +170,8 @@ type Session struct {
 	// planRevision is the requested plan-file revision for this turn. Zero
 	// means compute the next available revision when recording.
 	planRevision int
+	// diag is the post-edit diagnostics gate. The zero value disables it.
+	diag rolemanager.DiagnosticsGate
 }
 
 // steerBuffer is the steering queue capacity. A full queue drops the newest
@@ -327,6 +332,7 @@ func NewSession(o Options) (*Session, error) {
 		steer:              make(chan string, steerBuffer),
 		trace:              trace.Env(),
 		diffs:              filediff.NewRecorder(o.Workdir),
+		diag:               o.Diagnostics,
 		agentPool:          o.AgentPool,
 	}, nil
 }
@@ -871,6 +877,14 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 	// conversation but the TUI needs for line numbering.
 	if len(res.Meta) > 0 {
 		emit(Event{Kind: EventToolMetaKind, ToolName: call.Name, ToolCallID: call.ID, Meta: res.Meta})
+	}
+
+	// Language-server diagnostics ride back on the same tool result, so the
+	// model sees a syntax error in the same turn it made the change.
+	// Appended before promotion so both the guardrails-off path and the
+	// sanitize-only path carry it — and both sanitize it.
+	if block := s.diagnoseEdit(ctx, res); block != "" {
+		res.Content += "\n\n" + block
 	}
 
 	// Guardrails off: the verdict could not change the outcome, so the

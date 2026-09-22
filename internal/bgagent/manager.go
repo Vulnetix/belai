@@ -597,6 +597,9 @@ func (m *Manager) buildSession(inst *AgentInstance) (*agent.Session, error) {
 		// enforcement agreement, so it stays as-built; the wider surface lands
 		// on the next turn through SetPosture + a fresh session.
 		PlanSurface: tools.PlanSurface{GuardrailsOff: !m.settings.GuardrailsEnabled(), Perms: perms},
+		// Background agents run unattended. Live servers are off here; fallback
+		// syntax checks still honour the user's settings.
+		Diagnostics: rolemanager.DiagnosticsGateFromSettings(m.settings, reg.Cwd().Roots(), false),
 	})
 }
 

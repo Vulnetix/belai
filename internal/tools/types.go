@@ -126,9 +126,19 @@ func WriteResult(content string) Result {
 	return Result{Kind: KindWrite, Content: content}
 }
 
+// WriteResultMeta constructs a Write tool result with attached metadata.
+func WriteResultMeta(content string, meta map[string]any) Result {
+	return Result{Kind: KindWrite, Content: content, Meta: meta}
+}
+
 // EditResult constructs an Edit tool result.
 func EditResult(content string) Result {
 	return Result{Kind: KindEdit, Content: content}
+}
+
+// EditResultMeta constructs an Edit tool result with attached metadata.
+func EditResultMeta(content string, meta map[string]any) Result {
+	return Result{Kind: KindEdit, Content: content, Meta: meta}
 }
 
 // WebFetchResult constructs an untrusted WebFetch tool result.

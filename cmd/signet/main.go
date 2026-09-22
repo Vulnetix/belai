@@ -25,6 +25,7 @@ import (
 	"github.com/vulnetix/signet/internal/prompt"
 	"github.com/vulnetix/signet/internal/repoindex"
 	"github.com/vulnetix/signet/internal/repomap"
+	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/session"
 	"github.com/vulnetix/signet/internal/tools"
@@ -430,6 +431,9 @@ func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *ht
 		// subagent never does.
 		AllowPassLoop: true,
 		RepoMap:       &repoMap,
+		// Headless CLI: live language servers are off, but fallback syntax
+		// checks still run when enabled in settings.
+		Diagnostics: rolemanager.DiagnosticsGateFromSettings(settings, reg.Cwd().Roots(), false),
 	})
 	if err != nil {
 		return run.Result{}, err
