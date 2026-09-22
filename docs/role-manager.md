@@ -121,6 +121,12 @@ Rules:
   jailbreak out (phases 1/2 already ruled on them). `ParseExtractionSentinel`
   accepts only those three tokens: a phase-3 reply of `PROMPT_INJECTION` or
   `JAILBREAK` is malformed, not a verdict, and fails closed.
+- **Thresholds are user-adjustable and default high.** Each phase gate fires
+  only at or above its attack-probability threshold, which defaults to 0.75
+  rather than 0.5 (the local models over-trigger on benign coding-harness
+  text). Users tune it per phase via `classifier.phaseN.threshold`, the
+  `-classifier-phaseN-threshold` flags, or the `/model` phase-threshold rows;
+  clearing a threshold restores the 0.75 default.
 - **Phase 3 is opt-in** via the existing `classifier.provider` +
   `classifier.model` choice — no new setting. Unset both and a zero-config
   embedded install makes no network call in the classify path; set them and

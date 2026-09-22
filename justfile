@@ -66,6 +66,13 @@ modelprep *ARGS:
 build-jailbreak: modelprep
     go build -tags signet_bert_jailbreak -ldflags '{{ ldflags }} -X {{ module }}/internal/version.Variant=bert-guardrails-jailbreak' -o {{ binary }} {{ pkg }}
 
+# Build only the Linux amd64 jailbreak-classifier release binary into bin/.
+build-jailbreak-linux-amd64: modelprep
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+      go build -tags signet_bert_jailbreak \
+      -ldflags '-s -w {{ ldflags }} -X {{ module }}/internal/version.Variant=bert-guardrails-jailbreak' \
+      -o {{ bin }}/signet-bert-guardrails-jailbreak-linux-amd64 {{ pkg }}
+
 # Build ./signet with only the phase-1 prompt-saturation model embedded.
 build-bert: (modelprep '-phase1')
     go build -tags signet_bert -ldflags '{{ ldflags }} -X {{ module }}/internal/version.Variant=bert-guardrails' -o {{ binary }} {{ pkg }}

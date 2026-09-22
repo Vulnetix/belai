@@ -252,7 +252,7 @@ func resolveSecurityPhase(cls *config.ClassifierSettings, phase int) *mlclassify
 			model = embeddedID
 		} else {
 			// No embedded model and no explicit id: this phase has no model
-			// (phase 2 defaults to disabled on the non-jailbreak variants).
+			// (phase 2 stays off on variants that do not embed it).
 			return nil
 		}
 	}

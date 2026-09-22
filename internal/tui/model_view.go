@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -315,6 +316,11 @@ type modelRow struct {
 
 var defaultModelEfforts = []string{"low", "medium", "high"}
 
+// classifierThresholdOptions are the attack-probability thresholds the phase
+// threshold rows cycle through. They are written back to
+// classifier.phaseN.threshold as numeric values.
+var classifierThresholdOptions = []string{"0.50", "0.60", "0.70", "0.75", "0.80", "0.85", "0.90", "0.95"}
+
 // scopeOptions lists the storage scopes each role may cycle through. The agent
 // role can stay session-only; the classifier is global or project only.
 var (
@@ -423,7 +429,9 @@ func (a *App) modelRows() []modelRow {
 	}})
 	if kind == "models" {
 		rows = append(rows, modelRow{roleClassifier, a.classifierPhaseRow(1)})
+		rows = append(rows, modelRow{roleClassifier, a.classifierPhaseThresholdRow(1)})
 		rows = append(rows, modelRow{roleClassifier, a.classifierPhaseRow(2)})
+		rows = append(rows, modelRow{roleClassifier, a.classifierPhaseThresholdRow(2)})
 		rows = append(rows, modelRow{roleClassifier, a.classifierPhase3Row()})
 	}
 	rows = append(rows, modelRow{roleClassifier, settingsRow{
@@ -744,6 +752,10 @@ func (a *App) changeModelRow() tea.Cmd {
 		return a.cycleClassifierPhase(1, row.opts)
 	case "phase2":
 		return a.cycleClassifierPhase(2, row.opts)
+	case "phase1-threshold":
+		return a.cycleClassifierPhaseThreshold(1, row.opts)
+	case "phase2-threshold":
+		return a.cycleClassifierPhaseThreshold(2, row.opts)
 	case "provider":
 		if row.role == roleAgent {
 			return a.cycleAgentProvider(row.opts)
@@ -848,6 +860,27 @@ func (a *App) cycleClassifierPhase(phase int, opts []string) tea.Cmd {
 	})
 }
 
+// cycleClassifierPhaseThreshold advances one phase gate's attack threshold
+// through the choices the threshold row offered.
+func (a *App) cycleClassifierPhaseThreshold(phase int, opts []string) tea.Cmd {
+	if len(opts) == 0 {
+		return nil
+	}
+	cur := a.classifierPhaseThresholdValue(phase)
+	next := opts[(indexOfString(opts, cur)+1)%len(opts)]
+	val, err := strconv.ParseFloat(next, 64)
+	if err != nil {
+		return nil
+	}
+	return a.mutateClassifier(func(c *config.ClassifierSettings) {
+		if phase == 1 {
+			c.Phase1.Threshold = val
+		} else {
+			c.Phase2.Threshold = val
+		}
+	})
+}
+
 // applyModelProvider commits a provider/model/effort to the running session
 // without touching settings files (the picker's "session" scope). It is the
 // shared tail of the model picker and resume restore so the two cannot drift.
@@ -935,52 +968,81 @@ func (a *App) classifierKind() string {
 	return run.ClassifierKind(a.settings.Classifier)
 }
 
-// classifierPhaseRow builds the status/selector row for one local phase gate.
-// Embedded phases are locked (the binary choice cannot be overridden); remote
-// phases are selectable so the source can cycle; a phase with no usable model
-// reports why it is off. The effective source and model come from the same
-// resolution the pipeline uses (run.ResolveSecurityClassifier), never a
+// resolvedClassifierPhase returns the effective phase model config using the
+// same resolution the pipeline uses (run.ResolveSecurityClassifier), never a
 // parallel guess.
+func (a *App) resolvedClassifierPhase(phase int) *mlclassify.ModelConfig {
+	sc := run.ResolveSecurityClassifier(a.settings.Classifier)
+	if phase == 1 {
+		return sc.Phase1
+	}
+	return sc.Phase2
+}
+
+// classifierPhaseRow builds the status/selector row for one local phase gate.
+// Embedded phase 1 is locked (the binary choice cannot be overridden); remote
+// phases are selectable so the source can cycle; a phase with no usable model
+// reports why it is off.
 func (a *App) classifierPhaseRow(phase int) settingsRow {
 	key, label := "phase1", "phase 1"
 	if phase == 2 {
 		key, label = "phase2", "phase 2"
 	}
 
-	sc := run.ResolveSecurityClassifier(a.settings.Classifier)
-	var mc *mlclassify.ModelConfig
-	if phase == 1 {
-		mc = sc.Phase1
-	} else {
-		mc = sc.Phase2
-	}
-
+	mc := a.resolvedClassifierPhase(phase)
 	if mc == nil {
 		if phase == 1 {
 			return settingsRow{key: key, label: label, kind: "text",
 				value: "LLM sentinel (no HuggingFace key)", disabled: true}
 		}
 		return settingsRow{key: key, label: label, kind: "choose",
-			opts: a.classifierPhaseOpts(phase), value: "disabled — configure huggingface apikey"}
+			opts: a.classifierPhaseOpts(phase), value: "disabled"}
 	}
 
-	if mc.Source == mlclassify.SourceEmbedded {
+	// Phase 1 is always on when embedded and is not cyclable. Phase 2 stays
+	// cyclable even when its embedded model is resolved, so the jailbreak gate
+	// can still be turned back off from the TUI.
+	if mc.Source == mlclassify.SourceEmbedded && phase == 1 {
 		return settingsRow{key: key, label: label, kind: "text", value: mc.ID, disabled: true}
+	}
+	if mc.Source == mlclassify.SourceEmbedded {
+		return settingsRow{key: key, label: label, kind: "choose",
+			opts: a.classifierPhaseOpts(phase), value: mc.ID + " (embedded)"}
 	}
 	return settingsRow{key: key, label: label, kind: "choose",
 		opts: a.classifierPhaseOpts(phase), value: mc.ID + " via huggingface"}
 }
 
+// classifierPhaseThresholdRow builds the user-adjustable threshold row for one
+// phase gate. It is hidden (disabled) when the phase has no model.
+func (a *App) classifierPhaseThresholdRow(phase int) settingsRow {
+	key, label := "phase1-threshold", "phase 1 threshold"
+	if phase == 2 {
+		key, label = "phase2-threshold", "phase 2 threshold"
+	}
+	mc := a.resolvedClassifierPhase(phase)
+	if mc == nil {
+		return settingsRow{key: key, label: label, kind: "text", value: "—", disabled: true}
+	}
+	return settingsRow{key: key, label: label, kind: "choose",
+		opts: classifierThresholdOptions, value: fmt.Sprintf("%.2f", mc.ThresholdOr())}
+}
+
+// classifierPhaseThresholdValue returns the effective threshold for one phase
+// formatted the same way the threshold row renders it, so cycling can find the
+// current value in the options list.
+func (a *App) classifierPhaseThresholdValue(phase int) string {
+	mc := a.resolvedClassifierPhase(phase)
+	if mc == nil {
+		return ""
+	}
+	return fmt.Sprintf("%.2f", mc.ThresholdOr())
+}
+
 // classifierPhaseSource returns the effective source token for one phase, for
 // the source cycle to advance from.
 func (a *App) classifierPhaseSource(phase int) string {
-	sc := run.ResolveSecurityClassifier(a.settings.Classifier)
-	var mc *mlclassify.ModelConfig
-	if phase == 1 {
-		mc = sc.Phase1
-	} else {
-		mc = sc.Phase2
-	}
+	mc := a.resolvedClassifierPhase(phase)
 	if mc == nil {
 		if phase == 2 {
 			return "disabled"
@@ -1232,8 +1294,12 @@ func (a *App) unsetClassifierRow(key string) tea.Cmd {
 			c.Kind = ""
 		case "phase1":
 			c.Phase1 = config.ClassifierPhaseSettings{}
+		case "phase1-threshold":
+			c.Phase1.Threshold = 0
 		case "phase2":
 			c.Phase2 = config.ClassifierPhaseSettings{}
+		case "phase2-threshold":
+			c.Phase2.Threshold = 0
 		case "provider":
 			c.Provider = ""
 			c.Model = ""
