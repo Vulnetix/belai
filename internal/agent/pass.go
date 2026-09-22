@@ -200,7 +200,9 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		// isError results so the model can re-issue in the next iteration.
 		if assistant.StopReason == "length" && len(filtered) > 0 {
 			for _, call := range filtered {
-				emit(Event{Kind: EventToolStartKind, Tool: &call})
+				callCopy := call
+				callCopy.Args, _ = parseToolArgs(call)
+				emit(Event{Kind: EventToolStartKind, Tool: &callCopy})
 				result := "tool result withheld: arguments may be truncated; re-issue the tool call with complete arguments"
 				emit(Event{Kind: EventToolResultKind, ToolName: call.Name, ToolResult: result})
 				turns = append(turns, run.Turn{
@@ -245,7 +247,9 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 			var wg sync.WaitGroup
 			for i := 0; i < concurrentEnd; i++ {
 				u := units[i]
-				emit(Event{Kind: EventToolStartKind, Tool: &u.call})
+				callCopy := u.call
+				callCopy.Args = u.args
+				emit(Event{Kind: EventToolStartKind, Tool: &callCopy})
 				wg.Add(1)
 				go func(i int, u callUnit) {
 					defer wg.Done()
@@ -266,7 +270,9 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		for i := 0; i < len(units); i++ {
 			u := units[i]
 			if i >= concurrentEnd {
-				emit(Event{Kind: EventToolStartKind, Tool: &u.call})
+				callCopy := u.call
+				callCopy.Args = u.args
+				emit(Event{Kind: EventToolStartKind, Tool: &callCopy})
 				if u.parseErr != nil {
 					results[i] = fmt.Sprintf("tool result withheld: malformed arguments for %q: %v", u.call.Name, u.parseErr)
 				} else {
