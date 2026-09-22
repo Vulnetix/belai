@@ -202,6 +202,9 @@ func (a *App) handleSettingsKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			a.settingsState.editMode = false
 			a.settingsState.errorMsg = ""
+			if row.key == "provider" || row.key == "model" {
+				return a, a.syncProviderFromSettings()
+			}
 			return a, nil
 		default:
 			cmd := a.editor.Update(m)
@@ -238,6 +241,9 @@ func (a *App) handleSettingsKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 				a.settingsState.errorMsg = err.Error()
 			} else {
 				a.settingsState.errorMsg = ""
+				if row.key == "provider" || row.key == "model" {
+					return a, a.syncProviderFromSettings()
+				}
 			}
 		}
 		return a, nil
@@ -308,7 +314,9 @@ func (a *App) commitTextRow(row settingsRow, raw string) error {
 		if !a.isProviderName(val) {
 			return fmt.Errorf("unknown provider %q", val)
 		}
-		return a.mutateSetting(func(s *config.Settings) { s.Provider = val })
+		// A provider change invalidates the old provider's model, matching the
+		// /model screen's provider-cycle tail.
+		return a.mutateSetting(func(s *config.Settings) { s.Provider = val; s.Model = "" })
 	case "model":
 		return a.mutateSetting(func(s *config.Settings) { s.Model = val })
 	case "session_retention_days":
@@ -422,6 +430,7 @@ func (a *App) unsetSetting(key string) error {
 		switch key {
 		case "provider":
 			s.Provider = ""
+			s.Model = ""
 		case "model":
 			s.Model = ""
 		case "effort":

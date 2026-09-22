@@ -4102,6 +4102,18 @@ func (a *App) refreshProvider() tea.Cmd {
 	return nil
 }
 
+// syncProviderFromSettings adopts the settings-file provider and model into the
+// running config and re-resolves credentials, so a /settings edit of provider
+// or model lands live the way the /model screen's edits do. Without it the
+// running session — and every session started from it — keeps the stale
+// provider (the fresh-install default) until the process restarts.
+func (a *App) syncProviderFromSettings() tea.Cmd {
+	a.requestedProvider = a.settings.Provider
+	a.cfg.Provider = a.settings.Provider
+	a.cfg.Model = a.settings.Model
+	return a.refreshProvider()
+}
+
 // reResolveCredentials is the synchronous half of refreshProvider. It is used
 // by send as a last-ditch retry when the async initial credential check has
 // not landed or failed spuriously. If credentials resolve, it adopts the new
