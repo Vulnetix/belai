@@ -52,23 +52,14 @@ func Spec(providerName string) []Field {
 }
 
 // SpecFor returns the required fields for a provider, honouring a custom
-// profile's kind. With a real kind ("ollama" or "llama-server"), the api_key
-// is the template's optional field, so a local instance offers an optional key
-// rather than a mandatory one; host/port/protocol stay in the settings profile
-// and never become credentials for a custom instance. With no profile (or a
-// generic "openai-compatible" profile), Spec's behaviour is preserved verbatim.
+// profile's kind. A custom provider never gates on api_key: a keyless
+// OpenAI-compatible endpoint is configured when its models endpoint answers
+// (checked by the availability probe), so the field is always optional for
+// custom profiles. With no profile, Spec's behaviour is preserved verbatim.
 func SpecFor(providerName string, prof *config.ProviderProfile) []Field {
-	if prof != nil && prof.Kind != "" && prof.Kind != "openai-compatible" {
-		if d, ok := provider.Template(prof.Kind); ok {
-			optional := false
-			for _, f := range d.Fields {
-				if f.Name == "api_key" && f.Optional {
-					optional = true
-				}
-			}
-			return []Field{
-				{Name: "api_key", EnvVars: []string{EnvVarForProvider(providerName)}, Secret: true, Optional: optional},
-			}
+	if prof != nil {
+		return []Field{
+			{Name: "api_key", EnvVars: []string{EnvVarForProvider(providerName)}, Secret: true, Optional: true},
 		}
 	}
 	if d, ok := provider.Lookup(providerName); ok {

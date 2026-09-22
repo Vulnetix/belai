@@ -564,31 +564,27 @@ func resolveCustom(cfg *Config, status *Status, name string, prof provider.Profi
 	if key, origin, ok := src.Lookup(name, "api_key"); ok {
 		cfg.APIKey = key
 		status.Origins["api_key"] = origin
-	} else if d, ok := provider.Template(prof.Kind); ok && templateKeyOptional(d) {
-		cfg.APIKey = placeholderKey(prof.Kind)
 	} else {
-		status.Missing = append(status.Missing, "api_key")
+		// Keyless custom provider: inject a harmless placeholder so the wire
+		// layer's non-empty-key check passes. Whether the endpoint is actually
+		// usable is the availability probe's call (its models endpoint must
+		// answer); a server that really requires a key rejects the request
+		// with a clear 401 at runtime instead of being gated here.
+		cfg.APIKey = placeholderKey(prof.Kind)
 	}
 }
 
-// templateKeyOptional reports whether the template's api_key field is optional.
-func templateKeyOptional(d provider.Descriptor) bool {
-	for _, f := range d.Fields {
-		if f.Name == "api_key" && f.Optional {
-			return true
-		}
-	}
-	return false
-}
-
-// placeholderKey returns the same placeholder the built-in local providers
-// inject when no key is configured.
+// placeholderKey returns the placeholder the keyless path injects. Local
+// templates reuse the built-in local providers' placeholders; generic
+// OpenAI-compatible endpoints get a neutral value keyless servers ignore.
 func placeholderKey(kind string) string {
 	switch kind {
 	case "llama-server":
 		return "llama"
-	default:
+	case "ollama":
 		return "ollama"
+	default:
+		return "signet"
 	}
 }
 

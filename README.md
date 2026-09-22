@@ -213,10 +213,14 @@ an API-key exfiltration primitive.
 A profile may also carry a `kind` (`ollama`, `llama-server`, or
 `openai-compatible`) that templates it from a built-in descriptor, plus
 `protocol` / `host` / `port` for the editor and the default display label.
-`base_url` stays the authoritative wire value. Add as many named instances as
-you need — a second Ollama, a second llama-server — and give each a friendly
-name in `provider_labels`, which the TUI shows in `/providers`, `/model` and
-the footer and accepts as a `-provider` selector:
+`base_url` stays the authoritative wire value. A custom provider's API key is
+always optional: with no key stored, Signet offers the provider when its
+`/models` endpoint answers (the same liveness probe local servers get), so a
+keyless self-hosted OpenAI-compatible endpoint works with no credential at
+all. Add as many named instances as you need — a second Ollama, a second
+llama-server — and give each a friendly name in `provider_labels`, which the
+TUI shows in `/providers`, `/model` and the footer and accepts as a
+`-provider` selector:
 
 ```json
 {

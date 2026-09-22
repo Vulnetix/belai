@@ -2007,12 +2007,14 @@ because a weaker classifier weakens detection everywhere.
 
 Rows reuse the `/settings` declarative row table (`settingsRow`). The
 selected row is highlighted; `⏎` edits it, `s` cycles scope for the active
-role, `x` unsets the row, `p` jumps to `/providers`, and `esc` returns to
+role, `c` clears the row, `p` jumps to `/providers`, and `esc` returns to
 chat.
 
 #### Agent role
 
-The agent role rows are **provider**, **model**, **effort** and **scope**:
+The agent role is the global model settings section. Its rows are
+**provider**, **model**, **effort**, **reasoning**, **caveman**,
+**guardrails**, **ask**, **firewall** and **scope**:
 
 - **Provider** cycles through the full list of available providers, in
   canonical order, wrapping from the last back to the first — every
@@ -2022,18 +2024,25 @@ The agent role rows are **provider**, **model**, **effort** and **scope**:
   configuration always carries a concrete provider name (`run.Prepare`
   normalises an empty provider to the default, so an unset stop would
   bounce on the next wrap and leave the providers sorting before the
-  default unreachable). Unsetting is the `x` key's job.
+  default unreachable). Unsetting is the `c` key's job.
 - **Model** opens an embedded sub-picker over the selected provider's
   catalogue.
+- **Reasoning drives effort.** Off writes `effort: "none"` and greys the
+  effort row; on restores the previously selected chip (or the provider
+  default).
 - **Effort** cycles the model's advertised effort chips, or
   `low`/`medium`/`high` when none are advertised.
+- **Caveman** is the agent's voice rewrite (`f2`), stored per project.
+- **Guardrails**, **ask** and **firewall** are the same posture toggles as
+  `f3`, `f4` and `f10`, surfaced here as rows so the global model settings
+  show every stored global toggle.
 - **Scope** is `session`, `global` or `project`. Session writes directly to
   the running configuration; `global`/`project` mutate the settings file.
 
 #### Classifier role
 
 The classifier role rows are **provider**, **model**, **reasoning**,
-**effort**, **caveman**, **chunk** and **scope**:
+**effort**, **chunk** and **scope**:
 
 - **Provider** cycles with an inherit stop: `— (main: X)` means the
   classifier follows the main model, which is a stable state for the
@@ -2043,7 +2052,7 @@ The classifier role rows are **provider**, **model**, **reasoning**,
   reasoning off writes `classifier.effort: "none"` and greys the effort row;
   toggling it back on restores the previously selected chip.
 - **Changing provider clears the model.**
-- **Unset (`x`)** clears one field; clearing provider or model drops them both,
+- **Clear (`c`)** clears one field; clearing provider or model drops them both,
   and clearing every field removes the `classifier` block so the classifier
   falls back to the main model.
 - **Scope is `global` or `project` only** — never session. `config.State`
@@ -2096,6 +2105,12 @@ Business rules:
   report configured. They are therefore additionally probed with a bare
   `GET {base}/v1/models` (`localinfer.ProbeRunning`, no credentials, no
   content, 5s ceiling) and dropped when nothing answers.
+- **Keyless custom providers also answer by liveness.** A custom profile's
+  `api_key` is always optional; when no key resolves the provider is probed
+  exactly like a local server and offered only when its models endpoint
+  answers. `run.Prepare` injects a harmless placeholder key so the wire
+  layer's non-empty-key check passes, and a server that really requires a
+  key rejects the request with a 401 at runtime.
 - **Pinned names always survive.** The committed agent provider and the
   committed classifier provider stay in the list even when unavailable, so
   a picker can never silently move the user off their own model. An

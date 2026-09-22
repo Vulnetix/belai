@@ -9,7 +9,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
+	"github.com/vulnetix/signet/internal/wire"
 )
 
 // newTestResolver builds a resolver over a temp workdir.
@@ -211,5 +213,61 @@ func TestProbeAvailabilityWithoutResolverIsNil(t *testing.T) {
 	var cmd tea.Cmd = a.probeAvailabilityCmd()
 	if cmd != nil {
 		t.Fatal("probeAvailabilityCmd must be nil without a resolver")
+	}
+}
+
+func TestKeylessCustomProviderNeedsLiveness(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/models" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	cases := []struct {
+		name    string
+		base    string
+		offered bool
+	}{
+		{"live endpoint", srv.URL + "/v1", true},
+		{"dead endpoint", "http://127.0.0.1:1/v1", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("SIGNET_HOME", t.TempDir())
+			workdir := t.TempDir()
+			if err := config.SaveGlobal(config.Settings{
+				Providers: map[string]config.ProviderProfile{
+					"lite-llm": {BaseURL: tc.base, API: wire.SurfaceOpenAIChat, Kind: "openai-compatible"},
+				},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			a := New(Options{Workdir: workdir, Resolver: newTestResolver(t, workdir)})
+			cmd := a.probeAvailabilityCmd()
+			if cmd == nil {
+				t.Fatal("probeAvailabilityCmd returned nil with a resolver present")
+			}
+			msg, ok := cmd().(availabilityMsg)
+			if !ok {
+				t.Fatalf("probe returned %T, want availabilityMsg", msg)
+			}
+			if !msg.configured["lite-llm"] {
+				t.Fatal("keyless custom provider must report configured (api_key optional)")
+			}
+			if !msg.keyless["lite-llm"] {
+				t.Fatal("lite-llm must be flagged keyless")
+			}
+			if msg.local["lite-llm"] != tc.offered {
+				t.Fatalf("local[lite-llm] = %v, want %v", msg.local["lite-llm"], tc.offered)
+			}
+
+			a.handleAvailability(msg)
+			if got := a.providerAvailable("lite-llm"); got != tc.offered {
+				t.Fatalf("providerAvailable(lite-llm) = %v, want %v", got, tc.offered)
+			}
+		})
 	}
 }

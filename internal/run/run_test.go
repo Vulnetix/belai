@@ -778,12 +778,12 @@ func TestPrepareCustomProviderMissingAPIKey(t *testing.T) {
 			"my-llm": {BaseURL: "https://llm.example/v1", API: wire.SurfaceOpenAIChat, Auth: provider.AuthBearer},
 		},
 	}
-	_, status := Prepare("", "my-llm", src)
-	if status.Configured {
-		t.Fatal("expected not configured")
+	cfg, status := Prepare("", "my-llm", src)
+	if !status.Configured {
+		t.Fatalf("keyless custom should be configured (liveness decides), missing=%v", status.Missing)
 	}
-	if !sliceEqual(status.Missing, []string{"api_key"}) {
-		t.Fatalf("missing = %v, want [api_key]", status.Missing)
+	if cfg.APIKey != "signet" {
+		t.Fatalf("APIKey = %q, want the generic keyless placeholder", cfg.APIKey)
 	}
 }
 
@@ -1719,18 +1719,18 @@ func TestPrepareKindOllamaProfileNoKeyConfigured(t *testing.T) {
 	}
 }
 
-func TestPrepareGenericProfileStillRequiresKey(t *testing.T) {
+func TestPrepareGenericProfileKeylessConfigured(t *testing.T) {
 	src := fakeProfileSource{
 		profiles: map[string]provider.Profile{
 			"generic": {BaseURL: "https://x.example/v1", Kind: "openai-compatible", API: wire.SurfaceOpenAIChat, Auth: provider.AuthBearer},
 		},
 	}
-	_, status := Prepare("", "generic", src)
-	if status.Configured {
-		t.Fatal("generic profile without a key must not be configured")
+	cfg, status := Prepare("", "generic", src)
+	if !status.Configured {
+		t.Fatalf("keyless generic should be configured, missing=%v", status.Missing)
 	}
-	if !sliceEqual(status.Missing, []string{"api_key"}) {
-		t.Fatalf("missing = %v, want [api_key]", status.Missing)
+	if cfg.APIKey != "signet" {
+		t.Fatalf("APIKey = %q, want the generic keyless placeholder", cfg.APIKey)
 	}
 }
 

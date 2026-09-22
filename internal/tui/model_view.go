@@ -34,8 +34,10 @@ type modelViewState struct {
 	agentScope      string // session | global | project
 	classifierScope string // global | project
 
-	// classifierLastEffort preserves the effort chip across reasoning off/on.
+	// classifierLastEffort preserves the classifier effort chip across
+	// reasoning off/on; agentLastEffort does the same for the main model.
 	classifierLastEffort string
+	agentLastEffort      string
 
 	// sub-picker state, shared by agent and classifier model rows.
 	picking     bool
@@ -64,7 +66,11 @@ func (a *App) enterModel() tea.Cmd {
 	if last == "" {
 		last = "medium"
 	}
-	a.modelState = modelViewState{agentScope: agentScope, classifierScope: clsScope, classifierLastEffort: last}
+	agentLast := a.settings.Effort
+	if agentLast == "none" {
+		agentLast = ""
+	}
+	a.modelState = modelViewState{agentScope: agentScope, classifierScope: clsScope, classifierLastEffort: last, agentLastEffort: agentLast}
 	return tea.Batch(a.fetchCatalogCmd(a.cfg.Provider), a.availabilityCmdIfStale())
 }
 
@@ -320,7 +326,15 @@ func (a *App) modelRows() []modelRow {
 	origin := a.eff.Origin
 	var rows []modelRow
 
-	// Agent role.
+	agentOn := a.settings.Effort != "none"
+	agentEffortVal := a.settings.Effort
+	if !agentOn {
+		agentEffortVal = "none (reasoning off)"
+	} else if agentEffortVal == "" {
+		agentEffortVal = "—"
+	}
+
+	// Agent role — the global model settings.
 	rows = append(rows, modelRow{roleAgent, settingsRow{
 		key: "provider", label: "provider", kind: "choose",
 		opts: a.modelProviders(), value: a.providerDisplayLabel(a.cfg.Provider),
@@ -332,8 +346,29 @@ func (a *App) modelRows() []modelRow {
 	}})
 	rows = append(rows, modelRow{roleAgent, settingsRow{
 		key: "effort", label: "effort", kind: "choose",
-		opts: a.agentEffortOpts(), value: a.cfg.Effort,
-		src: sourceLabel(origin["effort"]),
+		opts: a.agentEffortOpts(), value: agentEffortVal,
+		src:      sourceLabel(origin["effort"]),
+		disabled: !agentOn,
+	}})
+	rows = append(rows, modelRow{roleAgent, settingsRow{
+		key: "reasoning", label: "reasoning", kind: "toggle",
+		value: boolLabel(agentOn), src: sourceLabel(origin["effort"]),
+	}})
+	rows = append(rows, modelRow{roleAgent, settingsRow{
+		key: "caveman", label: "caveman", kind: "toggle",
+		value: boolLabel(a.settings.CavemanEnabled()), src: sourceLabel(origin["caveman"]),
+	}})
+	rows = append(rows, modelRow{roleAgent, settingsRow{
+		key: "guardrails", label: "guardrails", kind: "toggle",
+		value: boolLabel(a.guardrailsEnabled()), src: sourceLabel(origin["guardrails"]),
+	}})
+	rows = append(rows, modelRow{roleAgent, settingsRow{
+		key: "ask", label: "ask", kind: "toggle",
+		value: boolLabel(a.askEnabled()), src: sourceLabel(origin["ask_permission"]),
+	}})
+	rows = append(rows, modelRow{roleAgent, settingsRow{
+		key: "firewall", label: "firewall", kind: "toggle",
+		value: boolLabel(a.firewallEnabled()), src: sourceLabel(origin["firewall_enabled"]),
 	}})
 	rows = append(rows, modelRow{roleAgent, settingsRow{
 		key: "scope", label: "scope", kind: "choose",
@@ -357,7 +392,6 @@ func (a *App) modelRows() []modelRow {
 	if on {
 		effortVal = cls.Effort
 	}
-	cavemanVal := boolLabel(a.settings.ClassifierCavemanEnabled()) + "  (prose payloads only)"
 	var chunkVal string
 	if cls != nil {
 		c := cls.Chunk
@@ -386,10 +420,6 @@ func (a *App) modelRows() []modelRow {
 		key: "effort", label: "effort", kind: "choose",
 		opts: a.classifierEffortOpts(), value: effortVal, src: src,
 		disabled: !on,
-	}})
-	rows = append(rows, modelRow{roleClassifier, settingsRow{
-		key: "caveman", label: "caveman", kind: "toggle",
-		value: cavemanVal, src: src,
 	}})
 	rows = append(rows, modelRow{roleClassifier, settingsRow{
 		key: "chunk", label: "chunk", kind: "text",
@@ -502,7 +532,7 @@ func (a *App) modelView() string {
 		b.WriteString("\n" + components.DangerStyle.Render("✗ "+a.modelState.errorMsg) + "\n")
 	}
 	b.WriteString("\n" + components.HelpBar(
-		"↑↓", "move", "⏎", "edit", "s", "scope", "x", "unset", "p", "providers", "esc", "back") + "\n")
+		"↑↓", "move", "⏎", "edit", "s", "scope", "c", "clear", "p", "providers", "esc", "back") + "\n")
 	return lipgloss.NewStyle().Padding(1).Render(b.String())
 }
 
@@ -586,7 +616,7 @@ func (a *App) handleModelKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, a.push(viewProviders)
 	case "s":
 		return a, a.cycleScope()
-	case "x":
+	case "c", "x":
 		return a, a.unsetModelRow()
 	case " ", "enter":
 		return a, a.changeModelRow()
@@ -710,10 +740,18 @@ func (a *App) changeModelRow() tea.Cmd {
 		}
 		return a.cycleClassifierEffort(row.opts)
 	case "reasoning":
+		if row.role == roleAgent {
+			return a.toggleAgentReasoning()
+		}
 		return a.toggleClassifierReasoning()
 	case "caveman":
-		on := !a.settings.ClassifierCavemanEnabled()
-		return a.mutateClassifier(func(c *config.ClassifierSettings) { c.Caveman = &on })
+		return a.toggleCaveman()
+	case "guardrails":
+		return a.toggleGuardrails()
+	case "ask":
+		return a.toggleAsk()
+	case "firewall":
+		return a.toggleFirewall()
 	case "scope":
 		return a.cycleScope()
 	}
@@ -743,6 +781,19 @@ func (a *App) unsetModelRow() tea.Cmd {
 				a.cfg.Effort = ""
 				a.settings.Effort = ""
 			})
+		case "reasoning":
+			return a.mutateAgent(func(s *config.Settings) { s.Effort = "" }, func() {
+				a.cfg.Effort = ""
+				a.settings.Effort = ""
+			})
+		case "caveman":
+			return a.clearCaveman()
+		case "guardrails":
+			return a.clearGuardrails()
+		case "ask":
+			return a.clearAsk()
+		case "firewall":
+			return a.clearFirewall()
 		}
 	case roleClassifier:
 		return a.unsetClassifierRow(row.key)
@@ -967,6 +1018,76 @@ func (a *App) toggleClassifierReasoning() tea.Cmd {
 	return a.mutateClassifier(func(c *config.ClassifierSettings) { c.Effort = restore })
 }
 
+// toggleAgentReasoning drives the main model's reasoning: off stores "none"
+// (the single value that suppresses the reasoning hint), on restores the
+// remembered effort, defaulting to the provider default ("").
+func (a *App) toggleAgentReasoning() tea.Cmd {
+	if a.settings.Effort != "none" {
+		a.modelState.agentLastEffort = a.settings.Effort
+		return a.mutateAgent(func(s *config.Settings) { s.Effort = "none" }, func() {
+			a.cfg.Effort = "none"
+			a.settings.Effort = "none"
+		})
+	}
+	restore := a.modelState.agentLastEffort
+	return a.mutateAgent(func(s *config.Settings) { s.Effort = restore }, func() {
+		a.cfg.Effort = restore
+		a.settings.Effort = restore
+	})
+}
+
+// clearCaveman resets the caveman project preference, falling back to the
+// settings-file value.
+func (a *App) clearCaveman() tea.Cmd {
+	if err := a.persistPref(func(p *config.ProjectPrefs) { p.Caveman = nil }); err != nil {
+		a.modelState.errorMsg = err.Error()
+		return nil
+	}
+	a.invalidateAgentSession()
+	return nil
+}
+
+// clearGuardrails resets the guardrails project preference and override.
+func (a *App) clearGuardrails() tea.Cmd {
+	a.guardrailsOverride = nil
+	if err := a.persistPref(func(p *config.ProjectPrefs) { p.Guardrails = nil }); err != nil {
+		a.modelState.errorMsg = err.Error()
+		return nil
+	}
+	a.invalidateAgentSession()
+	a.syncPosture()
+	return nil
+}
+
+// clearAsk resets the ask-permission project preference and override.
+func (a *App) clearAsk() tea.Cmd {
+	a.askOverride = nil
+	if err := a.persistPref(func(p *config.ProjectPrefs) { p.AskPermission = nil }); err != nil {
+		a.modelState.errorMsg = err.Error()
+		return nil
+	}
+	a.invalidateAgentSession()
+	a.syncPosture()
+	return nil
+}
+
+// clearFirewall resets the firewall project preference and override, then
+// re-resolves the gateway routing so the session stops routing through it.
+func (a *App) clearFirewall() tea.Cmd {
+	a.firewallOverride = nil
+	if err := a.persistPref(func(p *config.ProjectPrefs) { p.FirewallEnabled = nil }); err != nil {
+		a.modelState.errorMsg = err.Error()
+		return nil
+	}
+	if a.resolver != nil {
+		if cfg, err := a.resolveConfig(); err == nil {
+			a.cfg = cfg
+		}
+	}
+	a.refreshFooter()
+	return nil
+}
+
 // unsetClassifierRow clears one classifier field. Clearing provider/model drops
 // the block.
 func (a *App) unsetClassifierRow(key string) tea.Cmd {
@@ -979,8 +1100,6 @@ func (a *App) unsetClassifierRow(key string) tea.Cmd {
 			c.Model = ""
 		case "reasoning", "effort":
 			c.Effort = ""
-		case "caveman":
-			c.Caveman = nil
 		}
 	})
 }

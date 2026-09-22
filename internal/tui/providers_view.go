@@ -509,7 +509,7 @@ func (a *App) providerDetailCredentials(w int) string {
 		}
 	}
 
-	for j, f := range credentials.Spec(name) {
+	for j, f := range a.providerDetailSpec(name) {
 		v, ok := set.Values[f.Name]
 		status := components.MutedStyle.Width(16).Render("○ missing")
 		from := components.MutedStyle.Render("—")
@@ -568,7 +568,7 @@ func (a *App) providerDetailCredentials(w int) string {
 }
 
 func (a *App) providerDetailCredentialFieldCount() int {
-	return len(credentials.Spec(a.providerDetailState.provider))
+	return len(a.providerDetailSpec(a.providerDetailState.provider))
 }
 
 func (a *App) providerDetailModels(w int) string {
@@ -892,7 +892,7 @@ func (a *App) providerDetailCommitField() (tea.Model, tea.Cmd) {
 
 	val := strings.TrimSpace(a.editor.Value())
 	p := a.providerDetailState.provider
-	spec := credentials.Spec(p)
+	spec := a.providerDetailSpec(p)
 	if a.providerDetailState.fieldIdx < 0 || a.providerDetailState.fieldIdx >= len(spec) {
 		a.providerDetailState.fieldIdx = 0
 	}
@@ -966,7 +966,7 @@ func (a *App) providerDetailClearField() (tea.Model, tea.Cmd) {
 		return a, nil
 	}
 	p := a.providerDetailState.provider
-	spec := credentials.Spec(p)
+	spec := a.providerDetailSpec(p)
 	if a.providerDetailState.fieldIdx < 0 || a.providerDetailState.fieldIdx >= len(spec) {
 		return a, nil
 	}
@@ -1010,6 +1010,17 @@ func (a *App) refreshProviderDetail() {
 	}
 	a.providerDetailState.sets[p] = a.resolver.Resolve(p)
 	a.invalidateAvailability()
+}
+
+// providerDetailSpec returns the credential fields for a provider, honouring
+// a custom profile so a keyless instance shows an optional api_key rather
+// than a mandatory one.
+func (a *App) providerDetailSpec(name string) []credentials.Field {
+	var prof *config.ProviderProfile
+	if p, ok := a.settings.Providers[name]; ok {
+		prof = &p
+	}
+	return credentials.SpecFor(name, prof)
 }
 
 func (a *App) handleProviderDetailModelsKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {

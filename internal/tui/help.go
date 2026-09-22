@@ -130,7 +130,7 @@ func keySections() []keySection {
 			{"up, down", "move between rows"},
 			{"⏎", "edit the selected row"},
 			{"s", "cycle scope for the active role"},
-			{"x", "unset the selected row"},
+			{"c", "clear the selected row"},
 			{"p", "open /providers"},
 			{"esc", "back"},
 		}},

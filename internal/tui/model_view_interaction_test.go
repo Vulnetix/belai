@@ -45,7 +45,7 @@ func TestModelScopeKeyCyclesRoleScopes(t *testing.T) {
 		}
 	}
 
-	a.modelState.selected = 4 // classifier provider row
+	a.modelState.selected = 9 // classifier provider row
 	a.modelState.classifierScope = "project"
 	for _, want := range []string{"global", "project"} {
 		_, _ = a.handleModelKey(modelKey("s"))
@@ -172,7 +172,7 @@ func TestModelKeyUnsetAgentRows(t *testing.T) {
 	a.settings.Effort = "high"
 	a.cfg.Effort = "high"
 	a.modelState.selected = 2
-	_, _ = a.handleModelKey(modelKey("x"))
+	_, _ = a.handleModelKey(modelKey("c"))
 	if a.cfg.Effort != "" || a.settings.Effort != "" {
 		t.Fatalf("effort not cleared: cfg=%q settings=%q", a.cfg.Effort, a.settings.Effort)
 	}
@@ -180,7 +180,7 @@ func TestModelKeyUnsetAgentRows(t *testing.T) {
 	// Unset provider: the running config re-resolves to the default provider,
 	// which is openrouter's free router on an install that names none.
 	a.modelState.selected = 0
-	_, _ = a.handleModelKey(modelKey("x"))
+	_, _ = a.handleModelKey(modelKey("c"))
 	if a.cfg.Provider != "openrouter" {
 		t.Fatalf("provider = %q, want default openrouter after unset", a.cfg.Provider)
 	}
@@ -212,25 +212,17 @@ func TestModelKeyUnsetClassifierRows(t *testing.T) {
 	a.modelState.classifierScope = "project"
 
 	// Unset provider drops the provider+model pair.
-	a.modelState.selected = 4
-	_, _ = a.handleModelKey(modelKey("x"))
+	a.modelState.selected = 9
+	_, _ = a.handleModelKey(modelKey("c"))
 	if a.settings.Classifier.Provider != "" || a.settings.Classifier.Model != "" {
 		t.Fatalf("classifier provider/model not cleared: %+v", a.settings.Classifier)
 	}
 
 	// Unset effort.
-	a.modelState.selected = 7
-	_, _ = a.handleModelKey(modelKey("x"))
+	a.modelState.selected = 12
+	_, _ = a.handleModelKey(modelKey("c"))
 	if a.settings.Classifier.Effort != "" {
 		t.Fatalf("classifier effort = %q, want empty", a.settings.Classifier.Effort)
-	}
-
-	// Unset caveman. With no overrides left, the whole classifier block drops
-	// (IsZero), so accept either a nil block or a nil caveman pointer.
-	a.modelState.selected = 8
-	_, _ = a.handleModelKey(modelKey("x"))
-	if a.settings.Classifier != nil && a.settings.Classifier.Caveman != nil {
-		t.Fatalf("classifier caveman = %v, want cleared", a.settings.Classifier.Caveman)
 	}
 }
 
@@ -539,7 +531,7 @@ func TestModelKeyEnterOpensClassifierPicker(t *testing.T) {
 		t.Fatalf("reload settings: %v", err)
 	}
 	a.modelState.classifierScope = "project"
-	a.modelState.selected = 5 // classifier model row
+	a.modelState.selected = 10 // classifier model row
 
 	_, _ = a.handleModelKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if !a.modelState.picking || a.modelState.pickingRole != roleClassifier {
@@ -552,22 +544,22 @@ func TestModelKeyEnterOpensClassifierPicker(t *testing.T) {
 	}
 }
 
-func TestModelKeyTogglesClassifierCaveman(t *testing.T) {
+func TestModelKeyTogglesAgentCaveman(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 	a := newModelScreen(t, t.TempDir())
-	a.modelState.classifierScope = "project"
-	a.modelState.selected = 8 // classifier caveman row
+	a.modelState.agentScope = "global"
+	a.modelState.selected = 4 // agent caveman row
 
 	_, _ = a.handleModelKey(tea.KeyMsg{Type: tea.KeyEnter})
-	if !a.settings.ClassifierCavemanEnabled() {
-		t.Fatal("classifier caveman should be toggled on")
+	if !a.settings.CavemanEnabled() {
+		t.Fatal("agent caveman should be toggled on")
 	}
 }
 
 func TestModelChangeModelRowDisabledNoop(t *testing.T) {
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.rows = a.modelRows()
-	a.modelState.selected = 7 // classifier effort row, disabled when reasoning is off
+	a.modelState.selected = 12 // classifier effort row, disabled when reasoning is off
 
 	if cmd := a.changeModelRow(); cmd != nil {
 		t.Fatal("changeModelRow on a disabled row must be a no-op")
@@ -582,7 +574,7 @@ func TestModelKeyUnsetAgentModelRow(t *testing.T) {
 	a.cfg.Model = "gpt-4.1"
 
 	a.modelState.selected = 1 // agent model row
-	_, _ = a.handleModelKey(modelKey("x"))
+	_, _ = a.handleModelKey(modelKey("c"))
 	if a.cfg.Model != run.DefaultModel(a.cfg.Provider) {
 		t.Fatalf("model = %q, want the %s default after unset", a.cfg.Model, a.cfg.Provider)
 	}
@@ -602,9 +594,9 @@ func TestModelKeyUnsetClassifierModelRow(t *testing.T) {
 		t.Fatalf("reload settings: %v", err)
 	}
 	a.modelState.classifierScope = "project"
-	a.modelState.selected = 5 // classifier model row
+	a.modelState.selected = 10 // classifier model row
 
-	_, _ = a.handleModelKey(modelKey("x"))
+	_, _ = a.handleModelKey(modelKey("c"))
 	if a.settings.Classifier.Model != "" {
 		t.Fatalf("classifier model = %q, want empty after unset", a.settings.Classifier.Model)
 	}
@@ -638,5 +630,45 @@ func TestAgentEffortOptsDefaultFallback(t *testing.T) {
 	}
 	if got := a.classifierEffortOpts(); !slices.Equal(got, defaultModelEfforts) {
 		t.Fatalf("classifierEffortOpts = %v, want default efforts %v", got, defaultModelEfforts)
+	}
+}
+
+func TestModelKeyTogglesAgentReasoning(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("OPENAI_API_KEY", "sk-openai")
+	a := newModelScreen(t, t.TempDir())
+	a.modelState.agentScope = "session"
+	a.modelState.selected = 3 // agent reasoning row
+
+	// Default ("" = provider default) is reasoning on; toggling off writes "none".
+	_, _ = a.handleModelKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if a.settings.Effort != "none" || a.cfg.Effort != "none" {
+		t.Fatalf("effort = settings %q cfg %q, want none after reasoning off", a.settings.Effort, a.cfg.Effort)
+	}
+
+	// Toggling back on restores the remembered provider default ("").
+	a.modelState.rows = a.modelRows()
+	_, _ = a.handleModelKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if a.settings.Effort != "" {
+		t.Fatalf("effort = %q, want empty (provider default) after reasoning on", a.settings.Effort)
+	}
+}
+
+func TestModelKeyTogglesAgentGuardrails(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("OPENAI_API_KEY", "sk-openai")
+	a := newModelScreen(t, t.TempDir())
+	a.modelState.selected = 5 // agent guardrails row
+
+	_, _ = a.handleModelKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if a.guardrailsEnabled() {
+		t.Fatal("guardrails should be toggled off")
+	}
+
+	// Clear resets the pref and override back to the default (on).
+	a.modelState.rows = a.modelRows()
+	_, _ = a.handleModelKey(modelKey("c"))
+	if !a.guardrailsEnabled() {
+		t.Fatal("clearing guardrails should restore the default (on)")
 	}
 }

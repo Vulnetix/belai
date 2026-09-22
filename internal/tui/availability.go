@@ -62,7 +62,8 @@ const availabilityProbeTimeout = 5 * time.Second
 // provider is offered rather than none.
 type providerAvailability struct {
 	configured map[string]bool // credentials fully resolved
-	local      map[string]bool // local server answered GET /v1/models
+	local      map[string]bool // liveness-required provider answered its models endpoint
+	keyless    map[string]bool // custom providers with no api_key resolved
 	probedAt   time.Time
 	inFlight   bool
 	note       string // why the list fell back to everything, if it did
@@ -72,6 +73,7 @@ type providerAvailability struct {
 type availabilityMsg struct {
 	configured map[string]bool
 	local      map[string]bool
+	keyless    map[string]bool
 }
 
 // isLocalProvider reports whether a provider's availability is a running
@@ -120,7 +122,7 @@ func (a *App) availableProviders(pinned ...string) []string {
 		case keep[name]:
 		case !a.avail.configured[name]:
 			continue
-		case a.isLocalProvider(name) && !a.avail.local[name]:
+		case a.needsLiveness(name) && !a.avail.local[name]:
 			continue
 		}
 		out = append(out, name)
@@ -142,21 +144,32 @@ func (a *App) providerAvailable(name string) bool {
 	if !a.avail.configured[name] {
 		return false
 	}
-	return !a.isLocalProvider(name) || a.avail.local[name]
+	return !a.needsLiveness(name) || a.avail.local[name]
 }
 
-// probeAvailabilityCmd resolves credential completeness and pings the local
-// inference endpoints off the Update loop. Nothing inside the returned command
-// touches *App: the resolver and the provider list are captured first.
+// needsLiveness reports whether a provider's availability is a running server
+// rather than a stored credential: a built-in local provider, or a custom
+// provider with no api_key resolved. Both answer only when their models
+// endpoint responds.
+func (a *App) needsLiveness(name string) bool {
+	return a.isLocalProvider(name) || a.avail.keyless[name]
+}
+
+// probeAvailabilityCmd resolves credential completeness and pings the
+// liveness-required endpoints off the Update loop: built-in local servers and
+// custom providers with no api_key. Nothing inside the returned command
+// touches *App: the resolver and the settings snapshot are captured first.
 //
-// The local ping is a bare GET /v1/models carrying no credentials and no
-// content, to a host the user already configured for inference.
+// The ping is a bare GET /v1/models carrying no credentials and no content,
+// to a host the user already configured for inference.
 func (a *App) probeAvailabilityCmd() tea.Cmd {
 	res := a.resolver
 	if res == nil {
 		return nil
 	}
 	a.avail.inFlight = true
+	settings := a.settings
+	localNames := localProviders(settings)
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), availabilityProbeTimeout)
 		defer cancel()
@@ -166,12 +179,32 @@ func (a *App) probeAvailabilityCmd() tea.Cmd {
 			configured[name] = true
 		}
 
+		// Keyless custom providers need a liveness answer rather than a
+		// stored key.
+		keyless := map[string]bool{}
+		for name := range settings.Providers {
+			if provider.Builtin(name) {
+				continue
+			}
+			if _, _, ok := res.Lookup(name, "api_key"); !ok {
+				keyless[name] = true
+			}
+		}
+
 		// Resolve the base URLs first, on this goroutine. Resolver.Lookup
 		// fills lazy caches (netrc, keychain availability) without a lock, so
 		// two concurrent run.Prepare calls race on them. Resolution is local
 		// and cheap; the dial is what is worth parallelising.
 		bases := map[string]string{}
-		for _, name := range localProviders(a.settings) {
+		for _, name := range localNames {
+			if !configured[name] {
+				continue
+			}
+			if cfg, _ := run.Prepare("", name, credentialSourceOf(res)); cfg.BaseURL != "" {
+				bases[name] = cfg.BaseURL
+			}
+		}
+		for name := range keyless {
 			if !configured[name] {
 				continue
 			}
@@ -180,7 +213,7 @@ func (a *App) probeAvailabilityCmd() tea.Cmd {
 			}
 		}
 
-		// Probe the local endpoints concurrently: a dead one costs a dial
+		// Probe the endpoints concurrently: a dead one costs a dial
 		// timeout, and serialising them would double the wait.
 		local := map[string]bool{}
 		var mu sync.Mutex
@@ -197,7 +230,7 @@ func (a *App) probeAvailabilityCmd() tea.Cmd {
 		}
 		wg.Wait()
 
-		return availabilityMsg{configured: configured, local: local}
+		return availabilityMsg{configured: configured, local: local, keyless: keyless}
 	}
 }
 
@@ -215,6 +248,7 @@ func credentialSourceOf(res *credentials.Resolver) run.CredentialSource {
 func (a *App) handleAvailability(m availabilityMsg) tea.Cmd {
 	a.avail.configured = m.configured
 	a.avail.local = m.local
+	a.avail.keyless = m.keyless
 	a.avail.probedAt = time.Now()
 	a.avail.inFlight = false
 	return nil

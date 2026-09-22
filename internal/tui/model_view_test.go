@@ -30,14 +30,14 @@ func TestModelRowsReflectSettings(t *testing.T) {
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
 	_ = a.enterModel()
 	rows := a.modelRows()
-	if len(rows) != 11 {
-		t.Fatalf("len(rows) = %d, want 11", len(rows))
+	if len(rows) != 15 {
+		t.Fatalf("len(rows) = %d, want 15", len(rows))
 	}
 	if rows[0].role != roleAgent || rows[0].key != "provider" {
 		t.Fatalf("first row = %+v, want agent provider", rows[0])
 	}
-	if rows[4].role != roleClassifier || rows[4].key != "provider" {
-		t.Fatalf("classifier provider row = %+v", rows[4])
+	if rows[9].role != roleClassifier || rows[9].key != "provider" {
+		t.Fatalf("classifier provider row = %+v", rows[9])
 	}
 }
 
@@ -46,7 +46,7 @@ func TestModelAgentScopeCanBeCycled(t *testing.T) {
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
 	_ = a.enterModel()
 	a.modelState.rows = a.modelRows()
-	a.modelState.selected = 3 // agent scope row
+	a.modelState.selected = 8 // agent scope row
 	_ = a.cycleScope()
 	if a.modelState.agentScope != "global" {
 		t.Fatalf("agent scope = %q, want global", a.modelState.agentScope)
@@ -103,9 +103,9 @@ func TestModelClassifierReasoningToggleDrivesEffort(t *testing.T) {
 	}
 	_ = a.enterModel()
 
-	// Selected row must be the reasoning toggle (index 6).
+	// Selected row must be the reasoning toggle (index 11).
 	a.modelState.rows = a.modelRows()
-	a.modelState.selected = 6
+	a.modelState.selected = 11
 	a.modelState.classifierScope = "project"
 	_ = a.changeModelRow()
 	if a.settings.Classifier.Effort != "none" {
@@ -138,7 +138,7 @@ func TestModelViewGroupsRolesWithPerRoleBadges(t *testing.T) {
 	}
 
 	// Select a classifier row and render again.
-	a.modelState.selected = 4
+	a.modelState.selected = 9
 	viewClassifier := a.modelView()
 	if !strings.Contains(viewClassifier, "CLASSIFIER") {
 		t.Fatal("expected CLASSIFIER group header")
@@ -246,7 +246,7 @@ func TestModelScopeKeyCyclesRoleScopeNotRowOptions(t *testing.T) {
 	}
 
 	// Same for the classifier provider row.
-	a.modelState.selected = 4
+	a.modelState.selected = 9
 	a.modelState.classifierScope = "project"
 	_ = a.cycleScope()
 	if a.modelState.classifierScope != "global" {
