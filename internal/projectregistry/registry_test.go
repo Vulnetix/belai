@@ -200,3 +200,115 @@ func TestRaceManyObserves(t *testing.T) {
 		t.Fatalf("entries = %d, want %d", len(reg.All()), n)
 	}
 }
+
+func TestTrustCreatesEntryAndAcceptedDirs(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	dir := t.TempDir()
+	extra := t.TempDir()
+	if err := Trust(dir, []string{extra}); err != nil {
+		t.Fatalf("Trust: %v", err)
+	}
+	trusted, accepted, declined, err := TrustOf(dir)
+	if err != nil {
+		t.Fatalf("TrustOf: %v", err)
+	}
+	if !trusted {
+		t.Fatal("expected trusted")
+	}
+	want := mustEvalSymlinks(t, extra)
+	if len(accepted) != 1 || accepted[0] != want {
+		t.Fatalf("accepted = %v, want [%s]", accepted, want)
+	}
+	if len(declined) != 0 {
+		t.Fatalf("declined = %v, want none", declined)
+	}
+	ws := WorkspaceDirs(dir)
+	if len(ws) != 1 || ws[0] != want {
+		t.Fatalf("workspace dirs = %v, want [%s]", ws, want)
+	}
+}
+
+func TestTrustIdempotent(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	dir := t.TempDir()
+	if err := Trust(dir, nil); err != nil {
+		t.Fatalf("Trust: %v", err)
+	}
+	if err := Trust(dir, nil); err != nil {
+		t.Fatalf("Trust again: %v", err)
+	}
+	trusted, accepted, _, err := TrustOf(dir)
+	if err != nil {
+		t.Fatalf("TrustOf: %v", err)
+	}
+	if !trusted || len(accepted) != 0 {
+		t.Fatalf("trusted=%v accepted=%v", trusted, accepted)
+	}
+	reg, _ := Load()
+	if len(reg.All()) != 1 {
+		t.Fatalf("entries = %d, want one", len(reg.All()))
+	}
+}
+
+func TestTrustOverlappingDirRejectedWithoutMarkingTrust(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	dir := t.TempDir()
+	outer := t.TempDir()
+	inner := filepath.Join(outer, "inner")
+	if err := os.MkdirAll(inner, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := Trust(dir, []string{outer}); err != nil {
+		t.Fatalf("Trust: %v", err)
+	}
+	if err := Trust(dir, []string{inner}); err == nil {
+		t.Fatal("expected overlap rejection for a nested dir")
+	}
+	trusted, accepted, _, err := TrustOf(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !trusted {
+		t.Fatal("trust from the first call must remain")
+	}
+	if len(accepted) != 1 {
+		t.Fatalf("accepted = %v, want only the outer dir", accepted)
+	}
+}
+
+func TestOldFormatLoadsUntrusted(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	dir := t.TempDir()
+	if err := Observe(dir, SourceWorkdir); err != nil {
+		t.Fatal(err)
+	}
+	reg, _ := Load()
+	if len(reg.All()) != 1 {
+		t.Fatalf("entries = %d", len(reg.All()))
+	}
+	// Zero the trust fields and re-save: this reproduces a projects.json
+	// written by the old format, which must read back as untrusted.
+	reg.file.Entries[0].Trusted = false
+	reg.file.Entries[0].TrustedAt = time.Time{}
+	reg.file.Entries[0].AcceptedProjectDirs = nil
+	reg.file.Entries[0].DeclinedProjectDirs = nil
+	if err := reg.save(); err != nil {
+		t.Fatal(err)
+	}
+	trusted, _, _, err := TrustOf(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trusted {
+		t.Fatal("an old-format entry must load as untrusted")
+	}
+}
+
+func mustEvalSymlinks(t *testing.T, p string) string {
+	t.Helper()
+	got, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return p
+	}
+	return got
+}

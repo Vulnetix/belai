@@ -833,6 +833,9 @@ func New(opts Options) *App {
 		a.showCredentialMessage(initial.Provider, nil)
 	}
 	for _, note := range eff.Notes {
+		if strings.HasPrefix(note, "project workspace_dirs ignored") && !a.workspaceDirsIgnoredNoteStillValid() {
+			continue
+		}
 		a.addSystem(note)
 	}
 
@@ -1645,6 +1648,12 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 	}
 	ix := repoindex.Scan(context.Background(), p.workdir)
 	reg := tools.DefaultWithCaps(p.workdir, p.settings.ReadOnlyEnabled(), caps, ix)
+	// Activated workspace dirs become real confinement roots, so a restored
+	// (or trust-accepted) directory is not just advertised but actually
+	// reachable through SanitizePath.
+	for _, d := range p.workspaceDirs {
+		_ = reg.Cwd().AddRoot(d)
+	}
 	if len(p.toolAllow) > 0 {
 		// An engaged background definition brings its allowlist with it, the
 		// same narrowing internal/bgagent applies when it runs the definition

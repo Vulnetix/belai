@@ -28,6 +28,7 @@ import (
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/session"
 	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/signet/internal/trustgate"
 	"github.com/vulnetix/signet/internal/tui"
 	"github.com/vulnetix/signet/internal/version"
 )
@@ -45,6 +46,7 @@ func main() {
 	go hardExitOnSecondSignal(ctx)
 
 	showVersion := flag.Bool("version", false, "print version and exit")
+	trustDir := flag.Bool("trust-dir", false, "trust the current directory without prompting")
 	prompt := flag.String("prompt", "", "send a noninteractive prompt and print the reply, then exit")
 	model := flag.String("model", "", "model id (defaults per provider)")
 	provider := flag.String("provider", "", "provider (default openrouter): openai, anthropic, cloudflare-workers-ai, cloudflare-ai-gateway, openrouter, google-gemini, ollama, llama-server, github-copilot, huggingface, or a custom name from settings.json")
@@ -100,6 +102,40 @@ func main() {
 	}
 
 	workdir, _ := os.Getwd()
+
+	// First-run trust gate: block on an unknown directory before any repo
+	// content is read, any process is auto-started, or any model turn runs.
+	st, terr := trustgate.Check(workdir)
+	switch {
+	case terr != nil || st.NeedsPrompt():
+		if *trustDir && !st.Trusted {
+			// Grant trust to the directory only; proposed workspace_dirs are
+			// not accepted, so the flag can never silently widen the sandbox.
+			if err := trustgate.Grant(workdir, nil); err != nil {
+				fmt.Fprintln(os.Stderr, "signet: trust directory:", err)
+				os.Exit(1)
+			}
+			if len(st.NewDirs) > 0 {
+				fmt.Fprintf(os.Stderr, "signet: trusted %s; skipping proposed workspace directories: %s\n",
+					workdir, strings.Join(st.NewDirs, ", "))
+			}
+		} else if interactive(isCharDevice(os.Stdout), isCharDevice(os.Stdin), os.Getenv) {
+			ok, err := tui.RunTrustGate(st)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "signet: trust dialog:", err)
+				os.Exit(1)
+			}
+			if !ok && !st.Trusted {
+				os.Exit(1)
+			}
+		} else {
+			// Headless fails closed: no model turn runs in an untrusted
+			// directory without an explicit opt-in.
+			fmt.Fprintf(os.Stderr, "signet: %s is not a trusted workspace.\n"+
+				"Run `signet` here once to review and trust it, or `signet -trust-dir`.\n", workdir)
+			os.Exit(1)
+		}
+	}
 
 	settings, err := config.LoadMerged(workdir)
 	if err != nil {

@@ -127,6 +127,7 @@ signet -provider anthropic -model claude-sonnet-4-5 -prompt "review this diff"
 | `-continue`, `-c` | continue the most recent session for the current project |
 | `-verbose` | print mode and security decisions to stderr |
 | `-version` | print the version and exit |
+| `-trust-dir` | trust the current directory without prompting (grants the directory only, not its proposed workspace dirs) |
 
 Signet starts the UI only when both stdin and stdout are a terminal, so it is safe in pipelines and CI.
 

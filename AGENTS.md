@@ -50,10 +50,20 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
 - **The confinement boundary is a fixed root set unless the user widens it.**
   The primary working directory is the default confinement root. The only way
   to add roots is an explicit `/add-dir` command confirmed by the user.
-  Project-level `workspace_dirs` settings propose directories; they do not
-  activate unless the global `allow_project_workspace_dirs` opt-in is set.
+  Project-level `workspace_dirs` settings propose directories. They never
+  activate from the settings layer (`resolve.go` still drops them without the
+  global `allow_project_workspace_dirs` opt-in). They activate only when the
+  user accepts them by name — in the first-run trust confirmation for that
+  directory, or with `/add-dir`. The accepted set is recorded per project; a
+  directory the project adds afterwards is not covered and prompts again.
   A path outside every root is refused outright, and roots cannot overlap so
   a single path is never resolvable two ways.
+- **First-run directories are gated on explicit trust.** A directory with no
+  `trusted:true` entry in the global registry blocks startup with a
+  confirmation before any repo content is read, any process is auto-started,
+  or any model turn runs. Headless invocations fail closed; `-trust-dir` is the
+  only bypass and grants trust to the directory only, never its proposed
+  `workspace_dirs`. Guardrails-off does not skip the gate.
 - **Path resolution is root-relative, not process-relative.** A path argument
   may be an absolute filesystem path under any root (primary or added, longest
   match first), a path relative to the working directory, or — when it starts

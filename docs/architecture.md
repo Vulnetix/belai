@@ -578,6 +578,38 @@ extra roots so the model knows the boundary. `Cd` still moves only inside
 the primary root; added roots are reached by naming absolute paths. This is
 a deliberate, user-confirmed relaxation of the default single-root invariant.
 
+### First-run workspace trust
+
+Signet refuses to touch a directory it has never seen without an explicit
+"yes". `internal/trustgate` computes the decision from
+`internal/projectregistry`: an `Entry` carries `trusted` / `trusted_at` plus
+`accepted_project_dirs` / `declined_project_dirs` for the project-proposed
+`workspace_dirs` the user has already ruled on. The gate runs in
+`cmd/signet/main.go` immediately after `os.Getwd()` and **before**
+`config.LoadMerged`, so no settings merge, posture load, repo-map scan, or
+`autoStartProcesses` can happen in an untrusted directory.
+
+- An unknown directory (no entry, or `trusted:false`) blocks startup with the
+  absolute path and any proposed `workspace_dirs` listed in an amber panel;
+  the cursor defaults to *No*. Esc is decline.
+- A trusted directory whose settings grew a new `workspace_dirs` entry prompts
+  for **only** the new directories. Declining records them in
+  `declined_project_dirs` and continues normally; it does not exit.
+- Headless invocations (`-prompt`, `-agent`, `-agent-create`, or any non-TTY
+  run) fail closed with a message naming the directory and how to trust it.
+- `-trust-dir` trusts the directory only — never its proposed
+  `workspace_dirs`, which are printed as skipped — so the flag can never
+  silently widen the sandbox. Guardrails-off does not skip the gate.
+- Accepting trust is the same standing confirmation `/add-dir` has: the
+  accepted directories run through the registry's `Abs → EvalSymlinks →
+  IsDir → overlap` checks and land in both `workspace_dirs` and
+  `accepted_project_dirs`. `internal/tui` installs them as real confinement
+  roots (`Registry.Cwd().AddRoot`) when the agent session is built, so a
+  trust-activated directory is not merely advertised to the model.
+- Trust is keyed by `session.WorkdirKey(abs)` without resolving symlinks, so
+  reaching the same repository through a symlinked path prompts again. That
+  errs closed and is deliberate.
+
 The `Cd` tool takes one `path` and reports where it landed
 (`working directory: /internal/tools`, or `working directory: / (session
 root)`). It reads nothing and writes nothing, so it is `KindNative` —

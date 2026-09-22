@@ -143,3 +143,29 @@ func TestAllowlistedSessionKeepsCwdTracker(t *testing.T) {
 		t.Fatal("an allowlisted session must keep the working-directory tracker")
 	}
 }
+
+// A session built with workspace dirs must install them as real confinement
+// roots, so a trust-activated or restored directory is reachable, not just
+// advertised to the model.
+func TestBuildAgentSessionAddsWorkspaceRoots(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	root := t.TempDir()
+	extra := t.TempDir()
+	a := New(Options{Workdir: root})
+	a.workspaceDirs = []string{extra}
+
+	sess, err := buildAgentSession(a.sessionBuildParams())
+	if err != nil {
+		t.Fatalf("buildAgentSession: %v", err)
+	}
+	roots := sess.Cwd().Roots()
+	found := false
+	for _, r := range roots {
+		if r == extra {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("roots = %v, want to include %s", roots, extra)
+	}
+}

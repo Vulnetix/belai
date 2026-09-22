@@ -75,6 +75,16 @@ type Entry struct {
 	// WorkspaceDirs are additional directories added to the session with
 	// /add-dir and persisted globally for this project.
 	WorkspaceDirs []string `json:"workspace_dirs,omitempty"`
+	// Trusted records that the user explicitly affirmed this directory on
+	// first launch. Missing entries (or trusted:false) prompt again, and a
+	// repo cannot ship its own trust: this lives in the global registry only.
+	Trusted   bool      `json:"trusted,omitempty"`
+	TrustedAt time.Time `json:"trusted_at,omitempty"`
+	// AcceptedProjectDirs / DeclinedProjectDirs record project-proposed
+	// workspace_dirs the user has already ruled on, so a folder that grows its
+	// list later prompts again and a declined directory does not nag.
+	AcceptedProjectDirs []string `json:"accepted_project_dirs,omitempty"`
+	DeclinedProjectDirs []string `json:"declined_project_dirs,omitempty"`
 }
 
 // File is the on-disk JSON shape.
@@ -400,20 +410,9 @@ func (r *Registry) addWorkspaceDir(workdir, dir string) error {
 		return fmt.Errorf("no registry entry for %s", workdir)
 	}
 
-	abs, err := filepath.Abs(dir)
+	abs, err := normalizeDir(dir)
 	if err != nil {
 		return err
-	}
-	abs, err = filepath.EvalSymlinks(abs)
-	if err != nil {
-		return err
-	}
-	info, err := os.Stat(abs)
-	if err != nil {
-		return err
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("not a directory: %s", dir)
 	}
 
 	for _, existing := range e.WorkspaceDirs {
@@ -423,6 +422,98 @@ func (r *Registry) addWorkspaceDir(workdir, dir string) error {
 	}
 	e.WorkspaceDirs = append(e.WorkspaceDirs, abs)
 	return nil
+}
+
+// normalizeDir absolutises dir, resolves symlinks and requires a directory.
+// It is the one rule for turning a user-supplied path into a persisted root.
+func normalizeDir(dir string) (string, error) {
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	abs, err = filepath.EvalSymlinks(abs)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("not a directory: %s", dir)
+	}
+	return abs, nil
+}
+
+// Trust records that the user affirms workdir and accepts the given proposed
+// workspace directories. It registers a non-git directory too, and routes each
+// accepted dir through the same Abs → EvalSymlinks → IsDir → overlap checks as
+// /add-dir, so a bad dir fails the whole trust without marking it.
+func Trust(workdir string, accept []string) error {
+	return Mutate(func(r *Registry) error {
+		r.observe(workdir, SourceWorkdir)
+		for _, d := range accept {
+			if err := r.addWorkspaceDir(workdir, d); err != nil {
+				return err
+			}
+		}
+		e := r.entryByKey(entryKey(workdir))
+		if e == nil {
+			return fmt.Errorf("no registry entry for %s", workdir)
+		}
+		e.Trusted = true
+		e.TrustedAt = time.Now()
+		for _, d := range accept {
+			abs, err := normalizeDir(d)
+			if err != nil {
+				return err
+			}
+			e.AcceptedProjectDirs = appendUnique(e.AcceptedProjectDirs, abs)
+		}
+		return nil
+	})
+}
+
+// Decline records that the user refused the given proposed workspace
+// directories for workdir, so they are not offered again.
+func Decline(workdir string, dirs []string) error {
+	return Mutate(func(r *Registry) error {
+		r.observe(workdir, SourceWorkdir)
+		e := r.entryByKey(entryKey(workdir))
+		if e == nil {
+			return nil
+		}
+		for _, d := range dirs {
+			abs, err := filepath.Abs(d)
+			if err != nil {
+				abs = d
+			}
+			e.DeclinedProjectDirs = appendUnique(e.DeclinedProjectDirs, abs)
+		}
+		return nil
+	})
+}
+
+// TrustOf reports whether workdir is trusted and which project-proposed
+// directories have been accepted or declined, read-only.
+func TrustOf(workdir string) (trusted bool, accepted, declined []string, err error) {
+	reg, err := Load()
+	if err != nil {
+		return false, nil, nil, err
+	}
+	if e := reg.entryByKey(entryKey(workdir)); e != nil {
+		return e.Trusted, e.AcceptedProjectDirs, e.DeclinedProjectDirs, nil
+	}
+	return false, nil, nil, nil
+}
+
+func appendUnique(list []string, s string) []string {
+	for _, v := range list {
+		if v == s {
+			return list
+		}
+	}
+	return append(list, s)
 }
 
 // WorkspaceDirs returns the persisted additional workspace directories for

@@ -163,7 +163,7 @@ func writeChat(w http.ResponseWriter, content string) {
 func runSignet(t *testing.T, baseURL string, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
 	var out, errb bytes.Buffer
-	cmd := exec.Command(signetBin, args...)
+	cmd := exec.Command(signetBin, append([]string{"-trust-dir"}, args...)...)
 	env := append(os.Environ(), "SIGNET_BASE_URL="+baseURL, "OPENAI_API_KEY=test")
 	if os.Getenv("SIGNET_HOME") == "" {
 		home := filepath.Join(t.TempDir(), "signet-home")
@@ -210,6 +210,55 @@ func TestSafePromptProceeds(t *testing.T) {
 	}
 	if len(mp.chatSys) != 1 || !strings.Contains(mp.chatSys[0], `nonce="`) || !strings.Contains(mp.chatSys[0], `integrity="`) {
 		t.Fatalf("final chat system prompt was not sealed: %q", mp.chatSys)
+	}
+}
+
+// TestUntrustedDirFailsClosed pins the first-run trust gate's headless path:
+// a noninteractive invocation in an unknown directory exits non-zero before any
+// model turn, and the same invocation with -trust-dir proceeds.
+func TestUntrustedDirFailsClosed(t *testing.T) {
+	srv, _ := newMockServer(t)
+	defer srv.Close()
+
+	dir := t.TempDir()
+	home := filepath.Join(t.TempDir(), "signet-home")
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		t.Fatalf("mkdir home: %v", err)
+	}
+
+	run := func(extra ...string) (string, string, int) {
+		var out, errb bytes.Buffer
+		args := append([]string{"-tools=false", "-provider", "openai", "-model", "test", "-prompt", "hi"}, extra...)
+		cmd := exec.Command(signetBin, args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(), "SIGNET_BASE_URL="+srv.URL, "OPENAI_API_KEY=test", "SIGNET_HOME="+home)
+		cmd.Stdout = &out
+		cmd.Stderr = &errb
+		code := 0
+		if err := cmd.Run(); err != nil {
+			if ee, ok := err.(*exec.ExitError); ok {
+				code = ee.ExitCode()
+			} else {
+				t.Fatalf("run signet: %v", err)
+			}
+		}
+		return out.String(), errb.String(), code
+	}
+
+	_, errOut, code := run()
+	if code == 0 {
+		t.Fatalf("expected nonzero exit for untrusted dir")
+	}
+	if !strings.Contains(errOut, "not a trusted workspace") {
+		t.Fatalf("stderr = %q, want trust-refusal message", errOut)
+	}
+
+	out, _, code := run("-trust-dir")
+	if code != 0 {
+		t.Fatalf("-trust-dir exit = %d, want 0", code)
+	}
+	if !strings.Contains(out, "mock reply") {
+		t.Fatalf("stdout = %q", out)
 	}
 }
 
@@ -394,7 +443,7 @@ func TestCustomProviderFromProjectSettings(t *testing.T) {
 	}
 
 	var out, errb bytes.Buffer
-	cmd := exec.Command(signetBin, "-provider", "my-llm", "-model", "m1", "-prompt", "hello")
+	cmd := exec.Command(signetBin, "-trust-dir", "-provider", "my-llm", "-model", "m1", "-prompt", "hello")
 	cmd.Dir = workdir
 	cmd.Env = append(os.Environ(), "SIGNET_BASE_URL="+srv.URL, "MY_LLM_KEY=test", "SIGNET_HOME="+home)
 	cmd.Stdout = &out
@@ -424,7 +473,7 @@ func TestFirewallOnRoutesThroughStubGateway(t *testing.T) {
 
 	var out, errb bytes.Buffer
 	cmd := exec.Command(signetBin,
-		"-provider", "openai", "-model", "test", "-prompt", "firewall on", "--firewall")
+		"-trust-dir", "-provider", "openai", "-model", "test", "-prompt", "firewall on", "--firewall")
 	cmd.Env = append(os.Environ(),
 		"SIGNET_BASE_URL="+srv.URL,
 		"OPENAI_API_KEY=provider-key",
@@ -556,7 +605,7 @@ func runSignetDir(t *testing.T, dir, baseURL string, args ...string) (stdout, st
 func runSignetDirWithGlobal(t *testing.T, dir, baseURL, globalSettings string, args ...string) (stdout, stderr string, code int) {
 	t.Helper()
 	var out, errb bytes.Buffer
-	cmd := exec.Command(signetBin, args...)
+	cmd := exec.Command(signetBin, append([]string{"-trust-dir"}, args...)...)
 	cmd.Dir = dir
 	// Isolate global state so the developer's (or CI's) local settings cannot
 	// change the posture/policy under test.
@@ -1052,7 +1101,7 @@ func TestGoalModePassLoopSIGINT(t *testing.T) {
 	dir := t.TempDir()
 	global := `{"resilience":{"max_iterations":2}}`
 
-	cmd := exec.Command(signetBin, "-tools", "-allow-ask-without-tty", "-provider", "openai", "-model", "test", "-prompt", "ship the thing")
+	cmd := exec.Command(signetBin, "-trust-dir", "-tools", "-allow-ask-without-tty", "-provider", "openai", "-model", "test", "-prompt", "ship the thing")
 	cmd.Dir = dir
 	home := filepath.Join(t.TempDir(), "signet-home")
 	if err := os.MkdirAll(home, 0o700); err != nil {

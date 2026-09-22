@@ -125,7 +125,7 @@ func TestProcessStartAndRecovery(t *testing.T) {
 		t.Fatalf("write settings: %v", err)
 	}
 
-	cmd := exec.Command(signetBin, "-provider", "openai", "-model", "test")
+	cmd := exec.Command(signetBin, "-trust-dir", "-provider", "openai", "-model", "test")
 	cmd.Dir = dir
 	// The TUI is skipped when CI is set (cmd/signet/main.go's interactive()
 	// gate), and GitHub Actions sets CI=true. Strip it — and SIGNET_NO_TUI —

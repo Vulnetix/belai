@@ -83,6 +83,7 @@ just ask anthropic claude-sonnet-4-5 "review this diff" -detect-mode -verbose
 | `-continue`, `-c` | continue the most recent session for the current project; rejected with `-resume` or `-prompt` |
 | `-verbose` | print Role Manager decisions and the security sentinel to stderr |
 | `-version` | print the version and exit |
+| `-trust-dir` | trust the current directory without prompting (grants the directory only, never its proposed `workspace_dirs`) |
 
 Every posture gate also has a flag (`-allow-unsafe-tool-result`,
 `-allow-malformed-tool-result`, `-allow-unsafe-prompt`,

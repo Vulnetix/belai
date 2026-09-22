@@ -14,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/projectregistry"
 	"github.com/vulnetix/signet/internal/repomap"
 	"github.com/vulnetix/signet/internal/tui/components"
@@ -78,6 +79,43 @@ func (a *App) loadWorkspaceDirs() []tea.Cmd {
 		cmds = append(cmds, a.workspaceMapScanCmd(d))
 	}
 	return cmds
+}
+
+// workspaceDirsIgnoredNoteStillValid reports whether the "project
+// workspace_dirs ignored" resolve note still applies. Once every proposed
+// directory is already an active root (accepted through the trust gate or
+// /add-dir), the note is misleading and is suppressed.
+func (a *App) workspaceDirsIgnoredNoteStillValid() bool {
+	proj, err := config.LoadProject(a.workdir)
+	if err != nil || len(proj.WorkspaceDirs) == 0 {
+		return true
+	}
+	active := map[string]bool{}
+	for _, d := range a.workspaceDirs {
+		active[d] = true
+	}
+	for _, d := range proj.WorkspaceDirs {
+		if !active[workspaceDirAbs(a.workdir, d)] {
+			return true
+		}
+	}
+	return false
+}
+
+// workspaceDirAbs absolutises a project-proposed directory against workdir,
+// resolving symlinks when the directory exists.
+func workspaceDirAbs(workdir, dir string) string {
+	if !filepath.IsAbs(dir) {
+		dir = filepath.Join(workdir, dir)
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		return dir
+	}
+	if eval, err := filepath.EvalSymlinks(abs); err == nil {
+		return eval
+	}
+	return abs
 }
 
 // workspaceMapScanCmd returns a tea.Cmd that scans dir for a repo map.
