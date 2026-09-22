@@ -37,6 +37,9 @@ const (
 	EventBoundaryVerifyFailure     Event = "boundary_verify_failure"
 	EventToolCallMismatch          Event = "tool_call_mismatch"
 	EventAgentPoolAdmit            Event = "agent_pool_admit"
+	EventLSPDetect                 Event = "lsp_detect"
+	EventLSPDiagnose               Event = "lsp_diagnose"
+	EventLSPServerDown             Event = "lsp_server_down"
 )
 
 // Level is the display granularity of the internal-work feed. Order matters:
@@ -222,6 +225,12 @@ func Describe(a Activity) (Description, bool) {
 		return compactionDescription(a), true
 	case EventSessionName:
 		return sessionNameDescription(a), true
+	case EventLSPDiagnose:
+		return lspDiagnoseDescription(a), true
+	case EventLSPDetect:
+		return lspDetectDescription(a), true
+	case EventLSPServerDown:
+		return lspServerDownDescription(a), true
 	}
 	return Description{}, false
 }
@@ -384,6 +393,61 @@ func sessionNameDescription(a Activity) Description {
 		Summary: "Tried to name this session",
 		Outcome: "reply was unusable — left it unnamed",
 		Tone:    ToneNeutral,
+		Levels:  LevelDecisions,
+	}
+}
+
+// lspDiagnoseDescription renders one language-server diagnostics check.
+func lspDiagnoseDescription(a Activity) Description {
+	lang := langPhrase(a.Subject)
+	d := Description{
+		Summary: "Checked the " + lang + " file Signet just edited",
+		Levels:  LevelAll,
+	}
+	switch a.Verdict {
+	case "problems":
+		d.Outcome = countOr("count", a.Detail, "some") + " problems reported"
+		d.Tone = ToneCaution
+	case "clean":
+		d.Outcome = "no problems"
+		d.Tone = ToneClear
+	case "warming":
+		d.Outcome = "language server still starting — skipped"
+		d.Tone = ToneNeutral
+	case "unavailable":
+		d.Outcome = "no checker available"
+		d.Tone = ToneNeutral
+	case "timeout":
+		d.Outcome = "took too long — skipped"
+		d.Tone = ToneNeutral
+	default:
+		d.Outcome = "couldn't tell"
+		d.Tone = ToneCaution
+	}
+	return d
+}
+
+func lspDetectDescription(a Activity) Description {
+	lang := langPhrase(a.Subject)
+	server := field(a.Detail, "server")
+	outcome := "none installed"
+	if server != "" {
+		outcome = "found " + server
+	}
+	return Description{
+		Summary: "Looked for a " + lang + " language server",
+		Outcome: outcome,
+		Tone:    ToneNeutral,
+		Levels:  LevelAll,
+	}
+}
+
+func lspServerDownDescription(a Activity) Description {
+	lang := langPhrase(a.Subject)
+	return Description{
+		Summary: "The " + lang + " language server stopped responding",
+		Outcome: "fell back to a syntax check",
+		Tone:    ToneCaution,
 		Levels:  LevelDecisions,
 	}
 }

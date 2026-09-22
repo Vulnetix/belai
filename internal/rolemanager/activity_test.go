@@ -28,6 +28,9 @@ var allEvents = []Event{
 	EventBoundaryVerifyFailure,
 	EventToolCallMismatch,
 	EventAgentPoolAdmit,
+	EventLSPDetect,
+	EventLSPDiagnose,
+	EventLSPServerDown,
 }
 
 func TestEveryEventHasDescribeOrSuppression(t *testing.T) {
