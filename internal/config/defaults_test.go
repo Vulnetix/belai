@@ -67,6 +67,33 @@ func TestSettingsAccessorDefaults(t *testing.T) {
 			"allow_project_providers", Settings.AllowProjectProvidersEnabled,
 			func(s *Settings, v *bool) { s.AllowProjectProviders = v }, false,
 		},
+		{
+			"lsp_enabled", Settings.LSPEnabled,
+			func(s *Settings, v *bool) {
+				if s.LSP == nil {
+					s.LSP = &LSPSettings{}
+				}
+				s.LSP.Enabled = v
+			}, true,
+		},
+		{
+			"lsp_fallback", Settings.LSPFallbackEnabled,
+			func(s *Settings, v *bool) {
+				if s.LSP == nil {
+					s.LSP = &LSPSettings{}
+				}
+				s.LSP.Fallback = v
+			}, true,
+		},
+		{
+			"lsp_classify_diagnostics", Settings.LSPClassifyDiagnostics,
+			func(s *Settings, v *bool) {
+				if s.LSP == nil {
+					s.LSP = &LSPSettings{}
+				}
+				s.LSP.ClassifyDiagnostics = v
+			}, false,
+		},
 	}
 
 	for _, tc := range tests {
