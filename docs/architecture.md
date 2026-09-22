@@ -86,9 +86,11 @@ Business rules:
   to load or verify is a hard startup error, never a silent downgrade to the
   LLM path. Extraction and load happen once, eagerly.
 - **Windowing.** The local models hard-error past 512 tokens and do not
-  truncate. The ML path windows by BERT tokens (`window_tokens` 510,
-  `window_overlap` 1/8, `max_windows` 64) inside `internal/mlclassify`,
-  independent of the LLM `chunk` bounds. Beyond `max_windows` it fails closed.
+  truncate. The ML path windows by BERT tokens inside `internal/mlclassify`,
+  independent of the LLM `chunk` bounds. Content is limited to 508 tokens per
+  window (512 minus [CLS]/[SEP] minus a 2-token safety margin for rare
+  wordpiece boundary effects) with 1/8 overlap and a 64-window ceiling. Beyond
+  `max_windows` it fails closed.
 - **Chunked classify-all** (LLM path only): content over `chunk.max_bytes` is
   split into overlapping chunks (default 1/8 overlap, aligned to rune
   boundaries) and classified concurrently (default 4). Verdicts fold

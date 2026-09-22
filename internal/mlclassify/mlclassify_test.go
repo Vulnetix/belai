@@ -132,6 +132,31 @@ func TestWindowsShortContentSingleWindow(t *testing.T) {
 	}
 }
 
+// TestWindowsDefaultBudgetLeavesHeadroom guards the default window token limit.
+// The embedded BERT models enforce max_position_embeddings=512 and add
+// [CLS]/[SEP]; the default therefore cannot be 510 because re-tokenizing a
+// substring at a wordpiece boundary can occasionally produce one or two extra
+// content tokens. That caused "input sequence too long: 513 > 512" errors on
+// long Read tool results. The safety margin keeps every window under the model
+// limit.
+func TestWindowsDefaultBudgetLeavesHeadroom(t *testing.T) {
+	c := &Classifier{window: WindowConfig{}, tok: wordTokenizer}
+	if got := c.window.tokens(); got != maxPositionEmbeddings-4 {
+		t.Fatalf("default token budget = %d, want %d", got, maxPositionEmbeddings-4)
+	}
+
+	// 508 tokens should stay a single window, but 509 must be split because
+	// any re-tokenization headroom must not push it over 512 total.
+	got := c.mustWindows(t, strings.Repeat("t ", 508))
+	if len(got) != 1 {
+		t.Fatalf("508-token content should fit one window, got %d", len(got))
+	}
+	got = c.mustWindows(t, strings.Repeat("t ", 509))
+	if len(got) < 2 {
+		t.Fatalf("509-token content must be split, got %d windows", len(got))
+	}
+}
+
 func TestClassifyPhase1FiresSkipsPhase2And3(t *testing.T) {
 	p1 := &fakeGate{ph: Phase1, sentinel: rolemanager.SentinelPromptInjection}
 	p2 := &fakeGate{ph: Phase2, sentinel: rolemanager.SentinelSafe}

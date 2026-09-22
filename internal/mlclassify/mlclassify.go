@@ -96,12 +96,19 @@ func (m ModelConfig) threshold() float64 {
 // value the classifier actually enforces.
 func (m ModelConfig) ThresholdOr() float64 { return m.threshold() }
 
+// maxPositionEmbeddings is the BERT sequence length the embedded models enforce.
+// The model counts [CLS]/[SEP], so the content token budget is two less.
+const maxPositionEmbeddings = 512
+
 // WindowConfig bounds token windowing of oversized content. The local models
-// hard-error past max_position_embeddings (512) tokens and do not truncate, so
-// windowing is the caller's responsibility.
+// hard-error past max_position_embeddings and do not truncate, so windowing is
+// the caller's responsibility.
 type WindowConfig struct {
-	// Tokens is the maximum wordpiece tokens per window, minus [CLS]/[SEP].
-	// Zero means 510.
+	// Tokens is the maximum wordpiece tokens per window, minus [CLS]/[SEP] and
+	// a small safety margin. The margin covers rare cases where re-tokenizing a
+	// substring can produce one or two extra wordpiece tokens because the
+	// surrounding context at a window boundary changes how the first/last word
+	// is split. Zero means 508.
 	Tokens int
 	// Overlap is the number of tokens adjacent windows share, so an injection
 	// straddling a boundary is still seen whole by at least one window. Zero
@@ -114,7 +121,8 @@ type WindowConfig struct {
 
 func (w WindowConfig) tokens() int {
 	if w.Tokens <= 0 {
-		return 510
+		// Budget: 512 - 2 special tokens - 2 safety margin = 508.
+		return maxPositionEmbeddings - 4
 	}
 	return w.Tokens
 }
