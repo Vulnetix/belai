@@ -8,6 +8,7 @@ import permMerge from '../../assets/concepts/permission-merge.svg?raw';
 import guardSwitch from '../../assets/concepts/guardrails-switch.svg?raw';
 import fanOut from '../../assets/concepts/fan-out.svg?raw';
 import credRes from '../../assets/concepts/credential-resolution.svg?raw';
+import processSupervision from '../../assets/concepts/process-supervision.svg?raw';
 
 import planReviewShot from '../../assets/shots/plan-review.svg';
 import approvalDiffShot from '../../assets/shots/approval-diff.svg';
@@ -35,7 +36,7 @@ import localModelShot from '../../assets/shots/local-model.svg';
       </p>
       <p class="mt-4 text-vx-ink/80">
         <strong>Plan</strong> reads before it changes. The surface is fail-closed with <code class="mono">Bash</code> absent,
-        not present-but-gated: a model cannot call what is not advertised. A read-only
+        not present-but-gated: a model cannot call what is not advertised. A read-only{' '}
         <code class="mono">Bash</code> returns only under an explicit allow rule, and the plan is a structured,
         persisted document you approve.
       </p>
@@ -61,9 +62,9 @@ import localModelShot from '../../assets/shots/local-model.svg';
     <div class="prose-measure">
       <h2 class="text-3xl font-bold text-vx-ink">Tools.</h2>
       <p class="mt-4 text-vx-ink/80">
-        A fixed-argv native catalogue of read-only utilities: <code class="mono">Cat</code>, <code class="mono">Head</code>,
+        A fixed-argv native catalogue of read-only utilities: <code class="mono">Cat</code>, <code class="mono">Head</code>,{' '}
         <code class="mono">Git</code>, <code class="mono">JQ</code>, <code class="mono">Find</code>, <code class="mono">Diff</code>, and about 19 more. Each is
-        backed by a specific binary and a fixed argument shape passed straight to
+        backed by a specific binary and a fixed argument shape passed straight to{' '}
         <code class="mono">exec.Command</code>, never through a shell. Arbitrary command strings are rejected.
       </p>
       <p class="mt-4 text-vx-ink/80">
@@ -94,7 +95,7 @@ import localModelShot from '../../assets/shots/local-model.svg';
       </p>
       <p class="mt-4 text-vx-ink/80">
         No rules yet? Every tool call is allowed, and the <code class="mono">permission_no_match</code> setting flips
-        that default to enforce. The guardrails switch reaches every surface: agent session, inline
+        that default to enforce. The guardrails switch reaches every surface: agent session, inline{' '}
         <code class="mono">!cmd</code>, <code class="mono">@file</code> admission, background agents, the CLI. A gated path checks the
         level <em>before</em> calling the classifier, never after.
       </p>
@@ -131,7 +132,37 @@ import localModelShot from '../../assets/shots/local-model.svg';
   </div>
 </SealedSection>
 
-<SealedSection label="providers" sealText="Providers and local inference: five-layer credential resolution with provenance, ollama and llama-server in the box, a /local-model assess verdict, and the classifier on a separate local model." id="providers">
+<SealedSection label="processes" sealText="Supervised processes: !!cmd starts a long-lived command with no model turn, the library keeps it per project or globally, logs stream to disk, and a bounded recovery subagent may change flags but never the binary." id="processes">
+  <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
+    <div class="prose-measure">
+      <h2 class="text-3xl font-bold text-vx-ink">Supervised processes.</h2>
+      <p class="mt-4 text-vx-ink/80">
+        <code class="mono">!!cmd</code> starts a long-lived command — a dev server, a watcher, a tunnel —
+        under the harness instead of in another terminal. No model turn is sent for it. The command is
+        written verbatim into the project&rsquo;s process library, so the next session in this directory
+        can start it again, and enabled entries auto-start when you return.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        <code class="mono">/processes</code> manages the library across project and global scope. Output
+        streams to a log file under <code class="mono">~/.vulnetix/signet/logs</code> and into the{' '}
+        <code class="mono">f9</code> runs panel, where <code class="mono">v</code> opens the live tail
+        full-screen and <code class="mono">x</code> kills the process group. A finished process still opens
+        its tail, because the log outlives the run.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        When a process exits non-zero, a <strong>recovery subagent</strong> wakes with the read-only plan
+        surface plus two tools: <code class="mono">SubAgentLog</code> to read the tail, and{' '}
+        <code class="mono">ProcessRestart</code> to try again. Its authority is bounded on purpose. The
+        restart may change flags but never the binary — <code class="mono">argv[0]</code> is pinned — deny
+        rules still apply, and every attempt spends one slot. At the cap the process is marked failed and
+        no further model call is made.
+      </p>
+    </div>
+    <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={processSupervision} /></div>
+  </div>
+</SealedSection>
+
+<SealedSection label="providers" sealText="Providers and local inference: five-layer credential resolution with provenance, ollama and llama-server in the box, multiple named instances with display labels, a /local-model assess verdict, and a classifier role with its own kind and phase rows." id="providers">
   <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
     <div class="prose-measure">
       <h2 class="text-3xl font-bold text-vx-ink">Providers &amp; local inference.</h2>
@@ -146,12 +177,27 @@ import localModelShot from '../../assets/shots/local-model.svg';
         picker but stays in <code class="mono">/credentials</code>, so nothing silently re-picks an unavailable host.
       </p>
       <p class="mt-4 text-vx-ink/80">
+        Run as many named instances as you need. A provider profile can carry a <code class="mono">kind</code>{' '}
+        (<code class="mono">ollama</code>, <code class="mono">llama-server</code>, <code class="mono">openai-compatible</code>){' '}
+        that templates it from a built-in descriptor, and a friendly label in{' '}
+        <code class="mono">provider_labels</code> that <code class="mono">/providers</code>,{' '}
+        <code class="mono">/model</code>, the footer and the <code class="mono">-provider</code> flag all accept. A
+        second Ollama on another box is a config entry, not a fork.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
         <code class="mono">/local-model</code> assesses a candidate against the classifier probe before you trust
         it with a session: fit, notes, and the gap against the hosted baseline.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        The security classifier can run on a separate local model, so untrusted content is judged on
-        hardware you control instead of being sent off the machine.
+        The security classifier is its own role, with its own row on <code class="mono">/model</code>. The{' '}
+        <code class="mono">kind</code> row picks the stack — <code class="mono">models</code> for the embedded BERT
+        gates, <code class="mono">llm</code> for the sentinel — and the phase rows state exactly which model is
+        judging your untrusted content, including when phase 3 is off. Point it at a separate local
+        model and nothing leaves the machine at all.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        The other sentinel families — mode select, goal contract, clarify, plan eval, goal eval,
+        compaction — keep inheriting the main provider and model. Only the security path switched.
       </p>
     </div>
     <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={credRes} /></div>
@@ -167,7 +213,7 @@ import localModelShot from '../../assets/shots/local-model.svg';
   </div>
 </SealedSection>
 
-<SealedSection label="vulnetix" sealText="Vulnetix integration: the AI Firewall routes traffic, the code scanner reviews repositories, and /vulnetix review, firewall, and status are built in. Free for everyone." id="vulnetix">
+<SealedSection label="vulnetix" sealText="Vulnetix integration: the AI Firewall routes traffic, nine code scanners run in parallel lanes, findings come back as classified triage with a dry-run fix plan, and /vulnetix review, firewall, and status are built in. Free for everyone." id="vulnetix">
   <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
     <div class="order-2 lg:order-1 rounded-lg border border-vx-ink p-2" aria-hidden="true">
       <img src={footerShot.src} alt="The status footer showing the firewall chip" class="block h-auto w-full" loading="lazy" />
@@ -182,14 +228,28 @@ import localModelShot from '../../assets/shots/local-model.svg';
         claim that survives an unreachable gateway.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        <a class="underline" href="https://www.vulnetix.com/features/code-scanner">Code Scanner</a>
+        <a class="underline" href="https://www.vulnetix.com/features/code-scanner">Code Scanner</a>{' '}
         reviews repositories and surfaces findings without promoting raw snippets into the
-        transcript. Artifact content is shown in the TUI, never sent as a trusted system block.
-        <code class="mono">/vulnetix review</code> runs the configured subcommands, <code class="mono">firewall</code> toggles the
+        transcript. Artifact content is shown in the TUI, never sent as a trusted system block.{' '}
+        <code class="mono">/vulnetix review</code> runs the scanners, <code class="mono">firewall</code> toggles the
         gateway, and <code class="mono">status</code> prints capabilities.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        The platform also ships an <a class="underline" href="https://www.vulnetix.com/features/mcp-server">MCP server</a>.
+        A review runs nine scanners — <code class="mono">sca</code>, <code class="mono">containers</code>,{' '}
+        <code class="mono">sast</code>, <code class="mono">secrets</code>, <code class="mono">iac</code>,{' '}
+        <code class="mono">malscan</code>, <code class="mono">sbom</code>, <code class="mono">aibom</code>,{' '}
+        <code class="mono">cbom</code> — eight of them concurrently, in fixed lanes so two scanners never
+        race for the same artifact file. Killing one row does not stop the rest, and a review scan runs
+        until it exits rather than dying on a timeout.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        The findings then come back as triage. Bounded report blocks are sanitised, classified, and
+        dropped unless the classifier says proceed; dependency findings route to a{' '}
+        <code class="mono">vulnetix fix</code> plan that is dry-run unless you opted into autofix, and code
+        findings route to the live session under the normal permission prompts.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        The platform also ships an <a class="underline" href="https://www.vulnetix.com/features/mcp-server">MCP server</a>.{' '}
         The scanners, the firewall, and the MCP server are free for everyone. The baseline that
         platforms eventually copy is already public.
       </p>

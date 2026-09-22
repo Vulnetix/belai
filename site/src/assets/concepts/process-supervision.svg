@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 340" width="640" height="340" role="img" aria-label="Supervised processes: a long-lived command is started by the supervisor, its log is streamed to disk, and a failure wakes a bounded recovery subagent that may only restart with changed flags">
+  <style>
+    .box { fill: #FFF8ED; stroke: #001614; stroke-width: 2; }
+    .lbl { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 13px; fill: #001614; }
+    .sub { font-family: 'Geist Mono', ui-monospace, monospace; font-size: 10.5px; fill: #009484; }
+    .wire { stroke: #001614; stroke-width: 2; fill: none; }
+    .warn { stroke: #FCA326; stroke-width: 2; fill: none; }
+    .beat { animation: beat 3.6s ease-in-out infinite; }
+    @keyframes beat { 0%,100%{ opacity:.4 } 40%,60%{ opacity:.95 } }
+    @media (prefers-reduced-motion: reduce){ .beat{ animation:none; opacity:.85 } }
+  </style>
+  <rect x="0" y="0" width="640" height="340" rx="18" class="box"/>
+  <text x="24" y="36" class="lbl" font-weight="bold">supervised processes</text>
+
+  <!-- command in -->
+  <g transform="translate(24 70)">
+    <rect width="150" height="56" rx="8" class="box"/>
+    <text x="14" y="24" class="lbl">!!npm run dev</text>
+    <text x="14" y="42" class="sub">no model turn sent</text>
+  </g>
+
+  <!-- supervisor -->
+  <g transform="translate(212 70)">
+    <rect width="184" height="56" rx="8" class="box"/>
+    <rect class="beat" x="2" y="2" width="180" height="52" rx="6" fill="#66DCC8" opacity="0.35"/>
+    <text x="14" y="24" class="lbl">supervisor</text>
+    <text x="14" y="42" class="sub">lock file · lifecycle</text>
+  </g>
+  <path class="wire" d="M174 98 H212"/>
+
+  <!-- log -->
+  <g transform="translate(434 70)">
+    <rect width="182" height="56" rx="8" class="box"/>
+    <text x="14" y="24" class="lbl">log stream</text>
+    <text x="14" y="42" class="sub">~/.vulnetix/signet/logs</text>
+  </g>
+  <path class="wire" d="M396 98 H434"/>
+
+  <!-- failure path -->
+  <path class="warn" d="M304 126 V158"/>
+  <text x="316" y="148" class="sub">non-zero exit</text>
+
+  <g transform="translate(212 158)">
+    <rect width="214" height="62" rx="8" class="box"/>
+    <text x="14" y="24" class="lbl">recovery subagent</text>
+    <text x="14" y="42" class="sub">read-only plan surface plus</text>
+    <text x="14" y="55" class="sub">SubAgentLog · ProcessRestart</text>
+  </g>
+
+  <path class="warn" d="M426 190 H442"/>
+  <g transform="translate(442 158)">
+    <rect width="174" height="62" rx="8" class="box"/>
+    <text x="14" y="24" class="lbl">restart, flags only</text>
+    <text x="14" y="42" class="sub">argv[0] pinned</text>
+    <text x="14" y="55" class="sub">deny rules still apply</text>
+  </g>
+
+  <text x="24" y="248" class="sub">every attempt spends one recovery slot · at the cap the process is</text>
+  <text x="24" y="262" class="sub">marked failed and no further model call is made</text>
+
+  <g transform="translate(24 276)">
+    <rect width="592" height="44" rx="8" fill="#001614"/>
+    <text x="16" y="28" font-family="'Geist Mono', ui-monospace, monospace" font-size="13" fill="#66DCC8">bounded authority: it may change flags, never the binary</text>
+  </g>
+</svg>

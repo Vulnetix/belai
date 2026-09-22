@@ -62,6 +62,7 @@ func main() {
 		"permissions":     permissions(),
 		"agents-roster":   agentsRoster(),
 		"model-picker":    modelPicker(),
+		"classifier":      classifier(),
 		"local-model":     localModel(),
 		"exit-card":       exitCard(),
 	}
@@ -320,6 +321,21 @@ func modelPicker() string {
 		components.HelpBar("↑/↓", "select", "enter", "choose", "esc", "back")
 }
 
+// classifier renders the /model classifier rows for the three-phase ML stack:
+// the kind row, the two local phase gates, and the derived phase-3 status row.
+func classifier() string {
+	head := components.SectionHeader("model", "role · classifier", width)
+	var rows []string
+	rows = append(rows, classifierRow("kind", "models", "embedded · locked", components.ColorTeal))
+	rows = append(rows, classifierRow("phase 1", "GuardrailsAI/prompt-saturation-attack-detector", "embedded", components.ColorTeal))
+	rows = append(rows, classifierRow("phase 2", "jackhhao/jailbreak-classifier", "disabled", components.ColorMuted))
+	rows = append(rows, classifierRow("phase 3", "off — set classifier provider + model to enable", "extraction only", components.ColorAmber))
+	rows = append(rows, components.Rule(width))
+	rows = append(rows, components.MutedStyle.Render("phases 1 and 2 run in-process over the same token windows; phase 3 is opt-in and adds nothing else."))
+	return head + strings.Join(rows, "\n") + "\n\n" +
+		components.HelpBar("↑/↓", "select", "tab", "cycle", "esc", "back")
+}
+
 // localModel renders a /local-model assess verdict.
 func localModel() string {
 	head := components.SectionHeader("local model", "/local-model · assess", width)
@@ -368,6 +384,12 @@ func perm(name, state string, colour lipgloss.TerminalColor) string {
 func agentRow(name, state string, colour lipgloss.TerminalColor, selected bool) string {
 	return components.Cursor(selected) + components.EmphStyle.Render(name) +
 		components.MutedStyle.Render("  ") + components.Chip(state, colour)
+}
+
+// classifierRow renders one /model classifier row as label · value · state chip.
+func classifierRow(label, value, state string, colour lipgloss.TerminalColor) string {
+	return components.MutedStyle.Render(label) + components.MutedStyle.Render("  ") +
+		components.EmphStyle.Render(value) + components.MutedStyle.Render("  ") + components.Chip(state, colour)
 }
 
 // modelRow renders one model picker row with a selected marker.
