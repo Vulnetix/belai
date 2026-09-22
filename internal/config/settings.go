@@ -202,7 +202,7 @@ type ClassifierPhaseSettings struct {
 	// Source is "embedded", "huggingface", or (phase 2 only) "disabled".
 	Source string `json:"source,omitempty"`
 	// Threshold is the attack-probability threshold at or above which the
-	// gate fires. Zero means the default (0.5).
+	// gate fires. Zero means the default (mlclassify.DefaultThreshold, 0.75).
 	Threshold float64 `json:"threshold,omitempty"`
 }
 

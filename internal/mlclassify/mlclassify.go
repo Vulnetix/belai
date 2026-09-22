@@ -67,7 +67,8 @@ type ModelConfig struct {
 	// Source selects embedded vs remote weights.
 	Source ModelSource
 	// Threshold is the attack-probability threshold at or above which the
-	// gate fires. Zero or negative means the default (0.5).
+	// gate fires. Zero or negative means the default
+	// (DefaultThreshold, 0.75).
 	Threshold float64
 	// AttackLabel is the classifier label that means "attack" (for example
 	// "LABEL_1" on the phase-1 model, "jailbreak" on phase 2). Remote gates
@@ -75,12 +76,25 @@ type ModelConfig struct {
 	AttackLabel string
 }
 
+// DefaultThreshold is the attack-probability threshold a phase gate uses when
+// none is configured. It is deliberately above the midpoint: the local models
+// over-trigger on benign coding-harness text, so the default favours precision
+// (fewer false blocks) while staying a hard gate for high-confidence attacks.
+// Users can tune it per phase via classifier.phaseN.threshold, the
+// -classifier-phaseN-threshold flags, or the /model phase rows.
+const DefaultThreshold = 0.75
+
 func (m ModelConfig) threshold() float64 {
 	if m.Threshold <= 0 {
-		return 0.5
+		return DefaultThreshold
 	}
 	return m.Threshold
 }
+
+// ThresholdOr returns the effective attack threshold, defaulting when unset.
+// It is the exported form of threshold for the TUI, which must render the same
+// value the classifier actually enforces.
+func (m ModelConfig) ThresholdOr() float64 { return m.threshold() }
 
 // WindowConfig bounds token windowing of oversized content. The local models
 // hard-error past max_position_embeddings (512) tokens and do not truncate, so

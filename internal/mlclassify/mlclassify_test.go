@@ -62,6 +62,18 @@ func newTestClassifier(t *testing.T, phase1, phase2 *fakeGate, llm rolemanager.C
 	return c
 }
 
+func TestModelConfigThresholdDefaults(t *testing.T) {
+	if got := (ModelConfig{}).ThresholdOr(); got != DefaultThreshold {
+		t.Fatalf("default threshold = %.2f, want %.2f", got, DefaultThreshold)
+	}
+	if got := (ModelConfig{Threshold: 0.9}).ThresholdOr(); got != 0.9 {
+		t.Fatalf("explicit threshold = %.2f, want 0.9", got)
+	}
+	if got := (ModelConfig{Threshold: -1}).ThresholdOr(); got != DefaultThreshold {
+		t.Fatalf("negative threshold = %.2f, want default %.2f", got, DefaultThreshold)
+	}
+}
+
 func TestFoldPrecedence(t *testing.T) {
 	cases := []struct {
 		a, b, want rolemanager.Sentinel

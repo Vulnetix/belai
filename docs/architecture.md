@@ -29,9 +29,9 @@ chain: default < state < global < project prefs < project < env < flag):
   "caveman":  false,              // voices PROSE payloads only
   "chunk": { "max_bytes": 1048576, "concurrency": 4 },
   "phase1": { "model": "GuardrailsAI/prompt-saturation-attack-detector",
-              "source": "embedded", "threshold": 0.5 },
+              "source": "embedded", "threshold": 0.75 },
   "phase2": { "model": "jackhhao/jailbreak-classifier",
-              "source": "disabled", "threshold": 0.5 }
+              "source": "disabled", "threshold": 0.75 }
 }
 ```
 
@@ -70,6 +70,12 @@ Business rules:
 - **Separate provider** (LLM path): a `classifier.provider` that differs from
   the main provider is resolved through the same credential backends with its
   own credentials. Missing credentials fail closed with `ErrNotConfigured`.
+- **Thresholds are user-adjustable and default high.** Each phase gate fires
+  only at or above its attack-probability threshold, and the default is 0.75
+  rather than 0.5: the local models over-trigger on benign coding-harness
+  text, so the higher default favours precision (fewer false blocks). Tune per
+  phase via `classifier.phaseN.threshold`, `-classifier-phaseN-threshold`, or
+  the `/model` phase-threshold rows.
 - **Embedded models fail closed.** A variant binary whose embedded model fails
   to load or verify is a hard startup error, never a silent downgrade to the
   LLM path. Extraction and load happen once, eagerly.
