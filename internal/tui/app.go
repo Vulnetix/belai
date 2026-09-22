@@ -2963,10 +2963,13 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			a.messages = a.messages[:last]
 		}
 		// A partially streamed assistant bubble keeps its accumulated text: the
-		// turn is over, so flush the builder back into Content.
+		// turn is over, so flush the builder back into Content, then write the
+		// settled tail. A failed turn must still leave its model responses and
+		// tool results on disk for /resume.
 		if last := len(a.messages) - 1; last >= 0 && a.messages[last].Role == "assistant" {
 			a.messages[last].Materialise()
 		}
+		a.persistTail()
 		if m.Err != nil {
 			a.addSystem("agent error: " + m.Err.Error())
 		}
