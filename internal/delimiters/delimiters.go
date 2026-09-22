@@ -33,6 +33,10 @@ const KindExploration = "exploration"
 // any untrusted path is stripped by the sanitizer.
 const KindDirective = "directive"
 
+// KindDiagnostics is the delimiter kind for language-server diagnostics. It
+// wraps server-composed text, so an integrity attribute is mandatory.
+const KindDiagnostics = "diagnostics"
+
 // KnownKinds is the set of harness block kinds the engine manages. Tags with
 // any other kind (e.g. arbitrary HTML in user content) are left untouched.
 var KnownKinds = map[string]bool{
@@ -46,6 +50,7 @@ var KnownKinds = map[string]bool{
 	KindAttachment:  true,
 	KindExploration: true,
 	KindDirective:   true,
+	KindDiagnostics: true,
 }
 
 // NonceChecker reports whether a nonce is currently valid (present in the
@@ -185,7 +190,7 @@ func valid(attrs, content string, checker NonceChecker, kind string) bool {
 		return false
 	}
 	integ, present := parsed["integrity"]
-	if kind == KindAttachment || kind == KindDirective {
+	if kind == KindAttachment || kind == KindDirective || kind == KindDiagnostics {
 		if !present || integ == "" {
 			return false
 		}
