@@ -227,6 +227,15 @@ func main() {
 	}
 	posture.PrintBanner(pol, os.Stderr)
 
+	// Eagerly load the embedded classifier models so a variant binary whose
+	// embedded model fails to load or verify is a hard startup error, never a
+	// silent downgrade to the LLM sentinel path. A vanilla binary resolves to
+	// kind "llm" and this is a no-op.
+	if err := run.PreloadClassifier(run.ResolveSecurityClassifier(settings.Classifier)); err != nil {
+		fmt.Fprintln(os.Stderr, "signet: load embedded classifier:", err)
+		os.Exit(1)
+	}
+
 	// Resolve --resume / --continue before the TUI starts so a bad id (or an
 	// empty project) exits non-zero with a message instead of dropping the user
 	// into a TUI to discover the failure.
