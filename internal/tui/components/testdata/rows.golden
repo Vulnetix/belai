@@ -30,7 +30,7 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 === tool_wrapping w=32
 ╭─ signet ─────────────────────╮
-│ ⌁ Bash  go build ./...     ✓ │
+│ ⌁ Bash  Exec(go build ./.  ✓ │
 │   a single very long line of │
 │   output that has to wrap    │
 │   several times before it    │
@@ -38,38 +38,38 @@
 ╰──────────────────────────────╯
 === tool_wrapping w=41
 ╭─ signet ──────────────────────────────╮
-│ ⌁ Bash  go build ./...              ✓ │
+│ ⌁ Bash  Exec(go build ./...)        ✓ │
 │   a single very long line of output   │
 │   that has to wrap several times      │
 │   before it runs out of things to say │
 ╰───────────────────────────────────────╯
 === tool_wrapping w=53
 ╭─ signet ──────────────────────────────────────────╮
-│ ⌁ Bash  go build ./...                          ✓ │
+│ ⌁ Bash  Exec(go build ./...)                    ✓ │
 │   a single very long line of output that has to   │
 │   wrap several times before it runs out of things │
 │   to say                                          │
 ╰───────────────────────────────────────────────────╯
 === tool_wrapping w=60
 ╭─ signet ─────────────────────────────────────────────────╮
-│ ⌁ Bash  go build ./...                                 ✓ │
+│ ⌁ Bash  Exec(go build ./...)                           ✓ │
 │   a single very long line of output that has to wrap     │
 │   several times before it runs out of things to say      │
 ╰──────────────────────────────────────────────────────────╯
 === tool_wrapping w=80
 ╭─ signet ─────────────────────────────────────────────────────────────────────╮
-│ ⌁ Bash  go build ./...                                                     ✓ │
+│ ⌁ Bash  Exec(go build ./...)                                               ✓ │
 │   a single very long line of output that has to wrap several times before it │
 │   runs out of things to say                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 === tool_wrapping w=120
 ╭─ signet ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ ⌁ Bash  go build ./...                                                                                             ✓ │
+│ ⌁ Bash  Exec(go build ./...)                                                                                       ✓ │
 │   a single very long line of output that has to wrap several times before it runs out of things to say               │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 === tool_error w=32
 ╭─ signet ─────────────────────╮
-│ ⌁ Bash  go test ./...      ✗ │
+│ ⌁ Bash  Exec(go test ./..  ✗ │
 │   FAIL                       │
 │   github.com/vulnetix/signet │
 │   /internal/run    0.2s      │
@@ -77,7 +77,7 @@
 ╰──────────────────────────────╯
 === tool_error w=41
 ╭─ signet ──────────────────────────────╮
-│ ⌁ Bash  go test ./...               ✗ │
+│ ⌁ Bash  Exec(go test ./...)         ✗ │
 │   FAIL                                │
 │   github.com/vulnetix/signet/internal │
 │   /run    0.2s                        │
@@ -85,33 +85,33 @@
 ╰───────────────────────────────────────╯
 === tool_error w=53
 ╭─ signet ──────────────────────────────────────────╮
-│ ⌁ Bash  go test ./...                           ✗ │
+│ ⌁ Bash  Exec(go test ./...)                     ✗ │
 │   FAIL    github.com/vulnetix/signet/internal/run │
 │   0.2s                                            │
 │   exit status 1                                   │
 ╰───────────────────────────────────────────────────╯
 === tool_error w=60
 ╭─ signet ─────────────────────────────────────────────────╮
-│ ⌁ Bash  go test ./...                                  ✗ │
+│ ⌁ Bash  Exec(go test ./...)                            ✗ │
 │   FAIL    github.com/vulnetix/signet/internal/run        │
 │   0.2s                                                   │
 │   exit status 1                                          │
 ╰──────────────────────────────────────────────────────────╯
 === tool_error w=80
 ╭─ signet ─────────────────────────────────────────────────────────────────────╮
-│ ⌁ Bash  go test ./...                                                      ✗ │
+│ ⌁ Bash  Exec(go test ./...)                                                ✗ │
 │   FAIL    github.com/vulnetix/signet/internal/run    0.2s                    │
 │   exit status 1                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 === tool_error w=120
 ╭─ signet ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ ⌁ Bash  go test ./...                                                                                              ✗ │
+│ ⌁ Bash  Exec(go test ./...)                                                                                        ✗ │
 │   FAIL    github.com/vulnetix/signet/internal/run    0.2s                                                            │
 │   exit status 1                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 === tool_collapsed_marker w=32
 ╭─ signet ─ ctrl+o expand all ─╮
-│ ⌁ Bash  ls -la             ✓ │
+│ ⌁ Bash  Exec(ls -la)       ✓ │
 │   … 2 earlier lines          │
 │   third                      │
 │   fourth                     │
@@ -119,7 +119,7 @@
 ╰──────────────────────────────╯
 === tool_collapsed_marker w=41
 ╭─ signet ────────── ctrl+o expand all ─╮
-│ ⌁ Bash  ls -la                      ✓ │
+│ ⌁ Bash  Exec(ls -la)                ✓ │
 │   … 2 earlier lines                   │
 │   third                               │
 │   fourth                              │
@@ -127,7 +127,7 @@
 ╰───────────────────────────────────────╯
 === tool_collapsed_marker w=53
 ╭─ signet ────────────────────── ctrl+o expand all ─╮
-│ ⌁ Bash  ls -la                                  ✓ │
+│ ⌁ Bash  Exec(ls -la)                            ✓ │
 │   … 2 earlier lines                               │
 │   third                                           │
 │   fourth                                          │
@@ -135,7 +135,7 @@
 ╰───────────────────────────────────────────────────╯
 === tool_collapsed_marker w=60
 ╭─ signet ───────────────────────────── ctrl+o expand all ─╮
-│ ⌁ Bash  ls -la                                         ✓ │
+│ ⌁ Bash  Exec(ls -la)                                   ✓ │
 │   … 2 earlier lines                                      │
 │   third                                                  │
 │   fourth                                                 │
@@ -143,7 +143,7 @@
 ╰──────────────────────────────────────────────────────────╯
 === tool_collapsed_marker w=80
 ╭─ signet ───────────────────────────────────────────────── ctrl+o expand all ─╮
-│ ⌁ Bash  ls -la                                                             ✓ │
+│ ⌁ Bash  Exec(ls -la)                                                       ✓ │
 │   … 2 earlier lines                                                          │
 │   third                                                                      │
 │   fourth                                                                     │
@@ -151,7 +151,7 @@
 ╰──────────────────────────────────────────────────────────────────────────────╯
 === tool_collapsed_marker w=120
 ╭─ signet ───────────────────────────────────────────────────────────────────────────────────────── ctrl+o expand all ─╮
-│ ⌁ Bash  ls -la                                                                                                     ✓ │
+│ ⌁ Bash  Exec(ls -la)                                                                                               ✓ │
 │   … 2 earlier lines                                                                                                  │
 │   third                                                                                                              │
 │   fourth                                                                                                             │
@@ -159,7 +159,7 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 === tool_expanded w=32
 ╭─ signet ─────────────────────╮
-│ ⌁ Bash  ls -la             ✓ │
+│ ⌁ Bash  Exec(ls -la)       ✓ │
 │   first                      │
 │   second                     │
 │   third                      │
@@ -168,7 +168,7 @@
 ╰──────────────────────────────╯
 === tool_expanded w=41
 ╭─ signet ──────────────────────────────╮
-│ ⌁ Bash  ls -la                      ✓ │
+│ ⌁ Bash  Exec(ls -la)                ✓ │
 │   first                               │
 │   second                              │
 │   third                               │
@@ -177,7 +177,7 @@
 ╰───────────────────────────────────────╯
 === tool_expanded w=53
 ╭─ signet ──────────────────────────────────────────╮
-│ ⌁ Bash  ls -la                                  ✓ │
+│ ⌁ Bash  Exec(ls -la)                            ✓ │
 │   first                                           │
 │   second                                          │
 │   third                                           │
@@ -186,7 +186,7 @@
 ╰───────────────────────────────────────────────────╯
 === tool_expanded w=60
 ╭─ signet ─────────────────────────────────────────────────╮
-│ ⌁ Bash  ls -la                                         ✓ │
+│ ⌁ Bash  Exec(ls -la)                                   ✓ │
 │   first                                                  │
 │   second                                                 │
 │   third                                                  │
@@ -195,7 +195,7 @@
 ╰──────────────────────────────────────────────────────────╯
 === tool_expanded w=80
 ╭─ signet ─────────────────────────────────────────────────────────────────────╮
-│ ⌁ Bash  ls -la                                                             ✓ │
+│ ⌁ Bash  Exec(ls -la)                                                       ✓ │
 │   first                                                                      │
 │   second                                                                     │
 │   third                                                                      │
@@ -204,7 +204,7 @@
 ╰──────────────────────────────────────────────────────────────────────────────╯
 === tool_expanded w=120
 ╭─ signet ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ ⌁ Bash  ls -la                                                                                                     ✓ │
+│ ⌁ Bash  Exec(ls -la)                                                                                               ✓ │
 │   first                                                                                                              │
 │   second                                                                                                             │
 │   third                                                                                                              │
@@ -213,42 +213,42 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 === tool_blank_interior_line w=32
 ╭─ signet ─────────────────────╮
-│ ⌁ Bash  cat notes          ✓ │
+│ ⌁ Bash  Exec(cat notes)    ✓ │
 │   head                       │
 │                              │
 │   tail                       │
 ╰──────────────────────────────╯
 === tool_blank_interior_line w=41
 ╭─ signet ──────────────────────────────╮
-│ ⌁ Bash  cat notes                   ✓ │
+│ ⌁ Bash  Exec(cat notes)             ✓ │
 │   head                                │
 │                                       │
 │   tail                                │
 ╰───────────────────────────────────────╯
 === tool_blank_interior_line w=53
 ╭─ signet ──────────────────────────────────────────╮
-│ ⌁ Bash  cat notes                               ✓ │
+│ ⌁ Bash  Exec(cat notes)                         ✓ │
 │   head                                            │
 │                                                   │
 │   tail                                            │
 ╰───────────────────────────────────────────────────╯
 === tool_blank_interior_line w=60
 ╭─ signet ─────────────────────────────────────────────────╮
-│ ⌁ Bash  cat notes                                      ✓ │
+│ ⌁ Bash  Exec(cat notes)                                ✓ │
 │   head                                                   │
 │                                                          │
 │   tail                                                   │
 ╰──────────────────────────────────────────────────────────╯
 === tool_blank_interior_line w=80
 ╭─ signet ─────────────────────────────────────────────────────────────────────╮
-│ ⌁ Bash  cat notes                                                          ✓ │
+│ ⌁ Bash  Exec(cat notes)                                                    ✓ │
 │   head                                                                       │
 │                                                                              │
 │   tail                                                                       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 === tool_blank_interior_line w=120
 ╭─ signet ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ ⌁ Bash  cat notes                                                                                                  ✓ │
+│ ⌁ Bash  Exec(cat notes)                                                                                            ✓ │
 │   head                                                                                                               │
 │                                                                                                                      │
 │   tail                                                                                                               │
@@ -452,7 +452,7 @@
 ╰──────────────────────────────╯
 
 ╭─ signet ─ ctrl+o expand all ─╮
-│ ⌁ Bash  go test ./  withheld │
+│ ⌁ Bash  Exec(go te  withheld │
 │   … 1 earlier lines          │
 │   second line                │
 │   third line                 │
@@ -480,7 +480,7 @@
 ╰───────────────────────────────────────╯
 
 ╭─ signet ────────── ctrl+o expand all ─╮
-│ ⌁ Bash  go test ./...        withheld │
+│ ⌁ Bash  Exec(go test ./...)  withheld │
 │   … 1 earlier lines                   │
 │   second line                         │
 │   third line                          │
@@ -507,7 +507,7 @@
 ╰───────────────────────────────────────────────────╯
 
 ╭─ signet ────────────────────── ctrl+o expand all ─╮
-│ ⌁ Bash  go test ./...                    withheld │
+│ ⌁ Bash  Exec(go test ./...)              withheld │
 │   … 1 earlier lines                               │
 │   second line                                     │
 │   third line                                      │
@@ -533,7 +533,7 @@
 ╰──────────────────────────────────────────────────────────╯
 
 ╭─ signet ───────────────────────────── ctrl+o expand all ─╮
-│ ⌁ Bash  go test ./...                           withheld │
+│ ⌁ Bash  Exec(go test ./...)                     withheld │
 │   … 1 earlier lines                                      │
 │   second line                                            │
 │   third line                                             │
@@ -559,7 +559,7 @@
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
 ╭─ signet ───────────────────────────────────────────────── ctrl+o expand all ─╮
-│ ⌁ Bash  go test ./...                                               withheld │
+│ ⌁ Bash  Exec(go test ./...)                                         withheld │
 │   … 1 earlier lines                                                          │
 │   second line                                                                │
 │   third line                                                                 │
@@ -585,7 +585,7 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 ╭─ signet ───────────────────────────────────────────────────────────────────────────────────────── ctrl+o expand all ─╮
-│ ⌁ Bash  go test ./...                                                                                       withheld │
+│ ⌁ Bash  Exec(go test ./...)                                                                                 withheld │
 │   … 1 earlier lines                                                                                                  │
 │   second line                                                                                                        │
 │   third line                                                                                                         │
