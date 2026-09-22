@@ -12,6 +12,32 @@ import (
 // knows what happened (and says so in the resume system line).
 const maxToolResultBytes = 32 << 10
 
+// rmText returns the plain-English line a rolemanager activity row renders:
+// "Summary — Outcome". It is the persisted Content of a rolemanager entry.
+func rmText(m components.Message) string {
+	if m.RM.Summary == "" && m.RM.Outcome == "" {
+		return ""
+	}
+	return m.RM.Summary + " — " + m.RM.Outcome
+}
+
+// neverPersisted reports whether a message can never produce a session entry.
+// persistTail skips these rather than letting them block later messages.
+func neverPersisted(m components.Message) bool {
+	switch m.Role {
+	case "assistant":
+		// An assistant with neither text nor tool calls is never persisted,
+		// matching buildTurns which skips it.
+		return strings.TrimSpace(m.Text()) == "" && len(m.ToolCalls) == 0
+	case "reasoning", "system":
+		return strings.TrimSpace(m.Text()) == ""
+	case "rolemanager":
+		return strings.TrimSpace(rmText(m)) == ""
+	default:
+		return false
+	}
+}
+
 // settled reports whether messages[i] is final: a tool row with no result, or
 // the in-flight trailing assistant bubble, are not. Persisting only settled
 // messages keeps the file structurally safe — an assistant tool_calls entry
@@ -22,14 +48,6 @@ func settled(msgs []components.Message, i int) bool {
 	case "user":
 		return true
 	case "assistant":
-		// An assistant with neither text nor tool calls is never persisted,
-		// matching buildTurns which skips it. Text() (not Content) is the
-		// source of truth: a finished pass keeps its streamed text in the
-		// buffer until Materialise, and a non-trailing bubble is final even
-		// before that flush.
-		if strings.TrimSpace(m.Text()) == "" && len(m.ToolCalls) == 0 {
-			return false
-		}
 		// A tool-calls assistant is final only once every one of its tool
 		// results has landed too, so an assistant tool_calls entry can never
 		// be written without its results following in the same file. The
@@ -48,9 +66,19 @@ func settled(msgs []components.Message, i int) bool {
 		return m.Content != ""
 	case "tool":
 		return m.Content != "" || m.Status != ""
+	case "reasoning":
+		// A reasoning bubble streams before the assistant turn. It is final
+		// once a later message exists (the stream moved on to text or tools)
+		// or once the turn ended and Materialise flushed its buffer.
+		if i != len(msgs)-1 {
+			return true
+		}
+		return m.Content != ""
+	case "system", "rolemanager":
+		// System notices and role-manager activity rows are appended whole,
+		// never streamed, so they are final as soon as they exist.
+		return true
 	default:
-		// reasoning, system, and rolemanager never persist, matching
-		// buildTurns.
 		return false
 	}
 }
@@ -78,10 +106,14 @@ func toolsAllSettled(msgs []components.Message, start, want int) bool {
 func (a *App) persistTail() {
 	for i := a.persistedUpTo; i < len(a.messages); i++ {
 		m := a.messages[i]
-		// reasoning, system, and rolemanager rows are render-only and skipped
-		// entirely, matching buildTurns. Advancing the cursor past them means
-		// a settled assistant after a pass-loop verdict is still written.
-		if m.Role == "reasoning" || m.Role == "system" || m.Role == "rolemanager" {
+		if neverPersisted(m) {
+			// A trailing empty frame is the in-flight turn bubble (or a turn
+			// that produced nothing) and must stop the scan; a non-trailing
+			// one is a finalized no-op and is skipped so it cannot block later
+			// settled messages.
+			if i == len(a.messages)-1 {
+				break
+			}
 			a.persistedUpTo = i + 1
 			continue
 		}
@@ -135,5 +167,21 @@ func (a *App) persistMessage(i int) {
 			content = content[:maxToolResultBytes]
 		}
 		a.appendEntry(session.Entry{Type: "tool", Role: "tool", Content: content, Meta: meta, SubagentID: m.SubagentID})
+	case "reasoning":
+		a.appendEntry(session.Entry{Type: "reasoning", Role: "reasoning", Content: m.Text()})
+	case "system":
+		a.appendEntry(session.Entry{Type: "system", Role: "system", Content: m.Text()})
+	case "rolemanager":
+		a.appendEntry(session.Entry{
+			Type:    "rolemanager",
+			Role:    "rolemanager",
+			Content: rmText(m),
+			Meta: map[string]any{
+				"summary": m.RM.Summary,
+				"outcome": m.RM.Outcome,
+				"tone":    int(m.RM.Tone),
+				"level":   int(m.Level),
+			},
+		})
 	}
 }

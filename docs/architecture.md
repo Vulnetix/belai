@@ -2093,8 +2093,11 @@ The agent role is the global model settings section. Its rows are
 - **Guardrails**, **ask** and **firewall** are the same posture toggles as
   `f3`, `f4` and `f10`, surfaced here as rows so the global model settings
   show every stored global toggle.
-- **Scope** is `session`, `global` or `project`. Session writes directly to
-  the running configuration; `global`/`project` mutate the settings file.
+- **Scope** is `session`, `global` or `project`. Session writes the agent
+  provider/model/effort to `state.json` and updates the running
+  configuration, so a fresh TUI opens with the same agent role unless an
+  environment variable or CLI flag outranks it. `global` and `project` mutate
+  the settings file for the active scope and reload the merged settings.
 
 #### Classifier role
 
@@ -2308,8 +2311,11 @@ Business rules:
   never define a provider, a permission rule, or a workspace directory.
 - **Precedence sits above global, below everything repo-visible.** The merge
   order is defaults < `state.json` < global < project prefs < project
-  `settings.json` < environment < CLI flags. Provider and model stay in
-  `state.json`, exactly as before — they are global, not project-sticky.
+  `settings.json` < environment < CLI flags. When the agent role is set from
+  `/model` with `session` scope, provider and model stay in `state.json`;
+  with `global` or `project` scope they are written to the corresponding
+  `settings.json` and follow the normal precedence rules. The session
+  toggles (`f2`–`f5`, `f10`) never make provider/model project-sticky.
 - **The only-tighten invariant still holds for the repo layer.**
   `.vulnetix/settings.json` may still only turn `guardrails`/`ask_permission`
   back on and only turn the firewall off. The user's own prefs set all three
