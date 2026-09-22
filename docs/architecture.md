@@ -1336,7 +1336,12 @@ Provider-streamed reasoning renders in a dim `reasoning` panel (toggle with
 four states — auto (the resolved settings), all, edits only, none — and names
 the resolved pair in a system line. `ui.show_tool_calls` gates every tool row
 except `Write`/`Edit`; `ui.show_edits` gates the `Write`/`Edit` rows only, so
-hiding tool chatter keeps the file diffs and vice versa. The transcript
+hiding tool chatter keeps the file diffs and vice versa. `ui.show_internal_work`
+gates the role-manager activity feed (see
+[role-manager.md](role-manager.md#tui-activity-signal)): `hidden`, `decisions`,
+`security`, or `all`, additive in that order. Rows that control whether
+something is *displayed* say `shown`/`hidden`; rows that control whether a
+behaviour *runs* keep `on`/`off`. The transcript
 auto-follows the tail; scrolling up
 (mouse wheel or `pgup`/`shift+up`) detaches and returns to the bottom
 re-attach. Mouse capture is on by default (`ui.mouse`); with capture on the
@@ -1666,7 +1671,7 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 | `ctrl+o` | Toggle full output for all truncated turns and tool results |
 | `ctrl+s` | Over a hovered panel with text, save its content to a path typed into the composer; with a loaded library prompt, open the overwrite/delete action bar; otherwise save the prompt to the library |
 | `ctrl+x` | Copy the session id to the clipboard (hinted when hovering the footer's session segment) |
-| `ctrl+r` / `ctrl+t` | `ctrl+r` toggles the reasoning panel for the session; `ctrl+t` cycles tool-row display auto → all → edits only → none |
+| `ctrl+r` / `ctrl+t` | `ctrl+r` toggles the reasoning panel for the session (`shown`/`hidden`); `ctrl+t` cycles tool-row display auto → all → edits only → none |
 | `f2` | Toggle the caveman voice rewrite, persisting to the per-project preference file; the footer `caveman:` slot updates in the same frame |
 | `f3` | Toggle guardrails (the posture gates), from any screen |
 | `f4` | Toggle the permission-ask gate, from any screen |
@@ -2185,10 +2190,13 @@ global `settings.json`, the per-project user preference file
 include `provider`, `model`, `effort`, `caveman`, `read_only`,
 `permissions` (structured `allow`/`ask`/`deny`), `session_retention_days`,
 `ui.banner`, `ui.status_bar`, `ui.spinner`, `ui.show_reasoning`,
-`ui.show_tool_calls`, `ui.show_edits`, `ui.show_todos`, `ui.mouse`, `ui.colors`,
+`ui.show_tool_calls`, `ui.show_edits`, `ui.show_todos`, `ui.show_internal_work`,
+`ui.mouse`, `ui.colors`,
 `ui.kitty_keyboard` (all default on when unset except `ui.show_reasoning`,
-which defaults off unless explicitly true; `ui.kitty_keyboard` is overridden
-off by `SIGNET_NO_KITTY=1`),
+which defaults off unless explicitly true; `ui.show_internal_work` defaults to
+`hidden`, the four-level role-manager feed described in
+[role-manager.md](role-manager.md#tui-activity-signal); `ui.kitty_keyboard` is
+overridden off by `SIGNET_NO_KITTY=1`),
 `show_session_names` (default on),
 `update_check` (default on; overridden off by `SIGNET_NO_UPDATE_CHECK=1`),
 `context_windows`,

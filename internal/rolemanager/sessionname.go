@@ -28,10 +28,10 @@ func BuildSessionNamePayload(firstUserMessage string, caveman bool) ClassifierPa
 func ParseSessionName(raw string) (string, error) {
 	s, err := sanitizeName(raw, true)
 	if err != nil {
-		record("session_name", "invalid", "", "", 0)
+		record(EventSessionName, "invalid", "", "", 0)
 		return "", err
 	}
-	record("session_name", "valid", "", "", 0)
+	record(EventSessionName, "valid", "", "", 0)
 	return s, nil
 }
 

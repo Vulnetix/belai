@@ -65,10 +65,10 @@ func ClassifyMode(ctx context.Context, c Classifier, prompt string) (ModeSentine
 	}
 	s, err := ParseModeSentinel(raw)
 	if err != nil {
-		record("mode_classify", string(ModeUndetermined), "", "malformed: "+traceSnippet(raw), 0)
+		record(EventModeClassify, string(ModeUndetermined), "", "malformed: "+traceSnippet(raw), 0)
 		return ModeUndetermined, nil
 	}
-	record("mode_classify", string(s), "", "", 0)
+	record(EventModeClassify, string(s), "", "", 0)
 	return s, nil
 }
 

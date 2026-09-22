@@ -92,6 +92,10 @@ type streamChunkMsg run.Chunk
 // agentEventMsg wraps one agent streaming event.
 type agentEventMsg agent.Event
 
+// rmActivityMsg carries one role-manager activity out of the observer channel
+// and into the Update loop.
+type rmActivityMsg rolemanager.Activity
+
 // agentReadyMsg carries the result of an async agent-session build. Session
 // construction can block on a nonce GET (3s deadline), so it runs on a tea.Cmd
 // goroutine instead of freezing the Update loop.
@@ -270,6 +274,10 @@ type App struct {
 	planMode bool
 	agent    *agent.Session
 	events   <-chan agent.Event
+	// rmEvents carries role-manager activity from the observer into the
+	// render loop; rmCancel detaches the observer on teardown.
+	rmEvents chan rolemanager.Activity
+	rmCancel func()
 	pending  string  // pending prompt to send once configured
 	initCmd  tea.Cmd // resume command batched into Init(), set by New
 	// requestedProvider is the provider name from settings/state/env/flags
@@ -775,9 +783,20 @@ func New(opts Options) *App {
 		subagentIdx:       map[string]int{},
 		execEditor:        tea.ExecProcess,
 		trace:             trace.Env(),
+		rmEvents:          make(chan rolemanager.Activity, 256),
 	}
 	// One Live for the process: the running session and the next one share it.
 	a.live = posture.NewLive(a.effectivePosture(), !a.askEnabled())
+	// Register the role-manager activity observer. The observer contract is
+	// non-blocking: a non-blocking send on a buffered channel, dropping on
+	// overflow. Dropping is correct — the feed is render-only. The returned
+	// cancel detaches on teardown.
+	a.rmCancel = rolemanager.SetObserver(func(act rolemanager.Activity) {
+		select {
+		case a.rmEvents <- act:
+		default:
+		}
+	})
 	// A brand-new install has nothing persisted and names no provider: the
 	// default provider is OpenRouter's free router, which needs an account
 	// before it answers, so such a user gets the signup hint rather than a
@@ -976,7 +995,7 @@ func (a *App) SetClassifier(c rolemanager.Classifier) {
 // Init implements tea.Model.
 func (a *App) Init() tea.Cmd {
 	a.maybeNoticeLegacyPrompts()
-	cmds := []tea.Cmd{tickCmd(), a.watchActivityEvents()}
+	cmds := []tea.Cmd{tickCmd(), a.watchActivityEvents(), a.nextRMActivity()}
 	if a.procManager != nil {
 		cmds = append(cmds, a.watchProcessEvents())
 	}
@@ -1778,6 +1797,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case agentEventMsg:
 		return a, a.handleAgentEvent(m)
 
+	case rmActivityMsg:
+		a.addRMActivity(rolemanager.Activity(m))
+		return a, a.nextRMActivity()
+
 	case activityEventMsg:
 		return a, a.handleActivityEvent(m)
 
@@ -1985,6 +2008,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// the window) tears down and quits, printing the exit card.
 			if a.isArmed(armQuit) {
 				a.disarm()
+				if a.rmCancel != nil {
+					a.rmCancel()
+				}
 				a.stopLocalServers()
 				if a.procManager != nil {
 					a.procManager.Shutdown()
@@ -1995,7 +2021,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, nil
 		case "ctrl+r":
 			a.reasoningOverride = nextBoolPtr(a.reasoningOverride)
-			a.addSystem("reasoning display: " + boolLabel(a.reasoningVisible()))
+			a.addSystem("reasoning display: " + showLabel(a.reasoningVisible()))
 			return a, nil
 		case "ctrl+t":
 			a.toolDisplay = (a.toolDisplay + 1) % 4
@@ -3311,6 +3337,7 @@ func (a *App) chatView() string {
 		ShowReasoning: a.reasoningVisible(),
 		ShowTools:     a.toolCallsVisible(),
 		ShowEdits:     a.editsVisible(),
+		InternalWork:  rolemanager.ParseLevel(a.settings.InternalWorkLevel()),
 	}.Render()
 	// The banner is the first entry of the scrollable transcript. Prepending it
 	// here — before the content compare, Highlight and SetContent — keeps the
@@ -3827,6 +3854,34 @@ func (a *App) saveSession() {
 
 func (a *App) addSystem(text string) {
 	a.messages = append(a.messages, components.Message{Role: "system", Content: text})
+}
+
+// addRMActivity turns one role-manager activity into a render-only signet
+// panel row. Suppressed events (those already covered by a dedicated line)
+// and unrenderable activities are dropped here.
+func (a *App) addRMActivity(act rolemanager.Activity) {
+	desc, ok := rolemanager.Describe(act)
+	if !ok {
+		return
+	}
+	a.messages = append(a.messages, components.Message{
+		Role:  "rolemanager",
+		Level: desc.Levels,
+		RM:    desc,
+	})
+}
+
+// nextRMActivity reads one activity off the observer channel and re-arms,
+// modelled directly on nextAgent: one message per Update, so a burst of
+// classifier decisions never floods a single frame.
+func (a *App) nextRMActivity() tea.Cmd {
+	return func() tea.Msg {
+		act, ok := <-a.rmEvents
+		if !ok {
+			return nil
+		}
+		return rmActivityMsg(act)
+	}
 }
 
 // maybeNoticeLegacyPrompts emits a one-line notice the first time a session
@@ -5302,8 +5357,8 @@ func (a *App) editsVisible() bool {
 
 // toolDisplayNotice names the resolved pair for the ctrl+t system line.
 func (a *App) toolDisplayNotice() string {
-	return "tool-call display: tools " + boolLabel(a.toolCallsVisible()) +
-		" · edits " + boolLabel(a.editsVisible())
+	return "tool-call display: tools " + showLabel(a.toolCallsVisible()) +
+		" · edits " + showLabel(a.editsVisible())
 }
 
 func nextBoolPtr(b *bool) *bool {

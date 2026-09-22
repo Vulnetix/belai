@@ -282,6 +282,11 @@ type UISettings struct {
 	ShowEdits     *bool `json:"show_edits,omitempty"`
 	ShowTodos     *bool `json:"show_todos,omitempty"`
 	Mouse         *bool `json:"mouse,omitempty"`
+	// ShowInternalWork selects how much of the role manager's internal
+	// decision-making is shown in the signet panel: "hidden", "decisions",
+	// "security", or "all". It is display-only — every level runs exactly the
+	// same gates.
+	ShowInternalWork *string `json:"show_internal_work,omitempty"`
 }
 
 // merge folds from over u, taking any non-nil field from from. It is the
@@ -320,6 +325,9 @@ func (u *UISettings) merge(from *UISettings) {
 	}
 	if from.Mouse != nil {
 		u.Mouse = from.Mouse
+	}
+	if from.ShowInternalWork != nil {
+		u.ShowInternalWork = from.ShowInternalWork
 	}
 }
 
@@ -438,6 +446,22 @@ func (s Settings) PlanExploreEnabled() bool {
 // ReasoningVisible reports whether reasoning deltas render. Default false.
 func (s Settings) ReasoningVisible() bool {
 	return s.UI != nil && s.UI.ShowReasoning != nil && *s.UI.ShowReasoning
+}
+
+// InternalWorkLevel returns the role-manager display granularity as a
+// normalised name: "hidden", "decisions", "security", or "all". The default
+// is hidden, and an unrecognised value reads as hidden (fail closed on
+// display). It is display-only: every level runs exactly the same gates.
+func (s Settings) InternalWorkLevel() string {
+	if s.UI == nil || s.UI.ShowInternalWork == nil {
+		return "hidden"
+	}
+	switch strings.ToLower(strings.TrimSpace(*s.UI.ShowInternalWork)) {
+	case "decisions", "security", "all":
+		return strings.ToLower(strings.TrimSpace(*s.UI.ShowInternalWork))
+	default:
+		return "hidden"
+	}
 }
 
 // ToolCallsVisible reports whether tool-call rows render. Default true.

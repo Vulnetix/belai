@@ -313,6 +313,41 @@ trace channel. The explore pill is *not* a Role Manager signal: it is a
 separate composer phase, because the fan-out emits only subagent events and
 never parent text.
 
+**Internal-work feed.** Every `record` decision also fans out to an in-process
+observer (`rolemanager.SetObserver`) and can render inside the signet panel as
+a plain-English line with a colour-coded outcome. `/settings` → `internal
+work` selects how much shows, in four additive levels:
+
+| Level | Shows |
+| ----- | ----- |
+| `hidden` (default) | nothing — the feed is render-only and never changes a verdict |
+| `decisions` | agent evaluator, goal drafting, clarification, compaction, session naming, tool-call mismatch, goal-length limit |
+| `security` | everything in `decisions` plus the security classifier sentinel/malformed, bad verdict cache, boundary verify failure |
+| `all` | everything in `security` plus bookkeeping: boundary sealing, verdict-cache hits, fan-out admission |
+
+Events already surfaced by a dedicated line — `mode_classify`, `mode_forced`,
+`goal_eval`, `goal_eval_repair`, `plan_eval` — are suppressed in the feed so
+the same decision never prints twice in one panel. The feed is additive to
+those lines, which are left exactly as they are.
+
+Four security invariants, stated in the code and here:
+
+1. The observer receives only `rolemanager.Activity` — the same bounded
+   metadata `trace.Record` carries. No classified payload text, no
+   credentials.
+2. `Detail` is parsed for harness-authored structure only (`blocks=…`,
+   `kind=…`, `slot=…`, `round=…`), never rendered raw, so a `traceSnippet` of
+   a model reply never reaches the terminal.
+3. The feed is render-only, like tool-diff rows: it never enters the
+   conversation and never reaches a model.
+4. The setting is display-only. Every level, including `hidden`, runs exactly
+   the same gates — this is not a posture control and must never become one.
+
+The observer contract is non-blocking: it is called on hot classifier paths
+from several goroutines, so the TUI's implementation does a non-blocking send
+on a buffered channel and drops on overflow. Dropping is correct — the feed is
+render-only.
+
 ## Pipeline
 
 Every tool result is untrusted and every one of them is sanitized before it
@@ -1370,7 +1405,10 @@ tool-less, skill-less, and agent-less for every attempt.
 Signet writes **no application log by default**. There is no `log`/`slog`/zerolog
 call anywhere in the codebase. The only durable observability surface is the
 opt-in trace writer: set `SIGNET_TRACE=<path>` and every role-manager decision
-is appended as one JSON line.
+is appended as one JSON line. Each `record` call fans out to both sinks — the
+trace writer *and* the in-process observer that feeds the TUI's internal-work
+panel — so the audit file and the on-screen feed never disagree about what
+happened.
 
 ```bash
 SIGNET_TRACE=/tmp/signet.jsonl signet -prompt "plan the migration"

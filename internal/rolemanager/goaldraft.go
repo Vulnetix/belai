@@ -99,16 +99,16 @@ func DraftGoalContract(ctx context.Context, c Classifier, in GoalDraftInput) (st
 	}
 	draft := sanitize.Sanitize(raw)
 	if strings.TrimSpace(draft) == "" {
-		record("goal_draft", "empty", "", "", 0)
+		record(EventGoalDraft, "empty", "", "", 0)
 		return "", ErrGoalDraftUnusable
 	}
 	contract := "Objective:\n" + in.Prompt + "\n\n" + draft
 	if !strings.Contains(contract, in.Prompt) {
 		// Unreachable for a non-empty prompt; kept as the fail-closed guard
 		// the caller's fallback contract promises.
-		record("goal_draft", "missing_objective", "", "", 0)
+		record(EventGoalDraft, "missing_objective", "", "", 0)
 		return "", ErrGoalDraftUnusable
 	}
-	record("goal_draft", "usable", "", fmt.Sprintf("chars=%d", len(contract)), 0)
+	record(EventGoalDraft, "usable", "", fmt.Sprintf("chars=%d", len(contract)), 0)
 	return contract, nil
 }

@@ -109,18 +109,18 @@ func (a *App) settingsRows() []settingsRow {
 	if s.SessionRetentionDays != nil {
 		retentionVal = fmt.Sprintf("%d days", *s.SessionRetentionDays)
 	}
-	bannerVal := "on"
+	bannerVal := "shown"
 	if s.UI != nil && s.UI.Banner != nil {
-		bannerVal = boolLabel(*s.UI.Banner)
+		bannerVal = showLabel(*s.UI.Banner)
 	}
 	colorsVal := boolLabel(s.ColorsEnabled())
-	spinnerVal := boolLabel(s.SpinnerEnabled())
-	reasoningVal := boolLabel(s.ReasoningVisible())
-	toolCallsVal := boolLabel(s.ToolCallsVisible())
-	editsVal := boolLabel(s.EditsVisible())
-	todosVal := boolLabel(s.TodosVisible())
+	spinnerVal := showLabel(s.SpinnerEnabled())
+	reasoningVal := showLabel(s.ReasoningVisible())
+	toolCallsVal := showLabel(s.ToolCallsVisible())
+	editsVal := showLabel(s.EditsVisible())
+	todosVal := showLabel(s.TodosVisible())
 	mouseVal := boolLabel(s.MouseEnabled())
-	showNamesVal := boolLabel(s.SessionNamesVisible())
+	showNamesVal := showLabel(s.SessionNamesVisible())
 	updateCheckVal := boolLabel(s.UpdateCheckEnabled())
 	permsVal := fmt.Sprintf("%d allow · %d ask · %d deny", len(s.Permissions.Allow), len(s.Permissions.Ask), len(s.Permissions.Deny))
 	maxAgentsVal := "3"
@@ -142,6 +142,7 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "show_reasoning", label: "reasoning", kind: "toggle", value: reasoningVal, src: sourceLabel(origin["ui"])},
 		{key: "show_tool_calls", label: "tool calls", kind: "toggle", value: toolCallsVal, src: sourceLabel(origin["ui"])},
 		{key: "show_edits", label: "file edits", kind: "toggle", value: editsVal, src: sourceLabel(origin["ui"])},
+		{key: "show_internal_work", label: "internal work", kind: "choose", opts: []string{"hidden", "decisions", "security", "all"}, value: s.InternalWorkLevel(), src: sourceLabel(origin["ui"])},
 		{key: "show_todos", label: "todo panel", kind: "toggle", value: todosVal, src: sourceLabel(origin["ui"])},
 		{key: "mouse", label: "mouse capture", kind: "toggle", value: mouseVal, src: sourceLabel(origin["ui"])},
 		{key: "show_session_names", label: "session names", kind: "toggle", value: showNamesVal, src: sourceLabel(origin["show_session_names"])},
@@ -164,6 +165,16 @@ func boolLabel(v bool) string {
 		return "on"
 	}
 	return "off"
+}
+
+// showLabel is the display-toggle wording: a row that controls whether
+// something is shown says shown/hidden, never on/off. Behaviour toggles keep
+// boolLabel.
+func showLabel(v bool) string {
+	if v {
+		return "shown"
+	}
+	return "hidden"
 }
 
 func (a *App) handleSettingsKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -389,18 +400,20 @@ func (a *App) cycleToggle(key string) error {
 
 func (a *App) cycleChoice(key string, opts []string) error {
 	return a.mutateSetting(func(s *config.Settings) {
-		if key != "effort" {
-			return
-		}
-		cur := s.Effort
-		idx := -1
-		for i, o := range opts {
-			if o == cur {
-				idx = i
-				break
+		switch key {
+		case "effort":
+			cur := s.Effort
+			idx := indexOfString(opts, cur)
+			s.Effort = opts[(idx+1)%len(opts)]
+		case "show_internal_work":
+			cur := s.InternalWorkLevel()
+			idx := indexOfString(opts, cur)
+			if s.UI == nil {
+				s.UI = &config.UISettings{}
 			}
+			next := opts[(idx+1)%len(opts)]
+			s.UI.ShowInternalWork = &next
 		}
-		s.Effort = opts[(idx+1)%len(opts)]
 	})
 }
 
@@ -442,6 +455,10 @@ func (a *App) unsetSetting(key string) error {
 		case "show_edits":
 			if s.UI != nil {
 				s.UI.ShowEdits = nil
+			}
+		case "show_internal_work":
+			if s.UI != nil {
+				s.UI.ShowInternalWork = nil
 			}
 		case "show_todos":
 			if s.UI != nil {

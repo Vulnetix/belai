@@ -54,7 +54,7 @@ func DecideMode(s ModeSentinel, in ModeInput) ModeDecision {
 	switch s {
 	case ModeGoal:
 		if length > limit {
-			record("mode_goal_length_limit", string(ModeAgent), "", fmt.Sprintf("len=%d limit=%d", length, limit), 0)
+			record(EventModeGoalLengthLimit, string(ModeAgent), "", fmt.Sprintf("len=%d limit=%d", length, limit), 0)
 			return ModeDecision{
 				Mode:    modes.ModeAgent,
 				Warning: fmt.Sprintf("prompt exceeds the goal mode length limit (%d); engaging default agent mode", limit),
@@ -82,7 +82,7 @@ func DecideMode(s ModeSentinel, in ModeInput) ModeDecision {
 // the classifier from routing a long prompt into goal mode by mistake, and a
 // user who selected goal mode has made no mistake to guard against.
 func DecideForcedMode(m modes.Mode, prompt string, hasReferences bool) ModeDecision {
-	record("mode_forced", string(m), "", "", 0)
+	record(EventModeForced, string(m), "", "", 0)
 	in := ModeInput{Prompt: prompt, HasReferences: hasReferences}
 	switch m {
 	case modes.ModeGoal:

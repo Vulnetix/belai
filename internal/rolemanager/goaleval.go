@@ -157,10 +157,10 @@ func EvaluateGoal(ctx context.Context, c Classifier, in GoalEvalInput) (GoalSent
 	}
 	s, parseErr := ParseGoalSentinel(raw)
 	if parseErr == nil {
-		record("goal_eval", string(s), "", "", 0)
+		record(EventGoalEval, string(s), "", "", 0)
 		return s, nil
 	}
-	record("goal_eval", string(GoalPartial), "", "malformed: "+traceSnippet(raw), 0)
+	record(EventGoalEval, string(GoalPartial), "", "malformed: "+traceSnippet(raw), 0)
 
 	repaired, err := c.Classify(ctx, BuildGoalEvalRepairPayload(in, raw))
 	if err != nil {
@@ -171,9 +171,9 @@ func EvaluateGoal(ctx context.Context, c Classifier, in GoalEvalInput) (GoalSent
 	}
 	s, parseErr = ParseGoalSentinel(repaired)
 	if parseErr != nil {
-		record("goal_eval_repair", string(GoalPartial), "", "malformed: "+traceSnippet(repaired), 0)
+		record(EventGoalEvalRepair, string(GoalPartial), "", "malformed: "+traceSnippet(repaired), 0)
 		return GoalPartial, ErrMalformedGoalEval
 	}
-	record("goal_eval_repair", string(s), "", "repaired", 0)
+	record(EventGoalEvalRepair, string(s), "", "repaired", 0)
 	return s, nil
 }

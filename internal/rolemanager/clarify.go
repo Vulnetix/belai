@@ -112,10 +112,10 @@ func AskClarify(ctx context.Context, c Classifier, in ClarifyInput, maxAttempts 
 			parseErr = q.Validate()
 		}
 		if parseErr == nil {
-			record("clarify", "usable", "", fmt.Sprintf("round=%s groups=%d", in.Round, len(q.Groups)), 0)
+			record(EventClarify, "usable", "", fmt.Sprintf("round=%s groups=%d", in.Round, len(q.Groups)), 0)
 			return q, nil
 		}
-		record("clarify", "invalid", "", fmt.Sprintf("round=%s attempt=%d", in.Round, attempt), 0)
+		record(EventClarify, "invalid", "", fmt.Sprintf("round=%s attempt=%d", in.Round, attempt), 0)
 
 		feedback := sanitize.Sanitize(fmt.Sprintf("Validation error: %s. Reply with only valid JSON matching the schema.", parseErr.Error()))
 		turns = append(turns, clarifyTurn{role: "assistant", content: raw})

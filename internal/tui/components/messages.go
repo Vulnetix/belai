@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/vulnetix/signet/internal/filediff"
+	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/transcript"
 )
 
@@ -24,12 +25,19 @@ type AgentToolCall struct {
 
 // Message is one message in the transcript.
 type Message struct {
-	Role     string // user, assistant, tool, system
+	Role     string // user, assistant, tool, system, rolemanager
 	Content  string
 	Usage    *transcript.Usage // non-nil on metered assistant turns
 	ToolName string            // set on tool turns
 	ToolArgs string            // set on tool turns
 	Status   string            // set on tool turns (✓, withheld, …)
+
+	// Level is the role-manager activity level for "rolemanager" rows. The
+	// grouping loop drops a rolemanager row when its level exceeds the
+	// MessageList's InternalWork setting.
+	Level rolemanager.Level
+	// RM is the rendered role-manager description for "rolemanager" rows.
+	RM rolemanager.Description
 
 	// Expanded overrides global truncation for this message.
 	Expanded bool
@@ -126,6 +134,12 @@ type renderKey struct {
 	// metaLen changes when Meta is attached, so a late-arriving start_line
 	// causes a re-render.
 	metaLen int
+	// rmSummaryLen / rmOutcomeLen / rmTone key a rolemanager row's rendered
+	// description. The text is measured while still plain, so the cache key
+	// must include every field that changes the rendered line.
+	rmSummaryLen int
+	rmOutcomeLen int
+	rmTone       int
 	// subagentID distinguishes subagent activity rows (render-only gutter).
 	subagentID string
 	// groupN and groupLen key the cached render of a coalesced system group,
@@ -155,23 +169,26 @@ func renderKeyFor(m *Message, width int, expandAll bool) renderKey {
 		usage = m.Usage.Total()
 	}
 	return renderKey{
-		role:       m.Role,
-		contentLen: len(m.Text()),
-		toolName:   m.ToolName,
-		toolArgs:   m.ToolArgs,
-		status:     m.Status,
-		width:      width,
-		expand:     expandAll,
-		expanded:   m.Expanded,
-		partial:    m.Partial,
-		steering:   m.Steering,
-		usageTotal: usage,
-		toolCallsN: len(m.ToolCalls),
-		started:    running,
-		diffSeq:    m.diffSeq,
-		metaLen:    len(m.Meta),
-		subagentID: m.SubagentID,
-		markdown:   assistantMarkdown(*m),
+		role:         m.Role,
+		contentLen:   len(m.Text()),
+		toolName:     m.ToolName,
+		toolArgs:     m.ToolArgs,
+		status:       m.Status,
+		width:        width,
+		expand:       expandAll,
+		expanded:     m.Expanded,
+		partial:      m.Partial,
+		steering:     m.Steering,
+		usageTotal:   usage,
+		toolCallsN:   len(m.ToolCalls),
+		started:      running,
+		diffSeq:      m.diffSeq,
+		metaLen:      len(m.Meta),
+		subagentID:   m.SubagentID,
+		markdown:     assistantMarkdown(*m),
+		rmSummaryLen: len(m.RM.Summary),
+		rmOutcomeLen: len(m.RM.Outcome),
+		rmTone:       int(m.RM.Tone),
 	}
 }
 
@@ -298,9 +315,12 @@ type MessageList struct {
 	// mirroring the ctrl+r / ctrl+t toggles resolved by the caller. ShowEdits
 	// gates the Write/Edit rows independently of ShowTools, so a transcript
 	// can keep the file diffs while hiding the rest of the tool chatter.
+	// InternalWork gates the role-manager activity feed: a row renders when
+	// its level is <= this one.
 	ShowReasoning bool
 	ShowTools     bool
 	ShowEdits     bool
+	InternalWork  rolemanager.Level
 }
 
 // editToolNames are the file-mutation tools whose rows ShowEdits governs —
@@ -377,6 +397,17 @@ func (m MessageList) Render() (string, LineMap) {
 				entries = append(entries, renderEntry{idxs: []int{i}, kind: "system"})
 			}
 		case "system":
+			if n := len(entries); n > 0 && entries[n-1].kind == "system" {
+				entries[n-1].idxs = append(entries[n-1].idxs, i)
+			} else {
+				entries = append(entries, renderEntry{idxs: []int{i}, kind: "system"})
+			}
+		case "rolemanager":
+			// The activity feed is render-only and gated by the resolved level,
+			// exactly like the ShowTools / ShowEdits gates above.
+			if msg.Level > m.InternalWork {
+				continue
+			}
 			if n := len(entries); n > 0 && entries[n-1].kind == "system" {
 				entries[n-1].idxs = append(entries[n-1].idxs, i)
 			} else {

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/vulnetix/signet/internal/rolemanager"
 )
 
 // signetPanel renders a coalesced run of adjacent system notices and tool
@@ -18,7 +19,7 @@ func signetPanel(msgs []Message, idxs []int, width int, expandAll bool) (string,
 	first := &msgs[idxs[0]]
 	systemOnly := true
 	for _, idx := range idxs {
-		if msgs[idx].Role != "system" {
+		if msgs[idx].Role != "system" && msgs[idx].Role != "rolemanager" {
 			systemOnly = false
 			break
 		}
@@ -77,6 +78,8 @@ func renderSignetPanel(msgs []Message, idxs []int, width int, expandAll bool) (s
 		switch msg.Role {
 		case "system":
 			lineOwners, isSystemLine, bodyLines, bodyLm = renderSignetSystemLines(msg, idx, inner, bar, barCol, icol, groupCopyable, lineOwners, isSystemLine, bodyLines, bodyLm)
+		case "rolemanager":
+			lineOwners, isSystemLine, bodyLines, bodyLm = renderSignetActivityLines(msg, idx, inner, bar, barCol, icol, groupCopyable, lineOwners, isSystemLine, bodyLines, bodyLm)
 		case "tool":
 			lineOwners, isSystemLine, bodyLines, bodyLm = renderSignetToolLines(msg, idx, inner, bar, barCol, expandAll, groupCopyable, lineOwners, isSystemLine, bodyLines, bodyLm)
 		}
@@ -196,6 +199,62 @@ func renderSignetSystemLines(msg Message, owner, inner int, bar string, barCol, 
 		first = false
 	}
 	return owners, isSystem, bodyLines, lm
+}
+
+// renderSignetActivityLines adds a role-manager activity row to the panel
+// body. Unlike a system notice, the activity line is built from plain Segs and
+// wrapped with wrapSegs, then rendered through Row.Render so the outcome word
+// carries its tone colour while the LineMap is measured while the text is
+// still plain.
+func renderSignetActivityLines(msg Message, owner, inner int, bar string, barCol, icol int, groupCopyable bool, owners []int, isSystem []bool, bodyLines []string, lm LineMap) ([]int, []bool, []string, LineMap) {
+	content := []Seg{
+		NewSeg(msg.RM.Summary, nil),
+		NewSeg(" — ", nil),
+		NewSeg(msg.RM.Outcome, toneColor(msg.RM.Tone)),
+	}
+	wrapped := wrapSegs(content, max(inner-icol, 1))
+	if len(wrapped) == 0 {
+		wrapped = [][]Seg{{}}
+	}
+	first := true
+	for _, lineSegs := range wrapped {
+		prefix := "· "
+		if !first {
+			prefix = spaces(icol)
+		}
+		segs := append([]Seg{NewSeg(prefix, ColorMuted)}, lineSegs...)
+		row := Row{Segs: segs, Gutter: visibleLen(prefix)}
+		styled, sl := row.Render(inner)
+		pad := inner - visibleLen(segsPlain(segs))
+		if pad < 0 {
+			pad = 0
+		}
+		rendered := bar + " " + styled + spaces(pad) + " " + bar
+		bodyLines = append(bodyLines, rendered)
+
+		sl.Col += barCol
+		sl.Owner = owner
+		sl.Copyable = groupCopyable
+		owners = append(owners, owner)
+		isSystem = append(isSystem, true)
+		lm = append(lm, sl)
+		first = false
+	}
+	return owners, isSystem, bodyLines, lm
+}
+
+// toneColor maps an activity tone to its outcome colour.
+func toneColor(t rolemanager.Tone) lipgloss.TerminalColor {
+	switch t {
+	case rolemanager.ToneClear:
+		return ColorTeal
+	case rolemanager.ToneCaution:
+		return ColorAmber
+	case rolemanager.ToneBlocked:
+		return ColorDanger
+	default:
+		return ColorMuted
+	}
 }
 
 // renderSignetToolLines adds a tool result's existing row rendering to the

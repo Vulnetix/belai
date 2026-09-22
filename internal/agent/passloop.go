@@ -906,7 +906,7 @@ func (s *Session) compactBoundary(ctx context.Context, pipe *rolemanager.Pipelin
 	if err != nil {
 		return nil, false
 	}
-	dec, err := pipe.Admit(ctx, summary, s.live.Policy())
+	dec, err := pipe.Admit(ctx, summary, "summary", s.live.Policy())
 	if err != nil || dec.Action != rolemanager.ActionProceed {
 		return nil, false
 	}

@@ -1345,7 +1345,7 @@ func EngageWithPosture(ctx context.Context, cfg Config, prompt string, detectMod
 		selectErrCh <- err
 	}()
 
-	dec, err := pipe.Admit(ctx, clean, pol)
+	dec, err := pipe.Admit(ctx, clean, "prompt", pol)
 	if err != nil {
 		return res, err
 	}

@@ -132,7 +132,7 @@ func TestAdmitEmptyContentSkipsClassifier(t *testing.T) {
 	fc := &fakeClassifier{err: errors.New("classifier must not be called for empty content")}
 	p := NewPipeline(fc)
 	pol := posture.Policy{}
-	d, err := p.Admit(context.Background(), "", pol)
+	d, err := p.Admit(context.Background(), "", "test", pol)
 	if err != nil {
 		t.Fatalf("Admit: %v", err)
 	}

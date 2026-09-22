@@ -91,8 +91,9 @@ func NewPipelineWithChunk(c Classifier, chunk ChunkConfig) *Pipeline {
 
 // run performs sanitize -> classify -> parse and returns the raw result.
 // Content over the chunk threshold is classified in overlapping, concurrent
-// chunks and folded fail-closed.
-func (p *Pipeline) run(ctx context.Context, content string) (clean string, s Sentinel, parsed bool, err error) {
+// chunks and folded fail-closed. subject names what was checked (the trace
+// Tool field), so a security record can say what it looked at.
+func (p *Pipeline) run(ctx context.Context, content, subject string) (clean string, s Sentinel, parsed bool, err error) {
 	clean = sanitize.Sanitize(content)
 	// Content that is empty (or only whitespace) carries nothing to classify:
 	// a shell command that printed nothing cannot hold an injection. Calling
@@ -104,7 +105,7 @@ func (p *Pipeline) run(ctx context.Context, content string) (clean string, s Sen
 	if p.Cache != nil {
 		key := Key(clean)
 		if cached, ok := p.Cache.Get(key); ok {
-			record("verdict_cache_hit", string(cached), "", "", 0)
+			record(EventVerdictCacheHit, string(cached), subject, "", 0)
 			return clean, cached, true, nil
 		}
 	}
@@ -129,10 +130,10 @@ func (p *Pipeline) run(ctx context.Context, content string) (clean string, s Sen
 
 	s, err = ParseSentinel(raw)
 	if err != nil {
-		record("security_sentinel_malformed", "", "", "", 0)
+		record(EventSecuritySentinelMalformed, "", subject, "", 0)
 		return clean, "", false, nil
 	}
-	record("security_sentinel", string(s), "", "", 0)
+	record(EventSecuritySentinel, string(s), subject, "", 0)
 	if p.Cache != nil {
 		_ = p.Cache.Put(Key(clean), s)
 	}
@@ -250,7 +251,7 @@ func splitChunks(content string, maxBytes, overlap int) []string {
 // SAFE yields ActionProceed; every other sentinel — and any malformed
 // classifier output — fails closed to ActionWarn.
 func (p *Pipeline) Process(ctx context.Context, r tools.Result) (Decision, error) {
-	clean, s, parsed, err := p.run(ctx, r.Content)
+	clean, s, parsed, err := p.run(ctx, r.Content, string(r.Kind))
 	if err != nil {
 		return Decision{}, err
 	}
@@ -273,7 +274,7 @@ func (p *Pipeline) AcquireAgent(ctx context.Context, h agentpool.Handle) (*agent
 	}
 	lease, err := p.Pool.Acquire(ctx, h)
 	if err == nil {
-		record("agent_pool_admit", string(h.State), "", fmt.Sprintf("kind=%s id=%s slot=%d", h.Kind, h.ID, h.Index), 0)
+		record(EventAgentPoolAdmit, string(h.State), "", fmt.Sprintf("kind=%s id=%s slot=%d", h.Kind, h.ID, h.Index), 0)
 	}
 	return lease, err
 }
@@ -296,11 +297,12 @@ func (p *Pipeline) CancelAgent(id string) bool {
 
 // Admit classifies an arbitrary piece of content (e.g. a user prompt) and
 // applies the posture policy. Under enforce a non-SAFE sentinel is refused.
-func (p *Pipeline) Admit(ctx context.Context, content string, pol posture.Policy) (Decision, error) {
+// subject names what was checked for the activity feed and the trace file.
+func (p *Pipeline) Admit(ctx context.Context, content, subject string, pol posture.Policy) (Decision, error) {
 	if pol.Level(posture.PromptUnsafe) == posture.Ignore && pol.Level(posture.PromptMalformed) == posture.Ignore {
 		return Decision{Action: ActionProceed, Content: content}, nil
 	}
-	clean, s, parsed, err := p.run(ctx, content)
+	clean, s, parsed, err := p.run(ctx, content, subject)
 	if err != nil {
 		return Decision{}, err
 	}

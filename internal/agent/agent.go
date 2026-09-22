@@ -437,7 +437,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		}()
 	}
 
-	dec, err := pipe.Admit(ctx, clean, s.live.Policy())
+	dec, err := pipe.Admit(ctx, clean, "prompt", s.live.Policy())
 	if err != nil {
 		return run.Result{SanitizedPrompt: clean}, maybeCompact(err)
 	}
@@ -635,7 +635,7 @@ func (s *Session) drainSteer(ctx context.Context, pipe *rolemanager.Pipeline, em
 		}
 		clean := sanitize.Sanitize(text)
 		emit(Event{Kind: EventRoleManagerKind, Phase: RoleManagerPhaseSteer})
-		dec, err := pipe.Admit(ctx, clean, s.live.Policy())
+		dec, err := pipe.Admit(ctx, clean, "steering", s.live.Policy())
 		if err != nil {
 			emit(Event{Kind: EventErrorKind, Err: err})
 			continue

@@ -22,7 +22,7 @@ func (s stubClassifier) Classify(ctx context.Context, p ClassifierPayload) (stri
 
 func TestAdmitSafeProceeds(t *testing.T) {
 	pipe := NewPipeline(stubClassifier{reply: "SAFE"})
-	dec, err := pipe.Admit(context.Background(), "hello", posture.Defaults())
+	dec, err := pipe.Admit(context.Background(), "hello", "test", posture.Defaults())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -36,7 +36,7 @@ func TestAdmitSafeProceeds(t *testing.T) {
 
 func TestAdmitUnsafeEnforceRefuses(t *testing.T) {
 	pipe := NewPipeline(stubClassifier{reply: "PROMPT_INJECTION"})
-	_, err := pipe.Admit(context.Background(), "bad", posture.Defaults())
+	_, err := pipe.Admit(context.Background(), "bad", "test", posture.Defaults())
 	if err == nil {
 		t.Fatal("expected refusal error")
 	}
@@ -58,7 +58,7 @@ func TestAdmitUnsafeEnforceRefuses(t *testing.T) {
 func TestAdmitUnsafeWarnProceeds(t *testing.T) {
 	pipe := NewPipeline(stubClassifier{reply: "PROMPT_INJECTION"})
 	pol := posture.Policy{posture.PromptUnsafe: posture.Warn}
-	dec, err := pipe.Admit(context.Background(), "bad", pol)
+	dec, err := pipe.Admit(context.Background(), "bad", "test", pol)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestAdmitUnsafeWarnProceeds(t *testing.T) {
 func TestAdmitUnsafeIgnoreProceeds(t *testing.T) {
 	pipe := NewPipeline(stubClassifier{reply: "PROMPT_INJECTION"})
 	pol := posture.Policy{posture.PromptUnsafe: posture.Ignore}
-	dec, err := pipe.Admit(context.Background(), "bad", pol)
+	dec, err := pipe.Admit(context.Background(), "bad", "test", pol)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestAdmitUnsafeIgnoreProceeds(t *testing.T) {
 
 func TestAdmitMalformedEnforceRefuses(t *testing.T) {
 	pipe := NewPipeline(stubClassifier{reply: "not-a-sentinel"})
-	_, err := pipe.Admit(context.Background(), "bad", posture.Defaults())
+	_, err := pipe.Admit(context.Background(), "bad", "test", posture.Defaults())
 	if err == nil {
 		t.Fatal("expected refusal error")
 	}
@@ -97,7 +97,7 @@ func TestAdmitMalformedEnforceRefuses(t *testing.T) {
 func TestAdmitMalformedWarnProceeds(t *testing.T) {
 	pipe := NewPipeline(stubClassifier{reply: "nope"})
 	pol := posture.Policy{posture.PromptMalformed: posture.Warn}
-	dec, err := pipe.Admit(context.Background(), "bad", pol)
+	dec, err := pipe.Admit(context.Background(), "bad", "test", pol)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestAdmitMalformedWarnProceeds(t *testing.T) {
 func TestAdmitMalformedIgnoreProceeds(t *testing.T) {
 	pipe := NewPipeline(stubClassifier{reply: "nope"})
 	pol := posture.Policy{posture.PromptMalformed: posture.Ignore}
-	dec, err := pipe.Admit(context.Background(), "bad", pol)
+	dec, err := pipe.Admit(context.Background(), "bad", "test", pol)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestAdmitMalformedIgnoreProceeds(t *testing.T) {
 func TestAdmitIgnoreBothSkipsClassifier(t *testing.T) {
 	pipe := NewPipeline(stubClassifier{err: errors.New("should not be called")})
 	pol := posture.Policy{posture.PromptUnsafe: posture.Ignore, posture.PromptMalformed: posture.Ignore}
-	dec, err := pipe.Admit(context.Background(), "hello", pol)
+	dec, err := pipe.Admit(context.Background(), "hello", "test", pol)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -132,7 +132,7 @@ func TestAdmitIgnoreBothSkipsClassifier(t *testing.T) {
 
 func TestAdmitPropagatesClassifierError(t *testing.T) {
 	pipe := NewPipeline(stubClassifier{err: errors.New("boom")})
-	_, err := pipe.Admit(context.Background(), "hello", posture.Defaults())
+	_, err := pipe.Admit(context.Background(), "hello", "test", posture.Defaults())
 	if err == nil {
 		t.Fatal("expected error")
 	}

@@ -76,9 +76,9 @@ func EvaluateAgent(ctx context.Context, c Classifier, profileGoals, recentOutput
 	}
 	s, err := ParseAgentVerdict(raw)
 	if err != nil {
-		record("agent_eval", string(AgentPause), "", "malformed: "+traceSnippet(raw), 0)
+		record(EventAgentEval, string(AgentPause), "", "malformed: "+traceSnippet(raw), 0)
 		return AgentPause, ErrMalformedAgentEval
 	}
-	record("agent_eval", string(s), "", "", 0)
+	record(EventAgentEval, string(s), "", "", 0)
 	return s, nil
 }

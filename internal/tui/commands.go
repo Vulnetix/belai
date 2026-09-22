@@ -285,6 +285,9 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("exit", "quit and print the resume card", nil, func(a *App, arg string) tea.Cmd {
 		// Typing a whole command is confirmation enough: no two-press arm, and
 		// the exit card prints exactly as it does after the armed ctrl+d.
+		if a.rmCancel != nil {
+			a.rmCancel()
+		}
 		a.stopLocalServers()
 		if a.procManager != nil {
 			a.procManager.Shutdown()

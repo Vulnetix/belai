@@ -96,9 +96,9 @@ func EvaluatePlan(ctx context.Context, c Classifier, in PlanEvalInput) (PlanSent
 	}
 	s, err := ParsePlanSentinel(raw)
 	if err != nil {
-		record("plan_eval", string(PlanPartial), "", "malformed: "+traceSnippet(raw), 0)
+		record(EventPlanEval, string(PlanPartial), "", "malformed: "+traceSnippet(raw), 0)
 		return PlanPartial, ErrMalformedPlanEval
 	}
-	record("plan_eval", string(s), "", "", 0)
+	record(EventPlanEval, string(s), "", "", 0)
 	return s, nil
 }

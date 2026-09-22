@@ -682,3 +682,37 @@ func TestCatalogWindow(t *testing.T) {
 		t.Fatalf("zero settings = %d, want 0", got)
 	}
 }
+
+func TestInternalWorkLevelDefaultAndUnrecognised(t *testing.T) {
+	var s Settings
+	if got := s.InternalWorkLevel(); got != "hidden" {
+		t.Fatalf("default InternalWorkLevel = %q, want hidden", got)
+	}
+	v := "bogus"
+	s.UI = &UISettings{ShowInternalWork: &v}
+	if got := s.InternalWorkLevel(); got != "hidden" {
+		t.Fatalf("unrecognised InternalWorkLevel = %q, want hidden", got)
+	}
+	for _, want := range []string{"hidden", "decisions", "security", "all"} {
+		v = want
+		s.UI.ShowInternalWork = &v
+		if got := s.InternalWorkLevel(); got != want {
+			t.Fatalf("InternalWorkLevel(%q) = %q, want %q", want, got, want)
+		}
+	}
+}
+
+func TestShowInternalWorkMergePrecedence(t *testing.T) {
+	global := "security"
+	proj := "all"
+	got := (Settings{UI: &UISettings{ShowInternalWork: &global}}).Override(Settings{UI: &UISettings{ShowInternalWork: &proj}})
+	if got.InternalWorkLevel() != "all" {
+		t.Fatalf("project should override global: %q", got.InternalWorkLevel())
+	}
+
+	// Unset project falls back to global.
+	got = (Settings{UI: &UISettings{ShowInternalWork: &global}}).Override(Settings{})
+	if got.InternalWorkLevel() != "security" {
+		t.Fatalf("unset project should keep global: %q", got.InternalWorkLevel())
+	}
+}
