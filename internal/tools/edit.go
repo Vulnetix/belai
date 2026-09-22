@@ -140,7 +140,10 @@ func (e *Edit) Execute(ctx context.Context, args map[string]any) (Result, error)
 	if replacements == 1 {
 		plural = ""
 	}
-	return EditResult(fmt.Sprintf("edited %s (%d replacement%s)", res.Rel, replacements, plural)), nil
+	return EditResultMeta(
+		fmt.Sprintf("edited %s (%d replacement%s)", res.Rel, replacements, plural),
+		map[string]any{"abs_path": full, "rel_path": res.Rel},
+	), nil
 }
 
 func (e *Edit) maxBytes() int64 {

@@ -112,7 +112,10 @@ func (w *Write) Execute(ctx context.Context, args map[string]any) (Result, error
 	if countLines(content) == 1 {
 		lineWord = "line"
 	}
-	return WriteResult(fmt.Sprintf("wrote %s (%d bytes, %d %s)", res.Rel, len(content), countLines(content), lineWord)), nil
+	return WriteResultMeta(
+		fmt.Sprintf("wrote %s (%d bytes, %d %s)", res.Rel, len(content), countLines(content), lineWord),
+		map[string]any{"abs_path": full, "rel_path": res.Rel},
+	), nil
 }
 
 func (w *Write) maxBytes() int64 {
