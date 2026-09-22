@@ -3,7 +3,6 @@ package lsp
 import (
 	"context"
 	"io"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -70,19 +69,20 @@ func TestNewManagerAppliesDefaults(t *testing.T) {
 }
 
 func TestManagerStartFuncSeam(t *testing.T) {
-	var called atomic.Bool
+	called := make(chan struct{})
 	m := NewManager(Options{
 		Fallback: true,
+		Servers:  map[string]string{"go": "/test/gopls"},
 		Start: func(ctx context.Context, argv []string, dir string) (Conn, error) {
-			called.Store(true)
+			close(called)
 			return nil, context.DeadlineExceeded
 		},
 	})
 	defer m.Close()
 	_ = m.Diagnose(context.Background(), "foo.go", []byte("package main"))
-	// Give the goroutine time to run.
-	time.Sleep(50 * time.Millisecond)
-	if !called.Load() {
+	select {
+	case <-called:
+	case <-time.After(5 * time.Second):
 		t.Fatal("StartFunc was not called")
 	}
 }
