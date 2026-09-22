@@ -1414,6 +1414,7 @@ func (a *App) handleAgentReady(m agentReadyMsg) tea.Cmd {
 		a.cancel = nil
 		a.endPhase()
 		a.addSystem("agent error: " + m.err.Error())
+		a.persistTail()
 		return nil
 	}
 	a.agent = m.sess
@@ -2239,13 +2240,23 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 			a.preSend = false
 			a.endPhase()
 			a.addSystem("request cancelled")
+			a.persistTail()
 			return nil
 		}
 		if a.cancel != nil {
 			a.cancel()
 			a.cancel = nil
 			a.endPhase()
+			// Flush whatever streamed before the cancel (reasoning, partial
+			// text, completed tools, notices) so the transcript survives.
+			if last := a.trailingAssistant(); last >= 0 {
+				a.messages[last].Materialise()
+			}
+			if last := a.trailingReasoning(); last >= 0 {
+				a.messages[last].Materialise()
+			}
 			a.addSystem("request cancelled")
+			a.persistTail()
 			return nil
 		}
 		// Last step of the cascade: composer clear is two-press armed. Every
