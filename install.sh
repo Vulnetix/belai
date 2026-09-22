@@ -11,6 +11,7 @@ set -e
 
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 VERSION="${VERSION:-latest}"
+VARIANT="${SIGNET_VARIANT:-bert-guardrails}"
 BINARY_NAME="signet"
 GITHUB_REPO="Vulnetix/signet"
 GITHUB_BASE="https://github.com/${GITHUB_REPO}/releases"
@@ -29,6 +30,10 @@ while [ $# -gt 0 ]; do
       VERSION="$2"
       shift 2
       ;;
+    --variant)
+      VARIANT="$2"
+      shift 2
+      ;;
     --help)
       cat <<EOF
 Usage: install.sh [options]
@@ -36,16 +41,19 @@ Usage: install.sh [options]
 Options:
   --install-dir DIR    Installation directory (default: /usr/local/bin)
   --version VERSION    Version to install, e.g. v0.1.1 (default: latest)
+  --variant VARIANT    Asset family: bert-guardrails (default), bert-guardrails-jailbreak, no-classifier, or vanilla
   --help               Show this message
 
 Environment variables:
   INSTALL_DIR          Overrides --install-dir
   VERSION              Overrides --version
+  SIGNET_VARIANT       Overrides --variant
 
 Examples:
   curl -fsSL https://raw.githubusercontent.com/vulnetix/signet/main/install.sh | sh
   curl -fsSL https://raw.githubusercontent.com/vulnetix/signet/main/install.sh | sh -s -- --install-dir ~/.local/bin
   curl -fsSL https://raw.githubusercontent.com/vulnetix/signet/main/install.sh | sh -s -- --version v0.1.1
+  curl -fsSL https://raw.githubusercontent.com/vulnetix/signet/main/install.sh | sh -s -- --variant bert-guardrails-jailbreak
 EOF
       exit 0
       ;;
@@ -56,6 +64,23 @@ EOF
       ;;
   esac
 done
+
+# ---------------------------------------------------------------------------
+# Variant → release asset family
+# ---------------------------------------------------------------------------
+
+resolve_asset_name() {
+  case "$1" in
+    ""|vanilla)          ASSET_NAME="signet" ;;
+    no-classifier)       ASSET_NAME="signet-no-classifier" ;;
+    bert-guardrails)     ASSET_NAME="signet-bert-guardrails" ;;
+    bert-guardrails-jailbreak) ASSET_NAME="signet-bert-guardrails-jailbreak" ;;
+    *)
+      echo "error: unknown variant: $1 (want bert-guardrails, bert-guardrails-jailbreak, no-classifier, or vanilla)" >&2
+      exit 1
+      ;;
+  esac
+}
 
 # ---------------------------------------------------------------------------
 # Environment detection
@@ -313,7 +338,8 @@ main() {
 
   EXT=""
   [ "$OS" = "windows" ] && EXT=".exe"
-  ASSET="${BINARY_NAME}-${PLATFORM}${EXT}"
+  resolve_asset_name "$VARIANT"
+  ASSET="${ASSET_NAME}-${PLATFORM}${EXT}"
 
   # `latest` is resolved to a concrete tag ONCE, and both downloads are then
   # pinned to it. Fetching the binary and its checksums through the /latest/

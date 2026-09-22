@@ -51,6 +51,23 @@ curl -fsSL https://raw.githubusercontent.com/Vulnetix/signet/main/install.sh | s
 
 Pre-built binaries for Linux, macOS, and Windows are available on the [Releases](https://github.com/vulnetix/signet/releases) page.
 
+Release assets ship in four families. The default install (`install.sh`,
+Homebrew, Scoop) is **`signet-bert-guardrails`**, which embeds the phase-1
+prompt-saturation model so guardrails work with no provider or API key
+configured. The others:
+
+| Asset family | What is embedded | Approx size |
+| ------------ | ---------------- | ----------- |
+| `signet` | nothing (LLM sentinel only, exactly the pre-embed behaviour) | ~23 MB |
+| `signet-bert-guardrails` **(default)** | phase-1 prompt-saturation model | ~40 MB |
+| `signet-bert-guardrails-jailbreak` | phase-1 + phase-2 jailbreak model | ~485 MB |
+| `signet-no-classifier` | nothing | ~23 MB |
+
+`install.sh` accepts `--variant` (or `SIGNET_VARIANT`) to pick one of
+`no-classifier`, `bert-guardrails`, or `bert-guardrails-jailbreak`. The on-disk
+command name is `signet` regardless of variant, and a variant binary updates to
+its own family.
+
 ### Update checks
 
 At startup Signet compares its own version against the newest GitHub release.

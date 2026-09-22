@@ -34,3 +34,41 @@ jobs:
 
       - name: cross-compile (darwin)
         run: GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build ./...
+
+  # The embedded-model path is exercised here so a drift in the modelprep tool,
+  # the attack-label orientation, or the tagged build fails CI before a release.
+  models:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install torch + safetensors
+        run: pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu safetensors
+
+      - name: Cache prepared models
+        uses: actions/cache@v4
+        with:
+          path: internal/mlclassify/assets
+          key: models-${{ hashFiles('tools/modelprep/**') }}-6e8dbe4a-771aa6f1
+          restore-keys: models-${{ hashFiles('tools/modelprep/**') }}-
+
+      - name: Prepare models
+        run: go run ./tools/modelprep -python python -phase1 -phase2
+
+      - name: Golden tests (phase 1)
+        run: go test -race -tags signet_bert ./internal/mlclassify/...
+
+      - name: Golden tests (phase 2)
+        run: go test -race -tags signet_bert_jailbreak ./internal/mlclassify/...

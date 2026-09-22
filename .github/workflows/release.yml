@@ -41,10 +41,50 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "Releasing $VERSION"
 
-  # Signet is pure Go (CGO_ENABLED=0), so every target cross-compiles from one
-  # Linux box.
-  build:
+  # Prepare the embedded classifier models once, then hand the converted
+  # directories to the build job as an artifact so conversion happens once
+  # rather than per variant.
+  models:
     needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install torch + safetensors
+        run: pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu safetensors
+
+      # Cache the prepared model directories, not the raw HF downloads. The key
+      # pins the modelprep source and the HF commit revisions so a
+      # silently-updated model cannot change a release.
+      - name: Cache prepared models
+        uses: actions/cache@v4
+        with:
+          path: internal/mlclassify/assets
+          key: models-${{ hashFiles('tools/modelprep/**') }}-6e8dbe4a-771aa6f1
+          restore-keys: models-${{ hashFiles('tools/modelprep/**') }}-
+
+      - name: Prepare models
+        run: go run ./tools/modelprep -python python -phase1 -phase2
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: models
+          path: internal/mlclassify/assets/*
+
+  # Signet is pure Go (CGO_ENABLED=0), so every target cross-compiles from one
+  # Linux box. Each variant family is built for all six targets.
+  build:
+    needs: [version, models]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -57,6 +97,11 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - uses: actions/download-artifact@v7
+        with:
+          name: models
+          path: internal/mlclassify/assets
+
       - name: Build cross-platform binaries
         run: |
           VERSION=${{ needs.version.outputs.version }}
@@ -65,19 +110,40 @@ jobs:
           LDFLAGS="-s -w -X github.com/vulnetix/signet/internal/version.Version=${VERSION} -X github.com/vulnetix/signet/internal/version.Commit=${COMMIT} -X github.com/vulnetix/signet/internal/version.BuildDate=${BUILD_DATE}"
           mkdir -p bin
 
+          # variant: vanilla, no-classifier, bert-guardrails, bert-guardrails-jailbreak
           build_target() {
-            local goos="$1" goarch="$2" suffix="$3"
+            local variant="$1" goos="$2" goarch="$3" suffix="$4"
+            local name="signet" tags="" extra=""
+            case "$variant" in
+              no-classifier)
+                name="signet-no-classifier"
+                extra="-X github.com/vulnetix/signet/internal/version.Variant=no-classifier"
+                ;;
+              bert-guardrails)
+                name="signet-bert-guardrails"
+                tags="-tags signet_bert"
+                extra="-X github.com/vulnetix/signet/internal/version.Variant=bert-guardrails"
+                ;;
+              bert-guardrails-jailbreak)
+                name="signet-bert-guardrails-jailbreak"
+                tags="-tags signet_bert_jailbreak"
+                extra="-X github.com/vulnetix/signet/internal/version.Variant=bert-guardrails-jailbreak"
+                ;;
+            esac
+            echo "  bin/${name}-${goos}-${goarch}${suffix}"
             CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
-              go build -ldflags "$LDFLAGS" \
-              -o "bin/signet-${goos}-${goarch}${suffix}" ./cmd/signet
+              go build $tags -ldflags "$LDFLAGS $extra" \
+              -o "bin/${name}-${goos}-${goarch}${suffix}" ./cmd/signet
           }
 
-          build_target linux   amd64 ""
-          build_target linux   arm64 ""
-          build_target darwin  amd64 ""
-          build_target darwin  arm64 ""
-          build_target windows amd64 ".exe"
-          build_target windows arm64 ".exe"
+          for variant in "" no-classifier bert-guardrails bert-guardrails-jailbreak; do
+            build_target "$variant" linux   amd64 ""
+            build_target "$variant" linux   arm64 ""
+            build_target "$variant" darwin  amd64 ""
+            build_target "$variant" darwin  arm64 ""
+            build_target "$variant" windows amd64 ".exe"
+            build_target "$variant" windows arm64 ".exe"
+          done
 
       - uses: actions/upload-artifact@v6
         with:
@@ -171,10 +237,10 @@ jobs:
             fi
             printf '%s' "$sum"
           }
-          DARWIN_ARM64=$(hash_for signet-darwin-arm64)
-          DARWIN_AMD64=$(hash_for signet-darwin-amd64)
-          LINUX_ARM64=$(hash_for signet-linux-arm64)
-          LINUX_AMD64=$(hash_for signet-linux-amd64)
+          DARWIN_ARM64=$(hash_for signet-bert-guardrails-darwin-arm64)
+          DARWIN_AMD64=$(hash_for signet-bert-guardrails-darwin-amd64)
+          LINUX_ARM64=$(hash_for signet-bert-guardrails-linux-arm64)
+          LINUX_AMD64=$(hash_for signet-bert-guardrails-linux-amd64)
 
           cd homebrew-tap
           BREW="Formula/signet.rb"
@@ -182,11 +248,20 @@ jobs:
             echo "::error::homebrew-tap has no Formula/signet.rb" >&2
             exit 1
           fi
+
+          # The default asset family is the embedded guardrails build. The
+          # leading slash keeps these substitutions from colliding with the
+          # already-prefixed variant asset names.
+          sed -i "s#/signet-darwin-arm64#/signet-bert-guardrails-darwin-arm64#" "$BREW"
+          sed -i "s#/signet-darwin-amd64#/signet-bert-guardrails-darwin-amd64#" "$BREW"
+          sed -i "s#/signet-linux-arm64#/signet-bert-guardrails-linux-arm64#" "$BREW"
+          sed -i "s#/signet-linux-amd64#/signet-bert-guardrails-linux-amd64#" "$BREW"
+
           sed -i "s/version \"[^\"]*\"/version \"${VER_NUM}\"/" "$BREW"
-          sed -i "/signet-darwin-arm64/{n;s/sha256 \"[a-f0-9]*\"/sha256 \"${DARWIN_ARM64}\"/}" "$BREW"
-          sed -i "/signet-darwin-amd64/{n;s/sha256 \"[a-f0-9]*\"/sha256 \"${DARWIN_AMD64}\"/}" "$BREW"
-          sed -i "/signet-linux-arm64/{n;s/sha256 \"[a-f0-9]*\"/sha256 \"${LINUX_ARM64}\"/}" "$BREW"
-          sed -i "/signet-linux-amd64/{n;s/sha256 \"[a-f0-9]*\"/sha256 \"${LINUX_AMD64}\"/}" "$BREW"
+          sed -i "/signet-bert-guardrails-darwin-arm64/{n;s/sha256 \"[a-f0-9]*\"/sha256 \"${DARWIN_ARM64}\"/}" "$BREW"
+          sed -i "/signet-bert-guardrails-darwin-amd64/{n;s/sha256 \"[a-f0-9]*\"/sha256 \"${DARWIN_AMD64}\"/}" "$BREW"
+          sed -i "/signet-bert-guardrails-linux-arm64/{n;s/sha256 \"[a-f0-9]*\"/sha256 \"${LINUX_ARM64}\"/}" "$BREW"
+          sed -i "/signet-bert-guardrails-linux-amd64/{n;s/sha256 \"[a-f0-9]*\"/sha256 \"${LINUX_AMD64}\"/}" "$BREW"
 
           for want in "${VER_NUM}" "${DARWIN_ARM64}" "${DARWIN_AMD64}" "${LINUX_ARM64}" "${LINUX_AMD64}"; do
             if ! grep -q "$want" "$BREW"; then
@@ -218,8 +293,8 @@ jobs:
             fi
             printf '%s' "$sum"
           }
-          WIN_AMD64=$(hash_for signet-windows-amd64.exe)
-          WIN_ARM64=$(hash_for signet-windows-arm64.exe)
+          WIN_AMD64=$(hash_for signet-bert-guardrails-windows-amd64.exe)
+          WIN_ARM64=$(hash_for signet-bert-guardrails-windows-arm64.exe)
 
           cd scoop-bucket
           if [ ! -f bucket/signet.json ]; then
@@ -231,10 +306,14 @@ jobs:
             --arg h64 "$WIN_AMD64" \
             --arg harm "$WIN_ARM64" \
             '.version = $v |
-             .architecture."64bit".url = "https://github.com/Vulnetix/signet/releases/download/v\($v)/signet-windows-amd64.exe#/signet.exe" |
+             .architecture."64bit".url = "https://github.com/Vulnetix/signet/releases/download/v\($v)/signet-bert-guardrails-windows-amd64.exe#/signet.exe" |
              .architecture."64bit".hash = $h64 |
-             .architecture.arm64.url = "https://github.com/Vulnetix/signet/releases/download/v\($v)/signet-windows-arm64.exe#/signet.exe" |
-             .architecture.arm64.hash = $harm' bucket/signet.json > /tmp/signet.json
+             .architecture.arm64.url = "https://github.com/Vulnetix/signet/releases/download/v\($v)/signet-bert-guardrails-windows-arm64.exe#/signet.exe" |
+             .architecture.arm64.hash = $harm |
+             .autoupdate.architecture."64bit".url = "https://github.com/Vulnetix/signet/releases/download/v$version/signet-bert-guardrails-windows-amd64.exe#/signet.exe" |
+             .autoupdate.architecture."64bit".hash.regex = "([a-fA-F0-9]{64})  signet-bert-guardrails-windows-amd64.exe" |
+             .autoupdate.architecture.arm64.url = "https://github.com/Vulnetix/signet/releases/download/v$version/signet-bert-guardrails-windows-arm64.exe#/signet.exe" |
+             .autoupdate.architecture.arm64.hash.regex = "([a-fA-F0-9]{64})  signet-bert-guardrails-windows-arm64.exe"' bucket/signet.json > /tmp/signet.json
           mv /tmp/signet.json bucket/signet.json
 
           test "$(jq -r .version bucket/signet.json)" = "$VER_NUM"
