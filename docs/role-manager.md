@@ -428,6 +428,14 @@ work` selects how much shows, in four additive levels:
 | `security` | everything in `decisions` plus the security classifier sentinel/malformed, the ML classifier's phase 1/2/3 verdicts, bad verdict cache, boundary verify failure |
 | `all` | everything in `security` plus bookkeeping: boundary sealing, verdict-cache hits, fan-out admission |
 
+The `security` level renders the ML classifier stages by *why* they run, not
+by phase number: saturation checks read as "Checked whether the content
+floods the prompt with repeated instructions", jailbreak checks as "Checked
+whether the content tries to override the rules", and the extraction sentinel
+as "Checked whether the content tries to extract private data or model
+details". Phase numbers are implementation labels and never appear in the
+user-facing feed.
+
 Events already surfaced by a dedicated line — `mode_classify`, `mode_forced`,
 `goal_eval`, `goal_eval_repair`, `plan_eval` — are suppressed in the feed so
 the same decision never prints twice in one panel. The feed is additive to

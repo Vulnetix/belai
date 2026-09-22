@@ -104,6 +104,30 @@ func TestSecurityPhaseCoversEveryVerdictAndPhase(t *testing.T) {
 	}
 }
 
+func TestSecurityPhaseDescriptionsAreWhyFocused(t *testing.T) {
+	cases := []struct {
+		subject     string
+		wantPhrase  string
+		rejectPhase bool
+	}{
+		{"phase 1", "floods the prompt with repeated instructions", true},
+		{"phase 2", "tries to override the rules", true},
+		{"phase 3", "tries to extract private data or model details", true},
+	}
+	for _, c := range cases {
+		desc, ok := Describe(Activity{Event: EventSecurityPhase, Verdict: string(SentinelSafe), Subject: c.subject})
+		if !ok {
+			t.Fatalf("Describe(%q) returned false", c.subject)
+		}
+		if !strings.Contains(desc.Summary, c.wantPhrase) {
+			t.Errorf("%s summary = %q, want it to contain %q", c.subject, desc.Summary, c.wantPhrase)
+		}
+		if c.rejectPhase && strings.Contains(desc.Summary, "Phase ") {
+			t.Errorf("%s summary = %q, must not contain \"Phase\"", c.subject, desc.Summary)
+		}
+	}
+}
+
 func TestAgentEvalCoversEveryVerdict(t *testing.T) {
 	verdicts := []string{
 		string(AgentContinue),

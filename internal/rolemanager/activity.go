@@ -259,16 +259,18 @@ func securityDescription(a Activity) Description {
 	return d
 }
 
-// phaseDescription renders one ML classifier phase's verdict. The subject is
-// the phase name ("phase 1" / "phase 2" / "phase 3"); the verdict is a sentinel
-// token, or a status word ("skipped" / "off") for a phase that did not run.
+// phaseDescription renders one ML classifier stage's verdict. The subject is
+// the stage key ("phase 1" / "phase 2" / "phase 3"); the displayed text
+// explains why that stage is run, not what it is called. The verdict is a
+// sentinel token, or a status word ("skipped" / "off") for a stage that did
+// not run.
 func phaseDescription(a Activity) Description {
-	summary := "Phase 1 · prompt-saturation gate"
+	summary := "Checked whether the content floods the prompt with repeated instructions"
 	switch a.Subject {
 	case "phase 2":
-		summary = "Phase 2 · jailbreak gate"
+		summary = "Checked whether the content tries to override the rules"
 	case "phase 3":
-		summary = "Phase 3 · extraction sentinel"
+		summary = "Checked whether the content tries to extract private data or model details"
 	}
 	d := Description{
 		Summary: summary,
@@ -279,19 +281,19 @@ func phaseDescription(a Activity) Description {
 		d.Outcome = "clean"
 		d.Tone = ToneClear
 	case string(SentinelPromptInjection):
-		d.Outcome = "blocked — saturation / prompt-injection"
+		d.Outcome = "blocked — reads like an attempt to hijack the instructions"
 		d.Tone = ToneBlocked
 	case string(SentinelJailbreak):
-		d.Outcome = "blocked — jailbreak"
+		d.Outcome = "blocked — reads like an attempt to override the rules"
 		d.Tone = ToneBlocked
 	case string(SentinelDataExtraction):
-		d.Outcome = "blocked — data extraction"
+		d.Outcome = "blocked — reads like an attempt to pull out private data"
 		d.Tone = ToneBlocked
 	case string(SentinelModelExtraction):
-		d.Outcome = "blocked — model extraction"
+		d.Outcome = "blocked — reads like an attempt to copy the model"
 		d.Tone = ToneBlocked
 	case "skipped":
-		d.Outcome = "skipped — an earlier phase already flagged it"
+		d.Outcome = "skipped — an earlier check already flagged it"
 		d.Tone = ToneNeutral
 	case "off":
 		d.Outcome = "off"
