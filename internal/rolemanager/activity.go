@@ -19,6 +19,7 @@ type Event string
 const (
 	EventSecuritySentinel          Event = "security_sentinel"
 	EventSecuritySentinelMalformed Event = "security_sentinel_malformed"
+	EventSecurityPhase             Event = "security_phase"
 	EventVerdictCacheHit           Event = "verdict_cache_hit"
 	EventVerdictCacheBad           Event = "verdict_cache_bad"
 	EventModeClassify              Event = "mode_classify"
@@ -145,6 +146,8 @@ func Describe(a Activity) (Description, bool) {
 	switch a.Event {
 	case EventSecuritySentinel:
 		return securityDescription(a), true
+	case EventSecurityPhase:
+		return phaseDescription(a), true
 	case EventSecuritySentinelMalformed:
 		return Description{
 			Summary: "Checked what " + subjectPhrase(a.Subject) + " returned",
@@ -243,6 +246,50 @@ func securityDescription(a Activity) Description {
 	case string(SentinelModelExtraction):
 		d.Outcome = "blocked — reads like an attempt to copy the model"
 		d.Tone = ToneBlocked
+	}
+	return d
+}
+
+// phaseDescription renders one ML classifier phase's verdict. The subject is
+// the phase name ("phase 1" / "phase 2" / "phase 3"); the verdict is a sentinel
+// token, or a status word ("skipped" / "off") for a phase that did not run.
+func phaseDescription(a Activity) Description {
+	summary := "Phase 1 · prompt-saturation gate"
+	switch a.Subject {
+	case "phase 2":
+		summary = "Phase 2 · jailbreak gate"
+	case "phase 3":
+		summary = "Phase 3 · extraction sentinel"
+	}
+	d := Description{
+		Summary: summary,
+		Levels:  LevelSecurity,
+	}
+	switch a.Verdict {
+	case string(SentinelSafe):
+		d.Outcome = "clean"
+		d.Tone = ToneClear
+	case string(SentinelPromptInjection):
+		d.Outcome = "blocked — saturation / prompt-injection"
+		d.Tone = ToneBlocked
+	case string(SentinelJailbreak):
+		d.Outcome = "blocked — jailbreak"
+		d.Tone = ToneBlocked
+	case string(SentinelDataExtraction):
+		d.Outcome = "blocked — data extraction"
+		d.Tone = ToneBlocked
+	case string(SentinelModelExtraction):
+		d.Outcome = "blocked — model extraction"
+		d.Tone = ToneBlocked
+	case "skipped":
+		d.Outcome = "skipped — an earlier phase already flagged it"
+		d.Tone = ToneNeutral
+	case "off":
+		d.Outcome = "off"
+		d.Tone = ToneNeutral
+	default:
+		d.Outcome = "couldn't tell"
+		d.Tone = ToneCaution
 	}
 	return d
 }

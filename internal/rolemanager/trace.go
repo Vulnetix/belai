@@ -39,3 +39,12 @@ func record(e Event, verdict, subject, detail string, pass int) {
 		}()
 	}
 }
+
+// RecordSecurityPhase emits one ML classifier phase decision to the activity
+// feed. subject is the phase name ("phase 1" / "phase 2" / "phase 3"); verdict
+// is the phase's sentinel token, or a status word ("skipped" / "off") for a
+// phase that did not run. It is the mlclassify package's hook into the
+// observer, and never carries classified payload text.
+func RecordSecurityPhase(subject, verdict string) {
+	record(EventSecurityPhase, verdict, subject, "", 0)
+}

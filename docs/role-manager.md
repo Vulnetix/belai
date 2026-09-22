@@ -368,7 +368,7 @@ work` selects how much shows, in four additive levels:
 | ----- | ----- |
 | `hidden` (default) | nothing — the feed is render-only and never changes a verdict |
 | `decisions` | agent evaluator, goal drafting, clarification, compaction, session naming, tool-call mismatch, goal-length limit |
-| `security` | everything in `decisions` plus the security classifier sentinel/malformed, bad verdict cache, boundary verify failure |
+| `security` | everything in `decisions` plus the security classifier sentinel/malformed, the ML classifier's phase 1/2/3 verdicts, bad verdict cache, boundary verify failure |
 | `all` | everything in `security` plus bookkeeping: boundary sealing, verdict-cache hits, fan-out admission |
 
 Events already surfaced by a dedicated line — `mode_classify`, `mode_forced`,

@@ -204,3 +204,64 @@ func TestOptionsIdentityIncludesPhase3State(t *testing.T) {
 		t.Fatal("different phase-1 models must not share an identity")
 	}
 }
+
+func phaseEvents(acts []rolemanager.Activity) []string {
+	var out []string
+	for _, a := range acts {
+		if a.Event == rolemanager.EventSecurityPhase {
+			out = append(out, a.Subject+"="+a.Verdict)
+		}
+	}
+	return out
+}
+
+func TestClassifyEmitsPhaseEventsOffWhenIdle(t *testing.T) {
+	var got []rolemanager.Activity
+	cancel := rolemanager.SetObserver(func(a rolemanager.Activity) { got = append(got, a) })
+	defer cancel()
+
+	c := newTestClassifier(t, &fakeGate{ph: Phase1, sentinel: rolemanager.SentinelSafe}, nil, nil,
+		WindowConfig{Tokens: 3, Overlap: 1, MaxWindows: 10})
+	if _, err := c.Classify(context.Background(), rolemanager.BuildClassifierPayload("a b c")); err != nil {
+		t.Fatalf("Classify: %v", err)
+	}
+
+	want := []string{"phase 1=SAFE", "phase 2=off", "phase 3=off"}
+	if got := phaseEvents(got); !slicesEqual(got, want) {
+		t.Fatalf("phase events = %v, want %v", got, want)
+	}
+}
+
+func TestClassifyEmitsPhase3SkippedWhenPhase1Fires(t *testing.T) {
+	var got []rolemanager.Activity
+	cancel := rolemanager.SetObserver(func(a rolemanager.Activity) { got = append(got, a) })
+	defer cancel()
+
+	c := newTestClassifier(t,
+		&fakeGate{ph: Phase1, sentinel: rolemanager.SentinelPromptInjection},
+		&fakeGate{ph: Phase2, sentinel: rolemanager.SentinelSafe},
+		rolemanager.ClassifierFunc(func(context.Context, rolemanager.ClassifierPayload) (string, error) {
+			return "DATA_EXTRACTION", nil // must never be called
+		}),
+		WindowConfig{Tokens: 3, Overlap: 1, MaxWindows: 10})
+	if got, err := c.Classify(context.Background(), rolemanager.BuildClassifierPayload("a b c")); err != nil || got != string(rolemanager.SentinelPromptInjection) {
+		t.Fatalf("Classify = %q, %v", got, err)
+	}
+
+	want := []string{"phase 1=PROMPT_INJECTION", "phase 2=SAFE", "phase 3=skipped"}
+	if got := phaseEvents(got); !slicesEqual(got, want) {
+		t.Fatalf("phase events = %v, want %v", got, want)
+	}
+}
+
+func slicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}

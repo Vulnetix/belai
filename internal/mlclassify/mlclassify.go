@@ -272,7 +272,9 @@ func Embedded() bool {
 // Classify implements rolemanager.Classifier. It windows the content, runs
 // phases 1 and 2 concurrently per window, folds fail-closed, and only when
 // both clear every window and phase 3 is configured runs the narrowed LLM
-// sentinel. It returns a raw sentinel token string; an empty string with a nil
+// sentinel. Each phase's verdict is emitted to the role-manager activity feed
+// so the TUI can show phase 1/2/3 when internal work is set to security or
+// all. It returns a raw sentinel token string; an empty string with a nil
 // error signals a malformed phase-3 reply (so rolemanager.ParseSentinel fails
 // closed exactly as today).
 func (c *Classifier) Classify(ctx context.Context, p rolemanager.ClassifierPayload) (string, error) {
@@ -280,38 +282,70 @@ func (c *Classifier) Classify(ctx context.Context, p rolemanager.ClassifierPaylo
 	if err != nil {
 		return "", err
 	}
-	var verdict rolemanager.Sentinel = rolemanager.SentinelSafe
+	var p1, p2 rolemanager.Sentinel = rolemanager.SentinelSafe, rolemanager.SentinelSafe
 	for _, w := range windows {
-		s, err := c.classifyWindow(ctx, w)
+		a, b, err := c.classifyWindow(ctx, w)
 		if err != nil {
 			return "", err
 		}
-		verdict = fold(verdict, s)
+		p1 = fold(p1, a)
+		p2 = fold(p2, b)
 		// PROMPT_INJECTION is the highest rank; no later window can change it.
-		if verdict == rolemanager.SentinelPromptInjection {
-			return string(verdict), nil
+		if p1 == rolemanager.SentinelPromptInjection {
+			c.emitPhases(p1, p2, "skipped")
+			return string(p1), nil
 		}
 	}
+	verdict := fold(p1, p2)
 	if verdict != rolemanager.SentinelSafe {
+		c.emitPhases(p1, p2, "skipped")
 		return string(verdict), nil
 	}
 	if c.llm == nil {
+		c.emitPhases(p1, p2, "off")
 		return string(rolemanager.SentinelSafe), nil
 	}
-	return c.phase3(ctx, p.User)
+	s3, err := c.phase3(ctx, p.User)
+	if err != nil {
+		return "", err
+	}
+	c.emitPhases(p1, p2, phase3Status(s3))
+	return s3, nil
 }
 
-// classifyWindow runs phases 1 and 2 concurrently over one window and folds
-// the two verdicts. Any gate error is a hard failure.
-func (c *Classifier) classifyWindow(ctx context.Context, window string) (rolemanager.Sentinel, error) {
+// phase3Status maps a phase-3 raw reply to the status word the feed shows:
+// the sentinel token, or "malformed" for an empty (unparseable) reply.
+func phase3Status(s string) string {
+	if s == "" {
+		return "malformed"
+	}
+	return s
+}
+
+// emitPhases records the three phase verdicts. A disabled phase 2 reports
+// "off"; a skipped phase 3 means an earlier phase already failed the content.
+func (c *Classifier) emitPhases(p1, p2 rolemanager.Sentinel, phase3 string) {
+	rolemanager.RecordSecurityPhase("phase 1", string(p1))
+	if c.phase2 != nil {
+		rolemanager.RecordSecurityPhase("phase 2", string(p2))
+	} else {
+		rolemanager.RecordSecurityPhase("phase 2", "off")
+	}
+	rolemanager.RecordSecurityPhase("phase 3", phase3)
+}
+
+// classifyWindow runs phases 1 and 2 concurrently over one window and returns
+// each phase's verdict. Any gate error is a hard failure.
+func (c *Classifier) classifyWindow(ctx context.Context, window string) (rolemanager.Sentinel, rolemanager.Sentinel, error) {
 	type result struct {
-		s   rolemanager.Sentinel
-		err error
+		phase Phase
+		s     rolemanager.Sentinel
+		err   error
 	}
 	results := make(chan result, 2)
 	run := func(g gate) {
 		s, _, err := g.fire(ctx, window)
-		results <- result{s: s, err: err}
+		results <- result{phase: g.phase(), s: s, err: err}
 	}
 	n := 0
 	if c.phase1 != nil {
@@ -322,15 +356,20 @@ func (c *Classifier) classifyWindow(ctx context.Context, window string) (roleman
 		n++
 		go run(c.phase2)
 	}
-	verdict := rolemanager.SentinelSafe
+	p1, p2 := rolemanager.SentinelSafe, rolemanager.SentinelSafe
 	for i := 0; i < n; i++ {
 		r := <-results
 		if r.err != nil {
-			return "", r.err
+			return "", "", r.err
 		}
-		verdict = fold(verdict, r.s)
+		switch r.phase {
+		case Phase1:
+			p1 = r.s
+		case Phase2:
+			p2 = r.s
+		}
 	}
-	return verdict, nil
+	return p1, p2, nil
 }
 
 // phase3 runs the narrowed LLM sentinel covering DATA_EXTRACTION and

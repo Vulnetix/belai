@@ -10,6 +10,7 @@ import (
 var allEvents = []Event{
 	EventSecuritySentinel,
 	EventSecuritySentinelMalformed,
+	EventSecurityPhase,
 	EventVerdictCacheHit,
 	EventVerdictCacheBad,
 	EventModeClassify,
@@ -69,6 +70,33 @@ func TestSecuritySentinelCoversEverySentinel(t *testing.T) {
 		}
 		if !strings.Contains(desc.Summary, "the shell command") {
 			t.Fatalf("security_sentinel %s: subject phrase missing: %q", v, desc.Summary)
+		}
+	}
+}
+
+func TestSecurityPhaseCoversEveryVerdictAndPhase(t *testing.T) {
+	verdicts := []string{
+		string(SentinelSafe),
+		string(SentinelPromptInjection),
+		string(SentinelJailbreak),
+		string(SentinelDataExtraction),
+		string(SentinelModelExtraction),
+		"skipped",
+		"off",
+		"malformed",
+	}
+	for _, v := range verdicts {
+		for _, subject := range []string{"phase 1", "phase 2", "phase 3"} {
+			desc, ok := Describe(Activity{Event: EventSecurityPhase, Verdict: v, Subject: subject})
+			if !ok {
+				t.Fatalf("security_phase %s/%s: no description", subject, v)
+			}
+			if desc.Summary == "" || desc.Outcome == "" {
+				t.Fatalf("security_phase %s/%s: empty description %+v", subject, v, desc)
+			}
+			if desc.Levels != LevelSecurity {
+				t.Fatalf("security_phase %s/%s: Levels = %v, want security", subject, v, desc.Levels)
+			}
 		}
 	}
 }
