@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/signet/internal/mlclassify"
 	"github.com/vulnetix/signet/internal/modelfetch"
 	"github.com/vulnetix/signet/internal/models"
 	"github.com/vulnetix/signet/internal/run"
@@ -404,6 +405,14 @@ func (a *App) modelRows() []modelRow {
 		clsScope = "project"
 	}
 
+	kind := a.classifierKind()
+	kindRow := settingsRow{
+		key: "kind", label: "kind", kind: "choose",
+		opts: []string{"llm", "models"}, value: kind, src: src,
+		disabled: mlclassify.Embedded(),
+	}
+
+	rows = append(rows, modelRow{roleClassifier, kindRow})
 	rows = append(rows, modelRow{roleClassifier, settingsRow{
 		key: "provider", label: "provider", kind: "choose",
 		opts: a.classifierProviders(), value: providerVal, src: src,
@@ -412,6 +421,11 @@ func (a *App) modelRows() []modelRow {
 		key: "model", label: "model", kind: "pick",
 		value: modelVal, src: src,
 	}})
+	if kind == "models" {
+		rows = append(rows, modelRow{roleClassifier, a.classifierPhaseRow(1)})
+		rows = append(rows, modelRow{roleClassifier, a.classifierPhaseRow(2)})
+		rows = append(rows, modelRow{roleClassifier, a.classifierPhase3Row()})
+	}
 	rows = append(rows, modelRow{roleClassifier, settingsRow{
 		key: "reasoning", label: "reasoning", kind: "toggle",
 		value: boolLabel(on), src: src,
@@ -724,6 +738,12 @@ func (a *App) changeModelRow() tea.Cmd {
 		return nil
 	}
 	switch row.key {
+	case "kind":
+		return a.cycleClassifierKind(row.opts)
+	case "phase1":
+		return a.cycleClassifierPhase(1, row.opts)
+	case "phase2":
+		return a.cycleClassifierPhase(2, row.opts)
 	case "provider":
 		if row.role == roleAgent {
 			return a.cycleAgentProvider(row.opts)
@@ -799,6 +819,33 @@ func (a *App) unsetModelRow() tea.Cmd {
 		return a.unsetClassifierRow(row.key)
 	}
 	return nil
+}
+
+// cycleClassifierKind toggles the classifier stack between llm and models.
+func (a *App) cycleClassifierKind(opts []string) tea.Cmd {
+	if len(opts) == 0 {
+		return nil
+	}
+	next := opts[(indexOfString(opts, a.classifierKind())+1)%len(opts)]
+	return a.mutateClassifier(func(c *config.ClassifierSettings) { c.Kind = next })
+}
+
+// cycleClassifierPhase advances one phase gate's source through the choices the
+// row offered. The value committed is a source token ("embedded",
+// "huggingface", or "disabled" for phase 2).
+func (a *App) cycleClassifierPhase(phase int, opts []string) tea.Cmd {
+	if len(opts) == 0 {
+		return nil
+	}
+	cur := a.classifierPhaseSource(phase)
+	next := opts[(indexOfString(opts, cur)+1)%len(opts)]
+	return a.mutateClassifier(func(c *config.ClassifierSettings) {
+		if phase == 1 {
+			c.Phase1.Source = next
+		} else {
+			c.Phase2.Source = next
+		}
+	})
 }
 
 // applyModelProvider commits a provider/model/effort to the running session
@@ -881,6 +928,94 @@ func (a *App) classifierModel() string {
 		return cls.Model
 	}
 	return a.cfg.Model
+}
+
+// classifierKind resolves the effective classifier stack kind.
+func (a *App) classifierKind() string {
+	return run.ClassifierKind(a.settings.Classifier)
+}
+
+// classifierPhaseRow builds the status/selector row for one local phase gate.
+// Embedded phases are locked (the binary choice cannot be overridden); remote
+// phases are selectable so the source can cycle; a phase with no usable model
+// reports why it is off. The effective source and model come from the same
+// resolution the pipeline uses (run.ResolveSecurityClassifier), never a
+// parallel guess.
+func (a *App) classifierPhaseRow(phase int) settingsRow {
+	key, label := "phase1", "phase 1"
+	if phase == 2 {
+		key, label = "phase2", "phase 2"
+	}
+
+	sc := run.ResolveSecurityClassifier(a.settings.Classifier)
+	var mc *mlclassify.ModelConfig
+	if phase == 1 {
+		mc = sc.Phase1
+	} else {
+		mc = sc.Phase2
+	}
+
+	if mc == nil {
+		if phase == 1 {
+			return settingsRow{key: key, label: label, kind: "text",
+				value: "LLM sentinel (no HuggingFace key)", disabled: true}
+		}
+		return settingsRow{key: key, label: label, kind: "choose",
+			opts: a.classifierPhaseOpts(phase), value: "disabled — configure huggingface apikey"}
+	}
+
+	if mc.Source == mlclassify.SourceEmbedded {
+		return settingsRow{key: key, label: label, kind: "text", value: mc.ID, disabled: true}
+	}
+	return settingsRow{key: key, label: label, kind: "choose",
+		opts: a.classifierPhaseOpts(phase), value: mc.ID + " via huggingface"}
+}
+
+// classifierPhaseSource returns the effective source token for one phase, for
+// the source cycle to advance from.
+func (a *App) classifierPhaseSource(phase int) string {
+	sc := run.ResolveSecurityClassifier(a.settings.Classifier)
+	var mc *mlclassify.ModelConfig
+	if phase == 1 {
+		mc = sc.Phase1
+	} else {
+		mc = sc.Phase2
+	}
+	if mc == nil {
+		if phase == 2 {
+			return "disabled"
+		}
+		return ""
+	}
+	return string(mc.Source)
+}
+
+// classifierPhaseOpts returns the source choices a phase row cycles through.
+func (a *App) classifierPhaseOpts(phase int) []string {
+	if phase == 1 {
+		return []string{"huggingface"}
+	}
+	opts := []string{"disabled"}
+	if _, ok := mlclassify.EmbeddedPhase2(); ok {
+		opts = append(opts, "embedded")
+	}
+	if a.hfToken() != "" {
+		opts = append(opts, "huggingface")
+	}
+	return opts
+}
+
+// classifierPhase3Row builds the derived phase-3 status row. Phase 3 is not
+// separately editable: it is on iff the classifier provider and model rows are
+// both explicitly set, and this row makes that consequence visible.
+func (a *App) classifierPhase3Row() settingsRow {
+	cls := a.settings.Classifier
+	on := cls != nil && cls.Provider != "" && cls.Model != ""
+	value := "off — set classifier provider + model to enable"
+	if on {
+		value = "extraction only · " + a.providerDisplayLabel(cls.Provider) + "/" + cls.Model
+	}
+	return settingsRow{key: "phase3", label: "phase 3", kind: "text", value: value, disabled: true}
 }
 
 // classifierProviders are the providers the classifier page may offer.
@@ -1093,6 +1228,12 @@ func (a *App) clearFirewall() tea.Cmd {
 func (a *App) unsetClassifierRow(key string) tea.Cmd {
 	return a.mutateClassifier(func(c *config.ClassifierSettings) {
 		switch key {
+		case "kind":
+			c.Kind = ""
+		case "phase1":
+			c.Phase1 = config.ClassifierPhaseSettings{}
+		case "phase2":
+			c.Phase2 = config.ClassifierPhaseSettings{}
 		case "provider":
 			c.Provider = ""
 			c.Model = ""

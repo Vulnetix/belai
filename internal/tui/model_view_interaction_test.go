@@ -45,7 +45,7 @@ func TestModelScopeKeyCyclesRoleScopes(t *testing.T) {
 		}
 	}
 
-	a.modelState.selected = 9 // classifier provider row
+	a.modelState.selected = 10 // classifier provider row
 	a.modelState.classifierScope = "project"
 	for _, want := range []string{"global", "project"} {
 		_, _ = a.handleModelKey(modelKey("s"))
@@ -212,14 +212,14 @@ func TestModelKeyUnsetClassifierRows(t *testing.T) {
 	a.modelState.classifierScope = "project"
 
 	// Unset provider drops the provider+model pair.
-	a.modelState.selected = 9
+	a.modelState.selected = 10
 	_, _ = a.handleModelKey(modelKey("c"))
 	if a.settings.Classifier.Provider != "" || a.settings.Classifier.Model != "" {
 		t.Fatalf("classifier provider/model not cleared: %+v", a.settings.Classifier)
 	}
 
 	// Unset effort.
-	a.modelState.selected = 12
+	a.modelState.selected = 13
 	_, _ = a.handleModelKey(modelKey("c"))
 	if a.settings.Classifier.Effort != "" {
 		t.Fatalf("classifier effort = %q, want empty", a.settings.Classifier.Effort)
@@ -531,7 +531,7 @@ func TestModelKeyEnterOpensClassifierPicker(t *testing.T) {
 		t.Fatalf("reload settings: %v", err)
 	}
 	a.modelState.classifierScope = "project"
-	a.modelState.selected = 10 // classifier model row
+	a.modelState.selected = 11 // classifier model row
 
 	_, _ = a.handleModelKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if !a.modelState.picking || a.modelState.pickingRole != roleClassifier {
@@ -559,7 +559,7 @@ func TestModelKeyTogglesAgentCaveman(t *testing.T) {
 func TestModelChangeModelRowDisabledNoop(t *testing.T) {
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.rows = a.modelRows()
-	a.modelState.selected = 12 // classifier effort row, disabled when reasoning is off
+	a.modelState.selected = 13 // classifier effort row, disabled when reasoning is off
 
 	if cmd := a.changeModelRow(); cmd != nil {
 		t.Fatal("changeModelRow on a disabled row must be a no-op")
@@ -594,7 +594,7 @@ func TestModelKeyUnsetClassifierModelRow(t *testing.T) {
 		t.Fatalf("reload settings: %v", err)
 	}
 	a.modelState.classifierScope = "project"
-	a.modelState.selected = 10 // classifier model row
+	a.modelState.selected = 11 // classifier model row
 
 	_, _ = a.handleModelKey(modelKey("c"))
 	if a.settings.Classifier.Model != "" {

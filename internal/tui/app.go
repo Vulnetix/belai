@@ -721,6 +721,7 @@ func New(opts Options) *App {
 	if cc, err := run.ResolveClassifier(initial, eff.Settings.Classifier, run.EnvSource(os.Getenv)); err == nil {
 		initial.Classifier = cc
 	}
+	initial.Security = run.ResolveSecurityClassifier(eff.Settings.Classifier)
 
 	pol := opts.Posture
 	if len(pol) == 0 {
@@ -4024,6 +4025,7 @@ func (a *App) resolveCredentialsCmd() tea.Cmd {
 		if cc, err := run.ResolveClassifier(cfg, cls, src); err == nil {
 			cfg.Classifier = cc
 		}
+		cfg.Security = run.ResolveSecurityClassifier(cls)
 		return credentialsResolvedMsg{cfg: cfg, status: status}
 	}
 }
@@ -4085,6 +4087,7 @@ func (a *App) refreshProvider() tea.Cmd {
 	if cc, err := run.ResolveClassifier(cfg, a.settings.Classifier, src); err == nil {
 		cfg.Classifier = cc
 	}
+	cfg.Security = run.ResolveSecurityClassifier(a.settings.Classifier)
 	a.cfg = cfg
 	a.status = status
 	a.classifier = nil
@@ -4119,6 +4122,7 @@ func (a *App) reResolveCredentials() bool {
 	if cc, err := run.ResolveClassifier(cfg, a.settings.Classifier, src); err == nil {
 		cfg.Classifier = cc
 	}
+	cfg.Security = run.ResolveSecurityClassifier(a.settings.Classifier)
 	a.cfg = cfg
 	a.status = status
 	a.classifier = nil
