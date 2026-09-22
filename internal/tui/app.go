@@ -327,6 +327,7 @@ type App struct {
 	providerDetailState    providerDetailViewState
 	providerNewState       providerNewViewState
 	settingsState          settingsViewState
+	lspState               lspViewState
 	modelState             modelViewState
 	permState              permissionsViewState
 	importState            importViewState
@@ -345,6 +346,8 @@ type App struct {
 
 	// which providers the pickers may offer, filled by an async probe
 	avail providerAvailability
+	// lspDetect caches language-server PATH probes for the settings UI.
+	lspDetect lspDetectState
 
 	// workspaceDirs are additional directories added to the session with
 	// /add-dir; they widen the tool confinement boundary.
@@ -1731,6 +1734,8 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		AgentPool:     p.agentPool,
 		RepoMap:       &p.repoMap,
 		WorkspaceMaps: p.workspaceMaps,
+		// TUI is interactive, so live language servers are allowed.
+		Diagnostics: rolemanager.DiagnosticsGateFromSettings(p.settings, reg.Cwd().Roots(), true),
 	})
 }
 
@@ -1813,6 +1818,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case availabilityMsg:
 		return a, a.handleAvailability(m)
+
+	case lspProbeMsg:
+		a.handleLSPProbe(m)
+		return a, nil
 
 	case filesLoadedMsg:
 		return a, a.handleFilesLoaded(m)
