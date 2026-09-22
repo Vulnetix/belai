@@ -198,7 +198,9 @@ Declared intent lives in `settings.json`; last-used runtime values live in
 `<workdir>/.vulnetix/settings.json`. Precedence, lowest to highest:
 `defaults` < `state.json` < global `settings.json` < project `settings.json` <
 environment < CLI flags. The `/settings` browser shows the effective value and
-its provenance for every key.
+its provenance for every key. From `/model` the agent provider/model/effort can
+be written to `session` scope (`state.json`), `global` scope, or `project`
+scope, following the same precedence rules.
 
 | Key | Meaning |
 | --- | --- |
