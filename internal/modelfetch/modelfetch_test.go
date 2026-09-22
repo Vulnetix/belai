@@ -500,3 +500,63 @@ func TestListNewProviderEndpoint(t *testing.T) {
 		t.Fatalf("endpoint = %q, want %q", endpoint, want)
 	}
 }
+
+func TestListKindOllamaCustomHitsModelsAndShow(t *testing.T) {
+	var showCalls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/models":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"id": "llama3.1"}}})
+		case "/api/show":
+			showCalls.Add(1)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"model_info": map[string]any{
+					"general.architecture": "llama",
+					"llama.context_length": float64(131072),
+				},
+			})
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	models, err := List(context.Background(), Target{
+		Name: "ollama-gpu", Kind: "ollama", BaseURL: srv.URL, APIKey: "k",
+		API: wire.SurfaceOpenAIChat, Auth: provider.AuthBearer,
+	}, srv.Client())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(models) != 1 || models[0].ContextWindow != 131072 {
+		t.Fatalf("models = %+v", models)
+	}
+	if showCalls.Load() == 0 {
+		t.Fatal("expected /api/show enrichment calls for a kind:ollama custom")
+	}
+}
+
+func TestListKindLlamaServerCustomHitsProps(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"id": "custom-llama", "meta": map[string]any{"n_ctx_train": 32768}}}})
+		case "/props":
+			_ = json.NewEncoder(w).Encode(map[string]any{"default_generation_settings": map[string]any{"n_ctx": 16384}})
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	models, err := List(context.Background(), Target{
+		Name: "llama-gpu", Kind: "llama-server", BaseURL: srv.URL + "/v1", APIKey: "k",
+		API: wire.SurfaceOpenAIChat, Auth: provider.AuthBearer,
+	}, srv.Client())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(models) != 1 || models[0].ContextWindow != 16384 {
+		t.Fatalf("models = %+v", models)
+	}
+}

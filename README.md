@@ -114,7 +114,7 @@ signet -provider anthropic -model claude-sonnet-4-5 -prompt "review this diff"
 | Flag | Meaning |
 | --- | --- |
 | `-prompt` | send one turn, print the reply, exit |
-| `-provider` | `openai`, `anthropic`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`, `github-copilot`, `huggingface`, or a custom name from `settings.json` |
+| `-provider` | `openai`, `anthropic`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`, `llama-server`, `github-copilot`, `huggingface`, a custom name from `settings.json`, or a configured display label |
 | `-model` | model id; each provider has a default |
 | `-effort` | thinking-effort level: `low`, `medium`, or `high` |
 | `-caveman` | enable caveman voice rewrite for this run |
@@ -195,6 +195,7 @@ its provenance for every key.
 | `update_check` | check GitHub for a newer Signet release at startup (default on) |
 | `context_windows` | per-model context-window overrides, in tokens |
 | `providers` | custom provider profiles (see below) |
+| `provider_labels` | display labels keyed by provider name (see below) |
 | `allow_project_providers` | opt in to project-layer `providers` (default off) |
 | `resilience.max_agents` | fan-out ceiling for explore subagents + background agents (default 3) |
 | `resilience.plan_explore` | plan-mode repository survey on/off (default on) |
@@ -207,6 +208,33 @@ profile references the key via `api_key_env` or the credential backends.
 Project-layer `providers` blocks are ignored unless the global settings set
 `allow_project_providers: true`, because a hostile repo defining a provider is
 an API-key exfiltration primitive.
+
+A profile may also carry a `kind` (`ollama`, `llama-server`, or
+`openai-compatible`) that templates it from a built-in descriptor, plus
+`protocol` / `host` / `port` for the editor and the default display label.
+`base_url` stays the authoritative wire value. Add as many named instances as
+you need — a second Ollama, a second llama-server — and give each a friendly
+name in `provider_labels`, which the TUI shows in `/providers`, `/model` and
+the footer and accepts as a `-provider` selector:
+
+```json
+{
+  "providers": {
+    "ollama-gpu": {
+      "base_url": "http://localhost:11435/v1",
+      "api": "openai-chat",
+      "auth": "bearer",
+      "kind": "ollama",
+      "protocol": "http",
+      "host": "localhost",
+      "port": "11435"
+    }
+  },
+  "provider_labels": {
+    "ollama-gpu": "GPU Ollama"
+  }
+}
+```
 
 **Permissions merge is a union, never a replacement.** A project file can add
 rules but can never remove a rule you set globally, and a deny from either

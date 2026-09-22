@@ -29,6 +29,7 @@ type providersViewState struct {
 // providerRow is one rendered line in the master list.
 type providerRow struct {
 	isHeader bool
+	addNew   bool   // the synthetic "+ add new provider" entry
 	name     string // provider name or group header
 	label    string // optional extra label for headers
 }
@@ -51,6 +52,11 @@ type providerDetailViewState struct {
 	sets               map[string]credentials.Set
 	localReport        string
 	localReportPending bool
+	// endpointFields drives the server-tab endpoint editor for a custom
+	// kind'd provider (protocol/host/port/display name).
+	endpointFields   []providerNewField
+	endpointFieldSel int
+	endpointEditing  bool
 }
 
 // repoAction selects which local-model command the server-tab editor commits.
@@ -110,7 +116,8 @@ func (a *App) rebuildProviderRows() {
 		}
 	}
 
-	rows := make([]providerRow, 0, len(configured)+len(notConfigured)+2)
+	rows := make([]providerRow, 0, len(configured)+len(notConfigured)+3)
+	rows = append(rows, providerRow{addNew: true})
 	if len(configured) > 0 {
 		rows = append(rows, providerRow{isHeader: true, name: "configured"})
 		rows = append(rows, configured...)
@@ -206,7 +213,15 @@ func (a *App) providersView() string {
 			continue
 		}
 		selected := i == cursorAbs
-		line := a.renderProviderRow(r.name, selected)
+		var line string
+		if r.addNew {
+			line = components.Cursor(selected) + components.AccentStyle.Render("+ add new provider")
+			if selected {
+				line = components.Cursor(true) + components.AccentStyle.Bold(true).Render("+ add new provider")
+			}
+		} else {
+			line = a.renderProviderRow(r.name, selected)
+		}
 		b.WriteString(line + "\n")
 	}
 
@@ -238,7 +253,7 @@ func (a *App) providersView() string {
 		b.WriteString("\n" + components.HelpBar("type", "filter", "enter", "accept", "esc", "clear") + "\n")
 	} else {
 		b.WriteString("\n" + components.HelpBar(
-			"↑↓", "provider", "/", "filter", "enter", "open",
+			"↑↓", "provider", "/", "filter", "enter", "open", "n", "new",
 			"p", "local report", "i", "import", "r", "refetch", "esc", "back") + "\n")
 	}
 
@@ -281,6 +296,9 @@ func (a *App) renderProviderRow(name string, selected bool) string {
 			glyph = "○"
 		}
 		status = "custom"
+		if p, ok := a.settings.Providers[name]; ok && p.Kind != "" && p.Kind != "openai-compatible" {
+			status = p.Kind
+		}
 	}
 
 	var extra string
@@ -297,13 +315,19 @@ func (a *App) renderProviderRow(name string, selected bool) string {
 		extra = cfg.BaseURL
 	}
 
-	nameStr := name
+	// The display label (or host:port fallback) is the primary token; the
+	// slug stays muted beside it so the underlying identity is never hidden.
+	display := a.providerDisplayLabel(name)
+	nameStr := display
 	if selected {
-		nameStr = components.EmphStyle.Render(name)
+		nameStr = components.EmphStyle.Render(display)
 	} else {
-		nameStr = components.MutedStyle.Render(name)
+		nameStr = components.MutedStyle.Render(display)
 	}
 	line := fmt.Sprintf("%s %-16s %-12s %s", glyph, nameStr, components.MutedStyle.Render(status), components.MutedStyle.Render(extra))
+	if display != name {
+		line += components.MutedStyle.Render("  (" + name + ")")
+	}
 	return components.Cursor(selected) + line
 }
 
@@ -358,11 +382,18 @@ func (a *App) handleProvidersKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case "enter":
 		_, r := a.selectedProviderRow()
+		if r.addNew {
+			a.openProviderNew()
+			return a, a.push(viewProviderNew)
+		}
 		if r.name == "" {
 			return a, nil
 		}
 		a.openProviderDetail(r.name)
 		return a, a.push(viewProviderDetail)
+	case "n":
+		a.openProviderNew()
+		return a, a.push(viewProviderNew)
 	case "p":
 		a.providersState.reportPending = true
 		return a, a.localModelReportCmd("")
@@ -442,7 +473,7 @@ func (a *App) providerDetailTabs(w int) string {
 }
 
 func (a *App) isProviderTabServerVisible() bool {
-	if a.providerDetailState.provider == "llama-server" || a.providerDetailState.provider == "ollama" {
+	if a.isProviderKindLocal(a.providerDetailState.provider) {
 		return true
 	}
 	for _, s := range a.runningLocalServers() {
@@ -451,6 +482,21 @@ func (a *App) isProviderTabServerVisible() bool {
 		}
 	}
 	return false
+}
+
+// isProviderKindLocal reports whether a provider's availability is a running
+// local server: a built-in with Descriptor.Local or a custom profile whose
+// kind template is local.
+func (a *App) isProviderKindLocal(name string) bool {
+	if d, ok := provider.Lookup(name); ok {
+		return d.Local
+	}
+	p, ok := a.settings.Providers[name]
+	if !ok {
+		return false
+	}
+	d, ok := provider.Template(p.Kind)
+	return ok && d.Local
 }
 
 func (a *App) providerDetailCredentials(w int) string {
@@ -594,6 +640,9 @@ func (a *App) providerDetailServer(w int) string {
 		b.WriteString("\n" + components.HelpBar("enter", "commit", "esc", "cancel") + "\n")
 		return b.String()
 	}
+	if a.providerDetailEndpointEditing() {
+		return a.providerDetailEndpointView(w)
+	}
 	if a.providerDetailState.localReportPending {
 		b.WriteString(components.AccentStyle.Render("○ probing…") + "\n")
 	} else if a.providerDetailState.localReport != "" {
@@ -606,18 +655,99 @@ func (a *App) providerDetailServer(w int) string {
 	return b.String()
 }
 
+// providerDetailEndpointEditing reports whether the current detail provider is
+// a custom (non-built-in) profile, whose server tab shows the endpoint editor.
+func (a *App) providerDetailEndpointEditing() bool {
+	name := a.providerDetailState.provider
+	if provider.Builtin(name) {
+		return false
+	}
+	_, ok := a.settings.Providers[name]
+	return ok
+}
+
+// ensureEndpointFields builds the endpoint editor rows from the live profile.
+func (a *App) ensureEndpointFields() {
+	name := a.providerDetailState.provider
+	p, ok := a.settings.Providers[name]
+	if !ok {
+		a.providerDetailState.endpointFields = nil
+		return
+	}
+	protocol := p.Protocol
+	if protocol == "" {
+		protocol = "http"
+	}
+	display := a.settings.LabelFor(name)
+	if display == name {
+		display = p.Host
+		if p.Port != "" {
+			display = p.Host + ":" + p.Port
+		}
+	}
+	a.providerDetailState.endpointFields = []providerNewField{
+		{key: "protocol", label: "protocol", kind: "cycle", opts: []string{"http", "https"}, value: protocol},
+		{key: "host", label: "host", kind: "text", value: p.Host},
+		{key: "port", label: "port", kind: "text", value: p.Port},
+		{key: "display", label: "display name", kind: "text", value: display},
+	}
+	if a.providerDetailState.endpointFieldSel >= len(a.providerDetailState.endpointFields) {
+		a.providerDetailState.endpointFieldSel = 0
+	}
+}
+
+func (a *App) providerDetailEndpointView(w int) string {
+	if len(a.providerDetailState.endpointFields) == 0 {
+		a.ensureEndpointFields()
+	}
+	var b strings.Builder
+	b.WriteString(components.MutedStyle.Render("endpoint of this provider instance") + "\n\n")
+
+	if a.providerDetailState.endpointEditing {
+		f := a.providerDetailState.endpointFields[a.providerDetailState.endpointFieldSel]
+		b.WriteString(a.renderFieldEditor(f.label, w) + "\n")
+		b.WriteString("\n" + components.HelpBar("enter", "save", "esc", "cancel") + "\n")
+		return b.String()
+	}
+
+	for i, f := range a.providerDetailState.endpointFields {
+		selected := i == a.providerDetailState.endpointFieldSel
+		label := fmt.Sprintf("%-14s", f.label)
+		value := f.value
+		labelOut := components.MutedStyle.Render(label)
+		valueOut := value
+		if selected {
+			labelOut = components.AccentStyle.Bold(true).Render(label)
+			valueOut = components.EmphStyle.Render(value)
+		} else if f.kind == "cycle" {
+			valueOut = components.MutedStyle.Render(value)
+		}
+		b.WriteString(components.Cursor(selected) + labelOut + "  " + valueOut + "\n")
+	}
+	if a.providerDetailState.localReport != "" {
+		b.WriteString("\n" + components.DangerStyle.Render(a.providerDetailState.localReport) + "\n")
+	}
+	b.WriteString("\n" + components.HelpBar(
+		"↑↓", "move", "enter/space", "edit·cycle", "←/→", "cycle", "c", "save", "esc", "back") + "\n")
+	return b.String()
+}
+
 func (a *App) handleProviderDetailKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if a.providerDetailState.setMode || a.providerDetailState.envMode || a.providerDetailState.repoMode {
+	if a.providerDetailState.setMode || a.providerDetailState.envMode || a.providerDetailState.repoMode || a.providerDetailState.endpointEditing {
 		switch m.String() {
 		case "esc":
 			a.providerDetailState.setMode = false
 			a.providerDetailState.envMode = false
 			a.providerDetailState.repoMode = false
+			a.providerDetailState.endpointEditing = false
 			a.providerDetailState.repoAction = repoActionNone
 			a.editor.Masked = false
 			a.editor.Reset()
 			return a, nil
 		case "enter":
+			if a.providerDetailState.endpointEditing {
+				return a.providerDetailEndpointCommitField()
+			}
 			return a.providerDetailCommitField()
 		default:
 			cmd := a.editor.Update(m)
@@ -775,14 +905,14 @@ func (a *App) providerDetailCommitField() (tea.Model, tea.Cmd) {
 	}
 	f := spec[a.providerDetailState.fieldIdx]
 	if p == "ollama" || p == "llama-server" {
-		if f.Name == "port" && !validOllamaPort(val) {
+		if f.Name == "port" && !config.ValidOllamaPort(val) {
 			a.providerDetailState.setMode = false
 			a.providerDetailState.envMode = false
 			a.editor.Reset()
 			a.editor.Masked = false
 			return a, nil
 		}
-		if f.Name == "protocol" && !validOllamaProtocol(val) {
+		if f.Name == "protocol" && !config.ValidOllamaProtocol(val) {
 			a.providerDetailState.setMode = false
 			a.providerDetailState.envMode = false
 			a.editor.Reset()
@@ -976,6 +1106,9 @@ func (a *App) assignProviderModelToClassifier(provider string) tea.Cmd {
 }
 
 func (a *App) handleProviderDetailServerKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if a.providerDetailEndpointEditing() {
+		return a.handleProviderDetailEndpointKey(m)
+	}
 	switch m.String() {
 	case "d":
 		a.providerDetailState.repoMode = true
@@ -998,6 +1131,186 @@ func (a *App) handleProviderDetailServerKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, a.localModelStatusCmd()
 	}
 	return a, nil
+}
+
+// handleProviderDetailEndpointKey drives the custom profile's endpoint editor.
+func (a *App) handleProviderDetailEndpointKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
+	st := &a.providerDetailState
+	if len(st.endpointFields) == 0 {
+		a.ensureEndpointFields()
+	}
+	switch m.String() {
+	case "up", "k":
+		if st.endpointFieldSel > 0 {
+			st.endpointFieldSel--
+		}
+		return a, nil
+	case "down", "j":
+		if st.endpointFieldSel < len(st.endpointFields)-1 {
+			st.endpointFieldSel++
+		}
+		return a, nil
+	case "left", "h":
+		return a.providerDetailEndpointCycle(-1)
+	case "right", "l":
+		return a.providerDetailEndpointCycle(1)
+	case "enter", " ":
+		return a.providerDetailEndpointEditOrCycle()
+	case "c":
+		return a.providerDetailEndpointCommit()
+	}
+	return a, nil
+}
+
+func (a *App) providerDetailEndpointEditOrCycle() (tea.Model, tea.Cmd) {
+	st := &a.providerDetailState
+	if st.endpointFieldSel < 0 || st.endpointFieldSel >= len(st.endpointFields) {
+		return a, nil
+	}
+	f := st.endpointFields[st.endpointFieldSel]
+	if f.kind == "cycle" {
+		return a.providerDetailEndpointCycle(1)
+	}
+	a.editor.Reset()
+	a.editor.Masked = false
+	a.editor.SetValue(f.value)
+	a.editor.CursorEnd()
+	_ = a.editor.Focus()
+	st.endpointEditing = true
+	st.localReport = ""
+	return a, nil
+}
+
+func (a *App) providerDetailEndpointCycle(dir int) (tea.Model, tea.Cmd) {
+	st := &a.providerDetailState
+	if st.endpointFieldSel < 0 || st.endpointFieldSel >= len(st.endpointFields) {
+		return a, nil
+	}
+	f := &st.endpointFields[st.endpointFieldSel]
+	if f.kind != "cycle" {
+		return a, nil
+	}
+	idx := indexOfString(f.opts, f.value)
+	f.value = f.opts[(idx+dir+len(f.opts))%len(f.opts)]
+	return a, nil
+}
+
+// providerDetailEndpointCommitField saves an inline-edited endpoint field.
+func (a *App) providerDetailEndpointCommitField() (tea.Model, tea.Cmd) {
+	st := &a.providerDetailState
+	val := a.editor.Value()
+	a.editor.Reset()
+	a.editor.Masked = false
+	st.endpointEditing = false
+	if st.endpointFieldSel < 0 || st.endpointFieldSel >= len(st.endpointFields) {
+		return a, nil
+	}
+	st.endpointFields[st.endpointFieldSel].value = val
+	return a, nil
+}
+
+// providerDetailEndpointCommit writes protocol/host/port/display name back to
+// the custom profile and its label.
+func (a *App) providerDetailEndpointCommit() (tea.Model, tea.Cmd) {
+	st := &a.providerDetailState
+	name := st.provider
+	p, ok := a.settings.Providers[name]
+	if !ok {
+		st.localReport = "provider profile not found"
+		return a, nil
+	}
+	get := func(k string) string {
+		for _, f := range st.endpointFields {
+			if f.key == k {
+				return strings.TrimSpace(f.value)
+			}
+		}
+		return ""
+	}
+	protocol := get("protocol")
+	host := get("host")
+	port := get("port")
+	display := get("display")
+	if host == "" {
+		st.localReport = "host is required"
+		return a, nil
+	}
+	if port != "" && !config.ValidOllamaPort(port) {
+		st.localReport = fmt.Sprintf("invalid port %q", port)
+		return a, nil
+	}
+	d, ok := provider.Template(p.Kind)
+	if !ok {
+		st.localReport = fmt.Sprintf("unknown kind %q", p.Kind)
+		return a, nil
+	}
+	baseURL := d.BaseURLBuilder(map[string]string{"host": host, "port": port, "protocol": protocol})
+	if display == "" {
+		display = name
+	}
+
+	candidate := a.settings
+	if candidate.Providers == nil {
+		candidate.Providers = map[string]config.ProviderProfile{}
+	}
+	cp := p
+	cp.Protocol = protocol
+	cp.Host = host
+	cp.Port = port
+	cp.BaseURL = baseURL
+	candidate.Providers[name] = cp
+	if candidate.ProviderLabels == nil {
+		candidate.ProviderLabels = map[string]string{}
+	}
+	candidate.ProviderLabels[name] = display
+	if err := config.ValidateProviders(candidate); err != nil {
+		st.localReport = err.Error()
+		return a, nil
+	}
+
+	scope, found := a.providerProfileScope(name)
+	if !found {
+		scope = config.ScopeGlobal
+	}
+	if err := config.Mutate(scope, a.workdir, func(s *config.Settings) error {
+		sp := s.Providers[name]
+		sp.Protocol = protocol
+		sp.Host = host
+		sp.Port = port
+		sp.BaseURL = baseURL
+		s.Providers[name] = sp
+		if s.ProviderLabels == nil {
+			s.ProviderLabels = map[string]string{}
+		}
+		s.ProviderLabels[name] = display
+		return nil
+	}); err != nil {
+		st.localReport = err.Error()
+		return a, nil
+	}
+	if err := a.reloadSettings(); err != nil {
+		st.localReport = err.Error()
+		return a, nil
+	}
+	st.localReport = ""
+	st.endpointFields = nil // rebuild from the persisted profile next render
+	a.invalidateAvailability()
+	return a, a.refreshProvider()
+}
+
+// providerProfileScope reports which settings file holds a profile definition.
+func (a *App) providerProfileScope(name string) (config.Scope, bool) {
+	if g, err := config.LoadGlobal(); err == nil {
+		if _, ok := g.Providers[name]; ok {
+			return config.ScopeGlobal, true
+		}
+	}
+	if p, err := config.LoadProject(a.workdir); err == nil {
+		if _, ok := p.Providers[name]; ok {
+			return config.ScopeProject, true
+		}
+	}
+	return "", false
 }
 
 // handleProviderStatusMessage renders a local-model report inside the server

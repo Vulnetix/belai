@@ -63,7 +63,7 @@ just ask anthropic claude-sonnet-4-5 "review this diff" -detect-mode -verbose
 | Flag | Meaning |
 | --- | --- |
 | `-prompt` | send one turn noninteractively, print the reply, exit |
-| `-provider` | `openai`, `anthropic`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`, `llama-server`, `github-copilot`, `huggingface`, or a custom name from `settings.json` |
+| `-provider` | `openai`, `anthropic`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`, `llama-server`, `github-copilot`, `huggingface`, a custom name from `settings.json`, or a configured display label |
 | `-model` | model id; defaults come from `run.DefaultModel` (see the table below) |
 | `-effort` | thinking-effort level: `low`, `medium`, or `high` |
 | `-classifier-provider` | security-classifier provider (default: the main provider) |
@@ -224,6 +224,31 @@ Business rules and edge cases:
 - **Custom providers** — a custom provider from `settings.json` whose `api`
   field is `anthropic-messages` uses `/v1/models`; every other surface uses
   `/models`.
+- **Multiple named instances** — a `providers` profile may carry `kind`
+  (`ollama`, `llama-server`, or `openai-compatible`) to template itself from a
+  built-in descriptor, plus `protocol` / `host` / `port` for the editor and the
+  default `host:port` display label. Add as many as you need and name each in
+  `provider_labels`; the label shows in `/providers`, `/model` and the footer
+  and is accepted as a `-provider` selector:
+
+  ```json
+  {
+    "providers": {
+      "ollama-gpu": {
+        "base_url": "http://localhost:11435/v1",
+        "api": "openai-chat",
+        "auth": "bearer",
+        "kind": "ollama",
+        "protocol": "http",
+        "host": "localhost",
+        "port": "11435"
+      }
+    },
+    "provider_labels": {
+      "ollama-gpu": "GPU Ollama"
+    }
+  }
+  ```
 
 Runtime flag values override the settings file for the current run but are never persisted.
 

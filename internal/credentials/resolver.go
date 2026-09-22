@@ -102,17 +102,34 @@ func (r *Resolver) Profile(name string) (provider.Profile, bool) {
 	for _, m := range p.Models {
 		models = append(models, m.ID)
 	}
-	return provider.Profile{BaseURL: p.BaseURL, API: p.API, Auth: auth, Models: models}, true
+	return provider.Profile{BaseURL: p.BaseURL, API: p.API, Auth: auth, Models: models, Kind: p.Kind}, true
+}
+
+// CanonicalProvider implements run.AliasSource: it resolves a user-facing
+// display label back to the canonical provider slug.
+func (r *Resolver) CanonicalProvider(label string) (string, bool) {
+	return r.settings.CanonicalProvider(label)
+}
+
+// Label returns the user-facing display label for a provider name.
+func (r *Resolver) Label(name string) string {
+	return r.settings.LabelFor(name)
 }
 
 // spec returns the required fields for a provider, prepending a configured
-// profile's api_key_env so it is preferred over the derived variable.
+// profile's api_key_env so it is preferred over the derived variable. A
+// kind'd profile's spec follows the template, so a local instance offers an
+// optional api_key rather than a mandatory one.
 func (r *Resolver) spec(provider string) []Field {
-	spec := Spec(provider)
-	if p, ok := r.settings.Providers[provider]; ok && p.APIKeyEnv != "" {
+	var prof *config.ProviderProfile
+	if p, ok := r.settings.Providers[provider]; ok {
+		prof = &p
+	}
+	spec := SpecFor(provider, prof)
+	if prof != nil && prof.APIKeyEnv != "" {
 		for i := range spec {
 			if spec[i].Name == "api_key" {
-				spec[i].EnvVars = append([]string{p.APIKeyEnv}, spec[i].EnvVars...)
+				spec[i].EnvVars = append([]string{prof.APIKeyEnv}, spec[i].EnvVars...)
 			}
 		}
 	}

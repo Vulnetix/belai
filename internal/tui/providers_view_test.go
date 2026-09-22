@@ -6,7 +6,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
+	"github.com/vulnetix/signet/internal/wire"
 )
 
 func TestProvidersViewEnterBuildsRows(t *testing.T) {
@@ -90,5 +92,99 @@ func TestProviderDetailServerLaunchOpensEditorAndParsesArgs(t *testing.T) {
 	}
 	if flags.port != "9999" {
 		t.Fatalf("port = %q, want 9999", flags.port)
+	}
+}
+
+func TestProvidersMasterListHasAddNewRow(t *testing.T) {
+	a := New(Options{})
+	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	_ = a.push(viewProviders)
+	if len(a.providersState.rows) == 0 || !a.providersState.rows[0].addNew {
+		t.Fatalf("first row should be the add-new entry: %+v", a.providersState.rows)
+	}
+}
+
+func TestProviderNewFormCommitsProfileAndLabel(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	a.openProviderNew()
+
+	a.setProviderNewField("host", "localhost")
+	a.setProviderNewField("port", "11435")
+	a.setProviderNewField("display", "GPU Ollama")
+	a.setProviderNewField("name", "ollama-gpu")
+	a.providerNewState.displayAuto = false
+	a.providerNewState.nameAuto = false
+
+	_, _ = a.providerNewCommit()
+
+	prof, ok := a.settings.Providers["ollama-gpu"]
+	if !ok {
+		t.Fatalf("committed profile not in settings: %+v", a.settings.Providers)
+	}
+	if prof.Kind != "ollama" || prof.Host != "localhost" || prof.Port != "11435" {
+		t.Fatalf("profile = %+v", prof)
+	}
+	if prof.BaseURL != "http://localhost:11435/v1" {
+		t.Fatalf("BaseURL = %q", prof.BaseURL)
+	}
+	if a.settings.ProviderLabels["ollama-gpu"] != "GPU Ollama" {
+		t.Fatalf("label = %q", a.settings.ProviderLabels["ollama-gpu"])
+	}
+}
+
+func TestProviderNewAcceptsSecondInstanceOfSameKind(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+
+	for i, slug := range []string{"ollama-gpu", "ollama-cpu"} {
+		a.openProviderNew()
+		a.setProviderNewField("host", "localhost")
+		a.setProviderNewField("port", []string{"11435", "11436"}[i])
+		a.setProviderNewField("display", strings.ToUpper(slug))
+		a.setProviderNewField("name", slug)
+		a.providerNewState.displayAuto = false
+		a.providerNewState.nameAuto = false
+		_, _ = a.providerNewCommit()
+		if _, ok := a.settings.Providers[slug]; !ok {
+			t.Fatalf("%s not committed", slug)
+		}
+	}
+	if len(a.settings.Providers) != 2 {
+		t.Fatalf("providers = %+v, want both instances", a.settings.Providers)
+	}
+}
+
+func TestAvailableProvidersTreatsKindCustomAsLocal(t *testing.T) {
+	a := newAvailabilityApp(t,
+		map[string]bool{"openai": true, "ollama-gpu": true},
+		map[string]bool{"ollama-gpu": false},
+	)
+	a.settings.Providers = map[string]config.ProviderProfile{
+		"ollama-gpu": {BaseURL: "http://localhost:11435/v1", API: wire.SurfaceOpenAIChat, Kind: "ollama"},
+	}
+	if !a.isLocalProvider("ollama-gpu") {
+		t.Fatal("kind:ollama custom must be local")
+	}
+
+	got := a.availableProviders("")
+	for _, name := range got {
+		if name == "ollama-gpu" {
+			t.Fatal("kind'd local custom with no answering server must be filtered out")
+		}
+	}
+
+	a.avail.local["ollama-gpu"] = true
+	got = a.availableProviders("")
+	found := false
+	for _, name := range got {
+		if name == "ollama-gpu" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("kind'd local custom with a live server must be offered")
 	}
 }

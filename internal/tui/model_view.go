@@ -84,7 +84,7 @@ type modelsFetchedMsg struct {
 // catalogue.
 func catalogTarget(name string, src run.CredentialSource) modelfetch.Target {
 	cfg, _ := run.Prepare("", name, src)
-	target := modelfetch.Target{Name: name, BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Auth: cfg.Auth, API: cfg.API}
+	target := modelfetch.Target{Name: name, BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Auth: cfg.Auth, API: cfg.API, Kind: cfg.Kind}
 	if name == "cloudflare-ai-gateway" {
 		if wcfg, wstatus := run.Prepare("", "cloudflare-workers-ai", src); wstatus.Configured {
 			target = modelfetch.Target{Name: "cloudflare-workers-ai", BaseURL: wcfg.BaseURL, APIKey: wcfg.APIKey, Auth: wcfg.Auth, API: wcfg.API}
@@ -323,7 +323,7 @@ func (a *App) modelRows() []modelRow {
 	// Agent role.
 	rows = append(rows, modelRow{roleAgent, settingsRow{
 		key: "provider", label: "provider", kind: "choose",
-		opts: a.modelProviders(), value: a.cfg.Provider,
+		opts: a.modelProviders(), value: a.providerDisplayLabel(a.cfg.Provider),
 		src: sourceLabel(origin["provider"]),
 	}})
 	rows = append(rows, modelRow{roleAgent, settingsRow{
@@ -344,9 +344,9 @@ func (a *App) modelRows() []modelRow {
 	// Classifier role.
 	cls := a.settings.Classifier
 	src := sourceLabel(origin["classifier"])
-	providerVal := fmt.Sprintf("— (main: %s)", a.cfg.Provider)
+	providerVal := fmt.Sprintf("— (main: %s)", a.providerDisplayLabel(a.cfg.Provider))
 	if cls != nil && cls.Provider != "" {
-		providerVal = cls.Provider
+		providerVal = a.providerDisplayLabel(cls.Provider)
 	}
 	modelVal := fmt.Sprintf("— (main: %s)", a.cfg.Model)
 	if cls != nil && cls.Model != "" {

@@ -2,21 +2,45 @@ package tui
 
 import (
 	"context"
-	"strconv"
+	"os"
+	"sort"
 	"sync"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
 	"github.com/vulnetix/signet/internal/localinfer"
+	"github.com/vulnetix/signet/internal/provider"
 	"github.com/vulnetix/signet/internal/run"
 )
 
-// localProviders are the providers whose credential spec is entirely optional
-// (internal/credentials/credentials.go), so Configured() is always true for
-// them. Availability for these means a server that answers, not a stored key.
-var localProviders = []string{"ollama", "llama-server"}
+// localProviders returns the providers whose availability means a running
+// server rather than a stored credential: every built-in with Descriptor.Local
+// plus every configured profile whose kind template is local.
+func localProviders(s config.Settings) []string {
+	set := map[string]bool{}
+	for _, name := range provider.Names() {
+		if d, ok := provider.Lookup(name); ok && d.Local {
+			set[name] = true
+		}
+	}
+	for name, p := range s.Providers {
+		if provider.Builtin(name) {
+			continue
+		}
+		if d, ok := provider.Template(p.Kind); ok && d.Local {
+			set[name] = true
+		}
+	}
+	out := make([]string, 0, len(set))
+	for name := range set {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
+}
 
 // availabilityTTL bounds how stale a probe may be before a picker re-probes.
 // A server can start or stop between visits, so the answer is cached, not
@@ -52,30 +76,13 @@ type availabilityMsg struct {
 
 // isLocalProvider reports whether a provider's availability is a running
 // server rather than a stored credential.
-func isLocalProvider(name string) bool {
-	for _, p := range localProviders {
+func (a *App) isLocalProvider(name string) bool {
+	for _, p := range localProviders(a.settings) {
 		if p == name {
 			return true
 		}
 	}
 	return false
-}
-
-// validOllamaPort reports whether s is empty or a valid TCP port.
-func validOllamaPort(s string) bool {
-	if s == "" {
-		return true
-	}
-	n, err := strconv.Atoi(s)
-	return err == nil && n > 0 && n <= 65535
-}
-
-// validOllamaProtocol reports whether s is empty or a valid HTTP scheme.
-func validOllamaProtocol(s string) bool {
-	if s == "" {
-		return true
-	}
-	return s == "http" || s == "https"
 }
 
 // availableProviders returns the providers a picker may offer: those whose
@@ -113,7 +120,7 @@ func (a *App) availableProviders(pinned ...string) []string {
 		case keep[name]:
 		case !a.avail.configured[name]:
 			continue
-		case isLocalProvider(name) && !a.avail.local[name]:
+		case a.isLocalProvider(name) && !a.avail.local[name]:
 			continue
 		}
 		out = append(out, name)
@@ -135,7 +142,7 @@ func (a *App) providerAvailable(name string) bool {
 	if !a.avail.configured[name] {
 		return false
 	}
-	return !isLocalProvider(name) || a.avail.local[name]
+	return !a.isLocalProvider(name) || a.avail.local[name]
 }
 
 // probeAvailabilityCmd resolves credential completeness and pings the local
@@ -164,7 +171,7 @@ func (a *App) probeAvailabilityCmd() tea.Cmd {
 		// two concurrent run.Prepare calls race on them. Resolution is local
 		// and cheap; the dial is what is worth parallelising.
 		bases := map[string]string{}
-		for _, name := range localProviders {
+		for _, name := range localProviders(a.settings) {
 			if !configured[name] {
 				continue
 			}
@@ -195,10 +202,11 @@ func (a *App) probeAvailabilityCmd() tea.Cmd {
 }
 
 // credentialSourceOf adapts a resolver to the credential source run.Prepare
-// expects, keeping the nil case explicit at one site.
+// expects, keeping the nil case explicit at one site. A nil resolver means
+// environment-only resolution, matching the rest of the TUI's fallback.
 func credentialSourceOf(res *credentials.Resolver) run.CredentialSource {
 	if res == nil {
-		return nil
+		return run.EnvSource(os.Getenv)
 	}
 	return res
 }

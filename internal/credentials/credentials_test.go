@@ -88,10 +88,10 @@ func TestSpecUnknownProviderDoesNotUseOpenAIKey(t *testing.T) {
 
 func TestSpecOllamaFields(t *testing.T) {
 	got := Spec("ollama")
-	if len(got) != 3 {
-		t.Fatalf("ollama should have 3 fields, got %+v", got)
+	if len(got) != 4 {
+		t.Fatalf("ollama should have 4 fields, got %+v", got)
 	}
-	want := []string{"host", "port", "protocol"}
+	want := []string{"host", "port", "protocol", "api_key"}
 	for i, w := range want {
 		if got[i].Name != w {
 			t.Fatalf("field %d = %q, want %q", i, got[i].Name, w)
@@ -104,10 +104,10 @@ func TestSpecOllamaFields(t *testing.T) {
 
 func TestSpecLlamaServerFields(t *testing.T) {
 	got := Spec("llama-server")
-	if len(got) != 3 {
-		t.Fatalf("llama-server should have 3 fields, got %+v", got)
+	if len(got) != 4 {
+		t.Fatalf("llama-server should have 4 fields, got %+v", got)
 	}
-	want := []string{"host", "port", "protocol"}
+	want := []string{"host", "port", "protocol", "api_key"}
 	for i, w := range want {
 		if got[i].Name != w {
 			t.Fatalf("field %d = %q, want %q", i, got[i].Name, w)

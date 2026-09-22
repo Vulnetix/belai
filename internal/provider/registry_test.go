@@ -65,3 +65,65 @@ func TestBuiltinMatchesLookup(t *testing.T) {
 		}
 	}
 }
+
+func TestLocalProvidersExposeOneOptionalSecretField(t *testing.T) {
+	for _, name := range []string{"ollama", "llama-server"} {
+		d, ok := Lookup(name)
+		if !ok {
+			t.Fatalf("Lookup(%q) failed", name)
+		}
+		var secret int
+		for _, f := range d.Fields {
+			if f.Secret {
+				secret++
+				if f.Name != "api_key" {
+					t.Fatalf("%s: secret field %q is not api_key", name, f.Name)
+				}
+				if !f.Optional {
+					t.Fatalf("%s: api_key field must be optional", name)
+				}
+			}
+		}
+		if secret != 1 {
+			t.Fatalf("%s: %d secret fields, want exactly one", name, secret)
+		}
+	}
+}
+
+func TestTemplateMapsEveryKind(t *testing.T) {
+	cases := map[string]struct {
+		ok    bool
+		local bool
+		list  string
+		surf  string
+		auth  Auth
+	}{
+		"ollama":            {ok: true, local: true, list: "/models", surf: "openai-chat", auth: AuthBearer},
+		"llama-server":      {ok: true, local: true, list: "/models", surf: "openai-chat", auth: AuthBearer},
+		"":                  {ok: true, local: false, list: "/models", surf: "openai-chat", auth: AuthBearer},
+		"openai-compatible": {ok: true, local: false, list: "/models", surf: "openai-chat", auth: AuthBearer},
+		"anthropic":         {ok: false},
+		"bogus":             {ok: false},
+	}
+	for kind, want := range cases {
+		d, ok := Template(kind)
+		if ok != want.ok {
+			t.Fatalf("Template(%q) ok = %v, want %v", kind, ok, want.ok)
+		}
+		if !want.ok {
+			continue
+		}
+		if d.Local != want.local {
+			t.Fatalf("Template(%q).Local = %v, want %v", kind, d.Local, want.local)
+		}
+		if d.ListPath != want.list {
+			t.Fatalf("Template(%q).ListPath = %q, want %q", kind, d.ListPath, want.list)
+		}
+		if string(d.Surface) != want.surf {
+			t.Fatalf("Template(%q).Surface = %q, want %q", kind, d.Surface, want.surf)
+		}
+		if d.Auth != want.auth {
+			t.Fatalf("Template(%q).Auth = %q, want %q", kind, d.Auth, want.auth)
+		}
+	}
+}

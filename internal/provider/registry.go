@@ -198,6 +198,7 @@ var registry = map[string]Descriptor{
 			{Name: "host", EnvVars: []string{"SIGNET_OLLAMA_HOST"}, Secret: false, Optional: true},
 			{Name: "port", EnvVars: []string{"SIGNET_OLLAMA_PORT"}, Secret: false, Optional: true},
 			{Name: "protocol", EnvVars: []string{"SIGNET_OLLAMA_PROTOCOL"}, Secret: false, Optional: true},
+			{Name: "api_key", EnvVars: []string{"SIGNET_OLLAMA_API_KEY", "OLLAMA_API_KEY"}, Secret: true, Optional: true},
 		},
 		BaseURLBuilder: buildOllama, NetrcHost: "localhost",
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
@@ -212,6 +213,7 @@ var registry = map[string]Descriptor{
 			{Name: "host", EnvVars: []string{"SIGNET_LLAMA_HOST"}, Secret: false, Optional: true},
 			{Name: "port", EnvVars: []string{"SIGNET_LLAMA_PORT"}, Secret: false, Optional: true},
 			{Name: "protocol", EnvVars: []string{"SIGNET_LLAMA_PROTOCOL"}, Secret: false, Optional: true},
+			{Name: "api_key", EnvVars: []string{"SIGNET_LLAMA_API_KEY"}, Secret: true, Optional: true},
 		},
 		BaseURLBuilder: buildLlamaServer, NetrcHost: "localhost",
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
@@ -460,4 +462,50 @@ func buildLlamaServer(fields map[string]string) string {
 // ollamaHostEnv returns the OLLAMA_HOST environment value if set.
 func ollamaHostEnv() string {
 	return os.Getenv("OLLAMA_HOST")
+}
+
+// Template returns the compiled-in descriptor a custom instance is templated
+// from, keyed by its kind. It is the single place a kind becomes behaviour:
+// "ollama" and "llama-server" return the built-in local descriptors, while ""
+// and "openai-compatible" return a generic OpenAI-chat descriptor. Consumers
+// (run.Prepare, modelfetch, the TUI availability probe) dispatch through this
+// rather than re-reading the kind string themselves.
+func Template(kind string) (Descriptor, bool) {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "ollama":
+		d, ok := registry["ollama"]
+		return d, ok
+	case "llama-server":
+		d, ok := registry["llama-server"]
+		return d, ok
+	case "", "openai-compatible":
+		return Descriptor{
+			Name:           "openai-compatible",
+			Auth:           AuthBearer,
+			Surface:        wire.SurfaceOpenAIChat,
+			ToolMethod:     wire.ToolMethodString,
+			ListPath:       "/models",
+			BaseURLBuilder: buildGenericOpenAI,
+		}, true
+	}
+	return Descriptor{}, false
+}
+
+// buildGenericOpenAI composes an OpenAI-compatible base URL from decomposed
+// host, port and protocol. An empty port is omitted (the scheme's default), an
+// empty host/protocol default to localhost/http.
+func buildGenericOpenAI(fields map[string]string) string {
+	protocol := strings.TrimSpace(fields["protocol"])
+	if protocol == "" {
+		protocol = "http"
+	}
+	host := strings.TrimSpace(fields["host"])
+	if host == "" {
+		host = "localhost"
+	}
+	port := strings.TrimSpace(fields["port"])
+	if port == "" {
+		return protocol + "://" + host + "/v1"
+	}
+	return protocol + "://" + host + ":" + port + "/v1"
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/provider"
 )
 
@@ -47,6 +48,29 @@ func convertField(f provider.Field) Field {
 
 // Spec returns the required fields for a provider.
 func Spec(providerName string) []Field {
+	return SpecFor(providerName, nil)
+}
+
+// SpecFor returns the required fields for a provider, honouring a custom
+// profile's kind. With a real kind ("ollama" or "llama-server"), the api_key
+// is the template's optional field, so a local instance offers an optional key
+// rather than a mandatory one; host/port/protocol stay in the settings profile
+// and never become credentials for a custom instance. With no profile (or a
+// generic "openai-compatible" profile), Spec's behaviour is preserved verbatim.
+func SpecFor(providerName string, prof *config.ProviderProfile) []Field {
+	if prof != nil && prof.Kind != "" && prof.Kind != "openai-compatible" {
+		if d, ok := provider.Template(prof.Kind); ok {
+			optional := false
+			for _, f := range d.Fields {
+				if f.Name == "api_key" && f.Optional {
+					optional = true
+				}
+			}
+			return []Field{
+				{Name: "api_key", EnvVars: []string{EnvVarForProvider(providerName)}, Secret: true, Optional: optional},
+			}
+		}
+	}
 	if d, ok := provider.Lookup(providerName); ok {
 		out := make([]Field, len(d.Fields))
 		for i, f := range d.Fields {

@@ -1691,3 +1691,106 @@ func TestPrepareNewOpenAICompatibleProviders(t *testing.T) {
 		})
 	}
 }
+
+func TestPrepareKindOllamaProfileNoKeyConfigured(t *testing.T) {
+	src := fakeProfileSource{
+		profiles: map[string]provider.Profile{
+			"ollama-gpu": {BaseURL: "http://localhost:11435/v1", Kind: "ollama", Models: []string{"m1"}},
+		},
+	}
+	cfg, status := Prepare("", "ollama-gpu", src)
+	if !status.Configured {
+		t.Fatalf("expected configured, missing=%v", status.Missing)
+	}
+	if cfg.BaseURL != "http://localhost:11435/v1" {
+		t.Fatalf("BaseURL = %q", cfg.BaseURL)
+	}
+	if cfg.Kind != "ollama" {
+		t.Fatalf("Kind = %q, want ollama", cfg.Kind)
+	}
+	if cfg.API != wire.SurfaceOpenAIChat {
+		t.Fatalf("API = %q, want the ollama template surface", cfg.API)
+	}
+	if cfg.Auth != provider.AuthBearer {
+		t.Fatalf("Auth = %q, want bearer", cfg.Auth)
+	}
+	if cfg.APIKey != "ollama" {
+		t.Fatalf("APIKey = %q, want the ollama placeholder", cfg.APIKey)
+	}
+}
+
+func TestPrepareGenericProfileStillRequiresKey(t *testing.T) {
+	src := fakeProfileSource{
+		profiles: map[string]provider.Profile{
+			"generic": {BaseURL: "https://x.example/v1", Kind: "openai-compatible", API: wire.SurfaceOpenAIChat, Auth: provider.AuthBearer},
+		},
+	}
+	_, status := Prepare("", "generic", src)
+	if status.Configured {
+		t.Fatal("generic profile without a key must not be configured")
+	}
+	if !sliceEqual(status.Missing, []string{"api_key"}) {
+		t.Fatalf("missing = %v, want [api_key]", status.Missing)
+	}
+}
+
+type fakeAliasSource struct {
+	fakeProfileSource
+	labels map[string]string
+}
+
+func (f fakeAliasSource) CanonicalProvider(label string) (string, bool) {
+	for slug, l := range f.labels {
+		if strings.EqualFold(strings.TrimSpace(l), strings.TrimSpace(label)) {
+			return slug, true
+		}
+	}
+	return "", false
+}
+
+func TestPrepareLabelResolvesToSlug(t *testing.T) {
+	src := fakeAliasSource{
+		fakeProfileSource: fakeProfileSource{
+			vals: map[string]string{"my-llm:api_key": "k"},
+			profiles: map[string]provider.Profile{
+				"my-llm": {BaseURL: "https://llm.example/v1", API: wire.SurfaceOpenAIChat, Auth: provider.AuthBearer, Models: []string{"m1"}},
+			},
+		},
+		labels: map[string]string{"my-llm": "Friendly LLM"},
+	}
+	cfg, err := ResolveWithSource("", "Friendly LLM", envMap(map[string]string{}), src)
+	if err != nil {
+		t.Fatalf("ResolveWithSource: %v", err)
+	}
+	if cfg.Provider != "my-llm" {
+		t.Fatalf("Provider = %q, want my-llm", cfg.Provider)
+	}
+	if cfg.BaseURL != "https://llm.example/v1" {
+		t.Fatalf("BaseURL = %q", cfg.BaseURL)
+	}
+}
+
+func TestPrepareLabelEqualToBuiltinDoesNotShadow(t *testing.T) {
+	src := fakeAliasSource{
+		fakeProfileSource: fakeProfileSource{
+			vals: map[string]string{"openai:api_key": "k", "my-llm:api_key": "evil"},
+			profiles: map[string]provider.Profile{
+				"my-llm": {BaseURL: "https://evil.example/v1", API: wire.SurfaceOpenAIChat, Auth: provider.AuthBearer},
+			},
+		},
+		labels: map[string]string{"my-llm": "openai"},
+	}
+	cfg, status := Prepare("", "openai", src)
+	if !status.Configured {
+		t.Fatalf("expected configured, missing=%v", status.Missing)
+	}
+	if cfg.Provider != "openai" {
+		t.Fatalf("Provider = %q, want openai", cfg.Provider)
+	}
+	if cfg.BaseURL == "https://evil.example/v1" {
+		t.Fatalf("a label equal to a built-in must not shadow the built-in")
+	}
+	if cfg.APIKey != "k" {
+		t.Fatalf("APIKey = %q, want the built-in openai key", cfg.APIKey)
+	}
+}

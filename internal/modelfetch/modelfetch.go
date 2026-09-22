@@ -28,6 +28,21 @@ type Target struct {
 	APIKey  string
 	Auth    provider.Auth
 	API     wire.Surface // custom providers only
+	// Kind is the descriptor kind of a custom instance ("ollama",
+	// "llama-server", "", or "openai-compatible"). Empty for built-ins and
+	// untyped customs, where Name carries the behaviour.
+	Kind string
+}
+
+// kindOf returns the string that selects a target's behaviour: the explicit
+// kind when set, else the provider name. Every dispatch that previously
+// switched on t.Name routes through this so a kind'd custom instance inherits
+// its template's list parse and context enrichment.
+func kindOf(t Target) string {
+	if t.Kind != "" {
+		return t.Kind
+	}
+	return t.Name
 }
 
 // List fetches the live model catalogue for the target and returns it as
@@ -116,6 +131,13 @@ func EndpointFor(t Target) (string, error) {
 		return base + d.ListPath, nil
 	}
 
+	// Kind'd custom instance: inherit the template's list endpoint.
+	if t.Kind != "" {
+		if d, ok := provider.Template(t.Kind); ok && d.ListPath != "" {
+			return base + d.ListPath, nil
+		}
+	}
+
 	// Custom provider: choose by surface.
 	switch t.API {
 	case wire.SurfaceAnthropicMessages:
@@ -127,7 +149,7 @@ func EndpointFor(t Target) (string, error) {
 
 // parseModels decodes a provider-specific response into []models.Model.
 func parseModels(ctx context.Context, t Target, client *http.Client, endpoint string, resp *http.Response) ([]models.Model, error) {
-	switch t.Name {
+	switch kindOf(t) {
 	case "anthropic":
 		var r struct {
 			Data []struct {

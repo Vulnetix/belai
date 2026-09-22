@@ -24,6 +24,10 @@ type Profile struct {
 	API     wire.Surface
 	Auth    Auth
 	Models  []string
+	// Kind names the built-in descriptor this instance is templated from
+	// ("ollama", "llama-server", "", or "openai-compatible"). An unknown
+	// kind is rejected so a profile can never invent new behaviour.
+	Kind string
 }
 
 // Lookup returns the descriptor for a compiled-in provider, if any.
@@ -116,6 +120,9 @@ func NewFromProfile(name string, prof Profile, apiKey string) (*Provider, error)
 	}
 	if !prof.Auth.Valid() {
 		return nil, fmt.Errorf("unknown auth style %q", prof.Auth)
+	}
+	if _, ok := Template(prof.Kind); !ok {
+		return nil, fmt.Errorf("unknown provider kind %q", prof.Kind)
 	}
 	if !validSurface(prof.API) {
 		return nil, fmt.Errorf("unknown api surface %q", prof.API)

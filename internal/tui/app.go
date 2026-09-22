@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -316,6 +317,7 @@ type App struct {
 	viewStack              []viewState
 	providersState         providersViewState
 	providerDetailState    providerDetailViewState
+	providerNewState       providerNewViewState
 	settingsState          settingsViewState
 	modelState             modelViewState
 	permState              permissionsViewState
@@ -862,6 +864,33 @@ func (a *App) providerNames() []string {
 	}
 	sort.Strings(custom)
 	return append(names, custom...)
+}
+
+// providerDisplayLabel returns the user-facing label for a provider name: the
+// configured display label when set, else host:port for a local provider
+// derived from its resolved base URL, else the slug.
+func (a *App) providerDisplayLabel(name string) string {
+	if label := a.settings.LabelFor(name); label != name {
+		return label
+	}
+	if a.isLocalProvider(name) {
+		if cfg, _ := run.Prepare("", name, credentialSourceOf(a.resolver)); cfg.BaseURL != "" {
+			if hp := hostPortOf(cfg.BaseURL); hp != "" {
+				return hp
+			}
+		}
+	}
+	return name
+}
+
+// hostPortOf extracts the host:port of a base URL, dropping the scheme, path
+// and any userinfo. It is the default display label for local providers.
+func hostPortOf(baseURL string) string {
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return ""
+	}
+	return u.Host
 }
 
 // catalogFor returns the selectable models for a provider: the built-in
@@ -4063,7 +4092,7 @@ func (a *App) refreshFooter() {
 	a.footer.Width = a.contentWidth()
 	a.footer.Mode = a.mode
 	a.footer.Agent = a.engagedAgent()
-	a.footer.Provider = a.cfg.Provider
+	a.footer.Provider = a.providerDisplayLabel(a.cfg.Provider)
 	a.footer.Model = run.WireModel(a.cfg.Provider, a.cfg.Model)
 	// The effective settings are the UI's canonical effort source: the model
 	// picker and settings view both write there, and refreshProvider copies

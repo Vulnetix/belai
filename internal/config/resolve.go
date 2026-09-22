@@ -72,6 +72,12 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 		proj.Providers = nil
 		eff.Notes = append(eff.Notes, "project providers ignored (set allow_project_providers in global settings to use them)")
 	}
+	// Display labels travel with the provider map: a label naming a provider
+	// that is itself gated must not smuggle the reference through.
+	if len(proj.ProviderLabels) > 0 && !global.AllowProjectProvidersEnabled() {
+		proj.ProviderLabels = nil
+		eff.Notes = append(eff.Notes, "project provider_labels ignored (set allow_project_providers in global settings to use them)")
+	}
 	// Project-layer workspace directory proposals are treated the same way:
 	// a cloned repo must not be able to widen the sandbox by naming sensitive
 	// paths. They are ignored unless the user's global settings opt in.
@@ -198,6 +204,15 @@ func (e *Effective) apply(s Settings, src Source) {
 			e.Settings.Providers[k] = v
 		}
 		e.Origin["providers"] = src
+	}
+	if s.ProviderLabels != nil {
+		if e.Settings.ProviderLabels == nil {
+			e.Settings.ProviderLabels = map[string]string{}
+		}
+		for k, v := range s.ProviderLabels {
+			e.Settings.ProviderLabels[k] = v
+		}
+		e.Origin["provider_labels"] = src
 	}
 	if s.AllowProjectProviders != nil {
 		e.Settings.AllowProjectProviders = s.AllowProjectProviders

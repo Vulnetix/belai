@@ -37,6 +37,11 @@ type Config struct {
 	Effort   string        // empty means provider default thinking level
 	API      wire.Surface  // empty for built-ins; custom providers carry their surface
 	Auth     provider.Auth // empty for built-ins; custom providers carry their auth style
+	// Kind is the descriptor kind of a custom instance ("ollama",
+	// "llama-server", "", or "openai-compatible"). Empty for built-ins.
+	// Downstream consumers (modelfetch, availability) dispatch on it without
+	// re-reading settings.
+	Kind string
 	// ToolMethod is the session-stored tool calling method; ToolMethodNone
 	// (zero) means detect. It is resolved once per session and carried on
 	// every request so the model's method is not re-checked per turn.
@@ -318,6 +323,13 @@ type ProviderSource interface {
 	Profile(name string) (provider.Profile, bool)
 }
 
+// AliasSource resolves a user-facing provider label to its canonical slug. It
+// is optional: a CredentialSource that does not implement it resolves no
+// aliases, which is the fail-closed default.
+type AliasSource interface {
+	CanonicalProvider(label string) (string, bool)
+}
+
 // FirewallSource is implemented by a CredentialSource that can route a
 // provider through the Vulnetix AI Firewall gateway.
 type FirewallSource interface {
@@ -410,20 +422,27 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 		ps, ok := src.(ProviderSource)
 		if !ok {
 			status.Missing = append(status.Missing, "provider")
-		} else if prof, ok := ps.Profile(name); !ok {
-			status.Missing = append(status.Missing, "provider")
 		} else {
-			cfg.BaseURL = prof.BaseURL
-			cfg.API = prof.API
-			cfg.Auth = prof.Auth
-			if cfg.Model == "" && len(prof.Models) > 0 {
-				cfg.Model = prof.Models[0]
+			prof, ok := ps.Profile(name)
+			if !ok {
+				// A display label resolves only after both the built-in and the
+				// slug lookups miss, so a label can never shadow either.
+				alias, isAlias := src.(AliasSource)
+				if isAlias {
+					if slug, found := alias.CanonicalProvider(name); found {
+						if p2, ok2 := ps.Profile(slug); ok2 {
+							name = slug
+							cfg.Provider = slug
+							prof = p2
+							ok = true
+						}
+					}
+				}
 			}
-			if key, origin, ok := src.Lookup(name, "api_key"); ok {
-				cfg.APIKey = key
-				status.Origins["api_key"] = origin
+			if !ok {
+				status.Missing = append(status.Missing, "provider")
 			} else {
-				status.Missing = append(status.Missing, "api_key")
+				resolveCustom(&cfg, &status, name, prof, src)
 			}
 		}
 	}
@@ -511,6 +530,65 @@ func resolveBuiltin(cfg *Config, status *Status, d provider.Descriptor, src Cred
 		if cfg.APIKey == "" {
 			cfg.APIKey = "llama"
 		}
+	}
+}
+
+// resolveCustom fills cfg and status for a custom profile. When the profile
+// carries a kind, its auth style, wire surface and tool method default from the
+// template descriptor, and an optional template api_key does not make the
+// provider unconfigured — the same placeholder the built-in local providers
+// use is injected so newProvider's non-empty-key check still passes.
+func resolveCustom(cfg *Config, status *Status, name string, prof provider.Profile, src CredentialSource) {
+	cfg.BaseURL = prof.BaseURL
+	cfg.Kind = prof.Kind
+	cfg.API = prof.API
+	cfg.Auth = prof.Auth
+
+	if d, ok := provider.Template(prof.Kind); ok && prof.Kind != "" {
+		if prof.Auth == "" {
+			cfg.Auth = d.Auth
+		}
+		if prof.API == "" {
+			cfg.API = d.Surface
+		}
+		// Only inherit the template's tool method when the surface actually
+		// matches it; a hand-edited kind with a different surface keeps the
+		// dialect's own detection.
+		if prof.API == d.Surface {
+			cfg.ToolMethod = d.ToolMethod
+		}
+	}
+	if cfg.Model == "" && len(prof.Models) > 0 {
+		cfg.Model = prof.Models[0]
+	}
+	if key, origin, ok := src.Lookup(name, "api_key"); ok {
+		cfg.APIKey = key
+		status.Origins["api_key"] = origin
+	} else if d, ok := provider.Template(prof.Kind); ok && templateKeyOptional(d) {
+		cfg.APIKey = placeholderKey(prof.Kind)
+	} else {
+		status.Missing = append(status.Missing, "api_key")
+	}
+}
+
+// templateKeyOptional reports whether the template's api_key field is optional.
+func templateKeyOptional(d provider.Descriptor) bool {
+	for _, f := range d.Fields {
+		if f.Name == "api_key" && f.Optional {
+			return true
+		}
+	}
+	return false
+}
+
+// placeholderKey returns the same placeholder the built-in local providers
+// inject when no key is configured.
+func placeholderKey(kind string) string {
+	switch kind {
+	case "llama-server":
+		return "llama"
+	default:
+		return "ollama"
 	}
 }
 

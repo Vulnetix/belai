@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/vulnetix/signet/internal/wire"
 )
@@ -53,6 +54,12 @@ type Settings struct {
 	// Secrets never live here; they are resolved from api_key_env or the
 	// credential backends.
 	Providers map[string]ProviderProfile `json:"providers,omitempty"`
+	// ProviderLabels maps a provider name (built-in or custom slug) to its
+	// user-facing display label. It is the single source of truth for display
+	// labels; the profile carries no display name. Labels are matched from
+	// user input (CLI args and settings files) and rendered in the TUI, so
+	// they are charset-restricted and uniqueness-checked in validation.
+	ProviderLabels map[string]string `json:"provider_labels,omitempty"`
 	// AllowProjectProviders opts in to project-layer provider definitions.
 	// Defaults to false: a project file defining a provider is an API-key
 	// exfiltration primitive, so it requires an explicit user opt-in.
@@ -241,6 +248,18 @@ type ProviderProfile struct {
 	Auth      string          `json:"auth,omitempty"`        // bearer (default) | x-api-key | cf-aig
 	APIKeyEnv string          `json:"api_key_env,omitempty"` // env var holding the key
 	Models    []ProviderModel `json:"models,omitempty"`
+
+	// Kind names the built-in descriptor this instance is templated from:
+	// "ollama", "llama-server", or ""/"openai-compatible" for a generic
+	// OpenAI-chat endpoint. It selects the list endpoint, the context-window
+	// enrichment, local liveness probing and whether api_key is optional.
+	Kind string `json:"kind,omitempty"`
+	// Protocol is http | https. It is kept alongside Host/Port so the editor
+	// and the default display label can be rebuilt without re-parsing a URL.
+	// BaseURL stays the authoritative wire value.
+	Protocol string `json:"protocol,omitempty"`
+	Host     string `json:"host,omitempty"`
+	Port     string `json:"port,omitempty"`
 }
 
 // ProviderModel is one model in a custom provider's catalogue.
@@ -469,6 +488,33 @@ func (s Settings) AllowProjectWorkspaceDirsEnabled() bool {
 	return s.AllowProjectWorkspaceDirs != nil && *s.AllowProjectWorkspaceDirs
 }
 
+// LabelFor returns the user-facing display label for a provider name, or the
+// name itself when no label is configured. It is the single read path the TUI
+// uses to render provider labels.
+func (s Settings) LabelFor(name string) string {
+	if label, ok := s.ProviderLabels[strings.ToLower(strings.TrimSpace(name))]; ok && label != "" {
+		return label
+	}
+	return name
+}
+
+// CanonicalProvider resolves a user-facing display label (or a slug, or a
+// built-in name) back to the canonical provider slug. It is case-insensitive
+// and trims surrounding whitespace. The second return reports whether the
+// label matched a configured label.
+func (s Settings) CanonicalProvider(label string) (string, bool) {
+	l := strings.ToLower(strings.TrimSpace(label))
+	if l == "" {
+		return "", false
+	}
+	for name, disp := range s.ProviderLabels {
+		if strings.ToLower(strings.TrimSpace(disp)) == l {
+			return name, true
+		}
+	}
+	return "", false
+}
+
 // CavemanEnabled reports whether the caveman voice rewrite is active. The
 // default (nil or false) is off.
 func (s Settings) CavemanEnabled() bool {
@@ -607,6 +653,16 @@ func (s Settings) Override(proj Settings) Settings {
 			merged[k] = v
 		}
 		out.Providers = merged
+	}
+	if proj.ProviderLabels != nil {
+		merged := make(map[string]string, len(out.ProviderLabels)+len(proj.ProviderLabels))
+		for k, v := range out.ProviderLabels {
+			merged[k] = v
+		}
+		for k, v := range proj.ProviderLabels {
+			merged[k] = v
+		}
+		out.ProviderLabels = merged
 	}
 	if proj.ShowSessionNames != nil {
 		out.ShowSessionNames = proj.ShowSessionNames

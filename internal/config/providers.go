@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"strconv"
+	"strings"
+	"unicode"
 
 	"github.com/vulnetix/signet/internal/provider"
 	"github.com/vulnetix/signet/internal/wire"
@@ -28,7 +31,7 @@ func ValidateProviders(s Settings) error {
 			return err
 		}
 	}
-	return nil
+	return ValidateProviderLabels(s)
 }
 
 func validateProvider(name string, p ProviderProfile) error {
@@ -50,7 +53,106 @@ func validateProvider(name string, p ProviderProfile) error {
 	if p.APIKeyEnv != "" && !ValidEnvName(p.APIKeyEnv) {
 		return fmt.Errorf("provider %q: invalid api_key_env %q", name, p.APIKeyEnv)
 	}
+	if !validKind(p.Kind) {
+		return fmt.Errorf("provider %q: unknown kind %q (want \"ollama\", \"llama-server\", \"openai-compatible\", or empty)", name, p.Kind)
+	}
+	if p.Protocol != "" && !ValidOllamaProtocol(p.Protocol) {
+		return fmt.Errorf("provider %q: invalid protocol %q (want http or https)", name, p.Protocol)
+	}
+	if p.Port != "" && !ValidOllamaPort(p.Port) {
+		return fmt.Errorf("provider %q: invalid port %q", name, p.Port)
+	}
 	return nil
+}
+
+func validKind(kind string) bool {
+	switch kind {
+	case "", "ollama", "llama-server", "openai-compatible":
+		return true
+	}
+	return false
+}
+
+// ValidOllamaPort reports whether s is empty or a valid TCP port.
+func ValidOllamaPort(s string) bool {
+	if s == "" {
+		return true
+	}
+	n, err := strconv.Atoi(s)
+	return err == nil && n > 0 && n <= 65535
+}
+
+// ValidOllamaProtocol reports whether s is empty or a valid HTTP scheme.
+func ValidOllamaProtocol(s string) bool {
+	if s == "" {
+		return true
+	}
+	return s == "http" || s == "https"
+}
+
+// ValidateProviderLabels rejects display labels that could forge delimiter
+// markup or collide with a provider slug. Fails closed: a bad label
+// invalidates the settings file exactly as a malformed profile does.
+func ValidateProviderLabels(s Settings) error {
+	seen := map[string]string{} // lowercased label -> provider name that owns it
+	for name := range s.Providers {
+		if provider.Builtin(name) {
+			continue
+		}
+		if err := checkProviderLabel(s, name, seen); err != nil {
+			return err
+		}
+	}
+	for _, name := range provider.Names() {
+		if err := checkProviderLabel(s, name, seen); err != nil {
+			return err
+		}
+	}
+	// The label may also collide with a built-in slug or a configured slug.
+	for _, name := range provider.Names() {
+		seen[strings.ToLower(name)] = name
+	}
+	for name := range s.Providers {
+		seen[strings.ToLower(name)] = name
+	}
+	for name, label := range s.ProviderLabels {
+		key := strings.ToLower(strings.TrimSpace(label))
+		if owner, ok := seen[key]; ok && owner != name {
+			return fmt.Errorf("provider label %q for %q collides with provider %q", label, name, owner)
+		}
+	}
+	return nil
+}
+
+// checkProviderLabel validates one configured label and records it.
+func checkProviderLabel(s Settings, name string, seen map[string]string) error {
+	label, ok := s.ProviderLabels[name]
+	if !ok {
+		return nil
+	}
+	if !validLabelText(label) {
+		return fmt.Errorf("provider label %q for %q is invalid (1–64 printable runes, no <, >, or newlines)", label, name)
+	}
+	key := strings.ToLower(strings.TrimSpace(label))
+	if owner, dup := seen[key]; dup {
+		return fmt.Errorf("provider label %q for %q collides with the label of %q", label, name, owner)
+	}
+	seen[key] = name
+	return nil
+}
+
+func validLabelText(label string) bool {
+	n := 0
+	for _, r := range label {
+		n++
+		if !unicode.IsPrint(r) || unicode.Is(unicode.C, r) {
+			return false
+		}
+		if r == '<' || r == '>' {
+			return false
+		}
+	}
+	return n >= 1 && n <= 64
 }
 
 func validBaseURL(baseURL string) bool {
