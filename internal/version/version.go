@@ -5,6 +5,11 @@ var (
 	Version   = "dev"
 	Commit    = "unknown"
 	BuildDate = "unknown"
+	// Variant names the release asset family this binary belongs to: "",
+	// "no-classifier", "bert-guardrails", or "bert-guardrails-jailbreak".
+	// It is set at build time via -ldflags and read by selfupdate.AssetURL so
+	// a guardrails binary updates to a guardrails binary.
+	Variant = ""
 )
 
 // UserAgent is the User-Agent every outbound HTTP request carries: provider

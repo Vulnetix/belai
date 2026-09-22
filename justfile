@@ -52,28 +52,66 @@ detect-mode $TEXT:
 build:
     go build -ldflags '{{ ldflags }}' -o {{ binary }} {{ pkg }}
 
+# Prepare the embedded classifier models (download + convert + verify).
+# MODELPREP_PYTHON names a python with torch+safetensors installed (defaults
+# to python3). With no args both phases are prepared.
+modelprep *ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    PY="${MODELPREP_PYTHON:-python3}"
+    if [ "$#" -eq 0 ]; then set -- -phase1 -phase2; fi
+    go run ./tools/modelprep -python "$PY" "$@"
+
+# Build ./signet with both embedded models (phase 1 saturation + phase 2 jailbreak).
+build-jailbreak: modelprep
+    go build -tags signet_bert_jailbreak -ldflags '{{ ldflags }} -X {{ module }}/internal/version.Variant=bert-guardrails-jailbreak' -o {{ binary }} {{ pkg }}
+
+# Build ./signet with only the phase-1 prompt-saturation model embedded.
+build-bert: (modelprep '-phase1')
+    go build -tags signet_bert -ldflags '{{ ldflags }} -X {{ module }}/internal/version.Variant=bert-guardrails' -o {{ binary }} {{ pkg }}
+
 # Install signet into $(go env GOPATH)/bin.
 install:
     go install -ldflags '{{ ldflags }}' {{ pkg }}
 
-# Cross-compile every release target into bin/, mirroring .github/workflows/release.yml.
-build-all:
+# Cross-compile every release target and variant into bin/, mirroring
+# .github/workflows/release.yml. Needs the prepared models (run modelprep).
+build-all: modelprep
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p {{ bin }}
     build() {
-      local goos="$1" goarch="$2" suffix="${3:-}"
-      echo "  {{ bin }}/{{ binary }}-${goos}-${goarch}${suffix}"
+      local variant="$1" goos="$2" goarch="$3" suffix="${4:-}"
+      local name="{{ binary }}" tags="" extra=""
+      case "$variant" in
+        no-classifier)
+          name="{{ binary }}-no-classifier"
+          extra="-X {{ module }}/internal/version.Variant=no-classifier"
+          ;;
+        bert-guardrails)
+          name="{{ binary }}-bert-guardrails"
+          tags="-tags signet_bert"
+          extra="-X {{ module }}/internal/version.Variant=bert-guardrails"
+          ;;
+        bert-guardrails-jailbreak)
+          name="{{ binary }}-bert-guardrails-jailbreak"
+          tags="-tags signet_bert_jailbreak"
+          extra="-X {{ module }}/internal/version.Variant=bert-guardrails-jailbreak"
+          ;;
+      esac
+      echo "  {{ bin }}/${name}-${goos}-${goarch}${suffix}"
       CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
-        go build -ldflags '-s -w {{ ldflags }}' \
-        -o "{{ bin }}/{{ binary }}-${goos}-${goarch}${suffix}" {{ pkg }}
+        go build $tags -ldflags '-s -w {{ ldflags }} '"$extra" \
+        -o "{{ bin }}/${name}-${goos}-${goarch}${suffix}" {{ pkg }}
     }
-    build linux   amd64
-    build linux   arm64
-    build darwin  amd64
-    build darwin  arm64
-    build windows amd64 .exe
-    build windows arm64 .exe
+    for variant in "" no-classifier bert-guardrails bert-guardrails-jailbreak; do
+      build "$variant" linux   amd64
+      build "$variant" linux   arm64
+      build "$variant" darwin  amd64
+      build "$variant" darwin  arm64
+      build "$variant" windows amd64 .exe
+      build "$variant" windows arm64 .exe
+    done
     ( cd {{ bin }} && sha256sum {{ binary }}-* > checksums.txt )
 
 # Print the version string this tree would stamp into a build.

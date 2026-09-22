@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vulnetix/signet/internal/version"
 	"github.com/vulnetix/signet/internal/vulnetixcli"
 )
 
@@ -255,6 +256,18 @@ func TestAssetURL(t *testing.T) {
 		t.Fatalf("AssetURL = %q", got)
 	}
 	if got := AssetURL("v1.2.3", "windows", "amd64"); !strings.HasSuffix(got, "signet-windows-amd64.exe") {
+		t.Fatalf("AssetURL = %q", got)
+	}
+}
+
+func TestAssetURLVariant(t *testing.T) {
+	orig := version.Variant
+	version.Variant = "bert-guardrails"
+	defer func() { version.Variant = orig }()
+	if got := AssetURL("v1.2.3", "linux", "amd64"); got != "https://github.com/Vulnetix/signet/releases/download/v1.2.3/signet-bert-guardrails-linux-amd64" {
+		t.Fatalf("AssetURL = %q", got)
+	}
+	if got := AssetURL("v1.2.3", "windows", "arm64"); !strings.HasSuffix(got, "signet-bert-guardrails-windows-arm64.exe") {
 		t.Fatalf("AssetURL = %q", got)
 	}
 }

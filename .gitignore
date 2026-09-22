@@ -42,3 +42,6 @@ site/terraform/.terraform/
 site/terraform/*.tfstate
 site/terraform/*.tfstate.*
 site/terraform/*.auto.tfvars
+
+# Embedded classifier weights (populated by `just modelprep`, never committed)
+internal/mlclassify/assets/

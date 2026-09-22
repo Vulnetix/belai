@@ -206,9 +206,15 @@ func upgradeHint(m vulnetixcli.InstallMethod, tag string, opts Options) (string,
 }
 
 // AssetURL returns the release download URL for one platform. Asset names
-// match .github/workflows/release.yml: signet-<goos>-<goarch>[.exe].
+// match .github/workflows/release.yml: signet[-variant]-<goos>-<goarch>[.exe].
+// The variant suffix comes from version.Variant so a guardrails binary updates
+// to a guardrails binary and a vanilla binary keeps the plain signet asset.
 func AssetURL(tag, goos, goarch string) string {
-	name := fmt.Sprintf("signet-%s-%s", goos, goarch)
+	name := "signet"
+	if version.Variant != "" {
+		name += "-" + version.Variant
+	}
+	name += fmt.Sprintf("-%s-%s", goos, goarch)
 	if goos == "windows" {
 		name += ".exe"
 	}
