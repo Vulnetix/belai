@@ -235,6 +235,17 @@ func resolveSecurityPhase(cls *config.ClassifierSettings, phase int) *mlclassify
 		return nil
 	}
 
+	// Phase 2 (jailbreak) is opt-in even when the model is embedded. The
+	// embedded jailbreak classifier over-triggers on ordinary tool results —
+	// code, listings, JSON, help text and test output all score as "jailbreak"
+	// above 0.95, higher than the canonical DAN jailbreak — so no threshold
+	// separates them. Embedding the weights only makes the gate *available*,
+	// never *on*. An explicit phase2.source or phase2.model turns it on. Phase
+	// 1 stays on by default: the saturation gate is precise on tool output.
+	if phase == 2 && ps.Source == "" && ps.Model == "" {
+		return nil
+	}
+
 	var attack string
 	var embeddedID string
 	var embeddedOK bool
@@ -251,8 +262,7 @@ func resolveSecurityPhase(cls *config.ClassifierSettings, phase int) *mlclassify
 		if embeddedOK {
 			model = embeddedID
 		} else {
-			// No embedded model and no explicit id: this phase has no model
-			// (phase 2 stays off on variants that do not embed it).
+			// No embedded model and no explicit id: this phase has no model.
 			return nil
 		}
 	}

@@ -76,6 +76,12 @@ Business rules:
   text, so the higher default favours precision (fewer false blocks). Tune per
   phase via `classifier.phaseN.threshold`, `-classifier-phaseN-threshold`, or
   the `/model` phase-threshold rows.
+- **Phase 2 is opt-in even on the jailbreak variant.** The embedded jailbreak
+  model over-triggers on ordinary tool results — code, listings, JSON, help
+  text and test output score as "jailbreak" above 0.95, higher than the
+  canonical DAN jailbreak — so no threshold separates them. Embedding the
+  weights only makes the gate *available*, never *on*; it runs only when
+  `classifier.phase2.source` or `classifier.phase2.model` is set explicitly.
 - **Embedded models fail closed.** A variant binary whose embedded model fails
   to load or verify is a hard startup error, never a silent downgrade to the
   LLM path. Extraction and load happen once, eagerly.
