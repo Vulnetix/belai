@@ -14,15 +14,15 @@ import (
 // TestGoldenVectorsPhase2LongReadResult guards the 512-token model limit on
 // realistic tool-shaped content. The bug was:
 //
-//	classify jackhhao/jailbreak-classifier: input sequence too long: 513 > 512; result withheld
+//	classify <phase-2 model>: input sequence too long: 513 > 512; result withheld
 //
 // when a long Read result (directory listings, code, JSON, test output) reached
-// the classifier. The phase-2 gate is opt-in exactly because it over-triggers on
-// harmless tool output, so this test only asserts that classification does not
-// fail with a token-limit error; the verdict is allowed to be false-positive
-// JAILBREAK.
+// the classifier. The phase-2 gate is opt-in exactly because jailbreak
+// classifiers over-trigger on harmless tool output, so this test only asserts
+// that classification does not fail with a token-limit error; the verdict is
+// allowed to be false-positive JAILBREAK.
 func TestGoldenVectorsPhase2LongReadResult(t *testing.T) {
-	spec, ok := embeddedSpecFor("jackhhao/jailbreak-classifier")
+	spec, ok := embeddedSpecFor("leomaurodesenv/bert-base-uncased-trustairlab-jailbreak")
 	if !ok {
 		t.Fatal("phase-2 model not embedded in this build variant")
 	}
@@ -69,7 +69,7 @@ func TestGoldenVectorsPhase2LongReadResult(t *testing.T) {
 // known-attack and known-benign strings, pinning the jailbreak orientation the
 // same way the phase-1 golden test does.
 func TestGoldenVectorsPhase2(t *testing.T) {
-	spec, ok := embeddedSpecFor("jackhhao/jailbreak-classifier")
+	spec, ok := embeddedSpecFor("leomaurodesenv/bert-base-uncased-trustairlab-jailbreak")
 	if !ok {
 		t.Fatal("phase-2 model not embedded in this build variant")
 	}
@@ -99,6 +99,9 @@ func TestGoldenVectorsPhase2(t *testing.T) {
 		"what is the capital of france",
 		"explain how to cook pasta",
 		"summarize the benefits of regular exercise",
+		"total 8\ndrwxr-xr-x 2 chris chris 4096 Sep 22 09:36 .\ndrwxr-xr-x 3 chris chris 4096 Sep 22 09:36 ..\n-rw-r--r-- 1 chris chris 123 Sep 22 09:36 main.go\n",
+		"?? internal/newfile.go\nM  internal/run/run.go\nM  docs/architecture.md\n",
+		"package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n",
 	} {
 		got, err := c.Classify(ctx, rolemanager.BuildClassifierPayload(benign))
 		if err != nil {

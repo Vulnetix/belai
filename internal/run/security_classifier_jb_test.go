@@ -34,11 +34,11 @@ func TestResolveSecurityClassifierPhase2OptInWhenEmbedded(t *testing.T) {
 	if enabled.Phase2 == nil {
 		t.Fatal("explicit phase2.source=embedded must enable the gate")
 	}
-	if enabled.Phase2.ID != "jackhhao/jailbreak-classifier" ||
+	if enabled.Phase2.ID != "leomaurodesenv/bert-base-uncased-trustairlab-jailbreak" ||
 		enabled.Phase2.Source != mlclassify.SourceEmbedded {
 		t.Fatalf("phase2 = %+v, want the embedded jailbreak model", enabled.Phase2)
 	}
-	if got := enabled.Phase2.ThresholdOr(); got != mlclassify.DefaultThreshold {
-		t.Fatalf("phase2 default threshold = %.2f, want %.2f", got, mlclassify.DefaultThreshold)
+	if got := enabled.Phase2.ThresholdOr(mlclassify.Phase2); got != mlclassify.JailbreakDefaultThreshold {
+		t.Fatalf("phase2 default threshold = %.2f, want %.2f", got, mlclassify.JailbreakDefaultThreshold)
 	}
 }

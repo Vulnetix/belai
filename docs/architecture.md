@@ -30,8 +30,8 @@ chain: default < state < global < project prefs < project < env < flag):
   "chunk": { "max_bytes": 1048576, "concurrency": 4 },
   "phase1": { "model": "GuardrailsAI/prompt-saturation-attack-detector",
               "source": "embedded", "threshold": 0.75 },
-  "phase2": { "model": "jackhhao/jailbreak-classifier",
-              "source": "disabled", "threshold": 0.75 }
+  "phase2": { "model": "leomaurodesenv/bert-base-uncased-trustairlab-jailbreak",
+              "source": "disabled", "threshold": 0.5 }
 }
 ```
 
@@ -70,18 +70,24 @@ Business rules:
 - **Separate provider** (LLM path): a `classifier.provider` that differs from
   the main provider is resolved through the same credential backends with its
   own credentials. Missing credentials fail closed with `ErrNotConfigured`.
-- **Thresholds are user-adjustable and default high.** Each phase gate fires
-  only at or above its attack-probability threshold, and the default is 0.75
-  rather than 0.5: the local models over-trigger on benign coding-harness
-  text, so the higher default favours precision (fewer false blocks). Tune per
-  phase via `classifier.phaseN.threshold`, `-classifier-phaseN-threshold`, or
-  the `/model` phase-threshold rows.
-- **Phase 2 is opt-in even on the jailbreak variant.** The embedded jailbreak
-  model over-triggers on ordinary tool results — code, listings, JSON, help
-  text and test output score as "jailbreak" above 0.95, higher than the
-  canonical DAN jailbreak — so no threshold separates them. Embedding the
-  weights only makes the gate *available*, never *on*; it runs only when
-  `classifier.phase2.source` or `classifier.phase2.model` is set explicitly.
+- **Thresholds are user-adjustable, with per-phase defaults.** Each phase gate
+  fires only at or above its attack-probability threshold. Phase 1 defaults to
+  0.75 (the saturation model is effectively binary); phase 2 defaults to 0.5
+  (the trustairlab jailbreak model is calibrated lower: benign tool output
+  scores ~0.0–0.12 unsafe while known jailbreaks score ~0.6–0.75, so 0.5
+  separates them and 0.75 would miss the DAN jailbreak). Tune per phase via
+  `classifier.phaseN.threshold`, `-classifier-phaseN-threshold`, or the `/model`
+  phase-threshold rows.
+- **Phase 2 is opt-in even on the jailbreak variant.** The jailbreak variant
+  embeds the phase-2 model, but it runs only when `classifier.phase2.source` or
+  `classifier.phase2.model` is set explicitly. Embedding the weights makes the
+  gate *available*, never *on*. The original embedded jailbreak model,
+  `jackhhao/jailbreak-classifier`, over-triggered on ordinary tool results —
+  code, listings, JSON, help text and test output scored as "jailbreak" above
+  0.95, higher than the canonical DAN jailbreak (more false positives than true
+  negatives) — so it was replaced with
+  `leomaurodesenv/bert-base-uncased-trustairlab-jailbreak` (see
+  "Phase-2 jailbreak model selection" in docs/role-manager.md).
 - **Embedded models fail closed.** A variant binary whose embedded model fails
   to load or verify is a hard startup error, never a silent downgrade to the
   LLM path. Extraction and load happen once, eagerly.

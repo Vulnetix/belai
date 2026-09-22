@@ -7,20 +7,34 @@ import (
 	"github.com/vulnetix/signet/internal/mlclassify"
 )
 
-func TestClassifierKindDefaultVanillaIsLLM(t *testing.T) {
-	if got := ClassifierKind(nil); got != "llm" {
-		t.Fatalf("ClassifierKind(nil) = %q, want llm on the untagged build", got)
+func TestClassifierKindDefault(t *testing.T) {
+	want := "llm"
+	if mlclassify.Embedded() {
+		want = "models"
 	}
-	if got := ClassifierKind(&config.ClassifierSettings{}); got != "llm" {
-		t.Fatalf("ClassifierKind(empty) = %q, want llm", got)
+	if got := ClassifierKind(nil); got != want {
+		t.Fatalf("ClassifierKind(nil) = %q, want %q", got, want)
+	}
+	if got := ClassifierKind(&config.ClassifierSettings{}); got != want {
+		t.Fatalf("ClassifierKind(empty) = %q, want %q", got, want)
 	}
 	if got := ClassifierKind(&config.ClassifierSettings{Kind: "models"}); got != "models" {
 		t.Fatalf("ClassifierKind(models) = %q, want models", got)
 	}
 }
 
-func TestResolveSecurityClassifierLLMKindHasNoPhases(t *testing.T) {
+func TestResolveSecurityClassifierDefaultKind(t *testing.T) {
 	sc := ResolveSecurityClassifier(nil)
+	if mlclassify.Embedded() {
+		if sc.Kind != "models" {
+			t.Fatalf("Kind = %q, want models on the embedded build", sc.Kind)
+		}
+		// Phase 1 is embedded and always on; phase 2 is opt-in; phase 3 off.
+		if sc.Phase1 == nil || sc.Phase2 != nil || sc.Phase3On {
+			t.Fatalf("embedded default security config = %+v", sc)
+		}
+		return
+	}
 	if sc.Kind != "llm" {
 		t.Fatalf("Kind = %q, want llm", sc.Kind)
 	}
@@ -69,22 +83,28 @@ func TestResolveSecurityClassifierPhaseConfigs(t *testing.T) {
 func TestResolveSecurityClassifierPhase2RemoteLabel(t *testing.T) {
 	cls := &config.ClassifierSettings{
 		Kind:   "models",
-		Phase2: config.ClassifierPhaseSettings{Model: "jackhhao/jailbreak-classifier", Source: "huggingface"},
+		Phase2: config.ClassifierPhaseSettings{Model: "leomaurodesenv/bert-base-uncased-trustairlab-jailbreak", Source: "huggingface"},
 	}
 	sc := ResolveSecurityClassifier(cls)
 	if sc.Phase2 == nil {
 		t.Fatal("phase2 must be configured")
 	}
-	if sc.Phase2.AttackLabel != "jailbreak" {
-		t.Fatalf("phase2 AttackLabel = %q, want jailbreak", sc.Phase2.AttackLabel)
+	if sc.Phase2.AttackLabel != "unsafe" {
+		t.Fatalf("phase2 AttackLabel = %q, want unsafe", sc.Phase2.AttackLabel)
 	}
 }
 
-func TestResolveSecurityClassifierModelsNoPhase1OnVanilla(t *testing.T) {
+func TestResolveSecurityClassifierModelsPhase1(t *testing.T) {
+	sc := ResolveSecurityClassifier(&config.ClassifierSettings{Kind: "models"})
+	if mlclassify.Embedded() {
+		if sc.Phase1 == nil {
+			t.Fatal("phase1 must be embedded and configured on the embedded build")
+		}
+		return
+	}
 	// On the untagged build with no embedded model and no explicit phase-1
 	// config, phase 1 is absent — the ML stack cannot run, which the pipeline
 	// treats as a build failure rather than a silent LLM downgrade.
-	sc := ResolveSecurityClassifier(&config.ClassifierSettings{Kind: "models"})
 	if sc.Phase1 != nil {
 		t.Fatalf("phase1 = %+v, want nil without embedded model or explicit config", sc.Phase1)
 	}

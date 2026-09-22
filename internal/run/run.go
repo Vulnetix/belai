@@ -193,9 +193,9 @@ func ClassifierKind(cls *config.ClassifierSettings) string {
 
 const (
 	phase1ModelID     = "GuardrailsAI/prompt-saturation-attack-detector"
-	phase2ModelID     = "jackhhao/jailbreak-classifier"
+	phase2ModelID     = "leomaurodesenv/bert-base-uncased-trustairlab-jailbreak"
 	phase1AttackLabel = "LABEL_1" // the phase-1 model has no id2label; LABEL_1 is the saturation-attack class
-	phase2AttackLabel = "jailbreak"
+	phase2AttackLabel = "unsafe"  // id2label: 0 = "safe", 1 = "unsafe"
 )
 
 // Phase1ModelID returns the default phase-1 model id.

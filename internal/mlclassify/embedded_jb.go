@@ -13,17 +13,17 @@ import (
 // populated by tools/modelprep before a tagged build; it is gitignored so the
 // weights never enter the repository.
 //
-//go:embed assets/jackhhao_jailbreak-classifier
+//go:embed assets/leomaurodesenv_bert-base-uncased-trustairlab-jailbreak
 var phase2FS embed.FS
 
 func jailbreakEmbeddedSpec() (embeddedSpec, bool) {
-	sub, err := fs.Sub(phase2FS, "assets/jackhhao_jailbreak-classifier")
+	sub, err := fs.Sub(phase2FS, "assets/leomaurodesenv_bert-base-uncased-trustairlab-jailbreak")
 	if err != nil {
 		// Static embed path: this cannot fail at runtime.
 		panic(err)
 	}
 	return embeddedSpec{
-		id:       "jackhhao/jailbreak-classifier",
+		id:       "leomaurodesenv/bert-base-uncased-trustairlab-jailbreak",
 		phase:    Phase2,
 		fsys:     sub,
 		attack:   phase2AttackLabel,
