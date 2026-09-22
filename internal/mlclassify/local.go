@@ -80,7 +80,7 @@ func newLocalGate(mc ModelConfig, spec embeddedSpec) (gate, error) {
 	}
 	return &localModel{
 		spec:      spec,
-		threshold: mc.threshold(),
+		threshold: mc.effectiveThreshold(spec.phase),
 		m:         l.m,
 		tokFn:     l.tokFn,
 	}, nil

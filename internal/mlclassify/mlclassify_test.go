@@ -63,13 +63,19 @@ func newTestClassifier(t *testing.T, phase1, phase2 *fakeGate, llm rolemanager.C
 }
 
 func TestModelConfigThresholdDefaults(t *testing.T) {
-	if got := (ModelConfig{}).ThresholdOr(); got != DefaultThreshold {
-		t.Fatalf("default threshold = %.2f, want %.2f", got, DefaultThreshold)
+	if got := (ModelConfig{}).ThresholdOr(Phase1); got != DefaultThreshold {
+		t.Fatalf("phase-1 default threshold = %.2f, want %.2f", got, DefaultThreshold)
 	}
-	if got := (ModelConfig{Threshold: 0.9}).ThresholdOr(); got != 0.9 {
+	if got := (ModelConfig{}).ThresholdOr(Phase2); got != JailbreakDefaultThreshold {
+		t.Fatalf("phase-2 default threshold = %.2f, want %.2f", got, JailbreakDefaultThreshold)
+	}
+	if got := (ModelConfig{Threshold: 0.9}).ThresholdOr(Phase1); got != 0.9 {
 		t.Fatalf("explicit threshold = %.2f, want 0.9", got)
 	}
-	if got := (ModelConfig{Threshold: -1}).ThresholdOr(); got != DefaultThreshold {
+	if got := (ModelConfig{Threshold: 0.9}).ThresholdOr(Phase2); got != 0.9 {
+		t.Fatalf("explicit phase-2 threshold = %.2f, want 0.9", got)
+	}
+	if got := (ModelConfig{Threshold: -1}).ThresholdOr(Phase1); got != DefaultThreshold {
 		t.Fatalf("negative threshold = %.2f, want default %.2f", got, DefaultThreshold)
 	}
 }

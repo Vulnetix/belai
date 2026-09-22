@@ -979,6 +979,15 @@ func (a *App) resolvedClassifierPhase(phase int) *mlclassify.ModelConfig {
 	return sc.Phase2
 }
 
+// mlPhase maps the /model row's int phase to the mlclassify.Phase the
+// threshold helpers need.
+func mlPhase(phase int) mlclassify.Phase {
+	if phase == 2 {
+		return mlclassify.Phase2
+	}
+	return mlclassify.Phase1
+}
+
 // classifierPhaseRow builds the status/selector row for one local phase gate.
 // Embedded phase 1 is locked (the binary choice cannot be overridden); remote
 // phases are selectable so the source can cycle; a phase with no usable model
@@ -1025,7 +1034,7 @@ func (a *App) classifierPhaseThresholdRow(phase int) settingsRow {
 		return settingsRow{key: key, label: label, kind: "text", value: "—", disabled: true}
 	}
 	return settingsRow{key: key, label: label, kind: "choose",
-		opts: classifierThresholdOptions, value: fmt.Sprintf("%.2f", mc.ThresholdOr())}
+		opts: classifierThresholdOptions, value: fmt.Sprintf("%.2f", mc.ThresholdOr(mlPhase(phase)))}
 }
 
 // classifierPhaseThresholdValue returns the effective threshold for one phase
@@ -1036,7 +1045,7 @@ func (a *App) classifierPhaseThresholdValue(phase int) string {
 	if mc == nil {
 		return ""
 	}
-	return fmt.Sprintf("%.2f", mc.ThresholdOr())
+	return fmt.Sprintf("%.2f", mc.ThresholdOr(mlPhase(phase)))
 }
 
 // classifierPhaseSource returns the effective source token for one phase, for

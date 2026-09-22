@@ -11,5 +11,5 @@ package mlclassify
 const phase1AttackLabel = 1
 
 // phase2AttackLabel is the attack label index for
-// jackhhao/jailbreak-classifier.
+// leomaurodesenv/bert-base-uncased-trustairlab-jailbreak.
 const phase2AttackLabel = 1

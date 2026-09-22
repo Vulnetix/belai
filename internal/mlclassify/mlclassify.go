@@ -67,8 +67,8 @@ type ModelConfig struct {
 	// Source selects embedded vs remote weights.
 	Source ModelSource
 	// Threshold is the attack-probability threshold at or above which the
-	// gate fires. Zero or negative means the default
-	// (DefaultThreshold, 0.75).
+	// gate fires. Zero or negative means the phase default
+	// (DefaultThreshold for phase 1, JailbreakDefaultThreshold for phase 2).
 	Threshold float64
 	// AttackLabel is the classifier label that means "attack" (for example
 	// "LABEL_1" on the phase-1 model, "jailbreak" on phase 2). Remote gates
@@ -76,25 +76,36 @@ type ModelConfig struct {
 	AttackLabel string
 }
 
-// DefaultThreshold is the attack-probability threshold a phase gate uses when
-// none is configured. It is deliberately above the midpoint: the local models
-// over-trigger on benign coding-harness text, so the default favours precision
-// (fewer false blocks) while staying a hard gate for high-confidence attacks.
-// Users can tune it per phase via classifier.phaseN.threshold, the
-// -classifier-phaseN-threshold flags, or the /model phase rows.
+// DefaultThreshold is the attack-probability threshold phase 1 (the
+// prompt-saturation gate) uses when none is configured. It is deliberately
+// above the midpoint: the saturation model is effectively binary, so a high
+// default favours precision without missing real saturation attacks.
 const DefaultThreshold = 0.75
 
-func (m ModelConfig) threshold() float64 {
-	if m.Threshold <= 0 {
-		return DefaultThreshold
+// JailbreakDefaultThreshold is the attack-probability threshold phase 2 (the
+// jailbreak gate) uses when none is configured. It is lower than
+// DefaultThreshold because the embedded jailbreak model is calibrated to lower
+// confidence: benign tool output sits around 0.0–0.12 unsafe while known
+// jailbreaks land around 0.6–0.75, so 0.5 separates them with margin. A 0.75
+// default would miss the DAN jailbreak outright.
+const JailbreakDefaultThreshold = 0.5
+
+// effectiveThreshold returns the attack threshold for a phase, applying the
+// phase-specific default when the configured threshold is unset.
+func (m ModelConfig) effectiveThreshold(phase Phase) float64 {
+	if m.Threshold > 0 {
+		return m.Threshold
 	}
-	return m.Threshold
+	if phase == Phase2 {
+		return JailbreakDefaultThreshold
+	}
+	return DefaultThreshold
 }
 
-// ThresholdOr returns the effective attack threshold, defaulting when unset.
-// It is the exported form of threshold for the TUI, which must render the same
-// value the classifier actually enforces.
-func (m ModelConfig) ThresholdOr() float64 { return m.threshold() }
+// ThresholdOr returns the effective attack threshold for a phase, defaulting
+// when unset. It is the exported form of effectiveThreshold for the TUI, which
+// must render the same value the classifier actually enforces.
+func (m ModelConfig) ThresholdOr(phase Phase) float64 { return m.effectiveThreshold(phase) }
 
 // maxPositionEmbeddings is the BERT sequence length the embedded models enforce.
 // The model counts [CLS]/[SEP], so the content token budget is two less.
@@ -162,10 +173,10 @@ func (o Options) Identity() string {
 	var b strings.Builder
 	b.WriteString("models")
 	if o.Phase1 != nil {
-		fmt.Fprintf(&b, ";phase1=%s@%s:%.3f", o.Phase1.ID, o.Phase1.Source, o.Phase1.threshold())
+		fmt.Fprintf(&b, ";phase1=%s@%s:%.3f", o.Phase1.ID, o.Phase1.Source, o.Phase1.effectiveThreshold(Phase1))
 	}
 	if o.Phase2 != nil {
-		fmt.Fprintf(&b, ";phase2=%s@%s:%.3f", o.Phase2.ID, o.Phase2.Source, o.Phase2.threshold())
+		fmt.Fprintf(&b, ";phase2=%s@%s:%.3f", o.Phase2.ID, o.Phase2.Source, o.Phase2.effectiveThreshold(Phase2))
 	}
 	fmt.Fprintf(&b, ";phase3=%t", o.Phase3 != nil)
 	return b.String()

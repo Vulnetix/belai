@@ -100,7 +100,7 @@ first two clear and it is configured.
 | Phase | Model | Runs | Verdicts | Off switch |
 | ----- | ----- | ---- | -------- | ---------- |
 | 1 | `GuardrailsAI/prompt-saturation-attack-detector` (bert-tiny, embedded) | local, always | `SAFE` / `PROMPT_INJECTION` | none (required for the models path) |
-| 2 | `jackhhao/jailbreak-classifier` (bert-base, embedded in the jailbreak variant) | local, when enabled | `SAFE` / `JAILBREAK` | `phase2.source: disabled` |
+| 2 | `leomaurodesenv/bert-base-uncased-trustairlab-jailbreak` (bert-base, embedded in the jailbreak variant) | local, when enabled | `SAFE` / `JAILBREAK` | `phase2.source: disabled` |
 | 3 | the classifier provider+model | narrowed LLM sentinel | `SAFE` / `DATA_EXTRACTION` / `MODEL_EXTRACTION` | clear `classifier.provider` or `classifier.model` |
 
 Rules:
@@ -113,7 +113,7 @@ Rules:
   `PROMPT_INJECTION` > `JAILBREAK` > `DATA_EXTRACTION` > `MODEL_EXTRACTION` >
   `SAFE`.
 - **Window first.** The local models hard-error past 512 tokens and never
-  truncate, so the ML path windows by BERT tokens (`window_tokens` 510,
+  truncate, so the ML path windows by BERT tokens (`window_tokens` 508,
   `window_overlap` 1/8, `max_windows` 64) in `internal/mlclassify`, reusing the
   overlap rationale from `splitChunks`. Beyond `max_windows` it fails closed.
 - **Phase 3 is narrowed.** Its system prompt names only `SAFE`,
@@ -121,18 +121,24 @@ Rules:
   jailbreak out (phases 1/2 already ruled on them). `ParseExtractionSentinel`
   accepts only those three tokens: a phase-3 reply of `PROMPT_INJECTION` or
   `JAILBREAK` is malformed, not a verdict, and fails closed.
-- **Thresholds are user-adjustable and default high.** Each phase gate fires
-  only at or above its attack-probability threshold, which defaults to 0.75
-  rather than 0.5 (the local models over-trigger on benign coding-harness
-  text). Users tune it per phase via `classifier.phaseN.threshold`, the
-  `-classifier-phaseN-threshold` flags, or the `/model` phase-threshold rows;
-  clearing a threshold restores the 0.75 default.
+- **Thresholds are user-adjustable, with per-phase defaults.** Each phase gate
+  fires only at or above its attack-probability threshold. Phase 1 defaults to
+  0.75 (the saturation model is effectively binary); phase 2 defaults to 0.5
+  (the trustairlab jailbreak model is calibrated lower: benign tool output
+  scores ~0.0–0.12 unsafe while known jailbreaks score ~0.6–0.75, so 0.5
+  separates them, and 0.75 would miss the DAN jailbreak). Users tune either
+  via `classifier.phaseN.threshold`, the `-classifier-phaseN-threshold` flags,
+  or the `/model` phase-threshold rows; clearing a threshold restores the phase
+  default.
 - **Phase 2 is opt-in even when embedded.** The jailbreak variant embeds the
-  phase-2 model, but the model over-triggers on ordinary tool results at any
-  threshold (code, listings, JSON, help text and test output score as
-  "jailbreak" above 0.95), so it runs only when `phase2.source` (`embedded` or
+  phase-2 model, but it runs only when `phase2.source` (`embedded` or
   `huggingface`) or `phase2.model` is set explicitly. Embedding the weights
-  makes the gate *available*, not *on* by default.
+  makes the gate *available*, not *on* by default. The first embedded jailbreak
+  model, `jackhhao/jailbreak-classifier`, was tried and found to over-trigger on
+  ordinary tool results (code, listings, JSON, help text and test output scored
+  as "jailbreak" above 0.95 — more false positives than true negatives), so it
+  was replaced with `leomaurodesenv/bert-base-uncased-trustairlab-jailbreak`
+  (see "Phase-2 jailbreak model selection" below).
 - **Phase 3 is opt-in** via the existing `classifier.provider` +
   `classifier.model` choice — no new setting. Unset both and a zero-config
   embedded install makes no network call in the classify path; set them and
@@ -146,6 +152,37 @@ Rules:
 - **The sentinel families are untouched.** `Pipeline.Classifier` still serves
   mode select, goal contract, clarify, plan eval, goal eval and compaction;
   only the security path switches to `Pipeline.Security`.
+
+### Phase-2 jailbreak model selection
+
+The phase-2 gate needs a BERT-family sequence classifier: the cybertron/spaGO
+converter and the wordpiece windowing tokenizer only support BERT `vocab.txt`.
+The embedded model is `leomaurodesenv/bert-base-uncased-trustairlab-jailbreak`,
+a bert-base-uncased fine-tune on the TrustAIRLab jailbreak benchmark with
+`safe`/`unsafe` labels (`unsafe` is the attack class).
+
+History and evaluated alternatives:
+
+- `jackhhao/jailbreak-classifier` — the original embedded phase-2 model
+  (bert-base-uncased, fine-tuned on OpenOrca + jailbreak-classification). Tried
+  and replaced: it over-triggered on ordinary tool output (code, listings, JSON,
+  help text and test output scored as "jailbreak" above 0.95, higher than the
+  canonical DAN jailbreak), producing more false positives than true negatives.
+- `leomaurodesenv/bert-base-uncased-jailbreakv-28k` — bert-base-uncased,
+  `safe`/`unsafe` labels, reported eval accuracy 1.0 (overfit). Compatible but
+  not selected.
+- `hurtmongoose/bert-base-detect-jailbreak` — bert-base-uncased, self-contained
+  `vocab.txt`, no `id2label` (orientation resolved by the golden test), reported
+  F1 0.89. Compatible but not selected.
+- `hurtmongoose/jailbreak-bert-base-uncased` — bert-base-uncased,
+  `benign`/`jailbreak` labels, self-contained `vocab.txt`, no published metrics.
+  Compatible but not selected.
+
+Rejected up front as incompatible: DistilBERT/DeBERTa/RoBERTa/Electra/MiniLM
+jailbreak classifiers (wrong architecture or non-wordpiece tokenizers), LoRA
+adapter checkpoints (need merging), and LLM classifiers such as
+`rogue-security/prompt-injection-jailbreak-sentinel-v2` (Qwen3, BPE tokenizer,
+not BERT).
 
 ### Sentinel parsing
 

@@ -77,7 +77,7 @@ func newRemoteGate(phase Phase, mc ModelConfig, hfToken func() (string, error)) 
 		ph:        phase,
 		sentinel:  sentinelFor(phase),
 		attack:    mc.AttackLabel,
-		threshold: mc.threshold(),
+		threshold: mc.effectiveThreshold(phase),
 		token:     hfToken,
 		client:    client,
 		tokFn:     tokFn,
