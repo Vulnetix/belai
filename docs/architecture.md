@@ -1083,6 +1083,9 @@ session name or short id. Entry types:
 | `user` | `user` | the prompt |
 | `assistant` | `assistant` | the reply, with `prompt_tokens` / `completion_tokens` / `total_tokens` / `model` / `provider` / `mode` / `effort` / `tool_calls` in `meta` |
 | `tool` | `tool` | a tool result, with `tool_call_id` / `tool_name` / `tool_args` / `status` in `meta` |
+| `reasoning` | `reasoning` | streamed chain-of-thought shown in the `model · reasoning` panel |
+| `system` | `system` | a TUI system notice |
+| `rolemanager` | `rolemanager` | a role-manager decision line, with `summary` / `outcome` / `tone` / `level` in `meta` |
 | `session_name` | *(empty)* | the name; append-only, latest wins, empty clears |
 | `session_meta` | *(empty)* | per-session JSON: `schema`, `cwd`, `version`, `createdAt`, `resumedFrom`, `originCwd`, `activePlan`, `activeGoal`, `activeProfile`, `mode` |
 | `summary` | *(empty)* | a compaction summary; `meta.parent_session` links the source session |
@@ -1115,12 +1118,14 @@ tool row waits for its result, and an assistant `tool_calls` entry waits for
 exactly its own result rows so the file never holds an unpaired call. A
 trailing assistant is written once the turn finalises (`Materialise`), and a
 failed turn writes the settled tail too, so a terminal agent error still leaves
-the model's streamed replies and completed tool results on disk. Render-only
-rows — `reasoning`, `system`, and `rolemanager` — never persist. Multi-pass
-goal/plan turns persist every finished assistant reply, not only the final
-one: a natural-exit reply is finalised at the pass boundary (its buffered text
-counts even before the turn ends), and a tool-call reply is written once its
-results land.
+the model's streamed replies and completed tool results on disk. Reasoning
+rows are written once they finalise; system and role-manager rows are written
+as they are appended, so the session file holds the whole TUI transcript. They
+rehydrate as render-only rows and are never promoted into provider turns.
+Multi-pass goal/plan turns persist every finished assistant reply, not only
+the final one: a natural-exit reply is finalised at the pass boundary (its
+buffered text counts even before the turn ends), and a tool-call reply is
+written once its results land.
 
 ## Credentials
 
