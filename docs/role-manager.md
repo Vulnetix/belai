@@ -120,7 +120,11 @@ Rules:
   `DATA_EXTRACTION` and `MODEL_EXTRACTION`, and explicitly scopes injection and
   jailbreak out (phases 1/2 already ruled on them). `ParseExtractionSentinel`
   accepts only those three tokens: a phase-3 reply of `PROMPT_INJECTION` or
-  `JAILBREAK` is malformed, not a verdict, and fails closed.
+  `JAILBREAK` is malformed. A malformed phase-3 reply is **inconclusive, not a
+  block**: phases 1 and 2 are the primary gates, and phase 3 is an opt-in
+  supplement for the two extraction categories only, so the content proceeds
+  as `SAFE` and the feed records phase 3 as "couldn't tell". A phase-3
+  transport error still fails closed.
 - **Thresholds are user-adjustable, with per-phase defaults.** Each phase gate
   fires only at or above its attack-probability threshold. Phase 1 defaults to
   0.75 (the saturation model is effectively binary); phase 2 defaults to 0.5
@@ -232,9 +236,12 @@ preamble plus the token. Non-reasoning models still stop after the single
 token, so the wider budget costs them nothing. If a model still truncates
 (`finish_reason: length` with empty `content`), the sentinel evaluators
 (goal/plan/mode/agent) fall back to `reasoning_content` via
-`ClassifierPayload.AllowReasoningFallback`; the security classifier keeps
-content-only parsing, so an empty `content` there stays malformed — refusal,
-never a forced verdict.
+`ClassifierPayload.AllowReasoningFallback`; the five-token security sentinel
+keeps content-only parsing, so an empty `content` there stays malformed —
+refusal, never a forced verdict. The phase-3 extraction sentinel also keeps
+content-only parsing, but an empty reply there is inconclusive rather than a
+refusal: it returns `SAFE` and the feed shows "couldn't tell" (see
+"Three-phase classification").
 
 ### Classifier payload invariants
 

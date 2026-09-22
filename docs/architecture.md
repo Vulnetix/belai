@@ -56,7 +56,10 @@ Business rules:
   main model. Clear either and phase 3 is gone. A zero-config embedded install
   therefore stays fully local, with no network call in the classify path — and
   no `DATA_EXTRACTION` / `MODEL_EXTRACTION` coverage, which is stated, not
-  implied, on the `/model` phase-3 row.
+  implied, on the `/model` phase-3 row. An inconclusive phase-3 reply (a
+  non-token or empty reply from the extraction LLM) is not a block: phases 1
+  and 2 already ruled on injection/jailbreak, so it proceeds as `SAFE` while
+  the feed records "couldn't tell".
 - **The LLM sentinel families keep inheritance.** Mode select, goal contract,
   clarify, plan eval, goal eval and compaction still reach the LLM classifier,
   which derives from the main provider/model when unset, exactly as before.
