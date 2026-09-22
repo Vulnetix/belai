@@ -28,6 +28,7 @@ const (
 	viewRunsOutput
 	viewPrompts
 	viewProcesses
+	viewLSP
 )
 
 // viewHandler is one full-screen view. Chat is the base state and lives
@@ -61,6 +62,7 @@ func init() {
 	viewHandlers[viewRunsOutput] = viewHandler{name: "runs-output", enter: (*App).enterRunsOutput, key: (*App).handleRunsOutputKey, render: (*App).runsOutputView}
 	viewHandlers[viewPrompts] = viewHandler{name: "prompts", enter: (*App).enterPrompts, key: (*App).handlePromptsKey, render: (*App).promptsView}
 	viewHandlers[viewProcesses] = viewHandler{name: "processes", enter: (*App).enterProcesses, key: (*App).handleProcessesKey, render: (*App).processesView}
+	viewHandlers[viewLSP] = viewHandler{name: "lsp", enter: (*App).enterLSP, key: (*App).handleLSPKey, render: (*App).lspView}
 }
 
 // push navigates to a full-screen view, remembering the current one on the

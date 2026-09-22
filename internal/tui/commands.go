@@ -246,6 +246,9 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("permissions", "edit tool permissions", nil, func(a *App, arg string) tea.Cmd {
 		return a.push(viewPermissions)
 	})
+	r.Register("lsp", "manage language-server diagnostics", nil, func(a *App, arg string) tea.Cmd {
+		return a.push(viewLSP)
+	})
 	r.Register("prompts", "manage the prompt library", nil, func(a *App, arg string) tea.Cmd {
 		return a.push(viewPrompts)
 	})

@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/signet/internal/lsp"
 	"github.com/vulnetix/signet/internal/tui/components"
 )
 
@@ -150,7 +151,25 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "max_agents", label: "max agents", kind: "text", value: maxAgentsVal, src: sourceLabel(origin["resilience"])},
 		{key: "plan_explore", label: "plan explore", kind: "toggle", value: planExploreVal, src: sourceLabel(origin["resilience"])},
 		{key: "permissions", label: "permissions", kind: "submenu", value: permsVal, src: sourceLabel(origin["permissions"])},
+		{key: "lsp", label: "language servers", kind: "submenu", value: lspSummary(a), src: sourceLabel(origin["lsp"])},
 	}
+}
+
+func lspSummary(a *App) string {
+	if a.lspDetect.langs == nil {
+		return "…"
+	}
+	installed := 0
+	for _, v := range a.lspDetect.found {
+		if v {
+			installed++
+		}
+	}
+	total := len(a.lspDetect.langs)
+	if total == 0 {
+		total = len(lsp.Languages())
+	}
+	return fmt.Sprintf("on · %d of %d detected", installed, total)
 }
 
 func sourceLabel(src config.Source) string {
@@ -255,7 +274,12 @@ func (a *App) handleSettingsKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		row := rows[a.settingsState.selected]
 		switch row.kind {
 		case "submenu":
-			return a, a.push(viewPermissions)
+			switch row.key {
+			case "lsp":
+				return a, a.push(viewLSP)
+			default:
+				return a, a.push(viewPermissions)
+			}
 		case "toggle":
 			if err := a.cycleToggle(row.key); err != nil {
 				a.settingsState.errorMsg = err.Error()
