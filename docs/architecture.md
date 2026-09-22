@@ -1104,6 +1104,18 @@ must never be silently widened to another tree. Legacy schema-1 files rehydrate
 text-only (tool history predates persistence) and gain a backfilled
 `session_meta` on first same-key resume.
 
+Entries are appended by `persistTail`, which writes only *settled* messages: a
+tool row waits for its result, and an assistant `tool_calls` entry waits for
+exactly its own result rows so the file never holds an unpaired call. A
+trailing assistant is written once the turn finalises (`Materialise`), and a
+failed turn writes the settled tail too, so a terminal agent error still leaves
+the model's streamed replies and completed tool results on disk. Render-only
+rows — `reasoning`, `system`, and `rolemanager` — never persist. Multi-pass
+goal/plan turns persist every finished assistant reply, not only the final
+one: a natural-exit reply is finalised at the pass boundary (its buffered text
+counts even before the turn ends), and a tool-call reply is written once its
+results land.
+
 ## Credentials
 
 `internal/credentials` implements layered credential resolution for the

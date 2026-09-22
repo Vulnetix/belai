@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/vulnetix/signet/internal/agent"
 	"github.com/vulnetix/signet/internal/session"
 	"github.com/vulnetix/signet/internal/tui/components"
 )
@@ -140,6 +142,94 @@ func TestPersistTruncatesOversizeToolResult(t *testing.T) {
 	}
 	if tool.Meta["orig_len"] != float64(len(big)) {
 		t.Fatalf("orig_len = %#v", tool.Meta["orig_len"])
+	}
+}
+
+func TestPersistMultiPassNaturalExitReplies(t *testing.T) {
+	a := newPersistApp(t)
+	a.echoUser("plan it")
+
+	// A plan pass loop runs several natural-exit passes: each reply is a
+	// buffered assistant bubble separated by a pass-evaluator system line.
+	// Both replies must reach the session file, not just the trailing one.
+	pass1 := components.Message{Role: "assistant"}
+	pass1.AppendText("pass one plan")
+	pass2 := components.Message{Role: "assistant"}
+	pass2.AppendText("pass two plan")
+	a.messages = append(a.messages,
+		pass1,
+		components.Message{Role: "system", Content: "plan evaluator: PLAN_PARTIAL (pass 1)"},
+		pass2,
+	)
+	// Finalise the trailing reply the way EventDoneKind does.
+	if last := a.trailingAssistant(); last >= 0 {
+		a.messages[last].Materialise()
+	}
+	a.persistTail()
+
+	entries := persistedEntries(t, a)
+	if len(entries) != 3 {
+		t.Fatalf("entries = %d, want 3: %+v", len(entries), entries)
+	}
+	if entries[1].Type != "assistant" || entries[1].Content != "pass one plan" {
+		t.Fatalf("pass 1 entry wrong: %+v", entries[1])
+	}
+	if entries[2].Type != "assistant" || entries[2].Content != "pass two plan" {
+		t.Fatalf("pass 2 entry wrong: %+v", entries[2])
+	}
+}
+
+func TestPersistErrorPathWritesStreamedReply(t *testing.T) {
+	a := newPersistApp(t)
+	a.echoUser("plan it")
+
+	// Stream a reply, then fail the turn the way a terminal agent error does.
+	// The streamed reply must still be written so /resume has the model output.
+	a.handleAgentEvent(agentEventMsg{Kind: agent.EventTextKind, Text: "partial plan"})
+	a.handleAgentEvent(agentEventMsg{Kind: agent.EventErrorKind, Err: errors.New("boom")})
+
+	entries := persistedEntries(t, a)
+	if len(entries) != 2 {
+		t.Fatalf("entries = %d, want 2: %+v", len(entries), entries)
+	}
+	if entries[1].Type != "assistant" || entries[1].Content != "partial plan" {
+		t.Fatalf("assistant entry wrong: %+v", entries[1])
+	}
+}
+
+func TestPersistSkipsRolemanagerRows(t *testing.T) {
+	a := newPersistApp(t)
+	a.echoUser("hello")
+	a.messages = append(a.messages,
+		components.Message{Role: "rolemanager", Content: "checked what Read returned"},
+		components.Message{Role: "assistant", Content: "hi"},
+	)
+	a.persistTail()
+
+	entries := persistedEntries(t, a)
+	if len(entries) != 2 {
+		t.Fatalf("entries = %d, want 2: %+v", len(entries), entries)
+	}
+	if entries[1].Type != "assistant" || entries[1].Content != "hi" {
+		t.Fatalf("wrong entry: %+v", entries[1])
+	}
+}
+
+func TestPersistAbortedTrailingToolCallNotWritten(t *testing.T) {
+	a := newPersistApp(t)
+	a.echoUser("run it")
+	// A trailing assistant with tool calls whose results never landed must
+	// not be written with unpaired tool_calls.
+	a.messages = append(a.messages, components.Message{
+		Role:      "assistant",
+		Content:   "running a command",
+		ToolCalls: []components.AgentToolCall{{ID: "c1", Name: "Bash", Args: `{"command":"ls"}`}},
+	})
+	a.persistTail()
+
+	entries := persistedEntries(t, a)
+	if len(entries) != 1 {
+		t.Fatalf("entries = %d, want 1 (user only): %+v", len(entries), entries)
 	}
 }
 

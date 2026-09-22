@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	"github.com/vulnetix/signet/internal/session"
 	"github.com/vulnetix/signet/internal/tui/components"
 )
@@ -21,35 +23,44 @@ func settled(msgs []components.Message, i int) bool {
 		return true
 	case "assistant":
 		// An assistant with neither text nor tool calls is never persisted,
-		// matching buildTurns which skips it.
-		if m.Content == "" && len(m.ToolCalls) == 0 {
+		// matching buildTurns which skips it. Text() (not Content) is the
+		// source of truth: a finished pass keeps its streamed text in the
+		// buffer until Materialise, and a non-trailing bubble is final even
+		// before that flush.
+		if strings.TrimSpace(m.Text()) == "" && len(m.ToolCalls) == 0 {
 			return false
 		}
+		// A tool-calls assistant is final only once every one of its tool
+		// results has landed too, so an assistant tool_calls entry can never
+		// be written without its results following in the same file. The
+		// trailing bubble is no exception: a turn aborted mid-tool must not
+		// persist unpaired tool_calls.
+		if len(m.ToolCalls) > 0 {
+			return toolsAllSettled(msgs, i+1, len(m.ToolCalls))
+		}
 		if i != len(msgs)-1 {
-			// A tool-calls assistant is final only once every one of its tool
-			// results has landed too, so an assistant tool_calls entry can
-			// never be written without its results following in the same file.
-			if len(m.ToolCalls) > 0 {
-				return toolsAllSettled(msgs, i+1)
-			}
 			return true
 		}
 		// A trailing assistant bubble is in-flight while its text lives in the
-		// streaming buffer (Content empty). EventDoneKind calls Materialise,
-		// which flushes buf into Content, so a non-empty Content marks a turn
-		// that ended.
+		// streaming buffer (Content empty). EventDoneKind and EventErrorKind
+		// call Materialise, which flushes buf into Content, so a non-empty
+		// Content marks a turn that ended.
 		return m.Content != ""
 	case "tool":
 		return m.Content != "" || m.Status != ""
 	default:
-		// reasoning and system never persist, matching buildTurns.
+		// reasoning, system, and rolemanager never persist, matching
+		// buildTurns.
 		return false
 	}
 }
 
-// toolsAllSettled reports whether every tool row immediately following an
-// assistant (the contiguous run of tool messages) has its result landed.
-func toolsAllSettled(msgs []components.Message, start int) bool {
+// toolsAllSettled reports whether the contiguous run of tool rows immediately
+// following an assistant contains exactly want settled rows. A short run (an
+// aborted turn) and a long run (an unexpected extra row) both fail, so an
+// assistant tool_calls entry is never written without exactly its own results.
+func toolsAllSettled(msgs []components.Message, start, want int) bool {
+	n := 0
 	for j := start; j < len(msgs); j++ {
 		if msgs[j].Role != "tool" {
 			break
@@ -57,8 +68,9 @@ func toolsAllSettled(msgs []components.Message, start int) bool {
 		if !settled(msgs, j) {
 			return false
 		}
+		n++
 	}
-	return true
+	return n == want
 }
 
 // persistTail appends entries for every settled message after the cursor and
@@ -66,10 +78,10 @@ func toolsAllSettled(msgs []components.Message, start int) bool {
 func (a *App) persistTail() {
 	for i := a.persistedUpTo; i < len(a.messages); i++ {
 		m := a.messages[i]
-		// reasoning and system are skipped entirely, matching buildTurns.
-		// Advancing the cursor past them means a settled assistant after a
-		// pass-loop verdict is still written.
-		if m.Role == "reasoning" || m.Role == "system" {
+		// reasoning, system, and rolemanager rows are render-only and skipped
+		// entirely, matching buildTurns. Advancing the cursor past them means
+		// a settled assistant after a pass-loop verdict is still written.
+		if m.Role == "reasoning" || m.Role == "system" || m.Role == "rolemanager" {
 			a.persistedUpTo = i + 1
 			continue
 		}
