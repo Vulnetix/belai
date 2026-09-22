@@ -61,7 +61,9 @@ jobs:
           python-version: '3.12'
 
       - name: Install torch + safetensors
-        run: pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu safetensors
+        run: |
+          pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+          pip install --quiet safetensors
 
       # Cache the prepared model directories, not the raw HF downloads. The key
       # pins the modelprep source and the HF commit revisions so a

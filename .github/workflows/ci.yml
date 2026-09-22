@@ -55,7 +55,9 @@ jobs:
           python-version: '3.12'
 
       - name: Install torch + safetensors
-        run: pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu safetensors
+        run: |
+          pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+          pip install --quiet safetensors
 
       - name: Cache prepared models
         uses: actions/cache@v4
