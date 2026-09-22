@@ -924,7 +924,7 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 	}
 
 	if s.live.Level(posture.ToolResultUnsafe) == posture.Warn {
-		return fmt.Sprintf("tool result withheld: classified %s", dec.Sentinel)
+		return fmt.Sprintf("tool result withheld: classified %s", dec.Sentinel.Label())
 	}
 
 	// enforce — abort the whole turn. Since executeCall is called from the loop,
@@ -932,7 +932,7 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 	// support partial failure. For now the agent loop treats any withheld as a
 	// placeholder and continues; the strict abort is handled by refusing to
 	// promote the unsafe content, which is what a placeholder does.
-	return fmt.Sprintf("tool result withheld: classified %s", dec.Sentinel)
+	return fmt.Sprintf("tool result withheld: classified %s", dec.Sentinel.Label())
 }
 
 // gateMutation asks the user before a mutating tool touches disk. It blocks on
