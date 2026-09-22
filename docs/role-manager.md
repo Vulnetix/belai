@@ -589,7 +589,7 @@ turns. Every placeholder starts with `tool result withheld:` — the TUI keys th
 | `malformed arguments for …` | Tool-call arguments failed to parse |
 | `execution error for …` | The tool itself returned an error |
 | `classifier error for …` | The classifier could not produce a verdict |
-| `classified <SENTINEL>` | The content classified non-`SAFE`, or classified malformed |
+| `classified <sentinel label>` | The content classified non-`SAFE`, or classified malformed. The label is the human-readable phrase from `rolemanager.SentinelLabels`, not the raw token (e.g. `possible prompt injection detected`, not `PROMPT_INJECTION`). |
 
 ### Classifier-error placeholders
 

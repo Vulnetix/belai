@@ -379,7 +379,7 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 		return err
 	}
 	if verbose {
-		fmt.Fprintf(os.Stderr, "security: %s\n", res.SecuritySentinel)
+		fmt.Fprintf(os.Stderr, "security: %s\n", res.SecuritySentinel.Label())
 		if detectMode {
 			fmt.Fprintf(os.Stderr, "mode: %s\n", res.ModeDecision.Mode)
 			if res.ModeDecision.AgentName != "" {
