@@ -140,5 +140,23 @@ func ParseSentinel(raw string) (Sentinel, error) {
 	return Sentinel(s), nil
 }
 
+// ParseExtractionSentinel parses a phase-3 classifier reply. It accepts only
+// the three tokens the narrowed extraction prompt names — SAFE,
+// DATA_EXTRACTION, MODEL_EXTRACTION — and rejects everything else, including
+// PROMPT_INJECTION and JAILBREAK, which are out of scope by construction. The
+// narrowing is the point: an injection or jailbreak reply from phase 3 is
+// malformed, not a verdict.
+func ParseExtractionSentinel(raw string) (Sentinel, error) {
+	s, err := matchSentinel(raw, []string{
+		string(SentinelSafe),
+		string(SentinelDataExtraction),
+		string(SentinelModelExtraction),
+	})
+	if err != nil {
+		return "", fmt.Errorf("malformed classifier output %q: want a single sentinel token", raw)
+	}
+	return Sentinel(s), nil
+}
+
 // IsSafe reports whether the sentinel marks content as verified-safe.
 func (s Sentinel) IsSafe() bool { return s == SentinelSafe }

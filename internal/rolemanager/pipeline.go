@@ -51,8 +51,17 @@ func (f ClassifierFunc) Classify(ctx context.Context, p ClassifierPayload) (stri
 // executes tools during classification.
 type Pipeline struct {
 	Classifier Classifier
+	// Security, when non-nil, replaces Classifier for security classification
+	// only (tool results and prompt admission). It is the ML classifier stack:
+	// local phase-1/phase-2 models plus an optional narrowed phase-3 LLM. The
+	// mode select, goal contract, clarify, plan eval, goal eval and compaction
+	// paths keep reaching Classifier directly, because a BERT binary classifier
+	// cannot emit GOAL_COMPLETE.
+	Security Classifier
 	// Chunk bounds the chunked classify-all path for oversized payloads. A
 	// zero MaxBytes disables chunking (everything classifies in one call).
+	// The ML path (Security non-nil) windows by tokens inside mlclassify and
+	// never uses this byte-based chunking.
 	Chunk ChunkConfig
 	// Cache, when non-nil, memoises verdicts by the SHA-256 of the sanitized
 	// content (session-scoped for SAFE, persisted for non-SAFE).
@@ -62,6 +71,9 @@ type Pipeline struct {
 	// admission is traced with the rolemanager record helper. nil means no
 	// shared ceiling.
 	Pool *agentpool.Pool
+	// identity prefixes verdict cache keys so verdicts produced by different
+	// classifiers never share a bucket. Empty preserves content-only keying.
+	identity string
 }
 
 // ChunkConfig bounds chunked classification of oversized content. Content over
@@ -89,6 +101,30 @@ func NewPipelineWithChunk(c Classifier, chunk ChunkConfig) *Pipeline {
 	return &Pipeline{Classifier: c, Chunk: chunk}
 }
 
+// SetClassifierIdentity prefixes verdict cache keys with a classifier identity
+// string (kind + model ids + thresholds + phase-3 on/off) so switching the
+// classifier never serves a verdict produced by a different one. Empty
+// preserves content-only keying for the LLM sentinel path.
+func (p *Pipeline) SetClassifierIdentity(id string) { p.identity = id }
+
+// classifier returns the classifier that security classification uses: the ML
+// stack when wired, else the LLM sentinel.
+func (p *Pipeline) classifier() Classifier {
+	if p.Security != nil {
+		return p.Security
+	}
+	return p.Classifier
+}
+
+// cacheKey derives the verdict cache key for sanitized content, mixing in the
+// classifier identity when one is set.
+func (p *Pipeline) cacheKey(clean string) string {
+	if p.identity == "" {
+		return Key(clean)
+	}
+	return KeyFor(p.identity, clean)
+}
+
 // run performs sanitize -> classify -> parse and returns the raw result.
 // Content over the chunk threshold is classified in overlapping, concurrent
 // chunks and folded fail-closed. subject names what was checked (the trace
@@ -103,27 +139,29 @@ func (p *Pipeline) run(ctx context.Context, content, subject string) (clean stri
 		return clean, SentinelSafe, true, nil
 	}
 	if p.Cache != nil {
-		key := Key(clean)
+		key := p.cacheKey(clean)
 		if cached, ok := p.Cache.Get(key); ok {
 			record(EventVerdictCacheHit, string(cached), subject, "", 0)
 			return clean, cached, true, nil
 		}
 	}
 
-	if p.Chunk.MaxBytes > 0 && len(clean) > p.Chunk.MaxBytes {
+	// The LLM sentinel path chunks oversized payloads by bytes. The ML path
+	// windows by tokens inside mlclassify, so byte chunking never applies to it.
+	if p.Security == nil && p.Chunk.MaxBytes > 0 && len(clean) > p.Chunk.MaxBytes {
 		s, parsed, err := p.classifyChunked(ctx, clean)
 		if err != nil {
 			return clean, "", false, err
 		}
 		if parsed && p.Cache != nil {
-			_ = p.Cache.Put(Key(clean), s)
+			_ = p.Cache.Put(p.cacheKey(clean), s)
 		}
 		return clean, s, parsed, nil
 	}
 
 	payload := BuildClassifierPayload(clean)
 
-	raw, err := p.Classifier.Classify(ctx, payload)
+	raw, err := p.classifier().Classify(ctx, payload)
 	if err != nil {
 		return clean, "", false, err
 	}
@@ -135,7 +173,7 @@ func (p *Pipeline) run(ctx context.Context, content, subject string) (clean stri
 	}
 	record(EventSecuritySentinel, string(s), subject, "", 0)
 	if p.Cache != nil {
-		_ = p.Cache.Put(Key(clean), s)
+		_ = p.Cache.Put(p.cacheKey(clean), s)
 	}
 	return clean, s, true, nil
 }

@@ -96,10 +96,21 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 		AskPermission: envBool(env("SIGNET_ASK_PERMISSION")),
 		Vulnetix:      &VulnetixSettings{FirewallEnabled: envBool(env("SIGNET_FIREWALL"))},
 		Classifier: &ClassifierSettings{
+			Kind:     env("SIGNET_CLASSIFIER_KIND"),
 			Provider: env("SIGNET_CLASSIFIER_PROVIDER"),
 			Model:    env("SIGNET_CLASSIFIER_MODEL"),
 			Effort:   env("SIGNET_CLASSIFIER_EFFORT"),
 			Caveman:  envBool(env("SIGNET_CLASSIFIER_CAVEMAN")),
+			Phase1: ClassifierPhaseSettings{
+				Model:     env("SIGNET_CLASSIFIER_PHASE1_MODEL"),
+				Source:    env("SIGNET_CLASSIFIER_PHASE1_SOURCE"),
+				Threshold: envFloat(env("SIGNET_CLASSIFIER_PHASE1_THRESHOLD")),
+			},
+			Phase2: ClassifierPhaseSettings{
+				Model:     env("SIGNET_CLASSIFIER_PHASE2_MODEL"),
+				Source:    env("SIGNET_CLASSIFIER_PHASE2_SOURCE"),
+				Threshold: envFloat(env("SIGNET_CLASSIFIER_PHASE2_THRESHOLD")),
+			},
 		},
 	}, SourceEnv)
 
@@ -250,6 +261,16 @@ func envBool(v string) *bool {
 		return nil
 	}
 	return &b
+}
+
+// envFloat parses a float environment variable; zero when unset or
+// unparseable, so an absent variable never claims provenance.
+func envFloat(v string) float64 {
+	f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+	if err != nil {
+		return 0
+	}
+	return f
 }
 
 func firstNonEmpty(vals ...string) string {

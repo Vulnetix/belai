@@ -115,3 +115,35 @@ func TestSentinelIsSafe(t *testing.T) {
 		t.Fatalf("PROMPT_INJECTION.IsSafe() = true")
 	}
 }
+
+func TestParseExtractionSentinelValid(t *testing.T) {
+	cases := []struct {
+		in   string
+		want Sentinel
+	}{
+		{"SAFE", SentinelSafe},
+		{"DATA_EXTRACTION", SentinelDataExtraction},
+		{"MODEL_EXTRACTION", SentinelModelExtraction},
+		{"<thinking>…</thinking>\nSAFE", SentinelSafe},
+	}
+	for _, tc := range cases {
+		got, err := ParseExtractionSentinel(tc.in)
+		if err != nil {
+			t.Fatalf("ParseExtractionSentinel(%q): %v", tc.in, err)
+		}
+		if got != tc.want {
+			t.Fatalf("ParseExtractionSentinel(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestParseExtractionSentinelRejectsOutOfScope(t *testing.T) {
+	// The narrowing is the point: injection and jailbreak are out of scope for
+	// phase 3 and must be rejected, not accepted as verdicts.
+	bad := []string{"", "PROMPT_INJECTION", "JAILBREAK", "SAFE\nDATA_EXTRACTION"}
+	for _, in := range bad {
+		if _, err := ParseExtractionSentinel(in); err == nil {
+			t.Fatalf("ParseExtractionSentinel(%q) expected error", in)
+		}
+	}
+}

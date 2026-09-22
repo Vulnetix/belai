@@ -16,6 +16,7 @@ import (
 
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/httpclient"
+	"github.com/vulnetix/signet/internal/mlclassify"
 	"github.com/vulnetix/signet/internal/models"
 	"github.com/vulnetix/signet/internal/nonce"
 	"github.com/vulnetix/signet/internal/posture"
@@ -54,6 +55,10 @@ type Config struct {
 	// and no model), NewClassifier derives it from this config with reasoning
 	// off.
 	Classifier ClassifierConfig
+	// Security holds the resolved ML classifier-stack config (kind, phases,
+	// phase-3 on/off). A Kind of "" or "llm" means the LLM sentinel path; the
+	// ML stack only engages when Kind == "models".
+	Security SecurityClassifierConfig
 }
 
 // ClassifierConfig is a provider/model/credentials tuple scoped to the
@@ -69,6 +74,23 @@ type ClassifierConfig struct {
 	Auth      provider.Auth
 	MaxTokens int
 	Chunk     ChunkConfig
+}
+
+// SecurityClassifierConfig is the resolved ML classifier-stack config. It is
+// separate from ClassifierConfig because the LLM classifier that serves mode
+// select, goal contract, clarify, plan eval, goal eval and compaction keeps
+// its today behaviour (inherit the main model), while the ML stack is
+// fail-closed: no inheritance, and phase 3 only when a classifier provider
+// and model are both explicitly set.
+type SecurityClassifierConfig struct {
+	// Kind is "llm" or "models".
+	Kind string
+	// Phase1 and Phase2 configure the two local gates; nil disables that gate.
+	Phase1 *mlclassify.ModelConfig
+	Phase2 *mlclassify.ModelConfig
+	// Phase3On reports whether phase 3 is enabled: on the models path, a
+	// classifier provider and model are both explicitly set.
+	Phase3On bool
 }
 
 // ChunkConfig bounds the chunked classify-all path for oversized payloads.
@@ -155,6 +177,101 @@ func ResolveClassifier(main Config, cls *config.ClassifierSettings, src Credenti
 		}
 	}
 	return out, nil
+}
+
+// ClassifierKind resolves the effective classifier kind: an explicit setting,
+// else "models" when the binary embeds a model, else "llm".
+func ClassifierKind(cls *config.ClassifierSettings) string {
+	if cls != nil && cls.Kind != "" {
+		return cls.Kind
+	}
+	if mlclassify.Embedded() {
+		return "models"
+	}
+	return "llm"
+}
+
+const (
+	phase1ModelID     = "GuardrailsAI/prompt-saturation-attack-detector"
+	phase2ModelID     = "jackhhao/jailbreak-classifier"
+	phase1AttackLabel = "LABEL_1" // the phase-1 model has no id2label; LABEL_1 is the saturation-attack class
+	phase2AttackLabel = "jailbreak"
+)
+
+// Phase1ModelID returns the default phase-1 model id.
+func Phase1ModelID() string { return phase1ModelID }
+
+// Phase2ModelID returns the default phase-2 model id.
+func Phase2ModelID() string { return phase2ModelID }
+
+// ResolveSecurityClassifier resolves the ML classifier-stack config from the
+// raw settings. It carries no credentials: phase 3 reuses the already-resolved
+// LLM classifier on Config, and remote phases resolve the HuggingFace token at
+// pipeline construction. A Kind of "" or "llm" means the LLM sentinel path.
+func ResolveSecurityClassifier(cls *config.ClassifierSettings) SecurityClassifierConfig {
+	sc := SecurityClassifierConfig{Kind: ClassifierKind(cls)}
+	if sc.Kind != "models" {
+		return sc
+	}
+	sc.Phase1 = resolveSecurityPhase(cls, 1)
+	sc.Phase2 = resolveSecurityPhase(cls, 2)
+	// Phase 3 is opt-in and the switch is the existing provider+model choice:
+	// it runs iff both are explicitly set. No inheritance on the models path.
+	sc.Phase3On = cls != nil && cls.Provider != "" && cls.Model != ""
+	return sc
+}
+
+// resolveSecurityPhase resolves one phase gate to an mlclassify.ModelConfig.
+func resolveSecurityPhase(cls *config.ClassifierSettings, phase int) *mlclassify.ModelConfig {
+	var ps config.ClassifierPhaseSettings
+	if cls != nil {
+		if phase == 1 {
+			ps = cls.Phase1
+		} else {
+			ps = cls.Phase2
+		}
+	}
+	if ps.Source == "disabled" {
+		return nil
+	}
+
+	var attack string
+	var embeddedID string
+	var embeddedOK bool
+	if phase == 1 {
+		attack = phase1AttackLabel
+		embeddedID, embeddedOK = mlclassify.EmbeddedPhase1()
+	} else {
+		attack = phase2AttackLabel
+		embeddedID, embeddedOK = mlclassify.EmbeddedPhase2()
+	}
+
+	model := ps.Model
+	if model == "" {
+		if embeddedOK {
+			model = embeddedID
+		} else {
+			// No embedded model and no explicit id: this phase has no model
+			// (phase 2 defaults to disabled on the non-jailbreak variants).
+			return nil
+		}
+	}
+
+	source := ps.Source
+	if source == "" {
+		if embeddedOK && model == embeddedID {
+			source = string(mlclassify.SourceEmbedded)
+		} else {
+			source = string(mlclassify.SourceHuggingFace)
+		}
+	}
+
+	return &mlclassify.ModelConfig{
+		ID:          model,
+		Source:      mlclassify.ModelSource(source),
+		Threshold:   ps.Threshold,
+		AttackLabel: attack,
+	}
 }
 
 // ClassifierOrDefault returns the resolved classifier config, deriving one
@@ -777,12 +894,72 @@ func NewPipeline(cfg Config, client *http.Client, cache *rolemanager.Cache) *rol
 // the underlying classifier so retries are visible to observers.
 func NewPipelineWithRetry(cfg Config, client *http.Client, cache *rolemanager.Cache, onRetry func(resilience.Attempt)) *rolemanager.Pipeline {
 	cc := cfg.ClassifierOrDefault()
-	p := rolemanager.NewPipelineWithChunk(NewClassifierWithRetry(cfg, client, onRetry), rolemanager.ChunkConfig{
+	llm := NewClassifierWithRetry(cfg, client, onRetry)
+	p := rolemanager.NewPipelineWithChunk(llm, rolemanager.ChunkConfig{
 		MaxBytes:    cc.Chunk.MaxBytes,
 		Concurrency: cc.Chunk.Concurrency,
 	})
 	p.Cache = cache
+	if cfg.Security.Kind == "models" {
+		var phase3 rolemanager.Classifier
+		if cfg.Security.Phase3On {
+			phase3 = llm
+		}
+		var sec rolemanager.Classifier
+		if ml, err := buildSecurityClassifier(cfg.Security, phase3); err != nil {
+			// Fail closed: a stack that failed to build is a classifier that
+			// errors on every call, never a silent downgrade to the LLM path.
+			sec = failingClassifier{err: err}
+		} else {
+			sec = ml
+		}
+		p.Security = sec
+		p.SetClassifierIdentity(mlclassify.OptionsIdentity(cfg.Security.Phase1, cfg.Security.Phase2, cfg.Security.Phase3On))
+	}
 	return p
+}
+
+// failingClassifier returns a fixed error on every call, so a security stack
+// that failed to build fails closed rather than silently downgrading.
+type failingClassifier struct{ err error }
+
+func (f failingClassifier) Classify(context.Context, rolemanager.ClassifierPayload) (string, error) {
+	return "", f.err
+}
+
+// buildSecurityClassifier builds the mlclassify classifier stack for a
+// resolved security config. phase3 is the narrowed LLM sentinel, or nil.
+func buildSecurityClassifier(sc SecurityClassifierConfig, phase3 rolemanager.Classifier) (*mlclassify.Classifier, error) {
+	opts := mlclassify.Options{
+		Phase1:  sc.Phase1,
+		Phase2:  sc.Phase2,
+		Phase3:  phase3,
+		HFToken: envHFToken,
+	}
+	return mlclassify.New(opts)
+}
+
+// PreloadClassifier eagerly builds the local ML classifier stack so a variant
+// binary whose embedded model fails to load is a hard startup error rather
+// than a silent downgrade. It is idempotent and cheap on repeat calls (models
+// are cached); a non-models config is a no-op.
+func PreloadClassifier(sc SecurityClassifierConfig) error {
+	if sc.Kind != "models" {
+		return nil
+	}
+	_, err := buildSecurityClassifier(sc, nil)
+	return err
+}
+
+// envHFToken resolves the HuggingFace token for remote phase models. Public
+// models need no token, so a missing token is not an error here; the remote
+// inference call surfaces a 401 if the model actually requires one.
+func envHFToken() (string, error) {
+	token, _, ok := EnvSource(os.Getenv).Lookup("huggingface", "api_key")
+	if !ok {
+		return "", nil
+	}
+	return token, nil
 }
 
 // SealSystem builds and seals the system prompt from trusted harness blocks.

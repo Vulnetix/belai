@@ -162,9 +162,17 @@ func (s *Settings) UnmarshalJSON(data []byte) error {
 // token, so its effort defaults to "none" (reasoning off) regardless of the
 // main model's effort.
 type ClassifierSettings struct {
+	// Kind selects the security classifier stack: "llm" (the full five-token
+	// LLM sentinel) or "models" (local BERT gates plus an optional narrowed
+	// phase-3 LLM sentinel). Empty derives from the build variant: "models"
+	// when the binary embeds a model, else "llm".
+	Kind string `json:"kind,omitempty"`
 	// Provider is the classifier's provider; empty means the main provider.
+	// On the models path it is phase 3's provider: phase 3 runs iff Provider
+	// and Model are both explicitly set.
 	Provider string `json:"provider,omitempty"`
-	// Model is the classifier's model; empty means the main model.
+	// Model is the classifier's model; empty means the main model. On the
+	// models path it is phase 3's model.
 	Model string `json:"model,omitempty"`
 	// Effort is the classifier's reasoning effort; empty means "none".
 	Effort string `json:"effort,omitempty"`
@@ -177,6 +185,23 @@ type ClassifierSettings struct {
 	Caveman *bool `json:"caveman,omitempty"`
 	// Chunk bounds the chunked classify-all path for oversized payloads.
 	Chunk ClassifierChunkSettings `json:"chunk,omitempty"`
+	// Phase1 configures the prompt-saturation gate. Only consulted when Kind
+	// is "models".
+	Phase1 ClassifierPhaseSettings `json:"phase1,omitempty"`
+	// Phase2 configures the jailbreak gate. Only consulted when Kind is
+	// "models". Source "disabled" turns it off.
+	Phase2 ClassifierPhaseSettings `json:"phase2,omitempty"`
+}
+
+// ClassifierPhaseSettings configures one local BERT gate.
+type ClassifierPhaseSettings struct {
+	// Model is the HuggingFace model id.
+	Model string `json:"model,omitempty"`
+	// Source is "embedded", "huggingface", or (phase 2 only) "disabled".
+	Source string `json:"source,omitempty"`
+	// Threshold is the attack-probability threshold at or above which the
+	// gate fires. Zero means the default (0.5).
+	Threshold float64 `json:"threshold,omitempty"`
 }
 
 // ClassifierChunkSettings bounds chunked classification of oversized content.
@@ -194,6 +219,9 @@ type ClassifierChunkSettings struct {
 func (c *ClassifierSettings) merge(from *ClassifierSettings) {
 	if from == nil {
 		return
+	}
+	if from.Kind != "" {
+		c.Kind = from.Kind
 	}
 	if from.Provider != "" {
 		c.Provider = from.Provider
@@ -213,6 +241,24 @@ func (c *ClassifierSettings) merge(from *ClassifierSettings) {
 	if from.Chunk.Concurrency != 0 {
 		c.Chunk.Concurrency = from.Chunk.Concurrency
 	}
+	c.Phase1.merge(&from.Phase1)
+	c.Phase2.merge(&from.Phase2)
+}
+
+// merge folds from over c, taking any non-zero field from from.
+func (c *ClassifierPhaseSettings) merge(from *ClassifierPhaseSettings) {
+	if from == nil {
+		return
+	}
+	if from.Model != "" {
+		c.Model = from.Model
+	}
+	if from.Source != "" {
+		c.Source = from.Source
+	}
+	if from.Threshold != 0 {
+		c.Threshold = from.Threshold
+	}
 }
 
 // IsZero reports whether the classifier settings carry no overrides.
@@ -220,9 +266,18 @@ func (c *ClassifierSettings) IsZero() bool {
 	if c == nil {
 		return true
 	}
-	return c.Provider == "" && c.Model == "" && c.Effort == "" &&
+	return c.Kind == "" && c.Provider == "" && c.Model == "" && c.Effort == "" &&
 		c.Caveman == nil &&
-		c.Chunk.MaxBytes == 0 && c.Chunk.Concurrency == 0
+		c.Chunk.MaxBytes == 0 && c.Chunk.Concurrency == 0 &&
+		c.Phase1.IsZero() && c.Phase2.IsZero()
+}
+
+// IsZero reports whether the phase settings carry no overrides.
+func (c *ClassifierPhaseSettings) IsZero() bool {
+	if c == nil {
+		return true
+	}
+	return c.Model == "" && c.Source == "" && c.Threshold == 0
 }
 
 // MaxBytesOr returns the chunk threshold, defaulting to 1 MiB.

@@ -164,6 +164,37 @@ func TestClassifierSettingsIsZero(t *testing.T) {
 	if (&ClassifierSettings{Caveman: boolPtr(true)}).IsZero() {
 		t.Fatal("ClassifierSettings with caveman true should not be zero")
 	}
+	if (&ClassifierSettings{Kind: "models"}).IsZero() {
+		t.Fatal("ClassifierSettings with kind should not be zero")
+	}
+	if (&ClassifierSettings{Phase1: ClassifierPhaseSettings{Model: "m"}}).IsZero() {
+		t.Fatal("ClassifierSettings with phase1 model should not be zero")
+	}
+	if (&ClassifierSettings{Phase2: ClassifierPhaseSettings{Threshold: 0.7}}).IsZero() {
+		t.Fatal("ClassifierSettings with phase2 threshold should not be zero")
+	}
+}
+
+func TestClassifierPhaseMerge(t *testing.T) {
+	base := &ClassifierSettings{
+		Kind:   "llm",
+		Phase1: ClassifierPhaseSettings{Model: "a", Source: "embedded", Threshold: 0.5},
+		Phase2: ClassifierPhaseSettings{Model: "b", Source: "disabled"},
+	}
+	base.merge(&ClassifierSettings{
+		Kind:   "models",
+		Phase1: ClassifierPhaseSettings{Model: "a2", Threshold: 0.8},
+		Phase2: ClassifierPhaseSettings{Source: "huggingface"},
+	})
+	if base.Kind != "models" {
+		t.Fatalf("kind = %q, want models", base.Kind)
+	}
+	if base.Phase1.Model != "a2" || base.Phase1.Source != "embedded" || base.Phase1.Threshold != 0.8 {
+		t.Fatalf("phase1 = %+v, want model a2 source embedded threshold 0.8", base.Phase1)
+	}
+	if base.Phase2.Model != "b" || base.Phase2.Source != "huggingface" {
+		t.Fatalf("phase2 = %+v, want model b source huggingface", base.Phase2)
+	}
 }
 
 func TestClassifierCavemanMergeAndAccessor(t *testing.T) {

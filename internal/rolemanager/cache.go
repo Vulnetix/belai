@@ -71,10 +71,21 @@ func DefaultCachePath() string {
 	return filepath.Join(dir, "bad-hashes.json")
 }
 
-// Key hashes the sanitized content into the cache key.
+// Key hashes the sanitized content into the cache key for the LLM sentinel
+// path (no classifier identity).
 func Key(clean string) string {
-	sum := sha256.Sum256([]byte(clean))
-	return hex.EncodeToString(sum[:])
+	return KeyFor("", clean)
+}
+
+// KeyFor hashes a classifier identity plus the sanitized content into the
+// cache key, so verdicts from different classifier stacks never share a
+// bucket. An empty identity yields the content-only key.
+func KeyFor(identity, clean string) string {
+	h := sha256.New()
+	h.Write([]byte(identity))
+	h.Write([]byte{0})
+	h.Write([]byte(clean))
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // Get returns the cached verdict for key, if any.
