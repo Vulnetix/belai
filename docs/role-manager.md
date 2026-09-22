@@ -127,6 +127,12 @@ Rules:
   text). Users tune it per phase via `classifier.phaseN.threshold`, the
   `-classifier-phaseN-threshold` flags, or the `/model` phase-threshold rows;
   clearing a threshold restores the 0.75 default.
+- **Phase 2 is opt-in even when embedded.** The jailbreak variant embeds the
+  phase-2 model, but the model over-triggers on ordinary tool results at any
+  threshold (code, listings, JSON, help text and test output score as
+  "jailbreak" above 0.95), so it runs only when `phase2.source` (`embedded` or
+  `huggingface`) or `phase2.model` is set explicitly. Embedding the weights
+  makes the gate *available*, not *on* by default.
 - **Phase 3 is opt-in** via the existing `classifier.provider` +
   `classifier.model` choice — no new setting. Unset both and a zero-config
   embedded install makes no network call in the classify path; set them and

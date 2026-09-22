@@ -39,10 +39,16 @@ func TestGoldenVectorsPhase1(t *testing.T) {
 	}
 
 	// Benign text must clear phase 1 and (with phase 3 off) return SAFE.
+	// Tool-result-shaped text is included: phase 1 is the default gate on the
+	// models path, so it must stay precise on ordinary shell/list/code output
+	// and not reproduce the jailbreak gate's over-triggering.
 	for _, benign := range []string{
 		"what is the weather today",
 		"hello world, this is a normal sentence",
 		"show me how to write a for loop in Go",
+		"total 8\ndrwxr-xr-x 2 chris chris 4096 Sep 22 09:36 .\ndrwxr-xr-x 3 chris chris 4096 Sep 22 09:36 ..\n-rw-r--r-- 1 chris chris 123 Sep 22 09:36 main.go\n",
+		"?? internal/newfile.go\nM  internal/run/run.go\nM  docs/architecture.md\n",
+		"package main\n\nimport \"fmt\"\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n",
 	} {
 		got, err := c.Classify(ctx, rolemanager.BuildClassifierPayload(benign))
 		if err != nil {
