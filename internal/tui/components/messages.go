@@ -693,23 +693,31 @@ func turnPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 }
 
 // toolCallSummary renders a muted one-line substitute for an assistant turn
-// whose only output was tool calls. Tool names are deduped, order preserved,
-// and the line is truncated to the panel's inner width.
+// whose only output was tool calls. Each call is shown as "ToolName invocation"
+// (e.g. "Read foo.txt" or "JQ .foo bar.json"), duplicate labels are removed
+// in order, and the line is truncated to the panel's inner width.
 func toolCallSummary(calls []AgentToolCall, width int) string {
 	seen := map[string]bool{}
-	var names []string
+	var labels []string
 	for _, c := range calls {
-		if c.Name == "" || seen[c.Name] {
+		if c.Name == "" {
 			continue
 		}
-		seen[c.Name] = true
-		names = append(names, c.Name)
+		label := c.Name
+		if inv := formatToolInvocation(c.Name, c.Args); inv != "" {
+			label += " " + inv
+		}
+		if seen[label] {
+			continue
+		}
+		seen[label] = true
+		labels = append(labels, label)
 	}
-	label := "requested " + strconv.Itoa(len(names)) + " tools"
-	if len(names) == 0 {
-		label = "requested tools"
+	countLabel := "requested " + strconv.Itoa(len(labels)) + " tools"
+	if len(labels) == 0 {
+		countLabel = "requested tools"
 	}
-	line := label + " · " + strings.Join(names, ", ")
+	line := countLabel + " · " + strings.Join(labels, ", ")
 	inner := max(width-4, 8)
 	return MutedStyle.Render(truncateRunes(line, inner))
 }
@@ -1029,8 +1037,9 @@ func renderToolContent(content string, width int, isErr bool, trunc truncation) 
 	return renderRows(rows, width)
 }
 
-// formatToolInvocation extracts the most descriptive argument from a tool's
-// JSON args for display next to the tool name.
+// formatToolInvocation extracts the most descriptive argument(s) from a tool's
+// JSON args for display next to the tool name. It returns a concise string
+// that orients the user without leaking large payloads (e.g. Write content).
 func formatToolInvocation(name, argsJSON string) string {
 	argsJSON = strings.TrimSpace(argsJSON)
 	if argsJSON == "" {
@@ -1043,6 +1052,66 @@ func formatToolInvocation(name, argsJSON string) string {
 		return truncateRunes(s, 60)
 	}
 
+	// Tools whose meaning depends on more than one argument: surface the
+	// script/expression and, when a path is present, the file it targets.
+	// Bash gets Exec(...) wrapping so the command line is unambiguous.
+	switch name {
+	case "Bash":
+		if s := firstStrArg(args, "command", "cmd"); s != "" {
+			return truncateRunes("Exec("+s+")", 160)
+		}
+	case "JQ":
+		filter := strArg(args, "filter")
+		path := strArg(args, "path")
+		if filter != "" && path != "" {
+			return truncateRunes(filter+"  "+path, 160)
+		}
+		if filter != "" {
+			return truncateRunes(filter, 120)
+		}
+	case "YQ":
+		filter := strArg(args, "filter")
+		path := strArg(args, "path")
+		if filter != "" && path != "" {
+			return truncateRunes(filter+"  "+path, 160)
+		}
+		if filter != "" {
+			return truncateRunes(filter, 120)
+		}
+	case "Sed":
+		expr := strArg(args, "expression")
+		path := strArg(args, "path")
+		if expr != "" && path != "" {
+			return truncateRunes(expr+"  "+path, 160)
+		}
+		if expr != "" {
+			return truncateRunes(expr, 120)
+		}
+	case "Awk":
+		prog := strArg(args, "program")
+		path := strArg(args, "path")
+		if prog != "" && path != "" {
+			return truncateRunes(prog+"  "+path, 160)
+		}
+		if prog != "" {
+			return truncateRunes(prog, 120)
+		}
+	case "Cut":
+		fields := strArg(args, "fields")
+		delim := strArg(args, "delimiter")
+		path := strArg(args, "path")
+		if fields != "" {
+			s := fields
+			if delim != "" {
+				s += " -d " + delim
+			}
+			if path != "" {
+				s += "  " + path
+			}
+			return truncateRunes(s, 160)
+		}
+	}
+
 	keyOrder := map[string][]string{
 		"Bash":      {"command", "cmd"},
 		"Read":      {"file_path", "path", "file"},
@@ -1052,45 +1121,57 @@ func formatToolInvocation(name, argsJSON string) string {
 		"Glob":      {"pattern", "query"},
 		"WebSearch": {"query", "q"},
 		"WebFetch":  {"url"},
-		// Native catalogue tools: surface the most descriptive argument first.
-		"Git":     {"command"},
-		"JQ":      {"filter", "input"},
-		"YQ":      {"filter", "input"},
-		"Sed":     {"expression"},
-		"Awk":     {"program"},
-		"Cut":     {"fields"},
-		"Tr":      {"set1"},
-		"Sort":    {"path", "input"},
-		"Uniq":    {"path", "input"},
-		"WC":      {"path", "input"},
-		"Paste":   {"path", "input"},
-		"Join":    {"a"},
-		"Find":    {"name", "path"},
-		"Cat":     {"path"},
-		"Head":    {"path"},
-		"Tail":    {"path"},
-		"LS":      {"path"},
-		"File":    {"path"},
-		"Strings": {"path"},
-		"Diff":    {"a"},
-		"Cmp":     {"a"},
-		"Echo":    {"text"},
+		"Git":       {"command"},
+		"Tr":        {"set1"},
+		"Sort":      {"path", "input"},
+		"Uniq":      {"path", "input"},
+		"WC":        {"path", "input"},
+		"Paste":     {"path", "input"},
+		"Join":      {"a"},
+		"Find":      {"name", "path"},
+		"Cat":       {"path"},
+		"Head":      {"path"},
+		"Tail":      {"path"},
+		"LS":        {"path"},
+		"File":      {"path"},
+		"Strings":   {"path"},
+		"Diff":      {"a"},
+		"Cmp":       {"a"},
+		"Echo":      {"text"},
 	}
 
 	keys := keyOrder[name]
 	if len(keys) == 0 {
-		keys = []string{"command", "path", "pattern", "filter", "query", "url", "args"}
+		keys = []string{"command", "path", "file_path", "pattern", "filter", "query", "url"}
 	}
 	for _, k := range keys {
-		if v, ok := args[k]; ok {
-			if s, ok := v.(string); ok && s != "" {
-				return truncateRunes(s, 120)
-			}
+		if s := strArg(args, k); s != "" {
+			return truncateRunes(s, 120)
 		}
 	}
 	for _, v := range args {
 		if s, ok := v.(string); ok && s != "" {
 			return truncateRunes(s, 120)
+		}
+	}
+	return ""
+}
+
+// strArg returns the string value for the given key.
+func strArg(args map[string]any, key string) string {
+	if v, ok := args[key]; ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+// firstStrArg returns the first present string value among the given keys.
+func firstStrArg(args map[string]any, keys ...string) string {
+	for _, k := range keys {
+		if s := strArg(args, k); s != "" {
+			return s
 		}
 	}
 	return ""

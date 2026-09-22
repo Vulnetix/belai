@@ -1500,14 +1500,23 @@ is in a different place:
 A tail-anchored preview puts its hint *above* the content, since the hint
 summarises what came before it. `ctrl+o` expands everything.
 
-The invocation line next to a tool name is one argument, chosen per tool by
-`formatToolInvocation`'s key order: `Bash` shows `command`, `Read`/`Write`/`Edit`
-show `path`, `Grep`/`Glob` show `pattern`, `WebSearch` shows `query`, `WebFetch`
-shows `url`, and anything unlisted tries `command`, `path`, `pattern`, `query`,
-`url`, `args` in that order. `Write` and `Edit` deliberately list `path` alone,
-so a row shows what was written to and never the file body, the `old_string`, or
-the `new_string`. The value is clipped to 120 runes (60 for args that would not
-parse as JSON).
+The invocation line next to a tool name is chosen per tool by
+`formatToolInvocation`. File tools (`Read`, `Write`, `Edit`) show `path`/`file_path`;
+`Grep`/`Glob` show `pattern`; `WebSearch` shows `query`; `WebFetch` shows `url`;
+and tools whose context is a script or expression (`JQ`, `YQ`, `Sed`, `Awk`,
+`Cut`) show both the expression and the target file when both are present. A
+value is clipped to 120 runes, with extra headroom when two arguments are shown.
+`Write` and `Edit` deliberately list the path alone, so a row shows what was
+written to and never the file body, the `old_string`, or the `new_string`.
+`Bash` is special: its command is wrapped as `Exec(<command>)` so a bare command
+string is unmistakably a shell invocation. Anything unlisted tries `command`,
+`path`, `file_path`, `pattern`, `filter`, `query`, `url` in that order, and raw
+args that do not parse as JSON are clipped to 60 runes.
+
+When an assistant turn has no body text and only requested tool calls, the TUI
+renders a one-line summary: each call is shown as `ToolName invocation`
+(e.g. `Read foo.txt` or `Bash Exec(go test ./...)`), the list is deduped in
+order by the full label, and the line is clipped to the panel's inner width.
 
 Read rows are numbered at render time, never by the Read tool itself: the
 tool's `offset` is a byte count, so a model that read a line number out of the

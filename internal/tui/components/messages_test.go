@@ -144,17 +144,17 @@ func TestTurnPanelEmptyWithToolCallsRendersSummary(t *testing.T) {
 		Role:    "assistant",
 		Content: "",
 		ToolCalls: []AgentToolCall{
-			{ID: "1", Name: "Grep"},
-			{ID: "2", Name: "Read"},
-			{ID: "3", Name: "Grep"},
+			{ID: "1", Name: "Bash", Args: `{"command":"ls"}`},
+			{ID: "2", Name: "Read", Args: `{"path":"internal/foo.go"}`},
+			{ID: "3", Name: "Bash", Args: `{"command":"ls"}`},
 		},
 	}
 	out, _ := turnPanel(msg, 60, false)
 	if !strings.Contains(out, "requested 2 tools") {
 		t.Fatalf("expected tool summary, got:\n%s", out)
 	}
-	if !strings.Contains(out, "Grep, Read") {
-		t.Fatalf("expected deduped tool names, got:\n%s", out)
+	if !strings.Contains(out, "Bash Exec(ls), Read internal/foo.go") {
+		t.Fatalf("expected deduped tool names with Exec-wrapped Bash and path, got:\n%s", out)
 	}
 }
 
@@ -170,8 +170,8 @@ func TestToolRowRendersNameAndStatus(t *testing.T) {
 	if !strings.Contains(out, "Bash") {
 		t.Fatalf("expected tool name, got:\n%s", out)
 	}
-	if !strings.Contains(out, "echo hi") {
-		t.Fatalf("expected command argument, got:\n%s", out)
+	if !strings.Contains(out, "Exec(echo hi)") {
+		t.Fatalf("expected Exec-wrapped command argument, got:\n%s", out)
 	}
 	if !strings.Contains(out, "hi") {
 		t.Fatalf("expected result preview, got:\n%s", out)
@@ -509,14 +509,20 @@ func TestFormatToolInvocation(t *testing.T) {
 		args string
 		want string
 	}{
-		{"Bash command", "Bash", `{"command":"git status"}`, "git status"},
+		{"Bash command", "Bash", `{"command":"git status"}`, "Exec(git status)"},
 		{"Read path", "Read", `{"path":"foo.go"}`, "foo.go"},
+		{"Read file_path", "Read", `{"file_path":"foo.go"}`, "foo.go"},
 		{"Grep pattern", "Grep", `{"pattern":"TODO"}`, "TODO"},
 		{"Glob pattern", "Glob", `{"pattern":"*.go"}`, "*.go"},
 		{"WebSearch query", "WebSearch", `{"query":"golang"}`, "golang"},
 		{"WebFetch url", "WebFetch", `{"url":"https://example.com"}`, "https://example.com"},
 		{"Write path", "Write", `{"path":"x.go","content":"package x"}`, "x.go"},
 		{"Edit path", "Edit", `{"path":"x.go","old_string":"a","new_string":"b"}`, "x.go"},
+		{"JQ filter only", "JQ", `{"filter":".foo"}`, ".foo"},
+		{"JQ filter and file", "JQ", `{"filter":".foo","path":"data.json"}`, ".foo  data.json"},
+		{"YQ filter and file", "YQ", `{"filter":".items[]","path":"data.yaml"}`, ".items[]  data.yaml"},
+		{"Sed expression and file", "Sed", `{"expression":"s/old/new/g","path":"file.txt"}`, "s/old/new/g  file.txt"},
+		{"Awk program and file", "Awk", `{"program":"{print $1}","path":"file.txt"}`, "{print $1}  file.txt"},
 		{"Unknown args", "Other", `{"foo":"bar"}`, "bar"},
 		{"Invalid JSON", "Bash", `not json`, "not json"},
 	}
