@@ -614,3 +614,20 @@ Signet is pure Go with `CGO_ENABLED=0`, so every target cross-compiles from one 
 - `docs/nonce-endpoint-spec.md` — provider nonce GET spec.
 
 Security invariants that changes must not weaken are listed in [AGENTS.md](../AGENTS.md).
+
+## Diagnostics QA
+
+Language-server diagnostics are exercised from both the CLI and the TUI:
+
+- `just prompt "introduce a compile error in a .go file and then fix it"` from
+  a Go repository with `gopls` on `PATH` should show the sealed diagnostics
+  block on the `Edit` result and let the model fix it without a `Bash` build.
+- In `just tui`, `/settings` → **language servers** should list supported
+  languages with the correct glyph (`●` detected and enabled, `○` detected and
+  disabled, `◐` fallback only, `·` nothing available, `⋯` detection in flight).
+- Toggle a language off, edit a file in that language, and confirm the
+  `lsp_diagnose` internal-work event reports `unavailable`/`skipped` and the
+  result carries no diagnostics block.
+- With `typescript-language-server` absent, edit a `.sh` file with a syntax
+  error and confirm the `bash -n` fallback reports it.
+- Run `just site-check` after any marketing-site change.

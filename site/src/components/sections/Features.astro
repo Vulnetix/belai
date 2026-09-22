@@ -76,6 +76,49 @@ import localModelShot from '../../assets/shots/local-model.svg';
   </div>
 </SealedSection>
 
+<SealedSection label="diagnostics" sealText="Diagnostics: the harness checks the file the model just edited and hands the errors back on the same tool result. Language servers detected on PATH, fixed-argv syntax checks when none is installed, per-language on/off in /settings. Every message is capped, flattened to one line, stripped of control runes, and sealed with a nonce and a SHA-256." id="diagnostics">
+  <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
+    <div class="prose-measure">
+      <h2 class="text-3xl font-bold text-vx-ink">Diagnostics.</h2>
+      <p class="mt-4 text-vx-ink/80">
+        The harness checks the file the model just edited and hands the errors back on the same{' '}
+        <code class="mono">Edit</code> result. No extra round trip, no <code class="mono">Bash</code> build in between.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        Language servers are detected on <code class="mono">PATH</code>. When none is installed, fixed-argv syntax
+        checks like <code class="mono">gofmt -e</code>, <code class="mono">bash -n</code>, <code class="mono">ruby -c</code> and{' '}
+        <code class="mono">zig ast-check</code> take over. Each language can be toggled in <code class="mono">/settings</code>.
+      </p>
+    </div>
+    <div class="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div class="rounded-lg border border-vx-ink/30 p-4">
+        <h3 class="font-semibold text-vx-ink">Same turn</h3>
+        <p class="mt-2 text-sm text-vx-ink/80">Errors ride back on the tool result itself.</p>
+      </div>
+      <div class="rounded-lg border border-vx-ink/30 p-4">
+        <h3 class="font-semibold text-vx-ink">Fourteen languages</h3>
+        <p class="mt-2 text-sm text-vx-ink/80">Go, TypeScript, Python, Rust, C, C++, Obj-C, C#, Java, Dart, Swift, Zig, Bash and Ruby.</p>
+      </div>
+      <div class="rounded-lg border border-vx-ink/30 p-4">
+        <h3 class="font-semibold text-vx-ink">Detected, never assumed</h3>
+        <p class="mt-2 text-sm text-vx-ink/80">Servers found on PATH. /settings offers the install command but never runs it alone.</p>
+      </div>
+      <div class="rounded-lg border border-vx-ink/30 p-4">
+        <h3 class="font-semibold text-vx-ink">Fallback checks</h3>
+        <p class="mt-2 text-sm text-vx-ink/80">Fixed argv, never a shell, when no server is installed.</p>
+      </div>
+      <div class="rounded-lg border border-vx-ink/30 p-4">
+        <h3 class="font-semibold text-vx-ink">Capped and sealed</h3>
+        <p class="mt-2 text-sm text-vx-ink/80">Ten rows, 200 runes each, flattened to one line, control and bidi runes stripped, nonce-sealed.</p>
+      </div>
+      <div class="rounded-lg border border-vx-ink/30 p-4">
+        <h3 class="font-semibold text-vx-ink">Never claims clean</h3>
+        <p class="mt-2 text-sm text-vx-ink/80">Silence means nothing to report, not that nothing is wrong.</p>
+      </div>
+    </div>
+  </div>
+</SealedSection>
+
 <SealedSection label="permissions" sealText="Permissions and approvals: allow, deny, or ask per tool, a union with provenance per grant, and an approval prompt that shows the actual diff." id="permissions">
   <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
     <div class="order-2 lg:order-1 space-y-4">
