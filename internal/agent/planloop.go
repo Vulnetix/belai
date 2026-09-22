@@ -107,6 +107,36 @@ func (l *planLedger) planPartialDirective() string {
 	return "The plan is partially complete but no plan todo list is tracked yet. Write a planning todo list under a 'Plan:' header (numbered steps), then continue researching. Mark each step complete with [DONE:n] in your reply as you finish it."
 }
 
+// partialPlanResult builds the result returned on terminal error paths. The
+// plan-file contract is that every plan-mode turn writes a file — partial,
+// ceiling, cancelled, unproductive, or failed — so the reply (the latest plan
+// text the model produced) and a PLAN_PARTIAL sentinel ride the result when
+// the text is actually a plan. recordPlan writes the file from those fields;
+// the error itself still propagates as terminal. A terminal turn whose reply
+// was never plan-shaped (e.g. the model only answered "done") records nothing,
+// so an empty or invalid plan can never be written to disk as an artifact.
+func (l *planLedger) partialPlanResult(latest string) run.Result {
+	reply := latest
+	if reply == "" {
+		reply = l.lastText
+	}
+	if !hasPlan(reply) {
+		return run.Result{Passes: l.passes, PlanSentinel: rolemanager.PlanPartial}
+	}
+	return run.Result{Reply: reply, Passes: l.passes, PlanSentinel: rolemanager.PlanPartial}
+}
+
+// hasPlan reports whether text carries a plan worth recording: a numbered plan
+// under a "Plan:" header, or a structured markdown plan with numbered steps.
+// It mirrors the two parsers recordPlan canonicalises with.
+func hasPlan(text string) bool {
+	if _, err := plans.ExtractSteps(text); err == nil {
+		return true
+	}
+	_, err := plans.ParseDoc(text)
+	return err == nil
+}
+
 // planPassLoop drives the plan-mode pass loop. It is the plan-mode analogue of
 // the goal pass loop's boundary contact: when a pass exhausts its iteration
 // budget (or ends naturally), the harness contacts a plan evaluator through the
@@ -169,7 +199,7 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 				}
 			}
 			if err != nil {
-				return run.Result{Passes: l.passes}, maybeCompact(err)
+				return l.partialPlanResult(out.lastText), maybeCompact(err)
 			}
 		}
 
@@ -256,15 +286,17 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 		if evalErr != nil {
 			if !errors.Is(evalErr, rolemanager.ErrMalformedPlanEval) {
 				// Transport failure: terminal. The verdict is unknown, and an
-				// unknown verdict must not grant compute.
-				return run.Result{Passes: l.passes}, evalErr
+				// unknown verdict must not grant compute — but the plan
+				// gathered so far is still written to disk before the error
+				// surfaces, so the turn keeps its plan-file artifact.
+				return l.partialPlanResult(l.lastText), evalErr
 			}
 			// Malformed output fails closed to PLAN_PARTIAL (one garbled reply
 			// is noise); two in a row is a broken evaluator.
 			l.malformedStreak++
 			emit(Event{Kind: EventPlanEvalKind, Pass: l.passes, PlanSentinel: sentinel, Malformed: true})
 			if l.malformedStreak >= 2 {
-				return run.Result{Passes: l.passes, PlanSentinel: sentinel},
+				return l.partialPlanResult(l.lastText),
 					fmt.Errorf("plan pass loop stopped: %d consecutive malformed evaluator replies", l.malformedStreak)
 			}
 		} else {
@@ -299,7 +331,7 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 		default:
 			// Unreachable: ParsePlanSentinel accepts only the three sentinels,
 			// and malformed input resolves to PLAN_PARTIAL.
-			return run.Result{Passes: l.passes}, fmt.Errorf("plan pass loop: unknown verdict %q", sentinel)
+			return l.partialPlanResult(l.lastText), fmt.Errorf("plan pass loop: unknown verdict %q", sentinel)
 		}
 	}
 }

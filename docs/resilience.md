@@ -175,8 +175,9 @@ passes that ran changed real files, and a garbled classifier token is not a
 reason to discard them. An evaluator *transport* failure stays terminal: the
 verdict is unknown, and an unknown verdict must not grant compute. The plan
 pass loop keeps the stricter contract — no repair round, and two malformed
-`PLAN_*` replies are an error — because a plan-mode abort discards a plan,
-not work on disk.
+`PLAN_*` replies are an error. The terminal error still records the plan
+artifact before it surfaces (see role-manager.md, "Plan file"), so the
+stricter evaluator contract costs no plan text.
 
 Cancellation is the loop's only true ceiling, and it is not an error: `esc` in
 the TUI or `SIGINT` on the CLI returns the partial result wrapped in

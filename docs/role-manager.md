@@ -945,9 +945,13 @@ from an earlier session has no path into this payload.
 
 ### Plan file
 
-Every plan-mode turn writes a file, even on partial, ceiling, cancelled, or
-unproductive exit. The content is the model's full final reply, sanitized
-before it is written. The file lives at
+Every plan-mode turn writes a file — on completion, partial, ceiling,
+cancelled, unproductive, or failed exit. The content is the model's latest
+reply (the plan text handed to `ExitPlanMode` when one was given), sanitized
+before it is written. A terminal error — a main-model turn failure, a
+plan-evaluator transport failure, or a broken evaluator — still records the
+plan gathered so far before the error surfaces: the error stays terminal, but
+the artifact is not discarded. The file lives at
 `<workdir>/.vulnetix/plans/<name>.md` with mode `0o600`. Writing is harness
 I/O, not a model tool call, because plan mode denies every write tool.
 
