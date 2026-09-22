@@ -34,7 +34,17 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   knows — `path:line:text`, a list of paths, a confirmation it composed
   itself, a fixed argv's output — so they skip the round trip. A kind absent
   from `tools.classifierKinds` is sanitize-only, so adding a tool whose
-  content is arbitrary means adding its kind there.
+  content is arbitrary means adding its kind there. The optional diagnostics
+  block that rides back on `Write`/`Edit` is shaped the same way: no more
+  than ten rows, each flattened to one line, stripped of control and bidi
+  runes, with a restricted source field, sealed with a nonce and a SHA-256.
+- **Language servers are a trusted-root feature.** A language server is only
+  spawned under a directory the user has already trusted, and only in an
+  interactive TUI session. The server is always started with a scrubbed
+  environment and its own process group. It is never asked to perform a
+  `workspace/applyEdit` (every such request receives `{"applied":false}`),
+  `initializationOptions` is always `null`, and binary overrides from a
+  project-layer `lsp.servers` key are dropped unconditionally.
 - **The repo map is harness-computed facts only.** It may contain paths,
   counts, detected commands, git metadata and file sizes, and never repository
   file contents. Repository prose reaching the model stays on the
@@ -80,8 +90,10 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
 - **Delimiters are sealed.** Every harness delimiter carries a random nonce
   plus a SHA-256 integrity hash of its enclosed content. On egress, any block
   lacking a nonce, carrying an unknown nonce, or failing its integrity hash is
-  stripped before HTTP transport. That includes the `<tools>` briefing, so a
-  model cannot widen its own advertised tool surface by writing one.
+  stripped before HTTP transport. Attachment, directive, and diagnostics
+  blocks must also carry an integrity attribute. That includes the `<tools>`
+  briefing, so a model cannot widen its own advertised tool surface by writing
+  one.
 - **Classifier turns are tool-less.** The classifier payload carries no tools,
   no skills, and no agent block.
 - **The goal contract is classifier-drafted but harness-sealed.** The

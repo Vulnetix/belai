@@ -12,6 +12,7 @@ behaviour, and implementation details.
 | Installation, providers, TUI, CLI, settings, and sessions | [User guide](../README.md) | [Installation](../README.md#installation), [Usage](../README.md#usage), [Configuration](../README.md#configuration), [Settings files](../README.md#settings-files) |
 | Security architecture and trust boundaries | [Architecture](architecture.md) | [Delimiter, nonce, and integrity model](architecture.md#delimiter-nonce-and-integrity-model), [Tool-result trust](architecture.md#tool-result-trust), [TUI](architecture.md#tui) |
 | Classification, posture gates, permissions, and mode decisions | [Role Manager](role-manager.md) | [Security classification](role-manager.md#security-classification), [Gates and defaults](role-manager.md#gates-and-defaults), [Operating-mode classification](role-manager.md#operating-mode-classification) |
+| Language-server diagnostics | [LSP](lsp.md) | [Supported languages](lsp.md#supported-languages), [Security model](lsp.md#security-model), [Settings](lsp.md#settings) |
 | Provider retries and recovery | [Resilience](resilience.md) | [Error classification](resilience.md#error-classification-internalresilience), [Turn retry and state invariants](resilience.md#turn-retry-and-state-invariants), [Semantic repair](resilience.md#semantic-repair) |
 
 ## Agents

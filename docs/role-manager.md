@@ -37,6 +37,7 @@ The architecture overview lives in [architecture.md](architecture.md).
 | Nonce pool | `internal/nonce` | CSPRNG nonce lifecycle (reserve / release / rotate) | Live |
 | Prompt assembly | `internal/prompt` | Build system prompt from base text + optional carrier | Live |
 | Mode decision | `internal/modes` | Plan-mode read-only gate and mode constants | Live |
+| Language-server diagnostics | `internal/rolemanager` + `internal/lsp` | Check the edited file and return a sealed, capped diagnostics block on the same `Edit`/`Write` result | Live |
 | Tool executor | `internal/agent` | Registry lookup → permission check → execute → pipeline | Live |
 | Streaming | `internal/run` | Send turns and parse tool calls from provider responses | Live |
 | Carrier resolution | `internal/agent` | Resolve active plan/goal/profile into prompt.Options | Live |
@@ -367,7 +368,7 @@ work` selects how much shows, in four additive levels:
 | Level | Shows |
 | ----- | ----- |
 | `hidden` (default) | nothing — the feed is render-only and never changes a verdict |
-| `decisions` | agent evaluator, goal drafting, clarification, compaction, session naming, tool-call mismatch, goal-length limit |
+| `decisions` | agent evaluator, goal drafting, clarification, compaction, session naming, tool-call mismatch, goal-length limit, language-server diagnostics (`lsp_diagnose`, `lsp_server_down`) |
 | `security` | everything in `decisions` plus the security classifier sentinel/malformed, the ML classifier's phase 1/2/3 verdicts, bad verdict cache, boundary verify failure |
 | `all` | everything in `security` plus bookkeeping: boundary sealing, verdict-cache hits, fan-out admission |
 
@@ -378,15 +379,22 @@ those lines, which are left exactly as they are.
 
 Four security invariants, stated in the code and here:
 
-1. The observer receives only `rolemanager.Activity` — the same bounded
+1. Diagnostics blocks are capped, flattened, and sealed. Language-server
+   messages are limited to 10 rows of 200 runes each, flattened to one line,
+   stripped of control and bidi runes, with a restricted source field, and
+   wrapped in a `<diagnostics>` block that requires an integrity attribute.
+   They are sanitize-only unless `lsp.classify_diagnostics` is enabled, in
+   which case only the block itself is classified, never the surrounding
+   `Edit`/`Write` confirmation.
+2. The observer receives only `rolemanager.Activity` — the same bounded
    metadata `trace.Record` carries. No classified payload text, no
    credentials.
-2. `Detail` is parsed for harness-authored structure only (`blocks=…`,
+3. `Detail` is parsed for harness-authored structure only (`blocks=…`,
    `kind=…`, `slot=…`, `round=…`), never rendered raw, so a `traceSnippet` of
    a model reply never reaches the terminal.
-3. The feed is render-only, like tool-diff rows: it never enters the
+4. The feed is render-only, like tool-diff rows: it never enters the
    conversation and never reaches a model.
-4. The setting is display-only. Every level, including `hidden`, runs exactly
+5. The setting is display-only. Every level, including `hidden`, runs exactly
    the same gates — this is not a posture control and must never become one.
 
 The observer contract is non-blocking: it is called on hot classifier paths
