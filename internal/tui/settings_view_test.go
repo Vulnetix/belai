@@ -55,6 +55,25 @@ func TestInternalWorkRowCyclesAllLevelsAndUnsets(t *testing.T) {
 	}
 }
 
+func TestSettingsLSPSubmenuDispatches(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	a.push(viewSettings)
+	row, idx := settingsRowByKey(a, "lsp")
+	if idx < 0 {
+		t.Fatal("no lsp row")
+	}
+	if row.kind != "submenu" {
+		t.Fatalf("lsp row kind = %q, want submenu", row.kind)
+	}
+	a.settingsState.selected = idx
+	m, _ := a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	a = m.(*App)
+	if a.view != viewLSP {
+		t.Fatalf("space on lsp row should push viewLSP, got %v", a.view)
+	}
+}
+
 func TestDisplayRowsShownHiddenAndBehaviourRowsOnOff(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
