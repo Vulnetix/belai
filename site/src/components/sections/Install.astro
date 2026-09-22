@@ -3,23 +3,56 @@ import SealedSection from '../seal/SealedSection.astro';
 import CopyButton from '../ui/CopyButton.tsx';
 
 const sealText =
-  'Getting started: install from Homebrew, Scoop, a checksum-verified install.sh, go install, or source, then launch the TUI, read /help, pick a mode, and pick a model.';
+  'Getting started: install from Homebrew, Scoop, a checksum-verified install.sh, go install, or source. The default asset embeds the phase-1 guardrails model, --variant picks another family, and the first run asks you to trust the directory before anything reads it.';
 
 const installs = [
   { name: 'Homebrew', cmd: 'brew install vulnetix/tap/signet' },
   { name: 'Scoop', cmd: 'scoop bucket add vulnetix https://github.com/Vulnetix/scoop-bucket && scoop install signet' },
   { name: 'install.sh (checksum-verified)', cmd: 'curl -fsSL https://raw.githubusercontent.com/vulnetix/signet/main/install.sh | sh' },
+  { name: 'install.sh, another variant', cmd: 'curl -fsSL https://raw.githubusercontent.com/vulnetix/signet/main/install.sh | sh -s -- --variant bert-guardrails-jailbreak' },
   { name: 'go install', cmd: 'go install github.com/vulnetix/signet/cmd/signet@latest' },
   { name: 'source', cmd: 'git clone https://github.com/vulnetix/signet && cd signet && go build ./cmd/signet' },
 ];
 
+const variants = [
+  {
+    asset: 'signet-bert-guardrails',
+    tag: 'default',
+    embeds: 'phase-1 prompt-saturation model',
+    size: '~40 MB',
+    note: 'Guardrails classify locally with no provider and no API key configured.',
+  },
+  {
+    asset: 'signet-bert-guardrails-jailbreak',
+    tag: null,
+    embeds: 'phase-1 + phase-2 jailbreak model',
+    size: '~485 MB',
+    note: 'Adds the local jailbreak gate, run in parallel with phase 1.',
+  },
+  {
+    asset: 'signet',
+    tag: null,
+    embeds: 'nothing',
+    size: '~23 MB',
+    note: 'The LLM sentinel path, exactly the pre-embed behaviour.',
+  },
+  {
+    asset: 'signet-no-classifier',
+    tag: null,
+    embeds: 'nothing',
+    size: '~23 MB',
+    note: 'For hosts that classify somewhere else entirely.',
+  },
+];
+
 const firstSteps = [
   ['signet', 'launch the TUI'],
+  ['trust this directory?', 'a first-run directory is gated on an explicit yes, before anything reads it'],
   ['/help', 'commands and shortcuts, guarded by a test'],
   ['type a prompt', 'or / to browse slash commands'],
   ['shift+tab', 'cycle agent, plan, goal'],
   ['-detect-mode', 'print the mode decision without acting on it'],
-  ['/model', 'pick a provider and model'],
+  ['/model', 'pick a provider and model, and see the classifier kind and phase rows'],
 ];
 ---
 
@@ -59,6 +92,39 @@ const firstSteps = [
         ))}
       </ol>
     </div>
+  </div>
+
+  <div class="mt-12">
+    <h3 class="text-2xl font-bold text-vx-ink">Which binary you get.</h3>
+    <p class="prose-measure mt-4 text-vx-ink/80">
+      Releases ship in four asset families. Homebrew, Scoop and <code class="mono">install.sh</code> all
+      default to <strong>signet-bert-guardrails</strong>, which carries the phase-1 model inside the
+      binary — so guardrails work on a machine with no provider configured, no API key, and no model
+      download. The on-disk command is <code class="mono">signet</code> whichever family you pick, and a
+      variant binary self-updates within its own family.
+    </p>
+
+    <div class="mt-6 grid gap-4 md:grid-cols-2">
+      {variants.map((v) => (
+        <article class="rounded-lg border border-vx-ink/30 p-5">
+          <div class="flex flex-wrap items-center gap-2">
+            <code class="mono text-sm font-semibold text-vx-ink">{v.asset}</code>
+            {v.tag && (
+              <span class="mono rounded border border-vx-ink px-2 py-0.5 text-xs text-vx-ink">{v.tag}</span>
+            )}
+          </div>
+          <p class="mono mt-2 text-xs text-vx-ink/60">embeds: {v.embeds} · {v.size}</p>
+          <p class="mt-2 text-sm text-vx-ink/80">{v.note}</p>
+        </article>
+      ))}
+    </div>
+
+    <p class="prose-measure mt-6 text-vx-ink/80">
+      Pick a family with <code class="mono">--variant</code> (or <code class="mono">SIGNET_VARIANT</code>):{' '}
+      <code class="mono">bert-guardrails</code>, <code class="mono">bert-guardrails-jailbreak</code>,{' '}
+      <code class="mono">no-classifier</code>, or <code class="mono">vanilla</code>. Building from source
+      stays on the LLM sentinel path unless you run the model-prep recipes yourself.
+    </p>
   </div>
 
   <footer class="mt-12 border-t border-vx-ink/30 pt-6 text-vx-ink/70">

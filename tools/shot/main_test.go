@@ -28,6 +28,7 @@ func frames() map[string]func() string {
 		"permissions":     permissions,
 		"agents-roster":   agentsRoster,
 		"model-picker":    modelPicker,
+		"classifier":      classifier,
 		"local-model":     localModel,
 		"exit-card":       exitCard,
 	}

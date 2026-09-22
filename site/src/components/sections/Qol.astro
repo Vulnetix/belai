@@ -6,9 +6,10 @@ import exitCardShot from '../../assets/shots/exit-card.svg';
 import footerShot from '../../assets/shots/footer.svg';
 
 const sealText =
-  'Quality of life: the details you used to hack into a skills.md. Prompt library, repo map, work-discipline prompt section, identity block, capability auth probes, diff in the approval prompt, a todo panel that only trusts assistant text, sessions and compaction, /settings with provenance, no alt bindings ever, /help guarded by a test, and caveman mode.';
+  'Quality of life: the details you used to hack into a skills.md. First-run trust gate, prompt library, repo map, work-discipline prompt section, identity block, capability auth probes, diff in the approval prompt, a todo panel that only trusts assistant text, sessions and compaction, /settings with provenance, no alt bindings ever, /help guarded by a test, caveman mode, per-project session toggles, classifier verdicts in the internal-work feed, and a self-update that stays in its asset family.';
 
 const benefits = [
+  ['first-run trust gate', 'A directory Signet has never seen blocks startup until you say yes, before any settings merge, repo scan or auto-started process.'],
   ['prompt library as files', 'Prompts are files in the repo, versioned and reviewable, not baked into the binary.'],
   ['harness-computed repo map', 'Paths, counts, detected commands, git metadata. Never file contents.'],
   ['work-discipline prompt section', 'The system prompt carries a work-discipline section so the loop stays honest about what it is doing.'],
@@ -20,6 +21,9 @@ const benefits = [
   ['no alt bindings, ever', 'No chord is bound to alt, so no terminal swallows a key.'],
   ['/help guarded by a test', 'The help text is checked by a test, so it cannot drift from the real bindings.'],
   ['caveman mode', 'A voice rewrite that turns replies into short plain words.'],
+  ['session toggles that stick per project', 'Guardrails, ask and the rest remember what you set in this repository, not globally.'],
+  ['classifier verdicts in the feed', 'The internal-work feed names which phase ruled and what it returned, so a blocked result is never a mystery.'],
+  ['self-update stays in its family', 'A guardrails binary updates to the guardrails asset, never silently to a build without the embedded model.'],
 ];
 ---
 

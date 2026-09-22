@@ -15,7 +15,7 @@ The single-scroll marketing site at [signet.vulnetix.com](https://signet.vulneti
 rail (≥1120px). The content is full-width (no fixed max-width). Section order:
 
 hero · trust · sealed · beliefs · labs · modes · tools · permissions · agents ·
-providers · vulnetix · qol · start
+processes · providers · vulnetix · qol · start
 
 Interactive islands live in `site/src/components/ui/` (copy button, comparison
 table, shot carousel); everything else ships zero JS.

@@ -4,10 +4,12 @@ import ShotCarousel from '../ui/ShotCarousel.tsx';
 
 import trustPipeline from '../../assets/concepts/trust-pipeline.svg?raw';
 import chunked from '../../assets/concepts/chunked-classification.svg?raw';
+import classifierPhases from '../../assets/concepts/classifier-phases.svg?raw';
 import agentTurnShot from '../../assets/shots/agent-turn.svg';
+import classifierShot from '../../assets/shots/classifier.svg';
 
 const sealText =
-  'Trust pipeline: every untrusted tool result is sanitized, classified, then decided. Shaped results take a sanitize-only lane with no classifier round trip.';
+  'Trust pipeline: every untrusted tool result is sanitized, classified, then decided. Shaped results take a sanitize-only lane with no classifier round trip. The default install classifies in-process with two embedded BERT gates, and the extraction sentinel is opt-in.';
 ---
 
 <SealedSection label="trust" sealText={sealText} id="trust">
@@ -15,10 +17,10 @@ const sealText =
     <div class="prose-measure">
       <h2 class="text-3xl font-bold text-vx-ink">Trust pipeline.</h2>
       <p class="mt-4 text-vx-ink/80">
-        Every untrusted result goes through <strong>sanitize, classify, decide</strong>, fail closed.
-        <code class="mono">Bash</code>, <code class="mono">WebFetch</code>, <code class="mono">WebSearch</code>, <code class="mono">Read</code>,
-        and third-party repository text all classify, unconditionally. Shaped results whose shape the
-        harness knows, like <code class="mono">Grep</code>, <code class="mono">Glob</code>, <code class="mono">Write</code>, and
+        Every untrusted result goes through <strong>sanitize, classify, decide</strong>, fail closed.{' '}
+        <code class="mono">Bash</code>, <code class="mono">WebFetch</code>, <code class="mono">WebSearch</code>, <code class="mono">Read</code>,{' '}
+        supervised process output, and third-party repository text all classify, unconditionally. Shaped results whose shape the
+        harness knows, like <code class="mono">Grep</code>, <code class="mono">Glob</code>, <code class="mono">Write</code>, and{' '}
         <code class="mono">Edit</code>, take a sanitize-only lane and skip the round trip.
       </p>
       <p class="mt-4 text-vx-ink/80">
@@ -31,10 +33,46 @@ const sealText =
       <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={chunked} /></div>
     </div>
   </div>
+
+  <div class="mt-12 grid gap-10 lg:grid-cols-2 lg:items-center">
+    <div class="order-2 lg:order-1 rounded-lg border border-vx-ink p-2" aria-hidden="true">
+      <Fragment set:html={classifierPhases} />
+    </div>
+    <div class="prose-measure order-1 lg:order-2">
+      <h3 class="text-2xl font-bold text-vx-ink">The classifier ships in the binary.</h3>
+      <p class="mt-4 text-vx-ink/80">
+        The default download embeds its own guardrails. Two small BERT sequence classifiers run{' '}
+        <strong>in-process</strong> — pure Go, no cgo, no Python, no API key — so a fresh install
+        classifies untrusted content before you have configured a provider at all.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        <strong>Phase 1</strong> is prompt saturation, <strong>phase 2</strong> is jailbreak, and they
+        run concurrently over the same token windows. If either fires, the content already fails
+        closed and the fold returns immediately. <strong>Phase 3</strong> is a narrowed LLM sentinel
+        covering only <code class="mono">DATA_EXTRACTION</code> and <code class="mono">MODEL_EXTRACTION</code>,{' '}
+        the two categories no purpose-built model reaches.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        Phase 3 is opt-in, and the switch is a setting you already have: it runs only when{' '}
+        <code class="mono">classifier.provider</code> <em>and</em> <code class="mono">classifier.model</code> are
+        both set. Leave them clear and the classify path makes no network call at all — and says so on
+        the <code class="mono">/model</code> phase-3 row rather than implying coverage it does not have.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        The local models hard-error past 512 tokens instead of truncating, so the ML path windows by
+        BERT tokens with overlap and fails closed past its window ceiling. A binary whose embedded
+        model fails to load is a startup error, never a quiet downgrade. Verdicts are cached by the
+        hash of the sanitized content <em>plus the classifier identity</em>, so switching stacks never
+        serves a verdict another one produced.
+      </p>
+    </div>
+  </div>
+
   <div class="mt-10 max-w-[72ch]">
     <ShotCarousel
       client:load
       shots={[
+        { src: classifierShot.src, alt: 'The /model classifier rows showing kind, phase 1, phase 2 and phase 3', caption: '/model, classifier kind and phase rows' },
         { src: agentTurnShot.src, alt: 'A streaming agent turn with a collapsed Bash preview', caption: 'streaming turn, collapsed Bash preview' },
       ]}
     />
