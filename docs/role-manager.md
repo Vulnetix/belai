@@ -12,6 +12,7 @@ The architecture overview lives in [architecture.md](architecture.md).
 | Component | Package | Responsibility | Status |
 | --------- | ------- | -------------- | ------ |
 | Security classifier | `internal/rolemanager` | Classify untrusted content into a single security sentinel | Live |
+| ML classifier stack | `internal/mlclassify` | In-process BERT phase-1/phase-2 gates plus the optional narrowed phase-3 LLM sentinel; wired as `Pipeline.Security` | Live |
 | Pipeline | `internal/rolemanager` | sanitize → classify → sentinel decision for prompts and for the results that need it | Live |
 | Result trust gate | `internal/tools` | Decide which result kinds need the classifier: `Bash`, web, and `Read`; the shaped tools are sanitize-only | Live |
 | Boundaries | `internal/rolemanager` | Guarantee untrusted text never enters system/agent/tools blocks, and refuse unknown block kinds | Live |
@@ -87,6 +88,51 @@ line, and anything else fails closed. See [Sentinel parsing](#sentinel-parsing).
 | `DATA_EXTRACTION` | Training-data extraction / membership inference | **Warn** — do not promote | Live |
 | `MODEL_EXTRACTION` | Model extraction / model stealing | **Warn** — do not promote | Live |
 | _anything else_ | Malformed output (not one token) | **Warn** — fail closed | Live |
+
+### Three-phase classification (ML stack)
+
+The default install embeds the phase-1 model and classifies in-process with no
+provider or API key configured. Phases 1 and 2 run **concurrently** over the
+same token windows; phase 3 is a narrowed LLM sentinel that runs only when the
+first two clear and it is configured.
+
+| Phase | Model | Runs | Verdicts | Off switch |
+| ----- | ----- | ---- | -------- | ---------- |
+| 1 | `GuardrailsAI/prompt-saturation-attack-detector` (bert-tiny, embedded) | local, always | `SAFE` / `PROMPT_INJECTION` | none (required for the models path) |
+| 2 | `jackhhao/jailbreak-classifier` (bert-base, embedded in the jailbreak variant) | local, when enabled | `SAFE` / `JAILBREAK` | `phase2.source: disabled` |
+| 3 | the classifier provider+model | narrowed LLM sentinel | `SAFE` / `DATA_EXTRACTION` / `MODEL_EXTRACTION` | clear `classifier.provider` or `classifier.model` |
+
+Rules:
+
+- **Ordering.** Run phase 1 + phase 2 in parallel over each window. If either
+  fires, fold and return immediately — phase 3 is skipped, because the content
+  already fails closed and an extra LLM round trip cannot change the outcome.
+  Only when both return `SAFE`, and phase 3 is configured, run it.
+- **Precedence** when folding windows and gates:
+  `PROMPT_INJECTION` > `JAILBREAK` > `DATA_EXTRACTION` > `MODEL_EXTRACTION` >
+  `SAFE`.
+- **Window first.** The local models hard-error past 512 tokens and never
+  truncate, so the ML path windows by BERT tokens (`window_tokens` 510,
+  `window_overlap` 1/8, `max_windows` 64) in `internal/mlclassify`, reusing the
+  overlap rationale from `splitChunks`. Beyond `max_windows` it fails closed.
+- **Phase 3 is narrowed.** Its system prompt names only `SAFE`,
+  `DATA_EXTRACTION` and `MODEL_EXTRACTION`, and explicitly scopes injection and
+  jailbreak out (phases 1/2 already ruled on them). `ParseExtractionSentinel`
+  accepts only those three tokens: a phase-3 reply of `PROMPT_INJECTION` or
+  `JAILBREAK` is malformed, not a verdict, and fails closed.
+- **Phase 3 is opt-in** via the existing `classifier.provider` +
+  `classifier.model` choice — no new setting. Unset both and a zero-config
+  embedded install makes no network call in the classify path; set them and
+  phase 3 covers the two extraction categories. The phase-1 model detects
+  prompt *saturation*, not injection generally, and neither model reaches
+  `DATA_EXTRACTION` / `MODEL_EXTRACTION`; phase 3 exists to close exactly that
+  gap.
+- **Vanilla binaries** keep the LLM sentinel path unchanged (no embedded
+  weights). They can point phase 1/2 at HuggingFace remotely when a key is
+  present, and otherwise fall back to the LLM sentinel.
+- **The sentinel families are untouched.** `Pipeline.Classifier` still serves
+  mode select, goal contract, clarify, plan eval, goal eval and compaction;
+  only the security path switches to `Pipeline.Security`.
 
 ### Sentinel parsing
 

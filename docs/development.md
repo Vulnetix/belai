@@ -543,6 +543,8 @@ returns to the session root.
 
 **Release parity.** `just build-all` cross-compiles all six release targets into `bin/` with the same ldflags the release workflow uses, and writes `bin/checksums.txt`. Run the host binary and check `-version` reports the git description.
 
+**Model variants.** `just modelprep` downloads, converts and golden-verifies the embedded classifier models (set `MODELPREP_PYTHON` to a python with `torch`+`safetensors`). `just build-bert` builds `./signet` with only the phase-1 model embedded; `just build-jailbreak` builds it with both phase-1 and phase-2 embedded (~485 MB). The assets are gitignored and never committed; `internal/mlclassify/assets_meta.go` records the golden-verified attack-label orientation.
+
 **Supervised processes.** In a temp directory, type `!!sleep 30` and confirm a `Process` tool row appears, the footer activity strip shows it, and no model turn is sent. Check `.vulnetix/processes/010-sleep.sh` holds `sleep 30` verbatim, that the log file is written under `~/.vulnetix/signet/logs/`, and that `/processes` lists it enabled in the project scope. Press `f9` to open the runs panel, select the process row, and press `v` to open its live log full-screen; press `esc` to return. Press `x` to stop it; the row should turn into a stopped state. From `/processes`, select the stopped entry and press `enter`; the full log tail should open even though the process is no longer running. Run `!!false` and confirm the recovery subagent fires once (a `role manager` pill and a `ProcessRestart` tool row), then the process is marked `failed` after the configured max recoveries. Restart Signet in the same directory and confirm enabled entries auto-start.
 
 ## Tests
@@ -586,7 +588,7 @@ BuildDate = UTC RFC 3339
 ## CI and release
 
 - `.github/workflows/ci.yml` runs `go vet`, a `gofmt` check, `go test -race ./...`, and a windows/darwin cross-compile on every push and pull request.
-- `.github/workflows/release.yml` fires on a `v*` tag, cross-compiles the six targets on the self-hosted runner, publishes a GitHub release with `checksums.txt`, then updates the Homebrew tap and Scoop bucket from those checksums.
+- `.github/workflows/release.yml` fires on a `v*` tag: `modelprep` prepares the embedded models (cached by model id + revision), cross-compiles the six vanilla targets plus the three variant families (`signet-bert-guardrails`, `signet-bert-guardrails-jailbreak`, `signet-no-classifier`), publishes a GitHub release with `checksums.txt`, then updates the Homebrew tap and Scoop bucket from those checksums.
 - `.github/workflows/pages.yml` builds the marketing site on `site/**` pushes, asserts the custom domain survived, checks links, and deploys to GitHub Pages. See [docs/site.md](site.md).
 
 ## Site

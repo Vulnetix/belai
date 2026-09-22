@@ -22,44 +22,78 @@ chain: default < state < global < project prefs < project < env < flag):
 
 ```jsonc
 "classifier": {
-  "provider": "ollama",          // omit → main provider
+  "kind":   "models",           // "llm" | "models"; default models when embedded, else llm
+  "provider": "ollama",          // llm: omit → main provider; models: phase 3 (extraction) sentinel
   "model":    "qwen2.5-7b-instruct-q4_k_m",
   "effort":   "none",             // default: reasoning OFF
   "caveman":  false,              // voices PROSE payloads only
-  "chunk": { "max_bytes": 1048576, "concurrency": 4 }
+  "chunk": { "max_bytes": 1048576, "concurrency": 4 },
+  "phase1": { "model": "GuardrailsAI/prompt-saturation-attack-detector",
+              "source": "embedded", "threshold": 0.5 },
+  "phase2": { "model": "jackhhao/jailbreak-classifier",
+              "source": "disabled", "threshold": 0.5 }
 }
 ```
 
-Flags `-classifier-provider`, `-classifier-model`, `-classifier-effort`, and
-env vars `SIGNET_CLASSIFIER_PROVIDER/MODEL/EFFORT/CAVEMAN` set the same fields.
-The whole block is also editable from the TUI's `/model` page (see
+`kind` selects the stack. `"llm"` is the full five-token LLM sentinel.
+`"models"` runs small BERT sequence classifiers in-process (cybertron/spaGO,
+pure Go, no cgo) as the phase-1 prompt-saturation and phase-2 jailbreak gates,
+with an optional phase-3 narrowed LLM sentinel for the two extraction
+categories no purpose-built model reaches. The default is `"models"` on a
+binary that embeds the weights, `"llm"` otherwise.
+
+Flags `-classifier-provider`, `-classifier-model`, `-classifier-effort`,
+`-classifier-kind`, `-classifier-phase1-*`, `-classifier-phase2-*`, and env
+vars `SIGNET_CLASSIFIER_PROVIDER/MODEL/EFFORT/KIND/PHASE1_*/PHASE2_*` set the
+same fields. The whole block is also editable from the TUI's `/model` page (see
 "Classifier picker").
 
 Business rules:
 
-- **Default** (no block): the classifier reuses the main provider/model with
-  reasoning off and a bounded `max_tokens` cap (1024), so a single-sentinel
-  call never pays for extended thinking. A reasoning-effort of `"none"` is
-  *omitted* from the OpenAI `reasoning_effort` field rather than sent verbatim
-  (OpenAI rejects it).
-- **Separate provider**: a `classifier.provider` that differs from the main
-  provider is resolved through the same credential backends with its own
-  credentials. Missing credentials fail closed with `ErrNotConfigured`.
-- **Chunked classify-all**: content over `chunk.max_bytes` is split into
-  overlapping chunks (default 1/8 overlap, aligned to rune boundaries) and
-  classified concurrently (default 4). Verdicts fold fail-closed: any non-SAFE
-  sentinel fails the whole content, and any malformed chunk makes the whole
-  result malformed. Overlap guarantees an injection straddling a boundary is
-  seen whole by at least one chunk.
+- **Phase 3 is opt-in, and the switch is the existing provider+model choice.**
+  On the `models` path phase 3 runs iff `classifier.provider` **and**
+  `classifier.model` are both explicitly set; there is no inheritance from the
+  main model. Clear either and phase 3 is gone. A zero-config embedded install
+  therefore stays fully local, with no network call in the classify path — and
+  no `DATA_EXTRACTION` / `MODEL_EXTRACTION` coverage, which is stated, not
+  implied, on the `/model` phase-3 row.
+- **The LLM sentinel families keep inheritance.** Mode select, goal contract,
+  clarify, plan eval, goal eval and compaction still reach the LLM classifier,
+  which derives from the main provider/model when unset, exactly as before.
+  Only the security path is split: `rolemanager.Pipeline.Security` carries the
+  ML stack, `Pipeline.Classifier` remains the LLM classifier.
+- **Default** (no block, LLM path): the classifier reuses the main
+  provider/model with reasoning off and a bounded `max_tokens` cap (1024), so a
+  single-sentinel call never pays for extended thinking. A reasoning-effort of
+  `"none"` is *omitted* from the OpenAI `reasoning_effort` field rather than
+  sent verbatim (OpenAI rejects it).
+- **Separate provider** (LLM path): a `classifier.provider` that differs from
+  the main provider is resolved through the same credential backends with its
+  own credentials. Missing credentials fail closed with `ErrNotConfigured`.
+- **Embedded models fail closed.** A variant binary whose embedded model fails
+  to load or verify is a hard startup error, never a silent downgrade to the
+  LLM path. Extraction and load happen once, eagerly.
+- **Windowing.** The local models hard-error past 512 tokens and do not
+  truncate. The ML path windows by BERT tokens (`window_tokens` 510,
+  `window_overlap` 1/8, `max_windows` 64) inside `internal/mlclassify`,
+  independent of the LLM `chunk` bounds. Beyond `max_windows` it fails closed.
+- **Chunked classify-all** (LLM path only): content over `chunk.max_bytes` is
+  split into overlapping chunks (default 1/8 overlap, aligned to rune
+  boundaries) and classified concurrently (default 4). Verdicts fold
+  fail-closed: any non-SAFE sentinel fails the whole content, and any malformed
+  chunk makes the whole result malformed. Overlap guarantees an injection
+  straddling a boundary is seen whole by at least one chunk.
 - **Empty content**: content that is empty or whitespace-only after
   sanitization is SAFE without a classifier call. It carries nothing to
   classify — a shell command that printed nothing cannot hold an injection —
   and the round trip both costs latency per silent command and sends a user
   message with no content field, which OpenAI-compatible servers reject.
 - **Verdict cache**: verdicts are memoised by the SHA-256 of the *sanitized*
-  content. SAFE verdicts live in a bounded session LRU (512); non-SAFE hashes
-  persist to `<GlobalDir>/bad-hashes.json` (written atomically) and load at
-  session start. The bad-hash set stays small: memory is bounded and I/O is
+  content plus the classifier identity (kind + model ids + thresholds +
+  phase-3 on/off), so switching classifier never serves a verdict produced by
+  a different one. SAFE verdicts live in a bounded session LRU (512); non-SAFE
+  hashes persist to `<GlobalDir>/bad-hashes.json` (written atomically) and load
+  at session start. The bad-hash set stays small: memory is bounded and I/O is
   one read at startup plus an append per new bad verdict.
 - **Caveman is prose-only**: `classifier.caveman` voices the three payloads a
   human reads — the compaction summary, the session name, and the generated
