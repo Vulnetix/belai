@@ -899,6 +899,46 @@ func TestRunEmitsRoleManagerPhases(t *testing.T) {
 	}
 }
 
+func TestToolStartEventCarriesParsedArgs(t *testing.T) {
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
+
+	srv := mockSecurityServer("Read", `{"path":"f.txt"}`, "done")
+	defer srv.Close()
+
+	cfg := run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"}
+	sess, err := NewSession(Options{
+		Cfg:      cfg,
+		Client:   srv.Client(),
+		Registry: tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}),
+		Posture:  posture.Defaults(),
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	var toolStart *Event
+	emit := func(e Event) {
+		if e.Kind == EventToolStartKind && toolStart == nil {
+			toolStart = &e
+		}
+	}
+	_, err = sess.run(context.Background(), nil, TurnInput{Prompt: "read the file"}, false, emit)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if toolStart == nil || toolStart.Tool == nil {
+		t.Fatalf("expected a tool start event")
+	}
+	if toolStart.Tool.Args == nil {
+		t.Fatalf("expected tool args to be populated in the start event, got nil")
+	}
+	path, ok := toolStart.Tool.Args["path"].(string)
+	if !ok || path != "f.txt" {
+		t.Fatalf("expected args path=f.txt, got %v", toolStart.Tool.Args)
+	}
+}
+
 func TestSteerEmitsRoleManagerPhase(t *testing.T) {
 	root := t.TempDir()
 	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)

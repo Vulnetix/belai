@@ -1518,6 +1518,11 @@ renders a one-line summary: each call is shown as `ToolName invocation`
 (e.g. `Read foo.txt` or `Bash Exec(go test ./...)`), the list is deduped in
 order by the full label, and the line is clipped to the panel's inner width.
 
+The TUI derives this display from the parsed tool arguments, so the
+`EventToolStartKind` emitted by the agent must carry `Tool.Args` populated by
+`parseToolArgs`. Raw tool arguments stay on the wire as `RawArgs`; without the
+parsed map the TUI cannot show the command or path next to a tool row.
+
 Read rows are numbered at render time, never by the Read tool itself: the
 tool's `offset` is a byte count, so a model that read a line number out of the
 output and passed it back as an offset would silently get the wrong region.
