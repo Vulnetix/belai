@@ -307,9 +307,9 @@ func Embedded() bool {
 // both clear every window and phase 3 is configured runs the narrowed LLM
 // sentinel. Each phase's verdict is emitted to the role-manager activity feed
 // so the TUI can show phase 1/2/3 when internal work is set to security or
-// all. It returns a raw sentinel token string; an empty string with a nil
-// error signals a malformed phase-3 reply (so rolemanager.ParseSentinel fails
-// closed exactly as today).
+// all. It returns a raw sentinel token string. An inconclusive phase-3 reply
+// is returned as SAFE (see phase3), so the primary gates — not the opt-in
+// extraction check — decide the verdict.
 func (c *Classifier) Classify(ctx context.Context, p rolemanager.ClassifierPayload) (string, error) {
 	windows, err := c.windows(p.User)
 	if err != nil {
@@ -338,21 +338,12 @@ func (c *Classifier) Classify(ctx context.Context, p rolemanager.ClassifierPaylo
 		c.emitPhases(p1, p2, "off")
 		return string(rolemanager.SentinelSafe), nil
 	}
-	s3, err := c.phase3(ctx, p.User)
+	s3, status, err := c.phase3(ctx, p.User)
 	if err != nil {
 		return "", err
 	}
-	c.emitPhases(p1, p2, phase3Status(s3))
+	c.emitPhases(p1, p2, status)
 	return s3, nil
-}
-
-// phase3Status maps a phase-3 raw reply to the status word the feed shows:
-// the sentinel token, or "malformed" for an empty (unparseable) reply.
-func phase3Status(s string) string {
-	if s == "" {
-		return "malformed"
-	}
-	return s
 }
 
 // emitPhases records the three phase verdicts. A disabled phase 2 reports
@@ -406,19 +397,23 @@ func (c *Classifier) classifyWindow(ctx context.Context, window string) (roleman
 }
 
 // phase3 runs the narrowed LLM sentinel covering DATA_EXTRACTION and
-// MODEL_EXTRACTION only. A malformed reply (including an out-of-scope token
-// such as PROMPT_INJECTION) is returned as an empty string so the pipeline's
-// ParseSentinel records the malformed event and fails closed.
-func (c *Classifier) phase3(ctx context.Context, content string) (string, error) {
+// MODEL_EXTRACTION only. It returns the parsed sentinel and the status word
+// the feed shows. A malformed reply (including an out-of-scope token such as
+// PROMPT_INJECTION) is inconclusive, not a verdict: phases 1 and 2 already
+// ruled on injection and jailbreak, and phase 3 is an opt-in supplement for
+// the two extraction categories only, so an inconclusive reply must not block
+// content the primary gates cleared. The feed still records the phase as
+// "malformed" so the TUI shows "couldn't tell".
+func (c *Classifier) phase3(ctx context.Context, content string) (string, string, error) {
 	raw, err := c.llm.Classify(ctx, rolemanager.BuildExtractionPayload(content))
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	s, err := rolemanager.ParseExtractionSentinel(raw)
 	if err != nil {
-		return "", nil
+		return string(rolemanager.SentinelSafe), "malformed", nil
 	}
-	return string(s), nil
+	return string(s), string(s), nil
 }
 
 // windows splits content into overlapping token windows no larger than the

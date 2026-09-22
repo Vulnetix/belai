@@ -217,7 +217,7 @@ func TestClassifyPhase3OffReturnsSafe(t *testing.T) {
 	}
 }
 
-func TestPhase3MalformedReturnsEmpty(t *testing.T) {
+func TestPhase3MalformedFallsOpen(t *testing.T) {
 	c := newTestClassifier(t, &fakeGate{ph: Phase1, sentinel: rolemanager.SentinelSafe}, nil,
 		rolemanager.ClassifierFunc(func(context.Context, rolemanager.ClassifierPayload) (string, error) {
 			return "PROMPT_INJECTION", nil // out of scope for phase 3
@@ -226,8 +226,8 @@ func TestPhase3MalformedReturnsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Classify: %v", err)
 	}
-	if got != "" {
-		t.Fatalf("got %q, want empty (malformed) for an out-of-scope phase-3 token", got)
+	if got != string(rolemanager.SentinelSafe) {
+		t.Fatalf("got %q, want SAFE (inconclusive phase 3 must not block)", got)
 	}
 }
 
@@ -292,6 +292,28 @@ func TestClassifyEmitsPhase3SkippedWhenPhase1Fires(t *testing.T) {
 	}
 
 	want := []string{"phase 1=PROMPT_INJECTION", "phase 2=SAFE", "phase 3=skipped"}
+	if got := phaseEvents(got); !slicesEqual(got, want) {
+		t.Fatalf("phase events = %v, want %v", got, want)
+	}
+}
+
+func TestClassifyEmitsPhase3MalformedStatus(t *testing.T) {
+	var got []rolemanager.Activity
+	cancel := rolemanager.SetObserver(func(a rolemanager.Activity) { got = append(got, a) })
+	defer cancel()
+
+	c := newTestClassifier(t,
+		&fakeGate{ph: Phase1, sentinel: rolemanager.SentinelSafe},
+		nil,
+		rolemanager.ClassifierFunc(func(context.Context, rolemanager.ClassifierPayload) (string, error) {
+			return "not a sentinel", nil // malformed phase-3 reply
+		}),
+		WindowConfig{Tokens: 3, Overlap: 1, MaxWindows: 10})
+	if got, err := c.Classify(context.Background(), rolemanager.BuildClassifierPayload("a b c")); err != nil || got != string(rolemanager.SentinelSafe) {
+		t.Fatalf("Classify = %q, %v; want SAFE when phase 3 is inconclusive", got, err)
+	}
+
+	want := []string{"phase 1=SAFE", "phase 2=off", "phase 3=malformed"}
 	if got := phaseEvents(got); !slicesEqual(got, want) {
 		t.Fatalf("phase events = %v, want %v", got, want)
 	}
