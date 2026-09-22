@@ -6,15 +6,20 @@ import (
 	"testing"
 
 	"github.com/vulnetix/signet/internal/agent"
+	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/session"
 	"github.com/vulnetix/signet/internal/tui/components"
 )
 
-// newPersistApp builds an App with an isolated store and a workdir.
+// newPersistApp builds an App with an isolated store and a workdir. Startup
+// notices are dropped so the persistence tests assert only what they append.
 func newPersistApp(t *testing.T) *App {
 	t.Helper()
 	t.Setenv("SIGNET_HOME", t.TempDir())
-	return New(Options{Provider: "openai", Model: "gpt-5", Workdir: t.TempDir()})
+	a := New(Options{Provider: "openai", Model: "gpt-5", Workdir: t.TempDir()})
+	a.messages = nil
+	a.persistedUpTo = 0
+	return a
 }
 
 func persistedEntries(t *testing.T, a *App) []session.Entry {
@@ -88,7 +93,7 @@ func TestPersistTailIdempotent(t *testing.T) {
 	}
 }
 
-func TestPersistSkipsReasoningAndSystem(t *testing.T) {
+func TestPersistWritesReasoningAndSystem(t *testing.T) {
 	a := newPersistApp(t)
 	a.echoUser("hello")
 	a.messages = append(a.messages,
@@ -99,11 +104,17 @@ func TestPersistSkipsReasoningAndSystem(t *testing.T) {
 	a.persistTail()
 
 	entries := persistedEntries(t, a)
-	if len(entries) != 2 {
-		t.Fatalf("entries = %d, want 2: %+v", len(entries), entries)
+	if len(entries) != 4 {
+		t.Fatalf("entries = %d, want 4: %+v", len(entries), entries)
 	}
-	if entries[1].Type != "assistant" || entries[1].Content != "hi" {
-		t.Fatalf("wrong entry: %+v", entries[1])
+	if entries[1].Type != "reasoning" || entries[1].Content != "chain of thought" {
+		t.Fatalf("reasoning entry wrong: %+v", entries[1])
+	}
+	if entries[2].Type != "system" || entries[2].Content != "notice" {
+		t.Fatalf("system entry wrong: %+v", entries[2])
+	}
+	if entries[3].Type != "assistant" || entries[3].Content != "hi" {
+		t.Fatalf("assistant entry wrong: %+v", entries[3])
 	}
 }
 
@@ -151,7 +162,8 @@ func TestPersistMultiPassNaturalExitReplies(t *testing.T) {
 
 	// A plan pass loop runs several natural-exit passes: each reply is a
 	// buffered assistant bubble separated by a pass-evaluator system line.
-	// Both replies must reach the session file, not just the trailing one.
+	// Both replies and the interleaved system line must reach the session
+	// file, not just the trailing one.
 	pass1 := components.Message{Role: "assistant"}
 	pass1.AppendText("pass one plan")
 	pass2 := components.Message{Role: "assistant"}
@@ -168,14 +180,17 @@ func TestPersistMultiPassNaturalExitReplies(t *testing.T) {
 	a.persistTail()
 
 	entries := persistedEntries(t, a)
-	if len(entries) != 3 {
-		t.Fatalf("entries = %d, want 3: %+v", len(entries), entries)
+	if len(entries) != 4 {
+		t.Fatalf("entries = %d, want 4: %+v", len(entries), entries)
 	}
 	if entries[1].Type != "assistant" || entries[1].Content != "pass one plan" {
 		t.Fatalf("pass 1 entry wrong: %+v", entries[1])
 	}
-	if entries[2].Type != "assistant" || entries[2].Content != "pass two plan" {
-		t.Fatalf("pass 2 entry wrong: %+v", entries[2])
+	if entries[2].Type != "system" || entries[2].Content != "plan evaluator: PLAN_PARTIAL (pass 1)" {
+		t.Fatalf("system entry wrong: %+v", entries[2])
+	}
+	if entries[3].Type != "assistant" || entries[3].Content != "pass two plan" {
+		t.Fatalf("pass 2 entry wrong: %+v", entries[3])
 	}
 }
 
@@ -189,29 +204,53 @@ func TestPersistErrorPathWritesStreamedReply(t *testing.T) {
 	a.handleAgentEvent(agentEventMsg{Kind: agent.EventErrorKind, Err: errors.New("boom")})
 
 	entries := persistedEntries(t, a)
-	if len(entries) != 2 {
-		t.Fatalf("entries = %d, want 2: %+v", len(entries), entries)
+	if len(entries) != 3 {
+		t.Fatalf("entries = %d, want 3: %+v", len(entries), entries)
 	}
 	if entries[1].Type != "assistant" || entries[1].Content != "partial plan" {
 		t.Fatalf("assistant entry wrong: %+v", entries[1])
 	}
+	if entries[2].Type != "system" || entries[2].Content != "agent error: boom" {
+		t.Fatalf("system entry wrong: %+v", entries[2])
+	}
 }
 
-func TestPersistSkipsRolemanagerRows(t *testing.T) {
+func TestPersistWritesRolemanagerRows(t *testing.T) {
 	a := newPersistApp(t)
 	a.echoUser("hello")
 	a.messages = append(a.messages,
-		components.Message{Role: "rolemanager", Content: "checked what Read returned"},
+		components.Message{
+			Role:  "rolemanager",
+			Level: rolemanager.LevelSecurity,
+			RM: rolemanager.Description{
+				Summary: "Checked what the file Signet read returned",
+				Outcome: "clean",
+				Tone:    rolemanager.ToneClear,
+				Levels:  rolemanager.LevelSecurity,
+			},
+		},
 		components.Message{Role: "assistant", Content: "hi"},
 	)
 	a.persistTail()
 
 	entries := persistedEntries(t, a)
-	if len(entries) != 2 {
-		t.Fatalf("entries = %d, want 2: %+v", len(entries), entries)
+	if len(entries) != 3 {
+		t.Fatalf("entries = %d, want 3: %+v", len(entries), entries)
 	}
-	if entries[1].Type != "assistant" || entries[1].Content != "hi" {
-		t.Fatalf("wrong entry: %+v", entries[1])
+	rm := entries[1]
+	if rm.Type != "rolemanager" || rm.Content != "Checked what the file Signet read returned — clean" {
+		t.Fatalf("rolemanager entry wrong: %+v", rm)
+	}
+	if rm.Meta["summary"] != "Checked what the file Signet read returned" {
+		t.Fatalf("summary meta = %#v", rm.Meta["summary"])
+	}
+	if rm.Meta["outcome"] != "clean" ||
+		rm.Meta["tone"] != float64(rolemanager.ToneClear) ||
+		rm.Meta["level"] != float64(rolemanager.LevelSecurity) {
+		t.Fatalf("rolemanager meta = %#v", rm.Meta)
+	}
+	if entries[2].Type != "assistant" || entries[2].Content != "hi" {
+		t.Fatalf("assistant entry wrong: %+v", entries[2])
 	}
 }
 
@@ -260,5 +299,106 @@ func TestPersistTwoRoundToolTurn(t *testing.T) {
 	}
 	if entries[4].Content != "final reply" {
 		t.Fatalf("final assistant content = %q", entries[4].Content)
+	}
+}
+
+func TestPersistSkipsOrphanedEmptyAssistant(t *testing.T) {
+	a := newPersistApp(t)
+	a.echoUser("hello")
+	// The send-time empty assistant bubble is left behind streamed reasoning
+	// when a reasoning model thinks before answering. It must not block the
+	// reasoning and assistant that follow from reaching the session file.
+	a.messages = append(a.messages,
+		components.Message{Role: "assistant"},
+		components.Message{Role: "reasoning", Content: "thinking"},
+		components.Message{Role: "assistant", Content: "hi"},
+	)
+	a.persistTail()
+
+	entries := persistedEntries(t, a)
+	if len(entries) != 3 {
+		t.Fatalf("entries = %d, want 3 (user, reasoning, assistant): %+v", len(entries), entries)
+	}
+	if entries[1].Type != "reasoning" || entries[2].Type != "assistant" {
+		t.Fatalf("types = %q/%q", entries[1].Type, entries[2].Type)
+	}
+}
+
+func TestPersistTrailingEmptyAssistantNotWritten(t *testing.T) {
+	a := newPersistApp(t)
+	a.echoUser("hello")
+	// A trailing empty assistant is the in-flight turn bubble; it must stop
+	// the scan rather than be persisted as an empty frame.
+	a.messages = append(a.messages, components.Message{Role: "assistant"})
+	a.persistTail()
+
+	entries := persistedEntries(t, a)
+	if len(entries) != 1 {
+		t.Fatalf("entries = %d, want 1 (user only): %+v", len(entries), entries)
+	}
+}
+
+func TestPersistTrailingReasoningAfterMaterialise(t *testing.T) {
+	a := newPersistApp(t)
+	a.echoUser("hello")
+	r := components.Message{Role: "reasoning"}
+	r.AppendText("thinking")
+	a.messages = append(a.messages, r)
+	// EventDoneKind materialises the trailing reasoning before persistTail.
+	if last := a.trailingReasoning(); last >= 0 {
+		a.messages[last].Materialise()
+	}
+	a.persistTail()
+
+	entries := persistedEntries(t, a)
+	if len(entries) != 2 {
+		t.Fatalf("entries = %d, want 2: %+v", len(entries), entries)
+	}
+	if entries[1].Type != "reasoning" || entries[1].Content != "thinking" {
+		t.Fatalf("reasoning entry wrong: %+v", entries[1])
+	}
+}
+
+func TestEchoUserFlushesTrailingSystemRow(t *testing.T) {
+	a := newPersistApp(t)
+	a.addSystem("trailing notice")
+	// echoUser must flush the pending notice before advancing the cursor past
+	// the new user turn, so the notice is not skipped.
+	a.echoUser("hello")
+
+	entries := persistedEntries(t, a)
+	if len(entries) != 2 {
+		t.Fatalf("entries = %d, want 2 (system, user): %+v", len(entries), entries)
+	}
+	if entries[0].Type != "system" || entries[0].Content != "trailing notice" {
+		t.Fatalf("system entry wrong: %+v", entries[0])
+	}
+	if entries[1].Type != "user" || entries[1].Content != "hello" {
+		t.Fatalf("user entry wrong: %+v", entries[1])
+	}
+}
+
+func TestCurrentAssistantBubbleAttachesConsecutiveToolCalls(t *testing.T) {
+	a := newPersistApp(t)
+	a.echoUser("run two")
+	// The send-time empty assistant bubble exists, then two tool starts land
+	// back to back (a concurrent read-only group). Both calls must attach to
+	// the same assistant bubble, not only the first.
+	a.handleAgentEvent(agentEventMsg{Kind: agent.EventToolStartKind, Tool: &rolemanager.ToolCall{ID: "c1", Name: "Read", Args: map[string]any{"path": "a"}}})
+	a.handleAgentEvent(agentEventMsg{Kind: agent.EventToolStartKind, Tool: &rolemanager.ToolCall{ID: "c2", Name: "Read", Args: map[string]any{"path": "b"}}})
+
+	// The assistant bubble is the only assistant message in the transcript.
+	var bubble *components.Message
+	for i := range a.messages {
+		if a.messages[i].Role == "assistant" {
+			bubble = &a.messages[i]
+			break
+		}
+	}
+	if bubble == nil || len(bubble.ToolCalls) != 2 {
+		t.Fatalf("assistant bubble = %+v", bubble)
+	}
+	if bubble.ToolCalls[0].ID != "c1" || bubble.ToolCalls[1].ID != "c2" {
+		t.Fatalf("attached calls = %+v", bubble.ToolCalls)
 	}
 }

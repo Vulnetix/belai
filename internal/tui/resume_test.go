@@ -82,12 +82,16 @@ func TestResumeThenSubmitAppendsInPlace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	if len(got) != 4 {
-		t.Fatalf("entries = %d, want 4: %+v", len(got), got)
+	if len(got) != 5 {
+		t.Fatalf("entries = %d, want 5: %+v", len(got), got)
 	}
-	// The new entry branches from the old tail.
+	// The resumed system notice branches from the old tail, and the new user
+	// entry branches from that notice.
 	if got[3].ParentID != entries[len(entries)-1].ID {
-		t.Fatalf("new entry ParentID = %q, want %q", got[3].ParentID, entries[len(entries)-1].ID)
+		t.Fatalf("resumed notice ParentID = %q, want %q", got[3].ParentID, entries[len(entries)-1].ID)
+	}
+	if got[4].Type != "user" || got[4].ParentID != got[3].ID {
+		t.Fatalf("new user entry = %+v", got[4])
 	}
 
 	// Exactly one jsonl in the project directory.

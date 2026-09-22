@@ -1331,6 +1331,10 @@ func (a *App) submitInput(input string) tea.Cmd {
 // echoUser appends a submitted prompt to the transcript and persists it as a
 // user entry.
 func (a *App) echoUser(input string) {
+	// Flush any settled trailing rows first (e.g. a system notice added after
+	// the previous turn's final persistTail) so the cursor advance below never
+	// skips them.
+	a.persistTail()
 	a.messages = append(a.messages, components.Message{Role: "user", Content: input})
 	a.appendEntry(session.Entry{Type: "user", Role: "user", Content: input})
 	// The user turn is already on disk; advance the persistence cursor past
@@ -2965,14 +2969,18 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		// A partially streamed assistant bubble keeps its accumulated text: the
 		// turn is over, so flush the builder back into Content, then write the
 		// settled tail. A failed turn must still leave its model responses and
-		// tool results on disk for /resume.
-		if last := len(a.messages) - 1; last >= 0 && a.messages[last].Role == "assistant" {
-			a.messages[last].Materialise()
-		}
-		a.persistTail()
+		// tool results on disk for /resume. The error notice is added before
+		// the flush so it reaches the session file too.
 		if m.Err != nil {
 			a.addSystem("agent error: " + m.Err.Error())
 		}
+		if last := a.trailingAssistant(); last >= 0 {
+			a.messages[last].Materialise()
+		}
+		if last := a.trailingReasoning(); last >= 0 {
+			a.messages[last].Materialise()
+		}
+		a.persistTail()
 		return nil
 	case agent.EventTextKind:
 		a.setPhaseWorking()
@@ -2998,14 +3006,17 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		return a.nextAgent()
 	case agent.EventToolStartKind:
 		a.setPhaseWorking()
-		last := len(a.messages) - 1
-		if last >= 0 && a.messages[last].Role == "assistant" {
-			a.messages[last].ToolCalls = append(a.messages[last].ToolCalls, components.AgentToolCall{
-				ID:   m.Tool.ID,
-				Name: m.Tool.Name,
-				Args: toolArgsString(m.Tool.Args),
-			})
-		}
+		// The assistant turn bubble is created lazily and must stay one bubble
+		// for the whole turn: streamed reasoning and signet activity rows can
+		// precede it, and earlier tool rows follow it. Scanning back to the
+		// most recent assistant attaches every tool call of the turn to the
+		// same bubble instead of only the first.
+		idx := a.currentAssistantBubble()
+		a.messages[idx].ToolCalls = append(a.messages[idx].ToolCalls, components.AgentToolCall{
+			ID:   m.Tool.ID,
+			Name: m.Tool.Name,
+			Args: toolArgsString(m.Tool.Args),
+		})
 		a.messages = append(a.messages, components.Message{
 			Role:       "tool",
 			ToolName:   m.Tool.Name,
@@ -3225,6 +3236,9 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		// The turn is over: flush any streamed builder back into Content so the
 		// message is a plain value for the persistence and rebuild paths.
 		if last := a.trailingAssistant(); last >= 0 {
+			a.messages[last].Materialise()
+		}
+		if last := a.trailingReasoning(); last >= 0 {
 			a.messages[last].Materialise()
 		}
 		if m.Result.Usage != nil {
@@ -4978,6 +4992,35 @@ func (a *App) trailingAssistant() int {
 		}
 	}
 	return -1
+}
+
+// trailingReasoning returns the index of the last reasoning message in the
+// transcript, or -1. Like trailingAssistant it is not always the very last
+// message: streamed text and tool rows follow the reasoning bubble.
+func (a *App) trailingReasoning() int {
+	for i := len(a.messages) - 1; i >= 0; i-- {
+		if a.messages[i].Role == "reasoning" {
+			return i
+		}
+	}
+	return -1
+}
+
+// currentAssistantBubble returns the index of the assistant bubble the
+// current turn's stream fills, creating one when no assistant message exists.
+// The bubble is the most recent assistant message: streamed reasoning and
+// signet activity rows may precede it within the same turn, and earlier tool
+// rows follow it, so scanning backward keeps every tool call of a turn on one
+// bubble. send always appends a fresh empty bubble per turn, so this never
+// reaches into the previous turn's assistant reply.
+func (a *App) currentAssistantBubble() int {
+	for i := len(a.messages) - 1; i >= 0; i-- {
+		if a.messages[i].Role == "assistant" {
+			return i
+		}
+	}
+	a.messages = append(a.messages, components.Message{Role: "assistant"})
+	return len(a.messages) - 1
 }
 
 // startNewSession resets to a brand-new, unnamed session. The previous

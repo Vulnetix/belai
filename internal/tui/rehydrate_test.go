@@ -9,6 +9,7 @@ import (
 
 	"github.com/vulnetix/signet/internal/goals"
 	"github.com/vulnetix/signet/internal/modes"
+	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/session"
 	"github.com/vulnetix/signet/internal/todos"
 	"github.com/vulnetix/signet/internal/tui/components"
@@ -109,6 +110,62 @@ func TestRehydrateDropsOrphanCallAndResult(t *testing.T) {
 	}
 	if r.Messages[2].ToolCallID != "good" {
 		t.Fatalf("kept tool = %+v", r.Messages[2])
+	}
+	assertPairing(t, r.Messages)
+}
+
+func TestRehydrateReasoningSystemRolemanager(t *testing.T) {
+	entries := []session.Entry{
+		{ID: "u1", Type: "user", Role: "user", Content: "go"},
+		{ID: "r1", ParentID: "u1", Type: "reasoning", Role: "reasoning", Content: "thinking about it"},
+		{ID: "rm1", ParentID: "r1", Type: "rolemanager", Role: "rolemanager", Content: "Checked the file — clean", Meta: map[string]any{
+			"summary": "Checked the file", "outcome": "clean",
+			"tone": int(rolemanager.ToneClear), "level": int(rolemanager.LevelSecurity),
+		}},
+		{ID: "s1", ParentID: "rm1", Type: "system", Role: "system", Content: "notice"},
+		{ID: "a1", ParentID: "s1", Type: "assistant", Role: "assistant", Content: "hi"},
+	}
+	r := rehydrateSession(entries)
+	if len(r.Messages) != 5 {
+		t.Fatalf("messages = %d, want 5: %+v", len(r.Messages), r.Messages)
+	}
+	if r.Messages[1].Role != "reasoning" || r.Messages[1].Content != "thinking about it" {
+		t.Fatalf("reasoning message = %+v", r.Messages[1])
+	}
+	rm := r.Messages[2]
+	if rm.Role != "rolemanager" || rm.RM.Summary != "Checked the file" || rm.RM.Outcome != "clean" || rm.RM.Tone != rolemanager.ToneClear || rm.Level != rolemanager.LevelSecurity {
+		t.Fatalf("rolemanager message = %+v", rm)
+	}
+	if r.Messages[3].Role != "system" || r.Messages[3].Content != "notice" {
+		t.Fatalf("system message = %+v", r.Messages[3])
+	}
+	assertPairing(t, r.Messages)
+}
+
+func TestRehydrateTextOnlyExcludesNewerRows(t *testing.T) {
+	// A text-only session that carries reasoning/system rows was written by a
+	// build that persists them, so it is not a schema-1 gap.
+	entries := []session.Entry{
+		{ID: "u1", Type: "user", Role: "user", Content: "hello"},
+		{ID: "r1", ParentID: "u1", Type: "reasoning", Role: "reasoning", Content: "thinking"},
+		{ID: "a1", ParentID: "r1", Type: "assistant", Role: "assistant", Content: "hi"},
+	}
+	r := rehydrateSession(entries)
+	if r.TextOnly {
+		t.Fatal("TextOnly = true, want false when newer render-only rows are present")
+	}
+}
+
+func TestRehydrateDropsEmptyReasoningAndSystem(t *testing.T) {
+	entries := []session.Entry{
+		{ID: "u1", Type: "user", Role: "user", Content: "go"},
+		{ID: "r1", ParentID: "u1", Type: "reasoning", Role: "reasoning", Content: ""},
+		{ID: "s1", ParentID: "r1", Type: "system", Role: "system", Content: "   "},
+		{ID: "a1", ParentID: "s1", Type: "assistant", Role: "assistant", Content: "hi"},
+	}
+	r := rehydrateSession(entries)
+	if len(r.Messages) != 2 {
+		t.Fatalf("messages = %d, want 2: %+v", len(r.Messages), r.Messages)
 	}
 	assertPairing(t, r.Messages)
 }

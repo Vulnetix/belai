@@ -1,8 +1,11 @@
 package tui
 
 import (
+	"strings"
+
 	"github.com/vulnetix/signet/internal/goals"
 	"github.com/vulnetix/signet/internal/modes"
+	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/session"
 	"github.com/vulnetix/signet/internal/todos"
 	"github.com/vulnetix/signet/internal/transcript"
@@ -86,9 +89,11 @@ func rehydrateSession(entries []session.Entry) rehydrated {
 		r.Mode = metaString(lastMeta, "mode")
 	}
 
-	// TextOnly: assistant entries but no tool entries, and no session_meta
-	// (schema 1).
-	hasAssistant, hasTool, hasMeta := false, false, false
+	// TextOnly: assistant entries but no tool entries, and no session_meta or
+	// newer render-only rows (schema 1). A file carrying reasoning, system, or
+	// rolemanager rows was written by a build that also persists tools, so a
+	// text-only history there is genuine, not a schema-1 gap.
+	hasAssistant, hasTool, hasMeta, hasNewRow := false, false, false, false
 	for _, e := range entries {
 		switch e.Type {
 		case "assistant":
@@ -97,9 +102,11 @@ func rehydrateSession(entries []session.Entry) rehydrated {
 			hasTool = true
 		case session.EntryTypeSessionMeta:
 			hasMeta = true
+		case "reasoning", "system", "rolemanager":
+			hasNewRow = true
 		}
 	}
-	r.TextOnly = hasAssistant && !hasTool && !hasMeta
+	r.TextOnly = hasAssistant && !hasTool && !hasMeta && !hasNewRow
 	return r
 }
 
@@ -175,9 +182,55 @@ func messagesFromEntries(entries []session.Entry) ([]components.Message, int) {
 				ToolCallID: id,
 				SubagentID: e.SubagentID,
 			})
+		case "reasoning":
+			if strings.TrimSpace(e.Content) == "" {
+				continue
+			}
+			msgs = append(msgs, components.Message{Role: "reasoning", Content: e.Content})
+		case "system":
+			if strings.TrimSpace(e.Content) == "" {
+				continue
+			}
+			msgs = append(msgs, components.Message{Role: "system", Content: e.Content})
+		case "rolemanager":
+			if msg := rolemanagerMessage(e); msg.Role != "" {
+				msgs = append(msgs, msg)
+			}
 		}
 	}
 	return msgs, dropped
+}
+
+// rolemanagerMessage rebuilds a rolemanager row from a persisted entry,
+// restoring the rendered line and the structured description so a resumed
+// transcript keeps both the text and the original tone/level gating. An entry
+// with no renderable content returns an empty message and is dropped.
+func rolemanagerMessage(e session.Entry) components.Message {
+	content := strings.TrimSpace(e.Content)
+	msg := components.Message{Role: "rolemanager", Content: content}
+	if e.Meta != nil {
+		if s, ok := e.Meta["summary"].(string); ok {
+			msg.RM.Summary = s
+		}
+		if o, ok := e.Meta["outcome"].(string); ok {
+			msg.RM.Outcome = o
+		}
+		if v, ok := metaInt(e.Meta, "tone"); ok {
+			msg.RM.Tone = rolemanager.Tone(v)
+		}
+		if v, ok := metaInt(e.Meta, "level"); ok {
+			msg.Level = rolemanager.Level(v)
+		}
+	}
+	if content == "" && msg.RM.Summary == "" && msg.RM.Outcome == "" {
+		return components.Message{}
+	}
+	if msg.RM.Summary == "" && msg.RM.Outcome == "" {
+		// Malformed entry without structured meta: keep the rendered line as a
+		// plain system notice rather than a blank activity row.
+		return components.Message{Role: "system", Content: content}
+	}
+	return msg
 }
 
 // assistantToolCalls decodes the persisted tool_calls meta of an assistant
