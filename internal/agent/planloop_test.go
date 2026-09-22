@@ -25,6 +25,9 @@ type planPassOpts struct {
 	eval  []string // plan-evaluator sentinel sequence
 	main  string   // main model behaviour: "tool" | "length" | "reply"
 	reply string   // main model final reply when main == "reply"
+	// evalStatus, when non-zero, makes the plan evaluator return that HTTP
+	// status instead of a sentinel, simulating a transport failure.
+	evalStatus int
 }
 
 // planPassServer records the main-model system prompts and scripts the
@@ -65,6 +68,10 @@ func planPassServer(t *testing.T, opts planPassOpts) (*httptest.Server, *sync.Mu
 		case strings.Contains(system, "operating-mode classifier"):
 			writeChatJSON(w, opts.mode)
 		case strings.Contains(system, "plan-progress evaluator"):
+			if opts.evalStatus != 0 {
+				w.WriteHeader(opts.evalStatus)
+				return
+			}
 			mu.Lock()
 			i := evalIdx
 			evalIdx++
@@ -170,6 +177,84 @@ func TestPlanPassLoopTwoMalformedEvaluationsTerminate(t *testing.T) {
 	if !strings.Contains(err.Error(), "malformed") {
 		t.Fatalf("error = %v, want consecutive-malformed termination", err)
 	}
+}
+
+// newPlanPassSessionWithWorkdir is newPlanPassSession with an explicit
+// Workdir so recordPlan writes plan files into a test temp dir rather than the
+// package directory.
+func newPlanPassSessionWithWorkdir(t *testing.T, srv *httptest.Server, allowPassLoop bool, maxIter int, workdir string) *Session {
+	t.Helper()
+	cfg := run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"}
+	sess, err := NewSession(Options{
+		Cfg:           cfg,
+		Client:        srv.Client(),
+		Registry:      tools.NewRegistry(&tools.Read{Root: workdir, MaxBytes: 1024}),
+		Posture:       posture.Defaults(),
+		AllowExplore:  false,
+		AllowPassLoop: allowPassLoop,
+		MaxIterations: maxIter,
+		Workdir:       workdir,
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	return sess
+}
+
+// assertPlanFileContains fails unless at least one recorded plan file under
+// <workdir>/.vulnetix/plans contains want.
+func assertPlanFileContains(t *testing.T, workdir, want string) {
+	t.Helper()
+	dir := filepath.Join(workdir, ".vulnetix", "plans")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read plans dir: %v", err)
+	}
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Fatalf("read plan file %s: %v", e.Name(), err)
+		}
+		if strings.Contains(string(data), want) {
+			return
+		}
+	}
+	t.Fatalf("no plan file under %s contains %q", dir, want)
+}
+
+func TestPlanPassLoopTransportEvalFailureRecordsPlanFile(t *testing.T) {
+	reply := "Plan:\n1. inspect the downloader\n2. wire local inference\n"
+	srv, _, _ := planPassServer(t, planPassOpts{main: "reply", reply: reply, evalStatus: http.StatusBadRequest})
+	defer srv.Close()
+
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
+	sess := newPlanPassSessionWithWorkdir(t, srv, true, 2, root)
+
+	_, err := sess.Run(context.Background(), "write me a plan")
+	if err == nil {
+		t.Fatal("expected a terminal evaluator transport error")
+	}
+	assertPlanFileContains(t, root, "inspect the downloader")
+}
+
+func TestPlanPassLoopBrokenEvaluatorRecordsPlanFile(t *testing.T) {
+	reply := "Plan:\n1. inspect the parser\n2. refactor the parser\n"
+	srv, _, _ := planPassServer(t, planPassOpts{main: "reply", reply: reply, eval: []string{"garbage", "also garbage"}})
+	defer srv.Close()
+
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
+	sess := newPlanPassSessionWithWorkdir(t, srv, true, 2, root)
+
+	_, err := sess.Run(context.Background(), "write me a plan")
+	if err == nil {
+		t.Fatal("expected a terminal broken-evaluator error")
+	}
+	assertPlanFileContains(t, root, "inspect the parser")
 }
 
 func TestPlanPassLoopZeroProductiveDoesNotLoop(t *testing.T) {
