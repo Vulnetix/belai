@@ -56,25 +56,24 @@ build:
 # MODELPREP_PYTHON names a python with torch+safetensors installed (defaults
 # to python3). With no args both phases are prepared.
 modelprep *ARGS:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    PY="${MODELPREP_PYTHON:-python3}"
-    if [ "$#" -eq 0 ]; then set -- -phase1 -phase2; fi
-    go run ./tools/modelprep -python "$PY" "$@"
+    PY="${MODELPREP_PYTHON:-python3}"; if [ -z "{{ ARGS }}" ]; then set -- -phase1 -phase2; fi; go run ./tools/modelprep -python "$PY" {{ ARGS }} "$@"
 
 # Build ./signet with both embedded models (phase 1 saturation + phase 2 jailbreak).
-build-jailbreak: modelprep
+# Extra args are forwarded to modelprep, e.g. `just build-jailbreak -force`.
+build-jailbreak *ARGS: (modelprep '-phase1' '-phase2' ARGS)
     go build -tags signet_bert_jailbreak -ldflags '{{ ldflags }} -X {{ module }}/internal/version.Variant=bert-guardrails-jailbreak' -o {{ binary }} {{ pkg }}
 
 # Build only the Linux amd64 jailbreak-classifier release binary into bin/.
-build-jailbreak-linux-amd64: modelprep
+# Extra args are forwarded to modelprep, e.g. `just build-jailbreak-linux-amd64 -force`.
+build-jailbreak-linux-amd64 *ARGS: (modelprep '-phase1' '-phase2' ARGS)
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
       go build -tags signet_bert_jailbreak \
       -ldflags '-s -w {{ ldflags }} -X {{ module }}/internal/version.Variant=bert-guardrails-jailbreak' \
       -o {{ bin }}/signet-bert-guardrails-jailbreak-linux-amd64 {{ pkg }}
 
 # Build ./signet with only the phase-1 prompt-saturation model embedded.
-build-bert: (modelprep '-phase1')
+# Extra args are forwarded to modelprep, e.g. `just build-bert -force`.
+build-bert *ARGS: (modelprep '-phase1' ARGS)
     go build -tags signet_bert -ldflags '{{ ldflags }} -X {{ module }}/internal/version.Variant=bert-guardrails' -o {{ binary }} {{ pkg }}
 
 # Install signet into $(go env GOPATH)/bin.
@@ -83,7 +82,8 @@ install:
 
 # Cross-compile every release target and variant into bin/, mirroring
 # .github/workflows/release.yml. Needs the prepared models (run modelprep).
-build-all: modelprep
+# Extra args are forwarded to modelprep, e.g. `just build-all -force`.
+build-all *ARGS: (modelprep '-phase1' '-phase2' ARGS)
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p {{ bin }}
