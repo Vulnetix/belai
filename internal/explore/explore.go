@@ -17,8 +17,10 @@ import (
 )
 
 // MaxTasks is the hard cap on fan-out. Unbounded fan-out against a
-// rate-limited provider produces 429s, which is worse than sequential.
-const MaxTasks = 5
+// rate-limited provider produces 429s, which is worse than sequential. The
+// cap is now 12 so the default 15-agent pool can run a broad exploration
+// wave while leaving headroom for background agents.
+const MaxTasks = 12
 
 // Task is one reference to investigate.
 type Task struct {

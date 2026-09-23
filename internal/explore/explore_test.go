@@ -39,7 +39,11 @@ func TestPlanExploreModes(t *testing.T) {
 }
 
 func TestPlanCapsFanOut(t *testing.T) {
-	prompt := "review @a @b @c @d @e @f @g"
+	var refs []string
+	for i := 0; i < MaxTasks+5; i++ {
+		refs = append(refs, "@"+string(rune('a'+i)))
+	}
+	prompt := "review " + strings.Join(refs, " ")
 	tasks := Plan(prompt, rolemanager.ModeDecision{Mode: modes.ModePlan, Explore: true})
 	if len(tasks) != MaxTasks {
 		t.Fatalf("Plan fan-out = %d, want %d", len(tasks), MaxTasks)
