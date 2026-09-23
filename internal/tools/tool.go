@@ -126,6 +126,28 @@ func (r *Registry) ReadOnly() *Registry {
 	return r.withCwd(NewRegistry(list...))
 }
 
+// ReadOnlySurface returns the agent-mode surface the read_only setting asks
+// for: every mutating tool removed, plan-only tools dropped, and — when the
+// full registry carried a Bash — a read-only Bash in its place, so the model
+// keeps its allowlisted inspection commands. Goal mode and an accepted plan
+// never use this surface; read_only scopes to agent mode only.
+func (r *Registry) ReadOnlySurface() *Registry {
+	var bash *Bash
+	for _, t := range r.tools {
+		if b, ok := t.(*Bash); ok {
+			bash = b
+			break
+		}
+	}
+	base := r.WithoutPlanOnly().ReadOnly()
+	if bash == nil || bash.ReadOnly {
+		return base
+	}
+	ro := *bash
+	ro.ReadOnly = true
+	return base.withCwd(NewRegistry(append(base.tools, &ro)...))
+}
+
 // WithoutPlanOnly returns a registry that drops tools marked as plan-only so
 // they are not advertised to agent-mode or goal-mode turns. Plan mode keeps
 // them because they are the model's way of declaring the plan complete.

@@ -83,7 +83,17 @@ const (
 	verificationDirective = "Before doing any further work, verify the completed items in the todo list against the files on disk (read-only). Confirm each marked-done item is actually true; if one is not, correct the list and the work. Only continue new work after the check."
 	// continuationDirective is injected when a bounded pass spends its whole
 	// iteration budget. Budget exhaustion is a turn boundary, not a failure.
-	continuationDirective = "The tool budget for this turn was reached. If more tool calls are needed to finish the work, make them now; otherwise give the final answer. Either way, say briefly what was done and what remains."
+	continuationDirective = "The tool budget for this turn was reached. If the work needs a file change, make the edit now rather than reading further; if more tool calls are needed to finish, make them now; otherwise give the final answer. Either way, say briefly what was done and what remains."
+	// agentEditNudge leads the continuation directive when an agent-mode turn
+	// has spent a full tool budget without changing a file. Sessions showed
+	// agent mode reading until the context window filled; this is the agent
+	// twin of goal mode's noWriteDirective, softened because an agent turn
+	// may legitimately be a question.
+	agentEditNudge = "You have read enough to act. If the request needs a change, make the edit now; if something blocks it, state the blocker in one line. Do not re-read files you have already read in full."
+	// planExecuteDirective leads the first pass of an approved plan. The user
+	// already approved the plan, so there is nothing left to confirm or
+	// re-explore: the first unchecked step is the first edit.
+	planExecuteDirective = "The approved plan in the system prompt is your objective and it is already approved — do not re-plan, re-explore, or ask for confirmation. Execute it in order: the first unfinished step is the first edit of this pass."
 	// goalAckDirective is injected on the first goal pass. Goal mode's whole
 	// point over plan mode is that a clear change is made immediately, so the
 	// directive leads with the edit and treats the checklist as bookkeeping
@@ -96,11 +106,15 @@ const (
 // them. Test commands from added workspace directories are unioned in so the
 // verification surface covers every root.
 func (s *Session) goalAckDirective() string {
+	directive := goalAckDirective
+	if s.turnExecutePlan {
+		directive = planExecuteDirective + " " + directive
+	}
 	cmds := s.allTestCommands()
 	if len(cmds) == 0 {
-		return goalAckDirective
+		return directive
 	}
-	return goalAckDirective + " The default verification surface is: " + strings.Join(cmds, "; ") + "."
+	return directive + " The default verification surface is: " + strings.Join(cmds, "; ") + "."
 }
 
 // allTestCommands returns the union of Commands.Test across the primary repo
@@ -447,7 +461,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 
 		// Budget exhaustion is a turn boundary, not an error: inject a wrap-up
 		// directive and grant continuation passes with fresh budgets.
-		return s.agentContinuations(ctx, pipe, system, turns, streaming, emit, out, modeDec.Mode)
+		return s.agentContinuations(ctx, pipe, system, turns, streaming, emit, out, modeDec.Mode, prompt)
 	}
 
 	// maxPasses is an opt-in ceiling (0 = unbounded, the default). The loop's
@@ -459,8 +473,19 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 	gs := goals.NewGoalState(goalText)
 	goalStart := time.Now()
 	totalTokens := 0
+	basePasses := 0
+	if prior := s.turnPriorGoal; prior != nil {
+		// A continuation resumes the goal in flight: the same id and running
+		// totals, so passes, tokens, and time read as one goal, not two.
+		gs.ID = prior.ID
+		gs.CreatedAt = prior.CreatedAt
+		gs.TokenBudget = prior.TokenBudget
+		totalTokens = prior.TokensUsed
+		basePasses = prior.Passes
+		goalStart = goalStart.Add(-time.Duration(prior.TimeUsedSeconds) * time.Second)
+	}
 	turns = append(turns, directiveTurns(s.goalAckDirective())...)
-	emit(Event{Kind: EventGoalStateKind, GoalState: &gs})
+	emitGoalState(emit, gs)
 	for {
 		// Cancellation is the only ceiling, and it must not read as an error:
 		// a deliberate esc returns the partial result, never raw
@@ -545,13 +570,11 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 			list := l.list
 			emit(Event{Kind: EventTodosKind, Todos: &list})
 		}
-		if out.usage != nil {
-			totalTokens += out.usage.Total()
-		}
-		gs.Passes = l.passes
+		totalTokens += out.spent
+		gs.Passes = basePasses + l.passes
 		gs.TokensUsed = totalTokens
 		gs.TimeUsedSeconds = int(time.Since(goalStart).Seconds())
-		emit(Event{Kind: EventGoalStateKind, GoalState: &gs})
+		emitGoalState(emit, gs)
 
 		if !out.exhausted {
 			// Natural exit: a no-tool-call reply is a claim of completion, not
@@ -578,7 +601,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 					emit(Event{Kind: EventTodosKind, Todos: &list})
 				}
 				gs.Status = string(goals.StatusComplete)
-				emit(Event{Kind: EventGoalStateKind, GoalState: &gs})
+				emitGoalState(emit, gs)
 				return run.Result{Reply: out.reply, Usage: out.usage, GoalSentinel: sentinel, Passes: l.passes}, nil
 			}
 			if l.notePartial() {
@@ -701,7 +724,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 				emit(Event{Kind: EventTodosKind, Todos: &list})
 			}
 			gs.Status = string(goals.StatusComplete)
-			emit(Event{Kind: EventGoalStateKind, GoalState: &gs})
+			emitGoalState(emit, gs)
 			return run.Result{
 				Reply:        out.lastText,
 				Usage:        out.usage,
@@ -724,12 +747,13 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 // is the turn's normal answer. Capped by resilience.max_passes (0 falls back
 // to defaultAgentContinuations). Reaching the cap returns the last assistant
 // text, never an error.
-func (s *Session) agentContinuations(ctx context.Context, pipe *rolemanager.Pipeline, system string, turns []run.Turn, streaming bool, emit func(Event), out passOutcome, mode modes.Mode) (run.Result, error) {
+func (s *Session) agentContinuations(ctx context.Context, pipe *rolemanager.Pipeline, system string, turns []run.Turn, streaming bool, emit func(Event), out passOutcome, mode modes.Mode, userPrompt string) (run.Result, error) {
 	maxCont := s.settings.Resilience.MaxPassesOr()
 	if maxCont <= 0 {
 		maxCont = defaultAgentContinuations
 	}
 	continuations := 0
+	mutations := out.mutations
 	for continuations < maxCont {
 		if steer := s.drainSteer(ctx, pipe, emit); len(steer) > 0 {
 			turns = append(turns, steer...)
@@ -746,12 +770,27 @@ func (s *Session) agentContinuations(ctx context.Context, pipe *rolemanager.Pipe
 		continuations++
 		s.traceRecord("continuation", "", "", fmt.Sprintf("continuation=%d cap=%d", continuations, maxCont), continuations)
 		emit(Event{Kind: EventContinuationKind, Pass: continuations, MaxPasses: maxCont})
-		turns = append(turns, directiveTurns(continuationDirective)...)
+		// An agent turn used to die at the context window: only the goal and
+		// plan loops compacted. Compact here too, then restate the request
+		// so the summary cannot lose what the user asked for.
+		if compacted, ok := s.compactBoundary(ctx, pipe, turns); ok {
+			turns = compacted
+			if strings.TrimSpace(userPrompt) != "" {
+				turns = append(turns, run.Turn{Role: "user", Content: userPrompt})
+			}
+			emit(Event{Kind: EventWarningKind, Warning: "context compacted to keep the turn going"})
+		}
+		directive := continuationDirective
+		if mode == modes.ModeAgent && !s.turnReadOnly && mutations == 0 {
+			directive = agentEditNudge + " " + continuationDirective
+		}
+		turns = append(turns, directiveTurns(directive)...)
 		var err error
 		out, turns, err = s.pass(ctx, pipe, system, turns, streaming, emit, mode)
 		if err != nil {
 			return run.Result{}, err
 		}
+		mutations += out.mutations
 		if !out.exhausted {
 			return run.Result{Reply: out.reply, Usage: out.usage, Passes: continuations}, nil
 		}
@@ -942,4 +981,12 @@ func (s *Session) compactBoundary(ctx context.Context, pipe *rolemanager.Pipelin
 		{Role: "user", Content: rolemanager.SummaryPrefix + dec.Content + rolemanager.SummarySuffix},
 		{Role: "assistant", Content: rolemanager.SummaryAck},
 	}, true
+}
+
+// emitGoalState sends a copy of the goal state. The loop keeps mutating its
+// own gs after the send and the TUI reads the event asynchronously, so a
+// shared pointer would be a data race.
+func emitGoalState(emit func(Event), gs goals.GoalState) {
+	cp := gs
+	emit(Event{Kind: EventGoalStateKind, GoalState: &cp})
 }

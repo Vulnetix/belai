@@ -1,0 +1,412 @@
+---
+import SealedSection from '../seal/SealedSection.astro';
+
+import classifierPhases from '../../assets/concepts/classifier-phases.svg?raw';
+import classifierShot from '../../assets/shots/classifier.svg';
+
+const sealText =
+  'Classifier: three engines can classify untrusted content, and all of them reply with one of five sentinel tokens. The LLM sentinel works alone and is also the fallback for the other two. Embedded BERT models handle phases 1 and 2 locally or through HuggingFace, with an optional LLM phase 3. Jev on OpenRouter can be phase 3, or the whole classifier on a binary without embedded models, and passes undecided results to the agent model. Errors always block the content.';
+
+// The five tokens every engine reduces to.
+const sentinels = [
+  { token: 'SAFE', tone: 'safe' },
+  { token: 'PROMPT_INJECTION', tone: 'bad' },
+  { token: 'JAILBREAK', tone: 'bad' },
+  { token: 'DATA_EXTRACTION', tone: 'bad' },
+  { token: 'MODEL_EXTRACTION', tone: 'bad' },
+];
+
+// Who rules on each threat category, per setup. Every cell is what the code
+// does, including the gaps.
+type Cell = { who: string; tone: 'local' | 'llm' | 'jev' | 'gap' };
+const L = (who: string): Cell => ({ who, tone: 'local' });
+const S = (who: string): Cell => ({ who, tone: 'llm' });
+const J = (who: string): Cell => ({ who, tone: 'jev' });
+const GAP: Cell = { who: 'not checked', tone: 'gap' };
+
+const coverage: { setup: string; how: string; cells: Cell[] }[] = [
+  {
+    setup: 'LLM sentinel',
+    how: 'kind: llm',
+    cells: [S('sentinel'), S('sentinel'), S('sentinel'), S('sentinel')],
+  },
+  {
+    setup: 'Jev as the whole classifier',
+    how: 'kind: llm + typesafe/jev-1.13',
+    cells: [J('Jev → sentinel'), J('Jev → sentinel'), J('Jev → sentinel'), J('Jev → sentinel')],
+  },
+  {
+    setup: 'Default download, phase 3 off',
+    how: 'signet-bert-guardrails',
+    cells: [L('BERT · local'), GAP, GAP, GAP],
+  },
+  {
+    setup: 'Default download with phase 3',
+    how: 'phase 3 = sentinel or Jev',
+    cells: [L('BERT · local'), S('phase 3'), S('phase 3'), S('phase 3')],
+  },
+  {
+    setup: 'Jailbreak build, phase 2 on',
+    how: 'signet-bert-guardrails-jailbreak',
+    cells: [L('BERT · local'), L('BERT · local'), S('phase 3'), S('phase 3')],
+  },
+  {
+    setup: 'No embedded models, HuggingFace',
+    how: 'kind: models + HF_TOKEN',
+    cells: [L('BERT · HF'), S('phase 3 or BERT · HF'), S('phase 3'), S('phase 3')],
+  },
+];
+
+const categories = ['injection', 'jailbreak', 'data extraction', 'model extraction'];
+
+// Every outcome a classifier call can have.
+const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open' }[] = [
+  { event: 'The sentinel replies with anything other than one token', result: 'The content is blocked.', tone: 'closed' },
+  { event: 'A classifier call errors, times out or gets a non-2xx response', result: 'The content is blocked. The provider error is shown on one line.', tone: 'closed' },
+  { event: 'The content needs more than 64 BERT windows', result: 'The content is blocked.', tone: 'closed' },
+  { event: 'An embedded model fails to load', result: 'Signet refuses to start.', tone: 'closed' },
+  { event: 'Jev scores between 0.1 and 0.9, or its answer is malformed', result: 'The agent model answers the same sentinel prompt.', tone: 'hand' },
+  { event: 'The binary has no phase-2 model', result: 'Phase 3 checks for jailbreaks as well, if phase 3 is set up.', tone: 'hand' },
+  { event: 'Phase 3 replies with something malformed or empty', result: 'The content goes through. Phases 1 and 2 already passed it, and the feed shows "couldn\'t tell" for phase 3.', tone: 'open' },
+];
+---
+
+<SealedSection label="classifier" sealText={sealText} id="classifier">
+  <div class="prose-measure">
+    <h2 class="text-3xl font-bold text-vx-ink">The classifier.</h2>
+    <p class="mt-4 text-vx-ink/80">
+      Signet accepts only one kind of answer about untrusted content: a single token from the five
+      below. Three engines can give that answer. The LLM sentinel asks a chat model to reply with one
+      token. The embedded models are BERT classifiers that run inside the Signet binary. Jev is a model
+      on OpenRouter that returns a probability for each question it is asked. You choose which ones run.
+    </p>
+  </div>
+
+  <ul class="mt-6 flex flex-wrap gap-2 list-none p-0" aria-label="The five security sentinels">
+    {sentinels.map((s) => (
+      <li class={`sentinel-chip sentinel-chip--${s.tone}`}>{s.token}</li>
+    ))}
+  </ul>
+
+  <div class="mt-10">
+    <h3 class="text-xl font-bold text-vx-ink">Coverage by setup.</h3>
+    <p class="mt-2 max-w-[72ch] text-vx-ink/80">
+      Each row is a setup. Each cell names the engine that checks for that threat, or says that nothing
+      does. The phase rows in <code class="mono">/model</code> show the same thing for your own settings.
+    </p>
+    <div class="coverage-wrap mt-5">
+      <table class="coverage">
+        <thead>
+          <tr>
+            <th scope="col">setup</th>
+            {categories.map((c) => <th scope="col">{c}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {coverage.map((row) => (
+            <tr>
+              <th scope="row">
+                <span class="block font-semibold">{row.setup}</span>
+                <code class="mono block text-xs text-vx-ink/60">{row.how}</code>
+              </th>
+              {row.cells.map((cell) => (
+                <td><span class={`cov cov--${cell.tone}`}>{cell.who}</span></td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    <p class="mono mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-vx-ink/70">
+      <span><span class="cov cov--local">local</span> BERT in-process or on HuggingFace</span>
+      <span><span class="cov cov--llm">LLM</span> the sentinel, or Jev as phase 3</span>
+      <span><span class="cov cov--jev">Jev</span> Jev first, then the sentinel</span>
+      <span><span class="cov cov--gap">gap</span> no check</span>
+    </p>
+  </div>
+
+  <article class="engine mt-12" aria-labelledby="engine-sentinel">
+    <header class="engine__head">
+      <span class="engine__num mono">01</span>
+      <h3 id="engine-sentinel" class="text-2xl font-bold text-vx-ink">LLM sentinel.</h3>
+      <code class="engine__tag mono">classifier.kind: llm</code>
+    </header>
+    <div class="engine__body grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
+      <div class="prose-measure">
+        <p class="text-vx-ink/80">
+          The sentinel can be your only classifier. A chat model reads the sanitized content with no
+          tools, skills or agent block available, and has to reply with one of the five tokens. Any other
+          reply blocks the content.
+        </p>
+        <p class="mt-4 text-vx-ink/80">
+          If <code class="mono">classifier.provider</code> and <code class="mono">classifier.model</code> are
+          empty, your agent model is the classifier. Set them to a local <code class="mono">llama-server</code>{' '}
+          or Ollama model to keep untrusted content on your machine.
+        </p>
+        <p class="mt-4 text-vx-ink/80">
+          The same sentinel is used in two other places. With the embedded models it runs as phase 3, using
+          a shorter list of tokens. With Jev it answers whenever Jev can't reach a decision.
+        </p>
+      </div>
+      <dl class="facts">
+        <div><dt>Default on</dt><dd><code class="mono">signet</code>, <code class="mono">signet-no-classifier</code></dd></div>
+        <div><dt>Model</dt><dd>the classifier model, or the agent model if unset</dd></div>
+        <div><dt>Checks for</dt><dd>all four threat types</dd></div>
+        <div><dt>Reasoning</dt><dd>effort <code class="mono">none</code> by default</dd></div>
+        <div><dt>Bad reply</dt><dd>content is blocked</dd></div>
+      </dl>
+    </div>
+
+    <details class="deep">
+      <summary>How replies are parsed</summary>
+      <div class="deep__body">
+        <p>
+          All sentinel parsers use the same normalizer. It removes <code class="mono">&lt;thinking&gt;</code>{' '}
+          and <code class="mono">&lt;reasoning&gt;</code> blocks, bold markers and code fences, then accepts a
+          token only if it is alone on its line. If a reasoning block is never closed, everything after it is
+          dropped, so a token inside unfinished reasoning can't count as the answer.
+        </p>
+        <table class="mini">
+          <thead><tr><th scope="col">reply</th><th scope="col">result</th></tr></thead>
+          <tbody>
+            <tr><td><code class="mono">&lt;thinking&gt;…&lt;/thinking&gt;⏎SAFE</code></td><td><code class="mono">SAFE</code></td></tr>
+            <tr><td><code class="mono">**JAILBREAK**</code></td><td><code class="mono">JAILBREAK</code></td></tr>
+            <tr><td><code class="mono">SAFE.</code></td><td><code class="mono">SAFE</code></td></tr>
+            <tr><td><code class="mono">maybe SAFE?</code></td><td>malformed, blocked</td></tr>
+            <tr><td>two different tokens on two lines</td><td>ambiguous, blocked</td></tr>
+          </tbody>
+        </table>
+        <p>
+          The security sentinel only reads the <code class="mono">content</code> field. If a reasoning model
+          uses up its token budget while thinking, <code class="mono">content</code> is empty and the content
+          is blocked. Signet does not take the answer from <code class="mono">reasoning_content</code>. The
+          budget leaves room for a short reasoning preamble and the token.
+        </p>
+        <p>
+          The classifier picker lists a limited set of providers. <code class="mono">huggingface</code> appears
+          when <code class="mono">HF_TOKEN</code> is set, and <code class="mono">openrouter</code> appears when
+          its key is available. Custom providers, <code class="mono">llama-server</code> and{' '}
+          <code class="mono">ollama</code> are always listed, with a warning that general chat models are a poor
+          fit. General chat providers such as OpenAI and Anthropic are not listed.
+        </p>
+        <p>
+          Content larger than <code class="mono">classifier.chunk.max_bytes</code> (1&nbsp;MiB by default) is
+          split into chunks that overlap by one eighth. Up to four chunks are classified at a time by default,
+          and the strictest chunk verdict applies to the whole content. <code class="mono">SAFE</code> verdicts
+          are cached for the session and blocked content is remembered by hash. The cache key includes the
+          classifier's identity, so a verdict from one engine is never reused by another.
+        </p>
+      </div>
+    </details>
+  </article>
+
+  <article class="engine mt-10" aria-labelledby="engine-models">
+    <header class="engine__head">
+      <span class="engine__num mono">02</span>
+      <h3 id="engine-models" class="text-2xl font-bold text-vx-ink">Embedded models.</h3>
+      <code class="engine__tag mono">classifier.kind: models</code>
+    </header>
+    <div class="engine__body grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
+      <div class="prose-measure">
+        <p class="text-vx-ink/80">
+          The default download includes a BERT classifier that runs inside the process. It is written in
+          pure Go and needs no cgo, Python or API key, so a new install can classify content before you
+          configure a provider.
+        </p>
+        <p class="mt-4 text-vx-ink/80">
+          Phase 1 detects prompt saturation and phase 2 detects jailbreaks. They run at the same time over
+          the same token windows, and a hit from either one ends the check. Neither model detects data or
+          model extraction, so phase 3 hands that to an LLM once both BERT phases return{' '}
+          <code class="mono">SAFE</code>. Phase 3 uses whatever <code class="mono">classifier.provider</code> and{' '}
+          <code class="mono">classifier.model</code> name, which can be the sentinel or Jev. It stays off until
+          both are set.
+        </p>
+        <p class="mt-4 text-vx-ink/80">
+          Any phase can also run on HuggingFace. Set <code class="mono">phaseN.source: huggingface</code> and
+          choose a model from the list below. A binary without embedded models can use this to get BERT
+          phases, and the default download can use it to add phase 2 without the 485&nbsp;MB jailbreak build.
+        </p>
+      </div>
+      <div class="space-y-4">
+        <dl class="facts">
+          <div><dt>Default on</dt><dd>both <code class="mono">bert-guardrails</code> builds, and can't be changed there</dd></div>
+          <div><dt>Phase 1</dt><dd>bert-tiny, embedded, always on</dd></div>
+          <div><dt>Phase 2</dt><dd>bert-base, opt-in, embedded or HF</dd></div>
+          <div><dt>Phase 3</dt><dd>an LLM, opt-in, extraction only</dd></div>
+          <div><dt>Network</dt><dd>only for HuggingFace or phase 3</dd></div>
+        </dl>
+        <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={classifierPhases} /></div>
+      </div>
+    </div>
+
+    <details class="deep">
+      <summary>Phase 3 and the LLM fallback</summary>
+      <div class="deep__body">
+        <p>
+          The phase-3 prompt lists only <code class="mono">SAFE</code>, <code class="mono">DATA_EXTRACTION</code>{' '}
+          and <code class="mono">MODEL_EXTRACTION</code>, and tells the model that injection and jailbreaks have
+          already been checked. A smaller or cheaper model does better with three options than with five.
+        </p>
+        <p>
+          If the binary has no jailbreak model and you haven't set up a remote one, phase 2 is marked{' '}
+          <em>deferred to phase 3</em> and <code class="mono">JAILBREAK</code> is added to the phase-3 tokens.
+          Prompt injection always stays with phase 1, which runs locally whenever the embedded models are in
+          use. The separate <code class="mono">phase2.source: disabled</code> setting exists only on the
+          jailbreak build, and turns jailbreak checks off entirely.
+        </p>
+        <p>
+          A malformed reply from phase 3 lets the content through, because phases 1 and 2 have already passed
+          it. The activity feed shows "couldn't tell" for phase 3. If the phase-3 request itself fails, the
+          content is blocked.
+        </p>
+      </div>
+    </details>
+
+    <details class="deep">
+      <summary>Models, thresholds and windows</summary>
+      <div class="deep__body">
+        <table class="mini">
+          <thead><tr><th scope="col">model</th><th scope="col">phase</th><th scope="col">available from</th></tr></thead>
+          <tbody>
+            <tr><td><code class="mono">GuardrailsAI/prompt-saturation-attack-detector</code></td><td>1</td><td>both bert builds, or HF</td></tr>
+            <tr><td><code class="mono">leomaurodesenv/bert-base-uncased-trustairlab-jailbreak</code></td><td>2</td><td>jailbreak build, or HF</td></tr>
+            <tr><td><code class="mono">leomaurodesenv/bert-base-uncased-jailbreakv-28k</code></td><td>2</td><td>HF</td></tr>
+            <tr><td><code class="mono">hurtmongoose/bert-base-detect-jailbreak</code></td><td>2</td><td>HF</td></tr>
+            <tr><td><code class="mono">hurtmongoose/jailbreak-bert-base-uncased</code></td><td>2</td><td>HF</td></tr>
+          </tbody>
+        </table>
+        <p>
+          Only BERT models are listed, because the converter and the wordpiece tokenizer read BERT{' '}
+          <code class="mono">vocab.txt</code> files. Each entry stores the label its model uses for an attack,
+          so Signet doesn't have to guess it for a remote model. On a binary without embedded models, with{' '}
+          <code class="mono">kind: models</code> and an <code class="mono">HF_TOKEN</code> set, phase 1 uses the
+          saturation model through the HuggingFace inference API by default.
+        </p>
+        <p>
+          A phase flags content when the attack score reaches its threshold. Phase 1 defaults to 0.75. Phase 2
+          defaults to 0.5, because ordinary tool output scores between 0.0 and 0.12 and known jailbreaks score
+          between 0.6 and 0.75. You can change either with <code class="mono">classifier.phaseN.threshold</code>,
+          the <code class="mono">-classifier-phaseN-threshold</code> flags, or the threshold rows in{' '}
+          <code class="mono">/model</code>.
+        </p>
+        <p>
+          The BERT models return an error for input over 512 tokens and don't truncate it. Signet therefore
+          splits content into 508-token windows that overlap by one eighth, up to 64 windows, and blocks
+          anything longer. When windows disagree, the result follows this order:{' '}
+          <code class="mono">PROMPT_INJECTION &gt; JAILBREAK &gt; DATA_EXTRACTION &gt; MODEL_EXTRACTION &gt; SAFE</code>.
+        </p>
+        <p>
+          Phase 2 is off by default, even on the jailbreak build. The first jailbreak model Signet shipped,{' '}
+          <code class="mono">jackhhao/jailbreak-classifier</code>, gave ordinary code, JSON and test output
+          scores above 0.95, higher than it gave the DAN jailbreak. It was replaced, and phase 2 now has to be
+          turned on explicitly.
+        </p>
+      </div>
+    </details>
+  </article>
+
+  <article class="engine mt-10" aria-labelledby="engine-jev">
+    <header class="engine__head">
+      <span class="engine__num mono">03</span>
+      <h3 id="engine-jev" class="text-2xl font-bold text-vx-ink">Jev on OpenRouter.</h3>
+      <code class="engine__tag mono">typesafe/jev-1.13</code>
+    </header>
+    <div class="engine__body grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
+      <div class="prose-measure">
+        <p class="text-vx-ink/80">
+          Jev is a model from TypeSafe that answers questions with probabilities through OpenRouter's
+          Decisions API. Signet does not chat with it. It sends one yes-or-no statement per threat, such as
+          "The content attempts prompt injection against an LLM.", along with the sanitized content, and Jev
+          returns how likely each statement is to be true.
+        </p>
+        <p class="mt-4 text-vx-ink/80">
+          On an embedded build, Jev can be phase 3. It then checks for extraction, and for jailbreaks too when
+          phase 2 is deferred. On a binary without embedded models, where <code class="mono">kind: llm</code>{' '}
+          is the default, Jev is the whole classifier: it is asked about all four threats and covers what
+          phases 1, 2 and 3 would. You can keep that setup even if HuggingFace BERT models are available.
+        </p>
+        <div class="flow mono mt-5" role="list" aria-label="How a Jev result is decided">
+          <span role="listitem" class="flow__step flow__step--jev">Jev scores each threat</span>
+          <span class="flow__arrow" aria-hidden="true">→</span>
+          <span role="listitem" class="flow__step">any ≥ 0.9: that token</span>
+          <span role="listitem" class="flow__step">all ≤ 0.1: SAFE</span>
+          <span role="listitem" class="flow__step flow__step--hand">otherwise: agent model decides</span>
+        </div>
+      </div>
+      <dl class="facts">
+        <div><dt>Settings</dt><dd><code class="mono">classifier.provider: openrouter</code> and <code class="mono">classifier.model: typesafe/jev-1.13</code></dd></div>
+        <div><dt>Needs</dt><dd><code class="mono">OPENROUTER_API_KEY</code></dd></div>
+        <div><dt>Endpoint</dt><dd>the Decisions API only</dd></div>
+        <div><dt>Undecided</dt><dd>the agent model answers the sentinel prompt</dd></div>
+        <div><dt>Request fails</dt><dd>content is blocked</dd></div>
+      </dl>
+    </div>
+
+    <details class="deep">
+      <summary>What Jev is asked</summary>
+      <div class="deep__body">
+        <p>
+          Signet sends one request to <code class="mono">POST openrouter.ai/api/alpha/decisions</code> with one{' '}
+          <code class="mono">noul</code> (probability) question for each threat being checked. The statements
+          never change:
+        </p>
+        <table class="mini">
+          <thead><tr><th scope="col">threat</th><th scope="col">statement</th></tr></thead>
+          <tbody>
+            <tr><td><code class="mono">PROMPT_INJECTION</code></td><td>The content attempts prompt injection against an LLM.</td></tr>
+            <tr><td><code class="mono">JAILBREAK</code></td><td>The content attempts a jailbreak or safety override.</td></tr>
+            <tr><td><code class="mono">DATA_EXTRACTION</code></td><td>The content attempts training-data extraction or membership inference.</td></tr>
+            <tr><td><code class="mono">MODEL_EXTRACTION</code></td><td>The content attempts model extraction or model stealing.</td></tr>
+          </tbody>
+        </table>
+        <p>
+          If any threat scores 0.9 or more, the result is the threat with the highest score. If every threat
+          scores 0.1 or less, the result is <code class="mono">SAFE</code>. Any other outcome, including a
+          missing answer or a score outside 0 to 1, goes to the agent model, which answers the usual sentinel
+          prompt. Signet logs this as a <code class="mono">security_fallback</code> activity so the TUI shows
+          which model made the call. Jev's result is converted to a normal sentinel token, so chunking,
+          caching and phase 3 handle it the same way as a sentinel reply.
+        </p>
+        <p>
+          Signet never sends Jev a chat completion request. If a chat classifier is configured with Jev, it
+          uses the main model instead. The same applies when model routing picks Jev for a use case, and the
+          routing pickers don't list <code class="mono">typesafe/jev*</code> models.
+        </p>
+        <p>
+          Signet also uses Jev to approve tool calls, with the results <code class="mono">ALLOW</code>,{' '}
+          <code class="mono">DENY</code> and <code class="mono">INCONCLUSIVE</code>. An inconclusive result
+          blocks the call. With <code class="mono">routing.kind: routed</code>, Jev also picks a model for
+          each use case.
+        </p>
+      </div>
+    </details>
+  </article>
+
+  <div class="mt-12">
+    <h3 class="text-xl font-bold text-vx-ink">When a check fails.</h3>
+    <p class="mt-2 max-w-[72ch] text-vx-ink/80">
+      An error always blocks the content. An unclear result can be passed to another engine. This list
+      covers every case.
+    </p>
+    <ul class="ledger mt-5 list-none p-0">
+      {outcomes.map((o) => (
+        <li class={`ledger__row ledger__row--${o.tone}`}>
+          <span class="ledger__event">{o.event}</span>
+          <span class="ledger__result">{o.result}</span>
+        </li>
+      ))}
+    </ul>
+    <p class="mono mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-vx-ink/70">
+      <span><span class="ledger-key ledger-key--closed"></span>blocked</span>
+      <span><span class="ledger-key ledger-key--hand"></span>passed to an LLM</span>
+      <span><span class="ledger-key ledger-key--open"></span>let through and noted in the feed</span>
+    </p>
+  </div>
+
+  <figure class="mt-10 max-w-[72ch]">
+    <div class="overflow-hidden rounded-lg border border-vx-ink bg-vx-ink">
+      <img src={classifierShot.src} alt="The /model classifier rows showing kind, phase 1, phase 2 and phase 3" class="block h-auto w-full" loading="lazy" />
+    </div>
+    <figcaption class="mono mt-3 text-sm text-vx-ink/70">/model, classifier kind and phase rows</figcaption>
+  </figure>
+</SealedSection>

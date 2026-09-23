@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/signet/internal/agent"
+	"github.com/vulnetix/signet/internal/agentpool"
 	"github.com/vulnetix/signet/internal/agentprofile"
 	"github.com/vulnetix/signet/internal/bgagent"
 	"github.com/vulnetix/signet/internal/calltrace"
@@ -408,7 +409,9 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool) (run.Result, error) {
 	caps := tools.DetectDefault()
 	ix := repoindex.Scan(ctx, workdir)
-	reg := tools.DefaultWithCaps(workdir, settings.ReadOnlyEnabled(), caps, ix)
+	// The full registry: read_only narrows agent-mode turns inside the session
+	// (Options.ReadOnlyAgent) and never goal mode or an accepted plan.
+	reg := tools.DefaultWithCaps(workdir, false, caps, ix)
 
 	perms := permissions.From(settings.Permissions.Allow, settings.Permissions.Ask, settings.Permissions.Deny)
 	repoMap := repomap.Scan(ctx, workdir)
@@ -425,6 +428,7 @@ func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *ht
 		Perms:         perms,
 		Posture:       pol,
 		PlanMode:      planMode,
+		ReadOnlyAgent: settings.ReadOnlyEnabled(),
 		Workdir:       workdir,
 		Settings:      settings,
 		PromptOptions: promptOpts,
@@ -439,6 +443,9 @@ func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *ht
 		// subagent never does.
 		AllowPassLoop: true,
 		RepoMap:       &repoMap,
+		// The same settings-backed fan-out ceiling the TUI uses; without it
+		// max_agents had no effect on the CLI.
+		AgentPool: agentpool.New(settings.Resilience.MaxAgentsOr(config.DefaultMaxAgents)),
 		// Headless CLI: live language servers are off, but fallback syntax
 		// checks still run when enabled in settings.
 		Diagnostics: rolemanager.DiagnosticsGateFromSettings(settings, reg.Cwd().Roots(), false),

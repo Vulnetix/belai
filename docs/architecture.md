@@ -417,6 +417,13 @@ worse than sequential. Anything else ends the run:
 - Malformed arguments or an unknown tool name — the call is answered
   (withheld) in order like the sequential tail.
 
+Before the permission gate, `tools.CheckArgs` rejects any argument key the
+tool's schema does not declare, naming it and the accepted keys. A key the
+tool silently ignored (Grep's trained `-i`, Bash's `run_in_background`) would
+answer a different question than the model asked. The `file_path`/`path`
+alias is accepted wherever either is declared, and Bash tolerates the
+advisory `description` and `timeout`.
+
 Results match back to their transcript row by tool call id, so an
 out-of-order completion from the concurrent group lands on its own row
 rather than the newest tool row; legacy events without a call id fall back
@@ -2553,9 +2560,14 @@ Tool availability defaults to allow: a call matching no permission rule
 proceeds (unregistered tool names are still rejected by the agent's registry
 check first). Opt-outs, in order of strength: a `permissions.deny` rule
 always blocks; `read_only: true` (settings file or the `/settings` "read-only
-tools" toggle) removes every mutating tool from the registry — `Write`,
-`Edit`, and full `Bash` are not registered, though a read-only `Bash` remains
-for inspection; and `postures: {permission_no_match: enforce}` in
+tools" toggle) narrows **agent-mode** turns to `Registry.ReadOnlySurface` —
+`Write`, `Edit`, and full `Bash` are withheld, though a read-only `Bash`
+remains for inspection, and the TUI says so on the first agent-mode send.
+Goal mode and an approved plan never honour `read_only`: they exist to change
+files, and sessions showed goals stalling for their whole budget behind a
+project file that had it set. The session always holds the full registry and
+latches the narrowed surface per turn (`Session.turnReadOnly`), so what the
+request advertises and what `executeCall` runs never diverge; and `postures: {permission_no_match: enforce}` in
 `preferences.yaml` restores the legacy no-match-block. `Bash` otherwise runs
 full shell commands via `sh -c` (timeout, env scrubbing, and output truncation
 still apply); plan mode keeps `Bash` read-only regardless of `read_only`.

@@ -6,32 +6,32 @@ import exitCardShot from '../../assets/shots/exit-card.svg';
 import footerShot from '../../assets/shots/footer.svg';
 
 const sealText =
-  'Quality of life: the details you used to hack into a skills.md. First-run trust gate, prompt library, repo map, work-discipline prompt section, identity block, capability auth probes, diff in the approval prompt, a todo panel that only trusts assistant text, sessions and compaction, /settings with provenance, no alt bindings ever, /help guarded by a test, caveman mode, per-project session toggles, classifier verdicts in the internal-work feed, and a self-update that stays in its asset family.';
+  'Quality of life: smaller features you would otherwise add through a skills.md. First-run trust gate, prompt library, repo map, work-discipline prompt section, identity block, capability auth probes, diff in the approval prompt, a todo panel that only trusts assistant text, sessions and compaction, /settings with provenance, no alt bindings ever, /help guarded by a test, caveman mode, per-project session toggles, classifier verdicts in the internal-work feed, and a self-update that stays in its asset family.';
 
 const benefits = [
   ['first-run trust gate', 'A directory Signet has never seen blocks startup until you say yes, before any settings merge, repo scan or auto-started process.'],
-  ['prompt library as files', 'Prompts are files in the repo, versioned and reviewable, not baked into the binary.'],
-  ['harness-computed repo map', 'Paths, counts, detected commands, git metadata. Never file contents.'],
-  ['work-discipline prompt section', 'The system prompt carries a work-discipline section so the loop stays honest about what it is doing.'],
-  ['identity block', 'The model knows what it is and which tool it is running, every turn.'],
-  ['capability auth probes', 'Cheap probes confirm the model can use a capability before the harness relies on it.'],
-  ['diff in the approval prompt', 'Approvals show the diff, not a bare path.'],
-  ['todo panel that only trusts assistant text', 'The todo list advances from assistant text only, never from tool output.'],
-  ['/settings with provenance', 'Every value shows who set it, where, and when.'],
-  ['no alt bindings, ever', 'No chord is bound to alt, so no terminal swallows a key.'],
-  ['/help guarded by a test', 'The help text is checked by a test, so it cannot drift from the real bindings.'],
-  ['caveman mode', 'A voice rewrite that turns replies into short plain words.'],
-  ['session toggles that stick per project', 'Guardrails, ask and the rest remember what you set in this repository, not globally.'],
-  ['classifier verdicts in the feed', 'The internal-work feed names which phase ruled and what it returned, so a blocked result is never a mystery.'],
-  ['self-update stays in its family', 'A guardrails binary updates to the guardrails asset, never silently to a build without the embedded model.'],
+  ['prompt library as files', 'Prompts are files in the repository, so they are versioned and reviewed like code.'],
+  ['harness-computed repo map', 'Paths, counts, detected commands and git metadata, with no file contents.'],
+  ['work-discipline prompt section', 'The system prompt tells the model to read the exact lines it will change, batch its reads, make the edits it is sure of first, and report what changed.'],
+  ['identity block', 'Every system prompt names the harness, provider and model in use.'],
+  ['capability auth probes', 'A small test request checks that a model supports a capability before Signet relies on it.'],
+  ['diff in the approval prompt', 'The approval prompt shows the diff of the change as well as the path.'],
+  ['todo panel that only trusts assistant text', "The todo list only changes based on the assistant's own text. Tool output cannot update it."],
+  ['/settings with provenance', 'Every value shows which settings layer it came from.'],
+  ['no alt bindings', 'No shortcut uses the alt key, so terminals that capture alt do not swallow keystrokes.'],
+  ['/help guarded by a test', 'A test compares the help text with the real key bindings.'],
+  ['caveman mode', 'An optional voice that makes replies short and plain.'],
+  ['session toggles per project', 'Toggles such as guardrails and ask-permission are saved for each repository.'],
+  ['classifier verdicts in the feed', 'When a result is blocked, the internal-work feed shows which phase blocked it and what it returned.'],
+  ['self-update stays in its family', 'A guardrails binary updates to the next guardrails build, so it keeps its embedded model.'],
 ];
 ---
 
 <SealedSection label="qol" sealText={sealText} id="qol">
   <h2 class="text-3xl font-bold text-vx-ink">Quality of life.</h2>
   <p class="prose-measure mt-4 text-vx-ink/80">
-    The details you used to hack into a <code class="mono">skills.md</code> yourself. Each one is a file or a
-    passing test in this repository, not a paste-in afterthought.
+    Smaller features you would otherwise add yourself through a <code class="mono">skills.md</code>. Each
+    one is implemented and tested in this repository.
   </p>
 
   <div class="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -45,11 +45,12 @@ const benefits = [
 
   <div class="mt-10 grid gap-8 rounded-lg border border-vx-ink/30 p-6 lg:grid-cols-2 lg:items-center">
     <div>
-      <h3 class="text-xl font-semibold text-vx-ink">Sessions &amp; compaction.</h3>
+      <h3 class="text-xl font-semibold text-vx-ink">Sessions.</h3>
       <p class="mt-3 text-vx-ink/80">
-        <code class="mono">/compact</code> runs against a validated contract, not a vibes-based summary.
-        Sessions auto-name from the work they did. Mid-turn steering queues a message onto the
-        running turn. The exit card always carries the resume command back to the finished session.
+        <code class="mono">/compact</code> writes a summary that must include a goal, next steps and
+        critical context, and a summary missing any of them is rejected. Sessions are named after the
+        work done in them. A message sent mid-turn is queued onto the running turn, and the exit card
+        shows the command to resume the session.
       </p>
     </div>
     <ShotCarousel

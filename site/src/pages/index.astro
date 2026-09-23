@@ -2,16 +2,19 @@
 import Base from '../layouts/Base.astro';
 import Hero from '../components/sections/Hero.astro';
 import Trust from '../components/sections/Trust.astro';
+import Classifier from '../components/sections/Classifier.astro';
 import SealedBlock from '../components/sections/SealedBlock.astro';
 import Beliefs from '../components/sections/Beliefs.astro';
 import Labs from '../components/sections/Labs.astro';
 import Features from '../components/sections/Features.astro';
+import CLI from '../components/sections/CLI.astro';
 import Qol from '../components/sections/Qol.astro';
 import Install from '../components/sections/Install.astro';
 
 const rail = [
   ['hero', 'hero'],
   ['trust', 'trust'],
+  ['classifier', 'classifier'],
   ['sealed', 'sealed'],
   ['beliefs', 'beliefs'],
   ['labs', 'labs'],
@@ -23,6 +26,7 @@ const rail = [
   ['processes', 'processes'],
   ['providers', 'providers'],
   ['vulnetix', 'vulnetix'],
+  ['cli', 'cli'],
   ['qol', 'qol'],
   ['start', 'getting started'],
 ] as const;
@@ -62,10 +66,12 @@ const rail = [
     <main class="min-w-0 flex-1 space-y-8">
       <Hero />
       <Trust />
+      <Classifier />
       <SealedBlock />
       <Beliefs />
       <Labs />
       <Features />
+      <CLI />
       <Qol />
       <Install />
     </main>

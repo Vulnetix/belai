@@ -37,6 +37,7 @@ import (
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
 	"github.com/vulnetix/signet/internal/gitinfo"
+	"github.com/vulnetix/signet/internal/goals"
 	"github.com/vulnetix/signet/internal/httpclient"
 	"github.com/vulnetix/signet/internal/localinfer"
 	"github.com/vulnetix/signet/internal/machineprobe"
@@ -304,6 +305,18 @@ type App struct {
 	// the agent to load the plan as the execution carrier.
 	pendingPlanExecute bool
 	planExecuteName    string
+	// planExecuting stays true after a plan is approved until its goal loop
+	// reports GOAL_COMPLETE or the user changes mode. Every send while it is
+	// set re-executes the active plan, so "continue" resumes the plan instead
+	// of starting an unrelated agent turn.
+	planExecuting bool
+	// lastGoal is the latest goal_state seen in this session (live or
+	// rehydrated). It rides on the next turn as TurnInput.PriorGoal so a
+	// continuation prompt resumes the goal in flight.
+	lastGoal *goals.GoalState
+	// readOnlyNoticed records that this process already showed the read_only
+	// notice for an agent-mode send.
+	readOnlyNoticed bool
 	// pendingPlanRevision is the revision number requested for the next
 	// plan-mode recording. Zero means "compute next available". Set by
 	// submitPlanRefine so a refined plan is written as -rN.
@@ -1245,6 +1258,21 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 		in.PlanName = a.planExecuteName
 		a.pendingPlanExecute = false
 		a.planExecuteName = ""
+	} else if a.planExecuting && a.mode == "agent" && a.state.ActivePlan != "" {
+		// An approved plan keeps executing across turns until it completes
+		// or the user changes mode.
+		in.ExecutePlan = true
+		in.PlanName = a.state.ActivePlan
+	}
+	if a.lastGoal != nil {
+		prior := *a.lastGoal
+		in.PriorGoal = &prior
+	}
+	if !a.readOnlyNoticed && a.mode == "agent" && !in.ExecutePlan {
+		if note := a.readOnlyNotice(); note != "" {
+			a.readOnlyNoticed = true
+			a.addSystem(note)
+		}
 	}
 	in.PlanRevision = a.pendingPlanRevision
 	a.pendingPlanRevision = 0
@@ -1350,12 +1378,20 @@ func (a *App) echoUser(input string) {
 	// Flush any settled trailing rows first (e.g. a system notice added after
 	// the previous turn's final persistTail) so the cursor advance below never
 	// skips them.
-	a.persistTail()
+	// A new user turn is a turn boundary: anything a finished turn left
+	// unsettled (an aborted tool call) is force-flushed so it can never block
+	// later rows. The cursor used to jump over such rows instead, which
+	// silently dropped whole goal-mode turns from the session file.
+	a.persistTailMode(true)
 	a.messages = append(a.messages, components.Message{Role: "user", Content: input})
-	a.appendEntry(session.Entry{Type: "user", Role: "user", Content: input})
-	// The user turn is already on disk; advance the persistence cursor past
-	// it so persistTail never double-writes it.
-	a.persistedUpTo = len(a.messages)
+	if a.persistedUpTo == len(a.messages)-1 {
+		a.appendEntry(session.Entry{Type: "user", Role: "user", Content: input})
+		// The user turn is already on disk; advance the persistence cursor
+		// past it so persistTail never double-writes it.
+		a.persistedUpTo = len(a.messages)
+	}
+	// Otherwise a running turn still holds unsettled rows (this is steering);
+	// persistTail writes this user turn in order once they settle.
 }
 
 // sendTurnNoEcho starts the agent turn for a prompt already echoed to the
@@ -1695,7 +1731,9 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		caps = tools.DetectDefault()
 	}
 	ix := repoindex.Scan(context.Background(), p.workdir)
-	reg := tools.DefaultWithCaps(p.workdir, p.settings.ReadOnlyEnabled(), caps, ix)
+	// The full registry: read_only narrows agent-mode turns inside the session
+	// (Options.ReadOnlyAgent), never goal mode or an accepted plan.
+	reg := tools.DefaultWithCaps(p.workdir, false, caps, ix)
 	// Activated workspace dirs become real confinement roots, so a restored
 	// (or trust-accepted) directory is not just advertised but actually
 	// reachable through SanitizePath.
@@ -1732,6 +1770,7 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		Perms:         perms,
 		Live:          p.live,
 		PlanMode:      p.planMode,
+		ReadOnlyAgent: p.settings.ReadOnlyEnabled(),
 		Workdir:       p.workdir,
 		Settings:      p.settings,
 		PromptOptions: promptOpts,
@@ -3232,6 +3271,8 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 	case agent.EventGoalStateKind:
 		if m.GoalState != nil {
 			a.appendEntry(m.GoalState.ToEntry(a.lastEntryID))
+			gs := *m.GoalState
+			a.lastGoal = &gs
 		}
 		return a.nextAgent()
 	case agent.EventGoalEvalKind:
@@ -3284,6 +3325,11 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			a.usage = m.Result.Usage
 			a.usageStale = false
 			a.tokensTotal += m.Result.Usage.TotalTokens
+		}
+		if a.planExecuting && m.Result.GoalSentinel == rolemanager.GoalComplete {
+			// The approved plan is done; the next send is an ordinary turn.
+			a.planExecuting = false
+			a.addSystem("approved plan complete")
 		}
 		a.persistTail()
 		// In plan mode, extract a numbered plan out of the reply and persist it
@@ -3706,6 +3752,7 @@ func (a *App) handleCommand(input string) tea.Cmd {
 }
 
 func (a *App) cycleMode() {
+	a.planExecuting = false
 	switch a.mode {
 	case "agent":
 		a.mode = "plan"
@@ -3716,6 +3763,9 @@ func (a *App) cycleMode() {
 	case "goal":
 		a.mode = "agent"
 		a.addSystem("agent mode on")
+		if note := a.readOnlyNotice(); note != "" {
+			a.addSystem(note)
+		}
 	}
 	a.modeExplicit = true
 	a.modeSticky = true
@@ -4266,6 +4316,12 @@ func (a *App) refreshFooter() {
 	a.footer.Width = a.contentWidth()
 	a.footer.Mode = a.mode
 	a.footer.Agent = a.engagedAgent()
+	if a.planExecuting && a.mode == "agent" {
+		// An approved plan runs autonomously, but the user chose plan mode;
+		// the chip says both.
+		a.footer.Mode = "plan"
+		a.footer.Agent = "executing"
+	}
 	a.footer.Provider = a.providerDisplayLabel(a.cfg.Provider)
 	a.footer.Model = run.WireModel(a.cfg.Provider, a.cfg.Model)
 	// The effective settings are the UI's canonical effort source: the model
@@ -5096,6 +5152,8 @@ func (a *App) currentAssistantBubble() int {
 // message.
 func (a *App) startNewSession() {
 	a.sessionID = session.MustID()
+	a.planExecuting = false
+	a.lastGoal = nil
 	a.publishSessionID()
 	a.lastEntryID = ""
 	a.persistedUpTo = 0

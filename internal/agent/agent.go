@@ -16,6 +16,7 @@ import (
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/delimiters"
 	"github.com/vulnetix/signet/internal/filediff"
+	"github.com/vulnetix/signet/internal/goals"
 	"github.com/vulnetix/signet/internal/hooks"
 	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/nonce"
@@ -47,8 +48,15 @@ type Options struct {
 	// nil the session wraps Posture and AskDisabled in a fixed Live that never
 	// changes, which is what the one-shot CLI and hand-built test sessions
 	// want.
-	Live          *posture.Live
-	PlanMode      bool
+	Live     *posture.Live
+	PlanMode bool
+	// ReadOnlyAgent is the read_only setting. It narrows agent-mode turns to
+	// Registry.ReadOnlySurface (no Write/Edit, allowlisted Bash) and nothing
+	// else: goal mode and an accepted plan always run on the full surface, and
+	// plan mode before acceptance has its own fail-closed surface. Registry
+	// must therefore be the full registry, never one already narrowed by
+	// ReadOnly.
+	ReadOnlyAgent bool
 	MaxIterations int
 	PromptOptions prompt.Options
 	ToolMethod    run.ToolMethod
@@ -150,11 +158,26 @@ type Session struct {
 	// tools and no Bash. A plan-mode turn advertises these instead.
 	planOpenAITools    []wire.OpenAITool
 	planAnthropicTools []wire.AnthropicToolDef
-	hooks              []*hooks.Hook
-	hookRunner         *hooks.Runner
-	toolMethod         run.ToolMethod
-	steer              chan string
-	trace              *trace.Writer
+	// readOnlyAgent is Options.ReadOnlyAgent. turnReadOnly is the per-turn
+	// latch derived from it: true only for an agent-mode turn, so goal mode
+	// and plan execution are never narrowed by the read_only setting.
+	// roRegistry and ro*Tools are the pre-built ReadOnlySurface.
+	readOnlyAgent    bool
+	turnReadOnly     bool
+	roRegistry       *tools.Registry
+	roOpenAITools    []wire.OpenAITool
+	roAnthropicTools []wire.AnthropicToolDef
+	// turnPriorGoal is the goal this turn resumes (see TurnInput.PriorGoal);
+	// nil starts a fresh goal state.
+	turnPriorGoal *goals.GoalState
+	// turnExecutePlan is set for the turn that executes an approved plan, so
+	// the first-pass directive can point at the plan rather than a goal.
+	turnExecutePlan bool
+	hooks           []*hooks.Hook
+	hookRunner      *hooks.Runner
+	toolMethod      run.ToolMethod
+	steer           chan string
+	trace           *trace.Writer
 	// exploreBridge fans steering to explore subagents while a fan-out runs.
 	// It is nil/empty outside explore; the pointer form keeps Steer (called
 	// from the UI goroutine) race-free with the fan-out's lifecycle.
@@ -239,7 +262,31 @@ func (s *Session) toolSurface() (*tools.Registry, []wire.OpenAITool, []wire.Anth
 	if s.planMode {
 		return s.registry.PlanWith(s.planSurface), s.planOpenAITools, s.planAnthropicTools
 	}
+	if s.turnReadOnly && s.roRegistry != nil {
+		return s.roRegistry, s.roOpenAITools, s.roAnthropicTools
+	}
 	return s.registry.WithoutPlanOnly(), s.openAITools, s.anthropicTools
+}
+
+// execTool resolves a call against the registry that executes it. A
+// read-only agent turn resolves against the ReadOnlySurface, so Bash runs as
+// the allowlisted copy and Write/Edit are refused with the reason named;
+// every other turn resolves against the full registry and relies on
+// modes.ToolAllowed for plan mode, exactly as before.
+func (s *Session) execTool(name string) (tools.Tool, string) {
+	if s.turnReadOnly && s.roRegistry != nil {
+		if t, ok := s.roRegistry.Find(name); ok {
+			return t, ""
+		}
+		if _, ok := s.registry.Find(name); ok {
+			return nil, fmt.Sprintf("tool result withheld: %q is unavailable because the read_only setting is on for agent mode; goal mode and an accepted plan are not affected", name)
+		}
+	}
+	t, ok := s.registry.Find(name)
+	if !ok {
+		return nil, fmt.Sprintf("tool result withheld: %q is not registered", name)
+	}
+	return t, ""
 }
 
 // toolsPlanSurface combines caller-provided plan surface with the session
@@ -284,6 +331,13 @@ func NewSession(o Options) (*Session, error) {
 	planSurface := toolsPlanSurface(o.Perms, o.PlanSurface)
 	openAITools, anthropicTools := wireTools(reg.WithoutPlanOnly())
 	planOpenAITools, planAnthropicTools := wireTools(reg.PlanWith(planSurface))
+	var roReg *tools.Registry
+	var roOpenAITools []wire.OpenAITool
+	var roAnthropicTools []wire.AnthropicToolDef
+	if o.ReadOnlyAgent {
+		roReg = reg.ReadOnlySurface()
+		roOpenAITools, roAnthropicTools = wireTools(roReg)
+	}
 
 	// Load validated hooks for the six declared events. Discovery fails closed:
 	// an unreadable dir yields no hooks, never an error.
@@ -335,6 +389,10 @@ func NewSession(o Options) (*Session, error) {
 		anthropicTools:     anthropicTools,
 		planOpenAITools:    planOpenAITools,
 		planAnthropicTools: planAnthropicTools,
+		readOnlyAgent:      o.ReadOnlyAgent,
+		roRegistry:         roReg,
+		roOpenAITools:      roOpenAITools,
+		roAnthropicTools:   roAnthropicTools,
 		hooks:              hs,
 		hookRunner:         runner,
 		toolMethod:         method,
@@ -375,6 +433,12 @@ type TurnInput struct {
 	ExecutePlan bool
 	// PlanName is the plan to load when ExecutePlan is true.
 	PlanName string
+	// PriorGoal is the last goal_state the caller saw in this session (live or
+	// rehydrated after a resume). When the new goal-mode prompt is a
+	// continuation ("continue", "keep going", …) and PriorGoal is not
+	// complete, the turn resumes that goal — same id, contract and counters —
+	// instead of starting a new goal whose objective is "continue".
+	PriorGoal *goals.GoalState
 	// PlanRevision is the revision number to use when recording the plan file.
 	// Zero means "compute next available". The plan review pane sets this when
 	// refining so the new plan file is named -rN rather than starting a new
@@ -478,6 +542,13 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		modeDec = rolemanager.DecideForcedMode(in.ForceMode, clean, in.HasReferences)
 	}
 
+	// Executing an approved plan is the plan-mode twin of a goal: the human
+	// approval already happened, so the turn runs autonomously through the
+	// goal pass loop on the full tool surface. An engaged agent profile never
+	// narrows it, and it never re-explores.
+	if in.ExecutePlan {
+		in.ForceAgent = ""
+	}
 	if in.ForceAgent != "" {
 		modeDec.Mode = modes.ModeAgent
 		modeDec.AgentName = in.ForceAgent
@@ -496,6 +567,58 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		s.planMode = true
 	}
 	defer func() { s.planMode = savedPlanMode }()
+	if in.ExecutePlan {
+		// An accepted plan is never read-only, whatever the mode chip says.
+		s.planMode = false
+		modeDec.Explore = false
+	}
+
+	// Per-turn read_only latch: the setting narrows agent-mode turns only.
+	// Goal mode and plan execution always keep the full surface.
+	savedReadOnly := s.turnReadOnly
+	s.turnReadOnly = s.readOnlyAgent && !in.ExecutePlan && modeDec.Mode == modes.ModeAgent
+	defer func() { s.turnReadOnly = savedReadOnly }()
+
+	// Carrier resolution happens before exploration so the goal contract can
+	// be drafted concurrently with the explore fan-out instead of after it.
+	opts, _ := CarrierOptions(s.workdir, modeDec, in.ExecutePlan, in.PlanName, s.state, s.settings)
+
+	// loopDec/loopGoal are what the pass loop runs against. They differ from
+	// modeDec only for plan execution, which runs the goal loop with the
+	// approved plan as its objective while the carrier stays the plan.
+	loopDec := modeDec
+	loopGoal := ""
+	s.turnPriorGoal = nil
+	s.turnExecutePlan = in.ExecutePlan
+	var draftCh chan goalDraft
+	switch {
+	case in.ExecutePlan:
+		loopDec.Mode = modes.ModeGoal
+		loopGoal = opts.PlanText
+		if strings.TrimSpace(loopGoal) == "" {
+			loopGoal = clean
+		}
+	case opts.Carrier != "":
+		opts.Caveman = s.opts.Caveman
+	case modeDec.Mode == modes.ModeGoal:
+		if prior := in.PriorGoal; prior != nil && prior.Status != string(goals.StatusComplete) && strings.TrimSpace(prior.Objective) != "" && IsContinuation(clean) {
+			// A continuation resumes the goal in flight: same id, same
+			// counters, same contract. Anything the user added beyond the
+			// bare "continue" rides along as extra direction.
+			loopGoal = prior.Objective
+			if extra := continuationExtra(clean); extra != "" {
+				loopGoal += "\n\nAdditional direction:\n" + extra
+			}
+			p := *prior
+			s.turnPriorGoal = &p
+			break
+		}
+		// CarrierOptions only knows how to load a *memorised* goal
+		// (state.ActiveGoal). A prompt routed to goal mode usually has none,
+		// so the goal carrier is built here. The draft runs concurrently
+		// with exploration and is joined below.
+		draftCh = s.startGoalDraft(ctx, pipe, clean)
+	}
 
 	// Explore-agent launch: read-only subagents run before sealing, and their
 	// classified findings re-enter as untrusted user turns ahead of the prompt.
@@ -511,37 +634,26 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		exploreTurns = append(exploreTurns, s.clarifyRounds(ctx, pipe, modeDec, clean, exploreTurns, emit)...)
 	}
 
-	opts, _ := CarrierOptions(s.workdir, modeDec, in.ExecutePlan, in.PlanName, s.state, s.settings)
 	switch {
-	case opts.Carrier != "":
+	case in.ExecutePlan && opts.Carrier != "":
 		opts.Caveman = s.opts.Caveman
+	case in.ExecutePlan:
+		// The approved plan failed to load: still run it as a goal, against
+		// the prompt, rather than dropping back to a single agent pass.
+		opts = s.opts
+	case opts.Carrier != "":
+		// A memorised goal or plan loaded by CarrierOptions.
 	case modeDec.Mode == modes.ModeGoal:
-		// CarrierOptions only knows how to load a *memorised* goal
-		// (state.ActiveGoal). A prompt the classifier routed to goal mode
-		// usually has no memorised goal, and CarrierOptions answers that with a
-		// bare Options{} — so without this the goal carrier is silently dropped
-		// and the goal evaluator has nothing to evaluate against. The prompt is
-		// harness-owned text already bound for the system prompt, so carrying
-		// it as the goal introduces no new trust question.
-		goalText := clean
-		if drafted, err := rolemanager.DraftGoalContract(ctx, pipe.Classifier, rolemanager.GoalDraftInput{
-			Prompt:              clean,
-			VerificationSurface: s.allTestCommands(),
-		}); err == nil {
-			drafted = sanitize.Sanitize(drafted)
-			if strings.TrimSpace(drafted) != "" && strings.Contains(drafted, clean) {
-				goalText = drafted
-			} else {
-				emit(Event{Kind: EventWarningKind, Warning: "goal contract draft was unusable; carrying the raw prompt"})
-			}
-		} else {
-			// Fail open to the raw prompt: a weak drafting model must never
-			// cost the turn.
-			emit(Event{Kind: EventWarningKind, Warning: "goal contract drafting failed; carrying the raw prompt"})
+		goalText := loopGoal
+		if draftCh != nil {
+			goalText = s.joinGoalDraft(draftCh, clean, emit)
 		}
 		opts = prompt.Options{Carrier: prompt.CarrierGoal, GoalText: goalText, Caveman: s.opts.Caveman}
 	default:
 		opts = s.opts
+	}
+	if loopGoal == "" {
+		loopGoal = opts.GoalText
 	}
 	// Work discipline is agent/goal-mode guidance. Plan mode has its own
 	// contract and must never be told to start editing.
@@ -565,7 +677,11 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	// will not be given.
 	opts.Tools = s.toolDocs()
 	if s.repoMap != nil {
-		opts.RepoMap = prompt.RepoMapBlock(*s.repoMap)
+		// The changed-path facts are refreshed every turn (one bounded git
+		// status), so they include this session's own edits.
+		m := *s.repoMap
+		m.RefreshStatus(ctx)
+		opts.RepoMap = prompt.RepoMapBlock(m)
 	}
 	if len(s.workspaceMaps) > 0 {
 		opts.WorkspaceBlock = prompt.WorkspaceBlock(s.workspaceMaps)
@@ -590,7 +706,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	// mode has none). Digest the findings here; they are already classified
 	// and admitted as SAFE, and the evaluator call sanitizes them again.
 	planContext := exploreContextDigest(exploreTurns)
-	res, err := s.passLoop(ctx, pipe, system, turns, modeDec, opts.GoalText, planContext, clean, streaming, emit)
+	res, err := s.passLoop(ctx, pipe, system, turns, loopDec, loopGoal, planContext, clean, streaming, emit)
 	res.SanitizedPrompt = clean
 	res.SecuritySentinel = dec.Sentinel
 	res.ModeDecision = modeDec
@@ -805,9 +921,16 @@ type callEffect struct {
 // executeCall runs one tool call and returns the string the conversation sees.
 // eff, when non-nil, receives the harness-observed disk effect of the call.
 func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, emit func(Event), eff *callEffect) string {
-	tool, ok := s.registry.Find(call.Name)
-	if !ok {
-		return fmt.Sprintf("tool result withheld: %q is not registered", call.Name)
+	tool, refusal := s.execTool(call.Name)
+	if tool == nil {
+		return refusal
+	}
+
+	// An argument the schema does not declare would be silently ignored,
+	// answering a different question than the model asked. Checked before
+	// the permission gate so nobody is asked to approve a call that cannot run.
+	if err := tools.CheckArgs(tool.Definition(), call.Args); err != nil {
+		return fmt.Sprintf("tool call rejected: %v", err)
 	}
 
 	if !modes.ToolAllowed(call.Name, call.Args, s.planMode, s.planSurface) {
@@ -936,7 +1059,7 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 	}
 
 	if s.live.Level(posture.ToolResultUnsafe) == posture.Warn {
-		return fmt.Sprintf("tool result withheld: classified %s", dec.Sentinel.Label())
+		return fmt.Sprintf("tool result withheld: classified %s. %s", dec.Sentinel.Label(), withheldVerdictHint)
 	}
 
 	// enforce — abort the whole turn. Since executeCall is called from the loop,
@@ -944,7 +1067,7 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 	// support partial failure. For now the agent loop treats any withheld as a
 	// placeholder and continues; the strict abort is handled by refusing to
 	// promote the unsafe content, which is what a placeholder does.
-	return fmt.Sprintf("tool result withheld: classified %s", dec.Sentinel.Label())
+	return fmt.Sprintf("tool result withheld: classified %s. %s", dec.Sentinel.Label(), withheldVerdictHint)
 }
 
 // gateMutation asks the user before a mutating tool touches disk. It blocks on
@@ -981,6 +1104,13 @@ func (s *Session) gateMutation(ctx context.Context, call rolemanager.ToolCall, t
 // stack trace; the head of it names the status and the reason, and the rest is
 // noise the model cannot act on.
 const classifierErrorMaxRunes = 180
+
+// withheldVerdictHint follows a classifier verdict so the model reads it as a
+// decision about the content rather than a mistake in its arguments. Without
+// it, sessions showed the model re-reading the same withheld file with new
+// offsets until the budget ran out. The verdict is cached, so the same bytes
+// are withheld again.
+const withheldVerdictHint = "This is a safety verdict on the content, not an argument error: requesting the same content again returns the same verdict. Use Grep for just the lines you need, or continue without it."
 
 // classifierWithheld renders the placeholder that stands in for a tool result
 // the classifier could not verify. The placeholder enters the model's context

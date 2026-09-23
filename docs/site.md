@@ -14,8 +14,8 @@ The single-scroll marketing site at [signet.vulnetix.com](https://signet.vulneti
 `site/src/pages/index.astro` composes one long scroller with a sticky left status
 rail (≥1120px). The content is full-width (no fixed max-width). Section order:
 
-hero · trust · sealed · beliefs · labs · modes · tools · diagnostics · permissions · agents ·
-processes · providers · vulnetix · qol · start
+hero · trust · classifier · sealed · beliefs · labs · modes · tools · diagnostics · permissions · agents ·
+processes · providers · vulnetix · cli · qol · start
 
 Interactive islands live in `site/src/components/ui/` (copy button, comparison
 table, shot carousel); everything else ships zero JS.

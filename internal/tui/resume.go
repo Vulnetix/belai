@@ -204,6 +204,8 @@ func (a *App) clearForResume() {
 	// Plan/execute one-shot state.
 	a.lastPlanText = ""
 	a.pendingPlanExecute = false
+	a.planExecuting = false
+	a.lastGoal = nil
 	a.planExecuteName = ""
 	a.pendingPlanRevision = 0
 	a.pendingDirective = ""
@@ -325,6 +327,10 @@ func (a *App) restorePlanGoal(r rehydrated, crossProject bool) {
 	}
 	a.state.ActivePlan = plan
 	a.state.ActiveGoal = goal
+	if r.Goal != nil && !crossProject {
+		gs := *r.Goal
+		a.lastGoal = &gs
+	}
 	a.state.ActiveProfile = profile
 	a.setNamedAgent(profile)
 	_ = config.SaveState(a.state)

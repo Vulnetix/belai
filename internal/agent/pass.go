@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/permissions"
 	"github.com/vulnetix/signet/internal/rolemanager"
@@ -16,10 +17,28 @@ import (
 	"github.com/vulnetix/signet/internal/transcript"
 )
 
-// toolConcurrency caps how many read-only tool calls execute in parallel.
-// Unbounded fan-out against a rate-limited provider produces 429s, which is
-// worse than sequential.
-const toolConcurrency = 4
+// minToolConcurrency and maxToolConcurrency bound how many read-only tool
+// calls of one assistant turn execute in parallel. Local tools do not touch
+// the provider, so the bound follows the user's max_agents fan-out setting
+// rather than a fixed 4, clamped so a huge setting cannot fork-bomb the host.
+const (
+	minToolConcurrency = 4
+	maxToolConcurrency = 16
+)
+
+// toolConcurrency returns the parallel read-only tool-call bound for this
+// session: resilience.max_agents clamped to [minToolConcurrency,
+// maxToolConcurrency].
+func (s *Session) toolConcurrency() int {
+	n := s.settings.Resilience.MaxAgentsOr(config.DefaultMaxAgents)
+	if n < minToolConcurrency {
+		return minToolConcurrency
+	}
+	if n > maxToolConcurrency {
+		return maxToolConcurrency
+	}
+	return n
+}
 
 // concurrentEnd returns the length of the leading run of read-only,
 // permission-allowed, parseable calls. A mutating tool ends the run, so a Read
@@ -38,8 +57,14 @@ func concurrentEnd(units []callUnit) int {
 
 // passOutcome is the result of one bounded tool-loop pass.
 type passOutcome struct {
-	reply     string
-	usage     *transcript.Usage
+	reply string
+	// usage is the most recent provider call's usage (its prompt tokens are the
+	// live context size). It is set on every exit path, exhausted included.
+	usage *transcript.Usage
+	// spent is the total tokens of every provider call the pass made. A pass
+	// usually makes several calls, so this — not usage — is what goal
+	// accounting adds up.
+	spent     int
 	exhausted bool
 	// text accumulates every non-empty assistant text of the pass. It is
 	// model-authored assistant text and the only input the pass loop feeds to
@@ -91,7 +116,7 @@ const maxMutatedPaths = 20
 // surface, so a withheld streak means the model's calls are failing and must be
 // re-issued with corrected arguments. It never names ExitPlanMode, which is not
 // advertised outside plan mode.
-const withheldRepairDirective = "Every tool result in the last two rounds was withheld. The errors are above. Re-issue the calls with corrected arguments — check the path form against the working directory and session roots in the system prompt — or state the blocker in one line. Do not answer with a plan."
+const withheldRepairDirective = "Every tool result in the last two rounds was withheld. Read each reason above. An argument error (a bad path, a missing file) is fixed by re-issuing the call with corrected arguments — check the path form against the working directory and session roots in the system prompt. A classifier verdict is not an argument error: do not request that content again; use Grep for the specific lines or proceed without it. If neither works, state the blocker in one line. Do not answer with a plan."
 
 // toolRepairDirective is injected at a goal pass boundary when the pass that
 // just ended executed no tool at all: every call it made was rejected before
@@ -159,6 +184,10 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 	finish := func(o passOutcome) passOutcome {
 		o.mutations = acc.mutations
 		o.mutatedPaths = acc.mutatedPaths
+		if o.usage == nil {
+			o.usage = acc.usage
+		}
+		o.spent = acc.spent
 		return o
 	}
 	for i := 0; i < s.maxIter; i++ {
@@ -167,6 +196,10 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		assistant, err := s.streamTurnRetry(ctx, system, turns, streaming, emit)
 		if err != nil {
 			return finish(passOutcome{text: text, lastText: lastText}), turns, err
+		}
+		if assistant.Usage != nil {
+			acc.usage = assistant.Usage
+			acc.spent += assistant.Usage.Total()
 		}
 
 		if assistant.Text != "" {
@@ -243,7 +276,7 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		// observation needs no locking.
 		effects := make([]callEffect, len(units))
 		if concurrentEnd > 0 {
-			sem := make(chan struct{}, toolConcurrency)
+			sem := make(chan struct{}, s.toolConcurrency())
 			var wg sync.WaitGroup
 			for i := 0; i < concurrentEnd; i++ {
 				u := units[i]

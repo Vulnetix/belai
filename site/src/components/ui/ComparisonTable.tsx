@@ -37,7 +37,7 @@ const row = (group: Group, feature: string, signet: Cell, claude: Cell, codex: C
 const ROWS: Row[] = [
   // untrusted content
   row('untrusted content', 'sealed delimiters (nonce + SHA-256, stripped at egress), the tools briefing included', 'yes', 'no', 'no', 'no', 'no'),
-  row('untrusted content', 'security classifier on every arbitrary tool result, other agents’ transcripts included', 'yes', 'no', 'no', 'no', 'no'),
+  row('untrusted content', 'security classifier on every arbitrary tool result, including other agents\' transcripts', 'yes', 'no', 'no', 'no', 'no'),
   row('untrusted content', 'three-phase classifier: in-process BERT gates before any LLM call', 'yes', 'no', 'no', 'no', 'no'),
   row('untrusted content', 'classifier models embedded in the binary (no API key, no download)', 'yes', 'no', 'no', 'no', 'no'),
   row('untrusted content', 'classifier on a separate or local model, routed per use case', 'yes', 'no', 'no', 'no', 'no'),
@@ -48,13 +48,13 @@ const ROWS: Row[] = [
   // boundaries
   row('boundaries', 'first-run directory gated on explicit trust, headless fails closed', 'yes', 'yes', 'unknown', 'unknown', 'unknown'),
   row('boundaries', 'fixed confinement roots; project-proposed dirs activate only when you accept them', 'yes', 'unknown', 'unknown', 'unknown', 'unknown'),
-  row('boundaries', 'plan mode with Bash absent, not restricted', 'yes', 'no', 'no', 'no', 'no'),
+  row('boundaries', 'plan mode does not offer Bash to the model', 'yes', 'no', 'no', 'no', 'no'),
   row('boundaries', 'one guardrails switch reaching every surface: session, !cmd, @file, background agents, CLI', 'yes', 'no', 'no', 'no', 'no'),
   row('boundaries', 'posture gates with provenance, down to the model behind each classifier phase', 'yes', 'no', 'no', 'no', 'no'),
   row('boundaries', 'skills and hooks load only after strict schema validation', 'yes', 'unknown', 'unknown', 'unknown', 'unknown'),
 
   // autonomy
-  row('autonomy', 'goal loop stops when blocked, not after a turn count', 'yes', 'no', 'no', 'no', 'no'),
+  row('autonomy', 'goal loop stops when it is blocked, with no fixed turn count', 'yes', 'no', 'no', 'no', 'no'),
   row('autonomy', 'goal contract drafted by the classifier, sealed by the harness', 'yes', 'no', 'no', 'no', 'no'),
   row('autonomy', 'structured persisted plan documents, best plan kept across passes', 'yes', 'yes', 'unknown', 'unknown', 'unknown'),
   row('autonomy', 'plan-mode explore subagents fanned out in parallel', 'yes', 'yes', 'unknown', 'unknown', 'unknown'),
@@ -66,15 +66,14 @@ const ROWS: Row[] = [
   row('tools & context', 'native fixed-argv tool catalogue (~25 utilities)', 'yes', 'no', 'no', 'no', 'no'),
   row('tools & context', 'language-server diagnostics sealed into Edit/Write results', 'yes', 'no', 'no', 'no', 'no'),
   row('tools & context', 'language servers never granted workspace/applyEdit', 'yes', 'unknown', 'unknown', 'unknown', 'unknown'),
-  row('tools & context', 'harness-computed repo map: facts only, never file contents', 'yes', 'unknown', 'unknown', 'unknown', 'unknown'),
-  row('tools & context', 'path-free search across other agents’ sessions and memory', 'yes', 'no', 'no', 'no', 'no'),
+  row('tools & context', 'harness-computed repo map with no file contents', 'yes', 'unknown', 'unknown', 'unknown', 'unknown'),
+  row('tools & context', "path-free search across other agents' sessions and memory", 'yes', 'no', 'no', 'no', 'no'),
   row('tools & context', 'prompt library as files', 'yes', 'no', 'no', 'no', 'no'),
 
   // integrations
   row('integrations', 'local providers in the box (ollama, llama-server)', 'yes', 'no', 'yes', 'no', 'no'),
   row('integrations', 'security scanners and an AI firewall built in (Vulnetix)', 'yes', 'no', 'no', 'no', 'no'),
   row('integrations', 'credential import', 'yes', 'yes', 'yes', 'yes', 'yes'),
-  row('integrations', 'CI-enforced docs', 'yes', 'unknown', 'unknown', 'unknown', 'unknown'),
 ];
 
 const FILTERS = [

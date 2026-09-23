@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// ansi-to-svg.mjs — convert TrueColor ANSI captures into Geist-Mono SVG.
+// ansi-to-svg.mjs: convert TrueColor ANSI captures into Geist-Mono SVG.
 //
 // Input:  site/src/assets/shots/*.ansi (produced by tools/shot)
 // Output: site/src/assets/shots/*.svg
 //
 // The TUI draws on a dark terminal, so every capture is rendered on the ink
 // background from internal/tui/components/theme.go. SGR colours arrive as
-// truecolour sequences (38;2;r;g;b / 48;2;r;g;b) and are emitted verbatim —
+// truecolour sequences (38;2;r;g;b / 48;2;r;g;b) and are emitted verbatim:
 // they already *are* the theme.go palette, baked in by lipgloss at render time.
 // The half-block glyph U+2580 (▀) is drawn as two stacked rects because a font
 // cannot carry the two-tone foreground/background split that makes the Pix owl.

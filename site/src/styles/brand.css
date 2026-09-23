@@ -1,4 +1,4 @@
-/* Signet marketing site — brand tokens and Tailwind v4 theme.
+/* Signet marketing site: brand tokens and Tailwind v4 theme.
  *
  * Token values are ported verbatim from Vulnetix/website/src/styles/_brand.scss
  * (the hex table in the plan) so captured TUI frames sit natively on the page.
@@ -20,7 +20,7 @@
   --color-vx-bone: #E8E7E3;
   --color-vx-coral: #FA5C57;
 
-  /* TUI palette (internal/tui/components/theme.go) — used by shot SVGs and
+  /* TUI palette (internal/tui/components/theme.go): used by shot SVGs and
      any inline chrome that must read as terminal output. */
   --color-tui-ink: #1C3431;
   --color-tui-teal: #3AC4B4;
@@ -70,7 +70,7 @@ body {
 }
 
 /* ----------------------------------------------------------------------------
- * The sealed block — the page's signature device.
+ * The sealed block: the page's signature device.
  *
  * Each section is framed as a harness block: a real mono header whose sha256
  * was computed at build time from the section's sealed payload, and a footer
@@ -155,7 +155,7 @@ body {
 }
 
 /* ----------------------------------------------------------------------------
- * Hero boot sequence — one orchestrated page-load, then stillness.
+ * Hero boot sequence: one orchestrated page-load, then stillness.
  * ------------------------------------------------------------------------- */
 @keyframes boot-draw {
   from { opacity: 0; transform: translateY(8px); }
@@ -214,7 +214,7 @@ body {
 }
 
 /* ----------------------------------------------------------------------------
- * Reduced motion — every animated element is listed explicitly.
+ * Reduced motion: every animated element is listed explicitly.
  * ------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
   html {
@@ -234,7 +234,7 @@ body {
 }
 
 /* ----------------------------------------------------------------------------
- * Focus visibility — every interactive element gets a visible ring.
+ * Focus visibility: every interactive element gets a visible ring.
  * ------------------------------------------------------------------------- */
 :focus-visible {
   outline: 2px solid var(--color-vx-mint-strong);
@@ -249,3 +249,326 @@ body {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
+/* ----------------------------------------------------------------------------
+ * Classifier section: sentinel chips, coverage matrix, engine panels,
+ * collapsed deep dives and the fail-closed ledger.
+ * ------------------------------------------------------------------------- */
+.sentinel-chip {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 6px;
+  border: 1px solid var(--color-vx-ink);
+}
+
+.sentinel-chip--safe {
+  background: var(--color-vx-ink);
+  color: var(--color-vx-mint);
+}
+
+.sentinel-chip--bad {
+  background: rgba(250, 92, 87, 0.1);
+  color: var(--color-vx-ink);
+  border-color: var(--color-vx-coral);
+}
+
+.coverage-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--color-vx-ink);
+  border-radius: 10px;
+}
+
+.coverage {
+  width: 100%;
+  min-width: 44rem;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.coverage th,
+.coverage td {
+  padding: 0.625rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid rgba(0, 22, 20, 0.12);
+}
+
+.coverage thead th {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--color-vx-ink);
+  color: var(--color-vx-mint);
+  border-bottom: 0;
+}
+
+.coverage tbody tr:last-child th,
+.coverage tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.coverage tbody th {
+  font-weight: 400;
+  min-width: 13rem;
+}
+
+.cov {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.3;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.cov--local {
+  background: rgba(102, 220, 200, 0.25);
+  border-color: var(--color-vx-mint-strong);
+}
+
+.cov--llm {
+  background: rgba(253, 224, 181, 0.7);
+  border-color: var(--color-vx-sand-amber);
+}
+
+.cov--jev {
+  background: var(--color-vx-ink);
+  color: var(--color-vx-mint);
+}
+
+.cov--gap {
+  color: rgba(0, 22, 20, 0.55);
+  border: 1px dashed rgba(0, 22, 20, 0.35);
+}
+
+.engine {
+  border-top: 1px solid var(--color-vx-ink);
+  padding-top: 1.75rem;
+}
+
+.engine__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.engine__num {
+  font-size: 0.875rem;
+  color: var(--color-vx-mint-strong);
+}
+
+.engine__tag {
+  font-size: 0.75rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 22, 20, 0.35);
+  color: rgba(0, 22, 20, 0.75);
+}
+
+.facts {
+  margin: 0;
+  border: 1px solid var(--color-vx-ink);
+  border-radius: 10px;
+  background: rgba(232, 231, 227, 0.45);
+  font-size: 0.875rem;
+}
+
+.facts > div {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 0.5rem 0.875rem;
+  border-bottom: 1px solid rgba(0, 22, 20, 0.12);
+}
+
+.facts > div:last-child {
+  border-bottom: 0;
+}
+
+.facts dt {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: rgba(0, 22, 20, 0.6);
+  padding-top: 0.1rem;
+}
+
+.facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.deep {
+  margin-top: 1.25rem;
+  border: 1px solid rgba(0, 22, 20, 0.35);
+  border-radius: 10px;
+  max-width: 72rem;
+}
+
+.deep + .deep {
+  margin-top: 0.625rem;
+}
+
+.deep > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.75rem 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  color: var(--color-vx-ink);
+}
+
+.deep > summary::-webkit-details-marker {
+  display: none;
+}
+
+.deep > summary::before {
+  content: "+";
+  display: inline-grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+  border-radius: 4px;
+  background: var(--color-vx-ink);
+  color: var(--color-vx-mint);
+  font-size: 0.875rem;
+  line-height: 1;
+}
+
+.deep[open] > summary::before {
+  content: "−";
+}
+
+.deep > summary:hover {
+  background: rgba(102, 220, 200, 0.12);
+}
+
+.deep[open] > summary {
+  border-bottom: 1px solid rgba(0, 22, 20, 0.12);
+}
+
+.deep__body {
+  padding: 0.25rem 1rem 1rem;
+  max-width: 72ch;
+  color: rgba(0, 22, 20, 0.8);
+  overflow-x: auto;
+}
+
+.deep__body > p,
+.deep__body > table {
+  margin-top: 0.875rem;
+}
+
+.mini {
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  width: 100%;
+}
+
+.mini th,
+.mini td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.375rem 0.625rem 0.375rem 0;
+  border-bottom: 1px solid rgba(0, 22, 20, 0.12);
+  overflow-wrap: anywhere;
+}
+
+.mini thead th {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(0, 22, 20, 0.6);
+}
+
+.flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.flow__step {
+  padding: 0.25rem 0.625rem;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 22, 20, 0.35);
+}
+
+.flow__step--jev {
+  background: var(--color-vx-ink);
+  color: var(--color-vx-mint);
+  border-color: var(--color-vx-ink);
+}
+
+.flow__step--hand {
+  background: rgba(253, 224, 181, 0.7);
+  border-color: var(--color-vx-sand-amber);
+}
+
+.flow__arrow {
+  color: var(--color-vx-mint-strong);
+}
+
+.ledger {
+  border: 1px solid var(--color-vx-ink);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.ledger__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.25rem 1.5rem;
+  padding: 0.75rem 1rem 0.75rem 1.25rem;
+  border-bottom: 1px solid rgba(0, 22, 20, 0.12);
+  border-left: 4px solid transparent;
+  font-size: 0.9375rem;
+}
+
+.ledger__row:last-child {
+  border-bottom: 0;
+}
+
+@media (min-width: 768px) {
+  .ledger__row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  }
+}
+
+.ledger__event {
+  font-weight: 600;
+}
+
+.ledger__result {
+  color: rgba(0, 22, 20, 0.8);
+}
+
+.ledger__row--closed { border-left-color: var(--color-vx-coral); }
+.ledger__row--hand { border-left-color: var(--color-vx-sand-amber); }
+.ledger__row--open { border-left-color: var(--color-vx-mint-strong); }
+
+.ledger-key {
+  display: inline-block;
+  width: 0.625rem;
+  height: 0.625rem;
+  margin-right: 0.375rem;
+  border-radius: 2px;
+  vertical-align: -0.05em;
+}
+
+.ledger-key--closed { background: var(--color-vx-coral); }
+.ledger-key--hand { background: var(--color-vx-sand-amber); }
+.ledger-key--open { background: var(--color-vx-mint-strong); }

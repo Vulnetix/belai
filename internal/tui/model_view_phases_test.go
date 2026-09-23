@@ -68,7 +68,7 @@ func TestModelRowsPhasesForModelsVanilla(t *testing.T) {
 	if !ok {
 		t.Fatal("phase3 row missing for models kind")
 	}
-	if !p3.disabled || !strings.Contains(p3.value, "off — set classifier provider + model to enable") {
+	if !p3.disabled || !strings.Contains(p3.value, "off: set classifier provider + model to enable") {
 		t.Fatalf("phase3 row = %+v, want locked off status", p3)
 	}
 }

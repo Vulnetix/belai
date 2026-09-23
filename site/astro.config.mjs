@@ -4,7 +4,7 @@ import react from '@astrojs/react';
 import tailwindcss from '@tailwindcss/vite';
 
 // The custom domain (signet.vulnetix.com) is bound by public/CNAME, so Pages
-// serves this project at the domain root. base must be '/' — a '/signet/'
+// serves this project at the domain root. base must be '/': a '/signet/'
 // base would emit asset URLs under a path the apex never exposes. Keep base
 // in sync with public/CNAME.
 export default defineConfig({
