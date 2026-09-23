@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -59,6 +60,10 @@ type Config struct {
 	// phase-3 on/off). A Kind of "" or "llm" means the LLM sentinel path; the
 	// ML stack only engages when Kind == "models".
 	Security SecurityClassifierConfig
+	// Routing holds the resolved model-routing config. Kind "defined" (zero)
+	// routes every model call to this config; Kind "routed" routes each
+	// role-manager use case through the Jev routing activity over Candidates.
+	Routing RoutingConfig
 }
 
 // ClassifierConfig is a provider/model/credentials tuple scoped to the
@@ -445,6 +450,86 @@ func (c Config) ClassifierOrDefault() ClassifierConfig {
 		return cc
 	}
 	return c.Classifier
+}
+
+// RoutingCandidate is one resolved provider/model option in the routing pool.
+// Key is the use-case label from the settings map; Cfg is the fully resolved
+// provider config (credentials, base URL, auth, surface, model).
+type RoutingCandidate struct {
+	Key string
+	Cfg Config
+}
+
+// RoutingConfig is the resolved model-routing configuration carried on Config.
+// The zero value is Kind "defined": every model call uses the main config.
+type RoutingConfig struct {
+	// Kind is "defined" (default) or "routed".
+	Kind string
+	// Candidates is the routing pool for Kind "routed": every use_cases entry
+	// resolved into a provider config. The Jev routing activity selects one
+	// candidate per role-manager use case.
+	Candidates []RoutingCandidate
+	// JevToken resolves the OpenRouter API key the Jev Decisions call uses. It
+	// is a func so a lazily-fetched key (keychain/netrc) stays fresh per call.
+	JevToken func() (string, error)
+}
+
+// ResolveRouting resolves the routing settings into a RoutingConfig. A nil or
+// non-routed settings block resolves to Kind "defined" (no candidates, no Jev
+// token): the main config serves every role-manager activity.
+//
+// Under "routed", every use_cases entry resolves to a provider config through
+// src, with unset provider/model fields inheriting the main config. A
+// candidate that cannot be configured is an error, not a silent skip: a broken
+// routing table must not route traffic to the wrong model.
+func ResolveRouting(main Config, rs *config.RoutingSettings, src CredentialSource) (RoutingConfig, error) {
+	if rs == nil || rs.Kind != config.RoutingRouted {
+		return RoutingConfig{Kind: config.RoutingDefined}, nil
+	}
+	if src == nil {
+		src = EnvSource(os.Getenv)
+	}
+	out := RoutingConfig{Kind: config.RoutingRouted}
+	keys := make([]string, 0, len(rs.UseCases))
+	for k := range rs.UseCases {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		t := rs.UseCases[key]
+		candidate, err := resolveRouteCandidate(main, t, src)
+		if err != nil {
+			return RoutingConfig{}, fmt.Errorf("routing.use_cases.%s: %w", key, err)
+		}
+		out.Candidates = append(out.Candidates, RoutingCandidate{Key: key, Cfg: candidate})
+	}
+	out.JevToken = func() (string, error) {
+		v, _, ok := src.Lookup("openrouter", "api_key")
+		if !ok || strings.TrimSpace(v) == "" {
+			return "", fmt.Errorf("openrouter api key not configured for Jev routing")
+		}
+		return v, nil
+	}
+	return out, nil
+}
+
+// resolveRouteCandidate resolves one routing use-case entry to a provider
+// config. An unset provider inherits the main provider; an unset model
+// inherits the main model, or the new provider's default when the provider
+// changed and no model was named.
+func resolveRouteCandidate(main Config, t config.RoutingTarget, src CredentialSource) (Config, error) {
+	providerName := t.Provider
+	if providerName == "" {
+		providerName = main.Provider
+	}
+	model := t.Model
+	if model == "" && t.Provider != "" && t.Provider != main.Provider {
+		model = DefaultModel(providerName)
+	}
+	if model == "" {
+		model = main.Model
+	}
+	return ResolveWithSource(model, providerName, os.Getenv, src)
 }
 
 func (c Config) String() string {
