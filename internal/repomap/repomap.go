@@ -7,6 +7,7 @@ package repomap
 
 import (
 	"context"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -40,8 +41,24 @@ type Map struct {
 	Entrypoints          []string
 	Layout               []DirSummary
 	AgentsFiles          []AgentsFile
-	ScannedAt            time.Time
+	// JustRecipes are the recipe names a justfile declares — identifiers
+	// only, never recipe bodies.
+	JustRecipes []string
+	// Changed is the working tree's changed paths (git status porcelain
+	// codes and paths), capped at maxChanged; ChangedTotal is the uncapped
+	// count. RefreshStatus updates both per turn so the model starts from
+	// what is actually dirty instead of spending calls on git status.
+	Changed      []ChangedPath
+	ChangedTotal int
+	ScannedAt    time.Time
 }
+
+// ChangedPath is one `git status --porcelain` row: its two-letter code and
+// path.
+type ChangedPath struct{ Status, Path string }
+
+// maxChanged caps the changed-path list the map carries.
+const maxChanged = 50
 
 // Remote is one configured git remote.
 type Remote struct{ Name, URL string }
@@ -98,21 +115,48 @@ func Scan(ctx context.Context, workdir string) Map {
 	if m.Head == "" {
 		m.Head = repoindex.RunProbe(ctx, info.Root, "git", "rev-parse", "--short", "HEAD")
 	}
-	m.Dirty = dirty(ctx, info.Root)
+	m.RefreshStatus(ctx)
 	m.Remotes = remotes(ctx, info.Root)
 	m.Languages = languages(ctx, info.Root)
-	m.Commands = commands(info.Root)
+	m.JustRecipes = justRecipes(info.Root)
+	m.Commands = commands(info.Root, m.JustRecipes)
 	m.Entrypoints = entrypoints(ctx, info.Root)
 	m.Layout = layout(ctx, info.Root)
 	m.AgentsFiles = agentsFiles(info.Root)
 	return m
 }
 
-// dirty reports whether the tree has uncommitted changes, via a bounded
-// git status probe.
-func dirty(ctx context.Context, root string) bool {
-	out := repoindex.RunProbe(ctx, root, "git", "status", "--porcelain")
-	return strings.TrimSpace(out) != ""
+// RefreshStatus re-probes the working tree (one bounded `git status
+// --porcelain`) and updates Dirty, Changed and ChangedTotal. It is cheap enough
+// to run before every turn, which keeps the changed-path facts current after
+// the session's own edits.
+func (m *Map) RefreshStatus(ctx context.Context) {
+	if m == nil || m.Module == "" {
+		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	out := repoindex.RunProbe(ctx, m.Module, "git", "status", "--porcelain")
+	m.Changed, m.ChangedTotal = parseStatus(out)
+	m.Dirty = m.ChangedTotal > 0
+}
+
+// parseStatus reads `git status --porcelain` output into capped rows.
+func parseStatus(out string) ([]ChangedPath, int) {
+	var rows []ChangedPath
+	total := 0
+	for _, line := range strings.Split(out, "\n") {
+		if len(line) < 4 {
+			continue
+		}
+		total++
+		if len(rows) >= maxChanged {
+			continue
+		}
+		rows = append(rows, ChangedPath{Status: strings.TrimSpace(line[:2]), Path: strings.TrimSpace(line[3:])})
+	}
+	return rows, total
 }
 
 // remotes lists configured git remotes.
@@ -121,10 +165,11 @@ func remotes(ctx context.Context, root string) []Remote {
 	var rs []Remote
 	for _, line := range strings.Split(out, "\n") {
 		fields := strings.Fields(line)
-		if len(fields) < 2 || fields[1] != "(fetch)" {
+		// `origin <url> (fetch)`: the marker is the third field.
+		if len(fields) < 3 || fields[2] != "(fetch)" {
 			continue
 		}
-		rs = append(rs, Remote{Name: fields[0], URL: fields[1]})
+		rs = append(rs, Remote{Name: fields[0], URL: redactRemote(fields[1])})
 	}
 	sort.Slice(rs, func(i, j int) bool { return rs[i].Name < rs[j].Name })
 	return rs
@@ -172,13 +217,26 @@ func languages(ctx context.Context, root string) []LangCount {
 }
 
 // commands detects build/test/fmt/lint commands from a fixed file table.
-func commands(root string) Commands {
+// A justfile contributes only the recipes it actually declares, so the map
+// never advertises `just lint` to a repo that has no lint recipe.
+func commands(root string, recipes []string) Commands {
 	var c Commands
-	if _, err := os.Stat(filepath.Join(root, "justfile")); err == nil {
-		c.Build = append(c.Build, "just build")
-		c.Test = append(c.Test, "just check")
-		c.Fmt = append(c.Fmt, "just fmt")
-		c.Lint = append(c.Lint, "just lint")
+	if len(recipes) > 0 {
+		has := map[string]bool{}
+		for _, r := range recipes {
+			has[r] = true
+		}
+		pick := func(dst *[]string, names ...string) {
+			for _, n := range names {
+				if has[n] {
+					*dst = append(*dst, "just "+n)
+				}
+			}
+		}
+		pick(&c.Build, "build")
+		pick(&c.Test, "check", "test")
+		pick(&c.Fmt, "fmt")
+		pick(&c.Lint, "lint", "vet")
 	}
 	if _, err := os.Stat(filepath.Join(root, "Makefile")); err == nil {
 		c.Build = append(c.Build, "make build")
@@ -289,4 +347,78 @@ func agentsFiles(root string) []AgentsFile {
 		}
 	}
 	return out
+}
+
+// maxRecipes caps the recipe names the map carries.
+const maxRecipes = 40
+
+// justRecipes returns the recipe names a justfile at root declares, in file
+// order. Only header identifiers are read — a recipe header is an
+// unindented line `name [params]:` that is not a `:=` assignment — so the map
+// never carries recipe bodies or comments.
+func justRecipes(root string) []string {
+	var data []byte
+	for _, name := range []string{"justfile", "Justfile", ".justfile"} {
+		b, err := os.ReadFile(filepath.Join(root, name))
+		if err == nil {
+			data = b
+			break
+		}
+	}
+	if data == nil {
+		return nil
+	}
+	var out []string
+	seen := map[string]bool{}
+	for _, line := range strings.Split(string(data), "\n") {
+		if line == "" || line[0] == ' ' || line[0] == '\t' || line[0] == '#' || line[0] == '[' {
+			continue
+		}
+		colon := strings.IndexByte(line, ':')
+		if colon <= 0 || strings.HasPrefix(line[colon:], ":=") {
+			continue
+		}
+		head := strings.Fields(line[:colon])
+		if len(head) == 0 {
+			continue
+		}
+		name := strings.TrimPrefix(head[0], "@")
+		if head[0] == "set" || head[0] == "alias" || head[0] == "import" || head[0] == "mod" || head[0] == "export" || !isRecipeName(name) || seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, name)
+		if len(out) >= maxRecipes {
+			break
+		}
+	}
+	return out
+}
+
+// isRecipeName reports whether s is a just recipe identifier.
+func isRecipeName(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r == '_':
+		case i > 0 && (r >= '0' && r <= '9' || r == '-'):
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// redactRemote strips credentials from a remote URL. Remotes enter the system
+// block, so `https://user:token@host/repo` must never reach a provider; the
+// scp form `git@host:repo` carries no secret and is kept.
+func redactRemote(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.User == nil {
+		return raw
+	}
+	u.User = nil
+	return u.String()
 }

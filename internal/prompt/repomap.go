@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/vulnetix/signet/internal/repomap"
+	"github.com/vulnetix/signet/internal/sanitize"
 )
 
 // WorkspaceBlock renders a harness-computed repository-map block for each
@@ -85,12 +86,28 @@ func RepoMapBlock(m repomap.Map) string {
 		}
 		b.WriteString("layout: " + strings.Join(dirs, " ") + "\n")
 	}
+	if len(m.JustRecipes) > 0 {
+		b.WriteString("just recipes: " + strings.Join(m.JustRecipes, " ") + "\n")
+	}
 	if len(m.AgentsFiles) > 0 {
 		var files []string
 		for _, f := range m.AgentsFiles {
 			files = append(files, fmt.Sprintf("%s(%dB)", f.Name, f.Size))
 		}
 		b.WriteString("agent files: " + strings.Join(files, " ") + "\n")
+	}
+	if len(m.Changed) > 0 {
+		// Paths and porcelain codes only — the same facts `git status` would
+		// return — so the first call can be an edit, not a status probe.
+		var rows []string
+		for _, c := range m.Changed {
+			rows = append(rows, c.Status+" "+sanitize.Sanitize(c.Path))
+		}
+		b.WriteString(fmt.Sprintf("changed (%d): %s", m.ChangedTotal, strings.Join(rows, ", ")))
+		if m.ChangedTotal > len(m.Changed) {
+			b.WriteString(", …")
+		}
+		b.WriteString("\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
