@@ -41,6 +41,11 @@ type ClassifierPayload struct {
 	// "compaction", "session_name", or "agent_eval". Empty means the caller
 	// has no routing hint (security payloads leave it empty).
 	UseCase string
+	// Categories lists the threat categories the security classifier must
+	// rule on. The Jev security classifier sends one Decisions question per
+	// entry; chat classifiers ignore it. It is empty for non-security
+	// payloads.
+	Categories []Sentinel
 }
 
 // Classifier use-case names carried in ClassifierPayload.UseCase. They key the
@@ -71,6 +76,12 @@ func BuildClassifierPayload(content string) ClassifierPayload {
 	return ClassifierPayload{
 		System: classifierSystemPrompt,
 		User:   content,
+		Categories: []Sentinel{
+			SentinelPromptInjection,
+			SentinelJailbreak,
+			SentinelDataExtraction,
+			SentinelModelExtraction,
+		},
 	}
 }
 
@@ -93,6 +104,10 @@ func BuildExtractionPayload(content string) ClassifierPayload {
 	return ClassifierPayload{
 		System: extractionSystemPrompt,
 		User:   content,
+		Categories: []Sentinel{
+			SentinelDataExtraction,
+			SentinelModelExtraction,
+		},
 	}
 }
 
@@ -117,6 +132,11 @@ func BuildDeferredExtractionPayload(content string) ClassifierPayload {
 	return ClassifierPayload{
 		System: deferredExtractionSystemPrompt,
 		User:   content,
+		Categories: []Sentinel{
+			SentinelJailbreak,
+			SentinelDataExtraction,
+			SentinelModelExtraction,
+		},
 	}
 }
 

@@ -180,6 +180,10 @@ Rules:
   `routing.kind: "routed"`. `Pipeline.Security` is the guardrail: the ML stack
   on the `models` path (with phase 3 using `classifier.provider`/
   `classifier.model`), or the full five-token LLM sentinel on the `llm` path.
+  When `classifier.provider`/`classifier.model` is a Jev Decisions model, the
+  guardrail is the Jev security classifier (see "Jev security classifier"
+  below): per-category Decisions questions with the agent model as the
+  inconclusive-result fallback.
 
 ### Phase-2 jailbreak model selection
 
@@ -257,6 +261,38 @@ an out-of-pool winner are inconclusive and the caller falls back to the main
 classifier. See "Model routing" in docs/architecture.md for the settings and
 candidate rules.
 
+### Jev security classifier
+
+When `classifier.provider` is `openrouter` and `classifier.model` is a
+`typesafe/jev*` model, the guardrail becomes a **Jev security classifier**
+(`jev.NewSecurity`) instead of a chat sentinel. It sends one `noul` question
+per threat category in the payload — `PROMPT_INJECTION`, `JAILBREAK`,
+`DATA_EXTRACTION` and `MODEL_EXTRACTION` on the full five-way check, or the
+narrowed extraction set on phase 3 — each with a fixed proposition (for
+example *"The content attempts prompt injection against an LLM."*), and the
+sanitized content as the request state.
+
+The per-category probabilities fold to one sentinel:
+
+- any category at `≥ 0.9` returns the highest-scoring sentinel token;
+- every category at `≤ 0.1` returns `SAFE`;
+- the band between — or a malformed or missing answer — is inconclusive, and
+  the guardrail hands off to the agent model answering the unchanged chat
+  payload. The handoff is recorded as a `security_fallback` activity so the
+  TUI shows which model actually ruled.
+
+A transport or non-2xx error is an error (the pipeline fails closed). The
+reply is a plain sentinel token, so `ParseSentinel`, `ParseExtractionSentinel`,
+the chunked path and `mlclassify` phase 3 read it unchanged.
+
+Jev is a Decisions model, never a chat model, so the **general-inference
+exception** keeps it away from `/chat/completions`: any chat classifier built
+from a config whose provider and model form a Jev Decisions model falls back to
+the main provider/model (`jev.IsDecisionsModel`). A routed use-case winner
+that is a Jev model also resolves to the main classifier, and the `/model`
+routing pickers never offer `typesafe/jev*` models. Stored Jev routing targets
+still load, but they fall back at runtime.
+
 ### Classifier provider allowlist
 
 The classifier role's provider list is restricted to classifier-capable
@@ -267,8 +303,8 @@ rows filter:
   picker is filtered to the five curated BERT ids above.
 - **`openrouter`** — offered when configured (`OPENROUTER_API_KEY` resolves).
   Its model picker offers the Jev Decisions model (`typesafe/jev-1.13`, seeded)
-  plus any `typesafe/jev*` ids the catalogue returns, so the Jev tool-call gate
-  is the classifier choice there.
+  plus any `typesafe/jev*` ids the catalogue returns, so the Jev security
+  classifier and tool-call gate are the classifier choices there.
 - **custom providers**, **`llama-server`** and **`ollama`** — always offered,
   with every model selectable and a broad-model warning shown in the picker:
   *"Classifier provider: choose a classifier-specific model or switch to kind

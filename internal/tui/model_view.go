@@ -709,7 +709,26 @@ func (a *App) modelPickerCatalog() (string, []models.Model) {
 	if a.modelState.pickingRole == roleClassifier && a.classifierKind() == "models" {
 		catalog = a.classifierCatalogFor(name, catalog)
 	}
+	// Routed use cases are chat activities, so the routing picker never offers
+	// Jev Decisions models (which cannot chat). Stored Jev routing targets
+	// still load, but resolve to the main model at runtime.
+	if a.modelState.pickingRole == roleRouting {
+		catalog = filterOutDecisionsModels(name, catalog)
+	}
 	return name, filterModels(catalog, a.modelState.filter)
+}
+
+// filterOutDecisionsModels drops Jev Decisions models from a routing picker
+// catalogue. Routed use cases need chat, and a Jev Decisions model cannot
+// chat: it is only ever asked Decisions questions.
+func filterOutDecisionsModels(providerName string, catalog []models.Model) []models.Model {
+	out := make([]models.Model, 0, len(catalog))
+	for _, m := range catalog {
+		if !jev.IsDecisionsModel(providerName, m.ID) {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // classifierCatalogFor restricts a provider's catalogue to the models the
@@ -742,7 +761,7 @@ func (a *App) classifierCatalogFor(providerName string, catalog []models.Model) 
 		// typesafe/jev* ids the catalogue happens to return.
 		out := []models.Model{{ID: jev.DefaultModel, Label: "tool-call gatekeeper · probability verdicts"}}
 		for _, m := range catalog {
-			if strings.HasPrefix(m.ID, "typesafe/jev") && m.ID != jev.DefaultModel {
+			if jev.IsDecisionsModel("openrouter", m.ID) && m.ID != jev.DefaultModel {
 				out = append(out, m)
 			}
 		}

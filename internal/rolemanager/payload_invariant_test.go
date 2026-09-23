@@ -38,6 +38,33 @@ func TestClassifierPayloadsAreToolSkillAgentFree(t *testing.T) {
 	}
 }
 
+// TestClassifierPayloadsCarryCategories pins the threat-category set each
+// security payload asks the Jev security classifier to rule on, so a new
+// security builder also declares its categories.
+func TestClassifierPayloadsCarryCategories(t *testing.T) {
+	cases := []struct {
+		name    string
+		payload ClassifierPayload
+		want    []Sentinel
+	}{
+		{"security", BuildClassifierPayload("untrusted tool output"), []Sentinel{SentinelPromptInjection, SentinelJailbreak, SentinelDataExtraction, SentinelModelExtraction}},
+		{"extraction", BuildExtractionPayload("untrusted tool output"), []Sentinel{SentinelDataExtraction, SentinelModelExtraction}},
+		{"deferred extraction", BuildDeferredExtractionPayload("untrusted tool output"), []Sentinel{SentinelJailbreak, SentinelDataExtraction, SentinelModelExtraction}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if len(tc.payload.Categories) != len(tc.want) {
+				t.Fatalf("Categories = %v, want %v", tc.payload.Categories, tc.want)
+			}
+			for i := range tc.want {
+				if tc.payload.Categories[i] != tc.want[i] {
+					t.Fatalf("Categories = %v, want %v", tc.payload.Categories, tc.want)
+				}
+			}
+		})
+	}
+}
+
 // TestClassifierPayloadsCarryUseCase pins the routing hint attached to every
 // role-manager activity so adding a new builder also adds a use-case value.
 func TestClassifierPayloadsCarryUseCase(t *testing.T) {

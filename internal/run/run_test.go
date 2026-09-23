@@ -2220,6 +2220,7 @@ func TestRoutedClassifierPicksWinnerAndCaches(t *testing.T) {
 
 	jevSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		jevCalls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"model":"typesafe/jev-1.13","answers":{"a":{"type":"noul","noul":0.9},"b":{"type":"noul","noul":0.1}},"usage":{}}`))
 	}))
 	defer jevSrv.Close()

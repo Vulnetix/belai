@@ -1,9 +1,10 @@
 module github.com/vulnetix/signet
 
-go 1.25
+go 1.25.10
 
 require (
 	github.com/BurntSushi/toml v1.6.0
+	github.com/OpenRouterTeam/go-sdk v0.8.22
 	github.com/alecthomas/chroma/v2 v2.27.0
 	github.com/atotto/clipboard v0.1.4
 	github.com/aymanbagabas/go-udiff v0.3.1
@@ -43,6 +44,7 @@ require (
 	github.com/nlpodyssey/spago v1.1.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rs/zerolog v1.31.0 // indirect
+	github.com/spyzhov/ajson v0.8.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/sys v0.38.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
