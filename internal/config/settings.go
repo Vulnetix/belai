@@ -77,6 +77,10 @@ type Settings struct {
 	// Classifier configures the security classifier separately from the main
 	// agent model. nil means reuse the main provider/model with reasoning off.
 	Classifier *ClassifierSettings `json:"classifier,omitempty"`
+	// Routing configures how the global provider/model serves the main turn
+	// and the non-guardrail role-manager activities. nil means "defined": one
+	// global provider/model serves everything.
+	Routing *RoutingSettings `json:"routing,omitempty"`
 	// LSP configures language-server diagnostics.
 	LSP *LSPSettings `json:"lsp,omitempty"`
 	// Sweep enables the background filesystem sweep for .vulnetix projects.
@@ -428,6 +432,60 @@ type ResilienceSettings struct {
 	// PlanExplore, when non-nil, toggles the plan-mode repository survey. nil
 	// means on (the default), so false is honoured as an explicit opt-out.
 	PlanExplore *bool `json:"plan_explore,omitempty"`
+}
+
+// RoutingKind values for RoutingSettings.Kind. "defined" is the default: one
+// global provider/model serves the main turn and every non-guardrail
+// role-manager activity. "routed" asks the Jev routing activity to select a
+// UseCases entry per use case.
+const (
+	RoutingDefined = "defined"
+	RoutingRouted  = "routed"
+)
+
+// RoutingTarget is one provider/model pair a routed use case may resolve to.
+// At least one of Provider/Model must be set; a missing field inherits the
+// global value at resolution time.
+type RoutingTarget struct {
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
+}
+
+// RoutingSettings configures how the global provider/model serves the main
+// turn and the non-guardrail role-manager activities.
+type RoutingSettings struct {
+	// Kind selects the routing mode. Empty means "defined".
+	Kind string `json:"kind,omitempty"`
+	// UseCases maps a semantic use case to its provider/model candidate.
+	// Known keys: "main", "mode_eval", "goal_eval", "plan_eval",
+	// "goal_contract", "clarify", "compaction", "session_name". Only
+	// consulted when Kind == "routed".
+	UseCases map[string]RoutingTarget `json:"use_cases,omitempty"`
+}
+
+// merge folds from over r, taking any non-zero field from from. UseCases merge
+// key-by-key so a project layer can add one candidate without restating the
+// global map.
+func (r *RoutingSettings) merge(from *RoutingSettings) {
+	if from == nil {
+		return
+	}
+	if from.Kind != "" {
+		r.Kind = from.Kind
+	}
+	if from.UseCases != nil {
+		if r.UseCases == nil {
+			r.UseCases = map[string]RoutingTarget{}
+		}
+		for k, v := range from.UseCases {
+			r.UseCases[k] = v
+		}
+	}
+}
+
+// IsZero reports whether the routing settings carry no overrides.
+func (r *RoutingSettings) IsZero() bool {
+	return r == nil || (r.Kind == "" && len(r.UseCases) == 0)
 }
 
 // MaxAttemptsOr returns MaxAttempts or the provided default.
@@ -861,6 +919,14 @@ func (s Settings) Override(proj Settings) Settings {
 		}
 		merged.merge(proj.Resilience)
 		out.Resilience = merged
+	}
+	if proj.Routing != nil {
+		merged := &RoutingSettings{}
+		if out.Routing != nil {
+			*merged = *out.Routing
+		}
+		merged.merge(proj.Routing)
+		out.Routing = merged
 	}
 	if proj.WorkspaceDirs != nil {
 		out.WorkspaceDirs = proj.WorkspaceDirs

@@ -127,6 +127,9 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	if err := ValidateLSP(eff.Settings); err != nil {
 		return eff, err
 	}
+	if err := ValidateRouting(eff.Settings); err != nil {
+		return eff, err
+	}
 
 	return eff, nil
 }
@@ -264,6 +267,13 @@ func (e *Effective) apply(s Settings, src Source) {
 		}
 		e.Settings.Resilience.merge(s.Resilience)
 		e.Origin["resilience"] = src
+	}
+	if s.Routing != nil && !s.Routing.IsZero() {
+		if e.Settings.Routing == nil {
+			e.Settings.Routing = &RoutingSettings{}
+		}
+		e.Settings.Routing.merge(s.Routing)
+		e.Origin["routing"] = src
 	}
 	if s.WorkspaceDirs != nil {
 		// Later layers replace, not append, so a project layer can narrow the
