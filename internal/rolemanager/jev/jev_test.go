@@ -142,3 +142,90 @@ func TestClassifyMalformedIsInconclusive(t *testing.T) {
 		t.Fatalf("Classify = %q, want %q", got, Inconclusive)
 	}
 }
+
+func TestSelectRoute(t *testing.T) {
+	cases := []struct {
+		name   string
+		scores map[string]float64
+		want   string
+	}{
+		{"clear winner", map[string]float64{"a": 0.9, "b": 0.1}, "a"},
+		{"tie at top", map[string]float64{"a": 0.9, "b": 0.9}, ""},
+		{"all below threshold", map[string]float64{"a": 0.4, "b": 0.1}, ""},
+		{"single at threshold", map[string]float64{"a": 0.5}, ""},
+		{"empty", map[string]float64{}, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := SelectRoute(tc.scores); got != tc.want {
+				t.Fatalf("SelectRoute(%v) = %q, want %q", tc.scores, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseRouteAnswer(t *testing.T) {
+	candidates := []Candidate{{Key: "a"}, {Key: "b"}}
+	scores, err := ParseRouteAnswer(
+		[]byte(`{"model":"typesafe/jev-1.13","answers":{"a":{"type":"noul","noul":0.9},"b":{"type":"noul","noul":0.1}},"usage":{"input_tokens":1,"output_tokens":1}}`),
+		candidates)
+	if err != nil {
+		t.Fatalf("ParseRouteAnswer: %v", err)
+	}
+	if scores["a"] != 0.9 || scores["b"] != 0.1 {
+		t.Fatalf("scores = %v", scores)
+	}
+
+	bad := []string{
+		``,
+		`{"model":"x","answers":{},"usage":{"input_tokens":1,"output_tokens":1}}`,
+		`{"model":"x","answers":{"a":{"type":"noul","noul":1.5}},"usage":{"input_tokens":1,"output_tokens":1}}`,
+	}
+	for _, in := range bad {
+		if _, err := ParseRouteAnswer([]byte(in), candidates); err == nil {
+			t.Fatalf("ParseRouteAnswer(%q) expected error", in)
+		}
+	}
+}
+
+func TestRouteSelectsUniqueWinner(t *testing.T) {
+	c := New(func() (string, error) { return "test-key", nil })
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		io.WriteString(w, `{"model":"typesafe/jev-1.13","answers":{"mode_eval":{"type":"noul","noul":0.92},"goal_eval":{"type":"noul","noul":0.03}},"usage":{"input_tokens":1,"output_tokens":1}}`)
+	}))
+	t.Cleanup(srv.Close)
+	c.endpoint = srv.URL
+
+	got, err := c.Route(context.Background(), "mode select", []Candidate{
+		{Key: "mode_eval", Provider: "openrouter", Model: "typesafe/jev-1.13"},
+		{Key: "goal_eval", Provider: "openai", Model: "gpt-5-mini"},
+	})
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if got.Key != "mode_eval" {
+		t.Fatalf("Route.Key = %q, want mode_eval (scores %v)", got.Key, got.Scores)
+	}
+	if got.Scores["mode_eval"] != 0.92 {
+		t.Fatalf("scores = %v", got.Scores)
+	}
+}
+
+func TestRouteMalformedIsInconclusive(t *testing.T) {
+	c := New(func() (string, error) { return "test-key", nil })
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		io.WriteString(w, `{"model":"x","answers":{},"usage":{"input_tokens":1,"output_tokens":1}}`)
+	}))
+	t.Cleanup(srv.Close)
+	c.endpoint = srv.URL
+
+	got, err := c.Route(context.Background(), "mode select", []Candidate{{Key: "mode_eval", Provider: "openai", Model: "gpt-5"}})
+	if err != nil {
+		t.Fatalf("Route must not error on a malformed answer: %v", err)
+	}
+	if got.Key != "" {
+		t.Fatalf("Route.Key = %q, want inconclusive", got.Key)
+	}
+}

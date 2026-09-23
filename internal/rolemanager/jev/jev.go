@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/vulnetix/signet/internal/rolemanager"
@@ -188,6 +189,143 @@ func ParseAnswer(raw []byte) (Sentinel, error) {
 		return "", fmt.Errorf("jev decisions response: noul out of range %.3f", ans.Noul)
 	}
 	return Threshold(ans.Noul), nil
+}
+
+// Candidate is one provider/model pair the Jev router may select for a use
+// case. Key is the use-case entry key (e.g. "mode_eval") and is echoed back in
+// RouteDecision.Key.
+type Candidate struct {
+	Key         string
+	Provider    string
+	Model       string
+	Description string // optional context appended to the proposition
+}
+
+// RouteDecision is the routing verdict for one use case.
+type RouteDecision struct {
+	// Key is the chosen candidate key. Empty means inconclusive; the caller
+	// falls back to the defined global provider/model.
+	Key    string
+	Scores map[string]float64 // noul probability per candidate key
+}
+
+// routeThreshold is the noul probability a candidate must exceed to be
+// selected. At or below it the answer is "probably not this candidate".
+const routeThreshold = 0.5
+
+// Route asks Jev which of candidates should serve useCase. It sends one noul
+// question per candidate — "This use case should be served by <provider>
+// <model>." — and selects the unique candidate with the highest noul above
+// 0.5. A tie at the top, or no score above 0.5, is inconclusive (empty Key).
+// A transport or non-2xx error is returned; a malformed reply is inconclusive,
+// not an error, so the caller can fail closed to the defined global model.
+func (c *Client) Route(ctx context.Context, useCase string, candidates []Candidate) (RouteDecision, error) {
+	if len(candidates) == 0 {
+		return RouteDecision{}, fmt.Errorf("jev route: no candidates")
+	}
+	token, err := c.token()
+	if err != nil {
+		return RouteDecision{}, err
+	}
+	questions := make(map[string]noulQuestion, len(candidates))
+	for _, cand := range candidates {
+		if strings.TrimSpace(cand.Key) == "" {
+			return RouteDecision{}, fmt.Errorf("jev route: empty candidate key")
+		}
+		questions[cand.Key] = noulQuestion{
+			Type:         "noul",
+			Instructions: routeInstruction(cand),
+		}
+	}
+	body, err := json.Marshal(decisionsRequest{
+		Model:     c.model,
+		Questions: questions,
+		State:     "Use case: " + useCase,
+	})
+	if err != nil {
+		return RouteDecision{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
+	if err != nil {
+		return RouteDecision{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return RouteDecision{}, err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return RouteDecision{}, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return RouteDecision{}, fmt.Errorf("jev route %s: %s", resp.Status, truncate(string(data), 200))
+	}
+	scores, err := ParseRouteAnswer(data, candidates)
+	if err != nil {
+		// A malformed answer is inconclusive, not an error: the caller fails
+		// closed to the defined global model.
+		return RouteDecision{Scores: map[string]float64{}}, nil
+	}
+	return RouteDecision{Key: SelectRoute(scores), Scores: scores}, nil
+}
+
+// routeInstruction renders the proposition Jev evaluates for one candidate.
+func routeInstruction(cand Candidate) string {
+	base := fmt.Sprintf("This use case should be served by %s %s.", cand.Provider, cand.Model)
+	if cand.Description != "" {
+		base += " " + cand.Description
+	}
+	return base
+}
+
+// ParseRouteAnswer parses a Decisions response with one answer per candidate
+// key. A malformed body, a missing answer, or a probability outside [0,1] is
+// an error, so a broken reply can never silently select a candidate.
+func ParseRouteAnswer(raw []byte, candidates []Candidate) (map[string]float64, error) {
+	var out decisionsResponse
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, fmt.Errorf("malformed jev route response: %w", err)
+	}
+	scores := make(map[string]float64, len(candidates))
+	for _, cand := range candidates {
+		ans, ok := out.Answers[cand.Key]
+		if !ok || ans.Type != "noul" {
+			return nil, fmt.Errorf("jev route response: missing answer for %q", cand.Key)
+		}
+		if ans.Noul < 0 || ans.Noul > 1 {
+			return nil, fmt.Errorf("jev route response: noul out of range %.3f for %q", ans.Noul, cand.Key)
+		}
+		scores[cand.Key] = ans.Noul
+	}
+	return scores, nil
+}
+
+// SelectRoute picks the winning candidate from the raw noul scores. It
+// returns the empty string when no candidate exceeds routeThreshold, or when
+// the top score is tied: a routing decision must be a single clear winner, and
+// anything else falls back to the defined global model.
+func SelectRoute(scores map[string]float64) string {
+	best := ""
+	bestScore := 0.0
+	tie := false
+	for key, score := range scores {
+		switch {
+		case score > bestScore:
+			best = key
+			bestScore = score
+			tie = false
+		case score == bestScore && score > 0:
+			tie = true
+		}
+	}
+	if best == "" || bestScore <= routeThreshold || tie {
+		return ""
+	}
+	return best
 }
 
 // truncate bounds an error body to a short excerpt.
