@@ -1936,7 +1936,7 @@ func TestResolveClassifierDropsForeignModelOnExplicitProvider(t *testing.T) {
 		APIKey:   "cf-aig-token",
 		Model:    "@cf/deepseek-ai/deepseek-v4-pro-0813",
 	}
-	cls := &config.ClassifierSettings{Provider: "huggingface", Model: "openrouter/free"}
+	cls := &config.ClassifierSettings{Kind: "llm", Provider: "huggingface", Model: "openrouter/free"}
 	cc, err := ResolveClassifier(main, cls, fakeSource{vals: map[string]string{"huggingface:api_key": "hf-x"}})
 	if err != nil {
 		t.Fatalf("ResolveClassifier: %v", err)
