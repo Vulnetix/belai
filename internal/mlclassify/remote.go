@@ -42,12 +42,6 @@ func newRemoteGate(phase Phase, mc ModelConfig, hfToken func() (string, error)) 
 	}
 	client := &http.Client{Timeout: 30 * time.Second}
 
-	// Fetch the tokenizer files once so windowing matches server-side
-	// tokenization. They live under the same model repo.
-	dir, err := os.MkdirTemp("", "signet-hf-tok-*")
-	if err != nil {
-		return nil, err
-	}
 	token, err := hfToken()
 	if err != nil {
 		// A token is optional for public models; the download still works
@@ -55,20 +49,43 @@ func newRemoteGate(phase Phase, mc ModelConfig, hfToken func() (string, error)) 
 		// inference call surface a 401 if it is actually required.
 		token = ""
 	}
+
+	// Fetch the tokenizer files once so windowing matches server-side
+	// tokenization. Prefer the persistent on-disk cache (populated by a
+	// previous extraction or remote fetch) so missing or 404-prone files do
+	// not break a model that already has them locally.
+	dir, err := modelCacheDir(mc.ID)
+	if err != nil {
+		return nil, err
+	}
+	// If this model is embedded and the cache is empty, seed it from the
+	// binary so the tokenizer files are available even when the upstream
+	// repo does not ship them (e.g. the jailbreak model has no vocab.txt).
+	if spec, ok := embeddedSpecFor(mc.ID); ok {
+		if _, err := os.Stat(filepath.Join(dir, "spago_model.bin")); err != nil {
+			if _, err := extractEmbedded(spec); err != nil {
+				// Non-fatal: fall through to remote fetch below.
+			}
+		}
+	}
 	for _, f := range []string{"vocab.txt", "tokenizer_config.json"} {
+		path := filepath.Join(dir, f)
+		if _, err := os.Stat(path); err == nil {
+			continue
+		}
+		if !os.IsNotExist(err) {
+			return nil, err
+		}
 		data, err := fetchHFFile(context.Background(), client, mc.ID, "main", f, token)
 		if err != nil {
-			os.RemoveAll(dir)
 			return nil, fmt.Errorf("remote model %q: fetch %s: %w", mc.ID, f, err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, f), data, 0o600); err != nil {
-			os.RemoveAll(dir)
-			return nil, err
+		if err := writeFileAtomic(path, data); err != nil {
+			return nil, fmt.Errorf("remote model %q: cache %s: %w", mc.ID, f, err)
 		}
 	}
 	tokFn, err := newWordPieceTokenizer(filepath.Join(dir, "vocab.txt"))
 	if err != nil {
-		os.RemoveAll(dir)
 		return nil, fmt.Errorf("remote model %q: %w", mc.ID, err)
 	}
 
