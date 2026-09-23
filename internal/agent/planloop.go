@@ -34,11 +34,12 @@ const defaultPlanContinuations = 5
 // wording is plan-mode, so a plan-mode turn never tells the model it is
 // pursuing a goal.
 const (
-	planPlanningDirective = "The plan has not started yet. Write a planning todo list under a 'Plan:' header (numbered steps), then begin researching the first step. Mark each step complete with [DONE:n] in your reply as you finish it."
-	// planContinuationDirective is injected when a natural-exit pass is not
-	// accepted as complete: the model stopped calling tools but the plan is
-	// not done, so it must keep going.
-	planContinuationDirective = "The plan is not complete yet. Report what remains to research and continue from the current plan todo list. Mark steps complete with [DONE:n] in your reply as you finish them."
+	planPlanningDirective = "The plan has not started yet. Write a planning todo list under a 'Plan:' header (numbered steps), then begin researching the first step. Mark each step complete with [DONE:n] in your reply as you finish it. When the plan is decision complete, call ExitPlanMode with the full plan."
+	// planBudgetNote is prefixed to a plan continuation directive when the
+	// pass that just ended spent its whole tool budget. The counter has reset
+	// for the next pass, so the model must treat the boundary as a
+	// continuation, never a stop.
+	planBudgetNote = "Your tool-call budget for that pass was reached and has been reset for this pass. "
 )
 
 // planLedger is the loop-local decision state of one plan pass loop. Like the
@@ -47,9 +48,11 @@ const (
 // ledger so no goal-mode field (or a leftover memorised goal) can leak into
 // the plan path.
 type planLedger struct {
-	passes   int
-	context  string // exploration findings shown to the plan evaluator
-	lastText string // latest assistant text of the last finished pass
+	passes    int
+	maxPasses int    // bounded ceiling, for the escalating finish-or-check-in wording
+	context   string // exploration findings shown to the plan evaluator
+	lastText  string // latest non-empty assistant text of the last finished pass
+	bestPlan  string // latest plan-shaped assistant text; the artifact fallback
 
 	// plan todo list, shared with the TUI panel.
 	list        todos.List
@@ -95,16 +98,94 @@ func (l *planLedger) turnState() string {
 	return b.String()
 }
 
-// planPartialDirective builds the continuation instruction for a PLAN_PARTIAL
-// verdict: the current plan list state when one exists, otherwise the
-// instruction to start tracking one.
-func (l *planLedger) planPartialDirective() string {
-	if l.hasList {
-		return "The plan is partially complete. Continue from the current plan todo list state:\n\n" +
-			l.list.Render() +
-			"\n\nMark steps complete with [DONE:n] in your reply as you finish them."
+// planProgress renders the tracked todo list as a one-line progress summary:
+// how many steps are done, in progress, and remaining. Empty when no list is
+// tracked yet.
+func (l *planLedger) planProgress() string {
+	if !l.hasList || len(l.list.Items) == 0 {
+		return ""
 	}
-	return "The plan is partially complete but no plan todo list is tracked yet. Write a planning todo list under a 'Plan:' header (numbered steps), then continue researching. Mark each step complete with [DONE:n] in your reply as you finish it."
+	done, active, pending := 0, 0, 0
+	for _, it := range l.list.Items {
+		switch it.Status {
+		case todos.StatusDone:
+			done++
+		case todos.StatusActive:
+			active++
+		default:
+			pending++
+		}
+	}
+	return fmt.Sprintf("Steps tracked: %d done, %d in progress, %d remaining.", done, active, pending)
+}
+
+// planUrgency renders the escalating finish-or-check-in push. The closer the
+// loop is to its bounded ceiling the harder it pushes finalisation over new
+// research, so a long planning turn converges instead of accumulating evidence.
+func (l *planLedger) planUrgency() string {
+	remaining := l.maxPasses - l.passes
+	if remaining < 0 {
+		remaining = 0
+	}
+	switch {
+	case remaining <= 1:
+		return "This is the final planning pass: finalise now. Either call ExitPlanMode with the full plan, or ask the user the one question that unblocks finalising. Do not start new research."
+	case remaining == 2:
+		return "Planning budget is nearly exhausted: resolve every open decision now. Finalise the plan (call ExitPlanMode) or check in with the user rather than continuing to explore."
+	default:
+		return "Resolve decisions as you reach them rather than accumulating research, so the plan can be finalised promptly."
+	}
+}
+
+// planSoFar returns the best available plan text for a ceiling, unproductive,
+// cancelled, or partial exit. It prefers the latest plan-shaped assistant
+// text, then the tracked todo list rendered as a numbered plan, then any
+// assistant text. It returns "" only when nothing was produced at all.
+func (l *planLedger) planSoFar() string {
+	if l.bestPlan != "" {
+		return l.bestPlan
+	}
+	if l.hasList && len(l.list.Items) > 0 {
+		var b strings.Builder
+		b.WriteString("Plan:\n")
+		for _, it := range l.list.Items {
+			fmt.Fprintf(&b, "%d. %s\n", it.N, it.Text)
+		}
+		return b.String()
+	}
+	return l.lastText
+}
+
+// planStartDirective builds the PLAN_NOT_STARTED continuation instruction.
+// exhausted reports whether the pass spent its whole tool budget.
+func (l *planLedger) planStartDirective(exhausted bool) string {
+	if exhausted {
+		return planBudgetNote + planPlanningDirective
+	}
+	return planPlanningDirective
+}
+
+// planPartialDirective builds the continuation instruction for a PLAN_PARTIAL
+// verdict: the current plan list state, a progress summary, and an escalating
+// finish-or-check-in push. exhausted reports whether the pass spent its whole
+// tool budget, in which case the model is told the counter has reset.
+func (l *planLedger) planPartialDirective(exhausted bool) string {
+	var b strings.Builder
+	if exhausted {
+		b.WriteString(planBudgetNote)
+	}
+	b.WriteString("The plan is partially complete.")
+	if p := l.planProgress(); p != "" {
+		b.WriteString(" " + p)
+	}
+	b.WriteString(" " + l.planUrgency())
+	if l.hasList {
+		b.WriteString("\n\nCurrent plan todo list:\n\n" + l.list.Render() +
+			"\n\nFold the concrete tool calls you have made (files read, commands run) into the plan's implementation stages, then continue. Mark steps complete with [DONE:n] in your reply as you finish them.")
+	} else {
+		b.WriteString(" Write a planning todo list under a 'Plan:' header (numbered steps), then continue researching. Mark each step complete with [DONE:n] in your reply as you finish it.")
+	}
+	return b.String()
 }
 
 // partialPlanResult builds the result returned on terminal error paths. The
@@ -117,8 +198,8 @@ func (l *planLedger) planPartialDirective() string {
 // so an empty or invalid plan can never be written to disk as an artifact.
 func (l *planLedger) partialPlanResult(latest string) run.Result {
 	reply := latest
-	if reply == "" {
-		reply = l.lastText
+	if !hasPlan(reply) {
+		reply = l.planSoFar()
 	}
 	if !hasPlan(reply) {
 		return run.Result{Passes: l.passes, PlanSentinel: rolemanager.PlanPartial}
@@ -157,20 +238,20 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 		maxPasses = defaultPlanContinuations
 	}
 
-	l := planLedger{context: planContext}
+	l := planLedger{context: planContext, maxPasses: maxPasses}
 
 	for {
 		// Cancellation returns the partial result cleanly, never a raw
 		// context.Canceled.
 		if err := ctx.Err(); err != nil {
-			return run.Result{Passes: l.passes}, ErrPlanLoopCancelled
+			return run.Result{Reply: l.planSoFar(), Passes: l.passes, PlanSentinel: rolemanager.PlanPartial}, ErrPlanLoopCancelled
 		}
 
 		if l.passes >= maxPasses {
 			// The bounded ceiling is a turn boundary: return the plan so far
 			// with a system note, never an error.
 			emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("plan pass loop stopped: max passes (%d) reached; returning the plan so far", maxPasses)})
-			return run.Result{Reply: l.lastText, Passes: l.passes, PlanSentinel: rolemanager.PlanPartial}, nil
+			return run.Result{Reply: l.planSoFar(), Passes: l.passes, PlanSentinel: rolemanager.PlanPartial}, nil
 		}
 
 		l.passes++
@@ -189,7 +270,11 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 		out, turns, err := s.pass(ctx, pipe, system, turns, streaming, emit, modes.ModePlan)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return run.Result{Reply: out.lastText, Usage: out.usage, PlanSentinel: rolemanager.PlanPartial, Passes: l.passes}, ErrPlanLoopCancelled
+				reply := out.lastText
+				if reply == "" {
+					reply = l.planSoFar()
+				}
+				return run.Result{Reply: reply, Usage: out.usage, PlanSentinel: rolemanager.PlanPartial, Passes: l.passes}, ErrPlanLoopCancelled
 			}
 			if !l.overflowRetried && isOverflow(err) {
 				l.overflowRetried = true
@@ -204,7 +289,12 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 		}
 
 		l.advancePlan(out.text)
-		l.lastText = out.lastText
+		if out.lastText != "" {
+			l.lastText = out.lastText
+		}
+		if hasPlan(out.lastText) {
+			l.bestPlan = out.lastText
+		}
 		if out.updatePlan != nil {
 			if !l.hasList {
 				l.list = todos.New(l.context, nil)
@@ -228,8 +318,12 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 				list := l.list
 				emit(Event{Kind: EventTodosKind, Todos: &list})
 			}
+			reply := out.lastText
+			if reply == "" {
+				reply = out.planText
+			}
 			return run.Result{
-				Reply:        out.lastText,
+				Reply:        reply,
 				Usage:        out.usage,
 				PlanSentinel: rolemanager.PlanComplete,
 				PlanText:     out.planText,
@@ -274,7 +368,7 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 			// the harness can write it to disk for review.
 			if out.productive == 0 {
 				emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("plan pass loop stopped: pass %d executed no tools; returning the plan so far", l.passes)})
-				return run.Result{Reply: l.lastText, Passes: l.passes, PlanSentinel: rolemanager.PlanPartial}, nil
+				return run.Result{Reply: l.planSoFar(), Passes: l.passes, PlanSentinel: rolemanager.PlanPartial}, nil
 			}
 		}
 
@@ -312,8 +406,12 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 				list := l.list
 				emit(Event{Kind: EventTodosKind, Todos: &list})
 			}
+			reply := out.lastText
+			if reply == "" {
+				reply = l.planSoFar()
+			}
 			return run.Result{
-				Reply:        out.lastText,
+				Reply:        reply,
 				Usage:        out.usage,
 				PlanSentinel: sentinel,
 				Passes:       l.passes,
@@ -323,10 +421,10 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 			// The explore wave already ran before the loop, so there is no
 			// forced survey here: the exploration context is already in the
 			// conversation and in l.context. Inject the planning directive.
-			turns = append(turns, directiveTurns(planPlanningDirective)...)
+			turns = append(turns, directiveTurns(l.planStartDirective(out.exhausted))...)
 
 		case rolemanager.PlanPartial:
-			turns = append(turns, directiveTurns(l.planPartialDirective())...)
+			turns = append(turns, directiveTurns(l.planPartialDirective(out.exhausted))...)
 
 		default:
 			// Unreachable: ParsePlanSentinel accepts only the three sentinels,

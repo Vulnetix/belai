@@ -16,6 +16,7 @@ import (
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/signet/internal/todos"
 	"github.com/vulnetix/signet/internal/tools"
 )
 
@@ -425,5 +426,197 @@ func TestPlanLedgerAdvancePlanBuildsAndAdvances(t *testing.T) {
 	}
 	if !l.todoChanged {
 		t.Fatal("expected todoChanged=true after an assistant marker transition")
+	}
+}
+
+// TestPlanPassLoopCeilingReturnsAccumulatedPlan pins the fix for the
+// "returning the plan so far" bug: when the bounded ceiling is hit and the
+// final pass produced only tool calls (no assistant text), the loop must still
+// return the plan the model produced earlier — and write it to disk — rather
+// than an empty reply that never materialises.
+func TestPlanPassLoopCeilingReturnsAccumulatedPlan(t *testing.T) {
+	var mu sync.Mutex
+	mainCalls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var req struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		var system string
+		for _, m := range req.Messages {
+			if m.Role == "system" {
+				system = m.Content
+			}
+		}
+		switch {
+		case strings.Contains(system, "security classifier"):
+			writeChatJSON(w, "SAFE")
+		case strings.Contains(system, "operating-mode classifier"):
+			writeChatJSON(w, "PLAN")
+		case strings.Contains(system, "plan-progress evaluator"):
+			writeChatJSON(w, "PLAN_PARTIAL")
+		default:
+			mu.Lock()
+			n := mainCalls
+			mainCalls++
+			mu.Unlock()
+			if n == 0 {
+				writeChatJSON(w, "Plan:\n1. inspect the parser\n2. refactor the parser\n")
+			} else {
+				writeToolCallJSON(w, "Read", `{"path":"f.txt"}`)
+			}
+		}
+	}))
+	defer srv.Close()
+
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
+	sess := newPlanPassSessionWithWorkdir(t, srv, true, 2, root)
+	sess.settings = config.Settings{Resilience: &config.ResilienceSettings{MaxPasses: 2}}
+
+	res, err := sess.Run(context.Background(), "write me a plan")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.PlanSentinel != "PLAN_PARTIAL" {
+		t.Fatalf("PlanSentinel = %q, want PLAN_PARTIAL", res.PlanSentinel)
+	}
+	if !strings.Contains(res.Reply, "inspect the parser") {
+		t.Fatalf("Reply = %q, want the accumulated plan", res.Reply)
+	}
+	assertPlanFileContains(t, root, "inspect the parser")
+}
+
+// TestPlanPassLoopCancellationRecordsPlanFile pins the plan-file contract on
+// the cancellation path: a deliberate esc after planning work has begun still
+// writes the plan gathered so far to disk before surfacing ErrPlanLoopCancelled.
+func TestPlanPassLoopCancellationRecordsPlanFile(t *testing.T) {
+	var mu sync.Mutex
+	mainCalls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var req struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		var system string
+		for _, m := range req.Messages {
+			if m.Role == "system" {
+				system = m.Content
+			}
+		}
+		switch {
+		case strings.Contains(system, "security classifier"):
+			writeChatJSON(w, "SAFE")
+		case strings.Contains(system, "operating-mode classifier"):
+			writeChatJSON(w, "PLAN")
+		case strings.Contains(system, "plan-progress evaluator"):
+			writeChatJSON(w, "PLAN_PARTIAL")
+		default:
+			mu.Lock()
+			n := mainCalls
+			mainCalls++
+			mu.Unlock()
+			if n == 0 {
+				writeChatJSON(w, "Plan:\n1. inspect the parser\n2. refactor the parser\n")
+			} else {
+				writeToolCallJSON(w, "Read", `{"path":"f.txt"}`)
+			}
+		}
+	}))
+	defer srv.Close()
+
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
+	sess := newPlanPassSessionWithWorkdir(t, srv, true, 3, root)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, err := sess.run(ctx, nil, TurnInput{Prompt: "write me a plan"}, false, func(e Event) {
+		if e.Kind == EventToolStartKind {
+			cancel()
+		}
+	})
+	if !errors.Is(err, ErrPlanLoopCancelled) {
+		t.Fatalf("cancellation error = %v, want ErrPlanLoopCancelled", err)
+	}
+	assertPlanFileContains(t, root, "inspect the parser")
+}
+
+// TestPlanLedgerPlanSoFarPreference pins the artifact-fallback ordering:
+// latest plan-shaped text wins, then the rendered todo list, then any
+// assistant prose.
+func TestPlanLedgerPlanSoFarPreference(t *testing.T) {
+	l := planLedger{}
+	if got := l.planSoFar(); got != "" {
+		t.Fatalf("empty ledger planSoFar = %q, want empty", got)
+	}
+
+	l.list = todos.New("", []string{"step a", "step b"})
+	l.hasList = true
+	if got := l.planSoFar(); !strings.Contains(got, "1. step a") || !strings.Contains(got, "2. step b") {
+		t.Fatalf("todo fallback = %q", got)
+	}
+
+	l.bestPlan = "Plan:\n1. the real plan"
+	if got := l.planSoFar(); got != "Plan:\n1. the real plan" {
+		t.Fatalf("bestPlan must win, got %q", got)
+	}
+
+	prose := planLedger{lastText: "plain prose"}
+	if got := prose.planSoFar(); got != "plain prose" {
+		t.Fatalf("lastText fallback = %q", got)
+	}
+}
+
+// TestPlanLedgerDirectiveEscalation pins the escalating finish-or-check-in
+// wording and the steps-taken/remaining summary the model is shown as the
+// bounded loop approaches its ceiling.
+func TestPlanLedgerDirectiveEscalation(t *testing.T) {
+	l := planLedger{maxPasses: 5, passes: 1}
+	if got := l.planUrgency(); !strings.Contains(got, "finalised promptly") {
+		t.Fatalf("early urgency = %q", got)
+	}
+
+	l.passes = 4
+	if got := l.planUrgency(); !strings.Contains(got, "final planning pass") || !strings.Contains(got, "ExitPlanMode") {
+		t.Fatalf("late urgency = %q", got)
+	}
+
+	l.passes = 1
+	l.list = todos.New("", []string{"read the parser", "write the plan"})
+	l.hasList = true
+	l.list.Items[0].Status = todos.StatusDone
+	l.list.Items[1].Status = todos.StatusActive
+	got := l.planPartialDirective(true)
+	for _, want := range []string{
+		planBudgetNote,
+		"The plan is partially complete",
+		"Steps tracked: 1 done, 1 in progress, 0 remaining",
+		"Fold the concrete tool calls you have made",
+		"Current plan todo list",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("partial directive missing %q:\n%s", want, got)
+		}
+	}
+
+	started := l.planStartDirective(true)
+	if !strings.HasPrefix(started, planBudgetNote) {
+		t.Fatalf("start directive must carry the budget note, got %q", started)
 	}
 }
