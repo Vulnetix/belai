@@ -1060,6 +1060,14 @@ unbounded-by-default behaviour, and it has no verification gate: the goal
 loop's disk re-check exists because goal mode mutates files, while plan mode
 is read-only and the user reviews the plan before executing it.
 
+The continuation directives injected after a `PLAN_PARTIAL` or
+`PLAN_NOT_STARTED` verdict escalate with the loop: they name the tracked steps
+done / in progress / remaining, push harder to finalise or check in with the
+user as the ceiling approaches, tell the model to fold the concrete tool calls
+it already made into the plan's implementation stages, and — when the pass that
+just ended exhausted its whole tool budget — state that the budget has reset
+for the next pass.
+
 ### Plan evaluator
 
 | Sentinel | Meaning | Loop response |
@@ -1090,11 +1098,11 @@ from an earlier session has no path into this payload.
 | Rule | Condition | Outcome |
 | ---- | --------- | ------- |
 | Plan complete | `PLAN_COMPLETE` (evaluator or fast path) | Success; plan list marked complete; reply is the pass's last assistant text |
-| Ceiling | `max_passes` reached | Return the plan so far with a system note — not an error |
-| Unproductive pass | A pass executed no non-withheld tool result | Return the plan so far with a warning — plan mode must always produce a file |
+| Ceiling | `max_passes` reached | Return the best plan so far (latest plan-shaped text, else the tracked todo list) with a system note — not an error |
+| Unproductive pass | A pass executed no non-withheld tool result | Return the best plan so far with a warning — plan mode must always produce a file |
 | Broken evaluator | 2 consecutive malformed evaluator replies | Error: *plan pass loop stopped: N consecutive malformed evaluator replies* |
 | Evaluator transport failure | `Classify` returns an error | Terminal |
-| Cancellation | `ctx` cancelled (`esc`, `SIGINT`) | `ErrPlanLoopCancelled` with the partial result — never a raw `context.Canceled` |
+| Cancellation | `ctx` cancelled (`esc`, `SIGINT`) | `ErrPlanLoopCancelled` with the best plan so far recorded — never a raw `context.Canceled` |
 
 ### Plan file
 
