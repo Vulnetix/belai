@@ -725,6 +725,9 @@ func New(opts Options) *App {
 		initial.Classifier = cc
 	}
 	initial.Security = run.ResolveSecurityClassifier(eff.Settings.Classifier)
+	if rc, err := run.ResolveRouting(initial, eff.Settings.Routing, run.EnvSource(os.Getenv)); err == nil {
+		initial.Routing = rc
+	}
 
 	pol := opts.Posture
 	if len(pol) == 0 {
@@ -1010,7 +1013,11 @@ func (a *App) Init() tea.Cmd {
 	// Credential resolution can probe the host keychain; run it off the first
 	// frame so the TUI paints from the env-only resolution immediately.
 	if a.resolver != nil {
-		cmds = append(cmds, a.resolveCredentialsCmd(), a.probeAvailabilityCmd())
+		// Credential resolution tells us which providers are actually
+		// configured. Run the availability probe immediately after it
+		// finishes so the model picker, footer and /providers list are
+		// current without waiting for the user to open /providers.
+		cmds = append(cmds, a.resolveCredentialsCmd())
 	} else if cmd := a.prefetchCatalogCmd(a.cfg.Provider); cmd != nil {
 		// Without a resolver the env-only provider is final, so the footer's
 		// context meter can start warming its catalogue now. With one, the
@@ -4079,6 +4086,9 @@ func (a *App) resolveCredentialsCmd() tea.Cmd {
 			cfg.Classifier = cc
 		}
 		cfg.Security = run.ResolveSecurityClassifier(cls)
+		if rc, err := run.ResolveRouting(cfg, a.settings.Routing, src); err == nil {
+			cfg.Routing = rc
+		}
 		return credentialsResolvedMsg{cfg: cfg, status: status}
 	}
 }
@@ -4113,6 +4123,12 @@ func (a *App) handleCredentialsResolved(m credentialsResolvedMsg) tea.Cmd {
 	// scales to the selected model's context window, which most providers
 	// only declare in their live catalogue.
 	cmds := []tea.Cmd{}
+	// Credential resolution can change which providers are configured, so
+	// re-probe availability immediately rather than waiting for the user to
+	// open /providers. If a probe is already in flight this is a no-op.
+	if cmd := a.availabilityCmdIfStale(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
 	if newProcWatcher != nil {
 		cmds = append(cmds, newProcWatcher)
 	}
@@ -4142,6 +4158,9 @@ func (a *App) refreshProvider() tea.Cmd {
 		cfg.Classifier = cc
 	}
 	cfg.Security = run.ResolveSecurityClassifier(a.settings.Classifier)
+	if rc, err := run.ResolveRouting(cfg, a.settings.Routing, src); err == nil {
+		cfg.Routing = rc
+	}
 	a.cfg = cfg
 	a.status = status
 	a.classifier = nil
@@ -4189,6 +4208,9 @@ func (a *App) reResolveCredentials() bool {
 		cfg.Classifier = cc
 	}
 	cfg.Security = run.ResolveSecurityClassifier(a.settings.Classifier)
+	if rc, err := run.ResolveRouting(cfg, a.settings.Routing, src); err == nil {
+		cfg.Routing = rc
+	}
 	a.cfg = cfg
 	a.status = status
 	a.classifier = nil
