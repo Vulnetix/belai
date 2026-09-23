@@ -1844,3 +1844,26 @@ func TestPrepareLabelEqualToBuiltinDoesNotShadow(t *testing.T) {
 		t.Fatalf("APIKey = %q, want the built-in openai key", cfg.APIKey)
 	}
 }
+
+// A foreign model override must also be dropped when the classifier provider is
+// explicit: a stale "openrouter/free" left behind after the classifier provider
+// moved to huggingface must never be sent to huggingface.
+func TestResolveClassifierDropsForeignModelOnExplicitProvider(t *testing.T) {
+	main := Config{
+		Provider: "cloudflare-ai-gateway",
+		BaseURL:  "https://gateway.ai.cloudflare.com/v1/acct/default/compat",
+		APIKey:   "cf-aig-token",
+		Model:    "@cf/deepseek-ai/deepseek-v4-pro-0813",
+	}
+	cls := &config.ClassifierSettings{Provider: "huggingface", Model: "openrouter/free"}
+	cc, err := ResolveClassifier(main, cls, fakeSource{vals: map[string]string{"huggingface:api_key": "hf-x"}})
+	if err != nil {
+		t.Fatalf("ResolveClassifier: %v", err)
+	}
+	if cc.Provider != "huggingface" {
+		t.Fatalf("provider = %q, want huggingface", cc.Provider)
+	}
+	if cc.Model != "" {
+		t.Fatalf("foreign model must be dropped on the explicit huggingface provider: got %q", cc.Model)
+	}
+}

@@ -154,19 +154,6 @@ func ResolveClassifier(main Config, cls *config.ClassifierSettings, src Credenti
 	}
 	if cls.Model != "" {
 		out.Model = cls.Model
-		// A model override that rides on an inherited provider must still be
-		// a model that provider can serve. The unambiguous failure is a model
-		// id namespaced to a different built-in provider — the fresh-install
-		// default "openrouter/free" left behind after the main provider moved
-		// to cloudflare-ai-gateway. Sending that id to the gateway returns a
-		// 401 and kills every classifier call (mode select, goal draft, plan
-		// eval, goal eval) at the first pass boundary. Fall back to the main
-		// model instead: it is the known-working model on the inherited
-		// provider, and an explicit classifier.provider still takes precedence
-		// below.
-		if cls.Provider == "" && !classifierModelApplies(main, cls.Model) {
-			out.Model = main.Model
-		}
 	}
 	if cls.Chunk.MaxBytesOr() > 0 {
 		out.Chunk.MaxBytes = cls.Chunk.MaxBytesOr()
@@ -194,19 +181,35 @@ func ResolveClassifier(main Config, cls *config.ClassifierSettings, src Credenti
 			out.Model = cfg.Model
 		}
 	}
+	// A model whose leading path segment is a different built-in provider can
+	// never be served by the resolved classifier provider. Drop it: fall back
+	// to the main model on an inherited provider, or the provider's own default
+	// on an explicit one. This is the stale fresh-install default
+	// ("openrouter/free") left behind after the provider moved.
+	if out.Model != "" && !classifierModelApplies(out.Provider, out.Model) {
+		if cls.Provider == "" {
+			out.Model = main.Model
+		} else {
+			out.Model = DefaultModel(out.Provider)
+		}
+	}
 	return out, nil
 }
 
-// classifierModelApplies reports whether a classifier model override may ride
-// on an inherited provider (no explicit classifier.provider). The only
-// unambiguous mismatch it rejects is a model id whose leading path segment is
-// a different built-in provider name: "openrouter/free" can never be served
-// by cloudflare-ai-gateway, anthropic, or any other provider than openrouter.
-// Un-namespaced ids ("gpt-5-mini", "claude-sonnet-4-5") and the Workers AI
-// namespace ("@cf/...") pass through because they are valid on the providers
-// that serve them and cannot be attributed to a foreign provider.
-func classifierModelApplies(main Config, model string) bool {
-	if model == "" || model == main.Model {
+// classifierModelApplies reports whether a model id may be served by a
+// classifier provider. The only unambiguous mismatch it rejects is a model id
+// whose leading path segment is a different built-in provider name:
+// "openrouter/free" can never be served by cloudflare-ai-gateway, anthropic,
+// or huggingface. Un-namespaced ids ("gpt-5-mini") and the Workers AI
+// namespace ("@cf/...") pass through, and a custom provider (which may proxy
+// any model id) is never rejected.
+func classifierModelApplies(providerName, model string) bool {
+	if model == "" {
+		return true
+	}
+	// A custom provider can serve any model id, so a namespaced id cannot be
+	// attributed to a foreign built-in provider.
+	if !provider.Builtin(providerName) {
 		return true
 	}
 	head := model
@@ -217,7 +220,7 @@ func classifierModelApplies(main Config, model string) bool {
 	if head == "" || !provider.Builtin(head) {
 		return true
 	}
-	return head == strings.ToLower(strings.TrimSpace(main.Provider))
+	return head == strings.ToLower(strings.TrimSpace(providerName))
 }
 
 // ClassifierKind resolves the effective classifier kind: an explicit setting,
@@ -266,8 +269,10 @@ func ResolveSecurityClassifier(cls *config.ClassifierSettings) SecurityClassifie
 	_, phase2Embedded := mlclassify.EmbeddedPhase2()
 	sc.Phase2Deferred = sc.Phase2 == nil && !phase2Embedded && (cls == nil || cls.Phase2.Source != "disabled")
 	// Phase 3 is opt-in and the switch is the existing provider+model choice:
-	// it runs iff both are explicitly set. No inheritance on the models path.
-	sc.Phase3On = cls != nil && cls.Provider != "" && cls.Model != ""
+	// it runs iff both are explicitly set and the model can actually be served
+	// by that provider. No inheritance on the models path.
+	sc.Phase3On = cls != nil && cls.Provider != "" && cls.Model != "" &&
+		classifierModelApplies(cls.Provider, cls.Model)
 	return sc
 }
 
