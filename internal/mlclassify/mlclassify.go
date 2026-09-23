@@ -166,6 +166,10 @@ type Options struct {
 	// and the phase-3 LLM sentinel therefore also covers JAILBREAK. It mirrors
 	// run.SecurityClassifierConfig.Phase2Deferred.
 	Phase2Deferred bool
+	// Phase3Label is the provider/model display identity of the phase-3 LLM
+	// classifier (e.g. "openrouter/typesafe/jev-1.13"), recorded to the
+	// activity feed so the TUI can show which model ran phase 3.
+	Phase3Label string
 	// HFToken resolves the HuggingFace bearer token for remote models.
 	HFToken func() (string, error)
 	// Window bounds token windowing. Zero fields take defaults.
@@ -221,12 +225,15 @@ type tokenizeFunc func(text string) []span
 // Classifier implements rolemanager.Classifier using the local models, with an
 // optional narrowed LLM (phase 3) fallback for extraction verdicts.
 type Classifier struct {
-	phase1 gate
-	phase2 gate
-	llm    rolemanager.Classifier
-	window WindowConfig
-	tok    tokenizeFunc
-	ident  string
+	phase1      gate
+	phase2      gate
+	llm         rolemanager.Classifier
+	window      WindowConfig
+	tok         tokenizeFunc
+	ident       string
+	phase1Label string
+	phase2Label string
+	phase3Label string
 	// phase2Deferred broadens the phase-3 LLM sentinel to cover JAILBREAK.
 	phase2Deferred bool
 }
@@ -242,6 +249,7 @@ func New(opts Options) (*Classifier, error) {
 		llm:            opts.Phase3,
 		window:         opts.Window,
 		ident:          opts.Identity(),
+		phase3Label:    opts.Phase3Label,
 		phase2Deferred: opts.Phase2Deferred,
 	}
 	var err error
@@ -250,12 +258,14 @@ func New(opts Options) (*Classifier, error) {
 		if err != nil {
 			return nil, fmt.Errorf("mlclassify: phase1: %w", err)
 		}
+		c.phase1Label = string(opts.Phase1.Source) + "/" + opts.Phase1.ID
 	}
 	if opts.Phase2 != nil {
 		c.phase2, err = newGate(Phase2, *opts.Phase2, opts.HFToken)
 		if err != nil {
 			return nil, fmt.Errorf("mlclassify: phase2: %w", err)
 		}
+		c.phase2Label = string(opts.Phase2.Source) + "/" + opts.Phase2.ID
 	}
 	// A single shared tokenizer drives windowing. Prefer a local gate's
 	// tokenizer; both phase models use the bert-base-uncased vocabulary, so
@@ -358,13 +368,13 @@ func (c *Classifier) Classify(ctx context.Context, p rolemanager.ClassifierPaylo
 // emitPhases records the three phase verdicts. A disabled phase 2 reports
 // "off"; a skipped phase 3 means an earlier phase already failed the content.
 func (c *Classifier) emitPhases(p1, p2 rolemanager.Sentinel, phase3 string) {
-	rolemanager.RecordSecurityPhase("phase 1", string(p1))
+	rolemanager.RecordSecurityPhase("phase 1", string(p1), c.phase1Label)
 	if c.phase2 != nil {
-		rolemanager.RecordSecurityPhase("phase 2", string(p2))
+		rolemanager.RecordSecurityPhase("phase 2", string(p2), c.phase2Label)
 	} else {
-		rolemanager.RecordSecurityPhase("phase 2", "off")
+		rolemanager.RecordSecurityPhase("phase 2", "off", c.phase2Label)
 	}
-	rolemanager.RecordSecurityPhase("phase 3", phase3)
+	rolemanager.RecordSecurityPhase("phase 3", phase3, c.phase3Label)
 }
 
 // classifyWindow runs phases 1 and 2 concurrently over one window and returns

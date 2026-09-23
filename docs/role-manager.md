@@ -173,9 +173,13 @@ Rules:
   phase-1 row shows a "set HF token / provider" hint and the phase-2 row shows
   "deferred to phase 3"; with no resolvable phase model the ML stack fails
   closed at build time.
-- **The sentinel families are untouched.** `Pipeline.Classifier` still serves
-  mode select, goal contract, clarify, plan eval, goal eval and compaction;
-  only the security path switches to `Pipeline.Security`.
+- **Role classifier vs guardrail.** `Pipeline.Classifier` serves the
+  non-guardrail role-manager activities (mode select, goal contract, clarify,
+  plan eval, goal eval, compaction, session name, agent eval) from the main
+  config under `routing.kind: "defined"`, or from the Jev-routed winner under
+  `routing.kind: "routed"`. `Pipeline.Security` is the guardrail: the ML stack
+  on the `models` path (with phase 3 using `classifier.provider`/
+  `classifier.model`), or the full five-token LLM sentinel on the `llm` path.
 
 ### Phase-2 jailbreak model selection
 

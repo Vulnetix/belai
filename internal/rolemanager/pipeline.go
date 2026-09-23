@@ -79,6 +79,10 @@ type Pipeline struct {
 	// identity prefixes verdict cache keys so verdicts produced by different
 	// classifiers never share a bucket. Empty preserves content-only keying.
 	identity string
+	// securityModelLabel is the provider/model identity of the guardrail
+	// classifier, recorded on security sentinel activities so the TUI shows
+	// which classifier ran rather than the agent model.
+	securityModelLabel string
 }
 
 // ChunkConfig bounds chunked classification of oversized content. Content over
@@ -116,6 +120,10 @@ func (p *Pipeline) SetClassifierIdentity(id string) { p.identity = id }
 // by run.NewPipelineWithRetry and keeps the oversized-content windowing choice
 // aligned with the actual guardrail classifier.
 func (p *Pipeline) SetMLSecurity(on bool) { p.mlSecurity = on }
+
+// SetSecurityModelLabel sets the provider/model identity of the guardrail
+// classifier, recorded on security sentinel activities.
+func (p *Pipeline) SetSecurityModelLabel(s string) { p.securityModelLabel = s }
 
 // classifier returns the classifier that security classification uses: the ML
 // stack when wired, else the LLM sentinel.
@@ -178,10 +186,10 @@ func (p *Pipeline) run(ctx context.Context, content, subject string) (clean stri
 
 	s, err = ParseSentinel(raw)
 	if err != nil {
-		record(EventSecuritySentinelMalformed, "", subject, "", 0)
+		recordModel(EventSecuritySentinelMalformed, "", subject, "", 0, p.securityModelLabel)
 		return clean, "", false, nil
 	}
-	record(EventSecuritySentinel, string(s), subject, "", 0)
+	recordModel(EventSecuritySentinel, string(s), subject, "", 0, p.securityModelLabel)
 	if p.Cache != nil {
 		_ = p.Cache.Put(p.cacheKey(clean), s)
 	}
