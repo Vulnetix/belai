@@ -334,8 +334,12 @@ func ResolveSecurityClassifier(cls *config.ClassifierSettings) SecurityClassifie
 	if sc.Kind != "models" {
 		return sc
 	}
-	sc.Phase1 = resolveSecurityPhase(cls, 1)
-	sc.Phase2 = resolveSecurityPhase(cls, 2)
+	// On a no-classifier binary phase 1 defaults to the known saturation model
+	// over HuggingFace when a token resolves; otherwise it has no model and the
+	// /model row shows the configure hint.
+	hfAvailable := hfTokenConfigured()
+	sc.Phase1 = resolveSecurityPhase(cls, 1, hfAvailable)
+	sc.Phase2 = resolveSecurityPhase(cls, 2, hfAvailable)
 	// Phase 2 is deferred to phase 3 when no local jailbreak gate can run:
 	// this build variant embeds no jailbreak model and no remote model was
 	// configured. On the jailbreak variant the gate is embedded but opt-in, so
@@ -354,7 +358,7 @@ func ResolveSecurityClassifier(cls *config.ClassifierSettings) SecurityClassifie
 }
 
 // resolveSecurityPhase resolves one phase gate to an mlclassify.ModelConfig.
-func resolveSecurityPhase(cls *config.ClassifierSettings, phase int) *mlclassify.ModelConfig {
+func resolveSecurityPhase(cls *config.ClassifierSettings, phase int, hfAvailable bool) *mlclassify.ModelConfig {
 	var ps config.ClassifierPhaseSettings
 	if cls != nil {
 		if phase == 1 {
@@ -390,8 +394,13 @@ func resolveSecurityPhase(cls *config.ClassifierSettings, phase int) *mlclassify
 	if model == "" {
 		if embeddedOK {
 			model = embeddedID
+		} else if phase == 1 && hfAvailable {
+			// A no-classifier binary with a HuggingFace token defaults phase 1
+			// to the known saturation model over the inference API.
+			model = phase1ModelID
 		} else {
-			// No embedded model and no explicit id: this phase has no model.
+			// No embedded model, no explicit id, and (for phase 1) no token:
+			// this phase has no model.
 			return nil
 		}
 	}
@@ -1099,11 +1108,17 @@ func PreloadClassifier(sc SecurityClassifierConfig) error {
 	if sc.Kind != "models" {
 		return nil
 	}
-	// No local phase model resolves on this binary (no embedded model and no
-	// remote phase configured). There is nothing embedded to load or verify,
-	// so this is not the embedded-model failure PreloadClassifier exists to
-	// catch — do not block startup. The pipeline still fails closed at use
-	// time and the /model phase rows show the configure hint.
+	// Eagerly load and verify only embedded models. A variant binary whose
+	// embedded model fails to load or verify is a hard startup error. Remote
+	// phase models fetch their tokenizer at pipeline construction, never here,
+	// so a no-classifier binary with a HuggingFace token does not block startup
+	// on a network fetch.
+	if sc.Phase1 != nil && sc.Phase1.Source != mlclassify.SourceEmbedded {
+		sc.Phase1 = nil
+	}
+	if sc.Phase2 != nil && sc.Phase2.Source != mlclassify.SourceEmbedded {
+		sc.Phase2 = nil
+	}
 	if sc.Phase1 == nil && sc.Phase2 == nil {
 		return nil
 	}
@@ -1120,6 +1135,14 @@ func envHFToken() (string, error) {
 		return "", nil
 	}
 	return token, nil
+}
+
+// hfTokenConfigured reports whether a HuggingFace token resolves from the
+// environment. It gates the no-classifier phase-1 default: without a token the
+// phase has no model and the /model row shows the configure hint.
+func hfTokenConfigured() bool {
+	token, _ := envHFToken()
+	return token != ""
 }
 
 // SealSystem builds and seals the system prompt from trusted harness blocks.

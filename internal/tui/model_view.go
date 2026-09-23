@@ -617,25 +617,32 @@ func (a *App) modelPickerCatalog() (string, []models.Model) {
 		return name, nil
 	}
 	catalog := a.catalogFor(name)
-	if a.modelState.pickingRole == roleClassifier {
+	// The classifier-only filter (curated BERT ids on huggingface, Jev on
+	// openrouter) applies to the models path, where the picker offers
+	// classifier-appropriate models. On the llm path the classifier is the LLM
+	// sentinel, so the provider's full chat catalogue stays selectable.
+	if a.modelState.pickingRole == roleClassifier && a.classifierKind() == "models" {
 		catalog = a.classifierCatalogFor(name, catalog)
 	}
 	return name, filterModels(catalog, a.modelState.filter)
 }
 
 // classifierCatalogFor restricts a provider's catalogue to the models the
-// classifier role may pick. It is a UX filter, not a security boundary:
-// run.Prepare remains the fail-closed gate on actually using a model.
+// classifier role may pick on the models path. It is a UX filter, not a
+// security boundary: run.Prepare remains the fail-closed gate on actually
+// using a model.
 func (a *App) classifierCatalogFor(providerName string, catalog []models.Model) []models.Model {
 	switch providerName {
 	case "huggingface":
-		known := make(map[string]bool, len(mlclassify.ClassifierModelIDs()))
+		// The five curated BERT classifier ids are seeded first so the picker
+		// is never empty (huggingface has no static chat catalogue), then any
+		// matching entries the live catalogue happens to return.
+		out := make([]models.Model, 0, len(mlclassify.ClassifierModelIDs()))
 		for _, id := range mlclassify.ClassifierModelIDs() {
-			known[id] = true
+			out = append(out, models.Model{ID: id})
 		}
-		out := make([]models.Model, 0, len(catalog))
 		for _, m := range catalog {
-			if known[m.ID] {
+			if mlclassify.IsKnownClassifierModel(m.ID) && indexOfModel(out, m.ID) < 0 {
 				out = append(out, m)
 			}
 		}

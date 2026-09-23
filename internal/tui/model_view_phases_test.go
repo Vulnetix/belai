@@ -322,3 +322,44 @@ func TestClassifierProviderListOpenRouterWithResolver(t *testing.T) {
 		t.Fatalf("openrouter must appear for the classifier role when configured via the resolver, got %v", got)
 	}
 }
+
+func TestModelRowsPhase1HuggingFaceDefaultWithToken(t *testing.T) {
+	t.Setenv("HF_TOKEN", "hf-x")
+	t.Setenv("HUGGINGFACE_TOKEN", "")
+	a := modelScreen(t)
+	a.settings.Classifier = &config.ClassifierSettings{Kind: "models"}
+
+	p1, ok := rowByKey(a.modelRows(), "phase1")
+	if !ok {
+		t.Fatal("phase1 row missing")
+	}
+	if strings.Contains(p1.value, "no HuggingFace key") {
+		t.Fatalf("phase1 row = %q, must not say 'no HuggingFace key' when HF_TOKEN is set", p1.value)
+	}
+	if !strings.Contains(p1.value, "GuardrailsAI/prompt-saturation-attack-detector") ||
+		!strings.Contains(p1.value, "huggingface") {
+		t.Fatalf("phase1 row = %q, want the default saturation model via huggingface", p1.value)
+	}
+}
+
+func TestModelPickerLLMKindShowsFullCatalog(t *testing.T) {
+	a := modelScreen(t)
+	a.settings.Classifier = &config.ClassifierSettings{Kind: "llm", Provider: "openrouter"}
+	a.modelState.picking = true
+	a.modelState.pickingRole = roleClassifier
+
+	name, catalog := a.modelPickerCatalog()
+	if name != "openrouter" {
+		t.Fatalf("picker name = %q, want openrouter", name)
+	}
+	// The llm-kind classifier is the LLM sentinel: the full chat catalogue must
+	// be selectable, not the Jev-only filtered list.
+	if len(catalog) < 2 {
+		t.Fatalf("llm-kind classifier catalogue = %v, want the full openrouter chat catalogue", catalog)
+	}
+	for _, m := range catalog {
+		if m.ID == jev.DefaultModel {
+			t.Fatalf("llm-kind classifier catalogue must not be filtered to Jev: %v", catalog)
+		}
+	}
+}
