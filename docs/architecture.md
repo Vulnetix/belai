@@ -182,11 +182,17 @@ Business rules and edge cases:
 
 - **"defined" mode is the default.** A missing block or `"kind": "defined"`
   means the main provider/model serves every role-manager activity, exactly as
-  before.
-- **"routed" mode resolves per activity.** Each payload builder tags its
-  `ClassifierPayload.UseCase`; the resolver looks up that key in
-  `routing.use_cases` and falls back to the global provider/model when the key
-  is missing or the candidate is invalid.
+  before. `ResolveRouting` returns no candidates and the classifier path is the
+  plain main classifier.
+- **"routed" mode selects per activity through Jev.** Each payload builder tags
+  its `ClassifierPayload.UseCase`. On the first call for a use case, the Jev
+  Decisions API (`jev.Client.Route`) scores the `routing.use_cases` candidates
+  against the use case and `jev.SelectRoute` picks the single highest-scoring
+  candidate; the winner is cached for the session and later calls for that use
+  case reuse it. An empty use case resolves as `main`. A transport error, an
+  inconclusive verdict (no unique winner), or a winner missing from the pool
+  falls back to the defined main classifier — routing degrades to the main
+  model, never to a dropped turn.
 - **Use-case keys are the single source of truth.** The known keys are
   `main`, `mode_eval`, `goal_eval`, `plan_eval`, `goal_contract`, `clarify`,
   `compaction`, `session_name`, and `agent_eval`. Unknown keys may be stored

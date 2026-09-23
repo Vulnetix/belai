@@ -47,6 +47,8 @@ The architecture overview lives in [architecture.md](architecture.md).
 | Banner | `internal/tui` | Pix owl rendered with half-blocks, ASCII fallback | Live |
 | Settings UI | `internal/tui` | /settings browser (write-through) + /permissions editor | Live |
 | Model picker | `internal/tui` | /model provider tabs, model list, effort, scope | Live |
+| Jev tool-call gate | `internal/rolemanager/jev` | Decisions-API probability verdict (ALLOW/DENY/INCONCLUSIVE) for a tool call, plus the per-use-case model router | Live |
+| Model routing | `internal/config` + `internal/run` + `internal/rolemanager` | Per-use-case provider/model selection, statically defined or Jev-routed | Live |
 | Session store | `internal/session` | Append-only JSONL; TUI owns a live session; /compact forks | Live |
 | Context metering | `internal/transcript` + `internal/modelinfo` | Hybrid usage accounting with context-window registry | Live |
 | Streaming tool calls | `internal/tui` | Render tool-use deltas in the TUI stream | Live |
@@ -242,6 +244,14 @@ missing answer is `INCONCLUSIVE`, not a block in itself: the caller fails
 closed on an inconclusive verdict. A transport or non-2xx error is an error.
 The gate turn carries no tools, skills, or agent block, exactly like the
 security classifier turn.
+
+The same Jev client also backs **model routing** (`jev.Client.Route` +
+`jev.SelectRoute`): under `routing.kind: "routed"`, Signet sends the configured
+use-case candidates to Jev as a `choice` question and Jev returns a probability
+per candidate. `SelectRoute` picks the single highest-scoring candidate; ties or
+an out-of-pool winner are inconclusive and the caller falls back to the main
+classifier. See "Model routing" in docs/architecture.md for the settings and
+candidate rules.
 
 ### Classifier provider allowlist
 
