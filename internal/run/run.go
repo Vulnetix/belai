@@ -88,6 +88,11 @@ type SecurityClassifierConfig struct {
 	// Phase1 and Phase2 configure the two local gates; nil disables that gate.
 	Phase1 *mlclassify.ModelConfig
 	Phase2 *mlclassify.ModelConfig
+	// Phase2Deferred reports that the jailbreak gate is not running locally
+	// (this build variant has no embedded jailbreak model and no remote model
+	// was configured) and its JAILBREAK responsibility is deferred to phase 3.
+	// It is false when the user explicitly set phase2.source: "disabled".
+	Phase2Deferred bool
 	// Phase3On reports whether phase 3 is enabled: on the models path, a
 	// classifier provider and model are both explicitly set.
 	Phase3On bool
@@ -215,6 +220,15 @@ func ResolveSecurityClassifier(cls *config.ClassifierSettings) SecurityClassifie
 	}
 	sc.Phase1 = resolveSecurityPhase(cls, 1)
 	sc.Phase2 = resolveSecurityPhase(cls, 2)
+	// Phase 2 is deferred to phase 3 when no local jailbreak gate can run:
+	// this build variant embeds no jailbreak model and no remote model was
+	// configured. On the jailbreak variant the gate is embedded but opt-in, so
+	// an unset phase 2 is "available but off" (disabled), never deferred — the
+	// user can turn it on locally. An explicit source: "disabled" is also not
+	// deferred: it is a deliberate turn-off, so JAILBREAK is not handed to
+	// phase 3.
+	_, phase2Embedded := mlclassify.EmbeddedPhase2()
+	sc.Phase2Deferred = sc.Phase2 == nil && !phase2Embedded && (cls == nil || cls.Phase2.Source != "disabled")
 	// Phase 3 is opt-in and the switch is the existing provider+model choice:
 	// it runs iff both are explicitly set. No inheritance on the models path.
 	sc.Phase3On = cls != nil && cls.Provider != "" && cls.Model != ""
@@ -933,7 +947,7 @@ func NewPipelineWithRetry(cfg Config, client *http.Client, cache *rolemanager.Ca
 			sec = ml
 		}
 		p.Security = sec
-		p.SetClassifierIdentity(mlclassify.OptionsIdentity(cfg.Security.Phase1, cfg.Security.Phase2, cfg.Security.Phase3On))
+		p.SetClassifierIdentity(mlclassify.OptionsIdentity(cfg.Security.Phase1, cfg.Security.Phase2, cfg.Security.Phase3On, cfg.Security.Phase2Deferred))
 	}
 	return p
 }
@@ -950,10 +964,11 @@ func (f failingClassifier) Classify(context.Context, rolemanager.ClassifierPaylo
 // resolved security config. phase3 is the narrowed LLM sentinel, or nil.
 func buildSecurityClassifier(sc SecurityClassifierConfig, phase3 rolemanager.Classifier) (*mlclassify.Classifier, error) {
 	opts := mlclassify.Options{
-		Phase1:  sc.Phase1,
-		Phase2:  sc.Phase2,
-		Phase3:  phase3,
-		HFToken: envHFToken,
+		Phase1:         sc.Phase1,
+		Phase2:         sc.Phase2,
+		Phase3:         phase3,
+		Phase2Deferred: sc.Phase2Deferred,
+		HFToken:        envHFToken,
 	}
 	return mlclassify.New(opts)
 }

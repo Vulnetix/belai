@@ -161,6 +161,11 @@ type Options struct {
 	// Phase3 is the narrowed LLM classifier covering DATA_EXTRACTION and
 	// MODEL_EXTRACTION only. nil disables phase 3.
 	Phase3 rolemanager.Classifier
+	// Phase2Deferred reports that no local jailbreak gate runs (this build
+	// variant has no embedded phase-2 model and no remote one was configured)
+	// and the phase-3 LLM sentinel therefore also covers JAILBREAK. It mirrors
+	// run.SecurityClassifierConfig.Phase2Deferred.
+	Phase2Deferred bool
 	// HFToken resolves the HuggingFace bearer token for remote models.
 	HFToken func() (string, error)
 	// Window bounds token windowing. Zero fields take defaults.
@@ -179,21 +184,22 @@ func (o Options) Identity() string {
 		fmt.Fprintf(&b, ";phase2=%s@%s:%.3f", o.Phase2.ID, o.Phase2.Source, o.Phase2.effectiveThreshold(Phase2))
 	}
 	fmt.Fprintf(&b, ";phase3=%t", o.Phase3 != nil)
+	fmt.Fprintf(&b, ";phase2deferred=%t", o.Phase2Deferred)
 	return b.String()
 }
 
 // OptionsIdentity returns the verdict-cache identity string for a classifier
-// stack described by the two phase configs and phase-3 on/off, without
-// building the classifier. It lets the pipeline key the cache consistently
-// even when the classifier itself failed to build.
-func OptionsIdentity(phase1, phase2 *ModelConfig, phase3On bool) string {
+// stack described by the two phase configs, phase-3 on/off and the phase-2
+// deferred flag, without building the classifier. It lets the pipeline key the
+// cache consistently even when the classifier itself failed to build.
+func OptionsIdentity(phase1, phase2 *ModelConfig, phase3On, phase2Deferred bool) string {
 	var phase3 rolemanager.Classifier
 	if phase3On {
 		phase3 = rolemanager.ClassifierFunc(func(context.Context, rolemanager.ClassifierPayload) (string, error) {
 			return "", nil
 		})
 	}
-	return Options{Phase1: phase1, Phase2: phase2, Phase3: phase3}.Identity()
+	return Options{Phase1: phase1, Phase2: phase2, Phase3: phase3, Phase2Deferred: phase2Deferred}.Identity()
 }
 
 // gate runs one local model over a single already-windowed text.
@@ -221,6 +227,8 @@ type Classifier struct {
 	window WindowConfig
 	tok    tokenizeFunc
 	ident  string
+	// phase2Deferred broadens the phase-3 LLM sentinel to cover JAILBREAK.
+	phase2Deferred bool
 }
 
 // New builds a Classifier from opts. It resolves each configured gate to its
@@ -231,9 +239,10 @@ func New(opts Options) (*Classifier, error) {
 		return nil, fmt.Errorf("mlclassify: no phase configured")
 	}
 	c := &Classifier{
-		llm:    opts.Phase3,
-		window: opts.Window,
-		ident:  opts.Identity(),
+		llm:            opts.Phase3,
+		window:         opts.Window,
+		ident:          opts.Identity(),
+		phase2Deferred: opts.Phase2Deferred,
 	}
 	var err error
 	if opts.Phase1 != nil {
@@ -396,20 +405,31 @@ func (c *Classifier) classifyWindow(ctx context.Context, window string) (roleman
 	return p1, p2, nil
 }
 
-// phase3 runs the narrowed LLM sentinel covering DATA_EXTRACTION and
-// MODEL_EXTRACTION only. It returns the parsed sentinel and the status word
+// phase3 runs the narrowed LLM sentinel. With a local jailbreak gate it
+// covers DATA_EXTRACTION and MODEL_EXTRACTION only; when phase 2 is deferred
+// it also covers JAILBREAK. It returns the parsed sentinel and the status word
 // the feed shows. A malformed reply (including an out-of-scope token such as
 // PROMPT_INJECTION) is inconclusive, not a verdict: phases 1 and 2 already
-// ruled on injection and jailbreak, and phase 3 is an opt-in supplement for
-// the two extraction categories only, so an inconclusive reply must not block
-// content the primary gates cleared. The feed still records the phase as
-// "malformed" so the TUI shows "couldn't tell".
+// ruled on injection and jailbreak, and phase 3 is an opt-in supplement, so an
+// inconclusive reply must not block content the primary gates cleared. The
+// feed still records the phase as "malformed" so the TUI shows "couldn't tell".
 func (c *Classifier) phase3(ctx context.Context, content string) (string, string, error) {
-	raw, err := c.llm.Classify(ctx, rolemanager.BuildExtractionPayload(content))
+	var raw string
+	var err error
+	if c.phase2Deferred {
+		raw, err = c.llm.Classify(ctx, rolemanager.BuildDeferredExtractionPayload(content))
+	} else {
+		raw, err = c.llm.Classify(ctx, rolemanager.BuildExtractionPayload(content))
+	}
 	if err != nil {
 		return "", "", err
 	}
-	s, err := rolemanager.ParseExtractionSentinel(raw)
+	var s rolemanager.Sentinel
+	if c.phase2Deferred {
+		s, err = rolemanager.ParseDeferredExtractionSentinel(raw)
+	} else {
+		s, err = rolemanager.ParseExtractionSentinel(raw)
+	}
 	if err != nil {
 		return string(rolemanager.SentinelSafe), "malformed", nil
 	}

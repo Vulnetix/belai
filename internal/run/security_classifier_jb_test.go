@@ -26,6 +26,11 @@ func TestResolveSecurityClassifierPhase2OptInWhenEmbedded(t *testing.T) {
 	if sc.Phase2 != nil {
 		t.Fatalf("phase2 must default to disabled even when embedded, got %+v", sc.Phase2)
 	}
+	// The jailbreak variant embeds the phase-2 model, so an unset phase 2 is
+	// "available but off", never deferred to phase 3.
+	if sc.Phase2Deferred {
+		t.Fatal("embedded jailbreak gate must not be deferred to phase 3")
+	}
 
 	enabled := ResolveSecurityClassifier(&config.ClassifierSettings{
 		Kind:   "models",
@@ -40,5 +45,8 @@ func TestResolveSecurityClassifierPhase2OptInWhenEmbedded(t *testing.T) {
 	}
 	if got := enabled.Phase2.ThresholdOr(mlclassify.Phase2); got != mlclassify.JailbreakDefaultThreshold {
 		t.Fatalf("phase2 default threshold = %.2f, want %.2f", got, mlclassify.JailbreakDefaultThreshold)
+	}
+	if enabled.Phase2Deferred {
+		t.Fatal("an enabled embedded jailbreak gate must not be deferred")
 	}
 }

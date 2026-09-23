@@ -672,3 +672,19 @@ func TestModelKeyTogglesAgentGuardrails(t *testing.T) {
 		t.Fatal("clearing guardrails should restore the default (on)")
 	}
 }
+
+func TestClassifierPickerWarningBroadProvider(t *testing.T) {
+	a := modelScreen(t)
+	a.modelState.picking = true
+	a.modelState.pickingRole = roleClassifier
+
+	a.settings.Classifier = &config.ClassifierSettings{Kind: "models", Provider: "ollama", Model: "qwen2.5"}
+	if out := a.modelPicker(); !strings.Contains(out, "Classifier provider: choose a classifier-specific model") {
+		t.Fatalf("ollama classifier picker missing broad-model warning:\n%s", out)
+	}
+
+	a.settings.Classifier = &config.ClassifierSettings{Kind: "models", Provider: "huggingface", Model: "GuardrailsAI/prompt-saturation-attack-detector"}
+	if out := a.modelPicker(); strings.Contains(out, "Classifier provider:") {
+		t.Fatalf("huggingface classifier picker must not show the broad-model warning:\n%s", out)
+	}
+}

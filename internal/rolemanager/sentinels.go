@@ -158,6 +158,24 @@ func ParseExtractionSentinel(raw string) (Sentinel, error) {
 	return Sentinel(s), nil
 }
 
+// ParseDeferredExtractionSentinel parses a phase-3 classifier reply when the
+// jailbreak gate is deferred to phase 3. It accepts the four tokens the
+// deferred extraction prompt names — SAFE, JAILBREAK, DATA_EXTRACTION,
+// MODEL_EXTRACTION — and rejects everything else, including PROMPT_INJECTION,
+// which stays out of scope because phase 1 is always local on the models path.
+func ParseDeferredExtractionSentinel(raw string) (Sentinel, error) {
+	s, err := matchSentinel(raw, []string{
+		string(SentinelSafe),
+		string(SentinelJailbreak),
+		string(SentinelDataExtraction),
+		string(SentinelModelExtraction),
+	})
+	if err != nil {
+		return "", fmt.Errorf("malformed classifier output %q: want a single sentinel token", raw)
+	}
+	return Sentinel(s), nil
+}
+
 // NormalizeSentinelReply is the exported form of normalizeSentinelReply. It is
 // used by verdict grammars outside this package (for example the Jev tool-call
 // gate) so every sentinel parser strips the same reasoning blocks, fences,
