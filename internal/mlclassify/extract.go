@@ -25,6 +25,20 @@ func modelsRoot() (string, error) {
 	return filepath.Join(dir, "models"), nil
 }
 
+// modelCacheDir returns the on-disk cache directory for a HuggingFace model id,
+// creating it if necessary.
+func modelCacheDir(id string) (string, error) {
+	root, err := modelsRoot()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(root, modelFileName(id))
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("create model cache dir %q: %w", dir, err)
+	}
+	return dir, nil
+}
+
 // extractEmbedded extracts an embedded model directory to disk once and
 // returns the on-disk directory path. Extraction is idempotent: if the four
 // required files are already present they are reused, so a warm start never
