@@ -149,3 +149,96 @@ func TestSettingsMaxAgentsPersistsAndReloads(t *testing.T) {
 		t.Fatalf("max_agents row after edit = %q, want 12", row.value)
 	}
 }
+
+// TestSettingsMaxAgentsResizesLivePool: the edit must reach the running
+// session's fan-out ceiling, not only the settings file.
+func TestSettingsMaxAgentsResizesLivePool(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	if got := a.agentPool.Size(); got != config.DefaultMaxAgents {
+		t.Fatalf("initial pool size = %d, want %d", got, config.DefaultMaxAgents)
+	}
+	a.push(viewSettings)
+	a.settingsState.scope = config.ScopeProject
+	_, idx := settingsRowByKey(a, "max_agents")
+	a.settingsState.selected = idx
+	a.settingsState.editMode = true
+	a.editor.SetValue("7")
+	m, _ := a.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	a = m.(*App)
+	if got := a.agentPool.Size(); got != 7 {
+		t.Fatalf("pool size after edit = %d, want 7", got)
+	}
+}
+
+// TestSettingsGlobalEditShadowedByProjectExplains is the "I changed it and
+// it never stuck" report: a global edit under a project override persists,
+// and the screen says which layer wins instead of silently showing the old
+// value.
+func TestSettingsGlobalEditShadowedByProjectExplains(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	workdir := t.TempDir()
+	if err := config.Mutate(config.ScopeProject, workdir, func(s *config.Settings) error {
+		s.Resilience = &config.ResilienceSettings{MaxAgents: 30}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	a := New(Options{Workdir: workdir})
+	a.push(viewSettings)
+	m, _ := a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	a = m.(*App)
+	if a.settingsState.scope != config.ScopeGlobal {
+		t.Fatalf("scope = %v, want global after s", a.settingsState.scope)
+	}
+	_, idx := settingsRowByKey(a, "max_agents")
+	a.settingsState.selected = idx
+	a.settingsState.editMode = true
+	a.editor.SetValue("20")
+	m, _ = a.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	a = m.(*App)
+
+	global, err := config.LoadGlobal()
+	if err != nil {
+		t.Fatalf("LoadGlobal: %v", err)
+	}
+	if global.Resilience == nil || global.Resilience.MaxAgents != 20 {
+		t.Fatalf("global max_agents not persisted: %+v", global.Resilience)
+	}
+	if !strings.Contains(a.settingsState.notice, "project wins") {
+		t.Fatalf("notice = %q, want it to name the winning project layer", a.settingsState.notice)
+	}
+
+	// Reopening /settings keeps the scope the user chose.
+	a.pop()
+	a.handleCommand("/settings")
+	if a.settingsState.scope != config.ScopeGlobal {
+		t.Fatalf("reopened scope = %v, want the chosen global scope", a.settingsState.scope)
+	}
+}
+
+// TestReadOnlyNoticeNamesSourceAndScope: the read_only setting must never be
+// a silent reason agent mode cannot write.
+func TestReadOnlyNoticeNamesSourceAndScope(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	workdir := t.TempDir()
+	on := true
+	if err := config.Mutate(config.ScopeProject, workdir, func(s *config.Settings) error {
+		s.ReadOnly = &on
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	a := New(Options{Workdir: workdir})
+	note := a.readOnlyNotice()
+	if !strings.Contains(note, "project") || !strings.Contains(note, "goal mode and approved plans are unaffected") {
+		t.Fatalf("notice = %q", note)
+	}
+
+	a.planExecuting = true
+	a.mode = "goal"
+	a.cycleMode()
+	if a.planExecuting {
+		t.Fatal("changing mode must end plan execution")
+	}
+}

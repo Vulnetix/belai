@@ -17,8 +17,14 @@ import (
 type settingsViewState struct {
 	selected int
 	scope    config.Scope
-	editMode bool
-	errorMsg string
+	// scopeChosen records that the user picked the scope with `s` this
+	// session, so reopening /settings keeps it instead of snapping back to
+	// project.
+	scopeChosen bool
+	editMode    bool
+	errorMsg    string
+	// notice explains a saved edit that a higher settings layer shadows.
+	notice string
 }
 
 // settingsRow is one declarative settings-browser row.
@@ -73,6 +79,8 @@ func (a *App) settingsView() string {
 
 	if a.settingsState.errorMsg != "" {
 		b.WriteString("\n" + components.DangerStyle.Render("✗ "+a.settingsState.errorMsg) + "\n")
+	} else if a.settingsState.notice != "" {
+		b.WriteString("\n" + components.WarnStyle.Render("! "+a.settingsState.notice) + "\n")
 	}
 
 	if a.settingsState.editMode {
@@ -221,6 +229,7 @@ func (a *App) handleSettingsKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			a.settingsState.editMode = false
 			a.settingsState.errorMsg = ""
+			a.settingsState.notice = a.shadowNotice(row.key)
 			if row.key == "provider" || row.key == "model" {
 				return a, a.syncProviderFromSettings()
 			}
@@ -251,6 +260,8 @@ func (a *App) handleSettingsKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			a.settingsState.scope = config.ScopeGlobal
 		}
+		a.settingsState.scopeChosen = true
+		a.settingsState.notice = ""
 		return a, nil
 	case "x":
 		rows := a.settingsRows()
@@ -285,6 +296,7 @@ func (a *App) handleSettingsKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 				a.settingsState.errorMsg = err.Error()
 			} else {
 				a.settingsState.errorMsg = ""
+				a.settingsState.notice = a.shadowNotice(row.key)
 			}
 			return a, nil
 		case "choose":
@@ -292,6 +304,7 @@ func (a *App) handleSettingsKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 				a.settingsState.errorMsg = err.Error()
 			} else {
 				a.settingsState.errorMsg = ""
+				a.settingsState.notice = a.shadowNotice(row.key)
 			}
 			return a, nil
 		case "text":
@@ -572,4 +585,49 @@ func (a *App) isProviderName(name string) bool {
 		}
 	}
 	return false
+}
+
+// readOnlyNotice returns the system line shown when agent mode runs with the
+// read_only setting on, naming the settings layer that turned it on, or "".
+// Sessions showed agent turns silently unable to write or test because a
+// project file had read_only set; the notice makes that visible, and it says
+// what is unaffected so the user knows goal mode is the way through.
+func (a *App) readOnlyNotice() string {
+	if !a.settings.ReadOnlyEnabled() {
+		return ""
+	}
+	return fmt.Sprintf("read-only tools: on (%s) — agent mode has no Write/Edit and Bash is allowlisted; goal mode and approved plans are unaffected", sourceLabel(a.eff.Origin["read_only"]))
+}
+
+// sourceRank orders settings layers by precedence, lowest first.
+var sourceRank = map[string]int{
+	string(config.SourceDefault):      0,
+	string(config.SourceState):        1,
+	string(config.SourceGlobal):       2,
+	string(config.SourceProjectPrefs): 3,
+	string(config.SourceProject):      4,
+	string(config.SourceEnv):          5,
+	string(config.SourceFlag):         6,
+}
+
+// shadowNotice explains a just-saved /settings edit that did not take effect
+// because a higher-precedence layer sets the same key — the "I changed it and
+// it didn't stick" report. It reads the row's provenance after the reload, so
+// it names the layer that actually won and the value in force. It returns ""
+// when the edit is what the row now shows.
+func (a *App) shadowNotice(key string) string {
+	written := string(config.SourceProject)
+	if a.settingsState.scope == config.ScopeGlobal {
+		written = string(config.SourceGlobal)
+	}
+	for _, row := range a.settingsRows() {
+		if row.key != key {
+			continue
+		}
+		if sourceRank[row.src] > sourceRank[written] {
+			return fmt.Sprintf("%s: saved to %s, but %s wins (%s) — edit it there or switch scope with s", row.label, written, row.src, strings.TrimSpace(row.value))
+		}
+		return ""
+	}
+	return ""
 }
