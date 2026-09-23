@@ -1254,20 +1254,78 @@ func TestEvaluateGoalPassStreakAndGracefulStop(t *testing.T) {
 	}
 }
 
-// A transport failure leaves the verdict unknown, and an unknown verdict must
-// not grant compute: it is terminal, not a graceful stop.
-func TestEvaluateGoalPassTransportFailureIsTerminal(t *testing.T) {
+// A transport failure leaves the verdict unknown, so the loop fails closed to
+// GOAL_PARTIAL rather than throwing the run away. Consecutive failures are
+// counted, and the streak stops the loop gracefully with the work so far — a
+// permanently unreachable evaluator must not grant unbounded passes.
+func TestEvaluateGoalPassTransportFailureFailsClosedThenStops(t *testing.T) {
 	pipe := &rolemanager.Pipeline{Classifier: rolemanager.ClassifierFunc(
 		func(_ context.Context, _ rolemanager.ClassifierPayload) (string, error) {
-			return "", context.DeadlineExceeded
+			return "", errors.New("provider returned 401: no cookie auth credentials found")
 		})}
 	sess := &Session{}
 	l := passLedger{goalText: "g"}
-	_, stop, err := sess.evaluateGoalPass(context.Background(), pipe, &l, "evidence", func(Event) {})
-	if err == nil {
-		t.Fatal("a transport failure must be returned as an error")
+
+	got, stop, err := sess.evaluateGoalPass(context.Background(), pipe, &l, "evidence", func(Event) {})
+	if err != nil {
+		t.Fatalf("one transport failure must not abort the run: %v", err)
 	}
 	if stop {
-		t.Fatal("a transport failure is terminal, not a graceful stop")
+		t.Fatal("one transport failure must not stop the loop")
+	}
+	if got != rolemanager.GoalPartial {
+		t.Fatalf("verdict = %q, want the fail-closed %q", got, rolemanager.GoalPartial)
+	}
+	if l.evalErrorStreak != 1 {
+		t.Fatalf("evalErrorStreak = %d, want 1", l.evalErrorStreak)
+	}
+
+	var warned bool
+	_, stop, err = sess.evaluateGoalPass(context.Background(), pipe, &l, "evidence", func(e Event) {
+		if e.Kind == EventWarningKind && strings.Contains(e.Warning, "failed 2 times in a row") {
+			warned = true
+		}
+	})
+	if err != nil {
+		t.Fatalf("a transport failure is not a terminal error: %v", err)
+	}
+	if !stop {
+		t.Fatalf("%d consecutive transport failures must stop the loop", maxGoalEvalErrors)
+	}
+	if !warned {
+		t.Fatal("the graceful stop must warn the user")
+	}
+}
+
+// A clean evaluator contact (even a malformed reply) resets the transport
+// failure streak, because the evaluator has been reached again.
+func TestEvaluateGoalPassTransportFailureStreakResets(t *testing.T) {
+	reply := ""
+	pipe := &rolemanager.Pipeline{Classifier: rolemanager.ClassifierFunc(
+		func(_ context.Context, _ rolemanager.ClassifierPayload) (string, error) {
+			if reply == "" {
+				return "", errors.New("provider returned 500: upstream down")
+			}
+			return reply, nil
+		})}
+	sess := &Session{}
+	l := passLedger{goalText: "g"}
+
+	_, stop, err := sess.evaluateGoalPass(context.Background(), pipe, &l, "evidence", func(Event) {})
+	if err != nil || stop || l.evalErrorStreak != 1 {
+		t.Fatalf("first transport failure: stop=%v err=%v streak=%d", stop, err, l.evalErrorStreak)
+	}
+
+	// A malformed reply still reaches the evaluator, so it resets the streak.
+	reply = "not a sentinel"
+	_, stop, err = sess.evaluateGoalPass(context.Background(), pipe, &l, "evidence", func(Event) {})
+	if err != nil || stop {
+		t.Fatalf("malformed reply after transport failure: stop=%v err=%v", stop, err)
+	}
+	if l.evalErrorStreak != 0 {
+		t.Fatalf("evalErrorStreak = %d, want a reached evaluator to reset it", l.evalErrorStreak)
+	}
+	if l.malformedStreak != 1 {
+		t.Fatalf("malformedStreak = %d, want 1", l.malformedStreak)
 	}
 }

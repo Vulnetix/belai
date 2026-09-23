@@ -51,6 +51,11 @@ const (
 	// already re-asked once with corrective feedback) before the loop stops
 	// consulting the evaluator and returns the work so far.
 	maxMalformedEvals = 2
+	// maxGoalEvalErrors: consecutive goal-evaluator transport failures before
+	// the loop stops consulting the evaluator and returns the work so far. A
+	// single provider error at a pass boundary must not throw away a long run,
+	// but a permanently unreachable evaluator must not grant unbounded passes.
+	maxGoalEvalErrors = 2
 	// maxUnproductivePasses: consecutive passes that executed no tool at all
 	// before the loop stops. The first one is repaired rather than fatal: a
 	// rejected argument shape costs a pass without meaning the run is over,
@@ -152,9 +157,12 @@ type passLedger struct {
 
 	// partialStreak counts consecutive no-progress PARTIAL verdicts; a todo
 	// transition resets it. malformedStreak counts consecutive malformed
-	// evaluator replies; a clean reply resets it.
+	// evaluator replies; a clean reply resets it. evalErrorStreak counts
+	// consecutive evaluator transport failures; any evaluator contact
+	// (clean or malformed) resets it.
 	partialStreak   int
 	malformedStreak int
+	evalErrorStreak int
 
 	// writes is the number of file-changing tool calls observed across the
 	// whole goal; passWrites is the count for the pass that just ended and
@@ -756,15 +764,17 @@ func (s *Session) agentContinuations(ctx context.Context, pipe *rolemanager.Pipe
 }
 
 // evaluateGoalPass runs the goal evaluator for one pass boundary and folds the
-// malformed-reply bookkeeping into the ledger.
+// malformed-reply and transport-failure bookkeeping into the ledger.
 //
-// The returns are: the verdict (always usable — a malformed reply fails closed
-// to GOAL_PARTIAL); stop, meaning the evaluator has failed often enough that
-// the loop must end gracefully with the work so far; and a terminal transport
-// error. A garbled classifier token is not a reason to throw away a long run,
-// so the streak limit returns the work rather than an error — only an unknown
-// verdict from a transport failure is terminal, because an unknown verdict
-// must not grant compute.
+// The returns are: the verdict (always usable — a malformed reply or a
+// transport failure fails closed to GOAL_PARTIAL); stop, meaning the
+// evaluator has failed often enough that the loop must end gracefully with
+// the work so far; and an error, which is no longer produced here but is
+// kept in the signature so a caller can still stop on an unknown verdict if
+// one is ever reintroduced. A garbled classifier token is not a reason to
+// throw away a long run, and neither is a provider error at a pass boundary:
+// both count toward a bounded streak, and the streak limit returns the work
+// rather than an error.
 func (s *Session) evaluateGoalPass(ctx context.Context, pipe *rolemanager.Pipeline, l *passLedger, evidence string, emit func(Event)) (rolemanager.GoalSentinel, bool, error) {
 	sentinel, err := rolemanager.EvaluateGoal(ctx, pipe.Classifier, rolemanager.GoalEvalInput{
 		Goal:     l.goalText,
@@ -774,15 +784,33 @@ func (s *Session) evaluateGoalPass(ctx context.Context, pipe *rolemanager.Pipeli
 	})
 	if err == nil {
 		l.malformedStreak = 0
+		l.evalErrorStreak = 0
 		emit(Event{Kind: EventGoalEvalKind, Pass: l.passes, GoalSentinel: sentinel})
 		return sentinel, false, nil
 	}
 	if !errors.Is(err, rolemanager.ErrMalformedGoalEval) {
-		return sentinel, false, err
+		// A transport failure leaves the verdict unknown, but discarding the
+		// whole run at a pass boundary over one provider error is worse than
+		// continuing with a fail-closed GOAL_PARTIAL verdict — the same
+		// reasoning that treats a malformed reply as non-terminal. Count
+		// consecutive failures so a permanently unreachable evaluator still
+		// stops the loop gracefully with the work so far instead of granting
+		// unbounded passes.
+		l.evalErrorStreak++
+		emit(Event{Kind: EventGoalEvalKind, Pass: l.passes, GoalSentinel: rolemanager.GoalPartial})
+		if l.evalErrorStreak >= maxGoalEvalErrors {
+			emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("goal evaluator failed %d times in a row (%v); stopping the goal loop and returning the work so far", l.evalErrorStreak, err)})
+			return rolemanager.GoalPartial, true, nil
+		}
+		emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("goal evaluator transport error: %v; continuing as %s", err, rolemanager.GoalPartial.Label())})
+		return rolemanager.GoalPartial, false, nil
 	}
 	// Malformed output fails closed to GOAL_PARTIAL (one garbled reply is
 	// noise, and the evaluator was already re-asked once with the exact
-	// syntax it broke); two in a row is a broken evaluator.
+	// syntax it broke); two in a row is a broken evaluator. Reaching the
+	// evaluator at all — even with a garbled reply — resets the transport
+	// failure streak.
+	l.evalErrorStreak = 0
 	l.malformedStreak++
 	emit(Event{Kind: EventGoalEvalKind, Pass: l.passes, GoalSentinel: sentinel, Malformed: true})
 	if l.malformedStreak >= maxMalformedEvals {
