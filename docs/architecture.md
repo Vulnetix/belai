@@ -155,6 +155,53 @@ Business rules:
   the settings file rather than being pruned as empty. `ClassifierSettings.
   IsZero` counts the field, so a caveman-only block still merges.
 
+### Model routing
+
+The optional `routing` settings block selects a different provider/model for
+specific role-manager activities without changing the main agent model. It is
+*not* a security boundary; it is a performance/cost knob.
+
+```jsonc
+"routing": {
+  "kind": "routed",               // "defined" | "routed"; default "defined"
+  "use_cases": {
+    "main":          { "provider": "openai", "model": "gpt-5" },
+    "mode_eval":     { "provider": "openrouter", "model": "typesafe/jev-1.13" },
+    "goal_eval":     { "provider": "openrouter", "model": "typesafe/jev-1.13" },
+    "plan_eval":     { "provider": "openrouter", "model": "typesafe/jev-1.13" },
+    "goal_contract": { "provider": "openai", "model": "gpt-5-mini" },
+    "clarify":       { "provider": "openai", "model": "gpt-5-mini" },
+    "compaction":    { "provider": "openai", "model": "gpt-5-mini" },
+    "session_name":  { "provider": "openai", "model": "gpt-5-mini" },
+    "agent_eval":    { "provider": "openrouter", "model": "typesafe/jev-1.13" }
+  }
+}
+```
+
+Business rules and edge cases:
+
+- **"defined" mode is the default.** A missing block or `"kind": "defined"`
+  means the main provider/model serves every role-manager activity, exactly as
+  before.
+- **"routed" mode resolves per activity.** Each payload builder tags its
+  `ClassifierPayload.UseCase`; the resolver looks up that key in
+  `routing.use_cases` and falls back to the global provider/model when the key
+  is missing or the candidate is invalid.
+- **Use-case keys are the single source of truth.** The known keys are
+  `main`, `mode_eval`, `goal_eval`, `plan_eval`, `goal_contract`, `clarify`,
+  `compaction`, `session_name`, and `agent_eval`. Unknown keys may be stored
+  but are not consulted.
+- **Candidates are validated.** A use-case target must set at least one of
+  `provider` or `model`. Provider names are validated against the built-in and
+  custom-provider allowlists. Invalid routing settings fail config resolution
+  with an error, so a malformed routing table cannot silently redirect traffic.
+- **Project-layer merging is key-by-key.** A project file can override one
+  use case without restating the global routing table.
+- **Security payloads are not routed.** The security/ML classifier stack runs
+  its own configured model and never uses the routing table; untrusted content
+  classification must remain governed by explicit classifier settings rather
+  than a general routing knob.
+
 ## Delimiter, nonce, and integrity model
 
 Harness-generated blocks use tags such as:
