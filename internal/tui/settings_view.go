@@ -124,7 +124,7 @@ func (a *App) settingsRows() []settingsRow {
 	showNamesVal := showLabel(s.SessionNamesVisible())
 	updateCheckVal := boolLabel(s.UpdateCheckEnabled())
 	permsVal := fmt.Sprintf("%d allow · %d ask · %d deny", len(s.Permissions.Allow), len(s.Permissions.Ask), len(s.Permissions.Deny))
-	maxAgentsVal := "3"
+	maxAgentsVal := strconv.Itoa(config.DefaultMaxAgents)
 	if s.Resilience != nil && s.Resilience.MaxAgents != 0 {
 		maxAgentsVal = strconv.Itoa(s.Resilience.MaxAgents)
 	}

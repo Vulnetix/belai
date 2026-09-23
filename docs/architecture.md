@@ -948,8 +948,7 @@ Each explore subagent:
   block that re-enters the parent as an untrusted user turn.
 
 Subagents run in parallel bounded by the shared FIFO agent pool
-(`resilience.max_agents`, default 3 — today's historical `exploreConcurrency`)
-and `explore.MaxTasks` (5). The pool is a `container/list` FIFO queue, not a
+(`resilience.max_agents`, default 15) and `explore.MaxTasks` (12). The pool is a `container/list` FIFO queue, not a
 buffered-channel semaphore, so waiters are admitted in arrival order; `esc`
 drops queued work at once and `x` on a running chip cancels it through the
 pool. `resilience.plan_explore: false` skips the survey entirely so plan mode
@@ -1353,7 +1352,7 @@ returns focus to the composer. Chips persist across turns and are removed only
 by an explicit dismiss; running chips are never removed automatically.
 
 The fan-out is capped by one settings-backed FIFO pool
-(`resilience.max_agents`, default 3) that the Role Manager owns and reaches
+(`resilience.max_agents`, default 15) that the Role Manager owns and reaches
 through `rolemanager.Pipeline`. Explore subagents and background-agent turns
 alike acquire a lease; queued work shows a muted chip, running a teal chip,
 done a teal-soft `✓`, and cancelled/failed an amber chip. Subagent tool

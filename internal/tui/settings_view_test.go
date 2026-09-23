@@ -112,3 +112,40 @@ func TestSettingsViewInternalWorkRowRenders(t *testing.T) {
 		t.Fatalf("settings view missing internal work row:\n%s", a.View())
 	}
 }
+
+func TestSettingsMaxAgentsPersistsAndReloads(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	workdir := t.TempDir()
+	a := New(Options{Workdir: workdir})
+	a.push(viewSettings)
+	a.settingsState.scope = config.ScopeProject
+
+	row, idx := settingsRowByKey(a, "max_agents")
+	if idx < 0 {
+		t.Fatal("no max_agents row")
+	}
+	if row.value != "15" {
+		t.Fatalf("default max_agents row = %q, want 15", row.value)
+	}
+
+	a.settingsState.selected = idx
+	a.settingsState.editMode = true
+	a.editor.SetValue("12")
+
+	m, _ := a.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	a = m.(*App)
+
+	persisted, err := config.LoadProject(workdir)
+	if err != nil {
+		t.Fatalf("LoadProject: %v", err)
+	}
+	if persisted.Resilience == nil || persisted.Resilience.MaxAgents != 12 {
+		t.Fatalf("project max_agents not persisted: %+v", persisted.Resilience)
+	}
+	if a.settings.Resilience == nil || a.settings.Resilience.MaxAgents != 12 {
+		t.Fatalf("effective max_agents not reloaded: %+v", a.settings.Resilience)
+	}
+	if row, _ := settingsRowByKey(a, "max_agents"); row.value != "12" {
+		t.Fatalf("max_agents row after edit = %q, want 12", row.value)
+	}
+}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/vulnetix/signet/internal/agentprofile"
 	"github.com/vulnetix/signet/internal/commands"
+	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/profiles"
 	"github.com/vulnetix/signet/internal/provider"
 	"github.com/vulnetix/signet/internal/vulnetixcli"
@@ -204,6 +205,10 @@ func NewRegistry(workdir string) *Registry {
 		}
 	})
 	r.Register("settings", "view and edit settings", nil, func(a *App, arg string) tea.Cmd {
+		// Default the settings scope to project so a bare /settings edit
+		// lands where the user expects (repo/.vulnetix/settings.json) and
+		// the provenance label is honest.
+		a.settingsState.scope = config.ScopeProject
 		return a.push(viewSettings)
 	})
 	r.Register("providers", "manage providers, credentials and local models", func() []string {

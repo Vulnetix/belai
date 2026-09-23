@@ -217,7 +217,7 @@ scope, following the same precedence rules.
 | `providers` | custom provider profiles (see below) |
 | `provider_labels` | display labels keyed by provider name (see below) |
 | `allow_project_providers` | opt in to project-layer `providers` (default off) |
-| `resilience.max_agents` | fan-out ceiling for explore subagents + background agents (default 3) |
+| `resilience.max_agents` | fan-out ceiling for explore subagents + background agents (default 15) |
 | `resilience.plan_explore` | plan-mode repository survey on/off (default on) |
 
 **Custom providers.** A `providers` block defines a provider by name, with
