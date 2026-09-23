@@ -232,7 +232,7 @@ func TestClassifierProviderList(t *testing.T) {
 		t.Fatal("huggingface must not appear for the classifier role without an HF token")
 	}
 	if hasStr(got, "openrouter") {
-		t.Fatal("openrouter must not appear for the classifier role without a typesafe/jev model")
+		t.Fatal("openrouter must not appear for the classifier role without OPENROUTER_API_KEY")
 	}
 	if hasStr(got, "openai") || hasStr(got, "anthropic") {
 		t.Fatalf("general-chat providers must not appear for the classifier role: %v", got)
@@ -248,17 +248,14 @@ func TestClassifierProviderList(t *testing.T) {
 		t.Fatal("huggingface must appear for the classifier role when HF_TOKEN is set")
 	}
 
-	// OPENROUTER_API_KEY alone is not enough: the catalogue must expose a
-	// typesafe/jev model.
+	// OPENROUTER_API_KEY alone is enough: the picker filters to typesafe/jev*
+	// after the provider is chosen, so the gate is the key, not a pre-fetched
+	// catalogue.
 	t.Setenv("HF_TOKEN", "")
 	t.Setenv("OPENROUTER_API_KEY", "or-key")
 	a = modelScreen(t)
-	if hasStr(a.classifierProviders(), "openrouter") {
-		t.Fatal("openrouter must not appear without a typesafe/jev model in its catalogue")
-	}
-	a.catalogCache = map[string][]models.Model{"openrouter": {{ID: "typesafe/jev-1"}}}
 	if !hasStr(a.classifierProviders(), "openrouter") {
-		t.Fatal("openrouter must appear when configured and its catalogue has typesafe/jev*")
+		t.Fatal("openrouter must appear for the classifier role when OPENROUTER_API_KEY is set")
 	}
 }
 
@@ -309,5 +306,16 @@ func TestModelRowsPhasesNoClassifierHFRemote(t *testing.T) {
 	if !strings.Contains(p1.value, "GuardrailsAI/prompt-saturation-attack-detector") ||
 		!strings.Contains(p1.value, "huggingface") {
 		t.Fatalf("phase1 row = %+v, want remote huggingface model", p1)
+	}
+}
+
+func TestClassifierProviderListOpenRouterWithResolver(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("OPENROUTER_API_KEY", "or-key")
+	a := newModelScreen(t, t.TempDir())
+	a.resolver = newTestResolver(t, a.workdir)
+	got := a.classifierProviders()
+	if !hasStr(got, "openrouter") {
+		t.Fatalf("openrouter must appear for the classifier role when configured via the resolver, got %v", got)
 	}
 }
