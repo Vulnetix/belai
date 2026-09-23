@@ -22,7 +22,7 @@ const (
 	readTabWidth = 4
 )
 
-// readArgs pulls the path and byte offset out of a Read call's arguments.
+// readArgs pulls the path and line offset out of a Read call's arguments.
 func readArgs(argsJSON string) (path string, offset int) {
 	if strings.TrimSpace(argsJSON) == "" {
 		return "", 0
@@ -31,7 +31,7 @@ func readArgs(argsJSON string) (path string, offset int) {
 	if json.Unmarshal([]byte(argsJSON), &args) != nil {
 		return "", 0
 	}
-	for _, k := range []string{"path", "file"} {
+	for _, k := range []string{"file_path", "path", "file"} {
 		if s, ok := args[k].(string); ok && s != "" {
 			path = s
 			break
@@ -54,20 +54,63 @@ func isMarkdownPath(path string) bool {
 	return false
 }
 
+// splitReadGutter separates a Read result in the tool's `cat -n` shape into
+// the file's own lines, the first line number, and the paging trailer. ok is
+// false when content is not in that shape — an @file attachment's verbatim
+// body, or a transcript from before the tool numbered its output — which is
+// told apart by the numbers themselves: every line must carry one, and they
+// must run consecutively. The shape is sniffed rather than taken from Meta so
+// a resumed transcript renders the same as a live one.
+func splitReadGutter(content string) (body string, first int, trailer string, ok bool) {
+	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
+	if n := len(lines); n > 1 && strings.HasPrefix(lines[n-1], "[Read: ") {
+		trailer = lines[n-1]
+		lines = lines[:n-1]
+	}
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		tab := strings.IndexByte(l, '\t')
+		if tab < 1 {
+			return content, 0, "", false
+		}
+		num, err := strconv.Atoi(strings.TrimLeft(l[:tab], " "))
+		if err != nil || num < 1 || (i > 0 && num != first+i) {
+			return content, 0, "", false
+		}
+		if i == 0 {
+			first = num
+		}
+		out[i] = l[tab+1:]
+	}
+	return strings.Join(out, "\n"), first, trailer, true
+}
+
+// FileText returns a Read result's file content without the tool's line
+// number gutter or paging trailer — what copying or saving a file panel should
+// hand out. Anything else returns Text unchanged.
+func (m Message) FileText() string {
+	text := m.Text()
+	if m.ToolName != "Read" {
+		return text
+	}
+	if body, _, _, ok := splitReadGutter(text); ok {
+		return body
+	}
+	return text
+}
+
 // readToolRow renders a Read result as numbered source.
 //
-// Line numbers are added here rather than by the Read tool itself, for two
-// reasons. The tool's offset and limit are byte quantities, so a model that
-// saw a line number and passed it back as an offset would silently read the
-// wrong region — worse than having no numbers. And a gutter in the tool's
-// output would be content: it would cost tokens on every replay of the
-// transcript, and it would end up in every copy.
+// The Read tool numbers its own output in the trained `cat -n` shape, because
+// its offset is a line number and the model needs the coordinates. That gutter
+// is stripped here and redrawn in the TUI's own style, so the numbers are
+// never shown twice and never copied as file content; the paging trailer is
+// kept as a muted row beneath the source.
 //
-// Numbering is correct when the read started at the beginning of the file
-// (offset == 0). For partial reads the tool emits Meta["start_line"], which
-// this function uses so the visible lines are still numbered correctly.
-// Without that metadata a partial read is left unnumbered rather than numbered
-// wrongly.
+// Content without the tool's gutter (an @file attachment, an old transcript)
+// is numbered from Meta["start_line"] when the read started at the top of the
+// file or the metadata says where it started, and left unnumbered otherwise
+// rather than numbered wrongly.
 //
 // Syntax highlighting is applied only when the row is expanded. Collapsed, a
 // Read row is three lines, and colour there would compete with the diff and
@@ -80,13 +123,19 @@ func readToolRow(msg Message, width int, expand bool) (string, LineMap) {
 		}
 	}
 
+	text := msg.Text()
+	body, firstLine, trailer, numbered := splitReadGutter(text)
+	if numbered {
+		text = body
+	}
+
 	// Markdown files read as markdown once expanded: a file's prose is meant
 	// to be read, so headings, lists and fences render instead of numbered
 	// source. Collapsed rows keep the numbered head — a file's first lines are
 	// how it is recognised, matching the highlight-only-when-expanded rule.
 	if expand && isMarkdownPath(path) {
 		inner := max(width-2, 8)
-		md := RenderMarkdown(strings.TrimRight(msg.Text(), "\n"), inner)
+		md := RenderMarkdown(strings.TrimRight(text, "\n"), inner)
 		var rows []Row
 		for _, r := range md.Rows {
 			r.Gutter += 2
@@ -100,7 +149,7 @@ func readToolRow(msg Message, width int, expand bool) (string, LineMap) {
 	// text. Seg text is tab-free by construction, so expanding later would be
 	// too late; and leaving tabs for the terminal would put the indentation
 	// wherever its own stops fall, which the gutter has already shifted.
-	content := expandTabsLines(strings.TrimRight(msg.Text(), "\n"), readTabWidth)
+	content := expandTabsLines(strings.TrimRight(text, "\n"), readTabWidth)
 
 	lines := strings.Split(content, "\n")
 	shown := lines
@@ -121,7 +170,10 @@ func readToolRow(msg Message, width int, expand bool) (string, LineMap) {
 
 	startLine := 1
 	hasStartLine := false
-	if msg.Meta != nil {
+	if numbered {
+		startLine = firstLine
+		hasStartLine = true
+	} else if msg.Meta != nil {
 		if sl, ok := msg.Meta["start_line"].(int); ok && sl > 0 {
 			startLine = sl
 			hasStartLine = true
@@ -157,7 +209,14 @@ func readToolRow(msg Message, width int, expand bool) (string, LineMap) {
 		r.Segs = append(r.Segs, codeSegs(line, segs, i, inner-gutter)...)
 		rows = append(rows, r)
 	}
-	return renderRows(appendHint(rows, trunc, icol+gutter, width), width)
+	rows = appendHint(rows, trunc, icol+gutter, width)
+	if trailer != "" {
+		rows = append(rows, Row{Gutter: icol + gutter, Segs: []Seg{
+			NewSeg(indent+spaces(gutter), nil),
+			NewSeg(trailer, ColorMuted),
+		}})
+	}
+	return renderRows(rows, width)
 }
 
 // codeSegs renders one source line, using its highlighted segments when they

@@ -110,7 +110,7 @@ func TestCwdAbsolutePrimaryRootPathResolves(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Read(absolute primary path): %v", err)
 	}
-	if got.Content != "top" {
+	if readBody(got.Content) != "top" {
 		t.Fatalf("content = %q, want top", got.Content)
 	}
 }
@@ -226,7 +226,7 @@ func TestReadFollowsWorkingDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Read(leaf.txt) after Cd: %v", err)
 	}
-	if res.Content != "leaf" {
+	if readBody(res.Content) != "leaf" {
 		t.Fatalf("content = %q, want leaf", res.Content)
 	}
 
@@ -235,7 +235,7 @@ func TestReadFollowsWorkingDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Read(/top.txt) after Cd: %v", err)
 	}
-	if res.Content != "top" {
+	if readBody(res.Content) != "top" {
 		t.Fatalf("content = %q, want top", res.Content)
 	}
 
@@ -369,7 +369,7 @@ func TestDefaultRegistrySharesOneTracker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Read after Cd: %v", err)
 	}
-	if res.Content != "leaf" {
+	if readBody(res.Content) != "leaf" {
 		t.Fatalf("Read content = %q", res.Content)
 	}
 }

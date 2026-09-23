@@ -1226,7 +1226,7 @@ func TestRunEmitsToolMetaForRead(t *testing.T) {
 	content := "line1\nline2\nline3\n"
 	_ = os.WriteFile(filepath.Join(root, "data.txt"), []byte(content), 0o600)
 
-	srv := mockSecurityServer("Read", `{"path":"data.txt","offset":6}`, "done")
+	srv := mockSecurityServer("Read", `{"path":"data.txt","offset":2}`, "done")
 	defer srv.Close()
 
 	cfg := run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"}
@@ -1273,7 +1273,7 @@ func TestRunEmitsToolMetaForRead(t *testing.T) {
 	if !ok {
 		t.Fatalf("start_line type = %T", metaEvent.Meta["start_line"])
 	}
-	// offset 6 lands in "line2\n" (bytes 0-5 = line1\n, 6-11 = line2\n)
+	// offset is a 1-based line number, so start_line echoes it.
 	if sl != 2 {
 		t.Fatalf("start_line = %d, want 2", sl)
 	}
