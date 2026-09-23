@@ -282,6 +282,99 @@ and `llama-server` speaks a llama-server / llama.cpp OpenAI-compatible endpoint
 environment variable (`OLLAMA_HOST` and `SIGNET_LLAMA_HOST` respectively) or
 from individually-managed host, port, and protocol fields in `/providers`.
 
+### Outbound identification and trace headers
+
+Every outbound HTTP request Signet makes identifies itself with one
+`User-Agent`, built by `version.UserAgent()`:
+
+```
+User-Agent: signet/<version> (+https://github.com/Vulnetix/signet)
+```
+
+That covers provider and classifier turns, nonce fetches, the release check,
+`WebFetch` and `WebSearch`. On top of it, `internal/calltrace` stamps trace
+headers onto provider requests (`run.roundTrip`, the streaming `openStream`,
+model-list fetches) and onto the `WebFetch`/`WebSearch` tool requests, so a
+server, gateway or proxy can tie each request to its session, tool call and
+build:
+
+| Header                    | Value                                          | Sent on                      |
+| ------------------------- | ---------------------------------------------- | ---------------------------- |
+| `X-Signet-Session-Id`     | the transcript session id (as in `/resume`)    | provider + tool requests     |
+| `X-Signet-Tool`           | registered tool name, e.g. `WebFetch`          | tool requests only           |
+| `X-Signet-Tool-Call-Id`   | the model's tool-call id                       | tool requests only           |
+| `X-Signet-Client-Version` | `version.Version`                              | every stamped request        |
+| `X-Signet-Client-Build`   | `<commit>; <build date>[; <variant>]`          | every stamped request        |
+| `traceparent`             | W3C Trace Context `00-<trace-id>-<span-id>-01` | provider + tool requests     |
+
+The trace-id is the first 16 bytes of SHA-256 of the session id, so every
+request in a session belongs to one trace. Each tool call gets a fresh random
+span-id, and so does each provider request. Headers whose value is empty are
+omitted. A request made without a session (the model list, the release check)
+carries only the client version and build. The tool name and call id are
+reduced to visible ASCII and capped at 128 bytes, so a model-chosen id can
+never form an invalid header or split an environment entry.
+
+Edge cases:
+
+- **Tool with no session.** The tool name and call id are still stamped, but
+  no `X-Signet-Session-Id` and no `traceparent`, because the trace-id is derived
+  from the session.
+- **Tool name spelling.** `X-Signet-Tool` carries the registered spelling
+  (`Read`), not the model's (`read`). Tool lookup is case-insensitive, so the
+  model's spelling can differ.
+- **Span per tool call.** All requests within one tool call (a WebSearch
+  backend query, say) share that call's span-id. Outside a tool call, each
+  provider request mints its own span-id.
+- **Nested contexts.** A later `WithTool` replaces the tool identity and span.
+  The session is kept.
+- **Redirects.** Go's HTTP client copies request headers onto a redirect, and
+  only drops `Authorization`/`Cookie` when the host changes. So a
+  `WebFetch` redirect (at most five) carries the same `X-Signet-*`,
+  `traceparent` and `User-Agent` headers to the redirect target.
+- **Reachability probe.** `WebSearch.Available()` runs with no context, so its
+  `HEAD` carries only `User-Agent` and the client version/build.
+- **Credentials.** None of these headers or variables ever carries a key or
+  token. Auth headers stay with the provider layer.
+
+Tool subprocesses (`Bash`, the native catalogue including `GH`/`Glab`, and the
+`rg`/`grep`/`fd` behind `Grep` and `Glob`) receive the same identity through
+environment variables. These are appended after `proc.ScrubbedEnv()`, so
+scrubbing still removes every credential first:
+
+| Variable              | Value                                   |
+| --------------------- | --------------------------------------- |
+| `SIGNET`              | `1`                                     |
+| `SIGNET_VERSION`      | `version.Version`                       |
+| `SIGNET_SESSION_ID`   | session id                              |
+| `SIGNET_TOOL`         | tool name                               |
+| `SIGNET_TOOL_CALL_ID` | tool-call id                            |
+| `TRACEPARENT`         | same value as the `traceparent` header  |
+
+`TRACEPARENT` follows the OpenTelemetry environment-variable propagation
+convention, so an instrumented child process joins the session's trace.
+Language servers and supervised processes are not tool calls and get no trace
+variables.
+
+**Where the session id comes from.** The TUI wraps each turn's context with its
+current session id and pushes it into the background agent and process
+managers (`SetSessionID`), including after `/new`, resume and plan fork.
+Explore subagents inherit the parent's id. A headless `signet -p` run mints a
+fresh id per invocation. The TUI's direct tool runs (inline `!cmd`, `@file`
+admission, the file picker) carry it too.
+
+**Privacy.** The session id is sent as-is. Any site `WebFetch` reaches and any
+search backend `WebSearch` queries can see it, and can link together every
+request from one session. It is an opaque random id and carries no credential,
+path or prompt content.
+
+**Conventions followed.** The scheme mirrors the ones other coding agents use:
+Claude Code's `X-Claude-Code-Session-Id`, Codex's `session_id`/`originator`/`version`,
+and Copilot's `editor-version`, namespaced under `X-Signet-*`, plus the
+vendor-neutral W3C `traceparent`. Web Bot Auth (`Signature-Agent` with RFC 9421
+message signatures) is not implemented. It is still an individual IETF draft
+and is tracked as future work.
+
 ## Modes
 
 `internal/modes` defines three modes; agent is the default.

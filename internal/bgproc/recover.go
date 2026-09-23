@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/signet/internal/agent"
+	"github.com/vulnetix/signet/internal/calltrace"
 	"github.com/vulnetix/signet/internal/permissions"
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/repoindex"
@@ -28,7 +29,7 @@ func (m *Manager) runRecovery(id string) {
 		return
 	}
 
-	ctx := context.Background()
+	ctx := calltrace.WithSession(context.Background(), m.sessionID())
 	tail := m.tail(id, 200)
 	body := m.filterTail(ctx, tail)
 

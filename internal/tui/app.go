@@ -31,6 +31,7 @@ import (
 	"github.com/vulnetix/signet/internal/aifirewall"
 	"github.com/vulnetix/signet/internal/bgagent"
 	"github.com/vulnetix/signet/internal/bgproc"
+	"github.com/vulnetix/signet/internal/calltrace"
 	"github.com/vulnetix/signet/internal/clipboard"
 	"github.com/vulnetix/signet/internal/commands"
 	"github.com/vulnetix/signet/internal/config"
@@ -842,8 +843,10 @@ func New(opts Options) *App {
 		a.bgManager = bgagent.NewManager(workdir, initial, a.client, a.settings, a.effectivePosture())
 		a.bgManager.SetCredentialSource(credentialSourceOf(a.resolver))
 		a.bgManager.SetPool(a.agentPool)
+		a.publishSessionID()
 	}
 	a.procManager = bgproc.NewManager(workdir, initial, a.client, a.settings, a.effectivePosture(), a.caps)
+	a.publishSessionID()
 	a.autoStartProcesses()
 	a.applyGitInfo(gitinfo.Detect(a.workdir))
 	a.loadAgents()
@@ -1285,7 +1288,7 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 
 // startAgent begins the streaming turn on an already-built session.
 func (a *App) startAgent(sess *agent.Session, history []run.Turn, in agent.TurnInput) tea.Cmd {
-	a.events = sess.RunStream(a.ctx, history, in)
+	a.events = sess.RunStream(calltrace.WithSession(a.ctx, a.sessionID), history, in)
 	return tea.Batch(a.nextAgent(), a.workSpin.Tick)
 }
 
@@ -4120,6 +4123,7 @@ func (a *App) handleCredentialsResolved(m credentialsResolvedMsg) tea.Cmd {
 			a.bgManager = bgagent.NewManager(a.workdir, m.cfg, a.client, a.settings, a.effectivePosture())
 			a.bgManager.SetCredentialSource(credentialSourceOf(a.resolver))
 			a.bgManager.SetPool(a.agentPool)
+			a.publishSessionID()
 		}
 	} else {
 		a.showCredentialMessage(m.cfg.Provider, a.resolver)
@@ -4127,6 +4131,7 @@ func (a *App) handleCredentialsResolved(m credentialsResolvedMsg) tea.Cmd {
 	var newProcWatcher tea.Cmd
 	if a.procManager == nil {
 		a.procManager = bgproc.NewManager(a.workdir, m.cfg, a.client, a.settings, a.effectivePosture(), a.caps)
+		a.publishSessionID()
 		a.autoStartProcesses()
 		newProcWatcher = a.watchProcessEvents()
 	}
@@ -5091,6 +5096,7 @@ func (a *App) currentAssistantBubble() int {
 // message.
 func (a *App) startNewSession() {
 	a.sessionID = session.MustID()
+	a.publishSessionID()
 	a.lastEntryID = ""
 	a.persistedUpTo = 0
 	a.sessionName = ""
@@ -5366,6 +5372,7 @@ func (a *App) applyCompaction(summary string) tea.Cmd {
 	oldName := a.sessionName
 
 	a.sessionID = session.MustID()
+	a.publishSessionID()
 	a.lastEntryID = ""
 	a.persistedUpTo = 0
 	a.parentSession = old

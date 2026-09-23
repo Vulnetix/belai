@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/vulnetix/signet/internal/agent"
 	"github.com/vulnetix/signet/internal/agentpool"
 	"github.com/vulnetix/signet/internal/agentprofile"
+	"github.com/vulnetix/signet/internal/calltrace"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/permissions"
 	"github.com/vulnetix/signet/internal/posture"
@@ -93,6 +95,19 @@ type Manager struct {
 	// src resolves credentials when an agent profile overrides the main
 	// provider. nil means environment-only resolution.
 	src run.CredentialSource
+	// session is the owning transcript session id, stamped on every
+	// background turn's provider requests and tool calls through calltrace.
+	session atomic.Value // string
+}
+
+// SetSessionID records the owning session id. The TUI calls it whenever its
+// session changes (new, resume, fork), so later background turns carry it.
+func (m *Manager) SetSessionID(id string) { m.session.Store(id) }
+
+// sessionID returns the owning session id, or "".
+func (m *Manager) sessionID() string {
+	id, _ := m.session.Load().(string)
+	return id
 }
 
 // NewManager creates a Manager.
@@ -502,6 +517,7 @@ func (m *Manager) releaseLease(inst *AgentInstance, lease *agentpool.Lease) {
 }
 
 func (m *Manager) executeTurn(ctx context.Context, inst *AgentInstance) {
+	ctx = calltrace.WithSession(ctx, m.sessionID())
 	sess, err := m.buildSession(inst)
 	if err != nil {
 		inst.pushEvent(Event{AgentName: inst.Profile.Name, Kind: agent.EventErrorKind, Err: err})
@@ -642,7 +658,7 @@ func (m *Manager) wrapEvent(name string, e agent.Event) Event {
 
 func (m *Manager) evaluateMonitor(ctx context.Context, condition string) (bool, error) {
 	prompt := fmt.Sprintf("You are a trigger monitor. Given the condition %q, should the agent act now? Reply with exactly one word: YES or NO.", condition)
-	reply, err := run.Run(ctx, m.cfg, prompt, m.client)
+	reply, err := run.Run(calltrace.WithSession(ctx, m.sessionID()), m.cfg, prompt, m.client)
 	if err != nil {
 		return false, err
 	}

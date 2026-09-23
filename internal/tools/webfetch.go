@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/vulnetix/signet/internal/calltrace"
 	"github.com/vulnetix/signet/internal/httpclient"
 	"github.com/vulnetix/signet/internal/version"
 )
@@ -95,6 +96,7 @@ func (w *WebFetch) Execute(ctx context.Context, args map[string]any) (Result, er
 		return Result{}, err
 	}
 	req.Header.Set("user-agent", version.UserAgent())
+	calltrace.Apply(ctx, req.Header)
 
 	resp, err := client.Do(req)
 	if err != nil {

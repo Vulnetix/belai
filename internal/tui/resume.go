@@ -78,6 +78,7 @@ func (a *App) resumeSession(key session.Key, sessionID string) tea.Cmd {
 
 	// 6. Adopt the session identity.
 	a.sessionID = newID
+	a.publishSessionID()
 	a.sessionKey = cur
 	a.sessionWorkdir = a.workdir
 

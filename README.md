@@ -285,6 +285,14 @@ harness already knows — `Grep`, `Glob`, `Write`, `Edit`, and the native
 read-only tools — are sanitized and promoted directly. See
 [docs/architecture.md](docs/architecture.md#tool-result-trust).
 
+**Outbound requests identify themselves.** Provider calls, `WebFetch` and
+`WebSearch` send `User-Agent: signet/<version>` plus `X-Signet-Session-Id`,
+`X-Signet-Tool`, `X-Signet-Tool-Call-Id`, `X-Signet-Client-Version`,
+`X-Signet-Client-Build` and a W3C `traceparent`. Tool subprocesses get the
+same identity as `SIGNET_*` and `TRACEPARENT` environment variables. The
+session id is sent as-is, so any site you fetch can see it. See
+[docs/architecture.md](docs/architecture.md#outbound-identification-and-trace-headers).
+
 **Path rules are relative to the working directory.** Tools share one working
 directory that starts at the session root and can move within it with `Cd`. A
 path beginning with `/` means the session root; anything else is relative to

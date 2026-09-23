@@ -221,8 +221,9 @@ func (a *App) validateAttachmentCmd(id int, root, rel string) tea.Cmd {
 	cfg := a.cfg
 	client := a.client
 	pol := a.effectivePosture()
+	traceCtx := a.toolContext(context.Background(), "Read", "")
 	return func() tea.Msg {
-		ctx := context.Background()
+		ctx := traceCtx
 		// A directory is listed, not read — the answer an Ls call would give.
 		// Entry names are shaped, harness-known output (one per line), so the
 		// listing is sanitised and admitted without a classifier round trip,
