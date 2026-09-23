@@ -155,3 +155,18 @@ func TestResolveClassifierKindLLMStillInherits(t *testing.T) {
 		t.Fatalf("LLM classifier must still inherit main model: %+v", cc)
 	}
 }
+
+func TestResolveClassifierKindModelsIgnoresPhase3Provider(t *testing.T) {
+	// On the models path, classifier.provider/model configure phase 3 only;
+	// the LLM classifier must not move to that provider, even when the model
+	// is a stale foreign id.
+	main := Config{Provider: "cloudflare-ai-gateway", BaseURL: "https://gw.example", APIKey: "k", Model: "@cf/deepseek-ai/deepseek-v4-pro-0813"}
+	cls := &config.ClassifierSettings{Kind: "models", Provider: "huggingface", Model: "openrouter/free"}
+	cc, err := ResolveClassifier(main, cls, fakeSource{vals: map[string]string{"huggingface:api_key": "hf-x"}})
+	if err != nil {
+		t.Fatalf("ResolveClassifier: %v", err)
+	}
+	if cc.Provider != main.Provider || cc.Model != main.Model {
+		t.Fatalf("LLM classifier must inherit main on the models path: %+v", cc)
+	}
+}

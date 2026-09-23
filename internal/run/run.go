@@ -152,14 +152,24 @@ func ResolveClassifier(main Config, cls *config.ClassifierSettings, src Credenti
 	if cls.Effort != "" {
 		out.Effort = cls.Effort
 	}
-	if cls.Model != "" {
-		out.Model = cls.Model
-	}
 	if cls.Chunk.MaxBytesOr() > 0 {
 		out.Chunk.MaxBytes = cls.Chunk.MaxBytesOr()
 	}
 	if cls.Chunk.ConcurrencyOr() > 0 {
 		out.Chunk.Concurrency = cls.Chunk.ConcurrencyOr()
+	}
+
+	// On the models path, classifier.provider/model configure phase 3 only;
+	// the LLM classifier (mode select, goal contract, plan/goal eval, …) keeps
+	// inheriting the main provider/model. The separate-provider LLM classifier
+	// applies only on the llm path. ClassifierKind, not the raw field, decides:
+	// an unset kind resolves to "models" when the binary embeds a model.
+	if ClassifierKind(cls) == "models" {
+		return out, nil
+	}
+
+	if cls.Model != "" {
+		out.Model = cls.Model
 	}
 	if cls.Provider != "" && cls.Provider != main.Provider {
 		cfg, status := Prepare(cls.Model, cls.Provider, src)
