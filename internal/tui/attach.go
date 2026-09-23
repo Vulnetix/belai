@@ -236,7 +236,9 @@ func (a *App) validateAttachmentCmd(id int, root, rel string) tea.Cmd {
 			}
 			return attachValidatedMsg{id: id, body: sanitize.Sanitize(body), sentinel: rolemanager.SentinelSafe, isDir: true}
 		}
-		read := &tools.Read{Root: root, MaxBytes: 64 * 1024}
+		// Verbatim: the body is diffed against the index and handed over as the
+		// file itself, so it must not carry the model-facing gutter or trailer.
+		read := &tools.Read{Root: root, MaxBytes: 64 * 1024, Verbatim: true}
 		res, err := read.Execute(ctx, map[string]any{"path": rel})
 		if err != nil {
 			return attachValidatedMsg{id: id, err: err, sentinel: rolemanager.SentinelMalformed}

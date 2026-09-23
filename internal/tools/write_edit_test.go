@@ -232,3 +232,46 @@ func TestWriteEditSubjectsAreLexical(t *testing.T) {
 		t.Fatalf("Edit.Subject = %q", got)
 	}
 }
+
+// An old_string copied from a Read result with its `cat -n` numbers still
+// fails — matching stays exact — but the error names the cause.
+func TestEditGutterPrefixHint(t *testing.T) {
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "a.go"), []byte("package a\n\nfunc F() {}\n"), 0o600)
+	e := &Edit{Root: root}
+	_, err := e.Execute(context.Background(), map[string]any{
+		"file_path":  "a.go",
+		"old_string": "     3\tfunc F() {}",
+		"new_string": "func G() {}",
+	})
+	if err == nil || !strings.Contains(err.Error(), "line-number prefix") {
+		t.Fatalf("err = %v, want the gutter hint", err)
+	}
+	_, err = e.Execute(context.Background(), map[string]any{
+		"file_path":  "a.go",
+		"old_string": "func H() {}",
+		"new_string": "func G() {}",
+	})
+	if err == nil || strings.Contains(err.Error(), "line-number prefix") {
+		t.Fatalf("err = %v, want a plain not-found", err)
+	}
+	body, _ := os.ReadFile(filepath.Join(root, "a.go"))
+	if string(body) != "package a\n\nfunc F() {}\n" {
+		t.Fatalf("file changed: %q", body)
+	}
+}
+
+func TestHasReadGutter(t *testing.T) {
+	for s, want := range map[string]bool{
+		"     1\tfoo\n     2\tbar": true,
+		"12\tx":                    true,
+		"\tindented":               false,
+		"foo\tbar":                 false,
+		"     1\tfoo\nbar":         false,
+		"":                         false,
+	} {
+		if got := hasReadGutter(s); got != want {
+			t.Fatalf("hasReadGutter(%q) = %v, want %v", s, got, want)
+		}
+	}
+}

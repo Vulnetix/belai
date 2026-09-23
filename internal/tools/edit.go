@@ -21,7 +21,7 @@ func (e *Edit) Definition() Definition {
 	return Definition{
 		Name: "Edit",
 		Description: "Edit an existing file under the working directory by replacing an exact byte string. " +
-			"No whitespace or line-ending normalisation is performed: old_string must match the file byte for byte, including indentation. Read the file first. " +
+			"No whitespace or line-ending normalisation is performed: old_string must match the file byte for byte, including indentation. Read the file first, and copy only the text after the line-number prefix and tab that Read puts on each line. " +
 			"The call fails, leaving the file byte-identical, when the file does not exist, is binary, is over 1 MiB, when old_string equals new_string, when old_string is not found, or when it appears more than once without replace_all=true. " +
 			"The write is atomic. Mutating, so it asks for approval unless an explicit allow rule matches, and it is unavailable in plan mode.",
 		Properties: map[string]Property{
@@ -123,6 +123,9 @@ func (e *Edit) Execute(ctx context.Context, args map[string]any) (Result, error)
 
 	count := strings.Count(string(body), oldS)
 	if count == 0 {
+		if hasReadGutter(oldS) {
+			return Result{}, fmt.Errorf("old_string not found in %s; it carries Read's line-number prefix (the number and tab before each line), which is not part of the file — remove it and match the text after the tab", res.Rel)
+		}
 		return Result{}, fmt.Errorf("old_string not found in %s", res.Rel)
 	}
 	if count > 1 && !replaceAll {
@@ -151,6 +154,27 @@ func (e *Edit) maxBytes() int64 {
 		return MaxWriteBytes
 	}
 	return e.MaxBytes
+}
+
+// hasReadGutter reports whether every line of s starts with Read's `cat -n`
+// prefix — digits, optionally left-padded with spaces, then a tab — which is
+// the shape of an old_string copied from a Read result along with its
+// numbers. It only shapes an error message; matching stays byte-exact.
+func hasReadGutter(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, line := range strings.Split(strings.TrimRight(s, "\n"), "\n") {
+		tab := strings.IndexByte(line, '\t')
+		if tab < 1 {
+			return false
+		}
+		digits := strings.TrimLeft(line[:tab], " ")
+		if digits == "" || strings.Trim(digits, "0123456789") != "" {
+			return false
+		}
+	}
+	return true
 }
 
 // replaceEdit applies the replacement without any normalisation.

@@ -1720,14 +1720,24 @@ floods the prompt...`), surfacing the internal activity key and the model
 behind it. The activity key and provider/model are persisted under
 `meta.activity`, `meta.provider`, and `meta.model` for role-manager entries.
 
-Read rows are numbered at render time, never by the Read tool itself: the
-tool's `offset` is a byte count, so a model that read a line number out of the
-output and passed it back as an offset would silently get the wrong region.
-For a partial read (`offset > 0`) the Read tool emits `Result.Meta` with
-`start_line`, derived by counting newlines in the `[0, offset)` prefix up to
-1 MiB. The TUI receives this via `EventToolMetaKind` and numbers the visible
-lines starting from `start_line`. Without the metadata the partial read is
-left unnumbered rather than numbered wrongly.
+The Read tool follows the trained contract: `offset` is a 1-based line
+number (so a `Grep` line number works as-is), `limit` is a line count
+(default 2000), and the output is `cat -n` formatted — each line prefixed with
+its right-aligned number and a tab. Lines over 2000 bytes are clipped, and the
+whole result stays under the byte cap (64 KiB), cut at a line boundary. A
+partial read ends with `[Read: lines A–B of N; truncated — continue with
+offset=B+1]` or `[Read: lines A–B of N; end of file]`; a whole-file read has
+no trailer, and an offset past the end is answered rather than errored. Edit
+names the prefix in its not-found error when an `old_string` still carries it.
+
+The tool also emits `Result.Meta` with `start_line` and `numbered`, delivered
+via `EventToolMetaKind`. The TUI strips the tool's gutter and trailer
+(`splitReadGutter`, which sniffs the shape so a resumed transcript renders
+like a live one), redraws the numbers in its own gutter, and shows the
+trailer as a muted row. Copying or saving a file panel hands out the file
+text without the gutter (`Message.FileText`). `@file` attachments use
+`tools.Read{Verbatim: true}`: exact bytes, no gutter or trailer, because the
+body is diffed against the index and handed over as the file itself.
 
 Syntax highlighting (chroma, mapped onto the palette in `theme.go`, lexer
 chosen by filename only) applies to expanded rows alone — collapsed, the diff

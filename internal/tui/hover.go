@@ -141,7 +141,7 @@ func (a *App) copyHoveredPanel(idx int) tea.Cmd {
 	if idx < 0 || idx >= len(a.messages) {
 		return nil
 	}
-	text := a.messages[idx].Text()
+	text := a.messages[idx].FileText()
 	if text == "" {
 		return nil
 	}
@@ -221,7 +221,7 @@ func (a *App) handleSaveFileKey(m tea.KeyMsg) tea.Cmd {
 func (a *App) finishSaveFile(path string) tea.Cmd {
 	var content string
 	if a.saveFileMsg >= 0 && a.saveFileMsg < len(a.messages) {
-		content = a.messages[a.saveFileMsg].Text()
+		content = a.messages[a.saveFileMsg].FileText()
 	}
 	full := path
 	if !filepath.IsAbs(full) {
