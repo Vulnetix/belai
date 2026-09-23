@@ -59,6 +59,20 @@ func TestResolveSecurityClassifierModelsPhase3OptIn(t *testing.T) {
 	}
 }
 
+func TestResolveSecurityClassifierPhase3ForeignModelOff(t *testing.T) {
+	// A phase-3 model namespaced to a different built-in provider can never be
+	// served by the configured provider, so phase 3 must stay off rather than
+	// run a stale "openrouter/free" against huggingface.
+	sc := ResolveSecurityClassifier(&config.ClassifierSettings{
+		Kind:     "models",
+		Provider: "huggingface",
+		Model:    "openrouter/free",
+	})
+	if sc.Phase3On {
+		t.Fatal("phase 3 must be off when the model is foreign to the provider")
+	}
+}
+
 func TestResolveSecurityClassifierPhaseConfigs(t *testing.T) {
 	cls := &config.ClassifierSettings{
 		Kind:   "models",
