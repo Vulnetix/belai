@@ -2996,14 +2996,22 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 	case agent.EventTextKind:
 		a.setPhaseWorking()
 		if len(a.messages) == 0 || a.messages[len(a.messages)-1].Role != "assistant" {
-			a.messages = append(a.messages, components.Message{Role: "assistant"})
+			a.messages = append(a.messages, components.Message{
+				Role:     "assistant",
+				Provider: a.cfg.Provider,
+				Model:    a.cfg.Model,
+			})
 		}
 		a.messages[len(a.messages)-1].AppendText(m.Text)
 		return a.nextAgent()
 	case agent.EventReasoningKind:
 		a.setPhaseWorking()
 		if len(a.messages) == 0 || a.messages[len(a.messages)-1].Role != "reasoning" {
-			a.messages = append(a.messages, components.Message{Role: "reasoning"})
+			a.messages = append(a.messages, components.Message{
+				Role:     "reasoning",
+				Provider: a.cfg.Provider,
+				Model:    a.cfg.Model,
+			})
 		}
 		a.messages[len(a.messages)-1].AppendText(m.Reasoning)
 		return a.nextAgent()
@@ -3178,7 +3186,11 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		if len(a.messages) > 0 && a.messages[len(a.messages)-1].Role == "assistant" {
 			a.messages[len(a.messages)-1].Partial = true
 		}
-		a.messages = append(a.messages, components.Message{Role: "assistant"})
+		a.messages = append(a.messages, components.Message{
+			Role:     "assistant",
+			Provider: a.cfg.Provider,
+			Model:    a.cfg.Model,
+		})
 		a.addSystem(fmt.Sprintf("retrying (%d/%d) after %s — %s", m.RetryAttempt, 10, m.RetryDelay.Round(time.Millisecond), m.RetryReason))
 		return a.nextAgent()
 	case agent.EventPassKind:
@@ -3903,9 +3915,12 @@ func (a *App) addRMActivity(act rolemanager.Activity) {
 		return
 	}
 	a.messages = append(a.messages, components.Message{
-		Role:  "rolemanager",
-		Level: desc.Levels,
-		RM:    desc,
+		Role:     "rolemanager",
+		Level:    desc.Levels,
+		RM:       desc,
+		Activity: string(act.Event),
+		Provider: a.cfg.Provider,
+		Model:    a.cfg.Model,
 	})
 }
 

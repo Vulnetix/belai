@@ -158,7 +158,13 @@ func messagesFromEntries(entries []session.Entry) ([]components.Message, int) {
 			if e.Content == "" && len(kept) == 0 {
 				continue
 			}
-			msg := components.Message{Role: "assistant", Content: e.Content, ToolCalls: kept}
+			msg := components.Message{
+				Role:      "assistant",
+				Content:   e.Content,
+				ToolCalls: kept,
+				Provider:  metaString(e.Meta, "provider"),
+				Model:     metaString(e.Meta, "model"),
+			}
 			if u := usageFromMeta(e.Meta); u != nil {
 				msg.Usage = u
 			}
@@ -186,7 +192,12 @@ func messagesFromEntries(entries []session.Entry) ([]components.Message, int) {
 			if strings.TrimSpace(e.Content) == "" {
 				continue
 			}
-			msgs = append(msgs, components.Message{Role: "reasoning", Content: e.Content})
+			msgs = append(msgs, components.Message{
+				Role:     "reasoning",
+				Content:  e.Content,
+				Provider: metaString(e.Meta, "provider"),
+				Model:    metaString(e.Meta, "model"),
+			})
 		case "system":
 			if strings.TrimSpace(e.Content) == "" {
 				continue
@@ -221,6 +232,9 @@ func rolemanagerMessage(e session.Entry) components.Message {
 		if v, ok := metaInt(e.Meta, "level"); ok {
 			msg.Level = rolemanager.Level(v)
 		}
+		msg.Activity = metaString(e.Meta, "activity")
+		msg.Provider = metaString(e.Meta, "provider")
+		msg.Model = metaString(e.Meta, "model")
 	}
 	if content == "" && msg.RM.Summary == "" && msg.RM.Outcome == "" {
 		return components.Message{}
