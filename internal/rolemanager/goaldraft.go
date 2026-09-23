@@ -57,6 +57,7 @@ func BuildGoalDraftPayload(in GoalDraftInput) ClassifierPayload {
 		System:    goalDraftSystemPrompt,
 		User:      goalDraftUser(in),
 		MaxTokens: ClassifierStructuredMaxTokens,
+		UseCase:   UseCaseGoalContract,
 	}
 }
 

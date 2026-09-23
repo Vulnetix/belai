@@ -56,6 +56,7 @@ func BuildAgentEvalPayload(profileGoals, recentOutput string) ClassifierPayload 
 		System:                 agentEvalSystemPrompt,
 		User:                   user,
 		AllowReasoningFallback: true,
+		UseCase:                UseCaseAgentEval,
 	}
 }
 

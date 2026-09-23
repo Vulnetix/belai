@@ -74,6 +74,7 @@ func BuildPlanEvalPayload(in PlanEvalInput) ClassifierPayload {
 		System:                 planEvalSystemPrompt,
 		User:                   user,
 		AllowReasoningFallback: true,
+		UseCase:                UseCasePlanEval,
 	}
 }
 

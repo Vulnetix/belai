@@ -35,6 +35,7 @@ func BuildCompactionPayload(conversation string, caveman bool) ClassifierPayload
 		System:    withCavemanVoice(compactionSystemPrompt, caveman),
 		User:      conversation,
 		MaxTokens: ClassifierStructuredMaxTokens,
+		UseCase:   UseCaseCompaction,
 	}
 }
 

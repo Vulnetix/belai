@@ -90,6 +90,7 @@ func BuildGoalEvalPayload(in GoalEvalInput) ClassifierPayload {
 		System:                 goalEvalSystemPrompt,
 		User:                   goalEvalUser(in),
 		AllowReasoningFallback: true,
+		UseCase:                UseCaseGoalEval,
 	}
 }
 
@@ -118,6 +119,7 @@ func BuildGoalEvalRepairPayload(in GoalEvalInput, raw string) ClassifierPayload 
 		System:                 goalEvalSystemPrompt,
 		User:                   goalEvalUser(in) + repair,
 		AllowReasoningFallback: true,
+		UseCase:                UseCaseGoalEval,
 	}
 }
 

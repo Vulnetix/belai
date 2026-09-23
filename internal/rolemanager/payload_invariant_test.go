@@ -37,3 +37,33 @@ func TestClassifierPayloadsAreToolSkillAgentFree(t *testing.T) {
 		})
 	}
 }
+
+// TestClassifierPayloadsCarryUseCase pins the routing hint attached to every
+// role-manager activity so adding a new builder also adds a use-case value.
+func TestClassifierPayloadsCarryUseCase(t *testing.T) {
+	cases := []struct {
+		name    string
+		payload ClassifierPayload
+		want    string
+	}{
+		{"security", BuildClassifierPayload("untrusted tool output"), ""},
+		{"mode", BuildModeClassifierPayload("classify my prompt"), UseCaseModeEval},
+		{"session name", BuildSessionNamePayload("first user message", false), UseCaseSessionName},
+		{"session name caveman", BuildSessionNamePayload("first user message", true), UseCaseSessionName},
+		{"compaction", BuildCompactionPayload("<conversation>", false), UseCaseCompaction},
+		{"compaction caveman", BuildCompactionPayload("<conversation>", true), UseCaseCompaction},
+		{"goal evaluator", BuildGoalEvalPayload(GoalEvalInput{Goal: "g", Todos: "t", Facts: "f", Evidence: "e"}), UseCaseGoalEval},
+		{"goal evaluator repair", BuildGoalEvalRepairPayload(GoalEvalInput{Goal: "g", Todos: "t", Facts: "f", Evidence: "e"}, "raw"), UseCaseGoalEval},
+		{"goal contract", BuildGoalDraftPayload(GoalDraftInput{Prompt: "ship it", VerificationSurface: []string{"go test ./..."}}), UseCaseGoalContract},
+		{"plan evaluator", BuildPlanEvalPayload(PlanEvalInput{Context: "c", Todos: "t", Evidence: "e"}), UseCasePlanEval},
+		{"agent loop evaluator", BuildAgentEvalPayload("goals", "output"), UseCaseAgentEval},
+		{"clarify", BuildClarifyPayload(ClarifyInput{Prompt: "p", Findings: "f", Round: "1"}), UseCaseClarify},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.payload.UseCase != tc.want {
+				t.Fatalf("UseCase = %q, want %q", tc.payload.UseCase, tc.want)
+			}
+		})
+	}
+}

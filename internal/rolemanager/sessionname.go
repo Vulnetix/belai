@@ -17,8 +17,9 @@ const MaxSessionNameRunes = 48
 // caveman voices the title; ParseSessionName's rules apply either way.
 func BuildSessionNamePayload(firstUserMessage string, caveman bool) ClassifierPayload {
 	return ClassifierPayload{
-		System: withCavemanVoice(sessionNameSystemPrompt, caveman),
-		User:   firstUserMessage,
+		System:  withCavemanVoice(sessionNameSystemPrompt, caveman),
+		User:    firstUserMessage,
+		UseCase: UseCaseSessionName,
 	}
 }
 
