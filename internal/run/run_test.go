@@ -2018,3 +2018,109 @@ func TestResolveClassifierDropsForeignModelOnExplicitProvider(t *testing.T) {
 		t.Fatalf("foreign model must be dropped on the explicit huggingface provider: got %q", cc.Model)
 	}
 }
+
+// TestResolveRoutingDefinedMode verifies that a nil or non-routed settings
+// block resolves to the defined (no-op) routing config.
+func TestResolveRoutingDefinedMode(t *testing.T) {
+	main := Config{Provider: "openai", Model: "gpt-5", APIKey: "sk"}
+	got, err := ResolveRouting(main, nil, nil)
+	if err != nil {
+		t.Fatalf("ResolveRouting(nil): %v", err)
+	}
+	if got.Kind != config.RoutingDefined || len(got.Candidates) != 0 {
+		t.Fatalf("ResolveRouting(nil) = %+v, want defined with no candidates", got)
+	}
+
+	got, err = ResolveRouting(main, &config.RoutingSettings{Kind: config.RoutingDefined}, nil)
+	if err != nil {
+		t.Fatalf("ResolveRouting(defined): %v", err)
+	}
+	if got.Kind != config.RoutingDefined {
+		t.Fatalf("kind = %q, want defined", got.Kind)
+	}
+}
+
+// TestResolveRoutingResolvesCandidates verifies that routed use cases inherit
+// provider/model sensibly and are returned sorted by key.
+func TestResolveRoutingResolvesCandidates(t *testing.T) {
+	main := Config{Provider: "openai", Model: "gpt-5", APIKey: "sk"}
+	rs := &config.RoutingSettings{
+		Kind: config.RoutingRouted,
+		UseCases: map[string]config.RoutingTarget{
+			"mode_eval":     {Provider: "anthropic", Model: "claude-opus-4-5"},
+			"compaction":    {Model: "gpt-5-mini"},                // same provider as main
+			"agent_eval":    {Provider: "openrouter"},             // model defaults to openrouter
+			"goal_contract": {Provider: "openai", Model: "gpt-5"}, // explicit same
+		},
+	}
+
+	src := fakeSource{vals: map[string]string{
+		"openai:api_key":     "ok",
+		"anthropic:api_key":  "ak",
+		"openrouter:api_key": "rk",
+	}}
+
+	got, err := ResolveRouting(main, rs, src)
+	if err != nil {
+		t.Fatalf("ResolveRouting: %v", err)
+	}
+	if got.Kind != config.RoutingRouted {
+		t.Fatalf("kind = %q, want routed", got.Kind)
+	}
+	if len(got.Candidates) != len(rs.UseCases) {
+		t.Fatalf("candidates = %d, want %d", len(got.Candidates), len(rs.UseCases))
+	}
+
+	// Candidates must be sorted by key so the order is deterministic.
+	wantOrder := []string{"agent_eval", "compaction", "goal_contract", "mode_eval"}
+	for i, c := range got.Candidates {
+		if c.Key != wantOrder[i] {
+			t.Fatalf("candidate[%d].Key = %q, want %q", i, c.Key, wantOrder[i])
+		}
+	}
+
+	find := func(key string) Config {
+		for _, c := range got.Candidates {
+			if c.Key == key {
+				return c.Cfg
+			}
+		}
+		t.Fatalf("missing candidate %q", key)
+		return Config{}
+	}
+
+	if c := find("mode_eval"); c.Provider != "anthropic" || c.Model != "claude-opus-4-5" {
+		t.Fatalf("mode_eval = %+v", c)
+	}
+	if c := find("compaction"); c.Provider != "openai" || c.Model != "gpt-5-mini" {
+		t.Fatalf("compaction = %+v", c)
+	}
+	if c := find("agent_eval"); c.Provider != "openrouter" || c.Model == "" {
+		t.Fatalf("agent_eval = %+v", c)
+	}
+	if c := find("goal_contract"); c.Provider != "openai" || c.Model != "gpt-5" {
+		t.Fatalf("goal_contract = %+v", c)
+	}
+
+	// Jev token resolver must fetch the OpenRouter key.
+	tok, err := got.JevToken()
+	if err != nil {
+		t.Fatalf("JevToken: %v", err)
+	}
+	if tok != "rk" {
+		t.Fatalf("JevToken = %q, want rk", tok)
+	}
+}
+
+// TestResolveRoutingErrorsOnMisconfiguredCandidate verifies that a routing
+// table entry whose provider cannot be configured fails closed with an error.
+func TestResolveRoutingErrorsOnMisconfiguredCandidate(t *testing.T) {
+	main := Config{Provider: "openai", Model: "gpt-5", APIKey: "sk"}
+	rs := &config.RoutingSettings{
+		Kind:     config.RoutingRouted,
+		UseCases: map[string]config.RoutingTarget{"main": {Provider: "anthropic"}},
+	}
+	if _, err := ResolveRouting(main, rs, fakeSource{}); err == nil {
+		t.Fatal("expected error for missing anthropic api_key")
+	}
+}

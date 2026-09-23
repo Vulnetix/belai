@@ -345,6 +345,9 @@ func withClassifier(cfg run.Config, settings config.Settings, resolver *credenti
 	}
 	cfg.Classifier = cc
 	cfg.Security = run.ResolveSecurityClassifier(settings.Classifier)
+	if rc, err := run.ResolveRouting(cfg, settings.Routing, src); err == nil {
+		cfg.Routing = rc
+	}
 	return cfg, nil
 }
 
