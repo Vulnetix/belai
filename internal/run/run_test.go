@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -2122,5 +2123,135 @@ func TestResolveRoutingErrorsOnMisconfiguredCandidate(t *testing.T) {
 	}
 	if _, err := ResolveRouting(main, rs, fakeSource{}); err == nil {
 		t.Fatal("expected error for missing anthropic api_key")
+	}
+}
+
+func TestResolveRoutingDefined(t *testing.T) {
+	main := Config{Provider: "openai", BaseURL: "https://api.openai.com/v1", APIKey: "k", Model: "gpt-5"}
+	rc, err := ResolveRouting(main, nil, nil)
+	if err != nil {
+		t.Fatalf("ResolveRouting(nil): %v", err)
+	}
+	if rc.Kind != config.RoutingDefined || len(rc.Candidates) != 0 || rc.JevToken != nil {
+		t.Fatalf("nil routing must resolve to defined: %+v", rc)
+	}
+
+	rc, err = ResolveRouting(main, &config.RoutingSettings{Kind: config.RoutingDefined, UseCases: map[string]config.RoutingTarget{"a": {Provider: "openai"}}}, nil)
+	if err != nil {
+		t.Fatalf("ResolveRouting(defined): %v", err)
+	}
+	if rc.Kind != config.RoutingDefined || len(rc.Candidates) != 0 {
+		t.Fatalf("defined routing must carry no candidates: %+v", rc)
+	}
+}
+
+func TestResolveRoutingRoutedResolvesCandidatesAndJevToken(t *testing.T) {
+	main := Config{Provider: "openai", BaseURL: "https://api.openai.com/v1", APIKey: "k", Model: "gpt-5"}
+	src := fakeSource{vals: map[string]string{
+		"openrouter:api_key": "jr-token",
+		"anthropic:api_key":  "anth-key",
+	}}
+	rs := &config.RoutingSettings{
+		Kind: config.RoutingRouted,
+		UseCases: map[string]config.RoutingTarget{
+			"mode_eval": {Provider: "openrouter", Model: "typesafe/jev-1.13"},
+			"goal_eval": {Provider: "anthropic"}, // provider change, no model -> provider default
+		},
+	}
+	rc, err := ResolveRouting(main, rs, src)
+	if err != nil {
+		t.Fatalf("ResolveRouting: %v", err)
+	}
+	if rc.Kind != config.RoutingRouted || len(rc.Candidates) != 2 {
+		t.Fatalf("routed config = %+v", rc)
+	}
+	// Keys are sorted for deterministic prompts.
+	if rc.Candidates[0].Key != "goal_eval" || rc.Candidates[1].Key != "mode_eval" {
+		t.Fatalf("candidate order = %q,%q", rc.Candidates[0].Key, rc.Candidates[1].Key)
+	}
+	goal := rc.Candidates[0].Cfg
+	if goal.Provider != "anthropic" || goal.Model != "claude-opus-4-5" || goal.APIKey != "anth-key" || goal.BaseURL != "https://api.anthropic.com" {
+		t.Fatalf("goal_eval candidate = %+v", goal)
+	}
+	mode := rc.Candidates[1].Cfg
+	if mode.Provider != "openrouter" || mode.Model != "typesafe/jev-1.13" || mode.BaseURL != "https://openrouter.ai/api/v1" {
+		t.Fatalf("mode_eval candidate = %+v", mode)
+	}
+	tok, err := rc.JevToken()
+	if err != nil || tok != "jr-token" {
+		t.Fatalf("JevToken = %q, %v", tok, err)
+	}
+}
+
+func TestResolveRoutingMissingCandidateFails(t *testing.T) {
+	main := Config{Provider: "openai", BaseURL: "https://api.openai.com/v1", APIKey: "k", Model: "gpt-5"}
+	rs := &config.RoutingSettings{Kind: config.RoutingRouted, UseCases: map[string]config.RoutingTarget{"a": {Provider: "anthropic"}}}
+	if _, err := ResolveRouting(main, rs, fakeSource{}); err == nil {
+		t.Fatal("expected NotConfiguredError for a candidate without credentials")
+	}
+}
+
+func TestNewRoleClassifierDefinedUsesMain(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"c","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{}}`))
+	}))
+	defer srv.Close()
+
+	cfg := Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "gpt-5"}
+	role := NewRoleClassifier(cfg, srv.Client(), nil)
+	got, err := role.Classify(context.Background(), rolemanager.ClassifierPayload{System: "s", User: "u"})
+	if err != nil {
+		t.Fatalf("Classify: %v", err)
+	}
+	if got != "ok" {
+		t.Fatalf("Classify = %q, want ok", got)
+	}
+}
+
+func TestRoutedClassifierPicksWinnerAndCaches(t *testing.T) {
+	var modelCalls, jevCalls atomic.Int32
+	modelSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		modelCalls.Add(1)
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"c","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{}}`))
+	}))
+	defer modelSrv.Close()
+
+	jevSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		jevCalls.Add(1)
+		_, _ = w.Write([]byte(`{"model":"typesafe/jev-1.13","answers":{"a":{"type":"noul","noul":0.9},"b":{"type":"noul","noul":0.1}},"usage":{}}`))
+	}))
+	defer jevSrv.Close()
+
+	cfg := Config{
+		Provider: "openai", BaseURL: modelSrv.URL, APIKey: "k", Model: "gpt-5",
+		Routing: RoutingConfig{
+			Kind: config.RoutingRouted,
+			Candidates: []RoutingCandidate{
+				{Key: "a", Cfg: Config{Provider: "openai", BaseURL: modelSrv.URL, APIKey: "k", Model: "gpt-5-mini"}},
+				{Key: "b", Cfg: Config{Provider: "openai", BaseURL: modelSrv.URL, APIKey: "k", Model: "gpt-4.1"}},
+			},
+			JevToken: func() (string, error) { return "test-key", nil },
+		},
+	}
+	r := newRoutedClassifier(cfg, modelSrv.Client(), nil)
+	r.jev.SetEndpoint(jevSrv.URL)
+
+	payload := rolemanager.ClassifierPayload{System: "s", User: "u", UseCase: rolemanager.UseCaseGoalEval}
+	for i := 0; i < 2; i++ {
+		got, err := r.Classify(context.Background(), payload)
+		if err != nil {
+			t.Fatalf("Classify #%d: %v", i, err)
+		}
+		if got != "ok" {
+			t.Fatalf("Classify #%d = %q, want ok", i, got)
+		}
+	}
+	if jevCalls.Load() != 1 {
+		t.Fatalf("Jev called %d times, want 1 (cached per use case)", jevCalls.Load())
+	}
+	if modelCalls.Load() != 2 {
+		t.Fatalf("model called %d times, want 2 (one per Classify)", modelCalls.Load())
 	}
 }
