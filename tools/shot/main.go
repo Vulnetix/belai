@@ -329,7 +329,7 @@ func classifier() string {
 	rows = append(rows, classifierRow("kind", "models", "embedded · locked", components.ColorTeal))
 	rows = append(rows, classifierRow("phase 1", "GuardrailsAI/prompt-saturation-attack-detector", "embedded", components.ColorTeal))
 	rows = append(rows, classifierRow("phase 2", "jackhhao/jailbreak-classifier", "disabled", components.ColorMuted))
-	rows = append(rows, classifierRow("phase 3", "off — set classifier provider + model to enable", "extraction only", components.ColorAmber))
+	rows = append(rows, classifierRow("phase 3", "off: set classifier provider + model to enable", "extraction only", components.ColorAmber))
 	rows = append(rows, components.Rule(width))
 	rows = append(rows, components.MutedStyle.Render("phases 1 and 2 run in-process over the same token windows; phase 3 is opt-in and adds nothing else."))
 	return head + strings.Join(rows, "\n") + "\n\n" +

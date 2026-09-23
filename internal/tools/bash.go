@@ -128,6 +128,10 @@ type Bash struct {
 	MaxBytes int
 }
 
+// readOnlyBashHint follows every read-only rejection so the model moves on to
+// a tool that can answer instead of rephrasing the same refused command.
+const readOnlyBashHint = "this Bash is read-only (the read_only setting is on for agent mode, or this is a plan/explore surface), so it cannot build, test, or pipe — send one allowlisted command, or use Grep, Glob, or Read instead"
+
 // Definition returns the static tool metadata. The description branches on
 // the mode so the model knows which execution model it has.
 func (b *Bash) Definition() Definition {
@@ -137,7 +141,7 @@ func (b *Bash) Definition() Definition {
 		"The command is killed after 30 seconds, and whatever it printed up to that point is still returned. " +
 		"Provider credentials are stripped from the environment, so a command cannot read or forward them. " +
 		"Mutating, so it asks for approval unless an explicit allow rule matches, and it is unavailable in plan mode — use Read, Grep, Glob, and the read-only command tools there instead."
-	arg := "The command to run, e.g. \"go test ./... | tail -20\" or \"git commit -m msg\""
+	arg := "The command to run, e.g. \"go test ./...\" or \"git commit -m msg\""
 	if b.ReadOnly {
 		desc = "Run one read-only shell command in the working directory. " +
 			"It does not run through a shell, so pipes, redirections, chaining, substitutions, and newlines are rejected rather than escaped — send a single command with its arguments. " +
@@ -200,10 +204,10 @@ func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink
 		// allowlist. Plan-mode restrictions additionally live in
 		// modes.ToolAllowed, which callers must apply before Execute.
 		if strings.ContainsAny(cmd, ShellMetacharacters) {
-			return Result{}, fmt.Errorf("command contains shell metacharacters")
+			return Result{}, fmt.Errorf("command contains shell metacharacters; %s", readOnlyBashHint)
 		}
 		if !BashAllowed(cmd) {
-			return Result{}, fmt.Errorf("command not in read-only allowlist: %s", cmd)
+			return Result{}, fmt.Errorf("command not in read-only allowlist: %s; %s", cmd, readOnlyBashHint)
 		}
 		fields := strings.Fields(cmd)
 		if len(fields) == 0 {

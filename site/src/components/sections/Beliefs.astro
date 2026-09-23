@@ -11,25 +11,25 @@ const sealText =
 const beliefs = [
   {
     title: 'Safety above all else, and easy to YOLO.',
-    body: 'Press f3 and the guardrail switch throws to off: one gold chip, zero classifier calls. Off means not called-and-ignored, simply not called. Flipping back restores the full fail-closed surface everywhere: session, inline commands, file admission, background agents, the CLI.',
+    body: 'Press f3 to turn the guardrails off. A gold chip appears in the footer, and the classifier is not called at all until you turn them back on. Turning them on again restores every check in the session, inline commands, file attachments, background agents and the CLI.',
     svg: pixYolo,
     alt: 'Pix grinning next to a gold YOLO chip with the guardrail switch thrown',
   },
   {
     title: 'Roles for determinism.',
-    body: 'Modes are sticky. An explicit choice is never silently re-classified by the next turn, and -detect-mode tells you what the Role Manager would do without acting on it. A plan session stays a plan session.',
+    body: 'Once you pick a mode, it stays until you change it, and later turns do not re-classify it. -detect-mode shows which mode the Role Manager would choose without acting on it.',
     svg: pixProfessor,
     alt: 'Pix raising a wing to make a point',
   },
   {
     title: 'Tools first class.',
-    body: 'A fixed-argv native catalogue of about 25 read-only utilities: Cat, Head, Git, JQ, Find, Diff. Each is backed by a specific binary and a fixed argument shape, never a shell. Instead of a growing Bash(jq *) allowlist, the verbs themselves are tools.',
+    body: 'About 25 read-only utilities, including Cat, Head, Git, JQ, Find and Diff, are tools of their own. Each runs one specific binary with a fixed argument shape and never goes through a shell, so you do not need a growing Bash(jq *) allowlist.',
     svg: pixConductor,
     alt: 'Pix directing a fan of tool chips',
   },
   {
     title: 'Local first, open source, community access.',
-    body: 'Apache-2.0, zero telemetry, zero logging. The default download embeds its own classifier models, so guardrails run in-process with no provider, no API key and no network call. Two local providers ship in the box, and the Vulnetix scanners and AI Firewall are free for everyone.',
+    body: 'Signet is Apache-2.0 and sends no telemetry or logs. The default download includes its classifier model, so guardrails run locally without a provider or API key. Ollama and llama-server work out of the box, and the Vulnetix scanners and AI Firewall are free for everyone.',
     svg: pixHomestead,
     alt: 'Pix perched beside a local box with a dangling cable',
   },

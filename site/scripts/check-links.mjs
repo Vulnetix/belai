@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// check-links.mjs — verify internal links in the built site.
+// check-links.mjs: verify internal links in the built site.
 //
 // Walks the Astro dist/ output and checks every same-origin link:
 //   - href="#anchor" must resolve to an id in the target page

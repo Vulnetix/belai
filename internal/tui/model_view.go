@@ -1293,7 +1293,7 @@ func (a *App) classifierPhaseOpts(phase int) []string {
 func (a *App) classifierPhase3Row() settingsRow {
 	cls := a.settings.Classifier
 	on := cls != nil && cls.Provider != "" && cls.Model != ""
-	value := "off — set classifier provider + model to enable"
+	value := "off: set classifier provider + model to enable"
 	if on {
 		scope := "extraction only"
 		if a.resolvedSecurityClassifier().Phase2Deferred {

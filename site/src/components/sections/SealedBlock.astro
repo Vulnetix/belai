@@ -3,26 +3,27 @@ import SealedSection from '../seal/SealedSection.astro';
 import delimiterSeal from '../../assets/concepts/delimiter-seal.svg?raw';
 
 const sealText =
-  'Every block of context carries a random nonce and a SHA-256 integrity hash of its enclosed content. Anything unsealed is stripped at egress. The page you are reading is built out of the same device: each section header hashes its own sealed payload.';
+  'Every block of context carries a random nonce and a SHA-256 integrity hash of its enclosed content. Blocks without a valid seal are removed before a request is sent. The sections of this page use the same format, and each header hashes its own section text.';
 ---
 
 <SealedSection label="sealed" sealText={sealText} id="sealed">
   <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
     <div class="prose-measure">
-      <h2 class="text-3xl font-bold text-vx-ink">The sealed block, explained.</h2>
+      <h2 class="text-3xl font-bold text-vx-ink">Sealed blocks.</h2>
       <p class="mt-4 text-vx-ink/80">
-        Every block of context carries a random nonce and a SHA-256 integrity hash of its enclosed
-        content. On the way out, any block with a missing nonce, an unknown nonce, or a failing hash
-        is stripped before it reaches transport.
+        Every block of context carries a random nonce and a SHA-256 hash of its content. Before a
+        request is sent, Signet removes any block whose nonce is missing or unknown, or whose hash
+        doesn't match.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        The real claim: <strong>a model cannot widen its own advertised tool surface</strong> by writing a
-        forged <code class="mono">&lt;tools&gt;</code> block. The markup is verified, not trusted.
+        This stops a model from giving itself extra tools by writing its own{' '}
+        <code class="mono">&lt;tools&gt;</code> block. The forged block has no valid nonce, so it is
+        removed before the request goes out.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        This page is built out of the same device. Each section is framed as a harness block whose
-        header hash is computed at build time from that section&rsquo;s own sealed payload. Scroll one
-        into view and its integrity badge runs a verify tick. Nothing here is trusted on sight.
+        The sections of this page use the same format. Each header shows a hash that was computed at
+        build time from the section's text. When a section scrolls into view, your browser recomputes
+        the hash and the badge changes from sealed to verified if the two match.
       </p>
     </div>
     <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true">

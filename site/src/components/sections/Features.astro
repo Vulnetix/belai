@@ -27,25 +27,24 @@ import localModelShot from '../../assets/shots/local-model.svg';
     <div class="prose-measure order-1 lg:order-2">
       <h2 class="text-3xl font-bold text-vx-ink">Modes.</h2>
       <p class="mt-4 text-vx-ink/80">
-        Three modes, one fail-closed surface. Signet classifies a mode-less prompt into agent, plan,
-        or goal, and an explicit choice is never re-guessed.
+        Signet has three modes: agent, plan and goal. A prompt sent without a mode is classified into
+        one of them. A mode you pick yourself is kept as it is.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        <strong>Agent</strong> is the default for general coding. The full tool surface sits behind the
-        permission gates, and the security classifier runs on every untrusted result.
+        Agent is the default for general coding. Every tool is available behind the permission rules,
+        and the security classifier checks every untrusted result.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        <strong>Plan</strong> reads before it changes. The surface is fail-closed with <code class="mono">Bash</code> absent,
-        not present-but-gated: a model cannot call what is not advertised. A read-only{' '}
-        <code class="mono">Bash</code> returns only under an explicit allow rule, and the plan is a structured,
-        persisted document you approve.
+        Plan mode is read-only. The model is not offered <code class="mono">Bash</code> at all, so it has
+        no way to call it. An explicit allow rule can add a read-only <code class="mono">Bash</code> back.
+        The plan is saved as a structured document that you approve.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        <strong>Goal</strong> pursues one named objective to completion. A todo list built only from assistant
-        text tracks the work, and the loop keeps going while the objective advances.
+        Goal mode works on one named objective until it is done. Progress is tracked in a todo list
+        built from the assistant's own text, and the loop continues while the objective moves forward.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        Not sure what it would pick? <code class="mono">-detect-mode</code> prints the decision without acting on it.
+        <code class="mono">-detect-mode</code> prints the mode Signet would choose for a prompt without acting on it.
       </p>
     </div>
   </div>
@@ -62,14 +61,14 @@ import localModelShot from '../../assets/shots/local-model.svg';
     <div class="prose-measure">
       <h2 class="text-3xl font-bold text-vx-ink">Tools.</h2>
       <p class="mt-4 text-vx-ink/80">
-        A fixed-argv native catalogue of read-only utilities: <code class="mono">Cat</code>, <code class="mono">Head</code>,{' '}
-        <code class="mono">Git</code>, <code class="mono">JQ</code>, <code class="mono">Find</code>, <code class="mono">Diff</code>, and about 19 more. Each is
-        backed by a specific binary and a fixed argument shape passed straight to{' '}
-        <code class="mono">exec.Command</code>, never through a shell. Arbitrary command strings are rejected.
+        Signet includes a set of read-only utilities as tools: <code class="mono">Cat</code>, <code class="mono">Head</code>,{' '}
+        <code class="mono">Git</code>, <code class="mono">JQ</code>, <code class="mono">Find</code>, <code class="mono">Diff</code> and about 19 more. Each
+        runs a specific binary with a fixed argument shape, passed directly to{' '}
+        <code class="mono">exec.Command</code> without a shell. Free-form command strings are rejected.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        <code class="mono">Cd</code> is confined: the working directory moves <em>inside</em> the session root, and the
-        root does not widen. Path traversal to <code class="mono">../../../etc</code> is blocked, not warned about.
+        <code class="mono">Cd</code> can move the working directory anywhere inside the session root and nowhere
+        outside it. A path such as <code class="mono">../../../etc</code> that leaves the root is refused.
       </p>
     </div>
     <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={cdConfine} /></div>
@@ -81,8 +80,8 @@ import localModelShot from '../../assets/shots/local-model.svg';
     <div class="prose-measure">
       <h2 class="text-3xl font-bold text-vx-ink">Diagnostics.</h2>
       <p class="mt-4 text-vx-ink/80">
-        The harness checks the file the model just edited and hands the errors back on the same{' '}
-        <code class="mono">Edit</code> result. No extra round trip, no <code class="mono">Bash</code> build in between.
+        After the model edits a file, Signet checks it and returns any errors in the same{' '}
+        <code class="mono">Edit</code> result. The model does not need a separate build or lint call to see them.
       </p>
       <p class="mt-4 text-vx-ink/80">
         Language servers are detected on <code class="mono">PATH</code>. When none is installed, fixed-argv syntax
@@ -93,27 +92,27 @@ import localModelShot from '../../assets/shots/local-model.svg';
     <div class="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       <div class="rounded-lg border border-vx-ink/30 p-4">
         <h3 class="font-semibold text-vx-ink">Same turn</h3>
-        <p class="mt-2 text-sm text-vx-ink/80">Errors ride back on the tool result itself.</p>
+        <p class="mt-2 text-sm text-vx-ink/80">Errors come back on the Edit or Write result.</p>
       </div>
       <div class="rounded-lg border border-vx-ink/30 p-4">
         <h3 class="font-semibold text-vx-ink">Fourteen languages</h3>
         <p class="mt-2 text-sm text-vx-ink/80">Go, TypeScript, Python, Rust, C, C++, Obj-C, C#, Java, Dart, Swift, Zig, Bash and Ruby.</p>
       </div>
       <div class="rounded-lg border border-vx-ink/30 p-4">
-        <h3 class="font-semibold text-vx-ink">Detected, never assumed</h3>
-        <p class="mt-2 text-sm text-vx-ink/80">Servers found on PATH. /settings offers the install command but never runs it alone.</p>
+        <h3 class="font-semibold text-vx-ink">Found on PATH</h3>
+        <p class="mt-2 text-sm text-vx-ink/80">Signet only uses servers it finds on PATH. /settings shows the install command for a missing one but does not run it.</p>
       </div>
       <div class="rounded-lg border border-vx-ink/30 p-4">
         <h3 class="font-semibold text-vx-ink">Fallback checks</h3>
-        <p class="mt-2 text-sm text-vx-ink/80">Fixed argv, never a shell, when no server is installed.</p>
+        <p class="mt-2 text-sm text-vx-ink/80">With no server installed, fixed-argv syntax checks run instead, without a shell.</p>
       </div>
       <div class="rounded-lg border border-vx-ink/30 p-4">
         <h3 class="font-semibold text-vx-ink">Capped and sealed</h3>
-        <p class="mt-2 text-sm text-vx-ink/80">Ten rows, 200 runes each, flattened to one line, control and bidi runes stripped, nonce-sealed.</p>
+        <p class="mt-2 text-sm text-vx-ink/80">Up to ten rows of 200 runes, each on one line, with control and bidi runes removed and a nonce seal.</p>
       </div>
       <div class="rounded-lg border border-vx-ink/30 p-4">
-        <h3 class="font-semibold text-vx-ink">Never claims clean</h3>
-        <p class="mt-2 text-sm text-vx-ink/80">Silence means nothing to report, not that nothing is wrong.</p>
+        <h3 class="font-semibold text-vx-ink">No all-clear message</h3>
+        <p class="mt-2 text-sm text-vx-ink/80">When no check reports anything, nothing is attached. Signet never tells the model a file is error-free.</p>
       </div>
     </div>
   </div>
@@ -126,21 +125,21 @@ import localModelShot from '../../assets/shots/local-model.svg';
       <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={guardSwitch} /></div>
     </div>
     <div class="prose-measure order-1 lg:order-2">
-      <h2 class="text-3xl font-bold text-vx-ink">Permissions &amp; approvals.</h2>
+      <h2 class="text-3xl font-bold text-vx-ink">Permissions.</h2>
       <p class="mt-4 text-vx-ink/80">
-        Every tool falls into <strong>allow</strong>, <strong>deny</strong>, or <strong>ask</strong>. Ask shows the actual
-        diff before a mutating tool runs, so the approval is about what changed, not a bare path.
+        Each tool is set to allow, deny or ask. With ask, you see the diff before a tool that changes
+        files runs.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        The effective permission set is a union of policy, session, tool kind and role. Provenance is
-        kept per grant, so every effective grant remembers which source added it. An explicit deny
-        still wins, and merging never silently widens a surface.
+        The permissions in effect combine policy, session, tool kind and role. Each grant records which
+        of these added it, and an explicit deny always wins.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        No rules yet? Every tool call is allowed, and the <code class="mono">permission_no_match</code> setting flips
-        that default to enforce. The guardrails switch reaches every surface: agent session, inline{' '}
-        <code class="mono">!cmd</code>, <code class="mono">@file</code> admission, background agents, the CLI. A gated path checks the
-        level <em>before</em> calling the classifier, never after.
+        When no rule matches, the tool call is allowed. Set <code class="mono">permission_no_match</code> to
+        enforce to block it instead. The guardrails switch applies to the agent session, inline{' '}
+        <code class="mono">!cmd</code>, <code class="mono">@file</code> attachments, background agents and the CLI.
+        Each of these checks the switch before calling the classifier, so turning a gate off also stops
+        its classifier calls.
       </p>
     </div>
   </div>
@@ -158,11 +157,11 @@ import localModelShot from '../../assets/shots/local-model.svg';
 <SealedSection label="agents" sealText="Agents and fan-out: the f8 roster spawns concurrent read-only agents, each branch sees only the surface it is allowed to touch, and results merge." id="agents">
   <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
     <div class="prose-measure">
-      <h2 class="text-3xl font-bold text-vx-ink">Agents &amp; fan-out.</h2>
+      <h2 class="text-3xl font-bold text-vx-ink">Agents.</h2>
       <p class="mt-4 text-vx-ink/80">
-        The f8 roster splits a question into concurrent read-only probes. Each branch sees only the
-        surface it is allowed to touch, and the orchestrator merges the verdicts. A branch that
-        cannot mutate cannot be talked into mutating.
+        The f8 roster splits a question across several read-only agents that run at the same time.
+        Each one gets only the tools it is allowed to use, and their results are merged at the end.
+        These agents have no write tools, so text they read can't get them to change files.
       </p>
     </div>
     <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={fanOut} /></div>
@@ -180,25 +179,25 @@ import localModelShot from '../../assets/shots/local-model.svg';
     <div class="prose-measure">
       <h2 class="text-3xl font-bold text-vx-ink">Supervised processes.</h2>
       <p class="mt-4 text-vx-ink/80">
-        <code class="mono">!!cmd</code> starts a long-lived command — a dev server, a watcher, a tunnel —
-        under the harness instead of in another terminal. No model turn is sent for it. The command is
-        written verbatim into the project&rsquo;s process library, so the next session in this directory
-        can start it again, and enabled entries auto-start when you return.
+        <code class="mono">!!cmd</code> starts a long-running command, such as a dev server, a file watcher
+        or a tunnel, inside Signet instead of in another terminal. No model turn is sent for it. The
+        command is saved as typed in the project's process library, so a later session in the same
+        directory can start it again, and entries marked enabled start automatically.
       </p>
       <p class="mt-4 text-vx-ink/80">
         <code class="mono">/processes</code> manages the library across project and global scope. Output
         streams to a log file under <code class="mono">~/.vulnetix/signet/logs</code> and into the{' '}
         <code class="mono">f9</code> runs panel, where <code class="mono">v</code> opens the live tail
-        full-screen and <code class="mono">x</code> kills the process group. A finished process still opens
-        its tail, because the log outlives the run.
+        full-screen and <code class="mono">x</code> kills the process group. The log stays on disk, so you
+        can still open the tail after the process has finished.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        When a process exits non-zero, a <strong>recovery subagent</strong> wakes with the read-only plan
-        surface plus two tools: <code class="mono">SubAgentLog</code> to read the tail, and{' '}
-        <code class="mono">ProcessRestart</code> to try again. Its authority is bounded on purpose. The
-        restart may change flags but never the binary — <code class="mono">argv[0]</code> is pinned — deny
-        rules still apply, and every attempt spends one slot. At the cap the process is marked failed and
-        no further model call is made.
+        When a process exits with a non-zero code, a recovery subagent starts. It has the read-only plan
+        tools plus <code class="mono">SubAgentLog</code> to read the log and{' '}
+        <code class="mono">ProcessRestart</code> to try again. A restart can change the flags but not the
+        binary, because <code class="mono">argv[0]</code> is fixed to the original command. Deny rules still
+        apply, and each attempt uses one of the <code class="mono">resilience.max_process_recoveries</code>{' '}
+        slots. When they run out, the process is marked failed and no more model calls are made.
       </p>
     </div>
     <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={processSupervision} /></div>
@@ -208,39 +207,42 @@ import localModelShot from '../../assets/shots/local-model.svg';
 <SealedSection label="providers" sealText="Providers and local inference: five-layer credential resolution with provenance, ollama and llama-server in the box, multiple named instances with display labels, a /local-model assess verdict, and a classifier role with its own kind and phase rows." id="providers">
   <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
     <div class="prose-measure">
-      <h2 class="text-3xl font-bold text-vx-ink">Providers &amp; local inference.</h2>
+      <h2 class="text-3xl font-bold text-vx-ink">Providers.</h2>
       <p class="mt-4 text-vx-ink/80">
-        Credentials resolve across five layers: command line, environment, config file, agent
-        profile, built-in defaults. Every resolved value carries its provenance: who set it, where,
-        and when.
+        Credentials are read from five layers: the command line, environment, config file, agent
+        profile and built-in defaults. Each resolved value records which layer it came from.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        Two local providers ship in the box: <code class="mono">ollama</code> and <code class="mono">llama-server</code>. Run a
-        model locally and it appears in <code class="mono">/model</code>. Stop the server and it drops out of the
-        picker but stays in <code class="mono">/credentials</code>, so nothing silently re-picks an unavailable host.
+        <code class="mono">ollama</code> and <code class="mono">llama-server</code> are supported without extra
+        setup. A model you run locally appears in <code class="mono">/model</code>. If you stop the server, it
+        leaves the picker but stays in <code class="mono">/credentials</code>, so Signet won't switch to a host
+        that isn't running.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        Run as many named instances as you need. A provider profile can carry a <code class="mono">kind</code>{' '}
-        (<code class="mono">ollama</code>, <code class="mono">llama-server</code>, <code class="mono">openai-compatible</code>){' '}
-        that templates it from a built-in descriptor, and a friendly label in{' '}
+        You can configure several named instances of a provider. A provider profile can set a{' '}
+        <code class="mono">kind</code> (<code class="mono">ollama</code>, <code class="mono">llama-server</code> or{' '}
+        <code class="mono">openai-compatible</code>) to copy a built-in template, and a display name in{' '}
         <code class="mono">provider_labels</code> that <code class="mono">/providers</code>,{' '}
         <code class="mono">/model</code>, the footer and the <code class="mono">-provider</code> flag all accept. A
-        second Ollama on another box is a config entry, not a fork.
+        second Ollama on another machine is one more config entry.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        <code class="mono">/local-model</code> assesses a candidate against the classifier probe before you trust
-        it with a session: fit, notes, and the gap against the hosted baseline.
+        <code class="mono">/local-model</code> runs the classifier probe against a local model before you use it
+        for a session, and reports how well it fits, any notes, and how it compares with the hosted
+        baseline.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        The security classifier is its own role, with its own row on <code class="mono">/model</code>. The{' '}
-        <code class="mono">kind</code> row picks the stack — <code class="mono">models</code> for the embedded BERT
-        gates, <code class="mono">llm</code> for the sentinel — and the phase rows state exactly which model is
-        judging your untrusted content, including when phase 3 is off. Point it at a separate local
-        model and nothing leaves the machine at all.
+        The security classifier is configured separately, with its own rows in <code class="mono">/model</code>.
+        The <code class="mono">kind</code> row selects <code class="mono">models</code> (the embedded BERT models)
+        or <code class="mono">llm</code> (the sentinel), and the phase rows name the model used for each phase,
+        including when phase 3 is off. With a local classifier model, untrusted content is judged on your
+        own machine. The <a href="#classifier" class="underline">classifier</a> section explains how the
+        engines combine.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        The other sentinel families — mode select, goal contract, clarify, plan eval, goal eval,
-        compaction — keep inheriting the main provider and model. Only the security path switched.
+        Other Role Manager tasks (mode selection, the goal contract, clarifying questions, plan and goal
+        evaluation, and compaction) use the main provider and model, or a per-task model if you set up
+        routing.
       </p>
     </div>
     <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={credRes} /></div>
@@ -265,36 +267,35 @@ import localModelShot from '../../assets/shots/local-model.svg';
       <h2 class="text-3xl font-bold text-vx-ink">Vulnetix integration.</h2>
       <p class="mt-4 text-vx-ink/80">
         <a class="underline" href="https://www.vulnetix.com/features/ai-firewall">AI Firewall</a> routes
-        your LLM traffic through a guarded gateway, replacing the provider key with the gateway key.
-        It is fail-closed: if any of the four conditions is missing, the run falls back to the native
-        provider. The status footer reports availability through a quiet probe at startup, not a
-        claim that survives an unreachable gateway.
+        your LLM traffic through a filtering gateway, using the gateway key in place of the provider
+        key. If any of its four required settings is missing, Signet talks to the provider directly.
+        The status footer shows whether the gateway was reachable when Signet started.
       </p>
       <p class="mt-4 text-vx-ink/80">
         <a class="underline" href="https://www.vulnetix.com/features/code-scanner">Code Scanner</a>{' '}
-        reviews repositories and surfaces findings without promoting raw snippets into the
-        transcript. Artifact content is shown in the TUI, never sent as a trusted system block.{' '}
+        reviews repositories and reports findings without copying raw code snippets into the
+        transcript. Report content is shown in the TUI and is never sent to the model as a trusted
+        system block.{' '}
         <code class="mono">/vulnetix review</code> runs the scanners, <code class="mono">firewall</code> toggles the
         gateway, and <code class="mono">status</code> prints capabilities.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        A review runs nine scanners — <code class="mono">sca</code>, <code class="mono">containers</code>,{' '}
+        A review runs nine scanners: <code class="mono">sca</code>, <code class="mono">containers</code>,{' '}
         <code class="mono">sast</code>, <code class="mono">secrets</code>, <code class="mono">iac</code>,{' '}
-        <code class="mono">malscan</code>, <code class="mono">sbom</code>, <code class="mono">aibom</code>,{' '}
-        <code class="mono">cbom</code> — eight of them concurrently, in fixed lanes so two scanners never
-        race for the same artifact file. Killing one row does not stop the rest, and a review scan runs
-        until it exits rather than dying on a timeout.
+        <code class="mono">malscan</code>, <code class="mono">sbom</code>, <code class="mono">aibom</code> and{' '}
+        <code class="mono">cbom</code>. Eight run at once, each in its own lane, so no two scanners write the
+        same output file. Stopping one scanner leaves the others running, and review scans have no
+        timeout.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        The findings then come back as triage. Bounded report blocks are sanitised, classified, and
-        dropped unless the classifier says proceed; dependency findings route to a{' '}
-        <code class="mono">vulnetix fix</code> plan that is dry-run unless you opted into autofix, and code
-        findings route to the live session under the normal permission prompts.
+        Findings come back for triage. Report blocks are size-limited, sanitised and classified, and
+        are dropped unless the classifier passes them. Dependency findings go to a{' '}
+        <code class="mono">vulnetix fix</code> plan, which is a dry run unless you turned on autofix. Code
+        findings go to the current session and use the normal permission prompts.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        The platform also ships an <a class="underline" href="https://www.vulnetix.com/features/mcp-server">MCP server</a>.{' '}
-        The scanners, the firewall, and the MCP server are free for everyone. The baseline that
-        platforms eventually copy is already public.
+        Vulnetix also provides an <a class="underline" href="https://www.vulnetix.com/features/mcp-server">MCP server</a>.{' '}
+        The scanners, the firewall and the MCP server are free for everyone.
       </p>
     </div>
   </div>

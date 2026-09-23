@@ -34,7 +34,7 @@ const variants = [
     tag: null,
     embeds: 'nothing',
     size: '~23 MB',
-    note: 'The LLM sentinel path, exactly the pre-embed behaviour.',
+    note: 'Classifies with the LLM sentinel, as Signet did before models were embedded.',
   },
   {
     asset: 'signet-no-classifier',
@@ -59,10 +59,9 @@ const firstSteps = [
 <SealedSection label="start" sealText={sealText} id="start">
   <h2 class="text-3xl font-bold text-vx-ink">Getting started.</h2>
   <p class="prose-measure mt-4 text-vx-ink/80">
-    Install any way you like. Six platforms: linux, darwin, and windows, each amd64 and arm64. Every
-    release is built by the same workflow that publishes the Homebrew formula and the Scoop
-    manifest, and the installer verifies the binary against the release checksums before it writes
-    anything.
+    Signet runs on linux, darwin and windows, on amd64 and arm64. Each release is built by the same
+    workflow that publishes the Homebrew formula and the Scoop manifest, and the installer checks the
+    binary against the release checksums before writing anything.
   </p>
 
   <div class="mt-8 grid gap-10 lg:grid-cols-2">
@@ -98,10 +97,10 @@ const firstSteps = [
     <h3 class="text-2xl font-bold text-vx-ink">Which binary you get.</h3>
     <p class="prose-measure mt-4 text-vx-ink/80">
       Releases ship in four asset families. Homebrew, Scoop and <code class="mono">install.sh</code> all
-      default to <strong>signet-bert-guardrails</strong>, which carries the phase-1 model inside the
-      binary — so guardrails work on a machine with no provider configured, no API key, and no model
-      download. The on-disk command is <code class="mono">signet</code> whichever family you pick, and a
-      variant binary self-updates within its own family.
+      default to <code class="mono">signet-bert-guardrails</code>, which includes the phase-1 model in the
+      binary. Guardrails work straight away, without a configured provider, an API key or a model
+      download. The installed command is <code class="mono">signet</code> for every family, and each binary
+      updates itself within its own family.
     </p>
 
     <div class="mt-6 grid gap-4 md:grid-cols-2">
@@ -132,7 +131,7 @@ const firstSteps = [
       signet · Apache-2.0 · <a class="underline" href="https://github.com/vulnetix/signet">github.com/vulnetix/signet</a>
     </p>
     <p class="mt-2 text-sm">
-      Free and open source, alongside Vulnetix&rsquo;s scanners, AI Firewall, and MCP server.
+      Free and open source, like the Vulnetix scanners, AI Firewall and MCP server.
     </p>
   </footer>
 </SealedSection>

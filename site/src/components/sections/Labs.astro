@@ -4,23 +4,22 @@ import ComparisonTable from '../ui/ComparisonTable.tsx';
 import pixFacepalm from '../../assets/pix/pix-facepalm.svg?raw';
 
 const sealText =
-  'Where the labs stopped: a feature-presence comparison naming Claude Code, Codex, Cursor and Gemini CLI. Every row is a checkable fact, never a quality judgement. The models are the good part.';
+  'Compared with other harnesses: a table of which features Claude Code, Codex, Cursor and Gemini CLI have. Each row can be checked against a public source, and the table does not rate the models.';
 ---
 
 <SealedSection label="labs" sealText={sealText} id="labs">
   <div>
     <div class="grid gap-10 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-start">
       <div class="min-w-0">
-        <h2 class="text-3xl font-bold text-vx-ink">Where the labs stopped.</h2>
+        <h2 class="text-3xl font-bold text-vx-ink">Compared with other harnesses.</h2>
         <p class="mt-4 max-w-[72ch] text-vx-ink/80">
-          Claude Code, Codex, Cursor, Gemini CLI. The big labs build excellent models and put them
-          behind harnesses that leak, over-trust tool output, and ship nothing you did not hack into
-          a <code class="mono">skills.md</code> yourself. The models are the good part. This page is not a verdict on
-          them.
+          Claude Code, Codex, Cursor and Gemini CLI run very good models. This table compares the
+          harnesses around those models, and only on whether each feature exists. It says nothing about
+          the models themselves.
         </p>
         <p class="mt-3 max-w-[72ch] text-vx-ink/80">
-          The table is scoped strictly to <strong>feature presence</strong>. Every row is a checkable fact, never
-          a quality judgement. A dot means there is no public, checkable source at time of writing.
+          Each row can be checked against public documentation or source code. A dot means no public
+          source was found either way when the table was written.
         </p>
 
         <div class="mt-8">

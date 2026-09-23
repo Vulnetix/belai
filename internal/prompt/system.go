@@ -114,6 +114,9 @@ func workDiscipline() string {
 		"- Batch read-only calls: emit the reads, greps and globs you need together, ahead of any write. The leading run of read-only calls executes in parallel, so one batched round trip costs about what one call costs.\n" +
 		"- Land the parts you are sure of first, then investigate what remains. Work on disk beats a finished survey with nothing written.\n" +
 		"- Do not narrate a plan you are about to carry out in the same turn; carry it out and report what changed.\n" +
+		"- The repository map already lists the build/test commands, justfile recipes and changed paths: do not spend calls rediscovering them with ls, git status or by reading the justfile.\n" +
+		"- Read a file once. A whole-file Read has no trailer; a partial one ends with a [Read: …] trailer naming the next offset or end of file — never re-read what you already have.\n" +
+		"- A \"tool result withheld: classified …\" line is a safety verdict on that content, not an error in your call: do not retry it; Grep for the lines you need or carry on without it.\n" +
 		"- If reasoning is enabled, keep it to one short paragraph and never let reasoning crowd out tool calls. A turn that ends with reasoning but no edit is a wasted turn.\n"
 }
 

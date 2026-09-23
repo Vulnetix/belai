@@ -307,6 +307,7 @@ func (a *App) executeApprovedPlan(opt modes.PlanOption) tea.Cmd {
 	a.modeSticky = true
 	a.pendingPlanExecute = true
 	a.planExecuteName = a.planReview.name
+	a.planExecuting = true
 	a.syncPlanMode()
 	a.saveMode()
 	a.persistCarrierMeta()

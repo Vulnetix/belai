@@ -87,6 +87,10 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   no mutating tools and no `Bash`. A read-only `Bash` returns only when an
   explicit permission allow rule opts into it, and guardrails off restores the
   full surface.
+  An approved plan is no longer plan mode: its execute turn runs the goal
+  pass loop on the full surface (the human approval is the gate), and the
+  `read_only` setting narrows agent-mode turns only — never goal mode or an
+  approved plan.
 - **Delimiters are sealed.** Every harness delimiter carries a random nonce
   plus a SHA-256 integrity hash of its enclosed content. On egress, any block
   lacking a nonce, carrying an unknown nonce, or failing its integrity hash is
