@@ -36,7 +36,27 @@ type ClassifierPayload struct {
 	// (goal/plan/mode/agent evaluators) and left false for security and the
 	// structured builders, which keep content-only parsing.
 	AllowReasoningFallback bool
+	// UseCase names the role-manager activity for model routing: "main",
+	// "mode_eval", "goal_eval", "plan_eval", "goal_contract", "clarify",
+	// "compaction", "session_name", or "agent_eval". Empty means the caller
+	// has no routing hint (security payloads leave it empty).
+	UseCase string
 }
+
+// Classifier use-case names carried in ClassifierPayload.UseCase. They key the
+// model-routing decision per role-manager activity, so the values are the
+// single source of truth shared by the payload builders and run's router.
+const (
+	UseCaseMain         = "main"
+	UseCaseModeEval     = "mode_eval"
+	UseCaseGoalEval     = "goal_eval"
+	UseCasePlanEval     = "plan_eval"
+	UseCaseGoalContract = "goal_contract"
+	UseCaseClarify      = "clarify"
+	UseCaseCompaction   = "compaction"
+	UseCaseSessionName  = "session_name"
+	UseCaseAgentEval    = "agent_eval"
+)
 
 // ClassifierStructuredMaxTokens is the completion budget for classifier calls
 // whose reply is structured multi-token output (a compaction summary, a

@@ -52,6 +52,7 @@ func BuildModeClassifierPayload(prompt string) ClassifierPayload {
 		System:                 modeClassifierSystemPrompt,
 		User:                   prompt,
 		AllowReasoningFallback: true,
+		UseCase:                UseCaseModeEval,
 	}
 }
 

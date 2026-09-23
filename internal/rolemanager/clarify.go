@@ -56,6 +56,7 @@ func BuildClarifyPayload(in ClarifyInput) ClassifierPayload {
 		System:    clarifySystemPrompt,
 		User:      buildClarifyUserContent(in.Prompt, in.Findings, in.Round),
 		MaxTokens: ClassifierStructuredMaxTokens,
+		UseCase:   UseCaseClarify,
 	}
 }
 
