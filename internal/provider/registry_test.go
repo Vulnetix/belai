@@ -127,3 +127,18 @@ func TestTemplateMapsEveryKind(t *testing.T) {
 		}
 	}
 }
+
+// TestStreamUsageProviders pins which providers ask for streamed token usage.
+// Goal-mode accounting depends on it: without stream_options.include_usage the
+// OpenAI-compatible streams never report usage and every pass counted 0.
+func TestStreamUsageProviders(t *testing.T) {
+	for _, name := range []string{"openai", "openrouter", "groq", "deepseek", "fireworks", "together", "xai"} {
+		d, ok := Lookup(name)
+		if !ok {
+			t.Fatalf("provider %q missing", name)
+		}
+		if !d.Usage {
+			t.Errorf("provider %q must request stream usage", name)
+		}
+	}
+}

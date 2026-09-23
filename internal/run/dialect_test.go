@@ -103,8 +103,13 @@ func TestResolveDialectNewBuiltinsOpenAIChat(t *testing.T) {
 			if d.kind != kindOpenAIChat || d.route != routeNative {
 				t.Fatalf("dialect = %+v, want openai chat native", d)
 			}
-			if d.effort || d.usage || d.thinking {
+			if d.effort || d.thinking {
 				t.Fatalf("feature bits should stay off for %s: %+v", name, d)
+			}
+			// openrouter documents stream_options.include_usage; the others
+			// are not asked for it.
+			if wantUsage := name == "openrouter"; d.usage != wantUsage {
+				t.Fatalf("usage bit for %s = %v, want %v", name, d.usage, wantUsage)
 			}
 		})
 	}
