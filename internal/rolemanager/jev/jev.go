@@ -113,6 +113,9 @@ func New(token func() (string, error)) *Client {
 	}
 }
 
+// SetEndpoint overrides the Decisions endpoint (test seam).
+func (c *Client) SetEndpoint(endpoint string) { c.endpoint = endpoint }
+
 // Classify implements rolemanager.Classifier. A transport error from the
 // Decisions API is an error; a reply that cannot be parsed as a probability is
 // INCONCLUSIVE, not an error, so the caller can fail closed.
