@@ -34,6 +34,13 @@ type remoteModel struct {
 }
 
 func newRemoteGate(phase Phase, mc ModelConfig, hfToken func() (string, error)) (gate, error) {
+	// A remote model selected from the curated classifier catalogue can
+	// resolve its attack label here, so the caller never has to guess one.
+	if mc.AttackLabel == "" {
+		if label, ok := AttackLabelFor(mc.ID); ok {
+			mc.AttackLabel = label
+		}
+	}
 	if mc.AttackLabel == "" {
 		return nil, fmt.Errorf("remote model %q: AttackLabel is required", mc.ID)
 	}

@@ -246,14 +246,11 @@ func resolveSecurityPhase(cls *config.ClassifierSettings, phase int) *mlclassify
 		return nil
 	}
 
-	var attack string
 	var embeddedID string
 	var embeddedOK bool
 	if phase == 1 {
-		attack = phase1AttackLabel
 		embeddedID, embeddedOK = mlclassify.EmbeddedPhase1()
 	} else {
-		attack = phase2AttackLabel
 		embeddedID, embeddedOK = mlclassify.EmbeddedPhase2()
 	}
 
@@ -265,6 +262,18 @@ func resolveSecurityPhase(cls *config.ClassifierSettings, phase int) *mlclassify
 			// No embedded model and no explicit id: this phase has no model.
 			return nil
 		}
+	}
+
+	// Resolve the attack label from the curated catalogue when the model is
+	// known; fall back to the per-phase embedded default otherwise. The
+	// catalogue is the single source of truth for the five supported models,
+	// so a curated remote model always resolves its documented label.
+	attack := phase1AttackLabel
+	if phase == 2 {
+		attack = phase2AttackLabel
+	}
+	if label, ok := mlclassify.AttackLabelFor(model); ok {
+		attack = label
 	}
 
 	source := ps.Source
