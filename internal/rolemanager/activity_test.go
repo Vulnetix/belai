@@ -11,6 +11,7 @@ var allEvents = []Event{
 	EventSecuritySentinel,
 	EventSecuritySentinelMalformed,
 	EventSecurityPhase,
+	EventSecurityFallback,
 	EventVerdictCacheHit,
 	EventVerdictCacheBad,
 	EventModeClassify,
@@ -125,6 +126,19 @@ func TestSecurityPhaseDescriptionsAreWhyFocused(t *testing.T) {
 		if c.rejectPhase && strings.Contains(desc.Summary, "Phase ") {
 			t.Errorf("%s summary = %q, must not contain \"Phase\"", c.subject, desc.Summary)
 		}
+	}
+}
+
+func TestSecurityFallbackDescription(t *testing.T) {
+	desc, ok := Describe(Activity{Event: EventSecurityFallback, Verdict: "fallback", Subject: "security"})
+	if !ok {
+		t.Fatal("security_fallback has no description")
+	}
+	if desc.Summary == "" || desc.Outcome == "" {
+		t.Fatalf("security_fallback: empty description %+v", desc)
+	}
+	if desc.Levels != LevelSecurity {
+		t.Fatalf("security_fallback: Levels = %v, want security", desc.Levels)
 	}
 }
 

@@ -58,3 +58,13 @@ func recordModel(e Event, verdict, subject, detail string, pass int, model strin
 func RecordSecurityPhase(subject, verdict, model string) {
 	recordModel(EventSecurityPhase, verdict, subject, "", 0, model)
 }
+
+// RecordSecurityFallback emits a security-fallback event: the Jev security
+// classifier could not settle a verdict (an in-band probability, or a
+// malformed or missing answer) and handed off to the fallback classifier, the
+// agent model. The event carries no model identity of its own: the TUI
+// attributes an activity with an empty Model to the agent model, which is
+// exactly the model that ruled on the fallback.
+func RecordSecurityFallback() {
+	recordModel(EventSecurityFallback, "fallback", "security", "", 0, "")
+}

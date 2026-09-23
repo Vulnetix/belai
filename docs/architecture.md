@@ -117,7 +117,10 @@ Business rules:
   five curated BERT ids and `openrouter` to the Jev Decisions model
   (`typesafe/jev-1.13`, seeded) plus any `typesafe/jev*` ids; custom,
   `llama-server` and `ollama` stay unfiltered and show the broad-model
-  warning. The agent/provider picker is unchanged.
+  warning. The agent/provider picker is unchanged. The Jev choice is the
+  guardrail security classifier and tool-call gate; Jev is a Decisions model,
+  never a chat model, so it appears on the classifier picker only and never on
+  the agent or routing pickers.
 - **Embedded models fail closed.** A variant binary whose embedded model fails
   to load or verify is a hard startup error, never a silent downgrade to the
   LLM path. Extraction and load happen once, eagerly.
@@ -172,14 +175,14 @@ specific role-manager activities without changing the main agent model. It is
   "kind": "routed",               // "defined" | "routed"; default "defined"
   "use_cases": {
     "main":          { "provider": "openai", "model": "gpt-5" },
-    "mode_eval":     { "provider": "openrouter", "model": "typesafe/jev-1.13" },
-    "goal_eval":     { "provider": "openrouter", "model": "typesafe/jev-1.13" },
-    "plan_eval":     { "provider": "openrouter", "model": "typesafe/jev-1.13" },
+    "mode_eval":     { "provider": "openrouter", "model": "openai/gpt-5-mini" },
+    "goal_eval":     { "provider": "openrouter", "model": "openai/gpt-5-mini" },
+    "plan_eval":     { "provider": "openrouter", "model": "openai/gpt-5-mini" },
     "goal_contract": { "provider": "openai", "model": "gpt-5-mini" },
     "clarify":       { "provider": "openai", "model": "gpt-5-mini" },
     "compaction":    { "provider": "openai", "model": "gpt-5-mini" },
     "session_name":  { "provider": "openai", "model": "gpt-5-mini" },
-    "agent_eval":    { "provider": "openrouter", "model": "typesafe/jev-1.13" }
+    "agent_eval":    { "provider": "openrouter", "model": "openai/gpt-5-mini" }
   }
 }
 ```
@@ -199,6 +202,12 @@ Business rules and edge cases:
   inconclusive verdict (no unique winner), or a winner missing from the pool
   falls back to the defined main classifier — routing degrades to the main
   model, never to a dropped turn.
+- **Jev candidates fall back to the agent model.** A use-case target may still
+  name a Jev Decisions model (`openrouter` + `typesafe/jev*`) and it loads
+  without error, but a Jev model cannot chat, so a routed winner that is a Jev
+  model resolves to the main classifier at runtime. The `/model` routing
+  pickers never offer `typesafe/jev*` models for this reason; they stay
+  available on the classifier picker only.
 - **Use-case keys are the single source of truth.** The known keys are
   `main`, `mode_eval`, `goal_eval`, `plan_eval`, `goal_contract`, `clarify`,
   `compaction`, `session_name`, and `agent_eval`. Unknown keys may be stored
@@ -2343,7 +2352,9 @@ rows (when `kind` is `models`), **reasoning**, **effort**, **chunk** and
   (`typesafe/jev-1.13`, seeded) plus any `typesafe/jev*` ids, and the
   broad-model providers (custom, `llama-server`, `ollama`) show every model
   plus a warning line — *"Classifier provider: choose a classifier-specific
-  model or switch to kind LLM for general chat models."*
+  model or switch to kind LLM for general chat models."* The routing
+  use-case pickers, by contrast, leave out `typesafe/jev*` models: routed
+  use cases need chat, and Jev cannot chat.
 - **Phase rows** appear only when `kind` is `models`. Phase 1 is locked when
   embedded, shows the remote model when an HF token resolves it, or a
   "set HF token / provider" hint. Phase 2 renders the model when running,

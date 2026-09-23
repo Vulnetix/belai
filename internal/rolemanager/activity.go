@@ -20,6 +20,7 @@ const (
 	EventSecuritySentinel          Event = "security_sentinel"
 	EventSecuritySentinelMalformed Event = "security_sentinel_malformed"
 	EventSecurityPhase             Event = "security_phase"
+	EventSecurityFallback          Event = "security_fallback"
 	EventVerdictCacheHit           Event = "verdict_cache_hit"
 	EventVerdictCacheBad           Event = "verdict_cache_bad"
 	EventModeClassify              Event = "mode_classify"
@@ -155,6 +156,13 @@ func Describe(a Activity) (Description, bool) {
 		return securityDescription(a), true
 	case EventSecurityPhase:
 		return phaseDescription(a), true
+	case EventSecurityFallback:
+		return Description{
+			Summary: "Jev couldn't settle the security verdict",
+			Outcome: "the agent model ruled instead",
+			Tone:    ToneCaution,
+			Levels:  LevelSecurity,
+		}, true
 	case EventSecuritySentinelMalformed:
 		return Description{
 			Summary: "Checked what " + subjectPhrase(a.Subject) + " returned",

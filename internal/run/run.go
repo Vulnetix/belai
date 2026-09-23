@@ -1141,10 +1141,16 @@ func mainClassifierConfig(cfg Config) Config {
 }
 
 // NewClassifierWithRetry is NewClassifier with an onRetry callback invoked
-// before each L1 backoff. The callback can forward resilience.Attempt metadata
-// to observers such as the TUI.
+// before each L1 backoff. A classifier config whose provider and model form a
+// Jev Decisions model falls back to the main config: Jev is a Decisions model,
+// never a chat model, so it must never receive chat/completions. The Jev
+// security path wires the Decisions call separately in NewPipelineWithRetry.
 func NewClassifierWithRetry(cfg Config, client *http.Client, onRetry func(resilience.Attempt)) rolemanager.Classifier {
-	return classifierFromConfig(cfg.ClassifierOrDefault().config(), client, onRetry)
+	cc := cfg.ClassifierOrDefault().config()
+	if jev.IsDecisionsModel(cc.Provider, cc.Model) {
+		cc = mainClassifierConfig(cfg)
+	}
+	return classifierFromConfig(cc, client, onRetry)
 }
 
 // NewRoleClassifier builds the classifier that serves the non-guardrail
@@ -1218,6 +1224,12 @@ func (r *routedClassifier) forUseCase(ctx context.Context, useCase string) rolem
 	}
 	for _, pc := range r.pool {
 		if pc.Key == decision.Key {
+			// A Jev Decisions model is not a chat model: a routed winner that
+			// is a Jev model falls back to the main classifier rather than
+			// ever being asked to chat.
+			if jev.IsDecisionsModel(pc.Cfg.Provider, pc.Cfg.Model) {
+				return r.cacheAndReturn(useCase, r.main)
+			}
 			return r.cacheAndReturn(useCase, classifierFromConfig(pc.Cfg, r.client, r.onRetry))
 		}
 	}
@@ -1263,7 +1275,7 @@ func NewPipelineWithRetry(cfg Config, client *http.Client, cache *rolemanager.Ca
 	// follows the routing config (defined: main; routed: Jev). The guardrail
 	// classifier serves security and always follows classifier.provider/model.
 	role := NewRoleClassifier(cfg, client, onRetry)
-	guard := NewClassifierWithRetry(cfg, client, onRetry)
+	guard := securityGuard(cfg, client, onRetry)
 	p := rolemanager.NewPipelineWithChunk(role, rolemanager.ChunkConfig{
 		MaxBytes:    cc.Chunk.MaxBytes,
 		Concurrency: cc.Chunk.Concurrency,
@@ -1293,6 +1305,22 @@ func NewPipelineWithRetry(cfg Config, client *http.Client, cache *rolemanager.Ca
 		p.SetMLSecurity(false)
 	}
 	return p
+}
+
+// securityGuard builds the guardrail security classifier. It follows
+// classifier.provider/model: the full five-token LLM sentinel on the llm path,
+// or phase 3 on the models path. When the classifier is a Jev Decisions model
+// the guard sends its security checks to the Decisions API (one noul question
+// per threat category) and falls back to the agent model — the chat
+// classifier NewClassifierWithRetry already resolved to main — on an
+// inconclusive verdict.
+func securityGuard(cfg Config, client *http.Client, onRetry func(resilience.Attempt)) rolemanager.Classifier {
+	cc := cfg.ClassifierOrDefault()
+	guard := NewClassifierWithRetry(cfg, client, onRetry)
+	if jev.IsDecisionsModel(cc.Provider, cc.Model) {
+		guard = jev.NewSecurity(func() (string, error) { return cc.APIKey, nil }, guard)
+	}
+	return guard
 }
 
 // failingClassifier returns a fixed error on every call, so a security stack
