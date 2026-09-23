@@ -488,6 +488,7 @@ func runAgentForeground(ctx context.Context, name, model, providerName, workdir 
 		return err
 	}
 	mgr := bgagent.NewManager(workdir, cfg, httpclient.Default(), settings, pol)
+	mgr.SetCredentialSource(resolver)
 	if err := mgr.Start(name, profile); err != nil {
 		return err
 	}
