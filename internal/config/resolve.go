@@ -258,6 +258,13 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.LSP.merge(s.LSP)
 		e.Origin["lsp"] = src
 	}
+	if s.Resilience != nil {
+		if e.Settings.Resilience == nil {
+			e.Settings.Resilience = &ResilienceSettings{}
+		}
+		e.Settings.Resilience.merge(s.Resilience)
+		e.Origin["resilience"] = src
+	}
 	if s.WorkspaceDirs != nil {
 		// Later layers replace, not append, so a project layer can narrow the
 		// set of allowed workspace directories.

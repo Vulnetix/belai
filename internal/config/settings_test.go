@@ -444,23 +444,26 @@ func TestMaxExploreIterationsOrDefaults(t *testing.T) {
 }
 
 func TestMaxAgentsOrDefaults(t *testing.T) {
+	def := DefaultMaxAgents
 	var nilSettings *ResilienceSettings
-	if got := nilSettings.MaxAgentsOr(3); got != 3 {
-		t.Fatalf("nil MaxAgentsOr = %d, want 3", got)
+	if got := nilSettings.MaxAgentsOr(def); got != def {
+		t.Fatalf("nil MaxAgentsOr = %d, want %d", got, def)
 	}
-	if got := (&ResilienceSettings{}).MaxAgentsOr(3); got != 3 {
-		t.Fatalf("unset MaxAgentsOr = %d, want 3", got)
+	if got := (&ResilienceSettings{}).MaxAgentsOr(def); got != def {
+		t.Fatalf("unset MaxAgentsOr = %d, want %d", got, def)
 	}
-	if got := (&ResilienceSettings{MaxAgents: 1}).MaxAgentsOr(3); got != 1 {
+	if got := (&ResilienceSettings{MaxAgents: 1}).MaxAgentsOr(def); got != 1 {
 		t.Fatalf("MaxAgentsOr = %d, want 1", got)
 	}
 }
 
-func TestResilienceOverrideTakesMinimumMaxAgents(t *testing.T) {
+func TestResilienceMaxAgentsProjectOverride(t *testing.T) {
+	// MaxAgents is a performance preference, not a safety budget, so a project
+	// may raise it above the global value.
 	global := Settings{Resilience: &ResilienceSettings{MaxAgents: 3}}
 	got := global.Override(Settings{Resilience: &ResilienceSettings{MaxAgents: 10}})
-	if got.Resilience.MaxAgents != 3 {
-		t.Fatalf("project cannot raise max_agents: got %d", got.Resilience.MaxAgents)
+	if got.Resilience.MaxAgents != 10 {
+		t.Fatalf("project should be able to raise max_agents: got %d", got.Resilience.MaxAgents)
 	}
 	got = global.Override(Settings{Resilience: &ResilienceSettings{MaxAgents: 1}})
 	if got.Resilience.MaxAgents != 1 {
@@ -469,6 +472,13 @@ func TestResilienceOverrideTakesMinimumMaxAgents(t *testing.T) {
 	got = Settings{Resilience: &ResilienceSettings{}}.Override(Settings{Resilience: &ResilienceSettings{MaxAgents: 2}})
 	if got.Resilience.MaxAgents != 2 {
 		t.Fatalf("unset global should take project max_agents: got %d", got.Resilience.MaxAgents)
+	}
+	// Other resilience budgets remain tighten-only to preserve the safety
+	// invariant project settings cannot widen.
+	global = Settings{Resilience: &ResilienceSettings{MaxAttempts: 3}}
+	got = global.Override(Settings{Resilience: &ResilienceSettings{MaxAttempts: 10}})
+	if got.Resilience.MaxAttempts != 3 {
+		t.Fatalf("project must still tighten MaxAttempts: got %d", got.Resilience.MaxAttempts)
 	}
 }
 
