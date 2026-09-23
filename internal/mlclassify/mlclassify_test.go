@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/vulnetix/signet/internal/rolemanager"
 )
@@ -335,4 +336,41 @@ func slicesEqual(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// runeWordTokenizer is wordTokenizer with rune offsets, which is what the
+// cybertron wordpiece tokenizer reports.
+func runeWordTokenizer(text string) []span {
+	var spans []span
+	start := -1
+	runes := []rune(text)
+	for i := 0; i <= len(runes); i++ {
+		if i == len(runes) || runes[i] == ' ' {
+			if start >= 0 {
+				spans = append(spans, span{start: start, end: i})
+				start = -1
+			}
+		} else if start < 0 {
+			start = i
+		}
+	}
+	return spans
+}
+
+// TestWindowsNonASCIIUseRuneOffsets is the "513 > 512" regression: rune
+// offsets used as byte offsets shifted every window on non-ASCII text and
+// left the tail unclassified. Each window must be exactly its tokens, and the
+// last window must reach the final token.
+func TestWindowsNonASCIIUseRuneOffsets(t *testing.T) {
+	c := &Classifier{window: WindowConfig{Tokens: 3, Overlap: 1, MaxWindows: 10}, tok: runeWordTokenizer}
+	got := c.mustWindows(t, "α — β → γ 🙂 δ 中文 end")
+	want := []string{"α — β", "β → γ", "γ 🙂 δ", "δ 中文 end"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("windows = %q, want %q", got, want)
+	}
+	for _, w := range got {
+		if !utf8.ValidString(w) {
+			t.Fatalf("window %q is not valid UTF-8", w)
+		}
+	}
 }

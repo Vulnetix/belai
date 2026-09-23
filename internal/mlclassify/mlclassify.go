@@ -178,9 +178,17 @@ type Options struct {
 
 // Identity returns the classifier-identity string mixed into verdict cache
 // keys so verdicts from different classifier stacks never share a bucket.
+// windowingVersion is mixed into the cache identity. Bump it whenever window
+// slicing changes what text a verdict was computed over: version 2 fixed the
+// rune/byte offset bug, so every verdict computed on misaligned windows —
+// including permanently cached false positives on non-ASCII files — is
+// re-evaluated once rather than trusted. Content is still always classified.
+const windowingVersion = 2
+
 func (o Options) Identity() string {
 	var b strings.Builder
 	b.WriteString("models")
+	fmt.Fprintf(&b, ";windowing=v%d", windowingVersion)
 	if o.Phase1 != nil {
 		fmt.Fprintf(&b, ";phase1=%s@%s:%.3f", o.Phase1.ID, o.Phase1.Source, o.Phase1.effectiveThreshold(Phase1))
 	}
@@ -466,14 +474,19 @@ func (c *Classifier) windows(content string) ([]string, error) {
 		return []string{content}, nil
 	}
 
+	// The tokenizer reports offsets in runes, not bytes. Slicing the string
+	// with them directly misaligned every window on non-ASCII text: windows
+	// re-tokenized past 512 tokens (a hard model error that withheld the
+	// result) and the file's tail was never classified at all.
+	byteAt := runeByteOffsets(content)
 	var windows []string
 	for start := 0; start < len(toks); {
 		end := start + limit
 		if end >= len(toks) {
-			windows = append(windows, sliceText(content, toks, start, len(toks)))
+			windows = append(windows, sliceText(content, byteAt, toks, start, len(toks)))
 			break
 		}
-		windows = append(windows, sliceText(content, toks, start, end))
+		windows = append(windows, sliceText(content, byteAt, toks, start, end))
 		if len(windows) > maxWindows {
 			return nil, fmt.Errorf("mlclassify: content exceeds %d windows", maxWindows)
 		}
@@ -487,11 +500,34 @@ func (c *Classifier) windows(content string) ([]string, error) {
 }
 
 // sliceText returns the substring of content spanning token [start,end).
-func sliceText(content string, toks []span, start, end int) string {
-	s := toks[start].start
-	e := toks[end-1].end
-	if e > len(content) {
-		e = len(content)
+// Token offsets are rune indices; byteAt maps them to byte offsets.
+func sliceText(content string, byteAt []int, toks []span, start, end int) string {
+	s := runeToByte(byteAt, toks[start].start)
+	e := runeToByte(byteAt, toks[end-1].end)
+	if e < s {
+		e = s
 	}
 	return content[s:e]
+}
+
+// runeByteOffsets returns, for every rune index i of s, the byte offset where
+// that rune starts, plus a final entry len(s) for the end of the string.
+func runeByteOffsets(s string) []int {
+	out := make([]int, 0, len(s)+1)
+	for i := range s {
+		out = append(out, i)
+	}
+	return append(out, len(s))
+}
+
+// runeToByte maps a rune index to its byte offset, clamped to the string.
+func runeToByte(byteAt []int, r int) int {
+	switch {
+	case r <= 0:
+		return 0
+	case r >= len(byteAt):
+		return byteAt[len(byteAt)-1]
+	default:
+		return byteAt[r]
+	}
 }
