@@ -79,7 +79,7 @@ const (
 // is wrapped in DirectivePrefix/DirectiveSuffix prose so the model reads the
 // sealed block as context rather than as the question to answer.
 const (
-	planDirective         = "No work has landed yet. Name the file to change and make the smallest correct edit that advances the goal, in this pass. Record the steps with update_plan (first step in_progress) if you have not already; the list is a side effect of working, not a substitute for it."
+	planDirective         = "No work has landed yet. Name the file to change and make the smallest correct edit that advances the goal, in this pass. Record the steps with update_plan (first step in_progress) if you have not already; the list is a side effect of working, not a substitute for it. Read the exact bytes first, then edit immediately — do not end this pass without a file mutation."
 	verificationDirective = "Before doing any further work, verify the completed items in the todo list against the files on disk (read-only). Confirm each marked-done item is actually true; if one is not, correct the list and the work. Only continue new work after the check."
 	// continuationDirective is injected when a bounded pass spends its whole
 	// iteration budget. Budget exhaustion is a turn boundary, not a failure.
@@ -88,7 +88,7 @@ const (
 	// point over plan mode is that a clear change is made immediately, so the
 	// directive leads with the edit and treats the checklist as bookkeeping
 	// that happens alongside it.
-	goalAckDirective = "Start the work in this pass. Call update_plan once with the steps you will execute, the first marked in_progress, then make the first real change — read the exact bytes you are about to edit and edit them. A pass that ends with no file changed has not advanced the goal. Mark steps complete with update_plan, or with [DONE:n] in your reply, as you finish them. Keep any restatement of the objective to a single line naming the deliverable and how completion will be verified."
+	goalAckDirective = "Start the work in this pass. Call update_plan once with the steps you will execute, the first marked in_progress, then make the first real change — read the exact bytes you are about to edit and edit them. Mutate at least one file in this first pass unless the task is explicitly read-only. Prefer parallel read-only calls followed immediately by an Edit or Write; do not gather evidence across multiple passes before editing. A pass that ends with no file changed has not advanced the goal. Mark steps complete with update_plan, or with [DONE:n] in your reply, as you finish them. Keep any restatement of the objective to a single line naming the deliverable and how completion will be verified."
 )
 
 // goalAckDirective returns the first-pass goal directive, naming the detected
