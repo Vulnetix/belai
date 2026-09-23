@@ -164,6 +164,9 @@ var registry = map[string]Descriptor{
 		},
 		BaseURL: "https://openrouter.ai/api/v1", NetrcHost: "openrouter.ai",
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
+		// Documented to accept stream_options.include_usage; without it goal
+		// token accounting read 0 for every pass.
+		Usage: true,
 		// openrouter/free is the harness default for a fresh install: it
 		// routes across OpenRouter's zero-cost models, so a new user with a
 		// signup credit can run Signet before choosing a paid model.
@@ -230,6 +233,9 @@ var registry = map[string]Descriptor{
 		},
 		BaseURL: "https://api.groq.com/openai/v1", NetrcHost: "api.groq.com",
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
+		// Documented to accept stream_options.include_usage; without it goal
+		// token accounting read 0 for every pass.
+		Usage:        true,
 		DefaultModel: "llama-3.3-70b-versatile",
 		Models: []ModelSpec{
 			{ID: "llama-3.3-70b-versatile", Label: "Llama 3.3 70B"},
@@ -245,6 +251,9 @@ var registry = map[string]Descriptor{
 		},
 		BaseURL: "https://api.deepseek.com/v1", NetrcHost: "api.deepseek.com",
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
+		// Documented to accept stream_options.include_usage; without it goal
+		// token accounting read 0 for every pass.
+		Usage:        true,
 		DefaultModel: "deepseek-chat",
 		Models: []ModelSpec{
 			{ID: "deepseek-chat", Label: "DeepSeek Chat"},
@@ -260,6 +269,9 @@ var registry = map[string]Descriptor{
 		},
 		BaseURL: "https://api.fireworks.ai/inference/v1", NetrcHost: "api.fireworks.ai",
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
+		// Documented to accept stream_options.include_usage; without it goal
+		// token accounting read 0 for every pass.
+		Usage:        true,
 		DefaultModel: "accounts/fireworks/models/llama-v3p3-70b-instruct",
 		Models: []ModelSpec{
 			{ID: "accounts/fireworks/models/llama-v3p3-70b-instruct", Label: "Llama 3.3 70B Instruct"},
@@ -290,6 +302,9 @@ var registry = map[string]Descriptor{
 		},
 		BaseURL: "https://api.together.xyz/v1", NetrcHost: "api.together.xyz",
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
+		// Documented to accept stream_options.include_usage; without it goal
+		// token accounting read 0 for every pass.
+		Usage:        true,
 		DefaultModel: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
 		Models: []ModelSpec{
 			{ID: "meta-llama/Llama-3.3-70B-Instruct-Turbo", Label: "Llama 3.3 70B"},
@@ -305,6 +320,9 @@ var registry = map[string]Descriptor{
 		},
 		BaseURL: "https://api.x.ai/v1", NetrcHost: "api.x.ai",
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
+		// Documented to accept stream_options.include_usage; without it goal
+		// token accounting read 0 for every pass.
+		Usage:        true,
 		Effort:       true,
 		DefaultModel: "grok-3-latest",
 		Models: []ModelSpec{
