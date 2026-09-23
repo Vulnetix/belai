@@ -71,6 +71,11 @@ type Pipeline struct {
 	// admission is traced with the rolemanager record helper. nil means no
 	// shared ceiling.
 	Pool *agentpool.Pool
+	// mlSecurity reports whether Security is the ML classifier stack (models
+	// path) rather than the LLM sentinel. It drives the oversized-content
+	// windowing choice: the ML stack windows by tokens inside mlclassify, while
+	// the LLM sentinel path byte-chunks here.
+	mlSecurity bool
 	// identity prefixes verdict cache keys so verdicts produced by different
 	// classifiers never share a bucket. Empty preserves content-only keying.
 	identity string
@@ -106,6 +111,11 @@ func NewPipelineWithChunk(c Classifier, chunk ChunkConfig) *Pipeline {
 // classifier never serves a verdict produced by a different one. Empty
 // preserves content-only keying for the LLM sentinel path.
 func (p *Pipeline) SetClassifierIdentity(id string) { p.identity = id }
+
+// SetMLSecurity reports whether Security is the ML classifier stack. It is set
+// by run.NewPipelineWithRetry and keeps the oversized-content windowing choice
+// aligned with the actual guardrail classifier.
+func (p *Pipeline) SetMLSecurity(on bool) { p.mlSecurity = on }
 
 // classifier returns the classifier that security classification uses: the ML
 // stack when wired, else the LLM sentinel.
@@ -148,7 +158,7 @@ func (p *Pipeline) run(ctx context.Context, content, subject string) (clean stri
 
 	// The LLM sentinel path chunks oversized payloads by bytes. The ML path
 	// windows by tokens inside mlclassify, so byte chunking never applies to it.
-	if p.Security == nil && p.Chunk.MaxBytes > 0 && len(clean) > p.Chunk.MaxBytes {
+	if !p.mlSecurity && p.Chunk.MaxBytes > 0 && len(clean) > p.Chunk.MaxBytes {
 		s, parsed, err := p.classifyChunked(ctx, clean)
 		if err != nil {
 			return clean, "", false, err
@@ -204,7 +214,7 @@ func (p *Pipeline) classifyChunked(ctx context.Context, content string) (Sentine
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			raw, err := p.Classifier.Classify(ctx, BuildClassifierPayload(chunk))
+			raw, err := p.classifier().Classify(ctx, BuildClassifierPayload(chunk))
 			if err != nil {
 				errMu.Lock()
 				if firstErr == nil {

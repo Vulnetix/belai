@@ -363,3 +363,18 @@ func TestModelPickerLLMKindShowsFullCatalog(t *testing.T) {
 		}
 	}
 }
+
+func TestModelPickerShowsCuratedModelBlurb(t *testing.T) {
+	a := modelScreen(t)
+	a.settings.Classifier = &config.ClassifierSettings{Kind: "models", Provider: "huggingface"}
+	a.modelState.picking = true
+	a.modelState.pickingRole = roleClassifier
+
+	out := a.modelPicker()
+	if !strings.Contains(out, "GuardrailsAI/prompt-saturation-attack-detector") {
+		t.Fatalf("picker missing the curated BERT model id:\n%s", out)
+	}
+	if !strings.Contains(out, "prompt-saturation gate") {
+		t.Fatalf("picker missing the curated model blurb:\n%s", out)
+	}
+}
