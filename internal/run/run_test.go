@@ -1381,6 +1381,87 @@ func TestResolveClassifierSeparateProviderMissingCreds(t *testing.T) {
 	}
 }
 
+// A profile that pins a different provider must re-resolve that provider's
+// credentials, base URL, auth and surface — the previous provider's key must
+// never be sent to the new provider.
+func TestApplyProfileOverrideReResolvesProvider(t *testing.T) {
+	cfg := Config{
+		Provider: "openai",
+		BaseURL:  "https://api.openai.com/v1",
+		APIKey:   "openai-key",
+		Model:    "gpt-5",
+		Auth:     provider.AuthBearer,
+	}
+	src := fakeSource{vals: map[string]string{"anthropic:api_key": "anthropic-key"}}
+	out, err := ApplyProfileOverride(cfg, ProfileOverride{Provider: "anthropic", Model: "claude-sonnet-4-5"}, nil, src)
+	if err != nil {
+		t.Fatalf("ApplyProfileOverride: %v", err)
+	}
+	if out.Provider != "anthropic" {
+		t.Fatalf("provider = %q, want anthropic", out.Provider)
+	}
+	if out.APIKey != "anthropic-key" {
+		t.Fatalf("api key = %q, want the new provider's key", out.APIKey)
+	}
+	if out.BaseURL != "https://api.anthropic.com" {
+		t.Fatalf("base url = %q, want anthropic's", out.BaseURL)
+	}
+	if out.Model != "claude-sonnet-4-5" {
+		t.Fatalf("model = %q", out.Model)
+	}
+	if out.Classifier.Provider != "anthropic" || out.Classifier.Model != "claude-sonnet-4-5" {
+		t.Fatalf("classifier must be re-derived for the new provider: %+v", out.Classifier)
+	}
+}
+
+// A profile with no provider pin leaves the resolved main config (and its
+// credentials) untouched and only re-derives the classifier around the model
+// override.
+func TestApplyProfileOverrideSameProviderModelOnly(t *testing.T) {
+	cfg := Config{Provider: "openai", BaseURL: "https://api.openai.com/v1", APIKey: "k", Model: "gpt-5"}
+	out, err := ApplyProfileOverride(cfg, ProfileOverride{Model: "gpt-5-mini"}, nil, nil)
+	if err != nil {
+		t.Fatalf("ApplyProfileOverride: %v", err)
+	}
+	if out.Provider != "openai" || out.APIKey != "k" || out.BaseURL != cfg.BaseURL {
+		t.Fatalf("same-provider override must reuse main creds: %+v", out)
+	}
+	if out.Model != "gpt-5-mini" {
+		t.Fatalf("model = %q, want gpt-5-mini", out.Model)
+	}
+	if out.Classifier.Model != "gpt-5-mini" {
+		t.Fatalf("classifier = %+v, want it to follow the model override", out.Classifier)
+	}
+}
+
+// A profile provider that cannot be configured is an error, not a silent
+// session carrying the previous provider's credentials.
+func TestApplyProfileOverrideMissingProviderFails(t *testing.T) {
+	cfg := Config{Provider: "openai", BaseURL: "https://api.openai.com/v1", APIKey: "k", Model: "gpt-5"}
+	if _, err := ApplyProfileOverride(cfg, ProfileOverride{Provider: "anthropic"}, nil, fakeSource{}); err == nil {
+		t.Fatal("expected NotConfiguredError for a profile provider without credentials")
+	}
+}
+
+// A model-only profile override namespaced to a foreign built-in provider is
+// dropped, the same way the classifier override is: the stale fresh-install
+// default must not be sent to a different provider.
+func TestApplyProfileOverrideDropsForeignModel(t *testing.T) {
+	cfg := Config{
+		Provider: "cloudflare-ai-gateway",
+		BaseURL:  "https://gateway.ai.cloudflare.com/v1/acct/default/compat",
+		APIKey:   "cf-aig-token",
+		Model:    "@cf/deepseek-ai/deepseek-v4-pro-0813",
+	}
+	out, err := ApplyProfileOverride(cfg, ProfileOverride{Model: "openrouter/free"}, nil, nil)
+	if err != nil {
+		t.Fatalf("ApplyProfileOverride: %v", err)
+	}
+	if out.Model != cfg.Model {
+		t.Fatalf("foreign profile model must fall back to the main model: got %q", out.Model)
+	}
+}
+
 func TestClassifierOrDefault(t *testing.T) {
 	cfg := Config{Provider: "anthropic", Model: "claude-sonnet-4-5", Effort: "high"}
 	cc := cfg.ClassifierOrDefault()

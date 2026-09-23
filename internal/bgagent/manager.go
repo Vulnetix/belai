@@ -90,6 +90,9 @@ type Manager struct {
 	// pool caps every background-agent turn against the shared FIFO fan-out
 	// ceiling. nil means no shared ceiling.
 	pool *agentpool.Pool
+	// src resolves credentials when an agent profile overrides the main
+	// provider. nil means environment-only resolution.
+	src run.CredentialSource
 }
 
 // NewManager creates a Manager.
@@ -132,6 +135,15 @@ func (m *Manager) SetPool(p *agentpool.Pool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.pool = p
+}
+
+// SetCredentialSource installs the resolver used to re-resolve a profile's
+// provider override. Without it, provider overrides resolve from the
+// environment only.
+func (m *Manager) SetCredentialSource(src run.CredentialSource) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.src = src
 }
 
 // Start launches a background agent by name in the manager's default workdir.
@@ -566,17 +578,13 @@ func (m *Manager) buildSession(inst *AgentInstance) (*agent.Session, error) {
 		live = posture.NewLive(pol, true)
 	}
 
-	cfg := m.cfg
-	if profile.Provider != "" {
-		cfg.Provider = profile.Provider
-	}
-	if profile.Model != "" {
-		cfg.Model = profile.Model
-	} else if profile.Provider != "" && m.cfg.Provider != profile.Provider {
-		cfg.Model = run.DefaultModel(profile.Provider)
-	}
-	if profile.Effort != "" {
-		cfg.Effort = profile.Effort
+	cfg, err := run.ApplyProfileOverride(m.cfg, run.ProfileOverride{
+		Provider: profile.Provider,
+		Model:    profile.Model,
+		Effort:   profile.Effort,
+	}, m.settings.Classifier, m.src)
+	if err != nil {
+		return nil, err
 	}
 
 	return agent.NewSession(agent.Options{

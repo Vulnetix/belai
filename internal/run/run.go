@@ -233,6 +233,73 @@ func classifierModelApplies(providerName, model string) bool {
 	return head == strings.ToLower(strings.TrimSpace(providerName))
 }
 
+// ProfileOverride carries the provider/model/effort pins an engaged agent
+// profile applies to a session's main config. It is the subset of
+// agentprofile.AgentProfile shared by the TUI's engaged profile and background
+// agents, kept in run so both callers resolve the override the same way.
+type ProfileOverride struct {
+	Provider string
+	Model    string
+	Effort   string
+}
+
+// ApplyProfileOverride returns the session's main config after applying an
+// agent profile's provider/model/effort pins. A provider change re-resolves
+// the provider through src so the new provider's credentials, base URL, auth
+// style and wire surface replace the inherited ones: the previous provider's
+// API key must never be sent to a different provider. The classifier config is
+// then re-derived from the new main config — a stale Classifier would keep
+// calling the previous provider/model at every role-manager activity.
+//
+// A provider that cannot be configured is an error (the session cannot be
+// built). A classifier that cannot be resolved is left empty so
+// ClassifierOrDefault re-derives it from the main config at pipeline build,
+// matching the TUI's existing fail-open handling of classifier resolution.
+func ApplyProfileOverride(cfg Config, o ProfileOverride, cls *config.ClassifierSettings, src CredentialSource) (Config, error) {
+	if o.Provider == "" && o.Model == "" && o.Effort == "" {
+		return cfg, nil
+	}
+	if src == nil {
+		src = EnvSource(os.Getenv)
+	}
+
+	out := cfg
+	if o.Effort != "" {
+		out.Effort = o.Effort
+	}
+	if o.Provider != "" && o.Provider != cfg.Provider {
+		prepared, err := ResolveWithSource(o.Model, o.Provider, os.Getenv, src)
+		if err != nil {
+			return Config{}, err
+		}
+		out = prepared
+		out.Effort = cfg.Effort
+		if o.Effort != "" {
+			out.Effort = o.Effort
+		}
+	}
+	if o.Model != "" {
+		out.Model = o.Model
+		// Mirror the classifier guard for the main model: a model id
+		// namespaced to a different built-in provider must not ride on an
+		// inherited provider. A profile that pins the provider explicitly
+		// keeps the pair as written.
+		if o.Provider == "" && !classifierModelApplies(out.Provider, out.Model) {
+			out.Model = cfg.Model
+		}
+	}
+
+	// Re-derive the role-manager config from the new main config. On the
+	// models path ResolveClassifier already returns the main-inheriting LLM
+	// classifier, and ResolveSecurityClassifier recomputes phase 3.
+	out.Classifier = ClassifierConfig{}
+	if cc, err := ResolveClassifier(out, cls, src); err == nil {
+		out.Classifier = cc
+	}
+	out.Security = ResolveSecurityClassifier(cls)
+	return out, nil
+}
+
 // ClassifierKind resolves the effective classifier kind: an explicit setting,
 // else "models" when the binary embeds a model, else "llm".
 func ClassifierKind(cls *config.ClassifierSettings) string {
