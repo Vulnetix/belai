@@ -24,7 +24,7 @@ chain: default < state < global < project prefs < project < env < flag):
 "classifier": {
   "kind":   "models",           // "llm" | "models"; default models when embedded, else llm
   "provider": "openrouter",      // llm: omit → main provider; models: phase 3 (extraction/jailbreak) sentinel
-  "model":    "typesafe/jev-1",  // openrouter → a typesafe/jev* gate model; huggingface → a curated BERT id
+  "model":    "typesafe/jev-1.13", // openrouter → the Jev Decisions gate model; huggingface → a curated BERT id
   "effort":   "none",             // default: reasoning OFF
   "caveman":  false,              // voices PROSE payloads only
   "chunk": { "max_bytes": 1048576, "concurrency": 4 },
@@ -108,7 +108,8 @@ Business rules:
   restricted to classifier-capable sources: custom profiles, `llama-server`,
   `ollama`, `huggingface` (when `HF_TOKEN` is configured), and `openrouter`
   (when configured). The classifier model picker filters `huggingface` to the
-  five curated BERT ids and `openrouter` to `typesafe/jev*`; custom,
+  five curated BERT ids and `openrouter` to the Jev Decisions model
+  (`typesafe/jev-1.13`, seeded) plus any `typesafe/jev*` ids; custom,
   `llama-server` and `ollama` stay unfiltered and show the broad-model
   warning. The agent/provider picker is unchanged.
 - **Embedded models fail closed.** A variant binary whose embedded model fails
@@ -2186,7 +2187,8 @@ rows (when `kind` is `models`), **reasoning**, **effort**, **chunk** and
   configured. It cycles with an inherit stop:
   `— (main: X)` means the classifier follows the main model.
 - **Model** opens the sub-picker filtered by provider: `huggingface` shows
-  only the five curated BERT ids, `openrouter` only `typesafe/jev*`, and the
+  only the five curated BERT ids, `openrouter` the Jev Decisions model
+  (`typesafe/jev-1.13`, seeded) plus any `typesafe/jev*` ids, and the
   broad-model providers (custom, `llama-server`, `ollama`) show every model
   plus a warning line — *"Classifier provider: choose a classifier-specific
   model or switch to kind LLM for general chat models."*

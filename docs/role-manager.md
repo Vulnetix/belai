@@ -226,14 +226,22 @@ label instead of guessing.
 ### Jev tool-call gate
 
 The Role Manager ships a **Jev tool-call gating workflow**
-(`internal/rolemanager/jev`): a classifier that asks the TypeSafe/Jev model
-(on OpenRouter) whether a model-emitted tool call may execute. It implements
-`rolemanager.Classifier` and reduces the reply to one of three sentinels —
-`ALLOW`, `DENY`, or `INCONCLUSIVE` — via `jev.ParseVerdict`, which reuses the
-same sentinel normalizer as every other verdict grammar. A malformed or
-refused reply is `INCONCLUSIVE`, not a block in itself: the caller is expected
-to fail closed on an inconclusive verdict. The gate turn carries no tools,
-skills, or agent block, exactly like the security classifier turn.
+(`internal/rolemanager/jev`): a classifier that asks the TypeSafe/Jev decision
+model on OpenRouter whether a model-emitted tool call may execute. It
+implements `rolemanager.Classifier` and reduces the reply to one of three
+sentinels — `ALLOW`, `DENY`, or `INCONCLUSIVE`.
+
+Jev is a **Decisions API** model (`typesafe/jev-1.13`), not a chat model, so it
+is called at `POST https://openrouter.ai/api/alpha/decisions`. The gate sends
+one `noul` (boolean) question — *"The tool call is unsafe and must be
+blocked"* — and the tool call as the request `state`. Jev returns a
+probability (`noul`, 0..1) that the proposition is true; `jev.Threshold` maps
+it to a sentinel: `≤ 0.1` means false → `ALLOW`, `≥ 0.9` means true → `DENY`,
+and the band between is `INCONCLUSIVE` (a human must decide). A malformed or
+missing answer is `INCONCLUSIVE`, not a block in itself: the caller fails
+closed on an inconclusive verdict. A transport or non-2xx error is an error.
+The gate turn carries no tools, skills, or agent block, exactly like the
+security classifier turn.
 
 ### Classifier provider allowlist
 
@@ -244,8 +252,9 @@ rows filter:
 - **`huggingface`** — offered when an `HF_TOKEN` is configured. Its model
   picker is filtered to the five curated BERT ids above.
 - **`openrouter`** — offered when configured (`OPENROUTER_API_KEY` resolves).
-  Its model picker is filtered to `typesafe/jev*` only, so the Jev tool-call
-  gate is the classifier choice there.
+  Its model picker offers the Jev Decisions model (`typesafe/jev-1.13`, seeded)
+  plus any `typesafe/jev*` ids the catalogue returns, so the Jev tool-call gate
+  is the classifier choice there.
 - **custom providers**, **`llama-server`** and **`ollama`** — always offered,
   with every model selectable and a broad-model warning shown in the picker:
   *"Classifier provider: choose a classifier-specific model or switch to kind

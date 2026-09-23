@@ -17,6 +17,7 @@ import (
 	"github.com/vulnetix/signet/internal/modelfetch"
 	"github.com/vulnetix/signet/internal/models"
 	"github.com/vulnetix/signet/internal/provider"
+	"github.com/vulnetix/signet/internal/rolemanager/jev"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/tui/components"
 )
@@ -640,9 +641,13 @@ func (a *App) classifierCatalogFor(providerName string, catalog []models.Model) 
 		}
 		return out
 	case "openrouter":
-		out := make([]models.Model, 0, len(catalog))
+		// Jev is a Decisions API model, not a chat model, so it never appears in
+		// the live chat model list. Seed the known Jev model id so the
+		// classifier picker always offers it, then keep any additional
+		// typesafe/jev* ids the catalogue happens to return.
+		out := []models.Model{{ID: jev.DefaultModel}}
 		for _, m := range catalog {
-			if strings.HasPrefix(m.ID, "typesafe/jev") {
+			if strings.HasPrefix(m.ID, "typesafe/jev") && m.ID != jev.DefaultModel {
 				out = append(out, m)
 			}
 		}

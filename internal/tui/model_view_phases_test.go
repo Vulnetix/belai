@@ -9,6 +9,7 @@ import (
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/mlclassify"
 	"github.com/vulnetix/signet/internal/models"
+	"github.com/vulnetix/signet/internal/rolemanager/jev"
 )
 
 func modelScreen(t *testing.T) *App {
@@ -172,8 +173,10 @@ func TestClassifierCatalogForOpenRouterOnlyJev(t *testing.T) {
 		{ID: "typesafe/jev-2"},
 	}
 	got := a.classifierCatalogFor("openrouter", catalog)
-	if len(got) != 3 {
-		t.Fatalf("openrouter classifier catalogue = %v, want only typesafe/jev* models", got)
+	// The known Jev Decisions model is seeded first; the three typesafe/jev*
+	// catalogue entries follow; general-chat models are excluded.
+	if len(got) != 4 || got[0].ID != jev.DefaultModel {
+		t.Fatalf("openrouter classifier catalogue = %v, want the seeded Jev model plus three typesafe/jev* entries", got)
 	}
 	for _, m := range got {
 		if !strings.HasPrefix(m.ID, "typesafe/jev") {
