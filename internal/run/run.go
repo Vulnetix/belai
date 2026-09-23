@@ -166,15 +166,13 @@ func ResolveClassifier(main Config, cls *config.ClassifierSettings, src Credenti
 		out.Chunk.Concurrency = cls.Chunk.ConcurrencyOr()
 	}
 
-	// On the models path, classifier.provider/model configure phase 3 only;
-	// the LLM classifier (mode select, goal contract, plan/goal eval, …) keeps
-	// inheriting the main provider/model. The separate-provider LLM classifier
-	// applies only on the llm path. ClassifierKind, not the raw field, decides:
-	// an unset kind resolves to "models" when the binary embeds a model.
-	if ClassifierKind(cls) == "models" {
-		return out, nil
-	}
-
+	// ResolveClassifier produces the guardrail classifier config: the LLM
+	// sentinel on the llm path, and phase 3 on the models path. On both paths
+	// classifier.provider/model override the main config. The role classifier
+	// (mode select, goal/plan eval, compaction, …) is resolved separately by
+	// NewRoleClassifier from the main config or the routing table, so a stale
+	// classifier.provider can no longer move the role classifier off the main
+	// model.
 	if cls.Model != "" {
 		out.Model = cls.Model
 	}
@@ -1259,6 +1257,7 @@ func NewPipeline(cfg Config, client *http.Client, cache *rolemanager.Cache) *rol
 // the underlying classifiers so retries are visible to observers.
 func NewPipelineWithRetry(cfg Config, client *http.Client, cache *rolemanager.Cache, onRetry func(resilience.Attempt)) *rolemanager.Pipeline {
 	cc := cfg.ClassifierOrDefault()
+	guardLabel := cc.Provider + "/" + cc.Model
 	// The role classifier serves the non-guardrail role-manager activities and
 	// follows the routing config (defined: main; routed: Jev). The guardrail
 	// classifier serves security and always follows classifier.provider/model.
@@ -1269,13 +1268,14 @@ func NewPipelineWithRetry(cfg Config, client *http.Client, cache *rolemanager.Ca
 		Concurrency: cc.Chunk.Concurrency,
 	})
 	p.Cache = cache
+	p.SetSecurityModelLabel(guardLabel)
 	if cfg.Security.Kind == "models" {
 		var phase3 rolemanager.Classifier
 		if cfg.Security.Phase3On {
 			phase3 = guard
 		}
 		var sec rolemanager.Classifier
-		if ml, err := buildSecurityClassifier(cfg.Security, phase3); err != nil {
+		if ml, err := buildSecurityClassifier(cfg.Security, phase3, guardLabel); err != nil {
 			// Fail closed: a stack that failed to build is a classifier that
 			// errors on every call, never a silent downgrade to the LLM path.
 			sec = failingClassifier{err: err}
@@ -1304,12 +1304,13 @@ func (f failingClassifier) Classify(context.Context, rolemanager.ClassifierPaylo
 
 // buildSecurityClassifier builds the mlclassify classifier stack for a
 // resolved security config. phase3 is the narrowed LLM sentinel, or nil.
-func buildSecurityClassifier(sc SecurityClassifierConfig, phase3 rolemanager.Classifier) (*mlclassify.Classifier, error) {
+func buildSecurityClassifier(sc SecurityClassifierConfig, phase3 rolemanager.Classifier, phase3Label string) (*mlclassify.Classifier, error) {
 	opts := mlclassify.Options{
 		Phase1:         sc.Phase1,
 		Phase2:         sc.Phase2,
 		Phase3:         phase3,
 		Phase2Deferred: sc.Phase2Deferred,
+		Phase3Label:    phase3Label,
 		HFToken:        envHFToken,
 	}
 	return mlclassify.New(opts)
@@ -1337,7 +1338,7 @@ func PreloadClassifier(sc SecurityClassifierConfig) error {
 	if sc.Phase1 == nil && sc.Phase2 == nil {
 		return nil
 	}
-	_, err := buildSecurityClassifier(sc, nil)
+	_, err := buildSecurityClassifier(sc, nil, "")
 	return err
 }
 

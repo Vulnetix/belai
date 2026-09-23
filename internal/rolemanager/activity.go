@@ -72,6 +72,10 @@ type Activity struct {
 	Subject string // the trace Tool field
 	Detail  string
 	Pass    int
+	// Model carries the provider/model identity that produced the verdict
+	// ("openrouter/typesafe/jev-1.13", "embedded/GuardrailsAI/…"). Empty when
+	// the activity did not invoke a model.
+	Model string
 }
 
 // Description is the plain-English rendering of one Activity. It never carries

@@ -26,6 +26,7 @@ type Record struct {
 	Tool     string `json:"tool,omitempty"`
 	Pass     int    `json:"pass,omitempty"`
 	Detail   string `json:"detail,omitempty"`
+	Model    string `json:"model,omitempty"`
 }
 
 // Writer appends one JSON line per event to an opt-in trace file.

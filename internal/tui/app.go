@@ -3927,13 +3927,21 @@ func (a *App) addRMActivity(act rolemanager.Activity) {
 	if !ok {
 		return
 	}
+	provider, model := a.cfg.Provider, a.cfg.Model
+	if act.Model != "" {
+		if p, m, ok := strings.Cut(act.Model, "/"); ok {
+			provider, model = p, m
+		} else {
+			model = act.Model
+		}
+	}
 	a.messages = append(a.messages, components.Message{
 		Role:     "rolemanager",
 		Level:    desc.Levels,
 		RM:       desc,
 		Activity: string(act.Event),
-		Provider: a.cfg.Provider,
-		Model:    a.cfg.Model,
+		Provider: provider,
+		Model:    model,
 	})
 }
 

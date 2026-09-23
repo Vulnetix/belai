@@ -65,11 +65,17 @@ Business rules:
   non-token or empty reply from the extraction LLM) is not a block: phases 1
   and 2 already ruled on injection/jailbreak, so it proceeds as `SAFE` while
   the feed records "couldn't tell".
-- **The LLM sentinel families keep inheritance.** Mode select, goal contract,
-  clarify, plan eval, goal eval and compaction still reach the LLM classifier,
-  which derives from the main provider/model when unset, exactly as before.
-  Only the security path is split: `rolemanager.Pipeline.Security` carries the
-  ML stack, `Pipeline.Classifier` remains the LLM classifier.
+- **The role classifier and the guardrail are split.** The non-guardrail
+  role-manager activities (mode select, goal contract, clarify, plan eval,
+  goal eval, compaction, session name, agent eval) run on the *role*
+  classifier: the main provider/model under `routing.kind: "defined"` (the
+  default), or the Jev-routed winner under `routing.kind: "routed"`. The
+  security *guardrail* runs separately: `rolemanager.Pipeline.Security` is the
+  ML stack on the `models` path, or the full five-token LLM sentinel (built
+  from `classifier.provider`/`classifier.model`) on the `llm` path.
+  `classifier.provider`/`classifier.model` therefore configure the guardrail —
+  phase 3 on the `models` path, the sentinel on the `llm` path — never the
+  mode/goal evaluator.
 - **Default** (no block, LLM path): the classifier reuses the main
   provider/model with reasoning off and a bounded `max_tokens` cap (1024), so a
   single-sentinel call never pays for extended thinking. A reasoning-effort of
