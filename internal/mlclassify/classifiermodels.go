@@ -13,6 +13,9 @@ type classifierModel struct {
 	// attackLabel is the classifier label that means "attack" on this model,
 	// as returned by the HuggingFace inference API.
 	attackLabel string
+	// blurb is the one-line efficacy/benefit note the /model picker shows next
+	// to the model id.
+	blurb string
 }
 
 // classifierModels is the curated catalogue of supported BERT classifier
@@ -23,16 +26,19 @@ var classifierModels = []classifierModel{
 		id:          "GuardrailsAI/prompt-saturation-attack-detector",
 		phase:       Phase1,
 		attackLabel: "LABEL_1", // no id2label; LABEL_1 is the saturation-attack class
+		blurb:       "prompt-saturation gate · precise on tool output",
 	},
 	{
 		id:          "leomaurodesenv/bert-base-uncased-trustairlab-jailbreak",
 		phase:       Phase2,
 		attackLabel: "unsafe", // id2label: 0 = "safe", 1 = "unsafe"
+		blurb:       "jailbreak gate · safe/unsafe labels",
 	},
 	{
 		id:          "leomaurodesenv/bert-base-uncased-jailbreakv-28k",
 		phase:       Phase2,
 		attackLabel: "unsafe", // id2label: "safe"/"unsafe"
+		blurb:       "jailbreak gate · high reported accuracy",
 	},
 	{
 		// No id2label; the HuggingFace inference API reports the default
@@ -41,11 +47,13 @@ var classifierModels = []classifierModel{
 		id:          "hurtmongoose/bert-base-detect-jailbreak",
 		phase:       Phase2,
 		attackLabel: "LABEL_1",
+		blurb:       "jailbreak gate · self-contained vocab, F1 0.89",
 	},
 	{
 		id:          "hurtmongoose/jailbreak-bert-base-uncased",
 		phase:       Phase2,
 		attackLabel: "jailbreak", // id2label: "benign"/"jailbreak"
+		blurb:       "jailbreak gate · benign/jailbreak labels",
 	},
 }
 
@@ -79,6 +87,17 @@ func AttackLabelFor(id string) (string, bool) {
 		return "", false
 	}
 	return m.attackLabel, true
+}
+
+// BlurbFor returns the one-line efficacy/benefit note for a curated classifier
+// model, and whether the id is in the catalogue. It is the text the /model
+// picker shows to the right of the model id.
+func BlurbFor(id string) (string, bool) {
+	m, ok := classifierModelByID(id)
+	if !ok || m.blurb == "" {
+		return "", false
+	}
+	return m.blurb, true
 }
 
 // classifierModelByID returns the catalogue entry for a model id.
