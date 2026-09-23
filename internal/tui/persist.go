@@ -140,6 +140,14 @@ func (a *App) persistMessage(i int) {
 			"mode":     a.mode,
 			"effort":   a.cfg.Effort,
 		}
+		// Persist the per-message provider/model so restored history can show
+		// which provider/model produced each turn even if settings later change.
+		if m.Provider != "" {
+			meta["provider"] = m.Provider
+		}
+		if m.Model != "" {
+			meta["model"] = m.Model
+		}
 		if m.Usage != nil {
 			meta["prompt_tokens"] = m.Usage.PromptTokens
 			meta["completion_tokens"] = m.Usage.CompletionTokens
@@ -168,20 +176,37 @@ func (a *App) persistMessage(i int) {
 		}
 		a.appendEntry(session.Entry{Type: "tool", Role: "tool", Content: content, Meta: meta, SubagentID: m.SubagentID})
 	case "reasoning":
-		a.appendEntry(session.Entry{Type: "reasoning", Role: "reasoning", Content: m.Text()})
+		meta := map[string]any{}
+		if m.Provider != "" {
+			meta["provider"] = m.Provider
+		}
+		if m.Model != "" {
+			meta["model"] = m.Model
+		}
+		a.appendEntry(session.Entry{Type: "reasoning", Role: "reasoning", Content: m.Text(), Meta: meta})
 	case "system":
 		a.appendEntry(session.Entry{Type: "system", Role: "system", Content: m.Text()})
 	case "rolemanager":
+		meta := map[string]any{
+			"summary": m.RM.Summary,
+			"outcome": m.RM.Outcome,
+			"tone":    int(m.RM.Tone),
+			"level":   int(m.Level),
+		}
+		if m.Activity != "" {
+			meta["activity"] = m.Activity
+		}
+		if m.Provider != "" {
+			meta["provider"] = m.Provider
+		}
+		if m.Model != "" {
+			meta["model"] = m.Model
+		}
 		a.appendEntry(session.Entry{
 			Type:    "rolemanager",
 			Role:    "rolemanager",
 			Content: rmText(m),
-			Meta: map[string]any{
-				"summary": m.RM.Summary,
-				"outcome": m.RM.Outcome,
-				"tone":    int(m.RM.Tone),
-				"level":   int(m.Level),
-			},
+			Meta:    meta,
 		})
 	}
 }

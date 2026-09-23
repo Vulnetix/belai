@@ -94,6 +94,19 @@ type Message struct {
 	// start_line). It never enters the conversation and keys the render cache.
 	Meta map[string]any
 
+	// Provider and Model record which provider/model produced an assistant
+	// turn, a reasoning block, or a role-manager activity that invoked a
+	// model. They are persisted and used when ctrl+o expands a panel so the
+	// title can read as provider/model instead of the generic "model".
+	Provider string
+	Model    string
+
+	// Activity records the role-manager event key for a "rolemanager" row
+	// (e.g. "security_phase"). It is persisted and shown when the signet
+	// panel is expanded so the user can see which internal activity produced
+	// the line.
+	Activity string
+
 	// SubagentID keys a subagent activity row to its subagent ("" for the main
 	// thread). Subagent rows are render-only: they carry tool activity forwarded
 	// from a subagent, never enter buildTurns, and render with a dim gutter
@@ -140,6 +153,11 @@ type renderKey struct {
 	rmSummaryLen int
 	rmOutcomeLen int
 	rmTone       int
+	// provider/model/activity key expanded panel titles and role-manager
+	// detail lines, so a change is reflected on the next render.
+	provider string
+	model    string
+	activity string
 	// subagentID distinguishes subagent activity rows (render-only gutter).
 	subagentID string
 	// groupN and groupLen key the cached render of a coalesced system group,
@@ -189,6 +207,9 @@ func renderKeyFor(m *Message, width int, expandAll bool) renderKey {
 		rmSummaryLen: len(m.RM.Summary),
 		rmOutcomeLen: len(m.RM.Outcome),
 		rmTone:       int(m.RM.Tone),
+		provider:     m.Provider,
+		model:        m.Model,
+		activity:     m.Activity,
 	}
 }
 
@@ -601,8 +622,12 @@ func reasoningPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 		body, marker, hidden = truncateBody(body, assistantPreviewLines)
 	}
 	body = MutedStyle.Render(body)
+	title := "model · reasoning"
+	if (expandAll || msg.Expanded) && msg.Provider != "" && msg.Model != "" {
+		title = msg.Provider + "/" + msg.Model + " · reasoning"
+	}
 	return Panel{
-		Title:  "model · reasoning",
+		Title:  title,
 		Body:   body,
 		Width:  width,
 		Accent: lipgloss.TerminalColor(ColorMuted),
@@ -626,6 +651,8 @@ func turnPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 		}
 	} else if msg.Role != "assistant" {
 		title, accent = msg.Role, lipgloss.TerminalColor(ColorMuted)
+	} else if (expandAll || msg.Expanded) && msg.Provider != "" && msg.Model != "" {
+		title = msg.Provider + "/" + msg.Model
 	}
 
 	meta := ""

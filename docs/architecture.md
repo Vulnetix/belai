@@ -1523,6 +1523,22 @@ The TUI derives this display from the parsed tool arguments, so the
 `parseToolArgs`. Raw tool arguments stay on the wire as `RawArgs`; without the
 parsed map the TUI cannot show the command or path next to a tool row.
 
+### Expanded panel context
+
+Each assistant/reasoning panel normally carries the generic `model` title.
+When the user presses `ctrl+o` to expand all panels, the title switches to
+`provider/model` (or `provider/model · reasoning`) so it is clear which model
+produced the turn. The provider and model are recorded per-message, persisted
+in the session JSONL under `meta.provider`/`meta.model`, and restored on resume
+so old transcripts keep showing the model that generated them.
+
+The `signet` panel's role-manager activity rows also expose extra context when
+expanded: each line is prefixed with `[activity]` and `[provider/model]`
+(e.g. `[security_phase] [cloudflare/deepseek-v4] Checked whether the content
+floods the prompt...`), surfacing the internal activity key and the model
+behind it. The activity key and provider/model are persisted under
+`meta.activity`, `meta.provider`, and `meta.model` for role-manager entries.
+
 Read rows are numbered at render time, never by the Read tool itself: the
 tool's `offset` is a byte count, so a model that read a line number out of the
 output and passed it back as an offset would silently get the wrong region.

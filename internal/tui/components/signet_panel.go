@@ -79,7 +79,7 @@ func renderSignetPanel(msgs []Message, idxs []int, width int, expandAll bool) (s
 		case "system":
 			lineOwners, isSystemLine, bodyLines, bodyLm = renderSignetSystemLines(msg, idx, inner, bar, barCol, icol, groupCopyable, lineOwners, isSystemLine, bodyLines, bodyLm)
 		case "rolemanager":
-			lineOwners, isSystemLine, bodyLines, bodyLm = renderSignetActivityLines(msg, idx, inner, bar, barCol, icol, groupCopyable, lineOwners, isSystemLine, bodyLines, bodyLm)
+			lineOwners, isSystemLine, bodyLines, bodyLm = renderSignetActivityLines(msg, idx, inner, bar, barCol, icol, expandAll, groupCopyable, lineOwners, isSystemLine, bodyLines, bodyLm)
 		case "tool":
 			lineOwners, isSystemLine, bodyLines, bodyLm = renderSignetToolLines(msg, idx, inner, bar, barCol, expandAll, groupCopyable, lineOwners, isSystemLine, bodyLines, bodyLm)
 		}
@@ -206,11 +206,26 @@ func renderSignetSystemLines(msg Message, owner, inner int, bar string, barCol, 
 // wrapped with wrapSegs, then rendered through Row.Render so the outcome word
 // carries its tone colour while the LineMap is measured while the text is
 // still plain.
-func renderSignetActivityLines(msg Message, owner, inner int, bar string, barCol, icol int, groupCopyable bool, owners []int, isSystem []bool, bodyLines []string, lm LineMap) ([]int, []bool, []string, LineMap) {
+func renderSignetActivityLines(msg Message, owner, inner int, bar string, barCol, icol int, expandAll bool, groupCopyable bool, owners []int, isSystem []bool, bodyLines []string, lm LineMap) ([]int, []bool, []string, LineMap) {
 	content := []Seg{
 		NewSeg(msg.RM.Summary, nil),
 		NewSeg(" — ", nil),
 		NewSeg(msg.RM.Outcome, toneColor(msg.RM.Tone)),
+	}
+	// When expanded, surface the internal activity key and the model that
+	// produced it as a muted prefix so the user can see which subsystem and
+	// provider/model are behind each signet line.
+	if expandAll {
+		var parts []string
+		if msg.Activity != "" {
+			parts = append(parts, "["+msg.Activity+"]")
+		}
+		if msg.Provider != "" && msg.Model != "" {
+			parts = append(parts, "["+msg.Provider+"/"+msg.Model+"]")
+		}
+		if len(parts) > 0 {
+			content = append([]Seg{NewSeg(strings.Join(parts, " ")+" ", ColorMuted)}, content...)
+		}
 	}
 	wrapped := wrapSegs(content, max(inner-icol, 1))
 	if len(wrapped) == 0 {
