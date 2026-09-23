@@ -2,9 +2,11 @@ package repomap
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -92,8 +94,58 @@ func TestCommandsTableNeverInfersFromProse(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("run: go test ./...\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	c := commands(root)
+	c := commands(root, justRecipes(root))
 	if len(c.Build) != 0 || len(c.Test) != 0 {
 		t.Fatalf("commands inferred from prose: %+v", c)
+	}
+}
+
+func TestJustRecipesHeadersOnly(t *testing.T) {
+	root := t.TempDir()
+	just := "set shell := [\"bash\", \"-uc\"]\nbinary := \"signet\"\n# a comment: not a recipe\ndefault:\n    @just --list\nbuild:\n    go build ./...\ntest *ARGS:\n    go test ./... {{ARGS}}\n@check: fmt-check test\n[private]\nfmt-check:\n    gofmt -l .\n"
+	if err := os.WriteFile(filepath.Join(root, "justfile"), []byte(just), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(justRecipes(root), " ")
+	if want := "default build test check fmt-check"; got != want {
+		t.Fatalf("recipes = %q, want %q", got, want)
+	}
+	c := commands(root, justRecipes(root))
+	if strings.Join(c.Test, ";") != "just check;just test" || strings.Join(c.Build, ";") != "just build" {
+		t.Fatalf("commands = %+v", c)
+	}
+	if len(c.Lint) != 0 || len(c.Fmt) != 0 {
+		t.Fatalf("a justfile without lint/fmt recipes must not advertise them: %+v", c)
+	}
+}
+
+func TestParseStatusCapsAndCounts(t *testing.T) {
+	var b strings.Builder
+	for i := 0; i < maxChanged+5; i++ {
+		fmt.Fprintf(&b, " M file%d.go\n", i)
+	}
+	b.WriteString("?? new.txt\n")
+	rows, total := parseStatus(b.String())
+	if total != maxChanged+6 {
+		t.Fatalf("total = %d", total)
+	}
+	if len(rows) != maxChanged {
+		t.Fatalf("rows = %d, want cap %d", len(rows), maxChanged)
+	}
+	if rows[0].Status != "M" || rows[0].Path != "file0.go" {
+		t.Fatalf("row0 = %+v", rows[0])
+	}
+}
+
+func TestRedactRemote(t *testing.T) {
+	cases := map[string]string{
+		"https://user:ghp_secret@github.com/o/r.git": "https://github.com/o/r.git",
+		"https://github.com/o/r.git":                 "https://github.com/o/r.git",
+		"git@github.com:o/r.git":                     "git@github.com:o/r.git",
+	}
+	for in, want := range cases {
+		if got := redactRemote(in); got != want {
+			t.Errorf("redactRemote(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
