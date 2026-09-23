@@ -17,6 +17,7 @@ import (
 	"github.com/vulnetix/signet/internal/modelfetch"
 	"github.com/vulnetix/signet/internal/models"
 	"github.com/vulnetix/signet/internal/provider"
+	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/rolemanager/jev"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/tui/components"
@@ -28,6 +29,7 @@ type modelRole string
 const (
 	roleAgent      modelRole = "agent"
 	roleClassifier modelRole = "classifier"
+	roleRouting    modelRole = "routing"
 )
 
 // modelViewState tracks the /model role screen.
@@ -37,6 +39,11 @@ type modelViewState struct {
 
 	agentScope      string // session | global | project
 	classifierScope string // global | project
+	routingScope    string // global | project
+
+	// routingUseCase names the use case whose model is being picked in the
+	// embedded picker.
+	routingUseCase string
 
 	// classifierLastEffort preserves the classifier effort chip across
 	// reasoning off/on; agentLastEffort does the same for the main model.
@@ -455,7 +462,69 @@ func (a *App) modelRows() []modelRow {
 		value: clsScope,
 	}})
 
+	// Routing role — the global model-routing choice.
+	routingSrc := sourceLabel(origin["routing"])
+	routing := a.settings.Routing
+	kindVal := config.RoutingDefined
+	if routing != nil && routing.Kind != "" {
+		kindVal = routing.Kind
+	}
+	routingScope := a.modelState.routingScope
+	if routingScope == "" {
+		routingScope = "project"
+	}
+	rows = append(rows, modelRow{roleRouting, settingsRow{
+		key: "kind", label: "kind", kind: "choose",
+		opts: routingKindOptions, value: kindVal, src: routingSrc,
+	}})
+	for _, uc := range routingUseCaseKeys() {
+		prov, model := a.routingUseCaseTarget(uc)
+		val := "— (inherits main)"
+		if prov != "" || model != "" {
+			val = fmt.Sprintf("%s/%s", prov, model)
+		}
+		rows = append(rows, modelRow{roleRouting, settingsRow{
+			key: "route:" + uc, label: uc, kind: "pick",
+			value: val, src: routingSrc,
+		}})
+	}
+	rows = append(rows, modelRow{roleRouting, settingsRow{
+		key: "scope", label: "scope", kind: "choose",
+		opts: classifierScopeOptions, value: routingScope,
+	}})
+
 	return rows
+}
+
+// routingKindOptions are the choices the routing kind row cycles through.
+var routingKindOptions = []string{config.RoutingDefined, config.RoutingRouted}
+
+// routingUseCaseKeys returns the known routing use cases in display order.
+func routingUseCaseKeys() []string {
+	return []string{
+		rolemanager.UseCaseMain,
+		rolemanager.UseCaseModeEval,
+		rolemanager.UseCaseGoalEval,
+		rolemanager.UseCasePlanEval,
+		rolemanager.UseCaseGoalContract,
+		rolemanager.UseCaseClarify,
+		rolemanager.UseCaseCompaction,
+		rolemanager.UseCaseSessionName,
+		rolemanager.UseCaseAgentEval,
+	}
+}
+
+// routingUseCaseTarget returns the configured provider/model for one use case.
+// Empty provider/model mean "inherit the main config".
+func (a *App) routingUseCaseTarget(useCase string) (string, string) {
+	if a.settings.Routing == nil {
+		return "", ""
+	}
+	t, ok := a.settings.Routing.UseCases[useCase]
+	if !ok {
+		return "", ""
+	}
+	return t.Provider, t.Model
 }
 
 func safeRow(rows []modelRow, i int) modelRow {
@@ -490,6 +559,11 @@ func (a *App) modelGroupHeader(role modelRole) string {
 		}
 	case roleClassifier:
 		scope = a.modelState.classifierScope
+		if scope == "" {
+			scope = "project"
+		}
+	case roleRouting:
+		scope = a.modelState.routingScope
 		if scope == "" {
 			scope = "project"
 		}
@@ -618,6 +692,11 @@ func (a *App) modelPickerCatalog() (string, []models.Model) {
 		}
 	case roleClassifier:
 		name = a.classifierProvider()
+	case roleRouting:
+		name, _ = a.routingUseCaseTarget(a.modelState.routingUseCase)
+		if name == "" {
+			name = a.cfg.Provider
+		}
 	}
 	if name == "" {
 		return name, nil
@@ -783,6 +862,13 @@ func (a *App) handleModelPickerKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, a.mutateAgent(func(s *config.Settings) { s.Model = id }, func() { a.cfg.Model = id })
 		case roleClassifier:
 			return a, a.mutateClassifier(func(c *config.ClassifierSettings) { c.Model = id })
+		case roleRouting:
+			useCase := a.modelState.routingUseCase
+			return a, a.mutateRouting(func(r *config.RoutingSettings) {
+				t := r.UseCases[useCase]
+				t.Model = id
+				r.UseCases[useCase] = t
+			})
 		}
 	}
 	return a, nil
@@ -804,6 +890,9 @@ func (a *App) cycleScope() tea.Cmd {
 	case roleClassifier:
 		opts = classifierScopeOptions
 		cur = a.modelState.classifierScope
+	case roleRouting:
+		opts = classifierScopeOptions
+		cur = a.modelState.routingScope
 	}
 	next := opts[(indexOfString(opts, cur)+1)%len(opts)]
 	switch row.role {
@@ -811,6 +900,8 @@ func (a *App) cycleScope() tea.Cmd {
 		a.modelState.agentScope = next
 	case roleClassifier:
 		a.modelState.classifierScope = next
+	case roleRouting:
+		a.modelState.routingScope = next
 	}
 	return nil
 }
@@ -822,6 +913,9 @@ func (a *App) changeModelRow() tea.Cmd {
 	}
 	switch row.key {
 	case "kind":
+		if row.role == roleRouting {
+			return a.cycleRoutingKind(row.opts)
+		}
 		return a.cycleClassifierKind(row.opts)
 	case "phase1":
 		return a.cycleClassifierPhase(1, row.opts)
@@ -861,6 +955,9 @@ func (a *App) changeModelRow() tea.Cmd {
 		return a.toggleFirewall()
 	case "scope":
 		return a.cycleScope()
+	}
+	if strings.HasPrefix(row.key, "route:") {
+		return a.changeRoutingUseCase(strings.TrimPrefix(row.key, "route:"))
 	}
 	return nil
 }
@@ -904,6 +1001,10 @@ func (a *App) unsetModelRow() tea.Cmd {
 		}
 	case roleClassifier:
 		return a.unsetClassifierRow(row.key)
+	case roleRouting:
+		if strings.HasPrefix(row.key, "route:") {
+			return a.unsetRoutingUseCase(strings.TrimPrefix(row.key, "route:"))
+		}
 	}
 	return nil
 }
@@ -1426,6 +1527,93 @@ func (a *App) clearFirewall() tea.Cmd {
 	}
 	a.refreshFooter()
 	return nil
+}
+
+// cycleRoutingKind toggles the routing kind between defined and routed.
+func (a *App) cycleRoutingKind(opts []string) tea.Cmd {
+	cur := config.RoutingDefined
+	if a.settings.Routing != nil && a.settings.Routing.Kind != "" {
+		cur = a.settings.Routing.Kind
+	}
+	next := opts[(indexOfString(opts, cur)+1)%len(opts)]
+	return a.mutateRouting(func(r *config.RoutingSettings) { r.Kind = next })
+}
+
+// changeRoutingUseCase edits one use-case candidate: the first press assigns a
+// provider (cycling the provider list, model inherited); once a provider is
+// set, enter opens the model picker for it.
+func (a *App) changeRoutingUseCase(useCase string) tea.Cmd {
+	prov, _ := a.routingUseCaseTarget(useCase)
+	if prov == "" {
+		providers := a.modelProviders()
+		if len(providers) == 0 {
+			return nil
+		}
+		next := providers[0]
+		if idx := indexOfString(providers, a.cfg.Provider); idx >= 0 {
+			next = providers[(idx+1)%len(providers)]
+		}
+		return a.mutateRouting(func(r *config.RoutingSettings) {
+			t := r.UseCases[useCase]
+			t.Provider = next
+			t.Model = ""
+			r.UseCases[useCase] = t
+		})
+	}
+	return a.openRoutingModelPicker(useCase)
+}
+
+// unsetRoutingUseCase removes one use-case candidate, so it inherits the main
+// config again.
+func (a *App) unsetRoutingUseCase(useCase string) tea.Cmd {
+	return a.mutateRouting(func(r *config.RoutingSettings) {
+		delete(r.UseCases, useCase)
+	})
+}
+
+// openRoutingModelPicker opens the model picker for one use-case candidate.
+func (a *App) openRoutingModelPicker(useCase string) tea.Cmd {
+	prov, _ := a.routingUseCaseTarget(useCase)
+	a.modelState.picking = true
+	a.modelState.pickingRole = roleRouting
+	a.modelState.routingUseCase = useCase
+	a.modelState.filter = ""
+	a.modelState.filtering = false
+	a.modelState.scroll = 0
+	a.modelState.modelIdx = indexOfModel(a.catalogFor(prov), "")
+	return a.fetchCatalogCmd(prov)
+}
+
+// mutateRouting applies fn to the routing block in the page's scope, reloads
+// the merged settings, and re-resolves the routing config.
+func (a *App) mutateRouting(fn func(*config.RoutingSettings)) tea.Cmd {
+	scope := a.modelState.routingScope
+	if scope == "" {
+		scope = "project"
+	}
+	cfgScope := config.ScopeProject
+	if scope == "global" {
+		cfgScope = config.ScopeGlobal
+	}
+	if err := config.Mutate(cfgScope, a.workdir, func(s *config.Settings) error {
+		if s.Routing == nil {
+			s.Routing = &config.RoutingSettings{}
+		}
+		if s.Routing.UseCases == nil {
+			s.Routing.UseCases = map[string]config.RoutingTarget{}
+		}
+		fn(s.Routing)
+		return nil
+	}); err != nil {
+		a.modelState.errorMsg = err.Error()
+		return nil
+	}
+	if err := a.reloadSettings(); err != nil {
+		a.modelState.errorMsg = err.Error()
+		return nil
+	}
+	a.modelState.errorMsg = ""
+	return a.refreshProvider()
 }
 
 // unsetClassifierRow clears one classifier field. Clearing provider/model drops
