@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/vulnetix/signet/internal/session"
 	"github.com/vulnetix/signet/internal/tui/components"
@@ -39,22 +40,36 @@ func neverPersisted(m components.Message) bool {
 }
 
 // settled reports whether messages[i] is final: a tool row with no result, or
-// the in-flight trailing assistant bubble, are not. Persisting only settled
+// the in-flight turn's assistant bubble, are not. Persisting only settled
 // messages keeps the file structurally safe — an assistant tool_calls entry
 // can never be written without its results following in the same file.
-func settled(msgs []components.Message, i int) bool {
+//
+// inFlight is true while an agent turn is running. The TUI attaches every
+// tool call of a turn to one assistant bubble, so the in-flight turn's latest
+// assistant bubble may still gain calls and is held until the turn ends.
+//
+// force is the new-user-turn flush: whatever is still unsettled after a turn
+// ended (an aborted call that never got its result) is written as far as it
+// can be — the assistant with only its answered calls, unanswered tool rows
+// dropped — instead of blocking every later row forever.
+func settled(msgs []components.Message, i int, inFlight, force bool) bool {
 	m := msgs[i]
 	switch m.Role {
 	case "user":
 		return true
 	case "assistant":
-		// A tool-calls assistant is final only once every one of its tool
-		// results has landed too, so an assistant tool_calls entry can never
-		// be written without its results following in the same file. The
-		// trailing bubble is no exception: a turn aborted mid-tool must not
-		// persist unpaired tool_calls.
 		if len(m.ToolCalls) > 0 {
-			return toolsAllSettled(msgs, i+1, len(m.ToolCalls))
+			if force {
+				return true
+			}
+			if inFlight && i == lastAssistant(msgs) {
+				return false
+			}
+			// Results are matched by tool_call_id, not position: reasoning,
+			// system and role-manager rows land between an assistant and its
+			// tool rows in goal mode, and a positional count never matched,
+			// so whole goal sessions were never persisted.
+			return allCallsAnswered(msgs, i)
 		}
 		if i != len(msgs)-1 {
 			return true
@@ -63,9 +78,9 @@ func settled(msgs []components.Message, i int) bool {
 		// streaming buffer (Content empty). EventDoneKind and EventErrorKind
 		// call Materialise, which flushes buf into Content, so a non-empty
 		// Content marks a turn that ended.
-		return m.Content != ""
+		return m.Content != "" || force
 	case "tool":
-		return m.Content != "" || m.Status != ""
+		return toolAnswered(m) || force
 	case "reasoning":
 		// A reasoning bubble streams before the assistant turn. It is final
 		// once a later message exists (the stream moved on to text or tools)
@@ -73,7 +88,7 @@ func settled(msgs []components.Message, i int) bool {
 		if i != len(msgs)-1 {
 			return true
 		}
-		return m.Content != ""
+		return m.Content != "" || force
 	case "system", "rolemanager":
 		// System notices and role-manager activity rows are appended whole,
 		// never streamed, so they are final as soon as they exist.
@@ -83,27 +98,56 @@ func settled(msgs []components.Message, i int) bool {
 	}
 }
 
-// toolsAllSettled reports whether the contiguous run of tool rows immediately
-// following an assistant contains exactly want settled rows. A short run (an
-// aborted turn) and a long run (an unexpected extra row) both fail, so an
-// assistant tool_calls entry is never written without exactly its own results.
-func toolsAllSettled(msgs []components.Message, start, want int) bool {
-	n := 0
-	for j := start; j < len(msgs); j++ {
-		if msgs[j].Role != "tool" {
-			break
+// toolAnswered reports whether a tool row carries its result.
+func toolAnswered(m components.Message) bool {
+	return m.Content != "" || m.Status != ""
+}
+
+// lastAssistant returns the index of the last assistant message, or -1.
+func lastAssistant(msgs []components.Message) int {
+	for j := len(msgs) - 1; j >= 0; j-- {
+		if msgs[j].Role == "assistant" {
+			return j
 		}
-		if !settled(msgs, j) {
+	}
+	return -1
+}
+
+// answeredCallIDs returns the tool_call_ids that have an answered tool row
+// after msgs[i]. Subagent rows are excluded: they belong to a subagent's own
+// calls, never to this assistant.
+func answeredCallIDs(msgs []components.Message, i int) map[string]bool {
+	ids := map[string]bool{}
+	for j := i + 1; j < len(msgs); j++ {
+		t := msgs[j]
+		if t.Role == "tool" && t.SubagentID == "" && t.ToolCallID != "" && toolAnswered(t) {
+			ids[t.ToolCallID] = true
+		}
+	}
+	return ids
+}
+
+// allCallsAnswered reports whether every tool call of msgs[i] has an answered
+// tool row after it.
+func allCallsAnswered(msgs []components.Message, i int) bool {
+	ids := answeredCallIDs(msgs, i)
+	for _, c := range msgs[i].ToolCalls {
+		if !ids[c.ID] {
 			return false
 		}
-		n++
 	}
-	return n == want
+	return true
 }
 
 // persistTail appends entries for every settled message after the cursor and
 // advances it, stopping at the first unsettled one. Idempotent.
-func (a *App) persistTail() {
+func (a *App) persistTail() { a.persistTailMode(false) }
+
+// persistTailMode is persistTail with the force flush described on settled.
+// A turn still running is never forced: its rows keep arriving.
+func (a *App) persistTailMode(force bool) {
+	inFlight := a.cancel != nil
+	force = force && !inFlight
 	for i := a.persistedUpTo; i < len(a.messages); i++ {
 		m := a.messages[i]
 		if neverPersisted(m) {
@@ -111,14 +155,20 @@ func (a *App) persistTail() {
 			// that produced nothing) and must stop the scan; a non-trailing
 			// one is a finalized no-op and is skipped so it cannot block later
 			// settled messages.
-			if i == len(a.messages)-1 {
+			if i == len(a.messages)-1 && !force {
 				break
 			}
 			a.persistedUpTo = i + 1
 			continue
 		}
-		if !settled(a.messages, i) {
+		if !settled(a.messages, i, inFlight, force) {
 			break
+		}
+		if m.Role == "tool" && !toolAnswered(m) {
+			// Forced past an unanswered call: its assistant entry was written
+			// without this call, so the row is dropped rather than orphaned.
+			a.persistedUpTo = i + 1
+			continue
 		}
 		a.persistMessage(i)
 		a.persistedUpTo = i + 1
@@ -154,11 +204,19 @@ func (a *App) persistMessage(i int) {
 			meta["total_tokens"] = m.Usage.Total()
 		}
 		if len(m.ToolCalls) > 0 {
+			// Only answered calls are written, so a forced flush of an aborted
+			// turn never leaves an unpaired tool_calls entry on disk.
+			answered := answeredCallIDs(a.messages, i)
 			calls := make([]map[string]any, 0, len(m.ToolCalls))
 			for _, tc := range m.ToolCalls {
+				if !answered[tc.ID] {
+					continue
+				}
 				calls = append(calls, map[string]any{"id": tc.ID, "name": tc.Name, "args": tc.Args})
 			}
-			meta["tool_calls"] = calls
+			if len(calls) > 0 {
+				meta["tool_calls"] = calls
+			}
 		}
 		a.appendEntry(session.Entry{Type: "assistant", Role: "assistant", Content: m.Text(), Meta: meta})
 	case "tool":
@@ -172,7 +230,7 @@ func (a *App) persistMessage(i int) {
 		if len(content) > maxToolResultBytes {
 			meta["truncated"] = true
 			meta["orig_len"] = len(content)
-			content = content[:maxToolResultBytes]
+			content = truncateUTF8(content, maxToolResultBytes)
 		}
 		a.appendEntry(session.Entry{Type: "tool", Role: "tool", Content: content, Meta: meta, SubagentID: m.SubagentID})
 	case "reasoning":
@@ -209,4 +267,17 @@ func (a *App) persistMessage(i int) {
 			Meta:    meta,
 		})
 	}
+}
+
+// truncateUTF8 cuts s to at most max bytes without splitting a multi-byte
+// character, so a truncated tool result is still valid UTF-8 on disk.
+func truncateUTF8(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	cut := max
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
 }
