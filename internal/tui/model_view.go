@@ -16,6 +16,7 @@ import (
 	"github.com/vulnetix/signet/internal/mlclassify"
 	"github.com/vulnetix/signet/internal/modelfetch"
 	"github.com/vulnetix/signet/internal/models"
+	"github.com/vulnetix/signet/internal/provider"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/tui/components"
 )
@@ -563,6 +564,10 @@ func (a *App) modelPicker() string {
 	name, catalog := a.modelPickerCatalog()
 	var b strings.Builder
 	b.WriteString(components.MutedStyle.Render("model for ") + components.Chip(name, components.ColorTeal) + "\n")
+	if a.modelState.pickingRole == roleClassifier && a.classifierProviderNeedsWarning(name) {
+		b.WriteString(components.WarnStyle.Render(
+			"Classifier provider: choose a classifier-specific model or switch to kind LLM for general chat models.") + "\n")
+	}
 	b.WriteString(a.modelSearchLine() + "\n")
 
 	const rows = 10
@@ -610,7 +615,56 @@ func (a *App) modelPickerCatalog() (string, []models.Model) {
 	if name == "" {
 		return name, nil
 	}
-	return name, filterModels(a.catalogFor(name), a.modelState.filter)
+	catalog := a.catalogFor(name)
+	if a.modelState.pickingRole == roleClassifier {
+		catalog = a.classifierCatalogFor(name, catalog)
+	}
+	return name, filterModels(catalog, a.modelState.filter)
+}
+
+// classifierCatalogFor restricts a provider's catalogue to the models the
+// classifier role may pick. It is a UX filter, not a security boundary:
+// run.Prepare remains the fail-closed gate on actually using a model.
+func (a *App) classifierCatalogFor(providerName string, catalog []models.Model) []models.Model {
+	switch providerName {
+	case "huggingface":
+		known := make(map[string]bool, len(mlclassify.ClassifierModelIDs()))
+		for _, id := range mlclassify.ClassifierModelIDs() {
+			known[id] = true
+		}
+		out := make([]models.Model, 0, len(catalog))
+		for _, m := range catalog {
+			if known[m.ID] {
+				out = append(out, m)
+			}
+		}
+		return out
+	case "openrouter":
+		out := make([]models.Model, 0, len(catalog))
+		for _, m := range catalog {
+			if strings.HasPrefix(m.ID, "typesafe/jev") {
+				out = append(out, m)
+			}
+		}
+		return out
+	default:
+		// Custom providers, llama-server and ollama are broad-model
+		// providers: every model stays selectable and the picker shows the
+		// classifier-specific warning instead of filtering.
+		return catalog
+	}
+}
+
+// classifierProviderNeedsWarning reports whether the classifier model picker
+// must show the broad-model warning for a provider: custom profiles and the
+// built-in local servers can serve any model, so the user must choose a
+// classifier-appropriate one themselves.
+func (a *App) classifierProviderNeedsWarning(name string) bool {
+	switch name {
+	case "llama-server", "ollama":
+		return true
+	}
+	return name != "" && !provider.Builtin(name)
 }
 
 func (a *App) handleModelKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -972,11 +1026,17 @@ func (a *App) classifierKind() string {
 // same resolution the pipeline uses (run.ResolveSecurityClassifier), never a
 // parallel guess.
 func (a *App) resolvedClassifierPhase(phase int) *mlclassify.ModelConfig {
-	sc := run.ResolveSecurityClassifier(a.settings.Classifier)
+	sc := a.resolvedSecurityClassifier()
 	if phase == 1 {
 		return sc.Phase1
 	}
 	return sc.Phase2
+}
+
+// resolvedSecurityClassifier returns the effective security classifier config
+// for the current settings, using the same resolution the pipeline uses.
+func (a *App) resolvedSecurityClassifier() run.SecurityClassifierConfig {
+	return run.ResolveSecurityClassifier(a.settings.Classifier)
 }
 
 // mlPhase maps the /model row's int phase to the mlclassify.Phase the
@@ -1003,6 +1063,10 @@ func (a *App) classifierPhaseRow(phase int) settingsRow {
 		if phase == 1 {
 			return settingsRow{key: key, label: label, kind: "text",
 				value: "LLM sentinel (no HuggingFace key)", disabled: true}
+		}
+		if a.resolvedSecurityClassifier().Phase2Deferred {
+			return settingsRow{key: key, label: label, kind: "text",
+				value: "deferred to phase 3", disabled: true}
 		}
 		return settingsRow{key: key, label: label, kind: "choose",
 			opts: a.classifierPhaseOpts(phase), value: "disabled"}
@@ -1066,36 +1130,90 @@ func (a *App) classifierPhaseOpts(phase int) []string {
 	if phase == 1 {
 		return []string{"huggingface"}
 	}
-	opts := []string{"disabled"}
+	var opts []string
 	if _, ok := mlclassify.EmbeddedPhase2(); ok {
 		opts = append(opts, "embedded")
 	}
 	if a.hfToken() != "" {
 		opts = append(opts, "huggingface")
 	}
+	// "disabled" appears only when the gate is currently on, so it is a
+	// turn-off stop rather than a state the deferred/off row can reach.
+	if a.resolvedClassifierPhase(2) != nil {
+		opts = append(opts, "disabled")
+	}
 	return opts
 }
 
 // classifierPhase3Row builds the derived phase-3 status row. Phase 3 is not
 // separately editable: it is on iff the classifier provider and model rows are
-// both explicitly set, and this row makes that consequence visible.
+// both explicitly set, and this row makes that consequence visible. When the
+// jailbreak gate is deferred, phase 3 also covers JAILBREAK.
 func (a *App) classifierPhase3Row() settingsRow {
 	cls := a.settings.Classifier
 	on := cls != nil && cls.Provider != "" && cls.Model != ""
 	value := "off — set classifier provider + model to enable"
 	if on {
-		value = "extraction only · " + a.providerDisplayLabel(cls.Provider) + "/" + cls.Model
+		scope := "extraction only"
+		if a.resolvedSecurityClassifier().Phase2Deferred {
+			scope = "jailbreak + extraction"
+		}
+		value = scope + " · " + a.providerDisplayLabel(cls.Provider) + "/" + cls.Model
 	}
 	return settingsRow{key: "phase3", label: "phase 3", kind: "text", value: value, disabled: true}
 }
 
-// classifierProviders are the providers the classifier page may offer.
+// classifierProviders are the providers the classifier page may offer: custom
+// profiles, the built-in local servers, openrouter when a typesafe/jev model
+// is available, and huggingface when a token is configured. Other built-ins
+// (openai, anthropic, …) are general-chat providers and are not
+// classifier-capable, so they never appear for this role.
 func (a *App) classifierProviders() []string {
-	var pinned string
-	if cls := a.settings.Classifier; cls != nil {
-		pinned = cls.Provider
+	allowed := func(name string) bool {
+		switch name {
+		case "huggingface":
+			return a.hfToken() != ""
+		case "openrouter":
+			return a.classifierOpenRouterAvailable()
+		case "llama-server", "ollama":
+			return true
+		default:
+			return !provider.Builtin(name) // custom profiles only
+		}
 	}
-	return a.availableProviders(a.cfg.Provider, pinned)
+	var out []string
+	for _, name := range a.providerNames() {
+		if allowed(name) {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// classifierOpenRouterAvailable reports whether openrouter is offered to the
+// classifier role: it must be configured and its catalogue must contain a
+// typesafe/jev* model.
+func (a *App) classifierOpenRouterAvailable() bool {
+	if !a.providerConfigured("openrouter") {
+		return false
+	}
+	for _, m := range a.catalogFor("openrouter") {
+		if strings.HasPrefix(m.ID, "typesafe/jev") {
+			return true
+		}
+	}
+	return false
+}
+
+// providerConfigured reports whether a provider's credentials resolve through
+// the resolver, falling back to the environment source when no resolver is
+// set (the non-interactive construction path and most tests).
+func (a *App) providerConfigured(name string) bool {
+	if a.resolver != nil {
+		return a.resolver.Configured(name)
+	}
+	_, status := run.Prepare("", name, run.CredentialSource(run.EnvSource(os.Getenv)))
+	return status.Configured
 }
 
 // classifierEffortOpts returns the effort chips for the classifier's model.

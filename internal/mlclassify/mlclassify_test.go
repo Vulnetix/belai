@@ -233,17 +233,23 @@ func TestPhase3MalformedFallsOpen(t *testing.T) {
 
 func TestOptionsIdentityIncludesPhase3State(t *testing.T) {
 	p1 := &ModelConfig{ID: "GuardrailsAI/prompt-saturation-attack-detector", Source: SourceEmbedded, Threshold: 0.5}
-	on := OptionsIdentity(p1, nil, true)
-	off := OptionsIdentity(p1, nil, false)
+	on := OptionsIdentity(p1, nil, true, false)
+	off := OptionsIdentity(p1, nil, false, false)
 	if on == off {
 		t.Fatalf("phase-3 on/off must produce distinct identities, both %q", on)
 	}
 	if !strings.Contains(on, "phase3=true") || !strings.Contains(off, "phase3=false") {
 		t.Fatalf("identity missing phase3 marker: on=%q off=%q", on, off)
 	}
+	// A deferred jailbreak gate changes the phase-3 prompt, so the identity
+	// must change too.
+	deferred := OptionsIdentity(p1, nil, true, true)
+	if deferred == on {
+		t.Fatalf("phase-2 deferred/not-deferred must produce distinct identities, both %q", deferred)
+	}
 	// Two different phase-1 models must not collide.
 	p2 := &ModelConfig{ID: "other/model", Source: SourceEmbedded, Threshold: 0.5}
-	if OptionsIdentity(p1, nil, false) == OptionsIdentity(p2, nil, false) {
+	if OptionsIdentity(p1, nil, false, false) == OptionsIdentity(p2, nil, false, false) {
 		t.Fatal("different phase-1 models must not share an identity")
 	}
 }
