@@ -302,7 +302,7 @@ func (m *Manager) runLoopMode(ctx context.Context, inst *AgentInstance) {
 	if maxIter <= 0 {
 		maxIter = m.settings.Resilience.MaxIterationsOr(10)
 	}
-	classifier := run.NewClassifier(m.cfg, m.client)
+	classifier := run.NewRoleClassifier(m.cfg, m.client, nil)
 
 	inner := 0
 	for {
