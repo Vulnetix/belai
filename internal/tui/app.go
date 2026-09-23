@@ -780,7 +780,7 @@ func New(opts Options) *App {
 		saveFileMsg:       -1,
 		bannerW:           -1,
 		footerW:           -1,
-		agentPool:         agentpool.New(eff.Settings.Resilience.MaxAgentsOr(3)),
+		agentPool:         agentpool.New(eff.Settings.Resilience.MaxAgentsOr(config.DefaultMaxAgents)),
 		activity:          activity.NewRegistry(),
 		activityAnnounced: map[string]bool{},
 		activityFinished:  map[string]bool{},
@@ -837,6 +837,7 @@ func New(opts Options) *App {
 	if initialStatus.Configured {
 		a.SetClassifier(run.NewClassifier(initial, a.client))
 		a.bgManager = bgagent.NewManager(workdir, initial, a.client, a.settings, a.effectivePosture())
+		a.bgManager.SetCredentialSource(credentialSourceOf(a.resolver))
 		a.bgManager.SetPool(a.agentPool)
 	}
 	a.procManager = bgproc.NewManager(workdir, initial, a.client, a.settings, a.effectivePosture(), a.caps)
@@ -1614,6 +1615,9 @@ type sessionBuildParams struct {
 	// profile is the engaged agent definition, if any. Its provider/model/
 	// effort overrides are applied to cfg before the session is built.
 	profile agentprofile.AgentProfile
+	// src resolves credentials for a profile's provider override; nil means
+	// environment-only resolution.
+	src run.CredentialSource
 	// toolAllow restricts the registry to an engaged background definition's
 	// tools. Empty means every registered tool.
 	toolAllow []string
@@ -1656,6 +1660,7 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 		planMode:      a.planMode,
 		allowClarify:  true,
 		profile:       p,
+		src:           credentialSourceOf(a.resolver),
 		toolAllow:     a.engagedAgentTools(),
 		agentPool:     a.agentPool,
 		repoMap:       a.repoMap,
@@ -1697,17 +1702,13 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 	if p.settings.Caveman != nil && *p.settings.Caveman {
 		promptOpts.Caveman = true
 	}
-	cfg := p.cfg
-	if p.profile.Provider != "" {
-		cfg.Provider = p.profile.Provider
-	}
-	if p.profile.Model != "" {
-		cfg.Model = p.profile.Model
-	} else if p.profile.Provider != "" && p.cfg.Provider != p.profile.Provider {
-		cfg.Model = run.DefaultModel(p.profile.Provider)
-	}
-	if p.profile.Effort != "" {
-		cfg.Effort = p.profile.Effort
+	cfg, err := run.ApplyProfileOverride(p.cfg, run.ProfileOverride{
+		Provider: p.profile.Provider,
+		Model:    p.profile.Model,
+		Effort:   p.profile.Effort,
+	}, p.settings.Classifier, p.src)
+	if err != nil {
+		return nil, err
 	}
 	return agent.NewSession(agent.Options{
 		Cfg:           cfg,
@@ -4094,6 +4095,7 @@ func (a *App) handleCredentialsResolved(m credentialsResolvedMsg) tea.Cmd {
 		a.SetClassifier(run.NewClassifier(m.cfg, a.client))
 		if a.bgManager == nil {
 			a.bgManager = bgagent.NewManager(a.workdir, m.cfg, a.client, a.settings, a.effectivePosture())
+			a.bgManager.SetCredentialSource(credentialSourceOf(a.resolver))
 			a.bgManager.SetPool(a.agentPool)
 		}
 	} else {
@@ -4209,7 +4211,7 @@ func (a *App) reloadSettings() error {
 		a.resolver.SetFirewallEnabled(a.firewallOverride)
 	}
 	if a.agentPool != nil {
-		a.agentPool.SetSize(a.settings.Resilience.MaxAgentsOr(3))
+		a.agentPool.SetSize(a.settings.Resilience.MaxAgentsOr(config.DefaultMaxAgents))
 	}
 	// A /settings edit of guardrails or ask_permission lands live through the
 	// shared holder, exactly like the f3/f4 toggles.
