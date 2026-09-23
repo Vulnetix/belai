@@ -44,6 +44,17 @@ func TestClassifierModelsCatalogue(t *testing.T) {
 			t.Fatalf("AttackLabelFor(%q) = %q, want %q", id, got, want)
 		}
 	}
+
+	// blurbs feed the /model picker's right-hand column for the curated BERT
+	// classifier models.
+	for _, id := range got {
+		if _, ok := BlurbFor(id); !ok {
+			t.Fatalf("BlurbFor(%q) = ok=false, want a non-empty blurb", id)
+		}
+	}
+	if _, ok := BlurbFor("jackhhao/jailbreak-classifier"); ok {
+		t.Fatal("BlurbFor must not return ok for an unknown model id")
+	}
 }
 
 func TestIsKnownClassifierModelRejectsUnknown(t *testing.T) {

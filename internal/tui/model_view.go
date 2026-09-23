@@ -587,6 +587,12 @@ func (a *App) modelPicker() string {
 			} else {
 				line = components.MutedStyle.Render(line)
 			}
+			// Curated classifier models carry a brief efficacy/benefit note that
+			// renders to the right of the id, subtly muted so the id stays the
+			// prominent column.
+			if catalog[i].Label != "" {
+				line += "  " + components.MutedStyle.Render(catalog[i].Label)
+			}
 			b.WriteString(components.Cursor(selected) + line + "\n")
 		}
 		b.WriteString(components.MutedStyle.Render(fmt.Sprintf("  %d/%d", midx+1, len(catalog))) + "\n")
@@ -636,10 +642,13 @@ func (a *App) classifierCatalogFor(providerName string, catalog []models.Model) 
 	case "huggingface":
 		// The five curated BERT classifier ids are seeded first so the picker
 		// is never empty (huggingface has no static chat catalogue), then any
-		// matching entries the live catalogue happens to return.
+		// matching entries the live catalogue happens to return. Each seeded
+		// model carries its efficacy/benefit blurb for the picker's right
+		// column.
 		out := make([]models.Model, 0, len(mlclassify.ClassifierModelIDs()))
 		for _, id := range mlclassify.ClassifierModelIDs() {
-			out = append(out, models.Model{ID: id})
+			label, _ := mlclassify.BlurbFor(id)
+			out = append(out, models.Model{ID: id, Label: label})
 		}
 		for _, m := range catalog {
 			if mlclassify.IsKnownClassifierModel(m.ID) && indexOfModel(out, m.ID) < 0 {
@@ -652,7 +661,7 @@ func (a *App) classifierCatalogFor(providerName string, catalog []models.Model) 
 		// the live chat model list. Seed the known Jev model id so the
 		// classifier picker always offers it, then keep any additional
 		// typesafe/jev* ids the catalogue happens to return.
-		out := []models.Model{{ID: jev.DefaultModel}}
+		out := []models.Model{{ID: jev.DefaultModel, Label: "tool-call gatekeeper · probability verdicts"}}
 		for _, m := range catalog {
 			if strings.HasPrefix(m.ID, "typesafe/jev") && m.ID != jev.DefaultModel {
 				out = append(out, m)
