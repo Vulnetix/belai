@@ -183,10 +183,13 @@ Business rules and edge cases:
   with `Compatibility endpoint: openai/chat/completions is not supported`.
 - **HuggingFace enablement** — the router's `/v1/models` list is live-fetched
   and may include models from third-party Inference Providers the account has
-  not enabled. Selecting an un-enabled model returns `model_not_supported`
-  from HuggingFace; enable the corresponding provider in the HuggingFace
-  dashboard before calling it. The picker does not pre-filter because the
-  router exposes no enabled-only list.
+  not enabled. Signet appends a `:fastest` policy suffix to the model id on
+  the wire (e.g. `stepfun-ai/Step-3.5-Flash:fastest`) so HuggingFace routes
+  the request to the fastest enabled provider. Selecting an un-enabled model
+  still returns `model_not_supported` from HuggingFace; enable the
+  corresponding provider in the HuggingFace dashboard before calling it, or
+  set an explicit suffix such as `:deepinfra` in the model field. The picker
+  does not pre-filter because the router exposes no enabled-only list.
 - **Anthropic context fields** — the parser reads `max_input_tokens` and
   falls back to `max_tokens` and the legacy `context_window` key. Any proxy
   that emits the older spelling still works; the first non-zero value wins.

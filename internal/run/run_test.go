@@ -597,11 +597,81 @@ func TestWireModel(t *testing.T) {
 		{"cloudflare-ai-gateway", "claude-sonnet-4-5", "claude-sonnet-4-5"},
 		{"cloudflare-workers-ai", "@cf/qwen/qwen3.8-27b", "@cf/qwen/qwen3.8-27b"},
 		{"openai", "@cf/whatever", "@cf/whatever"},
+		{"huggingface", "stepfun-ai/Step-3.5-Flash", "stepfun-ai/Step-3.5-Flash:fastest"},
+		{"huggingface", "openai/gpt-oss-120b:groq", "openai/gpt-oss-120b:groq"},
+		{"huggingface", "", ""},
 	}
 	for _, c := range cases {
 		if got := WireModel(c.provider, c.model); got != c.want {
 			t.Errorf("WireModel(%q, %q) = %q, want %q", c.provider, c.model, got, c.want)
 		}
+	}
+}
+
+func TestBuildRequestHuggingFaceModelSuffix(t *testing.T) {
+	cfg := Config{
+		Provider: "huggingface",
+		BaseURL:  "https://router.huggingface.co/v1",
+		APIKey:   "hf-token",
+		Model:    "stepfun-ai/Step-3.5-Flash",
+	}
+	req, _, err := buildRequest(context.Background(), cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, false, nil, nil)
+	if err != nil {
+		t.Fatalf("buildRequest: %v", err)
+	}
+	b, _ := io.ReadAll(req.Body)
+	var body map[string]any
+	if err := json.Unmarshal(b, &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	if body["model"] != "stepfun-ai/Step-3.5-Flash:fastest" {
+		t.Fatalf("model = %q, want stepfun-ai/Step-3.5-Flash:fastest", body["model"])
+	}
+	// Already-suffixed models must not be double-suffixed.
+	cfg.Model = "openai/gpt-oss-120b:groq"
+	req, _, err = buildRequest(context.Background(), cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, false, nil, nil)
+	if err != nil {
+		t.Fatalf("buildRequest: %v", err)
+	}
+	b, _ = io.ReadAll(req.Body)
+	if err := json.Unmarshal(b, &body); err != nil {
+		t.Fatalf("unmarshal body: %v", err)
+	}
+	if body["model"] != "openai/gpt-oss-120b:groq" {
+		t.Fatalf("model = %q, want openai/gpt-oss-120b:groq", body["model"])
+	}
+}
+
+func TestHuggingFaceChatRoutesWithProviderSuffix(t *testing.T) {
+	var gotModel string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			http.NotFound(w, r)
+			return
+		}
+		var reqBody map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&reqBody)
+		gotModel, _ = reqBody["model"].(string)
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-test","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"hi back"},"finish_reason":"stop"}],"usage":{}}`))
+	}))
+	defer srv.Close()
+
+	cfg := Config{
+		Provider: "huggingface",
+		BaseURL:  srv.URL,
+		APIKey:   "hf-token",
+		Model:    "stepfun-ai/Step-3.5-Flash",
+	}
+	assistant, err := SendTurnsWithTools(context.Background(), cfg, "", []Turn{{Role: "user", Content: "hello"}}, srv.Client(), nil, nil, nil)
+	if err != nil {
+		t.Fatalf("SendTurnsWithTools: %v", err)
+	}
+	if gotModel != "stepfun-ai/Step-3.5-Flash:fastest" {
+		t.Fatalf("sent model = %q, want stepfun-ai/Step-3.5-Flash:fastest", gotModel)
+	}
+	if assistant.Text != "hi back" {
+		t.Fatalf("assistant text = %q, want hi back", assistant.Text)
 	}
 }
 

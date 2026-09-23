@@ -537,6 +537,15 @@ func WireModel(provider, model string) string {
 	if provider == "cloudflare-ai-gateway" && strings.HasPrefix(model, "@cf/") {
 		return "workers-ai/" + model
 	}
+	// Hugging Face Inference Providers route OpenAI-compatible chat requests
+	// through a provider suffix on the model id. The API default is the
+	// "fastest" policy, but the raw endpoint expects the suffix to be
+	// present (e.g. "deepseek-ai/DeepSeek-R1:fastest"). Preserve an
+	// already-qualified model id so users can override with a specific
+	// provider or policy.
+	if provider == "huggingface" && model != "" && !strings.Contains(model, ":") {
+		return model + ":fastest"
+	}
 	return model
 }
 
