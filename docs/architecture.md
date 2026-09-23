@@ -23,8 +23,8 @@ chain: default < state < global < project prefs < project < env < flag):
 ```jsonc
 "classifier": {
   "kind":   "models",           // "llm" | "models"; default models when embedded, else llm
-  "provider": "ollama",          // llm: omit → main provider; models: phase 3 (extraction) sentinel
-  "model":    "qwen2.5-7b-instruct-q4_k_m",
+  "provider": "openrouter",      // llm: omit → main provider; models: phase 3 (extraction/jailbreak) sentinel
+  "model":    "typesafe/jev-1",  // openrouter → a typesafe/jev* gate model; huggingface → a curated BERT id
   "effort":   "none",             // default: reasoning OFF
   "caveman":  false,              // voices PROSE payloads only
   "chunk": { "max_bytes": 1048576, "concurrency": 4 },
@@ -34,6 +34,11 @@ chain: default < state < global < project prefs < project < env < flag):
               "source": "disabled", "threshold": 0.5 }
 }
 ```
+
+On a BERT-only or no-classifier binary an unset phase 2 is not `disabled`: it
+resolves to `phase2.deferred` ("deferred to phase 3"), and phase 3's sentinel
+broadens to cover `JAILBREAK`. `source: "disabled"` is only meaningful on the
+jailbreak variant, where the embedded gate is available to turn off.
 
 `kind` selects the stack. `"llm"` is the full five-token LLM sentinel.
 `"models"` runs small BERT sequence classifiers in-process (cybertron/spaGO,
@@ -91,6 +96,22 @@ Business rules:
   negatives) — so it was replaced with
   `leomaurodesenv/bert-base-uncased-trustairlab-jailbreak` (see
   "Phase-2 jailbreak model selection" in docs/role-manager.md).
+- **Phase 2 is deferred, not disabled, when it cannot run.** On a BERT-only or
+  no-classifier binary an unset phase 2 resolves `Phase2Deferred = true` and
+  the `/model` phase-2 row renders **"deferred to phase 3"**. Phase 3's
+  sentinel then broadens to cover `JAILBREAK` (`BuildDeferredExtractionPayload`
+  / `ParseDeferredExtractionSentinel`). `source: "disabled"` is only reachable
+  on the jailbreak variant, where it means the user explicitly turned the
+  embedded gate off — a deliberate drop of jailbreak coverage, never a silent
+  deferral.
+- **Classifier provider allowlist.** The `/model` classifier provider list is
+  restricted to classifier-capable sources: custom profiles, `llama-server`,
+  `ollama`, `huggingface` (when `HF_TOKEN` is configured), and `openrouter`
+  (when configured and its model list contains a `typesafe/jev*` model). The
+  classifier model picker filters `huggingface` to the five curated BERT ids
+  and `openrouter` to `typesafe/jev*`; custom, `llama-server` and `ollama` stay
+  unfiltered and show the broad-model warning. The agent/provider picker is
+  unchanged.
 - **Embedded models fail closed.** A variant binary whose embedded model fails
   to load or verify is a hard startup error, never a silent downgrade to the
   LLM path. Extraction and load happen once, eagerly.
@@ -2153,13 +2174,32 @@ The agent role is the global model settings section. Its rows are
 
 #### Classifier role
 
-The classifier role rows are **provider**, **model**, **reasoning**,
-**effort**, **chunk** and **scope**:
+The classifier role rows are **kind**, **provider**, **model**, the phase
+rows (when `kind` is `models`), **reasoning**, **effort**, **chunk** and
+**scope**:
 
-- **Provider** cycles with an inherit stop: `— (main: X)` means the
-  classifier follows the main model, which is a stable state for the
-  classifier (unlike the agent, where an empty provider is normalised away
-  on every re-resolve), so the ring includes it and wraps through it.
+- **Kind** toggles `llm` ↔ `models`. On a binary that embeds a model it is
+  locked to `models`; on a no-classifier binary it is editable, and choosing
+  `models` expands the phase rows instead of silently downgrading to the LLM
+  sentinel.
+- **Provider** is restricted to classifier-capable sources (see the
+  allowlist rule above): custom profiles, `llama-server`, `ollama`,
+  `huggingface` when an HF token is configured, and `openrouter` when its
+  catalogue contains a `typesafe/jev*` model. It cycles with an inherit stop:
+  `— (main: X)` means the classifier follows the main model.
+- **Model** opens the sub-picker filtered by provider: `huggingface` shows
+  only the five curated BERT ids, `openrouter` only `typesafe/jev*`, and the
+  broad-model providers (custom, `llama-server`, `ollama`) show every model
+  plus a warning line — *"Classifier provider: choose a classifier-specific
+  model or switch to kind LLM for general chat models."*
+- **Phase rows** appear only when `kind` is `models`. Phase 1 is locked when
+  embedded, shows the remote model when an HF token resolves it, or a
+  "set HF token / provider" hint. Phase 2 renders the model when running,
+  `disabled` when the user explicitly turned an embedded gate off (jailbreak
+  variant), or **"deferred to phase 3"** when no local jailbreak gate can
+  run. Phase 3 is a locked derived row: off until both classifier provider
+  and model are set, then `extraction only` (or `jailbreak + extraction` when
+  phase 2 is deferred).
 - **Reasoning drives effort.** There is no separate reasoning key. Toggling
   reasoning off writes `classifier.effort: "none"` and greys the effort row;
   toggling it back on restores the previously selected chip.
