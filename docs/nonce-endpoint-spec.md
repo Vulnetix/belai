@@ -61,7 +61,12 @@ Fetched nonces are *appended* to the pool's available list rather than
 replacing it, so seeding from a provider never discards nonces the pool
 already holds. Only `Rotate` discards.
 
-Every request carries Signet's `user-agent`.
+Every request carries Signet's `user-agent`
+(`signet/<version> (+https://github.com/Vulnetix/signet)`). Provider turns also
+carry the `X-Signet-Session-Id`, `X-Signet-Client-Version`,
+`X-Signet-Client-Build` and W3C `traceparent` headers described in
+[architecture.md](architecture.md#outbound-identification-and-trace-headers).
+A provider may log them for correlation but must not depend on them.
 
 ## Unsupported / not enabled
 

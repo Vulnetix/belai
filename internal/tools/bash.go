@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vulnetix/signet/internal/calltrace"
 	"github.com/vulnetix/signet/internal/proc"
 )
 
@@ -217,6 +218,7 @@ func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink
 	}
 	ec.Dir = baseDir(b.Root, b.Cwd)
 	ec.Env = proc.ScrubbedEnv()
+	ec.Env = append(ec.Env, calltrace.Env(ctx)...)
 
 	if b.MaxBytes <= 0 {
 		b.MaxBytes = 64 * 1024

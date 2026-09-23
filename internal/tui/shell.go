@@ -108,6 +108,7 @@ func (a *App) handleShell(input string) tea.Cmd {
 	// its watcher yet; beyond that, a full channel throttles the subprocess,
 	// which is the intended backpressure.
 	progress := make(chan tools.Progress, 64)
+	traceCtx := a.toolContext(a.ctx, "Bash", callID)
 
 	exec := func() tea.Msg {
 		defer close(progress)
@@ -116,7 +117,7 @@ func (a *App) handleShell(input string) tea.Cmd {
 		if !ok {
 			return shellDoneMsg{command: cmd, callID: callID, err: fmt.Errorf("Bash tool not registered")}
 		}
-		ctx, cancel := context.WithTimeout(a.ctx, 30*time.Second)
+		ctx, cancel := context.WithTimeout(traceCtx, 30*time.Second)
 		defer cancel()
 
 		var res tools.Result

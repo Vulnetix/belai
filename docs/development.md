@@ -325,6 +325,17 @@ Business rules and edge cases:
   working directory, and a refused move leaves the working directory exactly
   where it was. See
   [architecture.md](architecture.md#working-directory-cd).
+- **Every outbound call identifies itself.** `WebFetch`, `WebSearch` and
+  provider requests carry `User-Agent: signet/<version>` plus the
+  `X-Signet-*` and `traceparent` headers from `internal/calltrace`. Tool
+  subprocesses get `SIGNET_*` and `TRACEPARENT`, appended after
+  `proc.ScrubbedEnv()`. A new HTTP call site must call
+  `calltrace.Apply(ctx, req.Header)` next to its `user-agent`. A new subprocess
+  tool must append `calltrace.Env(ctx)` after scrubbing. Direct TUI tool runs
+  build their context with `a.toolContext`. `internal/calltrace`,
+  `internal/tools/calltrace_test.go`, `internal/run/calltrace_test.go` and
+  `internal/agent/calltrace_test.go` pin the contract. See
+  [architecture.md](architecture.md#outbound-identification-and-trace-headers).
 
 ## Credentials for QA
 
@@ -394,6 +405,13 @@ just ask huggingface 'meta-llama/Llama-3.2-3B-Instruct' "reply with the single w
 env -u OPENAI_API_KEY SIGNET_NO_TUI=1 just prompt "hello"
 # signet: openai requires OPENAI_API_KEY (looked in: environment)
 ```
+
+**Trace headers.** In the TUI, `!env | grep -E '^(SIGNET|TRACEPARENT)'` should
+print `SIGNET=1`, `SIGNET_VERSION`, `SIGNET_SESSION_ID` (the id `/resume`
+shows), `SIGNET_TOOL=Bash`, `SIGNET_TOOL_CALL_ID` and `TRACEPARENT`. To see the
+HTTP side, point `SIGNET_WEBSEARCH_URL` at a local listener (`nc -l 8099`) and
+ask for a web search. The request should carry `User-Agent: signet/…`,
+`X-Signet-Session-Id`, `X-Signet-Tool: WebSearch` and `traceparent`.
 
 **Clarify loop.** In the TUI, `shift+tab` to plan mode and send an ambiguous
 prompt with an `@file` reference (for example, "plan how to refactor @README.md

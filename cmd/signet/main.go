@@ -17,6 +17,7 @@ import (
 	"github.com/vulnetix/signet/internal/agent"
 	"github.com/vulnetix/signet/internal/agentprofile"
 	"github.com/vulnetix/signet/internal/bgagent"
+	"github.com/vulnetix/signet/internal/calltrace"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
 	"github.com/vulnetix/signet/internal/httpclient"
@@ -372,6 +373,10 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 		return err
 	}
 
+	// A headless prompt keeps no transcript, but still gets its own session id
+	// so its provider requests and tool calls share one trace.
+	ctx = calltrace.WithSession(ctx, session.MustID())
+
 	var res run.Result
 	if detectMode || !enableTools {
 		res, err = run.EngageWithPosture(ctx, cfg, prompt, detectMode, httpclient.Default(), pol)
@@ -492,6 +497,7 @@ func runAgentForeground(ctx context.Context, name, model, providerName, workdir 
 	}
 	mgr := bgagent.NewManager(workdir, cfg, httpclient.Default(), settings, pol)
 	mgr.SetCredentialSource(resolver)
+	mgr.SetSessionID(session.MustID())
 	if err := mgr.Start(name, profile); err != nil {
 		return err
 	}

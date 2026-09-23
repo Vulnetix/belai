@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	"github.com/vulnetix/signet/internal/aifirewall"
+	"github.com/vulnetix/signet/internal/calltrace"
 	"github.com/vulnetix/signet/internal/httpclient"
 	"github.com/vulnetix/signet/internal/models"
 	"github.com/vulnetix/signet/internal/provider"
@@ -74,6 +75,7 @@ func List(ctx context.Context, t Target, client *http.Client) ([]models.Model, e
 		return nil, err
 	}
 	req = req.WithContext(ctx)
+	calltrace.Apply(ctx, req.Header)
 	req.Header.Set("accept", "application/json")
 
 	// Per-target header overrides. The native Gemini model-list API uses a

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/vulnetix/signet/internal/calltrace"
 	"github.com/vulnetix/signet/internal/proc"
 )
 
@@ -107,6 +108,7 @@ func (g *Grep) runRg(ctx context.Context, pattern, sub, dir string) ([]byte, err
 	ec := exec.CommandContext(ctx, g.rgPath, args...)
 	ec.Dir = dir
 	ec.Env = proc.ScrubbedEnv()
+	ec.Env = append(ec.Env, calltrace.Env(ctx)...)
 	return ec.Output()
 }
 
@@ -118,6 +120,7 @@ func (g *Grep) runGrep(ctx context.Context, pattern, sub, dir string) ([]byte, e
 	ec := exec.CommandContext(ctx, "grep", args...)
 	ec.Dir = dir
 	ec.Env = proc.ScrubbedEnv()
+	ec.Env = append(ec.Env, calltrace.Env(ctx)...)
 	return ec.Output()
 }
 

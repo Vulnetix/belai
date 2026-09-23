@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vulnetix/signet/internal/calltrace"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/httpclient"
 	"github.com/vulnetix/signet/internal/mlclassify"
@@ -1945,6 +1946,7 @@ func EngageWithPosture(ctx context.Context, cfg Config, prompt string, detectMod
 
 func roundTrip(ctx context.Context, client *http.Client, req *http.Request, cfg Config, redact func(string) string) ([]byte, int, error) {
 	req = req.WithContext(ctx)
+	calltrace.Apply(ctx, req.Header)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, 0, fmt.Errorf("request: %w", err)

@@ -271,6 +271,7 @@ func (a *App) submitPlanApproveNew() tea.Cmd {
 		return nil
 	}
 	a.sessionID = newID
+	a.publishSessionID()
 	a.lastEntryID = ""
 	a.persistedUpTo = 0
 	// Planning passes stay in the parent: the child begins a fresh transcript.

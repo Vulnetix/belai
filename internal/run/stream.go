@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/vulnetix/signet/internal/calltrace"
 	"github.com/vulnetix/signet/internal/delimiters"
 	"github.com/vulnetix/signet/internal/httpclient"
 	"github.com/vulnetix/signet/internal/nonce"
@@ -178,6 +179,7 @@ func openStream(ctx context.Context, cfg Config, system string, turns []Turn, cl
 			return nil, err
 		}
 		req.Header.Set("accept", "text/event-stream")
+		calltrace.Apply(ctx, req.Header)
 		resp, err := client.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("request: %w", err)

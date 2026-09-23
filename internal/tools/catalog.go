@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vulnetix/signet/internal/calltrace"
 	"github.com/vulnetix/signet/internal/proc"
 	"github.com/vulnetix/signet/internal/repoindex"
 )
@@ -165,6 +166,7 @@ func (n *Native) Execute(ctx context.Context, args map[string]any) (Result, erro
 	ec := exec.CommandContext(ctx, binary, argv...)
 	ec.Dir = baseDir(n.Root, n.Cwd)
 	ec.Env = proc.ScrubbedEnv()
+	ec.Env = append(ec.Env, calltrace.Env(ctx)...)
 	if stdin != "" {
 		ec.Stdin = strings.NewReader(stdin)
 	}

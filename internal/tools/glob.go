@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/vulnetix/signet/internal/calltrace"
 	"github.com/vulnetix/signet/internal/proc"
 )
 
@@ -156,6 +157,7 @@ func (g *Glob) enumerateFd(ctx context.Context, sub, root string) []candidate {
 	ec := exec.CommandContext(ctx, g.fdPath, args...)
 	ec.Dir = base
 	ec.Env = proc.ScrubbedEnv()
+	ec.Env = append(ec.Env, calltrace.Env(ctx)...)
 	out, err := ec.Output()
 	if err != nil {
 		return nil

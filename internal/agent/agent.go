@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/signet/internal/agentpool"
+	"github.com/vulnetix/signet/internal/calltrace"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/delimiters"
 	"github.com/vulnetix/signet/internal/filediff"
@@ -104,9 +105,14 @@ type Options struct {
 	// A subagent sets this: it discards the provider-seeded pool one line later
 	// in favour of a fresh local pool, so the GET is a wasted round trip.
 	SkipNonceSeed bool
-	Workdir       string
-	State         config.State
-	Settings      config.Settings
+	// SessionID is the transcript session this agent runs under. It is
+	// stamped on every provider request and tool call (X-Signet-Session-Id,
+	// traceparent, SIGNET_SESSION_ID) through calltrace. Empty inherits any
+	// session already carried on the run context.
+	SessionID string
+	Workdir   string
+	State     config.State
+	Settings  config.Settings
 	// AgentPool caps how many fan-out subagents run at once across the whole
 	// session (explore fan-out plus background agents). It is the shared FIFO
 	// pool reached through rolemanager.Pipeline; nil means no ceiling beyond
@@ -172,6 +178,9 @@ type Session struct {
 	planRevision int
 	// diag is the post-edit diagnostics gate. The zero value disables it.
 	diag rolemanager.DiagnosticsGate
+	// sessionID is the transcript session stamped on outbound calls; see
+	// Options.SessionID.
+	sessionID string
 }
 
 // steerBuffer is the steering queue capacity. A full queue drops the newest
@@ -334,6 +343,7 @@ func NewSession(o Options) (*Session, error) {
 		diffs:              filediff.NewRecorder(o.Workdir),
 		diag:               o.Diagnostics,
 		agentPool:          o.AgentPool,
+		sessionID:          o.SessionID,
 	}, nil
 }
 
@@ -401,6 +411,7 @@ func (s *Session) RunObserved(ctx context.Context, userPrompt string, emit func(
 func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, streaming bool, emit func(Event)) (run.Result, error) {
 	turnStart := time.Now()
 	defer func() { s.trace.Event("agent", "turn", time.Since(turnStart)) }()
+	ctx = calltrace.WithSession(ctx, s.sessionID)
 
 	clean := sanitize.Sanitize(in.Prompt)
 
@@ -764,6 +775,7 @@ func (s *Session) decidePermission(tool, subject string) (dec permissions.Decisi
 // the pipe — so a command producing output faster than the terminal can draw
 // it throttles itself instead of growing an unbounded queue.
 func runTool(ctx context.Context, tool tools.Tool, call rolemanager.ToolCall, emit func(Event)) (tools.Result, error) {
+	ctx = calltrace.WithTool(ctx, tool.Definition().Name, call.ID)
 	st, ok := tool.(tools.StreamingTool)
 	if !ok {
 		return tool.Execute(ctx, call.Args)

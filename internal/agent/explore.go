@@ -291,6 +291,7 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task, steerCh chan 
 		Cache:         s.cache, // share the session verdict cache across fan-out
 		SkipNonceSeed: true,    // the subagent re-seeds locally below
 		RepoMap:       s.repoMap,
+		SessionID:     s.sessionID,
 	})
 	if err != nil {
 		return ""

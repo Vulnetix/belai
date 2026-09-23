@@ -41,8 +41,9 @@ func (a *App) fileListCmd() tea.Cmd {
 	workdir := a.workdir
 	workspaceDirs := append([]string{}, a.workspaceDirs...)
 	a.filesLoading = true
+	traceCtx := a.toolContext(context.Background(), "Glob", "")
 	return func() tea.Msg {
-		ctx := context.Background()
+		ctx := traceCtx
 		var files []string
 		seen := map[string]bool{}
 		roots := append([]string{workdir}, workspaceDirs...)

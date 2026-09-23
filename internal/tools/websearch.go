@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/vulnetix/signet/internal/calltrace"
 	"github.com/vulnetix/signet/internal/httpclient"
 	"github.com/vulnetix/signet/internal/version"
 )
@@ -80,6 +81,7 @@ func (w *WebSearch) Execute(ctx context.Context, args map[string]any) (Result, e
 	}
 	req.Header.Set("accept", "application/json")
 	req.Header.Set("user-agent", version.UserAgent())
+	calltrace.Apply(ctx, req.Header)
 	resp, err := client.Do(req)
 	if err != nil {
 		return Result{}, err
@@ -110,6 +112,7 @@ func (w *WebSearch) duckDuckGo(ctx context.Context, query string) (Result, error
 	}
 	req.Header.Set("accept", "application/json")
 	req.Header.Set("user-agent", version.UserAgent())
+	calltrace.Apply(ctx, req.Header)
 	resp, err := client.Do(req)
 	if err != nil {
 		return Result{}, err
@@ -167,6 +170,7 @@ func (w *WebSearch) Available() bool {
 		return false
 	}
 	req.Header.Set("user-agent", version.UserAgent())
+	calltrace.Apply(context.Background(), req.Header)
 	resp, err := client.Do(req)
 	if err != nil {
 		return false

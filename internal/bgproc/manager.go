@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/vulnetix/signet/internal/config"
@@ -110,6 +111,19 @@ type Manager struct {
 	live     *posture.Live
 	caps     tools.Capabilities
 	logsDir  string
+	// session is the owning transcript session id, stamped on the recovery
+	// subagent's provider requests and tool calls through calltrace.
+	session atomic.Value // string
+}
+
+// SetSessionID records the owning session id. The TUI calls it whenever its
+// session changes (new, resume, fork), so a later recovery carries it.
+func (m *Manager) SetSessionID(id string) { m.session.Store(id) }
+
+// sessionID returns the owning session id, or "".
+func (m *Manager) sessionID() string {
+	id, _ := m.session.Load().(string)
+	return id
 }
 
 type processInstance struct {
