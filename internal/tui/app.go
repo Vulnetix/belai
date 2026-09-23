@@ -1028,6 +1028,11 @@ func (a *App) Init() tea.Cmd {
 	if a.pending != "" && a.status.Configured {
 		cmds = append(cmds, a.sendPending())
 	}
+	// Probe language-server availability at startup so the /lsp settings
+	// view shows detected servers without waiting for the user to open it.
+	if cmd := a.enterLSP(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
 	// Discover the Vulnetix CLI quietly on startup so the footer and
 	// /vulnetix configure view have fresh capabilities from the first frame.
 	cmds = append(cmds, a.probeVulnetixSilentCmd())
