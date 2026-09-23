@@ -100,8 +100,8 @@ first two clear and it is configured.
 | Phase | Model | Runs | Verdicts | Off switch |
 | ----- | ----- | ---- | -------- | ---------- |
 | 1 | `GuardrailsAI/prompt-saturation-attack-detector` (bert-tiny, embedded) | local, always | `SAFE` / `PROMPT_INJECTION` | none (required for the models path) |
-| 2 | `leomaurodesenv/bert-base-uncased-trustairlab-jailbreak` (bert-base, embedded in the jailbreak variant) | local, when enabled | `SAFE` / `JAILBREAK` | `phase2.source: disabled` |
-| 3 | the classifier provider+model | narrowed LLM sentinel | `SAFE` / `DATA_EXTRACTION` / `MODEL_EXTRACTION` | clear `classifier.provider` or `classifier.model` |
+| 2 | `leomaurodesenv/bert-base-uncased-trustairlab-jailbreak` (bert-base, embedded in the jailbreak variant) | local, when enabled | `SAFE` / `JAILBREAK` | `phase2.source: disabled` — only reachable on the jailbreak variant; on BERT-only and no-classifier binaries an unset phase 2 is **deferred to phase 3**, not disabled |
+| 3 | the classifier provider+model | narrowed LLM sentinel | `SAFE` / `DATA_EXTRACTION` / `MODEL_EXTRACTION`; plus `JAILBREAK` when phase 2 is deferred to it | clear `classifier.provider` or `classifier.model` |
 
 Rules:
 
@@ -125,6 +125,12 @@ Rules:
   supplement for the two extraction categories only, so the content proceeds
   as `SAFE` and the feed records phase 3 as "couldn't tell". A phase-3
   transport error still fails closed.
+- **Phase 3 broadens when phase 2 is deferred.** When no local jailbreak gate
+  runs (this build variant has no embedded jailbreak model and no remote one
+  was configured), phase 3 takes over the `JAILBREAK` category: its prompt adds
+  `JAILBREAK` to the token set and `ParseDeferredExtractionSentinel` accepts
+  it. `PROMPT_INJECTION` stays out of scope either way because phase 1 is
+  always local on the models path.
 - **Thresholds are user-adjustable, with per-phase defaults.** Each phase gate
   fires only at or above its attack-probability threshold. Phase 1 defaults to
   0.75 (the saturation model is effectively binary); phase 2 defaults to 0.5
@@ -143,6 +149,14 @@ Rules:
   as "jailbreak" above 0.95 — more false positives than true negatives), so it
   was replaced with `leomaurodesenv/bert-base-uncased-trustairlab-jailbreak`
   (see "Phase-2 jailbreak model selection" below).
+- **Phase 2 deferred, not disabled, when it cannot run.** On a BERT-only
+  binary (phase 1 embedded, no jailbreak model) or a no-classifier binary,
+  an unset phase 2 is recorded as `phase2.deferred` and surfaced in the
+  `/model` phase-2 row as **"deferred to phase 3"**. It is *not*
+  `phase2.source: disabled`: that token is reserved for the jailbreak variant,
+  where the user has an embedded gate to explicitly turn off. Deferred means
+  the `JAILBREAK` category moves to the phase-3 LLM sentinel; disabled means
+  the user deliberately dropped jailbreak coverage.
 - **Phase 3 is opt-in** via the existing `classifier.provider` +
   `classifier.model` choice — no new setting. Unset both and a zero-config
   embedded install makes no network call in the classify path; set them and
@@ -152,7 +166,11 @@ Rules:
   gap.
 - **Vanilla binaries** keep the LLM sentinel path unchanged (no embedded
   weights). They can point phase 1/2 at HuggingFace remotely when a key is
-  present, and otherwise fall back to the LLM sentinel.
+  present, and otherwise fall back to the LLM sentinel. Choosing `kind: models`
+  on a vanilla binary never silently downgrades to the LLM sentinel: the
+  phase-1 row shows a "set HF token / provider" hint and the phase-2 row shows
+  "deferred to phase 3"; with no resolvable phase model the ML stack fails
+  closed at build time.
 - **The sentinel families are untouched.** `Pipeline.Classifier` still serves
   mode select, goal contract, clarify, plan eval, goal eval and compaction;
   only the security path switches to `Pipeline.Security`.
@@ -187,6 +205,53 @@ jailbreak classifiers (wrong architecture or non-wordpiece tokenizers), LoRA
 adapter checkpoints (need merging), and LLM classifiers such as
 `rogue-security/prompt-injection-jailbreak-sentinel-v2` (Qwen3, BPE tokenizer,
 not BERT).
+
+### Curated classifier model catalogue
+
+The `/model` classifier picker and the remote HuggingFace gate resolve from one
+curated catalogue (`internal/mlclassify/classifiermodels.go`): five BERT model
+ids with their documented attack labels. `IsKnownClassifierModel` and
+`AttackLabelFor` are the exported lookup helpers; `resolveSecurityPhase` uses
+the catalogue so a curated remote model always resolves its documented attack
+label instead of guessing.
+
+| Model | Phase | Attack label |
+| ----- | ----- | ------------ |
+| `GuardrailsAI/prompt-saturation-attack-detector` | 1 | `LABEL_1` |
+| `leomaurodesenv/bert-base-uncased-trustairlab-jailbreak` | 2 | `unsafe` |
+| `leomaurodesenv/bert-base-uncased-jailbreakv-28k` | 2 | `unsafe` |
+| `hurtmongoose/bert-base-detect-jailbreak` | 2 | `LABEL_1` (no `id2label`; the default BERT orientation) |
+| `hurtmongoose/jailbreak-bert-base-uncased` | 2 | `jailbreak` |
+
+### Jev tool-call gate
+
+The Role Manager ships a **Jev tool-call gating workflow**
+(`internal/rolemanager/jev`): a classifier that asks the TypeSafe/Jev model
+(on OpenRouter) whether a model-emitted tool call may execute. It implements
+`rolemanager.Classifier` and reduces the reply to one of three sentinels —
+`ALLOW`, `DENY`, or `INCONCLUSIVE` — via `jev.ParseVerdict`, which reuses the
+same sentinel normalizer as every other verdict grammar. A malformed or
+refused reply is `INCONCLUSIVE`, not a block in itself: the caller is expected
+to fail closed on an inconclusive verdict. The gate turn carries no tools,
+skills, or agent block, exactly like the security classifier turn.
+
+### Classifier provider allowlist
+
+The classifier role's provider list is restricted to classifier-capable
+sources. The agent/provider picker is unchanged; only the `/model` classifier
+rows filter:
+
+- **`huggingface`** — offered when an `HF_TOKEN` is configured. Its model
+  picker is filtered to the five curated BERT ids above.
+- **`openrouter`** — offered when configured **and** its model list contains a
+  `typesafe/jev*` model. Its model picker is filtered to `typesafe/jev*` only.
+- **custom providers**, **`llama-server`** and **`ollama`** — always offered,
+  with every model selectable and a broad-model warning shown in the picker:
+  *"Classifier provider: choose a classifier-specific model or switch to kind
+  LLM for general chat models."* The warning is a prompt, not a block: Signet
+  never silently stops a user from choosing a model on these providers.
+- General-chat built-ins (`openai`, `anthropic`, …) never appear for the
+  classifier role.
 
 ### Sentinel parsing
 
