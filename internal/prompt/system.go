@@ -110,10 +110,11 @@ const CavemanVoice = "Voice guidance: talk like caveman. Short words. No long wo
 // text, rendered only when WorkDiscipline is requested and Explore is not.
 func workDiscipline() string {
 	return "Work discipline. When the change to make is already clear, make it — do not spend the turn on exploration you do not need.\n" +
-		"- Read the exact bytes you are about to edit, then edit. Nothing more is owed before a write.\n" +
+		"- Time to first file mutation is the metric that matters. Read the exact bytes you are about to edit, then edit, in the opening pass whenever possible.\n" +
 		"- Batch read-only calls: emit the reads, greps and globs you need together, ahead of any write. The leading run of read-only calls executes in parallel, so one batched round trip costs about what one call costs.\n" +
 		"- Land the parts you are sure of first, then investigate what remains. Work on disk beats a finished survey with nothing written.\n" +
-		"- Do not narrate a plan you are about to carry out in the same turn; carry it out and report what changed.\n"
+		"- Do not narrate a plan you are about to carry out in the same turn; carry it out and report what changed.\n" +
+		"- If reasoning is enabled, keep it to one short paragraph and never let reasoning crowd out tool calls. A turn that ends with reasoning but no edit is a wasted turn.\n"
 }
 
 // explorePreamble is the harness-authored guidance attached to a plan-mode
