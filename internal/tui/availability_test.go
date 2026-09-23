@@ -3,6 +3,7 @@ package tui
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"testing"
 	"time"
@@ -270,4 +271,92 @@ func TestKeylessCustomProviderNeedsLiveness(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCredentialsResolvedSchedulesAvailabilityProbe verifies that credential
+// resolution at startup immediately schedules the same availability probe that
+// /providers runs, so the user does not have to open the providers screen to
+// see which providers are live.
+func TestCredentialsResolvedSchedulesAvailabilityProbe(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/models" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	// Point the built-in local providers at the same test server so the
+	// probe finishes instantly instead of timing out against localhost.
+	t.Setenv("OLLAMA_HOST", srv.URL)
+	u, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatalf("parse server url: %v", err)
+	}
+	t.Setenv("SIGNET_LLAMA_HOST", u.Hostname())
+	t.Setenv("SIGNET_LLAMA_PORT", u.Port())
+	t.Setenv("SIGNET_LLAMA_PROTOCOL", u.Scheme)
+
+	workdir := t.TempDir()
+	a := New(Options{Workdir: workdir, Resolver: newTestResolver(t, workdir)})
+
+	cmd := a.handleCredentialsResolved(credentialsResolvedMsg{cfg: a.cfg, status: a.status})
+	if cmd == nil {
+		t.Fatal("handleCredentialsResolved must return a command when a resolver is present")
+	}
+
+	if !drainForMsg(t, cmd, func(m tea.Msg) bool { _, ok := m.(availabilityMsg); return ok }) {
+		t.Fatal("handleCredentialsResolved did not schedule an availability probe")
+	}
+}
+
+// drainForMsg executes a command (and any nested commands/messages) until it
+// finds a message satisfying want. It understands bubbletea's BatchMsg so a
+// single returned tea.Batch can be expanded.
+func drainForMsg(t *testing.T, cmd tea.Cmd, want func(tea.Msg) bool) bool {
+	t.Helper()
+	return matchMsg(t, cmd(), want, 0)
+}
+
+func matchMsg(t *testing.T, m tea.Msg, want func(tea.Msg) bool, depth int) bool {
+	t.Helper()
+	if depth > 12 {
+		t.Fatal("command nesting exceeded safe limit")
+	}
+	if want(m) {
+		return true
+	}
+	// A command may return another command as its message; unwrap it.
+	if f, ok := m.(tea.Cmd); ok && f != nil {
+		if matchMsg(t, f(), want, depth+1) {
+			return true
+		}
+	}
+	// Expand bubbletea batch/sequence messages.
+	switch v := m.(type) {
+	case tea.BatchMsg:
+		for _, sub := range v {
+			if sub != nil && matchMsg(t, sub(), want, depth+1) {
+				return true
+			}
+		}
+	default:
+		// Older API compatibility: reflect any struct field named cmds.
+		rv := reflect.ValueOf(m)
+		if rv.Kind() == reflect.Struct {
+			f := rv.FieldByName("cmds")
+			if f.IsValid() && f.Kind() == reflect.Slice {
+				for i := 0; i < f.Len(); i++ {
+					if sub, ok := f.Index(i).Interface().(tea.Cmd); ok && sub != nil {
+						if matchMsg(t, sub(), want, depth+1) {
+							return true
+						}
+					}
+				}
+			}
+		}
+	}
+	return false
 }
