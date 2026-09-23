@@ -58,3 +58,19 @@ func TestDraftGoalContractSanitizesDelimiterMarkup(t *testing.T) {
 		t.Fatalf("contract carried delimiter markup:\n%s", got)
 	}
 }
+
+func TestDropInventedCommands(t *testing.T) {
+	draft := "## Verification surface\n- Run `make test` from the root.\n- Run `just check`; it must exit 0.\n- Inspect `internal/tui/app.go` and run `git status --short`.\n- Run `go test ./...`.\n\n## Constraints\nKeep going."
+	got := dropInventedCommands(draft, []string{"just check", "go test ./..."})
+	if strings.Contains(got, "make test") {
+		t.Fatalf("invented make test survived:\n%s", got)
+	}
+	for _, keep := range []string{"just check", "internal/tui/app.go", "go test ./...", "## Constraints"} {
+		if !strings.Contains(got, keep) {
+			t.Fatalf("dropped %q:\n%s", keep, got)
+		}
+	}
+	if dropInventedCommands(draft, nil) != draft {
+		t.Fatal("with no detected commands the draft must be unchanged")
+	}
+}

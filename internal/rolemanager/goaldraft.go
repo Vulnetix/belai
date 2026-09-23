@@ -37,7 +37,9 @@ Rules:
 - Do not repeat the objective line; it is already present.
 - Do not output any other headings, Markdown fences, or commentary outside the sections.
 - The contract is read by the model doing the work, so be concrete and actionable, not generic.
-- Keep the whole reply under 1500 words.`
+- Verification commands: when a harness-detected command list is given, use only those commands (plus read-only git). Never invent a build tool or target the list does not name — no make, npm, cargo or similar unless listed.
+- Name files only when the user's goal names them or they are certain; never guess paths.
+- Keep the whole reply under 600 words; the loop starts editing as soon as this contract exists, so brevity is speed.`
 
 // GoalDraftInput is the material the goal-contract classifier is shown.
 type GoalDraftInput struct {
@@ -99,6 +101,7 @@ func DraftGoalContract(ctx context.Context, c Classifier, in GoalDraftInput) (st
 		return "", fmt.Errorf("goal contract draft: %w", err)
 	}
 	draft := sanitize.Sanitize(raw)
+	draft = dropInventedCommands(draft, in.VerificationSurface)
 	if strings.TrimSpace(draft) == "" {
 		record(EventGoalDraft, "empty", "", "", 0)
 		return "", ErrGoalDraftUnusable
@@ -112,4 +115,56 @@ func DraftGoalContract(ctx context.Context, c Classifier, in GoalDraftInput) (st
 	}
 	record(EventGoalDraft, "usable", "", fmt.Sprintf("chars=%d", len(contract)), 0)
 	return contract, nil
+}
+
+// knownRunners are build and test tool names a drafting model tends to invent
+// for a repository that does not use them. Sessions showed `make test` written
+// into contracts for a repository with no Makefile, and the goal loop then
+// spent passes failing a command that could never succeed.
+var knownRunners = map[string]bool{
+	"make": true, "npm": true, "npx": true, "yarn": true, "pnpm": true, "bun": true,
+	"cargo": true, "pytest": true, "tox": true, "poetry": true, "pip": true,
+	"go": true, "just": true, "bazel": true, "gradle": true, "gradlew": true,
+	"mvn": true, "dotnet": true, "rake": true, "bundle": true, "mix": true,
+}
+
+// dropInventedCommands removes contract lines that name a backticked command
+// whose runner is not among the harness-detected commands. It is a
+// deterministic post-check on the draft: with no detected commands there is
+// nothing to check against and the draft is returned unchanged. File paths and
+// git commands in backticks are never runners, so they are untouched.
+func dropInventedCommands(draft string, detected []string) string {
+	if len(detected) == 0 {
+		return draft
+	}
+	allowed := map[string]bool{"git": true}
+	for _, c := range detected {
+		if f := strings.Fields(c); len(f) > 0 {
+			allowed[f[0]] = true
+		}
+	}
+	lines := strings.Split(draft, "\n")
+	out := lines[:0]
+	for _, line := range lines {
+		if !namesInventedRunner(line, allowed) {
+			out = append(out, line)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// namesInventedRunner reports whether a line holds a backticked command whose
+// first word is a known runner that allowed does not contain.
+func namesInventedRunner(line string, allowed map[string]bool) bool {
+	parts := strings.Split(line, "`")
+	for i := 1; i < len(parts); i += 2 {
+		f := strings.Fields(parts[i])
+		if len(f) == 0 {
+			continue
+		}
+		if knownRunners[f[0]] && !allowed[f[0]] {
+			return true
+		}
+	}
+	return false
 }
