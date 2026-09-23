@@ -109,6 +109,8 @@ func TestResolveSecurityClassifierPhase2RemoteLabel(t *testing.T) {
 }
 
 func TestResolveSecurityClassifierModelsPhase1(t *testing.T) {
+	t.Setenv("HF_TOKEN", "")
+	t.Setenv("HUGGINGFACE_TOKEN", "")
 	sc := ResolveSecurityClassifier(&config.ClassifierSettings{Kind: "models"})
 	if mlclassify.Embedded() {
 		if sc.Phase1 == nil {
@@ -116,11 +118,12 @@ func TestResolveSecurityClassifierModelsPhase1(t *testing.T) {
 		}
 		return
 	}
-	// On the untagged build with no embedded model and no explicit phase-1
-	// config, phase 1 is absent — the ML stack cannot run, which the pipeline
-	// treats as a build failure rather than a silent LLM downgrade.
+	// On the untagged build with no embedded model, no explicit phase-1 config
+	// and no HuggingFace token, phase 1 is absent — the ML stack cannot run,
+	// which the pipeline treats as a build failure rather than a silent LLM
+	// downgrade.
 	if sc.Phase1 != nil {
-		t.Fatalf("phase1 = %+v, want nil without embedded model or explicit config", sc.Phase1)
+		t.Fatalf("phase1 = %+v, want nil without embedded model, explicit config or HF token", sc.Phase1)
 	}
 }
 

@@ -16,10 +16,12 @@ func phase2EmbeddedAvailable() bool {
 }
 
 // TestResolveSecurityClassifierScenarioNoClassifier pins the no-classifier
-// (vanilla) scenario: kind models with no explicit phases resolves no local
-// phase model, and the jailbreak gate is deferred to phase 3 rather than
-// silently downgraded to the LLM sentinel.
+// (vanilla) scenario with no HuggingFace token: kind models resolves no phase-1
+// model, and the jailbreak gate is deferred to phase 3 rather than silently
+// downgraded to the LLM sentinel.
 func TestResolveSecurityClassifierScenarioNoClassifier(t *testing.T) {
+	t.Setenv("HF_TOKEN", "")
+	t.Setenv("HUGGINGFACE_TOKEN", "")
 	sc := ResolveSecurityClassifier(&config.ClassifierSettings{Kind: "models"})
 	if sc.Kind != "models" {
 		t.Fatalf("Kind = %q, want models", sc.Kind)
@@ -113,5 +115,23 @@ func TestResolveSecurityClassifierExplicitDisabledNotDeferred(t *testing.T) {
 	}
 	if sc.Phase2Deferred {
 		t.Fatal("explicit phase2.source=disabled must not be deferred to phase 3")
+	}
+}
+
+// TestResolveSecurityClassifierScenarioNoClassifierHF pins the no-classifier
+// scenario with a HuggingFace token: phase 1 defaults to the known saturation
+// model over the HuggingFace inference API instead of resolving no model.
+func TestResolveSecurityClassifierScenarioNoClassifierHF(t *testing.T) {
+	t.Setenv("HF_TOKEN", "hf-x")
+	t.Setenv("HUGGINGFACE_TOKEN", "")
+	sc := ResolveSecurityClassifier(&config.ClassifierSettings{Kind: "models"})
+	if mlclassify.Embedded() {
+		t.Skip("embedded build already has phase 1")
+	}
+	if sc.Phase1 == nil {
+		t.Fatal("phase1 must resolve to the default huggingface model when HF_TOKEN is set")
+	}
+	if sc.Phase1.ID != Phase1ModelID() || sc.Phase1.Source != mlclassify.SourceHuggingFace {
+		t.Fatalf("phase1 = %+v, want %s via huggingface", sc.Phase1, Phase1ModelID())
 	}
 }
