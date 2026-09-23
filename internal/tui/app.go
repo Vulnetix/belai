@@ -838,7 +838,7 @@ func New(opts Options) *App {
 		}
 	}
 	if initialStatus.Configured {
-		a.SetClassifier(run.NewClassifier(initial, a.client))
+		a.SetClassifier(run.NewRoleClassifier(initial, a.client, nil))
 		a.bgManager = bgagent.NewManager(workdir, initial, a.client, a.settings, a.effectivePosture())
 		a.bgManager.SetCredentialSource(credentialSourceOf(a.resolver))
 		a.bgManager.SetPool(a.agentPool)
@@ -4102,7 +4102,7 @@ func (a *App) handleCredentialsResolved(m credentialsResolvedMsg) tea.Cmd {
 	a.classifier = nil
 	a.invalidateAgentSession()
 	if m.status.Configured {
-		a.SetClassifier(run.NewClassifier(m.cfg, a.client))
+		a.SetClassifier(run.NewRoleClassifier(m.cfg, a.client, nil))
 		if a.bgManager == nil {
 			a.bgManager = bgagent.NewManager(a.workdir, m.cfg, a.client, a.settings, a.effectivePosture())
 			a.bgManager.SetCredentialSource(credentialSourceOf(a.resolver))
@@ -4166,7 +4166,7 @@ func (a *App) refreshProvider() tea.Cmd {
 	a.classifier = nil
 	a.invalidateAgentSession()
 	if status.Configured {
-		a.SetClassifier(run.NewClassifier(cfg, a.client))
+		a.SetClassifier(run.NewRoleClassifier(cfg, a.client, nil))
 	}
 	a.refreshFooter()
 	if a.pending != "" && status.Configured {
@@ -4215,7 +4215,7 @@ func (a *App) reResolveCredentials() bool {
 	a.status = status
 	a.classifier = nil
 	a.invalidateAgentSession()
-	a.SetClassifier(run.NewClassifier(cfg, a.client))
+	a.SetClassifier(run.NewRoleClassifier(cfg, a.client, nil))
 	a.refreshFooter()
 	return true
 }

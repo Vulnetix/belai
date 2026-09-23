@@ -459,7 +459,7 @@ func runAgentCreate(ctx context.Context, description, model, providerName, workd
 	if err != nil {
 		return err
 	}
-	classifier := run.NewClassifier(cfg, httpclient.Default())
+	classifier := run.NewRoleClassifier(cfg, httpclient.Default(), nil)
 	b := agentprofile.Builder{Classifier: classifier, MaxAttempts: 3, Caveman: settings.ClassifierCavemanEnabled()}
 	profile, err := b.Build(ctx, description)
 	if err != nil {
