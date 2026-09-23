@@ -207,8 +207,12 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("settings", "view and edit settings", nil, func(a *App, arg string) tea.Cmd {
 		// Default the settings scope to project so a bare /settings edit
 		// lands where the user expects (repo/.vulnetix/settings.json) and
-		// the provenance label is honest.
-		a.settingsState.scope = config.ScopeProject
+		// the provenance label is honest — unless the user already chose a
+		// scope this session, which reopening must not silently undo.
+		if !a.settingsState.scopeChosen {
+			a.settingsState.scope = config.ScopeProject
+		}
+		a.settingsState.notice = ""
 		return a.push(viewSettings)
 	})
 	r.Register("providers", "manage providers, credentials and local models", func() []string {

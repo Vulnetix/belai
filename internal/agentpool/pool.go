@@ -114,6 +114,13 @@ func (p *Pool) SetSize(n int) {
 	p.emit()
 }
 
+// Size returns the current concurrency ceiling.
+func (p *Pool) Size() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.size
+}
+
 // Acquire registers h as queued and blocks until a slot is free, returning a
 // Lease. It selects on ctx.Done() while queued, so a parent cancellation drops
 // queued work at once. The returned context is derived from ctx and is the
