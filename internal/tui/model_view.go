@@ -1191,18 +1191,13 @@ func (a *App) classifierProviders() []string {
 }
 
 // classifierOpenRouterAvailable reports whether openrouter is offered to the
-// classifier role: it must be configured and its catalogue must contain a
-// typesafe/jev* model.
+// classifier role. It needs only that the provider is configured: the model
+// picker filters to typesafe/jev* when it is selected. Requiring the Jev model
+// to already be in the (not-yet-fetched) catalogue would make the provider
+// unreachable — the live fetch that surfaces typesafe/jev only happens after
+// openrouter is chosen.
 func (a *App) classifierOpenRouterAvailable() bool {
-	if !a.providerConfigured("openrouter") {
-		return false
-	}
-	for _, m := range a.catalogFor("openrouter") {
-		if strings.HasPrefix(m.ID, "typesafe/jev") {
-			return true
-		}
-	}
-	return false
+	return a.providerConfigured("openrouter")
 }
 
 // providerConfigured reports whether a provider's credentials resolve through

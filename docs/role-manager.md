@@ -243,8 +243,9 @@ rows filter:
 
 - **`huggingface`** — offered when an `HF_TOKEN` is configured. Its model
   picker is filtered to the five curated BERT ids above.
-- **`openrouter`** — offered when configured **and** its model list contains a
-  `typesafe/jev*` model. Its model picker is filtered to `typesafe/jev*` only.
+- **`openrouter`** — offered when configured (`OPENROUTER_API_KEY` resolves).
+  Its model picker is filtered to `typesafe/jev*` only, so the Jev tool-call
+  gate is the classifier choice there.
 - **custom providers**, **`llama-server`** and **`ollama`** — always offered,
   with every model selectable and a broad-model warning shown in the picker:
   *"Classifier provider: choose a classifier-specific model or switch to kind

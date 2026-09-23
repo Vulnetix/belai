@@ -107,11 +107,10 @@ Business rules:
 - **Classifier provider allowlist.** The `/model` classifier provider list is
   restricted to classifier-capable sources: custom profiles, `llama-server`,
   `ollama`, `huggingface` (when `HF_TOKEN` is configured), and `openrouter`
-  (when configured and its model list contains a `typesafe/jev*` model). The
-  classifier model picker filters `huggingface` to the five curated BERT ids
-  and `openrouter` to `typesafe/jev*`; custom, `llama-server` and `ollama` stay
-  unfiltered and show the broad-model warning. The agent/provider picker is
-  unchanged.
+  (when configured). The classifier model picker filters `huggingface` to the
+  five curated BERT ids and `openrouter` to `typesafe/jev*`; custom,
+  `llama-server` and `ollama` stay unfiltered and show the broad-model
+  warning. The agent/provider picker is unchanged.
 - **Embedded models fail closed.** A variant binary whose embedded model fails
   to load or verify is a hard startup error, never a silent downgrade to the
   LLM path. Extraction and load happen once, eagerly.
@@ -2184,8 +2183,8 @@ rows (when `kind` is `models`), **reasoning**, **effort**, **chunk** and
   sentinel.
 - **Provider** is restricted to classifier-capable sources (see the
   allowlist rule above): custom profiles, `llama-server`, `ollama`,
-  `huggingface` when an HF token is configured, and `openrouter` when its
-  catalogue contains a `typesafe/jev*` model. It cycles with an inherit stop:
+  `huggingface` when an HF token is configured, and `openrouter` when
+  configured. It cycles with an inherit stop:
   `— (main: X)` means the classifier follows the main model.
 - **Model** opens the sub-picker filtered by provider: `huggingface` shows
   only the five curated BERT ids, `openrouter` only `typesafe/jev*`, and the
