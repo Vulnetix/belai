@@ -13,6 +13,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/vulnetix/signet/internal/config"
@@ -25,6 +26,7 @@ import (
 	"github.com/vulnetix/signet/internal/provider"
 	"github.com/vulnetix/signet/internal/resilience"
 	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/signet/internal/rolemanager/jev"
 	"github.com/vulnetix/signet/internal/sanitize"
 	"github.com/vulnetix/signet/internal/transcript"
 	"github.com/vulnetix/signet/internal/wire"
@@ -1102,13 +1104,12 @@ func NewClassifier(cfg Config, client *http.Client) rolemanager.Classifier {
 	return NewClassifierWithRetry(cfg, client, nil)
 }
 
-// NewClassifierWithRetry is NewClassifier with an onRetry callback invoked
-// before each L1 backoff. The callback can forward resilience.Attempt metadata
-// to observers such as the TUI.
-func NewClassifierWithRetry(cfg Config, client *http.Client, onRetry func(resilience.Attempt)) rolemanager.Classifier {
-	cc := cfg.ClassifierOrDefault()
+// classifierFromConfig builds a rolemanager.Classifier that sends
+// ClassifierPayload calls through the given resolved provider config. It is
+// the single construction point shared by the guardrail classifier, the
+// defined role classifier and every routed candidate classifier.
+func classifierFromConfig(c Config, client *http.Client, onRetry func(resilience.Attempt)) rolemanager.Classifier {
 	return rolemanager.ClassifierFunc(func(ctx context.Context, p rolemanager.ClassifierPayload) (string, error) {
-		c := cc.config()
 		if p.MaxTokens > 0 {
 			c.MaxTokens = p.MaxTokens
 		}
@@ -1122,6 +1123,113 @@ func NewClassifierWithRetry(cfg Config, client *http.Client, onRetry func(resili
 		}
 		return text, nil
 	})
+}
+
+// mainClassifierConfig returns the main config with reasoning off, the shape
+// the role classifier uses under "defined": the global provider/model serves
+// every non-guardrail role-manager activity.
+func mainClassifierConfig(cfg Config) Config {
+	return Config{
+		Provider: cfg.Provider,
+		BaseURL:  cfg.BaseURL,
+		APIKey:   cfg.APIKey,
+		Model:    cfg.Model,
+		Effort:   "none",
+		API:      cfg.API,
+		Auth:     cfg.Auth,
+		Kind:     cfg.Kind,
+	}
+}
+
+// NewClassifierWithRetry is NewClassifier with an onRetry callback invoked
+// before each L1 backoff. The callback can forward resilience.Attempt metadata
+// to observers such as the TUI.
+func NewClassifierWithRetry(cfg Config, client *http.Client, onRetry func(resilience.Attempt)) rolemanager.Classifier {
+	return classifierFromConfig(cfg.ClassifierOrDefault().config(), client, onRetry)
+}
+
+// NewRoleClassifier builds the classifier that serves the non-guardrail
+// role-manager activities (mode select, goal/plan eval, compaction, goal
+// contract, clarify, session name, agent eval). Under "defined" it is the main
+// config with reasoning off. Under "routed" it dispatches each payload's
+// UseCase through the Jev routing activity, cached per use case, falling back
+// to the main config on any routing failure.
+func NewRoleClassifier(cfg Config, client *http.Client, onRetry func(resilience.Attempt)) rolemanager.Classifier {
+	if cfg.Routing.Kind != config.RoutingRouted || len(cfg.Routing.Candidates) == 0 {
+		return classifierFromConfig(mainClassifierConfig(cfg), client, onRetry)
+	}
+	return newRoutedClassifier(cfg, client, onRetry)
+}
+
+// routedClassifier resolves a per-use-case classifier through Jev once, caches
+// it, and delegates every later call for that use case to the cached winner.
+// A transport error, an inconclusive verdict, or a winner missing from the
+// pool falls back to the defined main classifier.
+type routedClassifier struct {
+	main    rolemanager.Classifier
+	pool    []RoutingCandidate
+	jev     *jev.Client
+	client  *http.Client
+	onRetry func(resilience.Attempt)
+
+	mu    sync.Mutex
+	cache map[string]rolemanager.Classifier
+}
+
+func newRoutedClassifier(cfg Config, client *http.Client, onRetry func(resilience.Attempt)) *routedClassifier {
+	return &routedClassifier{
+		main:    classifierFromConfig(mainClassifierConfig(cfg), client, onRetry),
+		pool:    cfg.Routing.Candidates,
+		jev:     jev.New(cfg.Routing.JevToken),
+		client:  client,
+		onRetry: onRetry,
+		cache:   map[string]rolemanager.Classifier{},
+	}
+}
+
+func (r *routedClassifier) Classify(ctx context.Context, p rolemanager.ClassifierPayload) (string, error) {
+	c := r.forUseCase(ctx, p.UseCase)
+	return c.Classify(ctx, p)
+}
+
+// forUseCase returns the cached classifier for a use case, resolving it once
+// through Jev on first use. The empty use case resolves as "main".
+func (r *routedClassifier) forUseCase(ctx context.Context, useCase string) rolemanager.Classifier {
+	if useCase == "" {
+		useCase = rolemanager.UseCaseMain
+	}
+	r.mu.Lock()
+	if c, ok := r.cache[useCase]; ok {
+		r.mu.Unlock()
+		return c
+	}
+	r.mu.Unlock()
+
+	candidates := make([]jev.Candidate, len(r.pool))
+	for i, pc := range r.pool {
+		candidates[i] = jev.Candidate{
+			Key:      pc.Key,
+			Provider: pc.Cfg.Provider,
+			Model:    pc.Cfg.Model,
+		}
+	}
+	decision, err := r.jev.Route(ctx, useCase, candidates)
+	if err != nil || decision.Key == "" {
+		return r.cacheAndReturn(useCase, r.main)
+	}
+	for _, pc := range r.pool {
+		if pc.Key == decision.Key {
+			return r.cacheAndReturn(useCase, classifierFromConfig(pc.Cfg, r.client, r.onRetry))
+		}
+	}
+	return r.cacheAndReturn(useCase, r.main)
+}
+
+func (r *routedClassifier) cacheAndReturn(useCase string, c rolemanager.Classifier) rolemanager.Classifier {
+	r.mu.Lock()
+	r.cache[useCase] = c
+	r.mu.Unlock()
+	return c
 }
 
 func chatWithRetryAssistant(ctx context.Context, cfg Config, system, user string, client *http.Client, onRetry func(resilience.Attempt)) (Assistant, error) {
@@ -1148,11 +1256,15 @@ func NewPipeline(cfg Config, client *http.Client, cache *rolemanager.Cache) *rol
 }
 
 // NewPipelineWithRetry is NewPipeline with an onRetry callback forwarded to
-// the underlying classifier so retries are visible to observers.
+// the underlying classifiers so retries are visible to observers.
 func NewPipelineWithRetry(cfg Config, client *http.Client, cache *rolemanager.Cache, onRetry func(resilience.Attempt)) *rolemanager.Pipeline {
 	cc := cfg.ClassifierOrDefault()
-	llm := NewClassifierWithRetry(cfg, client, onRetry)
-	p := rolemanager.NewPipelineWithChunk(llm, rolemanager.ChunkConfig{
+	// The role classifier serves the non-guardrail role-manager activities and
+	// follows the routing config (defined: main; routed: Jev). The guardrail
+	// classifier serves security and always follows classifier.provider/model.
+	role := NewRoleClassifier(cfg, client, onRetry)
+	guard := NewClassifierWithRetry(cfg, client, onRetry)
+	p := rolemanager.NewPipelineWithChunk(role, rolemanager.ChunkConfig{
 		MaxBytes:    cc.Chunk.MaxBytes,
 		Concurrency: cc.Chunk.Concurrency,
 	})
@@ -1160,7 +1272,7 @@ func NewPipelineWithRetry(cfg Config, client *http.Client, cache *rolemanager.Ca
 	if cfg.Security.Kind == "models" {
 		var phase3 rolemanager.Classifier
 		if cfg.Security.Phase3On {
-			phase3 = llm
+			phase3 = guard
 		}
 		var sec rolemanager.Classifier
 		if ml, err := buildSecurityClassifier(cfg.Security, phase3); err != nil {
@@ -1171,7 +1283,13 @@ func NewPipelineWithRetry(cfg Config, client *http.Client, cache *rolemanager.Ca
 			sec = ml
 		}
 		p.Security = sec
+		p.SetMLSecurity(true)
 		p.SetClassifierIdentity(mlclassify.OptionsIdentity(cfg.Security.Phase1, cfg.Security.Phase2, cfg.Security.Phase3On, cfg.Security.Phase2Deferred))
+	} else {
+		// LLM sentinel path: the guardrail is the classifier.provider/model
+		// sentinel, separate from the role classifier.
+		p.Security = guard
+		p.SetMLSecurity(false)
 	}
 	return p
 }
