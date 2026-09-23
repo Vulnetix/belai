@@ -402,3 +402,163 @@ func TestCurrentAssistantBubbleAttachesConsecutiveToolCalls(t *testing.T) {
 		t.Fatalf("attached calls = %+v", bubble.ToolCalls)
 	}
 }
+
+// TestPersistInterleavedGoalTurn is the goal-mode shape that used to persist
+// nothing: reasoning, system and role-manager rows land between an assistant
+// and its tool rows. Every row must reach disk, in order.
+func TestPersistInterleavedGoalTurn(t *testing.T) {
+	a := newPersistApp(t)
+	a.echoUser("fix it")
+	a.messages = append(a.messages,
+		components.Message{Role: "assistant", Content: "working", ToolCalls: []components.AgentToolCall{
+			{ID: "c1", Name: "Read", Args: `{"path":"a"}`},
+			{ID: "c2", Name: "Write", Args: `{"path":"a"}`},
+		}},
+		components.Message{Role: "tool", ToolName: "Read", ToolCallID: "c1", Content: "a", Status: "✓"},
+		components.Message{Role: "reasoning", Content: "now write"},
+		components.Message{Role: "system", Content: "goal evaluator: partial (pass 1)"},
+		components.Message{Role: "rolemanager", RM: rolemanager.Description{Summary: "Checked the file", Outcome: "clean"}},
+		components.Message{Role: "tool", ToolName: "Write", ToolCallID: "c2", Content: "wrote a", Status: "✓"},
+	)
+	a.persistTail()
+
+	entries := persistedEntries(t, a)
+	var types []string
+	for _, e := range entries {
+		types = append(types, e.Type)
+	}
+	want := "user assistant tool reasoning system rolemanager tool"
+	if got := strings.Join(types, " "); got != want {
+		t.Fatalf("persisted %q, want %q", got, want)
+	}
+	if calls, _ := entries[1].Meta["tool_calls"].([]any); len(calls) != 2 {
+		t.Fatalf("assistant tool_calls = %#v, want both calls", entries[1].Meta["tool_calls"])
+	}
+}
+
+// TestPersistHoldsInFlightBubble: while a turn runs, its assistant bubble can
+// still gain calls, so it is held even when every current call is answered;
+// rows before it still persist.
+func TestPersistHoldsInFlightBubble(t *testing.T) {
+	a := newPersistApp(t)
+	a.echoUser("fix it")
+	a.messages = append(a.messages,
+		components.Message{Role: "rolemanager", RM: rolemanager.Description{Summary: "Admitted", Outcome: "clean"}},
+		components.Message{Role: "assistant", ToolCalls: []components.AgentToolCall{{ID: "c1", Name: "Read"}}},
+		components.Message{Role: "tool", ToolName: "Read", ToolCallID: "c1", Content: "a", Status: "✓"},
+	)
+	a.cancel = func() {}
+	a.persistTail()
+	if got := len(persistedEntries(t, a)); got != 2 {
+		t.Fatalf("in flight: entries = %d, want 2 (user, rolemanager)", got)
+	}
+
+	a.cancel = nil
+	a.persistTail()
+	if got := len(persistedEntries(t, a)); got != 4 {
+		t.Fatalf("after the turn: entries = %d, want 4", got)
+	}
+}
+
+// TestEchoUserForceFlushesAbortedTurn: an aborted call never gets a result.
+// The next user turn must write what it can — the assistant without the
+// unanswered call — and everything after, instead of skipping the rows.
+func TestEchoUserForceFlushesAbortedTurn(t *testing.T) {
+	a := newPersistApp(t)
+	a.echoUser("run it")
+	a.messages = append(a.messages,
+		components.Message{Role: "assistant", Content: "running", ToolCalls: []components.AgentToolCall{
+			{ID: "c1", Name: "Read"}, {ID: "c2", Name: "Bash"},
+		}},
+		components.Message{Role: "tool", ToolName: "Read", ToolCallID: "c1", Content: "a", Status: "✓"},
+		components.Message{Role: "tool", ToolName: "Bash", ToolCallID: "c2"},
+		components.Message{Role: "system", Content: "request cancelled"},
+	)
+	a.persistTail()
+	if got := len(persistedEntries(t, a)); got != 1 {
+		t.Fatalf("before the next turn: entries = %d, want 1", got)
+	}
+
+	a.echoUser("try again")
+	entries := persistedEntries(t, a)
+	var types []string
+	for _, e := range entries {
+		types = append(types, e.Type)
+	}
+	if got, want := strings.Join(types, " "), "user assistant tool system user"; got != want {
+		t.Fatalf("persisted %q, want %q", got, want)
+	}
+	calls, _ := entries[1].Meta["tool_calls"].([]any)
+	if len(calls) != 1 || calls[0].(map[string]any)["id"] != "c1" {
+		t.Fatalf("assistant tool_calls = %#v, want only the answered c1", entries[1].Meta["tool_calls"])
+	}
+}
+
+// TestEchoUserDuringRunningTurnKeepsOrder: steering mid-turn must not jump
+// the cursor past the running turn's rows; the user row is written in order
+// once they settle.
+func TestEchoUserDuringRunningTurnKeepsOrder(t *testing.T) {
+	a := newPersistApp(t)
+	a.echoUser("fix it")
+	a.messages = append(a.messages,
+		components.Message{Role: "assistant", ToolCalls: []components.AgentToolCall{{ID: "c1", Name: "Read"}}},
+		components.Message{Role: "tool", ToolName: "Read", ToolCallID: "c1"},
+	)
+	a.cancel = func() {}
+	a.echoUser("also update the docs")
+	a.messages[2].Content, a.messages[2].Status = "a", "✓"
+	a.cancel = nil
+	a.persistTail()
+
+	entries := persistedEntries(t, a)
+	var types []string
+	for _, e := range entries {
+		types = append(types, e.Type)
+	}
+	if got, want := strings.Join(types, " "), "user assistant tool user"; got != want {
+		t.Fatalf("persisted %q, want %q", got, want)
+	}
+}
+
+func TestTruncateUTF8KeepsRunes(t *testing.T) {
+	s := "ab—cd" // em-dash is bytes 2..4
+	if got := truncateUTF8(s, 3); got != "ab" {
+		t.Fatalf("truncateUTF8 = %q, want %q", got, "ab")
+	}
+	if got := truncateUTF8(s, 100); got != s {
+		t.Fatalf("short input changed: %q", got)
+	}
+}
+
+// TestInterleavedGoalTurnRehydratesWithoutDrops closes the loop: the
+// interleaved layout persisted above must resume with every call paired.
+func TestInterleavedGoalTurnRehydratesWithoutDrops(t *testing.T) {
+	a := newPersistApp(t)
+	a.echoUser("fix it")
+	a.messages = append(a.messages,
+		components.Message{Role: "assistant", Content: "working", ToolCalls: []components.AgentToolCall{
+			{ID: "c1", Name: "Read", Args: `{"path":"a"}`},
+			{ID: "c2", Name: "Write", Args: `{"path":"a"}`},
+		}},
+		components.Message{Role: "tool", ToolName: "Read", ToolCallID: "c1", Content: "a", Status: "✓"},
+		components.Message{Role: "reasoning", Content: "now write"},
+		components.Message{Role: "system", Content: "goal evaluator: partial (pass 1)"},
+		components.Message{Role: "tool", ToolName: "Write", ToolCallID: "c2", Content: "wrote a", Status: "✓"},
+		components.Message{Role: "assistant", Content: "done"},
+	)
+	a.persistTail()
+
+	r := rehydrateSession(persistedEntries(t, a))
+	if r.Dropped != 0 {
+		t.Fatalf("rehydrate dropped %d tool rows from an interleaved goal turn", r.Dropped)
+	}
+	tools := 0
+	for _, m := range r.Messages {
+		if m.Role == "tool" {
+			tools++
+		}
+	}
+	if tools != 2 {
+		t.Fatalf("rehydrated %d tool rows, want 2", tools)
+	}
+}
