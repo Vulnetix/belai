@@ -1017,6 +1017,14 @@ func PreloadClassifier(sc SecurityClassifierConfig) error {
 	if sc.Kind != "models" {
 		return nil
 	}
+	// No local phase model resolves on this binary (no embedded model and no
+	// remote phase configured). There is nothing embedded to load or verify,
+	// so this is not the embedded-model failure PreloadClassifier exists to
+	// catch — do not block startup. The pipeline still fails closed at use
+	// time and the /model phase rows show the configure hint.
+	if sc.Phase1 == nil && sc.Phase2 == nil {
+		return nil
+	}
 	_, err := buildSecurityClassifier(sc, nil)
 	return err
 }

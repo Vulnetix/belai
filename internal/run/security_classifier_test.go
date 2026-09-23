@@ -119,6 +119,16 @@ func TestPreloadClassifierNoopForLLM(t *testing.T) {
 	}
 }
 
+func TestPreloadClassifierNoopWhenNoPhaseConfigured(t *testing.T) {
+	// A no-classifier binary with kind "models" but no resolvable phase model
+	// must not hard-fail startup: there is no embedded model to load, and the
+	// pipeline fails closed at use time instead. This is the no-phase case, not
+	// the embedded-model-load-failure case PreloadClassifier exists to catch.
+	if err := PreloadClassifier(SecurityClassifierConfig{Kind: "models"}); err != nil {
+		t.Fatalf("PreloadClassifier(models, no phases) = %v, want nil", err)
+	}
+}
+
 func TestResolveClassifierKindLLMStillInherits(t *testing.T) {
 	// Regression: the LLM sentinel path keeps inheritance. A models-kind
 	// setting must not leak the no-inheritance rule into the LLM path.
