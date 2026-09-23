@@ -1323,6 +1323,56 @@ func TestResolveClassifierSeparateProvider(t *testing.T) {
 	}
 }
 
+// A model-only classifier override whose leading segment is another built-in
+// provider must never ride on the inherited main provider: it is the exact
+// shape of the stale fresh-install default ("openrouter/free" after switching
+// the main provider to cloudflare-ai-gateway) that returned a 401 from the
+// gateway and killed every classifier call at the first pass boundary.
+func TestResolveClassifierDropsForeignModelOverride(t *testing.T) {
+	main := Config{
+		Provider: "cloudflare-ai-gateway",
+		BaseURL:  "https://gateway.ai.cloudflare.com/v1/acct/default/compat",
+		APIKey:   "cf-aig-token",
+		Model:    "@cf/deepseek-ai/deepseek-v4-pro-0813",
+	}
+	cls := &config.ClassifierSettings{Model: "openrouter/free"}
+	cc, err := ResolveClassifier(main, cls, nil)
+	if err != nil {
+		t.Fatalf("ResolveClassifier: %v", err)
+	}
+	if cc.Provider != main.Provider || cc.BaseURL != main.BaseURL || cc.APIKey != main.APIKey {
+		t.Fatalf("inherited provider/creds must survive: %+v", cc)
+	}
+	if cc.Model != main.Model {
+		t.Fatalf("foreign model override must fall back to the main model: got %q, want %q", cc.Model, main.Model)
+	}
+}
+
+// Same-provider model overrides stay honoured: namespaced to the main
+// provider, un-namespaced, or in the Workers AI namespace on the gateway.
+func TestResolveClassifierKeepsCompatibleModelOverride(t *testing.T) {
+	cases := []struct {
+		name  string
+		main  Config
+		model string
+	}{
+		{"un-namespaced", Config{Provider: "openai", BaseURL: "https://api.openai.com/v1", APIKey: "k", Model: "gpt-5"}, "gpt-5-mini"},
+		{"same-provider namespaced", Config{Provider: "openrouter", BaseURL: "https://openrouter.ai/api/v1", APIKey: "k", Model: "openrouter/auto"}, "openrouter/free"},
+		{"workers-ai through gateway", Config{Provider: "cloudflare-ai-gateway", BaseURL: "https://gw.example", APIKey: "k", Model: "@cf/deepseek-ai/deepseek-v4-pro-0813"}, "@cf/meta/llama-4-scout-17b-16e-instruct"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cc, err := ResolveClassifier(tc.main, &config.ClassifierSettings{Model: tc.model}, nil)
+			if err != nil {
+				t.Fatalf("ResolveClassifier: %v", err)
+			}
+			if cc.Model != tc.model {
+				t.Fatalf("model override = %q, want %q", cc.Model, tc.model)
+			}
+		})
+	}
+}
+
 func TestResolveClassifierSeparateProviderMissingCreds(t *testing.T) {
 	main := Config{Provider: "openai", BaseURL: "https://api.openai.com/v1", APIKey: "k", Model: "gpt-5"}
 	cls := &config.ClassifierSettings{Provider: "cloudflare-workers-ai"}
