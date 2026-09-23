@@ -53,10 +53,18 @@ build:
     go build -ldflags '{{ ldflags }}' -o {{ binary }} {{ pkg }}
 
 # Prepare the embedded classifier models (download + convert + verify).
-# MODELPREP_PYTHON names a python with torch+safetensors installed (defaults
-# to python3). With no args both phases are prepared.
+# When `uv` is available this runs under `uv run --with torch --with
+# safetensors --with numpy` so no system Python setup is required.
+# Otherwise set MODELPREP_PYTHON to a python with torch+safetensors installed.
 modelprep *ARGS:
-    PY="${MODELPREP_PYTHON:-python3}"; if [ -z "{{ ARGS }}" ]; then set -- -phase1 -phase2; fi; go run ./tools/modelprep -python "$PY" {{ ARGS }} "$@"
+    if command -v uv >/dev/null 2>&1; then \
+        if [ -z "{{ ARGS }}" ]; then set -- -phase1 -phase2; fi; \
+        uv run --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple --with torch --with safetensors --with numpy go run ./tools/modelprep -python python3 {{ ARGS }} "$@"; \
+    else \
+        PY="${MODELPREP_PYTHON:-python3}"; \
+        if [ -z "{{ ARGS }}" ]; then set -- -phase1 -phase2; fi; \
+        go run ./tools/modelprep -python "$PY" {{ ARGS }} "$@"; \
+    fi
 
 # Build ./signet with both embedded models (phase 1 saturation + phase 2 jailbreak).
 # Extra args are forwarded to modelprep, e.g. `just build-jailbreak -force`.
