@@ -176,11 +176,5 @@ func ParseDeferredExtractionSentinel(raw string) (Sentinel, error) {
 	return Sentinel(s), nil
 }
 
-// NormalizeSentinelReply is the exported form of normalizeSentinelReply. It is
-// used by verdict grammars outside this package (for example the Jev tool-call
-// gate) so every sentinel parser strips the same reasoning blocks, fences,
-// bold markers, backticks and trailing punctuation before matching.
-func NormalizeSentinelReply(raw string) string { return normalizeSentinelReply(raw) }
-
 // IsSafe reports whether the sentinel marks content as verified-safe.
 func (s Sentinel) IsSafe() bool { return s == SentinelSafe }
