@@ -58,8 +58,8 @@ const sealText =
         Phase 3 is opt-in, and the switch is a setting you already have: it runs only when{' '}
         <code class="mono">classifier.provider</code> <em>and</em> <code class="mono">classifier.model</code> are
         both set. The classifier model picker is restricted to classifier-appropriate choices — the
-        five curated HuggingFace BERT models, or the TypeSafe{' '}
-        <code class="mono">typesafe/jev*</code> tool-call gate on OpenRouter — with a broad-model
+        five curated HuggingFace BERT models, or the TypeSafe Jev Decisions model{' '}
+        (<code class="mono">typesafe/jev-1.13</code>) tool-call gate on OpenRouter — with a broad-model
         warning on custom, llama-server and Ollama providers. Leave the fields clear and the classify
         path makes no network call at all — and says so on the <code class="mono">/model</code> phase-3
         row rather than implying coverage it does not have.
