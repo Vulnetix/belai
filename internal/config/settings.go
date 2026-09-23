@@ -11,6 +11,12 @@ import (
 	"github.com/vulnetix/signet/internal/wire"
 )
 
+// DefaultMaxAgents is the default concurrency ceiling for fan-out subagents
+// and background agents. It is intentionally generous (15) because modern
+// LLM workloads are I/O-bound on tool results; raising the ceiling lets the
+// harness run read-only exploration in parallel instead of queuing work.
+const DefaultMaxAgents = 15
+
 // Settings holds user- and project-level configuration.
 // Project settings override global settings field-by-field.
 type Settings struct {
@@ -413,9 +419,11 @@ type ResilienceSettings struct {
 	// means the default (3).
 	MaxProcessRecoveries int `json:"max_process_recoveries,omitempty"`
 	// MaxAgents caps how many fan-out subagents (explore plus background
-	// agents) run at once across the whole session. It defaults to 3, today's
-	// exploreConcurrency, and backs the single FIFO agent pool. Zero means the
-	// default (3).
+	// agents) run at once across the whole session. It defaults to 15. Zero
+	// means the default (15); a higher value requires provider rate-limit
+	// headroom. It is intentionally overridable per-project (unlike retry
+	// budgets), because concurrency is a local performance preference, not a
+	// safety budget.
 	MaxAgents int `json:"max_agents,omitempty"`
 	// PlanExplore, when non-nil, toggles the plan-mode repository survey. nil
 	// means on (the default), so false is honoured as an explicit opt-out.
@@ -474,12 +482,51 @@ func (r *ResilienceSettings) MaxProcessRecoveriesOr(def int) int {
 }
 
 // MaxAgentsOr returns MaxAgents or the provided default. Zero means "use the
-// default"; callers should pass the built-in default (3).
+// default"; callers should pass the built-in default (DefaultMaxAgents).
 func (r *ResilienceSettings) MaxAgentsOr(def int) int {
 	if r == nil || r.MaxAgents == 0 {
 		return def
 	}
 	return r.MaxAgents
+}
+
+// merge folds another ResilienceSettings into this one. Safety budgets
+// (retry and iteration limits) tighten-only; MaxAgents is a performance
+// preference and may be raised; PlanExplore is replaced when explicitly set.
+func (r *ResilienceSettings) merge(other *ResilienceSettings) {
+	if other == nil {
+		return
+	}
+	tighten := func(cur, val *int) {
+		if *val == 0 {
+			return
+		}
+		if *cur == 0 {
+			*cur = *val
+			return
+		}
+		*cur = min(*cur, *val)
+	}
+	tighten(&r.MaxAttempts, &other.MaxAttempts)
+	tighten(&r.MaxIterations, &other.MaxIterations)
+	tighten(&r.MaxPasses, &other.MaxPasses)
+	// MaxClarifyRounds is tighten-only for positive values; a negative value
+	// disables clarification and overrides any earlier positive or negative
+	// value, because disabling is an explicit opt-out.
+	if other.MaxClarifyRounds != 0 {
+		if r.MaxClarifyRounds == 0 || other.MaxClarifyRounds < 0 || (r.MaxClarifyRounds > 0 && other.MaxClarifyRounds < r.MaxClarifyRounds) {
+			r.MaxClarifyRounds = other.MaxClarifyRounds
+		}
+	}
+	tighten(&r.MaxExploreIterations, &other.MaxExploreIterations)
+	tighten(&r.MaxProcessRecoveries, &other.MaxProcessRecoveries)
+	// MaxAgents is intentionally overridable upward.
+	if other.MaxAgents != 0 {
+		r.MaxAgents = other.MaxAgents
+	}
+	if other.PlanExplore != nil {
+		r.PlanExplore = other.PlanExplore
+	}
 }
 
 // ColorsEnabled reports whether role colours are on. Default true.
@@ -812,59 +859,7 @@ func (s Settings) Override(proj Settings) Settings {
 		if out.Resilience != nil {
 			*merged = *out.Resilience
 		}
-		if proj.Resilience.MaxAttempts != 0 {
-			if merged.MaxAttempts == 0 {
-				merged.MaxAttempts = proj.Resilience.MaxAttempts
-			} else {
-				// Project settings cannot widen the budget; take the minimum.
-				merged.MaxAttempts = min(merged.MaxAttempts, proj.Resilience.MaxAttempts)
-			}
-		}
-		if proj.Resilience.MaxIterations != 0 {
-			if merged.MaxIterations == 0 {
-				merged.MaxIterations = proj.Resilience.MaxIterations
-			} else {
-				merged.MaxIterations = min(merged.MaxIterations, proj.Resilience.MaxIterations)
-			}
-		}
-		if proj.Resilience.MaxPasses != 0 {
-			if merged.MaxPasses == 0 {
-				merged.MaxPasses = proj.Resilience.MaxPasses
-			} else {
-				merged.MaxPasses = min(merged.MaxPasses, proj.Resilience.MaxPasses)
-			}
-		}
-		if proj.Resilience.MaxClarifyRounds != 0 {
-			if merged.MaxClarifyRounds == 0 {
-				merged.MaxClarifyRounds = proj.Resilience.MaxClarifyRounds
-			} else {
-				merged.MaxClarifyRounds = min(merged.MaxClarifyRounds, proj.Resilience.MaxClarifyRounds)
-			}
-		}
-		if proj.Resilience.MaxExploreIterations != 0 {
-			if merged.MaxExploreIterations == 0 {
-				merged.MaxExploreIterations = proj.Resilience.MaxExploreIterations
-			} else {
-				merged.MaxExploreIterations = min(merged.MaxExploreIterations, proj.Resilience.MaxExploreIterations)
-			}
-		}
-		if proj.Resilience.MaxProcessRecoveries != 0 {
-			if merged.MaxProcessRecoveries == 0 {
-				merged.MaxProcessRecoveries = proj.Resilience.MaxProcessRecoveries
-			} else {
-				merged.MaxProcessRecoveries = min(merged.MaxProcessRecoveries, proj.Resilience.MaxProcessRecoveries)
-			}
-		}
-		if proj.Resilience.MaxAgents != 0 {
-			if merged.MaxAgents == 0 {
-				merged.MaxAgents = proj.Resilience.MaxAgents
-			} else {
-				merged.MaxAgents = min(merged.MaxAgents, proj.Resilience.MaxAgents)
-			}
-		}
-		if proj.Resilience.PlanExplore != nil {
-			merged.PlanExplore = proj.Resilience.PlanExplore
-		}
+		merged.merge(proj.Resilience)
 		out.Resilience = merged
 	}
 	if proj.WorkspaceDirs != nil {

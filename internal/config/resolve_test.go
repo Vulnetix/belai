@@ -403,3 +403,40 @@ func TestClassifierChunkDefaults(t *testing.T) {
 		t.Fatalf("MaxBytesOr = %d, want 10", got)
 	}
 }
+
+func TestResolveResilienceMaxAgents(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	workdir := t.TempDir()
+
+	// Safety budgets remain tighten-only; MaxAgents is a performance preference
+	// and a project may raise it above the global value.
+	if err := SaveGlobal(Settings{Resilience: &ResilienceSettings{
+		MaxAttempts: 3,
+		MaxAgents:   3,
+	}}); err != nil {
+		t.Fatalf("SaveGlobal: %v", err)
+	}
+	if err := SaveProject(workdir, Settings{Resilience: &ResilienceSettings{
+		MaxAttempts: 10,
+		MaxAgents:   15,
+	}}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+
+	eff, err := Resolve(workdir, func(string) string { return "" }, Settings{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if eff.Settings.Resilience == nil {
+		t.Fatal("Resilience settings were not resolved")
+	}
+	if eff.Settings.Resilience.MaxAttempts != 3 {
+		t.Fatalf("MaxAttempts = %d, want 3 (tighten-only)", eff.Settings.Resilience.MaxAttempts)
+	}
+	if eff.Settings.Resilience.MaxAgents != 15 {
+		t.Fatalf("MaxAgents = %d, want 15 (project override)", eff.Settings.Resilience.MaxAgents)
+	}
+	if eff.Origin["resilience"] != SourceProject {
+		t.Fatalf("resilience origin = %q, want project", eff.Origin["resilience"])
+	}
+}
