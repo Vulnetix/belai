@@ -1316,7 +1316,7 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 	}
 	a.ctx, a.cancel = context.WithCancel(context.Background())
 	a.setPhaseRoleManager(agent.RoleManagerPhasePrePrompt)
-	a.messages = append(a.messages, components.Message{Role: "assistant"})
+	a.messages = append(a.messages, a.newAssistantBubble())
 
 	// A cached session starts synchronously; a cold session build (which can
 	// block on a nonce GET) is hoisted onto a tea.Cmd goroutine so the TUI
@@ -5357,8 +5357,17 @@ func (a *App) currentAssistantBubble() int {
 			return i
 		}
 	}
-	a.messages = append(a.messages, components.Message{Role: "assistant"})
+	a.messages = append(a.messages, a.newAssistantBubble())
 	return len(a.messages) - 1
+}
+
+// newAssistantBubble is an empty assistant bubble stamped with the agent
+// provider/model. Every bubble carries the stamp, including the one a turn
+// opens with: a turn whose first event is a tool call fills that bubble with
+// calls and no text, and ctrl+o titles the panel from the stamp. Without it
+// the panel falls back to the generic "model".
+func (a *App) newAssistantBubble() components.Message {
+	return components.Message{Role: "assistant", Provider: a.cfg.Provider, Model: a.cfg.Model}
 }
 
 // startNewSession resets to a brand-new, unnamed session. The previous
