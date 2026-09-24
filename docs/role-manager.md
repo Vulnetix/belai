@@ -199,11 +199,12 @@ Rules:
   plan eval, goal eval, compaction, session name, agent eval) from the main
   config under `routing.kind: "defined"`, or from the Jev-routed winner under
   `routing.kind: "routed"`. The one-token sentinel activities (mode select,
-  session name, goal/plan/agent eval) and the goal contract fall back to the
-  **fast tier** rather than the main model when one is configured or implied
-  by the provider registry; compaction and clarify stay on the main model.
-  Precedence: Jev-routed candidate, then fast tier (`run.IsFastUseCase` roles
-  only), then main. The guardrail moves to the fast tier only under
+  session name, goal/plan/agent eval) and the goal contract go to the
+  **fast tier** whenever one is configured or implied by the provider
+  registry. Under `routed` they skip Jev entirely. Compaction and clarify
+  stay on the main model, or the Jev winner. Precedence: fast tier
+  (`run.IsFastUseCase` roles only, whenever one exists), then the Jev-routed
+  candidate, then main. The guardrail moves to the fast tier only under
   `classifier.tier: "fast"`, and an explicit `classifier.provider`/`model`
   outranks the tier (see architecture.md, "Fast tier"). `Pipeline.Security` is the guardrail: the ML stack
   on the `models` path (with phase 3 using `classifier.provider`/
@@ -631,9 +632,10 @@ Edge cases:
   it on the first `/` only, so a model id such as `@cf/org/name` stays whole.
 - The security classifier lines keep their own label
   (`Pipeline.securityModelLabel`, and the phase identities).
-- Under `routed`, a fast use case is served by whichever pool candidate Jev
-  picks, and falls back to the fast tier only when Jev does not settle it
-  (`route_fallback`). Its line then names that pool model.
+- A fast use case (mode select, session naming, the goal, plan and agent
+  evaluators, goal drafting) names the fast tier whenever one exists, under
+  `routed` too, because it never reaches Jev. It names a pool model only when
+  there is no fast tier.
 
 Four security invariants, stated in the code and here:
 

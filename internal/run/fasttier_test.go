@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/vulnetix/signet/internal/config"
@@ -117,44 +118,6 @@ func TestFastRolesUseTheFastTierAndGenerativeRolesStayMain(t *testing.T) {
 	}
 }
 
-// TestRoutedGoalContractFallsBackToTheFastTier pins the goal contract to the
-// fast tier when Jev does not settle it: the main model is a slow reasoning
-// model often enough that the draft's deadline expired on it.
-func TestRoutedGoalContractFallsBackToTheFastTier(t *testing.T) {
-	srv, seen := roleServer(t)
-	defer srv.Close()
-	jevSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// 400, not 5xx: the OpenRouter SDK retries a 5xx with backoff.
-		http.Error(w, "bad request", http.StatusBadRequest)
-	}))
-	defer jevSrv.Close()
-
-	main := Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "gpt-5"}
-	rc, err := ResolveRouting(main, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rc.Kind = config.RoutingRouted
-	rc.Candidates = []RoutingCandidate{{Key: "a", Cfg: Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "gpt-4.1"}}}
-	rc.JevToken = func() (string, error) { return "test-key", nil }
-	main.Routing = rc
-
-	r := NewRoleClassifier(main, srv.Client(), nil).(*routedClassifier)
-	r.jev.SetEndpoint(jevSrv.URL)
-	for _, uc := range []string{rolemanager.UseCaseGoalContract, rolemanager.UseCaseCompaction} {
-		if _, err := r.Classify(context.Background(), rolemanager.ClassifierPayload{System: uc, User: "u", UseCase: uc}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	got := seen()
-	if m := got[rolemanager.UseCaseGoalContract]; len(m) != 1 || m[0] != "gpt-5-mini" {
-		t.Fatalf("goal contract answered by %v, want the fast tier", m)
-	}
-	if m := got[rolemanager.UseCaseCompaction]; len(m) != 1 || m[0] != "gpt-5" {
-		t.Fatalf("compaction answered by %v, want the main model", m)
-	}
-}
-
 func TestGuardStaysOnTheMainModelUnlessTierFast(t *testing.T) {
 	main := Config{Provider: "openai", BaseURL: "https://api.openai.com/v1", APIKey: "k", Model: "gpt-5"}
 	rc, _ := ResolveRouting(main, nil, nil)
@@ -177,5 +140,124 @@ func TestGuardStaysOnTheMainModelUnlessTierFast(t *testing.T) {
 	main.Classifier = cc
 	if g := GuardConfig(main); g.Model != "gpt-4.1" {
 		t.Fatalf("explicit guard = %s, want gpt-4.1", g.Model)
+	}
+}
+
+// TestRoleClassifierReportsTheModelThatAnswered pins activity attribution: the
+// leaf classifier that replied notes its provider/model on a tracked context,
+// so a fast-tier role is labelled with the fast model, not the agent model.
+func TestRoleClassifierReportsTheModelThatAnswered(t *testing.T) {
+	srv, _ := roleServer(t)
+	defer srv.Close()
+	main := Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "gpt-5"}
+	rc, err := ResolveRouting(main, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	main.Routing = rc
+	c := NewRoleClassifier(main, srv.Client(), nil)
+	for uc, want := range map[string]string{
+		rolemanager.UseCaseSessionName: "openai/gpt-5-mini",
+		rolemanager.UseCaseCompaction:  "openai/gpt-5",
+	} {
+		ctx, served := rolemanager.TrackServedModel(context.Background())
+		if _, err := c.Classify(ctx, rolemanager.ClassifierPayload{System: uc, User: "u", UseCase: uc}); err != nil {
+			t.Fatal(err)
+		}
+		if got := served(); got != want {
+			t.Fatalf("%s served by %q, want %q", uc, got, want)
+		}
+	}
+}
+
+// routedFixture builds a routed role classifier over a model server that
+// records who answered, and a Jev endpoint that counts its calls and never
+// settles a route. fast controls whether a fast tier exists.
+func routedFixture(t *testing.T, fast bool) (*routedClassifier, func() map[string][]string, func() int32) {
+	t.Helper()
+	srv, seen := roleServer(t)
+	t.Cleanup(srv.Close)
+	var jevCalls atomic.Int32
+	jevSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		jevCalls.Add(1)
+		http.Error(w, "bad request", http.StatusBadRequest)
+	}))
+	t.Cleanup(jevSrv.Close)
+
+	main := Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "gpt-5"}
+	rc, err := ResolveRouting(main, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !fast {
+		rc.Fast = nil
+	}
+	rc.Kind = config.RoutingRouted
+	rc.Candidates = []RoutingCandidate{{Key: "a", Cfg: Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "gpt-4.1"}}}
+	rc.JevToken = func() (string, error) { return "test-key", nil }
+	main.Routing = rc
+
+	r := NewRoleClassifier(main, srv.Client(), nil).(*routedClassifier)
+	r.jev.SetEndpoint(jevSrv.URL)
+	return r, seen, jevCalls.Load
+}
+
+// TestRoutedFastUseCasesSkipJev pins the fast tier under "routed": every fast
+// use case goes straight to the fast tier and Jev is never asked, while a
+// non-fast use case is still routed through Jev (and, unsettled, falls back
+// to the main model).
+func TestRoutedFastUseCasesSkipJev(t *testing.T) {
+	r, seen, jevCalls := routedFixture(t, true)
+	fastCases := []string{
+		rolemanager.UseCaseModeEval,
+		rolemanager.UseCaseSessionName,
+		rolemanager.UseCaseGoalEval,
+		rolemanager.UseCasePlanEval,
+		rolemanager.UseCaseAgentEval,
+		rolemanager.UseCaseGoalContract,
+	}
+	for _, uc := range fastCases {
+		ctx, served := rolemanager.TrackServedModel(context.Background())
+		if _, err := r.Classify(ctx, rolemanager.ClassifierPayload{System: uc, User: "u", UseCase: uc}); err != nil {
+			t.Fatal(err)
+		}
+		if got := served(); got != "openai/gpt-5-mini" {
+			t.Fatalf("%s served by %q, want the fast tier", uc, got)
+		}
+	}
+	if n := jevCalls(); n != 0 {
+		t.Fatalf("Jev was called %d times for fast use cases, want 0", n)
+	}
+
+	if _, err := r.Classify(context.Background(), rolemanager.ClassifierPayload{System: "c", User: "u", UseCase: rolemanager.UseCaseCompaction}); err != nil {
+		t.Fatal(err)
+	}
+	if n := jevCalls(); n != 1 {
+		t.Fatalf("Jev calls after compaction = %d, want 1", n)
+	}
+	got := seen()
+	for _, uc := range fastCases {
+		if m := got[uc]; len(m) != 1 || m[0] != "gpt-5-mini" {
+			t.Fatalf("%s answered by %v, want gpt-5-mini", uc, m)
+		}
+	}
+	if m := got["c"]; len(m) != 1 || m[0] != "gpt-5" {
+		t.Fatalf("compaction answered by %v, want the main model", m)
+	}
+}
+
+// TestRoutedFastUseCaseWithoutFastTierUsesJev pins the edge case: with no fast
+// tier there is nothing to short-circuit to, so a fast use case is routed
+// through Jev like any other and, unsettled, falls back to the main model.
+func TestRoutedFastUseCaseWithoutFastTierUsesJev(t *testing.T) {
+	r, seen, jevCalls := routedFixture(t, false)
+	if _, err := r.Classify(context.Background(), rolemanager.ClassifierPayload{System: "n", User: "u", UseCase: rolemanager.UseCaseSessionName}); err != nil {
+		t.Fatal(err)
+	}
+	if n := jevCalls(); n != 1 {
+		t.Fatalf("Jev calls = %d, want 1", n)
+	}
+	if m := seen()["n"]; len(m) != 1 || m[0] != "gpt-5" {
+		t.Fatalf("session name answered by %v, want the main model", m)
 	}
 }

@@ -154,12 +154,12 @@ func (a *App) modelRoleBlurb(role modelRole) string {
 	case roleAgent:
 		return "does the work: every turn, tool call, compaction, goal contract, clarify and final report"
 	case roleFast:
-		return "answers one-token verdicts: mode select, session name, goal/plan/agent evaluator"
+		return "answers one-token verdicts (mode select, session name, goal/plan/agent evaluator) and drafts the goal contract"
 	case roleClassifier:
 		return "the security guard: classifies the prompt and every arbitrary tool result"
 	case roleRouting:
 		if a.settings.Routing != nil && a.settings.Routing.Kind == config.RoutingRouted {
-			return "Jev picks one model from this pool for each use case; the fast tier is the verdict fallback"
+			return "Jev picks one model from this pool for each use case; verdicts and the goal contract skip it for the fast tier"
 		}
 		return "defined: the agent model serves every role; the pool below is unused until kind is routed"
 	case rolePosture:
@@ -185,7 +185,11 @@ func (a *App) modelSummary(labelW, valW int) string {
 	verdicts := a.resolvedFastLabel()
 	drafting := "work model"
 	if a.cfg.Routing.Kind == config.RoutingRouted && len(a.cfg.Routing.Candidates) > 0 {
-		verdicts = "Jev picks from pool, else " + verdicts
+		// A fast use case skips Jev whenever a fast tier exists
+		// (run.NewRoleClassifier); only without one does Jev pick for it.
+		if a.cfg.Routing.Fast == nil {
+			verdicts = "Jev picks from pool, else work model"
+		}
 		drafting = "Jev picks from pool, else work model"
 	}
 	lines := [][2]string{
