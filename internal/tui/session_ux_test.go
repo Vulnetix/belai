@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/tui/components"
@@ -170,5 +171,26 @@ func TestHoverResolvesAfterBannerPrepend(t *testing.T) {
 	a.recomputeHover()
 	if !a.hover.file || a.hover.msg != 0 {
 		t.Fatalf("hover = %+v, want file panel 0", a.hover)
+	}
+}
+
+// A turn that opens with tool calls fills the bubble the turn started with.
+// That bubble must carry the agent provider/model, or ctrl+o titles the panel
+// with the generic word "model".
+func TestToolOnlyAssistantBubbleTitlesWithTheModel(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	a.cfg.Provider, a.cfg.Model = "cloudflare-ai-gateway", "@cf/deepseek-ai/deepseek-v4-pro-0813"
+	a.messages = nil
+
+	i := a.currentAssistantBubble()
+	a.messages[i].ToolCalls = []components.AgentToolCall{{ID: "c1", Name: "Bash", Args: `{"command":"go test ./..."}`}}
+	if got := a.messages[i]; got.Provider != a.cfg.Provider || got.Model != a.cfg.Model {
+		t.Fatalf("bubble = %s/%s, want the agent model", got.Provider, got.Model)
+	}
+
+	out := ansi.Strip(components.MessageList{Width: 120, ExpandAll: true, ShowTools: true, Messages: a.messages}.View())
+	if !strings.Contains(out, "cloudflare-ai-gateway/@cf/deepseek-ai/deepseek-v4-pro-0813") {
+		t.Fatalf("expanded tool-only panel is not titled with the model:\n%s", out)
 	}
 }
