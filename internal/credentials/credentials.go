@@ -90,6 +90,8 @@ func upperSnake(s string) string {
 		switch {
 		case c >= 'a' && c <= 'z':
 			b.WriteByte(c - 'a' + 'A')
+		case c >= 'A' && c <= 'Z':
+			b.WriteByte(c)
 		case c >= '0' && c <= '9':
 			b.WriteByte(c)
 		default:

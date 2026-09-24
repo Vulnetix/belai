@@ -208,13 +208,16 @@ func scanHubCache(out []byte) ([]CachedModel, error) {
 }
 
 // guessRepoFromPath extracts a rough repo id from an HF hub cache path. It is
-// a human-readable hint, not a canonical parse.
+// a human-readable hint, not a canonical parse. The cache nests files under
+// snapshots/<hash>/ or blobs/, so the models--<org>--<repo> directory may be
+// several levels above the file rather than its immediate parent.
 func guessRepoFromPath(path string) string {
-	base := filepath.Base(filepath.Dir(path))
-	if strings.HasPrefix(base, "models--") {
-		parts := strings.SplitN(strings.TrimPrefix(base, "models--"), "--", 2)
-		if len(parts) == 2 {
-			return parts[0] + "/" + parts[1]
+	for _, part := range strings.Split(filepath.ToSlash(path), "/") {
+		if strings.HasPrefix(part, "models--") {
+			parts := strings.SplitN(strings.TrimPrefix(part, "models--"), "--", 2)
+			if len(parts) == 2 {
+				return parts[0] + "/" + parts[1]
+			}
 		}
 	}
 	return ""

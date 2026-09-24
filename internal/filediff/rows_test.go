@@ -306,6 +306,14 @@ func TestRowsHandlesCreateAndDelete(t *testing.T) {
 	}
 }
 
+func TestExpandedTabExpandsBothSides(t *testing.T) {
+	fc := FileChange{Path: "a.go", Old: "\told", New: "\tnew"}
+	old, new := fc.Expanded()
+	if old != "    old" || new != "    new" {
+		t.Fatalf("Expanded = (%q, %q), want tabs expanded", old, new)
+	}
+}
+
 func TestRowsSkipsBinaryAndTruncated(t *testing.T) {
 	if rows := (FileChange{Path: "x", Old: "a", New: "b", Binary: true}).Rows(); rows != nil {
 		t.Fatal("binary files must not be diffed")

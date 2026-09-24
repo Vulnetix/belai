@@ -232,6 +232,75 @@ func TestPhase3MalformedFallsOpen(t *testing.T) {
 	}
 }
 
+func TestPhase3DeferredAcceptsJailbreak(t *testing.T) {
+	c := newTestClassifier(t, &fakeGate{ph: Phase1, sentinel: rolemanager.SentinelSafe}, nil,
+		rolemanager.ClassifierFunc(func(context.Context, rolemanager.ClassifierPayload) (string, error) {
+			return string(rolemanager.SentinelJailbreak), nil
+		}), WindowConfig{Tokens: 3, Overlap: 1, MaxWindows: 10})
+	c.phase2Deferred = true
+	got, err := c.Classify(context.Background(), rolemanager.BuildClassifierPayload("a b c"))
+	if err != nil {
+		t.Fatalf("Classify: %v", err)
+	}
+	if got != string(rolemanager.SentinelJailbreak) {
+		t.Fatalf("got %q, want JAILBREAK (deferred phase 2 covers jailbreak)", got)
+	}
+}
+
+func TestPhase3DeferredRejectsInjection(t *testing.T) {
+	c := newTestClassifier(t, &fakeGate{ph: Phase1, sentinel: rolemanager.SentinelSafe}, nil,
+		rolemanager.ClassifierFunc(func(context.Context, rolemanager.ClassifierPayload) (string, error) {
+			return string(rolemanager.SentinelPromptInjection), nil // still out of scope
+		}), WindowConfig{Tokens: 3, Overlap: 1, MaxWindows: 10})
+	c.phase2Deferred = true
+	got, err := c.Classify(context.Background(), rolemanager.BuildClassifierPayload("a b c"))
+	if err != nil {
+		t.Fatalf("Classify: %v", err)
+	}
+	if got != string(rolemanager.SentinelSafe) {
+		t.Fatalf("got %q, want SAFE (injection stays out of phase 3 scope)", got)
+	}
+}
+
+func TestClassifyGateErrorPropagates(t *testing.T) {
+	c := newTestClassifier(t, &fakeGate{ph: Phase1, err: context.Canceled}, nil, nil,
+		WindowConfig{Tokens: 3, Overlap: 1, MaxWindows: 10})
+	if _, err := c.Classify(context.Background(), rolemanager.BuildClassifierPayload("a b c")); err == nil {
+		t.Fatal("a phase gate error must fail the classification")
+	}
+}
+
+func TestNewRequiresPhase(t *testing.T) {
+	if _, err := New(Options{}); err == nil {
+		t.Fatal("New with no phase configured must error")
+	}
+}
+
+func TestWindowsEmptyContent(t *testing.T) {
+	c := &Classifier{window: WindowConfig{}, tok: wordTokenizer}
+	got := c.mustWindows(t, "")
+	if len(got) != 1 || got[0] != "" {
+		t.Fatalf("empty content windows = %q, want a single empty window", got)
+	}
+}
+
+func TestWindowsOverlapClampedToHalfLimit(t *testing.T) {
+	// overlap >= limit collapses to limit/2 so the next window still advances.
+	c := &Classifier{window: WindowConfig{Tokens: 4, Overlap: 8, MaxWindows: 10}, tok: wordTokenizer}
+	got := c.mustWindows(t, "a b c d e f g h i j")
+	// limit 4, overlap clamped to 2 -> windows advance by 2 tokens.
+	var all []string
+	for _, w := range got {
+		all = append(all, w)
+	}
+	if len(all) != 4 {
+		t.Fatalf("windows = %q (%d), want 4", all, len(all))
+	}
+	if all[0] != "a b c d" || all[1] != "c d e f" {
+		t.Fatalf("windows = %q, overlap not clamped to limit/2", all)
+	}
+}
+
 func TestOptionsIdentityIncludesPhase3State(t *testing.T) {
 	p1 := &ModelConfig{ID: "GuardrailsAI/prompt-saturation-attack-detector", Source: SourceEmbedded, Threshold: 0.5}
 	on := OptionsIdentity(p1, nil, true, false)

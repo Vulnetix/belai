@@ -10,6 +10,22 @@ import (
 	"github.com/vulnetix/signet/internal/config"
 )
 
+func TestDirResolvesScope(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("SIGNET_HOME", home)
+	workdir := t.TempDir()
+
+	if got, err := Dir(config.ScopeProject, workdir); err != nil || got != filepath.Join(workdir, ".vulnetix", "prompts") {
+		t.Fatalf("Dir(project) = %q, %v", got, err)
+	}
+	if got, err := Dir(config.ScopeGlobal, workdir); err != nil || got != filepath.Join(home, "prompts") {
+		t.Fatalf("Dir(global) = %q, %v", got, err)
+	}
+	if _, err := Dir(config.Scope("bogus"), workdir); err == nil {
+		t.Fatal("expected an error for an unknown scope")
+	}
+}
+
 func TestLoadMissingReturnsEmpty(t *testing.T) {
 	listing, err := Load(config.ScopeGlobal, t.TempDir())
 	if err != nil {

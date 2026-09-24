@@ -142,3 +142,59 @@ func TestStreamUsageProviders(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildCloudflareWorkersAI(t *testing.T) {
+	if got := buildCloudflareWorkersAI(map[string]string{"account_id": "acct"}); got != "https://api.cloudflare.com/client/v4/accounts/acct" {
+		t.Fatalf("buildCloudflareWorkersAI = %q", got)
+	}
+	if got := buildCloudflareWorkersAI(map[string]string{}); got != "" {
+		t.Fatalf("buildCloudflareWorkersAI(no account) = %q, want empty", got)
+	}
+}
+
+func TestBuildCloudflareGateway(t *testing.T) {
+	// Explicit base_url wins over account_id.
+	if got := buildCloudflareGateway(map[string]string{"base_url": "https://gw.example", "account_id": "acct"}); got != "https://gw.example" {
+		t.Fatalf("buildCloudflareGateway = %q", got)
+	}
+	if got := buildCloudflareGateway(map[string]string{"account_id": "acct"}); got != "https://gateway.ai.cloudflare.com/v1/acct/default/compat" {
+		t.Fatalf("buildCloudflareGateway = %q", got)
+	}
+	if got := buildCloudflareGateway(map[string]string{}); got != "" {
+		t.Fatalf("buildCloudflareGateway(empty) = %q, want empty", got)
+	}
+}
+
+func TestBuildOllama(t *testing.T) {
+	t.Setenv("OLLAMA_HOST", "")
+	if got := buildOllama(map[string]string{}); got != "http://localhost:11434/v1" {
+		t.Fatalf("buildOllama(default) = %q", got)
+	}
+	if got := buildOllama(map[string]string{"host": "10.0.0.1", "port": "9999", "protocol": "https"}); got != "https://10.0.0.1:9999/v1" {
+		t.Fatalf("buildOllama(decomposed) = %q", got)
+	}
+
+	// With no decomposition, OLLAMA_HOST is the complete prefix.
+	t.Setenv("OLLAMA_HOST", "ollama.internal:11435")
+	if got := buildOllama(map[string]string{}); got != "http://ollama.internal:11435/v1" {
+		t.Fatalf("buildOllama(env host) = %q", got)
+	}
+}
+
+func TestBuildLlamaServer(t *testing.T) {
+	if got := buildLlamaServer(map[string]string{}); got != "http://localhost:8080/v1" {
+		t.Fatalf("buildLlamaServer(default) = %q", got)
+	}
+	if got := buildLlamaServer(map[string]string{"host": "h", "port": "1234", "protocol": "https"}); got != "https://h:1234/v1" {
+		t.Fatalf("buildLlamaServer(decomposed) = %q", got)
+	}
+}
+
+func TestBuildGenericOpenAI(t *testing.T) {
+	if got := buildGenericOpenAI(map[string]string{}); got != "http://localhost/v1" {
+		t.Fatalf("buildGenericOpenAI(default) = %q", got)
+	}
+	if got := buildGenericOpenAI(map[string]string{"host": "h", "port": "8000", "protocol": "http"}); got != "http://h:8000/v1" {
+		t.Fatalf("buildGenericOpenAI(decomposed) = %q", got)
+	}
+}

@@ -34,6 +34,22 @@ func TestProseBuildersCarryCavemanVoice(t *testing.T) {
 	}
 }
 
+// TestCavemanProse covers the exported prose-only wrapper around
+// withCavemanVoice: off is identity, on appends the voice and the guard.
+func TestCavemanProse(t *testing.T) {
+	base := "BASE PROMPT"
+	if got := CavemanProse(base, false); got != base {
+		t.Fatalf("CavemanProse(off) = %q, want %q", got, base)
+	}
+	on := CavemanProse(base, true)
+	if !strings.HasPrefix(on, base) {
+		t.Fatalf("CavemanProse(on) rewrote the base: %q", on)
+	}
+	if !strings.Contains(on, prompt.CavemanVoice) || !strings.Contains(on, cavemanPreserve) {
+		t.Fatalf("CavemanProse(on) missing voice/guard: %q", on)
+	}
+}
+
 // TestSentinelBuildersNeverCarryCavemanVoice is the security pin: a sentinel or
 // strict-JSON reply is matched exactly, so no builder whose reply is parsed as
 // a token or as JSON may ever be voiced.

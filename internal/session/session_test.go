@@ -441,3 +441,72 @@ func TestTimedUserPromptsOldestFirstWithModTimeFallback(t *testing.T) {
 		t.Fatalf("unstamped ts = %d, want session mod time %d", got[1].Timestamp, infos[0].ModTime)
 	}
 }
+
+func TestNewStoreRoot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("SIGNET_HOME", home)
+	st, err := NewStore()
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	want, err := config.SessionsDir()
+	if err != nil {
+		t.Fatalf("SessionsDir: %v", err)
+	}
+	if st.Root != want {
+		t.Fatalf("Root = %q, want %q", st.Root, want)
+	}
+}
+
+func TestKeyString(t *testing.T) {
+	if got := Key("signet-275e7780").String(); got != "signet-275e7780" {
+		t.Fatalf("String() = %q", got)
+	}
+}
+
+func TestSessionPathUnresolved(t *testing.T) {
+	st := NewStoreAt(t.TempDir())
+	workdir := t.TempDir()
+	got, err := st.sessionPath(workdir, "sess-1")
+	if err != nil {
+		t.Fatalf("sessionPath: %v", err)
+	}
+	k, err := KeyFor(workdir)
+	if err != nil {
+		t.Fatalf("KeyFor: %v", err)
+	}
+	if want := st.sessionPathForKey(k, "sess-1"); got != want {
+		t.Fatalf("sessionPath = %q, want %q", got, want)
+	}
+}
+
+func TestResolveForAppendCreatesOnDemand(t *testing.T) {
+	st := NewStoreAt(t.TempDir())
+	workdir := t.TempDir()
+
+	// A brand-new id is returned as-is: append-only stores create on demand.
+	got, err := st.resolveForAppend(workdir, "brand-new")
+	if err != nil {
+		t.Fatalf("resolveForAppend: %v", err)
+	}
+	if got != "brand-new" {
+		t.Fatalf("got %q, want brand-new", got)
+	}
+
+	// An existing id resolves to itself (the shared single-match branch).
+	if err := st.Append(workdir, "existing", Entry{ID: "e1", Type: "user", Content: "x"}); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	got, err = st.resolveForAppend(workdir, "existing")
+	if err != nil {
+		t.Fatalf("resolveForAppend existing: %v", err)
+	}
+	if got != "existing" {
+		t.Fatalf("got %q, want existing", got)
+	}
+
+	// Empty id is rejected.
+	if _, err := st.resolveForAppend(workdir, ""); err == nil {
+		t.Fatal("expected empty id to error")
+	}
+}

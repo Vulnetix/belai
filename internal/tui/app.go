@@ -3199,9 +3199,16 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 	case agent.EventToolCallDeltaKind:
 		a.setPhaseWorking()
 		// Render-only; no execution authority. The live fragment updates the
-		// pending tool row if one is present.
-		if len(a.messages) > 0 && a.messages[len(a.messages)-1].Role == "tool" {
-			a.messages[len(a.messages)-1].ToolArgs += m.ToolDelta.Args
+		// pending tool row for the same call if one is present. A call's row
+		// is only created at EventToolStart, after its arguments finish
+		// streaming, so the trailing tool row is usually an earlier, finished
+		// call: appending to it glued the next call's arguments onto it and
+		// persisted a tool_args that is no longer valid JSON.
+		if d := m.ToolDelta; d != nil && d.ID != "" && len(a.messages) > 0 {
+			last := &a.messages[len(a.messages)-1]
+			if last.Role == "tool" && last.ToolCallID == d.ID && last.Status == "" {
+				last.ToolArgs += d.Args
+			}
 		}
 		return a.nextAgent()
 	case agent.EventToolStartKind:

@@ -2,7 +2,9 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -277,9 +279,22 @@ func resolvePath(root string, cwd *Cwd, raw string) (resolved, error) {
 	}
 	rel, err := SanitizePath(root, cwd.join(raw))
 	if err != nil {
-		return resolved{}, err
+		return resolved{}, outsideRootsHint(raw, err)
 	}
 	return resolved{Root: root, Rel: rel}, nil
+}
+
+// outsideRootsHint explains a missing path that began with "/" and landed in
+// no root. Such a path is read relative to the session root, so a model that
+// wrote /tmp/cover.out from Bash and then asks Read for it gets "lstat
+// <root>/tmp: no such file", which reads like a transient failure and is
+// retried. Naming the rule stops the retry loop. Resolution is unchanged.
+func outsideRootsHint(raw string, err error) error {
+	if !errors.Is(err, fs.ErrNotExist) || !strings.HasPrefix(expandHome(raw), "/") {
+		return err
+	}
+	return fmt.Errorf("%w (%s is outside every session root, so it was read relative to the session root; "+
+		"files outside the roots cannot be read, so write scratch output under the working directory instead)", err, raw)
 }
 
 // resolveNewPath is resolvePath for a path that need not exist yet.

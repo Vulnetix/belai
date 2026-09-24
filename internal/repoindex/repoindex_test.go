@@ -215,3 +215,39 @@ func TestParseRemoteRejectsUnparseable(t *testing.T) {
 		t.Fatal("expected unparseable remote to fail")
 	}
 }
+
+func TestEntryString(t *testing.T) {
+	cases := []struct {
+		e    Entry
+		want string
+	}{
+		{Entry{Path: "/p"}, "/p"},
+		{Entry{Path: "/p", Owner: "O", Name: "N", Host: "h"}, "h/O/N /p"},
+		{Entry{Path: "/p", Owner: "O", Name: "N", Host: "h", Branch: "main"}, "h/O/N /p (branch main)"},
+	}
+	for _, tc := range cases {
+		if got := tc.e.String(); got != tc.want {
+			t.Errorf("String(%+v) = %q, want %q", tc.e, got, tc.want)
+		}
+	}
+}
+
+func TestIndexOwnerAndEmpty(t *testing.T) {
+	ix := Index{entries: []Entry{
+		{Owner: "A", Name: "r1"},
+		{Owner: "B", Name: "r2"},
+		{Owner: "a", Name: "r3"},
+	}}
+	if ix.Empty() {
+		t.Fatal("non-empty index reported empty")
+	}
+	if got := ix.Owner("a"); len(got) != 2 {
+		t.Fatalf("Owner(a) = %d entries, want 2 (case-insensitive)", len(got))
+	}
+	if got := (Index{}).Owner("a"); len(got) != 0 {
+		t.Fatalf("empty index Owner = %v, want empty", got)
+	}
+	if !(Index{}).Empty() {
+		t.Fatal("zero index should be empty")
+	}
+}

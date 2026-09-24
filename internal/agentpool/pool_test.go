@@ -283,6 +283,25 @@ func TestSetSizeGrowsAdmitsQueued(t *testing.T) {
 	l1.Done(StateDone, "")
 }
 
+func TestSize(t *testing.T) {
+	if got := New(0).Size(); got != 1 {
+		t.Fatalf("New(0).Size() = %d, want 1", got)
+	}
+	if got := New(3).Size(); got != 3 {
+		t.Fatalf("New(3).Size() = %d, want 3", got)
+	}
+
+	p := New(1)
+	p.SetSize(5)
+	if got := p.Size(); got != 5 {
+		t.Fatalf("Size after SetSize(5) = %d, want 5", got)
+	}
+	p.SetSize(0)
+	if got := p.Size(); got != 1 {
+		t.Fatalf("Size after SetSize(0) = %d, want 1", got)
+	}
+}
+
 // TestNoGoroutineLeak pins that Acquire returns promptly on cancellation and
 // that Done releases every slot so the pool drains cleanly under -race.
 func TestNoGoroutineLeak(t *testing.T) {

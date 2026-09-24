@@ -148,3 +148,134 @@ func TestVVDSecretMatchesGateway(t *testing.T) {
 		t.Fatalf("hmac mismatch: %q vs %q", got, want)
 	}
 }
+
+func TestLoadEnvAPIKeyWithoutOrgFallsThrough(t *testing.T) {
+	// A key with no org id is incomplete; Load must not return a partial
+	// credential and instead falls through to "no credential found".
+	env := func(k string) string {
+		if k == "VULNETIX_API_KEY" {
+			return "key-1"
+		}
+		return ""
+	}
+	_, err := Load(env, t.TempDir(), "", &fakeKeychain{})
+	if err == nil {
+		t.Fatal("expected error when key present but org id missing")
+	}
+}
+
+func TestLoadEnvVVDOrgWithoutSecretFallsThrough(t *testing.T) {
+	env := func(k string) string {
+		if k == "VVD_ORG" {
+			return "org-2"
+		}
+		return ""
+	}
+	_, err := Load(env, t.TempDir(), "", &fakeKeychain{})
+	if err == nil {
+		t.Fatal("expected error when org present but secret missing")
+	}
+}
+
+func TestLoadWorkdirCredentialsDir(t *testing.T) {
+	workdir := t.TempDir()
+	credDir := filepath.Join(workdir, ".vulnetix")
+	if err := os.MkdirAll(credDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	data := []byte(`{"org_id":"org-7","api_key":"org-7:key7","method":"apikey"}`)
+	if err := os.WriteFile(filepath.Join(credDir, "credentials.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(func(string) string { return "" }, t.TempDir(), workdir, &fakeKeychain{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.OrgUUID != "org-7" || c.APIKey != "key7" {
+		t.Fatalf("unexpected credential: %+v", c)
+	}
+}
+
+func TestLoadCredentialsDirEnv(t *testing.T) {
+	dir := t.TempDir()
+	data := []byte(`{"org_id":"org-8","api_key":"org-8:key8","method":"apikey"}`)
+	if err := os.WriteFile(filepath.Join(dir, "credentials.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := func(k string) string {
+		if k == "VULNETIX_CREDENTIALS_DIR" {
+			return dir
+		}
+		return ""
+	}
+	c, err := Load(env, t.TempDir(), "", &fakeKeychain{})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.APIKey != "key8" {
+		t.Fatalf("unexpected credential: %+v", c)
+	}
+}
+
+func TestLoadFileTokenWithKeyDerivesAPIKey(t *testing.T) {
+	dir := t.TempDir()
+	// A token credential that also carries an API key derives from the key.
+	data := []byte(`{"org_id":"org-9","api_key":"org-9:tokkey","method":"token"}`)
+	if err := os.WriteFile(filepath.Join(dir, "credentials.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, ok, err := loadFile(filepath.Join(dir, "credentials.json"), &fakeKeychain{})
+	if err != nil || !ok {
+		t.Fatalf("loadFile = (%+v, %v, %v)", c, ok, err)
+	}
+	if c.APIKey != "tokkey" {
+		t.Fatalf("unexpected credential: %+v", c)
+	}
+}
+
+func TestLoadFileSigV4Keyring(t *testing.T) {
+	dir := t.TempDir()
+	data := []byte(`{"org_id":"org-10","hmac_in_keyring":true,"method":"sigv4"}`)
+	if err := os.WriteFile(filepath.Join(dir, "credentials.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	kc := &fakeKeychain{data: map[string]string{"hmac-secret:org-10": "kr-secret"}}
+	c, ok, err := loadFile(filepath.Join(dir, "credentials.json"), kc)
+	if err != nil || !ok {
+		t.Fatalf("loadFile = (%+v, %v, %v)", c, ok, err)
+	}
+	want := hmacKey("kr-secret", "org-10")
+	if c.APIKey != want {
+		t.Fatalf("sigv4 keyring key mismatch: got %q want %q", c.APIKey, want)
+	}
+}
+
+func TestLoadFileBadJSON(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "credentials.json"), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, ok, err := loadFile(filepath.Join(dir, "credentials.json"), &fakeKeychain{})
+	if ok || err == nil {
+		t.Fatalf("loadFile bad json = (ok=%v, err=%v), want error", ok, err)
+	}
+}
+
+func TestLoadFileKeyringMissing(t *testing.T) {
+	dir := t.TempDir()
+	data := []byte(`{"org_id":"org-11","api_key_in_keyring":true,"method":"apikey"}`)
+	if err := os.WriteFile(filepath.Join(dir, "credentials.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, ok, err := loadFile(filepath.Join(dir, "credentials.json"), &fakeKeychain{data: map[string]string{}})
+	if ok || err == nil {
+		t.Fatalf("loadFile missing keyring entry = (ok=%v, err=%v), want error", ok, err)
+	}
+}
+
+func TestLoadFileMissing(t *testing.T) {
+	_, ok, err := loadFile(filepath.Join(t.TempDir(), "nope.json"), &fakeKeychain{})
+	if ok || err != nil {
+		t.Fatalf("loadFile missing = (ok=%v, err=%v), want silent miss", ok, err)
+	}
+}

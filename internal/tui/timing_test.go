@@ -6,6 +6,7 @@ import (
 
 	"github.com/vulnetix/signet/internal/agent"
 	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/signet/internal/run"
 )
 
 // A turn's rows are written at turn end, but each must carry the time it
@@ -96,5 +97,26 @@ func TestToolDurationFallsBackToTheRowSpan(t *testing.T) {
 	}
 	if got := toolDurationMS(0, time.Time{}, start); got != 0 {
 		t.Fatalf("unknown start = %d", got)
+	}
+}
+
+// The arguments of a call still streaming belong to that call. A finished
+// tool row trailing the transcript must not absorb them: doing so glued the
+// next call's JSON onto the previous row and persisted a tool_args that no
+// longer parsed.
+func TestToolCallDeltaDoesNotLeakIntoPreviousToolRow(t *testing.T) {
+	a := newPersistApp(t)
+	a.echoUser("run it")
+	a.cancel = func() {}
+
+	a.handleAgentEvent(agentEventMsg{Kind: agent.EventToolStartKind, Tool: &rolemanager.ToolCall{ID: "c1", Name: "Bash", Args: map[string]any{"command": "go test"}}})
+	a.handleAgentEvent(agentEventMsg{Kind: agent.EventToolResultKind, ToolName: "Bash", ToolCallID: "c1", ToolResult: "ok"})
+	want := a.messages[len(a.messages)-1].ToolArgs
+
+	a.handleAgentEvent(agentEventMsg{Kind: agent.EventToolCallDeltaKind, ToolDelta: &run.ToolCallDelta{Index: 0, ID: "c2", Name: "Bash", Args: `{"command": "git diff"}`}})
+	a.handleAgentEvent(agentEventMsg{Kind: agent.EventToolCallDeltaKind, ToolDelta: &run.ToolCallDelta{Index: 0, Args: `{"more": 1}`}})
+
+	if got := a.messages[len(a.messages)-1].ToolArgs; got != want {
+		t.Fatalf("finished row args = %q, want %q", got, want)
 	}
 }
