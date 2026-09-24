@@ -212,6 +212,9 @@ type Event struct {
 
 	// PlanSentinel carries EventPlanEvalKind verdicts.
 	PlanSentinel rolemanager.PlanSentinel
+	// EvalReason is the plan evaluator's sanitised one-line account of what
+	// the plan still lacks; empty when it gave none.
+	EvalReason string
 
 	// Malformed reports that the evaluator reply did not parse; the carried
 	// sentinel is the fail-closed substitute, not a verdict the model gave.

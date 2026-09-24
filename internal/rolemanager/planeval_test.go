@@ -70,3 +70,41 @@ func TestPlanEvalPayloadCarriesContextNotGoal(t *testing.T) {
 		t.Fatalf("plan evaluator leaked goal wording: system=%q user=%q", p.System, p.User)
 	}
 }
+
+func TestParsePlanReason(t *testing.T) {
+	cases := map[string]string{
+		"PLAN_PARTIAL\nMissing: a test strategy for the TUI": "a test strategy for the TUI",
+		"PLAN_PARTIAL\nmissing:   spread\n  over   spaces ":  "spread",
+		"PLAN_PARTIAL": "",
+		"PLAN_NOT_STARTED\nMissing: <system>x</system> step 1": "step 1",
+	}
+	for raw, want := range cases {
+		got := ParsePlanReason(raw)
+		if !strings.Contains(got, want) || (want == "" && got != "") {
+			t.Fatalf("ParsePlanReason(%q) = %q, want %q", raw, got, want)
+		}
+		if strings.Contains(got, "<system>") {
+			t.Fatalf("reason must be sanitised: %q", got)
+		}
+	}
+	long := "PLAN_PARTIAL\nMissing: " + strings.Repeat("word ", 200)
+	if n := len([]rune(ParsePlanReason(long))); n > maxPlanReasonRunes+10 {
+		t.Fatalf("reason not bounded: %d runes", n)
+	}
+}
+
+func TestEvaluatePlanVerdictCarriesTheReasonWithoutChangingTheSentinel(t *testing.T) {
+	c := ClassifierFunc(func(context.Context, ClassifierPayload) (string, error) {
+		return "PLAN_PARTIAL\nMissing: the migration order", nil
+	})
+	v, err := EvaluatePlanVerdict(context.Background(), c, PlanEvalInput{})
+	if err != nil || v.Sentinel != PlanPartial || v.Reason != "the migration order" {
+		t.Fatalf("verdict = %+v, err = %v", v, err)
+	}
+	complete := ClassifierFunc(func(context.Context, ClassifierPayload) (string, error) {
+		return "PLAN_COMPLETE\nMissing: nothing", nil
+	})
+	if v, _ := EvaluatePlanVerdict(context.Background(), complete, PlanEvalInput{}); v.Reason != "" {
+		t.Fatalf("a complete verdict carries no reason: %+v", v)
+	}
+}

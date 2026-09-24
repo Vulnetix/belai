@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
+
+	"github.com/vulnetix/signet/internal/sanitize"
 )
 
 // PlanSentinel is the strict single-token output of the plan evaluator. It is
@@ -58,12 +62,46 @@ type PlanEvalInput struct {
 
 // planEvalSystemPrompt instructs the evaluator to answer with exactly one
 // plan sentinel token and nothing else.
-const planEvalSystemPrompt = `You are a plan-progress evaluator for an LLM coding harness. You are shown the read-only exploration context gathered for the session, the harness's tracked plan todo list, and a digest of the work performed during the most recent pass. Decide whether the plan is complete and ready to execute, partially complete, or not yet started, and reply with a single token and nothing else — no punctuation, no explanation, no surrounding text.
+const planEvalSystemPrompt = `You are a plan-progress evaluator for an LLM coding harness. You are shown the read-only exploration context gathered for the session, the harness's tracked plan todo list, and a digest of the work performed during the most recent pass. Decide whether the plan is complete and ready to execute, partially complete, or not yet started.
 
-Reply with exactly one of these tokens:
+The first line of your reply is exactly one of these tokens, alone on the line:
 - PLAN_COMPLETE: every item in the plan todo list is researched and the plan is ready to execute.
 - PLAN_PARTIAL: the plan has advanced but it is not yet complete.
-- PLAN_NOT_STARTED: no meaningful planning work has happened yet.`
+- PLAN_NOT_STARTED: no meaningful planning work has happened yet.
+
+After PLAN_PARTIAL or PLAN_NOT_STARTED, add one second line of the form "Missing: <what the plan still lacks, in under 20 words>". Write nothing else.`
+
+// planReasonPrefix opens the evaluator's optional one-line reason.
+const planReasonPrefix = "missing:"
+
+// maxPlanReasonRunes bounds the reason carried to the next pass.
+const maxPlanReasonRunes = 200
+
+// ParsePlanReason extracts the evaluator's one-line "Missing: …" reason, or
+// "" when there is none. The reason is model output about untrusted evidence,
+// so it is sanitised, flattened to one line and bounded here, and the caller
+// must never seal it into a harness block: it rides as plain turn text only.
+func ParsePlanReason(raw string) string {
+	for _, line := range strings.Split(normalizeSentinelReply(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if len(line) < len(planReasonPrefix) || !strings.EqualFold(line[:len(planReasonPrefix)], planReasonPrefix) {
+			continue
+		}
+		reason := strings.Join(strings.Fields(sanitize.Sanitize(line[len(planReasonPrefix):])), " ")
+		if r := []rune(reason); len(r) > maxPlanReasonRunes {
+			reason = string(r[:maxPlanReasonRunes]) + "…"
+		}
+		return reason
+	}
+	return ""
+}
+
+// PlanVerdict is one plan-evaluator answer: the strict sentinel plus the
+// optional one-line reason (see ParsePlanReason).
+type PlanVerdict struct {
+	Sentinel PlanSentinel
+	Reason   string
+}
 
 // BuildPlanEvalPayload constructs the plan-evaluator request. Tools, Skills,
 // and Agent are always empty: the evaluator turn must never expose tools,
@@ -91,15 +129,29 @@ var ErrMalformedPlanEval = errors.New("malformed plan evaluator output")
 // grants a pass, but the loop driver detects the error to stop a provider
 // that keeps returning garbage.
 func EvaluatePlan(ctx context.Context, c Classifier, in PlanEvalInput) (PlanSentinel, error) {
+	v, err := EvaluatePlanVerdict(ctx, c, in)
+	return v.Sentinel, err
+}
+
+// EvaluatePlanVerdict is EvaluatePlan that also returns the evaluator's
+// one-line reason. The sentinel parse is unchanged and strict; the reason is
+// optional and never affects the verdict.
+func EvaluatePlanVerdict(ctx context.Context, c Classifier, in PlanEvalInput) (PlanVerdict, error) {
+	start := time.Now()
 	raw, err := c.Classify(ctx, BuildPlanEvalPayload(in))
+	took := time.Since(start)
 	if err != nil {
-		return "", err
+		return PlanVerdict{}, err
 	}
 	s, err := ParsePlanSentinel(raw)
 	if err != nil {
-		record(EventPlanEval, string(PlanPartial), "", "malformed: "+traceSnippet(raw), 0)
-		return PlanPartial, ErrMalformedPlanEval
+		recordTimed(EventPlanEval, string(PlanPartial), "", "malformed: "+traceSnippet(raw), 0, "", took)
+		return PlanVerdict{Sentinel: PlanPartial}, ErrMalformedPlanEval
 	}
-	record(EventPlanEval, string(s), "", "", 0)
-	return s, nil
+	recordTimed(EventPlanEval, string(s), "", "", 0, "", took)
+	v := PlanVerdict{Sentinel: s}
+	if s != PlanComplete {
+		v.Reason = ParsePlanReason(raw)
+	}
+	return v, nil
 }

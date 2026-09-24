@@ -1761,7 +1761,7 @@ provider I/O — and the composer's top edge switches to a working state:
 
 The agent emits `EventRoleManagerKind` (with the sub-phase) at every Role
 Manager classification point; model and tool events switch the composer to the
-generic phase, and done/error return it to idle. 
+generic phase, and done/error return it to idle.
 
 **Mode selection runs inside the agent.** A prompt whose mode the user has
 not fixed starts its turn at once with no mode decision; the agent runs mode

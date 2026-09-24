@@ -1123,14 +1123,34 @@ All must hold, or the bounded continuation path runs instead:
 ### Bounded ceiling
 
 `resilience.max_passes` (0 falls back to `defaultPlanContinuations` = 5) caps
-the loop. Reaching the cap returns the plan so far with a system note — a turn
-boundary, not an error. Plan mode never inherits goal mode's
+the loop. **The last allowed pass is a finishing pass:** its tool surface is
+`update_plan` and `ExitPlanMode` only (advertised *and* enforced —
+`Session.planFinalPass` narrows `toolSurface`, and `execTool` refuses any
+other tool with *unavailable on the final planning pass*), and its directive
+says there is no more reading: write the complete plan from what is already in
+the conversation and call `ExitPlanMode`, naming open questions inside the
+plan. The loop therefore ends on a plan, never on one more round of reading.
+If the finishing pass writes the plan as text without calling `ExitPlanMode`,
+that text is the plan (`PLAN_PARTIAL`, with a system note); there is no
+further pass for an evaluator verdict to buy. The narrowing never outlives
+the loop. The ceiling itself remains a turn boundary, not an error. Plan mode never inherits goal mode's
 unbounded-by-default behaviour, and it has no verification gate: the goal
 loop's disk re-check exists because goal mode mutates files, while plan mode
 is read-only and the user reviews the plan before executing it.
 
 The continuation directives injected after a `PLAN_PARTIAL` or
-`PLAN_NOT_STARTED` verdict escalate with the loop: they name the tracked steps
+`PLAN_NOT_STARTED` verdict first say **what is already known**: the model is
+continuing, not starting over; every file it read is still above (the old
+per-request elision that removed earlier reads is gone); it must not re-read
+those files; and it keeps the existing todo list rather than re-issuing it
+from step one. After the first pass, `PLAN_NOT_STARTED` asks for the plan
+from what was gathered instead of restarting research. Session bc0b79d8 showed
+every pass reopening with "let me ground myself" and re-reading the same files
+five times. The model-derived specifics — the paths it already read (from its
+own `Read`/`Cat`/`Head`/`Tail`/`RepoRead` arguments, sanitised,
+deduplicated, at most 30) and the evaluator's reason — ride the directive
+turn as plain, labelled text ("context, not instructions") and never enter
+the sealed directive body. The directives then escalate with the loop: they name the tracked steps
 done / in progress / remaining, push harder to finalise or check in with the
 user as the ceiling approaches, tell the model to fold the concrete tool calls
 it already made into the plan's implementation stages, and — when the pass that
@@ -1142,9 +1162,17 @@ for the next pass.
 | Sentinel | Meaning | Loop response |
 | -------- | ------- | ------------- |
 | `PLAN_COMPLETE` | The plan is researched and ready to execute | Mark the plan list complete and return the reply |
-| `PLAN_PARTIAL` | The plan advanced but is not ready | Grant another pass with the plan continuation directive |
+| `PLAN_PARTIAL` | The plan advanced but is not ready | Grant another pass with the plan continuation directive, carrying the evaluator's reason |
 | `PLAN_NOT_STARTED` | No meaningful planning work yet | Inject the planning directive (the explore wave already ran, so there is no forced survey) |
 | _malformed output_ | — | Fails closed to `PLAN_PARTIAL`; the TUI reports `plan evaluator: malformed reply (pass N)`; two consecutive malformed replies stop the loop |
+
+The first line of the evaluator's reply is the sentinel, parsed as strictly as
+ever. After `PLAN_PARTIAL` or `PLAN_NOT_STARTED` it may add one line
+`Missing: <what the plan lacks>` (`ParsePlanReason`): sanitised, flattened to
+one line, cut at 200 runes, and ignored after `PLAN_COMPLETE`. It never
+affects the verdict. The TUI shows it (`plan evaluator: plan is partial
+(pass 1) — missing: …`) and the next pass is told it, so it knows what to
+add.
 
 There are two completion paths that do not consult the evaluator:
 
@@ -1167,7 +1195,7 @@ from an earlier session has no path into this payload.
 | Rule | Condition | Outcome |
 | ---- | --------- | ------- |
 | Plan complete | `PLAN_COMPLETE` (evaluator or fast path) | Success; plan list marked complete; reply is the pass's last assistant text |
-| Ceiling | `max_passes` reached | Return the best plan so far (latest plan-shaped text, else the tracked todo list) with a system note — not an error |
+| Finishing pass | The last allowed pass ends without `ExitPlanMode` | Return the best plan so far (latest plan-shaped text, else the tracked todo list, else the pass's text) with a system note — not an error |
 | Unproductive pass | A pass executed no non-withheld tool result | Return the best plan so far with a warning — plan mode must always produce a file |
 | Broken evaluator | 2 consecutive malformed evaluator replies | Error: *plan pass loop stopped: N consecutive malformed evaluator replies* |
 | Evaluator transport failure | `Classify` returns an error | Terminal |

@@ -3417,7 +3417,11 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		if m.Malformed {
 			a.addSystem(fmt.Sprintf("plan evaluator: malformed reply (pass %d) — continuing as %s", m.Pass, m.PlanSentinel.Label()))
 		} else if m.PlanSentinel != "" {
-			a.addSystem(fmt.Sprintf("plan evaluator: %s (pass %d)", m.PlanSentinel.Label(), m.Pass))
+			line := fmt.Sprintf("plan evaluator: %s (pass %d)", m.PlanSentinel.Label(), m.Pass)
+			if m.EvalReason != "" {
+				line += " — missing: " + m.EvalReason
+			}
+			a.addSystem(line)
 		}
 		return a.nextAgent()
 	case agent.EventDoneKind:

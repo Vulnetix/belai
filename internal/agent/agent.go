@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -158,6 +159,12 @@ type Session struct {
 	// tools and no Bash. A plan-mode turn advertises these instead.
 	planOpenAITools    []wire.OpenAITool
 	planAnthropicTools []wire.AnthropicToolDef
+	// planFinalPass narrows plan mode to planFinishTools for the last pass the
+	// plan loop allows, so the loop always ends on a plan rather than on one
+	// more round of reading. finalPlan*Tools are that surface pre-rendered.
+	planFinalPass           bool
+	finalPlanOpenAITools    []wire.OpenAITool
+	finalPlanAnthropicTools []wire.AnthropicToolDef
 	// readOnlyAgent is Options.ReadOnlyAgent. turnReadOnly is the per-turn
 	// latch derived from it: true only for an agent-mode turn, so goal mode
 	// and plan execution are never narrowed by the read_only setting.
@@ -269,6 +276,9 @@ func (s *Session) toolDocs() prompt.ToolsOptions {
 // actually permits. Plan mode narrows both together, so what the request
 // advertises and what executeCall will run can never diverge.
 func (s *Session) toolSurface() (*tools.Registry, []wire.OpenAITool, []wire.AnthropicToolDef) {
+	if s.planMode && s.planFinalPass {
+		return s.registry.PlanWith(s.planSurface).Only(planFinishTools...), s.finalPlanOpenAITools, s.finalPlanAnthropicTools
+	}
 	if s.planMode {
 		return s.registry.PlanWith(s.planSurface), s.planOpenAITools, s.planAnthropicTools
 	}
@@ -284,6 +294,9 @@ func (s *Session) toolSurface() (*tools.Registry, []wire.OpenAITool, []wire.Anth
 // every other turn resolves against the full registry and relies on
 // modes.ToolAllowed for plan mode, exactly as before.
 func (s *Session) execTool(name string) (tools.Tool, string) {
+	if s.planMode && s.planFinalPass && !slices.Contains(planFinishTools, name) {
+		return nil, fmt.Sprintf("tool result withheld: %q is unavailable on the final planning pass; write the plan and call ExitPlanMode", name)
+	}
 	if s.turnReadOnly && s.roRegistry != nil {
 		if t, ok := s.roRegistry.Find(name); ok {
 			return t, ""
@@ -341,6 +354,7 @@ func NewSession(o Options) (*Session, error) {
 	planSurface := toolsPlanSurface(o.Perms, o.PlanSurface)
 	openAITools, anthropicTools := wireTools(reg.WithoutPlanOnly())
 	planOpenAITools, planAnthropicTools := wireTools(reg.PlanWith(planSurface))
+	finalPlanOpenAITools, finalPlanAnthropicTools := wireTools(reg.PlanWith(planSurface).Only(planFinishTools...))
 	var roReg *tools.Registry
 	var roOpenAITools []wire.OpenAITool
 	var roAnthropicTools []wire.AnthropicToolDef
@@ -399,19 +413,23 @@ func NewSession(o Options) (*Session, error) {
 		anthropicTools:     anthropicTools,
 		planOpenAITools:    planOpenAITools,
 		planAnthropicTools: planAnthropicTools,
-		readOnlyAgent:      o.ReadOnlyAgent,
-		roRegistry:         roReg,
-		roOpenAITools:      roOpenAITools,
-		roAnthropicTools:   roAnthropicTools,
-		hooks:              hs,
-		hookRunner:         runner,
-		toolMethod:         method,
-		steer:              make(chan string, steerBuffer),
-		trace:              trace.Env(),
-		diffs:              filediff.NewRecorder(o.Workdir),
-		diag:               o.Diagnostics,
-		agentPool:          o.AgentPool,
-		sessionID:          o.SessionID,
+
+		finalPlanOpenAITools:    finalPlanOpenAITools,
+		finalPlanAnthropicTools: finalPlanAnthropicTools,
+
+		readOnlyAgent:    o.ReadOnlyAgent,
+		roRegistry:       roReg,
+		roOpenAITools:    roOpenAITools,
+		roAnthropicTools: roAnthropicTools,
+		hooks:            hs,
+		hookRunner:       runner,
+		toolMethod:       method,
+		steer:            make(chan string, steerBuffer),
+		trace:            trace.Env(),
+		diffs:            filediff.NewRecorder(o.Workdir),
+		diag:             o.Diagnostics,
+		agentPool:        o.AgentPool,
+		sessionID:        o.SessionID,
 	}, nil
 }
 
