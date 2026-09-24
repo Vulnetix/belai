@@ -17,6 +17,13 @@ import (
 // harness run read-only exploration in parallel instead of queuing work.
 const DefaultMaxAgents = 15
 
+// DefaultMaxIterations is the per-pass tool-loop budget when
+// resilience.max_iterations is unset. Every budget overflow costs a
+// continuation directive plus an evaluator call and breaks the model's
+// momentum, so the default is sized for a real task (reads, edits and a test
+// run) rather than for a single lookup.
+const DefaultMaxIterations = 40
+
 // Settings holds user- and project-level configuration.
 // Project settings override global settings field-by-field.
 type Settings struct {
