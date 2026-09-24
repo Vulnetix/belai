@@ -399,6 +399,13 @@ func TestSendCallsProvider(t *testing.T) {
 
 func newAgentSSEServer(t *testing.T, finalReply string) *httptest.Server {
 	t.Helper()
+	return newAgentSSEServerMode(t, finalReply, "AGENT")
+}
+
+// newAgentSSEServerMode is newAgentSSEServer with a scripted mode-classifier
+// reply.
+func newAgentSSEServerMode(t *testing.T, finalReply, mode string) *httptest.Server {
+	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusNotFound)
@@ -422,7 +429,7 @@ func newAgentSSEServer(t *testing.T, finalReply string) *httptest.Server {
 		if strings.Contains(system, "security classifier") {
 			reply = "SAFE"
 		} else if strings.Contains(system, "operating-mode classifier") {
-			reply = "AGENT"
+			reply = mode
 		} else if strings.Contains(system, "goal-progress evaluator") {
 			reply = "GOAL_COMPLETE"
 		} else if strings.Contains(system, "plan-progress evaluator") {
@@ -1763,13 +1770,17 @@ func TestEnterWhileWorkingSteers(t *testing.T) {
 }
 
 // --- instant echo and the Role Manager working indicator ------------------
+//
+// The pre-send tests below name an agent (@agent:reviewer): only such a
+// prompt still classifies before the turn starts, because the profile shapes
+// the session. Every other prompt selects its mode inside the agent.
 
 func TestSubmitInputEchoesPromptInstantly(t *testing.T) {
 	a := New(Options{})
 	a.mode = "goal" // avoid the agent-picker gate during pre-send tests
 	a.modeSticky = false
 	a.SetClassifier(&fakeClassifier{raw: "AGENT"})
-	a.editor.SetValue("hello world")
+	a.editor.SetValue("hello world @agent:reviewer")
 
 	cmd := a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
@@ -1777,7 +1788,7 @@ func TestSubmitInputEchoesPromptInstantly(t *testing.T) {
 	}
 	var echoed bool
 	for _, m := range a.messages {
-		if m.Role == "user" && m.Content == "hello world" {
+		if m.Role == "user" && m.Content == "hello world @agent:reviewer" {
 			echoed = true
 		}
 	}
@@ -1817,7 +1828,7 @@ func TestSubmitInputClassifiesAsyncThenSends(t *testing.T) {
 	a.status = status
 	a.SetClassifier(&fakeClassifier{raw: "PLAN"})
 	a.sessionName = "named" // skip the auto-naming side channel
-	a.editor.SetValue("refactor the parser")
+	a.editor.SetValue("refactor the parser @agent:reviewer")
 
 	cmd := a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
@@ -1936,7 +1947,7 @@ func TestEscCancelsPreSend(t *testing.T) {
 	a.mode = "goal" // avoid the agent-picker gate during pre-send tests
 	a.modeSticky = false
 	a.SetClassifier(&fakeClassifier{raw: "AGENT"})
-	a.editor.SetValue("hello")
+	a.editor.SetValue("hello @agent:reviewer")
 	cmd := a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("expected the async classify command")
@@ -1969,7 +1980,7 @@ func TestEnterDuringPreSendDoesNotSendOrSteer(t *testing.T) {
 	a.mode = "goal" // avoid the agent-picker gate during pre-send tests
 	a.modeSticky = false
 	a.SetClassifier(&fakeClassifier{raw: "AGENT"})
-	a.editor.SetValue("first")
+	a.editor.SetValue("first @agent:reviewer")
 	if cmd := a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter}); cmd == nil {
 		t.Fatal("expected the async classify command")
 	}
@@ -2517,5 +2528,59 @@ func TestCtrlTCyclesToolDisplayStates(t *testing.T) {
 		}
 		m, _ := a.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
 		a = m.(*App)
+	}
+}
+
+// A plain prompt no longer waits on a serial mode-classifier call: the turn
+// starts at once, the agent selects the mode alongside admission, and the
+// decision lands through EventModeDecidedKind.
+func TestSubmitInputSelectsModeInsideTheAgent(t *testing.T) {
+	srv := newAgentSSEServerMode(t, "pong", "PLAN")
+	defer srv.Close()
+
+	src := &fakeCredentialSource{vals: map[string]string{"openai:api_key": "sk-test"}}
+	cfg, status := run.Prepare("gpt-5", "openai", src)
+	if !status.Configured {
+		t.Fatalf("expected configured")
+	}
+	cfg.BaseURL = srv.URL
+	a := New(Options{Client: srv.Client(), Provider: "openai", Model: "gpt-5", Workdir: t.TempDir()})
+	a.mode = "goal" // avoid the agent-picker gate
+	a.modeSticky = false
+	a.cfg = cfg
+	a.status = status
+	calls := 0
+	a.SetClassifier(rolemanager.ClassifierFunc(func(context.Context, rolemanager.ClassifierPayload) (string, error) {
+		calls++
+		return "AGENT", nil
+	}))
+	a.sessionName = "named"
+	a.editor.SetValue("refactor the parser")
+
+	cmd := a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected the turn to start")
+	}
+	if a.preSend {
+		t.Fatal("a plain prompt must not wait in pre-send")
+	}
+	if !a.working() {
+		t.Fatal("the turn should start immediately")
+	}
+	a = drainAgent(t, a, cmd)
+	if calls != 0 {
+		t.Fatalf("the TUI ran its own mode classifier %d time(s); the agent selects", calls)
+	}
+	if a.mode != "plan" {
+		t.Fatalf("mode = %q, want the agent's decision (plan)", a.mode)
+	}
+	var announced bool
+	for _, m := range a.messages {
+		if strings.Contains(m.Content, "mode: plan") {
+			announced = true
+		}
+	}
+	if !announced {
+		t.Fatalf("the decision should be announced: %+v", a.messages)
 	}
 }

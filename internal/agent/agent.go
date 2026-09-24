@@ -544,6 +544,10 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 			return run.Result{SanitizedPrompt: clean, SecuritySentinel: dec.Sentinel}, maybeCompact(err)
 		}
 		modeDec = <-selectCh
+		// The caller sent no decision, so it is waiting on this one: a UI
+		// that started the turn at once applies it from this event.
+		d := modeDec
+		emit(Event{Kind: EventModeDecidedKind, Mode: &d})
 	}
 	s.trace.Event("agent", "pre_prompt", time.Since(preStart))
 

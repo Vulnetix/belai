@@ -1381,6 +1381,15 @@ func (a *App) submitInput(input string) tea.Cmd {
 		return a.sendTurn(firstUser, input, safe, directive)
 	}
 	a.modeExplicit = false
+	if rolemanager.ExtractAgentName(input) == "" {
+		// Mode selection runs inside the agent, concurrently with admission,
+		// instead of as a full serial model call before the turn starts. The
+		// agent reports its decision with EventModeDecidedKind.
+		return a.sendTurnSelectingMode(firstUser, input, safe, directive)
+	}
+	// A prompt that names an agent profile still selects first: the profile
+	// decides the session's tool allowlist and model, which must be settled
+	// before the session is built.
 	a.preSend = true
 	return tea.Batch(a.classifyAndSend(input, safe, directive, firstUser), a.workSpin.Tick)
 }
@@ -1456,6 +1465,51 @@ func (a *App) classifyAndSend(input string, atts []run.Attachment, directive str
 		})
 		return modeClassifiedMsg{input: input, atts: atts, directive: directive, firstUser: firstUser, decision: d, err: err}
 	}
+}
+
+// sendTurnSelectingMode starts the turn with no mode decision, so the agent
+// runs mode selection alongside admission. What the previous turn's classifier
+// decided must not carry over: its named agent is released (unless the user
+// engaged it) and its plan-mode baseline is dropped — the agent latches plan
+// mode per turn from its own decision, so the session is built without it.
+func (a *App) sendTurnSelectingMode(firstUser bool, input string, atts []run.Attachment, directive string) tea.Cmd {
+	a.modeDecision = rolemanager.ModeDecision{}
+	if !a.agentExplicit {
+		a.setNamedAgent("")
+	}
+	a.planMode = false
+	if a.agent != nil && a.agent.PlanMode() {
+		a.invalidateAgentSession()
+	}
+	return a.sendTurn(firstUser, input, atts, directive)
+}
+
+// applyLiveModeDecision records the decision the agent reported mid-turn. It
+// is applyModeDecision without the session rebuild: the running session
+// already latched the mode for this turn, and dropping it mid-turn would
+// orphan steering. The chip, warnings and plan-mode flag update as before.
+func (a *App) applyLiveModeDecision(d rolemanager.ModeDecision) {
+	previous := a.mode
+	a.modeDecision = d
+	a.modeWarning = d.Warning
+	if !a.modeSticky {
+		a.mode = string(d.Mode)
+	}
+	a.planMode = a.mode == "plan"
+	switch {
+	case string(d.Mode) != previous:
+		msg := "mode: " + string(d.Mode)
+		if d.Explore {
+			msg += " (launch explore agents)"
+		}
+		a.addSystem(msg)
+	case d.Explore:
+		a.addSystem("launch explore agents")
+	}
+	if d.Warning != "" {
+		a.addSystem(d.Warning)
+	}
+	a.refreshFooter()
 }
 
 // handleModeClassified applies the mode decision and starts the agent turn.
@@ -3047,6 +3101,13 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 	switch m.Kind {
 	case agent.EventModelCallKind:
 		a.noteModelCall(m.Duration)
+		return a.nextAgent()
+	case agent.EventModeDecidedKind:
+		// The agent resolved the mode itself (the turn was sent without
+		// waiting for selection): apply it as the pre-send path used to.
+		if m.Mode != nil {
+			a.applyLiveModeDecision(*m.Mode)
+		}
 		return a.nextAgent()
 	case agent.EventWarningKind:
 		a.addSystem(m.Warning)
