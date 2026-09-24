@@ -4370,6 +4370,7 @@ func (a *App) refreshFooter() {
 	}
 	a.footer.Provider = a.providerDisplayLabel(a.cfg.Provider)
 	a.footer.Model = run.WireModel(a.cfg.Provider, a.cfg.Model)
+	a.footer.RoutedModels = routedModelCount(a.cfg)
 	// The effective settings are the UI's canonical effort source: the model
 	// picker and settings view both write there, and refreshProvider copies
 	// the value into cfg for the agent session. If the active provider does

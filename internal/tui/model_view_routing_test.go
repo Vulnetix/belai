@@ -7,6 +7,7 @@ import (
 	"github.com/vulnetix/signet/internal/models"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/rolemanager/jev"
+	"github.com/vulnetix/signet/internal/run"
 )
 
 // TestModelPickerRoutingLeavesOutJev pins that routed use-case pickers never
@@ -74,5 +75,30 @@ func TestModelPickerClassifierStillOffersJev(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("classifier picker must still offer the Jev Decisions model: %v", catalog)
+	}
+}
+
+// TestRoutedModelCount pins the footer's "n models active" count: zero unless
+// the router is engaged, and distinct provider/model pairs (main included)
+// otherwise.
+func TestRoutedModelCount(t *testing.T) {
+	main := run.Config{Provider: "openai", Model: "gpt-5"}
+	if n := routedModelCount(main); n != 0 {
+		t.Fatalf("defined routing: got %d, want 0", n)
+	}
+	empty := main
+	empty.Routing = run.RoutingConfig{Kind: config.RoutingRouted}
+	if n := routedModelCount(empty); n != 0 {
+		t.Fatalf("routed with empty pool: got %d, want 0", n)
+	}
+	routed := main
+	routed.Routing = run.RoutingConfig{Kind: config.RoutingRouted, Candidates: []run.RoutingCandidate{
+		{Key: "main", Cfg: run.Config{Provider: "openai", Model: "gpt-5"}},
+		{Key: "clarify", Cfg: run.Config{Provider: "anthropic", Model: "claude-sonnet-5"}},
+		{Key: "compaction", Cfg: run.Config{Provider: "anthropic", Model: "claude-sonnet-5"}},
+		{Key: "session_name", Cfg: run.Config{Provider: "anthropic", Model: "claude-haiku-4-5"}},
+	}}
+	if n := routedModelCount(routed); n != 3 {
+		t.Fatalf("routed pool: got %d, want 3", n)
 	}
 }

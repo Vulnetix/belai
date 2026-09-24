@@ -514,6 +514,23 @@ func routingUseCaseKeys() []string {
 	}
 }
 
+// routedModelCount returns how many distinct provider/model pairs the smart
+// router is working across, or 0 when routing is not engaged. It mirrors
+// run.NewRoleClassifier, which only routes under "routed" with a non-empty
+// pool, so the footer never advertises a router that is not running. The main
+// config counts: it serves the main turn, inheriting use cases, and the
+// router's fallback.
+func routedModelCount(cfg run.Config) int {
+	if cfg.Routing.Kind != config.RoutingRouted || len(cfg.Routing.Candidates) == 0 {
+		return 0
+	}
+	seen := map[string]bool{cfg.Provider + "/" + cfg.Model: true}
+	for _, c := range cfg.Routing.Candidates {
+		seen[c.Cfg.Provider+"/"+c.Cfg.Model] = true
+	}
+	return len(seen)
+}
+
 // routingUseCaseTarget returns the configured provider/model for one use case.
 // Empty provider/model mean "inherit the main config".
 func (a *App) routingUseCaseTarget(useCase string) (string, string) {
