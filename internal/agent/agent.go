@@ -623,7 +623,13 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	loopGoal := ""
 	s.turnPriorGoal = nil
 	s.turnExecutePlan = in.ExecutePlan
-	var draftCh chan goalDraft
+	var draft *pendingDraft
+	// A turn that ends before the join must not leave the draft running.
+	defer func() {
+		if draft != nil {
+			draft.cancel(nil)
+		}
+	}()
 	switch {
 	case in.ExecutePlan:
 		loopDec.Mode = modes.ModeGoal
@@ -650,7 +656,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		// (state.ActiveGoal). A prompt routed to goal mode usually has none,
 		// so the goal carrier is built here. The draft runs concurrently
 		// with exploration and is joined below.
-		draftCh = s.startGoalDraft(ctx, pipe, clean)
+		draft = s.startGoalDraft(ctx, pipe, clean)
 	}
 
 	// Explore-agent launch: read-only subagents run before sealing, and their
@@ -678,8 +684,8 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		// A memorised goal or plan loaded by CarrierOptions.
 	case modeDec.Mode == modes.ModeGoal:
 		goalText := loopGoal
-		if draftCh != nil {
-			goalText = s.joinGoalDraft(draftCh, clean, emit)
+		if draft != nil {
+			goalText = s.joinGoalDraft(draft, clean, emit)
 		}
 		opts = prompt.Options{Carrier: prompt.CarrierGoal, GoalText: goalText, Caveman: s.opts.Caveman}
 	default:

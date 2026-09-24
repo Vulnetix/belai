@@ -612,22 +612,24 @@ Events already surfaced by a dedicated line — `mode_classify`, `mode_forced`,
 the same decision never prints twice in one panel. The feed is additive to
 those lines, which are left exactly as they are.
 
-**Which model a line names.** Each line names the provider/model that
-answered the call, not the model that was configured for the role. The
+**Which model a line names.** Each line names the provider/model the call
+was sent to, not the model that was configured for the role. The
 role-manager call site wraps its context with `rolemanager.TrackServedModel`,
-and the leaf classifier that replies (`run.classifierFromConfig`) records its
-`provider/model` with `rolemanager.NoteServedModel`. A tiered or Jev-routed
-classifier only delegates, so it never notes itself, and the line names the
-model that actually replied: the fast tier, the Jev-picked pool candidate, or
+and the leaf classifier that is asked (`run.classifierFromConfig`) records its
+`provider/model` with `rolemanager.NoteServedModel` before it sends. A tiered
+or Jev-routed classifier only delegates, so it never notes itself, and the
+line names the model that was actually asked: the fast tier, the Jev-picked pool candidate, or
 the fallback. This covers mode select, the goal, plan and agent evaluators
 (including the goal-eval repair round), goal drafting, clarify, compaction
 (`ValidateServedSummary`) and session naming (`ParseServedSessionName`).
 
 Edge cases:
 
-- A call that fails in transport has no answering leaf, so its activity
-  carries no model. The TUI then labels the line with the agent model, as it
-  does for events that are not classifier calls.
+- A call that times out or fails still names the model that was asked,
+  because the leaf notes itself before sending. A `goal_draft` timeout line
+  therefore names the model that was too slow. Only a classifier that never
+  reports itself leaves the model empty. The TUI then labels the line with
+  the agent model, as it does for events that are not classifier calls.
 - The identity is harness configuration, never model output. The TUI splits
   it on the first `/` only, so a model id such as `@cf/org/name` stays whole.
 - The security classifier lines keep their own label
