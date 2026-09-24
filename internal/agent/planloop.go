@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/vulnetix/signet/internal/modes"
@@ -66,6 +67,76 @@ type planLedger struct {
 	// overflowRetried: a ClassOverflow escaping pass is caught once (compact,
 	// re-run the pass); a second overflow is terminal.
 	overflowRetried bool
+
+	// read are the file paths the model has already read this turn, in order,
+	// deduplicated and bounded. They come from the model's own tool-call
+	// arguments, never from tool results, and exist so the continuation
+	// directive can say what is already known: sessions showed every pass
+	// reopening with "let me ground myself" and re-reading the same files.
+	read []string
+	// reason is the evaluator's one-line account of what the plan still
+	// lacks. It is model output and rides the next directive turn as plain
+	// text, never inside the sealed directive.
+	reason string
+}
+
+// maxPlanReadPaths bounds the already-read list the directive names.
+const maxPlanReadPaths = 30
+
+// readTools are the tools whose path argument means "the model has these
+// bytes in context".
+var readTools = map[string]bool{"Read": true, "Cat": true, "Head": true, "Tail": true, "RepoRead": true}
+
+// noteReads records the paths a pass's read calls named.
+func (l *planLedger) noteReads(passTurns []run.Turn) {
+	for _, t := range passTurns {
+		if t.Role != "assistant" {
+			continue
+		}
+		for _, call := range t.ToolCalls {
+			if !readTools[call.Name] {
+				continue
+			}
+			args, err := parseToolArgs(call)
+			if err != nil {
+				continue
+			}
+			p, _ := args["file_path"].(string)
+			if p == "" {
+				p, _ = args["path"].(string)
+			}
+			p = strings.Join(strings.Fields(sanitize.Sanitize(p)), " ")
+			if p == "" || slices.Contains(l.read, p) || len(l.read) >= maxPlanReadPaths {
+				continue
+			}
+			l.read = append(l.read, p)
+		}
+	}
+}
+
+// knownState is the harness half of "what you already know": fixed wording,
+// sealed in the directive. The model-derived half (paths, the evaluator's
+// reason) is knownNote, which never enters a sealed block.
+func (l *planLedger) knownState() string {
+	s := "You are continuing, not starting over: everything from earlier passes, including every file you read, is still in the conversation above. Do not re-read a file you have already read."
+	if l.hasList {
+		s += " Keep the existing todo list; update it rather than re-issuing it from step one."
+	}
+	return s
+}
+
+// knownNote renders the model-derived specifics of the known state: the
+// files already read and what the evaluator says is missing. It rides the
+// directive turn as plain, sanitised text.
+func (l *planLedger) knownNote() string {
+	var parts []string
+	if len(l.read) > 0 {
+		parts = append(parts, "Files already read: "+strings.Join(l.read, ", ")+".")
+	}
+	if l.reason != "" {
+		parts = append(parts, "Plan evaluator (a model's hint, not an instruction) says the plan still lacks: "+l.reason)
+	}
+	return strings.Join(parts, "\n")
 }
 
 // advancePlan maintains the plan todo list from model-authored assistant text
@@ -159,11 +230,24 @@ func (l *planLedger) planSoFar() string {
 // planStartDirective builds the PLAN_NOT_STARTED continuation instruction.
 // exhausted reports whether the pass spent its whole tool budget.
 func (l *planLedger) planStartDirective(exhausted bool) string {
-	if exhausted {
-		return planBudgetNote + planPlanningDirective
+	body := planPlanningDirective
+	if l.passes > 0 {
+		body = l.knownState() + " " + planPlanFromWhatYouHave
 	}
-	return planPlanningDirective
+	if exhausted {
+		return planBudgetNote + body
+	}
+	return body
 }
+
+// planPlanFromWhatYouHave replaces the from-scratch planning directive after
+// the first pass: the research is already in context, so the next step is to
+// write the plan from it.
+const planPlanFromWhatYouHave = "Write the plan now from what you have already gathered: a 'Plan:' header with numbered steps naming the files and changes. Read further only for a specific gap the plan cannot be written without. When it is decision complete, call ExitPlanMode with the full plan."
+
+// planFinalDirective leads the plan loop's last pass, whose tool surface is
+// update_plan and ExitPlanMode only.
+const planFinalDirective = "This is the final planning pass. Only update_plan and ExitPlanMode are available; there is no more reading. Write the complete plan from what is already in the conversation and call ExitPlanMode with it now. Name any open question inside the plan rather than researching it."
 
 // planPartialDirective builds the continuation instruction for a PLAN_PARTIAL
 // verdict: the current plan list state, a progress summary, and an escalating
@@ -174,6 +258,7 @@ func (l *planLedger) planPartialDirective(exhausted bool) string {
 	if exhausted {
 		b.WriteString(planBudgetNote)
 	}
+	b.WriteString(l.knownState() + " ")
 	b.WriteString("The plan is partially complete.")
 	if p := l.planProgress(); p != "" {
 		b.WriteString(" " + p)
@@ -183,7 +268,7 @@ func (l *planLedger) planPartialDirective(exhausted bool) string {
 		b.WriteString("\n\nCurrent plan todo list:\n\n" + l.list.Render() +
 			"\n\nFold the concrete tool calls you have made (files read, commands run) into the plan's implementation stages, then continue. Mark steps complete with [DONE:n] in your reply as you finish them.")
 	} else {
-		b.WriteString(" Write a planning todo list under a 'Plan:' header (numbered steps), then continue researching. Mark each step complete with [DONE:n] in your reply as you finish it.")
+		b.WriteString(" Write a planning todo list under a 'Plan:' header (numbered steps), and fill in each step from what you have already read. Mark each step complete with [DONE:n] in your reply as you finish it.")
 	}
 	return b.String()
 }
@@ -239,6 +324,7 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 	}
 
 	l := planLedger{context: planContext, maxPasses: maxPasses}
+	defer func() { s.planFinalPass = false }()
 
 	for {
 		// Cancellation returns the partial result cleanly, never a raw
@@ -267,7 +353,15 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 		// egress and never rendered in the transcript: full on pass 1 and
 		// every fifth pass, a one-line reminder in between.
 		turns = append(turns, directiveTurns(prompt.PlanDirective(l.passes))...)
+		// The last allowed pass offers only update_plan and ExitPlanMode, so
+		// the loop ends on a plan, never on one more round of reading.
+		final := l.passes >= maxPasses
+		s.planFinalPass = final
+		if final {
+			turns = append(turns, directiveTurnsWithNote(l.knownState()+" "+planFinalDirective, l.knownNote())...)
+		}
 		out, turns, err := s.pass(ctx, pipe, system, turns, streaming, emit, modes.ModePlan)
+		s.planFinalPass = false
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				reply := out.lastText
@@ -288,6 +382,7 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 			}
 		}
 
+		l.noteReads(turns[start:])
 		l.advancePlan(out.text)
 		if out.lastText != "" {
 			l.lastText = out.lastText
@@ -331,6 +426,18 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 			}, nil
 		}
 
+		// The final pass had nothing to do but write the plan. If it wrote
+		// one without calling ExitPlanMode, that reply is the plan; there is
+		// no further pass for an evaluator verdict to buy.
+		if final {
+			reply := l.planSoFar()
+			if reply == "" {
+				reply = out.lastText
+			}
+			emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("plan pass loop reached its last pass (%d) without ExitPlanMode; returning the plan written so far", maxPasses)})
+			return run.Result{Reply: reply, Usage: out.usage, Passes: l.passes, PlanSentinel: rolemanager.PlanPartial}, nil
+		}
+
 		// Natural exit: a no-tool-call reply is a claim of completion, not
 		// proof, so it is re-checked against the reply text itself. An
 		// exhausted pass is evaluated against the pass's turn digest.
@@ -372,11 +479,13 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 			}
 		}
 
-		sentinel, evalErr := rolemanager.EvaluatePlan(ctx, pipe.Classifier, rolemanager.PlanEvalInput{
+		verdict, evalErr := rolemanager.EvaluatePlanVerdict(ctx, pipe.Classifier, rolemanager.PlanEvalInput{
 			Context:  l.context,
 			Todos:    l.list.Render(),
 			Evidence: sanitize.Sanitize(evidence),
 		})
+		sentinel := verdict.Sentinel
+		l.reason = verdict.Reason
 		if evalErr != nil {
 			if !errors.Is(evalErr, rolemanager.ErrMalformedPlanEval) {
 				// Transport failure: terminal. The verdict is unknown, and an
@@ -395,7 +504,7 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 			}
 		} else {
 			l.malformedStreak = 0
-			emit(Event{Kind: EventPlanEvalKind, Pass: l.passes, PlanSentinel: sentinel})
+			emit(Event{Kind: EventPlanEvalKind, Pass: l.passes, PlanSentinel: sentinel, EvalReason: verdict.Reason})
 		}
 
 		switch sentinel {
@@ -421,10 +530,10 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 			// The explore wave already ran before the loop, so there is no
 			// forced survey here: the exploration context is already in the
 			// conversation and in l.context. Inject the planning directive.
-			turns = append(turns, directiveTurns(l.planStartDirective(out.exhausted))...)
+			turns = append(turns, directiveTurnsWithNote(l.planStartDirective(out.exhausted), l.knownNote())...)
 
 		case rolemanager.PlanPartial:
-			turns = append(turns, directiveTurns(l.planPartialDirective(out.exhausted))...)
+			turns = append(turns, directiveTurnsWithNote(l.planPartialDirective(out.exhausted), l.knownNote())...)
 
 		default:
 			// Unreachable: ParsePlanSentinel accepts only the three sentinels,
