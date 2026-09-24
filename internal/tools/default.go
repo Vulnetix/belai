@@ -1,8 +1,6 @@
 package tools
 
 import (
-	"time"
-
 	"github.com/vulnetix/signet/internal/agentstore"
 )
 
@@ -18,16 +16,18 @@ import (
 // left pointing at a directory the others have left.
 func Default(workdir string, readOnly bool) *Registry {
 	cwd := NewCwd(workdir)
+	// One read record for the session: Read notes, Edit and Write check.
+	reads := NewReadState()
 	var list []Tool
-	list = append(list, &Read{Root: workdir, MaxBytes: 64 * 1024, Cwd: cwd})
-	list = append(list, &Write{Root: workdir, MaxBytes: MaxWriteBytes, Cwd: cwd})
-	list = append(list, &Edit{Root: workdir, MaxBytes: MaxWriteBytes, Cwd: cwd})
+	list = append(list, &Read{Root: workdir, MaxBytes: 64 * 1024, Cwd: cwd, Reads: reads})
+	list = append(list, &Write{Root: workdir, MaxBytes: MaxWriteBytes, Cwd: cwd, Reads: reads})
+	list = append(list, &Edit{Root: workdir, MaxBytes: MaxWriteBytes, Cwd: cwd, Reads: reads})
 	list = append(list, &WebFetch{})
 	ws := &WebSearch{}
 	if ws.Available() {
 		list = append(list, ws)
 	}
-	list = append(list, &Bash{Root: workdir, ReadOnly: readOnly, Timeout: 30 * time.Second, MaxBytes: 64 * 1024, Cwd: cwd})
+	list = append(list, &Bash{Root: workdir, ReadOnly: readOnly, Timeout: BashDefaultTimeout, MaxBytes: 64 * 1024, Cwd: cwd})
 	list = append(list, &Grep{Root: workdir, MaxMatches: 200, MaxLineLen: 200, Cwd: cwd})
 	list = append(list, &Glob{Root: workdir, MaxResults: 200, Cwd: cwd})
 	list = append(list, &Cd{Cwd: cwd})

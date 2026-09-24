@@ -36,6 +36,9 @@ type Read struct {
 	// paging trailer, offset and limit ignored — for harness callers such as
 	// @file attachments, whose content is diffed against the index.
 	Verbatim bool
+	// Reads, when set, records each successful read so Edit and Write can
+	// tell a file the model has seen from one it has not; see ReadState.
+	Reads *ReadState
 }
 
 // Definition returns the static tool metadata.
@@ -110,6 +113,7 @@ func (r *Read) Execute(ctx context.Context, args map[string]any) (Result, error)
 		if err != nil {
 			return Result{}, err
 		}
+		r.Reads.Note(full)
 		return ReadResultMeta(content, meta), nil
 	}
 
@@ -145,6 +149,7 @@ func (r *Read) Execute(ctx context.Context, args map[string]any) (Result, error)
 		meta["start_line"] = int(w.first)
 		meta["numbered"] = true
 	}
+	r.Reads.Note(full)
 	return ReadResultMeta(w.body+readTrailer(w.first, w.last, w.total), meta), nil
 }
 
