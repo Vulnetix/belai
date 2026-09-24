@@ -62,17 +62,17 @@ func BuildModeClassifierPayload(prompt string) ClassifierPayload {
 // agent mode.
 func ClassifyMode(ctx context.Context, c Classifier, prompt string) (ModeSentinel, error) {
 	start := time.Now()
-	raw, err := c.Classify(ctx, BuildModeClassifierPayload(prompt))
+	raw, model, err := classifyServed(ctx, c, BuildModeClassifierPayload(prompt))
 	took := time.Since(start)
 	if err != nil {
 		return "", err
 	}
 	s, err := ParseModeSentinel(raw)
 	if err != nil {
-		recordTimed(EventModeClassify, string(ModeUndetermined), "", "malformed: "+traceSnippet(raw), 0, "", took)
+		recordTimed(EventModeClassify, string(ModeUndetermined), "", "malformed: "+traceSnippet(raw), 0, model, took)
 		return ModeUndetermined, nil
 	}
-	recordTimed(EventModeClassify, string(s), "", "", 0, "", took)
+	recordTimed(EventModeClassify, string(s), "", "", 0, model, took)
 	return s, nil
 }
 

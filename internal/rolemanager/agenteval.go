@@ -71,15 +71,15 @@ var ErrMalformedAgentEval = errors.New("malformed agent evaluator output")
 // malformed reply fails closed to (AgentPause, ErrMalformedAgentEval): stop
 // spending tokens, wait for the user.
 func EvaluateAgent(ctx context.Context, c Classifier, profileGoals, recentOutput string) (AgentVerdict, error) {
-	raw, err := c.Classify(ctx, BuildAgentEvalPayload(profileGoals, recentOutput))
+	raw, model, err := classifyServed(ctx, c, BuildAgentEvalPayload(profileGoals, recentOutput))
 	if err != nil {
 		return "", err
 	}
 	s, err := ParseAgentVerdict(raw)
 	if err != nil {
-		record(EventAgentEval, string(AgentPause), "", "malformed: "+traceSnippet(raw), 0)
+		recordModel(EventAgentEval, string(AgentPause), "", "malformed: "+traceSnippet(raw), 0, model)
 		return AgentPause, ErrMalformedAgentEval
 	}
-	record(EventAgentEval, string(s), "", "", 0)
+	recordModel(EventAgentEval, string(s), "", "", 0, model)
 	return s, nil
 }
