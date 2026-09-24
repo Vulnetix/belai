@@ -486,6 +486,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	turnStart := time.Now()
 	defer func() { s.trace.Event("agent", "turn", time.Since(turnStart)) }()
 	ctx = calltrace.WithSession(ctx, s.sessionID)
+	emit = stampEvents(emit)
 
 	clean := sanitize.Sanitize(in.Prompt)
 
@@ -750,6 +751,18 @@ func (s *Session) sealSystem(opts prompt.Options) (string, error) {
 	}
 	s.sealKey, s.sealed = key, system
 	return system, nil
+}
+
+// stampEvents wraps emit so every event carries the time it was emitted. The
+// stamp is taken once, at the source: a transcript written later from these
+// events then records when each thing happened, not when it was flushed.
+func stampEvents(emit func(Event)) func(Event) {
+	return func(e Event) {
+		if e.At.IsZero() {
+			e.At = time.Now()
+		}
+		emit(e)
+	}
 }
 
 // joinDirectives combines harness directive bodies for one turn, skipping

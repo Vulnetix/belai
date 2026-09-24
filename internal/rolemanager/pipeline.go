@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/vulnetix/signet/internal/agentpool"
@@ -179,17 +180,19 @@ func (p *Pipeline) run(ctx context.Context, content, subject string) (clean stri
 
 	payload := BuildClassifierPayload(clean)
 
+	start := time.Now()
 	raw, err := p.classifier().Classify(ctx, payload)
+	took := time.Since(start)
 	if err != nil {
 		return clean, "", false, err
 	}
 
 	s, err = ParseSentinel(raw)
 	if err != nil {
-		recordModel(EventSecuritySentinelMalformed, "", subject, "", 0, p.securityModelLabel)
+		recordTimed(EventSecuritySentinelMalformed, "", subject, "", 0, p.securityModelLabel, took)
 		return clean, "", false, nil
 	}
-	recordModel(EventSecuritySentinel, string(s), subject, "", 0, p.securityModelLabel)
+	recordTimed(EventSecuritySentinel, string(s), subject, "", 0, p.securityModelLabel, took)
 	if p.Cache != nil {
 		_ = p.Cache.Put(p.cacheKey(clean), s)
 	}

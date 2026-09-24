@@ -2,6 +2,7 @@ package rolemanager
 
 import (
 	"sync"
+	"time"
 
 	"github.com/vulnetix/signet/internal/trace"
 )
@@ -22,15 +23,22 @@ func traceWriter() *trace.Writer {
 // recover so a panicking sink cannot break the decision path, and it receives
 // only the same bounded fields trace.Record carries.
 func record(e Event, verdict, subject, detail string, pass int) {
-	recordModel(e, verdict, subject, detail, pass, "")
+	recordTimed(e, verdict, subject, detail, pass, "", 0)
 }
 
 // recordModel is record with the provider/model identity that produced the
 // verdict. It is used by the security classifier paths so the TUI can show
 // which classifier ran, rather than always the agent model.
 func recordModel(e Event, verdict, subject, detail string, pass int, model string) {
+	recordTimed(e, verdict, subject, detail, pass, model, 0)
+}
+
+// recordTimed is recordModel with the wall-clock time the decision took. The
+// activity is stamped when it is recorded, so a sink that batches rows (the
+// TUI persists at turn end) still keeps each row's own time.
+func recordTimed(e Event, verdict, subject, detail string, pass int, model string, took time.Duration) {
 	if w := traceWriter(); w != nil {
-		w.Record(trace.Record{
+		rec := trace.Record{
 			Phase:   "rolemanager",
 			Event:   string(e),
 			Verdict: verdict,
@@ -38,12 +46,16 @@ func recordModel(e Event, verdict, subject, detail string, pass int, model strin
 			Pass:    pass,
 			Detail:  detail,
 			Model:   model,
-		})
+		}
+		if took > 0 {
+			rec.Duration = took.String()
+		}
+		w.Record(rec)
 	}
 	if fn := observer.Load(); fn != nil {
 		func() {
 			defer func() { _ = recover() }()
-			(*fn)(Activity{Event: e, Verdict: verdict, Subject: subject, Detail: detail, Pass: pass, Model: model})
+			(*fn)(Activity{Event: e, Verdict: verdict, Subject: subject, Detail: detail, Pass: pass, Model: model, At: time.Now(), Duration: took})
 		}()
 	}
 }
@@ -56,7 +68,13 @@ func recordModel(e Event, verdict, subject, detail string, pass int, model strin
 // It is the mlclassify package's hook into the observer, and never carries
 // classified payload text.
 func RecordSecurityPhase(subject, verdict, model string) {
-	recordModel(EventSecurityPhase, verdict, subject, "", 0, model)
+	RecordSecurityPhaseTimed(subject, verdict, model, 0)
+}
+
+// RecordSecurityPhaseTimed is RecordSecurityPhase with the phase's wall-clock
+// time (zero when the phase did not run).
+func RecordSecurityPhaseTimed(subject, verdict, model string, took time.Duration) {
+	recordTimed(EventSecurityPhase, verdict, subject, "", 0, model, took)
 }
 
 // RecordSecurityFallback emits a security-fallback event: the Jev security

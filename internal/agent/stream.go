@@ -15,6 +15,7 @@ import (
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/todos"
+	"github.com/vulnetix/signet/internal/transcript"
 )
 
 // EventKind identifies one streaming agent event.
@@ -104,6 +105,10 @@ const (
 	// the sentinel the loop ended on in GoalSentinel. The TUI renders it as a
 	// system line, so the report streams into its own bubble.
 	EventReportKind
+	// EventModelCallKind reports that one main-model provider call finished.
+	// It carries the call's wall-clock time in Duration and its usage in
+	// Usage, so a transcript can say where a turn's time went.
+	EventModelCallKind
 )
 
 // Role Manager sub-phases carried by EventRoleManagerKind.
@@ -118,6 +123,17 @@ const (
 // meaningful.
 type Event struct {
 	Kind EventKind
+
+	// At is when the event was emitted, stamped once on the agent's emit
+	// path. A consumer that batches events (the TUI writes its transcript at
+	// turn end) keeps each event's real time instead of its flush time.
+	At time.Time
+	// Duration is the wall-clock time of the work the event reports: a tool
+	// execution on EventToolResultKind, a provider call on
+	// EventModelCallKind. Zero when not measured.
+	Duration time.Duration
+	// Usage carries EventModelCallKind's provider-reported usage.
+	Usage *transcript.Usage
 
 	// Text carries EventText deltas.
 	Text string
@@ -359,6 +375,13 @@ func (s *Session) streamTurn(ctx context.Context, system string, turns []run.Tur
 	// The advertised surface follows the mode this turn is running in, so a
 	// plan-mode turn never offers a tool executeCall would refuse.
 	_, openAITools, anthropicTools := s.toolSurface()
+	callStart := time.Now()
+	// The call's time and usage are reported once it is done, so a
+	// transcript can attribute a turn's time to model calls.
+	done := func(a run.Assistant) run.Assistant {
+		emit(Event{Kind: EventModelCallKind, Duration: time.Since(callStart), Usage: a.Usage})
+		return a
+	}
 	if streaming {
 		ch, err = run.StreamTurnsWithTools(turnCtx, s.cfg, system, turns, s.client, s.pool, openAITools, anthropicTools, onRetry)
 	} else {
@@ -385,9 +408,9 @@ func (s *Session) streamTurn(ctx context.Context, system string, turns []run.Tur
 		}
 		if c.Done {
 			if c.Assistant != nil {
-				return *c.Assistant, nil
+				return done(*c.Assistant), nil
 			}
-			return run.Assistant{Text: text.String(), Usage: c.Usage}, nil
+			return done(run.Assistant{Text: text.String(), Usage: c.Usage}), nil
 		}
 	}
 	return run.Assistant{}, fmt.Errorf("stream closed without a done chunk")

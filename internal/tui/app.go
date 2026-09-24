@@ -291,6 +291,9 @@ type App struct {
 	// replayed by the next nextAgent call instead of being dropped.
 	pendingEvent    agent.Event
 	pendingEventSet bool
+	// pendingModelMS holds provider-call durations that arrived before this
+	// turn had an assistant bubble to carry them; the next bubble adopts them.
+	pendingModelMS []int64
 
 	// session display overrides (ctrl+r / ctrl+t), shadowing the resolved
 	// settings without rewriting the settings file.
@@ -1875,6 +1878,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case rmActivityMsg:
 		a.addRMActivity(rolemanager.Activity(m))
+		a.stampMessages(m.At)
 		return a, a.nextRMActivity()
 
 	case activityEventMsg:
@@ -3038,7 +3042,12 @@ func (a *App) handleStreamChunk(m streamChunkMsg) tea.Cmd {
 func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 	evStart := time.Now()
 	defer func() { a.trace.Event("tui", "agent_event", time.Since(evStart)) }()
+	// Rows this event creates take the event's own emit time.
+	defer a.stampMessages(m.At)
 	switch m.Kind {
+	case agent.EventModelCallKind:
+		a.noteModelCall(m.Duration)
+		return a.nextAgent()
 	case agent.EventWarningKind:
 		a.addSystem(m.Warning)
 		return a.nextAgent()
@@ -3222,6 +3231,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 				if a.messages[i].Role == "tool" && a.messages[i].ToolCallID == m.ToolCallID {
 					a.messages[i].SetContent(m.ToolResult)
 					a.messages[i].Status = toolResultStatus(m.ToolName, m.ToolResult)
+					a.messages[i].DurationMS = toolDurationMS(m.Duration, a.messages[i].StartedAt, m.At)
 					a.persistTail() // mid-turn durability: the settled pair is now complete
 					return a.nextAgent()
 				}
@@ -4035,12 +4045,13 @@ func (a *App) addRMActivity(act rolemanager.Activity) {
 		}
 	}
 	a.messages = append(a.messages, components.Message{
-		Role:     "rolemanager",
-		Level:    desc.Levels,
-		RM:       desc,
-		Activity: string(act.Event),
-		Provider: provider,
-		Model:    model,
+		Role:       "rolemanager",
+		Level:      desc.Levels,
+		RM:         desc,
+		Activity:   string(act.Event),
+		Provider:   provider,
+		Model:      model,
+		DurationMS: act.Duration.Milliseconds(),
 	})
 }
 

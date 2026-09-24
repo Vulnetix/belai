@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // Event names one role-manager decision, typed so a new event cannot be added
@@ -77,6 +78,11 @@ type Activity struct {
 	// ("openrouter/typesafe/jev-1.13", "embedded/GuardrailsAI/…"). Empty when
 	// the activity did not invoke a model.
 	Model string
+	// At is when the decision was recorded. Duration is how long the model
+	// or gate took to reach it; zero when it was not timed (a cache hit, a
+	// forced mode, a phase that did not run).
+	At       time.Time
+	Duration time.Duration
 }
 
 // Description is the plain-English rendering of one Activity. It never carries

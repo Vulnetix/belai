@@ -183,7 +183,7 @@ func (a *App) persistMessage(i int) {
 	m := a.messages[i]
 	switch m.Role {
 	case "user":
-		a.appendEntry(session.Entry{Type: "user", Role: "user", Content: m.Text()})
+		a.appendEntry(timedEntry(m, session.Entry{Type: "user", Role: "user", Content: m.Text()}))
 	case "assistant":
 		meta := map[string]any{
 			"model":    a.cfg.Model,
@@ -219,7 +219,7 @@ func (a *App) persistMessage(i int) {
 				meta["tool_calls"] = calls
 			}
 		}
-		a.appendEntry(session.Entry{Type: "assistant", Role: "assistant", Content: m.Text(), Meta: meta})
+		a.appendEntry(timedEntry(m, session.Entry{Type: "assistant", Role: "assistant", Content: m.Text(), Meta: meta}))
 	case "tool":
 		content := m.Text()
 		meta := map[string]any{
@@ -233,7 +233,7 @@ func (a *App) persistMessage(i int) {
 			meta["orig_len"] = len(content)
 			content = truncateUTF8(content, maxToolResultBytes)
 		}
-		a.appendEntry(session.Entry{Type: "tool", Role: "tool", Content: content, Meta: meta, SubagentID: m.SubagentID})
+		a.appendEntry(timedEntry(m, session.Entry{Type: "tool", Role: "tool", Content: content, Meta: meta, SubagentID: m.SubagentID}))
 	case "reasoning":
 		meta := map[string]any{}
 		if m.Provider != "" {
@@ -242,11 +242,11 @@ func (a *App) persistMessage(i int) {
 		if m.Model != "" {
 			meta["model"] = m.Model
 		}
-		a.appendEntry(session.Entry{Type: "reasoning", Role: "reasoning", Content: m.Text(), Meta: meta})
+		a.appendEntry(timedEntry(m, session.Entry{Type: "reasoning", Role: "reasoning", Content: m.Text(), Meta: meta}))
 	case "system":
-		a.appendEntry(session.Entry{Type: "system", Role: "system", Content: m.Text(), SubagentID: m.SubagentID})
+		a.appendEntry(timedEntry(m, session.Entry{Type: "system", Role: "system", Content: m.Text(), SubagentID: m.SubagentID}))
 	case completionRole:
-		a.appendEntry(session.Entry{Type: completionRole, Role: completionRole, Content: m.Text()})
+		a.appendEntry(timedEntry(m, session.Entry{Type: completionRole, Role: completionRole, Content: m.Text()}))
 	case "rolemanager":
 		meta := map[string]any{
 			"summary": m.RM.Summary,
@@ -263,12 +263,12 @@ func (a *App) persistMessage(i int) {
 		if m.Model != "" {
 			meta["model"] = m.Model
 		}
-		a.appendEntry(session.Entry{
+		a.appendEntry(timedEntry(m, session.Entry{
 			Type:    "rolemanager",
 			Role:    "rolemanager",
 			Content: rmText(m),
 			Meta:    meta,
-		})
+		}))
 	}
 }
 
