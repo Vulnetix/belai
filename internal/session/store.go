@@ -473,6 +473,33 @@ func (s *Store) Keys() ([]Key, error) {
 // session for a workdir, most recently appended first. Duplicates are
 // deduplicated while preserving the first (most recent) occurrence.
 func (s *Store) UserPrompts(workdir string) ([]string, error) {
+	all, err := s.TimedUserPrompts(workdir)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]bool)
+	var out []string
+	for i := len(all) - 1; i >= 0; i-- {
+		if p := all[i].Content; !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
+// TimedPrompt is one user-typed prompt and when it was written, in Unix
+// milliseconds.
+type TimedPrompt struct {
+	Content   string
+	Timestamp int64
+}
+
+// TimedUserPrompts returns every user-typed prompt across the stored sessions
+// for a workdir, oldest first, duplicates included. An entry written without a
+// timestamp takes its session file's modification time, so it still orders
+// against history kept outside the session store.
+func (s *Store) TimedUserPrompts(workdir string) ([]TimedPrompt, error) {
 	infos, err := s.Sessions(workdir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -480,33 +507,24 @@ func (s *Store) UserPrompts(workdir string) ([]string, error) {
 		}
 		return nil, err
 	}
-	// Sort oldest session first so appending entries in order and then
-	// reversing yields globally most-recent-first.
+	// Oldest session first, so entries appended in order read oldest first
+	// across the whole store.
 	sort.Slice(infos, func(i, j int) bool { return infos[i].ModTime < infos[j].ModTime })
-	var all []string
+	var all []TimedPrompt
 	for _, info := range infos {
 		entries, err := s.Read(workdir, info.ID)
 		if err != nil {
 			continue
 		}
 		for _, e := range entries {
-			if e.Type == "user" || e.Role == "user" {
-				if e.Content != "" {
-					all = append(all, e.Content)
+			if (e.Type == "user" || e.Role == "user") && e.Content != "" {
+				ts := e.Timestamp
+				if ts == 0 {
+					ts = info.ModTime
 				}
+				all = append(all, TimedPrompt{Content: e.Content, Timestamp: ts})
 			}
 		}
 	}
-	for i, j := 0, len(all)-1; i < j; i, j = i+1, j-1 {
-		all[i], all[j] = all[j], all[i]
-	}
-	seen := make(map[string]bool)
-	var out []string
-	for _, p := range all {
-		if !seen[p] {
-			seen[p] = true
-			out = append(out, p)
-		}
-	}
-	return out, nil
+	return all, nil
 }

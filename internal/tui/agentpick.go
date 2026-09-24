@@ -257,6 +257,7 @@ func (a *App) acceptAgentArg() tea.Cmd {
 		return nil
 	}
 	line := "/agent " + a.agentArgSub + " " + choice.Name
+	a.recordInput(line)
 	a.closeAgentArgPicker()
 	a.editor.Reset()
 	a.clearAutocomplete()

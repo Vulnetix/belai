@@ -39,6 +39,7 @@ import (
 	"github.com/vulnetix/signet/internal/gitinfo"
 	"github.com/vulnetix/signet/internal/goals"
 	"github.com/vulnetix/signet/internal/httpclient"
+	"github.com/vulnetix/signet/internal/inputhistory"
 	"github.com/vulnetix/signet/internal/localinfer"
 	"github.com/vulnetix/signet/internal/machineprobe"
 	"github.com/vulnetix/signet/internal/modelinfo"
@@ -2429,23 +2430,8 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		input := strings.TrimSpace(a.editor.Value())
 		// A slash command and a `!cmd` / `!!cmd` are local acts, not model
 		// turns: they need no carrier, so they run on this enter.
-		if isProcessInput(input) {
-			a.editor.Reset()
-			a.clearLoadedPrompt()
-			a.clearAutocomplete()
-			return a.handleProcess(input)
-		}
-		if isShellInput(input) {
-			a.editor.Reset()
-			a.clearLoadedPrompt()
-			a.clearAutocomplete()
-			return a.handleShell(input)
-		}
-		if strings.HasPrefix(input, "/") {
-			a.editor.Reset()
-			a.clearLoadedPrompt()
-			a.clearAutocomplete()
-			return a.handleCommand(input)
+		if cmd, ok := a.runLocalInput(input); ok {
+			return cmd
 		}
 		// In agent mode with no agent engaged, enter opens the picker rather
 		// than sending a turn that has no carrier. The submit is deferred, not
@@ -2605,17 +2591,64 @@ func (a *App) buildHistoryResults(query string) []historyItem {
 		}
 	}
 
-	if a.store != nil {
-		prompts, _ := a.store.UserPrompts(a.workdir)
-		for _, p := range prompts {
-			if !seen[p] && promptlib.Match(promptlib.Entry{Name: "", Prompt: p}, query) {
-				seen[p] = true
-				results = append(results, historyItem{Prompt: p})
-			}
+	for _, p := range a.recentInputs() {
+		if !seen[p] && promptlib.Match(promptlib.Entry{Name: "", Prompt: p}, query) {
+			seen[p] = true
+			results = append(results, historyItem{Prompt: p})
 		}
 	}
 
 	return results
+}
+
+// recentInputs is the unnamed tail of the browse list: session prompts and
+// the locally run `!cmd`, `!!cmd` and slash-command lines, merged newest
+// first. The local lines never become user entries in a session file, so
+// they come from their own per-project history.
+func (a *App) recentInputs() []string {
+	var prompts []inputhistory.Item
+	if a.store != nil {
+		timed, _ := a.store.TimedUserPrompts(a.workdir)
+		prompts = make([]inputhistory.Item, 0, len(timed))
+		for _, p := range timed {
+			prompts = append(prompts, inputhistory.Item{Text: p.Content, Timestamp: p.Timestamp})
+		}
+	}
+	var local []inputhistory.Item
+	if path, err := inputhistory.Path(a.workdir); err == nil {
+		local, _ = inputhistory.Load(path)
+	}
+	return inputhistory.Newest(prompts, local)
+}
+
+// recordInput remembers a locally run composer line so up recalls it. A
+// failure to write only costs the recall, never the command.
+func (a *App) recordInput(input string) {
+	if path, err := inputhistory.Path(a.workdir); err == nil {
+		_ = inputhistory.Record(path, input, time.Now().UnixMilli())
+	}
+}
+
+// runLocalInput runs a slash command, `!cmd` or `!!cmd` straight from the
+// composer, recording it in the input history. ok is false when input is a
+// prompt for the model, which the caller still has to send.
+func (a *App) runLocalInput(input string) (cmd tea.Cmd, ok bool) {
+	var run func(string) tea.Cmd
+	switch {
+	case isProcessInput(input):
+		run = a.handleProcess
+	case isShellInput(input):
+		run = a.handleShell
+	case strings.HasPrefix(input, "/"):
+		run = a.handleCommand
+	default:
+		return nil, false
+	}
+	a.recordInput(input)
+	a.editor.Reset()
+	a.clearLoadedPrompt()
+	a.clearAutocomplete()
+	return run(input), true
 }
 
 // namedHistoryCount is the number of leading results that carry a library
@@ -2705,23 +2738,8 @@ func (a *App) handleHistoryKey(m tea.KeyMsg) tea.Cmd {
 		if input == "" {
 			return nil
 		}
-		if isProcessInput(input) {
-			a.editor.Reset()
-			a.clearLoadedPrompt()
-			a.clearAutocomplete()
-			return a.handleProcess(input)
-		}
-		if isShellInput(input) {
-			a.editor.Reset()
-			a.clearLoadedPrompt()
-			a.clearAutocomplete()
-			return a.handleShell(input)
-		}
-		if strings.HasPrefix(input, "/") {
-			a.editor.Reset()
-			a.clearLoadedPrompt()
-			a.clearAutocomplete()
-			return a.handleCommand(input)
+		if cmd, ok := a.runLocalInput(input); ok {
+			return cmd
 		}
 		if a.working() {
 			a.messages = append(a.messages, components.Message{Role: "user", Content: input, Steering: true})

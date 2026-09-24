@@ -2312,7 +2312,7 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 | `ctrl+left` / `ctrl+right` | Move the cursor one word left / right, crossing into the neighbouring line at a line boundary |
 | `home` / `end` | Jump to the start / end of the logical line (`fn+left` / `fn+right` on a laptop keyboard) |
 | `shift+enter` | Insert a newline. bubbletea has no shift+enter key type, so it arrives one of two ways and `Editor.Update` accepts both: under the kitty protocol the CSI-u translator folds every modified enter onto `ctrl+j`, and without it the terminal sends ESC+CR, which decodes as `enter` carrying the alt flag. That flag is a terminal encoding, not a chord anyone presses, so it is matched by key type rather than bound as an alt keycap |
-| `up` / `down` | Browse prompt history and prompt library. Library entries come first and their names show as a chip strip above the composer: `tab` cycles the named prompts, `right` accepts the loaded one into the composer, `enter` sends it. Typing — like any edit key — leaves the browse cycle and edits the loaded prompt |
+| `up` / `down` | Browse prompt, `!cmd`, `!!cmd` and `/command` history and the prompt library. Library entries come first and their names show as a chip strip above the composer: `tab` cycles the named prompts, `right` accepts the loaded one into the composer, `enter` sends it. Typing — like any edit key — leaves the browse cycle and edits the loaded prompt |
 | `f7` | Save the current prompt to the project prompt library — a save-as alias of `ctrl+s` with no loaded entry |
 | `tab` | Move the highlight through the slash-command hints, or — when the agent picker is open in agent mode — through the agent candidates. It never writes into the prompt. While browsing the prompt library it loads the next named prompt instead |
 | `right` / `enter` | Accept the highlighted hint (or the first, for `right` with nothing highlighted). A `/prompt:`, `/agent:` or `/process:` library hint acts immediately instead of filling the prompt; when the agent picker is open, engage the highlighted agent — and also send the prompt when it was a submit that opened the picker; while browsing the prompt library, accept the loaded prompt into the composer (`right`) or send it (`enter`). Without a highlight, `right` is the cursor key and `enter` sends, or opens the agent picker in agent mode if no agent is engaged |
@@ -2606,11 +2606,44 @@ syntax highlighting only.
 Browsing is entered with `up`. The result list is built once, when the cycle
 starts: load both scopes, `promptlib.Merge` them, then `promptlib.Enabled`
 (disabled entries never reach the cycle), then `promptlib.Filter`; then this
-workdir's session-history prompts, newest first, that match the same text and
-are not already in the list by identical prompt text. The composer's text at
+workdir's recent inputs, newest first, that match the same text and are not
+already in the list by identical prompt text. The composer's text at
 the moment `up` is pressed is the filter, and the match is a case-insensitive
 substring test against name and prompt (`promptlib.Match`). The list is **not**
 rebuilt mid-cycle.
+
+**Recent inputs.** The unnamed tail of the list merges two sources by
+timestamp (`inputhistory.Newest`):
+
+- **Session prompts.** Every `user` entry in this workdir's session files
+  (`session.Store.TimedUserPrompts`). An entry with no timestamp takes its
+  session file's modification time.
+- **Local commands.** Every `!cmd`, `!!cmd` and `/command` line run from the
+  composer, including a line sent from the browse cycle and the `/agent …`
+  line the agent-argument picker completes. These lines are not model turns,
+  so they never become `user` entries. They are recorded
+  (`App.runLocalInput`) in a per-project file,
+  `<GlobalDir>/inputhistory/<WorkdirKey>.json` (`internal/inputhistory`),
+  written atomically at `0600`. They are kept out of the session file on
+  purpose: a first-line `/resume` or `/clear` would otherwise leave a session
+  with no turns in the `/resume` list.
+
+Rules for the input history file:
+
+- A line is recorded **before** it runs, so a command that fails, is
+  refused, or is unknown is still recalled, as a shell's history would.
+- Text is trimmed and blank lines are skipped. Re-running a line removes its
+  earlier copy, so each line is recalled once, at its newest position.
+- The file keeps the newest `inputhistory.Max` (500) lines. The oldest are
+  dropped first.
+- Ties on timestamp keep list order (session prompts before local commands)
+  and, within one source, treat the later entry as newer.
+- A missing file is an empty history. An unreadable file is replaced on the
+  next record. A failed write costs only the recall, never the command.
+- Lines run before this file existed are not recoverable.
+- The file sits beside the session files under the user's global directory,
+  never in the repository. A `!cmd` carrying a secret is stored as typed,
+  just as the shell panel already persists its output.
 
 **Merge ordering.** Each scope sorts by `(Order, Name)`. The merged list is the
 global block in global order, then project-only names in project order. A
@@ -2624,11 +2657,11 @@ otherwise invisible in the `up` cycle.
 Because library entries lead the list, the named ones are always a prefix of
 it, and the TUI draws that prefix as a chip strip above the composer — one chip
 per prompt *name*, the loaded one highlighted. `tab` walks the named prefix;
-`up`/`down` walk the whole list including unnamed session history.
+`up`/`down` walk the whole list including the unnamed recent inputs.
 
 | Key | While browsing |
 | --- | -------------- |
-| `up` / `down` | Move through **all** results, library entries then session history. `down` past the newest result restores the text you had before browsing |
+| `up` / `down` | Move through **all** results, library entries then recent inputs (prompts, `!cmd`, `!!cmd`, `/command`). `down` past the newest result restores the text you had before browsing |
 | `tab` | Load the next **named** prompt, wrapping at the end of the named prefix. With no library match the strip is absent and `tab` does nothing |
 | `right` | Accept the loaded prompt into the composer and leave the cycle, cursor at the end |
 | `enter` | Accept the loaded prompt and send it (`/command` and `!shell` text dispatches as usual; while a turn runs it steers) |
