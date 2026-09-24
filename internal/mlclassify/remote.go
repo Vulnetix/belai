@@ -16,10 +16,12 @@ import (
 )
 
 // hfInferenceEndpoint is the HuggingFace serverless inference API for
-// text-classification models. It is a different endpoint from the registry's
-// chat BaseURL, so the remote gate runs its own small client and reuses only
-// the credential lookup.
-const hfInferenceEndpoint = "https://api-inference.huggingface.co/models/"
+// text-classification models, served through the Inference Providers router.
+// The legacy api-inference.huggingface.co host no longer resolves, which made
+// every remote phase call fail (and so fail closed). It is a different
+// endpoint from the registry's chat BaseURL, so the remote gate runs its own
+// small client and reuses only the credential lookup.
+const hfInferenceEndpoint = "https://router.huggingface.co/hf-inference/models/"
 
 // remoteModel runs one phase model over the HuggingFace inference API.
 type remoteModel struct {
@@ -31,6 +33,7 @@ type remoteModel struct {
 	token     func() (string, error)
 	client    *http.Client
 	tokFn     tokenizeFunc
+	endpoint  string // inference base URL; hfInferenceEndpoint unless a test overrides it
 }
 
 func newRemoteGate(phase Phase, mc ModelConfig, hfToken func() (string, error)) (gate, error) {
@@ -105,6 +108,7 @@ func newRemoteGate(phase Phase, mc ModelConfig, hfToken func() (string, error)) 
 		token:     hfToken,
 		client:    client,
 		tokFn:     tokFn,
+		endpoint:  hfInferenceEndpoint,
 	}, nil
 }
 
@@ -122,11 +126,33 @@ func (g *remoteModel) phase() Phase { return g.ph }
 
 func (g *remoteModel) tokenizer() tokenizeFunc { return g.tokFn }
 
-// hfClassificationResponse is the text-classification reply shape:
-// [[{"label": "...", "score": 0.9}, ...]].
-type hfClassificationResponse [][]struct {
+// hfLabelScore is one label in a text-classification reply.
+type hfLabelScore struct {
 	Label string  `json:"label"`
 	Score float64 `json:"score"`
+}
+
+// decodeHFClassification accepts both reply shapes the inference API has
+// served for text classification: nested per input,
+// [[{"label": "...", "score": 0.9}, ...]], and flat for a single input,
+// [{"label": "...", "score": 0.9}, ...]. An empty or unrecognised reply is an
+// error, so the gate fails closed.
+func decodeHFClassification(data []byte) ([]hfLabelScore, error) {
+	var nested [][]hfLabelScore
+	if err := json.Unmarshal(data, &nested); err == nil {
+		if len(nested) == 0 || len(nested[0]) == 0 {
+			return nil, fmt.Errorf("empty response")
+		}
+		return nested[0], nil
+	}
+	var flat []hfLabelScore
+	if err := json.Unmarshal(data, &flat); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+	if len(flat) == 0 {
+		return nil, fmt.Errorf("empty response")
+	}
+	return flat, nil
 }
 
 func (g *remoteModel) fire(ctx context.Context, window string) (rolemanager.Sentinel, float64, error) {
@@ -138,7 +164,11 @@ func (g *remoteModel) fire(ctx context.Context, window string) (rolemanager.Sent
 	if err != nil {
 		return "", 0, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, hfInferenceEndpoint+g.id, bytes.NewReader(body))
+	endpoint := g.endpoint
+	if endpoint == "" {
+		endpoint = hfInferenceEndpoint
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+g.id, bytes.NewReader(body))
 	if err != nil {
 		return "", 0, err
 	}
@@ -158,15 +188,12 @@ func (g *remoteModel) fire(ctx context.Context, window string) (rolemanager.Sent
 	if resp.StatusCode != http.StatusOK {
 		return "", 0, fmt.Errorf("classify %s: %s: %s", g.id, resp.Status, strings.TrimSpace(string(data)))
 	}
-	var out hfClassificationResponse
-	if err := json.Unmarshal(data, &out); err != nil {
-		return "", 0, fmt.Errorf("classify %s: decode response: %w", g.id, err)
-	}
-	if len(out) == 0 {
-		return "", 0, fmt.Errorf("classify %s: empty response", g.id)
+	labels, err := decodeHFClassification(data)
+	if err != nil {
+		return "", 0, fmt.Errorf("classify %s: %w", g.id, err)
 	}
 	score := 0.0
-	for _, r := range out[0] {
+	for _, r := range labels {
 		if r.Label == g.attack {
 			score = r.Score
 			break
