@@ -154,23 +154,81 @@ import localModelShot from '../../assets/shots/local-model.svg';
   </div>
 </SealedSection>
 
-<SealedSection label="agents" sealText="Agents and fan-out: the f8 roster spawns concurrent read-only agents, each branch sees only the surface it is allowed to touch, and results merge." id="agents">
-  <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
-    <div class="prose-measure">
-      <h2 class="text-3xl font-bold text-vx-ink">Agents.</h2>
+<SealedSection label="agents" sealText="Agents: full tool access is the default for the main session and for background agents; read-only is the deliberate exception, applied to the f8 fan-out roster, plan mode and the bounded recovery subagent. Background agents are named profiles under /agent with their own system prompt, mode, autonomy, provider and tool allowlist, and a fail-closed rule blocks a profile that stacks guardrails off, autonomous, and an unbounded loop." id="agents">
+  <div class="prose-measure">
+    <h2 class="text-3xl font-bold text-vx-ink">Agents.</h2>
+    <p class="mt-4 text-vx-ink/80">
+      The default is full tool access. The main session and background agents both get the whole
+      catalogue&mdash;<code class="mono">Bash</code>, <code class="mono">Read</code>,{' '}
+      <code class="mono">Write</code>, <code class="mono">Edit</code>, the native read-only utilities,{' '}
+      <code class="mono">GH</code>/<code class="mono">Glab</code>&mdash;gated by permission rules and the
+      guardrails switch, not by a fixed ceiling. Read-only is the exception, and it is only ever applied
+      on purpose, in three specific places.
+    </p>
+  </div>
+
+  <div class="mt-10 grid gap-10 lg:grid-cols-2 lg:items-center">
+    <div class="order-2 lg:order-1 prose-measure">
+      <h3 class="text-xl font-bold text-vx-ink">Read-only fan-out.</h3>
       <p class="mt-4 text-vx-ink/80">
         The f8 roster splits a question across several read-only agents that run at the same time.
         Each one gets only the tools it is allowed to use, and their results are merged at the end.
         These agents have no write tools, so text they read can't get them to change files.
       </p>
     </div>
-    <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={fanOut} /></div>
+    <div class="order-1 lg:order-2 rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={fanOut} /></div>
   </div>
   <div class="mt-10 max-w-[72ch]">
     <ShotCarousel
       client:load
       shots={[{ src: agentsRosterShot.src, alt: 'The f8 subagent roster and runs panel', caption: 'f8 roster, runs panel' }]}
     />
+  </div>
+
+  <div class="mt-12 prose-measure">
+    <h3 class="text-xl font-bold text-vx-ink">Background agents.</h3>
+    <p class="mt-4 text-vx-ink/80">
+      <code class="mono">/agent</code> picks a saved agent profile or opens the editor to build one.
+      A profile is a named, reusable definition&mdash;its own system prompt, its own provider, model
+      and effort, its own guardrails switch&mdash;that runs unattended in the background while you keep
+      working in the session.
+    </p>
+    <p class="mt-4 text-vx-ink/80">
+      Leave a profile's tool list unset and it inherits the full registry, same as the main session. Name
+      tools instead and the profile is narrowed to exactly those, chosen from a conservative allowlist the
+      profile editor itself offers&mdash;<code class="mono">Bash</code> and <code class="mono">Write</code>{' '}
+      included, because scoping down is a choice the profile author makes, not a limit the platform
+      imposes. The built-in <code class="mono">signet:triage-vulns</code> profile is the pattern: it keeps{' '}
+      <code class="mono">Read</code>, <code class="mono">Grep</code>, <code class="mono">Glob</code> and{' '}
+      <code class="mono">Bash</code>, drops <code class="mono">Write</code> and <code class="mono">Edit</code>,
+      and says why in its own system prompt&mdash;"triage proposes, it does not patch."
+    </p>
+    <div class="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div class="rounded-lg border border-vx-ink/30 p-4">
+        <h3 class="font-semibold text-vx-ink">Four modes</h3>
+        <p class="mt-2 text-sm text-vx-ink/80">Single for one run, loop for repeated turns, scheduled on an interval, or monitor, which only fires a turn once a stated condition is true.</p>
+      </div>
+      <div class="rounded-lg border border-vx-ink/30 p-4">
+        <h3 class="font-semibold text-vx-ink">Supervised or autonomous</h3>
+        <p class="mt-2 text-sm text-vx-ink/80">Autonomy is set per profile. Autonomous still runs under whatever permission and guardrails rules apply.</p>
+      </div>
+      <div class="rounded-lg border border-vx-ink/30 p-4">
+        <h3 class="font-semibold text-vx-ink">Fail-closed by construction</h3>
+        <p class="mt-2 text-sm text-vx-ink/80">A profile that stacks guardrails off, autonomy: autonomous and a looping mode is rejected unless it also sets max_iterations. Three relaxations at once is one too many.</p>
+      </div>
+      <div class="rounded-lg border border-vx-ink/30 p-4">
+        <h3 class="font-semibold text-vx-ink">Own model, own guardrails</h3>
+        <p class="mt-2 text-sm text-vx-ink/80">Provider, model and effort can differ from the main session. Guardrails can be set per profile too, overriding the session default.</p>
+      </div>
+      <div class="rounded-lg border border-vx-ink/30 p-4">
+        <h3 class="font-semibold text-vx-ink">Runs alongside you</h3>
+        <p class="mt-2 text-sm text-vx-ink/80">A background agent has its own lease and its own turn budget; it does not block or share state with the session you're typing in.</p>
+      </div>
+      <div class="rounded-lg border border-vx-ink/30 p-4">
+        <h3 class="font-semibold text-vx-ink">Bounded when it matters</h3>
+        <p class="mt-2 text-sm text-vx-ink/80">The same read-only surface backs the <a href="#processes" class="underline">recovery subagent</a> that restarts a crashed supervised process&mdash;plan tools plus exactly two more, never the binary.</p>
+      </div>
+    </div>
   </div>
 </SealedSection>
 
