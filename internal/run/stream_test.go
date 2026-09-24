@@ -651,6 +651,65 @@ func TestStreamRetriesOpenStream(t *testing.T) {
 	}
 }
 
+// h2FlakeTransport fails its first round trip with the HTTP/2 stream reset a
+// gateway peer sends, then serves a completed SSE stream.
+type h2FlakeTransport struct {
+	calls     int
+	idleDrops int
+}
+
+func (f *h2FlakeTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	f.calls++
+	if f.calls == 1 {
+		return nil, errors.New("stream error: stream ID 85; PROTOCOL_ERROR; received from peer")
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n")),
+		Request:    r,
+	}, nil
+}
+
+func (f *h2FlakeTransport) CloseIdleConnections() { f.idleDrops++ }
+
+// TestStreamRetriesHTTP2StreamError pins the gateway PROTOCOL_ERROR fix: a
+// peer stream reset before the first byte is retried on a fresh connection
+// instead of failing the turn.
+func TestStreamRetriesHTTP2StreamError(t *testing.T) {
+	tr := &h2FlakeTransport{}
+	client := &http.Client{Transport: tr}
+	cfg := Config{Provider: "openai", BaseURL: "https://gateway.example/v1", APIKey: "sk", Model: "gpt-5"}
+	var retries []resilience.Attempt
+	ch, err := StreamTurnsWithTools(context.Background(), cfg, "", []Turn{{Role: "user", Content: "hi"}}, client, nil, nil, nil,
+		func(a resilience.Attempt) { retries = append(retries, a) })
+	if err != nil {
+		t.Fatalf("StreamTurnsWithTools: %v", err)
+	}
+	var out strings.Builder
+	for c := range ch {
+		if c.Err != nil {
+			t.Fatalf("stream error: %v", c.Err)
+		}
+		out.WriteString(c.Text)
+		if c.Done {
+			break
+		}
+	}
+	if out.String() != "ok" {
+		t.Fatalf("got %q, want ok", out.String())
+	}
+	if tr.calls != 2 || len(retries) != 1 {
+		t.Fatalf("calls=%d retries=%d, want 2 and 1", tr.calls, len(retries))
+	}
+	if retries[0].Max != defaultRetryPolicy.MaxAttempts {
+		t.Fatalf("retry max = %d, want %d", retries[0].Max, defaultRetryPolicy.MaxAttempts)
+	}
+	if tr.idleDrops == 0 {
+		t.Fatal("transport failure did not drop idle connections before the retry")
+	}
+}
+
 func TestIdleWatchdogTearsDownAfterGap(t *testing.T) {
 	pr, pw := io.Pipe()
 	wd := newIdleWatchdog(pr, 20*time.Millisecond)

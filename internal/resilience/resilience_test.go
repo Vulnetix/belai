@@ -3,7 +3,13 @@ package resilience
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"net"
 	"net/http"
+	"net/url"
+	"os"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -139,6 +145,9 @@ func TestDoCallsOnRetry(t *testing.T) {
 	if attempts[0].Attempt != 2 || attempts[1].Attempt != 3 {
 		t.Fatalf("attempt numbers = %v", attempts)
 	}
+	if attempts[0].Max != 3 || attempts[1].Max != 3 {
+		t.Fatalf("attempt max = %v, want 3", attempts)
+	}
 }
 
 func TestDoCancelDuringBackoff(t *testing.T) {
@@ -235,6 +244,66 @@ func TestDefaultClassifierDenyListQuotaRemainsFatal(t *testing.T) {
 	v := c.Classify(errors.New("insufficient_quota: please check billing"))
 	if v.Class != ClassFatal {
 		t.Fatalf("denylist quota -> %v, want fatal", v.Class)
+	}
+}
+
+// timeoutErr is a net.Error that reports a timeout without being a context
+// error, as a dial or read deadline does.
+type timeoutErr struct{}
+
+func (timeoutErr) Error() string   { return "read tcp: i/o deadline reached" }
+func (timeoutErr) Timeout() bool   { return true }
+func (timeoutErr) Temporary() bool { return true }
+
+func postErr(u string, err error) error {
+	return fmt.Errorf("request: %w", &url.Error{Op: "Post", URL: u, Err: err})
+}
+
+func TestDefaultClassifierTransportErrors(t *testing.T) {
+	const gw = "https://gateway.ai.cloudflare.com/v1/acct/default/compat/v1/chat/completions"
+	cases := []struct {
+		name string
+		err  error
+		want Class
+	}{
+		{"h2 protocol error from peer", postErr(gw, errors.New("stream error: stream ID 85; PROTOCOL_ERROR; received from peer")), ClassRetryable},
+		{"h2 goaway", postErr(gw, errors.New("http2: server sent GOAWAY and closed the connection; LastStreamID=85, ErrCode=NO_ERROR, debug=\"\"")), ClassRetryable},
+		{"h2 refused stream", postErr(gw, errors.New("stream error: stream ID 3; REFUSED_STREAM")), ClassRetryable},
+		{"mid-stream internal error", errors.New("stream read: stream error: stream ID 9; INTERNAL_ERROR; received from peer"), ClassRetryable},
+		{"client connection lost", postErr(gw, errors.New("http2: client connection lost")), ClassRetryable},
+		{"stream idle timeout", errors.New("stream idle timeout after 2m0s"), ClassRetryable},
+		{"econnreset", postErr(gw, &net.OpError{Op: "read", Net: "tcp", Err: os.NewSyscallError("read", syscall.ECONNRESET)}), ClassRetryable},
+		{"unexpected eof", fmt.Errorf("stream read: %w", io.ErrUnexpectedEOF), ClassRetryable},
+		{"pooled conn eof", postErr(gw, io.EOF), ClassRetryable},
+		{"net timeout", postErr(gw, timeoutErr{}), ClassRetryable},
+		{"url words are not scanned", postErr("https://payment.example/quota/token_limit", errors.New("connection reset by peer")), ClassRetryable},
+		{"wrapped 503", fmt.Errorf("turn: %w", &statusErr{code: 503}), ClassRetryable},
+		{"wrapped 401", fmt.Errorf("turn: %w", &statusErr{code: 401}), ClassFatal},
+		{"x509 unknown authority", postErr(gw, errors.New("tls: failed to verify certificate: x509: certificate signed by unknown authority")), ClassFatal},
+		{"bare eof is not a transport fault", io.EOF, ClassFatal},
+		{"unrecognised", errors.New("something odd"), ClassFatal},
+		{"cancelled", postErr(gw, context.Canceled), ClassAborted},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := (DefaultClassifier{}).Classify(tc.err).Class; got != tc.want {
+				t.Fatalf("Classify(%q) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestDefaultClassifierEnhanceYourCalmIsRateLimited(t *testing.T) {
+	v := DefaultClassifier{}.Classify(errors.New("stream error: stream ID 5; ENHANCE_YOUR_CALM"))
+	if v.Class != ClassRetryable || v.RetryAfter != DefaultRateLimitRetryAfter {
+		t.Fatalf("ENHANCE_YOUR_CALM -> %+v, want retryable with %v", v, DefaultRateLimitRetryAfter)
+	}
+}
+
+func TestDefaultClassifierWrappedRetryAfter(t *testing.T) {
+	v := DefaultClassifier{}.Classify(fmt.Errorf("turn: %w", &retryAfterErr{code: 503, retryAfter: 7 * time.Second}))
+	if v.Class != ClassRetryable || v.RetryAfter != 7*time.Second {
+		t.Fatalf("wrapped retry-after -> %+v", v)
 	}
 }
 

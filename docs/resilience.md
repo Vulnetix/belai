@@ -21,19 +21,68 @@ loop.
 Classification is fail-closed:
 
 1. `context.Canceled` / `DeadlineExceeded` → `ClassAborted`, terminal.
-2. Denylist text (`quota`, `billing`, `invalid_api_key` …) → `ClassFatal`.
-3. Overflow text (`context length`, `token limit` …) → `ClassOverflow`,
+2. Typed transport faults → `ClassRetryable` (see "Transport and HTTP/2
+   failures" below).
+3. Denylist text (`quota`, `billing`, `invalid_api_key` …) → `ClassFatal`.
+4. Overflow text (`context length`, `token limit` …) → `ClassOverflow`,
    never retried; the user is told to `/compact`.
-4. Explicit `Retry-After` header (seconds or HTTP-date) → `ClassRetryable`,
+5. Explicit `Retry-After` header (seconds or HTTP-date) → `ClassRetryable`,
    delay clamped to the policy ceiling.
-5. Rate-limit signalling without `Retry-After` (HTTP 429 or text such as
-   `rate limit`, `too many requests`, `throttled`, `requests per minute` …)
-   → `ClassRetryable` with a low-pressure 60 s default backoff, also clamped
-   to the policy ceiling.
-6. `StatusCoder` with 408/409/≥500 → `ClassRetryable`; 400/401/403/404/422
+6. Rate-limit signalling without `Retry-After` (HTTP 429 or text such as
+   `rate limit`, `too many requests`, `throttled`, `requests per minute`,
+   the HTTP/2 `ENHANCE_YOUR_CALM` code …) → `ClassRetryable` with a
+   low-pressure 60 s default backoff, also clamped to the policy ceiling.
+7. `StatusCoder` with 408/409/≥500 → `ClassRetryable`; 400/401/403/404/422
    → `ClassFatal`.
-7. Retryable text (`ended without`, `connection reset` …) → `ClassRetryable`.
-8. Anything else → `ClassFatal`.
+8. Retryable or transport text (`ended without`, `connection reset`,
+   `stream error`, `PROTOCOL_ERROR`, `GOAWAY` …) → `ClassRetryable`.
+9. Anything else → `ClassFatal`.
+
+`StatusCoder` and `RetryAfterer` are found with `errors.As`, so a
+`ProviderError` wrapped by a caller keeps its status and `Retry-After`.
+
+### Transport and HTTP/2 failures
+
+A transport failure means no usable response came back. Retrying one on a
+fresh connection is safe and usually works. Step 2 matches these types:
+
+- `io.ErrUnexpectedEOF`
+- `ECONNRESET`, `ECONNABORTED`, `ECONNREFUSED`, `EPIPE`
+- any `net.Error` whose `Timeout()` is true
+- `io.EOF`, but only inside a `*url.Error` (`Post "…": EOF`, meaning the server
+  closed a pooled connection). A bare `io.EOF` stays fatal.
+
+Go's bundled HTTP/2 errors aren't exported types, so step 8 matches them by
+text:
+
+- stream resets: `stream error … PROTOCOL_ERROR | INTERNAL_ERROR | REFUSED_STREAM`
+- connection shutdown: `GOAWAY`, `http2: client connection lost`
+- pool and connection faults: `server closed idle connection`,
+  `use of closed network connection`, `connection closed before …`
+- timeouts: `TLS handshake timeout`, `i/o timeout`, `stream idle timeout`
+- incomplete streams: `closed without a done chunk`
+- `overloaded` provider events
+
+Edge cases:
+
+- **Only the cause is matched.** For a `*url.Error`, steps 3, 4, 6 and 8 read
+  the underlying cause and ignore the full message. The request URL is left
+  out, so a host or path containing `payment`, `quota` or `token_limit` can't
+  turn a connection reset into a fatal or overflow verdict.
+- **Some transport errors stay fatal.** TLS certificate failures (x509) match
+  none of the patterns above. A bad certificate won't fix itself.
+- **Status beats text.** A response with a status code is classified by that
+  status before the transport patterns run. For example, a 400 whose body says
+  `INTERNAL_ERROR` is still fatal.
+- **The pool is flushed before a retry.** When `client.Do` fails with no
+  response, the L1 attempt calls `CloseIdleConnections` before returning. The
+  retry then dials fresh instead of reusing an HTTP/2 connection the peer just
+  reset or sent `GOAWAY` on. This only closes idle connections, so other
+  sessions' in-flight streams aren't touched. A cancelled turn leaves the pool
+  alone.
+- **Mid-stream resets are retried by L2.** A reset after the first byte
+  (`stream read: stream error …`) is past L1's reach, so L2 re-issues the whole
+  turn, and the TUI dims the partial bubble.
 
 Backoff honors an explicit `Retry-After` header first, then the rate-limit
 default when rate limiting is detected but no header is supplied, and finally
@@ -101,6 +150,17 @@ assistant bubble as `Partial` so it is rendered dimly and skipped by
 
 The retry budget is **consecutive failures**: any success resets the counter.
 There is no circuit breaker or cross-session cooldown.
+
+L2 takes its delay from the classifier's verdict. A rate-limit error with no
+`Retry-After` therefore waits the same 60 s default at L2 as it does at L1,
+rather than falling back to a 0.5 s exponential retry. An explicit
+`Retry-After` on a (possibly wrapped) `ProviderError` still takes precedence.
+
+Each retry event includes the budget of the layer that is retrying
+(`resilience.Attempt.Max` → `agent.Event.RetryMax`). The TUI shows it as
+`retrying (n/max)`, or as `retrying (n)` when the budget is unknown. L1 retries
+count against the fixed transport budget of 3. L2 retries count against
+`max_attempts`.
 
 ## Configuration
 
