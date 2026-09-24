@@ -2,6 +2,7 @@ package bgagent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -41,6 +42,10 @@ type Event struct {
 	Text       string
 	ToolName   string
 	ToolResult string
+	// ToolArgs and ToolCallID pair a tool start with its result. Both are
+	// render-only.
+	ToolArgs   string
+	ToolCallID string
 	Warning    string
 	Err        error
 	// Subagent carries a roster delta for background agents, sharing the
@@ -653,7 +658,19 @@ func stricterLevel(a, b posture.Level) posture.Level {
 }
 
 func (m *Manager) wrapEvent(name string, e agent.Event) Event {
-	return Event{AgentName: name, Kind: e.Kind, Text: e.Text, ToolName: e.ToolName, ToolResult: e.ToolResult, Warning: e.Warning, Err: e.Err, Subagent: e.Subagent, SubagentID: e.SubagentID}
+	out := Event{AgentName: name, Kind: e.Kind, Text: e.Text, ToolName: e.ToolName, ToolResult: e.ToolResult, ToolArgs: e.ToolArgs, ToolCallID: e.ToolCallID, Warning: e.Warning, Err: e.Err, Subagent: e.Subagent, SubagentID: e.SubagentID}
+	// A tool start carries its call in Tool, not in the flat fields.
+	if e.Tool != nil {
+		out.ToolName = e.Tool.Name
+		out.ToolCallID = e.Tool.ID
+		out.ToolArgs = e.Tool.RawArgs
+		if out.ToolArgs == "" && len(e.Tool.Args) > 0 {
+			if b, err := json.Marshal(e.Tool.Args); err == nil {
+				out.ToolArgs = string(b)
+			}
+		}
+	}
+	return out
 }
 
 func (m *Manager) evaluateMonitor(ctx context.Context, condition string) (bool, error) {
