@@ -609,7 +609,6 @@ func TestPlanLedgerDirectiveEscalation(t *testing.T) {
 		"The plan is partially complete",
 		"Steps tracked: 1 done, 1 in progress, 0 remaining",
 		"Fold the concrete tool calls you have made",
-		"Current plan todo list",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("partial directive missing %q:\n%s", want, got)
@@ -725,6 +724,11 @@ func TestPlanPassLoopFinalPassOffersOnlyTheFinishTools(t *testing.T) {
 		t.Fatalf("earlier passes keep the exploration tools: %v", (*toolSets)[0])
 	}
 	final := (*lastUser)[len(*lastUser)-1]
+	for i, u := range *lastUser {
+		if !strings.Contains(u, "TODO check") {
+			t.Fatalf("plan request %d carried no TODO progress check:\n%s", i, u)
+		}
+	}
 	for _, want := range []string{"final planning pass", "not starting over", "Files already read: f.txt", "the rollback step"} {
 		if !strings.Contains(final, want) {
 			t.Fatalf("final directive turn missing %q:\n%s", want, final)

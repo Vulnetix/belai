@@ -601,11 +601,15 @@ func TestPassLedgerProgressionDirective(t *testing.T) {
 	l.list = todos.New("ship the thing", []string{"alpha", "beta"})
 	l.hasList = true
 	got = l.progressionDirective()
-	if !strings.Contains(got, "alpha") || !strings.Contains(got, "beta") {
-		t.Fatalf("progression directive with a list should include rendered list, got:\n%s", got)
+	if strings.Contains(got, "alpha") {
+		t.Fatalf("progression body must not carry model step text (the TODO check note does), got:\n%s", got)
 	}
-	if !strings.Contains(got, "[DONE:n]") {
-		t.Fatalf("progression directive should remind model to use todo markers, got:\n%s", got)
+	turns := l.directive(got)
+	if !strings.Contains(turns[0].Content, "alpha") || !strings.Contains(turns[0].Content, "beta") {
+		t.Fatalf("framed progression directive should carry the rendered list, got:\n%s", turns[0].Content)
+	}
+	if !strings.Contains(turns[0].Directive, "[DONE:n]") || !strings.Contains(turns[0].Directive, "TODO check") {
+		t.Fatalf("framed progression directive should carry the TODO check, got:\n%s", turns[0].Directive)
 	}
 }
 

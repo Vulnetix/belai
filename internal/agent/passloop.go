@@ -240,6 +240,13 @@ func (l *passLedger) advanceTodos(passAssistantText string) {
 	}
 }
 
+// directive frames a goal-loop boundary directive with the per-pass TODO
+// progress check: every pass after the first is asked where it stands on the
+// list and to update it alongside the tool calls that advance it.
+func (l *passLedger) directive(body string) []run.Turn {
+	return withTodoCheck(body, l.list, l.hasList)
+}
+
 // hasVerifiableWork reports whether the tracked list has anything a
 // verification pass could check. Arming verification against an all-pending
 // list spends a read-only pass confirming nothing. A done item with no write
@@ -334,9 +341,6 @@ func (l *passLedger) noWriteDirective() string {
 		fmt.Fprintf(&b, " — the next step is: %s", step)
 	}
 	b.WriteString(". Read the exact bytes you are about to edit, then edit them. If a real blocker prevents any edit, state the blocker in one line and say what you need.")
-	if l.hasList {
-		b.WriteString("\n\n" + l.list.Render())
-	}
 	return b.String()
 }
 
@@ -594,7 +598,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 			if sentinel == rolemanager.GoalComplete {
 				if l.verificationPasses == 0 {
 					l.verificationArmed = true
-					turns = append(turns, directiveTurns(l.gateDirective())...)
+					turns = append(turns, l.directive(l.gateDirective())...)
 					continue
 				}
 				if l.hasList {
@@ -609,14 +613,14 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 			}
 			if l.notePartial() {
 				l.partialStreak = 0
-				turns = append(turns, directiveTurns(l.progressionDirective())...)
+				turns = append(turns, l.directive(l.progressionDirective())...)
 				continue
 			}
 			if l.stalledOnWrites() {
-				turns = append(turns, directiveTurns(l.noWriteOrRepairDirective())...)
+				turns = append(turns, l.directive(l.noWriteOrRepairDirective())...)
 				continue
 			}
-			turns = append(turns, directiveTurns(continuationDirective)...)
+			turns = append(turns, l.directive(continuationDirective)...)
 			continue
 		}
 
@@ -650,7 +654,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 				return run.Result{Passes: l.passes}, fmt.Errorf("goal pass loop stopped: pass %d executed no tools", l.passes)
 			}
 			emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("pass %d executed no tools; asking for corrected tool calls", l.passes)})
-			turns = append(turns, directiveTurns(toolRepairDirective)...)
+			turns = append(turns, l.directive(toolRepairDirective)...)
 			continue
 		}
 		l.unproductivePasses = 0
@@ -687,7 +691,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 				}
 				l.surveyedOnce = true
 			}
-			turns = append(turns, directiveTurns(planDirective)...)
+			turns = append(turns, l.directive(planDirective)...)
 
 		case rolemanager.GoalPartial:
 			if l.notePartial() {
@@ -695,14 +699,14 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 				// tracking, and start a new agentic evaluation loop rather
 				// than aborting.
 				l.partialStreak = 0
-				turns = append(turns, directiveTurns(l.progressionDirective())...)
+				turns = append(turns, l.directive(l.progressionDirective())...)
 				continue
 			}
 			body, arm := l.partialDirectiveTurn()
 			if arm {
 				l.verificationArmed = true
 			}
-			turns = append(turns, directiveTurns(body)...)
+			turns = append(turns, l.directive(body)...)
 
 		case rolemanager.GoalComplete:
 			if l.verificationPasses == 0 {
@@ -715,11 +719,11 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 					// Provide session context, reset progression tracking, and
 					// start a new agentic evaluation loop rather than aborting.
 					l.partialStreak = 0
-					turns = append(turns, directiveTurns(l.progressionDirective())...)
+					turns = append(turns, l.directive(l.progressionDirective())...)
 					continue
 				}
 				l.verificationArmed = true
-				turns = append(turns, directiveTurns(l.gateDirective())...)
+				turns = append(turns, l.directive(l.gateDirective())...)
 				continue
 			}
 			// Accepted: mark the todo list complete and return.
@@ -759,6 +763,21 @@ func (s *Session) agentContinuations(ctx context.Context, pipe *rolemanager.Pipe
 	}
 	continuations := 0
 	mutations := out.mutations
+	// Agent mode keeps no ledger, but update_plan is on its surface: adopt
+	// what the model reports so each continuation carries the TODO check.
+	var list todos.List
+	hasList := false
+	adopt := func(o passOutcome) {
+		if o.updatePlan == nil {
+			return
+		}
+		if !hasList {
+			list = todos.New(userPrompt, nil)
+			hasList = true
+		}
+		list.Adopt(o.updatePlan.Items)
+	}
+	adopt(out)
 	for continuations < maxCont {
 		if steer := s.drainSteer(ctx, pipe, emit); len(steer) > 0 {
 			turns = append(turns, steer...)
@@ -789,12 +808,13 @@ func (s *Session) agentContinuations(ctx context.Context, pipe *rolemanager.Pipe
 		if mode == modes.ModeAgent && !s.turnReadOnly && mutations == 0 {
 			directive = agentEditNudge + " " + continuationDirective
 		}
-		turns = append(turns, directiveTurns(directive)...)
+		turns = append(turns, withTodoCheck(directive, list, hasList)...)
 		var err error
 		out, turns, err = s.pass(ctx, pipe, system, turns, streaming, emit, mode)
 		if err != nil {
 			return run.Result{}, err
 		}
+		adopt(out)
 		mutations += out.mutations
 		if !out.exhausted {
 			return run.Result{Reply: out.reply, Usage: out.usage, Passes: continuations}, nil
@@ -875,8 +895,7 @@ func (l *passLedger) partialDirective() string {
 		} else {
 			body += " Carry out the next action with an edit in this pass."
 		}
-		return body + "\n\n" + l.list.Render() +
-			"\n\nMark steps complete with update_plan, or with [DONE:n] in your reply, as you finish them."
+		return body
 	}
 	return "The goal is partially complete and no step list is tracked yet. Call update_plan with the steps you will execute, then carry out the next one with an edit in this pass."
 }
@@ -887,9 +906,7 @@ func (l *passLedger) partialDirective() string {
 // step, creating a new agentic evaluation loop rather than aborting.
 func (l *passLedger) progressionDirective() string {
 	if l.hasList {
-		return "Progress has stalled — the step list has not advanced for several passes. Execute the single most concrete next step now, as an edit; review the conversation history above only as far as that step needs. If you are blocked, state the blocker explicitly.\n\n" +
-			l.list.Render() +
-			"\n\nMark steps complete with update_plan, or with [DONE:n] in your reply, as you finish them."
+		return "Progress has stalled — the step list has not advanced for several passes. Execute the single most concrete next step now, as an edit; review the conversation history above only as far as that step needs. If you are blocked, state the blocker explicitly."
 	}
 	return "Progress has stalled and no step list is tracked yet. Call update_plan with the steps you will execute, then carry out the first one as an edit in this pass. If you are blocked, state the blocker explicitly."
 }

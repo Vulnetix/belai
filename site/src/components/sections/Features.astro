@@ -46,6 +46,8 @@ import localModelShot from '../../assets/shots/local-model.svg';
       <p class="mt-4 text-vx-ink/80">
         Goal mode works on one named objective until it is done. Progress is tracked in a todo list
         built from the assistant's own text, and the loop continues while the objective moves forward.
+        Every pass checks progress against that list and asks the model to update it alongside the
+        tool calls that finish the next step.
         When the goal is met, the model writes a final report of what changed and how it was checked.
         A goal that stops early reports what is left. An approved plan runs the same way and ends on
         the same report.
