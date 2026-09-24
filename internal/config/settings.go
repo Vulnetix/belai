@@ -188,6 +188,12 @@ type ClassifierSettings struct {
 	Model string `json:"model,omitempty"`
 	// Effort is the classifier's reasoning effort; empty means "none".
 	Effort string `json:"effort,omitempty"`
+	// Tier picks which model answers the security guard when Provider and
+	// Model are unset: "main" (default) keeps the main model, "fast" moves it
+	// to the fast-tier model. A smaller guard is less robust against prompt
+	// injection, so fast is an explicit opt-in. Classification still runs on
+	// every required kind; only the answering model changes.
+	Tier string `json:"tier,omitempty"`
 	// Caveman, when non-nil and true, applies the caveman voice to the
 	// classifier's prose payloads only — the compaction summary, the session
 	// name, and the agent-profile designer. Sentinel payloads are never
@@ -244,6 +250,9 @@ func (c *ClassifierSettings) merge(from *ClassifierSettings) {
 	if from.Effort != "" {
 		c.Effort = from.Effort
 	}
+	if from.Tier != "" {
+		c.Tier = from.Tier
+	}
 	if from.Caveman != nil {
 		c.Caveman = from.Caveman
 	}
@@ -278,7 +287,7 @@ func (c *ClassifierSettings) IsZero() bool {
 	if c == nil {
 		return true
 	}
-	return c.Kind == "" && c.Provider == "" && c.Model == "" && c.Effort == "" &&
+	return c.Kind == "" && c.Provider == "" && c.Model == "" && c.Effort == "" && c.Tier == "" &&
 		c.Caveman == nil &&
 		c.Chunk.MaxBytes == 0 && c.Chunk.Concurrency == 0 &&
 		c.Phase1.IsZero() && c.Phase2.IsZero()
@@ -441,6 +450,10 @@ type ResilienceSettings struct {
 const (
 	RoutingDefined = "defined"
 	RoutingRouted  = "routed"
+
+	// ClassifierTierMain and ClassifierTierFast are the classifier.tier values.
+	ClassifierTierMain = "main"
+	ClassifierTierFast = "fast"
 )
 
 // RoutingTarget is one provider/model pair a routed use case may resolve to.
@@ -461,6 +474,12 @@ type RoutingSettings struct {
 	// "goal_contract", "clarify", "compaction", "session_name". Only
 	// consulted when Kind == "routed".
 	UseCases map[string]RoutingTarget `json:"use_cases,omitempty"`
+	// Fast is the fast-tier model: the provider/model that answers the
+	// one-token sentinel roles (mode select, session name, goal and plan
+	// evaluator verdicts) when no routing candidate does. Unset fields fall
+	// back to the main provider and that provider's registry fast model. It
+	// may name a different provider than the main model.
+	Fast *RoutingTarget `json:"fast_model,omitempty"`
 }
 
 // merge folds from over r, taking any non-zero field from from. UseCases merge
@@ -472,6 +491,10 @@ func (r *RoutingSettings) merge(from *RoutingSettings) {
 	}
 	if from.Kind != "" {
 		r.Kind = from.Kind
+	}
+	if from.Fast != nil {
+		f := *from.Fast
+		r.Fast = &f
 	}
 	if from.UseCases != nil {
 		if r.UseCases == nil {
@@ -485,7 +508,7 @@ func (r *RoutingSettings) merge(from *RoutingSettings) {
 
 // IsZero reports whether the routing settings carry no overrides.
 func (r *RoutingSettings) IsZero() bool {
-	return r == nil || (r.Kind == "" && len(r.UseCases) == 0)
+	return r == nil || (r.Kind == "" && len(r.UseCases) == 0 && r.Fast == nil)
 }
 
 // MaxAttemptsOr returns MaxAttempts or the provided default.

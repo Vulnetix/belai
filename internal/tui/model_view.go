@@ -30,6 +30,9 @@ const (
 	roleAgent      modelRole = "agent"
 	roleClassifier modelRole = "classifier"
 	roleRouting    modelRole = "routing"
+	// roleFast edits routing.fast_model: the fast tier that answers the
+	// one-token sentinel roles.
+	roleFast modelRole = "fast"
 )
 
 // modelViewState tracks the /model role screen.
@@ -392,6 +395,8 @@ func (a *App) modelRows() []modelRow {
 		value: a.modelState.agentScope,
 	}})
 
+	rows = append(rows, a.fastRows()...)
+
 	// Classifier role.
 	cls := a.settings.Classifier
 	src := sourceLabel(origin["classifier"])
@@ -452,6 +457,7 @@ func (a *App) modelRows() []modelRow {
 		opts: a.classifierEffortOpts(), value: effortVal, src: src,
 		disabled: !on,
 	}})
+	rows = append(rows, modelRow{roleClassifier, a.classifierTierRow()})
 	rows = append(rows, modelRow{roleClassifier, settingsRow{
 		key: "chunk", label: "chunk", kind: "text",
 		value: chunkVal, src: src,
@@ -579,19 +585,25 @@ func (a *App) modelGroupHeader(role modelRole) string {
 		if scope == "" {
 			scope = "project"
 		}
-	case roleRouting:
+	case roleRouting, roleFast:
 		scope = a.modelState.routingScope
 		if scope == "" {
 			scope = "project"
 		}
 	}
 	name := strings.ToUpper(string(role))
+	if role == roleFast {
+		name = "FAST TIER"
+	}
 	b := strings.Builder{}
 	b.WriteString(name)
 	b.WriteString("   ")
 	b.WriteString(components.Chip(scope, components.ColorTealSoft))
 	b.WriteString("  ")
 	b.WriteString(components.MutedStyle.Render(a.scopeTarget(scope)))
+	if blurb := modelRoleBlurb(role); blurb != "" {
+		b.WriteString("\n" + components.MutedStyle.Render(blurb))
+	}
 	if role == roleClassifier {
 		b.WriteString("\n")
 		b.WriteString(components.WarnStyle.Render(
@@ -607,6 +619,9 @@ func (a *App) modelView() string {
 
 	var b strings.Builder
 	b.WriteString(components.SectionHeader("Model Roles", "esc back", w))
+	if !a.modelState.picking {
+		b.WriteString("\n" + a.modelSummary())
+	}
 
 	if a.modelState.picking {
 		b.WriteString("\n")
@@ -707,6 +722,8 @@ func (a *App) modelPickerCatalog() (string, []models.Model) {
 				name = providers[0]
 			}
 		}
+	case roleFast:
+		name = a.fastProvider()
 	case roleClassifier:
 		name = a.classifierProvider()
 	case roleRouting:
@@ -729,7 +746,7 @@ func (a *App) modelPickerCatalog() (string, []models.Model) {
 	// Routed use cases are chat activities, so the routing picker never offers
 	// Jev Decisions models (which cannot chat). Stored Jev routing targets
 	// still load, but resolve to the main model at runtime.
-	if a.modelState.pickingRole == roleRouting {
+	if a.modelState.pickingRole == roleRouting || a.modelState.pickingRole == roleFast {
 		catalog = filterOutDecisionsModels(name, catalog)
 	}
 	return name, filterModels(catalog, a.modelState.filter)
@@ -896,6 +913,8 @@ func (a *App) handleModelPickerKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch a.modelState.pickingRole {
 		case roleAgent:
 			return a, a.mutateAgent(func(s *config.Settings) { s.Model = id }, func() { a.cfg.Model = id })
+		case roleFast:
+			return a, a.setFastModel(id)
 		case roleClassifier:
 			return a, a.mutateClassifier(func(c *config.ClassifierSettings) { c.Model = id })
 		case roleRouting:
@@ -926,7 +945,7 @@ func (a *App) cycleScope() tea.Cmd {
 	case roleClassifier:
 		opts = classifierScopeOptions
 		cur = a.modelState.classifierScope
-	case roleRouting:
+	case roleRouting, roleFast:
 		opts = classifierScopeOptions
 		cur = a.modelState.routingScope
 	}
@@ -936,7 +955,7 @@ func (a *App) cycleScope() tea.Cmd {
 		a.modelState.agentScope = next
 	case roleClassifier:
 		a.modelState.classifierScope = next
-	case roleRouting:
+	case roleRouting, roleFast:
 		a.modelState.routingScope = next
 	}
 	return nil
@@ -946,6 +965,18 @@ func (a *App) changeModelRow() tea.Cmd {
 	row := safeRow(a.modelState.rows, a.modelState.selected)
 	if row.disabled {
 		return nil
+	}
+	if row.role == roleFast {
+		switch row.key {
+		case "provider":
+			return a.cycleFastProvider(row.opts)
+		case "model":
+			return a.openFastModelPicker()
+		}
+		return nil
+	}
+	if row.key == "tier" {
+		return a.cycleClassifierTier(row.opts)
 	}
 	switch row.key {
 	case "kind":
@@ -1035,6 +1066,8 @@ func (a *App) unsetModelRow() tea.Cmd {
 		case "firewall":
 			return a.clearFirewall()
 		}
+	case roleFast:
+		return a.unsetFastRow(row.key)
 	case roleClassifier:
 		return a.unsetClassifierRow(row.key)
 	case roleRouting:
@@ -1674,6 +1707,8 @@ func (a *App) unsetClassifierRow(key string) tea.Cmd {
 			c.Model = ""
 		case "reasoning", "effort":
 			c.Effort = ""
+		case "tier":
+			c.Tier = ""
 		}
 	})
 }

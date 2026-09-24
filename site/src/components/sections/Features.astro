@@ -310,9 +310,13 @@ import localModelShot from '../../assets/shots/local-model.svg';
         engines combine.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        Other Role Manager tasks (mode selection, the goal contract, clarifying questions, plan and goal
-        evaluation, and compaction) use the main provider and model, or a per-task model if you set up
-        routing.
+        One-word verdicts (mode selection, the session name, and the plan and goal evaluators) go to a
+        small fast-tier model, such as <code class="mono">claude-haiku-4-5</code> for Anthropic or{' '}
+        <code class="mono">gpt-5-mini</code> for OpenAI, which can be from a different provider. Work that
+        shapes the result (compaction, the goal contract, clarifying questions and the final report) stays
+        on your main model. The security classifier also stays on the main model unless you set{' '}
+        <code class="mono">classifier.tier</code> to <code class="mono">fast</code>. <code class="mono">/model</code>{' '}
+        opens with a summary of which model answers what. Routing can still set a model per task.
       </p>
     </div>
     <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={credRes} /></div>

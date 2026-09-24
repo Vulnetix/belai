@@ -11,8 +11,23 @@ import (
 // whole resolve, exactly like an invalid provider profile: a half-applied
 // routing table would silently send role-manager traffic to the wrong model.
 func ValidateRouting(s Settings) error {
+	if c := s.Classifier; c != nil {
+		switch c.Tier {
+		case "", ClassifierTierMain, ClassifierTierFast:
+		default:
+			return fmt.Errorf("classifier.tier %q is invalid (want %q or %q)", c.Tier, ClassifierTierMain, ClassifierTierFast)
+		}
+	}
 	if s.Routing == nil {
 		return nil
+	}
+	if f := s.Routing.Fast; f != nil {
+		if f.Provider == "" && f.Model == "" {
+			return fmt.Errorf("routing.fast_model must set provider and/or model")
+		}
+		if f.Provider != "" && !provider.Builtin(f.Provider) && !provider.ValidCustomName(f.Provider) {
+			return fmt.Errorf("routing.fast_model: invalid provider %q", f.Provider)
+		}
 	}
 	switch s.Routing.Kind {
 	case "", RoutingDefined, RoutingRouted:

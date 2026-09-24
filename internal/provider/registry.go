@@ -116,9 +116,14 @@ type Descriptor struct {
 	MaxCompletionTokens bool
 
 	DefaultModel string
-	Models       []ModelSpec // static fallback catalogue
-	ListPath     string      // "" = no live fetch; "/models" for most
-	Local        bool        // probe with localinfer.ProbeRunning
+	// FastModel is the provider's fast tier: a small, cheap model that
+	// answers the one-token sentinel roles when routing.fast_model is unset.
+	// Empty means the provider has no fast tier and those roles stay on the
+	// main model.
+	FastModel string
+	Models    []ModelSpec // static fallback catalogue
+	ListPath  string      // "" = no live fetch; "/models" for most
+	Local     bool        // probe with localinfer.ProbeRunning
 }
 
 var registry = map[string]Descriptor{
@@ -131,6 +136,7 @@ var registry = map[string]Descriptor{
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
 		Effort: true, Usage: true, MaxCompletionTokens: true,
 		DefaultModel: "gpt-5",
+		FastModel:    "gpt-5-mini",
 		Models: []ModelSpec{
 			{ID: "gpt-5", Label: "GPT-5", MaxOutput: 128000},
 			{ID: "gpt-5-mini", Label: "GPT-5 Mini", MaxOutput: 128000},
@@ -148,6 +154,7 @@ var registry = map[string]Descriptor{
 		Thinking:     true,
 		PromptCache:  true,
 		DefaultModel: "claude-opus-4-5",
+		FastModel:    "claude-haiku-4-5",
 		Models: []ModelSpec{
 			{ID: "claude-opus-5-5", Label: "Claude Opus 5.5", MaxOutput: 128000, Thinking: ThinkingAlways},
 			{ID: "claude-fable-5-1", Label: "Claude Fable 5.1", MaxOutput: 128000, Thinking: ThinkingAlways},
@@ -223,6 +230,7 @@ var registry = map[string]Descriptor{
 		BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai", NetrcHost: "generativelanguage.googleapis.com",
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
 		DefaultModel: "gemini-2.5-flash",
+		FastModel:    "gemini-2.0-flash",
 		Models: []ModelSpec{
 			{ID: "gemini-2.5-flash", Label: "Gemini 2.5 Flash", MaxOutput: 65536},
 			{ID: "gemini-2.5-pro", Label: "Gemini 2.5 Pro", MaxOutput: 65536},
@@ -272,6 +280,7 @@ var registry = map[string]Descriptor{
 		// token accounting read 0 for every pass.
 		Usage:        true,
 		DefaultModel: "llama-3.3-70b-versatile",
+		FastModel:    "llama-3.1-8b-instant",
 		Models: []ModelSpec{
 			{ID: "llama-3.3-70b-versatile", Label: "Llama 3.3 70B"},
 			{ID: "llama-3.1-8b-instant", Label: "Llama 3.1 8B"},
@@ -323,6 +332,7 @@ var registry = map[string]Descriptor{
 		BaseURL: "https://api.mistral.ai/v1", NetrcHost: "api.mistral.ai",
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
 		DefaultModel: "mistral-large-latest",
+		FastModel:    "mistral-small-latest",
 		Models: []ModelSpec{
 			{ID: "mistral-large-latest", Label: "Mistral Large"},
 			{ID: "mistral-small-latest", Label: "Mistral Small"},
@@ -360,6 +370,7 @@ var registry = map[string]Descriptor{
 		Usage:        true,
 		Effort:       true,
 		DefaultModel: "grok-3-latest",
+		FastModel:    "grok-3-mini-latest",
 		Models: []ModelSpec{
 			{ID: "grok-3-latest", Label: "Grok 3"},
 			{ID: "grok-3-mini-latest", Label: "Grok 3 Mini"},

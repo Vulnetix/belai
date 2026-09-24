@@ -30,17 +30,17 @@ func TestModelRowsReflectSettings(t *testing.T) {
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
 	_ = a.enterModel()
 	rows := a.modelRows()
-	if len(rows) != 27 {
-		t.Fatalf("len(rows) = %d, want 27", len(rows))
+	if len(rows) != 30 {
+		t.Fatalf("len(rows) = %d, want 30", len(rows))
 	}
 	if rows[0].role != roleAgent || rows[0].key != "provider" {
 		t.Fatalf("first row = %+v, want agent provider", rows[0])
 	}
-	if rows[9].role != roleClassifier || rows[9].key != "kind" {
-		t.Fatalf("classifier kind row = %+v", rows[9])
+	if rows[11].role != roleClassifier || rows[11].key != "kind" {
+		t.Fatalf("classifier kind row = %+v", rows[11])
 	}
-	if rows[16].role != roleRouting || rows[16].key != "kind" {
-		t.Fatalf("routing kind row = %+v", rows[16])
+	if rows[19].role != roleRouting || rows[19].key != "kind" {
+		t.Fatalf("routing kind row = %+v", rows[19])
 	}
 }
 
@@ -106,9 +106,9 @@ func TestModelClassifierReasoningToggleDrivesEffort(t *testing.T) {
 	}
 	_ = a.enterModel()
 
-	// Selected row must be the reasoning toggle (index 11).
+	// Selected row must be the classifier reasoning toggle.
 	a.modelState.rows = a.modelRows()
-	a.modelState.selected = 12
+	a.modelState.selected = 14
 	a.modelState.classifierScope = "project"
 	_ = a.changeModelRow()
 	if a.settings.Classifier.Effort != "none" {
@@ -141,7 +141,7 @@ func TestModelViewGroupsRolesWithPerRoleBadges(t *testing.T) {
 	}
 
 	// Select a classifier row and render again.
-	a.modelState.selected = 9
+	a.modelState.selected = 11
 	viewClassifier := a.modelView()
 	if !strings.Contains(viewClassifier, "CLASSIFIER") {
 		t.Fatal("expected CLASSIFIER group header")
@@ -249,7 +249,7 @@ func TestModelScopeKeyCyclesRoleScopeNotRowOptions(t *testing.T) {
 	}
 
 	// Same for the classifier provider row.
-	a.modelState.selected = 10
+	a.modelState.selected = 12
 	a.modelState.classifierScope = "project"
 	_ = a.cycleScope()
 	if a.modelState.classifierScope != "global" {
