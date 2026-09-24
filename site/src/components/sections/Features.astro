@@ -154,16 +154,18 @@ import localModelShot from '../../assets/shots/local-model.svg';
   </div>
 </SealedSection>
 
-<SealedSection label="agents" sealText="Agents: full tool access is the default for the main session and for background agents; read-only is the deliberate exception, applied to the f8 fan-out roster, plan mode and the bounded recovery subagent. Background agents are named profiles under /agent with their own system prompt, mode, autonomy, provider and tool allowlist, and a fail-closed rule blocks a profile that stacks guardrails off, autonomous, and an unbounded loop." id="agents">
+<SealedSection label="agents" sealText="Agents: the main session and background agents get every tool, behind the permission rules and the guardrails switch. The f8 roster, plan mode and the recovery subagent are read-only. Background agents are saved profiles under /agent with their own system prompt, mode, autonomy, model and tool list. A profile with guardrails off, autonomous and a looping mode must also set max_iterations." id="agents">
   <div class="prose-measure">
     <h2 class="text-3xl font-bold text-vx-ink">Agents.</h2>
     <p class="mt-4 text-vx-ink/80">
-      The default is full tool access. The main session and background agents both get the whole
-      catalogue&mdash;<code class="mono">Bash</code>, <code class="mono">Read</code>,{' '}
-      <code class="mono">Write</code>, <code class="mono">Edit</code>, the native read-only utilities,{' '}
-      <code class="mono">GH</code>/<code class="mono">Glab</code>&mdash;gated by permission rules and the
-      guardrails switch, not by a fixed ceiling. Read-only is the exception, and it is only ever applied
-      on purpose, in three specific places.
+      The main session and background agents get every tool: <code class="mono">Bash</code>,{' '}
+      <code class="mono">Read</code>, <code class="mono">Write</code>, <code class="mono">Edit</code>, the
+      native read-only utilities, and <code class="mono">GH</code> and <code class="mono">Glab</code>. The
+      permission rules and the guardrails switch decide what each call may do.
+    </p>
+    <p class="mt-4 text-vx-ink/80">
+      Three kinds of agent are read-only: the f8 roster, plan mode, and the recovery subagent that
+      restarts a crashed process.
     </p>
   </div>
 
@@ -188,45 +190,42 @@ import localModelShot from '../../assets/shots/local-model.svg';
   <div class="mt-12 prose-measure">
     <h3 class="text-xl font-bold text-vx-ink">Background agents.</h3>
     <p class="mt-4 text-vx-ink/80">
-      <code class="mono">/agent</code> picks a saved agent profile or opens the editor to build one.
-      A profile is a named, reusable definition&mdash;its own system prompt, its own provider, model
-      and effort, its own guardrails switch&mdash;that runs unattended in the background while you keep
-      working in the session.
+      <code class="mono">/agent</code> opens the list of saved agent profiles, where you can edit one,
+      start it, or make a new one. A profile has its own system prompt, provider, model, effort and
+      guardrails setting. A started profile runs in the background while you keep working in the session.
     </p>
     <p class="mt-4 text-vx-ink/80">
-      Leave a profile's tool list unset and it inherits the full registry, same as the main session. Name
-      tools instead and the profile is narrowed to exactly those, chosen from a conservative allowlist the
-      profile editor itself offers&mdash;<code class="mono">Bash</code> and <code class="mono">Write</code>{' '}
-      included, because scoping down is a choice the profile author makes, not a limit the platform
-      imposes. The built-in <code class="mono">signet:triage-vulns</code> profile is the pattern: it keeps{' '}
+      A profile with no tool list gets every tool. A profile that lists tools gets only those. The list is
+      chosen from a fixed set in the profile editor, which includes <code class="mono">Bash</code> and{' '}
+      <code class="mono">Write</code>. The built-in <code class="mono">signet:triage-vulns</code> profile lists{' '}
       <code class="mono">Read</code>, <code class="mono">Grep</code>, <code class="mono">Glob</code> and{' '}
-      <code class="mono">Bash</code>, drops <code class="mono">Write</code> and <code class="mono">Edit</code>,
-      and says why in its own system prompt&mdash;"triage proposes, it does not patch."
+      <code class="mono">Bash</code>. It leaves out <code class="mono">Write</code> and{' '}
+      <code class="mono">Edit</code> because it only proposes fixes.
     </p>
     <div class="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       <div class="rounded-lg border border-vx-ink/30 p-4">
-        <h3 class="font-semibold text-vx-ink">Four modes</h3>
-        <p class="mt-2 text-sm text-vx-ink/80">Single for one run, loop for repeated turns, scheduled on an interval, or monitor, which only fires a turn once a stated condition is true.</p>
+        <h3 class="font-semibold text-vx-ink">Modes</h3>
+        <p class="mt-2 text-sm text-vx-ink/80">Single runs once. Loop repeats. Scheduled runs on an interval. Monitor checks a condition on an interval and runs when it is true.</p>
       </div>
       <div class="rounded-lg border border-vx-ink/30 p-4">
         <h3 class="font-semibold text-vx-ink">Supervised or autonomous</h3>
-        <p class="mt-2 text-sm text-vx-ink/80">Autonomy is set per profile. Autonomous still runs under whatever permission and guardrails rules apply.</p>
+        <p class="mt-2 text-sm text-vx-ink/80">Each profile sets its autonomy. An autonomous agent still follows the permission rules and guardrails.</p>
       </div>
       <div class="rounded-lg border border-vx-ink/30 p-4">
-        <h3 class="font-semibold text-vx-ink">Fail-closed by construction</h3>
-        <p class="mt-2 text-sm text-vx-ink/80">A profile that stacks guardrails off, autonomy: autonomous and a looping mode is rejected unless it also sets max_iterations. Three relaxations at once is one too many.</p>
+        <h3 class="font-semibold text-vx-ink">Iteration limit</h3>
+        <p class="mt-2 text-sm text-vx-ink/80">A profile with guardrails off, autonomy set to autonomous and a looping mode is refused unless it also sets max_iterations.</p>
       </div>
       <div class="rounded-lg border border-vx-ink/30 p-4">
-        <h3 class="font-semibold text-vx-ink">Own model, own guardrails</h3>
-        <p class="mt-2 text-sm text-vx-ink/80">Provider, model and effort can differ from the main session. Guardrails can be set per profile too, overriding the session default.</p>
+        <h3 class="font-semibold text-vx-ink">Model and guardrails</h3>
+        <p class="mt-2 text-sm text-vx-ink/80">A profile can use a different provider, model and effort from the main session. It can also turn guardrails on or off for itself.</p>
       </div>
       <div class="rounded-lg border border-vx-ink/30 p-4">
-        <h3 class="font-semibold text-vx-ink">Runs alongside you</h3>
-        <p class="mt-2 text-sm text-vx-ink/80">A background agent has its own lease and its own turn budget; it does not block or share state with the session you're typing in.</p>
+        <h3 class="font-semibold text-vx-ink">Runs beside the session</h3>
+        <p class="mt-2 text-sm text-vx-ink/80">Each background agent has its own slot in the agent pool and its own iteration count. It doesn't block the session you are typing in.</p>
       </div>
       <div class="rounded-lg border border-vx-ink/30 p-4">
-        <h3 class="font-semibold text-vx-ink">Bounded when it matters</h3>
-        <p class="mt-2 text-sm text-vx-ink/80">The same read-only surface backs the <a href="#processes" class="underline">recovery subagent</a> that restarts a crashed supervised process&mdash;plan tools plus exactly two more, never the binary.</p>
+        <h3 class="font-semibold text-vx-ink">Recovery subagent</h3>
+        <p class="mt-2 text-sm text-vx-ink/80">The <a href="#processes" class="underline">recovery subagent</a> gets the read-only plan tools plus <code class="mono">SubAgentLog</code> and <code class="mono">ProcessRestart</code>. It can change a command's flags but not its binary.</p>
       </div>
     </div>
   </div>
