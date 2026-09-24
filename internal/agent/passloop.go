@@ -1060,11 +1060,12 @@ func (s *Session) compactBoundary(ctx context.Context, pipe *rolemanager.Pipelin
 		return nil, false
 	}
 	conv := transcript.Serialize(msgs, transcript.SerializeOptions{})
-	raw, err := pipe.Classifier.Classify(ctx, rolemanager.BuildCompactionPayload(conv, s.settings.ClassifierCavemanEnabled()))
+	cctx, served := rolemanager.TrackServedModel(ctx)
+	raw, err := pipe.Classifier.Classify(cctx, rolemanager.BuildCompactionPayload(conv, s.settings.ClassifierCavemanEnabled()))
 	if err != nil {
 		return nil, false
 	}
-	summary, err := rolemanager.ValidateSummary(raw)
+	summary, err := rolemanager.ValidateServedSummary(raw, served())
 	if err != nil {
 		return nil, false
 	}

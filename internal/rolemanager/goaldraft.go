@@ -97,29 +97,29 @@ func DraftGoalContract(ctx context.Context, c Classifier, in GoalDraftInput) (st
 	if strings.TrimSpace(in.Prompt) == "" {
 		return "", ErrGoalDraftUnusable
 	}
-	raw, err := c.Classify(ctx, BuildGoalDraftPayload(in))
+	raw, model, err := classifyServed(ctx, c, BuildGoalDraftPayload(in))
 	if err != nil {
 		verdict := "error"
 		if errors.Is(err, context.DeadlineExceeded) {
 			verdict = "timeout"
 		}
-		record(EventGoalDraft, verdict, "", "", 0)
+		recordModel(EventGoalDraft, verdict, "", "", 0, model)
 		return "", fmt.Errorf("goal contract draft: %w", err)
 	}
 	draft := sanitize.Sanitize(raw)
 	draft = dropInventedCommands(draft, in.VerificationSurface)
 	if strings.TrimSpace(draft) == "" {
-		record(EventGoalDraft, "empty", "", "", 0)
+		recordModel(EventGoalDraft, "empty", "", "", 0, model)
 		return "", ErrGoalDraftUnusable
 	}
 	contract := "Objective:\n" + in.Prompt + "\n\n" + draft
 	if !strings.Contains(contract, in.Prompt) {
 		// Unreachable for a non-empty prompt; kept as the fail-closed guard
 		// the caller's fallback contract promises.
-		record(EventGoalDraft, "missing_objective", "", "", 0)
+		recordModel(EventGoalDraft, "missing_objective", "", "", 0, model)
 		return "", ErrGoalDraftUnusable
 	}
-	record(EventGoalDraft, "usable", "", fmt.Sprintf("chars=%d", len(contract)), 0)
+	recordModel(EventGoalDraft, "usable", "", fmt.Sprintf("chars=%d", len(contract)), 0, model)
 	return contract, nil
 }
 

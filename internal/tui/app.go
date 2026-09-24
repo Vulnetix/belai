@@ -5421,11 +5421,12 @@ func (a *App) nameSessionCmd(firstUserMessage string) tea.Cmd {
 	c := a.classifier
 	caveman := a.settings.ClassifierCavemanEnabled()
 	return func() tea.Msg {
-		raw, err := c.Classify(a.ctx, rolemanager.BuildSessionNamePayload(firstUserMessage, caveman))
+		ctx, served := rolemanager.TrackServedModel(a.ctx)
+		raw, err := c.Classify(ctx, rolemanager.BuildSessionNamePayload(firstUserMessage, caveman))
 		if err != nil {
 			return sessionNamedMsg{err: err}
 		}
-		name, err := rolemanager.ParseSessionName(raw)
+		name, err := rolemanager.ParseServedSessionName(raw, served())
 		return sessionNamedMsg{name: name, err: err}
 	}
 }
@@ -5595,11 +5596,12 @@ func (a *App) compactCmd() tea.Cmd {
 	c := a.classifier
 	caveman := a.settings.ClassifierCavemanEnabled()
 	return func() tea.Msg {
-		raw, err := c.Classify(a.ctx, rolemanager.BuildCompactionPayload(doc, caveman))
+		ctx, served := rolemanager.TrackServedModel(a.ctx)
+		raw, err := c.Classify(ctx, rolemanager.BuildCompactionPayload(doc, caveman))
 		if err != nil {
 			return compactDoneMsg{err: err}
 		}
-		s, err := rolemanager.ValidateSummary(raw)
+		s, err := rolemanager.ValidateServedSummary(raw, served())
 		return compactDoneMsg{summary: s, err: err}
 	}
 }

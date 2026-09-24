@@ -1330,6 +1330,7 @@ func classifierFromConfig(c Config, client *http.Client, onRetry func(resilience
 		if err != nil {
 			return "", err
 		}
+		rolemanager.NoteServedModel(ctx, c.Provider+"/"+c.Model)
 		text := a.Text
 		if p.AllowReasoningFallback && strings.TrimSpace(text) == "" {
 			text = a.Reasoning

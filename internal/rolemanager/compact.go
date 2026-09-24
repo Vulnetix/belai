@@ -46,10 +46,14 @@ var ErrIncompleteSummary = errors.New("compaction summary is incomplete")
 // ValidateSummary fails closed on a summary that is empty or that lacks the
 // required headings. It also sanitizes delimiter markup so tool output
 // embedded in the conversation cannot survive into the stored summary.
-func ValidateSummary(raw string) (string, error) {
+func ValidateSummary(raw string) (string, error) { return ValidateServedSummary(raw, "") }
+
+// ValidateServedSummary is ValidateSummary for a reply whose answering
+// provider/model is known (see TrackServedModel).
+func ValidateServedSummary(raw, model string) (string, error) {
 	s := strings.TrimSpace(raw)
 	if s == "" {
-		record(EventCompactionSummary, "invalid", "", "empty", 0)
+		recordModel(EventCompactionSummary, "invalid", "", "empty", 0, model)
 		return "", ErrIncompleteSummary
 	}
 	if !strings.Contains(s, "## Goal") ||
@@ -57,7 +61,7 @@ func ValidateSummary(raw string) (string, error) {
 		!strings.Contains(s, "## Critical Context") {
 		return "", ErrIncompleteSummary
 	}
-	record(EventCompactionSummary, "valid", "", "", 0)
+	recordModel(EventCompactionSummary, "valid", "", "", 0, model)
 	return sanitize.Sanitize(s), nil
 }
 

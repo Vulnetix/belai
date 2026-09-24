@@ -26,13 +26,18 @@ func BuildSessionNamePayload(firstUserMessage string, caveman bool) ClassifierPa
 // ParseSessionName validates a model-produced name and fails closed: a
 // malformed reply leaves the session unnamed rather than taking a mangled or
 // attacker-chosen title.
-func ParseSessionName(raw string) (string, error) {
+func ParseSessionName(raw string) (string, error) { return ParseServedSessionName(raw, "") }
+
+// ParseServedSessionName is ParseSessionName for a reply whose answering
+// provider/model is known (see TrackServedModel), so the activity names the
+// model that wrote the title rather than the agent model.
+func ParseServedSessionName(raw, model string) (string, error) {
 	s, err := sanitizeName(raw, true)
 	if err != nil {
-		record(EventSessionName, "invalid", "", "", 0)
+		recordModel(EventSessionName, "invalid", "", "", 0, model)
 		return "", err
 	}
-	record(EventSessionName, "valid", "", "", 0)
+	recordModel(EventSessionName, "valid", "", "", 0, model)
 	return s, nil
 }
 

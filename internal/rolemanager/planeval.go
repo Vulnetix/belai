@@ -138,17 +138,17 @@ func EvaluatePlan(ctx context.Context, c Classifier, in PlanEvalInput) (PlanSent
 // optional and never affects the verdict.
 func EvaluatePlanVerdict(ctx context.Context, c Classifier, in PlanEvalInput) (PlanVerdict, error) {
 	start := time.Now()
-	raw, err := c.Classify(ctx, BuildPlanEvalPayload(in))
+	raw, model, err := classifyServed(ctx, c, BuildPlanEvalPayload(in))
 	took := time.Since(start)
 	if err != nil {
 		return PlanVerdict{}, err
 	}
 	s, err := ParsePlanSentinel(raw)
 	if err != nil {
-		recordTimed(EventPlanEval, string(PlanPartial), "", "malformed: "+traceSnippet(raw), 0, "", took)
+		recordTimed(EventPlanEval, string(PlanPartial), "", "malformed: "+traceSnippet(raw), 0, model, took)
 		return PlanVerdict{Sentinel: PlanPartial}, ErrMalformedPlanEval
 	}
-	recordTimed(EventPlanEval, string(s), "", "", 0, "", took)
+	recordTimed(EventPlanEval, string(s), "", "", 0, model, took)
 	v := PlanVerdict{Sentinel: s}
 	if s != PlanComplete {
 		v.Reason = ParsePlanReason(raw)

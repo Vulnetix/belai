@@ -155,19 +155,19 @@ var ErrMalformedGoalEval = errors.New("malformed goal evaluator output")
 // usable does not go unnoticed.
 func EvaluateGoal(ctx context.Context, c Classifier, in GoalEvalInput) (GoalSentinel, error) {
 	start := time.Now()
-	raw, err := c.Classify(ctx, BuildGoalEvalPayload(in))
+	raw, model, err := classifyServed(ctx, c, BuildGoalEvalPayload(in))
 	took := time.Since(start)
 	if err != nil {
 		return "", err
 	}
 	s, parseErr := ParseGoalSentinel(raw)
 	if parseErr == nil {
-		recordTimed(EventGoalEval, string(s), "", "", 0, "", took)
+		recordTimed(EventGoalEval, string(s), "", "", 0, model, took)
 		return s, nil
 	}
-	recordTimed(EventGoalEval, string(GoalPartial), "", "malformed: "+traceSnippet(raw), 0, "", took)
+	recordTimed(EventGoalEval, string(GoalPartial), "", "malformed: "+traceSnippet(raw), 0, model, took)
 
-	repaired, err := c.Classify(ctx, BuildGoalEvalRepairPayload(in, raw))
+	repaired, model, err := classifyServed(ctx, c, BuildGoalEvalRepairPayload(in, raw))
 	if err != nil {
 		// The first reply was unusable and the repair round did not land. The
 		// verdict is unknown, so fail closed rather than reporting transport
@@ -176,9 +176,9 @@ func EvaluateGoal(ctx context.Context, c Classifier, in GoalEvalInput) (GoalSent
 	}
 	s, parseErr = ParseGoalSentinel(repaired)
 	if parseErr != nil {
-		record(EventGoalEvalRepair, string(GoalPartial), "", "malformed: "+traceSnippet(repaired), 0)
+		recordModel(EventGoalEvalRepair, string(GoalPartial), "", "malformed: "+traceSnippet(repaired), 0, model)
 		return GoalPartial, ErrMalformedGoalEval
 	}
-	record(EventGoalEvalRepair, string(s), "", "repaired", 0)
+	recordModel(EventGoalEvalRepair, string(s), "", "repaired", 0, model)
 	return s, nil
 }
