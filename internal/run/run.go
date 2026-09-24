@@ -1387,11 +1387,11 @@ func GuardConfig(cfg Config) Config {
 
 // NewRoleClassifier builds the classifier that serves the non-guardrail
 // role-manager activities (mode select, goal/plan eval, compaction, goal
-// contract, clarify, session name, agent eval). Precedence per use case:
-// under "routed", the Jev-selected candidate; then, for a fast use case (the
-// sentinel roles and the goal contract), the fast-tier model; then the main
-// config with reasoning off. The Jev path itself is unchanged — the fast tier
-// only replaces the main model as the fallback for fast use cases.
+// contract, clarify, session name, agent eval). A fast use case (the sentinel
+// roles and the goal contract) goes to the fast-tier model whenever one
+// exists, under "defined" and "routed" alike, and never reaches Jev. Every
+// other use case, and a fast one with no fast tier, takes the Jev-selected
+// candidate under "routed", else the main config with reasoning off.
 func NewRoleClassifier(cfg Config, client *http.Client, onRetry func(resilience.Attempt)) rolemanager.Classifier {
 	main := classifierFromConfig(mainClassifierConfig(cfg), client, onRetry)
 	var fast rolemanager.Classifier
@@ -1424,9 +1424,11 @@ func (t tieredClassifier) Classify(ctx context.Context, p rolemanager.Classifier
 
 // routedClassifier resolves a per-use-case classifier through Jev once, caches
 // it, and delegates every later call for that use case to the cached winner.
-// A transport error, an inconclusive verdict, or a winner missing from the
-// pool falls back to the fast tier for a fast use case, else to the
-// defined main classifier.
+// A fast use case never reaches Jev when a fast tier exists: it goes straight
+// to the fast tier, so a one-token verdict or a deadline-bound draft is never
+// handed to a slower pool model. A transport error, an inconclusive verdict,
+// or a winner missing from the pool falls back to the defined main
+// classifier.
 type routedClassifier struct {
 	main    rolemanager.Classifier
 	fast    rolemanager.Classifier // nil when there is no fast tier
@@ -1437,15 +1439,6 @@ type routedClassifier struct {
 
 	mu    sync.Mutex
 	cache map[string]rolemanager.Classifier
-}
-
-// fallback is the classifier a use case falls back to when Jev does not
-// settle it.
-func (r *routedClassifier) fallback(useCase string) rolemanager.Classifier {
-	if r.fast != nil && IsFastUseCase(useCase) {
-		return r.fast
-	}
-	return r.main
 }
 
 func newRoutedClassifier(cfg Config, client *http.Client, onRetry func(resilience.Attempt)) *routedClassifier {
@@ -1460,6 +1453,9 @@ func newRoutedClassifier(cfg Config, client *http.Client, onRetry func(resilienc
 }
 
 func (r *routedClassifier) Classify(ctx context.Context, p rolemanager.ClassifierPayload) (string, error) {
+	if r.fast != nil && IsFastUseCase(p.UseCase) {
+		return r.fast.Classify(ctx, p)
+	}
 	c := r.forUseCase(ctx, p.UseCase)
 	return c.Classify(ctx, p)
 }
@@ -1501,7 +1497,7 @@ func (r *routedClassifier) forUseCase(ctx context.Context, useCase string) rolem
 			status = &s
 		}
 		rolemanager.RecordRouteFallback(useCase, status, "openrouter/"+jev.DefaultModel, time.Since(start))
-		return r.cacheAndReturn(useCase, r.fallback(useCase))
+		return r.cacheAndReturn(useCase, r.main)
 	}
 	for _, pc := range r.pool {
 		if pc.Key == decision.Key {
@@ -1509,12 +1505,12 @@ func (r *routedClassifier) forUseCase(ctx context.Context, useCase string) rolem
 			// is a Jev model falls back to the main classifier rather than
 			// ever being asked to chat.
 			if jev.IsDecisionsModel(pc.Cfg.Provider, pc.Cfg.Model) {
-				return r.cacheAndReturn(useCase, r.fallback(useCase))
+				return r.cacheAndReturn(useCase, r.main)
 			}
 			return r.cacheAndReturn(useCase, classifierFromConfig(pc.Cfg, r.client, r.onRetry))
 		}
 	}
-	return r.cacheAndReturn(useCase, r.fallback(useCase))
+	return r.cacheAndReturn(useCase, r.main)
 }
 
 func (r *routedClassifier) cacheAndReturn(useCase string, c rolemanager.Classifier) rolemanager.Classifier {

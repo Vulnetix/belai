@@ -69,10 +69,10 @@ Business rules:
   role-manager activities (mode select, goal contract, clarify, plan eval,
   goal eval, compaction, session name, agent eval) run on the *role*
   classifier: the main provider/model under `routing.kind: "defined"` (the
-  default), or the Jev-routed winner under `routing.kind: "routed"` — except
-  that the one-token sentinel roles and the goal contract default to the fast
-  tier (see
-  [Fast tier](#fast-tier)). The
+  default), or the Jev-routed winner under `routing.kind: "routed"`. The
+  exception is the one-token sentinel roles and the goal contract: they go to
+  the fast tier whenever one exists, and under `routed` they never reach Jev
+  (see [Fast tier](#fast-tier)). The
   security *guardrail* runs separately: `rolemanager.Pipeline.Security` is the
   ML stack on the `models` path, or the full five-token LLM sentinel (built
   from `classifier.provider`/`classifier.model`) on the `llm` path.
@@ -263,10 +263,15 @@ Business rules and edge cases:
   it timed out every time and the goal ran on the raw prompt. Compaction,
   clarify and the final report stay on the main model: their output shapes
   the agent's later work.
-- **Precedence per use case:** a Jev-routed candidate when `routing.kind` is
-  `routed`; then the fast tier for a fast use case; then the main model.
-  The Jev path is unchanged — the fast tier only replaces the main model as
-  the fallback for fast use cases.
+- **Precedence per use case:** a fast use case goes to the fast tier whenever
+  one exists, under `defined` and `routed` alike. Under `routed` it skips Jev
+  entirely: no Decisions call, no `route_fallback`, and no pool candidate,
+  even one keyed with the use case's name. A one-token verdict or a draft with
+  a deadline is never handed to a slower pool model. Every other use case,
+  and a fast one when there is no fast tier, takes the Jev-routed candidate
+  under `routed`. If Jev does not settle it (a failed call, an inconclusive
+  reply, a winner outside the pool, or a Jev Decisions model as the winner),
+  it falls back to the main model. Under `defined` it uses the main model.
 - **The security guard stays on the main model by default.** A smaller guard
   is less robust against prompt injection, and relaxation is an explicit
   opt-in, so `classifier.tier: "fast"` is required to move it
@@ -2739,8 +2744,9 @@ truncate-on-crash hole in the old JSON save. Directories are `0o755`; files
 ### Model roles
 
 `/model` is the role screen. It opens with an **IN EFFECT** summary —
-`work` (the agent model), `verdicts` (the fast tier, or Jev picking from the
-pool then the fast tier; the goal contract rides here too), `drafting` (the
+`work` (the agent model), `verdicts` (the fast tier, which serves the goal
+contract too, even under `routed`; only with no fast tier does it read "Jev
+picks from pool, else work model"), `drafting` (the
 agent model for compaction and clarify, or Jev picking from the pool when
 routing is live) and `security` (`run.GuardConfig`, or the local gates) —
 resolved from the live config. Below it are labelled groups for the

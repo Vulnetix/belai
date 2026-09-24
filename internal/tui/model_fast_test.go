@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/signet/internal/run"
 )
 
 func selectRow(t *testing.T, a *App, role modelRole, key string) {
@@ -97,5 +98,31 @@ func TestModelRoutingBlurbFollowsKind(t *testing.T) {
 	a.settings.Routing = &config.RoutingSettings{Kind: config.RoutingRouted}
 	if got := a.modelRoleBlurb(roleRouting); !strings.Contains(got, "Jev picks") {
 		t.Fatalf("routed blurb = %q", got)
+	}
+}
+
+// TestModelSummaryVerdictsUnderRouted pins the IN EFFECT verdicts line to the
+// dispatch rule: under routed, fast roles skip Jev for the fast tier whenever
+// one exists, and only without one does Jev pick for them.
+func TestModelSummaryVerdictsUnderRouted(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	a := newModelScreen(t, t.TempDir())
+	a.cfg.Routing = run.RoutingConfig{
+		Kind:       config.RoutingRouted,
+		Fast:       &run.Config{Provider: "openai", Model: "gpt-5-mini"},
+		Candidates: []run.RoutingCandidate{{Key: "main", Cfg: run.Config{Provider: "openai", Model: "gpt-5"}}},
+	}
+	sum := a.modelSummary(10, 120)
+	if !strings.Contains(sum, "openai/gpt-5-mini") || strings.Contains(sum, "Jev picks from pool, else openai") {
+		t.Fatalf("verdicts with a fast tier should name it alone:\n%s", sum)
+	}
+	if !strings.Contains(sum, "Jev picks from pool, else work model") {
+		t.Fatalf("drafting under routed should credit Jev:\n%s", sum)
+	}
+
+	a.cfg.Routing.Fast = nil
+	sum = a.modelSummary(10, 120)
+	if strings.Count(sum, "Jev picks from pool, else work model") != 2 {
+		t.Fatalf("with no fast tier, verdicts and drafting both go through Jev:\n%s", sum)
 	}
 }
