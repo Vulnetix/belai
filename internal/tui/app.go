@@ -539,6 +539,16 @@ type App struct {
 	subagentIdx  map[string]int
 	threadFilter string // "" == main (unfiltered)
 
+	// chatDraft holds the composer text while the screen switcher is open
+	// over chat, so jumping between screens never costs a draft.
+	chatDraft string
+	// screensSel is the highlighted row of the screen switcher.
+	screensSel int
+
+	// ledger is the live loop state and audit trail of every subagent and
+	// background agent; the footer pulse and /agents read it.
+	ledger agentLedger
+
 	// runs panel: unified activity + subagent panel rendered above the composer.
 	runsOpen   bool // panel visible
 	runsFocus  bool // panel owns the keyboard
@@ -1963,6 +1973,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case bgAgentEventMsg:
 		return a, a.handleBgAgentEvent(m)
 
+	case agentPulseMsg:
+		return a, a.handleAgentPulse()
+
 	case catalogTargetMsg:
 		return a, a.handleCatalogTarget(m)
 
@@ -2130,6 +2143,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, nil
 			}
 			return a, a.cycleEffort()
+		case "f1":
+			// The screen switcher: every full-screen view one letter away.
+			return a, a.toggleScreens()
 		case "f8":
 			// Open the runs panel on the subagents tab.
 			if a.view == viewChat {
@@ -2288,6 +2304,13 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		if a.pendingInput != "" {
 			a.pendingInput = ""
 			return a.submitInput(strings.TrimSpace(a.editor.Value()))
+		}
+		if a.threadFilter != "" {
+			// Following an agent's thread: esc returns to the main thread
+			// before it touches the main turn, which is out of view.
+			a.threadFilter = ""
+			a.follow = true
+			return nil
 		}
 		if a.preSend {
 			// Cancel the in-flight pre-send: mode classification is still
@@ -3154,11 +3177,12 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			done, total, ref := a.exploringSummary()
 			a.setPhaseExploring(done, total, ref)
 		}
-		return a.nextAgent()
+		return tea.Batch(a.nextAgent(), a.armAgentPulse())
 	case agent.EventSubagentActivityKind:
 		// One forwarded tool start/result from a subagent. Render-only; the
 		// row is tagged with the subagent's ID and never enters buildTurns.
 		if m.Err != nil {
+			a.noteAgentError(m.SubagentID, m.Err)
 			a.addSystem(fmt.Sprintf("[%s] error: %s", subagentGutterLabel(m.SubagentID), m.Err))
 			return a.nextAgent()
 		}
@@ -3170,12 +3194,14 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 					mm.SetContent(m.ToolResult)
 					mm.Status = toolResultStatus(m.ToolName, m.ToolResult)
 					a.messages[i] = mm
+					a.noteAgentResult(m.SubagentID, m.ToolName, m.ToolResult)
 					found = true
 					break
 				}
 			}
 		}
 		if !found {
+			a.noteAgentTool(m.SubagentID, m.ToolName, m.ToolArgs)
 			a.messages = append(a.messages, components.Message{
 				Role:       "tool",
 				SubagentID: m.SubagentID,
@@ -4357,11 +4383,18 @@ func (a *App) refreshFooter() {
 	a.footer.Hint = a.hoverHint()
 	// The subagent strip is now rendered inside the runs panel; the footer
 	// line stays passive so focus never appears in the footer.
-	for i := range a.subagents {
-		a.subagents[i].Focused = false
+	chips := make([]components.SubagentChip, len(a.subagents))
+	for i, c := range a.subagents {
+		c.Focused = false
+		if _, ok := a.lookupLive(c.ID); ok {
+			c.Glyph = a.pulseGlyph(c.State)
+			c.Detail = a.agentDetail(c.ID)
+		}
+		chips[i] = c
 	}
-	a.footer.Subagents = a.subagents
+	a.footer.Subagents = chips
 	a.footer.MainFocused = false
+	a.footer.Pulse = a.followedPulse()
 
 	est := a.contextEstimate()
 	a.footer.Tokens = est.Tokens
@@ -5348,35 +5381,10 @@ func (a *App) handleAgentBuilderDone(m agentBuilderDoneMsg) tea.Cmd {
 }
 
 // handleBgAgentEvent appends a background-agent event as a system line.
-func (a *App) handleBgAgentEvent(m bgAgentEventMsg) tea.Cmd {
-	name := m.AgentName
-	switch m.Kind {
-	case agent.EventErrorKind:
-		if m.Err != nil {
-			a.addSystem(fmt.Sprintf("[agent:%s] error: %s", name, m.Err.Error()))
-		}
-	case agent.EventTextKind:
-		a.addSystem(fmt.Sprintf("[agent:%s] %s", name, m.Text))
-	case agent.EventToolStartKind:
-		a.addSystem(fmt.Sprintf("[agent:%s] tool: %s", name, m.ToolName))
-	case agent.EventToolResultKind:
-		a.addSystem(fmt.Sprintf("[agent:%s] result: %s", name, m.ToolResult))
-	case agent.EventSubagentKind:
-		// Background agents share the roster through the same SubagentUpdate
-		// shape. It does not drive the explore phase indicator.
-		if m.Subagent != nil {
-			a.handleSubagentUpdate(*m.Subagent)
-		}
-	case agent.EventDoneKind:
-		a.addSystem(fmt.Sprintf("[agent:%s] done", name))
-	}
-	if inst, ok := a.bgManager.Lookup(name); ok && inst.State != bgagent.StateDone {
-		return a.watchAgentEvents(name)
-	}
-	return nil
-}
-
 func (a *App) watchAgentEvents(name string) tea.Cmd {
+	if a.bgManager == nil {
+		return nil
+	}
 	inst, ok := a.bgManager.Lookup(name)
 	if !ok {
 		return nil

@@ -34,6 +34,33 @@ type agentViewState struct {
 	origFile           string // file name the profile was loaded from
 	pendingEditProfile string
 	errorMsg           string
+
+	// tab is the hub tab on show; openTab, when set, is the tab the next
+	// entry lands on.
+	tab     int
+	openTab *int
+	// liveSel is the highlighted agent on the running tab.
+	liveSel int
+	// auditSel is the highlighted row on the audit tab, newest first, and
+	// auditFilter narrows the trail to one agent id.
+	auditSel    int
+	auditFilter string
+}
+
+// The /agents hub tabs.
+const (
+	agentTabLive = iota
+	agentTabProfiles
+	agentTabAudit
+	agentTabCount
+)
+
+var agentTabNames = [agentTabCount]string{"running", "profiles", "audit"}
+
+// openAgentsTab pushes the hub on one tab.
+func (a *App) openAgentsTab(tab int) tea.Cmd {
+	a.agentState.openTab = &tab
+	return a.push(viewAgent)
 }
 
 // agentField is one editable agent-profile property.
@@ -85,7 +112,14 @@ func (a *App) enterAgentView() tea.Cmd {
 	a.agentState.toolSel = 0
 	a.agentState.toolMarks = nil
 	a.agentState.errorMsg = ""
+	// A direct push lands on the profiles, the screen's original purpose.
+	a.agentState.tab = agentTabProfiles
+	if a.agentState.openTab != nil {
+		a.agentState.tab = *a.agentState.openTab
+		a.agentState.openTab = nil
+	}
 	if a.agentState.pendingEditProfile != "" {
+		a.agentState.tab = agentTabProfiles
 		for i, p := range a.agentState.profiles {
 			if p.Name == a.agentState.pendingEditProfile {
 				a.enterAgentEdit(i)
@@ -121,13 +155,21 @@ func (a *App) enterAgentEdit(i int) {
 func (a *App) agentView() string {
 	w := a.contentWidth()
 	var b strings.Builder
-	b.WriteString(components.SectionHeader("Background Agents", "esc back", w))
+	b.WriteString(components.SectionHeader("Agents", "f1 screens · esc back", w))
+	if !a.agentState.editMode {
+		b.WriteString(a.agentTabStrip(w) + "\n\n")
+	}
 	if a.agentState.errorMsg != "" {
 		b.WriteString(components.DangerStyle.Render("✗ "+a.agentState.errorMsg) + "\n\n")
 	}
-	if a.agentState.editMode {
+	switch {
+	case a.agentState.editMode:
 		b.WriteString(a.agentEditView(w))
-	} else {
+	case a.agentState.tab == agentTabLive:
+		b.WriteString(a.agentLiveView(w))
+	case a.agentState.tab == agentTabAudit:
+		b.WriteString(a.agentAuditView(w))
+	default:
 		b.WriteString(a.agentListView(w))
 	}
 	return lipgloss.NewStyle().Padding(1).Render(b.String())
@@ -184,7 +226,7 @@ func (a *App) agentListView(w int) string {
 			}
 		}
 	}
-	b.WriteString("\n" + components.HelpBar("up, down", "move", "enter, e", "edit", "n", "new", "d", "duplicate", "esc", "back") + "\n")
+	b.WriteString("\n" + components.HelpBar("↑↓", "move", "⏎/e", "edit", "s", "start", "n", "new", "d", "duplicate", "esc", "back") + "\n")
 	return b.String()
 }
 
@@ -488,9 +530,26 @@ func (a *App) handleAgentKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a.handleAgentEditKey(m)
 	}
 
+	if cmd, ok := a.handleAgentTabKey(m); ok {
+		return a, cmd
+	}
+	switch a.agentState.tab {
+	case agentTabLive:
+		return a, a.handleAgentLiveKey(m)
+	case agentTabAudit:
+		return a, a.handleAgentAuditKey(m)
+	}
+
 	switch m.String() {
 	case "esc":
 		a.pop()
+		return a, nil
+	case "s":
+		if p := a.selectedAgentProfile(); p != nil {
+			cmd := a.startAgentProfile(p.Name)
+			a.agentState.tab = agentTabLive
+			return a, cmd
+		}
 		return a, nil
 	case "up", "k":
 		if a.agentState.selected > 0 {

@@ -2186,7 +2186,7 @@ func TestFilteredViewHidesMainRows(t *testing.T) {
 	if len(msgs) != 2 {
 		t.Fatalf("filtered messages = %d, want banner + one subagent row", len(msgs))
 	}
-	if msgs[0].Role != "system" || !strings.Contains(msgs[0].Content, "filtered") {
+	if msgs[0].Role != "system" || !strings.Contains(msgs[0].Content, "following") {
 		t.Fatalf("first row must be the filter banner, got %+v", msgs[0])
 	}
 	if msgs[1].SubagentID != "e1" {

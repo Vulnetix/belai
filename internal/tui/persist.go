@@ -243,7 +243,7 @@ func (a *App) persistMessage(i int) {
 		}
 		a.appendEntry(session.Entry{Type: "reasoning", Role: "reasoning", Content: m.Text(), Meta: meta})
 	case "system":
-		a.appendEntry(session.Entry{Type: "system", Role: "system", Content: m.Text()})
+		a.appendEntry(session.Entry{Type: "system", Role: "system", Content: m.Text(), SubagentID: m.SubagentID})
 	case "rolemanager":
 		meta := map[string]any{
 			"summary": m.RM.Summary,
