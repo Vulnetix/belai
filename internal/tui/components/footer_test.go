@@ -357,6 +357,34 @@ func TestFooterEffortRendering(t *testing.T) {
 	})
 }
 
+func TestFooterRoutedLabel(t *testing.T) {
+	t.Run("routed replaces provider, model and effort", func(t *testing.T) {
+		f := Footer{Model: "gpt-5", Effort: "high", Provider: "openai", RoutedModels: 3, Mode: "agent", Width: 120}
+		v := f.View()
+		if !strings.Contains(v, "Smart model router · 3 models active") {
+			t.Fatalf("routed label missing: %q", v)
+		}
+		for _, gone := range []string{"openai", "gpt-5", "high"} {
+			if strings.Contains(v, gone) {
+				t.Fatalf("routed footer must not show %q: %q", gone, v)
+			}
+		}
+	})
+	t.Run("singular count", func(t *testing.T) {
+		f := Footer{Model: "gpt-5", Provider: "openai", RoutedModels: 1, Mode: "agent", Width: 120}
+		if v := f.View(); !strings.Contains(v, "1 model active") {
+			t.Fatalf("singular label missing: %q", v)
+		}
+	})
+	t.Run("zero keeps provider and model", func(t *testing.T) {
+		f := Footer{Model: "gpt-5", Provider: "openai", Mode: "agent", Width: 120}
+		v := f.View()
+		if strings.Contains(v, "Smart model router") || !strings.Contains(v, "openai") || !strings.Contains(v, "gpt-5") {
+			t.Fatalf("defined footer should show provider and model: %q", v)
+		}
+	})
+}
+
 func TestSubagentChipStates(t *testing.T) {
 	f := Footer{Width: 120, Subagents: []SubagentChip{
 		{ID: "e1", Label: "one", State: "queued"},

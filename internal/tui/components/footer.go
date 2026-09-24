@@ -24,6 +24,11 @@ type Footer struct {
 	Provider string
 	Mode     string
 
+	// RoutedModels, when > 0, reports that smart model routing is active over
+	// that many distinct models. The provider/model/effort segment is then
+	// replaced by the router label, because no single model serves the turn.
+	RoutedModels int
+
 	// Agent is the engaged agent profile, shown inside the mode chip. Empty
 	// means the default agent, which the mode name already says.
 	Agent  string
@@ -296,10 +301,18 @@ func chipColour(id, state string) lipgloss.TerminalColor {
 // so its column is width(left)+pad and its width is the plain segment width.
 func (f *Footer) line2Layout() (left string, pad int, right string, sessionCol, sessionWidth int, sessionOK bool) {
 	parts := []string{}
-	if f.Provider != "" {
+	switch {
+	case f.RoutedModels > 0:
+		noun := "models"
+		if f.RoutedModels == 1 {
+			noun = "model"
+		}
+		parts = append(parts, lipgloss.NewStyle().Foreground(ColorCream).Render("Smart model router")+
+			MutedStyle.Render(fmt.Sprintf(" · %d %s active", f.RoutedModels, noun)))
+	case f.Provider != "":
 		parts = append(parts, MutedStyle.Render(f.Provider))
 	}
-	if f.Model != "" {
+	if f.Model != "" && f.RoutedModels == 0 {
 		modelPart := lipgloss.NewStyle().Foreground(ColorCream).Render(f.Model)
 		effort := f.Effort
 		if effort == "" {
