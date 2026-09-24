@@ -193,6 +193,7 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 	for i := 0; i < s.maxIter; i++ {
 		updatePlan = nil
 		turns = append(turns, s.drainSteer(ctx, pipe, emit)...)
+		s.clearStaleToolResults(turns)
 		assistant, err := s.streamTurnRetry(ctx, system, turns, streaming, emit)
 		if err != nil {
 			return finish(passOutcome{text: text, lastText: lastText}), turns, err
@@ -222,10 +223,14 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 
 		// Append assistant turn containing its tool_calls. Use the filtered
 		// set so a PolicyStrip turn matches the tool turns that follow.
+		// Signed thinking rides on the turn so the next request of the tool
+		// loop can echo it back, as the provider requires.
 		turns = append(turns, run.Turn{
-			Role:      "assistant",
-			Content:   assistant.Text,
-			ToolCalls: filtered,
+			Role:          "assistant",
+			Content:       assistant.Text,
+			ToolCalls:     filtered,
+			Thinking:      assistant.Thinking,
+			ThinkingModel: run.ThinkingSource(s.cfg),
 		})
 
 		// Semantic repair: if the model ran out of tokens mid-tool-call, do

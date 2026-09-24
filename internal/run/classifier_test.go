@@ -23,8 +23,10 @@ func TestNewClassifierHonorsPayloadMaxTokens(t *testing.T) {
 	var mu sync.Mutex
 	var maxTokens []int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// OpenAI takes the cap as max_completion_tokens (its reasoning
+		// models reject max_tokens).
 		var body struct {
-			MaxTokens int `json:"max_tokens"`
+			MaxTokens int `json:"max_completion_tokens"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		mu.Lock()

@@ -291,6 +291,59 @@ and `llama-server` speaks a llama-server / llama.cpp OpenAI-compatible endpoint
 environment variable (`OLLAMA_HOST` and `SIGNET_LLAMA_HOST` respectively) or
 from individually-managed host, port, and protocol fields in `/providers`.
 
+### Request shape
+
+`run.newRequestFactory` builds every provider request. The rules below are
+what keeps a request both valid and cacheable.
+
+- **Completion cap.** A request that sets no `MaxTokens` (the main agent)
+  sends the model's ceiling from the catalogue (`ModelSpec.MaxOutput`),
+  bounded to 64000 when streaming and 16384 when blocking. A Claude id not in
+  any catalogue (a live-fetched or gateway-routed one) resolves by id rule
+  (`models.MaxOutput`): Opus 4/4.1 32000, Sonnet/Haiku/Opus 4.5 64000,
+  4.6+ and 5.x 64000–128000, 3.5 8192, older 3.x 4096. An unknown model on
+  the Anthropic surface keeps 4096. The OpenAI-style route sends a cap only
+  from a catalogue entry written for that exact provider (a relay may cap a
+  model lower than its vendor), and OpenAI itself takes it as
+  `max_completion_tokens` — its reasoning models reject `max_tokens`. Role
+  calls keep their own small caps. A cap below a large `Write` truncated the
+  arguments and cost a "re-issue with complete arguments" round trip.
+- **Thinking follows the model generation** (`ModelSpec.Thinking`,
+  `models.Thinking`), on the native Anthropic dialect only:
+  - *budget* (Haiku 4.5 and older): `{type:"enabled", budget_tokens}` from
+    the effort (1024 / 4096 / 16384), clamped to stay below `max_tokens`;
+    below the 1024 minimum, thinking is left off.
+  - *adaptive* (Opus/Sonnet 4.6+, Sonnet 5, Opus 5 before 5.5):
+    `{type:"adaptive"}` plus `output_config.effort`. `budget_tokens` is a 400
+    on these models. Effort `none` or unset leaves thinking off.
+  - *always* (Opus 5.5+, Fable): thinking cannot be disabled, so only
+    `output_config.effort` is sent. A role call's `none` asks for `low`, so a
+    one-token verdict does not spend its small cap on thinking.
+- **Signed thinking is replayed.** Thinking and redacted-thinking blocks are
+  captured with their signatures (streamed `thinking_delta` +
+  `signature_delta`, or the blocking response) and stored on the assistant
+  turn (`Turn.Thinking`, `Turn.ThinkingModel`) as opaque provider data —
+  model output, never sanitised into or promoted as a harness block. The next
+  request of the tool loop echoes them, unchanged, ahead of the turn's text
+  and `tool_use` blocks, as Anthropic requires. They are replayed only to the
+  provider/model that produced them and only while thinking is on; any other
+  model never sees them.
+- **No per-request elision.** Tool results are sent exactly as recorded.
+  The old sliding elision truncated every result older than three iterations
+  on every request, so the model lost the bytes it had read and no provider
+  could cache a history whose middle changed each time. Context is bounded by
+  compaction at 70% of the window and, before that, by a one-step clearing at
+  50%: every tool result but the newest ten is replaced in place with
+  `[result cleared — re-Read if needed]`. The replacement is written to the
+  conversation, so the prefix stays byte-stable between jumps, and a jump
+  needs at least ten new results since the last one.
+- **Cache breakpoints** (native Anthropic, `Descriptor.PromptCache`): the
+  system prompt is sent as a block array with `cache_control:
+  {type:"ephemeral"}`, and the last tool definition and the last content
+  block of the newest message carry one too — three of the four allowed
+  breakpoints. The shared tool slice is copied, never marked in place. A
+  gateway or custom Anthropic-shaped server gets no `cache_control`.
+
 ### Outbound identification and trace headers
 
 Every outbound HTTP request Signet makes identifies itself with one

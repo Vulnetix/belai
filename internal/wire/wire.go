@@ -98,15 +98,18 @@ func (m OpenAIChatMessage) MarshalJSON() ([]byte, error) {
 
 // OpenAIChatRequest is the body of a chat/completions call.
 type OpenAIChatRequest struct {
-	Model           string               `json:"model"`
-	Messages        []OpenAIChatMessage  `json:"messages"`
-	Stream          bool                 `json:"stream,omitempty"`
-	Temperature     *float64             `json:"temperature,omitempty"`
-	MaxTokens       int                  `json:"max_tokens,omitempty"`
-	Tools           []OpenAITool         `json:"tools,omitempty"`
-	ToolChoice      string               `json:"tool_choice,omitempty"`
-	ReasoningEffort string               `json:"reasoning_effort,omitempty"`
-	StreamOptions   *OpenAIStreamOptions `json:"stream_options,omitempty"`
+	Model       string              `json:"model"`
+	Messages    []OpenAIChatMessage `json:"messages"`
+	Stream      bool                `json:"stream,omitempty"`
+	Temperature *float64            `json:"temperature,omitempty"`
+	MaxTokens   int                 `json:"max_tokens,omitempty"`
+	// MaxCompletionTokens is OpenAI's name for the completion cap on reasoning
+	// models, which reject max_tokens. Set one or the other, never both.
+	MaxCompletionTokens int                  `json:"max_completion_tokens,omitempty"`
+	Tools               []OpenAITool         `json:"tools,omitempty"`
+	ToolChoice          string               `json:"tool_choice,omitempty"`
+	ReasoningEffort     string               `json:"reasoning_effort,omitempty"`
+	StreamOptions       *OpenAIStreamOptions `json:"stream_options,omitempty"`
 }
 
 // OpenAIStreamOptions requests usage accounting on a streamed response.
@@ -229,31 +232,64 @@ func NewAnthropicBlockMessage(role string, blocks []AnthropicRequestBlock) Anthr
 }
 
 // AnthropicMessagesRequest is the body of a messages call.
+//
+// System is either a plain string or a []AnthropicSystemBlock; the block form
+// is what carries a cache_control breakpoint.
 type AnthropicMessagesRequest struct {
-	Model      string             `json:"model"`
-	MaxTokens  int                `json:"max_tokens"`
-	System     string             `json:"system,omitempty"`
-	Messages   []AnthropicMessage `json:"messages"`
-	Stream     bool               `json:"stream,omitempty"`
-	Tools      []AnthropicToolDef `json:"tools,omitempty"`
-	ToolChoice string             `json:"tool_choice,omitempty"`
-	Thinking   *AnthropicThinking `json:"thinking,omitempty"`
+	Model        string                 `json:"model"`
+	MaxTokens    int                    `json:"max_tokens"`
+	System       any                    `json:"system,omitempty"`
+	Messages     []AnthropicMessage     `json:"messages"`
+	Stream       bool                   `json:"stream,omitempty"`
+	Tools        []AnthropicToolDef     `json:"tools,omitempty"`
+	ToolChoice   string                 `json:"tool_choice,omitempty"`
+	Thinking     *AnthropicThinking     `json:"thinking,omitempty"`
+	OutputConfig *AnthropicOutputConfig `json:"output_config,omitempty"`
 }
 
-// AnthropicThinking enables extended thinking with a token budget.
+// AnthropicThinking configures extended thinking: {type:"enabled",
+// budget_tokens:N} on budget-generation models, {type:"adaptive"} on
+// adaptive ones (which reject budget_tokens).
 type AnthropicThinking struct {
 	Type         string `json:"type"`
-	BudgetTokens int    `json:"budget_tokens"`
+	BudgetTokens int    `json:"budget_tokens,omitempty"`
+}
+
+// AnthropicOutputConfig carries the effort dial for adaptive-thinking models.
+type AnthropicOutputConfig struct {
+	Effort string `json:"effort,omitempty"`
+}
+
+// AnthropicCacheControl marks a prompt-cache breakpoint: everything up to and
+// including the marked block is cached as one prefix.
+type AnthropicCacheControl struct {
+	Type string `json:"type"`
+}
+
+// EphemeralCache is the one breakpoint type the harness uses.
+func EphemeralCache() *AnthropicCacheControl {
+	return &AnthropicCacheControl{Type: "ephemeral"}
+}
+
+// AnthropicSystemBlock is one text block of the block-form system prompt.
+type AnthropicSystemBlock struct {
+	Type         string                 `json:"type"`
+	Text         string                 `json:"text"`
+	CacheControl *AnthropicCacheControl `json:"cache_control,omitempty"`
 }
 
 // AnthropicContentBlock is a content block in a messages response.
+// Signature and Data belong to thinking and redacted_thinking blocks, which
+// must be echoed back unchanged within a tool loop.
 type AnthropicContentBlock struct {
-	Type     string         `json:"type"`
-	Text     string         `json:"text,omitempty"`
-	Thinking string         `json:"thinking,omitempty"`
-	ID       string         `json:"id,omitempty"`
-	Name     string         `json:"name,omitempty"`
-	Input    map[string]any `json:"input,omitempty"`
+	Type      string         `json:"type"`
+	Text      string         `json:"text,omitempty"`
+	Thinking  string         `json:"thinking,omitempty"`
+	Signature string         `json:"signature,omitempty"`
+	Data      string         `json:"data,omitempty"`
+	ID        string         `json:"id,omitempty"`
+	Name      string         `json:"name,omitempty"`
+	Input     map[string]any `json:"input,omitempty"`
 }
 
 // AnthropicMessagesResponse is the non-streaming messages response.
@@ -288,6 +324,7 @@ type AnthropicStreamEvent struct {
 		Type        string `json:"type,omitempty"`
 		Text        string `json:"text,omitempty"`
 		Thinking    string `json:"thinking,omitempty"`
+		Signature   string `json:"signature,omitempty"`
 		StopReason  string `json:"stop_reason,omitempty"`
 		PartialJSON string `json:"partial_json,omitempty"`
 	} `json:"delta"`
@@ -295,6 +332,9 @@ type AnthropicStreamEvent struct {
 		Type string `json:"type,omitempty"`
 		ID   string `json:"id,omitempty"`
 		Name string `json:"name,omitempty"`
+		// Data is a redacted_thinking block's opaque payload; it arrives
+		// whole on content_block_start.
+		Data string `json:"data,omitempty"`
 	} `json:"content_block,omitempty"`
 	Message *struct {
 		Usage *AnthropicUsage `json:"usage,omitempty"`

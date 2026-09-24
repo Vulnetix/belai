@@ -29,7 +29,32 @@ type ModelSpec struct {
 	ID, Label     string
 	Efforts       []string
 	ContextWindow int
+	// MaxOutput is the model's documented completion ceiling in tokens. Zero
+	// means unknown, and the request then leaves the cap to the provider.
+	MaxOutput int
+	// Thinking is how the model's extended thinking is configured on the
+	// Anthropic messages surface. Empty means the model has none.
+	Thinking ThinkingStyle
 }
+
+// ThinkingStyle names the extended-thinking request shape a model accepts.
+// The shapes are not interchangeable: an adaptive-generation model rejects
+// {type:"enabled", budget_tokens} with a 400, and a budget-generation model
+// does not know {type:"adaptive"}.
+type ThinkingStyle string
+
+const (
+	// ThinkingNone: the model has no extended thinking.
+	ThinkingNone ThinkingStyle = ""
+	// ThinkingBudget: {type:"enabled", budget_tokens:N}. Haiku 4.5 and older.
+	ThinkingBudget ThinkingStyle = "budget"
+	// ThinkingAdaptive: {type:"adaptive"} plus output_config.effort. The model
+	// decides how long to think; effort is the only dial.
+	ThinkingAdaptive ThinkingStyle = "adaptive"
+	// ThinkingAlways: adaptive thinking that cannot be turned off. Effort is
+	// the only control, so the thinking field is never sent.
+	ThinkingAlways ThinkingStyle = "always"
+)
 
 // Builder composes a base URL from resolved credential fields, used when the
 // provider default is not a constant.
@@ -83,6 +108,12 @@ type Descriptor struct {
 	Thinking   bool // emit anthropic thinking budget from Effort
 	Effort     bool // emit reasoning_effort
 	Usage      bool // emit stream_options.include_usage
+	// PromptCache: the surface honours cache_control breakpoints on the
+	// system block, the last tool definition and the newest message.
+	PromptCache bool
+	// MaxCompletionTokens: the chat surface takes the completion cap as
+	// max_completion_tokens; OpenAI reasoning models reject max_tokens.
+	MaxCompletionTokens bool
 
 	DefaultModel string
 	Models       []ModelSpec // static fallback catalogue
@@ -98,12 +129,12 @@ var registry = map[string]Descriptor{
 		},
 		BaseURL: "https://api.openai.com/v1", NetrcHost: "api.openai.com",
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
-		Effort: true, Usage: true,
+		Effort: true, Usage: true, MaxCompletionTokens: true,
 		DefaultModel: "gpt-5",
 		Models: []ModelSpec{
-			{ID: "gpt-5", Label: "GPT-5"},
-			{ID: "gpt-5-mini", Label: "GPT-5 Mini"},
-			{ID: "gpt-4.1", Label: "GPT-4.1"},
+			{ID: "gpt-5", Label: "GPT-5", MaxOutput: 128000},
+			{ID: "gpt-5-mini", Label: "GPT-5 Mini", MaxOutput: 128000},
+			{ID: "gpt-4.1", Label: "GPT-4.1", MaxOutput: 32768},
 		},
 		ListPath: "",
 	},
@@ -115,11 +146,15 @@ var registry = map[string]Descriptor{
 		BaseURL: "https://api.anthropic.com", NetrcHost: "api.anthropic.com",
 		Surface: wire.SurfaceAnthropicMessages, ToolMethod: wire.ToolMethodBlocks,
 		Thinking:     true,
+		PromptCache:  true,
 		DefaultModel: "claude-opus-4-5",
 		Models: []ModelSpec{
-			{ID: "claude-opus-4-5", Label: "Claude Opus 4.5"},
-			{ID: "claude-sonnet-4-5", Label: "Claude Sonnet 4.5"},
-			{ID: "claude-haiku-4-5", Label: "Claude Haiku 4.5"},
+			{ID: "claude-opus-5-5", Label: "Claude Opus 5.5", MaxOutput: 128000, Thinking: ThinkingAlways},
+			{ID: "claude-fable-5-1", Label: "Claude Fable 5.1", MaxOutput: 128000, Thinking: ThinkingAlways},
+			{ID: "claude-sonnet-5", Label: "Claude Sonnet 5", MaxOutput: 64000, Thinking: ThinkingAdaptive},
+			{ID: "claude-opus-4-5", Label: "Claude Opus 4.5", MaxOutput: 64000, Thinking: ThinkingBudget},
+			{ID: "claude-sonnet-4-5", Label: "Claude Sonnet 4.5", MaxOutput: 64000, Thinking: ThinkingBudget},
+			{ID: "claude-haiku-4-5", Label: "Claude Haiku 4.5", MaxOutput: 64000, Thinking: ThinkingBudget},
 		},
 		ListPath: "/v1/models",
 	},
@@ -189,9 +224,9 @@ var registry = map[string]Descriptor{
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
 		DefaultModel: "gemini-2.5-flash",
 		Models: []ModelSpec{
-			{ID: "gemini-2.5-flash", Label: "Gemini 2.5 Flash"},
-			{ID: "gemini-2.5-pro", Label: "Gemini 2.5 Pro"},
-			{ID: "gemini-2.0-flash", Label: "Gemini 2.0 Flash"},
+			{ID: "gemini-2.5-flash", Label: "Gemini 2.5 Flash", MaxOutput: 65536},
+			{ID: "gemini-2.5-pro", Label: "Gemini 2.5 Pro", MaxOutput: 65536},
+			{ID: "gemini-2.0-flash", Label: "Gemini 2.0 Flash", MaxOutput: 8192},
 		},
 		ListPath: "/models",
 	},
