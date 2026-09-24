@@ -557,8 +557,13 @@ The user prompt is echoed to the transcript as a `user prompt` the instant
 Enter is pressed — before admission and before any provider I/O — so the
 indicator always refers to work the user cannot otherwise see. The agent
 emits `EventRoleManagerKind` with the sub-phase at every classification point;
-model and tool events drive the generic phase. `esc` in the pre-send window
-(echoed but not yet classified) cancels the turn without sending.
+model and tool events drive the generic phase. Mode selection runs inside the
+agent, concurrently with admission, for every prompt except one that names an
+agent profile (`@agent:NAME`), which still classifies before its turn starts;
+the agent reports its decision with `EventModeDecidedKind`. `esc` in that
+pre-send window (echoed but not yet classified) cancels the turn without
+sending. Explore subagents never select a mode: their turn is forced to agent
+mode on the read-only plan surface.
 
 The Role Manager also owns the FIFO fan-out queue: `rolemanager.Pipeline.Pool`
 is an `agentpool.Pool` constructed alongside the session, and both explore

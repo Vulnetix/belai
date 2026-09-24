@@ -109,6 +109,10 @@ const (
 	// It carries the call's wall-clock time in Duration and its usage in
 	// Usage, so a transcript can say where a turn's time went.
 	EventModelCallKind
+	// EventModeDecidedKind reports the mode the agent resolved for this turn
+	// when the caller sent none, so a UI that started the turn without
+	// waiting for mode selection can apply the decision. It carries Mode.
+	EventModeDecidedKind
 )
 
 // Role Manager sub-phases carried by EventRoleManagerKind.
@@ -134,6 +138,8 @@ type Event struct {
 	Duration time.Duration
 	// Usage carries EventModelCallKind's provider-reported usage.
 	Usage *transcript.Usage
+	// Mode carries EventModeDecidedKind's resolved decision.
+	Mode *rolemanager.ModeDecision
 
 	// Text carries EventText deltas.
 	Text string

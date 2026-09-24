@@ -1761,9 +1761,24 @@ provider I/O — and the composer's top edge switches to a working state:
 
 The agent emits `EventRoleManagerKind` (with the sub-phase) at every Role
 Manager classification point; model and tool events switch the composer to the
-generic phase, and done/error return it to idle. In the pre-send window — the
-prompt is echoed but classification is still running — Enter is held with a
-"still preparing" hint and `esc` cancels the turn without sending. While a
+generic phase, and done/error return it to idle. 
+
+**Mode selection runs inside the agent.** A prompt whose mode the user has
+not fixed starts its turn at once with no mode decision; the agent runs mode
+selection concurrently with prompt admission (as the CLI always has) and
+reports the result with `EventModeDecidedKind`. The TUI applies it without
+rebuilding the running session (`applyLiveModeDecision`): the chip, the
+announcement line and the plan-mode flag update, while the session already
+latched the mode for the turn. This removed one full serial model call from
+every TUI prompt. Before sending, the previous turn's classifier decisions are
+released — a classifier-engaged agent profile (unless the user engaged it) and
+a classifier-inferred plan-mode baseline — so they cannot narrow this turn.
+
+A prompt that names an agent profile (`@agent:NAME`) still classifies
+*before* the turn, because the profile decides the session's tool allowlist
+and model. In that pre-send window — the prompt is echoed but classification
+is still running — Enter is held with a "still preparing" hint and `esc`
+cancels the turn without sending. While a
 turn is running, Enter instead queues the text as a `user steering` prompt:
 steered turns pass through the same Role Manager admission as the original
 prompt, and a full queue drops the newest message.
