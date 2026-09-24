@@ -94,11 +94,12 @@ const (
 	// already approved the plan, so there is nothing left to confirm or
 	// re-explore: the first unchecked step is the first edit.
 	planExecuteDirective = "The approved plan in the system prompt is your objective and it is already approved — do not re-plan, re-explore, or ask for confirmation. Execute it in order: the first unfinished step is the first edit of this pass."
-	// goalAckDirective is injected on the first goal pass. Goal mode's whole
-	// point over plan mode is that a clear change is made immediately, so the
-	// directive leads with the edit and treats the checklist as bookkeeping
-	// that happens alongside it.
-	goalAckDirective = "Start the work in this pass. Call update_plan once with the steps you will execute, the first marked in_progress, then make the first real change — read the exact bytes you are about to edit and edit them. Mutate at least one file in this first pass unless the task is explicitly read-only. Prefer parallel read-only calls followed immediately by an Edit or Write; do not gather evidence across multiple passes before editing. A pass that ends with no file changed has not advanced the goal. Mark steps complete with update_plan, or with [DONE:n] in your reply, as you finish them. Keep any restatement of the objective to a single line naming the deliverable and how completion will be verified."
+	// goalAckDirective is injected on the first goal pass. Goal mode's point
+	// over plan mode is that the work starts now rather than after a review,
+	// so the checklist rides in the same response as the first actions — but
+	// the first actions are whatever the work needs, reading included; the
+	// no-write escalations at later boundaries catch a goal that never edits.
+	goalAckDirective = "Start the work in this pass. In the same response as your first actions, call update_plan once with the steps you will execute, the first marked in_progress. Batch the reads you need in parallel, then make the change from the exact bytes you read. Mark steps complete with update_plan, or with [DONE:n] in your reply, as you finish them. Keep any restatement of the objective to a single line naming the deliverable and how completion will be verified."
 )
 
 // goalAckDirective returns the first-pass goal directive, naming the detected

@@ -1622,6 +1622,15 @@ added root, a `Cd` or a model switch changes the key and re-seals. The
 volatile repository facts ride the user turn instead (see
 [Repository map](#repository-map)).
 
+**Work discipline** (agent and goal mode only; never plan mode or a read-only
+session such as an explore subagent) is Claude Code-style guidance: read the
+code you will change and its callers first; make the smallest change that
+fully solves the task in the surrounding style; batch independent reads in
+one response; run the detected test or lint command after changing code;
+don't narrate plans. It keeps the repo-map, read-once and withheld-result
+lines. It no longer measures "time to first file mutation" or caps
+reasoning, which pushed edits ahead of reading.
+
 ## TUI
 
 `internal/tui` is a Bubble Tea app laid out Codex-style: a scrolling transcript

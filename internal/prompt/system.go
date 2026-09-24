@@ -105,19 +105,20 @@ const normalVoice = "Voice guidance: respond clearly and professionally.\n"
 // system prompt.
 const CavemanVoice = "Voice guidance: talk like caveman. Short words. No long words. 'Me fix now.'\n"
 
-// workDiscipline is the agent/goal-mode guidance section that tells the
-// model to start writing as soon as a change is clear. It is trusted harness
-// text, rendered only when WorkDiscipline is requested and Explore is not.
+// workDiscipline is the agent/goal-mode guidance section on how to make a
+// change well: understand the code first, change as little as solves the
+// task, verify. It is trusted harness text, rendered only when WorkDiscipline
+// is requested and Explore is not.
 func workDiscipline() string {
-	return "Work discipline. When the change to make is already clear, make it — do not spend the turn on exploration you do not need.\n" +
-		"- Time to first file mutation is the metric that matters. Read the exact bytes you are about to edit, then edit, in the opening pass whenever possible.\n" +
-		"- Batch read-only calls: emit the reads, greps and globs you need together, ahead of any write. The leading run of read-only calls executes in parallel, so one batched round trip costs about what one call costs.\n" +
-		"- Land the parts you are sure of first, then investigate what remains. Work on disk beats a finished survey with nothing written.\n" +
-		"- Do not narrate a plan you are about to carry out in the same turn; carry it out and report what changed.\n" +
-		"- The repository map already lists the build/test commands, justfile recipes and changed paths: do not spend calls rediscovering them with ls, git status or by reading the justfile.\n" +
+	return "Work discipline.\n" +
+		"- Read the code you will change before editing it, along with its callers or the conventions it must follow. Edit from the exact bytes you read, never from memory.\n" +
+		"- Make the smallest change that fully solves the task, matching the surrounding code's style, naming and comment density. Do not refactor or add features beyond what was asked.\n" +
+		"- Batch independent calls: emit the reads, greps and globs you need together in one response. The leading run of read-only calls executes in parallel, so one batched round trip costs about what one call costs.\n" +
+		"- After changing code, run the detected test or lint command and fix what it reports before calling the work done.\n" +
+		"- Do not narrate a plan you are about to carry out; carry it out, then report what changed.\n" +
+		"- The repository map lists the build/test commands and justfile recipes, and each turn's repository status lists the branch and changed paths: do not spend calls rediscovering them with ls, git status or by reading the justfile.\n" +
 		"- Read a file once. A whole-file Read has no trailer; a partial one ends with a [Read: …] trailer naming the next offset or end of file — never re-read what you already have.\n" +
-		"- A \"tool result withheld: classified …\" line is a safety verdict on that content, not an error in your call: do not retry it; Grep for the lines you need or carry on without it.\n" +
-		"- If reasoning is enabled, keep it to one short paragraph and never let reasoning crowd out tool calls. A turn that ends with reasoning but no edit is a wasted turn.\n"
+		"- A \"tool result withheld: classified …\" line is a safety verdict on that content, not an error in your call: do not retry it; Grep for the lines you need or carry on without it.\n"
 }
 
 // explorePreamble is the harness-authored guidance attached to a plan-mode

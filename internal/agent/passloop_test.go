@@ -986,15 +986,19 @@ func TestPassLedgerEveryPassWithheld(t *testing.T) {
 }
 
 // The first-pass directive is the one chance to set the mode's contract. It
-// must lead with the work, not with a plan document.
-func TestGoalAckDirectiveLeadsWithTheEdit(t *testing.T) {
-	for _, want := range []string{"Start the work in this pass", "update_plan", "make the first real change", "no file changed"} {
+// must lead with the work, not with a plan document — but it must not demand
+// an edit before the model has read what it is changing.
+func TestGoalAckDirectiveLeadsWithTheWork(t *testing.T) {
+	for _, want := range []string{"Start the work in this pass", "update_plan", "same response as your first actions", "exact bytes you read"} {
 		if !strings.Contains(goalAckDirective, want) {
 			t.Fatalf("goal acknowledgement directive missing %q:\n%s", want, goalAckDirective)
 		}
 	}
 	if strings.Contains(goalAckDirective, "'Plan:' header") {
 		t.Fatal("the goal directive must not ask for a plan document before the work")
+	}
+	if strings.Contains(goalAckDirective, "Mutate at least one file") {
+		t.Fatal("the first pass must not be forced to mutate before it has read")
 	}
 }
 
