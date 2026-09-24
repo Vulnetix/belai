@@ -78,9 +78,24 @@ func TestModelScreenSaysWhoAnswersWhat(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 	a := newModelScreen(t, t.TempDir())
 	view := a.modelView()
-	for _, want := range []string{"who answers what", "work", "verdicts", "drafting", "security", "FAST TIER", "answers one-token verdicts", "does the work"} {
+	for _, want := range []string{"IN EFFECT", "work", "verdicts", "drafting", "security", "FAST TIER", "answers one-token verdicts", "does the work"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("/model view missing %q:\n%s", want, view)
 		}
+	}
+}
+
+// TestModelRoutingBlurbFollowsKind pins that the routing group describes the
+// kind actually set: under defined the pool is unused, and only routed claims
+// Jev is picking.
+func TestModelRoutingBlurbFollowsKind(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	a := newModelScreen(t, t.TempDir())
+	if got := a.modelRoleBlurb(roleRouting); !strings.Contains(got, "unused") || strings.Contains(got, "Jev picks") {
+		t.Fatalf("defined blurb = %q", got)
+	}
+	a.settings.Routing = &config.RoutingSettings{Kind: config.RoutingRouted}
+	if got := a.modelRoleBlurb(roleRouting); !strings.Contains(got, "Jev picks") {
+		t.Fatalf("routed blurb = %q", got)
 	}
 }
