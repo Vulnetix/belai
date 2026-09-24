@@ -101,6 +101,17 @@ type Message struct {
 	Provider string
 	Model    string
 
+	// CreatedAt is when the row came into being: the emitting event's own
+	// timestamp when there was one. It is what the session file records, so
+	// a transcript written at turn end still says when each row happened.
+	CreatedAt time.Time
+	// DurationMS is the wall-clock time of the work the row reports: a tool
+	// execution, or a role-manager model call. Zero when not measured.
+	DurationMS int64
+	// ModelCallsMS lists the provider calls behind an assistant bubble, in
+	// milliseconds, one per call. One bubble spans a whole tool loop.
+	ModelCallsMS []int64
+
 	// Activity records the role-manager event key for a "rolemanager" row
 	// (e.g. "security_phase"). It is persisted and shown when the signet
 	// panel is expanded so the user can see which internal activity produced

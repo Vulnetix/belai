@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/vulnetix/signet/internal/sanitize"
 )
@@ -153,16 +154,18 @@ var ErrMalformedGoalEval = errors.New("malformed goal evaluator output")
 // pass, and the loop driver counts the error so a provider returning nothing
 // usable does not go unnoticed.
 func EvaluateGoal(ctx context.Context, c Classifier, in GoalEvalInput) (GoalSentinel, error) {
+	start := time.Now()
 	raw, err := c.Classify(ctx, BuildGoalEvalPayload(in))
+	took := time.Since(start)
 	if err != nil {
 		return "", err
 	}
 	s, parseErr := ParseGoalSentinel(raw)
 	if parseErr == nil {
-		record(EventGoalEval, string(s), "", "", 0)
+		recordTimed(EventGoalEval, string(s), "", "", 0, "", took)
 		return s, nil
 	}
-	record(EventGoalEval, string(GoalPartial), "", "malformed: "+traceSnippet(raw), 0)
+	recordTimed(EventGoalEval, string(GoalPartial), "", "malformed: "+traceSnippet(raw), 0, "", took)
 
 	repaired, err := c.Classify(ctx, BuildGoalEvalRepairPayload(in, raw))
 	if err != nil {

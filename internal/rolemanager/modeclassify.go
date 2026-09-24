@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"time"
 )
 
 // ModeSentinel is the strict single-token output of the operating-mode
@@ -60,16 +61,18 @@ func BuildModeClassifierPayload(prompt string) ClassifierPayload {
 // classifier output fails closed to ModeUndetermined, which engages default
 // agent mode.
 func ClassifyMode(ctx context.Context, c Classifier, prompt string) (ModeSentinel, error) {
+	start := time.Now()
 	raw, err := c.Classify(ctx, BuildModeClassifierPayload(prompt))
+	took := time.Since(start)
 	if err != nil {
 		return "", err
 	}
 	s, err := ParseModeSentinel(raw)
 	if err != nil {
-		record(EventModeClassify, string(ModeUndetermined), "", "malformed: "+traceSnippet(raw), 0)
+		recordTimed(EventModeClassify, string(ModeUndetermined), "", "malformed: "+traceSnippet(raw), 0, "", took)
 		return ModeUndetermined, nil
 	}
-	record(EventModeClassify, string(s), "", "", 0)
+	recordTimed(EventModeClassify, string(s), "", "", 0, "", took)
 	return s, nil
 }
 

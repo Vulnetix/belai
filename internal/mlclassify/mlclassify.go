@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/vulnetix/signet/internal/rolemanager"
 )
@@ -343,6 +344,9 @@ func (c *Classifier) Classify(ctx context.Context, p rolemanager.ClassifierPaylo
 		return "", err
 	}
 	var p1, p2 rolemanager.Sentinel = rolemanager.SentinelSafe, rolemanager.SentinelSafe
+	// Phases 1 and 2 run concurrently per window, so they share one
+	// wall-clock time: the time the gates held the call.
+	gatesStart := time.Now()
 	for _, w := range windows {
 		a, b, err := c.classifyWindow(ctx, w)
 		if err != nil {
@@ -352,37 +356,39 @@ func (c *Classifier) Classify(ctx context.Context, p rolemanager.ClassifierPaylo
 		p2 = fold(p2, b)
 		// PROMPT_INJECTION is the highest rank; no later window can change it.
 		if p1 == rolemanager.SentinelPromptInjection {
-			c.emitPhases(p1, p2, "skipped")
+			c.emitPhases(p1, p2, "skipped", time.Since(gatesStart), 0)
 			return string(p1), nil
 		}
 	}
+	gates := time.Since(gatesStart)
 	verdict := fold(p1, p2)
 	if verdict != rolemanager.SentinelSafe {
-		c.emitPhases(p1, p2, "skipped")
+		c.emitPhases(p1, p2, "skipped", gates, 0)
 		return string(verdict), nil
 	}
 	if c.llm == nil {
-		c.emitPhases(p1, p2, "off")
+		c.emitPhases(p1, p2, "off", gates, 0)
 		return string(rolemanager.SentinelSafe), nil
 	}
+	phase3Start := time.Now()
 	s3, status, err := c.phase3(ctx, p.User)
 	if err != nil {
 		return "", err
 	}
-	c.emitPhases(p1, p2, status)
+	c.emitPhases(p1, p2, status, gates, time.Since(phase3Start))
 	return s3, nil
 }
 
 // emitPhases records the three phase verdicts. A disabled phase 2 reports
 // "off"; a skipped phase 3 means an earlier phase already failed the content.
-func (c *Classifier) emitPhases(p1, p2 rolemanager.Sentinel, phase3 string) {
-	rolemanager.RecordSecurityPhase("phase 1", string(p1), c.phase1Label)
+func (c *Classifier) emitPhases(p1, p2 rolemanager.Sentinel, phase3 string, gates, phase3Took time.Duration) {
+	rolemanager.RecordSecurityPhaseTimed("phase 1", string(p1), c.phase1Label, gates)
 	if c.phase2 != nil {
-		rolemanager.RecordSecurityPhase("phase 2", string(p2), c.phase2Label)
+		rolemanager.RecordSecurityPhaseTimed("phase 2", string(p2), c.phase2Label, gates)
 	} else {
 		rolemanager.RecordSecurityPhase("phase 2", "off", c.phase2Label)
 	}
-	rolemanager.RecordSecurityPhase("phase 3", phase3, c.phase3Label)
+	rolemanager.RecordSecurityPhaseTimed("phase 3", phase3, c.phase3Label, phase3Took)
 }
 
 // classifyWindow runs phases 1 and 2 concurrently over one window and returns

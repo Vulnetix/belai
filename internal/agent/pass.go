@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/modes"
@@ -280,6 +281,9 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		// construction, but each goroutine still writes its own slot so the
 		// observation needs no locking.
 		effects := make([]callEffect, len(units))
+		// took is each call's execution time, classification included: what the
+		// call cost the turn.
+		took := make([]time.Duration, len(units))
 		if concurrentEnd > 0 {
 			sem := make(chan struct{}, s.toolConcurrency())
 			var wg sync.WaitGroup
@@ -295,7 +299,9 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 					defer func() { <-sem }()
 					callCopy := u.call
 					callCopy.Args = u.args
+					start := time.Now()
 					results[i] = s.executeCall(ctx, callCopy, emit, &effects[i])
+					took[i] = time.Since(start)
 				}(i, u)
 			}
 			wg.Wait()
@@ -316,12 +322,14 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 				} else {
 					callCopy := u.call
 					callCopy.Args = u.args
+					start := time.Now()
 					results[i] = s.executeCall(ctx, callCopy, emit, &effects[i])
+					took[i] = time.Since(start)
 				}
 			}
 			acc.noteMutation(effects[i])
 			toolResult := results[i]
-			emit(Event{Kind: EventToolResultKind, ToolName: u.call.Name, ToolCallID: u.call.ID, ToolResult: toolResult})
+			emit(Event{Kind: EventToolResultKind, ToolName: u.call.Name, ToolCallID: u.call.ID, ToolResult: toolResult, Duration: took[i]})
 			turns = append(turns, run.Turn{
 				Role:       "tool",
 				Content:    toolResult,

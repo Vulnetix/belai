@@ -1501,8 +1501,8 @@ session name or short id. Entry types:
 | Type | Role | Content |
 | ---- | ---- | ------- |
 | `user` | `user` | the prompt |
-| `assistant` | `assistant` | the reply, with `prompt_tokens` / `completion_tokens` / `total_tokens` / `model` / `provider` / `mode` / `effort` / `tool_calls` in `meta` |
-| `tool` | `tool` | a tool result, with `tool_call_id` / `tool_name` / `tool_args` / `status` in `meta` |
+| `assistant` | `assistant` | the reply, with `prompt_tokens` / `completion_tokens` / `total_tokens` / `model` / `provider` / `mode` / `effort` / `tool_calls` / `duration_ms` / `model_calls_ms` in `meta` |
+| `tool` | `tool` | a tool result, with `tool_call_id` / `tool_name` / `tool_args` / `status` / `duration_ms` in `meta` |
 | `reasoning` | `reasoning` | streamed chain-of-thought shown in the `model · reasoning` panel |
 | `system` | `system` | a TUI system notice |
 | `rolemanager` | `rolemanager` | a role-manager decision line, with `summary` / `outcome` / `tone` / `level` in `meta` |
@@ -1547,6 +1547,28 @@ Multi-pass goal/plan turns persist every finished assistant reply, not only
 the final one: a natural-exit reply is finalised at the pass boundary (its
 buffered text counts even before the turn ends), and a tool-call reply is
 written once its results land.
+
+**Timestamps are event times, not flush times.** Rows are written in batches
+(an assistant bubble is held until its turn ends), so an entry stamped at
+write time said nothing: one 894-second session had all 373 entries within
+9 ms of each other. Now every agent event carries `At`, stamped once on the
+agent's emit path (`stampEvents`), and every role-manager activity carries its
+own `At`. A transcript row takes the time of the event that created it
+(`Message.CreatedAt`), and `timestamp` on disk is that time. Rows appended
+immediately (the user prompt, session name) use the write time, which is the
+same thing.
+
+**Durations say where the time went.** `meta.duration_ms` is recorded for:
+
+| Entry | Measured |
+| --- | --- |
+| `tool` | the call's execution, classification included (`EventToolResultKind.Duration`); falls back to the span from the row's start to its result |
+| `assistant` | the sum of its provider calls, with each one in `meta.model_calls_ms` (`EventModelCallKind`, one per call; one bubble spans a whole tool loop) |
+| `rolemanager` | the classifier or evaluator model call behind the decision (security sentinel, ML phases 1+2 together and phase 3, mode select, goal and plan evaluators) |
+
+A provider call that finishes before its turn has an assistant bubble is
+held and adopted by the next bubble, so no call is dropped. Cache hits,
+forced modes and phases that did not run carry no duration.
 
 ## Credentials
 
