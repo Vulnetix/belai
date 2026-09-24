@@ -173,6 +173,17 @@ Rules:
   phase-1 row shows a "set HF token / provider" hint and the phase-2 row shows
   "deferred to phase 3"; with no resolvable phase model the ML stack fails
   closed at build time.
+- **Remote phases use the Inference Providers router.** A phase whose
+  `source` is `huggingface` posts each window to
+  `https://router.huggingface.co/hf-inference/models/<id>` with the resolved
+  HuggingFace token as a bearer token. The legacy
+  `api-inference.huggingface.co` host no longer resolves; while signet still
+  pointed at it, every remote phase call errored, and so every prompt was
+  blocked. The reply may be nested per input (`[[{label, score}]]`) or flat
+  (`[{label, score}]`); both decode. A non-200 status, an empty list, or any
+  other shape is an error, and the content is blocked. A global
+  `phase2.source: huggingface` also overrides an embedded phase-2 model on the
+  jailbreak variant. Choose `embedded` to classify in-process.
 - **Role classifier vs guardrail.** `Pipeline.Classifier` serves the
   non-guardrail role-manager activities (mode select, goal contract, clarify,
   plan eval, goal eval, compaction, session name, agent eval) from the main
