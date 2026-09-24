@@ -547,6 +547,11 @@ whole list including unnamed session history (where no chip is highlighted);
 end; typing any character leaves the cycle and edits the loaded prompt rather
 than clearing the composer; `esc` restores what you had typed. With no saved
 prompts, confirm `up` still browses session history and the strip is absent.
+Run `!echo hi`, `/help` (then `esc`) and send a prompt, then press `up`
+three times: the prompt, `/help` and `!echo hi` load newest first. Run
+`!echo hi` again and confirm it now comes first and appears only once. Restart
+Signet in the same directory and confirm the commands are still recalled; in
+another directory they are not.
 Confirm the composer badge shows `✎ <name>` (with a `g` marker for a global
 entry and a `*` dirty marker after an edit); then press `ctrl+s`, confirm the
 action bar (`⏎ overwrite · d delete · esc cancel`), press `enter` then `y`, and

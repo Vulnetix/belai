@@ -46,7 +46,7 @@ func keySections() []keySection {
 			{"home, end", "jump to the start or end of the line (fn+left, fn+right)"},
 			{"esc", "clear the selection, return from a followed agent thread, then cancel the request; esc esc clears the composer"},
 			{"shift+tab", "cycle mode: agent, plan, goal"},
-			{"up", "browse prompt history and the prompt library"},
+			{"up", "browse prompt, !cmd and /command history and the prompt library"},
 			{"f7", "save the prompt to the library"},
 			{"ctrl+l", "clear the transcript view; the session is kept"},
 			{"ctrl+o", "expand or collapse every truncated output"},

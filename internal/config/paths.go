@@ -182,6 +182,18 @@ func ProjectPrefsPath(workdir string) (string, error) {
 	return filepath.Join(dir, "projectprefs", WorkdirKey(workdir)+".json"), nil
 }
 
+// InputHistoryPath returns the per-project composer input history for a
+// working directory: <GlobalDir>/inputhistory/<WorkdirKey(workdir)>.json. It
+// holds the `!cmd`, `!!cmd` and slash-command lines the user ran, which are
+// not model turns and so never reach a session file as user prompts.
+func InputHistoryPath(workdir string) (string, error) {
+	dir, err := GlobalDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "inputhistory", WorkdirKey(workdir)+".json"), nil
+}
+
 // Migrate is a one-shot migration from ~/.signet to ~/.vulnetix/signet.
 // It runs only when the legacy directory exists and the new one does not.
 // If os.Rename fails across filesystems, it falls back to a recursive copy

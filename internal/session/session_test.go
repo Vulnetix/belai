@@ -408,3 +408,36 @@ func TestNewIDUnique(t *testing.T) {
 		seen[id] = true
 	}
 }
+
+func TestTimedUserPromptsOldestFirstWithModTimeFallback(t *testing.T) {
+	st := testStore(t, t.TempDir())
+	workdir := t.TempDir()
+
+	if err := st.Append(workdir, "sess-1", Entry{ID: "a", Type: "user", Role: "user", Content: "stamped", Timestamp: 42}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Append(workdir, "sess-1", Entry{ID: "b", Type: "assistant", Role: "assistant", Content: "ok"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Append(workdir, "sess-1", Entry{ID: "c", Type: "user", Role: "user", Content: "unstamped"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Append(workdir, "sess-1", Entry{ID: "d", Type: "user", Role: "user", Content: ""}); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := st.TimedUserPrompts(workdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].Content != "stamped" || got[1].Content != "unstamped" {
+		t.Fatalf("got %+v, want stamped then unstamped, empty and assistant rows skipped", got)
+	}
+	if got[0].Timestamp != 42 {
+		t.Fatalf("stamped ts = %d, want 42", got[0].Timestamp)
+	}
+	infos, _ := st.Sessions(workdir)
+	if got[1].Timestamp != infos[0].ModTime {
+		t.Fatalf("unstamped ts = %d, want session mod time %d", got[1].Timestamp, infos[0].ModTime)
+	}
+}

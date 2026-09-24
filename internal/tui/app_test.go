@@ -21,6 +21,7 @@ import (
 	"github.com/vulnetix/signet/internal/agentpool"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
+	"github.com/vulnetix/signet/internal/inputhistory"
 	"github.com/vulnetix/signet/internal/promptlib"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
@@ -2582,5 +2583,108 @@ func TestSubmitInputSelectsModeInsideTheAgent(t *testing.T) {
 	}
 	if !announced {
 		t.Fatalf("the decision should be announced: %+v", a.messages)
+	}
+}
+
+// Slash commands, `!cmd` and `!!cmd` lines never become session prompts, so
+// they are recalled from the input history, interleaved with prompts by when
+// they ran.
+func TestHistoryCycleIncludesLocalInputsInOrder(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	st, _ := session.NewStore()
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "old prompt", Timestamp: 1000})
+	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "new prompt", Timestamp: 3000})
+
+	path, err := inputhistory.Path(workdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range []inputhistory.Item{{Text: "!ls -la", Timestamp: 500}, {Text: "/model", Timestamp: 2000}, {Text: "!!npm run dev", Timestamp: 4000}} {
+		if err := inputhistory.Record(path, it.Text, it.Timestamp); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	a := New(Options{Workdir: workdir})
+	a.store = st
+
+	want := []string{"!!npm run dev", "new prompt", "/model", "old prompt", "!ls -la"}
+	for i, w := range want {
+		a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+		if got := a.editor.Value(); got != w {
+			t.Fatalf("up %d: editor = %q, want %q", i+1, got, w)
+		}
+	}
+	// Down walks back toward the newest entry.
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyDown})
+	if got := a.editor.Value(); got != "old prompt" {
+		t.Fatalf("down: editor = %q, want old prompt", got)
+	}
+}
+
+func TestSubmittedSlashCommandIsRecalled(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	a := New(Options{Workdir: workdir})
+	a.editor.SetValue("/no-such-command")
+	a.clearAutocomplete()
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	a.editor.Reset()
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+	if !a.historyActive {
+		t.Fatalf("expected historyActive after Up")
+	}
+	if got := a.editor.Value(); got != "/no-such-command" {
+		t.Fatalf("editor = %q, want /no-such-command", got)
+	}
+}
+
+// A command re-run from the browse cycle is recorded again, so it moves to
+// the newest slot and appears once.
+func TestHistoryCycleRerunMovesCommandToNewest(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	path, err := inputhistory.Path(workdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = inputhistory.Record(path, "/no-such-command", 1)
+	_ = inputhistory.Record(path, "/also-missing", 2)
+
+	a := New(Options{Workdir: workdir})
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyUp})
+	if got := a.editor.Value(); got != "/no-such-command" {
+		t.Fatalf("editor = %q, want /no-such-command", got)
+	}
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+
+	items, err := inputhistory.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[1].Text != "/no-such-command" {
+		t.Fatalf("history = %+v, want /no-such-command newest and unique", items)
+	}
+}
+
+// A prompt for the model is not a local command and is never written to the
+// input history; the session store is its record.
+func TestPromptIsNotRecordedAsLocalInput(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("SIGNET_HOME", t.TempDir())
+
+	a := New(Options{Workdir: workdir})
+	if _, ok := a.runLocalInput("explain this repo"); ok {
+		t.Fatal("a plain prompt must not run as a local input")
+	}
+	path, _ := inputhistory.Path(workdir)
+	if items, _ := inputhistory.Load(path); len(items) != 0 {
+		t.Fatalf("history = %+v, want empty", items)
 	}
 }
