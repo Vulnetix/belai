@@ -2,11 +2,14 @@ package agent
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/sanitize"
 )
 
@@ -47,7 +50,7 @@ func (s *Session) startGoalDraft(ctx context.Context, pipe *rolemanager.Pipeline
 func (s *Session) joinGoalDraft(ch chan goalDraft, clean string, emit func(Event)) string {
 	d := <-ch
 	if d.err != nil {
-		emit(Event{Kind: EventWarningKind, Warning: "goal contract drafting failed; carrying the raw prompt"})
+		emit(Event{Kind: EventWarningKind, Warning: goalDraftFailure(d.err)})
 		return clean
 	}
 	drafted := sanitize.Sanitize(d.text)
@@ -56,6 +59,24 @@ func (s *Session) joinGoalDraft(ch chan goalDraft, clean string, emit func(Event
 		return clean
 	}
 	return drafted
+}
+
+// goalDraftFailure names why the draft failed, so the warning says whether to
+// look at the model's speed, the provider, or the draft itself. It carries a
+// provider's status code but never its response body: that is provider text.
+func goalDraftFailure(err error) string {
+	var pe *run.ProviderError
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return fmt.Sprintf("goal contract draft timed out after %s; carrying the raw prompt", goalDraftTimeout)
+	case errors.Is(err, rolemanager.ErrGoalDraftUnusable):
+		return "goal contract draft was unusable; carrying the raw prompt"
+	case errors.As(err, &pe) && pe.Status != 0:
+		return fmt.Sprintf("goal contract drafting failed (provider returned %d); carrying the raw prompt", pe.Status)
+	case errors.As(err, &pe):
+		return "goal contract drafting failed (provider unreachable); carrying the raw prompt"
+	}
+	return "goal contract drafting failed; carrying the raw prompt"
 }
 
 // continuationRe matches a prompt that asks the harness to carry on with the

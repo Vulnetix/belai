@@ -486,21 +486,24 @@ type RoutingConfig struct {
 	Fast *Config
 }
 
-// sentinelUseCases are the role-manager activities whose reply is a single
-// sentinel token. They default to the fast tier: the answer is one word, and
-// the full-size model adds cost and latency without changing it. Generative
-// roles (compaction, goal contract, clarify) stay on the main model, whose
-// quality shapes the agent's later work.
-var sentinelUseCases = map[string]bool{
-	rolemanager.UseCaseModeEval:    true,
-	rolemanager.UseCaseSessionName: true,
-	rolemanager.UseCaseGoalEval:    true,
-	rolemanager.UseCasePlanEval:    true,
-	rolemanager.UseCaseAgentEval:   true,
+// fastUseCases are the role-manager activities that default to the fast tier.
+// The one-token sentinel roles belong here: the answer is one word, and the
+// full-size model adds cost and latency without changing it. The goal contract
+// belongs here too: its draft runs under a short deadline alongside
+// exploration, and a slow reasoning model on the main tier misses that
+// deadline and costs the goal its contract. Compaction and clarify stay on the
+// main model, whose quality shapes the agent's later work.
+var fastUseCases = map[string]bool{
+	rolemanager.UseCaseModeEval:     true,
+	rolemanager.UseCaseSessionName:  true,
+	rolemanager.UseCaseGoalEval:     true,
+	rolemanager.UseCasePlanEval:     true,
+	rolemanager.UseCaseAgentEval:    true,
+	rolemanager.UseCaseGoalContract: true,
 }
 
-// IsSentinelUseCase reports whether a use case defaults to the fast tier.
-func IsSentinelUseCase(useCase string) bool { return sentinelUseCases[useCase] }
+// IsFastUseCase reports whether a use case defaults to the fast tier.
+func IsFastUseCase(useCase string) bool { return fastUseCases[useCase] }
 
 // resolveFast resolves the fast tier. An explicit routing.fast_model that
 // cannot be configured is an error; the implicit registry default is simply
@@ -1384,10 +1387,10 @@ func GuardConfig(cfg Config) Config {
 // NewRoleClassifier builds the classifier that serves the non-guardrail
 // role-manager activities (mode select, goal/plan eval, compaction, goal
 // contract, clarify, session name, agent eval). Precedence per use case:
-// under "routed", the Jev-selected candidate; then, for a sentinel use case,
-// the fast-tier model; then the main config with reasoning off. The Jev path
-// itself is unchanged — the fast tier only replaces the main model as the
-// fallback for sentinel roles.
+// under "routed", the Jev-selected candidate; then, for a fast use case (the
+// sentinel roles and the goal contract), the fast-tier model; then the main
+// config with reasoning off. The Jev path itself is unchanged — the fast tier
+// only replaces the main model as the fallback for fast use cases.
 func NewRoleClassifier(cfg Config, client *http.Client, onRetry func(resilience.Attempt)) rolemanager.Classifier {
 	main := classifierFromConfig(mainClassifierConfig(cfg), client, onRetry)
 	var fast rolemanager.Classifier
@@ -1405,14 +1408,14 @@ func NewRoleClassifier(cfg Config, client *http.Client, onRetry func(resilience.
 	return r
 }
 
-// tieredClassifier sends sentinel use cases to the fast tier and everything
-// else to the main model.
+// tieredClassifier sends fast use cases to the fast tier and everything else
+// to the main model.
 type tieredClassifier struct {
 	main, fast rolemanager.Classifier
 }
 
 func (t tieredClassifier) Classify(ctx context.Context, p rolemanager.ClassifierPayload) (string, error) {
-	if IsSentinelUseCase(p.UseCase) {
+	if IsFastUseCase(p.UseCase) {
 		return t.fast.Classify(ctx, p)
 	}
 	return t.main.Classify(ctx, p)
@@ -1421,7 +1424,7 @@ func (t tieredClassifier) Classify(ctx context.Context, p rolemanager.Classifier
 // routedClassifier resolves a per-use-case classifier through Jev once, caches
 // it, and delegates every later call for that use case to the cached winner.
 // A transport error, an inconclusive verdict, or a winner missing from the
-// pool falls back to the fast tier for a sentinel use case, else to the
+// pool falls back to the fast tier for a fast use case, else to the
 // defined main classifier.
 type routedClassifier struct {
 	main    rolemanager.Classifier
@@ -1438,7 +1441,7 @@ type routedClassifier struct {
 // fallback is the classifier a use case falls back to when Jev does not
 // settle it.
 func (r *routedClassifier) fallback(useCase string) rolemanager.Classifier {
-	if r.fast != nil && IsSentinelUseCase(useCase) {
+	if r.fast != nil && IsFastUseCase(useCase) {
 		return r.fast
 	}
 	return r.main

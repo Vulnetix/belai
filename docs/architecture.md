@@ -70,7 +70,8 @@ Business rules:
   goal eval, compaction, session name, agent eval) run on the *role*
   classifier: the main provider/model under `routing.kind: "defined"` (the
   default), or the Jev-routed winner under `routing.kind: "routed"` — except
-  that the one-token sentinel roles default to the fast tier (see
+  that the one-token sentinel roles and the goal contract default to the fast
+  tier (see
   [Fast tier](#fast-tier)). The
   security *guardrail* runs separately: `rolemanager.Pipeline.Security` is the
   ML stack on the `models` path, or the full five-token LLM sentinel (built
@@ -255,14 +256,17 @@ Business rules and edge cases:
   through the same credential backends as any provider. An *explicit* fast
   model that cannot be configured is a resolve error; the *implicit* default
   is simply absent when unusable.
-- **Only sentinel roles move.** Mode select, session name, and the goal, plan
-  and agent evaluator verdicts (`run.IsSentinelUseCase`) default to the fast
-  tier. Compaction, goal-contract drafting, clarify and the final report stay
-  on the main model: their output shapes the agent's later work.
+- **Sentinel roles and the goal contract move.** Mode select, session name,
+  the goal, plan and agent evaluator verdicts, and goal-contract drafting
+  (`run.IsFastUseCase`) default to the fast tier. The contract draft runs
+  under a 20s deadline alongside exploration; on a slow reasoning main model
+  it timed out every time and the goal ran on the raw prompt. Compaction,
+  clarify and the final report stay on the main model: their output shapes
+  the agent's later work.
 - **Precedence per use case:** a Jev-routed candidate when `routing.kind` is
-  `routed`; then the fast tier for a sentinel use case; then the main model.
+  `routed`; then the fast tier for a fast use case; then the main model.
   The Jev path is unchanged — the fast tier only replaces the main model as
-  the fallback for sentinel roles.
+  the fallback for fast use cases.
 - **The security guard stays on the main model by default.** A smaller guard
   is less robust against prompt injection, and relaxation is an explicit
   opt-in, so `classifier.tier: "fast"` is required to move it
@@ -1346,9 +1350,11 @@ the sanitized prompt and the repo map's detected test commands. The user's
 prompt is kept verbatim as the Objective line, and the drafted sections
 (verification surface, constraints, boundaries, iteration policy, blocked-stop
 condition) are appended beneath it. The draft is sanitized before sealing so
-it cannot forge a harness block; on transport failure, an empty draft, or a
-draft missing the objective, the raw prompt is carried instead and a warning
-is emitted. A memorised goal is user-authored and is carried verbatim — never
+it cannot forge a harness block; on transport failure, a timeout, an empty
+draft, or a draft missing the objective, the raw prompt is carried instead and
+a warning naming the cause is emitted (a timeout, a provider status code, or an
+unusable draft — never the provider's response body). The draft runs on the
+fast tier (see [Fast tier](#fast-tier)). A memorised goal is user-authored and is carried verbatim — never
 drafted.
 
 The first goal pass is a work pass, not an acknowledgement pass: the directive

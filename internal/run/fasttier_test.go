@@ -89,7 +89,7 @@ func roleServer(t *testing.T) (*httptest.Server, func() map[string][]string) {
 	}
 }
 
-func TestSentinelRolesUseTheFastTierAndGenerativeRolesStayMain(t *testing.T) {
+func TestFastRolesUseTheFastTierAndGenerativeRolesStayMain(t *testing.T) {
 	srv, seen := roleServer(t)
 	defer srv.Close()
 	main := Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "gpt-5"}
@@ -109,11 +109,49 @@ func TestSentinelRolesUseTheFastTierAndGenerativeRolesStayMain(t *testing.T) {
 		rolemanager.UseCaseModeEval:     "gpt-5-mini",
 		rolemanager.UseCaseGoalEval:     "gpt-5-mini",
 		rolemanager.UseCaseCompaction:   "gpt-5",
-		rolemanager.UseCaseGoalContract: "gpt-5",
+		rolemanager.UseCaseGoalContract: "gpt-5-mini",
 	} {
 		if len(got[uc]) != 1 || got[uc][0] != want {
 			t.Fatalf("%s answered by %v, want %s", uc, got[uc], want)
 		}
+	}
+}
+
+// TestRoutedGoalContractFallsBackToTheFastTier pins the goal contract to the
+// fast tier when Jev does not settle it: the main model is a slow reasoning
+// model often enough that the draft's deadline expired on it.
+func TestRoutedGoalContractFallsBackToTheFastTier(t *testing.T) {
+	srv, seen := roleServer(t)
+	defer srv.Close()
+	jevSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 400, not 5xx: the OpenRouter SDK retries a 5xx with backoff.
+		http.Error(w, "bad request", http.StatusBadRequest)
+	}))
+	defer jevSrv.Close()
+
+	main := Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "gpt-5"}
+	rc, err := ResolveRouting(main, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rc.Kind = config.RoutingRouted
+	rc.Candidates = []RoutingCandidate{{Key: "a", Cfg: Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "gpt-4.1"}}}
+	rc.JevToken = func() (string, error) { return "test-key", nil }
+	main.Routing = rc
+
+	r := NewRoleClassifier(main, srv.Client(), nil).(*routedClassifier)
+	r.jev.SetEndpoint(jevSrv.URL)
+	for _, uc := range []string{rolemanager.UseCaseGoalContract, rolemanager.UseCaseCompaction} {
+		if _, err := r.Classify(context.Background(), rolemanager.ClassifierPayload{System: uc, User: "u", UseCase: uc}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := seen()
+	if m := got[rolemanager.UseCaseGoalContract]; len(m) != 1 || m[0] != "gpt-5-mini" {
+		t.Fatalf("goal contract answered by %v, want the fast tier", m)
+	}
+	if m := got[rolemanager.UseCaseCompaction]; len(m) != 1 || m[0] != "gpt-5" {
+		t.Fatalf("compaction answered by %v, want the main model", m)
 	}
 }
 
