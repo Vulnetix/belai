@@ -99,8 +99,10 @@ func DraftGoalContract(ctx context.Context, c Classifier, in GoalDraftInput) (st
 	}
 	raw, model, err := classifyServed(ctx, c, BuildGoalDraftPayload(in))
 	if err != nil {
+		// A caller may cancel with a deadline cause (the goal loop's grace);
+		// that is a timeout too, though the transport sees a cancel.
 		verdict := "error"
-		if errors.Is(err, context.DeadlineExceeded) {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
 			verdict = "timeout"
 		}
 		recordModel(EventGoalDraft, verdict, "", "", 0, model)

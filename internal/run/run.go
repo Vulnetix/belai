@@ -1326,11 +1326,13 @@ func classifierFromConfig(c Config, client *http.Client, onRetry func(resilience
 		if p.MaxTokens > 0 {
 			c.MaxTokens = p.MaxTokens
 		}
+		// Noted before the call, so a timeout or a provider error still names
+		// the model that was asked rather than the agent model.
+		rolemanager.NoteServedModel(ctx, c.Provider+"/"+c.Model)
 		a, err := chatWithRetryAssistant(ctx, c, p.System, p.User, client, onRetry)
 		if err != nil {
 			return "", err
 		}
-		rolemanager.NoteServedModel(ctx, c.Provider+"/"+c.Model)
 		text := a.Text
 		if p.AllowReasoningFallback && strings.TrimSpace(text) == "" {
 			text = a.Reasoning

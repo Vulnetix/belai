@@ -13,12 +13,32 @@ import (
 	"github.com/vulnetix/signet/internal/sanitize"
 )
 
-// goalDraftTimeout bounds the goal-contract draft. Real sessions showed the
-// draft holding the first pass back for minutes (once for close to three
-// hours) behind a slow routed model; the contract is an aid, not a
-// prerequisite, so past this bound the goal starts on the raw prompt — the
-// same fail-open path a failed draft already takes.
-const goalDraftTimeout = 20 * time.Second
+// The goal-contract draft has two bounds. Real sessions showed it holding the
+// first pass back for minutes (once for close to three hours) behind a slow
+// routed model, and the contract is an aid, not a prerequisite, so past either
+// bound the goal starts on the raw prompt — the same fail-open path a failed
+// draft already takes.
+//
+// goalDraftCeiling bounds the draft itself. goalDraftGrace bounds how long the
+// goal loop waits for it once exploration is done and the contract is needed.
+// The draft runs alongside exploration, so time spent exploring is free: a
+// single deadline counted from the start killed a ~30s reasoning-model draft
+// at 20s even while a minute of exploration was still running.
+const goalDraftCeiling = 2 * time.Minute
+
+// goalDraftGrace is a var so tests can shorten it.
+var goalDraftGrace = 45 * time.Second
+
+// errGoalDraftGrace cancels a draft still running when the grace expires. It
+// wraps context.DeadlineExceeded so the draft's activity records a timeout.
+var errGoalDraftGrace = fmt.Errorf("goal contract draft not ready in time: %w", context.DeadlineExceeded)
+
+// pendingDraft is a goal-contract draft in flight.
+type pendingDraft struct {
+	ch     chan goalDraft
+	cancel context.CancelCauseFunc
+	start  time.Time
+}
 
 // goalDraft is the outcome of a concurrent contract draft.
 type goalDraft struct {
@@ -28,29 +48,39 @@ type goalDraft struct {
 
 // startGoalDraft launches the goal-contract draft in the background so it
 // overlaps exploration instead of serialising in front of the first pass. The
-// returned channel always receives exactly one value.
-func (s *Session) startGoalDraft(ctx context.Context, pipe *rolemanager.Pipeline, clean string) chan goalDraft {
-	ch := make(chan goalDraft, 1)
+// pending draft's channel always receives exactly one value.
+func (s *Session) startGoalDraft(ctx context.Context, pipe *rolemanager.Pipeline, clean string) *pendingDraft {
+	cctx, cancel := context.WithCancelCause(ctx)
+	p := &pendingDraft{ch: make(chan goalDraft, 1), cancel: cancel, start: time.Now()}
 	commands := s.allTestCommands()
 	go func() {
-		dctx, cancel := context.WithTimeout(ctx, goalDraftTimeout)
-		defer cancel()
+		dctx, stop := context.WithTimeout(cctx, goalDraftCeiling)
+		defer stop()
 		text, err := rolemanager.DraftGoalContract(dctx, pipe.Classifier, rolemanager.GoalDraftInput{
 			Prompt:              clean,
 			VerificationSurface: commands,
 		})
-		ch <- goalDraft{text: text, err: err}
+		p.ch <- goalDraft{text: text, err: err}
 	}()
-	return ch
+	return p
 }
 
 // joinGoalDraft waits for the draft and returns the goal text the loop runs
 // against. Any failure — transport, timeout, or an unusable draft — fails open
 // to the raw prompt: a weak or slow drafting model must never cost the turn.
-func (s *Session) joinGoalDraft(ch chan goalDraft, clean string, emit func(Event)) string {
-	d := <-ch
+func (s *Session) joinGoalDraft(p *pendingDraft, clean string, emit func(Event)) string {
+	var d goalDraft
+	select {
+	case d = <-p.ch:
+	case <-time.After(goalDraftGrace):
+		// The loop has waited its grace: stop the draft and start on the raw
+		// prompt. The draft's own activity row records the timeout.
+		p.cancel(errGoalDraftGrace)
+		d = goalDraft{err: errGoalDraftGrace}
+	}
+	p.cancel(nil)
 	if d.err != nil {
-		emit(Event{Kind: EventWarningKind, Warning: goalDraftFailure(d.err)})
+		emit(Event{Kind: EventWarningKind, Warning: goalDraftFailure(d.err, time.Since(p.start))})
 		return clean
 	}
 	drafted := sanitize.Sanitize(d.text)
@@ -64,11 +94,11 @@ func (s *Session) joinGoalDraft(ch chan goalDraft, clean string, emit func(Event
 // goalDraftFailure names why the draft failed, so the warning says whether to
 // look at the model's speed, the provider, or the draft itself. It carries a
 // provider's status code but never its response body: that is provider text.
-func goalDraftFailure(err error) string {
+func goalDraftFailure(err error, took time.Duration) string {
 	var pe *run.ProviderError
 	switch {
 	case errors.Is(err, context.DeadlineExceeded):
-		return fmt.Sprintf("goal contract draft timed out after %s; carrying the raw prompt", goalDraftTimeout)
+		return fmt.Sprintf("goal contract draft timed out after %s; carrying the raw prompt", took.Round(time.Second))
 	case errors.Is(err, rolemanager.ErrGoalDraftUnusable):
 		return "goal contract draft was unusable; carrying the raw prompt"
 	case errors.As(err, &pe) && pe.Status != 0:

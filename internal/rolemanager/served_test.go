@@ -23,13 +23,14 @@ func TestTrackServedModelKeepsTheLastNonEmptyNote(t *testing.T) {
 	}
 }
 
-// servingClassifier replies with raw and notes model as the answering leaf.
+// servingClassifier notes model as the leaf it is, before it answers (as
+// run.classifierFromConfig does), then replies with raw or fails with err.
 func servingClassifier(model, raw string, err error) Classifier {
 	return ClassifierFunc(func(ctx context.Context, _ ClassifierPayload) (string, error) {
+		NoteServedModel(ctx, model)
 		if err != nil {
 			return "", err
 		}
-		NoteServedModel(ctx, model)
 		return raw, nil
 	})
 }
@@ -90,13 +91,16 @@ func TestRoleActivitiesCarryTheServedModel(t *testing.T) {
 	}
 }
 
-// A call that fails in transport has no answering leaf, so its activity
-// carries no model and the TUI falls back to the agent model rather than
-// inventing one.
-func TestFailedCallRecordsNoServedModel(t *testing.T) {
+// A call that times out or fails still names the model that was asked: that
+// is the model whose speed or availability the line is about. A classifier
+// that never reports itself leaves the model empty, and the TUI falls back to
+// the agent model rather than inventing one.
+func TestFailedCallNamesTheModelThatWasAsked(t *testing.T) {
 	models := captureModels(t, EventGoalDraft)
-	_, _ = DraftGoalContract(context.Background(), servingClassifier("x/y", "", errors.New("refused")), GoalDraftInput{Prompt: "ship it"})
-	if got := models(); len(got) != 1 || got[0] != "" {
-		t.Fatalf("models = %q, want one empty", got)
+	_, _ = DraftGoalContract(context.Background(), servingClassifier("fast/m", "", context.DeadlineExceeded), GoalDraftInput{Prompt: "ship it"})
+	silent := ClassifierFunc(func(context.Context, ClassifierPayload) (string, error) { return "", errors.New("refused") })
+	_, _ = DraftGoalContract(context.Background(), silent, GoalDraftInput{Prompt: "ship it"})
+	if got := models(); len(got) != 2 || got[0] != "fast/m" || got[1] != "" {
+		t.Fatalf("models = %q, want [fast/m, \"\"]", got)
 	}
 }

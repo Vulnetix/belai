@@ -259,8 +259,10 @@ Business rules and edge cases:
 - **Sentinel roles and the goal contract move.** Mode select, session name,
   the goal, plan and agent evaluator verdicts, and goal-contract drafting
   (`run.IsFastUseCase`) default to the fast tier. The contract draft runs
-  under a 20s deadline alongside exploration; on a slow reasoning main model
-  it timed out every time and the goal ran on the raw prompt. Compaction,
+  alongside exploration, and the goal loop waits only a bounded grace for it
+  once it is needed (see [Goal mode](#goal-mode)). A slow reasoning
+  main model used to miss that bound every time, and the goal ran on the raw
+  prompt. Compaction,
   clarify and the final report stay on the main model: their output shapes
   the agent's later work.
 - **Precedence per use case:** a fast use case goes to the fast tier whenever
@@ -1359,8 +1361,25 @@ it cannot forge a harness block; on transport failure, a timeout, an empty
 draft, or a draft missing the objective, the raw prompt is carried instead and
 a warning naming the cause is emitted (a timeout, a provider status code, or an
 unusable draft — never the provider's response body). The draft runs on the
-fast tier (see [Fast tier](#fast-tier)). A memorised goal is user-authored and is carried verbatim — never
-drafted.
+fast tier (see [Fast tier](#fast-tier)). A memorised goal is user-authored and
+is carried verbatim — never drafted.
+
+The draft has two bounds (`internal/agent/goalstart.go`):
+
+- **Grace, 45s.** It starts when exploration and clarify are done and the
+  goal loop needs the contract, not when the draft starts. Time spent
+  exploring is free: a draft that finishes during exploration is used at
+  once, whatever it took. When the grace expires, the draft is cancelled with
+  a deadline cause and the raw prompt is carried. The warning reports the
+  draft's total age (`timed out after <d>`), and the `goal_draft` activity
+  records `timeout`, not `error`.
+- **Ceiling, 2 minutes.** It bounds the draft itself, from its start. It
+  guards against the stalls that once held a goal back for hours behind a
+  slow routed model.
+
+The previous single 20s deadline, counted from the start, killed a reasoning
+model's ~30s draft even while a minute of exploration was still running. A
+turn that ends before the join cancels the draft.
 
 The first goal pass is a work pass, not an acknowledgement pass: the directive
 asks for one `update_plan` call and the first real change in the same pass.
