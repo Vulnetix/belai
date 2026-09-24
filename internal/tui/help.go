@@ -326,6 +326,11 @@ func helpText(r *Registry) string {
 		b.WriteString("\n  " + pad("/"+n, width) + " — " + desc)
 	}
 
+	b.WriteString("\n\nlibrary shortcuts (the / popup fuzzy-matches these with the commands):")
+	b.WriteString("\n  /prompt:<name>  — load a saved prompt into the composer")
+	b.WriteString("\n  /agent:<name>   — switch to agent mode with that profile")
+	b.WriteString("\n  /process:<name> — start a saved process if it is not running, and show its status")
+
 	for _, s := range keySections() {
 		width = 0
 		for _, k := range s.Bindings {

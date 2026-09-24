@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/vulnetix/signet/internal/agentprofile"
 	"github.com/vulnetix/signet/internal/commands"
 	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/signet/internal/fuzzy"
 	"github.com/vulnetix/signet/internal/profiles"
 	"github.com/vulnetix/signet/internal/provider"
 	"github.com/vulnetix/signet/internal/vulnetixcli"
@@ -493,8 +495,9 @@ func (r *Registry) Names() []string {
 }
 
 // Complete returns slash-command completions for a partial input such as
-// "/pro" (command name) or "/agent st" (argument completion). It returns nil
-// when there is nothing to suggest.
+// "/pro" (command name) or "/agent st" (argument completion), ranked by
+// fuzzy match so "/pmt" still finds /prompts. It returns nil when there is
+// nothing to suggest.
 func (r *Registry) Complete(input string) []string {
 	if !strings.HasPrefix(input, "/") {
 		return nil
@@ -503,31 +506,24 @@ func (r *Registry) Complete(input string) []string {
 	if !strings.Contains(body, " ") {
 		return r.completeCommand(body)
 	}
-	name, argPrefix, _ := strings.Cut(body, " ")
+	name, argQuery, _ := strings.Cut(body, " ")
 	cmd, ok := r.commands[name]
 	if !ok || cmd.Args == nil {
 		return nil
 	}
+	args := slices.Clone(cmd.Args())
+	sort.Strings(args)
 	var out []string
-	for _, a := range cmd.Args() {
-		if strings.HasPrefix(a, argPrefix) {
-			out = append(out, "/"+name+" "+a)
-		}
+	for _, a := range fuzzy.Strings(argQuery, args) {
+		out = append(out, "/"+name+" "+a)
 	}
-	sort.Strings(out)
 	return out
 }
 
-func (r *Registry) completeCommand(prefix string) []string {
+func (r *Registry) completeCommand(query string) []string {
 	var out []string
-	for name, c := range r.commands {
-		if c.Hidden {
-			continue
-		}
-		if strings.HasPrefix(name, prefix) {
-			out = append(out, "/"+name)
-		}
+	for _, n := range fuzzy.Strings(query, r.Names()) {
+		out = append(out, "/"+n)
 	}
-	sort.Strings(out)
 	return out
 }

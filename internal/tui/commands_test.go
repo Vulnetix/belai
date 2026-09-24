@@ -2,6 +2,7 @@ package tui
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -13,13 +14,28 @@ func TestRegistryNames(t *testing.T) {
 	}
 }
 
-func TestCompleteCommandPrefix(t *testing.T) {
+func TestCompleteCommandFuzzy(t *testing.T) {
 	r := NewRegistry(t.TempDir())
 
+	// Prefix matches rank first, in name order; scattered subsequence
+	// matches follow.
 	got := r.Complete("/p")
-	want := []string{"/permissions", "/process", "/processes", "/profile", "/prompts", "/providers"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("Complete(/p) = %v, want %v", got, want)
+	wantHead := []string{"/permissions", "/process", "/processes", "/profile", "/prompts", "/providers"}
+	if len(got) < len(wantHead) || !reflect.DeepEqual(got[:len(wantHead)], wantHead) {
+		t.Fatalf("Complete(/p) = %v, want it to start with %v", got, wantHead)
+	}
+	if !slices.Contains(got, "/help") {
+		t.Fatalf("Complete(/p) = %v, want the non-prefix /help too", got)
+	}
+
+	if got := r.Complete("/pmt"); len(got) == 0 || got[0] != "/prompts" {
+		t.Fatalf("Complete(/pmt) = %v, want /prompts first", got)
+	}
+	if got := r.Complete("/dir"); len(got) == 0 || got[0] != "/add-dir" {
+		t.Fatalf("Complete(/dir) = %v, want /add-dir first", got)
+	}
+	if got := r.Complete("/"); !reflect.DeepEqual(got[0], "/add-dir") || len(got) != len(r.Names()) {
+		t.Fatalf("Complete(/) = %v, want every command in name order", got)
 	}
 
 	if got := r.Complete("/bogus"); got != nil {
@@ -33,8 +49,15 @@ func TestCompleteCommandPrefix(t *testing.T) {
 
 func TestCompleteAlias(t *testing.T) {
 	r := NewRegistry(t.TempDir())
-	if got := r.Complete("/n"); !reflect.DeepEqual(got, []string{"/new"}) {
-		t.Fatalf("Complete(/n) = %v, want [/new]", got)
+	if got := r.Complete("/n"); len(got) == 0 || got[0] != "/new" {
+		t.Fatalf("Complete(/n) = %v, want /new first", got)
+	}
+}
+
+func TestCompleteArgFuzzy(t *testing.T) {
+	r := NewRegistry(t.TempDir())
+	if got := r.Complete("/agent stp"); !reflect.DeepEqual(got, []string{"/agent stop"}) {
+		t.Fatalf("Complete(/agent stp) = %v, want [/agent stop]", got)
 	}
 }
 
