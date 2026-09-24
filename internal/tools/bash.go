@@ -120,12 +120,40 @@ func findReadOnly(fields []string) bool {
 // and is confined to the read-only allowlist; otherwise (the zero value, the
 // default) it runs through `sh -c` with full shell syntax (pipes,
 // redirections, chaining).
+//
+// Timeout is the default per-call time limit; a call may ask for a different
+// one with the timeout argument, up to BashMaxTimeout.
 type Bash struct {
 	Cwd      *Cwd
 	Root     string
 	ReadOnly bool
 	Timeout  time.Duration
 	MaxBytes int
+}
+
+// Bash time limits, in the trained shape: timeout is milliseconds.
+const (
+	// BashDefaultTimeout is the limit when a call names none. A normal test
+	// run takes longer than the old fixed 30 seconds.
+	BashDefaultTimeout = 120 * time.Second
+	// BashMaxTimeout caps what a call may ask for.
+	BashMaxTimeout = 600 * time.Second
+)
+
+// effectiveTimeout resolves the call's time limit: the timeout argument in
+// milliseconds when given (capped at BashMaxTimeout), else the tool default,
+// else BashDefaultTimeout.
+func (b *Bash) effectiveTimeout(args map[string]any) (time.Duration, error) {
+	if ms, ok := argInt64(args, "timeout"); ok {
+		if ms <= 0 {
+			return 0, fmt.Errorf("timeout must be a positive number of milliseconds")
+		}
+		return min(time.Duration(ms)*time.Millisecond, BashMaxTimeout), nil
+	}
+	if b.Timeout > 0 {
+		return b.Timeout, nil
+	}
+	return BashDefaultTimeout, nil
 }
 
 // readOnlyBashHint follows every read-only rejection so the model moves on to
@@ -138,7 +166,7 @@ func (b *Bash) Definition() Definition {
 	desc := "Run a shell command in the working directory. " +
 		"The full shell is available: pipes, redirections, chaining, and substitutions all work. " +
 		"Output is the command's stdout and stderr interleaved, capped at 64 KiB and truncated beyond that, with a non-zero exit reported as a trailing `exit status N` line. " +
-		"The command is killed after 30 seconds, and whatever it printed up to that point is still returned. " +
+		"The command is killed after its timeout (default 120000 ms, at most 600000 ms; set timeout for a long build or test run), and whatever it printed up to that point is still returned. " +
 		"Provider credentials are stripped from the environment, so a command cannot read or forward them. " +
 		"Mutating, so it asks for approval unless an explicit allow rule matches, and it is unavailable in plan mode — use Read, Grep, Glob, and the read-only command tools there instead."
 	arg := "The command to run, e.g. \"go test ./...\" or \"git commit -m msg\""
@@ -146,14 +174,16 @@ func (b *Bash) Definition() Definition {
 		desc = "Run one read-only shell command in the working directory. " +
 			"It does not run through a shell, so pipes, redirections, chaining, substitutions, and newlines are rejected rather than escaped — send a single command with its arguments. " +
 			"Only commands on the read-only allowlist are permitted (inspection utilities such as `cat`, `ls`, `head`, `find`, `wc`, `sort`, and read-only `git` subcommands: status, log, diff, show, rev-parse, ls-files, grep, describe); anything that could write, delete, or execute is refused. " +
-			"Output is capped at 64 KiB, the command is killed after 30 seconds, and provider credentials are stripped from the environment."
+			"Output is capped at 64 KiB, the command is killed after its timeout (at most 600000 ms), and provider credentials are stripped from the environment."
 		arg = "The single command to run, e.g. \"git status\" or \"ls -la internal\" — no pipes, redirections, or chaining"
 	}
 	return Definition{
 		Name:        "Bash",
 		Description: desc,
 		Properties: map[string]Property{
-			"command": {Type: "string", Description: arg},
+			"command":     {Type: "string", Description: arg},
+			"timeout":     {Type: "integer", Description: "Optional time limit in milliseconds (max 600000)"},
+			"description": {Type: "string", Description: "Optional short description of what the command does, shown to the user"},
 		},
 		Required: []string{"command"},
 	}
@@ -192,11 +222,12 @@ func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink
 		return Result{}, fmt.Errorf("missing command argument")
 	}
 
-	if b.Timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, b.Timeout)
-		defer cancel()
+	timeout, err := b.effectiveTimeout(args)
+	if err != nil {
+		return Result{}, err
 	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 
 	var ec *exec.Cmd
 	if b.ReadOnly {
@@ -250,7 +281,7 @@ func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink
 	if err := ec.Start(); err != nil {
 		return Result{}, err
 	}
-	err := ec.Wait()
+	err = ec.Wait()
 	tw.Flush()
 
 	content := tw.Content()
@@ -259,7 +290,7 @@ func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink
 		// here would discard it: executeCall drops the Result when err is
 		// non-nil, so a timed-out command used to report nothing at all, which
 		// is the least useful moment to have no output.
-		return BashResult(content + fmt.Sprintf("\n… command timed out after %s", b.Timeout)), nil
+		return BashResult(content + fmt.Sprintf("\n… command timed out after %s", timeout)), nil
 	}
 	if err != nil {
 		content += fmt.Sprintf("\nexit status %d", exitCode(err))
