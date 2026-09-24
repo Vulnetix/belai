@@ -198,7 +198,14 @@ Rules:
   non-guardrail role-manager activities (mode select, goal contract, clarify,
   plan eval, goal eval, compaction, session name, agent eval) from the main
   config under `routing.kind: "defined"`, or from the Jev-routed winner under
-  `routing.kind: "routed"`. `Pipeline.Security` is the guardrail: the ML stack
+  `routing.kind: "routed"`. The one-token sentinel activities (mode select,
+  session name, goal/plan/agent eval) fall back to the **fast tier** rather
+  than the main model when one is configured or implied by the provider
+  registry; compaction, goal contract and clarify stay on the main model.
+  Precedence: Jev-routed candidate, then fast tier (sentinel roles only), then
+  main. The guardrail moves to the fast tier only under
+  `classifier.tier: "fast"`, and an explicit `classifier.provider`/`model`
+  outranks the tier (see architecture.md, "Fast tier"). `Pipeline.Security` is the guardrail: the ML stack
   on the `models` path (with phase 3 using `classifier.provider`/
   `classifier.model`), or the full five-token LLM sentinel on the `llm` path.
   When `classifier.provider`/`classifier.model` is a Jev Decisions model, the

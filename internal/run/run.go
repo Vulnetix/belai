@@ -82,6 +82,10 @@ type ClassifierConfig struct {
 	Auth      provider.Auth
 	MaxTokens int
 	Chunk     ChunkConfig
+	// Tier is classifier.tier; Explicit is true when classifier.provider or
+	// classifier.model was set, which outranks the tier. See GuardConfig.
+	Tier     string
+	Explicit bool
 }
 
 // SecurityClassifierConfig is the resolved ML classifier-stack config. It is
@@ -160,6 +164,8 @@ func ResolveClassifier(main Config, cls *config.ClassifierSettings, src Credenti
 	if cls.Effort != "" {
 		out.Effort = cls.Effort
 	}
+	out.Tier = cls.Tier
+	out.Explicit = cls.Provider != "" || cls.Model != ""
 	if cls.Chunk.MaxBytesOr() > 0 {
 		out.Chunk.MaxBytes = cls.Chunk.MaxBytesOr()
 	}
@@ -473,6 +479,72 @@ type RoutingConfig struct {
 	// JevToken resolves the OpenRouter API key the Jev Decisions call uses. It
 	// is a func so a lazily-fetched key (keychain/netrc) stays fresh per call.
 	JevToken func() (string, error)
+	// Fast is the resolved fast-tier model (routing.fast_model, else the main
+	// provider's registry fast model). It answers the sentinel roles when no
+	// routing candidate does, and the security guard under classifier.tier
+	// "fast". Nil when there is no fast tier, or when it is the main model.
+	Fast *Config
+}
+
+// sentinelUseCases are the role-manager activities whose reply is a single
+// sentinel token. They default to the fast tier: the answer is one word, and
+// the full-size model adds cost and latency without changing it. Generative
+// roles (compaction, goal contract, clarify) stay on the main model, whose
+// quality shapes the agent's later work.
+var sentinelUseCases = map[string]bool{
+	rolemanager.UseCaseModeEval:    true,
+	rolemanager.UseCaseSessionName: true,
+	rolemanager.UseCaseGoalEval:    true,
+	rolemanager.UseCasePlanEval:    true,
+	rolemanager.UseCaseAgentEval:   true,
+}
+
+// IsSentinelUseCase reports whether a use case defaults to the fast tier.
+func IsSentinelUseCase(useCase string) bool { return sentinelUseCases[useCase] }
+
+// resolveFast resolves the fast tier. An explicit routing.fast_model that
+// cannot be configured is an error; the implicit registry default is simply
+// absent when its provider is not configured.
+func resolveFast(main Config, rs *config.RoutingSettings, src CredentialSource) (*Config, error) {
+	var t config.RoutingTarget
+	explicit := rs != nil && rs.Fast != nil
+	if explicit {
+		t = *rs.Fast
+	}
+	providerName := t.Provider
+	if providerName == "" {
+		providerName = main.Provider
+	}
+	model := t.Model
+	if model == "" {
+		if d, ok := provider.Lookup(providerName); ok {
+			model = d.FastModel
+		}
+	}
+	if model == "" {
+		if explicit {
+			return nil, fmt.Errorf("routing.fast_model: provider %q has no fast model; name one", providerName)
+		}
+		return nil, nil
+	}
+	if providerName == main.Provider && model == main.Model {
+		return nil, nil
+	}
+	if providerName == main.Provider {
+		// Same provider: reuse the resolved credentials rather than
+		// resolving them again.
+		c := main
+		c.Model = model
+		return &c, nil
+	}
+	c, err := ResolveWithSource(model, providerName, os.Getenv, src)
+	if err != nil {
+		if explicit {
+			return nil, fmt.Errorf("routing.fast_model: %w", err)
+		}
+		return nil, nil
+	}
+	return &c, nil
 }
 
 // ResolveRouting resolves the routing settings into a RoutingConfig. A nil or
@@ -484,13 +556,17 @@ type RoutingConfig struct {
 // candidate that cannot be configured is an error, not a silent skip: a broken
 // routing table must not route traffic to the wrong model.
 func ResolveRouting(main Config, rs *config.RoutingSettings, src CredentialSource) (RoutingConfig, error) {
-	if rs == nil || rs.Kind != config.RoutingRouted {
-		return RoutingConfig{Kind: config.RoutingDefined}, nil
-	}
 	if src == nil {
 		src = EnvSource(os.Getenv)
 	}
-	out := RoutingConfig{Kind: config.RoutingRouted}
+	fast, err := resolveFast(main, rs, src)
+	if err != nil {
+		return RoutingConfig{}, err
+	}
+	if rs == nil || rs.Kind != config.RoutingRouted {
+		return RoutingConfig{Kind: config.RoutingDefined, Fast: fast}, nil
+	}
+	out := RoutingConfig{Kind: config.RoutingRouted, Fast: fast}
 	keys := make([]string, 0, len(rs.UseCases))
 	for k := range rs.UseCases {
 		keys = append(keys, k)
@@ -1281,32 +1357,75 @@ func mainClassifierConfig(cfg Config) Config {
 // never a chat model, so it must never receive chat/completions. The Jev
 // security path wires the Decisions call separately in NewPipelineWithRetry.
 func NewClassifierWithRetry(cfg Config, client *http.Client, onRetry func(resilience.Attempt)) rolemanager.Classifier {
-	cc := cfg.ClassifierOrDefault().config()
+	cc := GuardConfig(cfg)
 	if jev.IsDecisionsModel(cc.Provider, cc.Model) {
 		cc = mainClassifierConfig(cfg)
 	}
 	return classifierFromConfig(cc, client, onRetry)
 }
 
+// GuardConfig is the request config the security guard answers with. The
+// order is: an explicit classifier.provider/model; else, under
+// classifier.tier "fast", the fast-tier model; else the main model. The tier
+// only changes which model answers — every required kind is still
+// classified — and it is an explicit opt-in, because a smaller guard is less
+// robust against prompt injection.
+func GuardConfig(cfg Config) Config {
+	cc := cfg.ClassifierOrDefault()
+	out := cc.config()
+	if cc.Tier == config.ClassifierTierFast && !cc.Explicit && cfg.Routing.Fast != nil {
+		f := *cfg.Routing.Fast
+		out.Provider, out.BaseURL, out.APIKey = f.Provider, f.BaseURL, f.APIKey
+		out.Model, out.API, out.Auth = f.Model, f.API, f.Auth
+	}
+	return out
+}
+
 // NewRoleClassifier builds the classifier that serves the non-guardrail
 // role-manager activities (mode select, goal/plan eval, compaction, goal
-// contract, clarify, session name, agent eval). Under "defined" it is the main
-// config with reasoning off. Under "routed" it dispatches each payload's
-// UseCase through the Jev routing activity, cached per use case, falling back
-// to the main config on any routing failure.
+// contract, clarify, session name, agent eval). Precedence per use case:
+// under "routed", the Jev-selected candidate; then, for a sentinel use case,
+// the fast-tier model; then the main config with reasoning off. The Jev path
+// itself is unchanged — the fast tier only replaces the main model as the
+// fallback for sentinel roles.
 func NewRoleClassifier(cfg Config, client *http.Client, onRetry func(resilience.Attempt)) rolemanager.Classifier {
-	if cfg.Routing.Kind != config.RoutingRouted || len(cfg.Routing.Candidates) == 0 {
-		return classifierFromConfig(mainClassifierConfig(cfg), client, onRetry)
+	main := classifierFromConfig(mainClassifierConfig(cfg), client, onRetry)
+	var fast rolemanager.Classifier
+	if cfg.Routing.Fast != nil {
+		fast = classifierFromConfig(mainClassifierConfig(*cfg.Routing.Fast), client, onRetry)
 	}
-	return newRoutedClassifier(cfg, client, onRetry)
+	if cfg.Routing.Kind != config.RoutingRouted || len(cfg.Routing.Candidates) == 0 {
+		if fast == nil {
+			return main
+		}
+		return tieredClassifier{main: main, fast: fast}
+	}
+	r := newRoutedClassifier(cfg, client, onRetry)
+	r.fast = fast
+	return r
+}
+
+// tieredClassifier sends sentinel use cases to the fast tier and everything
+// else to the main model.
+type tieredClassifier struct {
+	main, fast rolemanager.Classifier
+}
+
+func (t tieredClassifier) Classify(ctx context.Context, p rolemanager.ClassifierPayload) (string, error) {
+	if IsSentinelUseCase(p.UseCase) {
+		return t.fast.Classify(ctx, p)
+	}
+	return t.main.Classify(ctx, p)
 }
 
 // routedClassifier resolves a per-use-case classifier through Jev once, caches
 // it, and delegates every later call for that use case to the cached winner.
 // A transport error, an inconclusive verdict, or a winner missing from the
-// pool falls back to the defined main classifier.
+// pool falls back to the fast tier for a sentinel use case, else to the
+// defined main classifier.
 type routedClassifier struct {
 	main    rolemanager.Classifier
+	fast    rolemanager.Classifier // nil when there is no fast tier
 	pool    []RoutingCandidate
 	jev     *jev.Client
 	client  *http.Client
@@ -1314,6 +1433,15 @@ type routedClassifier struct {
 
 	mu    sync.Mutex
 	cache map[string]rolemanager.Classifier
+}
+
+// fallback is the classifier a use case falls back to when Jev does not
+// settle it.
+func (r *routedClassifier) fallback(useCase string) rolemanager.Classifier {
+	if r.fast != nil && IsSentinelUseCase(useCase) {
+		return r.fast
+	}
+	return r.main
 }
 
 func newRoutedClassifier(cfg Config, client *http.Client, onRetry func(resilience.Attempt)) *routedClassifier {
@@ -1355,7 +1483,7 @@ func (r *routedClassifier) forUseCase(ctx context.Context, useCase string) rolem
 	}
 	decision, err := r.jev.Route(ctx, useCase, candidates)
 	if err != nil || decision.Key == "" {
-		return r.cacheAndReturn(useCase, r.main)
+		return r.cacheAndReturn(useCase, r.fallback(useCase))
 	}
 	for _, pc := range r.pool {
 		if pc.Key == decision.Key {
@@ -1363,12 +1491,12 @@ func (r *routedClassifier) forUseCase(ctx context.Context, useCase string) rolem
 			// is a Jev model falls back to the main classifier rather than
 			// ever being asked to chat.
 			if jev.IsDecisionsModel(pc.Cfg.Provider, pc.Cfg.Model) {
-				return r.cacheAndReturn(useCase, r.main)
+				return r.cacheAndReturn(useCase, r.fallback(useCase))
 			}
 			return r.cacheAndReturn(useCase, classifierFromConfig(pc.Cfg, r.client, r.onRetry))
 		}
 	}
-	return r.cacheAndReturn(useCase, r.main)
+	return r.cacheAndReturn(useCase, r.fallback(useCase))
 }
 
 func (r *routedClassifier) cacheAndReturn(useCase string, c rolemanager.Classifier) rolemanager.Classifier {
@@ -1405,7 +1533,8 @@ func NewPipeline(cfg Config, client *http.Client, cache *rolemanager.Cache) *rol
 // the underlying classifiers so retries are visible to observers.
 func NewPipelineWithRetry(cfg Config, client *http.Client, cache *rolemanager.Cache, onRetry func(resilience.Attempt)) *rolemanager.Pipeline {
 	cc := cfg.ClassifierOrDefault()
-	guardLabel := cc.Provider + "/" + cc.Model
+	gc := GuardConfig(cfg)
+	guardLabel := gc.Provider + "/" + gc.Model
 	// The role classifier serves the non-guardrail role-manager activities and
 	// follows the routing config (defined: main; routed: Jev). The guardrail
 	// classifier serves security and always follows classifier.provider/model.

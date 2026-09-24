@@ -69,7 +69,9 @@ Business rules:
   role-manager activities (mode select, goal contract, clarify, plan eval,
   goal eval, compaction, session name, agent eval) run on the *role*
   classifier: the main provider/model under `routing.kind: "defined"` (the
-  default), or the Jev-routed winner under `routing.kind: "routed"`. The
+  default), or the Jev-routed winner under `routing.kind: "routed"` — except
+  that the one-token sentinel roles default to the fast tier (see
+  [Fast tier](#fast-tier)). The
   security *guardrail* runs separately: `rolemanager.Pipeline.Security` is the
   ML stack on the `models` path, or the full five-token LLM sentinel (built
   from `classifier.provider`/`classifier.model`) on the `llm` path.
@@ -222,6 +224,57 @@ Business rules and edge cases:
   its own configured model and never uses the routing table; untrusted content
   classification must remain governed by explicit classifier settings rather
   than a general routing knob.
+
+### Fast tier
+
+A prompt that reads five files used to make about seven full-size model calls
+before its first edit, most of them to get back one token. The fast tier is a
+small model, separate from the model the user picked for the work, that
+answers those one-token calls.
+
+```jsonc
+"routing": {
+  "fast_model": { "provider": "anthropic", "model": "claude-haiku-4-5" }
+},
+"classifier": {
+  "tier": "main"                  // "main" (default) | "fast"
+}
+```
+
+Business rules and edge cases:
+
+- **The fast tier is on by default.** With no `routing.fast_model`, it is the
+  main provider's registry fast model (`provider.Descriptor.FastModel`:
+  `gpt-5-mini` for openai, `claude-haiku-4-5` for anthropic,
+  `gemini-2.0-flash` for google-gemini, `llama-3.1-8b-instant` for groq,
+  `mistral-small-latest` for mistral, `grok-3-mini-latest` for xai), on the
+  main provider's credentials. A provider with no fast model (openrouter, the
+  local servers, custom profiles) has no fast tier, and a fast model equal to
+  the main model is no fast tier either.
+- **It may be a different provider.** `routing.fast_model.provider` resolves
+  through the same credential backends as any provider. An *explicit* fast
+  model that cannot be configured is a resolve error; the *implicit* default
+  is simply absent when unusable.
+- **Only sentinel roles move.** Mode select, session name, and the goal, plan
+  and agent evaluator verdicts (`run.IsSentinelUseCase`) default to the fast
+  tier. Compaction, goal-contract drafting, clarify and the final report stay
+  on the main model: their output shapes the agent's later work.
+- **Precedence per use case:** a Jev-routed candidate when `routing.kind` is
+  `routed`; then the fast tier for a sentinel use case; then the main model.
+  The Jev path is unchanged — the fast tier only replaces the main model as
+  the fallback for sentinel roles.
+- **The security guard stays on the main model by default.** A smaller guard
+  is less robust against prompt injection, and relaxation is an explicit
+  opt-in, so `classifier.tier: "fast"` is required to move it
+  (`run.GuardConfig`). An explicit `classifier.provider`/`classifier.model`
+  outranks the tier. Classification still runs on every required kind; only
+  the answering model changes. On the `models` path the tier moves phase 3.
+- **The `/model` screen says who answers what.** It opens with a four-line
+  summary (work, verdicts, drafting, security) resolved from the live config,
+  gives every group a one-line description, and adds a FAST TIER group
+  (provider, model; stored in the routing block and sharing its scope) and a
+  classifier `tier` row. Clearing the fast provider drops the whole target;
+  clearing only the model keeps the provider and its registry default.
 
 ## Delimiter, nonce, and integrity model
 
@@ -2511,9 +2564,13 @@ truncate-on-crash hole in the old JSON save. Directories are `0o755`; files
 
 ### Model roles
 
-`/model` is the role screen: it shows two labelled groups of settings, one
-for the **agent** role and one for the **classifier** role. Each group has
-its own scope badge (`session`, `global` or `project`), so the header never
+`/model` is the role screen. It opens with a **who answers what** summary —
+`work` (the agent model), `verdicts` (the fast tier, or Jev-routed then the
+fast tier), `drafting` (the agent model) and `security` (`run.GuardConfig`,
+or the local gates) — resolved from the live config. Below it are labelled
+groups for the **agent**, **fast tier**, **classifier** and **routing**
+roles, each with a one-line description of what it decides (see
+[Fast tier](#fast-tier)). Each group has its own scope badge (`session`, `global` or `project`), so the header never
 rewrites itself when the cursor moves between roles. The classifier group
 also carries a standing warning that it is the security gate for tool output,
 because a weaker classifier weakens detection everywhere.
@@ -2522,6 +2579,17 @@ Rows reuse the `/settings` declarative row table (`settingsRow`). The
 selected row is highlighted; `⏎` edits it, `s` cycles scope for the active
 role, `c` clears the row, `p` jumps to `/providers`, and `esc` returns to
 chat.
+
+#### Fast tier role
+
+**Provider** cycles the providers and clears the fast model, so the
+provider's registry fast model applies until one is picked; **model** opens
+the picker over that provider (Jev Decisions models are filtered out). The
+value column shows the default in force, and says when the default's
+provider is not configured. The target is stored as `routing.fast_model`
+and follows the routing scope. `c` on provider drops the target; `c` on
+model keeps the provider. The classifier group gains a **tier** row
+(`main` / `fast`) for `classifier.tier`.
 
 #### Agent role
 
