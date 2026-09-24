@@ -29,6 +29,16 @@ type goalPassOpts struct {
 	eval  []string // goal-evaluator sentinel sequence
 	main  string   // main model behaviour: "tool" | "length" | "reply" | "read"
 	reply string   // main model final reply when main == "reply"
+	// report is the main model's reply to the final report directive; when
+	// empty the report turn gets the ordinary main-model behaviour. The
+	// sentinel value "FAIL" answers the report turn with a provider error.
+	report string
+}
+
+// isReportTurn reports whether the request's last user message carries a
+// final report directive.
+func isReportTurn(lastUser string) bool {
+	return strings.Contains(lastUser, "Write the final report") || strings.Contains(lastUser, "Write a report for the user")
 }
 
 // goalPassServer records the main-model system prompts (so tests can assert the
@@ -57,10 +67,13 @@ func goalPassServer(t *testing.T, opts goalPassOpts) (*httptest.Server, *sync.Mu
 			} `json:"messages"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
-		var system string
+		var system, lastUser string
 		for _, m := range req.Messages {
-			if m.Role == "system" {
+			switch m.Role {
+			case "system":
 				system = m.Content
+			case "user":
+				lastUser = m.Content
 			}
 		}
 
@@ -85,6 +98,15 @@ func goalPassServer(t *testing.T, opts goalPassOpts) (*httptest.Server, *sync.Mu
 			mu.Lock()
 			mainSystems[system] = true
 			mu.Unlock()
+			if opts.report != "" && isReportTurn(lastUser) {
+				if opts.report == "FAIL" {
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write([]byte(`{"error":{"message":"report rejected"}}`))
+					return
+				}
+				writeChatJSON(w, opts.report)
+				return
+			}
 			switch opts.main {
 			case "length":
 				writeLengthRepairJSON(w, "Read", `{"path":"f.txt"}`)
