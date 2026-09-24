@@ -587,7 +587,8 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 				return run.Result{Passes: l.passes}, evalErr
 			}
 			if stop {
-				return run.Result{Reply: out.reply, Usage: out.usage, GoalSentinel: sentinel, Passes: l.passes}, nil
+				return s.goalReport(ctx, system, withReply(turns, out.reply), streaming, emit, sentinel,
+					run.Result{Reply: out.reply, Usage: out.usage, GoalSentinel: sentinel, Passes: l.passes}), nil
 			}
 			if sentinel == rolemanager.GoalComplete {
 				if l.verificationPasses == 0 {
@@ -602,7 +603,8 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 				}
 				gs.Status = string(goals.StatusComplete)
 				emitGoalState(emit, gs)
-				return run.Result{Reply: out.reply, Usage: out.usage, GoalSentinel: sentinel, Passes: l.passes}, nil
+				return s.goalReport(ctx, system, withReply(turns, out.reply), streaming, emit, sentinel,
+					run.Result{Reply: out.reply, Usage: out.usage, GoalSentinel: sentinel, Passes: l.passes}), nil
 			}
 			if l.notePartial() {
 				l.partialStreak = 0
@@ -641,7 +643,8 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 				// surfaced as one.
 				if l.writes > 0 {
 					emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("pass %d executed no tools; returning the work so far", l.passes)})
-					return run.Result{Reply: out.lastText, Usage: out.usage, GoalSentinel: rolemanager.GoalPartial, Passes: l.passes}, nil
+					return s.goalReport(ctx, system, turns, streaming, emit, rolemanager.GoalPartial,
+						run.Result{Reply: out.lastText, Usage: out.usage, GoalSentinel: rolemanager.GoalPartial, Passes: l.passes}), nil
 				}
 				return run.Result{Passes: l.passes}, fmt.Errorf("goal pass loop stopped: pass %d executed no tools", l.passes)
 			}
@@ -664,7 +667,8 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 			return run.Result{Passes: l.passes}, evalErr
 		}
 		if stop {
-			return run.Result{Reply: out.lastText, Usage: out.usage, GoalSentinel: sentinel, Passes: l.passes}, nil
+			return s.goalReport(ctx, system, turns, streaming, emit, sentinel,
+				run.Result{Reply: out.lastText, Usage: out.usage, GoalSentinel: sentinel, Passes: l.passes}), nil
 		}
 
 		switch sentinel {
@@ -725,12 +729,12 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 			}
 			gs.Status = string(goals.StatusComplete)
 			emitGoalState(emit, gs)
-			return run.Result{
+			return s.goalReport(ctx, system, turns, streaming, emit, sentinel, run.Result{
 				Reply:        out.lastText,
 				Usage:        out.usage,
 				GoalSentinel: sentinel,
 				Passes:       l.passes,
-			}, nil
+			}), nil
 
 		default:
 			// Unreachable: ParseGoalSentinel accepts only the three sentinels,
@@ -887,6 +891,66 @@ func (l *passLedger) progressionDirective() string {
 			"\n\nMark steps complete with update_plan, or with [DONE:n] in your reply, as you finish them."
 	}
 	return "Progress has stalled and no step list is tracked yet. Call update_plan with the steps you will execute, then carry out the first one as an edit in this pass. If you are blocked, state the blocker explicitly."
+}
+
+// Final report directives. A goal pass loop ends on an evaluator verdict, and
+// the pass that earned it usually ends mid-work — its last words are a tool
+// narration, not an account of the goal. Every non-error end of the loop
+// therefore asks the model once more, with no tool work allowed, for the
+// report the user reads.
+const (
+	goalReportDirective     = "The goal is complete and the harness has verified it. Do not call any tools. Write the final report for the user now: what was changed (each file and the substance of the change), how it was verified (the commands run and their outcome), and anything left open or worth following up. Be concise and factual, and report only work that is visible in this conversation."
+	goalStopReportDirective = "The goal loop has stopped before the goal was confirmed complete. Do not call any tools. Write a report for the user now: what was changed (each file and the substance of the change), what was verified and how, and what remains unfinished and why. Be concise and factual, and report only work that is visible in this conversation."
+)
+
+// reportDirective picks the final report directive for the sentinel the loop
+// ended on.
+func reportDirective(sentinel rolemanager.GoalSentinel) string {
+	if sentinel == rolemanager.GoalComplete {
+		return goalReportDirective
+	}
+	return goalStopReportDirective
+}
+
+// withReply appends a natural-exit pass's closing reply to turns. pass returns
+// on a text-only reply without appending it, so the report turn would
+// otherwise follow the previous user turn with no assistant turn between.
+func withReply(turns []run.Turn, reply string) []run.Turn {
+	if strings.TrimSpace(reply) == "" {
+		return turns
+	}
+	return append(turns, run.Turn{Role: "assistant", Content: reply})
+}
+
+// goalReport runs the final report turn of a goal pass loop and returns res
+// with the report as its reply. It is one provider turn: any tool call the
+// model makes anyway is ignored, never executed. The tool surface is still
+// advertised so the provider accepts the tool blocks in the history. A report
+// that fails or comes back empty never costs the goal: res is returned as it
+// was, with a warning naming the failure.
+func (s *Session) goalReport(ctx context.Context, system string, turns []run.Turn, streaming bool, emit func(Event), sentinel rolemanager.GoalSentinel, res run.Result) run.Result {
+	if ctx.Err() != nil {
+		return res
+	}
+	emit(Event{Kind: EventReportKind, GoalSentinel: sentinel})
+	s.traceRecord("report", string(sentinel), "", "", res.Passes)
+	turns = append(turns, directiveTurns(reportDirective(sentinel))...)
+	assistant, err := s.streamTurnRetry(ctx, system, turns, streaming, emit)
+	if err != nil {
+		if ctx.Err() == nil {
+			emit(Event{Kind: EventWarningKind, Warning: "final report failed: " + err.Error()})
+		}
+		return res
+	}
+	if strings.TrimSpace(assistant.Text) == "" {
+		emit(Event{Kind: EventWarningKind, Warning: "final report came back empty"})
+		return res
+	}
+	res.Reply = assistant.Text
+	if assistant.Usage != nil {
+		res.Usage = assistant.Usage
+	}
+	return res
 }
 
 // directiveTurns frames one harness continuation instruction: a user turn

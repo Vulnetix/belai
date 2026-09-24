@@ -1256,17 +1256,52 @@ which fails closed to `GOAL_PARTIAL` like any other malformed one.
 
 | Rule | Condition | Outcome |
 | ---- | --------- | ------- |
-| Goal met | `GOAL_COMPLETE` **and** `verificationPasses ≥ 1` | Success; todo list marked complete; reply is the pass's last assistant text |
-| Natural exit | A pass ends with no tool calls | Re-checked, not trusted: the reply is fed back to the evaluator once. `GOAL_COMPLETE` (past the verification gate) returns it as the answer; `GOAL_COMPLETE` before the gate arms a verification pass; otherwise a continuation directive is injected and the loop keeps going |
+| Goal met | `GOAL_COMPLETE` **and** `verificationPasses ≥ 1` | Success; todo list marked complete; the final report turn runs and its text is the reply (see [Final report](#final-report)) |
+| Natural exit | A pass ends with no tool calls | Re-checked, not trusted: the reply is fed back to the evaluator once. `GOAL_COMPLETE` (past the verification gate) ends the loop on the final report; `GOAL_COMPLETE` before the gate arms a verification pass; otherwise a continuation directive is injected and the loop keeps going |
 | Verification gate | `GOAL_COMPLETE` with `verificationPasses == 0` | Downgraded: arm one verification pass and continue. Harness logic — the model cannot talk its way past it. When the goal has changed no file (`writes == 0`) the armed pass carries the no-write directive instead, because re-reading a repository the goal never touched verifies nothing. If the pass also ended with every tool result withheld, the tool-repair directive replaces the no-write directive |
 | No-write escalation | `passesSinceWrite ≥ goalNoWritePasses` (2) | The no-write directive is injected, naming the next step and asking for the smallest correct edit or an explicit blocker. It outranks the periodic verification pass: a loop behind on writing does not need another read-only pass. A pass that also ended all-withheld gets the tool-repair directive instead — a model whose tools are failing must not be told to stop investigating |
 | Progression reset | `partialStreak ≥ 4` (`2 × goalVerifyEvery`) in `GOAL_PARTIAL` or at the verification gate | A progression directive with session context is injected and `partialStreak` is reset, starting a new agentic evaluation loop; the loop does not abort for stall |
-| Unproductive pass | A pass executed no non-withheld tool result | Repaired once: the tool-repair directive is injected and one more pass runs, because every call being rejected before it ran is usually a bad argument shape, not the end of the run. A second consecutive empty pass stops the loop — with the work so far and `GOAL_PARTIAL` when the goal has already changed a file, and with the error *pass N executed no tools* when it has not. Truncation repair still buys no further passes beyond that one repair |
+| Unproductive pass | A pass executed no non-withheld tool result | Repaired once: the tool-repair directive is injected and one more pass runs, because every call being rejected before it ran is usually a bad argument shape, not the end of the run. A second consecutive empty pass stops the loop — with the work so far, `GOAL_PARTIAL` and a stop report when the goal has already changed a file, and with the error *pass N executed no tools* when it has not. Truncation repair still buys no further passes beyond that one repair |
 | All-withheld goal | `writes == 0` and every pass so far ended with every tool result withheld | Error naming the tool failure, rather than granting unbounded passes against a broken resolver |
-| Broken evaluator | 2 consecutive malformed evaluator replies, each already re-asked once | The loop stops and returns the work so far with `GOAL_PARTIAL` and a warning — **not** an error. The passes that ran produced real changes; a garbled classifier token is no reason to discard them |
+| Broken evaluator | 2 consecutive malformed evaluator replies, each already re-asked once | The loop stops and returns the work so far with `GOAL_PARTIAL`, a warning and a stop report — **not** an error. The passes that ran produced real changes; a garbled classifier token is no reason to discard them |
 | Evaluator transport failure | `Classify` returns an error | Terminal. An unknown verdict must not grant compute |
 | Cancellation | `ctx` cancelled (`esc`, `SIGINT`) | `ErrPassLoopCancelled` with the partial result — never a raw `context.Canceled` |
 | Configured ceiling | `resilience.max_passes` reached (0 = unbounded, the default) | Error: *max passes (N) reached* |
+
+### Final report
+
+The pass that earns `GOAL_COMPLETE` usually ends mid-work, so its last
+assistant text is a tool narration, not an account of the goal. Every
+non-error end of the loop therefore makes one more main-model turn, the final
+report, and its text becomes the reply. The same loop runs an approved plan,
+so the end of a plan's execution reports the same way.
+
+| End of loop | Report directive | Report sentinel |
+| ----------- | ---------------- | --------------- |
+| Goal met (either the exhausted-pass or the natural-exit path) | *The goal is complete and verified* — what changed, how it was verified, what is left open | `GOAL_COMPLETE` |
+| Broken evaluator | *Stopped before the goal was confirmed complete* — what changed, what was verified, what remains and why | the loop's sentinel (`GOAL_PARTIAL`) |
+| Unproductive stop with work on disk | Same stop directive | `GOAL_PARTIAL` |
+| Error, cancellation, max passes | No report — the turn ends on the error or the cancellation | — |
+
+Rules:
+
+- The report is a single provider turn (with the usual L2 retry), not a pass.
+  It never executes a tool: any tool call the model makes anyway is ignored.
+  The tool surface is still advertised so the provider accepts the tool blocks
+  already in the history, and both directives say *Do not call any tools*.
+- The directive is a sealed harness directive (`directiveTurns`), like every
+  other pass-boundary instruction.
+- On a natural exit the closing reply is appended as an assistant turn before
+  the directive, since `pass` does not append a text-only reply itself.
+- A report that fails or comes back empty never costs the goal. The loop's
+  own result (the pass's last assistant text) is returned unchanged, with a
+  warning: *final report failed: …* or *final report came back empty*.
+- A cancelled context skips the report and emits nothing.
+- `EventReportKind` (carrying the sentinel) is emitted just before the report
+  turn. The TUI renders it as *goal complete — writing the final report* or
+  *goal stopped — writing the final report*. That system line also ends the
+  trailing assistant run, so the report streams into its own bubble.
+- The trace records the report as a `report` event with the sentinel.
 
 ### Verification passes
 
@@ -1404,14 +1439,18 @@ invariants").
 flowchart TD
     Start[Goal-mode prompt, top level] --> Pass[Run one bounded pass]
     Pass --> Exhausted{Budget exhausted?}
-    Exhausted -->|no| Reply[Return the model's reply]
+    Exhausted -->|no| NatEval[Goal evaluator on the reply]
+    NatEval -->|GOAL_COMPLETE| Gate
+    NatEval -->|other| Continue
     Exhausted -->|yes| Steer{Steering queued?}
     Steer -->|yes| Pass
     Steer -->|no| Prod{Any tool executed?}
-    Prod -->|no| StopUnproductive[Stop: pass executed no tools]
+    Prod -->|no, 2nd in a row| StopUnproductive[Stop: pass executed no tools]
+    StopUnproductive -->|files changed| StopReport[Stop report]
     Prod -->|yes| Eval[Goal evaluator]
     Eval -->|transport error| StopErr[Stop: unknown verdict]
     Eval -->|malformed x2| StopMalformed[Stop: broken evaluator]
+    StopMalformed --> StopReport
     Eval -->|GOAL_NOT_STARTED| Survey[Forced survey once + planning directive]
     Survey --> Pass
     Eval -->|GOAL_PARTIAL| Stall{4 passes without progress?}
@@ -1425,7 +1464,10 @@ flowchart TD
     Eval -->|GOAL_COMPLETE| Gate{Verification pass run?}
     Gate -->|no| VerifyGate[Verification directive]
     VerifyGate --> Pass
-    Gate -->|yes| Done[Goal met: mark todos done, return]
+    Gate -->|yes| Done[Goal met: mark todos done]
+    Done --> Report[Final report turn, tool-less]
+    Report --> Return[Return the report]
+    StopReport --> Return
 ```
 
 ## Agent-loop evaluator

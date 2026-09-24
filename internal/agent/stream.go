@@ -99,6 +99,11 @@ const (
 	// strings on this path are sanitized before they leave the child, and the
 	// finding itself still takes the existing classify route.
 	EventSubagentActivityKind
+	// EventReportKind reports that a goal pass loop (goal mode or an approved
+	// plan) has ended and its final report turn is about to stream. It carries
+	// the sentinel the loop ended on in GoalSentinel. The TUI renders it as a
+	// system line, so the report streams into its own bubble.
+	EventReportKind
 )
 
 // Role Manager sub-phases carried by EventRoleManagerKind.

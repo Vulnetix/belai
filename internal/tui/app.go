@@ -3315,6 +3315,15 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			a.addSystem(fmt.Sprintf("goal evaluator: %s (pass %d)", m.GoalSentinel.Label(), m.Pass))
 		}
 		return a.nextAgent()
+	case agent.EventReportKind:
+		// The goal loop has ended; the report streams next, into its own
+		// bubble because this line breaks the trailing assistant run.
+		if m.GoalSentinel == rolemanager.GoalComplete {
+			a.addSystem("goal complete — writing the final report")
+		} else {
+			a.addSystem("goal stopped — writing the final report")
+		}
+		return a.nextAgent()
 	case agent.EventPlanEvalKind:
 		if m.Todos != nil {
 			a.setTodos(m.Todos)
