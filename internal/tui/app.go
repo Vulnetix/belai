@@ -3335,8 +3335,10 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		}
 		return a.nextAgent()
 	case agent.EventDoneKind:
+		var elapsed time.Duration
 		if !a.phaseStartedAt.IsZero() {
-			a.trace.Event("tui", "turn_total", time.Since(a.phaseStartedAt))
+			elapsed = time.Since(a.phaseStartedAt)
+			a.trace.Event("tui", "turn_total", elapsed)
 		}
 		a.cancel = nil
 		a.endPhase()
@@ -3369,6 +3371,11 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			// The approved plan is done; the next send is an ordinary turn.
 			a.planExecuting = false
 			a.addSystem("approved plan complete")
+		}
+		// Agent mode has no report turn, so its end is marked by a
+		// harness-composed panel: the same every time, never model text.
+		if agentTurnCompleted(m.Result, a.planMode) {
+			a.addCompletion(elapsed)
 		}
 		a.persistTail()
 		// In plan mode, extract a numbered plan out of the reply and persist it

@@ -465,6 +465,8 @@ func (m MessageList) Render() (string, LineMap) {
 				switch msg.Role {
 				case "reasoning":
 					s, sub = reasoningPanel(*msg, width, m.ExpandAll)
+				case "completion":
+					s, sub = completionPanel(*msg, width)
 				default:
 					s, sub = turnPanel(*msg, width, m.ExpandAll)
 				}

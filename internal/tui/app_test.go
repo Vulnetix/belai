@@ -390,7 +390,9 @@ func TestSendCallsProvider(t *testing.T) {
 	a.status = status
 
 	a = drainAgent(t, a, a.send([]run.Turn{{Role: "user", Content: "ping"}}))
-	if len(a.messages) == 0 || a.messages[len(a.messages)-1].Content != "pong" {
+	// An agent turn ends on the completion panel, so the reply is the
+	// trailing assistant bubble rather than the last row.
+	if last := a.trailingAssistant(); last < 0 || a.messages[last].Content != "pong" {
 		t.Fatalf("expected assistant reply 'pong', got %v", a.messages)
 	}
 }
