@@ -3272,7 +3272,11 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			Provider: a.cfg.Provider,
 			Model:    a.cfg.Model,
 		})
-		a.addSystem(fmt.Sprintf("retrying (%d/%d) after %s — %s", m.RetryAttempt, 10, m.RetryDelay.Round(time.Millisecond), m.RetryReason))
+		count := fmt.Sprintf("%d", m.RetryAttempt)
+		if m.RetryMax > 0 {
+			count = fmt.Sprintf("%d/%d", m.RetryAttempt, m.RetryMax)
+		}
+		a.addSystem(fmt.Sprintf("retrying (%s) after %s — %s", count, m.RetryDelay.Round(time.Millisecond), m.RetryReason))
 		return a.nextAgent()
 	case agent.EventPassKind:
 		// A new goal-mode pass started. The agent owns the todo list; it is

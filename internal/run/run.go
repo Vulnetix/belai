@@ -1972,11 +1972,23 @@ func EngageWithPosture(ctx context.Context, cfg Config, prompt string, detectMod
 	return res, nil
 }
 
+// dropIdleConns closes the client's idle pooled connections after a transport
+// failure, so the retry dials fresh instead of reusing an HTTP/2 connection
+// the peer just reset or sent GOAWAY on. In-flight streams are untouched. A
+// cancelled turn is not a connection fault and leaves the pool alone.
+func dropIdleConns(ctx context.Context, client *http.Client) {
+	if client == nil || ctx.Err() != nil {
+		return
+	}
+	client.CloseIdleConnections()
+}
+
 func roundTrip(ctx context.Context, client *http.Client, req *http.Request, cfg Config, redact func(string) string) ([]byte, int, error) {
 	req = req.WithContext(ctx)
 	calltrace.Apply(ctx, req.Header)
 	resp, err := client.Do(req)
 	if err != nil {
+		dropIdleConns(ctx, client)
 		return nil, 0, fmt.Errorf("request: %w", err)
 	}
 	defer resp.Body.Close()

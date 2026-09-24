@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -168,8 +169,11 @@ type Event struct {
 	Clarify *clarify.Questionnaire
 	Reply   chan clarify.Answers
 
-	// RetryAttempt and RetryDelay carry EventRetryKind metadata.
+	// RetryAttempt and RetryDelay carry EventRetryKind metadata. RetryMax is
+	// the inclusive attempt budget of the layer that is retrying; zero means
+	// it is unknown.
 	RetryAttempt int
+	RetryMax     int
 	RetryDelay   time.Duration
 	RetryReason  string
 
@@ -303,14 +307,16 @@ func (s *Session) streamTurnRetry(ctx context.Context, system string, turns []ru
 		if verdict.Class != resilience.ClassRetryable {
 			return run.Assistant{}, maybeCompact(err)
 		}
-		retryAfter := time.Duration(0)
-		if rerr, ok := err.(*run.ProviderError); ok {
+		retryAfter := verdict.RetryAfter
+		var rerr *run.ProviderError
+		if errors.As(err, &rerr) && rerr.RetryAfter() > 0 {
 			retryAfter = rerr.RetryAfter()
 		}
 		delay := policy.Delay(attempt-1, retryAfter, policy.Rand())
 		emit(Event{
 			Kind:         EventRetryKind,
 			RetryAttempt: attempt + 1,
+			RetryMax:     maxAttempts,
 			RetryDelay:   delay,
 			RetryReason:  err.Error(),
 		})
@@ -340,6 +346,7 @@ func (s *Session) streamTurn(ctx context.Context, system string, turns []run.Tur
 		emit(Event{
 			Kind:         EventRetryKind,
 			RetryAttempt: a.Attempt,
+			RetryMax:     a.Max,
 			RetryDelay:   a.Delay,
 			RetryReason:  a.Reason,
 		})

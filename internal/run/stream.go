@@ -182,6 +182,7 @@ func openStream(ctx context.Context, cfg Config, system string, turns []Turn, cl
 		calltrace.Apply(ctx, req.Header)
 		resp, err := client.Do(req)
 		if err != nil {
+			dropIdleConns(ctx, client)
 			return nil, fmt.Errorf("request: %w", err)
 		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {

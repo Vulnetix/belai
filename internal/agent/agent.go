@@ -480,7 +480,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	clean := sanitize.Sanitize(in.Prompt)
 
 	onClassifierRetry := func(a resilience.Attempt) {
-		emit(Event{Kind: EventRetryKind, RetryAttempt: a.Attempt, RetryDelay: a.Delay, RetryReason: a.Reason})
+		emit(Event{Kind: EventRetryKind, RetryAttempt: a.Attempt, RetryMax: a.Max, RetryDelay: a.Delay, RetryReason: a.Reason})
 	}
 	pipe := run.NewPipelineWithRetry(s.cfg, s.client, s.cache, onClassifierRetry)
 	// The Role Manager owns the FIFO fan-out pool and reaches it through the
@@ -1041,7 +1041,7 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 
 	emit(Event{Kind: EventRoleManagerKind, Phase: RoleManagerPhaseToolResult})
 	pipe := run.NewPipelineWithRetry(s.cfg, s.client, s.cache, func(a resilience.Attempt) {
-		emit(Event{Kind: EventRetryKind, RetryAttempt: a.Attempt, RetryDelay: a.Delay, RetryReason: a.Reason})
+		emit(Event{Kind: EventRetryKind, RetryAttempt: a.Attempt, RetryMax: a.Max, RetryDelay: a.Delay, RetryReason: a.Reason})
 	})
 	cStart := time.Now()
 	dec, err := pipe.Process(ctx, res)

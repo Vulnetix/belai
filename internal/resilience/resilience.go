@@ -8,11 +8,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"math/rand"
+	"net"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
+	"syscall"
 	"time"
 )
 
@@ -37,8 +41,10 @@ type Verdict struct {
 // Attempt carries the metadata surfaced to observers before each backoff.
 type Attempt struct {
 	Attempt int
-	Delay   time.Duration
-	Reason  string
+	// Max is the inclusive attempt budget, so observers can render n/max.
+	Max    int
+	Delay  time.Duration
+	Reason string
 }
 
 // StatusCoder is implemented by errors that carry an HTTP status code.
@@ -183,7 +189,12 @@ var (
 	denyRE      = regexp.MustCompile(`(?i)quota|billing|usage.limit|insufficient_quota|payment|CARD_|invalid_api_key|invalid_auth`)
 	overflowRE  = regexp.MustCompile(`(?i)context.length|context.too.long|maximum.context|token.?limit|too many tokens|context length exceeded`)
 	allowRE     = regexp.MustCompile(`(?i)ended without|stream reset|connection reset|connection refused|read response|unexpected EOF|broken pipe|timeout awaiting response headers|no such host`)
-	rateLimitRE = regexp.MustCompile(`(?i)rate.?limit|too.?many.?requests|throttl|requests?\s+per\s+(min|minute|sec|second|hour)|inferencerequestpermin|over.?capacity`)
+	rateLimitRE = regexp.MustCompile(`(?i)rate.?limit|too.?many.?requests|throttl|requests?\s+per\s+(min|minute|sec|second|hour)|inferencerequestpermin|over.?capacity|ENHANCE_YOUR_CALM`)
+	// transportRE covers HTTP/2 and net/http failures the standard library
+	// does not export as types (the bundled h2 errors are unexported), so
+	// text is the only signal. Every entry is a peer or connection fault that
+	// the next attempt on a fresh stream can clear.
+	transportRE = regexp.MustCompile(`(?i)stream error|PROTOCOL_ERROR|INTERNAL_ERROR|REFUSED_STREAM|GOAWAY|http2: client connection lost|server closed idle connection|use of closed network connection|TLS handshake timeout|i/o timeout|stream idle timeout|closed without a done chunk|connection closed before|overloaded`)
 )
 
 // DefaultClassifier is the denylist-first classifier used by Signet's provider
@@ -192,13 +203,16 @@ type DefaultClassifier struct{}
 
 // Classify implements the retry classification order from the design doc:
 //  1. context errors → ClassAborted
-//  2. explicit non-retryable sentinels → ClassFatal
+//  2. typed transport faults (reset, EOF, timeout) → ClassRetryable
 //  3. denylist text → ClassFatal
 //  4. overflow text → ClassOverflow
 //  5. explicit Retry-After → ClassRetryable
 //  6. rate-limit signal without Retry-After → ClassRetryable with low-pressure default
-//  7. status code / retryable text → ClassRetryable
+//  7. status code / retryable or transport text → ClassRetryable
 //  8. default → ClassFatal
+//
+// For a transport error (*url.Error) the text steps match the underlying
+// cause only, so words in the request URL never decide the verdict.
 func (DefaultClassifier) Classify(err error) Verdict {
 	if err == nil {
 		return Verdict{Class: ClassFatal, Reason: "nil error"}
@@ -206,8 +220,15 @@ func (DefaultClassifier) Classify(err error) Verdict {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return Verdict{Class: ClassAborted, Reason: "request cancelled"}
 	}
+	if transportFault(err) {
+		return Verdict{Class: ClassRetryable, Reason: "transport error"}
+	}
 
 	msg := err.Error()
+	var uerr *url.Error
+	if errors.As(err, &uerr) && uerr.Err != nil {
+		msg = uerr.Err.Error()
+	}
 	if denyRE.MatchString(msg) {
 		return Verdict{Class: ClassFatal, Reason: "provider denied the request"}
 	}
@@ -215,17 +236,17 @@ func (DefaultClassifier) Classify(err error) Verdict {
 		return Verdict{Class: ClassOverflow, Reason: "context too long"}
 	}
 
-	var reason string
-	if r, ok := err.(RetryAfterer); ok {
-		retryAfter := r.RetryAfter()
-		if retryAfter > 0 {
+	var ra RetryAfterer
+	if errors.As(err, &ra) {
+		if retryAfter := ra.RetryAfter(); retryAfter > 0 {
 			return Verdict{Class: ClassRetryable, RetryAfter: retryAfter, Reason: "retry-after supplied"}
 		}
 	}
 
 	status := 0
-	if s, ok := err.(StatusCoder); ok {
-		status = s.StatusCode()
+	var sc StatusCoder
+	if errors.As(err, &sc) {
+		status = sc.StatusCode()
 	}
 	// Low-pressure rate-limit retry: when the provider says 429 or the body
 	// contains a rate-limit signal but omits Retry-After, default to a longer
@@ -239,10 +260,29 @@ func (DefaultClassifier) Classify(err error) Verdict {
 	if status != 0 {
 		return ClassifyStatus(status)
 	}
-	if allowRE.MatchString(msg) {
+	if allowRE.MatchString(msg) || transportRE.MatchString(msg) {
 		return Verdict{Class: ClassRetryable, Reason: "connection/stream reset"}
 	}
-	return Verdict{Class: ClassFatal, Reason: reason}
+	return Verdict{Class: ClassFatal}
+}
+
+// transportFault reports whether err is a typed connection-level failure that
+// a fresh attempt can clear. A bare io.EOF only counts inside a *url.Error,
+// where it means the server closed a pooled connection under the request.
+func transportFault(err error) bool {
+	if errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, syscall.ECONNABORTED) ||
+		errors.Is(err, syscall.ECONNREFUSED) ||
+		errors.Is(err, syscall.EPIPE) {
+		return true
+	}
+	var nerr net.Error
+	if errors.As(err, &nerr) && nerr.Timeout() {
+		return true
+	}
+	var uerr *url.Error
+	return errors.As(err, &uerr) && errors.Is(uerr.Err, io.EOF)
 }
 
 // Do executes attempt until it succeeds, the classifier says the error is not
@@ -270,7 +310,7 @@ func Do[T any](ctx context.Context, p Policy, c Classifier, attempt func(context
 		}
 		delay := p.Delay(retryIndex, verdict.RetryAfter, p.Rand())
 		if onRetry != nil {
-			onRetry(Attempt{Attempt: retryIndex + 2, Delay: delay, Reason: verdict.Reason})
+			onRetry(Attempt{Attempt: retryIndex + 2, Max: p.MaxAttempts, Delay: delay, Reason: verdict.Reason})
 		}
 		if err := p.Sleep(ctx, delay); err != nil {
 			return zero, err
