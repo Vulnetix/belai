@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -33,6 +34,10 @@ const (
 	// roleFast edits routing.fast_model: the fast tier that answers the
 	// one-token sentinel roles.
 	roleFast modelRole = "fast"
+	// rolePosture groups the session posture toggles (guardrails, ask,
+	// firewall, caveman). They always persist to the per-project preference
+	// file, so the group carries a fixed save target, not the agent's.
+	rolePosture modelRole = "posture"
 )
 
 // modelViewState tracks the /model role screen.
@@ -364,35 +369,14 @@ func (a *App) modelRows() []modelRow {
 		value: a.cfg.Model, src: sourceLabel(origin["model"]),
 	}})
 	rows = append(rows, modelRow{roleAgent, settingsRow{
-		key: "effort", label: "effort", kind: "choose",
-		opts: a.agentEffortOpts(), value: agentEffortVal,
-		src:      sourceLabel(origin["effort"]),
-		disabled: !agentOn,
-	}})
-	rows = append(rows, modelRow{roleAgent, settingsRow{
 		key: "reasoning", label: "reasoning", kind: "toggle",
 		value: boolLabel(agentOn), src: sourceLabel(origin["effort"]),
 	}})
 	rows = append(rows, modelRow{roleAgent, settingsRow{
-		key: "caveman", label: "caveman", kind: "toggle",
-		value: boolLabel(a.settings.CavemanEnabled()), src: sourceLabel(origin["caveman"]),
-	}})
-	rows = append(rows, modelRow{roleAgent, settingsRow{
-		key: "guardrails", label: "guardrails", kind: "toggle",
-		value: boolLabel(a.guardrailsEnabled()), src: sourceLabel(origin["guardrails"]),
-	}})
-	rows = append(rows, modelRow{roleAgent, settingsRow{
-		key: "ask", label: "ask", kind: "toggle",
-		value: boolLabel(a.askEnabled()), src: sourceLabel(origin["ask_permission"]),
-	}})
-	rows = append(rows, modelRow{roleAgent, settingsRow{
-		key: "firewall", label: "firewall", kind: "toggle",
-		value: boolLabel(a.firewallEnabled()), src: sourceLabel(origin["firewall_enabled"]),
-	}})
-	rows = append(rows, modelRow{roleAgent, settingsRow{
-		key: "scope", label: "scope", kind: "choose",
-		opts:  agentScopeOptions,
-		value: a.modelState.agentScope,
+		key: "effort", label: "effort", kind: "choose",
+		opts: a.agentEffortOpts(), value: agentEffortVal,
+		src:      sourceLabel(origin["effort"]),
+		disabled: !agentOn,
 	}})
 
 	rows = append(rows, a.fastRows()...)
@@ -420,11 +404,6 @@ func (a *App) modelRows() []modelRow {
 	} else {
 		chunkVal = fmt.Sprintf("%s ×%d", humanizeBytes(config.ClassifierChunkSettings{}.MaxBytesOr()), config.ClassifierChunkSettings{}.ConcurrencyOr())
 	}
-	clsScope := a.modelState.classifierScope
-	if clsScope == "" {
-		clsScope = "project"
-	}
-
 	kind := a.classifierKind()
 	kindRow := settingsRow{
 		key: "kind", label: "kind", kind: "choose",
@@ -462,11 +441,6 @@ func (a *App) modelRows() []modelRow {
 		key: "chunk", label: "chunk", kind: "text",
 		value: chunkVal, src: src,
 	}})
-	rows = append(rows, modelRow{roleClassifier, settingsRow{
-		key: "scope", label: "scope", kind: "choose",
-		opts:  classifierScopeOptions,
-		value: clsScope,
-	}})
 
 	// Routing role — the global model-routing choice.
 	routingSrc := sourceLabel(origin["routing"])
@@ -475,31 +449,55 @@ func (a *App) modelRows() []modelRow {
 	if routing != nil && routing.Kind != "" {
 		kindVal = routing.Kind
 	}
-	routingScope := a.modelState.routingScope
-	if routingScope == "" {
-		routingScope = "project"
-	}
 	rows = append(rows, modelRow{roleRouting, settingsRow{
 		key: "kind", label: "kind", kind: "choose",
 		opts: routingKindOptions, value: kindVal, src: routingSrc,
 	}})
 	for _, uc := range routingUseCaseKeys() {
-		prov, model := a.routingUseCaseTarget(uc)
-		val := "— (inherits main)"
-		if prov != "" || model != "" {
-			val = fmt.Sprintf("%s/%s", prov, model)
-		}
 		rows = append(rows, modelRow{roleRouting, settingsRow{
 			key: "route:" + uc, label: uc, kind: "pick",
-			value: val, src: routingSrc,
+			value: a.routeValue(uc), src: routingSrc,
 		}})
 	}
-	rows = append(rows, modelRow{roleRouting, settingsRow{
-		key: "scope", label: "scope", kind: "choose",
-		opts: classifierScopeOptions, value: routingScope,
+
+	// Session posture — per-project preferences whatever the role scopes say.
+	rows = append(rows, modelRow{rolePosture, settingsRow{
+		key: "guardrails", label: "guardrails", kind: "toggle",
+		value: boolLabel(a.guardrailsEnabled()), src: sourceLabel(origin["guardrails"]),
+	}})
+	rows = append(rows, modelRow{rolePosture, settingsRow{
+		key: "ask", label: "ask", kind: "toggle",
+		value: boolLabel(a.askEnabled()), src: sourceLabel(origin["ask_permission"]),
+	}})
+	rows = append(rows, modelRow{rolePosture, settingsRow{
+		key: "firewall", label: "firewall", kind: "toggle",
+		value: boolLabel(a.firewallEnabled()), src: sourceLabel(origin["firewall_enabled"]),
+	}})
+	rows = append(rows, modelRow{rolePosture, settingsRow{
+		key: "caveman", label: "caveman", kind: "toggle",
+		value: boolLabel(a.settings.CavemanEnabled()), src: sourceLabel(origin["caveman"]),
 	}})
 
 	return rows
+}
+
+// routeValue renders one routing pool entry. run.ResolveRouting builds the
+// pool from the use cases that have an entry, so an unset one is "not in
+// pool" rather than an inherited main model; an unset field inside an entry
+// inherits at resolution time.
+func (a *App) routeValue(useCase string) string {
+	prov, model := a.routingUseCaseTarget(useCase)
+	if prov == "" && model == "" {
+		return "— not in pool"
+	}
+	p := "main provider"
+	if prov != "" {
+		p = a.providerDisplayLabel(prov)
+	}
+	if model == "" {
+		model = "(default model)"
+	}
+	return p + " · " + model
 }
 
 // routingKindOptions are the choices the routing kind row cycles through.
@@ -557,71 +555,205 @@ func safeRow(rows []modelRow, i int) modelRow {
 	return rows[i]
 }
 
-// scopeTarget returns the human-readable storage path for a scope badge.
+// The /model screen speaks of two different places, and keeps a separate word
+// for each so they cannot be read as one:
+//
+//   - "saves to" is where an edit on a group is written: the group's scope
+//     (session, global, project) or, for the posture toggles, the per-project
+//     preference file. It appears once, on the group header.
+//   - "set in" is where a displayed value was loaded from: its provenance in
+//     the merged settings (config.Source). It appears only when it differs
+//     from the save target, because that is when it tells the user something
+//     — usually that a higher layer will override the edit.
+
+// postureScope is the fixed save target of the posture group.
+const postureScope = "project prefs"
+
+// roleScope returns the save target of a role group.
+func (a *App) roleScope(role modelRole) string {
+	switch role {
+	case roleAgent:
+		if a.modelState.agentScope != "" {
+			return a.modelState.agentScope
+		}
+		return "session"
+	case roleClassifier:
+		if a.modelState.classifierScope != "" {
+			return a.modelState.classifierScope
+		}
+	case roleRouting, roleFast:
+		if a.modelState.routingScope != "" {
+			return a.modelState.routingScope
+		}
+	case rolePosture:
+		return postureScope
+	}
+	return "project"
+}
+
+// saveLayer maps a save target onto the settings layer it writes, so a
+// value's provenance can be ranked against it. Session edits persist to
+// state.json, the lowest layer.
+func saveLayer(scope string) config.Source {
+	switch scope {
+	case "session":
+		return config.SourceState
+	case "global":
+		return config.SourceGlobal
+	case postureScope:
+		return config.SourceProjectPrefs
+	}
+	return config.SourceProject
+}
+
+// setIn returns a row's provenance when it is worth showing: not the default
+// and not the layer the group saves to.
+func setIn(src, scope string) string {
+	if src == "" || config.Source(src) == config.SourceDefault || config.Source(src) == saveLayer(scope) {
+		return ""
+	}
+	return src
+}
+
+// outranks reports whether a value set in src wins over an edit saved to
+// scope once settings are reloaded.
+func outranks(src, scope string) bool {
+	return sourceRank[src] > sourceRank[string(saveLayer(scope))]
+}
+
+// scopeTarget returns the human-readable storage location for a save target.
+// Project paths are shown relative to the working directory.
 func (a *App) scopeTarget(scope string) string {
 	switch scope {
+	case "session":
+		return "not written to any file"
+	case postureScope:
+		return "per-user, never committed"
 	case "global":
 		if p, _ := config.GlobalSettingsPath(); p != "" {
 			return p
 		}
-	case "session":
-		return "(session only)"
 	}
-	return config.ProjectSettingsPath(a.workdir)
+	return relToWorkdir(a.workdir, config.ProjectSettingsPath(a.workdir))
 }
 
-// modelGroupHeader renders a labelled role group with that role's own scope
-// badge, so moving the cursor between roles cannot rewrite the header.
-func (a *App) modelGroupHeader(role modelRole) string {
-	var scope string
-	switch role {
-	case roleAgent:
-		scope = a.modelState.agentScope
-		if scope == "" {
-			scope = "session"
+// relToWorkdir shortens p to a path relative to workdir when it lies inside.
+func relToWorkdir(workdir, p string) string {
+	if workdir == "" {
+		return p
+	}
+	if rel, err := filepath.Rel(workdir, p); err == nil && !strings.HasPrefix(rel, "..") {
+		return rel
+	}
+	return p
+}
+
+// modelGroup is one role's rows plus the provenance the header carries when
+// every row shares it.
+type modelGroup struct {
+	role   modelRole
+	scope  string
+	shared string // common "set in" value, hoisted into the header
+	perRow bool   // rows disagree: each shows its own "set in"
+}
+
+// modelGroupFor inspects a role's rows and decides where "set in" is shown.
+func (a *App) modelGroupFor(role modelRole, rows []modelRow) modelGroup {
+	g := modelGroup{role: role, scope: a.roleScope(role)}
+	seen := map[string]bool{}
+	for _, r := range rows {
+		if r.role != role {
+			continue
 		}
-	case roleClassifier:
-		scope = a.modelState.classifierScope
-		if scope == "" {
-			scope = "project"
-		}
-	case roleRouting, roleFast:
-		scope = a.modelState.routingScope
-		if scope == "" {
-			scope = "project"
+		if s := setIn(r.src, g.scope); s != "" {
+			seen[s] = true
+			g.shared = s
 		}
 	}
-	name := strings.ToUpper(string(role))
-	if role == roleFast {
+	if len(seen) > 1 {
+		g.shared, g.perRow = "", true
+	}
+	return g
+}
+
+// modelGroupHeader renders a role group's header: its name, where its edits
+// are saved, and — when every row shares it — where its values are set.
+func (a *App) modelGroupHeader(g modelGroup, w int) string {
+	name := strings.ToUpper(string(g.role))
+	switch g.role {
+	case roleFast:
 		name = "FAST TIER"
+	case rolePosture:
+		name = "SESSION POSTURE"
+	}
+	chipColor := components.ColorTealSoft
+	if g.role == rolePosture {
+		chipColor = components.ColorCream // fixed: `s` cannot cycle it
 	}
 	b := strings.Builder{}
-	b.WriteString(name)
-	b.WriteString("   ")
-	b.WriteString(components.Chip(scope, components.ColorTealSoft))
-	b.WriteString("  ")
-	b.WriteString(components.MutedStyle.Render(a.scopeTarget(scope)))
-	if blurb := modelRoleBlurb(role); blurb != "" {
-		b.WriteString("\n" + components.MutedStyle.Render(blurb))
+	b.WriteString(components.EmphStyle.Render(name))
+	b.WriteString("   " + components.MutedStyle.Render("saves to") + " ")
+	b.WriteString(components.Chip(g.scope, chipColor))
+	note := a.scopeTarget(g.scope)
+	if g.role == roleFast {
+		note = "with routing · " + note
 	}
-	if role == roleClassifier {
-		b.WriteString("\n")
-		b.WriteString(components.WarnStyle.Render(
-			"! the classifier is the security gate for tool output; a weaker model means weaker detection"))
+	b.WriteString("  " + components.MutedStyle.Render(note))
+	if g.shared != "" {
+		style := components.MutedStyle
+		if outranks(g.shared, g.scope) {
+			style = components.WarnStyle
+		}
+		b.WriteString(components.MutedStyle.Render("  ·  ") + style.Render("set in "+g.shared))
 	}
-	return b.String()
+	header := ansi.Truncate(b.String(), w, "…")
+	if blurb := a.modelRoleBlurb(g.role); blurb != "" {
+		header += "\n" + components.MutedStyle.Render(ansi.Truncate(blurb, w, "…"))
+	}
+	if g.role == roleClassifier {
+		header += "\n" + components.WarnStyle.Render(ansi.Truncate(
+			"! the classifier is the security gate for tool output; a weaker model means weaker detection", w, "…"))
+	}
+	if g.shared != "" && outranks(g.shared, g.scope) {
+		header += "\n" + components.WarnStyle.Render(ansi.Truncate(fmt.Sprintf(
+			"⚠ set in %s, which outranks %s: edits here last only until restart", g.shared, g.scope), w, "…"))
+	}
+	return header
+}
+
+// modelIndent is the left margin of every row and summary line, after the
+// two-cell cursor.
+const modelIndent = "  "
+
+// truncTail shortens s to w cells keeping its end: model ids differ in their
+// tails (…-pro-0813 vs …-flash-0731), so the provider prefix goes first.
+func truncTail(s string, w int) string {
+	n := ansi.StringWidth(s)
+	if n <= w {
+		return s
+	}
+	if w <= 1 {
+		return ansi.Truncate(s, w, "")
+	}
+	return "…" + ansi.TruncateLeft(s, n-(w-1), "")
+}
+
+// padRight pads s with spaces to w cells.
+func padRight(s string, w int) string {
+	if n := ansi.StringWidth(s); n < w {
+		return s + strings.Repeat(" ", w-n)
+	}
+	return s
 }
 
 func (a *App) modelView() string {
 	w := a.contentWidth()
+	inner := w - 2 // lipgloss Padding(1) below
 	rows := a.modelRows()
 	a.modelState.rows = rows
 
 	var b strings.Builder
 	b.WriteString(components.SectionHeader("Model Roles", "esc back", w))
-	if !a.modelState.picking {
-		b.WriteString("\n" + a.modelSummary())
-	}
 
 	if a.modelState.picking {
 		b.WriteString("\n")
@@ -629,30 +761,74 @@ func (a *App) modelView() string {
 		return lipgloss.NewStyle().Padding(1).Render(b.String())
 	}
 
+	// One label column for the whole page, the summary included, sized to the
+	// longest label so no label runs into its value.
+	labelW := len("verdicts")
+	for _, r := range rows {
+		labelW = max(labelW, ansi.StringWidth(r.label))
+	}
+	labelW += 2
+	groups := map[modelRole]modelGroup{}
+	srcW := 0
+	for _, r := range rows {
+		g, ok := groups[r.role]
+		if !ok {
+			g = a.modelGroupFor(r.role, rows)
+			groups[r.role] = g
+		}
+		if g.perRow {
+			srcW = max(srcW, ansi.StringWidth("set in "+setIn(r.src, g.scope)))
+		}
+	}
+	valW := inner - 2 - len(modelIndent) - labelW
+	if srcW > 0 {
+		valW -= srcW + 2
+	}
+	valW = max(valW, 12)
+
+	b.WriteString("\n" + a.modelSummary(labelW, valW) + "\n")
+
+	routed := a.settings.Routing != nil && a.settings.Routing.Kind == config.RoutingRouted
 	var prev modelRole
 	for i, r := range rows {
+		g := groups[r.role]
 		if r.role != prev {
 			if i > 0 {
 				b.WriteString("\n")
 			}
-			b.WriteString(a.modelGroupHeader(r.role) + "\n")
+			b.WriteString(a.modelGroupHeader(g, inner) + "\n")
 			prev = r.role
 		}
+		isRoute := strings.HasPrefix(r.key, "route:")
+		if isRoute && !strings.HasPrefix(safeRow(rows, i-1).key, "route:") {
+			b.WriteString(components.MutedStyle.Render("  candidate pool") + "\n")
+		}
 		selected := i == a.modelState.selected
-		label := fmt.Sprintf("  %-12s", r.label)
-		value := ansi.Truncate(r.value+" ", 41, "…")
+		label := modelIndent + padRight(r.label, labelW)
+		value := truncTail(r.value, valW)
+		// Pool rows stay editable under kind defined, but they are not in use,
+		// so they read like disabled ones.
+		dim := r.disabled || (isRoute && !routed)
 		switch {
-		case r.disabled:
-			label = components.MutedStyle.Render(label)
-			value = components.MutedStyle.Render(value)
 		case selected:
 			label = components.AccentStyle.Bold(true).Render(label)
 			value = components.EmphStyle.Render(value)
+		case dim:
+			label = components.MutedStyle.Render(label)
+			value = components.MutedStyle.Render(value)
 		default:
 			label = components.MutedStyle.Render(label)
 		}
-		b.WriteString(components.Cursor(selected) + label + value +
-			components.MutedStyle.Render(r.src) + "\n")
+		line := components.Cursor(selected) + label + value
+		if src := setIn(r.src, g.scope); g.perRow && src != "" {
+			style := components.MutedStyle
+			if outranks(src, g.scope) {
+				style = components.WarnStyle
+			}
+			gap := valW - ansi.StringWidth(truncTail(r.value, valW)) + 2
+			line += strings.Repeat(" ", gap) + style.Render("set in "+src)
+		}
+		b.WriteString(line + "\n")
 	}
 
 	if a.avail.note != "" {
@@ -662,7 +838,7 @@ func (a *App) modelView() string {
 		b.WriteString("\n" + components.DangerStyle.Render("✗ "+a.modelState.errorMsg) + "\n")
 	}
 	b.WriteString("\n" + components.HelpBar(
-		"↑↓", "move", "⏎", "edit", "s", "scope", "c", "clear", "p", "providers", "esc", "back") + "\n")
+		"↑↓", "move", "⏎", "edit", "s", "save to", "c", "clear", "p", "providers", "esc", "back") + "\n")
 	return lipgloss.NewStyle().Padding(1).Render(b.String())
 }
 
@@ -948,6 +1124,9 @@ func (a *App) cycleScope() tea.Cmd {
 	case roleRouting, roleFast:
 		opts = classifierScopeOptions
 		cur = a.modelState.routingScope
+	default:
+		// The posture group always saves to the per-project preferences.
+		return nil
 	}
 	next := opts[(indexOfString(opts, cur)+1)%len(opts)]
 	switch row.role {
@@ -1020,8 +1199,6 @@ func (a *App) changeModelRow() tea.Cmd {
 		return a.toggleAsk()
 	case "firewall":
 		return a.toggleFirewall()
-	case "scope":
-		return a.cycleScope()
 	}
 	if strings.HasPrefix(row.key, "route:") {
 		return a.changeRoutingUseCase(strings.TrimPrefix(row.key, "route:"))
@@ -1057,6 +1234,9 @@ func (a *App) unsetModelRow() tea.Cmd {
 				a.cfg.Effort = ""
 				a.settings.Effort = ""
 			})
+		}
+	case rolePosture:
+		switch row.key {
 		case "caveman":
 			return a.clearCaveman()
 		case "guardrails":
@@ -1280,9 +1460,11 @@ func (a *App) classifierPhaseRow(phase int) settingsRow {
 // classifierPhaseThresholdRow builds the user-adjustable threshold row for one
 // phase gate. It is hidden (disabled) when the phase has no model.
 func (a *App) classifierPhaseThresholdRow(phase int) settingsRow {
-	key, label := "phase1-threshold", "phase 1 threshold"
+	// The label is indented under its phase row, which already names the
+	// phase, so it stays inside the label column.
+	key, label := "phase1-threshold", "  threshold"
 	if phase == 2 {
-		key, label = "phase2-threshold", "phase 2 threshold"
+		key = "phase2-threshold"
 	}
 	mc := a.resolvedClassifierPhase(phase)
 	if mc == nil {

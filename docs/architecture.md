@@ -273,7 +273,7 @@ Business rules and edge cases:
   (`run.GuardConfig`). An explicit `classifier.provider`/`classifier.model`
   outranks the tier. Classification still runs on every required kind; only
   the answering model changes. On the `models` path the tier moves phase 3.
-- **The `/model` screen says who answers what.** It opens with a four-line
+- **The `/model` screen says what is in effect.** It opens with a four-line
   summary (work, verdicts, drafting, security) resolved from the live config,
   gives every group a one-line description, and adds a FAST TIER group
   (provider, model; stored in the routing block and sharing its scope) and a
@@ -2679,21 +2679,41 @@ truncate-on-crash hole in the old JSON save. Directories are `0o755`; files
 
 ### Model roles
 
-`/model` is the role screen. It opens with a **who answers what** summary —
-`work` (the agent model), `verdicts` (the fast tier, or Jev-routed then the
-fast tier), `drafting` (the agent model) and `security` (`run.GuardConfig`,
-or the local gates) — resolved from the live config. Below it are labelled
-groups for the **agent**, **fast tier**, **classifier** and **routing**
-roles, each with a one-line description of what it decides (see
-[Fast tier](#fast-tier)). Each group has its own scope badge (`session`, `global` or `project`), so the header never
-rewrites itself when the cursor moves between roles. The classifier group
-also carries a standing warning that it is the security gate for tool output,
-because a weaker classifier weakens detection everywhere.
+`/model` is the role screen. It opens with an **IN EFFECT** summary —
+`work` (the agent model), `verdicts` (the fast tier, or Jev picking from the
+pool then the fast tier; the goal contract rides here too), `drafting` (the
+agent model for compaction and clarify, or Jev picking from the pool when
+routing is live) and `security` (`run.GuardConfig`, or the local gates) —
+resolved from the live config. Below it are labelled groups for the
+**agent**, **fast tier**, **classifier**, **routing** and **session
+posture** roles, each with a one-line description of what it decides (see
+[Fast tier](#fast-tier)). The classifier group also carries a standing
+warning that it is the security gate for tool output, because a weaker
+classifier weakens detection everywhere.
 
-Rows reuse the `/settings` declarative row table (`settingsRow`). The
-selected row is highlighted; `⏎` edits it, `s` cycles scope for the active
-role, `c` clears the row, `p` jumps to `/providers`, and `esc` returns to
-chat.
+The screen keeps two words for two places. **saves to** is where an edit on
+a group is written — the group's scope (`session`, `global` or `project`),
+shown once on its header, so the header never rewrites itself when the
+cursor moves between roles. The fast tier saves *with routing*, since it is
+stored in the routing block. The posture toggles (guardrails, ask, firewall,
+caveman) always write the per-project preference file, so their group
+carries that fixed target and `s` does nothing there. **set in** is a
+value's provenance (`config.Source`). It is shown only when it differs from
+the save target: hoisted onto the header when a whole group shares it, per
+row when rows disagree, and in amber with a warning line when that layer
+outranks the save target, because then an edit here lasts only until
+restart.
+
+The routing group lists the use-case entries as a **candidate pool**: under
+`routed` Jev picks from the whole pool for each use case, so an entry's key
+is a label, not an assignment; under `defined` the pool is unused and shown
+dimmed. A use case with no entry reads `not in pool`.
+
+Rows reuse the `/settings` declarative row table (`settingsRow`). The label
+column is sized to the longest label and values keep their tail (the model
+id), so no row overflows or collides. The selected row is highlighted; `⏎`
+edits it, `s` cycles the save target for the active group, `c` clears the
+row, `p` jumps to `/providers`, and `esc` returns to chat.
 
 #### Fast tier role
 

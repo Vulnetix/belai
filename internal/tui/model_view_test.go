@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/vulnetix/signet/internal/config"
 )
@@ -30,17 +31,112 @@ func TestModelRowsReflectSettings(t *testing.T) {
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
 	_ = a.enterModel()
 	rows := a.modelRows()
-	if len(rows) != 30 {
-		t.Fatalf("len(rows) = %d, want 30", len(rows))
+	if len(rows) != 27 {
+		t.Fatalf("len(rows) = %d, want 27", len(rows))
 	}
 	if rows[0].role != roleAgent || rows[0].key != "provider" {
 		t.Fatalf("first row = %+v, want agent provider", rows[0])
 	}
-	if rows[11].role != roleClassifier || rows[11].key != "kind" {
-		t.Fatalf("classifier kind row = %+v", rows[11])
+	if rows[6].role != roleClassifier || rows[6].key != "kind" {
+		t.Fatalf("classifier kind row = %+v", rows[6])
 	}
-	if rows[19].role != roleRouting || rows[19].key != "kind" {
-		t.Fatalf("routing kind row = %+v", rows[19])
+	if rows[13].role != roleRouting || rows[13].key != "kind" {
+		t.Fatalf("routing kind row = %+v", rows[13])
+	}
+	if last := rows[len(rows)-1]; last.role != rolePosture {
+		t.Fatalf("last row = %+v, want the posture group", last)
+	}
+	// The save target lives on the group header; no group carries a scope row.
+	for _, r := range rows {
+		if r.key == "scope" {
+			t.Fatalf("unexpected scope row: %+v", r)
+		}
+	}
+}
+
+// TestModelPostureScopeIsFixed pins the posture group's save target: the
+// toggles always write per-project preferences, so `s` must not cycle it
+// or any other role's scope.
+func TestModelPostureScopeIsFixed(t *testing.T) {
+	a := New(Options{})
+	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	_ = a.enterModel()
+	selectRow(t, a, rolePosture, "guardrails")
+	before := a.modelState
+	_ = a.cycleScope()
+	if a.modelState.agentScope != before.agentScope ||
+		a.modelState.classifierScope != before.classifierScope ||
+		a.modelState.routingScope != before.routingScope {
+		t.Fatalf("s on a posture row changed a scope: %+v", a.modelState)
+	}
+	if got := a.roleScope(rolePosture); got != postureScope {
+		t.Fatalf("posture scope = %q, want %q", got, postureScope)
+	}
+}
+
+// TestModelSetInShownOnlyWhenItDiffers pins the provenance rule: a value set
+// in the layer the group saves to is not labelled, and one set in a layer
+// that outranks the save target is.
+func TestModelSetInShownOnlyWhenItDiffers(t *testing.T) {
+	cases := []struct {
+		src, scope, want string
+		outranks         bool
+	}{
+		{"default", "project", "", false},
+		{"", "session", "", false},
+		{"project", "project", "", false},
+		{"state", "session", "", false},
+		{"project_prefs", postureScope, "", false},
+		{"project", "session", "project", true},
+		{"project", "global", "project", true},
+		{"global", "project", "global", false},
+		{"env", "project", "env", true},
+	}
+	for _, c := range cases {
+		if got := setIn(c.src, c.scope); got != c.want {
+			t.Errorf("setIn(%q, %q) = %q, want %q", c.src, c.scope, got, c.want)
+		}
+		if c.want != "" {
+			if got := outranks(c.src, c.scope); got != c.outranks {
+				t.Errorf("outranks(%q, %q) = %v, want %v", c.src, c.scope, got, c.outranks)
+			}
+		}
+	}
+}
+
+// TestModelViewFitsWidth renders the page at several widths and fails on any
+// line wider than the terminal — the overlap the fixed 12-cell label column
+// and 41-cell value cut used to produce.
+func TestModelViewFitsWidth(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	workdir := t.TempDir()
+	if err := config.Mutate(config.ScopeProject, workdir, func(s *config.Settings) error {
+		s.Routing = &config.RoutingSettings{
+			Kind: config.RoutingRouted,
+			UseCases: map[string]config.RoutingTarget{
+				"goal_contract": {Provider: "openrouter"},
+				"session_name":  {Provider: "openrouter", Model: "some-vendor/a-very-long-model-identifier-that-keeps-going-0731"},
+			},
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("seed routing: %v", err)
+	}
+	for _, width := range []int{80, 120, 200} {
+		a := New(Options{Workdir: workdir})
+		a.Update(tea.WindowSizeMsg{Width: width, Height: 60})
+		_ = a.enterModel()
+		view := a.modelView()
+		for _, line := range strings.Split(view, "\n") {
+			if got := ansi.StringWidth(line); got > width {
+				t.Fatalf("width %d: line is %d cells:\n%q", width, got, ansi.Strip(line))
+			}
+		}
+		for _, want := range []string{"saves to", "candidate pool", "SESSION POSTURE", "(default model)", "not in pool"} {
+			if !strings.Contains(ansi.Strip(view), want) {
+				t.Fatalf("width %d: view missing %q", width, want)
+			}
+		}
 	}
 }
 
@@ -49,7 +145,7 @@ func TestModelAgentScopeCanBeCycled(t *testing.T) {
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
 	_ = a.enterModel()
 	a.modelState.rows = a.modelRows()
-	a.modelState.selected = 8 // agent scope row
+	selectRow(t, a, roleAgent, "model")
 	_ = a.cycleScope()
 	if a.modelState.agentScope != "global" {
 		t.Fatalf("agent scope = %q, want global", a.modelState.agentScope)
@@ -108,7 +204,7 @@ func TestModelClassifierReasoningToggleDrivesEffort(t *testing.T) {
 
 	// Selected row must be the classifier reasoning toggle.
 	a.modelState.rows = a.modelRows()
-	a.modelState.selected = 14
+	selectRow(t, a, roleClassifier, "reasoning")
 	a.modelState.classifierScope = "project"
 	_ = a.changeModelRow()
 	if a.settings.Classifier.Effort != "none" {
@@ -131,7 +227,7 @@ func TestModelViewGroupsRolesWithPerRoleBadges(t *testing.T) {
 	a.modelState.classifierScope = "project"
 
 	// Select an agent row and render.
-	a.modelState.selected = 0
+	selectRow(t, a, roleAgent, "provider")
 	viewAgent := a.modelView()
 	if !strings.Contains(viewAgent, "AGENT") {
 		t.Fatal("expected AGENT group header")
@@ -141,7 +237,7 @@ func TestModelViewGroupsRolesWithPerRoleBadges(t *testing.T) {
 	}
 
 	// Select a classifier row and render again.
-	a.modelState.selected = 11
+	selectRow(t, a, roleClassifier, "kind")
 	viewClassifier := a.modelView()
 	if !strings.Contains(viewClassifier, "CLASSIFIER") {
 		t.Fatal("expected CLASSIFIER group header")
@@ -234,7 +330,7 @@ func TestModelScopeKeyCyclesRoleScopeNotRowOptions(t *testing.T) {
 
 	// Press scope on the agent provider row, whose opts are provider names.
 	// The scope must cycle through role scopes, never provider names.
-	a.modelState.selected = 0
+	selectRow(t, a, roleAgent, "provider")
 	_ = a.cycleScope()
 	if a.modelState.agentScope != "global" {
 		t.Fatalf("agent scope = %q, want global", a.modelState.agentScope)
@@ -249,7 +345,7 @@ func TestModelScopeKeyCyclesRoleScopeNotRowOptions(t *testing.T) {
 	}
 
 	// Same for the classifier provider row.
-	a.modelState.selected = 12
+	selectRow(t, a, roleClassifier, "provider")
 	a.modelState.classifierScope = "project"
 	_ = a.cycleScope()
 	if a.modelState.classifierScope != "global" {

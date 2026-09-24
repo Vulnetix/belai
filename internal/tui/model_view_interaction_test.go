@@ -37,7 +37,7 @@ func TestModelScopeKeyCyclesRoleScopes(t *testing.T) {
 	a.modelState.agentScope = "session"
 	a.modelState.classifierScope = "project"
 
-	a.modelState.selected = 0 // agent provider row
+	selectRow(t, a, roleAgent, "provider")
 	for _, want := range []string{"global", "project", "session"} {
 		_, _ = a.handleModelKey(modelKey("s"))
 		if a.modelState.agentScope != want {
@@ -45,7 +45,7 @@ func TestModelScopeKeyCyclesRoleScopes(t *testing.T) {
 		}
 	}
 
-	a.modelState.selected = 12 // classifier provider row
+	selectRow(t, a, roleClassifier, "provider")
 	a.modelState.classifierScope = "project"
 	for _, want := range []string{"global", "project"} {
 		_, _ = a.handleModelKey(modelKey("s"))
@@ -59,7 +59,7 @@ func TestModelKeyNavigationBounds(t *testing.T) {
 	a := newModelScreen(t, t.TempDir())
 	n := len(a.modelRows())
 
-	a.modelState.selected = 0
+	selectRow(t, a, roleAgent, "provider")
 	_, _ = a.handleModelKey(tea.KeyMsg{Type: tea.KeyDown})
 	if a.modelState.selected != 1 {
 		t.Fatalf("selected = %d, want 1", a.modelState.selected)
@@ -71,7 +71,7 @@ func TestModelKeyNavigationBounds(t *testing.T) {
 		t.Fatalf("selected = %d, want clamped at %d", a.modelState.selected, n-1)
 	}
 
-	a.modelState.selected = 0
+	selectRow(t, a, roleAgent, "provider")
 	_, _ = a.handleModelKey(tea.KeyMsg{Type: tea.KeyUp})
 	if a.modelState.selected != 0 {
 		t.Fatalf("selected = %d, want clamped at 0", a.modelState.selected)
@@ -114,7 +114,7 @@ func TestModelKeyEnterCyclesAgentProviderAndReResolves(t *testing.T) {
 	}
 	startBase := a.cfg.BaseURL
 
-	a.modelState.selected = 0 // agent provider row
+	selectRow(t, a, roleAgent, "provider")
 	_, _ = a.handleModelKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if a.cfg.Provider != "openrouter" {
 		t.Fatalf("provider = %q, want openrouter", a.cfg.Provider)
@@ -133,7 +133,7 @@ func TestModelKeyEnterCyclesAgentEffort(t *testing.T) {
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.agentScope = "session"
 
-	a.modelState.selected = 2 // agent effort row
+	selectRow(t, a, roleAgent, "effort")
 	_, _ = a.handleModelKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if a.cfg.Effort != "low" {
 		t.Fatalf("effort = %q, want low", a.cfg.Effort)
@@ -146,7 +146,7 @@ func TestModelKeyEnterCyclesAgentEffort(t *testing.T) {
 func TestModelKeyEnterOpensModelPicker(t *testing.T) {
 	a := newModelScreen(t, t.TempDir())
 
-	a.modelState.selected = 1 // agent model row
+	selectRow(t, a, roleAgent, "model")
 	_, _ = a.handleModelKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if !a.modelState.picking {
 		t.Fatal("expected the model sub-picker to open")
@@ -171,7 +171,7 @@ func TestModelKeyUnsetAgentRows(t *testing.T) {
 	// Unset effort.
 	a.settings.Effort = "high"
 	a.cfg.Effort = "high"
-	a.modelState.selected = 2
+	selectRow(t, a, roleAgent, "effort")
 	_, _ = a.handleModelKey(modelKey("c"))
 	if a.cfg.Effort != "" || a.settings.Effort != "" {
 		t.Fatalf("effort not cleared: cfg=%q settings=%q", a.cfg.Effort, a.settings.Effort)
@@ -179,7 +179,7 @@ func TestModelKeyUnsetAgentRows(t *testing.T) {
 
 	// Unset provider: the running config re-resolves to the default provider,
 	// which is openrouter's free router on an install that names none.
-	a.modelState.selected = 0
+	selectRow(t, a, roleAgent, "provider")
 	_, _ = a.handleModelKey(modelKey("c"))
 	if a.cfg.Provider != "openrouter" {
 		t.Fatalf("provider = %q, want default openrouter after unset", a.cfg.Provider)
@@ -212,14 +212,14 @@ func TestModelKeyUnsetClassifierRows(t *testing.T) {
 	a.modelState.classifierScope = "project"
 
 	// Unset provider drops the provider+model pair.
-	a.modelState.selected = 12
+	selectRow(t, a, roleClassifier, "provider")
 	_, _ = a.handleModelKey(modelKey("c"))
 	if a.settings.Classifier.Provider != "" || a.settings.Classifier.Model != "" {
 		t.Fatalf("classifier provider/model not cleared: %+v", a.settings.Classifier)
 	}
 
 	// Unset effort.
-	a.modelState.selected = 15
+	selectRow(t, a, roleClassifier, "effort")
 	_, _ = a.handleModelKey(modelKey("c"))
 	if a.settings.Classifier.Effort != "" {
 		t.Fatalf("classifier effort = %q, want empty", a.settings.Classifier.Effort)
@@ -414,14 +414,16 @@ func TestScopeTarget(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 	a := New(Options{Workdir: "/tmp/w"})
 
-	if got := a.scopeTarget("session"); got != "(session only)" {
+	if got := a.scopeTarget("session"); got != "not written to any file" {
 		t.Fatalf("scopeTarget(session) = %q", got)
 	}
 	got := a.scopeTarget("global")
 	if !strings.HasSuffix(got, "settings.json") {
 		t.Fatalf("scopeTarget(global) = %q, want settings path", got)
 	}
-	if want := config.ProjectSettingsPath("/tmp/w"); a.scopeTarget("project") != want || a.scopeTarget("bogus") != want {
+	// Project paths are shown relative to the working directory.
+	if want := relToWorkdir("/tmp/w", config.ProjectSettingsPath("/tmp/w")); strings.HasPrefix(want, "/") ||
+		a.scopeTarget("project") != want || a.scopeTarget("bogus") != want {
 		t.Fatalf("project/bogus scope should fall back to %q, got %q/%q", want, a.scopeTarget("project"), a.scopeTarget("bogus"))
 	}
 }
@@ -531,7 +533,7 @@ func TestModelKeyEnterOpensClassifierPicker(t *testing.T) {
 		t.Fatalf("reload settings: %v", err)
 	}
 	a.modelState.classifierScope = "project"
-	a.modelState.selected = 13 // classifier model row
+	selectRow(t, a, roleClassifier, "model")
 
 	_, _ = a.handleModelKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if !a.modelState.picking || a.modelState.pickingRole != roleClassifier {
@@ -548,7 +550,7 @@ func TestModelKeyTogglesAgentCaveman(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.agentScope = "global"
-	a.modelState.selected = 4 // agent caveman row
+	selectRow(t, a, rolePosture, "caveman")
 
 	_, _ = a.handleModelKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if !a.settings.CavemanEnabled() {
@@ -559,7 +561,7 @@ func TestModelKeyTogglesAgentCaveman(t *testing.T) {
 func TestModelChangeModelRowDisabledNoop(t *testing.T) {
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.rows = a.modelRows()
-	a.modelState.selected = 15 // classifier effort row, disabled when reasoning is off
+	selectRow(t, a, roleClassifier, "effort")
 
 	if cmd := a.changeModelRow(); cmd != nil {
 		t.Fatal("changeModelRow on a disabled row must be a no-op")
@@ -573,7 +575,7 @@ func TestModelKeyUnsetAgentModelRow(t *testing.T) {
 	a.modelState.agentScope = "session"
 	a.cfg.Model = "gpt-4.1"
 
-	a.modelState.selected = 1 // agent model row
+	selectRow(t, a, roleAgent, "model")
 	_, _ = a.handleModelKey(modelKey("c"))
 	if a.cfg.Model != run.DefaultModel(a.cfg.Provider) {
 		t.Fatalf("model = %q, want the %s default after unset", a.cfg.Model, a.cfg.Provider)
@@ -594,7 +596,7 @@ func TestModelKeyUnsetClassifierModelRow(t *testing.T) {
 		t.Fatalf("reload settings: %v", err)
 	}
 	a.modelState.classifierScope = "project"
-	a.modelState.selected = 13 // classifier model row
+	selectRow(t, a, roleClassifier, "model")
 
 	_, _ = a.handleModelKey(modelKey("c"))
 	if a.settings.Classifier.Model != "" {
@@ -638,7 +640,7 @@ func TestModelKeyTogglesAgentReasoning(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "sk-openai")
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.agentScope = "session"
-	a.modelState.selected = 3 // agent reasoning row
+	selectRow(t, a, roleAgent, "reasoning")
 
 	// Default ("" = provider default) is reasoning on; toggling off writes "none".
 	_, _ = a.handleModelKey(tea.KeyMsg{Type: tea.KeyEnter})
@@ -658,7 +660,7 @@ func TestModelKeyTogglesAgentGuardrails(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 	t.Setenv("OPENAI_API_KEY", "sk-openai")
 	a := newModelScreen(t, t.TempDir())
-	a.modelState.selected = 5 // agent guardrails row
+	selectRow(t, a, rolePosture, "guardrails")
 
 	_, _ = a.handleModelKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if a.guardrailsEnabled() {

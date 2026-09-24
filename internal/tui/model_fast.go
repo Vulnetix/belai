@@ -146,7 +146,10 @@ func (a *App) unsetFastRow(key string) tea.Cmd {
 }
 
 // modelRoleBlurb is the one-line account of what each /model group decides.
-func modelRoleBlurb(role modelRole) string {
+// The routing line follows the routing kind: under "defined" the pool is not
+// consulted at all (run.ResolveRouting), and under "routed" Jev picks from the
+// whole pool per use case — a pool entry's key is a label, not an assignment.
+func (a *App) modelRoleBlurb(role modelRole) string {
 	switch role {
 	case roleAgent:
 		return "does the work: every turn, tool call, compaction, goal contract, clarify and final report"
@@ -155,17 +158,23 @@ func modelRoleBlurb(role modelRole) string {
 	case roleClassifier:
 		return "the security guard: classifies the prompt and every arbitrary tool result"
 	case roleRouting:
-		return "routed: Jev picks a candidate per use case; the fast tier stays the verdict fallback"
+		if a.settings.Routing != nil && a.settings.Routing.Kind == config.RoutingRouted {
+			return "Jev picks one model from this pool for each use case; the fast tier is the verdict fallback"
+		}
+		return "defined: the agent model serves every role; the pool below is unused until kind is routed"
+	case rolePosture:
+		return "session safety switches; not model settings, so they keep their own save target"
 	}
 	return ""
 }
 
-// modelSummary renders who answers what, resolved from the live config — the
-// part of the page the roles below exist to change.
-func (a *App) modelSummary() string {
-	work := a.providerDisplayLabel(a.cfg.Provider) + "/" + a.cfg.Model
+// modelSummary renders what is in effect, resolved from the live config — the
+// part of the page the groups below exist to change. It shares the rows'
+// label column so the page reads as one table.
+func (a *App) modelSummary(labelW, valW int) string {
+	work := a.providerDisplayLabel(a.cfg.Provider) + " · " + a.cfg.Model
 	guard := run.GuardConfig(a.cfg)
-	guardLabel := guard.Provider + "/" + guard.Model
+	guardLabel := a.providerDisplayLabel(guard.Provider) + " · " + guard.Model
 	if a.classifierKind() == "models" {
 		if a.resolvedSecurityClassifier().Phase3On {
 			guardLabel = "local gates + " + guardLabel
@@ -174,19 +183,21 @@ func (a *App) modelSummary() string {
 		}
 	}
 	verdicts := a.resolvedFastLabel()
+	drafting := "work model"
 	if a.cfg.Routing.Kind == config.RoutingRouted && len(a.cfg.Routing.Candidates) > 0 {
-		verdicts = "Jev-routed, else " + verdicts
+		verdicts = "Jev picks from pool, else " + verdicts
+		drafting = "Jev picks from pool, else work model"
 	}
 	lines := [][2]string{
 		{"work", work},
 		{"verdicts", verdicts},
-		{"drafting", work},
+		{"drafting", drafting},
 		{"security", guardLabel},
 	}
 	var b strings.Builder
-	b.WriteString(components.MutedStyle.Render("who answers what") + "\n")
+	b.WriteString(components.EmphStyle.Render("IN EFFECT") + "\n")
 	for _, l := range lines {
-		b.WriteString(components.MutedStyle.Render(fmt.Sprintf("  %-10s", l[0])) + l[1] + "\n")
+		b.WriteString("  " + components.MutedStyle.Render(modelIndent+padRight(l[0], labelW)) + truncTail(l[1], valW) + "\n")
 	}
 	return b.String()
 }
