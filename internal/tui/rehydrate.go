@@ -102,7 +102,7 @@ func rehydrateSession(entries []session.Entry) rehydrated {
 			hasTool = true
 		case session.EntryTypeSessionMeta:
 			hasMeta = true
-		case "reasoning", "system", "rolemanager", completionRole:
+		case "reasoning", "system", "rolemanager", completionRole, components.ShellRole:
 			hasNewRow = true
 		}
 	}
@@ -208,6 +208,19 @@ func messagesFromEntries(entries []session.Entry) ([]components.Message, int) {
 				continue
 			}
 			msgs = append(msgs, components.Message{Role: completionRole, Content: e.Content})
+		case components.ShellRole:
+			// A shell panel is render-only and pairs with nothing: the model's
+			// copy of its output rides the following user turn's attachment.
+			if e.Content == "" && metaString(e.Meta, "status") == "" {
+				continue
+			}
+			msgs = append(msgs, components.Message{
+				Role:       components.ShellRole,
+				Content:    e.Content,
+				ToolArgs:   components.ShellArgs(metaString(e.Meta, "command")),
+				ToolCallID: metaString(e.Meta, "shell_id"),
+				Status:     metaString(e.Meta, "status"),
+			})
 		case "rolemanager":
 			if msg := rolemanagerMessage(e); msg.Role != "" {
 				msgs = append(msgs, msg)

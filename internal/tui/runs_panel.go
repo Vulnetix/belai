@@ -624,18 +624,3 @@ func (a *App) registerAgentDesignActivity(name string, cancel context.CancelFunc
 		Silent: true,
 	}, cancel)
 }
-
-// registerShellActivity registers one !shell command in the panel.
-func (a *App) registerShellActivity(callID, command, workdir string) {
-	if a.activity == nil {
-		return
-	}
-	a.activity.Add(activity.Activity{
-		ID:    callID,
-		Kind:  activity.KindShell,
-		Label: "!" + command,
-		Argv:  []string{"!" + command},
-		Dir:   workdir,
-		State: activity.StateRunning,
-	}, func() {})
-}

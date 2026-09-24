@@ -2400,7 +2400,26 @@ binding needs a line there as well as in this document.
   agent picker.
 - `!cmd` executes a local `Bash` command (full shell by default; read-only
   in plan mode, or whenever `read_only` is set) and sends the output to
-  the model under the `signet:debug` profile.
+  the model under the `signet:debug` profile. The command gets its own
+  **shell panel** in the transcript (`components.ShellRole`). The panel is
+  not a tool row, is not part of the signet panel, and is not a runs-panel
+  activity, and ctrl+t does not hide it. It shows the command's raw output,
+  with a live tail while the command runs. When collapsed it shows the last
+  six lines; ctrl+o expands it, and ctrl+c / ctrl+s copy or save it.
+  Terminal control sequences are stripped on screen, while the copy keeps
+  the command's bytes. The panel is render-only: `buildTurns` and
+  compaction never read it. The model receives one sanitised, classified
+  `shell` attachment instead. A verdict that withholds that attachment still
+  leaves the raw output in the panel, marked `not sent`. That covers a
+  classifier error (`not sent: classifier failed`) and an unsafe verdict
+  (`not sent: <label>`). A command that fails before producing output shows
+  `failed: <error>` with a `✗` status. The panel is written to the session
+  file as a `shell` entry (`meta.command`, `meta.shell_id`, `meta.status`).
+  Output over 32 KiB is truncated there, with `meta.truncated` and
+  `meta.orig_len` recorded. A resumed session restores the panel. A shell
+  row that is still running is never persisted: the next user turn drops it
+  rather than writing an orphan. The panel saves with `ctrl+s` as a `.txt`
+  file, like a tool row.
 
 ### Agent picker
 

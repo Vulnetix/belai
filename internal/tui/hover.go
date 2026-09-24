@@ -104,7 +104,7 @@ func (a *App) hoverSaveName() string {
 	}
 	ext := ".md"
 	if a.hover.msg >= 0 && a.hover.msg < len(a.messages) {
-		if a.messages[a.hover.msg].Role == "tool" {
+		if r := a.messages[a.hover.msg].Role; r == "tool" || r == components.ShellRole {
 			ext = ".txt"
 		}
 	}

@@ -5240,6 +5240,12 @@ func (a *App) copySelection() tea.Cmd {
 func (a *App) transcriptMessages() []transcript.Message {
 	out := make([]transcript.Message, 0, len(a.messages))
 	for _, m := range a.messages {
+		// A shell panel holds a command's raw, unclassified output. The model
+		// already has the classified copy as the user turn's attachment, so
+		// compaction must not carry the raw text to the classifier.
+		if m.Role == components.ShellRole {
+			continue
+		}
 		out = append(out, transcript.Message{
 			Role:    m.Role,
 			Content: m.Text(),

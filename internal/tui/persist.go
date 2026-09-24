@@ -79,7 +79,7 @@ func settled(msgs []components.Message, i int, inFlight, force bool) bool {
 		// call Materialise, which flushes buf into Content, so a non-empty
 		// Content marks a turn that ended.
 		return m.Content != "" || force
-	case "tool":
+	case "tool", components.ShellRole:
 		return toolAnswered(m) || force
 	case "reasoning":
 		// A reasoning bubble streams before the assistant turn. It is final
@@ -165,7 +165,7 @@ func (a *App) persistTailMode(force bool) {
 		if !settled(a.messages, i, inFlight, force) {
 			break
 		}
-		if m.Role == "tool" && !toolAnswered(m) {
+		if (m.Role == "tool" || m.Role == components.ShellRole) && !toolAnswered(m) {
 			// Forced past an unanswered call: its assistant entry was written
 			// without this call, so the row is dropped rather than orphaned.
 			a.persistedUpTo = i + 1
@@ -247,6 +247,19 @@ func (a *App) persistMessage(i int) {
 		a.appendEntry(timedEntry(m, session.Entry{Type: "system", Role: "system", Content: m.Text(), SubagentID: m.SubagentID}))
 	case completionRole:
 		a.appendEntry(timedEntry(m, session.Entry{Type: completionRole, Role: completionRole, Content: m.Text()}))
+	case components.ShellRole:
+		content := m.Text()
+		meta := map[string]any{
+			"command":  m.ShellCommand(),
+			"shell_id": m.ToolCallID,
+			"status":   m.Status,
+		}
+		if len(content) > maxToolResultBytes {
+			meta["truncated"] = true
+			meta["orig_len"] = len(content)
+			content = truncateUTF8(content, maxToolResultBytes)
+		}
+		a.appendEntry(timedEntry(m, session.Entry{Type: components.ShellRole, Role: components.ShellRole, Content: content, Meta: meta}))
 	case "rolemanager":
 		meta := map[string]any{
 			"summary": m.RM.Summary,
