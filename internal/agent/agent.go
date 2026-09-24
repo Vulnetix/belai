@@ -204,7 +204,17 @@ type Session struct {
 	// sessionID is the transcript session stamped on outbound calls; see
 	// Options.SessionID.
 	sessionID string
+	// sealKey/sealed memoise the sealed system prompt across turns; see
+	// sealSystem.
+	sealMu  sync.Mutex
+	sealKey string
+	sealed  string
 }
+
+// planFinishTools is the whole surface of the plan loop's final pass: record
+// the checklist, hand over the plan. No exploration tool is offered, so the
+// pass cannot end in more reading.
+var planFinishTools = []string{"ExitPlanMode", "update_plan"}
 
 // steerBuffer is the steering queue capacity. A full queue drops the newest
 // message rather than stalling the UI or the loop.
@@ -676,18 +686,22 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	// request advertises, so the briefing cannot promise a tool the model
 	// will not be given.
 	opts.Tools = s.toolDocs()
+	var repoStatus string
 	if s.repoMap != nil {
-		// The changed-path facts are refreshed every turn (one bounded git
-		// status), so they include this session's own edits.
+		// The stable facts go in the system block; the volatile ones (branch,
+		// HEAD, changed paths) are refreshed every turn (one bounded git
+		// status) and ride on this turn's user message instead, so they
+		// include this session's own edits without changing the system bytes.
 		m := *s.repoMap
 		m.RefreshStatus(ctx)
 		opts.RepoMap = prompt.RepoMapBlock(m)
+		repoStatus = prompt.RepoStatusBlock(m)
 	}
 	if len(s.workspaceMaps) > 0 {
 		opts.WorkspaceBlock = prompt.WorkspaceBlock(s.workspaceMaps)
 	}
 
-	system, err := run.SealSystem(s.cfg, s.pool, opts)
+	system, err := s.sealSystem(opts)
 	if err != nil {
 		return run.Result{SanitizedPrompt: clean, SecuritySentinel: dec.Sentinel, ModeDecision: modeDec}, err
 	}
@@ -699,7 +713,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		turns = append(turns, exploreTurns...)
 		turns = append(turns, run.Turn{Role: "assistant", Content: rolemanager.SummaryAck})
 	}
-	turns = append(turns, run.Turn{Role: "user", Content: clean, Attachments: in.Attachments, Directive: in.Directive})
+	turns = append(turns, run.Turn{Role: "user", Content: clean, Attachments: in.Attachments, Directive: joinDirectives(in.Directive, repoStatus)})
 
 	// Plan mode's pass loop contacts the evaluator with the exploration
 	// context the explore agents gathered, not with a goal definition (plan
@@ -711,6 +725,41 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	res.SecuritySentinel = dec.Sentinel
 	res.ModeDecision = modeDec
 	return res, err
+}
+
+// sealSystem returns the sealed system and tools blocks for opts, reusing the
+// previous turn's sealed bytes when nothing that feeds them changed. Sealing
+// reserves fresh nonces, so re-sealing an identical prompt every turn changed
+// the first bytes of every request and no provider could cache any of it.
+// The pool never rotates in a session, so the earlier nonces stay valid.
+//
+// The key is the provider, the model and every prompt input: a mode switch,
+// a skills change, an added root, a Cd, or a model switch all re-seal.
+func (s *Session) sealSystem(opts prompt.Options) (string, error) {
+	key := fmt.Sprintf("%s\x00%s\x00%#v", s.cfg.Provider, s.cfg.Model, opts)
+	s.sealMu.Lock()
+	defer s.sealMu.Unlock()
+	if s.sealed != "" && s.sealKey == key {
+		return s.sealed, nil
+	}
+	system, err := run.SealSystem(s.cfg, s.pool, opts)
+	if err != nil {
+		return "", err
+	}
+	s.sealKey, s.sealed = key, system
+	return system, nil
+}
+
+// joinDirectives combines harness directive bodies for one turn, skipping
+// empty ones. The result is sealed as a single <directive> block.
+func joinDirectives(bodies ...string) string {
+	var parts []string
+	for _, b := range bodies {
+		if strings.TrimSpace(b) != "" {
+			parts = append(parts, b)
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 // PlanMode reports whether the session runs with plan-mode tool restrictions.

@@ -1448,9 +1448,11 @@ retries.
 
 ### Sealed-once invariant
 
-`sanitize` through `SealSystem` runs once per prompt, in `Session.run`. The
-system prompt is passed into the loop as a value and every pass reuses the same
-sealed bytes. Re-sealing would rotate nonces and invalidate already-sealed
+`sanitize` through `SealSystem` runs once per prompt, in `Session.run`, and
+the sealed bytes are memoised on the session (`Session.sealSystem`): a later
+prompt whose inputs are unchanged reuses them, nonces included, so the system
+prefix is byte-identical across turns. The system prompt is passed into the
+loop as a value and every pass reuses the same sealed bytes. Re-sealing would rotate nonces and invalidate already-sealed
 tool-result blocks (see [resilience.md](resilience.md), "Turn retry and state
 invariants").
 

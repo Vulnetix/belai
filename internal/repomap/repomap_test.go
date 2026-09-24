@@ -149,3 +149,25 @@ func TestRedactRemote(t *testing.T) {
 		}
 	}
 }
+
+func TestParseBranch(t *testing.T) {
+	cases := map[string]string{
+		"## main...origin/main [ahead 1]\n M a.go": "main",
+		"## feature/x":               "feature/x",
+		"## HEAD (no branch)\n?? b":  "",
+		"## No commits yet on trunk": "trunk",
+		" M a.go":                    "",
+	}
+	for in, want := range cases {
+		if got := parseBranch(in); got != want {
+			t.Fatalf("parseBranch(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestParseStatusSkipsTheBranchHeader(t *testing.T) {
+	rows, total := parseStatus("## main...origin/main\n M a.go\n")
+	if total != 1 || len(rows) != 1 || rows[0].Path != "a.go" {
+		t.Fatalf("rows = %+v total = %d", rows, total)
+	}
+}

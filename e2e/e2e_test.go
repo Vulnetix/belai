@@ -500,8 +500,14 @@ func TestFirewallOnRoutesThroughStubGateway(t *testing.T) {
 
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
-	if len(mp.chatUser) != 1 || mp.chatUser[0] != "firewall on" {
+	// The user message may lead with the sealed per-turn repository status
+	// directive (the working directory is a git checkout); the prompt itself
+	// follows it unchanged.
+	if len(mp.chatUser) != 1 || !strings.HasSuffix(mp.chatUser[0], "firewall on") {
 		t.Fatalf("chat user = %v, want [firewall on]", mp.chatUser)
+	}
+	if msg := mp.chatUser[0]; msg != "firewall on" && !strings.HasPrefix(msg, "<directive nonce=") {
+		t.Fatalf("anything before the prompt must be a sealed directive: %q", msg)
 	}
 }
 

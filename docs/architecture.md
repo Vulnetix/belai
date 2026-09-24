@@ -1063,14 +1063,25 @@ empty pass: counting it as one used to fail the whole goal loop with
 
 Every session's system prompt may carry a **harness-computed repository map**
 (`internal/repomap`), scanned once at startup. It holds facts only — module
-root, branch, HEAD, dirty flag, remotes, language counts by extension,
-detected build/test/fmt/lint commands from a fixed file table
-(`justfile`, `Makefile`, `go.mod`, `package.json`, `Cargo.toml`,
-`pyproject.toml`), entrypoints, top-level layout, and the presence/size of
-`AGENTS.md`/`CLAUDE.md` — and never repository file contents. That is the
-invariant that lets the map enter the system block: repository prose still
-reaches the model only through `RepoRead`/`Read`, which classify. The map is
-an accelerant, never a gate; a failed or empty scan renders nothing.
+root, remotes, language counts by extension, detected build/test/fmt/lint
+commands from a fixed file table (`justfile`, `Makefile`, `go.mod`,
+`package.json`, `Cargo.toml`, `pyproject.toml`), entrypoints, top-level
+layout, and the presence/size of `AGENTS.md`/`CLAUDE.md` — and never
+repository file contents. That is the invariant that lets the map enter the
+system block: repository prose still reaches the model only through
+`RepoRead`/`Read`, which classify. The map is an accelerant, never a gate; a
+failed or empty scan renders nothing.
+
+The facts that move with every commit or edit — branch, HEAD, the dirty flag
+and the changed paths — are **not** in the system block. They are refreshed
+before each turn (`Map.RefreshStatus`: one bounded `git status --porcelain
+--branch` and one `git rev-parse --short HEAD`) and rendered by
+`prompt.RepoStatusBlock` into that turn's sealed `<directive>` on the user
+message, with nonce and integrity like any directive. They are still
+harness-computed facts (porcelain codes and sanitised paths), so the repo-map
+invariant holds; they moved only so the system block's bytes stay the same
+from turn to turn (see [System prompt](#system-prompt)). A detached HEAD
+reports no branch; a repository with no commits reports the branch it is on.
 
 ### Release check
 
@@ -1467,6 +1478,17 @@ Toggling it from the chat view with `f2` persists the setting to the
 current scope (project by default), invalidates the cached agent session so
 the next turn picks up the new system prompt, and emits a `caveman: on/off`
 system message for immediate feedback.
+
+**The sealed system prompt is reused across turns.** `Session.sealSystem`
+keys the sealed bytes on the provider, the model and every prompt input
+(carrier, mode wording, tools briefing, skills, repo map, workspace roots,
+working directory). An unchanged key reuses the previous turn's sealed
+system and tools blocks and their nonces — safe because the nonce pool never
+rotates within a session — so the first bytes of every request stay
+identical and a provider can cache them. A mode switch, a skills change, an
+added root, a `Cd` or a model switch changes the key and re-seals. The
+volatile repository facts ride the user turn instead (see
+[Repository map](#repository-map)).
 
 ## TUI
 
