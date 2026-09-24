@@ -1,8 +1,10 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -290,5 +292,62 @@ func TestPlanExploreDisabledSkipsFanOut(t *testing.T) {
 		if e.Kind == EventSubagentKind || e.Kind == EventSubagentActivityKind || e.Kind == EventClarifyAskKind {
 			t.Fatalf("plan_explore: false must produce no fan-out or clarify, got %v", e.Kind)
 		}
+	}
+}
+
+// An explore subagent's mode is known, so a fan-out must not pay a mode-select
+// call per subagent (nor draft a goal contract it never uses).
+func TestExploreSubagentsSkipModeSelection(t *testing.T) {
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
+
+	mock := mockSecurityServer("Read", `{"path":"f.txt"}`, "finding")
+	defer mock.Close()
+	var mu sync.Mutex
+	modeCalls, draftCalls := 0, 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		if strings.Contains(string(body), "operating-mode classifier") {
+			modeCalls++
+		}
+		if strings.Contains(string(body), "goal contract") {
+			draftCalls++
+		}
+		mu.Unlock()
+		r.Body = io.NopCloser(bytes.NewReader(body))
+		mock.Config.Handler.ServeHTTP(w, r)
+	}))
+	defer srv.Close()
+
+	sess, err := NewSession(Options{
+		Cfg:           run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "test"},
+		Client:        srv.Client(),
+		Registry:      tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}),
+		Posture:       posture.Defaults(),
+		SkipNonceSeed: true,
+		AllowExplore:  true,
+		Workdir:       root,
+		Settings:      config.Settings{Resilience: &config.ResilienceSettings{MaxExploreIterations: 2}},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	var subagents int
+	_, err = sess.run(context.Background(), nil, TurnInput{Prompt: "survey the repo", ForceMode: modes.ModePlan}, false, func(e Event) {
+		if e.Kind == EventSubagentKind && e.Subagent != nil && e.Subagent.State == "done" {
+			subagents++
+		}
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if subagents == 0 {
+		t.Fatal("setup: expected an explore fan-out")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if modeCalls != 0 || draftCalls != 0 {
+		t.Fatalf("mode-select calls = %d, goal drafts = %d; an explore run needs neither", modeCalls, draftCalls)
 	}
 }

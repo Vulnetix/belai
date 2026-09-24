@@ -338,7 +338,10 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task, steerCh chan 
 			forward(Event{Kind: EventSubagentActivityKind, SubagentID: id, ToolName: e.ToolName, Err: e.Err})
 		}
 	}
-	res, err := sub.RunObserved(ctx, promptText, childEmitter)
+	// The subagent's mode is known: it explores, read-only, in one bounded
+	// pass. Forcing it skips the mode-select call and any goal-contract
+	// draft, neither of which an explore run ever uses.
+	res, err := sub.run(ctx, nil, TurnInput{Prompt: promptText, ForceMode: modes.ModeAgent}, false, childEmitter)
 	if err != nil {
 		return ""
 	}
