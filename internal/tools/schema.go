@@ -8,7 +8,11 @@ import (
 func (d Definition) Schema() map[string]any {
 	props := make(map[string]any, len(d.Properties))
 	for k, v := range d.Properties {
-		props[k] = map[string]any{"type": v.Type, "description": v.Description}
+		p := map[string]any{"type": v.Type, "description": v.Description}
+		if len(v.Enum) > 0 {
+			p["enum"] = v.Enum
+		}
+		props[k] = p
 	}
 	out := map[string]any{
 		"type":       "object",

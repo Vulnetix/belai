@@ -20,7 +20,8 @@ func TestCheckArgs(t *testing.T) {
 		{"alias", read, map[string]any{"path": "a"}, ""},
 		{"no args", grep, map[string]any{}, ""},
 		{"bash advisory", bash, map[string]any{"command": "ls", "description": "list", "timeout": 5000}, ""},
-		{"grep trained flags", grep, map[string]any{"pattern": "x", "-i": true, "glob": "*.go"}, `"-i", "glob"`},
+		{"grep trained flags", grep, map[string]any{"pattern": "x", "-i": true, "glob": "*.go", "output_mode": "count", "head_limit": 5, "-C": 2}, ""},
+		{"grep unknown flag", grep, map[string]any{"pattern": "x", "multiline": true}, `"multiline"`},
 		{"bash background", bash, map[string]any{"command": "ls", "run_in_background": true}, `"run_in_background"`},
 		{"read pages", read, map[string]any{"file_path": "a", "pages": "1-2"}, `"pages"`},
 	} {

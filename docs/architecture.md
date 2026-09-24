@@ -818,6 +818,38 @@ Business rules and edge cases:
   search of the parent.
 - The `backend` meta field (`fd` or `walk`) records which enumerator ran.
 
+`Grep` takes the argument shape trained harnesses use, so a trained call is
+honoured instead of rejected:
+
+| Argument | Meaning |
+| --- | --- |
+| `glob` | only files matching the glob (`*.go`, `**/*_test.go`) |
+| `type` | only files of a type (`go`, `py`, `js`, `ts`, `rust`, …) |
+| `-i` | case-insensitive |
+| `-n` | line numbers in content mode (default true) |
+| `-A` / `-B` / `-C` | context lines after / before / around each match, capped at 20 |
+| `output_mode` | `content` (default), `files_with_matches`, or `count` |
+| `head_limit` | at most N lines or entries (default 200, max 1000) |
+
+Business rules and edge cases:
+
+- **The default mode is `content`, a deliberate divergence.** Claude Code
+  defaults to `files_with_matches`; a model that omits `output_mode` here
+  gets the matching lines, which is a superset of what it expected. The tool
+  description says so.
+- **The output stays shaped.** Content is `path:line:text`, context lines are
+  `path-line-text` with `--` between groups, file mode is one path per line,
+  count mode is `path:N` for matching files only (POSIX grep's `path:0` rows
+  are dropped). Grep stays sanitize-only.
+- **Context output is not re-sorted.** ripgrep runs with `--sort path`, so
+  each file's context blocks arrive grouped and in order; sorting the lines
+  would scatter a match's context.
+- **Both backends honour every argument.** Without ripgrep, `type` maps to a
+  fixed table of `--include` globs; an unknown type is an error rather than a
+  silently unfiltered search.
+- **Bounds are enforced, not trusted.** Negative context, a non-positive
+  `head_limit`, or an unknown `output_mode` is refused.
+
 `internal/tools/capabilities.go` performs detection at session construction:
 local utilities by `$PATH`, cloud CLIs by `$PATH` plus a short, read-only auth
 probe (`aws sts get-caller-identity`, `gh auth status`, `gcloud config

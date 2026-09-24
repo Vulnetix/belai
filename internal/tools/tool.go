@@ -18,6 +18,8 @@ type Property struct {
 	Items       *Property           `json:"items,omitempty"`
 	Properties  map[string]Property `json:"properties,omitempty"`
 	Required    []string            `json:"required,omitempty"`
+	// Enum restricts a string property to the listed values.
+	Enum []string `json:"enum,omitempty"`
 }
 
 // Definition is the static metadata exposed to the model for a tool.
