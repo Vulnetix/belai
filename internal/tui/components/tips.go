@@ -16,7 +16,7 @@ var tips = []string{
 	"shift+tab cycles mode: agent, plan, goal",
 	"/resume returns to an earlier session",
 	"f3 toggles guardrails",
-	"f9 opens the runs panel",
+	"f9 opens the runs panel; tab cycles activity, subagents and processes",
 	"esc esc clears the composer",
 	"f2 toggles the caveman voice rewrite",
 	"f4 toggles the permission ask gate",

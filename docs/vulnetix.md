@@ -139,9 +139,11 @@ it classifies first (unless guardrails are off), seals as a shell attachment,
 and queues until the transcript is idle when a turn is in flight.
 
 The panel opens on the **activity** tab by default. `f8` opens it on the
-**subagents** tab. It is bounded: it consumes at most one third of the terminal
-height and refuses to open on terminals shorter than six rows so the chat
-input remains usable.
+**subagents** tab. `tab` cycles through activity → subagents → processes; the
+processes tab lists only running supervised processes from the library and
+offers `enter`/`v` to view, `x` to stop, and `r` to restart. It is bounded: it
+consumes at most one third of the terminal height and refuses to open on
+terminals shorter than six rows so the chat input remains usable.
 
 ## Severity parsing
 

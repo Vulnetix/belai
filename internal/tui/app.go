@@ -559,7 +559,7 @@ type App struct {
 	// runs panel: unified activity + subagent panel rendered above the composer.
 	runsOpen   bool // panel visible
 	runsFocus  bool // panel owns the keyboard
-	runsTab    int  // 0 == activity, 1 == subagents
+	runsTab    int  // 0 == activity, 1 == subagents, 2 == processes
 	runsSel    int  // selected item index (into runsItems())
 	runsScroll int  // first visible item when the list is windowed
 

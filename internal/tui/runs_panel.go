@@ -13,8 +13,10 @@ import (
 
 	"github.com/vulnetix/signet/internal/activity"
 	"github.com/vulnetix/signet/internal/agentprofile"
+	"github.com/vulnetix/signet/internal/bgproc"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/posture"
+	"github.com/vulnetix/signet/internal/processlib"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/sanitize"
@@ -40,7 +42,8 @@ const (
 const (
 	tabActivity  = 0
 	tabSubagents = 1
-	tabCount     = 2
+	tabProcesses = 2
+	tabCount     = 3
 )
 
 // runsItem is a row in the runs panel. It unifies activities and subagents so
@@ -75,10 +78,51 @@ func (a *App) runsPanelHeight() int {
 // runsItems returns the items for the current runs tab, with a nil guard on the
 // activity registry.
 func (a *App) runsItems() []runsItem {
-	if a.runsTab == tabSubagents {
+	switch a.runsTab {
+	case tabSubagents:
 		return a.subagentItems()
+	case tabProcesses:
+		return a.processItems()
+	default:
+		return a.activityItems()
 	}
-	return a.activityItems()
+}
+
+// processItems lists the running supervised processes that have a process
+// library entry. It mirrors the /processes screen but shows only live runs.
+func (a *App) processItems() []runsItem {
+	if a.procManager == nil {
+		return nil
+	}
+	running := make(map[string]bgproc.Process)
+	for _, p := range a.procManager.List() {
+		if p.State == bgproc.StateRunning {
+			running[p.Name] = p
+		}
+	}
+	if len(running) == 0 {
+		return nil
+	}
+	global, _ := processlib.Load(config.ScopeGlobal, a.workdir)
+	project, _ := processlib.Load(config.ScopeProject, a.workdir)
+	merged := processlib.Merge(global.Entries, project.Entries)
+	items := make([]runsItem, 0, len(running))
+	for _, e := range merged {
+		if p, ok := running[e.Name]; ok {
+			detail := p.State.Label()
+			if p.PID != 0 {
+				detail += fmt.Sprintf(" · pid %d", p.PID)
+			}
+			items = append(items, runsItem{
+				ID:          "proc-" + p.ID,
+				Label:       "!!" + e.Command,
+				Detail:      detail,
+				State:       string(p.State),
+				ProjectRoot: p.Dir,
+			})
+		}
+	}
+	return items
 }
 
 func (a *App) activityItems() []runsItem {
@@ -138,15 +182,18 @@ func (a *App) renderRunsPanel() string {
 	}
 
 	var b strings.Builder
-	tabNames := []string{"activity", "subagents"}
+	tabNames := []string{"activity", "subagents", "processes"}
 	header := a.renderRunsTabHeader(tabNames, w)
 	b.WriteString(header)
 	b.WriteString("\n")
 
 	if len(itemsWindow.items) == 0 {
 		placeholder := components.MutedStyle.Render("  no activities this turn")
-		if a.runsTab == tabSubagents {
+		switch a.runsTab {
+		case tabSubagents:
 			placeholder = components.MutedStyle.Render("  no subagents this turn")
+		case tabProcesses:
+			placeholder = components.MutedStyle.Render("  no running processes")
 		}
 		b.WriteString(ansi.Truncate(placeholder, w, "") + "\n")
 	} else {
@@ -265,6 +312,8 @@ func (a *App) runsPanelHelp() string {
 	switch a.runsTab {
 	case tabSubagents:
 		return components.HelpBar("↑↓", "select", "⏎", "filter", "x", "cancel/dismiss", "esc", "unfocus", "tab", "switch")
+	case tabProcesses:
+		return components.HelpBar("↑↓", "select", "⏎", "view", "v", "view", "x", "stop", "r", "restart", "esc", "unfocus", "tab", "switch")
 	default:
 		return components.HelpBar("↑↓", "select", "⏎", "send output", "v", "view", "x", "kill", "t", "triage", "esc", "unfocus", "tab", "switch")
 	}
@@ -302,6 +351,44 @@ func (a *App) handleRunsPanelKey(m tea.KeyMsg) tea.Cmd {
 		return a.handleRunsActivityKey(m)
 	case tabSubagents:
 		return a.handleRunsSubagentKey(m)
+	case tabProcesses:
+		return a.handleRunsProcessKey(m)
+	}
+	return nil
+}
+
+func (a *App) handleRunsProcessKey(m tea.KeyMsg) tea.Cmd {
+	items := a.processItems()
+	if a.runsSel < 0 || a.runsSel >= len(items) {
+		return nil
+	}
+	it := items[a.runsSel]
+	pid := strings.TrimPrefix(it.ID, "proc-")
+	switch m.String() {
+	case "enter", "v":
+		a.runsOutput.id = it.ID
+		return a.push(viewRunsOutput)
+	case "x":
+		if a.procManager == nil {
+			return nil
+		}
+		_ = a.procManager.Stop(pid)
+	case "r":
+		if a.procManager == nil {
+			return nil
+		}
+		var p bgproc.Process
+		for _, cp := range a.procManager.List() {
+			if cp.ID == pid {
+				p = cp
+				break
+			}
+		}
+		if p.ID == "" {
+			return nil
+		}
+		_ = a.procManager.Stop(pid)
+		_, _ = a.procManager.Start(p.Name, p.Command)
 	}
 	return nil
 }

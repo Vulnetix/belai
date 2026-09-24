@@ -1808,7 +1808,8 @@ main turn.
 
 The roster itself is driven from the runs panel: `f8` opens it on the
 subagents tab, `⏎` follows the selected subagent (main clears the filter), and
-`x` cancels a running chip or dismisses a finished one. Chips persist across
+`x` cancels a running chip or dismisses a finished one. `tab` cycles through the
+activity, subagents, and processes tabs. Chips persist across
 turns and are removed only by an explicit dismiss; running chips are never
 removed automatically.
 
@@ -1827,17 +1828,23 @@ Signet runs the Vulnetix CLI, `!shell` commands and background agents on the
 user's behalf; the bottom **runs panel** is the honest register of those
 processes plus the roster of subagents pinned to the conversation. `f8` opens
 and focuses the panel on the **subagents** tab, and `f9` opens it on the
-**activity** tab. The panel is bounded: it never consumes more than one third
-of the terminal height and refuses to open when fewer than six rows are
-available, so the chat composer always remains usable. Each row is truncated
-to fit the width of the panel; a full-screen **output view** (`v` or `enter`) is
-used to read long activity output.
+**activity** tab. `tab` cycles through **activity → subagents → processes**, so
+the processes tab is always one `tab` away from either entry point. The panel
+is bounded: it never consumes more than one third of the terminal height and
+refuses to open when fewer than six rows are available, so the chat composer
+always remains usable. Each row is truncated to fit the width of the panel;
+a full-screen **output view** (`v` or `enter`) is used to read long activity or
+process output.
 
-Keys while focused: `↑`/`↓` select, `tab` switches between the activity and
-subagent tabs, `x` kills the selected activity (running or queued), `t` starts
-`signet:triage-vulns` on its project, `enter` on an activity sends its output
-to the model (or on a subagent filters the conversation to that subagent),
-and `esc` returns focus to the composer.
+Each tab keeps its own selection. Keys while focused: `↑`/`↓` select,
+`tab` switches between the three tabs, `esc` returns focus to the composer,
+and `f9` closes the panel. Activity tab: `x` kills the selected activity
+(running or queued), `t` starts `signet:triage-vulns` on its project, and
+`enter` sends its output to the model. Subagents tab: `enter` filters the
+conversation to the selected subagent (or clears the filter on `main`), and
+`x` cancels a running chip or dismisses a finished one. Processes tab:
+`enter`/`v` open the live log for the selected running process, `x` stops it,
+and `r` restarts it.
 
 The register is `internal/activity`, a process-agnostic FIFO registry with no
 TUI imports. Subprocess output is arbitrary content, so it classifies
@@ -2297,8 +2304,8 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 | `f6` | Cycle reasoning effort: default → low → medium → high → default, from any screen |
 | `f7` | Save the current prompt to the project prompt library, from the chat view — a save-as alias of `ctrl+s` with no loaded entry |
 | `f1` | Open the screen switcher from chat or any screen. One letter opens a screen: `a` agents, `m` model, `p` providers, `s` settings, `k` permissions, `r` prompts, `x` processes, `l` lsp, `v` vulnetix, `h` sessions. A screen already open further down the stack is returned to, so `esc` walks back through distinct screens. It does nothing on a permission ask, a clarifying question, plan review or while an inline field edit holds text, and a chat draft is kept while it is open |
-| `f8` | Open and focus the bottom runs panel on the subagents tab (chat) |
-| `f9` | Open and focus the bottom runs panel on the activity tab (chat) |
+| `f8` | Open and focus the bottom runs panel on the subagents tab (chat); press `tab` twice to reach the processes tab |
+| `f9` | Open and focus the bottom runs panel on the activity tab (chat); press `tab` twice to cycle to the processes tab |
 | `f10` | Toggle the Vulnetix AI Firewall from any screen |
 | `ctrl+home` / `ctrl+end` | Jump the transcript to the top / bottom |
 | `ctrl+j` | Insert a newline in the prompt editor |
@@ -3149,10 +3156,17 @@ verbatim. `!!cmd` writes the command to the project scope with a slug derived
 from `argv[0]` and starts it. The manager screen (`/processes`) allows the
 user to toggle auto-start, reorder, edit in `$VISUAL/$EDITOR`, create, delete,
 run, stop, and view the log tail. `enter` on any process opens its full log
-in the same full-screen output reader that the F9 runs panel uses, and rows
-in the F9 runs panel expose `v` to open the live log for the selected process.
-Process output is also appended to the activity registry as it arrives, so the
-reader stays live even when the process is still running. Enabled entries
+in the same full-screen output reader that the F9 runs panel uses.
+
+The F9 runs panel has a dedicated **processes** tab that lists only currently
+running processes from the merged process library, in library order. It shows
+the command, the running state, and the PID. `enter` or `v` opens the live log
+full-screen, `x` stops the selected process, and `r` restarts it (stop then
+start with the same library command). The tab is running-only: a stopped
+process disappears until it is started again, either from `/processes` or
+with `/process:<name>`. Process output is also appended to the activity
+registry as it arrives, so the reader stays live even when the process is
+still running. Enabled entries
 auto-start when Signet opens the workdir; a lock file per `(workdir-hash, slug)`
 prevents a second Signet instance from launching a duplicate copy.
 
