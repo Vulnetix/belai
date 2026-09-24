@@ -1374,7 +1374,7 @@ work-discipline section says.
 
 | Directive | Injected when |
 | --------- | ------------- |
-| Goal acknowledgement | The first goal pass — start the work now: one `update_plan` call with the steps (first `in_progress`), then the first real change in the same pass; any restatement of the objective is a single line naming the deliverable and how completion will be verified |
+| Goal acknowledgement | The first goal pass — start the work now: in the same response as the first actions, one `update_plan` call with the steps (first `in_progress`); batch the reads the work needs, then change from the exact bytes read. It no longer demands a file mutation in the first pass — the no-write escalations at later boundaries catch a goal that never edits. Any restatement of the objective is a single line naming the deliverable and how completion will be verified |
 | Action | `GOAL_NOT_STARTED` — name the file to change and make the smallest correct edit that advances the goal, in this pass |
 | No-write | `passesSinceWrite` reaches `goalNoWritePasses`, and at the verification gate when nothing has been written — stop investigating, make the smallest correct edit that advances the named next step, or state the blocker in one line |
 | Verification | Armed when the tracked list has at least one completed item (`hasVerifiableWork`) and the loop is not behind on writes — re-check completed items against disk before continuing |

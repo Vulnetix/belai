@@ -163,8 +163,16 @@ func TestSystemWorkDiscipline(t *testing.T) {
 	if !strings.Contains(on, "Work discipline.") {
 		t.Fatalf("work discipline missing:\n%s", on)
 	}
-	if !strings.Contains(on, "Batch read-only calls") {
-		t.Fatalf("parallel-batching guidance missing:\n%s", on)
+	for _, want := range []string{"Batch independent calls", "Read the code you will change", "smallest change", "run the detected test"} {
+		if !strings.Contains(on, want) {
+			t.Fatalf("work discipline missing %q:\n%s", want, on)
+		}
+	}
+	// The old speed-over-understanding metrics pushed edits ahead of reading.
+	for _, gone := range []string{"Time to first file mutation", "wasted turn", "one short paragraph", "Work on disk beats"} {
+		if strings.Contains(on, gone) {
+			t.Fatalf("work discipline still carries %q:\n%s", gone, on)
+		}
 	}
 	// It must land before the voice line so normal/caveman voice assertions
 	// remain the final word.
