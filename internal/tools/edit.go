@@ -14,6 +14,9 @@ type Edit struct {
 	Cwd      *Cwd
 	Root     string
 	MaxBytes int64
+	// Reads, when set, refuses an edit to a file not read this session or
+	// changed since; see ReadState.
+	Reads *ReadState
 }
 
 // Definition returns the static tool metadata.
@@ -22,7 +25,7 @@ func (e *Edit) Definition() Definition {
 		Name: "Edit",
 		Description: "Edit an existing file under the working directory by replacing an exact byte string. " +
 			"No whitespace or line-ending normalisation is performed: old_string must match the file byte for byte, including indentation. Read the file first, and copy only the text after the line-number prefix and tab that Read puts on each line. " +
-			"The call fails, leaving the file byte-identical, when the file does not exist, is binary, is over 1 MiB, when old_string equals new_string, when old_string is not found, or when it appears more than once without replace_all=true. " +
+			"The call fails, leaving the file byte-identical, when the file has not been Read in this session or changed on disk since it was, when it does not exist, is binary, is over 1 MiB, when old_string equals new_string, when old_string is not found, or when it appears more than once without replace_all=true. " +
 			"The write is atomic. Mutating, so it asks for approval unless an explicit allow rule matches, and it is unavailable in plan mode.",
 		Properties: map[string]Property{
 			"file_path":   {Type: "string", Description: "Path to the file to edit: an absolute filesystem path under one of the session roots, or relative to the working directory; the file must already exist"},
@@ -106,6 +109,9 @@ func (e *Edit) Execute(ctx context.Context, args map[string]any) (Result, error)
 		return Result{}, err
 	}
 	full := res.Abs()
+	if err := e.Reads.Check(full, res.Rel); err != nil {
+		return Result{}, err
+	}
 	body, err := os.ReadFile(full)
 	if err != nil {
 		return Result{}, err
@@ -139,6 +145,9 @@ func (e *Edit) Execute(ctx context.Context, args map[string]any) (Result, error)
 	if err := writeFileAtomic(full, []byte(replaceEdit(string(body), oldS, newS, replaceAll))); err != nil {
 		return Result{}, err
 	}
+	// The model wrote these bytes, so it knows them: a follow-up edit to the
+	// same file needs no re-read.
+	e.Reads.Note(full)
 	plural := "s"
 	if replacements == 1 {
 		plural = ""

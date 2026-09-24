@@ -1023,6 +1023,28 @@ file is left byte-identical on every failure. This is deliberate: silent
 normalisation is the classic source of "the edit landed somewhere else", so
 the tool refuses rather than guess.
 
+**Read before you change.** `Read`, `Edit` and `Write` share one
+`tools.ReadState` per session (`tools.Default` wires it). `Read` records each
+file it returns — a partial read with `offset`/`limit` counts — with its
+modification time and size. Before touching an existing file, `Edit` and
+`Write` check the record:
+
+- a file never read this session is refused: *`<path> has not been read in
+  this session; Read it first`*. An edit built on a guessed `old_string` is
+  the failure this prevents.
+- a file whose modification time or size changed since the read (a
+  formatter, a Bash command, the user) is refused: *`<path> changed on disk
+  since you last read it`*.
+- a **new** file needs no read: there is nothing to be stale against.
+- a successful `Edit` or `Write` records the bytes it wrote, so consecutive
+  edits to the same file need no re-read.
+- the refusal happens before any byte is written, so the file is unchanged.
+- a tool built without a `ReadState` (a hand-built test registry) has no
+  guard. Explore subagents have no `Edit`/`Write` at all.
+- a `Read` whose result the classifier withholds still counts as a read: the
+  record is taken when the tool runs, before classification. The guard is
+  about stale or guessed bytes, not about what reached the model.
+
 Every mutating call asks before it touches disk. In the TUI this is the
 approval view (`viewPermissionAsk`): it shows the tool name, the normalised
 subject path, and the diff the call would make (`filediff.Preview`, a pure

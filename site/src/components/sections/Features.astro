@@ -75,6 +75,14 @@ import localModelShot from '../../assets/shots/local-model.svg';
         <code class="mono">Cd</code> can move the working directory anywhere inside the session root and nowhere
         outside it. A path such as <code class="mono">../../../etc</code> that leaves the root is refused.
       </p>
+      <p class="mt-4 text-vx-ink/80">
+        The core tools take the arguments models are trained on. <code class="mono">Grep</code> accepts{' '}
+        <code class="mono">glob</code>, <code class="mono">type</code>, <code class="mono">-i</code>, context lines and{' '}
+        <code class="mono">output_mode</code>. <code class="mono">Bash</code> accepts a{' '}
+        <code class="mono">timeout</code> of up to ten minutes (two by default), so a normal test run finishes.{' '}
+        <code class="mono">Edit</code> and <code class="mono">Write</code> refuse to change a file the model has not read in
+        this session, or one that changed on disk since it read it.
+      </p>
     </div>
     <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={cdConfine} /></div>
   </div>

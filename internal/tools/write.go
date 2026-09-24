@@ -19,6 +19,9 @@ type Write struct {
 	Cwd      *Cwd
 	Root     string
 	MaxBytes int64
+	// Reads, when set, refuses overwriting an existing file not read this
+	// session or changed since; a new file is always allowed.
+	Reads *ReadState
 }
 
 // Definition returns the static tool metadata.
@@ -28,7 +31,7 @@ func (w *Write) Definition() Definition {
 		Description: "Write a whole file under the working directory, creating parent directories as needed. " +
 			"There is no append or partial-write mode: content replaces the file entirely, so pass the complete new contents. " +
 			"The write is atomic (temp file plus rename), so a failure never leaves a half-written file, and the path is confined to the working directory. " +
-			"Content is bounded to 1 MiB. Prefer Edit for a change to an existing file; Write is for a new file or a full rewrite. " +
+			"Content is bounded to 1 MiB. Prefer Edit for a change to an existing file; Write is for a new file or a full rewrite. Overwriting an existing file requires having Read it in this session, and is refused if it changed on disk since. " +
 			"Mutating, so it asks for approval unless an explicit allow rule matches, and it is unavailable in plan mode.",
 		Properties: map[string]Property{
 			"file_path": {Type: "string", Description: "Path to the file to write: an absolute filesystem path under one of the session roots, or relative to the working directory; it need not exist yet"},
@@ -105,9 +108,13 @@ func (w *Write) Execute(ctx context.Context, args map[string]any) (Result, error
 	if fi, err := os.Stat(full); err == nil && fi.IsDir() {
 		return Result{}, fmt.Errorf("path is a directory")
 	}
+	if err := w.Reads.Check(full, res.Rel); err != nil {
+		return Result{}, err
+	}
 	if err := writeFileAtomic(full, []byte(content)); err != nil {
 		return Result{}, err
 	}
+	w.Reads.Note(full)
 	lineWord := "lines"
 	if countLines(content) == 1 {
 		lineWord = "line"
