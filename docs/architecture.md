@@ -2302,7 +2302,7 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 | `up` / `down` | Browse prompt history and prompt library. Library entries come first and their names show as a chip strip above the composer: `tab` cycles the named prompts, `right` accepts the loaded one into the composer, `enter` sends it. Typing — like any edit key — leaves the browse cycle and edits the loaded prompt |
 | `f7` | Save the current prompt to the project prompt library — a save-as alias of `ctrl+s` with no loaded entry |
 | `tab` | Move the highlight through the slash-command hints, or — when the agent picker is open in agent mode — through the agent candidates. It never writes into the prompt. While browsing the prompt library it loads the next named prompt instead |
-| `right` / `enter` | Accept the highlighted hint (or the first, for `right` with nothing highlighted); when the agent picker is open, engage the highlighted agent — and also send the prompt when it was a submit that opened the picker; while browsing the prompt library, accept the loaded prompt into the composer (`right`) or send it (`enter`). Without a highlight, `right` is the cursor key and `enter` sends, or opens the agent picker in agent mode if no agent is engaged |
+| `right` / `enter` | Accept the highlighted hint (or the first, for `right` with nothing highlighted). A `/prompt:`, `/agent:` or `/process:` library hint acts immediately instead of filling the prompt; when the agent picker is open, engage the highlighted agent — and also send the prompt when it was a submit that opened the picker; while browsing the prompt library, accept the loaded prompt into the composer (`right`) or send it (`enter`). Without a highlight, `right` is the cursor key and `enter` sends, or opens the agent picker in agent mode if no agent is engaged |
 | `ctrl+g` | Start the highlighted `↻` background-agent definition as a background agent |
 | `esc` (with a highlight) | Drop the highlight, keeping the popup on screen; close the agent picker |
 | `enter` (while working) | Steer the running turn with a new user message |
@@ -2317,6 +2317,63 @@ prompt text on every message — including the cursor blink — so writing `/mod
 into the editor narrowed the list to that one command and pinned the cycle to
 a single entry. `refreshAutocomplete` drops the highlight only when the
 candidate list actually changes, so a blink can never move it either.
+
+#### Slash popup: fuzzy matching and library entries
+
+The text after `/` is a **fuzzy** filter, not a prefix. `internal/fuzzy`
+matches a candidate when every query rune appears in it in order,
+case-insensitive. Candidates are ranked by score:
+
+- A match at the start of the candidate scores highest.
+- A match right after a word boundary (`-`, `_`, `:`, `/`, `.`, space) and a
+  run of consecutive matches score next.
+- Each rune skipped between matches costs a point. Leading skipped runes cost
+  a point each, capped at eight.
+- Equal scores keep the input order (stable sort). An empty query scores every
+  candidate 0, so a bare `/` shows the list in its natural order.
+- No match gives no chips. `Complete` returns nil, as it did before.
+
+Examples: `/pmt` finds `/prompts`, `/dir` finds `/add-dir`, and `/p` still
+lists every `/p…` command first, in name order, followed by weaker matches
+such as `/help`. The same ranking filters a command's arguments after the
+space, so `/agent stp` offers `/agent stop`.
+
+The popup also offers the saved libraries next to the commands, each under
+its own prefix. `App.slashCompletions` ranks everything as one list, in this
+order: the commands, then the enabled prompts from the merged prompt library
+(`/prompt:<name>`), then the agent picker's profiles (`/agent:<name>`), then
+**every** entry of the merged process library (`/process:<name>`).
+
+- Each group is sorted by name.
+- Disabled processes are offered as well: disabled only turns off auto-start,
+  and starting one by hand is the point of the chip.
+- A library entry matches on both its prefixed form and its bare name, so
+  `/deploy` finds `/prompt:deploy` and `/a:rev` finds `/agent:reviewer`.
+- A line with a space falls through to `Registry.Complete`, which does
+  argument completion only.
+- The prompt and process libraries are read once, when the composer line
+  starts with `/` (`slashLibCache`), not on every keystroke. A library edited
+  in the middle of a slash line shows up on the next slash line.
+
+A library chip names an item rather than a command line to edit. So `enter`
+or `right` on a highlighted library chip **acts at once**, the way the agent
+picker does. A command chip still fills the composer and waits for a second
+`enter`. Typing a library line out in full and pressing `enter` goes through
+`handleCommand`, which checks the three prefixes before the registry, so it
+does the same thing. Only the first prefix is cut, because agent names can
+contain a colon (`/agent:signet:debug`).
+
+| Line | Effect |
+| ---- | ------ |
+| `/prompt:<name>` | Loads the prompt body into the composer and sets `loadedPrompt`, exactly as `up`-browsing does, so `ctrl+s` overwrites that file. Nothing is sent |
+| `/agent:<name>` | Engages the profile and switches to agent mode from any mode. It sets `agentExplicit`, `modeExplicit` and `modeSticky` and persists the mode. The name must be one the agent picker offers |
+| `/process:<name>` | If the process is `running`, `recovering` or `restarted`, it is not started again. `bgproc.Manager.Start` would let this Signet start a second copy, so the check happens here. Otherwise it starts through `startSupervised`, which applies the same plan-mode `ToolAllowed` gate as `!!`. Either way it prints a status line: `process <name> (<id>) <state> · pid · up …` for a live process, or `· exit N · ended … ago` for one that has stopped, followed by the command and the log path |
+
+An unknown name prints a one-line refusal and changes nothing.
+
+The chip row is windowed so the highlighted chip is always drawn.
+`chipWindow` grows the row rightward from the highlighted chip, then leftward,
+and marks each clipped end with a muted `…`.
 
 `ctrl+l` clears the transcript view; `/clear` (or `/new`) starts a *new* session.
 They are deliberately different: one is cosmetic, the other changes what is
@@ -2815,6 +2872,12 @@ aliases exist but are not table rows: `/new` is a visible alias of `/clear`
 (`RegisterAlias`, appears in `Names()` and autocomplete), and `/provider` is a
 hidden alias of `/providers` (`RegisterHiddenAlias`, dispatchable but absent
 from `Names()` and autocomplete).
+
+The popup also lists `/prompt:<name>`, `/agent:<name>` and
+`/process:<name>` library entries. These are not registered commands:
+`handleCommand` dispatches them before the registry is consulted. Completion
+over both commands and library entries is fuzzy. See *Slash popup: fuzzy
+matching and library entries* above.
 
 ### Startup credential message
 

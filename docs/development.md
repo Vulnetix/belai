@@ -521,6 +521,21 @@ and the strip disappears, and that returning to agent mode brings both back.
 highlight cycles through every match instead of sticking on the second one —
 the prompt text must not change until `enter` or `right` accepts.
 
+Type `/pmt` and confirm `/prompts` is offered, which shows that matching is
+fuzzy and not by prefix. Type `/` and `tab` past the right edge, and confirm
+the row scrolls with `…` markers and the highlight stays visible.
+
+With a saved prompt `deploy`, a profile `reviewer` and a saved process `sleep`
+(`!!sleep 30`, then stop it), check each library entry in turn:
+
+- Type `/dpl`, `tab` to `/prompt:deploy` and press `enter`. The body loads
+  into the composer and no turn is sent.
+- From plan mode, type `/agent:reviewer` and press `enter`. The mode chip
+  switches to agent and shows `reviewer`.
+- Select `/process:sleep`. It starts, and a `process sleep (pN) running · …`
+  line appears. Select it again: no second copy starts, and the status line
+  is printed again.
+
 **Prompt library.** Type a prompt, press `f7`, name it, and confirm the
 system line reports it saved to the project library and that a file named
 `NNN-<name>.md` appears in `.vulnetix/prompts/`. Press `up` and confirm the

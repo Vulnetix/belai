@@ -434,6 +434,10 @@ type App struct {
 	// highlighted yet, so the first tab lands on the first candidate.
 	autocompleteIndex int
 
+	// slashLib caches the prompt and process libraries for the slash popup
+	// while a slash line is being typed.
+	slashLib slashLibCache
+
 	// agent picker: the profiles offered above the composer in agent mode,
 	// the highlighted one (noAgentSelection when none is), and whether the
 	// strip is currently open. The picker is opened explicitly by /agent or by
@@ -2805,6 +2809,17 @@ func (a *App) acceptAutocomplete() tea.Cmd {
 		}
 		choice = a.autocomplete[0]
 	}
+	// A library chip names an item, not a line to edit: it acts on this
+	// enter, the way the agent picker does. A prompt chip then leaves the
+	// prompt text in the composer.
+	if isLibraryLine(choice) {
+		a.editor.Reset()
+		a.clearLoadedPrompt()
+		a.clearAutocomplete()
+		cmd, _ := a.handleLibraryCommand(choice)
+		a.relayout()
+		return cmd
+	}
 	a.editor.SetValue(choice)
 	a.editor.CursorEnd()
 	a.clearAutocomplete()
@@ -2829,7 +2844,7 @@ func (a *App) refreshAutocomplete() {
 		a.autocompleteIndex = noAutocompleteSelection
 		return
 	}
-	next := a.registry.Complete(a.editor.Value())
+	next := a.slashCompletions(a.editor.Value())
 	if !slices.Equal(next, a.autocomplete) {
 		a.autocompleteIndex = noAutocompleteSelection
 	}
@@ -3844,8 +3859,50 @@ func (a *App) renderSuggestions() string {
 		}
 		parts = append(parts, components.KeyStyle.Render(s))
 	}
-	line := components.MutedStyle.Render("⌕ ") + strings.Join(parts, components.MutedStyle.Render("  ·  "))
+	sep := components.MutedStyle.Render("  ·  ")
+	lo, hi := chipWindow(parts, max(a.autocompleteIndex, 0), a.contentWidth()-lipgloss.Width("⌕ "), lipgloss.Width(sep))
+	line := components.MutedStyle.Render("⌕ ")
+	if lo > 0 {
+		line += components.MutedStyle.Render("… ")
+	}
+	line += strings.Join(parts[lo:hi], sep)
+	if hi < len(parts) {
+		line += components.MutedStyle.Render(" …")
+	}
 	return lipgloss.NewStyle().MaxWidth(a.contentWidth()).Render(line)
+}
+
+// chipWindow picks the run of chips [lo, hi) to draw in width columns so the
+// highlighted chip sel is always on screen. The row grows right from sel
+// first, then left, leaving room for the "… " markers at either cut end.
+func chipWindow(parts []string, sel, width, sepWidth int) (lo, hi int) {
+	if len(parts) == 0 {
+		return 0, 0
+	}
+	sel = min(sel, len(parts)-1)
+	const markerWidth = 2
+	fits := func(lo, hi int) bool {
+		w := 0
+		for i := lo; i < hi; i++ {
+			w += lipgloss.Width(parts[i])
+		}
+		w += (hi - lo - 1) * sepWidth
+		if lo > 0 {
+			w += markerWidth
+		}
+		if hi < len(parts) {
+			w += markerWidth
+		}
+		return w <= width
+	}
+	lo, hi = sel, sel+1
+	for hi < len(parts) && fits(lo, hi+1) {
+		hi++
+	}
+	for lo > 0 && fits(lo-1, hi) {
+		lo--
+	}
+	return lo, hi
 }
 
 func (a *App) bannerVisible() bool {
@@ -3857,6 +3914,9 @@ func (a *App) bannerVisible() bool {
 
 // handleCommand dispatches a slash command, resolving aliases first.
 func (a *App) handleCommand(input string) tea.Cmd {
+	if cmd, ok := a.handleLibraryCommand(input); ok {
+		return cmd
+	}
 	name, arg, _ := strings.Cut(strings.TrimPrefix(input, "/"), " ")
 	name = strings.TrimSpace(name)
 	canonical := a.registry.Canonical(name)

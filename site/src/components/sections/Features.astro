@@ -255,6 +255,10 @@ import localModelShot from '../../assets/shots/local-model.svg';
         directory can start it again, and entries marked enabled start automatically.
       </p>
       <p class="mt-4 text-vx-ink/80">
+        Type <code class="mono">/process:</code> and a few letters of a saved name to start it from the
+        composer. The <code class="mono">/</code> popup matches fuzzily, and it also offers saved prompts
+        (<code class="mono">/prompt:</code>) and agent profiles (<code class="mono">/agent:</code>). If the
+        process is already running, it isn't started again, and its status is shown either way.
         <code class="mono">/processes</code> manages the library across project and global scope. Output
         streams to a log file under <code class="mono">~/.vulnetix/signet/logs</code> and into the{' '}
         <code class="mono">f9</code> runs panel, where <code class="mono">v</code> opens the live tail

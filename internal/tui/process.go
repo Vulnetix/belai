@@ -41,11 +41,7 @@ func (a *App) handleProcess(input string) tea.Cmd {
 	if cmd == "" {
 		return nil
 	}
-
-	perms := permissions.From(a.settings.Permissions.Allow, a.settings.Permissions.Ask, a.settings.Permissions.Deny)
-	surface := tools.PlanSurface{GuardrailsOff: !a.guardrailsEnabled(), Perms: perms}
-	if !modes.ToolAllowed("bash", map[string]any{"command": cmd}, a.mode == "plan", surface) {
-		a.addSystem("process command not allowed in plan mode: " + cmd)
+	if !a.processAllowed(cmd) {
 		return nil
 	}
 
@@ -55,10 +51,37 @@ func (a *App) handleProcess(input string) tea.Cmd {
 		return nil
 	}
 
-	proc, err := a.procManager.Start(entry.Name, cmd)
+	proc, watch, ok := a.startSupervised(entry.Name, cmd)
+	if !ok {
+		return nil
+	}
+	a.addSystem(fmt.Sprintf("process %s started: %s", proc.ID, cmd))
+	return watch
+}
+
+// processAllowed applies the plan-mode surface to a process command, the same
+// gate as a Bash call, and reports a refusal in the transcript.
+func (a *App) processAllowed(cmd string) bool {
+	perms := permissions.From(a.settings.Permissions.Allow, a.settings.Permissions.Ask, a.settings.Permissions.Deny)
+	surface := tools.PlanSurface{GuardrailsOff: !a.guardrailsEnabled(), Perms: perms}
+	if !modes.ToolAllowed("bash", map[string]any{"command": cmd}, a.mode == "plan", surface) {
+		a.addSystem("process command not allowed in plan mode: " + cmd)
+		return false
+	}
+	return true
+}
+
+// startSupervised launches a library process under the manager and adds its
+// live tool row and runs-panel activity. Every start path goes through the
+// plan-mode gate here, so a library entry cannot start what `!!` could not.
+func (a *App) startSupervised(name, cmd string) (bgproc.Process, tea.Cmd, bool) {
+	if !a.processAllowed(cmd) {
+		return bgproc.Process{}, nil, false
+	}
+	proc, err := a.procManager.Start(name, cmd)
 	if err != nil {
 		a.addSystem(fmt.Sprintf("process start failed: %v", err))
-		return nil
+		return bgproc.Process{}, nil, false
 	}
 
 	callID := "proc-" + proc.ID
@@ -71,9 +94,7 @@ func (a *App) handleProcess(input string) tea.Cmd {
 	})
 	a.follow = true
 	a.registerProcessActivity(callID, cmd, a.workdir)
-
-	a.addSystem(fmt.Sprintf("process %s started: %s", proc.ID, cmd))
-	return a.watchProcessEvents()
+	return proc, a.watchProcessEvents(), true
 }
 
 // handleProcessProgress appends live output to the running process row and
