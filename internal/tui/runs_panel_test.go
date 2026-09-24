@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -156,6 +157,119 @@ func TestRunsPanelDoesNotOpenOnTinyFrames(t *testing.T) {
 	a.Update(tea.KeyMsg{Type: tea.KeyF9})
 	if a.runsOpen {
 		t.Fatalf("panel opened on height %d", a.height)
+	}
+}
+
+func TestRunsPanelTabCyclesThroughProcesses(t *testing.T) {
+	a := New(Options{})
+	a.runsOpen = true
+	a.runsFocus = true
+	a.runsTab = tabActivity
+
+	a.handleRunsPanelKey(tea.KeyMsg{Type: tea.KeyTab})
+	if a.runsTab != tabSubagents {
+		t.Fatalf("tab must switch to subagents, got %d", a.runsTab)
+	}
+	a.handleRunsPanelKey(tea.KeyMsg{Type: tea.KeyTab})
+	if a.runsTab != tabProcesses {
+		t.Fatalf("tab must switch to processes, got %d", a.runsTab)
+	}
+	a.handleRunsPanelKey(tea.KeyMsg{Type: tea.KeyTab})
+	if a.runsTab != tabActivity {
+		t.Fatalf("tab must wrap back to activity, got %d", a.runsTab)
+	}
+}
+
+func TestProcessesTabListsOnlyRunning(t *testing.T) {
+	dir := t.TempDir()
+	a := New(Options{Workdir: dir})
+	_ = a.handleProcess("!!sleep 30")
+	time.Sleep(50 * time.Millisecond)
+
+	a.runsTab = tabProcesses
+	items := a.processItems()
+	if len(items) != 1 {
+		t.Fatalf("expected 1 running process, got %d", len(items))
+	}
+	if !strings.Contains(items[0].Detail, "running") {
+		t.Fatalf("process detail must show running, got %q", items[0].Detail)
+	}
+	if !strings.HasPrefix(items[0].ID, "proc-") {
+		t.Fatalf("process item id must be proc-<id>, got %q", items[0].ID)
+	}
+
+	// Stopping the process removes it from the running-only list.
+	pid := strings.TrimPrefix(items[0].ID, "proc-")
+	_ = a.procManager.Stop(pid)
+	time.Sleep(100 * time.Millisecond)
+	if got := len(a.processItems()); got != 0 {
+		t.Fatalf("expected 0 running processes after stop, got %d", got)
+	}
+}
+
+func TestProcessesTabStopKey(t *testing.T) {
+	dir := t.TempDir()
+	a := New(Options{Workdir: dir})
+	_ = a.handleProcess("!!sleep 30")
+	time.Sleep(50 * time.Millisecond)
+
+	a.runsOpen = true
+	a.runsFocus = true
+	a.runsTab = tabProcesses
+	a.runsSel = 0
+	a.handleRunsPanelKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	time.Sleep(100 * time.Millisecond)
+
+	if got := len(a.processItems()); got != 0 {
+		t.Fatalf("expected 0 running processes after stop key, got %d", got)
+	}
+}
+
+func TestProcessesTabRestartKey(t *testing.T) {
+	dir := t.TempDir()
+	a := New(Options{Workdir: dir})
+	_ = a.handleProcess("!!sleep 30")
+	time.Sleep(50 * time.Millisecond)
+
+	a.runsOpen = true
+	a.runsFocus = true
+	a.runsTab = tabProcesses
+	a.runsSel = 0
+	first := a.processItems()
+	if len(first) != 1 {
+		t.Fatalf("expected 1 running process, got %d", len(first))
+	}
+
+	a.handleRunsPanelKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+
+	var second []runsItem
+	for i := 0; i < 50; i++ {
+		time.Sleep(50 * time.Millisecond)
+		second = a.processItems()
+		if len(second) == 1 && second[0].ID != first[0].ID {
+			break
+		}
+	}
+	if len(second) != 1 {
+		t.Fatalf("expected 1 running process after restart, got %d", len(second))
+	}
+	if second[0].ID == first[0].ID {
+		t.Fatalf("restart must produce a new process id, got the same %q", second[0].ID)
+	}
+}
+
+func TestProcessesTabOnlyListsLibraryProcesses(t *testing.T) {
+	dir := t.TempDir()
+	a := New(Options{Workdir: dir})
+	// Start a process directly through the manager without a library entry.
+	if _, err := a.procManager.Start("orphan", "sleep 30"); err != nil {
+		t.Fatalf("start orphan process: %v", err)
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	a.runsTab = tabProcesses
+	if got := len(a.processItems()); got != 0 {
+		t.Fatalf("expected 0 library-backed running processes, got %d", got)
 	}
 }
 

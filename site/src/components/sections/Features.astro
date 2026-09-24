@@ -265,9 +265,12 @@ import localModelShot from '../../assets/shots/local-model.svg';
         process is already running, it isn't started again, and its status is shown either way.
         <code class="mono">/processes</code> manages the library across project and global scope. Output
         streams to a log file under <code class="mono">~/.vulnetix/signet/logs</code> and into the{' '}
-        <code class="mono">f9</code> runs panel, where <code class="mono">v</code> opens the live tail
-        full-screen and <code class="mono">x</code> kills the process group. The log stays on disk, so you
-        can still open the tail after the process has finished.
+        <code class="mono">f9</code> runs panel. The panel opens on the activity tab; press{' '}
+        <code class="mono">tab</code> to cycle to the processes tab, which lists only currently-running
+        processes from the library. From there <code class="mono">enter</code> or <code class="mono">v</code>{' '}
+        opens the live tail full-screen, <code class="mono">x</code> stops the selected process, and{' '}
+        <code class="mono">r</code> restarts it. The log stays on disk, so you can still open the tail after
+        the process has finished.
       </p>
       <p class="mt-4 text-vx-ink/80">
         When a process exits with a non-zero code, a recovery subagent starts. It has the read-only plan
