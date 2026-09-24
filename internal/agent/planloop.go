@@ -265,8 +265,7 @@ func (l *planLedger) planPartialDirective(exhausted bool) string {
 	}
 	b.WriteString(" " + l.planUrgency())
 	if l.hasList {
-		b.WriteString("\n\nCurrent plan todo list:\n\n" + l.list.Render() +
-			"\n\nFold the concrete tool calls you have made (files read, commands run) into the plan's implementation stages, then continue. Mark steps complete with [DONE:n] in your reply as you finish them.")
+		b.WriteString(" Fold the concrete tool calls you have made (files read, commands run) into the plan's implementation stages, then continue. Mark steps complete with [DONE:n] in your reply as you finish them.")
 	} else {
 		b.WriteString(" Write a planning todo list under a 'Plan:' header (numbered steps), and fill in each step from what you have already read. Mark each step complete with [DONE:n] in your reply as you finish it.")
 	}
@@ -352,13 +351,13 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 		// The planning contract rides a hidden harness directive, sealed at
 		// egress and never rendered in the transcript: full on pass 1 and
 		// every fifth pass, a one-line reminder in between.
-		turns = append(turns, directiveTurns(prompt.PlanDirective(l.passes))...)
+		turns = append(turns, withTodoCheck(prompt.PlanDirective(l.passes), l.list, l.hasList)...)
 		// The last allowed pass offers only update_plan and ExitPlanMode, so
 		// the loop ends on a plan, never on one more round of reading.
 		final := l.passes >= maxPasses
 		s.planFinalPass = final
 		if final {
-			turns = append(turns, directiveTurnsWithNote(l.knownState()+" "+planFinalDirective, l.knownNote())...)
+			turns = append(turns, withTodoCheck(l.knownState()+" "+planFinalDirective, l.list, l.hasList, l.knownNote())...)
 		}
 		out, turns, err := s.pass(ctx, pipe, system, turns, streaming, emit, modes.ModePlan)
 		s.planFinalPass = false

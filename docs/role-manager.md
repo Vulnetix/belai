@@ -1089,7 +1089,9 @@ and runs one more bounded pass with a fresh tool budget:
 - a pass that ends with text only is the turn's normal answer;
 - the loop is capped by `resilience.max_passes` (0 falls back to
   `defaultAgentContinuations` = 5 in agent mode), and reaching the cap
-  returns the last assistant text with a system note — still not an error.
+  returns the last assistant text with a system note — still not an error;
+- each continuation directive carries the [per-pass TODO check](#per-pass-todo-check),
+  built from the list the model reported through `update_plan`.
 
 **Reset-on-steer** still outranks the continuation directive: an explore
 subagent that exhausts its budget does not continue if new steering arrived;
@@ -1413,6 +1415,33 @@ work-discipline section says.
 | Verification | Armed when the tracked list has at least one completed item (`hasVerifiableWork`) and the loop is not behind on writes — re-check completed items against disk before continuing |
 | Continuation | Budget exhaustion or a non-complete natural exit — if more tool calls are needed, make them now; otherwise give the final answer. Either way, say briefly what was done and what remains |
 | Progression | `partialStreak` reaches `goalStallPartial` — execute the single most concrete next step as an edit; reset the streak and start a new agentic evaluation loop |
+
+### Per-pass TODO check
+
+Every loop pass carries a **TODO progress check** beside whatever directive
+the boundary chose (`internal/agent/todocheck.go`, `withTodoCheck`). The
+directives above no longer render the list themselves; the check is the one
+place it is attached, so no boundary can forget it:
+
+| Loop | Where the check rides |
+| ---- | --------------------- |
+| Goal | Every directive injected inside the loop (`passLedger.directive`): action, no-write, verification, gate, continuation, tool repair, progression, partial. The first-pass goal acknowledgement is exempt — it already asks for the first `update_plan` — and the final report is exempt because it forbids tools |
+| Plan | The per-pass planning directive (`prompt.PlanDirective`) at the start of every pass, including the final `update_plan`/`ExitPlanMode`-only pass |
+| Agent | Every budget-exhaustion continuation. Agent mode keeps no ledger, so the continuation loop adopts the list from the model's own `update_plan` calls |
+
+The check's wording depends on the list state:
+
+| List state | Check asks the model to |
+| ---------- | ----------------------- |
+| None tracked (or an empty list) | Call `update_plan` with the steps it will execute, first `in_progress`, in the same response as its next tool calls |
+| Open steps | Bring the list up to date with `update_plan` (finished → `completed`, current → `in_progress`; a `[DONE:n]` marker also counts) in the same response as the tool calls that complete the next unfinished step — never a list-only reply. It states *N of M done, K in progress* |
+| Every step done | Correct the list only if a step is wrong or missing, and spend the pass confirming or finishing the work |
+
+Trust split: the check's wording and its counts are harness-computed and
+travel in the **sealed** directive body. The rendered list is model-authored
+step text, so it rides the directive turn's plain, sanitised note
+("Current TODO list:"), alongside any other note such as the plan loop's
+files-already-read line — it never enters the sealed block.
 
 ### Forced survey
 
