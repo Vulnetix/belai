@@ -27,6 +27,9 @@ type ToolCallDelta struct {
 type toolAccumulator struct {
 	calls     map[int]*toolBuilder
 	openKinds map[int]string // Anthropic content block kind ("tool_use" or "text")
+	// thinking holds open Anthropic thinking and redacted_thinking blocks by
+	// index until content_block_stop, when the text and signature are whole.
+	thinking map[int]*ThinkingBlock
 }
 
 type toolBuilder struct {
@@ -39,6 +42,7 @@ func newToolAccumulator() *toolAccumulator {
 	return &toolAccumulator{
 		calls:     map[int]*toolBuilder{},
 		openKinds: map[int]string{},
+		thinking:  map[int]*ThinkingBlock{},
 	}
 }
 
@@ -129,6 +133,8 @@ type streamDelta struct {
 	toolDelta  *ToolCallDelta
 	completed  []rolemanager.ToolCall
 	stopReason string
+	// thinking is a closed thinking or redacted_thinking block.
+	thinking *ThinkingBlock
 }
 
 // decodeStreamEvent decodes one SSE payload per dialect, updating the
@@ -258,6 +264,12 @@ func decodeAnthropicEvent(data string, acc *toolAccumulator) (streamDelta, error
 			idx := eventIndex(&ev)
 			if acc != nil {
 				acc.open(idx, ev.ContentBlock.ID, ev.ContentBlock.Name, ev.ContentBlock.Type)
+				switch ev.ContentBlock.Type {
+				case "thinking":
+					acc.thinking[idx] = &ThinkingBlock{}
+				case "redacted_thinking":
+					acc.thinking[idx] = &ThinkingBlock{Redacted: true, Data: ev.ContentBlock.Data}
+				}
 			}
 			if ev.ContentBlock.Type == "tool_use" {
 				out.toolDelta = &ToolCallDelta{Index: idx, ID: ev.ContentBlock.ID, Name: ev.ContentBlock.Name}
@@ -270,6 +282,13 @@ func decodeAnthropicEvent(data string, acc *toolAccumulator) (streamDelta, error
 			out.text = ev.Delta.Text
 		case "thinking_delta":
 			out.reasoning = ev.Delta.Thinking
+			if acc != nil && acc.thinking[idx] != nil {
+				acc.thinking[idx].Thinking += ev.Delta.Thinking
+			}
+		case "signature_delta":
+			if acc != nil && acc.thinking[idx] != nil {
+				acc.thinking[idx].Signature += ev.Delta.Signature
+			}
 		case "input_json_delta":
 			if acc != nil {
 				acc.appendArgs(idx, ev.Delta.PartialJSON)
@@ -280,6 +299,10 @@ func decodeAnthropicEvent(data string, acc *toolAccumulator) (streamDelta, error
 		idx := eventIndex(&ev)
 		if acc == nil {
 			break
+		}
+		if th := acc.thinking[idx]; th != nil {
+			delete(acc.thinking, idx)
+			out.thinking = th
 		}
 		if acc.openedKind(idx) == "tool_use" {
 			call, err := acc.complete(idx)

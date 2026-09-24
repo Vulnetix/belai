@@ -73,23 +73,30 @@ type OpenAIToolCall struct {
 // AnthropicToolDef is the wire shape for a tool offered in an Anthropic
 // messages request.
 type AnthropicToolDef struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description,omitempty"`
-	InputSchema map[string]any `json:"input_schema"`
+	Name         string                 `json:"name"`
+	Description  string                 `json:"description,omitempty"`
+	InputSchema  map[string]any         `json:"input_schema"`
+	CacheControl *AnthropicCacheControl `json:"cache_control,omitempty"`
 }
 
 // AnthropicRequestBlock is one content block in an Anthropic message.
 // For text turns it contains just Text; for tool_use blocks it contains
 // ID, Name, and Input; for tool_result blocks it contains ToolUseID and
-// Content.
+// Content. A replayed thinking block carries Thinking and Signature; a
+// redacted_thinking block carries Data. Thinking is a pointer because a
+// thinking block whose text the provider omitted still has the field.
 type AnthropicRequestBlock struct {
-	Type      string         `json:"type"`
-	Text      string         `json:"text,omitempty"`
-	ID        string         `json:"id,omitempty"`
-	Name      string         `json:"name,omitempty"`
-	Input     map[string]any `json:"input,omitempty"`
-	ToolUseID string         `json:"tool_use_id,omitempty"`
-	Content   string         `json:"content,omitempty"`
+	Type         string                 `json:"type"`
+	Text         string                 `json:"text,omitempty"`
+	Thinking     *string                `json:"thinking,omitempty"`
+	Signature    string                 `json:"signature,omitempty"`
+	Data         string                 `json:"data,omitempty"`
+	ID           string                 `json:"id,omitempty"`
+	Name         string                 `json:"name,omitempty"`
+	Input        map[string]any         `json:"input,omitempty"`
+	ToolUseID    string                 `json:"tool_use_id,omitempty"`
+	Content      string                 `json:"content,omitempty"`
+	CacheControl *AnthropicCacheControl `json:"cache_control,omitempty"`
 }
 
 // CanonicalToolArgs converts raw wire bytes into canonical JSON text.

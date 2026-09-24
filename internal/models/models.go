@@ -14,6 +14,8 @@ type Model struct {
 	Label         string
 	Efforts       []string
 	ContextWindow int // 0 when unknown
+	MaxOutput     int // completion ceiling in tokens; 0 when unknown
+	Thinking      ThinkingStyle
 }
 
 // defaultEfforts is the effort set used by providers that expose all three
@@ -36,6 +38,8 @@ func Catalog(providerName string) []Model {
 				Label:         m.Label,
 				Efforts:       m.Efforts,
 				ContextWindow: m.ContextWindow,
+				MaxOutput:     m.MaxOutput,
+				Thinking:      m.Thinking,
 			}
 			if len(out[i].Efforts) == 0 {
 				out[i].Efforts = defaultEfforts

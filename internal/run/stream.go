@@ -152,7 +152,11 @@ func egressTurns(turns []Turn, pool *nonce.Pool) []Turn {
 			ToolCalls:  t.ToolCalls,
 			ToolCallID: t.ToolCallID,
 			ToolName:   t.ToolName,
-			egrossed:   egressed,
+			// Signed thinking is opaque provider data: it rides along
+			// untouched, since any edit breaks its signature.
+			Thinking:      t.Thinking,
+			ThinkingModel: t.ThinkingModel,
+			egrossed:      egressed,
 		}
 		// Write the memo back so the next request reuses it.
 		t.egrossed = egressed
@@ -217,6 +221,7 @@ func drainStream(ctx context.Context, ch chan<- Chunk, resp *http.Response, d di
 	var reasoning strings.Builder
 	var usage *transcript.Usage
 	var calls []rolemanager.ToolCall
+	var thinking []ThinkingBlock
 	var stopReason string
 
 	send := func(c Chunk) bool {
@@ -234,7 +239,7 @@ func drainStream(ctx context.Context, ch chan<- Chunk, resp *http.Response, d di
 				calls = append(calls, completed...)
 			}
 		}
-		send(Chunk{Done: true, Usage: usage, Assistant: &Assistant{Text: text.String(), Reasoning: reasoning.String(), ToolCalls: calls, Usage: usage, StopReason: stopReason}})
+		send(Chunk{Done: true, Usage: usage, Assistant: &Assistant{Text: text.String(), Reasoning: reasoning.String(), ToolCalls: calls, Usage: usage, StopReason: stopReason, Thinking: thinking}})
 	}
 
 	for scan.Scan() {
@@ -279,8 +284,9 @@ func drainStream(ctx context.Context, ch chan<- Chunk, resp *http.Response, d di
 				return
 			}
 		}
-		for _, c := range delta.completed {
-			calls = append(calls, c)
+		calls = append(calls, delta.completed...)
+		if delta.thinking != nil {
+			thinking = append(thinking, *delta.thinking)
 		}
 		if delta.stopReason != "" {
 			stopReason = delta.stopReason

@@ -613,6 +613,115 @@ func maxTokensOr(v, def int) int {
 	return def
 }
 
+// Completion caps for requests that do not set Config.MaxTokens (the main
+// agent; every role call sets its own small cap).
+const (
+	// streamMaxTokens bounds a streamed turn. A large Write or Edit is a
+	// single tool_use block; a cap below it truncates the arguments and costs
+	// the turn a "re-issue with complete arguments" round trip.
+	streamMaxTokens = 64000
+	// blockingMaxTokens bounds a non-streamed turn, which holds the whole
+	// response in one HTTP read.
+	blockingMaxTokens = 16384
+	// unknownAnthropicMaxTokens is the cap for a model no catalogue or id rule
+	// knows, which is every custom Anthropic-surface provider's model.
+	unknownAnthropicMaxTokens = 4096
+	// minThinkingBudget is the smallest budget_tokens Anthropic accepts.
+	minThinkingBudget = 1024
+)
+
+// anthropicDefaultMaxTokens is the completion cap for a messages request that
+// did not set one: the model's ceiling, bounded by the transport.
+func anthropicDefaultMaxTokens(cfg Config, stream bool) int {
+	ceiling := models.MaxOutput(cfg.Provider, cfg.Model)
+	if ceiling <= 0 {
+		return unknownAnthropicMaxTokens
+	}
+	if stream {
+		return min(ceiling, streamMaxTokens)
+	}
+	return min(ceiling, blockingMaxTokens)
+}
+
+// anthropicThinking builds the thinking and output_config fields for the
+// model's thinking style. Only the native Anthropic dialect sends either.
+//
+//   - budget models get {type:"enabled", budget_tokens}, clamped below
+//     max_tokens (the API rejects a budget that is not smaller).
+//   - adaptive models get {type:"adaptive"} + output_config.effort; they
+//     reject budget_tokens. Effort "none" or unset leaves thinking off.
+//   - always-on models cannot turn thinking off, so effort is the only
+//     field. A role call's "none" asks for low effort, which keeps a
+//     one-token sentinel reply from spending its small cap on thinking.
+func anthropicThinking(cfg Config, d dialect, maxTokens int) (*wire.AnthropicThinking, *wire.AnthropicOutputConfig) {
+	if !d.thinking {
+		return nil, nil
+	}
+	effort := strings.ToLower(strings.TrimSpace(cfg.Effort))
+	switch models.Thinking(cfg.Provider, cfg.Model) {
+	case models.StyleBudget:
+		budget := min(models.ThinkingBudget(effort), maxTokens-minThinkingBudget)
+		if budget < minThinkingBudget {
+			return nil, nil
+		}
+		return &wire.AnthropicThinking{Type: "enabled", BudgetTokens: budget}, nil
+	case models.StyleAdaptive:
+		if !reasoningEnabled(effort) {
+			return nil, nil
+		}
+		return &wire.AnthropicThinking{Type: "adaptive"}, &wire.AnthropicOutputConfig{Effort: effort}
+	case models.StyleAlways:
+		switch {
+		case reasoningEnabled(effort):
+			return nil, &wire.AnthropicOutputConfig{Effort: effort}
+		case effort == "none":
+			return nil, &wire.AnthropicOutputConfig{Effort: "low"}
+		}
+	}
+	return nil, nil
+}
+
+// ThinkingSource names the provider and model a signed thinking block belongs
+// to. A block is replayed only to the same source: a signature is bound to the
+// model that produced it, and another model rejects it.
+func ThinkingSource(cfg Config) string {
+	return cfg.Provider + "/" + cfg.Model
+}
+
+// applyCacheBreakpoints marks three of Anthropic's four cache breakpoints:
+// the system block, the last tool definition, and the last content block of
+// the newest message. Tool order and the system text are stable within a
+// session, so the first two cache the fixed prefix; the third caches the
+// conversation so far for the next iteration of the tool loop. The shared
+// tool slice is copied, never marked in place.
+func applyCacheBreakpoints(req *wire.AnthropicMessagesRequest) {
+	if s, ok := req.System.(string); ok && s != "" {
+		req.System = []wire.AnthropicSystemBlock{{Type: "text", Text: s, CacheControl: wire.EphemeralCache()}}
+	}
+	if n := len(req.Tools); n > 0 {
+		tools := make([]wire.AnthropicToolDef, n)
+		copy(tools, req.Tools)
+		tools[n-1].CacheControl = wire.EphemeralCache()
+		req.Tools = tools
+	}
+	if n := len(req.Messages); n > 0 {
+		last := &req.Messages[n-1]
+		switch c := last.Content.(type) {
+		case string:
+			if c != "" {
+				last.Content = []wire.AnthropicRequestBlock{{Type: "text", Text: c, CacheControl: wire.EphemeralCache()}}
+			}
+		case []wire.AnthropicRequestBlock:
+			if k := len(c); k > 0 {
+				blocks := make([]wire.AnthropicRequestBlock, k)
+				copy(blocks, c)
+				blocks[k-1].CacheControl = wire.EphemeralCache()
+				last.Content = blocks
+			}
+		}
+	}
+}
+
 // WireModel returns the model id as it is sent on the wire for a provider.
 // Workers AI models (the @cf/ namespace) routed through the Cloudflare AI
 // Gateway are prefixed with "workers-ai/" so the gateway dispatches them to
@@ -659,12 +768,38 @@ type Turn struct {
 	// known harness kind — before sealing, so a directive written into Content
 	// would be silently deleted on its way to the provider.
 	Directive string
+	// Thinking holds an assistant turn's signed thinking blocks, opaque
+	// provider data replayed verbatim to the model that produced them
+	// (ThinkingModel, see ThinkingSource) and dropped for any other. It is
+	// model output: it is never sanitised into, promoted into, or rendered
+	// as a system, tools or agent block.
+	Thinking      []ThinkingBlock
+	ThinkingModel string
 	// egrossed memoises the sanitised, sealed and egress-verified content for
 	// this turn. Turns are immutable once appended to a conversation and the
 	// nonce pool never rotates mid-session, so the memo stays valid. Empty
 	// means not yet computed. It is unexported so it never reaches the wire
 	// shape.
 	egrossed string
+}
+
+// ThinkingBlock is one Anthropic thinking or redacted_thinking block. Within a
+// tool loop the API requires the assistant turn's signed thinking to come
+// back unchanged, so the fields are kept byte-for-byte.
+type ThinkingBlock struct {
+	Redacted  bool   `json:"redacted,omitempty"`
+	Thinking  string `json:"thinking,omitempty"`
+	Signature string `json:"signature,omitempty"`
+	Data      string `json:"data,omitempty"`
+}
+
+// requestBlock renders the block in its wire shape.
+func (b ThinkingBlock) requestBlock() wire.AnthropicRequestBlock {
+	if b.Redacted {
+		return wire.AnthropicRequestBlock{Type: "redacted_thinking", Data: b.Data}
+	}
+	text := b.Thinking
+	return wire.AnthropicRequestBlock{Type: "thinking", Thinking: &text, Signature: b.Signature}
 }
 
 // ErrNotConfigured is returned when provider credentials are missing.
@@ -1473,12 +1608,6 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 		if d.effort && reasoningEnabled(cfg.Effort) {
 			reasoningEffort = strings.ToLower(strings.TrimSpace(cfg.Effort))
 		}
-		var thinking *wire.AnthropicThinking
-		if d.thinking {
-			if budget := models.ThinkingBudget(cfg.Effort); budget > 0 {
-				thinking = &wire.AnthropicThinking{Type: "enabled", BudgetTokens: budget}
-			}
-		}
 		var streamOpts *wire.OpenAIStreamOptions
 		if stream && d.usage {
 			streamOpts = &wire.OpenAIStreamOptions{IncludeUsage: true}
@@ -1487,10 +1616,10 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 		// Repair any assistant turns whose tool_calls never received a matching
 		// tool result in the stored transcript. Synthetic results are added to
 		// the outbound payload only and are never written to session storage.
+		// Tool results are otherwise sent exactly as they were recorded: the
+		// history is only ever shortened by the agent's clearing step and by
+		// compaction, never per request, so the prefix stays cacheable.
 		turns = synthesizeDanglingToolResults(turns)
-		// Bound the context cost: keep the last few iterations' tool results in
-		// full and elide older ones to a short head.
-		turns = elideToolResults(turns)
 
 		switch d.kind {
 		case kindWorkersAI:
@@ -1501,18 +1630,31 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 				Tools:     openAITools,
 			})
 		case kindAnthropicMessages:
-			return d.messagesRequest(p, wire.AnthropicMessagesRequest{
-				Model:      cfg.Model,
-				MaxTokens:  maxTokensOr(cfg.MaxTokens, 4096),
-				System:     system,
-				Messages:   buildAnthropicMessages(turns),
-				Stream:     stream,
-				Tools:      anthropicTools,
-				ToolChoice: "auto",
-				Thinking:   thinking,
-			})
+			maxTokens := maxTokensOr(cfg.MaxTokens, anthropicDefaultMaxTokens(cfg, stream))
+			thinking, outputConfig := anthropicThinking(cfg, d, maxTokens)
+			// Signed thinking is replayed only to the model that produced it,
+			// and only while thinking is on for this request.
+			replayFor := ""
+			if thinking != nil || (d.thinking && models.Thinking(cfg.Provider, cfg.Model) == models.StyleAlways) {
+				replayFor = ThinkingSource(cfg)
+			}
+			req := wire.AnthropicMessagesRequest{
+				Model:        cfg.Model,
+				MaxTokens:    maxTokens,
+				System:       system,
+				Messages:     buildAnthropicMessages(turns, replayFor),
+				Stream:       stream,
+				Tools:        anthropicTools,
+				ToolChoice:   "auto",
+				Thinking:     thinking,
+				OutputConfig: outputConfig,
+			}
+			if d.cache {
+				applyCacheBreakpoints(&req)
+			}
+			return d.messagesRequest(p, req)
 		default:
-			return d.chatRequest(p, wire.OpenAIChatRequest{
+			req := wire.OpenAIChatRequest{
 				Model:           WireModel(cfg.Provider, cfg.Model),
 				Messages:        buildOpenAIMessages(system, turns, d.method),
 				Stream:          stream,
@@ -1521,7 +1663,16 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 				ToolChoice:      "auto",
 				ReasoningEffort: reasoningEffort,
 				StreamOptions:   streamOpts,
-			})
+			}
+			if req.MaxTokens <= 0 && stream {
+				// Only a catalogue entry is trusted here: an OpenAI-compatible
+				// relay may cap a model lower than its vendor does.
+				req.MaxTokens = min(models.CatalogMaxOutput(cfg.Provider, cfg.Model), streamMaxTokens)
+			}
+			if d.maxCompletion {
+				req.MaxCompletionTokens, req.MaxTokens = req.MaxTokens, 0
+			}
+			return d.chatRequest(p, req)
 		}
 	}
 	return factory, d, nil
@@ -1547,6 +1698,9 @@ type Assistant struct {
 	Stop       bool
 	Usage      *transcript.Usage // provider-reported usage, when available
 	StopReason string
+	// Thinking is the turn's signed thinking, in order, for replay on the
+	// next request of a tool loop (see Turn.Thinking).
+	Thinking []ThinkingBlock
 }
 
 // SendTurns sends a conversation and returns the assistant reply, including
@@ -1685,10 +1839,14 @@ func parseAnthropic(body []byte, status int, redact func(string) string) (Assist
 	var b strings.Builder
 	var reasoning strings.Builder
 	var calls []rolemanager.ToolCall
+	var thinking []ThinkingBlock
 	for _, c := range ar.Content {
 		switch c.Type {
 		case "thinking":
 			reasoning.WriteString(c.Thinking)
+			thinking = append(thinking, ThinkingBlock{Thinking: c.Thinking, Signature: c.Signature})
+		case "redacted_thinking":
+			thinking = append(thinking, ThinkingBlock{Redacted: true, Data: c.Data})
 		default:
 			b.WriteString(c.Text)
 		}
@@ -1704,7 +1862,7 @@ func parseAnthropic(body []byte, status int, redact func(string) string) (Assist
 		PromptTokens:     ar.Usage.InputTokens + ar.Usage.CacheReadInputTokens + ar.Usage.CacheCreationInputTokens,
 		CompletionTokens: ar.Usage.OutputTokens,
 	}
-	return Assistant{Text: b.String(), Reasoning: reasoning.String(), ToolCalls: calls, Usage: usage, StopReason: ar.StopReason}, nil
+	return Assistant{Text: b.String(), Reasoning: reasoning.String(), ToolCalls: calls, Usage: usage, StopReason: ar.StopReason, Thinking: thinking}, nil
 }
 
 // synthesizeDanglingToolResults inserts synthetic "No result provided"
@@ -1737,43 +1895,21 @@ func synthesizeDanglingToolResults(turns []Turn) []Turn {
 	return out
 }
 
-// keepRecentToolIterations is how many trailing tool-result iterations stay in
-// full on the outbound request. Older tool results are elided to a short head,
-// which is the largest token-cost centre in long sessions.
-const keepRecentToolIterations = 3
+// ClearedToolResult replaces a tool result the agent has cleared from the
+// history to bound its context. The model is told the bytes are gone rather
+// than handed a truncated head it might mistake for the whole file.
+const ClearedToolResult = "[result cleared — re-Read if needed]"
 
-// elideToolResults returns a copy of turns with tool results older than the
-// last keepRecentToolIterations iterations truncated to
-// transcript.DefaultMaxToolResultChars. An iteration boundary is an assistant
-// turn that carried tool calls; the tool turns following it belong to that
-// iteration. Elision runs per request (not memoised like egress) because a
-// turn's position shifts as the conversation grows.
-func elideToolResults(turns []Turn) []Turn {
-	if len(turns) == 0 {
-		return turns
+// ClearToolResult replaces a tool turn's content with ClearedToolResult and
+// drops the egress memo, so the next request seals the placeholder instead of
+// the old bytes. It reports whether the turn changed. Only tool turns clear.
+func (t *Turn) ClearToolResult() bool {
+	if t.Role != "tool" || t.Content == ClearedToolResult {
+		return false
 	}
-	keepFrom := 0
-	iterations := 0
-	for i := len(turns) - 1; i >= 0; i-- {
-		if turns[i].Role == "assistant" && len(turns[i].ToolCalls) > 0 {
-			iterations++
-			if iterations >= keepRecentToolIterations {
-				keepFrom = i
-				break
-			}
-		}
-	}
-	if keepFrom == 0 {
-		return turns
-	}
-	out := make([]Turn, len(turns))
-	copy(out, turns)
-	for i := 0; i < keepFrom; i++ {
-		if out[i].Role == "tool" {
-			out[i].Content = transcript.TruncateRunes(out[i].Content, transcript.DefaultMaxToolResultChars)
-		}
-	}
-	return out
+	t.Content = ClearedToolResult
+	t.egrossed = ""
+	return true
 }
 
 func buildOpenAIMessages(system string, turns []Turn, method wire.ToolMethod) []wire.OpenAIChatMessage {
@@ -1819,7 +1955,11 @@ func buildOpenAIMessages(system string, turns []Turn, method wire.ToolMethod) []
 	return msgs
 }
 
-func buildAnthropicMessages(turns []Turn) []wire.AnthropicMessage {
+// buildAnthropicMessages renders turns as Anthropic messages. replayFor is the
+// ThinkingSource whose signed thinking blocks are echoed back ahead of the
+// turn's text and tool_use blocks; empty replays none. Thinking recorded
+// under any other source is dropped: its signature would not verify.
+func buildAnthropicMessages(turns []Turn, replayFor string) []wire.AnthropicMessage {
 	msgs := make([]wire.AnthropicMessage, 0, len(turns))
 	for _, t := range turns {
 		switch t.Role {
@@ -1827,7 +1967,12 @@ func buildAnthropicMessages(turns []Turn) []wire.AnthropicMessage {
 			if t.Content == "" && len(t.ToolCalls) == 0 {
 				continue
 			}
-			blocks := make([]wire.AnthropicRequestBlock, 0, 1+len(t.ToolCalls))
+			blocks := make([]wire.AnthropicRequestBlock, 0, 1+len(t.ToolCalls)+len(t.Thinking))
+			if replayFor != "" && t.ThinkingModel == replayFor {
+				for _, th := range t.Thinking {
+					blocks = append(blocks, th.requestBlock())
+				}
+			}
 			if t.Content != "" {
 				blocks = append(blocks, wire.AnthropicRequestBlock{Type: "text", Text: t.Content})
 			}

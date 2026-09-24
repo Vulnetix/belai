@@ -37,6 +37,11 @@ type dialect struct {
 	effort   bool // emit reasoning_effort from Effort
 	usage    bool // emit stream_options.include_usage when streaming
 	method   wire.ToolMethod
+	// cache marks Anthropic prompt-cache breakpoints. Native Anthropic only:
+	// an Anthropic-shaped custom server or relay may reject the field.
+	cache bool
+	// maxCompletion sends the completion cap as max_completion_tokens.
+	maxCompletion bool
 }
 
 // resolveDialect maps a provider (and model) onto its dialect. The three
@@ -67,6 +72,9 @@ func resolveDialect(cfg Config) (dialect, error) {
 		effort:   d.Effort,
 		usage:    d.Usage,
 		method:   d.ToolMethod,
+
+		cache:         d.PromptCache,
+		maxCompletion: d.MaxCompletionTokens,
 	}
 	// Workers AI has its own route and requires tool arguments as objects.
 	if cfg.Provider == "cloudflare-workers-ai" {
