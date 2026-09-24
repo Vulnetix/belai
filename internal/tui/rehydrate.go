@@ -202,7 +202,7 @@ func messagesFromEntries(entries []session.Entry) ([]components.Message, int) {
 			if strings.TrimSpace(e.Content) == "" {
 				continue
 			}
-			msgs = append(msgs, components.Message{Role: "system", Content: e.Content})
+			msgs = append(msgs, components.Message{Role: "system", Content: e.Content, SubagentID: e.SubagentID})
 		case "rolemanager":
 			if msg := rolemanagerMessage(e); msg.Role != "" {
 				msgs = append(msgs, msg)

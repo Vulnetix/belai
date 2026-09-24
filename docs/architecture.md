@@ -1252,8 +1252,22 @@ autonomy level (`supervised` or `autonomous`).
 
 The TUI integrates background agents via `/agent create <name>`, `/agent edit`,
 `/agent start`, `/agent pause`, `/agent resume`, `/agent stop`, `/agent list`,
-and `/agent log`. `/agent list` discovers every stored profile, shows the
-file path for each, and highlights running instances; pressing `e` (or `enter`)
+and `/agent log`, and through the `/agents` screen. `/agents` has three tabs,
+switched with `1`, `2`, `3` or `tab`: **running** lists every subagent and
+background agent seen this session with its state, running tool, iteration,
+tool count, elapsed time and latest output line; **profiles** is the profile
+list and editor; **audit** is the step-by-step trail (state changes, tool
+calls, results, replies, errors) held in a bounded in-memory ledger of 1000
+rows. On the running tab `enter` follows an agent's thread in chat, `p` pauses
+or resumes a background agent, `x` stops it (or cancels or dismisses a
+subagent), and `a` narrows the audit tab to it. `/agent list` opens the
+profiles tab and `/agent log <name>` opens that agent's audit trail. Audit rows
+are flattened to one line with control and bidi runes removed, and the ledger
+is display-only: nothing in it reaches a model.
+
+The profiles tab discovers every stored profile, shows the
+file path for each, and highlights running instances; `s` starts the
+highlighted profile in the background, and pressing `e` (or `enter`)
 opens a sectioned editor covering the full `AgentProfile` schema — name, file
 name, description, system prompt, tools, mode, schedule, monitor condition,
 provider, model, effort, autonomy, guardrails, ask permission, reflection, and
@@ -1264,8 +1278,13 @@ designer runs visibly behind a `Silent` activity row and a composer phase, and
 after the builder returns the profile's `Name` is forced back to the requested
 name before save. On success the new profile is selected and the editor opens
 automatically; on failure a valid stub is saved and the editor still opens.
-Events stream into the main transcript as system lines so the user's session
-is never blocked.
+A background agent's events go to its own thread, keyed `bg:<name>`: streamed
+reply deltas are joined into one row, and each tool call and its result share
+a row. The main view hides these threads; it shows one line when the agent
+starts, one when its loop ends, and one per error. Following the thread (from
+`/agents`, the `f8` runs panel, or the audit tab) shows it in full, and `esc`
+returns to main. Thread rows carry a `SubagentID`, so they never enter
+`buildTurns` and survive `/resume` like explore rows do.
 
 `loop` mode treats `max_iterations` as an *inner* budget: when it is exhausted,
 an agent-loop evaluator decides whether to continue, pause, sleep one schedule
@@ -1510,15 +1529,28 @@ turn is running, Enter instead queues the text as a `user steering` prompt:
 steered turns pass through the same Role Manager admission as the original
 prompt, and a full queue drops the newest message.
 
-### Subagent roster and the f8 strip
+### Subagent roster and the footer pulse
 
-Every fan-out subagent the harness launches — explore tasks and background
-agents — has a chip in a footer strip: `[main] [chip…]`. `f8` moves focus onto
-the strip (a no-op with an empty roster); `←`/`→` cycle over main and the
-chips, `⏎` filters the transcript to the selected subagent (main clears the
-filter), `x` cancels a running chip or dismisses a finished one, and `esc`
-returns focus to the composer. Chips persist across turns and are removed only
-by an explicit dismiss; running chips are never removed automatically.
+Every fan-out subagent the harness launches, explore tasks and background
+agents alike, has a chip on the footer's roster line: `[main] [chip…]`. Each
+chip carries a state glyph (a spinner while running, `○` queued, `‖` paused,
+`◌` idle between scheduled runs, `✓` done, `✗` failed or stopped) and, when
+there is room, a muted note naming the running tool and the iteration. When
+the line is too narrow the notes go first, then chips collapse into `→ N
+more`. A one-second tick drives the glyph and refreshes background loop state
+only while an agent is working.
+
+While a thread is followed, the roster line becomes the pulse for that agent:
+its chip, state, running tool or `thinking`, `iter N/M`, tool and error
+counts, elapsed time, as much of its latest output as fits, and `esc main` on
+the right. `esc` in chat leaves the followed thread before it would cancel the
+main turn.
+
+The roster itself is driven from the runs panel: `f8` opens it on the
+subagents tab, `⏎` follows the selected subagent (main clears the filter), and
+`x` cancels a running chip or dismisses a finished one. Chips persist across
+turns and are removed only by an explicit dismiss; running chips are never
+removed automatically.
 
 The fan-out is capped by one settings-backed FIFO pool
 (`resilience.max_agents`, default 15) that the Role Manager owns and reaches
@@ -1980,6 +2012,7 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 | `f5` | Cycle mode and re-sync plan mode, from any screen |
 | `f6` | Cycle reasoning effort: default → low → medium → high → default, from any screen |
 | `f7` | Save the current prompt to the project prompt library, from the chat view — a save-as alias of `ctrl+s` with no loaded entry |
+| `f1` | Open the screen switcher from chat or any screen. One letter opens a screen: `a` agents, `m` model, `p` providers, `s` settings, `k` permissions, `r` prompts, `x` processes, `l` lsp, `v` vulnetix, `h` sessions. A screen already open further down the stack is returned to, so `esc` walks back through distinct screens. It does nothing on a permission ask, a clarifying question, plan review or while an inline field edit holds text, and a chat draft is kept while it is open |
 | `f8` | Open and focus the bottom runs panel on the subagents tab (chat) |
 | `f9` | Open and focus the bottom runs panel on the activity tab (chat) |
 | `f10` | Toggle the Vulnetix AI Firewall from any screen |
@@ -2481,7 +2514,8 @@ Business rules:
 | `/compact` | Summarise the session into a new one |
 | `/resume` | Resume a session by id, or browse every session on disk |
 | `/rename` | Rename this session |
-| `/agent` | Manage background agents (`create`, `list`, `edit <name>`, `start`, `stop`, `pause`, `resume`, `log`) |
+| `/agent` | Manage background agents (`create`, `list`, `edit <name>`, `start`, `stop`, `pause`, `resume`, `log`); `log` opens the agent's audit trail |
+| `/agents` | Open the agents screen: `running`, `profiles` or `audit` (bare `/agents` opens running once any agent has run, profiles before that) |
 
 The table is the whole set registered by `internal/tui.NewRegistry`. Two
 aliases exist but are not table rows: `/new` is a visible alias of `/clear`

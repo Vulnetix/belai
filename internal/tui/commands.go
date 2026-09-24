@@ -379,7 +379,7 @@ func NewRegistry(workdir string) *Registry {
 			}
 			return tea.Batch(buildCmd, a.workSpin.Tick)
 		case "list":
-			return a.push(viewAgent)
+			return a.openAgentsTab(agentTabProfiles)
 		case "edit":
 			name := strings.TrimSpace(rest)
 			if name == "" {
@@ -392,97 +392,50 @@ func NewRegistry(workdir string) *Registry {
 			}
 			a.agentState.pendingEditProfile = name
 			return a.push(viewAgent)
-		case "start":
+		case "start", "stop", "pause", "resume", "log":
 			name := strings.TrimSpace(rest)
 			if name == "" {
-				a.addSystem("agent start <name>")
+				a.addSystem("agent " + sub + " <name>")
 				return nil
 			}
-			if a.bgManager == nil {
-				a.addSystem("agent: no background manager configured")
-				return nil
-			}
-			p, err := agentprofile.Load(name)
-			if err != nil {
-				a.addSystem("agent start: " + err.Error())
-				return nil
-			}
-			if err := a.bgManager.Start(name, p); err != nil {
-				a.addSystem("agent start: " + err.Error())
-				return nil
-			}
-			a.registerAgentActivity(name, name, a.workdir)
-			a.addSystem("agent started: " + name)
-			return a.watchAgentEvents(name)
-		case "stop":
-			name := strings.TrimSpace(rest)
-			if name == "" {
-				a.addSystem("agent stop <name>")
-				return nil
-			}
-			if a.bgManager == nil {
-				a.addSystem("agent: no background manager configured")
-				return nil
-			}
-			if err := a.bgManager.Stop(name); err != nil {
-				a.addSystem("agent stop: " + err.Error())
-				return nil
-			}
-			a.addSystem("agent stopped: " + name)
-			return nil
-		case "pause":
-			name := strings.TrimSpace(rest)
-			if name == "" {
-				a.addSystem("agent pause <name>")
-				return nil
-			}
-			if a.bgManager == nil {
-				a.addSystem("agent: no background manager configured")
-				return nil
-			}
-			if err := a.bgManager.Pause(name); err != nil {
-				a.addSystem("agent pause: " + err.Error())
-				return nil
-			}
-			a.addSystem("agent paused: " + name)
-			return nil
-		case "resume":
-			name := strings.TrimSpace(rest)
-			if name == "" {
-				a.addSystem("agent resume <name>")
-				return nil
-			}
-			if a.bgManager == nil {
-				a.addSystem("agent: no background manager configured")
-				return nil
-			}
-			if err := a.bgManager.Resume(name); err != nil {
-				a.addSystem("agent resume: " + err.Error())
-				return nil
-			}
-			a.addSystem("agent resumed: " + name)
-			return a.watchAgentEvents(name)
-		case "log":
-			name := strings.TrimSpace(rest)
-			if name == "" {
-				a.addSystem("agent log <name>")
-				return nil
-			}
-			inst, ok := a.bgManager.Lookup(name)
-			if !ok {
-				a.addSystem("agent log: " + name + " not found")
-				return nil
-			}
-			out := inst.LastOutput()
-			if out == "" {
-				a.addSystem("agent log: " + name + " — no output yet")
-			} else {
-				a.addSystem("agent log: " + name + "\n" + out)
+			switch sub {
+			case "start":
+				return a.startAgentProfile(name)
+			case "stop":
+				a.stopAgent(name)
+			case "pause":
+				a.pauseAgent(name)
+			case "resume":
+				return a.resumeAgent(name)
+			case "log":
+				// The log is the agent's audit trail on the /agents screen.
+				a.agentState.auditFilter = "bg:" + name
+				a.agentState.auditSel = 0
+				return a.openAgentsTab(agentTabAudit)
 			}
 			return nil
 		default:
 			a.addSystem("agent: unknown subcommand " + sub)
 			return nil
+		}
+	})
+	r.Register("agents", "running agents, profiles and the audit trail", func() []string {
+		return []string{"running", "profiles", "audit"}
+	}, func(a *App, arg string) tea.Cmd {
+		switch strings.TrimSpace(arg) {
+		case "profiles":
+			return a.openAgentsTab(agentTabProfiles)
+		case "audit":
+			a.agentState.auditFilter = ""
+			return a.openAgentsTab(agentTabAudit)
+		case "running":
+			return a.openAgentsTab(agentTabLive)
+		default:
+			// Nothing has run yet: the profiles are the useful first view.
+			if len(a.ledger.order) == 0 {
+				return a.openAgentsTab(agentTabProfiles)
+			}
+			return a.openAgentsTab(agentTabLive)
 		}
 	})
 	// Hidden alias: dispatchable, absent from Names() and autocomplete.

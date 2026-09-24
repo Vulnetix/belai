@@ -110,7 +110,7 @@ func (a *App) activityItems() []runsItem {
 func (a *App) subagentItems() []runsItem {
 	items := []runsItem{{ID: "", Label: "main", Detail: "unfiltered", State: "main"}}
 	for _, c := range a.subagents {
-		items = append(items, runsItem{ID: c.ID, Label: c.Label, Detail: c.State, State: c.State})
+		items = append(items, runsItem{ID: c.ID, Label: c.Label, Detail: a.agentSummary(c.ID, c.State), State: c.State})
 	}
 	return items
 }
@@ -589,8 +589,7 @@ func (a *App) startTriage(projectRoot string) tea.Cmd {
 		return nil
 	}
 	a.registerAgentActivity(key, profile.Name, projectRoot)
-	a.addSystem("triage started for " + projectRoot)
-	return a.watchAgentEvents(key)
+	return a.noteAgentStarted(key)
 }
 
 // registerAgentActivity registers one background-agent turn in the panel.

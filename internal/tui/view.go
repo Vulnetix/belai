@@ -29,6 +29,7 @@ const (
 	viewPrompts
 	viewProcesses
 	viewLSP
+	viewScreens
 )
 
 // viewHandler is one full-screen view. Chat is the base state and lives
@@ -63,6 +64,7 @@ func init() {
 	viewHandlers[viewPrompts] = viewHandler{name: "prompts", enter: (*App).enterPrompts, key: (*App).handlePromptsKey, render: (*App).promptsView}
 	viewHandlers[viewProcesses] = viewHandler{name: "processes", enter: (*App).enterProcesses, key: (*App).handleProcessesKey, render: (*App).processesView}
 	viewHandlers[viewLSP] = viewHandler{name: "lsp", enter: (*App).enterLSP, key: (*App).handleLSPKey, render: (*App).lspView}
+	viewHandlers[viewScreens] = viewHandler{name: "screens", enter: (*App).enterScreens, key: (*App).handleScreensKey, render: (*App).screensView}
 }
 
 // push navigates to a full-screen view, remembering the current one on the
@@ -95,4 +97,26 @@ func (a *App) pop() {
 	a.editor.Reset()
 	a.editor.Masked = false
 	a.clearLoadedPrompt()
+	a.restoreChatDraft()
+}
+
+// popToChat leaves every full-screen view at once.
+func (a *App) popToChat() {
+	a.viewStack = nil
+	a.view = viewChat
+	a.editor.Reset()
+	a.editor.Masked = false
+	a.clearLoadedPrompt()
+	a.restoreChatDraft()
+}
+
+// restoreChatDraft puts back the composer text the screen switcher set aside
+// when it was opened from chat.
+func (a *App) restoreChatDraft() {
+	if a.view != viewChat || a.chatDraft == "" {
+		return
+	}
+	a.editor.SetValue(a.chatDraft)
+	a.editor.CursorEnd()
+	a.chatDraft = ""
 }

@@ -73,6 +73,10 @@ type Footer struct {
 	// [main] chip is the selected roster entry.
 	Subagents   []SubagentChip
 	MainFocused bool
+
+	// Pulse is the followed agent's loop state. While a thread is filtered it
+	// takes the roster's line, so the footer says what that agent is doing.
+	Pulse *AgentPulse
 }
 
 // SubagentChip is one roster entry in the footer's subagent strip.
@@ -81,6 +85,24 @@ type SubagentChip struct {
 	Label   string
 	State   string
 	Focused bool
+	// Glyph is the state mark drawn inside the chip; Detail is the short
+	// muted note after it (the running tool, the iteration). Both are
+	// optional and Detail is the first thing dropped when space runs out.
+	Glyph  string
+	Detail string
+}
+
+// AgentPulse is one agent's loop state, drawn as a single footer line.
+type AgentPulse struct {
+	Glyph   string
+	Label   string
+	State   string
+	Step    string // the running tool ("⚙ Grep") or "thinking"
+	Iter    string // "iter 3/12"
+	Tools   int
+	Errors  int
+	Elapsed string
+	Last    string // the latest line of output
 }
 
 func modeColor(mode string) lipgloss.TerminalColor {
@@ -146,53 +168,124 @@ func (f *Footer) View() string {
 // [main] leads the strip, chips follow in insertion order, and overflow
 // collapses to a "→ N more" marker matching the /model windowed-list idiom.
 func (f *Footer) subagentLine() string {
+	if f.Pulse != nil {
+		return f.pulseLine()
+	}
 	if len(f.Subagents) == 0 {
 		return ""
 	}
+	// Details first; when they do not all fit, the chips alone.
+	if line, ok := f.chipLine(true); ok {
+		return line
+	}
+	line, _ := f.chipLine(false)
+	return line
+}
+
+// chipLine lays the roster out on one line. ok is false when a chip had to
+// collapse into the "→ N more" marker.
+func (f *Footer) chipLine(details bool) (string, bool) {
 	parts := []string{renderSubagentChip(SubagentChip{ID: "", Label: "main", State: "main", Focused: f.MainFocused})}
 	used := lipgloss.Width(parts[0])
 	const sep = 2
 	for i, c := range f.Subagents {
 		rendered := renderSubagentChip(c)
+		if details && c.Detail != "" {
+			rendered += " " + MutedStyle.Render(c.Detail)
+		}
 		w := lipgloss.Width(rendered)
 		if used+w+sep > f.Width {
 			parts = append(parts, MutedStyle.Render(fmt.Sprintf("→ %d more", len(f.Subagents)-i)))
-			break
+			return strings.Join(parts, MutedStyle.Render("  ")), false
 		}
 		parts = append(parts, rendered)
 		used += w + sep
 	}
-	return strings.Join(parts, MutedStyle.Render("  "))
+	return strings.Join(parts, MutedStyle.Render("  ")), true
+}
+
+// pulseLine renders the followed agent: its chip, the loop counters, and as
+// much of its latest output as fits before the way back to main.
+func (f *Footer) pulseLine() string {
+	p := f.Pulse
+	label := p.Label
+	if p.Glyph != "" {
+		label = p.Glyph + " " + label
+	}
+	chip := Chip(label, chipColour("x", p.State))
+	parts := []string{MutedStyle.Render(p.State)}
+	if p.Step != "" {
+		if strings.HasPrefix(p.Step, "⚙") {
+			parts = append(parts, WarnStyle.Render(p.Step))
+		} else {
+			parts = append(parts, MutedStyle.Render(p.Step))
+		}
+	}
+	if p.Iter != "" {
+		parts = append(parts, MutedStyle.Render(p.Iter))
+	}
+	if p.Tools > 0 {
+		parts = append(parts, MutedStyle.Render(countNoun(p.Tools, "tool")))
+	}
+	if p.Errors > 0 {
+		parts = append(parts, DangerStyle.Render(countNoun(p.Errors, "error")))
+	}
+	if p.Elapsed != "" {
+		parts = append(parts, MutedStyle.Render(p.Elapsed))
+	}
+	left := chip + "  " + strings.Join(parts, MutedStyle.Render(" · "))
+	hint := MutedStyle.Render("esc main")
+	if room := f.Width - lipgloss.Width(left) - lipgloss.Width(hint) - 6; p.Last != "" && room > 12 {
+		left += MutedStyle.Render("  › " + truncateRunes(p.Last, room))
+	}
+	pad := f.Width - lipgloss.Width(left) - lipgloss.Width(hint)
+	if pad < 2 {
+		return ansi.Truncate(left, f.Width, "…")
+	}
+	return left + strings.Repeat(" ", pad) + hint
+}
+
+func countNoun(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }
 
 // renderSubagentChip renders one roster chip with its state colour. queued is
 // muted, running is teal, done is teal-soft with a check, cancelled/failed is
 // amber, and the focused chip renders inverse.
 func renderSubagentChip(c SubagentChip) string {
-	var colour lipgloss.TerminalColor
 	label := c.Label
-	if c.ID == "" {
-		colour = ColorTealSoft
-	} else {
-		switch c.State {
-		case "queued":
-			colour = ColorMuted
-		case "running":
-			colour = ColorTeal
-		case "done":
-			label = c.Label + " ✓"
-			colour = ColorTealSoft
-		case "cancelled", "failed":
-			colour = ColorAmber
-		default:
-			colour = ColorMuted
-		}
+	switch {
+	case c.Glyph != "":
+		label = c.Glyph + " " + c.Label
+	case c.ID != "" && c.State == "done":
+		label = c.Label + " ✓"
 	}
-	chip := Chip(label, colour)
+	chip := Chip(label, chipColour(c.ID, c.State))
 	if c.Focused {
 		chip = lipgloss.NewStyle().Reverse(true).Render(chip)
 	}
 	return chip
+}
+
+// chipColour is the roster colour for a state; the main chip ("" id) is
+// always teal-soft.
+func chipColour(id, state string) lipgloss.TerminalColor {
+	if id == "" {
+		return ColorTealSoft
+	}
+	switch state {
+	case "running":
+		return ColorTeal
+	case "done":
+		return ColorTealSoft
+	case "cancelled", "failed", "stopped", "paused":
+		return ColorAmber
+	default:
+		return ColorMuted
+	}
 }
 
 // line2Layout computes the footer's second content line. It returns the

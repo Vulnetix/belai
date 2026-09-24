@@ -123,23 +123,8 @@ func (a *App) startAgentChoice(c agentChoice) tea.Cmd {
 		a.addSystem(c.Name + " is a profile, not a background agent — enter engages it here")
 		return nil
 	}
-	if a.bgManager == nil {
-		a.addSystem("background agents need configured credentials")
-		return nil
-	}
-	p, err := agentprofile.Load(c.Name)
-	if err != nil {
-		a.addSystem("agent: " + err.Error())
-		return nil
-	}
-	if err := a.bgManager.Start(c.Name, p); err != nil {
-		a.addSystem("agent start failed: " + err.Error())
-		return nil
-	}
-	a.registerAgentActivity(c.Name, c.Name, a.workdir)
 	a.agentIndex = noAgentSelection
-	a.addSystem("agent started in the background: " + c.Name)
-	return nil
+	return a.startAgentProfile(c.Name)
 }
 
 // agentCandidates returns the profiles the strip is currently offering: the
