@@ -472,10 +472,22 @@ worse than sequential. Anything else ends the run:
 
 Before the permission gate, `tools.CheckArgs` rejects any argument key the
 tool's schema does not declare, naming it and the accepted keys. A key the
-tool silently ignored (Grep's trained `-i`, Bash's `run_in_background`) would
+tool silently ignored (Bash's `run_in_background`, Read's `pages`) would
 answer a different question than the model asked. The `file_path`/`path`
-alias is accepted wherever either is declared, and Bash tolerates the
-advisory `description` and `timeout`.
+alias is accepted wherever either is declared. Grep's trained flags and
+Bash's `timeout` and `description` are declared arguments (see below), so
+they are honoured rather than tolerated.
+
+`Bash` takes the trained `timeout` in milliseconds: default 120000, capped
+at 600000, and a non-positive value is refused. A timed-out command still
+returns what it printed, followed by `… command timed out after <d>`. The
+read-only Bash on plan/explore surfaces keeps a 30-second default but
+accepts the same argument. `description` labels the call for the user and
+changes nothing about its execution.
+
+Each tool result event carries the call's execution time (classification
+included), which the transcript records as `duration_ms`; see
+[Session store](#session-store).
 
 Results match back to their transcript row by tool call id, so an
 out-of-order completion from the concurrent group lands on its own row

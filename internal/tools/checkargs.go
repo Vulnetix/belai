@@ -8,11 +8,9 @@ import (
 
 // toleratedArgs are keys a tool accepts without advertising them: trained
 // arguments that are advisory for this harness, so ignoring them cannot give
-// the model a different answer than it asked for. Bash's description only
-// labels the call, and its timeout is superseded by the harness's own bound.
-var toleratedArgs = map[string][]string{
-	"Bash": {"description", "timeout"},
-}
+// the model a different answer than it asked for. Empty today: Bash's
+// description and timeout are now declared arguments.
+var toleratedArgs = map[string][]string{}
 
 // CheckArgs refuses argument keys the tool's schema does not declare. A key
 // the tool silently ignored — Grep's trained `-i` or `glob`, Bash's
