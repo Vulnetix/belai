@@ -153,6 +153,12 @@ test-pkg PKG *ARGS:
 e2e *ARGS:
     go test -race ./e2e {{ ARGS }}
 
+# Replay AIxploit's payloads through each classifier variant (built from source)
+# and write a Markdown report to .vulnetix/redteam/. Makes real provider calls:
+# `just redteam -provider cloudflare-ai-gateway -model @cf/deepseek-ai/deepseek-r1-distill-qwen-32b`.
+redteam *ARGS:
+    go run ./tools/redteam {{ ARGS }}
+
 # Write coverage.txt and print the per-function summary.
 cover:
     go test -coverprofile=coverage.txt -covermode=atomic ./...
