@@ -19,7 +19,7 @@ import modelPickerShot from '../../assets/shots/model-picker.svg';
 import localModelShot from '../../assets/shots/local-model.svg';
 ---
 
-<SealedSection label="modes" sealText="Modes: agent for general coding, plan for read-only investigation with Bash absent, and goal for one tracked objective. Explicit choices are sticky and never re-classified." id="modes">
+<SealedSection label="modes" sealText="Modes: agent for general coding, plan for read-only investigation with Bash absent, and goal for one tracked objective. Explicit choices are sticky and never re-classified. An agent turn ends on a done panel; a goal or an approved plan ends on a final report." id="modes">
   <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
     <div class="order-2 lg:order-1 space-y-4">
       <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={planMode} /></div>
@@ -32,7 +32,9 @@ import localModelShot from '../../assets/shots/local-model.svg';
       </p>
       <p class="mt-4 text-vx-ink/80">
         Agent is the default for general coding. Every tool is available behind the permission rules,
-        and the security classifier checks every untrusted result.
+        and the security classifier checks every untrusted result. Each agent turn ends on a
+        <code class="mono">✓ done</code> panel that Signet writes itself, with the number of tool calls,
+        edits and the time taken.
       </p>
       <p class="mt-4 text-vx-ink/80">
         Plan mode is read-only. The model is not offered <code class="mono">Bash</code> at all, so it has
@@ -42,6 +44,9 @@ import localModelShot from '../../assets/shots/local-model.svg';
       <p class="mt-4 text-vx-ink/80">
         Goal mode works on one named objective until it is done. Progress is tracked in a todo list
         built from the assistant's own text, and the loop continues while the objective moves forward.
+        When the goal is met, the model writes a final report of what changed and how it was checked.
+        A goal that stops early reports what is left. An approved plan runs the same way and ends on
+        the same report.
       </p>
       <p class="mt-4 text-vx-ink/80">
         <code class="mono">-detect-mode</code> prints the mode Signet would choose for a prompt without acting on it.

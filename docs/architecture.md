@@ -1310,6 +1310,7 @@ session name or short id. Entry types:
 | `reasoning` | `reasoning` | streamed chain-of-thought shown in the `model · reasoning` panel |
 | `system` | `system` | a TUI system notice |
 | `rolemanager` | `rolemanager` | a role-manager decision line, with `summary` / `outcome` / `tone` / `level` in `meta` |
+| `completion` | `completion` | the harness-composed agent-mode completion panel body (never sent to a model) |
 | `session_name` | *(empty)* | the name; append-only, latest wins, empty clears |
 | `session_meta` | *(empty)* | per-session JSON: `schema`, `cwd`, `version`, `createdAt`, `resumedFrom`, `originCwd`, `activePlan`, `activeGoal`, `activeProfile`, `mode` |
 | `summary` | *(empty)* | a compaction summary; `meta.parent_session` links the source session |
@@ -1795,6 +1796,30 @@ Every framed panel is titled by its speaker, never by the harness:
 - **`signet`** — Signet's own notices. Adjacent system entries coalesce into
   one panel, one body line per notice with a muted `·` gutter, the frame's
   edges in the line colour and the title in the brand accent.
+- **`✓ done`** — the completion panel that closes every agent-mode turn (see
+  below). Teal-framed, one line, composed by the harness.
+
+#### How a turn ends
+
+Every successful turn ends on something that says it ended:
+
+| Turn | Ends on |
+| ---- | ------- |
+| Agent mode | The `✓ done` completion panel: *agent turn complete · N tool calls · N edits · elapsed*. |
+| Goal mode | The final report turn, streamed into its own `model` panel after *goal complete — writing the final report* (see [role-manager.md](role-manager.md#final-report)). |
+| Approved plan | The same final report (an approved plan runs the goal loop), then *approved plan complete*. |
+| Plan mode | The plan review pane. |
+
+The completion panel is deterministic: `agentTurnCompleted` decides from harness
+state only — no goal sentinel, no plan sentinel, a resolved mode that is neither
+`plan` nor `goal`, and a session not in plan mode — and never from reply text.
+Its figures come from the transcript rows of the turn: main-thread tool rows
+after the last non-steering user prompt (subagent rows are not counted), edits
+being the `Write`/`Edit` family, and the elapsed time from the turn's start.
+It is render-only: `buildTurns` skips the `completion` role, so it never
+reaches a provider. It is persisted as a `completion` entry and restored on
+resume; a blank one is dropped. A failed turn gets no panel — it ends on its
+error.
 
 Assistant bodies go through `RenderMarkdown` (`markdown.go`, `markdown_inline.go`,
 `markdown_table.go`), a hand-rolled, line-oriented, single-pass renderer with

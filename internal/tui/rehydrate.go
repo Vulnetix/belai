@@ -102,7 +102,7 @@ func rehydrateSession(entries []session.Entry) rehydrated {
 			hasTool = true
 		case session.EntryTypeSessionMeta:
 			hasMeta = true
-		case "reasoning", "system", "rolemanager":
+		case "reasoning", "system", "rolemanager", completionRole:
 			hasNewRow = true
 		}
 	}
@@ -203,6 +203,11 @@ func messagesFromEntries(entries []session.Entry) ([]components.Message, int) {
 				continue
 			}
 			msgs = append(msgs, components.Message{Role: "system", Content: e.Content, SubagentID: e.SubagentID})
+		case completionRole:
+			if strings.TrimSpace(e.Content) == "" {
+				continue
+			}
+			msgs = append(msgs, components.Message{Role: completionRole, Content: e.Content})
 		case "rolemanager":
 			if msg := rolemanagerMessage(e); msg.Role != "" {
 				msgs = append(msgs, msg)
