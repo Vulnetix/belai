@@ -44,7 +44,7 @@ where `GlobalDir()` honours `SIGNET_HOME` and otherwise resolves to
 | `schedule` | No | string | Cron-like schedule expression (used when `mode` is `scheduled`). |
 | `monitor_condition` | No | string | Human-readable trigger condition (used when `mode` is `monitor`). |
 | `reflection` | No | bool | When true, the model is asked to emit `<thinking>` or a `reflection` field before acting. |
-| `max_iterations` | No | int | Per-run iteration bound; defaults to the global `resilience.max_iterations` setting (10). |
+| `max_iterations` | No | int | Per-run iteration bound; defaults to the global `resilience.max_iterations` setting (40). |
 | `autonomy` | No | string | `supervised` (default) or `autonomous`. Both execute tools during a turn; the field decides only what happens when a `loop`-mode agent exhausts `max_iterations` and the evaluator returns `CONTINUE`. An autonomous profile resets the budget and continues; a supervised one is paused instead, so unattended unbounded tool use needs the explicit opt-in. |
 | `provider` | No | string | Model provider to use for this agent. Must be a built-in provider name or a configured custom-provider name. Omitted means inherit the session provider. A profile may only *name* a provider; it may never define one (no API key exfiltration). |
 | `model` | No | string | Model id to use for this agent. Applies to `provider` when set, otherwise to the session provider. Omitted means inherit the session/model default (`run.DefaultModel`). |

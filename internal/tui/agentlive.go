@@ -501,7 +501,7 @@ func agentMaxIter(p agentprofile.AgentProfile, s config.Settings) int {
 		if p.MaxIterations > 0 {
 			return p.MaxIterations
 		}
-		return s.Resilience.MaxIterationsOr(10)
+		return s.Resilience.MaxIterationsOr(config.DefaultMaxIterations)
 	default:
 		return p.MaxIterations
 	}

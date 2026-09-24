@@ -311,7 +311,7 @@ func toolsPlanSurface(perms permissions.Settings, surface tools.PlanSurface) too
 func NewSession(o Options) (*Session, error) {
 	maxIter := o.MaxIterations
 	if maxIter <= 0 {
-		maxIter = o.Settings.Resilience.MaxIterationsOr(10)
+		maxIter = o.Settings.Resilience.MaxIterationsOr(config.DefaultMaxIterations)
 	}
 	pool := nonce.New()
 	if o.SkipNonceSeed {

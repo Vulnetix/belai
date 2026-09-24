@@ -169,7 +169,7 @@ Retry budgets are configurable via `config.Settings.Resilience`:
 
 - `max_attempts`: L2 turn retry budget per model call (default 3, same as
   the internal L1 default).
-- `max_iterations`: per-pass tool-loop budget (default 10).
+- `max_iterations`: per-pass tool-loop budget (default 40).
 - `max_passes`: goal-mode pass-loop ceiling (default 0 — unbounded). The pass
   loop's own stall detectors are what normally stop it; this exists for CI and
   for anyone who wants a hard bound on spend. When it is reached the loop
