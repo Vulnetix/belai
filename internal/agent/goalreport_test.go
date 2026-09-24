@@ -194,3 +194,31 @@ func TestGoalReportSkippedOnCancel(t *testing.T) {
 		t.Fatalf("cancelled report: reply=%q emitted=%d", out.Reply, emitted)
 	}
 }
+
+// The case the user saw ("goal evaluator: goal is complete (pass 2)" and then
+// nothing): a pass-1 completion is held for the verification pass, the pass-2
+// completion is accepted, and the report turn must still follow.
+func TestGoalReportFollowsCompletionAtPassTwo(t *testing.T) {
+	res, events, err := runGoalReport(t, goalPassOpts{
+		eval:   []string{"GOAL_COMPLETE", "GOAL_COMPLETE"},
+		report: "REPORT: done at pass two.",
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if res.GoalSentinel != rolemanager.GoalComplete || res.Passes != 2 {
+		t.Fatalf("result = %+v, want GOAL_COMPLETE after 2 passes", res)
+	}
+	if res.Reply != "REPORT: done at pass two." {
+		t.Fatalf("Reply = %q, want the report", res.Reply)
+	}
+	var reported bool
+	for _, e := range events {
+		if e.Kind == EventReportKind {
+			reported = true
+		}
+	}
+	if !reported {
+		t.Fatal("no report turn after a pass-2 completion")
+	}
+}
