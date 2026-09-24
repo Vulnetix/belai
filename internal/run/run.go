@@ -1481,8 +1481,22 @@ func (r *routedClassifier) forUseCase(ctx context.Context, useCase string) rolem
 			Model:    pc.Cfg.Model,
 		}
 	}
+	start := time.Now()
 	decision, err := r.jev.Route(ctx, useCase, candidates)
 	if err != nil || decision.Key == "" {
+		// Record why Jev did not settle it: a failed call carries its HTTP
+		// status, so a failing Decisions endpoint is visible rather than a
+		// silent switch to the default model.
+		var status *int
+		if err != nil {
+			s := 0
+			var de *jev.DecisionsError
+			if errors.As(err, &de) {
+				s = de.Status
+			}
+			status = &s
+		}
+		rolemanager.RecordRouteFallback(useCase, status, "openrouter/"+jev.DefaultModel, time.Since(start))
 		return r.cacheAndReturn(useCase, r.fallback(useCase))
 	}
 	for _, pc := range r.pool {

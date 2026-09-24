@@ -1,6 +1,7 @@
 package rolemanager
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -85,4 +86,17 @@ func RecordSecurityPhaseTimed(subject, verdict, model string, took time.Duration
 // exactly the model that ruled on the fallback.
 func RecordSecurityFallback() {
 	recordModel(EventSecurityFallback, "fallback", "security", "", 0, "")
+}
+
+// RecordRouteFallback emits a route-fallback event: Jev did not settle which
+// model serves useCase, and the defined model serves it instead. A non-nil
+// status marks a failed Decisions call and carries its HTTP status (0 when no
+// response arrived); a nil status is an inconclusive reply. Only the status
+// number is recorded — never the error body, which is server text.
+func RecordRouteFallback(useCase string, status *int, model string, took time.Duration) {
+	verdict, detail := "inconclusive", ""
+	if status != nil {
+		verdict, detail = "error", fmt.Sprintf("status=%d", *status)
+	}
+	recordTimed(EventRouteFallback, verdict, useCase, detail, 0, model, took)
 }
