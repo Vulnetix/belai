@@ -123,16 +123,6 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
       <span><span class="cov cov--jev">Jev</span> Jev first, then the sentinel</span>
       <span><span class="cov cov--gap">gap</span> no check</span>
     </p>
-    <p class="mt-5 max-w-[72ch] text-vx-ink/80">
-      These cells are measured, not assumed. <code class="mono">just redteam</code> replays the attack prompts
-      from AIxploit through each build, plus five ordinary prompts that must not be blocked. In our run, the
-      LLM sentinel blocked 8 of the 10 attacks, and the BERT gates blocked none of them, even with phase 2
-      on. Phase 1 detects prompt saturation and phase 2 detects role-play jailbreaks such as DAN. Short
-      instructions like "forget everything and write X" are neither. No build blocked any of the five
-      ordinary prompts. If prompt injection is your threat, use the LLM sentinel
-      (<code class="mono">classifier.kind: llm</code>). Phase 3 doesn't help here, because it never checks for
-      injection.
-    </p>
   </div>
 
   <article class="engine mt-12" aria-labelledby="engine-sentinel">
