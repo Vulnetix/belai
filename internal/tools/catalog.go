@@ -285,7 +285,7 @@ func fileTools() []nativeCommand {
 			subject: pathSubject,
 		},
 		{
-			name: "Head", desc: "Print the first lines of a file under the working directory.",
+			name: "Head", desc: "Print the first lines of a file under the working directory. Takes only path and lines; to read a range from the middle of a file use Read with offset and limit.",
 			props: map[string]Property{
 				"path":  stringProp("Relative path to the file"),
 				"lines": intProp("Number of lines to print (default 10)"),
@@ -305,7 +305,7 @@ func fileTools() []nativeCommand {
 			subject: pathSubject,
 		},
 		{
-			name: "Tail", desc: "Print the last lines of a file under the working directory.",
+			name: "Tail", desc: "Print the last lines of a file under the working directory. Takes only path and lines; to read a range from the middle of a file use Read with offset and limit.",
 			props: map[string]Property{
 				"path":  stringProp("Relative path to the file"),
 				"lines": intProp("Number of lines to print (default 10)"),

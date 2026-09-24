@@ -1096,6 +1096,13 @@ Business rules and edge cases:
 - **Explore subagents build the plan surface directly**
   (`DefaultWithCaps(...).Plan()`) rather than relying on the gate alone, so
   the exploration preamble cannot promise a `Bash` the gate will refuse.
+- **The briefing names the substitutes.** When the plan surface has no
+  `Bash`, the sealed `<tools>` block says so and points at the read-only
+  `Git` tool for git state and at `Read` with `offset`/`limit` for part of a
+  file — each only when that tool is actually advertised. `Head` and `Tail`
+  take no offset, and their descriptions point to `Read` for ranges. A
+  session showed four Bash refusals and two rejected `Head` offsets in one
+  plan turn before this.
 
 **The plan is a structured document.** `ExitPlanMode` takes a required `plan`
 argument — the full plan in markdown with `## Summary`, `## Steps` (numbered,

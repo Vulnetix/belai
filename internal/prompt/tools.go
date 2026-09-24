@@ -128,6 +128,17 @@ func ToolsBlock(opts ToolsOptions) string {
 			b.WriteString("- Bash is not available. Neither are Write, Edit, or any other tool that changes the workspace; they are not in the list below and calling one is refused.\n")
 			b.WriteString("- Investigate with the read-only tools below and answer with a plan. Do not describe a change as made — describe the change you would make.\n")
 		}
+		if !hasBash && !hasWrite {
+			// Sessions showed the model reaching for Bash out of habit and
+			// losing a round to each refusal: name the substitutes.
+			set := opts.toolNamesSet()
+			if set["git"] {
+				b.WriteString("- For git state use the Git tool (read-only subcommands such as status, log, diff, show), not Bash.\n")
+			}
+			if set["read"] {
+				b.WriteString("- To read part of a file use Read with offset and limit; Head and Tail take no offset.\n")
+			}
+		}
 	}
 
 	b.WriteString("\nTools:\n")

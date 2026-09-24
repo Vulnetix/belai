@@ -112,6 +112,24 @@ func TestToolsBlockPlanModeNamesWhatIsUnavailable(t *testing.T) {
 	}
 }
 
+// A plan-mode block without Bash names the read-only substitutes the model
+// reaches for Bash to get, but only when they are actually advertised.
+func TestToolsBlockPlanModeNamesTheSubstitutes(t *testing.T) {
+	got := ToolsBlock(ToolsOptions{
+		PlanMode: true,
+		Tools:    []ToolDoc{{Name: "Read"}, {Name: "Git"}, {Name: "Head"}},
+	})
+	for _, want := range []string{"use the Git tool", "Read with offset and limit"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("plan block missing %q:\n%s", want, got)
+		}
+	}
+	bare := ToolsBlock(ToolsOptions{PlanMode: true, Tools: []ToolDoc{{Name: "Grep"}}})
+	if strings.Contains(bare, "Git tool") || strings.Contains(bare, "offset and limit") {
+		t.Errorf("block must not name a tool that is not advertised:\n%s", bare)
+	}
+}
+
 // The cross-cutting rules are the part the per-tool schema cannot carry, so
 // they must be in every non-empty block.
 func TestToolsBlockAlwaysCarriesTheSharedRules(t *testing.T) {
