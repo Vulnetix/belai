@@ -42,6 +42,7 @@ const (
 	EventLSPDetect                 Event = "lsp_detect"
 	EventLSPDiagnose               Event = "lsp_diagnose"
 	EventLSPServerDown             Event = "lsp_server_down"
+	EventRouteFallback             Event = "route_fallback"
 )
 
 // Level is the display granularity of the internal-work feed. Order matters:
@@ -249,6 +250,8 @@ func Describe(a Activity) (Description, bool) {
 		return lspDetectDescription(a), true
 	case EventLSPServerDown:
 		return lspServerDownDescription(a), true
+	case EventRouteFallback:
+		return routeFallbackDescription(a), true
 	}
 	return Description{}, false
 }
@@ -470,6 +473,62 @@ func lspServerDownDescription(a Activity) Description {
 		Tone:    ToneCaution,
 		Levels:  LevelDecisions,
 	}
+}
+
+// routeFallbackDescription renders a Jev routing decision that did not settle
+// a use case. Verdict "error" is a failed Decisions call (Detail carries the
+// harness-composed "status=N", 0 when no response arrived); "inconclusive" is
+// a reply with no single clear winner.
+func routeFallbackDescription(a Activity) Description {
+	outcome := "no clear winner — using the default model"
+	if a.Verdict == "error" {
+		outcome = "the call failed — using the default model"
+		if s := field(a.Detail, "status"); s != "" && s != "0" && isDigits(s) {
+			outcome = "the call failed (HTTP " + s + ") — using the default model"
+		}
+	}
+	return Description{
+		Summary: "Jev couldn't pick a model for " + useCasePhrase(a.Subject),
+		Outcome: outcome,
+		Tone:    ToneCaution,
+		Levels:  LevelDecisions,
+	}
+}
+
+// useCasePhrase maps a role-manager use case to plain English. Unknown use
+// cases fall back to a generic phrase.
+func useCasePhrase(useCase string) string {
+	switch useCase {
+	case UseCaseMain:
+		return "role-manager work"
+	case UseCaseModeEval:
+		return "mode selection"
+	case UseCaseGoalEval:
+		return "goal checks"
+	case UseCasePlanEval:
+		return "plan checks"
+	case UseCaseGoalContract:
+		return "the completion checklist"
+	case UseCaseClarify:
+		return "clarifying questions"
+	case UseCaseCompaction:
+		return "compaction"
+	case UseCaseSessionName:
+		return "session naming"
+	case UseCaseAgentEval:
+		return "agent checks"
+	default:
+		return "a role-manager task"
+	}
+}
+
+func isDigits(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return s != ""
 }
 
 // subjectPhrase maps a classifier subject kind to plain English. Unknown

@@ -8,6 +8,7 @@ package jev
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -16,6 +17,8 @@ import (
 	openrouter "github.com/OpenRouterTeam/go-sdk"
 	"github.com/OpenRouterTeam/go-sdk/models/components"
 	"github.com/OpenRouterTeam/go-sdk/models/operations"
+	"github.com/OpenRouterTeam/go-sdk/models/sdkerrors"
+	"github.com/OpenRouterTeam/go-sdk/retry"
 
 	"github.com/vulnetix/signet/internal/rolemanager"
 )
@@ -181,7 +184,7 @@ func (c *Client) Classify(ctx context.Context, p rolemanager.ClassifierPayload) 
 		},
 		State: components.CreateStateMapOfAny(map[string]any{"tool_call": p.User}),
 	}
-	resp, err := c.decisionsSDK().Alpha.Decisions.Create(ctx, req, operations.WithServerURL(c.endpoint))
+	resp, err := createDecision(ctx, c.decisionsSDK(), req, c.endpoint)
 	if err != nil {
 		return "", err
 	}
@@ -272,7 +275,7 @@ func (c *Client) Route(ctx context.Context, useCase string, candidates []Candida
 		Questions: questions,
 		State:     components.CreateStateMapOfAny(map[string]any{"use_case": useCase}),
 	}
-	resp, err := c.decisionsSDK().Alpha.Decisions.Create(ctx, req, operations.WithServerURL(c.endpoint))
+	resp, err := createDecision(ctx, c.decisionsSDK(), req, c.endpoint)
 	if err != nil {
 		return RouteDecision{}, err
 	}
@@ -355,6 +358,63 @@ func SelectRoute(scores map[string]float64) string {
 	return best
 }
 
+// noRetries disables the SDK's retry loop for a Decisions call. The SDK
+// default retries every 5XX with exponential backoff for up to an hour, which
+// parks the caller — a routing decision, a tool-call gate, a security verdict
+// — behind a failing endpoint instead of letting it fail closed at once. A
+// Decisions call is one attempt: every caller already has a fallback (the
+// defined model, INCONCLUSIVE, or a fail-closed pipeline error).
+var noRetries = operations.WithRetries(retry.Config{Strategy: "none"})
+
+// createDecision sends one Decisions request with no retries and wraps a
+// failure as a *DecisionsError so callers can read the HTTP status.
+func createDecision(ctx context.Context, sdk *openrouter.OpenRouter, req components.DecisionsRequest, endpoint string) (*components.DecisionsResponse, error) {
+	resp, err := sdk.Alpha.Decisions.Create(ctx, req, operations.WithServerURL(endpoint), noRetries)
+	if err != nil {
+		return nil, &DecisionsError{Status: statusOf(err), err: err}
+	}
+	return resp, nil
+}
+
+// DecisionsError is a failed Decisions call. Status is the HTTP status, or 0
+// for a failure before a response arrived (transport, token resolution).
+type DecisionsError struct {
+	Status int
+	err    error
+}
+
+// Error bounds the SDK's message, which carries the response body, so a large
+// error page cannot flood a log line.
+func (e *DecisionsError) Error() string {
+	if e.Status == 0 {
+		return "jev decisions: " + truncate(e.err.Error(), 300)
+	}
+	return fmt.Sprintf("jev decisions: HTTP %d: %s", e.Status, truncate(e.err.Error(), 300))
+}
+
+func (e *DecisionsError) Unwrap() error { return e.err }
+
+// statusOf reads the HTTP status from an SDK error. The generic APIError
+// carries it directly. Every typed status error (InternalServerResponseError,
+// BadGatewayResponseError, …) renders as its JSON envelope,
+// {"error":{"code":N,…}}, so the code is read from there. Anything else —
+// a transport or token error — has no status.
+func statusOf(err error) int {
+	var api *sdkerrors.APIError
+	if errors.As(err, &api) {
+		return api.StatusCode
+	}
+	var env struct {
+		Error struct {
+			Code int `json:"code"`
+		} `json:"error"`
+	}
+	if json.Unmarshal([]byte(err.Error()), &env) == nil {
+		return env.Error.Code
+	}
+	return 0
+}
+
 // truncate bounds an error body to a short excerpt.
 func truncate(s string, n int) string {
 	if len(s) <= n {
@@ -427,7 +487,7 @@ func (s *Security) Classify(ctx context.Context, p rolemanager.ClassifierPayload
 		Questions: questions,
 		State:     components.CreateStateMapOfAny(map[string]any{"content": p.User}),
 	}
-	resp, err := s.decisionsSDK().Alpha.Decisions.Create(ctx, req, operations.WithServerURL(s.endpoint))
+	resp, err := createDecision(ctx, s.decisionsSDK(), req, s.endpoint)
 	if err != nil {
 		return "", err
 	}

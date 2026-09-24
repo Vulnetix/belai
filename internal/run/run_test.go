@@ -2168,6 +2168,70 @@ func TestNewRoleClassifierDefinedUsesMain(t *testing.T) {
 	}
 }
 
+// TestRoutedClassifierJev5xxFallsBackOnce pins the failing-endpoint path: a
+// 5XX from the Decisions API is one attempt (no SDK backoff), the use case
+// falls back to the main model at once, and a route_fallback activity carries
+// the HTTP status so the failure is visible rather than silent.
+func TestRoutedClassifierJev5xxFallsBackOnce(t *testing.T) {
+	var modelCalls, jevCalls atomic.Int32
+	modelSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		modelCalls.Add(1)
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"c","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{}}`))
+	}))
+	defer modelSrv.Close()
+
+	jevSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		jevCalls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":{"code":503,"message":"decisions unavailable"}}`))
+	}))
+	defer jevSrv.Close()
+
+	var mu sync.Mutex
+	var got []rolemanager.Activity
+	cancel := rolemanager.SetObserver(func(a rolemanager.Activity) {
+		if a.Event == rolemanager.EventRouteFallback {
+			mu.Lock()
+			got = append(got, a)
+			mu.Unlock()
+		}
+	})
+	defer cancel()
+
+	cfg := Config{
+		Provider: "openai", BaseURL: modelSrv.URL, APIKey: "k", Model: "gpt-5",
+		Routing: RoutingConfig{
+			Kind: config.RoutingRouted,
+			Candidates: []RoutingCandidate{
+				{Key: "a", Cfg: Config{Provider: "openai", BaseURL: modelSrv.URL, APIKey: "k", Model: "gpt-5-mini"}},
+			},
+			JevToken: func() (string, error) { return "test-key", nil },
+		},
+	}
+	r := newRoutedClassifier(cfg, modelSrv.Client(), nil)
+	r.jev.SetEndpoint(jevSrv.URL)
+
+	payload := rolemanager.ClassifierPayload{System: "s", User: "u", UseCase: rolemanager.UseCaseCompaction}
+	ctx, done := context.WithTimeout(context.Background(), 5*time.Second)
+	defer done()
+	if out, err := r.Classify(ctx, payload); err != nil || out != "ok" {
+		t.Fatalf("Classify = %q, %v; want the main model's ok", out, err)
+	}
+	if jevCalls.Load() != 1 {
+		t.Fatalf("Jev called %d times, want 1 (no retries)", jevCalls.Load())
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 1 {
+		t.Fatalf("route_fallback activities = %d, want 1", len(got))
+	}
+	if a := got[0]; a.Verdict != "error" || a.Detail != "status=503" || a.Subject != rolemanager.UseCaseCompaction {
+		t.Fatalf("route_fallback = %+v, want error status=503 for compaction", a)
+	}
+}
+
 func TestRoutedClassifierPicksWinnerAndCaches(t *testing.T) {
 	var modelCalls, jevCalls atomic.Int32
 	modelSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

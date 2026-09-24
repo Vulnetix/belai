@@ -32,6 +32,7 @@ var allEvents = []Event{
 	EventLSPDetect,
 	EventLSPDiagnose,
 	EventLSPServerDown,
+	EventRouteFallback,
 }
 
 func TestEveryEventHasDescribeOrSuppression(t *testing.T) {
@@ -139,6 +140,35 @@ func TestSecurityFallbackDescription(t *testing.T) {
 	}
 	if desc.Levels != LevelSecurity {
 		t.Fatalf("security_fallback: Levels = %v, want security", desc.Levels)
+	}
+}
+
+func TestRouteFallbackDescription(t *testing.T) {
+	cases := []struct {
+		name, verdict, detail, want, reject string
+	}{
+		{"http error", "error", "status=503", "HTTP 503", ""},
+		{"no response", "error", "status=0", "the call failed", "HTTP"},
+		{"non-numeric status", "error", "status=<b>", "the call failed", "<b>"},
+		{"inconclusive", "inconclusive", "", "no clear winner", "HTTP"},
+	}
+	for _, c := range cases {
+		desc, ok := Describe(Activity{Event: EventRouteFallback, Verdict: c.verdict, Subject: UseCaseModeEval, Detail: c.detail})
+		if !ok {
+			t.Fatalf("%s: route_fallback has no description", c.name)
+		}
+		if !strings.Contains(desc.Summary, "mode selection") {
+			t.Errorf("%s: summary = %q, want the use-case phrase", c.name, desc.Summary)
+		}
+		if !strings.Contains(desc.Outcome, c.want) {
+			t.Errorf("%s: outcome = %q, want %q", c.name, desc.Outcome, c.want)
+		}
+		if c.reject != "" && strings.Contains(desc.Outcome, c.reject) {
+			t.Errorf("%s: outcome = %q, must not contain %q", c.name, desc.Outcome, c.reject)
+		}
+		if desc.Tone != ToneCaution {
+			t.Errorf("%s: tone = %v, want caution", c.name, desc.Tone)
+		}
 	}
 }
 

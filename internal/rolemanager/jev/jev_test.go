@@ -261,6 +261,57 @@ func TestRouteMalformedIsInconclusive(t *testing.T) {
 	}
 }
 
+// TestDecisions5xxIsOneAttempt pins the no-retry policy: a 5XX from the
+// Decisions API returns at once as a *DecisionsError carrying the status and
+// the server's message, instead of the SDK backing off for up to an hour.
+func TestDecisions5xxIsOneAttempt(t *testing.T) {
+	for _, tc := range []struct {
+		name, contentType, body string
+		status                  int
+	}{
+		{"typed json 500", "application/json", `{"error":{"code":500,"message":"decision backend failed"}}`, http.StatusInternalServerError},
+		{"typed json 503", "application/json", `{"error":{"code":503,"message":"decision backend failed"}}`, http.StatusServiceUnavailable},
+		{"html 502", "text/html", `<html>decision backend failed</html>`, http.StatusBadGateway},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				w.Header().Set("Content-Type", tc.contentType)
+				w.WriteHeader(tc.status)
+				io.WriteString(w, tc.body)
+			}))
+			t.Cleanup(srv.Close)
+			c := New(func() (string, error) { return "test-key", nil })
+			c.SetEndpoint(srv.URL)
+
+			_, err := c.Route(context.Background(), "mode_eval", []Candidate{{Key: "mode_eval", Provider: "openai", Model: "gpt-5"}})
+			var de *DecisionsError
+			if !errors.As(err, &de) {
+				t.Fatalf("Route error = %v, want *DecisionsError", err)
+			}
+			if de.Status != tc.status {
+				t.Fatalf("Status = %d, want %d", de.Status, tc.status)
+			}
+			if !strings.Contains(err.Error(), "decision backend failed") {
+				t.Fatalf("error = %q, want the server message", err)
+			}
+			if calls != 1 {
+				t.Fatalf("Decisions called %d times, want 1 (no retries)", calls)
+			}
+		})
+	}
+}
+
+func TestDecisionsTokenErrorHasNoStatus(t *testing.T) {
+	c := New(func() (string, error) { return "", errors.New("no key") })
+	_, err := c.Route(context.Background(), "mode_eval", []Candidate{{Key: "mode_eval", Provider: "openai", Model: "gpt-5"}})
+	var de *DecisionsError
+	if !errors.As(err, &de) || de.Status != 0 {
+		t.Fatalf("Route error = %v, want a *DecisionsError with Status 0", err)
+	}
+}
+
 // --- Security classifier ---
 
 // newStubSecurity returns a Security pointed at a Decisions API stub, the

@@ -283,11 +283,23 @@ security classifier turn.
 
 The same Jev client also backs **model routing** (`jev.Client.Route` +
 `jev.SelectRoute`): under `routing.kind: "routed"`, Signet sends the configured
-use-case candidates to Jev as a `choice` question and Jev returns a probability
-per candidate. `SelectRoute` picks the single highest-scoring candidate; ties or
-an out-of-pool winner are inconclusive and the caller falls back to the main
-classifier. See "Model routing" in docs/architecture.md for the settings and
-candidate rules.
+use-case candidates to Jev as one `noul` question per candidate and Jev
+returns a probability per candidate. `SelectRoute` picks the single
+highest-scoring candidate; ties or an out-of-pool winner are inconclusive and
+the caller falls back to the main classifier. See "Model routing" in
+docs/architecture.md for the settings and candidate rules.
+
+Every Decisions call — gate, router, security classifier — is **one attempt**.
+The OpenRouter SDK's default policy retries any 5XX with exponential backoff
+for up to an hour; Signet turns it off, because every caller already has a
+fallback (the defined model, `INCONCLUSIVE`, or a fail-closed pipeline error)
+and a backoff loop only parks the turn behind a failing endpoint. A failure
+comes back as a `jev.DecisionsError` carrying the HTTP status. When routing
+does not settle a use case, a `route_fallback` activity records the use case
+and, for a failed call, the status (never the response body), so a failing
+endpoint shows in the feed and in `SIGNET_TRACE` rather than as a silent
+switch to the default model. To see the raw failure, run the live probe:
+`SIGNET_JEV_LIVE=1 OPENROUTER_API_KEY=… go test ./internal/rolemanager/jev -run LiveDecisionsProbe -v`.
 
 ### Jev security classifier
 
