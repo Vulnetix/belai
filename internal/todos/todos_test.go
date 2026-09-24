@@ -51,6 +51,53 @@ func TestApplyMarkersAdvancesAndReactivates(t *testing.T) {
 	}
 }
 
+func TestAdoptReplacesAndResyncs(t *testing.T) {
+	l := New("p", []string{"a", "b"})
+	l.ApplyMarkers("[DONE:1]")
+	l.Adopt([]Item{{N: 1, Text: "x", Status: StatusPending}, {N: 2, Text: "y", Status: StatusDone}})
+	if len(l.Items) != 2 || l.Items[0].Text != "x" || l.Items[1].Text != "y" {
+		t.Fatalf("adopt = %+v", l.Items)
+	}
+	if l.Items[0].Status != StatusActive {
+		t.Fatalf("first adopted item should be active, got %q", l.Items[0].Status)
+	}
+	if l.Items[1].Status != StatusDone {
+		t.Fatalf("adopted done item must stay done, got %q", l.Items[1].Status)
+	}
+}
+
+func TestAdoptIgnoresClearedList(t *testing.T) {
+	l := New("p", []string{"a"})
+	l.Cleared = true
+	l.Adopt([]Item{{N: 1, Text: "x", Status: StatusPending}})
+	if len(l.Items) != 1 || l.Items[0].Text != "a" {
+		t.Fatalf("cleared list must not adopt: %+v", l.Items)
+	}
+}
+
+func TestMarkAllDone(t *testing.T) {
+	l := New("p", []string{"a", "b", "c"})
+	l.ApplyMarkers("[DONE:1]")
+	l.MarkAllDone()
+	for _, it := range l.Items {
+		if it.Status != StatusDone {
+			t.Fatalf("item %d = %q, want done", it.N, it.Status)
+		}
+	}
+	if !l.Complete() {
+		t.Fatal("MarkAllDone must complete the list")
+	}
+}
+
+func TestMarkAllDoneIgnoresClearedList(t *testing.T) {
+	l := New("p", []string{"a"})
+	l.Cleared = true
+	l.MarkAllDone()
+	if l.Items[0].Status == StatusDone {
+		t.Fatal("cleared list must not advance")
+	}
+}
+
 func TestApplyMarkersIgnoresClearedList(t *testing.T) {
 	l := New("p", []string{"a", "b"})
 	l.Cleared = true

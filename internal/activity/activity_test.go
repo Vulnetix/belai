@@ -139,3 +139,48 @@ func TestRegistryAppendByID(t *testing.T) {
 		t.Fatalf("unknown id must not append: %q", out)
 	}
 }
+
+// TestRegistryFinishByID covers the id-only Finish path (the direct-handle
+// path is exercised everywhere else). Unknown ids must be ignored.
+func TestRegistryFinishByID(t *testing.T) {
+	r := NewRegistry()
+	h := r.Add(Activity{Kind: KindVulnetix, Label: "scan"}, nil)
+	h.Activity.State = StateRunning
+	r.Finish(h.Activity.ID, 1, true, errors.New("boom"))
+	if h.Activity.State != StateFailed || h.Activity.ExitCode != 1 || !h.Activity.TimedOut {
+		t.Fatalf("state = %q exit=%d timedOut=%v, want failed/1/true", h.Activity.State, h.Activity.ExitCode, h.Activity.TimedOut)
+	}
+	// A clean id-only finish maps to done.
+	h2 := r.Add(Activity{Kind: KindVulnetix, Label: "scan2"}, nil)
+	h2.Activity.State = StateRunning
+	r.Finish(h2.Activity.ID, 0, false, nil)
+	if h2.Activity.State != StateDone || h2.Activity.TimedOut {
+		t.Fatalf("state = %q timedOut=%v, want done/false", h2.Activity.State, h2.Activity.TimedOut)
+	}
+	// Unknown id is a no-op, not a panic.
+	r.Finish("nope", 0, false, nil)
+}
+
+// TestSetTargetsEmitsEvent covers SetTargets and its event emission, plus the
+// defensive copy it makes of the caller's slice.
+func TestSetTargetsEmitsEvent(t *testing.T) {
+	r := NewRegistry()
+	h := r.Add(Activity{Kind: KindVulnetix, Label: "scan"}, nil)
+	<-r.Events() // drain the Add event
+
+	src := []string{"out.json"}
+	h.SetTargets(src)
+	src[0] = "mutated.json" // must not leak into the stored copy
+
+	if len(h.Activity.Targets) != 1 || h.Activity.Targets[0] != "out.json" {
+		t.Fatalf("targets = %v, want a defensive copy of [out.json]", h.Activity.Targets)
+	}
+	select {
+	case e := <-r.Events():
+		if len(e.Targets) != 1 || e.Targets[0] != "out.json" {
+			t.Fatalf("event targets = %v", e.Targets)
+		}
+	default:
+		t.Fatal("SetTargets must emit an event")
+	}
+}

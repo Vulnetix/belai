@@ -84,6 +84,13 @@ func TestChatMessageKeepsEmptyContentForContentRoles(t *testing.T) {
 	}
 }
 
+func TestEphemeralCache(t *testing.T) {
+	c := EphemeralCache()
+	if c == nil || c.Type != "ephemeral" {
+		t.Fatalf("EphemeralCache = %+v, want type ephemeral", c)
+	}
+}
+
 // An assistant message carrying tool calls is the one case where the content
 // field is legitimately absent; providers reject an empty assistant content
 // alongside tool_calls.

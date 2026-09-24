@@ -141,6 +141,36 @@ func TestCacheGetPutAndPersistence(t *testing.T) {
 	}
 }
 
+func TestDefaultCachePath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("SIGNET_HOME", home)
+	if got, want := DefaultCachePath(), filepath.Join(home, "bad-hashes.json"); got != want {
+		t.Fatalf("DefaultCachePath() = %q, want %q", got, want)
+	}
+}
+
+func TestNewCacheDefaultsSafeBound(t *testing.T) {
+	if c := NewCache(0, ""); c.maxSafe != defaultSafeCacheSize {
+		t.Fatalf("NewCache(0) maxSafe = %d, want %d", c.maxSafe, defaultSafeCacheSize)
+	}
+	if c := NewCache(7, ""); c.maxSafe != 7 {
+		t.Fatalf("NewCache(7) maxSafe = %d, want 7", c.maxSafe)
+	}
+}
+
+// TestCacheBadWithoutPath persists bad verdicts in memory only: no disk write
+// is attempted when badPath is empty.
+func TestCacheBadWithoutPath(t *testing.T) {
+	c := NewCache(16, "")
+	key := Key("bad-no-path")
+	if err := c.Put(key, SentinelPromptInjection); err != nil {
+		t.Fatalf("Put(bad, no path): %v", err)
+	}
+	if s, ok := c.Get(key); !ok || s != SentinelPromptInjection {
+		t.Fatalf("bad verdict not cached: %q %v", s, ok)
+	}
+}
+
 func TestCacheSafeLRUBounded(t *testing.T) {
 	c := NewCache(2, "")
 	for _, content := range []string{"a", "b", "c"} {

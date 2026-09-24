@@ -43,7 +43,10 @@ func Summarize(ctx context.Context, workdir string, arts []Artifact) Summary {
 		}
 	}
 
-	s.Union = crossFileUnion(allCDX, allSARIF, allVEX)
+	// Memory findings were merged into s.Union above; the cross-file union
+	// must be merged on top of them rather than replacing them, or a memory
+	// block alongside SARIF/CycloneDX/VEX would silently drop its counts.
+	s.Union = s.Union.Merge(crossFileUnion(allCDX, allSARIF, allVEX))
 	s.Licenses = licenseCounts(ctx, arts)
 	return s
 }

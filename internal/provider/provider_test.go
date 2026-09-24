@@ -462,6 +462,76 @@ func TestNewAssignsAuthForNewBuiltins(t *testing.T) {
 	}
 }
 
+func TestProviderAccessorsAndGetRequest(t *testing.T) {
+	p, err := NewWithAuth("my-llm", "https://x.example/v1", "k", AuthBearer)
+	if err != nil {
+		t.Fatalf("NewWithAuth: %v", err)
+	}
+	if p.Name() != "my-llm" || p.BaseURL() != "https://x.example/v1" || p.Auth() != AuthBearer {
+		t.Fatalf("accessors = (%q, %q, %q)", p.Name(), p.BaseURL(), p.Auth())
+	}
+
+	req, err := p.NewGetRequest("https://x.example/v1/models")
+	if err != nil {
+		t.Fatalf("NewGetRequest: %v", err)
+	}
+	if req.Method != http.MethodGet {
+		t.Fatalf("method = %q, want GET", req.Method)
+	}
+	if got := req.Header.Get("Authorization"); got != "Bearer k" {
+		t.Fatalf("Authorization = %q, want %q", got, "Bearer k")
+	}
+}
+
+func TestWorkersAIRequest(t *testing.T) {
+	p, _ := New("cloudflare-workers-ai", "https://api.cloudflare.com/client/v4/accounts/acct", "k")
+	req, err := p.NewWorkersAIRequest("@cf/meta/llama", wire.WorkersAIRequest{
+		Messages:  []wire.OpenAIChatMessage{{Role: "user", Content: "hi"}},
+		Stream:    true,
+		MaxTokens: 64,
+	})
+	if err != nil {
+		t.Fatalf("NewWorkersAIRequest: %v", err)
+	}
+	if got, want := req.URL.String(), "https://api.cloudflare.com/client/v4/accounts/acct/ai/run/@cf/meta/llama"; got != want {
+		t.Fatalf("URL = %q, want %q", got, want)
+	}
+	body := readBody(t, req)
+	if body["stream"] != true {
+		t.Fatalf("body.stream = %v, want true", body["stream"])
+	}
+	if body["max_tokens"] != float64(64) {
+		t.Fatalf("body.max_tokens = %v", body["max_tokens"])
+	}
+}
+
+func TestGatewayResponsesAndMessagesRequests(t *testing.T) {
+	p, _ := New("cloudflare-ai-gateway", "https://gateway.ai.cloudflare.com/v1/acct/default/compat", "aig")
+
+	rq, err := p.NewGatewayResponsesRequest(wire.OpenAIResponsesRequest{Model: "gpt-5", Input: "hi"})
+	if err != nil {
+		t.Fatalf("NewGatewayResponsesRequest: %v", err)
+	}
+	if got, want := rq.URL.String(), "https://gateway.ai.cloudflare.com/v1/acct/default/compat/openai/responses"; got != want {
+		t.Fatalf("responses URL = %q, want %q", got, want)
+	}
+
+	mq, err := p.NewGatewayMessagesRequest(wire.AnthropicMessagesRequest{
+		Model:     "claude-opus-4-5",
+		MaxTokens: 16,
+		Messages:  []wire.AnthropicMessage{{Role: "user", Content: "hi"}},
+	})
+	if err != nil {
+		t.Fatalf("NewGatewayMessagesRequest: %v", err)
+	}
+	if got, want := mq.URL.String(), "https://gateway.ai.cloudflare.com/v1/acct/default/compat/anthropic/v1/messages"; got != want {
+		t.Fatalf("messages URL = %q, want %q", got, want)
+	}
+	if got, want := mq.Header.Get("cf-aig-authorization"), "Bearer aig"; got != want {
+		t.Fatalf("cf-aig-authorization = %q, want %q", got, want)
+	}
+}
+
 func TestCopilotHeadersIncludeIntegrationID(t *testing.T) {
 	p, err := New("github-copilot", "https://api.githubcopilot.com", "session-token")
 	if err != nil {

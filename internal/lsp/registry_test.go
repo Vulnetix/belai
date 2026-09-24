@@ -80,6 +80,19 @@ func equalSlices(a, b []string) bool {
 	return true
 }
 
+func TestKnownLanguageID(t *testing.T) {
+	for _, id := range []string{"go", "ts", "python", "zig"} {
+		if !KnownLanguageID(id) {
+			t.Errorf("KnownLanguageID(%q) = false, want true", id)
+		}
+	}
+	for _, id := range []string{"", "bogus", "Go", "golang"} {
+		if KnownLanguageID(id) {
+			t.Errorf("KnownLanguageID(%q) = true, want false", id)
+		}
+	}
+}
+
 func TestLanguageFor(t *testing.T) {
 	cases := []struct {
 		path string

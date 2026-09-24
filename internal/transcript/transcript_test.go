@@ -147,3 +147,15 @@ func TestEstimateContextAnchorReflect(t *testing.T) {
 	e := EstimateContext([]Message{{Role: "user", Content: "hi"}})
 	var _ = reflect.TypeOf(e)
 }
+
+func TestTruncateRunesExported(t *testing.T) {
+	if got := TruncateRunes("hello", 100); got != "hello" {
+		t.Fatalf("TruncateRunes(short) = %q", got)
+	}
+	if got := TruncateRunes("hello world", 5); got != "hello… (truncated, 11 chars total)" {
+		t.Fatalf("TruncateRunes(long) = %q", got)
+	}
+	if got := TruncateRunes("éééé", 3); got != "ééé… (truncated, 4 chars total)" {
+		t.Fatalf("TruncateRunes(multibyte) = %q", got)
+	}
+}

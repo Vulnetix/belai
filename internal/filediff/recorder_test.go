@@ -296,6 +296,13 @@ func TestHeuristicIgnoresPathsOutsideTheWorkdir(t *testing.T) {
 	}
 }
 
+func TestStaticErrMessage(t *testing.T) {
+	e := &staticErr{"boom"}
+	if e.Error() != "boom" {
+		t.Fatalf("Error() = %q, want boom", e.Error())
+	}
+}
+
 func TestNilSnapshotIsSafe(t *testing.T) {
 	var s *Snapshot
 	if c := s.After(context.Background()); !c.Empty() {

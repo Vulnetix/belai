@@ -205,3 +205,54 @@ func TestAgentStoreResultSanitizedAndClassified(t *testing.T) {
 		t.Fatalf("plain text should survive: %q", out)
 	}
 }
+
+func TestParseRelativeDuration(t *testing.T) {
+	cases := []struct {
+		in   string
+		want time.Duration
+	}{
+		{"7d", 7 * 24 * time.Hour},
+		{"24h", 24 * time.Hour},
+		{"30m", 30 * time.Minute},
+		{"90s", 90 * time.Second},
+		{"2w", 14 * 24 * time.Hour},
+	}
+	for _, tc := range cases {
+		got, err := parseRelativeDuration(tc.in)
+		if err != nil {
+			t.Errorf("parseRelativeDuration(%q): %v", tc.in, err)
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("parseRelativeDuration(%q) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
+	for _, bad := range []string{"", "x", "1", "7y", "d", "-3d"} {
+		if _, err := parseRelativeDuration(bad); err == nil {
+			t.Errorf("parseRelativeDuration(%q) expected error", bad)
+		}
+	}
+}
+
+func TestParseWhen(t *testing.T) {
+	if got, err := parseWhen(""); err != nil || !got.IsZero() {
+		t.Fatalf("parseWhen(\"\") = %v, %v; want zero time, nil", got, err)
+	}
+	if got, err := parseWhen("2026-09-08T22:31:00Z"); err != nil || got.Year() != 2026 {
+		t.Fatalf("parseWhen(rfc3339) = %v, %v", got, err)
+	}
+	before := time.Now()
+	got, err := parseWhen("7d")
+	if err != nil {
+		t.Fatalf("parseWhen(7d): %v", err)
+	}
+	after := time.Now()
+	wantMin := before.Add(-7 * 24 * time.Hour)
+	wantMax := after.Add(-7 * 24 * time.Hour)
+	if got.Before(wantMin) || got.After(wantMax) {
+		t.Fatalf("parseWhen(7d) = %v, want between %v and %v", got, wantMin, wantMax)
+	}
+	if _, err := parseWhen("not-a-time"); err == nil {
+		t.Fatal("parseWhen(bad) expected error")
+	}
+}

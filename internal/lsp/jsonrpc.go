@@ -143,7 +143,7 @@ func (t *transport) write(msg rawMsg) error {
 	b.Write(body)
 	t.writeMu.Lock()
 	defer t.writeMu.Unlock()
-	if t.closed {
+	if t.isClosed() {
 		return errTransportClosed
 	}
 	_, err = t.conn.Write(b.Bytes())

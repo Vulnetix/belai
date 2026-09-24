@@ -688,6 +688,9 @@ func parseSchedule(s string) time.Duration {
 		return time.Minute
 	}
 	if d, err := time.ParseDuration(s); err == nil {
+		if d <= 0 {
+			return time.Minute
+		}
 		return d
 	}
 	var mins int

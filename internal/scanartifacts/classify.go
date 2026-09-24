@@ -173,13 +173,17 @@ func Classify(rel string) (Kind, string, time.Time, string) {
 	if isSignetPath(rel) {
 		return KindSignet, "", time.Time{}, ""
 	}
-	if strings.Contains(dir, "/signet/") || strings.Contains(dir, "/plans/") || strings.Contains(dir, "/goals/") {
-		return KindSignet, "", time.Time{}, ""
+	for _, seg := range strings.Split(dir, "/") {
+		if signetDirs[seg] {
+			return KindSignet, "", time.Time{}, ""
+		}
 	}
 
 	ext := strings.ToLower(filepath.Ext(base))
 	stem := strings.TrimSuffix(lower, ext)
+	gz := false
 	if ext == ".gz" {
+		gz = true
 		base2 := strings.TrimSuffix(base, ext)
 		ext = filepath.Ext(base2)
 		stem = strings.TrimSuffix(strings.ToLower(base2), ext)
@@ -211,7 +215,7 @@ func Classify(rel string) (Kind, string, time.Time, string) {
 	}
 
 	// OpenVEX.
-	if ext == ".json" && (strings.HasPrefix(stem, "vex") || strings.HasSuffix(stem, ".openvex")) {
+	if ext == ".json" && (strings.HasPrefix(stem, "vex") || stem == "openvex" || strings.HasSuffix(stem, ".openvex")) {
 		if stem == "vex-risk-accepted" {
 			return KindOpenVEXRiskAccepted, "", time.Time{}, ""
 		}
@@ -232,7 +236,7 @@ func Classify(rel string) (Kind, string, time.Time, string) {
 	}
 
 	// Package scan manifest.
-	if strings.HasPrefix(dir, "scans/") && ext == ".json" && strings.HasSuffix(stem, ".packages") {
+	if (dir == "scans" || strings.HasPrefix(dir, "scans/")) && ext == ".json" && strings.HasSuffix(stem, ".packages") {
 		return KindPackagesScan, "", time.Time{}, ""
 	}
 
@@ -244,6 +248,12 @@ func Classify(rel string) (Kind, string, time.Time, string) {
 	// Native third-party output files are recognised by known prefixes.
 	if knownNative(stem) {
 		return KindToolNative, "", time.Time{}, ""
+	}
+
+	// A compressed file with no recognisable inner extension is a captured
+	// tool log (e.g. gitleaks.gz), not a scannable artifact.
+	if gz {
+		return KindToolLog, "", time.Time{}, ""
 	}
 
 	return KindUnknown, "", time.Time{}, ""

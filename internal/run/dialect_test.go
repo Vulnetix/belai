@@ -114,3 +114,24 @@ func TestResolveDialectNewBuiltinsOpenAIChat(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveDialectIgnoresError(t *testing.T) {
+	if d := ResolveDialect(Config{Provider: "gemini"}); d != (dialect{}) {
+		t.Fatalf("ResolveDialect(unknown) = %+v, want zero dialect", d)
+	}
+	if d := ResolveDialect(Config{Provider: "anthropic"}); d.kind != kindAnthropicMessages {
+		t.Fatalf("ResolveDialect(anthropic).kind = %d", d.kind)
+	}
+}
+
+func TestUsesEffort(t *testing.T) {
+	if (dialect{}).UsesEffort() {
+		t.Fatal("zero dialect must not use effort")
+	}
+	if !(dialect{thinking: true}).UsesEffort() {
+		t.Fatal("thinking dialect must use effort")
+	}
+	if !(dialect{effort: true}).UsesEffort() {
+		t.Fatal("effort dialect must use effort")
+	}
+}

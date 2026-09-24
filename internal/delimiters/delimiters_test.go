@@ -165,3 +165,14 @@ func TestEgressStripsDirectiveWithUnknownNonce(t *testing.T) {
 		t.Fatalf("Egress = %q, want empty", got)
 	}
 }
+
+func TestCheckerFuncValid(t *testing.T) {
+	var called string
+	c := CheckerFunc(func(nonce string) bool { called = nonce; return nonce == "ok" })
+	if !c.Valid("ok") || called != "ok" {
+		t.Fatalf("CheckerFunc.Valid(ok) = false, called=%q", called)
+	}
+	if c.Valid("no") {
+		t.Fatal("CheckerFunc.Valid(no) = true")
+	}
+}

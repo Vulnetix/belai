@@ -91,3 +91,13 @@ func TestLiveLevelFallsBackToDefault(t *testing.T) {
 		t.Fatal("empty policy should fall back to default ignore")
 	}
 }
+
+func TestLiveFixed(t *testing.T) {
+	l := Fixed(Policy{ToolResultUnsafe: Warn})
+	if l.Level(ToolResultUnsafe) != Warn {
+		t.Fatalf("Fixed level = %q, want warn", l.Level(ToolResultUnsafe))
+	}
+	if l.AskDisabled() {
+		t.Fatal("Fixed should have ask reporting on (AskDisabled false)")
+	}
+}

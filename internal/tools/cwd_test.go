@@ -2,6 +2,8 @@ package tools
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 
 	"github.com/vulnetix/signet/internal/repoindex"
@@ -443,5 +445,24 @@ func TestCdDefinitionDocumentsResolution(t *testing.T) {
 	}
 	if d.Properties["path"].Description == "" {
 		t.Error("Cd path property has no description")
+	}
+}
+
+// A path outside every root, such as a scratch file Bash wrote to /tmp, is
+// still read root-relative and still refused. The error must say so: the bare
+// "lstat <root>/tmp: no such file" sent a goal run into seven retries.
+func TestCwdOutsideRootPathNamesTheRule(t *testing.T) {
+	root := cwdTree(t)
+	_, err := resolvePath(root, NewCwd(root), "/tmp/cover.out")
+	if err == nil {
+		t.Fatal("resolvePath(/tmp/cover.out) succeeded, want refusal")
+	}
+	if !errors.Is(err, fs.ErrNotExist) || !strings.Contains(err.Error(), "outside every session root") {
+		t.Fatalf("err = %v, want a not-exist error naming the root rule", err)
+	}
+	// A plain missing relative path keeps the bare error.
+	_, err = resolvePath(root, NewCwd(root), "missing.txt")
+	if err == nil || strings.Contains(err.Error(), "outside every session root") {
+		t.Fatalf("relative miss err = %v, want the bare not-exist error", err)
 	}
 }
