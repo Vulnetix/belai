@@ -357,7 +357,14 @@ func goalDraftDescription(a Activity) Description {
 			Tone:    ToneClear,
 			Levels:  LevelDecisions,
 		}
-	default: // "empty", "missing_objective"
+	case "timeout":
+		return Description{
+			Summary: "Tried to write the completion checklist",
+			Outcome: "timed out — using your words as written",
+			Tone:    ToneCaution,
+			Levels:  LevelDecisions,
+		}
+	default: // "empty", "missing_objective", "error"
 		return Description{
 			Summary: "Tried to write the completion checklist",
 			Outcome: "couldn't — using your words as written",

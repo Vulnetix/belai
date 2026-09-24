@@ -87,8 +87,9 @@ var ErrGoalDraftUnusable = errors.New("goal contract draft was not usable")
 // sanitized before it is returned, so delimiter markup cannot forge a harness
 // block when the caller seals the contract into the system prompt.
 //
-// A nil classifier, transport failure, or an empty draft is returned as
-// ErrGoalDraftUnusable so the caller can fail open to the raw prompt.
+// A nil classifier or an empty draft is returned as ErrGoalDraftUnusable; a
+// transport failure or deadline is returned wrapped. Either way the caller
+// fails open to the raw prompt.
 func DraftGoalContract(ctx context.Context, c Classifier, in GoalDraftInput) (string, error) {
 	if c == nil {
 		return "", ErrGoalDraftUnusable
@@ -98,6 +99,11 @@ func DraftGoalContract(ctx context.Context, c Classifier, in GoalDraftInput) (st
 	}
 	raw, err := c.Classify(ctx, BuildGoalDraftPayload(in))
 	if err != nil {
+		verdict := "error"
+		if errors.Is(err, context.DeadlineExceeded) {
+			verdict = "timeout"
+		}
+		record(EventGoalDraft, verdict, "", "", 0)
 		return "", fmt.Errorf("goal contract draft: %w", err)
 	}
 	draft := sanitize.Sanitize(raw)

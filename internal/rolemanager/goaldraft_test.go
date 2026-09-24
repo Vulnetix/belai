@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -43,6 +44,33 @@ func TestDraftGoalContractFallsBackOnTransportFailure(t *testing.T) {
 	})
 	if _, err := DraftGoalContract(context.Background(), c, GoalDraftInput{Prompt: "ship it"}); err == nil {
 		t.Fatal("transport failure must not produce a contract")
+	}
+}
+
+func TestDraftGoalContractRecordsTransportFailures(t *testing.T) {
+	var mu sync.Mutex
+	var verdicts []string
+	cancel := SetObserver(func(a Activity) {
+		if a.Event == EventGoalDraft {
+			mu.Lock()
+			verdicts = append(verdicts, a.Verdict)
+			mu.Unlock()
+		}
+	})
+	defer cancel()
+
+	for _, fail := range []error{context.DeadlineExceeded, errors.New("connection refused")} {
+		c := ClassifierFunc(func(_ context.Context, _ ClassifierPayload) (string, error) {
+			return "", fail
+		})
+		if _, err := DraftGoalContract(context.Background(), c, GoalDraftInput{Prompt: "ship it"}); !errors.Is(err, fail) {
+			t.Fatalf("err = %v, want it to wrap %v", err, fail)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if strings.Join(verdicts, ",") != "timeout,error" {
+		t.Fatalf("goal_draft verdicts = %v, want [timeout error]", verdicts)
 	}
 }
 
