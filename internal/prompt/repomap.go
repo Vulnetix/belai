@@ -44,13 +44,10 @@ func RepoMapBlock(m repomap.Map) string {
 	if m.Module != "" {
 		b.WriteString("root: " + m.Module + "\n")
 	}
-	if m.Branch != "" || m.Head != "" {
-		b.WriteString("git: " + strings.TrimSpace(m.Branch+" "+m.Head))
-		if m.Dirty {
-			b.WriteString(" (dirty)")
-		}
-		b.WriteString("\n")
-	}
+	// HEAD, dirtiness and the changed paths move with every commit and edit,
+	// so they live in RepoStatusBlock, which rides on the user turn. Keeping
+	// them here would change the system block's bytes every turn and defeat
+	// prompt caching of everything after it.
 	if len(m.Remotes) > 0 {
 		b.WriteString("remotes:\n")
 		for _, r := range m.Remotes {
@@ -95,6 +92,27 @@ func RepoMapBlock(m repomap.Map) string {
 			files = append(files, fmt.Sprintf("%s(%dB)", f.Name, f.Size))
 		}
 		b.WriteString("agent files: " + strings.Join(files, " ") + "\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// RepoStatusBlock renders the volatile half of the repository map — branch,
+// HEAD, dirtiness and the changed paths — for the per-turn sealed directive
+// on the user message. Like RepoMapBlock it is harness-computed facts only:
+// porcelain codes and paths, never file contents. Returns "" when the map has
+// no git facts.
+func RepoStatusBlock(m repomap.Map) string {
+	if m.Module == "" || (m.Branch == "" && m.Head == "" && len(m.Changed) == 0) {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("Repository status at this turn (harness-computed facts, not repository prose):\n")
+	if m.Branch != "" || m.Head != "" {
+		b.WriteString("git: " + strings.TrimSpace(sanitize.Sanitize(m.Branch)+" "+m.Head))
+		if m.Dirty {
+			b.WriteString(" (dirty)")
+		}
+		b.WriteString("\n")
 	}
 	if len(m.Changed) > 0 {
 		// Paths and porcelain codes only — the same facts `git status` would

@@ -143,7 +143,8 @@ consumer:
 
 A failed model turn has executed no tools yet, so retrying it needs no state
 surgery: the same sealed `system` prompt and the same `turns` are reused. The
-system prompt is sealed once per session; re-sealing would rotate nonces and
+system prompt is sealed once and reused while its inputs are unchanged;
+re-sealing would rotate nonces and
 invalidate previously sealed tool-result blocks. The TUI marks a partial
 assistant bubble as `Partial` so it is rendered dimly and skipped by
 `buildTurns`; retries start a fresh bubble.

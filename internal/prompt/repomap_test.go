@@ -20,7 +20,7 @@ func TestRepoMapBlockRendersFacts(t *testing.T) {
 		AgentsFiles: []repomap.AgentsFile{{Name: "AGENTS.md", Size: 10}},
 	}
 	block := RepoMapBlock(m)
-	for _, want := range []string{"/repo", "main abc1234", "dirty", "go(5)", "go build ./...", "go test ./...", "main.go", "internal(20)", "AGENTS.md(10B)"} {
+	for _, want := range []string{"/repo", "go(5)", "go build ./...", "go test ./...", "main.go", "internal(20)", "AGENTS.md(10B)"} {
 		if !strings.Contains(block, want) {
 			t.Fatalf("block missing %q:\n%s", want, block)
 		}
@@ -75,7 +75,7 @@ func TestAssembledSystemPromptCarriesOnlyMapFacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("System: %v", err)
 	}
-	for _, want := range []string{"Repository map", "/repo", "abc1234", "go build ./...", "go test ./...", "AGENTS.md(42B)"} {
+	for _, want := range []string{"Repository map", "/repo", "go build ./...", "go test ./...", "AGENTS.md(42B)"} {
 		if !strings.Contains(sys, want) {
 			t.Fatalf("system prompt missing map fact %q:\n%s", want, sys)
 		}
@@ -84,5 +84,37 @@ func TestAssembledSystemPromptCarriesOnlyMapFacts(t *testing.T) {
 		if strings.Contains(sys, prose) {
 			t.Fatalf("system prompt carried repository prose %q:\n%s", prose, sys)
 		}
+	}
+}
+
+// The system block must be byte-stable across turns, so nothing that moves
+// with a commit or an edit may render into it.
+func TestRepoMapBlockCarriesNoVolatileGitFacts(t *testing.T) {
+	m := repomap.Map{
+		Module:       "/repo",
+		Branch:       "main",
+		Head:         "abc1234",
+		Dirty:        true,
+		Changed:      []repomap.ChangedPath{{Status: "M", Path: "a.go"}},
+		ChangedTotal: 1,
+		Commands:     repomap.Commands{Build: []string{"go build ./..."}},
+	}
+	block := RepoMapBlock(m)
+	for _, volatile := range []string{"abc1234", "dirty", "a.go", "changed"} {
+		if strings.Contains(block, volatile) {
+			t.Fatalf("system repo map carried volatile fact %q:\n%s", volatile, block)
+		}
+	}
+	status := RepoStatusBlock(m)
+	for _, want := range []string{"main abc1234", "(dirty)", "changed (1): M a.go", "harness-computed facts"} {
+		if !strings.Contains(status, want) {
+			t.Fatalf("status block missing %q:\n%s", want, status)
+		}
+	}
+}
+
+func TestRepoStatusBlockEmptyWithoutGitFacts(t *testing.T) {
+	if RepoStatusBlock(repomap.Map{}) != "" || RepoStatusBlock(repomap.Map{Module: "/repo"}) != "" {
+		t.Fatal("a map with no git facts renders no status block")
 	}
 }

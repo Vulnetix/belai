@@ -127,9 +127,10 @@ func Scan(ctx context.Context, workdir string) Map {
 }
 
 // RefreshStatus re-probes the working tree (one bounded `git status
-// --porcelain`) and updates Dirty, Changed and ChangedTotal. It is cheap enough
-// to run before every turn, which keeps the changed-path facts current after
-// the session's own edits.
+// --porcelain --branch` and one `git rev-parse --short HEAD`) and updates
+// Branch, Head, Dirty, Changed and ChangedTotal. It is cheap enough to run
+// before every turn, which keeps the facts current after the session's own
+// edits and commits.
 func (m *Map) RefreshStatus(ctx context.Context) {
 	if m == nil || m.Module == "" {
 		return
@@ -137,17 +138,39 @@ func (m *Map) RefreshStatus(ctx context.Context) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	out := repoindex.RunProbe(ctx, m.Module, "git", "status", "--porcelain")
+	out := repoindex.RunProbe(ctx, m.Module, "git", "status", "--porcelain", "--branch")
+	if branch := parseBranch(out); branch != "" {
+		m.Branch = branch
+	}
+	if head := repoindex.RunProbe(ctx, m.Module, "git", "rev-parse", "--short", "HEAD"); head != "" {
+		m.Head = head
+	}
 	m.Changed, m.ChangedTotal = parseStatus(out)
 	m.Dirty = m.ChangedTotal > 0
 }
 
-// parseStatus reads `git status --porcelain` output into capped rows.
+// parseBranch reads the branch out of a `--branch` header line
+// ("## main...origin/main [ahead 1]"). A detached HEAD reports no branch.
+func parseBranch(out string) string {
+	line, _, _ := strings.Cut(out, "\n")
+	rest, ok := strings.CutPrefix(line, "## ")
+	if !ok || strings.HasPrefix(rest, "HEAD (no branch)") {
+		return ""
+	}
+	// A repository with no commits yet reports "No commits yet on main".
+	rest = strings.TrimPrefix(rest, "No commits yet on ")
+	rest, _, _ = strings.Cut(rest, "...")
+	rest, _, _ = strings.Cut(rest, " ")
+	return rest
+}
+
+// parseStatus reads `git status --porcelain` output into capped rows. A
+// `--branch` header line is skipped.
 func parseStatus(out string) ([]ChangedPath, int) {
 	var rows []ChangedPath
 	total := 0
 	for _, line := range strings.Split(out, "\n") {
-		if len(line) < 4 {
+		if len(line) < 4 || strings.HasPrefix(line, "## ") {
 			continue
 		}
 		total++
