@@ -54,7 +54,7 @@ The architecture overview lives in [architecture.md](architecture.md).
 | Streaming tool calls | `internal/tui` | Render tool-use deltas in the TUI stream | Live |
 | Working indicator | `internal/tui` | Role Manager activity pill plus generic working label in the Ask composer | Live |
 | File attachments | `internal/tui` | Parse `@file` references, seal SAFE contents as `<attachment>` blocks | Live |
-| Inline shell | `internal/tui` | Execute `!cmd` and round-trip output under the debug profile | Live |
+| Inline shell | `internal/tui` | Execute `!cmd`, show its raw output in a dedicated shell panel, and round-trip the classified copy once under the debug profile | Live |
 | Agent builder classifier | `internal/agentprofile` | LLM-driven profile generator with schema-validation loop and max-attempts bounding | Live |
 | Explore-agent launch | `internal/explore` + `internal/agent` | Auto-launch read-only explore subagents for PLAN / GOAL with references | Live |
 

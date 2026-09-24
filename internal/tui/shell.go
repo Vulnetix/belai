@@ -18,13 +18,19 @@ import (
 	"github.com/vulnetix/signet/internal/tui/components"
 )
 
-// shellDoneMsg carries the result of an async shell execution.
+// shellDoneMsg carries the result of an async shell execution. raw is what the
+// command printed, shown in its panel; body is the sanitised, classified copy
+// that is the only thing ever sent to the model.
 type shellDoneMsg struct {
 	command  string
 	callID   string
+	raw      string
 	body     string
 	err      error
 	sentinel rolemanager.Sentinel
+	// send is set when body may go to the model: guardrails off, or a clean
+	// verdict with no classifier error.
+	send bool
 }
 
 // shellProgressMsg carries one batch of live output from a running `!cmd`.
@@ -49,16 +55,13 @@ func watchShellProgress(callID string, ch chan tools.Progress) tea.Cmd {
 	}
 }
 
-// handleShellProgress appends live output to the row for a running command.
+// handleShellProgress appends live output to the panel for a running command.
 func (a *App) handleShellProgress(m shellProgressMsg) tea.Cmd {
 	if m.done {
 		return nil
 	}
-	for i := len(a.messages) - 1; i >= 0; i-- {
-		if a.messages[i].Role == "tool" && a.messages[i].ToolCallID == m.callID {
-			a.messages[i].AppendProgress(m.text)
-			break
-		}
+	if i := a.shellRow(m.callID); i >= 0 {
+		a.messages[i].AppendProgress(m.text)
 	}
 	if a.follow {
 		a.vp.GotoBottom()
@@ -89,20 +92,19 @@ func (a *App) handleShell(input string) tea.Cmd {
 	bashReadOnly := a.settings.ReadOnlyEnabled()
 	pol := a.effectivePosture()
 
-	// Render `!cmd` as a real tool row rather than a system notice. It then
-	// gets the same live tail, tail-anchored preview and ctrl+o expansion as a
-	// command the agent runs, instead of a second, divergent presentation of
-	// the same thing.
+	// A `!cmd` gets its own shell panel: the raw output, a live tail while it
+	// runs, and ctrl+o / ctrl+c like any other panel. It is not a tool row —
+	// the model did not ask for it — and not a runs-panel activity, whose
+	// finish would round-trip the output a second time.
 	callID := fmt.Sprintf("shell-%d", time.Now().UnixNano())
 	a.messages = append(a.messages, components.Message{
-		Role:       "tool",
-		ToolName:   "Bash",
-		ToolArgs:   toolArgsString(map[string]any{"command": cmd}),
+		Role:       components.ShellRole,
+		ToolArgs:   components.ShellArgs(cmd),
 		ToolCallID: callID,
 		StartedAt:  time.Now(),
+		CreatedAt:  time.Now(),
 	})
 	a.follow = true
-	a.registerShellActivity(callID, cmd, workdir)
 
 	// Buffered so a short command does not block on a UI that has not armed
 	// its watcher yet; beyond that, a full channel throttles the subprocess,
@@ -138,59 +140,82 @@ func (a *App) handleShell(input string) tea.Cmd {
 		// output to the provider's classifier turn, which is the opposite of
 		// what turning guardrails off asks for. Sanitising still runs.
 		if pol.Level(posture.ToolResultUnsafe) == posture.Ignore {
-			return shellDoneMsg{command: cmd, callID: callID, body: sanitize.Sanitize(res.Content), sentinel: rolemanager.SentinelSafe}
+			return shellDoneMsg{command: cmd, callID: callID, raw: res.Content, body: sanitize.Sanitize(res.Content), sentinel: rolemanager.SentinelSafe, send: true}
 		}
-		body := res.Content
+		// The sanitised copy is the fallback, never the raw output: raw is for
+		// the panel only.
+		body := sanitize.Sanitize(res.Content)
 		pipe := run.NewPipeline(cfg, client, a.cache)
 		dec, perr := pipe.Process(ctx, res)
 		if perr == nil && dec.Action == rolemanager.ActionProceed {
 			body = dec.Content
 		}
-		return shellDoneMsg{command: cmd, callID: callID, body: body, sentinel: dec.Sentinel, err: perr}
+		return shellDoneMsg{
+			command:  cmd,
+			callID:   callID,
+			raw:      res.Content,
+			body:     body,
+			sentinel: dec.Sentinel,
+			err:      perr,
+			send:     perr == nil && dec.Sentinel.IsSafe(),
+		}
 	}
 
 	return tea.Batch(exec, watchShellProgress(callID, progress))
 }
 
-// handleShellDone routes the classified shell output into the transcript and,
-// when safe, back to the model under the debug profile.
+// handleShellDone lands the raw output in the command's shell panel and, when
+// the classified copy is safe, sends that copy to the model under the debug
+// profile. The panel always shows what the command printed; only the
+// attachment depends on the verdict.
 func (a *App) handleShellDone(m shellDoneMsg) tea.Cmd {
-	if a.activity != nil {
-		a.activity.Finish(m.callID, 0, false, m.err)
-	}
-	if m.err != nil {
+	switch {
+	case m.err != nil && m.raw == "":
 		a.setShellResult(m.callID, fmt.Sprintf("failed: %v", m.err), "✗")
+		return nil
+	case m.err != nil:
+		// The command ran; classifying its output did not. Show the output and
+		// send nothing — an unclassified result never reaches the model.
+		a.setShellResult(m.callID, m.raw, "not sent: classifier failed")
+		a.addSystem(fmt.Sprintf("shell output not sent: %v", m.err))
+		return nil
+	case !m.send:
+		a.setShellResult(m.callID, m.raw, "not sent: "+m.sentinel.Label())
+		a.addSystem(fmt.Sprintf("shell output classified: %s", m.sentinel.Label()))
 		return nil
 	}
 
-	// The output lands on the command's own tool row, which collapses and
-	// expands like any other. There is no display-side truncation here: the
-	// row's preview policy decides how much to show.
-	a.setShellResult(m.callID, m.body, toolResultStatus("Bash", m.body))
-
-	if m.sentinel.IsSafe() || a.effectivePosture().Level(posture.ToolResultUnsafe) == posture.Ignore {
-		input := fmt.Sprintf("Output of `%s` is attached.", m.command)
-		return a.sendWithAttachments(input, []run.Attachment{
-			{Kind: "shell", Label: m.command, Body: m.body},
-		}, "")
-	}
-
-	a.addSystem(fmt.Sprintf("shell output classified: %s", m.sentinel.Label()))
-	return nil
+	a.setShellResult(m.callID, m.raw, toolResultStatus("Bash", m.raw))
+	input := fmt.Sprintf("Output of `%s` is attached.", m.command)
+	return a.sendWithAttachments(input, []run.Attachment{
+		{Kind: "shell", Label: m.command, Body: m.body},
+	}, "")
 }
 
-// setShellResult lands a finished `!cmd` on its own tool row, replacing the
-// live tail. A row is always present — handleShell appends it before running —
-// but fall back to a system notice rather than losing the output if it is not.
-func (a *App) setShellResult(callID, body, status string) {
+// setShellResult lands a finished `!cmd` in its shell panel, replacing the
+// live tail. A panel is always present — handleShell appends it before running
+// — but fall back to a system notice rather than losing the output if it is
+// not.
+func (a *App) setShellResult(callID, raw, status string) {
+	if i := a.shellRow(callID); i >= 0 {
+		a.messages[i].SetContent(raw)
+		a.messages[i].Status = status
+		if !a.messages[i].StartedAt.IsZero() {
+			a.messages[i].DurationMS = time.Since(a.messages[i].StartedAt).Milliseconds()
+		}
+		return
+	}
+	a.addSystem(raw)
+}
+
+// shellRow returns the index of the shell panel for callID, or -1.
+func (a *App) shellRow(callID string) int {
 	for i := len(a.messages) - 1; i >= 0; i-- {
-		if a.messages[i].Role == "tool" && a.messages[i].ToolCallID == callID {
-			a.messages[i].SetContent(body)
-			a.messages[i].Status = status
-			return
+		if a.messages[i].Role == components.ShellRole && a.messages[i].ToolCallID == callID {
+			return i
 		}
 	}
-	a.addSystem(body)
+	return -1
 }
 
 func isShellInput(s string) bool { return strings.HasPrefix(s, "!") }

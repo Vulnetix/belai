@@ -192,7 +192,7 @@ type renderCache struct {
 
 // renderKeyFor computes the cache key for one message at a given width.
 func renderKeyFor(m *Message, width int, expandAll bool) renderKey {
-	running := m.Role == "tool" && !m.StartedAt.IsZero() && m.Text() == ""
+	running := (m.Role == "tool" || m.Role == ShellRole) && !m.StartedAt.IsZero() && m.Text() == ""
 	usage := 0
 	if m.Usage != nil {
 		usage = m.Usage.Total()
@@ -368,7 +368,7 @@ func IsEditTool(name string) bool { return editToolNames[name] }
 // notice or tool result index so they can be rendered as one signet panel.
 type renderEntry struct {
 	idxs []int  // message indices in this entry
-	kind string // "turn", "system", "reasoning"
+	kind string // "turn", "system", "reasoning", "shell"
 }
 
 const (
@@ -434,6 +434,10 @@ func (m MessageList) Render() (string, LineMap) {
 			} else {
 				entries = append(entries, renderEntry{idxs: []int{i}, kind: "system"})
 			}
+		case ShellRole:
+			// A `!cmd` is something the user ran, not tool chatter: its panel
+			// stands alone and ignores the ShowTools gate.
+			entries = append(entries, renderEntry{idxs: []int{i}, kind: "shell"})
 		case "rolemanager":
 			// The activity feed is render-only and gated by the resolved level,
 			// exactly like the ShowTools / ShowEdits gates above.
@@ -478,6 +482,8 @@ func (m MessageList) Render() (string, LineMap) {
 					s, sub = reasoningPanel(*msg, width, m.ExpandAll)
 				case "completion":
 					s, sub = completionPanel(*msg, width)
+				case ShellRole:
+					s, sub = shellPanel(*msg, width, m.ExpandAll)
 				default:
 					s, sub = turnPanel(*msg, width, m.ExpandAll)
 				}
@@ -967,21 +973,31 @@ func previewOf(content, toolName string, expand bool) (string, truncation) {
 		return content, truncation{}
 	}
 	n := previewLines(toolName)
+	if tailAnchored(toolName) {
+		return tailPreview(content, n)
+	}
 	lines := strings.Split(content, "\n")
 	if len(lines) <= n {
 		return content, truncation{}
 	}
-	if tailAnchored(toolName) {
-		cut := len(lines) - n
-		return strings.Join(lines[cut:], "\n"), truncation{
-			hidden: strings.Join(lines[:cut], "\n"),
-			label:  "… " + strconv.Itoa(cut) + " earlier lines",
-			atTop:  true,
-		}
-	}
 	return strings.Join(lines[:n], "\n"), truncation{
 		hidden: strings.Join(lines[n:], "\n"),
 		label:  "… " + strconv.Itoa(len(lines)-n) + " more lines",
+	}
+}
+
+// tailPreview keeps the last n lines of content, with a hint above them whose
+// hidden text is everything before.
+func tailPreview(content string, n int) (string, truncation) {
+	lines := strings.Split(content, "\n")
+	if len(lines) <= n {
+		return content, truncation{}
+	}
+	cut := len(lines) - n
+	return strings.Join(lines[cut:], "\n"), truncation{
+		hidden: strings.Join(lines[:cut], "\n"),
+		label:  "… " + strconv.Itoa(cut) + " earlier lines",
+		atTop:  true,
 	}
 }
 
@@ -1022,7 +1038,14 @@ type truncation struct {
 // The body is wrapped and measured unstyled and only then styled, so every
 // SourceLine.Text stays free of ANSI as linemap.go:16-23 requires.
 func renderToolContent(content string, width int, isErr bool, trunc truncation) (string, LineMap) {
-	prefix := "  "
+	return renderRows(contentRows(content, "  ", width, isErr, trunc), width)
+}
+
+// contentRows is renderToolContent's layout without the final render: the
+// wrapped, hinted body as rows, each led by prefix. The shell panel hands
+// these to a Panel as BodyRows, so its output reaches the terminal through
+// the same NewSeg sanitising as a tool row.
+func contentRows(content, prefix string, width int, isErr bool, trunc truncation) []Row {
 	pcol := visibleLen(prefix)
 	inner := max(width-pcol, 8)
 
@@ -1074,7 +1097,7 @@ func renderToolContent(content string, width int, isErr bool, trunc truncation) 
 		}
 		rows = append(rows, r)
 	}
-	return renderRows(rows, width)
+	return rows
 }
 
 // formatToolInvocation extracts the most descriptive argument(s) from a tool's
