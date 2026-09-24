@@ -1291,6 +1291,12 @@ is untrusted — it re-enters as part of each subagent prompt and is admitted
 through the Role Manager like any user content, never promoted into a
 system/agent block.
 
+An explore subagent runs its turn with a forced agent mode
+(`TurnInput.ForceMode`), so it never spends a mode-select call or drafts a
+goal contract it would not use. It is still a read-only session on the plan
+surface, and a read-only session never receives the work-discipline
+guidance.
+
 Each explore subagent:
 
 - receives the original prompt, the grounding evidence, and an investigation
