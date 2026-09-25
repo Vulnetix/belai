@@ -185,9 +185,10 @@ Retry budgets are configurable via `config.Settings.Resilience`:
   entirely: the accessor passes the sign through unclamped and
   `clarifyRounds` returns immediately on it. Zero is not a disable — zero
   means "use the default", like every other budget here.
-- `max_explore_iterations`: the tool-loop budget of a single explore subagent
-  (default 8, raised from a historical 4 so a subagent actually runs
-  `rg`/`find`/`git` before clarifying, while keeping the fan-out bounded).
+- `max_explore_iterations`: the ceiling on a single explore subagent's
+  tool-loop budget (default 8). Each task carries its own, smaller budget
+  (2–5 rounds by kind; see [architecture.md](architecture.md), "Agentic
+  exploration"), and the smaller of the two applies.
 
 Zero always means "unset, use the default" — which is why `max_passes` needs
 its own rule below, and why a budget genuinely cannot be set to zero.

@@ -130,6 +130,33 @@ func TestForgeNoProbeWhilePanelClosed(t *testing.T) {
 	}
 }
 
+func TestForgeCacheSharedWithPanel(t *testing.T) {
+	if New(Options{Workdir: t.TempDir()}).forgeCache != nil {
+		t.Fatal("New must not create the forge cache: only Start probes")
+	}
+	a, f := forgeApp(t, false)
+	a.forge = forgeState{}
+	a.startForgeCache() // gitOK is false in the temp dir: no probe
+	if a.forgeCache == nil {
+		t.Fatal("startForgeCache did not create the cache")
+	}
+	a.forgeCache.Store(a.forgeDir(), forge.Snapshot{Root: a.workdir, Branch: "cached"}, time.Now())
+	if cmd := a.refreshForge(false); cmd != nil {
+		t.Fatal("a fresh cached snapshot was re-probed")
+	}
+	if !a.forge.have || a.forge.snap.Branch != "cached" {
+		t.Fatalf("panel did not adopt the cached snapshot: %+v", a.forge)
+	}
+	// The panel's own probe lands in the cache for the session to use.
+	a.handleForgeProbe(forgeProbeMsg{snap: forge.Snapshot{Root: a.workdir, Branch: "probed"}, dir: a.forgeDir(), at: time.Now().Add(time.Second)})
+	if s, _, _ := a.forgeCache.Get(a.forgeDir()); s.Branch != "probed" {
+		t.Fatalf("probe not stored in the shared cache: %+v", s)
+	}
+	if len(f.called()) != 0 {
+		t.Fatalf("unexpected calls %v", f.called())
+	}
+}
+
 func TestForgeRemoveGuards(t *testing.T) {
 	a, f := forgeApp(t, false)
 	// current worktree: refused, no confirmation

@@ -65,18 +65,22 @@ func intArg(v any) int64 {
 // repeatedRead returns the harness note answering a Read whose content the
 // model already has in the conversation, or "" when the read must run.
 func (s *Session) repeatedRead(key readindex.Key, turns []run.Turn) string {
-	e, ok := s.reads.Lookup(key, func(e readindex.Entry) bool { return liveToolResult(turns, e.ResultHash) })
+	e, ok := s.reads.Lookup(key, func(e readindex.Entry) bool { return liveResult(turns, e.ResultHash) })
 	if !ok {
 		return ""
+	}
+	if e.CallID == prefetchCallID {
+		return fmt.Sprintf("[Read: %s is unchanged since the harness attached it to this turn's user message, and that attachment is still above. Use it instead of reading the file again. Any file changed since — by any tool or on disk — is always read fresh.]", e.Describe(s.readRoot()))
 	}
 	return fmt.Sprintf("[Read: %s is unchanged since you read it earlier in this conversation, and that earlier Read result is still above. Use it instead of reading the file again. Any file changed since — by any tool or on disk — is always read fresh.]", e.Describe(s.readRoot()))
 }
 
-// liveToolResult reports whether a tool result with exactly this content hash
-// is still in the conversation: not cleared by context clearing and not
-// compacted away. Matching the delivered bytes rather than the call id keeps
-// a provider that reuses ids from vouching for a result that is gone.
-func liveToolResult(turns []run.Turn, resultHash string) bool {
+// liveResult reports whether content with exactly this hash is still in the
+// conversation: a tool result not cleared by context clearing and not
+// compacted away, or a file attachment the harness prefetched onto a user
+// turn. Matching the delivered bytes rather than the call id keeps a
+// provider that reuses ids from vouching for a result that is gone.
+func liveResult(turns []run.Turn, resultHash string) bool {
 	if resultHash == "" {
 		return false
 	}
@@ -84,6 +88,13 @@ func liveToolResult(turns []run.Turn, resultHash string) bool {
 		t := turns[i]
 		if t.Role == "tool" && t.Content != run.ClearedToolResult && readindex.HashResult(t.Content) == resultHash {
 			return true
+		}
+		if t.Role == "user" {
+			for _, a := range t.Attachments {
+				if a.Kind == "file" && readindex.HashResult(a.Body) == resultHash {
+					return true
+				}
+			}
 		}
 	}
 	return false
@@ -121,7 +132,7 @@ func (s *Session) readRoot() string {
 // contents — the same class of fact the repo map carries.
 func (s *Session) readSummary(turns []run.Turn) string {
 	lines := s.reads.Summary(s.readRoot(), maxPlanReadPaths, func(e readindex.Entry) bool {
-		return e.Current() && liveToolResult(turns, e.ResultHash)
+		return e.Current() && liveResult(turns, e.ResultHash)
 	})
 	if len(lines) == 0 {
 		return ""

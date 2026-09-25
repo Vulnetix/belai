@@ -29,9 +29,11 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `JQ`, `YQ`, `Sed`, `Awk`, `Cut`, `Sort`, `Uniq`, `Tr`, `Paste`, `Join`,
   `Diff` (all `KindRead`), `SubAgentLog` (`KindProcess`),
   `SearchSessions`/`ReadSession`/`SearchMemory` (`KindAgentStore`, other
-  agents' transcript and memory text) and the recovery subagent's
-  process-tail briefing all classify, unconditionally. Do not add an
-  exemption for any of them.
+  agents' transcript and memory text), the recovery subagent's
+  process-tail briefing and the plan/goal context prefetch
+  (`agent/prefetch.go`: instruction and changed files, read through the
+  session's own `Read` and gated exactly like its result) all classify,
+  unconditionally. Do not add an exemption for any of them.
 - **Shaped, controlled results are sanitized only.** `Grep`, `Glob`, `Write`,
   `Edit`, and the rest of the native catalogue (listings, `File`, `Cmp`,
   `Date`, …) return output whose shape the harness knows — `path:line:text`,
@@ -54,7 +56,8 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   exemption: no file content crosses. It keys on the resolved path and window,
   checks the file's stat on every lookup, is invalidated by every harness
   mutation the file-diff recorder sees, and checks liveness by the SHA-256 of
-  the delivered result (never the call id). A withheld read is never
+  the delivered result — a tool turn, or a prefetched `file` attachment on a
+  user turn — never the call id. A withheld read is never
   recorded, a flagged file never hits, and only a permission-allowed call on
   the advertised surface is answered from it. Its summary rides on the
   per-turn status, never the system block.
@@ -69,7 +72,10 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   counts, detected commands, git metadata and file sizes, and never repository
   file contents. Repository prose reaching the model stays on the
   `RepoRead`/`Read` path, which classifies. This is what permits the map in the
-  system block.
+  system block. The per-turn forge facts (`prompt.ForgeStatusBlock`: upstream,
+  ahead/behind, worktrees, PR/MR number and state, CI counts) follow the same
+  rule and ride on the turn's directive; forge-supplied text (PR titles, check
+  names, CLI errors) never renders there.
 - **Agent-store search is path-free.** `SearchSessions`, `ReadSession` and
   `SearchMemory` read other agents' transcript and memory stores outside the
   confinement root set. They take no path argument: every path comes from the

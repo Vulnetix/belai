@@ -113,6 +113,10 @@ const (
 	// when the caller sent none, so a UI that started the turn without
 	// waiting for mode selection can apply the decision. It carries Mode.
 	EventModeDecidedKind
+	// EventPrefetchKind reports the files the harness read, classified and
+	// attached to a plan or goal turn up front (see prefetch.go). It carries
+	// their root-relative paths in Paths. Render-only.
+	EventPrefetchKind
 )
 
 // Role Manager sub-phases carried by EventRoleManagerKind.
@@ -176,6 +180,9 @@ type Event struct {
 
 	// Meta carries tool metadata on EventToolMetaKind. Render-only.
 	Meta map[string]any
+
+	// Paths carries EventPrefetchKind's root-relative file paths.
+	Paths []string
 
 	// Cwd carries the new working directory on EventCwdKind, relative to the
 	// session root and slash-separated; "" means the root itself. CwdDir is

@@ -53,7 +53,7 @@ func (s *Session) allEntrypoints() []string {
 
 // planning starts immediately. A goal's pre-flight survey runs only with
 // resilience.goal_explore: true; the not-started goal survey is unaffected.
-func (s *Session) exploreTurns(ctx context.Context, decision rolemanager.ModeDecision, clean string, pipe *rolemanager.Pipeline, emit func(Event)) []run.Turn {
+func (s *Session) exploreTurns(ctx context.Context, decision rolemanager.ModeDecision, clean string, attached map[string]bool, pipe *rolemanager.Pipeline, emit func(Event)) []run.Turn {
 	if !s.allowExplore {
 		return nil
 	}
@@ -71,11 +71,14 @@ func (s *Session) exploreTurns(ctx context.Context, decision rolemanager.ModeDec
 			// repo map(s) already computed, so the subagent investigates real
 			// files rather than rediscovering them. Workspace directories are
 			// included so cross-repo entrypoints are covered.
-			if len(tasks) > 0 && tasks[0].Reference == "repository structure" {
+			if len(tasks) > 0 && tasks[0].Reference == explore.SurveyReference {
 				tasks = explore.PlanSurveyWithEntrypoints(clean, entrypoints)
 			}
 		}
 	}
+	// A file the user attached already rides on the turn whole; a subagent
+	// reading it again only to summarise it is a wasted round trip.
+	tasks = explore.DropAttached(tasks, attached)
 	return s.runExploreTasks(ctx, tasks, "explore", pipe, emit)
 }
 
@@ -175,6 +178,10 @@ func (s *Session) runExploreTasks(ctx context.Context, tasks []explore.Task, kin
 		}})
 	}
 
+	// One grounding probe for the whole fan-out: every subagent used to run
+	// its own git probes over the same unchanged working tree.
+	grounding := s.groundingProbe(ctx)
+
 	results := make([]string, len(tasks))
 	var wg sync.WaitGroup
 	for _, t := range tasks {
@@ -208,7 +215,7 @@ func (s *Session) runExploreTasks(ctx context.Context, tasks []explore.Task, kin
 				Index: t.Index, Total: len(tasks),
 			}})
 
-			body := s.runSubagent(runCtx, t, bridge.subscribe(), id, forward, kind == "goal-survey")
+			body := s.runSubagent(runCtx, t, grounding, bridge.subscribe(), id, forward, kind == "goal-survey")
 			results[t.Index] = body
 
 			state := agentpool.StateDone
@@ -282,7 +289,7 @@ func (s *Session) exploreConfig() run.Config {
 // EventSubagentActivityKind stamped with the subagent's ID. Every string on
 // that path is sanitized before it leaves the child, and the finding itself
 // still takes the existing sanitize + posture-gated classify route below.
-func (s *Session) runSubagent(ctx context.Context, t explore.Task, steerCh chan string, id string, forward func(Event), goalSurvey bool) string {
+func (s *Session) runSubagent(ctx context.Context, t explore.Task, g Grounding, steerCh chan string, id string, forward func(Event), goalSurvey bool) string {
 	// The subagent runs in plan mode, so it gets the plan-mode surface:
 	// read-only native and base tools with Bash removed. Building it with
 	// .Plan() rather than relying on PlanMode alone keeps the advertised
@@ -290,7 +297,7 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task, steerCh chan 
 	// promise a Bash the gate will refuse.
 	reg := tools.DefaultWithCaps(s.workdir, true, s.caps, s.repoIndex).Plan()
 
-	grounding := s.groundingProbe(ctx).digest()
+	grounding := g.digest(t.Kind == explore.RefRepo || t.Kind == explore.RefOrg)
 	promptText := t.Prompt
 	if grounding != "" {
 		promptText += "\n\nWorkspace grounding (untrusted evidence):\n" + grounding
@@ -308,7 +315,7 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task, steerCh chan 
 		Live:          s.live,
 		PlanMode:      true,  // read-only even if the registry grows
 		AllowExplore:  false, // a subagent must not fan out again
-		MaxIterations: s.settings.Resilience.MaxExploreIterationsOr(8),
+		MaxIterations: exploreBudget(t.Budget, s.settings.Resilience.MaxExploreIterationsOr(8)),
 		Workdir:       s.workdir,
 		Settings:      s.settings,
 		PromptOptions: opts,
@@ -371,7 +378,7 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task, steerCh chan 
 	if err != nil {
 		return ""
 	}
-	reply := res.Reply
+	reply := capReport(res.Reply)
 	if reply == "" {
 		return ""
 	}
@@ -397,6 +404,35 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task, steerCh chan 
 		return ""
 	}
 	return delimiters.Egress(delimiters.Wrap(delimiters.KindExploration, nonceVal, body), s.pool)
+}
+
+// exploreBudget is a task's tool-round budget: the task's own, capped by the
+// resilience.max_explore_iterations setting (which a task with no budget
+// uses as is).
+func exploreBudget(task, setting int) int {
+	if task > 0 && task < setting {
+		return task
+	}
+	return setting
+}
+
+// maxExploreReport bounds one finding, in bytes. The report contract asks
+// for at most ten located bullets; a subagent that writes an essay anyway is
+// cut at a line boundary, so the parent's context and the classifier call
+// stay small.
+const maxExploreReport = 6 * 1024
+
+// capReport trims a finding to maxExploreReport at a line boundary.
+func capReport(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= maxExploreReport {
+		return s
+	}
+	cut := s[:maxExploreReport]
+	if i := strings.LastIndexByte(cut, '\n'); i > 0 {
+		cut = cut[:i]
+	}
+	return cut + "\n… (report truncated)"
 }
 
 // toolArgsJSON serializes a tool call's arguments for render-only display. A

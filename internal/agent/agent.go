@@ -17,6 +17,7 @@ import (
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/delimiters"
 	"github.com/vulnetix/signet/internal/filediff"
+	"github.com/vulnetix/signet/internal/forge"
 	"github.com/vulnetix/signet/internal/goals"
 	"github.com/vulnetix/signet/internal/hooks"
 	"github.com/vulnetix/signet/internal/modes"
@@ -111,6 +112,10 @@ type Options struct {
 	// added with /add-dir. They are surfaced as a separate block so the model
 	// knows the shape of every root it may operate on.
 	WorkspaceMaps []repomap.Map
+	// Forge is the shared git/forge snapshot cache (the TUI's git tab probes
+	// into it too). Its facts — never forge-supplied text — ride on the
+	// per-turn status. nil leaves the forge block out.
+	Forge *forge.Cache
 	// SkipNonceSeed skips the SeedFromProvider GET and seeds the pool locally.
 	// A subagent sets this: it discards the provider-seeded pool one line later
 	// in favour of a fresh local pool, so the GET is a wasted round trip.
@@ -160,6 +165,7 @@ type Session struct {
 	planSurface     tools.PlanSurface
 	repoMap         *repomap.Map
 	workspaceMaps   []repomap.Map
+	forge           *forge.Cache
 	opts            prompt.Options
 	workdir         string
 	state           config.State
@@ -428,6 +434,7 @@ func NewSession(o Options) (*Session, error) {
 		planSurface:        planSurface,
 		repoMap:            o.RepoMap,
 		workspaceMaps:      o.WorkspaceMaps,
+		forge:              o.Forge,
 		planRevision:       o.PlanRevision,
 		opts:               o.PromptOptions,
 		workdir:            o.Workdir,
@@ -697,11 +704,23 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		draft = s.startGoalDraft(ctx, pipe, clean)
 	}
 
+	// Context prefetch for plan and goal turns (and plan execution, which runs
+	// the goal loop): the agent instruction files and changed files are read
+	// and classified while exploration and clarify run, and joined when the
+	// user turn is assembled. See prefetch.go.
+	var prefetch *pendingPrefetch
+	if (modeDec.Mode == modes.ModePlan && !in.ExecutePlan) || loopDec.Mode == modes.ModeGoal {
+		prefetch = s.startPrefetch(ctx, pipe, history, attachedPaths(in.Attachments), emit)
+		// The prefetch emits; it must finish before run returns and RunStream
+		// closes the event channel, on every path.
+		defer prefetch.wait()
+	}
+
 	// Explore-agent launch: read-only subagents run before sealing, and their
 	// classified findings re-enter as untrusted user turns ahead of the prompt.
 	var exploreTurns []run.Turn
 	if modeDec.Explore {
-		exploreTurns = s.exploreTurns(ctx, modeDec, clean, pipe, emit)
+		exploreTurns = s.exploreTurns(ctx, modeDec, clean, attachedPaths(in.Attachments), pipe, emit)
 	}
 
 	// Clarify round loop: only when the planner classifier can articulate a
@@ -789,6 +808,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	// been shown and is still current, so a new turn does not re-read it.
 	// It changes every turn, so it rides here and never in the system block.
 	repoStatus = joinDirectives(repoStatus, s.readSummary(history))
+	repoStatus = joinDirectives(repoStatus, s.forgeStatus())
 	if len(s.workspaceMaps) > 0 {
 		opts.WorkspaceBlock = prompt.WorkspaceBlock(s.workspaceMaps)
 	}
@@ -809,7 +829,15 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	if clarified != "" {
 		userContent += "\n\n" + clarified + "\n\nThese answers are final. Plan with them; do not ask these questions again or add a step that asks the user."
 	}
-	turns = append(turns, run.Turn{Role: "user", Content: userContent, Attachments: in.Attachments, Directive: joinDirectives(in.Directive, repoStatus)})
+	atts := in.Attachments
+	if fetched := prefetch.wait(); len(fetched) > 0 {
+		atts = append([]run.Attachment{}, in.Attachments...)
+		for _, f := range fetched {
+			atts = append(atts, f.att)
+		}
+		repoStatus = joinDirectives(repoStatus, prefetchDirective(fetched))
+	}
+	turns = append(turns, run.Turn{Role: "user", Content: userContent, Attachments: atts, Directive: joinDirectives(in.Directive, repoStatus)})
 
 	// Plan mode's pass loop contacts the evaluator with the exploration
 	// context the explore agents gathered, not with a goal definition (plan

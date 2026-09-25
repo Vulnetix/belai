@@ -3,6 +3,8 @@ package forge
 import (
 	"context"
 	"os/exec"
+	"strconv"
+	"strings"
 )
 
 // Snapshot is everything the git and ci tabs render, gathered in one probe.
@@ -11,6 +13,8 @@ type Snapshot struct {
 	Root        string // repository top level; "" when dir is not in a repo
 	Branch      string // "" when detached
 	Upstream    string // e.g. origin/feature; "" when none is set
+	Ahead       int    // commits on HEAD not on Upstream
+	Behind      int    // commits on Upstream not on HEAD
 	LastSubject string // subject of HEAD, the default PR title
 	Remote      Remote
 	Worktrees   []Worktree
@@ -41,6 +45,11 @@ func Probe(ctx context.Context, r Runner, look LookPath, dir string) Snapshot {
 	s.Root = root
 	s.Branch, _ = run(ctx, r, ReadTimeout, root, "git", "branch", "--show-current")
 	s.Upstream, _ = run(ctx, r, ReadTimeout, root, "git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+	if s.Upstream != "" {
+		if counts, err := run(ctx, r, ReadTimeout, root, "git", "rev-list", "--left-right", "--count", "HEAD...@{u}"); err == nil {
+			s.Ahead, s.Behind = parseAheadBehind(counts)
+		}
+	}
 	subject, _ := run(ctx, r, ReadTimeout, root, "git", "log", "-1", "--format=%s")
 	s.LastSubject = Clean(subject)
 
@@ -78,6 +87,18 @@ func Probe(ctx context.Context, r Runner, look LookPath, dir string) Snapshot {
 	}
 	s.Checks = checks
 	return s
+}
+
+// parseAheadBehind reads `git rev-list --left-right --count HEAD...@{u}`:
+// two counts, ahead then behind.
+func parseAheadBehind(out string) (ahead, behind int) {
+	f := strings.Fields(out)
+	if len(f) != 2 {
+		return 0, 0
+	}
+	ahead, _ = strconv.Atoi(f[0])
+	behind, _ = strconv.Atoi(f[1])
+	return ahead, behind
 }
 
 // CIAvailable reports whether the ci tab has something to show: a provider
