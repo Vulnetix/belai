@@ -328,6 +328,9 @@ import localModelShot from '../../assets/shots/local-model.svg';
         on your main model. The security classifier also stays on the main model unless you set{' '}
         <code class="mono">classifier.tier</code> to <code class="mono">fast</code>. <code class="mono">/model</code>{' '}
         opens with a summary of which model answers what. Routing can still set a model per task.
+        Press <code class="mono">tab</code> in chat, or anywhere on <code class="mono">/model</code>, to cycle model mode
+        between <code class="mono">routed</code> and <code class="mono">defined</code>; the footer switches between the
+        smart-model-router count and the single provider/model as it changes.
       </p>
     </div>
     <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={credRes} /></div>

@@ -838,7 +838,7 @@ func (a *App) modelView() string {
 		b.WriteString("\n" + components.DangerStyle.Render("✗ "+a.modelState.errorMsg) + "\n")
 	}
 	b.WriteString("\n" + components.HelpBar(
-		"↑↓", "move", "⏎", "edit", "s", "save to", "c", "clear", "p", "providers", "esc", "back") + "\n")
+		"↑↓", "move", "⏎", "edit", "tab", "mode", "s", "scope", "c", "clear", "p", "providers") + "\n")
 	return lipgloss.NewStyle().Padding(1).Render(b.String())
 }
 
@@ -1025,6 +1025,10 @@ func (a *App) handleModelKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, a.unsetModelRow()
 	case " ", "enter":
 		return a, a.changeModelRow()
+	case "tab":
+		// Tab cycles the model mode between routed and defined from anywhere on
+		// the screen, updating the footer's router chip to match.
+		return a, a.cycleRoutingKind(routingKindOptions)
 	}
 	return a, nil
 }

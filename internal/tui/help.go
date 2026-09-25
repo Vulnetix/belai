@@ -46,6 +46,7 @@ func keySections() []keySection {
 			{"home, end", "jump to the start or end of the line (fn+left, fn+right)"},
 			{"esc", "clear the selection, return from a followed agent thread, then cancel the request; esc esc clears the composer"},
 			{"shift+tab", "cycle mode: agent, plan, goal"},
+			{"tab", "cycle model mode between routed and defined (when no popup or picker is open)"},
 			{"up", "browse prompt, !cmd and /command history and the prompt library"},
 			{"f7", "save the prompt to the library"},
 			{"ctrl+l", "clear the transcript view; the session is kept"},
@@ -151,6 +152,7 @@ func keySections() []keySection {
 			{"s", "cycle scope for the active role"},
 			{"c", "clear the selected row"},
 			{"p", "open /providers"},
+			{"tab", "cycle model mode between routed and defined"},
 			{"esc", "back"},
 		}},
 		{"model picker", []keyBinding{
