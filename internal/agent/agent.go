@@ -511,6 +511,11 @@ type TurnInput struct {
 	// same way explore findings do, so this session's model — which sees all
 	// of them against the whole repository — decides what to remediate.
 	Review []explore.ReviewReport
+	// ReviewFindings are scanner subagent reports that already ran, as
+	// background agents, while the review's scans were still running. Each
+	// is sealed as an exploration turn, and a Review report whose scanner
+	// has a finding here runs no subagent of its own.
+	ReviewFindings []explore.ReviewFinding
 }
 
 // Result is the outcome of a session run.
@@ -733,7 +738,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	// user asked for the review explicitly, so it runs whatever the mode's
 	// explore settings say; only a session that may not fan out (a subagent)
 	// skips it.
-	review := s.reviewTurns(ctx, clean, in.Review, pipe, emit)
+	review := s.reviewTurns(ctx, clean, in.Review, in.ReviewFindings, pipe, emit)
 	exploreTurns = append(exploreTurns, review...)
 
 	// Clarify round loop: only when the planner classifier can articulate a

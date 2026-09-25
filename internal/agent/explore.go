@@ -260,11 +260,45 @@ func (s *Session) goalSurveyTurns(ctx context.Context, goalText string, pipe *ro
 // and returns their classified findings as user turns. The reports were
 // classified by the caller before they reached the session, and each rides to
 // its subagent as a file attachment, never spliced into the prompt text.
-func (s *Session) reviewTurns(ctx context.Context, clean string, reports []explore.ReviewReport, pipe *rolemanager.Pipeline, emit func(Event)) []run.Turn {
-	if !s.allowExplore || len(reports) == 0 {
-		return nil
+//
+// A scanner whose subagent already ran (findings, classified by the caller)
+// is sealed as an exploration turn as it is, and only the scanners without
+// one fan out here.
+func (s *Session) reviewTurns(ctx context.Context, clean string, reports []explore.ReviewReport, findings []explore.ReviewFinding, pipe *rolemanager.Pipeline, emit func(Event)) []run.Turn {
+	var turns []run.Turn
+	done := map[string]bool{}
+	for _, f := range findings {
+		done[f.Scanner] = true
+		body := sanitize.Sanitize(f.Body)
+		if strings.TrimSpace(body) == "" {
+			continue
+		}
+		if sealed := s.sealExploration("vulnetix " + f.Scanner + " review:\n" + body); sealed != "" {
+			turns = append(turns, run.Turn{Role: "user", Content: sealed})
+		}
 	}
-	return s.runExploreTasks(ctx, explore.PlanReview(clean, reports), "review", pipe, emit)
+	var rest []explore.ReviewReport
+	for _, r := range reports {
+		if !done[r.Scanner] {
+			rest = append(rest, r)
+		}
+	}
+	// Findings that already ran need no fan-out; the rest do, which a
+	// session that may not fan out (a subagent) skips.
+	if len(rest) > 0 && s.allowExplore {
+		turns = append(turns, s.runExploreTasks(ctx, explore.PlanReview(clean, rest), "review", pipe, emit)...)
+	}
+	return turns
+}
+
+// sealExploration wraps an admitted finding in a sealed exploration block,
+// or returns "" when no nonce can be reserved.
+func (s *Session) sealExploration(body string) string {
+	nonceVal, err := s.pool.Reserve()
+	if err != nil {
+		return ""
+	}
+	return delimiters.Egress(delimiters.Wrap(delimiters.KindExploration, nonceVal, body), s.pool)
 }
 
 // exploreConfig returns the config an explore subagent runs under. The
@@ -422,11 +456,7 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task, g Grounding, 
 		body = dec.Content
 	}
 
-	nonceVal, err := s.pool.Reserve()
-	if err != nil {
-		return ""
-	}
-	return delimiters.Egress(delimiters.Wrap(delimiters.KindExploration, nonceVal, body), s.pool)
+	return s.sealExploration(body)
 }
 
 // exploreBudget is a task's tool-round budget: the task's own, capped by the

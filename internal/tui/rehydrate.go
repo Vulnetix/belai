@@ -102,7 +102,7 @@ func rehydrateSession(entries []session.Entry) rehydrated {
 			hasTool = true
 		case session.EntryTypeSessionMeta:
 			hasMeta = true
-		case "reasoning", "system", "rolemanager", completionRole, components.ShellRole:
+		case "reasoning", "system", "rolemanager", completionRole, components.ShellRole, components.ReportRole:
 			hasNewRow = true
 		}
 	}
@@ -208,6 +208,17 @@ func messagesFromEntries(entries []session.Entry) ([]components.Message, int) {
 				continue
 			}
 			msgs = append(msgs, components.Message{Role: completionRole, Content: e.Content})
+		case components.ReportRole:
+			if strings.TrimSpace(e.Content) == "" {
+				continue
+			}
+			msgs = append(msgs, components.Message{
+				Role:     components.ReportRole,
+				Content:  e.Content,
+				ToolName: metaString(e.Meta, "title"),
+				ToolArgs: metaString(e.Meta, "meta"),
+				Status:   metaString(e.Meta, "status"),
+			})
 		case components.ShellRole:
 			// A shell panel is render-only and pairs with nothing: the model's
 			// copy of its output rides the following user turn's attachment.

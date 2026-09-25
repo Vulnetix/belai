@@ -484,6 +484,8 @@ func (m MessageList) Render() (string, LineMap) {
 					s, sub = completionPanel(*msg, width)
 				case ShellRole:
 					s, sub = shellPanel(*msg, width, m.ExpandAll)
+				case ReportRole:
+					s, sub = reportPanel(*msg, width, m.ExpandAll)
 				default:
 					s, sub = turnPanel(*msg, width, m.ExpandAll)
 				}

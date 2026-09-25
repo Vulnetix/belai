@@ -42,3 +42,31 @@ func TestBuildTriageBlocksRendersFindings(t *testing.T) {
 		t.Fatalf("triage blocks did not carry the findings: %+v", blocks)
 	}
 }
+
+// A scanner's own outcome carries only its artifacts' blocks, so a finished
+// sast never re-reports the sbom that sca wrote earlier.
+func TestBuildTriageBlocksForFiltersByArtifact(t *testing.T) {
+	workdir := t.TempDir()
+	vdir := filepath.Join(workdir, ".vulnetix")
+	if err := os.MkdirAll(vdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sarif := `{"runs":[{"tool":{"driver":{"rules":[]}},"results":[
+		{"ruleId":"S1","level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"internal/a.go"},"region":{"startLine":12}}}]}
+	]}]}`
+	if err := os.WriteFile(filepath.Join(vdir, "sast.sarif"), []byte(sarif), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cdx := `{"vulnerabilities":[{"id":"CVE-2026-0001","source":{"name":"NVD"},"ratings":[{"source":{"name":"NVD"},"score":9.8,"severity":"critical","method":"CVSSv31"}],"affects":[{"ref":"pkg:golang/example"}]}]}`
+	if err := os.WriteFile(filepath.Join(vdir, "sbom.cdx.json"), []byte(cdx), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	blocks := BuildTriageBlocksFor(context.Background(), workdir, []string{"sast.sarif"})
+	if len(blocks) != 1 || blocks[0].Label != "sast report" {
+		t.Fatalf("blocks = %+v, want only the sast report", blocks)
+	}
+	if got := BuildTriageBlocksFor(context.Background(), workdir, []string{"secrets.sarif"}); len(got) != 0 {
+		t.Fatalf("a scanner with no artifact got blocks: %+v", got)
+	}
+}

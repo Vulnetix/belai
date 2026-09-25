@@ -45,7 +45,11 @@ if [ "$FAKE_SLEEP" = "1" ]; then
 fi
 
 mkdir -p .vulnetix
-printf 'ran\n' > ".vulnetix/ran-$sub"
+printf '%s\n' "$*" > ".vulnetix/ran-$sub"
+
+if [ "$FAKE_SARIF" = "1" ] && [ "$sub" = "sast" ]; then
+	printf '%s' '{"runs":[{"tool":{"driver":{"name":"sast","rules":[]}},"results":[{"ruleId":"S1","level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"a.go"},"region":{"startLine":3}}}]}]}]}' > .vulnetix/sast.sarif
+fi
 
 if [ "$FAKE_LANE" = "1" ] && [ "$sub" = "containers" ]; then
 	if [ -f .vulnetix/ran-sca ]; then
@@ -111,6 +115,74 @@ func TestVulnetixRunsSubcommandsAndWritesArtifacts(t *testing.T) {
 		if !found {
 			t.Fatalf("manifest missing %s: %v", want, manifest)
 		}
+	}
+}
+
+// The CLI's secrets stage walks up to 500 commits of git history by default,
+// which kept every review waiting on secrets. The review scans the working
+// tree only.
+func TestVulnetixSecretsSkipsGitHistory(t *testing.T) {
+	bin := writeReviewVulnetix(t)
+	cli := detectFake(t, bin)
+
+	workdir := t.TempDir()
+	if _, err := (Vulnetix{CLI: cli, Workdir: workdir, Subcommands: []string{"secrets"}}).Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(workdir, ".vulnetix", "ran-secrets"))
+	if err != nil {
+		t.Fatalf("secrets did not run: %v", err)
+	}
+	if !strings.Contains(string(raw), "--ignore-git") {
+		t.Fatalf("secrets argv = %q, want --ignore-git", strings.TrimSpace(string(raw)))
+	}
+}
+
+// Each scanner reports as soon as it finishes, with only its own artifacts'
+// blocks, so the TUI can show it without waiting for the slowest scanner.
+func TestVulnetixOnScanDoneReportsEachScanner(t *testing.T) {
+	bin := writeReviewVulnetix(t)
+	cli := detectFake(t, bin)
+	t.Setenv("FAKE_SARIF", "1")
+
+	var mu sync.Mutex
+	got := map[string]ScanOutcome{}
+	var order []string
+	workdir := t.TempDir()
+	_, err := (Vulnetix{CLI: cli, Workdir: workdir, OnScanDone: func(o ScanOutcome) {
+		mu.Lock()
+		defer mu.Unlock()
+		if _, dup := got[o.Name]; dup {
+			t.Errorf("%s reported twice", o.Name)
+		}
+		got[o.Name] = o
+		order = append(order, o.Name)
+	}}).Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for _, sub := range []string{"sca", "containers", "sast", "secrets", "iac", "malscan", "sbom", "aibom", "cbom", "fix"} {
+		if _, ok := got[sub]; !ok {
+			t.Fatalf("%s never reported; got %v", sub, order)
+		}
+	}
+	sast := got["sast"]
+	if len(sast.Blocks) != 1 || sast.Blocks[0].Scanner != "sast" || sast.Findings != 1 || sast.Artifact != "sast.sarif" {
+		t.Fatalf("sast outcome = %+v", sast)
+	}
+	if len(got["secrets"].Blocks) != 0 {
+		t.Fatalf("secrets carried another scanner's blocks: %+v", got["secrets"].Blocks)
+	}
+	idx := func(name string) int {
+		for i, n := range order {
+			if n == name {
+				return i
+			}
+		}
+		return -1
+	}
+	if idx("containers") < idx("sca") || idx("fix") < idx("sca") {
+		t.Fatalf("lane order broken: %v", order)
 	}
 }
 

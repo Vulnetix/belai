@@ -32,6 +32,13 @@ func TestVulnetixArgv(t *testing.T) {
 		// malscan has --path but no --reachability.
 		{in: "malscan", want: []string{"--path " + root}, wantNot: []string{"--reachability"}, scan: true},
 		{in: "sca -o json-cyclonedx", want: []string{"-o json-cyclonedx"}, scan: true},
+		// secrets scans the working tree, not git history, by default; any
+		// explicit history choice is the model's own.
+		{in: "secrets", want: []string{"secrets", "--ignore-git"}, scan: true, noteHas: "working tree only"},
+		{in: "scan --evaluate-secrets", want: []string{"--ignore-git"}, scan: true},
+		{in: "secrets --git-history", wantNot: []string{"--ignore-git"}, scan: true},
+		{in: "secrets --git-history-max-commits 50", wantNot: []string{"--ignore-git"}, scan: true},
+		{in: "sast", wantNot: []string{"--ignore-git"}, scan: true},
 		{in: "vdb vuln CVE-2021-44228", want: []string{"vdb vuln CVE-2021-44228", "--disable-memory"}, wantNot: []string{"--path"}},
 		{in: "auth status", want: []string{"auth status"}},
 		// Help is passed through untouched.
