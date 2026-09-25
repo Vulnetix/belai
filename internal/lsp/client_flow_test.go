@@ -62,8 +62,8 @@ func (c *scriptedConn) Read(p []byte) (int, error) {
 }
 
 func (c *scriptedConn) Write(p []byte) (int, error) {
-	n, err := c.buf.Write(p)
 	c.mu.Lock()
+	n, err := c.buf.Write(p)
 	if !c.ready && isRequest(p) {
 		c.ready = true
 		c.cond.Broadcast()
@@ -82,9 +82,28 @@ func (c *scriptedConn) Close() error {
 
 func (c *scriptedConn) Wait() error { return nil }
 
+// written and isClosed read the conn under its lock: the transport's read
+// loop writes and closes it on its own goroutine.
+func (c *scriptedConn) written() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.buf.String()
+}
+
+func (c *scriptedConn) isClosed() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.closed
+}
+
 // isRequest reports whether a written JSON-RPC message is a request (has both
-// an id and a method) rather than a notification or response.
+// an id and a method) rather than a notification or response. The transport
+// writes the Content-Length header and the body in one Write, so the header is
+// dropped before the body is parsed.
 func isRequest(p []byte) bool {
+	if _, body, ok := bytes.Cut(p, []byte("\r\n\r\n")); ok {
+		p = body
+	}
 	var m rawMsg
 	if err := json.Unmarshal(p, &m); err != nil {
 		return false
@@ -138,7 +157,7 @@ func TestPullFullReport(t *testing.T) {
 	if c.resultID != "r1" {
 		t.Fatalf("resultID = %q, want r1", c.resultID)
 	}
-	if got := conn.buf.String(); !strings.Contains(got, `"method":"textDocument/diagnostic"`) {
+	if got := conn.written(); !strings.Contains(got, `"method":"textDocument/diagnostic"`) {
 		t.Fatalf("diagnostic request not written: %q", got)
 	}
 }
@@ -202,7 +221,7 @@ func TestDiagnosePullPathWritesDidOpen(t *testing.T) {
 	if report.Status != StatusReady {
 		t.Fatalf("status = %q", report.Status)
 	}
-	w := conn.buf.String()
+	w := conn.written()
 	for _, want := range []string{`"method":"textDocument/didOpen"`, `"method":"textDocument/didChange"`, `"method":"textDocument/diagnostic"`} {
 		if !strings.Contains(w, want) {
 			t.Fatalf("missing %s in writes: %q", want, w)
@@ -226,7 +245,7 @@ func TestDiagnosePushPath(t *testing.T) {
 	if len(report.Rows) != 1 || report.Rows[0].Message != "m" {
 		t.Fatalf("rows = %+v", report.Rows)
 	}
-	if got := conn.buf.String(); !strings.Contains(got, `"method":"textDocument/didOpen"`) {
+	if got := conn.written(); !strings.Contains(got, `"method":"textDocument/didOpen"`) {
 		t.Fatalf("missing didOpen: %q", got)
 	}
 }
@@ -239,7 +258,7 @@ func TestClientClose(t *testing.T) {
 	if err := c.close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	if !conn.closed {
+	if !conn.isClosed() {
 		t.Fatal("conn not closed")
 	}
 	if !c.closed {
