@@ -26,11 +26,20 @@ const (
 	StreamIdleTimeout = 2 * time.Minute
 	// KeepAlive keeps pooled connections warm between requests.
 	KeepAlive = 30 * time.Second
+	// BlockingResponseTimeout bounds a non-streaming model reply. Such a reply
+	// sends its headers only once the whole completion is generated, so the
+	// 30s ResponseHeaderTimeout measures generation time, not liveness: a
+	// reasoning model writing a two-minute answer was cut off at 30s and
+	// retried from scratch until the retry budget ran out, stalling sessions
+	// for minutes with nothing to show. The blocking client waits this long
+	// instead; a stream's liveness is the idle watchdog's job.
+	BlockingResponseTimeout = 10 * time.Minute
 )
 
 var (
 	sharedTransport = buildTransport()
-	sharedClient    = &http.Client{Transport: sharedTransport}
+	sharedClient    = &http.Client{Transport: withTracing(sharedTransport)}
+	blockingClient  = &http.Client{Transport: withTracing(buildTransportWith(BlockingResponseTimeout))}
 )
 
 // buildTransport returns the tuned transport. MaxIdleConnsPerHost is raised
@@ -38,6 +47,11 @@ var (
 // being added) are exactly the ones hurt by a per-host pool of 2, while h2
 // providers multiplex over one connection and are unaffected.
 func buildTransport() *http.Transport {
+	return buildTransportWith(ResponseHeaderTimeout)
+}
+
+// buildTransportWith is buildTransport with a chosen pre-first-byte bound.
+func buildTransportWith(headerTimeout time.Duration) *http.Transport {
 	return &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
@@ -50,7 +64,7 @@ func buildTransport() *http.Transport {
 		TLSHandshakeTimeout:   DialTimeout,
 		ExpectContinueTimeout: 1 * time.Second,
 		ForceAttemptHTTP2:     true,
-		ResponseHeaderTimeout: ResponseHeaderTimeout,
+		ResponseHeaderTimeout: headerTimeout,
 	}
 }
 
@@ -63,4 +77,15 @@ func Default() *http.Client { return sharedClient }
 // shares no mutable state with the shared client.
 func Transport() *http.Transport {
 	return buildTransport()
+}
+
+// ForBlocking returns the client a non-streaming model request should use.
+// The shared client is swapped for its blocking twin, whose header bound is
+// BlockingResponseTimeout rather than ResponseHeaderTimeout; any other client
+// (a test server's, a caller's own) is returned unchanged.
+func ForBlocking(c *http.Client) *http.Client {
+	if c == nil || c == sharedClient {
+		return blockingClient
+	}
+	return c
 }

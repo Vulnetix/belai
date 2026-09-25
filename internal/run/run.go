@@ -2274,6 +2274,9 @@ func dropIdleConns(ctx context.Context, client *http.Client) {
 }
 
 func roundTrip(ctx context.Context, client *http.Client, req *http.Request, cfg Config, redact func(string) string) ([]byte, int, error) {
+	// A blocking reply's headers arrive only when the completion is done, so
+	// it must not run under the streaming path's 30s header bound.
+	client = httpclient.ForBlocking(client)
 	req = req.WithContext(ctx)
 	calltrace.Apply(ctx, req.Header)
 	resp, err := client.Do(req)

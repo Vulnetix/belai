@@ -1453,6 +1453,10 @@ func (a *App) sendTurn(firstUser bool, input string, atts []run.Attachment, dire
 	return cmd
 }
 
+// modeSelectTimeout bounds the pre-send mode classification. Past it the
+// classifier error path runs, which falls back to agent mode.
+const modeSelectTimeout = 45 * time.Second
+
 // classifyAndSend runs the mode classifier in a goroutine and sends the turn
 // when the decision lands. By the time this command starts, the prompt is
 // already echoed and the Role Manager indicator is up.
@@ -1463,11 +1467,12 @@ func (a *App) classifyAndSend(input string, atts []run.Attachment, directive str
 	// the decision lands in send), and a previous esc/resume leaves it
 	// canceled. Capturing it here made the next mode classification fail with
 	// "context canceled" against an otherwise healthy provider. A fresh
-	// context is still bounded by the shared transport's 30s
-	// ResponseHeaderTimeout, and esc during pre-send drops the result via the
+	// context carries its own bound (the blocking model client no longer cuts
+	// a reply off at 30s), and esc during pre-send drops the result via the
 	// preSend flag, so nothing depends on this goroutine being cancelable.
-	ctx := context.Background()
 	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), modeSelectTimeout)
+		defer cancel()
 		d, err := rolemanager.Select(ctx, c, rolemanager.ModeInput{
 			Prompt:        input,
 			GoalLimit:     rolemanager.DefaultGoalPromptLengthLimit,
