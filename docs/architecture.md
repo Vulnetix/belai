@@ -3285,9 +3285,18 @@ The TUI's perceived-latency path is tuned at several layers:
 - **Shared HTTP client**: one tuned `httpclient.Default()` transport
   (`MaxIdleConnsPerHost: 16`, `ResponseHeaderTimeout: 30s`, no blanket
   `Client.Timeout`) serves provider, tool, credential and catalogue I/O. SSE
-  streams carry an idle-gap watchdog instead. WebFetch uses a dedicated
+  streams carry an idle-gap watchdog instead. A non-streaming model request
+  (`run.roundTrip`) is swapped to a twin client (`httpclient.ForBlocking`)
+  whose header bound is 10 minutes: its headers arrive only when the whole
+  completion is done, so the 30s bound measured generation time, not
+  liveness. A reasoning model's two-minute answer was cut off at 30s and
+  retried from scratch until the retry budget ran out, and an explore
+  subagent writing its report could stall a session for minutes. WebFetch uses a dedicated
   transport whose validating `DialContext` resolves once and pins the address,
   closing the DNS-rebinding TOCTOU.
 - **Timing**: opt-in `SIGNET_TRACE=<path>` writes JSONL `{phase, event,
-  duration}` records; the composer meta shows a live `working · N.Ns` elapsed
+  duration}` records, including one `http`/`request` record per outbound
+  request on the shared clients (endpoint, model, request and response bytes,
+  time to headers, total time, or the transport error — never a body, header
+  value or credential); the composer meta shows a live `working · N.Ns` elapsed
   label and running tool rows show live elapsed time.
