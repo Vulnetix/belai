@@ -1062,6 +1062,40 @@ reporting toggle that prints the decision to stderr.
 - A named agent is referenced as `@agent:NAME`.
 - `HasReferences` and `GoalLimit` are set at every call site.
 
+### Intent detection
+
+When no explicit mode is set, the harness first tries to detect the user's
+intent. Jev is used when `routing.mode_detection` is `jev`, or when it is
+`auto` and the user already sends traffic to OpenRouter/Jev (the main provider
+is `openrouter`, the classifier is a Jev model, or `routing.kind` is `routed`).
+Otherwise the LLM mode classifier answers.
+
+Detected intents map onto the three operating modes:
+
+| Intent | Engaged mode | Profile | Carrier | Explore |
+|--------|--------------|---------|---------|---------|
+| `agent` | Agent | none | none | no |
+| `agent` with `@agent:NAME` | Agent | named profile | profile | no |
+| `plan` | Plan | none | plan | yes |
+| `goal` | Goal | none | goal | yes when references present |
+| `handoff` | Agent | `signet:plan-handoff` | profile | scoped to plan paths |
+| `debug` | Agent | `signet:debug` | profile | no |
+| `fanout` | Agent | `signet:fanout` | profile | parallel `Task` subagents |
+
+A confident detection (top score `>= 0.80` and at least `0.25` ahead of the
+runner-up) is engaged automatically. An ambiguous detection, or a confident
+detection that disagrees with a sticky mode the user set, opens a deterministic
+mode-choice panel. The panel lists the top three intents plus the current mode,
+shows percentages for Jev scores or "suggested" for the LLM fallback, and lets
+the user pick. The user's choice is recorded as `UserChosen` and updates the
+mode chip even when the mode was sticky.
+
+The `handoff` intent is only offered when a Markdown plan-file attachment is
+present: a file under the project plans directory, under a `plans/` directory,
+with `*plan*.md` in its basename, or containing at least three task markers.
+The plan text never enters the system block; only harness-computed metadata
+(label, task count, referenced paths) crosses into the detector.
+
 ### Forced mode
 
 A mode the user selected — `shift+tab` in the TUI, or `/mode <name>` — is not a

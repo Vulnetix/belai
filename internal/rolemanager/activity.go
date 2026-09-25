@@ -25,6 +25,7 @@ const (
 	EventVerdictCacheHit           Event = "verdict_cache_hit"
 	EventVerdictCacheBad           Event = "verdict_cache_bad"
 	EventModeClassify              Event = "mode_classify"
+	EventModeDetect                Event = "mode_detect"
 	EventModeForced                Event = "mode_forced"
 	EventModeGoalLengthLimit       Event = "mode_goal_length_limit"
 	EventGoalEval                  Event = "goal_eval"
@@ -102,6 +103,7 @@ type Description struct {
 // revisit if a dedicated line is ever removed.
 var suppressedEvents = map[Event]bool{
 	EventModeClassify:   true,
+	EventModeDetect:     true,
 	EventModeForced:     true,
 	EventGoalEval:       true,
 	EventGoalEvalRepair: true,
@@ -218,6 +220,13 @@ func Describe(a Activity) (Description, bool) {
 			Summary: "Request too long to track as a single goal",
 			Outcome: "handled it as ordinary work",
 			Tone:    ToneCaution,
+			Levels:  LevelDecisions,
+		}, true
+	case EventModeDetect:
+		return Description{
+			Summary: "Detected the intent for this prompt",
+			Outcome: a.Verdict,
+			Tone:    ToneNeutral,
 			Levels:  LevelDecisions,
 		}, true
 	case EventAgentPoolAdmit:

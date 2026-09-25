@@ -476,6 +476,7 @@ func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *ht
 		// Top-level goal-mode prompts may run the unbounded pass loop; a
 		// subagent never does.
 		AllowPassLoop: true,
+		ModeDetector:  run.NewModeDetector(cfg),
 		RepoMap:       &repoMap,
 		// The same settings-backed fan-out ceiling the TUI uses; without it
 		// max_agents had no effect on the CLI.

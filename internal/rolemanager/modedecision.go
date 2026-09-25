@@ -40,6 +40,18 @@ type ModeDecision struct {
 	AppendCarrier bool
 	// Explore is true when the engaged mode should launch explore agent(s).
 	Explore bool
+	// Intent is the detected intent that produced the decision.
+	Intent Intent
+	// Scores carry the per-intent probabilities from the Jev detector. They are
+	// nil when the decision came from the LLM fallback (one-hot) or a forced
+	// mode.
+	Scores map[Intent]float64
+	// UserChosen is true when the intent was picked by the user in the
+	// mode-choice panel rather than automatically engaged.
+	UserChosen bool
+	// Handoff carries harness-computed facts about a plan-file attachment,
+	// set only when Intent is IntentHandoff.
+	Handoff *HandoffFacts
 }
 
 // DecideMode maps a classifier sentinel plus prompt metadata to a decision.

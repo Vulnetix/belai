@@ -377,6 +377,7 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task, g Grounding, 
 		return ""
 	}
 	sub.exploreSubagent = true
+	sub.scope = t.Scope
 	sub.steerSource = func() string {
 		select {
 		case text := <-steerCh:

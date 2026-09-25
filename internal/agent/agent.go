@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -24,6 +25,7 @@ import (
 	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/nonce"
 	"github.com/vulnetix/signet/internal/permissions"
+	"github.com/vulnetix/signet/internal/plans"
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/prompt"
 	"github.com/vulnetix/signet/internal/readindex"
@@ -134,6 +136,9 @@ type Options struct {
 	// pool reached through rolemanager.Pipeline; nil means no ceiling beyond
 	// the caller's own bounds.
 	AgentPool *agentpool.Pool
+	// ModeDetector is the optional intent detector used instead of the LLM
+	// mode classifier. nil means use the LLM fallback.
+	ModeDetector rolemanager.IntentDetector
 }
 
 // Session executes the tool loop for a single user prompt.
@@ -205,11 +210,25 @@ type Session struct {
 	// turnExecutePlan is set for the turn that executes an approved plan, so
 	// the first-pass directive can point at the plan rather than a goal.
 	turnExecutePlan bool
-	hooks           []*hooks.Hook
-	hookRunner      *hooks.Runner
-	toolMethod      run.ToolMethod
-	steer           chan string
-	trace           *trace.Writer
+	// turnFanOut is set for fan-out profile turns. It advertises the Task
+	// tool and allows several read-only subagents to run concurrently.
+	turnFanOut bool
+	// fanOutRegistry is the full registry plus a Task tool whose runner
+	// executes a read-only subagent for this session.
+	fanOutRegistry       *tools.Registry
+	fanOutOpenAITools    []wire.OpenAITool
+	fanOutAnthropicTools []wire.AnthropicToolDef
+	fanOutTask           *tools.Task
+	modeDetector         rolemanager.IntentDetector
+	// taskCallsThisTurn counts Task invocations in the current fan-out turn.
+	taskCallsThisTurn int
+	// emit is the current turn's event emitter, set at the start of run.
+	emit       func(Event)
+	hooks      []*hooks.Hook
+	hookRunner *hooks.Runner
+	toolMethod run.ToolMethod
+	steer      chan string
+	trace      *trace.Writer
 	// exploreBridge fans steering to explore subagents while a fan-out runs.
 	// It is nil/empty outside explore; the pointer form keeps Steer (called
 	// from the UI goroutine) race-free with the fan-out's lifecycle.
@@ -218,6 +237,10 @@ type Session struct {
 	// pass loop reset its iteration budget when steering arrives instead of
 	// returning a hard "max iterations" error.
 	exploreSubagent bool
+	// scope is the handoff subagent path allowlist. Empty means no scope
+	// restriction. It is set by runSubagent when explore.Task.Scope is
+	// non-empty.
+	scope []string
 	// steerSource, when non-nil, is polled by drainSteer in addition to the
 	// session's own steer channel. Explore subagents use it to receive parent
 	// steering broadcast during the fan-out.
@@ -310,6 +333,9 @@ func (s *Session) toolSurface() (*tools.Registry, []wire.OpenAITool, []wire.Anth
 	if s.planMode {
 		return s.registry.PlanWith(s.planSurface), s.planOpenAITools, s.planAnthropicTools
 	}
+	if s.turnFanOut && s.fanOutRegistry != nil {
+		return s.fanOutRegistry, s.fanOutOpenAITools, s.fanOutAnthropicTools
+	}
 	if s.turnReadOnly && s.roRegistry != nil {
 		return s.roRegistry, s.roOpenAITools, s.roAnthropicTools
 	}
@@ -327,6 +353,11 @@ func (s *Session) execTool(name string) (tools.Tool, string) {
 	}
 	if s.planMode && s.planFinalPass && !slices.Contains(planFinishTools, name) {
 		return nil, fmt.Sprintf("tool result withheld: %q is unavailable on the final planning pass; write the plan and call ExitPlanMode", name)
+	}
+	if s.turnFanOut && s.fanOutRegistry != nil {
+		if t, ok := s.fanOutRegistry.Find(name); ok {
+			return t, ""
+		}
 	}
 	if s.turnReadOnly && s.roRegistry != nil {
 		if t, ok := s.roRegistry.Find(name); ok {
@@ -393,6 +424,9 @@ func NewSession(o Options) (*Session, error) {
 		roReg = reg.ReadOnlySurface()
 		roOpenAITools, roAnthropicTools = wireTools(roReg)
 	}
+	fanOutTask := &tools.Task{}
+	fanOutReg := reg.With(fanOutTask)
+	fanOutOpenAITools, fanOutAnthropicTools := wireTools(fanOutReg)
 
 	// Load validated hooks for the six declared events. Discovery fails closed:
 	// an unreadable dir yields no hooks, never an error.
@@ -450,19 +484,24 @@ func NewSession(o Options) (*Session, error) {
 		finalPlanOpenAITools:    finalPlanOpenAITools,
 		finalPlanAnthropicTools: finalPlanAnthropicTools,
 
-		readOnlyAgent:    o.ReadOnlyAgent,
-		roRegistry:       roReg,
-		roOpenAITools:    roOpenAITools,
-		roAnthropicTools: roAnthropicTools,
-		hooks:            hs,
-		hookRunner:       runner,
-		toolMethod:       method,
-		steer:            make(chan string, steerBuffer),
-		trace:            trace.Env(),
-		diffs:            filediff.NewRecorder(o.Workdir),
-		diag:             o.Diagnostics,
-		agentPool:        o.AgentPool,
-		sessionID:        o.SessionID,
+		readOnlyAgent:        o.ReadOnlyAgent,
+		roRegistry:           roReg,
+		roOpenAITools:        roOpenAITools,
+		roAnthropicTools:     roAnthropicTools,
+		fanOutRegistry:       fanOutReg,
+		fanOutOpenAITools:    fanOutOpenAITools,
+		fanOutAnthropicTools: fanOutAnthropicTools,
+		fanOutTask:           fanOutTask,
+		modeDetector:         o.ModeDetector,
+		hooks:                hs,
+		hookRunner:           runner,
+		toolMethod:           method,
+		steer:                make(chan string, steerBuffer),
+		trace:                trace.Env(),
+		diffs:                filediff.NewRecorder(o.Workdir),
+		diag:                 o.Diagnostics,
+		agentPool:            o.AgentPool,
+		sessionID:            o.SessionID,
 	}, nil
 }
 
@@ -487,6 +526,9 @@ type TurnInput struct {
 	// Select call, since the caller's decision would otherwise be re-run and
 	// discarded. It is not "forced": an empty Mode still classifies.
 	Mode rolemanager.ModeDecision
+	// ModeHint is the currently selected UI mode and whether it is sticky.
+	// It feeds the intent detector's mode-choice logic.
+	ModeHint rolemanager.ModeHint
 	// ExecutePlan, when true, tells the agent to load the named plan as the
 	// execution carrier regardless of the classifier's mode. Used by the TUI
 	// immediately after a plan is approved so the same-session execute turn
@@ -516,6 +558,28 @@ type TurnInput struct {
 	// is sealed as an exploration turn, and a Review report whose scanner
 	// has a finding here runs no subagent of its own.
 	ReviewFindings []explore.ReviewFinding
+}
+
+// detectPlanAttachment inspects file attachments for a Markdown plan file.
+// The first matching attachment wins. The plan text stays in the attachment;
+// only harness-computed metadata crosses into the detector.
+func detectPlanAttachment(atts []run.Attachment, workdir string) *rolemanager.HandoffFacts {
+	plansDir := config.ProjectPlansDir(workdir)
+	for _, a := range atts {
+		if a.Kind != "file" {
+			continue
+		}
+		facts, ok := plans.DetectHandoff(a.Label, a.Body, plansDir)
+		if !ok {
+			continue
+		}
+		return &rolemanager.HandoffFacts{
+			Label: facts.Label,
+			Tasks: facts.Tasks,
+			Paths: facts.Paths,
+		}
+	}
+	return nil
 }
 
 // Result is the outcome of a session run.
@@ -549,6 +613,8 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	defer func() { s.trace.Event("agent", "turn", time.Since(turnStart)) }()
 	ctx = calltrace.WithSession(ctx, s.sessionID)
 	emit = stampEvents(emit)
+	s.emit = emit
+	s.taskCallsThisTurn = 0
 
 	clean := sanitize.Sanitize(in.Prompt)
 
@@ -583,8 +649,8 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	// supplied a decision or forced a mode/agent — its result would be
 	// discarded below.
 	needSelect := in.Mode.Mode == "" && in.ForceMode == "" && in.ForceAgent == ""
-	selectCh := make(chan rolemanager.ModeDecision, 1)
-	selectErrCh := make(chan error, 1)
+	detectCh := make(chan rolemanager.Detection, 1)
+	detectErrCh := make(chan error, 1)
 	// selectWG joins the mode-selection goroutine before run returns on ANY
 	// path. Without it, an early return (admission failure/refusal) leaves the
 	// classifier goroutine still emitting retry events on the streaming
@@ -595,11 +661,18 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		selectWG.Add(1)
 		go func() {
 			defer selectWG.Done()
-			d, err := rolemanager.Select(ctx, pipe.Classifier, rolemanager.ModeInput{
-				Prompt: clean, GoalLimit: rolemanager.DefaultGoalPromptLengthLimit, HasReferences: in.HasReferences,
+			planAtt := detectPlanAttachment(in.Attachments, s.workdir)
+			det, err := rolemanager.Detect(ctx, s.modeDetector, pipe.Classifier, rolemanager.DetectInput{
+				Prompt:         clean,
+				HasReferences:  in.HasReferences,
+				PlanAttachment: planAtt,
+				ModeHint:       in.ModeHint,
 			})
-			selectCh <- d
-			selectErrCh <- err
+			if err != nil {
+				detectErrCh <- err
+				return
+			}
+			detectCh <- det
 		}()
 	}
 
@@ -614,10 +687,25 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	emit(Event{Kind: EventRoleManagerKind, Phase: RoleManagerPhasePrePrompt})
 	modeDec := in.Mode
 	if needSelect {
-		if err := <-selectErrCh; err != nil {
+		var det rolemanager.Detection
+		select {
+		case err := <-detectErrCh:
 			return run.Result{SanitizedPrompt: clean, SecuritySentinel: dec.Sentinel}, maybeCompact(err)
+		case det = <-detectCh:
 		}
-		modeDec = <-selectCh
+		intent, needsChoice := rolemanager.Resolve(det, in.ModeHint, s.allowClarify)
+		if needsChoice {
+			q, opts := rolemanager.ModeChoiceQuestionnaire(det, in.ModeHint)
+			answers, ok := s.askUserModeChoice(ctx, q, emit)
+			if ok {
+				if chosen, chosenOK := rolemanager.ModeChoiceAnswer(answers, opts, in.ModeHint); chosenOK {
+					intent = chosen
+				}
+			}
+		}
+		modeDec = intent.Decision(det.Handoff)
+		modeDec.Scores = det.Scores
+		modeDec.UserChosen = needsChoice
 		// The caller sent no decision, so it is waiting on this one: a UI
 		// that started the turn at once applies it from this event.
 		d := modeDec
@@ -645,6 +733,15 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		modeDec.Explore = false
 	}
 
+	// Handoff profile: the first directive tells the model to record every
+	// plan task before editing, and the turn stays scoped to the plan's paths.
+	if modeDec.Intent == rolemanager.IntentHandoff && modeDec.Handoff != nil {
+		in.Directive = joinDirectives(in.Directive, fmt.Sprintf(
+			"The attached plan lists %d tasks. Your first tool call is update_plan with every task, the first in_progress. Then make the edits each task describes directly.",
+			modeDec.Handoff.Tasks,
+		))
+	}
+
 	// Per-turn plan-mode latch: a classifier-inferred ModePlan must hold the
 	// whole turn read-only, but a session is reused across turns, so the
 	// previous value is restored on the way out rather than latched
@@ -667,6 +764,15 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	savedReadOnly := s.turnReadOnly
 	s.turnReadOnly = s.readOnlyAgent && !in.ExecutePlan && modeDec.Mode == modes.ModeAgent
 	defer func() { s.turnReadOnly = savedReadOnly }()
+
+	// Per-turn fan-out latch: the fan-out profile advertises the Task tool and
+	// runs read-only subagents for parallel investigation.
+	savedFanOut := s.turnFanOut
+	s.turnFanOut = modeDec.Intent == rolemanager.IntentFanOut
+	defer func() { s.turnFanOut = savedFanOut }()
+	if s.turnFanOut && s.fanOutTask != nil {
+		s.fanOutTask.Runner = s.runTask
+	}
 
 	// Carrier resolution happens before exploration so the goal contract can
 	// be drafted concurrently with the explore fan-out instead of after it.
@@ -731,7 +837,10 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	// Explore-agent launch: read-only subagents run before sealing, and their
 	// classified findings re-enter as untrusted user turns ahead of the prompt.
 	var exploreTurns []run.Turn
-	if modeDec.Explore {
+	switch {
+	case modeDec.Intent == rolemanager.IntentHandoff && modeDec.Handoff != nil && s.allowExplore:
+		exploreTurns = s.runExploreTasks(ctx, explore.PlanHandoff(modeDec.Handoff.Paths), "handoff", pipe, emit)
+	case modeDec.Explore:
 		exploreTurns = s.exploreTurns(ctx, modeDec, clean, attachedPaths(in.Attachments), pipe, emit)
 	}
 	// A /vulnetix review runs one read-only subagent per scanner report. The
@@ -1134,6 +1243,11 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 	if tool == nil {
 		return refusal
 	}
+	if len(s.scope) > 0 && tool.Kind().ReadOnly() {
+		if subj := tool.Subject(call.Args); subj != "" && !inScope(subj, s.scope) {
+			return fmt.Sprintf("tool result withheld: %q is outside the handoff scope %v", call.Name, s.scope)
+		}
+	}
 
 	// An argument the schema does not declare would be silently ignored,
 	// answering a different question than the model asked. Checked before
@@ -1364,4 +1478,24 @@ func (s *Session) runHooks(ctx context.Context, event string, call rolemanager.T
 		}
 	}
 	return firstErr
+}
+
+// inScope reports whether subject is inside any of the path prefixes in scope.
+// An empty scope or empty subject means no restriction. Paths are compared
+// after normalising to slash-separated form.
+func inScope(subject string, scope []string) bool {
+	if len(scope) == 0 || strings.TrimSpace(subject) == "" {
+		return true
+	}
+	subject = filepath.ToSlash(strings.TrimSpace(subject))
+	for _, p := range scope {
+		p = filepath.ToSlash(strings.TrimSpace(p))
+		if p == "" {
+			continue
+		}
+		if subject == p || strings.HasPrefix(subject, p+"/") {
+			return true
+		}
+	}
+	return false
 }

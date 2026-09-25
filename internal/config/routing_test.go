@@ -33,6 +33,7 @@ func TestValidateRouting(t *testing.T) {
 		{"empty key", RoutingSettings{Kind: RoutingRouted, UseCases: map[string]RoutingTarget{"": {Provider: "openai"}}}, "empty use-case key"},
 		{"empty target", RoutingSettings{Kind: RoutingRouted, UseCases: map[string]RoutingTarget{"main": {}}}, "must set provider and/or model"},
 		{"invalid provider", RoutingSettings{Kind: RoutingRouted, UseCases: map[string]RoutingTarget{"main": {Provider: "not a provider!"}}}, "invalid provider"},
+		{"bad mode detection", RoutingSettings{Kind: RoutingDefined, ModeDetection: "bogus"}, "mode_detection"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

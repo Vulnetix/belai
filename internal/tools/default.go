@@ -33,6 +33,7 @@ func Default(workdir string, readOnly bool) *Registry {
 	list = append(list, &Cd{Cwd: cwd})
 	list = append(list, UpdatePlan{})
 	list = append(list, ExitPlanMode{})
+	list = append(list, Task{})
 	// The three agent-store tools read other agents' stores through the
 	// static registry. Probing is lazy (first use), not at startup, so a
 	// registry built here costs nothing until a call is made.

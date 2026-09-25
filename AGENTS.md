@@ -29,7 +29,7 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `JQ`, `YQ`, `Sed`, `Awk`, `Cut`, `Sort`, `Uniq`, `Tr`, `Paste`, `Join`,
   `Diff` (all `KindRead`), `SubAgentLog` (`KindProcess`),
   `SearchSessions`/`ReadSession`/`SearchMemory` (`KindAgentStore`, other
-  agents' transcript and memory text), the `Vulnetix` tool (`KindRemote`,
+  agents' transcript and memory text), `Task` subagent reports (`KindSubagent`, model-written arbitrary text), the `Vulnetix` tool (`KindRemote`,
   database advisory text and repository snippets), the dependency hook's Vulnetix CLI
   output (`KindRemote`) and its background agents' reports (`KindProcess`,
   `internal/tui/depwatch.go`), the recovery subagent's
@@ -144,6 +144,11 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   they never install or run a package manager, so a malicious package's
   install scripts never run on their account. A repo-visible project
   settings file may turn `vulnetix.dep_watch` on, never off.
+- **Task subagent reports are arbitrary content.** The result of the `Task` tool is model-written text, so it is added to `tools.classifierKinds` as `KindSubagent` and classified before promotion.
+- **Jev intent detection sees only harness facts.** The detector payload carries the sanitized prompt, the current mode, and derived metadata such as a plan-file task count. It never carries attachment bytes or file contents.
+- **Sticky mode changes only with the user's choice.** When a confident detected intent disagrees with a mode the user set, the deterministic mode-choice panel asks before leaving the sticky mode. In headless mode the sticky mode is preserved.
+- **Handoff subagents are path-scoped.** `explore.Task.Scope` restrict a handoff subagent to the paths the plan names; read-kind tool calls outside that scope are refused.
+- **The plan text never enters the system block.** An attached plan remains a classified attachment on the user turn; only harness-computed metadata reaches the intent detector and directive.
 - **The goal contract is classifier-drafted but harness-sealed.** The
   classifier-routed goal path asks the goal-contract role for the five
   sections beneath the verbatim objective line. The draft is sanitized before

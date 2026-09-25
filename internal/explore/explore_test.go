@@ -1,6 +1,7 @@
 package explore
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -72,7 +73,7 @@ func TestPlanGoalSurveyIsDeterministicAndBounded(t *testing.T) {
 		t.Fatalf("goal survey fan-out = %d, want <= %d", len(a), MaxTasks)
 	}
 	for i := range a {
-		if a[i] != b[i] {
+		if !reflect.DeepEqual(a[i], b[i]) {
 			t.Fatalf("goal survey drifted at %d: %+v vs %+v", i, a[i], b[i])
 		}
 		if a[i].Index != i {
@@ -317,7 +318,7 @@ func slicesEqual(a, b []Task) bool {
 		return false
 	}
 	for i := range a {
-		if a[i] != b[i] {
+		if !reflect.DeepEqual(a[i], b[i]) {
 			return false
 		}
 	}

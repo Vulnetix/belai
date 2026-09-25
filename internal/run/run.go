@@ -482,6 +482,8 @@ type RoutingConfig struct {
 	// JevToken resolves the OpenRouter API key the Jev Decisions call uses. It
 	// is a func so a lazily-fetched key (keychain/netrc) stays fresh per call.
 	JevToken func() (string, error)
+	// ModeDetection selects the intent-detection backend. Empty means "auto".
+	ModeDetection string
 	// Fast is the resolved fast-tier model (routing.fast_model, else the main
 	// provider's registry fast model). It answers the sentinel roles when no
 	// routing candidate does, and the security guard under classifier.tier
@@ -574,10 +576,14 @@ func ResolveRouting(main Config, rs *config.RoutingSettings, src CredentialSourc
 	if err != nil {
 		return RoutingConfig{}, err
 	}
-	if rs == nil || rs.Kind != config.RoutingRouted {
-		return RoutingConfig{Kind: config.RoutingDefined, Fast: fast}, nil
+	modeDetection := ""
+	if rs != nil {
+		modeDetection = rs.ModeDetection
 	}
-	out := RoutingConfig{Kind: config.RoutingRouted, Fast: fast}
+	if rs == nil || rs.Kind != config.RoutingRouted {
+		return RoutingConfig{Kind: config.RoutingDefined, ModeDetection: modeDetection, Fast: fast}, nil
+	}
+	out := RoutingConfig{Kind: config.RoutingRouted, ModeDetection: modeDetection, Fast: fast}
 	keys := make([]string, 0, len(rs.UseCases))
 	for k := range rs.UseCases {
 		keys = append(keys, k)
@@ -618,6 +624,47 @@ func resolveRouteCandidate(main Config, t config.RoutingTarget, src CredentialSo
 		model = main.Model
 	}
 	return ResolveWithSource(model, providerName, os.Getenv, src)
+}
+
+// NewModeDetector returns the intent detector for a resolved config. It
+// returns nil when mode detection is disabled or no Jev token is available,
+// so the caller falls back to the LLM classifier.
+func NewModeDetector(cfg Config) rolemanager.IntentDetector {
+	mode := cfg.Routing.ModeDetection
+	if mode == "" {
+		mode = config.ModeDetectionAuto
+	}
+	switch mode {
+	case config.ModeDetectionLlm:
+		return nil
+	case config.ModeDetectionJev:
+		if cfg.Routing.JevToken == nil {
+			return nil
+		}
+		return jev.New(cfg.Routing.JevToken)
+	case config.ModeDetectionAuto:
+		if !jevTrafficLikely(cfg) {
+			return nil
+		}
+		if cfg.Routing.JevToken == nil {
+			return nil
+		}
+		return jev.New(cfg.Routing.JevToken)
+	}
+	return nil
+}
+
+func jevTrafficLikely(cfg Config) bool {
+	if cfg.Provider == "openrouter" {
+		return true
+	}
+	if cfg.Classifier.Provider == "openrouter" || strings.HasPrefix(cfg.Classifier.Model, "typesafe/jev") {
+		return true
+	}
+	if cfg.Routing.Kind == config.RoutingRouted {
+		return true
+	}
+	return false
 }
 
 func (c Config) String() string {

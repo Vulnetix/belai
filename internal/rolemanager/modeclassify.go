@@ -15,6 +15,9 @@ const (
 	ModeAgent        ModeSentinel = "AGENT"
 	ModePlan         ModeSentinel = "PLAN"
 	ModeGoal         ModeSentinel = "GOAL"
+	ModeHandoff      ModeSentinel = "HANDOFF"
+	ModeDebug        ModeSentinel = "DEBUG"
+	ModeFanOut       ModeSentinel = "FANOUT"
 	ModeUndetermined ModeSentinel = "UNDETERMINED"
 )
 
@@ -26,6 +29,9 @@ func ParseModeSentinel(raw string) (ModeSentinel, error) {
 		string(ModeAgent),
 		string(ModePlan),
 		string(ModeGoal),
+		string(ModeHandoff),
+		string(ModeDebug),
+		string(ModeFanOut),
 		string(ModeUndetermined),
 	})
 	if err != nil {
@@ -35,14 +41,17 @@ func ParseModeSentinel(raw string) (ModeSentinel, error) {
 }
 
 // modeClassifierSystemPrompt instructs the classifier to answer with exactly
-// one mode token and nothing else. The classifier is shown only the user
+// one intent token and nothing else. The classifier is shown only the user
 // prompt — never attachment contents or referenced files.
-const modeClassifierSystemPrompt = `You are an operating-mode classifier for an LLM coding harness. The user's prompt does not explicitly name a mode. Classify it into exactly one mode and reply with a single token and nothing else — no punctuation, no explanation.
+const modeClassifierSystemPrompt = `You are an operating-mode classifier for an LLM coding harness. The user's prompt does not explicitly name a mode. Classify it into exactly one intent and reply with a single token and nothing else — no punctuation, no explanation.
 
 Reply with exactly one of these tokens:
 - AGENT: a general interactive coding request that needs no formal plan and no tracked goal.
 - PLAN: a read-only investigation that should first produce a step-by-step plan before any changes.
 - GOAL: a specific objective to be tracked and completed.
+- HANDOFF: the user wants an already-written plan in an attached file carried out now, step by step.
+- DEBUG: the user wants to reproduce, isolate, and fix a bug or failure.
+- FANOUT: the user wants several independent read-only investigations in parallel before acting.
 - UNDETERMINED: you cannot confidently classify the prompt.`
 
 // BuildModeClassifierPayload constructs the prompt-classifier request for a
@@ -54,6 +63,30 @@ func BuildModeClassifierPayload(prompt string) ClassifierPayload {
 		User:                   prompt,
 		AllowReasoningFallback: true,
 		UseCase:                UseCaseModeEval,
+	}
+}
+
+// modeSentinelToIntent maps a classifier sentinel to an intent. HANDOFF is
+// downgraded to AGENT when no plan-file attachment is present, so the LLM can
+// never route a prompt into the handoff profile without harness proof of a
+// plan.
+func modeSentinelToIntent(s ModeSentinel, hasPlan bool) Intent {
+	switch s {
+	case ModePlan:
+		return IntentPlan
+	case ModeGoal:
+		return IntentGoal
+	case ModeHandoff:
+		if hasPlan {
+			return IntentHandoff
+		}
+		return IntentAgent
+	case ModeDebug:
+		return IntentDebug
+	case ModeFanOut:
+		return IntentFanOut
+	default:
+		return IntentAgent
 	}
 }
 
@@ -74,6 +107,16 @@ func ClassifyMode(ctx context.Context, c Classifier, prompt string) (ModeSentine
 	}
 	recordTimed(EventModeClassify, string(s), "", "", 0, model, took)
 	return s, nil
+}
+
+// ClassifyModeIntent runs the LLM mode classifier and returns the resolved
+// intent. A HANDOFF sentinel without a plan attachment resolves to AGENT.
+func ClassifyModeIntent(ctx context.Context, c Classifier, prompt string, hasPlan bool) (Intent, string, error) {
+	s, err := ClassifyMode(ctx, c, prompt)
+	if err != nil {
+		return "", "", err
+	}
+	return modeSentinelToIntent(s, hasPlan), string(s), nil
 }
 
 // agentNameRe matches a named-agent reference of the form "@agent:NAME".
