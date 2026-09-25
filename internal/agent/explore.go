@@ -51,12 +51,16 @@ func (s *Session) allEntrypoints() []string {
 	return out
 }
 
-// planning starts immediately. Goal mode's survey is unaffected.
+// planning starts immediately. A goal's pre-flight survey runs only with
+// resilience.goal_explore: true; the not-started goal survey is unaffected.
 func (s *Session) exploreTurns(ctx context.Context, decision rolemanager.ModeDecision, clean string, pipe *rolemanager.Pipeline, emit func(Event)) []run.Turn {
 	if !s.allowExplore {
 		return nil
 	}
 	if decision.Mode == modes.ModePlan && !s.settings.PlanExploreEnabled() {
+		return nil
+	}
+	if decision.Mode == modes.ModeGoal && !s.settings.GoalExploreEnabled() {
 		return nil
 	}
 	tasks := explore.Plan(clean, decision)

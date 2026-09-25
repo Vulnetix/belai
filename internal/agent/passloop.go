@@ -462,6 +462,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 				}
 				break
 			}
+			return s.exploreReport(ctx, pipe, system, turns, streaming, emit, modeDec.Mode, out)
 		}
 
 		// Budget exhaustion is a turn boundary, not an error: inject a wrap-up
@@ -751,6 +752,29 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 			return run.Result{Passes: l.passes}, fmt.Errorf("goal pass loop: unknown verdict %q", sentinel)
 		}
 	}
+}
+
+// exploreReportDirective asks a spent explore subagent for its findings.
+const exploreReportDirective = "The exploration budget is spent. Write your findings report now from what you have already read — no more tool calls. Lead with the facts the parent needs to act: file paths, symbols, line numbers, and how the pieces connect. Keep it concise; do not restate file contents."
+
+// exploreReport ends a budget-exhausted explore subagent with exactly one
+// tool-less pass that writes the findings. Explore subagents used to take the
+// agent-mode continuation route — up to five more full tool budgets of
+// reading — which held the parent's first pass back for minutes while the
+// subagent re-read what it already had. The report is the subagent's whole
+// deliverable, so a failed report falls back to the last words it wrote.
+func (s *Session) exploreReport(ctx context.Context, pipe *rolemanager.Pipeline, system string, turns []run.Turn, streaming bool, emit func(Event), mode modes.Mode, last passOutcome) (run.Result, error) {
+	s.reportOnly = true
+	defer func() { s.reportOnly = false }()
+	turns = append(turns, directiveTurns(exploreReportDirective)...)
+	out, _, err := s.pass(ctx, pipe, system, turns, streaming, emit, mode)
+	if err != nil || strings.TrimSpace(out.reply) == "" {
+		if strings.TrimSpace(last.lastText) != "" {
+			return run.Result{Reply: last.lastText, Usage: last.usage}, nil
+		}
+		return run.Result{}, err
+	}
+	return run.Result{Reply: out.reply, Usage: out.usage}, nil
 }
 
 // agentContinuations runs the budget-exhaustion wrap-up passes for agent and

@@ -162,7 +162,10 @@ type Session struct {
 	// planFinalPass narrows plan mode to planFinishTools for the last pass the
 	// plan loop allows, so the loop always ends on a plan rather than on one
 	// more round of reading. finalPlan*Tools are that surface pre-rendered.
-	planFinalPass           bool
+	planFinalPass bool
+	// reportOnly advertises no tools at all: an explore subagent whose
+	// budget is spent gets one pass to write its findings, not more reading.
+	reportOnly              bool
 	finalPlanOpenAITools    []wire.OpenAITool
 	finalPlanAnthropicTools []wire.AnthropicToolDef
 	// readOnlyAgent is Options.ReadOnlyAgent. turnReadOnly is the per-turn
@@ -279,6 +282,9 @@ func (s *Session) toolDocs() prompt.ToolsOptions {
 // actually permits. Plan mode narrows both together, so what the request
 // advertises and what executeCall will run can never diverge.
 func (s *Session) toolSurface() (*tools.Registry, []wire.OpenAITool, []wire.AnthropicToolDef) {
+	if s.reportOnly {
+		return s.registry.Only(), nil, nil
+	}
 	if s.planMode && s.planFinalPass {
 		return s.registry.PlanWith(s.planSurface).Only(planFinishTools...), s.finalPlanOpenAITools, s.finalPlanAnthropicTools
 	}
@@ -297,6 +303,9 @@ func (s *Session) toolSurface() (*tools.Registry, []wire.OpenAITool, []wire.Anth
 // every other turn resolves against the full registry and relies on
 // modes.ToolAllowed for plan mode, exactly as before.
 func (s *Session) execTool(name string) (tools.Tool, string) {
+	if s.reportOnly {
+		return nil, fmt.Sprintf("tool result withheld: %q is unavailable while writing the findings report; answer from what you have", name)
+	}
 	if s.planMode && s.planFinalPass && !slices.Contains(planFinishTools, name) {
 		return nil, fmt.Sprintf("tool result withheld: %q is unavailable on the final planning pass; write the plan and call ExitPlanMode", name)
 	}

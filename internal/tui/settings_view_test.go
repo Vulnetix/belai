@@ -92,6 +92,7 @@ func TestDisplayRowsShownHiddenAndBehaviourRowsOnOff(t *testing.T) {
 		"mouse":              "on",
 		"update_check":       "on",
 		"plan_explore":       "on",
+		"goal_explore":       "off",
 	}
 	for key, want := range want {
 		row, idx := settingsRowByKey(a, key)
