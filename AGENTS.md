@@ -108,7 +108,9 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   classifier-routed goal path asks the goal-contract role for the five
   sections beneath the verbatim objective line. The draft is sanitized before
   sealing, and on any failure the raw user prompt is carried instead — a weak
-  drafting model must never cost the turn. A memorised goal is user-authored
+  drafting model must never cost the turn. The goal never waits for it: a
+  draft still running when the loop starts is adopted at a later pass
+  boundary as a sealed directive, never as unsealed turn text. A memorised goal is user-authored
   and is carried verbatim, never drafted.
 - **The guardrails switch reaches every surface.** Off means
   `posture.AllIgnore()` everywhere — agent session, inline `!cmd`, `@file`

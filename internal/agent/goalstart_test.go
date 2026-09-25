@@ -31,8 +31,8 @@ func TestJoinGoalDraftNamesTheFailure(t *testing.T) {
 		p := &pendingDraft{ch: make(chan goalDraft, 1), cancel: func(error) {}, start: time.Now().Add(-3 * time.Second)}
 		p.ch <- goalDraft{err: c.err}
 		var warnings []string
-		got := s.joinGoalDraft(p, "ship it", func(e Event) { warnings = append(warnings, e.Warning) })
-		if got != "ship it" {
+		got, pending := s.joinGoalDraft(p, "ship it", func(e Event) { warnings = append(warnings, e.Warning) })
+		if got != "ship it" || pending {
 			t.Fatalf("%v: goal text = %q, want the raw prompt", c.err, got)
 		}
 		if len(warnings) != 1 || !strings.Contains(warnings[0], c.want) {
@@ -63,76 +63,83 @@ func (d draftClassifier) Classify(ctx context.Context, p rolemanager.ClassifierP
 	}
 }
 
-// TestGoalDraftTimeBeforeTheJoinIsFree pins the regression: the draft runs
-// alongside exploration, so a draft slower than the grace still lands when the
-// loop needs it after it has finished. A single start-anchored deadline used
-// to kill a ~30s reasoning-model draft at 20s mid-exploration.
-func TestGoalDraftTimeBeforeTheJoinIsFree(t *testing.T) {
-	defer func(g time.Duration) { goalDraftGrace = g }(goalDraftGrace)
-	goalDraftGrace = 20 * time.Millisecond
-
+// TestGoalDraftDoneBeforeTheLoopIsCarried pins the fast path: a draft that
+// finished while exploration ran is taken as the loop starts.
+func TestGoalDraftDoneBeforeTheLoopIsCarried(t *testing.T) {
 	s := &Session{}
-	p := s.startGoalDraft(context.Background(), rolemanager.NewPipeline(draftClassifier{delay: 80 * time.Millisecond}), "ship it")
-	time.Sleep(150 * time.Millisecond) // exploration, longer than the grace
+	p := s.startGoalDraft(context.Background(), rolemanager.NewPipeline(draftClassifier{delay: 10 * time.Millisecond}), "ship it")
+	time.Sleep(150 * time.Millisecond) // exploration
 	var warnings []string
-	got := s.joinGoalDraft(p, "ship it", func(e Event) { warnings = append(warnings, e.Warning) })
-	if len(warnings) != 0 || !strings.Contains(got, "Objective:\nship it") || !strings.Contains(got, "Verification surface") {
-		t.Fatalf("goal = %q warnings = %q, want the drafted contract", got, warnings)
+	got, pending := s.joinGoalDraft(p, "ship it", func(e Event) { warnings = append(warnings, e.Warning) })
+	if pending || len(warnings) != 0 || !strings.Contains(got, "Objective:\nship it") || !strings.Contains(got, "Verification surface") {
+		t.Fatalf("goal = %q pending = %v warnings = %q, want the drafted contract", got, pending, warnings)
 	}
 }
 
-// TestGoalDraftGraceBoundsTheWait pins the other bound: once the loop needs the
-// contract it waits at most the grace, then cancels the draft with a deadline
-// cause and carries the raw prompt with a timeout warning.
-func TestGoalDraftGraceBoundsTheWait(t *testing.T) {
-	defer func(g time.Duration) { goalDraftGrace = g }(goalDraftGrace)
-	goalDraftGrace = 30 * time.Millisecond
-
+// TestGoalDraftNeverHoldsTheLoop pins the regression: a draft still running
+// when the loop starts costs no wait at all. The loop starts on the raw
+// prompt and the draft keeps running rather than being cancelled.
+func TestGoalDraftNeverHoldsTheLoop(t *testing.T) {
 	cause := make(chan error, 1)
 	s := &Session{}
 	p := s.startGoalDraft(context.Background(), rolemanager.NewPipeline(draftClassifier{delay: time.Minute, cause: cause}), "ship it")
+	defer p.cancel(nil)
 	start := time.Now()
 	var warnings []string
-	got := s.joinGoalDraft(p, "ship it", func(e Event) { warnings = append(warnings, e.Warning) })
-	if waited := time.Since(start); waited > 5*time.Second {
-		t.Fatalf("join waited %s, want about the grace", waited)
+	got, pending := s.joinGoalDraft(p, "ship it", func(e Event) { warnings = append(warnings, e.Warning) })
+	if waited := time.Since(start); waited > 50*time.Millisecond {
+		t.Fatalf("join waited %s, want no wait", waited)
 	}
-	if got != "ship it" || len(warnings) != 1 || !strings.Contains(warnings[0], "timed out after") {
-		t.Fatalf("goal = %q warnings = %q, want the raw prompt and a timeout warning", got, warnings)
+	if got != "ship it" || !pending || len(warnings) != 0 {
+		t.Fatalf("goal = %q pending = %v warnings = %q, want the raw prompt, pending, no warning", got, pending, warnings)
 	}
 	select {
 	case c := <-cause:
-		if !errors.Is(c, context.DeadlineExceeded) {
-			t.Fatalf("draft cancelled with %v, want a deadline cause", c)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("the draft was not cancelled when the grace expired")
+		t.Fatalf("the draft was cancelled (%v) when the loop started", c)
+	case <-time.After(50 * time.Millisecond):
 	}
 }
 
-// TestGoalDraftGraceCancelRecordsATimeout pins the feed row: a draft the loop
-// stopped waiting for records verdict "timeout", not a generic error.
-func TestGoalDraftGraceCancelRecordsATimeout(t *testing.T) {
-	defer func(g time.Duration) { goalDraftGrace = g }(goalDraftGrace)
-	goalDraftGrace = 20 * time.Millisecond
-
-	verdicts := make(chan string, 4)
-	cancel := rolemanager.SetObserver(func(a rolemanager.Activity) {
-		if a.Event == rolemanager.EventGoalDraft {
-			verdicts <- a.Verdict
-		}
-	})
-	defer cancel()
-
+// TestLateGoalDraftIsAdoptedAsADirective checks a draft that lands after the
+// loop started: it becomes the evaluator's goal text and one sealed directive,
+// once, and the pending draft is cleared.
+func TestLateGoalDraftIsAdoptedAsADirective(t *testing.T) {
 	s := &Session{}
-	p := s.startGoalDraft(context.Background(), rolemanager.NewPipeline(draftClassifier{delay: time.Minute}), "ship it")
-	s.joinGoalDraft(p, "ship it", func(Event) {})
-	select {
-	case v := <-verdicts:
-		if v != "timeout" {
-			t.Fatalf("goal_draft verdict = %q, want timeout", v)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("no goal_draft activity recorded")
+	p := s.startGoalDraft(context.Background(), rolemanager.NewPipeline(draftClassifier{delay: 30 * time.Millisecond}), "ship it")
+	if _, pending := s.joinGoalDraft(p, "ship it", func(Event) {}); !pending {
+		t.Fatal("draft finished instantly; the test needs it still running")
+	}
+	s.turnDraft = p
+	l := passLedger{goalText: "ship it"}
+	if turns := s.adoptLateGoalDraft(&l, "ship it", func(Event) {}); turns != nil {
+		t.Fatalf("adopted %d turns before the draft landed", len(turns))
+	}
+	time.Sleep(150 * time.Millisecond)
+	turns := s.adoptLateGoalDraft(&l, "ship it", func(Event) {})
+	if len(turns) != 2 || !strings.Contains(turns[0].Directive, "Verification surface") || !strings.Contains(turns[0].Directive, goalContractNote) {
+		t.Fatalf("turns = %+v, want one sealed contract directive", turns)
+	}
+	if !strings.Contains(l.goalText, "Verification surface") {
+		t.Fatalf("evaluator goal text = %q, want the contract", l.goalText)
+	}
+	if s.turnDraft != nil || s.adoptLateGoalDraft(&l, "ship it", func(Event) {}) != nil {
+		t.Fatal("the draft was adopted more than once")
+	}
+}
+
+// TestLateGoalDraftFailureIsReportedAndDropped checks a draft that fails after
+// the loop started: it is named in a warning and adds no directive.
+func TestLateGoalDraftFailureIsReportedAndDropped(t *testing.T) {
+	s := &Session{}
+	p := &pendingDraft{ch: make(chan goalDraft, 1), cancel: func(error) {}, start: time.Now()}
+	p.ch <- goalDraft{err: rolemanager.ErrGoalDraftUnusable}
+	s.turnDraft = p
+	l := passLedger{goalText: "ship it"}
+	var warnings []string
+	if turns := s.adoptLateGoalDraft(&l, "ship it", func(e Event) { warnings = append(warnings, e.Warning) }); turns != nil {
+		t.Fatalf("a failed draft added %d turns", len(turns))
+	}
+	if len(warnings) != 1 || l.goalText != "ship it" || s.turnDraft != nil {
+		t.Fatalf("warnings = %q goal = %q, want one warning and the raw goal", warnings, l.goalText)
 	}
 }

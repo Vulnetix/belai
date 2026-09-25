@@ -42,7 +42,7 @@ row.
 - **Token accounting.** Each pass adds up the usage of every provider call it makes (`passOutcome.spent`). openrouter, groq, deepseek, fireworks, together and xai now request stream usage. Goal-state events carry a copy of the state rather than a shared pointer, which removes a data race.
 - **Goal continuation.** A goal-mode prompt that `IsContinuation` recognises ("continue", "keep going", …) resumes the prior goal. The TUI passes the prior goal, live or restored after `/resume`, in `TurnInput.PriorGoal`. The resumed goal keeps the same id, contract and counters, and any extra instruction is appended as "Additional direction".
 - **Time to first mutation.**
-  - The contract draft runs alongside exploration. The goal loop waits at most a 45 s grace for it once it is needed, and the draft itself is capped at 2 minutes. Past either bound it falls back to the raw prompt.
+  - The contract draft runs alongside exploration and never holds the first pass back. A draft still running when the goal starts is adopted as a sealed directive at the next pass boundary; the draft itself is capped at 2 minutes. A failed draft falls back to the raw prompt.
   - The drafter may only use the detected commands. A deterministic post-check removes lines that name an undetected build runner.
   - The repo map now carries justfile recipe names, changed paths (refreshed every turn) and remotes with credentials removed. The `remotes()` field-index bug is fixed.
   - Up to `min(max_agents, 16)` read-only tool calls run in parallel.

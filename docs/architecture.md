@@ -259,10 +259,8 @@ Business rules and edge cases:
 - **Sentinel roles and the goal contract move.** Mode select, session name,
   the goal, plan and agent evaluator verdicts, and goal-contract drafting
   (`run.IsFastUseCase`) default to the fast tier. The contract draft runs
-  alongside exploration, and the goal loop waits only a bounded grace for it
-  once it is needed (see [Goal mode](#goal-mode)). A slow reasoning
-  main model used to miss that bound every time, and the goal ran on the raw
-  prompt. Compaction,
+  alongside exploration and never holds the goal's first pass back (see
+  [Goal mode](#goal-mode)). Compaction,
   clarify and the final report stay on the main model: their output shapes
   the agent's later work.
 - **Precedence per use case:** a fast use case goes to the fast tier whenever
@@ -1393,22 +1391,23 @@ unusable draft — never the provider's response body). The draft runs on the
 fast tier (see [Fast tier](#fast-tier)). A memorised goal is user-authored and
 is carried verbatim — never drafted.
 
-The draft has two bounds (`internal/agent/goalstart.go`):
+The goal never waits for the draft (`internal/agent/goalstart.go`):
 
-- **Grace, 45s.** It starts when exploration and clarify are done and the
-  goal loop needs the contract, not when the draft starts. Time spent
-  exploring is free: a draft that finishes during exploration is used at
-  once, whatever it took. When the grace expires, the draft is cancelled with
-  a deadline cause and the raw prompt is carried. The warning reports the
-  draft's total age (`timed out after <d>`), and the `goal_draft` activity
-  records `timeout`, not `error`.
-- **Ceiling, 2 minutes.** It bounds the draft itself, from its start. It
-  guards against the stalls that once held a goal back for hours behind a
-  slow routed model.
+- **Done in time: sealed in the system block.** A draft that finished while
+  exploration ran is carried in the goal carrier, as before.
+- **Still running: the loop starts anyway.** Pass 1 starts on the raw prompt
+  at once and the draft keeps running. When it lands, the next pass boundary
+  adopts it: the contract becomes the evaluator's goal text and reaches the
+  model as a sealed directive. The sealed system block is not re-sealed, so
+  the provider's prompt cache is kept. A draft that fails after the loop
+  started is reported with the same warning and dropped.
+- **Ceiling, 2 minutes.** It bounds the draft itself, from its start. A turn
+  that ends first cancels it.
 
-The previous single 20s deadline, counted from the start, killed a reasoning
-model's ~30s draft even while a minute of exploration was still running. A
-turn that ends before the join cancels the draft.
+A 45s grace used to hold every goal turn's first pass back while the draft
+finished. On a reasoning model the draft routinely used the whole grace and
+was then thrown away, so a goal cost 45 seconds before the main model was
+asked anything.
 
 The first goal pass is a work pass, not an acknowledgement pass: the directive
 asks for one `update_plan` call and the first real change in the same pass.
