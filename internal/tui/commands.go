@@ -260,6 +260,9 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("lsp", "manage language-server diagnostics", nil, func(a *App, arg string) tea.Cmd {
 		return a.push(viewLSP)
 	})
+	r.Register("budgets", "manage token budgets per provider and model", nil, func(a *App, arg string) tea.Cmd {
+		return a.openBudgets()
+	})
 	r.Register("prompts", "manage the prompt library", nil, func(a *App, arg string) tea.Cmd {
 		return a.push(viewPrompts)
 	})

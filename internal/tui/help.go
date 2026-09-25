@@ -207,6 +207,13 @@ func keySections() []keySection {
 			{"s", "toggle scope: global, project"},
 			{"esc", "back"},
 		}},
+		{"/budgets", []keyBinding{
+			{"up, down", "move"},
+			{"a", "add a budget: provider/model, then s, d or m for the scope, then tokens (250k, 1.5M)"},
+			{"enter, space", "change the selected budget's allowance"},
+			{"x", "delete the selected budget"},
+			{"esc", "back"},
+		}},
 		{"/permissions", []keyBinding{
 			{"up, down", "move"},
 			{"a", "add a rule"},

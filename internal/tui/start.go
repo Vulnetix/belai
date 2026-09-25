@@ -23,6 +23,11 @@ func Start(opts Options) error {
 	}
 	p := tea.NewProgram(New(opts), progOpts...)
 	model, err := p.Run()
+	// Every exit path (ctrl+d, /exit, ctrl+c, an error) flushes the usage
+	// ledger once here.
+	if a, ok := model.(*App); ok {
+		a.closeBudgets()
+	}
 	// Only a clean exit prints the card. On an error path main.go keeps its
 	// stderr-and-exit-1 behaviour; nothing is written to stdout then.
 	if err == nil {

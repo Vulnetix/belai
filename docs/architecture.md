@@ -566,6 +566,34 @@ out-of-order completion from the concurrent group lands on its own row
 rather than the newest tool row; legacy events without a call id fall back
 to the last tool row.
 
+### Read index
+
+Models re-read. Session `b3a026a4` read the same files five to ten times each
+during one planning turn, and every copy cost a full-context round, a
+classifier call, and context that clearing then had to drop. Signet makes
+every file change itself, so the harness keeps `internal/readindex`: one
+entry per `Read` it delivered, keyed by the resolved path and window
+(`offset`, `limit`), holding the file's size and mtime, its git blob id
+(streamed, as `git hash-object` computes it, up to 8 MiB) and the SHA-256 of
+the delivered result. It never holds file contents; a tool result can be far
+too large to keep a second copy of.
+
+A later `Read` of the same window — or any window of a file an earlier read
+showed whole — is answered with a harness note naming the file, extent, size
+and blob id and pointing at the earlier result, when all of these hold: the
+file's stat is unchanged, no harness mutation has touched it (every path the
+file-diff recorder sees change is invalidated, so an edit is always followed
+by a fresh read), a tool turn with exactly the recorded result hash is still
+in the conversation (not cleared, not compacted), the file was never
+withheld, and the call is permission-allowed on the advertised surface.
+Otherwise the read goes to disk as normal and is classified as always. The
+serial part of a multi-call response decides again at execution time, after
+the calls before it ran.
+
+The live entries also ride on each turn's repository status (paths, extents,
+sizes, blob ids), so a new turn starts knowing what it already has. That
+block is volatile and never enters the system block.
+
 ### Tool-result trust
 
 Every tool result is sanitized (`internal/sanitize`) before it can be
@@ -1307,8 +1335,10 @@ in the TUI only, like the banner itself.
   for the session (never a goal definition: plan mode has none), the plan
   todo list, and the pass evidence, and it answers with `PLAN_*` sentinels,
   never `GOAL_*` ones. The loop is bounded by `resilience.max_passes`
-  (default `defaultPlanContinuations` = 5) and returns the plan so far at the
-  ceiling. The planning model can also declare completion by calling the
+  (default `defaultPlanContinuations` = 3), each plan pass reads for at most
+  12 tool rounds, a pass that spends them without drafting a plan makes the
+  next pass the write-only finishing pass, and the loop returns the plan so
+  far at the ceiling. The planning model can also declare completion by calling the
   read-only `ExitPlanMode` tool, which short-circuits the evaluator.
   The normative rules are in [role-manager.md](role-manager.md),
   "Plan pass loop".
@@ -1354,8 +1384,10 @@ Subagents run in parallel bounded by the shared FIFO agent pool
 (`resilience.max_agents`, default 15) and `explore.MaxTasks` (12). The pool is a `container/list` FIFO queue, not a
 buffered-channel semaphore, so waiters are admitted in arrival order; `esc`
 drops queued work at once and `x` on a running chip cancels it through the
-pool. `resilience.plan_explore: false` skips the survey entirely so plan mode
-starts planning immediately. A goal whose prompt carries references is not
+pool. Plan mode does not survey before its first pass unless
+`resilience.plan_explore: true`: three subagents of up to eight model calls
+each measured about three minutes before the planner started, on a prompt as
+small as "read a file", and the planner re-read what it needed anyway. A goal whose prompt carries references is not
 surveyed before its first pass unless `resilience.goal_explore: true`: the
 goal's own passes read what they need, and the survey held the first pass
 back for minutes only for the goal to re-read the same files. The goal loop's
@@ -1368,10 +1400,14 @@ advertised, whose reply is its findings report. It used to take the agent-mode
 continuation route — up to five more full tool budgets of reading — which kept
 the parent waiting for minutes.
 
-Clarification is now **gated on findings**: the clarify loop runs only when
-exploration produced non-empty findings and the planner classifier returns a
-non-empty questionnaire. A zero-findings wave no longer triggers a
-questionnaire.
+Clarification runs on exploration findings when a wave produced them, and in
+plan mode without a survey on harness-computed workspace facts (the repo map
+and the top-level listing — paths, never file contents), so a plan can still
+ask "which file?" with real options. It asks only when the planner classifier
+returns a non-empty questionnaire. Every round sees the questions already
+answered this turn, and a repeated question is dropped rather than asked
+again. A clarify answer triggers a follow-up explore round only when an explore
+wave ran; otherwise it goes straight to the planner.
 
 ### Goal mode
 
@@ -1743,6 +1779,13 @@ The footer is a rule plus three content lines:
   the directory the session started in; it returns to the root whenever the
   agent session is rebuilt. The footer's memoised height is invalidated on a
   move, since line 1 appears or disappears with the directory.
+- Line 1, right: the selected provider+model's [token budget](token-budgets.md)
+  gauge — scope, percentage of tokens left, time left (day and month only)
+  and a bar filled in teal, amber or red over a grey trough — shown only under
+  `defined` routing when that model has a budget, cycling through its budgets
+  every `ui.budget_cycle_seconds`. When the line is narrow the gauge drops the
+  time first, then the cwd side is truncated (keeping the mode chip), and the
+  percentage goes last.
 - Line 2, left: provider · model (with effort) · the permission chips ·
   `caveman: on|off`. When smart model routing is engaged (`routing.kind:
   "routed"` resolving to a non-empty pool), the provider/model segment is
@@ -1856,6 +1899,21 @@ cancels the turn without sending. While a
 turn is running, Enter instead queues the text as a `user steering` prompt:
 steered turns pass through the same Role Manager admission as the original
 prompt, and a full queue drops the newest message.
+
+### Token usage and budgets
+
+Every completed model call reports its usage once, from the two places a call
+completes in `internal/run`: `sendTurnsWithTools` (every non-streaming call —
+classifier, role manager, blocking main turn) and `drainStream` (every
+streaming call). `run.SetUsageObserver` holds one process-wide observer. The
+TUI's observer calls `budget.Recorder.Add` directly — it is safe from any
+goroutine and never waits on disk, so usage is never dropped — and then wakes
+the render loop through a buffered channel, which may drop because the next
+tick redraws anyway. The recorder folds usage into `usage.json` in the
+background under an advisory lockfile shared with other signet processes, and
+the 2-second tick re-reads it every 30 seconds. The headless CLI registers the
+same recorder. The rules, colour states and edge cases are in
+[Token budgets](token-budgets.md).
 
 ### Subagent roster and the footer pulse
 
@@ -2371,7 +2429,7 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 | `f5` | Cycle mode and re-sync plan mode, from any screen |
 | `f6` | Cycle reasoning effort: default → low → medium → high → default, from any screen |
 | `f7` | Save the current prompt to the project prompt library, from the chat view — a save-as alias of `ctrl+s` with no loaded entry |
-| `f1` | Open the screen switcher from chat or any screen. One letter opens a screen: `a` agents, `m` model, `p` providers, `s` settings, `k` permissions, `r` prompts, `x` processes, `l` lsp, `v` vulnetix, `h` sessions. A screen already open further down the stack is returned to, so `esc` walks back through distinct screens. It does nothing on a permission ask, a clarifying question, plan review or while an inline field edit holds text, and a chat draft is kept while it is open |
+| `f1` | Open the screen switcher from chat or any screen. One letter opens a screen: `a` agents, `m` model, `p` providers, `s` settings, `b` token budgets, `k` permissions, `r` prompts, `x` processes, `l` lsp, `v` vulnetix, `h` sessions. A screen already open further down the stack is returned to, so `esc` walks back through distinct screens. It does nothing on a permission ask, a clarifying question, plan review or while an inline field edit holds text, and a chat draft is kept while it is open |
 | `f8` | Open and focus the bottom runs panel on the subagents tab (chat); press `tab` twice to reach the processes tab |
 | `f9` | Open and focus the bottom runs panel on the activity tab (chat); press `tab` twice to cycle to the processes tab |
 | `f10` | Toggle the Vulnetix AI Firewall from any screen |

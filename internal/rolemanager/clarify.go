@@ -13,7 +13,7 @@ import (
 // clarifySystemPrompt instructs the classifier to emit a clarification
 // questionnaire as strict JSON. It is the planner framing: the classifier is
 // asked, after exploration, whether it can proceed or still needs the user.
-const clarifySystemPrompt = `You are a planning assistant for a secure LLM coding harness. The user sent a prompt, and read-only exploration has produced the findings below. Decide whether you can proceed to planning without further user input, or whether you still need the user to answer a clarification questionnaire.
+const clarifySystemPrompt = `You are a planning assistant for a secure LLM coding harness. The user sent a prompt, and the evidence below describes the workspace (harness-computed facts or read-only exploration findings). Decide whether you can proceed to planning without further user input, or whether you still need the user to answer a clarification questionnaire.
 
 Reply with ONLY a JSON object matching this schema:
 
@@ -33,7 +33,9 @@ Rules:
 - Reply with ONLY valid JSON. No Markdown fences, no prose outside the JSON, no trailing text.
 - groups may contain 1–6 items. Use {"groups": []} when you can proceed without the user.
 - Prefer exactly one question; never exceed three groups.
-- Never ask what a read-only tool could already answer from the findings or the repository.
+- Never ask what a read-only tool could already answer from the evidence or the repository.
+- Never repeat or rephrase a question listed under "Already answered". The user's answers there are final; when they settle the ambiguity, reply {"groups": []}.
+- Base options on the evidence: name real files, directories or commands from it rather than generic placeholders.
 - Each group must have 2–4 options. One option is not a choice.
 - Put the recommended option first and suffix its label with " (Recommended)".
 - Do not emit an "Other" option — the UI provides the free-form path itself.
@@ -47,6 +49,10 @@ type ClarifyInput struct {
 	Prompt   string
 	Findings string
 	Round    string
+	// Answered is the rendered questions and answers of the earlier rounds of
+	// this turn. Without it every round saw the same prompt and findings, so
+	// the clarifier asked the same question again.
+	Answered string
 }
 
 // BuildClarifyPayload constructs the classifier request for a clarification
@@ -54,7 +60,7 @@ type ClarifyInput struct {
 func BuildClarifyPayload(in ClarifyInput) ClassifierPayload {
 	return ClassifierPayload{
 		System:    clarifySystemPrompt,
-		User:      buildClarifyUserContent(in.Prompt, in.Findings, in.Round),
+		User:      buildClarifyUserContent(in),
 		MaxTokens: ClassifierStructuredMaxTokens,
 		UseCase:   UseCaseClarify,
 	}
@@ -94,15 +100,17 @@ func AskClarify(ctx context.Context, c Classifier, in ClarifyInput, maxAttempts 
 		maxAttempts = 3
 	}
 
+	base := BuildClarifyPayload(in)
 	turns := []clarifyTurn{
-		{role: "user", content: buildClarifyUserContent(in.Prompt, in.Findings, in.Round)},
+		{role: "user", content: base.User},
 	}
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		payload := ClassifierPayload{
-			System: clarifySystemPrompt,
-			User:   renderClarifyTurns(turns),
-		}
+		// The use case routes the call (routing.use_cases.clarify); the
+		// payload used to be built without it, so the clarify route was
+		// never taken.
+		payload := base
+		payload.User = renderClarifyTurns(turns)
 		raw, model, err := classifyServed(ctx, c, payload)
 		if err != nil {
 			return clarify.Questionnaire{}, fmt.Errorf("clarify attempt %d: %w", attempt, err)
@@ -126,14 +134,18 @@ func AskClarify(ctx context.Context, c Classifier, in ClarifyInput, maxAttempts 
 	return clarify.Questionnaire{}, ErrClarifyUnusable
 }
 
-func buildClarifyUserContent(prompt, findings, round string) string {
+func buildClarifyUserContent(in ClarifyInput) string {
 	var b strings.Builder
 	b.WriteString("Original prompt: ")
-	b.WriteString(sanitize.Sanitize(prompt))
+	b.WriteString(sanitize.Sanitize(in.Prompt))
 	b.WriteString("\nRound: ")
-	b.WriteString(sanitize.Sanitize(round))
-	b.WriteString("\nExploration findings:\n")
-	b.WriteString(sanitize.Sanitize(findings))
+	b.WriteString(sanitize.Sanitize(in.Round))
+	if a := strings.TrimSpace(in.Answered); a != "" {
+		b.WriteString("\nAlready answered:\n")
+		b.WriteString(sanitize.Sanitize(a))
+	}
+	b.WriteString("\nEvidence:\n")
+	b.WriteString(sanitize.Sanitize(in.Findings))
 	return b.String()
 }
 

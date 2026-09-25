@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vulnetix/signet/internal/rolemanager"
 )
@@ -445,5 +446,45 @@ func TestSecurityEmptyCategoriesCallsFallback(t *testing.T) {
 	}
 	if *fallbackCalls != 1 {
 		t.Fatalf("fallback called %d times, want 1", *fallbackCalls)
+	}
+}
+
+// A Decisions endpoint that is down or slow hands the verdict to the agent
+// model instead of withholding the tool result: the content is still
+// classified. A refused request (401) still propagates, above.
+func TestSecurityUnavailableEndpointCallsFallback(t *testing.T) {
+	s, _, _, fallbackCalls := newStubSecurity(t, http.StatusBadGateway, `{"error":{"code":502,"message":"upstream"}}`)
+	got, err := s.Classify(context.Background(), securityPayload())
+	if err != nil {
+		t.Fatalf("a 502 must fall back, not error: %v", err)
+	}
+	if got != string(rolemanager.SentinelSafe) || *fallbackCalls != 1 {
+		t.Fatalf("got %q with %d fallback calls, want SAFE from one fallback call", got, *fallbackCalls)
+	}
+}
+
+// Jev is a fast verdict model; one call is bounded at DecisionsTimeout (3s)
+// and a timeout falls back rather than holding every tool result behind it.
+func TestSecurityTimeoutCallsFallback(t *testing.T) {
+	if DecisionsTimeout != 3*time.Second {
+		t.Fatalf("DecisionsTimeout = %v, want 3s", DecisionsTimeout)
+	}
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+	}))
+	defer srv.Close()
+	defer close(release)
+	calls := 0
+	fallback := rolemanager.ClassifierFunc(func(context.Context, rolemanager.ClassifierPayload) (string, error) {
+		calls++
+		return string(rolemanager.SentinelSafe), nil
+	})
+	s := NewSecurity(func() (string, error) { return "k", nil }, fallback)
+	s.client.Timeout = 50 * time.Millisecond
+	s.SetEndpoint(srv.URL)
+	got, err := s.Classify(context.Background(), securityPayload())
+	if err != nil || got != string(rolemanager.SentinelSafe) || calls != 1 {
+		t.Fatalf("timeout: got %q, err %v, fallback calls %d; want SAFE via one fallback", got, err, calls)
 	}
 }

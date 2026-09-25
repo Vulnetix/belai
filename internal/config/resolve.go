@@ -85,6 +85,12 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 		proj.WorkspaceDirs = nil
 		eff.Notes = append(eff.Notes, "project workspace_dirs ignored (set allow_project_workspace_dirs in global settings to use them)")
 	}
+	// Token budgets are global: a repository must not be able to raise or
+	// remove the limits a user set for their own spend.
+	if len(proj.TokenBudgets) > 0 {
+		proj.TokenBudgets = nil
+		eff.Notes = append(eff.Notes, "project token_budgets ignored (budgets are global; set them in /budgets)")
+	}
 	if proj.LSP != nil && len(proj.LSP.Servers) > 0 {
 		proj.LSP.Servers = nil
 		eff.Notes = append(eff.Notes, "project lsp.servers ignored (binary paths may only be set in global settings)")
@@ -125,6 +131,9 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 		return eff, err
 	}
 	if err := ValidateLSP(eff.Settings); err != nil {
+		return eff, err
+	}
+	if err := ValidateTokenBudgets(eff.Settings); err != nil {
 		return eff, err
 	}
 	if err := ValidateRouting(eff.Settings); err != nil {
@@ -274,6 +283,11 @@ func (e *Effective) apply(s Settings, src Source) {
 		}
 		e.Settings.Routing.merge(s.Routing)
 		e.Origin["routing"] = src
+	}
+	if s.TokenBudgets != nil {
+		// Replace, not append: the global list is the whole set.
+		e.Settings.TokenBudgets = s.TokenBudgets
+		e.Origin["token_budgets"] = src
 	}
 	if s.WorkspaceDirs != nil {
 		// Later layers replace, not append, so a project layer can narrow the

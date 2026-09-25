@@ -205,7 +205,7 @@ func openStream(ctx context.Context, cfg Config, system string, turns []Turn, cl
 // It always closes resp.Body and closes ch exactly once. An idle-gap watchdog
 // wraps the body so a provider that stops producing bytes mid-stream is torn
 // down after httpclient.StreamIdleTimeout instead of hanging the turn forever.
-func drainStream(ctx context.Context, ch chan<- Chunk, resp *http.Response, d dialect) {
+func drainStream(ctx context.Context, ch chan<- Chunk, resp *http.Response, d dialect, onDone func(Assistant)) {
 	defer close(ch)
 	defer resp.Body.Close()
 
@@ -239,7 +239,11 @@ func drainStream(ctx context.Context, ch chan<- Chunk, resp *http.Response, d di
 				calls = append(calls, completed...)
 			}
 		}
-		send(Chunk{Done: true, Usage: usage, Assistant: &Assistant{Text: text.String(), Reasoning: reasoning.String(), ToolCalls: calls, Usage: usage, StopReason: stopReason, Thinking: thinking}})
+		a := Assistant{Text: text.String(), Reasoning: reasoning.String(), ToolCalls: calls, Usage: usage, StopReason: stopReason, Thinking: thinking}
+		if onDone != nil {
+			onDone(a)
+		}
+		send(Chunk{Done: true, Usage: usage, Assistant: &a})
 	}
 
 	for scan.Scan() {
@@ -358,7 +362,8 @@ func streamTurns(ctx context.Context, cfg Config, system string, turns []Turn, c
 		return nil, err
 	}
 	ch := make(chan Chunk, 256)
-	go drainStream(ctx, ch, resp, d)
+	// Every streaming call completes in drainStream; report what it spent.
+	go drainStream(ctx, ch, resp, d, func(a Assistant) { reportUsage(cfg, system, sanitized, a) })
 	return ch, nil
 }
 func anthropicEventUsage(ev *wire.AnthropicStreamEvent) *transcript.Usage {

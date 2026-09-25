@@ -158,3 +158,18 @@ func TestRenderNote(t *testing.T) {
 		t.Fatalf("Render missing note: %q", got)
 	}
 }
+
+func TestSkippedAll(t *testing.T) {
+	if !(Answers{}).SkippedAll() {
+		t.Fatal("empty answers must report SkippedAll")
+	}
+	if !(Answers{Items: []Answer{{GroupIndex: 0, Skipped: true}}}).SkippedAll() {
+		t.Fatal("an all-skipped answer set must report SkippedAll")
+	}
+	if (Answers{Items: []Answer{{GroupIndex: 0, Chosen: []int{0}}}}).SkippedAll() {
+		t.Fatal("a chosen option must not report SkippedAll")
+	}
+	if (Answers{Items: []Answer{{GroupIndex: 0, Note: "because"}}}).SkippedAll() {
+		t.Fatal("a note must not report SkippedAll")
+	}
+}

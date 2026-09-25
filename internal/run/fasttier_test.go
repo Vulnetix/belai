@@ -100,7 +100,7 @@ func TestFastRolesUseTheFastTierAndGenerativeRolesStayMain(t *testing.T) {
 	}
 	main.Routing = rc
 	c := NewRoleClassifier(main, srv.Client(), nil)
-	for _, uc := range []string{rolemanager.UseCaseModeEval, rolemanager.UseCaseGoalEval, rolemanager.UseCaseCompaction, rolemanager.UseCaseGoalContract} {
+	for _, uc := range []string{rolemanager.UseCaseModeEval, rolemanager.UseCaseGoalEval, rolemanager.UseCaseCompaction, rolemanager.UseCaseGoalContract, rolemanager.UseCaseClarify} {
 		if _, err := c.Classify(context.Background(), rolemanager.ClassifierPayload{System: uc, User: "u", UseCase: uc}); err != nil {
 			t.Fatal(err)
 		}
@@ -111,6 +111,7 @@ func TestFastRolesUseTheFastTierAndGenerativeRolesStayMain(t *testing.T) {
 		rolemanager.UseCaseGoalEval:     "gpt-5-mini",
 		rolemanager.UseCaseCompaction:   "gpt-5",
 		rolemanager.UseCaseGoalContract: "gpt-5-mini",
+		rolemanager.UseCaseClarify:      "gpt-5-mini",
 	} {
 		if len(got[uc]) != 1 || got[uc][0] != want {
 			t.Fatalf("%s answered by %v, want %s", uc, got[uc], want)
@@ -215,6 +216,7 @@ func TestRoutedFastUseCasesSkipJev(t *testing.T) {
 		rolemanager.UseCasePlanEval,
 		rolemanager.UseCaseAgentEval,
 		rolemanager.UseCaseGoalContract,
+		rolemanager.UseCaseClarify,
 	}
 	for _, uc := range fastCases {
 		ctx, served := rolemanager.TrackServedModel(context.Background())

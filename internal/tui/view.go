@@ -29,6 +29,7 @@ const (
 	viewPrompts
 	viewProcesses
 	viewLSP
+	viewBudgets
 	viewScreens
 )
 
@@ -64,6 +65,7 @@ func init() {
 	viewHandlers[viewPrompts] = viewHandler{name: "prompts", enter: (*App).enterPrompts, key: (*App).handlePromptsKey, render: (*App).promptsView}
 	viewHandlers[viewProcesses] = viewHandler{name: "processes", enter: (*App).enterProcesses, key: (*App).handleProcessesKey, render: (*App).processesView}
 	viewHandlers[viewLSP] = viewHandler{name: "lsp", enter: (*App).enterLSP, key: (*App).handleLSPKey, render: (*App).lspView}
+	viewHandlers[viewBudgets] = viewHandler{name: "budgets", enter: (*App).enterBudgets, key: (*App).handleBudgetsKey, render: (*App).budgetsView}
 	viewHandlers[viewScreens] = viewHandler{name: "screens", enter: (*App).enterScreens, key: (*App).handleScreensKey, render: (*App).screensView}
 }
 

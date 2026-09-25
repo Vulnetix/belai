@@ -31,6 +31,7 @@ import (
 	"github.com/vulnetix/signet/internal/aifirewall"
 	"github.com/vulnetix/signet/internal/bgagent"
 	"github.com/vulnetix/signet/internal/bgproc"
+	"github.com/vulnetix/signet/internal/budget"
 	"github.com/vulnetix/signet/internal/calltrace"
 	"github.com/vulnetix/signet/internal/clipboard"
 	"github.com/vulnetix/signet/internal/commands"
@@ -281,8 +282,16 @@ type App struct {
 	// render loop; rmCancel detaches the observer on teardown.
 	rmEvents chan rolemanager.Activity
 	rmCancel func()
-	pending  string  // pending prompt to send once configured
-	initCmd  tea.Cmd // resume command batched into Init(), set by New
+	// budgets records every model call's tokens (via the run usage observer)
+	// and measures the token budgets; usageEvents wakes the render loop and
+	// usageCancel detaches the observer on exit. nil when the ledger could
+	// not be opened.
+	budgets      *budget.Recorder
+	usageEvents  chan run.UsageEvent
+	usageCancel  func()
+	budgetsState budgetsViewState
+	pending      string  // pending prompt to send once configured
+	initCmd      tea.Cmd // resume command batched into Init(), set by New
 	// requestedProvider is the provider name from settings/state/env/flags
 	// before any sole-configured-provider fallback. Empty means none was
 	// configured; the async credential resolution may then pick a sole provider.
@@ -840,6 +849,7 @@ func New(opts Options) *App {
 		default:
 		}
 	})
+	a.initBudgets()
 	// A brand-new install has nothing persisted and names no provider: the
 	// default provider is OpenRouter's free router, which needs an account
 	// before it answers, so such a user gets the signup hint rather than a
@@ -1041,7 +1051,7 @@ func (a *App) SetClassifier(c rolemanager.Classifier) {
 // Init implements tea.Model.
 func (a *App) Init() tea.Cmd {
 	a.maybeNoticeLegacyPrompts()
-	cmds := []tea.Cmd{tickCmd(), a.watchActivityEvents(), a.nextRMActivity()}
+	cmds := []tea.Cmd{tickCmd(), a.watchActivityEvents(), a.nextRMActivity(), a.nextUsage()}
 	if a.procManager != nil {
 		cmds = append(cmds, a.watchProcessEvents())
 	}
@@ -1936,6 +1946,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.armed.kind != armNone && time.Now().After(a.armed.until) {
 			a.disarm()
 		}
+		if a.budgets != nil {
+			a.budgets.Refresh(budgetRefreshAge)
+		}
 		a.refreshFooter()
 		return a, tea.Batch(tickCmd(), a.refreshGitInfoCmd())
 
@@ -1945,6 +1958,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case agentEventMsg:
 		return a, a.handleAgentEvent(m)
 
+	case usageMsg:
+		a.handleUsage(run.UsageEvent(m))
+		return a, a.nextUsage()
 	case rmActivityMsg:
 		a.addRMActivity(rolemanager.Activity(m))
 		a.stampMessages(m.At)
@@ -4620,6 +4636,7 @@ func (a *App) refreshFooter() {
 	a.footer.Provider = a.providerDisplayLabel(a.cfg.Provider)
 	a.footer.Model = run.WireModel(a.cfg.Provider, a.cfg.Model)
 	a.footer.RoutedModels = routedModelCount(a.cfg)
+	a.footer.Budget = a.budgetGauge(time.Now())
 	// The effective settings are the UI's canonical effort source: the model
 	// picker and settings view both write there, and refreshProvider copies
 	// the value into cfg for the agent session. If the active provider does

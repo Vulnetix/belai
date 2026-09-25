@@ -215,6 +215,8 @@ func TestClassifyModeSameModeStillReportsExplore(t *testing.T) {
 	a := NewApp(t.TempDir(), "")
 	a.SetClassifier(&fakeClassifier{raw: "PLAN"})
 	a.mode = "plan"
+	on := true
+	a.settings.Resilience = &config.ResilienceSettings{PlanExplore: &on}
 
 	a.classifyMode("figure out how to refactor this")
 
@@ -229,6 +231,8 @@ func TestClassifyModeChangeIsAnnounced(t *testing.T) {
 	a := NewApp(t.TempDir(), "")
 	a.SetClassifier(&fakeClassifier{raw: "PLAN"})
 	a.mode = "agent"
+	on := true
+	a.settings.Resilience = &config.ResilienceSettings{PlanExplore: &on}
 
 	a.classifyMode("figure out how to refactor this")
 

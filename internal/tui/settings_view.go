@@ -138,6 +138,9 @@ func (a *App) settingsRows() []settingsRow {
 	}
 	planExploreVal := boolLabel(s.PlanExploreEnabled())
 	goalExploreVal := boolLabel(s.GoalExploreEnabled())
+	budgetCycleVal := fmt.Sprintf("%ds", int(s.BudgetCycle().Seconds()))
+	budgetWarnVal := boolLabel(s.BudgetWarnEnabled())
+	budgetsVal := fmt.Sprintf("%d set", len(s.TokenBudgets))
 
 	return []settingsRow{
 		{key: "provider", label: "provider", kind: "text", value: providerVal, src: sourceLabel(origin["provider"])},
@@ -162,6 +165,9 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "goal_explore", label: "goal explore", kind: "toggle", value: goalExploreVal, src: sourceLabel(origin["resilience"])},
 		{key: "permissions", label: "permissions", kind: "submenu", value: permsVal, src: sourceLabel(origin["permissions"])},
 		{key: "lsp", label: "language servers", kind: "submenu", value: lspSummary(a), src: sourceLabel(origin["lsp"])},
+		{key: "token_budgets", label: "token budgets", kind: "submenu", value: budgetsVal, src: sourceLabel(origin["token_budgets"])},
+		{key: "budget_cycle_seconds", label: "budget cycle", kind: "text", value: budgetCycleVal, src: sourceLabel(origin["ui"])},
+		{key: "budget_warn", label: "budget warnings", kind: "toggle", value: budgetWarnVal, src: sourceLabel(origin["ui"])},
 	}
 }
 
@@ -290,6 +296,8 @@ func (a *App) handleSettingsKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			switch row.key {
 			case "lsp":
 				return a, a.push(viewLSP)
+			case "token_budgets":
+				return a, a.openBudgets()
 			default:
 				return a, a.push(viewPermissions)
 			}
@@ -339,6 +347,11 @@ func (a *App) rawValue(key string) string {
 			return strconv.Itoa(a.settings.Resilience.MaxAgents)
 		}
 		return ""
+	case "budget_cycle_seconds":
+		if a.settings.UI != nil && a.settings.UI.BudgetCycleSeconds != nil {
+			return strconv.Itoa(*a.settings.UI.BudgetCycleSeconds)
+		}
+		return ""
 	}
 	return ""
 }
@@ -380,6 +393,21 @@ func (a *App) commitTextRow(row settingsRow, raw string) error {
 				s.Resilience = &config.ResilienceSettings{}
 			}
 			s.Resilience.MaxAgents = n
+		})
+	case "budget_cycle_seconds":
+		if val == "" {
+			return a.unsetSetting("budget_cycle_seconds")
+		}
+		n, err := strconv.Atoi(strings.TrimSuffix(val, "s"))
+		if err != nil || n <= 0 {
+			return fmt.Errorf("budget cycle must be a positive number of seconds")
+		}
+		// Stored as typed; BudgetCycle clamps below the minimum when read.
+		return a.mutateSetting(func(s *config.Settings) {
+			if s.UI == nil {
+				s.UI = &config.UISettings{}
+			}
+			s.UI.BudgetCycleSeconds = &n
 		})
 	}
 	return fmt.Errorf("cannot edit %q", row.key)
@@ -446,6 +474,11 @@ func (a *App) cycleToggle(key string) error {
 				s.Resilience = &config.ResilienceSettings{}
 			}
 			s.Resilience.GoalExplore = nextBool(s.Resilience.GoalExplore)
+		case "budget_warn":
+			if s.UI == nil {
+				s.UI = &config.UISettings{}
+			}
+			s.UI.BudgetWarn = nextBool(s.UI.BudgetWarn)
 		}
 	})
 }
@@ -536,6 +569,14 @@ func (a *App) unsetSetting(key string) error {
 		case "max_agents":
 			if s.Resilience != nil {
 				s.Resilience.MaxAgents = 0
+			}
+		case "budget_cycle_seconds":
+			if s.UI != nil {
+				s.UI.BudgetCycleSeconds = nil
+			}
+		case "budget_warn":
+			if s.UI != nil {
+				s.UI.BudgetWarn = nil
 			}
 		}
 	})

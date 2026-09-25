@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
@@ -92,6 +93,11 @@ func planPassServer(t *testing.T, opts planPassOpts) (*httptest.Server, *sync.Mu
 				writeLengthRepairJSON(w, "Read", `{"path":"f.txt"}`)
 			case "reply":
 				writeChatJSON(w, opts.reply)
+			case "drafting":
+				// Reads while carrying a plan draft, so the loop's
+				// no-plan-drafted rule does not force the final pass and
+				// the evaluator's verdicts drive it.
+				writeToolCallWithContentJSON(w, "Read", `{"path":"f.txt"}`, "Plan:\n1. inspect the parser\n2. refactor the parser\n")
 			default:
 				writeToolCallJSON(w, "Read", `{"path":"f.txt"}`)
 			}
@@ -122,9 +128,12 @@ func newPlanPassSession(t *testing.T, srv *httptest.Server, allowPassLoop bool, 
 }
 
 func TestPlanPassLoopPartialPartialComplete(t *testing.T) {
-	srv, mu, systems := planPassServer(t, planPassOpts{eval: []string{"PLAN_PARTIAL", "PLAN_PARTIAL", "PLAN_COMPLETE"}})
+	srv, mu, systems := planPassServer(t, planPassOpts{main: "drafting", eval: []string{"PLAN_PARTIAL", "PLAN_PARTIAL", "PLAN_COMPLETE"}})
 	defer srv.Close()
 	sess := newPlanPassSession(t, srv, true, 2)
+	// Three evaluated passes need a ceiling above the default of 3, whose
+	// last pass is the write-only final pass.
+	sess.settings.Resilience = &config.ResilienceSettings{MaxPasses: 5}
 
 	res, err := sess.Run(context.Background(), "write me a plan")
 	if err != nil {
@@ -168,7 +177,7 @@ func TestPlanPassLoopCompleteOnNaturalExit(t *testing.T) {
 }
 
 func TestPlanPassLoopTwoMalformedEvaluationsTerminate(t *testing.T) {
-	srv, _, _ := planPassServer(t, planPassOpts{eval: []string{"garbage", "also garbage"}})
+	srv, _, _ := planPassServer(t, planPassOpts{main: "drafting", eval: []string{"garbage", "also garbage"}})
 	defer srv.Close()
 	sess := newPlanPassSession(t, srv, true, 2)
 
@@ -791,5 +800,48 @@ func TestFinalPlanPassRefusesExplorationAtExecution(t *testing.T) {
 	s.planFinalPass = false
 	if tool, _ := s.execTool("Read"); tool == nil {
 		t.Fatal("Read is refused only on the final pass")
+	}
+}
+
+// A plan pass reads at most planPassIterations rounds, whatever the general
+// iteration budget. At 40 rounds a planning pass read 114–138 files over 20+
+// minutes and never wrote a plan (session b3a026a4).
+func TestPlanPassBudgetIsCapped(t *testing.T) {
+	s := &Session{maxIter: 40}
+	if got := s.passBudget(modes.ModePlan); got != planPassIterations {
+		t.Fatalf("plan pass budget = %d, want %d", got, planPassIterations)
+	}
+	if got := s.passBudget(modes.ModeGoal); got != 40 {
+		t.Fatalf("goal pass budget = %d, want the session budget 40", got)
+	}
+	s.maxIter = 5
+	if got := s.passBudget(modes.ModePlan); got != 5 {
+		t.Fatalf("a smaller session budget must win, got %d", got)
+	}
+}
+
+// A pass that spends its read budget without drafting a plan makes the next
+// pass the final, write-only one, instead of the evaluator buying another
+// pass of reading.
+func TestPlanPassLoopWritesAfterABudgetWithNoDraft(t *testing.T) {
+	srv, _, _ := planPassServer(t, planPassOpts{eval: []string{"PLAN_PARTIAL", "PLAN_PARTIAL", "PLAN_PARTIAL"}})
+	defer srv.Close()
+	sess := newPlanPassSession(t, srv, true, 2)
+	sess.settings.Resilience = &config.ResilienceSettings{MaxPasses: 5}
+
+	var warned bool
+	res, err := sess.run(context.Background(), nil, TurnInput{Prompt: "write me a plan", ForceMode: modes.ModePlan}, false, func(e Event) {
+		if e.Kind == EventWarningKind && strings.Contains(e.Warning, "no plan drafted") {
+			warned = true
+		}
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if res.Passes != 2 {
+		t.Fatalf("Passes = %d, want 2: one read pass, then the write-only pass", res.Passes)
+	}
+	if !warned {
+		t.Fatal("the forced write pass was not surfaced")
 	}
 }

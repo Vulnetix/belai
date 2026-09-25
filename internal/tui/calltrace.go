@@ -12,6 +12,10 @@ import (
 // and after either manager is created. It runs on the Bubble Tea goroutine;
 // the managers store the id atomically.
 func (a *App) publishSessionID() {
+	// A new or resumed session starts or resumes its own session-scope total.
+	if a.budgets != nil {
+		a.budgets.SetSession(a.sessionID)
+	}
 	if a.bgManager != nil {
 		a.bgManager.SetSessionID(a.sessionID)
 	}

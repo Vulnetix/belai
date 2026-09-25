@@ -147,6 +147,15 @@ func goalPassServer(t *testing.T, opts goalPassOpts) (*httptest.Server, *sync.Mu
 					// A pass that only reads: the loop observes no file
 					// change, which is what drives the no-write escalation.
 					writeToolCallWithContentJSON(w, "Read", `{"path":"f.txt"}`, "Plan:\n1. Ship the release\n[DONE:1]\n")
+				case "read-varied":
+					// A read-only pass whose read differs every time, so the
+					// repeat detector does not stop a loop a test wants to
+					// drive to its pass ceiling.
+					mu.Lock()
+					writeIdx++
+					n := writeIdx
+					mu.Unlock()
+					writeToolCallWithContentJSON(w, "Read", fmt.Sprintf(`{"path":"f.txt","limit":%d}`, n+10), "Plan:\n1. Ship the release\n[DONE:1]\n")
 				default:
 					// The default pass writes a file, because that is what a
 					// goal-mode pass is supposed to do: the pass loop's
@@ -564,7 +573,7 @@ func TestGoalPassLoopStallTriggersProgression(t *testing.T) {
 	// instead of aborting. Without a ceiling a stuck loop would now run
 	// forever, so we use a small max-passes ceiling to prove the loop
 	// survived past the old stall boundary.
-	srv, _, _ := goalPassServer(t, goalPassOpts{main: "read", eval: []string{"GOAL_PARTIAL"}})
+	srv, _, _ := goalPassServer(t, goalPassOpts{main: "read-varied", eval: []string{"GOAL_PARTIAL"}})
 	defer srv.Close()
 
 	root := t.TempDir()
@@ -589,6 +598,63 @@ func TestGoalPassLoopStallTriggersProgression(t *testing.T) {
 	}
 	if res.Passes != 5 {
 		t.Fatalf("Passes = %d, want 5 (loop should continue past the old stall boundary)", res.Passes)
+	}
+}
+
+// A pass that repeats the previous pass's work exactly, changing no file, is
+// not progress. Session fbf5adf5 executed an approved plan by reading
+// AGENTS.md, reporting [DONE:1] [DONE:2], and doing it again every pass while
+// the evaluator said GOAL_PARTIAL; the progression reset kept it alive
+// forever. The loop now stops after maxRepeatPasses repeats.
+func TestGoalPassLoopStopsOnRepeatedPasses(t *testing.T) {
+	srv, _, _ := goalPassServer(t, goalPassOpts{main: "read", eval: []string{"GOAL_PARTIAL"}})
+	defer srv.Close()
+
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
+	sess, err := NewSession(Options{
+		Cfg:           run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"},
+		Client:        srv.Client(),
+		Registry:      tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}),
+		Posture:       posture.Defaults(),
+		AllowExplore:  true,
+		AllowPassLoop: true,
+		MaxIterations: 2,
+		Settings:      config.Settings{Resilience: &config.ResilienceSettings{MaxPasses: 20}},
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	var warned bool
+	res, err := sess.run(context.Background(), nil, TurnInput{Prompt: "ship the thing"}, false, func(e Event) {
+		if e.Kind == EventWarningKind && strings.Contains(e.Warning, "repeated the same work") {
+			warned = true
+		}
+	})
+	if err != nil {
+		t.Fatalf("a repeat stop returns the work so far, not an error: %v", err)
+	}
+	if res.Passes != 1+maxRepeatPasses {
+		t.Fatalf("Passes = %d, want %d", res.Passes, 1+maxRepeatPasses)
+	}
+	if !warned {
+		t.Fatal("the repeat stop was not surfaced as a warning")
+	}
+}
+
+func TestPassPrintIgnoresCallIDsAndWording(t *testing.T) {
+	a := []run.Turn{{Role: "assistant", Content: "reading now", ToolCalls: []rolemanager.ToolCall{{ID: "c1", Name: "Read", Args: map[string]any{"path": "AGENTS.md"}}}}}
+	b := []run.Turn{{Role: "assistant", Content: "let me read", ToolCalls: []rolemanager.ToolCall{{ID: "c9", Name: "Read", Args: map[string]any{"path": "AGENTS.md"}}}}}
+	c := []run.Turn{{Role: "assistant", ToolCalls: []rolemanager.ToolCall{{ID: "c1", Name: "Read", Args: map[string]any{"path": "README.md"}}}}}
+	if passPrint(a, "x") != passPrint(b, "y") {
+		t.Fatal("the same calls with different ids and wording must fingerprint the same")
+	}
+	if passPrint(a, "x") == passPrint(c, "x") {
+		t.Fatal("different arguments must fingerprint differently")
+	}
+	if passPrint(nil, "  ") != "" {
+		t.Fatal("an empty pass has no fingerprint")
 	}
 }
 
@@ -1199,7 +1265,7 @@ func TestGoalPassLoopReportsObservedWritesToTheEvaluator(t *testing.T) {
 // The forced survey runs at most once per goal. A second one would buy more
 // reading, which is never what a not-started goal is short of.
 func TestGoalPassLoopSurveysAtMostOncePerGoal(t *testing.T) {
-	srv, _, _ := goalPassServer(t, goalPassOpts{main: "read", eval: []string{"GOAL_NOT_STARTED"}})
+	srv, _, _ := goalPassServer(t, goalPassOpts{main: "read-varied", eval: []string{"GOAL_NOT_STARTED"}})
 	defer srv.Close()
 
 	root := t.TempDir()
@@ -1390,5 +1456,31 @@ func TestGoalPassLoopStopsOnRepeatedVerdictWithholds(t *testing.T) {
 	}
 	if res.Reply != "Blocked: the file was withheld." {
 		t.Fatalf("Reply = %q, want the stop report", res.Reply)
+	}
+}
+
+// Executing an approved plan that only reads must never be told to invent an
+// edit: the no-write escalation names the next plan step and lets a finished
+// read-only plan report completion.
+func TestPlanExecutionNoWriteWordingAllowsReadOnlyPlans(t *testing.T) {
+	goal := passLedger{passesSinceWrite: 2}
+	if !strings.Contains(goal.noWriteDirective(), "make the smallest correct edit") {
+		t.Fatal("goal mode keeps the edit escalation")
+	}
+	plan := passLedger{executePlan: true, passesSinceWrite: 2}
+	got := plan.noWriteDirective()
+	if strings.Contains(got, "smallest correct edit") {
+		t.Fatalf("plan execution was told to edit:\n%s", got)
+	}
+	for _, want := range []string{"next unfinished step", "only reads or reports", "plan is complete"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("plan no-write directive missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(planReadStreakDirective, "without changing a file. Stop surveying: pick the first file") {
+		t.Fatal("the plan read-streak nudge must not demand an edit")
+	}
+	if strings.Contains(planExecuteDirective, "first edit of this pass") {
+		t.Fatal("the plan execute directive must not call the first step an edit")
 	}
 }

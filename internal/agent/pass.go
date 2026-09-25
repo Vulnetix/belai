@@ -11,6 +11,7 @@ import (
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/permissions"
+	"github.com/vulnetix/signet/internal/readindex"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/todos"
@@ -151,6 +152,12 @@ func (s *Session) readStreakNudge(streak, seen *int, mutations int, productive b
 	}
 	switch mode {
 	case modes.ModeGoal:
+		if s.turnExecutePlan {
+			// An approved plan may only read and report; telling it to
+			// edit would push a finished read-only plan into inventing
+			// a change.
+			return planReadStreakDirective
+		}
 		return readStreakDirective
 	case modes.ModeAgent:
 		return agentEditNudge
@@ -185,6 +192,24 @@ func updatePlanFromArgs(args map[string]any) (todos.List, bool) {
 	return list, true
 }
 
+// planPassIterations bounds one plan-mode pass. The plan is the deliverable,
+// and every round is a full-context model call: at the general 40-round
+// budget a planning pass read 114–138 files over 20+ minutes, the oldest
+// results were cleared out of context as it grew, and it re-read them instead
+// of writing (session b3a026a4, 99 minutes, no plan). Twelve rounds of
+// parallel reads is enough to ground any plan; what is still open goes under
+// Assumptions.
+const planPassIterations = 12
+
+// passBudget is the tool-round budget of one pass in mode: the session's
+// iteration budget, capped at planPassIterations for a plan-mode pass.
+func (s *Session) passBudget(mode modes.Mode) int {
+	if mode == modes.ModePlan && s.maxIter > planPassIterations {
+		return planPassIterations
+	}
+	return s.maxIter
+}
+
 // callUnit is one parsed, permission-checked tool call, used to decide the
 // concurrent run without reordering.
 type callUnit struct {
@@ -193,6 +218,11 @@ type callUnit struct {
 	parseErr error
 	tool     tools.Tool
 	decision permissions.Decision
+	// readKey is set for a Read the read index can answer; repeat is the
+	// harness note that answers it instead of running the read.
+	readKey readindex.Key
+	isRead  bool
+	repeat  string
 }
 
 // pass runs exactly one bounded tool-loop pass. It is the verbatim body of the
@@ -225,7 +255,7 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		o.spent = acc.spent
 		return o
 	}
-	for i := 0; i < s.maxIter; i++ {
+	for i := 0; i < s.passBudget(mode); i++ {
 		updatePlan = nil
 		turns = append(turns, s.drainSteer(ctx, pipe, emit)...)
 		s.clearStaleToolResults(turns)
@@ -300,6 +330,17 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 					u.decision, _, _ = s.decidePermission(call.Name, tool.Subject(args))
 				}
 			}
+			// A Read the index already answers is not run again. Only an
+			// allowed call on the advertised surface qualifies, so a deny
+			// rule or the final plan pass's narrowing still applies.
+			if u.tool != nil && u.decision == permissions.DecisionAllow {
+				if _, refusal := s.execTool(call.Name); refusal == "" {
+					if key, ok := s.readKey(call.Name, args); ok {
+						u.readKey, u.isRead = key, true
+						u.repeat = s.repeatedRead(key, turns)
+					}
+				}
+			}
 			units[i] = u
 		}
 
@@ -331,6 +372,10 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 					defer wg.Done()
 					sem <- struct{}{}
 					defer func() { <-sem }()
+					if u.repeat != "" {
+						results[i] = u.repeat
+						return
+					}
 					callCopy := u.call
 					callCopy.Args = u.args
 					start := time.Now()
@@ -351,9 +396,18 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 				callCopy := u.call
 				callCopy.Args = u.args
 				emit(Event{Kind: EventToolStartKind, Tool: &callCopy})
-				if u.parseErr != nil {
+				if u.isRead {
+					// Serial calls run after the ones before them in this
+					// response, which may have changed the file: decide
+					// again now rather than trusting the up-front answer.
+					u.repeat = s.repeatedRead(u.readKey, turns)
+				}
+				switch {
+				case u.parseErr != nil:
 					results[i] = fmt.Sprintf("tool result withheld: malformed arguments for %q: %v", u.call.Name, u.parseErr)
-				} else {
+				case u.repeat != "":
+					results[i] = u.repeat
+				default:
 					callCopy := u.call
 					callCopy.Args = u.args
 					start := time.Now()
@@ -362,6 +416,13 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 				}
 			}
 			acc.noteMutation(effects[i])
+			// Every file a call changed drops out of the read index, so a
+			// read after an edit always sees the new bytes. The stat check in
+			// the index covers changes the recorder cannot see.
+			s.reads.Invalidate(s.readRoot(), effects[i].paths...)
+			if u.isRead && u.repeat == "" {
+				s.recordRead(u.readKey, u.call.ID, results[i])
+			}
 			toolResult := results[i]
 			emit(Event{Kind: EventToolResultKind, ToolName: u.call.Name, ToolCallID: u.call.ID, ToolResult: toolResult, Duration: took[i]})
 			turns = append(turns, run.Turn{

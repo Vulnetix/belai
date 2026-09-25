@@ -210,6 +210,19 @@ func (a Answers) Render(q Questionnaire) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+// SkippedAll reports whether the user declined to answer every group: no
+// choice and no note anywhere. A questionnaire answered this way carries no
+// new information, so the clarify loop should not spend another model round
+// re-asking it — planning proceeds with the evidence already gathered.
+func (a Answers) SkippedAll() bool {
+	for _, ans := range a.Items {
+		if len(ans.Chosen) > 0 || ans.Note != "" {
+			return false
+		}
+	}
+	return true
+}
+
 // sanitizeQuestionnaire applies sanitize.Sanitize to every human-readable
 // string in the parsed questionnaire.
 func sanitizeQuestionnaire(q Questionnaire) Questionnaire {

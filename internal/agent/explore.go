@@ -247,6 +247,28 @@ func (s *Session) goalSurveyTurns(ctx context.Context, goalText string, pipe *ro
 	return s.runExploreTasks(ctx, explore.PlanGoalSurvey(goalText), "goal-survey", pipe, emit)
 }
 
+// exploreConfig returns the config an explore subagent runs under. The
+// subagent performs a bounded, read-only survey whose quality does not need
+// the full-size main model, so it runs on the fast tier whenever one is
+// resolved. Plan mode is read-only and the user is waiting for a plan, so the
+// pre-planning survey must not spend minutes on a slow reasoning model before
+// the first planning turn. Only the main-model identity moves; the resolved
+// classifier stack and routing stay the parent's.
+func (s *Session) exploreConfig() run.Config {
+	cfg := s.cfg
+	if f := cfg.Routing.Fast; f != nil {
+		cfg.Provider = f.Provider
+		cfg.BaseURL = f.BaseURL
+		cfg.APIKey = f.APIKey
+		cfg.Model = f.Model
+		cfg.Effort = "low" // the survey does not need extended thinking
+		cfg.API = f.API
+		cfg.Auth = f.Auth
+		cfg.Kind = f.Kind
+	}
+	return cfg
+}
+
 // runSubagent runs one read-only explore subagent and returns its classified,
 // sealed finding (or "" when the finding is unsafe or the subagent fails).
 // The subagent sees the original prompt, the grounding evidence, and the
@@ -280,7 +302,7 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task, steerCh chan 
 	opts.ExploreTools = reg.Names() // promise only the tools actually registered
 
 	sub, err := NewSession(Options{
-		Cfg:           s.cfg,
+		Cfg:           s.exploreConfig(),
 		Client:        s.client,
 		Registry:      reg,
 		Live:          s.live,
