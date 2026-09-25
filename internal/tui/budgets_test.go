@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -287,5 +290,34 @@ func TestBudgetFormatting(t *testing.T) {
 		if got := humanTokens(n); got != want {
 			t.Errorf("humanTokens(%d) = %q, want %q", n, got, want)
 		}
+	}
+}
+
+// R14: the TUI imports earlier sessions' transcripts at start (an Init
+// command), so a day budget counts sessions it never recorded live.
+func TestBudgetRule14_TUIImportsHistoryAtStart(t *testing.T) {
+	a := budgetApp(t, bud("p", "m", config.BudgetScopeDay, 1000))
+	dir, err := config.SessionsDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "proj"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	line := fmt.Sprintf(`{"type":"assistant","timestamp":%d,"content":"","meta":{"provider":"p","model":"m","mode":"agent","total_tokens":250}}`, time.Now().UnixMilli())
+	if err := os.WriteFile(filepath.Join(dir, "proj", "earlier.jsonl"), []byte(line+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := a.importHistory()
+	if cmd == nil {
+		t.Fatal("no import command")
+	}
+	cmd()
+	if got := a.budgets.Used(bud("p", "m", config.BudgetScopeDay, 1)); got != 250 {
+		t.Fatalf("day usage after the import = %d, want 250", got)
+	}
+	a.refreshFooter()
+	if g := a.footer.Budget; g == nil || g.TokenPct != 75 {
+		t.Fatalf("footer = %+v, want 75%% left", g)
 	}
 }

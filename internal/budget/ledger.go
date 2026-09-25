@@ -30,6 +30,11 @@ type ledgerData struct {
 	Version  int                         `json:"version"`
 	Days     map[string]map[string]int64 `json:"days,omitempty"`
 	Sessions map[string]*sessionEntry    `json:"sessions,omitempty"`
+	// Imported names the sessions whose transcript usage has been folded into
+	// Days (value: the local date of the import), so a session is imported at
+	// most once. A live session pruned from Sessions moves here too, so its
+	// transcript is never imported on top of the usage it recorded live.
+	Imported map[string]string `json:"imported,omitempty"`
 }
 
 type sessionEntry struct {
@@ -38,7 +43,7 @@ type sessionEntry struct {
 }
 
 func newLedgerData() ledgerData {
-	return ledgerData{Version: 1, Days: map[string]map[string]int64{}, Sessions: map[string]*sessionEntry{}}
+	return ledgerData{Version: 1, Days: map[string]map[string]int64{}, Sessions: map[string]*sessionEntry{}, Imported: map[string]string{}}
 }
 
 // Recorder accumulates token usage and measures budgets against it. Add is
@@ -357,12 +362,18 @@ func readLedger(path string) (ledgerData, string, error) {
 	if data.Sessions == nil {
 		data.Sessions = map[string]*sessionEntry{}
 	}
+	if data.Imported == nil {
+		data.Imported = map[string]string{}
+	}
 	return data, "", nil
 }
 
 // prune drops day totals older than dayRetention and sessions idle past the
 // session retention.
 func prune(d *ledgerData, now time.Time, sessionRetention time.Duration) {
+	if d.Imported == nil {
+		d.Imported = map[string]string{}
+	}
 	cutoff := now.Add(-dayRetention).Format(dayLayout)
 	for key, byDay := range d.Days {
 		for day := range byDay {
@@ -377,6 +388,20 @@ func prune(d *ledgerData, now time.Time, sessionRetention time.Duration) {
 	for id, e := range d.Sessions {
 		if e == nil || now.Sub(e.Updated) > sessionRetention {
 			delete(d.Sessions, id)
+			// Its usage is already in Days: remember it so the history import
+			// never counts its transcript again.
+			day := now.Format(dayLayout)
+			if e != nil {
+				day = e.Updated.Format(dayLayout)
+			}
+			d.Imported[id] = day
+		}
+	}
+	// An import marker outlives its usage by the same 13 months: once the days
+	// it fed are pruned, re-importing could only add days that are pruned too.
+	for id, day := range d.Imported {
+		if day < cutoff {
+			delete(d.Imported, id)
 		}
 	}
 }
