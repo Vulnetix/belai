@@ -317,6 +317,9 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("rename", "rename this session", nil, func(a *App, arg string) tea.Cmd {
 		return a.renameSession(arg)
 	})
+	r.Register("export", "export this session (or one by id) as Markdown", nil, func(a *App, arg string) tea.Cmd {
+		return a.exportSessionCmd(arg)
+	})
 	r.Register("agent", "pick an agent profile or manage background agents", func() []string {
 		return []string{"create", "list", "edit", "start", "stop", "pause", "resume", "log"}
 	}, func(a *App, arg string) tea.Cmd {

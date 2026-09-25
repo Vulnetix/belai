@@ -92,10 +92,20 @@ func main() {
 	flag.StringVar(resume, "r", "", "shorthand for -resume")
 	continueLast := flag.String("continue", "", "continue the most recent session for this project")
 	flag.StringVar(continueLast, "c", "", "shorthand for -continue")
+	exportID := flag.String("export", "", "export a session by id or unique id prefix as Markdown and exit")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Println(version.Version)
+		os.Exit(0)
+	}
+
+	workdir, _ := os.Getwd()
+	if *exportID != "" {
+		if err := exportSessionCLI(*exportID, workdir); err != nil {
+			fmt.Fprintln(os.Stderr, "signet:", err)
+			os.Exit(1)
+		}
 		os.Exit(0)
 	}
 
@@ -111,8 +121,6 @@ func main() {
 		fmt.Fprintln(os.Stderr, "signet: -continue requires the interactive TUI (not supported with -prompt)")
 		os.Exit(1)
 	}
-
-	workdir, _ := os.Getwd()
 
 	// First-run trust gate: block on an unknown directory before any repo
 	// content is read, any process is auto-started, or any model turn runs.
@@ -320,6 +328,27 @@ func hardExitOnSecondSignal(ctx context.Context) {
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	<-sig
 	os.Exit(130)
+}
+
+// exportSessionCLI resolves a session id or prefix (preferring the current
+// project) and prints its Markdown export to stdout. It reads only the global
+// session store, never repository content, so it needs no trust gate.
+func exportSessionCLI(idOrPrefix, workdir string) error {
+	store, err := session.NewStore()
+	if err != nil {
+		return err
+	}
+	cur, _ := session.KeyFor(workdir)
+	key, id, err := store.ResolveAnywhere(cur, idOrPrefix)
+	if err != nil {
+		return err
+	}
+	entries, err := store.ReadFrom(key, id)
+	if err != nil {
+		return err
+	}
+	fmt.Print(session.ExportMarkdown(entries, session.ExportOptions{ID: id}))
+	return nil
 }
 
 func interactive(stdoutTTY, stdinTTY bool, env func(string) string) bool {

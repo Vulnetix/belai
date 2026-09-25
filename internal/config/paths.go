@@ -108,6 +108,13 @@ func ProjectPlansDir(workdir string) string {
 	return filepath.Join(ProjectDir(workdir), "plans")
 }
 
+// ProjectExportsDir returns <workdir>/.vulnetix/exports, the directory that
+// holds exported session Markdown. Exports contain raw tool output, so the
+// directory is created 0700 and files are written 0600.
+func ProjectExportsDir(workdir string) string {
+	return filepath.Join(ProjectDir(workdir), "exports")
+}
+
 // ProjectGoalsDir returns <workdir>/.vulnetix/goals.
 func ProjectGoalsDir(workdir string) string {
 	return filepath.Join(ProjectDir(workdir), "goals")
