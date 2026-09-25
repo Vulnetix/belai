@@ -61,6 +61,12 @@ const (
 	// rejected argument shape costs a pass without meaning the run is over,
 	// and failing the goal there discards every pass that did work.
 	maxUnproductivePasses = 2
+	// goalVerdictStall: tool results withheld by a classifier verdict, with no
+	// file changed, before the loop stops. Asking again returns the same
+	// verdict, so a goal that needs that content cannot progress; without this
+	// a goal to "read this file verbatim" retried Read, Cat, Bash and Grep
+	// against an injected file until it was killed.
+	goalVerdictStall = 3
 	// readStreakNudgeAfter is how many tool rounds in a row may change no file
 	// before a goal or agent pass is told to start editing. The nudge repeats
 	// every readStreakNudgeAfter rounds while the streak lasts.
@@ -486,6 +492,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 	maxPasses := s.settings.Resilience.MaxPassesOr()
 
 	l := passLedger{goalText: goalText}
+	verdictBase := s.verdictWithheld.Load()
 	gs := goals.NewGoalState(goalText)
 	goalStart := time.Now()
 	totalTokens := 0
@@ -565,6 +572,18 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 		// key off.
 		l.noteWrites(out)
 		l.noteWithheld(out)
+
+		// Content the classifier withheld does not come back by asking again,
+		// with the same tool or another. A goal that has written nothing while
+		// its reads keep being withheld cannot progress: stop and report what
+		// was blocked rather than loop against the same verdict. Checked
+		// before the broken-surface guard below, whose "re-check the path
+		// resolver" advice is wrong when the cause is a safety verdict.
+		if n := s.verdictWithheld.Load() - verdictBase; l.writes == 0 && n >= goalVerdictStall {
+			emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("goal stopped: the security classifier withheld content %d times and no file has changed; the goal cannot proceed without that content", n)})
+			return s.goalReport(ctx, system, turns, streaming, emit, rolemanager.GoalPartial,
+				run.Result{Reply: out.lastText, Usage: out.usage, GoalSentinel: rolemanager.GoalPartial, Passes: l.passes}), nil
+		}
 
 		// A goal whose every pass ended with every tool result withheld has a
 		// broken tool surface, not a lazy model. Terminate with the tool

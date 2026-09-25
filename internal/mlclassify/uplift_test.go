@@ -110,6 +110,7 @@ func TestNewGateEmbeddedUnknownID(t *testing.T) {
 func TestNewGateHuggingFaceUsesCachedFiles(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 	id := "fake/remote"
+	hubStub(t, "config.json", "model.safetensors", "tokenizer.json")
 	dir, err := modelCacheDir(id)
 	if err != nil {
 		t.Fatalf("modelCacheDir: %v", err)
@@ -244,6 +245,7 @@ func TestNewRemoteGateRequiresAttackLabel(t *testing.T) {
 func TestNewRemoteGateNilTokenResolver(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 	id := "fake/nil-token"
+	hubStub(t, "config.json", "model.safetensors", "tokenizer.json")
 	dir, err := modelCacheDir(id)
 	if err != nil {
 		t.Fatalf("modelCacheDir: %v", err)

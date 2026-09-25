@@ -131,30 +131,37 @@ type Options struct {
 
 // Session executes the tool loop for a single user prompt.
 type Session struct {
-	cfg            run.Config
-	client         *http.Client
-	registry       *tools.Registry
-	perms          permissions.Settings
-	live           *posture.Live
-	planMode       bool
-	allowExplore   bool
-	allowClarify   bool
-	allowAsk       bool
-	allowPassLoop  bool
-	maxIter        int
-	cache          *rolemanager.Cache
-	caps           tools.Capabilities
-	repoIndex      repoindex.Index
-	planSurface    tools.PlanSurface
-	repoMap        *repomap.Map
-	workspaceMaps  []repomap.Map
-	opts           prompt.Options
-	workdir        string
-	state          config.State
-	settings       config.Settings
-	pool           *nonce.Pool
-	openAITools    []wire.OpenAITool
-	anthropicTools []wire.AnthropicToolDef
+	cfg           run.Config
+	client        *http.Client
+	registry      *tools.Registry
+	perms         permissions.Settings
+	live          *posture.Live
+	planMode      bool
+	allowExplore  bool
+	allowClarify  bool
+	allowAsk      bool
+	allowPassLoop bool
+	maxIter       int
+	cache         *rolemanager.Cache
+	// flagged holds the files whose Read result was withheld, so a Grep over
+	// the same file cannot hand the lines back unclassified.
+	flagged flaggedFiles
+	// verdictWithheld counts tool results the classifier withheld by verdict
+	// (not by error). The goal loop reads it to stop a goal that keeps asking
+	// for content that will never be released.
+	verdictWithheld atomic.Int64
+	caps            tools.Capabilities
+	repoIndex       repoindex.Index
+	planSurface     tools.PlanSurface
+	repoMap         *repomap.Map
+	workspaceMaps   []repomap.Map
+	opts            prompt.Options
+	workdir         string
+	state           config.State
+	settings        config.Settings
+	pool            *nonce.Pool
+	openAITools     []wire.OpenAITool
+	anthropicTools  []wire.AnthropicToolDef
 	// plan*Tools is the same registry narrowed by Registry.Plan: no mutating
 	// tools and no Bash. A plan-mode turn advertises these instead.
 	planOpenAITools    []wire.OpenAITool
@@ -1160,6 +1167,15 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 	// does first — and promoted without the round trip. See
 	// tools.Kind.NeedsClassifier.
 	if !res.Kind.NeedsClassifier() {
+		if res.Kind == tools.KindGrep {
+			// Always filter: a registry without a tracker resolves row paths
+			// against the session workdir rather than skipping the check.
+			root, dir := s.workdir, s.workdir
+			if cwd := s.registry.Cwd(); cwd != nil {
+				root, dir = cwd.Root(), cwd.Dir()
+			}
+			res.Content = s.flagged.withholdGrep(res.Content, root, dir)
+		}
 		return delimiters.Egress(sanitize.Sanitize(res.Content), s.pool)
 	}
 
@@ -1181,6 +1197,8 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 	if dec.Action == rolemanager.ActionProceed {
 		return delimiters.Egress(dec.Content, s.pool)
 	}
+	s.flagged.flag(res, dec.Sentinel)
+	s.verdictWithheld.Add(1)
 
 	if s.live.Level(posture.ToolResultUnsafe) == posture.Warn {
 		return fmt.Sprintf("tool result withheld: classified %s. %s", dec.Sentinel.Label(), withheldVerdictHint)
@@ -1234,7 +1252,7 @@ const classifierErrorMaxRunes = 180
 // it, sessions showed the model re-reading the same withheld file with new
 // offsets until the budget ran out. The verdict is cached, so the same bytes
 // are withheld again.
-const withheldVerdictHint = "This is a safety verdict on the content, not an argument error: requesting the same content again returns the same verdict. Use Grep for just the lines you need, or continue without it."
+const withheldVerdictHint = "This is a safety verdict on the content, not an argument error: requesting the same content again, with this or any other tool, returns the same verdict. Continue without it."
 
 // classifierWithheld renders the placeholder that stands in for a tool result
 // the classifier could not verify. The placeholder enters the model's context

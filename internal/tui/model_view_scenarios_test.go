@@ -42,8 +42,8 @@ func TestModelViewScenarioNoClassifier(t *testing.T) {
 		if !strings.Contains(p1.value, "GuardrailsAI/prompt-saturation-attack-detector") {
 			t.Fatalf("phase1 row = %q, want the embedded saturation model", p1.value)
 		}
-	} else if !strings.Contains(p1.value, "LLM sentinel (no HuggingFace key)") {
-		t.Fatalf("phase1 row = %q, want the no-HF-key hint", p1.value)
+	} else if !strings.Contains(p1.value, "off — no model in this build") {
+		t.Fatalf("phase1 row = %q, want the no-model hint", p1.value)
 	}
 
 	p2, ok := rowByKey(rows, "phase2")

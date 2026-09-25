@@ -153,6 +153,41 @@ func (w WindowConfig) maxWindows() int {
 	return w.MaxWindows
 }
 
+// phase1WindowTokens is the phase-1 window ceiling. The saturation model
+// scores length, not intent: ordinary source and prose score about 0 up to
+// roughly 100 tokens and about 1.0 beyond it (checked against a transformers
+// reference run of the same weights), so a 508-token window flagged 108 of 157
+// files in this repository as PROMPT_INJECTION. Phase 1 therefore classifies
+// short windows of its own; phase 2 keeps the full model-length windows.
+const phase1WindowTokens = 95
+
+// phase1Tokens is phase 1's window ceiling: phase1WindowTokens, or the general
+// window when that is smaller.
+func (w WindowConfig) phase1Tokens() int {
+	return min(phase1WindowTokens, w.tokens())
+}
+
+// phase1Overlap is phase 1's marginal overlap: the general overlap when phase
+// 1 uses the general window, otherwise an eighth of its own window.
+func (w WindowConfig) phase1Overlap() int {
+	if w.phase1Tokens() == w.tokens() {
+		return w.overlap()
+	}
+	return max(1, w.phase1Tokens()/8)
+}
+
+// phase1MaxWindows scales the window cap to phase 1's smaller windows, so the
+// content size past which classification fails closed is the same for both
+// phases rather than shrinking five-fold for phase 1.
+func (w WindowConfig) phase1MaxWindows() int {
+	if w.phase1Tokens() == w.tokens() {
+		return w.maxWindows()
+	}
+	stride := max(1, w.tokens()-min(w.overlap(), w.tokens()/2))
+	stride1 := max(1, w.phase1Tokens()-w.phase1Overlap())
+	return (w.maxWindows()*stride + stride1 - 1) / stride1
+}
+
 // Options configures the ML classifier stack.
 type Options struct {
 	// Phase1 and Phase2 configure the two local gates. A nil config disables
@@ -184,7 +219,9 @@ type Options struct {
 // rune/byte offset bug, so every verdict computed on misaligned windows —
 // including permanently cached false positives on non-ASCII files — is
 // re-evaluated once rather than trusted. Content is still always classified.
-const windowingVersion = 2
+// Version 3 gave phase 1 its own short levelled windows, so the length false
+// positives cached under version 2 are re-evaluated.
+const windowingVersion = 3
 
 func (o Options) Identity() string {
 	var b strings.Builder
@@ -339,28 +376,33 @@ func Embedded() bool {
 // is returned as SAFE (see phase3), so the primary gates — not the opt-in
 // extraction check — decide the verdict.
 func (c *Classifier) Classify(ctx context.Context, p rolemanager.ClassifierPayload) (string, error) {
-	windows, err := c.windows(p.User)
+	// Phase 1 classifies its own short windows and phase 2 the general ones;
+	// both are cut before any model runs, so oversized content fails closed
+	// without a verdict. The two phases run concurrently and share one
+	// wall-clock time: the time the gates held the call.
+	var w1, w2 []string
+	var err error
+	if c.phase1 != nil {
+		if w1, err = c.phase1Windows(p.User); err != nil {
+			return "", err
+		}
+	}
+	if c.phase2 != nil {
+		if w2, err = c.windows(p.User); err != nil {
+			return "", err
+		}
+	}
+	gatesStart := time.Now()
+	p1, p2, err := c.runGates(ctx, w1, w2)
 	if err != nil {
 		return "", err
 	}
-	var p1, p2 rolemanager.Sentinel = rolemanager.SentinelSafe, rolemanager.SentinelSafe
-	// Phases 1 and 2 run concurrently per window, so they share one
-	// wall-clock time: the time the gates held the call.
-	gatesStart := time.Now()
-	for _, w := range windows {
-		a, b, err := c.classifyWindow(ctx, w)
-		if err != nil {
-			return "", err
-		}
-		p1 = fold(p1, a)
-		p2 = fold(p2, b)
-		// PROMPT_INJECTION is the highest rank; no later window can change it.
-		if p1 == rolemanager.SentinelPromptInjection {
-			c.emitPhases(p1, p2, "skipped", time.Since(gatesStart), 0)
-			return string(p1), nil
-		}
-	}
 	gates := time.Since(gatesStart)
+	// PROMPT_INJECTION is the highest rank; phase 2 cannot change it.
+	if p1 == rolemanager.SentinelPromptInjection {
+		c.emitPhases(p1, p2, "skipped", gates, 0)
+		return string(p1), nil
+	}
 	verdict := fold(p1, p2)
 	if verdict != rolemanager.SentinelSafe {
 		c.emitPhases(p1, p2, "skipped", gates, 0)
@@ -391,42 +433,55 @@ func (c *Classifier) emitPhases(p1, p2 rolemanager.Sentinel, phase3 string, gate
 	rolemanager.RecordSecurityPhaseTimed("phase 3", phase3, c.phase3Label, phase3Took)
 }
 
-// classifyWindow runs phases 1 and 2 concurrently over one window and returns
-// each phase's verdict. Any gate error is a hard failure.
-func (c *Classifier) classifyWindow(ctx context.Context, window string) (rolemanager.Sentinel, rolemanager.Sentinel, error) {
+// runGates runs phase 1 over w1 and phase 2 over w2 concurrently and returns
+// each phase's folded verdict. A phase-1 PROMPT_INJECTION, the highest rank,
+// stops phase 2 early. Any other gate error is a hard failure.
+func (c *Classifier) runGates(ctx context.Context, w1, w2 []string) (rolemanager.Sentinel, rolemanager.Sentinel, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	type result struct {
-		phase Phase
-		s     rolemanager.Sentinel
-		err   error
+		s   rolemanager.Sentinel
+		err error
 	}
-	results := make(chan result, 2)
-	run := func(g gate) {
-		s, _, err := g.fire(ctx, window)
-		results <- result{phase: g.phase(), s: s, err: err}
+	scan := func(g gate, windows []string, stop rolemanager.Sentinel, out chan<- result) {
+		verdict := rolemanager.SentinelSafe
+		for _, w := range windows {
+			s, _, err := g.fire(ctx, w)
+			if err != nil {
+				out <- result{err: err}
+				return
+			}
+			if verdict = fold(verdict, s); verdict == stop {
+				break
+			}
+		}
+		out <- result{s: verdict}
 	}
-	n := 0
+	r1, r2 := make(chan result, 1), make(chan result, 1)
 	if c.phase1 != nil {
-		n++
-		go run(c.phase1)
+		go scan(c.phase1, w1, rolemanager.SentinelPromptInjection, r1)
+	} else {
+		r1 <- result{s: rolemanager.SentinelSafe}
 	}
 	if c.phase2 != nil {
-		n++
-		go run(c.phase2)
+		go scan(c.phase2, w2, rolemanager.SentinelJailbreak, r2)
+	} else {
+		r2 <- result{s: rolemanager.SentinelSafe}
 	}
-	p1, p2 := rolemanager.SentinelSafe, rolemanager.SentinelSafe
-	for i := 0; i < n; i++ {
-		r := <-results
-		if r.err != nil {
-			return "", "", r.err
-		}
-		switch r.phase {
-		case Phase1:
-			p1 = r.s
-		case Phase2:
-			p2 = r.s
-		}
+	a := <-r1
+	if a.err != nil {
+		return "", "", a.err
 	}
-	return p1, p2, nil
+	if a.s == rolemanager.SentinelPromptInjection {
+		cancel()
+		<-r2 // phase 2 may fail on the cancel; its verdict cannot matter
+		return a.s, rolemanager.SentinelSafe, nil
+	}
+	b := <-r2
+	if b.err != nil {
+		return "", "", b.err
+	}
+	return a.s, b.s, nil
 }
 
 // phase3 runs the narrowed LLM sentinel. With a local jailbreak gate it
@@ -461,47 +516,56 @@ func (c *Classifier) phase3(ctx context.Context, content string) (string, string
 	return string(s), string(s), nil
 }
 
-// windows splits content into overlapping token windows no larger than the
-// configured token bound, aligned to token boundaries so no window begins or
-// ends mid-token. It fails closed when the content would exceed MaxWindows.
+// windows splits content into the general windows phase 2 classifies.
 func (c *Classifier) windows(content string) ([]string, error) {
-	toks := c.tok(content)
-	limit := c.window.tokens()
-	overlap := c.window.overlap()
-	maxWindows := c.window.maxWindows()
+	return c.levelledWindows(content, c.window.tokens(), c.window.overlap(), c.window.maxWindows())
+}
 
+// phase1Windows splits content into the short windows phase 1 classifies.
+func (c *Classifier) phase1Windows(content string) ([]string, error) {
+	return c.levelledWindows(content, c.window.phase1Tokens(), c.window.phase1Overlap(), c.window.phase1MaxWindows())
+}
+
+// levelledWindows splits content into overlapping token windows no larger than
+// limit, aligned to token boundaries so no window begins or ends mid-token. The
+// windows are levelled: it takes the fewest windows that fit, then gives every
+// window the same size and spaces them evenly, so adjacent windows share at
+// least overlap tokens and no short tail window is left over (100 tokens at a
+// 95-token limit is two windows of 55, not 95 and 5). It fails closed when the
+// content would need more than maxWindows windows.
+func (c *Classifier) levelledWindows(content string, limit, overlap, maxWindows int) ([]string, error) {
+	toks := c.tok(content)
 	if overlap >= limit {
 		overlap = limit / 2
 	}
-
-	if len(toks) == 0 {
+	n := len(toks)
+	if n == 0 {
 		return []string{""}, nil
 	}
-	if len(toks) <= limit {
+	if n <= limit {
 		return []string{content}, nil
 	}
+
+	// k windows of limit tokens advancing limit-overlap cover n tokens when
+	// k*(limit-overlap)+overlap >= n. Levelled, each window is
+	// ceil((n+(k-1)*overlap)/k) <= limit tokens.
+	stride := limit - overlap
+	k := (n - overlap + stride - 1) / stride
+	if k > maxWindows {
+		return nil, fmt.Errorf("mlclassify: content exceeds %d windows", maxWindows)
+	}
+	size := (n + (k-1)*overlap + k - 1) / k
 
 	// The tokenizer reports offsets in runes, not bytes. Slicing the string
 	// with them directly misaligned every window on non-ASCII text: windows
 	// re-tokenized past 512 tokens (a hard model error that withheld the
 	// result) and the file's tail was never classified at all.
 	byteAt := runeByteOffsets(content)
-	var windows []string
-	for start := 0; start < len(toks); {
-		end := start + limit
-		if end >= len(toks) {
-			windows = append(windows, sliceText(content, byteAt, toks, start, len(toks)))
-			break
-		}
-		windows = append(windows, sliceText(content, byteAt, toks, start, end))
-		if len(windows) > maxWindows {
-			return nil, fmt.Errorf("mlclassify: content exceeds %d windows", maxWindows)
-		}
-		next := end - overlap
-		if next <= start {
-			next = start + 1
-		}
-		start = next
+	windows := make([]string, 0, k)
+	for i := 0; i < k; i++ {
+		// Evenly spaced starts; the last window ends on the final token.
+		start := i * (n - size) / (k - 1)
+		windows = append(windows, sliceText(content, byteAt, toks, start, start+size))
 	}
 	return windows, nil
 }

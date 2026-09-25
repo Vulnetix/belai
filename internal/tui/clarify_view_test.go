@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/vulnetix/signet/internal/agent"
 	"github.com/vulnetix/signet/internal/clarify"
@@ -236,3 +238,38 @@ func TestClarifyEscCancelsTurn(t *testing.T) {
 }
 
 func keyMsg(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
+
+// TestClarifyReplacesComposerAndFooter checks that the clarify questionnaire
+// is rendered as a bottom panel over the chat transcript, sized to its
+// content, and that the composer and footer are hidden while it is active.
+func TestClarifyReplacesComposerAndFooter(t *testing.T) {
+	a := New(Options{})
+	a.width = 120
+	a.height = 40
+	a.cfg.Model = "test-clarify-model"
+
+	reply := make(chan clarify.Answers)
+	a.clarifyState = newClarifyState(sampleQuestionnaire(), reply)
+	a.view = viewClarify
+
+	view := a.chatView()
+
+	if !strings.Contains(view, "Clarify") {
+		t.Fatalf("chatView should render the clarify panel header")
+	}
+	if strings.Contains(view, "test-clarify-model") {
+		t.Fatalf("chatView should not render the footer while clarify is active")
+	}
+	if strings.Contains(view, "⏎ send · ctrl+j newline") {
+		t.Fatalf("chatView should not render the composer while clarify is active")
+	}
+
+	wantPanelH := lipgloss.Height(a.clarifyPanel())
+	wantVP := a.height - 2 - wantPanelH
+	if wantVP < 5 {
+		wantVP = 5
+	}
+	if a.vp.Height != wantVP {
+		t.Fatalf("viewport height = %d, want %d (panel height %d)", a.vp.Height, wantVP, wantPanelH)
+	}
+}

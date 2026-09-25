@@ -24,15 +24,24 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
 - **Arbitrary content goes through the classifier.** `Bash` (an arbitrary
   command), `WebFetch` and `WebSearch` (text written off this machine),
   `Read` (a file's bytes), `GH`/`Glab` results (`KindRemote`, third-party
-  repository text), `RepoRead` (`KindRead`), `SubAgentLog` (`KindProcess`),
+  repository text), `RepoRead` and the native tools that can print a file's
+  contents — `Cat`, `Head`, `Tail`, `Strings` and the path-reading transforms
+  `JQ`, `YQ`, `Sed`, `Awk`, `Cut`, `Sort`, `Uniq`, `Tr`, `Paste`, `Join`,
+  `Diff` (all `KindRead`), `SubAgentLog` (`KindProcess`),
   `SearchSessions`/`ReadSession`/`SearchMemory` (`KindAgentStore`, other
   agents' transcript and memory text) and the recovery subagent's
   process-tail briefing all classify, unconditionally. Do not add an
   exemption for any of them.
 - **Shaped, controlled results are sanitized only.** `Grep`, `Glob`, `Write`,
-  `Edit`, and the native catalogue return output whose shape the harness
-  knows — `path:line:text`, a list of paths, a confirmation it composed
-  itself, a fixed argv's output — so they skip the round trip. A kind absent
+  `Edit`, and the rest of the native catalogue (listings, `File`, `Cmp`,
+  `Date`, …) return output whose shape the harness knows — `path:line:text`,
+  a list of paths, a confirmation it composed itself, a fixed argv's
+  metadata — so they skip the round trip. A native tool that can print a
+  file's contents is not shaped, whatever its argv. `Grep`'s text
+  column is still the file's own lines, so a Grep row from a file whose `Read`
+  was withheld earlier in the session is withheld too (`agent.flaggedFiles`);
+  the withheld placeholder must never point the model at another tool for the
+  same content. A kind absent
   from `tools.classifierKinds` is sanitize-only, so adding a tool whose
   content is arbitrary means adding its kind there. The optional diagnostics
   block that rides back on `Write`/`Edit` is shaped the same way: no more

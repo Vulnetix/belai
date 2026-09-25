@@ -1,10 +1,13 @@
 package run
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/mlclassify"
+	"github.com/vulnetix/signet/internal/tools"
 )
 
 func TestClassifierKindDefault(t *testing.T) {
@@ -114,7 +117,11 @@ func TestResolveSecurityClassifierPhase2RemoteLabel(t *testing.T) {
 }
 
 func TestResolveSecurityClassifierModelsPhase1(t *testing.T) {
-	t.Setenv("HF_TOKEN", "")
+	// Even with a HuggingFace token, the untagged build resolves no phase-1
+	// model: HF serverless inference cannot serve the known saturation model
+	// (its repo ships no tokenizer files), so a token alone must not fabricate
+	// a remote default that 400s every prompt.
+	t.Setenv("HF_TOKEN", "hf-x")
 	t.Setenv("HUGGINGFACE_TOKEN", "")
 	sc := ResolveSecurityClassifier(&config.ClassifierSettings{Kind: "models"})
 	if mlclassify.Embedded() {
@@ -123,12 +130,12 @@ func TestResolveSecurityClassifierModelsPhase1(t *testing.T) {
 		}
 		return
 	}
-	// On the untagged build with no embedded model, no explicit phase-1 config
-	// and no HuggingFace token, phase 1 is absent — the ML stack cannot run,
-	// which the pipeline treats as a build failure rather than a silent LLM
-	// downgrade.
+	// On the untagged build with no embedded model and no explicit phase-1
+	// config, phase 1 is absent regardless of token presence — the ML stack
+	// cannot run, which the pipeline fails closed on rather than silently
+	// downgrading to the LLM path.
 	if sc.Phase1 != nil {
-		t.Fatalf("phase1 = %+v, want nil without embedded model, explicit config or HF token", sc.Phase1)
+		t.Fatalf("phase1 = %+v, want nil without embedded model or explicit config", sc.Phase1)
 	}
 }
 
@@ -138,6 +145,31 @@ func TestPreloadClassifierNoopForLLM(t *testing.T) {
 	}
 	if err := PreloadClassifier(SecurityClassifierConfig{}); err != nil {
 		t.Fatalf("PreloadClassifier(empty) = %v, want nil", err)
+	}
+}
+
+// TestModelsKindNoPhaseModelFailsClosedWithActionableError pins that a
+// models-kind config with no resolvable phase model (a no-classifier binary
+// with no explicit phase) fails closed with the actionable error naming the
+// ways out, not the opaque "no phase configured" repeated per prompt.
+func TestModelsKindNoPhaseModelFailsClosedWithActionableError(t *testing.T) {
+	if mlclassify.Embedded() {
+		t.Skip("embedded build always resolves a phase model")
+	}
+	cfg := Config{Provider: "openai", BaseURL: "https://example.invalid/v1", APIKey: "k", Model: "gpt-5"}
+	cfg.Security = ResolveSecurityClassifier(&config.ClassifierSettings{Kind: "models"})
+	if cfg.Security.Phase1 != nil || cfg.Security.Phase2 != nil {
+		t.Fatalf("setup: security config resolved phases: %+v", cfg.Security)
+	}
+	p := NewPipelineWithRetry(cfg, nil, nil, nil)
+	_, err := p.Process(context.Background(), tools.Result{Kind: tools.KindBash, Content: "echo hi"})
+	if err == nil {
+		t.Fatal("Process must fail closed when the models path has no phase model")
+	}
+	for _, want := range []string{"no phase model", "just build-bert", "\"llm\""} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q must contain %q", err.Error(), want)
+		}
 	}
 }
 

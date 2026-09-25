@@ -3634,6 +3634,12 @@ func (a *App) buildTurns() []run.Turn {
 
 // View implements tea.Model.
 func (a *App) View() string {
+	// The clarify questionnaire is a bottom-sheet over the chat transcript:
+	// it keeps the conversation visible while replacing the composer and
+	// footer area with the interactive panel.
+	if a.view == viewClarify {
+		return a.chatView()
+	}
 	if a.view != viewChat {
 		if h, ok := viewHandlers[a.view]; ok {
 			return h.render(a)
@@ -3674,6 +3680,21 @@ func (a *App) chatView() string {
 		body = components.Highlight(body, lm, from, to, a.vp.YOffset, a.vp.Height)
 	}
 	a.vp.SetContent(body)
+
+	// When clarifying, the panel replaces the composer and footer. Compute it
+	// before follow/GotoBottom so the viewport height can be adjusted to its
+	// natural content height while preserving a minimum transcript area.
+	var clarifyPanel string
+	if a.view == viewClarify {
+		clarifyPanel = a.clarifyPanel()
+		panelH := lipgloss.Height(clarifyPanel)
+		avail := a.height - 2 - panelH
+		if avail < 5 {
+			avail = 5
+		}
+		a.vp.Height = avail
+	}
+
 	if a.follow {
 		a.vp.GotoBottom()
 	}
@@ -3694,50 +3715,55 @@ func (a *App) chatView() string {
 	var sb strings.Builder
 	sb.WriteString(a.vp.View())
 	sb.WriteString("\n")
-	if len(a.autocomplete) > 0 {
-		sb.WriteString(a.renderSuggestions())
+
+	if a.view == viewClarify {
+		sb.WriteString(clarifyPanel)
+	} else {
+		if len(a.autocomplete) > 0 {
+			sb.WriteString(a.renderSuggestions())
+			sb.WriteString("\n")
+		}
+		if a.agentPickerVisible() {
+			sb.WriteString(a.renderAgentPicker())
+			sb.WriteString("\n")
+		}
+		if a.promptPickerVisible() {
+			sb.WriteString(a.renderPromptPicker())
+			sb.WriteString("\n")
+		}
+		if a.dirPickVisible() {
+			sb.WriteString(a.renderAddDirPicker())
+			sb.WriteString("\n")
+		}
+		if a.filePickerVisible() {
+			sb.WriteString(a.renderFilePicker())
+			sb.WriteString("\n")
+		}
+		if a.rootConfirmVisible() {
+			sb.WriteString(a.renderRootConfirm())
+			sb.WriteString("\n")
+		}
+		if len(a.attachments) > 0 {
+			sb.WriteString(a.renderAttachStrip())
+			sb.WriteString("\n")
+		}
+		if a.todosVisible() {
+			sb.WriteString(a.renderTodoPanel())
+			sb.WriteString("\n")
+		}
+		if a.runsOpen {
+			sb.WriteString(a.renderRunsPanel())
+			sb.WriteString("\n")
+		}
+		if hint := a.workingHint(); hint != "" {
+			sb.WriteString(hint)
+			sb.WriteString("\n")
+		}
+		sb.WriteString(a.renderComposer())
 		sb.WriteString("\n")
+		a.refreshFooter()
+		sb.WriteString(a.footer.View())
 	}
-	if a.agentPickerVisible() {
-		sb.WriteString(a.renderAgentPicker())
-		sb.WriteString("\n")
-	}
-	if a.promptPickerVisible() {
-		sb.WriteString(a.renderPromptPicker())
-		sb.WriteString("\n")
-	}
-	if a.dirPickVisible() {
-		sb.WriteString(a.renderAddDirPicker())
-		sb.WriteString("\n")
-	}
-	if a.filePickerVisible() {
-		sb.WriteString(a.renderFilePicker())
-		sb.WriteString("\n")
-	}
-	if a.rootConfirmVisible() {
-		sb.WriteString(a.renderRootConfirm())
-		sb.WriteString("\n")
-	}
-	if len(a.attachments) > 0 {
-		sb.WriteString(a.renderAttachStrip())
-		sb.WriteString("\n")
-	}
-	if a.todosVisible() {
-		sb.WriteString(a.renderTodoPanel())
-		sb.WriteString("\n")
-	}
-	if a.runsOpen {
-		sb.WriteString(a.renderRunsPanel())
-		sb.WriteString("\n")
-	}
-	if hint := a.workingHint(); hint != "" {
-		sb.WriteString(hint)
-		sb.WriteString("\n")
-	}
-	sb.WriteString(a.renderComposer())
-	sb.WriteString("\n")
-	a.refreshFooter()
-	sb.WriteString(a.footer.View())
 
 	// Per-frame render timing: first_paint once, then one render event per
 	// frame while a turn is in flight. Idle frames (typing, scrolling) are

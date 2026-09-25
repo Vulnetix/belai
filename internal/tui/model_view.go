@@ -1436,8 +1436,12 @@ func (a *App) classifierPhaseRow(phase int) settingsRow {
 	mc := a.resolvedClassifierPhase(phase)
 	if mc == nil {
 		if phase == 1 {
+			// A no-classifier binary with no explicit phase model: this build
+			// embeds none, and a HuggingFace token is not enough (HF serverless
+			// inference cannot serve the known saturation model), so the row
+			// names the ways out instead of a key.
 			return settingsRow{key: key, label: label, kind: "text",
-				value: "LLM sentinel (no HuggingFace key)", disabled: true}
+				value: "off — no model in this build; use just build-bert or set phase1.model", disabled: true}
 		}
 		if a.resolvedSecurityClassifier().Phase2Deferred {
 			return settingsRow{key: key, label: label, kind: "text",

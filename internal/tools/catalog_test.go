@@ -25,8 +25,8 @@ func TestNativeToolsAreReadOnly(t *testing.T) {
 	}
 	for _, c := range commands {
 		n := &Native{Root: t.TempDir(), cmd: c}
-		if n.Kind() != KindNative && n.Kind() != KindRemote {
-			t.Fatalf("%s kind = %q, want %q or %q", c.name, n.Kind(), KindNative, KindRemote)
+		if n.Kind() != KindNative && n.Kind() != KindRemote && n.Kind() != KindRead {
+			t.Fatalf("%s kind = %q, want %q, %q or %q", c.name, n.Kind(), KindNative, KindRemote, KindRead)
 		}
 		if !n.Kind().ReadOnly() {
 			t.Fatalf("%s must be read-only", c.name)
@@ -51,7 +51,15 @@ func TestCloudCLIsReportRemoteKindAndClassify(t *testing.T) {
 	if !KindRemote.NeedsClassifier() {
 		t.Fatal("KindRemote result must be classified")
 	}
-	ls := localCatalog()[0]
+	var ls nativeCommand
+	for _, c := range localCatalog() {
+		if c.name == "LS" {
+			ls = c
+		}
+	}
+	if ls.name == "" {
+		t.Fatal("LS missing from the local catalogue")
+	}
 	if ls.kind != "" && ls.kind != KindNative {
 		t.Fatalf("local native kind = %q, want zero or %q", ls.kind, KindNative)
 	}
@@ -298,5 +306,32 @@ func TestJQRejectsNonJSONInput(t *testing.T) {
 	}
 	if _, err := n.Execute(context.Background(), map[string]any{"filter": ".a"}); err == nil || !strings.Contains(err.Error(), "no input") {
 		t.Fatalf("empty input: got %v, want no-input error", err)
+	}
+}
+
+// A native tool that can print a file's contents carries that file's bytes as
+// surely as Read does, so it classifies like Read. They were KindNative, which
+// is sanitize-only: after Read withheld an injected file, Cat, Sort or Sed over
+// the same path handed the whole file back unclassified.
+func TestNativeFileContentToolsClassify(t *testing.T) {
+	mustClassify := map[string]bool{
+		"Cat": true, "Head": true, "Tail": true, "Strings": true,
+		"JQ": true, "YQ": true, "Sed": true, "Awk": true, "Cut": true, "Sort": true,
+		"Uniq": true, "Tr": true, "Paste": true, "Join": true, "Diff": true,
+	}
+	seen := map[string]bool{}
+	for _, c := range localCatalog() {
+		n := &Native{Root: t.TempDir(), cmd: c}
+		if mustClassify[c.name] {
+			seen[c.name] = true
+			if !n.Kind().NeedsClassifier() {
+				t.Errorf("%s prints file contents but its kind %q skips the classifier", c.name, n.Kind())
+			}
+		}
+	}
+	for name := range mustClassify {
+		if !seen[name] {
+			t.Errorf("%s is missing from the local catalogue", name)
+		}
 	}
 }
