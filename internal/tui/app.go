@@ -2042,6 +2042,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case compactDoneMsg:
 		return a, a.handleCompactDone(m)
 
+	case exportDoneMsg:
+		return a, a.handleExportDone(m)
+
 	case sessionNamedMsg:
 		return a, a.handleSessionNamed(m)
 
