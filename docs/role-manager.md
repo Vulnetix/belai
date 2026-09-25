@@ -178,12 +178,19 @@ Rules:
   / `MODEL_EXTRACTION`. Phase 3 is what classifies tool output on the models
   path, which is why it no longer waits for an opt-in.
 - **Vanilla binaries** keep the LLM sentinel path unchanged (no embedded
-  weights). They can point phase 1/2 at HuggingFace remotely when a key is
-  present, and otherwise fall back to the LLM sentinel. Choosing `kind: models`
-  on a vanilla binary never silently downgrades to the LLM sentinel: the
-  phase-1 row shows a "set HF token / provider" hint and the phase-2 row shows
-  "deferred to phase 3"; with no resolvable phase model the ML stack fails
-  closed at build time.
+  weights). A HuggingFace token alone resolves no phase model: HF serverless
+  inference cannot serve the known saturation model — its repo ships no
+  tokenizer files, so the inference API 400s with "Can't load tokenizer for
+  '/repository'" on every call (the repo's server-side mount path, not a local
+  directory on the caller's machine) — and a token therefore never fabricates
+  a remote phase-1 default. An explicit `phaseN.model` with
+  `source: huggingface` still points a phase at the inference API, for models
+  it can actually serve. Choosing `kind: models` on a vanilla binary never
+  silently downgrades to the LLM sentinel: the phase-1 row shows **"off — no
+  model in this build"** with the ways out and the phase-2 row shows
+  "deferred to phase 3"; with no resolvable phase model the stack fails closed
+  with that same actionable error (build with the embedded model, switch to
+  `kind: llm`, or set an explicit phase model).
 - **Remote phases use the Inference Providers router.** A phase whose
   `source` is `huggingface` posts each window to
   `https://router.huggingface.co/hf-inference/models/<id>` with the resolved
@@ -195,6 +202,18 @@ Rules:
   other shape is an error, and the content is blocked. A global
   `phase2.source: huggingface` also overrides an embedded phase-2 model on the
   jailbreak variant. Choose `embedded` to classify in-process.
+- **The remote gate verifies servability before it can fail per prompt.**
+  HF serverless inference mounts a model repo at its own `/repository` path
+  and loads the tokenizer from it, so a repo that ships no tokenizer files
+  (`tokenizer.json`/`vocab.txt`) 400s on every call, and models outside the
+  router's supported set 400 with "Model not supported by provider" — the
+  known phase-1 saturation model is the former, and the curated phase-2
+  models the latter. Before any window is sent, the gate reads the repo's
+  file list from the Hub API and caches the verdict in the model cache
+  directory for seven days; an unservable model is refused at pipeline
+  construction with an actionable error (build signet with the embedded model
+  instead) rather than dying per prompt, and a "not supported by provider" 400
+  at call time is surfaced with the same hint.
 - **The models path does not cover instruction-override injection.** The
   phase-1 model detects prompt *saturation*, the phase-2 model detects
   role-play jailbreaks (the DAN prompt is blocked as `JAILBREAK`), and phase 3

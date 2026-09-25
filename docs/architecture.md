@@ -2910,8 +2910,10 @@ rows (when `kind` is `models`), **reasoning**, **effort**, **chunk** and
   use-case pickers, by contrast, leave out `typesafe/jev*` models: routed
   use cases need chat, and Jev cannot chat.
 - **Phase rows** appear only when `kind` is `models`. Phase 1 is locked when
-  embedded, shows the remote model when an HF token resolves it, or a
-  "set HF token / provider" hint. Phase 2 renders the model when running,
+  embedded, shows the remote model when one is explicitly configured, or an
+  "off — no model in this build" hint with the ways out (a HuggingFace token
+  alone resolves no phase model: the inference API cannot serve the known
+  saturation model). Phase 2 renders the model when running,
   `disabled` when the user explicitly turned an embedded gate off (jailbreak
   variant), or **"deferred to phase 3"** when no local jailbreak gate can
   run. Phase 3 is a locked derived row: off until both classifier provider
