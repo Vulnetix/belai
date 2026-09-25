@@ -55,6 +55,48 @@ func TestInternalWorkRowCyclesAllLevelsAndUnsets(t *testing.T) {
 	}
 }
 
+func TestAutoCommitPerTaskToggleAlwaysGlobal(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	workdir := t.TempDir()
+	a := New(Options{Workdir: workdir})
+	a.push(viewSettings)
+	a.settingsState.scope = config.ScopeProject
+
+	row, idx := settingsRowByKey(a, "auto_commit_per_task")
+	if idx < 0 {
+		t.Fatal("no auto_commit_per_task row")
+	}
+	if row.value != "off" {
+		t.Fatalf("default row = %q, want off", row.value)
+	}
+	if row.help == "" {
+		t.Fatal("auto-commit row must carry help text about committing whole files")
+	}
+
+	a.settingsState.selected = idx
+	m, _ := a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	a = m.(*App)
+
+	global, err := config.LoadGlobal()
+	if err != nil {
+		t.Fatalf("LoadGlobal: %v", err)
+	}
+	if global.AutoCommitPerTask == nil || !*global.AutoCommitPerTask {
+		t.Fatalf("toggle must write the global scope, got %+v", global.AutoCommitPerTask)
+	}
+	project, err := config.LoadProject(workdir)
+	if err != nil {
+		t.Fatalf("LoadProject: %v", err)
+	}
+	if project.AutoCommitPerTask != nil {
+		t.Fatalf("toggle must never write the project scope, got %+v", project.AutoCommitPerTask)
+	}
+
+	if !strings.Contains(a.View(), "commits each completed goal") {
+		t.Fatalf("settings view missing auto-commit help:\n%s", a.View())
+	}
+}
+
 func TestSettingsLSPSubmenuDispatches(t *testing.T) {
 	t.Setenv("SIGNET_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})

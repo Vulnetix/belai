@@ -64,6 +64,10 @@ func TestSettingsAccessorDefaults(t *testing.T) {
 			func(s *Settings, v *bool) { s.ReadOnly = v }, false,
 		},
 		{
+			"auto_commit_per_task", Settings.AutoCommitPerTaskEnabled,
+			func(s *Settings, v *bool) { s.AutoCommitPerTask = v }, false,
+		},
+		{
 			"allow_project_providers", Settings.AllowProjectProvidersEnabled,
 			func(s *Settings, v *bool) { s.AllowProjectProviders = v }, false,
 		},
