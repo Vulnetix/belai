@@ -58,8 +58,12 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   is in `tools.classifierKinds` unconditionally. Do not add a path argument and
   do not add an exemption.
 - **The confinement boundary is a fixed root set unless the user widens it.**
-  The primary working directory is the default confinement root. The only way
-  to add roots is an explicit `/add-dir` command confirmed by the user.
+  The primary working directory is the default confinement root. The only
+  ways to add roots are an explicit `/add-dir` command confirmed by the user,
+  or the user answering the confirm-root prompt for an `@` path outside the
+  roots (for the session, or saved for the project like `/add-dir`). The `@`
+  chooser may list entry names above the roots, for the user only. An
+  outside path is never read until its directory has been adopted.
   Project-level `workspace_dirs` settings propose directories. They never
   activate from the settings layer (`resolve.go` still drops them without the
   global `allow_project_workspace_dirs` opt-in). They activate only when the

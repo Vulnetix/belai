@@ -77,6 +77,13 @@ func pickerCounter(selected, total int) string {
 // rendered panel and the updated scroll position. If candidates is empty it
 // returns an empty string and the supplied scroll value unchanged.
 func renderPicker(title, meta string, width int, cands []string, selected, scroll int, header []string, accent lipgloss.TerminalColor) (string, int) {
+	return renderPickerMarked(title, meta, width, cands, selected, scroll, header, accent, nil)
+}
+
+// renderPickerMarked is renderPicker with a per-row prefix. mark, when set,
+// returns an already-styled prefix drawn between the cursor and the row text;
+// it should return a constant-width string so rows stay aligned.
+func renderPickerMarked(title, meta string, width int, cands []string, selected, scroll int, header []string, accent lipgloss.TerminalColor, mark func(cand string) string) (string, int) {
 	n := len(cands)
 	if n == 0 {
 		return "", scroll
@@ -101,7 +108,11 @@ func renderPicker(title, meta string, width int, cands []string, selected, scrol
 		if sel {
 			style = components.EmphStyle
 		}
-		lines = append(lines, components.Cursor(sel)+style.Render(cands[i]))
+		prefix := ""
+		if mark != nil {
+			prefix = mark(cands[i])
+		}
+		lines = append(lines, components.Cursor(sel)+prefix+style.Render(cands[i]))
 	}
 
 	return components.Panel{

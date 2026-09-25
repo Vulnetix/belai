@@ -469,6 +469,10 @@ type App struct {
 	fileIndex     int       // highlight; -1 = none
 	fileScroll    int       // window start over fileCandidates
 	fileDismissed string    // the @token esc/left closed on; cleared when it changes
+	// path-mode @ chooser: one-level directory listings keyed by absolute dir,
+	// used when the @token is a path (../, /, ~/) that may leave the roots.
+	fsLists   map[string]fsListing
+	fsLoading map[string]bool
 
 	// save to library
 	savePromptMode    bool
@@ -1189,6 +1193,7 @@ func (a *App) belowViewportHeight() int {
 		h++
 	}
 	h += a.addDirPickHeight()
+	h += a.rootConfirmHeight()
 	h += a.filePickHeight()
 	h += a.attachStripHeight()
 	h += a.todoPanelHeight()
@@ -1959,6 +1964,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case filesLoadedMsg:
 		return a, a.handleFilesLoaded(m)
 
+	case fsListedMsg:
+		a.handleFSListed(m)
+		return a, nil
+
 	case copiedMsg:
 		a.addSystem(m.text)
 		return a, nil
@@ -2283,6 +2292,12 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		}
 	}
 
+	// An @path outside the session roots waits on the user's answer; the
+	// confirmation owns the keyboard until then, like the /add-dir confirm.
+	if a.rootConfirmVisible() {
+		return a.handleRootConfirmKey(m)
+	}
+
 	if a.filePickerVisible() {
 		if cmd, handled := a.handleFilePickKey(m); handled {
 			return cmd
@@ -2554,9 +2569,7 @@ func (a *App) forwardToEditor(m tea.KeyMsg) tea.Cmd {
 	// appear. Returning the command alongside the editor update lets the
 	// current keystroke take effect while the listing fills in the background.
 	if !a.dirPickState.open {
-		if loadCmd := a.fileListIfStale(); loadCmd != nil {
-			return tea.Batch(cmd, loadCmd)
-		}
+		return tea.Batch(cmd, a.fileListIfStale(), a.pathListIfStale())
 	}
 	return cmd
 }
@@ -3694,6 +3707,10 @@ func (a *App) chatView() string {
 	}
 	if a.filePickerVisible() {
 		sb.WriteString(a.renderFilePicker())
+		sb.WriteString("\n")
+	}
+	if a.rootConfirmVisible() {
+		sb.WriteString(a.renderRootConfirm())
 		sb.WriteString("\n")
 	}
 	if len(a.attachments) > 0 {
