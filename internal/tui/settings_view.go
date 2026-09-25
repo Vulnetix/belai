@@ -39,6 +39,9 @@ type settingsRow struct {
 	// row that only means something under another row's setting — an effort
 	// with reasoning off — stays visible without being changeable.
 	disabled bool
+	// help is the one-line description shown under the selected row. Empty
+	// rows render no help line.
+	help string
 }
 
 func (a *App) settingsView() string {
@@ -75,6 +78,10 @@ func (a *App) settingsView() string {
 		}
 		b.WriteString(components.Cursor(selected) + label + value +
 			components.MutedStyle.Render(row.src) + "\n")
+	}
+
+	if a.settingsState.selected < len(rows) && rows[a.settingsState.selected].help != "" {
+		b.WriteString("\n" + components.MutedStyle.Render(rows[a.settingsState.selected].help) + "\n")
 	}
 
 	if a.settingsState.errorMsg != "" {
@@ -131,6 +138,7 @@ func (a *App) settingsRows() []settingsRow {
 	mouseVal := boolLabel(s.MouseEnabled())
 	showNamesVal := showLabel(s.SessionNamesVisible())
 	updateCheckVal := boolLabel(s.UpdateCheckEnabled())
+	autoCommitVal := boolLabel(s.AutoCommitPerTaskEnabled())
 	permsVal := fmt.Sprintf("%d allow · %d ask · %d deny", len(s.Permissions.Allow), len(s.Permissions.Ask), len(s.Permissions.Deny))
 	maxAgentsVal := strconv.Itoa(config.DefaultMaxAgents)
 	if s.Resilience != nil && s.Resilience.MaxAgents != 0 {
@@ -160,6 +168,7 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "mouse", label: "mouse capture", kind: "toggle", value: mouseVal, src: sourceLabel(origin["ui"])},
 		{key: "show_session_names", label: "session names", kind: "toggle", value: showNamesVal, src: sourceLabel(origin["show_session_names"])},
 		{key: "update_check", label: "update check", kind: "toggle", value: updateCheckVal, src: sourceLabel(origin["update_check"])},
+		{key: "auto_commit_per_task", label: "auto-commit per task", kind: "toggle", value: autoCommitVal, src: sourceLabel(origin["auto_commit_per_task"]), help: "commits each completed goal's changed files as one conventional commit — global only, and a file you edited before the goal touched it is committed whole"},
 		{key: "max_agents", label: "max agents", kind: "text", value: maxAgentsVal, src: sourceLabel(origin["resilience"])},
 		{key: "plan_explore", label: "plan explore", kind: "toggle", value: planExploreVal, src: sourceLabel(origin["resilience"])},
 		{key: "goal_explore", label: "goal explore", kind: "toggle", value: goalExploreVal, src: sourceLabel(origin["resilience"])},
@@ -414,6 +423,13 @@ func (a *App) commitTextRow(row settingsRow, raw string) error {
 }
 
 func (a *App) cycleToggle(key string) error {
+	if key == "auto_commit_per_task" {
+		// This toggle is global only: a repo-visible settings file must never
+		// be able to make the harness commit on the user's behalf.
+		return a.mutateGlobalSetting(func(s *config.Settings) {
+			s.AutoCommitPerTask = nextBool(s.AutoCommitPerTask)
+		})
+	}
 	return a.mutateSetting(func(s *config.Settings) {
 		switch key {
 		case "caveman":
@@ -503,6 +519,11 @@ func (a *App) cycleChoice(key string, opts []string) error {
 }
 
 func (a *App) unsetSetting(key string) error {
+	if key == "auto_commit_per_task" {
+		return a.mutateGlobalSetting(func(s *config.Settings) {
+			s.AutoCommitPerTask = nil
+		})
+	}
 	return a.mutateSetting(func(s *config.Settings) {
 		switch key {
 		case "provider":
@@ -584,6 +605,19 @@ func (a *App) unsetSetting(key string) error {
 
 func (a *App) mutateSetting(fn func(*config.Settings)) error {
 	if err := config.Mutate(a.settingsState.scope, a.workdir, func(s *config.Settings) error {
+		fn(s)
+		return nil
+	}); err != nil {
+		return err
+	}
+	return a.reloadSettings()
+}
+
+// mutateGlobalSetting writes one setting to the global settings file,
+// regardless of the /settings scope row. It is used by settings that are
+// security-relevant and must never be project-overridable.
+func (a *App) mutateGlobalSetting(fn func(*config.Settings)) error {
+	if err := config.Mutate(config.ScopeGlobal, a.workdir, func(s *config.Settings) error {
 		fn(s)
 		return nil
 	}); err != nil {

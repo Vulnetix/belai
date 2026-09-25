@@ -107,6 +107,12 @@ type Settings struct {
 	// newer Signet release. Default true. SIGNET_NO_UPDATE_CHECK=1 overrides
 	// it for a single run.
 	UpdateCheck *bool `json:"update_check,omitempty"`
+	// AutoCommitPerTask, when non-nil and true, commits each completed goal's
+	// changed files as one conventional commit. Default false: committing is a
+	// repository mutation and must be an explicit user opt-in. Global only: a
+	// repo-visible project settings file must never be able to make the harness
+	// commit, so the project layer is dropped in Resolve.
+	AutoCommitPerTask *bool `json:"auto_commit_per_task,omitempty"`
 	// TokenBudgets caps the tokens each provider+model may spend per session,
 	// day or month. Global only: the project layer is dropped in Resolve.
 	TokenBudgets []TokenBudget `json:"token_budgets,omitempty"`
@@ -158,6 +164,13 @@ func (s VulnetixSettings) AutoFixEnabled() bool {
 // Default true.
 func (s Settings) UpdateCheckEnabled() bool {
 	return s.UpdateCheck == nil || *s.UpdateCheck
+}
+
+// AutoCommitPerTaskEnabled reports whether a completed goal is committed
+// automatically. Default false: committing is a repo mutation and must be an
+// explicit user opt-in.
+func (s Settings) AutoCommitPerTaskEnabled() bool {
+	return s.AutoCommitPerTask != nil && *s.AutoCommitPerTask
 }
 
 // SweepEnabled reports whether the vulnetix sweep is on. Default true.

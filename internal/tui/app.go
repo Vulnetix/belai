@@ -619,6 +619,10 @@ type App struct {
 	reviewSeq int
 	// deps is the dependency-manifest hook (see depwatch.go).
 	deps *depState
+	// taskPaths collects the files the in-flight goal turn changed for the
+	// per-goal auto-commit hook (see autocommit.go).
+	taskPaths   []string
+	taskPathSet map[string]bool
 
 	// todos is the shared goal/plan todo list rendered in the chat chrome and
 	// persisted to the session. The agent emits it; the TUI owns persistence.
@@ -863,6 +867,7 @@ func New(opts Options) *App {
 		activityAnnounced: map[string]bool{},
 		activityFinished:  map[string]bool{},
 		deps:              &depState{},
+		taskPathSet:       map[string]bool{},
 		subagentIdx:       map[string]int{},
 		execEditor:        tea.ExecProcess,
 		trace:             trace.Env(),
@@ -2059,6 +2064,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case forgeActionMsg:
 		return a, a.handleForgeAction(m)
+
+	case autoCommitMsg:
+		return a, a.handleAutoCommit(m)
 
 	case planEditedMsg:
 		return a, a.handlePlanEdited(m)
@@ -3314,6 +3322,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			a.messages[last].Materialise()
 		}
 		a.persistTail()
+		a.resetTaskPaths()
 		// Edits made before the failure are on disk all the same.
 		return a.flushDepWatch()
 	case agent.EventTextKind:
@@ -3389,6 +3398,9 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		// The dependency hook matches every changed file against the
 		// manifest table; matches are checked when the turn ends.
 		a.observeDepDiff(m.Diff)
+		// Auto-commit collects every changed path so a completed goal can be
+		// committed exactly as one conventional commit.
+		a.observeTaskDiff(m.Diff)
 		return a.nextAgent()
 	case agent.EventCwdKind:
 		a.setPhaseWorking()
@@ -3661,7 +3673,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			a.appendEntry(a.todos.ToEntry(""))
 		}
 		a.refreshFooter()
-		return tea.Batch(a.flushPendingActivitySends(), a.flushDepWatch())
+		return tea.Batch(a.flushPendingActivitySends(), a.flushDepWatch(), a.flushAutoCommit(m.Result))
 	}
 	return nil
 }
@@ -5580,6 +5592,7 @@ func (a *App) startNewSession() {
 	a.sessionID = session.MustID()
 	a.planExecuting = false
 	a.lastGoal = nil
+	a.resetTaskPaths()
 	a.publishSessionID()
 	a.lastEntryID = ""
 	a.persistedUpTo = 0

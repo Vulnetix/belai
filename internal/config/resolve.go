@@ -91,6 +91,13 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 		proj.TokenBudgets = nil
 		eff.Notes = append(eff.Notes, "project token_budgets ignored (budgets are global; set them in /budgets)")
 	}
+	// Auto-commit per task is global: a repo-visible settings file must never
+	// be able to make the harness commit on the user's behalf. Dropped
+	// unconditionally, before the project layer is applied.
+	if proj.AutoCommitPerTask != nil {
+		proj.AutoCommitPerTask = nil
+		eff.Notes = append(eff.Notes, "project auto_commit_per_task ignored (auto-commit is global)")
+	}
 	if proj.LSP != nil && len(proj.LSP.Servers) > 0 {
 		proj.LSP.Servers = nil
 		eff.Notes = append(eff.Notes, "project lsp.servers ignored (binary paths may only be set in global settings)")
@@ -267,6 +274,10 @@ func (e *Effective) apply(s Settings, src Source) {
 	if s.UpdateCheck != nil {
 		e.Settings.UpdateCheck = s.UpdateCheck
 		e.Origin["update_check"] = src
+	}
+	if s.AutoCommitPerTask != nil {
+		e.Settings.AutoCommitPerTask = s.AutoCommitPerTask
+		e.Origin["auto_commit_per_task"] = src
 	}
 	if s.Classifier != nil && !s.Classifier.IsZero() {
 		if e.Settings.Classifier == nil {
