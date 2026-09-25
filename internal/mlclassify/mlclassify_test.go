@@ -102,7 +102,8 @@ func TestFoldPrecedence(t *testing.T) {
 func TestWindowsTokenBoundAndOverlap(t *testing.T) {
 	c := &Classifier{window: WindowConfig{Tokens: 3, Overlap: 1, MaxWindows: 10}, tok: wordTokenizer}
 	got := c.mustWindows(t, "a b c d e f g h")
-	// tokens: 8. limit 3, overlap 1 -> windows of 3 tokens each advancing 2.
+	// tokens: 8. limit 3, overlap 1 -> four levelled windows of 3 tokens,
+	// evenly spaced so the last ends on the final token with no short tail.
 	var all []string
 	for _, w := range got {
 		all = append(all, w)
@@ -110,8 +111,104 @@ func TestWindowsTokenBoundAndOverlap(t *testing.T) {
 	if len(all) != 4 {
 		t.Fatalf("windows = %q (%d), want 4 windows", all, len(all))
 	}
-	if all[0] != "a b c" || all[1] != "c d e" || all[2] != "e f g" || all[3] != "g h" {
+	if all[0] != "a b c" || all[1] != "b c d" || all[2] != "d e f" || all[3] != "f g h" {
 		t.Fatalf("windows = %q", all)
+	}
+}
+
+// Windows are levelled: the fewest windows that fit, all the same size, each
+// sharing at least the overlap with its neighbour, and together covering every
+// token. A greedy split of 100 tokens at 95 left a 5-token tail.
+func TestWindowsAreLevelled(t *testing.T) {
+	for _, tc := range []struct{ n, limit, overlap, wantK, wantSize int }{
+		{100, 95, 11, 2, 56},
+		{96, 95, 11, 2, 54},
+		{500, 95, 11, 6, 93},
+		{1000, 508, 63, 3, 376},
+	} {
+		c := &Classifier{window: WindowConfig{MaxWindows: 1000}, tok: wordTokenizer}
+		toks := make([]string, tc.n)
+		for i := range toks {
+			toks[i] = "t" + strings.Repeat("x", i%3)
+		}
+		got, err := c.levelledWindows(strings.Join(toks, " "), tc.limit, tc.overlap, 1000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got) != tc.wantK {
+			t.Fatalf("n=%d limit=%d: %d windows, want %d", tc.n, tc.limit, len(got), tc.wantK)
+		}
+		covered := 0
+		prevEnd := 0
+		for i, w := range got {
+			size := len(wordTokenizer(w))
+			if size != tc.wantSize || size > tc.limit {
+				t.Fatalf("n=%d limit=%d: window %d has %d tokens, want %d", tc.n, tc.limit, i, size, tc.wantSize)
+			}
+			start := i * (tc.n - size) / (len(got) - 1)
+			if i > 0 && prevEnd-start < tc.overlap {
+				t.Fatalf("n=%d: windows %d/%d overlap %d, want >= %d", tc.n, i-1, i, prevEnd-start, tc.overlap)
+			}
+			prevEnd = start + size
+			covered = prevEnd
+		}
+		if covered != tc.n {
+			t.Fatalf("n=%d: windows end at token %d, want %d", tc.n, covered, tc.n)
+		}
+	}
+}
+
+// Phase 1 classifies ~95-token windows by default (the saturation model scores
+// length past ~100 tokens), phase 2 keeps model-length windows, and the phase-1
+// window cap scales so both phases fail closed at the same content size.
+func TestPhase1WindowDefaults(t *testing.T) {
+	w := WindowConfig{}
+	if w.phase1Tokens() != 95 || w.phase1Overlap() != 11 {
+		t.Fatalf("phase1 window = %d/%d, want 95/11", w.phase1Tokens(), w.phase1Overlap())
+	}
+	if w.tokens() != 508 {
+		t.Fatalf("general window = %d, want 508", w.tokens())
+	}
+	// 64 windows advancing 445 tokens ~= 28480 tokens; phase 1 advances 84.
+	if got := w.phase1MaxWindows(); got != 340 {
+		t.Fatalf("phase1MaxWindows = %d, want 340", got)
+	}
+	// A general window smaller than 95 is used unchanged by phase 1.
+	small := WindowConfig{Tokens: 3, Overlap: 1, MaxWindows: 10}
+	if small.phase1Tokens() != 3 || small.phase1Overlap() != 1 || small.phase1MaxWindows() != 10 {
+		t.Fatalf("small phase1 window = %d/%d/%d, want 3/1/10", small.phase1Tokens(), small.phase1Overlap(), small.phase1MaxWindows())
+	}
+}
+
+// windowGate records the size of every window it is asked to classify.
+type windowGate struct {
+	ph    Phase
+	sizes []int
+}
+
+func (g *windowGate) phase() Phase { return g.ph }
+
+func (g *windowGate) fire(_ context.Context, w string) (rolemanager.Sentinel, float64, error) {
+	g.sizes = append(g.sizes, len(wordTokenizer(w)))
+	return rolemanager.SentinelSafe, 0, nil
+}
+
+func TestPhasesClassifyTheirOwnWindows(t *testing.T) {
+	g1, g2 := &windowGate{ph: Phase1}, &windowGate{ph: Phase2}
+	c := &Classifier{phase1: g1, phase2: g2, tok: wordTokenizer}
+	if _, err := c.Classify(context.Background(), rolemanager.BuildClassifierPayload(strings.Repeat("t ", 600))); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range g1.sizes {
+		if s > 95 {
+			t.Fatalf("phase 1 saw a %d-token window, want <= 95 (sizes %v)", s, g1.sizes)
+		}
+	}
+	if len(g2.sizes) != 2 || g2.sizes[0] > 508 {
+		t.Fatalf("phase 2 window sizes = %v, want two levelled windows <= 508", g2.sizes)
+	}
+	if len(g1.sizes) != 8 {
+		t.Fatalf("phase 1 windows = %d, want 8 for 600 tokens", len(g1.sizes))
 	}
 }
 

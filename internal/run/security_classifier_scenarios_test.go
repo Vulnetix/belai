@@ -119,8 +119,11 @@ func TestResolveSecurityClassifierExplicitDisabledNotDeferred(t *testing.T) {
 }
 
 // TestResolveSecurityClassifierScenarioNoClassifierHF pins the no-classifier
-// scenario with a HuggingFace token: phase 1 defaults to the known saturation
-// model over the HuggingFace inference API instead of resolving no model.
+// scenario with a HuggingFace token: a token alone must not resolve a phase-1
+// model. The old default (the known saturation model over the inference API)
+// failed every prompt, because HF serverless inference cannot serve that
+// model — its repo ships no tokenizer files — so the token no longer
+// fabricates a remote default.
 func TestResolveSecurityClassifierScenarioNoClassifierHF(t *testing.T) {
 	t.Setenv("HF_TOKEN", "hf-x")
 	t.Setenv("HUGGINGFACE_TOKEN", "")
@@ -128,10 +131,16 @@ func TestResolveSecurityClassifierScenarioNoClassifierHF(t *testing.T) {
 	if mlclassify.Embedded() {
 		t.Skip("embedded build already has phase 1")
 	}
-	if sc.Phase1 == nil {
-		t.Fatal("phase1 must resolve to the default huggingface model when HF_TOKEN is set")
+	if sc.Phase1 != nil {
+		t.Fatalf("phase1 = %+v, want nil: a token alone must not fabricate a remote default", sc.Phase1)
 	}
-	if sc.Phase1.ID != Phase1ModelID() || sc.Phase1.Source != mlclassify.SourceHuggingFace {
-		t.Fatalf("phase1 = %+v, want %s via huggingface", sc.Phase1, Phase1ModelID())
+	// An explicit model still resolves, so the remote path remains reachable
+	// for models HF can actually serve.
+	explicit := ResolveSecurityClassifier(&config.ClassifierSettings{
+		Kind:   "models",
+		Phase1: config.ClassifierPhaseSettings{Model: "GuardrailsAI/prompt-saturation-attack-detector", Source: "huggingface"},
+	})
+	if explicit.Phase1 == nil || explicit.Phase1.Source != mlclassify.SourceHuggingFace {
+		t.Fatalf("explicit phase1 = %+v, want remote huggingface gate", explicit.Phase1)
 	}
 }

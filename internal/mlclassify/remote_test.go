@@ -2,16 +2,46 @@ package mlclassify
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/vulnetix/signet/internal/rolemanager"
 )
+
+// containsFold reports whether s contains substr, ignoring case.
+func containsFold(s, substr string) bool {
+	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
+}
+
+// hubStub points the repo servability check at a stub Hub API reporting the
+// given file list, and restores the real endpoint afterwards.
+func hubStub(t *testing.T, files ...string) *int32 {
+	t.Helper()
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.Header().Set("Content-Type", "application/json")
+		sibs := make([]map[string]string, 0, len(files))
+		for _, f := range files {
+			sibs = append(sibs, map[string]string{"rfilename": f})
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"siblings": sibs})
+	}))
+	t.Cleanup(srv.Close)
+	old := hubModelsAPI
+	hubModelsAPI = srv.URL + "/"
+	t.Cleanup(func() { hubModelsAPI = old })
+	return &calls
+}
 
 // TestHFInferenceEndpointIsRouter pins the inference host: the legacy
 // api-inference.huggingface.co host no longer resolves, so every remote phase
@@ -108,8 +138,9 @@ is
 `
 
 // TestRemoteGateUsesCachedTokenizerFiles verifies that newRemoteGate does not
-// need to reach HuggingFace when vocab.txt and tokenizer_config.json already
-// exist in the on-disk model cache.
+// need to reach HuggingFace for the tokenizer files when vocab.txt and
+// tokenizer_config.json already exist in the on-disk model cache. The repo
+// servability check is stubbed so the test stays network-free.
 func TestRemoteGateUsesCachedTokenizerFiles(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("SIGNET_HOME", home)
@@ -125,6 +156,7 @@ func TestRemoteGateUsesCachedTokenizerFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(cacheDir, "tokenizer_config.json"), []byte(`{"do_lower_case": true}`), 0o600); err != nil {
 		t.Fatalf("write tokenizer_config.json: %v", err)
 	}
+	hubStub(t, "config.json", "model.safetensors", "tokenizer.json", "tokenizer_config.json")
 
 	mc := ModelConfig{
 		ID:          modelID,
@@ -147,6 +179,8 @@ func TestRemoteGateCreatesCacheDir(t *testing.T) {
 	t.Setenv("SIGNET_HOME", home)
 
 	modelID := "another-org/another-model"
+	hubStub(t, "config.json", "model.safetensors", "tokenizer.json")
+
 	root, err := modelsRoot()
 	if err != nil {
 		t.Fatalf("modelsRoot: %v", err)
@@ -161,11 +195,124 @@ func TestRemoteGateCreatesCacheDir(t *testing.T) {
 		Source:      SourceHuggingFace,
 		AttackLabel: "LABEL_1",
 	}
-	// It will fail to fetch from HuggingFace, but newRemoteGate must create
-	// the cache directory before attempting any fetch.
+	// The vocab fetch 404s (the stub repo ships no vocab.txt), but
+	// newRemoteGate must create the cache directory before attempting any
+	// fetch.
 	newRemoteGate(Phase1, mc, func() (string, error) { return "", nil }) //nolint:errcheck
 	if _, err := os.Stat(cacheDir); os.IsNotExist(err) {
 		t.Fatal("newRemoteGate did not create the cache directory")
+	}
+}
+
+// TestRemoteGateRefusesRepoWithoutTokenizer pins the servability gate: a repo
+// that ships no tokenizer files (like the known phase-1 saturation model)
+// cannot be loaded by HF serverless inference — the API 400s with "Can't load
+// tokenizer for '/repository'" on every call — so the remote gate must refuse
+// the model at construction with an actionable error instead of dying per
+// prompt.
+func TestRemoteGateRefusesRepoWithoutTokenizer(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("SIGNET_HOME", home)
+	hubStub(t, ".gitattributes", "README.md", "config.json", "model.safetensors")
+
+	mc := ModelConfig{
+		ID:          "GuardrailsAI/prompt-saturation-attack-detector",
+		Source:      SourceHuggingFace,
+		AttackLabel: "LABEL_1",
+	}
+	_, err := newRemoteGate(Phase1, mc, func() (string, error) { return "", nil })
+	if err == nil {
+		t.Fatal("newRemoteGate must refuse a repo with no tokenizer files")
+	}
+	for _, want := range []string{"cannot serve", "tokenizer files", "just build-bert"} {
+		if !containsFold(err.Error(), want) {
+			t.Fatalf("error %q must contain %q", err.Error(), want)
+		}
+	}
+}
+
+// TestRemoteGateHubCheckCached pins that the repo servability verdict is
+// cached on disk: with a fresh marker the gate must not re-query the Hub API,
+// so per-turn pipeline rebuilds stay network-free until the marker expires.
+func TestRemoteGateHubCheckCached(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("SIGNET_HOME", home)
+
+	modelID := "cached-org/cached-model"
+	cacheDir, err := modelCacheDir(modelID)
+	if err != nil {
+		t.Fatalf("modelCacheDir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, "vocab.txt"), []byte(vocabStub), 0o600); err != nil {
+		t.Fatalf("write vocab.txt: %v", err)
+	}
+	marker, _ := json.Marshal(hubFilesMarker{
+		Fetched: time.Now().Unix(),
+		Files:   []string{"config.json", "model.safetensors", "tokenizer.json"},
+	})
+	if err := os.WriteFile(filepath.Join(cacheDir, hubFileCacheFile), marker, 0o600); err != nil {
+		t.Fatalf("write marker: %v", err)
+	}
+	calls := hubStub(t, "config.json", "model.safetensors", "tokenizer.json")
+
+	mc := ModelConfig{ID: modelID, Source: SourceHuggingFace, AttackLabel: "LABEL_1"}
+	if _, err := newRemoteGate(Phase1, mc, func() (string, error) { return "", nil }); err != nil {
+		t.Fatalf("newRemoteGate: %v", err)
+	}
+	if n := atomic.LoadInt32(calls); n != 0 {
+		t.Fatalf("Hub API queried %d times with a fresh marker, want 0", n)
+	}
+}
+
+// TestRemoteGateHubCheckFailsClosedWithoutMarker pins the fail-closed edge:
+// when the Hub API is unreachable and no marker exists, the gate errors rather
+// than assuming the model is servable.
+func TestRemoteGateHubCheckFailsClosedWithoutMarker(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("SIGNET_HOME", home)
+
+	modelID := "offline-org/offline-model"
+	// A dead endpoint: the check must fail without a marker to fall back on.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	srv.Close()
+	old := hubModelsAPI
+	hubModelsAPI = srv.URL + "/"
+	t.Cleanup(func() { hubModelsAPI = old })
+
+	mc := ModelConfig{ID: modelID, Source: SourceHuggingFace, AttackLabel: "LABEL_1"}
+	_, err := newRemoteGate(Phase1, mc, func() (string, error) { return "", nil })
+	if err == nil {
+		t.Fatal("newRemoteGate must fail closed when the Hub check cannot run and no marker exists")
+	}
+	if !containsFold(err.Error(), "check whether HuggingFace can serve model") {
+		t.Fatalf("error %q must name the failed servability check", err.Error())
+	}
+}
+
+// TestRemoteFireModelNotSupportedReworded pins that the router's "Model not
+// supported by provider" 400 (the curated phase-2 models hit it) is surfaced
+// as an actionable local-build hint instead of the raw provider body.
+func TestRemoteFireModelNotSupportedReworded(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		io.WriteString(w, `{"error":"Model not supported by provider hf-inference"}`)
+	}))
+	defer srv.Close()
+
+	g := &remoteModel{
+		id: "org/jb", ph: Phase2, sentinel: rolemanager.SentinelJailbreak,
+		attack: "unsafe", threshold: 0.5, client: srv.Client(),
+		token:    func() (string, error) { return "", nil },
+		endpoint: srv.URL + "/hf-inference/models/",
+	}
+	_, _, err := g.fire(context.Background(), "hello")
+	if err == nil {
+		t.Fatal("fire must error on the unsupported-model 400")
+	}
+	for _, want := range []string{"does not serve this model", "just build-bert"} {
+		if !containsFold(err.Error(), want) {
+			t.Fatalf("error %q must contain %q", err.Error(), want)
+		}
 	}
 }
 
@@ -183,6 +330,7 @@ func TestRemoteGateSeedsEmbeddedModelIntoCache(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("SIGNET_HOME", home)
 
+	hubStub(t, "config.json", "model.safetensors", "tokenizer.json", "tokenizer_config.json", "training_args.bin")
 	mc := ModelConfig{
 		ID:          id,
 		Source:      SourceHuggingFace,

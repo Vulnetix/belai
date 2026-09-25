@@ -168,7 +168,10 @@ func (s *clarifyViewState) buildAnswers() clarify.Answers {
 	return clarify.Answers{Items: items}
 }
 
-func (a *App) clarifyView() string {
+// clarifyPanel renders the interactive questionnaire as a bottom-sheet that
+// replaces the composer and footer in the chat view. It is the inner content
+// without the full-screen padding so it nests cleanly under the transcript.
+func (a *App) clarifyPanel() string {
 	w := a.contentWidth()
 	var b strings.Builder
 	b.WriteString(components.SectionHeader("Clarify", "esc cancel", w))
@@ -224,7 +227,11 @@ func (a *App) clarifyView() string {
 			"enter", "submit", "esc", "cancel") + "\n")
 	}
 
-	return lipgloss.NewStyle().Padding(1).Render(b.String())
+	return b.String()
+}
+
+func (a *App) clarifyView() string {
+	return lipgloss.NewStyle().Padding(1).Render(a.clarifyPanel())
 }
 
 func (a *App) handleClarifyKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {

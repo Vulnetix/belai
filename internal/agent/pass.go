@@ -117,7 +117,7 @@ const maxMutatedPaths = 20
 // surface, so a withheld streak means the model's calls are failing and must be
 // re-issued with corrected arguments. It never names ExitPlanMode, which is not
 // advertised outside plan mode.
-const withheldRepairDirective = "Every tool result in the last two rounds was withheld. Read each reason above. An argument error (a bad path, a missing file) is fixed by re-issuing the call with corrected arguments — check the path form against the working directory and session roots in the system prompt. A classifier verdict is not an argument error: do not request that content again; use Grep for the specific lines or proceed without it. If neither works, state the blocker in one line. Do not answer with a plan."
+const withheldRepairDirective = "Every tool result in the last two rounds was withheld. Read each reason above. An argument error (a bad path, a missing file) is fixed by re-issuing the call with corrected arguments — check the path form against the working directory and session roots in the system prompt. A classifier verdict is not an argument error: do not request that content again with any tool — proceed without it. If the task cannot be done without it, state that blocker in one line. Do not answer with a plan."
 
 // toolRepairDirective is injected at a goal pass boundary when the pass that
 // just ended executed no tool at all: every call it made was rejected before

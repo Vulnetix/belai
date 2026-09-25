@@ -103,7 +103,9 @@ func (r *Read) Execute(ctx context.Context, args map[string]any) (Result, error)
 		max = 64 * 1024 // 64 KiB default
 	}
 
-	meta := map[string]any{"path": res.Rel}
+	// abs is the resolved file the agent remembers when this result is
+	// withheld, so Grep cannot return the same file's lines unclassified.
+	meta := map[string]any{"path": res.Rel, "abs": full}
 	if l := lexers.Match(filepath.Base(res.Rel)); l != nil {
 		meta["lang"] = l.Config().Name
 	}

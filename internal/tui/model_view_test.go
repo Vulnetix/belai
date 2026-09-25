@@ -28,6 +28,9 @@ func TestModelViewRendersRolesAndWarning(t *testing.T) {
 
 func TestModelRowsReflectSettings(t *testing.T) {
 	a := New(Options{})
+	// Pin the llm stack: an embedded build defaults to models, which adds the
+	// phase rows, and an explicit kind is honoured on every build.
+	a.settings.Classifier = &config.ClassifierSettings{Kind: "llm"}
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
 	_ = a.enterModel()
 	rows := a.modelRows()

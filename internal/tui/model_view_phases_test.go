@@ -43,6 +43,9 @@ func TestModelRowsPhasesHiddenForLLM(t *testing.T) {
 }
 
 func TestModelRowsPhasesForModelsVanilla(t *testing.T) {
+	if mlclassify.Embedded() {
+		t.Skip("covers the no-classifier binary; an embedded build runs its own phase-1 model")
+	}
 	t.Setenv("HF_TOKEN", "")
 	t.Setenv("HUGGINGFACE_TOKEN", "")
 	a := modelScreen(t)
@@ -52,8 +55,8 @@ func TestModelRowsPhasesForModelsVanilla(t *testing.T) {
 	if !ok {
 		t.Fatal("phase1 row missing for models kind")
 	}
-	if !strings.Contains(p1.value, "LLM sentinel (no HuggingFace key)") || !p1.disabled {
-		t.Fatalf("phase1 row = %+v, want locked 'LLM sentinel (no HuggingFace key)'", p1)
+	if !strings.Contains(p1.value, "off — no model in this build") || !p1.disabled {
+		t.Fatalf("phase1 row = %+v, want locked 'off — no model in this build'", p1)
 	}
 
 	p2, ok := rowByKey(a.modelRows(), "phase2")
@@ -95,8 +98,14 @@ func TestModelPhase3RowOn(t *testing.T) {
 	a := modelScreen(t)
 	a.settings.Classifier = &config.ClassifierSettings{Kind: "models", Provider: "openai", Model: "gpt-5"}
 	row := a.classifierPhase3Row()
-	if !row.disabled || !strings.Contains(row.value, "injection + jailbreak + extraction") || !strings.Contains(row.value, "openai/gpt-5") {
-		t.Fatalf("phase3 row = %+v, want locked 'injection + jailbreak + extraction · openai/gpt-5'", row)
+	// Phase 3 takes jailbreak too only when no local jailbreak gate runs; the
+	// jailbreak variant embeds one.
+	scope := "injection + extraction"
+	if a.resolvedSecurityClassifier().Phase2Deferred {
+		scope = "injection + jailbreak + extraction"
+	}
+	if !row.disabled || !strings.Contains(row.value, scope+" · openai/gpt-5") {
+		t.Fatalf("phase3 row = %+v, want locked '%s · openai/gpt-5'", row, scope)
 	}
 }
 
@@ -263,6 +272,9 @@ func TestClassifierProviderList(t *testing.T) {
 }
 
 func TestModelRowsPhasesNoClassifier(t *testing.T) {
+	if mlclassify.Embedded() {
+		t.Skip("covers the no-classifier binary; an embedded build runs its own phase-1 model")
+	}
 	t.Setenv("HF_TOKEN", "")
 	t.Setenv("HUGGINGFACE_TOKEN", "")
 	a := modelScreen(t)
@@ -280,8 +292,8 @@ func TestModelRowsPhasesNoClassifier(t *testing.T) {
 	if !ok {
 		t.Fatal("phase1 row missing")
 	}
-	if !strings.Contains(p1.value, "LLM sentinel (no HuggingFace key)") || !p1.disabled {
-		t.Fatalf("phase1 row = %+v, want locked 'LLM sentinel (no HuggingFace key)'", p1)
+	if !strings.Contains(p1.value, "off — no model in this build") || !p1.disabled {
+		t.Fatalf("phase1 row = %+v, want locked 'off — no model in this build'", p1)
 	}
 
 	p2, ok := rowByKey(a.modelRows(), "phase2")
@@ -323,7 +335,10 @@ func TestClassifierProviderListOpenRouterWithResolver(t *testing.T) {
 	}
 }
 
-func TestModelRowsPhase1HuggingFaceDefaultWithToken(t *testing.T) {
+func TestModelRowsPhase1NoHFDefaultWithToken(t *testing.T) {
+	if mlclassify.Embedded() {
+		t.Skip("the no-classifier binary's phase-1 row is covered here; an embedded build runs its own phase-1 model")
+	}
 	t.Setenv("HF_TOKEN", "hf-x")
 	t.Setenv("HUGGINGFACE_TOKEN", "")
 	a := modelScreen(t)
@@ -333,12 +348,11 @@ func TestModelRowsPhase1HuggingFaceDefaultWithToken(t *testing.T) {
 	if !ok {
 		t.Fatal("phase1 row missing")
 	}
-	if strings.Contains(p1.value, "no HuggingFace key") {
-		t.Fatalf("phase1 row = %q, must not say 'no HuggingFace key' when HF_TOKEN is set", p1.value)
-	}
-	if !strings.Contains(p1.value, "GuardrailsAI/prompt-saturation-attack-detector") ||
-		!strings.Contains(p1.value, "huggingface") {
-		t.Fatalf("phase1 row = %q, want the default saturation model via huggingface", p1.value)
+	// A HuggingFace token alone no longer fabricates a remote phase-1
+	// default: HF serverless inference cannot serve the known saturation
+	// model, so the row names the ways out instead.
+	if !strings.Contains(p1.value, "off — no model in this build") || !p1.disabled {
+		t.Fatalf("phase1 row = %+v, want locked 'off — no model in this build'", p1)
 	}
 }
 

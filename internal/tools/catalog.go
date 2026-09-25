@@ -276,6 +276,7 @@ func fileTools() []nativeCommand {
 	return []nativeCommand{
 		{
 			name: "Cat", desc: "Print the full contents of a file under the working directory.",
+			kind:     KindRead,
 			props:    map[string]Property{"path": stringProp("Relative path to the file")},
 			required: []string{"path"},
 			build: func(root string, args map[string]any) ([]string, string, error) {
@@ -286,6 +287,7 @@ func fileTools() []nativeCommand {
 		},
 		{
 			name: "Head", desc: "Print the first lines of a file under the working directory. Takes only path and lines; to read a range from the middle of a file use Read with offset and limit.",
+			kind: KindRead,
 			props: map[string]Property{
 				"path":  stringProp("Relative path to the file"),
 				"lines": intProp("Number of lines to print (default 10)"),
@@ -306,6 +308,7 @@ func fileTools() []nativeCommand {
 		},
 		{
 			name: "Tail", desc: "Print the last lines of a file under the working directory. Takes only path and lines; to read a range from the middle of a file use Read with offset and limit.",
+			kind: KindRead,
 			props: map[string]Property{
 				"path":  stringProp("Relative path to the file"),
 				"lines": intProp("Number of lines to print (default 10)"),
@@ -336,6 +339,7 @@ func fileTools() []nativeCommand {
 		},
 		{
 			name: "Strings", desc: "Print the printable strings in a file (useful for binaries).",
+			kind: KindRead,
 			props: map[string]Property{
 				"path":   stringProp("Relative path to the file"),
 				"minlen": intProp("Minimum string length to print (default 4)"),
@@ -467,6 +471,7 @@ func gitTool() nativeCommand {
 // transformSpec is the per-tool data for one stdin-backed transform tool.
 type transformSpec struct {
 	name     string
+	kind     Kind // KindRead when the tool can print a file's contents
 	binary   string
 	desc     string
 	props    map[string]Property
@@ -481,6 +486,7 @@ func transformTools() []nativeCommand {
 	specs := []transformSpec{
 		{
 			name: "JQ", desc: "Transform JSON using a jq filter (single line). Pass JSON via input or path.",
+			kind: KindRead,
 			props: map[string]Property{
 				"filter": stringProp("The jq filter expression (single line)"),
 				"input":  stringProp("JSON text to transform (takes precedence over path)"),
@@ -507,6 +513,7 @@ func transformTools() []nativeCommand {
 		},
 		{
 			name: "YQ", desc: "Transform YAML/JSON using a yq expression (single line). Pass data via input or path.",
+			kind: KindRead,
 			props: map[string]Property{
 				"filter": stringProp("The yq expression (single line)"),
 				"input":  stringProp("YAML text to transform (takes precedence over path)"),
@@ -534,6 +541,7 @@ func transformTools() []nativeCommand {
 		},
 		{
 			name: "Sed", desc: "Transform text with a sed expression. Pass text via input or path.",
+			kind: KindRead,
 			props: map[string]Property{
 				"expression": stringProp("The sed expression, e.g. s/old/new/g"),
 				"input":      stringProp("Text to transform (takes precedence over path)"),
@@ -554,6 +562,7 @@ func transformTools() []nativeCommand {
 		},
 		{
 			name: "Awk", desc: "Process text with an awk program. Pass text via input or path.",
+			kind: KindRead,
 			props: map[string]Property{
 				"program": stringProp("The awk program, e.g. {print $1}"),
 				"input":   stringProp("Text to process (takes precedence over path)"),
@@ -574,6 +583,7 @@ func transformTools() []nativeCommand {
 		},
 		{
 			name: "Cut", desc: "Cut selected fields or columns from each line. Pass text via input or path.",
+			kind: KindRead,
 			props: map[string]Property{
 				"fields":    stringProp(`Fields to select, e.g. "1,3" or "2-"`),
 				"delimiter": stringProp("Optional field delimiter (default tab)"),
@@ -599,6 +609,7 @@ func transformTools() []nativeCommand {
 		},
 		{
 			name: "Sort", desc: "Sort lines. Pass text via input or path.",
+			kind: KindRead,
 			props: map[string]Property{
 				"input":   stringProp("Text to sort (takes precedence over path)"),
 				"path":    stringProp("Optional file to sort"),
@@ -623,6 +634,7 @@ func transformTools() []nativeCommand {
 		},
 		{
 			name: "Uniq", desc: "Report or omit repeated lines (adjacent). Pass text via input or path.",
+			kind: KindRead,
 			props: map[string]Property{
 				"input": stringProp("Text to process (takes precedence over path)"),
 				"path":  stringProp("Optional file to process"),
@@ -666,6 +678,7 @@ func transformTools() []nativeCommand {
 		},
 		{
 			name: "Tr", desc: "Translate or delete characters. Pass text via input or path.",
+			kind: KindRead,
 			props: map[string]Property{
 				"set1":  stringProp("The set of characters to translate from"),
 				"set2":  stringProp("The set of characters to translate to"),
@@ -691,6 +704,7 @@ func transformTools() []nativeCommand {
 		},
 		{
 			name: "Paste", desc: "Merge lines of input side by side. Pass text via input or path.",
+			kind: KindRead,
 			props: map[string]Property{
 				"input":     stringProp("Text to merge (takes precedence over path)"),
 				"path":      stringProp("Optional file to merge"),
@@ -707,6 +721,7 @@ func transformTools() []nativeCommand {
 		},
 		{
 			name: "Join", desc: "Join two sorted files on a common field.",
+			kind: KindRead,
 			props: map[string]Property{
 				"a":     stringProp("Path to the first sorted file"),
 				"b":     stringProp("Path to the second sorted file"),
@@ -776,6 +791,7 @@ func transformTools() []nativeCommand {
 		},
 		{
 			name: "Diff", desc: "Show the differences between two files or directories.",
+			kind: KindRead,
 			props: map[string]Property{
 				"a": stringProp("Path to the first file or directory"),
 				"b": stringProp("Path to the second file or directory"),
@@ -831,6 +847,7 @@ func transformTools() []nativeCommand {
 		spec := spec
 		out = append(out, nativeCommand{
 			name:     spec.name,
+			kind:     spec.kind,
 			binary:   spec.binary,
 			desc:     spec.desc,
 			props:    spec.props,

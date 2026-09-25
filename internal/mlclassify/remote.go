@@ -23,6 +23,28 @@ import (
 // small client and reuses only the credential lookup.
 const hfInferenceEndpoint = "https://router.huggingface.co/hf-inference/models/"
 
+// hubModelsAPI is the Hub API endpoint that reports a model repo's file list.
+// It is a package variable so tests can point it at a stub server.
+var hubModelsAPI = "https://huggingface.co/api/models/"
+
+// hubFilesTTL bounds how stale the cached repo file list may be before the
+// gate re-checks it. The list only feeds the servability verdict, so a week
+// of staleness is fine and keeps per-turn pipeline rebuilds off the Hub API.
+const hubFilesTTL = 7 * 24 * time.Hour
+
+// hubFileCacheFile is the per-model marker recording the last fetched file
+// list of the model's HuggingFace repo.
+const hubFileCacheFile = ".hub_files.json"
+
+// tokenizerFileNames are the repo files that let the HuggingFace inference
+// server load a model's tokenizer. A repo that ships none of them cannot be
+// loaded by HF serverless inference at all: the API 400s with "Can't load
+// tokenizer for '/repository'" (the server-side mount path of the repo, not a
+// path on the caller's machine). The known phase-1 saturation model is
+// exactly such a repo, which made the remote phase-1 default fail every
+// prompt.
+var tokenizerFileNames = []string{"tokenizer.json", "vocab.txt", "vocab.json"}
+
 // remoteModel runs one phase model over the HuggingFace inference API.
 type remoteModel struct {
 	id        string
@@ -60,14 +82,25 @@ func newRemoteGate(phase Phase, mc ModelConfig, hfToken func() (string, error)) 
 		token = ""
 	}
 
-	// Fetch the tokenizer files once so windowing matches server-side
-	// tokenization. Prefer the persistent on-disk cache (populated by a
-	// previous extraction or remote fetch) so missing or 404-prone files do
-	// not break a model that already has them locally.
+	// The on-disk cache directory for this model. The servability check caches
+	// its verdict there, and the tokenizer fetches below fall back to it.
 	dir, err := modelCacheDir(mc.ID)
 	if err != nil {
 		return nil, err
 	}
+
+	// Fail fast, before any tokenizer fetch or per-prompt call, when the
+	// HuggingFace inference API cannot serve the model at all. HF serverless
+	// inference mounts the repo at its own "/repository" path and loads the
+	// tokenizer from it, so a repo that ships no tokenizer files 400s on
+	// every call — including the known phase-1 model. The gate refuses such a
+	// model here with an actionable error instead of dying per prompt.
+	if tokenizable, err := hfRepoTokenizable(client, dir, mc.ID, token); err != nil {
+		return nil, fmt.Errorf("remote model %q: %w", mc.ID, err)
+	} else if !tokenizable {
+		return nil, fmt.Errorf("remote model %q: HuggingFace serverless inference cannot serve it — the repo ships no tokenizer files (tokenizer.json/vocab.txt), so the inference API fails to load the model. Run it locally instead: build signet with the embedded model (just build-bert or just build-jailbreak)", mc.ID)
+	}
+
 	// If this model is embedded and the cache is empty, seed it from the
 	// binary so the tokenizer files are available even when the upstream
 	// repo does not ship them (e.g. the jailbreak model has no vocab.txt).
@@ -186,7 +219,11 @@ func (g *remoteModel) fire(ctx context.Context, window string) (rolemanager.Sent
 		return "", 0, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", 0, fmt.Errorf("classify %s: %s: %s", g.id, resp.Status, strings.TrimSpace(string(data)))
+		msg := strings.TrimSpace(string(data))
+		if strings.Contains(msg, "Model not supported by provider") {
+			return "", 0, fmt.Errorf("classify %s: HuggingFace serverless inference does not serve this model (%s); run it locally instead — build signet with the embedded model (just build-bert or just build-jailbreak)", g.id, msg)
+		}
+		return "", 0, fmt.Errorf("classify %s: %s: %s", g.id, resp.Status, msg)
 	}
 	labels, err := decodeHFClassification(data)
 	if err != nil {
@@ -225,4 +262,94 @@ func fetchHFFile(ctx context.Context, client *http.Client, id, revision, file, t
 		return nil, fmt.Errorf("%s: %s", resp.Status, strings.TrimSpace(string(body)))
 	}
 	return io.ReadAll(resp.Body)
+}
+
+// hubFilesMarker is the on-disk record of the last fetched file list of a
+// model's HuggingFace repo.
+type hubFilesMarker struct {
+	Fetched int64    `json:"fetched"`
+	Files   []string `json:"files"`
+}
+
+// hasTokenizerFile reports whether a repo file list contains a file the
+// HuggingFace inference server can load a tokenizer from.
+func hasTokenizerFile(files []string) bool {
+	for _, f := range files {
+		for _, want := range tokenizerFileNames {
+			if f == want {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// hfRepoTokenizable reports whether the HuggingFace repo for id ships
+// tokenizer files, i.e. whether HF serverless inference can load the model
+// at all. The verdict is cached on disk in the model cache directory with a
+// hubFilesTTL so per-turn pipeline rebuilds do not hit the Hub API. When the
+// Hub is unreachable a stale marker degrades to the last known verdict
+// instead of failing the check; with no marker at all the check fails closed.
+func hfRepoTokenizable(client *http.Client, dir, id, token string) (bool, error) {
+	markerPath := filepath.Join(dir, hubFileCacheFile)
+	readMarker := func() (hubFilesMarker, bool) {
+		data, err := os.ReadFile(markerPath)
+		if err != nil {
+			return hubFilesMarker{}, false
+		}
+		var m hubFilesMarker
+		if json.Unmarshal(data, &m) != nil {
+			return hubFilesMarker{}, false
+		}
+		return m, true
+	}
+	if m, ok := readMarker(); ok && time.Since(time.Unix(m.Fetched, 0)) < hubFilesTTL {
+		return hasTokenizerFile(m.Files), nil
+	}
+
+	req, err := http.NewRequest(http.MethodGet, hubModelsAPI+id, nil)
+	if err != nil {
+		return false, err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := client.Do(req)
+	if err == nil {
+		defer resp.Body.Close()
+		switch {
+		case resp.StatusCode == http.StatusNotFound:
+			return false, fmt.Errorf("model %q not found on HuggingFace", id)
+		case resp.StatusCode != http.StatusOK:
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+			err = fmt.Errorf("%s: %s", resp.Status, strings.TrimSpace(string(body)))
+		default:
+			var meta struct {
+				Siblings []struct {
+					RFilename string `json:"rfilename"`
+				} `json:"siblings"`
+			}
+			if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&meta); err != nil {
+				err = fmt.Errorf("decode model metadata: %w", err)
+			} else {
+				files := make([]string, 0, len(meta.Siblings))
+				for _, s := range meta.Siblings {
+					files = append(files, s.RFilename)
+				}
+				marker, _ := json.Marshal(hubFilesMarker{Fetched: time.Now().Unix(), Files: files})
+				if werr := writeFileAtomic(markerPath, marker); werr != nil {
+					// A marker write failure is not fatal: the verdict is still
+					// valid for this check, the next one just re-fetches.
+				}
+				return hasTokenizerFile(files), nil
+			}
+		}
+	}
+	// The Hub check failed (transport, non-200, or bad metadata). A stale
+	// marker degrades to the last known verdict; without one the gate fails
+	// closed rather than guessing the model is servable.
+	if m, ok := readMarker(); ok {
+		return hasTokenizerFile(m.Files), nil
+	}
+	return false, fmt.Errorf("check whether HuggingFace can serve model %q: %w", id, err)
 }

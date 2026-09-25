@@ -348,12 +348,12 @@ func ResolveSecurityClassifier(cls *config.ClassifierSettings) SecurityClassifie
 	if sc.Kind != "models" {
 		return sc
 	}
-	// On a no-classifier binary phase 1 defaults to the known saturation model
-	// over HuggingFace when a token resolves; otherwise it has no model and the
-	// /model row shows the configure hint.
-	hfAvailable := hfTokenConfigured()
-	sc.Phase1 = resolveSecurityPhase(cls, 1, hfAvailable)
-	sc.Phase2 = resolveSecurityPhase(cls, 2, hfAvailable)
+	// A no-classifier binary has a phase model only when the user names one.
+	// A HuggingFace token alone never fabricates a remote default: HF
+	// serverless inference cannot serve the known saturation model (its repo
+	// ships no tokenizer files), so defaulting to it 400'd every prompt.
+	sc.Phase1 = resolveSecurityPhase(cls, 1)
+	sc.Phase2 = resolveSecurityPhase(cls, 2)
 	// Phase 2 is deferred to phase 3 when no local jailbreak gate can run:
 	// this build variant embeds no jailbreak model and no remote model was
 	// configured. On the jailbreak variant the gate is embedded but opt-in, so
@@ -372,7 +372,7 @@ func ResolveSecurityClassifier(cls *config.ClassifierSettings) SecurityClassifie
 }
 
 // resolveSecurityPhase resolves one phase gate to an mlclassify.ModelConfig.
-func resolveSecurityPhase(cls *config.ClassifierSettings, phase int, hfAvailable bool) *mlclassify.ModelConfig {
+func resolveSecurityPhase(cls *config.ClassifierSettings, phase int) *mlclassify.ModelConfig {
 	var ps config.ClassifierPhaseSettings
 	if cls != nil {
 		if phase == 1 {
@@ -405,18 +405,15 @@ func resolveSecurityPhase(cls *config.ClassifierSettings, phase int, hfAvailable
 	}
 
 	model := ps.Model
+	if model == "" && !embeddedOK {
+		// No embedded model and no explicit id: this phase has no model. A
+		// HuggingFace token is not enough to make a remote default — the
+		// inference API cannot serve the known saturation model, so one must
+		// be named explicitly (phaseN.model) or the build must embed it.
+		return nil
+	}
 	if model == "" {
-		if embeddedOK {
-			model = embeddedID
-		} else if phase == 1 && hfAvailable {
-			// A no-classifier binary with a HuggingFace token defaults phase 1
-			// to the known saturation model over the inference API.
-			model = phase1ModelID
-		} else {
-			// No embedded model, no explicit id, and (for phase 1) no token:
-			// this phase has no model.
-			return nil
-		}
+		model = embeddedID
 	}
 
 	// Resolve the attack label from the curated catalogue when the model is
@@ -1611,8 +1608,14 @@ func (f failingClassifier) Classify(context.Context, rolemanager.ClassifierPaylo
 }
 
 // buildSecurityClassifier builds the mlclassify classifier stack for a
-// resolved security config. phase3 is the narrowed LLM sentinel, or nil.
+// resolved security config. phase3 is the narrowed LLM sentinel, or nil. A
+// models-kind config with no resolvable phase model fails with an actionable
+// error so the fail-closed pipeline tells the user which of the three ways
+// out to take instead of repeating "no phase configured" on every prompt.
 func buildSecurityClassifier(sc SecurityClassifierConfig, phase3 rolemanager.Classifier, phase3Label string) (*mlclassify.Classifier, error) {
+	if sc.Phase1 == nil && sc.Phase2 == nil {
+		return nil, errors.New(`classifier kind "models" is set but no phase model is available in this build: build signet with embedded models (just build-bert or just build-jailbreak), switch classifier.kind to "llm", or set an explicit classifier.phase1/phase2 model`)
+	}
 	opts := mlclassify.Options{
 		Phase1:         sc.Phase1,
 		Phase2:         sc.Phase2,
@@ -1659,14 +1662,6 @@ func envHFToken() (string, error) {
 		return "", nil
 	}
 	return token, nil
-}
-
-// hfTokenConfigured reports whether a HuggingFace token resolves from the
-// environment. It gates the no-classifier phase-1 default: without a token the
-// phase has no model and the /model row shows the configure hint.
-func hfTokenConfigured() bool {
-	token, _ := envHFToken()
-	return token != ""
 }
 
 // SealSystem builds and seals the system prompt from trusted harness blocks.
