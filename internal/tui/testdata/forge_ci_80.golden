@@ -1,0 +1,7 @@
+activity  subagents  processes  git  [ ci ]              tab switch · f9 close
+  PR #42 · 1 pass · 1 fail · 1 pending
+▸ build  CI · ✓ pass
+  test  CI · ✗ fail
+  deploy  CD · … pending
+↑↓ select  ·  ⏎/c copy link  ·  r refresh  ·  esc unfocus  ·  tab switch
+──────────────────────────────────────────────────────────────────────────────

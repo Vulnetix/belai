@@ -1,0 +1,8 @@
+activity  subagents  processes  [ git ]  ci              tab switch · f9 close
+  ⎇ feat → origin/feat · GitHub (gh) · https://github.com/vulnetix/signet.git
+  PR #42 Add the thing (open)
+▸ /repo  ⎇ main · main worktree
+  /repo-feat  ⎇ feat · current
+  /repo-wip  ⎇ wip · dirty
+⏎ switch  ·  a add  ·  x remove  ·  p PR  ·  c url  ·  r refresh
+──────────────────────────────────────────────────────────────────────────────

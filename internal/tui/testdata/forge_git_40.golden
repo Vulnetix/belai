@@ -1,0 +1,8 @@
+activity  subagents  processes  [ git 
+  ⎇ feat → origin/feat · GitHub (gh) ·
+  PR #42 Add the thing (open)
+▸ /repo  ⎇ main · main worktree
+  /repo-feat  ⎇ feat · current
+  /repo-wip  ⎇ wip · dirty
+⏎ switch  ·  a add  ·  x remove  ·  p 
+──────────────────────────────────────

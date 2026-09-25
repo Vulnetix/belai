@@ -1,0 +1,6 @@
+[
+  {"name":"build","state":"SUCCESS","bucket":"pass","link":"https://github.com/o/r/actions/runs/1","workflow":"CI"},
+  {"name":"test","state":"FAILURE","bucket":"fail","link":"https://github.com/o/r/actions/runs/2","workflow":"CI"},
+  {"name":"deploy","state":"IN_PROGRESS","bucket":"pending","link":"","workflow":"CD"},
+  {"name":"docs","state":"SKIPPED","bucket":"skipping"}
+]

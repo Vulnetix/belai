@@ -115,7 +115,7 @@ func keySections() []keySection {
 			{"esc", "back"},
 		}},
 		{"runs panel (after f8/f9)", []keyBinding{
-			{"tab", "switch between activity, subagents and processes tabs"},
+			{"tab", "switch between activity, subagents, processes, git and ci tabs (ci only while the branch has a PR/MR)"},
 			{"up, down", "select an item"},
 			{"enter", "activity: send output; subagents: filter transcript; processes: view output"},
 			{"v", "activity/processes: view the selected output full-screen"},
@@ -124,6 +124,20 @@ func keySections() []keySection {
 			{"t", "activity: start the triage agent on the selected project"},
 			{"esc", "unfocus the panel (panel stays open)"},
 			{"f9", "close the panel"},
+		}},
+		{"runs panel — git tab", []keyBinding{
+			{"up, down", "select a worktree"},
+			{"enter", "switch the session into the selected worktree (inside the session root)"},
+			{"a", "add a worktree: branch [path], default .worktrees/<branch>"},
+			{"x", "remove the selected worktree after confirming; dirty or locked needs a force confirm"},
+			{"p", "create a PR (gh) or MR (glab) for the branch after confirming; pushes first if needed"},
+			{"c", "copy the PR/MR URL"},
+			{"r", "refresh"},
+		}},
+		{"runs panel — ci tab", []keyBinding{
+			{"up, down", "select a check"},
+			{"enter, c", "copy the selected check's run link"},
+			{"r", "refresh"},
 		}},
 		{"plan review (after a plan-mode turn)", []keyBinding{
 			{"up, down", "move between approve, refine and cancel"},
