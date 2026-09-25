@@ -625,7 +625,22 @@ The TUI composer accepts files with `@path` (`internal/tui/attach.go`). A
 scrolling, filterable file chooser (`internal/tui/filepick.go`) appears when
 the user types `@` in chat view; typing narrows the list, and `up`/`down`
 move the highlight while `right`/`tab`/`enter` insert the highlighted path.
-`esc` or `left` closes the chooser; the next keystroke reopens it. `@` is
+`esc` or `left` closes the chooser; the next keystroke reopens it.
+
+A token that is a path — it starts with `../`, `./`, `/` or `~/` — browses
+the filesystem one directory at a time instead of filtering the workspace
+listing, so `@../` walks above the session roots. Only entry names are read
+(hidden ones once the filter starts with `.`), and they reach the user only,
+never the model. `tab`/`right` on a directory descends into it; `enter`
+inserts it. A row outside every session root carries an amber `⚠`.
+Attaching such a path does not read it: the attachment waits while an
+amber *confirm root* pane offers the file's directory (or the directory
+itself) as a new root: `s` for this session, `p` saved for the project
+exactly like `/add-dir`, `n`/`esc` to decline and withhold it. A directory
+that contains the primary root, or overlaps an added root, is refused
+without a prompt, because roots never overlap. Once adopted, the attachment
+resolves inside the new root and goes through the pipeline below
+unchanged. `@` is
 now reserved for file references in the TUI, so `@agent:` is filtered like any
 other prefix and is only interpreted as a named-agent directive by the role
 manager when it appears in the submitted prompt.
@@ -988,7 +1003,11 @@ resolve paths from the concurrent fan-out.
 - there is no fourth case. An absolute filesystem path outside every root has
   no spelling here and is refused outright.
 
-The session root set can be widened during a session with `/add-dir`. A
+The session root set can be widened during a session with `/add-dir`, or
+by confirming an `@` path outside the roots (for the session only, or saved
+for the project like `/add-dir`). Both check the directory against the live
+root set (`Cwd.CheckRoot`) before anything is saved, so a directory the
+tools would refuse is never persisted. A
 confirmed added directory becomes an additional workspace root: absolute
 paths that prefix-match it resolve there, and the tool briefing lists the
 extra roots so the model knows the boundary. `Cd` still moves only inside

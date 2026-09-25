@@ -186,3 +186,51 @@ func firstPath(line string) string {
 	}
 	return line
 }
+
+// TestCheckRootValidatesWithoutWidening verifies CheckRoot applies the same
+// overlap rules as AddRoot but leaves the root set alone, and that Contains
+// agrees with the roots.
+func TestCheckRootValidatesWithoutWidening(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	primary := filepath.Join(base, "work")
+	sib := filepath.Join(base, "sib")
+	for _, d := range []string{filepath.Join(primary, "sub"), filepath.Join(sib, "inner")} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c := NewCwd(primary)
+
+	got, err := c.CheckRoot(sib)
+	if err != nil || got != sib {
+		t.Fatalf("CheckRoot(sib) = %q, %v; want %q", got, err, sib)
+	}
+	if len(c.Roots()) != 1 {
+		t.Fatalf("CheckRoot widened the roots: %v", c.Roots())
+	}
+	if _, err := c.CheckRoot(base); err == nil {
+		t.Fatal("an ancestor of the primary root must be refused")
+	}
+	if _, err := c.CheckRoot(filepath.Join(primary, "sub")); err == nil {
+		t.Fatal("a directory inside the primary root must be refused")
+	}
+	if c.Contains(filepath.Join(sib, "inner")) {
+		t.Fatal("Contains reported an unadded directory as inside")
+	}
+
+	if err := c.AddRoot(sib); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.CheckRoot(filepath.Join(sib, "inner")); err == nil {
+		t.Fatal("a directory inside an extra root must be refused")
+	}
+	if !c.Contains(filepath.Join(sib, "inner")) || !c.Contains(filepath.Join(primary, "sub")) {
+		t.Fatal("Contains missed a path under a root")
+	}
+	if c.Contains(base) {
+		t.Fatal("Contains reported the parent of the roots as inside")
+	}
+}

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -39,7 +40,9 @@ type filesLoadedMsg struct {
 // workdir into the closure before launching, so it never races the App.
 func (a *App) fileListCmd() tea.Cmd {
 	workdir := a.workdir
-	workspaceDirs := append([]string{}, a.workspaceDirs...)
+	// Only directories the tools accept as roots are listed, so a persisted
+	// workspace dir the Cwd refuses never surfaces in the chooser.
+	workspaceDirs := a.rootSet().Roots()[1:]
 	a.filesLoading = true
 	traceCtx := a.toolContext(context.Background(), "Glob", "")
 	return func() tea.Msg {
@@ -128,11 +131,163 @@ func (a *App) filePrefix() (at int, prefix string, ok bool) {
 	return 0, "", false
 }
 
+// fsListCap bounds one path-mode directory listing so a huge directory cannot
+// stall the chooser.
+const fsListCap = 2000
+
+// fsListing is one cached, single-level directory listing for the path-mode
+// chooser. Entry names carry a trailing "/" for directories.
+type fsListing struct {
+	entries  []string
+	loadedAt time.Time
+}
+
+// fsListedMsg carries the result of an async path-mode directory listing.
+type fsListedMsg struct {
+	dir     string
+	entries []string
+}
+
+// isPathToken reports whether an @-prefix names a filesystem path rather than
+// a filter over the workspace listing. Path tokens browse one directory at a
+// time and may walk above the session roots; what they name is only admitted
+// once its directory is a root (see resolveAttachment).
+func isPathToken(prefix string) bool {
+	switch {
+	case prefix == "..", prefix == "~":
+		return true
+	case strings.HasPrefix(prefix, "/"), strings.HasPrefix(prefix, "~/"),
+		strings.HasPrefix(prefix, "../"), strings.HasPrefix(prefix, "./"):
+		return true
+	}
+	return false
+}
+
+// splitPathToken splits a path token into the directory part as typed (with
+// its trailing slash), the name filter after it, and the absolute directory
+// to list. A leading "/" that names no real directory falls back to the
+// workdir, matching how @/path resolves root-relative.
+func (a *App) splitPathToken(prefix string) (dirPart, base, dir string) {
+	if prefix == ".." || prefix == "~" {
+		prefix += "/"
+	}
+	i := strings.LastIndex(prefix, "/")
+	dirPart, base = prefix[:i+1], prefix[i+1:]
+	dir = expandHomePath(dirPart)
+	if filepath.IsAbs(dir) && !strings.HasPrefix(dirPart, "~") {
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+			dir = filepath.Join(a.workdir, dir)
+		}
+	} else if !filepath.IsAbs(dir) {
+		dir = filepath.Join(a.workdir, dir)
+	}
+	return dirPart, base, filepath.Clean(dir)
+}
+
+// pathListIfStale returns a listing command for the directory the current
+// path token is in, when that listing is missing or stale and not already
+// loading. It returns nil for a non-path token.
+func (a *App) pathListIfStale() tea.Cmd {
+	_, prefix, ok := a.filePrefix()
+	if !ok || !isPathToken(prefix) {
+		return nil
+	}
+	_, _, dir := a.splitPathToken(prefix)
+	if a.fsLoading[dir] {
+		return nil
+	}
+	if l, ok := a.fsLists[dir]; ok && time.Since(l.loadedAt) < fileListTTL {
+		return nil
+	}
+	if a.fsLoading == nil {
+		a.fsLoading = map[string]bool{}
+	}
+	a.fsLoading[dir] = true
+	return fsListCmd(dir)
+}
+
+// fsListCmd reads one directory off the Update loop. Only entry names are
+// read — never file contents — and a symlink is stat'ed to mark it as a
+// directory but not followed any further.
+func fsListCmd(dir string) tea.Cmd {
+	return func() tea.Msg {
+		ents, err := os.ReadDir(dir)
+		if err != nil {
+			return fsListedMsg{dir: dir}
+		}
+		var out []string
+		for _, e := range ents {
+			if len(out) >= fsListCap {
+				break
+			}
+			name := e.Name()
+			isDir := e.IsDir()
+			if e.Type()&os.ModeSymlink != 0 {
+				if info, err := os.Stat(filepath.Join(dir, name)); err == nil {
+					isDir = info.IsDir()
+				}
+			}
+			if isDir {
+				out = append(out, name+"/")
+				continue
+			}
+			if imageExtensions[strings.ToLower(strings.TrimPrefix(filepath.Ext(name), "."))] {
+				continue
+			}
+			out = append(out, name)
+		}
+		return fsListedMsg{dir: dir, entries: out}
+	}
+}
+
+// handleFSListed installs a completed path-mode listing. A failed read is
+// cached empty so an unreadable directory is not re-read on every keystroke.
+func (a *App) handleFSListed(m fsListedMsg) {
+	delete(a.fsLoading, m.dir)
+	if a.fsLists == nil {
+		a.fsLists = map[string]fsListing{}
+	}
+	a.fsLists[m.dir] = fsListing{entries: m.entries, loadedAt: time.Now()}
+	a.relayout()
+}
+
+// pathCandidates lists the entries of the path token's directory whose name
+// starts with the typed filter, spelled the way the user typed the directory.
+// Hidden entries appear only once the filter itself starts with a dot.
+func (a *App) pathCandidates(prefix string) []string {
+	dirPart, base, dir := a.splitPathToken(prefix)
+	lower := strings.ToLower(base)
+	var out []string
+	for _, name := range a.fsLists[dir].entries {
+		if strings.HasPrefix(name, ".") && !strings.HasPrefix(base, ".") {
+			continue
+		}
+		if !strings.HasPrefix(strings.ToLower(name), lower) {
+			continue
+		}
+		out = append(out, dirPart+name)
+	}
+	return out
+}
+
+// candidateOutsideRoots reports whether a path-mode candidate lies outside
+// every session root. roots is computed once per render by the caller.
+func (a *App) candidateOutsideRoots(roots *tools.Cwd, cand string) bool {
+	if !isPathToken(cand) {
+		return false
+	}
+	_, _, dir := a.splitPathToken(cand)
+	return !roots.Contains(dir)
+}
+
 // fileCandidates returns the paths that match the current @-prefix.
 func (a *App) fileCandidates() []string {
 	_, prefix, ok := a.filePrefix()
 	if !ok {
 		return nil
+	}
+	if isPathToken(prefix) {
+		return a.pathCandidates(prefix)
 	}
 	cands := filterCandidates(a.files, prefix)
 	var out []string
@@ -208,6 +363,24 @@ func (a *App) acceptFilePick() tea.Cmd {
 	return a.syncAttachments()
 }
 
+// descendFilePick moves a path token into the highlighted directory, leaving
+// the chooser open on its entries. It reports false when the highlight is not
+// a path-mode directory, so the caller accepts instead.
+func (a *App) descendFilePick() (tea.Cmd, bool) {
+	at, prefix, ok := a.filePrefix()
+	if !ok || !isPathToken(prefix) {
+		return nil, false
+	}
+	path, ok := a.selectedFile()
+	if !ok || !strings.HasSuffix(path, "/") || strings.ContainsAny(path, " \t") {
+		return nil, false
+	}
+	a.editor.ReplaceRange(at, a.editor.CursorOffset(), "@"+path)
+	a.clearFilePickerOnAccept()
+	a.relayout()
+	return a.pathListIfStale(), true
+}
+
 // clearFilePickerOnAccept resets the chooser highlight but leaves the listing
 // cached for the next open.
 func (a *App) clearFilePickerOnAccept() {
@@ -238,7 +411,12 @@ func (a *App) handleFilePickKey(m tea.KeyMsg) (tea.Cmd, bool) {
 	case "down":
 		a.cycleFile(1)
 		return nil, true
-	case "right", "tab", "enter":
+	case "right", "tab":
+		if cmd, ok := a.descendFilePick(); ok {
+			return cmd, true
+		}
+		return a.acceptFilePick(), true
+	case "enter":
 		return a.acceptFilePick(), true
 	case "esc", "left":
 		a.dismissFilePicker()
@@ -258,7 +436,19 @@ func (a *App) fileSearchLine() string {
 func (a *App) renderFilePicker() string {
 	cands := a.fileCandidates()
 	meta := pickerCounter(a.fileIndex, len(cands))
-	rendered, newScroll := renderPicker("files", meta, a.contentWidth(), cands, a.fileIndex, a.fileScroll, []string{a.fileSearchLine()}, lipgloss.TerminalColor(components.ColorTeal))
+	var mark func(string) string
+	if _, prefix, _ := a.filePrefix(); isPathToken(prefix) {
+		// Rows outside every session root carry an amber triangle: picking
+		// one asks the user to adopt its directory as a root first.
+		roots := a.rootSet()
+		mark = func(cand string) string {
+			if a.candidateOutsideRoots(roots, cand) {
+				return components.WarnStyle.Render("⚠ ")
+			}
+			return "  "
+		}
+	}
+	rendered, newScroll := renderPickerMarked("files", meta, a.contentWidth(), cands, a.fileIndex, a.fileScroll, []string{a.fileSearchLine()}, lipgloss.TerminalColor(components.ColorTeal), mark)
 	a.fileScroll = newScroll
 	return rendered
 }

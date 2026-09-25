@@ -285,7 +285,7 @@ func NewRegistry(workdir string) *Registry {
 		if arg == "" {
 			return a.openAddDirPicker()
 		}
-		return a.addWorkspaceDirCmd(arg)
+		return a.addWorkspaceDirCmd(arg, true)
 	})
 	r.Register("help", "show commands and keyboard shortcuts", nil, func(a *App, arg string) tea.Cmd {
 		a.addSystem(helpText(a.registry))

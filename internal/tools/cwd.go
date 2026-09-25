@@ -78,36 +78,105 @@ func (c *Cwd) Roots() []string {
 // that contains or is contained by an existing root, because subsumption
 // would make one path resolvable two ways.
 func (c *Cwd) AddRoot(dir string) error {
-	abs, err := filepath.Abs(dir)
+	abs, err := resolveRootDir(dir)
 	if err != nil {
 		return err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err := c.overlapLocked(abs); err != nil {
+		return err
+	}
+	c.extra = append(c.extra, abs)
+	return nil
+}
+
+// CheckRoot reports whether AddRoot(dir) would succeed, without widening the
+// root set. It returns the resolved absolute directory AddRoot would record.
+// Callers that must ask the user before adding a root use it to refuse an
+// impossible root up front rather than after the user has said yes.
+func (c *Cwd) CheckRoot(dir string) (string, error) {
+	abs, err := resolveRootDir(dir)
+	if err != nil {
+		return "", err
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if err := c.overlapLocked(abs); err != nil {
+		return "", err
+	}
+	return abs, nil
+}
+
+// Contains reports whether path (absolute, or "~/"-prefixed) lies inside any
+// confinement root. Symlinks are resolved when the path exists, so a link
+// that points out of the roots is reported as outside.
+func (c *Cwd) Contains(path string) bool {
+	if c == nil {
+		return false
+	}
+	path = filepath.Clean(expandHome(path))
+	if !filepath.IsAbs(path) {
+		return false
+	}
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	sep := string(filepath.Separator)
+	for _, r := range c.Roots() {
+		if resolved, err := filepath.EvalSymlinks(r); err == nil {
+			r = resolved
+		}
+		if path == r || strings.HasPrefix(path, r+sep) {
+			return true
+		}
+	}
+	return false
+}
+
+// resolveRootDir returns dir as an absolute, symlink-resolved directory.
+func resolveRootDir(dir string) (string, error) {
+	abs, err := filepath.Abs(expandHome(dir))
+	if err != nil {
+		return "", err
 	}
 	abs, err = filepath.EvalSymlinks(abs)
 	if err != nil {
-		return err
+		return "", err
 	}
 	info, err := os.Stat(abs)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if !info.IsDir() {
-		return fmt.Errorf("not a directory: %s", dir)
+		return "", fmt.Errorf("not a directory: %s", dir)
 	}
+	return abs, nil
+}
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if abs == c.primary || strings.HasPrefix(abs, c.primary+string(filepath.Separator)) {
-		return fmt.Errorf("directory already inside the primary session root")
+// overlapLocked rejects a root that contains or is contained by an existing
+// root. The caller holds c.mu.
+func (c *Cwd) overlapLocked(abs string) error {
+	sep := string(filepath.Separator)
+	// abs is symlink-resolved, so compare it against the resolved primary as
+	// well: a workdir reached through a link must not hide an ancestor.
+	primaries := []string{c.primary}
+	if resolved, err := filepath.EvalSymlinks(c.primary); err == nil && resolved != c.primary {
+		primaries = append(primaries, resolved)
 	}
-	if strings.HasPrefix(c.primary, abs+string(filepath.Separator)) {
-		return fmt.Errorf("primary session root is inside the requested directory")
+	for _, p := range primaries {
+		if abs == p || strings.HasPrefix(abs, p+sep) {
+			return fmt.Errorf("directory already inside the primary session root")
+		}
+		if strings.HasPrefix(p, abs+sep) {
+			return fmt.Errorf("primary session root is inside the requested directory")
+		}
 	}
 	for _, r := range c.extra {
-		if abs == r || strings.HasPrefix(abs, r+string(filepath.Separator)) || strings.HasPrefix(r, abs+string(filepath.Separator)) {
+		if abs == r || strings.HasPrefix(abs, r+sep) || strings.HasPrefix(r, abs+sep) {
 			return fmt.Errorf("directory overlaps an existing workspace root")
 		}
 	}
-	c.extra = append(c.extra, abs)
 	return nil
 }
 

@@ -315,57 +315,80 @@ func (st *dirPickState) cycle(delta int) {
 	cyclePicker(st.filtered(), &st.selected, delta)
 }
 
-// addWorkspaceDirCmd persists an absolute or relative path as a workspace
-// directory. The repo-map scan is started by handleWorkspaceDirAdded, so the
-// persistence command itself stays fast and the chooser can close immediately.
-func (a *App) addWorkspaceDirCmd(arg string) tea.Cmd {
-	dir := arg
+// addWorkspaceDirCmd adopts an absolute or relative path as a workspace root.
+// persist saves it for the project, as /add-dir always does; without it the
+// root lasts for this session only (an @path the user confirmed with "s").
+// The directory is checked against the live root set first, so a root the
+// tools would refuse — an ancestor of the workdir, or an overlap — is never
+// saved. The repo-map scan is started by handleWorkspaceDirAdded, so the
+// command itself stays fast and the chooser can close immediately.
+func (a *App) addWorkspaceDirCmd(arg string, persist bool) tea.Cmd {
+	dir := expandHomePath(arg)
 	if !filepath.IsAbs(dir) {
 		dir = filepath.Join(a.workdir, dir)
 	}
+	roots := a.rootSet()
+	workdir := a.workdir
 	return func() tea.Msg {
-		if err := projectregistry.AddWorkspaceDir(a.workdir, dir); err != nil {
-			return workspaceDirAddedMsg{err: err}
+		abs, err := roots.CheckRoot(dir)
+		if err != nil {
+			return workspaceDirAddedMsg{dir: dir, err: err, sessionOnly: !persist}
 		}
-		return workspaceDirAddedMsg{dir: dir}
+		if persist {
+			if err := projectregistry.AddWorkspaceDir(workdir, abs); err != nil {
+				return workspaceDirAddedMsg{dir: abs, err: err}
+			}
+		}
+		return workspaceDirAddedMsg{dir: abs, sessionOnly: !persist}
 	}
 }
 
 // addSelectedWorkspaceDir persists the currently highlighted directory.
 func (a *App) addSelectedWorkspaceDir() tea.Cmd {
-	return a.addWorkspaceDirCmd(a.dirPickState.confirmPath)
+	return a.addWorkspaceDirCmd(a.dirPickState.confirmPath, true)
 }
 
 // workspaceDirAddedMsg reports the result of adding a workspace directory.
 type workspaceDirAddedMsg struct {
-	dir string
-	err error
+	dir         string
+	err         error
+	sessionOnly bool // adopted for this session, not saved for the project
 }
 
 // handleWorkspaceDirAdded installs an added workspace directory into the live
-// session and starts a background repo-map scan.
+// session, starts a background repo-map scan, and settles any @ attachment
+// that was waiting on the directory.
 func (a *App) handleWorkspaceDirAdded(m workspaceDirAddedMsg) tea.Cmd {
+	if a.dirPickState.open {
+		a.closeAddDirPicker()
+	}
 	if m.err != nil {
 		a.addSystem("add-dir: " + m.err.Error())
-		a.closeAddDirPicker()
-		return nil
+		return a.settleRootConfirm(m.dir, m.err)
 	}
 	// Idempotently extend the live list.
 	for _, d := range a.workspaceDirs {
 		if d == m.dir {
-			a.closeAddDirPicker()
 			a.addSystem("workspace directory already added: " + m.dir)
-			return nil
+			return a.settleRootConfirm(m.dir, nil)
+		}
+	}
+	if a.agent != nil && a.agent.Cwd() != nil {
+		if err := a.agent.Cwd().AddRoot(m.dir); err != nil {
+			a.addSystem("add-dir: " + err.Error())
+			return a.settleRootConfirm(m.dir, err)
 		}
 	}
 	a.workspaceDirs = append(a.workspaceDirs, m.dir)
-	if a.agent != nil && a.agent.Cwd() != nil {
-		_ = a.agent.Cwd().AddRoot(m.dir)
-	}
 	a.invalidateAgentSession()
-	a.addSystem("added workspace directory: " + m.dir)
-	a.closeAddDirPicker()
-	return a.workspaceMapScanCmd(m.dir)
+	// The @ chooser's listing now has another root to cover.
+	a.filesLoadedAt = time.Time{}
+	scope := "for this project"
+	if m.sessionOnly {
+		scope = "for this session"
+	}
+	a.addSystem("added workspace directory " + scope + ": " + m.dir)
+	return tea.Batch(a.workspaceMapScanCmd(m.dir), a.settleRootConfirm(m.dir, nil))
 }
 
 // handleAddDirKey routes keys while the inline directory chooser is open. It

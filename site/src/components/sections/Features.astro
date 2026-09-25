@@ -80,6 +80,14 @@ import localModelShot from '../../assets/shots/local-model.svg';
         outside it. A path such as <code class="mono">../../../etc</code> that leaves the root is refused.
       </p>
       <p class="mt-4 text-vx-ink/80">
+        You can still reach past the root yourself. Typing <code class="mono">@../</code>,{' '}
+        <code class="mono">@/</code> or <code class="mono">@~/</code> browses the filesystem one folder at a time, and
+        entries outside the session roots carry an amber <code class="mono">⚠</code>. Attaching one asks first:
+        add its folder as a root for this session, save it for the project like{' '}
+        <code class="mono">/add-dir</code>, or decline. Nothing outside the roots is read until you say yes, and a
+        folder that contains the session root is refused.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
         The core tools take the arguments models are trained on. <code class="mono">Grep</code> accepts{' '}
         <code class="mono">glob</code>, <code class="mono">type</code>, <code class="mono">-i</code>, context lines and{' '}
         <code class="mono">output_mode</code>. <code class="mono">Bash</code> accepts a{' '}

@@ -29,6 +29,9 @@ const (
 	attachClassifying
 	attachSafe
 	attachRejected
+	// attachNeedsRoot is an @path outside every session root, waiting for the
+	// user to adopt rootDir as a root (or decline) before it is read.
+	attachNeedsRoot
 )
 
 // attachment is one parsed @file reference.
@@ -42,7 +45,8 @@ type attachment struct {
 	reason   string
 	diff     filediff.Change // worktree-vs-index change, computed on validation
 	sentinel rolemanager.Sentinel
-	isDir    bool // the target is a directory: listed, not read
+	isDir    bool   // the target is a directory: listed, not read
+	rootDir  string // attachNeedsRoot: the directory proposed as a new root
 }
 
 // token is one candidate attachment parsed from editor text.
@@ -147,16 +151,9 @@ func (a *App) syncAttachments() tea.Cmd {
 			att.state = attachResolving
 			continue
 		}
-		root, rel, err := a.resolveAttachmentPath(tok.raw)
-		if err != nil {
-			att.state = attachRejected
-			att.reason = err.Error()
-			continue
+		if cmd := a.resolveAttachment(att); cmd != nil {
+			cmds = append(cmds, cmd)
 		}
-		att.root = root
-		att.raw = rel
-		att.state = attachClassifying
-		cmds = append(cmds, a.validateAttachmentCmd(id, root, rel))
 	}
 	// Compact attachOrder to remove deleted ids.
 	order := a.attachOrder[:0]
@@ -181,12 +178,184 @@ func (a *App) attachmentsByText(text string) (*attachment, bool) {
 	return nil, false
 }
 
+// resolveAttachment resolves one complete attachment against the session
+// roots. Inside a root it starts validation and returns that command. An
+// existing path outside every root is parked in attachNeedsRoot for the
+// user's confirmation, provided its directory could become a root at all;
+// anything else is rejected.
+func (a *App) resolveAttachment(att *attachment) tea.Cmd {
+	root, rel, err := a.resolveAttachmentPath(att.raw)
+	if err == nil {
+		att.root = root
+		att.raw = rel
+		att.state = attachClassifying
+		att.rootDir = ""
+		return a.validateAttachmentCmd(att.id, root, rel)
+	}
+	att.state = attachRejected
+	att.reason = err.Error()
+	target, ok := a.outsideRootTarget(att.raw)
+	if !ok {
+		return nil
+	}
+	dir := target
+	if info, statErr := os.Stat(target); statErr == nil && !info.IsDir() {
+		dir = filepath.Dir(target)
+	}
+	abs, checkErr := a.rootSet().CheckRoot(dir)
+	if checkErr != nil {
+		att.reason = fmt.Sprintf("%s: path escapes the session roots (%v); choose a subdirectory", att.text, checkErr)
+		return nil
+	}
+	att.state = attachNeedsRoot
+	att.reason = ""
+	att.rootDir = abs
+	return nil
+}
+
+// outsideRootTarget returns the absolute, symlink-resolved form of an @path
+// that exists and lies outside every session root. Relative paths are read
+// from the primary workdir, the way the @ chooser spells them.
+func (a *App) outsideRootTarget(raw string) (string, bool) {
+	abs := expandHomePath(raw)
+	if !filepath.IsAbs(abs) {
+		abs = filepath.Join(a.workdir, abs)
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return "", false
+	}
+	if a.rootSet().Contains(resolved) {
+		return "", false
+	}
+	return resolved, true
+}
+
+// rootSet returns the session's confinement roots as a Cwd: the primary
+// workdir plus every workspace directory that is a valid root. It mirrors
+// buildAgentSession, so the @ chooser and @file resolution agree with what
+// the tools will accept — a persisted directory the Cwd refuses (for example
+// an ancestor of the workdir) is not a root here either.
+func (a *App) rootSet() *tools.Cwd {
+	c := tools.NewCwd(a.workdir)
+	for _, d := range a.workspaceDirs {
+		_ = c.AddRoot(d)
+	}
+	return c
+}
+
+// expandHomePath resolves a leading "~/" (or a bare "~") against the user's
+// home directory, leaving any other path untouched.
+func expandHomePath(p string) string {
+	if p != "~" && !strings.HasPrefix(p, "~/") {
+		return p
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return p
+	}
+	return filepath.Join(home, strings.TrimPrefix(p, "~"))
+}
+
+// pendingRootConfirm returns the first attachment waiting on root adoption.
+// Only one confirmation is on screen at a time; the rest follow in order.
+func (a *App) pendingRootConfirm() (*attachment, bool) {
+	for _, id := range a.attachOrder {
+		if att, ok := a.attachments[id]; ok && att.state == attachNeedsRoot {
+			return att, true
+		}
+	}
+	return nil, false
+}
+
+// rootConfirmVisible reports whether the root confirmation pane is drawn.
+func (a *App) rootConfirmVisible() bool {
+	if a.view != viewChat {
+		return false
+	}
+	_, ok := a.pendingRootConfirm()
+	return ok
+}
+
+// handleRootConfirmKey answers the root confirmation. It swallows every key
+// it does not handle, so the prompt cannot be typed past: s adopts the
+// directory for this session, p also saves it for the project exactly like
+// /add-dir, and n or esc declines and withholds the attachment.
+func (a *App) handleRootConfirmKey(m tea.KeyMsg) tea.Cmd {
+	att, ok := a.pendingRootConfirm()
+	if !ok {
+		return nil
+	}
+	switch strings.ToLower(m.String()) {
+	case "s":
+		return a.addWorkspaceDirCmd(att.rootDir, false)
+	case "p":
+		return a.addWorkspaceDirCmd(att.rootDir, true)
+	case "n", "esc":
+		att.state = attachRejected
+		att.reason = att.text + ": outside the session roots (declined)"
+		a.relayout()
+		return a.flushPendingSubmit()
+	}
+	return nil
+}
+
+// settleRootConfirm re-resolves the attachments that were waiting on dir once
+// it has been adopted (err nil) or refused (err set).
+func (a *App) settleRootConfirm(dir string, err error) tea.Cmd {
+	var cmds []tea.Cmd
+	for _, id := range a.attachOrder {
+		att := a.attachments[id]
+		if att == nil || att.state != attachNeedsRoot {
+			continue
+		}
+		if err != nil {
+			if att.rootDir == dir {
+				att.state = attachRejected
+				att.reason = att.text + ": " + err.Error()
+			}
+			continue
+		}
+		if cmd := a.resolveAttachment(att); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	a.relayout()
+	cmds = append(cmds, a.flushPendingSubmit())
+	return tea.Batch(cmds...)
+}
+
+// rootConfirmHeight returns the rendered height of the confirmation pane.
+func (a *App) rootConfirmHeight() int {
+	if !a.rootConfirmVisible() {
+		return 0
+	}
+	return lipgloss.Height(a.renderRootConfirm())
+}
+
+// renderRootConfirm draws the amber confirmation pane for adopting a root.
+func (a *App) renderRootConfirm() string {
+	att, ok := a.pendingRootConfirm()
+	if !ok {
+		return ""
+	}
+	return components.Panel{
+		Title: "confirm root",
+		Body: components.WarnStyle.Render("⚠ ") +
+			components.EmphStyle.Render(att.rootDir) +
+			components.MutedStyle.Render(" is outside the session roots. Add it as a root?\n") +
+			components.MutedStyle.Render("s: this session  p: save for project  n: no"),
+		Width:  a.contentWidth(),
+		Accent: lipgloss.TerminalColor(components.ColorAmber),
+	}.View()
+}
+
 // resolveAttachmentPath resolves an @file path against the primary workdir
 // and any added workspace directories. It returns the matching root and the
 // root-relative path. Absolute paths that prefix-match a root are handled
 // directly; relative paths are sanitized against each root in turn.
 func (a *App) resolveAttachmentPath(raw string) (root, rel string, err error) {
-	roots := append([]string{a.workdir}, a.workspaceDirs...)
+	roots := append([]string{a.workdir}, a.rootSet().Roots()[1:]...)
 	for _, r := range roots {
 		rel, err = sanitizeAgainstRoot(r, raw)
 		if err == nil {
@@ -339,7 +508,7 @@ func (a *App) flushPendingSubmit() tea.Cmd {
 	}
 	for _, id := range a.attachOrder {
 		switch a.attachments[id].state {
-		case attachResolving, attachClassifying:
+		case attachResolving, attachClassifying, attachNeedsRoot:
 			return nil
 		}
 	}
@@ -429,7 +598,7 @@ func (a *App) attachmentPreviews() ([]components.Message, string) {
 // hasPendingAttachments reports whether any attachment has not yet resolved.
 func (a *App) hasPendingAttachments() bool {
 	for _, att := range a.attachments {
-		if att.state == attachResolving || att.state == attachClassifying {
+		if att.state == attachResolving || att.state == attachClassifying || att.state == attachNeedsRoot {
 			return true
 		}
 	}
@@ -471,6 +640,8 @@ func (a *App) renderAttachStrip() string {
 		switch att.state {
 		case attachResolving, attachClassifying:
 			parts = append(parts, spin+" "+att.text)
+		case attachNeedsRoot:
+			parts = append(parts, components.WarnStyle.Render("⚠ ")+att.text)
 		case attachSafe:
 			parts = append(parts, "✓ "+att.text)
 		case attachRejected:
