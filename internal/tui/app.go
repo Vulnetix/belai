@@ -1514,11 +1514,11 @@ func (a *App) applyLiveModeDecision(d rolemanager.ModeDecision) {
 	switch {
 	case string(d.Mode) != previous:
 		msg := "mode: " + string(d.Mode)
-		if d.Explore {
+		if a.exploreLaunches(d) {
 			msg += " (launch explore agents)"
 		}
 		a.addSystem(msg)
-	case d.Explore:
+	case a.exploreLaunches(d):
 		a.addSystem("launch explore agents")
 	}
 	if d.Warning != "" {
@@ -4329,6 +4329,22 @@ func (a *App) classifyMode(input string) {
 	a.applyModeDecision(d, err)
 }
 
+// exploreLaunches reports whether a decision's explore fan-out will actually
+// run, so the transcript never announces explore agents the agent skips: a
+// goal surveys first only under resilience.goal_explore, and plan mode only
+// while resilience.plan_explore is on.
+func (a *App) exploreLaunches(d rolemanager.ModeDecision) bool {
+	switch {
+	case !d.Explore:
+		return false
+	case d.Mode == modes.ModeGoal:
+		return a.settings.GoalExploreEnabled()
+	case d.Mode == modes.ModePlan:
+		return a.settings.PlanExploreEnabled()
+	}
+	return true
+}
+
 // applyModeDecision records a mode decision (or its error) on the session: the
 // mode chip, the engaged named agent, and warning lines.
 func (a *App) applyModeDecision(d rolemanager.ModeDecision, err error) {
@@ -4363,11 +4379,11 @@ func (a *App) applyModeDecision(d rolemanager.ModeDecision, err error) {
 		a.addSystem("engaged agent: " + d.AgentName)
 	case string(d.Mode) != previous:
 		msg := "mode: " + string(d.Mode)
-		if d.Explore {
+		if a.exploreLaunches(d) {
 			msg += " (launch explore agents)"
 		}
 		a.addSystem(msg)
-	case d.Explore:
+	case a.exploreLaunches(d):
 		// The mode is where it already was, so naming it repeats the footer
 		// chip. What the turn does differently is still worth a line.
 		a.addSystem("launch explore agents")

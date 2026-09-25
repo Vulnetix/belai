@@ -1355,11 +1355,18 @@ Subagents run in parallel bounded by the shared FIFO agent pool
 buffered-channel semaphore, so waiters are admitted in arrival order; `esc`
 drops queued work at once and `x` on a running chip cancels it through the
 pool. `resilience.plan_explore: false` skips the survey entirely so plan mode
-starts planning immediately. **Reset-on-steer**: an explore subagent that
+starts planning immediately. A goal whose prompt carries references is not
+surveyed before its first pass unless `resilience.goal_explore: true`: the
+goal's own passes read what they need, and the survey held the first pass
+back for minutes only for the goal to re-read the same files. The goal loop's
+not-started survey is unaffected. **Reset-on-steer**: an explore subagent that
 exhausts its iteration budget does not hard-fail when new steering arrives —
 the steering message is broadcast to the running subagents and each one
-restarts its budget and keeps investigating. Only when no new steering exists
-does the budget exhaustion surface.
+restarts its budget and keeps investigating. **Report on exhaustion**: with
+no new steering, a spent subagent gets exactly one pass with no tools
+advertised, whose reply is its findings report. It used to take the agent-mode
+continuation route — up to five more full tool budgets of reading — which kept
+the parent waiting for minutes.
 
 Clarification is now **gated on findings**: the clarify loop runs only when
 exploration produced non-empty findings and the planner classifier returns a
@@ -3066,7 +3073,7 @@ overridden off by `SIGNET_NO_KITTY=1`),
 `context_windows`,
 `resilience` (`max_attempts`, `max_iterations`, `max_passes`,
 `max_clarify_rounds`, `max_explore_iterations`, `max_agents`,
-`plan_explore`), `providers`,
+`plan_explore`, `goal_explore`), `providers`,
 `caveman` (default off; toggled from any screen with `f2`),
 `guardrails` and `ask_permission` (both default on; toggled with `f3` and
 `f4`, or together with `/yolo` — the repo-visible project layer may only

@@ -726,3 +726,32 @@ func TestShowInternalWorkMergePrecedence(t *testing.T) {
 		t.Fatalf("unset project should keep global: %q", got.InternalWorkLevel())
 	}
 }
+
+func TestGoalExploreEnabledTriState(t *testing.T) {
+	if got := (Settings{}).GoalExploreEnabled(); got {
+		t.Fatal("unset goal_explore must default off")
+	}
+	if got := (Settings{Resilience: &ResilienceSettings{}}).GoalExploreEnabled(); got {
+		t.Fatal("empty resilience must default goal_explore off")
+	}
+	f := false
+	if got := (Settings{Resilience: &ResilienceSettings{GoalExplore: &f}}).GoalExploreEnabled(); got {
+		t.Fatal("explicit false must be honoured")
+	}
+	tr := true
+	if got := (Settings{Resilience: &ResilienceSettings{GoalExplore: &tr}}).GoalExploreEnabled(); !got {
+		t.Fatal("explicit true must be honoured")
+	}
+}
+
+func TestGoalExploreOverridePrecedence(t *testing.T) {
+	tr := true
+	global := Settings{Resilience: &ResilienceSettings{GoalExplore: &tr}}
+	if got := global.Override(Settings{}); !got.GoalExploreEnabled() {
+		t.Fatal("project absent must keep global true")
+	}
+	f := false
+	if got := global.Override(Settings{Resilience: &ResilienceSettings{GoalExplore: &f}}); got.GoalExploreEnabled() {
+		t.Fatal("project false must replace global true")
+	}
+}

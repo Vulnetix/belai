@@ -137,6 +137,7 @@ func (a *App) settingsRows() []settingsRow {
 		maxAgentsVal = strconv.Itoa(s.Resilience.MaxAgents)
 	}
 	planExploreVal := boolLabel(s.PlanExploreEnabled())
+	goalExploreVal := boolLabel(s.GoalExploreEnabled())
 
 	return []settingsRow{
 		{key: "provider", label: "provider", kind: "text", value: providerVal, src: sourceLabel(origin["provider"])},
@@ -158,6 +159,7 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "update_check", label: "update check", kind: "toggle", value: updateCheckVal, src: sourceLabel(origin["update_check"])},
 		{key: "max_agents", label: "max agents", kind: "text", value: maxAgentsVal, src: sourceLabel(origin["resilience"])},
 		{key: "plan_explore", label: "plan explore", kind: "toggle", value: planExploreVal, src: sourceLabel(origin["resilience"])},
+		{key: "goal_explore", label: "goal explore", kind: "toggle", value: goalExploreVal, src: sourceLabel(origin["resilience"])},
 		{key: "permissions", label: "permissions", kind: "submenu", value: permsVal, src: sourceLabel(origin["permissions"])},
 		{key: "lsp", label: "language servers", kind: "submenu", value: lspSummary(a), src: sourceLabel(origin["lsp"])},
 	}
@@ -439,6 +441,11 @@ func (a *App) cycleToggle(key string) error {
 				s.Resilience = &config.ResilienceSettings{}
 			}
 			s.Resilience.PlanExplore = nextBool(s.Resilience.PlanExplore)
+		case "goal_explore":
+			if s.Resilience == nil {
+				s.Resilience = &config.ResilienceSettings{}
+			}
+			s.Resilience.GoalExplore = nextBool(s.Resilience.GoalExplore)
 		}
 	})
 }
@@ -521,6 +528,10 @@ func (a *App) unsetSetting(key string) error {
 		case "plan_explore":
 			if s.Resilience != nil {
 				s.Resilience.PlanExplore = nil
+			}
+		case "goal_explore":
+			if s.Resilience != nil {
+				s.Resilience.GoalExplore = nil
 			}
 		case "max_agents":
 			if s.Resilience != nil {

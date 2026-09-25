@@ -219,6 +219,7 @@ scope, following the same precedence rules.
 | `allow_project_providers` | opt in to project-layer `providers` (default off) |
 | `resilience.max_agents` | fan-out ceiling for explore subagents + background agents (default 15) |
 | `resilience.plan_explore` | plan-mode repository survey on/off (default on) |
+| `resilience.goal_explore` | survey a goal with references before its first pass (default off) |
 
 **Custom providers.** A `providers` block defines a provider by name, with
 `base_url`, `api` (`openai-chat`, `openai-responses`, or

@@ -448,6 +448,11 @@ type ResilienceSettings struct {
 	// PlanExplore, when non-nil, toggles the plan-mode repository survey. nil
 	// means on (the default), so false is honoured as an explicit opt-out.
 	PlanExplore *bool `json:"plan_explore,omitempty"`
+	// GoalExplore, when true, launches the explore fan-out before a goal
+	// whose prompt carries references. nil means off (the default): the goal
+	// loop's own first pass reads what it needs, and a pre-flight survey held
+	// that pass back for minutes only for the goal to re-read the same files.
+	GoalExplore *bool `json:"goal_explore,omitempty"`
 }
 
 // RoutingKind values for RoutingSettings.Kind. "defined" is the default: one
@@ -580,7 +585,8 @@ func (r *ResilienceSettings) MaxAgentsOr(def int) int {
 
 // merge folds another ResilienceSettings into this one. Safety budgets
 // (retry and iteration limits) tighten-only; MaxAgents is a performance
-// preference and may be raised; PlanExplore is replaced when explicitly set.
+// preference and may be raised; PlanExplore and GoalExplore are replaced when
+// explicitly set.
 func (r *ResilienceSettings) merge(other *ResilienceSettings) {
 	if other == nil {
 		return
@@ -615,6 +621,9 @@ func (r *ResilienceSettings) merge(other *ResilienceSettings) {
 	if other.PlanExplore != nil {
 		r.PlanExplore = other.PlanExplore
 	}
+	if other.GoalExplore != nil {
+		r.GoalExplore = other.GoalExplore
+	}
 }
 
 // ColorsEnabled reports whether role colours are on. Default true.
@@ -633,6 +642,13 @@ func (s Settings) SpinnerEnabled() bool {
 // deliberate opt-out rather than lost to the nil-means-default convention.
 func (s Settings) PlanExploreEnabled() bool {
 	return s.Resilience == nil || s.Resilience.PlanExplore == nil || *s.Resilience.PlanExplore
+}
+
+// GoalExploreEnabled reports whether a goal with references is surveyed by the
+// explore fan-out before its first pass. Default false; only an explicit true
+// enables it. The not-started goal survey is unaffected.
+func (s Settings) GoalExploreEnabled() bool {
+	return s.Resilience != nil && s.Resilience.GoalExplore != nil && *s.Resilience.GoalExplore
 }
 
 // ReasoningVisible reports whether reasoning deltas render. Default false.

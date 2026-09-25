@@ -53,6 +53,11 @@ import localModelShot from '../../assets/shots/local-model.svg';
         the same report.
       </p>
       <p class="mt-4 text-vx-ink/80">
+        A goal starts work at once. Its completion contract is drafted alongside and joins at the next
+        pass when it is ready, and it is not held back by a read-only survey unless{' '}
+        <code class="mono">resilience.goal_explore</code> is on.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
         <code class="mono">-detect-mode</code> prints the mode Signet would choose for a prompt without acting on it.
       </p>
     </div>
@@ -201,6 +206,8 @@ import localModelShot from '../../assets/shots/local-model.svg';
         The f8 roster splits a question across several read-only agents that run at the same time.
         Each one gets only the tools it is allowed to use, and their results are merged at the end.
         These agents have no write tools, so text they read can't get them to change files.
+        When one runs out of budget it writes its report in a single pass with no tools, instead of
+        reading on.
       </p>
     </div>
     <div class="order-1 lg:order-2 rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={fanOut} /></div>

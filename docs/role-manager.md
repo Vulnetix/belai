@@ -1019,7 +1019,7 @@ reporting toggle that prints the decision to stderr.
 | `AGENT`, `@agent:NAME` present | Agent | profile (the named agent) | no |
 | `PLAN` | Plan | plan | yes (launch explore agents) |
 | `GOAL`, length ≤ limit, no references | Goal | goal | no (pursue immediately) |
-| `GOAL`, length ≤ limit, references present | Goal | goal | yes (explore first) |
+| `GOAL`, length ≤ limit, references present | Goal | goal | decision says yes; the agent surveys first only with `resilience.goal_explore: true` |
 | `GOAL`, length > limit | Default agent + warning | none | no |
 | `UNDETERMINED` / malformed | Default agent | none | no |
 
@@ -1065,7 +1065,7 @@ flowchart TD
     S -->|GOAL| Len{Length exceeds goal limit?}
     Len -->|yes| WarnAgent[Warning + default agent<br/>no plan / goal / profile]
     Len -->|no| Ref{References or attachments?}
-    Ref -->|yes| GoalExplore[Goal mode<br/>launch explore agents]
+    Ref -->|yes| GoalExplore[Goal mode<br/>explore first only with goal_explore]
     Ref -->|no| GoalPursue[Goal mode<br/>pursue immediately]
     S -->|PLAN| PlanExplore[Plan mode<br/>launch explore agents]
     S -->|AGENT| Named{Named agent in prompt?}

@@ -174,7 +174,7 @@ func TestExploreSubagentResetsOnSteer(t *testing.T) {
 		t.Fatal("case B: steering source was never drained")
 	}
 	if *callsB != 6 {
-		t.Fatalf("case B: expected 6 model calls (initial + steer reset + one continuation), got %d", *callsB)
+		t.Fatalf("case B: expected 6 model calls (initial + steer reset + the report pass), got %d", *callsB)
 	}
 }
 
@@ -349,5 +349,107 @@ func TestExploreSubagentsSkipModeSelection(t *testing.T) {
 	defer mu.Unlock()
 	if modeCalls != 0 || draftCalls != 0 {
 		t.Fatalf("mode-select calls = %d, goal drafts = %d; an explore run needs neither", modeCalls, draftCalls)
+	}
+}
+
+// TestExploreSubagentReportsOnceWhenSpent pins the explore wrap-up: a subagent
+// whose budget is spent gets exactly one tool-less pass to write its report,
+// not the agent-mode continuation route of up to five more tool budgets.
+func TestExploreSubagentReportsOnceWhenSpent(t *testing.T) {
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, "f.txt"), []byte("x"), 0o600)
+
+	var mu sync.Mutex
+	var calls, toolless int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Tools []json.RawMessage `json:"tools"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		mu.Lock()
+		calls++
+		if len(req.Tools) == 0 {
+			toolless++
+		}
+		mu.Unlock()
+		if len(req.Tools) == 0 {
+			writeChatJSON(w, "REPORT: f.txt holds x")
+			return
+		}
+		writeToolCallJSON(w, "Read", `{"path":"f.txt"}`)
+	}))
+	defer srv.Close()
+
+	sess, err := NewSession(Options{
+		Cfg:           run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "test"},
+		Client:        srv.Client(),
+		Registry:      tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}),
+		Posture:       posture.AllIgnore(),
+		MaxIterations: 2,
+		SkipNonceSeed: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess.exploreSubagent = true
+	res, err := sess.run(context.Background(), nil, TurnInput{Prompt: "read it", Mode: rolemanager.ModeDecision{Mode: modes.ModeAgent}}, false, func(Event) {})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if calls != 3 || toolless != 1 {
+		t.Fatalf("calls = %d (tool-less %d), want the 2-call budget plus one tool-less report", calls, toolless)
+	}
+	if res.Reply != "REPORT: f.txt holds x" {
+		t.Fatalf("reply = %q, want the report", res.Reply)
+	}
+	if sess.reportOnly {
+		t.Fatal("reportOnly leaked past the report pass")
+	}
+}
+
+// TestGoalExploreIsOptIn pins resilience.goal_explore: a goal whose prompt
+// carries references starts its first pass without an explore fan-out unless
+// the setting turns the pre-flight survey on.
+func TestGoalExploreIsOptIn(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		setting *bool
+		want    bool
+	}{
+		{"default off", nil, false},
+		{"opted in", func() *bool { b := true; return &b }(), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var mu sync.Mutex
+			explored := false
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				raw, _ := io.ReadAll(r.Body)
+				if strings.Contains(string(raw), "plan-mode exploration") {
+					mu.Lock()
+					explored = true
+					mu.Unlock()
+				}
+				writeChatJSON(w, "done")
+			}))
+			defer srv.Close()
+			sess, err := NewSession(Options{
+				Cfg:           run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "test"},
+				Client:        srv.Client(),
+				Posture:       posture.AllIgnore(),
+				AllowExplore:  true,
+				SkipNonceSeed: true,
+				Settings:      config.Settings{Resilience: &config.ResilienceSettings{GoalExplore: tc.setting}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			decision := rolemanager.ModeDecision{Mode: modes.ModeGoal, AppendCarrier: true, Explore: true}
+			_, _ = sess.run(context.Background(), nil, TurnInput{Prompt: "update @docs/ to match", Mode: decision}, false, func(Event) {})
+			mu.Lock()
+			defer mu.Unlock()
+			if explored != tc.want {
+				t.Fatalf("explore fan-out ran = %v, want %v", explored, tc.want)
+			}
+		})
 	}
 }
