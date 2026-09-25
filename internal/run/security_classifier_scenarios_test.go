@@ -26,8 +26,8 @@ func TestResolveSecurityClassifierScenarioNoClassifier(t *testing.T) {
 	if sc.Kind != "models" {
 		t.Fatalf("Kind = %q, want models", sc.Kind)
 	}
-	if sc.Phase3On {
-		t.Fatal("phase 3 must be off when provider/model are unset")
+	if !sc.Phase3On {
+		t.Fatal("phase 3 must inherit the main model when provider/model are unset")
 	}
 	if sc.Phase2 != nil {
 		t.Fatalf("phase2 = %+v, want nil", sc.Phase2)

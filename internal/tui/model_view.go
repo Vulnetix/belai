@@ -1532,14 +1532,18 @@ func (a *App) classifierPhaseOpts(phase int) []string {
 // jailbreak gate is deferred, phase 3 also covers JAILBREAK.
 func (a *App) classifierPhase3Row() settingsRow {
 	cls := a.settings.Classifier
-	on := cls != nil && cls.Provider != "" && cls.Model != ""
-	value := "off: set classifier provider + model to enable"
-	if on {
+	sc := a.resolvedSecurityClassifier()
+	value := "off: set both classifier provider and model, or clear both to inherit the main model"
+	if sc.Phase3On {
 		scope := "injection + extraction"
-		if a.resolvedSecurityClassifier().Phase2Deferred {
+		if sc.Phase2Deferred {
 			scope = "injection + jailbreak + extraction"
 		}
-		value = scope + " · " + a.providerDisplayLabel(cls.Provider) + "/" + cls.Model
+		if cls != nil && cls.Provider != "" && cls.Model != "" {
+			value = scope + " · " + a.providerDisplayLabel(cls.Provider) + "/" + cls.Model
+		} else {
+			value = scope + " · main: " + a.providerDisplayLabel(a.cfg.Provider) + "/" + a.cfg.Model
+		}
 	}
 	return settingsRow{key: "phase3", label: "phase 3", kind: "text", value: value, disabled: true}
 }

@@ -37,8 +37,9 @@ func TestResolveSecurityClassifierDefaultKind(t *testing.T) {
 		if sc.Kind != "models" {
 			t.Fatalf("Kind = %q, want models on the embedded build", sc.Kind)
 		}
-		// Phase 1 is embedded and always on; phase 2 is opt-in; phase 3 off.
-		if sc.Phase1 == nil || sc.Phase2 != nil || sc.Phase3On {
+		// Phase 1 is embedded and always on; phase 2 is opt-in; phase 3
+		// inherits the main model, so tool output is classified by default.
+		if sc.Phase1 == nil || sc.Phase2 != nil || !sc.Phase3On {
 			t.Fatalf("embedded default security config = %+v", sc)
 		}
 		return
@@ -51,12 +52,14 @@ func TestResolveSecurityClassifierDefaultKind(t *testing.T) {
 	}
 }
 
-func TestResolveSecurityClassifierModelsPhase3OptIn(t *testing.T) {
-	// Phase 3 is opt-in: only an explicit provider AND model enable it.
-	off := ResolveSecurityClassifier(&config.ClassifierSettings{Kind: "models"})
-	if off.Phase3On {
-		t.Fatal("phase 3 must be off when provider/model are unset")
+func TestResolveSecurityClassifierModelsPhase3Default(t *testing.T) {
+	// Phase 3 is on by default: with provider and model both unset it inherits
+	// the main model, because the windowed phase 1 flags nothing on its own.
+	inherit := ResolveSecurityClassifier(&config.ClassifierSettings{Kind: "models"})
+	if !inherit.Phase3On {
+		t.Fatal("phase 3 must inherit the main model when provider/model are unset")
 	}
+	// A half-set pair is a misconfiguration and stays off.
 	modelOnly := ResolveSecurityClassifier(&config.ClassifierSettings{Kind: "models", Model: "gpt-5"})
 	if modelOnly.Phase3On {
 		t.Fatal("phase 3 must be off when provider is unset")

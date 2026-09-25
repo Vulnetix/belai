@@ -103,7 +103,7 @@ first two clear and it is configured.
 | ----- | ----- | ---- | -------- | ---------- |
 | 1 | `GuardrailsAI/prompt-saturation-attack-detector` (bert-tiny, embedded) | local, always | `SAFE` / `PROMPT_INJECTION` | none (required for the models path) |
 | 2 | `leomaurodesenv/bert-base-uncased-trustairlab-jailbreak` (bert-base, embedded in the jailbreak variant) | local, when enabled | `SAFE` / `JAILBREAK` | `phase2.source: disabled` — only reachable on the jailbreak variant; on BERT-only and no-classifier binaries an unset phase 2 is **deferred to phase 3**, not disabled |
-| 3 | the classifier provider+model | narrowed LLM sentinel | `SAFE` / `PROMPT_INJECTION` / `DATA_EXTRACTION` / `MODEL_EXTRACTION`; plus `JAILBREAK` when phase 2 is deferred to it | clear `classifier.provider` or `classifier.model` |
+| 3 | the classifier provider+model | narrowed LLM sentinel | `SAFE` / `PROMPT_INJECTION` / `DATA_EXTRACTION` / `MODEL_EXTRACTION`; plus `JAILBREAK` when phase 2 is deferred to it | guardrails off, or set only one of `classifier.provider` / `classifier.model` (unset both to inherit the main model) |
 
 Rules:
 
@@ -164,14 +164,19 @@ Rules:
   where the user has an embedded gate to explicitly turn off. Deferred means
   the `JAILBREAK` category moves to the phase-3 LLM sentinel; disabled means
   the user deliberately dropped jailbreak coverage.
-- **Phase 3 is opt-in** via the existing `classifier.provider` +
-  `classifier.model` choice — no new setting. Unset both and a zero-config
-  embedded install makes no network call in the classify path; set them and
-  phase 3 covers instruction injection and the two extraction categories. The
-  phase-1 model detects prompt *saturation*, not injection generally, and
-  neither model reaches `DATA_EXTRACTION` / `MODEL_EXTRACTION`; phase 3 exists
-  to close exactly that gap. Without phase 3 the models path does not catch
-  instruction-style injection in tool output.
+- **Phase 3 is on by default.** With `classifier.provider` and
+  `classifier.model` both unset it inherits the main (defined or routed)
+  model, as the LLM path does; set both to pin a classifier model instead. A
+  half-set pair is a misconfiguration and leaves phase 3 off, with the
+  `/model` row saying how to fix it. The guardrails switch still overrides:
+  off means no classifier call at all. Phase 3 covers instruction injection
+  and the two extraction categories. The phase-1 model scores prompt
+  *length*, not intent — about 0 below ~100 tokens and about 1.0 above, for
+  source and prose alike — so phase 1 classifies ~95-token levelled windows
+  (it flagged 108 of 157 repository files at 508 tokens, and none at 95) and,
+  at that size, flags nothing; neither local model reaches `DATA_EXTRACTION`
+  / `MODEL_EXTRACTION`. Phase 3 is what classifies tool output on the models
+  path, which is why it no longer waits for an opt-in.
 - **Vanilla binaries** keep the LLM sentinel path unchanged (no embedded
   weights). They can point phase 1/2 at HuggingFace remotely when a key is
   present, and otherwise fall back to the LLM sentinel. Choosing `kind: models`

@@ -71,8 +71,14 @@ func TestModelRowsPhasesForModelsVanilla(t *testing.T) {
 	if !ok {
 		t.Fatal("phase3 row missing for models kind")
 	}
-	if !p3.disabled || !strings.Contains(p3.value, "off: set classifier provider + model to enable") {
-		t.Fatalf("phase3 row = %+v, want locked off status", p3)
+	if !p3.disabled || !strings.Contains(p3.value, "injection + jailbreak + extraction · main: ") {
+		t.Fatalf("phase3 row = %+v, want locked phase 3 inheriting the main model", p3)
+	}
+
+	// A half-set pair is a misconfiguration: phase 3 is off and says how to fix it.
+	a.settings.Classifier = &config.ClassifierSettings{Kind: "models", Model: "gpt-5"}
+	if p3 := a.classifierPhase3Row(); !strings.Contains(p3.value, "off: set both classifier provider and model") {
+		t.Fatalf("half-set phase3 row = %+v, want the off hint", p3)
 	}
 }
 
