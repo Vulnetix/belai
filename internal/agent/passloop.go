@@ -508,6 +508,10 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 		emit(Event{Kind: EventPassKind, Pass: l.passes, Explored: l.surveyPending})
 		l.surveyPending = false
 
+		// A goal contract that finished drafting after the loop started
+		// joins here, at a clean boundary, instead of holding pass 1 back.
+		turns = append(turns, s.adoptLateGoalDraft(&l, prompt, emit)...)
+
 		// Proactive compaction: at this structurally clean boundary, compact
 		// when the estimated context exceeds the threshold — before an overflow
 		// fails a pass and pays a retry backoff. compactBoundary is a no-op

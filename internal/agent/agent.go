@@ -177,6 +177,9 @@ type Session struct {
 	// turnPriorGoal is the goal this turn resumes (see TurnInput.PriorGoal);
 	// nil starts a fresh goal state.
 	turnPriorGoal *goals.GoalState
+	// turnDraft is this turn's goal-contract draft when it was still running
+	// as the goal loop started; the loop adopts it when it lands.
+	turnDraft *pendingDraft
 	// turnExecutePlan is set for the turn that executes an approved plan, so
 	// the first-pass directive can point at the plan rather than a goal.
 	turnExecutePlan bool
@@ -622,6 +625,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	loopDec := modeDec
 	loopGoal := ""
 	s.turnPriorGoal = nil
+	s.turnDraft = nil
 	s.turnExecutePlan = in.ExecutePlan
 	var draft *pendingDraft
 	// A turn that ends before the join must not leave the draft running.
@@ -685,7 +689,14 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	case modeDec.Mode == modes.ModeGoal:
 		goalText := loopGoal
 		if draft != nil {
-			goalText = s.joinGoalDraft(draft, clean, emit)
+			var pending bool
+			goalText, pending = s.joinGoalDraft(draft, clean, emit)
+			if pending {
+				// Still drafting: the loop starts now and adopts the
+				// contract when it lands. The deferred cancel above still
+				// ends the draft with the turn.
+				s.turnDraft = draft
+			}
 		}
 		opts = prompt.Options{Carrier: prompt.CarrierGoal, GoalText: goalText, Caveman: s.opts.Caveman}
 	default:
