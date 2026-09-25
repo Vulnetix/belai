@@ -25,12 +25,22 @@ Finalize only when the plan is decision complete: an implementer following it
 would make no decisions of their own. The plan must be compact and structured
 as ## Summary, ## Key Changes, ## Test Plan, and ## Assumptions (plus ## Risks
 when any exist), with each Key Change a numbered step carrying the files it
-touches and how to verify it.`
+touches and how to verify it.
+
+Size the plan and the research to the task. A small task — one file, one
+command, one read — needs a line or two per section and no more than the
+reads it takes to confirm the target exists; do not describe internals the
+task does not touch. When the user asks for a quick or small plan, that wins.
+
+Every step is work to carry out after the plan is approved. Never write a step
+that asks the user, waits for a choice, or exits plan mode: questions the user
+already answered are settled, and anything still open goes under
+## Assumptions with the default you chose.`
 
 // PlanReminder is the one-line reminder injected on passes between full
 // injections, so the contract's discipline survives a long planning turn
 // without re-spending the tokens of the full contract every pass.
-const PlanReminder = "Continue the plan using the three-phase contract: ground, then intent, then implementation. Finish with ## Summary, ## Key Changes, ## Test Plan, and ## Assumptions."
+const PlanReminder = "Continue the plan using the three-phase contract: ground, then intent, then implementation, sized to the task. Finish with ## Summary, ## Key Changes, ## Test Plan, and ## Assumptions."
 
 // PlanDirective returns the planning directive for a 1-based pass number:
 // full on pass 1, a one-line reminder on each later pass, and a full

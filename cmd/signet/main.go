@@ -18,6 +18,7 @@ import (
 	"github.com/vulnetix/signet/internal/agentpool"
 	"github.com/vulnetix/signet/internal/agentprofile"
 	"github.com/vulnetix/signet/internal/bgagent"
+	"github.com/vulnetix/signet/internal/budget"
 	"github.com/vulnetix/signet/internal/calltrace"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
@@ -376,7 +377,11 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 
 	// A headless prompt keeps no transcript, but still gets its own session id
 	// so its provider requests and tool calls share one trace.
-	ctx = calltrace.WithSession(ctx, session.MustID())
+	sessionID := session.MustID()
+	ctx = calltrace.WithSession(ctx, sessionID)
+	// A headless prompt spends tokens like any other session: record them so
+	// day and month budgets see it. Nothing is printed; the TUI shows budgets.
+	defer recordUsage(sessionID, settings)()
 
 	var res run.Result
 	if detectMode || !enableTools {
@@ -551,4 +556,30 @@ func continueLatest(store *session.Store, cur session.Key) (session.Key, string,
 		return g.Key, g.Sessions[0].ID, nil
 	}
 	return "", "", errors.New("no sessions to continue for this project")
+}
+
+// recordUsage opens the token-usage ledger for a headless run and registers
+// the run package's usage observer, returning the func that detaches it and
+// flushes the ledger. A ledger that cannot be opened disables recording for
+// this run rather than failing it.
+func recordUsage(sessionID string, settings config.Settings) func() {
+	path, err := budget.DefaultPath()
+	if err != nil {
+		return func() {}
+	}
+	retention := 0
+	if settings.SessionRetentionDays != nil {
+		retention = *settings.SessionRetentionDays
+	}
+	rec, err := budget.Open(path, sessionID, retention)
+	if err != nil {
+		return func() {}
+	}
+	cancel := run.SetUsageObserver(func(ev run.UsageEvent) {
+		rec.Add(ev.Provider, ev.Model, int64(ev.Tokens))
+	})
+	return func() {
+		cancel()
+		_ = rec.Close()
+	}
 }

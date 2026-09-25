@@ -483,11 +483,11 @@ func TestResilienceMaxAgentsProjectOverride(t *testing.T) {
 }
 
 func TestPlanExploreEnabledTriState(t *testing.T) {
-	if got := (Settings{}).PlanExploreEnabled(); !got {
-		t.Fatal("unset plan_explore must default on")
+	if got := (Settings{}).PlanExploreEnabled(); got {
+		t.Fatal("unset plan_explore must default off")
 	}
-	if got := (Settings{Resilience: &ResilienceSettings{}}).PlanExploreEnabled(); !got {
-		t.Fatal("empty resilience must default plan_explore on")
+	if got := (Settings{Resilience: &ResilienceSettings{}}).PlanExploreEnabled(); got {
+		t.Fatal("empty resilience must default plan_explore off")
 	}
 	f := false
 	if got := (Settings{Resilience: &ResilienceSettings{PlanExplore: &f}}).PlanExploreEnabled(); got {

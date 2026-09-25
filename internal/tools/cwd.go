@@ -330,6 +330,17 @@ type resolved struct {
 // Abs returns the absolute filesystem path.
 func (r resolved) Abs() string { return filepath.Join(r.Root, r.Rel) }
 
+// ResolveAbs resolves a path argument to the absolute file a tool would
+// touch, by the same root-relative rule and confinement check the tools use.
+// The harness keys its read index with it before a call runs.
+func (c *Cwd) ResolveAbs(raw string) (string, error) {
+	res, err := resolvePath(c.Root(), c, raw)
+	if err != nil {
+		return "", err
+	}
+	return res.Abs(), nil
+}
+
 // resolvePath resolves a tool's path argument.
 func resolvePath(root string, cwd *Cwd, raw string) (resolved, error) {
 	if cwd == nil {

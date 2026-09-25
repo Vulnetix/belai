@@ -14,6 +14,7 @@ behaviour, and implementation details.
 | Classification, posture gates, permissions, and mode decisions | [Role Manager](role-manager.md) | [Security classification](role-manager.md#security-classification), [Gates and defaults](role-manager.md#gates-and-defaults), [Operating-mode classification](role-manager.md#operating-mode-classification) |
 | Language-server diagnostics | [LSP](lsp.md) | [Supported languages](lsp.md#supported-languages), [Security model](lsp.md#security-model), [Settings](lsp.md#settings) |
 | Provider retries and recovery | [Resilience](resilience.md) | [Error classification](resilience.md#error-classification-internalresilience), [Turn retry and state invariants](resilience.md#turn-retry-and-state-invariants), [Semantic repair](resilience.md#semantic-repair) |
+| Token budgets per provider and model | [Token budgets](token-budgets.md) | [Settings](token-budgets.md#settings), [Business rules](token-budgets.md#business-rules), [Edge cases](token-budgets.md#edge-cases) |
 
 ## Agents
 

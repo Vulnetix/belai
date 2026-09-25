@@ -211,6 +211,37 @@ func TestClarifyEnterSendsAnswersAndRearmsPump(t *testing.T) {
 	}
 }
 
+// Enter on an option picks it when its question has no answer yet. It used
+// to submit without selecting, so a user who moved to a file and pressed
+// enter sent "chose: (none)" and was asked the same question again. The
+// answers are also recorded in the transcript beside the questionnaire.
+func TestClarifyEnterChoosesHighlightedOption(t *testing.T) {
+	a := New(Options{})
+	a.push(viewClarify)
+	reply := make(chan clarify.Answers, 1)
+	a.clarifyState = newClarifyState(sampleQuestionnaire(), reply)
+
+	m, _ := a.Update(keyMsg("down")) // Parent → Child
+	a = m.(*App)
+	a.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	select {
+	case ans := <-reply:
+		if len(ans.Items[0].Chosen) != 1 || ans.Items[0].Chosen[0] != 1 {
+			t.Fatalf("enter on Child must choose it, got %+v", ans.Items[0])
+		}
+		if len(ans.Items[1].Chosen) != 0 {
+			t.Fatalf("an untouched question must stay unanswered, got %+v", ans.Items[1])
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no answer sent on reply channel")
+	}
+	last := a.messages[len(a.messages)-1].Text()
+	if !strings.Contains(last, "chose: Child") {
+		t.Fatalf("answers not recorded in the transcript: %q", last)
+	}
+}
+
 func TestClarifyEscCancelsTurn(t *testing.T) {
 	a := New(Options{})
 	a.push(viewClarify)

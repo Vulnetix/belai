@@ -494,8 +494,11 @@ type RoutingConfig struct {
 // full-size model adds cost and latency without changing it. The goal contract
 // belongs here too: its draft runs under a short deadline alongside
 // exploration, and a slow reasoning model on the main tier misses that
-// deadline and costs the goal its contract. Compaction and clarify stay on the
-// main model, whose quality shapes the agent's later work.
+// deadline and costs the goal its contract. Clarify belongs here as well: it
+// emits one short structured questionnaire, and the user is waiting for it in
+// plan mode — a slow reasoning model answering "which file?" is the bulk of
+// plan mode's pre-planning latency. Compaction stays on the main model, whose
+// quality shapes the agent's later work.
 var fastUseCases = map[string]bool{
 	rolemanager.UseCaseModeEval:     true,
 	rolemanager.UseCaseSessionName:  true,
@@ -503,6 +506,7 @@ var fastUseCases = map[string]bool{
 	rolemanager.UseCasePlanEval:     true,
 	rolemanager.UseCaseAgentEval:    true,
 	rolemanager.UseCaseGoalContract: true,
+	rolemanager.UseCaseClarify:      true,
 }
 
 // IsFastUseCase reports whether a use case defaults to the fast tier.
@@ -1913,14 +1917,22 @@ func sendTurnsWithTools(ctx context.Context, cfg Config, system string, turns []
 		return Assistant{}, err
 	}
 
+	var a Assistant
 	switch d.kind {
 	case kindWorkersAI:
-		return parseWorkersAI(res.body, res.status, redact)
+		a, err = parseWorkersAI(res.body, res.status, redact)
 	case kindAnthropicMessages:
-		return parseAnthropic(res.body, res.status, redact)
+		a, err = parseAnthropic(res.body, res.status, redact)
 	default:
-		return parseOpenAIChat(res.body, res.status, redact)
+		a, err = parseOpenAIChat(res.body, res.status, redact)
 	}
+	if err != nil {
+		return Assistant{}, err
+	}
+	// Every non-streaming call — role-manager, classifier, evaluator and the
+	// blocking main-turn sender — completes here.
+	reportUsage(cfg, system, turns, a)
+	return a, nil
 }
 
 func parseWorkersAI(body []byte, status int, redact func(string) string) (Assistant, error) {

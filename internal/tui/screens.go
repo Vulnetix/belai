@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/vulnetix/signet/internal/budget"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/tui/components"
 )
@@ -36,6 +37,7 @@ var screenEntries = []screenEntry{
 	{key: "m", name: "model", desc: "provider and model for each role", view: viewModel, open: viaCommand("/model"), status: func(a *App) string { return run.WireModel(a.cfg.Provider, a.cfg.Model) }},
 	{key: "p", name: "providers", desc: "credentials and local models", view: viewProviders, open: viaCommand("/providers"), status: func(a *App) string { return a.providerDisplayLabel(a.cfg.Provider) }},
 	{key: "s", name: "settings", desc: "every setting, by scope", view: viewSettings, open: viaCommand("/settings")},
+	{key: "b", name: "budgets", desc: "token budgets per provider and model", view: viewBudgets, open: viaCommand("/budgets"), status: (*App).budgetsStatus},
 	{key: "k", name: "permissions", desc: "allow, ask and deny rules", view: viewPermissions, open: viaCommand("/permissions"), status: (*App).permissionsStatus},
 	{key: "r", name: "prompts", desc: "the prompt library", view: viewPrompts, open: viaCommand("/prompts")},
 	{key: "x", name: "processes", desc: "the process library", view: viewProcesses, open: viaCommand("/processes")},
@@ -186,4 +188,15 @@ func (a *App) screensView() string {
 	}
 	b.WriteString("\n" + components.HelpBar("letter", "open", "↑↓", "move", "⏎", "open", "esc", "back") + "\n")
 	return lipgloss.NewStyle().Padding(1).Render(b.String())
+}
+
+// budgetsStatus summarises the selected model's budgets for the switcher row:
+// how many it has and the worst state among them.
+func (a *App) budgetsStatus() string {
+	bs := a.settings.BudgetsFor(a.cfg.Provider, a.cfg.Model)
+	if len(bs) == 0 || a.budgets == nil {
+		return ""
+	}
+	gs := a.budgets.Gauges(bs)
+	return fmt.Sprintf("%d for this model · %s", len(gs), budget.Worst(gs))
 }

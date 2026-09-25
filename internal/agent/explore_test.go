@@ -189,6 +189,7 @@ func TestPlanExploreLifecycleEvents(t *testing.T) {
 	srv := mockSecurityServer("Read", `{"path":"f.txt"}`, "finding")
 	defer srv.Close()
 
+	on := true
 	sess, err := NewSession(Options{
 		Cfg:           run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "test"},
 		Client:        srv.Client(),
@@ -196,7 +197,7 @@ func TestPlanExploreLifecycleEvents(t *testing.T) {
 		Posture:       posture.Defaults(),
 		SkipNonceSeed: true,
 		AllowExplore:  true,
-		Settings:      config.Settings{Resilience: &config.ResilienceSettings{MaxExploreIterations: 2}},
+		Settings:      config.Settings{Resilience: &config.ResilienceSettings{MaxExploreIterations: 2, PlanExplore: &on}},
 	})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
@@ -256,8 +257,8 @@ func TestPlanExploreLifecycleEvents(t *testing.T) {
 	}
 }
 
-// TestPlanExploreDisabledSkipsFanOut pins the resilience.plan_explore: false
-// gate: a forced plan-mode turn goes straight to planning with no subagent
+// TestPlanExploreDisabledSkipsFanOut pins the resilience.plan_explore default
+// (off): a forced plan-mode turn goes straight to planning with no subagent
 // events and no clarify.
 func TestPlanExploreDisabledSkipsFanOut(t *testing.T) {
 	root := t.TempDir()
@@ -266,7 +267,6 @@ func TestPlanExploreDisabledSkipsFanOut(t *testing.T) {
 	srv := mockSecurityServer("Read", `{"path":"f.txt"}`, "plan ready")
 	defer srv.Close()
 
-	f := false
 	sess, err := NewSession(Options{
 		Cfg:           run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "test"},
 		Client:        srv.Client(),
@@ -274,7 +274,6 @@ func TestPlanExploreDisabledSkipsFanOut(t *testing.T) {
 		Posture:       posture.Defaults(),
 		SkipNonceSeed: true,
 		AllowExplore:  true,
-		Settings:      config.Settings{Resilience: &config.ResilienceSettings{PlanExplore: &f}},
 	})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
@@ -290,7 +289,7 @@ func TestPlanExploreDisabledSkipsFanOut(t *testing.T) {
 
 	for _, e := range events {
 		if e.Kind == EventSubagentKind || e.Kind == EventSubagentActivityKind || e.Kind == EventClarifyAskKind {
-			t.Fatalf("plan_explore: false must produce no fan-out or clarify, got %v", e.Kind)
+			t.Fatalf("plan_explore off must produce no fan-out or clarify, got %v", e.Kind)
 		}
 	}
 }
@@ -320,6 +319,7 @@ func TestExploreSubagentsSkipModeSelection(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	on := true
 	sess, err := NewSession(Options{
 		Cfg:           run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "test"},
 		Client:        srv.Client(),
@@ -328,7 +328,7 @@ func TestExploreSubagentsSkipModeSelection(t *testing.T) {
 		SkipNonceSeed: true,
 		AllowExplore:  true,
 		Workdir:       root,
-		Settings:      config.Settings{Resilience: &config.ResilienceSettings{MaxExploreIterations: 2}},
+		Settings:      config.Settings{Resilience: &config.ResilienceSettings{MaxExploreIterations: 2, PlanExplore: &on}},
 	})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
@@ -349,6 +349,26 @@ func TestExploreSubagentsSkipModeSelection(t *testing.T) {
 	defer mu.Unlock()
 	if modeCalls != 0 || draftCalls != 0 {
 		t.Fatalf("mode-select calls = %d, goal drafts = %d; an explore run needs neither", modeCalls, draftCalls)
+	}
+}
+
+// TestExploreConfigUsesFastTier pins that explore subagents run on the fast
+// tier at low effort when one is resolved, and keep the main model otherwise.
+func TestExploreConfigUsesFastTier(t *testing.T) {
+	main := run.Config{Provider: "openai", BaseURL: "https://main", APIKey: "k", Model: "gpt-5", Effort: "high"}
+	fast := main
+	fast.Model = "gpt-5-mini"
+	main.Routing = run.RoutingConfig{Fast: &fast}
+
+	sess := &Session{cfg: main}
+	got := sess.exploreConfig()
+	if got.Model != "gpt-5-mini" || got.Effort != "low" {
+		t.Fatalf("exploreConfig = %+v, want the fast tier at low effort", got)
+	}
+
+	sess.cfg.Routing.Fast = nil
+	if got := sess.exploreConfig(); got.Model != "gpt-5" {
+		t.Fatalf("without a fast tier exploreConfig model = %q, want the main model", got.Model)
 	}
 }
 

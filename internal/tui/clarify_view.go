@@ -118,6 +118,22 @@ func (s *clarifyViewState) toggleChoice(rowIdx int) {
 	}
 }
 
+// chooseHighlighted selects the highlighted option when its group has no
+// answer yet. Enter on an option is the natural way to pick it; enter used to
+// submit without selecting, so a user who moved to a file and pressed enter
+// sent "chose: (none)" and the clarifier asked the same question again.
+func (s *clarifyViewState) chooseHighlighted() {
+	r := s.currentRow()
+	if r == nil || r.kind != clarifyRowOption {
+		return
+	}
+	g := r.groupIdx
+	if s.skipped[g] || len(s.chosen[g]) > 0 {
+		return
+	}
+	s.toggleChoice(s.selected)
+}
+
 func (s *clarifyViewState) skipGroup(gi int) {
 	s.skipped[gi] = true
 	s.chosen[gi] = map[int]bool{}
@@ -297,11 +313,15 @@ func (a *App) handleClarifyKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 	case "enter":
+		a.clarifyState.chooseHighlighted()
 		answers := a.clarifyState.buildAnswers()
 		if a.clarifyState.reply != nil {
 			go func() { a.clarifyState.reply <- answers }()
 		}
 		a.pop()
+		// The questionnaire is already in the transcript; the answers
+		// belong beside it so the session record shows what was chosen.
+		a.addSystem(answers.Render(a.clarifyState.q))
 		return a, a.nextAgent()
 	}
 
@@ -312,7 +332,7 @@ func (a *App) handleClarifyKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 // transcript, so the exchange survives in the session record.
 func formatQuestionnaire(q clarify.Questionnaire) string {
 	var b strings.Builder
-	b.WriteString("Exploration found ambiguity; please clarify:\n")
+	b.WriteString("Clarification needed:\n")
 	for i, g := range q.Groups {
 		fmt.Fprintf(&b, "%d. %s\n", i+1, g.Context)
 		for _, o := range g.Options {

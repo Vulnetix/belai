@@ -352,7 +352,12 @@ The per-category probabilities fold to one sentinel:
   payload. The handoff is recorded as a `security_fallback` activity so the
   TUI shows which model actually ruled.
 
-A transport or non-2xx error is an error (the pipeline fails closed). The
+Each Decisions call is bounded at `jev.DecisionsTimeout` (3s). An endpoint
+that does not answer in time, fails in transport, or answers 429 or 5xx is
+handed to the agent model exactly like an inconclusive answer, so the content
+is still classified; it used to be an error that withheld the tool result, and
+a slow OpenRouter withheld every read. A refused request (any other 4xx, such
+as a bad key) is still an error, and the pipeline fails closed. The
 reply is a plain sentinel token, so `ParseSentinel`, `ParseExtractionSentinel`,
 the chunked path and `mlclassify` phase 3 read it unchanged.
 
@@ -1194,8 +1199,14 @@ All must hold, or the bounded continuation path runs instead:
 
 ### Bounded ceiling
 
-`resilience.max_passes` (0 falls back to `defaultPlanContinuations` = 5) caps
-the loop. **The last allowed pass is a finishing pass:** its tool surface is
+`resilience.max_passes` (0 falls back to `defaultPlanContinuations` = 3) caps
+the loop, and each plan pass reads for at most `planPassIterations` (12) tool
+rounds, below the general iteration budget. A pass that spends that budget
+without drafting any plan makes the next pass the finishing pass. At the old
+40-round budget and five passes, session `b3a026a4` read 114–138 files per
+pass for 20+ minutes each, had its oldest results cleared out of context as it
+grew, re-read them, and never wrote a plan in 99 minutes.
+**The last allowed pass is a finishing pass:** its tool surface is
 `update_plan` and `ExitPlanMode` only (advertised *and* enforced —
 `Session.planFinalPass` narrows `toolSurface`, and `execTool` refuses any
 other tool with *unavailable on the final planning pass*), and its directive
@@ -1396,6 +1407,7 @@ which fails closed to `GOAL_PARTIAL` like any other malformed one.
 | Read streak (mid-pass) | 8 tool rounds in a row inside one pass changed no file (`readStreakNudgeAfter`) | The read-streak directive is injected at once, without waiting for the pass boundary: stop surveying and edit the first file the work needs from the bytes already read. It repeats every 8 such rounds and resets on any file change. A round whose every result was withheld does not count. Plan mode, a read-only agent turn, explore subagents and the report pass are never nudged; an agent-mode turn gets the softer agent edit nudge, because it may be a question. A pass has a 40-iteration budget and the boundary escalations only fire once it is spent, which let a goal read for over ten minutes before the harness said anything |
 | Progression reset | `partialStreak ≥ 4` (`2 × goalVerifyEvery`) in `GOAL_PARTIAL` or at the verification gate | A progression directive with session context is injected and `partialStreak` is reset, starting a new agentic evaluation loop; the loop does not abort for stall |
 | Unproductive pass | A pass executed no non-withheld tool result | Repaired once: the tool-repair directive is injected and one more pass runs, because every call being rejected before it ran is usually a bad argument shape, not the end of the run. A second consecutive empty pass stops the loop — with the work so far, `GOAL_PARTIAL` and a stop report when the goal has already changed a file, and with the error *pass N executed no tools* when it has not. Truncation repair still buys no further passes beyond that one repair |
+| Repeated pass | A pass changed no file and repeated the previous pass's work exactly — the same ordered tool calls and arguments, or the same reply when it called none — `maxRepeatPasses` (2) times in a row | Stops with `GOAL_PARTIAL`, a warning and a stop report. Call ids and wording are not part of the fingerprint. The progression reset cannot catch this: a model that re-adopts its checklist every pass (update_plan 0/2, read, update_plan 2/2) looks busy, and session `fbf5adf5` re-read the same file every pass until it was killed |
 | Verdict stall | `writes == 0` and the classifier has withheld 3 tool results by verdict (`goalVerdictStall`) since the goal began, checked before the all-withheld guard | Stops with `GOAL_PARTIAL`, a warning and a stop report naming the block: withheld content does not come back by asking again, with the same tool or another, so a goal that needs it cannot progress |
 | All-withheld goal | `writes == 0` and every pass so far ended with every tool result withheld | Error naming the tool failure, rather than granting unbounded passes against a broken resolver |
 | Broken evaluator | 2 consecutive malformed evaluator replies, each already re-asked once | The loop stops and returns the work so far with `GOAL_PARTIAL`, a warning and a stop report — **not** an error. The passes that ran produced real changes; a garbled classifier token is no reason to discard them |
@@ -1657,16 +1669,30 @@ autonomous operation stays an explicit opt-in that a classifier cannot grant.
 
 ## Clarify loop
 
-After the initial read-only explore wave finishes, ambiguous plan-mode prompts
-enter an interactive clarification round before planning. The loop is gated by
-`resilience.max_clarify_rounds` (default 3; 0 means default; negative disables
-it). The loop only runs when **all three** hold: the engaged mode requests
+Ambiguous plan-mode prompts enter an interactive clarification round before
+planning. The loop is gated by `resilience.max_clarify_rounds` (default 3; 0
+means default; negative disables it). It runs when the engaged mode requests
 exploration, the session was built with `AllowClarify` (only the interactive
-TUI sets that; subagents and the non-interactive CLI leave it false), **and
-exploration actually produced non-empty findings**. A zero-findings wave no
-longer triggers a questionnaire — the clarifier is a *planner* classifier that
-is asked, after exploration, whether it can proceed or still needs the user;
+TUI sets that; subagents and the non-interactive CLI leave it false), **and**
+either an explore wave produced findings or the mode is plan. The clarifier is
+a *planner* classifier asked whether it can proceed or still needs the user;
 an empty questionnaire means proceed to planning with the evidence at hand.
+
+Its evidence is always the harness-computed workspace facts — the repo map and
+the top-level directory listing, paths and counts only — plus the exploration
+findings when a wave ran (plan mode's survey is off by default,
+`resilience.plan_explore`). Every round is shown the questions already asked
+this turn with the user's answers under "Already answered", and the harness
+drops any question it has already asked, so the user is never asked the same
+thing twice. A follow-up explore fan-out after an answer runs only when the
+initial wave ran.
+
+The admitted answers ride on the user's prompt turn, with a line telling the
+planner they are final. They are the user's direction, not exploration
+evidence: appended to the exploration reports, whose note tells the model to
+treat them as untrusted evidence, they were ignored. In the TUI, `enter` on an
+option picks it when its question has no answer yet, and the answers are
+written to the transcript beside the questionnaire.
 
 ### Schema
 

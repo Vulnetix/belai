@@ -24,6 +24,7 @@ import (
 	"github.com/vulnetix/signet/internal/permissions"
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/prompt"
+	"github.com/vulnetix/signet/internal/readindex"
 	"github.com/vulnetix/signet/internal/repoindex"
 	"github.com/vulnetix/signet/internal/repomap"
 	"github.com/vulnetix/signet/internal/resilience"
@@ -146,6 +147,10 @@ type Session struct {
 	// flagged holds the files whose Read result was withheld, so a Grep over
 	// the same file cannot hand the lines back unclassified.
 	flagged flaggedFiles
+	// reads is the harness's index of Read results already delivered: a
+	// repeated read of an unchanged file whose result is still in the
+	// conversation is answered with a pointer to it (see readdedup.go).
+	reads *readindex.Index
 	// verdictWithheld counts tool results the classifier withheld by verdict
 	// (not by error). The goal loop reads it to stop a goal that keeps asking
 	// for content that will never be released.
@@ -417,6 +422,7 @@ func NewSession(o Options) (*Session, error) {
 		allowPassLoop:      o.AllowPassLoop,
 		maxIter:            maxIter,
 		cache:              cache,
+		reads:              readindex.New(),
 		caps:               o.Caps,
 		repoIndex:          o.RepoIndex,
 		planSurface:        planSurface,
@@ -698,11 +704,23 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		exploreTurns = s.exploreTurns(ctx, modeDec, clean, pipe, emit)
 	}
 
-	// Clarify round loop: only when exploration actually produced findings, and
-	// only when the planner classifier can articulate a concrete question the
-	// user must answer. A zero-findings wave no longer triggers a questionnaire.
-	if modeDec.Explore && s.allowClarify && len(exploreTurns) > 0 {
-		exploreTurns = append(exploreTurns, s.clarifyRounds(ctx, pipe, modeDec, clean, exploreTurns, emit)...)
+	// Clarify round loop: only when the planner classifier can articulate a
+	// concrete question the user must answer. It runs on exploration findings
+	// when a wave produced them, and in plan mode — whose survey is off by
+	// default — on the harness-computed workspace facts, so a plan can still
+	// ask "which file?" without minutes of exploration first.
+	//
+	// The answers are the user's own direction, so they ride on the user's
+	// prompt turn. They used to be appended to the exploration reports, which
+	// the model is told to treat as untrusted evidence, not instructions — so
+	// the planner ignored the file the user picked.
+	var clarified string
+	if modeDec.Explore && s.allowClarify && (len(exploreTurns) > 0 || modeDec.Mode == modes.ModePlan) {
+		answers, more := s.clarifyRounds(ctx, pipe, modeDec, clean, exploreTurns, emit)
+		exploreTurns = append(exploreTurns, more...)
+		if len(answers) > 0 {
+			clarified = strings.Join(answers, "\n\n")
+		}
 	}
 
 	switch {
@@ -767,6 +785,10 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		opts.RepoMap = prompt.RepoMapBlock(m)
 		repoStatus = prompt.RepoStatusBlock(m)
 	}
+	// The read index joins the volatile status: what the model has already
+	// been shown and is still current, so a new turn does not re-read it.
+	// It changes every turn, so it rides here and never in the system block.
+	repoStatus = joinDirectives(repoStatus, s.readSummary(history))
 	if len(s.workspaceMaps) > 0 {
 		opts.WorkspaceBlock = prompt.WorkspaceBlock(s.workspaceMaps)
 	}
@@ -783,13 +805,17 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		turns = append(turns, exploreTurns...)
 		turns = append(turns, run.Turn{Role: "assistant", Content: rolemanager.SummaryAck})
 	}
-	turns = append(turns, run.Turn{Role: "user", Content: clean, Attachments: in.Attachments, Directive: joinDirectives(in.Directive, repoStatus)})
+	userContent := clean
+	if clarified != "" {
+		userContent += "\n\n" + clarified + "\n\nThese answers are final. Plan with them; do not ask these questions again or add a step that asks the user."
+	}
+	turns = append(turns, run.Turn{Role: "user", Content: userContent, Attachments: in.Attachments, Directive: joinDirectives(in.Directive, repoStatus)})
 
 	// Plan mode's pass loop contacts the evaluator with the exploration
 	// context the explore agents gathered, not with a goal definition (plan
 	// mode has none). Digest the findings here; they are already classified
 	// and admitted as SAFE, and the evaluator call sanitizes them again.
-	planContext := exploreContextDigest(exploreTurns)
+	planContext := joinEvidence(clarified, exploreContextDigest(exploreTurns))
 	res, err := s.passLoop(ctx, pipe, system, turns, loopDec, loopGoal, planContext, clean, streaming, emit)
 	res.SanitizedPrompt = clean
 	res.SecuritySentinel = dec.Sentinel

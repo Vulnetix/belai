@@ -107,6 +107,9 @@ type Settings struct {
 	// newer Signet release. Default true. SIGNET_NO_UPDATE_CHECK=1 overrides
 	// it for a single run.
 	UpdateCheck *bool `json:"update_check,omitempty"`
+	// TokenBudgets caps the tokens each provider+model may spend per session,
+	// day or month. Global only: the project layer is dropped in Resolve.
+	TokenBudgets []TokenBudget `json:"token_budgets,omitempty"`
 }
 
 // VulnetixSettings is the per-project /vulnetix configuration.
@@ -370,6 +373,12 @@ type UISettings struct {
 	// "security", or "all". It is display-only — every level runs exactly the
 	// same gates.
 	ShowInternalWork *string `json:"show_internal_work,omitempty"`
+	// BudgetCycleSeconds is how long the footer shows one token budget before
+	// cycling to the next (default 10, minimum 2). See BudgetCycle.
+	BudgetCycleSeconds *int `json:"budget_cycle_seconds,omitempty"`
+	// BudgetWarn prints a system line on each model call for the selected
+	// model while any of its budgets is amber or red. Default off.
+	BudgetWarn *bool `json:"budget_warn,omitempty"`
 }
 
 // merge folds from over u, taking any non-nil field from from. It is the
@@ -412,6 +421,12 @@ func (u *UISettings) merge(from *UISettings) {
 	if from.ShowInternalWork != nil {
 		u.ShowInternalWork = from.ShowInternalWork
 	}
+	if from.BudgetCycleSeconds != nil {
+		u.BudgetCycleSeconds = from.BudgetCycleSeconds
+	}
+	if from.BudgetWarn != nil {
+		u.BudgetWarn = from.BudgetWarn
+	}
 }
 
 // ResilienceSettings controls the provider retry and agent-loop budgets.
@@ -445,8 +460,10 @@ type ResilienceSettings struct {
 	// budgets), because concurrency is a local performance preference, not a
 	// safety budget.
 	MaxAgents int `json:"max_agents,omitempty"`
-	// PlanExplore, when non-nil, toggles the plan-mode repository survey. nil
-	// means on (the default), so false is honoured as an explicit opt-out.
+	// PlanExplore, when true, runs the plan-mode repository survey before the
+	// first planning pass. nil means off (the default): the survey held the
+	// planner back for minutes on a small prompt, and the planner's own
+	// passes read what they need.
 	PlanExplore *bool `json:"plan_explore,omitempty"`
 	// GoalExplore, when true, launches the explore fan-out before a goal
 	// whose prompt carries references. nil means off (the default): the goal
@@ -638,10 +655,9 @@ func (s Settings) SpinnerEnabled() bool {
 }
 
 // PlanExploreEnabled reports whether plan-mode's repository survey runs.
-// Default true; only an explicit false disables it, so false is honoured as a
-// deliberate opt-out rather than lost to the nil-means-default convention.
+// Default false; only an explicit true enables it.
 func (s Settings) PlanExploreEnabled() bool {
-	return s.Resilience == nil || s.Resilience.PlanExplore == nil || *s.Resilience.PlanExplore
+	return s.Resilience != nil && s.Resilience.PlanExplore != nil && *s.Resilience.PlanExplore
 }
 
 // GoalExploreEnabled reports whether a goal with references is surveyed by the

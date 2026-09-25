@@ -1052,11 +1052,14 @@ func newGoalPassE2EServer(t *testing.T, evalSentinels []string) (*httptest.Serve
 		default:
 			gm.mu.Lock()
 			gm.chatCalls++
+			n := gm.chatCalls
 			gm.mu.Unlock()
 			// Include a todo list with a completed item so verification has
 			// real work to check; an all-pending list would skip the
 			// verification pass and change the pass-loop timing under test.
-			writeToolCallChat(w, "Bash", map[string]any{"command": "echo hi"}, "Plan:\n1. Ship the release\n[DONE:1]\n")
+			// The command differs per call: identical passes would trip the
+			// repeated-pass stop, which is not what these tests exercise.
+			writeToolCallChat(w, "Bash", map[string]any{"command": fmt.Sprintf("echo hi %d", n)}, "Plan:\n1. Ship the release\n[DONE:1]\n")
 		}
 	}))
 	return srv, gm
@@ -1310,7 +1313,9 @@ func TestPlanModeExploresWithToolsBeforeReplying(t *testing.T) {
 	srv, em := newExploreMockServer(t, "README.md")
 	defer srv.Close()
 
-	out, errOut, code := runSignetDirWithGlobal(t, dir, srv.URL, "",
+	// The pre-plan survey is opt-in (resilience.plan_explore); this test pins
+	// what it does when it runs.
+	out, errOut, code := runSignetDirWithGlobal(t, dir, srv.URL, `{"resilience":{"plan_explore":true}}`,
 		"-provider", "openai", "-model", "test", "-prompt", "plan how to refactor @README.md")
 	if code != 0 {
 		t.Fatalf("exit = %d (stderr %q)", code, errOut)

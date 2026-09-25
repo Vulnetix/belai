@@ -109,7 +109,7 @@ cd ~/code/my-project
 signet
 ```
 
-Inside the UI, `/` opens slash-command autocomplete — `/providers` (the provider list) to manage providers, credentials and local models, `/providers report` to probe local model servers, `/model` to pick provider/model/effort for the agent and classifier roles, `/settings` to edit settings, `/permissions` to edit tool rules, `/prompts` to manage the prompt library, `/processes` (or `/process`) to manage supervised long-lived processes, `/mode` to set the operating mode, `/todos`, `/profile`, `/agent` to create, edit, and run background agents, `/add-dir` to add another directory to the workspace, `/vulnetix` (with `review`, `configure`, `list`, `status`, and `firewall` subcommands), `/compact` to summarise a long session into a new one, `/clear` (or `/new`) to start a fresh session, `/yolo` to turn guardrails and the ask gate off together (`/yolo off` restores the settings-file values), and `/rename` to name the session. `/help` lists every command and keyboard shortcut. The popup matches fuzzily (`/pmt` finds `/prompts`) and also offers saved prompts as `/prompt:<name>` (loads it into the composer), agent profiles as `/agent:<name>` (switches to agent mode with that profile) and saved processes as `/process:<name>` (starts it unless it is already running, then shows its status).
+Inside the UI, `/` opens slash-command autocomplete — `/providers` (the provider list) to manage providers, credentials and local models, `/providers report` to probe local model servers, `/model` to pick provider/model/effort for the agent and classifier roles, `/settings` to edit settings, `/budgets` to set token budgets per provider and model (also `f1` then `b`), `/permissions` to edit tool rules, `/prompts` to manage the prompt library, `/processes` (or `/process`) to manage supervised long-lived processes, `/mode` to set the operating mode, `/todos`, `/profile`, `/agent` to create, edit, and run background agents, `/add-dir` to add another directory to the workspace, `/vulnetix` (with `review`, `configure`, `list`, `status`, and `firewall` subcommands), `/compact` to summarise a long session into a new one, `/clear` (or `/new`) to start a fresh session, `/yolo` to turn guardrails and the ask gate off together (`/yolo off` restores the settings-file values), and `/rename` to name the session. `/help` lists every command and keyboard shortcut. The popup matches fuzzily (`/pmt` finds `/prompts`) and also offers saved prompts as `/prompt:<name>` (loads it into the composer), agent profiles as `/agent:<name>` (switches to agent mode with that profile) and saved processes as `/process:<name>` (starts it unless it is already running, then shows its status).
 
 Operator safety controls live in the footer: `guardrails: on|off` (posture gates) and `ask: on|off` (the permission-ask gate). `f3` toggles guardrails, `f4` toggles ask, and when both are off the two chips collapse into a single gold `YOLO`. These are explicit opt-ins: turning them off is announced in the transcript and traced under `SIGNET_TRACE`. Guardrails off sets every posture gate to `ignore` across every surface — the agent loop, inline `!cmd`, `@file` attachments, background agents and the CLI — and the classifier is then not called at all rather than called and ignored, so a turn costs no extra requests. Sanitising is not part of the switch: delimiter markup is stripped either way. Next to them the footer always states `caveman: on|off`, so the voice rewrite (`f2`) can never be on without saying so.
 
@@ -213,12 +213,15 @@ scope, following the same precedence rules.
 | `ui.banner` / `ui.status_bar` | TUI presentation toggles |
 | `show_session_names` | show session names in the status bar (default on) |
 | `update_check` | check GitHub for a newer Signet release at startup (default on) |
+| `token_budgets` | global only: token allowances per provider, model and scope (`session`, `day`, `month`) — see [Token budgets](docs/token-budgets.md) |
+| `ui.budget_cycle_seconds` | seconds the footer shows each budget of the selected model before cycling (default 10, minimum 2) |
+| `ui.budget_warn` | print a warning line on each call to the selected model while one of its budgets is amber or red (default off) |
 | `context_windows` | per-model context-window overrides, in tokens |
 | `providers` | custom provider profiles (see below) |
 | `provider_labels` | display labels keyed by provider name (see below) |
 | `allow_project_providers` | opt in to project-layer `providers` (default off) |
 | `resilience.max_agents` | fan-out ceiling for explore subagents + background agents (default 15) |
-| `resilience.plan_explore` | plan-mode repository survey on/off (default on) |
+| `resilience.plan_explore` | survey the repository before the first planning pass (default off) |
 | `resilience.goal_explore` | survey a goal with references before its first pass (default off) |
 
 **Custom providers.** A `providers` block defines a provider by name, with
@@ -322,6 +325,7 @@ Highlights — full reference in [docs/README.md](docs/README.md):
 - [Architecture](docs/architecture.md): [delimiter/nonce integrity model](docs/architecture.md#delimiter-nonce-and-integrity-model), [tool-result trust](docs/architecture.md#tool-result-trust), [TUI keybindings](docs/architecture.md#keybindings)
 - [Role Manager](docs/role-manager.md): [security classification](docs/role-manager.md#security-classification), [posture gates](docs/role-manager.md#gates-and-defaults), [operating-mode classification](docs/role-manager.md#operating-mode-classification)
 - [Resilience](docs/resilience.md): [error classification](docs/resilience.md#error-classification-internalresilience), [provider retries](docs/resilience.md#pre-first-byte-boundary), [semantic repair](docs/resilience.md#semantic-repair)
+- [Token budgets](docs/token-budgets.md): per-model session/day/month budgets, the footer gauge, warnings, and the usage ledger
 - [Development](docs/development.md): prerequisites, `just` recipes, QA checklist, CI/release
 - [Agent Profiles](docs/agent-profiles.md): reusable agent definitions, [schema](docs/agent-profiles.md#profile-schema), [background lifecycle](docs/agent-profiles.md#background-agent-lifecycle), [precedence](docs/agent-profiles.md#per-agent-defaults-and-precedence)
 - [Agent Stores](docs/agent-stores.md): read-only context search with confinement guarantees

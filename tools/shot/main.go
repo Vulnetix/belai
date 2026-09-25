@@ -59,6 +59,7 @@ func main() {
 		"plan-review":     planReview(),
 		"approval-diff":   approvalDiff(),
 		"settings":        settings(),
+		"budgets":         budgets(),
 		"permissions":     permissions(),
 		"agents-roster":   agentsRoster(),
 		"model-picker":    modelPicker(),
@@ -177,6 +178,8 @@ func footer() string {
 			{ID: "f8-3", Label: "docs", State: "queued"},
 		},
 		MainFocused: true,
+		// 09:30: 60% of the day left but only 38% of the tokens, so amber.
+		Budget: &components.BudgetGauge{Scope: "day", TokenPct: 38, UsedFrac: 0.62, TimeLeft: "14h 30m", State: components.BudgetAmber},
 	}
 	return f.View()
 }
@@ -396,4 +399,37 @@ func classifierRow(label, value, state string, colour lipgloss.TerminalColor) st
 func modelRow(name, meta string, selected bool) string {
 	return components.Cursor(selected) + components.EmphStyle.Render(name) +
 		components.MutedStyle.Render("  ") + components.MutedStyle.Render(meta)
+}
+
+// budgets renders the token budgets screen (f1 then b): the selected model's
+// budgets first, each row coloured by its state, with its bar. The clock is 09:30
+// on day 24 of a 30-day month, so every row obeys the colour rules: the day is
+// amber (60% of the day left, 38% of the tokens), the month red (exhausted).
+
+func budgets() string {
+	head := components.SectionHeader("Token budgets", "esc back", width)
+	chip := components.Chip("global", components.ColorTealSoft) + "  " +
+		components.MutedStyle.Render("~/.vulnetix/signet/settings.json") + "\n\n"
+	row := func(selected bool, scope, limit, used string, g components.BudgetGauge, timeLeft string) string {
+		style := lipgloss.NewStyle().Foreground(g.Colour())
+		label := fmt.Sprintf("%-8s", scope)
+		if selected {
+			label = components.AccentStyle.Bold(true).Render(label)
+		}
+		return components.Cursor(selected) + label + fmt.Sprintf(" %9s limit  %9s used  ", limit, used) +
+			style.Render(fmt.Sprintf("%3d%% left", g.TokenPct)) + fmt.Sprintf("  %-14s ", timeLeft) + g.Bar()
+	}
+	lines := []string{
+		components.EmphStyle.Render("anthropic/claude-sonnet-4-5") + components.MutedStyle.Render("  (selected)"),
+		row(true, "session", "2M", "420k", components.BudgetGauge{TokenPct: 79, UsedFrac: 0.21, State: components.BudgetTeal}, "—"),
+		row(false, "day", "20M", "12.4M", components.BudgetGauge{TokenPct: 38, UsedFrac: 0.62, State: components.BudgetAmber}, "14h 30m (60%)"),
+		row(false, "month", "300M", "300M", components.BudgetGauge{TokenPct: 0, UsedFrac: 1, State: components.BudgetRed}, "6d 3h (20%)"),
+		"",
+		components.EmphStyle.Render("openrouter/deepseek/deepseek-v4-flash"),
+		row(false, "day", "5M", "600k", components.BudgetGauge{TokenPct: 88, UsedFrac: 0.12, State: components.BudgetTeal}, "14h 30m (60%)"),
+		"",
+		components.MutedStyle.Render("footer cycles every 10s · warnings on · change both in /settings"),
+	}
+	return head + chip + strings.Join(lines, "\n") + "\n\n" +
+		components.HelpBar("↑↓", "move", "a", "add", "enter", "edit", "x", "delete", "esc", "back")
 }

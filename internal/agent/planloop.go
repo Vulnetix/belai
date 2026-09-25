@@ -28,7 +28,7 @@ var ErrPlanLoopCancelled = errors.New("plan pass loop cancelled")
 // user executes it, so it never inherits goal mode's unbounded-by-default
 // behaviour. Reaching the ceiling returns the plan so far with a system note —
 // a turn boundary, not an error.
-const defaultPlanContinuations = 5
+const defaultPlanContinuations = 3
 
 // Harness-injected plan-mode continuation instructions. The bodies are sealed
 // into <directive> blocks at egress exactly like the goal loop's; only the
@@ -63,6 +63,11 @@ type planLedger struct {
 	// malformedStreak counts consecutive malformed evaluator replies; a clean
 	// reply resets it.
 	malformedStreak int
+
+	// writeNow makes the next pass the final, write-only pass: a pass spent
+	// its whole read budget without drafting any plan, so another research
+	// pass would only read more (and re-read what context clearing dropped).
+	writeNow bool
 
 	// overflowRetried: a ClassOverflow escaping pass is caught once (compact,
 	// re-run the pass); a second overflow is terminal.
@@ -354,7 +359,7 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 		turns = append(turns, withTodoCheck(prompt.PlanDirective(l.passes), l.list, l.hasList)...)
 		// The last allowed pass offers only update_plan and ExitPlanMode, so
 		// the loop ends on a plan, never on one more round of reading.
-		final := l.passes >= maxPasses
+		final := l.passes >= maxPasses || l.writeNow
 		s.planFinalPass = final
 		if final {
 			turns = append(turns, withTodoCheck(l.knownState()+" "+planFinalDirective, l.list, l.hasList, l.knownNote())...)
@@ -475,6 +480,15 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 			if out.productive == 0 {
 				emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("plan pass loop stopped: pass %d executed no tools; returning the plan so far", l.passes)})
 				return run.Result{Reply: l.planSoFar(), Passes: l.passes, PlanSentinel: rolemanager.PlanPartial}, nil
+			}
+			// A whole read budget spent with no plan drafted: the next pass
+			// writes it. Left to the evaluator, "partial, no plan yet" bought
+			// another pass of reading — twice in session b3a026a4, 23
+			// minutes each. The evaluator still runs for its reason, which
+			// the final directive carries.
+			if l.bestPlan == "" && !l.writeNow {
+				l.writeNow = true
+				emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("planning pass %d spent its read budget with no plan drafted; the next pass writes it", l.passes)})
 			}
 		}
 

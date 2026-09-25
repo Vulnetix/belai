@@ -15,7 +15,7 @@ The single-scroll marketing site at [signet.vulnetix.com](https://signet.vulneti
 rail (≥1120px). The content is full-width (no fixed max-width). Section order:
 
 hero · trust · classifier · sealed · beliefs · labs · modes · tools · diagnostics · permissions · agents ·
-processes · providers · vulnetix · cli · qol · start
+processes · budgets · providers · vulnetix · cli · qol · start
 
 Interactive islands live in `site/src/components/ui/` (copy button, comparison
 table, shot carousel); everything else ships zero JS.
@@ -71,6 +71,9 @@ Determinism rules:
 - `tools/shot` forces `lipgloss` TrueColor and `HasDarkBackground(true)`, and
   runs with stdout on a pty so `Banner`/`ExitCard` render their colour path.
 - No timestamps or random values in any frame.
+- The budget frames (`budgets`, and the gauge in `footer`) show a fixed clock —
+  09:30 on day 24 of a 30-day month — and every row must obey the colour
+  rules in [Token budgets](token-budgets.md) (R7, R8) for that clock.
 - The half-block glyph `▀` is drawn as two stacked rects; an unset half means
   "no pixel" and falls back to the ink background, so empty pixels read as
   empty rather than as speckles of light.

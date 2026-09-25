@@ -211,30 +211,13 @@ func (r *Registry) save() error {
 	return config.WriteGlobalFileAtomic(path, data)
 }
 
-// acquireLock takes an advisory lockfile, stealing it if it is stale.
+// acquireLock takes the registry's advisory lockfile.
 func acquireLock() (func(), error) {
 	path, err := lockfilePath()
 	if err != nil {
 		return nil, err
 	}
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-		if err == nil {
-			pid := fmt.Sprintf("%d", os.Getpid())
-			_, _ = f.WriteString(pid)
-			_ = f.Close()
-			return func() { _ = os.Remove(path) }, nil
-		}
-		if fi, stErr := os.Stat(path); stErr == nil && time.Since(fi.ModTime()) > 30*time.Second {
-			_ = os.Remove(path)
-			continue
-		}
-		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("could not acquire registry lock")
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
+	return config.AcquireFileLock(path)
 }
 
 // Observe records or updates an entry for workdir.

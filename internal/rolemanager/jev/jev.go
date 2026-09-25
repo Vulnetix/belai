@@ -64,6 +64,12 @@ const (
 	denyAt  = 0.9
 )
 
+// DecisionsTimeout bounds one Decisions call. Jev is a fast verdict model: a
+// call that has not answered in 3s is handed to the fallback (the agent model
+// for security, the default model for routing) rather than holding every tool
+// result of the turn behind it, as the old 30s bound did.
+const DecisionsTimeout = 3 * time.Second
+
 // DefaultServerURL is the Decisions server URL used by New and NewSecurity
 // when no endpoint is set. Tests redirect it to an httptest server; it stays
 // a package variable rather than a constant so pipeline-level tests can point
@@ -129,7 +135,7 @@ type Client struct {
 // fresh.
 func New(token func() (string, error)) *Client {
 	return &Client{
-		client:   &http.Client{Timeout: 30 * time.Second},
+		client:   &http.Client{Timeout: DecisionsTimeout},
 		token:    token,
 		model:    DefaultModel,
 		endpoint: DefaultServerURL,
@@ -444,7 +450,7 @@ type Security struct {
 // malformed Decisions answers.
 func NewSecurity(token func() (string, error), fallback rolemanager.Classifier) *Security {
 	return &Security{
-		client:   &http.Client{Timeout: 30 * time.Second},
+		client:   &http.Client{Timeout: DecisionsTimeout},
 		token:    token,
 		model:    DefaultModel,
 		endpoint: DefaultServerURL,
@@ -489,7 +495,17 @@ func (s *Security) Classify(ctx context.Context, p rolemanager.ClassifierPayload
 	}
 	resp, err := createDecision(ctx, s.decisionsSDK(), req, s.endpoint)
 	if err != nil {
-		return "", err
+		// The turn itself was cancelled, or the request was refused for a
+		// reason a retry elsewhere would not fix (a bad key): surface it.
+		if ctx.Err() != nil || !endpointUnavailable(err) {
+			return "", err
+		}
+		// A slow or failing Decisions endpoint is handed to the agent model
+		// like an inconclusive answer, so the content is still classified.
+		// It used to surface as a classifier error, which withheld the
+		// tool result — every read withheld while OpenRouter was slow.
+		rolemanager.RecordSecurityFallback()
+		return s.fallback.Classify(ctx, p)
 	}
 	verdict, decided := thresholdCategories(resp.Answers, p.Categories)
 	if decided {
@@ -499,6 +515,17 @@ func (s *Security) Classify(ctx context.Context, p rolemanager.ClassifierPayload
 	// then answer the unchanged chat payload with the fallback classifier.
 	rolemanager.RecordSecurityFallback()
 	return s.fallback.Classify(ctx, p)
+}
+
+// endpointUnavailable reports whether a Decisions failure means the endpoint
+// did not answer in time or is failing on its side — no response (a timeout
+// or transport error), a 429, or a 5xx — as opposed to a request it refused.
+func endpointUnavailable(err error) bool {
+	var de *DecisionsError
+	if !errors.As(err, &de) {
+		return false
+	}
+	return de.Status == 0 || de.Status == http.StatusTooManyRequests || de.Status >= 500
 }
 
 // thresholdCategories reduces the per-category noul answers to a verdict. A

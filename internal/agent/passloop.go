@@ -2,6 +2,9 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -67,6 +70,11 @@ const (
 	// a goal to "read this file verbatim" retried Read, Cat, Bash and Grep
 	// against an injected file until it was killed.
 	goalVerdictStall = 3
+	// maxRepeatPasses: consecutive passes that repeat the previous pass's
+	// work exactly, changing no file, before the loop stops. One repeat gives
+	// the boundary directive a chance to change course; a second means it
+	// did not, and every further pass would be the same pass again.
+	maxRepeatPasses = 2
 	// readStreakNudgeAfter is how many tool rounds in a row may change no file
 	// before a goal or agent pass is told to start editing. The nudge repeats
 	// every readStreakNudgeAfter rounds while the streak lasts.
@@ -103,7 +111,7 @@ const (
 	// planExecuteDirective leads the first pass of an approved plan. The user
 	// already approved the plan, so there is nothing left to confirm or
 	// re-explore: the first unchecked step is the first edit.
-	planExecuteDirective = "The approved plan in the system prompt is your objective and it is already approved — do not re-plan, re-explore, or ask for confirmation. Execute it in order: the first unfinished step is the first edit of this pass."
+	planExecuteDirective = "The approved plan in the system prompt is your objective and it is already approved — do not re-plan, re-explore, or ask for confirmation. Execute it in order: the first unfinished step is the first action of this pass. A plan whose steps only read or report changes no file; finish it and report the result."
 	// goalAckDirective is injected on the first goal pass. Goal mode's point
 	// over plan mode is that the work starts now rather than after a review,
 	// so the checklist rides in the same response as the first actions — but
@@ -114,8 +122,11 @@ const (
 	// 40-iteration budget and the pass-boundary escalations only fire once it
 	// is spent: sessions showed a goal reading for over ten minutes — more
 	// than a hundred Reads — before the harness said anything.
-	readStreakDirective = "You have spent several rounds reading without changing a file. Stop surveying: pick the first file the work needs and edit it in your next response, from the bytes you already have. Read more only for the exact lines that edit needs, and do not re-read files you have already read in full."
-	goalAckDirective    = "Start the work in this pass. In the same response as your first actions, call update_plan once with the steps you will execute, the first marked in_progress. Batch the reads you need in parallel, then make the change from the exact bytes you read. Mark steps complete with update_plan, or with [DONE:n] in your reply, as you finish them. Keep any restatement of the objective to a single line naming the deliverable and how completion will be verified."
+	// planReadStreakDirective is readStreakDirective while executing an
+	// approved plan, which may legitimately change no file.
+	planReadStreakDirective = "You have spent several rounds reading. Carry out the approved plan's next unfinished step in your next response from the bytes you already have: if it changes a file, make the change; if the remaining steps only read or report and are done, say the plan is complete and give the result. Do not re-read files you have already read in full."
+	readStreakDirective     = "You have spent several rounds reading without changing a file. Stop surveying: pick the first file the work needs and edit it in your next response, from the bytes you already have. Read more only for the exact lines that edit needs, and do not re-read files you have already read in full."
+	goalAckDirective        = "Start the work in this pass. In the same response as your first actions, call update_plan once with the steps you will execute, the first marked in_progress. Batch the reads you need in parallel, then make the change from the exact bytes you read. Mark steps complete with update_plan, or with [DONE:n] in your reply, as you finish them. Keep any restatement of the objective to a single line naming the deliverable and how completion will be verified."
 )
 
 // goalAckDirective returns the first-pass goal directive, naming the detected
@@ -165,6 +176,10 @@ func (s *Session) allTestCommands() []string {
 type passLedger struct {
 	passes   int
 	goalText string
+	// executePlan: the loop is executing an approved plan, which may change
+	// no file at all, so the no-write escalations name the next plan step
+	// instead of demanding an edit.
+	executePlan bool
 
 	// todo list shared by goal mode, plan pursual and the TUI panel.
 	list          todos.List
@@ -217,6 +232,16 @@ type passLedger struct {
 	// overflowRetried: a ClassOverflow escaping pass is caught once (compact,
 	// re-run the pass); a second overflow is terminal.
 	overflowRetried bool
+
+	// lastPassPrint is the fingerprint of the previous pass's work (its tool
+	// calls, or its reply when it called none) and repeatPasses the run of
+	// consecutive passes that repeated it exactly while changing no file. The
+	// other stall detectors inject a stronger directive and reset, so a model
+	// that redid the same read every pass — update_plan 0/2, Read, update_plan
+	// 2/2 — looped until it was killed. Repeating identical work is not
+	// progress, whatever the checklist says.
+	lastPassPrint string
+	repeatPasses  int
 
 	// unproductivePasses counts consecutive passes that executed no tool at
 	// all. One such pass is repairable — a rejected argument shape or a
@@ -316,6 +341,48 @@ func (l *passLedger) everyPassWithheld() bool {
 	return l.passes > 0 && l.withheldPasses == l.passes
 }
 
+// noteRepeat records whether the pass that just ended repeated the previous
+// pass's work exactly without changing a file, and reports whether the run of
+// repeats has reached maxRepeatPasses.
+func (l *passLedger) noteRepeat(passTurns []run.Turn, reply string) bool {
+	print := passPrint(passTurns, reply)
+	if l.passWrites == 0 && print != "" && print == l.lastPassPrint {
+		l.repeatPasses++
+	} else {
+		l.repeatPasses = 0
+	}
+	l.lastPassPrint = print
+	return l.repeatPasses >= maxRepeatPasses
+}
+
+// passPrint fingerprints a pass's work: the ordered tool calls with their
+// arguments, or the trimmed reply when the pass called no tool. Call ids and
+// wording around tool calls vary between passes that do the same thing, so
+// neither is part of it.
+func passPrint(passTurns []run.Turn, reply string) string {
+	h := sha256.New()
+	calls := 0
+	for _, t := range passTurns {
+		for _, c := range t.ToolCalls {
+			args := c.RawArgs
+			if args == "" {
+				b, _ := json.Marshal(c.Args) // map keys marshal sorted
+				args = string(b)
+			}
+			fmt.Fprintf(h, "%s\x00%s\x00", c.Name, args)
+			calls++
+		}
+	}
+	if calls == 0 {
+		r := strings.TrimSpace(reply)
+		if r == "" {
+			return ""
+		}
+		h.Write([]byte(r))
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 // stalledOnWrites reports whether the loop has gone long enough without a
 // file change to stop asking politely. It is deliberately independent of the
 // todo list: a model can keep a checklist moving with prose alone.
@@ -347,6 +414,9 @@ func (l *passLedger) nextStep() string {
 // file. It is the counterweight to the read-only pull of exploration: goal
 // mode is not finished investigating, it is behind on writing.
 func (l *passLedger) noWriteDirective() string {
+	if l.executePlan {
+		return l.planNoWriteDirective()
+	}
 	var b strings.Builder
 	if l.writes == 0 {
 		b.WriteString("No file has changed yet in this goal. Stop investigating and make the smallest correct edit that advances it now")
@@ -357,6 +427,24 @@ func (l *passLedger) noWriteDirective() string {
 		fmt.Fprintf(&b, " — the next step is: %s", step)
 	}
 	b.WriteString(". Read the exact bytes you are about to edit, then edit them. If a real blocker prevents any edit, state the blocker in one line and say what you need.")
+	return b.String()
+}
+
+// planNoWriteDirective is noWriteDirective for an approved plan. A plan may be
+// read-only — "read this file and report" — so "make the smallest edit now"
+// was wrong for it: the next plan step is the deliverable, and a finished
+// read-only plan is done, not behind on writing.
+func (l *passLedger) planNoWriteDirective() string {
+	var b strings.Builder
+	if l.writes == 0 {
+		b.WriteString("No file has changed yet while executing the approved plan. Carry out its next unfinished step now")
+	} else {
+		fmt.Fprintf(&b, "The last %d passes changed no files. Carry out the approved plan's next unfinished step now", l.passesSinceWrite)
+	}
+	if step := l.nextStep(); step != "" {
+		fmt.Fprintf(&b, " — the next step is: %s", step)
+	}
+	b.WriteString(". If that step changes a file, make the change from the exact bytes you read. If every remaining step only reads or reports and you have done it, say the plan is complete and give the result; do not re-read to re-confirm. If a real blocker prevents a step, state it in one line.")
 	return b.String()
 }
 
@@ -491,7 +579,7 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 	// for anyone who wants a hard bound on spend.
 	maxPasses := s.settings.Resilience.MaxPassesOr()
 
-	l := passLedger{goalText: goalText}
+	l := passLedger{goalText: goalText, executePlan: s.turnExecutePlan}
 	verdictBase := s.verdictWithheld.Load()
 	gs := goals.NewGoalState(goalText)
 	goalStart := time.Now()
@@ -572,6 +660,15 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 		// key off.
 		l.noteWrites(out)
 		l.noteWithheld(out)
+
+		// A pass that did exactly what the last one did, twice over, will
+		// do it again: stop and report instead of asking the evaluator
+		// for another verdict that buys the same pass.
+		if l.noteRepeat(turns[start:], out.reply) {
+			emit(Event{Kind: EventWarningKind, Warning: fmt.Sprintf("goal stopped: passes %d–%d repeated the same work and changed no file; returning the work so far", l.passes-maxRepeatPasses, l.passes)})
+			return s.goalReport(ctx, system, turns, streaming, emit, rolemanager.GoalPartial,
+				run.Result{Reply: out.lastText, Usage: out.usage, GoalSentinel: rolemanager.GoalPartial, Passes: l.passes}), nil
+		}
 
 		// Content the classifier withheld does not come back by asking again,
 		// with the same tool or another. A goal that has written nothing while

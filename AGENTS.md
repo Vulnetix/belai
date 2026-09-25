@@ -47,6 +47,17 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   block that rides back on `Write`/`Edit` is shaped the same way: no more
   than ten rows, each flattened to one line, stripped of control and bidi
   runes, with a restricted source field, sealed with a nonce and a SHA-256.
+- **The read index holds facts, never contents.** `internal/readindex`
+  answers a repeated `Read` of an unchanged file whose earlier result is still
+  in the conversation with a harness-composed pointer (path, extent, size, git
+  blob id) instead of the bytes, so the pointer is not a classification
+  exemption: no file content crosses. It keys on the resolved path and window,
+  checks the file's stat on every lookup, is invalidated by every harness
+  mutation the file-diff recorder sees, and checks liveness by the SHA-256 of
+  the delivered result (never the call id). A withheld read is never
+  recorded, a flagged file never hits, and only a permission-allowed call on
+  the advertised surface is answered from it. Its summary rides on the
+  per-turn status, never the system block.
 - **Language servers are a trusted-root feature.** A language server is only
   spawned under a directory the user has already trusted, and only in an
   interactive TUI session. The server is always started with a scrubbed

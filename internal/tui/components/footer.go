@@ -82,6 +82,11 @@ type Footer struct {
 	// Pulse is the followed agent's loop state. While a thread is filtered it
 	// takes the roster's line, so the footer says what that agent is doing.
 	Pulse *AgentPulse
+
+	// Budget is the token budget shown right-aligned on line 1: nil when the
+	// routing is "routed" or the selected model has no budget. The app picks
+	// which of the model's budgets to show as they cycle.
+	Budget *BudgetGauge
 }
 
 // SubagentChip is one roster entry in the footer's subagent strip.
@@ -148,7 +153,7 @@ func (f *Footer) View() string {
 	if f.Branch != "" {
 		line1Parts = append(line1Parts, AccentStyle.Render("⎇ ")+MutedStyle.Render(f.Branch))
 	}
-	line1 := strings.Join(line1Parts, MutedStyle.Render("  ·  "))
+	line1 := f.withBudget(strings.Join(line1Parts, MutedStyle.Render("  ·  ")))
 
 	left, pad, right, _, _, _ := f.line2Layout()
 	line2 := left
@@ -455,43 +460,19 @@ var barEighths = [8]rune{'▏', '▎', '▍', '▌', '▋', '▊', '▉'}
 // unknown window renders a dotted muted trough with no fill claim; a stale
 // window renders an empty muted bar as before.
 func (f *Footer) contextBar() string {
-	w := barWidth
-	full, eighth := 0, 0
+	frac := 0.0
 	if f.ContextLimit > 0 && !f.ContextStale {
-		frac := float64(f.Tokens) / float64(f.ContextLimit)
-		if frac < 0 {
-			frac = 0
-		}
-		if frac > 1 {
-			frac = 1
-		}
-		cells := frac * float64(w)
-		full = int(cells)
-		eighth = int((cells-float64(full))*8 + 0.5)
-		if eighth > 7 {
-			full++
-			eighth = 0
-		}
+		frac = float64(f.Tokens) / float64(f.ContextLimit)
 	}
-	r := make([]rune, 0, w)
-	for i := 0; i < w; i++ {
-		switch {
-		case i < full:
-			r = append(r, '█')
-		case i == full && eighth > 0:
-			r = append(r, barEighths[eighth-1])
-		default:
-			if f.ContextLimit <= 0 {
-				r = append(r, '·')
-			} else {
-				r = append(r, '░')
-			}
-		}
+	fill, trough := fillBar(frac, barWidth)
+	if f.ContextLimit <= 0 {
+		trough = strings.Repeat("·", barWidth-len([]rune(fill)))
 	}
+	bar := fill + trough
 	if pct, ok := f.percentRemaining(); ok {
-		return lipgloss.NewStyle().Foreground(f.barColour(pct)).Render(string(r))
+		return lipgloss.NewStyle().Foreground(f.barColour(pct)).Render(bar)
 	}
-	return MutedStyle.Render(string(r))
+	return MutedStyle.Render(bar)
 }
 
 func (f *Footer) barColour(remainingPct int) lipgloss.TerminalColor {
@@ -548,4 +529,35 @@ func onOff(v bool) string {
 		return "on"
 	}
 	return "off"
+}
+
+// minBudgetLeft is the narrowest the left side of line 1 (mode chip, cwd,
+// branch) is truncated to before the budget gauge gives up its percentage.
+const minBudgetLeft = 20
+
+// withBudget right-aligns the budget gauge on line 1. When the line is too
+// narrow the gauge first drops the time left; then the left side (cwd and
+// branch) is truncated, down to minBudgetLeft cells so the mode chip stays;
+// only then does the gauge drop its percentage. The colour and the bar are
+// always kept.
+func (f *Footer) withBudget(left string) string {
+	if f.Budget == nil {
+		return left
+	}
+	fits := func(l, seg string) bool { return lipgloss.Width(l)+1+lipgloss.Width(seg) <= f.Width }
+	seg := f.Budget.budgetSegment(2)
+	if !fits(left, seg) {
+		seg = f.Budget.budgetSegment(1)
+		if f.Width-lipgloss.Width(seg)-1 < min(minBudgetLeft, lipgloss.Width(left)) {
+			seg = f.Budget.budgetSegment(0)
+		}
+	}
+	room := f.Width - lipgloss.Width(seg) - 1
+	if room < 0 {
+		return ansi.Truncate(seg, f.Width, "")
+	}
+	if lipgloss.Width(left) > room {
+		left = ansi.Truncate(left, room, "…")
+	}
+	return left + strings.Repeat(" ", f.Width-lipgloss.Width(left)-lipgloss.Width(seg)) + seg
 }

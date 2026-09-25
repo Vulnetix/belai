@@ -17,6 +17,7 @@ import agentsRosterShot from '../../assets/shots/agents-roster.svg';
 import footerShot from '../../assets/shots/footer.svg';
 import modelPickerShot from '../../assets/shots/model-picker.svg';
 import localModelShot from '../../assets/shots/local-model.svg';
+import budgetsShot from '../../assets/shots/budgets.svg';
 ---
 
 <SealedSection label="modes" sealText="Modes: agent for general coding, plan for read-only investigation with Bash absent, and goal for one tracked objective. Explicit choices are sticky and never re-classified. An agent turn ends on a done panel; a goal or an approved plan ends on a final report." id="modes">
@@ -298,6 +299,45 @@ import localModelShot from '../../assets/shots/local-model.svg';
       </p>
     </div>
     <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={processSupervision} /></div>
+  </div>
+</SealedSection>
+
+<SealedSection label="budgets" sealText="Token budgets: a global allowance per provider and model for the session, the local day and the local month. Every completed model call counts, classifier and role-manager calls included. The footer shows the selected model's budget right-aligned and cycles between them; teal while tokens last as long as the clock, amber when spend runs ahead of it, red when exhausted. Budgets warn; they never block." id="budgets">
+  <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
+    <div class="prose-measure">
+      <h2 class="text-3xl font-bold text-vx-ink">Token budgets.</h2>
+      <p class="mt-4 text-vx-ink/80">
+        Give any provider and model a budget for the session, the local day or the local month, up to one
+        of each. Budgets are global: a repository's settings file cannot raise or remove them. Open the
+        screen with <code class="mono">f1</code> then <code class="mono">b</code>,{' '}
+        <code class="mono">/budgets</code>, or the token budgets row in <code class="mono">/settings</code>, and
+        type allowances as <code class="mono">250k</code> or <code class="mono">1.5M</code>.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        Every completed model call counts its prompt and completion tokens, reasoning included, under the
+        provider and model that served it. That covers the main turn, subagents, background agents and
+        every classifier and role-manager call. When a provider reports no usage, Signet estimates it and
+        marks it as estimated. Usage is kept in one ledger shared by every signet process, headless runs
+        included.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        With <code class="mono">defined</code> routing, the footer's top line shows the selected model's
+        budget on the right: the percentage of tokens left, the time left in the day or month, and a bar.
+        The bar is teal while the tokens are lasting at least as long as the clock, amber when a larger
+        share of the day or month is left than of the tokens, and red once the budget is spent. A session
+        budget has no clock, so it is never amber. With two or more budgets the footer cycles between them
+        every ten seconds (<code class="mono">ui.budget_cycle_seconds</code>). Turn on{' '}
+        <code class="mono">ui.budget_warn</code> for a warning line on every call while a budget is amber
+        or red. Budgets inform; they never block a call.
+      </p>
+    </div>
+    <ShotCarousel
+      client:load
+      shots={[
+        { src: budgetsShot.src, alt: 'The token budgets screen with teal, amber and red budgets', caption: 'f1 → b, token budgets' },
+        { src: footerShot.src, alt: 'The status footer with an amber day budget on the right of the top line', caption: 'footer, amber day budget' },
+      ]}
+    />
   </div>
 </SealedSection>
 
