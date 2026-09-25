@@ -207,6 +207,7 @@ func (a *App) clearForResume() {
 	a.pendingPlanExecute = false
 	a.planExecuting = false
 	a.lastGoal = nil
+	a.resetTaskPaths()
 	a.planExecuteName = ""
 	a.pendingPlanRevision = 0
 	a.pendingDirective = ""

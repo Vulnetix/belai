@@ -202,6 +202,9 @@ type Event struct {
 	// channel the UI must send the user's Answers on.
 	Clarify *clarify.Questionnaire
 	Reply   chan clarify.Answers
+	// ModeChoice is true when Clarify carries the deterministic mode-choice
+	// questionnaire instead of a clarification questionnaire.
+	ModeChoice bool
 
 	// RetryAttempt and RetryDelay carry EventRetryKind metadata. RetryMax is
 	// the inclusive attempt budget of the layer that is retrying; zero means

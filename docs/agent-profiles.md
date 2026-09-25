@@ -39,7 +39,7 @@ where `GlobalDir()` honours `SIGNET_HOME` and otherwise resolves to
 | *(file name)* | No | string | The on-disk filename (e.g. `triage-deps.json`), independent of `name`. It is never serialised — the file's own name is the record. Empty means derive it from `name`. The editor exposes it as its own field; renaming via `name` moves the file only while the file name is still derived. |
 | `description` | Yes | string | Human-readable purpose, shown in `/agent list`. |
 | `system_prompt` | Yes | string | The system prompt sent to the model on every turn. |
-| `tools` | No | string[] | Allowed tool names; empty means the full default registry. Validated against the built-in set: `Bash`, `Cd`, `Edit`, `ExitPlanMode`, `Glob`, `Grep`, `Read`, `ReadSession`, `SearchMemory`, `SearchSessions`, `SubAgentLog`, `update_plan`, `WebFetch`, `WebSearch`, `Write`. |
+| `tools` | No | string[] | Allowed tool names; empty means the full default registry. Validated against the built-in set: `Bash`, `Cd`, `Edit`, `ExitPlanMode`, `Glob`, `Grep`, `Read`, `ReadSession`, `SearchMemory`, `SearchSessions`, `SubAgentLog`, `Task`, `update_plan`, `WebFetch`, `WebSearch`, `Write`. |
 | `mode` | Yes | string | One of `single`, `loop`, `scheduled`, `monitor`. |
 | `schedule` | No | string | Cron-like schedule expression (used when `mode` is `scheduled`). |
 | `monitor_condition` | No | string | Human-readable trigger condition (used when `mode` is `monitor`). |
@@ -171,6 +171,24 @@ Built-in `signet:` profiles are read-only in the editor; any mutating key shows
 copy, and opens it. After `/agent create` the new profile is selected and the
 editor opens automatically.
 
+
+## Built-in intent profiles
+
+Three built-in single-turn profiles are always available:
+
+- `signet:plan-handoff` — execute an attached written plan step by step. The
+  first call must be `update_plan` with every plan task. When a task names an
+  edit, the profile makes it directly instead of re-deriving the plan.
+- `signet:debug` — reproduce, isolate, instrument, apply the smallest fix,
+  and verify with the failing test or command. It never changes code without
+  first reproducing the failure.
+- `signet:fanout` — split the objective into independent read-only questions,
+  issue several `Task` tool calls in one response, synthesize the reports,
+  then act.
+
+All three run in `single` mode with supervised autonomy and omit `tools`, so
+they advertise the full default surface. `@agent:signet:fanout` also pre-engages
+the fan-out surface so the `Task` tool is offered to the model.
 ## Event flow
 
 ```mermaid

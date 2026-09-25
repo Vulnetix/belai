@@ -59,3 +59,22 @@ func TestBuiltinNotInDiskList(t *testing.T) {
 		}
 	}
 }
+
+func TestBuiltinIntentProfilesLoadable(t *testing.T) {
+	resetDir(t)
+	for _, name := range []string{"signet:plan-handoff", "signet:debug", "signet:fanout"} {
+		p, err := Load(name)
+		if err != nil {
+			t.Fatalf("Load %s: %v", name, err)
+		}
+		if !p.Builtin {
+			t.Errorf("%s: expected built-in flag", name)
+		}
+		if p.Mode != ModeSingle || p.Autonomy != AutonomySupervised {
+			t.Errorf("%s: unexpected fields mode=%q autonomy=%q", name, p.Mode, p.Autonomy)
+		}
+		if strings.TrimSpace(p.SystemPrompt) == "" {
+			t.Errorf("%s: system prompt must be non-empty", name)
+		}
+	}
+}

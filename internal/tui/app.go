@@ -1928,6 +1928,9 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		// Top-level goal-mode prompts may run the unbounded pass loop; a
 		// subagent never does.
 		AllowPassLoop: true,
+		// Jev intent detection when the user already sends traffic to
+		// OpenRouter/Jev; otherwise the LLM classifier handles mode selection.
+		ModeDetector: run.NewModeDetector(cfg),
 		// Explore fan-out is capped by the shared FIFO pool the TUI owns.
 		AgentPool:     p.agentPool,
 		RepoMap:       &p.repoMap,

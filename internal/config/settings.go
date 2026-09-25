@@ -503,6 +503,13 @@ const (
 	RoutingDefined = "defined"
 	RoutingRouted  = "routed"
 
+	// ModeDetectionAuto, ModeDetectionJev and ModeDetectionLlm select the
+	// intent-detection backend. Auto uses Jev only when the user already
+	// sends traffic to OpenRouter/Jev.
+	ModeDetectionAuto = "auto"
+	ModeDetectionJev  = "jev"
+	ModeDetectionLlm  = "llm"
+
 	// ClassifierTierMain and ClassifierTierFast are the classifier.tier values.
 	ClassifierTierMain = "main"
 	ClassifierTierFast = "fast"
@@ -532,6 +539,12 @@ type RoutingSettings struct {
 	// back to the main provider and that provider's registry fast model. It
 	// may name a different provider than the main model.
 	Fast *RoutingTarget `json:"fast_model,omitempty"`
+	// ModeDetection selects the intent-detection backend. "auto" (default)
+	// uses the Jev detector when the user already sends traffic to
+	// OpenRouter/Jev; otherwise it falls back to the LLM classifier.
+	// "jev" always uses Jev when a key is available; "llm" always uses the
+	// LLM classifier.
+	ModeDetection string `json:"mode_detection,omitempty"`
 }
 
 // merge folds from over r, taking any non-zero field from from. UseCases merge

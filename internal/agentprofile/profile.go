@@ -92,6 +92,7 @@ var knownToolNames = map[string]bool{
 	"ReadSession":    true,
 	"SearchMemory":   true,
 	"SearchSessions": true,
+	"Task":           true,
 	"WebFetch":       true,
 	"WebSearch":      true,
 	"Write":          true,

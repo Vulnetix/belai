@@ -27,6 +27,9 @@ package tools
 //     call is confined to the static registry, but the bytes are written by
 //     other models — the textbook prompt-injection carrier — so they classify
 //     too.
+//   - KindSubagent is the result of the Task tool, a report written by a
+//     read-only subagent. Because the report is model-written arbitrary text,
+//     it classifies before promotion.
 //
 // Every other kind is both shaped and controlled: Grep returns matching lines
 // for a pattern the harness passed as one argument, Glob returns paths, Write
@@ -46,6 +49,7 @@ var classifierKinds = map[Kind]bool{
 	KindRemote:     true,
 	KindProcess:    true,
 	KindAgentStore: true,
+	KindSubagent:   true,
 }
 
 // NeedsClassifier reports whether a result of this kind must go through the

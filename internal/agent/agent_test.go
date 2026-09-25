@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -283,7 +284,7 @@ func TestRunAndRunStreamEquivalent(t *testing.T) {
 	if res1.Reply != res2.Reply {
 		t.Fatalf("Reply mismatch: %q vs %q", res1.Reply, res2.Reply)
 	}
-	if res1.SecuritySentinel != res2.SecuritySentinel || res1.ModeDecision != res2.ModeDecision {
+	if res1.SecuritySentinel != res2.SecuritySentinel || !reflect.DeepEqual(res1.ModeDecision, res2.ModeDecision) {
 		t.Fatalf("decision mismatch: %+v vs %+v", res1, res2)
 	}
 	if res1.SanitizedPrompt != res2.SanitizedPrompt {

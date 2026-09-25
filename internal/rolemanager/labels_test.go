@@ -106,3 +106,32 @@ func TestDepSentinelLabelFallback(t *testing.T) {
 		t.Errorf("unknown label fallback = %q, want %q", got, string(unknown))
 	}
 }
+
+func TestIntentLabelsAreDefined(t *testing.T) {
+	cases := []struct {
+		i    Intent
+		want string
+	}{
+		{IntentAgent, "agent"},
+		{IntentPlan, "plan"},
+		{IntentGoal, "goal"},
+		{IntentHandoff, "handoff"},
+		{IntentDebug, "debug"},
+		{IntentFanOut, "fan-out"},
+	}
+	for _, c := range cases {
+		if got := c.i.Label(); got != c.want {
+			t.Errorf("%q.Label() = %q, want %q", c.i, got, c.want)
+		}
+	}
+	if len(IntentLabels) != len(cases) {
+		t.Errorf("IntentLabels has %d entries, want %d", len(IntentLabels), len(cases))
+	}
+}
+
+func TestIntentLabelFallback(t *testing.T) {
+	unknown := Intent("UNKNOWN")
+	if got := unknown.Label(); got != string(unknown) {
+		t.Errorf("unknown label fallback = %q, want %q", got, string(unknown))
+	}
+}

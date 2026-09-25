@@ -34,6 +34,11 @@ func ValidateRouting(s Settings) error {
 	default:
 		return fmt.Errorf("routing.kind %q is invalid (want %q or %q)", s.Routing.Kind, RoutingDefined, RoutingRouted)
 	}
+	switch s.Routing.ModeDetection {
+	case "", ModeDetectionAuto, ModeDetectionJev, ModeDetectionLlm:
+	default:
+		return fmt.Errorf("routing.mode_detection %q is invalid (want %q, %q or %q)", s.Routing.ModeDetection, ModeDetectionAuto, ModeDetectionJev, ModeDetectionLlm)
+	}
 	for key, t := range s.Routing.UseCases {
 		if strings.TrimSpace(key) == "" {
 			return fmt.Errorf("routing.use_cases has an empty use-case key")

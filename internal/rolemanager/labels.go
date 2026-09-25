@@ -70,3 +70,24 @@ func (s DepSentinel) Label() string {
 	}
 	return string(s)
 }
+
+// IntentLabels maps each detected intent to a concise, human-readable label
+// shown in the TUI mode chip and the mode-choice panel. Maintain parity
+// with the Intent constants.
+var IntentLabels = map[Intent]string{
+	IntentAgent:   "agent",
+	IntentPlan:    "plan",
+	IntentGoal:    "goal",
+	IntentHandoff: "handoff",
+	IntentDebug:   "debug",
+	IntentFanOut:  "fan-out",
+}
+
+// Label returns the human-readable label for an intent. Unknown intents fall
+// back to their raw token.
+func (i Intent) Label() string {
+	if l, ok := IntentLabels[i]; ok {
+		return l
+	}
+	return string(i)
+}

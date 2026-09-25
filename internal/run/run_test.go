@@ -2279,3 +2279,33 @@ func TestRoutedClassifierPicksWinnerAndCaches(t *testing.T) {
 		t.Fatalf("model called %d times, want 2 (one per Classify)", modelCalls.Load())
 	}
 }
+
+func TestNewModeDetector(t *testing.T) {
+	token := func() (string, error) { return "key", nil }
+	cases := []struct {
+		name string
+		cfg  Config
+		nil  bool
+	}{
+		{"llm disabled", Config{Routing: RoutingConfig{ModeDetection: config.ModeDetectionLlm, JevToken: token}}, true},
+		{"jev no token", Config{Routing: RoutingConfig{ModeDetection: config.ModeDetectionJev}}, true},
+		{"jev with token", Config{Routing: RoutingConfig{ModeDetection: config.ModeDetectionJev, JevToken: token}}, false},
+		{"auto openrouter provider", Config{Provider: "openrouter", Routing: RoutingConfig{ModeDetection: config.ModeDetectionAuto, JevToken: token}}, false},
+		{"auto openrouter classifier", Config{Classifier: ClassifierConfig{Provider: "openrouter"}, Routing: RoutingConfig{ModeDetection: config.ModeDetectionAuto, JevToken: token}}, false},
+		{"auto jev classifier model", Config{Classifier: ClassifierConfig{Model: "typesafe/jev-1.13"}, Routing: RoutingConfig{ModeDetection: config.ModeDetectionAuto, JevToken: token}}, false},
+		{"auto routed", Config{Routing: RoutingConfig{ModeDetection: config.ModeDetectionAuto, Kind: config.RoutingRouted, JevToken: token}}, false},
+		{"auto no jev traffic", Config{Provider: "openai", Routing: RoutingConfig{ModeDetection: config.ModeDetectionAuto, JevToken: token}}, true},
+		{"auto default", Config{Provider: "openai"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := NewModeDetector(tc.cfg)
+			if tc.nil && d != nil {
+				t.Fatalf("expected nil detector, got %T", d)
+			}
+			if !tc.nil && d == nil {
+				t.Fatal("expected non-nil detector")
+			}
+		})
+	}
+}

@@ -151,8 +151,17 @@ func clarifyKey(context string) string {
 // context is cancelled. It is the only agent→UI round-trip in the codebase:
 // everything else is fire-and-forget.
 func (s *Session) askUser(ctx context.Context, q clarify.Questionnaire, emit func(Event)) (clarify.Answers, bool) {
+	return s.askUserWithModeChoice(ctx, q, false, emit)
+}
+
+// askUserModeChoice emits the deterministic mode-choice questionnaire.
+func (s *Session) askUserModeChoice(ctx context.Context, q clarify.Questionnaire, emit func(Event)) (clarify.Answers, bool) {
+	return s.askUserWithModeChoice(ctx, q, true, emit)
+}
+
+func (s *Session) askUserWithModeChoice(ctx context.Context, q clarify.Questionnaire, modeChoice bool, emit func(Event)) (clarify.Answers, bool) {
 	reply := make(chan clarify.Answers, 1)
-	emit(Event{Kind: EventClarifyAskKind, Clarify: &q, Reply: reply})
+	emit(Event{Kind: EventClarifyAskKind, Clarify: &q, Reply: reply, ModeChoice: modeChoice})
 	select {
 	case a := <-reply:
 		return a, true

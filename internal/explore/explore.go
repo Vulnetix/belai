@@ -43,6 +43,10 @@ type Task struct {
 	// default. A review report lists every finding, so it gets more room
 	// than a ten-bullet survey answer.
 	ReportBytes int
+	// Scope is a closed allowlist of paths for handoff subagents. When
+	// non-empty the subagent may only read files inside these paths. Empty
+	// means no scope restriction.
+	Scope []string
 }
 
 // Tool-round budgets. Each task is one narrow question, so it gets only the
@@ -65,6 +69,9 @@ const reportContract = "\n\nStop as soon as you can answer; do not survey beyond
 	"The repository map and status are already in your context — do not re-list the layout or git state. " +
 	"Reply with at most 10 bullets, each `path:line — fact` (or `path — fact` when there is no line), most relevant first, with no preamble and no narrative. " +
 	"If nothing relevant exists, say so in one line."
+
+// ReportContract returns the suffix that every explore task prompt ends with.
+func ReportContract() string { return reportContract }
 
 // SurveyReference is the reference label of the first plan-survey task, so
 // the runner can recognise a survey and enrich it with the map's entrypoints.
@@ -403,6 +410,30 @@ func PlanReview(prompt string, reports []ReviewReport) []Task {
 			Evidence:      r.Body,
 			EvidenceLabel: r.Label,
 			ReportBytes:   ReviewReportBytes,
+		})
+		if len(tasks) >= MaxTasks {
+			break
+		}
+	}
+	return tasks
+}
+
+// PlanHandoff derives one read-only task per path a plan names. Each
+// subagent is scoped to its path, so a handoff cannot silently expand beyond
+// the plan's surface. The tasks are capped at MaxTasks.
+func PlanHandoff(paths []string) []Task {
+	var tasks []Task
+	for _, p := range paths {
+		if strings.TrimSpace(p) == "" {
+			continue
+		}
+		prompt := fmt.Sprintf("Read and summarize the parts of %q that are relevant to the attached plan. Name files, functions, and line numbers the plan will need to touch. Do not edit anything.", p)
+		tasks = append(tasks, Task{
+			Index:     len(tasks),
+			Reference: p,
+			Prompt:    prompt + reportContract,
+			Budget:    budgetLocate,
+			Scope:     []string{p},
 		})
 		if len(tasks) >= MaxTasks {
 			break

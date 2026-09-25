@@ -40,6 +40,10 @@ const (
 	// text — arbitrary content written by other models — so the kind is
 	// read-only but classifies before promotion.
 	KindAgentStore Kind = "agent_store"
+	// KindSubagent identifies the result of the Task tool: a report written by
+	// a read-only subagent. Because the report is model-written arbitrary
+	// text, it always classifies before promotion.
+	KindSubagent Kind = "subagent"
 )
 
 // AllKinds is every registered Kind, in declaration order. Tests iterate it to
@@ -48,7 +52,7 @@ const (
 var AllKinds = []Kind{
 	KindRead, KindWebSearch, KindWebFetch, KindBash, KindGrep, KindGlob,
 	KindExplore, KindWrite, KindEdit, KindNative, KindRemote, KindUpdatePlan,
-	KindProcess, KindProcessCtl, KindAgentStore,
+	KindProcess, KindProcessCtl, KindAgentStore, KindSubagent,
 }
 
 // readOnlyKinds is the closed allowlist of kinds that only read. A Kind absent
@@ -67,6 +71,7 @@ var readOnlyKinds = map[Kind]bool{
 	KindUpdatePlan: true,
 	KindProcess:    true,
 	KindAgentStore: true,
+	KindSubagent:   true,
 }
 
 // ReadOnly reports whether a tool of this kind only reads and never mutates
