@@ -1115,6 +1115,61 @@ func TestForcedModeSkipsSelect(t *testing.T) {
 	}
 }
 
+// TestPlanModeSessionSkipsSelect pins that a session constructed for plan mode
+// (the CLI -plan path, or the TUI's initial -prompt send) forces plan mode and
+// never runs the operating-mode classifier. Running Select here could classify
+// the prompt as GOAL and surface goal-mode activity (including the goal length
+// limit) while the user explicitly chose plan mode.
+func TestPlanModeSessionSkipsSelect(t *testing.T) {
+	var modeCalls int32
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		var system string
+		for _, m := range req.Messages {
+			if m.Role == "system" {
+				system = m.Content
+			}
+		}
+		switch {
+		case strings.Contains(system, "security classifier"):
+			writeChatJSON(w, "SAFE")
+		case strings.Contains(system, "operating-mode classifier"):
+			mu.Lock()
+			modeCalls++
+			mu.Unlock()
+			writeChatJSON(w, "GOAL")
+		default:
+			writeChatJSON(w, "plan-reply")
+		}
+	}))
+	defer srv.Close()
+
+	cfg := run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "test-key", Model: "test"}
+	sess, err := NewSession(Options{Cfg: cfg, Client: srv.Client(), Posture: posture.Defaults(), PlanMode: true})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	res, err := sess.run(context.Background(), nil, TurnInput{Prompt: "make a plan to improve the footer"}, false, func(Event) {})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if res.ModeDecision.Mode != modes.ModePlan {
+		t.Fatalf("mode = %q, want plan (explicit plan-mode session)", res.ModeDecision.Mode)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if modeCalls != 0 {
+		t.Fatalf("operating-mode classifier called %d times, want 0 (plan-mode session)", modeCalls)
+	}
+}
+
 // TestConcurrentReadOnlyToolsPreserveOrder pins T2.1: a leading run of
 // read-only tools executes concurrently but their results re-enter the
 // transcript in call order, so providers never see reordered tool_call_ids.

@@ -430,12 +430,13 @@ func (c *Classifier) classifyWindow(ctx context.Context, window string) (roleman
 }
 
 // phase3 runs the narrowed LLM sentinel. With a local jailbreak gate it
-// covers DATA_EXTRACTION and MODEL_EXTRACTION only; when phase 2 is deferred
-// it also covers JAILBREAK. It returns the parsed sentinel and the status word
-// the feed shows. A malformed reply (including an out-of-scope token such as
-// PROMPT_INJECTION) is inconclusive, not a verdict: phases 1 and 2 already
-// ruled on injection and jailbreak, and phase 3 is an opt-in supplement, so an
-// inconclusive reply must not block content the primary gates cleared. The
+// covers PROMPT_INJECTION, DATA_EXTRACTION and MODEL_EXTRACTION; when phase 2
+// is deferred it also covers JAILBREAK. Injection stays in scope on both
+// paths because phase 1 detects prompt saturation, not instruction injection.
+// It returns the parsed sentinel and the status word the feed shows. A
+// malformed reply (including the out-of-scope JAILBREAK when phase 2 ran
+// locally) is inconclusive, not a verdict: phase 3 is an opt-in supplement, so
+// an inconclusive reply must not block content the primary gates cleared. The
 // feed still records the phase as "malformed" so the TUI shows "couldn't tell".
 func (c *Classifier) phase3(ctx context.Context, content string) (string, string, error) {
 	var raw string

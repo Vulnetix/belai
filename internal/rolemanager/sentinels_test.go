@@ -122,6 +122,7 @@ func TestParseExtractionSentinelValid(t *testing.T) {
 		want Sentinel
 	}{
 		{"SAFE", SentinelSafe},
+		{"PROMPT_INJECTION", SentinelPromptInjection},
 		{"DATA_EXTRACTION", SentinelDataExtraction},
 		{"MODEL_EXTRACTION", SentinelModelExtraction},
 		{"<thinking>…</thinking>\nSAFE", SentinelSafe},
@@ -138,9 +139,9 @@ func TestParseExtractionSentinelValid(t *testing.T) {
 }
 
 func TestParseExtractionSentinelRejectsOutOfScope(t *testing.T) {
-	// The narrowing is the point: injection and jailbreak are out of scope for
-	// phase 3 and must be rejected, not accepted as verdicts.
-	bad := []string{"", "PROMPT_INJECTION", "JAILBREAK", "SAFE\nDATA_EXTRACTION"}
+	// Jailbreak is owned by the local phase-2 gate, so it is out of scope for
+	// phase 3 and must be rejected, not accepted as a verdict.
+	bad := []string{"", "JAILBREAK", "SAFE\nDATA_EXTRACTION"}
 	for _, in := range bad {
 		if _, err := ParseExtractionSentinel(in); err == nil {
 			t.Fatalf("ParseExtractionSentinel(%q) expected error", in)

@@ -95,8 +95,8 @@ func TestModelPhase3RowOn(t *testing.T) {
 	a := modelScreen(t)
 	a.settings.Classifier = &config.ClassifierSettings{Kind: "models", Provider: "openai", Model: "gpt-5"}
 	row := a.classifierPhase3Row()
-	if !row.disabled || !strings.Contains(row.value, "jailbreak + extraction") || !strings.Contains(row.value, "openai/gpt-5") {
-		t.Fatalf("phase3 row = %+v, want locked 'jailbreak + extraction · openai/gpt-5'", row)
+	if !row.disabled || !strings.Contains(row.value, "injection + jailbreak + extraction") || !strings.Contains(row.value, "openai/gpt-5") {
+		t.Fatalf("phase3 row = %+v, want locked 'injection + jailbreak + extraction · openai/gpt-5'", row)
 	}
 }
 

@@ -21,15 +21,10 @@ func TestClassifierKindDefault(t *testing.T) {
 	if got := ClassifierKind(&config.ClassifierSettings{Kind: "models"}); got != "models" {
 		t.Fatalf("ClassifierKind(models) = %q, want models", got)
 	}
-	// An explicit "llm" is honoured only on a no-classifier binary; a binary
-	// that embeds the phase models is locked to the models path.
-	llm := ClassifierKind(&config.ClassifierSettings{Kind: "llm"})
-	if mlclassify.Embedded() {
-		if llm != "models" {
-			t.Fatalf("ClassifierKind(llm) = %q, want models on an embedded binary", llm)
-		}
-	} else if llm != "llm" {
-		t.Fatalf("ClassifierKind(llm) = %q, want llm", llm)
+	// An explicit "llm" is honoured on every build: embedding a model only
+	// changes the default. An embedded build used to ignore it silently.
+	if got := ClassifierKind(&config.ClassifierSettings{Kind: "llm"}); got != "llm" {
+		t.Fatalf("ClassifierKind(llm) = %q, want llm", got)
 	}
 }
 

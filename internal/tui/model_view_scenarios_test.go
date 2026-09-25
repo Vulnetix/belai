@@ -118,9 +118,9 @@ func TestModelViewScenarioRemoteOpenRouterJev(t *testing.T) {
 	}
 	// On a variant without an embedded jailbreak gate the phase-3 sentinel
 	// broadens to JAILBREAK.
-	wantScope := "extraction only"
+	wantScope := "injection + extraction"
 	if !variantHasEmbeddedPhase2() {
-		wantScope = "jailbreak + extraction"
+		wantScope = "injection + jailbreak + extraction"
 	}
 	if !strings.Contains(p3.value, wantScope) {
 		t.Fatalf("phase3 row = %q, want scope %q", p3.value, wantScope)

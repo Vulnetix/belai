@@ -2915,7 +2915,7 @@ rows (when `kind` is `models`), **reasoning**, **effort**, **chunk** and
   `disabled` when the user explicitly turned an embedded gate off (jailbreak
   variant), or **"deferred to phase 3"** when no local jailbreak gate can
   run. Phase 3 is a locked derived row: off until both classifier provider
-  and model are set, then `extraction only` (or `jailbreak + extraction` when
+  and model are set, then `injection + extraction` (or `injection + jailbreak + extraction` when
   phase 2 is deferred).
 - **Reasoning drives effort.** There is no separate reasoning key. Toggling
   reasoning off writes `classifier.effort: "none"` and greys the effort row;

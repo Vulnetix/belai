@@ -48,8 +48,8 @@ func TestClassifierPayloadsCarryCategories(t *testing.T) {
 		want    []Sentinel
 	}{
 		{"security", BuildClassifierPayload("untrusted tool output"), []Sentinel{SentinelPromptInjection, SentinelJailbreak, SentinelDataExtraction, SentinelModelExtraction}},
-		{"extraction", BuildExtractionPayload("untrusted tool output"), []Sentinel{SentinelDataExtraction, SentinelModelExtraction}},
-		{"deferred extraction", BuildDeferredExtractionPayload("untrusted tool output"), []Sentinel{SentinelJailbreak, SentinelDataExtraction, SentinelModelExtraction}},
+		{"extraction", BuildExtractionPayload("untrusted tool output"), []Sentinel{SentinelPromptInjection, SentinelDataExtraction, SentinelModelExtraction}},
+		{"deferred extraction", BuildDeferredExtractionPayload("untrusted tool output"), []Sentinel{SentinelPromptInjection, SentinelJailbreak, SentinelDataExtraction, SentinelModelExtraction}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

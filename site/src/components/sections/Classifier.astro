@@ -206,7 +206,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
       <h3 id="engine-models" class="text-2xl font-bold text-vx-ink">Embedded models.</h3>
       <code class="engine__tag mono">classifier.kind: models</code>
     </header>
-    <div class="engine__body grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
+    <div class="engine__body grid gap-8 lg:grid-cols-2 lg:items-center">
       <div class="prose-measure">
         <p class="text-vx-ink/80">
           The default download includes a BERT classifier that runs inside the process. It is written in
@@ -228,6 +228,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
         </p>
       </div>
       <div class="space-y-4">
+        <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={classifierPhases} /></div>
         <dl class="facts">
           <div><dt>Default on</dt><dd>both <code class="mono">bert-guardrails</code> builds, and can't be changed there</dd></div>
           <div><dt>Phase 1</dt><dd>bert-tiny, embedded, always on</dd></div>
@@ -235,7 +236,6 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
           <div><dt>Phase 3</dt><dd>an LLM, opt-in, extraction only</dd></div>
           <div><dt>Network</dt><dd>only for HuggingFace or phase 3</dd></div>
         </dl>
-        <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={classifierPhases} /></div>
       </div>
     </div>
 

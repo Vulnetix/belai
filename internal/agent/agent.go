@@ -533,6 +533,18 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	emit(Event{Kind: EventRoleManagerKind, Phase: RoleManagerPhasePrePrompt})
 	preStart := time.Now()
 
+	// A session constructed for plan mode (CLI -plan, or the TUI's initial
+	// -prompt send before submitInput sets ForceMode) has already made the
+	// mode choice explicit. The classifier must not re-route it: running
+	// Select here could classify the prompt as GOAL and surface goal-mode
+	// activity (including the goal length limit) while the user is in plan
+	// mode. The interactive TUI forces its plan mode through
+	// TurnInput.ForceMode, so this only changes the paths that rely on the
+	// session baseline alone.
+	if s.planMode && in.Mode.Mode == "" && in.ForceMode == "" && in.ForceAgent == "" {
+		in.ForceMode = modes.ModePlan
+	}
+
 	// Admit and mode selection are independent: both read the same sanitized
 	// prompt, use different system prompts, and neither feeds the other, so
 	// they run concurrently. Selection is skipped when the caller already
