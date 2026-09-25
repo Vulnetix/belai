@@ -30,7 +30,7 @@ func neverPersisted(m components.Message) bool {
 		// An assistant with neither text nor tool calls is never persisted,
 		// matching buildTurns which skips it.
 		return strings.TrimSpace(m.Text()) == "" && len(m.ToolCalls) == 0
-	case "reasoning", "system", completionRole:
+	case "reasoning", "system", completionRole, components.ReportRole:
 		return strings.TrimSpace(m.Text()) == ""
 	case "rolemanager":
 		return strings.TrimSpace(rmText(m)) == ""
@@ -89,7 +89,7 @@ func settled(msgs []components.Message, i int, inFlight, force bool) bool {
 			return true
 		}
 		return m.Content != "" || force
-	case "system", "rolemanager", completionRole:
+	case "system", "rolemanager", completionRole, components.ReportRole:
 		// System notices, role-manager activity rows and the completion
 		// panel are appended whole, never streamed, so they are final as soon
 		// as they exist.
@@ -247,6 +247,8 @@ func (a *App) persistMessage(i int) {
 		a.appendEntry(timedEntry(m, session.Entry{Type: "system", Role: "system", Content: m.Text(), SubagentID: m.SubagentID}))
 	case completionRole:
 		a.appendEntry(timedEntry(m, session.Entry{Type: completionRole, Role: completionRole, Content: m.Text()}))
+	case components.ReportRole:
+		a.appendEntry(timedEntry(m, session.Entry{Type: components.ReportRole, Role: components.ReportRole, Content: m.Text(), Meta: map[string]any{"title": m.ToolName, "meta": m.ToolArgs, "status": m.Status}}))
 	case components.ShellRole:
 		content := m.Text()
 		meta := map[string]any{

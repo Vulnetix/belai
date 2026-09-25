@@ -83,6 +83,11 @@ type Footer struct {
 	// takes the roster's line, so the footer says what that agent is doing.
 	Pulse *AgentPulse
 
+	// Review is a /vulnetix review in flight, drawn at the head of the roster
+	// line so a review that is still scanning is visible from the main
+	// thread. Nil when no review is running.
+	Review *ReviewProgress
+
 	// Budget is the token budget shown right-aligned on line 1: nil when the
 	// routing is "routed" or the selected model has no budget. The app picks
 	// which of the model's budgets to show as they cycle.
@@ -100,6 +105,18 @@ type SubagentChip struct {
 	// optional and Detail is the first thing dropped when space runs out.
 	Glyph  string
 	Detail string
+}
+
+// ReviewProgress is a running /vulnetix review: how many of its activities
+// (scanners plus the post-scan fix) finished, which are still running, and
+// how many scanner agents are still grounding reports.
+type ReviewProgress struct {
+	Glyph   string
+	Done    int
+	Total   int
+	Pending []string
+	Agents  int
+	Elapsed string
 }
 
 // AgentPulse is one agent's loop state, drawn as a single footer line.
@@ -181,15 +198,70 @@ func (f *Footer) subagentLine() string {
 	if f.Pulse != nil {
 		return f.pulseLine()
 	}
+	review := f.reviewSegment()
 	if len(f.Subagents) == 0 {
-		return ""
+		return review
+	}
+	// The review leads and the roster gets what is left of the line.
+	rest := *f
+	if review != "" {
+		rest.Width = f.Width - lipgloss.Width(review) - 2
+		if rest.Width < 16 {
+			return review
+		}
 	}
 	// Details first; when they do not all fit, the chips alone.
-	if line, ok := f.chipLine(true); ok {
-		return line
+	line, ok := rest.chipLine(true)
+	if !ok {
+		line, _ = rest.chipLine(false)
 	}
-	line, _ := f.chipLine(false)
+	if review != "" {
+		return review + "  " + line
+	}
 	return line
+}
+
+// reviewSegment renders the running review as a chip plus its progress,
+// most useful facts first so truncation drops the least useful. Pending
+// names past the third collapse to a count.
+func (f *Footer) reviewSegment() string {
+	r := f.Review
+	if r == nil {
+		return ""
+	}
+	label := fmt.Sprintf("vulnetix review %d/%d", r.Done, r.Total)
+	if r.Glyph != "" {
+		label = r.Glyph + " " + label
+	}
+	chip := Chip(label, ColorTeal)
+	var parts []string
+	if n := len(r.Pending); n > 0 {
+		shown := r.Pending
+		if n > 3 {
+			shown = shown[:3]
+		}
+		s := strings.Join(shown, ", ")
+		if n > 3 {
+			s += fmt.Sprintf(" +%d", n-3)
+		}
+		parts = append(parts, s)
+	}
+	if r.Agents > 0 {
+		parts = append(parts, countNoun(r.Agents, "agent"))
+	}
+	if r.Elapsed != "" {
+		parts = append(parts, r.Elapsed)
+	}
+	line := chip
+	if len(parts) > 0 {
+		line += "  " + MutedStyle.Render(strings.Join(parts, " · "))
+	}
+	// Keep room for at least the [main] chip after the review.
+	limit := f.Width
+	if len(f.Subagents) > 0 {
+		limit = f.Width * 2 / 3
+	}
+	return ansi.Truncate(line, limit, "…")
 }
 
 // chipLine lays the roster out on one line. ok is false when a chip had to

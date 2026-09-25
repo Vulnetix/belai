@@ -29,6 +29,8 @@ import (
 //   - scans and fix get an explicit --path (the working directory unless the
 //     model names one), which also skips fix's multi-manifest prompt;
 //   - reachability is off unless the model asks for it;
+//   - the secrets stage scans the working tree, not git history (the CLI's
+//     default walks up to 500 commits), unless the model asks for history;
 //   - scans run one at a time, because they write the same .vulnetix/
 //     artifacts, under a 15-minute limit;
 //   - progress, spinner and ANSI noise is stripped before the output is
@@ -102,7 +104,7 @@ func (v *Vulnetix) Definition() Definition {
 		Description: "Run the Vulnetix CLI: SCA and code scans, dependency fix plans, and vulnerability database lookups. " +
 			"Pass the arguments that follow `vulnetix`, for example `sca`, `sca --path web --depth 1`, `fix --dry-run --manifest go.mod`, `vdb vuln CVE-2021-44228`, `sca --help`. " +
 			"Allowed: scan, sca, sast, secrets, iac, containers, malscan, sbom, aibom, cbom, license, fix (always --dry-run), vdb lookups, env, version, auth status, and --help on any of them. " +
-			"The harness adds --no-banner --no-progress --no-analytics --disable-memory, passes --path (the working directory unless you give one), and turns reachability off unless you pass --reachability direct|transitive|both, because it is the slowest stage. " +
+			"The harness adds --no-banner --no-progress --no-analytics --disable-memory, passes --path (the working directory unless you give one), and turns reachability off unless you pass --reachability direct|transitive|both, because it is the slowest stage, and scans secrets in the working tree only (--ignore-git) unless you pass --git-history, because walking commit history is slow. " +
 			"A scan takes one to three minutes on a large repository: scope it with --path DIR --depth 1, run it once, and use -o json-cyclonedx or -o json-sarif when you need structured output rather than re-running with a different view. " +
 			"Before scanning, look in .vulnetix/ for the last /vulnetix review's results (sbom.cdx.json, sast.sarif, secrets.sarif, …). " +
 			"`fix` only plans: apply the manifest edits it proposes with Edit, then re-scan that directory. " +
@@ -270,6 +272,15 @@ func (v *Vulnetix) buildArgv(raw string) (argv []string, scan bool, note string,
 			out = append(out, "--reachability", "off")
 			notes = append(notes, "reachability was off (pass --reachability direct|transitive|both to include it)")
 		}
+		// The secrets stage walks git history by default, which is most of its
+		// run time on a long-lived repository. The working tree is the
+		// default; an explicit --ignore-git or any --git-history* flag is the
+		// model's own choice and is left alone.
+		secretsStage := first == "secrets" || (first == "scan" && hasFlag(fields, "--evaluate-secrets"))
+		if secretsStage && !hasFlag(fields, "--ignore-git") && !hasFlagPrefix(fields, "--git-history") {
+			out = append(out, "--ignore-git")
+			notes = append(notes, "secrets scanned the working tree only (pass --git-history to include commit history)")
+		}
 		if first == "fix" && !hasFlag(fields, "--dry-run") {
 			out = append(out, "--dry-run")
 			notes = append(notes, "fix ran as --dry-run: apply the planned edits with Edit")
@@ -297,6 +308,17 @@ func (v *Vulnetix) confine(p string) (string, error) {
 func hasFlag(fields []string, name string) bool {
 	for _, f := range fields {
 		if f == name || strings.HasPrefix(f, name+"=") {
+			return true
+		}
+	}
+	return false
+}
+
+// hasFlagPrefix reports whether any field starts with prefix, e.g.
+// --git-history, --git-history=false or --git-history-max-commits.
+func hasFlagPrefix(fields []string, prefix string) bool {
+	for _, f := range fields {
+		if strings.HasPrefix(f, prefix) {
 			return true
 		}
 	}

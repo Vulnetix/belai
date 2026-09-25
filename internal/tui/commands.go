@@ -161,6 +161,11 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("vulnetix", "Vulnetix code review and firewall", func() []string {
 		return []string{"review", "configure", "list", "status", "firewall", "help"}
 	}, func(a *App, arg string) tea.Cmd {
+		// A review starts on the UI loop: it registers its progress, prints
+		// its start line and reports each scanner as it finishes (review.go).
+		if inv, err := commands.ParseInvocation(arg); err == nil && inv.Action == commands.ActionRun {
+			return a.startReview()
+		}
 		return func() tea.Msg {
 			inv, err := commands.ParseInvocation(arg)
 			if err != nil {
@@ -190,19 +195,7 @@ func NewRegistry(workdir string) *Registry {
 			case commands.ActionHelp:
 				return vulnetixDoneMsg{report: commands.Report{Status: "/vulnetix review | configure | list | status | firewall"}}
 			default:
-				cli, err := vulnetixcli.Detect()
-				if err != nil {
-					return vulnetixDoneMsg{err: err}
-				}
-				autoFix := false
-				if a.settings.Vulnetix != nil {
-					autoFix = a.settings.Vulnetix.AutoFixEnabled()
-				}
-				// The scan rows are shown in the runs panel, but their stdout is
-				// not round-tripped: the triage turn carries structured report
-				// attachments instead of nine pretty-printed terminal tables.
-				rep, err := commands.Vulnetix{CLI: cli, Workdir: a.workdir, Observer: quietObserver{a}, AutoFix: autoFix}.Run(context.Background())
-				return vulnetixDoneMsg{report: rep, err: err}
+				return nil // ActionRun is handled above, on the UI loop
 			}
 		}
 	})

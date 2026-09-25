@@ -549,3 +549,69 @@ func TestReviewFansOutPerScanner(t *testing.T) {
 		}
 	}
 }
+
+// TestReviewFindingsSkipTheirSubagent pins the early-review path: a scanner
+// whose subagent already ran as a background agent reaches the parent as a
+// sealed exploration turn and does not fan out again; a scanner without one
+// still gets its subagent.
+func TestReviewFindingsSkipTheirSubagent(t *testing.T) {
+	root := t.TempDir()
+	reports := []explore.ReviewReport{
+		{Scanner: "sast", Label: "sast report", Body: "S1 high a.go:1"},
+		{Scanner: "secrets", Label: "secrets report", Body: "K1 critical b.go:2"},
+	}
+	findings := []explore.ReviewFinding{
+		{Scanner: "sast", Label: "sast report", Body: "a.go:1 | S1 | real | fix: escape the query"},
+	}
+
+	var mu sync.Mutex
+	var bodies []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		body := string(raw)
+		if strings.Contains(body, "security classifier") {
+			writeChatJSON(w, "SAFE")
+			return
+		}
+		mu.Lock()
+		bodies = append(bodies, body)
+		mu.Unlock()
+		writeChatJSON(w, "b.go:2 | K1 | real | fix: rotate the key")
+	}))
+	defer srv.Close()
+
+	sess, err := NewSession(Options{
+		Cfg:           run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "test"},
+		Client:        srv.Client(),
+		Registry:      tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}),
+		Posture:       posture.Defaults(),
+		SkipNonceSeed: true,
+		AllowExplore:  true,
+		Workdir:       root,
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	states := map[string]string{}
+	in := TurnInput{Prompt: "remediate the review", ForceMode: modes.ModeAgent, Review: reports, ReviewFindings: findings}
+	if _, err := sess.run(context.Background(), nil, in, false, func(e Event) {
+		if e.Kind == EventSubagentKind && e.Subagent.Kind == "review" {
+			states[e.Subagent.ID] = e.Subagent.State
+		}
+	}); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(states) != 1 {
+		t.Fatalf("review subagents = %v, want only the secrets one", states)
+	}
+	if len(bodies) != 2 {
+		t.Fatalf("model calls = %d, want the secrets subagent then the parent", len(bodies))
+	}
+	if strings.Contains(bodies[0], "S1 high a.go:1") || !strings.Contains(bodies[0], "K1 critical b.go:2") {
+		t.Fatalf("the only subagent must be secrets: %s", bodies[0])
+	}
+	parent := bodies[1]
+	if !strings.Contains(parent, "fix: escape the query") || !strings.Contains(parent, "fix: rotate the key") {
+		t.Fatalf("parent turn lacks a scanner report: %s", parent)
+	}
+}

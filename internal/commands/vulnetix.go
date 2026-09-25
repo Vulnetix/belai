@@ -33,17 +33,34 @@ type Scanner struct {
 // because both write sbom.cdx.json, so `containers` waits for `sca`. Every
 // scanner except `sca` passes --disable-memory so memory.yaml has a single
 // writer and finding-history/auto-resolve keeps working for SCA. `sbom` is
-// redirected to inventory.cdx.json to avoid contending with `sca`.
+// redirected to inventory.cdx.json to avoid contending with `sca`. `secrets`
+// passes --ignore-git: the CLI otherwise walks up to 500 commits of history,
+// which made it the scanner every review waited on; the review covers the
+// working tree.
 var reviewScanners = []Scanner{
 	{Name: "sca", Args: []string{"sca"}, Lane: "sbom", Artifacts: []string{"sbom.cdx.json"}},
 	{Name: "containers", Args: []string{"containers", "--disable-memory", "-o", ".vulnetix/containers.cdx.json"}, Lane: "sbom", Artifacts: []string{"containers.sarif", "containers.cdx.json"}},
 	{Name: "sast", Args: []string{"sast", "--disable-memory"}, Artifacts: []string{"sast.sarif"}},
-	{Name: "secrets", Args: []string{"secrets", "--disable-memory"}, Artifacts: []string{"secrets.sarif"}},
+	{Name: "secrets", Args: []string{"secrets", "--disable-memory", "--ignore-git"}, Artifacts: []string{"secrets.sarif"}},
 	{Name: "iac", Args: []string{"iac", "--disable-memory"}, Artifacts: []string{"iac.sarif"}},
 	{Name: "malscan", Args: []string{"malscan", "--disable-memory"}, Artifacts: []string{"malscan.sarif"}},
 	{Name: "sbom", Args: []string{"sbom", "--output-file", ".vulnetix/inventory.cdx.json"}, Artifacts: []string{"inventory.cdx.json"}},
 	{Name: "aibom", Args: []string{"aibom", "--disable-memory"}, Artifacts: []string{"ai-bom.cdx.json"}},
 	{Name: "cbom", Args: []string{"cbom", "--disable-memory"}, Artifacts: []string{"cbom.cdx.json"}},
+}
+
+// ActivityNames lists the activities Run reports through OnScanDone, in
+// table order: the scanners to run, then the post-scan fix.
+func (r Vulnetix) ActivityNames() ([]string, error) {
+	scanners, err := r.scannerList()
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(scanners)+1)
+	for _, sc := range scanners {
+		names = append(names, sc.Name)
+	}
+	return append(names, "fix"), nil
 }
 
 // AllowedSubcommands is the hard allowlist for configured subcommands, derived
@@ -106,6 +123,28 @@ type Vulnetix struct {
 	AutoFix bool
 	// Observer, when non-nil, receives per-subcommand activity registration.
 	Observer RunObserver
+	// OnScanDone, when non-nil, is called once per scanner (and once for the
+	// post-scan fix) as soon as it finishes, on that scanner's goroutine, so
+	// a caller can report each one without waiting for the slowest.
+	OnScanDone func(ScanOutcome)
+}
+
+// ScanOutcome is one finished review activity. Blocks are that scanner's own
+// triage blocks, built from its artifacts only; they are repository-derived
+// bytes and are classified by the caller like every other tool result.
+type ScanOutcome struct {
+	Name     string
+	ExitCode int
+	TimedOut bool
+	Err      error
+	Duration time.Duration
+	// Artifact is the scanner's first artifact present on disk (or its
+	// expected one), and Findings the total count parsed from its artifacts.
+	Artifact string
+	Findings int
+	// Counts is Findings broken down by severity.
+	Counts scanartifacts.Counts
+	Blocks []TriageBlock
 }
 
 // scannerByName returns the fixed scanner entry, or false for the post-scan
@@ -198,6 +237,7 @@ func (r Vulnetix) fanOut(ctx context.Context, cli vulnetixcli.CLI, scanners []Sc
 
 	runOne := func(i int, sc Scanner) {
 		defer wg.Done()
+		started := time.Now()
 		var res vulnetixcli.Result
 		var err error
 		if r.Observer == nil {
@@ -211,6 +251,10 @@ func (r Vulnetix) fanOut(ctx context.Context, cli vulnetixcli.CLI, scanners []Sc
 			finish(res.ExitCode, res.TimedOut, err)
 		}
 		results[i] = SubcommandResult{Name: sc.Name, Output: res.Stdout, Err: err}
+		// Report before releasing the lane, so a lane successor (containers)
+		// cannot overwrite a shared artifact while this scanner's blocks are
+		// being read.
+		r.reportScan(ctx, sc, res, err, time.Since(started))
 		close(done[i])
 	}
 
@@ -249,6 +293,7 @@ func (r Vulnetix) fanOut(ctx context.Context, cli vulnetixcli.CLI, scanners []Sc
 			<-done[scaIdx]
 		}
 		args := FixArgs(r.Workdir, r.AutoFix)
+		started := time.Now()
 		var res vulnetixcli.Result
 		var err error
 		if r.Observer == nil {
@@ -262,6 +307,9 @@ func (r Vulnetix) fanOut(ctx context.Context, cli vulnetixcli.CLI, scanners []Sc
 			finish(res.ExitCode, res.TimedOut, err)
 		}
 		results[len(scanners)] = SubcommandResult{Name: "fix", Output: res.Stdout, Err: err}
+		if r.OnScanDone != nil {
+			r.OnScanDone(ScanOutcome{Name: "fix", ExitCode: res.ExitCode, TimedOut: res.TimedOut, Err: err, Duration: time.Since(started)})
+		}
 	}()
 
 	wg.Wait()
@@ -298,6 +346,56 @@ func laneIndex(scanners []Scanner, lane string, target int) int {
 	return 0
 }
 
+// reportScan hands one finished scanner's outcome, with the triage blocks and
+// finding count of its own artifacts, to OnScanDone.
+func (r Vulnetix) reportScan(ctx context.Context, sc Scanner, res vulnetixcli.Result, err error, took time.Duration) {
+	if r.OnScanDone == nil {
+		return
+	}
+	dir := config.ProjectDir(r.Workdir)
+	arts, aerr := scanartifacts.Enumerate(dir)
+	if aerr != nil {
+		arts = nil
+	}
+	arts = artifactsIn(arts, sc.Artifacts)
+	summary := scanartifacts.Summarize(ctx, dir, arts)
+	art, findings := scannerFindings(summary, sc)
+	var counts scanartifacts.Counts
+	for _, rel := range sc.Artifacts {
+		if fs, ok := summary.PerFile[rel]; ok {
+			counts = counts.Merge(fs.Counts)
+		}
+	}
+	r.OnScanDone(ScanOutcome{
+		Name:     sc.Name,
+		ExitCode: res.ExitCode,
+		TimedOut: res.TimedOut,
+		Err:      err,
+		Duration: took,
+		Artifact: art,
+		Findings: findings,
+		Counts:   counts,
+		Blocks:   BuildTriageBlocksFor(ctx, r.Workdir, sc.Artifacts),
+	})
+}
+
+// scannerFindings returns a scanner's first artifact present in the summary
+// (its first expected one when none is) and the findings across all of them.
+func scannerFindings(summary scanartifacts.Summary, sc Scanner) (art string, findings int) {
+	for _, rel := range sc.Artifacts {
+		if fs, present := summary.PerFile[rel]; present {
+			if art == "" {
+				art = rel
+			}
+			findings += fs.Counts.Total()
+		}
+	}
+	if art == "" && len(sc.Artifacts) > 0 {
+		art = sc.Artifacts[0]
+	}
+	return art, findings
+}
+
 // buildSummary renders per-scanner status, exit code, artifact and finding
 // count from the parsed artifacts, then writes the legacy signet summary file.
 func (r Vulnetix) buildSummary(ctx context.Context, results []SubcommandResult) string {
@@ -321,17 +419,7 @@ func (r Vulnetix) buildSummary(ctx context.Context, results []SubcommandResult) 
 		art := ""
 		findings := 0
 		if ok {
-			for _, rel := range sc.Artifacts {
-				if fs, present := summary.PerFile[rel]; present {
-					if art == "" {
-						art = rel
-					}
-					findings += fs.Counts.Total()
-				}
-			}
-			if art == "" && len(sc.Artifacts) > 0 {
-				art = sc.Artifacts[0]
-			}
+			art, findings = scannerFindings(summary, sc)
 		}
 		line := fmt.Sprintf("vulnetix %s: %s", res.Name, status)
 		if res.Err != nil {

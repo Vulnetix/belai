@@ -60,7 +60,6 @@ import (
 	"github.com/vulnetix/signet/internal/repomap"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/sanitize"
 	"github.com/vulnetix/signet/internal/scanartifacts"
 	"github.com/vulnetix/signet/internal/selfupdate"
 	"github.com/vulnetix/signet/internal/session"
@@ -610,6 +609,14 @@ type App struct {
 	// its own subagent.
 	pendingReview *reviewSend
 	reviewReports []explore.ReviewReport
+	// reviewFindings are the scanner agents' reports that already ran; send
+	// moves them onto the TurnInput beside reviewReports.
+	reviewFindings []explore.ReviewFinding
+	// review is the /vulnetix review in flight (see review.go), nil when none
+	// is; reviewSeq numbers reviews so their scanner agents' keys never
+	// collide with an earlier review's.
+	review    *reviewRun
+	reviewSeq int
 	// deps is the dependency-manifest hook (see depwatch.go).
 	deps *depState
 
@@ -1298,6 +1305,7 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 	}
 	if !a.status.Configured {
 		a.reviewReports = nil // must not ride on the next prompt instead
+		a.reviewFindings = nil
 		return func() tea.Msg {
 			return agentEventMsg{Kind: agent.EventErrorKind, Err: fmt.Errorf("%s credentials missing (%s). Type /providers to configure.", a.cfg.Provider, strings.Join(a.status.Missing, ", "))}
 		}
@@ -1336,6 +1344,8 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 	a.pendingPlanRevision = 0
 	in.Review = a.reviewReports
 	a.reviewReports = nil
+	in.ReviewFindings = a.reviewFindings
+	a.reviewFindings = nil
 	// Only agent mode carries an agent: ForceAgent also forces the mode, so
 	// sending an engaged agent from plan or goal mode would silently leave the
 	// mode the user chose.
@@ -2071,6 +2081,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case vulnetixDoneMsg:
 		return a, a.handleVulnetixDone(m)
+
+	case reviewScanMsg:
+		return a, a.handleReviewScan(m)
+
+	case reviewScansDoneMsg:
+		return a, a.handleReviewScansDone(m)
+
+	case reviewReportMsg:
+		return a, a.handleReviewReport(m)
 
 	case depCheckMsg:
 		return a, a.handleDepCheck(m)
@@ -4750,6 +4769,7 @@ func (a *App) refreshFooter() {
 	a.footer.Subagents = chips
 	a.footer.MainFocused = false
 	a.footer.Pulse = a.followedPulse()
+	a.footer.Review = a.reviewProgress()
 
 	est := a.contextEstimate()
 	a.footer.Tokens = est.Tokens
@@ -5656,23 +5676,10 @@ func (a *App) sendVulnetixTriage(blocks []commands.TriageBlock) tea.Cmd {
 	if len(blocks) == 0 {
 		return nil
 	}
-	pol := a.effectivePosture()
-	var atts []run.Attachment
-	var reports []explore.ReviewReport
-	for _, block := range blocks {
-		raw := block.Body
-		body := sanitize.Sanitize(raw)
-		if pol.Level(posture.ToolResultUnsafe) != posture.Ignore {
-			pipe := run.NewPipeline(a.cfg, a.client, a.cache)
-			dec, err := pipe.Process(a.ctx, tools.Result{Kind: tools.KindRead, Content: raw})
-			if err != nil || dec.Action != rolemanager.ActionProceed {
-				a.addSystem(fmt.Sprintf("vulnetix %s classified: %s", block.Label, dec.Sentinel.Label()))
-				continue
-			}
-			body = dec.Content
-		}
-		atts = append(atts, run.Attachment{Kind: "file", Label: block.Label, Body: body})
-		reports = append(reports, explore.ReviewReport{Scanner: block.Scanner, Label: block.Label, Body: body})
+	guarded := a.effectivePosture().Level(posture.ToolResultUnsafe) != posture.Ignore
+	reports, atts, withheld := classifyTriageBlocks(a.ctx, blocks, guarded, run.NewPipeline(a.cfg, a.client, a.cache))
+	for _, w := range withheld {
+		a.addSystem("vulnetix " + w + " classified")
 	}
 	if len(atts) == 0 {
 		return nil
@@ -5689,6 +5696,9 @@ func (a *App) sendVulnetixTriage(blocks []commands.TriageBlock) tea.Cmd {
 type reviewSend struct {
 	atts    []run.Attachment
 	reports []explore.ReviewReport
+	// findings are the scanner agents' reports that already ran; their
+	// scanners' subagents are not run again in the triage turn.
+	findings []explore.ReviewFinding
 }
 
 // reviewPrompt is the triage turn's objective. How to remediate, when to defer
@@ -5714,6 +5724,7 @@ func (a *App) sendReview(rs *reviewSend) tea.Cmd {
 	}
 	a.agentExplicit = true
 	a.reviewReports = rs.reports
+	a.reviewFindings = rs.findings
 	a.forceMode = modes.ModeAgent
 	return a.sendWithAttachments(reviewPrompt, rs.atts, "")
 }

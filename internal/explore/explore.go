@@ -358,6 +358,17 @@ type ReviewReport struct {
 	Body    string
 }
 
+// ReviewFinding is one scanner subagent's finished report, run ahead of the
+// triage turn (as a background agent while the other scanners were still
+// running) and already sanitized and, under guardrails, classified. The
+// triage turn seals it as an exploration turn instead of running that
+// scanner's subagent again.
+type ReviewFinding struct {
+	Scanner string
+	Label   string
+	Body    string
+}
+
 // reviewContract ends every review task prompt. The subagent is read-only: it
 // grounds each finding in the repository and names the remediation paths, and
 // the parent session — which sees every scanner's report together — decides,
