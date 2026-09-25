@@ -37,6 +37,7 @@ import (
 	"github.com/vulnetix/signet/internal/commands"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
+	"github.com/vulnetix/signet/internal/forge"
 	"github.com/vulnetix/signet/internal/gitinfo"
 	"github.com/vulnetix/signet/internal/goals"
 	"github.com/vulnetix/signet/internal/httpclient"
@@ -544,6 +545,15 @@ type App struct {
 	bgManager *bgagent.Manager
 	// supervised-process manager
 	procManager *bgproc.Manager
+
+	// git and ci tabs of the runs panel (forge_state.go, forge_actions.go).
+	// forgeRunner and forgeLook are nil in production (real exec, PATH
+	// lookup); tests stub them.
+	forge        forgeState
+	forgeInput   forgeInputState
+	forgeConfirm forgeConfirmState
+	forgeRunner  forge.Runner
+	forgeLook    forge.LookPath
 
 	// agentPool caps every fan-out subagent (explore plus background agents)
 	// behind one settings-backed FIFO queue. The Role Manager owns it through
@@ -1950,7 +1960,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.budgets.Refresh(budgetRefreshAge)
 		}
 		a.refreshFooter()
-		return a, tea.Batch(tickCmd(), a.refreshGitInfoCmd())
+		var forgeCmd tea.Cmd
+		if a.forgeTabActive() {
+			forgeCmd = a.refreshForge(false)
+		}
+		return a, tea.Batch(tickCmd(), a.refreshGitInfoCmd(), forgeCmd)
 
 	case streamChunkMsg:
 		return a, a.handleStreamChunk(m)
@@ -2003,6 +2017,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.applyGitInfo(m.info, m.ok)
 		a.refreshFooter()
 		return a, nil
+
+	case forgeProbeMsg:
+		a.handleForgeProbe(m)
+		return a, nil
+
+	case forgeActionMsg:
+		return a, a.handleForgeAction(m)
 
 	case planEditedMsg:
 		return a, a.handlePlanEdited(m)
@@ -2292,6 +2313,13 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 	}
 	if a.saveFileMode {
 		return a.handleSaveFileKey(m)
+	}
+	// A forge confirmation swallows every key: only y proceeds.
+	if a.forgeConfirm.kind != forgeConfirmNone {
+		return a.handleForgeConfirmKey(m)
+	}
+	if a.forgeInput.kind != forgeInputNone {
+		return a.handleForgeInputKey(m)
 	}
 	if a.savePromptMode {
 		return a.handleSavePromptKey(m)
@@ -3820,6 +3848,9 @@ func (a *App) renderComposer() string {
 	}
 	if a.saveFileMode {
 		title, accent, meta = "save file", lipgloss.TerminalColor(components.ColorAmber), "⏎ save · esc cancel"
+	}
+	if t, mt, ok := a.forgeComposerTitle(); ok {
+		title, accent, meta = t, lipgloss.TerminalColor(components.ColorAmber), mt
 	}
 	if a.historyActive {
 		if a.promptPickerVisible() {
@@ -5520,6 +5551,7 @@ func (a *App) startNewSession() {
 	a.mousePresent = false
 	a.saveFileMode = false
 	a.saveFileMsg = -1
+	a.resetForgeFlows()
 	a.clearLoadedPrompt()
 	a.subagents = nil
 	a.subagentIdx = map[string]int{}

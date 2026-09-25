@@ -175,6 +175,11 @@ func TestRunsPanelTabCyclesThroughProcesses(t *testing.T) {
 		t.Fatalf("tab must switch to processes, got %d", a.runsTab)
 	}
 	a.handleRunsPanelKey(tea.KeyMsg{Type: tea.KeyTab})
+	if a.runsTab != tabGit {
+		t.Fatalf("tab must switch to git, got %d", a.runsTab)
+	}
+	// No PR for the branch, so the ci tab is skipped.
+	a.handleRunsPanelKey(tea.KeyMsg{Type: tea.KeyTab})
 	if a.runsTab != tabActivity {
 		t.Fatalf("tab must wrap back to activity, got %d", a.runsTab)
 	}

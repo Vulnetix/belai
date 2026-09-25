@@ -43,7 +43,9 @@ const (
 	tabActivity  = 0
 	tabSubagents = 1
 	tabProcesses = 2
-	tabCount     = 3
+	tabGit       = 3
+	tabCI        = 4 // offered only while the branch has a PR/MR (ciTabVisible)
+	tabCount     = 5
 )
 
 // runsItem is a row in the runs panel. It unifies activities and subagents so
@@ -72,7 +74,7 @@ func (a *App) runsPanelHeight() int {
 	if visible < 1 {
 		visible = 1 // header/help/rule still render one placeholder row
 	}
-	return min(a.height, 3+visible)
+	return min(a.height, 3+len(a.runsSummary())+visible)
 }
 
 // runsItems returns the items for the current runs tab, with a nil guard on the
@@ -83,6 +85,10 @@ func (a *App) runsItems() []runsItem {
 		return a.subagentItems()
 	case tabProcesses:
 		return a.processItems()
+	case tabGit:
+		return a.gitItems()
+	case tabCI:
+		return a.ciItems()
 	default:
 		return a.activityItems()
 	}
@@ -182,10 +188,12 @@ func (a *App) renderRunsPanel() string {
 	}
 
 	var b strings.Builder
-	tabNames := []string{"activity", "subagents", "processes"}
-	header := a.renderRunsTabHeader(tabNames, w)
+	header := a.renderRunsTabHeader(a.runsTabNames(), w)
 	b.WriteString(header)
 	b.WriteString("\n")
+	for _, line := range a.runsSummary() {
+		b.WriteString(ansi.Truncate(renderSummaryLine(line), w, "") + "\n")
+	}
 
 	if len(itemsWindow.items) == 0 {
 		placeholder := components.MutedStyle.Render("  no activities this turn")
@@ -194,6 +202,8 @@ func (a *App) renderRunsPanel() string {
 			placeholder = components.MutedStyle.Render("  no subagents this turn")
 		case tabProcesses:
 			placeholder = components.MutedStyle.Render("  no running processes")
+		case tabGit, tabCI:
+			placeholder = components.MutedStyle.Render("  " + a.forgePlaceholder())
 		}
 		b.WriteString(ansi.Truncate(placeholder, w, "") + "\n")
 	} else {
@@ -314,6 +324,10 @@ func (a *App) runsPanelHelp() string {
 		return components.HelpBar("↑↓", "select", "⏎", "filter", "x", "cancel/dismiss", "esc", "unfocus", "tab", "switch")
 	case tabProcesses:
 		return components.HelpBar("↑↓", "select", "⏎", "view", "v", "view", "x", "stop", "r", "restart", "esc", "unfocus", "tab", "switch")
+	case tabGit:
+		return components.HelpBar("⏎", "switch", "a", "add", "x", "remove", "p", a.forgeNoun(), "c", "url", "r", "refresh")
+	case tabCI:
+		return components.HelpBar("↑↓", "select", "⏎/c", "copy link", "r", "refresh", "esc", "unfocus", "tab", "switch")
 	default:
 		return components.HelpBar("↑↓", "select", "⏎", "send output", "v", "view", "x", "kill", "t", "triage", "esc", "unfocus", "tab", "switch")
 	}
@@ -330,9 +344,12 @@ func (a *App) handleRunsPanelKey(m tea.KeyMsg) tea.Cmd {
 		a.runsFocus = false
 		return nil
 	case "tab":
-		a.runsTab = (a.runsTab + 1) % tabCount
+		a.runsTab = a.nextRunsTab()
 		a.runsSel = 0
 		a.runsScroll = 0
+		if a.forgeTabActive() {
+			return a.refreshForge(false)
+		}
 		return nil
 	case "up", "k":
 		if a.runsSel > 0 {
@@ -353,6 +370,10 @@ func (a *App) handleRunsPanelKey(m tea.KeyMsg) tea.Cmd {
 		return a.handleRunsSubagentKey(m)
 	case tabProcesses:
 		return a.handleRunsProcessKey(m)
+	case tabGit:
+		return a.handleRunsGitKey(m)
+	case tabCI:
+		return a.handleRunsCIKey(m)
 	}
 	return nil
 }

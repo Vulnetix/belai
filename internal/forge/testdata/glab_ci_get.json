@@ -1,0 +1,5 @@
+{"id":99,"status":"running","web_url":"https://gitlab.com/g/p/-/pipelines/99","jobs":[
+  {"name":"compile","stage":"build","status":"success","web_url":"https://gitlab.com/g/p/-/jobs/1"},
+  {"name":"unit","stage":"test","status":"running","web_url":"https://gitlab.com/g/p/-/jobs/2"},
+  {"name":"lint","stage":"test","status":"failed","web_url":"https://gitlab.com/g/p/-/jobs/3"}
+]}

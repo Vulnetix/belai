@@ -1954,7 +1954,8 @@ Signet runs the Vulnetix CLI, `!shell` commands and background agents on the
 user's behalf; the bottom **runs panel** is the honest register of those
 processes plus the roster of subagents pinned to the conversation. `f8` opens
 and focuses the panel on the **subagents** tab, and `f9` opens it on the
-**activity** tab. `tab` cycles through **activity → subagents → processes**, so
+**activity** tab. `tab` cycles through **activity → subagents → processes →
+git → ci**, where **ci** is skipped unless the branch has an open PR/MR, so
 the processes tab is always one `tab` away from either entry point. The panel
 is bounded: it never consumes more than one third of the terminal height and
 refuses to open when fewer than six rows are available, so the chat composer
@@ -1963,7 +1964,7 @@ a full-screen **output view** (`v` or `enter`) is used to read long activity or
 process output.
 
 Each tab keeps its own selection. Keys while focused: `↑`/`↓` select,
-`tab` switches between the three tabs, `esc` returns focus to the composer,
+`tab` switches tabs, `esc` returns focus to the composer,
 and `f9` closes the panel. Activity tab: `x` kills the selected activity
 (running or queued), `t` starts `signet:triage-vulns` on its project, and
 `enter` sends its output to the model. Subagents tab: `enter` filters the
@@ -1980,6 +1981,37 @@ still runs) — and a non-SAFE sentinel is shown locally and not sent. The outpu
 seals as a `Kind: "shell"` attachment, which forces the `signet:debug` profile
 exactly like a `!shell` result. When a turn is already in flight the finished
 activity queues and flushes as one batched turn once the transcript is idle.
+
+#### Git and ci tabs
+
+The **git** tab shows the branch and its upstream, the forge (`GitHub (gh)`
+or `GitLab (glab)`), the origin URL with credentials masked, the PR/MR for
+the branch, and one row per worktree (current, main, dirty, locked and
+prunable are marked). The **ci** tab lists the PR/MR's checks (GitHub) or
+pipeline jobs (GitLab). Any other remote, or a missing CLI, leaves the git
+tab on branch, remote and worktrees, with a line saying why PR and CI actions
+are unavailable.
+
+The facts come from `internal/forge`, which execs `git`, `gh` and `glab`
+argv-only, with per-call timeouts and a process group each; the CLIs keep
+their own credentials. `internal/gitinfo` stays exec-free because it runs on
+every footer refresh. A probe runs only while the panel is open on a forge
+tab — on focus, on `r`, after a mutation, and when the 30 s snapshot goes
+stale — and never before the directory is trusted, because the trust gate
+runs before the App exists. Everything a forge CLI prints is cleaned
+(delimiter markup, control and bidi runes removed, length capped) and only
+rendered in the TUI; none of it enters a model turn.
+
+Git tab keys: `enter` moves the session's working directory into the selected
+worktree (only inside the primary root, the same bound as `Cd`); `a` adds a
+worktree from `branch [path]`, defaulting to `.worktrees/<branch>`, and
+refuses a path outside the session roots; `x` removes the selected worktree
+behind a y/N confirmation, refusing the current and main worktrees and asking
+for an explicit force confirmation when it is dirty or locked; `p` creates a
+PR/MR from a title and optional description behind a confirmation naming the
+forge, repository and branch — guardrails off does not skip it — and a branch
+with no upstream is pushed first behind its own confirmation; `c` copies the
+PR/MR URL. Ci tab: `enter`/`c` copy the selected run link. `r` refreshes both.
 
 ### Vulnetix AI Firewall
 
@@ -2431,7 +2463,7 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 | `f7` | Save the current prompt to the project prompt library, from the chat view — a save-as alias of `ctrl+s` with no loaded entry |
 | `f1` | Open the screen switcher from chat or any screen. One letter opens a screen: `a` agents, `m` model, `p` providers, `s` settings, `b` token budgets, `k` permissions, `r` prompts, `x` processes, `l` lsp, `v` vulnetix, `h` sessions. A screen already open further down the stack is returned to, so `esc` walks back through distinct screens. It does nothing on a permission ask, a clarifying question, plan review or while an inline field edit holds text, and a chat draft is kept while it is open |
 | `f8` | Open and focus the bottom runs panel on the subagents tab (chat); press `tab` twice to reach the processes tab |
-| `f9` | Open and focus the bottom runs panel on the activity tab (chat); press `tab` twice to cycle to the processes tab |
+| `f9` | Open and focus the bottom runs panel on the activity tab (chat); press `tab` twice to cycle to the processes tab, three times for git (ci follows when the branch has a PR/MR) |
 | `f10` | Toggle the Vulnetix AI Firewall from any screen |
 | `ctrl+home` / `ctrl+end` | Jump the transcript to the top / bottom |
 | `ctrl+j` | Insert a newline in the prompt editor |

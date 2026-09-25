@@ -183,6 +183,7 @@ func (a *App) clearForResume() {
 	a.mousePresent = false
 	a.saveFileMode = false
 	a.saveFileMsg = -1
+	a.resetForgeFlows()
 	a.clearLoadedPrompt()
 	a.loadAgents()
 
