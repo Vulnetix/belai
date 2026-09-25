@@ -1912,7 +1912,10 @@ the render loop through a buffered channel, which may drop because the next
 tick redraws anyway. The recorder folds usage into `usage.json` in the
 background under an advisory lockfile shared with other signet processes, and
 the 2-second tick re-reads it every 30 seconds. The headless CLI registers the
-same recorder. The rules, colour states and edge cases are in
+same recorder. At start the TUI also imports, in the background, the
+transcripts of sessions the ledger never recorded live (saved before token
+budgets, or by an older signet), once each, so day and month totals cover every
+session. The rules, colour states and edge cases are in
 [Token budgets](token-budgets.md).
 
 ### Subagent roster and the footer pulse

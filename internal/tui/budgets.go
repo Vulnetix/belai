@@ -56,6 +56,24 @@ func (a *App) initBudgets() {
 	})
 }
 
+// importHistory folds in the usage of sessions the ledger never saw (saved
+// before token budgets existed, or by an older signet), so day and month
+// budgets count every session. It is an Init command, so Bubble Tea runs it in
+// the background once per start: startup never waits on parsing transcripts,
+// and the footer picks the totals up on the next tick.
+func (a *App) importHistory() tea.Cmd {
+	rec := a.budgets
+	if rec == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		if dir, err := config.SessionsDir(); err == nil {
+			_, _ = rec.ImportHistory(dir)
+		}
+		return nil
+	}
+}
+
 // nextUsage reads one usage notification off the channel and re-arms.
 func (a *App) nextUsage() tea.Cmd {
 	return func() tea.Msg {

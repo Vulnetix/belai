@@ -1061,7 +1061,7 @@ func (a *App) SetClassifier(c rolemanager.Classifier) {
 // Init implements tea.Model.
 func (a *App) Init() tea.Cmd {
 	a.maybeNoticeLegacyPrompts()
-	cmds := []tea.Cmd{tickCmd(), a.watchActivityEvents(), a.nextRMActivity(), a.nextUsage()}
+	cmds := []tea.Cmd{tickCmd(), a.watchActivityEvents(), a.nextRMActivity(), a.nextUsage(), a.importHistory()}
 	if a.procManager != nil {
 		cmds = append(cmds, a.watchProcessEvents())
 	}

@@ -93,9 +93,19 @@ that is not here.
   signet processes share it through an advisory lockfile; each process sees its
   own usage at once and other processes' within 30 seconds. Day totals are kept
   for 13 months; a session's total is dropped once the session has been idle
-  longer than `session_retention_days`.
+  longer than `session_retention_days`, and it is then remembered as
+  imported so its transcript is never counted a second time.
 - **R13. Headless runs count.** `signet -prompt` records its usage in the same
   ledger, so day and month budgets include it. It prints nothing about budgets.
+- **R14. Day and month cover every session.** Day and month budgets are
+  global: they count every session of every project, not only the one on
+  screen. Sessions the ledger never recorded live — saved before token budgets
+  existed, or by an older signet — are imported from their transcripts under
+  `sessions/` when the TUI starts, in the background. A goal run counts its
+  exact `tokensUsed`, split across days by its `goal_state` rows and recorded
+  under the model its turns name; every other turn counts the usage its
+  transcript row kept (its last model call), so that part is a lower bound, and
+  classifier and role-manager calls outside a goal are not recoverable.
 
 ## Edge cases
 
@@ -117,3 +127,5 @@ that is not here.
 | E14 | Allowance input | Accepts whole numbers and `k`, `M`, `B` suffixes with decimals (`250k`, `1.5M`), ignoring commas, underscores and spaces; zero, negative and non-numbers are rejected |
 | E15 | Two processes recording at once | Neither loses usage: every write re-reads the ledger under the lock and adds its own deltas |
 | E16 | A ledger write fails | The usage stays pending in memory and is written on the next flush |
+| E17 | Two processes import history at once | Each session is counted once: the import re-reads the ledger under the lock and skips any session already imported |
+| E18 | A session that was recorded live | Never imported from its transcript — not while its ledger entry is kept, and not after an idle entry is pruned (it moves to the imported set); a TUI never imports its own session |
