@@ -105,8 +105,9 @@ type SecurityClassifierConfig struct {
 	// was configured) and its JAILBREAK responsibility is deferred to phase 3.
 	// It is false when the user explicitly set phase2.source: "disabled".
 	Phase2Deferred bool
-	// Phase3On reports whether phase 3 is enabled: on the models path, a
-	// classifier provider and model are both explicitly set.
+	// Phase3On reports whether phase 3 is enabled on the models path: when
+	// classifier provider and model are both unset (it inherits the main
+	// model), or both set to a model that provider can serve.
 	Phase3On bool
 }
 
@@ -363,11 +364,17 @@ func ResolveSecurityClassifier(cls *config.ClassifierSettings) SecurityClassifie
 	// phase 3.
 	_, phase2Embedded := mlclassify.EmbeddedPhase2()
 	sc.Phase2Deferred = sc.Phase2 == nil && !phase2Embedded && (cls == nil || cls.Phase2.Source != "disabled")
-	// Phase 3 is opt-in and the switch is the existing provider+model choice:
-	// it runs iff both are explicitly set and the model can actually be served
-	// by that provider. No inheritance on the models path.
-	sc.Phase3On = cls != nil && cls.Provider != "" && cls.Model != "" &&
-		classifierModelApplies(cls.Provider, cls.Model)
+	// Phase 3 is on by default. With classifier.provider and classifier.model
+	// both unset it inherits the main (defined or routed) model, as the llm
+	// path does: the embedded phase-1 model scores length, not intent, so
+	// once it is windowed below its length cliff it flags nothing, and phase 3
+	// is what classifies tool output on the models path. An explicit pair runs
+	// iff the model can actually be served by that provider; a half-set pair
+	// is a misconfiguration and stays off. The guardrails switch still
+	// overrides all of it: off means the classifier is never called.
+	inherit := cls == nil || (cls.Provider == "" && cls.Model == "")
+	sc.Phase3On = inherit || (cls.Provider != "" && cls.Model != "" &&
+		classifierModelApplies(cls.Provider, cls.Model))
 	return sc
 }
 
