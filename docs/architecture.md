@@ -1570,6 +1570,38 @@ Business rules and edge cases:
   returns no usage block contributes zero rather than an estimate — the field
   is an anchored count, not a guess.
 
+#### Per-goal auto-commit
+
+The TUI can commit each completed goal's changed files as one conventional
+commit. It is off by default (`auto_commit_per_task`), interactive-TUI only,
+and global-only: `config.Resolve` drops the key from the repo-visible project
+layer unconditionally, so a cloned `.vulnetix/settings.json` can never make the
+harness commit. The `/settings` toggle always writes the global scope.
+
+`observeTaskDiff` collects the deduplicated `f.Path` of every
+`EventToolDiffKind` into `App.taskPaths` (capped at 1000) while the turn runs;
+a change with `Unavailable` and no files is skipped. On the success done event,
+`flushAutoCommit` snapshots the paths, workdir and `lastGoal.Objective`, resets
+the collector, and — only when the setting is on, the result sentinel is
+`GOAL_COMPLETE`, and at least one path was collected — runs
+`forge.CommitPaths` off the UI loop. Partial, stopped, budget-limited and
+plain agent turns never commit, and the reset on the error path keeps one
+goal's files out of the next commit.
+
+`forge.CommitPaths` stages and commits exactly the listed paths and never
+pushes or passes `--no-verify` (the user's hooks run). It keeps only relative
+paths lexically inside the workdir, drops absolute paths and any path
+containing `..`, filters paths `git check-ignore` reports, stages with
+`git add -A -- <paths>`, returns without committing when
+`git diff --cached --quiet -- <paths>` reports nothing, and commits with
+`git commit --only -m <msg> -- <paths>` so unrelated already-staged content
+stays out. The commit message type is `docs`/`test`/`ci` for path sets that are
+all Markdown/docs, tests/e2e, or `.github/`; `fix`/`refactor` when the
+objective's first word is one of those; otherwise `feat` when any path is a new
+(untracked) file and `chore` when not. The header fits 72 characters and the
+body lists at most 50 paths. A file the user edited before the goal touched it
+is committed whole, including the user's edits — the toggle's help text says so.
+
 ### Todo list
 
 `internal/todos` owns the single todo list a session tracks, whatever mode
@@ -1697,6 +1729,36 @@ Multi-pass goal/plan turns persist every finished assistant reply, not only
 the final one: a natural-exit reply is finalised at the pass boundary (its
 buffered text counts even before the turn ends), and a tool-call reply is
 written once its results land.
+
+### Session export
+
+`/export [id-prefix]` writes a session as shareable Markdown under
+`<workdir>/.vulnetix/exports/<session-id>.md` (`config.ProjectExportsDir`).
+The directory is created `0700` and files are written `0600` because the
+Markdown carries raw tool output. The current session is flushed first
+(`persistTail`), so an export always reflects what has actually reached disk.
+The disk work runs off the UI loop as a `tea.Cmd`; the result is reported as a
+system line naming the written path.
+
+The serializer is `session.ExportMarkdown(entries, ExportOptions)`. It is
+deterministic: only entry data is read, never `time.Now`. The header carries
+`LatestMeta` plus the last `session_name` entry — name, id, cwd, created time,
+the set of provider/model values seen on assistant entries, and the token
+sum from assistant `meta.total_tokens`. The body replays entries in append
+order: `user` as `## User`, `assistant` as `## Assistant` plus each
+`meta.tool_calls` (name and JSON args in a backtick fence), `tool` as
+`### Tool result: <tool_name>` truncated by `transcript.TruncateRunes` (default
+4000 runes) with a note when `meta.truncated` is set, and `summary` as a quoted
+block. Skipped: `system`, `rolemanager`, `session_meta`, `session_name`,
+`goal_state`, `todo_list`, `plan_state`, any row with `SubagentID != ""`, and
+`reasoning` unless `IncludeReasoning` is set. The fence is one backtick longer
+than the longest backtick run anywhere in the exported content, so repository
+text cannot close its own fence.
+
+`signet -export <id-prefix>` prints the same Markdown to stdout and exits. It
+resolves the prefix with `Store.ResolveAnywhere` (current project first) and
+reads only the global session store, never repository content, so it needs no
+trust gate.
 
 **Timestamps are event times, not flush times.** Rows are written in batches
 (an assistant bubble is held until its turn ends), so an entry stamped at
@@ -3162,6 +3224,7 @@ Business rules:
 | `/compact` | Summarise the session into a new one |
 | `/resume` | Resume a session by id, or browse every session on disk |
 | `/rename` | Rename this session |
+| `/export` | Export this session (or another by id prefix) as Markdown under `.vulnetix/exports` |
 | `/agent` | Manage background agents (`create`, `list`, `edit <name>`, `start`, `stop`, `pause`, `resume`, `log`); `log` opens the agent's audit trail |
 | `/agents` | Open the agents screen: `running`, `profiles` or `audit` (bare `/agents` opens running once any agent has run, profiles before that) |
 
@@ -3214,6 +3277,8 @@ which defaults off unless explicitly true; `ui.show_internal_work` defaults to
 overridden off by `SIGNET_NO_KITTY=1`),
 `show_session_names` (default on),
 `update_check` (default on; overridden off by `SIGNET_NO_UPDATE_CHECK=1`),
+`auto_commit_per_task` (default off; global-only — see the per-goal
+auto-commit section in Goal mode),
 `context_windows`,
 `resilience` (`max_attempts`, `max_iterations`, `max_passes`,
 `max_clarify_rounds`, `max_explore_iterations`, `max_agents`,

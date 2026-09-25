@@ -2,7 +2,7 @@
 import SealedSection from '../seal/SealedSection.astro';
 
 const sealText =
-  'Headless CLI: the same harness without the TUI. Terminal detection keeps the UI off in pipelines, -prompt gives a single answer and exits, -plan runs read-only, -detect-mode prints the mode choice, -trust-dir opens a CI workspace, and every posture gate is reachable from flags.';
+  'Headless CLI: the same harness without the TUI. Terminal detection keeps the UI off in pipelines, -prompt gives a single answer and exits, -plan runs read-only, -detect-mode prints the mode choice, -trust-dir opens a CI workspace, -export prints a session as Markdown, and every posture gate is reachable from flags.';
 
 const features = [
   {
@@ -24,6 +24,10 @@ const features = [
   {
     title: 'trust a workspace in CI',
     body: 'signet -trust-dir grants trust to the current directory once, so unattended jobs can start in a fresh checkout without a prompt.',
+  },
+  {
+    title: 'export a session as Markdown',
+    body: 'signet -export <id-prefix> prints a deterministic Markdown transcript of a saved session and exits. It reads only the session store, never repository content.',
   },
   {
     title: 'every gate from flags',

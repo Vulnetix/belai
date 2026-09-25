@@ -51,7 +51,9 @@ import budgetsShot from '../../assets/shots/budgets.svg';
         tool calls that finish the next step.
         When the goal is met, the model writes a final report of what changed and how it was checked.
         A goal that stops early reports what is left. An approved plan runs the same way and ends on
-        the same report.
+        the same report. With <code class="mono">auto-commit per task</code> on in{' '}
+        <code class="mono">/settings</code>, each completed goal is committed as one conventional commit
+        of exactly the files it changed.
       </p>
       <p class="mt-4 text-vx-ink/80">
         A goal starts work at once. Its completion contract is drafted alongside and joins at the next
