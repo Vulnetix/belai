@@ -2502,7 +2502,31 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		}
 	}
 
+	// With no popup or picker claiming it, tab cycles the model mode between
+	// routed and defined — the same toggle as tab on /model.
+	if m.String() == "tab" {
+		return a.cycleModelModeFromChat()
+	}
+
 	return a.forwardToEditor(m)
+}
+
+// cycleModelModeFromChat is tab in the chat view: it flips the routing kind
+// between defined and routed in the /model routing scope, which refreshes the
+// footer's router segment, and says in the transcript which mode is now on.
+func (a *App) cycleModelModeFromChat() tea.Cmd {
+	cmd := a.cycleRoutingKind(routingKindOptions)
+	if msg := a.modelState.errorMsg; msg != "" {
+		a.modelState.errorMsg = ""
+		a.addSystem("model mode: " + msg)
+		return cmd
+	}
+	kind := config.RoutingDefined
+	if a.settings.Routing != nil && a.settings.Routing.Kind != "" {
+		kind = a.settings.Routing.Kind
+	}
+	a.addSystem("model mode: " + kind)
+	return cmd
 }
 
 // forwardToEditor hands a key to the composer and refreshes the state that

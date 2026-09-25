@@ -286,6 +286,16 @@ Business rules and edge cases:
   (provider, model; stored in the routing block and sharing its scope) and a
   classifier `tier` row. Clearing the fast provider drops the whole target;
   clearing only the model keeps the provider and its registry default.
+- **`tab` cycles the model mode.** From anywhere on the `/model` screen, and
+  from the chat view when no slash popup, picker or history cycle claims the
+  key, `tab` toggles the routing `kind` between `defined` and `routed` (the
+  same row the `enter` key edits in place). In chat, a `model mode: <kind>`
+  line names the result. The change is written to the routing block's
+  scope and the footer's provider/model segment swaps to the "Smart model
+  router · n models active" label the moment `routed` resolves to a non-empty
+  pool, and back when `defined` or an empty pool resolves to the single main
+  model. `s` still cycles the routing block's scope so `tab` saves where the
+  user pointed it.
 
 ## Delimiter, nonce, and integrity model
 
@@ -1709,7 +1719,16 @@ The footer is a rule plus three content lines:
   agent session is rebuilt. The footer's memoised height is invalidated on a
   move, since line 1 appears or disappears with the directory.
 - Line 2, left: provider · model (with effort) · the permission chips ·
-  `caveman: on|off`.
+  `caveman: on|off`. When smart model routing is engaged (`routing.kind:
+  "routed"` resolving to a non-empty pool), the provider/model segment is
+  replaced by a cream "Smart model router" label plus a muted count of the
+  distinct provider/model pairs it can choose between (main model included),
+  because no single model serves the turn. `tab` cycles the routing `kind`
+  (`defined` ↔ `routed`) from anywhere on the `/model` screen, and from the
+  chat view when no slash popup, picker or history cycle claims the key; it
+  saves to the `/model` routing scope (project by default), names the new mode
+  in the transcript, and updates this segment in the same frame. `routed` with
+  an empty candidate pool keeps the single provider/model segment.
 - Line 2, right: session (name or short id), the context-usage text segment,
   and the context progress bar.
 - Only the **session** segment is truncated, rune-safely with an ellipsis, to

@@ -96,6 +96,70 @@ func TestModelKeyEscAndProviders(t *testing.T) {
 	}
 }
 
+// Tab on the /model screen cycles the routing kind between defined and routed
+// from anywhere on the screen, not only from the routing kind row, and the
+// footer's router segment follows.
+func TestModelKeyTabCyclesRoutingKind(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("OPENAI_API_KEY", "sk-openai")
+	a := newModelScreen(t, t.TempDir())
+	a.modelState.routingScope = "project"
+
+	// Start defined (a nil or empty kind means defined).
+	if a.settings.Routing != nil && a.settings.Routing.Kind != "" && a.settings.Routing.Kind != config.RoutingDefined {
+		t.Fatalf("initial kind = %q, want defined", a.settings.Routing.Kind)
+	}
+
+	// Tab from the agent provider row toggles to routed and stores it.
+	selectRow(t, a, roleAgent, "provider")
+	_, _ = a.handleModelKey(tea.KeyMsg{Type: tea.KeyTab})
+	if got := a.settings.Routing.Kind; got != config.RoutingRouted {
+		t.Fatalf("kind = %q, want routed after tab", got)
+	}
+	if a.settings.Routing == nil || a.settings.Routing.Kind != config.RoutingRouted {
+		t.Fatalf("routing kind not persisted: %+v", a.settings.Routing)
+	}
+
+	// Tab again returns to defined.
+	_, _ = a.handleModelKey(tea.KeyMsg{Type: tea.KeyTab})
+	if got := a.settings.Routing.Kind; got != config.RoutingDefined {
+		t.Fatalf("kind = %q, want defined after second tab", got)
+	}
+}
+
+// A routed pool with at least one candidate replaces the footer's single
+// provider/model segment with the smart-router label; an empty pool under
+// routed leaves the single model segment.
+func TestFooterRouterSegmentFollowsRoutingKind(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("OPENAI_API_KEY", "sk-openai")
+	a := modelScreen(t)
+	a.settings.Routing = &config.RoutingSettings{
+		Kind:     config.RoutingRouted,
+		UseCases: map[string]config.RoutingTarget{"clarify": {Provider: "openai", Model: "gpt-5-mini"}},
+	}
+	if err := a.refreshProvider(); err != nil {
+		t.Fatalf("refreshProvider: %v", err)
+	}
+	if a.footer.RoutedModels == 0 {
+		t.Fatal("expected a non-zero router count for a routed pool")
+	}
+	if got := a.footer.View(); !strings.Contains(got, "Smart model router") {
+		t.Fatalf("footer missing smart-router label:\n%s", got)
+	}
+
+	a.settings.Routing.Kind = config.RoutingDefined
+	if err := a.refreshProvider(); err != nil {
+		t.Fatalf("refreshProvider: %v", err)
+	}
+	if a.footer.RoutedModels != 0 {
+		t.Fatalf("defined routing footer must not advertise a router, got %d", a.footer.RoutedModels)
+	}
+	if got := a.footer.View(); strings.Contains(got, "Smart model router") {
+		t.Fatalf("defined routing footer must not show the router label:\n%s", got)
+	}
+}
+
 // Enter on the agent provider row cycles to the next provider and re-resolves
 // the wire config: the base URL and API key must follow the provider, not stay
 // pinned to the previous one.
@@ -688,5 +752,68 @@ func TestClassifierPickerWarningBroadProvider(t *testing.T) {
 	a.settings.Classifier = &config.ClassifierSettings{Kind: "models", Provider: "huggingface", Model: "GuardrailsAI/prompt-saturation-attack-detector"}
 	if out := a.modelPicker(); strings.Contains(out, "Classifier provider:") {
 		t.Fatalf("huggingface classifier picker must not show the broad-model warning:\n%s", out)
+	}
+}
+
+// Tab in the chat view, with no popup or picker open, cycles the model mode
+// between routed and defined, persists it, says so in the transcript, and the
+// footer's router segment follows. With the slash popup open, tab keeps its
+// completion meaning and the mode is untouched.
+func TestChatTabCyclesModelMode(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("OPENAI_API_KEY", "sk-openai")
+	workdir := t.TempDir()
+	if err := config.Mutate(config.ScopeProject, workdir, func(s *config.Settings) error {
+		s.Routing = &config.RoutingSettings{UseCases: map[string]config.RoutingTarget{"clarify": {Provider: "openai", Model: "gpt-5-mini"}}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	a := New(Options{Workdir: workdir})
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	kind := func() string {
+		if a.settings.Routing == nil || a.settings.Routing.Kind == "" {
+			return config.RoutingDefined
+		}
+		return a.settings.Routing.Kind
+	}
+	lastSystem := func() string {
+		for i := len(a.messages) - 1; i >= 0; i-- {
+			if a.messages[i].Role == "system" {
+				return a.messages[i].Content
+			}
+		}
+		return ""
+	}
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+	if kind() != config.RoutingRouted {
+		t.Fatalf("kind = %q after tab, want routed", kind())
+	}
+	if !strings.Contains(lastSystem(), "model mode: routed") {
+		t.Fatalf("transcript = %q, want the new mode named", lastSystem())
+	}
+	if a.footer.RoutedModels == 0 || !strings.Contains(a.footer.View(), "Smart model router") {
+		t.Fatalf("footer did not switch to the router:\n%s", a.footer.View())
+	}
+	proj, err := config.LoadProject(workdir)
+	if err != nil || proj.Routing == nil || proj.Routing.Kind != config.RoutingRouted {
+		t.Fatalf("routed kind not persisted: %+v (%v)", proj.Routing, err)
+	}
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+	if kind() != config.RoutingDefined || a.footer.RoutedModels != 0 {
+		t.Fatalf("kind = %q router = %d after second tab, want defined and no router", kind(), a.footer.RoutedModels)
+	}
+
+	a.editor.SetValue("/mo")
+	a.refreshAutocomplete()
+	if len(a.autocomplete) == 0 {
+		t.Fatal("slash popup did not open for /mo")
+	}
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+	if kind() != config.RoutingDefined {
+		t.Fatalf("tab with the slash popup open changed the mode to %q", kind())
 	}
 }
