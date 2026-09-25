@@ -34,8 +34,9 @@ func TestModelRowsReflectSettings(t *testing.T) {
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
 	_ = a.enterModel()
 	rows := a.modelRows()
-	if len(rows) != 27 {
-		t.Fatalf("len(rows) = %d, want 27", len(rows))
+	// One routing row per role-manager use case, dep_change included.
+	if len(rows) != 28 {
+		t.Fatalf("len(rows) = %d, want 28", len(rows))
 	}
 	if rows[0].role != roleAgent || rows[0].key != "provider" {
 		t.Fatalf("first row = %+v, want agent provider", rows[0])

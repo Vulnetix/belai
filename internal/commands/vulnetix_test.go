@@ -267,3 +267,17 @@ func TestStatusText(t *testing.T) {
 		t.Fatalf("status text = %q", txt)
 	}
 }
+
+// The fix activity always names --path: without it the CLI prompts for a
+// manifest, and with no terminal fails on any repository with two manifests.
+func TestFixArgsAlwaysExplicitPath(t *testing.T) {
+	for _, autoFix := range []bool{false, true} {
+		args := strings.Join(FixArgs("/repo", autoFix), " ")
+		if !strings.HasSuffix(args, "--path /repo") {
+			t.Errorf("autofix=%v: %q lacks --path", autoFix, args)
+		}
+		if autoFix != strings.Contains(args, "--yes") || autoFix == strings.Contains(args, "--dry-run") {
+			t.Errorf("autofix=%v: %q", autoFix, args)
+		}
+	}
+}

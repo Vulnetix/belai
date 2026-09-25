@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/signet/internal/explore"
 	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/repoindex"
@@ -55,11 +56,11 @@ func TestExploreBudgetAndReportCap(t *testing.T) {
 			t.Errorf("exploreBudget(%d, %d) = %d, want %d", c.task, c.setting, got, c.want)
 		}
 	}
-	if got := capReport("  short  "); got != "short" {
+	if got := capReport("  short  ", maxExploreReport); got != "short" {
 		t.Errorf("short report = %q", got)
 	}
 	long := strings.Repeat("- a.go:1 — fact\n", 1000)
-	got := capReport(long)
+	got := capReport(long, maxExploreReport)
 	if len(got) > maxExploreReport+40 || !strings.HasSuffix(got, "… (report truncated)") {
 		t.Errorf("long report not capped: %d bytes", len(got))
 	}
@@ -462,5 +463,89 @@ func TestGoalExploreIsOptIn(t *testing.T) {
 				t.Fatalf("explore fan-out ran = %v, want %v", explored, tc.want)
 			}
 		})
+	}
+}
+
+// TestReviewFansOutPerScanner pins the /vulnetix review contract: each
+// scanner report gets its own read-only subagent, which receives the report as
+// an attachment, and every subagent's classified report reaches the parent
+// model as an exploration turn before the parent answers. A session that may
+// not fan out runs no review subagents.
+func TestReviewFansOutPerScanner(t *testing.T) {
+	root := t.TempDir()
+	reports := []explore.ReviewReport{
+		{Scanner: "sast", Label: "sast report", Body: "S1 high a.go:1"},
+		{Scanner: "secrets", Label: "secrets report", Body: "K1 critical b.go:2"},
+	}
+
+	for _, allow := range []bool{true, false} {
+		var mu sync.Mutex
+		var bodies []string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			raw, _ := io.ReadAll(r.Body)
+			body := string(raw)
+			if strings.Contains(body, "security classifier") {
+				writeChatJSON(w, "SAFE")
+				return
+			}
+			mu.Lock()
+			bodies = append(bodies, body)
+			mu.Unlock()
+			writeChatJSON(w, "a.go:1 — S1 — real — fix: validate input")
+		}))
+
+		sess, err := NewSession(Options{
+			Cfg:           run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "test"},
+			Client:        srv.Client(),
+			Registry:      tools.NewRegistry(&tools.Read{Root: root, MaxBytes: 1024}),
+			Posture:       posture.Defaults(),
+			SkipNonceSeed: true,
+			AllowExplore:  allow,
+			Workdir:       root,
+		})
+		if err != nil {
+			t.Fatalf("NewSession: %v", err)
+		}
+		states := map[string]string{}
+		_, err = sess.run(context.Background(), nil, TurnInput{Prompt: "remediate the review", ForceMode: modes.ModeAgent, Review: reports}, false, func(e Event) {
+			if e.Kind == EventSubagentKind && e.Subagent.Kind == "review" {
+				states[e.Subagent.ID] = e.Subagent.State
+			}
+		})
+		srv.Close()
+		if err != nil {
+			t.Fatalf("run: %v", err)
+		}
+
+		if !allow {
+			if len(states) != 0 || len(bodies) != 1 {
+				t.Fatalf("no fan-out allowed: subagents %v, model calls %d", states, len(bodies))
+			}
+			continue
+		}
+		if states["r1"] != "done" || states["r2"] != "done" || len(states) != 2 {
+			t.Fatalf("review subagents = %v, want r1 and r2 done", states)
+		}
+		// Two subagent calls, each carrying only its own scanner report, then
+		// the parent call carrying both subagent reports.
+		if len(bodies) != 3 {
+			t.Fatalf("model calls = %d, want 3", len(bodies))
+		}
+		var sast, secrets int
+		for _, b := range bodies[:2] {
+			if strings.Contains(b, "S1 high a.go:1") {
+				sast++
+			}
+			if strings.Contains(b, "K1 critical b.go:2") {
+				secrets++
+			}
+		}
+		if sast != 1 || secrets != 1 {
+			t.Fatalf("each subagent must see exactly its own report: sast %d, secrets %d", sast, secrets)
+		}
+		parent := bodies[2]
+		if strings.Count(parent, "fix: validate input") != 2 || !strings.Contains(parent, "per-scanner review subagent reports") {
+			t.Fatalf("parent turn lacks the subagent reports: %s", parent)
+		}
 	}
 }

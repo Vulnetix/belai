@@ -600,6 +600,10 @@ func (a *App) handleBgAgentEvent(m bgAgentEventMsg) tea.Cmd {
 		l.announced = true
 		a.addSystem(fmt.Sprintf("■ %s done · %s · %s · f8 to read", name, countOf(l.Tools, "tool"), compactDuration(agentElapsed(l))))
 	}
+	if m.Kind == agent.EventDoneKind {
+		// A dependency agent reports back to the main session.
+		return tea.Batch(a.armAgentPulse(), a.depAgentFinished(name))
+	}
 	return a.armAgentPulse()
 }
 

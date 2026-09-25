@@ -43,6 +43,7 @@ const (
 	EventLSPDiagnose               Event = "lsp_diagnose"
 	EventLSPServerDown             Event = "lsp_server_down"
 	EventRouteFallback             Event = "route_fallback"
+	EventDepChange                 Event = "dep_change"
 )
 
 // Level is the display granularity of the internal-work feed. Order matters:
@@ -250,6 +251,8 @@ func Describe(a Activity) (Description, bool) {
 		return lspDetectDescription(a), true
 	case EventLSPServerDown:
 		return lspServerDownDescription(a), true
+	case EventDepChange:
+		return depChangeDescription(a), true
 	case EventRouteFallback:
 		return routeFallbackDescription(a), true
 	}
@@ -408,6 +411,25 @@ func compactionDescription(a Activity) Description {
 		Tone:    ToneCaution,
 		Levels:  LevelDecisions,
 	}
+}
+
+// depChangeDescription renders one dependency-change decision on a manifest
+// the session changed.
+func depChangeDescription(a Activity) Description {
+	d := Description{
+		Summary: "Checked whether a manifest change touched dependencies",
+		Outcome: "dependencies changed, checking them with Vulnetix",
+		Tone:    ToneCaution,
+		Levels:  LevelDecisions,
+	}
+	if a.Verdict == string(DepsUnchanged) {
+		d.Outcome = "no dependency changed, nothing to check"
+		d.Tone = ToneClear
+	}
+	if strings.HasPrefix(a.Detail, "malformed") {
+		d.Outcome = "reply was unusable, checking anyway"
+	}
+	return d
 }
 
 func sessionNameDescription(a Activity) Description {

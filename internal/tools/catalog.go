@@ -883,7 +883,7 @@ func CatalogueNames() []string {
 	for _, c := range cloudCatalog() {
 		names = append(names, c.name)
 	}
-	names = append(names, "Repos", "RepoFiles", "RepoRead")
+	names = append(names, "Vulnetix", "Repos", "RepoFiles", "RepoRead")
 	return names
 }
 
@@ -907,6 +907,9 @@ func NativeTools(root string, caps Capabilities, cwd *Cwd, ix repoindex.Index) [
 		if caps.Has(c.name) {
 			out = append(out, &Native{Root: root, Timeout: 30 * time.Second, cmd: c, Cwd: cwd})
 		}
+	}
+	if caps.Has("Vulnetix") {
+		out = append(out, &Vulnetix{Root: root, Cwd: cwd})
 	}
 	// The index listing runs in-process and needs no binary, so it is offered
 	// whenever the index has anything to say; the two repo tools that shell
@@ -938,6 +941,19 @@ func DefaultWithCaps(workdir string, readOnly bool, caps Capabilities, ix repoin
 	}
 	list := append([]Tool{}, base.tools...)
 	list = append(list, extras...)
+	// With the Vulnetix tool present, Bash sends vulnetix calls to it: the
+	// unhardened Bash path is where scans ran for minutes and fix --yes
+	// edited manifests.
+	for _, t := range extras {
+		if _, ok := t.(*Vulnetix); !ok {
+			continue
+		}
+		for _, bt := range list {
+			if b, ok := bt.(*Bash); ok {
+				b.Vulnetix = true
+			}
+		}
+	}
 	reg := base.withCwd(NewRegistry(list...))
 	if readOnly {
 		return reg.ReadOnly()

@@ -129,6 +129,10 @@ func Detect(ctx context.Context, probe CapabilityProbe, timeout time.Duration) C
 	}
 
 	// Partition cloud CLIs into presence-only and auth-probe groups.
+	if _, ok := probe.LookPath("vulnetix"); ok {
+		caps.local["Vulnetix"] = true
+	}
+
 	var probed []cloudSpec
 	for _, cs := range cloudSpecs {
 		if _, ok := probe.LookPath(cs.binary); !ok {

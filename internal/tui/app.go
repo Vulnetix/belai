@@ -37,6 +37,7 @@ import (
 	"github.com/vulnetix/signet/internal/commands"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
+	"github.com/vulnetix/signet/internal/explore"
 	"github.com/vulnetix/signet/internal/forge"
 	"github.com/vulnetix/signet/internal/gitinfo"
 	"github.com/vulnetix/signet/internal/goals"
@@ -603,6 +604,14 @@ type App struct {
 	// pendingActivitySends are finished-activity attachments waiting for the
 	// in-flight turn to go idle before they flush as one turn.
 	pendingActivitySends []activitySend
+	// pendingReview holds a finished /vulnetix review whose triage turn is
+	// waiting for the in-flight turn to go idle. reviewReports is the review
+	// being sent: send moves it onto the TurnInput so each scanner report gets
+	// its own subagent.
+	pendingReview *reviewSend
+	reviewReports []explore.ReviewReport
+	// deps is the dependency-manifest hook (see depwatch.go).
+	deps *depState
 
 	// todos is the shared goal/plan todo list rendered in the chat chrome and
 	// persisted to the session. The agent emits it; the TUI owns persistence.
@@ -846,6 +855,7 @@ func New(opts Options) *App {
 		activity:          activity.NewRegistry(),
 		activityAnnounced: map[string]bool{},
 		activityFinished:  map[string]bool{},
+		deps:              &depState{},
 		subagentIdx:       map[string]int{},
 		execEditor:        tea.ExecProcess,
 		trace:             trace.Env(),
@@ -1287,6 +1297,7 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 		a.reResolveCredentials()
 	}
 	if !a.status.Configured {
+		a.reviewReports = nil // must not ride on the next prompt instead
 		return func() tea.Msg {
 			return agentEventMsg{Kind: agent.EventErrorKind, Err: fmt.Errorf("%s credentials missing (%s). Type /providers to configure.", a.cfg.Provider, strings.Join(a.status.Missing, ", "))}
 		}
@@ -1323,6 +1334,8 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 	}
 	in.PlanRevision = a.pendingPlanRevision
 	a.pendingPlanRevision = 0
+	in.Review = a.reviewReports
+	a.reviewReports = nil
 	// Only agent mode carries an agent: ForceAgent also forces the mode, so
 	// sending an engaged agent from plan or goal mode would silently leave the
 	// mode the user chose.
@@ -2058,6 +2071,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case vulnetixDoneMsg:
 		return a, a.handleVulnetixDone(m)
+
+	case depCheckMsg:
+		return a, a.handleDepCheck(m)
+
+	case depReportMsg:
+		return a, a.handleDepReport(m)
 
 	case vulnetixProbeMsg:
 		return a, a.handleVulnetixProbe(m)
@@ -3273,7 +3292,8 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			a.messages[last].Materialise()
 		}
 		a.persistTail()
-		return nil
+		// Edits made before the failure are on disk all the same.
+		return a.flushDepWatch()
 	case agent.EventTextKind:
 		a.setPhaseWorking()
 		if len(a.messages) == 0 || a.messages[len(a.messages)-1].Role != "assistant" {
@@ -3344,6 +3364,9 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 				}
 			}
 		}
+		// The dependency hook matches every changed file against the
+		// manifest table; matches are checked when the turn ends.
+		a.observeDepDiff(m.Diff)
 		return a.nextAgent()
 	case agent.EventCwdKind:
 		a.setPhaseWorking()
@@ -3616,7 +3639,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			a.appendEntry(a.todos.ToEntry(""))
 		}
 		a.refreshFooter()
-		return a.flushPendingActivitySends()
+		return tea.Batch(a.flushPendingActivitySends(), a.flushDepWatch())
 	}
 	return nil
 }
@@ -5635,6 +5658,7 @@ func (a *App) sendVulnetixTriage(blocks []commands.TriageBlock) tea.Cmd {
 	}
 	pol := a.effectivePosture()
 	var atts []run.Attachment
+	var reports []explore.ReviewReport
 	for _, block := range blocks {
 		raw := block.Body
 		body := sanitize.Sanitize(raw)
@@ -5648,18 +5672,50 @@ func (a *App) sendVulnetixTriage(blocks []commands.TriageBlock) tea.Cmd {
 			body = dec.Content
 		}
 		atts = append(atts, run.Attachment{Kind: "file", Label: block.Label, Body: body})
+		reports = append(reports, explore.ReviewReport{Scanner: block.Scanner, Label: block.Label, Body: body})
 	}
 	if len(atts) == 0 {
 		return nil
 	}
+	rs := &reviewSend{atts: atts, reports: reports}
 	if a.working() || a.preSend {
-		for _, att := range atts {
-			a.pendingActivitySends = append(a.pendingActivitySends, activitySend{label: att.Label, atts: []run.Attachment{att}})
-		}
+		a.pendingReview = rs
 		return nil
 	}
-	prompt := "Vulnetix review reports are attached. Triage the fixable findings: patch code findings (SAST, secrets, IaC, container, malscan) in the session and treat dependency findings with vulnetix fix. Propose or apply fixes per the normal permission rules."
-	return a.sendWithAttachments(prompt, atts, "")
+	return a.sendReview(rs)
+}
+
+// reviewSend is one classified /vulnetix review ready for its triage turn.
+type reviewSend struct {
+	atts    []run.Attachment
+	reports []explore.ReviewReport
+}
+
+// reviewPrompt is the triage turn's objective. How to remediate, when to defer
+// to the user and what the final report holds is the signet:vulnetix-review
+// profile's job; the per-scanner subagents' reports precede this turn and the
+// clarifier has already asked about findings with more than one fix.
+const reviewPrompt = "Remediate every finding of this Vulnetix review and write .vulnetix/signet/code-review-report.md. The per-scanner subagent reports precede this message; the scanner reports are attached."
+
+// sendReview starts the triage turn for a review. It switches the session to
+// agent mode with the signet:vulnetix-review profile engaged, as if the user
+// had picked it, so follow-up turns stay with the review agent until the user
+// clears it. Each scanner report rides on the turn input so the session runs
+// one subagent per scanner, and as an attachment so the model sees the
+// scanner's own finding list.
+func (a *App) sendReview(rs *reviewSend) tea.Cmd {
+	if a.mode != string(modes.ModeAgent) || a.namedAgent != profiles.ReviewProfile {
+		a.mode = string(modes.ModeAgent)
+		a.agentExplicit = true
+		a.setNamedAgent(profiles.ReviewProfile)
+		a.syncPlanMode() // drops a plan-mode or other-profile session
+		a.addSystem("agent: " + profiles.ReviewProfile)
+		a.relayout()
+	}
+	a.agentExplicit = true
+	a.reviewReports = rs.reports
+	a.forceMode = modes.ModeAgent
+	return a.sendWithAttachments(reviewPrompt, rs.atts, "")
 }
 
 func (a *App) handleVulnetixProbe(m vulnetixProbeMsg) tea.Cmd {

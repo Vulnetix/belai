@@ -208,6 +208,8 @@ import budgetsShot from '../../assets/shots/budgets.svg';
         The f8 roster splits a question across several read-only agents that run at the same time.
         Each one gets only the tools it is allowed to use, and their results are merged at the end.
         These agents have no write tools, so text they read can't get them to change files.
+        Each gets one narrow task and two to five rounds, depending on the kind of task, and reports
+        one <code class="mono">path:line</code> finding per line, capped at 6 KiB.
         When one runs out of budget it writes its report in a single pass with no tools, instead of
         reading on.
       </p>
@@ -265,7 +267,94 @@ import budgetsShot from '../../assets/shots/budgets.svg';
   </div>
 </SealedSection>
 
-<SealedSection label="processes" sealText="Supervised processes: !!cmd starts a long-lived command with no model turn, the library keeps it per project or globally, logs stream to disk, and a bounded recovery subagent may change flags but never the binary." id="processes">
+<SealedSection label="memory" sealText="Memory: SearchSessions, ReadSession and SearchMemory read the transcripts and memory files of other coding agents on this machine from a fixed registry, take no path argument, cite every hit, and always classify. Each turn also carries harness-computed git and forge facts and the read index, and plan and goal turns prefetch the instruction and changed files through a classified Read." id="memory">
+  <div class="prose-measure">
+    <h2 class="text-3xl font-bold text-vx-ink">Memory.</h2>
+    <p class="mt-4 text-vx-ink/80">
+      Other coding agents on your machine have probably explored this repository already. Signet can
+      search what they found instead of exploring again, and each turn starts with what the session
+      already knows about the repository, so the model does not have to ask again.
+    </p>
+  </div>
+
+  <div class="mt-10 grid gap-10 lg:grid-cols-2">
+    <div class="prose-measure">
+      <h3 class="text-xl font-bold text-vx-ink">Other agents on this machine.</h3>
+      <p class="mt-4 text-vx-ink/80">
+        <code class="mono">SearchSessions</code> searches past sessions with a regular expression, by default
+        only those recorded in the current project. <code class="mono">ReadSession</code> reads the turns
+        around a hit. <code class="mono">SearchMemory</code> searches memory and rules files such as{' '}
+        <code class="mono">AGENTS.md</code>, <code class="mono">CLAUDE.md</code>, <code class="mono">.cursorrules</code>{' '}
+        and each agent's memory folder. Every hit names the agent, session, turn, role, time and project it
+        came from, so the model can cite it.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        None of the three tools takes a path. Every location comes from a fixed list of known agent
+        stores, so they cannot be used to read any other file on the machine. They never write to another
+        agent's store. Text in those stores was written by other models, so every result is classified
+        before the model sees it, and the model is told that a hit is a record of what an agent once
+        wrote, to be checked against the current files.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        A search stops at 200 matches, 256 KiB or ten seconds, and the result says when it was cut short.
+      </p>
+    </div>
+    <div class="grid content-start gap-4 sm:grid-cols-2">
+      <div class="rounded-lg border border-vx-ink/30 p-4">
+        <h4 class="font-semibold text-vx-ink">Sessions</h4>
+        <p class="mt-2 text-sm text-vx-ink/80">Signet, Claude Code, Codex, pi, Goose, opencode, Copilot in VS Code, the Copilot CLI and Antigravity.</p>
+      </div>
+      <div class="rounded-lg border border-vx-ink/30 p-4">
+        <h4 class="font-semibold text-vx-ink">Prompt history</h4>
+        <p class="mt-2 text-sm text-vx-ink/80">With <code class="mono">prompts_only</code>, only the prompt history files are searched, which is faster.</p>
+      </div>
+      <div class="rounded-lg border border-vx-ink/30 p-4">
+        <h4 class="font-semibold text-vx-ink">Memory and rules</h4>
+        <p class="mt-2 text-sm text-vx-ink/80">Per-agent memory folders, Signet's saved goals, prompts and plans, and the usual rules files in your home folder and the workspace.</p>
+      </div>
+      <div class="rounded-lg border border-vx-ink/30 p-4">
+        <h4 class="font-semibold text-vx-ink">No new dependencies</h4>
+        <p class="mt-2 text-sm text-vx-ink/80">Uses <code class="mono">rg</code> to narrow the files when it is installed. Goose and opencode need <code class="mono">sqlite3</code> on PATH and are skipped, with the reason, without it.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-12 prose-measure">
+    <h3 class="text-xl font-bold text-vx-ink">What the session already knows.</h3>
+  </div>
+  <div class="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+    <div class="rounded-lg border border-vx-ink/30 p-4">
+      <h4 class="font-semibold text-vx-ink">Git and forge facts</h4>
+      <p class="mt-2 text-sm text-vx-ink/80">
+        Every turn carries the upstream with ahead and behind counts, the worktrees, and, when{' '}
+        <code class="mono">gh</code> or <code class="mono">glab</code> answers, the PR or MR number, its state and
+        CI counts. The facts refresh in the background and a turn never waits for the network. PR titles,
+        check names and other forge text are left out. The model reads those through{' '}
+        <code class="mono">GH</code> or <code class="mono">Glab</code>, which classify.
+      </p>
+    </div>
+    <div class="rounded-lg border border-vx-ink/30 p-4">
+      <h4 class="font-semibold text-vx-ink">Read index</h4>
+      <p class="mt-2 text-sm text-vx-ink/80">
+        When the model reads an unchanged file again and the earlier copy is still in the conversation,
+        it gets a short note instead: the path, the lines, the size and the git blob id. The index stores
+        those facts, never file contents. Any edit, a changed timestamp or a file whose read was withheld
+        sends the next read to disk and through the classifier as usual.
+      </p>
+    </div>
+    <div class="rounded-lg border border-vx-ink/30 p-4">
+      <h4 class="font-semibold text-vx-ink">Context prefetch</h4>
+      <p class="mt-2 text-sm text-vx-ink/80">
+        Plan and goal turns, and approved plans, start by reading <code class="mono">AGENTS.md</code>,{' '}
+        <code class="mono">CLAUDE.md</code> and the files changed in the working tree. The reads use the
+        session's own <code class="mono">Read</code> and are classified the same way. They stop at 12 files,
+        48 KiB per file and 128 KiB in total, and a file a permission rule would ask about is skipped.
+      </p>
+    </div>
+  </div>
+</SealedSection>
+
+<SealedSection label="processes"sealText="Supervised processes: !!cmd starts a long-lived command with no model turn, the library keeps it per project or globally, logs stream to disk, and a bounded recovery subagent may change flags but never the binary. The f9 runs panel cycles activity, subagents, processes, git and ci; the git tab manages worktrees and opens a PR or MR behind a confirmation, and forge text stays in the panel." id="processes">
   <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
     <div class="prose-measure">
       <h2 class="text-3xl font-bold text-vx-ink">Supervised processes.</h2>
@@ -282,9 +371,9 @@ import budgetsShot from '../../assets/shots/budgets.svg';
         process is already running, it isn't started again, and its status is shown either way.
         <code class="mono">/processes</code> manages the library across project and global scope. Output
         streams to a log file under <code class="mono">~/.vulnetix/signet/logs</code> and into the{' '}
-        <code class="mono">f9</code> runs panel. The panel opens on the activity tab; press{' '}
-        <code class="mono">tab</code> to cycle to the processes tab, which lists only currently-running
-        processes from the library. From there <code class="mono">enter</code> or <code class="mono">v</code>{' '}
+        <code class="mono">f9</code> runs panel. The panel opens on the activity tab, and{' '}
+        <code class="mono">tab</code> cycles through activity, subagents, processes, git and ci. The
+        processes tab lists only the library's running processes. From there <code class="mono">enter</code> or <code class="mono">v</code>{' '}
         opens the live tail full-screen, <code class="mono">x</code> stops the selected process, and{' '}
         <code class="mono">r</code> restarts it. The log stays on disk, so you can still open the tail after
         the process has finished.
@@ -297,12 +386,23 @@ import budgetsShot from '../../assets/shots/budgets.svg';
         apply, and each attempt uses one of the <code class="mono">resilience.max_process_recoveries</code>{' '}
         slots. When they run out, the process is marked failed and no more model calls are made.
       </p>
+      <p class="mt-4 text-vx-ink/80">
+        The git tab shows the branch and its upstream, the origin URL with credentials masked, the open
+        PR or MR, and every worktree. <code class="mono">enter</code> moves the session into a worktree,{' '}
+        <code class="mono">a</code> adds one, <code class="mono">x</code> removes one after a confirmation, and{' '}
+        <code class="mono">p</code> opens a PR or MR after a confirmation that names the forge, repository and
+        branch. Turning guardrails off does not skip that confirmation. The ci tab lists the checks or
+        pipeline jobs for the branch, and appears only when there is an open PR or MR. Signet runs{' '}
+        <code class="mono">git</code>, <code class="mono">gh</code> and <code class="mono">glab</code> with fixed
+        arguments, and those CLIs keep their own credentials. Text the forge returns, such as PR titles and
+        check names, is shown in the panel only. It is never sent to the model.
+      </p>
     </div>
     <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={processSupervision} /></div>
   </div>
 </SealedSection>
 
-<SealedSection label="budgets" sealText="Token budgets: a global allowance per provider and model for the session, the local day and the local month. Every completed model call counts, classifier and role-manager calls included. The footer shows the selected model's budget right-aligned and cycles between them; teal while tokens last as long as the clock, amber when spend runs ahead of it, red when exhausted. Budgets warn; they never block." id="budgets">
+<SealedSection label="budgets" sealText="Token budgets: a global allowance per provider and model for the session, the local day and the local month. Every completed model call counts, classifier and role-manager calls included. The footer shows the selected model's budget right-aligned and cycles between them; teal while tokens last as long as the clock, amber when spend runs ahead of it, red when exhausted. Past sessions are imported from their transcripts once, so day and month totals cover every project. Budgets warn; they never block." id="budgets">
   <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
     <div class="prose-measure">
       <h2 class="text-3xl font-bold text-vx-ink">Token budgets.</h2>
@@ -319,6 +419,14 @@ import budgetsShot from '../../assets/shots/budgets.svg';
         every classifier and role-manager call. When a provider reports no usage, Signet estimates it and
         marks it as estimated. Usage is kept in one ledger shared by every signet process, headless runs
         included.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        Day and month budgets count every project's sessions, including sessions from before budgets
+        existed. When the TUI starts, it reads the saved transcripts the ledger has not seen yet in the
+        background and adds their usage. A goal run adds its exact token count, split across the days it
+        ran. For other turns, a transcript keeps only the usage of the last model call, so the imported
+        figure is a lower bound. A session is never counted twice, even when two signet windows import at
+        the same time.
       </p>
       <p class="mt-4 text-vx-ink/80">
         With <code class="mono">defined</code> routing, the footer's top line shows the selected model's
@@ -377,16 +485,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
         engines combine.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        One-word verdicts (mode selection, the session name, and the plan and goal evaluators) go to a
-        small fast-tier model, such as <code class="mono">claude-haiku-4-5</code> for Anthropic or{' '}
-        <code class="mono">gpt-5-mini</code> for OpenAI, which can be from a different provider. Work that
-        shapes the result (compaction, the goal contract, clarifying questions and the final report) stays
-        on your main model. The security classifier also stays on the main model unless you set{' '}
-        <code class="mono">classifier.tier</code> to <code class="mono">fast</code>. <code class="mono">/model</code>{' '}
-        opens with a summary of which model answers what. Routing can still set a model per task.
-        Press <code class="mono">tab</code> in chat, or anywhere on <code class="mono">/model</code>, to cycle model mode
-        between <code class="mono">routed</code> and <code class="mono">defined</code>; the footer switches between the
-        smart-model-router count and the single provider/model as it changes.
+        Which model answers each kind of call is covered under <a href="#routing" class="underline">model routing</a>.
       </p>
     </div>
     <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={credRes} /></div>
@@ -402,7 +501,67 @@ import budgetsShot from '../../assets/shots/budgets.svg';
   </div>
 </SealedSection>
 
-<SealedSection label="vulnetix" sealText="Vulnetix integration: the AI Firewall routes traffic, nine code scanners run in parallel lanes, findings come back as classified triage with a dry-run fix plan, and /vulnetix review, firewall, and status are built in. Free for everyone." id="vulnetix">
+<SealedSection label="routing" sealText="Model routing: the model you pick does the work, a fast tier answers one-token verdicts and drafts the goal contract, and routed mode lets Jev pick a model per use case from your candidate list, falling back to the main model when it cannot decide. The security classifier never follows the routing table. tab cycles defined and routed." id="routing">
+  <div class="prose-measure">
+    <h2 class="text-3xl font-bold text-vx-ink">Model routing.</h2>
+    <p class="mt-4 text-vx-ink/80">
+      A single prompt can make several model calls before the first edit: picking the mode, naming the
+      session, checking the plan or goal, drafting the goal contract. Most of those return one token.
+      Routing decides which model answers each call, so the model you picked is spent on the work itself.
+    </p>
+    <p class="mt-4 text-vx-ink/80">
+      The fast tier is on by default. It uses the provider's own small model on the same credentials:{' '}
+      <code class="mono">claude-haiku-4-5</code> for Anthropic, <code class="mono">gpt-5-mini</code> for OpenAI,{' '}
+      <code class="mono">gemini-2.0-flash</code> for Google and a matching model for Groq, Mistral and xAI.{' '}
+      <code class="mono">routing.fast_model</code> can point it at another provider. Mode selection, the
+      session name, the plan, goal and agent verdicts and the goal-contract draft go to the fast tier.
+      Compaction, clarifying questions and the final report stay on your main model, because their output
+      shapes the rest of the work.
+    </p>
+    <p class="mt-4 text-vx-ink/80">
+      <code class="mono">routing.kind</code> is <code class="mono">defined</code> by default: your main model
+      answers everything the fast tier does not. Set it to <code class="mono">routed</code> and list candidate
+      models under <code class="mono">routing.use_cases</code>. On the first call for a use case, the Jev
+      Decisions API scores the candidates and Signet keeps the winner for the rest of the session. A failed
+      call, a tie, or a winner that is not in your list falls back to the main model, so routing can slow
+      a call down but never drop one. Fast-tier calls skip Jev entirely.
+    </p>
+    <p class="mt-4 text-vx-ink/80">
+      The security classifier is not part of routing. It stays on the main model, or on the classifier
+      models you configured, unless you set <code class="mono">classifier.tier</code> to{' '}
+      <code class="mono">fast</code>. A smaller guard is easier to talk past, so moving it is your choice
+      to make. Routing is a cost and speed setting, not a security boundary.
+    </p>
+  </div>
+  <div class="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+    <div class="rounded-lg border border-vx-ink/30 p-4">
+      <h3 class="font-semibold text-vx-ink">Nine use cases</h3>
+      <p class="mt-2 text-sm text-vx-ink/80"><code class="mono">main</code>, <code class="mono">mode_eval</code>, <code class="mono">goal_eval</code>, <code class="mono">plan_eval</code>, <code class="mono">goal_contract</code>, <code class="mono">clarify</code>, <code class="mono">compaction</code>, <code class="mono">session_name</code> and <code class="mono">agent_eval</code>.</p>
+    </div>
+    <div class="rounded-lg border border-vx-ink/30 p-4">
+      <h3 class="font-semibold text-vx-ink">tab to switch</h3>
+      <p class="mt-2 text-sm text-vx-ink/80">In chat or on <code class="mono">/model</code>, <code class="mono">tab</code> toggles between defined and routed. The footer then shows either the one model in use or the number of models the router has active.</p>
+    </div>
+    <div class="rounded-lg border border-vx-ink/30 p-4">
+      <h3 class="font-semibold text-vx-ink">/model says what is in effect</h3>
+      <p class="mt-2 text-sm text-vx-ink/80">The screen opens with four lines: which model does the work, the verdicts, the drafting and the security check, resolved from the live settings.</p>
+    </div>
+    <div class="rounded-lg border border-vx-ink/30 p-4">
+      <h3 class="font-semibold text-vx-ink">Checked at load</h3>
+      <p class="mt-2 text-sm text-vx-ink/80">A candidate needs a provider or a model, and the provider must be one Signet knows. A bad routing table stops startup instead of sending traffic somewhere unexpected.</p>
+    </div>
+    <div class="rounded-lg border border-vx-ink/30 p-4">
+      <h3 class="font-semibold text-vx-ink">Per project, key by key</h3>
+      <p class="mt-2 text-sm text-vx-ink/80">A project's settings can change one use case without repeating the global table.</p>
+    </div>
+    <div class="rounded-lg border border-vx-ink/30 p-4">
+      <h3 class="font-semibold text-vx-ink">Counted where served</h3>
+      <p class="mt-2 text-sm text-vx-ink/80">Every routed or fast-tier call counts against the <a href="#budgets" class="underline">budget</a> of the model that answered it.</p>
+    </div>
+  </div>
+</SealedSection>
+
+<SealedSection label="vulnetix" sealText="Vulnetix integration: the AI Firewall routes traffic, nine code scanners run in parallel lanes, findings come back as classified triage with one read-only subagent per scanner, a question when a finding has more than one fix, a dry-run fix plan, and a code-review report, and /vulnetix review, firewall, and status are built in. Free for everyone." id="vulnetix">
   <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
     <div class="order-2 lg:order-1 rounded-lg border border-vx-ink p-2" aria-hidden="true">
       <img src={footerShot.src} alt="The status footer showing the firewall chip" class="block h-auto w-full" loading="lazy" />
@@ -433,9 +592,21 @@ import budgetsShot from '../../assets/shots/budgets.svg';
       </p>
       <p class="mt-4 text-vx-ink/80">
         Findings come back for triage. Report blocks are size-limited, sanitised and classified, and
-        are dropped unless the classifier passes them. Dependency findings go to a{' '}
+        are dropped unless the classifier passes them. Each scanner's report then goes to its own
+        read-only subagent (<code class="mono">r1</code>, <code class="mono">r2</code> and so on in the runs
+        panel), on the fast tier when there is one. The subagent checks every finding against the
+        repository and returns one line per finding: a verdict, plus a fix, a list of options, or a note
+        that there is no fix.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        When a finding has more than one reasonable fix, Signet asks you which one to use before any
+        change is made. The session then switches to agent mode with the built-in{' '}
+        <code class="mono">signet:vulnetix-review</code> profile, which sees every subagent report together,
+        since findings from different scanners often have the same cause. Dependency findings go to a{' '}
         <code class="mono">vulnetix fix</code> plan, which is a dry run unless you turned on autofix. Code
-        findings go to the current session and use the normal permission prompts.
+        findings are patched in the session under the normal permission prompts. The review ends by writing{' '}
+        <code class="mono">.vulnetix/signet/code-review-report.md</code> with three lists: what was fixed,
+        what needs your decision, and what could not be resolved, with the reason for each.
       </p>
       <p class="mt-4 text-vx-ink/80">
         Vulnetix also provides an <a class="underline" href="https://www.vulnetix.com/features/mcp-server">MCP server</a>.{' '}

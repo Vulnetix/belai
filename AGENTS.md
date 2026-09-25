@@ -29,7 +29,10 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `JQ`, `YQ`, `Sed`, `Awk`, `Cut`, `Sort`, `Uniq`, `Tr`, `Paste`, `Join`,
   `Diff` (all `KindRead`), `SubAgentLog` (`KindProcess`),
   `SearchSessions`/`ReadSession`/`SearchMemory` (`KindAgentStore`, other
-  agents' transcript and memory text), the recovery subagent's
+  agents' transcript and memory text), the `Vulnetix` tool (`KindRemote`,
+  database advisory text and repository snippets), the dependency hook's Vulnetix CLI
+  output (`KindRemote`) and its background agents' reports (`KindProcess`,
+  `internal/tui/depwatch.go`), the recovery subagent's
   process-tail briefing and the plan/goal context prefetch
   (`agent/prefetch.go`: instruction and changed files, read through the
   session's own `Read` and gated exactly like its result) all classify,
@@ -130,6 +133,17 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   one.
 - **Classifier turns are tool-less.** The classifier payload carries no tools,
   no skills, and no agent block.
+- **The dependency hook is deterministic up to one sentinel.** A file
+  triggers it only by matching the manifest table ported from the Vulnetix
+  CLI (`internal/depwatch`, kept in step by a test against `../cli`). The
+  fast-tier `dep_change` role sees only a sanitized, bounded line digest of
+  the change, answers `DEPS_CHANGED`/`DEPS_UNCHANGED`, and fails toward
+  checking: a malformed reply, a transport error or an undiffable file is
+  checked. The CLI argv is fixed by the harness. The per-ecosystem
+  `signet:deps-*` background agents are read-only (`Read`, `Grep`, `Glob`):
+  they never install or run a package manager, so a malicious package's
+  install scripts never run on their account. A repo-visible project
+  settings file may turn `vulnetix.dep_watch` on, never off.
 - **The goal contract is classifier-drafted but harness-sealed.** The
   classifier-routed goal path asks the goal-contract role for the five
   sections beneath the verbatim objective line. The draft is sanitized before

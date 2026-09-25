@@ -344,3 +344,48 @@ func TestPlanGoalSurveyTargetsEdits(t *testing.T) {
 		}
 	}
 }
+
+// PlanReview gives every non-empty scanner report its own subagent task that
+// carries the report as evidence (never in the prompt text), asks for the
+// remediation paths, and gets the larger review report bound.
+func TestPlanReview(t *testing.T) {
+	reports := []ReviewReport{
+		{Scanner: "sast", Label: "sast report", Body: "S1 high a.go:1"},
+		{Scanner: "iac", Label: "iac report", Body: "   "},
+		{Label: "sbom report", Body: "CVE-2026-0001 critical"},
+	}
+	tasks := PlanReview("remediate the review", reports)
+	if len(tasks) != 2 {
+		t.Fatalf("tasks = %d, want 2 (the empty report is skipped)", len(tasks))
+	}
+	for i, tk := range tasks {
+		if tk.Index != i {
+			t.Errorf("task %d Index = %d", i, tk.Index)
+		}
+		if tk.Budget != budgetReview || tk.ReportBytes != ReviewReportBytes {
+			t.Errorf("task %d budget/report = %d/%d", i, tk.Budget, tk.ReportBytes)
+		}
+		if strings.Contains(tk.Prompt, tk.Evidence) {
+			t.Errorf("task %d splices its evidence into the prompt", i)
+		}
+		for _, want := range []string{"remediate the review", "options:", "none:", "read-only"} {
+			if !strings.Contains(tk.Prompt, want) {
+				t.Errorf("task %d prompt lacks %q", i, want)
+			}
+		}
+	}
+	if tasks[0].Reference != "vulnetix sast" || tasks[0].Evidence != "S1 high a.go:1" || tasks[0].EvidenceLabel != "sast report" {
+		t.Errorf("sast task = %+v", tasks[0])
+	}
+	if tasks[1].Reference != "vulnetix sbom report" {
+		t.Errorf("a report with no scanner name falls back to its label, got %q", tasks[1].Reference)
+	}
+
+	many := make([]ReviewReport, MaxTasks+3)
+	for i := range many {
+		many[i] = ReviewReport{Scanner: "s", Body: "x"}
+	}
+	if got := len(PlanReview("p", many)); got != MaxTasks {
+		t.Errorf("fan-out = %d, want the MaxTasks cap %d", got, MaxTasks)
+	}
+}

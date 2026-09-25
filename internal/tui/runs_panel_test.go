@@ -11,7 +11,10 @@ import (
 
 	"github.com/vulnetix/signet/internal/activity"
 	"github.com/vulnetix/signet/internal/commands"
+	"github.com/vulnetix/signet/internal/explore"
+	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/posture"
+	"github.com/vulnetix/signet/internal/profiles"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/tui/components"
 )
@@ -53,9 +56,9 @@ func TestTabSwitchesRunsTabs(t *testing.T) {
 	}
 }
 
-// A finished /vulnetix review queues its sanitized report blocks as file
-// attachments while a turn is in flight, so the triage hand-off never drops a
-// report.
+// A finished /vulnetix review queues its sanitized report blocks — as file
+// attachments and as one per-scanner subagent report each — while a turn is
+// in flight, so the triage hand-off never drops a report.
 func TestSendVulnetixTriageQueuesAttachments(t *testing.T) {
 	a := New(Options{})
 	a.posture = posture.AllIgnore()
@@ -68,15 +71,90 @@ func TestSendVulnetixTriageQueuesAttachments(t *testing.T) {
 	if cmd := a.sendVulnetixTriage(blocks); cmd != nil {
 		t.Fatalf("in-flight triage must queue, not send: %v", cmd)
 	}
-	if len(a.pendingActivitySends) != 2 {
-		t.Fatalf("queued sends = %d, want 2", len(a.pendingActivitySends))
+	rs := a.pendingReview
+	if rs == nil || len(rs.atts) != 2 || len(rs.reports) != 2 {
+		t.Fatalf("queued review = %+v, want 2 attachments and 2 reports", rs)
 	}
-	first := a.pendingActivitySends[0].atts[0]
+	first := rs.atts[0]
 	if first.Kind != "file" || first.Label != "sast report" {
 		t.Fatalf("attachment = %+v, want a file labelled sast report", first)
 	}
 	if strings.Contains(first.Body, "<system>") || !strings.Contains(first.Body, "S1 high a.go:1") {
 		t.Fatalf("attachment body was not sanitized: %q", first.Body)
+	}
+	if r := rs.reports[0]; r.Scanner != "sast" || r.Body != first.Body {
+		t.Fatalf("subagent report = %+v, want the sast scanner with the sanitized body", r)
+	}
+}
+
+// A queued review flushes first and on its own when the turn goes idle: its
+// reports ride on the turn input for the per-scanner subagents and the turn
+// carries the review agent. Activity outputs
+// wait for the next idle.
+func TestFlushPendingReviewFirst(t *testing.T) {
+	a := New(Options{})
+	a.mode = string(modes.ModeAgent)
+	a.pendingReview = &reviewSend{
+		atts:    []run.Attachment{{Kind: "file", Label: "sast report", Body: "S1"}},
+		reports: []explore.ReviewReport{{Scanner: "sast", Label: "sast report", Body: "S1"}},
+	}
+	a.pendingActivitySends = []activitySend{{label: "a", atts: []run.Attachment{{Kind: "shell", Label: "a", Body: "x"}}}}
+	if cmd := a.flushPendingActivitySends(); cmd == nil {
+		t.Fatal("idle flush must send the review")
+	}
+	if a.pendingReview != nil {
+		t.Fatal("flush must drain the queued review")
+	}
+	if len(a.pendingActivitySends) != 1 {
+		t.Fatalf("activity sends must wait for the next idle, got %d", len(a.pendingActivitySends))
+	}
+	var sent bool
+	for _, m := range a.messages {
+		sent = sent || (m.Role == "user" && strings.Contains(m.Content, "code-review-report.md"))
+	}
+	if !sent {
+		t.Fatal("the review turn must carry the review objective")
+	}
+}
+
+// sendReview switches to agent mode with the signet:vulnetix-review profile
+// engaged from whatever mode or agent the user was in, and keeps it engaged
+// like a picker choice so the mode classifier cannot drop it on a follow-up.
+func TestSendReviewEngagesReviewProfile(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	for _, c := range []struct {
+		mode  modes.Mode
+		agent string
+	}{
+		{modes.ModeAgent, ""},
+		{modes.ModeAgent, profiles.DebugProfile},
+		{modes.ModeGoal, ""},
+		{modes.ModePlan, ""},
+	} {
+		a := New(Options{Workdir: t.TempDir()})
+		a.mode = string(c.mode)
+		a.planMode = c.mode == modes.ModePlan
+		a.setNamedAgent(c.agent)
+		a.status.Configured = false // stop at the credential check, before the mode is consumed
+		_ = a.sendReview(&reviewSend{reports: []explore.ReviewReport{{Scanner: "sast", Body: "S1"}}})
+		if a.mode != string(modes.ModeAgent) || a.planMode || a.forceMode != modes.ModeAgent {
+			t.Errorf("from %s/%q: mode = %s (plan %v, force %q), want agent", c.mode, c.agent, a.mode, a.planMode, a.forceMode)
+		}
+		if a.engagedAgent() != profiles.ReviewProfile || !a.agentExplicit {
+			t.Errorf("from %s/%q: engaged = %q (explicit %v), want %s", c.mode, c.agent, a.engagedAgent(), a.agentExplicit, profiles.ReviewProfile)
+		}
+		if a.reviewReports != nil {
+			t.Errorf("from %s/%q: reviewReports must not outlive a send that never started", c.mode, c.agent)
+		}
+	}
+}
+
+// The review profile ships built in, so the switch never falls back to the
+// default agent.
+func TestReviewProfileIsBuiltin(t *testing.T) {
+	p, err := profiles.Load(profiles.ReviewProfile)
+	if err != nil || !p.Builtin || !strings.Contains(p.Content, "code-review-report.md") {
+		t.Fatalf("Load(%s) = %+v, %v", profiles.ReviewProfile, p, err)
 	}
 }
 
@@ -310,5 +388,25 @@ func TestRunsPanelFrameDoesNotOverflow(t *testing.T) {
 				t.Fatalf("size %dx%d: panel height %d > h/3", w, h, ph)
 			}
 		}
+	}
+}
+
+// A sent activity carries its recorded facts and an ask, so the model does not
+// spend tool calls rediscovering the command, directory and exit status.
+func TestActivityDirective(t *testing.T) {
+	start := time.Unix(1000, 0)
+	failed := activity.Activity{
+		Kind: activity.KindVulnetix, Label: "vulnetix fix", Argv: []string{"/bin/vulnetix", "--no-banner", "fix", "--dry-run"},
+		Dir: "/repo", State: activity.StateFailed, ExitCode: 1, Started: start, Ended: start.Add(95 * time.Second),
+	}
+	d := activityDirective(failed)
+	for _, want := range []string{"`vulnetix fix` ran as `/bin/vulnetix --no-banner fix --dry-run` in /repo", "exited 1", "after 1m35s", "Diagnose the failure", "Vulnetix tool"} {
+		if !strings.Contains(d, want) {
+			t.Errorf("directive lacks %q: %s", want, d)
+		}
+	}
+	ok := activity.Activity{Kind: activity.KindShell, Label: "!ls", Argv: []string{"ls"}, Dir: "/repo", State: activity.StateDone}
+	if d := activityDirective(ok); !strings.Contains(d, "exited 0") || strings.Contains(d, "Diagnose") || strings.Contains(d, "Vulnetix tool") {
+		t.Errorf("success directive = %s", d)
 	}
 }

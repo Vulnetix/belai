@@ -519,7 +519,9 @@ Interactive default. Profiles (`internal/profiles`, stored under
 `~/.vulnetix/signet/profiles/`) are selectable at startup and mid-session via
 `/profile`. Built-in profiles live under the `signet:` namespace; the debug
 profile (`signet:debug`) is automatically engaged for `!cmd` inline-shell
-round-trips. User files cannot shadow a built-in name.
+round-trips, and a finished `/vulnetix review` switches the session to agent
+mode with `signet:vulnetix-review` engaged (see [vulnetix.md](vulnetix.md)).
+User files cannot shadow a built-in name.
 
 Agent and goal mode carry a short *work-discipline* section in the system
 prompt that tells the model to start editing as soon as the change is clear and
