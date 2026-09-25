@@ -128,6 +128,16 @@ type VulnetixSettings struct {
 	// FirewallEnabled routes the session's LLM traffic through the Vulnetix AI
 	// Firewall gateway. Default false.
 	FirewallEnabled *bool `json:"firewall_enabled,omitempty"`
+	// DepWatch runs the dependency-manifest hook: a manifest the session
+	// changes is checked with the Vulnetix CLI when the change added or
+	// updated dependencies. Default true; false turns the hook off.
+	DepWatch *bool `json:"dep_watch,omitempty"`
+}
+
+// DepWatchEnabled reports whether the dependency-manifest hook runs. Default
+// true.
+func (s *VulnetixSettings) DepWatchEnabled() bool {
+	return s == nil || s.DepWatch == nil || *s.DepWatch
 }
 
 // GatewayURLOrDefault returns the configured gateway URL, or the default.
@@ -857,6 +867,17 @@ func (s Settings) Override(proj Settings) Settings {
 			out.Vulnetix = &VulnetixSettings{}
 		}
 		out.Vulnetix.FirewallEnabled = &f
+	}
+	// Likewise the dependency hook: a project file may turn it on, never off.
+	if proj.Vulnetix != nil && proj.Vulnetix.DepWatch != nil && *proj.Vulnetix.DepWatch {
+		t := true
+		if out.Vulnetix == nil {
+			out.Vulnetix = &VulnetixSettings{}
+		} else {
+			v := *out.Vulnetix
+			out.Vulnetix = &v
+		}
+		out.Vulnetix.DepWatch = &t
 	}
 	if proj.BashReadOnly != nil || proj.ReadOnly != nil {
 		if proj.ReadOnly != nil {

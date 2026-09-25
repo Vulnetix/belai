@@ -82,7 +82,9 @@ type AgentInstance struct {
 	// resume wakes a paused loop-mode agent. Buffered size 1 so Resume never
 	// blocks the UI; the loop re-checks State after waking.
 	resume chan struct{}
-	mu     sync.Mutex
+	// task is consumed by the first turn (see StartTask).
+	task Task
+	mu   sync.Mutex
 }
 
 // Manager owns a map of active background agents.
@@ -176,6 +178,20 @@ func (m *Manager) Start(name string, profile agentprofile.AgentProfile) error {
 // session's working directory, so the agent operates in project B while the
 // TUI session remains in project A.
 func (m *Manager) StartIn(workdir, name string, profile agentprofile.AgentProfile) error {
+	return m.StartTask(workdir, name, profile, Task{})
+}
+
+// Task is a harness-composed job for one background run: a prompt appended
+// to the profile's own, and attachments the caller has already sanitized and
+// classified (never raw repository or remote bytes). It rides on the first
+// turn only.
+type Task struct {
+	Prompt      string
+	Attachments []run.Attachment
+}
+
+// StartTask is StartIn with a task for the agent's first turn.
+func (m *Manager) StartTask(workdir, name string, profile agentprofile.AgentProfile, task Task) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, exists := m.agents[name]; exists {
@@ -190,6 +206,7 @@ func (m *Manager) StartIn(workdir, name string, profile agentprofile.AgentProfil
 		resume:  make(chan struct{}, 1),
 		workdir: workdir,
 		live:    posture.NewLive(choosePosture(m.posture, workdir), false),
+		task:    task,
 	}
 	m.agents[name] = inst
 	go m.runLoop(ctx, inst)
@@ -545,6 +562,17 @@ func (m *Manager) executeTurn(ctx context.Context, inst *AgentInstance) {
 		promptText = "Before acting, emit a <thinking> block with your reasoning, then proceed.\n\n" + promptText
 	}
 	in := agent.TurnInput{Prompt: promptText}
+	inst.mu.Lock()
+	task := inst.task
+	inst.task = Task{}
+	inst.mu.Unlock()
+	if task.Prompt != "" {
+		in.Prompt += "\n\nTask:\n" + task.Prompt
+	}
+	if len(task.Attachments) > 0 {
+		in.Attachments = task.Attachments
+		in.HasReferences = true
+	}
 	ch := sess.RunStream(ctx, history, in)
 	for e := range ch {
 		inst.pushEvent(m.wrapEvent(inst.Profile.Name, e))
@@ -617,7 +645,7 @@ func (m *Manager) buildSession(inst *AgentInstance) (*agent.Session, error) {
 		Workdir:       workdir,
 		Settings:      m.settings,
 		PromptOptions: promptOpts,
-		MaxIterations: 1,
+		MaxIterations: sessionRounds(profile),
 		Caps:          caps,
 		RepoIndex:     ix,
 		// The plan-mode surface is frozen for this session: GuardrailsOff reads
@@ -630,6 +658,18 @@ func (m *Manager) buildSession(inst *AgentInstance) (*agent.Session, error) {
 		// syntax checks still honour the user's settings.
 		Diagnostics: rolemanager.DiagnosticsGateFromSettings(m.settings, reg.Cwd().Roots(), false),
 	})
+}
+
+// sessionRounds is the tool-round budget of one background turn. A looping
+// mode spends max_iterations on turns, one round each, so its turns stay one
+// round. A single run has one turn, so max_iterations is that turn's round
+// budget: a one-round triage cannot read a manifest, grep for its importers
+// and answer.
+func sessionRounds(p agentprofile.AgentProfile) int {
+	if p.Mode == agentprofile.ModeSingle && p.MaxIterations > 1 {
+		return p.MaxIterations
+	}
+	return 1
 }
 
 // choosePosture returns the stricter of the manager's current posture and the

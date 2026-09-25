@@ -189,6 +189,18 @@ func (e *Effective) apply(s Settings, src Source) {
 			e.Origin["firewall_enabled"] = src
 		}
 	}
+	if s.Vulnetix != nil && s.Vulnetix.DepWatch != nil {
+		// The dependency hook is a check, like the guardrails: a repo-visible
+		// project layer may turn it on but never off, so a cloned repository
+		// cannot silence the check on the dependencies it asks you to add.
+		if *s.Vulnetix.DepWatch || src != SourceProject {
+			if e.Settings.Vulnetix == nil {
+				e.Settings.Vulnetix = &VulnetixSettings{}
+			}
+			e.Settings.Vulnetix.DepWatch = s.Vulnetix.DepWatch
+			e.Origin["dep_watch"] = src
+		}
+	}
 	if s.ReadOnly != nil || s.BashReadOnly != nil {
 		if s.ReadOnly != nil {
 			e.Settings.ReadOnly = s.ReadOnly

@@ -81,3 +81,28 @@ func TestRefusalErrorUsesLabel(t *testing.T) {
 		t.Errorf("RefusalError.Error() = %q, want %q", got, want)
 	}
 }
+
+func TestDepSentinelLabelsAreDefined(t *testing.T) {
+	cases := []struct {
+		s    DepSentinel
+		want string
+	}{
+		{DepsChanged, "dependencies were added or updated"},
+		{DepsUnchanged, "no dependency changed"},
+	}
+	for _, c := range cases {
+		if got := c.s.Label(); got != c.want {
+			t.Errorf("%q.Label() = %q, want %q", c.s, got, c.want)
+		}
+	}
+	if len(DepSentinelLabels) != len(cases) {
+		t.Errorf("DepSentinelLabels has %d entries, want %d", len(DepSentinelLabels), len(cases))
+	}
+}
+
+func TestDepSentinelLabelFallback(t *testing.T) {
+	unknown := DepSentinel("UNKNOWN")
+	if got := unknown.Label(); got != string(unknown) {
+		t.Errorf("unknown label fallback = %q, want %q", got, string(unknown))
+	}
+}

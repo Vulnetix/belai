@@ -507,6 +507,7 @@ var fastUseCases = map[string]bool{
 	rolemanager.UseCaseAgentEval:    true,
 	rolemanager.UseCaseGoalContract: true,
 	rolemanager.UseCaseClarify:      true,
+	rolemanager.UseCaseDepChange:    true,
 }
 
 // IsFastUseCase reports whether a use case defaults to the fast tier.

@@ -7,7 +7,7 @@ import footerShot from '../../assets/shots/footer.svg';
 import budgetsShot from '../../assets/shots/budgets.svg';
 
 const sealText =
-  'Quality of life: smaller features you would otherwise add through a skills.md. First-run trust gate, prompt library, one composer history for prompts and commands, repo map, work-discipline prompt section, identity block, capability auth probes, diff in the approval prompt, a todo panel that only trusts assistant text, sessions and compaction, /settings with provenance, no alt bindings ever, /help guarded by a test, caveman mode, per-project session toggles, classifier verdicts in the internal-work feed, token budgets per model in the footer, and a self-update that stays in its asset family.';
+  'Quality of life: smaller features you would otherwise add through a skills.md. First-run trust gate, prompt library, one composer history for prompts and commands, repo map, work-discipline prompt section, identity block, capability auth probes, diff in the approval prompt, a todo panel that only trusts assistant text, sessions and compaction, /settings with provenance, no alt bindings ever, /help guarded by a test, caveman mode, per-project session toggles, classifier verdicts in the internal-work feed, a shell panel for !cmd with the raw output, transcript rows stamped when they happen with durations, token budgets per model in the footer, and a self-update that stays in its asset family.';
 
 const benefits = [
   ['first-run trust gate', 'A directory Signet has never seen blocks startup until you say yes, before any settings merge, repo scan or auto-started process.'],
@@ -24,6 +24,8 @@ const benefits = [
   ['/help guarded by a test', 'A test compares the help text with the real key bindings.'],
   ['caveman mode', 'An optional voice that makes replies short and plain.'],
   ['session toggles per project', 'Toggles such as guardrails and ask-permission are saved for each repository.'],
+  ['!cmd gets its own shell panel', 'A !cmd shows its raw output in a panel, live while it runs. The model only gets the sanitised, classified copy, and the panel marks the output "not sent" when that copy is withheld. ctrl+o expands it, ctrl+c copies it and ctrl+s saves it.'],
+  ['timestamps and durations in the transcript', 'Each transcript row is stamped when its event happened, and tool calls, model replies and classifier decisions record how long they took, so a slow session shows where the time went.'],
   ['classifier verdicts in the feed', 'When a result is blocked, the internal-work feed shows which phase blocked it and what it returned.'],
   ['token budgets per model', 'Session, day and month allowances per provider and model, counted across every model call and every signet process, shown right-aligned in the footer: teal on pace, amber when spend runs ahead of the clock, red when spent.'],
   ['self-update stays in its family', 'A guardrails binary updates to the next guardrails build, so it keeps its embedded model.'],

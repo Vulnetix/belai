@@ -129,6 +129,9 @@ type Bash struct {
 	ReadOnly bool
 	Timeout  time.Duration
 	MaxBytes int
+	// Vulnetix is set when the Vulnetix tool is registered: a command that
+	// runs the vulnetix binary is refused with a pointer to that tool.
+	Vulnetix bool
 }
 
 // Bash time limits, in the trained shape: timeout is milliseconds.
@@ -220,6 +223,10 @@ func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink
 	cmd, ok := args["command"].(string)
 	if !ok || strings.TrimSpace(cmd) == "" {
 		return Result{}, fmt.Errorf("missing command argument")
+	}
+
+	if b.Vulnetix && VulnetixInCommand(cmd) {
+		return Result{}, fmt.Errorf("run vulnetix with the Vulnetix tool, not Bash: pass the arguments after `vulnetix` as its command (it adds --no-progress, scopes --path, keeps fix to --dry-run and allows a 15-minute scan)")
 	}
 
 	timeout, err := b.effectiveTimeout(args)

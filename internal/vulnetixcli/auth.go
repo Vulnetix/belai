@@ -1,6 +1,7 @@
 package vulnetixcli
 
 import (
+	"context"
 	"regexp"
 	"strings"
 )
@@ -143,4 +144,22 @@ func classifySource(text string) (SourceID, string) {
 	default:
 		return SourceOther, strings.TrimSpace(text)
 	}
+}
+
+// SafeHarbour reports whether the plan unlocks Safe Harbour version
+// recommendations (Pro and Enterprise). Community and unknown plans do not:
+// the CLI prints "Pro unlocks Safe-Harbour version recommendations" instead.
+func (p Plan) SafeHarbour() bool {
+	return p == PlanPro || p == PlanEnterprise
+}
+
+// AuthStatus runs `vulnetix auth status` and parses it. It is the one probe
+// the dependency hook needs (the plan tier), without the full Probe's version
+// and reachability checks. It fails closed to an unauthenticated state.
+func (c CLI) AuthStatus(ctx context.Context) AuthState {
+	res, err := c.ExecIn(ctx, "", "--disable-memory", "auth", "status")
+	if err != nil {
+		return AuthState{Plan: PlanUnknown}
+	}
+	return ParseAuthStatus(res.Stdout)
 }

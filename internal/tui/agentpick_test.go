@@ -385,6 +385,7 @@ func TestAgentPickerListsBackgroundDefinitions(t *testing.T) {
 	if len(bg.Tools) != 2 {
 		t.Fatalf("Tools = %v, want the definition's allowlist", bg.Tools)
 	}
+	a.width = 200 // room for every built-in chip ahead of the definition
 	if row := a.renderAgentPicker(); !strings.Contains(row, "↻ nightly-audit") {
 		t.Fatalf("picker row = %q, want the background marker", row)
 	}
@@ -452,7 +453,13 @@ func TestAgentPickerCtrlGStartsOnlyBackgroundDefinitions(t *testing.T) {
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
 	a.openAgentPicker()
-	a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+	// Tab past the built-ins, however many there are, to the user's profile.
+	for range len(a.agentCandidates()) {
+		a.handleChatKey(tea.KeyMsg{Type: tea.KeyTab})
+		if got, _ := a.agentSelection(); got.Name == "reviewer" {
+			break
+		}
+	}
 	if got, _ := a.agentSelection(); got.Name != "reviewer" {
 		t.Fatalf("selection = %+v, want reviewer", got)
 	}

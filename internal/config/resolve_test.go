@@ -440,3 +440,41 @@ func TestResolveResilienceMaxAgents(t *testing.T) {
 		t.Fatalf("resilience origin = %q, want project", eff.Origin["resilience"])
 	}
 }
+
+// The dependency hook defaults on. The user's global settings may turn it
+// off; a repo-visible project file may turn it on but never off, so a cloned
+// repository cannot silence the check on the dependencies it adds.
+func TestResolveDepWatchDirection(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	resolve := func(global, project *bool) bool {
+		t.Helper()
+		workdir := t.TempDir()
+		if err := SaveGlobal(Settings{Vulnetix: &VulnetixSettings{DepWatch: global}}); err != nil {
+			t.Fatal(err)
+		}
+		if err := SaveProject(workdir, Settings{Vulnetix: &VulnetixSettings{DepWatch: project}}); err != nil {
+			t.Fatal(err)
+		}
+		eff, err := Resolve(workdir, func(string) string { return "" }, Settings{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return eff.Settings.Vulnetix.DepWatchEnabled()
+	}
+	on, off := boolPtr(true), boolPtr(false)
+	if !resolve(nil, nil) {
+		t.Error("default must be on")
+	}
+	if resolve(off, nil) {
+		t.Error("the global layer must be able to turn it off")
+	}
+	if !resolve(nil, off) {
+		t.Error("a project file must not turn it off")
+	}
+	if !resolve(off, on) {
+		t.Error("a project file may turn it on")
+	}
+	if merged := (Settings{}).Override(Settings{Vulnetix: &VulnetixSettings{DepWatch: off}}); !merged.Vulnetix.DepWatchEnabled() {
+		t.Error("Override must not let a project file turn it off")
+	}
+}

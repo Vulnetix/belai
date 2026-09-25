@@ -165,6 +165,8 @@ func (s *Session) runExploreTasks(ctx context.Context, tasks []explore.Task, kin
 			prefix = "g"
 		case "clarify-explore":
 			prefix = "c"
+		case "review":
+			prefix = "r"
 		}
 		return fmt.Sprintf("%s%d", prefix, idx+1)
 	}
@@ -252,6 +254,17 @@ func (s *Session) goalSurveyTurns(ctx context.Context, goalText string, pipe *ro
 		return nil
 	}
 	return s.runExploreTasks(ctx, explore.PlanGoalSurvey(goalText), "goal-survey", pipe, emit)
+}
+
+// reviewTurns runs one read-only subagent per /vulnetix review scanner report
+// and returns their classified findings as user turns. The reports were
+// classified by the caller before they reached the session, and each rides to
+// its subagent as a file attachment, never spliced into the prompt text.
+func (s *Session) reviewTurns(ctx context.Context, clean string, reports []explore.ReviewReport, pipe *rolemanager.Pipeline, emit func(Event)) []run.Turn {
+	if !s.allowExplore || len(reports) == 0 {
+		return nil
+	}
+	return s.runExploreTasks(ctx, explore.PlanReview(clean, reports), "review", pipe, emit)
 }
 
 // exploreConfig returns the config an explore subagent runs under. The
@@ -374,11 +387,21 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task, g Grounding, 
 	// The subagent's mode is known: it explores, read-only, in one bounded
 	// pass. Forcing it skips the mode-select call and any goal-contract
 	// draft, neither of which an explore run ever uses.
-	res, err := sub.run(ctx, nil, TurnInput{Prompt: promptText, ForceMode: modes.ModeAgent}, false, childEmitter)
+	in := TurnInput{Prompt: promptText, ForceMode: modes.ModeAgent}
+	if t.Evidence != "" {
+		// Already classified by whoever handed the evidence over; it rides
+		// as an attachment exactly as an admitted @file does.
+		in.Attachments = []run.Attachment{{Kind: "file", Label: t.EvidenceLabel, Body: t.Evidence}}
+	}
+	res, err := sub.run(ctx, nil, in, false, childEmitter)
 	if err != nil {
 		return ""
 	}
-	reply := capReport(res.Reply)
+	limit := maxExploreReport
+	if t.ReportBytes > 0 {
+		limit = t.ReportBytes
+	}
+	reply := capReport(res.Reply, limit)
 	if reply == "" {
 		return ""
 	}
@@ -422,13 +445,13 @@ func exploreBudget(task, setting int) int {
 // stay small.
 const maxExploreReport = 6 * 1024
 
-// capReport trims a finding to maxExploreReport at a line boundary.
-func capReport(s string) string {
+// capReport trims a finding to limit bytes at a line boundary.
+func capReport(s string, limit int) string {
 	s = strings.TrimSpace(s)
-	if len(s) <= maxExploreReport {
+	if len(s) <= limit {
 		return s
 	}
-	cut := s[:maxExploreReport]
+	cut := s[:limit]
 	if i := strings.LastIndexByte(cut, '\n'); i > 0 {
 		cut = cut[:i]
 	}

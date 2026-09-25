@@ -61,6 +61,7 @@ const (
 	UseCaseCompaction   = "compaction"
 	UseCaseSessionName  = "session_name"
 	UseCaseAgentEval    = "agent_eval"
+	UseCaseDepChange    = "dep_change"
 )
 
 // ClassifierStructuredMaxTokens is the completion budget for classifier calls

@@ -60,3 +60,7 @@ func builtinByName(name string) (Profile, bool) {
 
 // DebugProfile is the built-in profile engaged by inline-shell turns.
 const DebugProfile = BuiltinPrefix + "debug"
+
+// ReviewProfile is the built-in profile a /vulnetix review switches to for
+// its triage turn: the agent that remediates the per-scanner subagent reports.
+const ReviewProfile = BuiltinPrefix + "vulnetix-review"

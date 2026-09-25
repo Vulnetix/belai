@@ -34,6 +34,15 @@ type Task struct {
 	// Budget is the task's tool-round budget. The runner takes the smaller
 	// of it and resilience.max_explore_iterations; zero means the setting.
 	Budget int
+	// Evidence is an already-classified report the subagent investigates,
+	// handed to it as a file attachment labelled EvidenceLabel rather than
+	// spliced into the prompt. Only review tasks carry one.
+	Evidence      string
+	EvidenceLabel string
+	// ReportBytes bounds the subagent's report; zero means the runner's
+	// default. A review report lists every finding, so it gets more room
+	// than a ten-bullet survey answer.
+	ReportBytes int
 }
 
 // Tool-round budgets. Each task is one narrow question, so it gets only the
@@ -46,6 +55,7 @@ const (
 	budgetLocate = 4 // grep/glob, then confirm the hits
 	budgetFocus  = 3 // one narrow lookup: tests, docs, a call path, a clarified choice
 	budgetRepo   = 5 // a repository is bigger than a file
+	budgetReview = 6 // locate and weigh every finding of one scanner report
 )
 
 // reportContract ends every task prompt. Findings re-enter the parent as
@@ -334,6 +344,60 @@ func PlanGoalSurvey(goalText string) []Task {
 		{"edit targets", "Name the exact files and line ranges that must change for this goal (Grep/Glob for its key terms first). Goal: " + goalText, budgetLocate},
 		{"verification", "Name the existing tests and the command that runs them for the code this goal changes. Goal: " + goalText, budgetFocus},
 	})
+}
+
+// ReviewReportBytes bounds one scanner subagent's report. Its contract is one
+// line per finding rather than ten bullets, so it is larger than a survey's.
+const ReviewReportBytes = 16 * 1024
+
+// ReviewReport is one scanner's bounded, already-classified report from a
+// /vulnetix review.
+type ReviewReport struct {
+	Scanner string
+	Label   string
+	Body    string
+}
+
+// reviewContract ends every review task prompt. The subagent is read-only: it
+// grounds each finding in the repository and names the remediation paths, and
+// the parent session — which sees every scanner's report together — decides,
+// fixes, asks the user, or records the finding as inconclusive.
+const reviewContract = "\n\nYou are read-only: do not attempt the fix. " +
+	"The repository map and status are already in your context — do not re-list the layout or git state. " +
+	"Reply with one line per finding, most severe first, with no preamble and no narrative, in the form " +
+	"`path:line | rule/id | verdict | remediation`, where verdict is real, false-positive or unclear, and remediation is one of " +
+	"`fix: <the single change>`, `options: <A> | <B> [| …]` when more than one reasonable fix exists and the choice needs the user, " +
+	"or `none: <why neither a fix nor further exploration can settle it>`. " +
+	"Findings that share a root cause may share one line. If the report has no actionable finding, say so in one line."
+
+// PlanReview derives one read-only task per scanner report of a /vulnetix
+// review. Each subagent receives its scanner's report as evidence and reports
+// back located findings with their remediation paths, which the parent session
+// then acts on. It is pure and deterministic, and capped at MaxTasks.
+func PlanReview(prompt string, reports []ReviewReport) []Task {
+	var tasks []Task
+	for _, r := range reports {
+		if strings.TrimSpace(r.Body) == "" {
+			continue
+		}
+		name := r.Scanner
+		if name == "" {
+			name = r.Label
+		}
+		tasks = append(tasks, Task{
+			Index:         len(tasks),
+			Reference:     "vulnetix " + name,
+			Prompt:        fmt.Sprintf("The attached %q is one scanner's findings from a Vulnetix review of this repository. For each finding, read the flagged code and its callers (Grep/Read the reported location first), decide whether it is real, and name how it would be remediated in this codebase. Review goal: %s%s", r.Label, prompt, reviewContract),
+			Budget:        budgetReview,
+			Evidence:      r.Body,
+			EvidenceLabel: r.Label,
+			ReportBytes:   ReviewReportBytes,
+		})
+		if len(tasks) >= MaxTasks {
+			break
+		}
+	}
+	return tasks
 }
 
 // surveyTask is one entry of a fixed survey.

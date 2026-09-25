@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -30,6 +31,8 @@ import (
 type activitySend struct {
 	label string
 	atts  []run.Attachment
+	// directive is the harness-recorded facts and ask for this output.
+	directive string
 }
 
 // activityEventMsg carries one registry delta into the TUI loop.
@@ -642,6 +645,11 @@ func (a *App) vulnetixTargets(workdir string) []string {
 // guardrails gate is ignored, sanitise always, and seal as a shell attachment.
 func (a *App) roundTripActivityOutput(act activity.Activity) tea.Cmd {
 	raw := a.activity.Output(act.ID)
+	if act.Kind == activity.KindVulnetix {
+		// Progress bars and redraws are most of a scan's bytes: they cost
+		// tokens and classifier time and tell the model nothing.
+		raw = tools.CleanVulnetixOutput(raw)
+	}
 	body := sanitize.Sanitize(raw)
 	pol := a.effectivePosture()
 	if pol.Level(posture.ToolResultUnsafe) != posture.Ignore {
@@ -655,28 +663,76 @@ func (a *App) roundTripActivityOutput(act activity.Activity) tea.Cmd {
 	}
 	label := act.Label
 	atts := []run.Attachment{{Kind: "shell", Label: label, Body: body}}
+	directive := activityDirective(act)
 	if a.working() || a.preSend {
-		a.pendingActivitySends = append(a.pendingActivitySends, activitySend{label: label, atts: atts})
+		a.pendingActivitySends = append(a.pendingActivitySends, activitySend{label: label, atts: atts, directive: directive})
 		return nil
 	}
-	return a.sendWithAttachments(fmt.Sprintf("Output of `%s` is attached.", label), atts, "")
+	return a.sendWithAttachments(fmt.Sprintf("Output of `%s` is attached.", label), atts, directive)
+}
+
+// activityDirective states the facts of a finished activity and what to do
+// with its output. Without them a model handed "Output of `vulnetix env` is
+// attached." spent a minute on Date, Git, LS and Read rediscovering the
+// command, its directory and whether it failed, then re-ran the CLI by hand.
+// Every field is harness-recorded, never the command's own output.
+func activityDirective(act activity.Activity) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "`%s` ran as `%s` in %s", act.Label, strings.Join(act.Argv, " "), act.Dir)
+	switch {
+	case act.State == activity.StateKilled:
+		b.WriteString(" and was killed")
+	case act.TimedOut:
+		b.WriteString(" and timed out")
+	case act.ExitCode != 0:
+		fmt.Fprintf(&b, " and exited %d", act.ExitCode)
+	default:
+		b.WriteString(" and exited 0")
+	}
+	if !act.Started.IsZero() && !act.Ended.IsZero() {
+		fmt.Fprintf(&b, " after %s", act.Ended.Sub(act.Started).Round(time.Second))
+	}
+	b.WriteString(". The user sent its output from the runs panel. ")
+	if act.ExitCode != 0 || act.TimedOut || act.State == activity.StateKilled {
+		b.WriteString("Diagnose the failure from the attached output first and say what fixes it. ")
+	} else {
+		b.WriteString("Say what the output shows and whether anything needs doing. ")
+	}
+	b.WriteString("The command, directory and exit status above are established; do not re-derive them")
+	if act.Kind == activity.KindVulnetix {
+		b.WriteString(", and re-run or narrow a Vulnetix command only with the Vulnetix tool")
+	}
+	b.WriteString(".")
+	return b.String()
 }
 
 // flushPendingActivitySends fires when the turn goes idle, batching several
 // finished activities into one turn carrying several attachments.
 func (a *App) flushPendingActivitySends() tea.Cmd {
-	if len(a.pendingActivitySends) == 0 || a.working() || a.preSend {
+	if a.working() || a.preSend {
+		return nil
+	}
+	// A queued review goes first and on its own: it carries its own
+	// objective and fan-out, so the activity outputs wait for the next idle.
+	if rs := a.pendingReview; rs != nil {
+		a.pendingReview = nil
+		return a.sendReview(rs)
+	}
+	if len(a.pendingActivitySends) == 0 {
 		return nil
 	}
 	sends := a.pendingActivitySends
 	a.pendingActivitySends = nil
 	var atts []run.Attachment
-	var labels []string
+	var labels, directives []string
 	for _, s := range sends {
 		atts = append(atts, s.atts...)
 		labels = append(labels, s.label)
+		if s.directive != "" {
+			directives = append(directives, s.directive)
+		}
 	}
-	return a.sendWithAttachments("Output of `"+strings.Join(labels, "`, `")+"` is attached.", atts, "")
+	return a.sendWithAttachments("Output of `"+strings.Join(labels, "`, `")+"` is attached.", atts, strings.Join(directives, "\n"))
 }
 
 // startTriage launches the signet:triage-vulns background agent on a project,

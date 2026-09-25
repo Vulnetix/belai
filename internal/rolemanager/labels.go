@@ -54,3 +54,19 @@ func (s GoalSentinel) Label() string {
 	}
 	return string(s)
 }
+
+// DepSentinelLabels maps each dependency-change sentinel to a concise,
+// human-readable statement. Maintain parity with the DepSentinel constants.
+var DepSentinelLabels = map[DepSentinel]string{
+	DepsChanged:   "dependencies were added or updated",
+	DepsUnchanged: "no dependency changed",
+}
+
+// Label returns the human-readable statement for a dependency-change
+// sentinel. Unknown sentinels return their raw token.
+func (s DepSentinel) Label() string {
+	if l, ok := DepSentinelLabels[s]; ok {
+		return l
+	}
+	return string(s)
+}

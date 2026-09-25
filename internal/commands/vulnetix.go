@@ -248,10 +248,7 @@ func (r Vulnetix) fanOut(ctx context.Context, cli vulnetixcli.CLI, scanners []Sc
 		if scaIdx >= 0 {
 			<-done[scaIdx]
 		}
-		args := []string{"fix", "--dry-run"}
-		if r.AutoFix {
-			args = []string{"fix", "--yes"}
-		}
+		args := FixArgs(r.Workdir, r.AutoFix)
 		var res vulnetixcli.Result
 		var err error
 		if r.Observer == nil {
@@ -269,6 +266,17 @@ func (r Vulnetix) fanOut(ctx context.Context, cli vulnetixcli.CLI, scanners []Sc
 
 	wg.Wait()
 	return results
+}
+
+// FixArgs is the post-scan fix argv. --path is always explicit: without it the
+// CLI asks which manifest to fix when several have candidates, and with no
+// terminal it fails with "multiple manifests have autofix candidates" — which
+// is what every review of a repository with two manifests reported.
+func FixArgs(workdir string, autoFix bool) []string {
+	if autoFix {
+		return []string{"fix", "--yes", "--path", workdir}
+	}
+	return []string{"fix", "--dry-run", "--path", workdir}
 }
 
 func laneMembers(scanners []Scanner, lane string) []int {
