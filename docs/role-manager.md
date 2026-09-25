@@ -1148,10 +1148,9 @@ The agent loop is bounded to prevent infinite tool-call loops. The default
 maximum is 10 iterations; each provider turn counts as one iteration. One run
 of that bounded loop is a **pass**.
 
-Explore subagents get their own, deeper budget from
-`resilience.max_explore_iterations` (default 8, where the pre-catalogue
-subagents used a hard 4), so an explore subagent actually runs `rg`/`find`/
-`git`/`jq` before reporting findings.
+Explore subagents get their own budget: each task's round budget (2–5 by
+kind — one narrow question needs only a few rounds), capped by
+`resilience.max_explore_iterations` (default 8).
 
 Agent mode — and every subagent, whatever its mode — keeps this bounded
 continuation behaviour: a spent iteration budget is a **turn boundary, not an

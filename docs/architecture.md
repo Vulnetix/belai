@@ -583,8 +583,10 @@ showed whole — is answered with a harness note naming the file, extent, size
 and blob id and pointing at the earlier result, when all of these hold: the
 file's stat is unchanged, no harness mutation has touched it (every path the
 file-diff recorder sees change is invalidated, so an edit is always followed
-by a fresh read), a tool turn with exactly the recorded result hash is still
-in the conversation (not cleared, not compacted), the file was never
+by a fresh read), a tool turn — or a harness-prefetched `file` attachment on
+a user turn (see [Repository map](#repository-map)) — with exactly the
+recorded result hash is still in the conversation (not cleared, not
+compacted), the file was never
 withheld, and the call is permission-allowed on the advertised surface.
 Otherwise the read goes to disk as normal and is classified as always. The
 serial part of a multi-call response decides again at execution time, after
@@ -1275,6 +1277,37 @@ invariant holds; they moved only so the system block's bytes stay the same
 from turn to turn (see [System prompt](#system-prompt)). A detached HEAD
 reports no branch; a repository with no commits reports the branch it is on.
 
+**Git and forge facts.** The same per-turn directive carries
+`prompt.ForgeStatusBlock`: the upstream with ahead/behind counts, the
+worktree list (path, branch, current/dirty/locked/prunable), and — when `gh`
+or `glab` answered — the branch's PR/MR number and state and its CI counts by
+state. They come from the `forge.Cache` the TUI shares with the session:
+`tui.Start` (after the trust gate) starts one background probe, the runs
+panel's git tab stores its probes there, and a turn asks for a background
+refresh when the snapshot is over a minute old. A turn never waits on the
+network; a snapshot over ten minutes old is left out. Only facts render:
+forge-supplied text — PR titles, check names, CLI error messages — is never
+in the block, and a PR state outside the known set renders as `unknown`. A
+model that needs the text asks the `GH`/`Glab` tools, which classify.
+
+**Context prefetch.** A plan turn, a goal turn and the execution of an
+approved plan start by reading what they almost always read first: the
+`AGENTS.md`/`CLAUDE.md` files the map names and the working tree's changed
+paths (`internal/agent/prefetch.go`). The harness reads them with the
+session's own `Read` tool while exploration and clarify run, and gates each
+result exactly as `executeCall` gates a `Read`: classified through
+`pipe.Process` (sanitised only, with no classifier call, when the tool-result
+gate is ignored), and flagged like a withheld `Read` when rejected. Admitted
+files ride on the user turn as sealed `file` attachments, never in the system
+block, and the directive names them. Deleted paths, untracked directories,
+empty files, files over 48 KiB, anything past 12 files or 128 KiB, files
+withheld earlier, files a user `@`-attached, files already live in the
+conversation and files a permission rule does not allow a `Read` of without
+asking are skipped. Each attachment is recorded in the read index against
+its body, so a `Read` of the same unchanged file that turn is answered with a
+pointer to the attachment. The TUI rebuilds history without attachments, so
+on the next turn the file is read from disk (or prefetched again) as normal.
+
 ### Release check
 
 Alongside the repo map and the Vulnetix CLI probe, startup runs one read-only
@@ -1350,14 +1383,29 @@ parent session runs a **grounding probe** first, then fans out **explore
 subagents** that investigate with the native read-only tool catalogue before
 any clarification questionnaire is shown.
 
-The grounding probe (`internal/agent/grounding.go`) attaches always-useful,
-read-only evidence: `git status`/branch/recent commits, a bounded top-level
-directory listing, `AGENTS.md`, and the single-shot background agents that
-are not scheduled/loop/monitor definitions. When workspace directories have
-been added, the probe gathers the same evidence from each root. This evidence
-is untrusted — it re-enters as part of each subagent prompt and is admitted
-through the Role Manager like any user content, never promoted into a
-system/agent block.
+The grounding probe (`internal/agent/grounding.go`) runs once per fan-out and
+attaches only what a subagent's context lacks: the last five commits, and —
+for a task about another repository or organisation — the local-repository
+index. The layout, languages, commands, entrypoints, branch and changed paths
+are already in every subagent's repository map and turn status, and the
+`AGENTS.md` body used to ride in every subagent prompt, where each subagent's
+admission call classified the same 16 KiB again. This evidence is untrusted —
+it re-enters as part of each subagent prompt and is admitted through the Role
+Manager like any user content, never promoted into a system/agent block.
+
+Tasks are narrow and many rather than broad and few (`internal/explore`).
+Each is one question with its own tool-round budget — 2 to read a file or
+fetch a URL, 3 for a focused lookup (tests, docs and config, a call path, a
+clarified choice, a directory), 4 to locate code by its terms, 5 for another
+repository — capped by `resilience.max_explore_iterations`. Every prompt ends
+in the same report contract: stop as soon as the question is answered, do not
+re-list the map or git state, and reply with at most ten `path:line — fact`
+bullets. A report is cut at 6 KiB on a line boundary before it is classified.
+The plan survey is `locate`, `call path` (only when the map found
+entrypoints), `tests`, and `docs and config`; it no longer has a "repository
+structure" task, which re-surveyed the map and was the slowest of the set. An
+`@file` whose file is already attached to the turn gets no subagent: the
+planner has the whole file.
 
 An explore subagent runs its turn with a forced agent mode
 (`TurnInput.ForceMode`), so it never spends a mode-select call or drafts a
@@ -1367,14 +1415,13 @@ guidance.
 
 Each explore subagent:
 
-- receives the original prompt, the grounding evidence, and an investigation
-  angle derived from the prompt's `@references` (or a codebase survey for
-  goal mode);
+- receives one narrow question derived from the prompt's `@references` (or a
+  survey question), the grounding evidence, and the report contract;
 - has its own read-only `agent.Session` (`PlanMode`, no further fan-out) that
-  inherits the parent's added workspace roots, with
-  a dedicated iteration budget from `resilience.max_explore_iterations`
-  (default 8, deeper than the historical 4), and a system-prompt preamble
-  telling it to discover facts with the native tools rather than ask;
+  inherits the parent's added workspace roots, with the task's own round
+  budget capped by `resilience.max_explore_iterations` (default 8), and a
+  system-prompt preamble telling it to discover facts with the native tools
+  rather than ask;
 - runs read-only tools (`rg`/`Grep`, `find`/`Find`, `git`/`Git`, `cat`,
   `jq`, …) to investigate, returning a findings report;
 - has its findings classified and, if SAFE, sealed as an `<exploration>`

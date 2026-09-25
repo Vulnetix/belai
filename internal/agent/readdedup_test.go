@@ -122,12 +122,12 @@ func TestLiveToolResultFollowsContentNotCallID(t *testing.T) {
 	result := "     1\tpackage a"
 	h := readindex.HashResult(result)
 	turns := []run.Turn{{Role: "tool", ToolCallID: "call_1", Content: result}}
-	if !liveToolResult(turns, h) {
+	if !liveResult(turns, h) {
 		t.Fatal("the delivered result is in the conversation")
 	}
 	turns[0].Content = run.ClearedToolResult
 	turns = append(turns, run.Turn{Role: "tool", ToolCallID: "call_1", Content: "something else"})
-	if liveToolResult(turns, h) {
+	if liveResult(turns, h) {
 		t.Fatal("a cleared result with its id reused elsewhere must not read as live")
 	}
 }

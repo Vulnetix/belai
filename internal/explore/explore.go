@@ -27,7 +27,38 @@ type Task struct {
 	Index     int
 	Reference string // the @file, URL, or prompt fragment to investigate
 	Prompt    string // the subagent's investigation prompt
+	// Kind is the reference's lexical kind; survey and clarify tasks are
+	// RefText. The runner attaches the local-repository index only to
+	// RefRepo/RefOrg tasks.
+	Kind RefKind
+	// Budget is the task's tool-round budget. The runner takes the smaller
+	// of it and resilience.max_explore_iterations; zero means the setting.
+	Budget int
 }
+
+// Tool-round budgets. Each task is one narrow question, so it gets only the
+// rounds that question needs: a subagent that must answer in a few rounds
+// searches instead of browsing. Many small subagents in parallel finish
+// sooner than a few broad ones, and a spent budget still ends on a report.
+const (
+	budgetFile   = 2 // read one file (usually already attached; see DropAttached)
+	budgetURL    = 2 // one fetch, one summary
+	budgetLocate = 4 // grep/glob, then confirm the hits
+	budgetFocus  = 3 // one narrow lookup: tests, docs, a call path, a clarified choice
+	budgetRepo   = 5 // a repository is bigger than a file
+)
+
+// reportContract ends every task prompt. Findings re-enter the parent as
+// context and pass the classifier, so a terse, located report is both faster
+// and more useful to the planner than a narrative survey.
+const reportContract = "\n\nStop as soon as you can answer; do not survey beyond the question. " +
+	"The repository map and status are already in your context — do not re-list the layout or git state. " +
+	"Reply with at most 10 bullets, each `path:line — fact` (or `path — fact` when there is no line), most relevant first, with no preamble and no narrative. " +
+	"If nothing relevant exists, say so in one line."
+
+// SurveyReference is the reference label of the first plan-survey task, so
+// the runner can recognise a survey and enrich it with the map's entrypoints.
+const SurveyReference = "locate"
 
 // RefKind classifies an extracted reference.
 type RefKind int
@@ -163,20 +194,56 @@ const localFirstRule = "\n\nCheck the local index first — call Repos to see wh
 
 // promptForKind builds an investigation prompt matched to the reference kind.
 func promptForKind(ref string, kind RefKind, prompt string) string {
+	var p string
 	switch kind {
 	case RefFile:
-		return fmt.Sprintf("Read the file %q and report what is relevant to: %s", ref, prompt)
+		p = fmt.Sprintf("Read the file %q and name the parts of it that matter for: %s", ref, prompt)
 	case RefDir:
-		return fmt.Sprintf("Explore the directory %q and report what is relevant to: %s", ref, prompt)
+		p = fmt.Sprintf("In the directory %q, find the files that matter for the goal (Glob/Grep first, read only the best hits). Goal: %s", ref, prompt)
 	case RefRepo:
-		return fmt.Sprintf("Investigate the repository %q for: %s%s", ref, prompt, localFirstRule)
+		p = fmt.Sprintf("In the repository %q, find the code that matters for: %s%s", ref, prompt, localFirstRule)
 	case RefOrg:
-		return fmt.Sprintf("Investigate repositories under %q for: %s%s", ref, prompt, localFirstRule)
+		p = fmt.Sprintf("Find which repositories under %q matter for: %s%s", ref, prompt, localFirstRule)
 	case RefURL:
-		return fmt.Sprintf("Fetch and summarize %q for: %s", ref, prompt)
+		p = fmt.Sprintf("Fetch %q and extract only what matters for: %s", ref, prompt)
 	default:
-		return fmt.Sprintf("Investigate %q for: %s", ref, prompt)
+		p = fmt.Sprintf("Find where %q lives in the code and what matters about it for: %s", ref, prompt)
 	}
+	return p + reportContract
+}
+
+// budgetForKind is the tool-round budget of a reference task.
+func budgetForKind(kind RefKind) int {
+	switch kind {
+	case RefFile:
+		return budgetFile
+	case RefURL:
+		return budgetURL
+	case RefRepo, RefOrg:
+		return budgetRepo
+	case RefDir:
+		return budgetFocus
+	}
+	return budgetLocate
+}
+
+// DropAttached removes the file tasks whose file already rides on the turn
+// as an attachment: the planner has the whole file, so a subagent reading it
+// again only to summarise it is a wasted round trip. attached holds
+// root-relative, slash-separated paths. The remaining tasks are re-indexed.
+func DropAttached(tasks []Task, attached map[string]bool) []Task {
+	if len(attached) == 0 {
+		return tasks
+	}
+	out := tasks[:0:0]
+	for _, t := range tasks {
+		if t.Kind == RefFile && attached[strings.TrimPrefix(t.Reference, "/")] {
+			continue
+		}
+		t.Index = len(out)
+		out = append(out, t)
+	}
+	return out
 }
 
 // Plan derives ordered investigation tasks from a prompt. It is pure and
@@ -192,14 +259,17 @@ func Plan(prompt string, decision rolemanager.ModeDecision) []Task {
 		return PlanSurvey(prompt)
 	}
 	if len(refs) == 0 {
-		return []Task{{Index: 0, Reference: prompt, Prompt: prompt}}
+		return []Task{{Index: 0, Reference: prompt, Prompt: "Find the code that matters for this request and where it lives. Request: " + prompt + reportContract, Budget: budgetLocate}}
 	}
 	tasks := make([]Task, 0, len(refs))
 	for i, r := range refs {
+		kind := ClassifyRef(r)
 		tasks = append(tasks, Task{
 			Index:     i,
 			Reference: r,
-			Prompt:    promptForKind(r, ClassifyRef(r), prompt),
+			Prompt:    promptForKind(r, kind, prompt),
+			Kind:      kind,
+			Budget:    budgetForKind(kind),
 		})
 	}
 	if len(tasks) > MaxTasks {
@@ -243,7 +313,8 @@ func PlanClarified(prompt string, q clarify.Questionnaire, a clarify.Answers) []
 		tasks = append(tasks, Task{
 			Index:     idx,
 			Reference: fmt.Sprintf("clarification %d", idx+1),
-			Prompt:    fmt.Sprintf("Investigate: %s The user chose %s.%s Goal: %s", g.Context, labelsStr, note, prompt),
+			Prompt:    fmt.Sprintf("Find what the user's choice means in the code. Question: %s The user chose %s.%s Goal: %s%s", g.Context, labelsStr, note, prompt, reportContract),
+			Budget:    budgetFocus,
 		})
 		idx++
 		if len(tasks) >= MaxTasks {
@@ -259,16 +330,23 @@ func PlanClarified(prompt string, q clarify.Questionnaire, a clarify.Answers) []
 // pass is about to edit, so the survey's job is to name the edit targets and
 // the check that will prove them right. It is pure and deterministic.
 func PlanGoalSurvey(goalText string) []Task {
-	surveys := []struct {
-		reference string
-		prompt    string
-	}{
-		{"edit targets", "Name the exact files and line ranges that must change for this goal. Report concrete path:line targets with a one-line reason each, not a narrative survey. Goal: " + goalText},
-		{"verification", "Name the existing tests, commands and documentation that will verify this goal, and where they live. Goal: " + goalText},
-	}
-	tasks := make([]Task, 0, len(surveys))
-	for i, s := range surveys {
-		tasks = append(tasks, Task{Index: i, Reference: s.reference, Prompt: s.prompt})
+	return survey([]surveyTask{
+		{"edit targets", "Name the exact files and line ranges that must change for this goal (Grep/Glob for its key terms first). Goal: " + goalText, budgetLocate},
+		{"verification", "Name the existing tests and the command that runs them for the code this goal changes. Goal: " + goalText, budgetFocus},
+	})
+}
+
+// surveyTask is one entry of a fixed survey.
+type surveyTask struct {
+	reference, prompt string
+	budget            int
+}
+
+// survey turns a fixed survey into tasks, each ending in the report contract.
+func survey(st []surveyTask) []Task {
+	tasks := make([]Task, 0, len(st))
+	for i, s := range st {
+		tasks = append(tasks, Task{Index: i, Reference: s.reference, Prompt: s.prompt + reportContract, Budget: s.budget})
 	}
 	return tasks
 }
@@ -286,24 +364,22 @@ func PlanSurveyWithEntrypoints(promptText string, entrypoints []string) []Task {
 	return planSurvey(promptText, entrypoints)
 }
 
+// planSurvey splits the survey into narrow questions that run in parallel.
+// There is no "repository structure" task: every subagent already has the
+// repository map (layout, languages, commands, entrypoints) in its context,
+// so re-surveying it was the slowest task and the least useful.
 func planSurvey(promptText string, entrypoints []string) []Task {
-	entryPrompt := "Identify the entry points and the modules most relevant to the goal. Goal: " + promptText
+	st := []surveyTask{
+		{SurveyReference, "Find the code this goal touches: Grep/Glob for its key terms and name the files, functions and line ranges. Goal: " + promptText, budgetLocate},
+	}
 	if len(entrypoints) > 0 {
-		entryPrompt = fmt.Sprintf("Investigate these entry points: %s. Report how they are wired and which is most relevant to: %s", strings.Join(entrypoints, ", "), promptText)
+		st = append(st, surveyTask{"call path", fmt.Sprintf("Which of these entry points reaches the code this goal touches, and through which calls: %s. Goal: %s", strings.Join(entrypoints, ", "), promptText), budgetFocus})
 	}
-	surveys := []struct {
-		reference string
-		prompt    string
-	}{
-		{"repository structure", "Survey the repository structure: list the top-level directories, the main packages, and how they relate. Also list any locally available related repositories. Goal: " + promptText},
-		{"entry points", entryPrompt},
-		{"tests and docs", "Find the existing tests and documentation that bear on the goal, and report their locations. Goal: " + promptText},
-	}
-	tasks := make([]Task, 0, len(surveys))
-	for i, s := range surveys {
-		tasks = append(tasks, Task{Index: i, Reference: s.reference, Prompt: s.prompt})
-	}
-	return tasks
+	st = append(st,
+		surveyTask{"tests", "Find the tests that cover the code this goal touches and the command that runs them. Goal: " + promptText, budgetFocus},
+		surveyTask{"docs and config", "Find the documentation, configuration and flags that describe or control what this goal changes. Goal: " + promptText, budgetFocus},
+	)
+	return survey(st)
 }
 
 // extractReferences returns the @-prefixed tokens in prompt, excluding the

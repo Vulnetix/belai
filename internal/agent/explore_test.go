@@ -13,67 +13,58 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/agentprofile"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/posture"
+	"github.com/vulnetix/signet/internal/repoindex"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/tools"
 )
 
-// TestGroundingProbeCollectsLayoutAndAgentsMD pins the non-git parts of the
-// grounding probe: a bounded top-level listing and AGENTS.md content.
-func TestGroundingProbeCollectsLayoutAndAgentsMD(t *testing.T) {
+// TestGroundingCarriesOnlyWhatTheMapLacks pins the trimmed grounding: no
+// AGENTS.md body, layout or git status (the repository map and turn status
+// already hold them), and the local-repository index only for tasks about
+// another repository.
+func TestGroundingCarriesOnlyWhatTheMapLacks(t *testing.T) {
 	root := t.TempDir()
 	_ = os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("# AGENTS\nbe careful"), 0o600)
-	_ = os.MkdirAll(filepath.Join(root, "subdir"), 0o755)
-
 	s := &Session{workdir: root}
 	g := s.groundingProbe(context.Background())
+	g.RecentCommits = "abc1234 first"
+	g.SiblingRepos = []repoindex.Entry{{Path: "/src/other"}}
 
-	if !strings.Contains(g.Layout, "subdir/") {
-		t.Fatalf("layout missing subdir/: %q", g.Layout)
+	plain := g.digest(false)
+	if strings.Contains(plain, "be careful") || strings.Contains(plain, "AGENTS.md") {
+		t.Fatalf("AGENTS.md body leaked into grounding: %q", plain)
 	}
-	if !strings.Contains(g.Layout, "AGENTS.md") {
-		t.Fatalf("layout missing AGENTS.md: %q", g.Layout)
+	if !strings.Contains(plain, "abc1234 first") || strings.Contains(plain, "/src/other") {
+		t.Fatalf("plain digest = %q, want commits without the repo index", plain)
 	}
-	if g.AgentsMD == "" || !strings.Contains(g.AgentsMD, "be careful") {
-		t.Fatalf("AGENTS.md not collected: %q", g.AgentsMD)
+	if repo := g.digest(true); !strings.Contains(repo, "/src/other") {
+		t.Fatalf("repo digest lacks the local index: %q", repo)
 	}
-}
-
-// TestGroundingDigestOmitsEmptySections pins that a zero grounding renders no
-// evidence rather than a stub prompt, and never carries a Go fmt artefact.
-func TestGroundingDigestOmitsEmptySections(t *testing.T) {
-	s := &Session{workdir: t.TempDir()}
-	g := s.groundingProbe(context.Background())
-	d := g.digest()
-	if strings.Contains(d, "<nil>") || strings.Contains(d, "%!") {
-		t.Fatalf("digest contains a Go fmt artefact: %q", d)
+	if d := (Grounding{}).digest(true); d != "" {
+		t.Fatalf("empty grounding rendered %q", d)
 	}
 }
 
-// TestRelevantAgentsFiltersNonSingle pins the grounding rule: only flat,
-// single-shot background agents are listed; scheduled/loop/monitor
-// definitions are background processes, not evidence.
-func TestRelevantAgentsFiltersNonSingle(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("SIGNET_HOME", home)
-
-	mustSave := func(p agentprofile.AgentProfile) {
-		if _, err := agentprofile.Save(p); err != nil {
-			t.Fatalf("save %s: %v", p.Name, err)
+func TestExploreBudgetAndReportCap(t *testing.T) {
+	for _, c := range []struct{ task, setting, want int }{{3, 8, 3}, {0, 8, 8}, {10, 8, 8}, {4, 2, 2}} {
+		if got := exploreBudget(c.task, c.setting); got != c.want {
+			t.Errorf("exploreBudget(%d, %d) = %d, want %d", c.task, c.setting, got, c.want)
 		}
 	}
-	mustSave(agentprofile.AgentProfile{Name: "plain", Description: "d", SystemPrompt: "s", Mode: agentprofile.ModeSingle})
-	mustSave(agentprofile.AgentProfile{Name: "loop", Description: "d", SystemPrompt: "s", Mode: agentprofile.ModeLoop})
-	mustSave(agentprofile.AgentProfile{Name: "sched", Description: "d", SystemPrompt: "s", Mode: agentprofile.ModeScheduled, Schedule: "*/5 * * * *"})
-	mustSave(agentprofile.AgentProfile{Name: "mon", Description: "d", SystemPrompt: "s", Mode: agentprofile.ModeMonitor, MonitorCondition: "x"})
-
-	names := relevantAgents()
-	if len(names) != 1 || names[0] != "plain" {
-		t.Fatalf("relevantAgents = %v, want [plain]", names)
+	if got := capReport("  short  "); got != "short" {
+		t.Errorf("short report = %q", got)
+	}
+	long := strings.Repeat("- a.go:1 — fact\n", 1000)
+	got := capReport(long)
+	if len(got) > maxExploreReport+40 || !strings.HasSuffix(got, "… (report truncated)") {
+		t.Errorf("long report not capped: %d bytes", len(got))
+	}
+	if strings.Contains(strings.TrimSuffix(got, "\n… (report truncated)"), "\n- a.go:1 — fac\n") {
+		t.Error("report cut mid-line")
 	}
 }
 

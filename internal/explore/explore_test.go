@@ -126,15 +126,16 @@ func TestPlanSurveyIsNotRawPrompt(t *testing.T) {
 
 func TestPlanUsesPerKindPrompts(t *testing.T) {
 	cases := []struct {
-		ref  string
-		want string
+		ref    string
+		want   string
+		budget int
 	}{
-		{"file.txt", "Read the file"},
-		{"docs/arch", "Explore the directory"},
-		{"Vulnetix/vdb-site", "Investigate the repository"},
-		{"Vulnetix", "Investigate repositories under"},
-		{"https://example.com", "Fetch and summarize"},
-		{"concept", "Investigate"},
+		{"file.txt", "Read the file", budgetFile},
+		{"docs/arch", "In the directory", budgetFocus},
+		{"Vulnetix/vdb-site", "In the repository", budgetRepo},
+		{"Vulnetix", "Find which repositories under", budgetRepo},
+		{"https://example.com", "Fetch", budgetURL},
+		{"concept", "Find where", budgetLocate},
 	}
 	for _, tc := range cases {
 		tasks := Plan("review @"+tc.ref, rolemanager.ModeDecision{Mode: modes.ModePlan, Explore: true})
@@ -144,6 +145,62 @@ func TestPlanUsesPerKindPrompts(t *testing.T) {
 		if !strings.HasPrefix(tasks[0].Prompt, tc.want) {
 			t.Fatalf("prompt for %q = %q, want prefix %q", tc.ref, tasks[0].Prompt, tc.want)
 		}
+		if tasks[0].Budget != tc.budget {
+			t.Errorf("budget for %q = %d, want %d", tc.ref, tasks[0].Budget, tc.budget)
+		}
+		if !strings.HasSuffix(tasks[0].Prompt, reportContract) {
+			t.Errorf("prompt for %q lacks the report contract", tc.ref)
+		}
+	}
+}
+
+// Every generated task is narrow: a small budget and the terse report
+// contract. The plan survey no longer re-surveys the repository structure
+// the map already carries.
+func TestTasksAreNarrowAndBudgeted(t *testing.T) {
+	var all []Task
+	all = append(all, PlanSurvey("add caching")...)
+	all = append(all, PlanSurveyWithEntrypoints("add caching", []string{"cmd/x/main.go"})...)
+	all = append(all, PlanGoalSurvey("add caching")...)
+	all = append(all, Plan("fix it", rolemanager.ModeDecision{Mode: modes.ModeGoal, Explore: true})...)
+	q := clarify.Questionnaire{Groups: []clarify.Group{{Context: "Which?", Options: []clarify.Option{{Label: "a"}}}}}
+	all = append(all, PlanClarified("p", q, clarify.Answers{Items: []clarify.Answer{{GroupIndex: 0, Chosen: []int{0}}}})...)
+	for _, task := range all {
+		if task.Budget <= 0 || task.Budget > budgetRepo {
+			t.Errorf("task %q budget %d", task.Reference, task.Budget)
+		}
+		if !strings.HasSuffix(task.Prompt, reportContract) {
+			t.Errorf("task %q lacks the report contract", task.Reference)
+		}
+		if task.Reference == "repository structure" {
+			t.Error("the survey still re-surveys the repository structure")
+		}
+	}
+	if got := PlanSurvey("x"); got[0].Reference != SurveyReference {
+		t.Errorf("first survey task = %q, want %q", got[0].Reference, SurveyReference)
+	}
+	if n := len(PlanSurveyWithEntrypoints("x", []string{"main.go"})); n != 4 {
+		t.Errorf("survey with entrypoints = %d tasks, want 4 (locate, call path, tests, docs)", n)
+	}
+}
+
+func TestDropAttachedSkipsAttachedFiles(t *testing.T) {
+	tasks := Plan("review @a.go @docs @b.go", rolemanager.ModeDecision{Mode: modes.ModePlan, Explore: true})
+	got := DropAttached(tasks, map[string]bool{"a.go": true, "docs": true})
+	var refs []string
+	for i, task := range got {
+		refs = append(refs, task.Reference)
+		if task.Index != i {
+			t.Errorf("task %q index %d, want %d", task.Reference, task.Index, i)
+		}
+	}
+	// docs is a directory reference: an attached listing is not the files,
+	// so its task stays.
+	if strings.Join(refs, ",") != "b.go,docs" {
+		t.Errorf("remaining = %v", refs)
+	}
+	if len(DropAttached(tasks, nil)) != len(tasks) {
+		t.Error("nil attachments dropped tasks")
 	}
 }
 

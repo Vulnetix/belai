@@ -554,6 +554,10 @@ type App struct {
 	forgeConfirm forgeConfirmState
 	forgeRunner  forge.Runner
 	forgeLook    forge.LookPath
+	// forgeCache is the git/forge snapshot shared with the agent session,
+	// whose per-turn status carries its facts. nil until Start creates it,
+	// so a bare New never probes; every forge.Cache method is nil-safe.
+	forgeCache *forge.Cache
 
 	// agentPool caps every fan-out subagent (explore plus background agents)
 	// behind one settings-backed FIFO queue. The Role Manager owns it through
@@ -1780,6 +1784,9 @@ type sessionBuildParams struct {
 	// repoMap is the harness-computed repository map handed to the session's
 	// system block.
 	repoMap repomap.Map
+	// forge is the shared git/forge snapshot cache; nil leaves the per-turn
+	// forge facts out.
+	forge *forge.Cache
 	// workspaceDirs are additional directories added to the session with
 	// /add-dir; they widen the tool confinement boundary.
 	workspaceDirs []string
@@ -1817,6 +1824,7 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 		toolAllow:     a.engagedAgentTools(),
 		agentPool:     a.agentPool,
 		repoMap:       a.repoMap,
+		forge:         a.forgeCache,
 		workspaceDirs: a.workspaceDirs,
 		workspaceMaps: a.workspaceMaps,
 		procManager:   a.procManager,
@@ -1896,6 +1904,7 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		AgentPool:     p.agentPool,
 		RepoMap:       &p.repoMap,
 		WorkspaceMaps: p.workspaceMaps,
+		Forge:         p.forge,
 		// TUI is interactive, so live language servers are allowed.
 		Diagnostics: rolemanager.DiagnosticsGateFromSettings(p.settings, reg.Cwd().Roots(), true),
 	})
@@ -3230,6 +3239,11 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		return a.nextAgent()
 	case agent.EventWarningKind:
 		a.addSystem(m.Warning)
+		return a.nextAgent()
+	case agent.EventPrefetchKind:
+		// Render-only: the files already ride on the user turn as classified
+		// attachments; this line only tells the user which ones.
+		a.addSystem(fmt.Sprintf("context: attached %d file(s) up front — %s", len(m.Paths), strings.Join(m.Paths, ", ")))
 		return a.nextAgent()
 	case agent.EventErrorKind:
 		if !a.phaseStartedAt.IsZero() {

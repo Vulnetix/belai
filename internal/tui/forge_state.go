@@ -67,14 +67,31 @@ func (a *App) ciTabVisible() bool {
 	return a.forge.have && a.forge.snap.CIAvailable()
 }
 
+// startForgeCache creates the snapshot cache the agent session shares and
+// starts its first background probe, so the first turn already carries the
+// git and forge facts. Start calls it after the trust gate; a directory
+// outside a repository is not probed.
+func (a *App) startForgeCache() {
+	if a.forgeCache == nil {
+		a.forgeCache = &forge.Cache{Runner: a.forgeRunner, Look: a.forgeLook}
+	}
+	if a.gitOK {
+		a.forgeCache.RefreshAsync(a.forgeDir(), forgeTTL, nil)
+	}
+}
+
 // refreshForge starts a probe unless one is running or, without force, the
 // snapshot is still fresh for the same directory. It never runs while the
-// panel is closed.
+// panel is closed. A fresher snapshot the shared cache already holds (the
+// startup probe, or one a turn asked for) is adopted instead of re-probing.
 func (a *App) refreshForge(force bool) tea.Cmd {
 	if !a.runsOpen || a.forge.inFlight {
 		return nil
 	}
 	dir := a.forgeDir()
+	if snap, at, ok := a.forgeCache.Get(dir); ok && (!a.forge.have || a.forge.dir != dir || at.After(a.forge.probedAt)) {
+		a.forge.snap, a.forge.dir, a.forge.probedAt, a.forge.have = snap, dir, at, true
+	}
 	if !force && a.forge.have && a.forge.dir == dir && time.Since(a.forge.probedAt) < forgeTTL {
 		return nil
 	}
@@ -95,6 +112,7 @@ func (a *App) handleForgeProbe(m forgeProbeMsg) {
 	a.forge.dir = m.dir
 	a.forge.probedAt = m.at
 	a.forge.have = true
+	a.forgeCache.Store(m.dir, m.snap, m.at)
 	if a.runsTab == tabCI && !a.ciTabVisible() {
 		a.runsTab = tabGit
 		a.runsSel, a.runsScroll = 0, 0

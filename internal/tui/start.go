@@ -21,7 +21,11 @@ func Start(opts Options) error {
 			tea.WithFilter(keys.Filter))
 		defer os.Stdout.WriteString(keys.Pop)
 	}
-	p := tea.NewProgram(New(opts), progOpts...)
+	app := New(opts)
+	// Only a real run probes git and the forge CLI in the background; New
+	// alone (every test) never execs them. Start runs after the trust gate.
+	app.startForgeCache()
+	p := tea.NewProgram(app, progOpts...)
 	model, err := p.Run()
 	// Every exit path (ctrl+d, /exit, ctrl+c, an error) flushes the usage
 	// ledger once here.
