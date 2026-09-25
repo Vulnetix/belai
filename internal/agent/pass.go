@@ -127,6 +127,37 @@ const withheldRepairDirective = "Every tool result in the last two rounds was wi
 const toolRepairDirective = "That pass executed no tool successfully — every call was rejected before it ran. The rejection messages are above and each one names what was wrong with the arguments. Fix the arguments and re-issue the call now, starting with the edit that advances the goal. If a tool cannot be called at all, state which one and what it rejected, in one line."
 
 // noteMutation folds one call's observed disk effect into the pass totals.
+// readStreakNudge tracks tool rounds that changed no file and returns the
+// directive to inject when the streak reaches readStreakNudgeAfter (and every
+// readStreakNudgeAfter rounds after), else "". Only a turn that may edit is
+// nudged: plan mode, a read-only agent turn, an explore subagent and the
+// report pass are left alone. Goal mode gets the firm directive; agent mode
+// the softer agentEditNudge, because an agent turn may be a question.
+func (s *Session) readStreakNudge(streak, seen *int, mutations int, productive bool, mode modes.Mode) string {
+	if mutations != *seen {
+		*seen = mutations
+		*streak = 0
+		return ""
+	}
+	if !productive {
+		return ""
+	}
+	*streak++
+	if *streak%readStreakNudgeAfter != 0 {
+		return ""
+	}
+	if s.planMode || s.turnReadOnly || s.exploreSubagent || s.reportOnly {
+		return ""
+	}
+	switch mode {
+	case modes.ModeGoal:
+		return readStreakDirective
+	case modes.ModeAgent:
+		return agentEditNudge
+	}
+	return ""
+}
+
 func (o *passOutcome) noteMutation(eff callEffect) {
 	if !eff.changed {
 		return
@@ -176,6 +207,9 @@ type callUnit struct {
 func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system string, turns []run.Turn, streaming bool, emit func(Event), mode modes.Mode) (passOutcome, []run.Turn, error) {
 	var productive int
 	var withheld int
+	// readStreak counts tool rounds in a row that changed no file;
+	// mutationsSeen is the pass's mutation count when it last reset.
+	var readStreak, mutationsSeen int
 	var text string
 	var lastText string
 	var updatePlan *todos.List
@@ -361,6 +395,9 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		}
 		if productiveIter {
 			productive++
+		}
+		if nudge := s.readStreakNudge(&readStreak, &mutationsSeen, acc.mutations, productiveIter, mode); nudge != "" {
+			turns = append(turns, directiveTurns(nudge)...)
 		}
 		if allWithheld {
 			withheld++

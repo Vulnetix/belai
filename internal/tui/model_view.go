@@ -405,10 +405,10 @@ func (a *App) modelRows() []modelRow {
 		chunkVal = fmt.Sprintf("%s ×%d", humanizeBytes(config.ClassifierChunkSettings{}.MaxBytesOr()), config.ClassifierChunkSettings{}.ConcurrencyOr())
 	}
 	kind := a.classifierKind()
+	// Selectable on every build: an embedded model only changes the default.
 	kindRow := settingsRow{
 		key: "kind", label: "kind", kind: "choose",
 		opts: []string{"llm", "models"}, value: kind, src: src,
-		disabled: mlclassify.Embedded(),
 	}
 
 	rows = append(rows, modelRow{roleClassifier, kindRow})
@@ -1531,9 +1531,9 @@ func (a *App) classifierPhase3Row() settingsRow {
 	on := cls != nil && cls.Provider != "" && cls.Model != ""
 	value := "off: set classifier provider + model to enable"
 	if on {
-		scope := "extraction only"
+		scope := "injection + extraction"
 		if a.resolvedSecurityClassifier().Phase2Deferred {
-			scope = "jailbreak + extraction"
+			scope = "injection + jailbreak + extraction"
 		}
 		value = scope + " · " + a.providerDisplayLabel(cls.Provider) + "/" + cls.Model
 	}

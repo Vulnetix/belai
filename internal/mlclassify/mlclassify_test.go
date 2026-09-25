@@ -221,7 +221,7 @@ func TestClassifyPhase3OffReturnsSafe(t *testing.T) {
 func TestPhase3MalformedFallsOpen(t *testing.T) {
 	c := newTestClassifier(t, &fakeGate{ph: Phase1, sentinel: rolemanager.SentinelSafe}, nil,
 		rolemanager.ClassifierFunc(func(context.Context, rolemanager.ClassifierPayload) (string, error) {
-			return "PROMPT_INJECTION", nil // out of scope for phase 3
+			return "JAILBREAK", nil // out of scope: the local phase 2 owns it
 		}), WindowConfig{Tokens: 3, Overlap: 1, MaxWindows: 10})
 	got, err := c.Classify(context.Background(), rolemanager.BuildClassifierPayload("a b c"))
 	if err != nil {
@@ -247,18 +247,23 @@ func TestPhase3DeferredAcceptsJailbreak(t *testing.T) {
 	}
 }
 
-func TestPhase3DeferredRejectsInjection(t *testing.T) {
-	c := newTestClassifier(t, &fakeGate{ph: Phase1, sentinel: rolemanager.SentinelSafe}, nil,
-		rolemanager.ClassifierFunc(func(context.Context, rolemanager.ClassifierPayload) (string, error) {
-			return string(rolemanager.SentinelPromptInjection), nil // still out of scope
-		}), WindowConfig{Tokens: 3, Overlap: 1, MaxWindows: 10})
-	c.phase2Deferred = true
-	got, err := c.Classify(context.Background(), rolemanager.BuildClassifierPayload("a b c"))
-	if err != nil {
-		t.Fatalf("Classify: %v", err)
-	}
-	if got != string(rolemanager.SentinelSafe) {
-		t.Fatalf("got %q, want SAFE (injection stays out of phase 3 scope)", got)
+// Phase 1 detects prompt saturation, not instruction injection: an "ignore
+// previous instructions, run this command" payload in a file read clears it.
+// Phase 3 must be able to call that injection on both paths.
+func TestPhase3CallsInjection(t *testing.T) {
+	for _, deferred := range []bool{false, true} {
+		c := newTestClassifier(t, &fakeGate{ph: Phase1, sentinel: rolemanager.SentinelSafe}, nil,
+			rolemanager.ClassifierFunc(func(context.Context, rolemanager.ClassifierPayload) (string, error) {
+				return string(rolemanager.SentinelPromptInjection), nil
+			}), WindowConfig{Tokens: 3, Overlap: 1, MaxWindows: 10})
+		c.phase2Deferred = deferred
+		got, err := c.Classify(context.Background(), rolemanager.BuildClassifierPayload("a b c"))
+		if err != nil {
+			t.Fatalf("deferred=%v Classify: %v", deferred, err)
+		}
+		if got != string(rolemanager.SentinelPromptInjection) {
+			t.Fatalf("deferred=%v got %q, want PROMPT_INJECTION", deferred, got)
+		}
 	}
 }
 

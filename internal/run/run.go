@@ -313,16 +313,15 @@ func ApplyProfileOverride(cfg Config, o ProfileOverride, cls *config.ClassifierS
 }
 
 // ClassifierKind resolves the effective classifier kind: an explicit setting,
-// else "models" when the binary embeds a model, else "llm". A binary that
-// embeds the phase models always uses the models path — the /model kind row is
-// locked there, so an explicit kind setting cannot override the embedded
-// classifier.
+// else "models" when the binary embeds a model, else "llm". Embedding a model
+// only changes the default, as -classifier-kind documents; an explicit "llm"
+// selects the full five-way LLM sentinel on every build.
 func ClassifierKind(cls *config.ClassifierSettings) string {
-	if mlclassify.Embedded() {
-		return "models"
-	}
 	if cls != nil && cls.Kind != "" {
 		return cls.Kind
+	}
+	if mlclassify.Embedded() {
+		return "models"
 	}
 	return "llm"
 }

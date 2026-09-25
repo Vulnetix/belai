@@ -61,6 +61,10 @@ const (
 	// rejected argument shape costs a pass without meaning the run is over,
 	// and failing the goal there discards every pass that did work.
 	maxUnproductivePasses = 2
+	// readStreakNudgeAfter is how many tool rounds in a row may change no file
+	// before a goal or agent pass is told to start editing. The nudge repeats
+	// every readStreakNudgeAfter rounds while the streak lasts.
+	readStreakNudgeAfter = 8
 	// compactThresholdPct: compact at the pass boundary when the estimated
 	// context exceeds this share of the model window.
 	compactThresholdPct = 70
@@ -99,7 +103,13 @@ const (
 	// so the checklist rides in the same response as the first actions — but
 	// the first actions are whatever the work needs, reading included; the
 	// no-write escalations at later boundaries catch a goal that never edits.
-	goalAckDirective = "Start the work in this pass. In the same response as your first actions, call update_plan once with the steps you will execute, the first marked in_progress. Batch the reads you need in parallel, then make the change from the exact bytes you read. Mark steps complete with update_plan, or with [DONE:n] in your reply, as you finish them. Keep any restatement of the objective to a single line naming the deliverable and how completion will be verified."
+	// readStreakDirective is injected mid-pass in goal mode after
+	// readStreakNudgeAfter tool rounds in a row changed no file. A pass has a
+	// 40-iteration budget and the pass-boundary escalations only fire once it
+	// is spent: sessions showed a goal reading for over ten minutes — more
+	// than a hundred Reads — before the harness said anything.
+	readStreakDirective = "You have spent several rounds reading without changing a file. Stop surveying: pick the first file the work needs and edit it in your next response, from the bytes you already have. Read more only for the exact lines that edit needs, and do not re-read files you have already read in full."
+	goalAckDirective    = "Start the work in this pass. In the same response as your first actions, call update_plan once with the steps you will execute, the first marked in_progress. Batch the reads you need in parallel, then make the change from the exact bytes you read. Mark steps complete with update_plan, or with [DONE:n] in your reply, as you finish them. Keep any restatement of the objective to a single line naming the deliverable and how completion will be verified."
 )
 
 // goalAckDirective returns the first-pass goal directive, naming the detected

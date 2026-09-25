@@ -141,14 +141,14 @@ func ParseSentinel(raw string) (Sentinel, error) {
 }
 
 // ParseExtractionSentinel parses a phase-3 classifier reply. It accepts only
-// the three tokens the narrowed extraction prompt names — SAFE,
-// DATA_EXTRACTION, MODEL_EXTRACTION — and rejects everything else, including
-// PROMPT_INJECTION and JAILBREAK, which are out of scope by construction. The
-// narrowing is the point: an injection or jailbreak reply from phase 3 is
-// malformed, not a verdict.
+// the four tokens the narrowed extraction prompt names — SAFE,
+// PROMPT_INJECTION, DATA_EXTRACTION, MODEL_EXTRACTION — and rejects
+// everything else, including JAILBREAK, which the local phase-2 gate owns. A
+// jailbreak reply from phase 3 is malformed, not a verdict.
 func ParseExtractionSentinel(raw string) (Sentinel, error) {
 	s, err := matchSentinel(raw, []string{
 		string(SentinelSafe),
+		string(SentinelPromptInjection),
 		string(SentinelDataExtraction),
 		string(SentinelModelExtraction),
 	})
@@ -159,13 +159,13 @@ func ParseExtractionSentinel(raw string) (Sentinel, error) {
 }
 
 // ParseDeferredExtractionSentinel parses a phase-3 classifier reply when the
-// jailbreak gate is deferred to phase 3. It accepts the four tokens the
-// deferred extraction prompt names — SAFE, JAILBREAK, DATA_EXTRACTION,
-// MODEL_EXTRACTION — and rejects everything else, including PROMPT_INJECTION,
-// which stays out of scope because phase 1 is always local on the models path.
+// jailbreak gate is deferred to phase 3. No local gate ruled on jailbreak or
+// instruction injection, so it accepts all five tokens the deferred prompt
+// names and rejects everything else.
 func ParseDeferredExtractionSentinel(raw string) (Sentinel, error) {
 	s, err := matchSentinel(raw, []string{
 		string(SentinelSafe),
+		string(SentinelPromptInjection),
 		string(SentinelJailbreak),
 		string(SentinelDataExtraction),
 		string(SentinelModelExtraction),

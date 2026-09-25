@@ -173,7 +173,12 @@ Retry budgets are configurable via `config.Settings.Resilience`:
 - `max_passes`: goal-mode pass-loop ceiling (default 0 — unbounded). The pass
   loop's own stall detectors are what normally stop it; this exists for CI and
   for anyone who wants a hard bound on spend. When it is reached the loop
-  returns `goal pass loop stopped: max passes (N) reached`.
+  returns `goal pass loop stopped: max passes (N) reached`. The stall
+  detectors stop a loop that makes no progress, not one that keeps making
+  some: an open-ended objective such as "keep uplifting test coverage" ran 21
+  passes and 44M tokens over 7.4 hours (session `f84e8c3a`, 2026-09-25) before
+  it was cancelled by hand. Set `max_passes` for open-ended or unattended goals,
+  and for headless runs, where nobody is watching the spend.
 - `max_clarify_rounds`: bounds the explore→clarify→explore loop (default 3).
   A **negative** value is the documented way to disable clarification
   entirely: the accessor passes the sign through unclamped and
