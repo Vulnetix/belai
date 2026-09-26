@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/proc"
+	"github.com/vulnetix/belai/internal/proc"
 )
 
 // sqliteQuery runs a read-only sqlite3 query and returns stdout. The binary

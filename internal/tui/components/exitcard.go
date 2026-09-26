@@ -77,7 +77,7 @@ func (c ExitCard) pixView() string {
 		MutedStyle.Render(name + " · " + shortID),
 		MutedStyle.Render(c.factsLine()),
 		"",
-		MutedStyle.Render("signet --resume ") + KeyStyle.Render(c.ResumeArg),
+		MutedStyle.Render("belai --resume ") + KeyStyle.Render(c.ResumeArg),
 		MutedStyle.Render(c.Path),
 	}
 	block := lipgloss.NewStyle().PaddingLeft(3).Render(strings.Join(right, "\n"))
@@ -94,14 +94,14 @@ func (c ExitCard) textView() string {
 		name = shortID
 	}
 	out := []string{
-		"SIGNET · session ended",
+		"BELAI · session ended",
 		name + " · " + shortID,
 	}
 	if facts := c.factsLine(); facts != "" {
 		out = append(out, facts)
 	}
 	if c.ResumeArg != "" {
-		out = append(out, "signet --resume "+c.ResumeArg)
+		out = append(out, "belai --resume "+c.ResumeArg)
 	}
 	if c.Path != "" {
 		out = append(out, c.Path)

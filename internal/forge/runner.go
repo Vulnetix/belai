@@ -10,8 +10,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/vulnetix/signet/internal/proc"
-	"github.com/vulnetix/signet/internal/sanitize"
+	"github.com/vulnetix/belai/internal/proc"
+	"github.com/vulnetix/belai/internal/sanitize"
 )
 
 // Timeouts for one CLI call. Reads are short so a hung network never stalls

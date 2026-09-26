@@ -15,7 +15,7 @@ import (
 func cacheHome(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("SIGNET_HOME", dir)
+	t.Setenv("BELAI_HOME", dir)
 	return dir
 }
 

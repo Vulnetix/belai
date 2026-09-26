@@ -1,7 +1,7 @@
 package tools
 
 import (
-	"github.com/vulnetix/signet/internal/agentstore"
+	"github.com/vulnetix/belai/internal/agentstore"
 )
 
 // Default builds the default tool registry for a working directory: Read

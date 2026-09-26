@@ -9,19 +9,19 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 // altLiteral matches a key-name string literal that carries an alt modifier,
 // in any position: "alt+s", "ctrl+alt+c", "alt+enter".
 var altLiteral = regexp.MustCompile(`"[a-z0-9+]*alt\+`)
 
-// Signet binds no alt chord anywhere, and this is the guard that keeps it that
+// Belai binds no alt chord anywhere, and this is the guard that keeps it that
 // way. Two independent reasons, both documented in docs/architecture.md:
 //
 //  1. keys.Translate folds a ctrl-modified letter onto the legacy
 //     tea.KeyCtrlA…KeyCtrlZ constants, which carry no alt bit. Under the kitty
-//     keyboard protocol Signet pushes by default, ctrl+alt+x is therefore
+//     keyboard protocol Belai pushes by default, ctrl+alt+x is therefore
 //     indistinguishable from ctrl+x by the time Update sees it, so a
 //     "ctrl+alt+…" case can never match — it is dead code that silently does
 //     nothing.
@@ -181,16 +181,16 @@ func TestCavemanToggleFromSettingsViewPersists(t *testing.T) {
 	}
 }
 
-// kitty_keyboard decides whether Signet pushes the keyboard-enhancement flag,
+// kitty_keyboard decides whether Belai pushes the keyboard-enhancement flag,
 // which is what makes shift+enter distinguishable and what makes ctrl+alt
-// indistinguishable. Default on, an explicit setting wins, and SIGNET_NO_KITTY=1
+// indistinguishable. Default on, an explicit setting wins, and BELAI_NO_KITTY=1
 // beats both — it is the escape hatch for a terminal that mishandles the
 // protocol, so nothing in the settings file may override it.
 func TestKittyEnabled(t *testing.T) {
 	off, on := false, true
 
 	t.Run("default on", func(t *testing.T) {
-		t.Setenv("SIGNET_NO_KITTY", "")
+		t.Setenv("BELAI_NO_KITTY", "")
 		if !kittyEnabled(nil) {
 			t.Fatal("nil settings must default kitty on")
 		}
@@ -203,7 +203,7 @@ func TestKittyEnabled(t *testing.T) {
 	})
 
 	t.Run("explicit setting wins", func(t *testing.T) {
-		t.Setenv("SIGNET_NO_KITTY", "")
+		t.Setenv("BELAI_NO_KITTY", "")
 		if kittyEnabled(&config.Settings{UI: &config.UISettings{KittyKeyboard: &off}}) {
 			t.Fatal("explicit false must disable kitty")
 		}
@@ -212,18 +212,18 @@ func TestKittyEnabled(t *testing.T) {
 		}
 	})
 
-	t.Run("SIGNET_NO_KITTY=1 overrides an explicit true", func(t *testing.T) {
-		t.Setenv("SIGNET_NO_KITTY", "1")
+	t.Run("BELAI_NO_KITTY=1 overrides an explicit true", func(t *testing.T) {
+		t.Setenv("BELAI_NO_KITTY", "1")
 		if kittyEnabled(&config.Settings{UI: &config.UISettings{KittyKeyboard: &on}}) {
-			t.Fatal("SIGNET_NO_KITTY=1 must win over the settings file")
+			t.Fatal("BELAI_NO_KITTY=1 must win over the settings file")
 		}
 	})
 
 	t.Run("only the exact value 1 disables it", func(t *testing.T) {
 		for _, v := range []string{"0", "true", "yes", "2", " 1"} {
-			t.Setenv("SIGNET_NO_KITTY", v)
+			t.Setenv("BELAI_NO_KITTY", v)
 			if !kittyEnabled(nil) {
-				t.Errorf("SIGNET_NO_KITTY=%q must not disable kitty; only \"1\" does", v)
+				t.Errorf("BELAI_NO_KITTY=%q must not disable kitty; only \"1\" does", v)
 			}
 		}
 	})

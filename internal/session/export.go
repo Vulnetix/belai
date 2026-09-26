@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/transcript"
+	"github.com/vulnetix/belai/internal/transcript"
 )
 
 // ExportOptions configures ExportMarkdown.

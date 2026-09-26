@@ -12,7 +12,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 // State is a budget's colour state.

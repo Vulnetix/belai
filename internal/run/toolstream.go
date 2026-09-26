@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/transcript"
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/transcript"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 // ToolCallDelta is a render-only fragment of a streamed tool call. It carries

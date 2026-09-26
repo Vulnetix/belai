@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 // maxListBytes is the largest session file SessionsIn will parse for its

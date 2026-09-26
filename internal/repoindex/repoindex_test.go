@@ -31,32 +31,32 @@ func run(t *testing.T, dir string, name string, args ...string) {
 
 func TestScanFindsDepthOneRepo(t *testing.T) {
 	root := t.TempDir()
-	dir := filepath.Join(root, "signet")
+	dir := filepath.Join(root, "belai")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	initRepo(t, dir, "git@github.com:Vulnetix/signet.git")
+	initRepo(t, dir, "git@github.com:Vulnetix/belai.git")
 
 	ix := Scan(context.Background(), filepath.Join(root, "other"))
-	e, ok := ix.Lookup("Vulnetix/signet")
+	e, ok := ix.Lookup("Vulnetix/belai")
 	if !ok {
 		t.Fatalf("Lookup failed, entries=%v", ix.Entries())
 	}
-	if e.Name != "signet" || e.Owner != "Vulnetix" || e.Host != "github.com" {
+	if e.Name != "belai" || e.Owner != "Vulnetix" || e.Host != "github.com" {
 		t.Fatalf("Entry = %+v", e)
 	}
 }
 
 func TestScanFindsDepthTwoRepo(t *testing.T) {
 	root := t.TempDir()
-	dir := filepath.Join(root, "Vulnetix", "signet")
+	dir := filepath.Join(root, "Vulnetix", "belai")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	initRepo(t, dir, "https://github.com/Vulnetix/signet.git")
+	initRepo(t, dir, "https://github.com/Vulnetix/belai.git")
 
 	ix := Scan(context.Background(), filepath.Join(root, "other"))
-	if _, ok := ix.Lookup("Vulnetix/signet"); !ok {
+	if _, ok := ix.Lookup("Vulnetix/belai"); !ok {
 		t.Fatalf("depth-2 lookup failed, entries=%v", ix.Entries())
 	}
 }
@@ -102,33 +102,33 @@ func TestScanListsUnparseableRemote(t *testing.T) {
 
 func TestLookupBareNameRequiresUniqueness(t *testing.T) {
 	root := t.TempDir()
-	a := filepath.Join(root, "OrgA", "signet")
-	b := filepath.Join(root, "OrgB", "signet")
+	a := filepath.Join(root, "OrgA", "belai")
+	b := filepath.Join(root, "OrgB", "belai")
 	if err := os.MkdirAll(a, 0o755); err != nil || os.MkdirAll(b, 0o755) != nil {
 		t.Fatal(err)
 	}
-	initRepo(t, a, "git@github.com:OrgA/signet.git")
-	initRepo(t, b, "git@github.com:OrgB/signet.git")
+	initRepo(t, a, "git@github.com:OrgA/belai.git")
+	initRepo(t, b, "git@github.com:OrgB/belai.git")
 
 	ix := Scan(context.Background(), filepath.Join(root, "other"))
-	if _, ok := ix.Lookup("signet"); ok {
+	if _, ok := ix.Lookup("belai"); ok {
 		t.Fatal("ambiguous bare name should not match")
 	}
-	if _, ok := ix.Lookup("OrgA/signet"); !ok {
+	if _, ok := ix.Lookup("OrgA/belai"); !ok {
 		t.Fatal("owner/repo lookup should succeed")
 	}
 }
 
 func TestLookupCaseInsensitive(t *testing.T) {
 	root := t.TempDir()
-	dir := filepath.Join(root, "signet")
+	dir := filepath.Join(root, "belai")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	initRepo(t, dir, "git@github.com:Vulnetix/Signet.git")
+	initRepo(t, dir, "git@github.com:Vulnetix/Belai.git")
 
 	ix := Scan(context.Background(), filepath.Join(root, "other"))
-	if _, ok := ix.Lookup("vulnetix/signet"); !ok {
+	if _, ok := ix.Lookup("vulnetix/belai"); !ok {
 		t.Fatal("case-insensitive lookup failed")
 	}
 }
@@ -160,7 +160,7 @@ func TestScanFindsWorktreeGitFile(t *testing.T) {
 	if err := os.MkdirAll(mainRepo, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	initRepo(t, mainRepo, "git@github.com:Vulnetix/signet.git")
+	initRepo(t, mainRepo, "git@github.com:Vulnetix/belai.git")
 	if _, err := os.Create(filepath.Join(mainRepo, "file.txt")); err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestScanFindsWorktreeGitFile(t *testing.T) {
 	for _, e := range ix.Entries() {
 		if strings.Contains(e.Path, "work") {
 			found = true
-			if e.Owner != "Vulnetix" || e.Name != "signet" {
+			if e.Owner != "Vulnetix" || e.Name != "belai" {
 				t.Fatalf("worktree entry malformed: %+v", e)
 			}
 			if e.Branch != "feature" {
@@ -191,11 +191,11 @@ func TestParseRemoteShapes(t *testing.T) {
 	cases := []struct {
 		raw, host, owner, name string
 	}{
-		{"git@github.com:Vulnetix/signet.git", "github.com", "Vulnetix", "signet"},
-		{"ssh://git@github.com/Vulnetix/signet.git", "github.com", "Vulnetix", "signet"},
-		{"https://github.com/Vulnetix/signet.git", "github.com", "Vulnetix", "signet"},
-		{"https://github.com/Vulnetix/signet", "github.com", "Vulnetix", "signet"},
-		{"github.com:Vulnetix/signet", "github.com", "Vulnetix", "signet"},
+		{"git@github.com:Vulnetix/belai.git", "github.com", "Vulnetix", "belai"},
+		{"ssh://git@github.com/Vulnetix/belai.git", "github.com", "Vulnetix", "belai"},
+		{"https://github.com/Vulnetix/belai.git", "github.com", "Vulnetix", "belai"},
+		{"https://github.com/Vulnetix/belai", "github.com", "Vulnetix", "belai"},
+		{"github.com:Vulnetix/belai", "github.com", "Vulnetix", "belai"},
 		{"git@gitlab.com:org/repo.git", "gitlab.com", "org", "repo"},
 	}
 	for _, tc := range cases {

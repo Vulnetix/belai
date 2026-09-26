@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 // classifyProbe is a mock provider that counts security-classifier calls and

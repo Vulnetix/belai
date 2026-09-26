@@ -17,23 +17,23 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/vulnetix/signet/internal/calltrace"
-	"github.com/vulnetix/signet/internal/clarify"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/httpclient"
-	"github.com/vulnetix/signet/internal/mlclassify"
-	"github.com/vulnetix/signet/internal/models"
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/nonce"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/prompt"
-	"github.com/vulnetix/signet/internal/provider"
-	"github.com/vulnetix/signet/internal/resilience"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/rolemanager/jev"
-	"github.com/vulnetix/signet/internal/sanitize"
-	"github.com/vulnetix/signet/internal/transcript"
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/clarify"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/httpclient"
+	"github.com/vulnetix/belai/internal/mlclassify"
+	"github.com/vulnetix/belai/internal/models"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/nonce"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/prompt"
+	"github.com/vulnetix/belai/internal/provider"
+	"github.com/vulnetix/belai/internal/resilience"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/rolemanager/jev"
+	"github.com/vulnetix/belai/internal/sanitize"
+	"github.com/vulnetix/belai/internal/transcript"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 // Config is a resolved provider + model + credentials.
@@ -1107,12 +1107,12 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 		}
 	}
 
-	if override := strings.TrimSpace(os.Getenv("SIGNET_BASE_URL")); override != "" {
+	if override := strings.TrimSpace(os.Getenv("BELAI_BASE_URL")); override != "" {
 		if cfg.BaseURL != "" && cfg.BaseURL != override {
-			status.Notes = append(status.Notes, fmt.Sprintf("SIGNET_BASE_URL overrides the base URL for %s", name))
+			status.Notes = append(status.Notes, fmt.Sprintf("BELAI_BASE_URL overrides the base URL for %s", name))
 		}
 		cfg.BaseURL = override
-		status.Origins["base_url"] = "$SIGNET_BASE_URL"
+		status.Origins["base_url"] = "$BELAI_BASE_URL"
 	}
 
 	return cfg, status
@@ -1231,13 +1231,13 @@ func placeholderKey(kind string) string {
 	case "ollama":
 		return "ollama"
 	default:
-		return "signet"
+		return "belai"
 	}
 }
 
 // Resolve reads provider configuration from environment variables, mirroring
-// Pi's resolution order: explicit provider flag, then SIGNET_PROVIDER, then
-// PI_PROVIDER, then a default of openai. SIGNET_BASE_URL overrides the base
+// Pi's resolution order: explicit provider flag, then BELAI_PROVIDER, then
+// PI_PROVIDER, then a default of openai. BELAI_BASE_URL overrides the base
 // URL for any provider (used by tests and proxies).
 func Resolve(model, providerName string, env func(string) string) (Config, error) {
 	return ResolveWithSource(model, providerName, env, EnvSource(env))
@@ -1248,7 +1248,7 @@ func Resolve(model, providerName string, env func(string) string) (Config, error
 func ResolveWithSource(model, providerName string, env func(string) string, src CredentialSource) (Config, error) {
 	name := strings.ToLower(strings.TrimSpace(providerName))
 	if name == "" {
-		name = strings.ToLower(strings.TrimSpace(env("SIGNET_PROVIDER")))
+		name = strings.ToLower(strings.TrimSpace(env("BELAI_PROVIDER")))
 	}
 	if name == "" {
 		name = strings.ToLower(strings.TrimSpace(env("PI_PROVIDER")))
@@ -1676,7 +1676,7 @@ func (f failingClassifier) Classify(context.Context, rolemanager.ClassifierPaylo
 // out to take instead of repeating "no phase configured" on every prompt.
 func buildSecurityClassifier(sc SecurityClassifierConfig, phase3 rolemanager.Classifier, phase3Label string) (*mlclassify.Classifier, error) {
 	if sc.Phase1 == nil && sc.Phase2 == nil {
-		return nil, errors.New(`classifier kind "models" is set but no phase model is available in this build: build signet with embedded models (just build-bert or just build-jailbreak), switch classifier.kind to "llm", or set an explicit classifier.phase1/phase2 model`)
+		return nil, errors.New(`classifier kind "models" is set but no phase model is available in this build: build belai with embedded models (just build-bert or just build-jailbreak), switch classifier.kind to "llm", or set an explicit classifier.phase1/phase2 model`)
 	}
 	opts := mlclassify.Options{
 		Phase1:         sc.Phase1,

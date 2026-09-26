@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/delimiters"
+	"github.com/vulnetix/belai/internal/delimiters"
 )
 
 // TrustedSource identifies where a prompt fragment came from. Only fragments

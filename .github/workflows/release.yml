@@ -83,7 +83,7 @@ jobs:
           name: models
           path: internal/mlclassify/assets/*
 
-  # Signet is pure Go (CGO_ENABLED=0), so every target cross-compiles from one
+  # Belai is pure Go (CGO_ENABLED=0), so every target cross-compiles from one
   # Linux box. Each variant family is built for all six targets.
   build:
     needs: [version, models]
@@ -109,33 +109,33 @@ jobs:
           VERSION=${{ needs.version.outputs.version }}
           COMMIT=$(git rev-parse --short HEAD)
           BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          LDFLAGS="-s -w -X github.com/vulnetix/signet/internal/version.Version=${VERSION} -X github.com/vulnetix/signet/internal/version.Commit=${COMMIT} -X github.com/vulnetix/signet/internal/version.BuildDate=${BUILD_DATE}"
+          LDFLAGS="-s -w -X github.com/vulnetix/belai/internal/version.Version=${VERSION} -X github.com/vulnetix/belai/internal/version.Commit=${COMMIT} -X github.com/vulnetix/belai/internal/version.BuildDate=${BUILD_DATE}"
           mkdir -p bin
 
           # variant: vanilla, no-classifier, bert-guardrails, bert-guardrails-jailbreak
           build_target() {
             local variant="$1" goos="$2" goarch="$3" suffix="$4"
-            local name="signet" tags="" extra=""
+            local name="belai" tags="" extra=""
             case "$variant" in
               no-classifier)
-                name="signet-no-classifier"
-                extra="-X github.com/vulnetix/signet/internal/version.Variant=no-classifier"
+                name="belai-no-classifier"
+                extra="-X github.com/vulnetix/belai/internal/version.Variant=no-classifier"
                 ;;
               bert-guardrails)
-                name="signet-bert-guardrails"
-                tags="-tags signet_bert"
-                extra="-X github.com/vulnetix/signet/internal/version.Variant=bert-guardrails"
+                name="belai-bert-guardrails"
+                tags="-tags belai_bert"
+                extra="-X github.com/vulnetix/belai/internal/version.Variant=bert-guardrails"
                 ;;
               bert-guardrails-jailbreak)
-                name="signet-bert-guardrails-jailbreak"
-                tags="-tags signet_bert_jailbreak"
-                extra="-X github.com/vulnetix/signet/internal/version.Variant=bert-guardrails-jailbreak"
+                name="belai-bert-guardrails-jailbreak"
+                tags="-tags belai_bert_jailbreak"
+                extra="-X github.com/vulnetix/belai/internal/version.Variant=bert-guardrails-jailbreak"
                 ;;
             esac
             echo "  bin/${name}-${goos}-${goarch}${suffix}"
             CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
               go build $tags -ldflags "$LDFLAGS $extra" \
-              -o "bin/${name}-${goos}-${goarch}${suffix}" ./cmd/signet
+              -o "bin/${name}-${goos}-${goarch}${suffix}" ./cmd/belai
           }
 
           for variant in "" no-classifier bert-guardrails bert-guardrails-jailbreak; do
@@ -197,7 +197,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Checkout signet repo
+      - name: Checkout belai repo
         uses: actions/checkout@v5
         with:
           token: ${{ secrets.PACKAGES_TOKEN }}
@@ -221,7 +221,7 @@ jobs:
       - name: Download checksums
         run: |
           curl -fsSL --retry 8 --retry-all-errors --retry-delay 5 \
-            "https://github.com/Vulnetix/signet/releases/download/${{ needs.release.outputs.version }}/checksums.txt" \
+            "https://github.com/Vulnetix/belai/releases/download/${{ needs.release.outputs.version }}/checksums.txt" \
             -o checksums.txt
 
       - name: Update Homebrew formula
@@ -239,31 +239,31 @@ jobs:
             fi
             printf '%s' "$sum"
           }
-          DARWIN_ARM64=$(hash_for signet-bert-guardrails-darwin-arm64)
-          DARWIN_AMD64=$(hash_for signet-bert-guardrails-darwin-amd64)
-          LINUX_ARM64=$(hash_for signet-bert-guardrails-linux-arm64)
-          LINUX_AMD64=$(hash_for signet-bert-guardrails-linux-amd64)
+          DARWIN_ARM64=$(hash_for belai-bert-guardrails-darwin-arm64)
+          DARWIN_AMD64=$(hash_for belai-bert-guardrails-darwin-amd64)
+          LINUX_ARM64=$(hash_for belai-bert-guardrails-linux-arm64)
+          LINUX_AMD64=$(hash_for belai-bert-guardrails-linux-amd64)
 
           cd homebrew-tap
-          BREW="Formula/signet.rb"
+          BREW="Formula/belai.rb"
           if [ ! -f "$BREW" ]; then
-            echo "::error::homebrew-tap has no Formula/signet.rb" >&2
+            echo "::error::homebrew-tap has no Formula/belai.rb" >&2
             exit 1
           fi
 
           # The default asset family is the embedded guardrails build. The
           # leading slash keeps these substitutions from colliding with the
           # already-prefixed variant asset names.
-          sed -i "s#/signet-darwin-arm64#/signet-bert-guardrails-darwin-arm64#" "$BREW"
-          sed -i "s#/signet-darwin-amd64#/signet-bert-guardrails-darwin-amd64#" "$BREW"
-          sed -i "s#/signet-linux-arm64#/signet-bert-guardrails-linux-arm64#" "$BREW"
-          sed -i "s#/signet-linux-amd64#/signet-bert-guardrails-linux-amd64#" "$BREW"
+          sed -i "s#/belai-darwin-arm64#/belai-bert-guardrails-darwin-arm64#" "$BREW"
+          sed -i "s#/belai-darwin-amd64#/belai-bert-guardrails-darwin-amd64#" "$BREW"
+          sed -i "s#/belai-linux-arm64#/belai-bert-guardrails-linux-arm64#" "$BREW"
+          sed -i "s#/belai-linux-amd64#/belai-bert-guardrails-linux-amd64#" "$BREW"
 
           sed -i "s/version \"[^\"]*\"/version \"${VER_NUM}\"/" "$BREW"
-          sed -i "/signet-bert-guardrails-darwin-arm64/{n;s/sha256 \"[a-f0-9]*\"/sha256 \"${DARWIN_ARM64}\"/}" "$BREW"
-          sed -i "/signet-bert-guardrails-darwin-amd64/{n;s/sha256 \"[a-f0-9]*\"/sha256 \"${DARWIN_AMD64}\"/}" "$BREW"
-          sed -i "/signet-bert-guardrails-linux-arm64/{n;s/sha256 \"[a-f0-9]*\"/sha256 \"${LINUX_ARM64}\"/}" "$BREW"
-          sed -i "/signet-bert-guardrails-linux-amd64/{n;s/sha256 \"[a-f0-9]*\"/sha256 \"${LINUX_AMD64}\"/}" "$BREW"
+          sed -i "/belai-bert-guardrails-darwin-arm64/{n;s/sha256 \"[a-f0-9]*\"/sha256 \"${DARWIN_ARM64}\"/}" "$BREW"
+          sed -i "/belai-bert-guardrails-darwin-amd64/{n;s/sha256 \"[a-f0-9]*\"/sha256 \"${DARWIN_AMD64}\"/}" "$BREW"
+          sed -i "/belai-bert-guardrails-linux-arm64/{n;s/sha256 \"[a-f0-9]*\"/sha256 \"${LINUX_ARM64}\"/}" "$BREW"
+          sed -i "/belai-bert-guardrails-linux-amd64/{n;s/sha256 \"[a-f0-9]*\"/sha256 \"${LINUX_AMD64}\"/}" "$BREW"
 
           for want in "${VER_NUM}" "${DARWIN_ARM64}" "${DARWIN_AMD64}" "${LINUX_ARM64}" "${LINUX_AMD64}"; do
             if ! grep -q "$want" "$BREW"; then
@@ -276,7 +276,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add "$BREW"
           if ! git diff --cached --quiet; then
-            git commit -m "signet ${VER_NUM}"
+            git commit -m "belai ${VER_NUM}"
             git push
           fi
 
@@ -295,12 +295,12 @@ jobs:
             fi
             printf '%s' "$sum"
           }
-          WIN_AMD64=$(hash_for signet-bert-guardrails-windows-amd64.exe)
-          WIN_ARM64=$(hash_for signet-bert-guardrails-windows-arm64.exe)
+          WIN_AMD64=$(hash_for belai-bert-guardrails-windows-amd64.exe)
+          WIN_ARM64=$(hash_for belai-bert-guardrails-windows-arm64.exe)
 
           cd scoop-bucket
-          if [ ! -f bucket/signet.json ]; then
-            echo "::error::scoop-bucket has no bucket/signet.json" >&2
+          if [ ! -f bucket/belai.json ]; then
+            echo "::error::scoop-bucket has no bucket/belai.json" >&2
             exit 1
           fi
           jq --indent 4 \
@@ -308,24 +308,24 @@ jobs:
             --arg h64 "$WIN_AMD64" \
             --arg harm "$WIN_ARM64" \
             '.version = $v |
-             .architecture."64bit".url = "https://github.com/Vulnetix/signet/releases/download/v\($v)/signet-bert-guardrails-windows-amd64.exe#/signet.exe" |
+             .architecture."64bit".url = "https://github.com/Vulnetix/belai/releases/download/v\($v)/belai-bert-guardrails-windows-amd64.exe#/belai.exe" |
              .architecture."64bit".hash = $h64 |
-             .architecture.arm64.url = "https://github.com/Vulnetix/signet/releases/download/v\($v)/signet-bert-guardrails-windows-arm64.exe#/signet.exe" |
+             .architecture.arm64.url = "https://github.com/Vulnetix/belai/releases/download/v\($v)/belai-bert-guardrails-windows-arm64.exe#/belai.exe" |
              .architecture.arm64.hash = $harm |
-             .autoupdate.architecture."64bit".url = "https://github.com/Vulnetix/signet/releases/download/v$version/signet-bert-guardrails-windows-amd64.exe#/signet.exe" |
-             .autoupdate.architecture."64bit".hash.regex = "([a-fA-F0-9]{64})  signet-bert-guardrails-windows-amd64.exe" |
-             .autoupdate.architecture.arm64.url = "https://github.com/Vulnetix/signet/releases/download/v$version/signet-bert-guardrails-windows-arm64.exe#/signet.exe" |
-             .autoupdate.architecture.arm64.hash.regex = "([a-fA-F0-9]{64})  signet-bert-guardrails-windows-arm64.exe"' bucket/signet.json > /tmp/signet.json
-          mv /tmp/signet.json bucket/signet.json
+             .autoupdate.architecture."64bit".url = "https://github.com/Vulnetix/belai/releases/download/v$version/belai-bert-guardrails-windows-amd64.exe#/belai.exe" |
+             .autoupdate.architecture."64bit".hash.regex = "([a-fA-F0-9]{64})  belai-bert-guardrails-windows-amd64.exe" |
+             .autoupdate.architecture.arm64.url = "https://github.com/Vulnetix/belai/releases/download/v$version/belai-bert-guardrails-windows-arm64.exe#/belai.exe" |
+             .autoupdate.architecture.arm64.hash.regex = "([a-fA-F0-9]{64})  belai-bert-guardrails-windows-arm64.exe"' bucket/belai.json > /tmp/belai.json
+          mv /tmp/belai.json bucket/belai.json
 
-          test "$(jq -r .version bucket/signet.json)" = "$VER_NUM"
-          test "$(jq -r '.architecture."64bit".hash' bucket/signet.json)" = "$WIN_AMD64"
-          test "$(jq -r '.architecture.arm64.hash' bucket/signet.json)" = "$WIN_ARM64"
+          test "$(jq -r .version bucket/belai.json)" = "$VER_NUM"
+          test "$(jq -r '.architecture."64bit".hash' bucket/belai.json)" = "$WIN_AMD64"
+          test "$(jq -r '.architecture.arm64.hash' bucket/belai.json)" = "$WIN_ARM64"
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add bucket/signet.json
+          git add bucket/belai.json
           if ! git diff --cached --quiet; then
-            git commit -m "signet ${VER_NUM}"
+            git commit -m "belai ${VER_NUM}"
             git push
           fi

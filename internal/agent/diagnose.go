@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 // diagnoseEdit returns the sealed diagnostics block to append to a Write/Edit

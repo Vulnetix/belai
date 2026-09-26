@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 func TestProvidersMergeKeyByKey(t *testing.T) {
@@ -28,7 +28,7 @@ func TestProvidersMergeKeyByKey(t *testing.T) {
 }
 
 func TestProvidersOriginTracked(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	if err := SaveGlobal(Settings{
 		Providers: map[string]ProviderProfile{
 			"mine": {BaseURL: "https://mine.example/v1", API: wire.SurfaceOpenAIChat},
@@ -46,7 +46,7 @@ func TestProvidersOriginTracked(t *testing.T) {
 }
 
 func TestMutatePreservesProvidersBlock(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	if err := SaveGlobal(Settings{
 		Model: "gpt-5",
 		Providers: map[string]ProviderProfile{
@@ -132,7 +132,7 @@ func TestValidateProvidersRejectsBadBaseURLAndAuth(t *testing.T) {
 }
 
 func TestProjectProviderBlockIgnoredWithoutOptIn(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	if err := SaveGlobal(Settings{Model: "gpt-5"}); err != nil {
 		t.Fatalf("SaveGlobal: %v", err)
@@ -163,7 +163,7 @@ func TestProjectProviderBlockIgnoredWithoutOptIn(t *testing.T) {
 }
 
 func TestProjectProviderBlockAllowedWithOptIn(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	if err := SaveGlobal(Settings{AllowProjectProviders: boolPtr(true)}); err != nil {
 		t.Fatalf("SaveGlobal: %v", err)
@@ -185,7 +185,7 @@ func TestProjectProviderBlockAllowedWithOptIn(t *testing.T) {
 }
 
 func TestProjectWorkspaceDirsIgnoredWithoutOptIn(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	if err := SaveGlobal(Settings{Model: "gpt-5"}); err != nil {
 		t.Fatalf("SaveGlobal: %v", err)
@@ -212,7 +212,7 @@ func TestProjectWorkspaceDirsIgnoredWithoutOptIn(t *testing.T) {
 }
 
 func TestProjectWorkspaceDirsAllowedWithOptIn(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	if err := SaveGlobal(Settings{AllowProjectWorkspaceDirs: boolPtr(true)}); err != nil {
 		t.Fatalf("SaveGlobal: %v", err)

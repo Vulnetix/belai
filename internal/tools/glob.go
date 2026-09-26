@@ -10,8 +10,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/calltrace"
-	"github.com/vulnetix/signet/internal/proc"
+	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/proc"
 )
 
 // Glob lists files matching a glob pattern.

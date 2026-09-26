@@ -13,8 +13,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/vulnetix/signet/internal/calltrace"
-	"github.com/vulnetix/signet/internal/jsonrpc"
+	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/jsonrpc"
 )
 
 // maxHTTPBody caps one response from an http server.
@@ -119,7 +119,7 @@ func (t *httpTransport) call(ctx context.Context, method string, params, result 
 }
 
 // readSSE reads events until the response whose id matches. Server
-// requests and notifications on the stream are skipped: Signet offers the
+// requests and notifications on the stream are skipped: Belai offers the
 // server nothing to call.
 func readSSE(r io.Reader, id json.RawMessage) (*jsonrpc.Message, error) {
 	sc := bufio.NewScanner(r)

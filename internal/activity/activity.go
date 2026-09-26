@@ -1,4 +1,4 @@
-// Package activity is the honest register of every subprocess Signet launches
+// Package activity is the honest register of every subprocess Belai launches
 // on the user's behalf: Vulnetix runs and probes, `!shell` commands, and
 // background agents. It is process-agnostic and has no TUI imports and no
 // knowledge of Vulnetix; the TUI renders its records in a side drawer.

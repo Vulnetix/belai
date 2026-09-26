@@ -6,7 +6,7 @@ import "testing"
 // detection pass that /lsp runs, so language-server availability is cached
 // before the user opens the LSP settings screen.
 func TestInitProbesLSPImmediately(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	_ = a.Init()
 

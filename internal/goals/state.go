@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/vulnetix/signet/internal/session"
+	"github.com/vulnetix/belai/internal/session"
 )
 
 // GoalStatus is the lifecycle state of a running goal.

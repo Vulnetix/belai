@@ -12,18 +12,18 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/vulnetix/signet/internal/activity"
-	"github.com/vulnetix/signet/internal/agentprofile"
-	"github.com/vulnetix/signet/internal/bgproc"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/processlib"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/sanitize"
-	"github.com/vulnetix/signet/internal/scanartifacts"
-	"github.com/vulnetix/signet/internal/tools"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/activity"
+	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/bgproc"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/processlib"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/sanitize"
+	"github.com/vulnetix/belai/internal/scanartifacts"
+	"github.com/vulnetix/belai/internal/tools"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // activitySend is one finished activity's output, queued to round-trip to the
@@ -620,7 +620,7 @@ func (q quietObserver) Start(name string, argv []string, dir string, cancel cont
 	return q.a.startActivity(name, argv, dir, cancel, false, true)
 }
 
-// vulnetixTargets enumerates the artifacts a run produced, excluding signet's
+// vulnetixTargets enumerates the artifacts a run produced, excluding belai's
 // own state (the same call collectManifest makes).
 func (a *App) vulnetixTargets(workdir string) []string {
 	if workdir == "" {
@@ -632,7 +632,7 @@ func (a *App) vulnetixTargets(workdir string) []string {
 	}
 	var out []string
 	for _, art := range arts {
-		if art.Kind == scanartifacts.KindSignet {
+		if art.Kind == scanartifacts.KindBelai {
 			continue
 		}
 		out = append(out, art.Rel)
@@ -735,19 +735,19 @@ func (a *App) flushPendingActivitySends() tea.Cmd {
 	return a.sendWithAttachments("Output of `"+strings.Join(labels, "`, `")+"` is attached.", atts, strings.Join(directives, "\n"))
 }
 
-// startTriage launches the signet:triage-vulns background agent on a project,
+// startTriage launches the belai:triage-vulns background agent on a project,
 // keyed per project so two projects do not collide on the instance name.
 func (a *App) startTriage(projectRoot string) tea.Cmd {
 	if a.bgManager == nil {
 		a.addSystem("triage: no background manager")
 		return nil
 	}
-	profile, err := agentprofile.Load("signet:triage-vulns")
+	profile, err := agentprofile.Load("belai:triage-vulns")
 	if err != nil {
 		a.addSystem("triage: " + err.Error())
 		return nil
 	}
-	key := "signet:triage-vulns@" + filepath.Base(projectRoot)
+	key := "belai:triage-vulns@" + filepath.Base(projectRoot)
 	if err := a.bgManager.StartIn(projectRoot, key, profile); err != nil {
 		a.addSystem("triage: " + err.Error())
 		return nil

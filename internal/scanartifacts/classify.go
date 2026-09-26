@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// Kind identifies the type of file produced by Vulnetix or signet.
+// Kind identifies the type of file produced by Vulnetix or belai.
 type Kind string
 
 const (
@@ -29,7 +29,7 @@ const (
 	KindAnalyzeReport       Kind = "analyze-report"
 	KindToolLog             Kind = "tool-log"
 	KindToolNative          Kind = "tool-native"
-	KindSignet              Kind = "signet"
+	KindBelai               Kind = "belai"
 	KindUnknown             Kind = "unknown"
 )
 
@@ -49,19 +49,19 @@ type Artifact struct {
 }
 
 // Enumerate walks dir and returns classified artifacts. It skips symlinks,
-// non-regular files, and files owned by signet's own state.
+// non-regular files, and files owned by belai's own state.
 func Enumerate(dir string) ([]Artifact, error) {
 	var out []Artifact
 
-	sgn := signetPaths(dir)
+	sgn := belaiPaths(dir)
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
 		if d.IsDir() {
-			// Do not descend into signet-owned state directories.
+			// Do not descend into belai-owned state directories.
 			rel, _ := filepath.Rel(dir, path)
-			if isSignetDir(rel) {
+			if isBelaiDir(rel) {
 				return fs.SkipDir
 			}
 			return nil
@@ -81,7 +81,7 @@ func Enumerate(dir string) ([]Artifact, error) {
 		if sgn[rel] {
 			return nil
 		}
-		if isSignetPath(rel) {
+		if isBelaiPath(rel) {
 			return nil
 		}
 		kind, tool, stamp, label := Classify(rel)
@@ -107,8 +107,8 @@ func Enumerate(dir string) ([]Artifact, error) {
 	return out, nil
 }
 
-// signetPaths precomputes known signet-owned paths inside dir.
-func signetPaths(dir string) map[string]bool {
+// belaiPaths precomputes known belai-owned paths inside dir.
+func belaiPaths(dir string) map[string]bool {
 	m := map[string]bool{
 		"settings.json": true,
 		// prompts.json is a tombstone: the old two-file prompt library. It is
@@ -119,7 +119,7 @@ func signetPaths(dir string) map[string]bool {
 		"code-review-summary.md":    true,
 		"code-review-manifest.json": true,
 	}
-	for _, base := range []string{"signet", "plans", "goals", "prompts"} {
+	for _, base := range []string{"belai", "plans", "goals", "prompts"} {
 		_ = filepath.WalkDir(filepath.Join(dir, base), func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return nil
@@ -132,21 +132,21 @@ func signetPaths(dir string) map[string]bool {
 	return m
 }
 
-// signet-owned directories by name.
-var signetDirs = map[string]bool{
-	"signet":  true,
+// belai-owned directories by name.
+var belaiDirs = map[string]bool{
+	"belai":   true,
 	"plans":   true,
 	"goals":   true,
 	"prompts": true,
 }
 
-func isSignetDir(rel string) bool {
+func isBelaiDir(rel string) bool {
 	parts := strings.Split(filepath.ToSlash(rel), "/")
-	return signetDirs[parts[0]]
+	return belaiDirs[parts[0]]
 }
 
-// isSignetPath matches signet files stored directly in .vulnetix.
-func isSignetPath(rel string) bool {
+// isBelaiPath matches belai files stored directly in .vulnetix.
+func isBelaiPath(rel string) bool {
 	base := filepath.Base(rel)
 	switch base {
 	case "settings.json", "credentials.json",
@@ -154,7 +154,7 @@ func isSignetPath(rel string) bool {
 		return true
 	case "prompts.json":
 		// Tombstone: a leftover prompts.json from the old library is still
-		// signet-owned, never a scannable artifact.
+		// belai-owned, never a scannable artifact.
 		return true
 	}
 	return false
@@ -169,13 +169,13 @@ func Classify(rel string) (Kind, string, time.Time, string) {
 	lower := strings.ToLower(base)
 	dir := filepath.ToSlash(filepath.Dir(rel))
 
-	// Signet files.
-	if isSignetPath(rel) {
-		return KindSignet, "", time.Time{}, ""
+	// Belai files.
+	if isBelaiPath(rel) {
+		return KindBelai, "", time.Time{}, ""
 	}
 	for _, seg := range strings.Split(dir, "/") {
-		if signetDirs[seg] {
-			return KindSignet, "", time.Time{}, ""
+		if belaiDirs[seg] {
+			return KindBelai, "", time.Time{}, ""
 		}
 	}
 

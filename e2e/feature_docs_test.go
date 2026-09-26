@@ -5,17 +5,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/acp"
-	"github.com/vulnetix/signet/internal/agentprofile"
-	"github.com/vulnetix/signet/internal/commands"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/hooks"
-	"github.com/vulnetix/signet/internal/notify"
-	"github.com/vulnetix/signet/internal/otel"
-	"github.com/vulnetix/signet/internal/plugins"
-	"github.com/vulnetix/signet/internal/sandbox"
-	"github.com/vulnetix/signet/internal/skills"
-	"github.com/vulnetix/signet/internal/tui"
+	"github.com/vulnetix/belai/internal/acp"
+	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/commands"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/hooks"
+	"github.com/vulnetix/belai/internal/notify"
+	"github.com/vulnetix/belai/internal/otel"
+	"github.com/vulnetix/belai/internal/plugins"
+	"github.com/vulnetix/belai/internal/sandbox"
+	"github.com/vulnetix/belai/internal/skills"
+	"github.com/vulnetix/belai/internal/tui"
 )
 
 // The feature docs must name everything the code accepts: an event, key or
@@ -82,8 +82,8 @@ func TestPluginsDocParity(t *testing.T) {
 	mustName(t, "docs/plugins.md", body, jsonKeys(plugins.Manifest{})...)
 	mustName(t, "docs/plugins.md", body, plugins.ManifestFile)
 	for _, cmd := range []string{"list", "install", "update", "enable", "disable", "remove"} {
-		if !strings.Contains(body, "signet plugin "+cmd) {
-			t.Errorf("docs/plugins.md does not document `signet plugin %s`", cmd)
+		if !strings.Contains(body, "belai plugin "+cmd) {
+			t.Errorf("docs/plugins.md does not document `belai plugin %s`", cmd)
 		}
 	}
 }
@@ -113,7 +113,7 @@ func TestACPDocParity(t *testing.T) {
 	mustName(t, "docs/acp.md", body, acp.Methods[0])
 	for _, m := range acp.Methods {
 		if m == "authenticate" {
-			continue // accepted as a no-op; Signet offers no auth methods
+			continue // accepted as a no-op; Belai offers no auth methods
 		}
 		mustName(t, "docs/acp.md", body, m)
 	}
@@ -159,7 +159,7 @@ func TestRoadmapStatusesMatchDocs(t *testing.T) {
 // Every built-in agent profile is named in docs/agent-profiles.md, so a
 // profile the harness starts on its own is never one a user cannot look up.
 func TestAgentProfilesDocNamesEveryBuiltin(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	body := docBody(t, "docs/agent-profiles.md")
 	all, err := agentprofile.List()
 	if err != nil {
@@ -186,7 +186,7 @@ func TestVulnetixDocParity(t *testing.T) {
 		mustName(t, "docs/vulnetix.md", body, name)
 	}
 	mustName(t, "docs/vulnetix.md", body,
-		"signet:vulnetix-scanner", "signet:vulnetix-review", "--ignore-git",
+		"belai:vulnetix-scanner", "belai:vulnetix-review", "--ignore-git",
 		"OnScanDone", "BuildTriageBlocksFor", "components.ReportRole", "TurnInput.ReviewFindings",
 		"nothing to scan", "no secrets in the working tree", "no known vulnerabilities")
 }

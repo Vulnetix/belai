@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/resilience"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/resilience"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 // midStreamResetBody yields one SSE chunk and then fails the read the way an

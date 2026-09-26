@@ -10,15 +10,15 @@ import (
 	"os"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/calltrace"
-	"github.com/vulnetix/signet/internal/httpclient"
-	"github.com/vulnetix/signet/internal/version"
+	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/httpclient"
+	"github.com/vulnetix/belai/internal/version"
 )
 
 // WebSearch is the web-search tool.
 type WebSearch struct {
 	Client   *http.Client
-	Endpoint string // overrides SIGNET_WEBSEARCH_URL
+	Endpoint string // overrides BELAI_WEBSEARCH_URL
 }
 
 // Definition returns the static tool metadata.
@@ -57,7 +57,7 @@ func (w *WebSearch) Execute(ctx context.Context, args map[string]any) (Result, e
 
 	endpoint := w.Endpoint
 	if endpoint == "" {
-		endpoint = os.Getenv("SIGNET_WEBSEARCH_URL")
+		endpoint = os.Getenv("BELAI_WEBSEARCH_URL")
 	}
 	if endpoint == "" {
 		return w.duckDuckGo(ctx, query)

@@ -5,8 +5,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/readindex"
-	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/belai/internal/readindex"
+	"github.com/vulnetix/belai/internal/run"
 )
 
 // Repeated-read answering. The session's readindex records every Read result

@@ -1,7 +1,7 @@
 package run
 
 import (
-	"github.com/vulnetix/signet/internal/copilotauth"
+	"github.com/vulnetix/belai/internal/copilotauth"
 )
 
 // copilotExchanger trades GitHub OAuth tokens for Copilot session tokens

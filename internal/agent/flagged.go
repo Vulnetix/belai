@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 // flaggedFiles remembers, for one session, the files whose Read result the

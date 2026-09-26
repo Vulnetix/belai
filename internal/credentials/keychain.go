@@ -22,7 +22,7 @@ var (
 	ErrNotFound    = errors.New("credential not found in keychain")
 )
 
-const keyringService = "signet"
+const keyringService = "belai"
 const keyringTimeout = 5 * time.Second
 
 // keyringBackend wraps zalando/go-keyring with timeouts.
@@ -32,7 +32,7 @@ type keyringBackend struct {
 }
 
 // NewKeyringBackend creates a keyring-backed Keychain for the named service.
-// The package default still uses "signet" so existing callers are unchanged.
+// The package default still uses "belai" so existing callers are unchanged.
 func NewKeyringBackend(service string) Keychain {
 	return &keyringBackend{service: service}
 }

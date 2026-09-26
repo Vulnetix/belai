@@ -11,10 +11,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/permissions"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/permissions"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 func newWriteSession(t *testing.T, root string, srv *httptest.Server, pol posture.Policy, allowAsk bool) *Session {

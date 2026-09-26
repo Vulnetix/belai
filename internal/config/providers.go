@@ -8,8 +8,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/vulnetix/signet/internal/provider"
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/provider"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 // envNameRe matches an environment variable name: a letter or underscore,

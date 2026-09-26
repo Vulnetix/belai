@@ -5,7 +5,7 @@
 //
 // Models re-read. A planning pass read the same files five to ten times each
 // (session b3a026a4), and every copy cost a full-context round, a classifier
-// call and context that the clearing pass then had to drop. Signet performs
+// call and context that the clearing pass then had to drop. Belai performs
 // every file change itself, so it knows exactly when a file it has shown the
 // model stops being current.
 //

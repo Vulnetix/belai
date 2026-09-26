@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 // Plan is a named plan document.

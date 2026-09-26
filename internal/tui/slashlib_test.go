@@ -8,17 +8,17 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/bgproc"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/processlib"
-	"github.com/vulnetix/signet/internal/promptlib"
+	"github.com/vulnetix/belai/internal/bgproc"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/processlib"
+	"github.com/vulnetix/belai/internal/promptlib"
 )
 
 // slashLibApp builds an App with one saved prompt, one agent profile and one
 // saved process, and stops any process a test starts.
 func slashLibApp(t *testing.T) *App {
 	t.Helper()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	if _, err := promptlib.Create(config.ScopeProject, workdir, "deploy", "ship it to staging"); err != nil {
 		t.Fatalf("prompt: %v", err)
@@ -183,12 +183,12 @@ func TestChipWindowKeepsSelectionVisible(t *testing.T) {
 
 func TestIsLibraryLine(t *testing.T) {
 	for line, want := range map[string]bool{
-		"/prompt:x":         true,
-		"/agent:signet:dbg": true,
-		"/process:web":      true,
-		"/prompts":          false,
-		"/agent start x":    false,
-		"prompt:x":          true,
+		"/prompt:x":        true,
+		"/agent:belai:dbg": true,
+		"/process:web":     true,
+		"/prompts":         false,
+		"/agent start x":   false,
+		"prompt:x":         true,
 	} {
 		if got := isLibraryLine(line); got != want {
 			t.Errorf("isLibraryLine(%q) = %v, want %v", line, got, want)

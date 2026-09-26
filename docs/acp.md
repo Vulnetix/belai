@@ -3,10 +3,10 @@
 **Status:** alpha-20260926. Shipped in an early form; the supported methods
 may still change.
 
-`signet acp` runs Signet as an [Agent Client
+`belai acp` runs Belai as an [Agent Client
 Protocol](https://agentclientprotocol.com) agent on stdin and stdout. Editors
 that speak ACP (Zed, JetBrains IDEs, Neovim through a plugin) can then use
-Signet as their agent, with the same classifier, permission rules, guardrails
+Belai as their agent, with the same classifier, permission rules, guardrails
 and budgets as the TUI.
 
 - [Editor setup](#editor-setup)
@@ -22,22 +22,22 @@ Zed, in `settings.json`:
 ```json
 {
   "agent_servers": {
-    "Signet": {
-      "command": "signet",
+    "Belai": {
+      "command": "belai",
       "args": ["acp"]
     }
   }
 }
 ```
 
-Other editors take the same command. `signet acp -provider <name> -model <id>`
+Other editors take the same command. `belai acp -provider <name> -model <id>`
 picks a provider and model; otherwise they resolve as they do for the TUI
-(settings, `SIGNET_PROVIDER`, available credentials). Everything else comes
-from your normal Signet settings for the project directory.
+(settings, `BELAI_PROVIDER`, available credentials). Everything else comes
+from your normal Belai settings for the project directory.
 
 ## What is supported
 
-| ACP method or update | Signet behaviour |
+| ACP method or update | Belai behaviour |
 | --- | --- |
 | `initialize` | protocol version 1; embedded file context accepted; no session loading |
 | `session/new` | starts a session in the editor's project directory |
@@ -57,7 +57,7 @@ classifier refuses it.
 
 - The project directory must already be trusted. `session/new` in an
   untrusted directory fails with a message telling you to open it in the TUI
-  once or run `signet -trust-dir` there. The trust prompt never runs over ACP.
+  once or run `belai -trust-dir` there. The trust prompt never runs over ACP.
 - Each ACP session is built the way the headless CLI builds one: the same
   classifier, posture gates, permission rules, sandbox and token budgets. The
   guardrails switch follows your settings for that directory.
@@ -70,7 +70,7 @@ classifier refuses it.
 ## Limitations
 
 - Sessions last as long as the editor's connection and are not written to
-  the Signet session store, so they cannot be resumed from the TUI.
+  the Belai session store, so they cannot be resumed from the TUI.
 - Clarifying questions, the harness's and the model's `AskUserQuestion`, are
   answered as declined over ACP; the agent proceeds with its
   best reading of the prompt.

@@ -102,7 +102,7 @@ func TestCommandsTableNeverInfersFromProse(t *testing.T) {
 
 func TestJustRecipesHeadersOnly(t *testing.T) {
 	root := t.TempDir()
-	just := "set shell := [\"bash\", \"-uc\"]\nbinary := \"signet\"\n# a comment: not a recipe\ndefault:\n    @just --list\nbuild:\n    go build ./...\ntest *ARGS:\n    go test ./... {{ARGS}}\n@check: fmt-check test\n[private]\nfmt-check:\n    gofmt -l .\n"
+	just := "set shell := [\"bash\", \"-uc\"]\nbinary := \"belai\"\n# a comment: not a recipe\ndefault:\n    @just --list\nbuild:\n    go build ./...\ntest *ARGS:\n    go test ./... {{ARGS}}\n@check: fmt-check test\n[private]\nfmt-check:\n    gofmt -l .\n"
 	if err := os.WriteFile(filepath.Join(root, "justfile"), []byte(just), 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -10,7 +10,7 @@ import (
 )
 
 func TestObserveCreatesEntry(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	dir := t.TempDir()
 	if err := Observe(dir, SourceWorkdir); err != nil {
 		t.Fatalf("Observe: %v", err)
@@ -29,7 +29,7 @@ func TestObserveCreatesEntry(t *testing.T) {
 }
 
 func TestMergePreservesRicherSource(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	dir := t.TempDir()
 	if err := Observe(dir, SourceSweep); err != nil {
 		t.Fatal(err)
@@ -45,7 +45,7 @@ func TestMergePreservesRicherSource(t *testing.T) {
 }
 
 func TestPruneRemovesOldUnpinned(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	dir := t.TempDir()
 	if err := Observe(dir, SourceSweep); err != nil {
 		t.Fatal(err)
@@ -69,7 +69,7 @@ func TestPruneRemovesOldUnpinned(t *testing.T) {
 }
 
 func TestForget(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	dir := t.TempDir()
 	if err := Observe(dir, SourceWorkdir); err != nil {
 		t.Fatal(err)
@@ -86,7 +86,7 @@ func TestForget(t *testing.T) {
 }
 
 func TestForwardVersionRefusesWrite(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	path, _ := registryPath()
 	_ = os.MkdirAll(filepath.Dir(path), 0o700)
 	_ = os.WriteFile(path, []byte(`{"version": 99, "entries": []}`), 0o600)
@@ -101,7 +101,7 @@ func TestForwardVersionRefusesWrite(t *testing.T) {
 }
 
 func TestAddWorkspaceDirStoresDirectories(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	extra := t.TempDir()
 	if err := Observe(workdir, SourceWorkdir); err != nil {
@@ -116,7 +116,7 @@ func TestAddWorkspaceDirStoresDirectories(t *testing.T) {
 }
 
 func TestAddWorkspaceDirRejectsOverlappingRoots(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	extra := t.TempDir()
 	_ = AddWorkspaceDir(workdir, extra)
@@ -133,7 +133,7 @@ func TestAddWorkspaceDirRejectsOverlappingRoots(t *testing.T) {
 }
 
 func TestAddWorkspaceDirRequiresDirectory(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	f := filepath.Join(t.TempDir(), "notadir")
 	_ = os.WriteFile(f, []byte("x"), 0o600)
@@ -143,7 +143,7 @@ func TestAddWorkspaceDirRequiresDirectory(t *testing.T) {
 }
 
 func TestResolveWorkspaceDirsFiltersRegistry(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	a := t.TempDir()
 	b := t.TempDir()
@@ -163,7 +163,7 @@ func TestResolveWorkspaceDirsFiltersRegistry(t *testing.T) {
 }
 
 func TestResolveWorkspaceDirsReturnsAllWhenAllowedEmpty(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	a := t.TempDir()
 	_ = AddWorkspaceDir(workdir, a)
@@ -178,7 +178,7 @@ func TestResolveWorkspaceDirsReturnsAllWhenAllowedEmpty(t *testing.T) {
 }
 
 func TestRaceManyObserves(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	const n = 50
 	dirs := make([]string, n)
 	for i := range dirs {
@@ -202,7 +202,7 @@ func TestRaceManyObserves(t *testing.T) {
 }
 
 func TestTrustCreatesEntryAndAcceptedDirs(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	dir := t.TempDir()
 	extra := t.TempDir()
 	if err := Trust(dir, []string{extra}); err != nil {
@@ -229,7 +229,7 @@ func TestTrustCreatesEntryAndAcceptedDirs(t *testing.T) {
 }
 
 func TestTrustIdempotent(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	dir := t.TempDir()
 	if err := Trust(dir, nil); err != nil {
 		t.Fatalf("Trust: %v", err)
@@ -251,7 +251,7 @@ func TestTrustIdempotent(t *testing.T) {
 }
 
 func TestTrustOverlappingDirRejectedWithoutMarkingTrust(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	dir := t.TempDir()
 	outer := t.TempDir()
 	inner := filepath.Join(outer, "inner")
@@ -277,7 +277,7 @@ func TestTrustOverlappingDirRejectedWithoutMarkingTrust(t *testing.T) {
 }
 
 func TestOldFormatLoadsUntrusted(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	dir := t.TempDir()
 	if err := Observe(dir, SourceWorkdir); err != nil {
 		t.Fatal(err)

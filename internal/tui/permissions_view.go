@@ -7,11 +7,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/permissions"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/tools"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/permissions"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/tools"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // permissionsViewState tracks the permissions editor UI.

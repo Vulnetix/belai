@@ -1,4 +1,4 @@
-//go:build signet_bert && !signet_bert_jailbreak
+//go:build belai_bert && !belai_bert_jailbreak
 
 package mlclassify
 

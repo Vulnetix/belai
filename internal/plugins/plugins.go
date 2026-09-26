@@ -1,7 +1,7 @@
 // Package plugins installs and loads plugin packages: a directory (usually a
-// git repository) with a signet-plugin.json manifest that bundles skills,
+// git repository) with a belai-plugin.json manifest that bundles skills,
 // hooks, saved prompts and agent profiles. Every component is validated with
-// the same validator Signet uses for the user's own files, installs are
+// the same validator Belai uses for the user's own files, installs are
 // confirmed by the user after a full listing, and a git install is pinned to
 // the commit that was shown. Plugins live only in the global state directory;
 // a repository can never install or enable one.
@@ -19,17 +19,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/agentprofile"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/hooks"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/skills"
+	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/hooks"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/skills"
 )
 
 // ManifestFile is the manifest's name at a plugin's root.
-const ManifestFile = "signet-plugin.json"
+const ManifestFile = "belai-plugin.json"
 
-// Manifest is a plugin's signet-plugin.json. Each component list names
+// Manifest is a plugin's belai-plugin.json. Each component list names
 // directories relative to the plugin root:
 //   - skills: directories of <name>/SKILL.md
 //   - hooks: directories of *.json hook files
@@ -47,13 +47,13 @@ type Manifest struct {
 
 var nameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,39}$`)
 
-// reservedNames cannot be plugin names: they would read as Signet's own.
-var reservedNames = map[string]bool{"signet": true, "user": true, "builtin": true}
+// reservedNames cannot be plugin names: they would read as Belai's own.
+var reservedNames = map[string]bool{"belai": true, "user": true, "builtin": true}
 
 // ValidName reports whether name is usable as a plugin name.
 func ValidName(name string) bool { return nameRE.MatchString(name) && !reservedNames[name] }
 
-// ReadManifest strictly decodes root/signet-plugin.json.
+// ReadManifest strictly decodes root/belai-plugin.json.
 func ReadManifest(root string) (Manifest, error) {
 	data, err := os.ReadFile(filepath.Join(root, ManifestFile))
 	if err != nil {

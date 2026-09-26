@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/calltrace"
-	"github.com/vulnetix/signet/internal/version"
+	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/version"
 )
 
 // TestProviderRequestCarriesTraceHeaders pins that a provider round trip

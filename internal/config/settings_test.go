@@ -106,7 +106,7 @@ func TestProjectOverridesGlobal(t *testing.T) {
 }
 
 func TestReadOnlyRoundTripAndDefault(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	// Default: unset means the full tool set (read-only is an opt-in).
 	var zero Settings
@@ -150,7 +150,7 @@ func TestReadOnlyRoundTripAndDefault(t *testing.T) {
 // TestBashReadOnlyAliasDecodes pins the deprecated alias: a legacy settings
 // file carrying bash_readonly still turns the master switch on.
 func TestBashReadOnlyAliasDecodes(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	path, err := GlobalSettingsPath()
 	if err != nil {
 		t.Fatal(err)
@@ -196,7 +196,7 @@ func TestReadOnlyWinsOverBashReadOnlyAlias(t *testing.T) {
 }
 
 func TestReadOnlyOverridePrecedence(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 
 	// An explicit project false must beat a global true.
@@ -287,22 +287,22 @@ func TestProjectPaths(t *testing.T) {
 	if got := ProjectGoalsDir(workdir); got != "/tmp/work/.vulnetix/goals" {
 		t.Fatalf("ProjectGoalsDir = %q", got)
 	}
-	if got := ProjectSignetDir(workdir); got != "/tmp/work/.vulnetix/signet" {
-		t.Fatalf("ProjectSignetDir = %q", got)
+	if got := ProjectBelaiDir(workdir); got != "/tmp/work/.vulnetix/belai" {
+		t.Fatalf("ProjectBelaiDir = %q", got)
 	}
-	if got := ProjectCredentialsPath(workdir); got != "/tmp/work/.vulnetix/signet/credentials.json" {
+	if got := ProjectCredentialsPath(workdir); got != "/tmp/work/.vulnetix/belai/credentials.json" {
 		t.Fatalf("ProjectCredentialsPath = %q", got)
 	}
 }
 
-func TestGlobalDirHonoursSignetHome(t *testing.T) {
-	t.Setenv("SIGNET_HOME", "/custom/signet")
+func TestGlobalDirHonoursBelaiHome(t *testing.T) {
+	t.Setenv("BELAI_HOME", "/custom/belai")
 	got, err := GlobalDir()
 	if err != nil {
 		t.Fatalf("GlobalDir: %v", err)
 	}
-	if got != "/custom/signet" {
-		t.Fatalf("GlobalDir = %q, want /custom/signet", got)
+	if got != "/custom/belai" {
+		t.Fatalf("GlobalDir = %q, want /custom/belai", got)
 	}
 }
 
@@ -310,7 +310,7 @@ func TestMigrateMovesLegacyDir(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 
-	legacy := filepath.Join(tmp, ".signet")
+	legacy := filepath.Join(tmp, ".belai")
 	if err := os.MkdirAll(legacy, 0o755); err != nil {
 		t.Fatalf("mkdir legacy: %v", err)
 	}
@@ -326,7 +326,7 @@ func TestMigrateMovesLegacyDir(t *testing.T) {
 		t.Fatalf("expected migration")
 	}
 
-	newDir := filepath.Join(tmp, ".vulnetix", "signet")
+	newDir := filepath.Join(tmp, ".vulnetix", "belai")
 	if _, err := os.Stat(newDir); err != nil {
 		t.Fatalf("new dir missing: %v", err)
 	}
@@ -343,11 +343,11 @@ func TestMigrateSkipsWhenTargetExists(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 
-	legacy := filepath.Join(tmp, ".signet")
+	legacy := filepath.Join(tmp, ".belai")
 	if err := os.MkdirAll(legacy, 0o755); err != nil {
 		t.Fatalf("mkdir legacy: %v", err)
 	}
-	newDir := filepath.Join(tmp, ".vulnetix", "signet")
+	newDir := filepath.Join(tmp, ".vulnetix", "belai")
 	if err := os.MkdirAll(newDir, 0o700); err != nil {
 		t.Fatalf("mkdir new: %v", err)
 	}

@@ -24,12 +24,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/proc"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/sandbox"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/proc"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/sandbox"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 // State is the lifecycle of a supervised process.
@@ -226,7 +226,7 @@ func (m *Manager) Start(name, command string) (Process, error) {
 
 	lockPath := filepath.Join(m.logsDir, lockName(m.workdir, slug))
 	if owner, ok := lockOwner(lockPath); ok && owner != os.Getpid() {
-		return Process{}, fmt.Errorf("process %q is already running in another Signet instance (lock %s)", name, lockPath)
+		return Process{}, fmt.Errorf("process %q is already running in another Belai instance (lock %s)", name, lockPath)
 	}
 
 	id := fmt.Sprintf("p%d", m.nextID)
@@ -330,7 +330,7 @@ func (m *Manager) Stop(id string) error {
 	return nil
 }
 
-// Shutdown stops every supervised process. It should be called before Signet
+// Shutdown stops every supervised process. It should be called before Belai
 // exits so children in their own process groups are not orphaned.
 func (m *Manager) Shutdown() {
 	m.mu.Lock()

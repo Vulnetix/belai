@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/agent"
+	"github.com/vulnetix/belai/internal/agent"
 )
 
 // TestRetryLineShowsLayerBudget pins that the retry system line renders the

@@ -9,7 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/lsp"
+	"github.com/vulnetix/belai/internal/lsp"
 )
 
 // lspProbeMsg carries the result of one detection run.

@@ -11,9 +11,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/clarify"
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/clarify"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
 // MaxTasks is the hard cap on fan-out. Unbounded fan-out against a

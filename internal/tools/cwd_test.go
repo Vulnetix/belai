@@ -6,7 +6,7 @@ import (
 	"io/fs"
 	"os"
 
-	"github.com/vulnetix/signet/internal/repoindex"
+	"github.com/vulnetix/belai/internal/repoindex"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -118,10 +118,10 @@ func TestCwdAbsolutePrimaryRootPathResolves(t *testing.T) {
 }
 
 // A leading "~/" expands to the user's home before the root test, so
-// ~/GitHub/signet/x resolves when it lands inside a root.
+// ~/GitHub/belai/x resolves when it lands inside a root.
 func TestCwdExpandsHomeAbsolutePath(t *testing.T) {
 	home := t.TempDir()
-	root := filepath.Join(home, "GitHub", "signet")
+	root := filepath.Join(home, "GitHub", "belai")
 	if err := os.MkdirAll(filepath.Join(root, "internal", "tools"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestCwdExpandsHomeAbsolutePath(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	c := NewCwd(root)
-	res, err := resolvePath(root, c, "~/GitHub/signet/top.txt")
+	res, err := resolvePath(root, c, "~/GitHub/belai/top.txt")
 	if err != nil {
 		t.Fatalf("resolvePath(~): %v", err)
 	}

@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/nlpodyssey/cybertron/pkg/tasks/textclassification/bert"
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
 // embeddedSpec describes one model embedded in this binary variant.

@@ -77,7 +77,7 @@ func TestMutateDeletesUnsetKeys(t *testing.T) {
 }
 
 func TestMutateGlobalScope(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	if err := Mutate(ScopeGlobal, "/ignored", func(s *Settings) error {
 		s.Provider = "openai"
 		return nil
@@ -178,7 +178,7 @@ func TestWriteFileAtomicCreatesAtomicFile(t *testing.T) {
 }
 
 func TestWriteGlobalFileAtomicCreatesGlobalDir(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	path, err := GlobalDir()
 	if err != nil {
 		t.Fatalf("GlobalDir: %v", err)

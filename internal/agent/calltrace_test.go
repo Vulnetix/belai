@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/calltrace"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 // traceProbe is a tool that records the calltrace environment its Execute

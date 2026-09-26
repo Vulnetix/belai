@@ -6,8 +6,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/mcp"
-	"github.com/vulnetix/signet/internal/sanitize"
+	"github.com/vulnetix/belai/internal/mcp"
+	"github.com/vulnetix/belai/internal/sanitize"
 )
 
 // mcpDoneMsg reports a /mcp restart.

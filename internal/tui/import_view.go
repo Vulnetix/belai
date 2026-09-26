@@ -8,10 +8,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/vulnetix/signet/internal/agentscan"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/credentials"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/agentscan"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // importViewState tracks the credential import UI.
@@ -308,7 +308,7 @@ func (a *App) cycleWritableBackend(cur credentials.Source) credentials.Source {
 
 func importEnvVar(provider string) string {
 	var b strings.Builder
-	b.WriteString("SIGNET_")
+	b.WriteString("BELAI_")
 	for i := 0; i < len(provider); i++ {
 		c := provider[i]
 		switch {

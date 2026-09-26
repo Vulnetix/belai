@@ -6,7 +6,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/vulnetix/signet/internal/posture"
+	"github.com/vulnetix/belai/internal/posture"
 )
 
 // loadCache memoises the last loaded directory. Skills are read from disk on

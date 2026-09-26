@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/vulnetixcreds"
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/vulnetixcreds"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 // mapEnv adapts a map to the Resolver's env accessor.
@@ -30,15 +30,15 @@ func newBareResolver(workdir string, env map[string]string, kc Keychain) *Resolv
 
 func TestUpperSnakeAndEnvVarForProvider(t *testing.T) {
 	cases := map[string]string{
-		"my-llm":         "SIGNET_MY_LLM_API_KEY",
-		"My LLM":         "SIGNET_MY_LLM_API_KEY",
-		"openai":         "SIGNET_OPENAI_API_KEY",
-		"a.b-c_d e9f":    "SIGNET_A_B_C_D_E9F_API_KEY",
-		"UPPER":          "SIGNET_UPPER_API_KEY",
-		"Trailing-Slash": "SIGNET_TRAILING_SLASH_API_KEY",
-		"trailing/slash": "SIGNET_TRAILING_SLASH_API_KEY",
-		"has space":      "SIGNET_HAS_SPACE_API_KEY",
-		"MiXeD case-99":  "SIGNET_MIXED_CASE_99_API_KEY",
+		"my-llm":         "BELAI_MY_LLM_API_KEY",
+		"My LLM":         "BELAI_MY_LLM_API_KEY",
+		"openai":         "BELAI_OPENAI_API_KEY",
+		"a.b-c_d e9f":    "BELAI_A_B_C_D_E9F_API_KEY",
+		"UPPER":          "BELAI_UPPER_API_KEY",
+		"Trailing-Slash": "BELAI_TRAILING_SLASH_API_KEY",
+		"trailing/slash": "BELAI_TRAILING_SLASH_API_KEY",
+		"has space":      "BELAI_HAS_SPACE_API_KEY",
+		"MiXeD case-99":  "BELAI_MIXED_CASE_99_API_KEY",
 	}
 	for in, want := range cases {
 		if got := EnvVarForProvider(in); got != want {
@@ -94,9 +94,9 @@ func TestSpecForCustomProfileOptionalKey(t *testing.T) {
 
 func TestConfiguredProvidersAndProviderNames(t *testing.T) {
 	env := map[string]string{
-		"OPENAI_API_KEY":        "k",
-		"SIGNET_MY_LLM_API_KEY": "k",
-		"SIGNET_OTHER_API_KEY":  "k",
+		"OPENAI_API_KEY":       "k",
+		"BELAI_MY_LLM_API_KEY": "k",
+		"BELAI_OTHER_API_KEY":  "k",
 	}
 	r := newBareResolver(t.TempDir(), env, &fakeKeychain{})
 	r.settings = config.Settings{

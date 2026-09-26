@@ -148,7 +148,7 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   the change, answers `DEPS_CHANGED`/`DEPS_UNCHANGED`, and fails toward
   checking: a malformed reply, a transport error or an undiffable file is
   checked. The CLI argv is fixed by the harness. The per-ecosystem
-  `signet:deps-*` background agents are read-only (`Read`, `Grep`, `Glob`):
+  `belai:deps-*` background agents are read-only (`Read`, `Grep`, `Glob`):
   they never install or run a package manager, so a malicious package's
   install scripts never run on their account. A repo-visible project
   settings file may turn `vulnetix.dep_watch` on, never off.
@@ -169,7 +169,7 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `posture.AllIgnore()` everywhere — agent session, inline `!cmd`, `@file`
   admission, background agents, and the CLI. Derive it from
   `App.effectivePosture()` in the TUI or `settings.GuardrailsEnabled()` in
-  `cmd/signet`; never read `a.posture` directly and never hand-roll the
+  `cmd/belai`; never read `a.posture` directly and never hand-roll the
   all-ignore loop. A gated path checks the level **before** calling the
   classifier, never after — a verdict that cannot change the outcome is a
   request nobody asked for and sends the content anyway. Sanitising is not
@@ -223,7 +223,7 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   sandbox-exec on macOS). The policy is built per call by
   `sandbox.FromSettings` from the settings, the current workspace roots and
   the effective posture, and rides on the call's context; guardrails off
-  turns it off. Signet's state directory is always hidden inside it. The
+  turns it off. Belai's state directory is always hidden inside it. The
   project layer may raise `sandbox.mode`, set `network` to `deny` and
   `caches` to `false`, never the reverse, and its `extra_writable` is
   dropped. `required` with no working backend refuses the command; it never
@@ -237,8 +237,8 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   asks without an allow rule and never reaches plan mode) and in
   `tools.classifierKinds` unconditionally. Server names, descriptions and
   schema text are sanitized and capped and reach the model only through the
-  sealed tools briefing. Signet answers a server's `ping` and nothing else.
-- **ACP never widens what an editor can do.** `signet acp` builds each
+  sealed tools briefing. Belai answers a server's `ping` and nothing else.
+- **ACP never widens what an editor can do.** `belai acp` builds each
   session with `newCLISession`, the headless path, so every gate, rule,
   sandbox and budget applies. `session/new` fails closed in a directory
   without `trusted:true`; the trust prompt never runs over ACP. Permission
@@ -262,7 +262,7 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
 
 ## Layout
 
-- `cmd/signet` — entrypoint.
+- `cmd/belai` — entrypoint.
 - `internal/...` — library code, one package per concern.
 - `e2e/` — end-to-end tests that drive the built binary.
 - `docs/` — architecture, specs, and the development workflow.

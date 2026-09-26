@@ -10,19 +10,19 @@ import (
 )
 
 func TestEnvUnsetDisabled(t *testing.T) {
-	t.Setenv("SIGNET_TRACE", "")
+	t.Setenv("BELAI_TRACE", "")
 	if w := Env(); w != nil {
-		t.Fatalf("Env() = %v, want nil when SIGNET_TRACE is unset", w)
+		t.Fatalf("Env() = %v, want nil when BELAI_TRACE is unset", w)
 	}
 }
 
 func TestEnvWritesToNamedFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "env-trace.jsonl")
-	t.Setenv("SIGNET_TRACE", path)
+	t.Setenv("BELAI_TRACE", path)
 
 	w := Env()
 	if w == nil {
-		t.Fatal("Env() returned nil for a valid SIGNET_TRACE path")
+		t.Fatal("Env() returned nil for a valid BELAI_TRACE path")
 	}
 	defer w.Close()
 	w.Event("agent", "turn", time.Millisecond)
@@ -51,7 +51,7 @@ func TestEnvUnopenablePathDisabled(t *testing.T) {
 	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("SIGNET_TRACE", filepath.Join(blocker, "trace.jsonl"))
+	t.Setenv("BELAI_TRACE", filepath.Join(blocker, "trace.jsonl"))
 
 	if w := Env(); w != nil {
 		t.Fatalf("Env() = %v, want nil for an unopenable path", w)

@@ -6,7 +6,7 @@ import chunked from '../../assets/concepts/chunked-classification.svg?raw';
 import agentTurnShot from '../../assets/shots/agent-turn.svg';
 
 const sealText =
-  'Trust pipeline: every untrusted tool result is sanitized, classified, then passed on or blocked. Tools whose output format Signet controls are sanitized but not classified. The next section covers which engine classifies.';
+  'Trust pipeline: every untrusted tool result is sanitized, classified, then passed on or blocked. Tools whose output format Belai controls are sanitized but not classified. The next section covers which engine classifies.';
 ---
 
 <SealedSection label="trust" sealText={sealText} id="trust">
@@ -17,14 +17,14 @@ const sealText =
         Every untrusted tool result is sanitized, then classified, then either passed to the model or
         blocked. Output from <code class="mono">Bash</code>, <code class="mono">WebFetch</code>,{' '}
         <code class="mono">WebSearch</code> and <code class="mono">Read</code>, supervised processes and
-        third-party repositories is always classified. Tools whose output has a format Signet controls,
+        third-party repositories is always classified. Tools whose output has a format Belai controls,
         such as <code class="mono">Grep</code>, <code class="mono">Glob</code>, <code class="mono">Write</code> and{' '}
         <code class="mono">Edit</code>, are sanitized but not classified.
       </p>
       <p class="mt-4 text-vx-ink/80">
         Outbound requests identify themselves. Provider calls, <code class="mono">WebFetch</code> and{' '}
-        <code class="mono">WebSearch</code> send <code class="mono">User-Agent: signet/&lt;version&gt;</code>, the{' '}
-        <code class="mono">X-Signet-Session-Id</code> and <code class="mono">X-Signet-Tool</code> headers, and a W3C{' '}
+        <code class="mono">WebSearch</code> send <code class="mono">User-Agent: belai/&lt;version&gt;</code>, the{' '}
+        <code class="mono">X-Belai-Session-Id</code> and <code class="mono">X-Belai-Tool</code> headers, and a W3C{' '}
         <code class="mono">traceparent</code>, so a gateway or proxy can tie every request back to its session and tool call.
       </p>
       <p class="mt-4 text-vx-ink/80">

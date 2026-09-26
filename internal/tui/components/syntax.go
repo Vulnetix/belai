@@ -128,7 +128,7 @@ func highlight(lexer chroma.Lexer, src string) [][]Seg {
 // syntaxColour maps a chroma token to the existing palette.
 //
 // The mapping is deliberately coarse and leaves plain identifiers uncoloured.
-// Signet has a six-colour brand palette, not a syntax theme; colouring every
+// Belai has a six-colour brand palette, not a syntax theme; colouring every
 // token class would both exhaust it and, by making everything significant,
 // make nothing significant. What is coloured here is structure — the
 // language's own words, the names being declared, and the literal data — which

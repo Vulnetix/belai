@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/vulnetix/signet/internal/agentprofile"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/goals"
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/plans"
-	"github.com/vulnetix/signet/internal/profiles"
-	"github.com/vulnetix/signet/internal/prompt"
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/goals"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/plans"
+	"github.com/vulnetix/belai/internal/profiles"
+	"github.com/vulnetix/belai/internal/prompt"
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
 // CarrierOptions resolves the active plan, goal, or agent profile and maps
@@ -65,7 +65,7 @@ func CarrierOptions(workdir string, d rolemanager.ModeDecision, executePlan bool
 					break
 				}
 				loadErr = fmt.Errorf("load profile %q: %w", d.AgentName, err)
-				fmt.Fprintf(os.Stderr, "signet: warning: %v; falling back to default agent\n", loadErr)
+				fmt.Fprintf(os.Stderr, "belai: warning: %v; falling back to default agent\n", loadErr)
 			}
 		}
 	}

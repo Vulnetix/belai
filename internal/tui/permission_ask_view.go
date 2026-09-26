@@ -6,9 +6,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/vulnetix/signet/internal/agent"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // permissionAskViewState tracks the interactive mutating-tool approval UI.

@@ -6,13 +6,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/calltrace"
-	"github.com/vulnetix/signet/internal/otel"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/otel"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/run"
 )
 
-// run is one turn, wrapped in the signet.turn span and the turn-duration
+// run is one turn, wrapped in the belai.turn span and the turn-duration
 // histogram. Only the mode, pass count and an outcome word are recorded:
 // nothing from the prompt or the reply.
 func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, streaming bool, emit func(Event)) (run.Result, error) {
@@ -20,7 +20,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		return s.runWithClarify(ctx, history, in, streaming, emit)
 	}
 	start := time.Now()
-	span := otel.StartSpan(ctxWithSession(ctx, s.sessionID), "signet.turn")
+	span := otel.StartSpan(ctxWithSession(ctx, s.sessionID), "belai.turn")
 	mode := "unknown"
 	inner := emit
 	emit = func(e Event) {
@@ -36,7 +36,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		span.Fail()
 	}
 	span.End()
-	otel.Observe("signet.turn.duration", time.Since(start), otel.S(otel.AttrMode, mode), otel.S(otel.AttrOutcome, outcome))
+	otel.Observe("belai.turn.duration", time.Since(start), otel.S(otel.AttrMode, mode), otel.S(otel.AttrOutcome, outcome))
 	return res, err
 }
 
@@ -56,7 +56,7 @@ func turnOutcome(ctx context.Context, err error) string {
 	return "error"
 }
 
-// executeCall is one tool call, wrapped in the signet.tool_call span and the
+// executeCall is one tool call, wrapped in the belai.tool_call span and the
 // tool-call counter. The tool's name and kind and an outcome word are
 // recorded; its arguments and result never are.
 func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, emit func(Event), eff *callEffect) string {
@@ -67,7 +67,7 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 	if t, ok := s.registry.Find(call.Name); ok {
 		kind = string(t.Kind())
 	}
-	span := otel.StartSpan(ctxWithSession(ctx, s.sessionID), "signet.tool_call", otel.S(otel.AttrToolName, call.Name), otel.S(otel.AttrToolKind, kind))
+	span := otel.StartSpan(ctxWithSession(ctx, s.sessionID), "belai.tool_call", otel.S(otel.AttrToolName, call.Name), otel.S(otel.AttrToolKind, kind))
 	out := s.executeCallInner(ctx, call, emit, eff)
 	outcome := toolOutcome(out)
 	span.Set(otel.S(otel.AttrOutcome, outcome))
@@ -75,7 +75,7 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 		span.Fail()
 	}
 	span.End()
-	otel.Add("signet.tool_calls", 1, otel.S(otel.AttrToolKind, kind), otel.S(otel.AttrOutcome, outcome))
+	otel.Add("belai.tool_calls", 1, otel.S(otel.AttrToolKind, kind), otel.S(otel.AttrOutcome, outcome))
 	return out
 }
 

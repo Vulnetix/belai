@@ -1,12 +1,12 @@
-# Signet architecture
+# Belai architecture
 
-Signet is a role-managed, injection-safe LLM coding harness with a Codex-style
+Belai is a role-managed, injection-safe LLM coding harness with a Codex-style
 terminal UI. This document describes its security model and the modes it
 exposes.
 
 ## Role Manager
 
-The Role Manager is Signet's central safety boundary: security classification,
+The Role Manager is Belai's central safety boundary: security classification,
 the sanitize → classify → decision pipeline, system/agent block boundaries,
 tool-call and permission invariants, skill/hook validation, and operating-mode
 auto-detection.
@@ -49,7 +49,7 @@ binary that embeds the weights, `"llm"` otherwise.
 
 Flags `-classifier-provider`, `-classifier-model`, `-classifier-effort`,
 `-classifier-kind`, `-classifier-phase1-*`, `-classifier-phase2-*`, and env
-vars `SIGNET_CLASSIFIER_PROVIDER/MODEL/EFFORT/KIND/PHASE1_*/PHASE2_*` set the
+vars `BELAI_CLASSIFIER_PROVIDER/MODEL/EFFORT/KIND/PHASE1_*/PHASE2_*` set the
 same fields. The whole block is also editable from the TUI's `/model` page (see
 "Classifier picker").
 
@@ -162,7 +162,7 @@ Business rules:
   survive it. It is independent of the agent's own `caveman` setting: either
   can be on without the other.
 - **Tri-state**: `classifier.caveman` is a `*bool`. Unset means off and claims
-  no provenance, so `SIGNET_CLASSIFIER_CAVEMAN` unset or unparseable never
+  no provenance, so `BELAI_CLASSIFIER_CAVEMAN` unset or unparseable never
   overrides a stored value, and a stored `false` survives a round trip through
   the settings file rather than being pruned as empty. `ClassifierSettings.
   IsZero` counts the field, so a caveman-only block still merges.
@@ -360,7 +360,7 @@ Both `ollama` and `llama-server` are local providers that need no API key.
 `ollama` speaks the Ollama native endpoint (default `http://localhost:11434/v1`)
 and `llama-server` speaks a llama-server / llama.cpp OpenAI-compatible endpoint
 (default `http://localhost:8080/v1`). Each resolves from a single `base_url`
-environment variable (`OLLAMA_HOST` and `SIGNET_LLAMA_HOST` respectively) or
+environment variable (`OLLAMA_HOST` and `BELAI_LLAMA_HOST` respectively) or
 from individually-managed host, port, and protocol fields in `/providers`.
 
 ### Request shape
@@ -418,11 +418,11 @@ what keeps a request both valid and cacheable.
 
 ### Outbound identification and trace headers
 
-Every outbound HTTP request Signet makes identifies itself with one
+Every outbound HTTP request Belai makes identifies itself with one
 `User-Agent`, built by `version.UserAgent()`:
 
 ```
-User-Agent: signet/<version> (+https://github.com/Vulnetix/signet)
+User-Agent: belai/<version> (+https://github.com/Vulnetix/belai)
 ```
 
 That covers provider and classifier turns, nonce fetches, the release check,
@@ -434,11 +434,11 @@ build:
 
 | Header                    | Value                                          | Sent on                      |
 | ------------------------- | ---------------------------------------------- | ---------------------------- |
-| `X-Signet-Session-Id`     | the transcript session id (as in `/resume`)    | provider + tool requests     |
-| `X-Signet-Tool`           | registered tool name, e.g. `WebFetch`          | tool requests only           |
-| `X-Signet-Tool-Call-Id`   | the model's tool-call id                       | tool requests only           |
-| `X-Signet-Client-Version` | `version.Version`                              | every stamped request        |
-| `X-Signet-Client-Build`   | `<commit>; <build date>[; <variant>]`          | every stamped request        |
+| `X-Belai-Session-Id`     | the transcript session id (as in `/resume`)    | provider + tool requests     |
+| `X-Belai-Tool`           | registered tool name, e.g. `WebFetch`          | tool requests only           |
+| `X-Belai-Tool-Call-Id`   | the model's tool-call id                       | tool requests only           |
+| `X-Belai-Client-Version` | `version.Version`                              | every stamped request        |
+| `X-Belai-Client-Build`   | `<commit>; <build date>[; <variant>]`          | every stamped request        |
 | `traceparent`             | W3C Trace Context `00-<trace-id>-<span-id>-01` | provider + tool requests     |
 
 The trace-id is the first 16 bytes of SHA-256 of the session id, so every
@@ -452,9 +452,9 @@ never form an invalid header or split an environment entry.
 Edge cases:
 
 - **Tool with no session.** The tool name and call id are still stamped, but
-  no `X-Signet-Session-Id` and no `traceparent`, because the trace-id is derived
+  no `X-Belai-Session-Id` and no `traceparent`, because the trace-id is derived
   from the session.
-- **Tool name spelling.** `X-Signet-Tool` carries the registered spelling
+- **Tool name spelling.** `X-Belai-Tool` carries the registered spelling
   (`Read`), not the model's (`read`). Tool lookup is case-insensitive, so the
   model's spelling can differ.
 - **Span per tool call.** All requests within one tool call (a WebSearch
@@ -464,7 +464,7 @@ Edge cases:
   The session is kept.
 - **Redirects.** Go's HTTP client copies request headers onto a redirect, and
   only drops `Authorization`/`Cookie` when the host changes. So a
-  `WebFetch` redirect (at most five) carries the same `X-Signet-*`,
+  `WebFetch` redirect (at most five) carries the same `X-Belai-*`,
   `traceparent` and `User-Agent` headers to the redirect target.
 - **Reachability probe.** `WebSearch.Available()` runs with no context, so its
   `HEAD` carries only `User-Agent` and the client version/build.
@@ -478,11 +478,11 @@ scrubbing still removes every credential first:
 
 | Variable              | Value                                   |
 | --------------------- | --------------------------------------- |
-| `SIGNET`              | `1`                                     |
-| `SIGNET_VERSION`      | `version.Version`                       |
-| `SIGNET_SESSION_ID`   | session id                              |
-| `SIGNET_TOOL`         | tool name                               |
-| `SIGNET_TOOL_CALL_ID` | tool-call id                            |
+| `BELAI`              | `1`                                     |
+| `BELAI_VERSION`      | `version.Version`                       |
+| `BELAI_SESSION_ID`   | session id                              |
+| `BELAI_TOOL`         | tool name                               |
+| `BELAI_TOOL_CALL_ID` | tool-call id                            |
 | `TRACEPARENT`         | same value as the `traceparent` header  |
 
 `TRACEPARENT` follows the OpenTelemetry environment-variable propagation
@@ -493,7 +493,7 @@ variables.
 **Where the session id comes from.** The TUI wraps each turn's context with its
 current session id and pushes it into the background agent and process
 managers (`SetSessionID`), including after `/new`, resume and plan fork.
-Explore subagents inherit the parent's id. A headless `signet -p` run mints a
+Explore subagents inherit the parent's id. A headless `belai -p` run mints a
 fresh id per invocation. The TUI's direct tool runs (inline `!cmd`, `@file`
 admission, the file picker) carry it too.
 
@@ -504,7 +504,7 @@ path or prompt content.
 
 **Conventions followed.** The scheme mirrors the ones other coding agents use:
 Claude Code's `X-Claude-Code-Session-Id`, Codex's `session_id`/`originator`/`version`,
-and Copilot's `editor-version`, namespaced under `X-Signet-*`, plus the
+and Copilot's `editor-version`, namespaced under `X-Belai-*`, plus the
 vendor-neutral W3C `traceparent`. Web Bot Auth (`Signature-Agent` with RFC 9421
 message signatures) is not implemented. It is still an individual IETF draft
 and is tracked as future work.
@@ -516,11 +516,11 @@ and is tracked as future work.
 ### Agent mode
 
 Interactive default. Profiles (`internal/profiles`, stored under
-`~/.vulnetix/signet/profiles/`) are selectable at startup and mid-session via
-`/profile`. Built-in profiles live under the `signet:` namespace; the debug
-profile (`signet:debug`) is automatically engaged for `!cmd` inline-shell
+`~/.vulnetix/belai/profiles/`) are selectable at startup and mid-session via
+`/profile`. Built-in profiles live under the `belai:` namespace; the debug
+profile (`belai:debug`) is automatically engaged for `!cmd` inline-shell
 round-trips, and a finished `/vulnetix review` switches the session to agent
-mode with `signet:vulnetix-review` engaged (see [vulnetix.md](vulnetix.md)).
+mode with `belai:vulnetix-review` engaged (see [vulnetix.md](vulnetix.md)).
 User files cannot shadow a built-in name.
 
 Agent and goal mode carry a short *work-discipline* section in the system
@@ -572,7 +572,7 @@ to the last tool row.
 
 Models re-read. Session `b3a026a4` read the same files five to ten times each
 during one planning turn, and every copy cost a full-context round, a
-classifier call, and context that clearing then had to drop. Signet makes
+classifier call, and context that clearing then had to drop. Belai makes
 every file change itself, so the harness keeps `internal/readindex`: one
 entry per `Read` it delivered, keyed by the resolved path and window
 (`offset`, `limit`), holding the file's size and mtime, its git blob id
@@ -769,7 +769,7 @@ reach several surfaces that each used to hold their own copy of the policy:
 | `@file` attachment admission | `App.effectivePosture()` read per attachment |
 | Background agents | `Manager.SetPosture`, pushed by `App.syncPosture` whenever the switch moves; each running instance's own `posture.Live` is updated in place |
 | `/permissions` preview | `App.effectivePosture()`, so the preview matches what would actually happen |
-| CLI | `settings.GuardrailsEnabled()` in `cmd/signet`, which the `-guardrails` flag folds into first |
+| CLI | `settings.GuardrailsEnabled()` in `cmd/belai`, which the `-guardrails` flag folds into first |
 
 Business rules and edge cases:
 
@@ -1037,7 +1037,7 @@ resolve paths from the concurrent fan-out.
   root resolves there, and a path inside an added root resolves against that
   root.
 - a leading `~/` expands to the user's home directory before that match, so
-  `~/src/signet/README.md` is the absolute filesystem path the model meant,
+  `~/src/belai/README.md` is the absolute filesystem path the model meant,
   not a literal `~` segment.
 - a path beginning with `/` that lands in no root is still session-root-
   relative (the `/`-is-root convention), so `/internal/tools` keeps meaning
@@ -1059,12 +1059,12 @@ a deliberate, user-confirmed relaxation of the default single-root invariant.
 
 ### First-run workspace trust
 
-Signet refuses to touch a directory it has never seen without an explicit
+Belai refuses to touch a directory it has never seen without an explicit
 "yes". `internal/trustgate` computes the decision from
 `internal/projectregistry`: an `Entry` carries `trusted` / `trusted_at` plus
 `accepted_project_dirs` / `declined_project_dirs` for the project-proposed
 `workspace_dirs` the user has already ruled on. The gate runs in
-`cmd/signet/main.go` immediately after `os.Getwd()` and **before**
+`cmd/belai/main.go` immediately after `os.Getwd()` and **before**
 `config.LoadMerged`, so no settings merge, posture load, repo-map scan, or
 `autoStartProcesses` can happen in an untrusted directory.
 
@@ -1331,25 +1331,25 @@ on the next turn the file is read from disk (or prefetched again) as normal.
 
 Alongside the repo map and the Vulnetix CLI probe, startup runs one read-only
 release check (`internal/selfupdate`): a `GET` of
-`/repos/Vulnetix/signet/releases/latest` compared against the `-ldflags`
+`/repos/Vulnetix/belai/releases/latest` compared against the `-ldflags`
 version stamp. It never downloads or executes anything — a newer release adds
-an amber note to the banner's version row and one signet-panel notice naming
+an amber note to the banner's version row and one belai-panel notice naming
 both versions, the upgrade command, and the release page.
 
 The command is chosen from how the running binary was installed
 (`vulnetixcli.DetectInstall` over `os.Executable()`): the Homebrew tap, the
 Scoop bucket, `go install`, or the installer script plus the
-`signet-<goos>-<goarch>` release asset. Detection is path-based, so an
+`belai-<goos>-<goarch>` release asset. Detection is path-based, so an
 unrecognised path falls back to the installer script and the asset URL rather
 than guessing a package manager.
 
 Three things keep the check quiet. The answer is cached six hours in
-`signet-release.json` under the global config directory, so repeated sessions
+`belai-release.json` under the global config directory, so repeated sessions
 make at most four requests a day. An unstamped build (`dev`) skips the check
 entirely — there is nothing to compare, and telling a source tree to run
 `brew upgrade` would be wrong. A failed fetch is stored and never rendered:
 the banner and panel stay silent when GitHub is unreachable. The check does
-not run at all when `update_check` is false or `SIGNET_NO_UPDATE_CHECK=1` is
+not run at all when `update_check` is false or `BELAI_NO_UPDATE_CHECK=1` is
 set, so no request leaves the machine.
 
 The release payload never reaches the model: it is harness chrome, rendered
@@ -1650,7 +1650,7 @@ rehydrate.
 
 `internal/bgagent` runs named, reusable agents defined by `internal/agentprofile`
 profiles in the background. Profiles are stored under
-`~/.vulnetix/signet/profiles/agents/` and specify a system prompt, tool
+`~/.vulnetix/belai/profiles/agents/` and specify a system prompt, tool
 allow-list, operating mode (`single`, `loop`, `scheduled`, `monitor`), and
 autonomy level (`supervised` or `autonomous`).
 
@@ -1699,7 +1699,7 @@ malformed or unreachable evaluator fails closed to pause. See
 ## Session store
 
 `internal/session` persists append-only JSONL session trees
-(`id` + `parentId`) under `~/.vulnetix/signet/sessions/<workdir>/<session>.jsonl`, with
+(`id` + `parentId`) under `~/.vulnetix/belai/sessions/<workdir>/<session>.jsonl`, with
 fork/resume reads (full or partial UUID) and display names.
 
 The TUI owns a live session: `App.sessionID` is minted at launch, entries are
@@ -1727,7 +1727,7 @@ tracked todo list is re-appended under the new session id so the panel and the
 new session file agree. `/clear` drops the list instead: it belongs to the
 session that produced it.
 
-Resume reads a session back into the running TUI in place: `signet -r <id>`
+Resume reads a session back into the running TUI in place: `belai -r <id>`
 opens the transcript, todos, plan/goal state and model, and `/resume` browses
 every session on disk (current project first). Tool turns are persisted as
 they happen so a resumed history keeps its tool activity; assistant `tool_calls`
@@ -1781,7 +1781,7 @@ block. Skipped: `system`, `rolemanager`, `session_meta`, `session_name`,
 than the longest backtick run anywhere in the exported content, so repository
 text cannot close its own fence.
 
-`signet -export <id-prefix>` prints the same Markdown to stdout and exits. It
+`belai -export <id-prefix>` prints the same Markdown to stdout and exits. It
 resolves the prefix with `Store.ResolveAnywhere` (current project first) and
 reads only the global session store, never repository content, so it needs no
 trust gate.
@@ -1815,9 +1815,9 @@ built-in providers and any custom providers defined in `settings.json`. The
 resolution order is:
 
 1. **Environment** — preserves existing behaviour exactly.
-2. **Project file** — `<workdir>/.vulnetix/signet/credentials.json`.
-3. **User file** — `~/.vulnetix/signet/credentials.json`.
-4. **`.netrc`** — read-only; never written by Signet.
+2. **Project file** — `<workdir>/.vulnetix/belai/credentials.json`.
+3. **User file** — `~/.vulnetix/belai/credentials.json`.
+4. **`.netrc`** — read-only; never written by Belai.
 5. **Host keychain** — via `zalando/go-keyring`, with a 5-second timeout so a
    locked D-Bus collection cannot block startup.
 
@@ -1829,7 +1829,7 @@ happen to `cd` into. A credential may be stored as the *name* of an
 environment variable rather than a value, read at resolve time and never
 written to disk; this is what keeps project credential files committable.
 
-When `~/.signet` exists and `~/.vulnetix/signet` does not, `config.Migrate()`
+When `~/.belai` exists and `~/.vulnetix/belai` does not, `config.Migrate()`
 moves the directory on first startup. A cross-filesystem fallback copies
 recursively and leaves a `.migrated` marker; nothing is deleted.
 
@@ -2053,11 +2053,11 @@ TUI's observer calls `budget.Recorder.Add` directly — it is safe from any
 goroutine and never waits on disk, so usage is never dropped — and then wakes
 the render loop through a buffered channel, which may drop because the next
 tick redraws anyway. The recorder folds usage into `usage.json` in the
-background under an advisory lockfile shared with other signet processes, and
+background under an advisory lockfile shared with other belai processes, and
 the 2-second tick re-reads it every 30 seconds. The headless CLI registers the
 same recorder. At start the TUI also imports, in the background, the
 transcripts of sessions the ledger never recorded live (saved before token
-budgets, or by an older signet), once each, so day and month totals cover every
+budgets, or by an older belai), once each, so day and month totals cover every
 session. The rules, colour states and edge cases are in
 [Token budgets](token-budgets.md).
 
@@ -2108,7 +2108,7 @@ output can never be promoted into the parent conversation.
 
 ### Runs panel
 
-Signet runs the Vulnetix CLI, `!shell` commands and background agents on the
+Belai runs the Vulnetix CLI, `!shell` commands and background agents on the
 user's behalf; the bottom **runs panel** is the honest register of those
 processes plus the roster of subagents pinned to the conversation. `f8` opens
 and focuses the panel on the **subagents** tab, and `f9` opens it on the
@@ -2124,7 +2124,7 @@ process output.
 Each tab keeps its own selection. Keys while focused: `↑`/`↓` select,
 `tab` switches tabs, `esc` returns focus to the composer,
 and `f9` closes the panel. Activity tab: `x` kills the selected activity
-(running or queued), `t` starts `signet:triage-vulns` on its project, and
+(running or queued), `t` starts `belai:triage-vulns` on its project, and
 `enter` sends its output to the model. Subagents tab: `enter` filters the
 conversation to the selected subagent (or clears the filter on `main`), and
 `x` cancels a running chip or dismisses a finished one. Processes tab:
@@ -2132,7 +2132,7 @@ conversation to the selected subagent (or clears the filter on `main`), and
 and `r` restarts it.
 
 Every background agent also has an activity row, labelled with its key
-(`signet:vulnetix-scanner@sast#1`, `signet:deps-go@go.mod#2`) so two agents
+(`belai:vulnetix-scanner@sast#1`, `belai:deps-go@go.mod#2`) so two agents
 of one profile are told apart. The row is quiet: the agent's own start and
 done lines are the ones in the main thread, and its report is routed by its
 owner, never sent from the panel. It closes when the agent's loop ends:
@@ -2145,7 +2145,7 @@ TUI imports. Subprocess output is arbitrary content, so it classifies
 unconditionally before a finished activity's output round-trips to the model —
 skipping the classifier only when the guardrails gate is ignored (sanitising
 still runs) — and a non-SAFE sentinel is shown locally and not sent. The output
-seals as a `Kind: "shell"` attachment, which forces the `signet:debug` profile
+seals as a `Kind: "shell"` attachment, which forces the `belai:debug` profile
 exactly like a `!shell` result. When a turn is already in flight the finished
 activity queues and flushes as one batched turn once the transcript is idle.
 
@@ -2183,7 +2183,7 @@ PR/MR URL. Ci tab: `enter`/`c` copy the selected run link. `r` refreshes both.
 ### Vulnetix AI Firewall
 
 When the user toggles it on (`F10`, `/vulnetix firewall`, or
-`SIGNET_FIREWALL=1`), Signet routes eligible provider traffic through the
+`BELAI_FIREWALL=1`), Belai routes eligible provider traffic through the
 Vulnetix AI Firewall gateway. The toggle is fail-closed: `run.Prepare` asks
 `credentials.Resolver` for the firewall source via `internal/aifirewall`, which
 maps the provider to a gateway slug and constructs
@@ -2194,7 +2194,7 @@ back to the native provider.
 
 The project-level `vulnetix.firewall_enabled` setting overrides the global
 profile value; the CLI flag/environment variable overrides the project value.
-`SIGNET_BASE_URL` overrides the gateway URL for any single run, which lets
+`BELAI_BASE_URL` overrides the gateway URL for any single run, which lets
 tests and local gateways observe the routing without contacting the live
 gateway.
 
@@ -2242,7 +2242,7 @@ cell width, and whether the row is pure chrome. `Panel.View` is the string-only
 half.
 
 This exists so hit-testing and copying can recover clean text without
-pattern-matching rendered output — the `│` panel bar, the `·` signet gutter
+pattern-matching rendered output — the `│` panel bar, the `·` belai gutter
 and the list/blockquote markers are all glyphs that also appear as content,
 and only the renderer knows which columns are decoration. The invariant each
 entry guarantees is `ansi.Cut(ansi.Strip(line), Col, Col+Width) == Text`, and
@@ -2349,7 +2349,7 @@ a tool call makes when no assistant row exists. A turn whose only output was
 tool calls therefore still titles its expanded panel `provider/model`, never
 the generic `model`.
 
-The `signet` panel's role-manager activity rows also expose extra context when
+The `belai` panel's role-manager activity rows also expose extra context when
 expanded: each line is prefixed with `[activity]` and `[provider/model]`
 (e.g. `[security_phase] [cloudflare/deepseek-v4] Checked whether the content
 floods the prompt...`), surfacing the internal activity key and the model
@@ -2389,7 +2389,7 @@ Every framed panel is titled by its speaker, never by the harness:
   amber.
 - **`model · reasoning`** — streamed chain-of-thought, dim and plain (shown
   only when `ctrl+r` reasoning is on).
-- **`signet`** — Signet's own notices. Adjacent system entries coalesce into
+- **`belai`** — Belai's own notices. Adjacent system entries coalesce into
   one panel, one body line per notice with a muted `·` gutter, the frame's
   edges in the line colour and the title in the brand accent.
 - **`✓ done`** — the completion panel that closes every agent-mode turn (see
@@ -2449,8 +2449,8 @@ Truncation moves to rendered rows: `truncateMarkdown` keeps the first
 `assistantPreviewLines` rows and sets the hint's hidden remainder to the raw
 markdown source from the first dropped row's `MD.Src` line, so a fence or table
 spanning many source lines but few screen rows truncates cleanly, and a
-selection over the hint still copies the original markdown. The signet panel
-truncates at `signetPreviewLines` (6) like any other panel — a deliberate
+selection over the hint still copies the original markdown. The belai panel
+truncates at `belaiPreviewLines` (6) like any other panel — a deliberate
 change from the old never-truncated system rows — and recovers the hidden
 notices from the per-line owner slice.
 
@@ -2542,10 +2542,10 @@ inert — the same gate as drag-selection.
 
 Three regions are actionable:
 
-- **Any panel with text** — user, assistant, reasoning, signet, and non-Read
+- **Any panel with text** — user, assistant, reasoning, belai, and non-Read
   tool rows alike. Hovering shows `ctrl+s save <name> · ctrl+c copy`. A `Read`
   file panel names its real file's basename; everything else gets a generated
-  default name `signet-<short-id>-<idx>.<ext>` (`.md` for text panels, `.txt`
+  default name `belai-<short-id>-<idx>.<ext>` (`.md` for text panels, `.txt`
   for tool results; the short-id segment is dropped when no session id
   exists). The name is truncated at 40 runes. `ctrl+s` turns the composer into
   a destination-path prompt (`save file`, `⏎ save · esc cancel`) pre-filled
@@ -2562,7 +2562,7 @@ Three regions are actionable:
   Assistant panels also show the provider-metered token count when available;
   user and reasoning panels show an estimated token count (`~N tok`) because
   they are not metered by the provider. The title bar mirrors the helper text
-  pattern used by the ask/composer and collapsed signet frames; hovering the
+  pattern used by the ask/composer and collapsed belai frames; hovering the
   panel still offers the same action in the footer.
 - **Session segment** — the footer's `session: …` text (name when shown, else
   the short id). Hovering shows `ctrl+x copy session id`, and `ctrl+x` copies
@@ -2570,7 +2570,7 @@ Three regions are actionable:
 - **Collapsed panel** — any truncated turn, reasoning panel, or tool row.
   Hovering shows `ctrl+o expand all`; the key is the same global toggle that
   collapses again when already expanded. A collapsed text panel shows all
-  three offers together (`save`, `copy`, `expand all`). **Signet** panels
+  three offers together (`save`, `copy`, `expand all`). **Belai** panels
   advertise the same binding in their title bar whenever they contain any
   collapsed content — whether the panel itself truncated a run of system
   notices or a nested tool row (for example a long `Bash` result) is hiding
@@ -2587,7 +2587,7 @@ the viewport.
 
 **No binding uses `alt`, and none ever will.** Two independent reasons:
 
-1. Under the kitty keyboard protocol Signet pushes (`ui.kitty_keyboard`,
+1. Under the kitty keyboard protocol Belai pushes (`ui.kitty_keyboard`,
    default on), `internal/tui/keys.Translate` maps a `ctrl`-modified letter
    onto the legacy `tea.KeyCtrlA…KeyCtrlZ` constants. Those constants carry no
    alt bit, so `ctrl+alt+x` and `ctrl+x` are indistinguishable by the time the
@@ -2710,13 +2710,13 @@ picker does. A command chip still fills the composer and waits for a second
 `enter`. Typing a library line out in full and pressing `enter` goes through
 `handleCommand`, which checks the three prefixes before the registry, so it
 does the same thing. Only the first prefix is cut, because agent names can
-contain a colon (`/agent:signet:debug`).
+contain a colon (`/agent:belai:debug`).
 
 | Line | Effect |
 | ---- | ------ |
 | `/prompt:<name>` | Loads the prompt body into the composer and sets `loadedPrompt`, exactly as `up`-browsing does, so `ctrl+s` overwrites that file. Nothing is sent |
 | `/agent:<name>` | Engages the profile and switches to agent mode from any mode. It sets `agentExplicit`, `modeExplicit` and `modeSticky` and persists the mode. The name must be one the agent picker offers |
-| `/process:<name>` | If the process is `running`, `recovering` or `restarted`, it is not started again. `bgproc.Manager.Start` would let this Signet start a second copy, so the check happens here. Otherwise it starts through `startSupervised`, which applies the same plan-mode `ToolAllowed` gate as `!!`. Either way it prints a status line: `process <name> (<id>) <state> · pid · up …` for a live process, or `· exit N · ended … ago` for one that has stopped, followed by the command and the log path |
+| `/process:<name>` | If the process is `running`, `recovering` or `restarted`, it is not started again. `bgproc.Manager.Start` would let this Belai start a second copy, so the check happens here. Otherwise it starts through `startSupervised`, which applies the same plan-mode `ToolAllowed` gate as `!!`. Either way it prints a status line: `process <name> (<id>) <state> · pid · up …` for a live process, or `· exit N · ended … ago` for one that has stopped, followed by the command and the log path |
 
 An unknown name prints a one-line refusal and changes nothing.
 
@@ -2743,9 +2743,9 @@ binding needs a line there as well as in this document.
   agent picker.
 - `!cmd` executes a local `Bash` command (full shell by default; read-only
   in plan mode, or whenever `read_only` is set) and sends the output to
-  the model under the `signet:debug` profile. The command gets its own
+  the model under the `belai:debug` profile. The command gets its own
   **shell panel** in the transcript (`components.ShellRole`). The panel is
-  not a tool row, is not part of the signet panel, and is not a runs-panel
+  not a tool row, is not part of the belai panel, and is not a runs-panel
   activity, and ctrl+t does not hide it. It shows the command's raw output,
   with a live tail while the command runs. When collapsed it shows the last
   six lines; ctrl+o expands it, and ctrl+c / ctrl+s copy or save it.
@@ -2771,11 +2771,11 @@ turn, drawn from both trees:
 
 | Row | Source | Marker |
 | --- | ------ | ------ |
-| built-in | embedded `signet:` profile | `◈`, muted |
+| built-in | embedded `belai:` profile | `◈`, muted |
 | user profile | `internal/profiles` (flat `Name`/`Content`) | none, keycap bright |
 | background definition | `internal/agentprofile` | `↻`, amber |
 
-`signet:debug` is the default agent and is selected first whenever the picker
+`belai:debug` is the default agent and is selected first whenever the picker
 opens. A flat profile owns a shared name — it is what `CarrierOptions`
 resolves first — so a background definition of the same name is not offered
 twice.
@@ -2811,7 +2811,7 @@ prompt in the composer, so it is deliberately not `enter`.
 The engaged agent is session state: it applies to every following turn
 (`App.namedAgent` → `agent.TurnInput.ForceAgent`), shows in the footer chip
 next to the mode, and is cleared by `/clear`. It is **agent mode only**. Plan
-and goal mode carry Signet's own plan or goal — `resolveCarrier` admits
+and goal mode carry Belai's own plan or goal — `resolveCarrier` admits
 exactly one carrier, and `ForceAgent` also forces the mode, so sending an
 engaged agent from plan mode would silently drop the mode the user picked.
 Outside agent mode the selection goes dormant rather than being discarded
@@ -2820,7 +2820,7 @@ hides it, the picker hides, the tool allow-list does not apply, and cycling
 `agent → plan → goal → agent` gets it back. `/profile <name>` and `/agent`
 engage the same field. The system prompt keeps its shape — the engaged text
 is the single carrier block (`prompt.CarrierProfile`), so the identity block
-naming Signet, the provider and the model still opens the prompt. For a
+naming Belai, the provider and the model still opens the prompt. For a
 background definition the carrier text is its `system_prompt`, resolved by
 `CarrierOptions` falling back to `agentprofile.Load`, and its `tools`
 allow-list narrows the foreground session's registry the same way
@@ -2833,7 +2833,7 @@ foreground.
 - The picker is only visible in agent mode, only on the chat view, and only
   when no slash-completion popup or file chooser is active. An active `@`
   prefix hides the agent picker because the file chooser owns `@`.
-- Opening the picker sets the highlight to `signet:debug` when it exists; if
+- Opening the picker sets the highlight to `belai:debug` when it exists; if
   the default built-in is missing, the first available candidate is selected.
 - Tab from a cold state (no highlight) lands on the first candidate; tab from
   the last candidate lands on `(none)`; tab again wraps to the first
@@ -2864,7 +2864,7 @@ foreground.
 
 `components.Editor` wraps a bubbles textarea, which supplies character motion,
 line motion (`home`/`end`, reached as `fn+left`/`fn+right` on a laptop
-keyboard) and the readline-style editing keys. Word motion is Signet's own,
+keyboard) and the readline-style editing keys. Word motion is Belai's own,
 handled in `Editor.Update` *before* the message reaches the textarea.
 
 It is handled at the Editor rather than in the `App` key switch so that every
@@ -2922,7 +2922,7 @@ the *end*. That asymmetry is deliberate and matches both Pi and readline.
 Named prompts live in a directory of plain-text `.md` files, not a JSON blob.
 Metadata is encoded in the filename: `NNN-slug.md` is an enabled entry at order
 `NNN`, `_NNN-slug.md` is a disabled one. The global directory is
-`~/.vulnetix/signet/prompts` (`config.GlobalPromptsDir`) and the project
+`~/.vulnetix/belai/prompts` (`config.GlobalPromptsDir`) and the project
 override is `<workdir>/.vulnetix/prompts` (`config.ProjectPromptsDir`). The old
 `prompts.json` format is abandoned outright — not read, not migrated, not
 deleted. A leftover `prompts.json` is a one-line system notice (once per
@@ -3047,7 +3047,7 @@ stray count.
 self-heals a directory hand-edited into collisions. Hand-picked numbers are
 lost on the first `J` — the grid is what makes moves collision-free. Per-scope
 only; the cross-scope order falls out of the merge rule. Renames are two-phase
-(everything moving goes to a dot-prefixed `.signet-tmp-<i>-<slug>.md`, which
+(everything moving goes to a dot-prefixed `.belai-tmp-<i>-<slug>.md`, which
 reads as a stray, then to its final name) because a swap collides in one phase;
 `os.Lstat` every target before phase two and abort the whole reorder if
 anything is there, since `os.Rename` overwrites silently on POSIX. A crashed
@@ -3213,7 +3213,7 @@ lists the provider's catalogue with windowing, `/` substring filtering, and a
 The catalogue is built by merging three sources, lower priority last, and
  de-duplicating by model id:
 
-1. **Live fetch** — when the provider exposes a model-list endpoint, Signet
+1. **Live fetch** — when the provider exposes a model-list endpoint, Belai
    queries it on first entry and caches the result per session. The picker
    shows `○ Fetching models from GET <url>…` while a fetch is in flight.
    Live fetched models are not persisted.
@@ -3338,9 +3338,9 @@ include `provider`, `model`, `effort`, `caveman`, `read_only`,
 which defaults off unless explicitly true; `ui.show_internal_work` defaults to
 `hidden`, the four-level role-manager feed described in
 [role-manager.md](role-manager.md#tui-activity-signal); `ui.kitty_keyboard` is
-overridden off by `SIGNET_NO_KITTY=1`),
+overridden off by `BELAI_NO_KITTY=1`),
 `show_session_names` (default on),
-`update_check` (default on; overridden off by `SIGNET_NO_UPDATE_CHECK=1`),
+`update_check` (default on; overridden off by `BELAI_NO_UPDATE_CHECK=1`),
 `auto_commit_per_task` (default off; global-only — see the per-goal
 auto-commit section in Goal mode),
 `context_windows`,
@@ -3362,7 +3362,7 @@ written back:
 
 - `bash_readonly` — the deprecated alias for `read_only`. `Settings.UnmarshalJSON`
   folds it into `read_only` only when the canonical key is absent, then clears
-  it, so a file Signet rewrites emits `read_only` alone and a file carrying both
+  it, so a file Belai rewrites emits `read_only` alone and a file carrying both
   keys resolves to the canonical one.
 - the legacy flat `permissions` map (`{"Bash": "deny"}`) — accepted and
   converted to the structured `allow`/`ask`/`deny` shape on read, never written.
@@ -3415,8 +3415,8 @@ Business rules:
   back on and only turn the firewall off. The user's own prefs set all three
   both ways. `Settings.Override` and `LoadMerged` are untouched; only the
   TUI's `config.Resolve` learns the prefs layer.
-- **Env and flags outrank prefs.** `SIGNET_GUARDRAILS`,
-  `SIGNET_ASK_PERMISSION`, `SIGNET_FIREWALL`, and the CLI posture flags beat a
+- **Env and flags outrank prefs.** `BELAI_GUARDRAILS`,
+  `BELAI_ASK_PERMISSION`, `BELAI_FIREWALL`, and the CLI posture flags beat a
   persisted pref. When a toggle is outranked, the TUI says so and names the
   winning source (`a.eff.Origin[...]`) rather than silently appearing not to
   stick.
@@ -3433,7 +3433,7 @@ Business rules:
 
 ## Local inference
 
-Local inference is served by `llama-server` from llama.cpp. Signet treats the
+Local inference is served by `llama-server` from llama.cpp. Belai treats the
 local server as a first-class provider: `/providers launch <repo>` allocates a
 port, downloads the GGUF through the Hugging Face CLI when it is present (or
 lets `llama-server` fetch it when the CLI is absent), launches the server,
@@ -3502,7 +3502,7 @@ credential-scrubbed environment (`proc.ScrubbedEnv`), and streams output to a
 live tool row and a log file under `<GlobalDir>/logs` without contacting
 the model while it runs.
 
-When a supervised process exits without the user having stopped it, Signet
+When a supervised process exits without the user having stopped it, Belai
 dispatches a **recovery subagent** with the command, the exit code, the run
 duration, the attempt count, and the tail of the log. The subagent's registry
 is intentionally narrow: the read-only plan surface plus `SubAgentLog` (to
@@ -3542,8 +3542,8 @@ process disappears until it is started again, either from `/processes` or
 with `/process:<name>`. Process output is also appended to the activity
 registry as it arrives, so the reader stays live even when the process is
 still running. Enabled entries
-auto-start when Signet opens the workdir; a lock file per `(workdir-hash, slug)`
-prevents a second Signet instance from launching a duplicate copy.
+auto-start when Belai opens the workdir; a lock file per `(workdir-hash, slug)`
+prevents a second Belai instance from launching a duplicate copy.
 
 ## Performance
 
@@ -3573,7 +3573,7 @@ The TUI's perceived-latency path is tuned at several layers:
   subagent writing its report could stall a session for minutes. WebFetch uses a dedicated
   transport whose validating `DialContext` resolves once and pins the address,
   closing the DNS-rebinding TOCTOU.
-- **Timing**: opt-in `SIGNET_TRACE=<path>` writes JSONL `{phase, event,
+- **Timing**: opt-in `BELAI_TRACE=<path>` writes JSONL `{phase, event,
   duration}` records, including one `http`/`request` record per outbound
   request on the shared clients (endpoint, model, request and response bytes,
   time to headers, total time, or the transport error — never a body, header

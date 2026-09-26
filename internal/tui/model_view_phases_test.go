@@ -6,10 +6,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/mlclassify"
-	"github.com/vulnetix/signet/internal/models"
-	"github.com/vulnetix/signet/internal/rolemanager/jev"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/mlclassify"
+	"github.com/vulnetix/belai/internal/models"
+	"github.com/vulnetix/belai/internal/rolemanager/jev"
 )
 
 func modelScreen(t *testing.T) *App {
@@ -131,7 +131,7 @@ func TestModelKindRowEditableOnVanilla(t *testing.T) {
 }
 
 func TestCycleClassifierKind(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.classifierScope = "project"
 	a.settings.Classifier = &config.ClassifierSettings{Kind: "llm"}
@@ -331,7 +331,7 @@ func TestModelRowsPhasesNoClassifierHFRemote(t *testing.T) {
 }
 
 func TestClassifierProviderListOpenRouterWithResolver(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	t.Setenv("OPENROUTER_API_KEY", "or-key")
 	a := newModelScreen(t, t.TempDir())
 	a.resolver = newTestResolver(t, a.workdir)

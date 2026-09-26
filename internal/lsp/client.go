@@ -74,7 +74,7 @@ func (c *client) initialize(ctx context.Context, lang *Language) error {
 	}
 	params := InitializeParams{
 		ProcessID:             0,
-		ClientInfo:            ClientInfo{Name: "signet", Version: "0"},
+		ClientInfo:            ClientInfo{Name: "belai", Version: "0"},
 		WorkspaceFolders:      folders,
 		InitializationOptions: nil,
 		Capabilities:          caps,

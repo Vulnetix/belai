@@ -6,11 +6,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/session"
-	"github.com/vulnetix/signet/internal/transcript"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/transcript"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 func TestResumeRestoresModelProvider(t *testing.T) {
@@ -34,7 +34,7 @@ func TestResumeRestoresModelProvider(t *testing.T) {
 func TestResumeCLIFlagBeatsSessionRecord(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "test")
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Provider: "openai", Model: "cli-model", Workdir: workdir})
 	key, _ := session.KeyFor(workdir)
 	entries := basicSessionEntries()

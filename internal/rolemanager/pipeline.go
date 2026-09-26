@@ -8,10 +8,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/vulnetix/signet/internal/agentpool"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/sanitize"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/agentpool"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/sanitize"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 // Action is the outcome of a pipeline run.

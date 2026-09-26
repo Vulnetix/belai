@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/otel"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/otel"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 // A real turn with telemetry on exports the turn and tool spans, and none of
@@ -55,7 +55,7 @@ func TestTelemetryCarriesNoContent(t *testing.T) {
 	mu.Lock()
 	all := bodies.String()
 	mu.Unlock()
-	for _, want := range []string{"signet.turn", "signet.tool_call", `"Read"`, "signet.tool_calls"} {
+	for _, want := range []string{"belai.turn", "belai.tool_call", `"Read"`, "belai.tool_calls"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("export lacks %s", want)
 		}

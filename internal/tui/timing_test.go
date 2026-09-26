@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/agent"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/run"
 )
 
 // A turn's rows are written at turn end, but each must carry the time it

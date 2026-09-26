@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 func TestWriteEnvRefRoundTrip(t *testing.T) {
@@ -97,7 +97,7 @@ func TestSpecCustomProviderPrefersProfileEnvKey(t *testing.T) {
 	if len(spec) != 1 {
 		t.Fatalf("expected 1 field, got %d", len(spec))
 	}
-	if len(spec[0].EnvVars) < 2 || spec[0].EnvVars[0] != "MY_LLM_KEY" || spec[0].EnvVars[1] != "SIGNET_MY_LLM_API_KEY" {
-		t.Fatalf("EnvVars = %v, want [MY_LLM_KEY SIGNET_MY_LLM_API_KEY]", spec[0].EnvVars)
+	if len(spec[0].EnvVars) < 2 || spec[0].EnvVars[0] != "MY_LLM_KEY" || spec[0].EnvVars[1] != "BELAI_MY_LLM_API_KEY" {
+		t.Fatalf("EnvVars = %v, want [MY_LLM_KEY BELAI_MY_LLM_API_KEY]", spec[0].EnvVars)
 	}
 }

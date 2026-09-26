@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 // writeTranscript writes a session transcript of the given entries under

@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/agentprofile"
 )
 
 func TestDetect(t *testing.T) {

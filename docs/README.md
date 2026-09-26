@@ -1,11 +1,11 @@
-# Signet documentation
+# Belai documentation
 
-This directory is the technical reference for Signet. Start with the
+This directory is the technical reference for Belai. Start with the
 [user guide](../README.md) for installation, configuration, and everyday use;
 then follow the links below for the security model, operating modes, retry
 behaviour, and implementation details.
 
-## Learn Signet
+## Learn Belai
 
 | Topic | Guide | Key sections |
 | --- | --- | --- |
@@ -20,7 +20,7 @@ behaviour, and implementation details.
 
 - [Agent Profiles](agent-profiles.md): reusable foreground and background agent
   definitions, schema, lifecycle, autonomy, and the profile builder.
-- [Agent Stores](agent-stores.md): read-only search across Signet and other
+- [Agent Stores](agent-stores.md): read-only search across Belai and other
   agents' session, prompt, and memory stores, including attribution and
   confinement guarantees.
 

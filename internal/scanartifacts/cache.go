@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/session"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/session"
 )
 
 // SchemaVersion bumps when the parsing contract changes.

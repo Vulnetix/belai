@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/delimiters"
-	"github.com/vulnetix/signet/internal/nonce"
-	"github.com/vulnetix/signet/internal/prompt"
+	"github.com/vulnetix/belai/internal/delimiters"
+	"github.com/vulnetix/belai/internal/nonce"
+	"github.com/vulnetix/belai/internal/prompt"
 )
 
 func sealPool(t *testing.T) *nonce.Pool {

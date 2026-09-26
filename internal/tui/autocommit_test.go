@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/filediff"
-	"github.com/vulnetix/signet/internal/goals"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/belai/internal/filediff"
+	"github.com/vulnetix/belai/internal/goals"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/run"
 )
 
 type autoCommitRunner struct {

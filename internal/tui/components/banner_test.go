@@ -36,8 +36,8 @@ func TestPixGridDimensions(t *testing.T) {
 func TestTextView(t *testing.T) {
 	b := Banner{}
 	v := b.textView()
-	if !strings.Contains(v, "SIGNET") {
-		t.Fatalf("text view should contain SIGNET")
+	if !strings.Contains(v, "BELAI") {
+		t.Fatalf("text view should contain BELAI")
 	}
 }
 

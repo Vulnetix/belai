@@ -25,7 +25,7 @@ func KeyFor(workdir string) (Key, error) {
 func (k Key) String() string { return string(k) }
 
 // Project returns the project basename without the trailing hash:
-// "signet-275e7780" -> "signet".
+// "belai-275e7780" -> "belai".
 func (k Key) Project() string {
 	s := string(k)
 	if i := strings.LastIndexByte(s, '-'); i > 0 {

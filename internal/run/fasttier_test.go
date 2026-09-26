@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
 func TestResolveFastDefaultsToTheProviderFastModel(t *testing.T) {

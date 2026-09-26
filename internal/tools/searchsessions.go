@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/agentstore"
+	"github.com/vulnetix/belai/internal/agentstore"
 )
 
 // SearchSessions searches other agents' past sessions on this machine.

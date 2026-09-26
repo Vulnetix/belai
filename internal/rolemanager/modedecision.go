@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"unicode/utf8"
 
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/prompt"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/prompt"
 )
 
 // DefaultGoalPromptLengthLimit is the default maximum prompt length (runes)
@@ -120,7 +120,7 @@ func Select(ctx context.Context, c Classifier, in ModeInput) (ModeDecision, erro
 }
 
 // PromptOptions maps the decision to the system-prompt carrier. Default agent
-// mode (no carrier) yields an empty Options, so only the base signet system
+// mode (no carrier) yields an empty Options, so only the base belai system
 // prompt is used.
 func (d ModeDecision) PromptOptions(planText, goalText, profileText string) prompt.Options {
 	opts := prompt.Options{}

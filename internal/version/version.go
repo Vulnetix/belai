@@ -17,5 +17,5 @@ var (
 // One value from one place, so a server sees the same identity and version for
 // every call a session makes.
 func UserAgent() string {
-	return "signet/" + Version + " (+https://github.com/Vulnetix/signet)"
+	return "belai/" + Version + " (+https://github.com/Vulnetix/belai)"
 }

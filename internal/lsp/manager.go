@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vulnetix/signet/internal/proc"
+	"github.com/vulnetix/belai/internal/proc"
 )
 
 // manager lives in manager.go to keep the exported API in lsp.go small.

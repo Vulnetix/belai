@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/proc"
+	"github.com/vulnetix/belai/internal/proc"
 )
 
 // ErrDeclined is returned when the user does not confirm.
@@ -241,7 +241,7 @@ func Describe(s Summary, source, commit string, prev *Summary) string {
 	}
 	list("skills", s.Skills)
 	if len(s.Hooks) > 0 {
-		b.WriteString("  hooks (commands Signet will run):\n")
+		b.WriteString("  hooks (commands Belai will run):\n")
 		for _, h := range s.Hooks {
 			fmt.Fprintf(&b, "    - %s on %s runs %s", clean(h.Name), clean(h.Event), clean(h.Command))
 			if h.Matcher != "" {

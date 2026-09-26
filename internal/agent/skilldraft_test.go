@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 const draftArgs = `{"name":"fixtures","description":"Regenerate fixtures","body":"1. run it"}`

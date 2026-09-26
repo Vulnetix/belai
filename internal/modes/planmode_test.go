@@ -4,9 +4,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/permissions"
-	"github.com/vulnetix/signet/internal/session"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/permissions"
+	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 func TestToolAllowed(t *testing.T) {

@@ -6,17 +6,17 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/agentprofile"
-	"github.com/vulnetix/signet/internal/bgagent"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/profiles"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/session"
+	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/bgagent"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/profiles"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/session"
 )
 
-// saveProfile writes a user profile into the test's SIGNET_HOME.
+// saveProfile writes a user profile into the test's BELAI_HOME.
 func saveProfile(t *testing.T, name string) {
 	t.Helper()
 	if _, err := profiles.Save(profiles.Profile{Name: name, Content: "you are " + name}); err != nil {
@@ -24,11 +24,11 @@ func saveProfile(t *testing.T, name string) {
 	}
 }
 
-// The picker offers built-ins first (signet:debug at index 0), then the
+// The picker offers built-ins first (belai:debug at index 0), then the
 // user's profiles, and marks which is which so a harness profile is never
 // mistaken for a file the user wrote.
 func TestAgentPickerListsBuiltinsFirstThenProfiles(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	saveProfile(t, "reviewer")
 
 	a := New(Options{Workdir: t.TempDir()})
@@ -59,7 +59,7 @@ func TestAgentPickerListsBuiltinsFirstThenProfiles(t *testing.T) {
 // slash popup when both could show. It is also hidden while a file @-prefix is
 // active.
 func TestAgentPickerHiddenOutsideAgentModeAndUnderSlashPopup(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
 	a.openAgentPicker()
@@ -92,7 +92,7 @@ func TestAgentPickerHiddenOutsideAgentModeAndUnderSlashPopup(t *testing.T) {
 // Typing @agent: does not open the agent picker; it is now a file-chooser
 // prefix (or a prompt-level directive handled by the classifier).
 func TestAgentPickerNotOpenedByAtPrefix(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	saveProfile(t, "reviewer")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
@@ -107,7 +107,7 @@ func TestAgentPickerNotOpenedByAtPrefix(t *testing.T) {
 // Tab walks every candidate and then the (none) entry, wrapping back to the
 // first — and never writes into the prompt.
 func TestAgentPickerTabCyclesThroughNone(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	saveProfile(t, "reviewer")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
@@ -140,7 +140,7 @@ func TestAgentPickerTabCyclesThroughNone(t *testing.T) {
 // Enter on a highlighted agent engages it instead of sending the turn, and
 // the picker closes.
 func TestAgentPickerEnterEngagesProfile(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	saveProfile(t, "reviewer")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
@@ -172,7 +172,7 @@ func TestAgentPickerEnterEngagesProfile(t *testing.T) {
 // Right accepts like enter, but only once something is highlighted — otherwise
 // it is the editor's cursor key.
 func TestAgentPickerRightIsCursorUntilHighlighted(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	saveProfile(t, "reviewer")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
@@ -193,9 +193,9 @@ func TestAgentPickerRightIsCursorUntilHighlighted(t *testing.T) {
 }
 
 // Enter in agent mode with no agent engaged opens the picker rather than
-// sending. The default signet:debug profile is selected.
+// sending. The default belai:debug profile is selected.
 func TestEnterInAgentModeWithoutAgentOpensPicker(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
 	a.mode = "agent"
@@ -216,7 +216,7 @@ func TestEnterInAgentModeWithoutAgentOpensPicker(t *testing.T) {
 
 // The /agent command with no argument opens the agent picker.
 func TestAgentCommandOpensPicker(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
 	a.handleCommand("/agent")
@@ -231,7 +231,7 @@ func TestAgentCommandOpensPicker(t *testing.T) {
 
 // /agent tolerates trailing whitespace and still opens the picker.
 func TestAgentCommandWithTrailingSpaceOpensPicker(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
 	a.handleCommand("/agent   ")
@@ -243,7 +243,7 @@ func TestAgentCommandWithTrailingSpaceOpensPicker(t *testing.T) {
 
 // /agent with a subcommand still dispatches to background-agent management.
 func TestAgentCommandWithSubcommandDoesNotOpenPicker(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
 	a.handleCommand("/agent list")
@@ -258,7 +258,7 @@ func TestAgentCommandWithSubcommandDoesNotOpenPicker(t *testing.T) {
 
 // Esc closes the picker and leaves the composer untouched.
 func TestAgentPickerEscCloses(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
 	a.openAgentPicker()
@@ -278,7 +278,7 @@ func TestAgentPickerEscCloses(t *testing.T) {
 // rather than resetting it, so the selection stays stable while the user
 // edits the prompt.
 func TestAgentPickerTypingPreservesHighlight(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
 	a.openAgentPicker()
@@ -295,7 +295,7 @@ func TestAgentPickerTypingPreservesHighlight(t *testing.T) {
 
 // The (none) entry clears the engaged agent, so the picker can undo itself.
 func TestAgentPickerNoneClearsSelection(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	saveProfile(t, "reviewer")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
@@ -313,7 +313,7 @@ func TestAgentPickerNoneClearsSelection(t *testing.T) {
 // The engaged profile carries the turn: it reaches the agent loop as
 // ForceAgent, which is what swaps the system prompt's carrier block.
 func TestEngagedAgentReachesTurnInput(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	saveProfile(t, "reviewer")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
@@ -332,7 +332,7 @@ func TestEngagedAgentReachesTurnInput(t *testing.T) {
 
 // A new session starts with no engaged agent: the profile is session state.
 func TestNewSessionClearsEngagedAgent(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	saveProfile(t, "reviewer")
 	a := New(Options{Workdir: t.TempDir()})
 	a.namedAgent = "reviewer"
@@ -345,7 +345,7 @@ func TestNewSessionClearsEngagedAgent(t *testing.T) {
 }
 
 // saveBackgroundAgent writes an internal/agentprofile definition into the
-// test's SIGNET_HOME.
+// test's BELAI_HOME.
 func saveBackgroundAgent(t *testing.T, name string, tools ...string) {
 	t.Helper()
 	p := agentprofile.AgentProfile{
@@ -363,7 +363,7 @@ func saveBackgroundAgent(t *testing.T, name string, tools ...string) {
 // Background-agent definitions are offered alongside the flat profiles, marked
 // so the two kinds are distinguishable.
 func TestAgentPickerListsBackgroundDefinitions(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	saveProfile(t, "reviewer")
 	saveBackgroundAgent(t, "nightly-audit", "Read", "Grep")
 
@@ -385,7 +385,9 @@ func TestAgentPickerListsBackgroundDefinitions(t *testing.T) {
 	if len(bg.Tools) != 2 {
 		t.Fatalf("Tools = %v, want the definition's allowlist", bg.Tools)
 	}
-	a.width = 200 // room for every built-in chip ahead of the definition
+	// Built-in belai:* chips sort ahead of the definition, so leave room for
+	// every one of them.
+	a.width = 2000
 	if row := a.renderAgentPicker(); !strings.Contains(row, "↻ nightly-audit") {
 		t.Fatalf("picker row = %q, want the background marker", row)
 	}
@@ -394,7 +396,7 @@ func TestAgentPickerListsBackgroundDefinitions(t *testing.T) {
 // A flat profile owns a shared name: it is what CarrierOptions resolves first,
 // so the shadowed definition must not be offered as a separate row.
 func TestAgentPickerFlatProfileWinsASharedName(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	saveProfile(t, "reviewer")
 	saveBackgroundAgent(t, "reviewer")
 
@@ -418,7 +420,7 @@ func TestAgentPickerFlatProfileWinsASharedName(t *testing.T) {
 // Engaging a background definition carries its prompt here and narrows the
 // session's tools to its allowlist.
 func TestAgentPickerEngagingBackgroundDefinitionAppliesTools(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	saveBackgroundAgent(t, "nightly-audit", "Read", "Grep")
 
 	a := New(Options{Workdir: t.TempDir()})
@@ -447,7 +449,7 @@ func TestAgentPickerEngagingBackgroundDefinitionAppliesTools(t *testing.T) {
 // ctrl+g starts the highlighted definition as a background agent instead of
 // engaging it, and says so when the row cannot be started.
 func TestAgentPickerCtrlGStartsOnlyBackgroundDefinitions(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	saveProfile(t, "reviewer")
 
 	a := New(Options{Workdir: t.TempDir()})
@@ -475,11 +477,11 @@ func TestAgentPickerCtrlGStartsOnlyBackgroundDefinitions(t *testing.T) {
 	}
 }
 
-// Plan and goal mode carry Signet's own plan or goal, and the system prompt
+// Plan and goal mode carry Belai's own plan or goal, and the system prompt
 // holds exactly one carrier: an engaged agent must go quiet there — hidden
 // from the footer, absent from the turn, and not narrowing the tools.
 func TestEngagedAgentIsDormantOutsideAgentMode(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	saveBackgroundAgent(t, "nightly-audit", "Read")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
@@ -527,7 +529,7 @@ func TestEngagedAgentIsDormantOutsideAgentMode(t *testing.T) {
 // Cycling the mode away from agent must not send the engaged agent, which
 // would force the turn back into agent mode and drop the mode the user chose.
 func TestCyclingModeStopsSendingTheEngagedAgent(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	saveProfile(t, "reviewer")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
@@ -547,7 +549,7 @@ func TestCyclingModeStopsSendingTheEngagedAgent(t *testing.T) {
 // the ctrl+p shortcut in the mode chip where its name had been, instead of
 // silently resuming whatever carrier was engaged before the cycle.
 func TestShiftTabIntoAgentClearsProfileAndShowsCtrlP(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	saveProfile(t, "reviewer")
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir})
@@ -590,7 +592,7 @@ func TestShiftTabIntoAgentClearsProfileAndShowsCtrlP(t *testing.T) {
 // submit is swallowed twice with no feedback: the prompt sits in the editor
 // while the user waits for a turn that never started.
 func TestAcceptingAgentSendsThePromptThatOpenedThePicker(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
 	a.mode = "agent"
@@ -619,7 +621,7 @@ func TestAcceptingAgentSendsThePromptThatOpenedThePicker(t *testing.T) {
 // The picker opened by /agent is not a pending submit: engaging an agent
 // there must not send whatever happens to be in the composer.
 func TestAgentCommandPickerDoesNotSendComposerText(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
 	a.mode = "agent"
@@ -641,7 +643,7 @@ func TestAgentCommandPickerDoesNotSendComposerText(t *testing.T) {
 // (none) leaves agent mode without a carrier — the exact state the picker
 // exists to prevent — so it must never send the pending submit.
 func TestNoneSelectionDoesNotSendPendingSubmit(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
 	a.mode = "agent"
@@ -666,7 +668,7 @@ func TestNoneSelectionDoesNotSendPendingSubmit(t *testing.T) {
 // esc cancels the pending submit along with the highlight: the prompt stays
 // in the composer and must not be sent by a later, unrelated engage.
 func TestEscapeCancelsThePendingSubmit(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
 	a.mode = "agent"
@@ -693,7 +695,7 @@ func TestEscapeCancelsThePendingSubmit(t *testing.T) {
 // A prompt left unsent in one session must never be sent into another, so
 // starting a new session drops the pending submit with the picker state.
 func TestNewSessionDropsThePendingSubmit(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
 	a.mode = "agent"
@@ -712,7 +714,7 @@ func TestNewSessionDropsThePendingSubmit(t *testing.T) {
 
 // Resuming another session drops the pending submit for the same reason.
 func TestResumeDropsThePendingSubmit(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
 	a.mode = "agent"
@@ -729,7 +731,7 @@ func TestResumeDropsThePendingSubmit(t *testing.T) {
 // An empty composer is not a submit: enter opens the picker to choose a
 // carrier, and engaging one must not start a turn with no prompt.
 func TestEmptyComposerNeverArmsThePendingSubmit(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
 	a.mode = "agent"
@@ -759,7 +761,7 @@ func assertNoUserTurn(t *testing.T, a *App) {
 // picker gate used to swallow the first enter, leaving the command in the
 // composer and forcing a second press.
 func TestSlashCommandRunsOnTheFirstEnterInAgentMode(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
 	a.mode = "agent"
@@ -786,7 +788,7 @@ func TestSlashCommandRunsOnTheFirstEnterInAgentMode(t *testing.T) {
 
 // `!cmd` is local execution, not a turn, and takes the same first enter.
 func TestShellInputRunsOnTheFirstEnterInAgentMode(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
 	a.mode = "agent"
@@ -815,7 +817,7 @@ func hasAgentName(a *App, name string) bool {
 // `/agent start ` is a name argument, so the picker takes over from the
 // subcommand chips and lists the profiles that can be started.
 func TestAgentStartArgumentOpensThePickerWithProfileNames(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	saveProfile(t, "reviewer")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
@@ -836,7 +838,7 @@ func TestAgentStartArgumentOpensThePickerWithProfileNames(t *testing.T) {
 // Typing narrows the list: the strip must show what the prefix can still
 // become, not every profile on disk.
 func TestAgentArgumentPickerFiltersByTypedPrefix(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	saveProfile(t, "reviewer")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
@@ -857,7 +859,7 @@ func TestAgentArgumentPickerFiltersByTypedPrefix(t *testing.T) {
 // (none) clears the engaged carrier; as a command argument it is not a name
 // and must never be offered or reachable by tab.
 func TestAgentArgumentPickerNeverOffersTheNoneRow(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
 	a.editor.SetValue("/agent start ")
@@ -886,7 +888,7 @@ func TestAgentArgumentPickerNeverOffersTheNoneRow(t *testing.T) {
 // Naming an agent for /agent stop is not choosing a carrier, so the argument
 // picker shows outside agent mode too.
 func TestAgentArgumentPickerShowsOutsideAgentMode(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
 	a.mode = "plan"
@@ -901,7 +903,7 @@ func TestAgentArgumentPickerShowsOutsideAgentMode(t *testing.T) {
 // Tab highlights, enter dispatches: the highlighted name completes the line
 // and runs it in one press.
 func TestAcceptingAgentArgumentRunsTheCommand(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
 	a.editor.SetValue("/agent start ")
@@ -940,7 +942,7 @@ func TestAcceptingAgentArgumentRunsTheCommand(t *testing.T) {
 // Verbs that act on a live agent complete from the agents actually running,
 // not from every profile on disk.
 func TestAgentStopArgumentListsRunningAgentsOnly(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	saveProfile(t, "reviewer")
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
@@ -968,7 +970,7 @@ func TestAgentStopArgumentListsRunningAgentsOnly(t *testing.T) {
 
 // The picker follows the line: editing away from the argument closes it.
 func TestAgentArgumentPickerClosesWhenTheLineChanges(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
 	a.editor.SetValue("/agent start ")
@@ -990,7 +992,7 @@ func TestAgentArgumentPickerClosesWhenTheLineChanges(t *testing.T) {
 // An explicit choice outlives a classifier turn that names no agent; the name
 // and its tool allowlist both survive.
 func TestExplicitAgentSurvivesEmptyClassifierDecision(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	saveBackgroundAgent(t, "nightly-audit", "Read", "Grep")
 
 	a := New(Options{Workdir: t.TempDir()})
@@ -1013,7 +1015,7 @@ func TestExplicitAgentSurvivesEmptyClassifierDecision(t *testing.T) {
 // With no explicit engagement the classifier's proposed agent is taken, and its
 // tool allowlist is loaded with it.
 func TestClassifierProposedAgentLoadsTools(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	saveBackgroundAgent(t, "nightly-audit", "Read", "Grep")
 
 	a := New(Options{Workdir: t.TempDir()})
@@ -1030,7 +1032,7 @@ func TestClassifierProposedAgentLoadsTools(t *testing.T) {
 // A picker-chosen agent reaches state.ActiveProfile, the session meta, and the
 // per-project prefs — the three records the next session needs to restore it.
 func TestPickerChosenAgentReachesStateMetaAndPrefs(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	saveBackgroundAgent(t, "nightly-audit", "Read", "Grep")
 
@@ -1071,7 +1073,7 @@ func TestPickerChosenAgentReachesStateMetaAndPrefs(t *testing.T) {
 // namedAgent empty must imply namedAgentTools nil after every clearing path, so
 // a stale allowlist can never be applied under no name.
 func TestNamedAgentEmptyImpliesToolsNil(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	saveBackgroundAgent(t, "nightly-audit", "Read", "Grep")
 	saveProfile(t, "reviewer")
 

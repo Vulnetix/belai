@@ -1,7 +1,7 @@
 // Package processlib manages named libraries of supervised process commands as
 // directories of shell-command files. It shares the prompt library's filename
 // grammar — "NNN-slug.sh" is enabled, "_NNN-slug.sh" is disabled — where
-// enabled additionally means the entry auto-starts when Signet opens the
+// enabled additionally means the entry auto-starts when Belai opens the
 // workdir. The whole file body is the command, verbatim.
 package processlib
 
@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/filelib"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/filelib"
 )
 
 // Entry is one named process in a library.

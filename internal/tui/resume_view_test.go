@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/session"
+	"github.com/vulnetix/belai/internal/session"
 )
 
 func TestFlattenGroupsOrder(t *testing.T) {

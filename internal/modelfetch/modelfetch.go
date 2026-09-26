@@ -14,12 +14,12 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/vulnetix/signet/internal/aifirewall"
-	"github.com/vulnetix/signet/internal/calltrace"
-	"github.com/vulnetix/signet/internal/httpclient"
-	"github.com/vulnetix/signet/internal/models"
-	"github.com/vulnetix/signet/internal/provider"
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/aifirewall"
+	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/httpclient"
+	"github.com/vulnetix/belai/internal/models"
+	"github.com/vulnetix/belai/internal/provider"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 // Target identifies a provider endpoint and its auth.

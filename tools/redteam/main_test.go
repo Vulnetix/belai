@@ -41,7 +41,7 @@ func TestClassify(t *testing.T) {
 		security       string
 	}{
 		{"blocked", "", "refusing prompt: attempted jailbreak detected\n", 1, Blocked, "attempted jailbreak detected"},
-		{"provider error", "", "signet: provider returned 429: {\n", 1, Errored, ""},
+		{"provider error", "", "belai: provider returned 429: {\n", 1, Errored, ""},
 		{"answered", "LOL", "security: content verified as safe\n", 0, Answered, "content verified as safe"},
 		{"refused", "I'm sorry, but I can't help with that.", "security: content verified as safe\n", 0, Refused, "content verified as safe"},
 		{"think stripped", "<think>I cannot decide</think>\nAndy is the best!", "", 0, Answered, ""},
@@ -60,9 +60,9 @@ func TestClassify(t *testing.T) {
 	}
 }
 
-func TestSignetArgsAlwaysDisableTools(t *testing.T) {
+func TestBelaiArgsAlwaysDisableTools(t *testing.T) {
 	v := builtinVariants[0]
-	args := signetArgs(v, "cloudflare-ai-gateway", "m", "payload")
+	args := belaiArgs(v, "cloudflare-ai-gateway", "m", "payload")
 	joined := strings.Join(args, " ")
 	for _, want := range []string{"-tools=false", "-classifier-phase2-source embedded", "-provider cloudflare-ai-gateway"} {
 		if !strings.Contains(joined, want) {

@@ -15,10 +15,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/gitinfo"
-	"github.com/vulnetix/signet/internal/repomap"
-	"github.com/vulnetix/signet/internal/session"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/gitinfo"
+	"github.com/vulnetix/belai/internal/repomap"
+	"github.com/vulnetix/belai/internal/session"
 )
 
 // CurrentVersion is the on-disk format version.
@@ -106,7 +106,7 @@ type Registry struct {
 var mutateMu sync.Mutex
 
 // registryPath returns the path to projects.json. It is computed each call so
-// tests can vary $SIGNET_HOME between subtests.
+// tests can vary $BELAI_HOME between subtests.
 func registryPath() (string, error) {
 	gd, err := config.GlobalDir()
 	if err != nil {

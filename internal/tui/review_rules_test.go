@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/commands"
-	"github.com/vulnetix/signet/internal/explore"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/scanartifacts"
+	"github.com/vulnetix/belai/internal/commands"
+	"github.com/vulnetix/belai/internal/explore"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/scanartifacts"
 )
 
 // A review with no admitted report block ends without a triage turn.
@@ -55,8 +55,8 @@ func TestReviewCloseCountsIssuesOnly(t *testing.T) {
 // reviewing the scanner.
 func TestReviewCardWithheldAndAgentLines(t *testing.T) {
 	o := commands.ScanOutcome{Name: "sast", Artifact: "sast.sarif", SARIF: &scanartifacts.RunFacts{Results: 1}}
-	body := reviewScanCard(o, cardFor(o), []string{"sast report (Unsafe)"}, "signet:vulnetix-scanner@sast#1")
-	for _, want := range []string{"withheld from the model: sast report (Unsafe)", "`signet:vulnetix-scanner@sast#1` · f8 to follow", "`.vulnetix/sast.sarif`"} {
+	body := reviewScanCard(o, cardFor(o), []string{"sast report (Unsafe)"}, "belai:vulnetix-scanner@sast#1")
+	for _, want := range []string{"withheld from the model: sast report (Unsafe)", "`belai:vulnetix-scanner@sast#1` · f8 to follow", "`.vulnetix/sast.sarif`"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("card lacks %q:\n%s", want, body)
 		}

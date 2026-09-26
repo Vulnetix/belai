@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/repomap"
+	"github.com/vulnetix/belai/internal/repomap"
 )
 
 func TestRepoMapClaimSingleFlight(t *testing.T) {

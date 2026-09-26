@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/plugins"
+	"github.com/vulnetix/belai/internal/plugins"
 )
 
 // pluginCommand runs /plugin. Install and update need the full listing and
-// an explicit confirmation, so they stay on the CLI (signet plugin install).
+// an explicit confirmation, so they stay on the CLI (belai plugin install).
 // A change applies to sessions built after it.
 func pluginCommand(arg string) string {
 	fields := strings.Fields(arg)
@@ -23,7 +23,7 @@ func pluginCommand(arg string) string {
 			return "plugins: " + err.Error()
 		}
 		if len(recs) == 0 {
-			return "no plugins installed · install one with: signet plugin install <git-url|dir>"
+			return "no plugins installed · install one with: belai plugin install <git-url|dir>"
 		}
 		var b strings.Builder
 		fmt.Fprintf(&b, "%d plugin(s):", len(recs))
@@ -54,7 +54,7 @@ func pluginCommand(arg string) string {
 		}
 		return fmt.Sprintf("plugin %s %sd · applies to the next session (/clear)", fields[1], strings.TrimSuffix(sub, "e"))
 	case "install", "update":
-		return "install and update need you to review the full listing: run `signet plugin " + sub + " …` in a terminal"
+		return "install and update need you to review the full listing: run `belai plugin " + sub + " …` in a terminal"
 	}
 	return "usage: /plugin [list | enable <name> | disable <name> | remove <name>]"
 }

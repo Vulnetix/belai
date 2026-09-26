@@ -8,9 +8,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/models"
-	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/models"
+	"github.com/vulnetix/belai/internal/run"
 )
 
 // modelKey builds a rune key message, matching the key handlers' m.String()
@@ -32,7 +32,7 @@ func newModelScreen(t *testing.T, workdir string) *App {
 // names, and a previous implementation wrote the first provider name into the
 // scope field.
 func TestModelScopeKeyCyclesRoleScopes(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.agentScope = "session"
 	a.modelState.classifierScope = "project"
@@ -100,7 +100,7 @@ func TestModelKeyEscAndProviders(t *testing.T) {
 // from anywhere on the screen, not only from the routing kind row, and the
 // footer's router segment follows.
 func TestModelKeyTabCyclesRoutingKind(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	t.Setenv("OPENAI_API_KEY", "sk-openai")
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.routingScope = "project"
@@ -131,7 +131,7 @@ func TestModelKeyTabCyclesRoutingKind(t *testing.T) {
 // provider/model segment with the smart-router label; an empty pool under
 // routed leaves the single model segment.
 func TestFooterRouterSegmentFollowsRoutingKind(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	t.Setenv("OPENAI_API_KEY", "sk-openai")
 	a := modelScreen(t)
 	a.settings.Routing = &config.RoutingSettings{
@@ -164,12 +164,12 @@ func TestFooterRouterSegmentFollowsRoutingKind(t *testing.T) {
 // the wire config: the base URL and API key must follow the provider, not stay
 // pinned to the previous one.
 func TestModelKeyEnterCyclesAgentProviderAndReResolves(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	t.Setenv("OPENAI_API_KEY", "sk-openai")
 	t.Setenv("OPENROUTER_API_KEY", "or-key")
 	// openrouter is the default provider, so the starting point this test
 	// cycles away from has to be named explicitly.
-	t.Setenv("SIGNET_PROVIDER", "openai")
+	t.Setenv("BELAI_PROVIDER", "openai")
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.agentScope = "session"
 
@@ -192,7 +192,7 @@ func TestModelKeyEnterCyclesAgentProviderAndReResolves(t *testing.T) {
 }
 
 func TestModelKeyEnterCyclesAgentEffort(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	t.Setenv("OPENAI_API_KEY", "sk-openai")
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.agentScope = "session"
@@ -227,7 +227,7 @@ func TestModelKeyEnterOpensModelPicker(t *testing.T) {
 }
 
 func TestModelKeyUnsetAgentRows(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	t.Setenv("OPENAI_API_KEY", "sk-openai")
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.agentScope = "session"
@@ -254,7 +254,7 @@ func TestModelKeyUnsetAgentRows(t *testing.T) {
 }
 
 func TestModelKeyUnsetClassifierRows(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	caveman := true
 	if err := config.Mutate(config.ScopeProject, workdir, func(s *config.Settings) error {
@@ -291,11 +291,11 @@ func TestModelKeyUnsetClassifierRows(t *testing.T) {
 }
 
 func TestModelPickerNavigationAndSelect(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	t.Setenv("OPENAI_API_KEY", "sk-openai")
 	// The assertions read the openai catalogue, so the app has to be on openai
 	// rather than the openrouter default.
-	t.Setenv("SIGNET_PROVIDER", "openai")
+	t.Setenv("BELAI_PROVIDER", "openai")
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.agentScope = "session"
 
@@ -363,10 +363,10 @@ func TestModelPickerEmptyCatalogEnterCloses(t *testing.T) {
 }
 
 func TestModelPickerUpDownWrap(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	t.Setenv("OPENAI_API_KEY", "sk-openai")
 	// The wrap arithmetic counts the openai catalogue, not the default one.
-	t.Setenv("SIGNET_PROVIDER", "openai")
+	t.Setenv("BELAI_PROVIDER", "openai")
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.agentScope = "session"
 	a.modelState.picking = true
@@ -388,7 +388,7 @@ func TestModelPickerUpDownWrap(t *testing.T) {
 }
 
 func TestModelPickerFilterSpaceAndEnter(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	t.Setenv("OPENAI_API_KEY", "sk-openai")
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.agentScope = "session"
@@ -475,7 +475,7 @@ func TestSafeRowBounds(t *testing.T) {
 }
 
 func TestScopeTarget(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: "/tmp/w"})
 
 	if got := a.scopeTarget("session"); got != "not written to any file" {
@@ -584,7 +584,7 @@ func TestCatalogTargetGatewayFallsBackToWorkersAI(t *testing.T) {
 }
 
 func TestModelKeyEnterOpensClassifierPicker(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	if err := config.Mutate(config.ScopeProject, workdir, func(s *config.Settings) error {
 		s.Classifier = &config.ClassifierSettings{Provider: "openai", Model: "gpt-5"}
@@ -611,7 +611,7 @@ func TestModelKeyEnterOpensClassifierPicker(t *testing.T) {
 }
 
 func TestModelKeyTogglesAgentCaveman(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.agentScope = "global"
 	selectRow(t, a, rolePosture, "caveman")
@@ -633,7 +633,7 @@ func TestModelChangeModelRowDisabledNoop(t *testing.T) {
 }
 
 func TestModelKeyUnsetAgentModelRow(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	t.Setenv("OPENAI_API_KEY", "sk-openai")
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.agentScope = "session"
@@ -647,7 +647,7 @@ func TestModelKeyUnsetAgentModelRow(t *testing.T) {
 }
 
 func TestModelKeyUnsetClassifierModelRow(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	if err := config.Mutate(config.ScopeProject, workdir, func(s *config.Settings) error {
 		s.Classifier = &config.ClassifierSettings{Provider: "openai", Model: "gpt-4"}
@@ -676,7 +676,7 @@ func TestCycleAgentEffortEmptyOptsNoop(t *testing.T) {
 }
 
 func TestApplyClassifierChangeSurfacesUnconfigured(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.cfg.Provider = "openai"
 	a.settings.Classifier = &config.ClassifierSettings{Provider: "anthropic", Model: "claude-opus-4-5"}
@@ -700,7 +700,7 @@ func TestAgentEffortOptsDefaultFallback(t *testing.T) {
 }
 
 func TestModelKeyTogglesAgentReasoning(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	t.Setenv("OPENAI_API_KEY", "sk-openai")
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.agentScope = "session"
@@ -721,7 +721,7 @@ func TestModelKeyTogglesAgentReasoning(t *testing.T) {
 }
 
 func TestModelKeyTogglesAgentGuardrails(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	t.Setenv("OPENAI_API_KEY", "sk-openai")
 	a := newModelScreen(t, t.TempDir())
 	selectRow(t, a, rolePosture, "guardrails")
@@ -760,7 +760,7 @@ func TestClassifierPickerWarningBroadProvider(t *testing.T) {
 // footer's router segment follows. With the slash popup open, tab keeps its
 // completion meaning and the mode is untouched.
 func TestChatTabCyclesModelMode(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	t.Setenv("OPENAI_API_KEY", "sk-openai")
 	workdir := t.TempDir()
 	if err := config.Mutate(config.ScopeProject, workdir, func(s *config.Settings) error {

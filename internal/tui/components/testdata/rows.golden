@@ -1,35 +1,35 @@
 === tool_short w=32
-╭─ signet ─────────────────────╮
+╭─ belai ──────────────────────╮
 │ ⌁ Read  internal/tui/app.  ✓ │
 │   package tui                │
 ╰──────────────────────────────╯
 === tool_short w=41
-╭─ signet ──────────────────────────────╮
+╭─ belai ───────────────────────────────╮
 │ ⌁ Read  internal/tui/app.go         ✓ │
 │   1 package tui                       │
 ╰───────────────────────────────────────╯
 === tool_short w=53
-╭─ signet ──────────────────────────────────────────╮
+╭─ belai ───────────────────────────────────────────╮
 │ ⌁ Read  internal/tui/app.go                     ✓ │
 │   1 package tui                                   │
 ╰───────────────────────────────────────────────────╯
 === tool_short w=60
-╭─ signet ─────────────────────────────────────────────────╮
+╭─ belai ──────────────────────────────────────────────────╮
 │ ⌁ Read  internal/tui/app.go                            ✓ │
 │   1 package tui                                          │
 ╰──────────────────────────────────────────────────────────╯
 === tool_short w=80
-╭─ signet ─────────────────────────────────────────────────────────────────────╮
+╭─ belai ──────────────────────────────────────────────────────────────────────╮
 │ ⌁ Read  internal/tui/app.go                                                ✓ │
 │   1 package tui                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 === tool_short w=120
-╭─ signet ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭─ belai ──────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ ⌁ Read  internal/tui/app.go                                                                                        ✓ │
 │   1 package tui                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 === tool_wrapping w=32
-╭─ signet ─────────────────────╮
+╭─ belai ──────────────────────╮
 │ ⌁ Bash  Exec(go build ./.  ✓ │
 │   a single very long line of │
 │   output that has to wrap    │
@@ -37,80 +37,79 @@
 │   runs out of things to say  │
 ╰──────────────────────────────╯
 === tool_wrapping w=41
-╭─ signet ──────────────────────────────╮
+╭─ belai ───────────────────────────────╮
 │ ⌁ Bash  Exec(go build ./...)        ✓ │
 │   a single very long line of output   │
 │   that has to wrap several times      │
 │   before it runs out of things to say │
 ╰───────────────────────────────────────╯
 === tool_wrapping w=53
-╭─ signet ──────────────────────────────────────────╮
+╭─ belai ───────────────────────────────────────────╮
 │ ⌁ Bash  Exec(go build ./...)                    ✓ │
 │   a single very long line of output that has to   │
 │   wrap several times before it runs out of things │
 │   to say                                          │
 ╰───────────────────────────────────────────────────╯
 === tool_wrapping w=60
-╭─ signet ─────────────────────────────────────────────────╮
+╭─ belai ──────────────────────────────────────────────────╮
 │ ⌁ Bash  Exec(go build ./...)                           ✓ │
 │   a single very long line of output that has to wrap     │
 │   several times before it runs out of things to say      │
 ╰──────────────────────────────────────────────────────────╯
 === tool_wrapping w=80
-╭─ signet ─────────────────────────────────────────────────────────────────────╮
+╭─ belai ──────────────────────────────────────────────────────────────────────╮
 │ ⌁ Bash  Exec(go build ./...)                                               ✓ │
 │   a single very long line of output that has to wrap several times before it │
 │   runs out of things to say                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 === tool_wrapping w=120
-╭─ signet ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭─ belai ──────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ ⌁ Bash  Exec(go build ./...)                                                                                       ✓ │
 │   a single very long line of output that has to wrap several times before it runs out of things to say               │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 === tool_error w=32
-╭─ signet ─────────────────────╮
+╭─ belai ──────────────────────╮
 │ ⌁ Bash  Exec(go test ./..  ✗ │
 │   FAIL                       │
-│   github.com/vulnetix/signet │
-│   /internal/run    0.2s      │
+│   github.com/vulnetix/belai/ │
+│   internal/run    0.2s       │
 │   exit status 1              │
 ╰──────────────────────────────╯
 === tool_error w=41
-╭─ signet ──────────────────────────────╮
+╭─ belai ───────────────────────────────╮
 │ ⌁ Bash  Exec(go test ./...)         ✗ │
 │   FAIL                                │
-│   github.com/vulnetix/signet/internal │
-│   /run    0.2s                        │
+│   github.com/vulnetix/belai/internal/ │
+│   run    0.2s                         │
 │   exit status 1                       │
 ╰───────────────────────────────────────╯
 === tool_error w=53
-╭─ signet ──────────────────────────────────────────╮
+╭─ belai ───────────────────────────────────────────╮
 │ ⌁ Bash  Exec(go test ./...)                     ✗ │
-│   FAIL    github.com/vulnetix/signet/internal/run │
+│   FAIL    github.com/vulnetix/belai/internal/run  │
 │   0.2s                                            │
 │   exit status 1                                   │
 ╰───────────────────────────────────────────────────╯
 === tool_error w=60
-╭─ signet ─────────────────────────────────────────────────╮
+╭─ belai ──────────────────────────────────────────────────╮
 │ ⌁ Bash  Exec(go test ./...)                            ✗ │
-│   FAIL    github.com/vulnetix/signet/internal/run        │
-│   0.2s                                                   │
+│   FAIL    github.com/vulnetix/belai/internal/run    0.2s │
 │   exit status 1                                          │
 ╰──────────────────────────────────────────────────────────╯
 === tool_error w=80
-╭─ signet ─────────────────────────────────────────────────────────────────────╮
+╭─ belai ──────────────────────────────────────────────────────────────────────╮
 │ ⌁ Bash  Exec(go test ./...)                                                ✗ │
-│   FAIL    github.com/vulnetix/signet/internal/run    0.2s                    │
+│   FAIL    github.com/vulnetix/belai/internal/run    0.2s                     │
 │   exit status 1                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 === tool_error w=120
-╭─ signet ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭─ belai ──────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ ⌁ Bash  Exec(go test ./...)                                                                                        ✗ │
-│   FAIL    github.com/vulnetix/signet/internal/run    0.2s                                                            │
+│   FAIL    github.com/vulnetix/belai/internal/run    0.2s                                                             │
 │   exit status 1                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 === tool_collapsed_marker w=32
-╭─ signet ─ ctrl+o expand all ─╮
+╭─ belai ── ctrl+o expand all ─╮
 │ ⌁ Bash  Exec(ls -la)       ✓ │
 │   … 2 earlier lines          │
 │   third                      │
@@ -118,7 +117,7 @@
 │   fifth                      │
 ╰──────────────────────────────╯
 === tool_collapsed_marker w=41
-╭─ signet ────────── ctrl+o expand all ─╮
+╭─ belai ─────────── ctrl+o expand all ─╮
 │ ⌁ Bash  Exec(ls -la)                ✓ │
 │   … 2 earlier lines                   │
 │   third                               │
@@ -126,7 +125,7 @@
 │   fifth                               │
 ╰───────────────────────────────────────╯
 === tool_collapsed_marker w=53
-╭─ signet ────────────────────── ctrl+o expand all ─╮
+╭─ belai ─────────────────────── ctrl+o expand all ─╮
 │ ⌁ Bash  Exec(ls -la)                            ✓ │
 │   … 2 earlier lines                               │
 │   third                                           │
@@ -134,7 +133,7 @@
 │   fifth                                           │
 ╰───────────────────────────────────────────────────╯
 === tool_collapsed_marker w=60
-╭─ signet ───────────────────────────── ctrl+o expand all ─╮
+╭─ belai ────────────────────────────── ctrl+o expand all ─╮
 │ ⌁ Bash  Exec(ls -la)                                   ✓ │
 │   … 2 earlier lines                                      │
 │   third                                                  │
@@ -142,7 +141,7 @@
 │   fifth                                                  │
 ╰──────────────────────────────────────────────────────────╯
 === tool_collapsed_marker w=80
-╭─ signet ───────────────────────────────────────────────── ctrl+o expand all ─╮
+╭─ belai ────────────────────────────────────────────────── ctrl+o expand all ─╮
 │ ⌁ Bash  Exec(ls -la)                                                       ✓ │
 │   … 2 earlier lines                                                          │
 │   third                                                                      │
@@ -150,7 +149,7 @@
 │   fifth                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 === tool_collapsed_marker w=120
-╭─ signet ───────────────────────────────────────────────────────────────────────────────────────── ctrl+o expand all ─╮
+╭─ belai ────────────────────────────────────────────────────────────────────────────────────────── ctrl+o expand all ─╮
 │ ⌁ Bash  Exec(ls -la)                                                                                               ✓ │
 │   … 2 earlier lines                                                                                                  │
 │   third                                                                                                              │
@@ -158,7 +157,7 @@
 │   fifth                                                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 === tool_expanded w=32
-╭─ signet ─────────────────────╮
+╭─ belai ──────────────────────╮
 │ ⌁ Bash  Exec(ls -la)       ✓ │
 │   first                      │
 │   second                     │
@@ -167,7 +166,7 @@
 │   fifth                      │
 ╰──────────────────────────────╯
 === tool_expanded w=41
-╭─ signet ──────────────────────────────╮
+╭─ belai ───────────────────────────────╮
 │ ⌁ Bash  Exec(ls -la)                ✓ │
 │   first                               │
 │   second                              │
@@ -176,7 +175,7 @@
 │   fifth                               │
 ╰───────────────────────────────────────╯
 === tool_expanded w=53
-╭─ signet ──────────────────────────────────────────╮
+╭─ belai ───────────────────────────────────────────╮
 │ ⌁ Bash  Exec(ls -la)                            ✓ │
 │   first                                           │
 │   second                                          │
@@ -185,7 +184,7 @@
 │   fifth                                           │
 ╰───────────────────────────────────────────────────╯
 === tool_expanded w=60
-╭─ signet ─────────────────────────────────────────────────╮
+╭─ belai ──────────────────────────────────────────────────╮
 │ ⌁ Bash  Exec(ls -la)                                   ✓ │
 │   first                                                  │
 │   second                                                 │
@@ -194,7 +193,7 @@
 │   fifth                                                  │
 ╰──────────────────────────────────────────────────────────╯
 === tool_expanded w=80
-╭─ signet ─────────────────────────────────────────────────────────────────────╮
+╭─ belai ──────────────────────────────────────────────────────────────────────╮
 │ ⌁ Bash  Exec(ls -la)                                                       ✓ │
 │   first                                                                      │
 │   second                                                                     │
@@ -203,7 +202,7 @@
 │   fifth                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 === tool_expanded w=120
-╭─ signet ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭─ belai ──────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ ⌁ Bash  Exec(ls -la)                                                                                               ✓ │
 │   first                                                                                                              │
 │   second                                                                                                             │
@@ -212,109 +211,109 @@
 │   fifth                                                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 === tool_blank_interior_line w=32
-╭─ signet ─────────────────────╮
+╭─ belai ──────────────────────╮
 │ ⌁ Bash  Exec(cat notes)    ✓ │
 │   head                       │
 │                              │
 │   tail                       │
 ╰──────────────────────────────╯
 === tool_blank_interior_line w=41
-╭─ signet ──────────────────────────────╮
+╭─ belai ───────────────────────────────╮
 │ ⌁ Bash  Exec(cat notes)             ✓ │
 │   head                                │
 │                                       │
 │   tail                                │
 ╰───────────────────────────────────────╯
 === tool_blank_interior_line w=53
-╭─ signet ──────────────────────────────────────────╮
+╭─ belai ───────────────────────────────────────────╮
 │ ⌁ Bash  Exec(cat notes)                         ✓ │
 │   head                                            │
 │                                                   │
 │   tail                                            │
 ╰───────────────────────────────────────────────────╯
 === tool_blank_interior_line w=60
-╭─ signet ─────────────────────────────────────────────────╮
+╭─ belai ──────────────────────────────────────────────────╮
 │ ⌁ Bash  Exec(cat notes)                                ✓ │
 │   head                                                   │
 │                                                          │
 │   tail                                                   │
 ╰──────────────────────────────────────────────────────────╯
 === tool_blank_interior_line w=80
-╭─ signet ─────────────────────────────────────────────────────────────────────╮
+╭─ belai ──────────────────────────────────────────────────────────────────────╮
 │ ⌁ Bash  Exec(cat notes)                                                    ✓ │
 │   head                                                                       │
 │                                                                              │
 │   tail                                                                       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 === tool_blank_interior_line w=120
-╭─ signet ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭─ belai ──────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ ⌁ Bash  Exec(cat notes)                                                                                            ✓ │
 │   head                                                                                                               │
 │                                                                                                                      │
 │   tail                                                                                                               │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 === tool_withheld w=32
-╭─ signet ─ ctrl+o expand all ─╮
+╭─ belai ── ctrl+o expand all ─╮
 │ ⌁ WebFetch  https:  withheld │
 │   tool result withheld:      │
 │   provider error             │
 │   … 1 more lines             │
 ╰──────────────────────────────╯
 === tool_withheld w=41
-╭─ signet ────────── ctrl+o expand all ─╮
+╭─ belai ─────────── ctrl+o expand all ─╮
 │ ⌁ WebFetch  https://example  withheld │
 │   tool result withheld: provider      │
 │   error  … 1 more lines               │
 ╰───────────────────────────────────────╯
 === tool_withheld w=53
-╭─ signet ────────────────────── ctrl+o expand all ─╮
+╭─ belai ─────────────────────── ctrl+o expand all ─╮
 │ ⌁ WebFetch  https://example.com          withheld │
 │   tool result withheld: provider error            │
 │   … 1 more lines                                  │
 ╰───────────────────────────────────────────────────╯
 === tool_withheld w=60
-╭─ signet ───────────────────────────── ctrl+o expand all ─╮
+╭─ belai ────────────────────────────── ctrl+o expand all ─╮
 │ ⌁ WebFetch  https://example.com                 withheld │
 │   tool result withheld: provider error  … 1 more lines   │
 ╰──────────────────────────────────────────────────────────╯
 === tool_withheld w=80
-╭─ signet ───────────────────────────────────────────────── ctrl+o expand all ─╮
+╭─ belai ────────────────────────────────────────────────── ctrl+o expand all ─╮
 │ ⌁ WebFetch  https://example.com                                     withheld │
 │   tool result withheld: provider error  … 1 more lines                       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 === tool_withheld w=120
-╭─ signet ───────────────────────────────────────────────────────────────────────────────────────── ctrl+o expand all ─╮
+╭─ belai ────────────────────────────────────────────────────────────────────────────────────────── ctrl+o expand all ─╮
 │ ⌁ WebFetch  https://example.com                                                                             withheld │
 │   tool result withheld: provider error  … 1 more lines                                                               │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 === system_short w=32
-╭─ signet ─────────────────────╮
+╭─ belai ──────────────────────╮
 │ · retrying (2/3) after 800ms │
 │   — rate limited             │
 ╰──────────────────────────────╯
 === system_short w=41
-╭─ signet ──────────────────────────────╮
+╭─ belai ───────────────────────────────╮
 │ · retrying (2/3) after 800ms — rate   │
 │   limited                             │
 ╰───────────────────────────────────────╯
 === system_short w=53
-╭─ signet ──────────────────────────────────────────╮
+╭─ belai ───────────────────────────────────────────╮
 │ · retrying (2/3) after 800ms — rate limited       │
 ╰───────────────────────────────────────────────────╯
 === system_short w=60
-╭─ signet ─────────────────────────────────────────────────╮
+╭─ belai ──────────────────────────────────────────────────╮
 │ · retrying (2/3) after 800ms — rate limited              │
 ╰──────────────────────────────────────────────────────────╯
 === system_short w=80
-╭─ signet ─────────────────────────────────────────────────────────────────────╮
+╭─ belai ──────────────────────────────────────────────────────────────────────╮
 │ · retrying (2/3) after 800ms — rate limited                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 === system_short w=120
-╭─ signet ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭─ belai ──────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ · retrying (2/3) after 800ms — rate limited                                                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 === system_wrapping w=32
-╭─ signet ─────────────────────╮
+╭─ belai ──────────────────────╮
 │ · a system notice long       │
 │   enough that it has to wrap │
 │   onto a second and probably │
@@ -322,30 +321,30 @@
 │   widths                     │
 ╰──────────────────────────────╯
 === system_wrapping w=41
-╭─ signet ──────────────────────────────╮
+╭─ belai ───────────────────────────────╮
 │ · a system notice long enough that it │
 │   has to wrap onto a second and       │
 │   probably a third line at narrow     │
 │   widths                              │
 ╰───────────────────────────────────────╯
 === system_wrapping w=53
-╭─ signet ──────────────────────────────────────────╮
+╭─ belai ───────────────────────────────────────────╮
 │ · a system notice long enough that it has to wrap │
 │   onto a second and probably a third line at      │
 │   narrow widths                                   │
 ╰───────────────────────────────────────────────────╯
 === system_wrapping w=60
-╭─ signet ─────────────────────────────────────────────────╮
+╭─ belai ──────────────────────────────────────────────────╮
 │ · a system notice long enough that it has to wrap onto a │
 │   second and probably a third line at narrow widths      │
 ╰──────────────────────────────────────────────────────────╯
 === system_wrapping w=80
-╭─ signet ─────────────────────────────────────────────────────────────────────╮
+╭─ belai ──────────────────────────────────────────────────────────────────────╮
 │ · a system notice long enough that it has to wrap onto a second and probably │
 │   a third line at narrow widths                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 === system_wrapping w=120
-╭─ signet ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭─ belai ──────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ · a system notice long enough that it has to wrap onto a second and probably a third line at narrow widths           │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 === assistant_markdown w=32
@@ -396,38 +395,38 @@
 │ ┌─┬─┐                                                                                                                │
 │ … 5 more lines                                                                                                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-=== signet_group w=32
-╭─ signet ─────────────────────╮
+=== belai_group w=32
+╭─ belai ──────────────────────╮
 │ · first notice               │
 │ · second notice              │
 │ · third notice               │
 ╰──────────────────────────────╯
-=== signet_group w=41
-╭─ signet ──────────────────────────────╮
+=== belai_group w=41
+╭─ belai ───────────────────────────────╮
 │ · first notice                        │
 │ · second notice                       │
 │ · third notice                        │
 ╰───────────────────────────────────────╯
-=== signet_group w=53
-╭─ signet ──────────────────────────────────────────╮
+=== belai_group w=53
+╭─ belai ───────────────────────────────────────────╮
 │ · first notice                                    │
 │ · second notice                                   │
 │ · third notice                                    │
 ╰───────────────────────────────────────────────────╯
-=== signet_group w=60
-╭─ signet ─────────────────────────────────────────────────╮
+=== belai_group w=60
+╭─ belai ──────────────────────────────────────────────────╮
 │ · first notice                                           │
 │ · second notice                                          │
 │ · third notice                                           │
 ╰──────────────────────────────────────────────────────────╯
-=== signet_group w=80
-╭─ signet ─────────────────────────────────────────────────────────────────────╮
+=== belai_group w=80
+╭─ belai ──────────────────────────────────────────────────────────────────────╮
 │ · first notice                                                               │
 │ · second notice                                                              │
 │ · third notice                                                               │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-=== signet_group w=120
-╭─ signet ─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+=== belai_group w=120
+╭─ belai ──────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ · first notice                                                                                                       │
 │ · second notice                                                                                                      │
 │ · third notice                                                                                                       │
@@ -451,7 +450,7 @@
 │ cause here                   │
 ╰──────────────────────────────╯
 
-╭─ signet ─ ctrl+o expand all ─╮
+╭─ belai ── ctrl+o expand all ─╮
 │ ⌁ Bash  Exec(go te  withheld │
 │   … 1 earlier lines          │
 │   second line                │
@@ -479,7 +478,7 @@
 │ thinking about the root cause here    │
 ╰───────────────────────────────────────╯
 
-╭─ signet ────────── ctrl+o expand all ─╮
+╭─ belai ─────────── ctrl+o expand all ─╮
 │ ⌁ Bash  Exec(go test ./...)  withheld │
 │   … 1 earlier lines                   │
 │   second line                         │
@@ -506,7 +505,7 @@
 │ thinking about the root cause here                │
 ╰───────────────────────────────────────────────────╯
 
-╭─ signet ────────────────────── ctrl+o expand all ─╮
+╭─ belai ─────────────────────── ctrl+o expand all ─╮
 │ ⌁ Bash  Exec(go test ./...)              withheld │
 │   … 1 earlier lines                               │
 │   second line                                     │
@@ -532,7 +531,7 @@
 │ thinking about the root cause here                       │
 ╰──────────────────────────────────────────────────────────╯
 
-╭─ signet ───────────────────────────── ctrl+o expand all ─╮
+╭─ belai ────────────────────────────── ctrl+o expand all ─╮
 │ ⌁ Bash  Exec(go test ./...)                     withheld │
 │   … 1 earlier lines                                      │
 │   second line                                            │
@@ -558,7 +557,7 @@
 │ thinking about the root cause here                                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
-╭─ signet ───────────────────────────────────────────────── ctrl+o expand all ─╮
+╭─ belai ────────────────────────────────────────────────── ctrl+o expand all ─╮
 │ ⌁ Bash  Exec(go test ./...)                                         withheld │
 │   … 1 earlier lines                                                          │
 │   second line                                                                │
@@ -584,7 +583,7 @@
 │ thinking about the root cause here                                                                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
-╭─ signet ───────────────────────────────────────────────────────────────────────────────────────── ctrl+o expand all ─╮
+╭─ belai ────────────────────────────────────────────────────────────────────────────────────────── ctrl+o expand all ─╮
 │ ⌁ Bash  Exec(go test ./...)                                                                                 withheld │
 │   … 1 earlier lines                                                                                                  │
 │   second line                                                                                                        │

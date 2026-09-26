@@ -11,7 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
-	"github.com/vulnetix/signet/internal/plans"
+	"github.com/vulnetix/belai/internal/plans"
 )
 
 // goldenPlanReviewDoc is the fixed structured plan the golden fixture renders,

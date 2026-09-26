@@ -9,11 +9,11 @@ import (
 	"io"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/agentprofile"
-	"github.com/vulnetix/signet/internal/hooks"
-	"github.com/vulnetix/signet/internal/plugins"
-	"github.com/vulnetix/signet/internal/promptlib"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/hooks"
+	"github.com/vulnetix/belai/internal/plugins"
+	"github.com/vulnetix/belai/internal/promptlib"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 // activatePlugins points every component loader at the enabled plugins. It
@@ -31,7 +31,7 @@ func activatePlugins() {
 	}
 }
 
-const pluginUsage = `usage: signet plugin <command>
+const pluginUsage = `usage: belai plugin <command>
 
   list                          installed plugins
   install [-yes] <git-url|dir>  install after confirming the listing (git-url may end #<ref>)
@@ -40,7 +40,7 @@ const pluginUsage = `usage: signet plugin <command>
   remove <name>
 `
 
-// runPluginCLI implements `signet plugin …` and returns the exit code.
+// runPluginCLI implements `belai plugin …` and returns the exit code.
 func runPluginCLI(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, isTTY bool) int {
 	if len(args) == 0 {
 		fmt.Fprint(stderr, pluginUsage)
@@ -60,7 +60,7 @@ func runPluginCLI(ctx context.Context, args []string, stdin io.Reader, stdout, s
 			return true
 		}
 		if !isTTY {
-			fmt.Fprintln(stderr, "signet: no terminal to confirm on; pass -yes after reviewing the listing")
+			fmt.Fprintln(stderr, "belai: no terminal to confirm on; pass -yes after reviewing the listing")
 			return false
 		}
 		fmt.Fprint(stdout, "Install this plugin? [y/N] ")
@@ -69,10 +69,10 @@ func runPluginCLI(ctx context.Context, args []string, stdin io.Reader, stdout, s
 	}
 	fail := func(err error) int {
 		if errors.Is(err, plugins.ErrDeclined) {
-			fmt.Fprintln(stderr, "signet: not installed")
+			fmt.Fprintln(stderr, "belai: not installed")
 			return 1
 		}
-		fmt.Fprintln(stderr, "signet:", err)
+		fmt.Fprintln(stderr, "belai:", err)
 		return 1
 	}
 	switch cmd {

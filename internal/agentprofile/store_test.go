@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 func TestSaveLoadRoundTrip(t *testing.T) {
@@ -110,11 +110,11 @@ func resetDir(t *testing.T) {
 	t.Cleanup(func() { _ = os.RemoveAll(d) })
 }
 
-// Agent profiles live under the global directory, not the legacy ~/.signet
-// path, and SIGNET_HOME moves them with everything else.
+// Agent profiles live under the global directory, not the legacy ~/.belai
+// path, and BELAI_HOME moves them with everything else.
 func TestDirUnderGlobalDir(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("SIGNET_HOME", home)
+	t.Setenv("BELAI_HOME", home)
 
 	got, err := Dir()
 	if err != nil {

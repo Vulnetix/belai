@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/filediff"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/filediff"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 // These tests drive the real Bash tool through the real Recorder, which is the

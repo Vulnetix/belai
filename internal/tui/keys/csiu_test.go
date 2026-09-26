@@ -58,7 +58,7 @@ func TestTranslateCSIu(t *testing.T) {
 	}
 }
 
-// TestCtrlAltCollapsesToCtrl pins the reason Signet binds no ctrl+alt chord.
+// TestCtrlAltCollapsesToCtrl pins the reason Belai binds no ctrl+alt chord.
 // A ctrl-modified letter is translated onto the legacy tea.KeyCtrlA…KeyCtrlZ
 // constants, and those constants have no alt bit to carry: modifier set 7
 // (ctrl+alt) and modifier set 5 (ctrl) produce the identical KeyMsg, so
@@ -82,7 +82,7 @@ func TestCtrlAltCollapsesToCtrl(t *testing.T) {
 	}
 }
 
-// Function keys keep their legacy encodings under the enhancement flag Signet
+// Function keys keep their legacy encodings under the enhancement flag Belai
 // pushes (flag 1 only disambiguates keys that lack one), so they never reach
 // Translate and are parsed by bubbletea itself. A CSI-u sequence that is not a
 // key this translator knows must be refused rather than guessed at.

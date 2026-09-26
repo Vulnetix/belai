@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/forge"
+	"github.com/vulnetix/belai/internal/forge"
 )
 
 func ghProvider(t *testing.T) forge.Provider {

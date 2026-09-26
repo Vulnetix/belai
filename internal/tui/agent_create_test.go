@@ -7,7 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/agentprofile"
 )
 
 const validAgentBuilderJSON = `{"name":"ignored","description":"designed","system_prompt":"designed prompt","mode":"single"}`

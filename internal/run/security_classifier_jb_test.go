@@ -1,12 +1,12 @@
-//go:build signet_bert_jailbreak
+//go:build belai_bert_jailbreak
 
 package run
 
 import (
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/mlclassify"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/mlclassify"
 )
 
 // TestResolveSecurityClassifierPhase2OptInWhenEmbedded pins the production

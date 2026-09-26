@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/todos"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/todos"
 )
 
 // todoCheck renders the TODO progress check every loop pass carries beside its

@@ -9,13 +9,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vulnetix/signet/internal/trace"
+	"github.com/vulnetix/belai/internal/trace"
 )
 
-// tracingTransport records one SIGNET_TRACE line per outbound request: the
+// tracingTransport records one BELAI_TRACE line per outbound request: the
 // endpoint, the model named in the request body, byte counts, time to the
 // response headers, and the time until the body was fully read and closed.
-// It is installed only when SIGNET_TRACE is set, so an untraced session pays
+// It is installed only when BELAI_TRACE is set, so an untraced session pays
 // nothing. Only request metadata is recorded — never a body, header value or
 // credential.
 type tracingTransport struct {
@@ -94,7 +94,7 @@ func (b *tracedBody) Close() error {
 	return b.ReadCloser.Close()
 }
 
-// withTracing wraps rt when SIGNET_TRACE is set and returns it unchanged
+// withTracing wraps rt when BELAI_TRACE is set and returns it unchanged
 // otherwise.
 func withTracing(rt http.RoundTripper) http.RoundTripper {
 	w := trace.Env()

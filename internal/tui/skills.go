@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/sanitize"
-	"github.com/vulnetix/signet/internal/skills"
+	"github.com/vulnetix/belai/internal/sanitize"
+	"github.com/vulnetix/belai/internal/skills"
 )
 
 // skillsListing renders /skills: one line per installed skill with its
@@ -13,7 +13,7 @@ import (
 // are sanitized and flattened to one line.
 func skillsListing(entries []skills.Entry) string {
 	if len(entries) == 0 {
-		return "no skills installed · add one under ~/.vulnetix/signet/skills/<name>/SKILL.md, or let the agent draft one with SkillDraft"
+		return "no skills installed · add one under ~/.vulnetix/belai/skills/<name>/SKILL.md, or let the agent draft one with SkillDraft"
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%d skill(s) installed:", len(entries))

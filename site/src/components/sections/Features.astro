@@ -28,13 +28,13 @@ import budgetsShot from '../../assets/shots/budgets.svg';
     <div class="prose-measure order-1 lg:order-2">
       <h2 class="text-3xl font-bold text-vx-ink">Modes.</h2>
       <p class="mt-4 text-vx-ink/80">
-        Signet has three modes: agent, plan and goal. A prompt sent without a mode is classified into
+        Belai has three modes: agent, plan and goal. A prompt sent without a mode is classified into
         one of them. A mode you pick yourself is kept as it is.
       </p>
       <p class="mt-4 text-vx-ink/80">
         Agent is the default for general coding. Every tool is available behind the permission rules,
         and the security classifier checks every untrusted result. Each agent turn ends on a
-        <code class="mono">✓ done</code> panel that Signet writes itself, with the number of tool calls,
+        <code class="mono">✓ done</code> panel that Belai writes itself, with the number of tool calls,
         edits and the time taken.
       </p>
       <p class="mt-4 text-vx-ink/80">
@@ -69,7 +69,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
         changing a file, the model is told to stop surveying and make the first edit.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        <code class="mono">-detect-mode</code> prints the mode Signet would choose for a prompt without acting on it.
+        <code class="mono">-detect-mode</code> prints the mode Belai would choose for a prompt without acting on it.
       </p>
     </div>
   </div>
@@ -86,7 +86,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
     <div class="prose-measure">
       <h2 class="text-3xl font-bold text-vx-ink">Tools.</h2>
       <p class="mt-4 text-vx-ink/80">
-        Signet includes a set of read-only utilities as tools: <code class="mono">Cat</code>, <code class="mono">Head</code>,{' '}
+        Belai includes a set of read-only utilities as tools: <code class="mono">Cat</code>, <code class="mono">Head</code>,{' '}
         <code class="mono">Git</code>, <code class="mono">JQ</code>, <code class="mono">Find</code>, <code class="mono">Diff</code> and about 19 more. Each
         runs a specific binary with a fixed argument shape, passed directly to{' '}
         <code class="mono">exec.Command</code> without a shell. Free-form command strings are rejected.
@@ -121,7 +121,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
     <div class="prose-measure">
       <h2 class="text-3xl font-bold text-vx-ink">Diagnostics.</h2>
       <p class="mt-4 text-vx-ink/80">
-        After the model edits a file, Signet checks it and returns any errors in the same{' '}
+        After the model edits a file, Belai checks it and returns any errors in the same{' '}
         <code class="mono">Edit</code> result. The model does not need a separate build or lint call to see them.
       </p>
       <p class="mt-4 text-vx-ink/80">
@@ -141,7 +141,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
       </div>
       <div class="rounded-lg border border-vx-ink/30 p-4">
         <h3 class="font-semibold text-vx-ink">Found on PATH</h3>
-        <p class="mt-2 text-sm text-vx-ink/80">Signet only uses servers it finds on PATH. /settings shows the install command for a missing one but does not run it.</p>
+        <p class="mt-2 text-sm text-vx-ink/80">Belai only uses servers it finds on PATH. /settings shows the install command for a missing one but does not run it.</p>
       </div>
       <div class="rounded-lg border border-vx-ink/30 p-4">
         <h3 class="font-semibold text-vx-ink">Fallback checks</h3>
@@ -153,7 +153,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
       </div>
       <div class="rounded-lg border border-vx-ink/30 p-4">
         <h3 class="font-semibold text-vx-ink">No all-clear message</h3>
-        <p class="mt-2 text-sm text-vx-ink/80">When no check reports anything, nothing is attached. Signet never tells the model a file is error-free.</p>
+        <p class="mt-2 text-sm text-vx-ink/80">When no check reports anything, nothing is attached. Belai never tells the model a file is error-free.</p>
       </div>
     </div>
   </div>
@@ -242,7 +242,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
     <p class="mt-4 text-vx-ink/80">
       A profile with no tool list gets every tool. A profile that lists tools gets only those. The list is
       chosen from a fixed set in the profile editor, which includes <code class="mono">Bash</code> and{' '}
-      <code class="mono">Write</code>. The built-in <code class="mono">signet:triage-vulns</code> profile lists{' '}
+      <code class="mono">Write</code>. The built-in <code class="mono">belai:triage-vulns</code> profile lists{' '}
       <code class="mono">Read</code>, <code class="mono">Grep</code>, <code class="mono">Glob</code> and{' '}
       <code class="mono">Bash</code>. It leaves out <code class="mono">Write</code> and{' '}
       <code class="mono">Edit</code> because it only proposes fixes.
@@ -280,7 +280,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
   <div class="prose-measure">
     <h2 class="text-3xl font-bold text-vx-ink">Memory.</h2>
     <p class="mt-4 text-vx-ink/80">
-      Other coding agents on your machine have probably explored this repository already. Signet can
+      Other coding agents on your machine have probably explored this repository already. Belai can
       search what they found instead of exploring again, and each turn starts with what the session
       already knows about the repository, so the model does not have to ask again.
     </p>
@@ -311,7 +311,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
     <div class="grid content-start gap-4 sm:grid-cols-2">
       <div class="rounded-lg border border-vx-ink/30 p-4">
         <h4 class="font-semibold text-vx-ink">Sessions</h4>
-        <p class="mt-2 text-sm text-vx-ink/80">Signet, Claude Code, Codex, pi, Goose, opencode, Copilot in VS Code, the Copilot CLI and Antigravity.</p>
+        <p class="mt-2 text-sm text-vx-ink/80">Belai, Claude Code, Codex, pi, Goose, opencode, Copilot in VS Code, the Copilot CLI and Antigravity.</p>
       </div>
       <div class="rounded-lg border border-vx-ink/30 p-4">
         <h4 class="font-semibold text-vx-ink">Prompt history</h4>
@@ -319,7 +319,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
       </div>
       <div class="rounded-lg border border-vx-ink/30 p-4">
         <h4 class="font-semibold text-vx-ink">Memory and rules</h4>
-        <p class="mt-2 text-sm text-vx-ink/80">Per-agent memory folders, Signet's saved goals, prompts and plans, and the usual rules files in your home folder and the workspace.</p>
+        <p class="mt-2 text-sm text-vx-ink/80">Per-agent memory folders, Belai's saved goals, prompts and plans, and the usual rules files in your home folder and the workspace.</p>
       </div>
       <div class="rounded-lg border border-vx-ink/30 p-4">
         <h4 class="font-semibold text-vx-ink">No new dependencies</h4>
@@ -369,7 +369,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
       <h2 class="text-3xl font-bold text-vx-ink">Supervised processes.</h2>
       <p class="mt-4 text-vx-ink/80">
         <code class="mono">!!cmd</code> starts a long-running command, such as a dev server, a file watcher
-        or a tunnel, inside Signet instead of in another terminal. No model turn is sent for it. The
+        or a tunnel, inside Belai instead of in another terminal. No model turn is sent for it. The
         command is saved as typed in the project's process library, so a later session in the same
         directory can start it again, and entries marked enabled start automatically.
       </p>
@@ -379,7 +379,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
         (<code class="mono">/prompt:</code>) and agent profiles (<code class="mono">/agent:</code>). If the
         process is already running, it isn't started again, and its status is shown either way.
         <code class="mono">/processes</code> manages the library across project and global scope. Output
-        streams to a log file under <code class="mono">~/.vulnetix/signet/logs</code> and into the{' '}
+        streams to a log file under <code class="mono">~/.vulnetix/belai/logs</code> and into the{' '}
         <code class="mono">f9</code> runs panel. The panel opens on the activity tab, and{' '}
         <code class="mono">tab</code> cycles through activity, subagents, processes, git and ci. The
         processes tab lists only the library's running processes. From there <code class="mono">enter</code> or <code class="mono">v</code>{' '}
@@ -401,7 +401,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
         <code class="mono">a</code> adds one, <code class="mono">x</code> removes one after a confirmation, and{' '}
         <code class="mono">p</code> opens a PR or MR after a confirmation that names the forge, repository and
         branch. Turning guardrails off does not skip that confirmation. The ci tab lists the checks or
-        pipeline jobs for the branch, and appears only when there is an open PR or MR. Signet runs{' '}
+        pipeline jobs for the branch, and appears only when there is an open PR or MR. Belai runs{' '}
         <code class="mono">git</code>, <code class="mono">gh</code> and <code class="mono">glab</code> with fixed
         arguments, and those CLIs keep their own credentials. Text the forge returns, such as PR titles and
         check names, is shown in the panel only. It is never sent to the model.
@@ -425,8 +425,8 @@ import budgetsShot from '../../assets/shots/budgets.svg';
       <p class="mt-4 text-vx-ink/80">
         Every completed model call counts its prompt and completion tokens, reasoning included, under the
         provider and model that served it. That covers the main turn, subagents, background agents and
-        every classifier and role-manager call. When a provider reports no usage, Signet estimates it and
-        marks it as estimated. Usage is kept in one ledger shared by every signet process, headless runs
+        every classifier and role-manager call. When a provider reports no usage, Belai estimates it and
+        marks it as estimated. Usage is kept in one ledger shared by every belai process, headless runs
         included.
       </p>
       <p class="mt-4 text-vx-ink/80">
@@ -434,7 +434,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
         existed. When the TUI starts, it reads the saved transcripts the ledger has not seen yet in the
         background and adds their usage. A goal run adds its exact token count, split across the days it
         ran. For other turns, a transcript keeps only the usage of the last model call, so the imported
-        figure is a lower bound. A session is never counted twice, even when two signet windows import at
+        figure is a lower bound. A session is never counted twice, even when two belai windows import at
         the same time.
       </p>
       <p class="mt-4 text-vx-ink/80">
@@ -469,7 +469,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
       <p class="mt-4 text-vx-ink/80">
         <code class="mono">ollama</code> and <code class="mono">llama-server</code> are supported without extra
         setup. A model you run locally appears in <code class="mono">/model</code>. If you stop the server, it
-        leaves the picker but stays in <code class="mono">/credentials</code>, so Signet won't switch to a host
+        leaves the picker but stays in <code class="mono">/credentials</code>, so Belai won't switch to a host
         that isn't running.
       </p>
       <p class="mt-4 text-vx-ink/80">
@@ -531,7 +531,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
       <code class="mono">routing.kind</code> is <code class="mono">defined</code> by default: your main model
       answers everything the fast tier does not. Set it to <code class="mono">routed</code> and list candidate
       models under <code class="mono">routing.use_cases</code>. On the first call for a use case, the Jev
-      Decisions API scores the candidates and Signet keeps the winner for the rest of the session. A failed
+      Decisions API scores the candidates and Belai keeps the winner for the rest of the session. A failed
       call, a tie, or a winner that is not in your list falls back to the main model, so routing can slow
       a call down but never drop one. Fast-tier calls skip Jev entirely.
     </p>
@@ -557,7 +557,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
     </div>
     <div class="rounded-lg border border-vx-ink/30 p-4">
       <h3 class="font-semibold text-vx-ink">Checked at load</h3>
-      <p class="mt-2 text-sm text-vx-ink/80">A candidate needs a provider or a model, and the provider must be one Signet knows. A bad routing table stops startup instead of sending traffic somewhere unexpected.</p>
+      <p class="mt-2 text-sm text-vx-ink/80">A candidate needs a provider or a model, and the provider must be one Belai knows. A bad routing table stops startup instead of sending traffic somewhere unexpected.</p>
     </div>
     <div class="rounded-lg border border-vx-ink/30 p-4">
       <h3 class="font-semibold text-vx-ink">Per project, key by key</h3>
@@ -580,8 +580,8 @@ import budgetsShot from '../../assets/shots/budgets.svg';
       <p class="mt-4 text-vx-ink/80">
         <a class="underline" href="https://www.vulnetix.com/features/ai-firewall">AI Firewall</a> routes
         your LLM traffic through a filtering gateway, using the gateway key in place of the provider
-        key. If any of its four required settings is missing, Signet talks to the provider directly.
-        The status footer shows whether the gateway was reachable when Signet started.
+        key. If any of its four required settings is missing, Belai talks to the provider directly.
+        The status footer shows whether the gateway was reachable when Belai started.
       </p>
       <p class="mt-4 text-vx-ink/80">
         <a class="underline" href="https://www.vulnetix.com/features/code-scanner">Code Scanner</a>{' '}
@@ -617,13 +617,13 @@ import budgetsShot from '../../assets/shots/budgets.svg';
         Its report shows up in the thread while the slower scanners are still working.
       </p>
       <p class="mt-4 text-vx-ink/80">
-        When a finding has more than one reasonable fix, Signet asks you which one to use before any
+        When a finding has more than one reasonable fix, Belai asks you which one to use before any
         change is made. The session then switches to agent mode with the built-in{' '}
-        <code class="mono">signet:vulnetix-review</code> profile, which sees every subagent report together,
+        <code class="mono">belai:vulnetix-review</code> profile, which sees every subagent report together,
         since findings from different scanners often have the same cause. Dependency findings go to a{' '}
         <code class="mono">vulnetix fix</code> plan, which is a dry run unless you turned on autofix. Code
         findings are patched in the session under the normal permission prompts. The review ends by writing{' '}
-        <code class="mono">.vulnetix/signet/code-review-report.md</code> with three lists: what was fixed,
+        <code class="mono">.vulnetix/belai/code-review-report.md</code> with three lists: what was fixed,
         what needs your decision, and what could not be resolved, with the reason for each.
       </p>
       <p class="mt-4 text-vx-ink/80">

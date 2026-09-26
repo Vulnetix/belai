@@ -7,20 +7,20 @@ import (
 	"io"
 	"os"
 
-	"github.com/vulnetix/signet/internal/acp"
-	"github.com/vulnetix/signet/internal/agent"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/credentials"
-	"github.com/vulnetix/signet/internal/httpclient"
-	"github.com/vulnetix/signet/internal/mcp"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/sandbox"
-	"github.com/vulnetix/signet/internal/session"
-	"github.com/vulnetix/signet/internal/trustgate"
+	"github.com/vulnetix/belai/internal/acp"
+	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/httpclient"
+	"github.com/vulnetix/belai/internal/mcp"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/sandbox"
+	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/trustgate"
 )
 
-// runACP implements `signet acp`: the Agent Client Protocol on stdin and
+// runACP implements `belai acp`: the Agent Client Protocol on stdin and
 // stdout. Nothing else may be written to stdout, so diagnostics go to
 // stderr. It returns the exit code.
 func runACP(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -34,11 +34,11 @@ func runACP(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 	wd, _ := os.Getwd()
 	global, err := config.LoadMerged(wd)
 	if err != nil {
-		fmt.Fprintln(stderr, "signet acp: load settings:", err)
+		fmt.Fprintln(stderr, "belai acp: load settings:", err)
 		return 1
 	}
 	if err := run.PreloadClassifier(run.ResolveSecurityClassifier(global.Classifier)); err != nil {
-		fmt.Fprintln(stderr, "signet acp: load embedded classifier:", err)
+		fmt.Fprintln(stderr, "belai acp: load embedded classifier:", err)
 		return 1
 	}
 	// The mcp key is read from the user's own settings only, so one set of
@@ -59,7 +59,7 @@ func runACP(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 		return buildACPSession(ctx, cwd, sessionID, *providerName, *model)
 	}
 	if err := acp.Serve(ctx, stdin, stdout, build); err != nil {
-		fmt.Fprintln(stderr, "signet acp:", err)
+		fmt.Fprintln(stderr, "belai acp:", err)
 		return 1
 	}
 	return 0
@@ -74,7 +74,7 @@ func buildACPSession(ctx context.Context, cwd, sessionID, providerName, model st
 		return nil, fmt.Errorf("check trust for %s: %w", cwd, err)
 	}
 	if !st.Trusted {
-		return nil, fmt.Errorf("%s is not trusted yet: run `signet` there once to review and trust it, or `signet -trust-dir` from that directory", cwd)
+		return nil, fmt.Errorf("%s is not trusted yet: run `belai` there once to review and trust it, or `belai -trust-dir` from that directory", cwd)
 	}
 	settings, err := config.LoadMerged(cwd)
 	if err != nil {

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/proc"
-	"github.com/vulnetix/signet/internal/session"
+	"github.com/vulnetix/belai/internal/proc"
+	"github.com/vulnetix/belai/internal/session"
 )
 
 // adapterFor builds the dialect adapter for one registry agent.
@@ -23,8 +23,8 @@ func (r *Registry) adapterFor(a Agent) Adapter {
 		return codexAdapter{}
 	case FormatJSONLPi:
 		return piAdapter{}
-	case FormatJSONLSignet:
-		return signetAdapter{store: session.NewStoreAt(filepath.Join(r.home, ".vulnetix", "signet", "sessions"))}
+	case FormatJSONLBelai:
+		return belaiAdapter{store: session.NewStoreAt(filepath.Join(r.home, ".vulnetix", "belai", "sessions"))}
 	case FormatJSONLPrompts:
 		return promptsAdapter{}
 	case FormatSQLiteGoose:

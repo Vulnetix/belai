@@ -9,8 +9,8 @@ import (
 // TestGlobalDerivedPaths pins every <GlobalDir>/... derivation that was not
 // already covered, so a renamed constant or a dropped segment fails the suite.
 func TestGlobalDerivedPaths(t *testing.T) {
-	t.Setenv("SIGNET_HOME", "/custom/signet")
-	const dir = "/custom/signet"
+	t.Setenv("BELAI_HOME", "/custom/belai")
+	const dir = "/custom/belai"
 
 	cases := []struct {
 		name string
@@ -49,12 +49,12 @@ func TestProjectProcessesAndPromptsDirs(t *testing.T) {
 }
 
 func TestInputHistoryPath(t *testing.T) {
-	t.Setenv("SIGNET_HOME", "/custom/signet")
+	t.Setenv("BELAI_HOME", "/custom/belai")
 	got, err := InputHistoryPath("/tmp/work")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join("/custom/signet", "inputhistory", WorkdirKey("/tmp/work")+".json")
+	want := filepath.Join("/custom/belai", "inputhistory", WorkdirKey("/tmp/work")+".json")
 	if got != want {
 		t.Fatalf("InputHistoryPath = %q, want %q", got, want)
 	}

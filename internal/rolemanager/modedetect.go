@@ -6,8 +6,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/vulnetix/signet/internal/clarify"
-	"github.com/vulnetix/signet/internal/modes"
+	"github.com/vulnetix/belai/internal/clarify"
+	"github.com/vulnetix/belai/internal/modes"
 )
 
 // DetectInput carries the raw inputs to intent detection. It contains only

@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/vulnetix/signet/internal/todos"
+	"github.com/vulnetix/belai/internal/todos"
 )
 
 func plain(s string) string { return ansi.Strip(s) }

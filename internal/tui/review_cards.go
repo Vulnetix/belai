@@ -9,8 +9,8 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/vulnetix/signet/internal/commands"
-	"github.com/vulnetix/signet/internal/scanartifacts"
+	"github.com/vulnetix/belai/internal/commands"
+	"github.com/vulnetix/belai/internal/scanartifacts"
 )
 
 // reviewCard is one scanner's result, in that scanner's own terms: an SBOM

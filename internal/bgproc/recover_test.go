@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 // TestUnsafeTailDroppedStillRecovers verifies that when the tail is dropped by
@@ -19,7 +19,7 @@ func TestUnsafeTailDroppedStillRecovers(t *testing.T) {
 	settings := config.Settings{Resilience: &config.ResilienceSettings{MaxProcessRecoveries: 1}}
 	dir := t.TempDir()
 	home := t.TempDir()
-	t.Setenv("SIGNET_HOME", home)
+	t.Setenv("BELAI_HOME", home)
 	m := NewManager(dir, run.Config{}, &http.Client{}, settings, posture.Defaults(), tools.Capabilities{})
 
 	if _, err := m.Start("false", "false"); err != nil {

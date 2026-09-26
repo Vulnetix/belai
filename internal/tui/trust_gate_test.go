@@ -6,13 +6,13 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/projectregistry"
-	"github.com/vulnetix/signet/internal/trustgate"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/projectregistry"
+	"github.com/vulnetix/belai/internal/trustgate"
 )
 
 func TestTrustGateUntrustedDefaultIsDecline(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	dir := t.TempDir()
 	st, err := trustgate.Check(dir)
 	if err != nil {
@@ -35,7 +35,7 @@ func TestTrustGateUntrustedDefaultIsDecline(t *testing.T) {
 }
 
 func TestTrustGateUntrustedAcceptGrantsTrust(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	dir := t.TempDir()
 	extra := t.TempDir()
 	if err := config.SaveProject(dir, config.Settings{WorkspaceDirs: []string{extra}}); err != nil {
@@ -67,7 +67,7 @@ func TestTrustGateUntrustedAcceptGrantsTrust(t *testing.T) {
 }
 
 func TestTrustGateTrustedDeclineRecordsAndContinues(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	dir := t.TempDir()
 	extra := t.TempDir()
 	if err := trustgate.Grant(dir, nil); err != nil {

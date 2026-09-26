@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/scanartifacts"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/scanartifacts"
 )
 
 // BuildTriageBlocks renders the model-facing report blocks from the artifacts
@@ -34,7 +34,7 @@ func BuildTriageBlocksFor(ctx context.Context, workdir string, rels []string) []
 	var blocks []TriageBlock
 	for i := range arts {
 		a := &arts[i]
-		if a.Superseded || a.Kind == scanartifacts.KindSignet {
+		if a.Superseded || a.Kind == scanartifacts.KindBelai {
 			continue
 		}
 		label := triageLabel(a)

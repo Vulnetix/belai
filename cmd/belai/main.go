@@ -14,29 +14,29 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/vulnetix/signet/internal/agent"
-	"github.com/vulnetix/signet/internal/agentpool"
-	"github.com/vulnetix/signet/internal/agentprofile"
-	"github.com/vulnetix/signet/internal/bgagent"
-	"github.com/vulnetix/signet/internal/budget"
-	"github.com/vulnetix/signet/internal/calltrace"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/credentials"
-	"github.com/vulnetix/signet/internal/httpclient"
-	"github.com/vulnetix/signet/internal/mcp"
-	"github.com/vulnetix/signet/internal/permissions"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/prompt"
-	"github.com/vulnetix/signet/internal/repoindex"
-	"github.com/vulnetix/signet/internal/repomap"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/sandbox"
-	"github.com/vulnetix/signet/internal/session"
-	"github.com/vulnetix/signet/internal/tools"
-	"github.com/vulnetix/signet/internal/trustgate"
-	"github.com/vulnetix/signet/internal/tui"
-	"github.com/vulnetix/signet/internal/version"
+	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/agentpool"
+	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/bgagent"
+	"github.com/vulnetix/belai/internal/budget"
+	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/httpclient"
+	"github.com/vulnetix/belai/internal/mcp"
+	"github.com/vulnetix/belai/internal/permissions"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/prompt"
+	"github.com/vulnetix/belai/internal/repoindex"
+	"github.com/vulnetix/belai/internal/repomap"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/sandbox"
+	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/tools"
+	"github.com/vulnetix/belai/internal/trustgate"
+	"github.com/vulnetix/belai/internal/tui"
+	"github.com/vulnetix/belai/internal/version"
 )
 
 func main() {
@@ -52,11 +52,11 @@ func main() {
 	defer stop()
 	go hardExitOnSecondSignal(ctx)
 
-	// `signet acp` serves the Agent Client Protocol to an editor.
+	// `belai acp` serves the Agent Client Protocol to an editor.
 	if len(os.Args) > 1 && os.Args[1] == "acp" {
 		os.Exit(runACP(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	}
-	// `signet plugin …` is a subcommand with its own flags.
+	// `belai plugin …` is a subcommand with its own flags.
 	if len(os.Args) > 1 && os.Args[1] == "plugin" {
 		os.Exit(runPluginCLI(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Stderr, isCharDevice(os.Stdin)))
 	}
@@ -115,22 +115,22 @@ func main() {
 	workdir, _ := os.Getwd()
 	if *exportID != "" {
 		if err := exportSessionCLI(*exportID, workdir); err != nil {
-			fmt.Fprintln(os.Stderr, "signet:", err)
+			fmt.Fprintln(os.Stderr, "belai:", err)
 			os.Exit(1)
 		}
 		os.Exit(0)
 	}
 
 	if *resume != "" && *prompt != "" {
-		fmt.Fprintln(os.Stderr, "signet: -resume requires the interactive TUI (not supported with -prompt)")
+		fmt.Fprintln(os.Stderr, "belai: -resume requires the interactive TUI (not supported with -prompt)")
 		os.Exit(1)
 	}
 	if *continueLast != "" && *resume != "" {
-		fmt.Fprintln(os.Stderr, "signet: -continue cannot be combined with -resume")
+		fmt.Fprintln(os.Stderr, "belai: -continue cannot be combined with -resume")
 		os.Exit(1)
 	}
 	if *continueLast != "" && *prompt != "" {
-		fmt.Fprintln(os.Stderr, "signet: -continue requires the interactive TUI (not supported with -prompt)")
+		fmt.Fprintln(os.Stderr, "belai: -continue requires the interactive TUI (not supported with -prompt)")
 		os.Exit(1)
 	}
 
@@ -143,17 +143,17 @@ func main() {
 			// Grant trust to the directory only; proposed workspace_dirs are
 			// not accepted, so the flag can never silently widen the sandbox.
 			if err := trustgate.Grant(workdir, nil); err != nil {
-				fmt.Fprintln(os.Stderr, "signet: trust directory:", err)
+				fmt.Fprintln(os.Stderr, "belai: trust directory:", err)
 				os.Exit(1)
 			}
 			if len(st.NewDirs) > 0 {
-				fmt.Fprintf(os.Stderr, "signet: trusted %s; skipping proposed workspace directories: %s\n",
+				fmt.Fprintf(os.Stderr, "belai: trusted %s; skipping proposed workspace directories: %s\n",
 					workdir, strings.Join(st.NewDirs, ", "))
 			}
 		} else if interactive(isCharDevice(os.Stdout), isCharDevice(os.Stdin), os.Getenv) {
 			ok, err := tui.RunTrustGate(st)
 			if err != nil {
-				fmt.Fprintln(os.Stderr, "signet: trust dialog:", err)
+				fmt.Fprintln(os.Stderr, "belai: trust dialog:", err)
 				os.Exit(1)
 			}
 			if !ok && !st.Trusted {
@@ -162,15 +162,15 @@ func main() {
 		} else {
 			// Headless fails closed: no model turn runs in an untrusted
 			// directory without an explicit opt-in.
-			fmt.Fprintf(os.Stderr, "signet: %s is not a trusted workspace.\n"+
-				"Run `signet` here once to review and trust it, or `signet -trust-dir`.\n", workdir)
+			fmt.Fprintf(os.Stderr, "belai: %s is not a trusted workspace.\n"+
+				"Run `belai` here once to review and trust it, or `belai -trust-dir`.\n", workdir)
 			os.Exit(1)
 		}
 	}
 
 	settings, err := config.LoadMerged(workdir)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "signet: load settings:", err)
+		fmt.Fprintln(os.Stderr, "belai: load settings:", err)
 		os.Exit(1)
 	}
 	if *effort != "" {
@@ -215,7 +215,7 @@ func main() {
 			settings.AskPermission = &f
 		}
 	}
-	if *firewall || os.Getenv("SIGNET_FIREWALL") == "1" || os.Getenv("SIGNET_FIREWALL") == "true" {
+	if *firewall || os.Getenv("BELAI_FIREWALL") == "1" || os.Getenv("BELAI_FIREWALL") == "true" {
 		if settings.Vulnetix == nil {
 			settings.Vulnetix = &config.VulnetixSettings{}
 		}
@@ -256,7 +256,7 @@ func main() {
 	// silent downgrade to the LLM sentinel path. A vanilla binary resolves to
 	// kind "llm" and this is a no-op.
 	if err := run.PreloadClassifier(run.ResolveSecurityClassifier(settings.Classifier)); err != nil {
-		fmt.Fprintln(os.Stderr, "signet: load embedded classifier:", err)
+		fmt.Fprintln(os.Stderr, "belai: load embedded classifier:", err)
 		os.Exit(1)
 	}
 
@@ -268,20 +268,20 @@ func main() {
 	if *resume != "" || *continueLast != "" {
 		store, err := session.NewStore()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "signet:", err)
+			fmt.Fprintln(os.Stderr, "belai:", err)
 			os.Exit(1)
 		}
 		cur, _ := session.KeyFor(workdir)
 		if *resume != "" {
 			resumeKey, resumeID, err = store.ResolveAnywhere(cur, *resume)
 			if err != nil {
-				fmt.Fprintln(os.Stderr, "signet:", err)
+				fmt.Fprintln(os.Stderr, "belai:", err)
 				os.Exit(1)
 			}
 		} else {
 			resumeKey, resumeID, err = continueLatest(store, cur)
 			if err != nil {
-				fmt.Fprintln(os.Stderr, "signet:", err)
+				fmt.Fprintln(os.Stderr, "belai:", err)
 				os.Exit(1)
 			}
 		}
@@ -293,7 +293,7 @@ func main() {
 
 	if *agentCreate != "" {
 		if err := runAgentCreate(ctx, *agentCreate, *model, *provider, workdir, pol, settings); err != nil {
-			fmt.Fprintln(os.Stderr, "signet:", err)
+			fmt.Fprintln(os.Stderr, "belai:", err)
 			os.Exit(1)
 		}
 		os.Exit(0)
@@ -301,7 +301,7 @@ func main() {
 
 	if *agentName != "" {
 		if err := runAgentForeground(ctx, *agentName, *model, *provider, workdir, pol, settings); err != nil {
-			fmt.Fprintln(os.Stderr, "signet:", err)
+			fmt.Fprintln(os.Stderr, "belai:", err)
 			os.Exit(1)
 		}
 		os.Exit(0)
@@ -327,7 +327,7 @@ func main() {
 		err := runPromptOrTUI(ctx, *prompt, *model, *provider, *detectMode, *verbose, workdir, pol, *enableTools, *planMode, settings)
 		shutdown()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "signet:", err)
+			fmt.Fprintln(os.Stderr, "belai:", err)
 			os.Exit(1)
 		}
 		os.Exit(0)
@@ -336,20 +336,20 @@ func main() {
 	if interactive(isCharDevice(os.Stdout), isCharDevice(os.Stdin), os.Getenv) {
 		resolver, err := credentials.NewResolver(workdir)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "signet:", err)
+			fmt.Fprintln(os.Stderr, "belai:", err)
 			os.Exit(1)
 		}
 		err = tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Provider: *provider, Model: *model, Settings: &settings, Posture: pol, PlanMode: *planMode, ResumeKey: resumeKey, ResumeSession: resumeID})
 		shutdown()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "signet:", err)
+			fmt.Fprintln(os.Stderr, "belai:", err)
 			os.Exit(1)
 		}
 		os.Exit(0)
 	}
 
 	shutdown()
-	fmt.Println("signet", version.Version)
+	fmt.Println("belai", version.Version)
 }
 
 // hardExitOnSecondSignal waits for the first signal to cancel ctx, then exits
@@ -385,7 +385,7 @@ func exportSessionCLI(idOrPrefix, workdir string) error {
 }
 
 func interactive(stdoutTTY, stdinTTY bool, env func(string) string) bool {
-	if env("SIGNET_NO_TUI") != "" || env("CI") != "" {
+	if env("BELAI_NO_TUI") != "" || env("CI") != "" {
 		return false
 	}
 	return stdoutTTY && stdinTTY
@@ -425,7 +425,7 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 	if err != nil {
 		var nce *run.NotConfiguredError
 		if errors.As(err, &nce) && interactive(isCharDevice(os.Stdout), isCharDevice(os.Stdin), os.Getenv) {
-			fmt.Fprintf(os.Stderr, "signet: no credentials for %s (missing %s). Opening the credential manager…\n",
+			fmt.Fprintf(os.Stderr, "belai: no credentials for %s (missing %s). Opening the credential manager…\n",
 				nce.Provider, strings.Join(nce.Missing, ", "))
 			return tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Prompt: prompt, Provider: providerName, Model: model, Settings: &settings, Posture: pol, PlanMode: planMode})
 		}

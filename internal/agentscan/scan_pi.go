@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/provider"
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/provider"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 func scanPi(home string) []Found {
@@ -20,7 +20,7 @@ func scanPi(home string) []Found {
 }
 
 // mapPiAPI maps Pi's api vocabulary onto a wire surface. Pi uses
-// "openai-completions" where Signet uses "openai-chat"; the other two values
+// "openai-completions" where Belai uses "openai-chat"; the other two values
 // pass through unchanged. An unrecognised value is not importable.
 func mapPiAPI(api string) (wire.Surface, bool) {
 	switch api {

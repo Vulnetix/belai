@@ -7,8 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 func TestShellPlanModeRejectsRmRf(t *testing.T) {
@@ -41,7 +41,7 @@ func TestBareExclamationIsNoOp(t *testing.T) {
 func TestShellEchoRunsInItsOwnPanel(t *testing.T) {
 	a := New(Options{})
 	a.mode = "agent"
-	cmd := a.handleShell("!echo hello-signet")
+	cmd := a.handleShell("!echo hello-belai")
 	if cmd == nil {
 		t.Fatalf("expected a command")
 	}
@@ -50,7 +50,7 @@ func TestShellEchoRunsInItsOwnPanel(t *testing.T) {
 	if row.StartedAt.IsZero() {
 		t.Fatalf("expected a running shell row, got %+v", row)
 	}
-	if row.ShellCommand() != "echo hello-signet" {
+	if row.ShellCommand() != "echo hello-belai" {
 		t.Fatalf("row does not carry the command: %q", row.ToolArgs)
 	}
 	for _, m := range a.messages {
@@ -77,7 +77,7 @@ func TestShellEchoRunsInItsOwnPanel(t *testing.T) {
 	if done.callID != row.ToolCallID {
 		t.Fatalf("result keyed %q, row is %q", done.callID, row.ToolCallID)
 	}
-	if !strings.Contains(done.raw, "hello-signet") {
+	if !strings.Contains(done.raw, "hello-belai") {
 		t.Fatalf("raw output = %q", done.raw)
 	}
 }

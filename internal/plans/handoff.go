@@ -31,7 +31,7 @@ type HandoffFacts struct {
 }
 
 // DetectHandoff decides whether an attached file should be treated as a plan
-// for the signet:plan-handoff profile. A file is a plan when it is Markdown
+// for the belai:plan-handoff profile. A file is a plan when it is Markdown
 // and at least one of the path/basename hints is present or it contains enough
 // task markers.
 func DetectHandoff(label, body, plansDir string) (HandoffFacts, bool) {

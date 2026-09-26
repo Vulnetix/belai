@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 func TestRecordNameSlug(t *testing.T) {

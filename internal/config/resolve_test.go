@@ -3,7 +3,7 @@ package config
 import "testing"
 
 func TestResolvePrecedence(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 
 	if err := SaveState(State{Model: "state-model", Provider: "openai"}); err != nil {
@@ -18,9 +18,9 @@ func TestResolvePrecedence(t *testing.T) {
 
 	env := func(k string) string {
 		switch k {
-		case "SIGNET_MODEL":
+		case "BELAI_MODEL":
 			return "env-model"
-		case "SIGNET_PROVIDER":
+		case "BELAI_PROVIDER":
 			return "anthropic"
 		}
 		return ""
@@ -61,7 +61,7 @@ func TestResolvePrecedence(t *testing.T) {
 }
 
 func TestResolveStateBeatsDefaultOnly(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	if err := SaveState(State{Model: "state-model"}); err != nil {
 		t.Fatalf("SaveState: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestResolveStateBeatsDefaultOnly(t *testing.T) {
 }
 
 func TestResolveNilEnvFallsBackToOS(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	// nil env must not panic; it falls back to os.Getenv.
 	if _, err := Resolve(t.TempDir(), nil, Settings{}); err != nil {
 		t.Fatalf("Resolve: %v", err)
@@ -89,7 +89,7 @@ func TestResolveNilEnvFallsBackToOS(t *testing.T) {
 }
 
 func TestResolveReadOnlyOrigin(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 
 	if err := SaveGlobal(Settings{ReadOnly: boolPtr(true)}); err != nil {
@@ -108,7 +108,7 @@ func TestResolveReadOnlyOrigin(t *testing.T) {
 }
 
 func TestResolveClassifierPrecedence(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 
 	if err := SaveGlobal(Settings{
@@ -119,7 +119,7 @@ func TestResolveClassifierPrecedence(t *testing.T) {
 
 	env := func(k string) string {
 		switch k {
-		case "SIGNET_CLASSIFIER_MODEL":
+		case "BELAI_CLASSIFIER_MODEL":
 			return "env-cls"
 		}
 		return ""
@@ -237,11 +237,11 @@ func TestClassifierCavemanMergeAndAccessor(t *testing.T) {
 }
 
 func TestResolveClassifierCavemanEnv(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 
 	env := func(k string) string {
-		if k == "SIGNET_CLASSIFIER_CAVEMAN" {
+		if k == "BELAI_CLASSIFIER_CAVEMAN" {
 			return "true"
 		}
 		return ""
@@ -251,7 +251,7 @@ func TestResolveClassifierCavemanEnv(t *testing.T) {
 		t.Fatalf("Resolve: %v", err)
 	}
 	if !eff.Settings.ClassifierCavemanEnabled() {
-		t.Fatal("SIGNET_CLASSIFIER_CAVEMAN=true should enable classifier caveman")
+		t.Fatal("BELAI_CLASSIFIER_CAVEMAN=true should enable classifier caveman")
 	}
 	if eff.Origin["classifier"] != SourceEnv {
 		t.Fatalf("classifier origin = %q, want env", eff.Origin["classifier"])
@@ -260,7 +260,7 @@ func TestResolveClassifierCavemanEnv(t *testing.T) {
 	// An unset or unparseable variable must not claim provenance.
 	for _, val := range []string{"", "yes-ish"} {
 		eff, err := Resolve(workdir, func(k string) string {
-			if k == "SIGNET_CLASSIFIER_CAVEMAN" {
+			if k == "BELAI_CLASSIFIER_CAVEMAN" {
 				return val
 			}
 			return ""
@@ -269,10 +269,10 @@ func TestResolveClassifierCavemanEnv(t *testing.T) {
 			t.Fatalf("Resolve(%q): %v", val, err)
 		}
 		if eff.Settings.ClassifierCavemanEnabled() {
-			t.Fatalf("SIGNET_CLASSIFIER_CAVEMAN=%q enabled caveman", val)
+			t.Fatalf("BELAI_CLASSIFIER_CAVEMAN=%q enabled caveman", val)
 		}
 		if _, ok := eff.Origin["classifier"]; ok {
-			t.Fatalf("SIGNET_CLASSIFIER_CAVEMAN=%q claimed classifier provenance", val)
+			t.Fatalf("BELAI_CLASSIFIER_CAVEMAN=%q claimed classifier provenance", val)
 		}
 	}
 }
@@ -281,7 +281,7 @@ func TestResolveClassifierCavemanEnv(t *testing.T) {
 // project layer may only tighten. The firewall is the mirror image: prefs may
 // turn it on, the project file may not.
 func TestResolveProjectPrefsGatesDirection(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	off := false
 
 	// Prefs relax both gates and the resolved origin names the layer.
@@ -357,7 +357,7 @@ func TestResolveProjectPrefsGatesDirection(t *testing.T) {
 // Env and CLI flags outrank the prefs layer, which is what makes the toggle's
 // honesty rule able to name a winning source instead of silently not sticking.
 func TestResolveProjectPrefsLoseToEnvAndFlag(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	off := false
 	if err := MutateProjectPrefs(workdir, func(p *ProjectPrefs) { p.Guardrails = &off }); err != nil {
@@ -365,7 +365,7 @@ func TestResolveProjectPrefsLoseToEnvAndFlag(t *testing.T) {
 	}
 
 	eff, err := Resolve(workdir, func(k string) string {
-		if k == "SIGNET_GUARDRAILS" {
+		if k == "BELAI_GUARDRAILS" {
 			return "true"
 		}
 		return ""
@@ -405,7 +405,7 @@ func TestClassifierChunkDefaults(t *testing.T) {
 }
 
 func TestResolveResilienceMaxAgents(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 
 	// Safety budgets remain tighten-only; MaxAgents is a performance preference
@@ -445,7 +445,7 @@ func TestResolveResilienceMaxAgents(t *testing.T) {
 // off; a repo-visible project file may turn it on but never off, so a cloned
 // repository cannot silence the check on the dependencies it adds.
 func TestResolveDepWatchDirection(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	resolve := func(global, project *bool) bool {
 		t.Helper()
 		workdir := t.TempDir()

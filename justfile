@@ -1,13 +1,13 @@
-# Signet — local development and QA tasks.
+# Belai — local development and QA tasks.
 #
 # Install just:  brew install just | cargo install just | pacman -S just | apt install just
 # List recipes:  just
 
 set shell := ["bash", "-uc"]
 
-module := "github.com/vulnetix/signet"
-binary := "signet"
-pkg := "./cmd/signet"
+module := "github.com/vulnetix/belai"
+binary := "belai"
+pkg := "./cmd/belai"
 bin := "bin"
 
 version := `git describe --tags --always --dirty 2>/dev/null || echo dev`
@@ -48,7 +48,7 @@ detect-mode $TEXT:
 # Build
 # ----------------------------------------------------------------------------
 
-# Build ./signet for this host.
+# Build ./belai for this host.
 build:
     go build -ldflags '{{ ldflags }}' -o {{ binary }} {{ pkg }}
 
@@ -66,25 +66,25 @@ modelprep *ARGS:
         go run ./tools/modelprep -python "$PY" {{ ARGS }} "$@"; \
     fi
 
-# Build ./signet with both embedded models (phase 1 saturation + phase 2 jailbreak).
+# Build ./belai with both embedded models (phase 1 saturation + phase 2 jailbreak).
 # Extra args are forwarded to modelprep, e.g. `just build-jailbreak -force`.
 build-jailbreak *ARGS: (modelprep '-phase1' '-phase2' ARGS)
-    go build -tags signet_bert_jailbreak -ldflags '{{ ldflags }} -X {{ module }}/internal/version.Variant=bert-guardrails-jailbreak' -o {{ binary }} {{ pkg }}
+    go build -tags belai_bert_jailbreak -ldflags '{{ ldflags }} -X {{ module }}/internal/version.Variant=bert-guardrails-jailbreak' -o {{ binary }} {{ pkg }}
 
 # Build only the Linux amd64 jailbreak-classifier release binary into bin/.
 # Extra args are forwarded to modelprep, e.g. `just build-jailbreak-linux-amd64 -force`.
 build-jailbreak-linux-amd64 *ARGS: (modelprep '-phase1' '-phase2' ARGS)
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-      go build -tags signet_bert_jailbreak \
+      go build -tags belai_bert_jailbreak \
       -ldflags '-s -w {{ ldflags }} -X {{ module }}/internal/version.Variant=bert-guardrails-jailbreak' \
-      -o {{ bin }}/signet-bert-guardrails-jailbreak-linux-amd64 {{ pkg }}
+      -o {{ bin }}/belai-bert-guardrails-jailbreak-linux-amd64 {{ pkg }}
 
-# Build ./signet with only the phase-1 prompt-saturation model embedded.
+# Build ./belai with only the phase-1 prompt-saturation model embedded.
 # Extra args are forwarded to modelprep, e.g. `just build-bert -force`.
 build-bert *ARGS: (modelprep '-phase1' ARGS)
-    go build -tags signet_bert -ldflags '{{ ldflags }} -X {{ module }}/internal/version.Variant=bert-guardrails' -o {{ binary }} {{ pkg }}
+    go build -tags belai_bert -ldflags '{{ ldflags }} -X {{ module }}/internal/version.Variant=bert-guardrails' -o {{ binary }} {{ pkg }}
 
-# Install signet into $(go env GOPATH)/bin.
+# Install belai into $(go env GOPATH)/bin.
 install:
     go install -ldflags '{{ ldflags }}' {{ pkg }}
 
@@ -105,12 +105,12 @@ build-all *ARGS: (modelprep '-phase1' '-phase2' ARGS)
           ;;
         bert-guardrails)
           name="{{ binary }}-bert-guardrails"
-          tags="-tags signet_bert"
+          tags="-tags belai_bert"
           extra="-X {{ module }}/internal/version.Variant=bert-guardrails"
           ;;
         bert-guardrails-jailbreak)
           name="{{ binary }}-bert-guardrails-jailbreak"
-          tags="-tags signet_bert_jailbreak"
+          tags="-tags belai_bert_jailbreak"
           extra="-X {{ module }}/internal/version.Variant=bert-guardrails-jailbreak"
           ;;
       esac
@@ -216,7 +216,7 @@ site-build:
 
 # Build the site, assert the custom domain survived, and check internal links.
 site-check:
-    cd site && yarn build && node scripts/check-links.mjs dist && test -f dist/CNAME && grep -qx 'signet.vulnetix.com' dist/CNAME
+    cd site && yarn build && node scripts/check-links.mjs dist && test -f dist/CNAME && grep -qx 'belai.vulnetix.com' dist/CNAME
 
 # Notify search engines that the sitemap changed. Google retired its sitemap
 # ping endpoint in 2023, so Bing (whose index also feeds DuckDuckGo/Yahoo) is
@@ -226,14 +226,14 @@ site-check:
 site-submit-sitemap:
     #!/usr/bin/env bash
     set -euo pipefail
-    sitemap="https://signet.vulnetix.com/sitemap.xml"
+    sitemap="https://belai.vulnetix.com/sitemap.xml"
     echo "Pinging Bing: ${sitemap}"
     curl -fsS "https://www.bing.com/ping?sitemap=${sitemap}"
     if [ -n "${INDEXNOW_KEY:-}" ]; then
       echo "Submitting via IndexNow..."
       curl -fsS -X POST "https://api.indexnow.org/indexnow" \
         -H "Content-Type: application/json" \
-        -d "{\"host\":\"signet.vulnetix.com\",\"key\":\"${INDEXNOW_KEY}\",\"urlList\":[\"https://signet.vulnetix.com/\"]}"
+        -d "{\"host\":\"belai.vulnetix.com\",\"key\":\"${INDEXNOW_KEY}\",\"urlList\":[\"https://belai.vulnetix.com/\"]}"
     else
       echo "INDEXNOW_KEY not set; skipping IndexNow submission."
     fi

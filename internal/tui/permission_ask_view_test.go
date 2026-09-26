@@ -7,8 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/agent"
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 func sampleAskRequest() *agent.AskRequest {

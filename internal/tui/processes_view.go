@@ -12,10 +12,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/vulnetix/signet/internal/bgproc"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/processlib"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/bgproc"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/processlib"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // processesViewState tracks the /processes manager UI.
@@ -584,7 +584,7 @@ func (a *App) showSelectedProcessTail() (tea.Model, tea.Cmd) {
 	}
 
 	// Fall back to the newest log file for this process, whether it is
-	// historical in this session or from a previous Signet run.
+	// historical in this session or from a previous Belai run.
 	tail, err := a.procManager.Tail(name, 256)
 	if err != nil {
 		a.processesState.errorMsg = err.Error()

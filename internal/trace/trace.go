@@ -1,6 +1,6 @@
-// Package trace implements the opt-in SIGNET_TRACE JSONL performance writer.
+// Package trace implements the opt-in BELAI_TRACE JSONL performance writer.
 //
-// When SIGNET_TRACE names a file, the agent and TUI emit one JSON object per
+// When BELAI_TRACE names a file, the agent and TUI emit one JSON object per
 // timed event, e.g. {"phase":"agent","event":"tool_result_classify","duration":"12ms"}.
 // The file is append-only and opened per writer; concurrent writers append
 // whole lines because each record is one Encoder.Encode call. Tracing is
@@ -52,10 +52,10 @@ func Open(path string) (*Writer, error) {
 	return &Writer{f: f, enc: json.NewEncoder(f)}, nil
 }
 
-// Env returns the writer named by SIGNET_TRACE. It returns nil when the
+// Env returns the writer named by BELAI_TRACE. It returns nil when the
 // variable is unset or the file cannot be opened: tracing is best-effort.
 func Env() *Writer {
-	w, err := Open(os.Getenv("SIGNET_TRACE"))
+	w, err := Open(os.Getenv("BELAI_TRACE"))
 	if err != nil {
 		return nil
 	}

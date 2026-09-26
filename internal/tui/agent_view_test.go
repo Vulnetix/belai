@@ -12,7 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
-	"github.com/vulnetix/signet/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/agentprofile"
 )
 
 func boolPtr(b bool) *bool { return &b }
@@ -39,7 +39,7 @@ func writeAgentProfile(t *testing.T, name string, p agentprofile.AgentProfile) {
 func agentTestHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
-	t.Setenv("SIGNET_HOME", home)
+	t.Setenv("BELAI_HOME", home)
 	return home
 }
 
@@ -727,8 +727,8 @@ func TestAgentEditGolden(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.Ascii)
 	defer lipgloss.SetColorProfile(old)
 
-	// A fixed SIGNET_HOME keeps the on-disk path in the header deterministic.
-	t.Setenv("SIGNET_HOME", "/signet-golden")
+	// A fixed BELAI_HOME keeps the on-disk path in the header deterministic.
+	t.Setenv("BELAI_HOME", "/belai-golden")
 	p := agentprofile.AgentProfile{
 		Name:             "golden-bot",
 		Description:      "Golden agent",

@@ -2,40 +2,40 @@
 import SealedSection from '../seal/SealedSection.astro';
 
 const sealText =
-  'Headless CLI: the same harness without the TUI. Terminal detection keeps the UI off in pipelines, -prompt gives a single answer and exits, -plan runs read-only, -detect-mode prints the mode choice, -trust-dir opens a CI workspace, -export prints a session as Markdown, signet acp serves editors, signet plugin manages plugins, and every posture gate is reachable from flags.';
+  'Headless CLI: the same harness without the TUI. Terminal detection keeps the UI off in pipelines, -prompt gives a single answer and exits, -plan runs read-only, -detect-mode prints the mode choice, -trust-dir opens a CI workspace, -export prints a session as Markdown, belai acp serves editors, belai plugin manages plugins, and every posture gate is reachable from flags.';
 
 const features = [
   {
     title: 'terminal-aware, CI-ready',
-    body: 'The TUI launches only when stdin and stdout are both terminals. In a pipeline, under GitHub Actions, or with SIGNET_NO_TUI=1 or CI set, Signet stays headless.',
+    body: 'The TUI launches only when stdin and stdout are both terminals. In a pipeline, under GitHub Actions, or with BELAI_NO_TUI=1 or CI set, Belai stays headless.',
   },
   {
     title: 'one-shot answers',
-    body: 'signet -prompt "review this diff" prints a single reply and exits. Pair it with -provider, -model and -effort, or let settings.json supply the defaults.',
+    body: 'belai -prompt "review this diff" prints a single reply and exits. Pair it with -provider, -model and -effort, or let settings.json supply the defaults.',
   },
   {
     title: 'read-only plans from the shell',
-    body: 'signet -plan -prompt "map the repo" runs the plan-mode surface with Bash absent, writes a structured plan document, and exits without asking for approval.',
+    body: 'belai -plan -prompt "map the repo" runs the plan-mode surface with Bash absent, writes a structured plan document, and exits without asking for approval.',
   },
   {
     title: '-detect-mode without acting',
-    body: 'signet -detect-mode -prompt "…" runs the mode classifier and prints the mode it would pick. No tools run.',
+    body: 'belai -detect-mode -prompt "…" runs the mode classifier and prints the mode it would pick. No tools run.',
   },
   {
     title: 'trust a workspace in CI',
-    body: 'signet -trust-dir grants trust to the current directory once, so unattended jobs can start in a fresh checkout without a prompt.',
+    body: 'belai -trust-dir grants trust to the current directory once, so unattended jobs can start in a fresh checkout without a prompt.',
   },
   {
     title: 'export a session as Markdown',
-    body: 'signet -export <id-prefix> prints a deterministic Markdown transcript of a saved session and exits. It reads only the session store, never repository content.',
+    body: 'belai -export <id-prefix> prints a deterministic Markdown transcript of a saved session and exits. It reads only the session store, never repository content.',
   },
   {
-    title: 'signet acp for editors',
-    body: 'signet acp serves the Agent Client Protocol on stdin and stdout, so Zed, JetBrains IDEs and Neovim plugins drive Signet with every gate in place. An untrusted directory is refused, never prompted.',
+    title: 'belai acp for editors',
+    body: 'belai acp serves the Agent Client Protocol on stdin and stdout, so Zed, JetBrains IDEs and Neovim plugins drive Belai with every gate in place. An untrusted directory is refused, never prompted.',
   },
   {
-    title: 'signet plugin',
-    body: 'signet plugin install <git-url|dir> prints every skill, hook command, prompt and agent a plugin adds and installs only on your yes (or -yes after reading it). list, update, enable, disable and remove manage what is installed.',
+    title: 'belai plugin',
+    body: 'belai plugin install <git-url|dir> prints every skill, hook command, prompt and agent a plugin adds and installs only on your yes (or -yes after reading it). list, update, enable, disable and remove manage what is installed.',
   },
   {
     title: 'every gate from flags',
@@ -47,7 +47,7 @@ const features = [
 <SealedSection label="cli" sealText={sealText} id="cli">
   <h2 class="text-3xl font-bold text-vx-ink">Headless CLI.</h2>
   <p class="prose-measure mt-4 text-vx-ink/80">
-    Signet is the same binary in a terminal and in a CI job. From the command line you can set the
+    Belai is the same binary in a terminal and in a CI job. From the command line you can set the
     mode, guardrails, permissions, provider and agents without starting the terminal UI.
   </p>
 

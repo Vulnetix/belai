@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 func settingsRowByKey(a *App, key string) (settingsRow, int) {
@@ -19,7 +19,7 @@ func settingsRowByKey(a *App, key string) (settingsRow, int) {
 }
 
 func TestInternalWorkRowCyclesAllLevelsAndUnsets(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir})
 	a.push(viewSettings)
@@ -56,7 +56,7 @@ func TestInternalWorkRowCyclesAllLevelsAndUnsets(t *testing.T) {
 }
 
 func TestAutoCommitPerTaskToggleAlwaysGlobal(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir})
 	a.push(viewSettings)
@@ -98,7 +98,7 @@ func TestAutoCommitPerTaskToggleAlwaysGlobal(t *testing.T) {
 }
 
 func TestSettingsLSPSubmenuDispatches(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.push(viewSettings)
 	row, idx := settingsRowByKey(a, "lsp")
@@ -117,7 +117,7 @@ func TestSettingsLSPSubmenuDispatches(t *testing.T) {
 }
 
 func TestDisplayRowsShownHiddenAndBehaviourRowsOnOff(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.push(viewSettings)
 
@@ -148,7 +148,7 @@ func TestDisplayRowsShownHiddenAndBehaviourRowsOnOff(t *testing.T) {
 }
 
 func TestSettingsViewInternalWorkRowRenders(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.push(viewSettings)
 	if !strings.Contains(a.View(), "internal work") {
@@ -157,7 +157,7 @@ func TestSettingsViewInternalWorkRowRenders(t *testing.T) {
 }
 
 func TestSettingsMaxAgentsPersistsAndReloads(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir})
 	a.push(viewSettings)
@@ -196,7 +196,7 @@ func TestSettingsMaxAgentsPersistsAndReloads(t *testing.T) {
 // TestSettingsMaxAgentsResizesLivePool: the edit must reach the running
 // session's fan-out ceiling, not only the settings file.
 func TestSettingsMaxAgentsResizesLivePool(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	if got := a.agentPool.Size(); got != config.DefaultMaxAgents {
 		t.Fatalf("initial pool size = %d, want %d", got, config.DefaultMaxAgents)
@@ -219,7 +219,7 @@ func TestSettingsMaxAgentsResizesLivePool(t *testing.T) {
 // and the screen says which layer wins instead of silently showing the old
 // value.
 func TestSettingsGlobalEditShadowedByProjectExplains(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	if err := config.Mutate(config.ScopeProject, workdir, func(s *config.Settings) error {
 		s.Resilience = &config.ResilienceSettings{MaxAgents: 30}
@@ -263,7 +263,7 @@ func TestSettingsGlobalEditShadowedByProjectExplains(t *testing.T) {
 // TestReadOnlyNoticeNamesSourceAndScope: the read_only setting must never be
 // a silent reason agent mode cannot write.
 func TestReadOnlyNoticeNamesSourceAndScope(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	on := true
 	if err := config.Mutate(config.ScopeProject, workdir, func(s *config.Settings) error {

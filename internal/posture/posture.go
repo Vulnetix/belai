@@ -11,7 +11,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 // Level is the enforcement posture for one gate.
@@ -191,7 +191,7 @@ func Load(workdir string) (Policy, error) {
 	if err != nil {
 		return nil, err
 	}
-	proj, err := loadPreferencesPath(filepath.Join(config.ProjectSignetDir(workdir), preferencesFile))
+	proj, err := loadPreferencesPath(filepath.Join(config.ProjectBelaiDir(workdir), preferencesFile))
 	if err != nil {
 		return nil, err
 	}
@@ -297,6 +297,6 @@ func (fs FlagSet) ToPolicy() Policy {
 // and a prominent banner for --dangerously-yolo-everything.
 func PrintBanner(p Policy, w *os.File) {
 	if down := p.Downgrades(); len(down) > 0 {
-		fmt.Fprintf(w, "signet: posture downgrades: %s\n", strings.Join(down, ", "))
+		fmt.Fprintf(w, "belai: posture downgrades: %s\n", strings.Join(down, ", "))
 	}
 }

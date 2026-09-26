@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/agentstore"
+	"github.com/vulnetix/belai/internal/agentstore"
 )
 
 // ReadSession reads a turn range from another agent's stored session.

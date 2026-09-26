@@ -186,11 +186,11 @@ func TestForDirsStricterThanPrimary(t *testing.T) {
 	dir := t.TempDir()
 	projDir := filepath.Join(dir, "project")
 	extraDir := filepath.Join(dir, "extra")
-	_ = os.MkdirAll(filepath.Join(projDir, ".signet"), 0o755)
-	_ = os.MkdirAll(filepath.Join(extraDir, ".signet"), 0o755)
+	_ = os.MkdirAll(filepath.Join(projDir, ".belai"), 0o755)
+	_ = os.MkdirAll(filepath.Join(extraDir, ".belai"), 0o755)
 
 	// Primary is at defaults; extra directory forces tool_result_unsafe to warn.
-	_ = os.WriteFile(filepath.Join(extraDir, ".signet", preferencesFile), []byte("postures:\n  tool_result_unsafe: warn\n"), 0o600)
+	_ = os.WriteFile(filepath.Join(extraDir, ".belai", preferencesFile), []byte("postures:\n  tool_result_unsafe: warn\n"), 0o600)
 
 	p, err := ForDirs(projDir, []string{extraDir})
 	if err != nil {
@@ -254,7 +254,7 @@ func TestPrintBannerWritesOneDowngradeLine(t *testing.T) {
 		t.Fatalf("read: %v", err)
 	}
 	got := string(b)
-	want := "signet: posture downgrades: tool_result_unsafe=warn, skill_invalid=ignore\n"
+	want := "belai: posture downgrades: tool_result_unsafe=warn, skill_invalid=ignore\n"
 	if got != want {
 		t.Fatalf("banner = %q, want %q", got, want)
 	}

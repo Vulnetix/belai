@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/plans"
-	"github.com/vulnetix/signet/internal/sanitize"
+	"github.com/vulnetix/belai/internal/plans"
+	"github.com/vulnetix/belai/internal/sanitize"
 )
 
 // PlanOnly is a marker implemented by tools that must only appear in the

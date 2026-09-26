@@ -24,55 +24,55 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/vulnetix/signet/internal/activity"
-	"github.com/vulnetix/signet/internal/agent"
-	"github.com/vulnetix/signet/internal/agentpool"
-	"github.com/vulnetix/signet/internal/agentprofile"
-	"github.com/vulnetix/signet/internal/aifirewall"
-	"github.com/vulnetix/signet/internal/bgagent"
-	"github.com/vulnetix/signet/internal/bgproc"
-	"github.com/vulnetix/signet/internal/budget"
-	"github.com/vulnetix/signet/internal/calltrace"
-	"github.com/vulnetix/signet/internal/clipboard"
-	"github.com/vulnetix/signet/internal/commands"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/credentials"
-	"github.com/vulnetix/signet/internal/explore"
-	"github.com/vulnetix/signet/internal/forge"
-	"github.com/vulnetix/signet/internal/gitinfo"
-	"github.com/vulnetix/signet/internal/goals"
-	"github.com/vulnetix/signet/internal/hooks"
-	"github.com/vulnetix/signet/internal/httpclient"
-	"github.com/vulnetix/signet/internal/inputhistory"
-	"github.com/vulnetix/signet/internal/localinfer"
-	"github.com/vulnetix/signet/internal/machineprobe"
-	"github.com/vulnetix/signet/internal/mcp"
-	"github.com/vulnetix/signet/internal/modelinfo"
-	"github.com/vulnetix/signet/internal/models"
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/notify"
-	"github.com/vulnetix/signet/internal/permissions"
-	"github.com/vulnetix/signet/internal/plans"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/profiles"
-	"github.com/vulnetix/signet/internal/projectregistry"
-	"github.com/vulnetix/signet/internal/prompt"
-	"github.com/vulnetix/signet/internal/promptlib"
-	"github.com/vulnetix/signet/internal/provider"
-	"github.com/vulnetix/signet/internal/repoindex"
-	"github.com/vulnetix/signet/internal/repomap"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/scanartifacts"
-	"github.com/vulnetix/signet/internal/selfupdate"
-	"github.com/vulnetix/signet/internal/session"
-	"github.com/vulnetix/signet/internal/todos"
-	"github.com/vulnetix/signet/internal/tools"
-	"github.com/vulnetix/signet/internal/trace"
-	"github.com/vulnetix/signet/internal/transcript"
-	"github.com/vulnetix/signet/internal/tui/components"
-	"github.com/vulnetix/signet/internal/version"
-	"github.com/vulnetix/signet/internal/vulnetixcli"
+	"github.com/vulnetix/belai/internal/activity"
+	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/agentpool"
+	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/aifirewall"
+	"github.com/vulnetix/belai/internal/bgagent"
+	"github.com/vulnetix/belai/internal/bgproc"
+	"github.com/vulnetix/belai/internal/budget"
+	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/clipboard"
+	"github.com/vulnetix/belai/internal/commands"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/explore"
+	"github.com/vulnetix/belai/internal/forge"
+	"github.com/vulnetix/belai/internal/gitinfo"
+	"github.com/vulnetix/belai/internal/goals"
+	"github.com/vulnetix/belai/internal/hooks"
+	"github.com/vulnetix/belai/internal/httpclient"
+	"github.com/vulnetix/belai/internal/inputhistory"
+	"github.com/vulnetix/belai/internal/localinfer"
+	"github.com/vulnetix/belai/internal/machineprobe"
+	"github.com/vulnetix/belai/internal/mcp"
+	"github.com/vulnetix/belai/internal/modelinfo"
+	"github.com/vulnetix/belai/internal/models"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/notify"
+	"github.com/vulnetix/belai/internal/permissions"
+	"github.com/vulnetix/belai/internal/plans"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/profiles"
+	"github.com/vulnetix/belai/internal/projectregistry"
+	"github.com/vulnetix/belai/internal/prompt"
+	"github.com/vulnetix/belai/internal/promptlib"
+	"github.com/vulnetix/belai/internal/provider"
+	"github.com/vulnetix/belai/internal/repoindex"
+	"github.com/vulnetix/belai/internal/repomap"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/scanartifacts"
+	"github.com/vulnetix/belai/internal/selfupdate"
+	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/todos"
+	"github.com/vulnetix/belai/internal/tools"
+	"github.com/vulnetix/belai/internal/trace"
+	"github.com/vulnetix/belai/internal/transcript"
+	"github.com/vulnetix/belai/internal/tui/components"
+	"github.com/vulnetix/belai/internal/version"
+	"github.com/vulnetix/belai/internal/vulnetixcli"
 )
 
 // Options configures a new TUI app.
@@ -215,7 +215,7 @@ const (
 
 // promptsViewState is declared in prompts_view.go, alongside the manager.
 
-// App is the Bubble Tea model for the Signet TUI.
+// App is the Bubble Tea model for the Belai TUI.
 type App struct {
 	registry     *Registry
 	messages     []components.Message
@@ -265,9 +265,9 @@ type App struct {
 	// when the turn ends.
 	phaseStartedAt time.Time
 	// painted marks the first rendered chat frame, used to emit one
-	// SIGNET_TRACE first_paint event.
+	// BELAI_TRACE first_paint event.
 	painted bool
-	// trace is the opt-in SIGNET_TRACE writer; nil when tracing is off.
+	// trace is the opt-in BELAI_TRACE writer; nil when tracing is off.
 	trace *trace.Writer
 
 	// provider & streaming state
@@ -405,10 +405,10 @@ type App struct {
 	gitInfo gitinfo.Info
 	gitOK   bool
 
-	// signetUpdate is the startup release check: whether a newer Signet
+	// belaiUpdate is the startup release check: whether a newer Belai
 	// exists and how to install it on this machine. Zero until the check
 	// answers, and stays zero when it is disabled or fails.
-	signetUpdate selfupdate.Status
+	belaiUpdate selfupdate.Status
 
 	// settings / state persistence
 	settings config.Settings
@@ -603,7 +603,7 @@ type App struct {
 	// runsOutput is the full-screen reader for one run's output.
 	runsOutput runsOutputState
 
-	// activity registry: the honest register of every process Signet launches.
+	// activity registry: the honest register of every process Belai launches.
 	activity *activity.Registry
 	// agentActs holds each running background agent's runs-panel row, keyed by
 	// agent key, so the row can be closed when the agent's loop ends.
@@ -1132,9 +1132,9 @@ func (a *App) Init() tea.Cmd {
 	// Discover the Vulnetix CLI quietly on startup so the footer and
 	// /vulnetix configure view have fresh capabilities from the first frame.
 	cmds = append(cmds, a.probeVulnetixSilentCmd())
-	// Ask GitHub whether a newer Signet exists. Cached for six hours on
+	// Ask GitHub whether a newer Belai exists. Cached for six hours on
 	// disk, so a session that starts often makes at most four requests a day.
-	if cmd := a.checkSignetUpdateCmd(); cmd != nil {
+	if cmd := a.checkBelaiUpdateCmd(); cmd != nil {
 		cmds = append(cmds, cmd)
 	}
 	return tea.Batch(cmds...)
@@ -1163,7 +1163,7 @@ func (a *App) bannerView() string {
 		Version:       version.Version,
 		Commit:        version.Commit,
 		Built:         version.BuildDate,
-		Update:        a.signetUpdate.BannerNote(),
+		Update:        a.belaiUpdate.BannerNote(),
 		Tip:           a.bannerTip,
 		Resumed:       a.bannerResumed,
 		RestoredTurns: a.bannerRestoredTurns,
@@ -2147,8 +2147,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case vulnetixProbeMsg:
 		return a, a.handleVulnetixProbe(m)
 
-	case signetUpdateMsg:
-		return a, a.handleSignetUpdate(m)
+	case belaiUpdateMsg:
+		return a, a.handleBelaiUpdate(m)
 
 	case projectsLoadedMsg:
 		return a, a.handleProjectsLoaded(m)
@@ -2321,7 +2321,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// The four session toggles sit on the function-key row rather than on
 		// ctrl+<letter>. Every free ctrl+<letter> is already spoken for by the
 		// prompt editor (ctrl+a/e/k/u/w/n/p/v and friends), and ctrl+alt+<key>
-		// cannot be used at all: under the kitty keyboard protocol Signet
+		// cannot be used at all: under the kitty keyboard protocol Belai
 		// pushes, a ctrl+<letter> event collapses to a legacy control code that
 		// carries no alt bit, so those chords never reached this switch.
 		case "f5":
@@ -3423,7 +3423,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 	case agent.EventToolStartKind:
 		a.setPhaseWorking()
 		// The assistant turn bubble is created lazily and must stay one bubble
-		// for the whole turn: streamed reasoning and signet activity rows can
+		// for the whole turn: streamed reasoning and belai activity rows can
 		// precede it, and earlier tool rows follow it. Scanning back to the
 		// most recent assistant attaches every tool call of the turn to the
 		// same bubble instead of only the first.
@@ -4447,7 +4447,7 @@ func (a *App) addSystem(text string) {
 	a.messages = append(a.messages, components.Message{Role: "system", Content: text})
 }
 
-// addRMActivity turns one role-manager activity into a render-only signet
+// addRMActivity turns one role-manager activity into a render-only belai
 // panel row. Suppressed events (those already covered by a dedicated line)
 // and unrenderable activities are dropped here.
 func (a *App) addRMActivity(act rolemanager.Activity) {
@@ -4510,7 +4510,7 @@ func (a *App) maybeNoticeLegacyPrompts() {
 	if gd, err := config.GlobalDir(); err == nil {
 		if gpd, err := config.GlobalPromptsDir(); err == nil &&
 			legacy(filepath.Join(gd, "prompts.json"), gpd) {
-			a.addSystem("prompt library moved to prompts/ under the signet home; prompts.json is no longer read")
+			a.addSystem("prompt library moved to prompts/ under the belai home; prompts.json is no longer read")
 			return
 		}
 	}
@@ -5667,7 +5667,7 @@ func (a *App) trailingReasoning() int {
 // currentAssistantBubble returns the index of the assistant bubble the
 // current turn's stream fills, creating one when no assistant message exists.
 // The bubble is the most recent assistant message: streamed reasoning and
-// signet activity rows may precede it within the same turn, and earlier tool
+// belai activity rows may precede it within the same turn, and earlier tool
 // rows follow it, so scanning backward keeps every tool call of a turn on one
 // bubble. send always appends a fresh empty bubble per turn, so this never
 // reaches into the previous turn's assistant reply.
@@ -5825,10 +5825,10 @@ type reviewSend struct {
 }
 
 // reviewPrompt is the triage turn's objective. How to remediate, when to defer
-// to the user and what the final report holds is the signet:vulnetix-review
+// to the user and what the final report holds is the belai:vulnetix-review
 // profile's job; the per-scanner subagents' reports precede this turn and the
 // clarifier has already asked about findings with more than one fix.
-const reviewPrompt = "Remediate every finding of this Vulnetix review and write .vulnetix/signet/code-review-report.md. The per-scanner subagent reports precede this message; the scanner reports are attached."
+const reviewPrompt = "Remediate every finding of this Vulnetix review and write .vulnetix/belai/code-review-report.md. The per-scanner subagent reports precede this message; the scanner reports are attached."
 
 // reviewPromptWith is the triage objective plus what the user typed while the
 // review ran. It is the user's own direction, so it rides on the prompt and
@@ -5841,7 +5841,7 @@ func reviewPromptWith(steer []string) string {
 }
 
 // sendReview starts the triage turn for a review. It switches the session to
-// agent mode with the signet:vulnetix-review profile engaged, as if the user
+// agent mode with the belai:vulnetix-review profile engaged, as if the user
 // had picked it, so follow-up turns stay with the review agent until the user
 // clears it. Each scanner report rides on the turn input so the session runs
 // one subagent per scanner, and as an attachment so the model sees the

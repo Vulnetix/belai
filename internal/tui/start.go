@@ -5,9 +5,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/hooks"
-	"github.com/vulnetix/signet/internal/tui/keys"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/hooks"
+	"github.com/vulnetix/belai/internal/tui/keys"
 )
 
 // Start runs the TUI until the user quits. It requires a TTY.
@@ -49,7 +49,7 @@ func Start(opts Options) error {
 }
 
 func kittyEnabled(s *config.Settings) bool {
-	if os.Getenv("SIGNET_NO_KITTY") == "1" {
+	if os.Getenv("BELAI_NO_KITTY") == "1" {
 		return false
 	}
 	if s != nil && s.UI != nil && s.UI.KittyKeyboard != nil {

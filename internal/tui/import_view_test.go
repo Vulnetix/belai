@@ -8,8 +8,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/credentials"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/credentials"
 )
 
 func writeAgentFixture(t *testing.T, home, rel, content string) {
@@ -50,7 +50,7 @@ func TestImportViewMasksSecrets(t *testing.T) {
 }
 
 func TestImportViewRequiresOverwriteConfirm(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	resolver, err := credentials.NewResolver(workdir)
 	if err != nil {
@@ -89,7 +89,7 @@ func TestImportViewRequiresOverwriteConfirm(t *testing.T) {
 }
 
 func TestImportSavesProfileAndSecret(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	resolver, err := credentials.NewResolver(workdir)
 	if err != nil {

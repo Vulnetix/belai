@@ -5,10 +5,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/agentprofile"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/run"
 )
 
 // TestSetPostureUpdatesLiveInstance pins the live half of the background-agent
@@ -20,7 +20,7 @@ func TestSetPostureUpdatesLiveInstance(t *testing.T) {
 	// The project layer only tightens. Relax tool_call_mismatch so the merge
 	// is observable: the manager's AllIgnore reaches the instance only where
 	// the project permits it.
-	prefs := filepath.Join(config.ProjectSignetDir(workdir), "preferences.yaml")
+	prefs := filepath.Join(config.ProjectBelaiDir(workdir), "preferences.yaml")
 	if err := os.MkdirAll(filepath.Dir(prefs), 0o755); err != nil {
 		t.Fatal(err)
 	}

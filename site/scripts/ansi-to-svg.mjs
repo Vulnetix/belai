@@ -170,7 +170,7 @@ export function renderAnsi(ansi, name = 'capture') {
     }
   }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Signet TUI capture: ${esc(name)}">\n  <rect width="${width}" height="${height}" fill="${DEFAULT_BG}"/>\n  ${body.join('\n  ')}\n</svg>\n`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img" aria-label="Belai TUI capture: ${esc(name)}">\n  <rect width="${width}" height="${height}" fill="${DEFAULT_BG}"/>\n  ${body.join('\n  ')}\n</svg>\n`;
 }
 
 function convert(name) {

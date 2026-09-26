@@ -6,38 +6,38 @@ const sealText =
   'Getting started: install from Homebrew, Scoop, a checksum-verified install.sh, go install, or source. The default asset embeds the phase-1 guardrails model, --variant picks another family, and the first run asks you to trust the directory before anything reads it.';
 
 const installs = [
-  { name: 'Homebrew', cmd: 'brew install vulnetix/tap/signet' },
-  { name: 'Scoop', cmd: 'scoop bucket add vulnetix https://github.com/Vulnetix/scoop-bucket && scoop install signet' },
-  { name: 'install.sh (checksum-verified)', cmd: 'curl -fsSL https://raw.githubusercontent.com/vulnetix/signet/main/install.sh | sh' },
-  { name: 'install.sh, another variant', cmd: 'curl -fsSL https://raw.githubusercontent.com/vulnetix/signet/main/install.sh | sh -s -- --variant bert-guardrails-jailbreak' },
-  { name: 'go install', cmd: 'go install github.com/vulnetix/signet/cmd/signet@latest' },
-  { name: 'source', cmd: 'git clone https://github.com/vulnetix/signet && cd signet && go build ./cmd/signet' },
+  { name: 'Homebrew', cmd: 'brew install vulnetix/tap/belai' },
+  { name: 'Scoop', cmd: 'scoop bucket add vulnetix https://github.com/Vulnetix/scoop-bucket && scoop install belai' },
+  { name: 'install.sh (checksum-verified)', cmd: 'curl -fsSL https://raw.githubusercontent.com/vulnetix/belai/main/install.sh | sh' },
+  { name: 'install.sh, another variant', cmd: 'curl -fsSL https://raw.githubusercontent.com/vulnetix/belai/main/install.sh | sh -s -- --variant bert-guardrails-jailbreak' },
+  { name: 'go install', cmd: 'go install github.com/vulnetix/belai/cmd/belai@latest' },
+  { name: 'source', cmd: 'git clone https://github.com/vulnetix/belai && cd belai && go build ./cmd/belai' },
 ];
 
 const variants = [
   {
-    asset: 'signet-bert-guardrails',
+    asset: 'belai-bert-guardrails',
     tag: 'default',
     embeds: 'phase-1 prompt-saturation model',
     size: '~40 MB',
     note: 'Guardrails classify locally with no provider and no API key configured.',
   },
   {
-    asset: 'signet-bert-guardrails-jailbreak',
+    asset: 'belai-bert-guardrails-jailbreak',
     tag: null,
     embeds: 'phase-1 + phase-2 jailbreak model',
     size: '~485 MB',
     note: 'Adds the local jailbreak gate, run in parallel with phase 1.',
   },
   {
-    asset: 'signet',
+    asset: 'belai',
     tag: null,
     embeds: 'nothing',
     size: '~23 MB',
-    note: 'Classifies with the LLM sentinel, as Signet did before models were embedded.',
+    note: 'Classifies with the LLM sentinel, as Belai did before models were embedded.',
   },
   {
-    asset: 'signet-no-classifier',
+    asset: 'belai-no-classifier',
     tag: null,
     embeds: 'nothing',
     size: '~23 MB',
@@ -46,7 +46,7 @@ const variants = [
 ];
 
 const firstSteps = [
-  ['signet', 'launch the TUI'],
+  ['belai', 'launch the TUI'],
   ['trust this directory?', 'a first-run directory is gated on an explicit yes, before anything reads it'],
   ['/help', 'commands and shortcuts, guarded by a test'],
   ['type a prompt', 'or / to fuzzy-find commands, prompts, agents and processes'],
@@ -60,7 +60,7 @@ const firstSteps = [
 <SealedSection label="start" sealText={sealText} id="start">
   <h2 class="text-3xl font-bold text-vx-ink">Getting started.</h2>
   <p class="prose-measure mt-4 text-vx-ink/80">
-    Signet runs on linux, darwin and windows, on amd64 and arm64. Each release is built by the same
+    Belai runs on linux, darwin and windows, on amd64 and arm64. Each release is built by the same
     workflow that publishes the Homebrew formula and the Scoop manifest, and the installer checks the
     binary against the release checksums before writing anything.
   </p>
@@ -98,9 +98,9 @@ const firstSteps = [
     <h3 class="text-2xl font-bold text-vx-ink">Which binary you get.</h3>
     <p class="prose-measure mt-4 text-vx-ink/80">
       Releases ship in four asset families. Homebrew, Scoop and <code class="mono">install.sh</code> all
-      default to <code class="mono">signet-bert-guardrails</code>, which includes the phase-1 model in the
+      default to <code class="mono">belai-bert-guardrails</code>, which includes the phase-1 model in the
       binary. Guardrails work straight away, without a configured provider, an API key or a model
-      download. The installed command is <code class="mono">signet</code> for every family, and each binary
+      download. The installed command is <code class="mono">belai</code> for every family, and each binary
       updates itself within its own family.
     </p>
 
@@ -120,7 +120,7 @@ const firstSteps = [
     </div>
 
     <p class="prose-measure mt-6 text-vx-ink/80">
-      Pick a family with <code class="mono">--variant</code> (or <code class="mono">SIGNET_VARIANT</code>):{' '}
+      Pick a family with <code class="mono">--variant</code> (or <code class="mono">BELAI_VARIANT</code>):{' '}
       <code class="mono">bert-guardrails</code>, <code class="mono">bert-guardrails-jailbreak</code>,{' '}
       <code class="mono">no-classifier</code>, or <code class="mono">vanilla</code>. Building from source
       stays on the LLM sentinel path unless you run the model-prep recipes yourself.
@@ -129,7 +129,7 @@ const firstSteps = [
 
   <footer class="mt-12 border-t border-vx-ink/30 pt-6 text-vx-ink/70">
     <p class="mono text-sm">
-      signet · Apache-2.0 · <a class="underline" href="https://github.com/vulnetix/signet">github.com/vulnetix/signet</a>
+      belai · Apache-2.0 · <a class="underline" href="https://github.com/vulnetix/belai">github.com/vulnetix/belai</a>
     </p>
     <p class="mt-2 text-sm">
       Free and open source, like the Vulnetix scanners, AI Firewall and MCP server.

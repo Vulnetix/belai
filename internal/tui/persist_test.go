@@ -5,17 +5,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/agent"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/session"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // newPersistApp builds an App with an isolated store and a workdir. Startup
 // notices are dropped so the persistence tests assert only what they append.
 func newPersistApp(t *testing.T) *App {
 	t.Helper()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Provider: "openai", Model: "gpt-5", Workdir: t.TempDir()})
 	a.messages = nil
 	a.persistedUpTo = 0
@@ -223,7 +223,7 @@ func TestPersistWritesRolemanagerRows(t *testing.T) {
 			Role:  "rolemanager",
 			Level: rolemanager.LevelSecurity,
 			RM: rolemanager.Description{
-				Summary: "Checked what the file Signet read returned",
+				Summary: "Checked what the file Belai read returned",
 				Outcome: "clean",
 				Tone:    rolemanager.ToneClear,
 				Levels:  rolemanager.LevelSecurity,
@@ -238,10 +238,10 @@ func TestPersistWritesRolemanagerRows(t *testing.T) {
 		t.Fatalf("entries = %d, want 3: %+v", len(entries), entries)
 	}
 	rm := entries[1]
-	if rm.Type != "rolemanager" || rm.Content != "Checked what the file Signet read returned — clean" {
+	if rm.Type != "rolemanager" || rm.Content != "Checked what the file Belai read returned — clean" {
 		t.Fatalf("rolemanager entry wrong: %+v", rm)
 	}
-	if rm.Meta["summary"] != "Checked what the file Signet read returned" {
+	if rm.Meta["summary"] != "Checked what the file Belai read returned" {
 		t.Fatalf("summary meta = %#v", rm.Meta["summary"])
 	}
 	if rm.Meta["outcome"] != "clean" ||

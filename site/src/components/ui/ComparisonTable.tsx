@@ -16,18 +16,18 @@ const GROUPS: Group[] = ['untrusted content', 'boundaries', 'autonomy', 'tools &
 interface Row {
   group: Group;
   feature: string;
-  signet: Cell;
+  belai: Cell;
   claude: Cell;
   codex: Cell;
   cursor: Cell;
   gemini: Cell;
 }
 
-// Each row has one line: group, feature, then signet / claude / codex / cursor / gemini.
-const row = (group: Group, feature: string, signet: Cell, claude: Cell, codex: Cell, cursor: Cell, gemini: Cell): Row => ({
+// Each row has one line: group, feature, then belai / claude / codex / cursor / gemini.
+const row = (group: Group, feature: string, belai: Cell, claude: Cell, codex: Cell, cursor: Cell, gemini: Cell): Row => ({
   group,
   feature,
-  signet,
+  belai,
   claude,
   codex,
   cursor,
@@ -78,7 +78,7 @@ const ROWS: Row[] = [
 
 const FILTERS = [
   { id: 'all', label: 'all rows' },
-  { id: 'leads', label: 'signet alone' },
+  { id: 'leads', label: 'belai alone' },
   { id: 'parity', label: 'shared elsewhere' },
 ] as const;
 
@@ -132,12 +132,12 @@ export default function ComparisonTable() {
       <div className="comparison-scroll rounded-lg border border-vx-ink/30">
         <table className="w-full border-collapse text-left text-sm">
           <caption className="sr-only">
-            Feature-presence comparison across Signet, Claude Code, Codex, Cursor and Gemini CLI.
+            Feature-presence comparison across Belai, Claude Code, Codex, Cursor and Gemini CLI.
           </caption>
           <thead>
             <tr className="mono border-b border-vx-ink bg-vx-bone text-vx-ink">
               <th scope="col" className="px-4 py-3 font-medium">feature</th>
-              <th scope="col" className="bg-vx-mint/15 px-4 py-3 font-bold">signet</th>
+              <th scope="col" className="bg-vx-mint/15 px-4 py-3 font-bold">belai</th>
               <th scope="col" className="px-4 py-3 font-medium">claude code</th>
               <th scope="col" className="px-4 py-3 font-medium">codex</th>
               <th scope="col" className="px-4 py-3 font-medium">cursor</th>
@@ -159,7 +159,7 @@ export default function ComparisonTable() {
                 {rows.map((r) => (
                   <tr key={r.feature} className="border-t border-vx-ink/15">
                     <th scope="row" className="px-4 py-3 font-normal text-vx-ink">{r.feature}</th>
-                    <td className={`mono bg-vx-mint/10 px-4 py-3 font-bold ${cellClass(r.signet)}`}>{cellChar(r.signet)}</td>
+                    <td className={`mono bg-vx-mint/10 px-4 py-3 font-bold ${cellClass(r.belai)}`}>{cellChar(r.belai)}</td>
                     <td className={`mono px-4 py-3 ${cellClass(r.claude)}`}>{cellChar(r.claude)}</td>
                     <td className={`mono px-4 py-3 ${cellClass(r.codex)}`}>{cellChar(r.codex)}</td>
                     <td className={`mono px-4 py-3 ${cellClass(r.cursor)}`}>{cellChar(r.cursor)}</td>

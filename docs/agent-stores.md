@@ -1,7 +1,7 @@
 # Agent stores
 
 `SearchSessions`, `ReadSession` and `SearchMemory` recover context that was
-already gathered — by signet or by any other coding agent on this machine —
+already gathered — by belai or by any other coding agent on this machine —
 without a fresh Explore round trip. They are read-only, path-free tools backed
 by a curated, deterministic registry of known agent store locations in
 `internal/agentstore`.
@@ -39,7 +39,7 @@ working directory.
 
 | Agent | Sessions | Prompts | Memory |
 | ----- | -------- | ------- | ------ |
-| `signet` | `~/.vulnetix/signet/sessions/*/*.jsonl` | — | `.vulnetix/goals`, `.vulnetix/prompts`, `.vulnetix/plans` |
+| `belai` | `~/.vulnetix/belai/sessions/*/*.jsonl` | — | `.vulnetix/goals`, `.vulnetix/prompts`, `.vulnetix/plans` |
 | `claude-code` | `~/.claude/projects/*/*.jsonl` | `~/.claude/history.jsonl` | `~/.claude/CLAUDE.md`, `~/.claude/projects/*/memory/*.md` |
 | `codex` | `~/.codex*/sessions/**/rollout-*.jsonl` | `~/.codex*/history.jsonl` | `~/.codex*/memories/**`, `~/.codex*/AGENTS.md` |
 | `pi` | `~/.pi/agent/sessions/*/*.jsonl` | — | `~/.pi/agent/plans/*/*.md` |
@@ -58,15 +58,15 @@ no new Go dependency, matching the shell-out precedent in `Grep`.
 
 - **Claude Code** — every line self-describing: `type`, `message.role`,
   `message.content[]`, `sessionId`, `cwd`, `timestamp`, `gitBranch`. Project is
-  also in the directory slug (`-home-chris-GitHub-signet`).
+  also in the directory slug (`-home-chris-GitHub-belai`).
 - **Codex rollout** — `cwd` and session id appear **only on line 1**
   (`type:"session_meta"`). Turns are `type:"response_item"` with
   `payload.type=="message"`, `payload.role`, `payload.content[].text`. A
   streaming scanner reads line 1 before it can attribute a match.
 - **pi** — same shape: line 1 `{type:"session", id, cwd}`, then `type:"message"`
   with `message.role`/`message.content[]`. Project also in the dir slug
-  (`--home-chris-GitHub-signet--`).
-- **signet** — `session.Entry` records; the project key is `session.WorkdirKey`
+  (`--home-chris-GitHub-belai--`).
+- **belai** — `session.Entry` records; the project key is `session.WorkdirKey`
   and files are read through the existing `session.Store` rather than a new
   parser.
 - **goose** — `messages(role, content_json)` joined to `sessions(working_dir)`.

@@ -13,15 +13,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/forge"
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/permissions"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/readindex"
-	"github.com/vulnetix/signet/internal/repomap"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/forge"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/permissions"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/readindex"
+	"github.com/vulnetix/belai/internal/repomap"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 // prefetchRepo builds a git repository whose working tree exercises every

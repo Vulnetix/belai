@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 // Spec describes one file-backed library: its extension and the two
@@ -324,7 +324,7 @@ func (s Spec) Reorder(scope config.Scope, workdir string, entries []Entry, from,
 		origs[i] = entries[i].Path
 	}
 	for i := range moved {
-		temps[i] = filepath.Join(dir, fmt.Sprintf(".signet-tmp-%d-%s%s", i, moved[i].Name, s.Ext))
+		temps[i] = filepath.Join(dir, fmt.Sprintf(".belai-tmp-%d-%s%s", i, moved[i].Name, s.Ext))
 		finals[i] = filepath.Join(dir, s.FileName(moved[i].Order, moved[i].Name, moved[i].Enabled))
 	}
 
@@ -512,7 +512,7 @@ func (s Spec) renumber(scope config.Scope, workdir string, entries []Entry, step
 	finals := make([]string, len(entries))
 	for i := range entries {
 		origs[i] = entries[i].Path
-		temps[i] = filepath.Join(dir, fmt.Sprintf(".signet-tmp-%d-%s%s", i, entries[i].Name, s.Ext))
+		temps[i] = filepath.Join(dir, fmt.Sprintf(".belai-tmp-%d-%s%s", i, entries[i].Name, s.Ext))
 		finals[i] = filepath.Join(dir, s.FileName(entries[i].Order, entries[i].Name, entries[i].Enabled))
 	}
 	if err := renameAll(origs, temps); err != nil {

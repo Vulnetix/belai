@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/permissions"
+	"github.com/vulnetix/belai/internal/permissions"
 )
 
 func TestDecodeLegacyFlatMap(t *testing.T) {

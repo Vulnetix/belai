@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/sandbox"
+	"github.com/vulnetix/belai/internal/sandbox"
 )
 
 // sandboxReport renders /sandbox: whether commands run sandboxed here, with

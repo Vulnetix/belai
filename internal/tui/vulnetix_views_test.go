@@ -9,9 +9,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/projectregistry"
-	"github.com/vulnetix/signet/internal/scanartifacts"
-	"github.com/vulnetix/signet/internal/vulnetixcli"
+	"github.com/vulnetix/belai/internal/projectregistry"
+	"github.com/vulnetix/belai/internal/scanartifacts"
+	"github.com/vulnetix/belai/internal/vulnetixcli"
 )
 
 func TestVulnetixConfigViewSmoke(t *testing.T) {
@@ -26,7 +26,7 @@ func TestVulnetixListViewSmoke(t *testing.T) {
 	a := New(Options{Workdir: t.TempDir()})
 	a.vulnetixListState = vulnetixListState{
 		rows: []vulnetixListRow{
-			{entry: projectregistry.Entry{Name: "signet", Path: "/x/signet", LastSeen: time.Now()}},
+			{entry: projectregistry.Entry{Name: "belai", Path: "/x/belai", LastSeen: time.Now()}},
 		},
 	}
 	_ = a.vulnetixListView()
@@ -57,7 +57,7 @@ func TestVulnetixConfigKeyNavigation(t *testing.T) {
 // pushes it right after writing artifacts, and it used to render "no
 // artifact summary loaded" because nothing ever loaded one on that path.
 func TestVulnetixArtifactsViewLoadsOnOpen(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	workdir := t.TempDir()
 	vdir := filepath.Join(workdir, ".vulnetix")

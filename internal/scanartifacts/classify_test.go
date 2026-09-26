@@ -51,9 +51,9 @@ func TestClassifyExtendedPaths(t *testing.T) {
 		{"semgrep.json", KindToolNative},
 		{"trivy.json", KindToolNative},
 		{"grype.json", KindToolNative},
-		{"sub/signet/something.json", KindSignet},
-		{"sub/plans/plan.json", KindSignet},
-		{"sub/goals/goal.json", KindSignet},
+		{"sub/belai/something.json", KindBelai},
+		{"sub/plans/plan.json", KindBelai},
+		{"sub/goals/goal.json", KindBelai},
 		{"totally.unknown.file", KindUnknown},
 		{"gitleaks.gz", KindToolLog},
 		{"openvex.json", KindOpenVEX},
@@ -76,32 +76,32 @@ func TestClassifyGzipSARIF(t *testing.T) {
 	}
 }
 
-func TestIsSignetPath(t *testing.T) {
+func TestIsBelaiPath(t *testing.T) {
 	for _, p := range []string{
 		"settings.json", "credentials.json",
 		"code-review-summary.md", "code-review-manifest.json",
 		"prompts.json", "sub/settings.json",
 	} {
-		if !isSignetPath(p) {
-			t.Fatalf("isSignetPath(%q) = false, want true", p)
+		if !isBelaiPath(p) {
+			t.Fatalf("isBelaiPath(%q) = false, want true", p)
 		}
 	}
 	for _, p := range []string{"sbom.cdx.json", "sast.sarif", "notes.md"} {
-		if isSignetPath(p) {
-			t.Fatalf("isSignetPath(%q) = true, want false", p)
+		if isBelaiPath(p) {
+			t.Fatalf("isBelaiPath(%q) = true, want false", p)
 		}
 	}
 }
 
-func TestIsSignetDir(t *testing.T) {
-	for _, d := range []string{"signet", "signet/sub", "plans", "goals", "prompts", "prompts/x/y"} {
-		if !isSignetDir(d) {
-			t.Fatalf("isSignetDir(%q) = false, want true", d)
+func TestIsBelaiDir(t *testing.T) {
+	for _, d := range []string{"belai", "belai/sub", "plans", "goals", "prompts", "prompts/x/y"} {
+		if !isBelaiDir(d) {
+			t.Fatalf("isBelaiDir(%q) = false, want true", d)
 		}
 	}
-	for _, d := range []string{"", "scans", "other/signet"} {
-		if isSignetDir(d) {
-			t.Fatalf("isSignetDir(%q) = true, want false", d)
+	for _, d := range []string{"", "scans", "other/belai"} {
+		if isBelaiDir(d) {
+			t.Fatalf("isBelaiDir(%q) = true, want false", d)
 		}
 	}
 }
@@ -225,7 +225,7 @@ func TestEnumerateSkipsSymlinkAndNonRegular(t *testing.T) {
 	}
 }
 
-func TestEnumerateSkipsSignetFiles(t *testing.T) {
+func TestEnumerateSkipsBelaiFiles(t *testing.T) {
 	dir := t.TempDir()
 	mkdir := func(p string) {
 		if err := os.MkdirAll(filepath.Join(dir, p), 0o755); err != nil {
@@ -241,11 +241,11 @@ func TestEnumerateSkipsSignetFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	mkdir("signet")
+	mkdir("belai")
 	mkdir("prompts")
 	write("settings.json", "{}")
 	write("prompts.json", "{}")
-	write("signet/credentials.json", "{}")
+	write("belai/credentials.json", "{}")
 	write("prompts/010-deploy.md", "deploy")
 	write("sbom.cdx.json", `{}`)
 	write("memory.yaml", "last_scan:\n")
@@ -258,9 +258,9 @@ func TestEnumerateSkipsSignetFiles(t *testing.T) {
 	for i, a := range arts {
 		rels[i] = a.Rel
 	}
-	for _, bad := range []string{"settings.json", "prompts.json", "signet/credentials.json", "prompts/010-deploy.md"} {
+	for _, bad := range []string{"settings.json", "prompts.json", "belai/credentials.json", "prompts/010-deploy.md"} {
 		if slices.Contains(rels, bad) {
-			t.Fatalf("signet file %q should be skipped", bad)
+			t.Fatalf("belai file %q should be skipped", bad)
 		}
 	}
 	if !slices.Contains(rels, "sbom.cdx.json") {

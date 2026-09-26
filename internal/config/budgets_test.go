@@ -35,7 +35,7 @@ func TestBudgetRule1_ValidateTokenBudgets(t *testing.T) {
 
 // R1: an invalid budget fails resolution as a whole.
 func TestBudgetRule1_InvalidBudgetFailsResolve(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	if err := SaveGlobal(Settings{TokenBudgets: []TokenBudget{tb("p", "m", "fortnight", 10)}}); err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestBudgetEdge13_DuplicateBudgetRejected(t *testing.T) {
 
 // R2: budgets are global; a project layer's are ignored with a note.
 func TestBudgetRule2_ProjectBudgetsIgnored(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	global := []TokenBudget{tb("p", "m", BudgetScopeDay, 1000)}
 	if err := SaveGlobal(Settings{TokenBudgets: global}); err != nil {

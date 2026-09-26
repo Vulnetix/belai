@@ -101,7 +101,7 @@ func TestRegistryConcurrentAppend(t *testing.T) {
 
 func TestRegistryEvents(t *testing.T) {
 	r := NewRegistry()
-	h := r.Add(Activity{Kind: KindAgent, Label: "signet:triage"}, nil)
+	h := r.Add(Activity{Kind: KindAgent, Label: "belai:triage"}, nil)
 	select {
 	case e := <-r.Events():
 		if e.ID != h.Activity.ID {

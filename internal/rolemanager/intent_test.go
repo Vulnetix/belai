@@ -3,7 +3,7 @@ package rolemanager
 import (
 	"testing"
 
-	"github.com/vulnetix/signet/internal/modes"
+	"github.com/vulnetix/belai/internal/modes"
 )
 
 func TestIntentDecision(t *testing.T) {
@@ -15,9 +15,9 @@ func TestIntentDecision(t *testing.T) {
 		{IntentAgent, nil, ModeDecision{Mode: modes.ModeAgent, Intent: IntentAgent}},
 		{IntentPlan, nil, ModeDecision{Mode: modes.ModePlan, AppendCarrier: true, Explore: true, Intent: IntentPlan}},
 		{IntentGoal, nil, ModeDecision{Mode: modes.ModeGoal, AppendCarrier: true, Explore: true, Intent: IntentGoal}},
-		{IntentHandoff, &HandoffFacts{Tasks: 3}, ModeDecision{Mode: modes.ModeAgent, AgentName: "signet:plan-handoff", AppendCarrier: true, Intent: IntentHandoff, Handoff: &HandoffFacts{Tasks: 3}}},
-		{IntentDebug, nil, ModeDecision{Mode: modes.ModeAgent, AgentName: "signet:debug", AppendCarrier: true, Intent: IntentDebug}},
-		{IntentFanOut, nil, ModeDecision{Mode: modes.ModeAgent, AgentName: "signet:fanout", AppendCarrier: true, Intent: IntentFanOut}},
+		{IntentHandoff, &HandoffFacts{Tasks: 3}, ModeDecision{Mode: modes.ModeAgent, AgentName: "belai:plan-handoff", AppendCarrier: true, Intent: IntentHandoff, Handoff: &HandoffFacts{Tasks: 3}}},
+		{IntentDebug, nil, ModeDecision{Mode: modes.ModeAgent, AgentName: "belai:debug", AppendCarrier: true, Intent: IntentDebug}},
+		{IntentFanOut, nil, ModeDecision{Mode: modes.ModeAgent, AgentName: "belai:fanout", AppendCarrier: true, Intent: IntentFanOut}},
 		{Intent("unknown"), nil, ModeDecision{Mode: modes.ModeAgent, Intent: Intent("unknown")}},
 	}
 	for _, c := range cases {

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/agentstore"
+	"github.com/vulnetix/belai/internal/agentstore"
 )
 
 // SearchMemory searches memory/rules files across the registered agents.

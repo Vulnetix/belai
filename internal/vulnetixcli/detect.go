@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
-	"github.com/vulnetix/signet/internal/proc"
+	"github.com/vulnetix/belai/internal/proc"
 )
 
 // Default subprocess limits.
@@ -212,7 +212,7 @@ func exitCode(err error) int {
 	return 1
 }
 
-// probeEnv returns the process environment with Signet provider secrets removed
+// probeEnv returns the process environment with Belai provider secrets removed
 // and the Vulnetix credential variables preserved.
 func probeEnv() []string {
 	keep := map[string]bool{
@@ -236,7 +236,7 @@ func probeEnv() []string {
 		if strings.HasPrefix(upper, "OPENAI_") ||
 			strings.HasPrefix(upper, "ANTHROPIC_") ||
 			strings.HasPrefix(upper, "CLOUDFLARE_") ||
-			strings.HasPrefix(upper, "SIGNET_") ||
+			strings.HasPrefix(upper, "BELAI_") ||
 			strings.HasSuffix(upper, "_API_KEY") ||
 			strings.HasSuffix(upper, "_TOKEN") ||
 			strings.HasSuffix(upper, "_SECRET") {

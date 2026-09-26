@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/posture"
+	"github.com/vulnetix/belai/internal/posture"
 )
 
 func write(t *testing.T, root, rel, body string) {
@@ -37,7 +37,7 @@ func samplePlugin(t *testing.T) string {
 func yes(Summary, string, string, *Summary) bool { return true }
 
 func TestInstallLocalAndLoad(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	var shown string
 	rec, err := Install(context.Background(), samplePlugin(t), func(s Summary, src, commit string, prev *Summary) bool {
 		shown = Describe(s, src, commit, prev)
@@ -85,7 +85,7 @@ func TestInstallLocalAndLoad(t *testing.T) {
 
 func TestDeclineInstallsNothing(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("SIGNET_HOME", home)
+	t.Setenv("BELAI_HOME", home)
 	_, err := Install(context.Background(), samplePlugin(t), func(Summary, string, string, *Summary) bool { return false })
 	if !errors.Is(err, ErrDeclined) {
 		t.Fatalf("err = %v", err)
@@ -97,7 +97,7 @@ func TestDeclineInstallsNothing(t *testing.T) {
 }
 
 func TestInvalidComponentRejectsWholePlugin(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	src := samplePlugin(t)
 	write(t, src, "hooks/bad.json", `{"name":"bad","event":"pre_tool","command":"/bin/sh"}`)
 	if _, err := Install(context.Background(), src, yes); err == nil {
@@ -128,7 +128,7 @@ func TestManifestStrictAndNames(t *testing.T) {
 	if _, err := ReadManifest(src); err == nil {
 		t.Fatal("unknown manifest key accepted")
 	}
-	for _, n := range []string{"signet", "user", "Bad", "a/b", ""} {
+	for _, n := range []string{"belai", "user", "Bad", "a/b", ""} {
 		if ValidName(n) {
 			t.Errorf("name %q accepted", n)
 		}
@@ -152,7 +152,7 @@ func TestLocalCopySkipsSymlinks(t *testing.T) {
 }
 
 func TestUpdateReconfirms(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	src := samplePlugin(t)
 	if _, err := Install(context.Background(), src, yes); err != nil {
 		t.Fatal(err)
@@ -184,7 +184,7 @@ func TestGitSourceRejectsOptionInjection(t *testing.T) {
 }
 
 func TestUpdateRules(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	src := samplePlugin(t)
 	if _, err := Install(context.Background(), src, yes); err != nil {
 		t.Fatal(err)

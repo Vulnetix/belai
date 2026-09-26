@@ -7,10 +7,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/vulnetix/signet/internal/aifirewall"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/provider"
-	"github.com/vulnetix/signet/internal/vulnetixcreds"
+	"github.com/vulnetix/belai/internal/aifirewall"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/provider"
+	"github.com/vulnetix/belai/internal/vulnetixcreds"
 )
 
 // Resolver resolves provider credentials from a stack of sources.

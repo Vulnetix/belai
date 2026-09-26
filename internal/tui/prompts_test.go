@@ -8,15 +8,15 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/promptlib"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/promptlib"
 )
 
 // key is a small helper for rune-based key presses.
 func keyRune(r rune) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}} }
 
 func TestCtrlSOverwritesLoadedGlobalEntryInPlace(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 
 	entry, err := promptlib.Create(config.ScopeGlobal, workdir, "deploy", "old body")
@@ -54,7 +54,7 @@ func TestCtrlSOverwritesLoadedGlobalEntryInPlace(t *testing.T) {
 }
 
 func TestActionBarDeleteConfirm(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 
 	entry, _ := promptlib.Create(config.ScopeProject, workdir, "deploy", "body")
@@ -160,7 +160,7 @@ func TestLoadedPromptClearedOnSubmitAndViews(t *testing.T) {
 }
 
 func TestDisabledEntriesAbsentFromHistory(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 
 	enabled, _ := promptlib.Create(config.ScopeGlobal, workdir, "enabled", "on")
@@ -177,7 +177,7 @@ func TestDisabledEntriesAbsentFromHistory(t *testing.T) {
 }
 
 func TestPromptsManagerToggleAndReorder(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 
 	if _, err := promptlib.Create(config.ScopeProject, workdir, "a", "a"); err != nil {
@@ -225,7 +225,7 @@ func TestPromptsManagerToggleAndReorder(t *testing.T) {
 func TestEditorUnsetFallsBackToInline(t *testing.T) {
 	t.Setenv("VISUAL", "")
 	t.Setenv("EDITOR", "")
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 
 	_, _ = promptlib.Create(config.ScopeProject, workdir, "deploy", "body")
@@ -247,7 +247,7 @@ func TestEditorUnsetFallsBackToInline(t *testing.T) {
 }
 
 func TestPromptEditedReloadsAndReenablesMouse(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 
 	entry, _ := promptlib.Create(config.ScopeProject, workdir, "deploy", "body")
@@ -273,7 +273,7 @@ func TestPromptEditedReloadsAndReenablesMouse(t *testing.T) {
 }
 
 func TestEditorRefusedWhileWorking(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 
 	_, _ = promptlib.Create(config.ScopeProject, workdir, "deploy", "body")
@@ -289,7 +289,7 @@ func TestEditorRefusedWhileWorking(t *testing.T) {
 }
 
 func TestSaveAsOntoExistingNameConfirms(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 
 	_, _ = promptlib.Create(config.ScopeProject, workdir, "deploy", "original")
@@ -320,7 +320,7 @@ func TestSaveAsOntoExistingNameConfirms(t *testing.T) {
 }
 
 func TestLegacyNoticeFiresOnceAndNeverTouchesPromptsJson(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 
 	legacy := filepath.Join(workdir, ".vulnetix", "prompts.json")

@@ -4,14 +4,14 @@ import CopyButton from '../ui/CopyButton.tsx';
 import pixSentinel from '../../assets/pix/pix-sentinel.svg?raw';
 
 const sealText =
-  'Signet is a safer LLM coding harness: sealed delimiters, a security classifier embedded in the binary, fail-closed posture gates, a prompt library, a repo map, and role/mode determinism. Free and open source, Apache-2.0.';
+  'Belai is a safer LLM coding harness: sealed delimiters, a security classifier embedded in the binary, fail-closed posture gates, a prompt library, a repo map, and role/mode determinism. Free and open source, Apache-2.0.';
 ---
 
 <SealedSection label="hero" sealText={sealText} id="hero">
   <div class="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_280px]">
     <div class="prose-measure">
       <p class="boot-stage boot-stage-1 mono text-sm text-vx-mint-strong" aria-hidden="true">
-        <span class="rail-fill inline-block">▌ signet v0.39.16 · sealed</span>
+        <span class="rail-fill inline-block">▌ belai v0.39.16 · sealed</span>
       </p>
 
       <h1 class="boot-stage boot-stage-2 mt-4 text-4xl font-bold leading-tight text-vx-ink md:text-5xl">
@@ -20,22 +20,22 @@ const sealText =
 
       <p class="boot-stage boot-stage-3 mt-5 text-lg leading-relaxed text-vx-ink/80">
         Most coding harnesses pass tool output straight to the model and leave safety to whatever you
-        write into a <code class="mono">skills.md</code>. Signet includes sealed delimiters, a security
+        write into a <code class="mono">skills.md</code>. Belai includes sealed delimiters, a security
         classifier built into the binary, posture gates that block by default, a prompt library, a repo
         map, and modes that stay put once chosen. It is free and open source under Apache-2.0.
       </p>
 
       <div class="boot-stage boot-stage-4 mt-8 flex flex-wrap items-center gap-4">
         <code class="mono rounded-md border border-vx-ink bg-vx-ink px-4 py-2.5 text-vx-mint">
-          brew install vulnetix/tap/signet
+          brew install vulnetix/tap/belai
         </code>
         <CopyButton
-          value="brew install vulnetix/tap/signet"
+          value="brew install vulnetix/tap/belai"
           label="copy install command"
           client:load
         />
         <a
-          href="https://github.com/vulnetix/signet"
+          href="https://github.com/vulnetix/belai"
           class="mono rounded-md border border-vx-ink px-4 py-2.5 text-vx-ink hover:bg-vx-ink hover:text-vx-mint"
         >
           github

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/vulnetix/signet/internal/trace"
+	"github.com/vulnetix/belai/internal/trace"
 )
 
 // Decision is the permission decision for a tool invocation.

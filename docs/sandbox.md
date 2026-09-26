@@ -3,10 +3,10 @@
 **Status:** alpha-20260926. Shipped in an early form; the defaults may still
 change.
 
-Signet confines its own file tools to the workspace roots, but a command can
+Belai confines its own file tools to the workspace roots, but a command can
 reach anything your user account can. The sandbox runs those commands under an
 operating-system boundary: only the workspace roots, a private `/tmp` and the
-usual tool caches are writable, Signet's own state directory is hidden, and
+usual tool caches are writable, Belai's own state directory is hidden, and
 the network can be switched off.
 
 - [What is confined](#what-is-confined)
@@ -36,16 +36,16 @@ Inside the sandbox:
   few more, plus the directories named by `GOCACHE`, `GOMODCACHE`, `GOPATH`,
   `XDG_CACHE_HOME`, `CARGO_HOME` and `npm_config_cache`.
 - Everything else is read-only.
-- `~/.vulnetix/signet` (or `$SIGNET_HOME`), which holds credentials and
+- `~/.vulnetix/belai` (or `$BELAI_HOME`), which holds credentials and
   sessions, is hidden: the command sees an empty directory.
 - The network is available unless `network` is `deny`.
-- The command dies with Signet.
+- The command dies with Belai.
 
 ## Backends
 
 | Platform | Backend | Notes |
 | --- | --- | --- |
-| Linux | `bwrap` (bubblewrap) | needs unprivileged user namespaces; Signet checks once per run that it works |
+| Linux | `bwrap` (bubblewrap) | needs unprivileged user namespaces; Belai checks once per run that it works |
 | macOS | `sandbox-exec` | generated profile |
 | Windows, or Linux without a working `bwrap` | none | `auto` runs unsandboxed, `required` refuses |
 
@@ -84,7 +84,7 @@ the network setting, and every writable and hidden path.
 
 A write outside the allowed paths, or a network call with the network denied,
 fails inside the command as an ordinary permission or resolution error. When a
-sandboxed `Bash` command exits non-zero, Signet adds a short note of its own
+sandboxed `Bash` command exits non-zero, Belai adds a short note of its own
 saying the command ran in the sandbox and what it could not do, so the model
 asks you rather than retrying blindly.
 
@@ -92,14 +92,14 @@ asks you rather than retrying blindly.
 
 - Files a command writes to `/tmp` are gone when it exits. Use a directory
   inside the workspace to pass files between commands.
-- Your home directory stays readable (read-only) apart from Signet's state
+- Your home directory stays readable (read-only) apart from Belai's state
   directory, so a command can still read files such as `~/.ssh/config`.
 - With `network` set to `deny`, a supervised dev server is not reachable from
   your browser.
 - MCP stdio servers run in the sandbox only when their settings say
   `sandbox: true` (see [MCP servers](mcp.md)).
-- The sandbox is a boundary for the commands Signet runs. It is not a
-  substitute for running Signet itself in a container.
+- The sandbox is a boundary for the commands Belai runs. It is not a
+  substitute for running Belai itself in a container.
 
 ## Edge cases
 
@@ -108,7 +108,7 @@ asks you rather than retrying blindly.
 - A relative path in `extra_writable` is ignored.
 - An unknown `mode` means `auto`. A `network` value other than `allow`
   means `deny`.
-- Signet's state directory stays hidden even when it sits under a writable
+- Belai's state directory stays hidden even when it sits under a writable
   path.
 - bubblewrap is probed once per run. If it is installed but cannot start
   (unprivileged user namespaces off), `auto` runs unsandboxed and

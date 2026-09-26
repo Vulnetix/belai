@@ -1,4 +1,4 @@
-// Package components holds the Bubble Tea building blocks for the Signet TUI.
+// Package components holds the Bubble Tea building blocks for the Belai TUI.
 package components
 
 import (
@@ -9,9 +9,9 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/vulnetix/signet/internal/filediff"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/transcript"
+	"github.com/vulnetix/belai/internal/filediff"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/transcript"
 )
 
 // AgentToolCall records a tool call that belongs to an assistant turn. The
@@ -113,7 +113,7 @@ type Message struct {
 	ModelCallsMS []int64
 
 	// Activity records the role-manager event key for a "rolemanager" row
-	// (e.g. "security_phase"). It is persisted and shown when the signet
+	// (e.g. "security_phase"). It is persisted and shown when the belai
 	// panel is expanded so the user can see which internal activity produced
 	// the line.
 	Activity string
@@ -365,7 +365,7 @@ func IsEditTool(name string) bool { return editToolNames[name] }
 
 // renderEntry is one visual unit in the transcript layout. Most entries
 // correspond to a single message; system entries carry every adjacent system
-// notice or tool result index so they can be rendered as one signet panel.
+// notice or tool result index so they can be rendered as one belai panel.
 type renderEntry struct {
 	idxs []int  // message indices in this entry
 	kind string // "turn", "system", "reasoning", "shell"
@@ -374,7 +374,7 @@ type renderEntry struct {
 const (
 	messageMinWidth       = 32
 	assistantPreviewLines = 4
-	signetPreviewLines    = 6
+	belaiPreviewLines     = 6
 )
 
 // assistantMarkdown reports whether an assistant turn renders its body as
@@ -384,9 +384,9 @@ func assistantMarkdown(m Message) bool {
 	return m.Role == "assistant" && !m.Partial && strings.TrimSpace(m.Text()) != ""
 }
 
-// View renders the transcript: conversational turns, reasoning and signet
+// View renders the transcript: conversational turns, reasoning and belai
 // activity as flat titled panels. Tool results and system notices are nested
-// inside the signet panel. Empty assistant/user frames with no tool calls are
+// inside the belai panel. Empty assistant/user frames with no tool calls are
 // skipped so a tool-calls-only turn never renders a bare box. Framed panels
 // are separated by a blank line.
 func (m MessageList) View() string {
@@ -457,10 +457,10 @@ func (m MessageList) Render() (string, LineMap) {
 		}
 	}
 
-	// If a model panel is actively streaming, do not let signet panels
-	// interrupt it. Hoist any signet messages from the same streaming phase
+	// If a model panel is actively streaming, do not let belai panels
+	// interrupt it. Hoist any belai messages from the same streaming phase
 	// (between the previous non-system entry and the streaming turn) into a
-	// single trailing signet panel rendered after the model panel, so the
+	// single trailing belai panel rendered after the model panel, so the
 	// model panel can keep streaming characters without visual interruption.
 	entries = hoistStreamingPhaseSystems(entries, m.Messages)
 
@@ -524,11 +524,11 @@ func findStreamingAssistant(entries []renderEntry, msgs []Message) int {
 	return -1
 }
 
-// hoistStreamingPhaseSystems moves signet messages from the current streaming
+// hoistStreamingPhaseSystems moves belai messages from the current streaming
 // phase so they render after the streaming model panel. The streaming phase
 // is the run of entries from the previous non-system entry up to the end of
 // the transcript; every system entry inside that run is gathered into one
-// trailing signet panel placed immediately after the streaming turn. This
+// trailing belai panel placed immediately after the streaming turn. This
 // keeps the streaming model panel visually contiguous while still surfacing
 // notices below it.
 func hoistStreamingPhaseSystems(entries []renderEntry, msgs []Message) []renderEntry {
@@ -569,7 +569,7 @@ func hoistStreamingPhaseSystems(entries []renderEntry, msgs []Message) []renderE
 }
 
 // renderSystemGroup renders a coalesced run of adjacent system notices as one
-// signet panel, memoised on the first member.
+// belai panel, memoised on the first member.
 func (m MessageList) renderSystemGroup(idxs []int, width int) (string, LineMap, []int) {
 	first := &m.Messages[idxs[0]]
 	key := renderKeyFor(first, width, m.ExpandAll)
@@ -580,7 +580,7 @@ func (m MessageList) renderSystemGroup(idxs []int, width int) (string, LineMap, 
 	if !key.started && first.rc.key == key {
 		return first.rc.text, first.rc.lm, first.rc.owners
 	}
-	s, lm, owners := signetPanel(m.Messages, idxs, width, m.ExpandAll)
+	s, lm, owners := belaiPanel(m.Messages, idxs, width, m.ExpandAll)
 	if !key.started {
 		first.rc = renderCache{key: key, text: s, lm: lm, owners: owners}
 	}
@@ -699,7 +699,7 @@ func turnPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 	}
 	// User and assistant panels advertise the copy shortcut in their title
 	// bar, mirroring the helper text the ask/composer frame carries and the
-	// ctrl+o hint shown on collapsed signet panels.
+	// ctrl+o hint shown on collapsed belai panels.
 	if (msg.Role == "assistant" || msg.Role == "user") && !msg.Partial && strings.TrimSpace(msg.Text()) != "" {
 		if meta != "" {
 			meta += " · "

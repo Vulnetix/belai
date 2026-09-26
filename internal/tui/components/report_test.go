@@ -37,7 +37,7 @@ func TestReportPanelRendersAndCollapses(t *testing.T) {
 // and the footer keeps its fixed height.
 func TestFooterReviewLineFitsTheWidth(t *testing.T) {
 	r := &ReviewProgress{Glyph: "●", Done: 6, Total: 10, Pending: []string{"secrets", "containers", "aibom", "cbom"}, Agents: 2, Elapsed: "3m12s"}
-	for _, chips := range [][]SubagentChip{nil, {{ID: "bg:x", Label: "signet:vulnetix-scanner@sast#1", State: "running"}}} {
+	for _, chips := range [][]SubagentChip{nil, {{ID: "bg:x", Label: "belai:vulnetix-scanner@sast#1", State: "running"}}} {
 		for w := 30; w <= 140; w += 10 {
 			f := Footer{Width: w, Review: r, Subagents: chips}
 			line := f.subagentLine()

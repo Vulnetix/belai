@@ -51,13 +51,13 @@ func TestOSCSequences(t *testing.T) {
 	if err := n.Send(context.Background(), EventPermission, "Bash"); err != nil {
 		t.Fatal(err)
 	}
-	if got := buf.String(); got != "\x1b]777;notify;Signet;Permission needed for Bash\x07" {
+	if got := buf.String(); got != "\x1b]777;notify;Belai;Permission needed for Bash\x07" {
 		t.Fatalf("osc777 = %q", got)
 	}
 	buf.Reset()
 	n = New(BackendOSC, env(map[string]string{"WT_SESSION": "x", "TMUX": "/tmp/t"}, "windows"), &buf)
 	_ = n.Send(context.Background(), EventGoalDone, "")
-	if got := buf.String(); !strings.HasPrefix(got, "\x1bPtmux;\x1b\x1b]9;Signet: Goal complete") || !strings.HasSuffix(got, "\x1b\\") {
+	if got := buf.String(); !strings.HasPrefix(got, "\x1bPtmux;\x1b\x1b]9;Belai: Goal complete") || !strings.HasSuffix(got, "\x1b\\") {
 		t.Fatalf("tmux-wrapped osc9 = %q", got)
 	}
 }
@@ -82,7 +82,7 @@ func TestExternalBackendsUseFixedArgv(t *testing.T) {
 	if err := n.Send(context.Background(), EventAgentDone, "deps-go"); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"notify-send", "--app-name=Signet", "Signet", "Background agent deps-go finished"}
+	want := []string{"notify-send", "--app-name=Belai", "Belai", "Background agent deps-go finished"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("argv = %q", got)
 	}

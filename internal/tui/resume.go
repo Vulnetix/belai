@@ -8,12 +8,12 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/agent"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/modelinfo"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/session"
-	"github.com/vulnetix/signet/internal/transcript"
+	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/modelinfo"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/transcript"
 )
 
 // resumeSession loads a stored session into the running TUI. Same-project

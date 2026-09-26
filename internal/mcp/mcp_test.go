@@ -12,9 +12,9 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/jsonrpc"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/jsonrpc"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 // fakeHandler is a tiny MCP server: one echo tool with a schema carrying a
@@ -52,7 +52,7 @@ func fakeHandler(ctx context.Context, method string, params json.RawMessage) (an
 }
 
 func TestMain(m *testing.M) {
-	if os.Getenv("SIGNET_FAKE_MCP") == "1" {
+	if os.Getenv("BELAI_FAKE_MCP") == "1" {
 		c := jsonrpc.NewConn(os.Stdin, os.Stdout, fakeHandler)
 		<-c.Done()
 		os.Exit(0)
@@ -103,7 +103,7 @@ func checkEcho(t *testing.T, m *Manager) {
 
 func TestStdioServer(t *testing.T) {
 	m := Start(context.Background(), &config.MCPSettings{Servers: map[string]config.MCPServer{
-		"fake": {Command: os.Args[0], Env: map[string]string{"SIGNET_FAKE_MCP": "1"}},
+		"fake": {Command: os.Args[0], Env: map[string]string{"BELAI_FAKE_MCP": "1"}},
 	}}, Options{Workdir: t.TempDir()})
 	defer m.Close()
 	checkEcho(t, m)
@@ -183,7 +183,7 @@ func TestFailedServerOffersNoTools(t *testing.T) {
 
 func TestToolAllowlistAndErrors(t *testing.T) {
 	m := Start(context.Background(), &config.MCPSettings{Servers: map[string]config.MCPServer{
-		"fake": {Command: os.Args[0], Env: map[string]string{"SIGNET_FAKE_MCP": "1"}, Tools: []string{"fail"}},
+		"fake": {Command: os.Args[0], Env: map[string]string{"BELAI_FAKE_MCP": "1"}, Tools: []string{"fail"}},
 	}}, Options{})
 	defer m.Close()
 	ts := m.Tools()

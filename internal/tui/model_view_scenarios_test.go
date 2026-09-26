@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/mlclassify"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/mlclassify"
 )
 
 // variantHasEmbeddedPhase2 reports whether this build variant embeds the

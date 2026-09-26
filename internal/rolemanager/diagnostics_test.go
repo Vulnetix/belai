@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/lsp"
-	"github.com/vulnetix/signet/internal/nonce"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/lsp"
+	"github.com/vulnetix/belai/internal/nonce"
 )
 
 type fakeDiagnoser struct {

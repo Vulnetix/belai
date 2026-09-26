@@ -3,7 +3,7 @@
 **Status:** alpha-20260926. Shipped in an early form; span and metric names
 may still change.
 
-Signet can send traces and metrics to an OpenTelemetry collector over OTLP, so
+Belai can send traces and metrics to an OpenTelemetry collector over OTLP, so
 teams can see turn latency, token use, tool calls and classifier decisions in
 the observability stack they already run. It carries facts about the session,
 never its content.
@@ -20,10 +20,10 @@ Spans:
 
 | Span | Attributes |
 | --- | --- |
-| `signet.turn` | `signet.mode`, `signet.outcome` (`ok`, `cancelled`, `refused`, `hook_blocked`, `error`), `signet.passes` |
-| `signet.tool_call` | `signet.tool.name`, `signet.tool.kind`, `signet.outcome` (`ok`, `denied`, `hook_denied`, `classified_unsafe`, `withheld`, `rejected`) |
+| `belai.turn` | `belai.mode`, `belai.outcome` (`ok`, `cancelled`, `refused`, `hook_blocked`, `error`), `belai.passes` |
+| `belai.tool_call` | `belai.tool.name`, `belai.tool.kind`, `belai.outcome` (`ok`, `denied`, `hook_denied`, `classified_unsafe`, `withheld`, `rejected`) |
 
-Both use the session's trace id, the same one Signet already sends in
+Both use the session's trace id, the same one Belai already sends in
 `traceparent` headers and passes to child processes as `TRACEPARENT`, so a
 gateway or tool that also reports to the collector joins the same trace.
 
@@ -31,18 +31,18 @@ Metrics (cumulative):
 
 | Metric | Type | Attributes |
 | --- | --- | --- |
-| `signet.tokens` | counter | `signet.provider`, `signet.model`, `signet.tokens.estimated` |
-| `signet.model_calls` | counter | `signet.provider`, `signet.model` |
-| `signet.tool_calls` | counter | `signet.tool.kind`, `signet.outcome` |
-| `signet.role_decisions` | counter | `signet.role` (the role-manager decision, such as `security_sentinel` or `mode_classify`), `signet.verdict` |
-| `signet.hook_runs`, `signet.hook_failures` | counter | `signet.hook.event`, `signet.decision` |
-| `signet.turn.duration` | histogram, seconds | `signet.mode`, `signet.outcome` |
+| `belai.tokens` | counter | `belai.provider`, `belai.model`, `belai.tokens.estimated` |
+| `belai.model_calls` | counter | `belai.provider`, `belai.model` |
+| `belai.tool_calls` | counter | `belai.tool.kind`, `belai.outcome` |
+| `belai.role_decisions` | counter | `belai.role` (the role-manager decision, such as `security_sentinel` or `mode_classify`), `belai.verdict` |
+| `belai.hook_runs`, `belai.hook_failures` | counter | `belai.hook.event`, `belai.decision` |
+| `belai.turn.duration` | histogram, seconds | `belai.mode`, `belai.outcome` |
 
-Resource attributes: `service.name=signet`, `service.version`, and
-`signet.project`, a hash of the project path.
+Resource attributes: `service.name=belai`, `service.version`, and
+`belai.project`, a hash of the project path.
 
 Export covers the TUI, background agents, headless `-prompt` runs and
-`signet acp`.
+`belai acp`.
 
 ## What is never exported
 
@@ -85,12 +85,12 @@ your session facts are sent would be an exfiltration path, so `resolve.go`
 drops the whole key from project settings.
 
 Export is batched on a background goroutine every 10 seconds and flushed when
-Signet exits. If the collector is slow or down, data is dropped rather than
+Belai exits. If the collector is slow or down, data is dropped rather than
 slowing a turn, and at most 4096 spans wait between exports.
 
 ## Relationship to the local trace
 
-`SIGNET_TRACE=<file>` keeps working and writes the local JSONL timing trace
+`BELAI_TRACE=<file>` keeps working and writes the local JSONL timing trace
 described in [development](development.md). OpenTelemetry export is separate
 and can be on at the same time.
 

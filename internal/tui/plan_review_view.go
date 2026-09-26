@@ -12,13 +12,13 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/charmbracelet/bubbles/viewport"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/filediff"
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/plans"
-	"github.com/vulnetix/signet/internal/session"
-	"github.com/vulnetix/signet/internal/todos"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/filediff"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/plans"
+	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/todos"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // Plan-review actions, in render order.

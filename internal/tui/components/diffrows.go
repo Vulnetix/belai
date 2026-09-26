@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 
-	"github.com/vulnetix/signet/internal/filediff"
+	"github.com/vulnetix/belai/internal/filediff"
 )
 
 // A diff row is laid out as

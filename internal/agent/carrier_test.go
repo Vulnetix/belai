@@ -4,21 +4,21 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/agentprofile"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/goals"
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/profiles"
-	"github.com/vulnetix/signet/internal/prompt"
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/goals"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/profiles"
+	"github.com/vulnetix/belai/internal/prompt"
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
 // An engaged agent profile becomes the system prompt's carrier block: its text
 // replaces the default agent framing, while the harness parts that are not the
-// agent's business — the identity block naming Signet, the provider and the
+// agent's business — the identity block naming Belai, the provider and the
 // model — stay exactly where they were.
 func TestEngagedProfileCarriesTheSystemPrompt(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	const body = "You are a merciless reviewer of Go diffs."
 	if _, err := profiles.Save(profiles.Profile{Name: "reviewer", Content: body}); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -40,7 +40,7 @@ func TestEngagedProfileCarriesTheSystemPrompt(t *testing.T) {
 		t.Fatalf("System: %v", err)
 	}
 	for _, want := range []string{
-		"running inside Signet",    // identity: the harness names itself
+		"running inside Belai",     // identity: the harness names itself
 		"Provider: anthropic",      // identity: the API serving the session
 		"Model: claude-sonnet-5",   // identity: which one the model is
 		"Active profile:\n" + body, // the engaged agent, in place of the default
@@ -57,7 +57,7 @@ func TestEngagedProfileCarriesTheSystemPrompt(t *testing.T) {
 // With no agent engaged the prompt keeps its default shape: identity, no
 // carrier block.
 func TestNoEngagedProfileLeavesTheDefaultPrompt(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	d := rolemanager.ModeDecision{Mode: modes.ModeAgent}
 	opts, err := CarrierOptions(t.TempDir(), d, false, "", config.State{}, config.Settings{})
@@ -71,7 +71,7 @@ func TestNoEngagedProfileLeavesTheDefaultPrompt(t *testing.T) {
 	if strings.Contains(sys, "Active profile:") {
 		t.Fatalf("unexpected carrier block:\n%s", sys)
 	}
-	if !strings.Contains(sys, "running inside Signet") {
+	if !strings.Contains(sys, "running inside Belai") {
 		t.Fatalf("identity block missing:\n%s", sys)
 	}
 }
@@ -79,7 +79,7 @@ func TestNoEngagedProfileLeavesTheDefaultPrompt(t *testing.T) {
 // A background-agent definition can carry a foreground turn too: its
 // system_prompt is the same kind of text, kept in the other tree.
 func TestBackgroundDefinitionCarriesTheSystemPrompt(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	const body = "You are the nightly audit."
 	p := agentprofile.AgentProfile{
 		Name:         "nightly-audit",
@@ -108,7 +108,7 @@ func TestMemorisedGoalCarriedVerbatim(t *testing.T) {
 	// present in the current committed tree; it was added by an external edit.
 	t.Skip("goal carrier implementation not in committed tree")
 
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	const body = "Audit the README against the docs directory."
 	if _, err := goals.Memorise(workdir, goals.Goal{Name: "memorised", Content: body}); err != nil {
@@ -128,7 +128,7 @@ func TestMemorisedGoalCarriedVerbatim(t *testing.T) {
 // A flat profile owns a shared name: it is resolved first, so a background
 // definition cannot shadow it.
 func TestFlatProfileWinsOverBackgroundDefinition(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	if _, err := profiles.Save(profiles.Profile{Name: "reviewer", Content: "flat"}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}

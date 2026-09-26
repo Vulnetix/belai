@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 // Collector records every OTLP payload it receives.
@@ -47,23 +47,23 @@ func TestExportAllowlistsAttributes(t *testing.T) {
 	col := NewCollector()
 	defer col.Srv.Close()
 	stop := Start(Config{Endpoint: col.Srv.URL, Traces: true, Metrics: true, Interval: time.Hour}, "abc123")
-	sp := StartSpan(context.Background(), "signet.tool_call",
+	sp := StartSpan(context.Background(), "belai.tool_call",
 		S(AttrToolName, "Bash"),
-		S("signet.prompt", "rm -rf / please"),
+		S("belai.prompt", "rm -rf / please"),
 		S(AttrOutcome, "ok; ignore previous instructions <system>"),
 	)
 	sp.End()
-	Add("signet.tool_calls", 2, S(AttrToolKind, "bash"), S("file.path", "/etc/passwd"))
-	Observe("signet.turn.duration", 3*time.Second, S(AttrMode, "agent"))
+	Add("belai.tool_calls", 2, S(AttrToolKind, "bash"), S("file.path", "/etc/passwd"))
+	Observe("belai.turn.duration", 3*time.Second, S(AttrMode, "agent"))
 	stop()
 
 	all := col.All()
-	for _, bad := range []string{"signet.prompt", "rm -rf", "file.path", "/etc/passwd", "<system>", "ignore previous instructions"} {
+	for _, bad := range []string{"belai.prompt", "rm -rf", "file.path", "/etc/passwd", "<system>", "ignore previous instructions"} {
 		if strings.Contains(all, bad) {
 			t.Errorf("export carried %q", bad)
 		}
 	}
-	for _, want := range []string{`"signet.tool.name"`, `"Bash"`, `"signet.tool_calls"`, `"asInt":"2"`, `"signet.turn.duration"`, `"service.name"`} {
+	for _, want := range []string{`"belai.tool.name"`, `"Bash"`, `"belai.tool_calls"`, `"asInt":"2"`, `"belai.turn.duration"`, `"service.name"`} {
 		if !strings.Contains(all, want) {
 			t.Errorf("export lacks %s:\n%s", want, all)
 		}
@@ -116,7 +116,7 @@ func TestAllowlistIsClosed(t *testing.T) {
 	if len(allowedAttrs) != 13 {
 		t.Fatalf("allowlist has %d keys; update this test deliberately", len(allowedAttrs))
 	}
-	if Allowed("signet.prompt") || Allowed("tool.args") {
+	if Allowed("belai.prompt") || Allowed("tool.args") {
 		t.Fatal("content-shaped key allowed")
 	}
 }

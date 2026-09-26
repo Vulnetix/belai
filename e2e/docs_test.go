@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 // docFiles returns every markdown file the repository ships, paired with its
@@ -145,7 +145,7 @@ func TestDocCodePathsExist(t *testing.T) {
 	}
 }
 
-// Signet binds no alt chord, because one cannot reach the TUI: under the kitty
+// Belai binds no alt chord, because one cannot reach the TUI: under the kitty
 // keyboard protocol a ctrl+alt+<key> event collapses onto the same legacy
 // control code as ctrl+<key>, and without that protocol alt is an ESC prefix
 // that terminals and multiplexers swallow. Documenting one would promise a key

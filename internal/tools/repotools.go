@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/repoindex"
+	"github.com/vulnetix/belai/internal/repoindex"
 )
 
 // repoTools builds the two repository tools that shell out (RepoFiles: git,

@@ -18,8 +18,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vulnetix/signet/internal/httpclient"
-	"github.com/vulnetix/signet/internal/version"
+	"github.com/vulnetix/belai/internal/httpclient"
+	"github.com/vulnetix/belai/internal/version"
 )
 
 // ErrUnsupported is returned when a provider does not implement the nonce GET

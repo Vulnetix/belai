@@ -2,7 +2,7 @@
 // across sessions via config/state.
 package modelselect
 
-import "github.com/vulnetix/signet/internal/config"
+import "github.com/vulnetix/belai/internal/config"
 
 // Selection is a model + effort/thinking level choice.
 type Selection struct {

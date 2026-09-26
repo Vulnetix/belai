@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/todos"
+	"github.com/vulnetix/belai/internal/todos"
 )
 
 // UpdatePlan is the trained checklist-progress tool (Codex's update_plan). It
@@ -16,7 +16,7 @@ import (
 type UpdatePlan struct{}
 
 // Definition describes the tool to the model. It deliberately documents the
-// divergence from Codex: signet accepts update_plan inside plan mode too,
+// divergence from Codex: belai accepts update_plan inside plan mode too,
 // because its plan pass loop already tracks a planning checklist.
 func (UpdatePlan) Definition() Definition {
 	return Definition{

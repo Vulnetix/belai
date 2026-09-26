@@ -3,8 +3,8 @@ package tui
 import (
 	"time"
 
-	"github.com/vulnetix/signet/internal/session"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // Transcript timing. The session file used to be stamped when a turn's rows

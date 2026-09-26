@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/provider"
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/provider"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 // kind is the wire shape a provider speaks for this (provider, model) pair.
@@ -133,9 +133,9 @@ func (d dialect) UsesEffort() bool {
 }
 
 // envVarForProvider returns the conventional environment variable holding a
-// custom provider's API key: SIGNET_<UPPER_SNAKE_NAME>_API_KEY.
+// custom provider's API key: BELAI_<UPPER_SNAKE_NAME>_API_KEY.
 func envVarForProvider(providerName string) string {
-	return "SIGNET_" + upperSnake(providerName) + "_API_KEY"
+	return "BELAI_" + upperSnake(providerName) + "_API_KEY"
 }
 
 func upperSnake(s string) string {

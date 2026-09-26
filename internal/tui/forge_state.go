@@ -10,8 +10,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/forge"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/forge"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // forgeState caches the last git/forge probe behind the runs panel's git and

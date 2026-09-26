@@ -3,7 +3,7 @@ package skills
 import (
 	"testing"
 
-	"github.com/vulnetix/signet/internal/posture"
+	"github.com/vulnetix/belai/internal/posture"
 )
 
 func TestValidateWithPostureIgnore(t *testing.T) {

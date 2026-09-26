@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/session"
+	"github.com/vulnetix/belai/internal/session"
 )
 
 func testdataPath(t *testing.T, name string) string {
@@ -41,7 +41,7 @@ func TestClaudeAdapter(t *testing.T) {
 	if src.SessionID != "aaaa1111-2222-3333-4444-555566667777" {
 		t.Fatalf("SessionID = %q", src.SessionID)
 	}
-	if src.Project != "/home/u/proj/signet" {
+	if src.Project != "/home/u/proj/belai" {
 		t.Fatalf("Project = %q", src.Project)
 	}
 
@@ -88,7 +88,7 @@ func TestCodexAdapterCwdOnlyOnLineOne(t *testing.T) {
 	if src.SessionID != "bbbb1111-2222-3333-4444-555566667777" {
 		t.Fatalf("SessionID = %q", src.SessionID)
 	}
-	if src.Project != "/home/u/proj/signet" {
+	if src.Project != "/home/u/proj/belai" {
 		t.Fatalf("Project = %q (cwd must come from line 1 only)", src.Project)
 	}
 
@@ -116,7 +116,7 @@ func TestPiAdapterCwdOnlyOnLineOne(t *testing.T) {
 	if src.SessionID != "cccc1111-2222-3333-4444-555566667777" {
 		t.Fatalf("SessionID = %q", src.SessionID)
 	}
-	if src.Project != "/home/u/proj/signet" {
+	if src.Project != "/home/u/proj/belai" {
 		t.Fatalf("Project = %q", src.Project)
 	}
 
@@ -132,13 +132,13 @@ func TestPiAdapterCwdOnlyOnLineOne(t *testing.T) {
 	}
 }
 
-func TestSignetAdapter(t *testing.T) {
+func TestBelaiAdapter(t *testing.T) {
 	root := t.TempDir()
-	keyDir := filepath.Join(root, "signet-275e7780")
+	keyDir := filepath.Join(root, "belai-275e7780")
 	if err := os.MkdirAll(keyDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(testdataPath(t, "signet.jsonl"))
+	data, err := os.ReadFile(testdataPath(t, "belai.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestSignetAdapter(t *testing.T) {
 	}
 
 	store := session.NewStoreAt(root)
-	a := signetAdapter{store: store}
+	a := belaiAdapter{store: store}
 	srcs, err := a.Sources(filepath.Join(keyDir, id+".jsonl"))
 	if err != nil {
 		t.Fatalf("Sources: %v", err)
@@ -157,7 +157,7 @@ func TestSignetAdapter(t *testing.T) {
 	if src.SessionID != id {
 		t.Fatalf("SessionID = %q", src.SessionID)
 	}
-	if src.Project != "/home/u/proj/signet" {
+	if src.Project != "/home/u/proj/belai" {
 		t.Fatalf("Project = %q", src.Project)
 	}
 
@@ -180,7 +180,7 @@ func TestPromptsAdapters(t *testing.T) {
 	for _, c := range []struct {
 		file, agent, id, project string
 	}{
-		{"prompts-claude.jsonl", "claude-code", "dddd1111-2222-3333-4444-555566667777", "/home/u/proj/signet"},
+		{"prompts-claude.jsonl", "claude-code", "dddd1111-2222-3333-4444-555566667777", "/home/u/proj/belai"},
 		{"prompts-codex.jsonl", "codex", "eeee1111-2222-3333-4444-555566667777", ""},
 	} {
 		a := promptsAdapter{}

@@ -30,7 +30,7 @@ type State struct {
 	ActiveSession string `json:"active_session,omitempty"`
 }
 
-// LoadState reads ~/.signet/state.json. A missing file yields zero-value
+// LoadState reads ~/.belai/state.json. A missing file yields zero-value
 // state with no error.
 func LoadState() (State, error) {
 	path, err := GlobalStatePath()
@@ -51,7 +51,7 @@ func LoadState() (State, error) {
 	return st, nil
 }
 
-// SaveState writes state to ~/.signet/state.json, creating directories as
+// SaveState writes state to ~/.belai/state.json, creating directories as
 // needed.
 func SaveState(st State) error {
 	path, err := GlobalStatePath()

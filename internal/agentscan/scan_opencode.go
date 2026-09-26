@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 
-	"github.com/vulnetix/signet/internal/provider"
+	"github.com/vulnetix/belai/internal/provider"
 )
 
 func scanOpenCode(home string) []Found {

@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/activity"
-	"github.com/vulnetix/signet/internal/httpclient"
-	"github.com/vulnetix/signet/internal/proc"
+	"github.com/vulnetix/belai/internal/activity"
+	"github.com/vulnetix/belai/internal/httpclient"
+	"github.com/vulnetix/belai/internal/proc"
 )
 
 // Binary is a launchable local inference server.

@@ -1,7 +1,7 @@
 package rolemanager
 
 import (
-	"github.com/vulnetix/signet/internal/modes"
+	"github.com/vulnetix/belai/internal/modes"
 )
 
 // Intent is the detected user intent for a turn. Intents map onto the three
@@ -48,15 +48,15 @@ func (i Intent) Decision(handoff *HandoffFacts) ModeDecision {
 	case IntentHandoff:
 		return ModeDecision{
 			Mode:          modes.ModeAgent,
-			AgentName:     "signet:plan-handoff",
+			AgentName:     "belai:plan-handoff",
 			AppendCarrier: true,
 			Intent:        i,
 			Handoff:       handoff,
 		}
 	case IntentDebug:
-		return ModeDecision{Mode: modes.ModeAgent, AgentName: "signet:debug", AppendCarrier: true, Intent: i}
+		return ModeDecision{Mode: modes.ModeAgent, AgentName: "belai:debug", AppendCarrier: true, Intent: i}
 	case IntentFanOut:
-		return ModeDecision{Mode: modes.ModeAgent, AgentName: "signet:fanout", AppendCarrier: true, Intent: i}
+		return ModeDecision{Mode: modes.ModeAgent, AgentName: "belai:fanout", AppendCarrier: true, Intent: i}
 	default: // IntentAgent and any unknown intent
 		return ModeDecision{Mode: modes.ModeAgent, Intent: i}
 	}

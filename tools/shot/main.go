@@ -1,4 +1,4 @@
-// Command shot renders Signet's TUI surfaces headlessly and writes them as
+// Command shot renders Belai's TUI surfaces headlessly and writes them as
 // TrueColor ANSI captures for the marketing site. It imports
 // internal/tui/components (never internal/tui) so it can reuse the exact
 // theme palette and panel primitives the real TUI draws with, without driving
@@ -22,8 +22,8 @@ import (
 	"github.com/creack/pty"
 	"github.com/muesli/termenv"
 
-	"github.com/vulnetix/signet/internal/filediff"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/filediff"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 const width = 100
@@ -163,7 +163,7 @@ func footer() string {
 		Mode:         "agent",
 		Agent:        "default",
 		Width:        width,
-		Cwd:          "/home/chris/GitHub/signet",
+		Cwd:          "/home/chris/GitHub/belai",
 		Branch:       "main",
 		Guardrails:   true,
 		Ask:          true,
@@ -200,7 +200,7 @@ func agentTurn() string {
 		Role:       "tool",
 		ToolName:   "Bash",
 		Status:     "✓",
-		Content:    "internal/tools/read.go\nok  \tgithub.com/vulnetix/signet/internal/tools\t1.2s",
+		Content:    "internal/tools/read.go\nok  \tgithub.com/vulnetix/belai/internal/tools\t1.2s",
 		ToolCallID: "call_1",
 	}
 
@@ -241,9 +241,9 @@ func planReview() string {
 func approvalDiff() string {
 	old := "package main\n\nfunc main() {\n\tprintln(\"hello\")\n}\n"
 	new := "package main\n\nfunc main() {\n\tprintln(\"hello, sealed\")\n}\n"
-	ch := filediff.Preview("cmd/signet/main.go", old, new)
+	ch := filediff.Preview("cmd/belai/main.go", old, new)
 
-	head := components.SectionHeader("approve edit?", "Write · cmd/signet/main.go", width)
+	head := components.SectionHeader("approve edit?", "Write · cmd/belai/main.go", width)
 	diff := components.DiffView(&ch, width)
 	prompt := components.Panel{
 		Title: "diff",
@@ -365,7 +365,7 @@ func exitCard() string {
 		Tokens:    "48,102",
 		Model:     "claude-sonnet-4-5",
 		Provider:  "anthropic",
-		Path:      "/home/chris/GitHub/signet",
+		Path:      "/home/chris/GitHub/belai",
 		Width:     width,
 	}
 	return c.View()
@@ -409,7 +409,7 @@ func modelRow(name, meta string, selected bool) string {
 func budgets() string {
 	head := components.SectionHeader("Token budgets", "esc back", width)
 	chip := components.Chip("global", components.ColorTealSoft) + "  " +
-		components.MutedStyle.Render("~/.vulnetix/signet/settings.json") + "\n\n"
+		components.MutedStyle.Render("~/.vulnetix/belai/settings.json") + "\n\n"
 	row := func(selected bool, scope, limit, used string, g components.BudgetGauge, timeLeft string) string {
 		style := lipgloss.NewStyle().Foreground(g.Colour())
 		label := fmt.Sprintf("%-8s", scope)

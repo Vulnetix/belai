@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 // Goal is a named goal document.

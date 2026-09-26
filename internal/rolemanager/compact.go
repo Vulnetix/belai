@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/sanitize"
+	"github.com/vulnetix/belai/internal/sanitize"
 )
 
 // compactionSystemPrompt instructs the classifier to summarise a conversation

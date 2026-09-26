@@ -83,7 +83,7 @@ func TestShellPanelCollapsesToTheTail(t *testing.T) {
 }
 
 // TestShellPanelIsNotToolChatter: the panel ignores the ctrl+t gate and never
-// folds into the signet panel beside it.
+// folds into the belai panel beside it.
 func TestShellPanelIsNotToolChatter(t *testing.T) {
 	msgs := []Message{
 		{Role: "system", Content: "a notice"},

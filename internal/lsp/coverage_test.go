@@ -78,7 +78,7 @@ func TestDetect(t *testing.T) {
 		t.Fatalf("Detect(empty) = (%q, %v), want (\"\", false)", got, ok)
 	}
 	// nil probe falls back to a real PATH lookup of a non-existent binary.
-	if got, ok := Detect(ctx, nil, "definitely-not-a-real-signet-binary", nil); ok || got != "" {
+	if got, ok := Detect(ctx, nil, "definitely-not-a-real-belai-binary", nil); ok || got != "" {
 		t.Fatalf("Detect(nil probe) = (%q, %v), want (\"\", false)", got, ok)
 	}
 }

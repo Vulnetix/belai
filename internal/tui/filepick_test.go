@@ -172,7 +172,7 @@ func TestFilePickerEscDismissesAndTypingReopens(t *testing.T) {
 }
 
 func TestFilePickerAgentSchemeIsNotAgentPicker(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := NewApp(t.TempDir(), "")
 	a.mode = "agent"
 	setFileList(a, "internal/agent/agent.go")

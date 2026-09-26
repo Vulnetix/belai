@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/version"
-	"github.com/vulnetix/signet/internal/vulnetixcli"
+	"github.com/vulnetix/belai/internal/version"
+	"github.com/vulnetix/belai/internal/vulnetixcli"
 )
 
 // releaseServer serves one GitHub releases/latest payload and counts hits.
@@ -22,12 +22,12 @@ func releaseServer(t *testing.T, tag string, hits *int) *httptest.Server {
 		if hits != nil {
 			*hits++
 		}
-		if !strings.HasSuffix(r.URL.Path, "/repos/Vulnetix/signet/releases/latest") {
+		if !strings.HasSuffix(r.URL.Path, "/repos/Vulnetix/belai/releases/latest") {
 			t.Errorf("unexpected path %q", r.URL.Path)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"tag_name": tag,
-			"html_url": "https://github.com/Vulnetix/signet/releases/tag/" + tag,
+			"html_url": "https://github.com/Vulnetix/belai/releases/tag/" + tag,
 		})
 	}))
 	t.Cleanup(srv.Close)
@@ -52,12 +52,12 @@ func baseOpts(t *testing.T, srv *httptest.Server) Options {
 	t.Helper()
 	return Options{
 		Getenv: func(k string) string {
-			if k == "SIGNET_GITHUB_API_BASE" {
+			if k == "BELAI_GITHUB_API_BASE" {
 				return srv.URL
 			}
 			return ""
 		},
-		CachePath: filepath.Join(t.TempDir(), "signet-release.json"),
+		CachePath: filepath.Join(t.TempDir(), "belai-release.json"),
 		GOOS:      "linux",
 		GOARCH:    "amd64",
 	}
@@ -67,7 +67,7 @@ func TestCheckReportsNewerRelease(t *testing.T) {
 	srv := releaseServer(t, "v9.9.9", nil)
 	opts := baseOpts(t, srv)
 	opts.Current = "v0.1.1"
-	opts.ExecPath = fakeBinary(t, "usr/local/bin/signet")
+	opts.ExecPath = fakeBinary(t, "usr/local/bin/belai")
 
 	st := Check(context.Background(), opts)
 	if st.Error != "" {
@@ -83,7 +83,7 @@ func TestCheckReportsNewerRelease(t *testing.T) {
 		t.Fatalf("BannerNote = %q", note)
 	}
 	notice := st.Notice()
-	for _, want := range []string{"v9.9.9", "v0.1.1", "install.sh", "signet-linux-amd64"} {
+	for _, want := range []string{"v9.9.9", "v0.1.1", "install.sh", "belai-linux-amd64"} {
 		if !strings.Contains(notice, want) {
 			t.Fatalf("Notice = %q, missing %q", notice, want)
 		}
@@ -94,7 +94,7 @@ func TestCheckUpToDate(t *testing.T) {
 	srv := releaseServer(t, "v0.1.1", nil)
 	opts := baseOpts(t, srv)
 	opts.Current = "v0.1.1"
-	opts.ExecPath = fakeBinary(t, "usr/local/bin/signet")
+	opts.ExecPath = fakeBinary(t, "usr/local/bin/belai")
 
 	st := Check(context.Background(), opts)
 	if !st.Checked {
@@ -128,13 +128,13 @@ func TestCheckNetworkFailureIsSilent(t *testing.T) {
 		Current:   "v0.1.1",
 		CachePath: filepath.Join(t.TempDir(), "cache.json"),
 		Getenv: func(k string) string {
-			if k == "SIGNET_GITHUB_API_BASE" {
+			if k == "BELAI_GITHUB_API_BASE" {
 				return "http://127.0.0.1:1"
 			}
 			return ""
 		},
 		Client:   &http.Client{Timeout: 500 * time.Millisecond},
-		ExecPath: fakeBinary(t, "usr/local/bin/signet"),
+		ExecPath: fakeBinary(t, "usr/local/bin/belai"),
 	}
 	st := Check(context.Background(), opts)
 	if st.Available {
@@ -153,7 +153,7 @@ func TestCacheAvoidsSecondRequest(t *testing.T) {
 	srv := releaseServer(t, "v9.9.9", &hits)
 	opts := baseOpts(t, srv)
 	opts.Current = "v0.1.1"
-	opts.ExecPath = fakeBinary(t, "usr/local/bin/signet")
+	opts.ExecPath = fakeBinary(t, "usr/local/bin/belai")
 
 	if st := Check(context.Background(), opts); !st.Available {
 		t.Fatal("first check: Available = false")
@@ -186,18 +186,18 @@ func TestUpgradeHintPerInstallMethod(t *testing.T) {
 		wantCmd  string
 		wantAsst string
 	}{
-		{vulnetixcli.InstallBrew, "darwin", "brew upgrade --formula vulnetix/tap/signet", ""},
-		{vulnetixcli.InstallScoop, "windows", "scoop update signet", ""},
-		{vulnetixcli.InstallGo, "linux", "go install github.com/vulnetix/signet/cmd/signet@latest", ""},
+		{vulnetixcli.InstallBrew, "darwin", "brew upgrade --formula vulnetix/tap/belai", ""},
+		{vulnetixcli.InstallScoop, "windows", "scoop update belai", ""},
+		{vulnetixcli.InstallGo, "linux", "go install github.com/vulnetix/belai/cmd/belai@latest", ""},
 		{
 			vulnetixcli.InstallDirect, "linux",
-			"curl -fsSL https://raw.githubusercontent.com/Vulnetix/signet/main/install.sh | sh",
-			"https://github.com/Vulnetix/signet/releases/download/v9.9.9/signet-linux-arm64",
+			"curl -fsSL https://raw.githubusercontent.com/Vulnetix/belai/main/install.sh | sh",
+			"https://github.com/Vulnetix/belai/releases/download/v9.9.9/belai-linux-arm64",
 		},
 		{
 			vulnetixcli.InstallUnknown, "windows",
-			"download https://github.com/Vulnetix/signet/releases/download/v9.9.9/signet-windows-arm64.exe",
-			"https://github.com/Vulnetix/signet/releases/download/v9.9.9/signet-windows-arm64.exe",
+			"download https://github.com/Vulnetix/belai/releases/download/v9.9.9/belai-windows-arm64.exe",
+			"https://github.com/Vulnetix/belai/releases/download/v9.9.9/belai-windows-arm64.exe",
 		},
 	}
 	for _, tc := range cases {
@@ -217,13 +217,13 @@ func TestCheckDetectsBrewInstall(t *testing.T) {
 	opts.Current = "v0.1.1"
 	opts.GOOS = "darwin"
 	opts.GOARCH = "arm64"
-	opts.ExecPath = fakeBinary(t, "opt/homebrew/Cellar/signet/0.1.1/bin/signet")
+	opts.ExecPath = fakeBinary(t, "opt/homebrew/Cellar/belai/0.1.1/bin/belai")
 
 	st := Check(context.Background(), opts)
 	if st.Method != vulnetixcli.InstallBrew {
 		t.Fatalf("Method = %q, want brew", st.Method)
 	}
-	if !strings.Contains(st.Notice(), "brew upgrade --formula vulnetix/tap/signet") {
+	if !strings.Contains(st.Notice(), "brew upgrade --formula vulnetix/tap/belai") {
 		t.Fatalf("Notice = %q", st.Notice())
 	}
 	if strings.Contains(st.Notice(), "releases/download") {
@@ -234,14 +234,14 @@ func TestCheckDetectsBrewInstall(t *testing.T) {
 func TestEnabled(t *testing.T) {
 	env := func(v string) func(string) string {
 		return func(k string) string {
-			if k == "SIGNET_NO_UPDATE_CHECK" {
+			if k == "BELAI_NO_UPDATE_CHECK" {
 				return v
 			}
 			return ""
 		}
 	}
 	if Enabled(env("1"), true) {
-		t.Error("SIGNET_NO_UPDATE_CHECK=1 must disable the check")
+		t.Error("BELAI_NO_UPDATE_CHECK=1 must disable the check")
 	}
 	if Enabled(env(""), false) {
 		t.Error("the settings opt-out must disable the check")
@@ -252,10 +252,10 @@ func TestEnabled(t *testing.T) {
 }
 
 func TestAssetURL(t *testing.T) {
-	if got := AssetURL("v1.2.3", "linux", "amd64"); got != "https://github.com/Vulnetix/signet/releases/download/v1.2.3/signet-linux-amd64" {
+	if got := AssetURL("v1.2.3", "linux", "amd64"); got != "https://github.com/Vulnetix/belai/releases/download/v1.2.3/belai-linux-amd64" {
 		t.Fatalf("AssetURL = %q", got)
 	}
-	if got := AssetURL("v1.2.3", "windows", "amd64"); !strings.HasSuffix(got, "signet-windows-amd64.exe") {
+	if got := AssetURL("v1.2.3", "windows", "amd64"); !strings.HasSuffix(got, "belai-windows-amd64.exe") {
 		t.Fatalf("AssetURL = %q", got)
 	}
 }
@@ -264,10 +264,10 @@ func TestAssetURLVariant(t *testing.T) {
 	orig := version.Variant
 	version.Variant = "bert-guardrails"
 	defer func() { version.Variant = orig }()
-	if got := AssetURL("v1.2.3", "linux", "amd64"); got != "https://github.com/Vulnetix/signet/releases/download/v1.2.3/signet-bert-guardrails-linux-amd64" {
+	if got := AssetURL("v1.2.3", "linux", "amd64"); got != "https://github.com/Vulnetix/belai/releases/download/v1.2.3/belai-bert-guardrails-linux-amd64" {
 		t.Fatalf("AssetURL = %q", got)
 	}
-	if got := AssetURL("v1.2.3", "windows", "arm64"); !strings.HasSuffix(got, "signet-bert-guardrails-windows-arm64.exe") {
+	if got := AssetURL("v1.2.3", "windows", "arm64"); !strings.HasSuffix(got, "belai-bert-guardrails-windows-arm64.exe") {
 		t.Fatalf("AssetURL = %q", got)
 	}
 }
@@ -277,7 +277,7 @@ func TestCheckSkipsDirtyWorkingTreeBuild(t *testing.T) {
 	srv := releaseServer(t, "v0.42.2", &hits)
 	opts := baseOpts(t, srv)
 	opts.Current = "v0.42.2-dirty"
-	opts.ExecPath = fakeBinary(t, "usr/local/bin/signet")
+	opts.ExecPath = fakeBinary(t, "usr/local/bin/belai")
 
 	st := Check(context.Background(), opts)
 	if st.Checked || st.Available {

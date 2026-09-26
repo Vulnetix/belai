@@ -10,7 +10,7 @@ import (
 )
 
 func TestLatestRelease(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	wantVersion := "3.108.0"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/repos/Vulnetix/cli/releases/latest" {
@@ -21,9 +21,9 @@ func TestLatestRelease(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("SIGNET_GITHUB_API_BASE", srv.URL)
+	t.Setenv("BELAI_GITHUB_API_BASE", srv.URL)
 	getenv := func(k string) string {
-		if k == "SIGNET_GITHUB_API_BASE" {
+		if k == "BELAI_GITHUB_API_BASE" {
 			return srv.URL
 		}
 		return ""
@@ -41,7 +41,7 @@ func TestLatestRelease(t *testing.T) {
 }
 
 func TestReleaseCacheUsedWithinTTL(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("server should not be contacted while cache is fresh")
 	}))

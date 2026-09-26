@@ -9,7 +9,7 @@ const validDoc = `---
 name: code-reviewer
 description: Reviews code for security issues
 license: Apache-2.0
-compatibility: signet>=0.1
+compatibility: belai>=0.1
 metadata: {"icon":"shield"}
 allowed-tools: [read, bash]
 disable-model-invocation: true

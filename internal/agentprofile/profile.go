@@ -1,5 +1,5 @@
 // Package agentprofile manages user-built agent profiles stored under
-// ~/.signet/profiles/agents/. Profiles are richer than the flat prompt
+// ~/.belai/profiles/agents/. Profiles are richer than the flat prompt
 // profiles used by /profile: each defines a system prompt, tool allowlist,
 // operating mode, and autonomy level.
 package agentprofile
@@ -14,7 +14,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/vulnetix/signet/internal/provider"
+	"github.com/vulnetix/belai/internal/provider"
 )
 
 // AgentProfile is a named, reusable background-agent definition.
@@ -105,7 +105,7 @@ var knownToolNames = map[string]bool{
 var unsafeName = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
 
 // BuiltinPrefix identifies harness-supplied agent profiles.
-const BuiltinPrefix = "signet:"
+const BuiltinPrefix = "belai:"
 
 //go:embed builtin/*.json
 var builtinFS embed.FS

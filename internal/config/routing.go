@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/provider"
+	"github.com/vulnetix/belai/internal/provider"
 )
 
 // ValidateRouting validates the routing settings. An invalid value fails the

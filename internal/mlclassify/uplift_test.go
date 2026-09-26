@@ -9,7 +9,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
 // ---- embeddedSpecFor / Embedded build-variant probes ----------------------
@@ -41,7 +41,7 @@ func TestEmbeddedBuildVariants(t *testing.T) {
 // ---- extract.go -----------------------------------------------------------
 
 func TestExtractEmbeddedWritesAndIsIdempotent(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	spec := embeddedSpec{
 		id: "org/model",
 		fsys: fstest.MapFS{
@@ -68,7 +68,7 @@ func TestExtractEmbeddedWritesAndIsIdempotent(t *testing.T) {
 }
 
 func TestExtractEmbeddedIncompleteIsHardError(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	spec := embeddedSpec{
 		id:   "org/incomplete",
 		fsys: fstest.MapFS{"vocab.txt": {Data: []byte("v")}},
@@ -108,7 +108,7 @@ func TestNewGateEmbeddedUnknownID(t *testing.T) {
 }
 
 func TestNewGateHuggingFaceUsesCachedFiles(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	id := "fake/remote"
 	hubStub(t, "config.json", "model.safetensors", "tokenizer.json")
 	dir, err := modelCacheDir(id)
@@ -243,7 +243,7 @@ func TestNewRemoteGateRequiresAttackLabel(t *testing.T) {
 }
 
 func TestNewRemoteGateNilTokenResolver(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	id := "fake/nil-token"
 	hubStub(t, "config.json", "model.safetensors", "tokenizer.json")
 	dir, err := modelCacheDir(id)

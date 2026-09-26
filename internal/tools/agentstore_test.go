@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/agentstore"
-	"github.com/vulnetix/signet/internal/sanitize"
+	"github.com/vulnetix/belai/internal/agentstore"
+	"github.com/vulnetix/belai/internal/sanitize"
 )
 
 type fakeAgentStore struct {
@@ -122,7 +122,7 @@ func TestSearchSessionsFormatsResult(t *testing.T) {
 				Agent:     "claude-code",
 				SessionID: "aaaa1111-2222-3333-4444-555566667777",
 				Path:      "/home/u/.claude/projects/-x/aaaa1111.jsonl",
-				Project:   "/home/u/proj/signet",
+				Project:   "/home/u/proj/belai",
 				Role:      "assistant",
 				Turn:      37,
 				At:        time.Date(2026, 9, 8, 22, 31, 0, 0, time.UTC),
@@ -141,7 +141,7 @@ func TestSearchSessionsFormatsResult(t *testing.T) {
 	for _, want := range []string{
 		"sources: claude-code(2 files)",
 		"skipped: goose(sqlite3 not on PATH)",
-		"claude-code  aaaa1111…  turn 37  assistant  2026-09-08T22:31Z  [signet]",
+		"claude-code  aaaa1111…  turn 37  assistant  2026-09-08T22:31Z  [belai]",
 		"/home/u/.claude/projects/-x/aaaa1111.jsonl",
 		"the delimiters carry a nonce",
 	} {
@@ -157,7 +157,7 @@ func TestReadSessionFormatsResult(t *testing.T) {
 			Agent:     "claude-code",
 			SessionID: "aaaa1111-2222-3333-4444-555566667777",
 			Path:      "/home/u/.claude/projects/-x/aaaa1111.jsonl",
-			Project:   "/home/u/proj/signet",
+			Project:   "/home/u/proj/belai",
 			Turns: []agentstore.Turn{
 				{Index: 35, Role: "user", Text: "the question", At: time.Date(2026, 9, 8, 22, 31, 0, 0, time.UTC)},
 			},
@@ -171,7 +171,7 @@ func TestReadSessionFormatsResult(t *testing.T) {
 	if res.Kind != KindAgentStore {
 		t.Fatalf("Kind = %q, want agent_store", res.Kind)
 	}
-	for _, want := range []string{"claude-code  aaaa1111…", "cwd: /home/u/proj/signet", "turn 35  user  2026-09-08T22:31Z", "the question"} {
+	for _, want := range []string{"claude-code  aaaa1111…", "cwd: /home/u/proj/belai", "turn 35  user  2026-09-08T22:31Z", "the question"} {
 		if !strings.Contains(res.Content, want) {
 			t.Fatalf("result missing %q:\n%s", want, res.Content)
 		}

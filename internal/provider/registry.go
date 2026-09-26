@@ -13,7 +13,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 // Field is one credential a provider requires.
@@ -211,7 +211,7 @@ var registry = map[string]Descriptor{
 		Usage: true,
 		// openrouter/free is the harness default for a fresh install: it
 		// routes across OpenRouter's zero-cost models, so a new user with a
-		// signup credit can run Signet before choosing a paid model.
+		// signup credit can run Belai before choosing a paid model.
 		DefaultModel: "openrouter/free",
 		Models: []ModelSpec{
 			{ID: "openrouter/free", Label: "OpenRouter Free"},
@@ -241,10 +241,10 @@ var registry = map[string]Descriptor{
 	"ollama": {
 		Name: "ollama", Auth: AuthBearer,
 		Fields: []Field{
-			{Name: "host", EnvVars: []string{"SIGNET_OLLAMA_HOST"}, Secret: false, Optional: true},
-			{Name: "port", EnvVars: []string{"SIGNET_OLLAMA_PORT"}, Secret: false, Optional: true},
-			{Name: "protocol", EnvVars: []string{"SIGNET_OLLAMA_PROTOCOL"}, Secret: false, Optional: true},
-			{Name: "api_key", EnvVars: []string{"SIGNET_OLLAMA_API_KEY", "OLLAMA_API_KEY"}, Secret: true, Optional: true},
+			{Name: "host", EnvVars: []string{"BELAI_OLLAMA_HOST"}, Secret: false, Optional: true},
+			{Name: "port", EnvVars: []string{"BELAI_OLLAMA_PORT"}, Secret: false, Optional: true},
+			{Name: "protocol", EnvVars: []string{"BELAI_OLLAMA_PROTOCOL"}, Secret: false, Optional: true},
+			{Name: "api_key", EnvVars: []string{"BELAI_OLLAMA_API_KEY", "OLLAMA_API_KEY"}, Secret: true, Optional: true},
 		},
 		BaseURLBuilder: buildOllama, NetrcHost: "localhost",
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
@@ -256,10 +256,10 @@ var registry = map[string]Descriptor{
 	"llama-server": {
 		Name: "llama-server", Auth: AuthBearer,
 		Fields: []Field{
-			{Name: "host", EnvVars: []string{"SIGNET_LLAMA_HOST"}, Secret: false, Optional: true},
-			{Name: "port", EnvVars: []string{"SIGNET_LLAMA_PORT"}, Secret: false, Optional: true},
-			{Name: "protocol", EnvVars: []string{"SIGNET_LLAMA_PROTOCOL"}, Secret: false, Optional: true},
-			{Name: "api_key", EnvVars: []string{"SIGNET_LLAMA_API_KEY"}, Secret: true, Optional: true},
+			{Name: "host", EnvVars: []string{"BELAI_LLAMA_HOST"}, Secret: false, Optional: true},
+			{Name: "port", EnvVars: []string{"BELAI_LLAMA_PORT"}, Secret: false, Optional: true},
+			{Name: "protocol", EnvVars: []string{"BELAI_LLAMA_PROTOCOL"}, Secret: false, Optional: true},
+			{Name: "api_key", EnvVars: []string{"BELAI_LLAMA_API_KEY"}, Secret: true, Optional: true},
 		},
 		BaseURLBuilder: buildLlamaServer, NetrcHost: "localhost",
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
@@ -272,7 +272,7 @@ var registry = map[string]Descriptor{
 		Name: "groq", Auth: AuthBearer,
 		Fields: []Field{
 			{Name: "api_key", EnvVars: []string{"GROQ_API_KEY"}, Secret: true},
-			{Name: "base_url", EnvVars: []string{"SIGNET_GROQ_BASE_URL"}, Secret: false, Optional: true},
+			{Name: "base_url", EnvVars: []string{"BELAI_GROQ_BASE_URL"}, Secret: false, Optional: true},
 		},
 		BaseURL: "https://api.groq.com/openai/v1", NetrcHost: "api.groq.com",
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
@@ -291,7 +291,7 @@ var registry = map[string]Descriptor{
 		Name: "deepseek", Auth: AuthBearer,
 		Fields: []Field{
 			{Name: "api_key", EnvVars: []string{"DEEPSEEK_API_KEY"}, Secret: true},
-			{Name: "base_url", EnvVars: []string{"SIGNET_DEEPSEEK_BASE_URL"}, Secret: false, Optional: true},
+			{Name: "base_url", EnvVars: []string{"BELAI_DEEPSEEK_BASE_URL"}, Secret: false, Optional: true},
 		},
 		BaseURL: "https://api.deepseek.com/v1", NetrcHost: "api.deepseek.com",
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
@@ -309,7 +309,7 @@ var registry = map[string]Descriptor{
 		Name: "fireworks", Auth: AuthBearer,
 		Fields: []Field{
 			{Name: "api_key", EnvVars: []string{"FIREWORKS_API_KEY"}, Secret: true},
-			{Name: "base_url", EnvVars: []string{"SIGNET_FIREWORKS_BASE_URL"}, Secret: false, Optional: true},
+			{Name: "base_url", EnvVars: []string{"BELAI_FIREWORKS_BASE_URL"}, Secret: false, Optional: true},
 		},
 		BaseURL: "https://api.fireworks.ai/inference/v1", NetrcHost: "api.fireworks.ai",
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
@@ -327,7 +327,7 @@ var registry = map[string]Descriptor{
 		Name: "mistral", Auth: AuthBearer,
 		Fields: []Field{
 			{Name: "api_key", EnvVars: []string{"MISTRAL_API_KEY"}, Secret: true},
-			{Name: "base_url", EnvVars: []string{"SIGNET_MISTRAL_BASE_URL"}, Secret: false, Optional: true},
+			{Name: "base_url", EnvVars: []string{"BELAI_MISTRAL_BASE_URL"}, Secret: false, Optional: true},
 		},
 		BaseURL: "https://api.mistral.ai/v1", NetrcHost: "api.mistral.ai",
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
@@ -343,7 +343,7 @@ var registry = map[string]Descriptor{
 		Name: "together", Auth: AuthBearer,
 		Fields: []Field{
 			{Name: "api_key", EnvVars: []string{"TOGETHER_API_KEY"}, Secret: true},
-			{Name: "base_url", EnvVars: []string{"SIGNET_TOGETHER_BASE_URL"}, Secret: false, Optional: true},
+			{Name: "base_url", EnvVars: []string{"BELAI_TOGETHER_BASE_URL"}, Secret: false, Optional: true},
 		},
 		BaseURL: "https://api.together.xyz/v1", NetrcHost: "api.together.xyz",
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
@@ -361,7 +361,7 @@ var registry = map[string]Descriptor{
 		Name: "xai", Auth: AuthBearer,
 		Fields: []Field{
 			{Name: "api_key", EnvVars: []string{"XAI_API_KEY"}, Secret: true},
-			{Name: "base_url", EnvVars: []string{"SIGNET_XAI_BASE_URL"}, Secret: false, Optional: true},
+			{Name: "base_url", EnvVars: []string{"BELAI_XAI_BASE_URL"}, Secret: false, Optional: true},
 		},
 		BaseURL: "https://api.x.ai/v1", NetrcHost: "api.x.ai",
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
@@ -381,7 +381,7 @@ var registry = map[string]Descriptor{
 		Name: "moonshot", Auth: AuthBearer,
 		Fields: []Field{
 			{Name: "api_key", EnvVars: []string{"MOONSHOT_API_KEY"}, Secret: true},
-			{Name: "base_url", EnvVars: []string{"SIGNET_MOONSHOT_BASE_URL"}, Secret: false, Optional: true},
+			{Name: "base_url", EnvVars: []string{"BELAI_MOONSHOT_BASE_URL"}, Secret: false, Optional: true},
 		},
 		BaseURL: "https://api.moonshot.ai/v1", NetrcHost: "api.moonshot.ai",
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
@@ -396,7 +396,7 @@ var registry = map[string]Descriptor{
 		Name: "minimax", Auth: AuthBearer,
 		Fields: []Field{
 			{Name: "api_key", EnvVars: []string{"MINIMAX_API_KEY"}, Secret: true},
-			{Name: "base_url", EnvVars: []string{"SIGNET_MINIMAX_BASE_URL"}, Secret: false, Optional: true},
+			{Name: "base_url", EnvVars: []string{"BELAI_MINIMAX_BASE_URL"}, Secret: false, Optional: true},
 		},
 		BaseURL: "https://api.minimax.io/v1", NetrcHost: "api.minimax.io",
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,
@@ -410,7 +410,7 @@ var registry = map[string]Descriptor{
 		Name: "alibaba", Auth: AuthBearer,
 		Fields: []Field{
 			{Name: "api_key", EnvVars: []string{"DASHSCOPE_API_KEY", "ALIBABA_API_KEY"}, Secret: true},
-			{Name: "base_url", EnvVars: []string{"SIGNET_ALIBABA_BASE_URL"}, Secret: false, Optional: true},
+			{Name: "base_url", EnvVars: []string{"BELAI_ALIBABA_BASE_URL"}, Secret: false, Optional: true},
 		},
 		BaseURL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", NetrcHost: "dashscope-intl.aliyuncs.com",
 		Surface: wire.SurfaceOpenAIChat, ToolMethod: wire.ToolMethodString,

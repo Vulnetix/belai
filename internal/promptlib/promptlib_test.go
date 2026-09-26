@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 func TestDirResolvesScope(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("SIGNET_HOME", home)
+	t.Setenv("BELAI_HOME", home)
 	workdir := t.TempDir()
 
 	if got, err := Dir(config.ScopeProject, workdir); err != nil || got != filepath.Join(workdir, ".vulnetix", "prompts") {
@@ -476,7 +476,7 @@ func TestReorderRenumbersAndLeavesNoTemps(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(promptsDir(t, dir), "010-a.md")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("old 010-a.md should be gone")
 	}
-	if temps, _ := filepath.Glob(filepath.Join(promptsDir(t, dir), ".signet-tmp-*")); len(temps) != 0 {
+	if temps, _ := filepath.Glob(filepath.Join(promptsDir(t, dir), ".belai-tmp-*")); len(temps) != 0 {
 		t.Fatalf("temps left behind: %v", temps)
 	}
 }
@@ -510,14 +510,14 @@ func TestReorderAbortsOnCollisionLeavingDirectoryUnchanged(t *testing.T) {
 			t.Fatalf("%s should be untouched: %v", name, err)
 		}
 	}
-	if temps, _ := filepath.Glob(filepath.Join(pd, ".signet-tmp-*")); len(temps) != 0 {
+	if temps, _ := filepath.Glob(filepath.Join(pd, ".belai-tmp-*")); len(temps) != 0 {
 		t.Fatalf("temps left behind after abort: %v", temps)
 	}
 }
 
 func TestCreateFileModes(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("SIGNET_HOME", home)
+	t.Setenv("BELAI_HOME", home)
 	workdir := t.TempDir()
 
 	ge, err := Create(config.ScopeGlobal, workdir, "g", "global")

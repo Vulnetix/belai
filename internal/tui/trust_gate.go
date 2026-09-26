@@ -7,8 +7,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/vulnetix/signet/internal/trustgate"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/trustgate"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // trustGateModel is the standalone first-run confirmation program. It runs
@@ -106,7 +106,7 @@ func (m trustGateModel) View() string {
 	} else {
 		b.WriteString(components.SectionHeader("Accessing workspace", "esc exit", width))
 		b.WriteString("\n" + components.EmphStyle.Render(m.st.Workdir) + "\n")
-		b.WriteString("\n" + components.WarnStyle.Render("Signet has not seen this directory before. It may contain files that\nconfigure what Signet reads and starts before you interact with it.") + "\n\n")
+		b.WriteString("\n" + components.WarnStyle.Render("Belai has not seen this directory before. It may contain files that\nconfigure what Belai reads and starts before you interact with it.") + "\n\n")
 	}
 
 	if len(m.st.NewDirs) > 0 {

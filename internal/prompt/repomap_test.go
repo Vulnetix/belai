@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/repomap"
+	"github.com/vulnetix/belai/internal/repomap"
 )
 
 func TestRepoMapBlockRendersFacts(t *testing.T) {

@@ -1,5 +1,5 @@
 // Package acp serves the Agent Client Protocol over stdio, so editors that
-// speak ACP (Zed, JetBrains IDEs, Neovim plugins) can drive Signet as their
+// speak ACP (Zed, JetBrains IDEs, Neovim plugins) can drive Belai as their
 // agent. Each ACP session is an agent.Session built exactly as the headless
 // CLI builds one, so the classifier, posture gates, permission rules and
 // budgets all apply; permission asks become session/request_permission
@@ -16,17 +16,17 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/vulnetix/signet/internal/agent"
-	"github.com/vulnetix/signet/internal/clarify"
-	"github.com/vulnetix/signet/internal/jsonrpc"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/session"
-	"github.com/vulnetix/signet/internal/todos"
-	"github.com/vulnetix/signet/internal/version"
+	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/clarify"
+	"github.com/vulnetix/belai/internal/jsonrpc"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/todos"
+	"github.com/vulnetix/belai/internal/version"
 )
 
-// ProtocolVersion is the ACP major version Signet speaks.
+// ProtocolVersion is the ACP major version Belai speaks.
 const ProtocolVersion = 1
 
 // Builder builds the agent session for a working directory. It must refuse
@@ -99,7 +99,7 @@ func (s *Server) handle(ctx context.Context, method string, params json.RawMessa
 		s.cancelSession(params)
 		return nil, nil
 	}
-	return nil, jsonrpc.Errorf(jsonrpc.CodeMethodNotFound, "signet does not support %s", method)
+	return nil, jsonrpc.Errorf(jsonrpc.CodeMethodNotFound, "belai does not support %s", method)
 }
 
 func (s *Server) initialize(params json.RawMessage) (any, error) {
@@ -110,7 +110,7 @@ func (s *Server) initialize(params json.RawMessage) (any, error) {
 			"promptCapabilities": map[string]any{"image": false, "audio": false, "embeddedContext": true},
 			"mcpCapabilities":    map[string]any{"http": false, "sse": false},
 		},
-		"agentInfo":   map[string]any{"name": "signet", "title": "Vulnetix Signet", "version": version.Version},
+		"agentInfo":   map[string]any{"name": "belai", "title": "Vulnetix Belai", "version": version.Version},
 		"authMethods": []any{},
 	}, nil
 }
@@ -156,7 +156,7 @@ func (s *Server) cancelSession(params json.RawMessage) {
 	}
 }
 
-// contentBlock is the subset of ACP content Signet reads from a prompt.
+// contentBlock is the subset of ACP content Belai reads from a prompt.
 type contentBlock struct {
 	Type     string `json:"type"`
 	Text     string `json:"text,omitempty"`
@@ -382,7 +382,7 @@ func (s *Server) askPermission(ctx context.Context, ss *acpSession, ev agent.Eve
 	return false
 }
 
-// toolKind maps a Signet tool onto ACP's ToolKind.
+// toolKind maps a Belai tool onto ACP's ToolKind.
 func toolKind(name string) string {
 	switch name {
 	case "Read", "Cat", "Head", "Tail", "RepoRead", "Skill":

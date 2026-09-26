@@ -1,8 +1,8 @@
 package rolemanager
 
 import (
-	"github.com/vulnetix/signet/internal/prompt"
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/prompt"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 // classifierSystemPrompt instructs the classifier model to answer with exactly

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/prompt"
+	"github.com/vulnetix/belai/internal/prompt"
 )
 
 // TestProseBuildersCarryCavemanVoice checks that the prose builders voice their

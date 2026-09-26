@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/plans"
-	"github.com/vulnetix/signet/internal/session"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/plans"
+	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 // PlanOption is the user's choice after a plan is extracted.

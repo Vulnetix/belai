@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/proc"
+	"github.com/vulnetix/belai/internal/proc"
 
-	"github.com/vulnetix/signet/internal/gitinfo"
+	"github.com/vulnetix/belai/internal/gitinfo"
 )
 
 const (

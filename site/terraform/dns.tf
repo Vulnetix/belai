@@ -1,6 +1,6 @@
-# DNS for the Signet marketing site.
+# DNS for the Belai marketing site.
 #
-# signet.vulnetix.com -> GitHub Pages.
+# belai.vulnetix.com -> GitHub Pages.
 #
 # Must NOT be proxied. GitHub Pages terminates TLS itself using a certificate it
 # issues for the custom domain, and it can only complete that issuance when it
@@ -12,9 +12,9 @@
 # disagree, Pages unbinds the custom domain on the next deploy — which is why
 # .github/workflows/pages.yml asserts the file after every build.
 
-resource "cloudflare_dns_record" "signet" {
+resource "cloudflare_dns_record" "belai" {
   zone_id = var.cloudflare_zone_id
-  name    = "signet" # label, not FQDN
+  name    = "belai" # label, not FQDN
   type    = "CNAME"
   content = var.github_pages_target
   proxied = false # mandatory — Pages cannot issue LE behind the proxy

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/prompt"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/prompt"
 )
 
 func TestDecideMode(t *testing.T) {
@@ -25,7 +25,7 @@ func TestDecideMode(t *testing.T) {
 		{
 			name:     "goal within limit no references pursues immediately",
 			sentinel: ModeGoal,
-			in:       ModeInput{Prompt: "ship the signet release"},
+			in:       ModeInput{Prompt: "ship the belai release"},
 			want:     ModeDecision{Mode: modes.ModeGoal, AppendCarrier: true, Explore: false},
 		},
 		{

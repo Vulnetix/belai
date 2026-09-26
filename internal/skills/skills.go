@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/vulnetix/signet/internal/posture"
+	"github.com/vulnetix/belai/internal/posture"
 )
 
 // ValidateWithPosture runs ValidateSkill and applies the skill_invalid posture.
@@ -18,7 +18,7 @@ func ValidateWithPosture(doc string, pol posture.Policy) (*Manifest, error) {
 	m, err := ValidateSkill(doc)
 	if err != nil {
 		if pol.Level(posture.SkillInvalid) == posture.Warn {
-			fmt.Fprintf(os.Stderr, "signet: warning: invalid skill: %v\n", err)
+			fmt.Fprintf(os.Stderr, "belai: warning: invalid skill: %v\n", err)
 			return nil, nil
 		}
 		return nil, err

@@ -164,7 +164,7 @@ func TestRecordWritesPrivateFile(t *testing.T) {
 
 func TestPathIsPerProjectUnderGlobalDir(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("SIGNET_HOME", home)
+	t.Setenv("BELAI_HOME", home)
 	a, err := Path("/work/a")
 	if err != nil {
 		t.Fatal(err)

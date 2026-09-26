@@ -12,12 +12,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/vulnetix/signet/internal/aifirewall"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/projectregistry"
-	"github.com/vulnetix/signet/internal/scanartifacts"
-	"github.com/vulnetix/signet/internal/tui/components"
-	"github.com/vulnetix/signet/internal/vulnetixcli"
+	"github.com/vulnetix/belai/internal/aifirewall"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/projectregistry"
+	"github.com/vulnetix/belai/internal/scanartifacts"
+	"github.com/vulnetix/belai/internal/tui/components"
+	"github.com/vulnetix/belai/internal/vulnetixcli"
 )
 
 type vulnetixConfigState struct {
@@ -462,7 +462,7 @@ func (a *App) vulnetixArtifactsView() string {
 func visibleArtifacts(arts []scanartifacts.Artifact) []scanartifacts.Artifact {
 	var out []scanartifacts.Artifact
 	for _, a := range arts {
-		if a.Kind == scanartifacts.KindSignet {
+		if a.Kind == scanartifacts.KindBelai {
 			continue
 		}
 		out = append(out, a)

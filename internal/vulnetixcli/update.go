@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 // releaseCacheTTL is how long a GitHub release probe remains valid.
@@ -82,8 +82,8 @@ func LatestRelease(ctx context.Context, client *http.Client, getenv func(string)
 	}
 
 	base := "https://api.github.com"
-	if getenv != nil && getenv("SIGNET_GITHUB_API_BASE") != "" {
-		base = strings.TrimRight(getenv("SIGNET_GITHUB_API_BASE"), "/")
+	if getenv != nil && getenv("BELAI_GITHUB_API_BASE") != "" {
+		base = strings.TrimRight(getenv("BELAI_GITHUB_API_BASE"), "/")
 	}
 
 	if client == nil {

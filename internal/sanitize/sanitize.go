@@ -10,7 +10,7 @@ package sanitize
 import (
 	"regexp"
 
-	"github.com/vulnetix/signet/internal/delimiters"
+	"github.com/vulnetix/belai/internal/delimiters"
 )
 
 var (

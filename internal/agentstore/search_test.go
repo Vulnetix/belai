@@ -13,7 +13,7 @@ func mkdirAll(p string) error { return os.MkdirAll(p, 0o755) }
 func TestSearchSessionsDefaultProjectScope(t *testing.T) {
 	t.Skip("pending external adapter fixture alignment")
 	home := t.TempDir()
-	workdir := filepath.Join(home, "u/proj/signet")
+	workdir := filepath.Join(home, "u/proj/belai")
 	if err := mkdirAll(workdir); err != nil {
 		t.Fatal(err)
 	}
@@ -21,7 +21,7 @@ func TestSearchSessionsDefaultProjectScope(t *testing.T) {
 	inProject := `{"type":"user","message":{"role":"user","content":"the nonce rule was decided"},"sessionId":"aaaa1111-2222-3333-4444-555566667777","cwd":"` + workdir + `","timestamp":"2026-09-08T22:31:00Z"}`
 	outProject := `{"type":"user","message":{"role":"user","content":"the nonce rule was decided"},"sessionId":"bbbb1111-2222-3333-4444-555566667777","cwd":"/home/u/proj/other","timestamp":"2026-09-08T22:31:00Z"}`
 
-	writeFixture(t, filepath.Join(home, ".claude/projects/-home-u-proj-signet/aaa.jsonl"), inProject)
+	writeFixture(t, filepath.Join(home, ".claude/projects/-home-u-proj-belai/aaa.jsonl"), inProject)
 	writeFixture(t, filepath.Join(home, ".claude/projects/-home-u-proj-other/bbb.jsonl"), outProject)
 
 	r := New(home, workdir)
@@ -44,11 +44,11 @@ func TestSearchSessionsDefaultProjectScope(t *testing.T) {
 
 func TestSearchSessionsAllProjects(t *testing.T) {
 	home := t.TempDir()
-	workdir := filepath.Join(home, "u/proj/signet")
+	workdir := filepath.Join(home, "u/proj/belai")
 	if err := mkdirAll(workdir); err != nil {
 		t.Fatal(err)
 	}
-	writeFixture(t, filepath.Join(home, ".claude/projects/-home-u-proj-signet/aaa.jsonl"),
+	writeFixture(t, filepath.Join(home, ".claude/projects/-home-u-proj-belai/aaa.jsonl"),
 		`{"type":"user","message":{"role":"user","content":"the nonce rule"},"sessionId":"aaaa1111-2222-3333-4444-555566667777","cwd":"`+workdir+`","timestamp":"2026-09-08T22:31:00Z"}`)
 	writeFixture(t, filepath.Join(home, ".claude/projects/-home-u-proj-other/bbb.jsonl"),
 		`{"type":"user","message":{"role":"user","content":"the nonce rule"},"sessionId":"bbbb1111-2222-3333-4444-555566667777","cwd":"/home/u/proj/other","timestamp":"2026-09-08T22:31:00Z"}`)
@@ -66,7 +66,7 @@ func TestSearchSessionsAllProjects(t *testing.T) {
 func TestSearchSessionsPromptsOnly(t *testing.T) {
 	t.Skip("pending external adapter fixture alignment")
 	home := t.TempDir()
-	workdir := filepath.Join(home, "u/proj/signet")
+	workdir := filepath.Join(home, "u/proj/belai")
 	if err := mkdirAll(workdir); err != nil {
 		t.Fatal(err)
 	}
@@ -93,12 +93,12 @@ func TestSearchSessionsUnknownAgent(t *testing.T) {
 
 func TestReadSessionPrefixResolution(t *testing.T) {
 	home := t.TempDir()
-	workdir := filepath.Join(home, "u/proj/signet")
+	workdir := filepath.Join(home, "u/proj/belai")
 	if err := mkdirAll(workdir); err != nil {
 		t.Fatal(err)
 	}
 	id := "aaaa1111-2222-3333-4444-555566667777"
-	writeFixture(t, filepath.Join(home, ".claude/projects/-home-u-proj-signet/"+id+".jsonl"),
+	writeFixture(t, filepath.Join(home, ".claude/projects/-home-u-proj-belai/"+id+".jsonl"),
 		`{"type":"user","message":{"role":"user","content":"first"},"sessionId":"`+id+`","cwd":"`+workdir+`","timestamp":"2026-09-08T22:31:00Z"}
 {"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"second"}]},"sessionId":"`+id+`","cwd":"`+workdir+`","timestamp":"2026-09-08T22:31:01Z"}`)
 
@@ -117,7 +117,7 @@ func TestReadSessionPrefixResolution(t *testing.T) {
 
 func TestSearchMemoryFileAndWholeFile(t *testing.T) {
 	home := t.TempDir()
-	workdir := filepath.Join(home, "u/proj/signet")
+	workdir := filepath.Join(home, "u/proj/belai")
 	if err := mkdirAll(workdir); err != nil {
 		t.Fatal(err)
 	}

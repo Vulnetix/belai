@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/permissions"
+	"github.com/vulnetix/belai/internal/permissions"
 )
 
 // Property is a JSON-schema property for a tool definition.

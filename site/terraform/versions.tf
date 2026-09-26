@@ -15,7 +15,7 @@ terraform {
 
   backend "s3" {
     bucket       = "vdb-manager-terraform-state"
-    key          = "signet-site/terraform.tfstate"
+    key          = "belai-site/terraform.tfstate"
     region       = "ap-southeast-2"
     encrypt      = true
     use_lockfile = true

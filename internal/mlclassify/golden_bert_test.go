@@ -1,4 +1,4 @@
-//go:build signet_bert || signet_bert_jailbreak
+//go:build belai_bert || belai_bert_jailbreak
 
 package mlclassify
 
@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
 // TestGoldenVectorsPhase1 runs the embedded phase-1 model over known-attack and

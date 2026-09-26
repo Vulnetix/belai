@@ -6,14 +6,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/hooks"
-	"github.com/vulnetix/signet/internal/otel"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/sanitize"
-	"github.com/vulnetix/signet/internal/tools"
-	"github.com/vulnetix/signet/internal/trace"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/hooks"
+	"github.com/vulnetix/belai/internal/otel"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/sanitize"
+	"github.com/vulnetix/belai/internal/tools"
+	"github.com/vulnetix/belai/internal/trace"
 )
 
 // Hook runner bounds. A hook's own timeout_ms overrides hookTimeout.
@@ -129,9 +129,9 @@ func (s *Session) traceHook(event string, o hooks.Outcome, d time.Duration) {
 	if decision == "" {
 		decision = "none"
 	}
-	otel.Add("signet.hook_runs", int64(o.Ran), otel.S(otel.AttrHookEvent, event), otel.S(otel.AttrDecision, decision))
+	otel.Add("belai.hook_runs", int64(o.Ran), otel.S(otel.AttrHookEvent, event), otel.S(otel.AttrDecision, decision))
 	if n := len(o.Failures); n > 0 {
-		otel.Add("signet.hook_failures", int64(n), otel.S(otel.AttrHookEvent, event))
+		otel.Add("belai.hook_failures", int64(n), otel.S(otel.AttrHookEvent, event))
 	}
 	if s.trace == nil {
 		return

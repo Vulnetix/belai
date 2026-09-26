@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/calltrace"
-	"github.com/vulnetix/signet/internal/version"
+	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/version"
 )
 
 // captureTransport records the last request and answers with a fixed body.
@@ -72,7 +72,7 @@ func TestWebSearchSendsTraceHeaders(t *testing.T) {
 
 func TestBashExportsTraceEnv(t *testing.T) {
 	b := &Bash{Root: t.TempDir(), Timeout: 5 * time.Second}
-	res, err := b.Execute(traceCtx("Bash"), map[string]any{"command": "echo $SIGNET:$SIGNET_SESSION_ID:$SIGNET_TOOL:$SIGNET_TOOL_CALL_ID"})
+	res, err := b.Execute(traceCtx("Bash"), map[string]any{"command": "echo $BELAI:$BELAI_SESSION_ID:$BELAI_TOOL:$BELAI_TOOL_CALL_ID"})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}

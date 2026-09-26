@@ -16,7 +16,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 // Max is the most lines a history file keeps; the oldest fall off first.

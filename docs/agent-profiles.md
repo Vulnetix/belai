@@ -1,13 +1,13 @@
 # Agent Profiles
 
 Agent profiles are named, reusable agent definitions stored on disk under
-`~/.vulnetix/signet/profiles/agents/`. They are richer than the flat prompt
+`~/.vulnetix/belai/profiles/agents/`. They are richer than the flat prompt
 profiles used by `/profile`: each profile defines a system prompt, a tool
 allow-list, an operating mode, and an autonomy level.
 
 The directory is `agentprofile.Dir()` — `config.GlobalDir()/profiles/agents`,
-where `GlobalDir()` honours `SIGNET_HOME` and otherwise resolves to
-`~/.vulnetix/signet`.
+where `GlobalDir()` honours `BELAI_HOME` and otherwise resolves to
+`~/.vulnetix/belai`.
 
 ## Profile schema
 
@@ -165,9 +165,9 @@ and tools opens a multi-select picker (`space` toggles, `a` all, `n` none,
 `enter` commits the sorted selection). `schedule` and `monitor condition` show
 a muted `required` marker when the current mode demands them.
 
-Built-in `signet:` profiles are read-only in the editor; any mutating key shows
+Built-in `belai:` profiles are read-only in the editor; any mutating key shows
 `built-in profile is read-only — d duplicates it`. Pressing `d` strips the
-`signet:` prefix, clears the built-in and file-name state, saves an editable
+`belai:` prefix, clears the built-in and file-name state, saves an editable
 copy, and opens it. After `/agent create` the new profile is selected and the
 editor opens automatically.
 
@@ -176,18 +176,18 @@ editor opens automatically.
 
 Three built-in single-turn profiles are always available:
 
-- `signet:plan-handoff` — execute an attached written plan step by step. The
+- `belai:plan-handoff` — execute an attached written plan step by step. The
   first call must be `update_plan` with every plan task. When a task names an
   edit, the profile makes it directly instead of re-deriving the plan.
-- `signet:debug` — reproduce, isolate, instrument, apply the smallest fix,
+- `belai:debug` — reproduce, isolate, instrument, apply the smallest fix,
   and verify with the failing test or command. It never changes code without
   first reproducing the failure.
-- `signet:fanout` — split the objective into independent read-only questions,
+- `belai:fanout` — split the objective into independent read-only questions,
   issue several `Task` tool calls in one response, synthesize the reports,
   then act.
 
 All three run in `single` mode with supervised autonomy and omit `tools`, so
-they advertise the full default surface. `@agent:signet:fanout` also pre-engages
+they advertise the full default surface. `@agent:belai:fanout` also pre-engages
 the fan-out surface so the `Task` tool is offered to the model.
 
 ## Built-in Vulnetix profiles
@@ -196,23 +196,23 @@ The harness starts these itself; they can also be started by hand with
 `/agent start`. The scanner and dependency agents are read-only by
 construction: their `tools` are `Read`, `Grep` and `Glob`, so they cannot edit
 a file, install a package or run a package manager.
-`signet:triage-vulns` also has `Bash`; its prompt forbids edits, and every
+`belai:triage-vulns` also has `Bash`; its prompt forbids edits, and every
 Bash call still goes through the permission rules. See
 [vulnetix.md](vulnetix.md).
 
-- `signet:vulnetix-scanner`: started by a `/vulnetix review` for each scanner
+- `belai:vulnetix-scanner`: started by a `/vulnetix review` for each scanner
   as soon as it finishes with admitted findings, keyed
-  `signet:vulnetix-scanner@<scanner>#<review>`. It grounds that scanner's
+  `belai:vulnetix-scanner@<scanner>#<review>`. It grounds that scanner's
   findings in the repository and replies one line per finding, the same
   contract as the triage turn's per-scanner subagent. `max_iterations` is 6.
-- `signet:triage-vulns`: `t` on the artifacts screen or a runs-panel row
+- `belai:triage-vulns`: `t` on the artifacts screen or a runs-panel row
   starts it on that project, keyed per project. It reads the `.vulnetix/`
   artifacts, cites file and line, and proposes fixes without patching.
-- `signet:deps-<ecosystem>`: the dependency hook's per-ecosystem agents:
-  `signet:deps-go`, `signet:deps-javascript`, `signet:deps-python`,
-  `signet:deps-rust`, `signet:deps-ruby`, `signet:deps-php`,
-  `signet:deps-jvm`, `signet:deps-dotnet`, `signet:deps-apple`,
-  `signet:deps-containers`, `signet:deps-ci` and `signet:deps-other`.
+- `belai:deps-<ecosystem>`: the dependency hook's per-ecosystem agents:
+  `belai:deps-go`, `belai:deps-javascript`, `belai:deps-python`,
+  `belai:deps-rust`, `belai:deps-ruby`, `belai:deps-php`,
+  `belai:deps-jvm`, `belai:deps-dotnet`, `belai:deps-apple`,
+  `belai:deps-containers`, `belai:deps-ci` and `belai:deps-other`.
 ## Event flow
 
 ```mermaid
@@ -242,9 +242,9 @@ never blocked. Events are forwarded into the TUI update loop through
 
 ## Storage namespace
 
-User-built agents live under `~/.vulnetix/signet/profiles/agents/` to avoid
+User-built agents live under `~/.vulnetix/belai/profiles/agents/` to avoid
 clashing with the flat `profiles/` namespace used by `/profile`. The two
-namespaces are disjoint; no migration is required. Setting `SIGNET_HOME` moves
+namespaces are disjoint; no migration is required. Setting `BELAI_HOME` moves
 both.
 
 ## Running a definition in the foreground
@@ -291,7 +291,7 @@ CLI flag  >  live TUI toggle (f3/f4, /yolo)  >  agent profile  >  settings.json 
   `postures:` preference.
 
 A profile that lowers `guardrails` or `ask_permission` is announced in the
-transcript and traced under `SIGNET_TRACE` (`profile_posture_drop`) so an
+transcript and traced under `BELAI_TRACE` (`profile_posture_drop`) so an
 unattended posture drop is never silent.
 
 Engaging resolves through `agent.CarrierOptions`, which tries

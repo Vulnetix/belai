@@ -16,7 +16,7 @@ import (
 )
 
 // Keychain abstracts the host keychain / secret service. It matches the
-// shape of credentials.Keychain so callers can pass either the signet or
+// shape of credentials.Keychain so callers can pass either the belai or
 // vulnetix-scoped backend without an import cycle.
 type Keychain interface {
 	Name() string

@@ -1,6 +1,6 @@
 # `/vulnetix` — Vulnetix review + AI Firewall
 
-`/vulnetix` is the Signet entry point for the Vulnetix CLI and the Vulnetix AI
+`/vulnetix` is the Belai entry point for the Vulnetix CLI and the Vulnetix AI
 Firewall. It runs Vulnetix review subcommands, surfaces CLI capability state,
 keeps a history of projects found on this machine, and toggles the AI Firewall
 for LLM traffic.
@@ -45,21 +45,21 @@ for LLM traffic.
 - **A killed scanner does not stop the run.** The old loop broke on the first
   non-zero exit; the fan-out lets the remaining scanners finish, and only a
   parent-context cancellation stops all of them.
-- **Artifacts live under `.vulnetix/`, summary state under `.vulnetix/signet/`.**
+- **Artifacts live under `.vulnetix/`, summary state under `.vulnetix/belai/`.**
   `code-review-summary.md` and `code-review-manifest.json` are written to
-  `<workdir>/.vulnetix/signet/` so they stay outside `@file` admission and
+  `<workdir>/.vulnetix/belai/` so they stay outside `@file` admission and
   Vulnetix's own scans.
-- **Signet's own files are excluded from the manifest.** The manifest uses
+- **Belai's own files are excluded from the manifest.** The manifest uses
   `scanartifacts.Enumerate`, which classifies `settings.json`, `prompts.json`
   (a tombstone for the old library), `credentials.json`,
   `code-review-summary.md`, `code-review-manifest.json`, and anything under
-  `signet/`, `plans/`, `goals/`, or `prompts/` as `KindSignet` and skips them.
+  `belai/`, `plans/`, `goals/`, or `prompts/` as `KindBelai` and skips them.
 - **Global cache, never inside the project.** `scanartifacts.Refresh` writes to
   `<GlobalDir>/scan-cache/<WorkdirKey>.json`. Invalidation is stat-only: a
   fingerprint over `(rel, size, mtime)` plus a schema version.
 - **AI Firewall is fail-closed.** The firewall routes LLM traffic only when
   four conditions are true: (1) the user toggled it on via `/vulnetix firewall`,
-  the `F10` key, or `SIGNET_FIREWALL=1`; (2) valid Vulnetix gateway credentials
+  the `F10` key, or `BELAI_FIREWALL=1`; (2) valid Vulnetix gateway credentials
   are present (`VULNETIX_API_KEY` + `VULNETIX_ORG_ID`, `VVD_ORG` + `VVD_SECRET`,
   or the logged-in Vulnetix CLI credential); (3) the provider maps to a
   gateway slug; and (4) resolving the credential succeeded without error. If any
@@ -71,7 +71,7 @@ for LLM traffic.
   base URL is `<gatewayHost>/<slug>/<org>/v1`. Anthropic chat uses
   `/v1/messages`; OpenAI-compatible surfaces use `/v1/chat/completions`. The
   gateway API key replaces the provider key.
-- **`SIGNET_BASE_URL` wins.** If the user sets `SIGNET_BASE_URL`, it overrides
+- **`BELAI_BASE_URL` wins.** If the user sets `BELAI_BASE_URL`, it overrides
   the firewall gateway URL for that run. This lets tests and local gateways
   observe firewall-on traffic without hitting the production gateway.
 
@@ -178,8 +178,8 @@ looks idle while the scanners work (`internal/tui/review.go`).
 - **`fix`.** The post-scan fix gets one line, `■ vulnetix fix --dry-run done`
   (`--yes` under autofix), or its timeout or failure.
 - **Scanner agents.** A scanner whose admitted report blocks are non-empty
-  starts the read-only background agent `signet:vulnetix-scanner` at once,
-  keyed `signet:vulnetix-scanner@<scanner>#<review>`. Its tools are `Read`,
+  starts the read-only background agent `belai:vulnetix-scanner` at once,
+  keyed `belai:vulnetix-scanner@<scanner>#<review>`. Its tools are `Read`,
   `Grep` and `Glob`, and it gets the same task and reply contract as the
   triage turn's per-scanner subagent. When it finishes, its report is capped
   at 16 KiB, sanitized, classified as `KindProcess` under the guardrails
@@ -209,7 +209,7 @@ After a review, the TUI hands the classified report blocks to the live
 session as one triage turn:
 
 1. **One subagent per scanner.** Each report is investigated by its own
-   read-only subagent. Normally that is the `signet:vulnetix-scanner`
+   read-only subagent. Normally that is the `belai:vulnetix-scanner`
    background agent that started when the scanner finished, on the session's
    model; the triage turn runs an explore subagent (`r1`, `r2`, … in the runs
    panel, on the fast tier when one is routed) only for a scanner without a
@@ -229,14 +229,14 @@ session as one triage turn:
    answers ride on the user turn as direction.
 4. **Switch to the review agent and remediate.** When the review starts its
    triage turn, the session switches to agent mode and engages the built-in
-   `signet:vulnetix-review` profile, whatever mode or agent was active. The
+   `belai:vulnetix-review` profile, whatever mode or agent was active. The
    profile's prompt carries the remediation contract. It stays engaged the way
    a picker choice does, so follow-up turns keep the review agent until the
    user clears it (`(none)` in the picker). Dependency findings route to
    `vulnetix fix`: a dry-run plan by default, `--yes` only when
    `vulnetix.autofix` is true. Code findings (SAST, secrets, IaC, container,
    malscan) are patched in the session under the normal permission prompts.
-5. **Final report.** The model writes `.vulnetix/signet/code-review-report.md`
+5. **Final report.** The model writes `.vulnetix/belai/code-review-report.md`
    with three sections. *Remediated* lists what was fixed. *Needs direction*
    lists each unresolved choice and its options. *Inconclusive* gives the
    rationale for every finding that has no remediation and that further
@@ -245,7 +245,7 @@ session as one triage turn:
 A review that finishes while a turn is running is queued. It is sent on its
 own at the next idle, ahead of any queued activity output.
 
-Keys: `↑↓` move, `t` start the built-in `signet:triage-vulns` agent for that
+Keys: `↑↓` move, `t` start the built-in `belai:triage-vulns` agent for that
 project, `l` history, `esc` back.
 
 ## The `Vulnetix` tool
@@ -313,7 +313,7 @@ no file is read.
    with `--block-malware --block-eol --block-eol-severity low --exploits poc
    --severity low`, so its exit status says whether anything was found
    (vulnerabilities, public exploits, end-of-life components, malware). The
-   CycloneDX output goes to `.vulnetix/signet/deps/`, outside the review's
+   CycloneDX output goes to `.vulnetix/belai/deps/`, outside the review's
    artifact list. Memory stays disabled, so `memory.yaml` keeps one writer. On
    a Pro or Enterprise plan (read from `vulnetix auth status` once per
    session) `vulnetix fix --dry-run` adds the Safe Harbour target versions.
@@ -325,18 +325,18 @@ no file is read.
 
    | Profile | Ecosystems |
    | --- | --- |
-   | `signet:deps-javascript` | npm, pnpm, Yarn, Deno |
-   | `signet:deps-python` | pip, Pipenv, Poetry, uv, Conda |
-   | `signet:deps-go` | Go modules |
-   | `signet:deps-rust` | Cargo |
-   | `signet:deps-ruby` | Bundler |
-   | `signet:deps-jvm` | Maven, Gradle, sbt, Mill, Clojure |
-   | `signet:deps-dotnet` | NuGet, Paket |
-   | `signet:deps-php` | Composer |
-   | `signet:deps-apple` | SwiftPM, CocoaPods, Carthage |
-   | `signet:deps-containers` | Dockerfile, compose, Kubernetes, Helm, Terraform |
-   | `signet:deps-ci` | CI pipelines, GitHub Actions, shell install scripts |
-   | `signet:deps-other` | Dart, Elixir, Erlang, Haskell, OCaml, Nix, Conan, vcpkg and the rest |
+   | `belai:deps-javascript` | npm, pnpm, Yarn, Deno |
+   | `belai:deps-python` | pip, Pipenv, Poetry, uv, Conda |
+   | `belai:deps-go` | Go modules |
+   | `belai:deps-rust` | Cargo |
+   | `belai:deps-ruby` | Bundler |
+   | `belai:deps-jvm` | Maven, Gradle, sbt, Mill, Clojure |
+   | `belai:deps-dotnet` | NuGet, Paket |
+   | `belai:deps-php` | Composer |
+   | `belai:deps-apple` | SwiftPM, CocoaPods, Carthage |
+   | `belai:deps-containers` | Dockerfile, compose, Kubernetes, Helm, Terraform |
+   | `belai:deps-ci` | CI pipelines, GitHub Actions, shell install scripts |
+   | `belai:deps-other` | Dart, Elixir, Erlang, Haskell, OCaml, Nix, Conan, vcpkg and the rest |
 
    Each profile carries its ecosystem's patching reference, drawn from the
    Vulnerability Coordinator package-manager appendix: how to bump a direct
@@ -357,7 +357,7 @@ cannot silence the check on the dependencies it asks you to add.
 
 ## AI Firewall (`/vulnetix firewall` and `F10`)
 
-The Vulnetix AI Firewall routes LLM traffic from Signet through the Vulnetix
+The Vulnetix AI Firewall routes LLM traffic from Belai through the Vulnetix
 AI Firewall gateway. It can be toggled from anywhere with `F10` or with
 `/vulnetix firewall` in chat. The footer shows a shield chip when the firewall
 is on. The toggle is persisted in the active project's `settings.json`
@@ -380,7 +380,7 @@ that row's process group; killing one scanner never aborts its siblings, and
 only cancelling the whole run (esc/quit) stops all of them. The review scan
 rows are registered quiet so their stdout is not round-tripped: the triage
 turn carries the structured report attachments instead. `t` starts
-`signet:triage-vulns` on the selected activity's project, keyed per project
+`belai:triage-vulns` on the selected activity's project, keyed per project
 basename so two projects do not collide on the instance name. `enter`
 round-trips the finished output to the model exactly like a `!shell` result:
 it classifies first (unless guardrails are off), seals as a shell attachment,

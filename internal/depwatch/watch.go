@@ -11,18 +11,18 @@ import (
 // agentprofile (internal/agentprofile/builtin/deps-*.json) that knows its
 // ecosystem's lockfile mechanics, transitive coercion and manifest quirks.
 const (
-	ProfileJavaScript = "signet:deps-javascript"
-	ProfilePython     = "signet:deps-python"
-	ProfileGo         = "signet:deps-go"
-	ProfileRust       = "signet:deps-rust"
-	ProfileRuby       = "signet:deps-ruby"
-	ProfileJVM        = "signet:deps-jvm"
-	ProfileDotNet     = "signet:deps-dotnet"
-	ProfilePHP        = "signet:deps-php"
-	ProfileApple      = "signet:deps-apple"
-	ProfileContainers = "signet:deps-containers"
-	ProfileCI         = "signet:deps-ci"
-	ProfileOther      = "signet:deps-other"
+	ProfileJavaScript = "belai:deps-javascript"
+	ProfilePython     = "belai:deps-python"
+	ProfileGo         = "belai:deps-go"
+	ProfileRust       = "belai:deps-rust"
+	ProfileRuby       = "belai:deps-ruby"
+	ProfileJVM        = "belai:deps-jvm"
+	ProfileDotNet     = "belai:deps-dotnet"
+	ProfilePHP        = "belai:deps-php"
+	ProfileApple      = "belai:deps-apple"
+	ProfileContainers = "belai:deps-containers"
+	ProfileCI         = "belai:deps-ci"
+	ProfileOther      = "belai:deps-other"
 )
 
 // Profiles lists every ecosystem profile, for tests and docs.
@@ -33,7 +33,7 @@ var Profiles = []string{
 
 // ProfileFor maps a CLI ecosystem to the background-agent profile that knows
 // how to address its manifests. Every ecosystem has one: the niche ones share
-// signet:deps-other.
+// belai:deps-other.
 func ProfileFor(ecosystem string) string {
 	switch ecosystem {
 	case "npm", "deno":

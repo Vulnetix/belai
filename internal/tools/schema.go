@@ -1,7 +1,7 @@
 package tools
 
 import (
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 // Schema converts a Definition into an OpenAI-compatible function schema.

@@ -17,17 +17,17 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/vulnetix/signet/internal/agent"
-	"github.com/vulnetix/signet/internal/agentpool"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/credentials"
-	"github.com/vulnetix/signet/internal/inputhistory"
-	"github.com/vulnetix/signet/internal/promptlib"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/session"
-	"github.com/vulnetix/signet/internal/transcript"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/agentpool"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/inputhistory"
+	"github.com/vulnetix/belai/internal/promptlib"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/transcript"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 func createTestPrompt(t *testing.T, scope config.Scope, workdir, name, prompt string) {
@@ -38,7 +38,7 @@ func createTestPrompt(t *testing.T, scope config.Scope, workdir, name, prompt st
 }
 
 func TestMain(m *testing.M) {
-	tmp, err := os.MkdirTemp("", "signet-tui-test")
+	tmp, err := os.MkdirTemp("", "belai-tui-test")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -46,7 +46,7 @@ func TestMain(m *testing.M) {
 	defer os.RemoveAll(tmp)
 
 	// Isolate state/session files and provider env from the developer machine.
-	os.Setenv("SIGNET_HOME", tmp)
+	os.Setenv("BELAI_HOME", tmp)
 	os.Setenv("OPENAI_API_KEY", "")
 	os.Setenv("ANTHROPIC_API_KEY", "")
 	os.Setenv("CLOUDFLARE_API_KEY", "")
@@ -55,10 +55,10 @@ func TestMain(m *testing.M) {
 	os.Setenv("CF_AIG_TOKEN", "")
 	os.Setenv("CF_AIG_URL", "")
 	os.Setenv("CF_ACCOUNT_ID", "")
-	os.Setenv("SIGNET_PROVIDER", "")
+	os.Setenv("BELAI_PROVIDER", "")
 	os.Setenv("PI_PROVIDER", "")
-	os.Setenv("SIGNET_MODEL", "")
-	os.Setenv("SIGNET_EFFORT", "")
+	os.Setenv("BELAI_MODEL", "")
+	os.Setenv("BELAI_EFFORT", "")
 	os.Exit(m.Run())
 }
 
@@ -152,7 +152,7 @@ func TestToggleCavemanPersistsToProjectPrefs(t *testing.T) {
 }
 
 func TestToggleCavemanOverridesGlobalDefault(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 
 	on := true
@@ -849,7 +849,7 @@ func TestAutoNamingMarksRequested(t *testing.T) {
 	a := New(Options{})
 	a.SetClassifier(&fakeClassifier{raw: "My Session"})
 	a.modeExplicit = true
-	a.namedAgent = "signet:debug" // agent mode requires an engaged agent
+	a.namedAgent = "belai:debug" // agent mode requires an engaged agent
 	a.editor.SetValue("hello world")
 	m, cmd := a.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	a = m.(*App)
@@ -1011,7 +1011,7 @@ func TestBuildTurnsPreservesToolMetadata(t *testing.T) {
 
 func TestHistoryCycleUpArrow(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	st, _ := session.NewStore()
 	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "older prompt"})
@@ -1036,7 +1036,7 @@ func TestHistoryCycleUpArrow(t *testing.T) {
 
 func TestHistoryCycleDownArrowRestoresOriginal(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	st, _ := session.NewStore()
 	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "history item"})
@@ -1061,7 +1061,7 @@ func TestHistoryCycleDownArrowRestoresOriginal(t *testing.T) {
 
 func TestHistoryCycleEnterAccepts(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	st, _ := session.NewStore()
 	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "accepted prompt"})
@@ -1093,7 +1093,7 @@ func TestHistoryCycleEnterAccepts(t *testing.T) {
 
 func TestHistoryCycleEscCancels(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	st, _ := session.NewStore()
 	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "history item"})
@@ -1117,7 +1117,7 @@ func TestHistoryCycleEscCancels(t *testing.T) {
 // what up offers; it is only mid-cycle typing that no longer re-filters.
 func TestHistoryCycleSeedsFromComposer(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	st, _ := session.NewStore()
 	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "how to deploy"})
@@ -1141,7 +1141,7 @@ func TestHistoryCycleSeedsFromComposer(t *testing.T) {
 // was doing.
 func TestHistoryCycleTypingEditsLoadedPrompt(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	st, _ := session.NewStore()
 	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "how to deploy"})
@@ -1162,7 +1162,7 @@ func TestHistoryCycleTypingEditsLoadedPrompt(t *testing.T) {
 
 func TestHistoryCycleTabCyclesNamedPrompts(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	createTestPrompt(t, config.ScopeGlobal, "", "deploy", "deploy the app")
 	createTestPrompt(t, config.ScopeGlobal, "", "review", "review the diff")
@@ -1203,7 +1203,7 @@ func TestHistoryCycleTabCyclesNamedPrompts(t *testing.T) {
 
 func TestHistoryCycleRightAccepts(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	createTestPrompt(t, config.ScopeGlobal, "", "deploy", "deploy the app")
 	a := New(Options{Workdir: workdir})
@@ -1222,7 +1222,7 @@ func TestHistoryCycleRightAccepts(t *testing.T) {
 
 func TestLibraryRankedBeforeHistory(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	createTestPrompt(t, config.ScopeGlobal, "", "deploy", "deploy the app")
 
@@ -1367,7 +1367,7 @@ func TestAutocompleteRightArrowAcceptsFirst(t *testing.T) {
 
 func TestSavePromptMode(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	a := New(Options{Workdir: workdir})
 	a.editor.SetValue("my favourite prompt")
@@ -1400,7 +1400,7 @@ func TestSavePromptMode(t *testing.T) {
 
 func TestSavePromptModeEmptyNameCancels(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	a := New(Options{Workdir: workdir})
 	a.editor.SetValue("prompt body")
@@ -1414,7 +1414,7 @@ func TestSavePromptModeEmptyNameCancels(t *testing.T) {
 
 func TestSavePromptModeEscCancels(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	a := New(Options{Workdir: workdir})
 	a.editor.SetValue("prompt body")
@@ -1437,7 +1437,7 @@ func TestSavePromptModeEmptyPromptWarns(t *testing.T) {
 
 func TestHistoryCycleBackspaceLeavesCycleAndEdits(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	st, _ := session.NewStore()
 	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "abc"})
@@ -1465,7 +1465,7 @@ func TestHistoryCycleBackspaceLeavesCycleAndEdits(t *testing.T) {
 
 func TestLibraryProjectOverridesGlobal(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	createTestPrompt(t, config.ScopeGlobal, "", "x", "global x")
 	createTestPrompt(t, config.ScopeProject, workdir, "x", "project x")
@@ -1482,7 +1482,7 @@ func TestLibraryProjectOverridesGlobal(t *testing.T) {
 // offered once, under its name.
 func TestHistoryResultsRankLibraryFirstAndDedupe(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	createTestPrompt(t, config.ScopeGlobal, "", "deploy", "deploy the app")
 	st, _ := session.NewStore()
@@ -1514,7 +1514,7 @@ func TestHistoryResultsRankLibraryFirstAndDedupe(t *testing.T) {
 // composer seed can name the prompt it wants.
 func TestHistoryResultsMatchOnName(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	createTestPrompt(t, config.ScopeGlobal, "", "deploy", "ship it")
 	createTestPrompt(t, config.ScopeGlobal, "", "review", "read the diff")
@@ -1530,7 +1530,7 @@ func TestHistoryResultsMatchOnName(t *testing.T) {
 // nothing.
 func TestPromptPickerHiddenWithoutNamedPrompts(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	st, _ := session.NewStore()
 	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "plain history"})
@@ -1559,7 +1559,7 @@ func TestPromptPickerHiddenWithoutNamedPrompts(t *testing.T) {
 
 func TestPromptPickerHintShownWithNamedPrompts(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	createTestPrompt(t, config.ScopeGlobal, "", "deploy", "deploy the app")
 	a := New(Options{Workdir: workdir})
@@ -1577,7 +1577,7 @@ func TestPromptPickerHintShownWithNamedPrompts(t *testing.T) {
 // the first named prompt rather than continuing into the unnamed tail.
 func TestHistoryTabReturnsFromUnnamedTail(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	createTestPrompt(t, config.ScopeGlobal, "", "deploy", "deploy the app")
 	st, _ := session.NewStore()
@@ -1605,7 +1605,7 @@ func TestHistoryTabReturnsFromUnnamedTail(t *testing.T) {
 // esc restores it untouched.
 func TestHistoryCycleNoResultsKeepsTypedText(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	a := New(Options{Workdir: workdir})
 	a.editor.SetValue("nothing matches this")
@@ -1637,7 +1637,7 @@ func TestHistoryCycleNoResultsKeepsTypedText(t *testing.T) {
 // results, and nothing rebuilds them until the cycle is re-entered.
 func TestHistoryCycleFilterIsFixedForTheCycle(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	st, _ := session.NewStore()
 	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "how to deploy"})
@@ -2233,7 +2233,7 @@ func TestBuildTurnsDropsSubagentRows(t *testing.T) {
 
 func TestHistoryCycleBackspaceEditsLoadedPrompt(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	st, _ := session.NewStore()
 	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "history item"})
@@ -2257,7 +2257,7 @@ func TestHistoryCycleBackspaceEditsLoadedPrompt(t *testing.T) {
 
 func TestHistoryCycleBackspaceAfterFilterEditsLoadedPrompt(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	st, _ := session.NewStore()
 	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "how to deploy"})
@@ -2282,7 +2282,7 @@ func TestHistoryCycleBackspaceAfterFilterEditsLoadedPrompt(t *testing.T) {
 
 func TestHistoryCycleLeftArrowKeepsLoadedPrompt(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	st, _ := session.NewStore()
 	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "history item"})
@@ -2303,7 +2303,7 @@ func TestHistoryCycleLeftArrowKeepsLoadedPrompt(t *testing.T) {
 
 func TestHistoryCycleEditAfterLeftArrowInsertsAtCursor(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	st, _ := session.NewStore()
 	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "abcd"})
@@ -2421,7 +2421,7 @@ func TestHandleAgentReadySurfacesBuildError(t *testing.T) {
 
 func TestResolveCredentialsCmdUsesResolver(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("SIGNET_HOME", home)
+	t.Setenv("BELAI_HOME", home)
 	workdir := t.TempDir()
 
 	userPath, err := config.UserCredentialsPath()
@@ -2595,7 +2595,7 @@ func TestSubmitInputSelectsModeInsideTheAgent(t *testing.T) {
 // they ran.
 func TestHistoryCycleIncludesLocalInputsInOrder(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	st, _ := session.NewStore()
 	_ = st.Append(workdir, "sess-1", session.Entry{Type: "user", Role: "user", Content: "old prompt", Timestamp: 1000})
@@ -2630,7 +2630,7 @@ func TestHistoryCycleIncludesLocalInputsInOrder(t *testing.T) {
 
 func TestSubmittedSlashCommandIsRecalled(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	a := New(Options{Workdir: workdir})
 	a.editor.SetValue("/no-such-command")
@@ -2651,7 +2651,7 @@ func TestSubmittedSlashCommandIsRecalled(t *testing.T) {
 // the newest slot and appears once.
 func TestHistoryCycleRerunMovesCommandToNewest(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	path, err := inputhistory.Path(workdir)
 	if err != nil {
@@ -2681,7 +2681,7 @@ func TestHistoryCycleRerunMovesCommandToNewest(t *testing.T) {
 // input history; the session store is its record.
 func TestPromptIsNotRecordedAsLocalInput(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	a := New(Options{Workdir: workdir})
 	if _, ok := a.runLocalInput("explain this repo"); ok {

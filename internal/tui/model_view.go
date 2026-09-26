@@ -13,15 +13,15 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/mlclassify"
-	"github.com/vulnetix/signet/internal/modelfetch"
-	"github.com/vulnetix/signet/internal/models"
-	"github.com/vulnetix/signet/internal/provider"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/rolemanager/jev"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/mlclassify"
+	"github.com/vulnetix/belai/internal/modelfetch"
+	"github.com/vulnetix/belai/internal/models"
+	"github.com/vulnetix/belai/internal/provider"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/rolemanager/jev"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // modelRole selects which role is being edited on the /model screen.

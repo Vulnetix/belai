@@ -8,17 +8,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 func testManager(t *testing.T) *Manager {
 	t.Helper()
 	dir := t.TempDir()
 	home := t.TempDir()
-	t.Setenv("SIGNET_HOME", home)
+	t.Setenv("BELAI_HOME", home)
 	return NewManager(dir, run.Config{}, nil, config.Settings{}, posture.Defaults(), tools.Capabilities{})
 }
 
@@ -87,7 +87,7 @@ func TestAttemptsCap(t *testing.T) {
 	settings := config.Settings{Resilience: &config.ResilienceSettings{MaxProcessRecoveries: 2}}
 	dir := t.TempDir()
 	home := t.TempDir()
-	t.Setenv("SIGNET_HOME", home)
+	t.Setenv("BELAI_HOME", home)
 	m := NewManager(dir, run.Config{}, nil, settings, posture.Defaults(), tools.Capabilities{})
 
 	if _, err := m.Start("false", "false"); err != nil {
@@ -247,7 +247,7 @@ func TestHistorySurvivesStop(t *testing.T) {
 
 func TestTailByIDAndLogDirectory(t *testing.T) {
 	m := testManager(t)
-	// The default log directory should sit under SIGNET_HOME/signet/logs.
+	// The default log directory should sit under BELAI_HOME/belai/logs.
 	if !strings.Contains(m.logsDir, string(filepath.Separator)+"logs") {
 		t.Fatalf("logsDir = %q, want .../logs", m.logsDir)
 	}

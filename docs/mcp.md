@@ -3,7 +3,7 @@
 **Status:** alpha-20260926. Shipped in an early form; the settings may still
 change.
 
-Signet connects to Model Context Protocol servers and offers their tools to
+Belai connects to Model Context Protocol servers and offers their tools to
 the model next to its own. Each server tool appears as
 `mcp__<server>__<tool>`, and every result is treated as untrusted third-party
 text.
@@ -18,7 +18,7 @@ text.
 ## Configuring servers
 
 Servers are declared in your global `settings.json`
-(`~/.vulnetix/signet/settings.json`):
+(`~/.vulnetix/belai/settings.json`):
 
 ```json
 {
@@ -47,7 +47,7 @@ Servers are declared in your global `settings.json`
 | --- | --- |
 | `transport` | `stdio` (default) or `http` (MCP streamable HTTP, JSON or event-stream responses) |
 | `command`, `args` | start a stdio server |
-| `env` | variables for a stdio server, on top of the scrubbed environment. `env:NAME` copies `NAME` from Signet's environment |
+| `env` | variables for a stdio server, on top of the scrubbed environment. `env:NAME` copies `NAME` from Belai's environment |
 | `url`, `headers` | reach an http server. A header value `env:NAME` is read from the environment |
 | `tools` | offer only these server tools |
 | `sandbox` | run a stdio server under the [OS sandbox](sandbox.md) |
@@ -57,7 +57,7 @@ Servers are declared in your global `settings.json`
 Server names are letters, digits, `_` and `-`, at most 32.
 
 Servers start in the background once the first-run trust gate has passed, so
-a slow server never delays startup. They stop when Signet exits. A server that
+a slow server never delays startup. They stop when Belai exits. A server that
 fails to start is reported by `/mcp` and offers no tools; the session carries
 on without it. A one-shot `-prompt` run waits for every server to connect or
 fail before its turn.
@@ -91,10 +91,10 @@ The `mcp` key is read from your global settings only. A repository's
   server cannot take the name of a built-in tool: every name starts with
   `mcp__`.
 - A stdio server starts with the scrubbed environment (no `*_API_KEY`,
-  `*_TOKEN`, `*_SECRET`, `SIGNET_*` from your shell), gets only the variables
+  `*_TOKEN`, `*_SECRET`, `BELAI_*` from your shell), gets only the variables
   you list, and runs in its own process group. With `sandbox: true` it runs
   under the OS sandbox too.
-- Signet offers servers nothing to call back: no roots, sampling or
+- Belai offers servers nothing to call back: no roots, sampling or
   elicitation. It only answers `ping`.
 
 ## Commands
@@ -118,12 +118,12 @@ reconnects one; the next turn uses its current tools.
 - A name longer than 64 characters is cut at 64.
 - A schema property whose name is not letters, digits, `_` and `-` is
   dropped, and `required` keeps only properties that survived.
-- A property type Signet does not know becomes `string`; a union such as
+- A property type Belai does not know becomes `string`; a union such as
   `["integer", "null"]` takes its first known type.
 - A server name with other characters fails to start and says why.
 - A tool listed in `tools` that the server does not offer is ignored.
 - An http server answering with a non-2xx status fails that call with the
   status. During connection, the status and a short excerpt of the body are
   the reason `/mcp` shows.
-- A stdio server still running two seconds after Signet closes its input is
+- A stdio server still running two seconds after Belai closes its input is
   killed with its process group.
