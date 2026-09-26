@@ -198,6 +198,18 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   asks on every call whatever the rules or the ask gate say, is withheld when
   nobody can be asked, and writes exactly the previewed file. The project
   layer may turn `skills.self_authoring` off, never on.
+- **Plugins are installed by the user, validated whole, and namespaced.**
+  `internal/plugins` installs only after the user confirms a full listing
+  (every hook's event and command included), or `-yes` on the CLI; the TUI
+  cannot install. Git runs a fixed argv with hooks disabled, no submodules,
+  no `file://` transport and the scrubbed environment; a local copy skips
+  `.git`, symlinks and special files. The manifest is strict, every component
+  path must stay inside the plugin after symlinks, and one invalid component
+  fails the plugin. Components load as `plugin:name` and never shadow the
+  user's or built-ins; plugin hooks resolve inside their own directory.
+  Plugins live in the global state directory only: no repository setting can
+  install, enable or propose one, and the manifest has no key for providers,
+  credentials, settings or permissions.
 - **Notifications carry harness text only.** `internal/notify` composes
   every notification from a fixed template; the one variable is a tool or
   agent name reduced to an identifier. Model output, tool output and paths

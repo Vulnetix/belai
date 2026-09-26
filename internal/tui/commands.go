@@ -315,6 +315,10 @@ func NewRegistry(workdir string) *Registry {
 		}
 		return a.push(viewResume)
 	})
+	r.Register("plugin", "list, enable, disable or remove plugins (install with signet plugin install)", nil, func(a *App, arg string) tea.Cmd {
+		a.addSystem(pluginCommand(arg))
+		return nil
+	})
 	r.Register("skills", "list installed skills", nil, func(a *App, arg string) tea.Cmd {
 		a.addSystem(skillsListing(tools.InstalledSkills()))
 		return nil

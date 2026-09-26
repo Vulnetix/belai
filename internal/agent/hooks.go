@@ -23,21 +23,28 @@ const (
 	hookResultSummaryBytes = 2 * 1024
 )
 
-// LoadHooks reads the global hooks directory. Discovery fails closed: an
-// unreadable dir or a disabled setting yields no hooks, never an error.
+// LoadHooks reads the global hooks directory, then enabled plugins' hooks.
+// Discovery fails closed: an unreadable dir or a disabled setting yields no
+// hooks, never an error.
 func LoadHooks(settings config.Settings, pol posture.Policy) *hooks.Set {
 	if !settings.Hooks.HooksEnabled() {
 		return nil
 	}
-	dir, err := config.GlobalHooksDir()
-	if err != nil {
+	var loaded []*hooks.Hook
+	if dir, err := config.GlobalHooksDir(); err == nil {
+		if hs, err := hooks.LoadDir(dir, pol); err == nil {
+			loaded = hs
+		}
+	}
+	// Enabled plugins' hooks follow the user's own; each keeps the directory
+	// it was loaded from, so its command resolves inside its plugin.
+	if hooks.Extra != nil {
+		loaded = append(loaded, hooks.Extra(pol)...)
+	}
+	if len(loaded) == 0 {
 		return nil
 	}
-	loaded, err := hooks.LoadDir(dir, pol)
-	if err != nil || len(loaded) == 0 {
-		return nil
-	}
-	return &hooks.Set{Hooks: loaded, Runner: &hooks.Runner{Root: dir, Timeout: hookTimeout, MaxBytes: hookMaxBytes}}
+	return &hooks.Set{Hooks: loaded, Runner: &hooks.Runner{Timeout: hookTimeout, MaxBytes: hookMaxBytes}}
 }
 
 // Hooks returns the session's loaded hooks, so a caller (the TUI) can fire
