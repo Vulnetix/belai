@@ -20,7 +20,7 @@ import localModelShot from '../../assets/shots/local-model.svg';
 import budgetsShot from '../../assets/shots/budgets.svg';
 ---
 
-<SealedSection label="modes" sealText="Modes: agent for general coding, plan for read-only investigation with Bash absent, and goal for one tracked objective. Explicit choices are sticky and never re-classified. An agent turn ends on a done panel; a goal or an approved plan ends on a final report." id="modes">
+<SealedSection label="modes" sealText="Modes: agent for general coding, plan for read-only investigation with Bash absent, and goal for one tracked objective. In any mode the model can ask you multiple-choice questions; in plan mode your answers start a new agent turn with every tool. Explicit choices are sticky and never re-classified. An agent turn ends on a done panel; a goal or an approved plan ends on a final report." id="modes">
   <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
     <div class="order-2 lg:order-1 space-y-4">
       <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={planMode} /></div>
@@ -40,9 +40,16 @@ import budgetsShot from '../../assets/shots/budgets.svg';
       <p class="mt-4 text-vx-ink/80">
         Plan mode is read-only. The model is not offered <code class="mono">Bash</code> at all, so it has
         no way to call it. An explicit allow rule can add a read-only <code class="mono">Bash</code> back.
-        The last planning pass offers only <code class="mono">update_plan</code> and{' '}
-        <code class="mono">ExitPlanMode</code>, so every plan turn ends with a plan.
-        The plan is saved as a structured document that you approve.
+        The last planning pass offers only <code class="mono">update_plan</code>,{' '}
+        <code class="mono">ExitPlanMode</code> and <code class="mono">AskUserQuestion</code>, so every plan turn
+        ends with a plan or a question. The plan is saved as a structured document that you approve.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        In any mode the model can ask you multiple-choice questions with{' '}
+        <code class="mono">AskUserQuestion</code> instead of guessing. In agent and goal mode your answers come
+        back to it straight away and the work carries on. In plan mode your answers start a new agent turn
+        with every tool, so the model acts on them rather than stopping at a plan. A question already asked in
+        the session is never asked again, and a run with nobody to answer is told to proceed on its own judgement.
       </p>
       <p class="mt-4 text-vx-ink/80">
         Goal mode works on one named objective until it is done. Progress is tracked in a todo list
