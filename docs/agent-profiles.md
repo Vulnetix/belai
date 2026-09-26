@@ -189,6 +189,30 @@ Three built-in single-turn profiles are always available:
 All three run in `single` mode with supervised autonomy and omit `tools`, so
 they advertise the full default surface. `@agent:signet:fanout` also pre-engages
 the fan-out surface so the `Task` tool is offered to the model.
+
+## Built-in Vulnetix profiles
+
+The harness starts these itself; they can also be started by hand with
+`/agent start`. The scanner and dependency agents are read-only by
+construction: their `tools` are `Read`, `Grep` and `Glob`, so they cannot edit
+a file, install a package or run a package manager.
+`signet:triage-vulns` also has `Bash`; its prompt forbids edits, and every
+Bash call still goes through the permission rules. See
+[vulnetix.md](vulnetix.md).
+
+- `signet:vulnetix-scanner`: started by a `/vulnetix review` for each scanner
+  as soon as it finishes with admitted findings, keyed
+  `signet:vulnetix-scanner@<scanner>#<review>`. It grounds that scanner's
+  findings in the repository and replies one line per finding, the same
+  contract as the triage turn's per-scanner subagent. `max_iterations` is 6.
+- `signet:triage-vulns`: `t` on the artifacts screen or a runs-panel row
+  starts it on that project, keyed per project. It reads the `.vulnetix/`
+  artifacts, cites file and line, and proposes fixes without patching.
+- `signet:deps-<ecosystem>`: the dependency hook's per-ecosystem agents:
+  `signet:deps-go`, `signet:deps-javascript`, `signet:deps-python`,
+  `signet:deps-rust`, `signet:deps-ruby`, `signet:deps-php`,
+  `signet:deps-jvm`, `signet:deps-dotnet`, `signet:deps-apple`,
+  `signet:deps-containers`, `signet:deps-ci` and `signet:deps-other`.
 ## Event flow
 
 ```mermaid

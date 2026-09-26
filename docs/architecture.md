@@ -2012,6 +2012,12 @@ provider I/O — and the composer's top edge switches to a working state:
   reads `exploring N/M · <reference>` with a live spinner. The explore pill is
   *not* a Role Manager signal — it stays up until a real parent stream event
   lands, because the fan-out emits only subagent events, never parent text.
+- **Vulnetix review** (teal). While a `/vulnetix review` runs and no turn is
+  in flight, the composer shows a `vulnetix review` pill with the review's
+  progress and `⏎ steer · esc cancel review`: enter queues the text for the
+  review's triage turn and esc cancels the review (see
+  [vulnetix.md](vulnetix.md#review-progress-in-the-main-thread)). A turn in
+  flight keeps the ordinary working state, and enter steers that turn.
 
 The agent emits `EventRoleManagerKind` (with the sub-phase) at every Role
 Manager classification point; model and tool events switch the composer to the
@@ -2072,6 +2078,11 @@ there is room, a muted note naming the running tool and the iteration. When
 the line is too narrow the notes go first, then chips collapse into `→ N
 more`. A one-second tick drives the glyph and refreshes background loop state
 only while an agent is working.
+
+A running `/vulnetix review` leads the roster line with its own progress,
+`vulnetix review 6/10 · secrets, cbom +1 · 2 agents · 3m12s`, and the chips
+share what is left of the line. The review segment is the last to be
+truncated.
 
 While a thread is followed, the roster line becomes the pulse for that agent:
 its chip, state, running tool or `thinking`, `iter N/M`, tool and error
@@ -2374,6 +2385,12 @@ Every framed panel is titled by its speaker, never by the harness:
   edges in the line colour and the title in the brand accent.
 - **`✓ done`** — the completion panel that closes every agent-mode turn (see
   below). Teal-framed, one line, composed by the harness.
+- **`vulnetix <scanner>`** / **`vulnetix <scanner> review`**: report cards, a
+  `/vulnetix review` scanner's harness-composed result and its scanner
+  agent's classified report. Markdown bodies collapsed to 12 lines; teal, amber
+  when the result needs action, red when the scanner failed. Render-only:
+  they never enter the model's history (see
+  [vulnetix.md](vulnetix.md#review-progress-in-the-main-thread)).
 
 #### How a turn ends
 
