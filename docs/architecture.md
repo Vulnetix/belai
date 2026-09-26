@@ -645,6 +645,10 @@ Business rules and edge cases:
   instead is not a way to launder a file past the classifier, because the
   sealed `<tools>` block tells the model that any tool result is data rather
   than instructions.
+- **Roadmap kinds classify.** Three planned kinds join the always-classify
+  set when they ship: `hook` (hook `additional_context` and denial reasons,
+  see [hooks](hooks.md)), `skill` (skill bodies, see [skills](skills.md)) and
+  `mcp` (MCP server results, see [MCP servers](mcp.md)).
 - **Explore findings are separate.** An explore subagent's report is model
   output, not tool output, and is classified explicitly in
   `internal/agent/explore.go` regardless of this rule.

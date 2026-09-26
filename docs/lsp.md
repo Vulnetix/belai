@@ -149,7 +149,8 @@ Three new role-manager events appear in the internal-work feed:
 ## Relationship to hooks
 
 The existing `internal/hooks` system defines `pre_edit`/`post_edit` hooks, but
-no caller currently uses it. Language-server diagnostics are **not** wired
+no caller currently uses it. Wiring them up is on the roadmap (see
+[hooks](hooks.md)). Language-server diagnostics are **not** wired
 through hooks. Hooks are user-authored commands whose output is arbitrary and
 would need `KindBash` treatment; diagnostics are a harness-shaped, sealed block
 from a fixed set of checkers. The two mechanisms stay orthogonal.
