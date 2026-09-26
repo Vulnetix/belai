@@ -1493,7 +1493,16 @@ the sanitized prompt and the repo map's detected test commands. The user's
 prompt is kept verbatim as the Objective line, and the drafted sections
 (verification surface, constraints, boundaries, iteration policy, blocked-stop
 condition) are appended beneath it. The draft is sanitized before sealing so
-it cannot forge a harness block; on transport failure, a timeout, an empty
+it cannot forge a harness block. The drafter is told to use only the
+harness-detected verification commands (plus read-only git), to name files
+only when the goal names them, and to stay under 600 words. A deterministic
+post-check (`dropInventedCommands`) then removes any contract line whose
+backticked command starts with a known build or test runner (`make`, `npm`,
+`cargo`, `pytest`, `go`, `just`, `gradle`, …) that no detected command
+uses. Sessions showed `make test` written into contracts for a repository
+with no Makefile, and the loop then spent passes on a command that could
+never pass. With no detected commands there is nothing to check against and
+the draft is kept as written. On transport failure, a timeout, an empty
 draft, or a draft missing the objective, the raw prompt is carried instead and
 a warning naming the cause is emitted (a timeout, a provider status code, or an
 unusable draft — never the provider's response body). The draft runs on the
@@ -2046,6 +2055,13 @@ budgets, or by an older signet), once each, so day and month totals cover every
 session. The rules, colour states and edge cases are in
 [Token budgets](token-budgets.md).
 
+A streamed OpenAI-compatible call reports usage only when the request asks
+for it. `openai`, `openrouter`, `groq`, `deepseek`, `fireworks`, `together`
+and `xai` send `stream_options.include_usage` (the provider registry's
+`Usage` flag). Without it a streamed turn reported no usage, and goal
+accounting stayed at zero. A provider that still returns no usage block
+contributes zero, never an estimate.
+
 ### Subagent roster and the footer pulse
 
 Every fan-out subagent the harness launches, explore tasks and background
@@ -2307,6 +2323,11 @@ When the user presses `ctrl+o` to expand all panels, the title switches to
 produced the turn. The provider and model are recorded per-message, persisted
 in the session JSONL under `meta.provider`/`meta.model`, and restored on resume
 so old transcripts keep showing the model that generated them.
+Every assistant bubble is stamped with the provider and model when it is
+created, including the empty bubble a turn opens with and the fallback bubble
+a tool call makes when no assistant row exists. A turn whose only output was
+tool calls therefore still titles its expanded panel `provider/model`, never
+the generic `model`.
 
 The `signet` panel's role-manager activity rows also expose extra context when
 expanded: each line is prefixed with `[activity]` and `[provider/model]`
