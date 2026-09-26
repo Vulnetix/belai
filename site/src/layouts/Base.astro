@@ -22,6 +22,8 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     <meta name="description" content={description} />
     <link rel="canonical" href={canonical} />
     <meta name="generator" content={Astro.generator} />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="author" content="Vulnetix" />
 
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
@@ -29,6 +31,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
+    <meta property="og:locale" content="en_US" />
 
     <!-- Twitter -->
     <meta name="twitter:card" content="summary" />
@@ -47,6 +50,12 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
       description,
       license: 'https://www.apache.org/licenses/LICENSE-2.0',
       offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+      codeRepository: 'https://github.com/vulnetix/signet',
+      publisher: {
+        '@type': 'Organization',
+        name: 'Vulnetix',
+        url: 'https://vulnetix.com',
+      },
     })} />
   </head>
 
