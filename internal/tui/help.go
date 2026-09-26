@@ -81,6 +81,7 @@ func keySections() []keySection {
 			{"tab", "highlight the next agent, ending on (none)"},
 			{"enter", "engage the highlighted agent for the following agent-mode turns"},
 			{"right", "engage the highlighted agent"},
+			{"ctrl+p", "cycle the available agent profiles; shift+tab clears the last-used one first"},
 			{"ctrl+g", "start the highlighted ↻ definition as a background agent"},
 			{"esc", "close the picker"},
 		}},

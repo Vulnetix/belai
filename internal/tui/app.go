@@ -2468,6 +2468,15 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 	case "shift+tab":
 		a.cycleMode()
 		return nil
+	case "ctrl+p":
+		// In agent mode ctrl+p cycles the available agent profiles — the
+		// shortcut the mode chip advertises after shift+tab clears the
+		// last-used profile. Outside agent mode it keeps the editor's own
+		// cursor-up binding.
+		if a.mode == "agent" {
+			return a.cycleAgentFromChat()
+		}
+		return a.forwardToEditor(m)
 	case "ctrl+l":
 		// Clear the transcript view; the session is untouched.
 		a.messages = nil
@@ -4224,6 +4233,11 @@ func (a *App) cycleMode() {
 	case "goal":
 		a.mode = "agent"
 		a.addSystem("agent mode on")
+		// Entering agent mode via shift+tab starts from a clean carrier: the
+		// previously engaged profile is cleared and the footer shows the ctrl+p
+		// shortcut where its name would have been, instead of silently resuming
+		// whatever profile was last used.
+		a.clearEngagedAgent()
 		if note := a.readOnlyNotice(); note != "" {
 			a.addSystem(note)
 		}
@@ -4794,6 +4808,12 @@ func (a *App) refreshFooter() {
 	a.footer.Width = a.contentWidth()
 	a.footer.Mode = a.mode
 	a.footer.Agent = a.engagedAgent()
+	if a.mode == "agent" && a.namedAgent == "" {
+		// No carrier is engaged: the profile-name slot in the mode chip becomes
+		// the shortcut that cycles the available profiles, so the prompt to
+		// choose one lives exactly where its name would appear.
+		a.footer.Agent = "ctrl+p to pick"
+	}
 	if a.footerAgentOverride != "" {
 		a.footer.Agent = a.footerAgentOverride
 	}
@@ -4903,6 +4923,23 @@ func (a *App) firewallAvailable() bool {
 		return false
 	}
 	return a.resolver.FirewallState(a.cfg.Provider).Reason == ""
+}
+
+// clearEngagedAgent drops the engaged agent profile and its persisted
+// record. It is the shift+tab entry into agent mode: the mode chip then shows
+// the ctrl+p shortcut in place of the profile name, prompting a fresh choice
+// rather than resuming the last-used carrier.
+func (a *App) clearEngagedAgent() {
+	a.namedAgent = ""
+	a.namedAgentTools = nil
+	a.agentExplicit = false
+	a.agentPickerOpen = false
+	a.agentPickerSubmit = false
+	a.agentIndex = noAgentSelection
+	a.state.ActiveProfile = ""
+	a.persistCarrierMeta()
+	_ = a.persistPref(func(p *config.ProjectPrefs) { p.Agent = "" })
+	a.refreshFooter()
 }
 
 // engagedProfile returns the currently engaged agent definition, if any.
