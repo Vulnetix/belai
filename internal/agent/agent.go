@@ -222,6 +222,11 @@ type Session struct {
 	modeDetector         rolemanager.IntentDetector
 	// taskCallsThisTurn counts Task invocations in the current fan-out turn.
 	taskCallsThisTurn int
+	// turnIntent is the detected intent for the current turn.
+	turnIntent rolemanager.Intent
+	// handoffUpdatePlanCalled is true once the handoff profile has called
+	// update_plan. Mutating tool calls before it are refused.
+	handoffUpdatePlanCalled bool
 	// emit is the current turn's event emitter, set at the start of run.
 	emit       func(Event)
 	hooks      []*hooks.Hook
@@ -615,6 +620,8 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	emit = stampEvents(emit)
 	s.emit = emit
 	s.taskCallsThisTurn = 0
+	s.handoffUpdatePlanCalled = false
+	// turnIntent is set when the mode decision is finalised below.
 
 	clean := sanitize.Sanitize(in.Prompt)
 
@@ -732,6 +739,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		modeDec.AppendCarrier = true
 		modeDec.Explore = false
 	}
+	s.turnIntent = modeDec.Intent
 
 	// Handoff profile: the first directive tells the model to record every
 	// plan task before editing, and the turn stays scoped to the plan's paths.
@@ -1243,10 +1251,19 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 	if tool == nil {
 		return refusal
 	}
+	if strings.EqualFold(call.Name, "update_plan") {
+		s.handoffUpdatePlanCalled = true
+	}
 	if len(s.scope) > 0 && tool.Kind().ReadOnly() {
 		if subj := tool.Subject(call.Args); subj != "" && !inScope(subj, s.scope) {
 			return fmt.Sprintf("tool result withheld: %q is outside the handoff scope %v", call.Name, s.scope)
 		}
+	}
+
+	// Handoff gate: the profile must call update_plan before any mutating
+	// tool, so the plan tasks are recorded before edits begin.
+	if s.turnIntent == rolemanager.IntentHandoff && !s.handoffUpdatePlanCalled && tools.Mutates(tool) {
+		return fmt.Sprintf("tool result withheld: %q must wait until update_plan records the plan tasks", call.Name)
 	}
 
 	// An argument the schema does not declare would be silently ignored,
