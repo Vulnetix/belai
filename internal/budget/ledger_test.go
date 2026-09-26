@@ -228,7 +228,7 @@ func TestBudgetEdge16_FailedWriteKeepsUsagePending(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := openAt(t, good, "s", time.Now())
-	r.path = filepath.Join(blocker, LedgerFile) // a file where a directory must be
+	setLedgerPath(r, filepath.Join(blocker, LedgerFile)) // a file where a directory must be
 	r.Add("p", "m", 77)
 	if err := r.Flush(); err == nil {
 		t.Fatal("expected the write to fail")
@@ -236,7 +236,7 @@ func TestBudgetEdge16_FailedWriteKeepsUsagePending(t *testing.T) {
 	if got := r.Used(day(1)); got != 77 {
 		t.Fatalf("usage after a failed write = %d, want 77 still counted", got)
 	}
-	r.path = good
+	setLedgerPath(r, good)
 	if err := r.Flush(); err != nil {
 		t.Fatal(err)
 	}
@@ -287,4 +287,13 @@ func TestRecorderCreatesMissingDirectory(t *testing.T) {
 	if got := readFile(t, path).Days["p/m"][time.Now().Format(dayLayout)]; got != 3 {
 		t.Fatalf("written = %d, want 3", got)
 	}
+}
+
+// setLedgerPath repoints a recorder at another file. The background flusher
+// may be mid-write (Add kicks it), and every write runs under flushMu, so the
+// path is swapped under that lock.
+func setLedgerPath(r *Recorder, p string) {
+	r.flushMu.Lock()
+	r.path = p
+	r.flushMu.Unlock()
 }
