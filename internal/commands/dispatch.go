@@ -16,6 +16,8 @@ const (
 	ActionStatus
 	ActionHelp
 	ActionFirewall
+	ActionMCP
+	ActionSetup
 )
 
 // Invocation is the result of parsing a /vulnetix argument.
@@ -33,6 +35,8 @@ var actionNames = map[string]Action{
 	"status":    ActionStatus,
 	"help":      ActionHelp,
 	"firewall":  ActionFirewall,
+	"mcp":       ActionMCP,
+	"setup":     ActionSetup,
 }
 
 // ParseInvocation parses a /vulnetix argument. Bare "" maps to ActionRun.
@@ -45,7 +49,7 @@ func ParseInvocation(arg string) (Invocation, error) {
 	name := strings.ToLower(fields[0])
 	act, ok := actionNames[name]
 	if !ok {
-		return Invocation{}, fmt.Errorf("unknown /vulnetix subcommand %q (try review, configure, list, status, firewall, help)", name)
+		return Invocation{}, fmt.Errorf("unknown /vulnetix subcommand %q (try review, configure, list, status, firewall, mcp, setup, help)", name)
 	}
 	return Invocation{Action: act, Args: fields[1:], Raw: raw}, nil
 }

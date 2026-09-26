@@ -31,6 +31,7 @@ const (
 	viewLSP
 	viewBudgets
 	viewScreens
+	viewGettingStarted
 )
 
 // viewHandler is one full-screen view. Chat is the base state and lives
@@ -67,6 +68,7 @@ func init() {
 	viewHandlers[viewLSP] = viewHandler{name: "lsp", enter: (*App).enterLSP, key: (*App).handleLSPKey, render: (*App).lspView}
 	viewHandlers[viewBudgets] = viewHandler{name: "budgets", enter: (*App).enterBudgets, key: (*App).handleBudgetsKey, render: (*App).budgetsView}
 	viewHandlers[viewScreens] = viewHandler{name: "screens", enter: (*App).enterScreens, key: (*App).handleScreensKey, render: (*App).screensView}
+	viewHandlers[viewGettingStarted] = viewHandler{name: "getting-started", enter: (*App).enterGettingStarted, key: (*App).handleGettingStartedKey, render: (*App).gettingStartedView}
 }
 
 // push navigates to a full-screen view, remembering the current one on the

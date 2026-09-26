@@ -41,6 +41,33 @@ type Resolver struct {
 	// firewallEnabledOverride lets the TUI toggle the firewall flag for this
 	// process without rewriting the settings file. nil means use settings.
 	firewallEnabledOverride *bool
+
+	// firewallKeyErr records a provider whose key could not be stored on the
+	// gateway (BYOK). Such a provider is not routed: the gateway would
+	// refuse every request with provider_key_missing.
+	firewallKeyMu  sync.Mutex
+	firewallKeyErr map[string]error
+}
+
+// SetFirewallKeyError records the outcome of pushing provider's key to the
+// AI Firewall. nil clears a recorded failure.
+func (r *Resolver) SetFirewallKeyError(provider string, err error) {
+	r.firewallKeyMu.Lock()
+	defer r.firewallKeyMu.Unlock()
+	if err == nil {
+		delete(r.firewallKeyErr, provider)
+		return
+	}
+	if r.firewallKeyErr == nil {
+		r.firewallKeyErr = map[string]error{}
+	}
+	r.firewallKeyErr[provider] = err
+}
+
+func (r *Resolver) firewallKeyError(provider string) error {
+	r.firewallKeyMu.Lock()
+	defer r.firewallKeyMu.Unlock()
+	return r.firewallKeyErr[provider]
 }
 
 // keychainAvailable reports whether the host keychain is reachable, probing
@@ -180,6 +207,17 @@ func (r *Resolver) loadVulnetixCred() (vulnetixcreds.Credential, error) {
 	return r.vulnetixCred, r.vulnetixCredErr
 }
 
+// VulnetixAuthHeader returns the Vulnetix CLI's Authorization header value
+// for workdir, read fresh from the environment, the CLI's credential files and
+// the vulnetix-scoped keyring. It backs the MCP "vulnetix:cli" reference.
+func VulnetixAuthHeader(workdir string) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return vulnetixcreds.AuthHeader(os.Getenv, home, workdir, NewKeyringBackend("vulnetix"))
+}
+
 // FirewallState describes why the AI Firewall can or cannot route a provider
 // independently of the enabled flag.
 type FirewallState struct {
@@ -227,6 +265,9 @@ func (r *Resolver) FirewallState(provider string) FirewallState {
 		st.Gateway = r.settings.Vulnetix.GatewayURLOrDefault()
 	}
 	st.BaseURL = aifirewall.BaseURL(st.Gateway, slug, cred.OrgUUID)
+	if err := r.firewallKeyError(provider); err != nil {
+		st.Reason = "the AI Firewall has no " + provider + " key for this org (" + err.Error() + ")"
+	}
 	return st
 }
 

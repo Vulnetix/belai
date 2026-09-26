@@ -355,11 +355,15 @@ type App struct {
 	pendingInput string // prompt held while attachments validate
 
 	// view state
-	view                   viewState
-	viewStack              []viewState
-	providersState         providersViewState
-	providerDetailState    providerDetailViewState
-	providerNewState       providerNewViewState
+	view                viewState
+	viewStack           []viewState
+	providersState      providersViewState
+	providerDetailState providerDetailViewState
+	providerNewState    providerNewViewState
+	gsState             gettingStartedState
+	// gettingStartedOnInit opens the Getting started view on the first
+	// frame of a first interactive launch (start.go).
+	gettingStartedOnInit   bool
 	settingsState          settingsViewState
 	lspState               lspViewState
 	modelState             modelViewState
@@ -1105,6 +1109,10 @@ func (a *App) Init() tea.Cmd {
 	}
 	if a.initCmd != nil {
 		cmds = append(cmds, a.initCmd)
+	}
+	if a.gettingStartedOnInit {
+		a.gettingStartedOnInit = false
+		cmds = append(cmds, a.openGettingStarted())
 	}
 	// Credential resolution can probe the host keychain; run it off the first
 	// frame so the TUI paints from the env-only resolution immediately.
@@ -2005,6 +2013,9 @@ func (a *App) syncPlanMode() {
 
 // Update implements tea.Model.
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if cmd, ok := a.handleGettingStartedMsg(msg); ok {
+		return a, cmd
+	}
 	switch m := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.width = m.Width
@@ -2071,6 +2082,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.addSystem(m.text)
 		return a, nil
 
+	case vulnetixMCPDoneMsg:
+		a.handleVulnetixMCPDone(m)
+		return a, nil
+	case firewallSyncMsg:
+		a.handleFirewallSync(m)
+		return a, nil
 	case mcpDoneMsg:
 		if m.err != nil {
 			a.addSystem("mcp: restart " + m.name + " failed: " + mcpClean(m.err.Error(), 200))
@@ -5022,6 +5039,9 @@ func (a *App) toggleFirewall() tea.Cmd {
 	}
 	if note := a.prefHonestyNotice("firewall_enabled", on, a.settings.FirewallEnabled()); note != "" {
 		a.addSystem(note)
+	}
+	if on {
+		return a.syncAllFirewallKeys()
 	}
 	return nil
 }

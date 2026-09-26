@@ -160,12 +160,20 @@ func NewRegistry(workdir string) *Registry {
 		return a.submitPlanRefine("")
 	})
 	r.Register("vulnetix", "Vulnetix code review and firewall", func() []string {
-		return []string{"review", "configure", "list", "status", "firewall", "help"}
+		return []string{"review", "configure", "list", "status", "firewall", "mcp", "setup", "help"}
 	}, func(a *App, arg string) tea.Cmd {
 		// A review starts on the UI loop: it registers its progress, prints
 		// its start line and reports each scanner as it finishes (review.go).
-		if inv, err := commands.ParseInvocation(arg); err == nil && inv.Action == commands.ActionRun {
-			return a.startReview()
+		// mcp and setup print and push views, so they run there too.
+		if inv, err := commands.ParseInvocation(arg); err == nil {
+			switch inv.Action {
+			case commands.ActionRun:
+				return a.startReview()
+			case commands.ActionMCP:
+				return a.vulnetixMCPCommand(inv.Args)
+			case commands.ActionSetup:
+				return a.openGettingStarted()
+			}
 		}
 		return func() tea.Msg {
 			inv, err := commands.ParseInvocation(arg)
@@ -194,7 +202,7 @@ func NewRegistry(workdir string) *Registry {
 			case commands.ActionFirewall:
 				return a.toggleFirewall()
 			case commands.ActionHelp:
-				return vulnetixDoneMsg{report: commands.Report{Status: "/vulnetix review | configure | list | status | firewall"}}
+				return vulnetixDoneMsg{report: commands.Report{Status: "/vulnetix review | configure | list | status | firewall | mcp [remove|status] | setup"}}
 			default:
 				return nil // ActionRun is handled above, on the UI loop
 			}

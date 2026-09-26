@@ -64,8 +64,11 @@ for LLM traffic.
   or the logged-in Vulnetix CLI credential); (3) the provider maps to a
   gateway slug; and (4) resolving the credential succeeded without error. If any
   condition is missing, the toggle is stored but the run falls back to the
-  native provider. The project-layer setting overrides the global value, and
-  the CLI flag / environment variable overrides the project value.
+  native provider. A provider whose key could not be stored on the gateway
+  (see *Provider keys* below) also stays direct. A repository's
+  `.vulnetix/settings.json` can turn the firewall off but never on; the
+  per-project toggle (`F10`) overrides the global value, and the CLI flag /
+  environment variable overrides both.
 - **Gateway routing uses the provider slug, not the URL.** `internal/aifirewall`
   maps providers (`openai`, `anthropic`, etc.) to gateway paths. The gateway
   base URL is `<gatewayHost>/<slug>/<org>/v1`. Anthropic chat uses
@@ -86,7 +89,86 @@ for LLM traffic.
 | `/vulnetix list` | Open the project history screen |
 | `/vulnetix status` | Print CLI capabilities as plain text |
 | `/vulnetix firewall` | Toggle the Vulnetix AI Firewall on/off |
+| `/vulnetix mcp` | Add the hosted Vulnetix MCP server, authenticated with the CLI's credential (see *Vulnetix MCP server*) |
+| `/vulnetix mcp remove` | Remove it from the global settings and stop it |
+| `/vulnetix mcp status` | Show its state and tools |
+| `/vulnetix setup` | Open the Getting started view again (see *Getting started*) |
 | `/vulnetix help` | Show the available subcommands |
+
+## Getting started
+
+The first interactive launch opens a **Getting started** view (never a
+headless run, a seeded prompt, `--resume` or ACP). `esc` on the first page
+skips it; either way it is recorded in `state.json` (`onboarded_at`) and
+does not open again. `/vulnetix setup` reopens it.
+
+1. **Keys** — `tab`, `shift+tab`, `F3`, `F4`, `F9`, described from the
+   `/help` table.
+2. **Commands** — `/permissions`, `/model`, `/settings`, `/help`.
+3. **Vulnetix CLI** — when `vulnetix` is not on `PATH`, Belai shows the exact
+   command it would run: `brew install vulnetix/tap/vulnetix` on macOS and
+   Linux, or `scoop bucket add vulnetix https://github.com/Vulnetix/scoop-bucket`
+   then `scoop install vulnetix` on Windows. The default choice is *Skip*;
+   the fixed command runs only when you pick *Install*, with the scrubbed
+   environment and its own process group. With neither package manager the
+   manual install command is shown instead.
+4. **Account** — skipped when a CLI credential already loads. Otherwise you
+   can create an account, log in to an existing one, or skip.
+   - *Create* posts email, optional company and password to the enrollment
+     flow at `https://auth.vulnetix.com/if/flow/vulnetix-enrollment/`
+     (`internal/vulnetixenroll`, Authentik's flow-executor API). The form is
+     sent to that host only, redirects off it are refused, and the password
+     fields are cleared as soon as the post returns or the form is left. The
+     password is never stored, logged, written to the transcript or shown to
+     a model. Field errors from the flow are shown against their fields; a
+     verification-email stage asks you to open the link; a stage the terminal
+     cannot run offers the web page (`o`).
+   - *Log in* runs the CLI's RFC 8628 device flow against
+     `www.vulnetix.com` (`vulnetixcli.DeviceLogin`), shows the code and opens
+     the verification page. The resulting org id and API key go to
+     `vulnetix auth login --noninteractive --store home` through that child's
+     environment only (never its argv), so the CLI stays the only writer of
+     `~/.vulnetix/credentials.json`.
+5. **AI Firewall and MCP** — once a credential loads, Belai sets
+   `vulnetix.firewall_enabled: true` in the **global** settings, adds the
+   Vulnetix MCP server, and pushes the configured provider keys to the
+   firewall.
+
+## Vulnetix MCP server (`/vulnetix mcp`)
+
+`/vulnetix mcp` writes this entry to the global `settings.json` and connects it
+in the running session:
+
+```json
+{"mcp": {"servers": {"vulnetix": {
+  "transport": "http",
+  "url": "https://mcp.vulnetix.com/mcp",
+  "headers": {"Authorization": "vulnetix:cli"}
+}}}}
+```
+
+`vulnetix:cli` stands for the Vulnetix CLI's own credential. It is resolved each
+time the server is dialled (`vulnetixcreds.AuthHeader`: `ApiKey <org>:<key>`
+for an API-key or SigV4 login, `Bearer <token>` for a token login), so a later
+`vulnetix auth login` takes effect on `/mcp restart vulnetix`. The secret is
+never written to settings. The reference expands only in the `Authorization`
+header of an `https` URL on `vulnetix.com` or a subdomain; anywhere else the
+server fails to start with the reason. The server's tools are ordinary MCP
+tools (`mcp__vulnetix__*`), classified like every other MCP result.
+
+## Provider keys (BYOK)
+
+The gateway forwards to a provider with the org's own key for it, which the
+org stores once (`vulnetix ai-firewall key set`). A provider with no stored
+key is refused with `provider_key_missing`. While the firewall is on, Belai
+stores the key for you in the background whenever one is saved in
+`/providers` (edit, add, or import) and when the firewall is turned on
+(`F10`, Getting started). It runs
+`vulnetix ai-firewall key set <provider> --stdin -o json` with the key on
+stdin — never in argv or the environment. The outcome is one chat line. A
+failure keeps that provider direct (unrouted) for the session, so no turn is
+sent to a gateway that would refuse it; a later successful sync routes it
+again.
 
 ## Capability screen (`/vulnetix configure`)
 
@@ -360,9 +442,12 @@ cannot silence the check on the dependencies it asks you to add.
 The Vulnetix AI Firewall routes LLM traffic from Belai through the Vulnetix
 AI Firewall gateway. It can be toggled from anywhere with `F10` or with
 `/vulnetix firewall` in chat. The footer shows a shield chip when the firewall
-is on. The toggle is persisted in the active project's `settings.json`
-(`vulnetix.firewall_enabled`) and merged with the global profile setting
-(project overrides global; CLI flag overrides both).
+is on. The toggle is persisted in the per-project preferences (kept in the
+user's global directory, keyed by the working directory) and overrides the
+global `vulnetix.firewall_enabled`; the CLI flag overrides both. A
+repository's `.vulnetix/settings.json` can turn it off but never on. Turning
+it on also stores the configured provider keys with the gateway (see
+*Provider keys*).
 
 When enabled, `run.Prepare` asks the credential resolver for the firewall
 configuration. The resolver returns the gateway URL and Vulnetix API key;

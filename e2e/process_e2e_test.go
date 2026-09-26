@@ -124,6 +124,11 @@ func TestProcessStartAndRecovery(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, "settings.json"), []byte(global), 0o600); err != nil {
 		t.Fatalf("write settings: %v", err)
 	}
+	// A fresh BELAI_HOME is a first launch, which opens Getting started;
+	// this test drives the chat, so mark onboarding done.
+	if err := os.WriteFile(filepath.Join(home, "state.json"), []byte(`{"onboarded_at":"2026-01-01T00:00:00Z"}`), 0o600); err != nil {
+		t.Fatalf("write state: %v", err)
+	}
 
 	cmd := exec.Command(belaiBin, "-trust-dir", "-provider", "openai", "-model", "test")
 	cmd.Dir = dir

@@ -73,14 +73,14 @@ func (c ExitCard) pixView() string {
 	}
 
 	right := []string{
-		lipgloss.NewStyle().Foreground(ColorCream).Bold(true).Render("S I G N E T") + MutedStyle.Render("  ·  session ended"),
-		MutedStyle.Render(name + " · " + shortID),
-		MutedStyle.Render(c.factsLine()),
+		belayLine(ropeStyle.Render("──") + " " + MutedStyle.Render("off belay · session ended")),
+		belayIndent + MutedStyle.Render(name+" · "+shortID),
+		belayIndent + MutedStyle.Render(c.factsLine()),
 		"",
-		MutedStyle.Render("belai --resume ") + KeyStyle.Render(c.ResumeArg),
-		MutedStyle.Render(c.Path),
+		belayIndent + MutedStyle.Render("belai --resume ") + KeyStyle.Render(c.ResumeArg),
+		belayIndent + MutedStyle.Render(c.Path),
 	}
-	block := lipgloss.NewStyle().PaddingLeft(3).Render(strings.Join(right, "\n"))
+	block := lipgloss.NewStyle().PaddingLeft(1).Render(strings.Join(right, "\n"))
 	return lipgloss.JoinHorizontal(lipgloss.Top, owl, block)
 }
 

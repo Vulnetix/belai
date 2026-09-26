@@ -23,6 +23,7 @@ func Start(opts Options) error {
 		defer os.Stdout.WriteString(keys.Pop)
 	}
 	app := New(opts)
+	app.maybeStartGettingStarted(opts)
 	// Only a real run probes git and the forge CLI in the background; New
 	// alone (every test) never execs them. Start runs after the trust gate.
 	app.startForgeCache()
