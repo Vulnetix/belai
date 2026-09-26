@@ -51,6 +51,7 @@ var classifierKinds = map[Kind]bool{
 	KindAgentStore: true,
 	KindSubagent:   true,
 	KindHook:       true,
+	KindSkill:      true,
 }
 
 // NeedsClassifier reports whether a result of this kind must go through the

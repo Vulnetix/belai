@@ -34,7 +34,6 @@ import (
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/sanitize"
-	"github.com/vulnetix/signet/internal/skills"
 	"github.com/vulnetix/signet/internal/tools"
 	"github.com/vulnetix/signet/internal/trace"
 	"github.com/vulnetix/signet/internal/wire"
@@ -407,6 +406,10 @@ func NewSession(o Options) (*Session, error) {
 	reg := o.Registry
 	if reg == nil {
 		reg = tools.NewRegistry()
+	}
+	// skills.self_authoring off removes SkillDraft from every surface.
+	if !o.Settings.Skills.SelfAuthoringEnabled() {
+		reg = reg.Without("SkillDraft")
 	}
 	// The shared holder carries the effective posture and ask gate; when the
 	// caller supplied none the session wraps the snapshot options in a fixed
@@ -929,12 +932,13 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		}
 	}
 
-	// Harness-loaded skills enter the system prompt (SourceHarness provenance).
-	// The skill bodies are read only on invocation and are untrusted then.
-	if dir, err := config.GlobalSkillsDir(); err == nil {
-		if manifests, err := skills.LoadDir(dir, s.live.Policy()); err == nil {
-			for _, m := range manifests {
-				opts.Skills = append(opts.Skills, m.Name+": "+m.Description)
+	// Skill names and descriptions enter the system prompt only when the
+	// Skill tool is on the surface to load them; the bodies are read by that
+	// tool and classify as KindSkill. A user-only skill is not listed.
+	if _, ok := s.registry.Find("Skill"); ok {
+		for _, e := range tools.InstalledSkills() {
+			if !e.DisableModelInvocation {
+				opts.Skills = append(opts.Skills, e.Name+": "+sanitize.Sanitize(e.Description))
 			}
 		}
 	}
@@ -1306,7 +1310,16 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 	// mutating-default ask resolve to allow with no prompt.
 	mutates := tools.Mutates(tool)
 	hookAsk := pre.Decision == hooks.DecisionAsk
-	if !s.live.AskDisabled() && (perm == permissions.DecisionAsk || (mutates && !matched) || hookAsk) {
+	// An always-ask tool (SkillDraft) asks whatever the rules and the ask
+	// gate say, and without a TTY it is withheld: nobody can approve it.
+	if tools.AlwaysAsks(tool) {
+		if !s.allowAsk {
+			return fmt.Sprintf("tool result withheld: %q needs the user's approval, and no one can be asked in this session", call.Name)
+		}
+		if !s.gateMutation(ctx, call, tool, emit) {
+			return fmt.Sprintf("tool result withheld: permission denied by user for %q", call.Name)
+		}
+	} else if !s.live.AskDisabled() && (perm == permissions.DecisionAsk || (mutates && !matched) || hookAsk) {
 		if !s.allowAsk {
 			// Non-TTY policy: fall back to today's PermissionAskNoTTY posture.
 			// Enforce withholds naming the flag; warn/ignore falls through to

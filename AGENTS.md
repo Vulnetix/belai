@@ -189,6 +189,15 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   the tool result it rides on; a prompt-hook note joins the prompt before
   admission. A prompt-hook denial reason is shown to the user only. The
   project layer may turn `hooks.enabled` off, never on.
+- **Skills load by name and are drafted only with approval.** `Skill` takes a
+  name, never a path, and reads only a registered, re-validated `SKILL.md`;
+  its result is `KindSkill`, in `tools.classifierKinds` unconditionally. Only
+  a skill's name and sanitized description reach the system block, and only
+  while `Skill` is on the surface; `disable-model-invocation` skills are
+  hidden and answer like missing ones. `SkillDraft` is an `AlwaysAsker`: it
+  asks on every call whatever the rules or the ask gate say, is withheld when
+  nobody can be asked, and writes exactly the previewed file. The project
+  layer may turn `skills.self_authoring` off, never on.
 - **Notifications carry harness text only.** `internal/notify` composes
   every notification from a fixed template; the one variable is a tool or
   agent name reduced to an identifier. Model output, tool output and paths
