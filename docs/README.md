@@ -41,7 +41,7 @@ ships, its status changes to `alpha-YYYYMMDD`, the date it landed.
 | Feature | Guide | Status |
 | --- | --- | --- |
 | Hook events with allow and deny decisions | [Hooks](hooks.md) | alpha-20260926 |
-| Desktop notifications | [Notifications](notifications.md) | Roadmap |
+| Desktop notifications | [Notifications](notifications.md) | alpha-20260926 |
 | Skill loading and self-authored skills | [Skills](skills.md) | Roadmap |
 | Plugin packages | [Plugins](plugins.md) | Roadmap |
 | OS sandbox for Bash | [Sandbox](sandbox.md) | Roadmap |

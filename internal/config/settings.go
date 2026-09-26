@@ -92,6 +92,10 @@ type Settings struct {
 	LSP *LSPSettings `json:"lsp,omitempty"`
 	// Hooks configures user hook commands (docs/hooks.md).
 	Hooks *HooksSettings `json:"hooks,omitempty"`
+	// Notifications configures desktop notifications
+	// (docs/notifications.md). A per-user preference: the project layer
+	// cannot set it.
+	Notifications *NotificationSettings `json:"notifications,omitempty"`
 	// Sweep enables the background filesystem sweep for .vulnetix projects.
 	VulnetixSweepEnabled *bool `json:"vulnetix_sweep_enabled,omitempty"`
 	// SweepRoots restricts the sweep to a list of paths. Empty means $HOME and
@@ -147,6 +151,50 @@ type HooksSettings struct {
 	// Enabled runs hooks. Default true; a repo-visible project layer may
 	// turn it off, never on.
 	Enabled *bool `json:"enabled,omitempty"`
+}
+
+// NotificationSettings configures desktop notifications.
+type NotificationSettings struct {
+	// Enabled turns notifications on. Default false.
+	Enabled *bool `json:"enabled,omitempty"`
+	// Backend is auto, osc, bell, notify-send or osascript. Empty is auto.
+	Backend string `json:"backend,omitempty"`
+	// Events names the moments to notify. nil means the default set.
+	Events []string `json:"events,omitempty"`
+	// MinTurnSeconds is how long a turn must run before turn_done notifies.
+	// Zero means DefaultNotifyMinTurnSeconds.
+	MinTurnSeconds int `json:"min_turn_seconds,omitempty"`
+}
+
+// DefaultNotifyMinTurnSeconds is the turn_done threshold when unset.
+const DefaultNotifyMinTurnSeconds = 30
+
+// NotificationsEnabled reports whether notifications are on. Default false.
+func (s *NotificationSettings) NotificationsEnabled() bool {
+	return s != nil && s.Enabled != nil && *s.Enabled
+}
+
+// MinTurnSecondsOr returns the turn_done threshold.
+func (s *NotificationSettings) MinTurnSecondsOr() int {
+	if s == nil || s.MinTurnSeconds <= 0 {
+		return DefaultNotifyMinTurnSeconds
+	}
+	return s.MinTurnSeconds
+}
+
+func (s *NotificationSettings) merge(from *NotificationSettings) {
+	if from.Enabled != nil {
+		s.Enabled = from.Enabled
+	}
+	if from.Backend != "" {
+		s.Backend = from.Backend
+	}
+	if from.Events != nil {
+		s.Events = append([]string(nil), from.Events...)
+	}
+	if from.MinTurnSeconds != 0 {
+		s.MinTurnSeconds = from.MinTurnSeconds
+	}
 }
 
 // HooksEnabled reports whether hooks run. Default true.

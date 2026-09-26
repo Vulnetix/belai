@@ -42,3 +42,34 @@ func TestResolveHooksDirection(t *testing.T) {
 		t.Error("Override must let a project file turn hooks off")
 	}
 }
+
+// Notifications are a per-user preference: the project layer is dropped.
+func TestResolveNotificationsIgnoresProject(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	workdir := t.TempDir()
+	on := boolPtr(true)
+	if err := SaveProject(workdir, Settings{Notifications: &NotificationSettings{Enabled: on, Backend: "bell"}}); err != nil {
+		t.Fatal(err)
+	}
+	eff, err := Resolve(workdir, func(string) string { return "" }, Settings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eff.Settings.Notifications.NotificationsEnabled() {
+		t.Fatal("a project file turned notifications on")
+	}
+	if err := SaveGlobal(Settings{Notifications: &NotificationSettings{Enabled: on, MinTurnSeconds: 5}}); err != nil {
+		t.Fatal(err)
+	}
+	eff, err = Resolve(workdir, func(string) string { return "" }, Settings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := eff.Settings.Notifications
+	if !n.NotificationsEnabled() || n.MinTurnSecondsOr() != 5 || n.Backend != "" {
+		t.Fatalf("notifications = %+v", n)
+	}
+	if merged := (Settings{}).Override(Settings{Notifications: &NotificationSettings{Enabled: on}}); merged.Notifications.NotificationsEnabled() {
+		t.Fatal("Override let a project file turn notifications on")
+	}
+}

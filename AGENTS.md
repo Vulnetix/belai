@@ -189,6 +189,12 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   the tool result it rides on; a prompt-hook note joins the prompt before
   admission. A prompt-hook denial reason is shown to the user only. The
   project layer may turn `hooks.enabled` off, never on.
+- **Notifications carry harness text only.** `internal/notify` composes
+  every notification from a fixed template; the one variable is a tool or
+  agent name reduced to an identifier. Model output, tool output and paths
+  never reach a notification. The external backends run a fixed argv with
+  the scrubbed environment. `notifications` is a per-user key: the project
+  layer is dropped.
 
 ## Layout
 

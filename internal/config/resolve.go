@@ -196,6 +196,15 @@ func (e *Effective) apply(s Settings, src Source) {
 			e.Origin["firewall_enabled"] = src
 		}
 	}
+	if s.Notifications != nil && src != SourceProject {
+		// Notifications are a per-user preference: a repository has no say
+		// in whether, or how, the desktop is interrupted.
+		if e.Settings.Notifications == nil {
+			e.Settings.Notifications = &NotificationSettings{}
+		}
+		e.Settings.Notifications.merge(s.Notifications)
+		e.Origin["notifications"] = src
+	}
 	if s.Hooks != nil && s.Hooks.Enabled != nil {
 		// Hooks run the user's own commands; a repo-visible project layer may
 		// turn them off, never on.
