@@ -543,6 +543,48 @@ func TestCyclingModeStopsSendingTheEngagedAgent(t *testing.T) {
 	}
 }
 
+// Shift+tab's re-entry into agent mode clears the last-used profile and shows
+// the ctrl+p shortcut in the mode chip where its name had been, instead of
+// silently resuming whatever carrier was engaged before the cycle.
+func TestShiftTabIntoAgentClearsProfileAndShowsCtrlP(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	saveProfile(t, "reviewer")
+	workdir := t.TempDir()
+	a := New(Options{Workdir: workdir})
+	a.loadAgents()
+	a.mode = "agent"
+	a.setNamedAgent("reviewer")
+
+	// agent → plan → goal → agent, exactly the shift+tab cycle.
+	a.cycleMode()
+	a.cycleMode()
+	a.cycleMode()
+
+	if a.mode != "agent" {
+		t.Fatalf("mode = %q, want agent", a.mode)
+	}
+	if a.namedAgent != "" {
+		t.Fatalf("namedAgent = %q, want cleared on agent-mode entry", a.namedAgent)
+	}
+	if a.namedAgentTools != nil {
+		t.Fatalf("namedAgentTools = %v, want nil", a.namedAgentTools)
+	}
+	if a.state.ActiveProfile != "" {
+		t.Fatalf("ActiveProfile = %q, want cleared", a.state.ActiveProfile)
+	}
+	a.refreshFooter()
+	if !strings.Contains(a.footer.Agent, "ctrl+p") {
+		t.Fatalf("footer.Agent = %q, want the ctrl+p shortcut indicator", a.footer.Agent)
+	}
+	prefs, err := config.LoadProjectPrefs(workdir)
+	if err != nil {
+		t.Fatalf("LoadProjectPrefs: %v", err)
+	}
+	if prefs.Agent != "" {
+		t.Fatalf("prefs.Agent = %q, want cleared", prefs.Agent)
+	}
+}
+
 // Enter opens the picker, and the next enter engages the highlighted agent
 // AND sends the prompt that was waiting in the composer. Without this the
 // submit is swallowed twice with no feedback: the prompt sits in the editor

@@ -286,9 +286,9 @@ func (a *App) agentPickerVisible() bool {
 // engagedAgent returns the agent carrying turns right now, which is nothing
 // outside agent mode. Plan and goal mode carry the active plan or goal instead
 // — that is Signet's own logic, and the system prompt holds exactly one
-// carrier — so an engaged agent is dormant there rather than cleared: cycling
-// agent → plan → goal → agent gets the selection back, and nothing in between
-// shows it or sends it.
+// carrier — so an engaged agent is dormant there rather than cleared: nothing
+// in between shows it or sends it. Shift+tab re-entering agent mode clears the
+// selection (clearEngagedAgent); a direct mode assignment leaves it dormant.
 func (a *App) engagedAgent() string {
 	if a.mode != "agent" {
 		return ""
@@ -344,6 +344,42 @@ func (a *App) cycleAgent() tea.Cmd {
 	if a.agentIndex > last {
 		a.agentIndex = 0
 	}
+	return nil
+}
+
+// cycleAgentFromChat engages the next available agent profile in agent mode.
+// It is ctrl+p, the shortcut the mode chip shows after shift+tab clears the
+// last-used profile: one key steps through the profiles without opening the
+// picker, so a fresh carrier is always one press away.
+func (a *App) cycleAgentFromChat() tea.Cmd {
+	if a.mode != "agent" {
+		return nil
+	}
+	if len(a.agents) == 0 {
+		a.loadAgents()
+	}
+	if len(a.agents) == 0 {
+		return nil
+	}
+	idx := -1
+	for i, c := range a.agents {
+		if c.Name == a.namedAgent {
+			idx = i
+			break
+		}
+	}
+	choice := a.agents[(idx+1)%len(a.agents)]
+	a.agentExplicit = true
+	a.setNamedAgent(choice.Name)
+	a.invalidateAgentSession()
+	a.mode = "agent"
+	msg := "agent: " + choice.Name
+	if choice.Background {
+		msg += " (background definition; ctrl+g starts it in the background instead)"
+	}
+	a.addSystem(msg)
+	a.refreshFooter()
+	a.relayout()
 	return nil
 }
 
