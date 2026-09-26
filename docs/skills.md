@@ -15,6 +15,7 @@ to save a new one with `SkillDraft`, which you approve.
 - [Security model](#security-model)
 - [Settings](#settings)
 - [TUI](#tui)
+- [Edge cases](#edge-cases)
 
 ## Skill files
 
@@ -114,3 +115,17 @@ project layer may set it to `false`, never to `true`.
 `/skills` lists the installed skills with their source, marking the ones
 hidden from the model as `(user only)`. To remove a skill, delete its
 directory.
+
+## Edge cases
+
+- Plugin skills are named `plugin:name`, so they never clash with yours or
+  with each other. Your skill named `release` and a plugin's `team:release`
+  are two different skills.
+- A skill that stopped validating after it was listed fails to load with an
+  error naming it, and never returns a partial body.
+- `SkillDraft` names are lowercase letters, digits and hyphens, at most 64,
+  so `../x` or `Name` is refused before any ask. A description longer than
+  300 bytes, an empty body, or a file over 32 KiB is refused the same way.
+- A description that spans lines is flattened to one, so it cannot add a
+  front-matter key.
+- A new skill is listed from the next turn, not the one that wrote it.

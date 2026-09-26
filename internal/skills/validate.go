@@ -6,6 +6,7 @@ package skills
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -139,4 +140,14 @@ func parseList(v string) ([]string, error) {
 		out = append(out, p)
 	}
 	return out, nil
+}
+
+// Fields returns every front-matter field a SKILL.md may use, sorted.
+func Fields() []string {
+	out := make([]string, 0, len(allowedFields))
+	for f := range allowedFields {
+		out = append(out, f)
+	}
+	sort.Strings(out)
+	return out
 }
