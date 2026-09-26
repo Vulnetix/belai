@@ -13,6 +13,7 @@ import (
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/signet/internal/sandbox"
 	"github.com/vulnetix/signet/internal/sanitize"
 	"github.com/vulnetix/signet/internal/tools"
 	"github.com/vulnetix/signet/internal/tui/components"
@@ -111,6 +112,8 @@ func (a *App) handleShell(input string) tea.Cmd {
 	// which is the intended backpressure.
 	progress := make(chan tools.Progress, 64)
 	traceCtx := a.toolContext(a.ctx, "Bash", callID)
+	// The inline shell runs under the same OS sandbox as the agent's Bash.
+	traceCtx = sandbox.WithPolicy(traceCtx, sandbox.FromSettings(a.settings.Sandbox, append([]string{workdir}, a.workspaceDirs...), a.effectivePosture()))
 
 	exec := func() tea.Msg {
 		defer close(progress)

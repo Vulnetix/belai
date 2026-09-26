@@ -100,3 +100,42 @@ func TestResolveSkillSelfAuthoringDirection(t *testing.T) {
 		t.Fatal("Override let a project file turn self-authoring on")
 	}
 }
+
+// The sandbox defaults to auto with the network and caches allowed. A
+// project file may only tighten it.
+func TestResolveSandboxTightenOnly(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	resolve := func(global, project *SandboxSettings) *SandboxSettings {
+		t.Helper()
+		workdir := t.TempDir()
+		if err := SaveGlobal(Settings{Sandbox: global}); err != nil {
+			t.Fatal(err)
+		}
+		if err := SaveProject(workdir, Settings{Sandbox: project}); err != nil {
+			t.Fatal(err)
+		}
+		eff, err := Resolve(workdir, func(string) string { return "" }, Settings{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return eff.Settings.Sandbox
+	}
+	d := resolve(nil, nil)
+	if d.ModeOr() != "auto" || d.NetworkOr() != "allow" || !d.CachesOr() {
+		t.Fatalf("defaults = %+v", d)
+	}
+	off, on := boolPtr(false), boolPtr(true)
+	got := resolve(&SandboxSettings{Mode: "required", Network: "deny", Caches: off},
+		&SandboxSettings{Mode: "off", Network: "allow", Caches: on, ExtraWritable: []string{"/"}})
+	if got.ModeOr() != "required" || got.NetworkOr() != "deny" || got.CachesOr() || len(got.ExtraWritable) != 0 {
+		t.Fatalf("project loosened the sandbox: %+v", got)
+	}
+	got = resolve(&SandboxSettings{Mode: "off"}, &SandboxSettings{Mode: "auto", Network: "deny"})
+	if got.ModeOr() != "auto" || got.NetworkOr() != "deny" {
+		t.Fatalf("project could not tighten: %+v", got)
+	}
+	merged := (Settings{Sandbox: &SandboxSettings{Mode: "required"}}).Override(Settings{Sandbox: &SandboxSettings{Mode: "off", ExtraWritable: []string{"/etc"}}})
+	if merged.Sandbox.ModeOr() != "required" || len(merged.Sandbox.ExtraWritable) != 0 {
+		t.Fatalf("Override loosened the sandbox: %+v", merged.Sandbox)
+	}
+}

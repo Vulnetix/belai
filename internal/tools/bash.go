@@ -10,6 +10,7 @@ import (
 
 	"github.com/vulnetix/signet/internal/calltrace"
 	"github.com/vulnetix/signet/internal/proc"
+	"github.com/vulnetix/signet/internal/sandbox"
 )
 
 // ShellMetacharacters are shell syntax that would let a command escape a
@@ -285,6 +286,14 @@ func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink
 	ec.WaitDelay = 2 * time.Second
 	proc.SetProcessGroup(ec)
 
+	// The OS sandbox, when the call's policy asks for one. Required mode with
+	// no backend refuses the command rather than running it bare.
+	policy := sandbox.FromContext(ctx)
+	sandboxed, err := sandbox.Wrap(ec, policy)
+	if err != nil {
+		return Result{}, err
+	}
+
 	if err := ec.Start(); err != nil {
 		return Result{}, err
 	}
@@ -301,6 +310,9 @@ func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink
 	}
 	if err != nil {
 		content += fmt.Sprintf("\nexit status %d", exitCode(err))
+		if sandboxed {
+			content += "\n" + sandboxNote(policy)
+		}
 	}
 
 	return BashResult(content), nil
@@ -321,4 +333,14 @@ func BashResult(content string) Result {
 // NativeResult constructs a native read-only tool result.
 func NativeResult(content string) Result {
 	return Result{Kind: KindNative, Content: content}
+}
+
+// sandboxNote tells the model, in the harness's words, that a failed command
+// ran inside the OS sandbox, so it asks the user rather than retrying blindly.
+func sandboxNote(p sandbox.Policy) string {
+	note := "(ran inside the Signet sandbox: writes outside the workspace roots, /tmp and tool caches fail"
+	if p.DenyNetwork {
+		note += ", and the network is off"
+	}
+	return note + "; if the command needs more, ask the user to adjust sandbox settings)"
 }

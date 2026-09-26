@@ -28,6 +28,7 @@ import (
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/proc"
 	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/signet/internal/sandbox"
 	"github.com/vulnetix/signet/internal/tools"
 )
 
@@ -274,6 +275,10 @@ func (m *Manager) startExecLocked(p *processInstance) error {
 	ec.Dir = p.dir
 	ec.Env = proc.ScrubbedEnv()
 	proc.SetProcessGroup(ec)
+	// Supervised processes run under the same OS sandbox as Bash.
+	if _, err := sandbox.Wrap(ec, sandbox.FromSettings(m.settings.Sandbox, []string{m.workdir, p.dir}, m.posture)); err != nil {
+		return err
+	}
 
 	sink := func(line string) { m.emitProgress(p.id, line) }
 	tw := proc.NewLineTee(maxLiveTailBytes, sink)

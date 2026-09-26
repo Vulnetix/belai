@@ -210,6 +210,16 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   Plugins live in the global state directory only: no repository setting can
   install, enable or propose one, and the manifest has no key for providers,
   credentials, settings or permissions.
+- **The OS sandbox only tightens from a repository.** `internal/sandbox`
+  wraps `Bash`, inline `!cmd` and supervised processes (bubblewrap on Linux,
+  sandbox-exec on macOS). The policy is built per call by
+  `sandbox.FromSettings` from the settings, the current workspace roots and
+  the effective posture, and rides on the call's context; guardrails off
+  turns it off. Signet's state directory is always hidden inside it. The
+  project layer may raise `sandbox.mode`, set `network` to `deny` and
+  `caches` to `false`, never the reverse, and its `extra_writable` is
+  dropped. `required` with no working backend refuses the command; it never
+  falls back to running it bare.
 - **Notifications carry harness text only.** `internal/notify` composes
   every notification from a fixed template; the one variable is a tool or
   agent name reduced to an identifier. Model output, tool output and paths
