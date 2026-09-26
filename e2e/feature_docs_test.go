@@ -13,6 +13,7 @@ import (
 	"github.com/vulnetix/signet/internal/plugins"
 	"github.com/vulnetix/signet/internal/sandbox"
 	"github.com/vulnetix/signet/internal/skills"
+	"github.com/vulnetix/signet/internal/tui"
 )
 
 // The feature docs must name everything the code accepts: an event, key or
@@ -149,6 +150,17 @@ func TestRoadmapStatusesMatchDocs(t *testing.T) {
 		}
 		if !strings.HasSuffix(strings.TrimSpace(row), "| "+status+" |") {
 			t.Errorf("docs/README.md row for %s.md = %q, want status %s", doc, row, status)
+		}
+	}
+}
+
+// The README's command list names every visible slash command, aliases
+// included, so a command never ships undiscoverable.
+func TestReadmeNamesEverySlashCommand(t *testing.T) {
+	body := docBody(t, "README.md")
+	for _, name := range tui.NewRegistry(t.TempDir()).Names() {
+		if !strings.Contains(body, "`/"+name+"`") && !strings.Contains(body, "`/"+name+" ") {
+			t.Errorf("README.md does not name `/%s`", name)
 		}
 	}
 }
