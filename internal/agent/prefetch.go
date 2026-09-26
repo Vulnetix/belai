@@ -73,13 +73,31 @@ func (p *pendingPrefetch) wait() []prefetchResult {
 }
 
 // startPrefetch begins reading and classifying the prefetch candidates in the
-// background. skip names root-relative paths the user already attached.
-func (s *Session) startPrefetch(ctx context.Context, pipe *rolemanager.Pipeline, history []run.Turn, skip map[string]bool, emit func(Event)) *pendingPrefetch {
+// background. seed lists root-relative paths that should be prefetched first
+// (e.g. files named in a plan-handoff); skip names root-relative paths the
+// user already attached.
+func (s *Session) startPrefetch(ctx context.Context, pipe *rolemanager.Pipeline, history []run.Turn, seed, skip map[string]bool, emit func(Event)) *pendingPrefetch {
 	tool, _ := s.execTool("Read")
 	if tool == nil {
 		return nil
 	}
 	cands := s.prefetchCandidates(ctx, tool, history, skip)
+	if len(seed) > 0 {
+		seen := map[string]bool{}
+		for _, c := range cands {
+			seen[c] = true
+		}
+		var merged []string
+		for p := range seed {
+			p = filepath.ToSlash(filepath.Clean(p))
+			if p == "." || p == ".." || strings.HasPrefix(p, "../") || filepath.IsAbs(p) || seen[p] || skip[p] {
+				continue
+			}
+			seen[p] = true
+			merged = append(merged, p)
+		}
+		cands = append(merged, cands...)
+	}
 	if len(cands) == 0 {
 		return nil
 	}

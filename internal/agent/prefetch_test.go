@@ -19,6 +19,7 @@ import (
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/readindex"
 	"github.com/vulnetix/signet/internal/repomap"
+	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
 	"github.com/vulnetix/signet/internal/tools"
 )
@@ -241,5 +242,35 @@ func TestAttachedPathsSkipsUserAttachments(t *testing.T) {
 	got := attachedPaths([]run.Attachment{{Kind: "file", Label: "@internal/a.go"}, {Kind: "file", Label: "b.go"}, {Kind: "shell", Label: "!ls"}})
 	if !got["internal/a.go"] || !got["b.go"] || len(got) != 2 {
 		t.Errorf("%v", got)
+	}
+}
+
+func TestHandoffSeedsPrefetchWithPlanPaths(t *testing.T) {
+	root := prefetchRepo(t)
+	fake := &prefetchServer{readSent: true}
+	srv := httptest.NewServer(http.HandlerFunc(fake.handler))
+	defer srv.Close()
+	sess := prefetchSession(t, root, srv, nil)
+
+	var prefetched []string
+	md := rolemanager.ModeDecision{
+		Mode:    modes.ModeAgent,
+		Intent:  rolemanager.IntentHandoff,
+		Handoff: &rolemanager.HandoffFacts{Label: "plan.md", Tasks: 3, Paths: []string{"a.go", "new.go", "nonexistent.go"}},
+	}
+	_, _ = sess.run(context.Background(), nil, TurnInput{Prompt: "do the plan", Mode: md}, false, func(e Event) {
+		if e.Kind == EventPrefetchKind {
+			prefetched = e.Paths
+		}
+	})
+
+	got := strings.Join(prefetched, ",")
+	for _, want := range []string{"a.go", "new.go"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("prefetch paths %q missing %q", got, want)
+		}
+	}
+	if strings.Contains(got, "nonexistent.go") {
+		t.Errorf("nonexistent plan path must not be prefetched")
 	}
 }
