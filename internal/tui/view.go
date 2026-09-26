@@ -60,7 +60,7 @@ func init() {
 	viewHandlers[viewResumeCompact] = viewHandler{name: "resume-compact", key: (*App).handleResumeCompactKey, render: (*App).resumeCompactView}
 	viewHandlers[viewVulnetixConfig] = viewHandler{name: "vulnetix-config", enter: (*App).enterVulnetixConfig, key: (*App).handleVulnetixConfigKey, render: (*App).vulnetixConfigView}
 	viewHandlers[viewVulnetixList] = viewHandler{name: "vulnetix-list", enter: (*App).enterVulnetixList, key: (*App).handleVulnetixListKey, render: (*App).vulnetixListView}
-	viewHandlers[viewVulnetixArtifacts] = viewHandler{name: "vulnetix-artifacts", key: (*App).handleVulnetixArtifactsKey, render: (*App).vulnetixArtifactsView}
+	viewHandlers[viewVulnetixArtifacts] = viewHandler{name: "vulnetix-artifacts", enter: (*App).enterVulnetixArtifacts, key: (*App).handleVulnetixArtifactsKey, render: (*App).vulnetixArtifactsView}
 	viewHandlers[viewRunsOutput] = viewHandler{name: "runs-output", enter: (*App).enterRunsOutput, key: (*App).handleRunsOutputKey, render: (*App).runsOutputView}
 	viewHandlers[viewPrompts] = viewHandler{name: "prompts", enter: (*App).enterPrompts, key: (*App).handlePromptsKey, render: (*App).promptsView}
 	viewHandlers[viewProcesses] = viewHandler{name: "processes", enter: (*App).enterProcesses, key: (*App).handleProcessesKey, render: (*App).processesView}
