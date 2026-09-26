@@ -16,6 +16,9 @@ func TestParseModeSentinelValid(t *testing.T) {
 		{"AGENT.", ModeAgent},
 		{"  PLAN\n", ModePlan},
 		{"GOAL", ModeGoal},
+		{"HANDOFF", ModeHandoff},
+		{"DEBUG", ModeDebug},
+		{"FANOUT", ModeFanOut},
 		{"UNDETERMINED", ModeUndetermined},
 	}
 	for _, tc := range cases {
@@ -98,5 +101,30 @@ func TestExtractAgentName(t *testing.T) {
 		if got := ExtractAgentName(tc.in); got != tc.want {
 			t.Fatalf("ExtractAgentName(%q) = %q, want %q", tc.in, got, tc.want)
 		}
+	}
+}
+
+func TestClassifyModeIntentMapsHandoffWithPlan(t *testing.T) {
+	fc := &fakeClassifier{raw: "HANDOFF"}
+	intent, sentinel, err := ClassifyModeIntent(context.Background(), fc, "do @plan.md", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sentinel != "HANDOFF" {
+		t.Fatalf("sentinel = %q, want HANDOFF", sentinel)
+	}
+	if intent != IntentHandoff {
+		t.Fatalf("intent = %q, want IntentHandoff", intent)
+	}
+}
+
+func TestClassifyModeIntentDowngradesHandoffWithoutPlan(t *testing.T) {
+	fc := &fakeClassifier{raw: "HANDOFF"}
+	intent, _, err := ClassifyModeIntent(context.Background(), fc, "do it", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if intent != IntentAgent {
+		t.Fatalf("intent = %q, want IntentAgent", intent)
 	}
 }
