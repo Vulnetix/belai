@@ -35,23 +35,20 @@ const (
 	AttrProvider   = "signet.provider"
 	AttrModel      = "signet.model"
 	AttrRole       = "signet.role"
-	AttrTokens     = "signet.tokens"
 	AttrEstimated  = "signet.tokens.estimated"
 	AttrToolName   = "signet.tool.name"
 	AttrToolKind   = "signet.tool.kind"
 	AttrDecision   = "signet.decision"
 	AttrVerdict    = "signet.verdict"
 	AttrHookEvent  = "signet.hook.event"
-	AttrHooksRan   = "signet.hooks.ran"
-	AttrHooksFail  = "signet.hooks.failed"
 	AttrProjectKey = "signet.project"
 )
 
 var allowedAttrs = map[string]bool{
 	AttrMode: true, AttrOutcome: true, AttrPasses: true, AttrProvider: true,
-	AttrModel: true, AttrRole: true, AttrTokens: true, AttrEstimated: true,
+	AttrModel: true, AttrRole: true, AttrEstimated: true,
 	AttrToolName: true, AttrToolKind: true, AttrDecision: true, AttrVerdict: true,
-	AttrHookEvent: true, AttrHooksRan: true, AttrHooksFail: true, AttrProjectKey: true,
+	AttrHookEvent: true, AttrProjectKey: true,
 }
 
 // Allowed reports whether key may be exported.
@@ -486,3 +483,13 @@ func (e *Exporter) post(path string, body any) {
 
 // Getenv is os.Getenv, named for FromSettings callers.
 var Getenv = os.Getenv
+
+// AllowedKeys returns every attribute key that may be exported, sorted.
+func AllowedKeys() []string {
+	out := make([]string, 0, len(allowedAttrs))
+	for k := range allowedAttrs {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}

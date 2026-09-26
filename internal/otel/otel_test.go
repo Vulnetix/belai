@@ -108,15 +108,57 @@ func TestFromSettings(t *testing.T) {
 // Every key the code exports must be on the allowlist, so a new attribute
 // is a deliberate edit to this package.
 func TestAllowlistIsClosed(t *testing.T) {
-	for _, k := range []string{AttrMode, AttrOutcome, AttrPasses, AttrProvider, AttrModel, AttrRole, AttrTokens, AttrEstimated, AttrToolName, AttrToolKind, AttrDecision, AttrVerdict, AttrHookEvent, AttrHooksRan, AttrHooksFail, AttrProjectKey} {
+	for _, k := range []string{AttrMode, AttrOutcome, AttrPasses, AttrProvider, AttrModel, AttrRole, AttrEstimated, AttrToolName, AttrToolKind, AttrDecision, AttrVerdict, AttrHookEvent, AttrProjectKey} {
 		if !Allowed(k) {
 			t.Errorf("%s not allowed", k)
 		}
 	}
-	if len(allowedAttrs) != 16 {
+	if len(allowedAttrs) != 13 {
 		t.Fatalf("allowlist has %d keys; update this test deliberately", len(allowedAttrs))
 	}
 	if Allowed("signet.prompt") || Allowed("tool.args") {
 		t.Fatal("content-shaped key allowed")
+	}
+}
+
+func TestConfigEdges(t *testing.T) {
+	c := FromSettings(&config.TelemetrySettings{OTLPEndpoint: "http://c:4318///"}, func(string) string { return "" })
+	if c.Endpoint != "http://c:4318" {
+		t.Fatalf("endpoint = %q", c.Endpoint)
+	}
+	stop := Start(Config{Endpoint: "http://c:4318"}, "k")
+	defer stop()
+	if Enabled() {
+		t.Fatal("traces and metrics both off still started")
+	}
+}
+
+func TestCleanValue(t *testing.T) {
+	if got := cleanValue("anthropic/claude-opus-5-5@2026"); got != "anthropic/claude-opus-5-5@2026" {
+		t.Fatalf("model id changed: %q", got)
+	}
+	if got := cleanValue("hello world\n<x>"); strings.ContainsAny(got, " \n<>") {
+		t.Fatalf("prose survived: %q", got)
+	}
+	if got := cleanValue(strings.Repeat("a", 200)); len(got) != 96 {
+		t.Fatalf("len = %d", len(got))
+	}
+}
+
+// Past the queue cap spans are dropped, not buffered without bound.
+func TestSpanQueueCap(t *testing.T) {
+	col := NewCollector()
+	defer col.Srv.Close()
+	stop := Start(Config{Endpoint: col.Srv.URL, Traces: true, Interval: time.Hour}, "k")
+	defer stop()
+	e := current()
+	for i := 0; i < maxQueuedSpans+10; i++ {
+		StartSpan(context.Background(), "s").End()
+	}
+	e.mu.Lock()
+	n, dropped := len(e.spans), e.dropped
+	e.mu.Unlock()
+	if n != maxQueuedSpans || dropped != 10 {
+		t.Fatalf("queued %d dropped %d", n, dropped)
 	}
 }
