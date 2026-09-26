@@ -649,9 +649,13 @@ Business rules and edge cases:
   `additional_context` and denial reasons with it, so they are always
   classified, separately from the result they ride on (see
   [hooks](hooks.md)).
-- **Roadmap kinds classify.** Two planned kinds join the always-classify set
-  when they ship: `skill` (skill bodies, see [skills](skills.md)) and `mcp`
-  (MCP server results, see [MCP servers](mcp.md)).
+- **Skill bodies classify.** The `Skill` tool returns a skill file's body,
+  which may be a plugin's, so its kind `skill` is always classified. Its
+  sibling `SkillDraft` returns a confirmation the harness wrote
+  (`skill_write`, sanitize-only) and asks on every call (see
+  [skills](skills.md)).
+- **Roadmap kinds classify.** One planned kind joins the always-classify set
+  when it ships: `mcp` (MCP server results, see [MCP servers](mcp.md)).
 - **Explore findings are separate.** An explore subagent's report is model
   output, not tool output, and is classified explicitly in
   `internal/agent/explore.go` regardless of this rule.

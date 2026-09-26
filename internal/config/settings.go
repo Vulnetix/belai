@@ -92,6 +92,8 @@ type Settings struct {
 	LSP *LSPSettings `json:"lsp,omitempty"`
 	// Hooks configures user hook commands (docs/hooks.md).
 	Hooks *HooksSettings `json:"hooks,omitempty"`
+	// Skills configures skill loading and self-authoring (docs/skills.md).
+	Skills *SkillsSettings `json:"skills,omitempty"`
 	// Notifications configures desktop notifications
 	// (docs/notifications.md). A per-user preference: the project layer
 	// cannot set it.
@@ -195,6 +197,18 @@ func (s *NotificationSettings) merge(from *NotificationSettings) {
 	if from.MinTurnSeconds != 0 {
 		s.MinTurnSeconds = from.MinTurnSeconds
 	}
+}
+
+// SkillsSettings configures skills.
+type SkillsSettings struct {
+	// SelfAuthoring offers the SkillDraft tool. Default true; a repo-visible
+	// project layer may turn it off, never on.
+	SelfAuthoring *bool `json:"self_authoring,omitempty"`
+}
+
+// SelfAuthoringEnabled reports whether SkillDraft is offered. Default true.
+func (s *SkillsSettings) SelfAuthoringEnabled() bool {
+	return s == nil || s.SelfAuthoring == nil || *s.SelfAuthoring
 }
 
 // HooksEnabled reports whether hooks run. Default true.
@@ -961,6 +975,11 @@ func (s Settings) Override(proj Settings) Settings {
 	if proj.Hooks != nil && proj.Hooks.Enabled != nil && !*proj.Hooks.Enabled {
 		f := false
 		out.Hooks = &HooksSettings{Enabled: &f}
+	}
+	// Likewise skill self-authoring: off, never on.
+	if proj.Skills != nil && proj.Skills.SelfAuthoring != nil && !*proj.Skills.SelfAuthoring {
+		f := false
+		out.Skills = &SkillsSettings{SelfAuthoring: &f}
 	}
 	// Likewise the dependency hook: a project file may turn it on, never off.
 	if proj.Vulnetix != nil && proj.Vulnetix.DepWatch != nil && *proj.Vulnetix.DepWatch {

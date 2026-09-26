@@ -49,6 +49,12 @@ const (
 	// so the text is arbitrary and always classifies. No tool has this kind;
 	// the agent tags hook text with it before promotion.
 	KindHook Kind = "hook"
+	// KindSkill is the body of an installed skill, loaded by the Skill tool.
+	// A skill may come from a plugin, so it is read-only but classifies.
+	KindSkill Kind = "skill"
+	// KindSkillWrite is SkillDraft's harness-composed confirmation. It is
+	// mutating (it writes a skill file) and sanitise-only.
+	KindSkillWrite Kind = "skill_write"
 )
 
 // AllKinds is every registered Kind, in declaration order. Tests iterate it to
@@ -57,7 +63,8 @@ const (
 var AllKinds = []Kind{
 	KindRead, KindWebSearch, KindWebFetch, KindBash, KindGrep, KindGlob,
 	KindExplore, KindWrite, KindEdit, KindNative, KindRemote, KindUpdatePlan,
-	KindProcess, KindProcessCtl, KindAgentStore, KindSubagent, KindHook,
+	KindProcess, KindProcessCtl, KindAgentStore, KindSubagent, KindHook, KindSkill,
+	KindSkillWrite,
 }
 
 // readOnlyKinds is the closed allowlist of kinds that only read. A Kind absent
@@ -77,6 +84,7 @@ var readOnlyKinds = map[Kind]bool{
 	KindProcess:    true,
 	KindAgentStore: true,
 	KindSubagent:   true,
+	KindSkill:      true,
 }
 
 // ReadOnly reports whether a tool of this kind only reads and never mutates

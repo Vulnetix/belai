@@ -34,6 +34,9 @@ func Default(workdir string, readOnly bool) *Registry {
 	list = append(list, UpdatePlan{})
 	list = append(list, ExitPlanMode{})
 	list = append(list, Task{})
+	// Skill loads an installed skill by name; SkillDraft proposes a new one
+	// and always asks. ReadOnly drops SkillDraft with the other writers.
+	list = append(list, Skill{}, SkillDraft{})
 	// The three agent-store tools read other agents' stores through the
 	// static registry. Probing is lazy (first use), not at startup, so a
 	// registry built here costs nothing until a call is made.

@@ -16,6 +16,7 @@ import (
 	"github.com/vulnetix/signet/internal/fuzzy"
 	"github.com/vulnetix/signet/internal/profiles"
 	"github.com/vulnetix/signet/internal/provider"
+	"github.com/vulnetix/signet/internal/tools"
 	"github.com/vulnetix/signet/internal/vulnetixcli"
 )
 
@@ -313,6 +314,10 @@ func NewRegistry(workdir string) *Registry {
 			return a.resumeByID(arg)
 		}
 		return a.push(viewResume)
+	})
+	r.Register("skills", "list installed skills", nil, func(a *App, arg string) tea.Cmd {
+		a.addSystem(skillsListing(tools.InstalledSkills()))
+		return nil
 	})
 	r.Register("rename", "rename this session", nil, func(a *App, arg string) tea.Cmd {
 		return a.renameSession(arg)

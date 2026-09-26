@@ -205,6 +205,14 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.Notifications.merge(s.Notifications)
 		e.Origin["notifications"] = src
 	}
+	if s.Skills != nil && s.Skills.SelfAuthoring != nil {
+		// Self-authoring writes files after an ask; a repo-visible project
+		// layer may turn it off, never on.
+		if !*s.Skills.SelfAuthoring || src != SourceProject {
+			e.Settings.Skills = &SkillsSettings{SelfAuthoring: s.Skills.SelfAuthoring}
+			e.Origin["skills_self_authoring"] = src
+		}
+	}
 	if s.Hooks != nil && s.Hooks.Enabled != nil {
 		// Hooks run the user's own commands; a repo-visible project layer may
 		// turn them off, never on.

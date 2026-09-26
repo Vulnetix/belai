@@ -73,3 +73,30 @@ func TestResolveNotificationsIgnoresProject(t *testing.T) {
 		t.Fatal("Override let a project file turn notifications on")
 	}
 }
+
+// Skill self-authoring defaults on; a project file may turn it off, never on.
+func TestResolveSkillSelfAuthoringDirection(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	resolve := func(global, project *bool) bool {
+		t.Helper()
+		workdir := t.TempDir()
+		if err := SaveGlobal(Settings{Skills: &SkillsSettings{SelfAuthoring: global}}); err != nil {
+			t.Fatal(err)
+		}
+		if err := SaveProject(workdir, Settings{Skills: &SkillsSettings{SelfAuthoring: project}}); err != nil {
+			t.Fatal(err)
+		}
+		eff, err := Resolve(workdir, func(string) string { return "" }, Settings{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return eff.Settings.Skills.SelfAuthoringEnabled()
+	}
+	on, off := boolPtr(true), boolPtr(false)
+	if !resolve(nil, nil) || resolve(off, nil) || resolve(nil, off) || resolve(off, on) {
+		t.Fatal("self_authoring direction wrong")
+	}
+	if merged := (Settings{Skills: &SkillsSettings{SelfAuthoring: off}}).Override(Settings{Skills: &SkillsSettings{SelfAuthoring: on}}); merged.Skills.SelfAuthoringEnabled() {
+		t.Fatal("Override let a project file turn self-authoring on")
+	}
+}
