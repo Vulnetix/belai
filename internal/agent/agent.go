@@ -850,14 +850,15 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	// and classified while exploration and clarify run, and joined when the
 	// user turn is assembled. See prefetch.go.
 	var prefetch *pendingPrefetch
-	prefetchPaths := attachedPaths(in.Attachments)
+	prefetchSkip := attachedPaths(in.Attachments)
+	prefetchSeed := map[string]bool{}
 	if modeDec.Intent == rolemanager.IntentHandoff && modeDec.Handoff != nil {
 		for _, p := range modeDec.Handoff.Paths {
-			prefetchPaths[p] = true
+			prefetchSeed[p] = true
 		}
 	}
 	if (modeDec.Mode == modes.ModePlan && !in.ExecutePlan) || loopDec.Mode == modes.ModeGoal || modeDec.Intent == rolemanager.IntentHandoff {
-		prefetch = s.startPrefetch(ctx, pipe, history, prefetchPaths, emit)
+		prefetch = s.startPrefetch(ctx, pipe, history, prefetchSeed, prefetchSkip, emit)
 		// The prefetch emits; it must finish before run returns and RunStream
 		// closes the event channel, on every path.
 		defer prefetch.wait()
@@ -1277,7 +1278,9 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 		s.handoffUpdatePlanCalled = true
 	}
 	if len(s.scope) > 0 && tool.Kind().ReadOnly() {
-		if subj := tool.Subject(call.Args); subj != "" && !inScope(subj, s.scope) {
+		if subj := tool.Subject(call.Args); subj == "" {
+			return fmt.Sprintf("tool result withheld: %q has no path argument, so it cannot be checked against the handoff scope %v", call.Name, s.scope)
+		} else if !inScope(subj, s.scope) {
 			return fmt.Sprintf("tool result withheld: %q is outside the handoff scope %v", call.Name, s.scope)
 		}
 	}

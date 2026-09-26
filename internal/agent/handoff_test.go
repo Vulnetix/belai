@@ -64,6 +64,28 @@ func TestHandoffGateNoEffectOutsideHandoff(t *testing.T) {
 	}
 }
 
+func TestHandoffScopeRefusesOutOfScopeRead(t *testing.T) {
+	s := testSession(t)
+	s.scope = []string{"internal/plan.go"}
+
+	call := rolemanager.ToolCall{Name: "Read", Args: map[string]any{"file_path": "other.go"}}
+	out := s.executeCall(context.Background(), call, func(Event) {}, nil)
+	if !strings.Contains(out, "outside the handoff scope") {
+		t.Fatalf("expected out-of-scope refusal, got %q", out)
+	}
+}
+
+func TestHandoffScopeRefusesPathlessRead(t *testing.T) {
+	s := testSession(t)
+	s.scope = []string{"internal/plan.go"}
+
+	call := rolemanager.ToolCall{Name: "Read", Args: map[string]any{}}
+	out := s.executeCall(context.Background(), call, func(Event) {}, nil)
+	if !strings.Contains(out, "no path argument") {
+		t.Fatalf("expected pathless-refusal, got %q", out)
+	}
+}
+
 func testSession(t *testing.T) *Session {
 	root := t.TempDir()
 	s, err := NewSession(Options{
