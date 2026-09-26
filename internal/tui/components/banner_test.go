@@ -100,6 +100,29 @@ func TestBannerHeightIsStable(t *testing.T) {
 	}
 }
 
+func TestBannerBelayLine(t *testing.T) {
+	v := Banner{Width: 80}.pixView()
+	if !strings.Contains(v, "belai") || !strings.Contains(v, "◉") {
+		t.Fatalf("banner should draw the belay-line wordmark: %q", v)
+	}
+	if !strings.Contains(v, "on belay") {
+		t.Fatalf("banner should carry the on-belay tagline: %q", v)
+	}
+}
+
+// The rope shortens on a narrow terminal so the wordmark row never wraps.
+func TestBannerRopeFitsWidth(t *testing.T) {
+	for _, w := range []int{30, 40, 50, 80, 200} {
+		b := Banner{Width: w}
+		if got := 12 + 1 + lipgloss.Width(belayLine(b.ropeTail())); got > w {
+			t.Fatalf("width %d: wordmark row is %d cells", w, got)
+		}
+	}
+	if full := lipgloss.Width(Banner{}.ropeTail()); full != belayRopeMax+1 {
+		t.Fatalf("unbounded rope = %d cells, want %d", full, belayRopeMax+1)
+	}
+}
+
 func TestBannerVersionLineCarriesUpdateNote(t *testing.T) {
 	b := Banner{Width: 80, Version: "0.4.2", Commit: "ab12cd3", Update: "update v0.5.0 available"}
 	line := b.versionLine()

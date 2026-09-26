@@ -14,6 +14,9 @@ func TestParseInvocation(t *testing.T) {
 		{"list", ActionList},
 		{"status", ActionStatus},
 		{"firewall", ActionFirewall},
+		{"mcp", ActionMCP},
+		{"mcp remove", ActionMCP},
+		{"setup", ActionSetup},
 		{"help", ActionHelp},
 		{"RUN extra", ActionRun},
 	}

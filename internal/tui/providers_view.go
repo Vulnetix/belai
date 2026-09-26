@@ -920,16 +920,20 @@ func (a *App) providerDetailCommitField() (tea.Model, tea.Cmd) {
 			return a, nil
 		}
 	}
+	var err error
 	if a.providerDetailState.envMode {
-		_ = a.resolver.StoreEnvRef(p, f.Name, val, a.providerDetailState.backend)
+		err = a.resolver.StoreEnvRef(p, f.Name, val, a.providerDetailState.backend)
 	} else {
-		_ = a.resolver.Store(p, f.Name, val, a.providerDetailState.backend)
+		err = a.resolver.Store(p, f.Name, val, a.providerDetailState.backend)
 	}
 	a.editor.Reset()
 	a.editor.Masked = false
 	a.providerDetailState.setMode = false
 	a.providerDetailState.envMode = false
 	a.refreshProviderDetail()
+	if err == nil && f.Name == "api_key" {
+		return a, tea.Batch(a.refreshProvider(), a.syncFirewallKey(p))
+	}
 	return a, a.refreshProvider()
 }
 

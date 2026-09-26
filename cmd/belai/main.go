@@ -312,6 +312,9 @@ func main() {
 	mcpMgr := mcp.StartAsync(ctx, settings.MCP, mcp.Options{
 		Workdir:    workdir,
 		HTTPClient: httpclient.Default(),
+		VulnetixAuth: func() (string, error) {
+			return credentials.VulnetixAuthHeader(workdir)
+		},
 		Sandbox: func() sandbox.Policy {
 			return sandbox.FromSettings(settings.Sandbox, []string{workdir}, pol)
 		},

@@ -46,6 +46,9 @@ func runACP(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 	mcpMgr := mcp.StartAsync(ctx, global.MCP, mcp.Options{
 		Workdir:    wd,
 		HTTPClient: httpclient.Default(),
+		VulnetixAuth: func() (string, error) {
+			return credentials.VulnetixAuthHeader(wd)
+		},
 		Sandbox: func() sandbox.Policy {
 			return sandbox.FromSettings(global.Sandbox, []string{wd}, posture.Defaults())
 		},

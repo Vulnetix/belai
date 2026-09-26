@@ -228,6 +228,27 @@ type MCPSettings struct {
 	Servers map[string]MCPServer `json:"servers,omitempty"`
 }
 
+const (
+	// VulnetixMCPName is the mcp.servers key /vulnetix mcp manages.
+	VulnetixMCPName = "vulnetix"
+	// VulnetixMCPURL is the hosted Vulnetix MCP server (streamable HTTP).
+	VulnetixMCPURL = "https://mcp.vulnetix.com/mcp"
+	// VulnetixCLIRef is a header value that stands for the Vulnetix CLI's
+	// Authorization credential. It is resolved when the server is dialled,
+	// only for https://*.vulnetix.com, and never written out resolved.
+	VulnetixCLIRef = "vulnetix:cli"
+)
+
+// VulnetixMCPServer is the entry /vulnetix mcp writes: the hosted server,
+// authenticated with the CLI's own credential by reference.
+func VulnetixMCPServer() MCPServer {
+	return MCPServer{
+		Transport: "http",
+		URL:       VulnetixMCPURL,
+		Headers:   map[string]string{"Authorization": VulnetixCLIRef},
+	}
+}
+
 // MCPServer is one MCP server.
 type MCPServer struct {
 	// Transport is stdio (default) or http.
@@ -239,7 +260,8 @@ type MCPServer struct {
 	// value "env:NAME" copies NAME from Belai's environment.
 	Env map[string]string `json:"env,omitempty"`
 	// URL and Headers reach an http server. A header value "env:NAME" is
-	// read from the environment.
+	// read from the environment; an Authorization value VulnetixCLIRef is
+	// the Vulnetix CLI's credential, sent only to https://*.vulnetix.com.
 	URL     string            `json:"url,omitempty"`
 	Headers map[string]string `json:"headers,omitempty"`
 	// Tools, when set, offers only these server tools.

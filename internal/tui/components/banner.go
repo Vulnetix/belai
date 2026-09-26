@@ -143,7 +143,7 @@ func (b Banner) pixView() string {
 	// the banner to six rows and leaves the transcript more of the screen.
 	// Six rows, always: the owl is six rows tall, and an unstamped build must
 	// not change the banner's height and reflow the transcript under it.
-	subtitle := "A safer coding harness | vulnetix.com"
+	subtitle := "on belay · a safer coding harness · vulnetix.com"
 	if b.Resumed != "" {
 		subtitle = "resumed " + b.Resumed
 		if b.RestoredTurns > 0 {
@@ -156,20 +156,51 @@ func (b Banner) pixView() string {
 	}
 	right := []string{
 		"",
-		lipgloss.NewStyle().Foreground(ColorCream).Bold(true).Render("S I G N E T"),
-		MutedStyle.Render(subtitle),
-		b.versionLine(),
+		belayLine(b.ropeTail()),
+		belayIndent + MutedStyle.Render(subtitle),
+		belayIndent + b.versionLine(),
 		"",
-		MutedStyle.Render(tip),
+		belayIndent + MutedStyle.Render(tip),
 	}
 
-	block := lipgloss.NewStyle().PaddingLeft(3).Render(strings.Join(right, "\n"))
+	block := lipgloss.NewStyle().PaddingLeft(1).Render(strings.Join(right, "\n"))
 	return lipgloss.JoinHorizontal(lipgloss.Top, owl, block)
+}
+
+// Belai is pronounced "belay", so the wordmark is drawn as one: a rope leads
+// out of the owl, through the name, and runs on to a carabiner. The rows
+// beneath it are indented to line up with the name.
+const (
+	belayIndent  = "   "
+	belayRopeMax = 33
+	belayRopeMin = 3
+	// belayLead is the owl, its one-cell gap and "── belai " before the rope.
+	belayLead = 12 + 1 + 9
+)
+
+var (
+	ropeStyle     = lipgloss.NewStyle().Foreground(ColorAmber)
+	wordmarkStyle = lipgloss.NewStyle().Foreground(ColorCream).Bold(true)
+)
+
+// belayLine renders "── belai " followed by tail, which carries the line on.
+func belayLine(tail string) string {
+	return ropeStyle.Render("──") + " " + wordmarkStyle.Render("belai") + " " + tail
+}
+
+// ropeTail is the rope after the name, shortened to fit a narrow terminal so
+// the wordmark row never wraps and the banner keeps its six rows.
+func (b Banner) ropeTail() string {
+	n := belayRopeMax
+	if b.Width > 0 && b.Width-belayLead-1 < n {
+		n = max(b.Width-belayLead-1, belayRopeMin)
+	}
+	return ropeStyle.Render(strings.Repeat("─", n) + "◉")
 }
 
 func (b Banner) textView() string {
 	var out []string
-	out = append(out, "BELAI")
+	out = append(out, "BELAI · on belay")
 	if v := b.versionLine(); v != "" {
 		out = append(out, v)
 	}

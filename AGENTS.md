@@ -238,6 +238,21 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `tools.classifierKinds` unconditionally. Server names, descriptions and
   schema text are sanitized and capped and reach the model only through the
   sealed tools briefing. Belai answers a server's `ping` and nothing else.
+  The `vulnetix:cli` header reference (written by `/vulnetix mcp`) resolves
+  to the Vulnetix CLI's credential at dial time, only in the `Authorization`
+  header and only for `https://*.vulnetix.com`; it is never written out
+  resolved.
+- **Onboarding sends secrets only where they belong.** The Getting started
+  sign-up posts to `auth.vulnetix.com` alone (redirects off it are refused);
+  its password fields are cleared once the post returns or the form is left,
+  and never reach a transcript, log, setting or model. The device-login key
+  reaches `vulnetix auth login --noninteractive` through that child's
+  environment, never its argv. The Vulnetix CLI is installed only after the
+  user picks *Install*, with a fixed brew/scoop argv and the scrubbed
+  environment. A provider key reaches the AI Firewall (BYOK) only while the
+  firewall is on, only through `vulnetix ai-firewall key set --stdin`, and a
+  failed push keeps that provider unrouted rather than sent to a gateway
+  that would refuse it.
 - **ACP never widens what an editor can do.** `belai acp` builds each
   session with `newCLISession`, the headless path, so every gate, rule,
   sandbox and budget applies. `session/new` fails closed in a directory

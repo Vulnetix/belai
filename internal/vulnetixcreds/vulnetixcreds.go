@@ -47,6 +47,7 @@ type diskCredential struct {
 	Method          string `json:"method"`
 	APIKeyInKeyring bool   `json:"api_key_in_keyring"`
 	HMACInKeyring   bool   `json:"hmac_in_keyring"`
+	TokenInKeyring  bool   `json:"token_in_keyring"`
 }
 
 // Load resolves the gateway credential using the CLI's precedence:
@@ -82,6 +83,68 @@ func Load(getenv func(string) string, home string, workdir string, kc Keychain) 
 		return c, err
 	}
 	return Credential{}, errors.New("no Vulnetix credential found")
+}
+
+// AuthHeader returns the Authorization header value the Vulnetix CLI would
+// send: "ApiKey <org>:<key>" for an API-key or SigV4 credential, or
+// "Bearer <token>" for a token login. Unlike Load it accepts a token-only
+// credential, because the Vulnetix API (and its MCP server) takes either.
+// It never falls back to the CLI's shared Community credential.
+func AuthHeader(getenv func(string) string, home, workdir string, kc Keychain) (string, error) {
+	if tok := strings.TrimSpace(getenv("VULNETIX_API_TOKEN")); tok != "" {
+		return "Bearer " + tok, nil
+	}
+	c, err := Load(getenv, home, workdir, kc)
+	if err == nil {
+		if c.OrgUUID == "" || c.APIKey == "" {
+			return "", errors.New("the Vulnetix credential has no org id or key")
+		}
+		return "ApiKey " + c.OrgUUID + ":" + c.APIKey, nil
+	}
+	if !errors.Is(err, ErrNoGatewayCredential) {
+		return "", err
+	}
+	for _, path := range credentialPaths(getenv, home, workdir) {
+		if tok, ok := loadToken(path, kc); ok {
+			return "Bearer " + tok, nil
+		}
+	}
+	return "", err
+}
+
+// credentialPaths lists the CLI credential files in load order.
+func credentialPaths(getenv func(string) string, home, workdir string) []string {
+	var out []string
+	if workdir != "" {
+		out = append(out, filepath.Join(workdir, ".vulnetix", "credentials.json"))
+	}
+	path := filepath.Join(home, ".vulnetix", "credentials.json")
+	if dir := getenv("VULNETIX_CREDENTIALS_DIR"); dir != "" {
+		path = filepath.Join(dir, "credentials.json")
+	}
+	return append(out, path)
+}
+
+// loadToken reads a token-method credential's bearer token.
+func loadToken(path string, kc Keychain) (string, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	var d diskCredential
+	if json.Unmarshal(data, &d) != nil || d.Method != "token" {
+		return "", false
+	}
+	tok := d.Token
+	if d.TokenInKeyring && kc != nil {
+		v, err := kc.Get("token:" + d.OrgID)
+		if err != nil {
+			return "", false
+		}
+		tok = v
+	}
+	tok = strings.TrimSpace(tok)
+	return tok, tok != ""
 }
 
 func loadFile(path string, kc Keychain) (Credential, bool, error) {

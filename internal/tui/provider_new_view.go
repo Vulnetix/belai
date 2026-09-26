@@ -439,5 +439,8 @@ func (a *App) providerNewCommit() (tea.Model, tea.Cmd) {
 	a.invalidateAvailability()
 	a.openProviderDetail(slug)
 	cmds := []tea.Cmd{a.push(viewProviderDetail), a.prefetchCatalogCmd(slug)}
+	if apiKey != "" {
+		cmds = append(cmds, a.syncFirewallKey(slug))
+	}
 	return a, tea.Batch(cmds...)
 }

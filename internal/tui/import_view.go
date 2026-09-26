@@ -282,7 +282,15 @@ func (a *App) doImport() tea.Cmd {
 		return nil
 	}
 	a.pop()
-	return a.refreshProvider()
+	cmds := []tea.Cmd{a.refreshProvider()}
+	synced := map[string]bool{}
+	for _, row := range a.importState.rows {
+		if row.chosen && row.found.Field == "api_key" && !synced[row.found.Provider] {
+			synced[row.found.Provider] = true
+			cmds = append(cmds, a.syncFirewallKey(row.found.Provider))
+		}
+	}
+	return tea.Batch(cmds...)
 }
 
 func (a *App) cycleWritableBackend(cur credentials.Source) credentials.Source {

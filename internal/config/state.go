@@ -28,6 +28,9 @@ type State struct {
 	// on every session change (new, compact, resume) and read back by future
 	// launches so the last session is addressable through /resume.
 	ActiveSession string `json:"active_session,omitempty"`
+	// OnboardedAt is when the user finished or skipped the Getting started
+	// view (RFC 3339). Empty shows it on the next interactive launch.
+	OnboardedAt string `json:"onboarded_at,omitempty"`
 }
 
 // LoadState reads ~/.belai/state.json. A missing file yields zero-value

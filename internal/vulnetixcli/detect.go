@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -36,6 +37,9 @@ type CLI struct {
 	Timeout time.Duration
 	// Env overrides the process environment. Nil means probeEnv().
 	Env []string
+	// Stdin feeds the process. Nil means no input. It is how a secret reaches
+	// the CLI without entering its argv.
+	Stdin io.Reader
 }
 
 // timeoutOrDefault returns the configured timeout or the package default.
@@ -148,6 +152,7 @@ func (c CLI) ExecStreamIn(ctx context.Context, dir string, sink func(string), ar
 	ec := exec.CommandContext(ctx, c.Path, argv(args)...)
 	ec.Dir = tmpDir
 	ec.Env = c.Env
+	ec.Stdin = c.Stdin
 	if ec.Env == nil {
 		ec.Env = probeEnv()
 	}

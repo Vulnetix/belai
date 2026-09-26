@@ -1,6 +1,7 @@
 package credentials
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -282,5 +283,36 @@ func TestFirewallEnabledOverrideFlipsWithoutRebuild(t *testing.T) {
 	r.SetFirewallEnabled(&off)
 	if _, _, ok := r.Firewall("anthropic"); ok {
 		t.Fatal("override off should disable firewall")
+	}
+}
+
+// A provider whose key could not be stored on the gateway is not routed: the
+// gateway would refuse it with provider_key_missing.
+func TestFirewallKeyErrorKeepsProviderDirect(t *testing.T) {
+	on := true
+	r := &Resolver{
+		env:                     func(string) string { return "" },
+		vulnetixKeychain:        &fakeKeychain{},
+		keychain:                &fakeKeychain{},
+		firewallEnabledOverride: &on,
+	}
+	r.vulnetixCredOnce.Do(func() {})
+	r.vulnetixCred = vulnetixcreds.Credential{OrgUUID: "org", APIKey: "k"}
+	if _, _, ok := r.Firewall("openai"); !ok {
+		t.Fatal("expected openai routed")
+	}
+	r.SetFirewallKeyError("openai", errors.New("HTTP 403"))
+	if _, _, ok := r.Firewall("openai"); ok {
+		t.Fatal("routed a provider the gateway has no key for")
+	}
+	if st := r.FirewallState("openai"); !st.HasCred || !strings.Contains(st.Reason, "no openai key") {
+		t.Fatalf("state = %+v", st)
+	}
+	if _, _, ok := r.Firewall("anthropic"); !ok {
+		t.Fatal("another provider was affected")
+	}
+	r.SetFirewallKeyError("openai", nil)
+	if _, _, ok := r.Firewall("openai"); !ok {
+		t.Fatal("a successful sync did not restore routing")
 	}
 }

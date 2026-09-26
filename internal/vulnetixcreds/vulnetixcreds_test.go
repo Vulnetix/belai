@@ -279,3 +279,74 @@ func TestLoadFileMissing(t *testing.T) {
 		t.Fatalf("loadFile missing = (ok=%v, err=%v), want silent miss", ok, err)
 	}
 }
+
+func writeCred(t *testing.T, home, body string) {
+	t.Helper()
+	dir := filepath.Join(home, ".vulnetix")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "credentials.json"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func noEnv(string) string { return "" }
+
+func TestAuthHeaderAPIKey(t *testing.T) {
+	home := t.TempDir()
+	writeCred(t, home, `{"org_id":"org-a","api_key":"org-a:abc","method":"apikey"}`)
+	got, err := AuthHeader(noEnv, home, "", &fakeKeychain{})
+	if err != nil || got != "ApiKey org-a:abc" {
+		t.Fatalf("got %q, %v", got, err)
+	}
+}
+
+func TestAuthHeaderSigV4(t *testing.T) {
+	home := t.TempDir()
+	writeCred(t, home, `{"org_id":"org-b","secret":"s","method":"sigv4"}`)
+	got, err := AuthHeader(noEnv, home, "", &fakeKeychain{})
+	if err != nil || got != "ApiKey org-b:"+hmacKey("s", "org-b") {
+		t.Fatalf("got %q, %v", got, err)
+	}
+}
+
+func TestAuthHeaderToken(t *testing.T) {
+	home := t.TempDir()
+	writeCred(t, home, `{"org_id":"org-c","token":"tok","method":"token"}`)
+	got, err := AuthHeader(noEnv, home, "", &fakeKeychain{})
+	if err != nil || got != "Bearer tok" {
+		t.Fatalf("got %q, %v", got, err)
+	}
+}
+
+func TestAuthHeaderTokenKeyring(t *testing.T) {
+	home := t.TempDir()
+	writeCred(t, home, `{"org_id":"org-d","token_in_keyring":true,"method":"token"}`)
+	kc := &fakeKeychain{data: map[string]string{"token:org-d": "kr-tok"}}
+	got, err := AuthHeader(noEnv, home, "", kc)
+	if err != nil || got != "Bearer kr-tok" {
+		t.Fatalf("got %q, %v", got, err)
+	}
+}
+
+func TestAuthHeaderTokenEnvWins(t *testing.T) {
+	home := t.TempDir()
+	writeCred(t, home, `{"org_id":"org-a","api_key":"abc","method":"apikey"}`)
+	env := func(k string) string {
+		if k == "VULNETIX_API_TOKEN" {
+			return "envtok"
+		}
+		return ""
+	}
+	got, err := AuthHeader(env, home, "", &fakeKeychain{})
+	if err != nil || got != "Bearer envtok" {
+		t.Fatalf("got %q, %v", got, err)
+	}
+}
+
+func TestAuthHeaderNoCredential(t *testing.T) {
+	if got, err := AuthHeader(noEnv, t.TempDir(), "", &fakeKeychain{}); err == nil {
+		t.Fatalf("expected an error, got %q", got)
+	}
+}

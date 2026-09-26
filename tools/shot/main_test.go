@@ -78,7 +78,7 @@ func TestFrameContent(t *testing.T) {
 	defer restore()
 
 	t.Run("banner shows the wordmark", func(t *testing.T) {
-		if !strings.Contains(bannerComposer(), "S I G N E T") {
+		if !strings.Contains(bannerComposer(), "belai") {
 			t.Error("banner wordmark missing")
 		}
 	})

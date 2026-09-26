@@ -48,7 +48,7 @@ Servers are declared in your global `settings.json`
 | `transport` | `stdio` (default) or `http` (MCP streamable HTTP, JSON or event-stream responses) |
 | `command`, `args` | start a stdio server |
 | `env` | variables for a stdio server, on top of the scrubbed environment. `env:NAME` copies `NAME` from Belai's environment |
-| `url`, `headers` | reach an http server. A header value `env:NAME` is read from the environment |
+| `url`, `headers` | reach an http server. A header value `env:NAME` is read from the environment. `"Authorization": "vulnetix:cli"` sends the Vulnetix CLI's credential, and only to `https://*.vulnetix.com` (`/vulnetix mcp` writes this entry; see [vulnetix.md](vulnetix.md)) |
 | `tools` | offer only these server tools |
 | `sandbox` | run a stdio server under the [OS sandbox](sandbox.md) |
 | `timeout_ms` | per-call timeout, default 60000, at most 600000 |
@@ -96,6 +96,11 @@ The `mcp` key is read from your global settings only. A repository's
   under the OS sandbox too.
 - Belai offers servers nothing to call back: no roots, sampling or
   elicitation. It only answers `ping`.
+- The `vulnetix:cli` header reference is resolved when the server is dialled
+  and held in memory only. It expands only in the `Authorization` header of
+  an `https` URL on `vulnetix.com` or a subdomain; any other use fails the
+  server with the reason, so a hand-edited entry cannot send the credential
+  elsewhere.
 
 ## Commands
 

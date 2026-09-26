@@ -84,7 +84,7 @@ func TestBannerResumedVariant(t *testing.T) {
 	if !strings.Contains(v, "7 turns restored") {
 		t.Fatalf("banner should show the restored turn count: %q", v)
 	}
-	if strings.Contains(v, "A safer coding harness") {
+	if strings.Contains(v, "a safer coding harness") {
 		t.Fatalf("resumed banner should replace the default subtitle: %q", v)
 	}
 }

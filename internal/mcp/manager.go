@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"slices"
 	"sort"
@@ -57,6 +58,53 @@ type Options struct {
 	Sandbox func() sandbox.Policy
 	// HTTPClient reaches http servers. nil means http.DefaultClient.
 	HTTPClient *http.Client
+	// VulnetixAuth returns the Vulnetix CLI's Authorization header value. It
+	// resolves a "vulnetix:cli" header reference on every dial, so a later
+	// login takes effect on restart. nil leaves the reference unresolved.
+	VulnetixAuth func() (string, error)
+}
+
+// VulnetixCLIRef is the header value that stands for the Vulnetix CLI's
+// credential. It is never written out resolved: settings hold the reference.
+const VulnetixCLIRef = config.VulnetixCLIRef
+
+// resolveHeaders expands every VulnetixCLIRef in an http server's headers.
+// The credential is sent only as an Authorization header, only over https,
+// and only to vulnetix.com or one of its subdomains, so a hand-edited entry
+// cannot hand it to another host.
+func (m *Manager) resolveHeaders(rawURL string, headers map[string]string) (map[string]string, error) {
+	out := make(map[string]string, len(headers))
+	for k, v := range headers {
+		if v != VulnetixCLIRef {
+			out[k] = v
+			continue
+		}
+		if !strings.EqualFold(k, "Authorization") {
+			return nil, fmt.Errorf("%s is only accepted in the Authorization header", VulnetixCLIRef)
+		}
+		if !vulnetixHost(rawURL) {
+			return nil, fmt.Errorf("%s is only sent to https://*.vulnetix.com", VulnetixCLIRef)
+		}
+		if m.opts.VulnetixAuth == nil {
+			return nil, fmt.Errorf("%s is not available in this session", VulnetixCLIRef)
+		}
+		h, err := m.opts.VulnetixAuth()
+		if err != nil {
+			return nil, fmt.Errorf("vulnetix credential: %w (run /vulnetix setup or `vulnetix auth login`)", err)
+		}
+		out[k] = h
+	}
+	return out, nil
+}
+
+// vulnetixHost reports whether rawURL is https on vulnetix.com or a subdomain.
+func vulnetixHost(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Scheme != "https" || u.User != nil {
+		return false
+	}
+	h := strings.ToLower(u.Hostname())
+	return h == "vulnetix.com" || strings.HasSuffix(h, ".vulnetix.com")
 }
 
 // Manager owns the connections to every configured server.
@@ -161,7 +209,11 @@ func (m *Manager) dial(ctx context.Context, name string, sc config.MCPServer) (*
 		if hc == nil {
 			hc = http.DefaultClient
 		}
-		t = newHTTP(sc.URL, sc.Headers, hc)
+		headers, err := m.resolveHeaders(sc.URL, sc.Headers)
+		if err != nil {
+			return nil, nil, err
+		}
+		t = newHTTP(sc.URL, headers, hc)
 	default:
 		return nil, nil, fmt.Errorf("unknown transport %q (want stdio or http)", sc.Transport)
 	}
@@ -277,6 +329,44 @@ func (m *Manager) Restart(ctx context.Context, name string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return s.err
+}
+
+// Upsert replaces (or adds) one server's configuration and connects it. It is
+// how a settings change made in this session, such as /vulnetix mcp, takes
+// effect without a restart.
+func (m *Manager) Upsert(ctx context.Context, name string, sc config.MCPServer) error {
+	if m == nil {
+		return fmt.Errorf("MCP is not running in this session")
+	}
+	m.mu.Lock()
+	if old, ok := m.servers[name]; ok && old.client != nil {
+		_ = old.client.Close()
+	}
+	s := &server{name: name, cfg: sc}
+	m.servers[name] = s
+	m.mu.Unlock()
+	if sc.Disabled {
+		return nil
+	}
+	m.connect(ctx, s)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return s.err
+}
+
+// Remove stops one server and forgets it.
+func (m *Manager) Remove(name string) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if s, ok := m.servers[name]; ok {
+		if s.client != nil {
+			_ = s.client.Close()
+		}
+		delete(m.servers, name)
+	}
 }
 
 // Close stops every server.
