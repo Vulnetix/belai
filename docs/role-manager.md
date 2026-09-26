@@ -279,7 +279,9 @@ not BERT).
 
 The `/model` classifier picker and the remote HuggingFace gate resolve from one
 curated catalogue (`internal/mlclassify/classifiermodels.go`): five BERT model
-ids with their documented attack labels. `IsKnownClassifierModel` and
+ids with their documented attack labels. Each entry also carries a one-line
+efficacy note (`BlurbFor`) that the `/model` picker shows to the right of the
+model id, for the curated models and the seeded Jev Decisions gate. `IsKnownClassifierModel` and
 `AttackLabelFor` are the exported lookup helpers; `resolveSecurityPhase` uses
 the catalogue so a curated remote model always resolves its documented attack
 label instead of guessing.
