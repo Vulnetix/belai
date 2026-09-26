@@ -93,3 +93,30 @@ func TestBellNeedsTTY(t *testing.T) {
 		t.Fatal("bell without a tty succeeded")
 	}
 }
+
+// Every event has its own fixed message, and none of them is the fallback.
+func TestEveryEventHasAMessage(t *testing.T) {
+	seen := map[string]string{}
+	_, fallback := Message("nope", "")
+	for _, e := range Events {
+		_, body := Message(e, "")
+		if body == "" || body == fallback {
+			t.Errorf("%s has no message of its own", e)
+		}
+		if prev, dup := seen[body]; dup {
+			t.Errorf("%s and %s share the message %q", e, prev, body)
+		}
+		seen[body] = e
+		if !ValidEvent(e) {
+			t.Errorf("%s not valid", e)
+		}
+	}
+	for _, b := range Backends {
+		if !ValidBackend(b) {
+			t.Errorf("backend %s not valid", b)
+		}
+	}
+	if ValidEvent("bogus") || ValidBackend("bogus") {
+		t.Fatal("unknown name accepted")
+	}
+}
