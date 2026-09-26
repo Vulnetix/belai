@@ -57,7 +57,7 @@ func TestReviewScanShowsCardImmediately(t *testing.T) {
 	if !ok {
 		t.Fatal("a finished scanner must add a report card")
 	}
-	if card.ToolName != "vulnetix sast" || !strings.Contains(card.Content, "3 findings") || !strings.Contains(card.Content, "2 high · 1 low") || !strings.Contains(card.Content, ".vulnetix/sast.sarif") {
+	if card.ToolName != "vulnetix sast" || !strings.Contains(card.Content, "3 code issues") || !strings.Contains(card.Content, "2 high · 1 low") || !strings.Contains(card.Content, ".vulnetix/sast.sarif") {
 		t.Fatalf("card = %+v", card)
 	}
 	if strings.Contains(card.Content, "a.go:1") {
@@ -254,5 +254,73 @@ func TestReviewEscCancels(t *testing.T) {
 	a.handleReviewScansDone(reviewScansDoneMsg{})
 	if a.review != nil || a.pendingReview != nil {
 		t.Fatal("a cancelled review must clear without a triage turn")
+	}
+}
+
+// Each activity's card speaks in that activity's terms: inventories count
+// what they inventoried and never say "findings" or "issues".
+func TestReviewCardsPerScanner(t *testing.T) {
+	cbom := &scanartifacts.BOMFacts{
+		Metadata: map[string]string{
+			"vulnetix:cbom/algorithms-detected": "3", "vulnetix:cbom/certificates-detected": "0",
+			"vulnetix:cbom/libraries-detected": "1", "vulnetix:cbom/quantum-safe": "2",
+			"vulnetix:cbom/quantum-vulnerable": "0", "vulnetix:cbom/hybrid": "0", "vulnetix:cbom/deprecated": "1",
+		},
+		PQC: map[string][]string{"deprecated": {"SHA-1"}},
+	}
+	aibom := &scanartifacts.BOMFacts{
+		Metadata: map[string]string{
+			"vulnetix:aibom/tools-detected": "2", "vulnetix:aibom/libraries-detected": "1", "vulnetix:aibom/models-detected": "22",
+		},
+		Categories: map[string]int{"coding-agent": 1, "ai-convention": 1, "ai-sdk": 1, "model": 22},
+		Names: map[string][]string{
+			"coding-agent": {"Claude Code"}, "ai-convention": {"AGENTS.md\x1b[31m instructions"},
+			"ai-sdk": {"Cloudflare Workers AI"}, "model": {"@cf/meta/llama"},
+		},
+	}
+	sbom := &scanartifacts.BOMFacts{
+		Metadata:   map[string]string{"vulnetix:sbom/packages-detected": "558"},
+		Ecosystems: map[string]int{"npm": 385, "golang": 140, "binary": 21},
+	}
+	sca := &scanartifacts.BOMFacts{
+		Components: 543, Ecosystems: map[string]int{"npm": 383, "golang": 149},
+		Vulns: scanartifacts.Counts{Critical: 1, High: 2}, Licenses: 10,
+	}
+	for _, c := range []struct {
+		o         commands.ScanOutcome
+		want      []string
+		attention bool
+		issues    int
+	}{
+		{commands.ScanOutcome{Name: "cbom", BOM: cbom}, []string{"3 algorithms · 0 certificates · 1 library", "quantum-safe 2 · quantum-vulnerable 0 · hybrid 0", "deprecated:** SHA-1"}, true, 0},
+		{commands.ScanOutcome{Name: "aibom", BOM: aibom}, []string{"2 AI tools · 1 AI library · 22 models", "tools: AGENTS.md instructions, Claude Code", "libraries: Cloudflare Workers AI", "models: @cf/meta/llama +21 more"}, false, 0},
+		{commands.ScanOutcome{Name: "sbom", BOM: sbom}, []string{"558 packages inventoried", "npm 385 · golang 140 · binary 21"}, false, 0},
+		{commands.ScanOutcome{Name: "sca", BOM: sca}, []string{"3 vulnerabilities** · 1 critical · 2 high", "10 license issues", "543 packages · npm 383 · golang 149"}, true, 3},
+		{commands.ScanOutcome{Name: "sast", SARIF: &scanartifacts.RunFacts{Results: 17, Counts: scanartifacts.Counts{High: 7, Medium: 10}, RulesTriggered: 13, RulesEvaluated: 193}}, []string{"17 code issues", "13 of 193 rules triggered"}, true, 17},
+		{commands.ScanOutcome{Name: "secrets", SARIF: &scanartifacts.RunFacts{RulesEvaluated: 40}}, []string{"no secrets in the working tree"}, false, 0},
+		{commands.ScanOutcome{Name: "iac", SARIF: &scanartifacts.RunFacts{Results: 1, Counts: scanartifacts.Counts{Medium: 1}}}, []string{"1 misconfiguration"}, true, 1},
+		{commands.ScanOutcome{Name: "containers", SARIF: &scanartifacts.RunFacts{Results: 7, Counts: scanartifacts.Counts{Medium: 7}}, BOM: &scanartifacts.BOMFacts{Components: 2}}, []string{"7 container issues", "2 images inventoried"}, true, 7},
+		{commands.ScanOutcome{Name: "malscan", SARIF: &scanartifacts.RunFacts{FilesScanned: 3, Indicators: 246709}}, []string{"**clean**", "3 files scanned · 246,709 indicators checked"}, false, 0},
+		{commands.ScanOutcome{Name: "malscan", SARIF: &scanartifacts.RunFacts{Results: 2, Malicious: true}}, []string{"**malicious** · 2 indicators matched"}, true, 2},
+	} {
+		card := cardFor(c.o)
+		body := reviewScanCard(c.o, card, nil, "")
+		for _, w := range c.want {
+			if !strings.Contains(body, w) {
+				t.Errorf("%s card lacks %q:\n%s", c.o.Name, w, body)
+			}
+		}
+		if strings.ContainsRune(body, '\x1b') {
+			t.Errorf("%s card carries a control rune: %q", c.o.Name, body)
+		}
+		switch c.o.Name {
+		case "cbom", "aibom", "sbom", "malscan":
+			if strings.Contains(body, "finding") || strings.Contains(body, "issue") {
+				t.Errorf("%s card speaks of findings or issues:\n%s", c.o.Name, body)
+			}
+		}
+		if card.attention != c.attention || card.issues != c.issues {
+			t.Errorf("%s: attention %v issues %d, want %v %d", c.o.Name, card.attention, card.issues, c.attention, c.issues)
+		}
 	}
 }

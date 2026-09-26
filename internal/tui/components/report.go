@@ -10,9 +10,17 @@ import (
 // review scanner's harness-composed result, or a scanner agent's classified
 // report. It is render-only: buildTurns never promotes it, so no model sees
 // it through the transcript. The card's title rides on ToolName, its
-// right-aligned meta (timing, counts) on ToolArgs, and a
-// "failed" Status draws the frame in the warning accent.
+// right-aligned meta (timing, counts) on ToolArgs, and its Status picks the
+// frame accent.
 const ReportRole = "report"
+
+// Report card statuses. A failed activity draws the frame in the danger
+// accent; one whose result needs the user's attention (vulnerabilities, a
+// deprecated algorithm, a malicious verdict) in the warning accent.
+const (
+	ReportFailed    = "failed"
+	ReportAttention = "attention"
+)
 
 // reportPreviewLines is how much of a collapsed report card shows. A scanner
 // agent's report is one line per finding, so the preview holds the most
@@ -26,7 +34,10 @@ func reportPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 		title = "report"
 	}
 	accent := lipgloss.TerminalColor(ColorTeal)
-	if msg.Status == "failed" {
+	switch msg.Status {
+	case ReportFailed:
+		accent = ColorDanger
+	case ReportAttention:
 		accent = ColorAmber
 	}
 	body := strings.TrimRight(msg.Text(), "\n")

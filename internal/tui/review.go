@@ -202,19 +202,24 @@ func (a *App) handleReviewScan(m reviewScanMsg) tea.Cmd {
 	}
 	r.reports = append(r.reports, m.reports...)
 	r.atts = append(r.atts, m.atts...)
-	r.total += o.Findings
+	card := cardFor(o)
+	r.total += card.issues
 
 	var agentCmd tea.Cmd
 	key := ""
 	if len(m.reports) > 0 {
 		key, agentCmd = a.startScannerAgent(r, o.Name, m.reports)
 	}
+	status := reviewScanStatus(o)
+	if status == "" && card.attention {
+		status = components.ReportAttention
+	}
 	a.messages = append(a.messages, components.Message{
 		Role:     components.ReportRole,
-		Content:  reviewScanCard(o, m.withheld, key),
+		Content:  reviewScanCard(o, card, m.withheld, key),
 		ToolName: "vulnetix " + o.Name,
 		ToolArgs: compactDuration(o.Duration),
-		Status:   reviewScanStatus(o),
+		Status:   status,
 	})
 	a.refreshFooter()
 	return tea.Batch(next, agentCmd)
@@ -393,7 +398,7 @@ func (a *App) maybeSendReview() tea.Cmd {
 		a.addSystem("■ vulnetix review done · nothing to triage · " + elapsed)
 		return nil
 	}
-	a.addSystem(fmt.Sprintf("■ vulnetix review done · %s · %s · triage starting", countOf(r.total, "finding"), elapsed))
+	a.addSystem(fmt.Sprintf("■ vulnetix review done · %s · %s · triage starting", nounCount(r.total, "issue", "issues"), elapsed))
 	rs := &reviewSend{atts: r.atts, reports: r.reports, findings: r.findings, steer: r.steer}
 	if a.working() || a.preSend {
 		a.pendingReview = rs
@@ -508,7 +513,7 @@ func (a *App) reviewProgress() *components.ReviewProgress {
 // Exit status 1 is a gate that found something, not a failure.
 func reviewScanStatus(o commands.ScanOutcome) string {
 	if o.TimedOut || (o.Err != nil && o.ExitCode != 1) {
-		return "failed"
+		return components.ReportFailed
 	}
 	return ""
 }
@@ -516,27 +521,20 @@ func reviewScanStatus(o commands.ScanOutcome) string {
 // reviewScanCard renders a finished scanner's card. Every line is a harness
 // observation — status, counts, the artifact path, the agent's key — and no
 // finding text, which stays on the classified triage path.
-func reviewScanCard(o commands.ScanOutcome, withheld []string, agentKey string) string {
+func reviewScanCard(o commands.ScanOutcome, card reviewCard, withheld []string, agentKey string) string {
 	var lines []string
 	switch {
 	case o.TimedOut:
 		lines = append(lines, "**timed out**")
-	case reviewScanStatus(o) == "failed":
+	case reviewScanStatus(o) == components.ReportFailed:
 		line := fmt.Sprintf("**failed** · exit %d", o.ExitCode)
 		if o.Err != nil {
 			line += " · " + auditLine(o.Err.Error())
 		}
 		lines = append(lines, line)
 	}
-	if o.Findings == 0 {
-		lines = append(lines, "no findings")
-	} else {
-		line := "**" + countOf(o.Findings, "finding") + "**"
-		if s := severityBreakdown(o.Counts); s != "" {
-			line += " · " + s
-		}
-		lines = append(lines, line)
-	}
+	lines = append(lines, card.headline)
+	lines = append(lines, card.lines...)
 	if o.Artifact != "" {
 		lines = append(lines, "`.vulnetix/"+o.Artifact+"`")
 	}
