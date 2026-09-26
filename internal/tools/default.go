@@ -33,6 +33,7 @@ func Default(workdir string, readOnly bool) *Registry {
 	list = append(list, &Cd{Cwd: cwd})
 	list = append(list, UpdatePlan{})
 	list = append(list, ExitPlanMode{})
+	list = append(list, AskUserQuestion{})
 	list = append(list, Task{})
 	// Skill loads an installed skill by name; SkillDraft proposes a new one
 	// and always asks. ReadOnly drops SkillDraft with the other writers.

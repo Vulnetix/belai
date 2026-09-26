@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vulnetix/signet/internal/clarify"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/permissions"
@@ -98,6 +99,10 @@ type passOutcome struct {
 	// updatePlan is a checklist the model reported through the update_plan
 	// tool. When non-nil the pass loop adopts it into the shared todo list.
 	updatePlan *todos.List
+	// askUser is the questionnaire the model sent through AskUserQuestion in
+	// plan mode. It ends the pass; the plan loop hands it back so the
+	// session can ask the user and continue in agent mode.
+	askUser *clarify.Questionnaire
 	// mutations counts the calls in this pass that the file-diff recorder saw
 	// change at least one file. It is harness-observed, never model-claimed,
 	// and it is the goal pass loop's primary progress signal.
@@ -390,6 +395,7 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		allWithheld := len(units) > 0
 		planExited := false
 		planText := ""
+		var askUser *clarify.Questionnaire
 		for i := 0; i < len(units); i++ {
 			u := units[i]
 			if i >= concurrentEnd {
@@ -424,6 +430,14 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 				s.recordRead(u.readKey, u.call.ID, results[i])
 			}
 			toolResult := results[i]
+			if toolResult == tools.AskUserSentinel {
+				var planQ *clarify.Questionnaire
+				toolResult, planQ = s.handleAskUser(ctx, pipe, u.args, mode, emit)
+				if planQ != nil {
+					askUser = planQ
+				}
+				results[i] = toolResult
+			}
 			emit(Event{Kind: EventToolResultKind, ToolName: u.call.Name, ToolCallID: u.call.ID, ToolResult: toolResult, Duration: took[i]})
 			turns = append(turns, run.Turn{
 				Role:       "tool",
@@ -432,6 +446,9 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 				ToolName:   u.call.Name,
 			})
 			switch {
+			case toolResult == tools.AskUserSentinel:
+				productiveIter = true
+				allWithheld = false
 			case toolResult == tools.ExitPlanModeSentinel:
 				planExited = true
 				if p, ok := u.args["plan"].(string); ok {
@@ -464,6 +481,9 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 			withheld++
 		} else {
 			withheld = 0
+		}
+		if askUser != nil && !planExited {
+			return finish(passOutcome{reply: assistant.Text, usage: assistant.Usage, text: text, lastText: lastText, productive: productive, updatePlan: updatePlan, askUser: askUser}), turns, nil
 		}
 		if planExited {
 			return finish(passOutcome{reply: assistant.Text, usage: assistant.Usage, text: text, lastText: lastText, productive: productive, planExit: true, planText: planText, updatePlan: updatePlan}), turns, nil

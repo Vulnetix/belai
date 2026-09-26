@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/vulnetix/signet/internal/calltrace"
+	"github.com/vulnetix/signet/internal/clarify"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/httpclient"
 	"github.com/vulnetix/signet/internal/mlclassify"
@@ -2274,6 +2275,10 @@ type Result struct {
 	// evaluator rather than an explicit ExitPlanMode call.
 	PlanText string
 	Passes   int
+	// Clarify is set when a plan-mode turn ended by asking the user
+	// (AskUserQuestion). The agent asks and runs the answers as a new
+	// agent-mode turn; a caller that sees it set was not able to ask.
+	Clarify *clarify.Questionnaire
 }
 
 // Engage runs the full noninteractive Role Manager pipeline: sanitize, then

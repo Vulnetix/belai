@@ -124,6 +124,14 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   pass loop on the full surface (the human approval is the gate), and the
   `read_only` setting narrows agent-mode turns only — never goal mode or an
   approved plan.
+- **Asking the user leaves plan mode only through the user.** `AskUserQuestion`
+  is offered in every mode. In plan mode it ends the plan loop, and only the
+  user's admitted answers start the new agent-mode turn with the full
+  surface, the same way a typed prompt would; declined or refused answers
+  start nothing. A session that cannot ask (headless, background agents,
+  explore subagents) never blocks and never widens: the model is told to
+  proceed. A question already asked this session is never put to the user
+  again.
 - **Delimiters are sealed.** Every harness delimiter carries a random nonce
   plus a SHA-256 integrity hash of its enclosed content. On egress, any block
   lacking a nonce, carrying an unknown nonce, or failing its integrity hash is
