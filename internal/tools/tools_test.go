@@ -388,7 +388,7 @@ func TestKindReadOnlyClassification(t *testing.T) {
 		// No tool carries KindHook; it stays off the read-only list so it
 		// could never admit a tool into the concurrent fan-out.
 		KindHook:  false,
-		KindSkill: true, KindSkillWrite: false,
+		KindSkill: true, KindSkillWrite: false, KindMCP: false,
 	}
 	seen := map[Kind]bool{}
 	for _, k := range AllKinds {

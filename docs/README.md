@@ -45,7 +45,7 @@ ships, its status changes to `alpha-YYYYMMDD`, the date it landed.
 | Skill loading and self-authored skills | [Skills](skills.md) | alpha-20260926 |
 | Plugin packages | [Plugins](plugins.md) | alpha-20260926 |
 | OS sandbox for Bash | [Sandbox](sandbox.md) | alpha-20260926 |
-| MCP client | [MCP servers](mcp.md) | Roadmap |
+| MCP client | [MCP servers](mcp.md) | alpha-20260926 |
 | Editor integration over ACP | [ACP](acp.md) | Roadmap |
 | OpenTelemetry export | [Telemetry](telemetry.md) | Roadmap |
 

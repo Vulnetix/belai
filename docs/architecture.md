@@ -654,8 +654,10 @@ Business rules and edge cases:
   sibling `SkillDraft` returns a confirmation the harness wrote
   (`skill_write`, sanitize-only) and asks on every call (see
   [skills](skills.md)).
-- **Roadmap kinds classify.** One planned kind joins the always-classify set
-  when it ships: `mcp` (MCP server results, see [MCP servers](mcp.md)).
+- **MCP results classify.** A server tool's result is text a third-party
+  server wrote, so kind `mcp` is always classified. The kind is also
+  mutating, so every call asks unless a rule allows it and plan mode never
+  offers it (see [MCP servers](mcp.md)).
 - **Explore findings are separate.** An explore subagent's report is model
   output, not tool output, and is classified explicitly in
   `internal/agent/explore.go` regardless of this rule.

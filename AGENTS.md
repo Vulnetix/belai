@@ -220,6 +220,16 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `caches` to `false`, never the reverse, and its `extra_writable` is
   dropped. `required` with no working backend refuses the command; it never
   falls back to running it bare.
+- **MCP servers are the user's, and their text classifies.** `mcp.servers`
+  is read from the user's own settings layers only; `resolve.go` drops the
+  project layer's `mcp` key outright. Servers start only after the trust
+  gate. A stdio server gets the scrubbed environment plus only its declared
+  `env`, its own process group, and the OS sandbox when it opts in. Every
+  server tool is `mcp__<server>__<tool>` with `tools.KindMCP`: mutating (so it
+  asks without an allow rule and never reaches plan mode) and in
+  `tools.classifierKinds` unconditionally. Server names, descriptions and
+  schema text are sanitized and capped and reach the model only through the
+  sealed tools briefing. Signet answers a server's `ping` and nothing else.
 - **Notifications carry harness text only.** `internal/notify` composes
   every notification from a fixed template; the one variable is a tool or
   agent name reduced to an identifier. Model output, tool output and paths

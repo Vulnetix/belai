@@ -319,6 +319,9 @@ func NewRegistry(workdir string) *Registry {
 		a.addSystem(pluginCommand(arg))
 		return nil
 	})
+	r.Register("mcp", "list MCP servers and their tools; /mcp restart <name>", nil, func(a *App, arg string) tea.Cmd {
+		return a.mcpCommand(arg)
+	})
 	r.Register("sandbox", "show the OS sandbox status and policy for commands", nil, func(a *App, arg string) tea.Cmd {
 		a.addSystem(a.sandboxReport())
 		return nil
