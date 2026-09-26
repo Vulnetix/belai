@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/vulnetix/signet/internal/commands"
 	"github.com/vulnetix/signet/internal/explore"
@@ -163,5 +164,95 @@ func TestReportCardsNeverReachTheModel(t *testing.T) {
 		if strings.Contains(turn.Content, "3 findings") {
 			t.Fatalf("report card promoted into turn %+v", turn)
 		}
+	}
+}
+
+// While a review runs and no turn is in flight, the composer is a working,
+// steering composer: it shows the review's progress and enter steers.
+func TestReviewComposerIsWorkingAndSteers(t *testing.T) {
+	a := New(Options{})
+	a.width, a.height = 160, 40
+	a.relayout()
+	a.mode = "agent" // no agent engaged: steering must not open the picker
+	r := testReview(a, "sast", "secrets", "fix")
+	r.done["sast"] = true
+
+	plain := ansi.Strip(a.renderComposer())
+	if !strings.Contains(plain, "vulnetix review") || !strings.Contains(plain, "1/3") || !strings.Contains(plain, "steer") {
+		t.Fatalf("composer is not the review's working composer:\n%s", plain)
+	}
+
+	a.editor.SetValue("focus on the secrets findings")
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if len(r.steer) != 1 || r.steer[0] != "focus on the secrets findings" {
+		t.Fatalf("steer = %v", r.steer)
+	}
+	if a.agentPickerOpen {
+		t.Fatal("steering a review must not open the agent picker")
+	}
+	var steered bool
+	for _, m := range a.messages {
+		steered = steered || (m.Role == "user" && m.Steering && m.Content == "focus on the secrets findings")
+	}
+	if !steered || a.editor.Value() != "" {
+		t.Fatal("the steer must show as a user steering row and clear the composer")
+	}
+
+	// The steer rides on the triage prompt.
+	a.preSend = true
+	r.done["secrets"], r.done["fix"] = true, true
+	r.atts = []run.Attachment{{Kind: "file", Label: "sast report", Body: "S1"}}
+	r.scansDone = true
+	a.maybeSendReview()
+	if a.pendingReview == nil || len(a.pendingReview.steer) != 1 {
+		t.Fatalf("queued triage = %+v, want the steer", a.pendingReview)
+	}
+	if p := reviewPromptWith(a.pendingReview.steer); !strings.Contains(p, reviewPrompt) || !strings.Contains(p, "focus on the secrets findings") {
+		t.Fatalf("triage prompt = %q", p)
+	}
+}
+
+// A turn in flight keeps enter for itself: the review is not steered.
+func TestReviewSteerYieldsToARunningTurn(t *testing.T) {
+	a := New(Options{})
+	testReview(a, "sast", "fix")
+	a.cancel = func() {}
+	if a.reviewSteerable() {
+		t.Fatal("a running turn takes the steer, not the review")
+	}
+}
+
+// esc cancels a review nobody is steering past: the composer and footer drop
+// it at once, killed scanners add no cards, and no triage turn runs.
+func TestReviewEscCancels(t *testing.T) {
+	a := New(Options{})
+	r := testReview(a, "sast", "fix")
+	cancelled := false
+	r.cancel = func() { cancelled = true }
+	r.agents["k"] = "sast"
+
+	a.handleChatKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if !cancelled || !r.cancelled || a.reviewActive() || len(r.agents) != 0 {
+		t.Fatalf("esc must cancel the review: cancelled %v, review %+v", cancelled, r)
+	}
+	if a.reviewProgress() != nil {
+		t.Fatal("a cancelled review must leave the footer")
+	}
+	if strings.Contains(ansi.Strip(a.renderComposer()), "vulnetix review") {
+		t.Fatal("a cancelled review must leave the composer")
+	}
+
+	n := len(a.messages)
+	a.handleReviewScan(reviewScanMsg{outcome: commands.ScanOutcome{Name: "sast", Err: errors.New("killed")}})
+	if len(a.messages) != n {
+		t.Fatal("a scanner killed by the cancel must not add a card")
+	}
+	a.handleReviewReport(reviewReportMsg{key: "k", scanner: "sast", body: "late"})
+	if len(a.messages) != n {
+		t.Fatal("a stopped agent's late report must not render")
+	}
+	a.handleReviewScansDone(reviewScansDoneMsg{})
+	if a.review != nil || a.pendingReview != nil {
+		t.Fatal("a cancelled review must clear without a triage turn")
 	}
 }

@@ -2266,7 +2266,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.attachSpin = spin
 		workSpin, workCmd := a.workSpin.Update(m)
 		a.workSpin = workSpin
-		if a.phase == phaseIdle {
+		if a.phase == phaseIdle && !a.reviewActive() {
 			workCmd = nil
 		}
 		if !a.hasPendingAttachments() {
@@ -2386,7 +2386,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	a.attachSpin = spin
 	workSpin, workCmd := a.workSpin.Update(msg)
 	a.workSpin = workSpin
-	if a.phase == phaseIdle {
+	if a.phase == phaseIdle && !a.reviewActive() {
 		workCmd = nil
 	}
 	if !a.hasPendingAttachments() {
@@ -2539,6 +2539,11 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 			a.persistTail()
 			return nil
 		}
+		if a.reviewSteerable() {
+			// No turn is in flight, so esc is the review's cancel.
+			a.cancelReview()
+			return nil
+		}
 		if a.cancel != nil {
 			a.cancel()
 			a.cancel = nil
@@ -2587,6 +2592,11 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		// turns: they need no carrier, so they run on this enter.
 		if cmd, ok := a.runLocalInput(input); ok {
 			return cmd
+		}
+		// A running review steers like a running turn: the triage turn it
+		// starts carries the review agent, so no picker is needed.
+		if input != "" && a.reviewSteerable() {
+			return a.steerReview(input)
 		}
 		// In agent mode with no agent engaged, enter opens the picker rather
 		// than sending a turn that has no carrier. The submit is deferred, not
@@ -2917,6 +2927,9 @@ func (a *App) handleHistoryKey(m tea.KeyMsg) tea.Cmd {
 		}
 		if cmd, ok := a.runLocalInput(input); ok {
 			return cmd
+		}
+		if a.reviewSteerable() {
+			return a.steerReview(input)
 		}
 		if a.working() {
 			a.messages = append(a.messages, components.Message{Role: "user", Content: input, Steering: true})
@@ -4013,6 +4026,12 @@ func (a *App) renderComposer() string {
 		title = a.spinMark() + " working" + a.elapsedLabel()
 		accent = lipgloss.TerminalColor(components.ColorAmber)
 		meta = "⏎ steer · esc cancel"
+	} else if t, ok := a.reviewComposerTitle(); ok {
+		// A running /vulnetix review is work in progress: the composer says
+		// so, and enter steers the triage turn it will start.
+		title = t
+		accent = lipgloss.TerminalColor(components.ColorTeal)
+		meta = "⏎ steer · esc cancel review"
 	}
 	// The ctrl+s action bar: overwrite or delete the loaded entry. The confirm
 	// question goes in Title (Meta is dropped at narrow widths, unacceptable
@@ -5761,6 +5780,8 @@ type reviewSend struct {
 	// findings are the scanner agents' reports that already ran; their
 	// scanners' subagents are not run again in the triage turn.
 	findings []explore.ReviewFinding
+	// steer is what the user typed while the review ran.
+	steer []string
 }
 
 // reviewPrompt is the triage turn's objective. How to remediate, when to defer
@@ -5768,6 +5789,16 @@ type reviewSend struct {
 // profile's job; the per-scanner subagents' reports precede this turn and the
 // clarifier has already asked about findings with more than one fix.
 const reviewPrompt = "Remediate every finding of this Vulnetix review and write .vulnetix/signet/code-review-report.md. The per-scanner subagent reports precede this message; the scanner reports are attached."
+
+// reviewPromptWith is the triage objective plus what the user typed while the
+// review ran. It is the user's own direction, so it rides on the prompt and
+// takes precedence over the default objective.
+func reviewPromptWith(steer []string) string {
+	if len(steer) == 0 {
+		return reviewPrompt
+	}
+	return reviewPrompt + "\n\nWhile the review ran, the user added (follow it where it narrows or changes the objective above):\n" + strings.Join(steer, "\n")
+}
 
 // sendReview starts the triage turn for a review. It switches the session to
 // agent mode with the signet:vulnetix-review profile engaged, as if the user
@@ -5788,7 +5819,7 @@ func (a *App) sendReview(rs *reviewSend) tea.Cmd {
 	a.reviewReports = rs.reports
 	a.reviewFindings = rs.findings
 	a.forceMode = modes.ModeAgent
-	return a.sendWithAttachments(reviewPrompt, rs.atts, "")
+	return a.sendWithAttachments(reviewPromptWith(rs.steer), rs.atts, "")
 }
 
 func (a *App) handleVulnetixProbe(m vulnetixProbeMsg) tea.Cmd {
