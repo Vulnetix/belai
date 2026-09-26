@@ -783,13 +783,15 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	}
 	defer func() { s.turnReadOnly = savedReadOnly }()
 
-	// Per-turn fan-out latch: the fan-out profile advertises the Task tool and
-	// runs read-only subagents for parallel investigation.
+	// Per-turn intent/fan-out latch: the fan-out profile advertises the Task
+	// tool and runs read-only subagents for parallel investigation.
+	savedIntent := s.turnIntent
+	s.turnIntent = modeDec.Intent
 	savedFanOut := s.turnFanOut
 	// Fan-out is engaged either by Jev intent detection or by an explicit
 	// @agent:signet:fanout pre-send override.
 	s.turnFanOut = modeDec.Intent == rolemanager.IntentFanOut || modeDec.AgentName == "signet:fanout"
-	defer func() { s.turnFanOut = savedFanOut }()
+	defer func() { s.turnFanOut = savedFanOut; s.turnIntent = savedIntent }()
 	if s.turnFanOut && s.fanOutTask != nil {
 		s.fanOutTask.Runner = s.runTask
 	}
@@ -847,8 +849,14 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	// and classified while exploration and clarify run, and joined when the
 	// user turn is assembled. See prefetch.go.
 	var prefetch *pendingPrefetch
-	if (modeDec.Mode == modes.ModePlan && !in.ExecutePlan) || loopDec.Mode == modes.ModeGoal {
-		prefetch = s.startPrefetch(ctx, pipe, history, attachedPaths(in.Attachments), emit)
+	prefetchPaths := attachedPaths(in.Attachments)
+	if modeDec.Intent == rolemanager.IntentHandoff && modeDec.Handoff != nil {
+		for _, p := range modeDec.Handoff.Paths {
+			prefetchPaths[p] = true
+		}
+	}
+	if (modeDec.Mode == modes.ModePlan && !in.ExecutePlan) || loopDec.Mode == modes.ModeGoal || modeDec.Intent == rolemanager.IntentHandoff {
+		prefetch = s.startPrefetch(ctx, pipe, history, prefetchPaths, emit)
 		// The prefetch emits; it must finish before run returns and RunStream
 		// closes the event channel, on every path.
 		defer prefetch.wait()

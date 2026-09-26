@@ -960,7 +960,11 @@ func (s *Session) agentContinuations(ctx context.Context, pipe *rolemanager.Pipe
 			emit(Event{Kind: EventWarningKind, Warning: "context compacted to keep the turn going"})
 		}
 		directive := continuationDirective
-		if mode == modes.ModeAgent && !s.turnReadOnly && mutations == 0 {
+		switch {
+		case mode == modes.ModeAgent && s.turnIntent == rolemanager.IntentHandoff && hasList && !list.Complete():
+			p := list.Progress()
+			directive = fmt.Sprintf("%d of %d plan tasks remain. Continue with the next open task, then finish.", len(list.Items)-p.Completed(), p.Total)
+		case mode == modes.ModeAgent && !s.turnReadOnly && mutations == 0:
 			directive = agentEditNudge + " " + continuationDirective
 		}
 		turns = append(turns, withTodoCheck(directive, list, hasList)...)
