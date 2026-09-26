@@ -12,6 +12,7 @@ never its content.
 - [What is never exported](#what-is-never-exported)
 - [Settings](#settings)
 - [Relationship to the local trace](#relationship-to-the-local-trace)
+- [Edge cases](#edge-cases)
 
 ## What is exported
 
@@ -66,6 +67,13 @@ file contents or reply reach the collector.
 }
 ```
 
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `otlp_endpoint` | none (export off) | collector base URL |
+| `headers` | none | sent with every export |
+| `traces` | `true` | export spans |
+| `metrics` | `true` | export metrics |
+
 A header value `env:NAME` is read from the environment. The standard
 `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS` and
 `OTEL_SDK_DISABLED` variables are honoured. The transport is OTLP over HTTP
@@ -85,3 +93,14 @@ slowing a turn, and at most 4096 spans wait between exports.
 `SIGNET_TRACE=<file>` keeps working and writes the local JSONL timing trace
 described in [development](development.md). OpenTelemetry export is separate
 and can be on at the same time.
+
+## Edge cases
+
+- `OTEL_SDK_DISABLED=true` turns export off whatever the settings say.
+- `OTEL_EXPORTER_OTLP_ENDPOINT` overrides `otlp_endpoint`.
+- A trailing `/` on the endpoint is removed.
+- With `traces` and `metrics` both false, nothing starts.
+- A string attribute such as a model id keeps letters, digits and `._:/@+-`;
+  anything else becomes `_`, and it is cut at 96 characters.
+- A collector that is down or slow loses that batch; the next export
+  carries the counters again, because they are cumulative.
