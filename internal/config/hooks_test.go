@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 // Hooks default on. The user's global settings may turn them off; a
 // repo-visible project file may turn them off but never on, so a cloned
@@ -179,5 +182,47 @@ func TestResolveTelemetryIgnoresProject(t *testing.T) {
 	}
 	if merged := (Settings{}).Override(Settings{Telemetry: &TelemetrySettings{OTLPEndpoint: "x"}}); merged.Telemetry != nil {
 		t.Fatal("Override let a project file set telemetry")
+	}
+}
+
+// "events": [] in the user's file means no desktop notifications, not the
+// default set.
+func TestNotificationEmptyEventsStaysEmpty(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("SIGNET_HOME", home)
+	path, err := GlobalSettingsPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"notifications":{"enabled":true,"events":[]}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	eff, err := Resolve(t.TempDir(), func(string) string { return "" }, Settings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev := eff.Settings.Notifications.Events
+	if ev == nil || len(ev) != 0 {
+		t.Fatalf("events = %#v, want empty non-nil", ev)
+	}
+}
+
+func TestSandboxValueFallbacks(t *testing.T) {
+	for mode, want := range map[string]string{"": "auto", "bogus": "auto", "off": "off", "required": "required"} {
+		if got := (&SandboxSettings{Mode: mode}).ModeOr(); got != want {
+			t.Errorf("ModeOr(%q) = %q, want %q", mode, got, want)
+		}
+	}
+	for net, want := range map[string]string{"": "allow", "allow": "allow", "deny": "deny", "open": "deny"} {
+		if got := (&SandboxSettings{Network: net}).NetworkOr(); got != want {
+			t.Errorf("NetworkOr(%q) = %q, want %q", net, got, want)
+		}
+	}
+	var n *NotificationSettings
+	if n.NotificationsEnabled() || n.MinTurnSecondsOr() != DefaultNotifyMinTurnSeconds {
+		t.Fatal("notification defaults wrong")
+	}
+	if (&NotificationSettings{MinTurnSeconds: -3}).MinTurnSecondsOr() != DefaultNotifyMinTurnSeconds {
+		t.Fatal("negative min_turn_seconds not defaulted")
 	}
 }

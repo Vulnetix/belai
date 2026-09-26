@@ -12,6 +12,7 @@ terminal is in another window or on another desktop.
 - [Security model](#security-model)
 - [Settings](#settings)
 - [Limitations](#limitations)
+- [Edge cases](#edge-cases)
 
 ## Triggers
 
@@ -82,3 +83,15 @@ project's `.vulnetix/settings.json`. Set it in your global `settings.json`.
   fire while you are looking at the window.
 - Inside tmux, OSC sequences need `set -g allow-passthrough on`.
 - Headless `-prompt` runs do not notify.
+
+## Edge cases
+
+- `events` left out means the default set. `events: []` means no desktop
+  notifications at all; the `notification` hook still fires.
+- An unknown name in `events` is ignored. An unknown `backend` means `auto`.
+- `min_turn_seconds` of 0 or less means 30.
+- A goal or an approved plan notifies `goal_done` or `goal_stalled` when its
+  report starts, never `turn_done` as well.
+- A background agent notifies once, when its loop ends.
+- A backend that fails (no `notify-send`, no terminal) is dropped silently:
+  a notification never interrupts the turn.

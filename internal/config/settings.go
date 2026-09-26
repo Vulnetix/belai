@@ -202,7 +202,9 @@ func (s *NotificationSettings) merge(from *NotificationSettings) {
 		s.Backend = from.Backend
 	}
 	if from.Events != nil {
-		s.Events = append([]string(nil), from.Events...)
+		// An explicit empty list means "none", so it must stay non-nil.
+		s.Events = make([]string, len(from.Events))
+		copy(s.Events, from.Events)
 	}
 	if from.MinTurnSeconds != 0 {
 		s.MinTurnSeconds = from.MinTurnSeconds
