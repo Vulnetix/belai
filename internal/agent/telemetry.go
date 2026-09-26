@@ -17,7 +17,7 @@ import (
 // nothing from the prompt or the reply.
 func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, streaming bool, emit func(Event)) (run.Result, error) {
 	if !otel.Enabled() || s.exploreSubagent {
-		return s.runTurn(ctx, history, in, streaming, emit)
+		return s.runWithClarify(ctx, history, in, streaming, emit)
 	}
 	start := time.Now()
 	span := otel.StartSpan(ctxWithSession(ctx, s.sessionID), "signet.turn")
@@ -29,7 +29,7 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 		}
 		inner(e)
 	}
-	res, err := s.runTurn(ctx, history, in, streaming, emit)
+	res, err := s.runWithClarify(ctx, history, in, streaming, emit)
 	outcome := turnOutcome(ctx, err)
 	span.Set(otel.S(otel.AttrMode, mode), otel.S(otel.AttrOutcome, outcome), otel.I(otel.AttrPasses, int64(res.Passes)))
 	if err != nil {

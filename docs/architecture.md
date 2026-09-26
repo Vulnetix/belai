@@ -1202,6 +1202,10 @@ Plan mode narrows the tool surface in two places that must agree:
   `ExitPlanMode` tool is registered in the base registry but filtered out
   of non-plan briefings by `Registry.WithoutPlanOnly()`, so agent and goal
   mode never see a tool that only makes sense during planning.
+  `AskUserQuestion` is read-only and offered in every mode, the final
+  planning pass included; in plan mode the user's answers start a new
+  agent-mode turn (see
+  [Asking the user](role-manager.md#asking-the-user-askuserquestion)).
 - `modes.ToolAllowed` is the **enforcement** half. It refuses the write-tool
   denylist (`write`, `edit`, `apply_patch`, `patch`, …) and refuses `Bash`
   outright, case-folded, whatever the command says. The advertisement and

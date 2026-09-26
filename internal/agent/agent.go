@@ -230,8 +230,12 @@ type Session struct {
 	// update_plan. Mutating tool calls before it are refused.
 	handoffUpdatePlanCalled bool
 	// emit is the current turn's event emitter, set at the start of run.
-	emit       func(Event)
-	hookSet    *hooks.Set
+	emit    func(Event)
+	hookSet *hooks.Set
+	// asked holds every question put to the user this session, by the model
+	// (AskUserQuestion) or the harness clarifier, so none is asked twice.
+	askedMu    sync.Mutex
+	asked      map[string]bool
 	toolMethod run.ToolMethod
 	steer      chan string
 	trace      *trace.Writer
@@ -275,7 +279,7 @@ type Session struct {
 // planFinishTools is the whole surface of the plan loop's final pass: record
 // the checklist, hand over the plan. No exploration tool is offered, so the
 // pass cannot end in more reading.
-var planFinishTools = []string{"ExitPlanMode", "update_plan"}
+var planFinishTools = []string{"ExitPlanMode", "update_plan", "AskUserQuestion"}
 
 // steerBuffer is the steering queue capacity. A full queue drops the newest
 // message rather than stalling the UI or the loop.

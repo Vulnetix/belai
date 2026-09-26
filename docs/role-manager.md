@@ -1245,12 +1245,13 @@ without drafting any plan makes the next pass the finishing pass. At the old
 pass for 20+ minutes each, had its oldest results cleared out of context as it
 grew, re-read them, and never wrote a plan in 99 minutes.
 **The last allowed pass is a finishing pass:** its tool surface is
-`update_plan` and `ExitPlanMode` only (advertised *and* enforced —
+`update_plan`, `ExitPlanMode` and `AskUserQuestion` only (advertised *and* enforced —
 `Session.planFinalPass` narrows `toolSurface`, and `execTool` refuses any
 other tool with *unavailable on the final planning pass*), and its directive
 says there is no more reading: write the complete plan from what is already in
 the conversation and call `ExitPlanMode`, naming open questions inside the
-plan. The loop therefore ends on a plan, never on one more round of reading.
+plan, or ask a question that is genuinely the user's with `AskUserQuestion`
+(see [Asking the user](#asking-the-user-askuserquestion)). The loop therefore ends on a plan, never on one more round of reading.
 If the finishing pass writes the plan as text without calling `ExitPlanMode`,
 that text is the plan (`PLAN_PARTIAL`, with a system note); there is no
 further pass for an evaluator verdict to buy. The narrowing never outlives
@@ -1549,7 +1550,7 @@ place it is attached, so no boundary can forget it:
 | Loop | Where the check rides |
 | ---- | --------------------- |
 | Goal | Every directive injected inside the loop (`passLedger.directive`): action, no-write, verification, gate, continuation, tool repair, progression, partial. The first-pass goal acknowledgement is exempt — it already asks for the first `update_plan` — and the final report is exempt because it forbids tools |
-| Plan | The per-pass planning directive (`prompt.PlanDirective`) at the start of every pass, including the final `update_plan`/`ExitPlanMode`-only pass |
+| Plan | The per-pass planning directive (`prompt.PlanDirective`) at the start of every pass, including the final pass limited to `update_plan`, `ExitPlanMode` and `AskUserQuestion` |
 | Agent | Every budget-exhaustion continuation. Agent mode keeps no ledger, so the continuation loop adopts the list from the model's own `update_plan` calls |
 
 The check's wording depends on the list state:
@@ -1821,6 +1822,55 @@ The questionnaire appears as a full-screen view (`internal/tui/viewClarify`):
 
 The questionnaire is also echoed into the transcript as a system notice so the
 exchange survives in the session record.
+
+## Asking the user (AskUserQuestion)
+
+The harness clarify loop above asks questions the clarifier drafts before
+planning starts. `AskUserQuestion` is the model's own way to ask, at any point,
+in every mode. It takes the trained Claude Code shape:
+
+```json
+{"questions": [{"question": "Which database should the service use?",
+                "header": "DB", "multiSelect": false,
+                "options": [{"label": "Postgres", "description": "…"}, {"label": "SQLite"}]}]}
+```
+
+The questions become the same questionnaire the clarify loop uses
+(`tools.QuestionnaireFromArgs`): sanitized, then validated against the same
+limits (1 to 6 questions, 2 to 4 options each, one-line text ending in `?` or
+`.`). A `header` is prefixed to its question. An invalid call is a tool error
+the model fixes in the same pass. The TUI shows the questions in the same
+full-screen view as the clarify loop.
+
+What happens next depends on the mode:
+
+| Mode | Behaviour |
+| --- | --- |
+| agent, goal | The harness asks at once. The answers, admitted by the prompt classifier like any prompt, are the tool result, and the loop carries on with every tool. |
+| plan (any pass, the finishing pass included) | Asking ends the planning pass and the plan loop (no plan is recorded). The harness asks, and the answers start a **new agent-mode turn** (`Session.runWithClarify`) with the full tool surface, whatever the mode chip says, so the model carries the work forward instead of stopping at a plan. The new turn's history holds the prompt, the planner's text and the questions it asked. The session's plan mode is restored afterwards. |
+
+Business rules and edge cases:
+
+- **Nobody to ask.** A session that cannot ask (headless `-prompt`, a
+  background agent, an explore subagent) never blocks: the result tells the
+  model that no one can answer and to proceed on its own judgement, stating
+  its assumptions. Explore subagents are not offered the tool at all.
+- **No repeats.** Every question put to the user in a session, by the model
+  or the clarify loop, is remembered (normalised for case, spacing and
+  closing punctuation). A repeated question is dropped before the user sees
+  it; when every question in a call was already asked, the result tells the
+  model to use the answers already in the conversation. The tool's own
+  description tells the model not to ask what was already asked, or what the
+  prompt, conversation, code or a sensible default already answers.
+- **Declined.** If the user skips every question, agent and goal mode get a
+  result saying so and proceed on their own judgement; in plan mode the plan
+  turn ends with its text and no new turn starts.
+- **Refused answers.** Answers the prompt classifier refuses are dropped, and
+  the model is told to proceed on its own judgement.
+- **Not for approval.** Plan approval stays with `ExitPlanMode` and the plan
+  review pane.
+- **ACP.** An editor session cannot show a questionnaire, so a question is
+  answered as declined (see [ACP](acp.md)).
 
 ## Adjacent security primitives
 

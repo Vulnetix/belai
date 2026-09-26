@@ -535,7 +535,10 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 	// and never GOAL_* presentation.
 	if s.allowPassLoop && modeDec.Mode == modes.ModePlan {
 		res, err := s.planPassLoop(ctx, pipe, system, turns, planContext, streaming, emit)
-		res = s.recordPlan(res, prompt, emit)
+		// A turn that ended in questions has no plan to record yet.
+		if res.Clarify == nil {
+			res = s.recordPlan(res, prompt, emit)
+		}
 		return res, err
 	}
 

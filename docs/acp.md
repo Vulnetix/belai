@@ -71,7 +71,8 @@ classifier refuses it.
 
 - Sessions last as long as the editor's connection and are not written to
   the Signet session store, so they cannot be resumed from the TUI.
-- Clarifying questions are not asked over ACP; the agent proceeds with its
+- Clarifying questions, the harness's and the model's `AskUserQuestion`, are
+  answered as declined over ACP; the agent proceeds with its
   best reading of the prompt.
 - Images and audio in prompts are not accepted.
 - Slash commands, modes and the TUI panels are not exposed.

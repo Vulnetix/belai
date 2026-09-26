@@ -60,13 +60,14 @@ func (s *Session) clarifyRounds(ctx context.Context, pipe *rolemanager.Pipeline,
 		if err != nil {
 			break
 		}
-		q = dropAsked(q, asked)
+		q = s.dropAskedBefore(dropAsked(q, asked))
 		if q.Empty() {
 			break
 		}
 		for _, g := range q.Groups {
 			asked[clarifyKey(g.Context)] = true
 		}
+		s.markAsked(q)
 
 		ans, ok := s.askUser(ctx, q, emit)
 		if !ok {

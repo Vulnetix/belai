@@ -235,3 +235,7 @@ func sanitizeQuestionnaire(q Questionnaire) Questionnaire {
 	}
 	return q
 }
+
+// Sanitized returns q with every human-readable string sanitized, so a
+// questionnaire from any source renders the same safe way.
+func (q Questionnaire) Sanitized() Questionnaire { return sanitizeQuestionnaire(q) }

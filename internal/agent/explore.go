@@ -343,7 +343,7 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task, g Grounding, 
 	// .Plan() rather than relying on PlanMode alone keeps the advertised
 	// list and the enforced list the same, so the preamble below cannot
 	// promise a Bash the gate will refuse.
-	reg := tools.DefaultWithCaps(s.workdir, true, s.caps, s.repoIndex).Plan()
+	reg := tools.DefaultWithCaps(s.workdir, true, s.caps, s.repoIndex).Plan().Without("AskUserQuestion") // a subagent cannot ask the user
 
 	grounding := g.digest(t.Kind == explore.RefRepo || t.Kind == explore.RefOrg)
 	promptText := t.Prompt

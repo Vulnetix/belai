@@ -252,7 +252,7 @@ const planPlanFromWhatYouHave = "Write the plan now from what you have already g
 
 // planFinalDirective leads the plan loop's last pass, whose tool surface is
 // update_plan and ExitPlanMode only.
-const planFinalDirective = "This is the final planning pass. Only update_plan and ExitPlanMode are available; there is no more reading. Write the complete plan from what is already in the conversation and call ExitPlanMode with it now. Name any open question inside the plan rather than researching it."
+const planFinalDirective = "This is the final planning pass. Only update_plan, ExitPlanMode and AskUserQuestion are available; there is no more reading. Write the complete plan from what is already in the conversation and call ExitPlanMode with it now. If a decision is genuinely the user's and nothing in the conversation or the code settles it, ask it with AskUserQuestion instead (never a question already asked or already answered); otherwise name any open question inside the plan rather than researching it."
 
 // planPartialDirective builds the continuation instruction for a PLAN_PARTIAL
 // verdict: the current plan list state, a progress summary, and an escalating
@@ -406,6 +406,12 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 		if l.todoChanged && l.hasList {
 			list := l.list
 			emit(Event{Kind: EventTodosKind, Todos: &list})
+		}
+
+		// The planner asked the user. The loop ends here; the session shows the
+		// questions and runs the answers as a new agent-mode turn.
+		if out.askUser != nil {
+			return run.Result{Reply: out.lastText, Usage: out.usage, Passes: l.passes, Clarify: out.askUser}, nil
 		}
 
 		// Model-declared completion: a direct ExitPlanMode call overrides the
