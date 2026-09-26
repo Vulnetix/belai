@@ -14,6 +14,7 @@ the network can be switched off.
 - [Settings](#settings)
 - [When a command is blocked](#when-a-command-is-blocked)
 - [Limitations](#limitations)
+- [Edge cases](#edge-cases)
 
 ## What is confined
 
@@ -99,3 +100,18 @@ asks you rather than retrying blindly.
   `sandbox: true` (see [MCP servers](mcp.md)).
 - The sandbox is a boundary for the commands Signet runs. It is not a
   substitute for running Signet itself in a container.
+
+## Edge cases
+
+- A cache directory that does not exist is skipped; bubblewrap binds only
+  what is there.
+- A relative path in `extra_writable` is ignored.
+- An unknown `mode` means `auto`. A `network` value other than `allow`
+  means `deny`.
+- Signet's state directory stays hidden even when it sits under a writable
+  path.
+- bubblewrap is probed once per run. If it is installed but cannot start
+  (unprivileged user namespaces off), `auto` runs unsandboxed and
+  `required` refuses.
+- Only a sandboxed `Bash` command that exits non-zero gets the sandbox note;
+  a successful one looks exactly as it would unsandboxed.
