@@ -182,3 +182,54 @@ func TestGitSourceRejectsOptionInjection(t *testing.T) {
 		t.Fatal("option-shaped ref accepted")
 	}
 }
+
+func TestUpdateRules(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	src := samplePlugin(t)
+	if _, err := Install(context.Background(), src, yes); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetEnabled("go-team", false); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := Update(context.Background(), "go-team", "", yes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec.Enabled {
+		t.Fatal("update re-enabled a disabled plugin")
+	}
+	other := t.TempDir()
+	write(t, other, ManifestFile, `{"name":"someone-else"}`)
+	if _, err := Update(context.Background(), "go-team", other, yes); err == nil {
+		t.Fatal("update to a source naming another plugin succeeded")
+	}
+	if _, err := Update(context.Background(), "missing", "", yes); err == nil {
+		t.Fatal("update of an uninstalled plugin succeeded")
+	}
+}
+
+func TestComponentMustBeADirectory(t *testing.T) {
+	src := t.TempDir()
+	write(t, src, ManifestFile, `{"name":"x","prompts":["file.md"]}`)
+	write(t, src, "file.md", "hi")
+	if _, err := Validate(src); err == nil {
+		t.Fatal("file component accepted")
+	}
+	src2 := t.TempDir()
+	write(t, src2, ManifestFile, `{"name":"x","prompts":["missing"]}`)
+	if _, err := Validate(src2); err == nil {
+		t.Fatal("missing component accepted")
+	}
+}
+
+func TestPromptFilesSkippedWhenBadNameOrTooLarge(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "ok.md", "fine")
+	write(t, dir, "Bad Name.md", "x")
+	write(t, dir, "huge.md", strings.Repeat("a", 64*1024+1))
+	ps := readPrompts(dir)
+	if len(ps) != 1 || ps[0].Name != "ok" {
+		t.Fatalf("prompts = %+v", ps)
+	}
+}

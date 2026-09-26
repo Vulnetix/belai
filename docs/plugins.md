@@ -12,6 +12,7 @@ be shared and installed together from a git repository or a local directory.
 - [Security model](#security-model)
 - [Commands](#commands)
 - [Limitations](#limitations)
+- [Edge cases](#edge-cases)
 
 ## Manifest
 
@@ -28,6 +29,15 @@ A plugin has `signet-plugin.json` at its root:
   "agents": ["agents"]
 }
 ```
+
+Top-level keys:
+
+| Key | Required | Meaning |
+| --- | --- | --- |
+| `name` | yes | the plugin name, used as the namespace of its components |
+| `version` | no | shown in listings and recorded at install |
+| `description` | no | shown in the install listing |
+| `skills`, `hooks`, `prompts`, `agents` | no | component directories, below |
 
 Each component list names directories relative to the plugin root:
 
@@ -64,6 +74,9 @@ signet plugin install ./local/plugin
 4. The plugin is stored at `~/.vulnetix/signet/plugins/<name>/`, and
    `plugins.json` beside it records the source and the commit it is pinned to
    (`local` for a directory copy).
+
+`signet plugin disable <name>` stops loading a plugin's components without
+removing it, and `signet plugin enable <name>` turns it back on.
 
 `signet plugin update <name>` fetches the recorded source again (or a new one
 given after the name), prints the new listing with a count of what the
@@ -116,3 +129,18 @@ listing before confirming.
 - There is no plugin index or search; install from a URL or directory you
   trust.
 - A repository cannot recommend plugins yet.
+
+## Edge cases
+
+- Installing a plugin whose name is already installed is refused; use
+  `update`.
+- An update whose source now names a different plugin is refused.
+- An update keeps the plugin's enabled or disabled state.
+- A disabled plugin keeps its files and registry entry; none of its
+  components load.
+- A plugin directory whose manifest no longer reads, or names a different
+  plugin than its registry entry, is skipped at load.
+- A prompt file whose name is not lowercase letters, digits and hyphens, or
+  which is larger than 64 KiB, is skipped.
+- A component path that is missing, is a file rather than a directory, or
+  leads outside the plugin (including through a symlink) fails the install.
