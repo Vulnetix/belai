@@ -218,6 +218,26 @@ site-build:
 site-check:
     cd site && yarn build && node scripts/check-links.mjs dist && test -f dist/CNAME && grep -qx 'signet.vulnetix.com' dist/CNAME
 
+# Notify search engines that the sitemap changed. Google retired its sitemap
+# ping endpoint in 2023, so Bing (whose index also feeds DuckDuckGo/Yahoo) is
+# the only ping left. Set INDEXNOW_KEY to also push via IndexNow (Bing,
+# Yandex, Seznam, Naver); publish site/public/$INDEXNOW_KEY.txt containing
+# that same key first, or the submission is rejected.
+site-submit-sitemap:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    sitemap="https://signet.vulnetix.com/sitemap.xml"
+    echo "Pinging Bing: ${sitemap}"
+    curl -fsS "https://www.bing.com/ping?sitemap=${sitemap}"
+    if [ -n "${INDEXNOW_KEY:-}" ]; then
+      echo "Submitting via IndexNow..."
+      curl -fsS -X POST "https://api.indexnow.org/indexnow" \
+        -H "Content-Type: application/json" \
+        -d "{\"host\":\"signet.vulnetix.com\",\"key\":\"${INDEXNOW_KEY}\",\"urlList\":[\"https://signet.vulnetix.com/\"]}"
+    else
+      echo "INDEXNOW_KEY not set; skipping IndexNow submission."
+    fi
+
 # Regenerate the TUI shot captures and their SVGs. Deterministic: a clean-tree
 # run must produce an empty diff (that is what makes the captures CI-reproducible).
 shots:
