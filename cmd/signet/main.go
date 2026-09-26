@@ -317,10 +317,15 @@ func main() {
 		},
 	})
 	mcp.SetActive(mcpMgr)
+	stopTelemetry := startTelemetry(settings, workdir)
+	shutdown := func() {
+		mcpMgr.Close()
+		stopTelemetry()
+	}
 
 	if *prompt != "" {
 		err := runPromptOrTUI(ctx, *prompt, *model, *provider, *detectMode, *verbose, workdir, pol, *enableTools, *planMode, settings)
-		mcpMgr.Close()
+		shutdown()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "signet:", err)
 			os.Exit(1)
@@ -335,7 +340,7 @@ func main() {
 			os.Exit(1)
 		}
 		err = tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Provider: *provider, Model: *model, Settings: &settings, Posture: pol, PlanMode: *planMode, ResumeKey: resumeKey, ResumeSession: resumeID})
-		mcpMgr.Close()
+		shutdown()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "signet:", err)
 			os.Exit(1)
@@ -343,7 +348,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	mcpMgr.Close()
+	shutdown()
 	fmt.Println("signet", version.Version)
 }
 

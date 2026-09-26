@@ -35,8 +35,8 @@ behaviour, and implementation details.
 
 ## Roadmap
 
-These features are designed and documented, but not in a release yet. When one
-ships, its status changes to `alpha-YYYYMMDD`, the date it landed.
+Features are documented here before they are built. A row reads `Roadmap`
+until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
 
 | Feature | Guide | Status |
 | --- | --- | --- |
@@ -47,7 +47,7 @@ ships, its status changes to `alpha-YYYYMMDD`, the date it landed.
 | OS sandbox for Bash | [Sandbox](sandbox.md) | alpha-20260926 |
 | MCP client | [MCP servers](mcp.md) | alpha-20260926 |
 | Editor integration over ACP | [ACP](acp.md) | alpha-20260926 |
-| OpenTelemetry export | [Telemetry](telemetry.md) | Roadmap |
+| OpenTelemetry export | [Telemetry](telemetry.md) | alpha-20260926 |
 
 ## Build, test, and publish
 

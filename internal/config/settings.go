@@ -100,6 +100,10 @@ type Settings struct {
 	// only: a server is a command to run or a URL to send data to, so the
 	// project layer is dropped.
 	MCP *MCPSettings `json:"mcp,omitempty"`
+	// Telemetry configures OpenTelemetry export (docs/telemetry.md). Global
+	// only: a repository choosing where session facts go would be an
+	// exfiltration path, so the project layer is dropped.
+	Telemetry *TelemetrySettings `json:"telemetry,omitempty"`
 	// Notifications configures desktop notifications
 	// (docs/notifications.md). A per-user preference: the project layer
 	// cannot set it.
@@ -203,6 +207,18 @@ func (s *NotificationSettings) merge(from *NotificationSettings) {
 	if from.MinTurnSeconds != 0 {
 		s.MinTurnSeconds = from.MinTurnSeconds
 	}
+}
+
+// TelemetrySettings configures OTLP export.
+type TelemetrySettings struct {
+	// OTLPEndpoint is the collector base URL, e.g. http://localhost:4318.
+	// Empty means export is off (unless OTEL_EXPORTER_OTLP_ENDPOINT is set).
+	OTLPEndpoint string `json:"otlp_endpoint,omitempty"`
+	// Headers are sent with every export. "env:NAME" reads the environment.
+	Headers map[string]string `json:"headers,omitempty"`
+	// Traces and Metrics turn either signal off. Default on.
+	Traces  *bool `json:"traces,omitempty"`
+	Metrics *bool `json:"metrics,omitempty"`
 }
 
 // MCPSettings lists MCP servers by name.

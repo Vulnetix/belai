@@ -52,6 +52,7 @@ func runACP(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 	})
 	mcp.SetActive(mcpMgr)
 	defer mcpMgr.Close()
+	defer startTelemetry(global, wd)()
 	defer recordUsage(session.MustID(), global)()
 
 	build := func(ctx context.Context, cwd, sessionID string) (*agent.Session, error) {

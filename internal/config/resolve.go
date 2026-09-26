@@ -205,6 +205,12 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.Notifications.merge(s.Notifications)
 		e.Origin["notifications"] = src
 	}
+	if s.Telemetry != nil && src != SourceProject {
+		// Where session facts are sent is the user's choice alone.
+		t := *s.Telemetry
+		e.Settings.Telemetry = &t
+		e.Origin["telemetry"] = src
+	}
 	if s.MCP != nil && src != SourceProject {
 		// MCP servers are commands to run and URLs to send data to: only the
 		// user's own layers may name them. Later layers replace earlier ones

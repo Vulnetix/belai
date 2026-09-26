@@ -238,6 +238,13 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   denies, and "allow for this session" lives in memory for that session and
   tool only. Editor-supplied `mcpServers` are ignored. Nothing but protocol
   messages is written to stdout.
+- **Telemetry carries facts, never content.** `internal/otel` exports only
+  attribute keys on its fixed allowlist, and reduces every string value to
+  identifier characters, capped. Never add a key that can hold a prompt,
+  reply, argument, output, path, command or URL; `TestAllowlistIsClosed` pins
+  the set and `TestTelemetryCarriesNoContent` runs a real turn against a
+  collector. `telemetry` is read from the user's own settings layers only.
+  Export is best effort and never fails or slows a turn.
 - **Notifications carry harness text only.** `internal/notify` composes
   every notification from a fixed template; the one variable is a tool or
   agent name reduced to an identifier. Model output, tool output and paths
