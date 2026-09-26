@@ -1,6 +1,7 @@
 package session
 
 import (
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -419,10 +420,19 @@ func TestTimedUserPromptsOldestFirstWithModTimeFallback(t *testing.T) {
 	if err := st.Append(workdir, "sess-1", Entry{ID: "b", Type: "assistant", Role: "assistant", Content: "ok"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Append(workdir, "sess-1", Entry{ID: "c", Type: "user", Role: "user", Content: "unstamped"}); err != nil {
+	// Append stamps every entry it writes, so an unstamped row can only come
+	// from an older store: write those lines to the file directly.
+	pre, err := st.Sessions(workdir)
+	if err != nil || len(pre) != 1 {
+		t.Fatalf("sessions = %v, %v", pre, err)
+	}
+	f, err := os.OpenFile(pre[0].Path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := st.Append(workdir, "sess-1", Entry{ID: "d", Type: "user", Role: "user", Content: ""}); err != nil {
+	_, err = f.WriteString(`{"id":"c","type":"user","role":"user","content":"unstamped"}` + "\n" + `{"id":"d","type":"user","role":"user","content":""}` + "\n")
+	f.Close()
+	if err != nil {
 		t.Fatal(err)
 	}
 
