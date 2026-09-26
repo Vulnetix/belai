@@ -13,6 +13,7 @@ and budgets as the TUI.
 - [What is supported](#what-is-supported)
 - [Security model](#security-model)
 - [Limitations](#limitations)
+- [Edge cases](#edge-cases)
 
 ## Editor setup
 
@@ -74,3 +75,15 @@ classifier refuses it.
   best reading of the prompt.
 - Images and audio in prompts are not accepted.
 - Slash commands, modes and the TUI panels are not exposed.
+
+## Edge cases
+
+- A second `session/prompt` on a session whose turn is still running is
+  refused.
+- An empty prompt, an unknown session id, or a relative `cwd` is refused
+  with invalid-params.
+- A permission ask the editor fails to answer, answers with `cancelled`, or
+  answers with an unknown option denies.
+- "Allow for this session" covers that tool name only, and ends with the
+  session.
+- Cancelling a turn returns `cancelled` even when the turn also failed.

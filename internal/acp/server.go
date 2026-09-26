@@ -81,6 +81,9 @@ func Serve(ctx context.Context, r io.Reader, w io.Writer, build Builder) error {
 	return nil
 }
 
+// Methods lists every ACP method the server answers.
+var Methods = []string{"initialize", "authenticate", "session/new", "session/prompt", "session/cancel"}
+
 func (s *Server) handle(ctx context.Context, method string, params json.RawMessage) (any, error) {
 	<-s.ready
 	switch method {
