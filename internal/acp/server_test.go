@@ -252,3 +252,43 @@ func TestPromptText(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// Every method in Methods is handled, and nothing else is.
+func TestMethodsParity(t *testing.T) {
+	s := &Server{sessions: map[string]*acpSession{}, ready: make(chan struct{})}
+	close(s.ready)
+	for _, m := range Methods {
+		_, err := s.handle(context.Background(), m, json.RawMessage(`{}`))
+		if rpc, ok := err.(*jsonrpc.Error); ok && rpc.Code == jsonrpc.CodeMethodNotFound {
+			t.Errorf("%s is listed but not handled", m)
+		}
+	}
+	if _, err := s.handle(context.Background(), "session/load", nil); err == nil {
+		t.Fatal("unlisted method handled")
+	}
+}
+
+// A second prompt while a turn runs is refused; an empty prompt is refused.
+func TestPromptGuards(t *testing.T) {
+	s := &Server{sessions: map[string]*acpSession{}, ready: make(chan struct{})}
+	close(s.ready)
+	s.sessions["busy"] = &acpSession{id: "busy", cancel: func() {}, always: map[string]bool{}}
+	s.sessions["idle"] = &acpSession{id: "idle", always: map[string]bool{}}
+	_, err := s.handle(context.Background(), "session/prompt", json.RawMessage(`{"sessionId":"busy","prompt":[{"type":"text","text":"hi"}]}`))
+	if rpc, ok := err.(*jsonrpc.Error); !ok || rpc.Code != jsonrpc.CodeInvalidRequest {
+		t.Fatalf("busy session: %v", err)
+	}
+	_, err = s.handle(context.Background(), "session/prompt", json.RawMessage(`{"sessionId":"idle","prompt":[{"type":"text","text":"  "}]}`))
+	if rpc, ok := err.(*jsonrpc.Error); !ok || rpc.Code != jsonrpc.CodeInvalidParams {
+		t.Fatalf("empty prompt: %v", err)
+	}
+}
+
+func TestToolKindsAreACPKinds(t *testing.T) {
+	valid := map[string]bool{"read": true, "edit": true, "delete": true, "move": true, "search": true, "execute": true, "think": true, "fetch": true, "switch_mode": true, "other": true}
+	for _, n := range []string{"Read", "Write", "Edit", "Grep", "Bash", "WebFetch", "update_plan", "mcp__x__y", "Skill", "SkillDraft"} {
+		if !valid[toolKind(n)] {
+			t.Errorf("toolKind(%s) = %q, not an ACP ToolKind", n, toolKind(n))
+		}
+	}
+}
