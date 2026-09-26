@@ -43,7 +43,7 @@ ships, its status changes to `alpha-YYYYMMDD`, the date it landed.
 | Hook events with allow and deny decisions | [Hooks](hooks.md) | alpha-20260926 |
 | Desktop notifications | [Notifications](notifications.md) | alpha-20260926 |
 | Skill loading and self-authored skills | [Skills](skills.md) | alpha-20260926 |
-| Plugin packages | [Plugins](plugins.md) | Roadmap |
+| Plugin packages | [Plugins](plugins.md) | alpha-20260926 |
 | OS sandbox for Bash | [Sandbox](sandbox.md) | Roadmap |
 | MCP client | [MCP servers](mcp.md) | Roadmap |
 | Editor integration over ACP | [ACP](acp.md) | Roadmap |

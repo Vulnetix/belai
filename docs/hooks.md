@@ -39,8 +39,9 @@ prompt and turn end do not fire `user_prompt_submit` or `stop`; its end fires
 ## Hook files
 
 Each hook is one JSON file in `~/.vulnetix/signet/hooks/` (or
-`$SIGNET_HOME/hooks/`). There is no project-level hooks directory: a
-repository never supplies a command Signet will run.
+`$SIGNET_HOME/hooks/`). Enabled [plugins](plugins.md) add theirs, named
+`plugin:name`. There is no project-level hooks directory: a repository never
+supplies a command Signet will run.
 
 ```json
 {

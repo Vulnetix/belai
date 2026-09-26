@@ -195,3 +195,8 @@ func writePrompt(path, body string, mode os.FileMode) error {
 	}
 	return os.WriteFile(path, []byte(body+"\n"), mode)
 }
+
+// ExtraEntries returns prompts from enabled plugins, named "plugin:slug".
+// They are offered as /prompt:<name> but are not part of either editable
+// library. nil means none. Set once at startup.
+var ExtraEntries func() []Entry

@@ -54,6 +54,9 @@ func (a *App) loadSlashLib() {
 	global, _ := promptlib.Load(config.ScopeGlobal, a.workdir)
 	project, _ := promptlib.Load(config.ScopeProject, a.workdir)
 	a.slashLib.prompts = promptlib.Enabled(promptlib.Merge(global.Entries, project.Entries))
+	if promptlib.ExtraEntries != nil {
+		a.slashLib.prompts = append(a.slashLib.prompts, promptlib.ExtraEntries()...)
+	}
 
 	// Every saved process is offered, disabled ones too: disabled only turns
 	// off auto-start, and starting one by hand is the point of the chip.

@@ -92,8 +92,9 @@ in read-only sessions.
   sanitized description do.
 - The file you approve is the file that is written: the preview and the write
   are built by the same code from the same sanitized input.
-- Skills are read from your global directory only. There is no project-level
-  skills directory.
+- Skills are read from your global directory and from enabled
+  [plugins](plugins.md), whose skills are namespaced `plugin:name`. There is
+  no project-level skills directory.
 
 ## Settings
 

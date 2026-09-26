@@ -43,3 +43,8 @@ func LoadDir(dir string, pol posture.Policy) ([]*Hook, error) {
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
+
+// Extra returns hooks from outside the global hooks directory (enabled
+// plugins), already validated and each with its Dir set. nil means none.
+// Set once at startup.
+var Extra func(pol posture.Policy) []*Hook

@@ -39,6 +39,7 @@ import (
 
 func main() {
 	_, _ = config.Migrate()
+	activatePlugins()
 
 	// One root context for every non-TUI entry point. Goal mode's pass loop is
 	// unbounded by design, so an interruptible context is the only thing that
@@ -48,6 +49,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go hardExitOnSecondSignal(ctx)
+
+	// `signet plugin …` is a subcommand with its own flags.
+	if len(os.Args) > 1 && os.Args[1] == "plugin" {
+		os.Exit(runPluginCLI(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Stderr, isCharDevice(os.Stdin)))
+	}
 
 	showVersion := flag.Bool("version", false, "print version and exit")
 	trustDir := flag.Bool("trust-dir", false, "trust the current directory without prompting")

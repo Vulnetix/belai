@@ -79,6 +79,9 @@ func SaveMoving(p AgentProfile, oldFile string) (string, error) {
 // and never touch disk, so a user file named signet_triage-vulns.json cannot
 // shadow signet:triage-vulns.
 func Load(name string) (AgentProfile, error) {
+	if p, ok := extraProfile(name); ok {
+		return p, nil
+	}
 	if IsBuiltin(name) {
 		p, ok := builtinProfiles[name]
 		if !ok {
@@ -164,6 +167,11 @@ func List() ([]AgentProfile, error) {
 		out = append(out, p)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	// Plugin profiles follow the user's, named "plugin:name" so they can
+	// never shadow a user or built-in profile.
+	if ExtraProfiles != nil {
+		out = append(out, ExtraProfiles()...)
+	}
 	// Append built-ins after user profiles so they are selectable but cannot be
 	// clobbered on disk.
 	for _, n := range builtinNames() {
@@ -189,4 +197,22 @@ func Delete(name string) error {
 // built-in's sanitised filename.
 func collidesWithBuiltin(p AgentProfile) bool {
 	return collidesWithBuiltinFileName(p)
+}
+
+// ExtraProfiles returns profiles from enabled plugins, each already
+// validated and named "plugin:name". nil means none. Set once at startup.
+var ExtraProfiles func() []AgentProfile
+
+// extraProfile finds a plugin profile by exact name. Only a namespaced name
+// (with a colon, outside the built-in prefix) can match.
+func extraProfile(name string) (AgentProfile, bool) {
+	if ExtraProfiles == nil || IsBuiltin(name) || !strings.Contains(name, ":") {
+		return AgentProfile{}, false
+	}
+	for _, p := range ExtraProfiles() {
+		if p.Name == name {
+			return p, true
+		}
+	}
+	return AgentProfile{}, false
 }
