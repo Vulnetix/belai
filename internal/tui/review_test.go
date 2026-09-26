@@ -302,6 +302,7 @@ func TestReviewCardsPerScanner(t *testing.T) {
 		{commands.ScanOutcome{Name: "containers", SARIF: &scanartifacts.RunFacts{Results: 7, Counts: scanartifacts.Counts{Medium: 7}}, BOM: &scanartifacts.BOMFacts{Components: 2}}, []string{"7 container issues", "2 images inventoried"}, true, 7},
 		{commands.ScanOutcome{Name: "malscan", SARIF: &scanartifacts.RunFacts{FilesScanned: 3, Indicators: 246709}}, []string{"**clean**", "3 files scanned · 246,709 indicators checked"}, false, 0},
 		{commands.ScanOutcome{Name: "malscan", SARIF: &scanartifacts.RunFacts{Results: 2, Malicious: true}}, []string{"**malicious** · 2 indicators matched"}, true, 2},
+		{commands.ScanOutcome{Name: "malscan", SARIF: &scanartifacts.RunFacts{}}, []string{"**nothing to scan**", "no dependency install directory at the repository root"}, false, 0},
 	} {
 		card := cardFor(c.o)
 		body := reviewScanCard(c.o, card, nil, "")
@@ -318,6 +319,9 @@ func TestReviewCardsPerScanner(t *testing.T) {
 			if strings.Contains(body, "finding") || strings.Contains(body, "issue") {
 				t.Errorf("%s card speaks of findings or issues:\n%s", c.o.Name, body)
 			}
+		}
+		if c.o.Name == "malscan" && c.o.SARIF.FilesScanned == 0 && strings.Contains(body, "clean") {
+			t.Errorf("a malscan that inspected nothing must not say clean:\n%s", body)
 		}
 		if card.attention != c.attention || card.issues != c.issues {
 			t.Errorf("%s: attention %v issues %d, want %v %d", c.o.Name, card.attention, card.issues, c.attention, c.issues)
