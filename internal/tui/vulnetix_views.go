@@ -45,6 +45,9 @@ type vulnetixListRow struct {
 }
 
 type vulnetixArtifactsState struct {
+	// dir is the project the next open of the view summarises; empty means
+	// the session's own project. The enter hook consumes it.
+	dir      string
 	summary  scanartifacts.Summary
 	cursor   int
 	scroll   int
@@ -135,6 +138,19 @@ func (a *App) sweepProjectsCmd() tea.Cmd {
 		_ = logd
 		return sweepFoundMsg{found: found}
 	}
+}
+
+// enterVulnetixArtifacts loads the summary every time the view opens: a
+// review pushes it right after writing new artifacts, and the project list
+// opens it for another project. The view used to render whatever summary was
+// last loaded, which after a review was none at all.
+func (a *App) enterVulnetixArtifacts() tea.Cmd {
+	dir := a.vulnetixArtifactsState.dir
+	if dir == "" {
+		dir = a.workdir
+	}
+	a.vulnetixArtifactsState = vulnetixArtifactsState{loading: true}
+	return a.loadArtifactsCmd(dir)
 }
 
 func (a *App) loadArtifactsCmd(workdir string) tea.Cmd {
@@ -356,8 +372,8 @@ func (a *App) handleVulnetixListKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(rows) == 0 || a.vulnetixListState.cursor >= len(rows) {
 			return a, nil
 		}
-		workdir := rows[a.vulnetixListState.cursor].entry.Path
-		return a, a.loadArtifactsCmd(workdir)
+		a.vulnetixArtifactsState.dir = rows[a.vulnetixListState.cursor].entry.Path
+		return a, a.push(viewVulnetixArtifacts)
 	}
 	return a, nil
 }
@@ -398,6 +414,10 @@ func (a *App) vulnetixArtifactsView() string {
 	b.WriteString(components.SectionHeader("code review", "artifacts", w))
 	if a.vulnetixArtifactsState.loading {
 		b.WriteString(components.AccentStyle.Render("  ○ Loading artifacts…") + "\n")
+		return b.String()
+	}
+	if msg := a.vulnetixArtifactsState.errorMsg; msg != "" {
+		b.WriteString(components.WarnStyle.Render("  "+msg) + "\n")
 		return b.String()
 	}
 	s := a.vulnetixArtifactsState.summary
