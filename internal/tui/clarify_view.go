@@ -14,14 +14,15 @@ import (
 
 // clarifyViewState tracks the interactive questionnaire UI.
 type clarifyViewState struct {
-	q        clarify.Questionnaire
-	reply    chan clarify.Answers
-	rows     []clarifyRow
-	selected int            // index into rows; selects only option rows
-	chosen   []map[int]bool // group index -> chosen option indices
-	notes    map[[2]int]string
-	skipped  []bool
-	noteMode bool
+	q          clarify.Questionnaire
+	reply      chan clarify.Answers
+	rows       []clarifyRow
+	selected   int            // index into rows; selects only option rows
+	chosen     []map[int]bool // group index -> chosen option indices
+	notes      map[[2]int]string
+	skipped    []bool
+	noteMode   bool
+	modeChoice bool // true for the deterministic mode-choice panel
 }
 
 type clarifyRowKind int
@@ -37,13 +38,14 @@ type clarifyRow struct {
 	optionIdx int
 }
 
-func newClarifyState(q clarify.Questionnaire, reply chan clarify.Answers) clarifyViewState {
+func newClarifyState(q clarify.Questionnaire, reply chan clarify.Answers, modeChoice bool) clarifyViewState {
 	state := clarifyViewState{
-		q:       q,
-		reply:   reply,
-		chosen:  make([]map[int]bool, len(q.Groups)),
-		notes:   map[[2]int]string{},
-		skipped: make([]bool, len(q.Groups)),
+		q:          q,
+		reply:      reply,
+		chosen:     make([]map[int]bool, len(q.Groups)),
+		notes:      map[[2]int]string{},
+		skipped:    make([]bool, len(q.Groups)),
+		modeChoice: modeChoice,
 	}
 	for gi := range q.Groups {
 		state.rows = append(state.rows, clarifyRow{kind: clarifyRowHeader, groupIdx: gi})
@@ -51,12 +53,32 @@ func newClarifyState(q clarify.Questionnaire, reply chan clarify.Answers) clarif
 			state.rows = append(state.rows, clarifyRow{kind: clarifyRowOption, groupIdx: gi, optionIdx: oi})
 		}
 	}
-	// Start on the first option row.
-	state.selected = state.nextSelectable(0)
+	// Mode choice starts on the recommended row; ordinary clarify starts on
+	// the first option.
+	if modeChoice {
+		state.selected = state.recommendedRow()
+	} else {
+		state.selected = state.nextSelectable(0)
+	}
 	if state.selected < 0 {
 		state.selected = 0
 	}
 	return state
+}
+
+// recommendedRow returns the first option row whose label contains the
+// recommended marker, or the first option row if none is marked.
+func (s *clarifyViewState) recommendedRow() int {
+	for i, row := range s.rows {
+		if row.kind != clarifyRowOption {
+			continue
+		}
+		opt := s.q.Groups[row.groupIdx].Options[row.optionIdx]
+		if strings.Contains(opt.Label, "Recommended") {
+			return i
+		}
+	}
+	return s.nextSelectable(0)
 }
 
 func (s *clarifyViewState) currentRow() *clarifyRow {
@@ -190,7 +212,11 @@ func (s *clarifyViewState) buildAnswers() clarify.Answers {
 func (a *App) clarifyPanel() string {
 	w := a.contentWidth()
 	var b strings.Builder
-	b.WriteString(components.SectionHeader("Clarify", "esc cancel", w))
+	title := "Clarify"
+	if a.clarifyState.modeChoice {
+		title = "Mode"
+	}
+	b.WriteString(components.SectionHeader(title, "esc cancel", w))
 
 	for i, row := range a.clarifyState.rows {
 		switch row.kind {
@@ -222,6 +248,10 @@ func (a *App) clarifyPanel() string {
 				line += "  " + components.MutedStyle.Render(opt.Description)
 			}
 			if selected {
+				line = components.EmphStyle.Render(line)
+			} else if a.clarifyState.modeChoice {
+				// Keep the percentage emphasised even when not selected so the
+				// recommended and secondary scores remain visually prominent.
 				line = components.EmphStyle.Render(line)
 			} else if a.clarifyState.skipped[row.groupIdx] {
 				line = components.MutedStyle.Render(line)
