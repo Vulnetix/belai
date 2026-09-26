@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -535,6 +536,7 @@ func (a *App) noteAgentStarted(key string) tea.Cmd {
 // noteAgentStopped records a stop the user asked for.
 func (a *App) noteAgentStopped(key string) {
 	id := "bg:" + key
+	a.finishAgentActivity(key, true, nil)
 	a.flushAgentThread(id)
 	a.noteAgentState(id, key, "stopped")
 	a.setRosterState(id, key, "cancelled")
@@ -602,6 +604,7 @@ func (a *App) handleBgAgentEvent(m bgAgentEventMsg) tea.Cmd {
 		a.addSystem(fmt.Sprintf("■ %s done · %s · %s · f8 to read", name, countOf(l.Tools, "tool"), compactDuration(agentElapsed(l))))
 	}
 	if m.Kind == agent.EventDoneKind {
+		a.finishAgentActivity(name, false, a.agentRunErr(name))
 		// A dependency or review scanner agent reports back to the main
 		// session.
 		return tea.Batch(a.armAgentPulse(), a.depAgentFinished(name), a.reviewAgentFinished(name), a.notifyCmd(notify.EventAgentDone, name))
@@ -657,4 +660,20 @@ func (a *App) followAgent(id string) {
 	a.threadFilter = id
 	a.follow = true
 	a.popToChat()
+}
+
+// agentRunErr reports why a finished background agent failed, or nil when it
+// did not. An agent failed when it hit an error and ended without a reply;
+// one that recovered from a tool error and still answered succeeded.
+func (a *App) agentRunErr(name string) error {
+	l, ok := a.lookupLive("bg:" + name)
+	if !ok || l.Errors == 0 {
+		return nil
+	}
+	if a.bgManager != nil {
+		if inst, ok := a.bgManager.Lookup(name); ok && strings.TrimSpace(inst.LastOutput()) != "" {
+			return nil
+		}
+	}
+	return errors.New(l.Last)
 }

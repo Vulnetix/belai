@@ -605,6 +605,9 @@ type App struct {
 
 	// activity registry: the honest register of every process Signet launches.
 	activity *activity.Registry
+	// agentActs holds each running background agent's runs-panel row, keyed by
+	// agent key, so the row can be closed when the agent's loop ends.
+	agentActs map[string]*activity.Handle
 	// activityAnnounced/activityFinished dedupe the thread start/finish lines
 	// driven by the registry event stream.
 	activityAnnounced map[string]bool

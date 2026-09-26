@@ -187,6 +187,8 @@ looks idle while the scanners work (`internal/tui/review.go`).
   prints the verdict and counts as reviewed, so the triage turn does not run
   it again. An agent that produced nothing leaves that scanner to the
   triage turn.
+  Its runs-panel row is labelled with that key and closes when the agent
+  ends, so a finished scanner agent never lingers as running.
 - **Close.** The triage turn starts once the scans and every scanner agent
   are done: `■ vulnetix review done · N issues · 4m02s · triage starting`.
   The count covers actionable results only; inventories are not counted.
