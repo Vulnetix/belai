@@ -640,6 +640,17 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	// The Role Manager owns the FIFO fan-out pool and reaches it through the
 	// pipeline so queue admission is traced with the rolemanager record helper.
 	pipe.Pool = s.agentPool
+
+	// Non-interactive callers (CLI -prompt) do not build formal attachments:
+	// parse @file references from the prompt, read them through the Read tool,
+	// and classify them so the rest of the turn treats them like TUI
+	// attachments.
+	if len(in.Attachments) == 0 {
+		if atts := s.attachFromPrompt(ctx, clean, pipe); len(atts) > 0 {
+			in.Attachments = atts
+			in.HasReferences = true
+		}
+	}
 	// The Role Manager is working before any model I/O: admission and mode
 	// selection are pre-prompt classification. Emit the signal so a UI can
 	// show a dedicated indicator rather than a generic working label.

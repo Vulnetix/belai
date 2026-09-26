@@ -15,12 +15,14 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/vulnetix/signet/internal/calltrace"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/httpclient"
 	"github.com/vulnetix/signet/internal/mlclassify"
 	"github.com/vulnetix/signet/internal/models"
+	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/nonce"
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/prompt"
@@ -2291,16 +2293,6 @@ func EngageWithPosture(ctx context.Context, cfg Config, prompt string, detectMod
 
 	pipe := NewPipeline(cfg, client, nil)
 
-	// Admit and Select are independent (same sanitized prompt, different
-	// system prompts, no data flow): run them concurrently.
-	selectCh := make(chan rolemanager.ModeDecision, 1)
-	selectErrCh := make(chan error, 1)
-	go func() {
-		d, err := rolemanager.Select(ctx, pipe.Classifier, rolemanager.ModeInput{Prompt: clean, GoalLimit: rolemanager.DefaultGoalPromptLengthLimit})
-		selectCh <- d
-		selectErrCh <- err
-	}()
-
 	dec, err := pipe.Admit(ctx, clean, "prompt", pol)
 	if err != nil {
 		return res, err
@@ -2310,10 +2302,28 @@ func EngageWithPosture(ctx context.Context, cfg Config, prompt string, detectMod
 	}
 	res.SecuritySentinel = dec.Sentinel
 
-	if err := <-selectErrCh; err != nil {
+	// Mode detection: prefer Jev when enabled, fall back to the LLM classifier,
+	// and resolve headlessly in the non-interactive CLI. Keep the old length
+	// limit and named-agent behaviours that DecideMode used to enforce.
+	det, err := rolemanager.Detect(ctx, NewModeDetector(cfg), pipe.Classifier, rolemanager.DetectInput{Prompt: clean})
+	if err != nil {
 		return res, err
 	}
-	res.ModeDecision = <-selectCh
+	intent, _ := rolemanager.Resolve(det, rolemanager.ModeHint{}, false)
+	limit := rolemanager.DefaultGoalPromptLengthLimit
+	if intent == rolemanager.IntentGoal && utf8.RuneCountInString(clean) > limit {
+		intent = rolemanager.IntentAgent
+		res.ModeDecision = intent.Decision(det.Handoff)
+		res.ModeDecision.Warning = fmt.Sprintf("prompt exceeds the goal mode length limit (%d); engaging default agent mode", limit)
+	} else {
+		res.ModeDecision = intent.Decision(det.Handoff)
+	}
+	if res.ModeDecision.Mode == modes.ModeAgent {
+		if agentName := rolemanager.ExtractAgentName(clean); agentName != "" {
+			res.ModeDecision.AgentName = agentName
+			res.ModeDecision.AppendCarrier = true
+		}
+	}
 
 	reply, err := Run(ctx, cfg, clean, client)
 	if err != nil {
