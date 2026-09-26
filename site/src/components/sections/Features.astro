@@ -570,7 +570,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
   </div>
 </SealedSection>
 
-<SealedSection label="vulnetix" sealText="Vulnetix integration: the AI Firewall routes traffic, nine code scanners run in parallel lanes, findings come back as classified triage with one read-only subagent per scanner, a question when a finding has more than one fix, a dry-run fix plan, and a code-review report, and /vulnetix review, firewall, and status are built in. Free for everyone." id="vulnetix">
+<SealedSection label="vulnetix" sealText="Vulnetix integration: the AI Firewall routes traffic, nine code scanners run in parallel lanes, each scanner posts a result card as it finishes and gets its own read-only background agent, the prompt steers or cancels a running review, a question when a finding has more than one fix, a dry-run fix plan, and a code-review report, and /vulnetix review, firewall, and status are built in. Free for everyone." id="vulnetix">
   <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
     <div class="order-2 lg:order-1 rounded-lg border border-vx-ink p-2" aria-hidden="true">
       <img src={footerShot.src} alt="The status footer showing the firewall chip" class="block h-auto w-full" loading="lazy" />
@@ -597,15 +597,24 @@ import budgetsShot from '../../assets/shots/budgets.svg';
         <code class="mono">malscan</code>, <code class="mono">sbom</code>, <code class="mono">aibom</code> and{' '}
         <code class="mono">cbom</code>. Eight run at once, each in its own lane, so no two scanners write the
         same output file. Stopping one scanner leaves the others running, and review scans have no
-        timeout.
+        timeout. <code class="mono">secrets</code> checks the files in your working tree, not every commit in
+        your history.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        You see the review as it happens. Each scanner posts a card in the thread the moment it
+        finishes, written for what that scanner does: vulnerabilities and license issues for{' '}
+        <code class="mono">sca</code>, exposed secrets for <code class="mono">secrets</code>, packages by
+        ecosystem for <code class="mono">sbom</code>, tools and models for <code class="mono">aibom</code>, and
+        algorithms with their post-quantum status for <code class="mono">cbom</code>, naming any deprecated
+        one. The footer counts scanners done and still running. While it runs, the prompt box steers
+        the review: what you type is added to the remediation turn, and <code class="mono">esc</code> cancels it.
       </p>
       <p class="mt-4 text-vx-ink/80">
         Findings come back for triage. Report blocks are size-limited, sanitised and classified, and
-        are dropped unless the classifier passes them. Each scanner's report then goes to its own
-        read-only subagent (<code class="mono">r1</code>, <code class="mono">r2</code> and so on in the runs
-        panel), on the fast tier when there is one. The subagent checks every finding against the
-        repository and returns one line per finding: a verdict, plus a fix, a list of options, or a note
-        that there is no fix.
+        are dropped unless the classifier passes them. As each scanner finishes, its report goes to a
+        read-only background agent that checks every finding against the repository and returns one
+        line per finding: a verdict, plus a fix, a list of options, or a note that there is no fix.
+        Its report shows up in the thread while the slower scanners are still working.
       </p>
       <p class="mt-4 text-vx-ink/80">
         When a finding has more than one reasonable fix, Signet asks you which one to use before any

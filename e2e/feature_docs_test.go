@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/vulnetix/signet/internal/acp"
+	"github.com/vulnetix/signet/internal/agentprofile"
+	"github.com/vulnetix/signet/internal/commands"
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/hooks"
 	"github.com/vulnetix/signet/internal/notify"
@@ -152,6 +154,41 @@ func TestRoadmapStatusesMatchDocs(t *testing.T) {
 			t.Errorf("docs/README.md row for %s.md = %q, want status %s", doc, row, status)
 		}
 	}
+}
+
+// Every built-in agent profile is named in docs/agent-profiles.md, so a
+// profile the harness starts on its own is never one a user cannot look up.
+func TestAgentProfilesDocNamesEveryBuiltin(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	body := docBody(t, "docs/agent-profiles.md")
+	all, err := agentprofile.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, p := range all {
+		if p.Builtin {
+			n++
+			mustName(t, "docs/agent-profiles.md", body, p.Name)
+		}
+	}
+	if n == 0 {
+		t.Fatal("no built-in profiles listed")
+	}
+}
+
+// docs/vulnetix.md names every review scanner, the card statuses' meaning,
+// and the review's background agent, so the page the review points at
+// describes what it does.
+func TestVulnetixDocParity(t *testing.T) {
+	body := docBody(t, "docs/vulnetix.md")
+	for name := range commands.AllowedSubcommands {
+		mustName(t, "docs/vulnetix.md", body, name)
+	}
+	mustName(t, "docs/vulnetix.md", body,
+		"signet:vulnetix-scanner", "signet:vulnetix-review", "--ignore-git",
+		"OnScanDone", "BuildTriageBlocksFor", "components.ReportRole", "TurnInput.ReviewFindings",
+		"nothing to scan", "no secrets in the working tree", "no known vulnerabilities")
 }
 
 // The README's command list names every visible slash command, aliases

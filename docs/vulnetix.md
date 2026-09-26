@@ -26,6 +26,18 @@ for LLM traffic.
   `--disable-memory` so `memory.yaml` has a single writer and SCA keeps its
   finding history and auto-resolve. `sbom` is redirected to
   `inventory.cdx.json` to avoid the other shared file.
+- **`secrets` scans the working tree, not git history.** The CLI's secrets
+  stage walks up to 500 commits and 5000 file versions of history by default,
+  which made it the scanner every review waited on. The review passes
+  `--ignore-git`. The `.git` directory is never scanned as source either way.
+- **Each scanner reports as soon as it finishes.** The runner calls
+  `OnScanDone` once per scanner, and once for `fix`, on that scanner's
+  goroutine, before a lane successor starts. The outcome carries the
+  scanner's own triage blocks (`BuildTriageBlocksFor` over its artifacts
+  only), its finding counts, and the facts its artifacts record
+  (`scanartifacts.SARIFFacts`, `scanartifacts.CycloneDXFacts`). All outcomes
+  and the closing done message travel on one channel, so the TUI sees them
+  in the order they happened.
 - **Review scans have no timeout.** A scan runs until it exits; `x` in the
   runs panel kills that row's process group, and cancelling the parent context
   (esc/quit) cancels every derived subcontext. CLI probes (`version`, `env`,
@@ -67,7 +79,7 @@ for LLM traffic.
 
 | Input | Effect |
 | --- | --- |
-| `/vulnetix` | Run the nine review scanners plus the post-scan `fix` activity, then open the artifacts screen |
+| `/vulnetix` | Run the nine review scanners plus the post-scan `fix` activity, report each in the main thread as it finishes, then open the artifacts screen and start the triage turn |
 | `/vulnetix run` | Same as bare `/vulnetix` |
 | `/vulnetix review` | Same as bare `/vulnetix` |
 | `/vulnetix configure` | Open the CLI capability screen |
@@ -90,27 +102,124 @@ session observations, completed reviews, manual pins, and an async TTL-gated
 filesystem sweep (24 h by default). The sweep skips symlinks, dependency
 directories (`node_modules`, `vendor`, ...), dot-directories, and system paths.
 
-Keys: `↑↓` move, `/` filter, `enter` load artifacts, `r` re-sweep, `c`
-configure, `esc` back.
+Keys: `↑↓` move, `/` filter, `enter` open the artifacts screen for that
+project, `r` re-sweep, `c` configure, `esc` back.
+
+## Review progress in the main thread
+
+A review runs in the background and reports as it goes, so the session never
+looks idle while the scanners work (`internal/tui/review.go`).
+
+- **Start.** `/vulnetix review` prints `▸ vulnetix review started · 9 scanners
+  + fix · f9 for output`. The scanners still register in the runs panel (f9)
+  quietly: their stdout is never round-tripped to the model.
+- **One review at a time.** A second `/vulnetix review` while one runs is
+  refused with `a vulnetix review is already running`.
+- **Footer.** The roster line leads with the review:
+  `vulnetix review 6/10 · secrets, cbom +1 · 2 agents · 3m12s` (activities
+  done of total, pending names with the rest collapsed to a count, running
+  scanner agents, elapsed). It drops out of the line last, and the footer's
+  height never changes.
+- **Composer.** While a review runs and no turn is in flight, the composer is
+  a working composer: spinner, a `vulnetix review` pill and the same
+  progress, with `⏎ steer · esc cancel review`. A turn already in flight
+  keeps enter and esc for itself.
+  - **Steering.** Enter records the text as a user steering row and appends it
+    to the triage turn's prompt as the user's own direction. The scans and
+    scanner agents cannot be redirected mid-run. In agent mode with no agent
+    engaged, steering does not open the agent picker. Slash commands and
+    `!cmd` still run locally.
+  - **Cancel.** Esc kills the scans and stops every scanner agent. Scanners
+    killed by the cancel add no card, a stopped agent's late report is
+    ignored, and no triage turn runs. The review clears once the scans have
+    exited.
+- **A card per scanner.** Each finished scanner adds a render-only report
+  card (`components.ReportRole`) titled `vulnetix <scanner>` with its
+  duration. Cards never enter `buildTurns`, are persisted and restored on
+  resume, and render their body as markdown, collapsed to 12 lines until
+  expanded. Each card speaks in its scanner's terms:
+
+  | Scanner | Headline | Detail |
+  | --- | --- | --- |
+  | `sca` | known vulnerabilities by severity, or `no known vulnerabilities` | license issues; packages by ecosystem |
+  | `sast` | code issues by severity, or `no code issues` | rules triggered of rules evaluated |
+  | `secrets` | exposed secrets, or `no secrets in the working tree` | rules triggered |
+  | `iac` | misconfigurations, or `no misconfigurations` | rules triggered |
+  | `containers` | container issues, or `no container issues` | rules triggered; images inventoried |
+  | `malscan` | `malicious · N indicators matched`, `clean`, or `nothing to scan` | files scanned and indicators checked |
+  | `sbom` | packages inventoried | ecosystems, largest first, five shown |
+  | `aibom` | AI tools · AI libraries · models, or `no AI usage detected` | tool, library and model names |
+  | `cbom` | algorithms · certificates · libraries, or `no cryptography detected` | quantum-safe, quantum-vulnerable and hybrid tallies; deprecated and quantum-vulnerable algorithms named |
+
+  Every card also names its artifact under `.vulnetix/`, any report block
+  the classifier withheld, and the background agent reviewing it. An
+  activity without a template falls back to a finding count.
+- **Card edge cases.**
+  - Counts come from the generator's metadata properties
+    (`vulnetix:cbom/algorithms-detected`, `vulnetix:aibom/models-detected`,
+    `vulnetix:sbom/packages-detected`, …) and fall back to counting the
+    components when a property is missing.
+  - Exit status 1 is a gate that found something, not a failure. A timeout,
+    or an error with any other exit status, marks the card failed and
+    shows the exit status and error.
+  - `malscan` inspects installed dependencies only, and only the install
+    directories directly under the repository root (`node_modules`,
+    `.venv`, `vendor`, …). Home caches such as `~/go/pkg/mod` need the
+    CLI's `--include-home`, which the review does not pass. A malscan that
+    inspected no file says `nothing to scan` and is never labelled clean.
+  - Names come from the scanned repository by way of the artifact. They are
+    display-only, and are stripped of ANSI sequences, control and bidi
+    runes, backticks and asterisks, then cut to 48 runes. A bucket keeps at
+    most eight names, and a card shows four with `+N more`.
+  - The frame is amber when the result needs action (vulnerabilities,
+    license issues, code issues, secrets, misconfigurations, a deprecated
+    or quantum-vulnerable algorithm, a malicious verdict), red when the
+    scanner failed, and teal otherwise.
+- **`fix`.** The post-scan fix gets one line, `■ vulnetix fix --dry-run done`
+  (`--yes` under autofix), or its timeout or failure.
+- **Scanner agents.** A scanner whose admitted report blocks are non-empty
+  starts the read-only background agent `signet:vulnetix-scanner` at once,
+  keyed `signet:vulnetix-scanner@<scanner>#<review>`. Its tools are `Read`,
+  `Grep` and `Glob`, and it gets the same task and reply contract as the
+  triage turn's per-scanner subagent. When it finishes, its report is capped
+  at 16 KiB, sanitized, classified as `KindProcess` under the guardrails
+  gate, and shown as a `vulnetix <scanner> review` card. A withheld report
+  prints the verdict and counts as reviewed, so the triage turn does not run
+  it again. An agent that produced nothing leaves that scanner to the
+  triage turn.
+- **Close.** The triage turn starts once the scans and every scanner agent
+  are done: `■ vulnetix review done · N issues · 4m02s · triage starting`.
+  The count covers actionable results only; inventories are not counted.
+  With no admitted report block the review ends with `nothing to triage`.
+  While agents still run after the scans, the thread says which ones it is
+  waiting on.
 
 ## Artifacts screen (`/vulnetix artifacts`)
 
 Lists classified artifacts with per-file counts. Superseded timestamp or branch
 variants are marked but excluded from the active summary. The header shows the
 union counts plus separate licence, suppressed, and risk-accepted tallies.
+The screen loads its summary every time it opens: for the session's project
+when a review opens it, or for the project picked in the history screen. A
+load error is shown instead of the empty-summary message.
+
 After a review, the TUI hands the classified report blocks to the live
 session as one triage turn:
 
 1. **One subagent per scanner.** Each report is investigated by its own
-   read-only explore subagent (`r1`, `r2`, … in the runs panel), on the fast
-   tier when one is routed. The report rides to the subagent as a file
-   attachment, never in its prompt text. The subagent grounds every finding in
-   the repository and reports one line per finding:
-   `path:line | rule/id | verdict | remediation`, with `fix:`, `options:`
-   (more than one reasonable fix) or `none:` (no fix, and exploring further
-   would not settle it).
+   read-only subagent. Normally that is the `signet:vulnetix-scanner`
+   background agent that started when the scanner finished, on the session's
+   model; the triage turn runs an explore subagent (`r1`, `r2`, … in the runs
+   panel, on the fast tier when one is routed) only for a scanner without a
+   finished report. The
+   report rides to the subagent as a file attachment, never in its prompt
+   text. The subagent grounds every finding in the repository and reports
+   one line per finding: `path:line | rule/id | verdict | remediation`, with
+   `fix:`, `options:` (more than one reasonable fix) or `none:` (no fix, and
+   exploring further would not settle it).
 2. **Reports return to the main thread.** Each subagent report is classified
-   and sealed as an `<exploration>` turn, like any explore finding. The main
+   and sealed as an `<exploration>` turn, like any explore finding
+   (`TurnInput.ReviewFindings` for the reports that already ran). The main
    model sees all of them, plus the scanner reports as attachments, and
    weighs them against the whole repository.
 3. **Clarify on multiple paths.** When a subagent reports `options:`, the
@@ -160,7 +269,10 @@ The tool takes the arguments after `vulnetix` and builds the argv itself:
   keeps the review's `sca` as its only writer.
 - Scans get an explicit `--path` (the working directory unless the model
   names one), which also skips `fix`'s manifest prompt, and
-  `--reachability off` unless the model asks for it. The per-subcommand flag
+  `--reachability off` unless the model asks for it. `secrets`, and `scan
+  --evaluate-secrets`, get `--ignore-git` so the secrets stage covers the
+  working tree only, unless the model passes `--ignore-git` itself or any
+  `--git-history*` flag; the note says history was skipped. The per-subcommand flag
   table follows the CLI's command manifest, so no call fails on an unknown
   flag (`sbom` takes neither `--path` nor `--disable-memory`).
 - `--path` and `-o` must stay inside the working tree.
