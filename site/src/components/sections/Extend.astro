@@ -1,0 +1,121 @@
+---
+import SealedSection from '../seal/SealedSection.astro';
+
+const sandboxSeal =
+  'OS sandbox: Bash, inline !cmd and supervised processes run under bubblewrap on Linux or sandbox-exec on macOS. The workspace roots, a private /tmp and the usual tool caches are writable, the state directory is hidden, and the network can be denied. A repository can only tighten it; guardrails off turns it off; required refuses to run without a backend.';
+
+const extendSeal =
+  'Extend it yourself: hooks at eleven points with allow, deny and ask decisions that can only narrow; skills loaded by name and new ones drafted only with your approval; plugin packages of skills, hooks, prompts and agents, validated whole, pinned and namespaced; desktop notifications written from fixed templates. Hook and skill text is classified like any other untrusted result.';
+
+const integrationsSeal =
+  'Integrations: MCP servers from your own settings, with every tool named mcp__server__tool, asking before it runs and classified after; signet acp for Zed, JetBrains and Neovim with the same gates as the CLI and a fail-closed trust check; OpenTelemetry export of spans and metrics built from an attribute allowlist that cannot carry content.';
+
+const extend = [
+  {
+    title: 'hooks that only narrow',
+    body: 'A hook runs your command at one of eleven points (before and after a tool call, on prompt submit, at turn end, before compaction, when a subagent stops, when Signet needs you). It reads the event as JSON on stdin and may answer allow, deny or ask. A deny withholds the call, an ask raises the permission prompt, and an allow never skips an ask a rule demanded. A blocking hook that fails, times out or prints anything but a decision denies.',
+    doc: 'hooks.md',
+  },
+  {
+    title: 'skills by name, drafted with approval',
+    body: 'The model loads a skill with the Skill tool by name, never by path. After working out a procedure worth keeping it can propose one with SkillDraft: you see the whole file, or the diff against an existing skill, and nothing is written unless you approve. That ask happens even with the ask gate off.',
+    doc: 'skills.md',
+  },
+  {
+    title: 'plugin packages',
+    body: 'signet plugin install takes a git URL (pinned with #ref) or a directory. Every skill, hook, prompt and agent profile is checked with the validator Signet uses for your own files, one bad component fails the install, and you confirm a listing that names every hook command. Components load as plugin:name and never shadow yours.',
+    doc: 'plugins.md',
+  },
+  {
+    title: 'desktop notifications',
+    body: 'Opt in and Signet tells you when a permission ask, a question or a plan is waiting, or when a goal finishes or stops. OSC 9 and 777 for terminals that show them, notify-send, osascript or the bell otherwise. The text comes from fixed templates, so a repository cannot put words in front of you.',
+    doc: 'notifications.md',
+  },
+];
+
+const integrations = [
+  {
+    title: 'MCP servers',
+    body: 'Declare stdio or streamable HTTP servers in your global settings. Each tool appears as mcp__server__tool, asks before it runs unless a rule allows it, is never offered in plan mode, and its result is classified. A repository cannot add, change or start a server.',
+    doc: 'mcp.md',
+  },
+  {
+    title: 'editor integration over ACP',
+    body: 'signet acp speaks the Agent Client Protocol, so Zed, JetBrains IDEs and Neovim plugins can use Signet as their agent. Each session is built like a headless CLI session, so every gate applies, and a directory you have not trusted is refused.',
+    doc: 'acp.md',
+  },
+  {
+    title: 'OpenTelemetry, without content',
+    body: 'Point Signet at a collector and it exports turn and tool-call spans on the session trace, plus token, tool, classifier and hook metrics. Only allowlisted keys leave, and every value is reduced to identifier characters, so no prompt, argument, output or path can.',
+    doc: 'telemetry.md',
+  },
+];
+
+const docBase = 'https://github.com/Vulnetix/signet/blob/main/docs/';
+---
+
+<SealedSection label="sandbox" sealText={sandboxSeal} id="sandbox">
+  <div class="prose-measure">
+    <h2 class="text-3xl font-bold text-vx-ink">Sandbox.</h2>
+    <p class="mt-4 text-vx-ink/80">
+      Signet's own file tools stay inside the workspace roots, but a command can reach anything your
+      account can. So <code class="mono">Bash</code>, inline <code class="mono">!cmd</code> and supervised
+      processes run under an operating-system boundary: bubblewrap on Linux, <code class="mono">sandbox-exec</code>{' '}
+      on macOS.
+    </p>
+    <p class="mt-4 text-vx-ink/80">
+      Inside it the workspace roots, a private <code class="mono">/tmp</code> and the usual tool caches are
+      writable, everything else is read-only, and <code class="mono">~/.vulnetix/signet</code> is hidden. The
+      default keeps the network and caches so builds work; set <code class="mono">network</code> to{' '}
+      <code class="mono">deny</code> and <code class="mono">caches</code> to <code class="mono">false</code> for the
+      strict policy. A repository can tighten the sandbox and never loosen it, and{' '}
+      <code class="mono">required</code> refuses a command rather than run it bare. <code class="mono">/sandbox</code>{' '}
+      shows the policy in effect.
+    </p>
+    <p class="mt-4 text-sm">
+      <a class="text-vx-ink underline" href={`${docBase}sandbox.md`}>docs/sandbox.md</a>
+    </p>
+  </div>
+</SealedSection>
+
+<SealedSection label="extend" sealText={extendSeal} id="extend">
+  <h2 class="text-3xl font-bold text-vx-ink">Extend it yourself.</h2>
+  <p class="prose-measure mt-4 text-vx-ink/80">
+    The things people usually add to a coding agent by forking it are built in, and each one is held
+    to the same trust model as the rest of Signet.
+  </p>
+  <div class="mt-8 grid gap-4 md:grid-cols-2">
+    {
+      extend.map((f) => (
+        <article class="rounded-lg border border-vx-ink/30 p-5">
+          <h3 class="mono text-sm font-semibold text-vx-ink">{f.title}</h3>
+          <p class="mt-2 text-sm text-vx-ink/80">{f.body}</p>
+          <p class="mt-3 text-xs">
+            <a class="text-vx-ink underline" href={`${docBase}${f.doc}`}>docs/{f.doc}</a>
+          </p>
+        </article>
+      ))
+    }
+  </div>
+</SealedSection>
+
+<SealedSection label="integrations" sealText={integrationsSeal} id="integrations">
+  <h2 class="text-3xl font-bold text-vx-ink">Integrations.</h2>
+  <p class="prose-measure mt-4 text-vx-ink/80">
+    Signet connects to the tools and editors you already use, and none of those connections is a way
+    around its gates.
+  </p>
+  <div class="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+    {
+      integrations.map((f) => (
+        <article class="rounded-lg border border-vx-ink/30 p-5">
+          <h3 class="mono text-sm font-semibold text-vx-ink">{f.title}</h3>
+          <p class="mt-2 text-sm text-vx-ink/80">{f.body}</p>
+          <p class="mt-3 text-xs">
+            <a class="text-vx-ink underline" href={`${docBase}${f.doc}`}>docs/{f.doc}</a>
+          </p>
+        </article>
+      ))
+    }
+  </div>
+</SealedSection>

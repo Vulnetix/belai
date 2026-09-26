@@ -15,7 +15,13 @@ The single-scroll marketing site at [signet.vulnetix.com](https://signet.vulneti
 rail (≥1120px). The content is full-width (no fixed max-width). Section order:
 
 hero · trust · classifier · sealed · beliefs · labs · modes · tools · diagnostics · permissions · agents ·
-memory · processes · budgets · providers · routing · vulnetix · cli · qol · start
+memory · processes · budgets · providers · routing · vulnetix · sandbox · extend ·
+integrations · cli · qol · start
+
+The sandbox, extend and integrations sections live in
+`site/src/components/sections/Extend.astro`. Each card links to the matching
+doc under `docs/` on GitHub, so the site states the rule and the doc carries
+the edge cases.
 
 Interactive islands live in `site/src/components/ui/` (copy button, comparison
 table, shot carousel); everything else ships zero JS.
