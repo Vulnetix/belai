@@ -253,6 +253,16 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   firewall is on, only through `vulnetix ai-firewall key set --stdin`, and a
   failed push keeps that provider unrouted rather than sent to a gateway
   that would refuse it.
+- **Kiro tokens go only to pinned AWS hosts.** `internal/kiroauth` sends
+  the AWS sign-in only to `oidc.<region>.amazonaws.com` and the access token
+  only to `q.`/`codewhisperer.<region>.amazonaws.com` (or a loopback mock),
+  over https, in the `Authorization` header (SSO-OIDC calls never follow a
+  redirect); a region must match the AWS region shape. The device code, client secret,
+  refresh and access tokens never reach a transcript, log, setting,
+  notification or model, and AWS error text is reduced to its code. A
+  rotated refresh token is written back only to the keychain or credentials
+  file that held the old one. `AuthKiro` is reserved for the built-in `kiro`
+  provider, which is never routed through the AI Firewall.
 - **ACP never widens what an editor can do.** `belai acp` builds each
   session with `newCLISession`, the headless path, so every gate, rule,
   sandbox and budget applies. `session/new` fails closed in a directory

@@ -63,7 +63,7 @@ just ask anthropic claude-sonnet-4-5 "review this diff" -detect-mode -verbose
 | Flag | Meaning |
 | --- | --- |
 | `-prompt` | send one turn noninteractively, print the reply, exit |
-| `-provider` | `openai`, `anthropic`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`, `llama-server`, `github-copilot`, `huggingface`, a custom name from `settings.json`, or a configured display label |
+| `-provider` | `openai`, `anthropic`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`, `llama-server`, `github-copilot`, `huggingface`, `kiro`, a custom name from `settings.json`, or a configured display label |
 | `-model` | model id; defaults come from `run.DefaultModel` (see the table below) |
 | `-effort` | thinking-effort level: `low`, `medium`, or `high` |
 | `-classifier-provider` | security-classifier provider (default: the main provider) |
@@ -134,6 +134,7 @@ when the user's credentials resolve for exactly one provider.
 | `ollama` | `llama3` |
 | `llama-server` | `default` (the server was started with a single model) |
 | `github-copilot` | `gpt-4o` |
+| `kiro` | `claude-sonnet-4.5` |
 | `huggingface` | none (user must type a model id; requires enabled providers in HuggingFace dashboard) |
 
 A custom provider from `settings.json` falls through to the `openrouter/free`
@@ -161,6 +162,7 @@ The TUI model picker (`e model`) shows a catalogue per provider. Sources are:
 | `llama-server` | ✅ `/models` |
 | `openrouter` | ✅ `/models` |
 | `github-copilot` | ✅ `/models` |
+| `kiro` | ❌ static catalogue (`auto`, Claude Sonnet 4.5/4, Haiku 4.5, Opus 4.5) |
 | `openai` | ❌ disabled — `/v1/models` includes deprecated, preview and internal identifiers that confuse the picker and fail at request time; only the curated static catalogue is shown |
 | `huggingface` | ✅ `router.huggingface.co/v1/models` (requires `HF_TOKEN`) |
 
@@ -361,6 +363,7 @@ Credentials resolve in this order, first hit wins:
 | `llama-server` | none (local; honours `BELAI_LLAMA_HOST/PATH/PROTOCOL` or host/port/protocol managed in `/providers`) |
 | `github-copilot` | `GITHUB_COPILOT_TOKEN` or `GH_TOKEN` (exchanged for a session token) |
 | `huggingface` | `HF_TOKEN` or `HUGGINGFACE_TOKEN` |
+| `kiro` | `belai login kiro` (stores the `login` credential); `KIRO_LOGIN` |
 | `groq` | `GROQ_API_KEY` |
 | `deepseek` | `DEEPSEEK_API_KEY` |
 | `fireworks` | `FIREWORKS_API_KEY` |

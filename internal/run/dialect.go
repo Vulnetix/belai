@@ -16,6 +16,7 @@ const (
 	kindOpenAIChat        kind = iota // OpenAI chat/completions shape
 	kindAnthropicMessages             // Anthropic messages shape
 	kindWorkersAI                     // Cloudflare Workers AI /ai/run/{model}
+	kindKiro                          // Kiro generateAssistantResponse, AWS event stream
 )
 
 // route is how a request reaches the wire surface.
@@ -100,6 +101,8 @@ func surfaceKind(s wire.Surface) kind {
 		return kindAnthropicMessages
 	case wire.SurfaceWorkersAI:
 		return kindWorkersAI
+	case wire.SurfaceKiro:
+		return kindKiro
 	}
 	return kindOpenAIChat
 }
@@ -162,6 +165,8 @@ func (d dialect) streamSurface() wire.Surface {
 		return wire.SurfaceAnthropicMessages
 	case kindWorkersAI:
 		return wire.SurfaceWorkersAI
+	case kindKiro:
+		return wire.SurfaceKiro
 	}
 	return wire.SurfaceOpenAIChat
 }

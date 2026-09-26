@@ -26,6 +26,8 @@ behaviour, and implementation details.
 
 ## Integrations and protocols
 
+- [Kiro](kiro.md): the `kiro` provider, AWS Builder ID and IAM Identity
+  Center sign-in, token refresh, and the Kiro wire surface.
 - [Vulnetix](vulnetix.md): review scanners, artifact handling, project history,
   and the Vulnetix AI Firewall.
 - [Session sync](session-sync.md): mirroring sessions to the Vulnetix website

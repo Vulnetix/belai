@@ -56,6 +56,10 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "acp" {
 		os.Exit(runACP(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	}
+	// `belai login kiro` signs in to Kiro with an AWS Builder ID.
+	if len(os.Args) > 1 && os.Args[1] == "login" {
+		os.Exit(runLoginCLI(ctx, os.Args[2:], os.Stdout, os.Stderr))
+	}
 	// `belai plugin …` is a subcommand with its own flags.
 	if len(os.Args) > 1 && os.Args[1] == "plugin" {
 		os.Exit(runPluginCLI(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Stderr, isCharDevice(os.Stdin)))
@@ -65,7 +69,7 @@ func main() {
 	trustDir := flag.Bool("trust-dir", false, "trust the current directory without prompting")
 	prompt := flag.String("prompt", "", "send a noninteractive prompt and print the reply, then exit")
 	model := flag.String("model", "", "model id (defaults per provider)")
-	provider := flag.String("provider", "", "provider (default openrouter): openai, anthropic, cloudflare-workers-ai, cloudflare-ai-gateway, openrouter, google-gemini, ollama, llama-server, github-copilot, huggingface, or a custom name from settings.json")
+	provider := flag.String("provider", "", "provider (default openrouter): openai, anthropic, cloudflare-workers-ai, cloudflare-ai-gateway, openrouter, google-gemini, ollama, llama-server, github-copilot, huggingface, kiro, or a custom name from settings.json")
 	detectMode := flag.Bool("detect-mode", false, "run the operating-mode classifier and report the decision")
 	verbose := flag.Bool("verbose", false, "print role-manager decisions to stderr")
 
@@ -337,7 +341,7 @@ func main() {
 	}
 
 	if interactive(isCharDevice(os.Stdout), isCharDevice(os.Stdin), os.Getenv) {
-		resolver, err := credentials.NewResolver(workdir)
+		resolver, err := newResolver(workdir)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "belai:", err)
 			os.Exit(1)
@@ -420,7 +424,7 @@ func withClassifier(cfg run.Config, settings config.Settings, resolver *credenti
 }
 
 func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, detectMode, verbose bool, workdir string, pol posture.Policy, enableTools, planMode bool, settings config.Settings) error {
-	resolver, err := credentials.NewResolver(workdir)
+	resolver, err := newResolver(workdir)
 	if err != nil {
 		return err
 	}
@@ -549,7 +553,7 @@ func newCLISession(ctx context.Context, cfg run.Config, client *http.Client, pol
 // pruneSessions removes idle sessions older than the configured retention, in
 // a best-effort goroutine so startup never blocks on it.
 func runAgentCreate(ctx context.Context, description, model, providerName, workdir string, pol posture.Policy, settings config.Settings) error {
-	resolver, err := credentials.NewResolver(workdir)
+	resolver, err := newResolver(workdir)
 	if err != nil {
 		return err
 	}
@@ -576,7 +580,7 @@ func runAgentCreate(ctx context.Context, description, model, providerName, workd
 }
 
 func runAgentForeground(ctx context.Context, name, model, providerName, workdir string, pol posture.Policy, settings config.Settings) error {
-	resolver, err := credentials.NewResolver(workdir)
+	resolver, err := newResolver(workdir)
 	if err != nil {
 		return err
 	}

@@ -21,6 +21,7 @@ import (
 	"github.com/vulnetix/belai/internal/clarify"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/httpclient"
+	"github.com/vulnetix/belai/internal/kiroauth"
 	"github.com/vulnetix/belai/internal/mlclassify"
 	"github.com/vulnetix/belai/internal/models"
 	"github.com/vulnetix/belai/internal/modes"
@@ -1284,6 +1285,10 @@ func ResolveWithSource(model, providerName string, env func(string) string, src 
 				envHints = append(envHints, "GITHUB_COPILOT_TOKEN", "GH_TOKEN")
 			case "huggingface:api_key":
 				envHints = append(envHints, "HF_TOKEN", "HUGGINGFACE_TOKEN")
+			case "kiro:login":
+				// The value is a sign-in, not a key: `belai login kiro`
+				// writes it.
+				envHints = append(envHints, "KIRO_LOGIN")
 			default:
 				if m == "api_key" {
 					envHints = append(envHints, envVarForProvider(cfg.Provider))
@@ -1795,6 +1800,19 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 			}
 			key = token.Value
 		}
+		var kiroProfile string
+		if cfg.Auth == provider.AuthKiro {
+			// The access token goes only to a pinned Kiro host (or a
+			// loopback mock), whatever BELAI_BASE_URL says.
+			if !kiroauth.AllowedAPIURL(cfg.BaseURL) {
+				return nil, fmt.Errorf("refusing to send a kiro token to %q", cfg.BaseURL)
+			}
+			token, err := kiroRefresher.Token(ctx, cfg.APIKey)
+			if err != nil {
+				return nil, err
+			}
+			key, kiroProfile = token.Value, token.ProfileARN
+		}
 		var p *provider.Provider
 		if cfg.API != "" && !provider.Builtin(cfg.Provider) {
 			p, err = provider.NewFromProfile(cfg.Provider, provider.Profile{BaseURL: cfg.BaseURL, API: cfg.API, Auth: cfg.Auth}, key)
@@ -1823,6 +1841,8 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 		turns = synthesizeDanglingToolResults(turns)
 
 		switch d.kind {
+		case kindKiro:
+			return p.NewKiroRequest(buildKiroRequest(cfg.Model, system, turns, openAITools, kiroProfile))
 		case kindWorkersAI:
 			return p.NewWorkersAIRequest(cfg.Model, wire.WorkersAIRequest{
 				Messages:  buildOpenAIMessages(system, turns, d.method),
@@ -1970,6 +1990,8 @@ func sendTurnsWithTools(ctx context.Context, cfg Config, system string, turns []
 
 	var a Assistant
 	switch d.kind {
+	case kindKiro:
+		a, err = parseKiro(res.body, res.status)
 	case kindWorkersAI:
 		a, err = parseWorkersAI(res.body, res.status, redact)
 	case kindAnthropicMessages:

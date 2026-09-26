@@ -137,3 +137,12 @@ func TestURLPathUUID(t *testing.T) {
 		}
 	}
 }
+
+// TestKiroIsNotRoutable pins that the kiro provider never goes through the
+// gateway: its access token is minted from an AWS sign-in and speaks a
+// surface the gateway does not relay.
+func TestKiroIsNotRoutable(t *testing.T) {
+	if _, ok := Slug("kiro"); ok {
+		t.Fatal("kiro must not be routable through the AI Firewall")
+	}
+}

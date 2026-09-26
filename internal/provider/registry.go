@@ -10,7 +10,9 @@
 package provider
 
 import (
+	"encoding/json"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/vulnetix/belai/internal/wire"
@@ -75,12 +77,13 @@ const (
 	AuthXAPIKey Auth = "x-api-key" // x-api-key + anthropic-version: 2023-06-01
 	AuthCFAIG   Auth = "cf-aig"    // cf-aig-authorization: Bearer <key>
 	AuthCopilot Auth = "copilot"   // Bearer + Editor-Version + Copilot-Integration-Id
+	AuthKiro    Auth = "kiro"      // Bearer <access token minted from the stored AWS login>
 )
 
 // Valid reports whether a is a known auth style.
 func (a Auth) Valid() bool {
 	switch a {
-	case AuthBearer, AuthXAPIKey, AuthCFAIG, AuthCopilot:
+	case AuthBearer, AuthXAPIKey, AuthCFAIG, AuthCopilot, AuthKiro:
 		return true
 	}
 	return false
@@ -436,6 +439,27 @@ var registry = map[string]Descriptor{
 		},
 		ListPath: "/models",
 	},
+	"kiro": {
+		Name: "kiro", Auth: AuthKiro,
+		Fields: []Field{
+			// login is the AWS Builder ID / Identity Center sign-in written
+			// by `belai login kiro`: a refresh token and its client
+			// registration, traded for an access token per request.
+			{Name: "login", EnvVars: []string{"KIRO_LOGIN"}, Secret: true},
+		},
+		BaseURLBuilder: buildKiro, NetrcHost: "q.us-east-1.amazonaws.com",
+		Surface: wire.SurfaceKiro, ToolMethod: wire.ToolMethodObject,
+		DefaultModel: "claude-sonnet-4.5",
+		FastModel:    "claude-haiku-4.5",
+		Models: []ModelSpec{
+			{ID: "auto", Label: "Kiro Auto"},
+			{ID: "claude-sonnet-4.5", Label: "Claude Sonnet 4.5"},
+			{ID: "claude-sonnet-4", Label: "Claude Sonnet 4"},
+			{ID: "claude-haiku-4.5", Label: "Claude Haiku 4.5"},
+			{ID: "claude-opus-4.5", Label: "Claude Opus 4.5"},
+		},
+		ListPath: "",
+	},
 	"huggingface": {
 		Name: "huggingface", Auth: AuthBearer,
 		Fields: []Field{
@@ -471,6 +495,23 @@ func buildCloudflareGateway(fields map[string]string) string {
 	}
 	return "https://gateway.ai.cloudflare.com/v1/" + acct + "/default/compat"
 }
+
+// buildKiro composes the Kiro API base URL from the stored login's API
+// region. The login is decoded here only for that one field; the region is
+// checked against the AWS region shape so a hand-edited login cannot steer
+// the host. Everything else in the login stays with internal/kiroauth.
+func buildKiro(fields map[string]string) string {
+	region := "us-east-1"
+	var l struct {
+		APIRegion string `json:"api_region"`
+	}
+	if err := json.Unmarshal([]byte(fields["login"]), &l); err == nil && kiroRegionRE.MatchString(l.APIRegion) {
+		region = l.APIRegion
+	}
+	return "https://q." + region + ".amazonaws.com"
+}
+
+var kiroRegionRE = regexp.MustCompile(`^[a-z]{2}(-gov|-iso[a-z]?)?-[a-z]+-[0-9]{1,2}$`)
 
 // buildOllama constructs an Ollama base URL from decomposed host, port, and
 // protocol, falling back to the OLLAMA_HOST environment variable or the
