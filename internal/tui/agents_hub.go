@@ -314,7 +314,7 @@ func (a *App) startAgentProfile(name string) tea.Cmd {
 		a.agentNotice("agent start: " + err.Error())
 		return nil
 	}
-	a.registerAgentActivity(name, name, a.workdir)
+	a.registerAgentActivity(name, a.workdir)
 	return a.noteAgentStarted(name)
 }
 

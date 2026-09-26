@@ -752,23 +752,61 @@ func (a *App) startTriage(projectRoot string) tea.Cmd {
 		a.addSystem("triage: " + err.Error())
 		return nil
 	}
-	a.registerAgentActivity(key, profile.Name, projectRoot)
+	a.registerAgentActivity(key, projectRoot)
 	return a.noteAgentStarted(key)
 }
 
-// registerAgentActivity registers one background-agent turn in the panel.
-func (a *App) registerAgentActivity(key, label, projectRoot string) {
+// registerAgentActivity registers one background agent in the runs panel,
+// labelled with its key so two agents of one profile (a review's scanner
+// agents, say) are told apart. The row is quiet: the agent's own start and
+// done lines already reach the main thread (noteAgentStarted,
+// handleBgAgentEvent), and its report is routed by its owner, never
+// round-tripped from the panel. finishAgentActivity closes the row when the
+// agent's loop ends.
+func (a *App) registerAgentActivity(key, projectRoot string) {
 	if a.activity == nil {
 		return
 	}
-	a.activity.Add(activity.Activity{
+	h := a.activity.Add(activity.Activity{
 		Kind:        activity.KindAgent,
-		Label:       label,
+		Label:       key,
 		Argv:        []string{key},
 		Dir:         a.workdir,
 		ProjectRoot: projectRoot,
 		State:       activity.StateRunning,
-	}, func() { _ = a.bgManager.Stop(key) })
+		Quiet:       true,
+	}, func() {
+		// A kill from the panel stops the agent. When the user already
+		// stopped it, the second Stop finds nothing and does nothing.
+		if a.bgManager != nil {
+			_ = a.bgManager.Stop(key)
+		}
+	})
+	if a.agentActs == nil {
+		a.agentActs = map[string]*activity.Handle{}
+	}
+	a.agentActs[key] = h
+}
+
+// finishAgentActivity closes a background agent's runs-panel row: done when
+// its loop ended normally, failed when it ended on an error with no output,
+// killed when the user stopped it. A row the user already killed from the
+// panel stays killed.
+func (a *App) finishAgentActivity(key string, stopped bool, err error) {
+	h, ok := a.agentActs[key]
+	if !ok {
+		return
+	}
+	delete(a.agentActs, key)
+	if stopped {
+		_ = a.activity.Kill(h.Activity.ID)
+		return
+	}
+	code := 0
+	if err != nil {
+		code = 1
+	}
+	h.Finish(code, false, err)
 }
 
 // registerAgentDesignActivity registers an /agent create design run in the

@@ -2131,6 +2131,15 @@ conversation to the selected subagent (or clears the filter on `main`), and
 `enter`/`v` open the live log for the selected running process, `x` stops it,
 and `r` restarts it.
 
+Every background agent also has an activity row, labelled with its key
+(`signet:vulnetix-scanner@sast#1`, `signet:deps-go@go.mod#2`) so two agents
+of one profile are told apart. The row is quiet: the agent's own start and
+done lines are the ones in the main thread, and its report is routed by its
+owner, never sent from the panel. It closes when the agent's loop ends:
+`done` after a reply, `failed` when the agent hit an error and ended with no
+reply, `killed` when the user stopped it (`x` here, `/agents`, or cancelling
+a `/vulnetix review`).
+
 The register is `internal/activity`, a process-agnostic FIFO registry with no
 TUI imports. Subprocess output is arbitrary content, so it classifies
 unconditionally before a finished activity's output round-trips to the model —

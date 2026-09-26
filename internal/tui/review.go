@@ -260,7 +260,7 @@ func (a *App) startScannerAgent(r *reviewRun, scanner string, reports []explore.
 		return "", nil
 	}
 	r.agents[key] = scanner
-	a.registerAgentActivity(key, profile.Name, a.workdir)
+	a.registerAgentActivity(key, a.workdir)
 	return key, a.noteAgentStarted(key)
 }
 

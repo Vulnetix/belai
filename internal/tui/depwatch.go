@@ -195,7 +195,7 @@ func (a *App) handleDepCheck(m depCheckMsg) tea.Cmd {
 		a.deps.agents = map[string]string{}
 	}
 	a.deps.agents[key] = path
-	a.registerAgentActivity(key, profile.Name, a.workdir)
+	a.registerAgentActivity(key, a.workdir)
 	return a.noteAgentStarted(key)
 }
 
