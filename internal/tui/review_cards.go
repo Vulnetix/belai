@@ -122,10 +122,20 @@ func malscanCard(o commands.ScanOutcome) reviewCard {
 		return issuesCard(o.Findings, o.Counts, "malware indicator", "malware indicators", "clean")
 	}
 	var card reviewCard
-	if f.Malicious || f.Results > 0 {
+	switch {
+	case f.Malicious || f.Results > 0:
 		n := max(f.Results, 1)
 		card = reviewCard{headline: "**malicious** · " + nounCount(f.Results, "indicator", "indicators") + " matched", attention: true, issues: n}
-	} else {
+	case f.FilesScanned == 0:
+		// malscan scans installed dependencies only, and only the install
+		// directories directly under the repository root; home caches such
+		// as ~/go/pkg/mod need --include-home. Nothing inspected is not a
+		// clean verdict, so the card says what was missing instead.
+		return reviewCard{
+			headline: "**nothing to scan**",
+			lines:    []string{"no dependency install directory at the repository root (node_modules, .venv, vendor, …); malscan inspects installed packages only"},
+		}
+	default:
 		card = reviewCard{headline: "**clean**"}
 	}
 	card.lines = append(card.lines, nounCount(f.FilesScanned, "file", "files")+" scanned · "+nounCount(f.Indicators, "indicator", "indicators")+" checked")
