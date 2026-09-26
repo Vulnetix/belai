@@ -94,6 +94,8 @@ type Settings struct {
 	Hooks *HooksSettings `json:"hooks,omitempty"`
 	// Skills configures skill loading and self-authoring (docs/skills.md).
 	Skills *SkillsSettings `json:"skills,omitempty"`
+	// Sandbox configures the OS sandbox for commands (docs/sandbox.md).
+	Sandbox *SandboxSettings `json:"sandbox,omitempty"`
 	// Notifications configures desktop notifications
 	// (docs/notifications.md). A per-user preference: the project layer
 	// cannot set it.
@@ -196,6 +198,67 @@ func (s *NotificationSettings) merge(from *NotificationSettings) {
 	}
 	if from.MinTurnSeconds != 0 {
 		s.MinTurnSeconds = from.MinTurnSeconds
+	}
+}
+
+// SandboxSettings configures the OS sandbox around Bash, inline !cmd and
+// supervised processes.
+type SandboxSettings struct {
+	// Mode is off, auto (default: sandbox when a backend exists) or required.
+	Mode string `json:"mode,omitempty"`
+	// Network is allow (default) or deny.
+	Network string `json:"network,omitempty"`
+	// Caches keeps the usual tool caches under $HOME writable. Default true;
+	// false is the strict policy.
+	Caches *bool `json:"caches,omitempty"`
+	// ExtraWritable adds absolute paths the sandbox may write. Global only.
+	ExtraWritable []string `json:"extra_writable,omitempty"`
+}
+
+var sandboxModeRank = map[string]int{"off": 0, "auto": 1, "required": 2}
+
+// ModeOr returns the mode, defaulting to auto. An unknown value is auto.
+func (s *SandboxSettings) ModeOr() string {
+	if s == nil {
+		return "auto"
+	}
+	if _, ok := sandboxModeRank[s.Mode]; ok {
+		return s.Mode
+	}
+	return "auto"
+}
+
+// NetworkOr returns the network setting, defaulting to allow. Anything but
+// allow or deny is deny.
+func (s *SandboxSettings) NetworkOr() string {
+	if s == nil || s.Network == "" || s.Network == "allow" {
+		return "allow"
+	}
+	return "deny"
+}
+
+// CachesOr reports whether tool caches stay writable. Default true.
+func (s *SandboxSettings) CachesOr() bool {
+	return s == nil || s.Caches == nil || *s.Caches
+}
+
+// mergeSandbox folds from into s. A repo-visible project layer may only
+// tighten: raise the mode, deny the network, drop the caches; its
+// extra_writable is ignored.
+func mergeSandbox(s *SandboxSettings, from *SandboxSettings, project bool) {
+	if from.Mode != "" {
+		if _, ok := sandboxModeRank[from.Mode]; ok && (!project || sandboxModeRank[from.Mode] > sandboxModeRank[s.ModeOr()]) {
+			s.Mode = from.Mode
+		}
+	}
+	if from.Network != "" && (!project || from.Network == "deny") {
+		s.Network = from.Network
+	}
+	if from.Caches != nil && (!project || !*from.Caches) {
+		s.Caches = from.Caches
+	}
+	if !project && from.ExtraWritable != nil {
+		s.ExtraWritable = append([]string(nil), from.ExtraWritable...)
 	}
 }
 
@@ -975,6 +1038,14 @@ func (s Settings) Override(proj Settings) Settings {
 	if proj.Hooks != nil && proj.Hooks.Enabled != nil && !*proj.Hooks.Enabled {
 		f := false
 		out.Hooks = &HooksSettings{Enabled: &f}
+	}
+	if proj.Sandbox != nil {
+		merged := &SandboxSettings{}
+		if out.Sandbox != nil {
+			*merged = *out.Sandbox
+		}
+		mergeSandbox(merged, proj.Sandbox, true)
+		out.Sandbox = merged
 	}
 	// Likewise skill self-authoring: off, never on.
 	if proj.Skills != nil && proj.Skills.SelfAuthoring != nil && !*proj.Skills.SelfAuthoring {

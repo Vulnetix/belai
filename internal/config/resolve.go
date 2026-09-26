@@ -205,6 +205,15 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.Notifications.merge(s.Notifications)
 		e.Origin["notifications"] = src
 	}
+	if s.Sandbox != nil {
+		// The sandbox is a boundary: a repo-visible project layer may only
+		// tighten it (see mergeSandbox).
+		if e.Settings.Sandbox == nil {
+			e.Settings.Sandbox = &SandboxSettings{}
+		}
+		mergeSandbox(e.Settings.Sandbox, s.Sandbox, src == SourceProject)
+		e.Origin["sandbox"] = src
+	}
 	if s.Skills != nil && s.Skills.SelfAuthoring != nil {
 		// Self-authoring writes files after an ask; a repo-visible project
 		// layer may turn it off, never on.

@@ -319,6 +319,10 @@ func NewRegistry(workdir string) *Registry {
 		a.addSystem(pluginCommand(arg))
 		return nil
 	})
+	r.Register("sandbox", "show the OS sandbox status and policy for commands", nil, func(a *App, arg string) tea.Cmd {
+		a.addSystem(a.sandboxReport())
+		return nil
+	})
 	r.Register("skills", "list installed skills", nil, func(a *App, arg string) tea.Cmd {
 		a.addSystem(skillsListing(tools.InstalledSkills()))
 		return nil

@@ -33,6 +33,7 @@ import (
 	"github.com/vulnetix/signet/internal/resilience"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/signet/internal/sandbox"
 	"github.com/vulnetix/signet/internal/sanitize"
 	"github.com/vulnetix/signet/internal/tools"
 	"github.com/vulnetix/signet/internal/trace"
@@ -1358,7 +1359,7 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 	// that also moves is covered without teaching this function about it.
 	cwdBefore := s.registry.Cwd().Rel()
 
-	res, err := runTool(ctx, tool, call, emit)
+	res, err := runTool(sandbox.WithPolicy(ctx, s.sandboxPolicy()), tool, call, emit)
 
 	if cwd := s.registry.Cwd(); cwd != nil {
 		if after := cwd.Rel(); after != cwdBefore {
