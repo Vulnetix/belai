@@ -41,6 +41,7 @@ import (
 	"github.com/vulnetix/signet/internal/forge"
 	"github.com/vulnetix/signet/internal/gitinfo"
 	"github.com/vulnetix/signet/internal/goals"
+	"github.com/vulnetix/signet/internal/hooks"
 	"github.com/vulnetix/signet/internal/httpclient"
 	"github.com/vulnetix/signet/internal/inputhistory"
 	"github.com/vulnetix/signet/internal/localinfer"
@@ -411,8 +412,11 @@ type App struct {
 	state    config.State
 
 	// session persistence
-	store          *session.Store
-	sessionID      string
+	store     *session.Store
+	sessionID string
+	// hookSet holds the TUI-fired hooks (session and notification events),
+	// loaded on first use.
+	hookSet        *hooks.Set
 	sessionName    string
 	sessionKey     session.Key // project key for the live session (resume-aware)
 	sessionWorkdir string      // the project path this session was resolved from
@@ -5848,7 +5852,12 @@ func (a *App) compactCmd() tea.Cmd {
 	doc := transcript.Serialize(msgs, transcript.SerializeOptions{Nonce: nonceHex()})
 	c := a.classifier
 	caveman := a.settings.ClassifierCavemanEnabled()
+	hookSet, sid, wd := a.sessionHooks(), a.sessionID, a.workdir
 	return func() tea.Msg {
+		// pre_compact runs off the UI goroutine; it cannot stop compaction.
+		if hookSet.Has(hooks.EventPreCompact) {
+			hookSet.Dispatch(a.ctx, hooks.Input{Event: hooks.EventPreCompact, SessionID: sid, Cwd: wd})
+		}
 		ctx, served := rolemanager.TrackServedModel(a.ctx)
 		raw, err := c.Classify(ctx, rolemanager.BuildCompactionPayload(doc, caveman))
 		if err != nil {

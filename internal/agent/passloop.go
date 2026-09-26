@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/signet/internal/goals"
+	"github.com/vulnetix/signet/internal/hooks"
 	"github.com/vulnetix/signet/internal/modelinfo"
 	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/plans"
@@ -1213,6 +1214,8 @@ func (s *Session) compactBoundary(ctx context.Context, pipe *rolemanager.Pipelin
 	if est.Tokens*100 < window*compactThresholdPct {
 		return nil, false
 	}
+	// pre_compact cannot stop compaction; its output is not read.
+	reportHookFailures(s.FireHook(ctx, hooks.Input{Event: hooks.EventPreCompact}), s.emit)
 	conv := transcript.Serialize(msgs, transcript.SerializeOptions{})
 	cctx, served := rolemanager.TrackServedModel(ctx)
 	raw, err := pipe.Classifier.Classify(cctx, rolemanager.BuildCompactionPayload(conv, s.settings.ClassifierCavemanEnabled()))

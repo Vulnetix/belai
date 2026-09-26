@@ -385,6 +385,9 @@ func TestKindReadOnlyClassification(t *testing.T) {
 	want := map[Kind]bool{
 		KindRead: true, KindWebSearch: true, KindWebFetch: true, KindGrep: true, KindGlob: true, KindExplore: true, KindNative: true, KindRemote: true, KindUpdatePlan: true, KindProcess: true, KindAgentStore: true, KindSubagent: true,
 		KindBash: false, KindWrite: false, KindEdit: false, KindProcessCtl: false,
+		// No tool carries KindHook; it stays off the read-only list so it
+		// could never admit a tool into the concurrent fan-out.
+		KindHook: false,
 	}
 	seen := map[Kind]bool{}
 	for _, k := range AllKinds {

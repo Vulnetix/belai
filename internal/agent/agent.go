@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -131,6 +130,9 @@ type Options struct {
 	Workdir   string
 	State     config.State
 	Settings  config.Settings
+	// Hooks overrides hook discovery. nil loads the global hooks directory
+	// (when Settings.Hooks allows); a subagent passes its parent's set.
+	Hooks *hooks.Set
 	// AgentPool caps how many fan-out subagents run at once across the whole
 	// session (explore fan-out plus background agents). It is the shared FIFO
 	// pool reached through rolemanager.Pipeline; nil means no ceiling beyond
@@ -229,8 +231,7 @@ type Session struct {
 	handoffUpdatePlanCalled bool
 	// emit is the current turn's event emitter, set at the start of run.
 	emit       func(Event)
-	hooks      []*hooks.Hook
-	hookRunner *hooks.Runner
+	hookSet    *hooks.Set
 	toolMethod run.ToolMethod
 	steer      chan string
 	trace      *trace.Writer
@@ -433,15 +434,9 @@ func NewSession(o Options) (*Session, error) {
 	fanOutReg := reg.With(fanOutTask)
 	fanOutOpenAITools, fanOutAnthropicTools := wireTools(fanOutReg)
 
-	// Load validated hooks for the six declared events. Discovery fails closed:
-	// an unreadable dir yields no hooks, never an error.
-	var hs []*hooks.Hook
-	var runner *hooks.Runner
-	if dir, err := config.GlobalHooksDir(); err == nil {
-		if loaded, err := hooks.LoadDir(dir, live.Policy()); err == nil && len(loaded) > 0 {
-			hs = loaded
-			runner = &hooks.Runner{Root: dir, Timeout: 5 * time.Second, MaxBytes: 64 * 1024}
-		}
+	hookSet := o.Hooks
+	if hookSet == nil {
+		hookSet = LoadHooks(o.Settings, live.Policy())
 	}
 	method := o.ToolMethod
 	if method == run.ToolMethodNone {
@@ -498,8 +493,7 @@ func NewSession(o Options) (*Session, error) {
 		fanOutAnthropicTools: fanOutAnthropicTools,
 		fanOutTask:           fanOutTask,
 		modeDetector:         o.ModeDetector,
-		hooks:                hs,
-		hookRunner:           runner,
+		hookSet:              hookSet,
 		toolMethod:           method,
 		steer:                make(chan string, steerBuffer),
 		trace:                trace.Env(),
@@ -624,6 +618,16 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	// turnIntent is set when the mode decision is finalised below.
 
 	clean := sanitize.Sanitize(in.Prompt)
+
+	// user_prompt_submit hooks run before any model I/O. A deny ends the turn
+	// here; context a hook adds joins the prompt ahead of admission, so the
+	// prompt classifier reads it too.
+	hookNote, err := s.promptHooks(ctx, in.Prompt, emit)
+	if err != nil {
+		return run.Result{SanitizedPrompt: clean}, err
+	}
+	clean += hookNote
+	defer s.stopHooks(ctx, emit)
 
 	onClassifierRetry := func(a resilience.Attempt) {
 		emit(Event{Kind: EventRetryKind, RetryAttempt: a.Attempt, RetryMax: a.Max, RetryDelay: a.Delay, RetryReason: a.Reason})
@@ -771,6 +775,9 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	// Goal mode and plan execution always keep the full surface.
 	savedReadOnly := s.turnReadOnly
 	s.turnReadOnly = s.readOnlyAgent && !in.ExecutePlan && modeDec.Mode == modes.ModeAgent
+	if s.turnReadOnly && modeDec.Intent == rolemanager.IntentHandoff {
+		emit(Event{Kind: EventWarningKind, Text: "read_only is on; the plan handoff cannot make edits until the setting is turned off"})
+	}
 	defer func() { s.turnReadOnly = savedReadOnly }()
 
 	// Per-turn fan-out latch: the fan-out profile advertises the Task tool and
@@ -1282,12 +1289,22 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 		return fmt.Sprintf("tool result withheld: permission denied for %q", call.Name)
 	}
 
+	// Pre-tool hooks run after the permission rules, so a Deny rule never
+	// spends a hook run, and before the ask, so a hook can turn a call into
+	// one that asks. A hook can only narrow: deny withholds, ask asks, and
+	// allow is no objection (it never skips an ask a rule demanded).
+	pre := s.preToolHooks(ctx, call, emit)
+	if pre.Decision == hooks.DecisionDeny {
+		return s.hookDenied(ctx, call, pre, emit)
+	}
+
 	// Every mutating call asks, unless an explicit Allow rule matched. An
 	// explicit Deny already blocked above; an Ask decision always asks — unless
 	// the operator disabled asking, in which case both an Ask decision and the
 	// mutating-default ask resolve to allow with no prompt.
 	mutates := tools.Mutates(tool)
-	if !s.live.AskDisabled() && (perm == permissions.DecisionAsk || (mutates && !matched)) {
+	hookAsk := pre.Decision == hooks.DecisionAsk
+	if !s.live.AskDisabled() && (perm == permissions.DecisionAsk || (mutates && !matched) || hookAsk) {
 		if !s.allowAsk {
 			// Non-TTY policy: fall back to today's PermissionAskNoTTY posture.
 			// Enforce withholds naming the flag; warn/ignore falls through to
@@ -1362,6 +1379,16 @@ func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, em
 		res.Content += "\n\n" + block
 	}
 
+	out := s.promoteResult(ctx, call, res, emit)
+	// Hook notes classify on their own, so a noisy hook cannot get a clean
+	// tool result withheld, and a clean result cannot vouch for a hook.
+	notes := append(pre.Context, s.postToolHooks(ctx, call, res, emit).Context...)
+	return out + s.promoteHookNotes(ctx, call, notes, emit)
+}
+
+// promoteResult sanitizes a tool result and, for the arbitrary-content kinds,
+// runs it through the classifier before it may enter the conversation.
+func (s *Session) promoteResult(ctx context.Context, call rolemanager.ToolCall, res tools.Result, emit func(Event)) string {
 	// Guardrails off: the verdict could not change the outcome, so the
 	// classifier is not called at all rather than called and discarded.
 	// Sanitising still runs — turning the gates off means skipping the model
@@ -1473,28 +1500,6 @@ func classifierWithheld(name string, err error) string {
 		detail = strings.TrimRight(string(runes[:classifierErrorMaxRunes]), " ") + "…"
 	}
 	return fmt.Sprintf("tool result withheld: classifier error for %q: %s", name, detail)
-}
-
-// runHooks executes every hook registered for event against the tool call.
-// Hook stdout is surfaced to stderr (never promoted into the prompt).
-func (s *Session) runHooks(ctx context.Context, event string, call rolemanager.ToolCall) error {
-	if s.hookRunner == nil {
-		return nil
-	}
-	var firstErr error
-	for _, h := range s.hooks {
-		if h.Event != event {
-			continue
-		}
-		out, err := s.hookRunner.Run(ctx, *h)
-		if out != "" {
-			fmt.Fprintf(os.Stderr, "signet: hook %s: %s\n", h.Name, out)
-		}
-		if err != nil && firstErr == nil {
-			firstErr = err
-		}
-	}
-	return firstErr
 }
 
 // inScope reports whether subject is inside any of the path prefixes in scope.

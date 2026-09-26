@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/signet/internal/hooks"
 	"github.com/vulnetix/signet/internal/tui/keys"
 )
 
@@ -25,8 +26,12 @@ func Start(opts Options) error {
 	// Only a real run probes git and the forge CLI in the background; New
 	// alone (every test) never execs them. Start runs after the trust gate.
 	app.startForgeCache()
+	app.fireSessionHook(hooks.EventSessionStart)
 	p := tea.NewProgram(app, progOpts...)
 	model, err := p.Run()
+	if a, ok := model.(*App); ok {
+		a.fireSessionHook(hooks.EventSessionEnd)
+	}
 	// Every exit path (ctrl+d, /exit, ctrl+c, an error) flushes the usage
 	// ledger once here.
 	if a, ok := model.(*App); ok {
