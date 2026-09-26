@@ -65,6 +65,11 @@ type Message struct {
 	// Steering marks a user turn injected mid-loop while the agent is running.
 	Steering bool
 
+	// RemoteID is the website prompt id on a user turn that arrived through
+	// session sync (docs/session-sync.md). It is persisted as the entry's
+	// meta.remote_prompt_id so the website can match its request to the line.
+	RemoteID string
+
 	// buf accumulates streamed deltas for an in-flight message. Content stays
 	// empty while buf is live; Text() materialises on read without a copy, so
 	// appending one delta is O(1) amortised instead of the O(n²) of
@@ -147,6 +152,7 @@ type renderKey struct {
 	expanded   bool
 	partial    bool
 	steering   bool
+	remote     bool
 	usageTotal int
 	toolCallsN int
 	// started marks a running tool row: its live elapsed label changes every
@@ -208,6 +214,7 @@ func renderKeyFor(m *Message, width int, expandAll bool) renderKey {
 		expanded:     m.Expanded,
 		partial:      m.Partial,
 		steering:     m.Steering,
+		remote:       m.RemoteID != "",
 		usageTotal:   usage,
 		toolCallsN:   len(m.ToolCalls),
 		started:      running,
@@ -669,6 +676,8 @@ func turnPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 		title, accent = "user prompt", lipgloss.TerminalColor(ColorTealSoft)
 		if msg.Steering {
 			title, accent = "user steering", lipgloss.TerminalColor(ColorAmber)
+		} else if msg.RemoteID != "" {
+			title = "web prompt"
 		}
 	} else if msg.Role != "assistant" {
 		title, accent = msg.Role, lipgloss.TerminalColor(ColorMuted)

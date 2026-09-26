@@ -196,6 +196,26 @@ func (e *Effective) apply(s Settings, src Source) {
 			e.Origin["firewall_enabled"] = src
 		}
 	}
+	if s.Sync != nil {
+		// Session sync sends transcripts off the machine and lets the website
+		// prompt the session: a repo-visible project layer may turn either
+		// off, never on.
+		if src == SourceProject {
+			e.Settings.Sync = mergeSyncOffOnly(e.Settings.Sync, s.Sync)
+		} else {
+			t := *s.Sync
+			if e.Settings.Sync != nil {
+				if t.Enabled == nil {
+					t.Enabled = e.Settings.Sync.Enabled
+				}
+				if t.RemotePrompts == nil {
+					t.RemotePrompts = e.Settings.Sync.RemotePrompts
+				}
+			}
+			e.Settings.Sync = &t
+		}
+		e.Origin["sync"] = src
+	}
 	if s.Notifications != nil && src != SourceProject {
 		// Notifications are a per-user preference: a repository has no say
 		// in whether, or how, the desktop is interrupted.

@@ -66,6 +66,7 @@ import (
 	"github.com/vulnetix/belai/internal/scanartifacts"
 	"github.com/vulnetix/belai/internal/selfupdate"
 	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/sessionsync"
 	"github.com/vulnetix/belai/internal/todos"
 	"github.com/vulnetix/belai/internal/tools"
 	"github.com/vulnetix/belai/internal/trace"
@@ -433,6 +434,13 @@ type App struct {
 	persistedUpTo  int         // count of leading a.messages already written
 	nameRequested  bool        // auto-naming already attempted for this session
 	storeDisabled  bool        // a store error was reported; degrade to memory-only
+
+	// session sync (session_sync.go): the website mirror of the session file
+	// and the prompts it sends back. nil when sync is off or not logged in.
+	syncer      *sessionsync.Syncer
+	syncedID    string                     // the session the syncer was last pointed at
+	syncNote    string                     // why sync is off, for /sync status
+	remoteQueue []sessionsync.RemotePrompt // web prompts waiting for the host to be idle
 
 	// context metering
 	summary       string            // compaction carrier; "" in a normal session
@@ -1104,6 +1112,9 @@ func (a *App) SetClassifier(c rolemanager.Classifier) {
 func (a *App) Init() tea.Cmd {
 	a.maybeNoticeLegacyPrompts()
 	cmds := []tea.Cmd{tickCmd(), a.watchActivityEvents(), a.nextRMActivity(), a.nextUsage(), a.importHistory()}
+	if cmd := a.watchRemotePrompts(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
 	if a.procManager != nil {
 		cmds = append(cmds, a.watchProcessEvents())
 	}
@@ -1458,6 +1469,13 @@ func (a *App) submitInput(input string) tea.Cmd {
 	// Instant echo: the prompt becomes a "User prompt" in the transcript and
 	// a session entry before any classification or provider I/O.
 	a.echoUser(input)
+	return a.dispatchPrompt(input, safe, directive, firstUser)
+}
+
+// dispatchPrompt starts the turn for a prompt already echoed and persisted:
+// the mode selection and send every user prompt goes through, typed or from
+// the website.
+func (a *App) dispatchPrompt(input string, safe []run.Attachment, directive string, firstUser bool) tea.Cmd {
 	a.setPhaseRoleManager(agent.RoleManagerPhasePrePrompt)
 
 	if a.modeSticky || a.modeExplicit || a.classifier == nil {
@@ -1482,6 +1500,12 @@ func (a *App) submitInput(input string) tea.Cmd {
 // echoUser appends a submitted prompt to the transcript and persists it as a
 // user entry.
 func (a *App) echoUser(input string) {
+	a.echoUserMessage(components.Message{Role: "user", Content: input})
+}
+
+// echoUserMessage is echoUser for a prepared user message (a web prompt
+// carries its RemoteID).
+func (a *App) echoUserMessage(m components.Message) {
 	// Flush any settled trailing rows first (e.g. a system notice added after
 	// the previous turn's final persistTail) so the cursor advance below never
 	// skips them.
@@ -1490,9 +1514,9 @@ func (a *App) echoUser(input string) {
 	// later rows. The cursor used to jump over such rows instead, which
 	// silently dropped whole goal-mode turns from the session file.
 	a.persistTailMode(true)
-	a.messages = append(a.messages, components.Message{Role: "user", Content: input})
+	a.messages = append(a.messages, m)
 	if a.persistedUpTo == len(a.messages)-1 {
-		a.appendEntry(session.Entry{Type: "user", Role: "user", Content: input})
+		a.appendEntry(userEntry(m))
 		// The user turn is already on disk; advance the persistence cursor
 		// past it so persistTail never double-writes it.
 		a.persistedUpTo = len(a.messages)
@@ -2039,7 +2063,19 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.forgeTabActive() {
 			forgeCmd = a.refreshForge(false)
 		}
-		return a, tea.Batch(tickCmd(), a.refreshGitInfoCmd(), forgeCmd)
+		// A web prompt queued behind a turn runs once the host is idle.
+		return a, tea.Batch(tickCmd(), a.refreshGitInfoCmd(), forgeCmd, a.drainRemoteQueue())
+
+	case remotePromptMsg:
+		return a, tea.Batch(a.handleRemotePrompt(sessionsync.RemotePrompt(m)), a.watchRemotePrompts())
+
+	case syncBackfillDoneMsg:
+		if m.err != nil {
+			a.addSystem(fmt.Sprintf("sync backfill: %d session(s) uploaded, then: %v", m.n, m.err))
+		} else {
+			a.addSystem(fmt.Sprintf("sync backfill: %d session(s) uploaded to History", m.n))
+		}
+		return a, nil
 
 	case streamChunkMsg:
 		return a, a.handleStreamChunk(m)
@@ -5649,6 +5685,8 @@ func (a *App) appendEntry(e session.Entry) {
 		return
 	}
 	a.lastEntryID = id
+	// The line is on disk: only now may the website see it.
+	a.syncTouch()
 }
 
 func (a *App) disableStore(msg string) {

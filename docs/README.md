@@ -28,6 +28,8 @@ behaviour, and implementation details.
 
 - [Vulnetix](vulnetix.md): review scanners, artifact handling, project history,
   and the Vulnetix AI Firewall.
+- [Session sync](session-sync.md): mirroring sessions to the Vulnetix website
+  (History and live Sessions) and prompting a live session from the browser.
 - [Nonce endpoint spec](nonce-endpoint-spec.md): the provider/gateway
   `GET /v1/nonces` contract and verification semantics.
 - [Image attachments](image-attachments.md): deferred multimodal attachment

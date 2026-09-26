@@ -132,7 +132,9 @@ does not open again. `/vulnetix setup` reopens it.
 5. **AI Firewall and MCP** — once a credential loads, Belai sets
    `vulnetix.firewall_enabled: true` in the **global** settings, adds the
    Vulnetix MCP server, and pushes the configured provider keys to the
-   firewall.
+   firewall. A login here also starts [session sync](session-sync.md), which
+   mirrors sessions to the website's Belai History and Sessions pages
+   (`/sync off` turns it off).
 
 ## Vulnetix MCP server (`/vulnetix mcp`)
 

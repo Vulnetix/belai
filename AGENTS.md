@@ -274,6 +274,19 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   never reach a notification. The external backends run a fixed argv with
   the scrubbed environment. `notifications` is a per-user key: the project
   layer is dropped.
+- **Session sync mirrors the file and admits web prompts as prompts.**
+  `internal/sessionsync` uploads only the lines `appendEntry` already wrote to
+  the session JSONL, keyed by line index; it never composes an entry. It sends
+  them only to `https://*.vulnetix.com` (or a loopback origin), with the
+  Vulnetix CLI's credential in the `Authorization` header only. A prompt from
+  the website is untrusted input: `sessionsync.CleanPrompt` strips delimiter
+  markup, control and bidi runes, and the prompt then takes the typed-prompt
+  path (`dispatchPrompt`) — the same mode selection, admission gate, posture,
+  permission rules and tool surface. It never runs a slash command, `!cmd` or
+  composer `@` attachment, never touches the composer, never answers a
+  permission ask or question, and in agent mode with no carrier it is refused
+  rather than answering the picker. The project layer may turn `sync.enabled`
+  and `sync.remote_prompts` off, never on.
 
 ## Layout
 

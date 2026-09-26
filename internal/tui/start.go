@@ -27,6 +27,8 @@ func Start(opts Options) error {
 	// Only a real run probes git and the forge CLI in the background; New
 	// alone (every test) never execs them. Start runs after the trust gate.
 	app.startForgeCache()
+	// Session sync likewise only starts on a real run (docs/session-sync.md).
+	app.startSessionSync()
 	app.fireSessionHook(hooks.EventSessionStart)
 	p := tea.NewProgram(app, progOpts...)
 	model, err := p.Run()
@@ -45,6 +47,11 @@ func Start(opts Options) error {
 			a.ensureSessionName()
 			_, _ = os.Stdout.WriteString(a.exitCard().View() + "\n")
 		}
+	}
+	// Last, so the name ensureSessionName may write is mirrored too: flush
+	// and move the session to the website's History.
+	if a, ok := model.(*App); ok {
+		a.closeSync()
 	}
 	return err
 }

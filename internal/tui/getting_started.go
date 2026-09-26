@@ -442,7 +442,7 @@ func (a *App) handleGettingStartedMsg(msg tea.Msg) (tea.Cmd, bool) {
 		if a.resolver != nil {
 			a.resolver.RefreshVulnetixCred()
 		}
-		return a.gsGo(gsEnable), true
+		return tea.Batch(a.gsGo(gsEnable), a.retrySessionSync()), true
 	case gsEnableDoneMsg:
 		st.enabling, st.enabled = false, true
 		st.enableLog = append(st.enableLog, m.lines...)
