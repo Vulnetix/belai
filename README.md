@@ -148,6 +148,8 @@ signet -provider anthropic -model claude-sonnet-4-5 -prompt "review this diff"
 
 Signet starts the UI only when both stdin and stdout are a terminal, so it is safe in pipelines and CI.
 
+Two subcommands sit beside the flags: `signet acp` serves the Agent Client Protocol so an editor such as Zed can use Signet as its agent ([docs/acp.md](docs/acp.md)), and `signet plugin` installs and manages plugins ([docs/plugins.md](docs/plugins.md)).
+
 ## Configuration
 
 No provider configured? Signet defaults to OpenRouter's free router
