@@ -489,15 +489,20 @@ this.
 ### Attachment admission
 
 `@file` references typed in the TUI are resolved against the working
-directory. A file is read with the bounded `Read` tool and run through the
-same `sanitize → classify` pipeline as any other untrusted tool result. A
-directory is not read — it is listed in-process (the answer an `Ls` call
-would give), and the listing is sanitised and admitted **without** a
-classifier round trip: entry names are shaped, harness-known output, not the
-arbitrary file bytes the classifier exists for. Only safe attachments are
-sealed with a fresh nonce from the active pool and appended to the user turn
-as an `<attachment>` block. Rejected attachments are shown in the attachment
-strip and are never sent.
+directory. The non-interactive CLI also resolves simple `@plan.md` references
+when the file looks like a Markdown plan (it lives under the project plans
+directory, under a `plans/` directory, has `*plan*.md` in its basename, or
+contains at least three task markers). Such plan files are read with the
+bounded `Read` tool, classified SAFE through the same `sanitize → classify`
+pipeline as any other untrusted tool result, and appended to the user turn as
+an `<attachment>` block. Other `@file` references in non-interactive prompts
+remain textual; only the TUI resolves arbitrary file and directory
+attachments. A directory is not read — it is listed in-process (the answer an
+`Ls` call would give), and the listing is sanitised and admitted **without**
+a classifier round trip: entry names are shaped, harness-known output, not
+the arbitrary file bytes the classifier exists for. Only safe attachments are
+sealed with a fresh nonce from the active pool and appended to the user turn.
+Rejected attachments are shown in the attachment strip and are never sent.
 
 Attachment admission calls the pipeline explicitly and is **not** subject to
 the per-kind rule above: an attachment is content the user pulled into the
