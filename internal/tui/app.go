@@ -46,6 +46,7 @@ import (
 	"github.com/vulnetix/signet/internal/inputhistory"
 	"github.com/vulnetix/signet/internal/localinfer"
 	"github.com/vulnetix/signet/internal/machineprobe"
+	"github.com/vulnetix/signet/internal/mcp"
 	"github.com/vulnetix/signet/internal/modelinfo"
 	"github.com/vulnetix/signet/internal/models"
 	"github.com/vulnetix/signet/internal/modes"
@@ -1893,6 +1894,11 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 	for _, d := range p.workspaceDirs {
 		_ = reg.Cwd().AddRoot(d)
 	}
+	// Tools of the MCP servers connected so far. Added before an allowlist
+	// narrows the registry, so an allowlist drops any it does not name.
+	if m := mcp.Active(); m != nil {
+		reg = reg.With(m.Tools()...)
+	}
 	if len(p.toolAllow) > 0 {
 		// An engaged background definition brings its allowlist with it, the
 		// same narrowing internal/bgagent applies when it runs the definition
@@ -2062,6 +2068,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.addSystem(m.text)
 		return a, nil
 
+	case mcpDoneMsg:
+		if m.err != nil {
+			a.addSystem("mcp: restart " + m.name + " failed: " + mcpClean(m.err.Error(), 200))
+		} else {
+			a.addSystem("mcp: " + m.name + " restarted")
+		}
+		// The next send rebuilds the session with the server's current tools.
+		a.invalidateAgentSession()
+		return a, nil
 	case compactDoneMsg:
 		return a, a.handleCompactDone(m)
 

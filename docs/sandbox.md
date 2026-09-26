@@ -95,6 +95,7 @@ asks you rather than retrying blindly.
   directory, so a command can still read files such as `~/.ssh/config`.
 - With `network` set to `deny`, a supervised dev server is not reachable from
   your browser.
-- MCP servers do not run in the sandbox yet.
+- MCP stdio servers run in the sandbox only when their settings say
+  `sandbox: true` (see [MCP servers](mcp.md)).
 - The sandbox is a boundary for the commands Signet runs. It is not a
   substitute for running Signet itself in a container.

@@ -55,6 +55,10 @@ const (
 	// KindSkillWrite is SkillDraft's harness-composed confirmation. It is
 	// mutating (it writes a skill file) and sanitise-only.
 	KindSkillWrite Kind = "skill_write"
+	// KindMCP is a result from an MCP server tool: text a third-party server
+	// wrote. It is mutating by default (a server tool may do anything) and
+	// always classifies.
+	KindMCP Kind = "mcp"
 )
 
 // AllKinds is every registered Kind, in declaration order. Tests iterate it to
@@ -64,7 +68,7 @@ var AllKinds = []Kind{
 	KindRead, KindWebSearch, KindWebFetch, KindBash, KindGrep, KindGlob,
 	KindExplore, KindWrite, KindEdit, KindNative, KindRemote, KindUpdatePlan,
 	KindProcess, KindProcessCtl, KindAgentStore, KindSubagent, KindHook, KindSkill,
-	KindSkillWrite,
+	KindSkillWrite, KindMCP,
 }
 
 // readOnlyKinds is the closed allowlist of kinds that only read. A Kind absent

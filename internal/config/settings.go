@@ -96,6 +96,10 @@ type Settings struct {
 	Skills *SkillsSettings `json:"skills,omitempty"`
 	// Sandbox configures the OS sandbox for commands (docs/sandbox.md).
 	Sandbox *SandboxSettings `json:"sandbox,omitempty"`
+	// MCP configures Model Context Protocol servers (docs/mcp.md). Global
+	// only: a server is a command to run or a URL to send data to, so the
+	// project layer is dropped.
+	MCP *MCPSettings `json:"mcp,omitempty"`
 	// Notifications configures desktop notifications
 	// (docs/notifications.md). A per-user preference: the project layer
 	// cannot set it.
@@ -199,6 +203,35 @@ func (s *NotificationSettings) merge(from *NotificationSettings) {
 	if from.MinTurnSeconds != 0 {
 		s.MinTurnSeconds = from.MinTurnSeconds
 	}
+}
+
+// MCPSettings lists MCP servers by name.
+type MCPSettings struct {
+	Servers map[string]MCPServer `json:"servers,omitempty"`
+}
+
+// MCPServer is one MCP server.
+type MCPServer struct {
+	// Transport is stdio (default) or http.
+	Transport string `json:"transport,omitempty"`
+	// Command and Args start a stdio server.
+	Command string   `json:"command,omitempty"`
+	Args    []string `json:"args,omitempty"`
+	// Env is passed to a stdio server on top of the scrubbed environment. A
+	// value "env:NAME" copies NAME from Signet's environment.
+	Env map[string]string `json:"env,omitempty"`
+	// URL and Headers reach an http server. A header value "env:NAME" is
+	// read from the environment.
+	URL     string            `json:"url,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+	// Tools, when set, offers only these server tools.
+	Tools []string `json:"tools,omitempty"`
+	// Disabled keeps the server configured but not started.
+	Disabled bool `json:"disabled,omitempty"`
+	// Sandbox runs a stdio server under the OS sandbox.
+	Sandbox bool `json:"sandbox,omitempty"`
+	// TimeoutMS bounds one tool call (default 60000, at most 600000).
+	TimeoutMS int `json:"timeout_ms,omitempty"`
 }
 
 // SandboxSettings configures the OS sandbox around Bash, inline !cmd and

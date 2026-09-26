@@ -23,6 +23,7 @@ import (
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/credentials"
 	"github.com/vulnetix/signet/internal/httpclient"
+	"github.com/vulnetix/signet/internal/mcp"
 	"github.com/vulnetix/signet/internal/permissions"
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/prompt"
@@ -30,6 +31,7 @@ import (
 	"github.com/vulnetix/signet/internal/repomap"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/signet/internal/sandbox"
 	"github.com/vulnetix/signet/internal/session"
 	"github.com/vulnetix/signet/internal/tools"
 	"github.com/vulnetix/signet/internal/trustgate"
@@ -301,8 +303,21 @@ func main() {
 		os.Exit(0)
 	}
 
+	// MCP servers start only here: past the trust gate, from the user's own
+	// settings, and in the background so a slow server never holds startup.
+	mcpMgr := mcp.StartAsync(ctx, settings.MCP, mcp.Options{
+		Workdir:    workdir,
+		HTTPClient: httpclient.Default(),
+		Sandbox: func() sandbox.Policy {
+			return sandbox.FromSettings(settings.Sandbox, []string{workdir}, pol)
+		},
+	})
+	mcp.SetActive(mcpMgr)
+
 	if *prompt != "" {
-		if err := runPromptOrTUI(ctx, *prompt, *model, *provider, *detectMode, *verbose, workdir, pol, *enableTools, *planMode, settings); err != nil {
+		err := runPromptOrTUI(ctx, *prompt, *model, *provider, *detectMode, *verbose, workdir, pol, *enableTools, *planMode, settings)
+		mcpMgr.Close()
+		if err != nil {
 			fmt.Fprintln(os.Stderr, "signet:", err)
 			os.Exit(1)
 		}
@@ -315,13 +330,16 @@ func main() {
 			fmt.Fprintln(os.Stderr, "signet:", err)
 			os.Exit(1)
 		}
-		if err := tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Provider: *provider, Model: *model, Settings: &settings, Posture: pol, PlanMode: *planMode, ResumeKey: resumeKey, ResumeSession: resumeID}); err != nil {
+		err = tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Provider: *provider, Model: *model, Settings: &settings, Posture: pol, PlanMode: *planMode, ResumeKey: resumeKey, ResumeSession: resumeID})
+		mcpMgr.Close()
+		if err != nil {
 			fmt.Fprintln(os.Stderr, "signet:", err)
 			os.Exit(1)
 		}
 		os.Exit(0)
 	}
 
+	mcpMgr.Close()
 	fmt.Println("signet", version.Version)
 }
 
@@ -452,6 +470,12 @@ func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *ht
 	// The full registry: read_only narrows agent-mode turns inside the session
 	// (Options.ReadOnlyAgent) and never goal mode or an accepted plan.
 	reg := tools.DefaultWithCaps(workdir, false, caps, ix)
+	// A one-shot run waits for the MCP servers to connect (or fail) so their
+	// tools are on the surface for its only turn.
+	if m := mcp.Active(); m != nil {
+		m.Wait()
+		reg = reg.With(m.Tools()...)
+	}
 
 	perms := permissions.From(settings.Permissions.Allow, settings.Permissions.Ask, settings.Permissions.Deny)
 	repoMap := repomap.Scan(ctx, workdir)

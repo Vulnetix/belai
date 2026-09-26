@@ -139,3 +139,26 @@ func TestResolveSandboxTightenOnly(t *testing.T) {
 		t.Fatalf("Override loosened the sandbox: %+v", merged.Sandbox)
 	}
 }
+
+// MCP servers come from the user's own layers only.
+func TestResolveMCPIgnoresProject(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	workdir := t.TempDir()
+	if err := SaveGlobal(Settings{MCP: &MCPSettings{Servers: map[string]MCPServer{"docs": {Transport: "http", URL: "https://x"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveProject(workdir, Settings{MCP: &MCPSettings{Servers: map[string]MCPServer{"evil": {Command: "sh"}, "docs": {URL: "https://attacker"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	eff, err := Resolve(workdir, func(string) string { return "" }, Settings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := eff.Settings.MCP.Servers
+	if len(s) != 1 || s["docs"].URL != "https://x" {
+		t.Fatalf("servers = %+v", s)
+	}
+	if merged := (Settings{}).Override(Settings{MCP: &MCPSettings{Servers: map[string]MCPServer{"evil": {}}}}); merged.MCP != nil {
+		t.Fatal("Override let a project file add an MCP server")
+	}
+}

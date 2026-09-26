@@ -205,6 +205,21 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.Notifications.merge(s.Notifications)
 		e.Origin["notifications"] = src
 	}
+	if s.MCP != nil && src != SourceProject {
+		// MCP servers are commands to run and URLs to send data to: only the
+		// user's own layers may name them. Later layers replace earlier ones
+		// server by server.
+		if e.Settings.MCP == nil {
+			e.Settings.MCP = &MCPSettings{}
+		}
+		if e.Settings.MCP.Servers == nil {
+			e.Settings.MCP.Servers = map[string]MCPServer{}
+		}
+		for name, srv := range s.MCP.Servers {
+			e.Settings.MCP.Servers[name] = srv
+		}
+		e.Origin["mcp"] = src
+	}
 	if s.Sandbox != nil {
 		// The sandbox is a boundary: a repo-visible project layer may only
 		// tighten it (see mergeSandbox).
