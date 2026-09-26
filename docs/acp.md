@@ -1,13 +1,13 @@
 # Editor integration (ACP)
 
-**Status:** Roadmap. This feature is designed but not yet in a release, so the
-page describes the planned behaviour.
+**Status:** alpha-20260926. Shipped in an early form; the supported methods
+may still change.
 
 `signet acp` runs Signet as an [Agent Client
-Protocol](https://agentclientprotocol.com) server on stdin and stdout. Editors
+Protocol](https://agentclientprotocol.com) agent on stdin and stdout. Editors
 that speak ACP (Zed, JetBrains IDEs, Neovim through a plugin) can then use
-Signet as their agent, with the same classifier, permission rules and
-guardrails as the TUI.
+Signet as their agent, with the same classifier, permission rules, guardrails
+and budgets as the TUI.
 
 - [Editor setup](#editor-setup)
 - [What is supported](#what-is-supported)
@@ -29,39 +29,48 @@ Zed, in `settings.json`:
 }
 ```
 
-Other editors take the same command. Provider, model and settings come from
-your normal Signet configuration.
+Other editors take the same command. `signet acp -provider <name> -model <id>`
+picks a provider and model; otherwise they resolve as they do for the TUI
+(settings, `SIGNET_PROVIDER`, available credentials). Everything else comes
+from your normal Signet settings for the project directory.
 
 ## What is supported
 
 | ACP method or update | Signet behaviour |
 | --- | --- |
-| `initialize` | advertises prompt, session load and permission support |
+| `initialize` | protocol version 1; embedded file context accepted; no session loading |
 | `session/new` | starts a session in the editor's project directory |
-| `session/load` | resumes a stored Signet session by id |
-| `session/prompt` | runs a turn |
-| `session/cancel` | stops the turn and keeps the partial result |
+| `session/prompt` | runs one turn; text, file links and embedded file text become the prompt |
+| `session/cancel` | stops the turn; the prompt returns `cancelled` |
 | `agent_message_chunk` | streamed reply text |
 | `agent_thought_chunk` | streamed reasoning |
-| `tool_call`, `tool_call_update` | each tool call, its progress, result and file diff |
-| `plan` | the todo list |
-| `session/request_permission` | a permission ask. `allow once` allows the call; `allow always` adds an allow rule for this session only |
+| `tool_call` | each tool call as it starts, with its kind (`read`, `edit`, `search`, `execute`, `fetch`, `think`, `other`) and arguments |
+| `tool_call_update` | the file diff a call made, then its result, `completed` or `failed` |
+| `plan` | the goal-mode todo list |
+| `session/request_permission` | a permission ask, offering allow once, allow for this session, or reject |
 
-Sessions are stored in the same store as TUI sessions, so `signet -r <id>`
-opens a session the editor started.
+A turn stops with `end_turn`, `cancelled`, or `refusal` when the prompt
+classifier refuses it.
 
 ## Security model
 
 - The project directory must already be trusted. `session/new` in an
   untrusted directory fails with a message telling you to open it in the TUI
-  once or run with `-trust-dir`. The trust prompt never runs over ACP.
-- The classifier, posture gates, permission rules and token budgets apply as
-  they do in the TUI. The guardrails switch follows your settings and
-  `-guardrails`.
-- `allow always` never writes a permission rule to disk.
+  once or run `signet -trust-dir` there. The trust prompt never runs over ACP.
+- Each ACP session is built the way the headless CLI builds one: the same
+  classifier, posture gates, permission rules, sandbox and token budgets. The
+  guardrails switch follows your settings for that directory.
+- Permission asks go to the editor. "Allow for this session" is remembered in
+  memory for that session and tool only, and never written to a settings
+  file. Any error, cancellation or other answer denies.
+- MCP servers come from your global settings. Servers an editor offers in
+  `session/new` are ignored.
 
 ## Limitations
 
-- Clarifying questions are not supported over ACP; the agent proceeds with
-  its best reading of the prompt.
-- Slash commands and the TUI panels are not exposed.
+- Sessions last as long as the editor's connection and are not written to
+  the Signet session store, so they cannot be resumed from the TUI.
+- Clarifying questions are not asked over ACP; the agent proceeds with its
+  best reading of the prompt.
+- Images and audio in prompts are not accepted.
+- Slash commands, modes and the TUI panels are not exposed.

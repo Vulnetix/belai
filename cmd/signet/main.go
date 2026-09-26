@@ -52,6 +52,10 @@ func main() {
 	defer stop()
 	go hardExitOnSecondSignal(ctx)
 
+	// `signet acp` serves the Agent Client Protocol to an editor.
+	if len(os.Args) > 1 && os.Args[1] == "acp" {
+		os.Exit(runACP(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+	}
 	// `signet plugin …` is a subcommand with its own flags.
 	if len(os.Args) > 1 && os.Args[1] == "plugin" {
 		os.Exit(runPluginCLI(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Stderr, isCharDevice(os.Stdin)))
@@ -465,13 +469,24 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 }
 
 func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool) (run.Result, error) {
+	sess, err := newCLISession(ctx, cfg, client, pol, workdir, settings, planMode, "", false)
+	if err != nil {
+		return run.Result{}, err
+	}
+	return sess.Run(ctx, userPrompt)
+}
+
+// newCLISession builds a top-level agent session outside the TUI: the
+// headless -prompt run (no asks: allowAsk false) and each ACP session (the
+// editor answers asks: allowAsk true).
+func newCLISession(ctx context.Context, cfg run.Config, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool, sessionID string, allowAsk bool) (*agent.Session, error) {
 	caps := tools.DetectDefault()
 	ix := repoindex.Scan(ctx, workdir)
 	// The full registry: read_only narrows agent-mode turns inside the session
 	// (Options.ReadOnlyAgent) and never goal mode or an accepted plan.
 	reg := tools.DefaultWithCaps(workdir, false, caps, ix)
-	// A one-shot run waits for the MCP servers to connect (or fail) so their
-	// tools are on the surface for its only turn.
+	// A CLI session waits for the MCP servers to connect (or fail) so their
+	// tools are on the surface from its first turn.
 	if m := mcp.Active(); m != nil {
 		m.Wait()
 		reg = reg.With(m.Tools()...)
@@ -496,6 +511,8 @@ func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *ht
 		Workdir:       workdir,
 		Settings:      settings,
 		PromptOptions: promptOpts,
+		SessionID:     sessionID,
+		AllowAsk:      allowAsk,
 		Caps:          caps,
 		RepoIndex:     ix,
 		PlanSurface:   tools.PlanSurface{GuardrailsOff: !settings.GuardrailsEnabled(), Perms: perms},
@@ -516,9 +533,9 @@ func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *ht
 		Diagnostics: rolemanager.DiagnosticsGateFromSettings(settings, reg.Cwd().Roots(), false),
 	})
 	if err != nil {
-		return run.Result{}, err
+		return nil, err
 	}
-	return sess.Run(ctx, userPrompt)
+	return sess, nil
 }
 
 // pruneSessions removes idle sessions older than the configured retention, in

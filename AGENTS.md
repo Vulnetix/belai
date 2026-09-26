@@ -230,6 +230,14 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `tools.classifierKinds` unconditionally. Server names, descriptions and
   schema text are sanitized and capped and reach the model only through the
   sealed tools briefing. Signet answers a server's `ping` and nothing else.
+- **ACP never widens what an editor can do.** `signet acp` builds each
+  session with `newCLISession`, the headless path, so every gate, rule,
+  sandbox and budget applies. `session/new` fails closed in a directory
+  without `trusted:true`; the trust prompt never runs over ACP. Permission
+  asks become `session/request_permission`; anything but an explicit allow
+  denies, and "allow for this session" lives in memory for that session and
+  tool only. Editor-supplied `mcpServers` are ignored. Nothing but protocol
+  messages is written to stdout.
 - **Notifications carry harness text only.** `internal/notify` composes
   every notification from a fixed template; the one variable is a tool or
   agent name reduced to an identifier. Model output, tool output and paths

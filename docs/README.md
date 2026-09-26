@@ -46,7 +46,7 @@ ships, its status changes to `alpha-YYYYMMDD`, the date it landed.
 | Plugin packages | [Plugins](plugins.md) | alpha-20260926 |
 | OS sandbox for Bash | [Sandbox](sandbox.md) | alpha-20260926 |
 | MCP client | [MCP servers](mcp.md) | alpha-20260926 |
-| Editor integration over ACP | [ACP](acp.md) | Roadmap |
+| Editor integration over ACP | [ACP](acp.md) | alpha-20260926 |
 | OpenTelemetry export | [Telemetry](telemetry.md) | Roadmap |
 
 ## Build, test, and publish
