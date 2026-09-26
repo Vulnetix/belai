@@ -13,6 +13,7 @@ text.
 - [Security model](#security-model)
 - [Commands](#commands)
 - [Limitations](#limitations)
+- [Edge cases](#edge-cases)
 
 ## Configuring servers
 
@@ -109,3 +110,20 @@ reconnects one; the next turn uses its current tools.
   list, is picked up when the session is rebuilt (`/clear`, or a mode or
   model change).
 - Agent profiles cannot name MCP tools in their allowlist yet.
+
+## Edge cases
+
+- Two server tools whose names become the same after sanitizing: the one
+  the server lists first is offered, the other is dropped.
+- A name longer than 64 characters is cut at 64.
+- A schema property whose name is not letters, digits, `_` and `-` is
+  dropped, and `required` keeps only properties that survived.
+- A property type Signet does not know becomes `string`; a union such as
+  `["integer", "null"]` takes its first known type.
+- A server name with other characters fails to start and says why.
+- A tool listed in `tools` that the server does not offer is ignored.
+- An http server answering with a non-2xx status fails that call with the
+  status. During connection, the status and a short excerpt of the body are
+  the reason `/mcp` shows.
+- A stdio server still running two seconds after Signet closes its input is
+  killed with its process group.

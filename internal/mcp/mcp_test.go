@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/jsonrpc"
@@ -201,5 +202,61 @@ func TestToolName(t *testing.T) {
 	}
 	if n := ToolName(strings.Repeat("s", 40), strings.Repeat("t", 40)); len(n) != 64 {
 		t.Fatalf("len = %d", len(n))
+	}
+}
+
+func TestSchemaEdgeCases(t *testing.T) {
+	props, req := convertSchema(json.RawMessage(`{"type":"object","required":["a","bad key","gone"],"properties":{
+		"a":{"type":["null","integer"]},
+		"bad key":{"type":"string"},
+		"b":{"type":"weird"},
+		"c":{"type":"array","items":{"type":"object","properties":{"d":{"type":"boolean"}}}},
+		"e":{"enum":["x",1,"y"]}
+	}}`))
+	if props["a"].Type != "integer" || props["b"].Type != "string" {
+		t.Fatalf("types = %+v", props)
+	}
+	if _, ok := props["bad key"]; ok {
+		t.Fatal("unsafe property name kept")
+	}
+	if len(req) != 1 || req[0] != "a" {
+		t.Fatalf("required = %v", req)
+	}
+	if props["c"].Items == nil || props["c"].Items.Properties["d"].Type != "boolean" {
+		t.Fatalf("nested = %+v", props["c"])
+	}
+	if strings.Join(props["e"].Enum, ",") != "x,y" {
+		t.Fatalf("enum = %v", props["e"].Enum)
+	}
+	if p, r := convertSchema(json.RawMessage(`not json`)); p != nil || r != nil {
+		t.Fatal("bad schema produced properties")
+	}
+}
+
+func TestUnknownTransportFails(t *testing.T) {
+	m := Start(context.Background(), &config.MCPSettings{Servers: map[string]config.MCPServer{
+		"x": {Transport: "carrier-pigeon"},
+		"y": {Transport: "http", URL: "ftp://nope"},
+		"z": {},
+	}}, Options{})
+	defer m.Close()
+	for _, s := range m.Status() {
+		if s.State != StateFailed || s.Err == "" {
+			t.Errorf("%s: state %s err %q", s.Name, s.State, s.Err)
+		}
+	}
+}
+
+func TestResultRendering(t *testing.T) {
+	big := strings.Repeat("é", maxResultBytes)
+	out := render(CallResult{Content: []Content{{Type: "text", Text: big}}})
+	if len(out) > maxResultBytes+len("\n… truncated") || !strings.HasSuffix(out, "… truncated") {
+		t.Fatalf("not truncated: %d", len(out))
+	}
+	if !utf8.ValidString(out) {
+		t.Fatal("truncation split a rune")
+	}
+	if got := render(CallResult{Content: []Content{{Type: "resource"}}}); got != "[resource omitted]" {
+		t.Fatalf("resource = %q", got)
 	}
 }
