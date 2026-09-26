@@ -15,6 +15,7 @@ hand the model a short note.
 - [Security model](#security-model)
 - [Settings](#settings)
 - [Limitations](#limitations)
+- [Edge cases](#edge-cases)
 
 ## Events
 
@@ -84,8 +85,16 @@ event are omitted.
 }
 ```
 
-`tool_result_summary` is the first 2 KiB of the tool's output, for
-`post_tool` and `post_edit`. `prompt` is set for `user_prompt_submit`.
+| Field | Set for |
+| --- | --- |
+| `event` | every event |
+| `session_id` | every event: the transcript session id |
+| `cwd` | every event: the session's current working directory |
+| `tool_name`, `tool_input` | `pre_tool`, `post_tool`, `pre_edit`, `post_edit`: the call and its arguments |
+| `tool_result_summary` | `post_tool`, `post_edit`: the first 2 KiB of the tool's output |
+| `prompt` | `user_prompt_submit`: the prompt as typed |
+| `subagent_id` | `subagent_stop`: the finished subagent |
+| `notification` | `notification`: the event name, such as `permission` |
 
 It may print one JSON object on stdout, or nothing:
 
@@ -151,7 +160,7 @@ at 64 KiB.
 }
 ```
 
-The project layer may set `hooks.enabled` to `false`, never to `true`.
+`enabled` defaults to `true`. The project layer may set `hooks.enabled` to `false`, never to `true`.
 
 Each run is recorded in the `SIGNET_TRACE` file under the `hook` phase with
 its decision, the number of hooks that ran, and how many failed.
@@ -165,3 +174,21 @@ its decision, the number of hooks that ran, and how many failed.
   the TUI only; headless `-prompt` runs fire the tool, prompt, `stop` and
   automatic compaction events.
 - `post_tool` does not fire for a call that failed to execute.
+
+## Edge cases
+
+- Several hooks for one event run one after another in name order. A deny
+  from any of them wins over an ask, and an ask wins over an allow; a later
+  hook still runs after an earlier one denied.
+- A hook with no `matcher` sees every tool. A `matcher` is ignored for events
+  that carry no tool (`stop`, `session_start`, …).
+- `timeout_ms` of 0 means the 5-second default. A hook that runs longer is
+  killed with its process group.
+- `ask` from a hook, with the ask gate off, resolves to allow like any other
+  ask. With no terminal to ask on, the `permission_ask_no_tty` posture
+  decides, as it does for rules.
+- `post_tool` and `post_edit` are not fired for a call that failed to run,
+  was denied, or was withheld before it ran.
+- A plugin's hooks run after yours, named `plugin:name`, and each resolves
+  its command inside its own directory.
+- `hooks.enabled: false` turns off every hook, the user's and every plugin's.
