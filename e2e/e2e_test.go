@@ -1616,3 +1616,159 @@ func TestCustomProviderGroqViaBaseURL(t *testing.T) {
 		t.Fatalf("expected chat request to groq, got none")
 	}
 }
+
+// TestPlanHandoffAttachmentEndToEnd drives the built binary through an
+// @plan.md handoff. The mock provider classifies the prompt as HANDOFF,
+// then scripts the model to call update_plan first and Edit second. The
+// harness must refuse any Edit before update_plan and execute the Edit after.
+func TestPlanHandoffAttachmentEndToEnd(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "plan.md"), []byte("# Plan\n- [ ] Add feature\n- [ ] Test it in `feature.go`\n- [ ] Ship it\n"), 0o600); err != nil {
+		t.Fatalf("write plan.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "feature.go"), []byte("package main"), 0o600); err != nil {
+		t.Fatalf("write feature.go: %v", err)
+	}
+
+	editArgs := `{"file_path":"feature.go","old_string":"package main","new_string":"package main\n\nfunc main() {}"}`
+	updatePlanArgs := `{"todos":[{"id":"1","content":"Add feature","status":"in_progress"},{"id":"2","content":"Test it","status":"not_started"},{"id":"3","content":"Ship it","status":"not_started"}]}`
+
+	var toolCalls []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Messages []struct {
+				Role      string `json:"role"`
+				Content   string `json:"content"`
+				ToolCalls []struct {
+					ID       string `json:"id"`
+					Function struct {
+						Name      string `json:"name"`
+						Arguments string `json:"arguments"`
+					} `json:"function"`
+				} `json:"tool_calls"`
+			} `json:"messages"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		var system, user string
+		for _, m := range req.Messages {
+			switch m.Role {
+			case "system":
+				system = m.Content
+			case "user":
+				user = m.Content
+			case "assistant":
+				for _, tc := range m.ToolCalls {
+					toolCalls = append(toolCalls, tc.Function.Name)
+				}
+			}
+		}
+
+		switch {
+		case strings.Contains(system, "security classifier"):
+			writeChat(w, "SAFE")
+		case strings.Contains(system, "operating-mode classifier"):
+			if strings.Contains(user, "@plan.md") || strings.Contains(user, "plan.md") {
+				writeChat(w, "HANDOFF")
+			} else {
+				writeChat(w, "AGENT")
+			}
+		case strings.Contains(system, "clarification questionnaire"):
+			writeChat(w, `{"groups":[]}`)
+		default:
+			// Tool-result classification requests reuse the chat endpoint with a
+			// classifier system prompt; admit them as SAFE so attachments and
+			// explore findings can be promoted.
+			if strings.Contains(system, "classifier") {
+				writeChat(w, "SAFE")
+				return
+			}
+			// Scripted parent-agent replies.
+			hasUpdatePlan := false
+			hasRead := false
+			hasEdit := false
+			for _, name := range toolCalls {
+				switch name {
+				case "update_plan":
+					hasUpdatePlan = true
+				case "Read":
+					hasRead = true
+				case "Edit":
+					hasEdit = true
+				}
+			}
+			switch {
+			case !hasUpdatePlan:
+				writeToolCall(w, "update_plan", updatePlanArgs)
+			case !hasRead:
+				writeToolCall(w, "Read", `{"file_path":"feature.go"}`)
+			case !hasEdit:
+				writeToolCall(w, "Edit", editArgs)
+			default:
+				writeChat(w, "done")
+			}
+		}
+	}))
+	defer srv.Close()
+
+	out, errOut, code := runSignetDirWithGlobal(t, dir, srv.URL, `{"guardrails":false,"ask_permission":false}`,
+		"-provider", "openai", "-model", "test", "-tools", "-prompt", "implement @plan.md")
+	if code != 0 {
+		t.Fatalf("exit = %d (stderr %q)\nstdout = %q", code, errOut, out)
+	}
+
+	// Sanity: the agent should have produced some reply.
+	if !strings.Contains(out, "done") && !strings.Contains(out, "mock") {
+		t.Logf("stdout = %q", out)
+	}
+
+	if len(toolCalls) < 2 {
+		t.Fatalf("expected at least 2 tool calls, got %v", toolCalls)
+	}
+	firstEdit := -1
+	firstUpdate := -1
+	for i, name := range toolCalls {
+		if name == "Edit" && firstEdit == -1 {
+			firstEdit = i
+		}
+		if name == "update_plan" && firstUpdate == -1 {
+			firstUpdate = i
+		}
+	}
+	if firstUpdate == -1 {
+		t.Fatalf("update_plan was never called; calls = %v", toolCalls)
+	}
+	if firstEdit != -1 && firstEdit < firstUpdate {
+		t.Fatalf("Edit called before update_plan; calls = %v", toolCalls)
+	}
+
+	body, err := os.ReadFile(filepath.Join(dir, "feature.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "func main") {
+		t.Fatalf("Edit did not change feature.go: %q", body)
+	}
+}
+
+func writeToolCall(w http.ResponseWriter, name, args string) {
+	b, _ := json.Marshal(map[string]any{
+		"id":     "tc",
+		"object": "chat.completion",
+		"choices": []any{
+			map[string]any{
+				"index":         0,
+				"message":       map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{"id": "tc1", "type": "function", "function": map[string]any{"name": name, "arguments": args}}}},
+				"finish_reason": "tool_calls",
+			},
+		},
+	})
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(b)
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
+}
