@@ -33,6 +33,22 @@ behaviour, and implementation details.
 - [Image attachments](image-attachments.md): deferred multimodal attachment
   design and candidate terminal-rendering approaches.
 
+## Roadmap
+
+These features are designed and documented, but not in a release yet. When one
+ships, its status changes to `alpha-YYYYMMDD`, the date it landed.
+
+| Feature | Guide | Status |
+| --- | --- | --- |
+| Hook events with allow and deny decisions | [Hooks](hooks.md) | Roadmap |
+| Desktop notifications | [Notifications](notifications.md) | Roadmap |
+| Skill loading and self-authored skills | [Skills](skills.md) | Roadmap |
+| Plugin packages | [Plugins](plugins.md) | Roadmap |
+| OS sandbox for Bash | [Sandbox](sandbox.md) | Roadmap |
+| MCP client | [MCP servers](mcp.md) | Roadmap |
+| Editor integration over ACP | [ACP](acp.md) | Roadmap |
+| OpenTelemetry export | [Telemetry](telemetry.md) | Roadmap |
+
 ## Build, test, and publish
 
 - [Development](development.md): prerequisites, source-running commands, QA
