@@ -49,6 +49,13 @@ type reviewRun struct {
 	scansDone bool
 	waitNoted bool
 	events    chan tea.Msg
+	// cancel stops the scans; cancelled marks a review the user stopped with
+	// esc, which ends without a triage turn.
+	cancel    context.CancelFunc
+	cancelled bool
+	// steer is what the user typed into the composer while the review ran.
+	// It is the user's own direction, so it rides on the triage prompt.
+	steer []string
 }
 
 // reviewScanMsg is one finished scanner with its blocks already sanitized
@@ -115,8 +122,10 @@ func (a *App) startReview() tea.Cmd {
 		events <- reviewScanMsg{outcome: o, reports: reports, atts: atts, withheld: withheld}
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
 	a.reviewSeq++
 	a.review = &reviewRun{
+		cancel:  cancel,
 		seq:     a.reviewSeq,
 		started: time.Now(),
 		autoFix: autoFix,
@@ -128,11 +137,17 @@ func (a *App) startReview() tea.Cmd {
 	a.addSystem(fmt.Sprintf("▸ vulnetix review started · %d scanners + fix · f9 for output", len(names)-1))
 	a.refreshFooter()
 	scan := func() tea.Msg {
-		rep, err := v.Run(context.Background())
+		rep, err := v.Run(ctx)
 		events <- reviewScansDoneMsg{report: rep, err: err}
 		return nil
 	}
-	return tea.Batch(scan, watchReviewEvents(events), a.armAgentPulse())
+	// The composer shows the review as work in progress, so its spinner
+	// runs; a turn already in flight keeps the one it started.
+	var spin tea.Cmd
+	if a.phase == phaseIdle {
+		spin = a.workSpin.Tick
+	}
+	return tea.Batch(scan, watchReviewEvents(events), a.armAgentPulse(), spin)
 }
 
 // watchReviewEvents delivers a review's next event. Every scanner outcome and
@@ -175,6 +190,11 @@ func (a *App) handleReviewScan(m reviewScanMsg) tea.Cmd {
 	o := m.outcome
 	r.done[o.Name] = true
 	next := watchReviewEvents(r.events)
+	if r.cancelled {
+		// A scanner killed by the cancel: no card, no agent. The stream is
+		// still drained so the closing done message arrives.
+		return next
+	}
 	if o.Name == "fix" {
 		a.addSystem(reviewFixLine(o, r.autoFix))
 		a.refreshFooter()
@@ -296,6 +316,9 @@ func (a *App) handleReviewReport(m reviewReportMsg) tea.Cmd {
 	if r == nil {
 		return nil
 	}
+	if _, ok := r.agents[m.key]; !ok {
+		return nil // an agent the user stopped with the review
+	}
 	delete(r.agents, m.key)
 	switch {
 	case m.body != "":
@@ -328,7 +351,9 @@ func (a *App) handleReviewScansDone(m reviewScansDoneMsg) tea.Cmd {
 	}
 	r.scansDone = true
 	var view tea.Cmd
-	if m.err != nil {
+	if r.cancelled {
+		// The scans were killed: their summary and artifacts are partial.
+	} else if m.err != nil {
 		a.addSystem("vulnetix failed: " + m.err.Error())
 	} else {
 		if m.report.Summary != "" {
@@ -360,13 +385,16 @@ func (a *App) maybeSendReview() tea.Cmd {
 	}
 	a.review = nil
 	a.refreshFooter()
+	if r.cancelled {
+		return nil
+	}
 	elapsed := compactDuration(time.Since(r.started))
 	if len(r.atts) == 0 {
 		a.addSystem("■ vulnetix review done · nothing to triage · " + elapsed)
 		return nil
 	}
 	a.addSystem(fmt.Sprintf("■ vulnetix review done · %s · %s · triage starting", countOf(r.total, "finding"), elapsed))
-	rs := &reviewSend{atts: r.atts, reports: r.reports, findings: r.findings}
+	rs := &reviewSend{atts: r.atts, reports: r.reports, findings: r.findings, steer: r.steer}
 	if a.working() || a.preSend {
 		a.pendingReview = rs
 		return nil
@@ -374,10 +402,91 @@ func (a *App) maybeSendReview() tea.Cmd {
 	return a.sendReview(rs)
 }
 
+// reviewActive reports whether a review is running that the user has not
+// cancelled. It drives the composer's working state, the footer line and the
+// spinner.
+func (a *App) reviewActive() bool {
+	return a.review != nil && !a.review.cancelled
+}
+
+// reviewSteerable reports whether enter in the composer steers the review:
+// a review is running and no turn is in flight, which would take the steer
+// itself.
+func (a *App) reviewSteerable() bool {
+	return a.reviewActive() && !a.working() && !a.preSend
+}
+
+// steerReview records the user's direction for the running review. The scans
+// and scanner agents cannot be redirected mid-run, so it rides on the triage
+// turn's prompt as the user's own words.
+func (a *App) steerReview(input string) tea.Cmd {
+	a.messages = append(a.messages, components.Message{Role: "user", Content: input, Steering: true})
+	a.review.steer = append(a.review.steer, input)
+	a.editor.Reset()
+	a.clearLoadedPrompt()
+	a.clearAutocomplete()
+	a.addSystem("vulnetix review: noted for the triage turn")
+	return nil
+}
+
+// cancelReview stops the running review: the scans are killed, the scanner
+// agents stopped, and no triage turn runs. The stream still drains, so the
+// review clears once the scans have exited.
+func (a *App) cancelReview() {
+	r := a.review
+	if r == nil || r.cancelled {
+		return
+	}
+	r.cancelled = true
+	if r.cancel != nil {
+		r.cancel()
+	}
+	keys := make([]string, 0, len(r.agents))
+	for key := range r.agents {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if a.bgManager != nil && a.bgManager.Stop(key) == nil {
+			a.noteAgentStopped(key)
+		}
+		delete(r.agents, key)
+	}
+	a.addSystem("vulnetix review cancelled")
+	a.refreshFooter()
+}
+
+// reviewComposerTitle is the composer's working title while a review runs:
+// the spinner, a review pill and the progress. ok is false when no review is
+// steerable.
+func (a *App) reviewComposerTitle() (title string, ok bool) {
+	if !a.reviewSteerable() {
+		return "", false
+	}
+	p := a.reviewProgress()
+	progress := fmt.Sprintf("%d/%d", p.Done, p.Total)
+	if len(p.Pending) > 0 {
+		shown := p.Pending
+		if len(shown) > 2 {
+			shown = shown[:2]
+		}
+		progress += " · " + strings.Join(shown, ", ")
+		if n := len(p.Pending) - len(shown); n > 0 {
+			progress += fmt.Sprintf(" +%d", n)
+		}
+	}
+	if p.Agents > 0 {
+		progress += " · " + countOf(p.Agents, "agent")
+	}
+	progress += " · " + p.Elapsed
+	pill := components.Chip("vulnetix review", components.ColorTeal)
+	return a.spinMark() + " " + pill + " " + components.MutedStyle.Render(progress), true
+}
+
 // reviewProgress is the footer's view of the running review.
 func (a *App) reviewProgress() *components.ReviewProgress {
 	r := a.review
-	if r == nil {
+	if r == nil || r.cancelled {
 		return nil
 	}
 	p := &components.ReviewProgress{
