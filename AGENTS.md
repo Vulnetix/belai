@@ -176,8 +176,19 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   apply. When the cap is reached the process is marked `failed` with no
   further model calls.
 - **Skills and hooks validate first.** Skills load only after strict
-  front-matter schema validation; hooks load only after schema validation with
-  no arbitrary code-path injection.
+  front-matter schema validation; hooks load only after strict schema
+  validation (unknown keys rejected) with no arbitrary code-path injection.
+- **Hooks only narrow, and their text classifies.** Hooks come from the
+  global hooks directory only, never a project directory, and each command
+  must resolve inside its own directory. A hook runs after the permission
+  rules: its `deny` withholds, its `ask` asks, and its `allow` never skips an
+  ask or overrides a Deny rule. A blocking hook (`user_prompt_submit`,
+  `pre_tool`, `pre_edit`) that fails, times out or prints anything but a
+  decision denies. Hook text for the model is `KindHook`, which is in
+  `tools.classifierKinds` unconditionally, and is classified separately from
+  the tool result it rides on; a prompt-hook note joins the prompt before
+  admission. A prompt-hook denial reason is shown to the user only. The
+  project layer may turn `hooks.enabled` off, never on.
 
 ## Layout
 

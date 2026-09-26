@@ -1,7 +1,6 @@
 package hooks
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"sort"
@@ -11,7 +10,8 @@ import (
 
 // LoadDir walks dir for *.json hook definitions, validates each one (honouring
 // the hook_invalid posture), and returns them sorted by name. Invalid files
-// are skipped — fail closed: an invalid hook is never loaded.
+// are skipped: fail closed, an invalid hook is never loaded. Each hook's Dir
+// is set to dir, so its command resolves there and nowhere else.
 func LoadDir(dir string, pol posture.Policy) ([]*Hook, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -29,14 +29,15 @@ func LoadDir(dir string, pol posture.Policy) ([]*Hook, error) {
 		if err != nil {
 			continue
 		}
-		var h Hook
-		if err := json.Unmarshal(data, &h); err != nil {
+		h, err := decodeStrict(data)
+		if err != nil {
 			continue
 		}
 		validated, err := ValidateWithPosture(h, pol)
 		if err != nil || validated == nil {
 			continue
 		}
+		validated.Dir = dir
 		out = append(out, validated)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })

@@ -10,7 +10,7 @@ import (
 // bytes the harness did not write, and a remote CLI result carrying
 // third-party repository text.
 func TestArbitraryContentKindsClassify(t *testing.T) {
-	for _, k := range []Kind{KindBash, KindWebFetch, KindWebSearch, KindRead, KindRemote, KindProcess, KindAgentStore, KindSubagent} {
+	for _, k := range []Kind{KindBash, KindWebFetch, KindWebSearch, KindRead, KindRemote, KindProcess, KindAgentStore, KindSubagent, KindHook} {
 		if !k.NeedsClassifier() {
 			t.Errorf("%q result skipped the classifier", k)
 		}
@@ -62,6 +62,7 @@ func TestClassifierKindsIsExactlyTheArbitraryContentSet(t *testing.T) {
 		KindProcessCtl: false,
 		KindAgentStore: true,
 		KindSubagent:   true,
+		KindHook:       true,
 	}
 	for _, k := range AllKinds {
 		if got := k.NeedsClassifier(); got != want[k] {

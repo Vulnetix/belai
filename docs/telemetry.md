@@ -11,7 +11,7 @@ never its content.
 - [What is exported](#what-is-exported)
 - [What is never exported](#what-is-never-exported)
 - [Settings](#settings)
-- [Relationship to SIGNET_TRACE](#relationship-to-signet_trace)
+- [Relationship to the local trace](#relationship-to-the-local-trace)
 
 ## What is exported
 
@@ -70,7 +70,7 @@ drops the whole key from project settings.
 Export is batched on a background goroutine. If the collector is slow or down,
 data is dropped rather than slowing a turn.
 
-## Relationship to SIGNET_TRACE
+## Relationship to the local trace
 
 `SIGNET_TRACE=<file>` keeps working and writes the local JSONL timing trace
 described in [development](development.md). OpenTelemetry export is separate

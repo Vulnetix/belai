@@ -1,7 +1,7 @@
 # Hooks
 
-**Status:** Roadmap. This feature is designed but not yet in a release, so the
-page describes the planned behaviour.
+**Status:** alpha-20260926. Shipped in an early form; the contract may still
+change.
 
 Hooks run a command of yours at fixed points in a session: before and after a
 tool call, when you submit a prompt, when a turn ends, before compaction, and
@@ -11,6 +11,7 @@ hand the model a short note.
 - [Events](#events)
 - [Hook files](#hook-files)
 - [The stdin and stdout contract](#the-stdin-and-stdout-contract)
+- [Where hook text goes](#where-hook-text-goes)
 - [Security model](#security-model)
 - [Settings](#settings)
 - [Limitations](#limitations)
@@ -19,24 +20,27 @@ hand the model a short note.
 
 | Event | Fires | Can block |
 | --- | --- | --- |
-| `session_start` | the TUI opens or resumes a session | no |
-| `session_end` | the session closes | no |
-| `user_prompt_submit` | a prompt is submitted, before the turn starts | yes |
+| `session_start` | the TUI starts, before the first frame | no |
+| `session_end` | the TUI exits | no |
+| `user_prompt_submit` | a prompt is submitted, before any model call | yes (deny) |
 | `pre_tool` | before any tool call runs, after the permission rules | yes |
-| `post_tool` | after a tool call returns | no |
-| `pre_edit` | before a `Write` or `Edit` runs | yes |
-| `post_edit` | after a `Write` or `Edit` succeeds | no |
-| `stop` | a turn ends (agent, plan, or goal pass) | no |
+| `post_tool` | after a tool call returns successfully | no |
+| `pre_edit` | before a `Write` or `Edit` runs, after `pre_tool` | yes |
+| `post_edit` | after a `Write` or `Edit` succeeds, after `post_tool` | no |
+| `stop` | a turn ends | no |
 | `pre_compact` | before `/compact` or automatic compaction | no |
-| `subagent_stop` | an explore or background subagent finishes | no |
+| `subagent_stop` | an explore subagent finishes | no |
 | `notification` | Signet is waiting on you (see [notifications](notifications.md)) | no |
+
+Tool hooks also see the tool calls explore subagents make. A subagent's own
+prompt and turn end do not fire `user_prompt_submit` or `stop`; its end fires
+`subagent_stop` instead.
 
 ## Hook files
 
 Each hook is one JSON file in `~/.vulnetix/signet/hooks/` (or
-`$SIGNET_HOME/hooks/`). Plugins can ship hooks too (see [plugins](plugins.md)).
-There is no project-level hooks directory: a repository never supplies a
-command Signet will run.
+`$SIGNET_HOME/hooks/`). There is no project-level hooks directory: a
+repository never supplies a command Signet will run.
 
 ```json
 {
@@ -50,18 +54,20 @@ command Signet will run.
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| `name` | yes | unique name, shown in the transcript |
+| `name` | yes | unique name, shown in warnings and the trace |
 | `event` | yes | one of the events above |
 | `command` | yes | a path relative to the hooks directory, then arguments. No shell, no metacharacters, no `..` |
-| `matcher` | no | tool-name pattern (`Bash`, `Edit\|Write`, `mcp__*`) for the tool events |
-| `timeout_ms` | no | default 5000, capped at 60000 |
+| `matcher` | no | `\|`-separated glob patterns over the tool name, case-insensitive (`Bash`, `Edit\|Write`, `mcp__*`). Ignored for events without a tool |
+| `timeout_ms` | no | default 5000, at most 60000 |
 
-Any other key fails validation. An invalid file is reported and skipped, under
-the `hook_invalid` posture gate.
+Any other key fails validation, so a typo such as `matchr` cannot silently
+widen a hook to every tool. An invalid file is skipped under the
+`hook_invalid` posture gate. Hooks run in name order.
 
 ## The stdin and stdout contract
 
-The hook receives one JSON object on stdin:
+The hook receives one JSON object on stdin. Fields that do not apply to the
+event are omitted.
 
 ```json
 {
@@ -70,39 +76,67 @@ The hook receives one JSON object on stdin:
   "cwd": "/home/me/project",
   "tool_name": "Bash",
   "tool_input": {"command": "rm -rf build"},
-  "tool_result_summary": null
+  "tool_result_summary": "",
+  "prompt": "",
+  "subagent_id": "",
+  "notification": ""
 }
 ```
 
-It may print one JSON object on stdout:
+`tool_result_summary` is the first 2 KiB of the tool's output, for
+`post_tool` and `post_edit`. `prompt` is set for `user_prompt_submit`.
+
+It may print one JSON object on stdout, or nothing:
 
 ```json
 {"decision": "deny", "reason": "build/ is managed by make", "additional_context": ""}
 ```
 
-- `decision` is `allow`, `deny` or `ask`. It is only read from blocking
-  events. Omitted means no opinion.
-- `reason` is shown to you and, for a denial, returned to the model as the
-  tool result.
+- `decision` is `allow`, `deny` or `ask`, and is only read from the blocking
+  events. Nothing, or `allow`, means no objection. `ask` is ignored for
+  `user_prompt_submit`.
+- `reason` explains a deny or an ask.
 - `additional_context` is a short note for the model.
 
-A non-zero exit from a blocking hook counts as `deny`. So does a timeout, or
-stdout that is not valid JSON. A non-zero exit from a non-blocking hook is
-reported and otherwise ignored.
+For a blocking event, a non-zero exit, a timeout, or stdout that is not a
+single JSON object with a known decision counts as `deny`. For the other
+events a failure is shown as a warning and otherwise ignored. When several
+hooks answer, any `deny` wins over any `ask`, which wins over `allow`.
+
+`reason` and `additional_context` are each capped at 2 KiB, and total output
+at 64 KiB.
+
+## Where hook text goes
+
+- **A denied tool call** returns `tool result withheld: denied by hook
+  "<name>"` to the model, followed by the hook's reason.
+- **A denied prompt** ends the turn with `prompt blocked by hook "<name>"`
+  and the reason, flattened to one line. It is shown to you and never sent to
+  a model.
+- **`additional_context` from tool hooks** is appended to that tool's result.
+- **`additional_context` from `user_prompt_submit`** is appended to your
+  prompt, marked as untrusted hook context, before the prompt classifier
+  reads it.
 
 ## Security model
 
-- A hook cannot widen permissions. `allow` from a hook never overrides a
-  `deny` or `block` permission rule, and `ask` still asks.
-- `additional_context` and a denial `reason` are text a program you did not
-  necessarily write produced, so they carry a dedicated tool kind (`hook`)
-  that is always sanitized and always classified. They ride back as a sealed
-  attachment on the next turn, never in the system block.
-- Commands run without a shell, from the hooks directory, with the scrubbed
-  environment used for Bash (no `*_API_KEY`, `*_TOKEN`, `*_SECRET`,
-  `SIGNET_*`), plus the `SIGNET_SESSION_ID` and `TRACEPARENT` identity
-  variables. A command path that resolves outside the hooks directory,
-  including through a symlink, is refused.
+- A hook cannot widen permissions. It runs after the permission rules, so a
+  `deny` rule wins before any hook runs. A hook's `allow` never skips an ask a
+  rule or the mutating-tool default demanded. A hook's `ask` raises the
+  permission ask even for a call a rule allowed; with the ask gate off it
+  resolves like any other ask.
+- Hook text reaching the model carries its own tool kind, `hook`, which is
+  always sanitized and always classified. It classifies separately from the
+  tool result it rides on, so it cannot get a clean result withheld and a
+  clean result cannot vouch for it. The prompt-hook context is read by the
+  prompt classifier along with the prompt. Hook text never enters the system
+  block.
+- Commands run without a shell, from their own directory, in their own
+  process group, with the scrubbed environment used for Bash (no
+  `*_API_KEY`, `*_TOKEN`, `*_SECRET`, `SIGNET_*` from your shell) plus the
+  identity variables `SIGNET=1`, `SIGNET_SESSION_ID` and `TRACEPARENT`. A
+  command path that resolves outside the hooks directory, including through
+  a symlink, is refused.
 - Hooks are your configuration, so they run with guardrails on or off. Only
   the classification of their output follows the guardrails switch.
 
@@ -118,7 +152,15 @@ reported and otherwise ignored.
 
 The project layer may set `hooks.enabled` to `false`, never to `true`.
 
+Each run is recorded in the `SIGNET_TRACE` file under the `hook` phase with
+its decision, the number of hooks that ran, and how many failed.
+
 ## Limitations
 
-- Hooks are read at session start. Adding a file needs a new session.
-- Output is capped at 64 KiB, and `additional_context` at 2 KiB.
+- Hooks are read when a session is built. A new file is picked up the next
+  time the session is rebuilt (a new session, `/clear`, or a mode or model
+  change).
+- `session_start`, `session_end` and `pre_compact` from `/compact` fire from
+  the TUI only; headless `-prompt` runs fire the tool, prompt, `stop` and
+  automatic compaction events.
+- `post_tool` does not fire for a call that failed to execute.

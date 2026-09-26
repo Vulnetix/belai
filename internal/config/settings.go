@@ -90,6 +90,8 @@ type Settings struct {
 	Routing *RoutingSettings `json:"routing,omitempty"`
 	// LSP configures language-server diagnostics.
 	LSP *LSPSettings `json:"lsp,omitempty"`
+	// Hooks configures user hook commands (docs/hooks.md).
+	Hooks *HooksSettings `json:"hooks,omitempty"`
 	// Sweep enables the background filesystem sweep for .vulnetix projects.
 	VulnetixSweepEnabled *bool `json:"vulnetix_sweep_enabled,omitempty"`
 	// SweepRoots restricts the sweep to a list of paths. Empty means $HOME and
@@ -138,6 +140,18 @@ type VulnetixSettings struct {
 	// changes is checked with the Vulnetix CLI when the change added or
 	// updated dependencies. Default true; false turns the hook off.
 	DepWatch *bool `json:"dep_watch,omitempty"`
+}
+
+// HooksSettings configures user hook commands.
+type HooksSettings struct {
+	// Enabled runs hooks. Default true; a repo-visible project layer may
+	// turn it off, never on.
+	Enabled *bool `json:"enabled,omitempty"`
+}
+
+// HooksEnabled reports whether hooks run. Default true.
+func (s *HooksSettings) HooksEnabled() bool {
+	return s == nil || s.Enabled == nil || *s.Enabled
 }
 
 // DepWatchEnabled reports whether the dependency-manifest hook runs. Default
@@ -893,6 +907,12 @@ func (s Settings) Override(proj Settings) Settings {
 			out.Vulnetix = &VulnetixSettings{}
 		}
 		out.Vulnetix.FirewallEnabled = &f
+	}
+	// Hooks are the user's own commands: a project file may turn them off,
+	// never on.
+	if proj.Hooks != nil && proj.Hooks.Enabled != nil && !*proj.Hooks.Enabled {
+		f := false
+		out.Hooks = &HooksSettings{Enabled: &f}
 	}
 	// Likewise the dependency hook: a project file may turn it on, never off.
 	if proj.Vulnetix != nil && proj.Vulnetix.DepWatch != nil && *proj.Vulnetix.DepWatch {

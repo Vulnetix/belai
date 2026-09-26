@@ -10,6 +10,7 @@ import (
 	"github.com/vulnetix/signet/internal/agentpool"
 	"github.com/vulnetix/signet/internal/delimiters"
 	"github.com/vulnetix/signet/internal/explore"
+	"github.com/vulnetix/signet/internal/hooks"
 	"github.com/vulnetix/signet/internal/modes"
 	"github.com/vulnetix/signet/internal/nonce"
 	"github.com/vulnetix/signet/internal/posture"
@@ -372,10 +373,12 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task, g Grounding, 
 		SkipNonceSeed: true,    // the subagent re-seeds locally below
 		RepoMap:       s.repoMap,
 		SessionID:     s.sessionID,
+		Hooks:         s.hookSet, // tool hooks see subagent calls too
 	})
 	if err != nil {
 		return ""
 	}
+	defer s.FireHook(context.WithoutCancel(ctx), hooks.Input{Event: hooks.EventSubagentStop, Subagent: id})
 	sub.exploreSubagent = true
 	sub.scope = t.Scope
 	sub.steerSource = func() string {

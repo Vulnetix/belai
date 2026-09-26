@@ -44,6 +44,11 @@ const (
 	// a read-only subagent. Because the report is model-written arbitrary
 	// text, it always classifies before promotion.
 	KindSubagent Kind = "subagent"
+	// KindHook is text a user hook command wrote for the model: its
+	// additional_context and denial reasons. The command may be a plugin's,
+	// so the text is arbitrary and always classifies. No tool has this kind;
+	// the agent tags hook text with it before promotion.
+	KindHook Kind = "hook"
 )
 
 // AllKinds is every registered Kind, in declaration order. Tests iterate it to
@@ -52,7 +57,7 @@ const (
 var AllKinds = []Kind{
 	KindRead, KindWebSearch, KindWebFetch, KindBash, KindGrep, KindGlob,
 	KindExplore, KindWrite, KindEdit, KindNative, KindRemote, KindUpdatePlan,
-	KindProcess, KindProcessCtl, KindAgentStore, KindSubagent,
+	KindProcess, KindProcessCtl, KindAgentStore, KindSubagent, KindHook,
 }
 
 // readOnlyKinds is the closed allowlist of kinds that only read. A Kind absent

@@ -196,6 +196,14 @@ func (e *Effective) apply(s Settings, src Source) {
 			e.Origin["firewall_enabled"] = src
 		}
 	}
+	if s.Hooks != nil && s.Hooks.Enabled != nil {
+		// Hooks run the user's own commands; a repo-visible project layer may
+		// turn them off, never on.
+		if !*s.Hooks.Enabled || src != SourceProject {
+			e.Settings.Hooks = &HooksSettings{Enabled: s.Hooks.Enabled}
+			e.Origin["hooks_enabled"] = src
+		}
+	}
 	if s.Vulnetix != nil && s.Vulnetix.DepWatch != nil {
 		// The dependency hook is a check, like the guardrails: a repo-visible
 		// project layer may turn it on but never off, so a cloned repository
