@@ -755,3 +755,31 @@ func TestGoalExploreOverridePrecedence(t *testing.T) {
 		t.Fatal("project false must replace global true")
 	}
 }
+
+func TestSyncDefaultsOnAndRemotePromptsFollowSync(t *testing.T) {
+	if !(Settings{}).SyncEnabled() || !(Settings{}).SyncRemotePromptsEnabled() {
+		t.Fatal("sync and web prompts must default on")
+	}
+	off := false
+	s := Settings{Sync: &SyncSettings{Enabled: &off}}
+	if s.SyncEnabled() || s.SyncRemotePromptsEnabled() {
+		t.Fatal("sync off must also turn web prompts off")
+	}
+	s = Settings{Sync: &SyncSettings{RemotePrompts: &off}}
+	if !s.SyncEnabled() || s.SyncRemotePromptsEnabled() {
+		t.Fatal("remote_prompts=false must leave sync on, view-only")
+	}
+}
+
+func TestSyncProjectMayTurnOffNeverOn(t *testing.T) {
+	on, off := true, false
+	global := Settings{Sync: &SyncSettings{Enabled: &off, RemotePrompts: &off}}
+	got := global.Override(Settings{Sync: &SyncSettings{Enabled: &on, RemotePrompts: &on}})
+	if got.SyncEnabled() || got.SyncRemotePromptsEnabled() {
+		t.Fatal("project settings must not be able to turn sync on")
+	}
+	got = (Settings{}).Override(Settings{Sync: &SyncSettings{RemotePrompts: &off}})
+	if !got.SyncEnabled() || got.SyncRemotePromptsEnabled() {
+		t.Fatal("project settings must be able to turn web prompts off")
+	}
+}

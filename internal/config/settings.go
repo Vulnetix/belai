@@ -108,6 +108,10 @@ type Settings struct {
 	// (docs/notifications.md). A per-user preference: the project layer
 	// cannot set it.
 	Notifications *NotificationSettings `json:"notifications,omitempty"`
+	// Sync mirrors session transcripts to the Vulnetix website while Belai is
+	// logged in with the Vulnetix CLI (docs/session-sync.md). The project
+	// layer may turn it off, never on.
+	Sync *SyncSettings `json:"sync,omitempty"`
 	// Sweep enables the background filesystem sweep for .vulnetix projects.
 	VulnetixSweepEnabled *bool `json:"vulnetix_sweep_enabled,omitempty"`
 	// SweepRoots restricts the sweep to a list of paths. Empty means $HOME and
@@ -134,6 +138,45 @@ type Settings struct {
 	// TokenBudgets caps the tokens each provider+model may spend per session,
 	// day or month. Global only: the project layer is dropped in Resolve.
 	TokenBudgets []TokenBudget `json:"token_budgets,omitempty"`
+}
+
+// SyncSettings configures session sync (docs/session-sync.md).
+type SyncSettings struct {
+	// Enabled mirrors each session's JSONL to the Vulnetix website. Default
+	// true whenever a Vulnetix CLI credential resolves; false turns it off.
+	Enabled *bool `json:"enabled,omitempty"`
+	// RemotePrompts lets the website send prompts into a live session. Default
+	// true; false shares the session view-only.
+	RemotePrompts *bool `json:"remote_prompts,omitempty"`
+}
+
+// mergeSyncOffOnly applies a project layer's sync keys over base, honouring
+// only false. It never mutates base.
+func mergeSyncOffOnly(base, proj *SyncSettings) *SyncSettings {
+	out := &SyncSettings{}
+	if base != nil {
+		*out = *base
+	}
+	f := false
+	if proj.Enabled != nil && !*proj.Enabled {
+		out.Enabled = &f
+	}
+	if proj.RemotePrompts != nil && !*proj.RemotePrompts {
+		out.RemotePrompts = &f
+	}
+	return out
+}
+
+// SyncEnabled reports whether session sync is on. Default on; it still needs
+// a Vulnetix CLI credential to do anything.
+func (s Settings) SyncEnabled() bool {
+	return s.Sync == nil || s.Sync.Enabled == nil || *s.Sync.Enabled
+}
+
+// SyncRemotePromptsEnabled reports whether a synced session accepts prompts
+// from the website. Default on, and never on while sync itself is off.
+func (s Settings) SyncRemotePromptsEnabled() bool {
+	return s.SyncEnabled() && (s.Sync == nil || s.Sync.RemotePrompts == nil || *s.Sync.RemotePrompts)
 }
 
 // VulnetixSettings is the per-project /vulnetix configuration.
@@ -1105,6 +1148,11 @@ func (s Settings) Override(proj Settings) Settings {
 			out.Vulnetix = &VulnetixSettings{}
 		}
 		out.Vulnetix.FirewallEnabled = &f
+	}
+	// Session sync sends transcripts off the machine: a project file may turn
+	// it (or its web prompts) off, never on.
+	if proj.Sync != nil {
+		out.Sync = mergeSyncOffOnly(out.Sync, proj.Sync)
 	}
 	// Hooks are the user's own commands: a project file may turn them off,
 	// never on.

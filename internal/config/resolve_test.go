@@ -478,3 +478,37 @@ func TestResolveDepWatchDirection(t *testing.T) {
 		t.Error("Override must not let a project file turn it off")
 	}
 }
+
+func TestResolveSyncProjectOffOnly(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	workdir := t.TempDir()
+	off, on := false, true
+
+	if err := SaveGlobal(Settings{Sync: &SyncSettings{Enabled: &off}}); err != nil {
+		t.Fatalf("SaveGlobal: %v", err)
+	}
+	if err := SaveProject(workdir, Settings{Sync: &SyncSettings{Enabled: &on}}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	eff, err := Resolve(workdir, func(string) string { return "" }, Settings{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if eff.Settings.SyncEnabled() {
+		t.Fatal("a project layer must not turn sync on")
+	}
+
+	if err := SaveGlobal(Settings{}); err != nil {
+		t.Fatalf("SaveGlobal: %v", err)
+	}
+	if err := SaveProject(workdir, Settings{Sync: &SyncSettings{RemotePrompts: &off}}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	eff, err = Resolve(workdir, func(string) string { return "" }, Settings{})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if !eff.Settings.SyncEnabled() || eff.Settings.SyncRemotePromptsEnabled() {
+		t.Fatal("a project layer must be able to make the session view-only")
+	}
+}

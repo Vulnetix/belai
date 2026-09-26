@@ -143,7 +143,8 @@ func messagesFromEntries(entries []session.Entry) ([]components.Message, int) {
 	for i, e := range emit {
 		switch e.Type {
 		case "user":
-			msgs = append(msgs, components.Message{Role: "user", Content: e.Content})
+			remoteID, _ := e.Meta["remote_prompt_id"].(string)
+			msgs = append(msgs, components.Message{Role: "user", Content: e.Content, RemoteID: remoteID})
 		case "assistant":
 			var kept []components.AgentToolCall
 			for _, c := range assistantToolCalls(e.Meta) {

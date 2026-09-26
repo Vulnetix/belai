@@ -262,6 +262,11 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("lsp", "manage language-server diagnostics", nil, func(a *App, arg string) tea.Cmd {
 		return a.push(viewLSP)
 	})
+	r.Register("sync", "show or change session sync to the Vulnetix website", func() []string {
+		return []string{"status", "on", "off", "backfill"}
+	}, func(a *App, arg string) tea.Cmd {
+		return a.syncCommand(arg)
+	})
 	r.Register("budgets", "manage token budgets per provider and model", nil, func(a *App, arg string) tea.Cmd {
 		return a.openBudgets()
 	})

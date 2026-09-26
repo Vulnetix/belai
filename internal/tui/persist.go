@@ -183,7 +183,7 @@ func (a *App) persistMessage(i int) {
 	m := a.messages[i]
 	switch m.Role {
 	case "user":
-		a.appendEntry(timedEntry(m, session.Entry{Type: "user", Role: "user", Content: m.Text()}))
+		a.appendEntry(timedEntry(m, userEntry(m)))
 	case "assistant":
 		meta := map[string]any{
 			"model":    a.cfg.Model,
