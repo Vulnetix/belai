@@ -611,7 +611,7 @@ func (s *Session) RunObserved(ctx context.Context, userPrompt string, emit func(
 // run is the shared loop body for both transports. Order is identical to the
 // pre-refactor Run: sanitize → Admit → Select → CarrierOptions → SealSystem →
 // bounded loop → CheckToolCalls → executeCall.
-func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, streaming bool, emit func(Event)) (run.Result, error) {
+func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput, streaming bool, emit func(Event)) (run.Result, error) {
 	turnStart := time.Now()
 	defer func() { s.trace.Event("agent", "turn", time.Since(turnStart)) }()
 	ctx = calltrace.WithSession(ctx, s.sessionID)
@@ -1269,7 +1269,7 @@ type callEffect struct {
 
 // executeCall runs one tool call and returns the string the conversation sees.
 // eff, when non-nil, receives the harness-observed disk effect of the call.
-func (s *Session) executeCall(ctx context.Context, call rolemanager.ToolCall, emit func(Event), eff *callEffect) string {
+func (s *Session) executeCallInner(ctx context.Context, call rolemanager.ToolCall, emit func(Event), eff *callEffect) string {
 	tool, refusal := s.execTool(call.Name)
 	if tool == nil {
 		return refusal

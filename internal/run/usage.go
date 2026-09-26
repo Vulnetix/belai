@@ -26,8 +26,9 @@ type UsageEvent struct {
 type UsageObserver func(UsageEvent)
 
 var (
-	usageObserver atomic.Pointer[UsageObserver]
-	usageMu       sync.Mutex
+	usageObserver  atomic.Pointer[UsageObserver]
+	telemetryUsage atomic.Pointer[UsageObserver]
+	usageMu        sync.Mutex
 )
 
 // SetUsageObserver registers the process-wide usage observer and returns a
@@ -54,15 +55,21 @@ func SetUsageObserver(fn UsageObserver) (cancel func()) {
 // fails or is cancelled before it completes reports nothing: providers send
 // usage only with the completed response.
 func reportUsage(cfg Config, system string, turns []Turn, a Assistant) {
-	obs := usageObserver.Load()
-	if obs == nil {
+	obs, tel := usageObserver.Load(), telemetryUsage.Load()
+	if obs == nil && tel == nil {
 		return
 	}
 	tokens, estimated := callTokens(system, turns, a)
 	if tokens <= 0 {
 		return
 	}
-	(*obs)(UsageEvent{Provider: cfg.Provider, Model: cfg.Model, Tokens: tokens, Estimated: estimated})
+	ev := UsageEvent{Provider: cfg.Provider, Model: cfg.Model, Tokens: tokens, Estimated: estimated}
+	if obs != nil {
+		(*obs)(ev)
+	}
+	if tel != nil {
+		(*tel)(ev)
+	}
 }
 
 // callTokens returns the provider-reported total for a call, or, when the
@@ -100,4 +107,15 @@ func toolCallTokens(name string, args map[string]any) int {
 		}
 	}
 	return (n + 3) / 4
+}
+
+// SetTelemetryUsage registers a second, independent usage observer for
+// OpenTelemetry export, so it never displaces the budget ledger's. nil
+// detaches it.
+func SetTelemetryUsage(fn UsageObserver) {
+	if fn == nil {
+		telemetryUsage.Store(nil)
+		return
+	}
+	telemetryUsage.Store(&fn)
 }

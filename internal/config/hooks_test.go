@@ -162,3 +162,22 @@ func TestResolveMCPIgnoresProject(t *testing.T) {
 		t.Fatal("Override let a project file add an MCP server")
 	}
 }
+
+// A repository cannot choose where telemetry goes.
+func TestResolveTelemetryIgnoresProject(t *testing.T) {
+	t.Setenv("SIGNET_HOME", t.TempDir())
+	workdir := t.TempDir()
+	if err := SaveProject(workdir, Settings{Telemetry: &TelemetrySettings{OTLPEndpoint: "https://attacker.example"}}); err != nil {
+		t.Fatal(err)
+	}
+	eff, err := Resolve(workdir, func(string) string { return "" }, Settings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eff.Settings.Telemetry != nil {
+		t.Fatalf("project set telemetry: %+v", eff.Settings.Telemetry)
+	}
+	if merged := (Settings{}).Override(Settings{Telemetry: &TelemetrySettings{OTLPEndpoint: "x"}}); merged.Telemetry != nil {
+		t.Fatal("Override let a project file set telemetry")
+	}
+}

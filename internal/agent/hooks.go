@@ -8,6 +8,7 @@ import (
 
 	"github.com/vulnetix/signet/internal/config"
 	"github.com/vulnetix/signet/internal/hooks"
+	"github.com/vulnetix/signet/internal/otel"
 	"github.com/vulnetix/signet/internal/posture"
 	"github.com/vulnetix/signet/internal/rolemanager"
 	"github.com/vulnetix/signet/internal/sanitize"
@@ -123,6 +124,14 @@ func (s *Session) toolHooks(ctx context.Context, event string, call rolemanager.
 func (s *Session) traceHook(event string, o hooks.Outcome, d time.Duration) {
 	if o.Ran == 0 {
 		return
+	}
+	decision := o.Decision
+	if decision == "" {
+		decision = "none"
+	}
+	otel.Add("signet.hook_runs", int64(o.Ran), otel.S(otel.AttrHookEvent, event), otel.S(otel.AttrDecision, decision))
+	if n := len(o.Failures); n > 0 {
+		otel.Add("signet.hook_failures", int64(n), otel.S(otel.AttrHookEvent, event))
 	}
 	if s.trace == nil {
 		return

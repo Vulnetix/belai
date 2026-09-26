@@ -93,6 +93,12 @@ func WithTool(ctx context.Context, tool, callID string) context.Context {
 // SessionID returns the session id carried on ctx, or "".
 func SessionID(ctx context.Context) string { return from(ctx).sessionID }
 
+// TraceID returns the W3C trace-id carried on ctx, or "".
+func TraceID(ctx context.Context) string { return from(ctx).traceID }
+
+// SpanID returns the span-id of the tool call carried on ctx, or "".
+func SpanID(ctx context.Context) string { return from(ctx).spanID }
+
 // Build returns the client build string: "<commit>; <build date>" plus
 // "; <variant>" when the binary has one.
 func Build() string {
