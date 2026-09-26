@@ -1,9 +1,9 @@
-// Package selfupdate checks the Signet GitHub releases for a newer version of
+// Package selfupdate checks the Belai GitHub releases for a newer version of
 // this binary and renders the upgrade command that matches how the binary was
 // installed (Homebrew tap, Scoop bucket, `go install`, or a direct download).
 //
 // It is a read-only check: nothing is downloaded or executed. The result is
-// surfaced in the TUI banner and as one signet-panel notice, and the user
+// surfaced in the TUI banner and as one belai-panel notice, and the user
 // runs the upgrade themselves.
 //
 // Version parsing and install-method detection are reused from
@@ -24,9 +24,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/version"
-	"github.com/vulnetix/signet/internal/vulnetixcli"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/version"
+	"github.com/vulnetix/belai/internal/vulnetixcli"
 )
 
 // releaseCacheTTL is how long a release probe stays valid. GitHub's
@@ -37,7 +37,7 @@ const releaseCacheTTL = 6 * time.Hour
 // repo is the releases repository this binary is built from.
 const (
 	repoOwner = "Vulnetix"
-	repoName  = "signet"
+	repoName  = "belai"
 )
 
 // Status is the outcome of an update check.
@@ -98,7 +98,7 @@ func Enabled(getenv func(string) string, settingsEnabled bool) bool {
 	if getenv == nil {
 		getenv = os.Getenv
 	}
-	switch strings.TrimSpace(getenv("SIGNET_NO_UPDATE_CHECK")) {
+	switch strings.TrimSpace(getenv("BELAI_NO_UPDATE_CHECK")) {
 	case "1", "true", "yes":
 		return false
 	}
@@ -189,28 +189,28 @@ func upgradeHint(m vulnetixcli.InstallMethod, tag string, opts Options) (string,
 
 	switch m {
 	case vulnetixcli.InstallBrew:
-		// The tapped name, not bare "signet": Homebrew also knows an
+		// The tapped name, not bare "belai": Homebrew also knows an
 		// unrelated cask by that name.
-		return "brew upgrade --formula vulnetix/tap/signet", ""
+		return "brew upgrade --formula vulnetix/tap/belai", ""
 	case vulnetixcli.InstallScoop:
-		return "scoop update signet", ""
+		return "scoop update belai", ""
 	case vulnetixcli.InstallGo:
-		return "go install github.com/vulnetix/signet/cmd/signet@latest", ""
+		return "go install github.com/vulnetix/belai/cmd/belai@latest", ""
 	}
 
 	asset := AssetURL(tag, goos, goarch)
 	if goos == "windows" {
 		return "download " + asset, asset
 	}
-	return "curl -fsSL https://raw.githubusercontent.com/Vulnetix/signet/main/install.sh | sh", asset
+	return "curl -fsSL https://raw.githubusercontent.com/Vulnetix/belai/main/install.sh | sh", asset
 }
 
 // AssetURL returns the release download URL for one platform. Asset names
-// match .github/workflows/release.yml: signet[-variant]-<goos>-<goarch>[.exe].
+// match .github/workflows/release.yml: belai[-variant]-<goos>-<goarch>[.exe].
 // The variant suffix comes from version.Variant so a guardrails binary updates
-// to a guardrails binary and a vanilla binary keeps the plain signet asset.
+// to a guardrails binary and a vanilla binary keeps the plain belai asset.
 func AssetURL(tag, goos, goarch string) string {
-	name := "signet"
+	name := "belai"
 	if version.Variant != "" {
 		name += "-" + version.Variant
 	}
@@ -238,7 +238,7 @@ func latestRelease(ctx context.Context, opts Options, getenv func(string) string
 	}
 
 	base := "https://api.github.com"
-	if v := strings.TrimSpace(getenv("SIGNET_GITHUB_API_BASE")); v != "" {
+	if v := strings.TrimSpace(getenv("BELAI_GITHUB_API_BASE")); v != "" {
 		base = strings.TrimRight(v, "/")
 	}
 
@@ -288,7 +288,7 @@ func cachePath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(gd, "signet-release.json"), nil
+	return filepath.Join(gd, "belai-release.json"), nil
 }
 
 func loadCache(path string) (*releaseCache, error) {
@@ -323,7 +323,7 @@ func (s Status) BannerNote() string {
 	return "update " + s.Latest.String() + " available"
 }
 
-// Notice is the multi-line signet-panel message, or "" when there is nothing
+// Notice is the multi-line belai-panel message, or "" when there is nothing
 // to say. It states both versions, how to update on this machine, and where
 // the release lives.
 func (s Status) Notice() string {
@@ -331,7 +331,7 @@ func (s Status) Notice() string {
 		return ""
 	}
 	lines := []string{
-		fmt.Sprintf("signet %s is available (running %s)", s.Latest.String(), s.Current.String()),
+		fmt.Sprintf("belai %s is available (running %s)", s.Latest.String(), s.Current.String()),
 	}
 	if s.Command != "" {
 		lines = append(lines, "update: "+s.Command)

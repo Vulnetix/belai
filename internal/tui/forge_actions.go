@@ -9,8 +9,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/clipboard"
-	"github.com/vulnetix/signet/internal/forge"
+	"github.com/vulnetix/belai/internal/clipboard"
+	"github.com/vulnetix/belai/internal/forge"
 )
 
 // forgeInputKind is the composer prompt a forge action is waiting on.
@@ -351,7 +351,7 @@ func (a *App) switchWorktree(wt forge.Worktree) tea.Cmd {
 	}
 	rel, err := filepath.Rel(a.workdir, wt.Path)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		a.addSystem("worktree " + displayPath(wt.Path) + " is outside the session root; start signet there to work in it")
+		a.addSystem("worktree " + displayPath(wt.Path) + " is outside the session root; start belai there to work in it")
 		return nil
 	}
 	sess, err := a.agentSession()

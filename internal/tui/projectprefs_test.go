@@ -5,14 +5,14 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/credentials"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/credentials"
 )
 
 // Each session toggle writes its own per-project preference, and a fresh App
 // over the same workdir reopens with it.
 func TestSessionTogglesPersistToProjectPrefsAndReopen(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 
 	a := New(Options{Workdir: workdir})
@@ -64,7 +64,7 @@ func TestSessionTogglesPersistToProjectPrefsAndReopen(t *testing.T) {
 // /yolo on persists both relaxations; /yolo off clears the prefs so leaving
 // yolo does not re-inherit a stale persisted relaxation.
 func TestYoloOffClearsGuardrailsAndAskPrefs(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir})
 
@@ -90,7 +90,7 @@ func TestYoloOffClearsGuardrailsAndAskPrefs(t *testing.T) {
 // Turning the firewall off never needs availability, so it must write the pref
 // even though turning it on is gated.
 func TestToggleFirewallOffPersistsPref(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir})
 	resolver, err := credentials.NewResolver(workdir)

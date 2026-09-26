@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 func testSpec(t *testing.T) (Spec, string) {

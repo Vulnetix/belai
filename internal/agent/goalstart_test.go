@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/run"
 )
 
 // TestJoinGoalDraftNamesTheFailure checks that a failed draft says why it

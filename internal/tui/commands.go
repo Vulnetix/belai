@@ -10,14 +10,14 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/agentprofile"
-	"github.com/vulnetix/signet/internal/commands"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/fuzzy"
-	"github.com/vulnetix/signet/internal/profiles"
-	"github.com/vulnetix/signet/internal/provider"
-	"github.com/vulnetix/signet/internal/tools"
-	"github.com/vulnetix/signet/internal/vulnetixcli"
+	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/commands"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/fuzzy"
+	"github.com/vulnetix/belai/internal/profiles"
+	"github.com/vulnetix/belai/internal/provider"
+	"github.com/vulnetix/belai/internal/tools"
+	"github.com/vulnetix/belai/internal/vulnetixcli"
 )
 
 // Handler runs a slash command with its argument.
@@ -315,7 +315,7 @@ func NewRegistry(workdir string) *Registry {
 		}
 		return a.push(viewResume)
 	})
-	r.Register("plugin", "list, enable, disable or remove plugins (install with signet plugin install)", nil, func(a *App, arg string) tea.Cmd {
+	r.Register("plugin", "list, enable, disable or remove plugins (install with belai plugin install)", nil, func(a *App, arg string) tea.Cmd {
 		a.addSystem(pluginCommand(arg))
 		return nil
 	})

@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
-// History import. The ledger counts every call from the moment a signet with
+// History import. The ledger counts every call from the moment a belai with
 // token budgets runs; sessions saved before that, or by an older binary still
 // running, are known only through their transcripts. ImportHistory folds each
 // transcript the ledger has never seen into the day totals once, so day and

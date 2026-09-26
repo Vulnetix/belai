@@ -3,9 +3,9 @@ package tui
 import (
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/vulnetix/signet/internal/session"
-	"github.com/vulnetix/signet/internal/todos"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/todos"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // todosVisible gates the panel on the ui.show_todos setting and on there being

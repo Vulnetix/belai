@@ -18,7 +18,7 @@ type Editor struct {
 // NewEditor returns a focused input editor.
 func NewEditor() Editor {
 	ta := textarea.New()
-	ta.Placeholder = "Type / for commands, or ask Signet anything…"
+	ta.Placeholder = "Type / for commands, or ask Belai anything…"
 	ta.ShowLineNumbers = false
 	ta.SetHeight(3)
 	ta.SetWidth(80)
@@ -138,7 +138,7 @@ func (e *Editor) Update(msg tea.Msg) tea.Cmd {
 	// ctrl+arrow in a form bubbletea decodes with the alt flag set (urxvt's
 	// \x1b[Od, xterm's \x1b[1;7D), which String() would render as an alt
 	// chord and no case would catch. The type is the same either way, and
-	// Signet treats a stray alt bit on these two keys as noise.
+	// Belai treats a stray alt bit on these two keys as noise.
 	if k, ok := msg.(tea.KeyMsg); ok && e.textarea.Focused() {
 		switch k.Type {
 		case tea.KeyCtrlLeft:

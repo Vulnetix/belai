@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vulnetix/signet/internal/otel"
-	"github.com/vulnetix/signet/internal/trace"
+	"github.com/vulnetix/belai/internal/otel"
+	"github.com/vulnetix/belai/internal/trace"
 )
 
 var (
@@ -41,7 +41,7 @@ func recordModel(e Event, verdict, subject, detail string, pass int, model strin
 func recordTimed(e Event, verdict, subject, detail string, pass int, model string, took time.Duration) {
 	// Only the decision's name and its verdict word are exported; the subject
 	// and detail stay local.
-	otel.Add("signet.role_decisions", 1, otel.S(otel.AttrRole, string(e)), otel.S(otel.AttrVerdict, verdict))
+	otel.Add("belai.role_decisions", 1, otel.S(otel.AttrRole, string(e)), otel.S(otel.AttrVerdict, verdict))
 	if w := traceWriter(); w != nil {
 		rec := trace.Record{
 			Phase:   "rolemanager",

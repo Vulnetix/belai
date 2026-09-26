@@ -1,8 +1,8 @@
 #!/bin/sh
 #
-# Signet installer.
+# Belai installer.
 #
-#   curl -fsSL https://raw.githubusercontent.com/vulnetix/signet/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/vulnetix/belai/main/install.sh | sh
 #
 # Downloads the release binary for this platform, verifies it against the
 # release checksums, and installs it. Run with --help for options.
@@ -11,9 +11,9 @@ set -e
 
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 VERSION="${VERSION:-latest}"
-VARIANT="${SIGNET_VARIANT:-bert-guardrails}"
-BINARY_NAME="signet"
-GITHUB_REPO="Vulnetix/signet"
+VARIANT="${BELAI_VARIANT:-bert-guardrails}"
+BINARY_NAME="belai"
+GITHUB_REPO="Vulnetix/belai"
 GITHUB_BASE="https://github.com/${GITHUB_REPO}/releases"
 
 # ---------------------------------------------------------------------------
@@ -47,13 +47,13 @@ Options:
 Environment variables:
   INSTALL_DIR          Overrides --install-dir
   VERSION              Overrides --version
-  SIGNET_VARIANT       Overrides --variant
+  BELAI_VARIANT       Overrides --variant
 
 Examples:
-  curl -fsSL https://raw.githubusercontent.com/vulnetix/signet/main/install.sh | sh
-  curl -fsSL https://raw.githubusercontent.com/vulnetix/signet/main/install.sh | sh -s -- --install-dir ~/.local/bin
-  curl -fsSL https://raw.githubusercontent.com/vulnetix/signet/main/install.sh | sh -s -- --version v0.1.1
-  curl -fsSL https://raw.githubusercontent.com/vulnetix/signet/main/install.sh | sh -s -- --variant bert-guardrails-jailbreak
+  curl -fsSL https://raw.githubusercontent.com/vulnetix/belai/main/install.sh | sh
+  curl -fsSL https://raw.githubusercontent.com/vulnetix/belai/main/install.sh | sh -s -- --install-dir ~/.local/bin
+  curl -fsSL https://raw.githubusercontent.com/vulnetix/belai/main/install.sh | sh -s -- --version v0.1.1
+  curl -fsSL https://raw.githubusercontent.com/vulnetix/belai/main/install.sh | sh -s -- --variant bert-guardrails-jailbreak
 EOF
       exit 0
       ;;
@@ -71,10 +71,10 @@ done
 
 resolve_asset_name() {
   case "$1" in
-    ""|vanilla)          ASSET_NAME="signet" ;;
-    no-classifier)       ASSET_NAME="signet-no-classifier" ;;
-    bert-guardrails)     ASSET_NAME="signet-bert-guardrails" ;;
-    bert-guardrails-jailbreak) ASSET_NAME="signet-bert-guardrails-jailbreak" ;;
+    ""|vanilla)          ASSET_NAME="belai" ;;
+    no-classifier)       ASSET_NAME="belai-no-classifier" ;;
+    bert-guardrails)     ASSET_NAME="belai-bert-guardrails" ;;
+    bert-guardrails-jailbreak) ASSET_NAME="belai-bert-guardrails-jailbreak" ;;
     *)
       echo "error: unknown variant: $1 (want bert-guardrails, bert-guardrails-jailbreak, no-classifier, or vanilla)" >&2
       exit 1
@@ -98,7 +98,7 @@ detect_os() {
   esac
 }
 
-# Signet publishes amd64 and arm64 only. Anything else is named explicitly so
+# Belai publishes amd64 and arm64 only. Anything else is named explicitly so
 # the failure says what is missing rather than 404ing on an asset URL later.
 detect_arch() {
   case "$(uname -m 2>/dev/null)" in
@@ -106,8 +106,8 @@ detect_arch() {
     arm64|aarch64) echo "arm64" ;;
     *)
       echo "error: unsupported architecture: $(uname -m)" >&2
-      echo "error: Signet releases cover amd64 and arm64. Build from source:" >&2
-      echo "error:   go install github.com/vulnetix/signet/cmd/signet@latest" >&2
+      echo "error: Belai releases cover amd64 and arm64. Build from source:" >&2
+      echo "error:   go install github.com/vulnetix/belai/cmd/belai@latest" >&2
       exit 1
       ;;
   esac
@@ -307,7 +307,7 @@ verify_checksum() {
     echo "error:   size:     $(wc -c < "$tmp_binary" 2>/dev/null || echo unknown) bytes" >&2
     echo "error: if the size above looks short, the download was interrupted — run the installer again." >&2
     echo "error: if it is the full size, do not install this binary. Report it at" >&2
-    echo "error:   https://github.com/Vulnetix/signet/issues" >&2
+    echo "error:   https://github.com/Vulnetix/belai/issues" >&2
     rm -f "$tmp_binary"
     exit 1
   fi
@@ -320,7 +320,7 @@ verify_checksum() {
 # ---------------------------------------------------------------------------
 
 main() {
-  echo "signet installer"
+  echo "belai installer"
   echo "----------------"
 
   OS=$(detect_os)
@@ -408,7 +408,7 @@ main() {
   echo "      $BINARY_NAME -version"
   echo ""
   echo "Set an API key first, e.g. OPENAI_API_KEY or ANTHROPIC_API_KEY, or run"
-  echo "/credentials inside the UI. See https://github.com/Vulnetix/signet"
+  echo "/credentials inside the UI. See https://github.com/Vulnetix/belai"
 }
 
 main "$@"

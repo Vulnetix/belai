@@ -7,13 +7,13 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/plans"
-	"github.com/vulnetix/signet/internal/prompt"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/sanitize"
-	"github.com/vulnetix/signet/internal/todos"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/plans"
+	"github.com/vulnetix/belai/internal/prompt"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/sanitize"
+	"github.com/vulnetix/belai/internal/todos"
 )
 
 // ErrPlanLoopCancelled reports a deliberate cancellation of the plan pass

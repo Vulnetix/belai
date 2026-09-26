@@ -12,32 +12,32 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/vulnetix/signet/internal/agentpool"
-	"github.com/vulnetix/signet/internal/calltrace"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/delimiters"
-	"github.com/vulnetix/signet/internal/explore"
-	"github.com/vulnetix/signet/internal/filediff"
-	"github.com/vulnetix/signet/internal/forge"
-	"github.com/vulnetix/signet/internal/goals"
-	"github.com/vulnetix/signet/internal/hooks"
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/nonce"
-	"github.com/vulnetix/signet/internal/permissions"
-	"github.com/vulnetix/signet/internal/plans"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/prompt"
-	"github.com/vulnetix/signet/internal/readindex"
-	"github.com/vulnetix/signet/internal/repoindex"
-	"github.com/vulnetix/signet/internal/repomap"
-	"github.com/vulnetix/signet/internal/resilience"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/sandbox"
-	"github.com/vulnetix/signet/internal/sanitize"
-	"github.com/vulnetix/signet/internal/tools"
-	"github.com/vulnetix/signet/internal/trace"
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/agentpool"
+	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/delimiters"
+	"github.com/vulnetix/belai/internal/explore"
+	"github.com/vulnetix/belai/internal/filediff"
+	"github.com/vulnetix/belai/internal/forge"
+	"github.com/vulnetix/belai/internal/goals"
+	"github.com/vulnetix/belai/internal/hooks"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/nonce"
+	"github.com/vulnetix/belai/internal/permissions"
+	"github.com/vulnetix/belai/internal/plans"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/prompt"
+	"github.com/vulnetix/belai/internal/readindex"
+	"github.com/vulnetix/belai/internal/repoindex"
+	"github.com/vulnetix/belai/internal/repomap"
+	"github.com/vulnetix/belai/internal/resilience"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/sandbox"
+	"github.com/vulnetix/belai/internal/sanitize"
+	"github.com/vulnetix/belai/internal/tools"
+	"github.com/vulnetix/belai/internal/trace"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 // Options configures a new agent session.
@@ -123,8 +123,8 @@ type Options struct {
 	// in favour of a fresh local pool, so the GET is a wasted round trip.
 	SkipNonceSeed bool
 	// SessionID is the transcript session this agent runs under. It is
-	// stamped on every provider request and tool call (X-Signet-Session-Id,
-	// traceparent, SIGNET_SESSION_ID) through calltrace. Empty inherits any
+	// stamped on every provider request and tool call (X-Belai-Session-Id,
+	// traceparent, BELAI_SESSION_ID) through calltrace. Empty inherits any
 	// session already carried on the run context.
 	SessionID string
 	Workdir   string
@@ -805,8 +805,8 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	s.turnIntent = modeDec.Intent
 	savedFanOut := s.turnFanOut
 	// Fan-out is engaged either by Jev intent detection or by an explicit
-	// @agent:signet:fanout pre-send override.
-	s.turnFanOut = modeDec.Intent == rolemanager.IntentFanOut || modeDec.AgentName == "signet:fanout"
+	// @agent:belai:fanout pre-send override.
+	s.turnFanOut = modeDec.Intent == rolemanager.IntentFanOut || modeDec.AgentName == "belai:fanout"
 	defer func() { s.turnFanOut = savedFanOut; s.turnIntent = savedIntent }()
 	if s.turnFanOut && s.fanOutTask != nil {
 		s.fanOutTask.Runner = s.runTask

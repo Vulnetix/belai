@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/forge"
-	"github.com/vulnetix/signet/internal/sanitize"
+	"github.com/vulnetix/belai/internal/forge"
+	"github.com/vulnetix/belai/internal/sanitize"
 )
 
 // maxForgeWorktrees caps the worktrees the forge block lists.

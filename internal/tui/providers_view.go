@@ -8,11 +8,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/credentials"
-	"github.com/vulnetix/signet/internal/provider"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/provider"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // providersViewState tracks the /providers master list.

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/vulnetix/signet/internal/explore"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/explore"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 // maxTaskCallsPerTurn caps the number of Task invocations in one fan-out

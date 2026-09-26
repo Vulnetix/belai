@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/hooks"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/hooks"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 func hookSet(t *testing.T, event, body string) *hooks.Set {

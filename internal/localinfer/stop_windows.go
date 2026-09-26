@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"sync"
 
-	"github.com/vulnetix/signet/internal/activity"
+	"github.com/vulnetix/belai/internal/activity"
 )
 
 // makeStop returns a function that terminates cmd on Windows. Process groups

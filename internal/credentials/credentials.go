@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/provider"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/provider"
 )
 
 // Source identifies where a credential came from.
@@ -78,9 +78,9 @@ func SpecFor(providerName string, prof *config.ProviderProfile) []Field {
 }
 
 // EnvVarForProvider returns the conventional environment variable holding a
-// custom provider's API key: SIGNET_<UPPER_SNAKE_NAME>_API_KEY.
+// custom provider's API key: BELAI_<UPPER_SNAKE_NAME>_API_KEY.
 func EnvVarForProvider(provider string) string {
-	return "SIGNET_" + upperSnake(provider) + "_API_KEY"
+	return "BELAI_" + upperSnake(provider) + "_API_KEY"
 }
 
 func upperSnake(s string) string {

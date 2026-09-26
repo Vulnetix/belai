@@ -125,22 +125,22 @@ func TestProcessStartAndRecovery(t *testing.T) {
 		t.Fatalf("write settings: %v", err)
 	}
 
-	cmd := exec.Command(signetBin, "-trust-dir", "-provider", "openai", "-model", "test")
+	cmd := exec.Command(belaiBin, "-trust-dir", "-provider", "openai", "-model", "test")
 	cmd.Dir = dir
-	// The TUI is skipped when CI is set (cmd/signet/main.go's interactive()
-	// gate), and GitHub Actions sets CI=true. Strip it — and SIGNET_NO_TUI —
+	// The TUI is skipped when CI is set (cmd/belai/main.go's interactive()
+	// gate), and GitHub Actions sets CI=true. Strip it — and BELAI_NO_TUI —
 	// so the PTY actually starts the TUI, then add the test's own overrides.
 	env := make([]string, 0, len(os.Environ())+4)
 	for _, e := range os.Environ() {
-		if strings.HasPrefix(e, "CI=") || strings.HasPrefix(e, "SIGNET_NO_TUI=") {
+		if strings.HasPrefix(e, "CI=") || strings.HasPrefix(e, "BELAI_NO_TUI=") {
 			continue
 		}
 		env = append(env, e)
 	}
 	cmd.Env = append(env,
-		"SIGNET_BASE_URL="+srv.URL,
+		"BELAI_BASE_URL="+srv.URL,
 		"OPENAI_API_KEY=test",
-		"SIGNET_HOME="+home,
+		"BELAI_HOME="+home,
 		"TERM=xterm",
 	)
 
@@ -161,7 +161,7 @@ func TestProcessStartAndRecovery(t *testing.T) {
 	}()
 
 	if err := cmd.Start(); err != nil {
-		t.Fatalf("start signet: %v", err)
+		t.Fatalf("start belai: %v", err)
 	}
 
 	// Wait for the TUI to render its first frame before typing: on a cold CI
@@ -220,13 +220,13 @@ func TestProcessStartAndRecovery(t *testing.T) {
 			if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() == 130 {
 				// Treat ctrl-c/-d induced exit as acceptable.
 			} else {
-				t.Fatalf("signet exited unexpectedly: %v", err)
+				t.Fatalf("belai exited unexpectedly: %v", err)
 			}
 		}
 	case <-time.After(10 * time.Second):
 		_ = cmd.Process.Kill()
 		t.Logf("captured output:\n%s", out.String())
-		t.Fatal("signet did not exit after ctrl-d")
+		t.Fatal("belai did not exit after ctrl-d")
 	}
 
 	// The `!!false` command should have created a project process entry.

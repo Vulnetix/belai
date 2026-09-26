@@ -4,8 +4,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/permissions"
-	"github.com/vulnetix/signet/internal/repoindex"
+	"github.com/vulnetix/belai/internal/permissions"
+	"github.com/vulnetix/belai/internal/repoindex"
 )
 
 // Plan mode drops every mutating tool and Bash, read-only or not. Read-only

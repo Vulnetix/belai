@@ -1,6 +1,6 @@
 // Package aifirewall implements the gateway-side contract for routing a
 // provider through the Vulnetix AI Firewall. It mirrors the shape of the
-// ai-firewall provider helper so Signet and the gateway agree on URLs.
+// ai-firewall provider helper so Belai and the gateway agree on URLs.
 package aifirewall
 
 import (
@@ -13,7 +13,7 @@ import (
 // DefaultGateway is the production Vulnetix AI Firewall host.
 const DefaultGateway = "https://guardrails.vulnetix.com"
 
-// Slug maps a Signet provider name to the gateway's provider path segment.
+// Slug maps a Belai provider name to the gateway's provider path segment.
 // Providers with no mapping cannot be routed; the gateway would not know how
 // to speak their dialect.
 var slugs = map[string]string{
@@ -31,10 +31,10 @@ var slugs = map[string]string{
 	"minimax":    "minimax",
 }
 
-// Slug returns the gateway provider segment for the given Signet provider, and
+// Slug returns the gateway provider segment for the given Belai provider, and
 // whether routing is supported.
-func Slug(signetProvider string) (string, bool) {
-	s, ok := slugs[strings.ToLower(signetProvider)]
+func Slug(belaiProvider string) (string, bool) {
+	s, ok := slugs[strings.ToLower(belaiProvider)]
 	return s, ok
 }
 
@@ -49,7 +49,7 @@ func Providers() []string {
 }
 
 // BaseURL builds the gateway base URL for a provider slug and org. It appends
-// /v1 for every wire except Anthropic messages, where the existing Signet path
+// /v1 for every wire except Anthropic messages, where the existing Belai path
 // helpers already include it / expect it.
 func BaseURL(gateway, slug, orgUUID string) string {
 	base := strings.TrimRight(gateway, "/")

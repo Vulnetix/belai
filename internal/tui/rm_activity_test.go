@@ -3,14 +3,14 @@ package tui
 import (
 	"testing"
 
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
 // TestRMActivityObserverFeedsPanel pins the transport wiring: New registers
 // the observer, a role-manager decision lands on the buffered channel, and
 // addRMActivity turns it into a render-only rolemanager message.
 func TestRMActivityObserverFeedsPanel(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	defer a.rmCancel()
 
@@ -45,7 +45,7 @@ func TestRMActivityObserverFeedsPanel(t *testing.T) {
 // activity with no served model falls back to the agent model. Model ids that
 // contain slashes (@cf/org/name) split on the first slash only.
 func TestRMActivityLabelsTheServedModel(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	defer a.rmCancel()
 	a.cfg.Provider, a.cfg.Model = "cloudflare-ai-gateway", "@cf/deepseek-ai/deepseek-v4-pro-0813"

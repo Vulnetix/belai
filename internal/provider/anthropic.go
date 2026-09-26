@@ -3,7 +3,7 @@ package provider
 import (
 	"net/http"
 
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 // NewMessagesRequest builds an Anthropic messages request against the

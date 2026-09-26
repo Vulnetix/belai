@@ -1,4 +1,4 @@
-//go:build signet_bert_jailbreak
+//go:build belai_bert_jailbreak
 
 package mlclassify
 
@@ -6,7 +6,7 @@ import (
 	"embed"
 	"io/fs"
 
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
 // phase2Files embeds the converted phase-2 jailbreak model. The directory is

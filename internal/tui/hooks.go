@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/vulnetix/signet/internal/agent"
-	"github.com/vulnetix/signet/internal/hooks"
+	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/hooks"
 )
 
 // sessionHooks returns the hooks the TUI fires itself (session_start,

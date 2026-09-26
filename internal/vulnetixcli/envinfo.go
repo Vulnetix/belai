@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// EnvInfo is the subset of `vulnetix env` relevant to Signet's UI.
+// EnvInfo is the subset of `vulnetix env` relevant to Belai's UI.
 type EnvInfo struct {
 	APIURL          string
 	WebURL          string

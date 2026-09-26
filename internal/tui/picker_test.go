@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 func TestRenderPickerHighlightsOnlyTheSelectedRow(t *testing.T) {

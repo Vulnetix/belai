@@ -6,11 +6,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/delimiters"
-	"github.com/vulnetix/signet/internal/lsp"
-	"github.com/vulnetix/signet/internal/nonce"
-	"github.com/vulnetix/signet/internal/sanitize"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/delimiters"
+	"github.com/vulnetix/belai/internal/lsp"
+	"github.com/vulnetix/belai/internal/nonce"
+	"github.com/vulnetix/belai/internal/sanitize"
 )
 
 // Diagnoser is the injection seam. internal/lsp.Manager implements it.

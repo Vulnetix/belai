@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/vulnetixcli"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/vulnetixcli"
 )
 
 // A manifest edited several times in one turn is checked once, against the

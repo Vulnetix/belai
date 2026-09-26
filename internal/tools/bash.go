@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/calltrace"
-	"github.com/vulnetix/signet/internal/proc"
-	"github.com/vulnetix/signet/internal/sandbox"
+	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/proc"
+	"github.com/vulnetix/belai/internal/sandbox"
 )
 
 // ShellMetacharacters are shell syntax that would let a command escape a
@@ -338,7 +338,7 @@ func NativeResult(content string) Result {
 // sandboxNote tells the model, in the harness's words, that a failed command
 // ran inside the OS sandbox, so it asks the user rather than retrying blindly.
 func sandboxNote(p sandbox.Policy) string {
-	note := "(ran inside the Signet sandbox: writes outside the workspace roots, /tmp and tool caches fail"
+	note := "(ran inside the Belai sandbox: writes outside the workspace roots, /tmp and tool caches fail"
 	if p.DenyNetwork {
 		note += ", and the network is off"
 	}

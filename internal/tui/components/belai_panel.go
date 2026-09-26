@@ -5,17 +5,17 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
-// signetPanel renders a coalesced run of adjacent system notices and tool
-// results as one framed panel titled signet. System notices render as muted
+// belaiPanel renders a coalesced run of adjacent system notices and tool
+// results as one framed panel titled belai. System notices render as muted
 // · lines; tool results keep their existing colour, status and body styling
 // but are nested inside the panel instead of rendered as flat rows. The
-// panel truncates long runs of system notices via signetPreviewLines, but
+// panel truncates long runs of system notices via belaiPreviewLines, but
 // groups that contain any tool result render in full because tool rows
 // already truncate their own content.
-func signetPanel(msgs []Message, idxs []int, width int, expandAll bool) (string, LineMap, []int) {
+func belaiPanel(msgs []Message, idxs []int, width int, expandAll bool) (string, LineMap, []int) {
 	first := &msgs[idxs[0]]
 	systemOnly := true
 	for _, idx := range idxs {
@@ -34,17 +34,17 @@ func signetPanel(msgs []Message, idxs []int, width int, expandAll bool) (string,
 		return first.rc.text, first.rc.lm, first.rc.owners
 	}
 
-	s, lm, owners := renderSignetPanel(msgs, idxs, width, expandAll)
+	s, lm, owners := renderBelaiPanel(msgs, idxs, width, expandAll)
 	if systemOnly && !key.started {
 		first.rc = renderCache{key: key, text: s, lm: lm, owners: owners}
 	}
 	return s, lm, owners
 }
 
-// renderSignetPanel builds the framed signet panel for a group of system
+// renderBelaiPanel builds the framed belai panel for a group of system
 // notices and tool results, including the panel borders and a fully
 // provenanced LineMap.
-func renderSignetPanel(msgs []Message, idxs []int, width int, expandAll bool) (string, LineMap, []int) {
+func renderBelaiPanel(msgs []Message, idxs []int, width int, expandAll bool) (string, LineMap, []int) {
 	width = max(width, panelMinWidth)
 	inner := max(width-4, 8)
 	barCol := visibleLen("│ ") // border plus padding
@@ -77,23 +77,23 @@ func renderSignetPanel(msgs []Message, idxs []int, width int, expandAll bool) (s
 		msg := msgs[idx]
 		switch msg.Role {
 		case "system":
-			lineOwners, isSystemLine, bodyLines, bodyLm = renderSignetSystemLines(msg, idx, inner, bar, barCol, icol, groupCopyable, lineOwners, isSystemLine, bodyLines, bodyLm)
+			lineOwners, isSystemLine, bodyLines, bodyLm = renderBelaiSystemLines(msg, idx, inner, bar, barCol, icol, groupCopyable, lineOwners, isSystemLine, bodyLines, bodyLm)
 		case "rolemanager":
-			lineOwners, isSystemLine, bodyLines, bodyLm = renderSignetActivityLines(msg, idx, inner, bar, barCol, icol, expandAll, groupCopyable, lineOwners, isSystemLine, bodyLines, bodyLm)
+			lineOwners, isSystemLine, bodyLines, bodyLm = renderBelaiActivityLines(msg, idx, inner, bar, barCol, icol, expandAll, groupCopyable, lineOwners, isSystemLine, bodyLines, bodyLm)
 		case "tool":
-			lineOwners, isSystemLine, bodyLines, bodyLm = renderSignetToolLines(msg, idx, inner, bar, barCol, expandAll, groupCopyable, lineOwners, isSystemLine, bodyLines, bodyLm)
+			lineOwners, isSystemLine, bodyLines, bodyLm = renderBelaiToolLines(msg, idx, inner, bar, barCol, expandAll, groupCopyable, lineOwners, isSystemLine, bodyLines, bodyLm)
 		}
 	}
 
-	// Truncate system-only groups line-by-line, preserving the existing signet
+	// Truncate system-only groups line-by-line, preserving the existing belai
 	// preview behaviour. Groups containing tools render in full because each
 	// tool row already applies its own preview/truncation and splitting a tool
 	// result mid-message would hide its status and body.
 	panelCollapsed := false
-	if !expandAll && !hasTool && len(bodyLines) > signetPreviewLines {
-		hidden := signetHidden(msgs, lineOwners, signetPreviewLines)
-		marker := "… " + strconv.Itoa(len(bodyLines)-signetPreviewLines) + " more lines"
-		firstHidden := lineOwners[signetPreviewLines]
+	if !expandAll && !hasTool && len(bodyLines) > belaiPreviewLines {
+		hidden := belaiHidden(msgs, lineOwners, belaiPreviewLines)
+		marker := "… " + strconv.Itoa(len(bodyLines)-belaiPreviewLines) + " more lines"
+		firstHidden := lineOwners[belaiPreviewLines]
 
 		markerPlain := marker
 		pad := inner - visibleLen(markerPlain)
@@ -102,8 +102,8 @@ func renderSignetPanel(msgs []Message, idxs []int, width int, expandAll bool) (s
 		}
 		markerLine := bar + " " + markerPlain + spaces(pad) + " " + bar
 
-		bodyLines = append(bodyLines[:signetPreviewLines], markerLine)
-		bodyLm = append(bodyLm[:signetPreviewLines], SourceLine{
+		bodyLines = append(bodyLines[:belaiPreviewLines], markerLine)
+		bodyLm = append(bodyLm[:belaiPreviewLines], SourceLine{
 			Text:        markerPlain,
 			Col:         barCol,
 			Width:       visibleLen(markerPlain),
@@ -114,8 +114,8 @@ func renderSignetPanel(msgs []Message, idxs []int, width int, expandAll bool) (s
 			Copyable:    groupCopyable,
 			Collapsed:   true,
 		})
-		lineOwners = append(lineOwners[:signetPreviewLines], firstHidden)
-		isSystemLine = append(isSystemLine[:signetPreviewLines], true)
+		lineOwners = append(lineOwners[:belaiPreviewLines], firstHidden)
+		isSystemLine = append(isSystemLine[:belaiPreviewLines], true)
 		panelCollapsed = true
 	}
 
@@ -141,7 +141,7 @@ func renderSignetPanel(msgs []Message, idxs []int, width int, expandAll bool) (s
 	if hasCollapsedContent {
 		meta = "ctrl+o expand all"
 	}
-	top := signetTopEdge(width, titleStyle, edge, meta)
+	top := belaiTopEdge(width, titleStyle, edge, meta)
 
 	var b strings.Builder
 	var lm LineMap
@@ -157,9 +157,9 @@ func renderSignetPanel(msgs []Message, idxs []int, width int, expandAll bool) (s
 	return b.String(), lm, lineOwners
 }
 
-// renderSignetSystemLines adds a system notice's wrapped, indented lines to
+// renderBelaiSystemLines adds a system notice's wrapped, indented lines to
 // the panel body and returns updated owner, type and line slices.
-func renderSignetSystemLines(msg Message, owner, inner int, bar string, barCol, icol int, groupCopyable bool, owners []int, isSystem []bool, bodyLines []string, lm LineMap) ([]int, []bool, []string, LineMap) {
+func renderBelaiSystemLines(msg Message, owner, inner int, bar string, barCol, icol int, groupCopyable bool, owners []int, isSystem []bool, bodyLines []string, lm LineMap) ([]int, []bool, []string, LineMap) {
 	text := strings.TrimRight(msg.Text(), "\n")
 	phys := strings.Split(text, "\n")
 	if len(phys) == 0 {
@@ -201,12 +201,12 @@ func renderSignetSystemLines(msg Message, owner, inner int, bar string, barCol, 
 	return owners, isSystem, bodyLines, lm
 }
 
-// renderSignetActivityLines adds a role-manager activity row to the panel
+// renderBelaiActivityLines adds a role-manager activity row to the panel
 // body. Unlike a system notice, the activity line is built from plain Segs and
 // wrapped with wrapSegs, then rendered through Row.Render so the outcome word
 // carries its tone colour while the LineMap is measured while the text is
 // still plain.
-func renderSignetActivityLines(msg Message, owner, inner int, bar string, barCol, icol int, expandAll bool, groupCopyable bool, owners []int, isSystem []bool, bodyLines []string, lm LineMap) ([]int, []bool, []string, LineMap) {
+func renderBelaiActivityLines(msg Message, owner, inner int, bar string, barCol, icol int, expandAll bool, groupCopyable bool, owners []int, isSystem []bool, bodyLines []string, lm LineMap) ([]int, []bool, []string, LineMap) {
 	content := []Seg{
 		NewSeg(msg.RM.Summary, nil),
 		NewSeg(" — ", nil),
@@ -214,7 +214,7 @@ func renderSignetActivityLines(msg Message, owner, inner int, bar string, barCol
 	}
 	// When expanded, surface the internal activity key and the model that
 	// produced it as a muted prefix so the user can see which subsystem and
-	// provider/model are behind each signet line.
+	// provider/model are behind each belai line.
 	if expandAll {
 		var parts []string
 		if msg.Activity != "" {
@@ -272,11 +272,11 @@ func toneColor(t rolemanager.Tone) lipgloss.TerminalColor {
 	}
 }
 
-// renderSignetToolLines adds a tool result's existing row rendering to the
+// renderBelaiToolLines adds a tool result's existing row rendering to the
 // panel body and returns updated owner, type and line slices. The tool row is
 // rendered at the panel's inner width so that status alignment and content
 // wrapping fit exactly between the borders.
-func renderSignetToolLines(msg Message, owner, inner int, bar string, barCol int, expandAll bool, groupCopyable bool, owners []int, isSystem []bool, bodyLines []string, lm LineMap) ([]int, []bool, []string, LineMap) {
+func renderBelaiToolLines(msg Message, owner, inner int, bar string, barCol int, expandAll bool, groupCopyable bool, owners []int, isSystem []bool, bodyLines []string, lm LineMap) ([]int, []bool, []string, LineMap) {
 	toolStr, toolLm := toolRow(msg, inner, expandAll)
 	tagProvenance(toolLm, owner, msg)
 	toolLines := strings.Split(toolStr, "\n")
@@ -305,12 +305,12 @@ func renderSignetToolLines(msg Message, owner, inner int, bar string, barCol int
 	return owners, isSystem, bodyLines, lm
 }
 
-// signetTopEdge renders the panel's top border with an optional right-aligned
+// belaiTopEdge renders the panel's top border with an optional right-aligned
 // metadata hint, matching the layout of components.Panel: the title sits on
 // the left, metadata is right-aligned, and if the metadata does not fit it is
 // dropped before the title is truncated.
-func signetTopEdge(width int, titleStyle, edge lipgloss.Style, meta string) string {
-	title := "signet"
+func belaiTopEdge(width int, titleStyle, edge lipgloss.Style, meta string) string {
+	title := "belai"
 	leftPlain := "╭─ " + title + " "
 	rightPlain := "─╮"
 	if meta != "" {
@@ -338,10 +338,10 @@ func signetTopEdge(width int, titleStyle, edge lipgloss.Style, meta string) stri
 	return top
 }
 
-// signetHidden joins the raw text of the notices whose rows were hidden,
+// belaiHidden joins the raw text of the notices whose rows were hidden,
 // deduplicating so a notice that still has visible rows is not duplicated in a
 // selection over the hint.
-func signetHidden(msgs []Message, owners []int, from int) string {
+func belaiHidden(msgs []Message, owners []int, from int) string {
 	var parts []string
 	seen := map[int]bool{}
 	for _, o := range owners[from:] {

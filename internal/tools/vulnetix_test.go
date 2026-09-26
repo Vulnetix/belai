@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/repoindex"
+	"github.com/vulnetix/belai/internal/repoindex"
 )
 
 func TestVulnetixArgv(t *testing.T) {

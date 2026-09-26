@@ -27,7 +27,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
 
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="Signet" />
+    <meta property="og:site_name" content="Belai" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
@@ -43,14 +43,14 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
     <script type="application/ld+json" set:html={JSON.stringify({
       '@context': 'https://schema.org',
       '@type': 'SoftwareApplication',
-      name: 'Signet',
+      name: 'Belai',
       applicationCategory: 'DeveloperApplication',
       operatingSystem: 'macOS, Linux, Windows',
-      url: 'https://signet.vulnetix.com',
+      url: 'https://belai.vulnetix.com',
       description,
       license: 'https://www.apache.org/licenses/LICENSE-2.0',
       offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-      codeRepository: 'https://github.com/vulnetix/signet',
+      codeRepository: 'https://github.com/vulnetix/belai',
       publisher: {
         '@type': 'Organization',
         name: 'Vulnetix',
@@ -106,7 +106,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site);
 
     <script>
       // Status rail tracking: highlight the section currently in view. The
-      // rail mirrors Signet's three-line status footer. It shows the current
+      // rail mirrors Belai's three-line status footer. It shows the current
       // section, mode, and guardrails, and updates as the reader scrolls.
       const railItems = Array.from(document.querySelectorAll('[data-rail]'));
       if (railItems.length > 0) {

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/sanitize"
+	"github.com/vulnetix/belai/internal/sanitize"
 )
 
 // goalDraftSystemPrompt instructs the classifier to draft a completion

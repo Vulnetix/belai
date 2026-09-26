@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/sanitize"
-	"github.com/vulnetix/signet/internal/transcript"
+	"github.com/vulnetix/belai/internal/sanitize"
+	"github.com/vulnetix/belai/internal/transcript"
 )
 
 // Sentinel is the strict single-token output of the classifier model.

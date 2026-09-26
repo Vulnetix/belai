@@ -9,12 +9,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/vulnetix/signet/internal/commands"
-	"github.com/vulnetix/signet/internal/explore"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/scanartifacts"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/commands"
+	"github.com/vulnetix/belai/internal/explore"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/scanartifacts"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // testReview installs a running review the way startReview does, without
@@ -98,7 +98,7 @@ func TestReviewTriageWaitsForScannerAgents(t *testing.T) {
 	r.done["sast"], r.done["fix"] = true, true
 	r.reports = []explore.ReviewReport{{Scanner: "sast", Label: "sast report", Body: "S1"}}
 	r.atts = []run.Attachment{{Kind: "file", Label: "sast report", Body: "S1"}}
-	r.agents["signet:vulnetix-scanner@sast#1"] = "sast"
+	r.agents["belai:vulnetix-scanner@sast#1"] = "sast"
 
 	a.handleReviewScansDone(reviewScansDoneMsg{err: errors.New("stop before the artifacts view")})
 	if a.review == nil || a.pendingReview != nil {
@@ -112,7 +112,7 @@ func TestReviewTriageWaitsForScannerAgents(t *testing.T) {
 		t.Fatal("the main thread must say what the review is waiting on")
 	}
 
-	a.handleReviewReport(reviewReportMsg{key: "signet:vulnetix-scanner@sast#1", scanner: "sast", body: "a.go:1 | S1 | real | fix: escape it"})
+	a.handleReviewReport(reviewReportMsg{key: "belai:vulnetix-scanner@sast#1", scanner: "sast", body: "a.go:1 | S1 | real | fix: escape it"})
 	card, ok := lastReportCard(a)
 	if !ok || card.ToolName != "vulnetix sast review" || !strings.Contains(card.Content, "fix: escape it") {
 		t.Fatalf("the agent's report must show in the main thread: %+v", card)

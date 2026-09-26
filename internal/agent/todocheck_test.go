@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/todos"
+	"github.com/vulnetix/belai/internal/todos"
 )
 
 func TestTodoCheckWithoutAListAsksForOne(t *testing.T) {

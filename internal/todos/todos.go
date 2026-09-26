@@ -14,8 +14,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/plans"
-	"github.com/vulnetix/signet/internal/session"
+	"github.com/vulnetix/belai/internal/plans"
+	"github.com/vulnetix/belai/internal/session"
 )
 
 // EntryType is the session entry type carrying a todo list.

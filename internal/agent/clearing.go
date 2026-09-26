@@ -3,8 +3,8 @@ package agent
 import (
 	"fmt"
 
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/transcript"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/transcript"
 )
 
 // Tool-result clearing bounds a session that grows fast before compaction

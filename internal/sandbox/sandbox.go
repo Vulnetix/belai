@@ -1,8 +1,8 @@
-// Package sandbox runs the commands Signet executes for the model (Bash,
+// Package sandbox runs the commands Belai executes for the model (Bash,
 // inline !cmd, supervised processes) under an operating-system boundary:
 // bubblewrap on Linux, sandbox-exec on macOS. Inside it the filesystem is
 // read-only except for the workspace roots, a private /tmp and (by default)
-// the usual tool caches; Signet's own state directory is hidden; and the
+// the usual tool caches; Belai's own state directory is hidden; and the
 // network can be cut off. The policy is computed per call from the settings
 // and the live guardrails switch, and rides on the call's context.
 package sandbox
@@ -19,8 +19,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/posture"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/posture"
 )
 
 // Modes and network settings.

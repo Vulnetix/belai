@@ -3,7 +3,7 @@ package tui
 import (
 	"strings"
 
-	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/belai/internal/run"
 )
 
 // normaliseTurns makes a turn list provider-safe: adjacent user turns merge

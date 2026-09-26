@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vulnetix/signet/internal/httpclient"
+	"github.com/vulnetix/belai/internal/httpclient"
 )
 
-// Capabilities is everything Signet knows about the local Vulnetix CLI.
+// Capabilities is everything Belai knows about the local Vulnetix CLI.
 type Capabilities struct {
 	Present        bool
 	Path, RealPath string

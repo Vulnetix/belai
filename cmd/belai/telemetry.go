@@ -5,9 +5,9 @@ import (
 	"encoding/hex"
 	"os"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/otel"
-	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/otel"
+	"github.com/vulnetix/belai/internal/run"
 )
 
 // startTelemetry starts OTLP export when the user's settings or the OTEL_*
@@ -25,8 +25,8 @@ func startTelemetry(settings config.Settings, workdir string) func() {
 		if ev.Estimated {
 			est = 1
 		}
-		otel.Add("signet.tokens", int64(ev.Tokens), otel.S(otel.AttrProvider, ev.Provider), otel.S(otel.AttrModel, ev.Model), otel.I(otel.AttrEstimated, est))
-		otel.Add("signet.model_calls", 1, otel.S(otel.AttrProvider, ev.Provider), otel.S(otel.AttrModel, ev.Model))
+		otel.Add("belai.tokens", int64(ev.Tokens), otel.S(otel.AttrProvider, ev.Provider), otel.S(otel.AttrModel, ev.Model), otel.I(otel.AttrEstimated, est))
+		otel.Add("belai.model_calls", 1, otel.S(otel.AttrProvider, ev.Provider), otel.S(otel.AttrModel, ev.Model))
 	})
 	return func() {
 		run.SetTelemetryUsage(nil)

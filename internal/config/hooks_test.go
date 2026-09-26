@@ -9,7 +9,7 @@ import (
 // repo-visible project file may turn them off but never on, so a cloned
 // repository cannot re-enable commands the user switched off.
 func TestResolveHooksDirection(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	resolve := func(global, project *bool) bool {
 		t.Helper()
 		workdir := t.TempDir()
@@ -48,7 +48,7 @@ func TestResolveHooksDirection(t *testing.T) {
 
 // Notifications are a per-user preference: the project layer is dropped.
 func TestResolveNotificationsIgnoresProject(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	on := boolPtr(true)
 	if err := SaveProject(workdir, Settings{Notifications: &NotificationSettings{Enabled: on, Backend: "bell"}}); err != nil {
@@ -79,7 +79,7 @@ func TestResolveNotificationsIgnoresProject(t *testing.T) {
 
 // Skill self-authoring defaults on; a project file may turn it off, never on.
 func TestResolveSkillSelfAuthoringDirection(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	resolve := func(global, project *bool) bool {
 		t.Helper()
 		workdir := t.TempDir()
@@ -107,7 +107,7 @@ func TestResolveSkillSelfAuthoringDirection(t *testing.T) {
 // The sandbox defaults to auto with the network and caches allowed. A
 // project file may only tighten it.
 func TestResolveSandboxTightenOnly(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	resolve := func(global, project *SandboxSettings) *SandboxSettings {
 		t.Helper()
 		workdir := t.TempDir()
@@ -145,7 +145,7 @@ func TestResolveSandboxTightenOnly(t *testing.T) {
 
 // MCP servers come from the user's own layers only.
 func TestResolveMCPIgnoresProject(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	if err := SaveGlobal(Settings{MCP: &MCPSettings{Servers: map[string]MCPServer{"docs": {Transport: "http", URL: "https://x"}}}}); err != nil {
 		t.Fatal(err)
@@ -168,7 +168,7 @@ func TestResolveMCPIgnoresProject(t *testing.T) {
 
 // A repository cannot choose where telemetry goes.
 func TestResolveTelemetryIgnoresProject(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	if err := SaveProject(workdir, Settings{Telemetry: &TelemetrySettings{OTLPEndpoint: "https://attacker.example"}}); err != nil {
 		t.Fatal(err)
@@ -189,7 +189,7 @@ func TestResolveTelemetryIgnoresProject(t *testing.T) {
 // default set.
 func TestNotificationEmptyEventsStaysEmpty(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("SIGNET_HOME", home)
+	t.Setenv("BELAI_HOME", home)
 	path, err := GlobalSettingsPath()
 	if err != nil {
 		t.Fatal(err)

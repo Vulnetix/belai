@@ -3,11 +3,11 @@ package tui
 import (
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/models"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/rolemanager/jev"
-	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/models"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/rolemanager/jev"
+	"github.com/vulnetix/belai/internal/run"
 )
 
 // TestModelPickerRoutingLeavesOutJev pins that routed use-case pickers never

@@ -9,24 +9,24 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/agentprofile"
-	"github.com/vulnetix/signet/internal/bgagent"
-	"github.com/vulnetix/signet/internal/commands"
-	"github.com/vulnetix/signet/internal/explore"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/sanitize"
-	"github.com/vulnetix/signet/internal/scanartifacts"
-	"github.com/vulnetix/signet/internal/tools"
-	"github.com/vulnetix/signet/internal/tui/components"
-	"github.com/vulnetix/signet/internal/vulnetixcli"
+	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/bgagent"
+	"github.com/vulnetix/belai/internal/commands"
+	"github.com/vulnetix/belai/internal/explore"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/sanitize"
+	"github.com/vulnetix/belai/internal/scanartifacts"
+	"github.com/vulnetix/belai/internal/tools"
+	"github.com/vulnetix/belai/internal/tui/components"
+	"github.com/vulnetix/belai/internal/vulnetixcli"
 )
 
 // reviewScannerProfile is the read-only background agent a /vulnetix review
 // starts for each scanner as soon as that scanner finishes, so its grounded
 // report reaches the main thread while the slower scanners still run.
-const reviewScannerProfile = "signet:vulnetix-scanner"
+const reviewScannerProfile = "belai:vulnetix-scanner"
 
 // reviewRun is one /vulnetix review in flight. It lives on the UI loop only:
 // the scanner goroutines hand their outcomes over through events.

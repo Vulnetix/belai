@@ -16,7 +16,7 @@ be shared and installed together from a git repository or a local directory.
 
 ## Manifest
 
-A plugin has `signet-plugin.json` at its root:
+A plugin has `belai-plugin.json` at its root:
 
 ```json
 {
@@ -49,20 +49,20 @@ Each component list names directories relative to the plugin root:
 | `agents` | `*.json` [agent profiles](agent-profiles.md) |
 
 `name` must be lowercase letters, digits and hyphens (at most 40), and not
-`signet`, `user` or `builtin`. Any other manifest key fails validation. Every
+`belai`, `user` or `builtin`. Any other manifest key fails validation. Every
 component path must be a directory inside the plugin, after following
-symlinks. Each component is checked with the validator Signet uses for your
+symlinks. Each component is checked with the validator Belai uses for your
 own files, and one invalid component fails the whole plugin.
 
 ## Installing
 
 ```bash
-signet plugin install https://github.com/example/go-team
-signet plugin install https://github.com/example/go-team#v1.2.0
-signet plugin install ./local/plugin
+belai plugin install https://github.com/example/go-team
+belai plugin install https://github.com/example/go-team#v1.2.0
+belai plugin install ./local/plugin
 ```
 
-1. Signet fetches the plugin into a staging directory. A git source is cloned
+1. Belai fetches the plugin into a staging directory. A git source is cloned
    with a fixed command: no submodules, repository hooks disabled, the
    `file://` transport refused, no credential prompts, and the scrubbed
    environment. A `#ref` suffix checks out that tag, branch or commit. A local
@@ -71,21 +71,21 @@ signet plugin install ./local/plugin
 3. It prints everything the plugin would add, including each hook's event
    and the command it runs, and asks you to confirm. Without a terminal it
    installs only with `-yes`, and still prints the listing.
-4. The plugin is stored at `~/.vulnetix/signet/plugins/<name>/`, and
+4. The plugin is stored at `~/.vulnetix/belai/plugins/<name>/`, and
    `plugins.json` beside it records the source and the commit it is pinned to
    (`local` for a directory copy).
 
-`signet plugin disable <name>` stops loading a plugin's components without
-removing it, and `signet plugin enable <name>` turns it back on.
+`belai plugin disable <name>` stops loading a plugin's components without
+removing it, and `belai plugin enable <name>` turns it back on.
 
-`signet plugin update <name>` fetches the recorded source again (or a new one
+`belai plugin update <name>` fetches the recorded source again (or a new one
 given after the name), prints the new listing with a count of what the
 installed version holds, and asks again before replacing it.
 
 ## How components load
 
 Enabled plugins load next to your own files, namespaced by plugin name, so
-they never shadow yours or Signet's:
+they never shadow yours or Belai's:
 
 | Component | Appears as |
 | --- | --- |
@@ -115,11 +115,11 @@ Changes to plugins apply to sessions built afterwards; `/clear` starts one.
 
 | CLI | TUI | Does |
 | --- | --- | --- |
-| `signet plugin list` | `/plugin` or `/plugin list` | installed plugins, version, state and commit |
-| `signet plugin install [-yes] <url\|dir>` | | install after confirming |
-| `signet plugin update [-yes] <name> [source]` | | fetch, show, confirm, replace |
-| `signet plugin enable <name>` / `disable <name>` | `/plugin enable <name>` / `disable <name>` | stop or resume loading its components |
-| `signet plugin remove <name>` | `/plugin remove <name>` | delete it |
+| `belai plugin list` | `/plugin` or `/plugin list` | installed plugins, version, state and commit |
+| `belai plugin install [-yes] <url\|dir>` | | install after confirming |
+| `belai plugin update [-yes] <name> [source]` | | fetch, show, confirm, replace |
+| `belai plugin enable <name>` / `disable <name>` | `/plugin enable <name>` / `disable <name>` | stop or resume loading its components |
+| `belai plugin remove <name>` | `/plugin remove <name>` | delete it |
 
 Install and update run from the CLI only, because they need you to read the
 listing before confirming.

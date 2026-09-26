@@ -7,11 +7,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/bgproc"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/fuzzy"
-	"github.com/vulnetix/signet/internal/processlib"
-	"github.com/vulnetix/signet/internal/promptlib"
+	"github.com/vulnetix/belai/internal/bgproc"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/fuzzy"
+	"github.com/vulnetix/belai/internal/processlib"
+	"github.com/vulnetix/belai/internal/promptlib"
 )
 
 // The slash popup offers the saved libraries next to the commands: a prompt
@@ -125,7 +125,7 @@ func isLibraryLine(line string) bool {
 // handleLibraryCommand runs a /prompt:, /agent: or /process: line. It reports
 // false for any other line so the caller falls through to the registry. Only
 // the first prefix is cut: agent names may themselves hold a colon
-// (signet:debug).
+// (belai:debug).
 func (a *App) handleLibraryCommand(line string) (tea.Cmd, bool) {
 	body := strings.TrimPrefix(strings.TrimSpace(line), "/")
 	if name, ok := strings.CutPrefix(body, slashPromptPrefix); ok {
@@ -200,7 +200,7 @@ func (a *App) engageAgent(name string) tea.Cmd {
 
 // runProcessEntry starts a saved process unless it is already live, then
 // reports its status either way. The manager does not refuse a second copy
-// from the same Signet, so the live check has to happen here.
+// from the same Belai, so the live check has to happen here.
 func (a *App) runProcessEntry(name string) tea.Cmd {
 	entry, ok := findProcess(a.slashLib.processes, name)
 	if !ok {

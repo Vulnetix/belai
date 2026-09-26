@@ -7,9 +7,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/processlib"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/processlib"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 func TestIsProcessInput(t *testing.T) {

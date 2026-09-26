@@ -14,14 +14,14 @@ import (
 // TestLiveDecisionsProbe sends the routing request, and variants of it, to the
 // real OpenRouter Decisions API and logs each raw status and body, so a failing
 // shape can be told apart from a failing endpoint. It is a diagnostic, not a
-// regression test: it runs only when SIGNET_JEV_LIVE=1 and OPENROUTER_API_KEY
+// regression test: it runs only when BELAI_JEV_LIVE=1 and OPENROUTER_API_KEY
 // are set, and never retries.
 //
-//	SIGNET_JEV_LIVE=1 OPENROUTER_API_KEY=… go test ./internal/rolemanager/jev -run LiveDecisionsProbe -v
+//	BELAI_JEV_LIVE=1 OPENROUTER_API_KEY=… go test ./internal/rolemanager/jev -run LiveDecisionsProbe -v
 func TestLiveDecisionsProbe(t *testing.T) {
 	key := os.Getenv("OPENROUTER_API_KEY")
-	if os.Getenv("SIGNET_JEV_LIVE") != "1" || key == "" {
-		t.Skip("set SIGNET_JEV_LIVE=1 and OPENROUTER_API_KEY to probe the live Decisions API")
+	if os.Getenv("BELAI_JEV_LIVE") != "1" || key == "" {
+		t.Skip("set BELAI_JEV_LIVE=1 and OPENROUTER_API_KEY to probe the live Decisions API")
 	}
 	noul := func(instr string, criteria bool) map[string]any {
 		q := map[string]any{"type": "noul", "instructions": instr}

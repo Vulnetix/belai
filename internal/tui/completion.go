@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // completionRole is the transcript role of the agent-mode completion panel.

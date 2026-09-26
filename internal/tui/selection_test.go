@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // frameFor builds a frame the way chatView does, for a viewport at the top.

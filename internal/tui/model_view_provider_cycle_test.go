@@ -11,7 +11,7 @@ import (
 // (authenticated) one, not the pre-probe full list.
 func newProviderCycleApp(t *testing.T) *App {
 	t.Helper()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir, Resolver: newTestResolver(t, workdir)})
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})

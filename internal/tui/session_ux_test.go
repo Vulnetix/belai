@@ -7,8 +7,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // TestPrependBannerLineMapAlignment pins the regression that would otherwise
@@ -60,7 +60,7 @@ func TestBannerPresentAfterManyMessages(t *testing.T) {
 	// out of the visible viewport as the thread grows), so it must be present
 	// in the prepared body, not hidden by the message count.
 	body, _ := a.prependBanner("transcript", components.LineMap{})
-	if !strings.Contains(body, "SIGNET") {
+	if !strings.Contains(body, "BELAI") {
 		t.Fatal("transcript body should still contain the banner")
 	}
 }
@@ -178,7 +178,7 @@ func TestHoverResolvesAfterBannerPrepend(t *testing.T) {
 // That bubble must carry the agent provider/model, or ctrl+o titles the panel
 // with the generic word "model".
 func TestToolOnlyAssistantBubbleTitlesWithTheModel(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.cfg.Provider, a.cfg.Model = "cloudflare-ai-gateway", "@cf/deepseek-ai/deepseek-v4-pro-0813"
 	a.messages = nil

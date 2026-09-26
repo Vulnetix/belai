@@ -8,8 +8,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/filediff"
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/filediff"
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
 // A directory attached with @ is listed, not read: the validation command

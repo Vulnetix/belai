@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/sandbox"
+	"github.com/vulnetix/belai/internal/sandbox"
 )
 
 // Bash honours the sandbox policy on its context: a write outside the roots
@@ -26,7 +26,7 @@ func TestBashRunsInsideSandbox(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(outside, "f")); err == nil {
 		t.Fatal("sandboxed Bash wrote outside the roots")
 	}
-	if !strings.Contains(res.Content, "ran inside the Signet sandbox") || !strings.Contains(res.Content, "network is off") {
+	if !strings.Contains(res.Content, "ran inside the Belai sandbox") || !strings.Contains(res.Content, "network is off") {
 		t.Fatalf("result = %q", res.Content)
 	}
 	if _, err := b.Execute(ctx, map[string]any{"command": "echo ok > inside"}); err != nil {

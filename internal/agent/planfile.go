@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/vulnetix/signet/internal/plans"
-	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/belai/internal/plans"
+	"github.com/vulnetix/belai/internal/run"
 )
 
 // recordPlan writes the model's reply to a plan file on every plan-mode exit

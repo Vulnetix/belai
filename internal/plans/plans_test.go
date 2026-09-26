@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 func TestPlanSaveLoadRoundTrip(t *testing.T) {

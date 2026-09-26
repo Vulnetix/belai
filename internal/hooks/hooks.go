@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/vulnetix/signet/internal/posture"
+	"github.com/vulnetix/belai/internal/posture"
 )
 
 // ValidateWithPosture runs ValidateHook and applies the hook_invalid posture.
@@ -18,7 +18,7 @@ func ValidateWithPosture(h Hook, pol posture.Policy) (*Hook, error) {
 	validated, err := ValidateHook(h)
 	if err != nil {
 		if pol.Level(posture.HookInvalid) == posture.Warn {
-			fmt.Fprintf(os.Stderr, "signet: warning: invalid hook: %v\n", err)
+			fmt.Fprintf(os.Stderr, "belai: warning: invalid hook: %v\n", err)
 			return nil, nil
 		}
 		return nil, err

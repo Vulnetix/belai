@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/modes"
+	"github.com/vulnetix/belai/internal/modes"
 )
 
 func TestDecideForcedModeEngagesTheChosenMode(t *testing.T) {

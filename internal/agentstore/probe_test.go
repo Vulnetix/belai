@@ -100,7 +100,7 @@ func TestExpandGlobDoubleStarAndTilde(t *testing.T) {
 }
 
 func TestAgentNamesAndHasAgent(t *testing.T) {
-	if !HasAgent("claude-code") || !HasAgent("signet") || !HasAgent("generic") {
+	if !HasAgent("claude-code") || !HasAgent("belai") || !HasAgent("generic") {
 		t.Fatal("expected registry agents to be known")
 	}
 	if HasAgent("nope") {

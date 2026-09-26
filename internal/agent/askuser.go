@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/clarify"
-	"github.com/vulnetix/signet/internal/delimiters"
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/sanitize"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/clarify"
+	"github.com/vulnetix/belai/internal/delimiters"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/sanitize"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 // askUserUnavailable replaces the AskUserQuestion result when nobody can

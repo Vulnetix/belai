@@ -8,7 +8,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 // chunkClassifier records every chunk it is asked to classify and answers via
@@ -143,7 +143,7 @@ func TestCacheGetPutAndPersistence(t *testing.T) {
 
 func TestDefaultCachePath(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("SIGNET_HOME", home)
+	t.Setenv("BELAI_HOME", home)
 	if got, want := DefaultCachePath(), filepath.Join(home, "bad-hashes.json"); got != want {
 		t.Fatalf("DefaultCachePath() = %q, want %q", got, want)
 	}

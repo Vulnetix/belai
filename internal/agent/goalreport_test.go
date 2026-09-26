@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/run"
 )
 
 // runGoalReport runs one goal prompt against the scripted server and returns

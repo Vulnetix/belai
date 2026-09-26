@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/posture"
+	"github.com/vulnetix/belai/internal/posture"
 )
 
 func TestLoadDirFindsAndValidatesSkills(t *testing.T) {

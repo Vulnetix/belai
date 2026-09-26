@@ -7,10 +7,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/credentials"
-	"github.com/vulnetix/signet/internal/provider"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/provider"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // providerNewViewState drives the "+ add new provider" form.

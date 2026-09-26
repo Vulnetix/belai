@@ -6,15 +6,15 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/budget"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/belai/internal/budget"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/run"
 )
 
 // R13: a headless run records its usage in the shared ledger, so day and month
 // budgets include it.
 func TestBudgetRule13_HeadlessRunRecordsUsage(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":70,"completion_tokens":7,"total_tokens":77}}`))

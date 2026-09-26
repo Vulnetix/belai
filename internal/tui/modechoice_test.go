@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/clarify"
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/clarify"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
 func TestModeChoicePanelStartsOnRecommended(t *testing.T) {
@@ -56,7 +56,7 @@ func TestApplyLiveModeDecisionUpdatesStickyModeWhenUserChosen(t *testing.T) {
 	d := rolemanager.ModeDecision{
 		Mode:       modes.ModeAgent,
 		Intent:     rolemanager.IntentDebug,
-		AgentName:  "signet:debug",
+		AgentName:  "belai:debug",
 		UserChosen: true,
 	}
 	a.applyLiveModeDecision(d)

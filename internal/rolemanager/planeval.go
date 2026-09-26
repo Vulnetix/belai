@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/sanitize"
+	"github.com/vulnetix/belai/internal/sanitize"
 )
 
 // PlanSentinel is the strict single-token output of the plan evaluator. It is

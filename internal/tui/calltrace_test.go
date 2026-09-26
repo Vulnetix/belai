@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/calltrace"
+	"github.com/vulnetix/belai/internal/calltrace"
 )
 
 // TestToolContextCarriesSessionAndTool pins that a tool the TUI runs directly

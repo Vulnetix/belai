@@ -10,8 +10,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/filelib"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/filelib"
 )
 
 // Entry is one named prompt in a library.

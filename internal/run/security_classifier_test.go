@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/mlclassify"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/mlclassify"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 func TestClassifierKindDefault(t *testing.T) {

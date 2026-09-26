@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 // maxFileSize caps every file read at 1 MiB.
@@ -22,7 +22,7 @@ const maxFileSize = 1 << 20
 // agent's on-disk configuration.
 type Found struct {
 	Agent    string                  // "pi", "codex", "goose", …
-	Provider string                  // signet provider name, or the custom name to create
+	Provider string                  // belai provider name, or the custom name to create
 	Field    string                  // "api_key", "oauth_token"
 	Location string                  // absolute path it came from
 	EnvKey   string                  // set when the source is itself an env reference

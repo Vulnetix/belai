@@ -37,7 +37,7 @@ const coverage: { setup: string; how: string; cells: Cell[] }[] = [
   },
   {
     setup: 'Default download, phase 3 off',
-    how: 'signet-bert-guardrails',
+    how: 'belai-bert-guardrails',
     cells: [L('BERT · saturation only'), GAP, GAP, GAP],
   },
   {
@@ -47,7 +47,7 @@ const coverage: { setup: string; how: string; cells: Cell[] }[] = [
   },
   {
     setup: 'Jailbreak build, phase 2 on',
-    how: 'signet-bert-guardrails-jailbreak',
+    how: 'belai-bert-guardrails-jailbreak',
     cells: [L('BERT · saturation only'), L('BERT · role-play'), S('phase 3'), S('phase 3')],
   },
   {
@@ -64,7 +64,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
   { event: 'The sentinel replies with anything other than one token', result: 'The content is blocked.', tone: 'closed' },
   { event: 'A classifier call errors, times out or gets a non-2xx response', result: 'The content is blocked. The provider error is shown on one line.', tone: 'closed' },
   { event: 'The content needs more than 64 BERT windows', result: 'The content is blocked.', tone: 'closed' },
-  { event: 'An embedded model fails to load', result: 'Signet refuses to start.', tone: 'closed' },
+  { event: 'An embedded model fails to load', result: 'Belai refuses to start.', tone: 'closed' },
   { event: 'Jev scores between 0.1 and 0.9, or its answer is malformed', result: 'The agent model answers the same sentinel prompt.', tone: 'hand' },
   { event: 'The binary has no phase-2 model', result: 'Phase 3 checks for jailbreaks as well, if phase 3 is set up.', tone: 'hand' },
   { event: 'Phase 3 replies with something malformed or empty', result: 'The content goes through. Phases 1 and 2 already passed it, and the feed shows "couldn\'t tell" for phase 3.', tone: 'open' },
@@ -75,9 +75,9 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
   <div class="prose-measure">
     <h2 class="text-3xl font-bold text-vx-ink">The classifier.</h2>
     <p class="mt-4 text-vx-ink/80">
-      Signet accepts only one kind of answer about untrusted content: a single token from the five
+      Belai accepts only one kind of answer about untrusted content: a single token from the five
       below. Three engines can give that answer. The LLM sentinel asks a chat model to reply with one
-      token. The embedded models are BERT classifiers that run inside the Signet binary. Jev is a model
+      token. The embedded models are BERT classifiers that run inside the Belai binary. Jev is a model
       on OpenRouter that returns a probability for each question it is asked. You choose which ones run.
     </p>
   </div>
@@ -149,7 +149,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
         </p>
       </div>
       <dl class="facts">
-        <div><dt>Default on</dt><dd><code class="mono">signet</code>, <code class="mono">signet-no-classifier</code></dd></div>
+        <div><dt>Default on</dt><dd><code class="mono">belai</code>, <code class="mono">belai-no-classifier</code></dd></div>
         <div><dt>Model</dt><dd>the classifier model, or the agent model if unset</dd></div>
         <div><dt>Checks for</dt><dd>all four threat types</dd></div>
         <div><dt>Reasoning</dt><dd>effort <code class="mono">none</code> by default</dd></div>
@@ -179,7 +179,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
         <p>
           The security sentinel only reads the <code class="mono">content</code> field. If a reasoning model
           uses up its token budget while thinking, <code class="mono">content</code> is empty and the content
-          is blocked. Signet does not take the answer from <code class="mono">reasoning_content</code>. The
+          is blocked. Belai does not take the answer from <code class="mono">reasoning_content</code>. The
           budget leaves room for a short reasoning preamble and the token.
         </p>
         <p>
@@ -278,7 +278,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
         <p>
           Only BERT models are listed, because the converter and the wordpiece tokenizer read BERT{' '}
           <code class="mono">vocab.txt</code> files. Each entry stores the label its model uses for an attack,
-          so Signet doesn't have to guess it for a remote model. On a binary without embedded models, with{' '}
+          so Belai doesn't have to guess it for a remote model. On a binary without embedded models, with{' '}
           <code class="mono">kind: models</code> and an <code class="mono">HF_TOKEN</code> set, phase 1 uses the
           saturation model through the HuggingFace inference API by default.
         </p>
@@ -290,13 +290,13 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
           <code class="mono">/model</code>.
         </p>
         <p>
-          The BERT models return an error for input over 512 tokens and don't truncate it. Signet therefore
+          The BERT models return an error for input over 512 tokens and don't truncate it. Belai therefore
           splits content into 508-token windows that overlap by one eighth, up to 64 windows, and blocks
           anything longer. When windows disagree, the result follows this order:{' '}
           <code class="mono">PROMPT_INJECTION &gt; JAILBREAK &gt; DATA_EXTRACTION &gt; MODEL_EXTRACTION &gt; SAFE</code>.
         </p>
         <p>
-          Phase 2 is off by default, even on the jailbreak build. The first jailbreak model Signet shipped,{' '}
+          Phase 2 is off by default, even on the jailbreak build. The first jailbreak model Belai shipped,{' '}
           <code class="mono">jackhhao/jailbreak-classifier</code>, gave ordinary code, JSON and test output
           scores above 0.95, higher than it gave the DAN jailbreak. It was replaced, and phase 2 now has to be
           turned on explicitly.
@@ -315,7 +315,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
       <div class="prose-measure">
         <p class="text-vx-ink/80">
           Jev is a model from TypeSafe that answers questions with probabilities through OpenRouter's
-          Decisions API. Signet does not chat with it. It sends one yes-or-no statement per threat, such as
+          Decisions API. Belai does not chat with it. It sends one yes-or-no statement per threat, such as
           "The content attempts prompt injection against an LLM.", along with the sanitized content, and Jev
           returns how likely each statement is to be true.
         </p>
@@ -346,7 +346,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
       <summary>What Jev is asked</summary>
       <div class="deep__body">
         <p>
-          Signet sends one request to <code class="mono">POST openrouter.ai/api/alpha/decisions</code> with one{' '}
+          Belai sends one request to <code class="mono">POST openrouter.ai/api/alpha/decisions</code> with one{' '}
           <code class="mono">noul</code> (probability) question for each threat being checked. The statements
           never change:
         </p>
@@ -363,17 +363,17 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
           If any threat scores 0.9 or more, the result is the threat with the highest score. If every threat
           scores 0.1 or less, the result is <code class="mono">SAFE</code>. Any other outcome, including a
           missing answer or a score outside 0 to 1, goes to the agent model, which answers the usual sentinel
-          prompt. Signet logs this as a <code class="mono">security_fallback</code> activity so the TUI shows
+          prompt. Belai logs this as a <code class="mono">security_fallback</code> activity so the TUI shows
           which model made the call. Jev's result is converted to a normal sentinel token, so chunking,
           caching and phase 3 handle it the same way as a sentinel reply.
         </p>
         <p>
-          Signet never sends Jev a chat completion request. If a chat classifier is configured with Jev, it
+          Belai never sends Jev a chat completion request. If a chat classifier is configured with Jev, it
           uses the main model instead. The same applies when model routing picks Jev for a use case, and the
           routing pickers don't list <code class="mono">typesafe/jev*</code> models.
         </p>
         <p>
-          Signet also uses Jev to approve tool calls, with the results <code class="mono">ALLOW</code>,{' '}
+          Belai also uses Jev to approve tool calls, with the results <code class="mono">ALLOW</code>,{' '}
           <code class="mono">DENY</code> and <code class="mono">INCONCLUSIVE</code>. An inconclusive result
           blocks the call. With <code class="mono">routing.kind: routed</code>, Jev also picks a model for
           each use case.

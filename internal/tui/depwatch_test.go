@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/depwatch"
-	"github.com/vulnetix/signet/internal/filediff"
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/depwatch"
+	"github.com/vulnetix/belai/internal/filediff"
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
 func depChange(path string) depwatch.Change {

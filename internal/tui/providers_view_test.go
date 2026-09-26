@@ -6,9 +6,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/credentials"
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 func TestProvidersViewEnterBuildsRows(t *testing.T) {
@@ -44,7 +44,7 @@ func TestProvidersReportCommandDoesNotPushView(t *testing.T) {
 }
 
 func TestProviderDetailCredentialsShowsBackend(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	resolver, err := credentials.NewResolver(workdir)
 	if err != nil {
@@ -105,7 +105,7 @@ func TestProvidersMasterListHasAddNewRow(t *testing.T) {
 }
 
 func TestProviderNewFormCommitsProfileAndLabel(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
 	a.openProviderNew()
@@ -135,7 +135,7 @@ func TestProviderNewFormCommitsProfileAndLabel(t *testing.T) {
 }
 
 func TestProviderNewAcceptsSecondInstanceOfSameKind(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
 

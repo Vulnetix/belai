@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 // LedgerFile is the usage ledger's name under the global state directory.
@@ -200,7 +200,7 @@ func (r *Recorder) Gauges(bs []config.TokenBudget) []Gauge {
 
 // Refresh re-reads the ledger when the last read is older than maxAge (or
 // maxAge <= 0), so
-// usage recorded by another signet process shows up. Pending local usage is
+// usage recorded by another belai process shows up. Pending local usage is
 // kept.
 func (r *Recorder) Refresh(maxAge time.Duration) {
 	r.mu.Lock()

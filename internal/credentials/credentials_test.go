@@ -81,8 +81,8 @@ func TestSpecUnknownProviderDoesNotUseOpenAIKey(t *testing.T) {
 			t.Fatalf("unknown provider must not resolve from OPENAI_API_KEY")
 		}
 	}
-	if len(spec[0].EnvVars) == 0 || spec[0].EnvVars[0] != "SIGNET_MYPROVIDER_API_KEY" {
-		t.Fatalf("EnvVars = %v, want [SIGNET_MYPROVIDER_API_KEY]", spec[0].EnvVars)
+	if len(spec[0].EnvVars) == 0 || spec[0].EnvVars[0] != "BELAI_MYPROVIDER_API_KEY" {
+		t.Fatalf("EnvVars = %v, want [BELAI_MYPROVIDER_API_KEY]", spec[0].EnvVars)
 	}
 }
 

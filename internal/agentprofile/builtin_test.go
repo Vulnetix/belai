@@ -7,7 +7,7 @@ import (
 
 func TestBuiltinTriageLoadable(t *testing.T) {
 	resetDir(t)
-	p, err := Load("signet:triage-vulns")
+	p, err := Load("belai:triage-vulns")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -22,7 +22,7 @@ func TestBuiltinTriageLoadable(t *testing.T) {
 func TestBuiltinCannotBeSaved(t *testing.T) {
 	resetDir(t)
 	p := AgentProfile{
-		Name:         "signet:custom",
+		Name:         "belai:custom",
 		Description:  "d",
 		SystemPrompt: "s",
 		Mode:         ModeSingle,
@@ -34,10 +34,10 @@ func TestBuiltinCannotBeSaved(t *testing.T) {
 
 func TestUserProfileCannotCollideWithBuiltin(t *testing.T) {
 	resetDir(t)
-	// "signet:triage-vulns" sanitises to "signet_triage-vulns"; a user profile
-	// named "signet_triage-vulns" must be rejected to prevent shadowing.
+	// "belai:triage-vulns" sanitises to "belai_triage-vulns"; a user profile
+	// named "belai_triage-vulns" must be rejected to prevent shadowing.
 	p := AgentProfile{
-		Name:         "signet_triage-vulns",
+		Name:         "belai_triage-vulns",
 		Description:  "d",
 		SystemPrompt: "s",
 		Mode:         ModeSingle,
@@ -54,7 +54,7 @@ func TestBuiltinNotInDiskList(t *testing.T) {
 		t.Fatalf("List: %v", err)
 	}
 	for _, p := range list {
-		if p.Name == "signet:triage-vulns" && !p.Builtin {
+		if p.Name == "belai:triage-vulns" && !p.Builtin {
 			t.Fatal("builtin must be flagged")
 		}
 	}
@@ -62,7 +62,7 @@ func TestBuiltinNotInDiskList(t *testing.T) {
 
 func TestBuiltinIntentProfilesLoadable(t *testing.T) {
 	resetDir(t)
-	for _, name := range []string{"signet:plan-handoff", "signet:debug", "signet:fanout"} {
+	for _, name := range []string{"belai:plan-handoff", "belai:debug", "belai:fanout"} {
 		p, err := Load(name)
 		if err != nil {
 			t.Fatalf("Load %s: %v", name, err)

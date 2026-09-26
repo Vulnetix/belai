@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/activity"
+	"github.com/vulnetix/belai/internal/activity"
 )
 
 func TestProbeRunningFindsHealthyServer(t *testing.T) {
@@ -243,14 +243,14 @@ func TestHFDownloadUsesEnvironmentToken(t *testing.T) {
 	// Fake hf binary writes its environment and arguments, then prints a
 	// fake .gguf path.
 	script := `#!/bin/sh
-printf '%s\n' "$HF_TOKEN" > "$SIGNET_TEST_DIR/token"
-printf '%s\n' "$*" > "$SIGNET_TEST_DIR/argv"
+printf '%s\n' "$HF_TOKEN" > "$BELAI_TEST_DIR/token"
+printf '%s\n' "$*" > "$BELAI_TEST_DIR/argv"
 printf 'ok\n/home/user/.cache/huggingface/hub/models--org--model/blobs/model-Q4_K_M.gguf\n'
 `
 	if err := os.WriteFile(binary, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("SIGNET_TEST_DIR", dir)
+	t.Setenv("BELAI_TEST_DIR", dir)
 
 	path, err := HFDownload(context.Background(), binary, "org/model", "Q4_K_M", "my-token", nil)
 	if err != nil {

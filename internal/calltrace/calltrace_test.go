@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/version"
+	"github.com/vulnetix/belai/internal/version"
 )
 
 var traceparentRE = regexp.MustCompile(`^00-[0-9a-f]{32}-[0-9a-f]{16}-01$`)
@@ -102,7 +102,7 @@ func TestTokenSanitised(t *testing.T) {
 
 func TestEnv(t *testing.T) {
 	base := Env(context.Background())
-	if strings.Join(base, " ") != "SIGNET=1 SIGNET_VERSION="+version.Version {
+	if strings.Join(base, " ") != "BELAI=1 BELAI_VERSION="+version.Version {
 		t.Fatalf("base env = %v", base)
 	}
 	ctx := WithTool(WithSession(context.Background(), "sess-1"), "Bash", "c1")

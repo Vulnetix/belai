@@ -7,9 +7,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/vulnetix/signet/internal/agentprofile"
-	"github.com/vulnetix/signet/internal/profiles"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/profiles"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // The agent picker is the slash-completion popup's sibling: a strip above
@@ -67,7 +67,7 @@ func (a *App) loadAgents() {
 		}
 	}
 
-	// Built-ins first: signet:debug is the default agent and always sits at
+	// Built-ins first: belai:debug is the default agent and always sits at
 	// index 0. User profiles follow, then background-agent definitions.
 	sort.Slice(builtins, func(i, j int) bool { return builtins[i].Name < builtins[j].Name })
 	for i, c := range builtins {
@@ -103,7 +103,7 @@ func (a *App) loadAgents() {
 }
 
 // openAgentPicker shows the agent strip above the composer and selects the
-// default signet:debug profile when it is available.
+// default belai:debug profile when it is available.
 func (a *App) openAgentPicker() {
 	a.agentPickerOpen = true
 	a.agentIndex = 0
@@ -285,7 +285,7 @@ func (a *App) agentPickerVisible() bool {
 
 // engagedAgent returns the agent carrying turns right now, which is nothing
 // outside agent mode. Plan and goal mode carry the active plan or goal instead
-// — that is Signet's own logic, and the system prompt holds exactly one
+// — that is Belai's own logic, and the system prompt holds exactly one
 // carrier — so an engaged agent is dormant there rather than cleared: nothing
 // in between shows it or sends it. Shift+tab re-entering agent mode clears the
 // selection (clearEngagedAgent); a direct mode assignment leaves it dormant.

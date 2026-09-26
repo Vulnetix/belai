@@ -16,7 +16,7 @@ func TestAdapterForDispatch(t *testing.T) {
 		{FormatJSONLClaude, true},
 		{FormatJSONLCodex, true},
 		{FormatJSONLPi, true},
-		{FormatJSONLSignet, true},
+		{FormatJSONLBelai, true},
 		{FormatJSONLPrompts, true},
 		{FormatSQLiteGoose, true},
 		{FormatSQLiteOpenCode, true},
@@ -35,12 +35,12 @@ func TestAdapterForDispatch(t *testing.T) {
 }
 
 func TestDefaultProject(t *testing.T) {
-	r := &Registry{workdir: "/home/u/proj/signet"}
+	r := &Registry{workdir: "/home/u/proj/belai"}
 	cases := []struct {
 		q    SessionQuery
 		want string
 	}{
-		{SessionQuery{}, "/home/u/proj/signet"},
+		{SessionQuery{}, "/home/u/proj/belai"},
 		{SessionQuery{Project: "other"}, "other"},
 		{SessionQuery{AllProjects: true}, ""},
 		{SessionQuery{AllProjects: true, Project: "other"}, ""}, // all-projects wins
@@ -58,10 +58,10 @@ func TestSourceMatchesProject(t *testing.T) {
 		project string
 		want    bool
 	}{
-		{Source{Project: "/home/u/proj/signet"}, "", true},
-		{Source{Project: "/home/u/proj/signet"}, "signet", true},
-		{Source{Project: "/home/u/proj/signet"}, "other", false},
-		{Source{Project: ""}, "signet", false}, // unknown project never matches
+		{Source{Project: "/home/u/proj/belai"}, "", true},
+		{Source{Project: "/home/u/proj/belai"}, "belai", true},
+		{Source{Project: "/home/u/proj/belai"}, "other", false},
+		{Source{Project: ""}, "belai", false}, // unknown project never matches
 	}
 	for _, c := range cases {
 		if got := sourceMatchesProject(c.src, c.project); got != c.want {
@@ -99,10 +99,10 @@ func TestHitMatchesProject(t *testing.T) {
 		project string
 		want    bool
 	}{
-		{Hit{Project: "/home/u/proj/signet"}, "", true},
-		{Hit{Project: "/home/u/proj/signet"}, "signet", true},
-		{Hit{Project: "/home/u/proj/signet"}, "other", false},
-		{Hit{Project: ""}, "signet", false},
+		{Hit{Project: "/home/u/proj/belai"}, "", true},
+		{Hit{Project: "/home/u/proj/belai"}, "belai", true},
+		{Hit{Project: "/home/u/proj/belai"}, "other", false},
+		{Hit{Project: ""}, "belai", false},
 	}
 	for _, c := range cases {
 		if got := hitMatchesProject(c.hit, c.project); got != c.want {

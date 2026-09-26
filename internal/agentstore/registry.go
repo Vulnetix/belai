@@ -22,9 +22,9 @@ const (
 	// FormatJSONLPi is a pi session file: line 1 carries type "session" (id
 	// and cwd); later lines are type "message".
 	FormatJSONLPi Format = "jsonl-pi"
-	// FormatJSONLSignet is a signet session.Entry JSONL file, read through
+	// FormatJSONLBelai is a belai session.Entry JSONL file, read through
 	// internal/session rather than a new parser.
-	FormatJSONLSignet Format = "jsonl-signet"
+	FormatJSONLBelai Format = "jsonl-belai"
 	// FormatJSONLPrompts is a history.jsonl prompt index.
 	FormatJSONLPrompts Format = "jsonl-prompts"
 	// FormatSQLiteGoose is the goose sessions SQLite database.
@@ -61,10 +61,10 @@ type Agent struct {
 // agent-store tools asks.
 var knownAgents = []Agent{
 	{
-		Name:     "signet",
-		Sessions: []string{"~/.vulnetix/signet/sessions/*/*.jsonl"},
+		Name:     "belai",
+		Sessions: []string{"~/.vulnetix/belai/sessions/*/*.jsonl"},
 		Memory:   []string{".vulnetix/goals", ".vulnetix/prompts", ".vulnetix/plans"},
-		Format:   FormatJSONLSignet,
+		Format:   FormatJSONLBelai,
 	},
 	{
 		Name:     "claude-code",

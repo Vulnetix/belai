@@ -2,12 +2,12 @@
 // context and stamps it onto outbound HTTP requests and subprocess
 // environments.
 //
-// Every outbound request already identifies Signet through
+// Every outbound request already identifies Belai through
 // version.UserAgent(). calltrace adds the correlation a server, proxy or child
 // process needs to tie a request back to the session and tool call that made
 // it, following the conventions other coding agents use (Claude Code's
 // X-Claude-Code-Session-Id, Codex's session_id/originator/version) under a
-// Signet-namespaced X-Signet-* prefix, plus the vendor-neutral W3C Trace
+// Belai-namespaced X-Belai-* prefix, plus the vendor-neutral W3C Trace
 // Context traceparent header (and the OpenTelemetry TRACEPARENT environment
 // variable for child processes).
 //
@@ -24,26 +24,26 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/version"
+	"github.com/vulnetix/belai/internal/version"
 )
 
 // Header names stamped onto outbound HTTP requests.
 const (
-	HeaderSessionID     = "X-Signet-Session-Id"
-	HeaderTool          = "X-Signet-Tool"
-	HeaderToolCallID    = "X-Signet-Tool-Call-Id"
-	HeaderClientVersion = "X-Signet-Client-Version"
-	HeaderClientBuild   = "X-Signet-Client-Build"
+	HeaderSessionID     = "X-Belai-Session-Id"
+	HeaderTool          = "X-Belai-Tool"
+	HeaderToolCallID    = "X-Belai-Tool-Call-Id"
+	HeaderClientVersion = "X-Belai-Client-Version"
+	HeaderClientBuild   = "X-Belai-Client-Build"
 	HeaderTraceparent   = "traceparent"
 )
 
 // Environment variable names exported to tool subprocesses.
 const (
-	EnvMarker      = "SIGNET"
-	EnvSessionID   = "SIGNET_SESSION_ID"
-	EnvTool        = "SIGNET_TOOL"
-	EnvToolCallID  = "SIGNET_TOOL_CALL_ID"
-	EnvVersion     = "SIGNET_VERSION"
+	EnvMarker      = "BELAI"
+	EnvSessionID   = "BELAI_SESSION_ID"
+	EnvTool        = "BELAI_TOOL"
+	EnvToolCallID  = "BELAI_TOOL_CALL_ID"
+	EnvVersion     = "BELAI_VERSION"
 	EnvTraceparent = "TRACEPARENT"
 )
 
@@ -132,7 +132,7 @@ func Apply(ctx context.Context, h http.Header) {
 }
 
 // Env returns the KEY=VALUE pairs to append to a tool subprocess's
-// environment. SIGNET=1 and SIGNET_VERSION are always present.
+// environment. BELAI=1 and BELAI_VERSION are always present.
 func Env(ctx context.Context) []string {
 	v := from(ctx)
 	env := []string{EnvMarker + "=1", EnvVersion + "=" + version.Version}

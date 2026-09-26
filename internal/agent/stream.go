@@ -7,15 +7,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/clarify"
-	"github.com/vulnetix/signet/internal/filediff"
-	"github.com/vulnetix/signet/internal/goals"
-	"github.com/vulnetix/signet/internal/permissions"
-	"github.com/vulnetix/signet/internal/resilience"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/todos"
-	"github.com/vulnetix/signet/internal/transcript"
+	"github.com/vulnetix/belai/internal/clarify"
+	"github.com/vulnetix/belai/internal/filediff"
+	"github.com/vulnetix/belai/internal/goals"
+	"github.com/vulnetix/belai/internal/permissions"
+	"github.com/vulnetix/belai/internal/resilience"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/todos"
+	"github.com/vulnetix/belai/internal/transcript"
 )
 
 // EventKind identifies one streaming agent event.

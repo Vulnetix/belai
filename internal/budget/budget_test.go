@@ -5,7 +5,7 @@ import (
 	"time"
 	_ "time/tzdata" // DST tests must not depend on the host's zoneinfo
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 func day(tokens int64) config.TokenBudget {

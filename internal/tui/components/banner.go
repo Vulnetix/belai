@@ -1,4 +1,4 @@
-// Package components holds the Bubble Tea building blocks for the Signet TUI.
+// Package components holds the Bubble Tea building blocks for the Belai TUI.
 package components
 
 import (
@@ -169,7 +169,7 @@ func (b Banner) pixView() string {
 
 func (b Banner) textView() string {
 	var out []string
-	out = append(out, "SIGNET")
+	out = append(out, "BELAI")
 	if v := b.versionLine(); v != "" {
 		out = append(out, v)
 	}

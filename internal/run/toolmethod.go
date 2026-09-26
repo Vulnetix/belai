@@ -3,8 +3,8 @@ package run
 import (
 	"fmt"
 
-	"github.com/vulnetix/signet/internal/provider"
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/provider"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 // ToolMethod is the wire method for serialising tool-call arguments. It is an

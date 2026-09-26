@@ -3,13 +3,13 @@ package tui
 import (
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 func saveProvidersForTest(t *testing.T, providers map[string]config.ProviderProfile) {
 	t.Helper()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	if err := config.SaveGlobal(config.Settings{Providers: providers}); err != nil {
 		t.Fatalf("SaveGlobal: %v", err)
 	}

@@ -3,7 +3,7 @@ package tui
 import (
 	"testing"
 
-	"github.com/vulnetix/signet/internal/notify"
+	"github.com/vulnetix/belai/internal/notify"
 )
 
 // events left out means the default set; an explicit empty list means none;

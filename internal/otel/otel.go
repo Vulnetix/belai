@@ -1,4 +1,4 @@
-// Package otel exports Signet's traces and metrics to an OpenTelemetry
+// Package otel exports Belai's traces and metrics to an OpenTelemetry
 // collector over OTLP/HTTP with JSON encoding. It carries facts about a
 // session, never its content: every attribute key comes from a fixed
 // allowlist and every string value is reduced to an identifier, so no
@@ -22,26 +22,26 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vulnetix/signet/internal/calltrace"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/version"
+	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/version"
 )
 
 // Attribute keys. Nothing else is ever exported.
 const (
-	AttrMode       = "signet.mode"
-	AttrOutcome    = "signet.outcome"
-	AttrPasses     = "signet.passes"
-	AttrProvider   = "signet.provider"
-	AttrModel      = "signet.model"
-	AttrRole       = "signet.role"
-	AttrEstimated  = "signet.tokens.estimated"
-	AttrToolName   = "signet.tool.name"
-	AttrToolKind   = "signet.tool.kind"
-	AttrDecision   = "signet.decision"
-	AttrVerdict    = "signet.verdict"
-	AttrHookEvent  = "signet.hook.event"
-	AttrProjectKey = "signet.project"
+	AttrMode       = "belai.mode"
+	AttrOutcome    = "belai.outcome"
+	AttrPasses     = "belai.passes"
+	AttrProvider   = "belai.provider"
+	AttrModel      = "belai.model"
+	AttrRole       = "belai.role"
+	AttrEstimated  = "belai.tokens.estimated"
+	AttrToolName   = "belai.tool.name"
+	AttrToolKind   = "belai.tool.kind"
+	AttrDecision   = "belai.decision"
+	AttrVerdict    = "belai.verdict"
+	AttrHookEvent  = "belai.hook.event"
+	AttrProjectKey = "belai.project"
 )
 
 var allowedAttrs = map[string]bool{
@@ -195,7 +195,7 @@ func Start(cfg Config, projectKey string) func() {
 	}
 	e := &Exporter{
 		cfg:      cfg,
-		resource: []Attr{S("service.name", "signet"), S("service.version", version.Version), S(AttrProjectKey, projectKey)},
+		resource: []Attr{S("service.name", "belai"), S("service.version", version.Version), S(AttrProjectKey, projectKey)},
 		sums:     map[string]*sumPoint{},
 		hists:    map[string]*histPoint{},
 		stop:     make(chan struct{}),
@@ -412,7 +412,7 @@ func (e *Exporter) flush() {
 	}
 	e.mu.Unlock()
 
-	scope := map[string]any{"name": "signet", "version": version.Version}
+	scope := map[string]any{"name": "belai", "version": version.Version}
 	res := map[string]any{"attributes": encodeAttrs(e.resource)}
 	if e.cfg.Traces && len(spans) > 0 {
 		var out []any

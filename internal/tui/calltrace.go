@@ -3,11 +3,11 @@ package tui
 import (
 	"context"
 
-	"github.com/vulnetix/signet/internal/calltrace"
+	"github.com/vulnetix/belai/internal/calltrace"
 )
 
 // publishSessionID pushes the current session id into the background agent
-// and process managers, so their turns stamp the same X-Signet-Session-Id and
+// and process managers, so their turns stamp the same X-Belai-Session-Id and
 // traceparent as the foreground session. Call it wherever a.sessionID changes
 // and after either manager is created. It runs on the Bubble Tea goroutine;
 // the managers store the id atomically.

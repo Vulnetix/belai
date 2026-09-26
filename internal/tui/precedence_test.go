@@ -3,7 +3,7 @@ package tui
 import (
 	"testing"
 
-	"github.com/vulnetix/signet/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/agentprofile"
 )
 
 func TestGuardrailsPrecedenceProfileBeatsSettings(t *testing.T) {

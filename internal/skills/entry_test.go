@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/posture"
+	"github.com/vulnetix/belai/internal/posture"
 )
 
 func putSkill(t *testing.T, root, dir, doc string) {

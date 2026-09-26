@@ -9,7 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/projectregistry"
+	"github.com/vulnetix/belai/internal/projectregistry"
 )
 
 // outsideRootFixture lays out base/{work,sib/notes.md,.hidden/,top.md} and
@@ -17,7 +17,7 @@ import (
 // is read without a classifier round trip.
 func outsideRootFixture(t *testing.T) (a *App, base, work, sib string) {
 	t.Helper()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	base, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)

@@ -7,16 +7,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/session"
-	"github.com/vulnetix/signet/internal/todos"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/todos"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 func newResumeApp(t *testing.T, workdir string) *App {
 	t.Helper()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	return New(Options{Provider: "openai", Model: "gpt-5", Workdir: workdir})
 }
 
@@ -306,7 +306,7 @@ func TestResumeABAConsistentFiles(t *testing.T) {
 }
 
 func TestNewWithResumeSessionLoadsTranscript(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	st, err := session.NewStore()
 	if err != nil {
@@ -330,7 +330,7 @@ func TestNewWithResumeSessionLoadsTranscript(t *testing.T) {
 }
 
 func TestNewWithBadResumeSessionFallsBack(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	key, _ := session.KeyFor(workdir)
 	a := New(Options{Provider: "openai", Model: "gpt-5", Workdir: workdir, ResumeKey: key, ResumeSession: "does-not-exist"})

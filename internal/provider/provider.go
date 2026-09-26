@@ -13,8 +13,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/version"
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/version"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 // Profile describes a provider that is not compiled in: where it lives, which

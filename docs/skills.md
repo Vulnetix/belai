@@ -5,7 +5,7 @@ still change.
 
 A skill is a `SKILL.md` file holding a procedure the agent can load when it is
 relevant: how this team cuts a release, how to regenerate fixtures, how to
-triage a scanner finding. Signet lists installed skills to the model by name
+triage a scanner finding. Belai lists installed skills to the model by name
 and description, the model loads one with the `Skill` tool, and it can offer
 to save a new one with `SkillDraft`, which you approve.
 
@@ -19,13 +19,13 @@ to save a new one with `SkillDraft`, which you approve.
 
 ## Skill files
 
-Skills live in `~/.vulnetix/signet/skills/<name>/SKILL.md` (or
-`$SIGNET_HOME/skills/`). The file starts with front matter:
+Skills live in `~/.vulnetix/belai/skills/<name>/SKILL.md` (or
+`$BELAI_HOME/skills/`). The file starts with front matter:
 
 ```markdown
 ---
 name: release
-description: Cut a Signet release, tag it, and check the Homebrew formula
+description: Cut a Belai release, tag it, and check the Homebrew formula
 allowed-tools: [Bash, Read, Grep]
 ---
 
@@ -77,7 +77,7 @@ with `SkillDraft`:
 2. It shows you that exact file in a permission ask. When a skill of that
    name exists, the ask shows the diff against it.
 3. Only if you approve is it written to
-   `~/.vulnetix/signet/skills/<name>/SKILL.md`, and it is listed from the next
+   `~/.vulnetix/belai/skills/<name>/SKILL.md`, and it is listed from the next
    turn.
 
 `SkillDraft` always asks: an allow rule does not skip the ask, and neither

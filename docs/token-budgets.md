@@ -1,7 +1,7 @@
 # Token budgets
 
 A token budget caps how many tokens one provider+model may spend in a
-**session**, a local calendar **day**, or a local calendar **month**. Signet
+**session**, a local calendar **day**, or a local calendar **month**. Belai
 counts every model call, shows the selected model's budgets in the footer, and
 can warn when spend is outrunning the clock. Budgets never block a call: they
 inform, they do not enforce.
@@ -57,11 +57,11 @@ that is not here.
   role call counts against that model's budgets, not the selected model's.
 - **R4. Tokens are the provider's total.** A call counts its provider-reported
   total: prompt plus completion, reasoning included. When a provider reports
-  no usage, Signet estimates about four characters per token over everything
+  no usage, Belai estimates about four characters per token over everything
   sent and received and marks the event as estimated.
 - **R5. Scope windows.** A day runs from local midnight to the next local
   midnight; a month from local midnight on the 1st to the 1st of the next
-  month. A session is the Signet session: a new session (`/new`, `/clear`,
+  month. A session is the Belai session: a new session (`/new`, `/clear`,
   plan execution) starts from zero, and a resumed session picks its stored
   total back up.
 - **R6. Token percentage left rounds up.** The percentage of the allowance
@@ -83,24 +83,24 @@ that is not here.
 - **R10. Cycling.** With two or more budgets for the selected model the footer
   shows each in scope order (session, day, month) for
   `ui.budget_cycle_seconds` (default 10) before moving to the next. The cycle
-  follows the clock, not a timer, so every signet window cycles in step.
+  follows the clock, not a timer, so every belai window cycles in step.
 - **R11. Warnings.** With `ui.budget_warn` on, each completed call to the
   selected provider+model prints one line per budget of that model that is
   amber (percentage of tokens and of time left) or red (exhausted, with usage
   and allowance). Off by default. A warning never blocks or delays a call.
 - **R12. The usage ledger.** Usage persists in `usage.json` in the global
   state directory: per model per local day, and per session per model. Several
-  signet processes share it through an advisory lockfile; each process sees its
+  belai processes share it through an advisory lockfile; each process sees its
   own usage at once and other processes' within 30 seconds. Day totals are kept
   for 13 months; a session's total is dropped once the session has been idle
   longer than `session_retention_days`, and it is then remembered as
   imported so its transcript is never counted a second time.
-- **R13. Headless runs count.** `signet -prompt` records its usage in the same
+- **R13. Headless runs count.** `belai -prompt` records its usage in the same
   ledger, so day and month budgets include it. It prints nothing about budgets.
 - **R14. Day and month cover every session.** Day and month budgets are
   global: they count every session of every project, not only the one on
   screen. Sessions the ledger never recorded live — saved before token budgets
-  existed, or by an older signet — are imported from their transcripts under
+  existed, or by an older belai — are imported from their transcripts under
   `sessions/` when the TUI starts, in the background. A goal run counts its
   exact `tokensUsed`, split across days by its `goal_state` rows and recorded
   under the model its turns name; every other turn counts the usage its

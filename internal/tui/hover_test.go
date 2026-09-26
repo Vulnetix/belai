@@ -8,7 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // renderFrame renders a.messages into a.lastFrame the way chatView does, so
@@ -380,8 +380,8 @@ func TestHoverSaveName(t *testing.T) {
 
 	b := hoverAssistantApp(t)
 	b.sessionID = "abcd1234abcd1234"
-	if got := b.hoverSaveName(); got != "signet-abcd1234-0.md" {
-		t.Fatalf("assistant save name = %q, want signet-abcd1234-0.md", got)
+	if got := b.hoverSaveName(); got != "belai-abcd1234-0.md" {
+		t.Fatalf("assistant save name = %q, want belai-abcd1234-0.md", got)
 	}
 
 	// Tool panels use .txt.
@@ -393,15 +393,15 @@ func TestHoverSaveName(t *testing.T) {
 	renderFrame(t, c)
 	pointAt(c, hoverLine(t, c, 0, false, false))
 	c.recomputeHover()
-	if got := c.hoverSaveName(); got != "signet-abcd1234-0.txt" {
-		t.Fatalf("tool save name = %q, want signet-abcd1234-0.txt", got)
+	if got := c.hoverSaveName(); got != "belai-abcd1234-0.txt" {
+		t.Fatalf("tool save name = %q, want belai-abcd1234-0.txt", got)
 	}
 
 	// No session id drops the segment.
 	d := hoverAssistantApp(t)
 	d.sessionID = ""
-	if got := d.hoverSaveName(); got != "signet-0.md" {
-		t.Fatalf("no-session save name = %q, want signet-0.md", got)
+	if got := d.hoverSaveName(); got != "belai-0.md" {
+		t.Fatalf("no-session save name = %q, want belai-0.md", got)
 	}
 
 	// Long names truncate at 40 runes.

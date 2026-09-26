@@ -45,7 +45,7 @@ func TestSummarize(t *testing.T) {
 `)
 	// Superseded SARIF should be excluded.
 	write("old.sarif", `{"runs": [{"tool": {"driver": {"rules": []}}, "results": [{"ruleId": "OLD", "level": "error"}]}]}`)
-	// Signet-owned file should be excluded.
+	// Belai-owned file should be excluded.
 	write("settings.json", "{}")
 
 	arts, err := Enumerate(dir)
@@ -75,7 +75,7 @@ func TestSummarize(t *testing.T) {
 		t.Fatalf("per-file missing sast.sarif: %+v", s.PerFile)
 	}
 	if _, ok := s.PerFile["settings.json"]; ok {
-		t.Fatal("signet-owned settings.json should not appear in per-file")
+		t.Fatal("belai-owned settings.json should not appear in per-file")
 	}
 }
 

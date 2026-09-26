@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vulnetix/signet/internal/jsonrpc"
-	"github.com/vulnetix/signet/internal/proc"
-	"github.com/vulnetix/signet/internal/sandbox"
+	"github.com/vulnetix/belai/internal/jsonrpc"
+	"github.com/vulnetix/belai/internal/proc"
+	"github.com/vulnetix/belai/internal/sandbox"
 )
 
 // stdioTransport runs a server as a child process speaking newline-delimited
@@ -75,13 +75,13 @@ func startStdio(command string, args []string, env map[string]string, dir string
 	return t, nil
 }
 
-// serverRequests answers requests a server sends the client. Signet offers
+// serverRequests answers requests a server sends the client. Belai offers
 // no roots, sampling or elicitation, so only ping is answered.
 func serverRequests(ctx context.Context, method string, params json.RawMessage) (any, error) {
 	if method == "ping" {
 		return map[string]any{}, nil
 	}
-	return nil, jsonrpc.Errorf(jsonrpc.CodeMethodNotFound, "signet does not support %s", method)
+	return nil, jsonrpc.Errorf(jsonrpc.CodeMethodNotFound, "belai does not support %s", method)
 }
 
 func (t *stdioTransport) call(ctx context.Context, method string, params, result any) error {

@@ -5,12 +5,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/agent"
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/session"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 func TestAgentTurnCompleted(t *testing.T) {

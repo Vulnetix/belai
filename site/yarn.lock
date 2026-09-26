@@ -1686,6 +1686,20 @@ __metadata:
   languageName: node
   linkType: hard
 
+"belai-site@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "belai-site@workspace:."
+  dependencies:
+    "@astrojs/react": "npm:^6.0.6"
+    "@fontsource/geist-mono": "npm:^5.3.0"
+    "@tailwindcss/vite": "npm:^4.3.3"
+    astro: "npm:^7.3.3"
+    react: "npm:^19.3.0"
+    react-dom: "npm:^19.3.0"
+    tailwindcss: "npm:^4.3.3"
+  languageName: unknown
+  linkType: soft
+
 "boolbase@npm:^1.0.0":
   version: 1.0.0
   resolution: "boolbase@npm:1.0.0"
@@ -3336,20 +3350,6 @@ __metadata:
   checksum: 10c0/deff32ff8069de44c8b0f11296088eafa9cece8e3aa0817b4a52637a31f291d4da08f1133f19bea1a976dda026386862cd131f37bfe6562c1b15932d25ee460e
   languageName: node
   linkType: hard
-
-"signet-site@workspace:.":
-  version: 0.0.0-use.local
-  resolution: "signet-site@workspace:."
-  dependencies:
-    "@astrojs/react": "npm:^6.0.6"
-    "@fontsource/geist-mono": "npm:^5.3.0"
-    "@tailwindcss/vite": "npm:^4.3.3"
-    astro: "npm:^7.3.3"
-    react: "npm:^19.3.0"
-    react-dom: "npm:^19.3.0"
-    tailwindcss: "npm:^4.3.3"
-  languageName: unknown
-  linkType: soft
 
 "sisteransi@npm:^1.0.5":
   version: 1.0.5

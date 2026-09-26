@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// fakeScript emits a shell stub that recognises the hardening flags Signet
+// fakeScript emits a shell stub that recognises the hardening flags Belai
 // prepends and responds to the real subcommand. This keeps existing tests
 // honest about the new --no-banner/--no-progress/--no-analytics/--disable-memory
 // surface without requiring a real vulnetix binary.

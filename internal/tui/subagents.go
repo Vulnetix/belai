@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/agent"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // The subagent roster lives here: insertion-ordered chips that persist across

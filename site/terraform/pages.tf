@@ -8,20 +8,20 @@
 #   * var.manage_pages defaults to false — `terraform plan` proposes no change.
 #   * The first enabling step is a documented import, never a blind apply:
 #
-#       terraform import github_repository_pages.signet signet
+#       terraform import github_repository_pages.belai belai
 #
 # Flip manage_pages on only after reading `terraform plan` output.
 
-resource "github_repository_pages" "signet" {
+resource "github_repository_pages" "belai" {
   count = var.manage_pages ? 1 : 0
 
-  repository = "signet"
+  repository = "belai"
 
   # The deployment is performed by .github/workflows/pages.yml via
   # actions/deploy-pages; GitHub therefore runs in "workflow" build mode and
   # the custom domain is declared here to match site/public/CNAME.
   build_type = "workflow"
-  cname      = "signet.vulnetix.com"
+  cname      = "belai.vulnetix.com"
 
   lifecycle {
     # Never let a stray `terraform destroy` delete the Pages binding.

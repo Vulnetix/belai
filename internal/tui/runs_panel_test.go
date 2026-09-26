@@ -9,14 +9,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/vulnetix/signet/internal/activity"
-	"github.com/vulnetix/signet/internal/commands"
-	"github.com/vulnetix/signet/internal/explore"
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/profiles"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/activity"
+	"github.com/vulnetix/belai/internal/commands"
+	"github.com/vulnetix/belai/internal/explore"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/profiles"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 func TestRunsPanelHeightClosedZero(t *testing.T) {
@@ -117,11 +117,11 @@ func TestFlushPendingReviewFirst(t *testing.T) {
 	}
 }
 
-// sendReview switches to agent mode with the signet:vulnetix-review profile
+// sendReview switches to agent mode with the belai:vulnetix-review profile
 // engaged from whatever mode or agent the user was in, and keeps it engaged
 // like a picker choice so the mode classifier cannot drop it on a follow-up.
 func TestSendReviewEngagesReviewProfile(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	for _, c := range []struct {
 		mode  modes.Mode
 		agent string

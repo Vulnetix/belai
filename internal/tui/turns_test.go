@@ -3,8 +3,8 @@ package tui
 import (
 	"testing"
 
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 func TestNormaliseTurnsMergesAdjacentUsers(t *testing.T) {

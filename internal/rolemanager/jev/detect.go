@@ -11,7 +11,7 @@ import (
 
 	"github.com/OpenRouterTeam/go-sdk/models/components"
 
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
 // intentQuestion is one fixed proposition Jev scores for an intent.

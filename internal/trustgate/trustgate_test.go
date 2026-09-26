@@ -4,11 +4,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 func TestCheckUnknownDirNeedsPrompt(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	dir := t.TempDir()
 	st, err := Check(dir)
 	if err != nil {
@@ -23,7 +23,7 @@ func TestCheckUnknownDirNeedsPrompt(t *testing.T) {
 }
 
 func TestCheckTrustedDirNoProposalsDoesNotPrompt(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	dir := t.TempDir()
 	if err := Grant(dir, nil); err != nil {
 		t.Fatalf("Grant: %v", err)
@@ -41,7 +41,7 @@ func TestCheckTrustedDirNoProposalsDoesNotPrompt(t *testing.T) {
 }
 
 func TestCheckTrustedDirWithNewProposalPromptsOnlyNew(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	dir := t.TempDir()
 	other := t.TempDir()
 	if err := Grant(dir, nil); err != nil {
@@ -64,7 +64,7 @@ func TestCheckTrustedDirWithNewProposalPromptsOnlyNew(t *testing.T) {
 }
 
 func TestCheckDeclinedProposalDoesNotComeBack(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	dir := t.TempDir()
 	other := t.TempDir()
 	if err := Grant(dir, nil); err != nil {

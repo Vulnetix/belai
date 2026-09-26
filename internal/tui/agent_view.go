@@ -13,9 +13,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/vulnetix/signet/internal/agentprofile"
-	"github.com/vulnetix/signet/internal/bgagent"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/bgagent"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // agentViewState tracks the /agent list/edit UI.
@@ -819,7 +819,7 @@ func (a *App) openAgentFieldEditor(row agentField) tea.Cmd {
 	if p == nil {
 		return nil
 	}
-	f, err := os.CreateTemp("", "signet-agent-field-*.md")
+	f, err := os.CreateTemp("", "belai-agent-field-*.md")
 	if err != nil {
 		a.addSystem("editor failed: " + err.Error())
 		return nil

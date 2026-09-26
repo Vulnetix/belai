@@ -7,7 +7,7 @@ import (
 )
 
 func TestAutoCommitPerTaskDefaultAndRoundTrip(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	var zero Settings
 	if zero.AutoCommitPerTaskEnabled() {
@@ -38,7 +38,7 @@ func TestAutoCommitPerTaskDefaultAndRoundTrip(t *testing.T) {
 }
 
 func TestResolveDropsProjectAutoCommitPerTask(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	on := true
 	if err := SaveProject(workdir, Settings{AutoCommitPerTask: &on}); err != nil {
@@ -58,7 +58,7 @@ func TestResolveDropsProjectAutoCommitPerTask(t *testing.T) {
 }
 
 func TestResolveAutoCommitPerTaskGlobalWins(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	if err := SaveGlobal(Settings{AutoCommitPerTask: boolPtr(true)}); err != nil {
 		t.Fatalf("SaveGlobal: %v", err)

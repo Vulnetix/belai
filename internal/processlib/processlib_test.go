@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 func TestNameForDerivesFromArgvZero(t *testing.T) {

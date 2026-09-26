@@ -14,7 +14,7 @@ func TestScoreMatchesSubsequence(t *testing.T) {
 		{"pmt", "prompts", true},
 		{"PMT", "prompts", true},
 		{"dir", "add-dir", true},
-		{"a:dbg", "agent:signet:debug", true},
+		{"a:dbg", "agent:belai:debug", true},
 		{"tmp", "prompts", false},
 		{"bogus", "prompts", false},
 		{"x", "", false},

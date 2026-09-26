@@ -5,15 +5,15 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 // newPersistProviderApp builds an App with a real resolver and lands an
 // availability probe so the /model provider list is deterministic. Both
-// SIGNET_HOME and the workdir use isolated temp directories.
+// BELAI_HOME and the workdir use isolated temp directories.
 func newPersistProviderApp(t *testing.T) (*App, string) {
 	t.Helper()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir, Resolver: newTestResolver(t, workdir)})
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
@@ -56,7 +56,7 @@ func TestModelAgentProviderSessionScopePersistsToState(t *testing.T) {
 		t.Fatalf("state provider = %q, want openrouter", st.Provider)
 	}
 
-	// A fresh app with the same SIGNET_HOME and workdir must start with the
+	// A fresh app with the same BELAI_HOME and workdir must start with the
 	// saved provider. No CLI flags or env overrides are in play.
 	b := New(Options{Workdir: workdir})
 	if b.cfg.Provider != "openrouter" {
@@ -65,7 +65,7 @@ func TestModelAgentProviderSessionScopePersistsToState(t *testing.T) {
 }
 
 // Changing the provider in /model with global scope persists it to
-// ~/.signet/settings.json and a fresh TUI picks it up through config.Resolve.
+// ~/.belai/settings.json and a fresh TUI picks it up through config.Resolve.
 func TestModelAgentProviderGlobalScopePersistsToSettings(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "sk-openai")
 	t.Setenv("OPENROUTER_API_KEY", "or-key")

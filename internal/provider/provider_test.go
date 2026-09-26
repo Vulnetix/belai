@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 func readBody(t *testing.T, req *http.Request) map[string]any {
@@ -191,20 +191,20 @@ func TestNewValidation(t *testing.T) {
 	}
 }
 
-// TestLiveRequest only runs when SIGNET_LIVE_TEST is set; it proves a real
+// TestLiveRequest only runs when BELAI_LIVE_TEST is set; it proves a real
 // request can be constructed and dispatched against a live endpoint.
 func TestLiveRequest(t *testing.T) {
-	if testing.Short() || os.Getenv("SIGNET_LIVE_TEST") == "" {
-		t.Skip("live network test gated behind SIGNET_LIVE_TEST=1")
+	if testing.Short() || os.Getenv("BELAI_LIVE_TEST") == "" {
+		t.Skip("live network test gated behind BELAI_LIVE_TEST=1")
 	}
-	base := os.Getenv("SIGNET_LIVE_BASE_URL")
-	key := os.Getenv("SIGNET_LIVE_API_KEY")
+	base := os.Getenv("BELAI_LIVE_BASE_URL")
+	key := os.Getenv("BELAI_LIVE_API_KEY")
 	if base == "" || key == "" {
-		t.Skip("SIGNET_LIVE_BASE_URL and SIGNET_LIVE_API_KEY must be set")
+		t.Skip("BELAI_LIVE_BASE_URL and BELAI_LIVE_API_KEY must be set")
 	}
 	prov := "openai"
-	if os.Getenv("SIGNET_LIVE_PROVIDER") != "" {
-		prov = os.Getenv("SIGNET_LIVE_PROVIDER")
+	if os.Getenv("BELAI_LIVE_PROVIDER") != "" {
+		prov = os.Getenv("BELAI_LIVE_PROVIDER")
 	}
 	p, err := New(prov, base, key)
 	if err != nil {
@@ -260,7 +260,7 @@ func TestNewAssignsBuiltinAuth(t *testing.T) {
 }
 
 func TestHeadersGoldenForBuiltins(t *testing.T) {
-	ua := "signet/dev (+https://github.com/Vulnetix/signet)"
+	ua := "belai/dev (+https://github.com/Vulnetix/belai)"
 	cases := []struct {
 		name string
 		want map[string]string

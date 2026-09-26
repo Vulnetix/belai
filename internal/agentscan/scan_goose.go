@@ -6,7 +6,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// gooseMap maps a Goose secret name onto a Signet provider/field.
+// gooseMap maps a Goose secret name onto a Belai provider/field.
 func gooseMap(name string) (provider, field string, ok bool) {
 	switch name {
 	case "OPENAI_API_KEY":
@@ -40,7 +40,7 @@ func scanGoose(home string) []Found {
 		}
 		prov, field, ok := gooseMap(name)
 		if !ok {
-			out = append(out, note("goose", path, name+" is not a mapped Signet credential"))
+			out = append(out, note("goose", path, name+" is not a mapped Belai credential"))
 			continue
 		}
 		out = append(out, Found{Agent: "goose", Provider: prov, Field: field, Location: path, value: val})

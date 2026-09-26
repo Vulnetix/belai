@@ -53,15 +53,15 @@ jobs:
         run: yarn build
 
       # public/CNAME is what binds the custom domain. If it goes missing, Pages
-      # silently unbinds signet.vulnetix.com and starts serving on
-      # vulnetix.github.io/signet instead, a failure that looks like DNS but is
+      # silently unbinds belai.vulnetix.com and starts serving on
+      # vulnetix.github.io/belai instead, a failure that looks like DNS but is
       # not. This check exists because the Terraform record and the file must
       # never disagree.
       - name: Verify the custom domain survived the build
         working-directory: site
         run: |
           test -f dist/CNAME || { echo "dist/CNAME missing: Pages would unbind the custom domain"; exit 1; }
-          grep -qx 'signet.vulnetix.com' dist/CNAME || {
+          grep -qx 'belai.vulnetix.com' dist/CNAME || {
             echo "dist/CNAME does not match the Terraform-managed record:"; cat dist/CNAME; exit 1;
           }
 

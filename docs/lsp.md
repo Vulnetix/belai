@@ -1,6 +1,6 @@
 # Language-server diagnostics
 
-Signet can check the file the model just edited and hand any diagnostics back
+Belai can check the file the model just edited and hand any diagnostics back
 on the same `Edit`/`Write` result. This happens on the same turn, with no extra
 round trip, so the model can fix a syntax error immediately.
 

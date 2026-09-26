@@ -5,7 +5,7 @@ package models
 import (
 	"strings"
 
-	"github.com/vulnetix/signet/internal/provider"
+	"github.com/vulnetix/belai/internal/provider"
 )
 
 // Model is one selectable model in a provider's catalog.

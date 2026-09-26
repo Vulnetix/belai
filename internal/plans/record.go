@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/sanitize"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/sanitize"
 )
 
 // RecordName builds a plan file stem from the prompt text, timestamp, and

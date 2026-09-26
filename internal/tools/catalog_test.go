@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/vulnetix/signet/internal/repoindex"
+	"github.com/vulnetix/belai/internal/repoindex"
 	"os/exec"
 	"path/filepath"
 	"strings"

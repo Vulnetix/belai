@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/clarify"
-	"github.com/vulnetix/signet/internal/sanitize"
+	"github.com/vulnetix/belai/internal/clarify"
+	"github.com/vulnetix/belai/internal/sanitize"
 )
 
 // clarifySystemPrompt instructs the classifier to emit a clarification

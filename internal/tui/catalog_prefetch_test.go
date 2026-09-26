@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/modelfetch"
-	"github.com/vulnetix/signet/internal/models"
+	"github.com/vulnetix/belai/internal/modelfetch"
+	"github.com/vulnetix/belai/internal/models"
 )
 
 var errTestTargetUnresolved = errors.New("cloudflare-ai-gateway: account_id missing")
@@ -16,7 +16,7 @@ var errTestTargetUnresolved = errors.New("cloudflare-ai-gateway: account_id miss
 // The footer's context meter reads the live catalogue's context window, so the
 // catalogue must be warmed on startup rather than when /model first opens.
 func TestPrefetchCatalogCmdResolvesTargetOffThread(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	t.Setenv("ANTHROPIC_API_KEY", "k")
 
 	a := New(Options{Workdir: t.TempDir()})
@@ -41,7 +41,7 @@ func TestPrefetchCatalogCmdResolvesTargetOffThread(t *testing.T) {
 // A prefetch already in flight, or an already-cached provider, must not fetch
 // again when the picker opens (and vice versa).
 func TestPrefetchCatalogCmdSkipsCachedAndInFlight(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 
 	a.catalogLoading = map[string]bool{"anthropic": true}
@@ -61,7 +61,7 @@ func TestPrefetchCatalogCmdSkipsCachedAndInFlight(t *testing.T) {
 // The resolved target runs through the normal fetch path, and the window it
 // carries reaches the footer without the picker ever opening.
 func TestCatalogPrefetchFillsFooterContextLimit(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{
 			map[string]any{"id": "claude-test", "max_input_tokens": 123456},
@@ -106,7 +106,7 @@ func TestCatalogPrefetchFillsFooterContextLimit(t *testing.T) {
 // A prefetch that cannot resolve its target stays silent: the error belongs on
 // the picker, not in the transcript.
 func TestCatalogPrefetchFailureIsSilent(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	before := len(a.messages)
 

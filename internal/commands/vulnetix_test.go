@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/vulnetixcli"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/vulnetixcli"
 )
 
 // writeReviewVulnetix installs a fake vulnetix binary on PATH that consumes
@@ -92,7 +92,7 @@ func TestVulnetixRunsSubcommandsAndWritesArtifacts(t *testing.T) {
 		t.Fatalf("summary = %q", rep.Summary)
 	}
 
-	dir := config.ProjectSignetDir(workdir)
+	dir := config.ProjectBelaiDir(workdir)
 	if _, err := os.Stat(filepath.Join(dir, "code-review-summary.md")); err != nil {
 		t.Fatalf("summary file missing: %v", err)
 	}

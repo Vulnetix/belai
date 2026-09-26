@@ -5,7 +5,7 @@ change.
 
 Hooks run a command of yours at fixed points in a session: before and after a
 tool call, when you submit a prompt, when a turn ends, before compaction, and
-when Signet needs your attention. A hook can log, lint, veto a tool call, or
+when Belai needs your attention. A hook can log, lint, veto a tool call, or
 hand the model a short note.
 
 - [Events](#events)
@@ -31,7 +31,7 @@ hand the model a short note.
 | `stop` | a turn ends | no |
 | `pre_compact` | before `/compact` or automatic compaction | no |
 | `subagent_stop` | an explore subagent finishes | no |
-| `notification` | Signet is waiting on you (see [notifications](notifications.md)) | no |
+| `notification` | Belai is waiting on you (see [notifications](notifications.md)) | no |
 
 Tool hooks also see the tool calls explore subagents make. A subagent's own
 prompt and turn end do not fire `user_prompt_submit` or `stop`; its end fires
@@ -39,10 +39,10 @@ prompt and turn end do not fire `user_prompt_submit` or `stop`; its end fires
 
 ## Hook files
 
-Each hook is one JSON file in `~/.vulnetix/signet/hooks/` (or
-`$SIGNET_HOME/hooks/`). Enabled [plugins](plugins.md) add theirs, named
+Each hook is one JSON file in `~/.vulnetix/belai/hooks/` (or
+`$BELAI_HOME/hooks/`). Enabled [plugins](plugins.md) add theirs, named
 `plugin:name`. There is no project-level hooks directory: a repository never
-supplies a command Signet will run.
+supplies a command Belai will run.
 
 ```json
 {
@@ -143,8 +143,8 @@ at 64 KiB.
   block.
 - Commands run without a shell, from their own directory, in their own
   process group, with the scrubbed environment used for Bash (no
-  `*_API_KEY`, `*_TOKEN`, `*_SECRET`, `SIGNET_*` from your shell) plus the
-  identity variables `SIGNET=1`, `SIGNET_SESSION_ID` and `TRACEPARENT`. A
+  `*_API_KEY`, `*_TOKEN`, `*_SECRET`, `BELAI_*` from your shell) plus the
+  identity variables `BELAI=1`, `BELAI_SESSION_ID` and `TRACEPARENT`. A
   command path that resolves outside the hooks directory, including through
   a symlink, is refused.
 - Hooks are your configuration, so they run with guardrails on or off. Only
@@ -162,7 +162,7 @@ at 64 KiB.
 
 `enabled` defaults to `true`. The project layer may set `hooks.enabled` to `false`, never to `true`.
 
-Each run is recorded in the `SIGNET_TRACE` file under the `hook` phase with
+Each run is recorded in the `BELAI_TRACE` file under the `hook` phase with
 its decision, the number of hooks that ran, and how many failed.
 
 ## Limitations

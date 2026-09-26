@@ -1,4 +1,4 @@
-// Package lsp implements Signet's lightweight language-server diagnostics.
+// Package lsp implements Belai's lightweight language-server diagnostics.
 //
 // It is a hand-rolled LSP client designed for one purpose only: the harness
 // checks the file the model just edited and hands any diagnostics back on the

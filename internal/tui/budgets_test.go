@@ -10,15 +10,15 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/run"
 )
 
-// budgetApp is an App on its own SIGNET_HOME, selected on provider p and
+// budgetApp is an App on its own BELAI_HOME, selected on provider p and
 // model m, with the given budgets in its effective settings.
 func budgetApp(t *testing.T, budgets ...config.TokenBudget) *App {
 	t.Helper()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{})
 	t.Cleanup(a.closeBudgets)
 	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})

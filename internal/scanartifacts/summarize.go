@@ -18,7 +18,7 @@ func Summarize(ctx context.Context, workdir string, arts []Artifact) Summary {
 	var allCDX, allSARIF, allVEX []FindingKey
 	for i := range arts {
 		a := &arts[i]
-		if a.Superseded || a.Kind == KindSignet {
+		if a.Superseded || a.Kind == KindBelai {
 			continue
 		}
 		fs, keys := parseArtifact(ctx, a)

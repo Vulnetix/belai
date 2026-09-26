@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/skills"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/skills"
 )
 
 func skillRoot(t *testing.T, files map[string]string) []skills.Entry {

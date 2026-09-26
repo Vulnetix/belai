@@ -14,7 +14,7 @@ import (
 // goldenFixtures exercise every shape the transcript renderers can produce: a
 // short tool result, one long enough to wrap, an error body, a collapsed
 // result carrying a marker, an expanded one carrying none, a blank interior
-// line, a system notice, a markdown assistant turn, and a coalesced signet
+// line, a system notice, a markdown assistant turn, and a coalesced belai
 // group.
 func goldenFixtures() []struct {
 	name string
@@ -34,7 +34,7 @@ func goldenFixtures() []struct {
 				"a single very long line of output that has to wrap several times before it runs out of things to say", "✓")}}},
 		{"tool_error", MessageList{ShowTools: true, Messages: []Message{
 			tool("Bash", `{"command":"go test ./..."}`,
-				"FAIL\tgithub.com/vulnetix/signet/internal/run\t0.2s\nexit status 1", "✗")}}},
+				"FAIL\tgithub.com/vulnetix/belai/internal/run\t0.2s\nexit status 1", "✗")}}},
 		{"tool_collapsed_marker", MessageList{ShowTools: true, Messages: []Message{
 			tool("Bash", `{"command":"ls -la"}`, "first\nsecond\nthird\nfourth\nfifth", "✓")}}},
 		{"tool_expanded", MessageList{ShowTools: true, ExpandAll: true, Messages: []Message{
@@ -50,7 +50,7 @@ func goldenFixtures() []struct {
 			{Role: "system", Content: "a system notice long enough that it has to wrap onto a second and probably a third line at narrow widths"}}}},
 		{"assistant_markdown", MessageList{Messages: []Message{
 			{Role: "assistant", Content: "## Title\n\n- one\n- two\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n```go\nfunc main() {}\n```"}}}},
-		{"signet_group", MessageList{Messages: []Message{
+		{"belai_group", MessageList{Messages: []Message{
 			{Role: "system", Content: "first notice"},
 			{Role: "system", Content: "second notice"},
 			{Role: "system", Content: "third notice"}}}},

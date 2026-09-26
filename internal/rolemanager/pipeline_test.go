@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 type fakeClassifier struct {

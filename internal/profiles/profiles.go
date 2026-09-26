@@ -1,4 +1,4 @@
-// Package profiles manages agent profiles stored under ~/.signet/profiles/.
+// Package profiles manages agent profiles stored under ~/.belai/profiles/.
 // Profiles are selectable at startup and mid-session via a /profile command.
 package profiles
 
@@ -12,7 +12,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 // Profile is a named agent profile. Its content is carried into the system
@@ -24,7 +24,7 @@ type Profile struct {
 	Builtin bool     `json:"-"`               // true for harness-supplied profiles
 }
 
-const BuiltinPrefix = "signet:"
+const BuiltinPrefix = "belai:"
 
 var unsafeName = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
 
@@ -41,7 +41,7 @@ func IsBuiltin(name string) bool {
 	return strings.HasPrefix(name, BuiltinPrefix)
 }
 
-// Dir returns the profiles directory (~/.signet/profiles).
+// Dir returns the profiles directory (~/.belai/profiles).
 func Dir() (string, error) {
 	gd, err := config.GlobalDir()
 	if err != nil {
@@ -96,8 +96,8 @@ func Save(p Profile) (string, error) {
 }
 
 // Load reads a profile by name. Built-in names resolve from the embedded
-// profile set and never touch disk, so a user file named signet_debug.json
-// cannot shadow the built-in signet:debug profile.
+// profile set and never touch disk, so a user file named belai_debug.json
+// cannot shadow the built-in belai:debug profile.
 func Load(name string) (Profile, error) {
 	if IsBuiltin(name) {
 		p, ok := builtinByName(name)

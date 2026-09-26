@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/selfupdate"
-	"github.com/vulnetix/signet/internal/vulnetixcli"
+	"github.com/vulnetix/belai/internal/selfupdate"
+	"github.com/vulnetix/belai/internal/vulnetixcli"
 )
 
 func availableStatus() selfupdate.Status {
@@ -17,18 +17,18 @@ func availableStatus() selfupdate.Status {
 		Current:   cur,
 		Latest:    latest,
 		Tag:       "v0.9.0",
-		URL:       "https://github.com/Vulnetix/signet/releases/tag/v0.9.0",
+		URL:       "https://github.com/Vulnetix/belai/releases/tag/v0.9.0",
 		Method:    vulnetixcli.InstallBrew,
-		Command:   "brew upgrade --formula vulnetix/tap/signet",
+		Command:   "brew upgrade --formula vulnetix/tap/belai",
 	}
 }
 
-func TestSignetUpdateNoticeReachesPanelAndBanner(t *testing.T) {
+func TestBelaiUpdateNoticeReachesPanelAndBanner(t *testing.T) {
 	a := New(Options{})
 	a.width = 100
 	before := len(a.messages)
 
-	a.handleSignetUpdate(signetUpdateMsg{status: availableStatus()})
+	a.handleBelaiUpdate(belaiUpdateMsg{status: availableStatus()})
 
 	if len(a.messages) != before+1 {
 		t.Fatalf("messages = %d, want %d", len(a.messages), before+1)
@@ -37,7 +37,7 @@ func TestSignetUpdateNoticeReachesPanelAndBanner(t *testing.T) {
 	if last.Role != "system" {
 		t.Fatalf("notice role = %q, want system", last.Role)
 	}
-	for _, want := range []string{"v0.9.0", "v0.1.1", "brew upgrade --formula vulnetix/tap/signet"} {
+	for _, want := range []string{"v0.9.0", "v0.1.1", "brew upgrade --formula vulnetix/tap/belai"} {
 		if !strings.Contains(last.Text(), want) {
 			t.Fatalf("notice = %q, missing %q", last.Text(), want)
 		}
@@ -47,12 +47,12 @@ func TestSignetUpdateNoticeReachesPanelAndBanner(t *testing.T) {
 	}
 }
 
-func TestSignetUpdateSilentWhenCurrent(t *testing.T) {
+func TestBelaiUpdateSilentWhenCurrent(t *testing.T) {
 	a := New(Options{})
 	a.width = 100
 	before := len(a.messages)
 
-	a.handleSignetUpdate(signetUpdateMsg{status: selfupdate.Status{Checked: true, Error: "github returned 403"}})
+	a.handleBelaiUpdate(belaiUpdateMsg{status: selfupdate.Status{Checked: true, Error: "github returned 403"}})
 
 	if len(a.messages) != before {
 		t.Fatalf("a failed check added %d message(s)", len(a.messages)-before)
@@ -62,19 +62,19 @@ func TestSignetUpdateSilentWhenCurrent(t *testing.T) {
 	}
 }
 
-func TestCheckSignetUpdateCmdRespectsOptOut(t *testing.T) {
+func TestCheckBelaiUpdateCmdRespectsOptOut(t *testing.T) {
 	a := New(Options{})
-	if a.checkSignetUpdateCmd() == nil {
+	if a.checkBelaiUpdateCmd() == nil {
 		t.Fatal("the check should be on by default")
 	}
 	off := false
 	a.settings.UpdateCheck = &off
-	if a.checkSignetUpdateCmd() != nil {
+	if a.checkBelaiUpdateCmd() != nil {
 		t.Fatal("update_check=false must skip the check entirely")
 	}
 	a.settings.UpdateCheck = nil
-	t.Setenv("SIGNET_NO_UPDATE_CHECK", "1")
-	if a.checkSignetUpdateCmd() != nil {
-		t.Fatal("SIGNET_NO_UPDATE_CHECK=1 must skip the check entirely")
+	t.Setenv("BELAI_NO_UPDATE_CHECK", "1")
+	if a.checkBelaiUpdateCmd() != nil {
+		t.Fatal("BELAI_NO_UPDATE_CHECK=1 must skip the check entirely")
 	}
 }

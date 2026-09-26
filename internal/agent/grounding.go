@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/repoindex"
-	"github.com/vulnetix/signet/internal/sanitize"
+	"github.com/vulnetix/belai/internal/repoindex"
+	"github.com/vulnetix/belai/internal/sanitize"
 )
 
 // Grounding is the read-only workspace evidence attached to explore subagent

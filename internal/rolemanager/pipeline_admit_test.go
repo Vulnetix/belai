@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/posture"
+	"github.com/vulnetix/belai/internal/posture"
 )
 
 type stubClassifier struct {

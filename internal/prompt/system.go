@@ -69,9 +69,9 @@ type Options struct {
 }
 
 // identity tells the model which of the three identities in a session is its
-// own. Signet is the harness, not the assistant: an earlier version of this
-// prompt opened with "You are Signet, an LLM coding harness", which the model
-// read as an instruction to adopt Signet as its identity. It then disclaimed
+// own. Belai is the harness, not the assistant: an earlier version of this
+// prompt opened with "You are Belai, an LLM coding harness", which the model
+// read as an instruction to adopt Belai as its identity. It then disclaimed
 // knowledge of itself — answering "I don't have visibility into the underlying
 // model" to a direct question about what it is — because the prompt had
 // replaced what it knows about itself from training.
@@ -80,9 +80,9 @@ type Options struct {
 // identity to the model.
 func identity(provider, model string) string {
 	var b strings.Builder
-	b.WriteString("You are an AI model running inside Signet, an LLM coding harness.\n")
+	b.WriteString("You are an AI model running inside Belai, an LLM coding harness.\n")
 	b.WriteString("Three identities are in play in this session and they are not interchangeable:\n")
-	b.WriteString("- Harness: Signet. The tooling around you — this prompt, the tools, the safety pipeline. Signet is not you.\n")
+	b.WriteString("- Harness: Belai. The tooling around you — this prompt, the tools, the safety pipeline. Belai is not you.\n")
 	if provider != "" {
 		b.WriteString(fmt.Sprintf("- Provider: %s. The API serving this session.\n", provider))
 	} else {
@@ -94,7 +94,7 @@ func identity(provider, model string) string {
 		b.WriteString("- Model: you.\n")
 	}
 	b.WriteString("Keep your own identity, capabilities, and knowledge as they come from your training. ")
-	b.WriteString("Asked what you are, answer as yourself and name Signet as the harness rather than claiming to be it.\n")
+	b.WriteString("Asked what you are, answer as yourself and name Belai as the harness rather than claiming to be it.\n")
 	return b.String()
 }
 

@@ -8,8 +8,8 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/vulnetix/signet/internal/tools"
-	"github.com/vulnetix/signet/internal/transcript"
+	"github.com/vulnetix/belai/internal/tools"
+	"github.com/vulnetix/belai/internal/transcript"
 )
 
 func TestTurnPanelRendersAssistantContent(t *testing.T) {
@@ -604,8 +604,8 @@ func TestMessageListReasoningPanelGated(t *testing.T) {
 	}
 }
 
-// TestMessageListCoalescesAdjacentSystemNotices pins the signet group: two
-// adjacent system notices render in one signet panel, one line per notice,
+// TestMessageListCoalescesAdjacentSystemNotices pins the belai group: two
+// adjacent system notices render in one belai panel, one line per notice,
 // and never as separate rows.
 func TestMessageListCoalescesAdjacentSystemNotices(t *testing.T) {
 	list := MessageList{
@@ -616,27 +616,27 @@ func TestMessageListCoalescesAdjacentSystemNotices(t *testing.T) {
 		},
 	}
 	out := list.View()
-	if strings.Count(out, "signet") != 1 {
-		t.Fatalf("want exactly one signet title for the group, got:\n%s", out)
+	if strings.Count(out, "belai") != 1 {
+		t.Fatalf("want exactly one belai title for the group, got:\n%s", out)
 	}
 	if !strings.Contains(out, "first notice") || !strings.Contains(out, "second notice") {
 		t.Fatalf("both notices should render in the panel:\n%s", out)
 	}
 }
 
-// TestSignetPanelTruncatesLongGroup pins the deliberate change from the old
-// untruncated system rows: more than signetPreviewLines notices collapse to a
+// TestBelaiPanelTruncatesLongGroup pins the deliberate change from the old
+// untruncated system rows: more than belaiPreviewLines notices collapse to a
 // hint whose selection copies the hidden notices.
-func TestSignetPanelTruncatesLongGroup(t *testing.T) {
+func TestBelaiPanelTruncatesLongGroup(t *testing.T) {
 	var msgs []Message
-	for i := 0; i < signetPreviewLines+2; i++ {
+	for i := 0; i < belaiPreviewLines+2; i++ {
 		msgs = append(msgs, Message{Role: "system", Content: "notice " + strconv.Itoa(i)})
 	}
 	idxs := make([]int, len(msgs))
 	for i := range idxs {
 		idxs[i] = i
 	}
-	s, lm, owners := signetPanel(msgs, idxs, 60, false)
+	s, lm, owners := belaiPanel(msgs, idxs, 60, false)
 	if !strings.Contains(s, "2 more lines") {
 		t.Fatalf("expected truncation hint, got:\n%s", s)
 	}
@@ -947,11 +947,11 @@ func TestTagProvenanceSetsCopyable(t *testing.T) {
 	}
 }
 
-// TestMessageListStreamingAssistantHoistsPrecedingSignet pins the rule that
-// a signet notice emitted before the model panel starts streaming must not
+// TestMessageListStreamingAssistantHoistsPrecedingBelai pins the rule that
+// a belai notice emitted before the model panel starts streaming must not
 // interrupt the model panel; it is hoisted to render after the streaming
 // assistant so the panel can keep streaming characters.
-func TestMessageListStreamingAssistantHoistsPrecedingSignet(t *testing.T) {
+func TestMessageListStreamingAssistantHoistsPrecedingBelai(t *testing.T) {
 	streaming := Message{Role: "assistant"}
 	streaming.AppendText("hello")
 	if !streaming.IsStreaming() {
@@ -964,29 +964,29 @@ func TestMessageListStreamingAssistantHoistsPrecedingSignet(t *testing.T) {
 	}
 	out := list.View()
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
-	var modelIdx, signetIdx int
+	var modelIdx, belaiIdx int
 	for i, l := range lines {
 		if strings.Contains(l, "model") {
 			modelIdx = i
 		}
-		if strings.Contains(l, "signet") {
-			signetIdx = i
+		if strings.Contains(l, "belai") {
+			belaiIdx = i
 		}
 	}
-	if modelIdx == 0 && signetIdx == 0 {
-		t.Fatalf("could not locate model and signet panels in:\n%s", out)
+	if modelIdx == 0 && belaiIdx == 0 {
+		t.Fatalf("could not locate model and belai panels in:\n%s", out)
 	}
-	if signetIdx < modelIdx {
-		t.Fatalf("signet panel should render after the streaming model panel, got:\n%s", out)
+	if belaiIdx < modelIdx {
+		t.Fatalf("belai panel should render after the streaming model panel, got:\n%s", out)
 	}
 	if !strings.Contains(out, "classifying") {
-		t.Fatalf("signet notice should still render, got:\n%s", out)
+		t.Fatalf("belai notice should still render, got:\n%s", out)
 	}
 }
 
-// TestMessageListStreamingSignetAfterModel keeps the normal order when the
-// signet notice already follows the streaming model panel in the transcript.
-func TestMessageListStreamingSignetAfterModel(t *testing.T) {
+// TestMessageListStreamingBelaiAfterModel keeps the normal order when the
+// belai notice already follows the streaming model panel in the transcript.
+func TestMessageListStreamingBelaiAfterModel(t *testing.T) {
 	streaming := Message{Role: "assistant"}
 	streaming.AppendText("hello")
 	list := MessageList{
@@ -998,16 +998,16 @@ func TestMessageListStreamingSignetAfterModel(t *testing.T) {
 		t.Fatalf("both model content and notice should render, got:\n%s", out)
 	}
 	modelLines := strings.Count(out, "model")
-	signetLines := strings.Count(out, "signet")
-	if modelLines < 1 || signetLines != 1 {
-		t.Fatalf("expected one streaming model panel and one signet panel, got model=%d signet=%d:\n%s", modelLines, signetLines, out)
+	belaiLines := strings.Count(out, "belai")
+	if modelLines < 1 || belaiLines != 1 {
+		t.Fatalf("expected one streaming model panel and one belai panel, got model=%d belai=%d:\n%s", modelLines, belaiLines, out)
 	}
 }
 
-// TestMessageListStreamingCoalescesPhaseSignets checks that notices both
+// TestMessageListStreamingCoalescesPhaseBelais checks that notices both
 // before and after a streaming model panel are gathered into one trailing
-// signet panel rather than splitting them around the model panel.
-func TestMessageListStreamingCoalescesPhaseSignets(t *testing.T) {
+// belai panel rather than splitting them around the model panel.
+func TestMessageListStreamingCoalescesPhaseBelais(t *testing.T) {
 	streaming := Message{Role: "assistant"}
 	streaming.AppendText("hello")
 	list := MessageList{
@@ -1019,19 +1019,19 @@ func TestMessageListStreamingCoalescesPhaseSignets(t *testing.T) {
 		},
 	}
 	out := list.View()
-	if strings.Count(out, "signet") != 1 {
-		t.Fatalf("want exactly one trailing signet panel, got:\n%s", out)
+	if strings.Count(out, "belai") != 1 {
+		t.Fatalf("want exactly one trailing belai panel, got:\n%s", out)
 	}
 	if !strings.Contains(out, "first notice") || !strings.Contains(out, "second notice") {
-		t.Fatalf("both notices should render in the trailing signet panel, got:\n%s", out)
+		t.Fatalf("both notices should render in the trailing belai panel, got:\n%s", out)
 	}
 }
 
-// TestMessageListRetrySignetsFollowStreamingModel pins the retry case: a
+// TestMessageListRetryBelaisFollowStreamingModel pins the retry case: a
 // warning before the fresh streaming assistant and a retry notice after the
-// fresh streaming assistant both end up in one signet panel after the model
+// fresh streaming assistant both end up in one belai panel after the model
 // panel that is still streaming.
-func TestMessageListRetrySignetsFollowStreamingModel(t *testing.T) {
+func TestMessageListRetryBelaisFollowStreamingModel(t *testing.T) {
 	partial := Message{Role: "assistant", Content: "partial output", Partial: true}
 	retrying := Message{Role: "assistant"}
 	retrying.AppendText("retry output")
@@ -1048,29 +1048,29 @@ func TestMessageListRetrySignetsFollowStreamingModel(t *testing.T) {
 	if strings.Count(out, "model") != 2 {
 		t.Fatalf("expected two model panels, got:\n%s", out)
 	}
-	if strings.Count(out, "signet") != 1 {
-		t.Fatalf("expected one trailing signet panel for retry notices, got:\n%s", out)
+	if strings.Count(out, "belai") != 1 {
+		t.Fatalf("expected one trailing belai panel for retry notices, got:\n%s", out)
 	}
-	// The signet panel must come after both model panels.
+	// The belai panel must come after both model panels.
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
-	lastModel, lastSignet := -1, -1
+	lastModel, lastBelai := -1, -1
 	for i, l := range lines {
 		if strings.Contains(l, "model") {
 			lastModel = i
 		}
-		if strings.Contains(l, "signet") {
-			lastSignet = i
+		if strings.Contains(l, "belai") {
+			lastBelai = i
 		}
 	}
-	if lastSignet < lastModel {
-		t.Fatalf("signet panel should follow the last model panel, got:\n%s", out)
+	if lastBelai < lastModel {
+		t.Fatalf("belai panel should follow the last model panel, got:\n%s", out)
 	}
 }
 
-// TestMessageListCompletedAssistantKeepsPrecedingSignet ensures the hoisting
+// TestMessageListCompletedAssistantKeepsPrecedingBelai ensures the hoisting
 // only applies while a model panel is actively streaming; once the assistant
-// has materialised, a preceding signet notice stays where it was.
-func TestMessageListCompletedAssistantKeepsPrecedingSignet(t *testing.T) {
+// has materialised, a preceding belai notice stays where it was.
+func TestMessageListCompletedAssistantKeepsPrecedingBelai(t *testing.T) {
 	list := MessageList{
 		Width: 60,
 		Messages: []Message{
@@ -1079,21 +1079,21 @@ func TestMessageListCompletedAssistantKeepsPrecedingSignet(t *testing.T) {
 		},
 	}
 	out := list.View()
-	if strings.Count(out, "signet") != 1 {
-		t.Fatalf("expected one signet panel, got:\n%s", out)
+	if strings.Count(out, "belai") != 1 {
+		t.Fatalf("expected one belai panel, got:\n%s", out)
 	}
 
 	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
-	var signetIdx, modelIdx int
+	var belaiIdx, modelIdx int
 	for i, l := range lines {
-		if strings.Contains(l, "signet") {
-			signetIdx = i
+		if strings.Contains(l, "belai") {
+			belaiIdx = i
 		}
 		if strings.Contains(l, "model") {
 			modelIdx = i
 		}
 	}
-	if signetIdx > modelIdx {
-		t.Fatalf("preceding signet should stay before a completed assistant, got:\n%s", out)
+	if belaiIdx > modelIdx {
+		t.Fatalf("preceding belai should stay before a completed assistant, got:\n%s", out)
 	}
 }

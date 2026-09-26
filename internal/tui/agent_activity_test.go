@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/activity"
-	"github.com/vulnetix/signet/internal/agent"
+	"github.com/vulnetix/belai/internal/activity"
+	"github.com/vulnetix/belai/internal/agent"
 )
 
 func agentActivity(t *testing.T, a *App, key string) activity.Activity {
@@ -24,9 +24,9 @@ func agentActivity(t *testing.T, a *App, key string) activity.Activity {
 // the only one in the main thread.
 func TestAgentActivityLabelledByKeyAndQuiet(t *testing.T) {
 	a := New(Options{Workdir: t.TempDir()})
-	a.registerAgentActivity("signet:vulnetix-scanner@sast#1", a.workdir)
-	a.registerAgentActivity("signet:vulnetix-scanner@cbom#1", a.workdir)
-	for _, key := range []string{"signet:vulnetix-scanner@sast#1", "signet:vulnetix-scanner@cbom#1"} {
+	a.registerAgentActivity("belai:vulnetix-scanner@sast#1", a.workdir)
+	a.registerAgentActivity("belai:vulnetix-scanner@cbom#1", a.workdir)
+	for _, key := range []string{"belai:vulnetix-scanner@sast#1", "belai:vulnetix-scanner@cbom#1"} {
 		act := agentActivity(t, a, key)
 		if act.State != activity.StateRunning || !act.Quiet {
 			t.Fatalf("%s: state %s quiet %v", key, act.State, act.Quiet)

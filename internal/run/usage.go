@@ -4,7 +4,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/vulnetix/signet/internal/transcript"
+	"github.com/vulnetix/belai/internal/transcript"
 )
 
 // UsageEvent reports the tokens one completed model call spent, keyed by the

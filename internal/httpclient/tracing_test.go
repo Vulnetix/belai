@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/trace"
+	"github.com/vulnetix/belai/internal/trace"
 )
 
 // TestTracingTransportRecordsMetadataOnly checks one record per request with
@@ -81,7 +81,7 @@ func TestTracingTransportRecordsTransportErrors(t *testing.T) {
 // TestWithTracingIsOffWithoutTraceEnv checks an untraced session keeps the
 // bare transport.
 func TestWithTracingIsOffWithoutTraceEnv(t *testing.T) {
-	t.Setenv("SIGNET_TRACE", "")
+	t.Setenv("BELAI_TRACE", "")
 	rt := http.DefaultTransport
 	if got := withTracing(rt); got != rt {
 		t.Fatalf("withTracing wrapped the transport with tracing off: %T", got)

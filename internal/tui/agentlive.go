@@ -10,12 +10,12 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/agent"
-	"github.com/vulnetix/signet/internal/agentprofile"
-	"github.com/vulnetix/signet/internal/bgagent"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/notify"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/bgagent"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/notify"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // The agent ledger is the one record of what every subagent and background

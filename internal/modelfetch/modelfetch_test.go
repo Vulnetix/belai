@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/provider"
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/provider"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 func TestListOpenAINoLiveFetch(t *testing.T) {

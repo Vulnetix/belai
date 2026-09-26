@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 func specs() map[string]Spec {
@@ -451,7 +451,7 @@ func TestReorderRenumbersAndLeavesNoTemps(t *testing.T) {
 			if _, err := os.Stat(filepath.Join(d, s.FileName(10, "a", true))); !errors.Is(err, os.ErrNotExist) {
 				t.Fatal("old first file should be gone")
 			}
-			if temps, _ := filepath.Glob(filepath.Join(d, ".signet-tmp-*")); len(temps) != 0 {
+			if temps, _ := filepath.Glob(filepath.Join(d, ".belai-tmp-*")); len(temps) != 0 {
 				t.Fatalf("temps left behind: %v", temps)
 			}
 		})
@@ -462,7 +462,7 @@ func TestCreateFileModes(t *testing.T) {
 	for name, s := range specs() {
 		t.Run(name, func(t *testing.T) {
 			home := t.TempDir()
-			t.Setenv("SIGNET_HOME", home)
+			t.Setenv("BELAI_HOME", home)
 			workdir := t.TempDir()
 
 			ge, err := s.Create(config.ScopeGlobal, workdir, "g", "global")

@@ -18,7 +18,7 @@ const (
 // AcquireFileLock takes the advisory lockfile at path, creating it exclusively
 // and writing the holder's pid. A lockfile older than LockStaleAfter is stolen.
 // It is the cross-process serialisation point for global state files that
-// several signet processes read-modify-write (projects.json, usage.json); an
+// several belai processes read-modify-write (projects.json, usage.json); an
 // in-process mutex must serialise first. The returned func releases the lock.
 func AcquireFileLock(path string) (func(), error) {
 	deadline := time.Now().Add(lockWait)

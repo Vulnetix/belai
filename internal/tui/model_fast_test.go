@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/run"
 )
 
 func selectRow(t *testing.T, a *App, role modelRole, key string) {
@@ -21,7 +21,7 @@ func selectRow(t *testing.T, a *App, role modelRole, key string) {
 }
 
 func TestModelScreenFastTierRows(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.routingScope = "project"
 
@@ -57,7 +57,7 @@ func TestModelScreenFastTierRows(t *testing.T) {
 }
 
 func TestModelScreenClassifierTierToggle(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.classifierScope = "project"
 	selectRow(t, a, roleClassifier, "tier")
@@ -76,7 +76,7 @@ func TestModelScreenClassifierTierToggle(t *testing.T) {
 }
 
 func TestModelScreenSaysWhoAnswersWhat(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := newModelScreen(t, t.TempDir())
 	view := a.modelView()
 	for _, want := range []string{"IN EFFECT", "work", "verdicts", "drafting", "security", "FAST TIER", "answers one-token verdicts", "does the work"} {
@@ -90,7 +90,7 @@ func TestModelScreenSaysWhoAnswersWhat(t *testing.T) {
 // kind actually set: under defined the pool is unused, and only routed claims
 // Jev is picking.
 func TestModelRoutingBlurbFollowsKind(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := newModelScreen(t, t.TempDir())
 	if got := a.modelRoleBlurb(roleRouting); !strings.Contains(got, "unused") || strings.Contains(got, "Jev picks") {
 		t.Fatalf("defined blurb = %q", got)
@@ -105,7 +105,7 @@ func TestModelRoutingBlurbFollowsKind(t *testing.T) {
 // dispatch rule: under routed, fast roles skip Jev for the fast tier whenever
 // one exists, and only without one does Jev pick for them.
 func TestModelSummaryVerdictsUnderRouted(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := newModelScreen(t, t.TempDir())
 	a.cfg.Routing = run.RoutingConfig{
 		Kind:       config.RoutingRouted,

@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/posture"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/posture"
 )
 
 func TestFromSettingsDefaults(t *testing.T) {
-	t.Setenv("SIGNET_HOME", "/home/x/.vulnetix/signet")
+	t.Setenv("BELAI_HOME", "/home/x/.vulnetix/belai")
 	p := FromSettings(nil, []string{"/work"}, posture.Defaults())
 	if p.Mode != ModeAuto || p.DenyNetwork {
 		t.Fatalf("policy = %+v", p)
@@ -20,7 +20,7 @@ func TestFromSettingsDefaults(t *testing.T) {
 	if p.Writable[0] != "/work" || len(p.Writable) < 5 {
 		t.Fatalf("writable = %v", p.Writable)
 	}
-	if len(p.Hidden) != 1 || p.Hidden[0] != "/home/x/.vulnetix/signet" {
+	if len(p.Hidden) != 1 || p.Hidden[0] != "/home/x/.vulnetix/belai" {
 		t.Fatalf("hidden = %v", p.Hidden)
 	}
 }

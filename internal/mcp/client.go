@@ -13,10 +13,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/version"
+	"github.com/vulnetix/belai/internal/version"
 )
 
-// ProtocolVersion is the MCP revision Signet speaks.
+// ProtocolVersion is the MCP revision Belai speaks.
 const ProtocolVersion = "2025-06-18"
 
 // transport carries JSON-RPC to one server.
@@ -63,7 +63,7 @@ func (c *Client) initialize(ctx context.Context) error {
 	params := map[string]any{
 		"protocolVersion": ProtocolVersion,
 		"capabilities":    map[string]any{},
-		"clientInfo":      map[string]any{"name": "signet", "version": version.Version},
+		"clientInfo":      map[string]any{"name": "belai", "version": version.Version},
 	}
 	var res struct {
 		ProtocolVersion string `json:"protocolVersion"`
@@ -112,7 +112,7 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 // Close ends the connection.
 func (c *Client) Close() error { return c.t.close() }
 
-// expand resolves an "env:NAME" value from Signet's environment.
+// expand resolves an "env:NAME" value from Belai's environment.
 func expand(v string) string {
 	if name, ok := strings.CutPrefix(v, "env:"); ok {
 		return os.Getenv(name)

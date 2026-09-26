@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // frame is the geometry and provenance of the last rendered transcript frame.

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/clarify"
+	"github.com/vulnetix/belai/internal/clarify"
 )
 
 // AskUserQuestion lets the model ask the user multiple-choice questions

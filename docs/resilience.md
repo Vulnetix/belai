@@ -1,6 +1,6 @@
 # Resilient provider retry
 
-Signet's provider path retries transient failures in two layers, mirroring the
+Belai's provider path retries transient failures in two layers, mirroring the
 model used by the Pi coding agent. A third layer repairs semantic failures
 inside the agent loop so the model can self-correct.
 
@@ -14,7 +14,7 @@ L4  pass boundary     goal mode: compact once on overflow, then re-run the pass
 
 ## Error classification (`internal/resilience`)
 
-The package is intentionally leaf-only: it imports no other signet packages.
+The package is intentionally leaf-only: it imports no other belai packages.
 Callers supply a `Policy` and a `Classifier`; `resilience.Do` runs the attempt
 loop.
 
@@ -91,7 +91,7 @@ first-class seam so tests never wait.
 
 ### Rate-limit edge cases
 
-- A `Retry-After` value of `0` is treated as absent: Signet falls back to the
+- A `Retry-After` value of `0` is treated as absent: Belai falls back to the
   rate-limit default or exponential backoff rather than retrying immediately.
 - A missing `Retry-After` header on a 429 does **not** mean "retry instantly";
   the 60 s default gives per-minute inference limits time to clear. If that is
@@ -116,13 +116,13 @@ caller reading those fields (L2 turn retry) must use.
 | `Base` | 500 ms | |
 | `Cap` | 8 s | caps the exponential term |
 | `Ceiling` | 60 s | absolute cap; also bounds `Retry-After` |
-| `Jitter` | **stays 0** | the one field with no non-zero default: 0 means no jitter. Signet's L1 and L2 policies both opt into 0.25 |
+| `Jitter` | **stays 0** | the one field with no non-zero default: 0 means no jitter. Belai's L1 and L2 policies both opt into 0.25 |
 | `Rand` | `rand.Float64` | |
 | `Sleep` | context-aware `time.After` | |
 
 Jitter is opt-in rather than defaulted because zero is a legitimate explicit
 choice (deterministic backoff in tests) and a Go zero value cannot distinguish
-"unset" from "none". Both real policies set it, so every retry Signet issues in
+"unset" from "none". Both real policies set it, so every retry Belai issues in
 production is jittered.
 
 ## Pre-first-byte boundary

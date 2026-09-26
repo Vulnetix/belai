@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/calltrace"
-	"github.com/vulnetix/signet/internal/proc"
+	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/proc"
 )
 
 // Runner executes a validated hook command under its directory. Commands run

@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/sanitize"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/sanitize"
 )
 
 const builderSystemPrompt = `You are an expert agent designer for a secure LLM coding harness. Given a user's request, design a named, reusable agent profile.

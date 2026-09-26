@@ -9,9 +9,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/calltrace"
-	"github.com/vulnetix/signet/internal/httpclient"
-	"github.com/vulnetix/signet/internal/version"
+	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/httpclient"
+	"github.com/vulnetix/belai/internal/version"
 )
 
 // WebFetch is the web-fetch tool with SSRF protection.

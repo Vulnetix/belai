@@ -3,8 +3,8 @@ package bgagent
 import (
 	"testing"
 
-	"github.com/vulnetix/signet/internal/agent"
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
 // A tool start carries its call in Tool; the wrapped event lifts the name, id

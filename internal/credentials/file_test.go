@@ -111,7 +111,7 @@ func TestFileAllowInsecurePermsOptIn(t *testing.T) {
 func TestFilePlainFileForm(t *testing.T) {
 	// If the parent path is a regular file (not a directory), read it directly.
 	dir := t.TempDir()
-	path := filepath.Join(dir, "signet") // no /credentials.json suffix; signet is a file
+	path := filepath.Join(dir, "belai") // no /credentials.json suffix; belai is a file
 	data := `{"version":1,"providers":{"openai":{"api_key":{"source":"inline","value":"plain-secret"}}}}`
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)

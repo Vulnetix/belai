@@ -3,12 +3,12 @@ package tui
 import (
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/run"
 )
 
 func TestSettingsProviderEditClearsModelAndSyncs(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 
 	if err := config.Mutate(config.ScopeGlobal, workdir, func(s *config.Settings) error {
@@ -60,7 +60,7 @@ func TestSettingsProviderEditClearsModelAndSyncs(t *testing.T) {
 }
 
 func TestSettingsProviderUnsetSyncs(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 
 	if err := config.Mutate(config.ScopeGlobal, workdir, func(s *config.Settings) error {

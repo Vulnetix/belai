@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
 // containsFold reports whether s contains substr, ignoring case.
@@ -143,7 +143,7 @@ is
 // servability check is stubbed so the test stays network-free.
 func TestRemoteGateUsesCachedTokenizerFiles(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("SIGNET_HOME", home)
+	t.Setenv("BELAI_HOME", home)
 
 	modelID := "fake-org/fake-model"
 	cacheDir, err := modelCacheDir(modelID)
@@ -176,7 +176,7 @@ func TestRemoteGateUsesCachedTokenizerFiles(t *testing.T) {
 // model cache directory when it does not yet exist.
 func TestRemoteGateCreatesCacheDir(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("SIGNET_HOME", home)
+	t.Setenv("BELAI_HOME", home)
 
 	modelID := "another-org/another-model"
 	hubStub(t, "config.json", "model.safetensors", "tokenizer.json")
@@ -212,7 +212,7 @@ func TestRemoteGateCreatesCacheDir(t *testing.T) {
 // prompt.
 func TestRemoteGateRefusesRepoWithoutTokenizer(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("SIGNET_HOME", home)
+	t.Setenv("BELAI_HOME", home)
 	hubStub(t, ".gitattributes", "README.md", "config.json", "model.safetensors")
 
 	mc := ModelConfig{
@@ -236,7 +236,7 @@ func TestRemoteGateRefusesRepoWithoutTokenizer(t *testing.T) {
 // so per-turn pipeline rebuilds stay network-free until the marker expires.
 func TestRemoteGateHubCheckCached(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("SIGNET_HOME", home)
+	t.Setenv("BELAI_HOME", home)
 
 	modelID := "cached-org/cached-model"
 	cacheDir, err := modelCacheDir(modelID)
@@ -269,7 +269,7 @@ func TestRemoteGateHubCheckCached(t *testing.T) {
 // than assuming the model is servable.
 func TestRemoteGateHubCheckFailsClosedWithoutMarker(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("SIGNET_HOME", home)
+	t.Setenv("BELAI_HOME", home)
 
 	modelID := "offline-org/offline-model"
 	// A dead endpoint: the check must fail without a marker to fall back on.
@@ -328,7 +328,7 @@ func TestRemoteGateSeedsEmbeddedModelIntoCache(t *testing.T) {
 	}
 
 	home := t.TempDir()
-	t.Setenv("SIGNET_HOME", home)
+	t.Setenv("BELAI_HOME", home)
 
 	hubStub(t, "config.json", "model.safetensors", "tokenizer.json", "tokenizer_config.json", "training_args.bin")
 	mc := ModelConfig{

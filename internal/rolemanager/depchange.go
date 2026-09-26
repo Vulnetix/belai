@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/vulnetix/signet/internal/sanitize"
+	"github.com/vulnetix/belai/internal/sanitize"
 )
 
 // DepSentinel is the strict single-token output of the dependency-change

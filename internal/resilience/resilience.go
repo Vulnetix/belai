@@ -1,6 +1,6 @@
 // Package resilience implements the retry and classification primitives used by
-// Signet's model provider path. It is intentionally leaf-only: it imports no
-// other signet packages so every caller, including internal/run, can depend on
+// Belai's model provider path. It is intentionally leaf-only: it imports no
+// other belai packages so every caller, including internal/run, can depend on
 // it without cycles.
 package resilience
 
@@ -60,7 +60,7 @@ type Policy struct {
 	Base        time.Duration // default 500ms
 	Cap         time.Duration // default 8s — caps the exponential term
 	Ceiling     time.Duration // default 60s — absolute cap; also bounds Retry-After
-	Jitter      float64       // 0 means none, downward only; Signet's policies use 0.25
+	Jitter      float64       // 0 means none, downward only; Belai's policies use 0.25
 	Rand        func() float64
 	Sleep       func(context.Context, time.Duration) error
 }
@@ -197,7 +197,7 @@ var (
 	transportRE = regexp.MustCompile(`(?i)stream error|PROTOCOL_ERROR|INTERNAL_ERROR|REFUSED_STREAM|GOAWAY|http2: client connection lost|server closed idle connection|use of closed network connection|TLS handshake timeout|i/o timeout|stream idle timeout|closed without a done chunk|connection closed before|overloaded`)
 )
 
-// DefaultClassifier is the denylist-first classifier used by Signet's provider
+// DefaultClassifier is the denylist-first classifier used by Belai's provider
 // retry layer. Unrecognised errors resolve to ClassFatal.
 type DefaultClassifier struct{}
 
@@ -250,7 +250,7 @@ func (DefaultClassifier) Classify(err error) Verdict {
 	}
 	// Low-pressure rate-limit retry: when the provider says 429 or the body
 	// contains a rate-limit signal but omits Retry-After, default to a longer
-	// wait instead of the usual exponential storm. This keeps Signet civil to
+	// wait instead of the usual exponential storm. This keeps Belai civil to
 	// providers with per-minute limits (common for local inference and small
 	// model endpoints) without requiring users to configure a ceiling.
 	if status == http.StatusTooManyRequests || rateLimitRE.MatchString(msg) {

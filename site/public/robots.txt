@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://signet.vulnetix.com/sitemap.xml
+Sitemap: https://belai.vulnetix.com/sitemap.xml

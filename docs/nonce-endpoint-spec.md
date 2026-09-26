@@ -1,7 +1,7 @@
 # Nonce endpoint spec (designed forward)
 
-Signet seals every harness-generated delimiter with a random nonce plus a
-SHA-256 integrity hash of the enclosed content. By default Signet mints its own
+Belai seals every harness-generated delimiter with a random nonce plus a
+SHA-256 integrity hash of the enclosed content. By default Belai mints its own
 nonces from a CSPRNG pool. Providers (or the ai-firewall gateway in front of
 them) may instead supply the nonces, which the harness then verifies rather
 than mints.
@@ -28,7 +28,7 @@ Examples:
 ## Request
 
 The request carries the same credentials as the provider surface. When an API
-key is supplied, Signet sends it as a Bearer token:
+key is supplied, Belai sends it as a Bearer token:
 
 ```
 Authorization: Bearer <api_key>
@@ -61,17 +61,17 @@ Fetched nonces are *appended* to the pool's available list rather than
 replacing it, so seeding from a provider never discards nonces the pool
 already holds. Only `Rotate` discards.
 
-Every request carries Signet's `user-agent`
-(`signet/<version> (+https://github.com/Vulnetix/signet)`). Provider turns also
-carry the `X-Signet-Session-Id`, `X-Signet-Client-Version`,
-`X-Signet-Client-Build` and W3C `traceparent` headers described in
+Every request carries Belai's `user-agent`
+(`belai/<version> (+https://github.com/Vulnetix/belai)`). Provider turns also
+carry the `X-Belai-Session-Id`, `X-Belai-Client-Version`,
+`X-Belai-Client-Build` and W3C `traceparent` headers described in
 [architecture.md](architecture.md#outbound-identification-and-trace-headers).
 A provider may log them for correlation but must not depend on them.
 
 ## Unsupported / not enabled
 
 When a provider does not implement the endpoint, or has it disabled, it returns
-`401` (or, for gateways that prefer it, `403`/`404`). Signet treats any of
+`401` (or, for gateways that prefer it, `403`/`404`). Belai treats any of
 these as "unsupported" and falls back to its local CSPRNG pool.
 
 The unsupported answer is **negative-cached per base URL for the process

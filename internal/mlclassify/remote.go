@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
 // hfInferenceEndpoint is the HuggingFace serverless inference API for
@@ -98,7 +98,7 @@ func newRemoteGate(phase Phase, mc ModelConfig, hfToken func() (string, error)) 
 	if tokenizable, err := hfRepoTokenizable(client, dir, mc.ID, token); err != nil {
 		return nil, fmt.Errorf("remote model %q: %w", mc.ID, err)
 	} else if !tokenizable {
-		return nil, fmt.Errorf("remote model %q: HuggingFace serverless inference cannot serve it — the repo ships no tokenizer files (tokenizer.json/vocab.txt), so the inference API fails to load the model. Run it locally instead: build signet with the embedded model (just build-bert or just build-jailbreak)", mc.ID)
+		return nil, fmt.Errorf("remote model %q: HuggingFace serverless inference cannot serve it — the repo ships no tokenizer files (tokenizer.json/vocab.txt), so the inference API fails to load the model. Run it locally instead: build belai with the embedded model (just build-bert or just build-jailbreak)", mc.ID)
 	}
 
 	// If this model is embedded and the cache is empty, seed it from the
@@ -221,7 +221,7 @@ func (g *remoteModel) fire(ctx context.Context, window string) (rolemanager.Sent
 	if resp.StatusCode != http.StatusOK {
 		msg := strings.TrimSpace(string(data))
 		if strings.Contains(msg, "Model not supported by provider") {
-			return "", 0, fmt.Errorf("classify %s: HuggingFace serverless inference does not serve this model (%s); run it locally instead — build signet with the embedded model (just build-bert or just build-jailbreak)", g.id, msg)
+			return "", 0, fmt.Errorf("classify %s: HuggingFace serverless inference does not serve this model (%s); run it locally instead — build belai with the embedded model (just build-bert or just build-jailbreak)", g.id, msg)
 		}
 		return "", 0, fmt.Errorf("classify %s: %s: %s", g.id, resp.Status, msg)
 	}

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 func testStore(t *testing.T, workdir string) *Store {
@@ -454,7 +454,7 @@ func TestTimedUserPromptsOldestFirstWithModTimeFallback(t *testing.T) {
 
 func TestNewStoreRoot(t *testing.T) {
 	home := t.TempDir()
-	t.Setenv("SIGNET_HOME", home)
+	t.Setenv("BELAI_HOME", home)
 	st, err := NewStore()
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
@@ -469,7 +469,7 @@ func TestNewStoreRoot(t *testing.T) {
 }
 
 func TestKeyString(t *testing.T) {
-	if got := Key("signet-275e7780").String(); got != "signet-275e7780" {
+	if got := Key("belai-275e7780").String(); got != "belai-275e7780" {
 		t.Fatalf("String() = %q", got)
 	}
 }

@@ -1,4 +1,4 @@
-//go:build signet_bert_jailbreak
+//go:build belai_bert_jailbreak
 
 package mlclassify
 
@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
 // TestGoldenVectorsPhase2LongReadResult guards the 512-token model limit on
@@ -41,10 +41,10 @@ func TestGoldenVectorsPhase2LongReadResult(t *testing.T) {
 	}
 	var testOut strings.Builder
 	for _, pkg := range []string{"internal/run", "internal/tui", "internal/mlclassify", "internal/session", "internal/agent", "internal/plans", "internal/goals", "internal/config"} {
-		fmt.Fprintf(&testOut, "ok  \tgithub.com/vulnetix/signet/%s\t0.123s\n", pkg)
+		fmt.Fprintf(&testOut, "ok  \tgithub.com/vulnetix/belai/%s\t0.123s\n", pkg)
 	}
 	for i := 0; i < 50; i++ {
-		fmt.Fprintf(&testOut, "ok  \tgithub.com/vulnetix/signet/internal/run\t0.123s\n")
+		fmt.Fprintf(&testOut, "ok  \tgithub.com/vulnetix/belai/internal/run\t0.123s\n")
 	}
 
 	cases := []string{

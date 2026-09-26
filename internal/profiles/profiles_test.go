@@ -133,7 +133,7 @@ func TestUserFileCannotShadowBuiltin(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	dir, _ := Dir()
 	_ = os.MkdirAll(dir, 0o755)
-	_ = os.WriteFile(filepath.Join(dir, "signet_debug.json"), []byte(`{"name":"signet_debug","content":"user shadow"}`), 0o600)
+	_ = os.WriteFile(filepath.Join(dir, "belai_debug.json"), []byte(`{"name":"belai_debug","content":"user shadow"}`), 0o600)
 	p, err := Load(DebugProfile)
 	if err != nil {
 		t.Fatalf("Load: %v", err)

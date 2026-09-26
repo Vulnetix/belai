@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/gitinfo"
-	"github.com/vulnetix/signet/internal/repoindex"
+	"github.com/vulnetix/belai/internal/gitinfo"
+	"github.com/vulnetix/belai/internal/repoindex"
 )
 
 // Scan bounds: never walk unboundedly.

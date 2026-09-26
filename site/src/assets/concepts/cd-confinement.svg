@@ -17,12 +17,12 @@
   <g transform="translate(24 60)">
     <rect width="380" height="220" rx="12" fill="#FFF8ED" stroke="#009484" stroke-width="2.5"/>
     <text x="16" y="28" class="lbl" font-weight="bold">session root</text>
-    <text x="16" y="46" class="sub">/home/chris/GitHub/signet</text>
+    <text x="16" y="46" class="sub">/home/chris/GitHub/belai</text>
 
     <!-- working directory -->
     <rect x="24" y="70" width="200" height="64" rx="8" class="box inside"/>
     <text x="38" y="96" class="mono" font-size="12">working directory</text>
-    <text x="38" y="116" class="sub">cd …/signet/site</text>
+    <text x="38" y="116" class="sub">cd …/belai/site</text>
 
     <!-- file access confined -->
     <rect x="24" y="150" width="332" height="46" rx="8" fill="#001614"/>

@@ -11,10 +11,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 // After the classifier withheld a Read, the model asked Grep for the same

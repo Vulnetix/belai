@@ -1,5 +1,5 @@
 // Package copilotauth exchanges a GitHub OAuth token for a short-lived
-// Copilot session token. It is the only auth path in Signet that performs a
+// Copilot session token. It is the only auth path in Belai that performs a
 // network call before the model request, so it lives in its own package with
 // its own tests. Nothing here may make a real network call in the test suite.
 package copilotauth
@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/vulnetix/signet/internal/httpclient"
+	"github.com/vulnetix/belai/internal/httpclient"
 	"io"
 	"net/http"
 	"strings"

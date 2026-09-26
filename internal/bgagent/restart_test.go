@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/agentprofile"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/run"
 )
 
 // newLoopMockServer scripts the security, mode, and loop-evaluator classifiers

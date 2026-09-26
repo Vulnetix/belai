@@ -144,7 +144,7 @@ func writeFileAtomic(path string, content []byte) error {
 	if fi, err := os.Lstat(path); err == nil {
 		mode = fi.Mode().Perm()
 	}
-	tmp, err := os.CreateTemp(dir, ".signet-write-*")
+	tmp, err := os.CreateTemp(dir, ".belai-write-*")
 	if err != nil {
 		return err
 	}

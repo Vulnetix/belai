@@ -3,8 +3,8 @@ package run
 import (
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/mlclassify"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/mlclassify"
 )
 
 // phase2EmbeddedAvailable reports whether this build variant embeds the

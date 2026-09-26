@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/sanitize"
-	"github.com/vulnetix/signet/internal/skills"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/sanitize"
+	"github.com/vulnetix/belai/internal/skills"
 )
 
 // ExtraSkillRoots returns skill directories beyond the user's own (enabled

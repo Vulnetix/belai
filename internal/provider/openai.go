@@ -3,7 +3,7 @@ package provider
 import (
 	"net/http"
 
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 // NewChatRequest builds an OpenAI chat/completions request. Streaming is

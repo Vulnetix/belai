@@ -10,9 +10,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/credentials"
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 // newTestResolver builds a resolver over a temp workdir.
@@ -29,7 +29,7 @@ func newTestResolver(t *testing.T, workdir string) *credentials.Resolver {
 // live) and a seeded availability cache, bypassing the network.
 func newAvailabilityApp(t *testing.T, configured, local map[string]bool) *App {
 	t.Helper()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir, Resolver: newTestResolver(t, workdir)})
 	a.avail = providerAvailability{configured: configured, local: local, probedAt: time.Now()}
@@ -105,7 +105,7 @@ func TestAvailableProvidersNeverEmpty(t *testing.T) {
 }
 
 func TestAvailableProvidersWithoutResolver(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	if a.resolver != nil {
 		t.Fatal("no Resolver option should leave the resolver nil")
@@ -138,7 +138,7 @@ func TestProbeAvailabilityReachesLocalServer(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			// OLLAMA_HOST takes a whole base URL; the SIGNET_OLLAMA_* fields
+			// OLLAMA_HOST takes a whole base URL; the BELAI_OLLAMA_* fields
 			// take a decomposed host/port/protocol.
 			t.Setenv("OLLAMA_HOST", tc.host)
 			a := newAvailabilityApp(t, nil, nil)
@@ -209,7 +209,7 @@ func TestCredentialMutationInvalidatesAvailability(t *testing.T) {
 // TestProbeAvailabilityWithoutResolverIsNil keeps the probe off the Init batch
 // when there is nothing to resolve.
 func TestProbeAvailabilityWithoutResolverIsNil(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	var cmd tea.Cmd = a.probeAvailabilityCmd()
 	if cmd != nil {
@@ -237,7 +237,7 @@ func TestKeylessCustomProviderNeedsLiveness(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("SIGNET_HOME", t.TempDir())
+			t.Setenv("BELAI_HOME", t.TempDir())
 			workdir := t.TempDir()
 			if err := config.SaveGlobal(config.Settings{
 				Providers: map[string]config.ProviderProfile{
@@ -287,7 +287,7 @@ func TestCredentialsResolvedSchedulesAvailabilityProbe(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	// Point the built-in local providers at the same test server so the
 	// probe finishes instantly instead of timing out against localhost.
 	t.Setenv("OLLAMA_HOST", srv.URL)
@@ -295,9 +295,9 @@ func TestCredentialsResolvedSchedulesAvailabilityProbe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse server url: %v", err)
 	}
-	t.Setenv("SIGNET_LLAMA_HOST", u.Hostname())
-	t.Setenv("SIGNET_LLAMA_PORT", u.Port())
-	t.Setenv("SIGNET_LLAMA_PROTOCOL", u.Scheme)
+	t.Setenv("BELAI_LLAMA_HOST", u.Hostname())
+	t.Setenv("BELAI_LLAMA_PORT", u.Port())
+	t.Setenv("BELAI_LLAMA_PROTOCOL", u.Scheme)
 
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir, Resolver: newTestResolver(t, workdir)})

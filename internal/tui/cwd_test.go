@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/agent"
+	"github.com/vulnetix/belai/internal/agent"
 )
 
 // lastSystemMessage returns the text of the newest system line, or "".
@@ -148,7 +148,7 @@ func TestAllowlistedSessionKeepsCwdTracker(t *testing.T) {
 // roots, so a trust-activated or restored directory is reachable, not just
 // advertised to the model.
 func TestBuildAgentSessionAddsWorkspaceRoots(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	root := t.TempDir()
 	extra := t.TempDir()
 	a := New(Options{Workdir: root})

@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 func TestGoalMemoriseLoadRoundTrip(t *testing.T) {
 	workdir := t.TempDir()
-	g := Goal{Name: "ship-signet", Content: "build and release signet"}
+	g := Goal{Name: "ship-belai", Content: "build and release belai"}
 
 	path, err := Memorise(workdir, g)
 	if err != nil {
@@ -22,11 +22,11 @@ func TestGoalMemoriseLoadRoundTrip(t *testing.T) {
 		t.Fatalf("Memorise returned empty path")
 	}
 
-	got, err := Load(workdir, "ship-signet")
+	got, err := Load(workdir, "ship-belai")
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got.Name != "ship-signet" || got.Content != g.Content {
+	if got.Name != "ship-belai" || got.Content != g.Content {
 		t.Fatalf("round-trip mismatch: %+v", got)
 	}
 }

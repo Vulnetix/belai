@@ -8,8 +8,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/clipboard"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/clipboard"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // hoverTarget records what the pointer is over. It is derived every frame
@@ -95,7 +95,7 @@ func (a *App) hoverHint() string {
 
 // hoverSaveName returns the suggested file name for saving the hovered panel:
 // the basename for a Read file panel, otherwise a generated
-// signet-<session>-<idx>.<ext> name. The name is unqualified (no directory) —
+// belai-<session>-<idx>.<ext> name. The name is unqualified (no directory) —
 // finishSaveFile joins a relative path against the workdir.
 func (a *App) hoverSaveName() string {
 	if path := a.filePanelPath(a.hover.msg); path != "" {
@@ -108,9 +108,9 @@ func (a *App) hoverSaveName() string {
 			ext = ".txt"
 		}
 	}
-	base := fmt.Sprintf("signet-%s-%d%s", a.sessionDisplay(), a.hover.msg, ext)
+	base := fmt.Sprintf("belai-%s-%d%s", a.sessionDisplay(), a.hover.msg, ext)
 	if a.sessionDisplay() == "" {
-		base = fmt.Sprintf("signet-%d%s", a.hover.msg, ext)
+		base = fmt.Sprintf("belai-%d%s", a.hover.msg, ext)
 	}
 	return truncateSaveName(base)
 }

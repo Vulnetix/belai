@@ -14,7 +14,7 @@ import "unicode"
 //
 // The one deliberate divergence is scripts without spaces: Pi's segmenter
 // finds word boundaries inside a run of CJK, and this does not — a run of
-// letters is one word here. Signet has no segmenter in the standard library,
+// letters is one word here. Belai has no segmenter in the standard library,
 // and a wrong boundary would be worse than a coarse one.
 
 type runeClass int

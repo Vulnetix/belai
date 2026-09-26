@@ -1,5 +1,5 @@
 // Package keys translates kitty keyboard-protocol CSI-u sequences into the
-// legacy bubbletea v1 KeyMsg values used by Signet. It is implemented by hand
+// legacy bubbletea v1 KeyMsg values used by Belai. It is implemented by hand
 // because bubbletea v1.3 has no native keyboard-enhancement option.
 package keys
 

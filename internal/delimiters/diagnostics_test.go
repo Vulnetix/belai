@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/nonce"
+	"github.com/vulnetix/belai/internal/nonce"
 )
 
 func TestDiagnosticsBlockRequiresIntegrity(t *testing.T) {

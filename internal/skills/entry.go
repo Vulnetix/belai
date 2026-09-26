@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/posture"
+	"github.com/vulnetix/belai/internal/posture"
 )
 
 // Entry is one discovered skill: its validated manifest and where its

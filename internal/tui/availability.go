@@ -9,11 +9,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/credentials"
-	"github.com/vulnetix/signet/internal/localinfer"
-	"github.com/vulnetix/signet/internal/provider"
-	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/localinfer"
+	"github.com/vulnetix/belai/internal/provider"
+	"github.com/vulnetix/belai/internal/run"
 )
 
 // localProviders returns the providers whose availability means a running

@@ -12,7 +12,7 @@ import (
 func pluginDir(t *testing.T) string {
 	t.Helper()
 	src := t.TempDir()
-	os.WriteFile(filepath.Join(src, "signet-plugin.json"), []byte(`{"name":"demo","prompts":["prompts"]}`), 0o600)
+	os.WriteFile(filepath.Join(src, "belai-plugin.json"), []byte(`{"name":"demo","prompts":["prompts"]}`), 0o600)
 	os.MkdirAll(filepath.Join(src, "prompts"), 0o700)
 	os.WriteFile(filepath.Join(src, "prompts", "hello.md"), []byte("say hello"), 0o600)
 	return src
@@ -21,7 +21,7 @@ func pluginDir(t *testing.T) string {
 // Without a terminal and without -yes, install prints the listing and
 // installs nothing.
 func TestPluginInstallNeedsConfirmation(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	src := pluginDir(t)
 	var out, errb bytes.Buffer
 	if code := runPluginCLI(context.Background(), []string{"install", src}, strings.NewReader(""), &out, &errb, false); code == 0 {
@@ -38,7 +38,7 @@ func TestPluginInstallNeedsConfirmation(t *testing.T) {
 }
 
 func TestPluginInstallConfirmedOnTTY(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	src := pluginDir(t)
 	var out, errb bytes.Buffer
 	if code := runPluginCLI(context.Background(), []string{"install", src}, strings.NewReader("y\n"), &out, &errb, true); code != 0 {
@@ -58,7 +58,7 @@ func TestPluginInstallConfirmedOnTTY(t *testing.T) {
 }
 
 func TestPluginInstallYes(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	var out, errb bytes.Buffer
 	if code := runPluginCLI(context.Background(), []string{"install", "-yes", pluginDir(t)}, nil, &out, &errb, false); code != 0 {
 		t.Fatalf("install -yes failed: %s", errb.String())

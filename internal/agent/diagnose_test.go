@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/lsp"
-	"github.com/vulnetix/signet/internal/nonce"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/lsp"
+	"github.com/vulnetix/belai/internal/nonce"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 type stubDiagnoser struct {

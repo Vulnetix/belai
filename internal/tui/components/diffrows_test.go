@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
-	"github.com/vulnetix/signet/internal/filediff"
+	"github.com/vulnetix/belai/internal/filediff"
 )
 
 func bashRowWithDiff(ch *filediff.Change) Message {

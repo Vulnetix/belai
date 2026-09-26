@@ -7,7 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 func TestModelViewRendersRolesAndWarning(t *testing.T) {
@@ -112,7 +112,7 @@ func TestModelSetInShownOnlyWhenItDiffers(t *testing.T) {
 // line wider than the terminal — the overlap the fixed 12-cell label column
 // and 41-cell value cut used to produce.
 func TestModelViewFitsWidth(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	if err := config.Mutate(config.ScopeProject, workdir, func(s *config.Settings) error {
 		s.Routing = &config.RoutingSettings{
@@ -157,7 +157,7 @@ func TestModelAgentScopeCanBeCycled(t *testing.T) {
 }
 
 func TestModelClassifierProviderChangeClearsModel(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir})
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
@@ -186,7 +186,7 @@ func TestModelClassifierProviderChangeClearsModel(t *testing.T) {
 }
 
 func TestModelClassifierReasoningToggleDrivesEffort(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir})
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
@@ -257,12 +257,12 @@ func TestModelViewGroupsRolesWithPerRoleBadges(t *testing.T) {
 }
 
 func TestModelAgentProviderChangeReResolvesConfig(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	t.Setenv("OPENAI_API_KEY", "sk-openai")
 	t.Setenv("OPENROUTER_API_KEY", "or-key")
 	// openrouter is the default provider, so the starting point this test
 	// cycles away from has to be named explicitly.
-	t.Setenv("SIGNET_PROVIDER", "openai")
+	t.Setenv("BELAI_PROVIDER", "openai")
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir})
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
@@ -295,7 +295,7 @@ func TestModelAgentProviderChangeReResolvesConfig(t *testing.T) {
 }
 
 func TestModelAgentProviderChangeGlobalScopeReResolvesConfig(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	t.Setenv("OPENROUTER_API_KEY", "or-key")
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir})
@@ -362,7 +362,7 @@ func TestModelScopeKeyCyclesRoleScopeNotRowOptions(t *testing.T) {
 }
 
 func TestModelClassifierScopeWritesGlobalSettings(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	a := New(Options{Workdir: workdir})
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})

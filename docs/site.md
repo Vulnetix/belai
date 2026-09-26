@@ -1,6 +1,6 @@
 # Marketing site
 
-The single-scroll marketing site at [signet.vulnetix.com](https://signet.vulnetix.com/), built from `site/`.
+The single-scroll marketing site at [belai.vulnetix.com](https://belai.vulnetix.com/), built from `site/`.
 
 ## Stack
 
@@ -88,16 +88,16 @@ Determinism rules:
 
 ## Terraform
 
-`site/terraform/` owns the Cloudflare CNAME (`cloudflare_dns_record.signet`) and,
+`site/terraform/` owns the Cloudflare CNAME (`cloudflare_dns_record.belai`) and,
 gated behind `var.manage_pages = false`, the GitHub Pages block. The Pages block
 is net-new for the org and delivered inert: `terraform plan` proposes no
 repository change until `manage_pages` is flipped and the repository is imported
-first (`terraform import github_repository.signet signet`).
+first (`terraform import github_repository.belai belai`).
 
 ## Deploy
 
 `.github/workflows/pages.yml` builds `site/`, asserts `dist/CNAME` still reads
-`signet.vulnetix.com` (a missing CNAME silently unbinds the custom domain), runs
+`belai.vulnetix.com` (a missing CNAME silently unbinds the custom domain), runs
 the link checker, then uploads and deploys the Pages artifact.
 
 ## Local workflow

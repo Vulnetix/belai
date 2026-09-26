@@ -6,7 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/vulnetix/signet/internal/todos"
+	"github.com/vulnetix/belai/internal/todos"
 )
 
 // TodoPanel renders the shared goal/plan todo list: the previous completed

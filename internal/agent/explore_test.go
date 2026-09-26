@@ -13,14 +13,14 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/explore"
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/repoindex"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/explore"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/repoindex"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 // TestGroundingCarriesOnlyWhatTheMapLacks pins the trimmed grounding: no

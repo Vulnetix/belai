@@ -10,11 +10,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/hooks"
-	"github.com/vulnetix/signet/internal/notify"
+	"github.com/vulnetix/belai/internal/hooks"
+	"github.com/vulnetix/belai/internal/notify"
 )
 
-// notifyCmd tells the user Signet needs them: a desktop notification when
+// notifyCmd tells the user Belai needs them: a desktop notification when
 // the settings ask for this event, and the notification hook either way.
 // Both run off the UI goroutine. subject is a tool or agent name; notify
 // reduces it to an identifier.

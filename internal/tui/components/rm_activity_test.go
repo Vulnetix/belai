@@ -6,7 +6,7 @@ import (
 
 	"github.com/muesli/termenv"
 
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
 func rmMessage(level rolemanager.Level, summary, outcome string, tone rolemanager.Tone) Message {
@@ -22,10 +22,10 @@ func rmMessage(level rolemanager.Level, summary, outcome string, tone rolemanage
 	}
 }
 
-// TestRolemanagerMessageRendersInSignetPanel pins the render-only feed: the
-// activity renders as a signet panel line, the LineMap matches the rendered
+// TestRolemanagerMessageRendersInBelaiPanel pins the render-only feed: the
+// activity renders as a belai panel line, the LineMap matches the rendered
 // line count, and under TrueColor the outcome word carries colour.
-func TestRolemanagerMessageRendersInSignetPanel(t *testing.T) {
+func TestRolemanagerMessageRendersInBelaiPanel(t *testing.T) {
 	withProfile(t, termenv.TrueColor, func() {
 		ml := MessageList{
 			Width:        80,

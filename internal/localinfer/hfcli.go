@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/proc"
+	"github.com/vulnetix/belai/internal/proc"
 )
 
 // HFBinary returns the path to the first Hugging Face CLI it finds: the hf
@@ -35,7 +35,7 @@ type CachedModel struct {
 // path is the resolved local GGUF.
 //
 // The implementation prefers the official CLI because it owns resumable,
-// checksummed downloads; Signet no longer does this by hand. It captures stdout
+// checksummed downloads; Belai no longer does this by hand. It captures stdout
 // and parses the last line that looks like a .gguf path. If that heuristic
 // fails, it falls back to scanning the HF hub cache for a matching file.
 func HFDownload(ctx context.Context, binary, repo, quant, token string, sink func(string)) (string, error) {

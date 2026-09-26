@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/provider"
+	"github.com/vulnetix/belai/internal/provider"
 )
 
 // ThinkingStyle re-exports the provider-owned thinking shape so callers that

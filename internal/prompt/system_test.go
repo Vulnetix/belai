@@ -20,9 +20,9 @@ func TestSystemCarriers(t *testing.T) {
 		},
 		{
 			name:     "goal carrier",
-			opts:     Options{Carrier: CarrierGoal, GoalText: "build signet"},
+			opts:     Options{Carrier: CarrierGoal, GoalText: "build belai"},
 			wantTag:  "Active goal:",
-			wantText: "build signet",
+			wantText: "build belai",
 		},
 		{
 			name:     "profile carrier",
@@ -107,8 +107,8 @@ func TestSystemNamesThreeIdentities(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"running inside Signet",
-		"- Harness: Signet.",
+		"running inside Belai",
+		"- Harness: Belai.",
 		"- Provider: anthropic.",
 		"- Model: claude-sonnet-4-5,",
 		"Keep your own identity",
@@ -119,7 +119,7 @@ func TestSystemNamesThreeIdentities(t *testing.T) {
 	}
 }
 
-// The harness must never tell the model it *is* Signet. Doing so overrode the
+// The harness must never tell the model it *is* Belai. Doing so overrode the
 // model's own trained identity, and it answered questions about itself by
 // disclaiming any knowledge of which model it was.
 func TestSystemDoesNotClaimModelIsHarness(t *testing.T) {
@@ -133,7 +133,7 @@ func TestSystemDoesNotClaimModelIsHarness(t *testing.T) {
 		if err != nil {
 			t.Fatalf("System(%+v): %v", opts, err)
 		}
-		if strings.Contains(got, "You are Signet") {
+		if strings.Contains(got, "You are Belai") {
 			t.Fatalf("system prompt claims the model is the harness:\n%s", got)
 		}
 	}

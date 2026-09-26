@@ -9,10 +9,10 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/budget"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/budget"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // usageMsg carries one model call's usage out of the run package's observer
@@ -20,7 +20,7 @@ import (
 type usageMsg run.UsageEvent
 
 // budgetRefreshAge is how stale the in-memory ledger may get before the tick
-// re-reads usage.json, so day and month spend recorded by another signet
+// re-reads usage.json, so day and month spend recorded by another belai
 // process reaches this footer.
 const budgetRefreshAge = 30 * time.Second
 
@@ -57,7 +57,7 @@ func (a *App) initBudgets() {
 }
 
 // importHistory folds in the usage of sessions the ledger never saw (saved
-// before token budgets existed, or by an older signet), so day and month
+// before token budgets existed, or by an older belai), so day and month
 // budgets count every session. It is an Init command, so Bubble Tea runs it in
 // the background once per start: startup never waits on parsing transcripts,
 // and the footer picks the totals up on the next tick.

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/repomap"
-	"github.com/vulnetix/signet/internal/sanitize"
+	"github.com/vulnetix/belai/internal/repomap"
+	"github.com/vulnetix/belai/internal/sanitize"
 )
 
 // WorkspaceBlock renders a harness-computed repository-map block for each

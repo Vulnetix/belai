@@ -6,9 +6,9 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/provider"
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/provider"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 func scanCodex(home string) []Found {

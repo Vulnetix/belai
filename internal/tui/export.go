@@ -7,8 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/session"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/session"
 )
 
 // exportDoneMsg carries the result of an async session export back to the UI

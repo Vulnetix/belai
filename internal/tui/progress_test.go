@@ -7,9 +7,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/agent"
-	"github.com/vulnetix/signet/internal/filediff"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/filediff"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // toolRowFor finds the tool row for a call id. Indices are not assumed: New

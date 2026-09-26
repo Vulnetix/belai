@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/proc"
+	"github.com/vulnetix/belai/internal/proc"
 )
 
 var (

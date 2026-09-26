@@ -1,4 +1,4 @@
-//go:build signet_bert || signet_bert_jailbreak
+//go:build belai_bert || belai_bert_jailbreak
 
 package mlclassify
 
@@ -6,7 +6,7 @@ import (
 	"embed"
 	"io/fs"
 
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
 // phase1Files embeds the converted phase-1 prompt-saturation model. The

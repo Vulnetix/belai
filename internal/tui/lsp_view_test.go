@@ -8,7 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
 func TestLSPViewRowCount(t *testing.T) {
@@ -46,7 +46,7 @@ func TestLSPViewTogglePersists(t *testing.T) {
 }
 
 func TestLSPKeySpaceThenEsc(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.view = viewLSP
 	a.viewStack = []viewState{viewSettings, viewLSP}

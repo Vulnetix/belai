@@ -9,9 +9,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/vulnetix/signet/internal/budget"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/budget"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // budgetsViewState is the token budgets screen's state. mode is "" when

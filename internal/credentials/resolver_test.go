@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/vulnetixcreds"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/vulnetixcreds"
 )
 
 func TestResolveOrderEnvWins(t *testing.T) {
@@ -21,7 +21,7 @@ func TestResolveOrderEnvWins(t *testing.T) {
 		env:      os.Getenv,
 		workdir:  filepath.Join(tmp, "proj"),
 		userFile: newFileStore(filepath.Join(tmp, "user.json"), false),
-		projFile: newFileStore(filepath.Join(tmp, "proj", ".vulnetix", "signet", "credentials.json"), true),
+		projFile: newFileStore(filepath.Join(tmp, "proj", ".vulnetix", "belai", "credentials.json"), true),
 		netrc:    &netrcStore{path: filepath.Join(tmp, ".netrc")},
 		keychain: &fakeKeychain{},
 	}
@@ -37,7 +37,7 @@ func TestResolveOrderEnvWins(t *testing.T) {
 func TestResolveOrderProjectFileWinsOverUserFile(t *testing.T) {
 	tmp := t.TempDir()
 	userPath := filepath.Join(tmp, "user.json")
-	projPath := filepath.Join(tmp, "proj", ".vulnetix", "signet", "credentials.json")
+	projPath := filepath.Join(tmp, "proj", ".vulnetix", "belai", "credentials.json")
 	if err := os.MkdirAll(filepath.Dir(userPath), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestResolveOrderUserFileWinsOverNetrc(t *testing.T) {
 		env:      func(string) string { return "" },
 		workdir:  filepath.Join(tmp, "proj"),
 		userFile: newFileStore(userPath, false),
-		projFile: newFileStore(filepath.Join(tmp, "proj", ".vulnetix", "signet", "credentials.json"), true),
+		projFile: newFileStore(filepath.Join(tmp, "proj", ".vulnetix", "belai", "credentials.json"), true),
 		netrc:    &netrcStore{path: netrcPath},
 		keychain: &fakeKeychain{},
 	}
@@ -104,7 +104,7 @@ func TestResolveOrderNetrcWinsOverKeychain(t *testing.T) {
 		env:      func(string) string { return "" },
 		workdir:  filepath.Join(tmp, "proj"),
 		userFile: newFileStore(filepath.Join(tmp, "user.json"), false),
-		projFile: newFileStore(filepath.Join(tmp, "proj", ".vulnetix", "signet", "credentials.json"), true),
+		projFile: newFileStore(filepath.Join(tmp, "proj", ".vulnetix", "belai", "credentials.json"), true),
 		netrc:    &netrcStore{path: netrcPath},
 		keychain: &fakeKeychain{data: map[string]string{"openai:api_key": "kc-key"}},
 	}
@@ -123,7 +123,7 @@ func TestResolveOrderKeychainLast(t *testing.T) {
 		env:      func(string) string { return "" },
 		workdir:  filepath.Join(tmp, "proj"),
 		userFile: newFileStore(filepath.Join(tmp, "user.json"), false),
-		projFile: newFileStore(filepath.Join(tmp, "proj", ".vulnetix", "signet", "credentials.json"), true),
+		projFile: newFileStore(filepath.Join(tmp, "proj", ".vulnetix", "belai", "credentials.json"), true),
 		netrc:    &netrcStore{path: filepath.Join(tmp, ".netrc")},
 		keychain: &fakeKeychain{data: map[string]string{"openai:api_key": "kc-key"}},
 	}
@@ -149,7 +149,7 @@ func TestResolveIncompleteReportsMissing(t *testing.T) {
 		env:      func(string) string { return "" },
 		workdir:  filepath.Join(tmp, "proj"),
 		userFile: newFileStore(userPath, false),
-		projFile: newFileStore(filepath.Join(tmp, "proj", ".vulnetix", "signet", "credentials.json"), true),
+		projFile: newFileStore(filepath.Join(tmp, "proj", ".vulnetix", "belai", "credentials.json"), true),
 		netrc:    &netrcStore{path: filepath.Join(tmp, "no-netrc")},
 		keychain: &fakeKeychain{},
 	}

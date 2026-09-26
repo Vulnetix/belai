@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 // DefaultMaxAgents is the default concurrency ceiling for fan-out subagents
@@ -57,7 +57,7 @@ type Settings struct {
 	// UI holds TUI presentation toggles.
 	UI *UISettings `json:"ui,omitempty"`
 	// ContextWindows overrides the built-in context-window size (in tokens)
-	// for specific model ids. Use it for models Signet does not know.
+	// for specific model ids. Use it for models Belai does not know.
 	ContextWindows map[string]int `json:"context_windows,omitempty"`
 	// ShowSessionNames toggles session names in the status bar (default on).
 	ShowSessionNames *bool `json:"show_session_names,omitempty"`
@@ -122,7 +122,7 @@ type Settings struct {
 	// attached; others are filtered out of the registry.
 	WorkspaceDirs []string `json:"workspace_dirs,omitempty"`
 	// UpdateCheck, when non-nil and false, disables the startup check for a
-	// newer Signet release. Default true. SIGNET_NO_UPDATE_CHECK=1 overrides
+	// newer Belai release. Default true. BELAI_NO_UPDATE_CHECK=1 overrides
 	// it for a single run.
 	UpdateCheck *bool `json:"update_check,omitempty"`
 	// AutoCommitPerTask, when non-nil and true, commits each completed goal's
@@ -236,7 +236,7 @@ type MCPServer struct {
 	Command string   `json:"command,omitempty"`
 	Args    []string `json:"args,omitempty"`
 	// Env is passed to a stdio server on top of the scrubbed environment. A
-	// value "env:NAME" copies NAME from Signet's environment.
+	// value "env:NAME" copies NAME from Belai's environment.
 	Env map[string]string `json:"env,omitempty"`
 	// URL and Headers reach an http server. A header value "env:NAME" is
 	// read from the environment.
@@ -582,7 +582,7 @@ type UISettings struct {
 	ShowTodos     *bool `json:"show_todos,omitempty"`
 	Mouse         *bool `json:"mouse,omitempty"`
 	// ShowInternalWork selects how much of the role manager's internal
-	// decision-making is shown in the signet panel: "hidden", "decisions",
+	// decision-making is shown in the belai panel: "hidden", "decisions",
 	// "security", or "all". It is display-only — every level runs exactly the
 	// same gates.
 	ShowInternalWork *string `json:"show_internal_work,omitempty"`
@@ -1076,7 +1076,7 @@ func (s Settings) Override(proj Settings) Settings {
 	}
 	// A project-layer settings file may turn the firewall off but never on.
 	// A repo must not be able to redirect prompts to a gateway by shipping a
-	// .vulnetix/signet/settings.json.
+	// .vulnetix/belai/settings.json.
 	if proj.Vulnetix != nil && proj.Vulnetix.FirewallEnabled != nil && !*proj.Vulnetix.FirewallEnabled {
 		f := false
 		if out.Vulnetix == nil {
@@ -1252,7 +1252,7 @@ func (s Settings) Override(proj Settings) Settings {
 	return out
 }
 
-// LoadGlobal reads the global settings file (~/.signet/settings.json).
+// LoadGlobal reads the global settings file (~/.belai/settings.json).
 // A missing file yields zero-value settings with no error.
 func LoadGlobal() (Settings, error) {
 	path, err := GlobalSettingsPath()
@@ -1296,7 +1296,7 @@ func loadSettings(path string) (Settings, error) {
 	return s, nil
 }
 
-// SaveGlobal writes settings to ~/.signet/settings.json, creating directories
+// SaveGlobal writes settings to ~/.belai/settings.json, creating directories
 // as needed.
 func SaveGlobal(s Settings) error {
 	path, err := GlobalSettingsPath()

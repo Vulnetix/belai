@@ -11,9 +11,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 // multiToolServer emits nToolCalls of the given tool before answering "done".

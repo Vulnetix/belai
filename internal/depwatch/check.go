@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/scanartifacts"
-	"github.com/vulnetix/signet/internal/vulnetixcli"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/scanartifacts"
+	"github.com/vulnetix/belai/internal/vulnetixcli"
 )
 
 // ExecResult is one Vulnetix CLI run.
@@ -144,11 +144,11 @@ func FixArgs(scanDir string, ch Change) []string {
 }
 
 // OutputPath is where a check's CycloneDX document is written: under
-// .vulnetix/signet/, which the review's artifact enumeration treats as
-// Signet's own state, so a hook scan never shows up as a review artifact.
+// .vulnetix/belai/, which the review's artifact enumeration treats as
+// Belai's own state, so a hook scan never shows up as a review artifact.
 func OutputPath(workdir, relPath string) string {
 	slug := strings.NewReplacer("/", "__", "\\", "__", ":", "_").Replace(relPath)
-	return filepath.Join(config.ProjectSignetDir(workdir), "deps", slug+".cdx.json")
+	return filepath.Join(config.ProjectBelaiDir(workdir), "deps", slug+".cdx.json")
 }
 
 func bound(s string) string {

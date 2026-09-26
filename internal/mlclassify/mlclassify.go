@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
 // Phase identifies one local security gate.

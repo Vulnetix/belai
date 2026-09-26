@@ -9,11 +9,11 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 // A provider rejection body is kilobytes of JSON and a server-side stack

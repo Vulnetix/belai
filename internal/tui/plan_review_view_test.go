@@ -6,8 +6,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/plans"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/plans"
 )
 
 func TestPlanReviewHeightFloor(t *testing.T) {

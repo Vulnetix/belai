@@ -8,8 +8,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/vulnetix/signet/internal/agent"
-	"github.com/vulnetix/signet/internal/clarify"
+	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/clarify"
 )
 
 func sampleQuestionnaire() clarify.Questionnaire {

@@ -32,7 +32,7 @@
   <g transform="translate(434 70)">
     <rect width="182" height="56" rx="8" class="box"/>
     <text x="14" y="24" class="lbl">log stream</text>
-    <text x="14" y="42" class="sub">~/.vulnetix/signet/logs</text>
+    <text x="14" y="42" class="sub">~/.vulnetix/belai/logs</text>
   </g>
   <path class="wire" d="M396 98 H434"/>
 

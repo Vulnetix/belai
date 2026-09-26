@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/agent"
-	"github.com/vulnetix/signet/internal/jsonrpc"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/agent"
+	"github.com/vulnetix/belai/internal/jsonrpc"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 // mockProvider answers the classifier SAFE, the mode classifier AGENT, and

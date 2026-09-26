@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/session"
+	"github.com/vulnetix/belai/internal/session"
 )
 
 func TestNewDropsBlankStepsAndSetsActive(t *testing.T) {

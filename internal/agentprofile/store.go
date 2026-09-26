@@ -8,10 +8,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/belai/internal/config"
 )
 
-// Dir returns the agent-profiles directory (~/.signet/profiles/agents).
+// Dir returns the agent-profiles directory (~/.belai/profiles/agents).
 func Dir() (string, error) {
 	gd, err := config.GlobalDir()
 	if err != nil {
@@ -76,8 +76,8 @@ func SaveMoving(p AgentProfile, oldFile string) (string, error) {
 }
 
 // Load reads a profile by name. Built-in names resolve from the embedded set
-// and never touch disk, so a user file named signet_triage-vulns.json cannot
-// shadow signet:triage-vulns.
+// and never touch disk, so a user file named belai_triage-vulns.json cannot
+// shadow belai:triage-vulns.
 func Load(name string) (AgentProfile, error) {
 	if p, ok := extraProfile(name); ok {
 		return p, nil

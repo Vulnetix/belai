@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 // NewWorkersAIRequest builds a Cloudflare Workers AI request:

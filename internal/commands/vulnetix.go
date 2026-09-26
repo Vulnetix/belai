@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/scanartifacts"
-	"github.com/vulnetix/signet/internal/vulnetixcli"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/scanartifacts"
+	"github.com/vulnetix/belai/internal/vulnetixcli"
 )
 
 // Scanner is one fixed review activity. Name is the Vulnetix subcommand, Args
@@ -190,7 +190,7 @@ func (r Vulnetix) scannerList() ([]Scanner, error) {
 
 // Run fans the fixed scanner table out with bounded concurrency, never
 // promotes arbitrary repository bytes to the model, and writes a summary plus
-// a manifest under .vulnetix/signet/.
+// a manifest under .vulnetix/belai/.
 func (r Vulnetix) Run(ctx context.Context) (Report, error) {
 	if r.CLI == nil {
 		return Report{}, fmt.Errorf("vulnetix CLI not available")
@@ -431,7 +431,7 @@ func scannerFindings(summary scanartifacts.Summary, sc Scanner) (art string, fin
 }
 
 // buildSummary renders per-scanner status, exit code, artifact and finding
-// count from the parsed artifacts, then writes the legacy signet summary file.
+// count from the parsed artifacts, then writes the legacy belai summary file.
 func (r Vulnetix) buildSummary(ctx context.Context, results []SubcommandResult) string {
 	dir := config.ProjectDir(r.Workdir)
 	arts, err := scanartifacts.Enumerate(dir)
@@ -467,7 +467,7 @@ func (r Vulnetix) buildSummary(ctx context.Context, results []SubcommandResult) 
 	return strings.TrimSpace(b.String())
 }
 
-// collectManifest lists artifacts produced by the CLI, excluding signet's own state.
+// collectManifest lists artifacts produced by the CLI, excluding belai's own state.
 func (r Vulnetix) collectManifest() ([]string, error) {
 	dir := config.ProjectDir(r.Workdir)
 	arts, err := scanartifacts.Enumerate(dir)
@@ -476,7 +476,7 @@ func (r Vulnetix) collectManifest() ([]string, error) {
 	}
 	var out []string
 	for _, a := range arts {
-		if a.Kind == scanartifacts.KindSignet {
+		if a.Kind == scanartifacts.KindBelai {
 			continue
 		}
 		out = append(out, a.Rel)
@@ -486,7 +486,7 @@ func (r Vulnetix) collectManifest() ([]string, error) {
 }
 
 func (r Vulnetix) writeArtifacts(summary string, manifest []string) error {
-	dir := config.ProjectSignetDir(r.Workdir)
+	dir := config.ProjectBelaiDir(r.Workdir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}

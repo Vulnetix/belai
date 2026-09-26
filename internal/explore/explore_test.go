@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/clarify"
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/clarify"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
 func TestPlanExploreModes(t *testing.T) {

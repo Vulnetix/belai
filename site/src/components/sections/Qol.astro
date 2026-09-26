@@ -10,13 +10,13 @@ const sealText =
   'Quality of life: smaller features you would otherwise add through a skills.md. First-run trust gate, prompt library, one composer history for prompts and commands, repo map, work-discipline prompt section, identity block, capability auth probes, diff in the approval prompt, a todo panel that only trusts assistant text, sessions, Markdown session export, opt-in per-goal auto-commit, /settings with provenance, no alt bindings ever, /help guarded by a test, caveman mode, per-project session toggles, classifier verdicts in the internal-work feed, a shell panel for !cmd with the raw output, transcript rows stamped when they happen with durations, token budgets per model in the footer, desktop notifications, /skills, /plugin, /mcp and /sandbox, and a self-update that stays in its asset family.';
 
 const benefits = [
-  ['first-run trust gate', 'A directory Signet has never seen blocks startup until you say yes, before any settings merge, repo scan or auto-started process.'],
+  ['first-run trust gate', 'A directory Belai has never seen blocks startup until you say yes, before any settings merge, repo scan or auto-started process.'],
   ['prompt library as files', 'Prompts are files in the repository, so they are versioned and reviewed like code.'],
   ['harness-computed repo map', 'Paths, counts, detected commands and git metadata, with no file contents.'],
   ['one history for everything you typed', 'Up recalls prompts, !shell commands, !!processes and /slash commands in the order you ran them, across restarts, with repeats kept once at their newest position.'],
   ['work-discipline prompt section', 'The system prompt tells the model to read the exact lines it will change, batch its reads, make the edits it is sure of first, and report what changed.'],
   ['identity block', 'Every system prompt names the harness, provider and model in use.'],
-  ['capability auth probes', 'A small test request checks that a model supports a capability before Signet relies on it.'],
+  ['capability auth probes', 'A small test request checks that a model supports a capability before Belai relies on it.'],
   ['diff in the approval prompt', 'The approval prompt shows the diff of the change as well as the path.'],
   ['todo panel that only trusts assistant text', "The todo list only changes based on the assistant's own text. Tool output cannot update it."],
   ['/settings with provenance', 'Every value shows which settings layer it came from.'],
@@ -24,13 +24,13 @@ const benefits = [
   ['/help guarded by a test', 'A test compares the help text with the real key bindings.'],
   ['caveman mode', 'An optional voice that makes replies short and plain.'],
   ['session toggles per project', 'Toggles such as guardrails and ask-permission are saved for each repository.'],
-  ['session export', 'Type /export to write the current session (or another by id) as deterministic Markdown under .vulnetix/exports; signet -export <id> prints it to stdout.'],
+  ['session export', 'Type /export to write the current session (or another by id) as deterministic Markdown under .vulnetix/exports; belai -export <id> prints it to stdout.'],
   ['opt-in per-goal auto-commit', 'Turn on auto-commit per task in /settings and every completed goal is committed as one conventional commit of exactly the files it changed — global only, so a repo can never switch it on for you.'],
   ['!cmd gets its own shell panel', 'A !cmd shows its raw output in a panel, live while it runs. The model only gets the sanitised, classified copy, and the panel marks the output "not sent" when that copy is withheld. ctrl+o expands it, ctrl+c copies it and ctrl+s saves it.'],
   ['timestamps and durations in the transcript', 'Each transcript row is stamped when its event happened, and tool calls, model replies and classifier decisions record how long they took, so a slow session shows where the time went.'],
   ['classifier verdicts in the feed', 'When a result is blocked, the internal-work feed shows which phase blocked it and what it returned.'],
-  ['token budgets per model', 'Session, day and month allowances per provider and model, counted across every model call and every signet process, shown right-aligned in the footer: teal on pace, amber when spend runs ahead of the clock, red when spent.'],
-  ['desktop notifications', 'Opt in with notifications.enabled and Signet tells you when a permission ask, a question or a plan is waiting, or when a goal ends. The text is written from fixed templates, never from model or tool output.'],
+  ['token budgets per model', 'Session, day and month allowances per provider and model, counted across every model call and every belai process, shown right-aligned in the footer: teal on pace, amber when spend runs ahead of the clock, red when spent.'],
+  ['desktop notifications', 'Opt in with notifications.enabled and Belai tells you when a permission ask, a question or a plan is waiting, or when a goal ends. The text is written from fixed templates, never from model or tool output.'],
   ['/skills, /plugin, /mcp and /sandbox', 'One command each shows the installed skills, the plugins and their state, the MCP servers and their tools, and the sandbox policy commands run under.'],
   ['self-update stays in its family', 'A guardrails binary updates to the next guardrails build, so it keeps its embedded model.'],
 ];

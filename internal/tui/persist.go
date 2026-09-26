@@ -4,8 +4,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/vulnetix/signet/internal/session"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // maxToolResultBytes caps a persisted tool result. Longer results are written

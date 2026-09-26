@@ -1,4 +1,4 @@
-module github.com/vulnetix/signet
+module github.com/vulnetix/belai
 
 go 1.25.10
 

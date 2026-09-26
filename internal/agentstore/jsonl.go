@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/session"
+	"github.com/vulnetix/belai/internal/session"
 )
 
 // scanJSONL streams a JSONL file line by line, calling fn for each non-empty
@@ -428,13 +428,13 @@ func collectJSONLTurns(src Source, from, to int, pick func(*jsonlTurn) (Turn, bo
 	return out, nil
 }
 
-// signetAdapter reads signet sessions through internal/session.Store.
-type signetAdapter struct {
+// belaiAdapter reads belai sessions through internal/session.Store.
+type belaiAdapter struct {
 	store *session.Store
 }
 
-func (s signetAdapter) Sources(path string) ([]Source, error) {
-	// path is a concrete ~/.vulnetix/signet/sessions/<key>/<id>.jsonl file.
+func (s belaiAdapter) Sources(path string) ([]Source, error) {
+	// path is a concrete ~/.vulnetix/belai/sessions/<key>/<id>.jsonl file.
 	fi, err := os.Stat(path)
 	if err != nil {
 		return nil, err
@@ -442,7 +442,7 @@ func (s signetAdapter) Sources(path string) ([]Source, error) {
 	dir := filepath.Dir(path)
 	key := filepath.Base(dir)
 	id := strings.TrimSuffix(filepath.Base(path), ".jsonl")
-	src := Source{Agent: "signet", Format: FormatJSONLSignet, Path: path, SessionID: id, ModTime: fi.ModTime()}
+	src := Source{Agent: "belai", Format: FormatJSONLBelai, Path: path, SessionID: id, ModTime: fi.ModTime()}
 	if s.store != nil {
 		if entries, err := s.store.ReadFrom(session.Key(key), id); err == nil {
 			if m, ok := session.LatestMeta(entries); ok && m.Cwd != "" {
@@ -453,7 +453,7 @@ func (s signetAdapter) Sources(path string) ([]Source, error) {
 	return []Source{src}, nil
 }
 
-func (s signetAdapter) Turns(src Source, from, to int) ([]Turn, error) {
+func (s belaiAdapter) Turns(src Source, from, to int) ([]Turn, error) {
 	key := filepath.Base(filepath.Dir(src.Path))
 	id := src.SessionID
 	if id == "" {
@@ -463,10 +463,10 @@ func (s signetAdapter) Turns(src Source, from, to int) ([]Turn, error) {
 	if err != nil {
 		return nil, err
 	}
-	return signetTurns(entries, from, to), nil
+	return belaiTurns(entries, from, to), nil
 }
 
-func (s signetAdapter) Scan(ctx context.Context, src Source, re *regexp.Regexp, caps Caps) ([]Hit, error) {
+func (s belaiAdapter) Scan(ctx context.Context, src Source, re *regexp.Regexp, caps Caps) ([]Hit, error) {
 	key := filepath.Base(filepath.Dir(src.Path))
 	id := src.SessionID
 	if id == "" {
@@ -476,7 +476,7 @@ func (s signetAdapter) Scan(ctx context.Context, src Source, re *regexp.Regexp, 
 	if err != nil {
 		return nil, err
 	}
-	turns := signetTurns(entries, 0, 0)
+	turns := belaiTurns(entries, 0, 0)
 	hits, trunc, err := scanTurns(ctx, src, re, caps, func(fn func(Turn) bool) error {
 		for _, t := range turns {
 			if !fn(t) {
@@ -489,8 +489,8 @@ func (s signetAdapter) Scan(ctx context.Context, src Source, re *regexp.Regexp, 
 	return hits, err
 }
 
-// signetTurns maps signet entries to attributed turns.
-func signetTurns(entries []session.Entry, from, to int) []Turn {
+// belaiTurns maps belai entries to attributed turns.
+func belaiTurns(entries []session.Entry, from, to int) []Turn {
 	var turns []Turn
 	idx := 0
 	for _, e := range entries {

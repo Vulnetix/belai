@@ -3,7 +3,7 @@
 **Status:** alpha-20260926. Shipped in an early form; the settings may still
 change.
 
-Signet can tell you when it needs you: a permission ask is waiting, a long turn
+Belai can tell you when it needs you: a permission ask is waiting, a long turn
 finished, a plan is ready for review, or goal mode ended. Useful when the
 terminal is in another window or on another desktop.
 
@@ -29,7 +29,7 @@ terminal is in another window or on another desktop.
 Every trigger also fires the `notification` [hook](hooks.md) with the event
 name in the `notification` field, whether or not desktop notifications are
 on. That lets you route the same moments somewhere else (a phone push
-service, a chat webhook) without Signet knowing about it.
+service, a chat webhook) without Belai knowing about it.
 
 ## Backends
 
@@ -79,7 +79,7 @@ project's `.vulnetix/settings.json`. Set it in your global `settings.json`.
 
 ## Limitations
 
-- Signet cannot tell whether the terminal has focus, so a notification may
+- Belai cannot tell whether the terminal has focus, so a notification may
   fire while you are looking at the window.
 - Inside tmux, OSC sequences need `set -g allow-passthrough on`.
 - Headless `-prompt` runs do not notify.

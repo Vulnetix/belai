@@ -3,9 +3,9 @@ package tui
 import (
 	"testing"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/session"
-	"github.com/vulnetix/signet/internal/todos"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/todos"
 )
 
 func testList() todos.List {
@@ -64,7 +64,7 @@ func TestTodoPanelHeightCountsTowardChrome(t *testing.T) {
 
 func TestSetTodosPersistsEntry(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	st, err := session.NewStore()
 	if err != nil {
@@ -128,7 +128,7 @@ func TestRehydrateTodosWithoutEntryIsNoop(t *testing.T) {
 
 func TestStartNewSessionDropsTodos(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	st, _ := session.NewStore()
 	a := New(Options{Workdir: workdir})
@@ -148,7 +148,7 @@ func TestStartNewSessionDropsTodos(t *testing.T) {
 
 func TestCompactionCarriesTodosIntoTheNewSession(t *testing.T) {
 	workdir := t.TempDir()
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 
 	st, _ := session.NewStore()
 	a := New(Options{Workdir: workdir})

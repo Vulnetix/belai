@@ -1,7 +1,7 @@
-# Signet session assessment
+# Belai session assessment
 
 This document records what the saved sessions under
-`~/.vulnetix/signet/sessions` showed about Signet's orchestration, prompts and
+`~/.vulnetix/belai/sessions` showed about Belai's orchestration, prompts and
 UX. It also records the changes made in response. The goal is to make the
 time to the first file mutation as short as possible, using deterministic
 context and parallelism rather than asking the model to rediscover facts.
@@ -16,7 +16,7 @@ row.
 
 | What the sessions showed | Root cause |
 |---|---|
-| Agent mode reported "no write tool exposed". `go test` was refused as "not in read-only allowlist" and pipes as "shell metacharacters". | The project `.vulnetix/settings.json` had `read_only: true`, and the TUI built its one registry with `ReadOnly()`, which applied to **every** mode, goal included. The `signet:debug` profile prose also told the model "Bash (read-only)". |
+| Agent mode reported "no write tool exposed". `go test` was refused as "not in read-only allowlist" and pipes as "shell metacharacters". | The project `.vulnetix/settings.json` had `read_only: true`, and the TUI built its one registry with `ReadOnly()`, which applied to **every** mode, goal included. The `belai:debug` profile prose also told the model "Bash (read-only)". |
 | An approved plan ran as a single agent pass and then stopped. | `modes.RoutePlanOption` routed Execute to agent mode: one bounded pass plus continuations, `read_only` applied, and no write ledger, directives or evaluator. |
 | Goal sessions contained only `user` and `goal_state` rows. | Persistence treated an assistant bubble as settled only when exactly N tool rows followed it contiguously. In goal mode, reasoning, system and role-manager rows land in between, so the bubble never settled. The next `echoUser` then moved the cursor past it, and the whole turn was lost. |
 | `goal_state.tokensUsed` stayed at 0. | A pass kept only the last provider call's usage, and dropped it entirely on budget-exhausted passes (the normal case). Only `openai` asked for `stream_options.include_usage`. |
@@ -48,7 +48,7 @@ row.
   - Up to `min(max_agents, 16)` read-only tool calls run in parallel.
   - Agent continuations compact the context, and push toward an edit when the turn has written nothing.
 - **Classifier.** Windows are sliced by rune offset and lower-cased the same way cybertron does. The classifier identity includes a windowing version, so verdicts computed on misaligned windows are evaluated again instead of being trusted. Content is still always classified.
-- **Guidance.** A withheld result now says it is a safety verdict and should not be retried. The work-discipline prompt tells the model the repo map already lists the commands and changed files, and not to re-read files. The `signet:debug` profile no longer describes which tools are available.
+- **Guidance.** A withheld result now says it is a safety verdict and should not be retried. The work-discipline prompt tells the model the repo map already lists the commands and changed files, and not to re-read files. The `belai:debug` profile no longer describes which tools are available.
 - **`/settings`.**
   - The scope chosen with `s` is kept across reopens.
   - A saved edit that a higher layer overrides shows `saved to global, but project wins (30)`.

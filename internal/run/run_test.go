@@ -15,13 +15,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/provider"
-	"github.com/vulnetix/signet/internal/resilience"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/tools"
-	"github.com/vulnetix/signet/internal/version"
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/provider"
+	"github.com/vulnetix/belai/internal/resilience"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/tools"
+	"github.com/vulnetix/belai/internal/version"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 func envMap(m map[string]string) func(string) string {
@@ -174,12 +174,12 @@ func TestRunSanitizesPrompt(t *testing.T) {
 	if body.Messages[0].Role != "system" {
 		t.Fatalf("expected system message first, got %s", body.Messages[0].Role)
 	}
-	if !strings.Contains(body.Messages[0].Content, "running inside Signet") {
+	if !strings.Contains(body.Messages[0].Content, "running inside Belai") {
 		t.Fatalf("system message missing base prompt: %q", body.Messages[0].Content)
 	}
 	// The harness names itself as the harness, never as the assistant.
-	if strings.Contains(body.Messages[0].Content, "You are Signet") {
-		t.Fatalf("system prompt claims the model is Signet: %q", body.Messages[0].Content)
+	if strings.Contains(body.Messages[0].Content, "You are Belai") {
+		t.Fatalf("system prompt claims the model is Belai: %q", body.Messages[0].Content)
 	}
 	if strings.Contains(body.Messages[1].Content, "<system>") {
 		t.Fatalf("user message should be sanitized of harness tags, got %q", body.Messages[1].Content)
@@ -473,10 +473,10 @@ func TestUserAgentIsConsistentAcrossRoleManagerCalls(t *testing.T) {
 			t.Fatalf("request %d User-Agent = %q, want %q", i, got, want)
 		}
 	}
-	if !strings.HasPrefix(want, "signet/") {
-		t.Fatalf("User-Agent %q does not identify signet", want)
+	if !strings.HasPrefix(want, "belai/") {
+		t.Fatalf("User-Agent %q does not identify belai", want)
 	}
-	if strings.Contains(want, "signet/dev") && version.Version != "dev" {
+	if strings.Contains(want, "belai/dev") && version.Version != "dev" {
 		t.Fatalf("User-Agent %q does not carry the build version", want)
 	}
 }
@@ -853,7 +853,7 @@ func TestPrepareCustomProviderMissingAPIKey(t *testing.T) {
 	if !status.Configured {
 		t.Fatalf("keyless custom should be configured (liveness decides), missing=%v", status.Missing)
 	}
-	if cfg.APIKey != "signet" {
+	if cfg.APIKey != "belai" {
 		t.Fatalf("APIKey = %q, want the generic keyless placeholder", cfg.APIKey)
 	}
 }
@@ -948,15 +948,15 @@ func TestResolveWithSourceCustomProvider(t *testing.T) {
 }
 
 func TestPrepareRecordsBaseURLOverrideOrigin(t *testing.T) {
-	t.Setenv("SIGNET_BASE_URL", "https://override.example/v1")
+	t.Setenv("BELAI_BASE_URL", "https://override.example/v1")
 	_, status := Prepare("", "openai", fakeSource{vals: map[string]string{"openai:api_key": "k"}})
-	if status.Origins["base_url"] != "$SIGNET_BASE_URL" {
-		t.Fatalf("base_url origin = %q, want $SIGNET_BASE_URL", status.Origins["base_url"])
+	if status.Origins["base_url"] != "$BELAI_BASE_URL" {
+		t.Fatalf("base_url origin = %q, want $BELAI_BASE_URL", status.Origins["base_url"])
 	}
 }
 
 func TestPrepareOverrideDisplacesCustomProfileBaseURL(t *testing.T) {
-	t.Setenv("SIGNET_BASE_URL", "https://override.example/v1")
+	t.Setenv("BELAI_BASE_URL", "https://override.example/v1")
 	src := fakeProfileSource{
 		vals: map[string]string{"my-llm:api_key": "k"},
 		profiles: map[string]provider.Profile{
@@ -967,12 +967,12 @@ func TestPrepareOverrideDisplacesCustomProfileBaseURL(t *testing.T) {
 	if cfg.BaseURL != "https://override.example/v1" {
 		t.Fatalf("BaseURL = %q, want override", cfg.BaseURL)
 	}
-	if status.Origins["base_url"] != "$SIGNET_BASE_URL" {
+	if status.Origins["base_url"] != "$BELAI_BASE_URL" {
 		t.Fatalf("base_url origin = %q", status.Origins["base_url"])
 	}
 	found := false
 	for _, n := range status.Notes {
-		if strings.Contains(n, "SIGNET_BASE_URL") {
+		if strings.Contains(n, "BELAI_BASE_URL") {
 			found = true
 		}
 	}
@@ -1786,8 +1786,8 @@ func TestPrepareFirewallReplacesProviderKey(t *testing.T) {
 	}
 }
 
-func TestPrepareSIGNET_BASE_URLStillWins(t *testing.T) {
-	t.Setenv("SIGNET_BASE_URL", "http://localhost:9999/v1")
+func TestPrepareBELAI_BASE_URLStillWins(t *testing.T) {
+	t.Setenv("BELAI_BASE_URL", "http://localhost:9999/v1")
 	src := &fakeFirewallSource{
 		values:   map[string]string{"anthropic:api_key": "provider-key"},
 		firewall: true,
@@ -1798,7 +1798,7 @@ func TestPrepareSIGNET_BASE_URLStillWins(t *testing.T) {
 	}
 	cfg, _ := Prepare("", "anthropic", src)
 	if cfg.BaseURL != "http://localhost:9999/v1" {
-		t.Fatalf("SIGNET_BASE_URL should override firewall base URL, got %q", cfg.BaseURL)
+		t.Fatalf("BELAI_BASE_URL should override firewall base URL, got %q", cfg.BaseURL)
 	}
 }
 
@@ -1890,7 +1890,7 @@ func TestPrepareGenericProfileKeylessConfigured(t *testing.T) {
 	if !status.Configured {
 		t.Fatalf("keyless generic should be configured, missing=%v", status.Missing)
 	}
-	if cfg.APIKey != "signet" {
+	if cfg.APIKey != "belai" {
 		t.Fatalf("APIKey = %q, want the generic keyless placeholder", cfg.APIKey)
 	}
 }

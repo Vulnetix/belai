@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/sandbox"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/sandbox"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 const (

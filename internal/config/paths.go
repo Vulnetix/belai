@@ -9,26 +9,26 @@ import (
 	"path/filepath"
 )
 
-// GlobalDir returns the global Signet state directory.
-// It honours $SIGNET_HOME when set, otherwise ~/.vulnetix/signet.
+// GlobalDir returns the global Belai state directory.
+// It honours $BELAI_HOME when set, otherwise ~/.vulnetix/belai.
 func GlobalDir() (string, error) {
-	if v := os.Getenv("SIGNET_HOME"); v != "" {
+	if v := os.Getenv("BELAI_HOME"); v != "" {
 		return v, nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("locate home dir: %w", err)
 	}
-	return filepath.Join(home, ".vulnetix", "signet"), nil
+	return filepath.Join(home, ".vulnetix", "belai"), nil
 }
 
-// LegacyGlobalDir returns the legacy global directory (~/.signet).
+// LegacyGlobalDir returns the legacy global directory (~/.belai).
 func LegacyGlobalDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("locate home dir: %w", err)
 	}
-	return filepath.Join(home, ".signet"), nil
+	return filepath.Join(home, ".belai"), nil
 }
 
 // GlobalSettingsPath returns <GlobalDir>/settings.json.
@@ -72,9 +72,9 @@ func ProjectDir(workdir string) string {
 	return filepath.Join(workdir, ".vulnetix")
 }
 
-// ProjectSignetDir returns the project-local Signet directory.
-func ProjectSignetDir(workdir string) string {
-	return filepath.Join(ProjectDir(workdir), "signet")
+// ProjectBelaiDir returns the project-local Belai directory.
+func ProjectBelaiDir(workdir string) string {
+	return filepath.Join(ProjectDir(workdir), "belai")
 }
 
 // GlobalPromptsDir returns <GlobalDir>/prompts, the directory of named
@@ -98,9 +98,9 @@ func ProjectSettingsPath(workdir string) string {
 	return filepath.Join(ProjectDir(workdir), "settings.json")
 }
 
-// ProjectCredentialsPath returns <workdir>/.vulnetix/signet/credentials.json.
+// ProjectCredentialsPath returns <workdir>/.vulnetix/belai/credentials.json.
 func ProjectCredentialsPath(workdir string) string {
-	return filepath.Join(ProjectSignetDir(workdir), "credentials.json")
+	return filepath.Join(ProjectBelaiDir(workdir), "credentials.json")
 }
 
 // ProjectPlansDir returns <workdir>/.vulnetix/plans.
@@ -201,7 +201,7 @@ func InputHistoryPath(workdir string) (string, error) {
 	return filepath.Join(dir, "inputhistory", WorkdirKey(workdir)+".json"), nil
 }
 
-// Migrate is a one-shot migration from ~/.signet to ~/.vulnetix/signet.
+// Migrate is a one-shot migration from ~/.belai to ~/.vulnetix/belai.
 // It runs only when the legacy directory exists and the new one does not.
 // If os.Rename fails across filesystems, it falls back to a recursive copy
 // and leaves a .migrated marker in the legacy directory.

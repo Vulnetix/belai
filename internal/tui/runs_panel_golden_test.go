@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/activity"
+	"github.com/vulnetix/belai/internal/activity"
 )
 
 func TestRunsPanelGolden(t *testing.T) {

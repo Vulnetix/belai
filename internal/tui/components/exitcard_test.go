@@ -17,10 +17,10 @@ func TestExitCardRendersFactsAndResume(t *testing.T) {
 		Tokens:    "~34.2k tokens",
 		Model:     "claude-opus-4",
 		Provider:  "anthropic",
-		Path:      "~/.vulnetix/signet/sessions/x/d4f1a9c2.jsonl",
+		Path:      "~/.vulnetix/belai/sessions/x/d4f1a9c2.jsonl",
 	}
 	v := c.View()
-	for _, want := range []string{"session ended", "refactor-the-parser", "d4f1a9c2", "12 turns", "8m 41s", "~34.2k tokens", "anthropic/claude-opus-4", "signet --resume", "d4f1a9c2.jsonl"} {
+	for _, want := range []string{"session ended", "refactor-the-parser", "d4f1a9c2", "12 turns", "8m 41s", "~34.2k tokens", "anthropic/claude-opus-4", "belai --resume", "d4f1a9c2.jsonl"} {
 		if !strings.Contains(v, want) {
 			t.Fatalf("exit card missing %q:\n%s", want, v)
 		}
@@ -33,7 +33,7 @@ func TestExitCardASCIIHasNoHalfBlocks(t *testing.T) {
 	if strings.Contains(v, "▀") {
 		t.Fatalf("ASCII exit card must not contain half-blocks: %q", v)
 	}
-	for _, want := range []string{"SIGNET · session ended", "signet --resume abcdef12", "/p/s.jsonl"} {
+	for _, want := range []string{"BELAI · session ended", "belai --resume abcdef12", "/p/s.jsonl"} {
 		if !strings.Contains(v, want) {
 			t.Fatalf("ASCII exit card missing %q: %q", want, v)
 		}

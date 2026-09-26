@@ -7,7 +7,7 @@ import (
 )
 
 func TestProjectPrefsRoundTrip(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 
 	on := true
@@ -38,7 +38,7 @@ func TestProjectPrefsRoundTrip(t *testing.T) {
 }
 
 func TestProjectPrefsMissingFileIsZero(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	got, err := LoadProjectPrefs(t.TempDir())
 	if err != nil {
 		t.Fatalf("LoadProjectPrefs: %v", err)
@@ -49,7 +49,7 @@ func TestProjectPrefsMissingFileIsZero(t *testing.T) {
 }
 
 func TestProjectPrefsTwoWorkdirsGetTwoFiles(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := t.TempDir()
 	b := t.TempDir()
 	on := true
@@ -73,7 +73,7 @@ func TestProjectPrefsTwoWorkdirsGetTwoFiles(t *testing.T) {
 // The prefs file is wholly owned by the TUI's toggles: the atomic write
 // replaces the whole document rather than preserving unrelated keys.
 func TestProjectPrefsWriteIsWholeFile(t *testing.T) {
-	t.Setenv("SIGNET_HOME", t.TempDir())
+	t.Setenv("BELAI_HOME", t.TempDir())
 	workdir := t.TempDir()
 	path, _ := ProjectPrefsPath(workdir)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {

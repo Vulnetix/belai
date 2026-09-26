@@ -1,5 +1,5 @@
 // Supervised-process composer and event handling. `!!cmd` starts a process
-// that lives as long as Signet; its output streams to a log and the UI, and
+// that lives as long as Belai; its output streams to a log and the UI, and
 // if it exits unexpectedly a recovery subagent is dispatched.
 package tui
 
@@ -10,14 +10,14 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/signet/internal/activity"
-	"github.com/vulnetix/signet/internal/bgproc"
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/permissions"
-	"github.com/vulnetix/signet/internal/processlib"
-	"github.com/vulnetix/signet/internal/tools"
-	"github.com/vulnetix/signet/internal/tui/components"
+	"github.com/vulnetix/belai/internal/activity"
+	"github.com/vulnetix/belai/internal/bgproc"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/permissions"
+	"github.com/vulnetix/belai/internal/processlib"
+	"github.com/vulnetix/belai/internal/tools"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // processEventMsg carries one supervised-process lifecycle event.
@@ -170,7 +170,7 @@ func (a *App) watchProcessEvents() tea.Cmd {
 // panel.
 // autoStartProcesses loads the merged enabled process library and starts
 // any entries that are not already running (the lock file handles races with
-// another Signet instance).
+// another Belai instance).
 func (a *App) autoStartProcesses() {
 	if a.procManager == nil {
 		return

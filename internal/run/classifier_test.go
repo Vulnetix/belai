@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
 // TestNewClassifierHonorsPayloadMaxTokens pins the per-call completion-budget

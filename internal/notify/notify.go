@@ -1,4 +1,4 @@
-// Package notify sends desktop notifications for moments Signet needs the
+// Package notify sends desktop notifications for moments Belai needs the
 // user: a permission ask, a clarifying question, a plan to review, a long
 // turn or a goal that ended. Every message is composed here from a fixed
 // template; model output, tool output and file names never reach a
@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/proc"
+	"github.com/vulnetix/belai/internal/proc"
 )
 
 // Event names, as used in settings.
@@ -72,7 +72,7 @@ func ValidBackend(name string) bool {
 // can ride in it.
 func Message(event, subject string) (title, body string) {
 	subject = identifier(subject)
-	title = "Signet"
+	title = "Belai"
 	switch event {
 	case EventPermission:
 		if subject == "" {
@@ -95,7 +95,7 @@ func Message(event, subject string) (title, body string) {
 		}
 		return title, "Background agent " + subject + " finished"
 	}
-	return title, "Signet needs you"
+	return title, "Belai needs you"
 }
 
 // identifier keeps [A-Za-z0-9_.:-], capped at 48 bytes.
@@ -193,7 +193,7 @@ func (n *Notifier) Send(ctx context.Context, event, subject string) error {
 	case BackendBell:
 		return n.write("\a")
 	case BackendNotifySend:
-		return n.run(ctx, "notify-send", "--app-name=Signet", title, body)
+		return n.run(ctx, "notify-send", "--app-name=Belai", title, body)
 	case BackendOsascript:
 		script := fmt.Sprintf("display notification %q with title %q", body, title)
 		return n.run(ctx, "osascript", "-e", script)

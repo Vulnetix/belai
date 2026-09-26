@@ -7,13 +7,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/goals"
-	"github.com/vulnetix/signet/internal/modes"
-	"github.com/vulnetix/signet/internal/plans"
-	"github.com/vulnetix/signet/internal/posture"
-	"github.com/vulnetix/signet/internal/rolemanager"
-	"github.com/vulnetix/signet/internal/run"
-	"github.com/vulnetix/signet/internal/tools"
+	"github.com/vulnetix/belai/internal/goals"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/plans"
+	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 func newReadOnlyAgentSession(t *testing.T, root string, srvURL string) *Session {
@@ -206,7 +206,7 @@ func TestExecutePlanRunsGoalLoopOnFullSurface(t *testing.T) {
 		Prompt:      "execute the approved plan",
 		ExecutePlan: true,
 		PlanName:    "ship",
-		ForceAgent:  "signet:debug",
+		ForceAgent:  "belai:debug",
 	}, false, func(e Event) {
 		if e.Kind == EventGoalStateKind {
 			goalStates++

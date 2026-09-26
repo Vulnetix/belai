@@ -3,9 +3,9 @@ package agent
 import (
 	"testing"
 
-	"github.com/vulnetix/signet/internal/nonce"
-	"github.com/vulnetix/signet/internal/prompt"
-	"github.com/vulnetix/signet/internal/run"
+	"github.com/vulnetix/belai/internal/nonce"
+	"github.com/vulnetix/belai/internal/prompt"
+	"github.com/vulnetix/belai/internal/run"
 )
 
 func TestSealSystemReusesBytesUntilAnInputChanges(t *testing.T) {

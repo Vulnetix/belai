@@ -181,7 +181,7 @@ func (c *Cwd) overlapLocked(abs string) error {
 }
 
 // expandHome resolves a leading "~/" against the user's home directory so a
-// path like ~/src/signet/README.md is treated as the absolute filesystem path
+// path like ~/src/belai/README.md is treated as the absolute filesystem path
 // the model meant, rather than as a literal "~" path segment.
 func expandHome(raw string) string {
 	if raw != "~" && !strings.HasPrefix(raw, "~/") {

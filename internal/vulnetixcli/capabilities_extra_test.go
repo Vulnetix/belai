@@ -339,12 +339,12 @@ func TestResolveURLsDefaultAndRejections(t *testing.T) {
 
 func TestProbeEnvStripsSecrets(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "secret")
-	t.Setenv("SIGNET_PROVIDER", "secret")
+	t.Setenv("BELAI_PROVIDER", "secret")
 	t.Setenv("VULNETIX_API_TOKEN", "keepme")
 	t.Setenv("NORMAL_VAR", "keepnormal")
 	env := probeEnv()
 	joined := strings.Join(env, "\n")
-	if strings.Contains(joined, "OPENAI_API_KEY") || strings.Contains(joined, "SIGNET_PROVIDER") {
+	if strings.Contains(joined, "OPENAI_API_KEY") || strings.Contains(joined, "BELAI_PROVIDER") {
 		t.Fatal("secret variables leaked into probeEnv")
 	}
 	if !strings.Contains(joined, "VULNETIX_API_TOKEN=keepme") {

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vulnetix/signet/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
 func TestIsDecisionsModel(t *testing.T) {

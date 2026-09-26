@@ -339,7 +339,7 @@ func TestWithDefaultsFillsEveryZeroField(t *testing.T) {
 		t.Fatalf("Ceiling = %v, want 60s", p.Ceiling)
 	}
 	// Jitter is the one field with no non-zero default: zero means "no
-	// jitter", and each call site opts in (Signet's policies use 0.25).
+	// jitter", and each call site opts in (Belai's policies use 0.25).
 	if p.Jitter != 0 {
 		t.Fatalf("Jitter = %v, want 0", p.Jitter)
 	}

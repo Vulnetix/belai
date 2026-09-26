@@ -203,7 +203,7 @@ func Describe(a Activity) (Description, bool) {
 		}, true
 	case EventBoundaryVerifyFailure:
 		return Description{
-			Summary: "Refused to put outside text into Signet's own instructions",
+			Summary: "Refused to put outside text into Belai's own instructions",
 			Outcome: "blocked",
 			Tone:    ToneBlocked,
 			Levels:  LevelSecurity,
@@ -462,7 +462,7 @@ func sessionNameDescription(a Activity) Description {
 func lspDiagnoseDescription(a Activity) Description {
 	lang := langPhrase(a.Subject)
 	d := Description{
-		Summary: "Checked the " + lang + " file Signet just edited",
+		Summary: "Checked the " + lang + " file Belai just edited",
 		Levels:  LevelAll,
 	}
 	switch a.Verdict {
@@ -576,9 +576,9 @@ func subjectPhrase(subject string) string {
 	case "bash":
 		return "the shell command"
 	case "read":
-		return "the file Signet read"
+		return "the file Belai read"
 	case "web_fetch", "web_search":
-		return "the page Signet fetched"
+		return "the page Belai fetched"
 	case "remote":
 		return "the remote repository text"
 	case "agent_store":

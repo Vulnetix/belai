@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/repoindex"
+	"github.com/vulnetix/belai/internal/repoindex"
 )
 
 // repoTestCaps is the capability set that offers every repo tool: RepoFiles
@@ -40,7 +40,7 @@ func initRepo(t *testing.T, dir string) {
 	cmd = exec.Command("git", "commit", "-q", "-m", "initial")
 	cmd.Dir = dir
 	cmd.Run()
-	cmd = exec.Command("git", "remote", "add", "origin", "git@github.com:Vulnetix/signet.git")
+	cmd = exec.Command("git", "remote", "add", "origin", "git@github.com:Vulnetix/belai.git")
 	cmd.Dir = dir
 	cmd.Run()
 }
@@ -56,7 +56,7 @@ func TestRepoToolsAbsentWhenIndexEmpty(t *testing.T) {
 
 func TestRepoToolsPresentWhenIndexNonEmpty(t *testing.T) {
 	dir := t.TempDir()
-	repo := filepath.Join(dir, "signet")
+	repo := filepath.Join(dir, "belai")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func TestRepoToolsPresentWhenIndexNonEmpty(t *testing.T) {
 // binary at all.
 func TestRepoToolsGatedOnBinaries(t *testing.T) {
 	dir := t.TempDir()
-	repo := filepath.Join(dir, "signet")
+	repo := filepath.Join(dir, "belai")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestRepoToolsGatedOnBinaries(t *testing.T) {
 
 func TestRepoReadConfinesToCheckout(t *testing.T) {
 	dir := t.TempDir()
-	repo := filepath.Join(dir, "signet")
+	repo := filepath.Join(dir, "belai")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestRepoReadConfinesToCheckout(t *testing.T) {
 	if !ok {
 		t.Fatal("RepoRead not registered")
 	}
-	res, err := tool.Execute(context.Background(), map[string]any{"repo": "Vulnetix/signet", "path": "file.txt"})
+	res, err := tool.Execute(context.Background(), map[string]any{"repo": "Vulnetix/belai", "path": "file.txt"})
 	if err != nil {
 		t.Fatalf("RepoRead: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestRepoReadConfinesToCheckout(t *testing.T) {
 
 func TestRepoReadRejectsEscape(t *testing.T) {
 	dir := t.TempDir()
-	repo := filepath.Join(dir, "signet")
+	repo := filepath.Join(dir, "belai")
 	other := filepath.Join(dir, "other.txt")
 	if err := os.MkdirAll(repo, 0o755); err != nil || os.WriteFile(other, []byte("secret"), 0o644) != nil {
 		t.Fatal(err)
@@ -147,7 +147,7 @@ func TestRepoReadRejectsEscape(t *testing.T) {
 	ix := repoindex.Scan(context.Background(), filepath.Join(dir, "other-dir"))
 	reg := DefaultWithCaps(t.TempDir(), true, repoTestCaps(), ix)
 	tool, _ := reg.Find("RepoRead")
-	_, err := tool.Execute(context.Background(), map[string]any{"repo": "Vulnetix/signet", "path": "../other.txt"})
+	_, err := tool.Execute(context.Background(), map[string]any{"repo": "Vulnetix/belai", "path": "../other.txt"})
 	if err == nil {
 		t.Fatal("expected path escape to be rejected")
 	}
@@ -155,7 +155,7 @@ func TestRepoReadRejectsEscape(t *testing.T) {
 
 func TestRepoFilesListsFiles(t *testing.T) {
 	dir := t.TempDir()
-	repo := filepath.Join(dir, "signet")
+	repo := filepath.Join(dir, "belai")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestRepoFilesListsFiles(t *testing.T) {
 	if !ok {
 		t.Fatal("RepoFiles not registered")
 	}
-	res, err := tool.Execute(context.Background(), map[string]any{"repo": "Vulnetix/signet"})
+	res, err := tool.Execute(context.Background(), map[string]any{"repo": "Vulnetix/belai"})
 	if err != nil {
 		t.Fatalf("RepoFiles: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestRepoFilesListsFiles(t *testing.T) {
 
 func TestRepoFilesMissListsAvailable(t *testing.T) {
 	dir := t.TempDir()
-	repo := filepath.Join(dir, "signet")
+	repo := filepath.Join(dir, "belai")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -192,10 +192,10 @@ func TestRepoFilesMissListsAvailable(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected miss error")
 	}
-	if !slices.Contains([]string{"Vulnetix/signet"}, "Vulnetix/signet") {
+	if !slices.Contains([]string{"Vulnetix/belai"}, "Vulnetix/belai") {
 		// sanity: available repo name is what we expect
 	}
-	if !strings.Contains(err.Error(), "Vulnetix/signet") {
+	if !strings.Contains(err.Error(), "Vulnetix/belai") {
 		t.Fatalf("miss error should list available repo: %v", err)
 	}
 }
@@ -214,7 +214,7 @@ func TestCatalogueNamesIncludesRepoTools(t *testing.T) {
 // with "executable file not found in $PATH".
 func TestReposExecutesInProcess(t *testing.T) {
 	dir := t.TempDir()
-	repo := filepath.Join(dir, "signet")
+	repo := filepath.Join(dir, "belai")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestReposExecutesInProcess(t *testing.T) {
 	if res.Kind != KindNative {
 		t.Fatalf("Repos kind = %q, want %q", res.Kind, KindNative)
 	}
-	if !strings.Contains(res.Content, "Vulnetix/signet") || !strings.Contains(res.Content, repo) {
+	if !strings.Contains(res.Content, "Vulnetix/belai") || !strings.Contains(res.Content, repo) {
 		t.Fatalf("Repos listing missing the indexed repo:\n%s", res.Content)
 	}
 	if got := tool.Subject(map[string]any{"owner": "Vulnetix"}); got != "Vulnetix" {
@@ -242,7 +242,7 @@ func TestReposExecutesInProcess(t *testing.T) {
 
 func TestReposOwnerFilter(t *testing.T) {
 	dir := t.TempDir()
-	repo := filepath.Join(dir, "signet")
+	repo := filepath.Join(dir, "belai")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +255,7 @@ func TestReposOwnerFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Repos(owner): %v", err)
 	}
-	if !strings.Contains(res.Content, "Vulnetix/signet") {
+	if !strings.Contains(res.Content, "Vulnetix/belai") {
 		t.Fatalf("owner filter dropped the matching repo:\n%s", res.Content)
 	}
 
@@ -285,7 +285,7 @@ func TestReposAbsentWhenIndexEmpty(t *testing.T) {
 // to find one at all).
 func TestRepoReadPathSurvivesCd(t *testing.T) {
 	dir := t.TempDir()
-	repo := filepath.Join(dir, "signet")
+	repo := filepath.Join(dir, "belai")
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -304,7 +304,7 @@ func TestRepoReadPathSurvivesCd(t *testing.T) {
 	if !ok {
 		t.Fatal("RepoRead not registered")
 	}
-	res, err := tool.Execute(context.Background(), map[string]any{"repo": "Vulnetix/signet", "path": "file.txt"})
+	res, err := tool.Execute(context.Background(), map[string]any{"repo": "Vulnetix/belai", "path": "file.txt"})
 	if err != nil {
 		t.Fatalf("RepoRead after Cd: %v", err)
 	}
@@ -317,7 +317,7 @@ func TestRepoReadPathSurvivesCd(t *testing.T) {
 		t.Fatalf("RepoRead subject after Cd = %q, want file.txt", got)
 	}
 	// An escape is still refused after the move, against the checkout.
-	if _, err := tool.Execute(context.Background(), map[string]any{"repo": "Vulnetix/signet", "path": "../outside.txt"}); err == nil {
+	if _, err := tool.Execute(context.Background(), map[string]any{"repo": "Vulnetix/belai", "path": "../outside.txt"}); err == nil {
 		t.Fatal("path escape after Cd must be rejected")
 	}
 }

@@ -7,8 +7,8 @@ package trustgate
 import (
 	"path/filepath"
 
-	"github.com/vulnetix/signet/internal/config"
-	"github.com/vulnetix/signet/internal/projectregistry"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/projectregistry"
 )
 
 // Status describes the trust state of one working directory.

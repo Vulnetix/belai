@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vulnetix/signet/internal/proc"
+	"github.com/vulnetix/belai/internal/proc"
 )
 
 // Capabilities is the set of native tools detected at session construction.

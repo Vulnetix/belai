@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vulnetix/signet/internal/delimiters"
-	"github.com/vulnetix/signet/internal/nonce"
-	"github.com/vulnetix/signet/internal/sanitize"
+	"github.com/vulnetix/belai/internal/delimiters"
+	"github.com/vulnetix/belai/internal/nonce"
+	"github.com/vulnetix/belai/internal/sanitize"
 )
 
 func seededPool(t *testing.T) *nonce.Pool {

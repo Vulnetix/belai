@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vulnetix/signet/internal/agentstore"
+	"github.com/vulnetix/belai/internal/agentstore"
 )
 
 // AgentStore is the seam the three agent-store tools use to reach the

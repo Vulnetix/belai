@@ -3,7 +3,7 @@ package run
 import (
 	"testing"
 
-	"github.com/vulnetix/signet/internal/wire"
+	"github.com/vulnetix/belai/internal/wire"
 )
 
 func TestDetectToolMethodBuiltins(t *testing.T) {
