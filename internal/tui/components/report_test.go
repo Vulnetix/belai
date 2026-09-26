@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 // A report card renders its markdown body under its title and collapses a
@@ -57,5 +58,19 @@ func TestFooterReviewLineFitsTheWidth(t *testing.T) {
 		if !strings.Contains(wide, want) {
 			t.Fatalf("wide review line lacks %q: %q", want, wide)
 		}
+	}
+}
+
+// The frame says how the activity went: failed in the danger accent, a
+// result that needs attention in the warning accent.
+func TestReportPanelAccentFollowsStatus(t *testing.T) {
+	old := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(old)
+	plain, _ := reportPanel(Message{Role: ReportRole, ToolName: "vulnetix cbom", Content: "- ok"}, 60, false)
+	attention, _ := reportPanel(Message{Role: ReportRole, ToolName: "vulnetix cbom", Content: "- ok", Status: ReportAttention}, 60, false)
+	failed, _ := reportPanel(Message{Role: ReportRole, ToolName: "vulnetix cbom", Content: "- ok", Status: ReportFailed}, 60, false)
+	if plain == attention || attention == failed || plain == failed {
+		t.Fatal("each status must draw its own accent")
 	}
 }

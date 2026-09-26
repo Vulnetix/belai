@@ -170,6 +170,12 @@ func TestVulnetixOnScanDoneReportsEachScanner(t *testing.T) {
 	if len(sast.Blocks) != 1 || sast.Blocks[0].Scanner != "sast" || sast.Findings != 1 || sast.Artifact != "sast.sarif" {
 		t.Fatalf("sast outcome = %+v", sast)
 	}
+	if sast.SARIF == nil || sast.SARIF.Results != 1 || sast.SARIF.RulesTriggered != 1 || sast.BOM != nil {
+		t.Fatalf("sast facts = %+v / %+v", sast.SARIF, sast.BOM)
+	}
+	if got["secrets"].SARIF != nil {
+		t.Fatal("a scanner that wrote no artifact has no facts")
+	}
 	if len(got["secrets"].Blocks) != 0 {
 		t.Fatalf("secrets carried another scanner's blocks: %+v", got["secrets"].Blocks)
 	}

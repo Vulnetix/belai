@@ -144,6 +144,13 @@ type ScanOutcome struct {
 	Findings int
 	// Counts is Findings broken down by severity.
 	Counts scanartifacts.Counts
+	// SARIF and BOM are what the scanner's own artifacts say about the scan:
+	// rules fired, files and indicators for a SARIF report; packages,
+	// algorithms, models and their status for a CycloneDX inventory. Either
+	// is nil when the scanner wrote no such artifact. They feed the result
+	// card, which is display-only.
+	SARIF  *scanartifacts.RunFacts
+	BOM    *scanartifacts.BOMFacts
 	Blocks []TriageBlock
 }
 
@@ -366,6 +373,7 @@ func (r Vulnetix) reportScan(ctx context.Context, sc Scanner, res vulnetixcli.Re
 			counts = counts.Merge(fs.Counts)
 		}
 	}
+	sarif, bom := scanFacts(ctx, arts)
 	r.OnScanDone(ScanOutcome{
 		Name:     sc.Name,
 		ExitCode: res.ExitCode,
@@ -376,7 +384,33 @@ func (r Vulnetix) reportScan(ctx context.Context, sc Scanner, res vulnetixcli.Re
 		Findings: findings,
 		Counts:   counts,
 		Blocks:   BuildTriageBlocksFor(ctx, r.Workdir, sc.Artifacts),
+		SARIF:    sarif,
+		BOM:      bom,
 	})
+}
+
+// scanFacts reads the first SARIF and the first CycloneDX artifact of a
+// scanner. A file that fails to parse contributes nothing.
+func scanFacts(ctx context.Context, arts []scanartifacts.Artifact) (*scanartifacts.RunFacts, *scanartifacts.BOMFacts) {
+	var sarif *scanartifacts.RunFacts
+	var bom *scanartifacts.BOMFacts
+	for _, a := range arts {
+		switch a.Kind {
+		case scanartifacts.KindSARIF:
+			if sarif == nil {
+				if f, err := scanartifacts.SARIFFacts(ctx, a.Path, scanartifacts.DefaultMaxBytes); err == nil {
+					sarif = &f
+				}
+			}
+		case scanartifacts.KindCycloneDXSBOM, scanartifacts.KindCycloneDXCBOM, scanartifacts.KindCycloneDXAIBOM:
+			if bom == nil {
+				if f, err := scanartifacts.CycloneDXFacts(ctx, a.Path, scanartifacts.DefaultMaxBytes); err == nil {
+					bom = &f
+				}
+			}
+		}
+	}
+	return sarif, bom
 }
 
 // scannerFindings returns a scanner's first artifact present in the summary
