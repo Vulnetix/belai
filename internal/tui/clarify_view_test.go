@@ -48,7 +48,7 @@ func TestEventClarifyAskPushesViewAndStopsPump(t *testing.T) {
 func TestClarifyCursorSkipsHeaders(t *testing.T) {
 	a := New(Options{})
 	a.push(viewClarify)
-	a.clarifyState = newClarifyState(sampleQuestionnaire(), make(chan clarify.Answers))
+	a.clarifyState = newClarifyState(sampleQuestionnaire(), make(chan clarify.Answers), false)
 
 	// initial selection should be on the first option row (index 1 because
 	// index 0 is the first header).
@@ -82,7 +82,7 @@ func TestClarifyCursorSkipsHeaders(t *testing.T) {
 func TestClarifySpaceRadioForSingle(t *testing.T) {
 	a := New(Options{})
 	a.push(viewClarify)
-	a.clarifyState = newClarifyState(sampleQuestionnaire(), make(chan clarify.Answers))
+	a.clarifyState = newClarifyState(sampleQuestionnaire(), make(chan clarify.Answers), false)
 
 	// group 0 is single-select; choosing child should replace parent.
 	m, _ := a.Update(keyMsg("down")) // move to Child
@@ -100,7 +100,7 @@ func TestClarifySpaceRadioForSingle(t *testing.T) {
 func TestClarifySpaceCheckboxForMulti(t *testing.T) {
 	a := New(Options{})
 	a.push(viewClarify)
-	a.clarifyState = newClarifyState(sampleQuestionnaire(), make(chan clarify.Answers))
+	a.clarifyState = newClarifyState(sampleQuestionnaire(), make(chan clarify.Answers), false)
 
 	// Move to group 2 (multi) option Read at row index 4.
 	m, _ := a.Update(keyMsg("down"))
@@ -128,7 +128,7 @@ func TestClarifySpaceCheckboxForMulti(t *testing.T) {
 func TestClarifyNoteOpensAndCommits(t *testing.T) {
 	a := New(Options{})
 	a.push(viewClarify)
-	a.clarifyState = newClarifyState(sampleQuestionnaire(), make(chan clarify.Answers))
+	a.clarifyState = newClarifyState(sampleQuestionnaire(), make(chan clarify.Answers), false)
 
 	m, _ := a.Update(keyMsg("n"))
 	a = m.(*App)
@@ -151,7 +151,7 @@ func TestClarifyNoteOpensAndCommits(t *testing.T) {
 func TestClarifySkipMarksGroupSkipped(t *testing.T) {
 	a := New(Options{})
 	a.push(viewClarify)
-	a.clarifyState = newClarifyState(sampleQuestionnaire(), make(chan clarify.Answers))
+	a.clarifyState = newClarifyState(sampleQuestionnaire(), make(chan clarify.Answers), false)
 
 	// Select an option in group 0 first, then skip the group.
 	m, _ := a.Update(keyMsg(" "))
@@ -173,7 +173,7 @@ func TestClarifyEnterSendsAnswersAndRearmsPump(t *testing.T) {
 	a := New(Options{})
 	a.push(viewClarify)
 	reply := make(chan clarify.Answers)
-	a.clarifyState = newClarifyState(sampleQuestionnaire(), reply)
+	a.clarifyState = newClarifyState(sampleQuestionnaire(), reply, false)
 
 	// Choose Parent in group 0.
 	m, _ := a.Update(keyMsg(" "))
@@ -219,7 +219,7 @@ func TestClarifyEnterChoosesHighlightedOption(t *testing.T) {
 	a := New(Options{})
 	a.push(viewClarify)
 	reply := make(chan clarify.Answers, 1)
-	a.clarifyState = newClarifyState(sampleQuestionnaire(), reply)
+	a.clarifyState = newClarifyState(sampleQuestionnaire(), reply, false)
 
 	m, _ := a.Update(keyMsg("down")) // Parent → Child
 	a = m.(*App)
@@ -245,7 +245,7 @@ func TestClarifyEnterChoosesHighlightedOption(t *testing.T) {
 func TestClarifyEscCancelsTurn(t *testing.T) {
 	a := New(Options{})
 	a.push(viewClarify)
-	a.clarifyState = newClarifyState(sampleQuestionnaire(), make(chan clarify.Answers))
+	a.clarifyState = newClarifyState(sampleQuestionnaire(), make(chan clarify.Answers), false)
 
 	cancelled := false
 	a.cancel = func() { cancelled = true }
@@ -280,7 +280,7 @@ func TestClarifyReplacesComposerAndFooter(t *testing.T) {
 	a.cfg.Model = "test-clarify-model"
 
 	reply := make(chan clarify.Answers)
-	a.clarifyState = newClarifyState(sampleQuestionnaire(), reply)
+	a.clarifyState = newClarifyState(sampleQuestionnaire(), reply, false)
 	a.view = viewClarify
 
 	view := a.chatView()

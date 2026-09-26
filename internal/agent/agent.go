@@ -783,7 +783,9 @@ func (s *Session) run(ctx context.Context, history []run.Turn, in TurnInput, str
 	// Per-turn fan-out latch: the fan-out profile advertises the Task tool and
 	// runs read-only subagents for parallel investigation.
 	savedFanOut := s.turnFanOut
-	s.turnFanOut = modeDec.Intent == rolemanager.IntentFanOut
+	// Fan-out is engaged either by Jev intent detection or by an explicit
+	// @agent:signet:fanout pre-send override.
+	s.turnFanOut = modeDec.Intent == rolemanager.IntentFanOut || modeDec.AgentName == "signet:fanout"
 	defer func() { s.turnFanOut = savedFanOut }()
 	if s.turnFanOut && s.fanOutTask != nil {
 		s.fanOutTask.Runner = s.runTask

@@ -246,6 +246,9 @@ type App struct {
 	agentExplicit bool
 	modeDecision  rolemanager.ModeDecision
 	modeWarning   string
+	// footerAgentOverride is the profile/intent label shown in the mode chip
+	// for one turn (e.g. "handoff"). It is cleared on the next turn.
+	footerAgentOverride string
 
 	// working indicator
 	phase   workingPhase // current activity; phaseIdle when no prompt is in flight
@@ -1358,8 +1361,11 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 	a.reviewFindings = nil
 	// Only agent mode carries an agent: ForceAgent also forces the mode, so
 	// sending an engaged agent from plan or goal mode would silently leave the
-	// mode the user chose.
-	if eng := a.engagedAgent(); eng != "" {
+	// mode the user chose. A detected profile intent (handoff/debug/fan-out)
+	// is engaged for this turn only and does not persist as namedAgent.
+	if a.modeDecision.Mode == modes.ModeAgent && a.modeDecision.AgentName != "" {
+		in.ForceAgent = a.modeDecision.AgentName
+	} else if eng := a.engagedAgent(); eng != "" {
 		in.ForceAgent = eng
 	}
 	if n := len(turns); n > 0 && turns[n-1].Role == "user" {
@@ -1564,8 +1570,12 @@ func (a *App) applyLiveModeDecision(d rolemanager.ModeDecision) {
 	previous := a.mode
 	a.modeDecision = d
 	a.modeWarning = d.Warning
-	if !a.modeSticky {
+	if !a.modeSticky || d.UserChosen {
 		a.mode = string(d.Mode)
+	}
+	a.footerAgentOverride = ""
+	if d.Intent != "" && d.Mode == modes.ModeAgent {
+		a.footerAgentOverride = d.Intent.Label()
 	}
 	a.planMode = a.mode == "plan"
 	switch {
@@ -3526,8 +3536,12 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		return tea.Batch(cmd, a.nextAgent(), a.notifyCmd(notify.EventPlanReady, ""))
 	case agent.EventClarifyAskKind:
 		q := *m.Clarify
-		a.clarifyState = newClarifyState(q, m.Reply)
-		a.addSystem(formatQuestionnaire(q))
+		a.clarifyState = newClarifyState(q, m.Reply, m.ModeChoice)
+		if m.ModeChoice {
+			a.addSystem("Mode choice: " + q.Groups[0].Context)
+		} else {
+			a.addSystem(formatQuestionnaire(q))
+		}
 		return tea.Batch(a.push(viewClarify), a.notifyCmd(notify.EventClarify, ""))
 	case agent.EventRoleManagerKind:
 		// The Role Manager is actively classifying (admission, mode selection,
@@ -4743,6 +4757,9 @@ func (a *App) refreshFooter() {
 	a.footer.Width = a.contentWidth()
 	a.footer.Mode = a.mode
 	a.footer.Agent = a.engagedAgent()
+	if a.footerAgentOverride != "" {
+		a.footer.Agent = a.footerAgentOverride
+	}
 	if a.planExecuting && a.mode == "agent" {
 		// An approved plan runs autonomously, but the user chose plan mode;
 		// the chip says both.
