@@ -2,7 +2,7 @@
 import SealedSection from '../seal/SealedSection.astro';
 
 const sealText =
-  'Headless CLI: the same harness without the TUI. Terminal detection keeps the UI off in pipelines, -prompt gives a single answer and exits, -plan runs read-only, -detect-mode prints the mode choice, -trust-dir opens a CI workspace, -export prints a session as Markdown, and every posture gate is reachable from flags.';
+  'Headless CLI: the same harness without the TUI. Terminal detection keeps the UI off in pipelines, -prompt gives a single answer and exits, -plan runs read-only, -detect-mode prints the mode choice, -trust-dir opens a CI workspace, -export prints a session as Markdown, signet acp serves editors, signet plugin manages plugins, and every posture gate is reachable from flags.';
 
 const features = [
   {
@@ -28,6 +28,14 @@ const features = [
   {
     title: 'export a session as Markdown',
     body: 'signet -export <id-prefix> prints a deterministic Markdown transcript of a saved session and exits. It reads only the session store, never repository content.',
+  },
+  {
+    title: 'signet acp for editors',
+    body: 'signet acp serves the Agent Client Protocol on stdin and stdout, so Zed, JetBrains IDEs and Neovim plugins drive Signet with every gate in place. An untrusted directory is refused, never prompted.',
+  },
+  {
+    title: 'signet plugin',
+    body: 'signet plugin install <git-url|dir> prints every skill, hook command, prompt and agent a plugin adds and installs only on your yes (or -yes after reading it). list, update, enable, disable and remove manage what is installed.',
   },
   {
     title: 'every gate from flags',
