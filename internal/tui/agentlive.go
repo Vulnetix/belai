@@ -13,6 +13,7 @@ import (
 	"github.com/vulnetix/signet/internal/agentprofile"
 	"github.com/vulnetix/signet/internal/bgagent"
 	"github.com/vulnetix/signet/internal/config"
+	"github.com/vulnetix/signet/internal/notify"
 	"github.com/vulnetix/signet/internal/tui/components"
 )
 
@@ -603,7 +604,7 @@ func (a *App) handleBgAgentEvent(m bgAgentEventMsg) tea.Cmd {
 	if m.Kind == agent.EventDoneKind {
 		// A dependency or review scanner agent reports back to the main
 		// session.
-		return tea.Batch(a.armAgentPulse(), a.depAgentFinished(name), a.reviewAgentFinished(name))
+		return tea.Batch(a.armAgentPulse(), a.depAgentFinished(name), a.reviewAgentFinished(name), a.notifyCmd(notify.EventAgentDone, name))
 	}
 	return a.armAgentPulse()
 }

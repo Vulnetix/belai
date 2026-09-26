@@ -49,6 +49,7 @@ import (
 	"github.com/vulnetix/signet/internal/modelinfo"
 	"github.com/vulnetix/signet/internal/models"
 	"github.com/vulnetix/signet/internal/modes"
+	"github.com/vulnetix/signet/internal/notify"
 	"github.com/vulnetix/signet/internal/permissions"
 	"github.com/vulnetix/signet/internal/plans"
 	"github.com/vulnetix/signet/internal/posture"
@@ -3515,19 +3516,19 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			return a.nextAgent()
 		}
 		a.permAskState = newPermissionAskState(m.Ask, m.AskReply)
-		return a.push(viewPermissionAsk)
+		return tea.Batch(a.push(viewPermissionAsk), a.notifyCmd(notify.EventPermission, m.Ask.Name))
 	case agent.EventPlanFileKind:
 		a.planReview = newPlanReviewState(m.PlanName, m.PlanPath)
 		a.addSystem("plan written: " + m.PlanPath)
 		// Keep draining the stream: the plan review pane is non-blocking and
 		// the turn still needs to finish cleanly (EventDoneKind).
 		cmd := a.push(viewPlanReview)
-		return tea.Batch(cmd, a.nextAgent())
+		return tea.Batch(cmd, a.nextAgent(), a.notifyCmd(notify.EventPlanReady, ""))
 	case agent.EventClarifyAskKind:
 		q := *m.Clarify
 		a.clarifyState = newClarifyState(q, m.Reply)
 		a.addSystem(formatQuestionnaire(q))
-		return a.push(viewClarify)
+		return tea.Batch(a.push(viewClarify), a.notifyCmd(notify.EventClarify, ""))
 	case agent.EventRoleManagerKind:
 		// The Role Manager is actively classifying (admission, mode selection,
 		// steering, or a tool result): show the dedicated indicator instead of
@@ -3595,10 +3596,10 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		// bubble because this line breaks the trailing assistant run.
 		if m.GoalSentinel == rolemanager.GoalComplete {
 			a.addSystem("goal complete — writing the final report")
-		} else {
-			a.addSystem("goal stopped — writing the final report")
+			return tea.Batch(a.nextAgent(), a.notifyCmd(notify.EventGoalDone, ""))
 		}
-		return a.nextAgent()
+		a.addSystem("goal stopped — writing the final report")
+		return tea.Batch(a.nextAgent(), a.notifyCmd(notify.EventGoalStalled, ""))
 	case agent.EventPlanEvalKind:
 		if m.Todos != nil {
 			a.setTodos(m.Todos)
@@ -3680,7 +3681,13 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			a.appendEntry(a.todos.ToEntry(""))
 		}
 		a.refreshFooter()
-		return tea.Batch(a.flushPendingActivitySends(), a.flushDepWatch(), a.flushAutoCommit(m.Result))
+		// A goal already notified when its report began; turn_done covers
+		// the other turns.
+		var notifyDone tea.Cmd
+		if m.Result.GoalSentinel == "" {
+			notifyDone = a.notifyTurnDone(elapsed)
+		}
+		return tea.Batch(a.flushPendingActivitySends(), a.flushDepWatch(), a.flushAutoCommit(m.Result), notifyDone)
 	}
 	return nil
 }
