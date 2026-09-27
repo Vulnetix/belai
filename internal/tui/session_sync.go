@@ -32,6 +32,20 @@ type remotePromptMsg sessionsync.RemotePrompt
 // it can touch the OS keyring, which must not happen on every upload.
 const syncAuthTTL = 5 * time.Minute
 
+// createSessionFile makes the live session's JSONL exist at startup so the
+// syncer can register the session with the website immediately, before its
+// first line is written. It is idempotent: a resumed session's file already
+// exists and is left untouched. Like startSessionSync, only a real run calls
+// it; New alone never touches the store.
+func (a *App) createSessionFile() {
+	if a.store == nil || a.storeDisabled {
+		return
+	}
+	if err := a.store.Create(a.sessionKey, a.sessionID); err != nil {
+		a.disableStore("create session file: " + err.Error())
+	}
+}
+
 // startSessionSync starts the syncer when sync is on and a usable Vulnetix
 // CLI credential resolves. It records why when it does not. Only a real run
 // calls it; New alone (every test) never touches the network.
@@ -306,7 +320,7 @@ func (a *App) syncStatusText() string {
 	case st.Registered:
 		fmt.Fprintf(&b, "\n  this session: %d lines on the website", st.LastSeq+1)
 	default:
-		b.WriteString("\n  this session: appears on the website after its first line")
+		b.WriteString("\n  this session: appears on the website once registered")
 	}
 	if len(a.remoteQueue) > 0 {
 		fmt.Fprintf(&b, "\n  %d web prompt(s) queued behind the running turn", len(a.remoteQueue))

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -169,4 +170,30 @@ func TestRemotePromptLeavesComposerDraft(t *testing.T) {
 	if a.editor.Value() != "half-typed" {
 		t.Fatalf("draft = %q", a.editor.Value())
 	}
+}
+
+// createSessionFile makes the live session's JSONL exist at launch, and the
+// syncer registers it immediately — before any line is written.
+func TestCreateSessionFileSyncsEmptySessionAtLaunch(t *testing.T) {
+	a, _ := newSyncApp(t)
+	a.createSessionFile()
+	path := a.store.SessionPath(a.sessionKey, a.sessionID)
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("session file not created: %v", err)
+	}
+	if fi.Size() != 0 {
+		t.Fatalf("session file size = %d, want 0", fi.Size())
+	}
+
+	a.syncTouch()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		st := a.syncer.Status()
+		if st.Registered && st.SessionID == a.sessionID {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("empty session was not registered: %+v", a.syncer.Status())
 }

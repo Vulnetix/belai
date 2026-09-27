@@ -249,8 +249,10 @@ func TestSwitchAndCloseEndSessions(t *testing.T) {
 	}
 }
 
-// A session with no lines is never registered.
-func TestEmptySessionNeverRegistered(t *testing.T) {
+// A session file that was never created is never registered. The TUI creates
+// the live session's file at startup; other callers may point at a missing
+// file, which stays absent from the website.
+func TestMissingSessionFileNeverRegistered(t *testing.T) {
 	fake := newFake()
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
@@ -261,6 +263,34 @@ func TestEmptySessionNeverRegistered(t *testing.T) {
 	defer fake.mu.Unlock()
 	if len(fake.sessions) != 0 {
 		t.Fatalf("registered %v", fake.sessions)
+	}
+}
+
+// An empty session file that exists (the TUI creates it at startup) is
+// registered immediately, before its first line.
+func TestEmptySessionFileRegistered(t *testing.T) {
+	fake := newFake()
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	path := filepath.Join(t.TempDir(), testSess+".jsonl")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := startSyncer(t, srv, false)
+	s.Activate(SessionInfo{ID: testSess, Path: path, ProjectName: "belai"})
+	eventually(t, "the empty session", func() bool {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		_, ok := fake.sessions[testSess]
+		return ok
+	})
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.sessions[testSess].ProjectName != "belai" {
+		t.Fatalf("session meta = %+v", fake.sessions[testSess])
+	}
+	if fake.lastSeq(testSess) != -1 {
+		t.Fatalf("lastSeq = %d, want -1 for an empty file", fake.lastSeq(testSess))
 	}
 }
 
