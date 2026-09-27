@@ -370,7 +370,7 @@ func cliTags(it kanban.Item, now int64) string {
 	if it.ClaimedBy != "" {
 		lease := "lapsed"
 		if it.LeaseUntil > now {
-			lease = time.Duration(it.LeaseUntil - now).Round(time.Minute).String()
+			lease = (time.Duration(it.LeaseUntil-now) * time.Millisecond).Round(time.Minute).String()
 		}
 		parts = append(parts, "claimed by "+it.ClaimedBy+" ("+lease+")")
 	}
