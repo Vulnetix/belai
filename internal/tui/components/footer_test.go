@@ -436,3 +436,33 @@ func TestFooterSubagentLineConstantHeight(t *testing.T) {
 		t.Fatalf("roster must not change footer height: empty=%d roster=%d", lipgloss.Height(empty.View()), lipgloss.Height(roster.View()))
 	}
 }
+
+// TestFooterLine2FitsWidth: line 2 never runs past the width. It sheds the
+// provider, the firewall label and the token counts before it truncates, and
+// the session segment stays exactly where SessionSpan says it is.
+func TestFooterLine2FitsWidth(t *testing.T) {
+	for _, width := range []int{60, 80, 100, 120, 160} {
+		f := Footer{
+			Mode: "agent", Provider: "anthropic", Model: "claude-sonnet-4-5", Effort: "high",
+			Guardrails: true, Ask: true, Firewall: true, FirewallLabel: "vulnetix",
+			Session: "session-abcdef0123", Tokens: 12500, ContextLimit: 200000, Width: width,
+		}
+		line := ansi.Strip(strings.Split(f.View(), "\n")[f.SessionRow()])
+		if w := lipgloss.Width(line); w > width {
+			t.Fatalf("width %d: line 2 is %d cells: %q", width, w, line)
+		}
+		col, w, ok := f.SessionSpan()
+		if !ok {
+			t.Fatalf("width %d: no session segment: %q", width, line)
+		}
+		if got := ansi.Cut(line, col, col+w); !strings.HasPrefix(got, "session: ") {
+			t.Fatalf("width %d: session span slices to %q: %q", width, got, line)
+		}
+		if width >= 160 && !strings.Contains(line, "anthropic") {
+			t.Fatalf("width %d: a wide line should keep the provider: %q", width, line)
+		}
+		if width == 100 && strings.Contains(line, "…") && strings.Contains(line, "anthropic") {
+			t.Fatalf("width %d: the provider should go before anything is truncated: %q", width, line)
+		}
+	}
+}
