@@ -501,17 +501,25 @@ func buildCloudflareGateway(fields map[string]string) string {
 	return "https://gateway.ai.cloudflare.com/v1/" + acct + "/default/compat"
 }
 
-// buildKiro composes the Kiro API base URL from the stored login's API
-// region. The login is decoded here only for that one field; the region is
-// checked against the AWS region shape so a hand-edited login cannot steer
-// the host. Everything else in the login stays with internal/kiroauth.
+// buildKiro composes the Kiro API base URL from the stored login's regions.
+// The login is decoded here only for those fields; a region is checked
+// against the AWS region shape so a hand-edited login cannot steer the host.
+// Everything else in the login stays with internal/kiroauth.
 func buildKiro(fields map[string]string) string {
 	region := "us-east-1"
 	var l struct {
 		APIRegion string `json:"api_region"`
+		Region    string `json:"region"`
 	}
-	if err := json.Unmarshal([]byte(fields["login"]), &l); err == nil && kiroRegionRE.MatchString(l.APIRegion) {
-		region = l.APIRegion
+	if err := json.Unmarshal([]byte(fields["login"]), &l); err == nil {
+		// The same order as kiroauth.Login.APIRegionOrDefault: the API
+		// region, else the SSO region, else us-east-1.
+		for _, r := range []string{l.APIRegion, l.Region} {
+			if kiroRegionRE.MatchString(r) {
+				region = r
+				break
+			}
+		}
 	}
 	return "https://q." + region + ".amazonaws.com"
 }

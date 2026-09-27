@@ -54,7 +54,7 @@ type Login struct {
 	Region string `json:"region"`
 	// StartURL is the Builder ID or IAM Identity Center start URL.
 	StartURL string `json:"start_url,omitempty"`
-	// APIRegion is the Kiro API region; empty means us-east-1.
+	// APIRegion is the Kiro API region; empty means Region.
 	APIRegion string `json:"api_region,omitempty"`
 	// ProfileARN is the CodeWhisperer profile an Identity Center login
 	// sends with each request. A Builder ID login has none.
@@ -96,10 +96,15 @@ func ParseLogin(s string) (Login, error) {
 	return l, nil
 }
 
-// APIRegionOrDefault returns the Kiro API region.
+// APIRegionOrDefault returns the Kiro API region: the explicit or
+// profile-derived API region, else the SSO region the login was made in (an
+// Identity Center instance in ap-southeast-2 serves Kiro there), else
+// us-east-1. It must stay in step with provider.buildKiro.
 func (l Login) APIRegionOrDefault() string {
-	if l.APIRegion != "" {
-		return l.APIRegion
+	for _, r := range []string{l.APIRegion, l.Region} {
+		if r != "" && ValidRegion(r) {
+			return r
+		}
 	}
 	return DefaultRegion
 }

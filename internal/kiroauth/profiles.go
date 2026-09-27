@@ -142,39 +142,66 @@ func printable(s string, max int) string {
 	return b.String()
 }
 
-// ProfileRegions are the regions Kiro serves profiles from.
+// ProfileRegions are the regions Kiro is known to serve profiles from. The
+// login's own SSO and API regions are always tried first, since a Kiro
+// profile may live in any region (an Identity Center instance in
+// ap-southeast-2 keeps its profile there).
 var ProfileRegions = []string{"us-east-1", "eu-central-1"}
 
+// profileRegionsFor is the ordered, de-duplicated set of regions to ask for
+// login's profiles: its API region, its SSO region, then ProfileRegions.
+func profileRegionsFor(login Login) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, r := range append([]string{login.APIRegion, login.Region}, ProfileRegions...) {
+		if r != "" && ValidRegion(r) && !seen[r] {
+			seen[r] = true
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // DiscoverProfiles mints an access token for login through r and lists the
-// account's profiles in every Kiro region. bases overrides the endpoints
-// (tests); nil means ProfilesBaseURL for each of ProfileRegions. A region that
-// fails is skipped; the error is returned only when every region failed.
+// account's profiles in every candidate region (profileRegionsFor). In each
+// region the codewhisperer host is asked first and the q host if that
+// fails. bases overrides the endpoints (tests), one endpoint per region. A
+// region that fails is skipped; the error is returned only when every
+// region failed.
 func DiscoverProfiles(ctx context.Context, client *http.Client, r *Refresher, login Login, bases []string) ([]Profile, error) {
 	tok, err := r.Token(ctx, login.Encode())
 	if err != nil {
 		return nil, err
 	}
+	var groups [][]string
 	if bases == nil {
-		for _, region := range ProfileRegions {
-			bases = append(bases, ProfilesBaseURL(region))
+		for _, region := range profileRegionsFor(login) {
+			groups = append(groups, []string{ProfilesBaseURL(region), APIBaseURL(region)})
+		}
+	} else {
+		for _, b := range bases {
+			groups = append(groups, []string{b})
 		}
 	}
 	var out []Profile
 	seen := map[string]bool{}
 	var lastErr error
 	ok := false
-	for _, base := range bases {
-		ps, err := ListProfiles(ctx, client, base, tok.Value)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		ok = true
-		for _, p := range ps {
-			if !seen[p.ARN] {
-				seen[p.ARN] = true
-				out = append(out, p)
+	for _, group := range groups {
+		for _, base := range group {
+			ps, err := ListProfiles(ctx, client, base, tok.Value)
+			if err != nil {
+				lastErr = err
+				continue
 			}
+			ok = true
+			for _, p := range ps {
+				if !seen[p.ARN] {
+					seen[p.ARN] = true
+					out = append(out, p)
+				}
+			}
+			break
 		}
 	}
 	if !ok {

@@ -13,7 +13,7 @@ short-lived access token before each model request.
 
 ```sh
 belai login kiro                       # AWS Builder ID
-belai login kiro -start-url https://acme.awsapps.com/start -region eu-west-1
+belai login kiro -start-url https://acme.awsapps.com/start -region ap-southeast-2
 belai login kiro -import               # reuse the sign-in Kiro already made
 ```
 
@@ -24,8 +24,8 @@ login.
 | Flag | Meaning |
 | --- | --- |
 | `-start-url` | IAM Identity Center start URL. Omit it for an AWS Builder ID. |
-| `-region` | The SSO region of that start URL (default `us-east-1`). |
-| `-api-region` | The Kiro API region. The default is the profile's region, else `us-east-1`. |
+| `-region` | The SSO region of that start URL. Any AWS region works; the default is `us-east-1`, the Builder ID region. |
+| `-api-region` | The Kiro API region. The default is the profile's region, else the SSO region. |
 | `-profile-arn` | The CodeWhisperer profile to use. By default Belai looks it up after signing in (see [Profiles](#profiles)). |
 | `-backend` | `keychain` or `user-file`. The default is the keychain when one works, else the user credentials file. |
 | `-import` | Import Kiro's own sign-in from `~/.aws/sso/cache` instead of signing in. |
@@ -46,8 +46,10 @@ without one. The login is stored in the backend the tab shows; `b` cycles it.
 
 After a sign-in or an import, Belai asks CodeWhisperer which profiles the
 account can use. The call is `ListAvailableProfiles` on
-`codewhisperer.<region>.amazonaws.com`, made in `us-east-1` and
-`eu-central-1`.
+`codewhisperer.<region>.amazonaws.com`, falling back to `q.<region>` if that
+fails. It asks the login's own regions first (the API region, then the SSO
+region) and then `us-east-1` and `eu-central-1`. So an Identity Center
+instance in, say, `ap-southeast-2` finds its profile in its own region.
 
 - **One profile.** Its ARN is stored in the login, and its region becomes the
   Kiro API region.
@@ -101,7 +103,9 @@ In two cases Belai stops and asks you to run `belai login kiro` again:
 
 ## Wire surface
 
-Kiro is reached through `POST https://q.<api-region>.amazonaws.com/generateAssistantResponse`
+Kiro is reached through `POST https://q.<api-region>.amazonaws.com/generateAssistantResponse`.
+The API region is the profile's region, else the SSO region the login was made
+in, else `us-east-1`. The request is sent
 with `Authorization: Bearer <access token>`. The reply is binary AWS
 event-stream frames, not SSE. `internal/wire/eventstream.go` reads them and
 checks both CRCs of every frame. A frame over 1 MiB, or one whose checksum

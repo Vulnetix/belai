@@ -23,8 +23,10 @@ Center start URL. Belai shows a code to confirm in the browser, then stores
 the sign-in as the kiro provider's login credential.
 
   -start-url URL    IAM Identity Center start URL (default: AWS Builder ID)
-  -region R         SSO region of the start URL (default us-east-1)
-  -api-region R     Kiro API region (default: the profile's region, else us-east-1)
+  -region R         SSO region of the start URL, any AWS region
+                    (default us-east-1)
+  -api-region R     Kiro API region (default: the profile's region, else
+                    the SSO region)
   -profile-arn ARN  CodeWhisperer profile ARN (default: looked up after
                     sign-in; asked for when the account has several)
   -backend B        keychain or user-file (default: keychain when available)

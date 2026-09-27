@@ -369,3 +369,39 @@ func TestResolveProfile(t *testing.T) {
 		t.Fatal("bad explicit ARN accepted")
 	}
 }
+
+func TestProfileRegionsIncludeTheLoginsOwn(t *testing.T) {
+	l := Login{Region: "ap-southeast-2"}
+	got := profileRegionsFor(l)
+	want := []string{"ap-southeast-2", "us-east-1", "eu-central-1"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("regions = %v, want %v", got, want)
+	}
+	l = Login{Region: "us-east-1", APIRegion: "ap-northeast-1"}
+	if got := profileRegionsFor(l); strings.Join(got, ",") != "ap-northeast-1,us-east-1,eu-central-1" {
+		t.Fatalf("regions = %v", got)
+	}
+	if got := profileRegionsFor(Login{Region: "bad/../region"}); strings.Join(got, ",") != "us-east-1,eu-central-1" {
+		t.Fatalf("invalid region kept: %v", got)
+	}
+	// A profile found in ap-southeast-2 moves the API there.
+	p := Profile{ARN: "arn:aws:codewhisperer:ap-southeast-2:123:profile/X"}
+	if lp := (Login{Region: "ap-southeast-2"}).WithProfile(p); lp.APIRegion != "ap-southeast-2" || APIBaseURL(lp.APIRegionOrDefault()) != "https://q.ap-southeast-2.amazonaws.com" {
+		t.Fatalf("login = %#v", lp)
+	}
+}
+
+func TestAPIRegionFallsBackToTheSSORegion(t *testing.T) {
+	for _, c := range []struct {
+		l    Login
+		want string
+	}{
+		{Login{}, "us-east-1"},
+		{Login{Region: "ap-southeast-2"}, "ap-southeast-2"},
+		{Login{Region: "ap-southeast-2", APIRegion: "us-east-1"}, "us-east-1"},
+	} {
+		if got := c.l.APIRegionOrDefault(); got != c.want {
+			t.Errorf("%#v: got %q want %q", c.l, got, c.want)
+		}
+	}
+}
