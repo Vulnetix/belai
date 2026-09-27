@@ -47,9 +47,12 @@ type Footer struct {
 	Guardrails bool
 	Ask        bool
 
-	// Firewall reports whether traffic is routed through the Vulnetix AI
+	// Firewall reports whether traffic is routed through the active AI
 	// Firewall. Rendered as a teal chip when on; omitted when off.
 	Firewall bool
+	// FirewallLabel names the active firewall (and its event count) on the
+	// chip; empty renders "on".
+	FirewallLabel string
 
 	// Caveman reports whether the caveman voice rewrite is active. It always
 	// renders, on and off alike, because it silently changes how every reply
@@ -459,7 +462,11 @@ func (f Footer) permissionChips() string {
 	ask := Chip("ask: "+onOff(f.Ask), onOffColor(f.Ask))
 	out := guardrails + MutedStyle.Render(" ") + ask
 	if f.Firewall {
-		out += MutedStyle.Render(" ") + Chip("firewall: on", ColorTeal)
+		label := f.FirewallLabel
+		if label == "" {
+			label = "on"
+		}
+		out += MutedStyle.Render(" ") + Chip("firewall: "+label, ColorTeal)
 	}
 	return out
 }

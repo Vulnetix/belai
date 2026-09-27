@@ -20,6 +20,7 @@ import (
 	"github.com/vulnetix/belai/internal/calltrace"
 	"github.com/vulnetix/belai/internal/clarify"
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/firewall"
 	"github.com/vulnetix/belai/internal/httpclient"
 	"github.com/vulnetix/belai/internal/kiroauth"
 	"github.com/vulnetix/belai/internal/mlclassify"
@@ -71,6 +72,10 @@ type Config struct {
 	// routes every model call to this config; Kind "routed" routes each
 	// role-manager use case through the Jev routing activity over Candidates.
 	Routing RoutingConfig
+	// Firewall is the AI Firewall route this config's calls take; nil for a
+	// direct call. BaseURL (and, outside transparent mode, APIKey) already
+	// carry the route's values.
+	Firewall *firewall.Route
 }
 
 // ClassifierConfig is a provider/model/credentials tuple scoped to the
@@ -988,12 +993,6 @@ type AliasSource interface {
 	CanonicalProvider(label string) (string, bool)
 }
 
-// FirewallSource is implemented by a CredentialSource that can route a
-// provider through the Vulnetix AI Firewall gateway.
-type FirewallSource interface {
-	Firewall(provider string) (baseURL, apiKey string, ok bool)
-}
-
 // EnvSource adapts an environment-lookup function to CredentialSource.
 type EnvSource func(string) string
 
@@ -1107,14 +1106,19 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 
 	status.Configured = len(status.Missing) == 0
 	if fw, ok := src.(FirewallSource); ok {
-		if base, key, on := fw.Firewall(name); on {
-			cfg.BaseURL = base
-			cfg.APIKey = key
-			cfg.Auth = provider.AuthBearer
-			status.Origins["base_url"] = "vulnetix-firewall"
-			status.Origins["api_key"] = "vulnetix-firewall"
-			status.Missing = nil
-			status.Notes = append(status.Notes, "routed through the Vulnetix AI Firewall")
+		if route, on := fw.Firewall(name); on {
+			origin := "firewall:" + route.Instance
+			cfg.BaseURL = route.BaseURL
+			status.Origins["base_url"] = origin
+			if !route.KeepProviderKey {
+				// BYOK: the firewall holds the provider key, so a missing
+				// one is not missing.
+				cfg.APIKey = route.APIKey
+				status.Origins["api_key"] = origin
+				status.Missing = nil
+			}
+			cfg.Firewall = &route
+			status.Notes = append(status.Notes, "routed through the "+route.Label)
 		}
 	}
 
@@ -1914,6 +1918,16 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 			return d.chatRequest(p, req)
 		}
 	}
+	if cfg.Firewall != nil {
+		inner := factory
+		factory = func(ctx context.Context) (*http.Request, error) {
+			req, err := inner(ctx)
+			if err == nil {
+				applyFirewall(ctx, cfg, req.Header)
+			}
+			return req, err
+		}
+	}
 	return factory, d, nil
 }
 
@@ -2403,7 +2417,7 @@ func roundTrip(ctx context.Context, client *http.Client, req *http.Request, cfg 
 	req = req.WithContext(ctx)
 	calltrace.Apply(ctx, req.Header)
 	applySessionAffinity(ctx, cfg, req.Header)
-	resp, err := client.Do(req)
+	resp, err := firewallClient(client, cfg).Do(req)
 	if err != nil {
 		dropIdleConns(ctx, client)
 		return nil, 0, fmt.Errorf("request: %w", err)
@@ -2413,6 +2427,7 @@ func roundTrip(ctx context.Context, client *http.Client, req *http.Request, cfg 
 	if err != nil {
 		return nil, resp.StatusCode, fmt.Errorf("read response: %w", err)
 	}
+	inspectFirewall(cfg, resp, body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, resp.StatusCode, newProviderError("roundTrip", cfg, resp, body, redact)
 	}

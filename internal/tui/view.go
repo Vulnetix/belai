@@ -33,6 +33,7 @@ const (
 	viewScreens
 	viewGettingStarted
 	viewKanban
+	viewFirewall
 )
 
 // viewHandler is one full-screen view. Chat is the base state and lives
@@ -71,6 +72,7 @@ func init() {
 	viewHandlers[viewScreens] = viewHandler{name: "screens", enter: (*App).enterScreens, key: (*App).handleScreensKey, render: (*App).screensView}
 	viewHandlers[viewGettingStarted] = viewHandler{name: "getting-started", enter: (*App).enterGettingStarted, key: (*App).handleGettingStartedKey, render: (*App).gettingStartedView}
 	viewHandlers[viewKanban] = viewHandler{name: "kanban", enter: (*App).enterKanban, key: (*App).handleKanbanKey, render: (*App).kanbanView}
+	viewHandlers[viewFirewall] = viewHandler{name: "firewall", enter: (*App).enterFirewall, key: (*App).handleFirewallKey, render: (*App).firewallView}
 }
 
 // push navigates to a full-screen view, remembering the current one on the

@@ -12,8 +12,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/vulnetix/belai/internal/aifirewall"
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/firewall"
 	"github.com/vulnetix/belai/internal/projectregistry"
 	"github.com/vulnetix/belai/internal/scanartifacts"
 	"github.com/vulnetix/belai/internal/tui/components"
@@ -198,17 +198,21 @@ func (a *App) vulnetixConfigView() string {
 	// Always render a Firewall row using the resolver's reasoned state so
 	// the user sees the real blocker instead of a misleading CLI message.
 	firewallState := "off"
-	if a.firewallEnabled() {
+	vulnetixActive := a.settings.FirewallActive() == config.DefaultFirewall
+	switch {
+	case a.firewallEnabled() && vulnetixActive:
 		firewallState = "on"
+	case a.firewallEnabled():
+		firewallState = "off · the active firewall is " + a.firewallLabel() + " (/firewall)"
 	}
 	var host, orgUUID, unavailableReason string
 	if a.resolver != nil {
-		st := a.resolver.FirewallState(a.cfg.Provider)
+		st := a.resolver.FirewallStateFor(config.DefaultFirewall, a.cfg.Provider)
 		if st.Reason != "" {
 			unavailableReason = st.Reason
 		} else {
-			host = aifirewall.HostOf(st.BaseURL)
-			orgUUID = aifirewall.URLPathUUID(st.BaseURL)
+			host = firewall.HostOf(st.Route.BaseURL)
+			orgUUID = st.Account
 		}
 	}
 	if unavailableReason != "" {
@@ -218,9 +222,12 @@ func (a *App) vulnetixConfigView() string {
 	if host != "" {
 		b.WriteString(renderLabelValue("Gateway", host, w))
 		b.WriteString(renderLabelValue("Org", orgUUID, w))
-		if slug, ok := aifirewall.Slug(a.cfg.Provider); ok {
+		if slug, ok := firewall.Slug(a.cfg.Provider); ok {
 			b.WriteString(renderLabelValue("Wire", slug, w))
 		}
+	}
+	if src := a.nonceSource(); src != "" {
+		b.WriteString(renderLabelValue("Nonces", src, w))
 	}
 	b.WriteString(renderLabelValue("API", fmt.Sprintf("reachable=%v", cap.API.Reachable), w))
 	if a.vulnetixConfigState.errorMsg != "" {

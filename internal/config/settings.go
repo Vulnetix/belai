@@ -120,6 +120,10 @@ type Settings struct {
 	// Vulnetix holds per-project /vulnetix configuration. It is typed and
 	// allowlisted so arbitrary argv can never be persisted here.
 	Vulnetix *VulnetixSettings `json:"vulnetix,omitempty"`
+	// Firewall configures the AI Firewall adapters (docs/firewall.md).
+	// Instances and the active choice are read from the user's own layers
+	// only; the project layer may turn the firewall off, never on.
+	Firewall *FirewallSettings `json:"firewall,omitempty"`
 	// WorkspaceDirs is a project-layer allowlist of additional directories that
 	// may be added to sessions started in this project. If non-empty, only
 	// directories in this list (and persisted to the project registry) are
@@ -201,8 +205,8 @@ type VulnetixSettings struct {
 	// scan. Default false: the review attaches a --dry-run plan instead of
 	// mutating the tree without confirmation.
 	AutoFix *bool `json:"autofix,omitempty"`
-	// FirewallEnabled routes the session's LLM traffic through the Vulnetix AI
-	// Firewall gateway. Default false.
+	// FirewallEnabled is the legacy switch for the AI Firewall, read as
+	// firewall.enabled when that key is unset. Writers use firewall.enabled.
 	FirewallEnabled *bool `json:"firewall_enabled,omitempty"`
 	// DepWatch runs the dependency-manifest hook: a manifest the session
 	// changes is checked with the Vulnetix CLI when the change added or
@@ -415,7 +419,7 @@ func (s VulnetixSettings) GatewayURLOrDefault() string {
 	if s.GatewayURL != "" {
 		return s.GatewayURL
 	}
-	return "https://guardrails.vulnetix.com"
+	return DefaultVulnetixGateway
 }
 
 // AutoFixEnabled reports whether /vulnetix review may run `vulnetix fix --yes`
@@ -1106,12 +1110,6 @@ func (s Settings) AskPermissionEnabled() bool {
 	return s.AskPermission == nil || *s.AskPermission
 }
 
-// FirewallEnabled reports whether the Vulnetix AI Firewall is turned on.
-// Default false: routing prompts to a third-party gateway is opt-in.
-func (s Settings) FirewallEnabled() bool {
-	return s.Vulnetix != nil && s.Vulnetix.FirewallEnabled != nil && *s.Vulnetix.FirewallEnabled
-}
-
 // ReadOnlyEnabled reports whether the master read-only switch is on. The
 // default (nil or false) is off: the full tool set, including mutating tools.
 func (s Settings) ReadOnlyEnabled() bool {
@@ -1148,15 +1146,17 @@ func (s Settings) Override(proj Settings) Settings {
 		t := true
 		out.AskPermission = &t
 	}
-	// A project-layer settings file may turn the firewall off but never on.
-	// A repo must not be able to redirect prompts to a gateway by shipping a
-	// .vulnetix/belai/settings.json.
-	if proj.Vulnetix != nil && proj.Vulnetix.FirewallEnabled != nil && !*proj.Vulnetix.FirewallEnabled {
-		f := false
-		if out.Vulnetix == nil {
-			out.Vulnetix = &VulnetixSettings{}
+	// A project-layer settings file may turn the firewall off but never on,
+	// and never names or picks one. A repo must not be able to redirect
+	// prompts to a gateway by shipping a .vulnetix/belai/settings.json.
+	out = normalizeFirewall(out)
+	if p := normalizeFirewall(proj); p.Firewall != nil {
+		fw := FirewallSettings{}
+		if out.Firewall != nil {
+			fw = *out.Firewall
 		}
-		out.Vulnetix.FirewallEnabled = &f
+		mergeFirewall(&fw, p.Firewall, true)
+		out.Firewall = &fw
 	}
 	// Session sync sends transcripts off the machine: a project file may turn
 	// it (or its web prompts) off, never on.

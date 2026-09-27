@@ -30,7 +30,7 @@ func (p ProjectPrefs) toSettings() Settings {
 		Caveman:       p.Caveman,
 	}
 	if p.FirewallEnabled != nil {
-		s.Vulnetix = &VulnetixSettings{FirewallEnabled: p.FirewallEnabled}
+		s.Firewall = &FirewallSettings{Enabled: p.FirewallEnabled}
 	}
 	return s
 }
