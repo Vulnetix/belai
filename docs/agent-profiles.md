@@ -233,7 +233,7 @@ items and works each as a goal. It adds these fields:
 | `kanban.lease`, `kanban.poll` | duration | Claim lease (1m–2h, default 20m) and idle poll (at least 5s, default 30s). |
 | `kanban.max_items` | int | Stop after this many items; 0 runs until stopped. |
 | `workspace.isolation` | string | `worktree` (a git worktree per item), `shared` (the repository), or `none`. |
-| `workspace.base`, `workspace.keep`, `workspace.publish` | | The commit new branches start from; keep the worktree after release; `draft_pr` to push and open a draft pull request when the item reaches `done`. |
+| `workspace.base`, `workspace.keep`, `workspace.publish` | | The commit new branches start from; keep the worktree after release; `publish` is `none`, `agent` (the agent may push its branch and open a draft pull request with `PublishBranch`) or `draft_pr` (the harness does so when the item reaches `done`); see [Publishing](fleet.md#publishing). |
 | `memory.enabled`, `memory.max_bytes` | | The worker's lessons file (default 8 KiB, at most 64 KiB). |
 | `budget.max_passes_per_item`, `budget.max_tokens_per_item`, `budget.max_wall_per_item` | | Per-item bounds. |
 | `schedule` | string | For a worker, a cron expression (`cron: */15 * * * *`, or a bare five-field expression, `@hourly`, `@daily`): the worker looks for work only at those times. |
@@ -245,7 +245,7 @@ Validation fails closed:
 - `guardrails: false` is rejected outright;
 - `autonomy: autonomous` needs `budget.max_passes_per_item`;
 - a worker that can write (`Write`, `Edit`, `Bash`, or no allowlist) needs `workspace.isolation`;
-- `publish: draft_pr` needs `isolation: worktree`.
+- `publish: agent` and `publish: draft_pr` need `isolation: worktree`.
 
 A definition can also be written as Markdown with YAML front-matter, the
 shape Claude Code, OpenClaw and Hermes use. The keys are the JSON keys,

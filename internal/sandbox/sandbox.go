@@ -42,8 +42,25 @@ type Policy struct {
 	DenyNetwork bool
 	// Writable are the paths the command may write, besides a private /tmp.
 	Writable []string
+	// Visible are paths the command may read even where the default layout
+	// hides them (under the private /tmp). They stay read-only.
+	Visible []string
+	// Mounts are applied after everything else, in order, each over the
+	// last: a writable directory can be narrowed by read-only entries inside
+	// it and those re-opened in turn. A fleet worker's git common dir uses
+	// this (fleet.Workspace.SandboxMounts).
+	Mounts []Mount
+	// Env is added to the command's environment when it is sandboxed: a
+	// fleet worker's git writes new objects to its own store through it.
+	Env []string
 	// Hidden are paths the command cannot see at all.
 	Hidden []string
+}
+
+// Mount is one ordered filesystem rule: Path readable, and writable or not.
+type Mount struct {
+	Path     string
+	Writable bool
 }
 
 // ErrUnavailable is returned in required mode when no backend works here.
@@ -159,6 +176,12 @@ func Wrap(cmd *exec.Cmd, p Policy) (bool, error) {
 		}
 		return false, nil
 	}
+	if len(p.Env) > 0 {
+		if cmd.Env == nil {
+			cmd.Env = os.Environ()
+		}
+		cmd.Env = append(cmd.Env, p.Env...)
+	}
 	target := cmd.Path
 	if target == "" && len(cmd.Args) > 0 {
 		target = cmd.Args[0]
@@ -186,8 +209,20 @@ func BwrapArgs(p Policy, dir string, argv []string) []string {
 		"--proc", "/proc",
 		"--tmpfs", "/tmp",
 	}
+	// Visible paths are re-exposed read-only after the private /tmp, and
+	// before the writable binds so a writable path inside one stays writable.
+	for _, v := range uniq(p.Visible) {
+		args = append(args, "--ro-bind-try", v, v)
+	}
 	for _, w := range uniq(p.Writable) {
 		args = append(args, "--bind-try", w, w)
+	}
+	for _, m := range p.Mounts {
+		if m.Writable {
+			args = append(args, "--bind-try", m.Path, m.Path)
+		} else {
+			args = append(args, "--ro-bind-try", m.Path, m.Path)
+		}
 	}
 	for _, h := range uniq(p.Hidden) {
 		if _, err := os.Stat(h); err == nil {
@@ -213,6 +248,15 @@ func SeatbeltProfile(p Policy) string {
 		fmt.Fprintf(&b, " (subpath %s)", quote(w))
 	}
 	b.WriteString(")\n")
+	// Seatbelt lets a later rule override an earlier one, which gives the
+	// ordered mounts the same layering bubblewrap does.
+	for _, m := range p.Mounts {
+		if m.Writable {
+			fmt.Fprintf(&b, "(allow file-write* (subpath %s))\n", quote(m.Path))
+		} else {
+			fmt.Fprintf(&b, "(deny file-write* (subpath %s))\n", quote(m.Path))
+		}
+	}
 	for _, h := range uniq(p.Hidden) {
 		fmt.Fprintf(&b, "(deny file-read* file-write* (subpath %s))\n", quote(h))
 	}
