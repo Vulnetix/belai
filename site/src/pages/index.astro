@@ -11,6 +11,7 @@ import Extend from '../components/sections/Extend.astro';
 import CLI from '../components/sections/CLI.astro';
 import Qol from '../components/sections/Qol.astro';
 import Install from '../components/sections/Install.astro';
+import FAQ from '../components/sections/FAQ.astro';
 
 const rail = [
   ['hero', 'hero'],
@@ -36,6 +37,7 @@ const rail = [
   ['cli', 'cli'],
   ['qol', 'qol'],
   ['start', 'getting started'],
+  ['faq', 'faq'],
 ] as const;
 ---
 
@@ -82,6 +84,7 @@ const rail = [
       <CLI />
       <Qol />
       <Install />
+      <FAQ />
     </main>
   </div>
 </Base>
