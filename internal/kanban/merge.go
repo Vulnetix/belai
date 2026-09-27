@@ -93,7 +93,14 @@ func (s *Store) Merge(remote []Item, cursor int64) (int, error) {
 			hist := unionHistory(local.History, r.History)
 			localWins := local.Dirty && (local.Updated > r.Updated ||
 				(local.Updated == r.Updated && local.ServerVersion >= r.ServerVersion))
-			if localWins {
+			// A pulled copy older than what this host already holds is stale:
+			// another process on this host pushed a newer change (and marked
+			// it clean) while this pull was in flight. The backend's own
+			// last-writer-wins keeps updatedAt and version monotonic per item,
+			// so a lower value can only be the past. Letting it win silently
+			// reverted a worker's claim, and a second worker claimed the item.
+			stale := r.ServerVersion < local.ServerVersion || r.Updated < local.Updated
+			if localWins || stale {
 				local.History = hist
 				if r.ServerVersion > local.ServerVersion {
 					local.ServerVersion = r.ServerVersion
