@@ -22,6 +22,9 @@ func (a *App) publishSessionID() {
 	if a.procManager != nil {
 		a.procManager.SetSessionID(a.sessionID)
 	}
+	if a.kb != nil {
+		a.kb.src.SetSession(a.sessionID)
+	}
 }
 
 // toolContext returns ctx carrying the session id and the named tool, for a

@@ -44,6 +44,7 @@ import (
 	"github.com/vulnetix/belai/internal/hooks"
 	"github.com/vulnetix/belai/internal/httpclient"
 	"github.com/vulnetix/belai/internal/inputhistory"
+	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/localinfer"
 	"github.com/vulnetix/belai/internal/machineprobe"
 	"github.com/vulnetix/belai/internal/mcp"
@@ -567,6 +568,8 @@ type App struct {
 	bgManager *bgagent.Manager
 	// supervised-process manager
 	procManager *bgproc.Manager
+	// kb is the global kanban board (kanban.go); nil when the setting is off.
+	kb *kanbanUI
 
 	// git and ci tabs of the runs panel (forge_state.go, forge_actions.go).
 	// forgeRunner and forgeLook are nil in production (real exec, PATH
@@ -911,6 +914,7 @@ func New(opts Options) *App {
 		}
 	})
 	a.initBudgets()
+	a.initKanban()
 	// A brand-new install has nothing persisted and names no provider: the
 	// default provider is OpenRouter's free router, which needs an account
 	// before it answers, so such a user gets the signup hint rather than a
@@ -949,6 +953,7 @@ func New(opts Options) *App {
 		a.bgManager = bgagent.NewManager(workdir, initial, a.client, a.settings, a.effectivePosture())
 		a.bgManager.SetCredentialSource(credentialSourceOf(a.resolver))
 		a.bgManager.SetPool(a.agentPool)
+		a.bgManager.SetKanban(a.kanbanStore())
 		a.publishSessionID()
 	}
 	a.procManager = bgproc.NewManager(workdir, initial, a.client, a.settings, a.effectivePosture(), a.caps)
@@ -1275,6 +1280,7 @@ func (a *App) belowViewportHeight() int {
 	h += a.filePickHeight()
 	h += a.attachmentPaneHeight()
 	h += a.todoPanelHeight()
+	h += a.kanbanPaneHeight()
 	h += a.runsPanelHeight()
 	h += a.hintHeight()
 	h += a.editor.Height() + 2 // composer frame (top and bottom edges)
@@ -1876,6 +1882,10 @@ type sessionBuildParams struct {
 	procManager *bgproc.Manager
 	// caps caches detected native-tool capabilities.
 	caps tools.Capabilities
+	// kanban is the global board and the live provenance its tools stamp;
+	// nil when the kanban setting is off.
+	kanban    *kanban.Store
+	kanbanSrc *kanban.Source
 }
 
 func (a *App) sessionBuildParams() sessionBuildParams {
@@ -1909,6 +1919,8 @@ func (a *App) sessionBuildParams() sessionBuildParams {
 		workspaceMaps: a.workspaceMaps,
 		procManager:   a.procManager,
 		caps:          a.caps,
+		kanban:        kanbanStoreOf(a),
+		kanbanSrc:     kanbanSourceOf(a),
 	}
 }
 
@@ -1935,6 +1947,10 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 	if m := mcp.Active(); m != nil {
 		reg = reg.With(m.Tools()...)
 	}
+	// The kanban board's search and update ride on every main session. Like
+	// MCP tools they come before the allowlist, so a definition that names
+	// its tools keeps exactly those.
+	reg = reg.WithKanban(p.kanban, p.kanbanSrc)
 	if len(p.toolAllow) > 0 {
 		// An engaged background definition brings its allowlist with it, the
 		// same narrowing internal/bgagent applies when it runs the definition
@@ -2483,6 +2499,14 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 	if a.runsFocus {
 		return a.handleRunsPanelKey(m)
 	}
+	// So does the kanban pane, until esc, enter or up past the first row.
+	if a.kb != nil && a.kb.pane.focus {
+		if !a.kanbanPaneVisible() {
+			a.kb.pane.focus = false
+		} else {
+			return a.handleKanbanPaneKey(m)
+		}
+	}
 
 	// The /add-dir chooser owns navigation and accept while open; every other
 	// key falls through to the composer so typing filters the directory list.
@@ -2703,6 +2727,13 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		return a.submitInput(input)
 	case "up":
 		return a.startHistoryCycle()
+	case "down":
+		// Down on an empty composer browses the kanban pane; up stays
+		// prompt history.
+		if a.focusKanbanPane() {
+			return nil
+		}
+		return a.forwardToEditor(m)
 	case "f7":
 		return a.startSavePrompt()
 	}
@@ -3702,6 +3733,9 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			a.addSystem(fmt.Sprintf("goal evaluator: %s (pass %d)", m.GoalSentinel.Label(), m.Pass))
 		}
 		return a.nextAgent()
+	case agent.EventKanbanKind:
+		a.kanbanEvent(agent.Event(m))
+		return a.nextAgent()
 	case agent.EventReportKind:
 		// The goal loop has ended; the report streams next, into its own
 		// bubble because this line breaks the trailing assistant run.
@@ -3989,6 +4023,10 @@ func (a *App) chatView() string {
 		}
 		if a.todosVisible() {
 			sb.WriteString(a.renderTodoPanel())
+			sb.WriteString("\n")
+		}
+		if a.kanbanPaneVisible() {
+			sb.WriteString(a.renderKanbanPane())
 			sb.WriteString("\n")
 		}
 		if a.runsOpen {

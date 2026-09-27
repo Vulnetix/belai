@@ -59,6 +59,15 @@ const (
 	// wrote. It is mutating by default (a server tool may do anything) and
 	// always classifies.
 	KindMCP Kind = "mcp"
+	// KindKanban is a KanbanSearch result: items on the global kanban board,
+	// written by other sessions' models and by the user on the website. It is
+	// read-only and always classifies.
+	KindKanban Kind = "kanban"
+	// KindKanbanWrite is the harness-composed confirmation of KanbanUpdate,
+	// KanbanMove and KanbanAdd. The board is bookkeeping outside every
+	// workspace root, so the kind is read-only with respect to the workspace
+	// (the store serialises its own writes) and sanitise-only.
+	KindKanbanWrite Kind = "kanban_write"
 )
 
 // AllKinds is every registered Kind, in declaration order. Tests iterate it to
@@ -68,7 +77,7 @@ var AllKinds = []Kind{
 	KindRead, KindWebSearch, KindWebFetch, KindBash, KindGrep, KindGlob,
 	KindExplore, KindWrite, KindEdit, KindNative, KindRemote, KindUpdatePlan,
 	KindProcess, KindProcessCtl, KindAgentStore, KindSubagent, KindHook, KindSkill,
-	KindSkillWrite, KindMCP,
+	KindSkillWrite, KindMCP, KindKanban, KindKanbanWrite,
 }
 
 // readOnlyKinds is the closed allowlist of kinds that only read. A Kind absent
@@ -76,19 +85,21 @@ var AllKinds = []Kind{
 // kind without registering it here makes it run on the sequential path rather
 // than racing the concurrent read-only fan-out.
 var readOnlyKinds = map[Kind]bool{
-	KindRead:       true,
-	KindWebSearch:  true,
-	KindWebFetch:   true,
-	KindGrep:       true,
-	KindGlob:       true,
-	KindExplore:    true,
-	KindNative:     true,
-	KindRemote:     true,
-	KindUpdatePlan: true,
-	KindProcess:    true,
-	KindAgentStore: true,
-	KindSubagent:   true,
-	KindSkill:      true,
+	KindRead:        true,
+	KindWebSearch:   true,
+	KindWebFetch:    true,
+	KindGrep:        true,
+	KindGlob:        true,
+	KindExplore:     true,
+	KindNative:      true,
+	KindRemote:      true,
+	KindUpdatePlan:  true,
+	KindProcess:     true,
+	KindAgentStore:  true,
+	KindSubagent:    true,
+	KindSkill:       true,
+	KindKanban:      true,
+	KindKanbanWrite: true,
 }
 
 // ReadOnly reports whether a tool of this kind only reads and never mutates

@@ -389,6 +389,9 @@ func TestKindReadOnlyClassification(t *testing.T) {
 		// could never admit a tool into the concurrent fan-out.
 		KindHook:  false,
 		KindSkill: true, KindSkillWrite: false, KindMCP: false,
+		// The kanban board is outside every workspace root: its tools
+		// never mutate the workspace, and the store serialises its writes.
+		KindKanban: true, KindKanbanWrite: true,
 	}
 	seen := map[Kind]bool{}
 	for _, k := range AllKinds {
