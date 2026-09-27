@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 
+	"github.com/vulnetix/belai/internal/filediff"
 	"github.com/vulnetix/belai/internal/goals"
 	"github.com/vulnetix/belai/internal/modes"
 	"github.com/vulnetix/belai/internal/rolemanager"
@@ -102,7 +103,7 @@ func rehydrateSession(entries []session.Entry) rehydrated {
 			hasTool = true
 		case session.EntryTypeSessionMeta:
 			hasMeta = true
-		case "reasoning", "system", "rolemanager", completionRole, components.ShellRole, components.ReportRole:
+		case "reasoning", "system", "rolemanager", "ask", "ask_answer", completionRole, components.ShellRole, components.ReportRole:
 			hasNewRow = true
 		}
 	}
@@ -180,7 +181,7 @@ func messagesFromEntries(entries []session.Entry) ([]components.Message, int) {
 				continue
 			}
 			emitted[id] = true
-			msgs = append(msgs, components.Message{
+			tm := components.Message{
 				Role:       "tool",
 				Content:    e.Content,
 				ToolName:   metaString(e.Meta, "tool_name"),
@@ -188,7 +189,13 @@ func messagesFromEntries(entries []session.Entry) ([]components.Message, int) {
 				Status:     metaString(e.Meta, "status"),
 				ToolCallID: id,
 				SubagentID: e.SubagentID,
-			})
+			}
+			// The diff is render-only: it restores the rows the live
+			// session drew, never re-enters the conversation.
+			if w := filediff.WireFromMeta(e.Meta["diff"]); w != nil {
+				tm.SetDiff(w.Change())
+			}
+			msgs = append(msgs, tm)
 		case "reasoning":
 			if strings.TrimSpace(e.Content) == "" {
 				continue
@@ -234,9 +241,25 @@ func messagesFromEntries(entries []session.Entry) ([]components.Message, int) {
 				Status:     metaString(e.Meta, "status"),
 			})
 		case "rolemanager":
+			if hidden, _ := e.Meta["hidden"].(bool); hidden {
+				// Recorded for the website; the live feed never showed it.
+				continue
+			}
 			if msg := rolemanagerMessage(e); msg.Role != "" {
 				msgs = append(msgs, msg)
 			}
+		case "ask":
+			// The notice the live session showed when it asked. A permission
+			// ask showed a view, not a line; its answer carries the outcome.
+			if metaString(e.Meta, "kind") == askPermission || strings.TrimSpace(e.Content) == "" {
+				continue
+			}
+			msgs = append(msgs, components.Message{Role: "system", Content: e.Content})
+		case "ask_answer":
+			if strings.TrimSpace(e.Content) == "" {
+				continue
+			}
+			msgs = append(msgs, components.Message{Role: "system", Content: e.Content})
 		}
 	}
 	return msgs, dropped

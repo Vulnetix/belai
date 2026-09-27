@@ -1,9 +1,11 @@
 package sessionsync
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -30,7 +32,9 @@ type fakeServer struct {
 	ended    map[string]bool
 	beats    int
 	inbox    []RemotePrompt
+	answers  []RemoteAnswer
 	acks     map[string]string
+	gzipped  int // entry posts that arrived gzip-encoded
 	failPost int // fail this many entry posts with 500
 }
 
@@ -63,9 +67,9 @@ func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.hosts[parts[1]] = h
 		writeJSON(map[string]bool{"ok": true})
 	case r.Method == http.MethodGet && parts[0] == "hosts" && parts[2] == "inbox":
-		out := f.inbox
-		f.inbox = nil
-		writeJSON(map[string]any{"prompts": out})
+		out, ans := f.inbox, f.answers
+		f.inbox, f.answers = nil, nil
+		writeJSON(map[string]any{"prompts": out, "answers": ans})
 	case r.Method == http.MethodPut && parts[0] == "sessions":
 		var m SessionMeta
 		_ = json.NewDecoder(r.Body).Decode(&m)
@@ -79,7 +83,17 @@ func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var in struct{ Entries []Entry }
-		_ = json.NewDecoder(r.Body).Decode(&in)
+		var body io.Reader = r.Body
+		if r.Header.Get("Content-Encoding") == "gzip" {
+			zr, err := gzip.NewReader(r.Body)
+			if err != nil {
+				http.Error(w, "bad gzip", 400)
+				return
+			}
+			f.gzipped++
+			body = zr
+		}
+		_ = json.NewDecoder(body).Decode(&in)
 		if f.entries[parts[1]] == nil {
 			f.entries[parts[1]] = map[int64]Entry{}
 		}
@@ -94,6 +108,11 @@ func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(map[string]bool{"ok": true})
 	case r.Method == http.MethodPost && len(parts) == 3 && parts[2] == "end":
 		f.ended[parts[1]] = true
+		writeJSON(map[string]bool{"ok": true})
+	case r.Method == http.MethodPost && parts[0] == "answers":
+		var in struct{ Status string }
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		f.acks["answer:"+parts[1]] = in.Status
 		writeJSON(map[string]bool{"ok": true})
 	case r.Method == http.MethodPost && parts[0] == "prompts":
 		var in struct{ Status string }
@@ -372,5 +391,72 @@ func TestHostIDStable(t *testing.T) {
 	}
 	if got := identifier("my<box>\x1b.local", 64); got != "mybox.local" {
 		t.Fatalf("identifier = %q", got)
+	}
+}
+
+// Web answers come through the same inbox as prompts, and an accepted answer
+// is acked only after the host's ask_answer line is uploaded.
+func TestInboxDeliversAnswersAndAcks(t *testing.T) {
+	fake := newFake()
+	fake.answers = []RemoteAnswer{{ID: "a1", SessionID: testSess, AskID: "k1", Kind: "permission",
+		Payload: json.RawMessage(`{"decision":"deny"}`)}}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	path := filepath.Join(t.TempDir(), testSess+".jsonl")
+	appendLines(t, path, line("a", "user", "1"))
+
+	c, err := NewClient(srv.URL+apiPath, func() (string, error) { return "ApiKey org:hex", nil }, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(Options{Client: c, HostID: testHost, RemoteAnswers: true,
+		TickEvery: 20 * time.Millisecond, HeartbeatEvery: time.Second, InboxWait: time.Second})
+	s.Start(context.Background())
+	t.Cleanup(func() { s.Close(time.Second) })
+	s.Activate(SessionInfo{ID: testSess, Path: path})
+	select {
+	case a := <-s.Answers():
+		if a.ID != "a1" || a.AskID != "k1" || string(a.Payload) != `{"decision":"deny"}` {
+			t.Fatalf("answer = %+v", a)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no answer delivered")
+	}
+	eventually(t, "session registered", func() bool { fake.mu.Lock(); defer fake.mu.Unlock(); return fake.sessions[testSess].RemoteAnswers })
+	s.AckAnswer("a1", AckAccepted, "", "answer-k1")
+	eventually(t, "answer ack", func() bool { fake.mu.Lock(); defer fake.mu.Unlock(); return fake.acks["answer:a1"] == AckAccepted })
+}
+
+// A host that takes no web answers refuses any the server hands it.
+func TestAnswersRefusedWhenOff(t *testing.T) {
+	fake := newFake()
+	fake.answers = []RemoteAnswer{{ID: "a2", SessionID: testSess, AskID: "k2", Kind: "clarify"}}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	path := filepath.Join(t.TempDir(), testSess+".jsonl")
+	appendLines(t, path, line("a", "user", "1"))
+	s := startSyncer(t, srv, true)
+	s.Activate(SessionInfo{ID: testSess, Path: path})
+	eventually(t, "refusal", func() bool { fake.mu.Lock(); defer fake.mu.Unlock(); return fake.acks["answer:a2"] == AckRefused })
+}
+
+// Large batches go up gzip-encoded and arrive intact.
+func TestLargeBatchesAreGzipped(t *testing.T) {
+	fake := newFake()
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	path := filepath.Join(t.TempDir(), testSess+".jsonl")
+	big := strings.Repeat("diff row text ", 2000)
+	appendLines(t, path, line("a", "tool", big), line("b", "user", "small"))
+	s := startSyncer(t, srv, false)
+	s.Activate(SessionInfo{ID: testSess, Path: path})
+	eventually(t, "upload", func() bool { return fake.count(testSess) == 2 })
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.gzipped == 0 {
+		t.Fatal("a large batch was sent uncompressed")
+	}
+	if fake.entries[testSess][0].Content != big {
+		t.Fatal("gzipped content did not round-trip")
 	}
 }

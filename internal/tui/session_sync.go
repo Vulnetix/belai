@@ -89,6 +89,7 @@ func (a *App) startSessionSync() {
 		HostID:        hostID,
 		Host:          sessionsync.Host{Hostname: sessionsync.Hostname(), OS: runtime.GOOS, BelaiVersion: version.Version},
 		RemotePrompts: a.settings.SyncRemotePromptsEnabled(),
+		RemoteAnswers: a.settings.SyncRemoteAnswersEnabled(),
 	})
 	a.syncer.Start(context.Background())
 	// The kanban board mirrors through the same client, so it goes only
@@ -106,7 +107,7 @@ func (a *App) retrySessionSync() tea.Cmd {
 		return nil
 	}
 	a.startSessionSync()
-	return a.watchRemotePrompts()
+	return a.watchRemote()
 }
 
 // cachedAuth reads the CLI credential at most once per syncAuthTTL.
@@ -296,7 +297,7 @@ func (a *App) syncCommand(arg string) tea.Cmd {
 		}
 		a.startSessionSync()
 		a.addSystem(a.syncStatusText())
-		return a.watchRemotePrompts()
+		return a.watchRemote()
 	case "backfill":
 		return a.syncBackfill()
 	default:
@@ -320,6 +321,11 @@ func (a *App) syncStatusText() string {
 		b.WriteString(" · web prompts on")
 	} else {
 		b.WriteString(" · view-only (sync.remote_prompts is false)")
+	}
+	if a.syncer.RemoteAnswersEnabled() {
+		b.WriteString(" · web answers on")
+	} else {
+		b.WriteString(" · asks answered here only (sync.remote_answers is false)")
 	}
 	switch {
 	case st.Registered:

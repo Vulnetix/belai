@@ -17,6 +17,7 @@ package sessionsync
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -110,7 +111,9 @@ type SessionMeta struct {
 	ParentSessionID string `json:"parentSessionId,omitempty"`
 	ResumedFromID   string `json:"resumedFromId,omitempty"`
 	RemotePrompts   bool   `json:"remotePrompts"`
-	CreatedAt       int64  `json:"createdAt,omitempty"`
+	// RemoteAnswers says the host takes web answers to its open asks.
+	RemoteAnswers bool  `json:"remoteAnswers"`
+	CreatedAt     int64 `json:"createdAt,omitempty"`
 }
 
 // Entry is one JSONL line as uploaded: the session.Entry fields plus seq.
@@ -134,6 +137,19 @@ type RemotePrompt struct {
 	CreatedAt int64  `json:"createdAt"`
 }
 
+// RemoteAnswer is a web answer to a question the host asked, claimed from the
+// inbox. AskID is the host's ask entry id; Payload is untrusted JSON the host
+// validates against the ask that is actually open (see the TUI's
+// handleRemoteAnswer).
+type RemoteAnswer struct {
+	ID        string          `json:"id"`
+	SessionID string          `json:"sessionId"`
+	AskID     string          `json:"askId"`
+	Kind      string          `json:"kind"`
+	Payload   json.RawMessage `json:"payload"`
+	CreatedAt int64           `json:"createdAt"`
+}
+
 // Prompt outcomes the host reports back.
 const (
 	AckQueued   = "queued"
@@ -141,14 +157,30 @@ const (
 	AckRefused  = "refused"
 )
 
+// gzipMinBytes is the body size from which an entry upload is compressed.
+// Diffs make lines large and compress well; small batches are not worth it.
+const gzipMinBytes = 8 << 10
+
 func (c *Client) do(ctx context.Context, method, path string, in, out any, timeout time.Duration) error {
+	return c.doBody(ctx, method, path, in, out, timeout, false)
+}
+
+func (c *Client) doBody(ctx context.Context, method, path string, in, out any, timeout time.Duration, compress bool) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var body io.Reader
+	gzipped := false
 	if in != nil {
 		b, err := json.Marshal(in)
 		if err != nil {
 			return err
+		}
+		if compress && len(b) >= gzipMinBytes {
+			var buf bytes.Buffer
+			zw := gzip.NewWriter(&buf)
+			if _, err := zw.Write(b); err == nil && zw.Close() == nil {
+				b, gzipped = buf.Bytes(), true
+			}
 		}
 		body = bytes.NewReader(b)
 	}
@@ -164,6 +196,9 @@ func (c *Client) do(ctx context.Context, method, path string, in, out any, timeo
 	req.Header.Set("Accept", "application/json")
 	if in != nil {
 		req.Header.Set("Content-Type", "application/json")
+	}
+	if gzipped {
+		req.Header.Set("Content-Encoding", "gzip")
 	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
@@ -205,8 +240,8 @@ func (c *Client) PostEntries(ctx context.Context, sessionID string, entries []En
 	var out struct {
 		LastSeq int64 `json:"lastSeq"`
 	}
-	err := c.do(ctx, http.MethodPost, "/sessions/"+url.PathEscape(sessionID)+"/entries",
-		map[string]any{"entries": entries}, &out, requestTimeout)
+	err := c.doBody(ctx, http.MethodPost, "/sessions/"+url.PathEscape(sessionID)+"/entries",
+		map[string]any{"entries": entries}, &out, requestTimeout, true)
 	return out.LastSeq, err
 }
 
@@ -220,14 +255,23 @@ func (c *Client) End(ctx context.Context, sessionID string) error {
 	return c.do(ctx, http.MethodPost, "/sessions/"+url.PathEscape(sessionID)+"/end", nil, nil, requestTimeout)
 }
 
-// Inbox long-polls for web prompts addressed to this host's live sessions.
-func (c *Client) Inbox(ctx context.Context, hostID string, wait time.Duration) ([]RemotePrompt, error) {
+// Inbox long-polls for web prompts and web answers addressed to this host's
+// live sessions. A server that predates answers sends none.
+func (c *Client) Inbox(ctx context.Context, hostID string, wait time.Duration) ([]RemotePrompt, []RemoteAnswer, error) {
 	var out struct {
 		Prompts []RemotePrompt `json:"prompts"`
+		Answers []RemoteAnswer `json:"answers"`
 	}
 	path := fmt.Sprintf("/hosts/%s/inbox?wait=%d", url.PathEscape(hostID), int(wait/time.Second))
 	err := c.do(ctx, http.MethodGet, path, nil, &out, wait+requestTimeout)
-	return out.Prompts, err
+	return out.Prompts, out.Answers, err
+}
+
+// AckAnswer reports what the host did with a web answer: accepted (applied,
+// with the ask_answer entry id) or refused (with a reason).
+func (c *Client) AckAnswer(ctx context.Context, answerID, status, reason, entryID string) error {
+	return c.do(ctx, http.MethodPost, "/answers/"+url.PathEscape(answerID)+"/ack",
+		map[string]string{"status": status, "reason": reason, "entryId": entryID}, nil, requestTimeout)
 }
 
 // Ack reports what the host did with a web prompt.
