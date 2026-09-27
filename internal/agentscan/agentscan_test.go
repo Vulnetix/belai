@@ -495,3 +495,26 @@ func TestScanOtherExplainsInstalledAgents(t *testing.T) {
 		}
 	}
 }
+
+func TestScanKiro(t *testing.T) {
+	home := t.TempDir()
+	if got := scanKiro(home); len(got) != 0 {
+		t.Fatalf("no Kiro install: got %v", got)
+	}
+	dir := filepath.Join(home, ".aws", "sso", "cache")
+	writeFixture(t, filepath.Join(dir, "kiro-auth-token.json"), `{"refreshToken":"kiro-refresh-secret","clientIdHash":"h1","authMethod":"IdC","provider":"BuilderId","region":"us-east-1"}`)
+	writeFixture(t, filepath.Join(dir, "h1.json"), `{"clientId":"cid","clientSecret":"cs","expiresAt":"2030-01-01T00:00:00Z"}`)
+	got := scanKiro(home)
+	if len(got) != 1 || !got[0].Importable() || got[0].Provider != "kiro" || got[0].Field != "login" {
+		t.Fatalf("got %v", got)
+	}
+	if !strings.Contains(got[0].Reveal(), "kiro-refresh-secret") || strings.Contains(got[0].String(), "kiro-refresh-secret") {
+		t.Fatal("login value mishandled")
+	}
+
+	writeFixture(t, filepath.Join(dir, "kiro-auth-token.json"), `{"refreshToken":"r","authMethod":"social","provider":"Google"}`)
+	f := findNote(t, scanKiro(home), "social")
+	if f.Importable() {
+		t.Fatal("social login should not be importable")
+	}
+}

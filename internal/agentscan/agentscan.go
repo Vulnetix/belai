@@ -70,6 +70,7 @@ func Scan(home string) []Found {
 	out = append(out, scanGoose(home)...)
 	out = append(out, scanOpenCode(home)...)
 	out = append(out, scanCopilot(home)...)
+	out = append(out, scanKiro(home)...)
 	out = append(out, scanOther(home)...)
 	return out
 }

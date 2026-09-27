@@ -88,7 +88,7 @@ func buildACPSession(ctx context.Context, cwd, sessionID, providerName, model st
 	if !settings.GuardrailsEnabled() {
 		pol = posture.AllIgnore()
 	}
-	resolver, err := credentials.NewResolver(cwd)
+	resolver, err := newResolver(cwd)
 	if err != nil {
 		return nil, err
 	}

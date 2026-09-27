@@ -353,8 +353,12 @@ non-streaming request/response shapes live in `internal/wire`.
 
 Compiled-in providers are: `openai`, `anthropic`, `cloudflare-workers-ai`,
 `cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`, `llama-server`,
-`github-copilot`, and `huggingface`. Custom provider profiles can speak any of
-the three surfaces with `bearer`, `x-api-key`, or `cf-aig` auth.
+`github-copilot`, `huggingface`, and `kiro` (among others; see the registry).
+Custom provider profiles can speak any of the three surfaces with `bearer`,
+`x-api-key`, or `cf-aig` auth. The `copilot` and `kiro` auth styles are
+reserved for their built-in providers. `kiro` speaks its own internal surface
+(generateAssistantResponse with an AWS event-stream reply); see
+[Kiro](kiro.md).
 
 Both `ollama` and `llama-server` are local providers that need no API key.
 `ollama` speaks the Ollama native endpoint (default `http://localhost:11434/v1`)
