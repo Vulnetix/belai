@@ -84,7 +84,7 @@ func SendTurnsStreamed(ctx context.Context, cfg Config, system string, turns []T
 			pool = nonce.New()
 		}
 		turns = egressTurns(turns, pool)
-		a, err := sendTurnsWithTools(ctx, cfg, system, turns, client, openAITools, anthropicTools, onRetry)
+		a, err := sendTurnsWithTools(withNoncePool(ctx, pool), cfg, system, turns, client, openAITools, anthropicTools, onRetry)
 		if err != nil {
 			ch <- Chunk{Err: err, Done: true}
 			return
@@ -198,7 +198,7 @@ func openStream(ctx context.Context, cfg Config, system string, turns []Turn, cl
 		}
 		calltrace.Apply(ctx, req.Header)
 		applySessionAffinity(ctx, cfg, req.Header)
-		resp, err := client.Do(req)
+		resp, err := firewallClient(client, cfg).Do(req)
 		if err != nil {
 			dropIdleConns(ctx, client)
 			return nil, fmt.Errorf("request: %w", err)
@@ -206,8 +206,10 @@ func openStream(ctx context.Context, cfg Config, system string, turns []Turn, cl
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			body, _ := io.ReadAll(resp.Body)
 			_ = resp.Body.Close()
+			inspectFirewall(cfg, resp, body)
 			return nil, newProviderError("openStream", cfg, resp, body, redact)
 		}
+		inspectFirewall(cfg, resp, nil)
 		return resp, nil
 	}
 
@@ -413,7 +415,7 @@ func (w *idleWatchdog) fired() bool { return w.firedFlag.Load() }
 // caller's goroutine so an error return means the final attempt failed.
 func streamTurns(ctx context.Context, cfg Config, system string, turns []Turn, client *http.Client, pool *nonce.Pool, openAITools []wire.OpenAITool, anthropicTools []wire.AnthropicToolDef, onRetry func(resilience.Attempt)) (<-chan Chunk, error) {
 	sanitized := egressTurns(turns, pool)
-	resp, d, err := openStream(ctx, cfg, system, sanitized, client, openAITools, anthropicTools, onRetry)
+	resp, d, err := openStream(withNoncePool(ctx, pool), cfg, system, sanitized, client, openAITools, anthropicTools, onRetry)
 	if err != nil {
 		return nil, err
 	}

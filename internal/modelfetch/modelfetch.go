@@ -14,8 +14,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/vulnetix/belai/internal/aifirewall"
 	"github.com/vulnetix/belai/internal/calltrace"
+	"github.com/vulnetix/belai/internal/firewall"
 	"github.com/vulnetix/belai/internal/httpclient"
 	"github.com/vulnetix/belai/internal/kiroauth"
 	"github.com/vulnetix/belai/internal/kiromodels"
@@ -35,6 +35,9 @@ type Target struct {
 	// "llama-server", "", or "openai-compatible"). Empty for built-ins and
 	// untyped customs, where Name carries the behaviour.
 	Kind string
+	// Firewall is the AI Firewall route the target's calls take, if any: the
+	// list request carries its headers and never follows a redirect.
+	Firewall *firewall.Route
 }
 
 // kindOf returns the string that selects a target's behaviour: the explicit
@@ -89,6 +92,14 @@ func List(ctx context.Context, t Target, client *http.Client) ([]models.Model, e
 		req.Header.Del("authorization")
 		req.Header.Set("x-goog-api-key", t.APIKey)
 	}
+	if t.Firewall != nil {
+		t.Firewall.Apply(req.Header)
+		c := *client
+		c.CheckRedirect = func(*http.Request, []*http.Request) error {
+			return fmt.Errorf("the firewall redirected the model list; refusing to follow")
+		}
+		client = &c
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -123,10 +134,13 @@ func EndpointFor(t Target) (string, error) {
 	case "openai":
 		// Do not live-fetch from OpenAI directly: their /v1/models list
 		// includes deprecated, preview and internal identifiers that confuse
-		// the picker. When the base URL is the Vulnetix gateway, the org's
-		// curated catalogue is worth fetching.
-		if aifirewall.IsGatewayURL("", base) {
-			return base + "/models", nil
+		// the picker. When the call goes through a firewall that serves the
+		// org's curated catalogue (Vulnetix, self-hosted or not), it is
+		// worth fetching.
+		if t.Firewall != nil {
+			if a, ok := firewall.Lookup(t.Firewall.AdapterID); ok && firewall.CapabilitiesOf(a).CuratedModels {
+				return base + "/models", nil
+			}
 		}
 		return "", nil
 	}

@@ -7,7 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/vulnetix/belai/internal/aifirewall"
+	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/firewall"
 	"github.com/vulnetix/belai/internal/vulnetixcli"
 )
 
@@ -22,7 +23,8 @@ type firewallSyncMsg struct {
 
 // syncFirewallKey pushes provider's API key to the org's AI Firewall (BYOK)
 // in the background, so a routed turn is not refused with
-// provider_key_missing. It runs only while the firewall is on, the provider
+// provider_key_missing. It runs only while the firewall is on and the active
+// adapter syncs keys (Vulnetix), the provider
 // has a gateway slug, a Vulnetix credential loads and the CLI is installed.
 // The key reaches the CLI on stdin, never its argv or environment.
 func (a *App) syncFirewallKey(provider string) tea.Cmd {
@@ -30,7 +32,7 @@ func (a *App) syncFirewallKey(provider string) tea.Cmd {
 		return nil
 	}
 	st := a.resolver.FirewallState(provider)
-	if !st.Routable || !st.HasCred {
+	if !st.Routable || !st.HasCred || !firewall.CapabilitiesOf(st.Adapter).KeySync {
 		return nil
 	}
 	key, _, ok := a.resolver.Lookup(provider, "api_key")
@@ -41,7 +43,8 @@ func (a *App) syncFirewallKey(provider string) tea.Cmd {
 	if err != nil {
 		return nil
 	}
-	slug, ctx := st.Slug, a.ctx
+	slug, _ := firewall.Slug(provider)
+	ctx := a.ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -66,7 +69,7 @@ func (a *App) syncAllFirewallKeys() tea.Cmd {
 	}
 	var cmds []tea.Cmd
 	for _, p := range a.resolver.ConfiguredProviders() {
-		if _, ok := aifirewall.Slug(p); ok {
+		if _, ok := firewall.Slug(p); ok {
 			cmds = append(cmds, a.syncFirewallKey(p))
 		}
 	}
@@ -81,9 +84,9 @@ func (a *App) handleFirewallSync(m firewallSyncMsg) {
 		a.resolver.SetFirewallKeyError(m.provider, m.err)
 	}
 	if m.err != nil {
-		a.addSystem("Vulnetix AI Firewall: could not store the " + m.provider + " key · " + mcpClean(m.err.Error(), 200) + " · the provider stays direct")
+		a.addSystem(a.firewallLabel() + ": could not store the " + m.provider + " key · " + mcpClean(m.err.Error(), 200) + " · the provider stays direct")
 	} else {
-		a.addSystem("Vulnetix AI Firewall: " + m.provider + " key synced (stored encrypted for your org)")
+		a.addSystem(a.firewallLabel() + ": " + m.provider + " key synced (stored encrypted for your org)")
 	}
 	if cfg, err := a.resolveConfig(); err == nil {
 		a.cfg = cfg
@@ -94,3 +97,28 @@ func (a *App) handleFirewallSync(m firewallSyncMsg) {
 type cliError string
 
 func (e cliError) Error() string { return string(e) }
+
+// nonceSource describes the running session's nonce pool, or "" before a
+// session exists.
+func (a *App) nonceSource() string {
+	if a.agent == nil {
+		return ""
+	}
+	return a.agent.NonceSource()
+}
+
+// enableFirewall writes the generic firewall switch and, when instance is
+// set, makes it active. The legacy vulnetix.firewall_enabled key is cleared
+// so the one switch is authoritative.
+func enableFirewall(s *config.Settings, instance string, on bool) {
+	if s.Firewall == nil {
+		s.Firewall = &config.FirewallSettings{}
+	}
+	s.Firewall.Enabled = &on
+	if instance != "" {
+		s.Firewall.Active = instance
+	}
+	if s.Vulnetix != nil {
+		s.Vulnetix.FirewallEnabled = nil
+	}
+}

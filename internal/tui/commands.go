@@ -173,6 +173,15 @@ func NewRegistry(workdir string) *Registry {
 				return a.vulnetixMCPCommand(inv.Args)
 			case commands.ActionSetup:
 				return a.openGettingStarted()
+			case commands.ActionFirewall:
+				// App state (the override, prefs, footer) changes here, so
+				// it must run on the UI loop, and its key-sync command must
+				// be returned as a command, not a message.
+				return a.vulnetixFirewallCommand()
+			case commands.ActionConfigure:
+				return a.push(viewVulnetixConfig)
+			case commands.ActionList:
+				return a.push(viewVulnetixList)
 			}
 		}
 		return func() tea.Msg {
@@ -181,10 +190,6 @@ func NewRegistry(workdir string) *Registry {
 				return vulnetixDoneMsg{err: err}
 			}
 			switch inv.Action {
-			case commands.ActionConfigure:
-				return a.push(viewVulnetixConfig)()
-			case commands.ActionList:
-				return a.push(viewVulnetixList)()
 			case commands.ActionStatus:
 				cli, err := vulnetixcli.Detect()
 				if err != nil {
@@ -199,14 +204,17 @@ func NewRegistry(workdir string) *Registry {
 					})
 					return vulnetixDoneMsg{report: commands.Report{Status: commands.Vulnetix{}.StatusText(cap)}}
 				}
-			case commands.ActionFirewall:
-				return a.toggleFirewall()
 			case commands.ActionHelp:
 				return vulnetixDoneMsg{report: commands.Report{Status: "/vulnetix review | configure | list | status | firewall | mcp [remove|status] | setup"}}
 			default:
 				return nil // ActionRun is handled above, on the UI loop
 			}
 		}
+	})
+	r.Register("firewall", "configure the AI Firewall", func() []string {
+		return []string{"on", "off", "use", "status"}
+	}, func(a *App, arg string) tea.Cmd {
+		return a.firewallCommand(arg)
 	})
 	r.Register("settings", "view and edit settings", nil, func(a *App, arg string) tea.Cmd {
 		// Default the settings scope to project so a bare /settings edit
@@ -323,6 +331,7 @@ func NewRegistry(workdir string) *Registry {
 		if a.rmCancel != nil {
 			a.rmCancel()
 		}
+		a.stopFirewallWatch()
 		a.stopLocalServers()
 		if a.procManager != nil {
 			a.procManager.Shutdown()

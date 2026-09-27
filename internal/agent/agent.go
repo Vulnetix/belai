@@ -428,10 +428,8 @@ func NewSession(o Options) (*Session, error) {
 		if err := pool.Seed(16); err != nil {
 			return nil, fmt.Errorf("seed nonce pool: %w", err)
 		}
-	} else if err := pool.SeedFromProvider(o.Client, o.Cfg.BaseURL, o.Cfg.APIKey, 16); err != nil {
-		if err := pool.Seed(16); err != nil {
-			return nil, fmt.Errorf("seed nonce pool: %w", err)
-		}
+	} else if _, err := pool.SeedFromEndpoints(o.Client, nonceEndpoints(o.Cfg), 16); err != nil {
+		return nil, fmt.Errorf("seed nonce pool: %w", err)
 	}
 	reg := o.Registry
 	if reg == nil {
@@ -1230,6 +1228,10 @@ func (s *Session) drainSteer(ctx context.Context, pipe *rolemanager.Pipeline, em
 // ToolMethod returns the session's tool calling method.
 func (s *Session) ToolMethod() run.ToolMethod { return s.toolMethod }
 
+// NonceSource describes where the session's nonce pool comes from: "local",
+// or "remote (<endpoint>)" when a firewall or provider issued them.
+func (s *Session) NonceSource() string { return s.pool.Source() }
+
 // applyToolMethod adopts the provider-demanded tool calling method if it
 // differs from the session's current one. Only the string/object axis is
 // correctable: the Anthropic blocks method has no function.arguments to
@@ -1644,4 +1646,29 @@ func inScope(subject string, scope []string) bool {
 		}
 	}
 	return false
+}
+
+// nonceEndpoints is the nonce probe order: the active firewall first, then
+// the provider itself, then (in SeedFromEndpoints) local minting. The
+// firewall is asked with its own credential. The provider is asked directly
+// only when its key would reach it anyway: with no firewall, or through a
+// transparent one. A BYOK firewall holds the provider key, so the provider is
+// never contacted from here.
+func nonceEndpoints(cfg run.Config) []nonce.Endpoint {
+	route := cfg.Firewall
+	if route == nil {
+		return []nonce.Endpoint{nonce.BearerEndpoint(cfg.Provider, cfg.BaseURL, cfg.APIKey)}
+	}
+	fw := nonce.Endpoint{Label: route.Instance, BaseURL: cfg.BaseURL, Authorize: func(r *http.Request) {
+		if route.KeyHeader != "" {
+			route.Apply(r.Header)
+		} else if cfg.APIKey != "" {
+			r.Header.Set("authorization", "Bearer "+cfg.APIKey)
+		}
+	}}
+	eps := []nonce.Endpoint{fw}
+	if route.KeepProviderKey && route.UpstreamBaseURL != "" {
+		eps = append(eps, nonce.BearerEndpoint(cfg.Provider, route.UpstreamBaseURL, cfg.APIKey))
+	}
+	return eps
 }

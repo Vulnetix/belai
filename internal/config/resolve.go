@@ -111,7 +111,7 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 		Effort:        env("BELAI_EFFORT"),
 		Guardrails:    envBool(env("BELAI_GUARDRAILS")),
 		AskPermission: envBool(env("BELAI_ASK_PERMISSION")),
-		Vulnetix:      &VulnetixSettings{FirewallEnabled: envBool(env("BELAI_FIREWALL"))},
+		Firewall:      &FirewallSettings{Enabled: envBool(env("BELAI_FIREWALL"))},
 		Classifier: &ClassifierSettings{
 			Kind:     env("BELAI_CLASSIFIER_KIND"),
 			Provider: env("BELAI_CLASSIFIER_PROVIDER"),
@@ -144,6 +144,9 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 		return eff, err
 	}
 	if err := ValidateRouting(eff.Settings); err != nil {
+		return eff, err
+	}
+	if err := ValidateFirewall(eff.Settings); err != nil {
 		return eff, err
 	}
 
@@ -184,17 +187,33 @@ func (e *Effective) apply(s Settings, src Source) {
 			e.Origin["ask_permission"] = src
 		}
 	}
-	if s.Vulnetix != nil && s.Vulnetix.FirewallEnabled != nil {
+	if s = normalizeFirewall(s); s.Firewall != nil {
 		// Firewall is the mirror image: a repo-visible project layer may only
-		// turn it off, never on, because routing prompts to a gateway must not
-		// be something a cloned repository can opt the user into.
-		if !*s.Vulnetix.FirewallEnabled || src != SourceProject {
-			if e.Settings.Vulnetix == nil {
-				e.Settings.Vulnetix = &VulnetixSettings{}
-			}
-			e.Settings.Vulnetix.FirewallEnabled = s.Vulnetix.FirewallEnabled
+		// turn it off, never on, and may never name or pick a gateway,
+		// because routing prompts to one must not be something a cloned
+		// repository can opt the user into.
+		if e.Settings.Firewall == nil {
+			e.Settings.Firewall = &FirewallSettings{}
+		}
+		before := e.Settings.Firewall.Enabled
+		if mergeFirewall(e.Settings.Firewall, s.Firewall, src == SourceProject) {
+			e.Notes = append(e.Notes, "project firewall instances and active choice ignored (firewalls are configured in /firewall)")
+		}
+		if e.Settings.Firewall.Enabled != before {
 			e.Origin["firewall_enabled"] = src
 		}
+		if src != SourceProject && (s.Firewall.Active != "" || len(s.Firewall.Instances) > 0) {
+			e.Origin["firewall"] = src
+		}
+	}
+	if s.Vulnetix != nil && s.Vulnetix.GatewayURL != "" && src != SourceProject {
+		// The legacy self-hosted gateway URL is where prompts go: the user's
+		// own layers only.
+		if e.Settings.Vulnetix == nil {
+			e.Settings.Vulnetix = &VulnetixSettings{}
+		}
+		e.Settings.Vulnetix.GatewayURL = s.Vulnetix.GatewayURL
+		e.Origin["gateway_url"] = src
 	}
 	if s.Sync != nil {
 		// Session sync sends transcripts off the machine and lets the website

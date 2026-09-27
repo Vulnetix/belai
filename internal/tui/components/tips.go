@@ -21,7 +21,7 @@ var tips = []string{
 	"f2 toggles the caveman voice rewrite",
 	"f4 toggles the permission ask gate",
 	"f6 cycles reasoning effort",
-	"f10 toggles the Vulnetix AI Firewall",
+	"f10 turns the active AI Firewall on or off · /firewall configures it",
 	"ctrl+r cycles reasoning display: auto, on, off",
 	"ctrl+t cycles tool display: auto → all → edits only → none",
 	"@ opens the file chooser in any mode",

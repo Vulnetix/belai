@@ -330,10 +330,7 @@ func (a *App) gsEnable() tea.Cmd {
 	var lines []string
 	on := true
 	if err := config.Mutate(config.ScopeGlobal, a.workdir, func(s *config.Settings) error {
-		if s.Vulnetix == nil {
-			s.Vulnetix = &config.VulnetixSettings{}
-		}
-		s.Vulnetix.FirewallEnabled = &on
+		enableFirewall(s, config.DefaultFirewall, on)
 		return nil
 	}); err != nil {
 		lines = append(lines, "✗ AI Firewall: "+err.Error())
@@ -360,7 +357,7 @@ func (a *App) gsEnable() tea.Cmd {
 		}
 		return gsEnableDoneMsg{lines: append(lines, fmt.Sprintf("✓ Vulnetix MCP connected · %d tools · /vulnetix mcp remove to undo", n))}
 	}
-	return tea.Batch(install, a.syncAllFirewallKeys())
+	return tea.Batch(install, a.firewallActivated())
 }
 
 // firewallOffReason names what keeps the firewall off after it was enabled.

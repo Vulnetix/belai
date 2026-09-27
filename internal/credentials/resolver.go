@@ -4,10 +4,8 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strings"
 	"sync"
 
-	"github.com/vulnetix/belai/internal/aifirewall"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/provider"
 	"github.com/vulnetix/belai/internal/vulnetixcreds"
@@ -216,73 +214,6 @@ func VulnetixAuthHeader(workdir string) (string, error) {
 		return "", err
 	}
 	return vulnetixcreds.AuthHeader(os.Getenv, home, workdir, NewKeyringBackend("vulnetix"))
-}
-
-// FirewallState describes why the AI Firewall can or cannot route a provider
-// independently of the enabled flag.
-type FirewallState struct {
-	Routable bool // provider has a gateway slug
-	Slug     string
-	HasCred  bool // a gateway credential resolved
-	OrgUUID  string
-	Gateway  string // resolved gateway host
-	BaseURL  string // populated only when Routable && HasCred
-	APIKey   string
-	Reason   string // empty when Routable && HasCred
-}
-
-// FirewallState returns the reasoned firewall availability for provider without
-// consulting the firewall enabled flag. It is the source of truth for honest
-// availability messages.
-func (r *Resolver) FirewallState(provider string) FirewallState {
-	st := FirewallState{}
-	slug, ok := aifirewall.Slug(provider)
-	st.Routable = ok
-	st.Slug = slug
-	if !ok {
-		st.Reason = fmt.Sprintf("provider %q cannot be routed through the gateway — routable providers: %s", provider, strings.Join(aifirewall.Providers(), ", "))
-		return st
-	}
-	cred, err := r.loadVulnetixCred()
-	if err != nil {
-		st.Reason = err.Error()
-		return st
-	}
-	if cred.OrgUUID == "" || cred.APIKey == "" {
-		errNoCred := vulnetixcreds.ErrNoGatewayCredential
-		if errNoCred != nil {
-			st.Reason = errNoCred.Error()
-		} else {
-			st.Reason = "no Vulnetix credential found"
-		}
-		return st
-	}
-	st.HasCred = true
-	st.OrgUUID = cred.OrgUUID
-	st.APIKey = cred.APIKey
-	st.Gateway = aifirewall.DefaultGateway
-	if r.settings.Vulnetix != nil {
-		st.Gateway = r.settings.Vulnetix.GatewayURLOrDefault()
-	}
-	st.BaseURL = aifirewall.BaseURL(st.Gateway, slug, cred.OrgUUID)
-	if err := r.firewallKeyError(provider); err != nil {
-		st.Reason = "the AI Firewall has no " + provider + " key for this org (" + err.Error() + ")"
-	}
-	return st
-}
-
-// Firewall implements run.FirewallSource. It returns ok=true when the firewall
-// setting is on, a usable Vulnetix credential exists, and the provider can be
-// routed through the gateway.
-func (r *Resolver) Firewall(provider string) (baseURL, apiKey string, ok bool) {
-	if !r.firewallEnabled() {
-		return "", "", false
-	}
-	st := r.FirewallState(provider)
-	if st.Reason != "" {
-		return "", "", false
-	}
-	return st.BaseURL, st.APIKey, true
 }
 
 // firewallEnabled reads the override first, then the settings file.

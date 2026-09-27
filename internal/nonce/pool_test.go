@@ -306,11 +306,13 @@ func TestSeedFromProviderAppends(t *testing.T) {
 		t.Fatalf("avail = %d, want 4 (2 local + 2 provider)", p.Available())
 	}
 
+	// A remote pool rotates from its endpoint: everything held is discarded
+	// and replaced by the endpoint's answer (which ignores the count here).
 	if err := p.Rotate(1); err != nil {
 		t.Fatalf("Rotate: %v", err)
 	}
-	if p.Available() != 1 {
-		t.Fatalf("Rotate must discard everything; avail = %d", p.Available())
+	if p.Available() != 2 || !p.Remote() {
+		t.Fatalf("Rotate must discard everything and refetch; avail = %d remote = %v", p.Available(), p.Remote())
 	}
 }
 
@@ -340,5 +342,87 @@ func TestFetchNoncesHeaders(t *testing.T) {
 	}
 	if gotAuth != "" {
 		t.Fatalf("no api key must send no authorization header, got %q", gotAuth)
+	}
+}
+
+// The probe chain adopts the first endpoint that answers, skipping an
+// unsupported one, and falls back to local minting when none does.
+func TestSeedFromEndpoints(t *testing.T) {
+	var fwAuth string
+	unsupported := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer unsupported.Close()
+	fw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fwAuth = r.Header.Get("X-Gw-Key")
+		_ = json.NewEncoder(w).Encode(NonceResponse{Nonces: []string{"g1", "g2"}})
+	}))
+	defer fw.Close()
+	gw := Endpoint{Label: "gw", BaseURL: fw.URL, Authorize: func(r *http.Request) { r.Header.Set("X-Gw-Key", "k") }}
+
+	p := New()
+	label, err := p.SeedFromEndpoints(fw.Client(), []Endpoint{BearerEndpoint("a", unsupported.URL, ""), gw}, 4)
+	if err != nil || label != "gw" || !p.Remote() || p.Available() != 2 || fwAuth != "k" {
+		t.Fatalf("label=%q err=%v remote=%v avail=%d auth=%q", label, err, p.Remote(), p.Available(), fwAuth)
+	}
+	if p.Source() != "remote (gw)" {
+		t.Fatalf("source = %q", p.Source())
+	}
+
+	local := New()
+	label, err = local.SeedFromEndpoints(fw.Client(), []Endpoint{BearerEndpoint("a", unsupported.URL, "")}, 4)
+	if err != nil || label != "" || local.Remote() || local.Available() != 4 {
+		t.Fatalf("fallback label=%q err=%v remote=%v avail=%d", label, err, local.Remote(), local.Available())
+	}
+}
+
+// A remote pool refills from its endpoint, and turns local for good when a
+// refill fails.
+func TestRemotePoolRefillsThenFallsBack(t *testing.T) {
+	calls := 0
+	fail := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if fail {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(NonceResponse{Nonces: []string{hex.EncodeToString([]byte{byte(calls)})}})
+	}))
+	defer srv.Close()
+	p := New()
+	if _, err := p.SeedFromEndpoints(srv.Client(), []Endpoint{BearerEndpoint("gw", srv.URL, "")}, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Reserve(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Reserve(); err != nil || calls != 2 || !p.Remote() {
+		t.Fatalf("refill err=%v calls=%d remote=%v", err, calls, p.Remote())
+	}
+	fail = true
+	if _, err := p.Reserve(); err != nil || p.Remote() {
+		t.Fatalf("failed refill err=%v remote=%v, want a local nonce and a local pool", err, p.Remote())
+	}
+}
+
+// A nonce fetch never follows a redirect: its credential is for that
+// endpoint only.
+func TestFetchNoncesRefusesRedirect(t *testing.T) {
+	var leaked string
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked = r.Header.Get("authorization")
+		_ = json.NewEncoder(w).Encode(NonceResponse{Nonces: []string{"x"}})
+	}))
+	defer target.Close()
+	redir := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+"/v1/nonces", http.StatusTemporaryRedirect)
+	}))
+	defer redir.Close()
+	if _, err := FetchNonces(redir.Client(), redir.URL, "secret"); err == nil {
+		t.Fatal("redirect was followed")
+	}
+	if leaked != "" {
+		t.Fatal("credential reached the redirect target")
 	}
 }
