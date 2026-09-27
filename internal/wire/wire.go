@@ -20,6 +20,10 @@ const (
 	// It is an internal decode surface only: custom provider profiles cannot
 	// select it, so Path has no case for it and validSurface rejects it.
 	SurfaceWorkersAI Surface = "workers-ai"
+	// SurfaceKiro describes Kiro's generateAssistantResponse call with an
+	// AWS event-stream response. Like SurfaceWorkersAI it is internal: only
+	// the built-in kiro provider selects it.
+	SurfaceKiro Surface = "kiro"
 )
 
 // Path returns the URL path appended to a base URL for this surface.

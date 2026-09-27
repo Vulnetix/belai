@@ -316,3 +316,30 @@ func TestFirewallKeyErrorKeepsProviderDirect(t *testing.T) {
 		t.Fatal("a successful sync did not restore routing")
 	}
 }
+
+func TestReplaceRewritesOnlyTheHoldingBackend(t *testing.T) {
+	tmp := t.TempDir()
+	kc := &fakeKeychain{data: map[string]string{"kiro:login": "old"}}
+	env := map[string]string{}
+	r := &Resolver{
+		env:      func(k string) string { return env[k] },
+		workdir:  filepath.Join(tmp, "proj"),
+		userFile: newFileStore(filepath.Join(tmp, "user.json"), false),
+		projFile: newFileStore(filepath.Join(tmp, "proj", ".vulnetix", "belai", "credentials.json"), true),
+		netrc:    &netrcStore{path: filepath.Join(tmp, ".netrc")},
+		keychain: kc,
+	}
+	if err := r.Replace("kiro", "login", "stale", "new"); err == nil {
+		t.Fatal("replaced a value that had changed")
+	}
+	if err := r.Replace("kiro", "login", "old", "new"); err != nil {
+		t.Fatalf("Replace: %v", err)
+	}
+	if kc.data["kiro:login"] != "new" {
+		t.Fatalf("keychain = %q", kc.data["kiro:login"])
+	}
+	env["KIRO_LOGIN"] = "from-env"
+	if err := r.Replace("kiro", "login", "from-env", "x"); err == nil {
+		t.Fatal("rewrote an environment value")
+	}
+}

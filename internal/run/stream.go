@@ -6,6 +6,7 @@ package run
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -136,7 +137,14 @@ func egressTurns(turns []Turn, pool *nonce.Pool) []Turn {
 			// Fail closed: a directive we cannot seal is dropped rather than
 			// sent as bare prose the model could mistake for user instruction.
 		}
+		var images []Attachment
 		for _, att := range t.Attachments {
+			if att.Kind == AttachmentImage {
+				// Image bytes never enter the text body; they ride beside it
+				// for a surface that can carry them.
+				images = append(images, att)
+				continue
+			}
 			nonceVal, err := pool.Reserve()
 			if err != nil {
 				// Fail closed: drop attachments we cannot seal.
@@ -156,6 +164,7 @@ func egressTurns(turns []Turn, pool *nonce.Pool) []Turn {
 			// untouched, since any edit breaks its signature.
 			Thinking:      t.Thinking,
 			ThinkingModel: t.ThinkingModel,
+			Attachments:   images,
 			egrossed:      egressed,
 		}
 		// Write the memo back so the next request reuses it.
@@ -182,7 +191,11 @@ func openStream(ctx context.Context, cfg Config, system string, turns []Turn, cl
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Set("accept", "text/event-stream")
+		if d.kind == kindKiro {
+			req.Header.Set("accept", "application/vnd.amazon.eventstream")
+		} else {
+			req.Header.Set("accept", "text/event-stream")
+		}
 		calltrace.Apply(ctx, req.Header)
 		resp, err := client.Do(req)
 		if err != nil {
@@ -201,7 +214,7 @@ func openStream(ctx context.Context, cfg Config, system string, turns []Turn, cl
 	return resp, d, err
 }
 
-// drainStream reads an already-open SSE response until completion or error.
+// drainStream reads an already-open SSE (or, for Kiro, event-stream) response until completion or error.
 // It always closes resp.Body and closes ch exactly once. An idle-gap watchdog
 // wraps the body so a provider that stops producing bytes mid-stream is torn
 // down after httpclient.StreamIdleTimeout instead of hanging the turn forever.
@@ -212,9 +225,6 @@ func drainStream(ctx context.Context, ch chan<- Chunk, resp *http.Response, d di
 	wd := newIdleWatchdog(resp.Body, httpclient.StreamIdleTimeout)
 	wd.start(func() { resp.Body.Close() })
 	defer wd.stop()
-
-	scan := bufio.NewScanner(wd)
-	scan.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 
 	acc := newToolAccumulator()
 	var text strings.Builder
@@ -246,6 +256,94 @@ func drainStream(ctx context.Context, ch chan<- Chunk, resp *http.Response, d di
 		send(Chunk{Done: true, Usage: usage, Assistant: &a})
 	}
 
+	// apply records one decoded delta and forwards its render-only parts. It
+	// reports false when the stream should stop.
+	apply := func(delta streamDelta) bool {
+		if delta.usage != nil {
+			if usage == nil {
+				usage = &transcript.Usage{}
+			}
+			usage.PromptTokens += delta.usage.PromptTokens
+			usage.CompletionTokens += delta.usage.CompletionTokens
+			if delta.usage.TotalTokens != 0 {
+				usage.TotalTokens = delta.usage.TotalTokens
+			}
+		}
+		if delta.text != "" {
+			text.WriteString(delta.text)
+			if !send(Chunk{Text: delta.text}) {
+				return false
+			}
+		}
+		if delta.reasoning != "" {
+			reasoning.WriteString(delta.reasoning)
+			if !send(Chunk{Reasoning: delta.reasoning}) {
+				return false
+			}
+		}
+		if delta.toolDelta != nil {
+			if !send(Chunk{ToolCall: delta.toolDelta}) {
+				return false
+			}
+		}
+		calls = append(calls, delta.completed...)
+		if delta.thinking != nil {
+			thinking = append(thinking, *delta.thinking)
+		}
+		if delta.stopReason != "" {
+			stopReason = delta.stopReason
+		}
+		select {
+		case <-ctx.Done():
+			send(Chunk{Err: ctx.Err(), Done: true})
+			return false
+		default:
+		}
+		return true
+	}
+
+	// readErr reports a body read failure, naming the idle watchdog when it
+	// was the cause.
+	readErr := func(err error) {
+		if wd.fired() {
+			send(Chunk{Err: fmt.Errorf("stream idle timeout after %s", httpclient.StreamIdleTimeout), Done: true})
+			return
+		}
+		send(Chunk{Err: fmt.Errorf("stream read: %w", err), Done: true})
+	}
+
+	if d.kind == kindKiro {
+		// Kiro answers with binary AWS event-stream frames, not SSE lines.
+		frames := wire.NewEventStreamReader(wd)
+		st := newKiroStreamState()
+		for {
+			msg, err := frames.Next()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				readErr(err)
+				return
+			}
+			delta, err := decodeKiroFrame(msg, st, acc)
+			if err != nil {
+				send(Chunk{Err: err, Done: true})
+				return
+			}
+			if !apply(delta) {
+				return
+			}
+		}
+		if u := st.finalUsage(d.kiroMaxInput()); u != nil && !apply(streamDelta{usage: u}) {
+			return
+		}
+		sendDone()
+		return
+	}
+
+	scan := bufio.NewScanner(wd)
+	scan.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
 	for scan.Scan() {
 		line := scan.Text()
 		if !strings.HasPrefix(line, "data: ") {
@@ -261,55 +359,12 @@ func drainStream(ctx context.Context, ch chan<- Chunk, resp *http.Response, d di
 			send(Chunk{Err: err, Done: true})
 			return
 		}
-		if delta.usage != nil {
-			if usage == nil {
-				usage = &transcript.Usage{}
-			}
-			usage.PromptTokens += delta.usage.PromptTokens
-			usage.CompletionTokens += delta.usage.CompletionTokens
-			if delta.usage.TotalTokens != 0 {
-				usage.TotalTokens = delta.usage.TotalTokens
-			}
-		}
-		if delta.text != "" {
-			text.WriteString(delta.text)
-			if !send(Chunk{Text: delta.text}) {
-				return
-			}
-		}
-		if delta.reasoning != "" {
-			reasoning.WriteString(delta.reasoning)
-			if !send(Chunk{Reasoning: delta.reasoning}) {
-				return
-			}
-		}
-		if delta.toolDelta != nil {
-			if !send(Chunk{ToolCall: delta.toolDelta}) {
-				return
-			}
-		}
-		calls = append(calls, delta.completed...)
-		if delta.thinking != nil {
-			thinking = append(thinking, *delta.thinking)
-		}
-		if delta.stopReason != "" {
-			stopReason = delta.stopReason
-		}
-		select {
-		case <-ctx.Done():
-			send(Chunk{Err: ctx.Err(), Done: true})
+		if !apply(delta) {
 			return
-		default:
 		}
 	}
 	if err := scan.Err(); err != nil {
-		if wd.fired() {
-			send(Chunk{Err: fmt.Errorf("stream idle timeout after %s", httpclient.StreamIdleTimeout), Done: true})
-			return
-		}
-		if !send(Chunk{Err: fmt.Errorf("stream read: %w", err), Done: true}) {
-			return
-		}
+		readErr(err)
 		return
 	}
 	sendDone()

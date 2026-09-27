@@ -17,6 +17,8 @@ import (
 	"github.com/vulnetix/belai/internal/aifirewall"
 	"github.com/vulnetix/belai/internal/calltrace"
 	"github.com/vulnetix/belai/internal/httpclient"
+	"github.com/vulnetix/belai/internal/kiroauth"
+	"github.com/vulnetix/belai/internal/kiromodels"
 	"github.com/vulnetix/belai/internal/models"
 	"github.com/vulnetix/belai/internal/provider"
 	"github.com/vulnetix/belai/internal/wire"
@@ -60,6 +62,9 @@ func List(ctx context.Context, t Target, client *http.Client) ([]models.Model, e
 	}
 	if client == nil {
 		client = httpclient.Default()
+	}
+	if t.Auth == provider.AuthKiro {
+		return listKiro(ctx, t, client)
 	}
 
 	p, err := provider.New(t.Name, t.BaseURL, t.APIKey)
@@ -129,6 +134,9 @@ func EndpointFor(t Target) (string, error) {
 	if d, ok := provider.Lookup(t.Name); ok {
 		if d.ListPath == "" {
 			return "", nil
+		}
+		if d.Auth == provider.AuthKiro {
+			return kiromodels.Endpoint(base, ""), nil
 		}
 		return base + d.ListPath, nil
 	}
@@ -590,4 +598,38 @@ func llamaPropsNCtx(ctx context.Context, t Target, client *http.Client, propsURL
 		return 0, err
 	}
 	return info.DefaultGenerationSettings.NCtx, nil
+}
+
+// kiroTokens mints the Kiro access token for the model list: the stored
+// login is not itself a bearer token. It is the process-wide refresher so a
+// list fetch and the model requests share one refresh; tests substitute one.
+var kiroTokens = kiroauth.Shared
+
+// listKiro fetches Kiro's live catalogue with a freshly minted access token,
+// remembers it for the request builder, and maps it to the picker's models.
+func listKiro(ctx context.Context, t Target, client *http.Client) ([]models.Model, error) {
+	login, err := kiroauth.ParseLogin(t.APIKey)
+	if err != nil {
+		return nil, err
+	}
+	tok, err := kiroTokens.Token(ctx, t.APIKey)
+	if err != nil {
+		return nil, err
+	}
+	infos, err := kiromodels.Fetch(ctx, client, t.BaseURL, tok.Value, login.ProfileARN)
+	if err != nil {
+		return nil, err
+	}
+	kiromodels.Remember(t.BaseURL, infos)
+	out := make([]models.Model, 0, len(infos))
+	for _, i := range infos {
+		out = append(out, models.Model{
+			ID:            i.ID,
+			Label:         i.Name,
+			Efforts:       i.Efforts,
+			ContextWindow: i.MaxInput,
+			MaxOutput:     i.MaxOutput,
+		})
+	}
+	return out, nil
 }
