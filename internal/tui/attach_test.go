@@ -278,6 +278,44 @@ func TestAttachmentResolvesInWorkspaceDir(t *testing.T) {
 	}
 }
 
+// An @~/path token resolves against an added workspace root after the home
+// directory is expanded, instead of being rejected or treated as a literal
+// "~" subdirectory of the primary workdir.
+func TestAttachmentResolvesTildePathInWorkspaceDir(t *testing.T) {
+	oldHome := os.Getenv("HOME")
+	home := t.TempDir()
+	os.Setenv("HOME", home)
+	defer os.Setenv("HOME", oldHome)
+
+	workdir := t.TempDir()
+	root := filepath.Join(home, "Pictures", "aur")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "file.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	a := New(Options{Workdir: workdir})
+	a.workspaceDirs = []string{root}
+
+	rootGot, rel, err := a.resolveAttachmentPath("~/Pictures/aur/file.txt")
+	if err != nil {
+		t.Fatalf("file path with tilde: unexpected error: %v", err)
+	}
+	if rootGot != root || rel != "file.txt" {
+		t.Fatalf("file path with tilde: got root=%q rel=%q, want root=%q rel=file.txt", rootGot, rel, root)
+	}
+
+	rootGot, rel, err = a.resolveAttachmentPath("~/Pictures/aur/")
+	if err != nil {
+		t.Fatalf("directory path with trailing slash: unexpected error: %v", err)
+	}
+	if rootGot != root || rel != "." {
+		t.Fatalf("directory path with trailing slash: got root=%q rel=%q, want root=%q rel=.", rootGot, rel, root)
+	}
+}
+
 func TestAttachmentRejectedOnPathEscape(t *testing.T) {
 	a := New(Options{})
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
