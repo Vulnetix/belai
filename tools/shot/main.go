@@ -138,7 +138,9 @@ func bannerComposer() string {
 		Version: "0.39.16",
 		Commit:  "9084f16",
 		Built:   "2025-09-20",
-		Tip:     "type " + components.KeyStyle.Render("/help") + components.MutedStyle.Render(" for commands and shortcuts"),
+		// Pinned so the capture does not depend on the host's toolchain.
+		Toolchain: "go1.25.1 linux/amd64",
+		Tip:       "type " + components.KeyStyle.Render("/help") + components.MutedStyle.Render(" for commands and shortcuts"),
 	}
 	e := components.NewEditor()
 	e.SetWidth(width)
