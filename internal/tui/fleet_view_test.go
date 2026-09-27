@@ -42,7 +42,7 @@ func TestKanbanRoutingBadges(t *testing.T) {
 	now := time.Now().UnixMilli()
 	it := kanban.Item{Labels: []string{"build"}, Priority: 2, Assignee: "belai:reviewer", ClaimedBy: "w-1", LeaseUntil: now + int64(10*time.Minute/time.Millisecond)}
 	got := kanbanRouting(it, now)
-	for _, want := range []string{"#build", "▲2", "@belai:reviewer", "⚙ w-1"} {
+	for _, want := range []string{"#build", "▲2", "@belai:reviewer", "⚙ w-1 10m"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("routing %q lacks %q", got, want)
 		}
