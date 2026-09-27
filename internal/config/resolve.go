@@ -217,8 +217,8 @@ func (e *Effective) apply(s Settings, src Source) {
 	}
 	if s.Sync != nil {
 		// Session sync sends transcripts off the machine and lets the website
-		// prompt the session: a repo-visible project layer may turn either
-		// off, never on.
+		// prompt the session and answer its asks: a repo-visible project
+		// layer may turn any of them off, never on.
 		if src == SourceProject {
 			e.Settings.Sync = mergeSyncOffOnly(e.Settings.Sync, s.Sync)
 		} else {
@@ -229,6 +229,9 @@ func (e *Effective) apply(s Settings, src Source) {
 				}
 				if t.RemotePrompts == nil {
 					t.RemotePrompts = e.Settings.Sync.RemotePrompts
+				}
+				if t.RemoteAnswers == nil {
+					t.RemoteAnswers = e.Settings.Sync.RemoteAnswers
 				}
 			}
 			e.Settings.Sync = &t

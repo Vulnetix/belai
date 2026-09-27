@@ -50,6 +50,10 @@ type FileChange struct {
 	Deleted   bool
 	Binary    bool // no text diff is possible
 	Truncated bool // too large to diff
+
+	// Stored holds rows restored from a session's wire form (see wire.go),
+	// where Old and New are no longer available. Rows returns it unchanged.
+	Stored []Row
 }
 
 // Change is everything one command did.

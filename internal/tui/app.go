@@ -382,14 +382,22 @@ type App struct {
 	kiroLogin           kiroLoginState
 	// gettingStartedOnInit opens the Getting started view on the first
 	// frame of a first interactive launch (start.go).
-	gettingStartedOnInit   bool
-	settingsState          settingsViewState
-	lspState               lspViewState
-	modelState             modelViewState
-	permState              permissionsViewState
-	importState            importViewState
-	clarifyState           clarifyViewState
-	permAskState           permissionAskViewState
+	gettingStartedOnInit bool
+	settingsState        settingsViewState
+	lspState             lspViewState
+	modelState           modelViewState
+	permState            permissionsViewState
+	importState          importViewState
+	clarifyState         clarifyViewState
+	permAskState         permissionAskViewState
+	// openAsks maps each ask recorded in the session and not yet answered to
+	// its kind; turnID/turnStarted describe the turn_state open now
+	// (web_asks.go).
+	openAsks               map[string]string
+	turnID                 string
+	turnStarted            time.Time
+	turnEnd                string
+	turnEndAt              time.Time
 	agentState             agentViewState
 	planReview             planReviewState
 	resumeState            resumeViewState
@@ -1145,7 +1153,7 @@ func (a *App) SetClassifier(c rolemanager.Classifier) {
 func (a *App) Init() tea.Cmd {
 	a.maybeNoticeLegacyPrompts()
 	cmds := []tea.Cmd{tickCmd(), a.watchActivityEvents(), a.nextRMActivity(), a.nextFirewall(), a.nextUsage(), a.importHistory()}
-	if cmd := a.watchRemotePrompts(); cmd != nil {
+	if cmd := a.watchRemote(); cmd != nil {
 		cmds = append(cmds, cmd)
 	}
 	if a.procManager != nil {
@@ -1445,6 +1453,7 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 		a.cancel()
 	}
 	a.ctx, a.cancel = context.WithCancel(context.Background())
+	a.openTurn()
 	a.setPhaseRoleManager(agent.RoleManagerPhasePrePrompt)
 	a.messages = append(a.messages, a.newAssistantBubble())
 
@@ -1744,6 +1753,7 @@ func (a *App) elapsedLabel() string {
 func (a *App) endPhase() {
 	a.phase = phaseIdle
 	a.phaseStartedAt = time.Time{}
+	a.closeTurn("ended")
 }
 
 // rmCaption is the sub-phase caption shown beside the role manager pill.
@@ -2104,6 +2114,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case tickMsg:
+		// Safety net for a turn that ended on a path that never persisted.
+		a.flushTurnEnd()
 		if a.armed.kind != armNone && time.Now().After(a.armed.until) {
 			a.disarm()
 		}
@@ -2120,6 +2132,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case remotePromptMsg:
 		return a, tea.Batch(a.handleRemotePrompt(sessionsync.RemotePrompt(m)), a.watchRemotePrompts())
+	case remoteAnswerMsg:
+		return a, tea.Batch(a.handleRemoteAnswer(sessionsync.RemoteAnswer(m)), a.watchRemoteAnswers())
 
 	case syncBackfillDoneMsg:
 		if m.err != nil {
@@ -2139,6 +2153,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.handleUsage(run.UsageEvent(m))
 		return a, a.nextUsage()
 	case rmActivityMsg:
+		if _, shown := rolemanager.Describe(rolemanager.Activity(m)); !shown {
+			a.recordHiddenDecision(rolemanager.Activity(m))
+		}
 		a.addRMActivity(rolemanager.Activity(m))
 		a.stampMessages(m.At)
 		return a, a.nextRMActivity()
@@ -2676,6 +2693,7 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		if a.cancel != nil {
 			a.cancel()
 			a.cancel = nil
+			a.closeTurn("interrupted")
 			a.endPhase()
 			// Flush whatever streamed before the cancel (reasoning, partial
 			// text, completed tools, notices) so the transcript survives.
@@ -3482,6 +3500,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		}
 		a.cancel = nil
 		a.preSend = false
+		a.closeTurn("error")
 		a.endPhase()
 		// Drop a trailing empty assistant bubble so an aborted turn does not
 		// leave a bare frame above the error row.
@@ -3557,6 +3576,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			Name: m.Tool.Name,
 			Args: toolArgsString(m.Tool.Args),
 		})
+		a.recordToolStart(m.Tool.ID, m.Tool.Name, toolArgsString(m.Tool.Args))
 		a.messages = append(a.messages, components.Message{
 			Role:       "tool",
 			ToolName:   m.Tool.Name,
@@ -3690,10 +3710,16 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			return a.nextAgent()
 		}
 		a.permAskState = newPermissionAskState(m.Ask, m.AskReply)
+		a.permAskState.askID = a.recordPermissionAsk(m.Ask)
 		return tea.Batch(a.push(viewPermissionAsk), a.notifyCmd(notify.EventPermission, m.Ask.Name))
 	case agent.EventPlanFileKind:
 		a.planReview = newPlanReviewState(m.PlanName, m.PlanPath)
-		a.addSystem("plan written: " + m.PlanPath)
+		a.planReview.askID = a.recordPlanReviewAsk(m.PlanName, m.PlanPath)
+		if a.planReview.askID != "" {
+			a.addEphemeralSystem("plan written: " + m.PlanPath)
+		} else {
+			a.addSystem("plan written: " + m.PlanPath)
+		}
 		// Keep draining the stream: the plan review pane is non-blocking and
 		// the turn still needs to finish cleanly (EventDoneKind).
 		cmd := a.push(viewPlanReview)
@@ -3701,10 +3727,17 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 	case agent.EventClarifyAskKind:
 		q := *m.Clarify
 		a.clarifyState = newClarifyState(q, m.Reply, m.ModeChoice)
+		kind, text := askClarify, formatQuestionnaire(q)
 		if m.ModeChoice {
-			a.addSystem("Mode choice: " + q.Groups[0].Context)
+			kind, text = askModeChoice, "Mode choice: "+q.Groups[0].Context
+		}
+		a.clarifyState.askID = a.recordAsk(kind, text, map[string]any{"questionnaire": q})
+		if a.clarifyState.askID != "" {
+			// The ask entry is the durable record; a resumed session rebuilds
+			// this notice from it.
+			a.addEphemeralSystem(text)
 		} else {
-			a.addSystem(formatQuestionnaire(q))
+			a.addSystem(text)
 		}
 		return tea.Batch(a.push(viewClarify), a.notifyCmd(notify.EventClarify, ""))
 	case agent.EventRoleManagerKind:
@@ -4607,6 +4640,7 @@ func (a *App) addRMActivity(act rolemanager.Activity) {
 		Level:      desc.Levels,
 		RM:         desc,
 		Activity:   string(act.Event),
+		Facts:      decisionFacts(act),
 		Provider:   provider,
 		Model:      model,
 		DurationMS: act.Duration.Milliseconds(),
@@ -5782,10 +5816,15 @@ func (a *App) appendEntry(e session.Entry) {
 	if a.store == nil || a.storeDisabled {
 		return
 	}
-	id, err := session.NewID()
-	if err != nil {
-		a.disableStore("generate session entry id: " + err.Error())
-		return
+	// An entry may bring its own id: an ask is keyed by its ask id so the
+	// website can address it (web_asks.go).
+	id := e.ID
+	if id == "" {
+		var err error
+		if id, err = session.NewID(); err != nil {
+			a.disableStore("generate session entry id: " + err.Error())
+			return
+		}
 	}
 	e.ID = id
 	if e.Timestamp == 0 {
@@ -5866,6 +5905,8 @@ func (a *App) newAssistantBubble() components.Message {
 // session's file is left untouched; nothing is written until the next user
 // message.
 func (a *App) startNewSession() {
+	a.flushTurnEnd()
+	a.openAsks = nil
 	a.sessionID = session.MustID()
 	a.planExecuting = false
 	a.lastGoal = nil
@@ -6175,6 +6216,8 @@ func (a *App) applyCompaction(summary string) tea.Cmd {
 	old := a.sessionID
 	oldName := a.sessionName
 
+	a.flushTurnEnd()
+	a.openAsks = nil
 	a.sessionID = session.MustID()
 	a.publishSessionID()
 	a.lastEntryID = ""

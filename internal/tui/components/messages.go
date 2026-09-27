@@ -132,6 +132,16 @@ type Message struct {
 	// the line.
 	Activity string
 
+	// Facts carries a "rolemanager" row's bounded decision metadata (the
+	// verdict sentinel and its label, subject tool, pass). It is persisted in
+	// the entry's meta for the website and never rendered from here.
+	Facts map[string]any
+
+	// Ephemeral marks a row whose durable record is written separately (an
+	// ask or its answer, see the TUI's web_asks.go): it shows in the
+	// transcript but never produces a session entry of its own.
+	Ephemeral bool
+
 	// SubagentID keys a subagent activity row to its subagent ("" for the main
 	// thread). Subagent rows are render-only: they carry tool activity forwarded
 	// from a subagent, never enter buildTurns, and render with a dim gutter

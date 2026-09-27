@@ -40,6 +40,9 @@ func (fc FileChange) Expanded() (old, new string) {
 
 // Rows renders one file change as a flat sequence of rows.
 func (fc FileChange) Rows() []Row {
+	if fc.Stored != nil {
+		return fc.Stored
+	}
 	if fc.Binary || fc.Truncated {
 		return nil
 	}

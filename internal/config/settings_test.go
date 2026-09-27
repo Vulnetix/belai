@@ -783,3 +783,24 @@ func TestSyncProjectMayTurnOffNeverOn(t *testing.T) {
 		t.Fatal("project settings must be able to turn web prompts off")
 	}
 }
+
+func TestSyncRemoteAnswersDefaultOnAndProjectOffOnly(t *testing.T) {
+	on, off := true, false
+	if !(Settings{}).SyncRemoteAnswersEnabled() {
+		t.Fatal("web answers must default on")
+	}
+	if (Settings{Sync: &SyncSettings{Enabled: &off}}).SyncRemoteAnswersEnabled() {
+		t.Fatal("sync off must also turn web answers off")
+	}
+	s := Settings{Sync: &SyncSettings{RemoteAnswers: &off}}
+	if !s.SyncEnabled() || !s.SyncRemotePromptsEnabled() || s.SyncRemoteAnswersEnabled() {
+		t.Fatal("remote_answers=false must leave sync and web prompts on")
+	}
+	global := Settings{Sync: &SyncSettings{RemoteAnswers: &off}}
+	if global.Override(Settings{Sync: &SyncSettings{RemoteAnswers: &on}}).SyncRemoteAnswersEnabled() {
+		t.Fatal("project settings must not be able to turn web answers on")
+	}
+	if (Settings{}).Override(Settings{Sync: &SyncSettings{RemoteAnswers: &off}}).SyncRemoteAnswersEnabled() {
+		t.Fatal("project settings must be able to turn web answers off")
+	}
+}
