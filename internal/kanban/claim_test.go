@@ -414,3 +414,36 @@ func TestWireCarriesAgentFields(t *testing.T) {
 		t.Fatal("absent agent block marked present")
 	}
 }
+
+// A pull fetched before another process pushed this host's claim must not
+// revert the claim when it lands after the push was marked clean. This is
+// the sequence that let two fleet workers claim one item against the live
+// backend.
+func TestMergeIgnoresAPullOlderThanAPushedClaim(t *testing.T) {
+	s := testStore(t)
+	clock := time.UnixMilli(7_000_000)
+	s.now = func() time.Time { return clock }
+	it := addItem(t, s, ItemInput{Title: "contended", Labels: []string{"build"}})
+	s.MarkPushed([]Pushed{{ID: it.ID, Updated: it.Updated, Version: 1}})
+	stale := ToWire(func() Item { g, _ := s.Get(it.ID); return g }()) // v1, backlog, unclaimed
+	stale.Version = 1
+
+	clock = clock.Add(400 * time.Millisecond)
+	claimed, err := s.Claim(claimReq("w1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Another process pushes the claim and marks it clean.
+	s.MarkPushed([]Pushed{{ID: it.ID, Updated: claimed.Updated, Version: 2}})
+	// The stale pull lands.
+	if _, err := s.Merge([]Item{FromWire(stale)}, 1); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Get(it.ID)
+	if got.List != InProgress || got.ClaimedBy != "w1" {
+		t.Fatalf("stale pull reverted the claim: %+v", got)
+	}
+	if _, err := s.Claim(claimReq("w2")); !errors.Is(err, ErrNoWork) {
+		t.Fatalf("a second worker claimed it: %v", err)
+	}
+}

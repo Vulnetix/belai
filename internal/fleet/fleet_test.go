@@ -160,6 +160,9 @@ func TestWorkerLeavesAnItemWhoseLeaseWasLost(t *testing.T) {
 	})
 	w.Run(context.Background())
 	got, _ := store.Get(it.ID)
+	if rec, _ := reg.Get(w.Record.ID); rec.Item != "" {
+		t.Fatalf("record still shows %s after the lease was lost", rec.Item)
+	}
 	if got.List != kanban.Backlog || got.ClaimedBy != "" {
 		t.Fatalf("item %+v", got)
 	}

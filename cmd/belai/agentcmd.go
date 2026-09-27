@@ -292,7 +292,8 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 	if err != nil {
 		return 1, err
 	}
-	cfg, err := run.ResolveWithSource(*model, *providerName, os.Getenv, resolver)
+	wantProvider, wantModel := workerModel(*providerName, *model, settings, config.LoadState)
+	cfg, err := run.ResolveWithSource(wantModel, wantProvider, os.Getenv, resolver)
 	if err != nil {
 		return 1, err
 	}
@@ -640,4 +641,27 @@ func jsonOut(w io.Writer, v any) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(v)
+}
+
+// workerModel picks the provider and model a worker runs on when no flag
+// names them: the settings file, then the saved TUI selection (state.json) —
+// the same order the TUI uses — so a worker runs on the model the user chose,
+// not on whichever provider happens to have a key in the environment. A
+// profile's own provider/model still overrides this afterwards.
+func workerModel(flagProvider, flagModel string, s config.Settings, loadState func() (config.State, error)) (provider, model string) {
+	if flagProvider != "" || flagModel != "" {
+		return flagProvider, flagModel
+	}
+	provider, model = s.Provider, s.Model
+	if provider == "" || model == "" {
+		if st, err := loadState(); err == nil {
+			if provider == "" {
+				provider = st.Provider
+			}
+			if model == "" {
+				model = st.Model
+			}
+		}
+	}
+	return provider, model
 }

@@ -416,6 +416,8 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		// branch, and move on.
 		w.logf("%s: %v; left as it is", it.Short(), errLeaseLost)
 		_, _ = ws.Commit(context.WithoutCancel(ctx), fmt.Sprintf("belai: work in progress on %s (claim released)", it.Short()))
+		w.Record.Item = ""
+		w.save()
 		return
 	}
 	if ws.Worktree {

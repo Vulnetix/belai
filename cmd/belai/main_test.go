@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/vulnetix/belai/internal/config"
 	"os"
 	"path/filepath"
 	"testing"
@@ -85,5 +86,20 @@ func TestContinueLatestNoSessions(t *testing.T) {
 	}
 	if _, _, err := continueLatest(st, cur); err == nil {
 		t.Fatal("continueLatest = nil error, want no-sessions error")
+	}
+}
+
+func TestWorkerModelFollowsTheUsersSelection(t *testing.T) {
+	state := func() (config.State, error) {
+		return config.State{Provider: "cloudflare-ai-gateway", Model: "@cf/state-model"}, nil
+	}
+	if p, m := workerModel("", "", config.Settings{Model: "@cf/settings-model"}, state); p != "cloudflare-ai-gateway" || m != "@cf/settings-model" {
+		t.Fatalf("settings then state: %q %q", p, m)
+	}
+	if p, m := workerModel("openai", "", config.Settings{Provider: "x", Model: "y"}, state); p != "openai" || m != "" {
+		t.Fatalf("flags win: %q %q", p, m)
+	}
+	if p, m := workerModel("", "", config.Settings{Provider: "anthropic", Model: "m"}, state); p != "anthropic" || m != "m" {
+		t.Fatalf("settings win over state: %q %q", p, m)
 	}
 }
