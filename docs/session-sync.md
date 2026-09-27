@@ -113,8 +113,10 @@ Code: `internal/sessionsync` (client, syncer, inbox, prompt cleaning) and
 
 ## Lifecycle
 
-- **When a session appears.** It appears on the website after its first line
-  is written; a session that never gets a line is never registered.
+- **When a session appears.** The TUI creates the live session's JSONL file
+  at startup, so the session is registered with the website immediately —
+  before its first line. A session whose file is never created (a caller that
+  does not do the startup creation) is never registered.
 - **Liveness.** The host sends a heartbeat every 15 s. A session is live while
   its last heartbeat is under 45 s old, so a host that crashes drops into
   History on its own.

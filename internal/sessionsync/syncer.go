@@ -326,8 +326,9 @@ func (s *Syncer) sendAcks(ctx context.Context, pending *[]ack) {
 
 func (s *Syncer) step(ctx context.Context, t *tail, hostOK *bool, live bool) error {
 	if _, err := os.Stat(t.info.Path); err != nil {
-		// Nothing written yet: a session that never gets a line never
-		// appears on the website.
+		// No file yet: the TUI creates the live session's file at startup,
+		// but another caller may point at a session that never gets one, and
+		// such a session is never registered.
 		return nil
 	}
 	if !*hostOK {
