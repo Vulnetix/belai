@@ -90,6 +90,10 @@ const (
 const (
 	PublishNone    = "none"
 	PublishDraftPR = "draft_pr"
+	// PublishAgent gives the model the PublishBranch tool: it pushes its
+	// branch and opens a draft pull request itself, whenever it judges the
+	// work ready. The harness also opens one at done if none exists.
+	PublishAgent = "agent"
 )
 
 // Defaults.
@@ -269,12 +273,12 @@ func (p AgentProfile) validateWorker() error {
 			return fmt.Errorf("workspace.isolation must be worktree, shared or none, not %q", w.Isolation)
 		}
 		switch w.Publish {
-		case "", PublishNone, PublishDraftPR:
+		case "", PublishNone, PublishDraftPR, PublishAgent:
 		default:
-			return fmt.Errorf("workspace.publish must be none or draft_pr, not %q", w.Publish)
+			return fmt.Errorf("workspace.publish must be none, draft_pr or agent, not %q", w.Publish)
 		}
-		if w.Publish == PublishDraftPR && w.Isolation != IsolationWorktree {
-			return errors.New("workspace.publish: draft_pr needs isolation: worktree (a branch to publish)")
+		if (w.Publish == PublishDraftPR || w.Publish == PublishAgent) && w.Isolation != IsolationWorktree {
+			return errors.New("workspace.publish needs isolation: worktree (a branch to publish)")
 		}
 		if strings.HasPrefix(strings.TrimSpace(w.Base), "-") {
 			return errors.New("workspace.base must be a commit or branch, not an option")
@@ -304,4 +308,12 @@ func (p AgentProfile) validateWorker() error {
 		return errors.New("a worker that can write (Write, Edit or Bash, or no tools allowlist) needs workspace.isolation: worktree or shared")
 	}
 	return nil
+}
+
+// PublishMode is workspace.publish, defaulted to none.
+func (p AgentProfile) PublishMode() string {
+	if p.Workspace == nil || p.Workspace.Publish == "" {
+		return PublishNone
+	}
+	return p.Workspace.Publish
 }

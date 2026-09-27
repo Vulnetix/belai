@@ -345,7 +345,27 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
     - the scrubbed environment;
     - an explicit `--git-dir`/`--work-tree`, with the worktree's `.git`
       pointer checked unchanged before each call.
-    The harness commits; the model is told not to.
+  - **The model's own git.** It may commit on the item's branch inside the
+    OS sandbox (`fleet.Workspace.Sandbox`, layered mounts):
+    - every existing entry of the git common dir is read-only, including
+      config, hooks, refs, objects and the main checkout's index;
+    - new objects go to a private store (`GIT_OBJECT_DIRECTORY`) that the
+      harness copies in, never overwriting, before any push;
+    - only the item's own `refs/heads/belai/K-xxxxxx/` and reflogs, and the
+      worktree's admin dir, are writable;
+    - `Settle` removes anything the model created at the top of the common
+      dir after each turn.
+    The harness commits what is left, after checking HEAD is still the
+    item's branch.
+  - **Pushing.** Only `PublishBranch` pushes (`KindPublish`,
+    mutating, sanitise-only): exactly the item's branch, by an explicit
+    refspec, to a GitHub/GitLab `origin`, then a draft pull request. It is on
+    the surface only for `workspace.publish` and `agents.publish` on. A
+    worker's Bash denies `git push`, `gh`/`glab` PR creation and merging,
+    `git switch`, `git checkout -b`, `git worktree`, `git config` and
+    `git remote` (`fleet.workerGitDeny`).
+  - **Workspace note.** The per-turn workspace directive carries harness
+    facts only: branch, base commit and the publishing rule.
   - **Preflight.** It fails closed:
     - a worker cannot turn guardrails off;
     - an autonomous worker needs a pass budget;

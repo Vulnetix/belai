@@ -45,6 +45,8 @@ type Turn struct {
 	SessionID string
 	// Memory is the profile's lessons, already classified; "" for none.
 	Memory string
+	// Workspace is where the item is worked; nil for a runner that needs none.
+	Workspace *Workspace
 	// Emit, when set, receives every agent event.
 	Emit func(agent.Event)
 }
@@ -149,9 +151,8 @@ func Preflight(p agentprofile.AgentProfile, s config.Settings, pol posture.Polic
 			return errors.New("an autonomous worker with Bash needs a working OS sandbox backend (bubblewrap on Linux, sandbox-exec on macOS)")
 		}
 	}
-	if p.Workspace != nil && p.Workspace.Publish == agentprofile.PublishDraftPR && !s.AgentsPublishEnabled() {
-		return errors.New("this profile publishes draft pull requests, and agents.publish is off")
-	}
+	// agents.publish off does not stop a publishing profile: it runs without
+	// PublishBranch, and nothing is pushed (Worker.publishes).
 	return nil
 }
 
@@ -371,8 +372,11 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	w.save()
 	var tokens int
 	var tokMu sync.Mutex
+	// Snapshot the git common dir so Settle can remove what the model adds.
+	ws.Sandbox() // prepares the ref dirs and packed-refs before the snapshot
+	rootBefore := ws.RootEntries()
 	res, runErr := w.Runner(itemCtx, Turn{
-		Item: it, Workdir: ws.Dir, Claim: claim, SessionID: sessionID,
+		Item: it, Workdir: ws.Dir, Claim: claim, SessionID: sessionID, Workspace: ws,
 		Memory: w.memory(ctx),
 		Emit: func(e agent.Event) {
 			if e.Kind == agent.EventGoalStateKind && e.GoalState != nil {
@@ -386,6 +390,9 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		},
 	})
 	stopRenew()
+	if removed, err := ws.Settle(rootBefore); err != nil || len(removed) > 0 {
+		w.logf("%s: settled the git common dir: removed %v, err %v", it.Short(), removed, err)
+	}
 	tokMu.Lock()
 	w.Record.Tokens += tokens
 	tokMu.Unlock()
@@ -433,7 +440,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		o.branch = ws.Branch
 	}
 	released := w.release(ctx, it, o)
-	if !o.failed && released.List == kanban.Done && p.Workspace != nil && p.Workspace.Publish == agentprofile.PublishDraftPR && ws.Worktree && w.Settings.AgentsPublishEnabled() {
+	if !o.failed && released.List == kanban.Done && w.publishes() && ws.Worktree {
 		w.publish(ctx, ws, released)
 	}
 	w.reflect(ctx, it, res, runErr)
@@ -557,7 +564,7 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 func (w *Worker) publish(ctx context.Context, ws *Workspace, it kanban.Item) {
 	title := "belai: " + it.Title
 	body := fmt.Sprintf("Kanban item %s, worked by Belai agents and approved by agent %s.\n\nOpened as a draft by Belai: review before merging.", it.Short(), w.Profile.Name)
-	url, err := ws.Publish(context.WithoutCancel(ctx), title, body)
+	url, err := ws.PublishBranch(context.WithoutCancel(ctx), title, body)
 	if err != nil {
 		w.logf("%s: publish: %v", it.Short(), err)
 		_, _ = w.Store.Update(it.ID, kanban.Patch{Note: "draft pull request not opened: " + sanitize.Sanitize(err.Error())}, w.Record.Session)
@@ -667,20 +674,32 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 			break
 		}
 	}
-	sess, err := headless.NewSession(ctx, headless.Params{
+	params := headless.Params{
 		Cfg: w.Cfg, Client: w.Client, Posture: w.Posture, Workdir: t.Workdir, Settings: settings,
 		SessionID: t.SessionID, AskDisabled: &askOff, MCP: mcpMgr,
 		Kanban: store, KanbanSource: src, Claim: t.Claim,
 		Narrow:  func(r *tools.Registry) *tools.Registry { return narrow(r, p.Tools) },
-		Deny:    []string{"Write(*.vulnetix/*)", "Edit(*.vulnetix/*)"},
+		Deny:    append([]string{"Write(*.vulnetix/*)", "Edit(*.vulnetix/*)"}, workerGitDeny...),
 		Persona: persona, MaxIterations: p.MaxIterations,
-	})
+	}
+	publish := false
+	if ws := t.Workspace; ws != nil && ws.Worktree {
+		params.SandboxMounts, params.SandboxEnv = ws.Sandbox()
+		if w.publishes() && ws.ForgeOrigin(ctx) {
+			publish = true
+			params.Extra = append(params.Extra, tools.PublishBranch{
+				P: &itemPublisher{ws: ws, store: w.Store, item: t.Item.ID, session: t.SessionID}, Branch: ws.Branch,
+			})
+		}
+	}
+	sess, err := headless.NewSession(ctx, params)
 	if err != nil {
 		return run.Result{}, err
 	}
 	in := agent.TurnInput{
 		Prompt: workPrompt, HarnessPrompt: workPrompt, ForceMode: modes.ModeGoal,
 		KanbanItem: t.Item.ID, NoGoalDraft: true,
+		Directive: workspaceDirective(t.Workspace, publish, w.Profile.PublishMode()),
 	}
 	if t.Memory != "" {
 		in.Attachments = []run.Attachment{{Kind: "memory", Label: "lessons of agent " + p.Name, Body: t.Memory}}
@@ -714,4 +733,68 @@ func narrow(r *tools.Registry, allow []string) *tools.Registry {
 		}
 	}
 	return r.Only(names...)
+}
+
+// publishes reports whether this worker may push its branch and open a draft
+// pull request: the profile asks for it and agents.publish allows it.
+func (w *Worker) publishes() bool {
+	return w.Profile.PublishMode() != agentprofile.PublishNone && w.Settings.AgentsPublishEnabled()
+}
+
+// workerGitDeny keeps a worker's Bash off the commands that could push or
+// publish anything but its own branch, or move it off that branch. Pushing
+// goes through PublishBranch, which pushes exactly the item's branch. The
+// patterns match anywhere in a command line, so `cd x && git push` is caught.
+var workerGitDeny = []string{
+	"Bash(*git push*)",
+	"Bash(*gh pr create*)", "Bash(*gh pr merge*)", "Bash(*gh pr ready*)",
+	"Bash(*glab mr create*)", "Bash(*glab mr merge*)",
+	"Bash(*git switch*)", "Bash(*git checkout -b*)", "Bash(*git worktree*)",
+	"Bash(*git config*)", "Bash(*git remote*)",
+}
+
+// workspaceDirective tells the model where it is working and what git may do
+// there. Harness facts only: the branch and base the harness chose, and the
+// publishing rule from the profile and settings.
+func workspaceDirective(ws *Workspace, publish bool, mode string) string {
+	if ws == nil || !ws.Worktree {
+		return ""
+	}
+	base := ws.Base
+	if len(base) > 12 {
+		base = base[:12]
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Workspace: your working directory is a git worktree on branch %s, made for this item from commit %s. ", ws.Branch, base)
+	fmt.Fprintf(&b, "git works here: status, diff, log, show, add and commit. Commit your work on this branch as you go, with clear messages; `git diff %s..HEAD` is everything this item has changed so far. ", base)
+	b.WriteString("Stay on this branch: do not switch or create branches, rebase onto other branches, add worktrees, or change git config or remotes. Anything you leave uncommitted, the harness commits when the goal ends. ")
+	switch {
+	case publish:
+		b.WriteString("Publishing: when the work is committed and verified, call PublishBranch to push this branch to origin and open a draft pull request (it returns the one already open, and pushes new commits when called again). `git push`, `gh pr create` and `glab mr create` are not available; PublishBranch is the only way to push.")
+	case mode != agentprofile.PublishNone:
+		b.WriteString("Publishing is not available for this run (no GitHub or GitLab origin, or agents.publish is off): nothing is pushed from here, and the branch moves on through the kanban board.")
+	default:
+		b.WriteString("This agent does not publish: nothing is pushed from here, and the branch moves on through the kanban board.")
+	}
+	return b.String()
+}
+
+// itemPublisher is PublishBranch for one claimed item: it publishes the
+// worktree's branch and records the pull request on the item.
+type itemPublisher struct {
+	ws      *Workspace
+	store   *kanban.Store
+	item    string
+	session string
+}
+
+func (p *itemPublisher) PublishBranch(ctx context.Context, title, body string) (string, error) {
+	url, err := p.ws.PublishBranch(ctx, title, body)
+	if err != nil {
+		return "", err
+	}
+	if cur, gerr := p.store.Get(p.item); gerr == nil && cur.PR != kanban.CleanTitle(url) {
+		_, _ = p.store.SetPR(p.item, url, p.session)
+	}
+	return url, nil
 }

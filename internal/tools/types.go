@@ -72,6 +72,10 @@ const (
 	// of the deferred tools it loaded, never their descriptions. Read-only and
 	// sanitise-only.
 	KindToolSearch Kind = "tool_search"
+	// KindPublish is PublishBranch's harness-composed confirmation: the pull
+	// request link the harness opened or found. It is mutating (it pushes to a
+	// remote) and sanitise-only.
+	KindPublish Kind = "publish"
 )
 
 // AllKinds is every registered Kind, in declaration order. Tests iterate it to
@@ -81,7 +85,7 @@ var AllKinds = []Kind{
 	KindRead, KindWebSearch, KindWebFetch, KindBash, KindGrep, KindGlob,
 	KindExplore, KindWrite, KindEdit, KindNative, KindRemote, KindUpdatePlan,
 	KindProcess, KindProcessCtl, KindAgentStore, KindSubagent, KindHook, KindSkill,
-	KindSkillWrite, KindMCP, KindKanban, KindKanbanWrite, KindToolSearch,
+	KindSkillWrite, KindMCP, KindKanban, KindKanbanWrite, KindToolSearch, KindPublish,
 }
 
 // readOnlyKinds is the closed allowlist of kinds that only read. A Kind absent

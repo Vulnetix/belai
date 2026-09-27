@@ -24,6 +24,7 @@ import (
 	"github.com/vulnetix/belai/internal/repomap"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/sessionsync"
 	"github.com/vulnetix/belai/internal/tools"
@@ -60,6 +61,12 @@ type Params struct {
 	Deny []string
 	// Persona is a worker profile's text; see agent.Options.Persona.
 	Persona string
+	// Extra tools join after Narrow, so an allowlist cannot drop them: a
+	// worker's PublishBranch, bound to its worktree.
+	Extra []tools.Tool
+	// SandboxMounts: agent.Options.SandboxMounts (a worker's git paths).
+	SandboxMounts []sandbox.Mount
+	SandboxEnv    []string
 	// MaxIterations is the per-pass round budget; zero is the default.
 	MaxIterations int
 }
@@ -79,6 +86,9 @@ func NewSession(ctx context.Context, p Params) (*agent.Session, error) {
 	}
 	if p.Narrow != nil {
 		reg = p.Narrow(reg)
+	}
+	if len(p.Extra) > 0 {
+		reg = reg.With(p.Extra...)
 	}
 	// The global kanban board: search and update on every call, the loop and
 	// wrap-up tools added per turn by the session — or, for a worker, the
@@ -134,6 +144,8 @@ func NewSession(ctx context.Context, p Params) (*agent.Session, error) {
 		// still run when enabled in settings.
 		Diagnostics:   rolemanager.DiagnosticsGateFromSettings(p.Settings, reg.Cwd().Roots(), false),
 		Persona:       p.Persona,
+		SandboxMounts: p.SandboxMounts,
+		SandboxEnv:    p.SandboxEnv,
 		MaxIterations: p.MaxIterations,
 	})
 }
