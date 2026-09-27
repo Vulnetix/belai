@@ -388,42 +388,34 @@ func chipColour(id, state string) lipgloss.TerminalColor {
 // that line (for hover hit-testing; ok is false when no session segment
 // renders). The session segment is always the first token of the right group,
 // so its column is width(left)+pad and its width is the plain segment width.
+//
+// The line never runs past the width. When it does not fit whole it sheds
+// detail, least useful first: the provider name, then the firewall label,
+// then the token counts (the remaining percentage stays), and only then is
+// the left group truncated.
 func (f *Footer) line2Layout() (left string, pad int, right string, sessionCol, sessionWidth int, sessionOK bool) {
-	parts := []string{}
-	switch {
-	case f.RoutedModels > 0:
-		noun := "models"
-		if f.RoutedModels == 1 {
-			noun = "model"
-		}
-		parts = append(parts, lipgloss.NewStyle().Foreground(ColorCream).Render("Smart model router")+
-			MutedStyle.Render(fmt.Sprintf(" · %d %s active", f.RoutedModels, noun)))
-	case f.Provider != "":
-		parts = append(parts, MutedStyle.Render(f.Provider))
-	}
-	if f.Model != "" && f.RoutedModels == 0 {
-		modelPart := lipgloss.NewStyle().Foreground(ColorCream).Render(f.Model)
-		effort := f.Effort
-		if effort == "" {
-			effort = "default"
-		}
-		modelPart += MutedStyle.Render(" · " + effort)
-		parts = append(parts, modelPart)
-	}
-	if chips := f.permissionChips(); chips != "" {
-		parts = append(parts, chips)
-	}
-	parts = append(parts, f.cavemanSegment())
-	left = strings.Join(parts, MutedStyle.Render(" · "))
-
-	ctxSeg := f.contextSegment()
 	ctxBar := f.contextBar()
 	sep := MutedStyle.Render("  ·  ")
 	sepW := visibleLen("  ·  ")
 
-	budget := f.Width - visibleLen(left) - visibleLen(ctxSeg) - visibleLen(ctxBar) - 2*sepW - 1
-	if budget < 12 {
-		budget = 12
+	var ctxSeg string
+	var budget int
+	for level := 0; level <= line2ShedLevels; level++ {
+		left = f.line2Left(level)
+		ctxSeg = f.contextSegment()
+		if level >= 3 {
+			ctxSeg = f.contextSegmentShort()
+		}
+		budget = f.Width - visibleLen(left) - visibleLen(ctxSeg) - visibleLen(ctxBar) - 2*sepW - 1
+		if budget >= minSessionBudget {
+			break
+		}
+	}
+	if budget < minSessionBudget {
+		// Nothing left to shed: cut the left group so the right one fits.
+		budget = minSessionBudget
+		room := f.Width - budget - visibleLen(ctxSeg) - visibleLen(ctxBar) - 2*sepW - 1
+		left = ansi.Truncate(left, max(room, 0), "…")
 	}
 	sessionPlain := f.sessionSegment(budget)
 
@@ -452,9 +444,58 @@ func (f *Footer) line2Layout() (left string, pad int, right string, sessionCol, 
 	return left, pad, right, sessionCol, sessionWidth, sessionOK
 }
 
+// line2ShedLevels is the last shedding level line2Layout tries; see line2Left.
+const line2ShedLevels = 3
+
+// minSessionBudget is the fewest cells the session segment is given
+// ("session: " plus a few characters of the id).
+const minSessionBudget = 12
+
+// line2Left renders the left group of line 2 at a shedding level: 0 is in
+// full, 1 drops the provider name, 2 also drops the firewall label (the
+// switch itself stays). Level 3 sheds on the right side, in line2Layout.
+func (f *Footer) line2Left(level int) string {
+	parts := []string{}
+	switch {
+	case f.RoutedModels > 0:
+		noun := "models"
+		if f.RoutedModels == 1 {
+			noun = "model"
+		}
+		parts = append(parts, lipgloss.NewStyle().Foreground(ColorCream).Render("Smart model router")+
+			MutedStyle.Render(fmt.Sprintf(" · %d %s active", f.RoutedModels, noun)))
+	case f.Provider != "" && level < 1:
+		parts = append(parts, MutedStyle.Render(f.Provider))
+	}
+	if f.Model != "" && f.RoutedModels == 0 {
+		modelPart := lipgloss.NewStyle().Foreground(ColorCream).Render(f.Model)
+		effort := f.Effort
+		if effort == "" {
+			effort = "default"
+		}
+		modelPart += MutedStyle.Render(" · " + effort)
+		parts = append(parts, modelPart)
+	}
+	if chips := f.permissionChipsAt(level >= 2); chips != "" {
+		parts = append(parts, chips)
+	}
+	parts = append(parts, f.cavemanSegment())
+	return strings.Join(parts, MutedStyle.Render(" · "))
+}
+
+// contextSegmentShort is the context segment reduced to what matters most
+// when the line is tight: the coloured remaining percentage, or the token
+// count when no percentage is known.
+func (f *Footer) contextSegmentShort() string {
+	if pct, ok := f.percentRemaining(); ok {
+		return f.colourPct(pct)
+	}
+	return f.contextSegment()
+}
+
 // SessionSpan reports the column range of the session segment on the footer's
-// second content line (footer-internal line index 2), for mouse hit-testing.
-// ok is false when no session segment renders.
+// SessionRow, for mouse hit-testing. ok is false when no session segment
+// renders.
 func (f *Footer) SessionSpan() (col, width int, ok bool) {
 	_, _, _, col, width, ok = f.line2Layout()
 	return col, width, ok
@@ -463,7 +504,11 @@ func (f *Footer) SessionSpan() (col, width int, ok bool) {
 // permissionChips renders the permission controls. Both off collapses to a
 // single golden YOLO chip; otherwise guardrails and ask render as two chips,
 // teal when on and red when off. The firewall chip renders only when on.
-func (f Footer) permissionChips() string {
+func (f Footer) permissionChips() string { return f.permissionChipsAt(false) }
+
+// permissionChipsAt is permissionChips with the firewall's label dropped
+// when bareFirewall is set, for a tight footer line.
+func (f Footer) permissionChipsAt(bareFirewall bool) string {
 	if !f.Guardrails && !f.Ask && !f.Firewall {
 		return Chip("YOLO", ColorAmber)
 	}
@@ -476,7 +521,7 @@ func (f Footer) permissionChips() string {
 	out := guardrails + "  " + switchDot("ask", f.Ask)
 	if f.Firewall {
 		label := "firewall"
-		if f.FirewallLabel != "" {
+		if f.FirewallLabel != "" && !bareFirewall {
 			label += ": " + f.FirewallLabel
 		}
 		out += "  " + switchDot(label, true)
