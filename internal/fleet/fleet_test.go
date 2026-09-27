@@ -16,9 +16,11 @@ import (
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/kanban"
+	"github.com/vulnetix/belai/internal/permissions"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -271,7 +273,7 @@ func TestWorktreeLifecycleIsHardened(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(ws.Branch, "belai/K-3f9a2c-a1") || strings.HasPrefix(ws.Dir, repo) {
+	if ws.Branch != "belai/K-3f9a2c/a1" || strings.HasPrefix(ws.Dir, repo) {
 		t.Fatalf("workspace %+v", ws)
 	}
 	os.WriteFile(filepath.Join(ws.Dir, "new.txt"), []byte("x\n"), 0o644)
@@ -352,7 +354,133 @@ func TestPublishNeedsAForgeOrigin(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ws.Remove(context.Background())
-	if _, err := ws.Publish(context.Background(), "t", "b"); err == nil || !strings.Contains(err.Error(), "no GitHub or GitLab origin") {
+	if _, err := ws.PublishBranch(context.Background(), "t", "b"); err == nil || !strings.Contains(err.Error(), "no GitHub or GitLab origin") {
 		t.Fatalf("publish without origin: %v", err)
+	}
+}
+
+// The model's own git must work inside the OS sandbox — status, diff, log,
+// commit on its branch — while the repository's config, hooks and every
+// other ref stay out of its reach. The repository lives under /tmp, which
+// the sandbox replaces with a private tmpfs: exactly the layout that left
+// agents with "not a git repository".
+func TestWorktreeGitInsideTheSandbox(t *testing.T) {
+	if name, _ := sandbox.Backend(); name == "" {
+		t.Skip("no sandbox backend")
+	}
+	testEnv(t)
+	repo := gitRepo(t)
+	ctx := context.Background()
+	ws, err := PrepareWorktree(ctx, repo, kanban.Item{ID: "6f9a2c00-0000-4000-8000-000000000000", Title: "t"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Remove(ctx)
+	// Another item's branch, which this agent must not touch.
+	other := filepath.Join(ws.commonDir, "refs", "heads", "belai", "K-aaaaaa")
+	os.MkdirAll(other, 0o755)
+	os.WriteFile(filepath.Join(other, "a1"), []byte(ws.Base+"\n"), 0o644)
+	mounts, env := ws.Sandbox()
+	pol := sandbox.Policy{Mode: sandbox.ModeRequired, Writable: []string{ws.Dir}, Mounts: mounts, Env: env}
+	sh := func(script string) (string, error) {
+		cmd := exec.Command("sh", "-c", script)
+		cmd.Dir = ws.Dir
+		if _, err := sandbox.Wrap(cmd, pol); err != nil {
+			t.Fatal(err)
+		}
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	// Without the git paths the model sees no repository at all.
+	bare := exec.Command("sh", "-c", "git status")
+	bare.Dir = ws.Dir
+	sandbox.Wrap(bare, sandbox.Policy{Mode: sandbox.ModeRequired, Writable: []string{ws.Dir}})
+	if out, err := bare.CombinedOutput(); err == nil || !strings.Contains(string(out), "not a git repository") {
+		t.Fatalf("expected the old failure without git paths: %v %s", err, out)
+	}
+	before := ws.RootEntries()
+	os.WriteFile(filepath.Join(ws.Dir, "agent.txt"), []byte("by the agent\n"), 0o644)
+	if out, err := sh("git status --short && git add agent.txt && git commit -q -m 'agent commit' && git log --oneline -1 && git diff --stat HEAD~1"); err != nil || strings.Contains(out, "error:") || strings.Contains(out, "fatal:") {
+		t.Fatalf("git inside the sandbox: %v\n%s", err, out)
+	}
+	objects := filepath.Join(ws.commonDir, "objects")
+	for name, script := range map[string]string{
+		"move main":          "git update-ref refs/heads/main HEAD",
+		"write config":       "git config user.name evil",
+		"plant a hook":       "echo x > \"$(git rev-parse --git-common-dir)/hooks/post-checkout\"",
+		"delete objects":     "rm -rf " + objects + "/*",
+		"touch another item": "git update-ref -d refs/heads/belai/K-aaaaaa/a1",
+		"rewrite main index": "echo x > " + filepath.Join(ws.commonDir, "index"),
+	} {
+		if out, err := sh(script); err == nil {
+			t.Errorf("%s succeeded inside the sandbox: %s", name, out)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(other, "a1")); err != nil {
+		t.Fatal("another item's branch was deleted")
+	}
+	// A file planted at the top of the common dir is removed by Settle.
+	if out, err := sh("echo deadbeef > " + filepath.Join(ws.commonDir, "MERGE_HEAD")); err != nil {
+		t.Fatalf("planting MERGE_HEAD: %v %s", err, out)
+	}
+	removed, err := ws.Settle(before)
+	if err != nil || !slices.Contains(removed, "MERGE_HEAD") {
+		t.Fatalf("settle: %v %v", removed, err)
+	}
+	if _, err := os.Stat(filepath.Join(ws.commonDir, "MERGE_HEAD")); err == nil {
+		t.Fatal("MERGE_HEAD survived")
+	}
+	// Settled, the model's commit is in the shared store: the harness sees it.
+	if n := ws.FilesChanged(ctx); n != 1 {
+		t.Fatalf("files changed since base: %d", n)
+	}
+	if out, err := exec.Command("git", "-C", repo, "cat-file", "-e", "refs/heads/"+ws.Branch+"^{commit}").CombinedOutput(); err != nil {
+		t.Fatalf("the main repository cannot read the agent's commit: %s", out)
+	}
+	// The harness still commits what the model left, on the same branch.
+	os.WriteFile(filepath.Join(ws.Dir, "more.txt"), []byte("x\n"), 0o644)
+	if n, err := ws.Commit(ctx, "belai: rest"); err != nil || n != 2 {
+		t.Fatalf("harness commit: %d %v", n, err)
+	}
+}
+
+func TestWorkerGitDenyRules(t *testing.T) {
+	perms := permissions.From(nil, nil, workerGitDeny)
+	for _, cmd := range []string{
+		"git push origin HEAD:main",
+		"cd sub && git push --force",
+		"gh pr create --fill",
+		"gh pr merge 12 --admin",
+		"glab mr create",
+		"git switch main",
+		"git checkout -b other",
+		"git config core.hooksPath /tmp/h",
+		"git remote set-url origin evil",
+		"git worktree add ../x",
+	} {
+		if d := perms.Evaluate("Bash", cmd); d != permissions.DecisionBlock {
+			t.Errorf("%q: %s, want block", cmd, d)
+		}
+	}
+	for _, cmd := range []string{"git status", "git diff abc..HEAD", "git add -A && git commit -m x", "git log --oneline", "go test ./..."} {
+		if d := perms.Evaluate("Bash", cmd); d == permissions.DecisionBlock {
+			t.Errorf("%q blocked", cmd)
+		}
+	}
+}
+
+func TestWorkspaceDirective(t *testing.T) {
+	ws := &Workspace{Worktree: true, Branch: "belai/K-3f9a2c-a1", Base: "0123456789abcdef"}
+	d := workspaceDirective(ws, true, agentprofile.PublishAgent)
+	for _, want := range []string{"belai/K-3f9a2c-a1", "0123456789ab..HEAD", "PublishBranch", "not available"} {
+		if !strings.Contains(d, want) {
+			t.Errorf("directive lacks %q: %s", want, d)
+		}
+	}
+	if d := workspaceDirective(ws, false, agentprofile.PublishAgent); strings.Contains(d, "call PublishBranch") || !strings.Contains(d, "not available for this run") {
+		t.Errorf("unpublishable directive: %s", d)
+	}
+	if workspaceDirective(SharedWorkspace("/x"), true, "") != "" {
+		t.Error("a shared workspace got a worktree directive")
 	}
 }

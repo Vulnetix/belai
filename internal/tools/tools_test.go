@@ -394,6 +394,7 @@ func TestKindReadOnlyClassification(t *testing.T) {
 		KindKanban: true, KindKanbanWrite: true,
 		// ToolSearch only changes which definitions are advertised.
 		KindToolSearch: true,
+		KindPublish:    false,
 	}
 	seen := map[Kind]bool{}
 	for _, k := range AllKinds {

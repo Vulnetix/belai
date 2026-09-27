@@ -130,6 +130,7 @@ var extraToolNames = map[string]bool{
 	"RepoRead":       true,
 	"GH":             true,
 	"Glab":           true,
+	"PublishBranch":  true,
 }
 
 var unsafeName = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)

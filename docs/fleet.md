@@ -51,7 +51,7 @@ One pass of the worker loop:
    `depends_on` is `done`, and only when its `assignee` is empty or names this
    profile. The item moves to `in_progress` with a lease.
 2. **Workspace.** A `worktree` worker gets a fresh git worktree on the branch
-   `belai/K-xxxxxx-a<attempt>`, outside the repository
+   `belai/K-xxxxxx/a<attempt>`, outside the repository
    (`~/.vulnetix/worktrees/<project>/…`, or `$BELAI_WORKTREES_DIR`). A worker
    that reviews an existing branch checks that branch out instead.
 3. **Work.** The item is worked as a goal-mode turn. The prompt is a fixed
@@ -154,13 +154,59 @@ them all. `/fleet start NAME`, `/fleet crew NAME` and `/fleet stop ID|all`
 do the same as the CLI, and `s` on a worker profile in the profiles tab
 starts one.
 
+## Git in the worktree
+
+A worker's working directory is a git worktree on its item's branch. Inside
+the OS sandbox the agent can use git normally there: `status`, `diff`, `log`,
+`show`, `add` and `commit`. The sandbox layers the repository's `.git`:
+
+- git may create files at the top of `.git` (it takes `packed-refs.lock` on
+  every commit), but every entry already there is read-only: `config`,
+  `HEAD`, the main checkout's `index`, `hooks`, `info`, `refs`, `logs`,
+  `objects` and the other worktrees. A read-only entry cannot be written or
+  renamed over. After each turn the harness removes anything the agent
+  created there, such as a `MERGE_HEAD` or `shallow` that would change your
+  main checkout.
+- The agent's git writes new objects to a private store in its worktree's
+  admin directory, reading the shared store as a read-only alternate. After
+  the turn, and before any push, the harness copies the new objects in,
+  never overwriting one. An agent cannot delete or rewrite your objects.
+- Writable are only the item's own branch directory
+  (`refs/heads/belai/K-xxxxxx/` and its reflogs), the worktree's admin
+  directory (its `HEAD` and index), and the worktree itself. No agent can
+  touch `main`, another branch, or another item's branch.
+
+Each turn carries a workspace note (harness facts only) with:
+
+- the branch and the base commit, so `git diff <base>..HEAD` shows the
+  item's work;
+- that it must stay on its branch;
+- whether it may publish.
+
+Whatever the agent leaves uncommitted, the harness commits when the goal
+ends. It first checks that the worktree is still on the item's branch.
+
 ## Publishing
 
-A profile with `workspace.publish: draft_pr` pushes the item's branch and
-opens a draft pull request (GitHub with `gh`, GitLab with `glab`) when the
-item reaches `done`, and records the link on the item. The built-in reviewer
-and verifier publish; the builders and patchers do not, so nothing is pushed
-before review. `agents.publish: false` turns publishing off everywhere.
+`workspace.publish` decides whether a worker pushes:
+
+| Value | Effect |
+|---|---|
+| `none` (default) | Nothing is pushed; the branch moves on through the board. |
+| `agent` | The agent gets the `PublishBranch` tool. It pushes exactly the item's branch to `origin` and opens a draft pull request, or returns the one already open. It can be called again after more commits. |
+| `draft_pr` | When the item reaches `done`, the harness does the same itself. |
+
+`git push`, `gh pr create`/`merge`/`ready`, `glab mr create`/`merge`,
+`git switch`, `git checkout -b`, `git worktree`, `git config` and
+`git remote` are denied in a worker's Bash wherever they appear in a command
+line. `PublishBranch` is the only way to push, because a raw push could send
+any ref, `main` included. Publishing needs a GitHub or GitLab `origin` and
+committed work on the branch. The link is recorded on the item.
+
+The built-in builders and patchers use `agent`; the reviewer and verifier use
+`draft_pr`, which finds the builder's pull request rather than opening a
+second one. `agents.publish: false` turns publishing off everywhere: the
+workers still run, and nothing is pushed.
 
 ## Memory
 
@@ -205,8 +251,8 @@ has died is marked `failed` and its claim is released. Logs are
 - **Git runs hardened.** Every git call a worker makes has hooks and
   fsmonitor off, no file transport, no credential prompts, the scrubbed
   environment, and an explicit `--git-dir` the harness computed. The
-  repository's `.git` stays read-only inside the sandbox; the harness
-  commits.
+  agent's own git may write only its worktree, the object store and the
+  `belai/` branches; config, hooks and every other ref stay read-only.
 
 ## Compared with other agent harnesses
 

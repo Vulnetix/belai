@@ -149,6 +149,14 @@ type Options struct {
 	// never repository, board or model text — and rides in the system block
 	// as its own section beside whatever carrier the turn uses.
 	Persona string
+	// SandboxMounts widen the OS sandbox for this
+	// session's commands, layered in order: a fleet worker's git worktree needs its
+	// repository's git metadata visible, and its own refs, objects and
+	// worktree admin dir writable (fleet.Workspace.SandboxMounts). Only the
+	// harness sets them; they apply only while the sandbox is on.
+	SandboxMounts []sandbox.Mount
+	// SandboxEnv is added to those commands' environment while sandboxed.
+	SandboxEnv []string
 }
 
 // noteAskWithheld records a call withheld because it needed an ask nobody
@@ -332,6 +340,9 @@ type Session struct {
 	askWithheld     []string
 	// persona is a fleet worker's profile text (Options.Persona).
 	persona string
+	// sandboxMounts: Options.SandboxMounts.
+	sandboxMounts []sandbox.Mount
+	sandboxEnv    []string
 	// deferral holds deferred-tool state (deferral.go); nil when the
 	// defer_tools setting is off and every definition rides on every request.
 	deferral *toolDeferral
@@ -557,6 +568,8 @@ func NewSession(o Options) (*Session, error) {
 		state:              o.State,
 		settings:           o.Settings,
 		persona:            o.Persona,
+		sandboxMounts:      o.SandboxMounts,
+		sandboxEnv:         o.SandboxEnv,
 		pool:               pool,
 		openAITools:        openAITools,
 		anthropicTools:     anthropicTools,
