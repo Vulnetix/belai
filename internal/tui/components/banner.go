@@ -3,6 +3,7 @@ package components
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -73,6 +74,10 @@ type Banner struct {
 	// the build facts and the resumed note. The owl is for a first run and
 	// /welcome (docs/tui-design.md).
 	Compact bool
+	// Toolchain overrides the Go release and platform on the build line;
+	// empty means the running binary's. Captures pin it so they do not
+	// depend on the host.
+	Toolchain string
 }
 
 // View returns the banner. In ASCII/NO_COLOR mode it falls back to plain text.
@@ -86,13 +91,15 @@ func (b Banner) View() string {
 	return b.pixView()
 }
 
-// compactView is the one-line header: `belai v0.14.2 · abc123  resumed x ·
-// 4 turns restored`, cut to the width.
+// Tagline is the brand line both banners carry: the owl's subtitle and the
+// compact header.
+const Tagline = "Safer LLM harness · vulnetix.com"
+
+// compactView is the header past a first run: the wordmark and tagline (plus
+// the resumed note) on one line, the full build facts on the next, each cut
+// to the width.
 func (b Banner) compactView() string {
-	line := AccentStyle.Bold(true).Render("belai")
-	if v := b.versionLine(); v != "" {
-		line += " " + v
-	}
+	line := AccentStyle.Bold(true).Render("belai") + MutedStyle.Render(" · "+Tagline)
 	if b.Resumed != "" {
 		note := "resumed " + b.Resumed
 		if b.RestoredTurns > 0 {
@@ -103,39 +110,59 @@ func (b Banner) compactView() string {
 	if b.Width > 0 {
 		line = lipgloss.NewStyle().MaxWidth(b.Width).Render(line)
 	}
+	if v := b.versionLine(); v != "" {
+		line += "\n" + v
+	}
 	return line
 }
 
-// versionLine renders one dim line with the build facts that are known.
-// Empty fields and unstamped sentinels are dropped; if nothing is known it
-// returns "" so a bare `go build` shows no line at all.
+// versionLine renders one dim line with the build facts that are known,
+// labelled: version, commit, build time, and the Go toolchain and platform
+// the binary was built for. Empty fields and unstamped sentinels are dropped;
+// if no stamp is known it returns "" so a bare `go build` shows no line at
+// all.
 func (b Banner) versionLine() string {
-	var parts []string
+	var head, rest []string
 	if !isVersionSentinel(b.Version) {
-		parts = append(parts, "v"+strings.TrimPrefix(b.Version, "v"))
+		head = append(head, versionStyle.Render("v"+strings.TrimPrefix(b.Version, "v")))
+	}
+	// The update note follows the version it supersedes, ahead of the
+	// detail, so a narrow terminal cuts the detail and keeps the note.
+	if b.Update != "" {
+		head = append(head, updateStyle.Render(b.Update))
 	}
 	if !isVersionSentinel(b.Commit) {
-		parts = append(parts, b.Commit)
+		rest = append(rest, "commit "+b.Commit)
 	}
 	if !isVersionSentinel(b.Built) {
-		parts = append(parts, b.Built)
+		rest = append(rest, "built "+b.Built)
 	}
-	if len(parts) == 0 && b.Update == "" {
+	if len(rest) > 0 || !isVersionSentinel(b.Version) {
+		rest = append(rest, b.toolchain())
+	}
+	for _, r := range rest {
+		head = append(head, versionStyle.Render(r))
+	}
+	if len(head) == 0 {
 		return ""
 	}
-	line := versionStyle.Render(strings.Join(parts, " · "))
-	if b.Update != "" {
-		note := updateStyle.Render(b.Update)
-		if line == "" {
-			line = note
-		} else {
-			line += versionStyle.Render(" · ") + note
-		}
-	}
+	line := strings.Join(head, versionStyle.Render(" · "))
 	if b.Width > 0 {
 		line = lipgloss.NewStyle().MaxWidth(b.Width).Render(line)
 	}
 	return line
+}
+
+// toolchain is the Go release and platform the binary was built for, or
+// b.Toolchain when set.
+func (b Banner) toolchain() string {
+	if b.Toolchain != "" {
+		return b.Toolchain
+	}
+	// A GOEXPERIMENT build reports e.g. "go1.27.1-X:nodwarf5"; the release
+	// is the useful part.
+	goVersion, _, _ := strings.Cut(runtime.Version(), "-X:")
+	return goVersion + " " + runtime.GOOS + "/" + runtime.GOARCH
 }
 
 func (b Banner) pixView() string {
@@ -170,7 +197,7 @@ func (b Banner) pixView() string {
 	// the banner to six rows and leaves the transcript more of the screen.
 	// Six rows, always: the owl is six rows tall, and an unstamped build must
 	// not change the banner's height and reflow the transcript under it.
-	subtitle := "on belay · a safer coding harness · vulnetix.com"
+	subtitle := Tagline
 	if b.Resumed != "" {
 		subtitle = "resumed " + b.Resumed
 		if b.RestoredTurns > 0 {
@@ -227,7 +254,7 @@ func (b Banner) ropeTail() string {
 
 func (b Banner) textView() string {
 	var out []string
-	out = append(out, "BELAI · on belay")
+	out = append(out, "BELAI · "+Tagline)
 	if v := b.versionLine(); v != "" {
 		out = append(out, v)
 	}
