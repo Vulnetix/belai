@@ -439,6 +439,23 @@ func (r *Resolver) Store(provider, field, secret string, backend Source) error {
 	}
 }
 
+// Replace rewrites field from old to next in the backend that currently
+// supplies it, and only when that backend still holds old. It is how a
+// rotated credential (a Kiro refresh token) is persisted where the user put
+// it. A value that comes from the environment, an env reference or netrc is
+// not the resolver's to rewrite and is left alone.
+func (r *Resolver) Replace(provider, field, old, next string) error {
+	v, ok := r.Resolve(provider).Values[field]
+	if !ok || v.Reveal() != old {
+		return fmt.Errorf("%s:%s changed since it was read", provider, field)
+	}
+	switch v.Source {
+	case SourceKeychain, SourceUserFile, SourceProjectFile:
+		return r.Store(provider, field, next, v.Source)
+	}
+	return fmt.Errorf("%s:%s comes from %s, which belai does not rewrite", provider, field, v.Source)
+}
+
 // StoreEnvRef stores a credential as the name of an environment variable
 // rather than a value. Only file backends can hold a reference; a keychain
 // entry cannot.
@@ -499,6 +516,15 @@ func (r *Resolver) Backends() []BackendInfo {
 
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
+}
+
+// PreferredBackend is where a harness-obtained secret (a sign-in, not a
+// typed key) is written: the keychain when it works, else the user file.
+func (r *Resolver) PreferredBackend() Source {
+	if r.keychainAvailable() {
+		return SourceKeychain
+	}
+	return SourceUserFile
 }
 
 func (r *Resolver) fromEnv(f Field) (Value, bool) {

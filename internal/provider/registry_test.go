@@ -198,3 +198,18 @@ func TestBuildGenericOpenAI(t *testing.T) {
 		t.Fatalf("buildGenericOpenAI(decomposed) = %q", got)
 	}
 }
+
+func TestBuildKiroRegions(t *testing.T) {
+	cases := map[string]string{
+		``:                            "https://q.us-east-1.amazonaws.com",
+		`{"region":"ap-southeast-2"}`: "https://q.ap-southeast-2.amazonaws.com",
+		`{"region":"ap-southeast-2","api_region":"us-east-1"}`:      "https://q.us-east-1.amazonaws.com",
+		`{"region":"evil.com/x","api_region":"../x"}`:               "https://q.us-east-1.amazonaws.com",
+		`{"region":"eu-west-1","api_region":"not a region at all"}`: "https://q.eu-west-1.amazonaws.com",
+	}
+	for login, want := range cases {
+		if got := buildKiro(map[string]string{"login": login}); got != want {
+			t.Errorf("buildKiro(%s) = %q, want %q", login, got, want)
+		}
+	}
+}

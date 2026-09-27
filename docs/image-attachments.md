@@ -26,7 +26,12 @@ re-discovering the constraints.
    cannot flow through the current `Read` tool unchanged; either the reader
    gets an image mode or images bypass the text tool entirely.
 
-4. **`run.Attachment` is text-only.** The wire shape in `internal/wire` has no
+4. **`run.Attachment` is text-only on most surfaces.** It now has an
+   `image` kind (`MediaType`, `Data`) that egress keeps out of the text
+   body, and the Kiro encoder sends it (see [Kiro](kiro.md#models-effort-and-images)).
+   Nothing creates one yet, and image bytes cannot be text-classified, so the
+   feature that attaches images must decide how they pass admission.
+   Before that change: The wire shape in `internal/wire` has no
    multimodal field today. Sending an image to a model therefore needs a new
    attachment kind and provider-specific encoding (OpenAI `image_url`,
    Anthropic `image`, etc.).

@@ -285,6 +285,8 @@ func (a *App) renderProviderRow(name string, selected bool) string {
 				status = "cf-aig"
 			} else if d.Auth == provider.AuthCopilot {
 				status = "copilot"
+			} else if d.Auth == provider.AuthKiro {
+				status = "builder-id"
 			} else {
 				status = "bearer"
 			}
@@ -561,6 +563,13 @@ func (a *App) providerDetailCredentials(w int) string {
 			strings.Join(backendParts, components.MutedStyle.Render("  ·  ")) + "\n")
 	}
 
+	if a.providerDetailAuth() == provider.AuthKiro {
+		b.WriteString(a.kiroSignInView(w))
+		b.WriteString("\n" + components.HelpBar(
+			"←→", "tab", "a", "aws sign-in", "x", "cancel sign-in",
+			"c", "clear", "b", "backend", "i", "import", "esc", "back") + "\n")
+		return b.String()
+	}
 	b.WriteString("\n" + components.HelpBar(
 		"←→", "tab", "↑↓", "field", "s", "set", "e", "env ref",
 		"c", "clear", "b", "backend", "i", "import", "esc", "back") + "\n")
@@ -733,9 +742,14 @@ func (a *App) providerDetailEndpointView(w int) string {
 }
 
 func (a *App) handleProviderDetailKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if a.providerDetailState.setMode || a.providerDetailState.envMode || a.providerDetailState.repoMode || a.providerDetailState.endpointEditing {
+	if a.kiroPickingProfile() {
+		return a.handleKiroProfileKey(m)
+	}
+
+	if a.providerDetailState.setMode || a.providerDetailState.envMode || a.providerDetailState.repoMode || a.providerDetailState.endpointEditing || a.kiroLogin.urlMode {
 		switch m.String() {
 		case "esc":
+			a.kiroLogin.urlMode = false
 			a.providerDetailState.setMode = false
 			a.providerDetailState.envMode = false
 			a.providerDetailState.repoMode = false
@@ -745,6 +759,9 @@ func (a *App) handleProviderDetailKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.editor.Reset()
 			return a, nil
 		case "enter":
+			if a.kiroLogin.urlMode {
+				return a.kiroStartSignIn()
+			}
 			if a.providerDetailState.endpointEditing {
 				return a.providerDetailEndpointCommitField()
 			}
@@ -881,8 +898,22 @@ func (a *App) handleProviderDetailCredentialsKey(m tea.KeyMsg) (tea.Model, tea.C
 		return a.providerDetailCycleBackend()
 	case "i":
 		return a, a.push(viewImport)
+	case "a":
+		if a.providerDetailAuth() == provider.AuthKiro {
+			return a.kiroBeginSignIn()
+		}
+	case "x":
+		if a.providerDetailAuth() == provider.AuthKiro && a.kiroLogin.busy {
+			a.kiroCancelSignIn()
+		}
 	}
 	return a, nil
+}
+
+// providerDetailAuth is the auth style of the provider being viewed.
+func (a *App) providerDetailAuth() provider.Auth {
+	d, _ := provider.Lookup(a.providerDetailState.provider)
+	return d.Auth
 }
 
 func (a *App) providerDetailCommitField() (tea.Model, tea.Cmd) {

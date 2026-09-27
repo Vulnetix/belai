@@ -16,6 +16,7 @@ const (
 	kindOpenAIChat        kind = iota // OpenAI chat/completions shape
 	kindAnthropicMessages             // Anthropic messages shape
 	kindWorkersAI                     // Cloudflare Workers AI /ai/run/{model}
+	kindKiro                          // Kiro generateAssistantResponse, AWS event stream
 )
 
 // route is how a request reaches the wire surface.
@@ -42,6 +43,9 @@ type dialect struct {
 	cache bool
 	// maxCompletion sends the completion cap as max_completion_tokens.
 	maxCompletion bool
+	// kiroBase and kiroModel key the live Kiro catalogue entry, so the
+	// decoder can size a context-percentage usage fallback.
+	kiroBase, kiroModel string
 }
 
 // resolveDialect maps a provider (and model) onto its dialect. The three
@@ -100,6 +104,8 @@ func surfaceKind(s wire.Surface) kind {
 		return kindAnthropicMessages
 	case wire.SurfaceWorkersAI:
 		return kindWorkersAI
+	case wire.SurfaceKiro:
+		return kindKiro
 	}
 	return kindOpenAIChat
 }
@@ -162,6 +168,8 @@ func (d dialect) streamSurface() wire.Surface {
 		return wire.SurfaceAnthropicMessages
 	case kindWorkersAI:
 		return wire.SurfaceWorkersAI
+	case kindKiro:
+		return wire.SurfaceKiro
 	}
 	return wire.SurfaceOpenAIChat
 }

@@ -362,6 +362,7 @@ type App struct {
 	providerDetailState providerDetailViewState
 	providerNewState    providerNewViewState
 	gsState             gettingStartedState
+	kiroLogin           kiroLoginState
 	// gettingStartedOnInit opens the Getting started view on the first
 	// frame of a first interactive launch (start.go).
 	gettingStartedOnInit   bool
@@ -2038,6 +2039,9 @@ func (a *App) syncPlanMode() {
 // Update implements tea.Model.
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if cmd, ok := a.handleGettingStartedMsg(msg); ok {
+		return a, cmd
+	}
+	if cmd, ok := a.handleKiroLoginMsg(msg); ok {
 		return a, cmd
 	}
 	switch m := msg.(type) {

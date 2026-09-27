@@ -21,6 +21,7 @@ import (
 	"github.com/vulnetix/belai/internal/clarify"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/httpclient"
+	"github.com/vulnetix/belai/internal/kiroauth"
 	"github.com/vulnetix/belai/internal/mlclassify"
 	"github.com/vulnetix/belai/internal/models"
 	"github.com/vulnetix/belai/internal/modes"
@@ -886,10 +887,20 @@ func WireModel(provider, model string) string {
 // nonce from the live pool, so the seal survives the sanitise pass every turn
 // body goes through.
 type Attachment struct {
-	Kind  string // "file" | "directory" | "shell"
+	Kind  string // "file" | "directory" | "shell" | "image"
 	Label string // the @path the user typed, or the ! command
 	Body  string
+	// MediaType and Data carry an "image" attachment (image/png, image/jpeg,
+	// image/gif or image/webp). Egress never folds image bytes into the text
+	// body; only a surface with an image seat (Kiro) sends them, and only to
+	// a model that declares image input. Nothing in the harness produces an
+	// image attachment yet (docs/image-attachments.md).
+	MediaType string
+	Data      []byte
 }
+
+// AttachmentImage is the Kind of an image attachment.
+const AttachmentImage = "image"
 
 // Turn is one message in a multi-turn conversation.
 type Turn struct {
@@ -1284,6 +1295,10 @@ func ResolveWithSource(model, providerName string, env func(string) string, src 
 				envHints = append(envHints, "GITHUB_COPILOT_TOKEN", "GH_TOKEN")
 			case "huggingface:api_key":
 				envHints = append(envHints, "HF_TOKEN", "HUGGINGFACE_TOKEN")
+			case "kiro:login":
+				// The value is a sign-in, not a key: `belai login kiro`
+				// writes it.
+				envHints = append(envHints, "KIRO_LOGIN")
 			default:
 				if m == "api_key" {
 					envHints = append(envHints, envVarForProvider(cfg.Provider))
@@ -1783,6 +1798,9 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 	if cfg.ToolMethod != ToolMethodNone {
 		d.method = cfg.ToolMethod
 	}
+	if d.kind == kindKiro {
+		d.kiroBase, d.kiroModel = cfg.BaseURL, cfg.Model
+	}
 
 	// Copilot token exchange and provider construction live inside the factory
 	// so each retry attempt gets a fresh token and a fresh request.
@@ -1794,6 +1812,19 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 				return nil, err
 			}
 			key = token.Value
+		}
+		var kiroProfile string
+		if cfg.Auth == provider.AuthKiro {
+			// The access token goes only to a pinned Kiro host (or a
+			// loopback mock), whatever BELAI_BASE_URL says.
+			if !kiroauth.AllowedAPIURL(cfg.BaseURL) {
+				return nil, fmt.Errorf("refusing to send a kiro token to %q", cfg.BaseURL)
+			}
+			token, err := kiroRefresher.Token(ctx, cfg.APIKey)
+			if err != nil {
+				return nil, err
+			}
+			key, kiroProfile = token.Value, token.ProfileARN
 		}
 		var p *provider.Provider
 		if cfg.API != "" && !provider.Builtin(cfg.Provider) {
@@ -1823,6 +1854,13 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 		turns = synthesizeDanglingToolResults(turns)
 
 		switch d.kind {
+		case kindKiro:
+			// The live catalogue decides what may ride in
+			// additionalModelRequestFields and whether images go out.
+			info := kiroModelInfo(ctx, cfg.BaseURL, cfg.Model, key, kiroProfile)
+			req := buildKiroRequest(cfg.Model, system, turns, openAITools, kiroProfile, info.Images)
+			req.AdditionalModelRequestFields = info.RequestFields(reasoningEffort, cfg.MaxTokens)
+			return p.NewKiroRequest(req)
 		case kindWorkersAI:
 			return p.NewWorkersAIRequest(cfg.Model, wire.WorkersAIRequest{
 				Messages:  buildOpenAIMessages(system, turns, d.method),
@@ -1970,6 +2008,8 @@ func sendTurnsWithTools(ctx context.Context, cfg Config, system string, turns []
 
 	var a Assistant
 	switch d.kind {
+	case kindKiro:
+		a, err = parseKiro(res.body, res.status, d.kiroMaxInput())
 	case kindWorkersAI:
 		a, err = parseWorkersAI(res.body, res.status, redact)
 	case kindAnthropicMessages:

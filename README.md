@@ -133,7 +133,7 @@ belai -provider anthropic -model claude-sonnet-4-5 -prompt "review this diff"
 | Flag | Meaning |
 | --- | --- |
 | `-prompt` | send one turn, print the reply, exit |
-| `-provider` | `openai`, `anthropic`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`, `llama-server`, `github-copilot`, `huggingface`, a custom name from `settings.json`, or a configured display label |
+| `-provider` | `openai`, `anthropic`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`, `openrouter`, `google-gemini`, `ollama`, `llama-server`, `github-copilot`, `huggingface`, `kiro`, a custom name from `settings.json`, or a configured display label |
 | `-model` | model id; each provider has a default |
 | `-effort` | thinking-effort level: `low`, `medium`, or `high` |
 | `-caveman` | enable caveman voice rewrite for this run |
@@ -173,6 +173,7 @@ Set the API key for your provider and Belai picks it up:
 | `ollama` | none (local; honours `OLLAMA_HOST`) |
 | `github-copilot` | `GITHUB_COPILOT_TOKEN` or `GH_TOKEN` (OAuth, exchanged for a session token) |
 | `huggingface` | `HF_TOKEN` or `HUGGINGFACE_TOKEN` |
+| `kiro` | none: run `belai login kiro` (AWS Builder ID or IAM Identity Center sign-in; see [Kiro](docs/kiro.md)). `KIRO_LOGIN` holds a stored login |
 | `groq` | `GROQ_API_KEY` |
 | `deepseek` | `DEEPSEEK_API_KEY` |
 | `fireworks` | `FIREWORKS_API_KEY` |

@@ -132,6 +132,12 @@ func NewFromProfile(name string, prof Profile, apiKey string) (*Provider, error)
 	if prof.Auth == AuthCopilot {
 		return nil, fmt.Errorf("auth style %q is reserved for the built-in github-copilot provider", prof.Auth)
 	}
+	// Kiro auth is reserved for the built-in kiro provider in the same way:
+	// its access token is minted from an AWS login and may only reach the
+	// pinned Kiro hosts.
+	if prof.Auth == AuthKiro {
+		return nil, fmt.Errorf("auth style %q is reserved for the built-in kiro provider", prof.Auth)
+	}
 	return newProvider(name, prof.BaseURL, apiKey, prof.Auth)
 }
 
@@ -189,6 +195,10 @@ func (p *Provider) Headers() map[string]string {
 		h["authorization"] = "Bearer " + p.apiKey
 		h["editor-version"] = "vscode/1.85.0"
 		h["copilot-integration-id"] = "vscode-chat"
+	case AuthKiro:
+		h["authorization"] = "Bearer " + p.apiKey
+		h["x-amzn-codewhisperer-optout"] = "true"
+		h["amz-sdk-request"] = "attempt=1; max=1"
 	default: // AuthBearer
 		h["authorization"] = "Bearer " + p.apiKey
 	}
