@@ -162,7 +162,7 @@ The TUI model picker (`e model`) shows a catalogue per provider. Sources are:
 | `llama-server` | ✅ `/models` |
 | `openrouter` | ✅ `/models` |
 | `github-copilot` | ✅ `/models` |
-| `kiro` | ❌ static catalogue (`auto`, Claude Sonnet 4.5/4, Haiku 4.5, Opus 4.5) |
+| `kiro` | ✅ `ListAvailableModels` (token minted from the login; effort levels, limits and image input from each model's schema) |
 | `openai` | ❌ disabled — `/v1/models` includes deprecated, preview and internal identifiers that confuse the picker and fail at request time; only the curated static catalogue is shown |
 | `huggingface` | ✅ `router.huggingface.co/v1/models` (requires `HF_TOKEN`) |
 

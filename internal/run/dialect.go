@@ -43,6 +43,9 @@ type dialect struct {
 	cache bool
 	// maxCompletion sends the completion cap as max_completion_tokens.
 	maxCompletion bool
+	// kiroBase and kiroModel key the live Kiro catalogue entry, so the
+	// decoder can size a context-percentage usage fallback.
+	kiroBase, kiroModel string
 }
 
 // resolveDialect maps a provider (and model) onto its dialect. The three

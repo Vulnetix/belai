@@ -55,6 +55,11 @@ func (r *Refresher) SetOnRotate(fn func(oldLogin, newLogin string)) {
 	r.mu.Unlock()
 }
 
+// Shared is the process-wide refresher: the model request, the model list
+// and the profile lookup all mint tokens through it, so one refresh serves
+// every Kiro call.
+var Shared = NewRefresher(nil)
+
 // NewRefresher builds a refresher over client (nil means a short-timeout
 // client).
 func NewRefresher(client *http.Client) *Refresher {
@@ -72,6 +77,23 @@ func NewRefresher(client *http.Client) *Refresher {
 func (r *Refresher) WithBaseURL(base string) *Refresher {
 	r.oidc.base = base
 	return r
+}
+
+// Current returns the login stored as stored after any rotation this
+// refresher has seen, so a caller about to persist a login it just used
+// saves the refresh token that still works.
+func (r *Refresher) Current(stored string) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	key := stored
+	for i := 0; i < 8; i++ {
+		next, ok := r.rotated[key]
+		if !ok {
+			break
+		}
+		key = next
+	}
+	return key
 }
 
 // Token returns a cached, non-expired access token for the stored login, or

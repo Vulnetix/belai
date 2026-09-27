@@ -25,8 +25,8 @@ login.
 | --- | --- |
 | `-start-url` | IAM Identity Center start URL. Omit it for an AWS Builder ID. |
 | `-region` | The SSO region of that start URL (default `us-east-1`). |
-| `-api-region` | The Kiro API region (default `us-east-1`). |
-| `-profile-arn` | The CodeWhisperer profile ARN that an Identity Center account sends with each request. |
+| `-api-region` | The Kiro API region. The default is the profile's region, else `us-east-1`. |
+| `-profile-arn` | The CodeWhisperer profile to use. By default Belai looks it up after signing in (see [Profiles](#profiles)). |
 | `-backend` | `keychain` or `user-file`. The default is the keychain when one works, else the user credentials file. |
 | `-import` | Import Kiro's own sign-in from `~/.aws/sso/cache` instead of signing in. |
 
@@ -38,8 +38,27 @@ Open `/providers`, choose **kiro**, and press `a` on the credentials tab.
 Press enter on an empty line to sign in with an AWS Builder ID, or type an
 Identity Center start URL and, optionally, its region. The verification URL
 opens in the browser and the code is shown in the view. Press `x` to cancel a
-sign-in that is still waiting. The login is stored in the backend the tab
-shows; `b` cycles it.
+sign-in that is still waiting. When the account has several profiles, the tab
+lists them: choose one with ↑↓ and enter, or press esc to store the login
+without one. The login is stored in the backend the tab shows; `b` cycles it.
+
+### Profiles
+
+After a sign-in or an import, Belai asks CodeWhisperer which profiles the
+account can use. The call is `ListAvailableProfiles` on
+`codewhisperer.<region>.amazonaws.com`, made in `us-east-1` and
+`eu-central-1`.
+
+- **One profile.** Its ARN is stored in the login, and its region becomes the
+  Kiro API region.
+- **Several profiles.** The CLI lists them and asks on a terminal. Without a
+  terminal it stops and asks for `-profile-arn`.
+- **No profile, or a failed lookup.** A Builder ID account may have none. The
+  login is stored without a profile and the CLI prints a warning.
+
+`-profile-arn` skips the lookup; the ARN must be a well-formed CodeWhisperer
+ARN. If the lookup's own token refresh rotates the refresh token, Belai stores
+the rotated one.
 
 ### Importing Kiro's sign-in
 
@@ -110,25 +129,71 @@ The events Belai reads are:
 - An `exception` or `error` frame, which ends the turn with the exception
   type and a flattened, length-capped message.
 
-Metering and context-usage events are ignored. Kiro reports no token counts.
+- `metadataEvent` with `tokenUsage`: its counts become the turn's usage. Prompt
+  tokens are uncached input plus cache reads plus cache writes, and completion
+  tokens are the output tokens. A later event replaces an earlier one rather
+  than adding to it.
+- `contextUsageEvent`, the fallback when no token counts arrive. The
+  percentage of the model's input limit becomes the prompt-token estimate. It
+  is skipped when the limit is unknown.
+
+Metering (credit) events are ignored.
+
+## Models, effort and images
+
+`internal/kiromodels` reads the account's catalogue with
+`GET /ListAvailableModels?origin=AI_EDITOR` (plus `profileArn` when the login
+has one). It follows up to five pages and caches the result for five minutes.
+The `/providers` model tab and the model picker show this list, with each
+model's context window and output limit. The static catalogue remains the
+fallback.
+
+Kiro checks `additionalModelRequestFields` against a JSON schema that each
+model publishes, and rejects any property the schema does not declare. Belai
+therefore reads each model's schema and sends only what it declares:
+
+- **Effort.** Claude models take `output_config.effort`; GPT models take
+  `reasoning.effort`. Effort is sent only when the chosen level is in the
+  model's declared list. The picker offers exactly those levels.
+- **`max_tokens`.** Sent only when a cap is set and the schema declares
+  `max_tokens`. The cap is held within the model's minimum and maximum.
+- **No schema.** A model without one gets no extra fields, so a missing or
+  unreadable schema falls back to the plain request instead of a 400.
+
+A headless run that never opened the picker fetches the catalogue once, with
+the same token as the request. A failed fetch is remembered as empty for five
+minutes, so it isn't retried on every request.
+
+**Images.** The Kiro encoder sends image attachments as
+`userInputMessage.images`, each `{format, source: {bytes}}`:
+
+- formats png, jpeg, gif and webp, at most 3.75 MB each;
+- only on the current message, because a request that replays earlier images
+  is rejected;
+- only when the model lists `IMAGE` among its input types. Otherwise the
+  images are dropped and a harness note says so.
+
+Egress never folds image bytes into the text. Nothing in Belai creates an
+image attachment yet (see [Image attachments](image-attachments.md)), so for
+now this is wire support only.
 
 ## Limits
 
-- Models come from a static catalogue: `auto`, `claude-sonnet-4.5` (the
-  default), `claude-sonnet-4`, `claude-haiku-4.5` (the fast tier) and
-  `claude-opus-4.5`. There is no live model list.
 - Kiro is never routed through the Vulnetix AI Firewall. Its tokens are
   minted from an AWS sign-in, and the gateway does not relay its surface.
-- Effort and extended-thinking settings are not sent.
-- Image attachments are not sent. Only the text of each turn reaches Kiro.
+- Kiro logins made with GitHub or Google are not supported.
+- These API shapes are not documented by AWS. They follow what Kiro's own
+  clients send, and every parser treats an unknown shape as "not reported"
+  rather than as an error.
 
 ## Security
 
 - Tokens go only to pinned hosts, over https. The SSO-OIDC calls never follow
   a redirect:
   - SSO-OIDC: `oidc.<region>.amazonaws.com`.
-  - Kiro API: `q.<region>.amazonaws.com` or
-    `codewhisperer.<region>.amazonaws.com`.
+  - Kiro API, model list and profile lookup: `q.<region>.amazonaws.com` or
+    `codewhisperer.<region>.amazonaws.com`. These calls never follow a
+    redirect either.
 
   A region must look like an AWS region name, so a hand-edited login cannot
   steer those hosts. `BELAI_BASE_URL` may point Kiro only at one of those
@@ -137,6 +202,9 @@ Metering and context-usage events are ignored. Kiro reports no token counts.
   reach a transcript, log, setting, notification or model. The TUI shows the
   user code and the verification URL only, and error text from AWS is reduced
   to its error code.
+- The model catalogue is kept as facts only: IDs, limits, effort levels and the
+  image flag. Model names are reduced to printable text, and IDs and effort
+  values to identifier characters.
 - The `kiro` auth style is reserved for the built-in provider. A custom
   profile cannot claim it.
 - The Kiro cache import reads two fixed files, with a size cap. The client

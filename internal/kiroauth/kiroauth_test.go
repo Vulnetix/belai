@@ -285,3 +285,87 @@ func TestImportKiroCache(t *testing.T) {
 		t.Fatal("path-traversing client hash accepted")
 	}
 }
+
+func TestDiscoverProfiles(t *testing.T) {
+	f := &fakeOIDC{t: t, tokenReplies: []func(http.ResponseWriter, map[string]string){
+		func(w http.ResponseWriter, _ map[string]string) {
+			fmt.Fprint(w, `{"accessToken":"at","expiresIn":3600}`)
+		},
+	}}
+	oidc := f.server()
+	defer oidc.Close()
+	r := NewRefresher(oidc.Client()).WithBaseURL(oidc.URL)
+
+	profiles := func(body string, check func(*http.Request)) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			check(req)
+			fmt.Fprint(w, body)
+		}))
+	}
+	check := func(req *http.Request) {
+		if req.Header.Get("X-Amz-Target") != "AmazonCodeWhispererService.ListAvailableProfiles" ||
+			req.Header.Get("Authorization") != "Bearer at" || req.Header.Get("Content-Type") != "application/x-amz-json-1.0" {
+			t.Errorf("headers = %v", req.Header)
+		}
+	}
+	us := profiles(`{"profiles":[{"arn":"arn:aws:codewhisperer:us-east-1:1:profile/A","profileName":"Team‮A"},{"arn":"not-an-arn"}]}`, check)
+	defer us.Close()
+	eu := profiles(`{"profiles":[{"arn":"arn:aws:codewhisperer:eu-central-1:1:profile/B","profileName":"B"},{"arn":"arn:aws:codewhisperer:us-east-1:1:profile/A"}]}`, check)
+	defer eu.Close()
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(500) }))
+	defer down.Close()
+
+	got, err := DiscoverProfiles(context.Background(), nil, r, testLogin(), []string{us.URL, down.URL, eu.URL})
+	if err != nil || len(got) != 2 {
+		t.Fatalf("profiles = %+v, %v", got, err)
+	}
+	if got[0].Name != "TeamA" || got[1].Region() != "eu-central-1" {
+		t.Fatalf("profiles = %+v", got)
+	}
+	l := testLogin().WithProfile(got[1])
+	if l.ProfileARN != got[1].ARN || l.APIRegion != "eu-central-1" {
+		t.Fatalf("WithProfile = %#v", l)
+	}
+	if _, err := DiscoverProfiles(context.Background(), nil, r, testLogin(), []string{down.URL}); err == nil {
+		t.Fatal("all regions failing should be an error")
+	}
+	if _, err := ListProfiles(context.Background(), nil, "https://evil.example", "at"); err == nil {
+		t.Fatal("unpinned host accepted")
+	}
+	if ARNRegion("arn:aws:codewhisperer:../x:1:profile/A") != "" || ARNRegion("arn:aws:s3:us-east-1:1:x/y") != "" {
+		t.Fatal("ARNRegion accepted a bad ARN")
+	}
+}
+
+func TestResolveProfile(t *testing.T) {
+	// The lookup's own refresh rotates the token: the returned login must
+	// carry the new one, or storing it would save a dead refresh token.
+	f := &fakeOIDC{t: t, tokenReplies: []func(http.ResponseWriter, map[string]string){
+		func(w http.ResponseWriter, _ map[string]string) {
+			fmt.Fprint(w, `{"accessToken":"at","refreshToken":"rotated","expiresIn":3600}`)
+		},
+	}}
+	oidc := f.server()
+	defer oidc.Close()
+	one := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `{"profiles":[{"arn":"arn:aws:codewhisperer:eu-central-1:1:profile/P","profileName":"P"}]}`)
+	}))
+	defer one.Close()
+
+	r := NewRefresher(oidc.Client()).WithBaseURL(oidc.URL)
+	l, ps, err := ResolveProfile(context.Background(), nil, r, testLogin(), "", []string{one.URL})
+	if err != nil || ps != nil {
+		t.Fatalf("ResolveProfile = %v, %v", ps, err)
+	}
+	if l.RefreshToken != "rotated" || l.ProfileARN != "arn:aws:codewhisperer:eu-central-1:1:profile/P" || l.APIRegion != "eu-central-1" {
+		t.Fatalf("login = %#v (refresh %q)", l, l.RefreshToken)
+	}
+
+	l, _, err = ResolveProfile(context.Background(), nil, r, testLogin(), "arn:aws:codewhisperer:us-east-1:9:profile/X", nil)
+	if err != nil || l.ProfileARN != "arn:aws:codewhisperer:us-east-1:9:profile/X" {
+		t.Fatalf("explicit = %#v, %v", l, err)
+	}
+	if _, _, err := ResolveProfile(context.Background(), nil, r, testLogin(), "not-an-arn", nil); err == nil {
+		t.Fatal("bad explicit ARN accepted")
+	}
+}

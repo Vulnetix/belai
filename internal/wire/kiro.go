@@ -16,6 +16,10 @@ const KiroOrigin = "AI_EDITOR"
 type KiroRequest struct {
 	ConversationState KiroConversationState `json:"conversationState"`
 	ProfileArn        string                `json:"profileArn,omitempty"`
+	// AdditionalModelRequestFields carries model-specific fields (effort,
+	// max_tokens). The service validates it against the model's published
+	// schema, so it holds only what that schema declares.
+	AdditionalModelRequestFields map[string]any `json:"additionalModelRequestFields,omitempty"`
 }
 
 // KiroConversationState carries the conversation.
@@ -38,6 +42,19 @@ type KiroUserInputMessage struct {
 	ModelID                 string                   `json:"modelId,omitempty"`
 	Origin                  string                   `json:"origin,omitempty"`
 	UserInputMessageContext *KiroUserInputMessageCtx `json:"userInputMessageContext,omitempty"`
+	Images                  []KiroImage              `json:"images,omitempty"`
+}
+
+// KiroImage is one image on a user message.
+type KiroImage struct {
+	Format string          `json:"format"` // png, jpeg, gif or webp
+	Source KiroImageSource `json:"source"`
+}
+
+// KiroImageSource holds the image bytes; encoding/json writes a []byte as
+// base64, which is the wire form.
+type KiroImageSource struct {
+	Bytes []byte `json:"bytes"`
 }
 
 // KiroUserInputMessageCtx carries tool results and tool definitions.
@@ -100,6 +117,27 @@ type KiroToolUseEvent struct {
 	Name      string `json:"name"`
 	Input     any    `json:"input"`
 	Stop      bool   `json:"stop"`
+}
+
+// KiroMetadataEvent is a metadataEvent payload. Field names vary between
+// service versions, so every counter is optional.
+type KiroMetadataEvent struct {
+	TokenUsage *KiroTokenUsage `json:"tokenUsage"`
+}
+
+// KiroTokenUsage is the token accounting of one response.
+type KiroTokenUsage struct {
+	UncachedInputTokens   int `json:"uncachedInputTokens"`
+	InputTokens           int `json:"inputTokens"`
+	CacheReadInputTokens  int `json:"cacheReadInputTokens"`
+	CacheWriteInputTokens int `json:"cacheWriteInputTokens"`
+	OutputTokens          int `json:"outputTokens"`
+	TotalTokens           int `json:"totalTokens"`
+}
+
+// KiroContextUsageEvent is a contextUsageEvent payload.
+type KiroContextUsageEvent struct {
+	ContextUsagePercentage float64 `json:"contextUsagePercentage"`
 }
 
 // KiroExceptionPayload is the body of an exception or error frame.

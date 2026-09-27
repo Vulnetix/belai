@@ -742,6 +742,10 @@ func (a *App) providerDetailEndpointView(w int) string {
 }
 
 func (a *App) handleProviderDetailKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if a.kiroPickingProfile() {
+		return a.handleKiroProfileKey(m)
+	}
+
 	if a.providerDetailState.setMode || a.providerDetailState.envMode || a.providerDetailState.repoMode || a.providerDetailState.endpointEditing || a.kiroLogin.urlMode {
 		switch m.String() {
 		case "esc":

@@ -137,7 +137,14 @@ func egressTurns(turns []Turn, pool *nonce.Pool) []Turn {
 			// Fail closed: a directive we cannot seal is dropped rather than
 			// sent as bare prose the model could mistake for user instruction.
 		}
+		var images []Attachment
 		for _, att := range t.Attachments {
+			if att.Kind == AttachmentImage {
+				// Image bytes never enter the text body; they ride beside it
+				// for a surface that can carry them.
+				images = append(images, att)
+				continue
+			}
 			nonceVal, err := pool.Reserve()
 			if err != nil {
 				// Fail closed: drop attachments we cannot seal.
@@ -157,6 +164,7 @@ func egressTurns(turns []Turn, pool *nonce.Pool) []Turn {
 			// untouched, since any edit breaks its signature.
 			Thinking:      t.Thinking,
 			ThinkingModel: t.ThinkingModel,
+			Attachments:   images,
 			egrossed:      egressed,
 		}
 		// Write the memo back so the next request reuses it.
@@ -325,6 +333,9 @@ func drainStream(ctx context.Context, ch chan<- Chunk, resp *http.Response, d di
 			if !apply(delta) {
 				return
 			}
+		}
+		if u := st.finalUsage(d.kiroMaxInput()); u != nil && !apply(streamDelta{usage: u}) {
+			return
 		}
 		sendDone()
 		return

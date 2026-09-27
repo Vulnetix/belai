@@ -449,6 +449,9 @@ var registry = map[string]Descriptor{
 		},
 		BaseURLBuilder: buildKiro, NetrcHost: "q.us-east-1.amazonaws.com",
 		Surface: wire.SurfaceKiro, ToolMethod: wire.ToolMethodObject,
+		// Effort rides in additionalModelRequestFields, and only when the
+		// model's live schema declares the level (internal/kiromodels).
+		Effort:       true,
 		DefaultModel: "claude-sonnet-4.5",
 		FastModel:    "claude-haiku-4.5",
 		Models: []ModelSpec{
@@ -458,7 +461,9 @@ var registry = map[string]Descriptor{
 			{ID: "claude-haiku-4.5", Label: "Claude Haiku 4.5"},
 			{ID: "claude-opus-4.5", Label: "Claude Opus 4.5"},
 		},
-		ListPath: "",
+		// The live catalogue (ListAvailableModels) replaces the static one
+		// once fetched; modelfetch mints the token for it.
+		ListPath: "/ListAvailableModels",
 	},
 	"huggingface": {
 		Name: "huggingface", Auth: AuthBearer,

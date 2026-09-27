@@ -2,23 +2,28 @@ package run
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 
 	"github.com/vulnetix/belai/internal/kiroauth"
+	"github.com/vulnetix/belai/internal/kiromodels"
 	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/transcript"
 	"github.com/vulnetix/belai/internal/wire"
 )
 
 // kiroRefresher trades the stored Kiro login for an access token inside the
-// request factory. It is a package variable so tests can substitute an
+// request factory. It is the process-wide kiroauth.Shared, so the model list
+// and the profile lookup reuse its tokens; tests substitute an
 // httptest-backed refresher.
-var kiroRefresher = kiroauth.NewRefresher(nil)
+var kiroRefresher = kiroauth.Shared
 
 // SetKiroRotationHook installs fn to persist a rotated Kiro login. The
 // callers that own a credential store (the CLI and the TUI) install it; fn
@@ -44,7 +49,12 @@ const kiroMaxToolDescription = 10000
 // user message, tool results ride on the user message that follows the
 // assistant's tool uses, and consecutive same-role turns merge so history
 // strictly alternates. Tools are advertised on the current message only.
-func buildKiroRequest(model, system string, turns []Turn, tools []wire.OpenAITool, profileARN string) wire.KiroRequest {
+//
+// images says whether the model accepts image input. Only the current
+// message carries images: earlier turns' images are dropped, because the
+// service rejects a follow-up request that replays them. On a model without
+// image input they are dropped with a harness note in their place.
+func buildKiroRequest(model, system string, turns []Turn, tools []wire.OpenAITool, profileARN string, images bool) wire.KiroRequest {
 	var entries []wire.KiroHistoryEntry
 	var user *wire.KiroUserInputMessage
 	var text []string
@@ -114,6 +124,11 @@ func buildKiroRequest(model, system string, turns []Turn, tools []wire.OpenAIToo
 			if t.Content != "" {
 				text = append(text, t.Content)
 			}
+			for _, att := range t.Attachments {
+				if att.Kind == AttachmentImage {
+					user.Images = append(user.Images, kiroImages([]Attachment{att})...)
+				}
+			}
 		}
 	}
 	if user == nil {
@@ -131,6 +146,15 @@ func buildKiroRequest(model, system string, turns []Turn, tools []wire.OpenAIToo
 
 	current := entries[len(entries)-1]
 	history := entries[:len(entries)-1]
+	for _, e := range history {
+		if e.UserInputMessage != nil {
+			e.UserInputMessage.Images = nil
+		}
+	}
+	if cur := current.UserInputMessage; len(cur.Images) > 0 && !images {
+		cur.Images = nil
+		cur.Content += "\n\n" + kiroImageOmitted
+	}
 	if specs := kiroTools(tools); len(specs) > 0 {
 		if current.UserInputMessage.UserInputMessageContext == nil {
 			current.UserInputMessage.UserInputMessageContext = &wire.KiroUserInputMessageCtx{}
@@ -147,6 +171,64 @@ func buildKiroRequest(model, system string, turns []Turn, tools []wire.OpenAIToo
 		ProfileArn: profileARN,
 	}
 }
+
+// kiroImageOmitted replaces images a text-only model cannot take. It is
+// harness text.
+const kiroImageOmitted = "[an attached image was not sent: this model does not accept images]"
+
+// kiroMaxImageBytes is the service's per-image ceiling before base64.
+const kiroMaxImageBytes = 3_750_000
+
+// kiroImages converts image attachments to Kiro images, dropping any in an
+// unsupported format or over the size ceiling.
+func kiroImages(atts []Attachment) []wire.KiroImage {
+	var out []wire.KiroImage
+	for _, a := range atts {
+		var format string
+		switch strings.ToLower(strings.TrimSpace(a.MediaType)) {
+		case "image/png":
+			format = "png"
+		case "image/jpeg", "image/jpg":
+			format = "jpeg"
+		case "image/gif":
+			format = "gif"
+		case "image/webp":
+			format = "webp"
+		default:
+			continue
+		}
+		if len(a.Data) == 0 || len(a.Data) > kiroMaxImageBytes {
+			continue
+		}
+		out = append(out, wire.KiroImage{Format: format, Source: wire.KiroImageSource{Bytes: a.Data}})
+	}
+	return out
+}
+
+// kiroModelInfo returns the live catalogue entry for model at base, fetching
+// the catalogue with token when the process holds none younger than
+// kiromodels.TTL. A failed fetch is remembered as empty, so it is not
+// retried on every request and the request falls back to the plain shape.
+func kiroModelInfo(ctx context.Context, base, model, token, profileARN string) kiromodels.Info {
+	info, found, fresh := kiromodels.Lookup(base, model)
+	if fresh {
+		return info
+	}
+	infos, err := kiromodels.Fetch(ctx, kiroModelsClient, base, token, profileARN)
+	if err != nil {
+		infos = nil
+	}
+	kiromodels.Remember(base, infos)
+	info, found, _ = kiromodels.Lookup(base, model)
+	if !found {
+		return kiromodels.Info{}
+	}
+	return info
+}
+
+// kiroModelsClient fetches the model catalogue; nil means kiromodels' own
+// short-timeout client. Tests substitute an httptest client.
+var kiroModelsClient *http.Client
 
 // kiroConversationID derives a stable UUID-shaped id from the conversation's
 // opening message, so every request of one conversation carries the same id
@@ -201,6 +283,25 @@ type kiroStreamState struct {
 	index map[string]int
 	done  map[string]bool
 	next  int
+	// usage is the latest metadataEvent's accounting; ctxPct the latest
+	// contextUsageEvent's percentage, the fallback when no metadata came.
+	usage  *transcript.Usage
+	ctxPct float64
+}
+
+// finalUsage is the turn's usage: the service's own token counts when it sent
+// them, else prompt tokens estimated from the context-window percentage and
+// the model's input limit, else nil.
+func (st *kiroStreamState) finalUsage(maxInput int) *transcript.Usage {
+	if st.usage != nil {
+		u := *st.usage
+		return &u
+	}
+	if st.ctxPct > 0 && maxInput > 0 {
+		pct := min(st.ctxPct, 100)
+		return &transcript.Usage{PromptTokens: int(pct / 100 * float64(maxInput))}
+	}
+	return nil
 }
 
 func newKiroStreamState() *kiroStreamState {
@@ -254,9 +355,35 @@ func decodeKiroFrame(msg wire.EventMessage, st *kiroStreamState, acc *toolAccumu
 			d.stopReason = "tool_use"
 		}
 		return d, nil
+	case "metadataEvent":
+		var ev wire.KiroMetadataEvent
+		if err := json.Unmarshal(msg.Payload, &ev); err == nil && ev.TokenUsage != nil {
+			tu := ev.TokenUsage
+			input := tu.UncachedInputTokens
+			if input == 0 {
+				input = tu.InputTokens
+			}
+			u := transcript.Usage{
+				PromptTokens:     max(input, 0) + max(tu.CacheReadInputTokens, 0) + max(tu.CacheWriteInputTokens, 0),
+				CompletionTokens: max(tu.OutputTokens, 0),
+				TotalTokens:      max(tu.TotalTokens, 0),
+			}
+			if u.PromptTokens+u.CompletionTokens+u.TotalTokens > 0 {
+				// A later event replaces an earlier one: the counters are
+				// the response's running totals, not increments.
+				st.usage = &u
+			}
+		}
+		return streamDelta{}, nil
+	case "contextUsageEvent":
+		var ev wire.KiroContextUsageEvent
+		if err := json.Unmarshal(msg.Payload, &ev); err == nil && ev.ContextUsagePercentage > 0 {
+			st.ctxPct = ev.ContextUsagePercentage
+		}
+		return streamDelta{}, nil
 	}
-	// meteringEvent, contextUsageEvent, codeReferenceEvent and the rest
-	// carry nothing the turn records.
+	// meteringEvent, codeReferenceEvent and the rest carry nothing the turn
+	// records.
 	return streamDelta{}, nil
 }
 
@@ -315,7 +442,7 @@ func safeIdent(s string) string {
 
 // parseKiro decodes a whole event-stream body into an Assistant, for the
 // blocking send path.
-func parseKiro(body []byte, status int) (Assistant, error) {
+func parseKiro(body []byte, status int, maxInput int) (Assistant, error) {
 	r := wire.NewEventStreamReader(bytes.NewReader(body))
 	st := newKiroStreamState()
 	acc := newToolAccumulator()
@@ -350,5 +477,14 @@ func parseKiro(body []byte, status int) (Assistant, error) {
 			}
 		}
 	}
-	return Assistant{Text: text.String(), ToolCalls: calls, Stop: len(calls) == 0, StopReason: stopReason}, nil
+	return Assistant{Text: text.String(), ToolCalls: calls, Stop: len(calls) == 0, StopReason: stopReason, Usage: st.finalUsage(maxInput)}, nil
+}
+
+// kiroMaxInput is the input-token limit of the dialect's model from the live
+// catalogue, or 0 when it is not known.
+func (d dialect) kiroMaxInput() int {
+	if info, found, _ := kiromodels.Lookup(d.kiroBase, d.kiroModel); found {
+		return info.MaxInput
+	}
+	return 0
 }

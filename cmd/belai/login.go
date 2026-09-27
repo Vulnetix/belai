@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/vulnetix/belai/internal/credentials"
@@ -22,8 +24,9 @@ the sign-in as the kiro provider's login credential.
 
   -start-url URL    IAM Identity Center start URL (default: AWS Builder ID)
   -region R         SSO region of the start URL (default us-east-1)
-  -api-region R     Kiro API region (default us-east-1)
-  -profile-arn ARN  CodeWhisperer profile ARN (Identity Center accounts)
+  -api-region R     Kiro API region (default: the profile's region, else us-east-1)
+  -profile-arn ARN  CodeWhisperer profile ARN (default: looked up after
+                    sign-in; asked for when the account has several)
   -backend B        keychain or user-file (default: keychain when available)
   -import           import the sign-in Kiro already made (~/.aws/sso/cache)
 `
@@ -43,7 +46,7 @@ func newResolver(workdir string) (*credentials.Resolver, error) {
 }
 
 // runLoginCLI implements `belai login …` and returns the exit code.
-func runLoginCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+func runLoginCLI(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, isTTY bool) int {
 	if len(args) == 0 || args[0] != "kiro" {
 		fmt.Fprint(stderr, loginUsage)
 		return 2
@@ -95,14 +98,8 @@ func runLoginCLI(ctx context.Context, args []string, stdout, stderr io.Writer) i
 			fmt.Fprintln(stderr, "belai:", err)
 			return 1
 		}
-		if *apiRegion != "" {
-			login.APIRegion = *apiRegion
-		}
-		if *profileARN != "" {
-			login.ProfileARN = *profileARN
-		}
 	} else {
-		d := kiroauth.DeviceLogin{StartURL: *startURL, Region: *region, APIRegion: *apiRegion, ProfileARN: *profileARN}
+		d := kiroauth.DeviceLogin{StartURL: *startURL, Region: *region}
 		g, err := d.Start(ctx)
 		if err != nil {
 			fmt.Fprintln(stderr, "belai:", err)
@@ -115,6 +112,13 @@ func runLoginCLI(ctx context.Context, args []string, stdout, stderr io.Writer) i
 			return 1
 		}
 	}
+	login, ok := chooseKiroProfile(ctx, login, *profileARN, stdin, stdout, stderr, isTTY)
+	if !ok {
+		return 1
+	}
+	if *apiRegion != "" {
+		login.APIRegion = *apiRegion // an explicit region outranks the profile's
+	}
 	if _, err := kiroauth.ParseLogin(login.Encode()); err != nil {
 		fmt.Fprintln(stderr, "belai:", err)
 		return 1
@@ -125,4 +129,39 @@ func runLoginCLI(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	}
 	fmt.Fprintf(stdout, "Signed in to Kiro; the login is stored in the %s. Use -provider kiro.\n", dest)
 	return 0
+}
+
+// chooseKiroProfile settles the login's CodeWhisperer profile: an explicit
+// ARN, the account's only profile, or the user's pick when there are
+// several. A lookup failure keeps the login without a profile and warns; a
+// headless run with several profiles fails and names them.
+func chooseKiroProfile(ctx context.Context, login kiroauth.Login, explicit string, stdin io.Reader, stdout, stderr io.Writer, isTTY bool) (kiroauth.Login, bool) {
+	login, profiles, err := kiroauth.ResolveProfile(ctx, nil, kiroauth.Shared, login, explicit, nil)
+	if err != nil {
+		if explicit != "" {
+			fmt.Fprintln(stderr, "belai:", err)
+			return login, false
+		}
+		fmt.Fprintln(stderr, "belai: warning: could not look up Kiro profiles:", err)
+		return login, true
+	}
+	if len(profiles) == 0 {
+		return login, true
+	}
+	fmt.Fprintln(stdout, "This account has several Kiro profiles:")
+	for i, p := range profiles {
+		fmt.Fprintf(stdout, "  %d) %s  %s\n", i+1, p.Name, p.ARN)
+	}
+	if !isTTY {
+		fmt.Fprintln(stderr, "belai: no terminal to choose on; pass -profile-arn with one of the ARNs above")
+		return login, false
+	}
+	fmt.Fprintf(stdout, "Profile [1-%d]: ", len(profiles))
+	line, _ := bufio.NewReader(stdin).ReadString('\n')
+	n, err := strconv.Atoi(strings.TrimSpace(line))
+	if err != nil || n < 1 || n > len(profiles) {
+		fmt.Fprintln(stderr, "belai: no profile chosen")
+		return login, false
+	}
+	return login.WithProfile(profiles[n-1]), true
 }

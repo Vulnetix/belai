@@ -28,6 +28,11 @@ type (
 		login kiroauth.Login
 		err   error
 	}
+	kiroProfilesMsg struct {
+		login    kiroauth.Login
+		profiles []kiroauth.Profile
+		err      error
+	}
 )
 
 // kiroLoginState is the sign-in's progress.
@@ -37,6 +42,12 @@ type kiroLoginState struct {
 	grant   *kiroauth.Grant
 	status  string
 	cancel  context.CancelFunc
+	// profiles, when non-empty, is the picker shown after a sign-in to an
+	// account with several CodeWhisperer profiles; pending is the login
+	// waiting for the choice.
+	profiles      []kiroauth.Profile
+	profileCursor int
+	pending       kiroauth.Login
 }
 
 const kiroEditorTitle = "start URL [region] · enter alone signs in with an AWS Builder ID"
@@ -118,23 +129,75 @@ func (a *App) handleKiroLoginMsg(msg tea.Msg) (tea.Cmd, bool) {
 			}
 			return nil, true
 		}
-		if a.resolver == nil {
-			st.status = "✗ no credential store to save the sign-in to"
+		st.busy, st.status = true, "looking up the account's Kiro profiles…"
+		ctx := a.baseCtx()
+		login := m.login
+		return func() tea.Msg {
+			l, ps, err := kiroauth.ResolveProfile(ctx, nil, kiroauth.Shared, login, "", nil)
+			return kiroProfilesMsg{login: l, profiles: ps, err: err}
+		}, true
+	case kiroProfilesMsg:
+		st.busy = false
+		if len(m.profiles) > 1 {
+			st.profiles, st.profileCursor, st.pending = m.profiles, 0, m.login
+			st.status = "choose the Kiro profile to use"
 			return nil, true
 		}
-		backend := a.providerDetailState.backend
-		if backend != credentials.SourceKeychain && backend != credentials.SourceUserFile {
-			backend = a.resolver.PreferredBackend()
+		note := ""
+		if m.err != nil {
+			note = " · profile lookup failed, stored without one"
 		}
-		if err := a.resolver.Store("kiro", "login", m.login.Encode(), backend); err != nil {
-			st.status = "✗ could not store the sign-in: " + err.Error()
-			return nil, true
-		}
-		st.status = "● signed in · stored in the " + string(backend)
-		a.refreshProviderDetail()
-		return a.refreshProvider(), true
+		return a.kiroStoreLogin(m.login, note), true
 	}
 	return nil, false
+}
+
+// kiroStoreLogin writes a finished login to the tab's backend.
+func (a *App) kiroStoreLogin(l kiroauth.Login, note string) tea.Cmd {
+	st := &a.kiroLogin
+	if a.resolver == nil {
+		st.status = "✗ no credential store to save the sign-in to"
+		return nil
+	}
+	backend := a.providerDetailState.backend
+	if backend != credentials.SourceKeychain && backend != credentials.SourceUserFile {
+		backend = a.resolver.PreferredBackend()
+	}
+	if err := a.resolver.Store("kiro", "login", l.Encode(), backend); err != nil {
+		st.status = "✗ could not store the sign-in: " + err.Error()
+		return nil
+	}
+	st.status = "● signed in · stored in the " + string(backend) + note
+	a.refreshProviderDetail()
+	return a.refreshProvider()
+}
+
+// kiroPickingProfile reports whether the profile picker has the keys.
+func (a *App) kiroPickingProfile() bool { return len(a.kiroLogin.profiles) > 0 }
+
+// handleKiroProfileKey drives the profile picker.
+func (a *App) handleKiroProfileKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
+	st := &a.kiroLogin
+	switch m.String() {
+	case "up", "k":
+		if st.profileCursor > 0 {
+			st.profileCursor--
+		}
+	case "down", "j":
+		if st.profileCursor < len(st.profiles)-1 {
+			st.profileCursor++
+		}
+	case "enter":
+		l := st.pending.WithProfile(st.profiles[st.profileCursor])
+		st.profiles, st.pending = nil, kiroauth.Login{}
+		return a, a.kiroStoreLogin(l, "")
+	case "esc":
+		// Keep the sign-in; the requests go out without a profile.
+		l := st.pending
+		st.profiles, st.pending = nil, kiroauth.Login{}
+		return a, a.kiroStoreLogin(l, " · no profile chosen")
+	}
+	return a, nil
 }
 
 // kiroSignInView renders the sign-in block under the credential fields.
@@ -143,6 +206,13 @@ func (a *App) kiroSignInView(w int) string {
 	var b strings.Builder
 	if st.urlMode {
 		b.WriteString("\n" + a.renderFieldEditor(kiroEditorTitle, w) + "\n")
+	}
+	for i, p := range st.profiles {
+		line := p.Name + "  " + components.MutedStyle.Render(p.ARN)
+		b.WriteString("\n  " + components.Cursor(i == st.profileCursor) + " " + line)
+		if i == len(st.profiles)-1 {
+			b.WriteString("\n    " + components.MutedStyle.Render("↑↓ choose · enter use · esc store without a profile") + "\n")
+		}
 	}
 	if st.grant != nil {
 		b.WriteString("\n    open  " + components.AccentStyle.Render(st.grant.BrowseURL()) + "\n")

@@ -58,7 +58,7 @@ func main() {
 	}
 	// `belai login kiro` signs in to Kiro with an AWS Builder ID.
 	if len(os.Args) > 1 && os.Args[1] == "login" {
-		os.Exit(runLoginCLI(ctx, os.Args[2:], os.Stdout, os.Stderr))
+		os.Exit(runLoginCLI(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Stderr, isCharDevice(os.Stdin)))
 	}
 	// `belai plugin …` is a subcommand with its own flags.
 	if len(os.Args) > 1 && os.Args[1] == "plugin" {

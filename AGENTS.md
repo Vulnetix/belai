@@ -256,8 +256,11 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
 - **Kiro tokens go only to pinned AWS hosts.** `internal/kiroauth` sends
   the AWS sign-in only to `oidc.<region>.amazonaws.com` and the access token
   only to `q.`/`codewhisperer.<region>.amazonaws.com` (or a loopback mock),
-  over https, in the `Authorization` header (SSO-OIDC calls never follow a
-  redirect); a region must match the AWS region shape. The device code, client secret,
+  over https, in the `Authorization` header (SSO-OIDC, model-list and
+  profile calls never follow a redirect); a region must match the AWS region
+  shape. The live model catalogue (`internal/kiromodels`) is facts only —
+  ids, limits, effort enums, an image flag — and additionalModelRequestFields
+  carries only what a model's schema declares. The device code, client secret,
   refresh and access tokens never reach a transcript, log, setting,
   notification or model, and AWS error text is reduced to its code. A
   rotated refresh token is written back only to the keychain or credentials
