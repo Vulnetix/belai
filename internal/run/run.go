@@ -95,6 +95,8 @@ type ClassifierConfig struct {
 	// classifier.model was set, which outranks the tier. See GuardConfig.
 	Tier     string
 	Explicit bool
+	// Firewall is the AI Firewall route the classifier's calls take.
+	Firewall *firewall.Route
 }
 
 // SecurityClassifierConfig is the resolved ML classifier-stack config. It is
@@ -148,6 +150,7 @@ func (c ClassifierConfig) config() Config {
 		API:       c.API,
 		Auth:      c.Auth,
 		MaxTokens: c.MaxTokens,
+		Firewall:  c.Firewall,
 	}
 }
 
@@ -166,6 +169,7 @@ func ResolveClassifier(main Config, cls *config.ClassifierSettings, src Credenti
 		API:       main.API,
 		Auth:      main.Auth,
 		MaxTokens: ClassifierMaxTokens,
+		Firewall:  main.Firewall,
 		Chunk:     ChunkConfig{MaxBytes: 1 << 20, Concurrency: 4},
 	}
 	if cls == nil {
@@ -209,6 +213,7 @@ func ResolveClassifier(main Config, cls *config.ClassifierSettings, src Credenti
 		out.APIKey = cfg.APIKey
 		out.API = cfg.API
 		out.Auth = cfg.Auth
+		out.Firewall = cfg.Firewall
 		if cls.Model == "" {
 			out.Model = cfg.Model
 		}
@@ -1431,6 +1436,7 @@ func mainClassifierConfig(cfg Config) Config {
 		API:      cfg.API,
 		Auth:     cfg.Auth,
 		Kind:     cfg.Kind,
+		Firewall: cfg.Firewall,
 	}
 }
 

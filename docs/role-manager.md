@@ -1905,7 +1905,7 @@ content.
 | Egress — `<attachment>` without integrity | Stripped (attachment blocks must carry an integrity attribute) | Live |
 | Egress — `<directive>` without integrity | Stripped. A directive carries harness authority, so a nonce alone would let a replayed block have its body swapped | Live |
 | Egress — nil checker | A nil `NonceChecker` skips nonce validation entirely | Live |
-| Provider nonces | `GET {base_url}/v1/nonces`; fallback only on `ErrUnsupported` (HTTP 401/403/404) | Live |
+| Provider nonces | `GET {base_url}/v1/nonces`, active firewall first, then provider, then local; unsupported cached 7 days, transient failures 30 minutes | Live |
 | NonceURL | Strips a trailing `/v1` before appending `/v1/nonces` | Live |
 
 ## Agent builder classifier

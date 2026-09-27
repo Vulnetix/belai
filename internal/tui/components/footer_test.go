@@ -83,13 +83,13 @@ func TestFooterRendersTwoLines(t *testing.T) {
 func TestFooterCavemanIndicator(t *testing.T) {
 	t.Run("enabled", func(t *testing.T) {
 		f := Footer{Model: "gpt-5", Provider: "openai", Mode: "agent", Guardrails: true, Ask: true, Caveman: true, Width: 120}
-		if v := f.View(); !strings.Contains(v, "caveman: on") {
+		if v := f.View(); !strings.Contains(ansi.Strip(v), "● caveman") {
 			t.Fatalf("footer must render caveman: on, got %q", v)
 		}
 	})
 	t.Run("disabled", func(t *testing.T) {
 		f := Footer{Model: "gpt-5", Provider: "openai", Mode: "agent", Guardrails: true, Ask: true, Width: 120}
-		if v := f.View(); !strings.Contains(v, "caveman: off") {
+		if v := f.View(); !strings.Contains(ansi.Strip(v), "○ caveman") {
 			t.Fatalf("footer must render caveman: off, got %q", v)
 		}
 	})
@@ -101,7 +101,7 @@ func TestFooterCavemanIndicator(t *testing.T) {
 		if !strings.Contains(v, "YOLO") {
 			t.Fatalf("both gates off must collapse to YOLO, got %q", v)
 		}
-		if !strings.Contains(v, "caveman: on") {
+		if !strings.Contains(ansi.Strip(v), "● caveman") {
 			t.Fatalf("caveman slot must survive the YOLO collapse, got %q", v)
 		}
 	})
@@ -109,7 +109,7 @@ func TestFooterCavemanIndicator(t *testing.T) {
 		// A footer with nothing configured yet must not read as silence on a
 		// setting that changes every reply.
 		var f Footer
-		if v := f.View(); !strings.Contains(v, "caveman: off") {
+		if v := f.View(); !strings.Contains(ansi.Strip(v), "○ caveman") {
 			t.Fatalf("zero footer must render caveman: off, got %q", v)
 		}
 	})
@@ -122,14 +122,14 @@ func TestFooterPermissionChips(t *testing.T) {
 		guardrails, ask bool
 		want, absent    []string
 	}{
-		{true, true, []string{"guardrails: on", "ask: on"}, []string{"YOLO"}},
-		{true, false, []string{"guardrails: on", "ask: off"}, []string{"YOLO"}},
-		{false, true, []string{"guardrails: off", "ask: on"}, []string{"YOLO"}},
-		{false, false, []string{"YOLO"}, []string{"guardrails:", "ask:"}},
+		{true, true, []string{"● guardrails", "● ask"}, []string{"YOLO", "guardrails: off"}},
+		{true, false, []string{"● guardrails", "○ ask"}, []string{"YOLO"}},
+		{false, true, []string{"guardrails: off", "● ask"}, []string{"YOLO"}},
+		{false, false, []string{"YOLO"}, []string{"guardrails", "ask"}},
 	}
 	for _, tc := range cases {
 		f := Footer{Guardrails: tc.guardrails, Ask: tc.ask, Width: 120}
-		got := f.permissionChips()
+		got := ansi.Strip(f.permissionChips())
 		for _, w := range tc.want {
 			if !strings.Contains(got, w) {
 				t.Errorf("guardrails=%v ask=%v: chips %q missing %q", tc.guardrails, tc.ask, got, w)
@@ -279,7 +279,7 @@ func TestFooterSessionSpan(t *testing.T) {
 	if len(lines) < 3 {
 		t.Fatalf("footer should have a line 2: %q", v)
 	}
-	line := ansi.Strip(lines[2])
+	line := ansi.Strip(lines[f.SessionRow()])
 	if got := ansi.Cut(line, col, col+width); got != "session: abcd1234" {
 		t.Fatalf("session span slices to %q, want %q (line %q)", got, "session: abcd1234", line)
 	}
@@ -294,19 +294,19 @@ func TestFooterSessionSpanOff(t *testing.T) {
 	}
 }
 
-// TestFooterHintLine pins the hover hint contract: the hint renders on its
-// own line, an empty hint still reserves that line (so the footer height
-// never changes with the pointer), and a non-empty hint is the last line.
+// TestFooterHintLine pins the hover hint contract: the hint takes the status
+// line, an empty hint still reserves it (so the footer height never changes
+// with the pointer), and a non-empty hint is the last line.
 func TestFooterHintLine(t *testing.T) {
 	f := Footer{Session: "abcd1234", Mode: "agent", Width: 80}
 	empty := f.View()
-	if lipgloss.Height(empty) != 5 {
-		t.Fatalf("footer without hint should reserve 5 lines, got %d (%q)", lipgloss.Height(empty), empty)
+	if lipgloss.Height(empty) != 3 {
+		t.Fatalf("footer without hint should reserve 3 lines, got %d (%q)", lipgloss.Height(empty), empty)
 	}
 
 	f.Hint = "ctrl+o expand all"
 	v := f.View()
-	if lipgloss.Height(v) != 5 {
+	if lipgloss.Height(v) != 3 {
 		t.Fatalf("a hint must not change footer height, got %d", lipgloss.Height(v))
 	}
 	lines := strings.Split(v, "\n")
@@ -338,13 +338,13 @@ func TestFooterEffortRendering(t *testing.T) {
 		f := Footer{Model: "gpt-5", Effort: "", Mode: "agent", Guardrails: true, Ask: true, Width: 100}
 		v := f.View()
 		lines := strings.Split(v, "\n")
-		// The model/effort line is the second content line (index 2), ahead of
-		// the subagent strip and the hint.
-		line2 := lines[2]
+		// The model/effort line is the second line (index 1), ahead of the
+		// status line.
+		line2 := ansi.Strip(lines[1])
 		if !strings.Contains(line2, "gpt-5 · default") {
 			t.Fatalf("empty effort should render as default: %q", line2)
 		}
-		if !strings.Contains(line2, "guardrails: on") {
+		if !strings.Contains(line2, "● guardrails") {
 			t.Fatalf("permission chips should still render: %q", line2)
 		}
 	})

@@ -656,27 +656,41 @@ func tagProvenance(lm LineMap, owner int, msg Message) {
 	}
 }
 
-// reasoningPanel renders streamed chain-of-thought as a dim, unbordered
-// sibling of the assistant panel, truncated like any other turn.
+// reasoningPanel renders streamed chain-of-thought. Collapsed, it is one low
+// line (`∴ reasoning · 12 lines · ctrl+o to read`) whose selection copies the
+// whole thought; expanded, it is a muted open panel.
 func reasoningPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 	body := strings.TrimRight(msg.Text(), "\n")
-	var marker, hidden string
 	if !expandAll && !msg.Expanded {
-		body, marker, hidden = truncateBody(body, assistantPreviewLines)
+		return reasoningLine(body, width)
 	}
-	body = MutedStyle.Render(body)
-	title := "model · reasoning"
-	if (expandAll || msg.Expanded) && msg.Provider != "" && msg.Model != "" {
-		title = msg.Provider + "/" + msg.Model + " · reasoning"
+	detail := msg.Model
+	if msg.Provider != "" && msg.Model != "" {
+		detail = msg.Provider + "/" + msg.Model
 	}
 	return Panel{
-		Title:  title,
-		Body:   body,
+		Title:  "reasoning",
+		Detail: detail,
+		Body:   MutedStyle.Render(body),
 		Width:  width,
-		Accent: lipgloss.TerminalColor(ColorMuted),
-		Marker: marker,
-		Hidden: hidden,
+		Accent: lipgloss.TerminalColor(ColorLow),
+		Open:   true,
 	}.Render()
+}
+
+// reasoningLine is the collapsed reasoning row. The whole line is the
+// truncation marker, so a selection over it copies the full thought.
+func reasoningLine(body string, width int) (string, LineMap) {
+	n := strings.Count(body, "\n") + 1
+	noun := "lines"
+	if n == 1 {
+		noun = "line"
+	}
+	plain := "∴ reasoning · " + strconv.Itoa(n) + " " + noun + " · ctrl+o to read"
+	plain = truncateRunes(plain, max(width-2, 8))
+	w := visibleLen(plain)
+	sl := SourceLine{Text: plain, Col: 2, Width: w, MarkerCol: 2, MarkerWidth: w, Hidden: body}
+	return "  " + LowStyle.Render(plain), LineMap{sl}
 }
 
 // turnPanel renders a user or assistant turn. Assistant bodies are markdown,
@@ -687,17 +701,20 @@ func reasoningPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 // hidden lines.
 func turnPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 	title, accent := "model", lipgloss.TerminalColor(ColorTeal)
+	detail := ""
 	if msg.Role == "user" {
-		title, accent = "user prompt", lipgloss.TerminalColor(ColorTealSoft)
+		title, accent = "you", lipgloss.TerminalColor(ColorTealSoft)
 		if msg.Steering {
-			title, accent = "user steering", lipgloss.TerminalColor(ColorAmber)
+			title, accent = "you · steering", lipgloss.TerminalColor(ColorAmber)
 		} else if msg.RemoteID != "" {
-			title = "web prompt"
+			title = "you · web"
 		}
 	} else if msg.Role != "assistant" {
 		title, accent = msg.Role, lipgloss.TerminalColor(ColorMuted)
 	} else if (expandAll || msg.Expanded) && msg.Provider != "" && msg.Model != "" {
-		title = msg.Provider + "/" + msg.Model
+		detail = msg.Provider + "/" + msg.Model
+	} else {
+		detail = msg.Model
 	}
 
 	meta := ""
@@ -739,7 +756,7 @@ func turnPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 		title = MutedStyle.Render(title)
 	}
 
-	p := Panel{Title: title, Meta: meta, Width: width, Accent: accent}
+	p := Panel{Title: title, Detail: detail, Meta: meta, Width: width, Accent: accent, Open: true}
 
 	if assistantMarkdown(msg) {
 		inner := max(width-4, 8)
@@ -756,6 +773,9 @@ func turnPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 		}
 		if msg.Partial {
 			body = MutedStyle.Render(body)
+		} else if msg.Role == "user" {
+			// What you typed is emphasis; reply body copy is softer.
+			body = lipgloss.NewStyle().Foreground(ColorCream).Render(body)
 		}
 		p.Body = body
 		p.Marker = marker
@@ -869,7 +889,7 @@ func toolRow(msg Message, width int, expandAll bool) (string, LineMap) {
 		}
 	}
 
-	head := toolNameStyle(msg.ToolName).Render("⌁ " + msg.ToolName)
+	head := toolHead(msg.ToolName, strings.HasPrefix(status, "✗"))
 	plain := "⌁ " + msg.ToolName
 
 	// Subagent activity rows carry a dim gutter naming their subagent, so a
@@ -1295,16 +1315,23 @@ var vendorToolColors = map[string]lipgloss.TerminalColor{
 }
 
 // toolNameStyle returns the style for a tool row's name: the vendor colour for
-// a known cloud/SaaS tool, the standard tool colour for the other native
-// catalogue tools, and the muted style for everything else (unchanged).
+// a known cloud/SaaS tool, and body text for everything else. Routine tool
+// activity is quiet (docs/tui-design.md): amber is for what needs the user.
 func toolNameStyle(name string) lipgloss.Style {
 	if c, ok := vendorToolColors[name]; ok {
 		return lipgloss.NewStyle().Foreground(c)
 	}
-	if isNativeTool(name) {
-		return WarnStyle
+	return TextStyle
+}
+
+// toolHead renders a tool row's `⌁ Name` lead: the glyph in ColorLow and the
+// name in its tool style, or both in the danger colour on a failed row so a
+// failure is the one row that stands out.
+func toolHead(name string, failed bool) string {
+	if failed {
+		return DangerStyle.Render("⌁ ") + lipgloss.NewStyle().Foreground(ColorCream).Render(name)
 	}
-	return MutedStyle
+	return LowStyle.Render("⌁ ") + toolNameStyle(name).Render(name)
 }
 
 // nativeToolNames is the set of first-class native tools (local + cloud). A

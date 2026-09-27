@@ -2184,20 +2184,40 @@ forge, repository and branch — guardrails off does not skip it — and a branc
 with no upstream is pushed first behind its own confirmation; `c` copies the
 PR/MR URL. Ci tab: `enter`/`c` copy the selected run link. `r` refreshes both.
 
-### Vulnetix AI Firewall
+### AI Firewall
 
-When the user toggles it on (`F10`, `/vulnetix firewall`, or
-`BELAI_FIREWALL=1`), Belai routes eligible provider traffic through the
-Vulnetix AI Firewall gateway. The toggle is fail-closed: `run.Prepare` asks
-`credentials.Resolver` for the firewall source via `internal/aifirewall`, which
-maps the provider to a gateway slug and constructs
-`<gateway>/<slug>/<org>/v1`. The resolver also loads the Vulnetix CLI
-credential through `internal/vulnetixcreds`. If credentials are missing or the
-provider has no gateway slug, the on-toggle is remembered but the run falls
-back to the native provider.
+When the user turns it on (`F10`, `/firewall on`, `/vulnetix firewall`,
+`-firewall` or `BELAI_FIREWALL=1`), Belai routes eligible provider traffic
+through the **active** firewall instance (see [firewall.md](firewall.md)).
+`internal/firewall` holds the adapters:
+- Vulnetix (stable);
+- Fastly ARC, Kong and AI Security Gateway (beta);
+- custom;
+- the read-only OpenRouter and Cloudflare entries.
 
-The project-level `vulnetix.firewall_enabled` setting overrides the global
-profile value; the CLI flag/environment variable overrides the project value.
+Each adapter plans a `firewall.Route` (base URL, key header, whether the
+provider's auth is dropped) and reads responses back into a
+`firewall.Verdict`.
+
+The toggle is fail-closed. `run.Prepare` asks `credentials.Resolver` for the
+route. The resolver checks the instance's provider limit and the adapter's
+support for the provider's wire and auth style. It then loads the key: the
+Vulnetix CLI credential through `internal/vulnetixcreds`, or the instance's
+secret stored under `firewall:<name>`. Any failure leaves the on-toggle
+remembered, but the run goes to the native provider.
+
+The route rides on `run.Config.Firewall`:
+- `newRequestFactory` applies its headers to every request.
+- `roundTrip` and `openStream` refuse redirects.
+- `inspectFirewall` passes each response to the process-wide
+  `run.SetFirewallObserver`.
+- The TUI turns each event into a render-only report card, and headless runs
+  print one stderr line per event.
+
+`firewall.instances` and `firewall.active` come from the user's own layers
+only. The project layer may set `firewall.enabled: false` and nothing else.
+The per-project toggle overrides the global value; the CLI flag or
+environment variable overrides both.
 `BELAI_BASE_URL` overrides the gateway URL for any single run, which lets
 tests and local gateways observe the routing without contacting the live
 gateway.

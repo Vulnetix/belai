@@ -146,23 +146,24 @@ func modeColor(mode string) lipgloss.TerminalColor {
 	}
 }
 
-// View renders the footer as three content lines plus the rule: line 1
-// carries the mode chip, cwd and branch; line 2 carries provider/model/effort/
-// permission controls on the left and session/context/bar on the right; line 3
-// is the hover hint (empty unless the pointer is over an actionable region).
+// View renders the footer as three lines under the composer, whose bottom
+// edge is its separator: line 1 carries the mode, cwd and branch; line 2
+// carries provider/model/effort and the safety switches on the left and
+// session/context/bar on the right (SessionRow); line 3 is the hover or armed
+// hint when there is one, and otherwise the subagent roster.
 func (f *Footer) View() string {
 	if f.Width <= 0 {
 		f.Width = 80
 	}
 
-	modeLabel := f.Mode
+	// The mode is coloured text, not a chip: solid chips are reserved for a
+	// relaxed safety switch (docs/tui-design.md).
+	mode := lipgloss.NewStyle().Foreground(modeColor(f.Mode)).Bold(true).Render(f.Mode)
 	if f.Agent != "" {
-		modeLabel += " · " + f.Agent
+		mode += LowStyle.Render(" · " + f.Agent)
 	}
-	modeChip := Chip(modeLabel, modeColor(f.Mode))
 
-	var line1Parts []string
-	line1Parts = append(line1Parts, modeChip)
+	line1Parts := []string{mode}
 	if f.Cwd != "" {
 		cwd := f.Cwd
 		if home, _ := os.UserHomeDir(); home != "" && strings.HasPrefix(cwd, home) {
@@ -173,7 +174,7 @@ func (f *Footer) View() string {
 	if f.Branch != "" {
 		line1Parts = append(line1Parts, AccentStyle.Render("⎇ ")+MutedStyle.Render(f.Branch))
 	}
-	line1 := f.withBudget(strings.Join(line1Parts, MutedStyle.Render("  ·  ")))
+	line1 := f.withBudget(strings.Join(line1Parts, LowStyle.Render("  ·  ")))
 
 	left, pad, right, _, _, _ := f.line2Layout()
 	line2 := left
@@ -181,16 +182,24 @@ func (f *Footer) View() string {
 		line2 = left + strings.Repeat(" ", pad) + right
 	}
 
-	rule := Rule(f.Width)
+	return line1 + "\n" + line2 + "\n" + f.statusLine()
+}
+
+// SessionRow is the footer-internal line index of the session segment.
+func (f *Footer) SessionRow() int { return 1 }
+
+// statusLine is the footer's last line: an armed or hover hint takes it while
+// one is showing, and the subagent roster (or review, or followed agent)
+// holds it otherwise.
+func (f *Footer) statusLine() string {
 	hint := f.Hint
 	if f.Armed != "" {
 		hint = f.Armed
 	}
-	hint = ansi.Truncate(hint, f.Width, "")
-	if line1 != "" {
-		return rule + "\n" + line1 + "\n" + line2 + "\n" + f.subagentLine() + "\n" + MutedStyle.Render(hint)
+	if hint != "" {
+		return MutedStyle.Render(ansi.Truncate(hint, f.Width, ""))
 	}
-	return rule + "\n" + line2 + "\n" + f.subagentLine() + "\n" + MutedStyle.Render(hint)
+	return f.subagentLine()
 }
 
 // subagentLine renders the subagent roster as one line. It returns "" when
@@ -458,35 +467,37 @@ func (f Footer) permissionChips() string {
 	if !f.Guardrails && !f.Ask && !f.Firewall {
 		return Chip("YOLO", ColorAmber)
 	}
-	guardrails := Chip("guardrails: "+onOff(f.Guardrails), onOffColor(f.Guardrails))
-	ask := Chip("ask: "+onOff(f.Ask), onOffColor(f.Ask))
-	out := guardrails + MutedStyle.Render(" ") + ask
+	// A switch that is on is a quiet dot; only a relaxed guardrail earns a
+	// solid chip (docs/tui-design.md).
+	guardrails := switchDot("guardrails", f.Guardrails)
+	if !f.Guardrails {
+		guardrails = Chip("guardrails: off", ColorDanger)
+	}
+	out := guardrails + "  " + switchDot("ask", f.Ask)
 	if f.Firewall {
-		label := f.FirewallLabel
-		if label == "" {
-			label = "on"
+		label := "firewall"
+		if f.FirewallLabel != "" {
+			label += ": " + f.FirewallLabel
 		}
-		out += MutedStyle.Render(" ") + Chip("firewall: "+label, ColorTeal)
+		out += "  " + switchDot(label, true)
 	}
 	return out
 }
 
-// cavemanSegment renders the caveman voice-rewrite status. Unlike the
-// permission chips it never collapses away: off is as much a fact as on, so
-// both render. The value is teal when on and muted when off, while the label
-// stays muted either way so the safety chips keep the visual lead.
-func (f Footer) cavemanSegment() string {
-	if f.Caveman {
-		return MutedStyle.Render("caveman: ") + lipgloss.NewStyle().Foreground(ColorTeal).Render("on")
+// switchDot renders a footer switch as `● label` (on, teal dot) or
+// `○ label` (off, all low).
+func switchDot(label string, on bool) string {
+	if on {
+		return AccentStyle.Render("●") + MutedStyle.Render(" "+label)
 	}
-	return MutedStyle.Render("caveman: off")
+	return LowStyle.Render("○ " + label)
 }
 
-func onOffColor(on bool) lipgloss.TerminalColor {
-	if on {
-		return ColorTeal
-	}
-	return ColorDanger
+// cavemanSegment renders the caveman voice-rewrite status. Unlike the
+// permission chips it never collapses away: off is as much a fact as on, so
+// both render, as a switch dot like the safety switches.
+func (f Footer) cavemanSegment() string {
+	return switchDot("caveman", f.Caveman)
 }
 
 // sessionSegment renders the session name (when shown) or the short id,
@@ -603,13 +614,6 @@ func truncateRunes(s string, max int) string {
 		return s
 	}
 	return string(runes[:max-1]) + "…"
-}
-
-func onOff(v bool) string {
-	if v {
-		return "on"
-	}
-	return "off"
 }
 
 // minBudgetLeft is the narrowest the left side of line 1 (mode chip, cwd,

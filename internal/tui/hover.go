@@ -53,15 +53,15 @@ func (a *App) recomputeHover() {
 }
 
 // hitSession reports whether a screen cell lies over the footer's session
-// segment. The segment lives on the footer's second content line (rule, line
-// 1, line 2), right-aligned, at the column span SessionSpan returns.
+// segment. The segment lives on the footer's SessionRow, right-aligned, at
+// the column span SessionSpan returns.
 func (a *App) hitSession(x, y int) bool {
 	h := a.footerHeight()
 	top := a.height - 1 - h
 	if y < top || y >= top+h {
 		return false
 	}
-	if y-top != 2 {
+	if y-top != a.footer.SessionRow() {
 		return false
 	}
 	col, width, ok := a.footer.SessionSpan()

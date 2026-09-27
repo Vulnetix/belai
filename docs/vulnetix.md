@@ -69,8 +69,8 @@ for LLM traffic.
   `.vulnetix/settings.json` can turn the firewall off but never on; the
   per-project toggle (`F10`) overrides the global value, and the CLI flag /
   environment variable overrides both.
-- **Gateway routing uses the provider slug, not the URL.** `internal/aifirewall`
-  maps providers (`openai`, `anthropic`, etc.) to gateway paths. The gateway
+- **Gateway routing uses the provider slug, not the URL.** The Vulnetix
+  adapter in `internal/firewall` (see [firewall.md](firewall.md)) maps providers (`openai`, `anthropic`, etc.) to gateway paths. The gateway
   base URL is `<gatewayHost>/<slug>/<org>/v1`. Anthropic chat uses
   `/v1/messages`; OpenAI-compatible surfaces use `/v1/chat/completions`. The
   gateway API key replaces the provider key.
@@ -88,7 +88,7 @@ for LLM traffic.
 | `/vulnetix configure` | Open the CLI capability screen |
 | `/vulnetix list` | Open the project history screen |
 | `/vulnetix status` | Print CLI capabilities as plain text |
-| `/vulnetix firewall` | Toggle the Vulnetix AI Firewall on/off |
+| `/vulnetix firewall` | Make the Vulnetix AI Firewall the active firewall, or toggle it on/off when it already is |
 | `/vulnetix mcp` | Add the hosted Vulnetix MCP server, authenticated with the CLI's credential (see *Vulnetix MCP server*) |
 | `/vulnetix mcp remove` | Remove it from the global settings and stop it |
 | `/vulnetix mcp status` | Show its state and tools |
@@ -443,22 +443,34 @@ cannot silence the check on the dependencies it asks you to add.
 
 ## AI Firewall (`/vulnetix firewall` and `F10`)
 
-The Vulnetix AI Firewall routes LLM traffic from Belai through the Vulnetix
-AI Firewall gateway. It can be toggled from anywhere with `F10` or with
-`/vulnetix firewall` in chat. The footer shows a shield chip when the firewall
-is on. The toggle is persisted in the per-project preferences (kept in the
-user's global directory, keyed by the working directory) and overrides the
-global `vulnetix.firewall_enabled`; the CLI flag overrides both. A
-repository's `.vulnetix/settings.json` can turn it off but never on. Turning
-it on also stores the configured provider keys with the gateway (see
-*Provider keys*).
+The Vulnetix AI Firewall is the first adapter of Belai's generic AI Firewall
+(see [firewall.md](firewall.md), which also covers the beta Fastly, Kong and
+AI Security Gateway adapters, custom firewalls and the read-only OpenRouter
+and Cloudflare entries). Getting started and `/vulnetix firewall` configure
+it through that system. They write `firewall.enabled` and make `vulnetix`
+the active instance, rather than a Vulnetix-specific switch.
 
-When enabled, `run.Prepare` asks the credential resolver for the firewall
-configuration. The resolver returns the gateway URL and Vulnetix API key;
-`run.Config` then uses those as the provider base URL and API key. The model
-catalog still fetches through the gateway when the user picks a provider.
+`F10` turns the active firewall on or off from anywhere, and the footer shows
+a `firewall: <name>` chip while it is on. The toggle is persisted in the
+per-project preferences (kept in the user's global directory, keyed by the
+working directory) and overrides the global `firewall.enabled`; the CLI flag
+overrides both. A repository's `.vulnetix/settings.json` can turn it off but
+never on. Turning it on also stores the configured provider keys with the
+gateway (see *Provider keys*).
 
-Keys: `F10` toggle, `esc` or `/vulnetix firewall` to toggle.
+When enabled, `run.Prepare` asks the credential resolver for the active
+firewall's route. For Vulnetix, that route is the gateway URL and the Vulnetix
+API key, which `run.Config` uses as the provider base URL and API key. The
+model catalogue is fetched through the gateway: the org's curated `/models`.
+
+When the gateway reports an event in its `X-Vulnetix-Firewall-*` response
+headers (a redaction, a flag, stripped capabilities or sealed blocks) or
+refuses a request (a guardrail block, `provider_key_missing`,
+`model_denied`, …), the thread shows a card with the matched rules, counts,
+code, request id and a hint. The matched text is never shown.
+
+Keys: `F10` toggle; `/firewall` configures; `/vulnetix firewall` makes
+Vulnetix active or toggles it.
 
 ## Runs panel
 
