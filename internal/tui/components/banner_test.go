@@ -107,7 +107,7 @@ func TestBannerBelayLine(t *testing.T) {
 	if !strings.Contains(v, "belai") || !strings.Contains(v, "◉") {
 		t.Fatalf("banner should draw the belay-line wordmark: %q", v)
 	}
-	if !strings.Contains(v, "Safer LLM harness · vulnetix.com") || strings.Contains(v, "on belay") {
+	if !strings.Contains(v, "a safer LLM harness · vulnetix.com") || strings.Contains(v, "on belay") {
 		t.Fatalf("banner should carry the tagline, without on belay: %q", v)
 	}
 }
@@ -159,7 +159,7 @@ func TestBannerCompactKeepsTagline(t *testing.T) {
 	if len(lines) != 2 {
 		t.Fatalf("compact header should be two lines: %q", lines)
 	}
-	if !strings.Contains(lines[0], "Safer LLM harness · vulnetix.com") || strings.Contains(lines[0], "on belay") {
+	if !strings.Contains(lines[0], "a safer LLM harness · vulnetix.com") || strings.Contains(lines[0], "on belay") {
 		t.Fatalf("compact header lost the tagline: %q", lines[0])
 	}
 	for _, want := range []string{"v0.54.1", "commit 082708f", "built 2026-09-27T13:37:52Z", runtime.GOOS + "/" + runtime.GOARCH} {

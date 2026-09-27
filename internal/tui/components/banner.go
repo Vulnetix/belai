@@ -93,7 +93,7 @@ func (b Banner) View() string {
 
 // Tagline is the brand line both banners carry: the owl's subtitle and the
 // compact header.
-const Tagline = "Safer LLM harness · vulnetix.com"
+const Tagline = "a safer LLM harness · vulnetix.com"
 
 // compactView is the header past a first run: the wordmark and tagline (plus
 // the resumed note) on one line, the full build facts on the next, each cut

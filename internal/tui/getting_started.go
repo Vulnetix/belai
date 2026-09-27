@@ -18,8 +18,8 @@ import (
 )
 
 // The Getting started view runs once per user on the first interactive
-// launch, and again on /vulnetix setup. It explains the main keys and
-// commands, then walks the Vulnetix setup: install the CLI through the
+// launch, and again on /vulnetix setup. It opens on a page of core Belai
+// concepts, explains the main keys and commands, then walks the Vulnetix setup: install the CLI through the
 // platform package manager (only after the user picks Install), create an
 // account through the enrollment flow, log the CLI in with the device flow,
 // and turn the AI Firewall and the Vulnetix MCP server on.
@@ -31,7 +31,8 @@ import (
 type gsStep int
 
 const (
-	gsKeys gsStep = iota
+	gsConcepts gsStep = iota
+	gsKeys
 	gsCommands
 	gsCLI
 	gsAccount
@@ -40,8 +41,43 @@ const (
 	gsEnable
 )
 
-// gsKeyList and gsCommandList are what the first two pages teach.
+// gsPageCount is the number of Getting started pages the header shows.
+const gsPageCount = 6
+
+// gsConcept is one core Belai concept the first page teaches.
+type gsConcept struct {
+	term string
+	desc string
+}
+
+// gsConceptList, gsKeyList and gsCommandList are what the first three pages
+// teach.
 var (
+	gsConceptList = []gsConcept{
+		{"modes", "agent steers each turn · plan drafts and you approve · goal keeps going until the work stalls"},
+		{"guardrails", "untrusted content — tool results, web, files — is classified before it can steer you"},
+		{"ask", "every tool call is allowed, asked or denied; off with guardrails is YOLO"},
+		{"agents", "a profile carries your turns — built-ins and your own — /profile"},
+		{"sandbox", "commands run inside an OS sandbox; only workspace roots and caches are writable"},
+		{"budgets", "token budgets cap spend per provider and model · /budgets"},
+		{"providers", "credentials and local models for every provider · /providers"},
+		{"sessions", "sessions persist, resume and compact · /resume /compact"},
+		{"kanban", "a shared board tracks work across sessions · /kanban"},
+		{"firewall", "an AI Firewall can sit in front of every provider call · /firewall"},
+		{"resilience", "transport, turn and semantic-repair retries recover provider trouble"},
+		{"lsp", "language servers give diagnostics only under directories you trust · /lsp"},
+		{"mcp", "MCP servers bring their own tools; their output is classified too · /mcp"},
+		{"skills", "skills load by name and validate before they run · /skills"},
+		{"plugins", "plugins install whole and namespaced, never shadowing built-ins · /plugin"},
+		{"permissions", "allow, ask and deny rules per tool · a deny from either scope wins · /permissions"},
+		{"prompts", "save and reuse prompts from the composer · /prompts"},
+		{"processes", "long-lived commands run supervised with their own log · /processes"},
+		{"sync", "mirror sessions to the Vulnetix website · /sync"},
+		{"hooks", "your hooks only narrow a decision; their text is classified"},
+		{"telemetry", "OpenTelemetry exports facts and identifiers, never prompt content"},
+		{"acp", "editors drive Belai over the Agent Client Protocol · belai acp"},
+		{"confinement", "paths resolve inside workspace roots; a traversal is refused, never clamped"},
+	}
 	gsKeyList     = []string{"tab", "shift+tab", "f3", "f4", "f9"}
 	gsCommandList = []string{"permissions", "model", "settings", "help"}
 )
@@ -527,12 +563,12 @@ func (a *App) handleGettingStartedKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		return a, a.gsBack()
 	case "left":
-		if st.step == gsKeys || st.step == gsCommands {
+		if st.step == gsConcepts || st.step == gsKeys || st.step == gsCommands {
 			return a, a.gsBack()
 		}
 		return a, nil
 	case "right":
-		if st.step == gsKeys || st.step == gsCommands {
+		if st.step == gsConcepts || st.step == gsKeys || st.step == gsCommands {
 			return a, a.gsGo(st.step + 1)
 		}
 		return a, nil
@@ -546,7 +582,7 @@ func (a *App) handleGettingStartedKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (a *App) gsBack() tea.Cmd {
 	st := &a.gsState
 	switch st.step {
-	case gsKeys:
+	case gsConcepts:
 		a.finishGettingStarted()
 		return nil
 	case gsCLI:
@@ -577,7 +613,7 @@ func (a *App) gsBack() tea.Cmd {
 func (a *App) gsEnter(opts []string) tea.Cmd {
 	st := &a.gsState
 	switch st.step {
-	case gsKeys, gsCommands:
+	case gsConcepts, gsKeys, gsCommands:
 		return a.gsGo(st.step + 1)
 	case gsCLI:
 		switch {
@@ -645,16 +681,25 @@ func (a *App) gettingStartedView() string {
 	w := a.contentWidth()
 	st := &a.gsState
 	titles := map[gsStep]string{
-		gsKeys: "Keys", gsCommands: "Commands", gsCLI: "Vulnetix CLI", gsAccount: "Vulnetix account",
+		gsConcepts: "Concepts", gsKeys: "Keys", gsCommands: "Commands", gsCLI: "Vulnetix CLI", gsAccount: "Vulnetix account",
 		gsSignup: "Create an account", gsLogin: "Log in", gsEnable: "AI Firewall and MCP",
 	}
 	var b strings.Builder
-	b.WriteString(components.SectionHeader("Getting started · "+titles[st.step], fmt.Sprintf("%d/5", gsPage(st.step)), w))
+	b.WriteString(components.SectionHeader("Getting started · "+titles[st.step], fmt.Sprintf("%d/%d", gsPage(st.step), gsPageCount), w))
 	muted, emph, accent := components.MutedStyle, components.EmphStyle, components.AccentStyle
 	line := func(s string) { b.WriteString(s + "\n") }
 	help := components.HelpBar("enter", "next", "esc", "back")
 
 	switch st.step {
+	case gsConcepts:
+		line(muted.Render("Welcome to Belai, a safer LLM coding harness. Core concepts that shape every turn:"))
+		line("")
+		for _, c := range gsConceptList {
+			line(fmt.Sprintf("  %s  %s", components.KeyStyle.Render(fmt.Sprintf("%-10s", c.term)), c.desc))
+		}
+		line("")
+		line(muted.Render("shift+tab cycles the modes · f3 toggles guardrails · f4 toggles ask."))
+		help = components.HelpBar("enter/→", "next", "esc", "skip getting started")
 	case gsKeys:
 		line(muted.Render("Welcome to Belai. A few keys worth knowing:"))
 		line("")
@@ -663,7 +708,7 @@ func (a *App) gettingStartedView() string {
 		}
 		line("")
 		line(muted.Render("Every binding is listed under /help."))
-		help = components.HelpBar("enter/→", "next", "esc", "skip getting started")
+		help = components.HelpBar("enter/→", "next", "←/esc", "back")
 	case gsCommands:
 		line(muted.Render("Type / in the prompt for every command. The ones to start with:"))
 		line("")
@@ -821,16 +866,18 @@ func (a *App) gettingStartedView() string {
 // gsPage maps a step to the page count shown in the header.
 func gsPage(s gsStep) int {
 	switch s {
-	case gsKeys:
+	case gsConcepts:
 		return 1
-	case gsCommands:
+	case gsKeys:
 		return 2
-	case gsCLI:
+	case gsCommands:
 		return 3
-	case gsAccount, gsSignup, gsLogin:
+	case gsCLI:
 		return 4
+	case gsAccount, gsSignup, gsLogin:
+		return 5
 	}
-	return 5
+	return 6
 }
 
 // keyDescription reads a binding's description from the /help table, so the
