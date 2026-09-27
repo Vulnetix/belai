@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -270,6 +271,10 @@ func (s *Session) kanbanWrapUp(ctx context.Context, pipe *rolemanager.Pipeline, 
 	if !kt.work || s.kanban == nil || !s.kanban.on || !s.allowPassLoop || s.exploreSubagent || ctx.Err() != nil {
 		return
 	}
+	if !s.kanbanNeeded(res.Reply, kt) {
+		s.traceRecord("kanban_wrap_up", "skipped", "", "no open work and no open items", 0)
+		return
+	}
 	s.kanbanWrapUpPass = true
 	s.passBudgetOverride = kanbanWrapUpBudget
 	defer func() {
@@ -320,4 +325,79 @@ const (
 // KanbanSummary counts what the wrap-up changed.
 type KanbanSummary struct {
 	Added, Moved, Updated int
+}
+
+// openWorkPattern matches the wording of open work in a report: the trigger
+// catalogue's signals, as phrases specific enough that a clean "created X,
+// tests pass" report does not match. It gates the wrap-up, which costs one or
+// more full-context model calls, so a turn that plainly finished everything
+// on a board with nothing open for this project skips it.
+var openWorkPattern = regexp.MustCompile(`(?i)\b(` +
+	`todo|fixme|xxx|hack|not (yet )?(done|implemented|tested|run|verified|handled|supported|covered|addressed)|` +
+	`unfinished|incomplete|partial(ly)?|remaining (work|tasks?|steps?|items?|issues?|failures?|errors?|todos?|gaps?)|remains to|left (over|to do|open|in place|as is)|still (need|needs|to|pending|open|fail)|` +
+	`next steps?|follow[- ]?ups?|out of scope|future work|phase 2|nice[- ]to[- ]have|you (could|may|might) (also|want)|` +
+	`recommend\w*|consider (adding|using|a|an|the)|should (eventually|also|be)|untested|not been (tested|run|verified)|` +
+	`failing|fails|failed|flaky|could ?n[o'’]t|cannot|can ?not|unable to|blocked|waiting (on|for)|requires? (a|an|manual|user|credentials|access)|` +
+	`manual(ly)? (qa|test|check|verif\w*)|workaround|temporar(y|ily)|hard[- ]?coded|debug (code|log|print)|deprecat\w*|limitations?|caveats?|` +
+	`edge cases?|known issues?|tech(nical)? debt|refactor\w*|duplicat\w*|(update|updating) (the )?(docs?|documentation|readme|changelog)|` +
+	`release notes|deploy\w*|migrations?|backfill|assum(e|ed|ption)s?|unclear|open questions?|stubs?|stubbed|placeholders?|skipped|warnings?` +
+	`)\b`)
+
+// openWorkHeading matches a report line that opens a list of open work
+// ("Remaining:", "- Not done", "## Known issues").
+var openWorkHeading = regexp.MustCompile(`(?im)^\s*[-*#>]*\s*\**(remaining|still to do|not done|open (items|issues|questions)|known issues|limitations|caveats)\**\s*[:—-]`)
+
+// negatedLead matches a negation just before an open-work phrase: "nothing
+// is left open", "no known issues", "there are no failing tests", "0 failed".
+var negatedLead = regexp.MustCompile(`(?i)\b(no|nothing|none|never|without|zero|nor|0)\b[^.!?\n]{0,24}$`)
+
+// reportHasOpenWork reports whether a report names open work: an open-work
+// heading, or an open-work phrase that is not negated.
+func reportHasOpenWork(report string) bool {
+	for _, m := range openWorkHeading.FindAllStringIndex(report, -1) {
+		if !negatedTail.MatchString(report[m[1]:min(len(report), m[1]+40)]) {
+			return true
+		}
+	}
+	for _, m := range openWorkPattern.FindAllStringIndex(report, -1) {
+		lead := report[max(0, m[0]-40):m[0]]
+		tail := report[m[1]:min(len(report), m[1]+40)]
+		if !negatedLead.MatchString(lead) && !negatedTail.MatchString(tail) {
+			return true
+		}
+	}
+	return false
+}
+
+// negatedTail matches a label answered with a negation: "Follow-up: none",
+// "**Remaining work:** nothing", "Known issues — n/a".
+var negatedTail = regexp.MustCompile(`(?i)^[\s*_:—–-]*(none|nothing|n/a|no\b)`)
+
+// kanbanNeeded reports whether a work turn has anything for the wrap-up to
+// do: a harness fact saying work is open, an open-work phrase in the turn's
+// report, or open items on this project's board that the turn may
+// have finished. Only when all of them are absent is the wrap-up skipped.
+func (s *Session) kanbanNeeded(reply string, kt kanbanTurn) bool {
+	if kt.reviews > 0 || (kt.sentinel != "" && kt.sentinel != rolemanager.GoalComplete) {
+		return true
+	}
+	if kt.todos != nil && len(kt.todos.Items) > 0 && !kt.todos.Complete() {
+		return true
+	}
+	// The report is where a turn says what it left open. Mid-turn narration
+	// ("that failed, retrying") is not, and scanning it ran the wrap-up after
+	// turns that ended clean.
+	if reportHasOpenWork(reply) {
+		return true
+	}
+	prov := s.kanban.base.Source.Get()
+	project := prov.ProjectKey
+	if project == "" {
+		project = prov.Project
+	}
+	counts, err := s.kanban.base.Store.Counts(project)
+	if err != nil {
+		return true // an unreadable board is reported by the tools, not hidden here
+	}
+	return counts[kanban.Backlog]+counts[kanban.Review]+counts[kanban.InProgress]+counts[kanban.Blocked] > 0
 }

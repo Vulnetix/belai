@@ -39,7 +39,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
       </p>
       <p class="mt-4 text-vx-ink/80">
         Plan mode is read-only. The model is not offered <code class="mono">Bash</code> at all, so it has
-        no way to call it. An explicit allow rule can add a read-only <code class="mono">Bash</code> back.
+        no way to call it; the model stays on a short rope. An explicit allow rule can add a read-only <code class="mono">Bash</code> back.
         The last planning pass offers only <code class="mono">update_plan</code>,{' '}
         <code class="mono">ExitPlanMode</code> and <code class="mono">AskUserQuestion</code>, so every plan turn
         ends with a plan or a question. The plan is saved as a structured document that you approve.
@@ -173,7 +173,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
       </p>
       <p class="mt-4 text-vx-ink/80">
         The permissions in effect combine policy, session, tool kind and role. Each grant records which
-        of these added it, and an explicit deny always wins.
+        of these added it, and an explicit deny is the anchor: it always wins.
       </p>
       <p class="mt-4 text-vx-ink/80">
         When no rule matches, the tool call is allowed. Set <code class="mono">permission_no_match</code> to
@@ -445,7 +445,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
         budget has no clock, so it is never amber. With two or more budgets the footer cycles between them
         every ten seconds (<code class="mono">ui.budget_cycle_seconds</code>). Turn on{' '}
         <code class="mono">ui.budget_warn</code> for a warning line on every call while a budget is amber
-        or red. Budgets inform; they never block a call.
+        or red. Budgets give you slack; they never block a call.
       </p>
     </div>
     <ShotCarousel

@@ -69,6 +69,7 @@ func TestClassifierKindsIsExactlyTheArbitraryContentSet(t *testing.T) {
 		// writers' confirmations are harness-composed.
 		KindKanban:      true,
 		KindKanbanWrite: false,
+		KindToolSearch:  false,
 	}
 	for _, k := range AllKinds {
 		if got := k.NeedsClassifier(); got != want[k] {
