@@ -47,6 +47,7 @@ type attachment struct {
 	sentinel rolemanager.Sentinel
 	isDir    bool   // the target is a directory: listed, not read
 	rootDir  string // attachNeedsRoot: the directory proposed as a new root
+	meta     attachMeta
 }
 
 // token is one candidate attachment parsed from editor text.
@@ -65,6 +66,7 @@ type attachValidatedMsg struct {
 	sentinel rolemanager.Sentinel
 	diff     filediff.Change
 	isDir    bool
+	meta     attachMeta
 }
 
 // reservedAttachSchemes lists prefixes that look like schemes but must not be
@@ -403,7 +405,8 @@ func (a *App) validateAttachmentCmd(id int, root, rel string) tea.Cmd {
 			if err != nil {
 				return attachValidatedMsg{id: id, err: err, sentinel: rolemanager.SentinelMalformed, isDir: true}
 			}
-			return attachValidatedMsg{id: id, body: sanitize.Sanitize(body), sentinel: rolemanager.SentinelSafe, isDir: true}
+			body = sanitize.Sanitize(body)
+			return attachValidatedMsg{id: id, body: body, meta: dirAttachmentMeta(abs, body), sentinel: rolemanager.SentinelSafe, isDir: true}
 		}
 		// Verbatim: the body is diffed against the index and handed over as the
 		// file itself, so it must not carry the model-facing gutter or trailer.
@@ -421,8 +424,11 @@ func (a *App) validateAttachmentCmd(id int, root, rel string) tea.Cmd {
 		// answer would spend a round trip per attachment and send the file to
 		// the provider's classifier turn, which is the opposite of what
 		// turning guardrails off asks for. Sanitising still runs.
+		abs = filepath.Join(root, rel)
+		meta := fileAttachmentMeta(abs, res.Content)
 		if pol.Level(posture.ToolResultUnsafe) == posture.Ignore {
-			return attachValidatedMsg{id: id, body: sanitize.Sanitize(res.Content), sentinel: rolemanager.SentinelSafe, diff: diff}
+			body := sanitize.Sanitize(res.Content)
+			return attachValidatedMsg{id: id, body: body, meta: meta.SetBodyTokens(body), sentinel: rolemanager.SentinelSafe, diff: diff}
 		}
 		pipe := run.NewPipeline(cfg, client, a.cache)
 		dec, perr := pipe.Process(ctx, res)
@@ -430,7 +436,7 @@ func (a *App) validateAttachmentCmd(id int, root, rel string) tea.Cmd {
 		if perr == nil && dec.Action == rolemanager.ActionProceed {
 			body = dec.Content
 		}
-		return attachValidatedMsg{id: id, body: body, err: perr, sentinel: dec.Sentinel, diff: diff}
+		return attachValidatedMsg{id: id, body: body, meta: meta.SetBodyTokens(body), err: perr, sentinel: dec.Sentinel, diff: diff}
 	}
 }
 
@@ -485,6 +491,7 @@ func (a *App) handleAttachValidated(m attachValidatedMsg) tea.Cmd {
 	att.sentinel = m.sentinel
 	att.diff = m.diff
 	att.isDir = m.isDir
+	att.meta = m.meta
 	if m.err != nil {
 		att.state = attachRejected
 		att.reason = m.err.Error()
@@ -562,12 +569,14 @@ func (a *App) attachmentPreviews() ([]components.Message, string) {
 				meta["start_line"] = 1
 			}
 			msg := components.Message{
-				Role:     "tool",
-				ToolName: toolName,
-				ToolArgs: `{"path":"` + att.raw + `"}`,
-				Content:  att.body,
-				Meta:     meta,
-				Status:   "✓",
+				Role:         "tool",
+				ToolName:     toolName,
+				ToolArgs:     `{"path":"` + att.raw + `"}`,
+				Content:      att.body,
+				Meta:         meta,
+				Status:       "✓",
+				AttachMeta:   fileMetaFor(att),
+				IsAttachment: true,
 			}
 			if !att.isDir && !att.diff.Empty() {
 				msg.SetDiff(&att.diff)
@@ -595,6 +604,123 @@ func (a *App) attachmentPreviews() ([]components.Message, string) {
 	return previews, directive
 }
 
+// fileMetaFor builds the UI metadata for a resolved attachment.
+func fileMetaFor(att *attachment) *components.FileMeta {
+	path := att.raw
+	if att.root != "" {
+		path = filepath.Join(att.root, att.raw)
+	}
+	return &components.FileMeta{
+		Path:      path,
+		IsDir:     att.isDir,
+		FileSize:  att.meta.FileSize,
+		DiskSize:  att.meta.DiskSize,
+		TotalSize: att.meta.TotalSize,
+		MIMEType:  att.meta.MIMEType,
+		Tokens:    att.meta.Tokens,
+		Trust:     att.meta.Trust,
+		FileCount: att.meta.FileCount,
+	}
+}
+
+// attachmentPaneTitle returns the header label for the attachment preview pane.
+func attachmentPaneTitle(count, tokens int) string {
+	if count == 1 {
+		return "1 file · " + fileCardTokenLabel(tokens)
+	}
+	return fmt.Sprintf("%d files · %s", count, fileCardTokenLabel(tokens))
+}
+
+// fileCardTokenLabel prints a token total with the leading tilde.
+func fileCardTokenLabel(n int) string {
+	return "~" + components.FormatTokens(n) + " tok"
+}
+
+// attachmentPaneRowLimit is the maximum number of attachment rows shown in
+// the composer pane before a "… N more" footer takes over.
+const attachmentPaneRowLimit = 3
+
+// attachmentPaneHeight returns the rows the attachment preview pane occupies
+// above the composer, or 0 when there are no attachments.
+func (a *App) attachmentPaneHeight() int {
+	if len(a.attachments) == 0 {
+		return 0
+	}
+	rows := min(len(a.attachOrder), attachmentPaneRowLimit)
+	if len(a.attachOrder) > attachmentPaneRowLimit {
+		rows++ // "… N more" line
+	}
+	// Header + body rows + bottom border.
+	return 1 + rows + 1
+}
+
+// renderAttachmentPane draws the file metadata pane above the composer. It
+// lists resolved attachments with their name, type, sizes, estimated tokens
+// and trust state, mirroring the shape of the F9 runs panel but scoped to
+// the current composer contents.
+func (a *App) renderAttachmentPane() string {
+	if len(a.attachments) == 0 {
+		return ""
+	}
+	w := a.contentWidth()
+
+	totalTokens := 0
+	for _, id := range a.attachOrder {
+		att := a.attachments[id]
+		if att.state == attachSafe {
+			totalTokens += att.meta.Tokens
+		}
+	}
+
+	var rows []string
+	for i, id := range a.attachOrder {
+		if i >= attachmentPaneRowLimit {
+			rows = append(rows, components.MutedStyle.Render(fmt.Sprintf("… %d more", len(a.attachOrder)-i)))
+			break
+		}
+		att := a.attachments[id]
+		rows = append(rows, a.renderAttachmentPaneRow(att))
+	}
+
+	body := strings.Join(rows, "\n")
+	return components.Panel{
+		Title:  attachmentPaneTitle(len(a.attachments), totalTokens),
+		Body:   body,
+		Width:  w,
+		Accent: lipgloss.TerminalColor(components.ColorTealSoft),
+	}.View()
+}
+
+// renderAttachmentPaneRow builds one line of the attachment pane for the
+// given attachment, adapting to its resolution state.
+func (a *App) renderAttachmentPaneRow(att *attachment) string {
+	switch att.state {
+	case attachResolving, attachClassifying:
+		return fmt.Sprintf("%s %s", a.attachSpin.View(), att.text)
+	case attachNeedsRoot:
+		return components.WarnStyle.Render("⚠ ") + att.text + components.MutedStyle.Render(" needs root")
+	case attachRejected:
+		return lipgloss.NewStyle().Strikethrough(true).Faint(true).Render(att.text) +
+			components.MutedStyle.Render(" "+truncateAttachmentReason(att.reason))
+	}
+
+	meta := fileMetaFor(att)
+	if meta == nil {
+		return components.FileCardCompact(components.FileMeta{Path: att.raw, IsDir: att.isDir}, a.contentWidth())
+	}
+	return components.FileCardCompact(*meta, a.contentWidth())
+}
+
+// truncateAttachmentReason keeps long rejection reasons from overflowing the
+// attachment pane row.
+func truncateAttachmentReason(reason string) string {
+	const max = 60
+	if len(reason) <= max {
+		return reason
+	}
+	return reason[:max-1] + "…"
+}
+
 // hasPendingAttachments reports whether any attachment has not yet resolved.
 func (a *App) hasPendingAttachments() bool {
 	for _, att := range a.attachments {
@@ -613,56 +739,4 @@ func (a *App) hasSafeAttachments() bool {
 		}
 	}
 	return false
-}
-
-// attachStripHeight returns 0–2 rows depending on attachments and warnings.
-func (a *App) attachStripHeight() int {
-	if len(a.attachments) == 0 {
-		return 0
-	}
-	h := 1
-	for _, att := range a.attachments {
-		if att.state == attachRejected && att.reason != "" {
-			h = 2
-			break
-		}
-	}
-	return h
-}
-
-// renderAttachStrip draws the attachment status line and, when present, a
-// warnings line.
-func (a *App) renderAttachStrip() string {
-	var parts []string
-	spin := a.attachSpin.View()
-	for _, id := range a.attachOrder {
-		att := a.attachments[id]
-		switch att.state {
-		case attachResolving, attachClassifying:
-			parts = append(parts, spin+" "+att.text)
-		case attachNeedsRoot:
-			parts = append(parts, components.WarnStyle.Render("⚠ ")+att.text)
-		case attachSafe:
-			parts = append(parts, "✓ "+att.text)
-		case attachRejected:
-			parts = append(parts, lipgloss.NewStyle().Strikethrough(true).Faint(true).Render(att.text))
-		}
-	}
-	var lines []string
-	line := lipgloss.NewStyle().MaxWidth(a.width).Render(strings.Join(parts, "  "))
-	if line != "" {
-		lines = append(lines, line)
-	}
-	var reasons []string
-	for _, id := range a.attachOrder {
-		att := a.attachments[id]
-		if att.state == attachRejected && att.reason != "" {
-			reasons = append(reasons, att.reason)
-		}
-	}
-	if len(reasons) > 0 {
-		w := lipgloss.NewStyle().Faint(true).MaxWidth(a.width).Render(strings.Join(reasons, "; "))
-		lines = append(lines, w)
-	}
-	return strings.Join(lines, "\n")
 }

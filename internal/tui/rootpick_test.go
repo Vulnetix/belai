@@ -161,8 +161,8 @@ func TestOutsideRootAttachmentWaitsForConfirmation(t *testing.T) {
 	if !a.rootConfirmVisible() || !strings.Contains(a.renderRootConfirm(), sib) {
 		t.Fatal("confirmation pane not shown")
 	}
-	if !strings.Contains(a.renderAttachStrip(), "⚠") {
-		t.Fatal("attachment strip did not mark the waiting attachment")
+	if !strings.Contains(a.renderAttachmentPane(), "⚠") {
+		t.Fatal("attachment pane did not mark the waiting attachment")
 	}
 
 	a.pendingInput = "read @../sib/notes.md"

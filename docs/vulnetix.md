@@ -270,7 +270,9 @@ looks idle while the scanners work (`internal/tui/review.go`).
   gate, and shown as a `vulnetix <scanner> review` card. A withheld report
   prints the verdict and counts as reviewed, so the triage turn does not run
   it again. An agent that produced nothing leaves that scanner to the
-  triage turn.
+  triage turn. If a scanner agent hangs for more than ten minutes, it is
+  stopped and treated the same as one that produced nothing, so the review
+  never waits forever on a stuck agent.
   Its runs-panel row is labelled with that key and closes when the agent
   ends, so a finished scanner agent never lingers as running.
 - **Close.** The triage turn starts once the scans and every scanner agent

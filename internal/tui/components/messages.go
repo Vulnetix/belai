@@ -106,6 +106,15 @@ type Message struct {
 	Provider string
 	Model    string
 
+	// IsAttachment marks a tool row that came from a composer @file or
+	// @directory attachment. These rows render as metadata cards rather than
+	// raw tool output; the full body still rides in Content for copying and
+	// for reconstructing the model transcript.
+	IsAttachment bool
+	// AttachMeta carries the metadata the card displays. It is only populated
+	// when IsAttachment is true.
+	AttachMeta *FileMeta
+
 	// CreatedAt is when the row came into being: the emitting event's own
 	// timestamp when there was one. It is what the session file records, so
 	// a transcript written at turn end still says when each row happened.
@@ -185,6 +194,9 @@ type renderKey struct {
 	// markdown distinguishes assistant markdown bodies from plain bodies so a
 	// role or format flip cannot hit a stale entry.
 	markdown bool
+	// isAttachment / attachMeta key attachment card renders.
+	isAttachment bool
+	attachMeta   *FileMeta
 }
 
 // renderCache is the memoised render of one message (or of a system group, on
@@ -228,6 +240,9 @@ func renderKeyFor(m *Message, width int, expandAll bool) renderKey {
 		provider:     m.Provider,
 		model:        m.Model,
 		activity:     m.Activity,
+		// Attachment metadata changes the card shape and contents.
+		isAttachment: m.IsAttachment,
+		attachMeta:   m.AttachMeta,
 	}
 }
 
@@ -688,7 +703,7 @@ func turnPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 	meta := ""
 	if msg.Usage != nil {
 		if n := msg.Usage.Total(); n > 0 {
-			meta = formatTokens(n) + " tok"
+			meta = FormatTokens(n) + " tok"
 		}
 	}
 	if msg.Partial {
@@ -703,7 +718,7 @@ func turnPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 			if meta != "" {
 				meta += " · "
 			}
-			meta += formatTokens(n) + " tok"
+			meta += FormatTokens(n) + " tok"
 		}
 	}
 	// User and assistant panels advertise the copy shortcut in their title
@@ -830,6 +845,13 @@ func truncateMarkdown(src string, md MD, maxLines int) (rows []Row, marker, hidd
 // When the result is available, a preview of the first line of stdout/stderr
 // is shown beneath; bash errors are rendered in red.
 func toolRow(msg Message, width int, expandAll bool) (string, LineMap) {
+	// Composer @file / @directory attachments render as metadata cards rather
+	// than raw tool output. The full body is still preserved in Content for
+	// copying and transcript reconstruction.
+	if (msg.ToolName == "Read" || msg.ToolName == "Ls") && msg.IsAttachment && msg.AttachMeta != nil {
+		return FileCard(*msg.AttachMeta, width)
+	}
+
 	isErr := toolResultIsError(msg.ToolName, msg.Text())
 
 	status := strings.TrimSpace(msg.Status)
