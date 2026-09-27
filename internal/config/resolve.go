@@ -354,6 +354,12 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.AutoCommitPerTask = s.AutoCommitPerTask
 		e.Origin["auto_commit_per_task"] = src
 	}
+	if s.Kanban != nil && (!*s.Kanban || src != SourceProject) {
+		// The board syncs off the machine and carries text between
+		// sessions: a repo-visible project layer may turn it off, never on.
+		e.Settings.Kanban = s.Kanban
+		e.Origin["kanban"] = src
+	}
 	if s.Classifier != nil && !s.Classifier.IsZero() {
 		if e.Settings.Classifier == nil {
 			e.Settings.Classifier = &ClassifierSettings{}

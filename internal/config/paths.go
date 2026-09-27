@@ -49,6 +49,15 @@ func GlobalStatePath() (string, error) {
 	return filepath.Join(dir, "state.json"), nil
 }
 
+// KanbanPath returns <GlobalDir>/kanban, the global kanban board file.
+func KanbanPath() (string, error) {
+	dir, err := GlobalDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "kanban"), nil
+}
+
 // UserCredentialsPath returns <GlobalDir>/credentials.json.
 func UserCredentialsPath() (string, error) {
 	dir, err := GlobalDir()

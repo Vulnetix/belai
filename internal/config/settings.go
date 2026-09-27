@@ -138,6 +138,10 @@ type Settings struct {
 	// TokenBudgets caps the tokens each provider+model may spend per session,
 	// day or month. Global only: the project layer is dropped in Resolve.
 	TokenBudgets []TokenBudget `json:"token_budgets,omitempty"`
+	// Kanban turns the global kanban board on or off: the Kanban* model tools,
+	// the wrap-up after a work turn, the composer pane, /kanban and board sync
+	// (docs/kanban.md). Default on. The project layer may turn it off, never on.
+	Kanban *bool `json:"kanban,omitempty"`
 }
 
 // SyncSettings configures session sync (docs/session-sync.md).
@@ -1154,6 +1158,11 @@ func (s Settings) Override(proj Settings) Settings {
 	if proj.Sync != nil {
 		out.Sync = mergeSyncOffOnly(out.Sync, proj.Sync)
 	}
+	// The kanban board syncs off the machine: off only.
+	if proj.Kanban != nil && !*proj.Kanban {
+		f := false
+		out.Kanban = &f
+	}
 	// Hooks are the user's own commands: a project file may turn them off,
 	// never on.
 	if proj.Hooks != nil && proj.Hooks.Enabled != nil && !*proj.Hooks.Enabled {
@@ -1398,4 +1407,9 @@ func saveSettings(path string, s Settings) error {
 		return fmt.Errorf("write settings %s: %w", path, err)
 	}
 	return nil
+}
+
+// KanbanEnabled reports whether the global kanban board is on. Default on.
+func (s Settings) KanbanEnabled() bool {
+	return s.Kanban == nil || *s.Kanban
 }

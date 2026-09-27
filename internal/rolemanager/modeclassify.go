@@ -46,7 +46,7 @@ func ParseModeSentinel(raw string) (ModeSentinel, error) {
 const modeClassifierSystemPrompt = `You are an operating-mode classifier for an LLM coding harness. The user's prompt does not explicitly name a mode. Classify it into exactly one intent and reply with a single token and nothing else — no punctuation, no explanation.
 
 Reply with exactly one of these tokens:
-- AGENT: a general interactive coding request that needs no formal plan and no tracked goal.
+- AGENT: a general coding request, including a single straightforward edit to one named file, that needs no formal plan and no tracked goal.
 - PLAN: a read-only investigation that should first produce a step-by-step plan before any changes.
 - GOAL: a specific objective to be tracked and completed.
 - HANDOFF: the user wants an already-written plan in an attached file carried out now, step by step.

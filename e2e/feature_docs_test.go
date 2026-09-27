@@ -6,15 +6,18 @@ import (
 	"testing"
 
 	"github.com/vulnetix/belai/internal/acp"
+	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/commands"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/hooks"
+	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/notify"
 	"github.com/vulnetix/belai/internal/otel"
 	"github.com/vulnetix/belai/internal/plugins"
 	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/skills"
+	"github.com/vulnetix/belai/internal/tools"
 	"github.com/vulnetix/belai/internal/tui"
 )
 
@@ -198,6 +201,39 @@ func TestReadmeNamesEverySlashCommand(t *testing.T) {
 	for _, name := range tui.NewRegistry(t.TempDir()).Names() {
 		if !strings.Contains(body, "`/"+name+"`") && !strings.Contains(body, "`/"+name+" ") {
 			t.Errorf("README.md does not name `/%s`", name)
+		}
+	}
+}
+
+// docs/kanban.md names every list, every kanban tool, the setting and every
+// wrap-up trigger category.
+func TestKanbanDocParity(t *testing.T) {
+	body := docBody(t, "docs/kanban.md")
+	for _, l := range kanban.Lists {
+		mustName(t, "docs/kanban.md", body, string(l))
+	}
+	mustName(t, "docs/kanban.md", body,
+		tools.KanbanSearchName, tools.KanbanUpdateName, tools.KanbanMoveName, tools.KanbanAddName,
+		"kanban", "KindKanban", "BKAN", "sync.enabled")
+	for _, c := range agent.KanbanTriggers {
+		if !strings.Contains(body, "**"+c.Category+"**") {
+			t.Errorf("docs/kanban.md does not describe the %q trigger category", c.Category)
+		}
+	}
+}
+
+// docs/bkan.md names the magic and every field the board file stores, so a
+// field added to the format cannot ship undocumented.
+func TestBkanDocParity(t *testing.T) {
+	body := docBody(t, "docs/bkan.md")
+	mustName(t, "docs/bkan.md", body, "BKAN", "kanban.Board", "Encode", "Decode", "ErrCorrupt", "formatVersion")
+	for _, v := range []any{kanban.Board{}, kanban.Item{}, kanban.Move{}} {
+		rt := reflect.TypeOf(v)
+		for i := 0; i < rt.NumField(); i++ {
+			name := rt.Field(i).Name
+			if !strings.Contains(body, "`"+name+"`") && !strings.Contains(body, "`"+name+"`,") {
+				t.Errorf("docs/bkan.md does not name %s.%s", rt.Name(), name)
+			}
 		}
 	}
 }

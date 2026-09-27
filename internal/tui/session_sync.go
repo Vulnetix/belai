@@ -91,6 +91,9 @@ func (a *App) startSessionSync() {
 		RemotePrompts: a.settings.SyncRemotePromptsEnabled(),
 	})
 	a.syncer.Start(context.Background())
+	// The kanban board mirrors through the same client, so it goes only
+	// where session sync goes and only with the same credential.
+	a.startKanbanSync(client, hostID)
 	a.syncedID = ""
 	// A resumed session is live on this host now, even before its next line.
 	a.syncTouch()
@@ -161,6 +164,7 @@ func (a *App) syncTouch() {
 
 // closeSync flushes the mirror and moves the live session to History.
 func (a *App) closeSync() {
+	a.stopKanbanSync()
 	if a.syncer == nil {
 		return
 	}

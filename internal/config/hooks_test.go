@@ -226,3 +226,42 @@ func TestSandboxValueFallbacks(t *testing.T) {
 		t.Fatal("negative min_turn_seconds not defaulted")
 	}
 }
+
+// The kanban board defaults on; a project file may turn it off, never on.
+func TestResolveKanbanDirection(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	resolve := func(global, project *bool) bool {
+		t.Helper()
+		workdir := t.TempDir()
+		if err := SaveGlobal(Settings{Kanban: global}); err != nil {
+			t.Fatal(err)
+		}
+		if err := SaveProject(workdir, Settings{Kanban: project}); err != nil {
+			t.Fatal(err)
+		}
+		eff, err := Resolve(workdir, func(string) string { return "" }, Settings{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return eff.Settings.KanbanEnabled()
+	}
+	on, off := boolPtr(true), boolPtr(false)
+	if !resolve(nil, nil) {
+		t.Error("default must be on")
+	}
+	if resolve(off, nil) {
+		t.Error("the global layer must be able to turn the board off")
+	}
+	if resolve(nil, off) {
+		t.Error("a project file may turn the board off")
+	}
+	if resolve(off, on) {
+		t.Error("a project file must not turn the board on")
+	}
+	if merged := (Settings{Kanban: off}).Override(Settings{Kanban: on}); merged.KanbanEnabled() {
+		t.Error("Override must not let a project file turn the board on")
+	}
+	if merged := (Settings{}).Override(Settings{Kanban: off}); merged.KanbanEnabled() {
+		t.Error("Override must let a project file turn the board off")
+	}
+}

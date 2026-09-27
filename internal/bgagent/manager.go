@@ -16,6 +16,7 @@ import (
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/calltrace"
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/permissions"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/prompt"
@@ -99,6 +100,11 @@ type Manager struct {
 	// pool caps every background-agent turn against the shared FIFO fan-out
 	// ceiling. nil means no shared ceiling.
 	pool *agentpool.Pool
+	// kanban is the global board background agents search and note on; nil
+	// leaves the kanban tools off. A definition's tools allowlist still
+	// narrows them.
+	kanban    *kanban.Store
+	kanbanSrc *kanban.Source
 	// src resolves credentials when an agent profile overrides the main
 	// provider. nil means environment-only resolution.
 	src run.CredentialSource
@@ -604,6 +610,9 @@ func (m *Manager) buildSession(inst *AgentInstance) (*agent.Session, error) {
 	caps := tools.DetectDefault()
 	ix := repoindex.Scan(context.Background(), workdir)
 	reg := tools.DefaultWithCaps(workdir, m.settings.ReadOnlyEnabled(), caps, ix)
+	m.mu.Lock()
+	reg = reg.WithKanban(m.kanban, m.kanbanSrc)
+	m.mu.Unlock()
 	if len(profile.Tools) > 0 {
 		reg = reg.Only(profile.Tools...)
 	}
@@ -752,4 +761,11 @@ func (inst *AgentInstance) pushEvent(e Event) {
 	case inst.Events <- e:
 	default:
 	}
+}
+
+// SetKanban gives background agents the global board.
+func (m *Manager) SetKanban(store *kanban.Store, src *kanban.Source) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.kanban, m.kanbanSrc = store, src
 }

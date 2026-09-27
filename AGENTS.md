@@ -29,7 +29,8 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `JQ`, `YQ`, `Sed`, `Awk`, `Cut`, `Sort`, `Uniq`, `Tr`, `Paste`, `Join`,
   `Diff` (all `KindRead`), `SubAgentLog` (`KindProcess`),
   `SearchSessions`/`ReadSession`/`SearchMemory` (`KindAgentStore`, other
-  agents' transcript and memory text), `Task` subagent reports (`KindSubagent`, model-written arbitrary text), the `Vulnetix` tool (`KindRemote`,
+  agents' transcript and memory text), `KanbanSearch` (`KindKanban`, board
+  items other sessions' models and web users wrote), `Task` subagent reports (`KindSubagent`, model-written arbitrary text), the `Vulnetix` tool (`KindRemote`,
   database advisory text and repository snippets), the dependency hook's Vulnetix CLI
   output (`KindRemote`) and its background agents' reports (`KindProcess`,
   `internal/tui/depwatch.go`), the recovery subagent's
@@ -274,6 +275,25 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   denies, and "allow for this session" lives in memory for that session and
   tool only. Editor-supplied `mcpServers` are ignored. Nothing but protocol
   messages is written to stdout.
+- **Kanban text is other sessions' and the web's text.** The global board
+  (`internal/kanban`, `~/.vulnetix/belai/kanban`) holds items written by
+  other sessions' models and by users on the Vulnetix website, so
+  `KindKanban` is in `tools.classifierKinds` unconditionally. The writers'
+  confirmations (`KindKanbanWrite`) are harness-composed. The per-turn board
+  directive carries counts and item ids only, never item text. The tools take
+  no path. Provenance (session, host, project, directory) is stamped by the
+  harness from `kanban.Source` and never taken from arguments. Explore, Task
+  and fan-out subagents get `KanbanSearch` only, so repository text they read
+  cannot persist into the board. A tools allowlist still narrows the kanban
+  tools like any other. `KanbanMove` and `KanbanAdd` exist only on their
+  phase's surface (the working loop, the post-report wrap-up), and plan mode
+  never moves items. Every write, local or pulled, is cleaned (delimiter
+  markup, ANSI, control and bidi runes) and capped. A board file failing its
+  magic, version or SHA-256 is refused and never overwritten. Sync rides on
+  the session-sync client (same origin allowlist, same credential, same
+  `sync.enabled` switch). The project layer may turn `kanban` off, never on.
+  A prefilled composer prompt from the pane is text in the editor and takes
+  the typed-prompt path like anything the user types.
 - **Telemetry carries facts, never content.** `internal/otel` exports only
   attribute keys on its fixed allowlist, and reduces every string value to
   identifier characters, capped. Never add a key that can hold a prompt,

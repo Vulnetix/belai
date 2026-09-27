@@ -65,6 +65,10 @@ func TestClassifierKindsIsExactlyTheArbitraryContentSet(t *testing.T) {
 		KindHook:       true,
 		KindSkill:      true,
 		KindMCP:        true,
+		// Kanban items are other sessions' and web users' text; the
+		// writers' confirmations are harness-composed.
+		KindKanban:      true,
+		KindKanbanWrite: false,
 	}
 	for _, k := range AllKinds {
 		if got := k.NeedsClassifier(); got != want[k] {
