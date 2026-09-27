@@ -28,7 +28,11 @@ func (a *App) resumeSession(key session.Key, sessionID string) tea.Cmd {
 		a.cancel()
 		a.cancel = nil
 	}
+	a.closeTurn("interrupted")
 	a.endPhase()
+	// The turn's end belongs in the session it ran in, not the one loaded next.
+	a.flushTurnEnd()
+	a.openAsks = nil
 	a.events = nil
 	a.pendingEvent = agent.Event{}
 	a.pendingEventSet = false

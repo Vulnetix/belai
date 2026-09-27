@@ -8,6 +8,10 @@ import (
 	"github.com/vulnetix/belai/internal/tui/components"
 )
 
+// maxDiffWireBytes caps the rendered diff rows persisted with a tool result
+// (meta.diff). Past it a file keeps its header and counts and drops rows.
+const maxDiffWireBytes = 256 << 10
+
 // maxToolResultBytes caps a persisted tool result. Longer results are written
 // truncated with meta.truncated and meta.orig_len so rehydrated history still
 // knows what happened (and says so in the resume system line).
@@ -25,6 +29,9 @@ func rmText(m components.Message) string {
 // neverPersisted reports whether a message can never produce a session entry.
 // persistTail skips these rather than letting them block later messages.
 func neverPersisted(m components.Message) bool {
+	if m.Ephemeral {
+		return true
+	}
 	switch m.Role {
 	case "assistant":
 		// An assistant with neither text nor tool calls is never persisted,
@@ -174,6 +181,7 @@ func (a *App) persistTailMode(force bool) {
 		a.persistMessage(i)
 		a.persistedUpTo = i + 1
 	}
+	a.flushTurnEnd()
 }
 
 // persistMessage writes one settled message as a session entry. User turns are
@@ -233,6 +241,11 @@ func (a *App) persistMessage(i int) {
 			meta["orig_len"] = len(content)
 			content = truncateUTF8(content, maxToolResultBytes)
 		}
+		// What the call changed on disk, as rendered rows: the website draws
+		// it and a resumed session restores it (rehydrate.go).
+		if d := m.Diff(); d != nil && !d.Empty() {
+			meta["diff"] = d.Wire(maxDiffWireBytes)
+		}
 		a.appendEntry(timedEntry(m, session.Entry{Type: "tool", Role: "tool", Content: content, Meta: meta, SubagentID: m.SubagentID}))
 	case "reasoning":
 		meta := map[string]any{}
@@ -277,6 +290,11 @@ func (a *App) persistMessage(i int) {
 		}
 		if m.Model != "" {
 			meta["model"] = m.Model
+		}
+		for k, v := range m.Facts {
+			if _, taken := meta[k]; !taken {
+				meta[k] = v
+			}
 		}
 		a.appendEntry(timedEntry(m, session.Entry{
 			Type:    "rolemanager",

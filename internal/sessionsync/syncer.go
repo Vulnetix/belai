@@ -29,6 +29,8 @@ type Options struct {
 	HostID        string
 	Host          Host
 	RemotePrompts bool
+	// RemoteAnswers delivers web answers to the host's open asks.
+	RemoteAnswers bool
 
 	TickEvery      time.Duration // how often the file is re-read without a nudge (2s)
 	HeartbeatEvery time.Duration // liveness beat (15s; the server's window is 45s)
@@ -61,7 +63,15 @@ type Status struct {
 	LastOK     time.Time
 }
 
-type ack struct{ id, status, reason, entryID string }
+type ack struct {
+	id, status, reason, entryID string
+	answer                      bool // a web answer's ack, not a prompt's
+}
+
+// nudgeCoalesce is how long the mirror waits after a nudge for the lines that
+// usually follow it (an ask and its notice, a tool start and its row), so a
+// burst goes up as one batch instead of one request per line.
+const nudgeCoalesce = 30 * time.Millisecond
 
 type metaUpdate struct {
 	id                    string
@@ -81,6 +91,7 @@ type Syncer struct {
 	closing  chan time.Duration
 	stopped  chan struct{}
 	prompts  chan RemotePrompt
+	answers  chan RemoteAnswer
 
 	cancel    context.CancelFunc
 	closeOnce sync.Once
@@ -110,6 +121,7 @@ func New(opts Options) *Syncer {
 		closing:  make(chan time.Duration, 1),
 		stopped:  make(chan struct{}),
 		prompts:  make(chan RemotePrompt, 16),
+		answers:  make(chan RemoteAnswer, 16),
 	}
 }
 
@@ -117,7 +129,7 @@ func New(opts Options) *Syncer {
 func (s *Syncer) Start(ctx context.Context) {
 	ctx, s.cancel = context.WithCancel(ctx)
 	go s.run(ctx)
-	if s.opts.RemotePrompts {
+	if s.opts.RemotePrompts || s.opts.RemoteAnswers {
 		go s.inbox(ctx)
 	}
 }
@@ -160,8 +172,42 @@ func (s *Syncer) Nudge() {
 // Prompts delivers web prompts claimed from the inbox.
 func (s *Syncer) Prompts() <-chan RemotePrompt { return s.prompts }
 
-// RemotePromptsEnabled reports whether the inbox loop runs.
+// RemotePromptsEnabled reports whether web prompts are taken.
 func (s *Syncer) RemotePromptsEnabled() bool { return s.opts.RemotePrompts }
+
+// Answers delivers web answers to open asks claimed from the inbox.
+func (s *Syncer) Answers() <-chan RemoteAnswer { return s.answers }
+
+// RemoteAnswersEnabled reports whether web answers are taken.
+func (s *Syncer) RemoteAnswersEnabled() bool { return s.opts.RemoteAnswers }
+
+// AckAnswer reports a web answer's outcome, like Ack: an accepted answer
+// refers to the ask_answer line just written, so it waits for that upload.
+func (s *Syncer) AckAnswer(answerID, status, reason, entryID string) {
+	a := ack{id: answerID, status: status, reason: reason, entryID: entryID, answer: true}
+	if status == AckAccepted {
+		select {
+		case s.acks <- a:
+			s.Nudge()
+			return
+		default:
+		}
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+		defer cancel()
+		if err := s.sendAck(ctx, a); err != nil {
+			s.setErr(fmt.Errorf("ack: %w", err))
+		}
+	}()
+}
+
+func (s *Syncer) sendAck(ctx context.Context, a ack) error {
+	if a.answer {
+		return s.opts.Client.AckAnswer(ctx, a.id, a.status, a.reason, a.entryID)
+	}
+	return s.opts.Client.Ack(ctx, a.id, a.status, a.reason, a.entryID)
+}
 
 // Ack reports a prompt's outcome in the background. An accepted ack refers
 // to a user line the host just wrote, so it goes through the mirror loop and
@@ -283,6 +329,7 @@ func (s *Syncer) run(ctx context.Context) {
 		case a := <-s.acks:
 			pendingAcks = append(pendingAcks, a)
 		case <-s.nudge:
+			s.coalesce(ctx)
 		case <-tick.C:
 		}
 		if cur == nil {
@@ -316,7 +363,7 @@ func (s *Syncer) run(ctx context.Context) {
 func (s *Syncer) sendAcks(ctx context.Context, pending *[]ack) {
 	kept := (*pending)[:0]
 	for _, a := range *pending {
-		if err := s.opts.Client.Ack(ctx, a.id, a.status, a.reason, a.entryID); err != nil && !errors.Is(err, ErrNotFound) {
+		if err := s.sendAck(ctx, a); err != nil && !errors.Is(err, ErrNotFound) {
 			s.setErr(fmt.Errorf("ack: %w", err))
 			kept = append(kept, a)
 		}
@@ -397,7 +444,7 @@ func (s *Syncer) metaFor(t *tail) SessionMeta {
 		HostID: s.opts.HostID, ProjectKey: i.ProjectKey, ProjectName: i.ProjectName, Cwd: i.Cwd,
 		Name: i.Name, Model: i.Model, Provider: i.Provider, Mode: i.Mode,
 		ParentSessionID: i.ParentSessionID, ResumedFromID: i.ResumedFromID,
-		RemotePrompts: s.opts.RemotePrompts,
+		RemotePrompts: s.opts.RemotePrompts, RemoteAnswers: s.opts.RemoteAnswers,
 	}
 }
 
@@ -590,7 +637,23 @@ func (s *Syncer) Backfill(ctx context.Context, infos []SessionInfo) (int, error)
 	return done, nil
 }
 
-// inbox long-polls for web prompts while a session is registered.
+// coalesce holds a nudged upload briefly so the lines written right after it
+// ride the same batch. Nudges arriving meanwhile are folded in.
+func (s *Syncer) coalesce(ctx context.Context) {
+	t := time.NewTimer(nudgeCoalesce)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.nudge:
+		case <-t.C:
+			return
+		}
+	}
+}
+
+// inbox long-polls for web prompts and answers while a session is registered.
 func (s *Syncer) inbox(ctx context.Context) {
 	var backoff time.Duration
 	for {
@@ -603,7 +666,7 @@ func (s *Syncer) inbox(ctx context.Context) {
 			}
 			continue
 		}
-		prompts, err := s.opts.Client.Inbox(ctx, s.opts.HostID, s.opts.InboxWait)
+		prompts, answers, err := s.opts.Client.Inbox(ctx, s.opts.HostID, s.opts.InboxWait)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -615,6 +678,18 @@ func (s *Syncer) inbox(ctx context.Context) {
 			continue
 		}
 		backoff = 0
+		// Answers first: the host is blocked on an ask until one arrives.
+		for _, a := range answers {
+			if !s.opts.RemoteAnswers {
+				s.AckAnswer(a.ID, AckRefused, "this host does not take answers from the web", "")
+				continue
+			}
+			select {
+			case s.answers <- a:
+			case <-ctx.Done():
+				return
+			}
+		}
 		for _, p := range prompts {
 			select {
 			case s.prompts <- p:

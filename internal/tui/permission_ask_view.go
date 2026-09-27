@@ -16,6 +16,7 @@ type permissionAskViewState struct {
 	ask      *agent.AskRequest
 	reply    chan agent.PermissionAskReply
 	selected int
+	askID    string // the ask entry id, for web answers (web_asks.go)
 }
 
 // Answer choices, in render order.
@@ -79,8 +80,7 @@ func (a *App) permissionAskView() string {
 func (a *App) handlePermissionAskKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.String() {
 	case "esc":
-		a.answerPermissionAsk(false)
-		a.pop()
+		a.settlePermissionAsk(askDeny, answerFromHost, "")
 		return a, nil
 	case "up", "k":
 		if a.permAskState.selected > permAskAllow {
@@ -93,13 +93,14 @@ func (a *App) handlePermissionAskKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 	case "enter":
-		allowAlways := a.permAskState.selected == permAskAllowAlways
-		allow := a.permAskState.selected == permAskAllow || allowAlways
-		if allowAlways && a.permAskState.ask != nil {
-			a.allowAlwaysRule(a.permAskState.ask.Name, a.permAskState.ask.Subject)
+		decision := askAllowOnce
+		switch a.permAskState.selected {
+		case permAskAllowAlways:
+			decision = askAllowAlways
+		case permAskDeny:
+			decision = askDeny
 		}
-		a.answerPermissionAsk(allow)
-		a.pop()
+		a.settlePermissionAsk(decision, answerFromHost, "")
 		return a, a.nextAgent()
 	}
 	return a, nil
@@ -121,14 +122,11 @@ func (a *App) answerPermissionAsk(allow bool) {
 // the view's own keys do: send once on the reply channel the agent loop is
 // blocked on, then pop back to the parent view.
 func (a *App) resolvePendingAsk(allow bool) {
-	if a.permAskState.reply == nil {
-		return
+	decision := askDeny
+	if allow {
+		decision = askAllowOnce
 	}
-	a.answerPermissionAsk(allow)
-	a.permAskState = permissionAskViewState{}
-	if a.view == viewPermissionAsk {
-		a.pop()
-	}
+	a.settlePermissionAsk(decision, answerFromHost, "")
 }
 
 // allowAlwaysRule writes a scoped Allow rule before answering, so the next

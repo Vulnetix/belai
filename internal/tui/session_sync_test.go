@@ -30,6 +30,12 @@ func (r *ackRecorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		id := strings.Split(strings.TrimPrefix(req.URL.Path, "/api/site/v1/belai/prompts/"), "/")[0]
 		r.acks[id] = in
 	}
+	if strings.Contains(req.URL.Path, "/answers/") && strings.HasSuffix(req.URL.Path, "/ack") {
+		var in map[string]string
+		_ = json.NewDecoder(req.Body).Decode(&in)
+		id := strings.Split(strings.TrimPrefix(req.URL.Path, "/api/site/v1/belai/answers/"), "/")[0]
+		r.acks["answer:"+id] = in
+	}
 	if strings.HasSuffix(req.URL.Path, "/inbox") {
 		_, _ = w.Write([]byte(`{"prompts":[]}`))
 		return
@@ -64,7 +70,8 @@ func newSyncApp(t *testing.T) (*App, *ackRecorder) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a.syncer = sessionsync.New(sessionsync.Options{Client: c, HostID: "11111111-1111-4111-8111-111111111111", RemotePrompts: true})
+	a.syncer = sessionsync.New(sessionsync.Options{Client: c, HostID: "11111111-1111-4111-8111-111111111111",
+		RemotePrompts: true, RemoteAnswers: true})
 	a.syncer.Start(context.Background())
 	t.Cleanup(func() { a.syncer.Close(time.Second) })
 	return a, rec

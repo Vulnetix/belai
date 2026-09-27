@@ -161,6 +161,11 @@ type SyncSettings struct {
 	// RemotePrompts lets the website send prompts into a live session. Default
 	// true; false shares the session view-only.
 	RemotePrompts *bool `json:"remote_prompts,omitempty"`
+	// RemoteAnswers lets the website answer the question a live session is
+	// blocked on: a permission ask (allow once, allow always, deny), a
+	// clarify questionnaire, the mode choice or a plan review. Default true;
+	// false keeps every ask on the host.
+	RemoteAnswers *bool `json:"remote_answers,omitempty"`
 }
 
 // mergeSyncOffOnly applies a project layer's sync keys over base, honouring
@@ -177,6 +182,9 @@ func mergeSyncOffOnly(base, proj *SyncSettings) *SyncSettings {
 	if proj.RemotePrompts != nil && !*proj.RemotePrompts {
 		out.RemotePrompts = &f
 	}
+	if proj.RemoteAnswers != nil && !*proj.RemoteAnswers {
+		out.RemoteAnswers = &f
+	}
 	return out
 }
 
@@ -190,6 +198,13 @@ func (s Settings) SyncEnabled() bool {
 // from the website. Default on, and never on while sync itself is off.
 func (s Settings) SyncRemotePromptsEnabled() bool {
 	return s.SyncEnabled() && (s.Sync == nil || s.Sync.RemotePrompts == nil || *s.Sync.RemotePrompts)
+}
+
+// SyncRemoteAnswersEnabled reports whether a synced session accepts answers
+// to its open asks from the website. Default on, and never on while sync
+// itself is off.
+func (s Settings) SyncRemoteAnswersEnabled() bool {
+	return s.SyncEnabled() && (s.Sync == nil || s.Sync.RemoteAnswers == nil || *s.Sync.RemoteAnswers)
 }
 
 // VulnetixSettings is the per-project /vulnetix configuration.

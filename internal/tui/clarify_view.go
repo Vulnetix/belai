@@ -22,7 +22,8 @@ type clarifyViewState struct {
 	notes      map[[2]int]string
 	skipped    []bool
 	noteMode   bool
-	modeChoice bool // true for the deterministic mode-choice panel
+	modeChoice bool   // true for the deterministic mode-choice panel
+	askID      string // the ask entry id, for web answers (web_asks.go)
 }
 
 type clarifyRowKind int
@@ -301,7 +302,14 @@ func (a *App) handleClarifyKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.String() {
 	case "esc":
 		a.pop()
-		a.addSystem("clarification cancelled")
+		a.addEphemeralSystem("clarification cancelled")
+		kind := askClarify
+		if a.clarifyState.modeChoice {
+			kind = askModeChoice
+		}
+		a.recordAskAnswer(a.clarifyState.askID, kind, answerFromHost, "", "clarification cancelled",
+			map[string]any{"cancelled": true})
+		a.clarifyState.askID = ""
 		if a.cancel != nil {
 			a.cancel()
 			a.cancel = nil
@@ -345,13 +353,12 @@ func (a *App) handleClarifyKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		a.clarifyState.chooseHighlighted()
 		answers := a.clarifyState.buildAnswers()
-		if a.clarifyState.reply != nil {
-			go func() { a.clarifyState.reply <- answers }()
+		if a.clarifyState.reply == nil {
+			a.pop()
+			a.addSystem(answers.Render(a.clarifyState.q))
+			return a, a.nextAgent()
 		}
-		a.pop()
-		// The questionnaire is already in the transcript; the answers
-		// belong beside it so the session record shows what was chosen.
-		a.addSystem(answers.Render(a.clarifyState.q))
+		a.settleClarify(answers, answerFromHost, "", false)
 		return a, a.nextAgent()
 	}
 

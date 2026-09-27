@@ -347,8 +347,22 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   permission rules and tool surface. It never runs a slash command, `!cmd` or
   composer `@` attachment, never touches the composer, never answers a
   permission ask or question, and in agent mode with no carrier it is refused
-  rather than answering the picker. The project layer may turn `sync.enabled`
-  and `sync.remote_prompts` off, never on.
+  rather than answering the picker. The project layer may turn `sync.enabled`,
+  `sync.remote_prompts` and `sync.remote_answers` off, never on.
+- **A web answer resolves only the ask that is open, through the host's own
+  code.** Asks, answers, turn boundaries, tool starts and role-manager
+  verdicts are written to the session JSONL by `appendEntry` like any line
+  (`internal/tui/web_asks.go`); the syncer still only mirrors the file. A web
+  answer (`sessionsync.RemoteAnswer`) is untrusted input: it is applied only
+  when its ask id is the ask open now and its kind matches, only after it
+  validates against that ask (indices in range, one choice for a
+  single-choice group, a known decision, notes cleaned by `CleanPrompt` and
+  capped), and only through the functions the host's keys call
+  (`settlePermissionAsk`, `settleClarify`, the plan-review arms), so clarify
+  answers are still admitted on the agent side and allow-always writes the
+  same rule. The first answer wins; a late one is refused. Plan-review notes
+  take the web-prompt path. The agent picker and the trust gate are never
+  answered from the web. A decision's `Detail` is never persisted.
 
 ## Layout
 

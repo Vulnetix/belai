@@ -43,6 +43,7 @@ type planReviewState struct {
 	editPath string // scratch path handed to $EDITOR
 	edited   bool
 	vp       viewport.Model
+	askID    string // the ask entry id, for web answers (web_asks.go)
 }
 
 // planEditedMsg carries the result of an external $EDITOR round-trip.
@@ -192,6 +193,7 @@ func (a *App) handlePlanReviewKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if notes == "" {
 				return a, nil
 			}
+			a.recordPlanChoice(planChoiceRefine, answerFromHost, "", notes)
 			return a, a.submitPlanRefine(notes)
 		default:
 			cmd := a.editor.Update(m)
@@ -201,6 +203,7 @@ func (a *App) handlePlanReviewKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch m.String() {
 	case "esc":
+		a.recordPlanChoice(planChoiceStay, answerFromHost, "", "")
 		return a, a.submitPlanStay()
 	case "up", "k":
 		if a.planReview.selected > planReviewApproveHere {
@@ -239,8 +242,12 @@ func (a *App) handlePlanReviewKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		switch a.planReview.selected {
 		case planReviewApproveHere:
+			a.recordPlanChoice(planChoiceApproveHere, answerFromHost, "", "")
 			return a, a.submitPlanApprove()
 		case planReviewApproveNew:
+			// Recorded before the fork, so the answer lands in the session
+			// that asked.
+			a.recordPlanChoice(planChoiceApproveNew, answerFromHost, "", "")
 			return a, a.submitPlanApproveNew()
 		case planReviewEdit:
 			return a, a.openPlanEditor()
@@ -250,6 +257,7 @@ func (a *App) handlePlanReviewKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 			_ = a.editor.Focus()
 			return a, nil
 		case planReviewCancel:
+			a.recordPlanChoice(planChoiceStay, answerFromHost, "", "")
 			return a, a.submitPlanStay()
 		}
 	}
@@ -397,10 +405,14 @@ func (a *App) submitPlanRefine(notes string) tea.Cmd {
 	a.pop()
 	a.pendingDirective = activePlanReviewDirective
 
-	base := planRevisionBase(a.planReview.name)
-	a.pendingPlanRevision = plans.NextRevision(a.workdir, base)
+	a.pendingPlanRevision = nextPlanRevision(a.workdir, a.planReview.name)
 
 	return a.submitInput(notes)
+}
+
+// nextPlanRevision is the next revision name for a refined plan.
+func nextPlanRevision(workdir, name string) int {
+	return plans.NextRevision(workdir, planRevisionBase(name))
 }
 
 // planRevisionBase strips a trailing -rN revision suffix from a recorded plan
