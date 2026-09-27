@@ -1,0 +1,101 @@
+---
+import SealedSection from '../seal/SealedSection.astro';
+import CopyButton from '../ui/CopyButton.tsx';
+
+const sealText =
+  'FAQ: install, update and clean-up. Including how to remove the previous name signet, clear Homebrew caches, refresh the tap, and verify the installed belai version after a fresh install.';
+
+const faqs = [
+  {
+    q: 'How do I install or update Belai?',
+    steps: [
+      { text: 'Update Homebrew and refresh the tap metadata:', cmd: 'brew update' },
+      { text: 'Upgrade the package (reinstalls only when the version changed):', cmd: 'brew upgrade belai' },
+      { text: 'Check the installed version:', cmd: 'belai -version' },
+    ],
+  },
+  {
+    q: 'What if `brew install` fails or reports a stale formula?',
+    steps: [
+      { text: 'Make sure the Vulnetix tap is present and up to date:', cmd: 'brew tap vulnetix/tap' },
+      { text: 'Force a fresh fetch of the tap metadata:', cmd: 'brew update --force' },
+      { text: 'Reinstall directly from the tap:', cmd: 'brew install vulnetix/tap/belai' },
+    ],
+  },
+  {
+    q: 'How do I clear cached bottles and start from scratch?',
+    steps: [
+      { text: 'Uninstall the existing binary:', cmd: 'brew uninstall belai' },
+      { text: 'Remove the cached bottle (the -s flag skips the safety period):', cmd: 'brew cleanup -s belai' },
+      { text: 'Install fresh and verify:', cmd: 'brew install vulnetix/tap/belai && belai -version' },
+    ],
+  },
+  {
+    q: 'I have an old install called `signet`. How do I remove it?',
+    steps: [
+      { text: 'Uninstall the previous package name if it is still present:', cmd: 'brew uninstall signet' },
+      { text: 'Clean up any leftover signet cache:', cmd: 'brew cleanup -s signet' },
+      { text: 'Remove the old tap alias if it is still listed:', cmd: 'brew untap vulnetix/tap/signet' },
+      { text: 'Install Belai and verify the version:', cmd: 'brew install vulnetix/tap/belai && belai -version' },
+    ],
+  },
+  {
+    q: 'How do I fully reset the Homebrew side?',
+    steps: [
+      { text: 'Uninstall both names and clear caches:', cmd: 'brew uninstall belai signet 2>/dev/null; brew cleanup -s belai signet' },
+      { text: 'Re-tap Vulnetix cleanly:', cmd: 'brew untap vulnetix/tap; brew tap vulnetix/tap' },
+      { text: 'Install from source and check the version:', cmd: 'brew install vulnetix/tap/belai && belai -version' },
+    ],
+  },
+  {
+    q: 'How do I verify the install worked?',
+    steps: [
+      { text: 'Print the version:', cmd: 'belai -version' },
+      { text: 'Run a quick smoke test:', cmd: 'belai -detect-mode' },
+      { text: 'Launch the TUI:', cmd: 'belai' },
+    ],
+  },
+];
+---
+
+<SealedSection label="faq" sealText={sealText} id="faq">
+  <h2 class="text-3xl font-bold text-vx-ink">FAQ.</h2>
+  <p class="prose-measure mt-4 text-vx-ink/80">
+    Install, update and clean-up notes. If something is left over from the
+    previous <code class="mono">signet</code> package name, or Homebrew has a
+    stale bottle, the recipes below walk through a clean recovery.
+  </p>
+
+  <div class="mt-8 space-y-6">
+    {faqs.map((faq, idx) => (
+      <details class="group rounded-md border border-vx-ink/30" open={idx === 0}>
+        <summary class="flex cursor-pointer list-none items-center justify-between p-4 text-vx-ink hover:bg-vx-ink/[0.03]">
+          <span class="font-semibold">{faq.q}</span>
+          <span class="mono text-vx-ink/60 transition-transform group-open:rotate-180">▼</span>
+        </summary>
+        <div class="border-t border-vx-ink/30 p-4 pt-2">
+          <ol class="list-none space-y-3 p-0">
+            {faq.steps.map((step, sidx) => (
+              <li>
+                <p class="text-sm text-vx-ink/70">
+                  {sidx + 1}. {step.text}
+                </p>
+                <div class="mt-2 flex flex-wrap items-center gap-3 rounded-md border border-vx-ink/20 bg-vx-ink/[0.02] p-3">
+                  <code class="mono block overflow-x-auto text-sm text-vx-ink">{step.cmd}</code>
+                  <CopyButton value={step.cmd} label="copy" client:load />
+                </div>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </details>
+    ))}
+  </div>
+
+  <p class="prose-measure mt-8 text-vx-ink/80">
+    Still stuck? Open an issue on{' '}
+    <a class="underline" href="https://github.com/vulnetix/belai">github.com/vulnetix/belai</a>{' '}
+    and include the output of <code class="mono">brew config</code>,{' '}
+    <code class="mono">brew doctor</code>, and <code class="mono">belai -version</code>.
+  </p>
+</SealedSection>

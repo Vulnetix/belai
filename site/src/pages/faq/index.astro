@@ -1,0 +1,35 @@
+---
+import Base from '../../layouts/Base.astro';
+import FAQ from '../../components/sections/FAQ.astro';
+
+const title = 'Belai FAQ — install, update and clean-up';
+const description =
+  'Answers to common install and update questions for Belai, including how to remove the previous signet package name, clear Homebrew caches, and verify a fresh install.';
+---
+
+<Base title={title} description={description}>
+  <div class="flex w-full gap-8 px-4 py-8 sm:px-6 lg:gap-10 lg:px-10 lg:py-10">
+    <aside class="status-rail w-52 shrink-0 flex-col justify-between xl:w-56" aria-label="Page sections">
+      <div>
+        <p class="mono text-sm font-bold text-vx-ink">▌ belai / faq</p>
+        <nav aria-label="On this page">
+          <ul class="mt-6 space-y-1 list-none p-0">
+            <li>
+              <a href="/#faq" class="status-rail__item mono block text-sm text-vx-ink/70 no-underline hover:text-vx-ink">
+                back to site
+              </a>
+            </li>
+          </ul>
+        </nav>
+      </div>
+      <div class="mono text-xs text-vx-ink/60">
+        <p>mode: agent</p>
+        <p>guardrails: on</p>
+      </div>
+    </aside>
+
+    <main class="min-w-0 flex-1 space-y-8">
+      <FAQ />
+    </main>
+  </div>
+</Base>
