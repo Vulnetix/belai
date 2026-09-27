@@ -1273,7 +1273,7 @@ func (a *App) belowViewportHeight() int {
 	h += a.addDirPickHeight()
 	h += a.rootConfirmHeight()
 	h += a.filePickHeight()
-	h += a.attachStripHeight()
+	h += a.attachmentPaneHeight()
 	h += a.todoPanelHeight()
 	h += a.runsPanelHeight()
 	h += a.hintHeight()
@@ -3984,7 +3984,7 @@ func (a *App) chatView() string {
 			sb.WriteString("\n")
 		}
 		if len(a.attachments) > 0 {
-			sb.WriteString(a.renderAttachStrip())
+			sb.WriteString(a.renderAttachmentPane())
 			sb.WriteString("\n")
 		}
 		if a.todosVisible() {
@@ -4188,6 +4188,12 @@ func (a *App) renderFieldEditor(title string, width int) string {
 	if a.editor.Masked {
 		accent = lipgloss.TerminalColor(components.ColorAmber)
 		meta = "input hidden · ⏎ save"
+	}
+	// Surface the number of @file references in the composer border so the
+	// count is visible at a glance. It updates as tokens are typed and
+	// resolves in place.
+	if n := len(a.attachments); n > 0 {
+		title = title + " · " + attachmentFileCountLabel(n)
 	}
 	return components.Panel{
 		Title:  title,

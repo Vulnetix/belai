@@ -501,10 +501,10 @@ func (f *Footer) sessionSegment(budget int) string {
 // renderings: a leading ~ for an estimate, (?) for a stale window, and a
 // coloured remaining percentage only when it is safe to show one.
 func (f *Footer) contextSegment() string {
-	tokens := formatTokens(f.Tokens)
+	tokens := FormatTokens(f.Tokens)
 
 	if f.ContextLimit > 0 {
-		limit := formatTokens(f.ContextLimit)
+		limit := FormatTokens(f.ContextLimit)
 		if f.ContextStale {
 			return fmt.Sprintf("tokens: ~%s/%s (?)", tokens, limit)
 		}
@@ -572,7 +572,9 @@ func (f *Footer) colourPct(pct int) string {
 	return lipgloss.NewStyle().Foreground(f.barColour(pct)).Render(fmt.Sprintf("%d%%", pct))
 }
 
-func formatTokens(n int) string {
+// FormatTokens renders an integer token count as a compact human-readable
+// string, e.g. 1234 -> "1.2k". It is used by both the footer and file cards.
+func FormatTokens(n int) string {
 	switch {
 	case n >= 1_000_000:
 		return trimFloat(float64(n)/1_000_000) + "M"

@@ -47,8 +47,8 @@ func TestContextSegmentUnknownWindow(t *testing.T) {
 func TestFormatTokens(t *testing.T) {
 	cases := map[int]string{842: "842", 12400: "12.4k", 1_200_000: "1.2M", 9999: "9999", 10000: "10k"}
 	for n, want := range cases {
-		if got := formatTokens(n); got != want {
-			t.Fatalf("formatTokens(%d) = %q, want %q", n, got, want)
+		if got := FormatTokens(n); got != want {
+			t.Fatalf("FormatTokens(%d) = %q, want %q", n, got, want)
 		}
 	}
 }

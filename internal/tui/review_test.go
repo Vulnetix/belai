@@ -328,3 +328,64 @@ func TestReviewCardsPerScanner(t *testing.T) {
 		}
 	}
 }
+
+// A scanner agent that hangs with no output eventually times out and the
+// review proceeds to triage without it, treating the scanner as if it had
+// produced no report.
+func TestReviewTriageProceedsWhenScannerAgentTimesOut(t *testing.T) {
+	a := New(Options{})
+	a.preSend = true
+	r := testReview(a, "sast", "fix")
+	r.done["sast"], r.done["fix"] = true, true
+	r.reports = []explore.ReviewReport{{Scanner: "sast", Label: "sast report", Body: "S1"}}
+	r.atts = []run.Attachment{{Kind: "file", Label: "sast report", Body: "S1"}}
+	r.scansDone = true
+	r.agents["belai:vulnetix-scanner@sast#1"] = "sast"
+	r.agentStarted = map[string]time.Time{
+		"belai:vulnetix-scanner@sast#1": time.Now().Add(-reviewScannerAgentTimeout - time.Minute),
+	}
+
+	if cmd := a.checkReviewAgentTimeouts(); cmd != nil {
+		cmd()
+	}
+
+	timedOut := false
+	for _, m := range a.messages {
+		if m.Role == "system" && strings.Contains(m.Content, "timed out") {
+			timedOut = true
+		}
+	}
+	if !timedOut {
+		t.Fatalf("expected a timeout system line, got %+v", a.messages)
+	}
+	if a.review != nil {
+		t.Fatalf("review must clear after the agent times out: %+v", a.review)
+	}
+	rs := a.pendingReview
+	if rs == nil || len(rs.atts) != 1 {
+		t.Fatalf("triage must be queued with the scanner reports: %+v", rs)
+	}
+	if len(rs.findings) != 0 {
+		t.Fatalf("a timed-out agent leaves no finding, so triage re-runs it: %+v", rs.findings)
+	}
+}
+
+// A scanner agent that is still inside the timeout window keeps the review
+// waiting normally.
+func TestReviewTriageWaitsWhileScannerAgentWithinTimeout(t *testing.T) {
+	a := New(Options{})
+	r := testReview(a, "sast", "fix")
+	r.done["sast"], r.done["fix"] = true, true
+	r.scansDone = true
+	r.agents["belai:vulnetix-scanner@sast#1"] = "sast"
+	r.agentStarted = map[string]time.Time{
+		"belai:vulnetix-scanner@sast#1": time.Now().Add(-reviewScannerAgentTimeout + 30*time.Second),
+	}
+
+	if cmd := a.checkReviewAgentTimeouts(); cmd != nil {
+		t.Fatal("agent inside timeout window must not trigger a timeout command")
+	}
+	if a.review == nil {
+		t.Fatal("review must still be waiting")
+	}
+}
