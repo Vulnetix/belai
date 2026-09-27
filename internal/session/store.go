@@ -129,6 +129,24 @@ func (s *Store) sessionPath(workdir, sessionID string) (string, error) {
 	return s.sessionPathForKey(k, sessionID), nil
 }
 
+// Create ensures a session's .jsonl file exists without writing an entry, so
+// a live session can be registered (and mirrored) before its first line. It
+// is idempotent: an existing file is left untouched.
+func (s *Store) Create(k Key, sessionID string) error {
+	path := s.sessionPathForKey(k, sessionID)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create session dir: %w", err)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		if os.IsExist(err) {
+			return nil
+		}
+		return fmt.Errorf("create session file: %w", err)
+	}
+	return f.Close()
+}
+
 // lookupIn returns candidate session ids for an exact-or-prefix match under
 // one key. It does not error when nothing matches.
 func (s *Store) lookupIn(k Key, idOrPrefix string) ([]string, error) {

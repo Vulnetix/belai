@@ -27,6 +27,9 @@ func Start(opts Options) error {
 	// Only a real run probes git and the forge CLI in the background; New
 	// alone (every test) never execs them. Start runs after the trust gate.
 	app.startForgeCache()
+	// The live session's file is created as a startup activity so the syncer
+	// can register it immediately, before its first line is written.
+	app.createSessionFile()
 	// Session sync likewise only starts on a real run (docs/session-sync.md).
 	app.startSessionSync()
 	app.fireSessionHook(hooks.EventSessionStart)

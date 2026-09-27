@@ -3,31 +3,62 @@ import SealedSection from '../seal/SealedSection.astro';
 import CopyButton from '../ui/CopyButton.tsx';
 
 const sealText =
-  'FAQ: install, update and clean-up. Including how to remove the previous name signet, clear Homebrew caches, refresh the tap, and verify the installed belai version after a fresh install.';
+  'FAQ: install, update and clean-up across Homebrew, Scoop, install.sh, GitHub Releases and source. Including variants, verification, and how to remove the previous name signet or reset stale package-manager state.';
 
 const faqs = [
   {
     q: 'How do I install or update Belai?',
     steps: [
-      { text: 'Update Homebrew and refresh the tap metadata:', cmd: 'brew update' },
-      { text: 'Upgrade the package (reinstalls only when the version changed):', cmd: 'brew upgrade belai' },
+      { text: 'macOS / Linux with Homebrew:', cmd: 'brew install vulnetix/tap/belai' },
+      { text: 'Windows with Scoop:', cmd: 'scoop bucket add vulnetix https://github.com/Vulnetix/scoop-bucket && scoop install belai' },
+      { text: 'Any platform with the shell installer (checksum-verified):', cmd: 'curl -fsSL https://raw.githubusercontent.com/vulnetix/belai/main/install.sh | sh' },
+      { text: 'Update Homebrew installs:', cmd: 'brew update && brew upgrade --formula vulnetix/tap/belai' },
+      { text: 'Update Scoop installs:', cmd: 'scoop update belai' },
+      { text: 'Re-run install.sh to update a script install:', cmd: 'curl -fsSL https://raw.githubusercontent.com/vulnetix/belai/main/install.sh | sh' },
+    ],
+  },
+  {
+    q: 'Which binary variant should I choose?',
+    steps: [
+      { text: 'Default: phase-1 guardrails embedded (~40 MB, no API key needed):', cmd: 'belai-bert-guardrails (installed by Homebrew, Scoop and install.sh)' },
+      { text: 'Add the local jailbreak gate (~485 MB total):', cmd: 'install.sh --variant bert-guardrails-jailbreak' },
+      { text: 'Use the LLM sentinel only (smaller, requires a provider):', cmd: 'install.sh --variant vanilla' },
+      { text: 'No local classification at all:', cmd: 'install.sh --variant no-classifier' },
+    ],
+  },
+  {
+    q: 'How do I use the install.sh script?',
+    steps: [
+      { text: 'Default install to ~/.local/bin:', cmd: 'curl -fsSL https://raw.githubusercontent.com/vulnetix/belai/main/install.sh | sh' },
+      { text: 'Install to a custom directory:', cmd: 'curl -fsSL https://raw.githubusercontent.com/vulnetix/belai/main/install.sh | sh -s -- --install-dir ~/.local/bin' },
+      { text: 'Install a specific version:', cmd: 'curl -fsSL https://raw.githubusercontent.com/vulnetix/belai/main/install.sh | sh -s -- --version v0.1.1' },
+      { text: 'Pick another variant:', cmd: 'curl -fsSL https://raw.githubusercontent.com/vulnetix/belai/main/install.sh | sh -s -- --variant bert-guardrails-jailbreak' },
+    ],
+  },
+  {
+    q: 'How do I install or update on Windows?',
+    steps: [
+      { text: 'Add the Vulnetix bucket and install:', cmd: 'scoop bucket add vulnetix https://github.com/Vulnetix/scoop-bucket && scoop install belai' },
+      { text: 'Update to the latest release:', cmd: 'scoop update belai' },
       { text: 'Check the installed version:', cmd: 'belai -version' },
     ],
   },
   {
-    q: 'What if `brew install` fails or reports a stale formula?',
+    q: 'How do I install from GitHub Releases or build from source?',
     steps: [
-      { text: 'Make sure the Vulnetix tap is present and up to date:', cmd: 'brew tap vulnetix/tap' },
-      { text: 'Force a fresh fetch of the tap metadata:', cmd: 'brew update --force' },
-      { text: 'Reinstall directly from the tap:', cmd: 'brew install vulnetix/tap/belai' },
+      { text: 'Download a pre-built binary from the release assets:', cmd: 'https://github.com/vulnetix/belai/releases' },
+      { text: 'Install the latest release with go:', cmd: 'go install github.com/vulnetix/belai/cmd/belai@latest' },
+      { text: 'Build a development binary from a clone:', cmd: 'git clone https://github.com/vulnetix/belai && cd belai && go build ./cmd/belai' },
+      { text: 'Build a stamped release binary with just:', cmd: 'git clone https://github.com/vulnetix/belai && cd belai && just build' },
     ],
   },
   {
-    q: 'How do I clear cached bottles and start from scratch?',
+    q: 'What if Homebrew fails or reports a stale formula?',
     steps: [
-      { text: 'Uninstall the existing binary:', cmd: 'brew uninstall belai' },
-      { text: 'Remove the cached bottle (the -s flag skips the safety period):', cmd: 'brew cleanup -s belai' },
-      { text: 'Install fresh and verify:', cmd: 'brew install vulnetix/tap/belai && belai -version' },
+      { text: 'Make sure the Vulnetix tap is present:', cmd: 'brew tap vulnetix/tap' },
+      { text: 'Force a fresh fetch of the tap metadata:', cmd: 'brew update --force' },
+      { text: 'Reinstall directly from the tap:', cmd: 'brew install vulnetix/tap/belai' },
+      { text: 'Clear caches and start over:', cmd: 'brew uninstall belai 2>/dev/null; brew cleanup -s belai' },
     ],
   },
   {
@@ -44,7 +75,7 @@ const faqs = [
     steps: [
       { text: 'Uninstall both names and clear caches:', cmd: 'brew uninstall belai signet 2>/dev/null; brew cleanup -s belai signet' },
       { text: 'Re-tap Vulnetix cleanly:', cmd: 'brew untap vulnetix/tap; brew tap vulnetix/tap' },
-      { text: 'Install from source and check the version:', cmd: 'brew install vulnetix/tap/belai && belai -version' },
+      { text: 'Install fresh and check the version:', cmd: 'brew install vulnetix/tap/belai && belai -version' },
     ],
   },
   {
@@ -61,9 +92,10 @@ const faqs = [
 <SealedSection label="faq" sealText={sealText} id="faq">
   <h2 class="text-3xl font-bold text-vx-ink">FAQ.</h2>
   <p class="prose-measure mt-4 text-vx-ink/80">
-    Install, update and clean-up notes. If something is left over from the
-    previous <code class="mono">signet</code> package name, or Homebrew has a
-    stale bottle, the recipes below walk through a clean recovery.
+    Install, update and clean-up notes for Homebrew, Scoop, install.sh, GitHub
+    Releases and source builds. If something is left over from the previous{' '}
+    <code class="mono">signet</code> package name, or Homebrew has a stale bottle,
+    the recipes below walk through a clean recovery.
   </p>
 
   <div class="mt-8 space-y-6">
@@ -95,7 +127,9 @@ const faqs = [
   <p class="prose-measure mt-8 text-vx-ink/80">
     Still stuck? Open an issue on{' '}
     <a class="underline" href="https://github.com/vulnetix/belai">github.com/vulnetix/belai</a>{' '}
-    and include the output of <code class="mono">brew config</code>,{' '}
-    <code class="mono">brew doctor</code>, and <code class="mono">belai -version</code>.
+    and include <code class="mono">belai -version</code>, the install method you
+    used, and any platform or package-manager diagnostics (for example{' '}
+    <code class="mono">brew config</code> and <code class="mono">brew doctor</code>{' '}
+    on macOS/Linux, or <code class="mono">scoop config</code> on Windows).
   </p>
 </SealedSection>

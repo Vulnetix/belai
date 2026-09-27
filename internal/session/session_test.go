@@ -30,6 +30,39 @@ func TestSessionPathAccessor(t *testing.T) {
 	}
 }
 
+func TestCreateSessionFile(t *testing.T) {
+	st := NewStoreAt(t.TempDir())
+	k, err := KeyFor(t.TempDir())
+	if err != nil {
+		t.Fatalf("KeyFor: %v", err)
+	}
+	if err := st.Create(k, "sess-1"); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	path := st.SessionPath(k, "sess-1")
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	if fi.Size() != 0 {
+		t.Fatalf("created file size = %d, want 0", fi.Size())
+	}
+	// Idempotent, and an existing file is never truncated.
+	if err := st.AppendTo(k, "sess-1", Entry{ID: "a", Type: "user", Content: "hi"}); err != nil {
+		t.Fatalf("AppendTo: %v", err)
+	}
+	if err := st.Create(k, "sess-1"); err != nil {
+		t.Fatalf("second Create: %v", err)
+	}
+	entries, err := st.ReadFrom(k, "sess-1")
+	if err != nil {
+		t.Fatalf("ReadFrom: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Content != "hi" {
+		t.Fatalf("entries = %+v, want the appended line", entries)
+	}
+}
+
 func TestAppendAndReadRoundTrip(t *testing.T) {
 	st := testStore(t, t.TempDir())
 	workdir := t.TempDir()
