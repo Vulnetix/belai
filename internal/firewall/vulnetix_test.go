@@ -1,4 +1,4 @@
-package aifirewall
+package firewall
 
 import (
 	"sort"

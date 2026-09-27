@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/firewall"
 	"github.com/vulnetix/belai/internal/provider"
 	"github.com/vulnetix/belai/internal/resilience"
 	"github.com/vulnetix/belai/internal/rolemanager"
@@ -1722,6 +1723,7 @@ type fakeFirewallSource struct {
 	org      string
 	apiKey   string
 	routable map[string]bool
+	custom   *config.FirewallInstance
 }
 
 func (f *fakeFirewallSource) Lookup(provider, field string) (value, origin string, ok bool) {
@@ -1729,16 +1731,16 @@ func (f *fakeFirewallSource) Lookup(provider, field string) (value, origin strin
 	return v, "env", ok
 }
 
-func (f *fakeFirewallSource) Firewall(provider string) (baseURL, apiKey string, ok bool) {
-	if !f.firewall || !f.routable[provider] {
-		return "", "", false
+func (f *fakeFirewallSource) Firewall(p string) (firewall.Route, bool) {
+	if !f.firewall || !f.routable[p] {
+		return firewall.Route{}, false
 	}
-	slug := provider
-	base := f.gateway + "/" + slug + "/" + f.org
-	if provider != "anthropic" {
-		base += "/v1"
+	if f.custom != nil {
+		r, err := firewall.Plan("corp", *f.custom, firewall.Target{Provider: p, Surface: wire.SurfaceAnthropicMessages, Auth: provider.AuthXAPIKey}, f.apiKey, "")
+		return r, err == nil
 	}
-	return base, f.apiKey, true
+	r, err := firewall.Plan("vulnetix", config.FirewallInstance{Adapter: "vulnetix", URL: f.gateway}, firewall.Target{Provider: p}, f.apiKey, f.org)
+	return r, err == nil
 }
 
 func TestPrepareRoutesThroughFirewall(t *testing.T) {
@@ -1760,11 +1762,112 @@ func TestPrepareRoutesThroughFirewall(t *testing.T) {
 	if cfg.APIKey != "vulnetix-key" {
 		t.Fatalf("API key should be Vulnetix key, got %q", cfg.APIKey)
 	}
-	if cfg.Auth != provider.AuthBearer {
-		t.Fatalf("auth = %v, want bearer", cfg.Auth)
+	if cfg.Firewall == nil || cfg.Firewall.Instance != "vulnetix" {
+		t.Fatalf("firewall route = %v", cfg.Firewall)
 	}
-	if status.Origins["base_url"] != "vulnetix-firewall" || status.Origins["api_key"] != "vulnetix-firewall" {
+	if status.Origins["base_url"] != "firewall:vulnetix" || status.Origins["api_key"] != "firewall:vulnetix" {
 		t.Fatalf("origins = %v", status.Origins)
+	}
+}
+
+// A transparent firewall swaps only the URL: the provider key is still sent
+// in the provider's own header, and a missing one is still missing.
+func TestPrepareTransparentFirewallKeepsProviderKey(t *testing.T) {
+	src := &fakeFirewallSource{
+		values:   map[string]string{"anthropic:api_key": "provider-key"},
+		firewall: true,
+		routable: map[string]bool{"anthropic": true},
+		custom:   &config.FirewallInstance{Adapter: "custom", URL: "https://proxy.example/{provider}", Mode: "transparent"},
+	}
+	cfg, status := Prepare("claude-sonnet-4", "anthropic", src)
+	if cfg.BaseURL != "https://proxy.example/anthropic" || cfg.APIKey != "provider-key" || !status.Configured {
+		t.Fatalf("cfg = %v status = %+v", cfg, status)
+	}
+	req, _, err := buildRequest(context.Background(), cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, false, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.Header.Get("x-api-key") != "provider-key" || !strings.HasPrefix(req.URL.String(), "https://proxy.example/anthropic/") {
+		t.Fatalf("request %s headers %v", req.URL, req.Header)
+	}
+
+	delete(src.values, "anthropic:api_key")
+	if _, status := Prepare("claude-sonnet-4", "anthropic", src); status.Configured {
+		t.Fatal("transparent firewall hid a missing provider key")
+	}
+}
+
+// A header-mode firewall sends its key in its own header and drops the
+// provider's auth header.
+func TestPrepareHeaderFirewallDropsProviderAuth(t *testing.T) {
+	src := &fakeFirewallSource{
+		values:   map[string]string{"anthropic:api_key": "provider-key"},
+		firewall: true,
+		apiKey:   "fw-key",
+		routable: map[string]bool{"anthropic": true},
+		custom:   &config.FirewallInstance{Adapter: "custom", URL: "https://gw.example", Mode: "header", Header: "X-Gw-Key"},
+	}
+	cfg, _ := Prepare("claude-sonnet-4", "anthropic", src)
+	req, _, err := buildRequest(context.Background(), cfg, "sys", []Turn{{Role: "user", Content: "hi"}}, false, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.Header.Get("X-Gw-Key") != "fw-key" || req.Header.Get("x-api-key") != "" || req.Header.Get("authorization") != "" {
+		t.Fatalf("headers = %v", req.Header)
+	}
+	for _, v := range req.Header {
+		for _, s := range v {
+			if strings.Contains(s, "provider-key") {
+				t.Fatal("provider key sent to a BYOK firewall")
+			}
+		}
+	}
+}
+
+// A routed call never follows a redirect, and its response is inspected.
+func TestFirewallRoundTripRefusesRedirectAndReportsVerdict(t *testing.T) {
+	var leaked string
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked = r.Header.Get("X-Gw-Key")
+	}))
+	defer target.Close()
+	redir := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	}))
+	defer redir.Close()
+	route := &firewall.Route{Instance: "corp", AdapterID: "custom", DropProviderAuth: true, KeyHeader: "X-Gw-Key", KeyValue: "fw"}
+	cfg := Config{Provider: "openai", Model: "gpt-5", BaseURL: redir.URL, Firewall: route}
+	req, _ := http.NewRequest(http.MethodPost, redir.URL, nil)
+	route.Apply(req.Header)
+	if _, _, err := roundTrip(context.Background(), redir.Client(), req, cfg, nil); err == nil || !strings.Contains(err.Error(), "redirect") {
+		t.Fatalf("err = %v, want a refused redirect", err)
+	}
+	if leaked != "" {
+		t.Fatal("the firewall key followed a redirect")
+	}
+
+	var got []firewall.Verdict
+	passes := 0
+	cancel := SetFirewallObserver(func(v firewall.Verdict) { got = append(got, v) }, func(string) { passes++ })
+	defer cancel()
+	block := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":{"message":"request blocked by AI firewall policy","type":"policy_violation","code":"request_blocked","blocked_by":"No secrets"}}`))
+	}))
+	defer block.Close()
+	cfg.BaseURL = block.URL
+	req, _ = http.NewRequest(http.MethodPost, block.URL, nil)
+	if _, _, err := roundTrip(context.Background(), block.Client(), req, cfg, nil); err == nil {
+		t.Fatal("403 did not fail")
+	}
+	if len(got) != 1 || got[0].Action != firewall.ActionBlock || got[0].Rules[0] != "No secrets" || got[0].Instance != "corp" {
+		t.Fatalf("verdicts = %+v", got)
+	}
+	ok := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`{}`)) }))
+	defer ok.Close()
+	req, _ = http.NewRequest(http.MethodPost, ok.URL, nil)
+	if _, _, err := roundTrip(context.Background(), ok.Client(), req, cfg, nil); err != nil || passes != 1 || len(got) != 1 {
+		t.Fatalf("clean pass err=%v passes=%d verdicts=%d", err, passes, len(got))
 	}
 }
 

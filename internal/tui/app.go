@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -28,7 +29,6 @@ import (
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/agentpool"
 	"github.com/vulnetix/belai/internal/agentprofile"
-	"github.com/vulnetix/belai/internal/aifirewall"
 	"github.com/vulnetix/belai/internal/bgagent"
 	"github.com/vulnetix/belai/internal/bgproc"
 	"github.com/vulnetix/belai/internal/budget"
@@ -38,6 +38,7 @@ import (
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
 	"github.com/vulnetix/belai/internal/explore"
+	"github.com/vulnetix/belai/internal/firewall"
 	"github.com/vulnetix/belai/internal/forge"
 	"github.com/vulnetix/belai/internal/gitinfo"
 	"github.com/vulnetix/belai/internal/goals"
@@ -51,6 +52,7 @@ import (
 	"github.com/vulnetix/belai/internal/modelinfo"
 	"github.com/vulnetix/belai/internal/models"
 	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/nonce"
 	"github.com/vulnetix/belai/internal/notify"
 	"github.com/vulnetix/belai/internal/permissions"
 	"github.com/vulnetix/belai/internal/plans"
@@ -88,6 +90,8 @@ type Options struct {
 	Settings *config.Settings // nil means load from disk
 	Posture  posture.Policy   // posture gates; defaults to posture.Defaults()
 	PlanMode bool
+	// Firewall turns the active AI Firewall on for this session (-firewall).
+	Firewall bool
 
 	// ResumeKey and ResumeSession load an existing session instead of minting
 	// a fresh one. ResumeSession is a fully-resolved id; ResumeKey addresses
@@ -291,6 +295,16 @@ type App struct {
 	// render loop; rmCancel detaches the observer on teardown.
 	rmEvents chan rolemanager.Activity
 	rmCancel func()
+	// fwEvents carries AI Firewall verdicts from the run observer into the
+	// render loop; fwCancel detaches it. fwPasses counts routed responses
+	// with no event; fwEventCount counts cards shown; fwLastKey/fwLastAt
+	// coalesce retries of one refused request into one card.
+	fwEvents     chan firewall.Verdict
+	fwCancel     func()
+	fwPasses     atomic.Int64
+	fwEventCount int
+	fwLastKey    string
+	fwLastAt     time.Time
 	// budgets records every model call's tokens (via the run usage observer)
 	// and measures the token budgets; usageEvents wakes the render loop and
 	// usageCancel detaches the observer on exit. nil when the ledger could
@@ -299,8 +313,10 @@ type App struct {
 	usageEvents  chan run.UsageEvent
 	usageCancel  func()
 	budgetsState budgetsViewState
-	pending      string  // pending prompt to send once configured
-	initCmd      tea.Cmd // resume command batched into Init(), set by New
+	// firewallState is the /firewall screen.
+	firewallState firewallViewState
+	pending       string  // pending prompt to send once configured
+	initCmd       tea.Cmd // resume command batched into Init(), set by New
 	// requestedProvider is the provider name from settings/state/env/flags
 	// before any sole-configured-provider fallback. Empty means none was
 	// configured; the async credential resolution may then pick a sole provider.
@@ -903,6 +919,14 @@ func New(opts Options) *App {
 	}
 	// One Live for the process: the running session and the next one share it.
 	a.live = posture.NewLive(a.effectivePosture(), !a.askEnabled())
+	if opts.Firewall {
+		on := true
+		a.firewallOverride = &on
+		if a.resolver != nil {
+			a.resolver.SetFirewallEnabled(&on)
+		}
+	}
+	a.watchFirewall()
 	// Register the role-manager activity observer. The observer contract is
 	// non-blocking: a non-blocking send on a buffered channel, dropping on
 	// overflow. Dropping is correct — the feed is render-only. The returned
@@ -1117,7 +1141,7 @@ func (a *App) SetClassifier(c rolemanager.Classifier) {
 // Init implements tea.Model.
 func (a *App) Init() tea.Cmd {
 	a.maybeNoticeLegacyPrompts()
-	cmds := []tea.Cmd{tickCmd(), a.watchActivityEvents(), a.nextRMActivity(), a.nextUsage(), a.importHistory()}
+	cmds := []tea.Cmd{tickCmd(), a.watchActivityEvents(), a.nextRMActivity(), a.nextFirewall(), a.nextUsage(), a.importHistory()}
 	if cmd := a.watchRemotePrompts(); cmd != nil {
 		cmds = append(cmds, cmd)
 	}
@@ -2110,6 +2134,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.addRMActivity(rolemanager.Activity(m))
 		a.stampMessages(m.At)
 		return a, a.nextRMActivity()
+	case firewallVerdictMsg:
+		a.addFirewallCard(firewall.Verdict(m))
+		return a, a.nextFirewall()
 
 	case activityEventMsg:
 		return a, a.handleActivityEvent(m)
@@ -2375,6 +2402,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if a.rmCancel != nil {
 					a.rmCancel()
 				}
+				a.stopFirewallWatch()
 				a.stopLocalServers()
 				if a.procManager != nil {
 					a.procManager.Shutdown()
@@ -4940,6 +4968,7 @@ func (a *App) refreshFooter() {
 	a.footer.Guardrails = a.guardrailsEnabled()
 	a.footer.Ask = a.askEnabled()
 	a.footer.Firewall = a.firewallEnabled()
+	a.footer.FirewallLabel = a.firewallFooterLabel()
 	a.footer.Caveman = a.settings.CavemanEnabled()
 	// The footer shows where relative paths currently resolve from, which is
 	// the session's working directory rather than the root it started at.
@@ -5101,11 +5130,11 @@ func (a *App) toggleFirewall() tea.Cmd {
 		if a.resolver != nil {
 			st := a.resolver.FirewallState(a.cfg.Provider)
 			if st.Reason != "" {
-				a.addSystem("Vulnetix AI Firewall: " + st.Reason)
+				a.addSystem(a.firewallLabel() + ": " + st.Reason)
 				return nil
 			}
 		}
-		a.addSystem("Vulnetix AI Firewall: unavailable")
+		a.addSystem(a.firewallLabel() + ": unavailable")
 		return nil
 	}
 	a.firewallOverride = &on
@@ -5125,9 +5154,33 @@ func (a *App) toggleFirewall() tea.Cmd {
 		a.addSystem(note)
 	}
 	if on {
-		return a.syncAllFirewallKeys()
+		return a.firewallActivated()
 	}
 	return nil
+}
+
+// firewallActivated runs what turning a firewall on starts: the Vulnetix
+// adapter's BYOK key sync, and a fresh nonce probe for the new route.
+func (a *App) firewallActivated() tea.Cmd {
+	if a.cfg.Firewall != nil {
+		nonce.ForgetEndpoint(a.cfg.BaseURL)
+	}
+	return a.syncAllFirewallKeys()
+}
+
+// firewallLabel names the active firewall.
+func (a *App) firewallLabel() string {
+	inst, ok := a.settings.FirewallInstanceNamed(a.settings.FirewallActive())
+	if !ok {
+		return "AI Firewall"
+	}
+	if ad, ok := firewall.Lookup(inst.Adapter); ok {
+		if inst.Adapter == "custom" {
+			return "firewall " + a.settings.FirewallActive()
+		}
+		return ad.Label()
+	}
+	return "AI Firewall"
 }
 
 // resolveConfig re-resolves the active provider config from current settings.
@@ -5141,22 +5194,25 @@ func (a *App) resolveConfig() (run.Config, error) {
 
 // firewallOnMessage reports what changed when the firewall was just enabled.
 func (a *App) firewallOnMessage() string {
-	var gateway, org string
-	if a.resolver != nil {
-		st := a.resolver.FirewallState(a.cfg.Provider)
-		if st.Reason == "" {
-			gateway = aifirewall.HostOf(st.BaseURL)
-			org = aifirewall.URLPathUUID(st.BaseURL)
-		}
+	msg := a.firewallLabel() + " on"
+	if a.resolver == nil {
+		return msg
 	}
-	msg := "Vulnetix AI Firewall on"
-	if gateway != "" {
-		msg += " · gateway " + gateway
+	st := a.resolver.FirewallState(a.cfg.Provider)
+	if !st.Ready() {
+		return msg
 	}
-	if org != "" {
-		msg += " · org " + org
+	if host := firewall.HostOf(st.Route.BaseURL); host != "" {
+		msg += " · gateway " + host
 	}
-	msg += " · provider key is no longer sent"
+	if st.Account != "" {
+		msg += " · org " + st.Account
+	}
+	if st.Route.KeepProviderKey {
+		msg += " · transparent: the provider key is still sent, via the firewall"
+	} else {
+		msg += " · provider key is no longer sent"
+	}
 	return msg
 }
 

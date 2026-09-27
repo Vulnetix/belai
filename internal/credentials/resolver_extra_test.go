@@ -206,13 +206,10 @@ func TestFirewallStateHonorsSettingsGateway(t *testing.T) {
 	r.vulnetixCredOnce.Do(func() {})
 	r.vulnetixCred = vulnetixcreds.Credential{OrgUUID: "org-1", APIKey: "vk"}
 	st := r.FirewallState("anthropic")
-	if st.Gateway != gateway {
-		t.Fatalf("Gateway = %q, want %q", st.Gateway, gateway)
+	if !strings.HasPrefix(st.Route.BaseURL, gateway) {
+		t.Fatalf("BaseURL = %q, want prefix %q", st.Route.BaseURL, gateway)
 	}
-	if !strings.HasPrefix(st.BaseURL, gateway) {
-		t.Fatalf("BaseURL = %q, want prefix %q", st.BaseURL, gateway)
-	}
-	if st.OrgUUID != "org-1" || st.APIKey != "vk" {
+	if st.Account != "org-1" || st.Route.APIKey != "vk" {
 		t.Fatalf("state = %+v", st)
 	}
 }

@@ -37,7 +37,7 @@ func keySections() []keySection {
 			{"f1", "open the screen switcher; a letter jumps to that screen"},
 			{"f8", "open the runs panel on the subagents tab (chat)"},
 			{"f9", "toggle the runs panel on the activity tab (chat)"},
-			{"f10", "toggle the Vulnetix AI Firewall (chat)"},
+			{"f10", "turn the active AI Firewall on or off (chat)"},
 		}},
 		{"chat", []keyBinding{
 			{"enter", "send; also runs !shell, !!process, and /commands, or steers a running turn"},

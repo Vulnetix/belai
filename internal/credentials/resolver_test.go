@@ -236,10 +236,10 @@ func TestFirewallStateOffStillAvailable(t *testing.T) {
 	if st.Reason != "" {
 		t.Fatalf("expected available with firewall off, got %q", st.Reason)
 	}
-	if !st.Routable || !st.HasCred || st.BaseURL == "" {
+	if !st.Routable || !st.HasCred || st.Route.BaseURL == "" {
 		t.Fatalf("state = %+v", st)
 	}
-	if _, _, ok := r.Firewall("anthropic"); ok {
+	if _, ok := r.Firewall("anthropic"); ok {
 		t.Fatal("Firewall() must stay off when settings flag is false")
 	}
 }
@@ -276,12 +276,12 @@ func TestFirewallEnabledOverrideFlipsWithoutRebuild(t *testing.T) {
 	r.vulnetixCred = vulnetixcreds.Credential{OrgUUID: "org", APIKey: "k"}
 	on := true
 	r.SetFirewallEnabled(&on)
-	if _, _, ok := r.Firewall("anthropic"); !ok {
+	if _, ok := r.Firewall("anthropic"); !ok {
 		t.Fatal("override on should enable firewall")
 	}
 	off := false
 	r.SetFirewallEnabled(&off)
-	if _, _, ok := r.Firewall("anthropic"); ok {
+	if _, ok := r.Firewall("anthropic"); ok {
 		t.Fatal("override off should disable firewall")
 	}
 }
@@ -298,21 +298,21 @@ func TestFirewallKeyErrorKeepsProviderDirect(t *testing.T) {
 	}
 	r.vulnetixCredOnce.Do(func() {})
 	r.vulnetixCred = vulnetixcreds.Credential{OrgUUID: "org", APIKey: "k"}
-	if _, _, ok := r.Firewall("openai"); !ok {
+	if _, ok := r.Firewall("openai"); !ok {
 		t.Fatal("expected openai routed")
 	}
 	r.SetFirewallKeyError("openai", errors.New("HTTP 403"))
-	if _, _, ok := r.Firewall("openai"); ok {
+	if _, ok := r.Firewall("openai"); ok {
 		t.Fatal("routed a provider the gateway has no key for")
 	}
 	if st := r.FirewallState("openai"); !st.HasCred || !strings.Contains(st.Reason, "no openai key") {
 		t.Fatalf("state = %+v", st)
 	}
-	if _, _, ok := r.Firewall("anthropic"); !ok {
+	if _, ok := r.Firewall("anthropic"); !ok {
 		t.Fatal("another provider was affected")
 	}
 	r.SetFirewallKeyError("openai", nil)
-	if _, _, ok := r.Firewall("openai"); !ok {
+	if _, ok := r.Firewall("openai"); !ok {
 		t.Fatal("a successful sync did not restore routing")
 	}
 }
@@ -341,5 +341,52 @@ func TestReplaceRewritesOnlyTheHoldingBackend(t *testing.T) {
 	env["KIRO_LOGIN"] = "from-env"
 	if err := r.Replace("kiro", "login", "from-env", "x"); err == nil {
 		t.Fatal("rewrote an environment value")
+	}
+}
+
+// A custom firewall's key comes from the environment, the user file or the
+// keychain, never the repo-visible project credentials file.
+func TestFirewallCustomInstanceSecret(t *testing.T) {
+	on := true
+	dir := t.TempDir()
+	settings := config.Settings{Firewall: &config.FirewallSettings{
+		Enabled: &on, Active: "corp",
+		Instances: map[string]config.FirewallInstance{
+			"corp": {Adapter: "custom", URL: "https://gw.example/v1", Mode: "header", Header: "X-Gw-Key"},
+		},
+	}}
+	env := map[string]string{}
+	r := &Resolver{
+		env:              func(k string) string { return env[k] },
+		settings:         settings,
+		userFile:         newFileStore(filepath.Join(dir, "user.json"), false),
+		projFile:         newFileStore(filepath.Join(dir, "proj.json"), true),
+		vulnetixKeychain: &fakeKeychain{},
+		keychain:         &fakeKeychain{},
+	}
+	if err := r.projFile.write(config.FirewallCredentialName("corp"), "api_key", "from-repo"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := r.Firewall("openai"); ok {
+		t.Fatal("routed with a key from the project credentials file")
+	}
+	if st := r.FirewallState("openai"); !strings.Contains(st.Reason, "no key") {
+		t.Fatalf("reason = %q", st.Reason)
+	}
+	env["BELAI_FIREWALL_CORP_API_KEY"] = "envkey"
+	route, ok := r.Firewall("openai")
+	if !ok || route.KeyHeader != "X-Gw-Key" || route.KeyValue != "envkey" || route.BaseURL != "https://gw.example/v1" {
+		t.Fatalf("route = %+v ok=%v", route, ok)
+	}
+	delete(env, "BELAI_FIREWALL_CORP_API_KEY")
+	if err := r.userFile.write(config.FirewallCredentialName("corp"), "api_key", "filekey"); err != nil {
+		t.Fatal(err)
+	}
+	if route, ok := r.Firewall("openai"); !ok || route.KeyValue != "filekey" {
+		t.Fatalf("route = %+v ok=%v", route, ok)
+	}
+	// Kiro is never routed, whatever the firewall.
+	if _, ok := r.Firewall("kiro"); ok {
+		t.Fatal("kiro routed through a firewall")
 	}
 }

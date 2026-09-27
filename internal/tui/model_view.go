@@ -109,7 +109,7 @@ type modelsFetchedMsg struct {
 // catalogue.
 func catalogTarget(name string, src run.CredentialSource) modelfetch.Target {
 	cfg, _ := run.Prepare("", name, src)
-	target := modelfetch.Target{Name: name, BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Auth: cfg.Auth, API: cfg.API, Kind: cfg.Kind}
+	target := modelfetch.Target{Name: name, BaseURL: cfg.BaseURL, APIKey: cfg.APIKey, Auth: cfg.Auth, API: cfg.API, Kind: cfg.Kind, Firewall: cfg.Firewall}
 	if name == "cloudflare-ai-gateway" {
 		if wcfg, wstatus := run.Prepare("", "cloudflare-workers-ai", src); wstatus.Configured {
 			target = modelfetch.Target{Name: "cloudflare-workers-ai", BaseURL: wcfg.BaseURL, APIKey: wcfg.APIKey, Auth: wcfg.Auth, API: wcfg.API}

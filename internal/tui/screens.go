@@ -42,7 +42,8 @@ var screenEntries = []screenEntry{
 	{key: "r", name: "prompts", desc: "the prompt library", view: viewPrompts, open: viaCommand("/prompts")},
 	{key: "x", name: "processes", desc: "the process library", view: viewProcesses, open: viaCommand("/processes")},
 	{key: "l", name: "lsp", desc: "language-server diagnostics", view: viewLSP, open: viaCommand("/lsp")},
-	{key: "v", name: "vulnetix", desc: "scanners and the AI Firewall", view: viewVulnetixConfig, open: func(a *App) tea.Cmd { return a.push(viewVulnetixConfig) }, status: func(a *App) string { return "firewall " + onOffLabel(a.firewallEnabled()) }},
+	{key: "v", name: "vulnetix", desc: "scanners and the Vulnetix AI Firewall", view: viewVulnetixConfig, open: func(a *App) tea.Cmd { return a.push(viewVulnetixConfig) }, status: func(a *App) string { return "firewall " + onOffLabel(a.firewallEnabled()) }},
+	{key: "f", name: "firewall", desc: "AI Firewall adapters and the active one", view: viewFirewall, open: viaCommand("/firewall"), status: func(a *App) string { return a.firewallLabel() + " " + onOffLabel(a.firewallEnabled()) }},
 	{key: "h", name: "sessions", desc: "resume an earlier session", view: viewResume, open: viaCommand("/resume")},
 	{key: "t", name: "kanban", desc: "the global kanban board", view: viewKanban, open: viaCommand("/kanban"), status: (*App).kanbanStatus},
 }
