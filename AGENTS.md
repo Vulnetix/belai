@@ -313,6 +313,49 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `sync.enabled` switch). The project layer may turn `kanban` off, never on.
   A prefilled composer prompt from the pane is text in the editor and takes
   the typed-prompt path like anything the user types.
+- **Fleet workers claim by harness, work in isolation, and hand back facts.**
+  `internal/fleet` workers (`belai agent run|start`, `/fleet`) take work
+  only from the kanban board. The rules:
+  - **Claims.** The harness claims (`kanban.Store.Claim`, one locked
+    read-modify-write). There is no model-facing claim tool, and the claim
+    fields (`ClaimedBy`, `LeaseUntil`, …) are never taken from a model
+    argument. The website may clear a claim, never set one.
+  - **Item text.** The claimed item's text reaches the model only as a
+    `kanban` attachment gated exactly like a `KanbanSearch` result
+    (`agent.TurnInput.KanbanItem`): sanitised, and classified unless the
+    posture ignores tool results. It never reaches the prompt, the carrier,
+    the system block or a directive; a withheld item is blocked, never worked.
+  - **Worker memory.** Lessons are classified when written and again when
+    read, and ride only as a user-turn attachment.
+  - **Board writes.** A worker's session gets `KanbanSearch`, and
+    `KanbanUpdate` and `KanbanHandoff` bound to its `tools.WorkerClaim`:
+    - it writes only its own item (notes only) and the items it handed off;
+    - handoffs follow the profile's `handoff_to`/`handoff_labels`
+      allowlist, at most five per item and six hops per chain;
+    - it gets no `KanbanMove` and no wrap-up.
+    In every session, `KanbanMove`/`KanbanUpdate` refuse another worker's
+    live claim.
+  - **Release notes.** The harness releases the item; its notes are harness
+    facts (stop reason, counts, tool names), never model text.
+  - **Settings and paths.** Settings, posture, credentials, trust, provenance
+    and the transcript key come from the trusted repository root, never
+    from a worktree. Worktrees live outside the repository and outside the
+    state directory (`config.WorktreesDir`). Every git call is hardened:
+    - hooks and fsmonitor off, no file transport, no credential prompt;
+    - the scrubbed environment;
+    - an explicit `--git-dir`/`--work-tree`, with the worktree's `.git`
+      pointer checked unchanged before each call.
+    The harness commits; the model is told not to.
+  - **Preflight.** It fails closed:
+    - a worker cannot turn guardrails off;
+    - an autonomous worker needs a pass budget;
+    - a writing worker needs isolation;
+    - an autonomous worker with Bash needs a working OS sandbox.
+  - **Asks.** A worker that cannot ask blocks the item with the tool names;
+    it never widens.
+  - **Project layer.** It may turn `agents.enabled` and `agents.publish` off
+    and lower `agents.max_workers`, never the reverse, and it can define no
+    profile or crew.
 - **Deferred tools change what is advertised, never what may run.** With
   `defer_tools` on (the default) a request carries the core tools
   (`tools.CoreTools`) in full, and the sealed tools briefing names the rest of

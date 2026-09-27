@@ -64,7 +64,11 @@ type kanbanSurface struct {
 type kanbanState struct {
 	base tools.KanbanBase
 	// on is true for a main session: its registry carries KanbanUpdate.
+	// worker is true for a fleet worker's session: its kanban tools carry a
+	// tools.WorkerClaim. It gets no loop KanbanMove and no wrap-up; the
+	// harness releases the claimed item.
 	on       bool
+	worker   bool
 	loopMove tools.KanbanMove
 	wrapUp   kanbanSurface
 
@@ -81,7 +85,7 @@ func newKanbanState(reg *tools.Registry) *kanbanState {
 	if _, write := reg.Find(tools.KanbanUpdateName); !write {
 		return ks
 	}
-	ks.base, ks.on = base, true
+	ks.base, ks.on, ks.worker = base, true, base.Claim != nil
 	ks.loopMove = tools.KanbanMove{KanbanBase: base, Allowed: tools.KanbanLoopLists}
 	wrap := tools.NewRegistry(
 		tools.KanbanSearch{KanbanBase: base},
@@ -172,6 +176,9 @@ func (s *Session) callableNames() []string {
 // this project, never item text, which was written by other sessions and
 // must not ride in a sealed directive.
 func (s *Session) kanbanDirective(prompt string) string {
+	if s.kanban != nil && s.kanban.worker {
+		return workerDirective(s.kanban.base.Claim)
+	}
 	if !s.turnKanbanLoop {
 		return ""
 	}
@@ -207,6 +214,25 @@ func (s *Session) kanbanDirective(prompt string) string {
 		fmt.Fprintf(&b, " Items to keep current: %s.", strings.Join(ids, ", "))
 	}
 	b.WriteString(" As you work, keep the items you touch current: KanbanMove an item to in_progress when you start it, to blocked with the blocker as the note when you cannot continue, and to done once it is finished and verified; KanbanUpdate adds a progress note. KanbanSearch reads an item. None of this replaces the task itself.")
+	return b.String()
+}
+
+// workerDirective is a fleet worker's board line: the claimed id and the
+// handoff contract, harness facts only. It names no other item, so a worker
+// is never invited to touch another worker's claim.
+func workerDirective(c *tools.WorkerClaim) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "You hold kanban item %s; its text is attached. The harness moves it when this goal ends — do not try to move it. KanbanUpdate may add a progress note to it.", kanban.ShortID(c.Item))
+	if len(c.HandoffTo) > 0 || len(c.HandoffLabels) > 0 {
+		fmt.Fprintf(&b, " Work that belongs to another agent goes on the board with KanbanHandoff (at most %d per item)", tools.MaxHandoffsPerItem)
+		if len(c.HandoffTo) > 0 {
+			fmt.Fprintf(&b, "; agents: %s", strings.Join(c.HandoffTo, ", "))
+		}
+		if len(c.HandoffLabels) > 0 {
+			fmt.Fprintf(&b, "; labels: %s", strings.Join(c.HandoffLabels, ", "))
+		}
+		b.WriteString(".")
+	}
 	return b.String()
 }
 

@@ -61,6 +61,7 @@ until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
 | Editor integration over ACP | [ACP](acp.md) | alpha-20260926 |
 | OpenTelemetry export | [Telemetry](telemetry.md) | alpha-20260926 |
 | Quiet TUI redesign | [TUI design system](tui-design.md) | alpha-20260927 (in part) |
+| Autonomous kanban agent fleet | [Agent fleet](fleet.md) | alpha-20260928 |
 
 ## Build, test, and publish
 

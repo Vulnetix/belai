@@ -2317,6 +2317,21 @@ func RunTurnsWithPool(ctx context.Context, cfg Config, turns []Turn, client *htt
 	return doChatWithPool(ctx, cfg, verifiedSystem, turns, client, pool)
 }
 
+// StopReason is why a goal pass loop ended.
+type StopReason string
+
+// Goal-loop stop reasons.
+const (
+	StopComplete   StopReason = "complete"   // the evaluator accepted GOAL_COMPLETE
+	StopStalled    StopReason = "stalled"    // repeated or unproductive passes
+	StopWithheld   StopReason = "withheld"   // the classifier withheld what the goal needs
+	StopMaxPasses  StopReason = "max_passes" // resilience.max_passes reached
+	StopEvaluator  StopReason = "evaluator"  // the goal evaluator failed or stopped the loop
+	StopCancelled  StopReason = "cancelled"  // the context ended
+	StopError      StopReason = "error"      // any other failure
+	StopIncomplete StopReason = "incomplete" // ended with a verdict short of complete
+)
+
 // Result captures what the noninteractive pipeline decided and produced.
 type Result struct {
 	SanitizedPrompt  string
@@ -2342,6 +2357,14 @@ type Result struct {
 	// evaluator rather than an explicit ExitPlanMode call.
 	PlanText string
 	Passes   int
+	// StopReason is why a goal-mode pass loop ended, as a harness fact
+	// (StopComplete, StopStalled, …); empty outside goal mode. A caller that
+	// must act on the outcome — a fleet worker releasing its item — reads it
+	// instead of matching warning text.
+	StopReason StopReason
+	// AsksWithheld names the tools whose calls were withheld because they
+	// needed a permission ask and nobody could be asked.
+	AsksWithheld []string
 	// Clarify is set when a plan-mode turn ended by asking the user
 	// (AskUserQuestion). The agent asks and runs the answers as a new
 	// agent-mode turn; a caller that sees it set was not able to ask.

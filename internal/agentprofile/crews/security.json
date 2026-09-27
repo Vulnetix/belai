@@ -1,0 +1,9 @@
+{
+  "name": "belai:security",
+  "description": "Vulnerability scout, patchers and a verifier: turn a scan into verified fixes",
+  "members": [
+    {"profile": "belai:vuln-scout", "replicas": 1},
+    {"profile": "belai:patcher", "replicas": 2},
+    {"profile": "belai:verifier", "replicas": 1}
+  ]
+}

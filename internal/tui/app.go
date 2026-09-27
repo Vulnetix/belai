@@ -2306,6 +2306,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case bgAgentEventMsg:
 		return a, a.handleBgAgentEvent(m)
 
+	case fleetTickMsg:
+		return a, a.handleFleetTick()
+
 	case agentPulseMsg:
 		return a, a.handleAgentPulse()
 

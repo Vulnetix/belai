@@ -34,6 +34,14 @@ type AgentProfile struct {
 	Effort           string   `json:"effort,omitempty"`
 	Guardrails       *bool    `json:"guardrails,omitempty"`
 	AskPermission    *bool    `json:"ask_permission,omitempty"`
+	// Identity is a worker's persona: who it is and how it works. It rides
+	// with system_prompt as the profile section of the system block.
+	Identity string `json:"identity,omitempty"`
+	// Worker blocks (mode: worker; see worker.go and docs/fleet.md).
+	Kanban    *KanbanSpec    `json:"kanban,omitempty"`
+	Workspace *WorkspaceSpec `json:"workspace,omitempty"`
+	Memory    *MemorySpec    `json:"memory,omitempty"`
+	Budget    *BudgetSpec    `json:"budget,omitempty"`
 	// Builtin is true for embedded profiles and never persisted to disk.
 	Builtin bool `json:"-"`
 	// File is the base filename this profile was loaded from (e.g.
@@ -61,11 +69,12 @@ var validModes = map[string]bool{
 	ModeLoop:      true,
 	ModeScheduled: true,
 	ModeMonitor:   true,
+	ModeWorker:    true,
 }
 
 // isLoopMode reports whether a mode repeats unattended.
 func isLoopMode(mode string) bool {
-	return mode == ModeLoop || mode == ModeScheduled || mode == ModeMonitor
+	return mode == ModeLoop || mode == ModeScheduled || mode == ModeMonitor || mode == ModeWorker
 }
 
 var validAutonomy = map[string]bool{
@@ -100,6 +109,27 @@ var knownToolNames = map[string]bool{
 	"WebSearch":       true,
 	"Write":           true,
 	"update_plan":     true,
+}
+
+// extraToolNames are tools a session adds beyond the default registry: the
+// board, the Vulnetix CLI and forge CLIs when installed, deferred-tool
+// loading, supervised processes and the local repository index. A profile
+// that sets an allowlist can still keep them.
+var extraToolNames = map[string]bool{
+	"KanbanSearch":   true,
+	"KanbanUpdate":   true,
+	"KanbanMove":     true,
+	"KanbanAdd":      true,
+	"KanbanHandoff":  true,
+	"Vulnetix":       true,
+	"ToolSearch":     true,
+	"SubAgentLog":    true,
+	"ProcessRestart": true,
+	"Repos":          true,
+	"RepoFiles":      true,
+	"RepoRead":       true,
+	"GH":             true,
+	"Glab":           true,
 }
 
 var unsafeName = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
@@ -174,7 +204,7 @@ func (p AgentProfile) Validate() error {
 		return errors.New("system_prompt is required")
 	}
 	if !validModes[p.Mode] {
-		return fmt.Errorf("invalid mode %q (want one of: single, loop, scheduled, monitor)", p.Mode)
+		return fmt.Errorf("invalid mode %q (want one of: single, loop, scheduled, monitor, worker)", p.Mode)
 	}
 	if p.Mode == ModeScheduled && strings.TrimSpace(p.Schedule) == "" {
 		return errors.New("schedule is required when mode is scheduled")
@@ -206,11 +236,25 @@ func (p AgentProfile) Validate() error {
 		return fmt.Errorf("profile name %q is reserved for built-in profiles", p.Name)
 	}
 	for _, t := range p.Tools {
-		if !knownToolNames[t] {
+		if !KnownTool(t) {
 			return fmt.Errorf("unknown tool %q", t)
 		}
 	}
-	return nil
+	return p.validateWorker()
+}
+
+// KnownTool reports whether a tools allowlist may name t: a built-in tool,
+// or an MCP tool (mcp__<server>__<tool>, where the tool part may be "*").
+func KnownTool(t string) bool {
+	if knownToolNames[t] || extraToolNames[t] {
+		return true
+	}
+	rest, ok := strings.CutPrefix(t, "mcp__")
+	if !ok {
+		return false
+	}
+	server, tool, ok := strings.Cut(rest, "__")
+	return ok && server != "" && tool != "" && !strings.ContainsAny(server+tool, " /\\")
 }
 
 // ValidateWithRegistry checks tool names against a live registry.
@@ -272,8 +316,11 @@ func ValidateFileName(file string) error {
 // picker must offer exactly this set, not the live registry, or saves would
 // fail on a tool the profile schema does not allow.
 func KnownTools() []string {
-	out := make([]string, 0, len(knownToolNames))
+	out := make([]string, 0, len(knownToolNames)+len(extraToolNames))
 	for name := range knownToolNames {
+		out = append(out, name)
+	}
+	for name := range extraToolNames {
 		out = append(out, name)
 	}
 	sort.Strings(out)

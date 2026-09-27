@@ -12,7 +12,7 @@ func (s *Store) Outbox() ([]Item, error) {
 	err := s.read(func(b *Board) {
 		for _, it := range b.Items {
 			if it.Dirty {
-				it.History = slices.Clone(it.History)
+				it = cloneItem(it)
 				out = append(out, it)
 			}
 		}
@@ -102,6 +102,7 @@ func (s *Store) Merge(remote []Item, cursor int64) (int, error) {
 			}
 			r.History = hist
 			r.Dirty = false
+			keepAgent(&r, *local)
 			*local = r
 			changed++
 		}
@@ -111,6 +112,24 @@ func (s *Store) Merge(remote []Item, cursor int64) (int, error) {
 		return nil
 	})
 	return changed, err
+}
+
+// keepAgent settles the routing and claim fields of a pulled item that won
+// last-writer-wins. A backend that does not carry them sent none, and the
+// local values stand. Lease renewals are host-local and never pushed, so a
+// pulled copy of the same claim carries an older lease: the later one stands,
+// or the claim would lapse under a working worker.
+func keepAgent(r *Item, local Item) {
+	if !r.remoteAgent {
+		r.Labels, r.Priority, r.Assignee = local.Labels, local.Priority, local.Assignee
+		r.Parent, r.DependsOn, r.Hops = local.Parent, local.DependsOn, local.Hops
+		r.ClaimedBy, r.ClaimHost, r.ClaimFrom = local.ClaimedBy, local.ClaimHost, local.ClaimFrom
+		r.LeaseUntil, r.Attempts, r.Branch, r.PR = local.LeaseUntil, local.Attempts, local.Branch, local.PR
+		return
+	}
+	if r.ClaimedBy != "" && r.ClaimedBy == local.ClaimedBy && local.LeaseUntil > r.LeaseUntil {
+		r.LeaseUntil = local.LeaseUntil
+	}
 }
 
 // cleanRemote applies the local write rules to a pulled item.
@@ -128,6 +147,31 @@ func cleanRemote(r Item) Item {
 	if !r.List.Valid() {
 		r.List = Review
 	}
+	r.Labels = NormLabels(r.Labels)
+	r.Priority = ClampPriority(r.Priority)
+	if a, err := CleanAssignee(r.Assignee); err == nil {
+		r.Assignee = a
+	} else {
+		r.Assignee = ""
+	}
+	r.Parent = CleanTitle(r.Parent)
+	var deps []string
+	for _, d := range r.DependsOn {
+		if d = CleanTitle(d); d != "" && len(deps) < MaxDepends {
+			deps = append(deps, d)
+		}
+	}
+	r.DependsOn = deps
+	r.Hops = max(r.Hops, 0)
+	r.Attempts = max(r.Attempts, 0)
+	r.ClaimedBy, r.ClaimHost = CleanTitle(r.ClaimedBy), CleanTitle(r.ClaimHost)
+	if r.ClaimFrom != "" && !r.ClaimFrom.Valid() {
+		r.ClaimFrom = ""
+	}
+	if r.ClaimedBy == "" {
+		r.ClaimHost, r.ClaimFrom, r.LeaseUntil = "", "", 0
+	}
+	r.Branch, r.PR = CleanTitle(r.Branch), CleanTitle(r.PR)
 	hist := make([]Move, 0, len(r.History))
 	for _, m := range r.History {
 		if m.ID == "" || !m.To.Valid() {
