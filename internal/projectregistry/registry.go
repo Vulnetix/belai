@@ -217,6 +217,11 @@ func acquireLock() (func(), error) {
 	if err != nil {
 		return nil, err
 	}
+	// The directory must exist before the lockfile can be created in it: on a
+	// fresh install the first write is the trust gate's Grant.
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, err
+	}
 	return config.AcquireFileLock(path)
 }
 

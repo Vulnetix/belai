@@ -312,3 +312,19 @@ func mustEvalSymlinks(t *testing.T, p string) string {
 	}
 	return got
 }
+
+// TestTrustCreatesMissingStateDir pins the fresh-install path: the first
+// write is the trust gate's Grant, before anything has created the global
+// state directory, so the lockfile's directory must be made on demand.
+func TestTrustCreatesMissingStateDir(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "fresh", "belai")
+	t.Setenv("BELAI_HOME", home)
+	wd := t.TempDir()
+	if err := Trust(wd, nil); err != nil {
+		t.Fatalf("Trust on a missing state dir: %v", err)
+	}
+	trusted, _, _, err := TrustOf(wd)
+	if err != nil || !trusted {
+		t.Fatalf("TrustOf = %v, %v; want trusted", trusted, err)
+	}
+}
