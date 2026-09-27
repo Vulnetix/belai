@@ -15,8 +15,11 @@ The single-scroll marketing site at [belai.vulnetix.com](https://belai.vulnetix.
 rail (≥1120px). The content is full-width (no fixed max-width). Section order:
 
 hero · trust · classifier · sealed · beliefs · labs · modes · tools · diagnostics · permissions · agents ·
-memory · processes · budgets · providers · routing · vulnetix · sandbox · extend ·
-integrations · cli · qol · start
+memory · processes · budgets · providers · routing · vulnetix · kanban · web sessions · sandbox · extend ·
+integrations · cli · qol · start · faq
+
+The web sessions section (`site/src/components/sections/WebSessions.astro`)
+covers following and answering a session on the Vulnetix website.
 
 The sandbox, extend and integrations sections live in
 `site/src/components/sections/Extend.astro`. Each card links to the matching
