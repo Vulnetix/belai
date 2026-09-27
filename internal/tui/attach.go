@@ -369,7 +369,11 @@ func (a *App) resolveAttachmentPath(raw string) (root, rel string, err error) {
 
 // sanitizeAgainstRoot returns the root-relative form of raw, accepting both
 // absolute paths that sit under root and relative paths confined to root.
+// A leading "~" is expanded against the user's home directory so @~/path
+// tokens resolve to the same absolute filesystem paths the rest of the TUI
+// (and the user) mean, rather than being treated as a literal "~" segment.
 func sanitizeAgainstRoot(root, raw string) (string, error) {
+	raw = filepath.Clean(expandHomePath(raw))
 	if filepath.IsAbs(raw) {
 		if raw == root {
 			return ".", nil
