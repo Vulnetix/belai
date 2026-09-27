@@ -558,8 +558,16 @@ type TurnInput struct {
 	// Directive is a harness-authored continuation instruction for the user
 	// turn. It is sealed into the turn as a <directive> block rather than part
 	// of Content, so it survives sanitization.
-	Directive  string
-	ForceAgent string
+	Directive string
+	// HarnessPrompt is the harness-authored lead of Prompt: fixed text the
+	// harness composed itself, such as the /vulnetix review objective. Prompt
+	// admission classifies only what follows it (what the user typed, plus any
+	// prompt-hook note): a constant the harness wrote carries no untrusted
+	// bytes, and a classifier verdict on it can only refuse belai's own
+	// instruction. It never holds user, model or tool text. A Prompt that does
+	// not start with it is admitted whole.
+	HarnessPrompt string
+	ForceAgent    string
 	// ForceMode engages an explicitly chosen operating mode instead of the one
 	// the classifier infers. A user who cycles to goal mode with shift+tab has
 	// stated their intent; a classifier guess must not override it.
@@ -601,6 +609,21 @@ type TurnInput struct {
 	// is sealed as an exploration turn, and a Review report whose scanner
 	// has a finding here runs no subagent of its own.
 	ReviewFindings []explore.ReviewFinding
+}
+
+// admissionText is the part of the sanitized prompt that prompt admission
+// classifies: everything after the harness-authored lead when the prompt
+// starts with it, else the whole prompt. The lead is sanitized the same way,
+// so a prompt that only resembles it is admitted whole.
+func admissionText(clean, harness string) string {
+	if harness == "" {
+		return clean
+	}
+	lead := sanitize.Sanitize(harness)
+	if lead == "" || !strings.HasPrefix(clean, lead) {
+		return clean
+	}
+	return clean[len(lead):]
 }
 
 // detectPlanAttachment inspects file attachments for a Markdown plan file.
@@ -754,7 +777,7 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 		}()
 	}
 
-	dec, err := pipe.Admit(ctx, clean, "prompt", s.live.Policy())
+	dec, err := pipe.Admit(ctx, admissionText(clean, in.HarnessPrompt), "prompt", s.live.Policy())
 	if err != nil {
 		return run.Result{SanitizedPrompt: clean}, maybeCompact(err)
 	}

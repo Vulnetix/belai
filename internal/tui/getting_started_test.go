@@ -56,11 +56,18 @@ func TestGettingStartedOnlyOnFirstInteractiveLaunch(t *testing.T) {
 	}
 }
 
-func TestGettingStartedTeachesKeysAndCommands(t *testing.T) {
+func TestGettingStartedTeachesConceptsKeysAndCommands(t *testing.T) {
 	_, wd := isolate(t)
 	a := New(Options{Workdir: wd})
 	a.openGettingStarted()
 	page := a.gettingStartedView()
+	for _, c := range gsConceptList {
+		if !strings.Contains(page, c.term) {
+			t.Errorf("concepts page lacks %q: %q", c.term, page)
+		}
+	}
+	a.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	page = a.gettingStartedView()
 	for _, k := range gsKeyList {
 		d := keyDescription(k)
 		if d == "" {
