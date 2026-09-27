@@ -30,13 +30,14 @@ func (p TodoPanel) View() string {
 		fmt.Fprintf(&b, "%s\n", MutedStyle.Render("✓ "+truncateRunes(prev.Text, inner-2)))
 	}
 	if current != nil {
-		b.WriteString(EmphStyle.Render("▸ "+truncateRunes(current.Text, inner-2)) + "\n")
+		b.WriteString(lipgloss.NewStyle().Foreground(ColorTealSoft).Render("◆ ") +
+			lipgloss.NewStyle().Foreground(ColorCream).Render(truncateRunes(current.Text, inner-2)) + "\n")
 	}
 	if next != nil {
-		fmt.Fprintf(&b, "%s\n", MutedStyle.Render("  "+truncateRunes(next.Text, inner-2)))
+		fmt.Fprintf(&b, "%s\n", LowStyle.Render("◇ "+truncateRunes(next.Text, inner-2)))
 	}
 	if more > 0 {
-		fmt.Fprintf(&b, "%s\n", MutedStyle.Render(fmt.Sprintf("  … %d more", more)))
+		fmt.Fprintf(&b, "%s\n", LowStyle.Render(fmt.Sprintf("  … %d more", more)))
 	}
 	body := strings.TrimRight(b.String(), "\n")
 
@@ -44,7 +45,8 @@ func (p TodoPanel) View() string {
 		Title:  "todo",
 		Body:   body,
 		Width:  p.Width,
-		Accent: lipgloss.TerminalColor(ColorAmber),
+		Accent: lipgloss.TerminalColor(ColorTealSoft),
 		Raw:    true,
+		Open:   true,
 	}.View()
 }

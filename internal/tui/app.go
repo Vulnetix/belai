@@ -1216,6 +1216,9 @@ func (a *App) bannerView() string {
 		Tip:           a.bannerTip,
 		Resumed:       a.bannerResumed,
 		RestoredTurns: a.bannerRestoredTurns,
+		// The owl greets a first run; every other session opens on the
+		// one-line header (docs/tui-design.md).
+		Compact: !a.firstRun,
 	}.View()
 }
 
@@ -4159,7 +4162,9 @@ func (a *App) renderComposer() string {
 		meta = "⏎ steer · esc cancel"
 	} else if a.phase == phaseWorking {
 		title = a.spinMark() + " working" + a.elapsedLabel()
-		accent = lipgloss.TerminalColor(components.ColorAmber)
+		// Work in flight is not a call for the user: amber is reserved for
+		// that (docs/tui-design.md).
+		accent = lipgloss.TerminalColor(components.ColorTeal)
 		meta = "⏎ steer · esc cancel"
 	} else if t, ok := a.reviewComposerTitle(); ok {
 		// A running /vulnetix review is work in progress: the composer says

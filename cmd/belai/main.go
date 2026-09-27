@@ -92,7 +92,7 @@ func main() {
 	dangerouslyYolo := flag.Bool("dangerously-yolo-everything", false, "ignore every posture gate")
 	guardrails := flag.Bool("guardrails", true, "enable the posture guardrails; -guardrails=false is the guardrails-off half of YOLO")
 	askPermission := flag.Bool("ask-permission", true, "enable the permission-ask gate; -ask-permission=false resolves asks to allow")
-	firewall := flag.Bool("firewall", false, "route LLM traffic through the Vulnetix AI Firewall")
+	firewall := flag.Bool("firewall", false, "route LLM traffic through the active AI Firewall (see /firewall)")
 	enableTools := flag.Bool("tools", true, "enable tool execution; pass -tools=false to disable")
 	effort := flag.String("effort", "", "thinking effort level: low, medium, or high")
 	classifierProvider := flag.String("classifier-provider", "", "security-classifier provider (default: the main provider)")
@@ -237,11 +237,14 @@ func main() {
 		}
 	}
 	if *firewall || os.Getenv("BELAI_FIREWALL") == "1" || os.Getenv("BELAI_FIREWALL") == "true" {
-		if settings.Vulnetix == nil {
-			settings.Vulnetix = &config.VulnetixSettings{}
+		if settings.Firewall == nil {
+			settings.Firewall = &config.FirewallSettings{}
 		}
 		t := true
-		settings.Vulnetix.FirewallEnabled = &t
+		settings.Firewall.Enabled = &t
+		// The resolver loads its own settings: tell it too, so the flag
+		// routes headless runs and not only the TUI.
+		forceFirewall = true
 	}
 	if !*deferTools {
 		f := false
@@ -367,7 +370,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "belai:", err)
 			os.Exit(1)
 		}
-		err = tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Provider: *provider, Model: *model, Settings: &settings, Posture: pol, PlanMode: *planMode, ResumeKey: resumeKey, ResumeSession: resumeID})
+		err = tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Provider: *provider, Model: *model, Settings: &settings, Posture: pol, PlanMode: *planMode, Firewall: forceFirewall, ResumeKey: resumeKey, ResumeSession: resumeID})
 		shutdown()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "belai:", err)
@@ -455,7 +458,7 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 		if errors.As(err, &nce) && interactive(isCharDevice(os.Stdout), isCharDevice(os.Stdin), os.Getenv) {
 			fmt.Fprintf(os.Stderr, "belai: no credentials for %s (missing %s). Opening the credential manager…\n",
 				nce.Provider, strings.Join(nce.Missing, ", "))
-			return tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Prompt: prompt, Provider: providerName, Model: model, Settings: &settings, Posture: pol, PlanMode: planMode})
+			return tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Prompt: prompt, Provider: providerName, Model: model, Settings: &settings, Posture: pol, PlanMode: planMode, Firewall: forceFirewall})
 		}
 		// Without a TTY, fail closed naming every location searched.
 		return err
@@ -472,6 +475,8 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 	// A headless prompt spends tokens like any other session: record them so
 	// day and month budgets see it. Nothing is printed; the TUI shows budgets.
 	defer recordUsage(sessionID, settings)()
+	// Firewall events print one line each to stderr; stdout stays the reply.
+	defer watchFirewallHeadless(os.Stderr)()
 
 	var res run.Result
 	if detectMode || !enableTools {

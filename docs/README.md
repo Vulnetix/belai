@@ -30,12 +30,20 @@ behaviour, and implementation details.
   Center sign-in, token refresh, and the Kiro wire surface.
 - [Vulnetix](vulnetix.md): review scanners, artifact handling, project history,
   and the Vulnetix AI Firewall.
+- [AI Firewall](firewall.md): the adapter-based firewall (Vulnetix, beta
+  Fastly ARC, Kong and AI Security Gateway, custom proxies, read-only
+  OpenRouter and Cloudflare), modes, key storage and event cards.
 - [Session sync](session-sync.md): mirroring sessions to the Vulnetix website
   (History and live Sessions) and prompting a live session from the browser.
 - [Nonce endpoint spec](nonce-endpoint-spec.md): the provider/gateway
   `GET /v1/nonces` contract and verification semantics.
 - [Image attachments](image-attachments.md): deferred multimodal attachment
   design and candidate terminal-rendering approaches.
+
+## Design
+
+- [TUI design system](tui-design.md): colour roles, glyphs, rhythm and the
+  surfaces they apply to.
 
 ## Roadmap
 
@@ -52,6 +60,7 @@ until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
 | MCP client | [MCP servers](mcp.md) | alpha-20260926 |
 | Editor integration over ACP | [ACP](acp.md) | alpha-20260926 |
 | OpenTelemetry export | [Telemetry](telemetry.md) | alpha-20260926 |
+| Quiet TUI redesign | [TUI design system](tui-design.md) | alpha-20260927 (in part) |
 
 ## Build, test, and publish
 

@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/firewall"
@@ -151,7 +152,7 @@ func (a *App) firewallView() string {
 				continue
 			}
 			sel := i == st.selected
-			label := r.label
+			label := fmt.Sprintf("%-34s", truncateRunes(r.label, 34))
 			marker := "  "
 			if r.kind == "instance" && r.instance == active {
 				marker = components.AccentStyle.Render("● ")
@@ -159,7 +160,8 @@ func (a *App) firewallView() string {
 			if sel {
 				label = components.AccentStyle.Bold(true).Render(label)
 			}
-			b.WriteString(components.Cursor(sel) + marker + fmt.Sprintf("%-34s", label) + " " + a.firewallRowStatus(r) + "\n")
+			status := ansi.Truncate(a.firewallRowStatus(r), max(w-44, 10), "…")
+			b.WriteString(components.Cursor(sel) + marker + label + " " + status + "\n")
 		}
 		if st.errorMsg != "" {
 			b.WriteString("\n" + components.DangerStyle.Render("✗ "+st.errorMsg) + "\n")

@@ -67,9 +67,15 @@ func TestTodoPanelTitleAndWidth(t *testing.T) {
 	if !strings.Contains(plain(out), "todo") {
 		t.Fatalf("panel missing its title:\n%s", out)
 	}
-	for _, line := range strings.Split(out, "\n") {
-		if w := visibleLen(plain(line)); w != 60 {
-			t.Fatalf("line width %d, want 60: %q", w, plain(line))
+	// The panel is open: the top rule spans the width and no body line
+	// overruns it.
+	lines := strings.Split(out, "\n")
+	if w := visibleLen(plain(lines[0])); w != 60 {
+		t.Fatalf("rule width %d, want 60: %q", w, plain(lines[0]))
+	}
+	for _, line := range lines[1:] {
+		if w := visibleLen(plain(line)); w > 60 {
+			t.Fatalf("line width %d, want at most 60: %q", w, plain(line))
 		}
 	}
 }

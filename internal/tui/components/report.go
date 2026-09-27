@@ -47,6 +47,6 @@ func reportPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 	if !expandAll && !msg.Expanded {
 		rows, _, _ = truncateMarkdown(body, md, reportPreviewLines)
 	}
-	p := Panel{Title: title, Meta: msg.ToolArgs, Width: width, Accent: accent, BodyRows: rows}
+	p := Panel{Title: title, Meta: msg.ToolArgs, Width: width, Accent: accent, BodyRows: rows, Open: true}
 	return p.Render()
 }

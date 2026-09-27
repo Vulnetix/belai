@@ -24,7 +24,7 @@ func numbered(n int) string {
 func TestShellPanelTitlesTheCommand(t *testing.T) {
 	out, _ := MessageList{Messages: []Message{shellMsg("git status", "clean")}, Width: 80}.Render()
 	plain := ansi.Strip(out)
-	if !strings.Contains(plain, "shell · $ git status") {
+	if !strings.Contains(plain, "! shell  $ git status") {
 		t.Fatalf("title missing:\n%s", plain)
 	}
 	if !strings.Contains(plain, "ctrl+c copy") {
@@ -95,7 +95,7 @@ func TestShellPanelIsNotToolChatter(t *testing.T) {
 	if !strings.Contains(plain, "hi-output") {
 		t.Fatalf("shell panel hidden with tools off:\n%s", plain)
 	}
-	if n := strings.Count(plain, "╭─ shell"); n != 1 {
+	if n := strings.Count(plain, "── ! shell"); n != 1 {
 		t.Fatalf("shell panel frames = %d, want 1:\n%s", n, plain)
 	}
 	if !strings.Contains(plain, "a notice") || !strings.Contains(plain, "another notice") {

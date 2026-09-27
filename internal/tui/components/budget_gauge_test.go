@@ -16,7 +16,7 @@ func line1(t *testing.T, f Footer) (plain, styled string) {
 	if len(lines) < 2 {
 		t.Fatalf("footer = %q", f.View())
 	}
-	return ansi.Strip(lines[1]), lines[1]
+	return ansi.Strip(lines[0]), lines[0]
 }
 
 func gaugeFooter(width int, g *BudgetGauge) Footer {
@@ -59,7 +59,7 @@ func TestBudgetRule9_GaugeColoursByState(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	defer lipgloss.SetColorProfile(old)
 
-	for state, want := range map[BudgetState]lipgloss.Color{BudgetTeal: ColorTeal, BudgetAmber: ColorAmber, BudgetRed: ColorDanger} {
+	for state, want := range map[BudgetState]lipgloss.TerminalColor{BudgetTeal: ColorTeal, BudgetAmber: ColorAmber, BudgetRed: ColorDanger} {
 		g := BudgetGauge{Scope: "day", TokenPct: 40, UsedFrac: 0.6, TimeLeft: "1h 0m", State: state}
 		if g.Colour() != want {
 			t.Fatalf("state %d colour = %v, want %v", state, g.Colour(), want)

@@ -15,6 +15,7 @@ func completionPanel(msg Message, width int) (string, LineMap) {
 		Body:   strings.TrimSpace(msg.Text()),
 		Width:  width,
 		Accent: ColorTeal,
+		Open:   true,
 	}
 	return p.Render()
 }

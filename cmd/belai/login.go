@@ -41,6 +41,10 @@ func newResolver(workdir string) (*credentials.Resolver, error) {
 	if err != nil {
 		return nil, err
 	}
+	if forceFirewall {
+		on := true
+		r.SetFirewallEnabled(&on)
+	}
 	run.SetKiroRotationHook(func(oldLogin, newLogin string) {
 		_ = r.Replace("kiro", "login", oldLogin, newLogin)
 	})

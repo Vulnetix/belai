@@ -136,7 +136,7 @@ func TestRecomputeHoverSession(t *testing.T) {
 	if !ok {
 		t.Fatal("expected a session span")
 	}
-	row := a.height - 1 - a.footerHeight() + 2
+	row := a.height - 1 - a.footerHeight() + a.footer.SessionRow()
 	a.mousePresent = true
 	a.mouseX = a.contentLeft() + col + w/2
 	a.mouseY = row
@@ -180,7 +180,7 @@ func TestHitSessionGeometry(t *testing.T) {
 	if !ok {
 		t.Fatal("expected a session span")
 	}
-	row := a.height - 1 - a.footerHeight() + 2
+	row := a.height - 1 - a.footerHeight() + a.footer.SessionRow()
 	if !a.hitSession(a.contentLeft()+col+1, row) {
 		t.Fatalf("hitSession at (%d,%d) should hit", a.contentLeft()+col+1, row)
 	}
