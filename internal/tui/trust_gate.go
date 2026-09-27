@@ -99,6 +99,9 @@ func (m trustGateModel) View() string {
 	if width < 40 {
 		width = 80
 	}
+	// The outer Padding(1) adds a column on each side; size the content to
+	// fit inside it so the header's hint is not clipped at the right edge.
+	width -= 2
 	var b strings.Builder
 	if m.st.Trusted {
 		b.WriteString(components.SectionHeader("This folder proposes new workspace directories", "esc cancel", width))
