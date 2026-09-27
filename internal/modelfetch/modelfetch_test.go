@@ -3,6 +3,7 @@ package modelfetch
 import (
 	"context"
 	"encoding/json"
+	"github.com/vulnetix/belai/internal/firewall"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -558,5 +559,23 @@ func TestListKindLlamaServerCustomHitsProps(t *testing.T) {
 	}
 	if len(models) != 1 || models[0].ContextWindow != 16384 {
 		t.Fatalf("models = %+v", models)
+	}
+}
+
+// OpenAI's own list is not fetched, but a firewall that serves the org's
+// curated catalogue (Vulnetix, self-hosted or not) is, with the route's
+// headers.
+func TestEndpointForFirewallCuratedModels(t *testing.T) {
+	base := "https://gw.self.example/openai/org/v1"
+	if ep, _ := EndpointFor(Target{Name: "openai", BaseURL: base}); ep != "" {
+		t.Fatalf("direct openai endpoint = %q, want static", ep)
+	}
+	vx := &firewall.Route{Instance: "vulnetix", AdapterID: "vulnetix"}
+	if ep, _ := EndpointFor(Target{Name: "openai", BaseURL: base, Firewall: vx}); ep != base+"/models" {
+		t.Fatalf("vulnetix endpoint = %q", ep)
+	}
+	custom := &firewall.Route{Instance: "corp", AdapterID: "custom"}
+	if ep, _ := EndpointFor(Target{Name: "openai", BaseURL: base, Firewall: custom}); ep != "" {
+		t.Fatalf("custom firewall endpoint = %q, want static", ep)
 	}
 }

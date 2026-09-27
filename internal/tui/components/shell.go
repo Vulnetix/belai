@@ -86,16 +86,18 @@ func shellPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 		rows = contentRows(preview, "", inner, isErr, trunc)
 	}
 
-	title := ShellTitle
+	detail := ""
 	if cmd := msg.ShellCommand(); cmd != "" {
-		title += " · $ " + truncateRunes(strings.ReplaceAll(cmd, "\n", " "), 120)
+		detail = "$ " + truncateRunes(strings.ReplaceAll(cmd, "\n", " "), 120)
 	}
 	return Panel{
-		Title:    title,
+		Title:    "! " + ShellTitle,
+		Detail:   detail,
 		Meta:     meta,
 		Width:    width,
 		Accent:   lipgloss.TerminalColor(ColorAmber),
 		BodyRows: rows,
+		Open:     true,
 	}.Render()
 }
 

@@ -69,14 +69,41 @@ type Banner struct {
 	// count shown next to it.
 	Resumed       string
 	RestoredTurns int
+	// Compact renders the one-line header instead of the owl: the wordmark,
+	// the build facts and the resumed note. The owl is for a first run and
+	// /welcome (docs/tui-design.md).
+	Compact bool
 }
 
 // View returns the banner. In ASCII/NO_COLOR mode it falls back to plain text.
 func (b Banner) View() string {
+	if b.Compact {
+		return b.compactView()
+	}
 	if termenv.NewOutput(nil).ColorProfile() == termenv.Ascii {
 		return b.textView()
 	}
 	return b.pixView()
+}
+
+// compactView is the one-line header: `belai v0.14.2 · abc123  resumed x ·
+// 4 turns restored`, cut to the width.
+func (b Banner) compactView() string {
+	line := AccentStyle.Bold(true).Render("belai")
+	if v := b.versionLine(); v != "" {
+		line += " " + v
+	}
+	if b.Resumed != "" {
+		note := "resumed " + b.Resumed
+		if b.RestoredTurns > 0 {
+			note += fmt.Sprintf(" · %d turns restored", b.RestoredTurns)
+		}
+		line += LowStyle.Render("   " + note)
+	}
+	if b.Width > 0 {
+		line = lipgloss.NewStyle().MaxWidth(b.Width).Render(line)
+	}
+	return line
 }
 
 // versionLine renders one dim line with the build facts that are known.

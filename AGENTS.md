@@ -250,10 +250,29 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   reaches `vulnetix auth login --noninteractive` through that child's
   environment, never its argv. The Vulnetix CLI is installed only after the
   user picks *Install*, with a fixed brew/scoop argv and the scrubbed
-  environment. A provider key reaches the AI Firewall (BYOK) only while the
-  firewall is on, only through `vulnetix ai-firewall key set --stdin`, and a
-  failed push keeps that provider unrouted rather than sent to a gateway
-  that would refuse it.
+  environment. A provider key reaches the Vulnetix AI Firewall (BYOK) only
+  while it is the active firewall and on, only through
+  `vulnetix ai-firewall key set --stdin`, and a failed push keeps that
+  provider unrouted rather than sent to a gateway that would refuse it.
+- **Firewalls are the user's, and their verdicts are facts.**
+  `internal/firewall` adapters (Vulnetix; beta Fastly, Kong, AI Security
+  Gateway; custom) are configured from the user's own layers only:
+  `resolve.go` and `Settings.Override` drop the project layer's
+  `firewall.instances` and `firewall.active`, and the project layer may set
+  `firewall.enabled` to false, never true. A firewall URL is https or
+  loopback http. A firewall key lives in the credentials resolver under
+  `firewall:<name>` (env, user file or keychain, never the project
+  credentials file or netrc). It is sent only to its instance's URL, only
+  in its configured header, and never across a redirect (model calls, model
+  lists and nonce fetches all refuse one). BYOK modes drop the provider's
+  auth headers. Copilot, Kiro and the Cloudflare AI Gateway provider are
+  never routed. The provider-native OpenRouter and Cloudflare entries are
+  read-only: they never alter a request. A `firewall.Verdict` is parsed by
+  the harness from response headers and error bodies, and every string on
+  it is cleaned (delimiter markup, ANSI, control and bidi runes) and capped.
+  It renders only as a report card or a headless stderr line. It never
+  reaches a model turn, a system block or telemetry, and matched text is
+  never carried.
 - **Kiro tokens go only to pinned AWS hosts.** `internal/kiroauth` sends
   the AWS sign-in only to `oidc.<region>.amazonaws.com` and the access token
   only to `q.`/`codewhisperer.<region>.amazonaws.com` (or a loopback mock),

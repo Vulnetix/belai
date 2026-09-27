@@ -64,16 +64,16 @@ func TestTurnPanelEmptyBodyStillRendersFrame(t *testing.T) {
 func TestTurnPanelUserTitle(t *testing.T) {
 	msg := Message{Role: "user", Content: "hi"}
 	out, _ := turnPanel(msg, 40, false)
-	if !strings.Contains(out, "user prompt") {
-		t.Fatalf("expected user prompt title, got:\n%s", out)
+	if !strings.Contains(out, "── you ") {
+		t.Fatalf("expected you title, got:\n%s", out)
 	}
 }
 
 func TestTurnPanelSteeringTitle(t *testing.T) {
 	msg := Message{Role: "user", Content: "keep going", Steering: true}
 	out, _ := turnPanel(msg, 40, false)
-	if !strings.Contains(out, "user steering") {
-		t.Fatalf("expected user steering title, got:\n%s", out)
+	if !strings.Contains(out, "you · steering") {
+		t.Fatalf("expected steering title, got:\n%s", out)
 	}
 }
 
@@ -596,10 +596,15 @@ func TestMessageListReasoningPanelGated(t *testing.T) {
 		t.Fatalf("reasoning must be hidden by default")
 	}
 	list.ShowReasoning = true
-	if !strings.Contains(list.View(), "private thought") {
-		t.Fatalf("reasoning should render when enabled")
+	// Collapsed, reasoning is one low line that names itself.
+	if !strings.Contains(list.View(), "∴ reasoning · 1 line") {
+		t.Fatalf("collapsed reasoning line missing:\n%s", list.View())
 	}
-	if !strings.Contains(list.View(), "model · reasoning") {
+	list.ExpandAll = true
+	if !strings.Contains(list.View(), "private thought") {
+		t.Fatalf("expanded reasoning should render its text")
+	}
+	if !strings.Contains(list.View(), "── reasoning") {
 		t.Fatalf("reasoning panel title missing")
 	}
 }

@@ -320,6 +320,7 @@ func (s *Session) exploreConfig() run.Config {
 		cfg.API = f.API
 		cfg.Auth = f.Auth
 		cfg.Kind = f.Kind
+		cfg.Firewall = f.Firewall
 	}
 	return cfg
 }

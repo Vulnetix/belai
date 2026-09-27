@@ -7,10 +7,11 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// Panel is one flat bordered block: a rounded frame carrying its title inline
-// on the top edge and optional right-aligned metadata. Panels never nest —
-// tool activity and system notices render as flat rows beside them, not as
-// boxes inside them.
+// Panel is one flat block carrying its title inline on the top edge and
+// optional right-aligned metadata. Boxed, it is a rounded frame; Open, it is
+// only the top rule over an indented body (docs/tui-design.md). Panels never
+// nest — tool activity and system notices render as flat rows beside them,
+// not as boxes inside them.
 type Panel struct {
 	Title  string
 	Meta   string // right-aligned on the top edge (timing, token counts, hints)
@@ -21,6 +22,12 @@ type Panel struct {
 	// frame accent is used, so panels that want one colour for both keep
 	// working unchanged.
 	TitleAccent lipgloss.TerminalColor
+	// Detail is a low-contrast note after the title on the top edge (the
+	// model id, a tool count). It is dropped before the title is truncated.
+	Detail string
+	// Open draws only the top rule: no side bars and no bottom edge. Thread
+	// blocks are open; the composer and full-screen views stay boxed.
+	Open bool
 	// Raw keeps the body verbatim (no re-wrapping) for bodies that already
 	// render at the right width, such as the textarea.
 	Raw bool
@@ -49,11 +56,10 @@ func (p Panel) View() string {
 }
 
 // Render renders the panel and returns the per-line provenance of every row
-// it emits. The text is byte-identical to what View returns today; the map
-// exists so hit-testing and copying can recover clean text without
-// pattern-matching the rendered output (the │ panel bar and the │ system-row
-// marker are the same glyph, and only the renderer knows which columns are
-// decoration).
+// it emits. The map exists so hit-testing and copying can recover clean text
+// without pattern-matching the rendered output (the │ panel bar and the │
+// system-row marker are the same glyph, and only the renderer knows which
+// columns are decoration).
 func (p Panel) Render() (string, LineMap) {
 	width := max(p.Width, panelMinWidth)
 	inner := width - 4 // two border cells plus one space of padding each side
@@ -69,39 +75,27 @@ func (p Panel) Render() (string, LineMap) {
 	edge := lipgloss.NewStyle().Foreground(accent)
 	titleStyle := lipgloss.NewStyle().Foreground(titleAccent).Bold(true)
 
-	title := p.Title
-	meta := p.Meta
+	top := TopEdge(width, p.Title, p.Detail, p.Meta, edge, titleStyle, p.Open)
 
-	// Lay the top edge out on plain text first, then style the pieces: the
-	// arithmetic must not see escape sequences.
-	leftPlain := "╭─ " + title + " "
-	rightPlain := "─╮"
-	if meta != "" {
-		rightPlain = " " + meta + " ─╮"
+	// An open panel indents its body by the same two columns the boxed
+	// frame's bar and padding take, so line-map columns match either way.
+	left, right := edge.Render("│")+" ", " "+edge.Render("│")
+	if p.Open {
+		left, right = "  ", ""
 	}
-	fill := width - visibleLen(leftPlain) - visibleLen(rightPlain)
-	if fill < 0 {
-		// Drop the meta before truncating the title.
-		rightPlain = "─╮"
-		meta = ""
-		fill = width - visibleLen(leftPlain) - visibleLen(rightPlain)
-	}
-	if fill < 0 {
-		title = truncateRunes(title, len([]rune(title))+fill)
-		leftPlain = "╭─ " + title + " "
-		fill = max(width-visibleLen(leftPlain)-visibleLen(rightPlain), 0)
-	}
-
-	top := edge.Render("╭─ ") + titleStyle.Render(title) + edge.Render(" "+repeatRune('─', fill))
-	if meta != "" {
-		top += MutedStyle.Render(" "+meta+" ") + edge.Render("─╮")
-	} else {
-		top += edge.Render("─╮")
-	}
-	bottom := edge.Render("╰" + repeatRune('─', width-2) + "╯")
-
-	bar := edge.Render("│")
 	barCol := visibleLen("│ ") // border cell plus its one column of padding
+
+	// row lays one body line out: boxed rows pad to the inner width so the
+	// right bar lines up; open rows end where their content ends.
+	row := func(line string) string {
+		if p.Open {
+			return strings.TrimRight(left+line, " ")
+		}
+		if w := visibleLen(line); w < inner {
+			line += spaces(inner - w)
+		}
+		return left + line + right
+	}
 
 	// Pre-built rows take precedence and skip the string re-wrap: they already
 	// render at the inner width, so wrapping them again would double-wrap
@@ -113,10 +107,7 @@ func (p Panel) Render() (string, LineMap) {
 		lm = append(lm, SourceLine{Chrome: true})
 		for _, r := range p.BodyRows {
 			line, sl := r.Render(inner)
-			if w := lipgloss.Width(line); w < inner {
-				line += spaces(inner - w)
-			}
-			b.WriteString(bar + " " + line + " " + bar + "\n")
+			b.WriteString(row(line) + "\n")
 			if sl.Chrome {
 				lm = append(lm, sl)
 				continue
@@ -130,9 +121,7 @@ func (p Panel) Render() (string, LineMap) {
 			}
 			lm = append(lm, sl)
 		}
-		b.WriteString(bottom)
-		lm = append(lm, SourceLine{Chrome: true})
-		return b.String(), lm
+		return p.finish(&b, lm, width, edge)
 	}
 
 	body := p.Body
@@ -159,12 +148,10 @@ func (p Panel) Render() (string, LineMap) {
 	b.WriteString(top + "\n")
 	lm = append(lm, SourceLine{Chrome: true})
 	for i, line := range bodyLines {
-		if w := visibleLen(line); w > inner {
+		if visibleLen(line) > inner {
 			line = lipgloss.NewStyle().MaxWidth(inner).Render(line)
-		} else {
-			line += spaces(inner - w)
 		}
-		b.WriteString(bar + " " + line + " " + bar + "\n")
+		b.WriteString(row(line) + "\n")
 		// Trailing padding is decoration, not text: the selectable region ends
 		// where the content ends, so a drag over the gutter copies nothing.
 		plain := strings.TrimRight(ansi.Strip(line), " ")
@@ -176,7 +163,72 @@ func (p Panel) Render() (string, LineMap) {
 		}
 		lm = append(lm, sl)
 	}
-	b.WriteString(bottom)
-	lm = append(lm, SourceLine{Chrome: true})
-	return b.String(), lm
+	return p.finish(&b, lm, width, edge)
+}
+
+// finish closes the panel: a boxed panel gets its bottom edge, an open one
+// ends on its last body row (the next block's top rule is the separator).
+func (p Panel) finish(b *strings.Builder, lm LineMap, width int, edge lipgloss.Style) (string, LineMap) {
+	if p.Open {
+		return strings.TrimSuffix(b.String(), "\n"), lm
+	}
+	b.WriteString(edge.Render("╰" + repeatRune('─', width-2) + "╯"))
+	return b.String(), append(lm, SourceLine{Chrome: true})
+}
+
+// TopEdge renders a panel's top line. Boxed, it is the rounded frame's edge
+// `╭─ title ──── meta ─╮` in the frame colour. Open, it is the rule
+// `── title  detail ──── meta ──`: the lead-in and bold title in the accent,
+// the detail and meta in ColorLow and the fill in ColorLine, so the rule reads
+// as structure and only the title carries colour. The layout is computed on
+// plain text first; when the width runs out the meta goes first, then the
+// detail, then the title is truncated.
+func TopEdge(width int, title, detail, meta string, edge, titleStyle lipgloss.Style, open bool) string {
+	lead, tail, end := "╭─ ", " ─╮", "─╮"
+	if open {
+		lead, tail, end = "── ", " ──", ""
+	}
+	measure := func() int {
+		n := visibleLen(lead+title) + 1
+		if detail != "" {
+			n += visibleLen("  " + detail)
+		}
+		if meta != "" {
+			return n + visibleLen(" "+meta+tail)
+		}
+		return n + visibleLen(end)
+	}
+	fill := width - measure()
+	if fill < 0 && meta != "" {
+		meta = ""
+		fill = width - measure()
+	}
+	if fill < 0 && detail != "" {
+		detail = ""
+		fill = width - measure()
+	}
+	if fill < 0 {
+		title = truncateRunes(title, len([]rune(title))+fill)
+		fill = max(width-measure(), 0)
+	}
+
+	top := edge.Render(lead) + titleStyle.Render(title)
+	if !open {
+		if detail != "" {
+			top += MutedStyle.Render("  " + detail)
+		}
+		top += edge.Render(" " + repeatRune('─', fill))
+		if meta != "" {
+			return top + MutedStyle.Render(" "+meta+" ") + edge.Render(end)
+		}
+		return top + edge.Render(end)
+	}
+	if detail != "" {
+		top += LowStyle.Render("  " + detail)
+	}
+	top += LineStyle.Render(" " + repeatRune('─', fill))
+	if meta != "" {
+		top += LowStyle.Render(" "+meta) + LineStyle.Render(tail)
+	}
+	return top
 }

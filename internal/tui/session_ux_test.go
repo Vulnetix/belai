@@ -60,7 +60,8 @@ func TestBannerPresentAfterManyMessages(t *testing.T) {
 	// out of the visible viewport as the thread grows), so it must be present
 	// in the prepared body, not hidden by the message count.
 	body, _ := a.prependBanner("transcript", components.LineMap{})
-	if !strings.Contains(body, "BELAI") {
+	// Past a first run the banner is the one-line header.
+	if !strings.Contains(body, "belai") {
 		t.Fatal("transcript body should still contain the banner")
 	}
 }

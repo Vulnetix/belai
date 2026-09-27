@@ -10,17 +10,28 @@ import (
 // panels, chips, headers, footer — reads as one brand rather than as raw ANSI.
 // lipgloss degrades these to the 256- or 16-colour equivalents on terminals
 // that cannot do truecolour, so no separate low-colour path is needed.
+//
+// Every colour has one role; docs/tui-design.md is the reference. The light
+// values are darker variants of the brand hues, because the dark-terminal
+// accents are unreadable on a light background.
 var (
-	ColorInk      = lipgloss.Color("#1C3431") // owl outline; chip foreground
-	ColorTeal     = lipgloss.Color("#3AC4B4") // plumage; primary accent
-	ColorTealSoft = lipgloss.Color("#76E0CD") // highlight plumage
-	ColorCream    = lipgloss.Color("#F6EED6") // face; primary text emphasis
-	ColorAmber    = lipgloss.Color("#E8912B") // beak; tools and warnings
-	ColorDanger   = lipgloss.Color("#E2564E")
+	ColorInk      = lipgloss.AdaptiveColor{Light: "#FBFBF8", Dark: "#1C3431"} // chip foreground
+	ColorTeal     = lipgloss.AdaptiveColor{Light: "#137A6F", Dark: "#3AC4B4"} // the model's voice; success; the one brand accent
+	ColorTealSoft = lipgloss.AdaptiveColor{Light: "#1A8C7C", Dark: "#76E0CD"} // your turns, plan mode, keycaps
+	ColorCream    = lipgloss.AdaptiveColor{Light: "#0F1F1C", Dark: "#F6EED6"} // emphasis: what you typed, named identifiers
+	ColorAmber    = lipgloss.AdaptiveColor{Light: "#A95A0B", Dark: "#E8912B"} // needs you, or you stepped in
+	ColorDanger   = lipgloss.AdaptiveColor{Light: "#B8322A", Dark: "#E2564E"} // failures, relaxed guardrails
+
+	// ColorText is reply body copy: softer than Cream so emphasis still has
+	// somewhere to go.
+	ColorText = lipgloss.AdaptiveColor{Light: "#2A3835", Dark: "#C9D6D2"}
 
 	// Chrome that must stay legible on both light and dark terminals.
 	ColorMuted = lipgloss.AdaptiveColor{Light: "#5C6E6B", Dark: "#7D918D"}
-	ColorLine  = lipgloss.AdaptiveColor{Light: "#C6D5D2", Dark: "#2F4340"}
+	// ColorLow is metadata a reader may ignore: counts, timings, hints. It is
+	// deliberately below text contrast and never carries required information.
+	ColorLow  = lipgloss.AdaptiveColor{Light: "#7F908C", Dark: "#4A5F5B"}
+	ColorLine = lipgloss.AdaptiveColor{Light: "#C6D5D2", Dark: "#2F4340"}
 
 	// Diff row washes. Desaturated derivatives of the accent and danger hues,
 	// dark enough on a dark terminal (and light enough on a light one) to sit
@@ -33,6 +44,10 @@ var (
 var (
 	// MutedStyle is secondary text: provenance, hints, metadata.
 	MutedStyle = lipgloss.NewStyle().Foreground(ColorMuted)
+	// LowStyle is ignorable metadata: counts, timings, hints.
+	LowStyle = lipgloss.NewStyle().Foreground(ColorLow)
+	// TextStyle is reply body copy.
+	TextStyle = lipgloss.NewStyle().Foreground(ColorText)
 	// LineStyle draws hairline rules and panel edges.
 	LineStyle = lipgloss.NewStyle().Foreground(ColorLine)
 	// EmphStyle is primary text emphasis inside a panel body.

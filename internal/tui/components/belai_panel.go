@@ -50,10 +50,14 @@ func renderBelaiPanel(msgs []Message, idxs []int, width int, expandAll bool) (st
 	barCol := visibleLen("│ ") // border plus padding
 	icol := visibleLen("· ")
 
-	edge := lipgloss.NewStyle().Foreground(ColorLine)
-	titleStyle := lipgloss.NewStyle().Foreground(ColorTeal).Bold(true)
-	bottom := edge.Render("╰" + repeatRune('─', width-2) + "╯")
-	bar := edge.Render("│")
+	// The group is an open block (docs/tui-design.md): a low rule on top and
+	// no side or bottom edges. The member renderers still lay rows out as
+	// `bar + " " + line + pad + " " + bar`; a blank bar keeps the two-column
+	// indent (and so every line-map column) and the padding is trimmed on
+	// output.
+	edge := LowStyle
+	titleStyle := lipgloss.NewStyle().Foreground(ColorMuted).Bold(true)
+	bar := " "
 
 	var bodyLines []string
 	var bodyLm LineMap
@@ -141,20 +145,41 @@ func renderBelaiPanel(msgs []Message, idxs []int, width int, expandAll bool) (st
 	if hasCollapsedContent {
 		meta = "ctrl+o expand all"
 	}
-	top := belaiTopEdge(width, titleStyle, edge, meta)
+	top := TopEdge(width, "belai", belaiDetail(msgs, idxs), meta, edge, titleStyle, true)
 
-	var b strings.Builder
-	var lm LineMap
-	b.WriteString(top + "\n")
-	lm = append(lm, SourceLine{Chrome: true, Owner: -1})
+	lines := make([]string, 0, len(bodyLines)+1)
+	lines = append(lines, top)
 	for _, line := range bodyLines {
-		b.WriteString(line + "\n")
+		lines = append(lines, strings.TrimRight(line, " "))
 	}
-	b.WriteString(bottom)
-	lm = append(lm, bodyLm...)
-	lm = append(lm, SourceLine{Chrome: true, Owner: -1})
+	lm := append(LineMap{{Chrome: true, Owner: -1}}, bodyLm...)
 
-	return b.String(), lm, lineOwners
+	return strings.Join(lines, "\n"), lm, lineOwners
+}
+
+// belaiDetail is the low note on the group's rule: how many tools ran and,
+// when any failed, how many.
+func belaiDetail(msgs []Message, idxs []int) string {
+	tools, failed := 0, 0
+	for _, idx := range idxs {
+		m := msgs[idx]
+		if m.Role != "tool" {
+			continue
+		}
+		tools++
+		if strings.HasPrefix(strings.TrimSpace(m.Status), "✗") ||
+			(strings.TrimSpace(m.Status) == "" && toolResultIsError(m.ToolName, m.Text())) {
+			failed++
+		}
+	}
+	if tools == 0 {
+		return ""
+	}
+	s := countNoun(tools, "tool")
+	if failed > 0 {
+		s += " · " + strconv.Itoa(failed) + " failed"
+	}
+	return s
 }
 
 // renderBelaiSystemLines adds a system notice's wrapped, indented lines to
@@ -303,39 +328,6 @@ func renderBelaiToolLines(msg Message, owner, inner int, bar string, barCol int,
 		lm = append(lm, sl)
 	}
 	return owners, isSystem, bodyLines, lm
-}
-
-// belaiTopEdge renders the panel's top border with an optional right-aligned
-// metadata hint, matching the layout of components.Panel: the title sits on
-// the left, metadata is right-aligned, and if the metadata does not fit it is
-// dropped before the title is truncated.
-func belaiTopEdge(width int, titleStyle, edge lipgloss.Style, meta string) string {
-	title := "belai"
-	leftPlain := "╭─ " + title + " "
-	rightPlain := "─╮"
-	if meta != "" {
-		rightPlain = " " + meta + " ─╮"
-	}
-	fill := width - visibleLen(leftPlain) - visibleLen(rightPlain)
-	if fill < 0 && meta != "" {
-		// Drop the metadata before truncating the title.
-		meta = ""
-		rightPlain = "─╮"
-		fill = width - visibleLen(leftPlain) - visibleLen(rightPlain)
-	}
-	if fill < 0 {
-		title = truncateRunes(title, len([]rune(title))+fill)
-		leftPlain = "╭─ " + title + " "
-		fill = max(width-visibleLen(leftPlain)-visibleLen(rightPlain), 0)
-	}
-
-	top := edge.Render("╭─ ") + titleStyle.Render(title) + edge.Render(" "+repeatRune('─', fill))
-	if meta != "" {
-		top += MutedStyle.Render(" "+meta+" ") + edge.Render("─╮")
-	} else {
-		top += edge.Render("─╮")
-	}
-	return top
 }
 
 // belaiHidden joins the raw text of the notices whose rows were hidden,

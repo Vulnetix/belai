@@ -112,7 +112,7 @@ func TestProjectPrefsToSettings(t *testing.T) {
 		t.Fatalf("ask_permission = %+v, want false", s.AskPermission)
 	}
 	if !s.FirewallEnabled() {
-		t.Fatalf("firewall should be enabled via Vulnetix.FirewallEnabled")
+		t.Fatalf("firewall should be enabled via firewall.enabled")
 	}
 	if !s.CavemanEnabled() {
 		t.Fatalf("caveman should be enabled")
