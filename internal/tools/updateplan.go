@@ -25,7 +25,8 @@ func (UpdatePlan) Definition() Definition {
 			"Each step carries a status: pending, in_progress, or completed. Keep it " +
 			"current as you work — it tracks work, it does not replace it. " +
 			"(Divergence from Codex: this tool is also accepted in plan mode, where the " +
-			"checklist being tracked is the planning one.)",
+			"checklist being tracked is the planning one. There it is optional and holds short research steps only: " +
+			"the plan itself goes to ExitPlanMode, never into update_plan, and update_plan belongs in the same response as other calls.)",
 		Properties: map[string]Property{
 			"explanation": {Type: "string", Description: "Optional note about this update."},
 			"plan": {

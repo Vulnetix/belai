@@ -207,7 +207,7 @@ func TestKanbanWrapUpSkipsAQuestionTurn(t *testing.T) {
 func TestKanbanWrapUpRefusesOtherTools(t *testing.T) {
 	root, store, src := kanbanFixture(t)
 	ks := &kanbanScript{
-		loopTool: "Read", loopArgs: `{"path":"a.txt"}`, report: "done",
+		loopTool: "Read", loopArgs: `{"path":"a.txt"}`, report: "done, but the tests were not run",
 		wrapTool: "Read", wrapArgs: `{"path":"a.txt"}`,
 	}
 	srv := ks.server(t)
@@ -287,4 +287,74 @@ func advertised(t *testing.T, body string) []string {
 		out = append(out, tl.Function.Name)
 	}
 	return out
+}
+
+func TestKanbanWrapUpSkipsCleanWorkOnAnEmptyBoard(t *testing.T) {
+	root, store, src := kanbanFixture(t)
+	ks := &kanbanScript{
+		loopTool: "Read", loopArgs: `{"path":"a.txt"}`, report: "Created mathx.js and test.js. node --test: 4 pass, 0 fail.",
+		wrapTool: "KanbanAdd", wrapArgs: `{"title":"x"}`,
+	}
+	srv := ks.server(t)
+	defer srv.Close()
+	_, events := runObserved(t, kanbanSession(t, srv, store, src, root), "read a.txt")
+	if len(kanbanEvents(events)) != 0 || len(ks.mainCalls) != 2 {
+		t.Fatalf("a clean turn on an empty board ran the wrap-up (%d main calls)", len(ks.mainCalls))
+	}
+
+	// An open item on this project's board may have been finished: run it.
+	store.Add(kanban.ItemInput{Title: "open item", List: kanban.Review}, src.Get())
+	ks.mainCalls = nil
+	_, events = runObserved(t, kanbanSession(t, srv, store, src, root), "read a.txt")
+	if len(kanbanEvents(events)) != 2 {
+		t.Fatal("open board items did not run the wrap-up")
+	}
+}
+
+func TestOpenWorkPattern(t *testing.T) {
+	open := []string{
+		"Remaining: tests were not run.", "TODO: handle overflow", "Follow-up: update the docs",
+		"I left the workaround in place", "The build failed on Windows", "You might also want to add caching",
+		"This is a partial fix", "Next steps are below", "Remaining:\n- wire the CLI", "**Known issues** — the parser drops comments",
+	}
+	for _, s := range open {
+		if !reportHasOpenWork(s) {
+			t.Errorf("missed open work: %q", s)
+		}
+	}
+	clean := []string{
+		"Created mathx.js, cli.js and test.js. node --test: 4 pass, 0 fail. Everything passes.",
+		`It returns "hello-world-2026": trim, lowercase, strip punctuation, then hyphenate.`,
+		"It removes the comma, and finally collapses the remaining whitespace into single hyphens.",
+		"No code changes were required. Nothing is left open.", "There are no failing tests and no known issues.",
+		"`node --test` — 4 tests passed, 0 failed.",
+		"**Follow-up:** Nothing remaining. The task is complete.", "Known issues: none.",
+	}
+	for _, s := range clean {
+		if reportHasOpenWork(s) {
+			t.Errorf("flagged a clean report: %q", s)
+		}
+	}
+}
+
+func TestIsVerifyingBash(t *testing.T) {
+	cases := []struct {
+		cmd, result string
+		want        bool
+	}{
+		{"node --test", "ℹ pass 4\nℹ fail 0", true},
+		{"node cli.js 12 18", "gcd=6 lcm=36", true},
+		{"go test ./...", "--- FAIL\nexit status 1", false},
+		{"ls -la && cat a.js", "a.js", false},
+		{"git status && git diff", "", false},
+		{"npm run build", "tool result withheld: permission denied", false},
+	}
+	for _, c := range cases {
+		if got := isVerifyingBash("Bash", map[string]any{"command": c.cmd}, c.result); got != c.want {
+			t.Errorf("isVerifyingBash(%q) = %v, want %v", c.cmd, got, c.want)
+		}
+	}
+	if isVerifyingBash("Read", map[string]any{"command": "node --test"}, "") {
+		t.Error("a non-Bash tool counted as verification")
+	}
 }

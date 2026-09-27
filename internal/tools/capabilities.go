@@ -98,8 +98,22 @@ func defaultProbe() CapabilityProbe {
 const detectTimeout = 2 * time.Second
 
 // DetectDefault runs capability detection against the real environment.
+// Auth-probe verdicts come from the on-disk probe cache when fresh (see
+// capcache.go), and the whole result is reused within a process for
+// probeCacheTTL.
 func DetectDefault() Capabilities {
-	return Detect(context.Background(), defaultProbe(), detectTimeout)
+	detectMu.Lock()
+	defer detectMu.Unlock()
+	if detectMemo != nil && time.Since(detectAt) < probeCacheTTL {
+		return *detectMemo
+	}
+	cache := openProbeCache()
+	probe := defaultProbe()
+	probe.Run = cache.cachedRun(probe.Run)
+	caps := Detect(context.Background(), probe, detectTimeout)
+	cache.save()
+	detectMemo, detectAt = &caps, time.Now()
+	return caps
 }
 
 // Detect builds a Capabilities set from a probe. Binary presence is checked

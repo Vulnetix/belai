@@ -171,12 +171,12 @@ type NonceResponse struct {
 }
 
 // FetchNonces GETs {base_url}/v1/nonces. apiKey, when non-empty, is sent as a
-// Bearer token. A 401/403/404 is reported as ErrUnsupported so callers fall
-// back to local generation, and is negative-cached per base URL for the
-// process lifetime. The request is bounded by a 3s deadline so a hanging
+// Bearer token. A 400/401/403/404/405 is reported as ErrUnsupported so callers fall
+// back to local generation, and is negative-cached per base URL (for the
+// process, and on disk for a day when SetNegativeCacheFile is set). The request is bounded by a 3s deadline so a hanging
 // provider cannot freeze session construction.
 func FetchNonces(client *http.Client, baseURL, apiKey string) ([]string, error) {
-	if _, ok := unsupportedURLs.Load(baseURL); ok {
+	if _, ok := unsupportedURLs.Load(baseURL); ok || knownUnsupported(baseURL) {
 		return nil, ErrUnsupported
 	}
 	if client == nil {
@@ -198,8 +198,9 @@ func FetchNonces(client *http.Client, baseURL, apiKey string) ([]string, error) 
 	}
 	defer resp.Body.Close()
 	switch resp.StatusCode {
-	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound:
+	case http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusMethodNotAllowed:
 		unsupportedURLs.Store(baseURL, true)
+		rememberUnsupported(baseURL)
 		return nil, ErrUnsupported
 	case http.StatusOK:
 		// ok

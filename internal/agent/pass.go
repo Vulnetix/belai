@@ -110,6 +110,13 @@ type passOutcome struct {
 	// mutatedPaths are the changed paths, deduplicated and bounded by
 	// maxMutatedPaths. They are harness facts (paths only, never contents).
 	mutatedPaths []string
+	// selfVerified is true when, after the pass's last file mutation, a
+	// non-inspection Bash command ran and exited 0 (tests, the script, a
+	// build): a harness observation that the pass checked its own change.
+	selfVerified bool
+	// callSeq, lastMutSeq and lastCheckSeq order the pass's calls for
+	// selfVerified.
+	callSeq, lastMutSeq, lastCheckSeq int
 }
 
 // maxMutatedPaths bounds the changed-path list carried out of a pass. The list
@@ -259,6 +266,7 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 	finish := func(o passOutcome) passOutcome {
 		o.mutations = acc.mutations
 		o.mutatedPaths = acc.mutatedPaths
+		o.selfVerified = acc.mutations > 0 && acc.lastCheckSeq > acc.lastMutSeq
 		if o.usage == nil {
 			o.usage = acc.usage
 		}
@@ -427,6 +435,12 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 				}
 			}
 			acc.noteMutation(effects[i])
+			acc.callSeq++
+			if effects[i].changed {
+				acc.lastMutSeq = acc.callSeq
+			} else if isVerifyingBash(u.call.Name, u.args, results[i]) {
+				acc.lastCheckSeq = acc.callSeq
+			}
 			// Every file a call changed drops out of the read index, so a
 			// read after an edit always sees the new bytes. The stat check in
 			// the index covers changes the recorder cannot see.

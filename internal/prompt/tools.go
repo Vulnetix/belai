@@ -34,6 +34,9 @@ type ToolsOptions struct {
 	// Absolute paths passed as tool arguments that land inside one of these
 	// roots are allowed; paths outside every root are refused.
 	ExtraRoots []string
+	// Deferred names the registered tools whose definitions are not in the
+	// request yet: ToolSearch loads them on demand. Names only.
+	Deferred []string
 }
 
 // toolNamesSet returns the lower-cased tool names in opts for quick lookups.
@@ -119,7 +122,7 @@ func ToolsBlock(opts ToolsOptions) string {
 		b.WriteString("\nMode: plan. ")
 		switch {
 		case hasWrite:
-			b.WriteString("Guardrails are off; the full tool surface is available, including tools that change the workspace and full Bash. You may edit while planning.\n")
+			b.WriteString("Guardrails are off, so every tool is available, including tools that change the workspace and full Bash. The deliverable of plan mode is still the plan, not the change: investigate with the tools you need, then call ExitPlanMode with the plan. Do not implement the change while planning — an approved plan runs next with the full surface.\n")
 		case hasBash:
 			b.WriteString("Bash is available in read-only form only. Write, Edit, and other tools that change the workspace are not in the list below and calling one is refused.\n")
 			b.WriteString("- Investigate with the read-only tools below and answer with a plan. Do not describe a change as made — describe the change you would make.\n")
@@ -141,15 +144,21 @@ func ToolsBlock(opts ToolsOptions) string {
 		}
 	}
 
-	b.WriteString("\nTools:\n")
+	// Names only: each listed tool's full definition rides on the same
+	// request, so repeating its summary here only re-spent those tokens on
+	// every call. The list stays the authoritative surface.
 	docs := append([]ToolDoc(nil), opts.Tools...)
 	sort.SliceStable(docs, func(i, j int) bool { return docs[i].Name < docs[j].Name })
-	for _, d := range docs {
-		if d.Summary == "" {
-			b.WriteString("- " + d.Name + "\n")
-			continue
-		}
-		b.WriteString("- " + d.Name + " — " + d.Summary + "\n")
+	names := make([]string, len(docs))
+	for i, d := range docs {
+		names[i] = d.Name
+	}
+	b.WriteString("\nTools (each fully defined in this request): " + strings.Join(names, ", ") + ".\n")
+	if len(opts.Deferred) > 0 {
+		deferred := append([]string(nil), opts.Deferred...)
+		sort.Strings(deferred)
+		b.WriteString("\nMore tools are available on demand. Their definitions are not loaded yet; call ToolSearch with query \"select:<Name>[,<Name>…]\" (or keywords) to load them, then call them like any tool above: ")
+		b.WriteString(strings.Join(deferred, ", ") + ".\n")
 	}
 
 	b.WriteString("\nRules that hold for every tool:\n")

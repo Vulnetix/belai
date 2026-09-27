@@ -55,7 +55,7 @@ func TestToolsBlockEmptyWithoutTools(t *testing.T) {
 	}
 }
 
-func TestToolsBlockListsToolsSortedWithSummaries(t *testing.T) {
+func TestToolsBlockListsToolsSortedByName(t *testing.T) {
 	got := ToolsBlock(ToolsOptions{
 		Workdir: "/repo",
 		Tools: []ToolDoc{
@@ -65,32 +65,29 @@ func TestToolsBlockListsToolsSortedWithSummaries(t *testing.T) {
 		},
 	})
 	for _, want := range []string{
-		"- Glob — Find files by name.\n",
-		"- Read — Read a file.\n",
-		"- Pwd\n",
+		"Tools (each fully defined in this request): Glob, Pwd, Read.\n",
 		"Working directory: /repo.",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("block missing %q:\n%s", want, got)
 		}
 	}
-	if strings.Index(got, "- Glob") > strings.Index(got, "- Read") {
-		t.Errorf("tools are not sorted by name:\n%s", got)
+	// The full definitions carry the descriptions; the briefing does not
+	// repeat them on every request.
+	if strings.Contains(got, "Find files by name.") {
+		t.Errorf("block repeats a tool summary:\n%s", got)
 	}
 	if strings.Contains(got, "Mode: plan") {
 		t.Errorf("agent-mode block must not carry plan-mode restrictions:\n%s", got)
 	}
 }
 
-// A tool with no summary still has to appear: an entry missing from the index
-// reads as a tool that is not available.
+// Every tool appears by name: an entry missing from the index reads as a tool
+// that is not available.
 func TestToolsBlockKeepsToolsWithoutSummaries(t *testing.T) {
 	got := ToolsBlock(ToolsOptions{Tools: []ToolDoc{{Name: "Env"}}})
-	if !strings.Contains(got, "- Env\n") {
+	if !strings.Contains(got, ": Env.\n") {
 		t.Fatalf("block missing the summary-less tool:\n%s", got)
-	}
-	if strings.Contains(got, "Env — ") {
-		t.Fatalf("block rendered an empty summary dash:\n%s", got)
 	}
 }
 

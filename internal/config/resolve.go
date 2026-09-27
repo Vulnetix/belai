@@ -354,6 +354,12 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.AutoCommitPerTask = s.AutoCommitPerTask
 		e.Origin["auto_commit_per_task"] = src
 	}
+	if s.DeferTools != nil {
+		// Deferral changes only which tool definitions ride on a request,
+		// never what may run, so any layer may set it.
+		e.Settings.DeferTools = s.DeferTools
+		e.Origin["defer_tools"] = src
+	}
 	if s.Kanban != nil && (!*s.Kanban || src != SourceProject) {
 		// The board syncs off the machine and carries text between
 		// sessions: a repo-visible project layer may turn it off, never on.

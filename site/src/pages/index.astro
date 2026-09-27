@@ -7,6 +7,7 @@ import SealedBlock from '../components/sections/SealedBlock.astro';
 import Beliefs from '../components/sections/Beliefs.astro';
 import Labs from '../components/sections/Labs.astro';
 import Features from '../components/sections/Features.astro';
+import Kanban from '../components/sections/Kanban.astro';
 import Extend from '../components/sections/Extend.astro';
 import CLI from '../components/sections/CLI.astro';
 import Qol from '../components/sections/Qol.astro';
@@ -31,6 +32,7 @@ const rail = [
   ['providers', 'providers'],
   ['routing', 'routing'],
   ['vulnetix', 'vulnetix'],
+  ['kanban', 'kanban'],
   ['sandbox', 'sandbox'],
   ['extend', 'extend'],
   ['integrations', 'integrations'],
@@ -68,6 +70,7 @@ const rail = [
       <div class="mono text-xs text-vx-ink/60">
         <p>mode: agent</p>
         <p>guardrails: on</p>
+        <p>rope: tight</p>
         <p>~12k / 200k</p>
       </div>
     </aside>
@@ -80,6 +83,7 @@ const rail = [
       <Beliefs />
       <Labs />
       <Features />
+      <Kanban />
       <Extend />
       <CLI />
       <Qol />

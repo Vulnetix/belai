@@ -127,18 +127,17 @@
   <text x="280" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(125,145,141)">u</text>
   <text x="290" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(125,145,141)">b</text>
   <text x="300" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(125,145,141)">/</text>
-  <text x="310" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(125,145,141)">s</text>
-  <text x="320" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(125,145,141)">i</text>
-  <text x="330" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(125,145,141)">g</text>
-  <text x="340" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(125,145,141)">n</text>
-  <text x="350" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(125,145,141)">e</text>
-  <text x="360" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(125,145,141)">t</text>
-  <text x="390" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(125,145,141)">·</text>
-  <text x="420" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(58,195,179)">⎇</text>
-  <text x="440" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(125,145,141)">m</text>
-  <text x="450" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(125,145,141)">a</text>
-  <text x="460" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(125,145,141)">i</text>
-  <text x="470" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(125,145,141)">n</text>
+  <text x="310" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(125,145,141)">b</text>
+  <text x="320" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(125,145,141)">e</text>
+  <text x="330" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(125,145,141)">l</text>
+  <text x="340" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(125,145,141)">a</text>
+  <text x="350" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(125,145,141)">i</text>
+  <text x="380" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(125,145,141)">·</text>
+  <text x="410" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(58,195,179)">⎇</text>
+  <text x="430" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(125,145,141)">m</text>
+  <text x="440" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(125,145,141)">a</text>
+  <text x="450" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(125,145,141)">i</text>
+  <text x="460" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(125,145,141)">n</text>
   <text x="720" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(232,145,43)">d</text>
   <text x="730" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(232,145,43)">a</text>
   <text x="740" y="36" font-family="'Geist Mono','DejaVu Sans Mono','Menlo',monospace" font-size="15" font-weight="500" fill="rgb(232,145,43)">y</text>

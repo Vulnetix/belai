@@ -24,6 +24,8 @@ import (
 	"github.com/vulnetix/belai/internal/credentials"
 	"github.com/vulnetix/belai/internal/httpclient"
 	"github.com/vulnetix/belai/internal/mcp"
+	"github.com/vulnetix/belai/internal/modes"
+	"github.com/vulnetix/belai/internal/nonce"
 	"github.com/vulnetix/belai/internal/permissions"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/prompt"
@@ -42,6 +44,11 @@ import (
 func main() {
 	_, _ = config.Migrate()
 	activatePlugins()
+	// Remember providers without a nonce endpoint across runs, so a session
+	// does not spend a round trip before its first model call relearning it.
+	if dir, err := config.GlobalDir(); err == nil {
+		nonce.SetNegativeCacheFile(filepath.Join(dir, "cache", "nonce-unsupported.json"))
+	}
 
 	// One root context for every non-TUI entry point. Goal mode's pass loop is
 	// unbounded by design, so an interruptible context is the only thing that
@@ -102,6 +109,8 @@ func main() {
 	sessionRetentionDays := flag.Int("session-retention-days", 0, "idle session retention in days (default 28)")
 	noPrune := flag.Bool("no-prune", false, "never prune idle sessions")
 	planMode := flag.Bool("plan", false, "start in plan mode (read-only)")
+	modeFlag := flag.String("mode", "", "operating mode for -prompt: agent, plan or goal (default: classified from the prompt)")
+	deferTools := flag.Bool("defer-tools", true, "advertise core tools in full and load the rest on demand with ToolSearch; -defer-tools=false sends every tool definition on every request")
 	agentName := flag.String("agent", "", "start a background agent by name in foreground mode")
 	agentCreate := flag.String("agent-create", "", "create an agent profile from a description and save to disk")
 	resume := flag.String("resume", "", "resume a session by id or unique id prefix")
@@ -114,6 +123,14 @@ func main() {
 	if *showVersion {
 		fmt.Println(version.Version)
 		os.Exit(0)
+	}
+	switch modes.Mode(*modeFlag) {
+	case "", modes.ModeAgent, modes.ModeGoal:
+	case modes.ModePlan:
+		*planMode = true
+	default:
+		fmt.Fprintf(os.Stderr, "belai: -mode must be agent, plan or goal, not %q\n", *modeFlag)
+		os.Exit(2)
 	}
 
 	workdir, _ := os.Getwd()
@@ -226,6 +243,10 @@ func main() {
 		t := true
 		settings.Vulnetix.FirewallEnabled = &t
 	}
+	if !*deferTools {
+		f := false
+		settings.DeferTools = &f
+	}
 	if *sessionRetentionDays > 0 {
 		settings.SessionRetentionDays = sessionRetentionDays
 	}
@@ -331,7 +352,7 @@ func main() {
 	}
 
 	if *prompt != "" {
-		err := runPromptOrTUI(ctx, *prompt, *model, *provider, *detectMode, *verbose, workdir, pol, *enableTools, *planMode, settings)
+		err := runPromptOrTUI(ctx, *prompt, *model, *provider, *detectMode, *verbose, workdir, pol, *enableTools, *planMode, modes.Mode(*modeFlag), settings)
 		shutdown()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "belai:", err)
@@ -423,7 +444,7 @@ func withClassifier(cfg run.Config, settings config.Settings, resolver *credenti
 	return cfg, nil
 }
 
-func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, detectMode, verbose bool, workdir string, pol posture.Policy, enableTools, planMode bool, settings config.Settings) error {
+func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, detectMode, verbose bool, workdir string, pol posture.Policy, enableTools, planMode bool, forceMode modes.Mode, settings config.Settings) error {
 	resolver, err := newResolver(workdir)
 	if err != nil {
 		return err
@@ -456,7 +477,7 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 	if detectMode || !enableTools {
 		res, err = run.EngageWithPosture(ctx, cfg, prompt, detectMode, httpclient.Default(), pol)
 	} else {
-		res, err = runAgent(ctx, cfg, prompt, httpclient.Default(), pol, workdir, settings, planMode)
+		res, err = runAgent(ctx, cfg, prompt, httpclient.Default(), pol, workdir, settings, planMode, forceMode)
 	}
 	if err != nil {
 		return err
@@ -480,13 +501,15 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 	return nil
 }
 
-func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool) (run.Result, error) {
+func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool, forceMode modes.Mode) (run.Result, error) {
 	sess, err := newCLISession(ctx, cfg, client, pol, workdir, settings, planMode, "", false)
 	if err != nil {
 		return run.Result{}, err
 	}
 	defer flushKanban(settings, workdir)
-	return sess.Run(ctx, userPrompt)
+	// An explicit -mode is the user's choice and outranks the classifier,
+	// exactly as a mode picked in the TUI does.
+	return sess.RunInput(ctx, agent.TurnInput{Prompt: userPrompt, ForceMode: forceMode})
 }
 
 // newCLISession builds a top-level agent session outside the TUI: the

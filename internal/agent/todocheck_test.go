@@ -27,7 +27,7 @@ func TestTodoCheckCountsOpenWork(t *testing.T) {
 	l.Items[1].Status = todos.StatusActive
 	l.Items[2].Status = todos.StatusPending
 	got := todoCheck(l, true)
-	for _, want := range []string{"1 of 3 steps done, 1 in progress", "update_plan", "[DONE:n]", "same response as your next tool calls", "Do not reply with a list update alone"} {
+	for _, want := range []string{"1 of 3 steps done, 1 in progress", "update_plan", "[DONE:n]", "response that carries your next tool calls", "Do not reply with a list update alone"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("todoCheck missing %q:\n%s", want, got)
 		}

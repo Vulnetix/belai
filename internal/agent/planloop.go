@@ -232,6 +232,10 @@ func (l *planLedger) planSoFar() string {
 	return l.lastText
 }
 
+// planChecklistOptional replaces the TODO check on a planning pass that has
+// no checklist yet.
+const planChecklistOptional = "A planning checklist is optional. If you keep one, send update_plan in the same response as your reads, never as a response of its own. When you have what the plan needs, call ExitPlanMode with it."
+
 // planStartDirective builds the PLAN_NOT_STARTED continuation instruction.
 // exhausted reports whether the pass spent its whole tool budget.
 func (l *planLedger) planStartDirective(exhausted bool) string {
@@ -356,7 +360,15 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 		// The planning contract rides a hidden harness directive, sealed at
 		// egress and never rendered in the transcript: full on pass 1 and
 		// every fifth pass, a one-line reminder in between.
-		turns = append(turns, withTodoCheck(prompt.PlanDirective(l.passes), l.list, l.hasList)...)
+		// Before a planning checklist exists, recording one is optional: the
+		// plan is the deliverable, and the mandatory "call update_plan" check
+		// made the model spend a whole round writing a checklist before it
+		// read anything. Once a list is tracked, the check keeps it current.
+		if l.hasList && len(l.list.Items) > 0 {
+			turns = append(turns, withTodoCheck(prompt.PlanDirective(l.passes), l.list, l.hasList)...)
+		} else {
+			turns = append(turns, directiveTurns(prompt.PlanDirective(l.passes)+"\n\n"+planChecklistOptional)...)
+		}
 		// The last allowed pass offers only update_plan and ExitPlanMode, so
 		// the loop ends on a plan, never on one more round of reading.
 		final := l.passes >= maxPasses || l.writeNow

@@ -66,6 +66,8 @@ func main() {
 		"classifier":      classifier(),
 		"local-model":     localModel(),
 		"exit-card":       exitCard(),
+		"kanban-pane":     kanbanPane(),
+		"kanban-board":    kanbanBoard(),
 	}
 
 	// Restore stdout before any real output: the pty slave has no reader and
@@ -432,4 +434,87 @@ func budgets() string {
 	}
 	return head + chip + strings.Join(lines, "\n") + "\n\n" +
 		components.HelpBar("↑↓", "move", "a", "add", "enter", "edit", "x", "delete", "esc", "back")
+}
+
+// kanbanColour mirrors internal/tui's kanbanListColor, so a shot shows each
+// list in the colour the TUI draws it.
+func kanbanColour(list string) lipgloss.TerminalColor {
+	switch list {
+	case "review":
+		return components.ColorAmber
+	case "blocked":
+		return components.ColorDanger
+	case "in progress":
+		return components.ColorTeal
+	case "done":
+		return components.ColorTealSoft
+	}
+	return components.ColorMuted
+}
+
+// kanbanPane renders the kanban pane above an idle, empty composer, with the
+// pane focused on its first row.
+func kanbanPane() string {
+	chips := components.Chip("all", components.ColorTealSoft) + " " +
+		components.MutedStyle.Render("backlog") + " " + components.MutedStyle.Render("review") + " " +
+		components.MutedStyle.Render("blocked")
+	head := components.MutedStyle.Render("▤ kanban  ") + chips + components.MutedStyle.Render("  · this project") +
+		components.MutedStyle.Render("   ↑↓ select · tab list · p scope · ⏎ use · esc back")
+	row := func(selected bool, list, id, title string) string {
+		prefix := "  "
+		if selected {
+			prefix = components.AccentStyle.Render("▸ ")
+			title = components.EmphStyle.Render(title)
+		}
+		return prefix + components.Chip(list, kanbanColour(list)) + " " + components.MutedStyle.Render(id) + " " + title
+	}
+	pane := strings.Join([]string{
+		head,
+		row(true, "review", "K-3c0bcb", "Run the race detector over internal/kanban sync and fix what it finds"),
+		row(false, "blocked", "K-5c5df2", "Waiting on the AWS profile for the kiro e2e"),
+		row(false, "backlog", "K-c25071", "Document the wrap-up trigger catalogue in the README"),
+		components.MutedStyle.Render("  +2 more"),
+	}, "\n")
+	composer := components.Panel{
+		Title: "ask",
+		Meta:  "⏎ send · ctrl+j newline · / commands · @ files · f1 screens",
+		Width: width,
+		Body:  components.MutedStyle.Render("Type / for commands, @ for files, or ask Belai anything…"),
+	}.View()
+	return pane + "\n" + composer
+}
+
+// kanbanBoard renders /kanban on the review list, with the selected item's
+// provenance and history.
+func kanbanBoard() string {
+	head := components.SectionHeader("Kanban", "esc back", width)
+	lists := []struct {
+		name string
+		n    int
+	}{{"backlog", 3}, {"review", 2}, {"in progress", 1}, {"blocked", 1}, {"done", 14}}
+	var tabs []string
+	for _, l := range lists {
+		label := fmt.Sprintf("%s %d", l.name, l.n)
+		if l.name == "review" {
+			tabs = append(tabs, components.Chip(label, kanbanColour(l.name)))
+			continue
+		}
+		tabs = append(tabs, lipgloss.NewStyle().Foreground(kanbanColour(l.name)).Render(label))
+	}
+	meta := components.MutedStyle.Render("this project (belai) · synced 4s ago")
+	rows := []string{
+		components.Cursor(true) + components.MutedStyle.Render("K-3c0bcb ") + components.EmphStyle.Render("Run the race detector over internal/kanban sync and fix what it finds"),
+		components.Cursor(false) + components.MutedStyle.Render("K-9e41d7 ") + "Update docs/session-sync.md for the kanban routes",
+	}
+	detail := []string{
+		components.Chip("review", components.ColorAmber) + " " + components.EmphStyle.Render("Run the race detector over internal/kanban sync and fix what it finds"),
+		components.MutedStyle.Render("belai · ~/src/belai · session 785d5499 · added 2026-09-27 19:11"),
+		"  sync.go was only tested with a fake remote; go test -race was not run.",
+		"  category: unverified",
+		components.MutedStyle.Render("  09-27 19:11 added to review"),
+		components.MutedStyle.Render("  09-27 19:40 note: reproduced a data race in Syncer.note"),
+	}
+	return head + strings.Join(tabs, "  ") + "\n" + meta + "\n\n" + strings.Join(rows, "\n") + "\n\n" +
+		strings.Join(detail, "\n") + "\n\n" +
+		components.HelpBar("←→", "list", "↑↓", "item", "⏎", "work on it", "n", "new", "m", "move", "o", "note", "d", "delete", "esc", "back")
 }

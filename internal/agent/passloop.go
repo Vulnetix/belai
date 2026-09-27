@@ -127,7 +127,7 @@ const (
 	// approved plan, which may legitimately change no file.
 	planReadStreakDirective = "You have spent several rounds reading. Carry out the approved plan's next unfinished step in your next response from the bytes you already have: if it changes a file, make the change; if the remaining steps only read or report and are done, say the plan is complete and give the result. Do not re-read files you have already read in full."
 	readStreakDirective     = "You have spent several rounds reading without changing a file. Stop surveying: pick the first file the work needs and edit it in your next response, from the bytes you already have. Read more only for the exact lines that edit needs, and do not re-read files you have already read in full."
-	goalAckDirective        = "Start the work in this pass. In the same response as your first actions, call update_plan once with the steps you will execute, the first marked in_progress. Batch the reads you need in parallel, then make the change from the exact bytes you read. Mark steps complete with update_plan, or with [DONE:n] in your reply, as you finish them. Keep any restatement of the objective to a single line naming the deliverable and how completion will be verified."
+	goalAckDirective        = "Start the work in this pass. In the same response as your first actions, call update_plan once with the steps you will execute, the first marked in_progress. Batch the reads you need in parallel, then make the change from the exact bytes you read. Mark steps complete with a [DONE:n] marker in the text of the response that carries your next tool calls — that updates the list without a round of its own; call update_plan again only when the steps themselves change. Keep any restatement of the objective to a single line naming the deliverable and how completion will be verified."
 )
 
 // goalAckDirective returns the first-pass goal directive, naming the detected
@@ -663,6 +663,12 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 		// the write ledger is what the directives and the verification gate
 		// key off.
 		l.noteWrites(out)
+		// A pass that ran its own passing check after its last change has
+		// verified it: the harness saw it, so GOAL_COMPLETE needs no
+		// separate verification pass to repeat the same checks.
+		if out.selfVerified {
+			l.verificationPasses++
+		}
 		l.noteWithheld(out)
 
 		// A pass that did exactly what the last one did, twice over, will
@@ -743,8 +749,18 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 				}
 				gs.Status = string(goals.StatusComplete)
 				emitGoalState(emit, gs)
-				return s.goalReport(ctx, system, withReply(turns, out.reply), streaming, emit, sentinel,
-					run.Result{Reply: out.reply, Usage: out.usage, GoalSentinel: sentinel, Passes: l.passes}), nil
+				res := run.Result{Reply: out.reply, Usage: out.usage, GoalSentinel: sentinel, Passes: l.passes}
+				// A one-pass goal that ended on its own closing reply has
+				// already written the report: that reply is the account of
+				// the whole goal, verified by the evaluator. Asking again cost
+				// a full-context call to restate it. Longer goals, and every
+				// stop that is not a clean completion, still get the report.
+				if l.passes == 1 && substantiveReport(out.reply) {
+					emit(Event{Kind: EventReportKind, GoalSentinel: sentinel})
+					s.traceRecord("report", string(sentinel), "", "closing reply reused", res.Passes)
+					return res, nil
+				}
+				return s.goalReport(ctx, system, withReply(turns, out.reply), streaming, emit, sentinel, res), nil
 			}
 			if l.notePartial() {
 				l.partialStreak = 0
@@ -926,14 +942,20 @@ func (s *Session) agentContinuations(ctx context.Context, pipe *rolemanager.Pipe
 	var list todos.List
 	hasList := false
 	adopt := func(o passOutcome) {
-		if o.updatePlan == nil {
-			return
+		if o.updatePlan != nil {
+			if !hasList {
+				list = todos.New(userPrompt, nil)
+				hasList = true
+			}
+			list.Adopt(o.updatePlan.Items)
 		}
-		if !hasList {
-			list = todos.New(userPrompt, nil)
-			hasList = true
+		// [DONE:n] markers in the pass's own assistant text complete steps
+		// too, as the TODO check invites, without a round of update_plan.
+		if hasList && strings.Contains(o.text, "[DONE:") {
+			list.ApplyMarkers(o.text)
+			l := list
+			emit(Event{Kind: EventTodosKind, Todos: &l})
 		}
-		list.Adopt(o.updatePlan.Items)
 	}
 	adopt(out)
 	for continuations < maxCont {
@@ -1082,6 +1104,13 @@ const (
 	goalReportDirective     = "The goal is complete and the harness has verified it. Do not call any tools. Write the final report for the user now: what was changed (each file and the substance of the change), how it was verified (the commands run and their outcome), and anything left open or worth following up. Be concise and factual, and report only work that is visible in this conversation."
 	goalStopReportDirective = "The goal loop has stopped before the goal was confirmed complete. Do not call any tools. Write a report for the user now: what was changed (each file and the substance of the change), what was verified and how, and what remains unfinished and why. Be concise and factual, and report only work that is visible in this conversation."
 )
+
+// substantiveReport reports whether a closing reply is a report rather than
+// a one-line acknowledgement: it names what was done in more than a line.
+func substantiveReport(reply string) bool {
+	r := strings.TrimSpace(reply)
+	return len(r) >= 160 && strings.Count(r, "\n") >= 1
+}
 
 // reportDirective picks the final report directive for the sentinel the loop
 // ended on.

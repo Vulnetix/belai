@@ -1,0 +1,163 @@
+---
+import SealedSection from '../seal/SealedSection.astro';
+import ShotCarousel from '../ui/ShotCarousel.tsx';
+import paneShot from '../../assets/shots/kanban-pane.svg';
+import boardShot from '../../assets/shots/kanban-board.svg';
+
+const docBase = 'https://github.com/Vulnetix/belai/blob/main/docs/';
+
+const sealText =
+  'Kanban: one global board every Belai session shares, with backlog, review, in_progress, blocked and done. After the report of a work turn the model files what the report left open into review and moves what it finished to done; while it works it keeps its items in_progress or blocked; every call can search and note. An idle empty composer shows the open items colour-coded, and enter fills the composer with a prompt written for that item\'s list. /kanban manages the board, and it syncs with the Belai → Kanban page on the Vulnetix website. Item text is untrusted, so search results always classify and the harness stamps who filed each item.';
+
+const phases = [
+  {
+    when: 'every call',
+    tools: ['KanbanSearch', 'KanbanUpdate'],
+    detail: 'Plan mode included. The model can look up an item and add a note to it at any point.',
+  },
+  {
+    when: 'while the loop works',
+    tools: ['KanbanMove'],
+    detail:
+      'Agent, goal and approved-plan runs move the items they touch: in_progress when they start one, blocked with the reason, done once it is verified.',
+  },
+  {
+    when: 'after the report',
+    tools: ['KanbanAdd', 'KanbanMove → done'],
+    detail:
+      'One short wrap-up pass files every piece of open work the report mentions into review, and closes what the turn finished. The report stays the answer.',
+  },
+];
+
+const triggers = [
+  ['unfinished', 'partial work, stubs, placeholders, skipped tests'],
+  ['markers', 'TODO, FIXME, XXX and HACK added or found'],
+  ['deferred', 'out of scope, follow-ups, phase 2, suggestions'],
+  ['unverified', 'tests not run or failing, manual QA, CI red'],
+  ['blocked', 'decisions, credentials, upstream, a stalled goal'],
+  ['found-not-fixed', 'bugs, vulnerabilities, edge cases, limits'],
+  ['temporary', 'workarounds, hard-coded values, debug code'],
+  ['tech-debt', 'duplication, refactors, the same fix elsewhere'],
+  ['docs', 'README, CHANGELOG, comments, release notes'],
+  ['operational', 'deploys, migrations, secrets, monitoring'],
+  ['question', 'assumptions, unanswered questions, guesses'],
+];
+
+const lists = [
+  ['backlog', 'nobody has started it', 'text-vx-ink/50'],
+  ['review', 'a session noted it; confirm it first', 'text-vx-sand-amber'],
+  ['in_progress', 'a session is on it now', 'text-vx-mint-strong'],
+  ['blocked', 'cannot continue; the note says why', 'text-vx-coral'],
+  ['done', 'finished and verified, or obsolete', 'text-vx-mint'],
+];
+---
+
+<SealedSection label="kanban" sealText={sealText} id="kanban">
+  <div class="prose-measure">
+    <h2 class="text-3xl font-bold text-vx-ink">Kanban.</h2>
+    <p class="mt-4 text-vx-ink/80">
+      A report ends with “tests not run”, “follow-up: update the docs”, “left the workaround in”, and the
+      next session never sees it. Belai keeps one global board that every session on your machine
+      shares, and the model files that open work on it itself.
+    </p>
+  </div>
+
+  <ul class="mt-6 flex flex-wrap gap-x-6 gap-y-2 list-none p-0">
+    {lists.map(([name, meaning, colour]) => (
+      <li class="text-sm">
+        <span class={colour} aria-hidden="true">■</span>{' '}<span class="mono font-semibold text-vx-ink">{name}</span>
+        <span class="text-vx-ink/70"> {meaning}</span>
+      </li>
+    ))}
+  </ul>
+
+  <div class="mt-8 grid gap-4 md:grid-cols-3">
+    {phases.map((p) => (
+      <article class="rounded-lg border border-vx-ink/30 p-5">
+        <h3 class="mono text-sm font-semibold text-vx-ink">{p.when}</h3>
+        <p class="mt-2 flex flex-wrap gap-2">
+          {p.tools.map((t) => (
+            <code class="mono rounded bg-vx-ink/10 px-2 py-0.5 text-xs">{t}</code>
+          ))}
+        </p>
+        <p class="mt-3 text-sm text-vx-ink/80">{p.detail}</p>
+      </article>
+    ))}
+  </div>
+
+  <div class="mt-10">
+    <h3 class="text-xl font-bold text-vx-ink">What counts as open work.</h3>
+    <p class="prose-measure mt-3 text-vx-ink/80">
+      The wrap-up does not wait for the word “TODO”. It gives the model eleven categories to look for
+      in the report and the conversation, and it searches the board first so nothing is filed twice.
+    </p>
+    <div class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {triggers.map(([name, examples]) => (
+        <div class="rounded-md border border-vx-ink/20 px-4 py-3">
+          <p class="mono text-sm font-semibold text-vx-ink">{name}</p>
+          <p class="mt-1 text-sm text-vx-ink/70">{examples}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+
+  <div class="mt-10 grid gap-8 rounded-lg border border-vx-ink/30 p-6 lg:grid-cols-2 lg:items-center">
+    <div>
+      <h3 class="text-xl font-semibold text-vx-ink">Pick it up from the composer.</h3>
+      <p class="mt-3 text-vx-ink/80">
+        When nothing is running and the composer is empty, this project's backlog, review and blocked
+        items sit above it, colour-coded. Press <kbd class="mono">↓</kbd> to browse,{' '}
+        <kbd class="mono">tab</kbd> to filter by list, and <kbd class="mono">enter</kbd> to fill the
+        composer with a prompt written for that list:
+      </p>
+      <ul class="mt-3 space-y-1 text-sm text-vx-ink/80">
+        <li><span class="mono">backlog</span>: start it, do it, verify it, close it.</li>
+        <li><span class="mono">review</span>: check it is still real before doing anything.</li>
+        <li><span class="mono">blocked</span>: re-check the blocker, then continue or say what still blocks it.</li>
+      </ul>
+      <p class="mt-3 text-vx-ink/80">
+        Edit the prompt before you send it. <code class="mono">/kanban</code> (or{' '}
+        <kbd class="mono">f1</kbd> then <kbd class="mono">t</kbd>) opens the whole board to add, edit,
+        note, move and delete.
+      </p>
+    </div>
+    <ShotCarousel
+      client:load
+      shots={[
+        { src: paneShot.src, alt: 'The kanban pane above an empty composer, listing review, blocked and backlog items', caption: 'idle composer, kanban pane focused' },
+        { src: boardShot.src, alt: 'The /kanban board on the review list, with provenance and history', caption: '/kanban, the review list' },
+      ]}
+    />
+  </div>
+
+  <div class="mt-10 grid gap-10 lg:grid-cols-2">
+    <div class="prose-measure">
+      <h3 class="text-xl font-bold text-vx-ink">On every machine, and on the web.</h3>
+      <p class="mt-4 text-vx-ink/80">
+        While the Vulnetix CLI is logged in, the board syncs with the <strong>Belai → Kanban</strong>{' '}
+        page on the Vulnetix website, where you can drag cards between the same colour-coded columns.
+        Every change is written to the local file first and pushed in the background, so no tool call
+        waits on the network. The TUI pulls the web's changes every 15 seconds, and the most recent
+        change to an item wins.
+      </p>
+    </div>
+    <div class="prose-measure">
+      <h3 class="text-xl font-bold text-vx-ink">Untrusted by design.</h3>
+      <p class="mt-4 text-vx-ink/80">
+        Board items were written by other sessions' models and by people on the web, so{' '}
+        <code class="mono">KanbanSearch</code> results always go through the security classifier. The
+        per-turn board facts carry counts and ids, never item text. The harness, not the model, stamps
+        the session, project and directory on each item. Subagents can search the board but never write
+        it, so a poisoned file they read cannot end up there.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        The board is one binary file, <code class="mono">~/.vulnetix/belai/kanban</code>: a{' '}
+        <code class="mono">BKAN</code> magic, a version, a Go gob payload and a SHA-256. A file that fails
+        any check is refused, never overwritten. Read{' '}
+        <a class="text-vx-ink underline" href={`${docBase}kanban.md`}>docs/kanban.md</a> for the feature and{' '}
+        <a class="text-vx-ink underline" href={`${docBase}bkan.md`}>docs/bkan.md</a> for the format, byte by
+        byte.
+      </p>
+    </div>
+  </div>
+</SealedSection>

@@ -218,6 +218,8 @@ scope, following the same precedence rules.
 | `ui.banner` / `ui.status_bar` | TUI presentation toggles |
 | `show_session_names` | show session names in the status bar (default on) |
 | `update_check` | check GitHub for a newer Belai release at startup (default on) |
+| `defer_tools` | advertise the core tools in full and load the rest (native catalogue, cloud CLIs, repo and agent-store tools, MCP tools) on demand with `ToolSearch`, keeping every request small (default on; `-defer-tools=false` for one run). Deferred tools stay callable by name |
+| `kanban` | the global kanban board: tools, wrap-up, composer pane, `/kanban` and sync (default on; a project may only turn it off) — see [docs/kanban.md](docs/kanban.md) |
 | `token_budgets` | global only: token allowances per provider, model and scope (`session`, `day`, `month`) — see [Token budgets](docs/token-budgets.md) |
 | `ui.budget_cycle_seconds` | seconds the footer shows each budget of the selected model before cycling (default 10, minimum 2) |
 | `ui.budget_warn` | print a warning line on each call to the selected model while one of its budgets is amber or red (default off) |

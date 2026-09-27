@@ -197,6 +197,7 @@ func openStream(ctx context.Context, cfg Config, system string, turns []Turn, cl
 			req.Header.Set("accept", "text/event-stream")
 		}
 		calltrace.Apply(ctx, req.Header)
+		applySessionAffinity(ctx, cfg, req.Header)
 		resp, err := client.Do(req)
 		if err != nil {
 			dropIdleConns(ctx, client)

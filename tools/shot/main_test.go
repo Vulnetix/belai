@@ -31,6 +31,8 @@ func frames() map[string]func() string {
 		"classifier":      classifier,
 		"local-model":     localModel,
 		"exit-card":       exitCard,
+		"kanban-pane":     kanbanPane,
+		"kanban-board":    kanbanBoard,
 	}
 }
 

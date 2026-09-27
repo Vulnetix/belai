@@ -392,6 +392,8 @@ func TestKindReadOnlyClassification(t *testing.T) {
 		// The kanban board is outside every workspace root: its tools
 		// never mutate the workspace, and the store serialises its writes.
 		KindKanban: true, KindKanbanWrite: true,
+		// ToolSearch only changes which definitions are advertised.
+		KindToolSearch: true,
 	}
 	seen := map[Kind]bool{}
 	for _, k := range AllKinds {
