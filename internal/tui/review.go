@@ -40,6 +40,9 @@ type reviewRun struct {
 	done  map[string]bool
 	// agents maps a running scanner agent's key to its scanner.
 	agents map[string]string
+	// agentStarted records when each running scanner agent was started, so a
+	// hung agent can be timed out instead of blocking the triage turn forever.
+	agentStarted map[string]time.Time
 	// reports and atts are the admitted scanner blocks, findings the admitted
 	// scanner agent reports; all of it goes to the triage turn.
 	reports   []explore.ReviewReport
@@ -125,14 +128,15 @@ func (a *App) startReview() tea.Cmd {
 	ctx, cancel := context.WithCancel(context.Background())
 	a.reviewSeq++
 	a.review = &reviewRun{
-		cancel:  cancel,
-		seq:     a.reviewSeq,
-		started: time.Now(),
-		autoFix: autoFix,
-		names:   names,
-		done:    map[string]bool{},
-		agents:  map[string]string{},
-		events:  events,
+		cancel:       cancel,
+		seq:          a.reviewSeq,
+		started:      time.Now(),
+		autoFix:      autoFix,
+		names:        names,
+		done:         map[string]bool{},
+		agents:       map[string]string{},
+		agentStarted: map[string]time.Time{},
+		events:       events,
 	}
 	a.addSystem(fmt.Sprintf("▸ vulnetix review started · %d scanners + fix · f9 for output", len(names)-1))
 	a.refreshFooter()
@@ -230,6 +234,13 @@ func (a *App) handleReviewScan(m reviewScanMsg) tea.Cmd {
 // turn's per-scanner subagent gets, so the report contract is unchanged. It
 // returns the agent's key, or "" when none started (the triage turn then runs
 // that scanner's subagent itself).
+// reviewScannerAgentTimeout bounds how long a /vulnetix review waits for one
+// read-only scanner agent to finish. Grounding a scanner's findings can touch
+// large files, so the limit is generous; it protects against agents that
+// hang (e.g. a Grep command with a pathological pattern, or a provider
+// stream that never closes) so the triage turn is never blocked forever.
+const reviewScannerAgentTimeout = 10 * time.Minute
+
 func (a *App) startScannerAgent(r *reviewRun, scanner string, reports []explore.ReviewReport) (string, tea.Cmd) {
 	if a.bgManager == nil {
 		return "", nil
@@ -260,8 +271,50 @@ func (a *App) startScannerAgent(r *reviewRun, scanner string, reports []explore.
 		return "", nil
 	}
 	r.agents[key] = scanner
+	r.agentStarted[key] = time.Now()
 	a.registerAgentActivity(key, a.workdir)
 	return key, a.noteAgentStarted(key)
+}
+
+// checkReviewAgentTimeouts is called every agent-pulse tick while a review
+// is waiting on scanner agents. Agents that exceed reviewScannerAgentTimeout
+// are stopped and treated as if they produced no report, so the review can
+// complete and the triage turn can re-run that scanner itself. Only one
+// timeout is processed per tick to keep the UI loop predictable.
+func (a *App) checkReviewAgentTimeouts() tea.Cmd {
+	r := a.review
+	if r == nil || !r.scansDone || len(r.agents) == 0 {
+		return nil
+	}
+	now := time.Now()
+	for key, scanner := range r.agents {
+		if now.Sub(r.agentStarted[key]) < reviewScannerAgentTimeout {
+			continue
+		}
+		return a.timeoutReviewAgent(key, scanner)
+	}
+	return nil
+}
+
+// timeoutReviewAgent gives up on one hung scanner agent. It stops the agent,
+// removes it from the review wait set, and prompts the triage turn to review
+// it directly instead.
+func (a *App) timeoutReviewAgent(key, scanner string) tea.Cmd {
+	if a.bgManager != nil {
+		if inst, ok := a.bgManager.Lookup(key); ok && inst.State == bgagent.StateRunning {
+			if err := a.bgManager.Stop(key); err == nil {
+				a.noteAgentStopped(key)
+			}
+		}
+	}
+	r := a.review
+	if r != nil {
+		delete(r.agents, key)
+		delete(r.agentStarted, key)
+	}
+	a.addSystem(fmt.Sprintf("vulnetix %s review timed out after %s; triage will review it", scanner, compactDuration(reviewScannerAgentTimeout)))
+	a.refreshFooter()
+	return a.maybeSendReview()
 }
 
 // reviewAgentFinished routes a scanner agent's report back to the review. The
@@ -325,6 +378,7 @@ func (a *App) handleReviewReport(m reviewReportMsg) tea.Cmd {
 		return nil // an agent the user stopped with the review
 	}
 	delete(r.agents, m.key)
+	delete(r.agentStarted, m.key)
 	switch {
 	case m.body != "":
 		a.messages = append(a.messages, components.Message{
@@ -456,6 +510,7 @@ func (a *App) cancelReview() {
 			a.noteAgentStopped(key)
 		}
 		delete(r.agents, key)
+		delete(r.agentStarted, key)
 	}
 	a.addSystem("vulnetix review cancelled")
 	a.refreshFooter()

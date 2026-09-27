@@ -442,7 +442,11 @@ func (a *App) handleAgentPulse() tea.Cmd {
 	a.ledger.ticking = false
 	a.ledger.pulse++
 	a.syncBackgroundLedger()
-	return a.armAgentPulse()
+	var extra tea.Cmd
+	if cmd := a.checkReviewAgentTimeouts(); cmd != nil {
+		extra = cmd
+	}
+	return tea.Batch(a.armAgentPulse(), extra)
 }
 
 // bgRunning reports whether a background agent is mid-run. A finished agent
