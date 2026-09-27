@@ -289,6 +289,9 @@ type Session struct {
 	// tool calls, one of the harness facts that make a turn a work turn.
 	lastTurns    []run.Turn
 	turnToolRuns int
+	// deferral holds deferred-tool state (deferral.go); nil when the
+	// defer_tools setting is off and every definition rides on every request.
+	deferral *toolDeferral
 }
 
 // planFinishTools is the whole surface of the plan loop's final pass: record
@@ -342,13 +345,13 @@ func (s *Session) toolDocs() prompt.ToolsOptions {
 	if len(extraRoots) > 0 {
 		extraRoots = extraRoots[1:]
 	}
-	return prompt.ToolsOptions{Tools: docs, PlanMode: s.planMode, Workdir: workdir, ExtraRoots: extraRoots}
+	return prompt.ToolsOptions{Tools: docs, PlanMode: s.planMode, Workdir: workdir, ExtraRoots: extraRoots, Deferred: s.deferredNames()}
 }
 
-// toolSurface returns the tool definitions and the registry the current mode
+// surfaceFull returns the tool definitions and the registry the current mode
 // actually permits. Plan mode narrows both together, so what the request
 // advertises and what executeCall will run can never diverge.
-func (s *Session) toolSurface() (*tools.Registry, []wire.OpenAITool, []wire.AnthropicToolDef) {
+func (s *Session) surfaceFull() (*tools.Registry, []wire.OpenAITool, []wire.AnthropicToolDef) {
 	if s.reportOnly {
 		return s.registry.Only(), nil, nil
 	}
@@ -438,6 +441,13 @@ func NewSession(o Options) (*Session, error) {
 	if !o.Settings.Skills.SelfAuthoringEnabled() {
 		reg = reg.Without("SkillDraft")
 	}
+	// Deferred tools: ToolSearch joins the registry before the surfaces are
+	// derived from it, so every surface can load what it defers.
+	var deferCat *deferCatalog
+	if o.Settings.DeferToolsEnabled() {
+		deferCat = &deferCatalog{}
+		reg = reg.With(tools.ToolSearch{Catalog: deferCat})
+	}
 	// The shared holder carries the effective posture and ask gate; when the
 	// caller supplied none the session wraps the snapshot options in a fixed
 	// holder that never changes.
@@ -480,7 +490,7 @@ func NewSession(o Options) (*Session, error) {
 	if cache == nil {
 		cache, _ = rolemanager.LoadCache(rolemanager.DefaultCachePath())
 	}
-	return &Session{
+	sess := &Session{
 		cfg:                o.Cfg,
 		client:             o.Client,
 		registry:           reg,
@@ -532,7 +542,12 @@ func NewSession(o Options) (*Session, error) {
 		agentPool:            o.AgentPool,
 		sessionID:            o.SessionID,
 		kanban:               newKanbanState(reg),
-	}, nil
+	}
+	if deferCat != nil {
+		sess.deferral = &toolDeferral{}
+		deferCat.s = sess
+	}
+	return sess, nil
 }
 
 // TurnInput is the structured input for one agent turn. It carries the
@@ -619,6 +634,16 @@ func detectPlanAttachment(atts []run.Attachment, workdir string) *rolemanager.Ha
 // drained RunStream. It discards every event.
 func (s *Session) Run(ctx context.Context, userPrompt string) (run.Result, error) {
 	return s.RunObserved(ctx, userPrompt, func(Event) {})
+}
+
+// RunInput is Run with a structured turn input, so a caller can carry an
+// explicit mode (the CLI's -mode) exactly as the TUI does. It discards every
+// event.
+func (s *Session) RunInput(ctx context.Context, in TurnInput) (run.Result, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return s.run(ctx, nil, in, false, func(Event) {})
 }
 
 // RunObserved is Run with a live emitter. It is the blocking-transport sibling

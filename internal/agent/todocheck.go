@@ -29,7 +29,7 @@ func todoCheck(list todos.List, has bool) string {
 	if done == len(list.Items) {
 		return "TODO check: every step is marked done. Correct the list with update_plan only if a step is wrong or missing, and focus this pass's tool calls on confirming the work or finishing."
 	}
-	return fmt.Sprintf("TODO check: %d of %d steps done, %d in progress. In the same response as your next tool calls, call update_plan to bring the list up to date: mark finished steps completed and the step you are working on in_progress (a [DONE:n] marker in your reply also completes step n). Then spend this pass on the tool calls that complete the next unfinished step. Do not reply with a list update alone.", done, len(list.Items), active)
+	return fmt.Sprintf("TODO check: %d of %d steps done, %d in progress. Mark finished steps with a [DONE:n] marker in the text of the response that carries your next tool calls (call update_plan only when the steps themselves change), then spend this pass on the tool calls that complete the next unfinished step. Do not reply with a list update alone.", done, len(list.Items), active)
 }
 
 // todoNote renders the tracked list for the directive's note. Step text is

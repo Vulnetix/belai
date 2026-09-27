@@ -46,7 +46,7 @@ func TestSealSystemSealsToolsBlock(t *testing.T) {
 	if want := delimiters.Integrity(m[3]); m[2] != want {
 		t.Errorf("tools block integrity = %s, want %s", m[2], want)
 	}
-	if !strings.Contains(m[3], "- Read — Read a file.") {
+	if !strings.Contains(m[3], "Tools (each fully defined in this request): Read.") {
 		t.Errorf("tools block does not carry the tool list:\n%s", m[3])
 	}
 

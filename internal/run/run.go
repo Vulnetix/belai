@@ -2040,7 +2040,12 @@ func parseWorkersAI(body []byte, status int, redact func(string) string) (Assist
 		for _, tc := range msg.ToolCalls {
 			args, err := parseToolCallArgs(tc.Function.Arguments)
 			if err != nil {
-				return Assistant{}, fmt.Errorf("malformed tool arguments: %w", err)
+				// Hand the raw text on: the agent salvages it or answers the
+				// call with a "malformed arguments" result the model can fix.
+				// Failing the whole response threw away a long turn over one
+				// bad call.
+				calls = append(calls, rolemanager.ToolCall{ID: tc.ID, Name: tc.Function.Name, RawArgs: rawToolArgs(tc.Function.Arguments)})
+				continue
 			}
 			calls = append(calls, rolemanager.ToolCall{ID: tc.ID, Name: tc.Function.Name, Args: args})
 		}
@@ -2063,7 +2068,9 @@ func parseOpenAIChat(body []byte, status int, redact func(string) string) (Assis
 	for _, tc := range msg.ToolCalls {
 		args, err := parseToolCallArgs(tc.Function.Arguments)
 		if err != nil {
-			return Assistant{}, fmt.Errorf("malformed tool arguments for %s: %w", tc.Function.Name, err)
+			// As above: the agent salvages or reports malformed arguments.
+			calls = append(calls, rolemanager.ToolCall{ID: tc.ID, Name: tc.Function.Name, RawArgs: rawToolArgs(tc.Function.Arguments)})
+			continue
 		}
 		calls = append(calls, rolemanager.ToolCall{ID: tc.ID, Name: tc.Function.Name, Args: args})
 	}
@@ -2395,6 +2402,7 @@ func roundTrip(ctx context.Context, client *http.Client, req *http.Request, cfg 
 	client = httpclient.ForBlocking(client)
 	req = req.WithContext(ctx)
 	calltrace.Apply(ctx, req.Header)
+	applySessionAffinity(ctx, cfg, req.Header)
 	resp, err := client.Do(req)
 	if err != nil {
 		dropIdleConns(ctx, client)
@@ -2432,4 +2440,17 @@ func parseToolCallArgs(raw json.RawMessage) (map[string]any, error) {
 		return nil, err
 	}
 	return args, nil
+}
+
+// rawToolArgs returns a tool call's arguments as text: the inner string of
+// the classic string form, or the raw JSON of the object form.
+func rawToolArgs(raw json.RawMessage) string {
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	if len(raw) == 0 {
+		return "{}"
+	}
+	return string(raw)
 }

@@ -142,6 +142,11 @@ type Settings struct {
 	// the wrap-up after a work turn, the composer pane, /kanban and board sync
 	// (docs/kanban.md). Default on. The project layer may turn it off, never on.
 	Kanban *bool `json:"kanban,omitempty"`
+	// DeferTools advertises the core tools in full and loads the rest on
+	// demand through ToolSearch, which keeps every request small. Default on;
+	// false sends every definition on every request. Deferral changes what is
+	// advertised, never what may run.
+	DeferTools *bool `json:"defer_tools,omitempty"`
 }
 
 // SyncSettings configures session sync (docs/session-sync.md).
@@ -1158,6 +1163,9 @@ func (s Settings) Override(proj Settings) Settings {
 	if proj.Sync != nil {
 		out.Sync = mergeSyncOffOnly(out.Sync, proj.Sync)
 	}
+	if proj.DeferTools != nil {
+		out.DeferTools = proj.DeferTools
+	}
 	// The kanban board syncs off the machine: off only.
 	if proj.Kanban != nil && !*proj.Kanban {
 		f := false
@@ -1412,4 +1420,10 @@ func saveSettings(path string, s Settings) error {
 // KanbanEnabled reports whether the global kanban board is on. Default on.
 func (s Settings) KanbanEnabled() bool {
 	return s.Kanban == nil || *s.Kanban
+}
+
+// DeferToolsEnabled reports whether tools outside the core set are advertised
+// on demand through ToolSearch rather than on every request. Default on.
+func (s Settings) DeferToolsEnabled() bool {
+	return s.DeferTools == nil || *s.DeferTools
 }

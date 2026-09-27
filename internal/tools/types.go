@@ -68,6 +68,10 @@ const (
 	// workspace root, so the kind is read-only with respect to the workspace
 	// (the store serialises its own writes) and sanitise-only.
 	KindKanbanWrite Kind = "kanban_write"
+	// KindToolSearch is ToolSearch's harness-composed confirmation: the names
+	// of the deferred tools it loaded, never their descriptions. Read-only and
+	// sanitise-only.
+	KindToolSearch Kind = "tool_search"
 )
 
 // AllKinds is every registered Kind, in declaration order. Tests iterate it to
@@ -77,7 +81,7 @@ var AllKinds = []Kind{
 	KindRead, KindWebSearch, KindWebFetch, KindBash, KindGrep, KindGlob,
 	KindExplore, KindWrite, KindEdit, KindNative, KindRemote, KindUpdatePlan,
 	KindProcess, KindProcessCtl, KindAgentStore, KindSubagent, KindHook, KindSkill,
-	KindSkillWrite, KindMCP, KindKanban, KindKanbanWrite,
+	KindSkillWrite, KindMCP, KindKanban, KindKanbanWrite, KindToolSearch,
 }
 
 // readOnlyKinds is the closed allowlist of kinds that only read. A Kind absent
@@ -100,6 +104,7 @@ var readOnlyKinds = map[Kind]bool{
 	KindSkill:       true,
 	KindKanban:      true,
 	KindKanbanWrite: true,
+	KindToolSearch:  true,
 }
 
 // ReadOnly reports whether a tool of this kind only reads and never mutates
