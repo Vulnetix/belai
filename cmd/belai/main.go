@@ -15,27 +15,21 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/agent"
-	"github.com/vulnetix/belai/internal/agentpool"
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/bgagent"
 	"github.com/vulnetix/belai/internal/budget"
 	"github.com/vulnetix/belai/internal/calltrace"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/headless"
 	"github.com/vulnetix/belai/internal/httpclient"
 	"github.com/vulnetix/belai/internal/mcp"
 	"github.com/vulnetix/belai/internal/modes"
 	"github.com/vulnetix/belai/internal/nonce"
-	"github.com/vulnetix/belai/internal/permissions"
 	"github.com/vulnetix/belai/internal/posture"
-	"github.com/vulnetix/belai/internal/prompt"
-	"github.com/vulnetix/belai/internal/repoindex"
-	"github.com/vulnetix/belai/internal/repomap"
-	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/session"
-	"github.com/vulnetix/belai/internal/tools"
 	"github.com/vulnetix/belai/internal/trustgate"
 	"github.com/vulnetix/belai/internal/tui"
 	"github.com/vulnetix/belai/internal/version"
@@ -66,6 +60,14 @@ func main() {
 	// `belai login kiro` signs in to Kiro with an AWS Builder ID.
 	if len(os.Args) > 1 && os.Args[1] == "login" {
 		os.Exit(runLoginCLI(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Stderr, isCharDevice(os.Stdin)))
+	}
+	// `belai agent …` manages fleet workers; `belai kanban …` edits the board.
+	// Both parse their own flags, so they dispatch before flag.Parse.
+	if len(os.Args) > 1 && os.Args[1] == "agent" {
+		os.Exit(runAgentCLI(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "kanban" {
+		os.Exit(runKanbanCLI(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	}
 	// `belai plugin …` is a subcommand with its own flags.
 	if len(os.Args) > 1 && os.Args[1] == "plugin" {
@@ -482,7 +484,7 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 	if detectMode || !enableTools {
 		res, err = run.EngageWithPosture(ctx, cfg, prompt, detectMode, httpclient.Default(), pol)
 	} else {
-		res, err = runAgent(ctx, cfg, prompt, httpclient.Default(), pol, workdir, settings, planMode, forceMode)
+		res, err = runAgent(ctx, cfg, prompt, httpclient.Default(), pol, workdir, settings, planMode, forceMode, sessionID)
 	}
 	if err != nil {
 		return err
@@ -506,8 +508,8 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 	return nil
 }
 
-func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool, forceMode modes.Mode) (run.Result, error) {
-	sess, err := newCLISession(ctx, cfg, client, pol, workdir, settings, planMode, "", false)
+func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool, forceMode modes.Mode, sessionID string) (run.Result, error) {
+	sess, err := newCLISession(ctx, cfg, client, pol, workdir, settings, planMode, sessionID, false)
 	if err != nil {
 		return run.Result{}, err
 	}
@@ -521,65 +523,12 @@ func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *ht
 // headless -prompt run (no asks: allowAsk false) and each ACP session (the
 // editor answers asks: allowAsk true).
 func newCLISession(ctx context.Context, cfg run.Config, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool, sessionID string, allowAsk bool) (*agent.Session, error) {
-	caps := tools.DetectDefault()
-	ix := repoindex.Scan(ctx, workdir)
-	// The full registry: read_only narrows agent-mode turns inside the session
-	// (Options.ReadOnlyAgent) and never goal mode or an accepted plan.
-	reg := tools.DefaultWithCaps(workdir, false, caps, ix)
-	// A CLI session waits for the MCP servers to connect (or fail) so their
-	// tools are on the surface from its first turn.
-	if m := mcp.Active(); m != nil {
-		m.Wait()
-		reg = reg.With(m.Tools()...)
-	}
-	// The global kanban board: search and update on every call, the loop and
-	// wrap-up tools added per turn by the session.
-	reg = reg.WithKanban(cliKanban(workdir, sessionID, settings))
-
-	perms := permissions.From(settings.Permissions.Allow, settings.Permissions.Ask, settings.Permissions.Deny)
-	repoMap := repomap.Scan(ctx, workdir)
-
-	var promptOpts prompt.Options
-	if settings.Caveman != nil && *settings.Caveman {
-		promptOpts.Caveman = true
-	}
-
-	sess, err := agent.NewSession(agent.Options{
-		Cfg:           cfg,
-		Client:        client,
-		Registry:      reg,
-		Perms:         perms,
-		Posture:       pol,
-		PlanMode:      planMode,
-		ReadOnlyAgent: settings.ReadOnlyEnabled(),
-		Workdir:       workdir,
-		Settings:      settings,
-		PromptOptions: promptOpts,
-		SessionID:     sessionID,
-		AllowAsk:      allowAsk,
-		Caps:          caps,
-		RepoIndex:     ix,
-		PlanSurface:   tools.PlanSurface{GuardrailsOff: !settings.GuardrailsEnabled(), Perms: perms},
-		AskDisabled:   !settings.AskPermissionEnabled(),
-		// Top-level session: explore subagents may fan out from here. A
-		// subagent sets this false so it can never fan out again.
-		AllowExplore: true,
-		// Top-level goal-mode prompts may run the unbounded pass loop; a
-		// subagent never does.
-		AllowPassLoop: true,
-		ModeDetector:  run.NewModeDetector(cfg),
-		RepoMap:       &repoMap,
-		// The same settings-backed fan-out ceiling the TUI uses; without it
-		// max_agents had no effect on the CLI.
-		AgentPool: agentpool.New(settings.Resilience.MaxAgentsOr(config.DefaultMaxAgents)),
-		// Headless CLI: live language servers are off, but fallback syntax
-		// checks still run when enabled in settings.
-		Diagnostics: rolemanager.DiagnosticsGateFromSettings(settings, reg.Cwd().Roots(), false),
+	store, src := cliKanban(workdir, sessionID, settings)
+	return headless.NewSession(ctx, headless.Params{
+		Cfg: cfg, Client: client, Posture: pol, Workdir: workdir, Settings: settings,
+		PlanMode: planMode, SessionID: sessionID, AllowAsk: allowAsk,
+		MCP: mcp.Active(), Kanban: store, KanbanSource: src,
 	})
-	if err != nil {
-		return nil, err
-	}
-	return sess, nil
 }
 
 // pruneSessions removes idle sessions older than the configured retention, in
@@ -630,7 +579,12 @@ func runAgentForeground(ctx context.Context, name, model, providerName, workdir 
 	}
 	mgr := bgagent.NewManager(workdir, cfg, httpclient.Default(), settings, pol)
 	mgr.SetCredentialSource(resolver)
-	mgr.SetSessionID(session.MustID())
+	sessionID := session.MustID()
+	mgr.SetSessionID(sessionID)
+	// The board, as every other headless session has it: without it a
+	// foreground agent had no kanban tools at all.
+	mgr.SetKanban(cliKanban(workdir, sessionID, settings))
+	defer flushKanban(settings, workdir)
 	if err := mgr.Start(name, profile); err != nil {
 		return err
 	}

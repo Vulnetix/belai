@@ -858,13 +858,10 @@ func lockOwner(path string) (int, bool) {
 	return 0, false
 }
 
-func processAlive(pid int) bool {
-	p, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	return p.Signal(os.Signal(nil)) == nil
-}
+// processAlive reports whether pid is running. It used to send
+// os.Signal(nil), which Go's Process.Signal rejects outright, so every lock
+// read as held by a dead process and was deleted.
+func processAlive(pid int) bool { return proc.Alive(pid) }
 
 func writeLock(path string) error {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)

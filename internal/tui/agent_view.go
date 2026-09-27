@@ -45,6 +45,8 @@ type agentViewState struct {
 	// auditFilter narrows the trail to one agent id.
 	auditSel    int
 	auditFilter string
+	// fleet is the fleet tab (fleet_view.go).
+	fleet fleetUI
 }
 
 // The /agents hub tabs.
@@ -52,10 +54,11 @@ const (
 	agentTabLive = iota
 	agentTabProfiles
 	agentTabAudit
+	agentTabFleet
 	agentTabCount
 )
 
-var agentTabNames = [agentTabCount]string{"running", "profiles", "audit"}
+var agentTabNames = [agentTabCount]string{"running", "profiles", "audit", "fleet"}
 
 // openAgentsTab pushes the hub on one tab.
 func (a *App) openAgentsTab(tab int) tea.Cmd {
@@ -156,6 +159,9 @@ func (a *App) agentView() string {
 	w := a.contentWidth()
 	var b strings.Builder
 	b.WriteString(components.SectionHeader("Agents", "f1 screens · esc back", w))
+	if a.agentState.tab == agentTabFleet && a.agentState.fleet.loaded.IsZero() {
+		a.reloadFleet()
+	}
 	if !a.agentState.editMode {
 		b.WriteString(a.agentTabStrip(w) + "\n\n")
 	}
@@ -167,6 +173,8 @@ func (a *App) agentView() string {
 		b.WriteString(a.agentEditView(w))
 	case a.agentState.tab == agentTabLive:
 		b.WriteString(a.agentLiveView(w))
+	case a.agentState.tab == agentTabFleet:
+		b.WriteString(a.fleetView(w))
 	case a.agentState.tab == agentTabAudit:
 		b.WriteString(a.agentAuditView(w))
 	default:
@@ -536,6 +544,8 @@ func (a *App) handleAgentKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch a.agentState.tab {
 	case agentTabLive:
 		return a, a.handleAgentLiveKey(m)
+	case agentTabFleet:
+		return a, a.handleFleetKey(m)
 	case agentTabAudit:
 		return a, a.handleAgentAuditKey(m)
 	}
@@ -545,6 +555,13 @@ func (a *App) handleAgentKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.pop()
 		return a, nil
 	case "s":
+		if p := a.selectedAgentProfile(); p != nil && p.Mode == agentprofile.ModeWorker {
+			// A worker is its own detached process, not an in-session agent.
+			a.startFleetWorkers(p.Name, "", 1)
+			a.agentState.tab = agentTabFleet
+			a.reloadFleet()
+			return a, a.fleetTick()
+		}
 		if p := a.selectedAgentProfile(); p != nil {
 			cmd := a.startAgentProfile(p.Name)
 			a.agentState.tab = agentTabLive

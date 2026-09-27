@@ -132,6 +132,9 @@ func (a *App) kanbanView() string {
 			if it.Dirty && a.kb.syncer != nil {
 				line += components.MutedStyle.Render("↑ ")
 			}
+			if r := kanbanRouting(it, time.Now().UnixMilli()); r != "" {
+				title += "  " + r
+			}
 			b.WriteString(ansi.Truncate(line+title, w, "…") + "\n")
 		}
 		if more := len(rows) - end; more > 0 {
@@ -155,6 +158,10 @@ func (a *App) kanbanView() string {
 		b.WriteString("\n" + a.renderFieldEditor("details", w) + "\n")
 	case "note":
 		b.WriteString("\n" + a.renderFieldEditor("add a note", w) + "\n")
+	case "assign":
+		b.WriteString("\n" + a.renderFieldEditor("assign to agent profile (empty: any matching agent)", w) + "\n")
+	case "labels":
+		b.WriteString("\n" + a.renderFieldEditor("labels, comma-separated (they route the item to agents)", w) + "\n")
 	case "move":
 		var opts []string
 		for i, l := range kanbanViewLists {
@@ -172,7 +179,7 @@ func (a *App) kanbanView() string {
 	if v.mode == "" {
 		b.WriteString("\n" + components.HelpBar(
 			"←→", "list", "↑↓", "item", "⏎", "work on it", "n", "new", "e", "title", "b", "details",
-			"o", "note", "m", "move", "d", "delete", "/", "filter", "p", "scope", "r", "sync", "esc", "back") + "\n")
+			"o", "note", "m", "move", "a", "assign", "L", "labels", "+/-", "priority", "u", "unclaim", "d", "delete", "/", "filter", "p", "scope", "r", "sync", "esc", "back") + "\n")
 	}
 	return lipgloss.NewStyle().Padding(1).Render(b.String())
 }
@@ -183,6 +190,12 @@ func (a *App) kanbanDetail(it kanban.Item, w int) string {
 	lines = append(lines, kanbanChip(it.List)+" "+components.EmphStyle.Render(it.Title))
 	prov := fmt.Sprintf("%s · %s · session %s · added %s", it.Project, it.Dir, kanbanShortSession(it.SessionID), time.UnixMilli(it.Created).Format("2006-01-02 15:04"))
 	lines = append(lines, components.MutedStyle.Render(ansi.Truncate(prov, w, "…")))
+	if r := kanbanRouting(it, time.Now().UnixMilli()); r != "" {
+		lines = append(lines, "  "+r)
+	}
+	if it.Branch != "" || it.PR != "" {
+		lines = append(lines, components.MutedStyle.Render(ansi.Truncate("  branch "+it.Branch+"  "+it.PR, w, "…")))
+	}
 	if it.Body != "" {
 		body := strings.Split(it.Body, "\n")
 		if len(body) > 8 {
@@ -225,7 +238,7 @@ func (a *App) handleKanbanKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	v := &a.kb.view
 	key := m.String()
 	switch v.mode {
-	case "filter", "new-title", "new-body", "edit-title", "edit-body", "note":
+	case "filter", "new-title", "new-body", "edit-title", "edit-body", "note", "assign", "labels":
 		switch key {
 		case "esc":
 			v.mode, v.errMsg = "", ""
@@ -317,6 +330,37 @@ func (a *App) handleKanbanKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 				a.kanbanEdit("note", "")
 			}
 		}
+	case "a", "L":
+		if it, ok := a.kanbanSelected(); ok {
+			v.editID = it.ID
+			if key == "a" {
+				a.kanbanEdit("assign", it.Assignee)
+			} else {
+				a.kanbanEdit("labels", strings.Join(it.Labels, ", "))
+			}
+		}
+	case "+", "-", "=":
+		if it, ok := a.kanbanSelected(); ok {
+			p := it.Priority + 1
+			if key == "-" {
+				p = it.Priority - 1
+			}
+			if got, err := a.kb.store.Route(it.ID, kanban.RoutePatch{Priority: &p}, a.sessionID); err != nil {
+				v.errMsg = err.Error()
+			} else {
+				v.status = fmt.Sprintf("%s priority %d", got.Short(), got.Priority)
+			}
+		}
+	case "u":
+		if it, ok := a.kanbanSelected(); ok {
+			if it.ClaimedBy == "" {
+				v.status = it.Short() + " is not claimed"
+			} else if got, err := a.kb.store.Unclaim(it.ID, "claim released by the user", a.sessionID, false); err != nil {
+				v.errMsg = err.Error()
+			} else {
+				v.status = fmt.Sprintf("%s released to %s", got.Short(), got.List)
+			}
+		}
 	case "m":
 		if _, ok := a.kanbanSelected(); ok {
 			v.mode = "move"
@@ -370,6 +414,19 @@ func (a *App) kanbanCommit(text string) {
 		default:
 			v.status = it.Short() + " added"
 		}
+	case "assign", "labels":
+		var rp kanban.RoutePatch
+		if mode == "assign" {
+			rp.Assignee = &text
+		} else {
+			labels := strings.Split(text, ",")
+			rp.Labels = &labels
+		}
+		if it, err := a.kb.store.Route(v.editID, rp, prov.SessionID); err != nil {
+			v.errMsg = err.Error()
+		} else {
+			v.status = it.Short() + " routed"
+		}
 	case "edit-title", "edit-body", "note":
 		var p kanban.Patch
 		switch mode {
@@ -407,4 +464,32 @@ func (a *App) kanbanStatus() string {
 		}
 	}
 	return strings.Join(parts, " · ")
+}
+
+// kanbanRouting renders an item's labels, priority, assignee and claim:
+// "#build ▲2 @belai:builder ⚙ belai-builder-3f9a2c 12m". A lapsed claim
+// shows ⚠ instead of the lease.
+func kanbanRouting(it kanban.Item, now int64) string {
+	var parts []string
+	for _, l := range it.Labels {
+		parts = append(parts, components.MutedStyle.Render("#"+l))
+	}
+	switch {
+	case it.Priority > 0:
+		parts = append(parts, components.WarnStyle.Render(fmt.Sprintf("▲%d", it.Priority)))
+	case it.Priority < 0:
+		parts = append(parts, components.MutedStyle.Render(fmt.Sprintf("▼%d", -it.Priority)))
+	}
+	if it.Assignee != "" {
+		parts = append(parts, components.AccentStyle.Render("@"+it.Assignee))
+	}
+	if it.ClaimedBy != "" {
+		if it.LeaseUntil > now {
+			lease := time.Duration(it.LeaseUntil - now).Round(time.Minute)
+			parts = append(parts, components.AccentStyle.Render("⚙ "+it.ClaimedBy+" "+compactDuration(lease)))
+		} else {
+			parts = append(parts, components.DangerStyle.Render("⚠ "+it.ClaimedBy+" lapsed"))
+		}
+	}
+	return strings.Join(parts, " ")
 }

@@ -274,6 +274,9 @@ func (a *App) renderKanbanPane() string {
 		if !a.kanbanDirReachable(it.Dir) {
 			row += components.WarnStyle.Render("⤴ ")
 		}
+		if it.Claimed(time.Now().UnixMilli()) {
+			row += components.AccentStyle.Render("⚙ ")
+		}
 		title := it.Title
 		if ps.focus && i == ps.sel {
 			title = components.EmphStyle.Render(title)

@@ -1,0 +1,416 @@
+package kanban
+
+import (
+	"bufio"
+	"bytes"
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/gob"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"slices"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/vulnetix/belai/internal/sessionsync"
+)
+
+func claimReq(worker string) ClaimRequest {
+	return ClaimRequest{Worker: worker, Profile: "builder", Host: "host-1", Lease: 5 * time.Minute}
+}
+
+func addItem(t *testing.T, s *Store, in ItemInput) Item {
+	t.Helper()
+	it, dup, err := s.Add(in, prov)
+	if err != nil || dup {
+		t.Fatalf("add %q: %v dup=%v", in.Title, err, dup)
+	}
+	return it
+}
+
+func TestNormLabelsAndPriority(t *testing.T) {
+	got := NormLabels([]string{" Build ", "needs review", "build", "", "a/b", strings.Repeat("x", 40)})
+	want := []string{"a-b", "build", "needs-review", strings.Repeat("x", MaxLabelRunes)}
+	if !slices.Equal(got, want) {
+		t.Fatalf("labels %q, want %q", got, want)
+	}
+	if ClampPriority(9) != MaxPriority || ClampPriority(-9) != MinPriority || ClampPriority(1) != 1 {
+		t.Fatal("clamp")
+	}
+	if _, err := CleanAssignee("bad name"); !errors.Is(err, ErrBadAssignee) {
+		t.Fatalf("assignee: %v", err)
+	}
+	if a, err := CleanAssignee(" belai:builder "); err != nil || a != "belai:builder" {
+		t.Fatalf("assignee %q %v", a, err)
+	}
+}
+
+func TestClaimPicksPriorityThenAge(t *testing.T) {
+	s := testStore(t)
+	clock := time.UnixMilli(1_000_000)
+	s.now = func() time.Time { clock = clock.Add(time.Millisecond); return clock }
+	old := addItem(t, s, ItemInput{Title: "old", Labels: []string{"build"}})
+	addItem(t, s, ItemInput{Title: "newer", Labels: []string{"build"}})
+	hot := addItem(t, s, ItemInput{Title: "urgent", Labels: []string{"build"}, Priority: 2})
+	addItem(t, s, ItemInput{Title: "other label", Labels: []string{"docs"}, Priority: 3})
+
+	r := claimReq("w1")
+	r.Labels = []string{"build"}
+	got, err := s.Claim(r)
+	if err != nil || got.ID != hot.ID {
+		t.Fatalf("first claim %v %v, want urgent", got.Title, err)
+	}
+	if got.List != InProgress || got.ClaimedBy != "w1" || got.ClaimFrom != Backlog || got.LeaseUntil <= 0 {
+		t.Fatalf("claimed item %+v", got)
+	}
+	got, err = s.Claim(r)
+	if err != nil || got.ID != old.ID {
+		t.Fatalf("second claim %v %v, want old", got.Title, err)
+	}
+}
+
+func TestClaimRespectsAssigneeDependsAndSkip(t *testing.T) {
+	s := testStore(t)
+	dep := addItem(t, s, ItemInput{Title: "first"})
+	assigned := addItem(t, s, ItemInput{Title: "for reviewer", Assignee: "reviewer"})
+	after := addItem(t, s, ItemInput{Title: "second", DependsOn: []string{dep.Short()}})
+
+	r := claimReq("w1")
+	r.Skip = []string{dep.ID}
+	if _, err := s.Claim(r); !errors.Is(err, ErrNoWork) {
+		t.Fatalf("assigned/dependent/skipped item claimed: %v", err)
+	}
+	r.Profile = "reviewer"
+	got, err := s.Claim(r)
+	if err != nil || got.ID != assigned.ID {
+		t.Fatalf("reviewer claim %v %v", got.Title, err)
+	}
+	if _, err := s.MoveAs(dep.Short(), Done, "done", "s", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	r = claimReq("w2")
+	got, err = s.Claim(r)
+	if err != nil || got.ID != after.ID {
+		t.Fatalf("dependent item not freed: %v %v", got.Title, err)
+	}
+	if _, _, err := s.Add(ItemInput{Title: "bad dep", DependsOn: []string{"K-ffffff"}}, prov); err == nil {
+		t.Fatal("unknown dependency accepted")
+	}
+}
+
+func TestClaimRequestValidation(t *testing.T) {
+	s := testStore(t)
+	for name, r := range map[string]ClaimRequest{
+		"no worker":   {Lease: time.Minute},
+		"short lease": {Worker: "w", Lease: time.Second},
+		"long lease":  {Worker: "w", Lease: 3 * time.Hour},
+		"bad list":    {Worker: "w", Lease: time.Minute, Lists: []List{InProgress}},
+	} {
+		if _, err := s.Claim(r); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+func TestLeaseRenewReleaseAndReap(t *testing.T) {
+	s := testStore(t)
+	clock := time.UnixMilli(10_000_000)
+	s.now = func() time.Time { return clock }
+	it := addItem(t, s, ItemInput{Title: "work", List: Review})
+	got, err := s.Claim(ClaimRequest{Worker: "w1", Profile: "p", Lease: time.Minute, Lists: []List{Review}})
+	if err != nil || got.ID != it.ID {
+		t.Fatal(err)
+	}
+	updated := got.Updated
+	clock = clock.Add(50 * time.Second)
+	if err := s.Renew(it.ID, "w1", time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := s.Get(it.ID)
+	if after.Updated != updated || len(after.History) != len(got.History) {
+		t.Fatal("a renewal must not touch Updated or history")
+	}
+	if err := s.Renew(it.ID, "w2", time.Minute); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("foreign renew: %v", err)
+	}
+	// The lease lapses; the next claim reaps it back to review.
+	clock = clock.Add(2 * time.Minute)
+	if _, err := s.Claim(ClaimRequest{Worker: "w3", Profile: "p", Lease: time.Minute, Lists: []List{Backlog}}); !errors.Is(err, ErrNoWork) {
+		t.Fatalf("claim: %v", err)
+	}
+	reaped, _ := s.Get(it.ID)
+	if reaped.List != Review || reaped.ClaimedBy != "" || reaped.Attempts != 1 {
+		t.Fatalf("reaped item %+v", reaped)
+	}
+	if err := s.Renew(it.ID, "w1", time.Minute); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("renew after reap: %v", err)
+	}
+	// Claim again and release with an outcome.
+	if _, err := s.ClaimID(it.Short(), ClaimRequest{Worker: "w4", Profile: "p", Lease: time.Minute}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Release(it.ID, "w1", Outcome{To: Done}); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("foreign release: %v", err)
+	}
+	out, err := s.Release(it.ID, "w4", Outcome{To: Review, Note: "done", AddLabels: []string{"needs-review"}, Branch: "belai/K-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.List != Review || out.ClaimedBy != "" || out.Branch != "belai/K-1" || !slices.Contains(out.Labels, "needs-review") || out.Attempts != 1 {
+		t.Fatalf("released %+v", out)
+	}
+}
+
+func TestMoveAsAndUpdateAsRespectClaims(t *testing.T) {
+	s := testStore(t)
+	it := addItem(t, s, ItemInput{Title: "held"})
+	if _, err := s.Claim(claimReq("w1")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.MoveAs(it.ID, Done, "", "s", "", nil); !errors.Is(err, ErrClaimed) {
+		t.Fatalf("move of claimed item: %v", err)
+	}
+	if _, err := s.MoveAs(it.ID, Done, "", "s", "w1", nil); !errors.Is(err, ErrClaimed) {
+		t.Fatalf("holder move must go through Release: %v", err)
+	}
+	title := "rewritten"
+	if _, err := s.UpdateAs(it.ID, Patch{Title: &title}, "s", "w2"); !errors.Is(err, ErrClaimed) {
+		t.Fatalf("foreign update: %v", err)
+	}
+	if _, err := s.UpdateAs(it.ID, Patch{Title: &title}, "s", "w1"); !errors.Is(err, ErrNotesOnly) {
+		t.Fatalf("holder rewrite: %v", err)
+	}
+	if _, err := s.UpdateAs(it.ID, Patch{Note: "progress"}, "s", "w1"); err != nil {
+		t.Fatalf("holder note: %v", err)
+	}
+	// Compare-and-set on the source list.
+	free := addItem(t, s, ItemInput{Title: "free"})
+	if _, err := s.MoveAs(free.ID, Done, "", "s", "", []List{Review}); err == nil {
+		t.Fatal("CAS ignored")
+	}
+	// A human override clears the claim.
+	if _, err := s.Unclaim(it.ID, "released by hand", "s", false); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Get(it.ID); got.ClaimedBy != "" || got.List != Backlog {
+		t.Fatalf("unclaimed %+v", got)
+	}
+}
+
+func TestUnclaimWorker(t *testing.T) {
+	s := testStore(t)
+	addItem(t, s, ItemInput{Title: "a"})
+	addItem(t, s, ItemInput{Title: "b"})
+	s.Claim(claimReq("dead"))
+	s.Claim(claimReq("dead"))
+	ids, err := s.UnclaimWorker("dead", "worker died")
+	if err != nil || len(ids) != 2 {
+		t.Fatalf("released %v %v", ids, err)
+	}
+	c, _ := s.Counts("")
+	if c[Backlog] != 2 {
+		t.Fatalf("counts %v", c)
+	}
+}
+
+func TestConcurrentClaimsNeverDoubleClaim(t *testing.T) {
+	s := testStore(t)
+	for i := range 30 {
+		addItem(t, s, ItemInput{Title: fmt.Sprintf("item %d", i)})
+	}
+	var mu sync.Mutex
+	seen := map[string]string{}
+	var wg sync.WaitGroup
+	for w := range 8 {
+		wg.Go(func() {
+			st := Open(s.Path()) // a separate store, as another process would have
+			worker := fmt.Sprintf("w%d", w)
+			for {
+				it, err := st.Claim(claimReq(worker))
+				if errors.Is(err, ErrNoWork) {
+					return
+				}
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				mu.Lock()
+				if prev, ok := seen[it.ID]; ok {
+					t.Errorf("%s claimed by %s and %s", it.Short(), prev, worker)
+				}
+				seen[it.ID] = worker
+				mu.Unlock()
+			}
+		})
+	}
+	wg.Wait()
+	if len(seen) != 30 {
+		t.Fatalf("claimed %d of 30", len(seen))
+	}
+}
+
+// TestClaimAcrossProcesses runs two real processes against one board.
+func TestClaimAcrossProcesses(t *testing.T) {
+	if os.Getenv("BELAI_KANBAN_CLAIM_HELPER") != "" {
+		t.Skip("helper")
+	}
+	s := testStore(t)
+	for i := range 20 {
+		addItem(t, s, ItemInput{Title: fmt.Sprintf("item %d", i)})
+	}
+	var outs [2]bytes.Buffer
+	var cmds [2]*exec.Cmd
+	for i := range cmds {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestClaimHelper$")
+		cmd.Env = append(os.Environ(), "BELAI_KANBAN_CLAIM_HELPER="+s.Path(), fmt.Sprintf("BELAI_KANBAN_WORKER=p%d", i))
+		cmd.Stdout = &outs[i]
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		cmds[i] = cmd
+	}
+	for _, c := range cmds {
+		if err := c.Wait(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seen := map[string]bool{}
+	for _, o := range outs {
+		sc := bufio.NewScanner(&o)
+		for sc.Scan() {
+			id, ok := strings.CutPrefix(sc.Text(), "CLAIMED ")
+			if !ok {
+				continue
+			}
+			if seen[id] {
+				t.Fatalf("%s claimed twice", id)
+			}
+			seen[id] = true
+		}
+	}
+	if len(seen) != 20 {
+		t.Fatalf("claimed %d of 20", len(seen))
+	}
+}
+
+func TestClaimHelper(t *testing.T) {
+	path := os.Getenv("BELAI_KANBAN_CLAIM_HELPER")
+	if path == "" {
+		t.Skip("run by TestClaimAcrossProcesses")
+	}
+	s := Open(path)
+	for {
+		it, err := s.Claim(claimReq(os.Getenv("BELAI_KANBAN_WORKER")))
+		if errors.Is(err, ErrNoWork) {
+			return
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		fmt.Println("CLAIMED " + it.ID)
+	}
+}
+
+func TestDecodeVersionOneBoard(t *testing.T) {
+	type v1Item struct {
+		ID, Title string
+		List      List
+		Created   int64
+		Updated   int64
+	}
+	type v1Board struct {
+		Cursor int64
+		Items  []v1Item
+	}
+	var payload bytes.Buffer
+	if err := gob.NewEncoder(&payload).Encode(v1Board{Cursor: 3, Items: []v1Item{{ID: "3f9a2c00-0000-4000-8000-000000000000", Title: "old", List: Review, Created: 1, Updated: 1}}}); err != nil {
+		t.Fatal(err)
+	}
+	data := append([]byte(magic), 0, 1)
+	data = append(data, payload.Bytes()...)
+	sum := sha256.Sum256(payload.Bytes())
+	data = append(data, sum[:]...)
+	b, err := Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Items) != 1 || b.Items[0].Title != "old" || b.Items[0].ClaimedBy != "" || b.Items[0].Labels != nil {
+		t.Fatalf("decoded %+v", b)
+	}
+	enc, err := Encode(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := binary.BigEndian.Uint16(enc[len(magic):headerLen]); v != formatVersion {
+		t.Fatalf("wrote version %d", v)
+	}
+}
+
+func TestMergeKeepsAgentFieldsTheBackendDoesNotCarry(t *testing.T) {
+	s := testStore(t)
+	clock := time.UnixMilli(5_000_000)
+	s.now = func() time.Time { return clock }
+	it := addItem(t, s, ItemInput{Title: "routed", Labels: []string{"build"}, Priority: 2})
+	s.Claim(claimReq("w1"))
+	local, _ := s.Get(it.ID)
+
+	// An old backend: no agent block, a newer web edit of the title.
+	w := ToWire(local)
+	w.Agent = nil
+	w.Title = "renamed on the web"
+	w.UpdatedAt = local.Updated + 10
+	if _, err := s.Merge([]Item{FromWire(w)}, 1); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Get(it.ID)
+	if got.Title != "renamed on the web" || got.ClaimedBy != "w1" || got.Priority != 2 || !slices.Contains(got.Labels, "build") {
+		t.Fatalf("agent fields lost: %+v", got)
+	}
+
+	// A new backend echoes an older lease: the later local lease stands.
+	clock = clock.Add(time.Minute)
+	if err := s.Renew(it.ID, "w1", 5*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	renewed, _ := s.Get(it.ID)
+	w = ToWire(got)
+	w.UpdatedAt = renewed.Updated + 20
+	w.Title = "renamed again"
+	s.Merge([]Item{FromWire(w)}, 2)
+	got, _ = s.Get(it.ID)
+	if got.LeaseUntil != renewed.LeaseUntil {
+		t.Fatalf("lease regressed %d < %d", got.LeaseUntil, renewed.LeaseUntil)
+	}
+
+	// The web releases the claim: a newer write with an empty claimedBy.
+	w = ToWire(got)
+	w.UpdatedAt = got.Updated + 30
+	w.Agent.ClaimedBy = ""
+	s.Merge([]Item{FromWire(w)}, 3)
+	got, _ = s.Get(it.ID)
+	if got.ClaimedBy != "" || got.LeaseUntil != 0 {
+		t.Fatalf("web release ignored: %+v", got)
+	}
+	if err := s.Renew(it.ID, "w1", 5*time.Minute); !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("worker must lose the lease: %v", err)
+	}
+}
+
+func TestWireCarriesAgentFields(t *testing.T) {
+	it := Item{ID: "x", Title: "t", List: Backlog, Labels: []string{"a"}, Priority: 1, Assignee: "b", ClaimedBy: "w", ClaimFrom: Review, LeaseUntil: 9, Branch: "belai/K-1"}
+	w := ToWire(it)
+	if w.Agent == nil || w.Agent.Assignee != "b" || w.Agent.ClaimFrom != "review" {
+		t.Fatalf("wire %+v", w.Agent)
+	}
+	back := FromWire(w)
+	if !back.remoteAgent || back.Branch != "belai/K-1" || back.LeaseUntil != 9 {
+		t.Fatalf("back %+v", back)
+	}
+	if FromWire(sessionsync.KanbanItem{ID: "y"}).remoteAgent {
+		t.Fatal("absent agent block marked present")
+	}
+}

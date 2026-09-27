@@ -108,12 +108,12 @@ func TestFromSettings(t *testing.T) {
 // Every key the code exports must be on the allowlist, so a new attribute
 // is a deliberate edit to this package.
 func TestAllowlistIsClosed(t *testing.T) {
-	for _, k := range []string{AttrMode, AttrOutcome, AttrPasses, AttrProvider, AttrModel, AttrRole, AttrEstimated, AttrToolName, AttrToolKind, AttrDecision, AttrVerdict, AttrHookEvent, AttrProjectKey} {
+	for _, k := range []string{AttrMode, AttrOutcome, AttrPasses, AttrProvider, AttrModel, AttrRole, AttrEstimated, AttrToolName, AttrToolKind, AttrDecision, AttrVerdict, AttrHookEvent, AttrProjectKey, AttrAgentProfile, AttrStopReason} {
 		if !Allowed(k) {
 			t.Errorf("%s not allowed", k)
 		}
 	}
-	if len(allowedAttrs) != 13 {
+	if len(allowedAttrs) != 15 {
 		t.Fatalf("allowlist has %d keys; update this test deliberately", len(allowedAttrs))
 	}
 	if Allowed("belai.prompt") || Allowed("tool.args") {

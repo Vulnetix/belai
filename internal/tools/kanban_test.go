@@ -2,9 +2,12 @@ package tools
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/permissions"
@@ -155,5 +158,85 @@ func TestWithKanbanSurfaces(t *testing.T) {
 	}
 	if got := Default(t.TempDir(), false).WithKanban(nil, nil); len(got.Names()) != len(Default(t.TempDir(), false).Names()) {
 		t.Fatal("a nil store added tools")
+	}
+}
+
+func TestKanbanHandoffIsConfinedByTheClaim(t *testing.T) {
+	b := kanbanBase(t)
+	ctx := context.Background()
+	parent, _, err := b.Store.Add(kanban.ItemInput{Title: "survey the parser"}, b.prov())
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, _, _ := b.Store.Add(kanban.ItemInput{Title: "someone else's"}, b.prov())
+	if _, err := b.Store.ClaimID(parent.ID, kanban.ClaimRequest{Worker: "w1", Profile: "scout", Lease: time.Minute}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Without a claim the tool refuses.
+	if _, err := (KanbanHandoff{b}).Execute(ctx, map[string]any{"title": "x", "labels": []any{"build"}}); err == nil {
+		t.Fatal("handoff without a claim")
+	}
+
+	b.Claim = &WorkerClaim{Worker: "w1", Item: parent.ID, Profile: "scout", HandoffTo: []string{"builder"}, HandoffLabels: []string{"build"}}
+	h := KanbanHandoff{b}
+	for name, args := range map[string]map[string]any{
+		"foreign assignee": {"title": "a", "assignee": "reviewer"},
+		"foreign label":    {"title": "a", "labels": []any{"deploy"}},
+		"unrouted":         {"title": "a"},
+		"bad list":         {"title": "a", "labels": []any{"build"}, "list": "done"},
+	} {
+		if _, err := h.Execute(ctx, args); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	res, err := h.Execute(ctx, map[string]any{"title": "add parser tests", "labels": []any{"Build"}, "assignee": "builder", "priority": float64(9)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := res.Meta["kanban_id"].(string)
+	got, _ := b.Store.Get(id)
+	if got.Parent != parent.ID || got.Hops != 1 || got.Assignee != "builder" || got.Priority != kanban.MaxPriority || got.List != kanban.Backlog {
+		t.Fatalf("handoff item %+v", got)
+	}
+
+	// Ownership: the claimed item and its handoffs only.
+	up := KanbanUpdate{b}
+	if _, err := up.Execute(ctx, map[string]any{"id": other.Short(), "note": "x"}); err == nil || !strings.Contains(err.Error(), "not yours") {
+		t.Fatalf("foreign update: %v", err)
+	}
+	if _, err := up.Execute(ctx, map[string]any{"id": got.Short(), "note": "context"}); err != nil {
+		t.Fatalf("update of own handoff: %v", err)
+	}
+	if _, err := up.Execute(ctx, map[string]any{"id": parent.Short(), "title": "rewrite"}); err == nil {
+		t.Fatal("rewrite of claimed item accepted")
+	}
+
+	// Caps.
+	for i := range MaxHandoffsPerItem {
+		h.Execute(ctx, map[string]any{"title": fmt.Sprintf("task %d", i), "labels": []any{"build"}})
+	}
+	if _, err := h.Execute(ctx, map[string]any{"title": "one too many", "labels": []any{"build"}}); err == nil {
+		t.Fatal("handoff cap not enforced")
+	}
+	deep := &WorkerClaim{Worker: "w1", Item: parent.ID, Hops: MaxHops, HandoffLabels: []string{"build"}}
+	if _, err := (KanbanHandoff{KanbanBase{Store: b.Store, Source: b.Source, Claim: deep}}).Execute(ctx, map[string]any{"title": "again", "labels": []any{"build"}}); err == nil {
+		t.Fatal("hop cap not enforced")
+	}
+}
+
+func TestKanbanMoveRefusesAClaimedItem(t *testing.T) {
+	b := kanbanBase(t)
+	it, _, _ := b.Store.Add(kanban.ItemInput{Title: "held"}, b.prov())
+	if _, err := b.Store.Claim(kanban.ClaimRequest{Worker: "w1", Lease: time.Minute}); err != nil {
+		t.Fatal(err)
+	}
+	mv := KanbanMove{KanbanBase: b, Allowed: KanbanLoopLists}
+	if _, err := mv.Execute(context.Background(), map[string]any{"id": it.Short(), "to": "done"}); !errors.Is(err, kanban.ErrClaimed) {
+		t.Fatalf("move of claimed item: %v", err)
+	}
+	out := RenderKanbanItems([]kanban.Item{func() kanban.Item { g, _ := b.Store.Get(it.ID); return g }()}, "x")
+	if !strings.Contains(out, "claimed") {
+		t.Fatalf("render lacks claim: %s", out)
 	}
 }

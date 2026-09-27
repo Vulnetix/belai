@@ -66,6 +66,11 @@ type Options struct {
 	// WorkspaceBlock is the rendered harness-computed repo-map block for any
 	// additional workspace directories added with /add-dir.
 	WorkspaceBlock string
+	// Persona is a fleet worker profile's own instructions (system prompt and
+	// identity). It is user-authored text from the global profile directory or
+	// a built-in, never repository, board or model text, and renders as its own
+	// section beside whatever carrier is active.
+	Persona string
 }
 
 // identity tells the model which of the three identities in a session is its
@@ -153,6 +158,9 @@ func System(opts Options) (string, error) {
 	b.WriteString(identity(opts.Provider, opts.Model))
 	if carrier != CarrierNone {
 		b.WriteString(fmt.Sprintf("Active %s:\n%s\n", carrier, text))
+	}
+	if strings.TrimSpace(opts.Persona) != "" {
+		b.WriteString("Agent profile:\n" + strings.TrimSpace(opts.Persona) + "\n")
 	}
 	if len(opts.Skills) > 0 {
 		b.WriteString("Available skills:\n")

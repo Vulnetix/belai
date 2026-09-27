@@ -1,0 +1,307 @@
+package agentprofile
+
+import (
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/vulnetix/belai/internal/cron"
+	"github.com/vulnetix/belai/internal/kanban"
+)
+
+// ModeWorker is a fleet worker: it claims kanban items one at a time and
+// works each as a goal (docs/fleet.md).
+const ModeWorker = "worker"
+
+// KanbanSpec says which items a worker claims and where they go next.
+type KanbanSpec struct {
+	// Lists to claim from: backlog and/or review. Empty means backlog.
+	Lists []string `json:"lists,omitempty"`
+	// Labels an item must all carry to be claimed.
+	Labels []string `json:"labels,omitempty"`
+	// AssignedOnly claims only items assigned to this profile by name.
+	AssignedOnly bool `json:"assigned_only,omitempty"`
+	// Project is "current" (default: the repository the worker runs in),
+	// "all", or a project name.
+	Project string `json:"project,omitempty"`
+	// OnSuccess is where a completed item goes; OnFailure where a failed
+	// attempt goes (default: back to the list it was claimed from). Once an
+	// item has failed MaxAttempts times it goes to blocked.
+	OnSuccess Route `json:"on_success"`
+	OnFailure Route `json:"on_failure,omitempty"`
+	// HandoffTo and HandoffLabels are the profiles and labels KanbanHandoff
+	// may route new items to. Both empty: no handoffs.
+	HandoffTo     []string `json:"handoff_to,omitempty"`
+	HandoffLabels []string `json:"handoff_labels,omitempty"`
+	MaxAttempts   int      `json:"max_attempts,omitempty"`
+	// Lease is how long a claim holds without renewal; Poll how often an
+	// idle worker looks for work. Go durations.
+	Lease string `json:"lease,omitempty"`
+	Poll  string `json:"poll,omitempty"`
+	// MaxItems stops the worker after this many items; 0 runs until stopped.
+	MaxItems int `json:"max_items,omitempty"`
+}
+
+// Route is a destination list plus label edits.
+type Route struct {
+	List       string   `json:"list,omitempty"`
+	Labels     []string `json:"labels,omitempty"`
+	DropLabels []string `json:"drop_labels,omitempty"`
+}
+
+// WorkspaceSpec says where a worker makes its changes.
+type WorkspaceSpec struct {
+	// Isolation is "worktree" (a git worktree per item, outside the
+	// repository), "shared" (the repository itself), or "none" (the default:
+	// the worker does not write files).
+	Isolation string `json:"isolation,omitempty"`
+	// Base is the commit a new branch starts from (default HEAD).
+	Base string `json:"base,omitempty"`
+	// Keep leaves the worktree on disk after the item is released.
+	Keep bool `json:"keep,omitempty"`
+	// Publish is "none" (default) or "draft_pr": when the item reaches done,
+	// push its branch and open a draft pull request.
+	Publish string `json:"publish,omitempty"`
+}
+
+// MemorySpec turns on the worker's lessons file.
+type MemorySpec struct {
+	Enabled  bool `json:"enabled,omitempty"`
+	MaxBytes int  `json:"max_bytes,omitempty"`
+}
+
+// BudgetSpec bounds one item.
+type BudgetSpec struct {
+	MaxPassesPerItem int    `json:"max_passes_per_item,omitempty"`
+	MaxTokensPerItem int    `json:"max_tokens_per_item,omitempty"`
+	MaxWallPerItem   string `json:"max_wall_per_item,omitempty"`
+}
+
+// Isolation values.
+const (
+	IsolationNone     = "none"
+	IsolationWorktree = "worktree"
+	IsolationShared   = "shared"
+)
+
+// Publish values.
+const (
+	PublishNone    = "none"
+	PublishDraftPR = "draft_pr"
+)
+
+// Defaults.
+const (
+	DefaultLease       = 20 * time.Minute
+	DefaultPoll        = 30 * time.Second
+	DefaultMaxAttempts = 3
+	DefaultMemoryBytes = 8 << 10
+	MaxMemoryBytes     = 64 << 10
+)
+
+// writingTools are the tools that change the workspace.
+var writingTools = []string{"Write", "Edit", "Bash"}
+
+// Writes reports whether the profile may change files: its allowlist names a
+// writing tool, or it has no allowlist (the full surface).
+func (p AgentProfile) Writes() bool {
+	if len(p.Tools) == 0 {
+		return true
+	}
+	for _, t := range p.Tools {
+		if slices.Contains(writingTools, t) {
+			return true
+		}
+	}
+	return false
+}
+
+// HasTool reports whether the allowlist grants name (an empty allowlist
+// grants everything).
+func (p AgentProfile) HasTool(name string) bool {
+	return len(p.Tools) == 0 || slices.Contains(p.Tools, name)
+}
+
+// LeaseDuration is the claim lease.
+func (p AgentProfile) LeaseDuration() time.Duration {
+	if p.Kanban == nil {
+		return DefaultLease
+	}
+	if d, err := time.ParseDuration(p.Kanban.Lease); err == nil && d > 0 {
+		return d
+	}
+	return DefaultLease
+}
+
+// PollInterval is how often an idle worker looks for work.
+func (p AgentProfile) PollInterval() time.Duration {
+	if p.Kanban != nil {
+		if d, err := time.ParseDuration(p.Kanban.Poll); err == nil && d > 0 {
+			return d
+		}
+	}
+	return DefaultPoll
+}
+
+// MaxAttemptsOr is the failed-attempt limit.
+func (p AgentProfile) MaxAttemptsOr() int {
+	if p.Kanban == nil || p.Kanban.MaxAttempts <= 0 {
+		return DefaultMaxAttempts
+	}
+	return p.Kanban.MaxAttempts
+}
+
+// WallBudget is the per-item wall-clock budget, or 0.
+func (p AgentProfile) WallBudget() time.Duration {
+	if p.Budget == nil {
+		return 0
+	}
+	d, _ := time.ParseDuration(p.Budget.MaxWallPerItem)
+	return d
+}
+
+// IsolationMode is the workspace isolation, defaulted.
+func (p AgentProfile) IsolationMode() string {
+	if p.Workspace == nil || p.Workspace.Isolation == "" {
+		return IsolationNone
+	}
+	return p.Workspace.Isolation
+}
+
+// ClaimLists are the lists to claim from.
+func (k KanbanSpec) ClaimLists() []kanban.List {
+	if len(k.Lists) == 0 {
+		return []kanban.List{kanban.Backlog}
+	}
+	out := make([]kanban.List, 0, len(k.Lists))
+	for _, l := range k.Lists {
+		if pl, ok := kanban.ParseList(l); ok {
+			out = append(out, pl)
+		}
+	}
+	return out
+}
+
+// CronSchedule parses a cron schedule: "cron: <expr>", or a bare five-field
+// expression. ok is false for a duration schedule (the older interval form).
+func CronSchedule(s string) (cron.Schedule, bool, error) {
+	s = strings.TrimSpace(s)
+	expr, isCron := strings.CutPrefix(s, "cron:")
+	if !isCron && (len(strings.Fields(s)) != 5 && !strings.HasPrefix(s, "@")) {
+		return cron.Schedule{}, false, nil
+	}
+	sched, err := cron.Parse(strings.TrimSpace(expr))
+	return sched, true, err
+}
+
+func validateRoute(name string, r Route, required bool) error {
+	if r.List == "" {
+		if required {
+			return fmt.Errorf("kanban.%s.list is required", name)
+		}
+		return nil
+	}
+	if _, ok := kanban.ParseList(r.List); !ok {
+		return fmt.Errorf("kanban.%s.list %q is not a list", name, r.List)
+	}
+	return nil
+}
+
+// validateWorker checks the worker-only blocks. It runs from Validate.
+func (p AgentProfile) validateWorker() error {
+	if p.Mode != ModeWorker {
+		if p.Kanban != nil {
+			return errors.New("a kanban block needs mode: worker")
+		}
+		return nil
+	}
+	k := p.Kanban
+	if k == nil {
+		return errors.New("mode worker needs a kanban block (which items to claim, and where they go)")
+	}
+	for _, l := range k.Lists {
+		pl, ok := kanban.ParseList(l)
+		if !ok || !slices.Contains(kanban.ClaimableLists, pl) {
+			return fmt.Errorf("kanban.lists: a worker claims from backlog or review, not %q", l)
+		}
+	}
+	if err := validateRoute("on_success", k.OnSuccess, true); err != nil {
+		return err
+	}
+	if err := validateRoute("on_failure", k.OnFailure, false); err != nil {
+		return err
+	}
+	for _, a := range k.HandoffTo {
+		if _, err := kanban.CleanAssignee(a); err != nil || strings.TrimSpace(a) == "" {
+			return fmt.Errorf("kanban.handoff_to: %q is not a profile name", a)
+		}
+	}
+	for _, l := range k.HandoffLabels {
+		if n := kanban.NormLabels([]string{l}); len(n) != 1 || n[0] != l {
+			return fmt.Errorf("kanban.handoff_labels: %q is not a normalised label (lower-case [a-z0-9:_-])", l)
+		}
+	}
+	if k.Lease != "" {
+		d, err := time.ParseDuration(k.Lease)
+		if err != nil || d < kanban.MinLease || d > kanban.MaxLease {
+			return fmt.Errorf("kanban.lease must be a duration from %s to %s", kanban.MinLease, kanban.MaxLease)
+		}
+	}
+	if k.Poll != "" {
+		if d, err := time.ParseDuration(k.Poll); err != nil || d < 5*time.Second {
+			return errors.New("kanban.poll must be a duration of at least 5s")
+		}
+	}
+	if k.MaxAttempts < 0 || k.MaxItems < 0 {
+		return errors.New("kanban.max_attempts and kanban.max_items must not be negative")
+	}
+	if p.Schedule != "" {
+		if _, _, err := CronSchedule(p.Schedule); err != nil {
+			return err
+		}
+	}
+	if w := p.Workspace; w != nil {
+		switch w.Isolation {
+		case "", IsolationNone, IsolationWorktree, IsolationShared:
+		default:
+			return fmt.Errorf("workspace.isolation must be worktree, shared or none, not %q", w.Isolation)
+		}
+		switch w.Publish {
+		case "", PublishNone, PublishDraftPR:
+		default:
+			return fmt.Errorf("workspace.publish must be none or draft_pr, not %q", w.Publish)
+		}
+		if w.Publish == PublishDraftPR && w.Isolation != IsolationWorktree {
+			return errors.New("workspace.publish: draft_pr needs isolation: worktree (a branch to publish)")
+		}
+		if strings.HasPrefix(strings.TrimSpace(w.Base), "-") {
+			return errors.New("workspace.base must be a commit or branch, not an option")
+		}
+	}
+	if b := p.Budget; b != nil {
+		if b.MaxPassesPerItem < 0 || b.MaxTokensPerItem < 0 {
+			return errors.New("budget values must not be negative")
+		}
+		if b.MaxWallPerItem != "" {
+			if d, err := time.ParseDuration(b.MaxWallPerItem); err != nil || d <= 0 {
+				return errors.New("budget.max_wall_per_item must be a positive duration")
+			}
+		}
+	}
+	if m := p.Memory; m != nil && (m.MaxBytes < 0 || m.MaxBytes > MaxMemoryBytes) {
+		return fmt.Errorf("memory.max_bytes must be at most %d", MaxMemoryBytes)
+	}
+	// Fail closed on the relaxations an unattended worker could stack.
+	if p.Guardrails != nil && !*p.Guardrails {
+		return errors.New("a worker cannot turn guardrails off: its item text and every tool result must stay classified")
+	}
+	if p.Autonomy == AutonomyAutonomous && (p.Budget == nil || p.Budget.MaxPassesPerItem <= 0) {
+		return errors.New("an autonomous worker needs budget.max_passes_per_item")
+	}
+	if p.Writes() && p.IsolationMode() == IsolationNone {
+		return errors.New("a worker that can write (Write, Edit or Bash, or no tools allowlist) needs workspace.isolation: worktree or shared")
+	}
+	return nil
+}

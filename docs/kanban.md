@@ -29,6 +29,8 @@ Belai offers the model different kanban tools at different points in a turn:
 | While an agent, goal or plan-execute loop works | plus `KanbanMove` (to `in_progress`, `blocked` or `done`) |
 | After the report of a work turn (the wrap-up) | only `KanbanSearch`, `KanbanUpdate`, `KanbanAdd` (to `review`) and `KanbanMove` (to `done`) |
 | Explore, Task and fan-out subagents | `KanbanSearch` only |
+| A [fleet worker](fleet.md) working its claimed item | `KanbanSearch`, `KanbanUpdate` (notes on its own item and its handoffs only) and `KanbanHandoff`; no `KanbanMove`, no wrap-up |
+| A [fleet worker](fleet.md) working its claimed item | `KanbanSearch`, `KanbanUpdate` (notes on its own item and handoffs only) and `KanbanHandoff`; no `KanbanMove`, no wrap-up |
 
 - **`KanbanSearch`** lists items by text, lists and project (`current` by
   default, `all`, or a name). A single match also shows its body and history.
@@ -36,6 +38,22 @@ Belai offers the model different kanban tools at different points in a turn:
 - **`KanbanMove`** moves an item between lists with a note saying why.
 - **`KanbanAdd`** files one piece of open work into `review`. If the same
   title is already open in the project, it returns that item's id instead.
+- **`KanbanHandoff`** (fleet workers only) files a follow-on item for
+  another agent, linked to the claimed item and routed by the labels and
+  profiles the worker's profile allows. A worker may file at most five per
+  item, and a chain of handoffs stops after six hops.
+
+In every session, `KanbanMove` and `KanbanUpdate` refuse an item another
+worker has claimed. `KanbanMove` is also a compare-and-set: it refuses the
+move if the item changed list since the model read it.
+- **`KanbanHandoff`** (fleet workers only) files a follow-on item for
+  another agent, linked to the claimed item, routed by the labels and
+  profiles the worker's profile allows (at most five per item, and a chain
+  of handoffs stops after six hops).
+
+In every session, `KanbanMove` and `KanbanUpdate` refuse an item another
+worker has claimed. `KanbanMove` is also a compare-and-set: it refuses a move
+if the item changed list since the model read it.
 
 While the loop runs, the turn's instructions include the board's counts for
 the project and the ids of its in_progress and blocked items, plus any
@@ -142,6 +160,38 @@ is admitted like anything you type.
 | `/` | filter |
 | `p` | toggle this project or all projects |
 | `r` | sync now |
+
+## Routing and claims
+
+An item can carry routing that decides which [fleet worker](fleet.md) takes
+it:
+
+- **labels** (lower-case `[a-z0-9:_-]`, up to eight): a worker claims only
+  items carrying all of its profile's labels;
+- **priority**, -2 to 3: claims take the highest first, then the oldest;
+- **assignee**: a profile name; only that profile may claim it;
+- **depends on**: items that must be `done` first.
+
+A claim moves the item to `in_progress` under a lease the worker renews while
+it works. The harness makes the claim under the board's lock, so two workers
+never hold the same item, and a lease that lapses (a crashed worker) returns
+the item to the list it came from. The claim, the branch holding the work and
+any draft pull request show on the item.
+
+From the command line:
+
+```sh
+belai kanban add "Add a -json flag to agent ps" -label build -priority 2
+belai kanban list -label build
+belai kanban show K-3f9a2c
+belai kanban move K-3f9a2c done -note "shipped"
+belai kanban release K-3f9a2c        # clear a claim
+belai kanban import items.jsonl      # one {"title", "labels", …} per line
+```
+
+In `/kanban`, `a` assigns, `L` edits labels, `+` and `-` change priority, and
+`u` releases a claim. Rows show `#labels`, `▲priority`, `@assignee` and
+`⚙ worker lease` (`⚠` when the lease has lapsed).
 
 ## Storage
 
