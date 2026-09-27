@@ -18,7 +18,7 @@ type Editor struct {
 // NewEditor returns a focused input editor.
 func NewEditor() Editor {
 	ta := textarea.New()
-	ta.Placeholder = "Type / for commands, or ask Belai anything…"
+	ta.Placeholder = "Type / for commands, @ for files, or ask Belai anything…"
 	ta.ShowLineNumbers = false
 	ta.SetHeight(3)
 	ta.SetWidth(80)
