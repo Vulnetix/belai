@@ -38,7 +38,7 @@ var classifierModels = []classifierModel{
 		id:          "leomaurodesenv/bert-base-uncased-jailbreakv-28k",
 		phase:       Phase2,
 		attackLabel: "unsafe", // id2label: "safe"/"unsafe"
-		blurb:       "jailbreak gate · high reported accuracy",
+		blurb:       "jailbreak gate · reported accuracy 1.0 (overfit)",
 	},
 	{
 		// No id2label; the HuggingFace inference API reports the default

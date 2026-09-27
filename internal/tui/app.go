@@ -656,6 +656,9 @@ type App struct {
 	// reviewFindings are the scanner agents' reports that already ran; send
 	// moves them onto the TurnInput beside reviewReports.
 	reviewFindings []explore.ReviewFinding
+	// harnessPrompt is the harness-authored lead of the prompt being sent
+	// (the review objective); send moves it onto TurnInput.HarnessPrompt.
+	harnessPrompt string
 	// review is the /vulnetix review in flight (see review.go), nil when none
 	// is; reviewSeq numbers reviews so their scanner agents' keys never
 	// collide with an earlier review's.
@@ -1376,6 +1379,7 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 	if !a.status.Configured {
 		a.reviewReports = nil // must not ride on the next prompt instead
 		a.reviewFindings = nil
+		a.harnessPrompt = ""
 		return func() tea.Msg {
 			return agentEventMsg{Kind: agent.EventErrorKind, Err: fmt.Errorf("%s credentials missing (%s). Type /providers to configure.", a.cfg.Provider, strings.Join(a.status.Missing, ", "))}
 		}
@@ -1387,8 +1391,9 @@ func (a *App) send(turns []run.Turn) tea.Cmd {
 		promptText = turns[n-1].Content
 		history = turns[:n-1]
 	}
-	in := agent.TurnInput{Prompt: promptText, ForceMode: a.forceMode, Mode: a.modeDecision}
+	in := agent.TurnInput{Prompt: promptText, HarnessPrompt: a.harnessPrompt, ForceMode: a.forceMode, Mode: a.modeDecision}
 	a.forceMode = ""
+	a.harnessPrompt = ""
 	if a.pendingPlanExecute {
 		in.ExecutePlan = true
 		in.PlanName = a.planExecuteName
@@ -6001,10 +6006,20 @@ const reviewPrompt = "Remediate every finding of this Vulnetix review and write 
 // review ran. It is the user's own direction, so it rides on the prompt and
 // takes precedence over the default objective.
 func reviewPromptWith(steer []string) string {
+	return reviewLead(steer) + strings.Join(steer, "\n")
+}
+
+// reviewLead is the harness-authored part of reviewPromptWith: the objective
+// and, when the user steered, the line introducing their text. It rides on the
+// turn as agent.TurnInput.HarnessPrompt, so prompt admission classifies only
+// the user's own lines. The scanner reports are classified before the turn
+// (classifyTriageBlocks), and a classifier verdict on this constant could only
+// refuse the review — and, cached as a bad hash, refuse every review after it.
+func reviewLead(steer []string) string {
 	if len(steer) == 0 {
 		return reviewPrompt
 	}
-	return reviewPrompt + "\n\nWhile the review ran, the user added (follow it where it narrows or changes the objective above):\n" + strings.Join(steer, "\n")
+	return reviewPrompt + "\n\nWhile the review ran, the user added (follow it where it narrows or changes the objective above):\n"
 }
 
 // sendReview starts the triage turn for a review. It switches the session to
@@ -6026,6 +6041,7 @@ func (a *App) sendReview(rs *reviewSend) tea.Cmd {
 	a.reviewReports = rs.reports
 	a.reviewFindings = rs.findings
 	a.forceMode = modes.ModeAgent
+	a.harnessPrompt = reviewLead(rs.steer)
 	return a.sendWithAttachments(reviewPromptWith(rs.steer), rs.atts, "")
 }
 

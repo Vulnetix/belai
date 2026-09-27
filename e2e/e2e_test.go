@@ -37,6 +37,12 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "go build belai: %v\n%s\n", err, out)
 		os.Exit(1)
 	}
+	// The binary resolves the developer's real Vulnetix CLI credential from
+	// $HOME and the keyring, whatever BELAI_HOME says, and sync is on by
+	// default: without this a test's kanban items and sessions are pushed to
+	// the developer's live account and pulled into their real board by the
+	// next TUI. A closed loopback port is an allowed origin that never answers.
+	os.Setenv("VULNETIX_WEB_URL", "http://127.0.0.1:1")
 	os.Exit(m.Run())
 }
 

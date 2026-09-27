@@ -14,6 +14,7 @@ import (
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/scanartifacts"
+	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/tui/components"
 )
 
@@ -210,6 +211,15 @@ func TestReviewComposerIsWorkingAndSteers(t *testing.T) {
 	if p := reviewPromptWith(a.pendingReview.steer); !strings.Contains(p, reviewPrompt) || !strings.Contains(p, "focus on the secrets findings") {
 		t.Fatalf("triage prompt = %q", p)
 	}
+	// Only the steer is the user's: admission skips the harness lead and
+	// classifies exactly what they typed.
+	lead := reviewLead(a.pendingReview.steer)
+	if rest, ok := strings.CutPrefix(reviewPromptWith(a.pendingReview.steer), lead); !ok || rest != "focus on the secrets findings" {
+		t.Fatalf("lead %q does not front the prompt, rest = %q", lead, rest)
+	}
+	if reviewLead(nil) != reviewPrompt || reviewPromptWith(nil) != reviewPrompt {
+		t.Fatal("an unsteered review is all harness text")
+	}
 }
 
 // A turn in flight keeps enter for itself: the review is not steered.
@@ -387,5 +397,37 @@ func TestReviewTriageWaitsWhileScannerAgentWithinTimeout(t *testing.T) {
 	}
 	if a.review == nil {
 		t.Fatal("review must still be waiting")
+	}
+}
+
+// The triage prompt is written to the session once, after the review's rows:
+// sendWithAttachments used to append it ahead of the unflushed rows, and
+// persistTail then wrote it again.
+func TestReviewPromptPersistsOnceInOrder(t *testing.T) {
+	workdir := t.TempDir()
+	t.Setenv("BELAI_HOME", t.TempDir())
+	st, err := session.NewStore()
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	a := New(Options{Workdir: workdir})
+	a.store = st
+	a.addSystem("■ vulnetix review done · 3 issues · triage starting")
+	a.sendWithAttachments(reviewPrompt, []run.Attachment{{Kind: "file", Label: "sca report", Body: "S1"}}, "")
+	a.persistTail()
+
+	entries, err := st.Read(workdir, a.sessionID)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	var order []string
+	for _, e := range entries {
+		switch e.Type {
+		case "user", "system":
+			order = append(order, e.Type)
+		}
+	}
+	if n := strings.Count(strings.Join(order, ","), "user"); n != 1 || order[len(order)-1] != "user" {
+		t.Fatalf("persisted rows = %v, want the notices then one user prompt", order)
 	}
 }

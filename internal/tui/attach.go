@@ -16,7 +16,6 @@ import (
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sanitize"
-	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/tools"
 	"github.com/vulnetix/belai/internal/tui/components"
 )
@@ -548,8 +547,10 @@ func (a *App) flushPendingSubmit() tea.Cmd {
 func (a *App) sendWithAttachments(input string, atts []run.Attachment, directive string) tea.Cmd {
 	turns := a.buildTurns()
 	turns = append(turns, run.Turn{Role: "user", Content: input, Attachments: atts, Directive: directive})
-	a.messages = append(a.messages, components.Message{Role: "user", Content: input})
-	a.appendEntry(session.Entry{Type: "user", Role: "user", Content: input})
+	// echoUser flushes the rows before the prompt and advances the persistence
+	// cursor past it. Appending the entry directly wrote the prompt ahead of
+	// any unflushed rows, and persistTail then wrote it a second time.
+	a.echoUser(input)
 	return a.send(turns)
 }
 
