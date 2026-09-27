@@ -213,7 +213,7 @@ func TestKanbanDocParity(t *testing.T) {
 		mustName(t, "docs/kanban.md", body, string(l))
 	}
 	mustName(t, "docs/kanban.md", body,
-		tools.KanbanSearchName, tools.KanbanUpdateName, tools.KanbanMoveName, tools.KanbanAddName,
+		tools.KanbanSearchName, tools.KanbanUpdateName, tools.KanbanMoveName, tools.KanbanAddName, tools.KanbanHandoffName,
 		"kanban", "KindKanban", "BKAN", "sync.enabled")
 	for _, c := range agent.KanbanTriggers {
 		if !strings.Contains(body, "**"+c.Category+"**") {

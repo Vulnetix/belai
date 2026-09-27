@@ -39,6 +39,8 @@ type CreatePRArgs struct {
 	Branch string
 	Title  string
 	Body   string
+	// Draft opens the pull or merge request as a draft.
+	Draft bool
 }
 
 // Provider drives one forge's CLI.
@@ -120,7 +122,11 @@ func (g github) CreatePR(ctx context.Context, dir string, a CreatePRArgs) (strin
 	if err := argSafe(a.Branch); err != nil {
 		return "", err
 	}
-	out, err := run(ctx, g.r, WriteTimeout, dir, "gh", "pr", "create", "--head", a.Branch, "--title", a.Title, "--body", a.Body)
+	argv := []string{"gh", "pr", "create", "--head", a.Branch, "--title", a.Title, "--body", a.Body}
+	if a.Draft {
+		argv = append(argv, "--draft")
+	}
+	out, err := run(ctx, g.r, WriteTimeout, dir, argv...)
 	if err != nil {
 		return "", err
 	}
@@ -206,7 +212,11 @@ func (g gitlab) CreatePR(ctx context.Context, dir string, a CreatePRArgs) (strin
 	if err := argSafe(a.Branch); err != nil {
 		return "", err
 	}
-	out, err := run(ctx, g.r, WriteTimeout, dir, "glab", "mr", "create", "--source-branch", a.Branch, "--title", a.Title, "--description", a.Body, "--yes")
+	argv := []string{"glab", "mr", "create", "--source-branch", a.Branch, "--title", a.Title, "--description", a.Body, "--yes"}
+	if a.Draft {
+		argv = append(argv, "--draft")
+	}
+	out, err := run(ctx, g.r, WriteTimeout, dir, argv...)
 	if err != nil {
 		return "", err
 	}

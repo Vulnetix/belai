@@ -195,11 +195,11 @@ func TestValidateRejectsBuiltinFileNameCollision(t *testing.T) {
 
 func TestKnownToolsAndValidEffortsMatchMaps(t *testing.T) {
 	tools := KnownTools()
-	if len(tools) != len(knownToolNames) {
-		t.Fatalf("KnownTools length = %d, want %d", len(tools), len(knownToolNames))
+	if len(tools) != len(knownToolNames)+len(extraToolNames) {
+		t.Fatalf("KnownTools length = %d, want %d", len(tools), len(knownToolNames)+len(extraToolNames))
 	}
 	for _, name := range tools {
-		if !knownToolNames[name] {
+		if !knownToolNames[name] && !extraToolNames[name] {
 			t.Fatalf("KnownTools has %q not in knownToolNames", name)
 		}
 	}

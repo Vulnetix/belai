@@ -63,7 +63,7 @@ var knownAgents = []Agent{
 	{
 		Name:     "belai",
 		Sessions: []string{"~/.vulnetix/belai/sessions/*/*.jsonl"},
-		Memory:   []string{".vulnetix/goals", ".vulnetix/prompts", ".vulnetix/plans"},
+		Memory:   []string{".vulnetix/goals", ".vulnetix/prompts", ".vulnetix/plans", "~/.vulnetix/belai/agents/memory/*.md"},
 		Format:   FormatJSONLBelai,
 	},
 	{

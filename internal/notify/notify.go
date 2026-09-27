@@ -27,10 +27,14 @@ const (
 	EventGoalDone    = "goal_done"
 	EventGoalStalled = "goal_stalled"
 	EventAgentDone   = "agent_done"
+	// EventWorkerBlocked and EventWorkerFailed are a fleet worker parking an
+	// item for a human, and a worker process failing.
+	EventWorkerBlocked = "worker_blocked"
+	EventWorkerFailed  = "worker_failed"
 )
 
 // Events lists every event name.
-var Events = []string{EventPermission, EventClarify, EventPlanReady, EventTurnDone, EventGoalDone, EventGoalStalled, EventAgentDone}
+var Events = []string{EventPermission, EventClarify, EventPlanReady, EventTurnDone, EventGoalDone, EventGoalStalled, EventAgentDone, EventWorkerBlocked, EventWorkerFailed}
 
 // DefaultEvents is the set notified when settings name none.
 var DefaultEvents = []string{EventPermission, EventClarify, EventPlanReady, EventGoalDone, EventGoalStalled}
@@ -94,6 +98,16 @@ func Message(event, subject string) (title, body string) {
 			return title, "Background agent finished"
 		}
 		return title, "Background agent " + subject + " finished"
+	case EventWorkerBlocked:
+		if subject == "" {
+			return title, "An agent blocked a kanban item for you"
+		}
+		return title, "Agent " + subject + " blocked a kanban item for you"
+	case EventWorkerFailed:
+		if subject == "" {
+			return title, "An agent stopped with an error"
+		}
+		return title, "Agent " + subject + " stopped with an error"
 	}
 	return title, "Belai needs you"
 }
@@ -167,6 +181,30 @@ func (e Env) Resolve(name string) string {
 		}
 	}
 	return BackendBell
+}
+
+// ResolveDetached is Resolve for a process with no terminal (a detached
+// fleet worker): the osc and bell backends would only write escape codes into
+// a log file, so it picks the platform notifier or nothing ("").
+func (e Env) ResolveDetached(name string) string {
+	b := e.Resolve(name)
+	if b != BackendOSC && b != BackendBell {
+		return b
+	}
+	if name != "" && name != BackendAuto {
+		return ""
+	}
+	switch e.GOOS {
+	case "linux", "freebsd", "openbsd", "netbsd":
+		if _, err := e.LookPath("notify-send"); err == nil {
+			return BackendNotifySend
+		}
+	case "darwin":
+		if _, err := e.LookPath("osascript"); err == nil {
+			return BackendOsascript
+		}
+	}
+	return ""
 }
 
 // Notifier sends notifications through one backend.

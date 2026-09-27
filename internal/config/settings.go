@@ -146,6 +146,9 @@ type Settings struct {
 	// the wrap-up after a work turn, the composer pane, /kanban and board sync
 	// (docs/kanban.md). Default on. The project layer may turn it off, never on.
 	Kanban *bool `json:"kanban,omitempty"`
+	// Agents governs the fleet: worker agents that claim kanban items and
+	// run unattended (docs/fleet.md). The project layer may only tighten it.
+	Agents *AgentsSettings `json:"agents,omitempty"`
 	// DeferTools advertises the core tools in full and loads the rest on
 	// demand through ToolSearch, which keeps every request small. Default on;
 	// false sends every definition on every request. Deferral changes what is
@@ -1186,6 +1189,10 @@ func (s Settings) Override(proj Settings) Settings {
 		f := false
 		out.Kanban = &f
 	}
+	// Fleet workers run unattended: a project may only tighten them.
+	if proj.Agents != nil {
+		out.Agents = out.Agents.tighten(proj.Agents)
+	}
 	// Hooks are the user's own commands: a project file may turn them off,
 	// never on.
 	if proj.Hooks != nil && proj.Hooks.Enabled != nil && !*proj.Hooks.Enabled {
@@ -1430,6 +1437,83 @@ func saveSettings(path string, s Settings) error {
 		return fmt.Errorf("write settings %s: %w", path, err)
 	}
 	return nil
+}
+
+// DefaultMaxWorkers is how many fleet workers may run on one machine when
+// agents.max_workers is unset.
+const DefaultMaxWorkers = 4
+
+// AgentsSettings governs fleet workers.
+type AgentsSettings struct {
+	// Enabled turns workers on or off. Default on.
+	Enabled *bool `json:"enabled,omitempty"`
+	// MaxWorkers caps the workers running on this machine.
+	MaxWorkers *int `json:"max_workers,omitempty"`
+	// Publish allows a worker profile's workspace.publish (push a branch and
+	// open a draft pull request). Default on.
+	Publish *bool `json:"publish,omitempty"`
+}
+
+// tighten applies a project layer: it may turn Enabled and Publish off and
+// lower MaxWorkers, never the reverse. A repository must not be able to
+// start unattended agents, or let them push, on the user's account.
+func (a *AgentsSettings) tighten(proj *AgentsSettings) *AgentsSettings {
+	out := AgentsSettings{}
+	if a != nil {
+		out = *a
+	}
+	if proj == nil {
+		return &out
+	}
+	f := false
+	if proj.Enabled != nil && !*proj.Enabled {
+		out.Enabled = &f
+	}
+	if proj.Publish != nil && !*proj.Publish {
+		out.Publish = &f
+	}
+	if proj.MaxWorkers != nil {
+		cur := DefaultMaxWorkers
+		if out.MaxWorkers != nil {
+			cur = *out.MaxWorkers
+		}
+		if n := *proj.MaxWorkers; n >= 0 && n < cur {
+			out.MaxWorkers = &n
+		}
+	}
+	return &out
+}
+
+// merge applies a user layer field by field.
+func (a *AgentsSettings) merge(o *AgentsSettings) {
+	if o.Enabled != nil {
+		a.Enabled = o.Enabled
+	}
+	if o.MaxWorkers != nil {
+		a.MaxWorkers = o.MaxWorkers
+	}
+	if o.Publish != nil {
+		a.Publish = o.Publish
+	}
+}
+
+// AgentsEnabled reports whether fleet workers may run. Default on.
+func (s Settings) AgentsEnabled() bool {
+	return s.Agents == nil || s.Agents.Enabled == nil || *s.Agents.Enabled
+}
+
+// AgentsPublishEnabled reports whether workers may push and open draft pull
+// requests. Default on; a profile must still ask for it.
+func (s Settings) AgentsPublishEnabled() bool {
+	return s.Agents == nil || s.Agents.Publish == nil || *s.Agents.Publish
+}
+
+// MaxWorkers is the fleet worker cap on this machine.
+func (s Settings) MaxWorkers() int {
+	if s.Agents == nil || s.Agents.MaxWorkers == nil || *s.Agents.MaxWorkers < 0 {
+		return DefaultMaxWorkers
+	}
+	return *s.Agents.MaxWorkers
 }
 
 // KanbanEnabled reports whether the global kanban board is on. Default on.

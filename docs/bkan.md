@@ -23,7 +23,7 @@ A board file is four sections, back to back, with no padding:
 ```
 offset  size  field
 0       4     magic      the ASCII bytes "BKAN" (42 4b 41 4e)
-4       2     version    uint16, big endian (currently 00 01)
+4       2     version    uint16, big endian (currently 00 02; 00 01 is still read)
 6       n     payload    encoding/gob stream of one kanban.Board
 6+n     32    checksum   SHA-256 of the payload bytes only
 ```
@@ -49,7 +49,7 @@ const (
 | Section | Question it answers | What happens on a mismatch |
 |---|---|---|
 | magic | Is this a kanban board at all? | `not a kanban board (bad magic)` |
-| version | Can this build of Belai read it? | `unsupported board version N (this Belai reads 1)` |
+| version | Can this build of Belai read it? | `unsupported board version N (this Belai reads 1 to 2)` |
 | payload | What is on the board? | a gob decode error |
 | checksum | Is the payload exactly what was written? | `checksum mismatch` |
 
@@ -83,7 +83,9 @@ marked.
 00000000  42 4b 41 4e 00 01                                 |BKAN..|
 ```
 
-The magic `BKAN`, then version `00 01`.
+The magic `BKAN`, then version `00 01`. This walk-through is a version 1
+file, before the routing and claim fields existed; a version 2 file has the
+same shape with more fields in the `Item` definition.
 
 **Gob type definitions** (bytes 6–0x170). Before sending any value, gob
 describes every type the value uses: each type's name, and each field's name
@@ -213,6 +215,25 @@ type Item struct {
 	Updated int64 // unix ms
 	History []Move
 
+	// Routing (version 2).
+	Labels    []string
+	Priority  int
+	Assignee  string
+	Parent    string
+	DependsOn []string
+	Hops      int
+
+	// Claim (version 2), set only by the harness.
+	ClaimedBy  string
+	ClaimHost  string
+	ClaimFrom  List
+	LeaseUntil int64
+	Attempts   int
+	Branch     string
+	PR         string
+
+	remoteAgent bool // in memory only; gob never stores it
+
 	// Sync state. ServerVersion is the backend's version of the item (0 when
 	// never pushed); Dirty marks a local change not yet pushed; Deleted is a
 	// tombstone kept until the delete is pushed.
@@ -257,6 +278,20 @@ type List string // backlog | review | in_progress | blocked | done
 | `SessionID` | The session that added the item, or empty when it was added on the web. | the harness |
 | `Created`, `Updated` | Unix milliseconds. `Updated` changes on every change and decides sync conflicts (the most recent change wins). | the harness |
 | `History` | The last 50 moves and notes, oldest first. | the harness, from moves and notes |
+| `Labels` | Routing labels: lower-case `[a-z0-9:_-]`, at most 8 of at most 32 runes, sorted. A worker claims only items carrying all of its profile's labels. | user, web, or a worker's handoff |
+| `Priority` | -2 to 3, 0 normal. Claims take the highest first. | user, web, or a handoff |
+| `Assignee` | The agent profile the item is routed to; empty means any matching worker. | user, web, or a handoff (from its allowlist) |
+| `Parent` | The item this one was handed off from. | the harness |
+| `DependsOn` | Items that must be `done` before this one can be claimed. | user, web, or a handoff |
+| `Hops` | Handoffs from the root item; a chain stops at 6. | the harness |
+| `ClaimedBy` | The worker instance holding the item, or empty. | the harness (`Claim`, `Release`, `Unclaim`) |
+| `ClaimHost` | The claiming worker's sync host id. | the harness |
+| `ClaimFrom` | The list the item was claimed from, and returns to. | the harness |
+| `LeaseUntil` | Unix milliseconds the claim lapses at. Renewals are host-local: they change neither `Updated` nor the history, and are never pushed on their own. | the harness |
+| `Attempts` | Claims that ended without success. | the harness |
+| `Branch` | The git branch holding the item's work. | the harness |
+| `PR` | The draft pull request opened for the branch. | the harness |
+| `remoteAgent` | Not stored (unexported). Set on a pulled item that carried the `agent` block, so a backend that predates it cannot clear the local routing and claim. | sync |
 | `ServerVersion` | The backend's version of the item, or 0 if it has never been pushed. | sync |
 | `Dirty` | A local change not yet pushed. | local writes; cleared by sync |
 | `Deleted` | A tombstone: the item is gone but the delete has not been pushed yet. | `Delete`; sync |
@@ -324,7 +359,7 @@ using `sessionsync.KanbanItem`; see [Sync mapping](#sync-mapping).
 2. **Otherwise reload.** Read the whole file and `Decode` it:
    1. The length must be at least 38 bytes.
    2. The magic must be `BKAN`.
-   3. The version must be 1.
+   3. The version must be 1 or 2 (`minVersion` to `formatVersion`).
    4. The SHA-256 of the payload must equal the last 32 bytes.
    5. The payload must gob-decode into a `Board`.
 3. **On success,** replace the copy in memory and remember the file's
@@ -401,6 +436,13 @@ Under gob's rules, changes to `Board`, `Item` or `Move` fall into four cases:
 | Rename a field | **The data is silently lost.** gob matches fields by name, so the old name's values are dropped. | Yes, with a migration |
 | Change a field's type | The decode fails, so the board reads as corrupt and is refused. | Yes, with a migration |
 
+Version 2 added the routing and claim fields. Adding fields needs no bump
+by itself, but a Belai that predates them would decode a newer board,
+silently drop the fields and write it back without them, releasing every
+claim. Raising the version makes that older Belai refuse the board instead.
+Version 1 files still decode, with every new field at its zero value:
+unrouted and unclaimed.
+
 The zero-value rule shapes new fields. A new field's zero value must mean
 "not set" or "the old behaviour", because a file written before the field
 existed will decode it as zero. For example, `ServerVersion == 0` means
@@ -411,7 +453,7 @@ rename, a type change, or a change of meaning for an existing field. The steps:
 
 1. Raise `formatVersion`.
 2. Teach `Decode` to accept the previous version and convert it. Today it
-   accepts exactly one version and rejects every other.
+   accepts versions 1 and 2 and rejects every other.
 3. Keep writing only the new version.
 4. Add a test that decodes a file written in the previous version.
 
@@ -472,7 +514,14 @@ Sync sends items as JSON (`sessionsync.KanbanItem`), converted by
 | `History` | `history` | Each `Move` becomes `{id, from, to, at, sessionId, note}`. |
 | `ServerVersion` | `version` | |
 | `Deleted` | `deleted` | |
+| `Labels`, `Priority`, `Assignee`, `Parent`, `DependsOn`, `Hops` | `agent.labels`, `agent.priority`, `agent.assignee`, `agent.parent`, `agent.dependsOn`, `agent.hops` | Always sent. |
+| `ClaimedBy`, `ClaimHost`, `ClaimFrom`, `LeaseUntil`, `Attempts`, `Branch`, `PR` | `agent.claimedBy`, `agent.claimHost`, `agent.claimFrom`, `agent.leaseUntil`, `agent.attempts`, `agent.branch`, `agent.pr` | The website may clear a claim, never set one. |
 | `Dirty` | — | Local only; never sent. |
+
+The routing and claim fields travel in one optional `agent` object
+(`sessionsync.KanbanAgent`). A pull without it keeps the host's own values.
+When a pulled copy of the same claim wins last-writer-wins, the later of the
+two leases stands, because renewals are never pushed.
 
 `Board.Cursor` is local only as well. It is the `since` parameter of
 `GET /v1/belai/kanban/items`.

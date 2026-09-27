@@ -388,6 +388,20 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.Kanban = s.Kanban
 		e.Origin["kanban"] = src
 	}
+	if s.Agents != nil {
+		// Fleet workers run unattended on the user's account: a project
+		// layer may turn them (or their publishing) off and lower the
+		// worker cap, never the reverse.
+		if src == SourceProject {
+			e.Settings.Agents = e.Settings.Agents.tighten(s.Agents)
+		} else {
+			if e.Settings.Agents == nil {
+				e.Settings.Agents = &AgentsSettings{}
+			}
+			e.Settings.Agents.merge(s.Agents)
+		}
+		e.Origin["agents"] = src
+	}
 	if s.Classifier != nil && !s.Classifier.IsZero() {
 		if e.Settings.Classifier == nil {
 			e.Settings.Classifier = &ClassifierSettings{}

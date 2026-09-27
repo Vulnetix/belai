@@ -39,8 +39,8 @@ where `GlobalDir()` honours `BELAI_HOME` and otherwise resolves to
 | *(file name)* | No | string | The on-disk filename (e.g. `triage-deps.json`), independent of `name`. It is never serialised — the file's own name is the record. Empty means derive it from `name`. The editor exposes it as its own field; renaming via `name` moves the file only while the file name is still derived. |
 | `description` | Yes | string | Human-readable purpose, shown in `/agent list`. |
 | `system_prompt` | Yes | string | The system prompt sent to the model on every turn. |
-| `tools` | No | string[] | Allowed tool names; empty means the full default registry. Validated against the built-in set: `AskUserQuestion`, `Bash`, `Cd`, `Edit`, `ExitPlanMode`, `Glob`, `Grep`, `Read`, `ReadSession`, `SearchMemory`, `SearchSessions`, `Skill`, `SkillDraft`, `SubAgentLog`, `Task`, `update_plan`, `WebFetch`, `WebSearch`, `Write`. |
-| `mode` | Yes | string | One of `single`, `loop`, `scheduled`, `monitor`. |
+| `tools` | No | string[] | Allowed tool names; empty means the full default registry. Validated against the built-in set: `AskUserQuestion`, `Bash`, `Cd`, `Edit`, `ExitPlanMode`, `Glob`, `Grep`, `Read`, `ReadSession`, `SearchMemory`, `SearchSessions`, `Skill`, `SkillDraft`, `SubAgentLog`, `Task`, `update_plan`, `WebFetch`, `WebSearch`, `Write`; the tools a session adds when available: `KanbanSearch`, `KanbanUpdate`, `KanbanMove`, `KanbanAdd`, `KanbanHandoff`, `Vulnetix`, `ToolSearch`, `ProcessRestart`, `Repos`, `RepoFiles`, `RepoRead`, `GH`, `Glab`; and MCP tools as `mcp__<server>__<tool>` (the tool part may be `*`). |
+| `mode` | Yes | string | One of `single`, `loop`, `scheduled`, `monitor`, `worker`. A `worker` claims kanban items; see [Worker profiles](#worker-profiles). |
 | `schedule` | No | string | Cron-like schedule expression (used when `mode` is `scheduled`). |
 | `monitor_condition` | No | string | Human-readable trigger condition (used when `mode` is `monitor`). |
 | `reflection` | No | bool | When true, the model is asked to emit `<thinking>` or a `reflection` field before acting. |
@@ -56,7 +56,7 @@ where `GlobalDir()` honours `BELAI_HOME` and otherwise resolves to
 
 - `name` must be non-empty and filesystem-safe (`[a-zA-Z0-9._-]+`).
 - A non-empty file name must be a safe basename: non-empty, ending in `.json`, with no path separators, and with a stem unchanged by the name sanitiser. It may not collide with a built-in's on-disk file name.
-- `mode` must be one of the four known values.
+- `mode` must be one of the five known values.
 - Every entry in `tools` must exist in the default tool registry.
 - `autonomy` must be `supervised` or `autonomous`.
 - `schedule` is required when `mode` is `scheduled`; ignored otherwise.
@@ -213,6 +213,58 @@ Bash call still goes through the permission rules. See
   `belai:deps-rust`, `belai:deps-ruby`, `belai:deps-php`,
   `belai:deps-jvm`, `belai:deps-dotnet`, `belai:deps-apple`,
   `belai:deps-containers`, `belai:deps-ci` and `belai:deps-other`.
+
+## Worker profiles
+
+A profile with `mode: worker` is a [fleet](fleet.md) worker: it claims kanban
+items and works each as a goal. It adds these fields:
+
+| Field | Type | Description |
+| ----- | ---- | ----------- |
+| `identity` | string | The worker's persona, sent with `system_prompt` as the system block's profile section. |
+| `kanban.lists` | string[] | Lists to claim from: `backlog` and/or `review`. Default `backlog`. |
+| `kanban.labels` | string[] | Labels an item must all carry. |
+| `kanban.assigned_only` | bool | Claim only items assigned to this profile. |
+| `kanban.project` | string | `current` (default), `all`, or a project name. |
+| `kanban.on_success` | route | Required. Where a completed item goes: `{list, labels, drop_labels}`. |
+| `kanban.on_failure` | route | Where a failed attempt goes; default the list it was claimed from. |
+| `kanban.handoff_to`, `kanban.handoff_labels` | string[] | The profiles and labels `KanbanHandoff` may route new items to. |
+| `kanban.max_attempts` | int | Failed attempts before the item goes to `blocked` (default 3). |
+| `kanban.lease`, `kanban.poll` | duration | Claim lease (1m–2h, default 20m) and idle poll (at least 5s, default 30s). |
+| `kanban.max_items` | int | Stop after this many items; 0 runs until stopped. |
+| `workspace.isolation` | string | `worktree` (a git worktree per item), `shared` (the repository), or `none`. |
+| `workspace.base`, `workspace.keep`, `workspace.publish` | | The commit new branches start from; keep the worktree after release; `draft_pr` to push and open a draft pull request when the item reaches `done`. |
+| `memory.enabled`, `memory.max_bytes` | | The worker's lessons file (default 8 KiB, at most 64 KiB). |
+| `budget.max_passes_per_item`, `budget.max_tokens_per_item`, `budget.max_wall_per_item` | | Per-item bounds. |
+| `schedule` | string | For a worker, a cron expression (`cron: */15 * * * *`, or a bare five-field expression, `@hourly`, `@daily`): the worker looks for work only at those times. |
+
+Validation fails closed:
+
+- a worker needs a `kanban` block with `on_success`;
+- it claims only from `backlog` or `review`;
+- `guardrails: false` is rejected outright;
+- `autonomy: autonomous` needs `budget.max_passes_per_item`;
+- a worker that can write (`Write`, `Edit`, `Bash`, or no allowlist) needs `workspace.isolation`;
+- `publish: draft_pr` needs `isolation: worktree`.
+
+A definition can also be written as Markdown with YAML front-matter, the
+shape Claude Code, OpenClaw and Hermes use. The keys are the JSON keys,
+checked strictly; the body is the `system_prompt`. `belai agent import FILE.md`
+validates it and saves it as JSON.
+
+### Built-in workers and crews
+
+| Profile | Claims | Hands on to |
+| --- | --- | --- |
+| `belai:scout` | backlog items labelled `scout` | `build` items for `belai:builder` |
+| `belai:builder` | backlog `build` items, on a worktree branch | review, labelled `needs-review` |
+| `belai:reviewer` | review `needs-review` items, on their branch | done (and a draft PR), or back to `build` with notes |
+| `belai:vuln-scout` | backlog items labelled `vuln-scan` | `vuln` items for `belai:patcher` |
+| `belai:patcher` | backlog `vuln` items, on a worktree branch | review, labelled `needs-verify` |
+| `belai:verifier` | review `needs-verify` items, on their branch | done (and a draft PR), or back to `vuln` with notes |
+
+The crews `belai:delivery` and `belai:security` start one scout, two
+builders or patchers, and one reviewer or verifier.
 ## Event flow
 
 ```mermaid

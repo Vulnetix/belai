@@ -19,7 +19,7 @@ import (
 // agentTabStrip renders the tab row with a count on each tab.
 func (a *App) agentTabStrip(w int) string {
 	live, parked := a.agentCounts()
-	counts := [agentTabCount]int{live + parked, len(a.agentState.profiles), len(a.ledger.audit)}
+	counts := [agentTabCount]int{live + parked, len(a.agentState.profiles), len(a.ledger.audit), a.fleetLive()}
 	var parts, plain []string
 	for i, name := range agentTabNames {
 		label := fmt.Sprintf("%s %d", name, counts[i])
@@ -32,7 +32,7 @@ func (a *App) agentTabStrip(w int) string {
 		plain = append(plain, label)
 	}
 	left := strings.Join(parts, "   ")
-	meta := "1 2 3 · tab"
+	meta := "1 2 3 4 · tab"
 	pad := w - lipgloss.Width(strings.Join(plain, "   ")) - lipgloss.Width(meta)
 	if pad < 2 {
 		return ansi.Truncate(left, w, "")
@@ -44,7 +44,7 @@ func (a *App) agentTabStrip(w int) string {
 // the key.
 func (a *App) handleAgentTabKey(m tea.KeyMsg) (tea.Cmd, bool) {
 	switch m.String() {
-	case "1", "2", "3":
+	case "1", "2", "3", "4":
 		a.agentState.tab = int(m.String()[0] - '1')
 	case "tab":
 		a.agentState.tab = (a.agentState.tab + 1) % agentTabCount
@@ -54,6 +54,10 @@ func (a *App) handleAgentTabKey(m tea.KeyMsg) (tea.Cmd, bool) {
 		return nil, false
 	}
 	a.agentState.errorMsg = ""
+	if a.agentState.tab == agentTabFleet {
+		a.reloadFleet()
+		return a.fleetTick(), true
+	}
 	return nil, true
 }
 
@@ -308,6 +312,10 @@ func (a *App) startAgentProfile(name string) tea.Cmd {
 	p, err := agentprofile.Load(name)
 	if err != nil {
 		a.agentNotice("agent start: " + err.Error())
+		return nil
+	}
+	if p.Mode == agentprofile.ModeWorker {
+		a.startFleetWorkers(name, "", 1)
 		return nil
 	}
 	if err := a.bgManager.Start(name, p); err != nil {

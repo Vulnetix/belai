@@ -22,8 +22,14 @@ import (
 // the tools render items as text.
 const (
 	magic         = "BKAN"
-	formatVersion = 1
-	headerLen     = len(magic) + 2
+	formatVersion = 2
+	// minVersion is the oldest version Decode still reads. Version 1 boards
+	// predate the routing and claim fields; gob decodes them with those
+	// fields zero, which means "unrouted, unclaimed". Version 2 exists so a
+	// Belai that predates the fields refuses the board instead of rewriting it
+	// without them.
+	minVersion = 1
+	headerLen  = len(magic) + 2
 )
 
 // Encode serialises a board.
@@ -50,8 +56,8 @@ func Decode(data []byte) (Board, error) {
 	if string(data[:len(magic)]) != magic {
 		return Board{}, errors.New("not a kanban board (bad magic)")
 	}
-	if v := binary.BigEndian.Uint16(data[len(magic):headerLen]); v != formatVersion {
-		return Board{}, fmt.Errorf("unsupported board version %d (this Belai reads %d)", v, formatVersion)
+	if v := binary.BigEndian.Uint16(data[len(magic):headerLen]); v < minVersion || v > formatVersion {
+		return Board{}, fmt.Errorf("unsupported board version %d (this Belai reads %d to %d)", v, minVersion, formatVersion)
 	}
 	payload := data[headerLen : len(data)-sha256.Size]
 	want := data[len(data)-sha256.Size:]

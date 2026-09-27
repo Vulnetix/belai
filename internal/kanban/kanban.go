@@ -105,6 +105,40 @@ type Item struct {
 	Updated int64 // unix ms
 	History []Move
 
+	// Routing. Labels are normalised (see NormLabels); Priority runs from
+	// MinPriority to MaxPriority, 0 being normal; Assignee is the agent
+	// profile the item is routed to, empty for any matching worker.
+	Labels   []string
+	Priority int
+	Assignee string
+	// Parent is the item this one was handed off from; DependsOn lists items
+	// that must be done before this one can be claimed; Hops counts handoffs
+	// from the root item, so a ping-pong between agents ends.
+	Parent    string
+	DependsOn []string
+	Hops      int
+
+	// Claim. Only the harness sets these (Claim, Renew, Release): no model
+	// argument ever reaches them. ClaimedBy is the worker instance holding
+	// the item, ClaimHost its sync host id, ClaimFrom the list it was claimed
+	// from and returns to, LeaseUntil the unix ms the claim lapses at.
+	ClaimedBy  string
+	ClaimHost  string
+	ClaimFrom  List
+	LeaseUntil int64
+	// Attempts counts claims that ended without success.
+	Attempts int
+	// Branch is the git branch holding the item's work; PR the draft pull
+	// request opened for it. Both are harness-set.
+	Branch string
+	PR     string
+
+	// remoteAgent is set by FromWire when the pulled item carried the routing
+	// and claim fields. A backend that does not know them yet omits them, and
+	// Merge must then keep the local values rather than clear them. It is
+	// unexported, so gob never stores it.
+	remoteAgent bool
+
 	// Sync state. ServerVersion is the backend's version of the item (0 when
 	// never pushed); Dirty marks a local change not yet pushed; Deleted is a
 	// tombstone kept until the delete is pushed.
@@ -157,6 +191,15 @@ type ItemInput struct {
 	Title string
 	Body  string
 	List  List
+	// Routing, all optional. Labels are normalised, Priority clamped,
+	// Assignee checked against the profile-name shape; DependsOn refs are
+	// resolved to full ids and unknown ones are an error.
+	Labels    []string
+	Priority  int
+	Assignee  string
+	Parent    string
+	DependsOn []string
+	Hops      int
 }
 
 // Patch edits an item. Nil fields are left alone; a non-empty Note is
@@ -174,7 +217,11 @@ type Query struct {
 	// Project matches Item.Project or Item.ProjectKey; empty means every
 	// project.
 	Project string
-	Limit   int
+	// Labels keeps items carrying every one of them; Assignee items routed
+	// to that profile.
+	Labels   []string
+	Assignee string
+	Limit    int
 }
 
 // Errors.
@@ -320,6 +367,11 @@ func (s *Store) mutateLocked(fn func(b *Board) error) error {
 		return err
 	}
 	defer release()
+	// Always reread under the lock. The stamp is mtime plus size, and a
+	// same-size write by another process inside the file system's mtime
+	// granularity would otherwise be missed: two workers could then both
+	// claim the same item.
+	s.loaded = false
 	if err := s.refreshLocked(); err != nil {
 		return err
 	}
@@ -343,7 +395,7 @@ func (s *Store) mutateLocked(fn func(b *Board) error) error {
 func cloneBoard(b Board) Board {
 	out := Board{Cursor: b.Cursor, Items: make([]Item, len(b.Items))}
 	for i, it := range b.Items {
-		it.History = slices.Clone(it.History)
+		it = cloneItem(it)
 		out.Items[i] = it
 	}
 	return out
@@ -428,7 +480,7 @@ func (s *Store) Get(ref string) (Item, error) {
 			ferr = err
 			return
 		}
-		out = b.Items[i]
+		out = cloneItem(b.Items[i])
 	})
 	if err != nil {
 		return Item{}, err
@@ -455,8 +507,14 @@ func (s *Store) Search(q Query) ([]Item, error) {
 			if q.Project != "" && !strings.EqualFold(it.Project, q.Project) && it.ProjectKey != q.Project {
 				continue
 			}
+			if !hasLabels(it, q.Labels) {
+				continue
+			}
+			if q.Assignee != "" && it.Assignee != q.Assignee {
+				continue
+			}
 			if len(words) > 0 {
-				hay := strings.ToLower(it.Title + "\n" + it.Body + "\n" + it.Short())
+				hay := strings.ToLower(it.Title + "\n" + it.Body + "\n" + it.Short() + "\n" + strings.Join(it.Labels, " "))
 				for _, m := range it.History {
 					hay += "\n" + strings.ToLower(m.Note)
 				}
@@ -471,7 +529,7 @@ func (s *Store) Search(q Query) ([]Item, error) {
 					continue
 				}
 			}
-			it.History = slices.Clone(it.History)
+			it = cloneItem(it)
 			out = append(out, it)
 		}
 	})
@@ -526,9 +584,25 @@ func (s *Store) Add(in ItemInput, prov Provenance) (Item, bool, error) {
 		return Item{}, false, ErrBadList
 	}
 	body := CleanBody(in.Body, MaxBodyBytes)
+	assignee, err := CleanAssignee(in.Assignee)
+	if err != nil {
+		return Item{}, false, err
+	}
 	var out Item
 	var dup bool
-	err := s.mutate(true, func(b *Board) error {
+	err = s.mutate(true, func(b *Board) error {
+		deps, err := resolveRefs(b, in.DependsOn)
+		if err != nil {
+			return err
+		}
+		parent := ""
+		if strings.TrimSpace(in.Parent) != "" {
+			i, err := find(b, in.Parent)
+			if err != nil {
+				return fmt.Errorf("parent %s: %w", in.Parent, err)
+			}
+			parent = b.Items[i].ID
+		}
 		live := 0
 		want := normTitle(title)
 		for _, it := range b.Items {
@@ -556,6 +630,8 @@ func (s *Store) Add(in ItemInput, prov Provenance) (Item, bool, error) {
 			Project: CleanTitle(prov.Project), ProjectKey: prov.ProjectKey, Dir: prov.Dir,
 			HostID: prov.HostID, SessionID: prov.SessionID,
 			Created: now, Updated: now, Dirty: true,
+			Labels: NormLabels(in.Labels), Priority: ClampPriority(in.Priority), Assignee: assignee,
+			Parent: parent, DependsOn: deps, Hops: max(in.Hops, 0),
 		}
 		appendHistory(&out, Move{ID: session.MustID(), To: list, At: now, SessionID: prov.SessionID})
 		b.Items = append(b.Items, out)
@@ -579,6 +655,11 @@ func sameProject(it Item, prov Provenance) bool {
 
 // Update edits an item's title or body and/or appends a note.
 func (s *Store) Update(ref string, p Patch, sessionID string) (Item, error) {
+	return s.update(ref, p, sessionID, nil)
+}
+
+// update is Update with an optional guard run on the item under the lock.
+func (s *Store) update(ref string, p Patch, sessionID string, guard func(it Item, now int64) error) (Item, error) {
 	var out Item
 	err := s.mutate(true, func(b *Board) error {
 		i, err := find(b, ref)
@@ -586,6 +667,11 @@ func (s *Store) Update(ref string, p Patch, sessionID string) (Item, error) {
 			return err
 		}
 		it := &b.Items[i]
+		if guard != nil {
+			if err := guard(*it, s.nowMs()); err != nil {
+				return err
+			}
+		}
 		changed := false
 		if p.Title != nil {
 			t := CleanTitle(*p.Title)

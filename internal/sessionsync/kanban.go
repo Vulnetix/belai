@@ -37,6 +37,29 @@ type KanbanItem struct {
 	History    []KanbanMove `json:"history,omitempty"`
 	Version    int64        `json:"version,omitempty"`
 	Deleted    bool         `json:"deleted,omitempty"`
+	// Agent carries the routing and claim fields. It is always sent. A
+	// backend that predates them omits it on a pull, and the host then keeps
+	// its own values rather than clearing them.
+	Agent *KanbanAgent `json:"agent,omitempty"`
+}
+
+// KanbanAgent is a kanban item's routing and claim state on the wire. The
+// website may edit the routing fields and clear a claim; claims themselves
+// are only ever made on a host.
+type KanbanAgent struct {
+	Labels     []string `json:"labels,omitempty"`
+	Priority   int      `json:"priority,omitempty"`
+	Assignee   string   `json:"assignee,omitempty"`
+	Parent     string   `json:"parent,omitempty"`
+	DependsOn  []string `json:"dependsOn,omitempty"`
+	Hops       int      `json:"hops,omitempty"`
+	ClaimedBy  string   `json:"claimedBy,omitempty"`
+	ClaimHost  string   `json:"claimHost,omitempty"`
+	ClaimFrom  string   `json:"claimFrom,omitempty"`
+	LeaseUntil int64    `json:"leaseUntil,omitempty"`
+	Attempts   int      `json:"attempts,omitempty"`
+	Branch     string   `json:"branch,omitempty"`
+	PR         string   `json:"pr,omitempty"`
 }
 
 // KanbanAck is the server's answer for one pushed item. Applied is false when

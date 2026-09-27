@@ -13,6 +13,7 @@ import (
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/commands"
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/fleet"
 	"github.com/vulnetix/belai/internal/fuzzy"
 	"github.com/vulnetix/belai/internal/profiles"
 	"github.com/vulnetix/belai/internal/provider"
@@ -470,7 +471,7 @@ func NewRegistry(workdir string) *Registry {
 		}
 	})
 	r.Register("agents", "running agents, profiles and the audit trail", func() []string {
-		return []string{"running", "profiles", "audit"}
+		return []string{"running", "profiles", "audit", "fleet"}
 	}, func(a *App, arg string) tea.Cmd {
 		switch strings.TrimSpace(arg) {
 		case "profiles":
@@ -478,6 +479,9 @@ func NewRegistry(workdir string) *Registry {
 		case "audit":
 			a.agentState.auditFilter = ""
 			return a.openAgentsTab(agentTabAudit)
+		case "fleet":
+			a.agentState.fleet.loaded = time.Time{}
+			return tea.Batch(a.openAgentsTab(agentTabFleet), a.fleetTick())
 		case "running":
 			return a.openAgentsTab(agentTabLive)
 		default:
@@ -487,6 +491,56 @@ func NewRegistry(workdir string) *Registry {
 			}
 			return a.openAgentsTab(agentTabLive)
 		}
+	})
+	r.Register("fleet", "kanban worker agents: start, stop and watch them", func() []string {
+		return []string{"start", "crew", "stop"}
+	}, func(a *App, arg string) tea.Cmd {
+		sub, rest, _ := strings.Cut(strings.TrimSpace(arg), " ")
+		rest = strings.TrimSpace(rest)
+		open := func() tea.Cmd {
+			a.agentState.fleet.loaded = time.Time{}
+			return tea.Batch(a.openAgentsTab(agentTabFleet), a.fleetTick())
+		}
+		switch sub {
+		case "":
+			return open()
+		case "start", "crew":
+			if rest == "" {
+				a.addSystem("fleet " + sub + " <name>")
+				return nil
+			}
+			if sub == "crew" {
+				a.startFleetWorkers("", rest, 0)
+			} else {
+				a.startFleetWorkers(rest, "", 1)
+			}
+			return open()
+		case "stop":
+			reg, err := a.fleetRegistry()
+			if err != nil {
+				a.addSystem("fleet: " + err.Error())
+				return nil
+			}
+			var recs []fleet.Record
+			if rest == "" || rest == "all" {
+				recs, err = reg.Live()
+			} else {
+				recs, err = reg.Resolve(rest)
+			}
+			if err != nil {
+				a.addSystem("fleet: " + err.Error())
+				return nil
+			}
+			a.addSystem(fmt.Sprintf("⚙ stopping %d worker(s); their items go back to the board", len(recs)))
+			return func() tea.Msg {
+				for _, r := range recs {
+					_ = reg.Stop(r, 20*time.Second)
+				}
+				return fleetTickMsg{}
+			}
+		}
+		a.addSystem("fleet: unknown subcommand " + sub + " (start, crew, stop)")
+		return nil
 	})
 	// Hidden alias: dispatchable, absent from Names() and autocomplete.
 	r.RegisterHiddenAlias("provider", "providers")

@@ -198,6 +198,11 @@ type Task struct {
 
 // StartTask is StartIn with a task for the agent's first turn.
 func (m *Manager) StartTask(workdir, name string, profile agentprofile.AgentProfile, task Task) error {
+	if profile.Mode == agentprofile.ModeWorker {
+		// A worker claims kanban items in its own process, worktree and
+		// registry entry; the in-session manager has none of that.
+		return fmt.Errorf("%s is a kanban worker: start it with /fleet start %s or `belai agent start %s`", profile.Name, profile.Name, profile.Name)
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, exists := m.agents[name]; exists {

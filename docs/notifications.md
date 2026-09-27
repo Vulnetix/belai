@@ -25,6 +25,8 @@ terminal is in another window or on another desktop.
 | `goal_done` | goal mode (or an approved plan) completed |
 | `goal_stalled` | goal mode stopped before completing |
 | `agent_done` | a background agent finished |
+| `worker_blocked` | a [fleet worker](fleet.md) moved an item to blocked for you (a permission it could not ask for, withheld item text, or too many failed attempts) |
+| `worker_failed` | a fleet worker process stopped with an error |
 
 Every trigger also fires the `notification` [hook](hooks.md) with the event
 name in the `notification` field, whether or not desktop notifications are
