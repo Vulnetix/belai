@@ -4031,7 +4031,7 @@ func (a *App) contentWidth() int {
 // carries: send/newline hints ride the top edge instead of costing a line.
 func (a *App) renderComposer() string {
 	title, accent := "ask", lipgloss.TerminalColor(components.ColorTeal)
-	meta := "⏎ send · ctrl+j newline"
+	meta := "⏎ send · ctrl+j newline · / commands · @ files · f1 screens"
 	if a.editor.Masked {
 		title, accent, meta = "secret", lipgloss.TerminalColor(components.ColorAmber), "input hidden · ⏎ save"
 	}

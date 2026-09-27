@@ -35,8 +35,9 @@ const syncAuthTTL = 5 * time.Minute
 // createSessionFile makes the live session's JSONL exist at startup so the
 // syncer can register the session with the website immediately, before its
 // first line is written. It is idempotent: a resumed session's file already
-// exists and is left untouched. Like startSessionSync, only a real run calls
-// it; New alone never touches the store.
+// exists and is left untouched. It runs only on a real launch (Start), never
+// from New alone, so tests that build an App without launching the TUI do not
+// write a file.
 func (a *App) createSessionFile() {
 	if a.store == nil || a.storeDisabled {
 		return

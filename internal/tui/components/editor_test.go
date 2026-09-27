@@ -7,6 +7,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+func TestEditorPlaceholder(t *testing.T) {
+	e := NewEditor()
+	if got := e.textarea.Placeholder; !strings.Contains(got, "/") || !strings.Contains(got, "@") {
+		t.Fatalf("placeholder = %q, want both '/' and '@'", got)
+	}
+}
+
 func TestEditorHeightAccessors(t *testing.T) {
 	e := NewEditor()
 	e.SetHeight(5)

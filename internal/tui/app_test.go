@@ -2035,6 +2035,21 @@ func TestComposerWorkingLabelForGenericIO(t *testing.T) {
 	}
 }
 
+func TestComposerIdleMetaAdvertisesMappings(t *testing.T) {
+	a := New(Options{})
+	a.width, a.height = 100, 30
+	if a.editor.Value() != "" {
+		t.Fatalf("editor must be empty for idle meta test, got %q", a.editor.Value())
+	}
+
+	view := a.renderComposer()
+	for _, want := range []string{"/ commands", "@ files", "f1 screens"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("idle composer meta should advertise %q, got:\n%s", want, view)
+		}
+	}
+}
+
 func TestRMCaptionSubPhases(t *testing.T) {
 	a := New(Options{})
 	cases := []struct {

@@ -8,7 +8,7 @@ import (
 
 func TestRegistryNames(t *testing.T) {
 	r := NewRegistry(t.TempDir())
-	want := []string{"add-dir", "agent", "agents", "budgets", "clear", "compact", "execute", "exit", "export", "help", "lsp", "mcp", "mode", "model", "new", "permissions", "plugin", "process", "processes", "profile", "prompts", "providers", "quit", "refine", "rename", "resume", "sandbox", "settings", "skills", "sync", "todos", "vulnetix", "yolo"}
+	want := []string{"add-dir", "agent", "agents", "budgets", "clear", "compact", "execute", "exit", "export", "help", "lsp", "mcp", "mode", "model", "new", "permissions", "plugin", "process", "processes", "profile", "prompts", "providers", "quit", "refine", "rename", "reset", "resume", "sandbox", "settings", "skills", "sync", "todos", "vulnetix", "welcome", "yolo"}
 	if !reflect.DeepEqual(r.Names(), want) {
 		t.Fatalf("Names = %v, want %v", r.Names(), want)
 	}
@@ -80,6 +80,20 @@ func TestCommandLookup(t *testing.T) {
 	}
 }
 
+func TestWelcomeCommandOpensGettingStarted(t *testing.T) {
+	r := NewRegistry(t.TempDir())
+	cmd, ok := r.Command("welcome")
+	if !ok {
+		t.Fatalf("welcome command missing")
+	}
+	if cmd.AliasOf != "" {
+		t.Fatalf("welcome must be canonical, got alias %q", cmd.AliasOf)
+	}
+	if cmd.Run == nil {
+		t.Fatalf("welcome command has no handler")
+	}
+}
+
 func TestEveryCommandHasHandler(t *testing.T) {
 	r := NewRegistry(t.TempDir())
 	for _, name := range r.Names() {
@@ -111,6 +125,9 @@ func TestAliasCanonical(t *testing.T) {
 	r := NewRegistry(t.TempDir())
 	if got := r.Canonical("new"); got != "clear" {
 		t.Fatalf("Canonical(new) = %q, want clear", got)
+	}
+	if got := r.Canonical("reset"); got != "clear" {
+		t.Fatalf("Canonical(reset) = %q, want clear", got)
 	}
 	if got := r.Canonical("provider"); got != "providers" {
 		t.Fatalf("Canonical(provider) = %q, want providers", got)
