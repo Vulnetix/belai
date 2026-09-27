@@ -1,10 +1,12 @@
 package components
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestBannerPixViewNotEmpty(t *testing.T) {
@@ -105,8 +107,8 @@ func TestBannerBelayLine(t *testing.T) {
 	if !strings.Contains(v, "belai") || !strings.Contains(v, "◉") {
 		t.Fatalf("banner should draw the belay-line wordmark: %q", v)
 	}
-	if !strings.Contains(v, "on belay") {
-		t.Fatalf("banner should carry the on-belay tagline: %q", v)
+	if !strings.Contains(v, "Safer LLM harness · vulnetix.com") || strings.Contains(v, "on belay") {
+		t.Fatalf("banner should carry the tagline, without on belay: %q", v)
 	}
 }
 
@@ -145,5 +147,30 @@ func TestBannerHeightUnchangedByUpdateNote(t *testing.T) {
 	noted := Banner{Width: 80, Version: "0.4.2", Update: "update v0.5.0 available"}.View()
 	if got, want := lipgloss.Height(noted), lipgloss.Height(plain); got != want {
 		t.Fatalf("height with update note = %d, want %d", got, want)
+	}
+}
+
+// TestBannerCompactKeepsTagline: the compact header carries the tagline on
+// its first line and the full build facts on its second, each within the
+// width.
+func TestBannerCompactKeepsTagline(t *testing.T) {
+	b := Banner{Width: 120, Compact: true, Version: "v0.54.1", Commit: "082708f", Built: "2026-09-27T13:37:52Z"}
+	lines := strings.Split(ansi.Strip(b.View()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("compact header should be two lines: %q", lines)
+	}
+	if !strings.Contains(lines[0], "Safer LLM harness · vulnetix.com") || strings.Contains(lines[0], "on belay") {
+		t.Fatalf("compact header lost the tagline: %q", lines[0])
+	}
+	for _, want := range []string{"v0.54.1", "commit 082708f", "built 2026-09-27T13:37:52Z", runtime.GOOS + "/" + runtime.GOARCH} {
+		if !strings.Contains(lines[1], want) {
+			t.Fatalf("build line missing %q: %q", want, lines[1])
+		}
+	}
+	b.Width = 30
+	for _, l := range strings.Split(b.View(), "\n") {
+		if w := lipgloss.Width(l); w > 30 {
+			t.Fatalf("line is %d cells at width 30: %q", w, l)
+		}
 	}
 }
