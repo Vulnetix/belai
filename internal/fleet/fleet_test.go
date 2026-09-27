@@ -343,3 +343,16 @@ func offline() config.Settings {
 	f := false
 	return config.Settings{Sync: &config.SyncSettings{Enabled: &f}}
 }
+
+func TestPublishNeedsAForgeOrigin(t *testing.T) {
+	testEnv(t)
+	repo := gitRepo(t)
+	ws, err := PrepareWorktree(context.Background(), repo, kanban.Item{ID: "5f9a2c00-0000-4000-8000-000000000000", Title: "t"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Remove(context.Background())
+	if _, err := ws.Publish(context.Background(), "t", "b"); err == nil || !strings.Contains(err.Error(), "no GitHub or GitLab origin") {
+		t.Fatalf("publish without origin: %v", err)
+	}
+}

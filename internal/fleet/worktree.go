@@ -271,13 +271,16 @@ func (w *Workspace) Publish(ctx context.Context, title, body string) (string, er
 	if err := w.intact(); err != nil {
 		return "", err
 	}
-	if err := forge.Push(ctx, w.run, w.Dir, w.Branch); err != nil {
-		return "", err
-	}
+	// Check the remote before pushing: with no origin, git reads "origin" as
+	// a local path, and the hardened runner refuses file transport with an
+	// error that says nothing useful.
 	origin, _ := git(ctx, w.repoRun, w.repo, "remote", "get-url", "origin")
 	rem, ok := forge.ParseRemote(origin)
 	if !ok {
-		return "", errors.New("the origin remote is not a GitHub or GitLab repository")
+		return "", errors.New("the repository has no GitHub or GitLab origin remote to publish to")
+	}
+	if err := forge.Push(ctx, w.run, w.Dir, w.Branch); err != nil {
+		return "", err
 	}
 	p, reason := forge.For(rem, w.run, exec.LookPath)
 	if p == nil {

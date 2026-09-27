@@ -485,7 +485,7 @@ func kanbanRouting(it kanban.Item, now int64) string {
 	}
 	if it.ClaimedBy != "" {
 		if it.LeaseUntil > now {
-			lease := time.Duration(it.LeaseUntil - now).Round(time.Minute)
+			lease := (time.Duration(it.LeaseUntil-now) * time.Millisecond).Round(time.Minute)
 			parts = append(parts, components.AccentStyle.Render("⚙ "+it.ClaimedBy+" "+compactDuration(lease)))
 		} else {
 			parts = append(parts, components.DangerStyle.Render("⚠ "+it.ClaimedBy+" lapsed"))
