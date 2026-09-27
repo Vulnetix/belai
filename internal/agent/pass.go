@@ -152,7 +152,7 @@ func (s *Session) readStreakNudge(streak, seen *int, mutations int, productive b
 	if *streak%readStreakNudgeAfter != 0 {
 		return ""
 	}
-	if s.planMode || s.turnReadOnly || s.exploreSubagent || s.reportOnly {
+	if s.planMode || s.turnReadOnly || s.exploreSubagent || s.reportOnly || s.kanbanWrapUpPass {
 		return ""
 	}
 	switch mode {
@@ -209,6 +209,9 @@ const planPassIterations = 12
 // passBudget is the tool-round budget of one pass in mode: the session's
 // iteration budget, capped at planPassIterations for a plan-mode pass.
 func (s *Session) passBudget(mode modes.Mode) int {
+	if s.passBudgetOverride > 0 {
+		return s.passBudgetOverride
+	}
 	if mode == modes.ModePlan && s.maxIter > planPassIterations {
 		return planPassIterations
 	}
@@ -251,6 +254,8 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 	// acc carries the pass's harness-observed disk effect across iterations;
 	// finish folds it into whichever outcome the pass returns.
 	var acc passOutcome
+	// The kanban wrap-up continues from wherever the turn's last pass ended.
+	defer func() { s.lastTurns = turns }()
 	finish := func(o passOutcome) passOutcome {
 		o.mutations = acc.mutations
 		o.mutatedPaths = acc.mutatedPaths
@@ -286,7 +291,7 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		}
 
 		mismatchPol := s.mismatchPolicy()
-		filtered, err := rolemanager.CheckToolCalls(assistant.ToolCalls, s.registry.Names(), mismatchPol)
+		filtered, err := rolemanager.CheckToolCalls(assistant.ToolCalls, s.callableNames(), mismatchPol)
 		if err != nil {
 			return finish(passOutcome{text: text, lastText: lastText}), turns, err
 		}
@@ -330,7 +335,7 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 			args, parseErr := parseToolArgs(call)
 			u := callUnit{call: call, args: args, parseErr: parseErr}
 			if parseErr == nil {
-				if tool, ok := s.registry.Find(call.Name); ok {
+				if tool, ok := s.findCallable(call.Name); ok {
 					u.tool = tool
 					u.decision, _, _ = s.decidePermission(call.Name, tool.Subject(args))
 				}
@@ -464,6 +469,8 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 					if l, ok := updatePlanFromArgs(u.args); ok {
 						updatePlan = &l
 					}
+				} else if !s.kanbanWrapUpPass && !strings.HasPrefix(u.call.Name, "Kanban") {
+					s.turnToolRuns++
 				}
 				productiveIter = true
 				allWithheld = false

@@ -53,6 +53,7 @@ var classifierKinds = map[Kind]bool{
 	KindHook:       true,
 	KindSkill:      true,
 	KindMCP:        true,
+	KindKanban:     true,
 }
 
 // NeedsClassifier reports whether a result of this kind must go through the

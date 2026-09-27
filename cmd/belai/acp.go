@@ -56,6 +56,8 @@ func runACP(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 	mcp.SetActive(mcpMgr)
 	defer mcpMgr.Close()
 	defer startTelemetry(global, wd)()
+	// Kanban writes made over this connection are pushed once at the end.
+	defer flushKanban(global, wd)
 	defer recordUsage(session.MustID(), global)()
 
 	build := func(ctx context.Context, cwd, sessionID string) (*agent.Session, error) {

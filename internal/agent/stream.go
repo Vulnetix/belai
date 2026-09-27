@@ -117,6 +117,10 @@ const (
 	// attached to a plan or goal turn up front (see prefetch.go). It carries
 	// their root-relative paths in Paths. Render-only.
 	EventPrefetchKind
+	// EventKanbanKind reports the kanban wrap-up after a work turn's report:
+	// Phase KanbanPhaseStart as it begins, KanbanPhaseDone with Kanban (what
+	// it added, moved and updated) when it ends. Render-only.
+	EventKanbanKind
 )
 
 // Role Manager sub-phases carried by EventRoleManagerKind.
@@ -256,6 +260,9 @@ type Event struct {
 
 	// Warning carries EventWarning.
 	Warning string
+
+	// Kanban carries EventKanbanKind's summary.
+	Kanban *KanbanSummary
 
 	// Result carries EventDone.
 	Result run.Result

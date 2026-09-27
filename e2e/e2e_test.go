@@ -545,6 +545,9 @@ type toolMock struct {
 	toolUsers     []string
 }
 
+// kanbanWrapUpPhrase opens the kanban wrap-up directive (internal/agent).
+const kanbanWrapUpPhrase = "Now update the global kanban board"
+
 func newToolMockServer(t *testing.T, toolPath string) (*httptest.Server, *toolMock) {
 	return newToolMockServerFor(t, "Read", map[string]any{"path": toolPath})
 }
@@ -565,6 +568,14 @@ func newToolMockServerFor(t *testing.T, toolName string, toolArgs map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		var system, user string
 		hasTool := false
+		// The kanban wrap-up after a work turn re-sends the history; it is
+		// answered but not recorded, so each tool result counts once.
+		wrapUp := false
+		for _, m := range req.Messages {
+			if strings.Contains(m.Content, kanbanWrapUpPhrase) {
+				wrapUp = true
+			}
+		}
 		for _, m := range req.Messages {
 			switch m.Role {
 			case "system":
@@ -573,14 +584,18 @@ func newToolMockServerFor(t *testing.T, toolName string, toolArgs map[string]any
 				user = m.Content
 			case "tool":
 				hasTool = true
-				tm.mu.Lock()
-				tm.toolUsers = append(tm.toolUsers, m.Content)
-				tm.mu.Unlock()
+				if !wrapUp {
+					tm.mu.Lock()
+					tm.toolUsers = append(tm.toolUsers, m.Content)
+					tm.mu.Unlock()
+				}
 			}
 		}
 		tm.mu.Lock()
 		defer tm.mu.Unlock()
 		switch {
+		case wrapUp:
+			writeChat(w, "KANBAN_DONE")
 		case strings.Contains(system, "operating-mode classifier"):
 			writeChat(w, "AGENT")
 		case strings.Contains(system, "security classifier"):

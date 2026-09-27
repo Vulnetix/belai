@@ -344,6 +344,11 @@ func (s *Session) runSubagent(ctx context.Context, t explore.Task, g Grounding, 
 	// list and the enforced list the same, so the preamble below cannot
 	// promise a Bash the gate will refuse.
 	reg := tools.DefaultWithCaps(s.workdir, true, s.caps, s.repoIndex).Plan().Without("AskUserQuestion") // a subagent cannot ask the user
+	// A subagent may search the kanban board, never write it: repository
+	// text it read must not be able to persist into the global board.
+	if s.kanban != nil && s.kanban.on {
+		reg = reg.WithKanban(s.kanban.base.Store, s.kanban.base.Source).Without(tools.KanbanUpdateName)
+	}
 
 	grounding := g.digest(t.Kind == explore.RefRepo || t.Kind == explore.RefOrg)
 	promptText := t.Prompt

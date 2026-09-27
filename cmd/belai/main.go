@@ -485,6 +485,7 @@ func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *ht
 	if err != nil {
 		return run.Result{}, err
 	}
+	defer flushKanban(settings, workdir)
 	return sess.Run(ctx, userPrompt)
 }
 
@@ -503,6 +504,9 @@ func newCLISession(ctx context.Context, cfg run.Config, client *http.Client, pol
 		m.Wait()
 		reg = reg.With(m.Tools()...)
 	}
+	// The global kanban board: search and update on every call, the loop and
+	// wrap-up tools added per turn by the session.
+	reg = reg.WithKanban(cliKanban(workdir, sessionID, settings))
 
 	perms := permissions.From(settings.Permissions.Allow, settings.Permissions.Ask, settings.Permissions.Deny)
 	repoMap := repomap.Scan(ctx, workdir)

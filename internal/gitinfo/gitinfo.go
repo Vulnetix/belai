@@ -80,3 +80,40 @@ func findGit(dir string) (root, gitDir string) {
 	}
 	return "", ""
 }
+
+// OriginURL returns the raw remote.origin.url from the repository's config,
+// read without shelling out, or "" when there is none. A linked worktree
+// reads the main repository's config through its commondir.
+func OriginURL(workdir string) string {
+	_, gitDir := findGit(workdir)
+	if gitDir == "" {
+		return ""
+	}
+	if data, err := os.ReadFile(filepath.Join(gitDir, "commondir")); err == nil {
+		common := strings.TrimSpace(string(data))
+		if !filepath.IsAbs(common) {
+			common = filepath.Join(gitDir, common)
+		}
+		gitDir = common
+	}
+	data, err := os.ReadFile(filepath.Join(gitDir, "config"))
+	if err != nil {
+		return ""
+	}
+	inOrigin := false
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "[") {
+			inOrigin = strings.EqualFold(strings.ReplaceAll(line, " ", ""), `[remote"origin"]`)
+			continue
+		}
+		if !inOrigin {
+			continue
+		}
+		k, v, ok := strings.Cut(line, "=")
+		if ok && strings.EqualFold(strings.TrimSpace(k), "url") {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}

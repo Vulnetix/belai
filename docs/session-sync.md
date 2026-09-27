@@ -138,3 +138,25 @@ Code: `internal/sessionsync` (client, syncer, inbox, prompt cleaning) and
   `20260926000001_add_belai_session_sync`).
 - **Website pages:** `src/pages/resolve/belai-*.vue`, in the sidebar's
   **Belai** group.
+
+## The kanban board
+
+The global kanban board ([kanban.md](kanban.md)) syncs through the same
+client: it uses the same origin allowlist and the same credential, and it runs
+only while session sync can run.
+
+- **Pushing.** Every local change is pushed in the background.
+- **Pulling.** The TUI pulls the website's changes every 15 seconds.
+- **Headless and ACP.** Unlike transcripts, their kanban writes are pushed
+  once as the run or connection ends.
+
+Server side:
+
+- **API:** the kanban routes are in `api/internal/handler/belai_kanban*.go`.
+  - `GET /v1/belai/kanban/items?since=` pulls changes after a cursor.
+  - `POST /v1/belai/kanban/items/batch` pushes the host's changes.
+  - `PUT /v1/belai/kanban/items/{id}` and `DELETE /v1/belai/kanban/items/{id}`
+    are for the browser.
+- **Schema:** `BelaiKanbanItem` in `saas/prisma/models/belai.prisma`.
+- **Website page:** `src/pages/resolve/belai-kanban.vue`, under **Belai →
+  Kanban**.

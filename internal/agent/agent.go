@@ -35,6 +35,7 @@ import (
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/sanitize"
+	"github.com/vulnetix/belai/internal/todos"
 	"github.com/vulnetix/belai/internal/tools"
 	"github.com/vulnetix/belai/internal/trace"
 	"github.com/vulnetix/belai/internal/wire"
@@ -274,6 +275,20 @@ type Session struct {
 	sealMu  sync.Mutex
 	sealKey string
 	sealed  string
+	// kanban is the board wiring (see kanban.go); never nil after NewSession.
+	// turnKanbanLoop latches the working loop's KanbanMove for an agent, goal
+	// or plan-execute turn; kanbanWrapUpPass narrows the surface to the
+	// wrap-up tools; passBudgetOverride, when positive, replaces the pass
+	// budget for that pass.
+	kanban             *kanbanState
+	turnKanbanLoop     bool
+	kanbanWrapUpPass   bool
+	passBudgetOverride int
+	// lastTurns is the most recent pass's final turns, which the wrap-up
+	// continues from; turnToolRuns counts this turn's executed non-kanban
+	// tool calls, one of the harness facts that make a turn a work turn.
+	lastTurns    []run.Turn
+	turnToolRuns int
 }
 
 // planFinishTools is the whole surface of the plan loop's final pass: record
@@ -337,6 +352,10 @@ func (s *Session) toolSurface() (*tools.Registry, []wire.OpenAITool, []wire.Anth
 	if s.reportOnly {
 		return s.registry.Only(), nil, nil
 	}
+	if s.kanbanWrapUpPass && s.kanban.on {
+		w := s.kanban.wrapUp
+		return w.reg, w.openAI, w.anthropic
+	}
 	if s.planMode && s.planFinalPass {
 		return s.registry.PlanWith(s.planSurface).Only(planFinishTools...), s.finalPlanOpenAITools, s.finalPlanAnthropicTools
 	}
@@ -344,12 +363,12 @@ func (s *Session) toolSurface() (*tools.Registry, []wire.OpenAITool, []wire.Anth
 		return s.registry.PlanWith(s.planSurface), s.planOpenAITools, s.planAnthropicTools
 	}
 	if s.turnFanOut && s.fanOutRegistry != nil {
-		return s.fanOutRegistry, s.fanOutOpenAITools, s.fanOutAnthropicTools
+		return s.withKanbanLoop("fanout", s.fanOutRegistry, s.fanOutOpenAITools, s.fanOutAnthropicTools)
 	}
 	if s.turnReadOnly && s.roRegistry != nil {
-		return s.roRegistry, s.roOpenAITools, s.roAnthropicTools
+		return s.withKanbanLoop("read_only", s.roRegistry, s.roOpenAITools, s.roAnthropicTools)
 	}
-	return s.registry.WithoutPlanOnly(), s.openAITools, s.anthropicTools
+	return s.withKanbanLoop("agent", s.registry.WithoutPlanOnly(), s.openAITools, s.anthropicTools)
 }
 
 // execTool resolves a call against the registry that executes it. A
@@ -360,6 +379,9 @@ func (s *Session) toolSurface() (*tools.Registry, []wire.OpenAITool, []wire.Anth
 func (s *Session) execTool(name string) (tools.Tool, string) {
 	if s.reportOnly {
 		return nil, fmt.Sprintf("tool result withheld: %q is unavailable while writing the findings report; answer from what you have", name)
+	}
+	if t, refusal, handled := s.kanbanExecTool(name); handled {
+		return t, refusal
 	}
 	if s.planMode && s.planFinalPass && !slices.Contains(planFinishTools, name) {
 		return nil, fmt.Sprintf("tool result withheld: %q is unavailable on the final planning pass; write the plan and call ExitPlanMode", name)
@@ -509,6 +531,7 @@ func NewSession(o Options) (*Session, error) {
 		diag:                 o.Diagnostics,
 		agentPool:            o.AgentPool,
 		sessionID:            o.SessionID,
+		kanban:               newKanbanState(reg),
 	}, nil
 }
 
@@ -623,6 +646,8 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	s.emit = emit
 	s.taskCallsThisTurn = 0
 	s.handoffUpdatePlanCalled = false
+	s.turnToolRuns = 0
+	s.lastTurns = nil
 	// turnIntent is set when the mode decision is finalised below.
 
 	clean := sanitize.Sanitize(in.Prompt)
@@ -798,6 +823,13 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 		emit(Event{Kind: EventWarningKind, Text: "read_only is on; the plan handoff cannot make edits until the setting is turned off"})
 	}
 	defer func() { s.turnReadOnly = savedReadOnly }()
+
+	// Per-turn kanban latch: an agent, goal or plan-execute turn of a main
+	// session may move board items while it works. Plan mode may only search
+	// and note. s.planMode is already latched for this turn.
+	savedKanbanLoop := s.turnKanbanLoop
+	s.turnKanbanLoop = s.kanban.on && !s.planMode && s.allowPassLoop && !s.exploreSubagent
+	defer func() { s.turnKanbanLoop = savedKanbanLoop }()
 
 	// Per-turn intent/fan-out latch: the fan-out profile advertises the Task
 	// tool and runs read-only subagents for parallel investigation.
@@ -988,6 +1020,7 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	// It changes every turn, so it rides here and never in the system block.
 	repoStatus = joinDirectives(repoStatus, s.readSummary(history))
 	repoStatus = joinDirectives(repoStatus, s.forgeStatus())
+	repoStatus = joinDirectives(repoStatus, s.kanbanDirective(clean))
 	if len(s.workspaceMaps) > 0 {
 		opts.WorkspaceBlock = prompt.WorkspaceBlock(s.workspaceMaps)
 	}
@@ -1023,7 +1056,31 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	// mode has none). Digest the findings here; they are already classified
 	// and admitted as SAFE, and the evaluator call sanitizes them again.
 	planContext := joinEvidence(clarified, exploreContextDigest(exploreTurns))
-	res, err := s.passLoop(ctx, pipe, system, turns, loopDec, loopGoal, planContext, clean, streaming, emit)
+	// The loop's todo events are watched so the kanban wrap-up can say, as a
+	// harness fact, how many update_plan steps were left open.
+	var todoMu sync.Mutex
+	var lastTodos *todos.List
+	loopEmit := func(e Event) {
+		if e.Kind == EventTodosKind && e.Todos != nil {
+			todoMu.Lock()
+			l := *e.Todos
+			lastTodos = &l
+			todoMu.Unlock()
+		}
+		emit(e)
+	}
+	res, err := s.passLoop(ctx, pipe, system, turns, loopDec, loopGoal, planContext, clean, streaming, loopEmit)
+	if err == nil && !s.planMode && res.Clarify == nil && s.lastTurns != nil {
+		todoMu.Lock()
+		kt := kanbanTurn{
+			work:     loopDec.Mode == modes.ModeGoal || in.ExecutePlan || len(in.Review) > 0 || s.turnToolRuns > 0,
+			sentinel: res.GoalSentinel,
+			todos:    lastTodos,
+			reviews:  len(in.Review) + len(in.ReviewFindings),
+		}
+		todoMu.Unlock()
+		s.kanbanWrapUp(ctx, pipe, system, s.lastTurns, res, kt, streaming, emit)
+	}
 	res.SanitizedPrompt = clean
 	res.SecuritySentinel = dec.Sentinel
 	res.ModeDecision = modeDec
