@@ -1660,7 +1660,11 @@ func NewPipelineWithRetry(cfg Config, client *http.Client, cache *rolemanager.Ca
 func securityGuard(cfg Config, client *http.Client, onRetry func(resilience.Attempt)) rolemanager.Classifier {
 	cc := cfg.ClassifierOrDefault()
 	guard := NewClassifierWithRetry(cfg, client, onRetry)
-	if jev.IsDecisionsModel(cc.Provider, cc.Model) {
+	// The Decisions call goes straight to OpenRouter. A firewall-routed
+	// classifier's APIKey is the firewall's credential, which never leaves
+	// its instance, so that classifier keeps the chat guard, which the
+	// firewall carries.
+	if jev.IsDecisionsModel(cc.Provider, cc.Model) && cc.Firewall == nil {
 		guard = jev.NewSecurity(func() (string, error) { return cc.APIKey, nil }, guard)
 	}
 	return guard
