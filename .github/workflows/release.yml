@@ -199,6 +199,13 @@ jobs:
     needs: release
     runs-on: [self-hosted, Linux, X64, vulnetix-local]
     timeout-minutes: 20
+    # One package update at a time across versions: two releases tagged
+    # minutes apart raced on the tap (v0.64.0's push was rejected), and an
+    # older one finishing last would have downgraded the formula. A queued
+    # older run is also skipped below once a newer version is in place.
+    concurrency:
+      group: belai-package-managers
+      cancel-in-progress: false
     steps:
       - name: Checkout belai repo
         uses: actions/checkout@v5
@@ -253,6 +260,14 @@ jobs:
             echo "::error::homebrew-tap has no Formula/belai.rb" >&2
             exit 1
           fi
+          # Never downgrade: a release that finishes after a newer one leaves
+          # the newer formula in place.
+          CUR=$(sed -n 's/^ *version "\([^"]*\)".*/\1/p' "$BREW" | head -n1)
+          if [ -n "$CUR" ] && [ "$CUR" != "$VER_NUM" ] && \
+             [ "$(printf '%s\n%s\n' "$CUR" "$VER_NUM" | sort -V | tail -n1)" = "$CUR" ]; then
+            echo "::notice::homebrew-tap already has belai ${CUR}, newer than ${VER_NUM}; not updating"
+            exit 0
+          fi
 
           # The default asset family is the embedded guardrails build. The
           # leading slash keeps these substitutions from colliding with the
@@ -280,7 +295,14 @@ jobs:
           git add "$BREW"
           if ! git diff --cached --quiet; then
             git commit -m "belai ${VER_NUM}"
-            git push
+            # Someone else may have pushed to the tap meanwhile: rebase and
+            # try again rather than fail the release.
+            for attempt in 1 2 3 4; do
+              git push && break
+              [ "$attempt" = 4 ] && { echo "::error::could not push to homebrew-tap" >&2; exit 1; }
+              sleep $((attempt * 5))
+              git pull --rebase origin main
+            done
           fi
 
       - name: Update Scoop manifest
@@ -306,6 +328,12 @@ jobs:
             echo "::error::scoop-bucket has no bucket/belai.json" >&2
             exit 1
           fi
+          CUR=$(jq -r '.version // ""' bucket/belai.json)
+          if [ -n "$CUR" ] && [ "$CUR" != "$VER_NUM" ] && \
+             [ "$(printf '%s\n%s\n' "$CUR" "$VER_NUM" | sort -V | tail -n1)" = "$CUR" ]; then
+            echo "::notice::scoop-bucket already has belai ${CUR}, newer than ${VER_NUM}; not updating"
+            exit 0
+          fi
           jq --indent 4 \
             --arg v "$VER_NUM" \
             --arg h64 "$WIN_AMD64" \
@@ -330,5 +358,10 @@ jobs:
           git add bucket/belai.json
           if ! git diff --cached --quiet; then
             git commit -m "belai ${VER_NUM}"
-            git push
+            for attempt in 1 2 3 4; do
+              git push && break
+              [ "$attempt" = 4 ] && { echo "::error::could not push to scoop-bucket" >&2; exit 1; }
+              sleep $((attempt * 5))
+              git pull --rebase origin main
+            done
           fi
