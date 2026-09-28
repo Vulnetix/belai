@@ -84,7 +84,10 @@ One pass of the worker loop:
 6. **Memory.** An optional reflection turn distils a few lessons into the
    profile's memory file, which later items receive as a classified
    attachment.
-7. **Done.** A worker exits by itself once the board has nothing left for
+7. **Survey.** A profile with a `kanban.survey` block finds its own work
+   when the board has none for it; see [Finding work](#finding-work-kanbansurvey).
+   The survey comes before the quiet window below.
+8. **Done.** A worker exits by itself once the board has nothing left for
    it. With no claimable item and no teammate in its crew (same repository)
    starting or working, it waits a quiet window of two polls, so a handoff
    made just before is claimed first, then stops. Its registry record reads
@@ -94,13 +97,92 @@ One pass of the worker loop:
    `belai agent run` or `start` keeps a standing worker that waits for new
    items, and a worker on a cron `schedule` always stays.
 
+### Finding work: `kanban.survey`
+
+A worker normally takes only items someone filed. A `kanban.survey` block
+lets it file its own:
+
+```json
+"survey": {
+  "title": "Survey {project} for work",
+  "body": "What to look for …",
+  "list": "review",
+  "every": "24h"
+}
+```
+
+When the worker has nothing to claim, the harness files one survey item and
+claims it at once:
+
+- **Title.** The title is the survey `title` with `{project}` replaced by the
+  project name (or "this repository"), plus the date:
+  `Survey belai for work (2026-09-29)`.
+- **Body and labels.** The body is the survey `body`. The labels are the
+  worker's own claim labels plus `survey`.
+- **Worked like any item.** It runs through the same classifier, budgets,
+  lease and routing as any other item, and goes to `on_success` when done.
+- **Handoffs.** Every `KanbanHandoff` made while working a `survey` item goes
+  to the survey's `list`, whatever list the model asks for. The default is
+  `review`, where a human confirms self-found work before any agent takes it.
+  The harness enforces this, not the prompt. Any item labelled `survey` gets
+  this treatment, so adding the label by hand can only make handoffs more
+  cautious.
+
+Limits:
+
+- **Filed work comes first.** A survey runs only when no item is claimable.
+- **Once per start.** A worker surveys at most once each time it starts.
+- **Once per `every`.** It surveys at most once per `every` (at least `1h`,
+  default `24h`) for the same profile and repository on the same machine. The
+  last survey's time is the mtime of a stamp file under the registry
+  (`agents/run/surveys/`). A worker restarted within the interval logs
+  `survey skipped` and does not survey.
+- **Never for a targeted run.** `-once` and `-item` never survey.
+- **Shared across hosts.** The dated title makes hosts that survey the same
+  project on the same day share one item. The board refuses a second open
+  item with the same title, and a survey another worker already holds is
+  left to it.
+- **Handoffs required.** A survey needs `handoff_to` or `handoff_labels`,
+  because it reports what it finds as handoffs.
+
+After the survey the worker is idle again. It exits after the quiet window
+unless `-stay` or a `schedule` keeps it.
+
+The built-in `belai:scout` surveys every 24 hours into `review`. It runs the
+project's tests, build and lint to find failures. It compares specs, PRDs,
+design notes, READMEs, `docs/` and the static site's prose with the code, to
+find flags, defaults, limits, commands and behaviours that disagree. It also
+looks for untested business rules, missing or stale docs, and site prose to
+add or update. It files at most five `build` handoffs, discrepancies before
+gaps. Moving one from Review to Backlog is the confirmation: a builder then
+claims it by its `build` label.
+
+### Read-only workspaces
+
+`"workspace": {"isolation": "worktree", "read_only": true}` is for a worker
+that runs checks but changes nothing, such as the scout running tests:
+
+- It gets a worktree like any other, so its commands cannot touch your
+  checkout.
+- The harness commits nothing the turn leaves behind (build output, coverage
+  files), and the release note names no branch.
+- The worktree and its branch are deleted after every item. A commit the
+  model made anyway keeps the branch; see [Git in the worktree](#git-in-the-worktree).
+- Its workspace note says the checkout is throwaway and that it must not
+  edit, create or commit files.
+- `read_only` needs `isolation: worktree`, and cannot be combined with
+  `keep` or a `publish` other than `none`.
+
+A read-only worker with `Bash` and `autonomy: autonomous` still needs the OS
+sandbox and a pass budget, like any autonomous `Bash` worker.
+
 ### What a worker's model may do on the board
 
 | Tool | In a worker |
 |---|---|
 | `KanbanSearch` | yes |
 | `KanbanUpdate` | a note on the claimed item only |
-| `KanbanHandoff` | files a new item with this item as its parent, to a profile in `handoff_to` |
+| `KanbanHandoff` | files a new item with this item as its parent, to a profile in `handoff_to`; under a `survey` item always to the survey's list |
 | `KanbanMove`, `KanbanAdd` | not offered; the harness moves the claimed item |
 
 There is no claim tool. In every session, a model's `KanbanMove` or
@@ -162,7 +244,11 @@ A crew is a named set of profiles started together:
 | `belai:security` | `belai:vuln-scout` ×1, `belai:patcher` ×2, `belai:verifier` ×1 |
 
 Delivery: file an item labelled `scout` ("survey internal/foo for missing
-tests"). The scout reads and hands off one `build` item per concrete task.
+tests"). The scout reads, runs the project's checks in a read-only worktree,
+and hands off one `build` item per concrete task to backlog. With no `scout`
+item on the board it [surveys the repository itself](#finding-work-kanbansurvey)
+at most once a day, and its handoffs from that survey go to Review for you to
+confirm.
 Builders implement each on its own branch and hand it on as `needs-review`.
 The reviewer checks the branch out, runs the tests, and moves the item to
 `done`, or back to `backlog` with its notes.
@@ -191,7 +277,7 @@ Your own crews live in `~/.vulnetix/belai/profiles/crews/<name>.json`:
 | `belai agent memory NAME [-clear]` | a worker's lessons |
 | `belai agent status` | running workers and this project's board |
 | `belai agent run NAME [-once] [-item K-…]` | run a worker in the foreground |
-| `belai agent start NAME \| -crew CREW` | start detached workers |
+| `belai agent start NAME \| -crew CREW [-max-workers N] [-stay]` | start detached workers; `-max-workers` replaces `agents.max_workers` for this start |
 | `belai agent ps` | running and recently stopped workers |
 | `belai agent logs ID [-f]` | a worker's log |
 | `belai agent stop ID \| NAME \| -all` | stop workers; claims are released |
@@ -268,7 +354,14 @@ Each turn carries a workspace note (harness facts only) with:
 - whether it may publish.
 
 Whatever the agent leaves uncommitted, the harness commits when the goal
-ends. It first checks that the worktree is still on the item's branch.
+ends. It first checks that the worktree is still on the item's branch. A
+`read_only` worker is the exception: nothing is committed for it.
+
+When the item is released the worktree is removed, unless `workspace.keep` is
+set. Its branch stays in the repository while it holds work. A `belai/`
+branch that still sits at its base commit, with no commit of its own, is
+deleted with the worktree, so a turn that changed nothing does not leave an
+empty branch behind.
 
 ## Publishing
 
@@ -291,7 +384,8 @@ A branch with no changes beyond its base is never pushed. When the base
 already does what the item asks, `PublishBranch` says so and names the base,
 rather than asking for a commit, so the agent records that on the item. The
 harness skips its own publish at `done` for such a branch, and the release
-note reads "no files changed on" the branch.
+note reads "no files changed on" the branch. The empty branch itself is then
+deleted with the worktree.
 
 The built-in builders and patchers use `agent`; the reviewer and verifier use
 `draft_pr`, which finds the builder's pull request rather than opening a
@@ -315,6 +409,27 @@ TUI's `/agents` screen and the other workers read it. A record whose process
 has died is marked `failed` and its claim is released. Logs are
 `~/.vulnetix/belai/agents/logs/<id>.log`.
 
+A detached start (`belai agent start`, the TUI's `/fleet`, remote control)
+writes the `starting` record itself, with the child's pid, before the worker
+runs. A worker that dies before it registers, for example on a bad settings
+file, is therefore swept to `failed` like any other and keeps its log, rather
+than vanishing. The starter reaps the child, so a long-lived starter (the TUI)
+never keeps a crashed worker as a zombie that looks alive and holds its slot.
+
+The log says what the worker does, in harness words only:
+
+- at start, what it looks for: `looking for backlog items labelled scout
+  unassigned or assigned to belai:scout in project belai; polling every 30s,
+  exiting after 1m0s with nothing to claim`;
+- once per dry spell, `nothing to claim: no …` with the same description, so
+  an idle worker says why;
+- each claim, release and publish, and the exit reason on stop.
+
+Anything the detached process prints to stderr before it registers (a bad
+flag, an untrusted directory, a settings error) lands in the same file. With
+remote control running, the tail of this log reaches the website's Sessions
+page ([remote control](remote-control.md#fleet-workers)).
+
 ## Settings
 
 ```json
@@ -322,8 +437,12 @@ has died is marked `failed` and its claim is released. Logs are
 ```
 
 - `enabled` turns workers on or off. A project may turn it off, never on.
-- `max_workers` caps running workers on this machine. A project may lower
-  it, never raise it.
+- `max_workers` caps running workers on this machine (default 4). A project
+  may lower it, never raise it. `belai agent start -max-workers N` replaces
+  the user's cap for that one start; `belai rc` passes it when started with
+  an explicit `--max N` (see [Remote control](remote-control.md#fleet-workers)).
+  A project that lowered the cap still holds it: the start uses the lower of
+  the two. Without the flag, `max_workers` applies.
 - `publish` allows `workspace.publish: draft_pr`. A project may turn it off,
   never on.
 

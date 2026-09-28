@@ -548,6 +548,33 @@ func (w *Workspace) nothingToPublish(ctx context.Context) error {
 		"If the base already does what the item asks, say so in the item's notes and finish without publishing", w.Branch, base, base, base)
 }
 
+// unchanged reports whether a worker-made belai/ branch still sits at its
+// base: no commit of its own, so nothing is lost by deleting it.
+func (w *Workspace) unchanged(ctx context.Context) bool {
+	if !w.Worktree || w.Base == "" || !strings.HasPrefix(w.Branch, BranchPrefix) {
+		return false
+	}
+	head, err := git(ctx, w.run, w.Dir, "rev-parse", "HEAD")
+	if err != nil {
+		return false
+	}
+	base, err := git(ctx, w.run, w.Dir, "rev-parse", w.Base+"^{commit}")
+	return err == nil && head != "" && head == base
+}
+
+// Discard removes the worktree, and its branch too when the branch holds no
+// commit of its own: a read-only worker (a scout running tests) or a turn
+// that changed nothing would otherwise leave one empty branch per item. A
+// branch with work on it stays in the repository.
+func (w *Workspace) Discard(ctx context.Context) error {
+	empty := w.unchanged(ctx)
+	err := w.Remove(ctx)
+	if empty && err == nil {
+		_, _ = git(ctx, w.repoRun, w.repo, "branch", "-D", w.Branch)
+	}
+	return err
+}
+
 // Remove deletes the worktree directory. The branch, and the work on it,
 // stay in the repository.
 func (w *Workspace) Remove(ctx context.Context) error {
