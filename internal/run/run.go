@@ -1117,7 +1117,6 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 		}
 	}
 
-	status.Configured = len(status.Missing) == 0
 	if fw, ok := src.(FirewallSource); ok {
 		if route, on := fw.Firewall(name); on {
 			origin := "firewall:" + route.Instance
@@ -1134,6 +1133,8 @@ func Prepare(model, providerName string, src CredentialSource) (Config, Status) 
 			status.Notes = append(status.Notes, "routed through the "+route.Label)
 		}
 	}
+	// Only now: a BYOK route above can clear Missing.
+	status.Configured = len(status.Missing) == 0
 
 	if override := strings.TrimSpace(os.Getenv("BELAI_BASE_URL")); override != "" {
 		if cfg.BaseURL != "" && cfg.BaseURL != override {
