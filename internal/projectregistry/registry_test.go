@@ -28,6 +28,34 @@ func TestObserveCreatesEntry(t *testing.T) {
 	}
 }
 
+func TestUntrustClearsTrustOnly(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	dir, other, extra := t.TempDir(), t.TempDir(), t.TempDir()
+	if err := Trust(dir, []string{extra}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Trust(other, nil); err != nil {
+		t.Fatal(err)
+	}
+	n, err := Untrust(entryKey(dir), "no-such-key")
+	if err != nil || n != 1 {
+		t.Fatalf("Untrust = %d, %v; want 1", n, err)
+	}
+	trusted, accepted, _, err := TrustOf(dir)
+	if err != nil || trusted {
+		t.Fatalf("still trusted (err %v)", err)
+	}
+	if len(accepted) != 1 || len(WorkspaceDirs(dir)) != 1 {
+		t.Fatalf("revoking dropped the proposal rulings: accepted %v", accepted)
+	}
+	if ok, _, _, _ := TrustOf(other); !ok {
+		t.Fatal("revoked an unrelated directory")
+	}
+	if n, _ := Untrust(entryKey(dir)); n != 0 {
+		t.Fatalf("second Untrust changed %d entries", n)
+	}
+}
+
 func TestMergePreservesRicherSource(t *testing.T) {
 	t.Setenv("BELAI_HOME", t.TempDir())
 	dir := t.TempDir()

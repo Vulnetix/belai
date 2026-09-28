@@ -45,6 +45,14 @@ A session runs only in a directory the daemon offers:
   `belai -trust-dir` would, the directory only, never the workspace
   directories its settings propose.
 
+`/trusted` in the TUI (also `f1` then `d`) lists every trusted directory and
+marks the ones the running daemon offers, the missing ones and the scratch ones
+it hides. `x` revokes one, `p` revokes every missing or scratch directory, and
+`a` trusts a path the same way `-trust-dir` does. Revoking clears the trust
+flag only: the next launch there asks again, and a session the daemon starts
+there fails its trust check. The daemon keeps listing it until you restart
+remote control.
+
 The daemon sends the list to the website, which offers only those. The daemon
 checks each request against its own list again (an exact match after
 resolving symlinks, never a prefix), and the session checks trust once more

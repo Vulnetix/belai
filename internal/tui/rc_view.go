@@ -367,7 +367,7 @@ func (a *App) rcView() string {
 		for _, c := range []gsConcept{
 			{"host", "`belai rc` runs in the background and shows this machine under Belai → Sessions"},
 			{"sessions", "the website starts a Belai session here, then follows and prompts it live"},
-			{"where", "only in projects you already trust on this machine, and directories you pass with --dir"},
+			{"where", "only in projects you already trust on this machine (/trusted manages them), and directories you pass with --dir"},
 			{"asks", "off: nobody is at this terminal, so the posture and permission rules decide"},
 			{"guardrails", "must stay on; remote control will not run without them"},
 			{"login", "needs a Vulnetix CLI browser login (vulnetix auth login); API-token logins cannot connect"},
@@ -457,6 +457,7 @@ func (a *App) rcView() string {
 				}
 				line(muted.Render("  " + d.Path + "  (" + d.Source + ")"))
 			}
+			line(muted.Render("Revoke directories in /trusted, then restart remote control."))
 			if r.LogPath != "" {
 				line("")
 				line(muted.Render("log: " + r.LogPath))

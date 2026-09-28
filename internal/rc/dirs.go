@@ -89,7 +89,7 @@ func Collect(args []string) []Dir {
 			continue
 		}
 		p, err := Normalize(e.Path)
-		if err != nil || seen[p] || isTempDir(p) {
+		if err != nil || seen[p] || IsTempDir(p) {
 			continue
 		}
 		seen[p] = true
@@ -118,9 +118,9 @@ func Allowed(dirs []Dir, cwd string) (string, bool) {
 	return "", false
 }
 
-// isTempDir hides trusted scratch directories (tests, throwaway checkouts)
-// from the offer; pass one with --dir to offer it anyway.
-func isTempDir(p string) bool {
+// IsTempDir reports a scratch directory (tests, throwaway checkouts), which
+// the offer hides even when trusted; pass one with --dir to offer it anyway.
+func IsTempDir(p string) bool {
 	for _, root := range []string{os.TempDir(), "/tmp", "/private/tmp", "/var/tmp"} {
 		if r, err := filepath.EvalSymlinks(root); err == nil {
 			root = r
