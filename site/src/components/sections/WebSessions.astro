@@ -135,6 +135,12 @@ const records = [
         <code class="mono">sync.remote_prompts</code> makes a session view-only. A repository's settings
         can turn either off, never on.
       </p>
+      <p class="mt-4 text-vx-ink/80">
+        The website's Agent Builder uses a live session too. It sends the host a one-line premise, and the
+        host checks it like a typed prompt, drafts an agent profile with its own model, and sends back each
+        field with a reason. Nothing is saved on the host. The request needs web prompts on, runs one at a
+        time per session, and expires after three minutes.
+      </p>
     </div>
   </div>
 

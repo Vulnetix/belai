@@ -151,6 +151,72 @@ Delivery mirrors web prompts: the answer is stored, the inbox hands it to the
 host (answers before prompts), the host acks it *accepted* once the
 `ask_answer` line is uploaded, or *refused* with a reason.
 
+## Web agent drafts
+
+The website's agent builder (`/resolve/belai-agent-creator`) asks a live
+session to draft an agent profile from a premise. The website runs no model,
+so a draft is a request like a web prompt: the host drafts with its own model
+and settings and posts offers back. Nothing is written on the host. The user
+takes, edits or drops each offer on the page and downloads the file for
+`belai agent import`.
+
+```mermaid
+sequenceDiagram
+    participant Page as Agent builder page
+    participant API as vdb-site API
+    participant Host as Belai host (TUI)
+    Page->>API: POST sessions/{id}/agent-drafts (premise, facts)
+    API-->>Host: inbox "drafts" (status delivered)
+    Host->>Host: CleanPrompt, admission classifier, agentdraft
+    Host->>API: POST agent-drafts/{did}/result (done + offers, or refused + reason)
+    Page->>API: GET agent-drafts/{did} (every 1.5s)
+    API-->>Page: status done, result
+```
+
+Rules:
+
+- **It rides the web-prompt switch.** A premise is web-typed text, so the
+  server queues a draft only for a live session with `sync.remote_prompts` on,
+  and a host with it off refuses any it is handed. `sync.remote_answers` does
+  not matter.
+- **One at a time, and it expires.** A session has at most one draft pending
+  or in progress. A draft expires 180 seconds after it was created, claimed or
+  not, and when its session ends. The page gives up at 190 seconds, so the
+  server's expiry is always the one the user sees. An older host that does not
+  know drafts never claims one, and the page says the host may need a newer
+  Belai.
+- **The premise is admitted like a prompt.** The host cleans it
+  (`CleanPrompt`) and runs it through the security classifier under the
+  effective posture before the drafter sees it. With guardrails off the
+  classifier is skipped, as for every prompt. A refused premise is never sent
+  to the drafter.
+- **The request carries facts only.** The context is worker profile names and
+  board labels. The server keeps only identifiers (1 to 64 of
+  `[A-Za-z0-9._:-]`, at most 64 workers and 128 labels) and drops anything
+  else. The host checks them again. The premise is 1 to 2000 characters.
+- **The drafter is a classifier turn.** `internal/agentdraft` makes a
+  tool-less call on the role-manager classifier. Every value in the reply is
+  checked against the profile schema, and a value that does not fit is dropped
+  rather than coerced. A draft never offers `guardrails` or `ask_permission`.
+  A reply without `name`, `description`, `system_prompt` and `mode` is sent
+  back once with the reason (two attempts in all).
+- **Crew offers come from facts.** The host computes them from the drafted
+  routes and its own worker profiles and crews, never from the model. It
+  offers a copy of a crew one of whose members feeds the new agent or is fed
+  by it, and a gap for each label the agent sends, or that sits on the board,
+  which no worker claims. It makes at most four crew offers, and none for an
+  agent that is not a worker. A crew already at eight members is not offered.
+- **Refusal reasons are harness text.** A refused draft carries a fixed
+  sentence, such as "no classifier model is configured on this host", never
+  provider or model output.
+- **Cancel is final.** The page withdraws a draft when the user cancels or
+  leaves the page. A host result for a cancelled or expired draft is refused
+  with 409, and the host does not count that as a sync error.
+
+The transcript notes each draft (`web: drafting an agent…`, then the field
+count or the refusal). `belai agent draft PREMISE` runs the same drafter from
+the command line (see [fleet.md](fleet.md)).
+
 ## Keeping it fast without blocking the TUI
 
 The TUI never waits on the network. `appendEntry` is a local append, and
@@ -224,16 +290,20 @@ and the inbox run on the syncer's own goroutines.
 
 - **API:** `vdb-site` (`api/internal/handler/belai_*.go`) serves `/v1/belai/*`.
   - Host endpoints: host and session upsert, entry upload (gzip accepted),
-    heartbeat, end, inbox long-poll, and prompt and answer acks.
+    heartbeat, end, inbox long-poll (prompts, answers and agent drafts), prompt
+    and answer acks, and agent-draft results.
   - Browser endpoints: list (sessions run in `/tmp`, `/private/tmp` or
     `/var/tmp` are hidden unless `tmp=1`), detail, paged entries, an SSE
-    stream, prompt create/cancel and answer create/cancel.
+    stream, prompt create/cancel, answer create/cancel, and agent-draft
+    create/read/cancel (`belai_drafts.go`).
   - Wake-ups: `belai_notify.go` listens on `belai_s` (session) and `belai_h`
     (host).
 - **Schema:** it lives in `saas` (`prisma/models/belai.prisma`, migrations
   `20260926000001_add_belai_session_sync` and
   `20260928000001_add_belai_remote_answers`, which adds `BelaiRemoteAnswer`,
-  `BelaiSession.remoteAnswers` and the notify triggers).
+  `BelaiSession.remoteAnswers` and the notify triggers, and
+  `20261001000001_add_belai_agent_drafts`, which adds `BelaiAgentDraft` and
+  its trigger).
 - **Website pages:** `src/pages/resolve/belai-*.vue`, in the sidebar's
   **Belai** group.
 

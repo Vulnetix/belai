@@ -365,6 +365,13 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
         lower their number, but cannot turn them on or raise it.
       </p>
       <p class="mt-4 text-vx-ink/80">
+        Or start from one sentence. <code class="mono">belai agent draft "what it should do"</code> drafts every
+        field and writes a file ready to import, and <code class="mono">-json</code> shows why it chose each value.
+        The Agent Builder on the Vulnetix website asks a live session to draft the same way, then lets you take,
+        change or drop each field before you download it. The draft never touches guardrails or permission
+        asks, and it only suggests crews from workers you already have.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
         <a class="text-vx-ink underline" href={`${docBase}fleet.md`}>docs/fleet.md</a> has the runtime and a
         comparison with Hermes Agent and OpenClaw;{' '}
         <a class="text-vx-ink underline" href={`${docBase}agent-profiles.md`}>docs/agent-profiles.md</a> has

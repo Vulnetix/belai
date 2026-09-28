@@ -22,7 +22,7 @@ func TestInboxNamesItsSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := c.Inbox(context.Background(), testHost, testSess, time.Second); err != nil {
+	if _, _, _, err := c.Inbox(context.Background(), testHost, testSess, time.Second); err != nil {
 		t.Fatal(err)
 	}
 	if got != "wait=1&session="+testSess {

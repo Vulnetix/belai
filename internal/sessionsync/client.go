@@ -46,6 +46,13 @@ var ErrNotFound = errors.New("sessionsync: not found")
 // ErrUnauthorized is a 401: the credential was refused.
 var ErrUnauthorized = errors.New("sessionsync: the Vulnetix credential was refused")
 
+// ErrConflict is a 409: the request no longer applies (a draft cancelled or
+// expired on the website, an answer already given).
+var ErrConflict = errors.New("sessionsync: the request no longer applies")
+
+// IsConflict reports whether err is ErrConflict.
+func IsConflict(err error) bool { return errors.Is(err, ErrConflict) }
+
 // BaseURL returns the belai API base for a console origin ("" = default).
 func BaseURL(origin string) string {
 	origin = strings.TrimRight(strings.TrimSpace(origin), "/")
@@ -191,6 +198,23 @@ type RemoteAnswer struct {
 	CreatedAt int64           `json:"createdAt"`
 }
 
+// RemoteDraft is a request from the website's agent builder to draft an agent
+// profile from a premise, claimed from the inbox. The premise is untrusted
+// web text: the host cleans it and admits it like a web prompt before the
+// drafter sees it. Context carries harness facts only (worker names, board
+// labels), which the drafter re-checks.
+type RemoteDraft struct {
+	ID        string `json:"id"`
+	SessionID string `json:"sessionId"`
+	Premise   string `json:"premise"`
+	Context   struct {
+		Workers []string `json:"workers"`
+		Labels  []string `json:"labels"`
+	} `json:"context"`
+	CreatedAt int64 `json:"createdAt"`
+	ExpiresAt int64 `json:"expiresAt"`
+}
+
 // Prompt outcomes the host reports back.
 const (
 	AckQueued   = "queued"
@@ -252,6 +276,8 @@ func (c *Client) doBody(ctx context.Context, method, path string, in, out any, t
 		return ErrNotFound
 	case resp.StatusCode == http.StatusUnauthorized:
 		return ErrUnauthorized
+	case resp.StatusCode == http.StatusConflict:
+		return ErrConflict
 	case resp.StatusCode < 200 || resp.StatusCode > 299:
 		return fmt.Errorf("sessionsync: %s %s: HTTP %d", method, path, resp.StatusCode)
 	}
@@ -300,17 +326,35 @@ func (c *Client) End(ctx context.Context, sessionID string) error {
 // live session of this host. A server that predates answers sends none; one
 // that predates the session filter hands over the whole host's inbox, which
 // the TUI refuses per prompt as before.
-func (c *Client) Inbox(ctx context.Context, hostID, sessionID string, wait time.Duration) ([]RemotePrompt, []RemoteAnswer, error) {
+func (c *Client) Inbox(ctx context.Context, hostID, sessionID string, wait time.Duration) ([]RemotePrompt, []RemoteAnswer, []RemoteDraft, error) {
 	var out struct {
 		Prompts []RemotePrompt `json:"prompts"`
 		Answers []RemoteAnswer `json:"answers"`
+		Drafts  []RemoteDraft  `json:"drafts"`
 	}
 	path := fmt.Sprintf("/hosts/%s/inbox?wait=%d", url.PathEscape(hostID), int(wait/time.Second))
 	if sessionID != "" {
 		path += "&session=" + url.QueryEscape(sessionID)
 	}
 	err := c.do(ctx, http.MethodGet, path, nil, &out, wait+requestTimeout)
-	return out.Prompts, out.Answers, err
+	return out.Prompts, out.Answers, out.Drafts, err
+}
+
+// Draft outcomes the host reports back.
+const (
+	DraftDone    = "done"
+	DraftRefused = "refused"
+)
+
+// DraftResult reports an agent draft: done with the result (field and crew
+// offers), or refused with a reason. The server refuses a result for a draft
+// that was cancelled, expired or already answered.
+func (c *Client) DraftResult(ctx context.Context, draftID, status, reason string, result any) error {
+	body := map[string]any{"status": status, "reason": reason}
+	if status == DraftDone {
+		body["result"] = result
+	}
+	return c.do(ctx, http.MethodPost, "/agent-drafts/"+url.PathEscape(draftID)+"/result", body, nil, requestTimeout)
 }
 
 // AckAnswer reports what the host did with a web answer: accepted (applied,

@@ -461,6 +461,17 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   same rule. The first answer wins; a late one is refused. Plan-review notes
   take the web-prompt path. The agent picker and the trust gate are never
   answered from the web. A decision's `Detail` is never persisted.
+- **A web agent draft is a prompt-grade request that writes nothing.** A
+  draft (`sessionsync.RemoteDraft`, `internal/tui/web_drafts.go`) arrives only
+  while `sync.remote_prompts` is on. Its premise is cleaned by `CleanPrompt`
+  and admitted through the security classifier under the effective posture
+  before `internal/agentdraft` sees it. The drafter is a tool-less classifier
+  turn that sees the premise and harness facts only (tool names, worker
+  names, labels). Every drafted value is shape-checked and cleaned, and a
+  draft never offers `guardrails` or `ask_permission`. Crew offers are
+  computed from the host's own profiles, never drafted. The host posts offers
+  back and writes no profile, setting or file. A refusal reason is harness
+  text, never model or provider output.
 
 ## Layout
 

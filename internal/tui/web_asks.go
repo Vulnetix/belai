@@ -446,9 +446,9 @@ func (a *App) watchRemoteAnswers() tea.Cmd {
 	}
 }
 
-// watchRemote arms both inbox watchers.
+// watchRemote arms the inbox watchers: prompts, answers and agent drafts.
 func (a *App) watchRemote() tea.Cmd {
-	return tea.Batch(a.watchRemotePrompts(), a.watchRemoteAnswers())
+	return tea.Batch(a.watchRemotePrompts(), a.watchRemoteAnswers(), a.watchRemoteDrafts())
 }
 
 // handleRemoteAnswer applies one web answer to the ask it names, if that ask

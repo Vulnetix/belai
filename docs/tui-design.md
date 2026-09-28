@@ -81,6 +81,13 @@ deliberately below that and never carry required information on their own.
 | `⎇` | `Teal` | Git branch. |
 | `▰` | `Teal` / `Line` | Context gauge: used, free (amber over 80%, danger over 95%). |
 | `…` | `Low` | A truncation hint (`… 16 more lines`). |
+| `◌` | `Amber` | A drafted offer the user has not taken yet (agent builder). Taken turns `✓` `Teal`; a default value is a `Low` `·`. |
+| `┄` `┆` | `Amber` | A drafted route between agents, horizontal and vertical (agent builder's relationship lane). |
+| `▶` `◀` | `Line` | The direction of a settled route between agents. |
+
+`◌`, `▶`, `◀`, `┄` and `┆` are East Asian ambiguous-width. Where go-runewidth
+reports them as two cells they fall back to `o`, `>`, `<`, `-` and `:` so that
+columns stay aligned.
 
 Never use emoji. A new glyph must be in this table before it ships.
 
@@ -151,6 +158,12 @@ Never use emoji. A new glyph must be in this table before it ships.
 - A failed tool row does not yet expand its output by default, and there is no
   `error` block for provider errors.
 - The subagent roster and review still use chips.
+- The premise-first agent builder is designed but not built. The design is in
+  the `Tui120`, `Tui80`, `TuiRel` and `TuiKeys` screens on the design canvas
+  <https://claude.ai/artifact/F8FCswyhCAa2r6X8AXLnFg>, and `◌`, `┄` `┆` and
+  `▶` `◀` above are reserved for it. The drafter it will use,
+  `internal/agentdraft`, already serves the website's builder and
+  `belai agent draft`.
 
 ## Changing the system
 

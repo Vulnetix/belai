@@ -38,6 +38,8 @@ const agentUsage = `usage: belai agent <command> [flags] [args]
   show NAME                      one profile as JSON
   validate FILE                  check a .json or .md profile
   import [-force] FILE           validate a .json or .md profile and save it
+  draft [-json] [-o FILE] PREMISE  draft a profile from a premise as markdown
+                                 (every offer taken; -json: the offers and why)
   crews                          crews and their members
   memory NAME [-clear]           a worker's lessons
   run [flags] NAME               run a worker in the foreground
@@ -136,6 +138,9 @@ func agentCommand(ctx context.Context, cmd string, rest []string, stdin io.Reade
 		}
 		fmt.Fprintf(stdout, "saved %s\n", path)
 		return 0, nil
+
+	case "draft":
+		return agentDraft(ctx, fs, rest, stdout, stderr, asJSON)
 
 	case "crews":
 		if err := fs.Parse(rest); err != nil {

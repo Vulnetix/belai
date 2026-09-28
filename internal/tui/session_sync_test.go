@@ -36,6 +36,15 @@ func (r *ackRecorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		id := strings.Split(strings.TrimPrefix(req.URL.Path, "/api/site/v1/belai/answers/"), "/")[0]
 		r.acks["answer:"+id] = in
 	}
+	if strings.Contains(req.URL.Path, "/agent-drafts/") && strings.HasSuffix(req.URL.Path, "/result") {
+		var in map[string]any
+		_ = json.NewDecoder(req.Body).Decode(&in)
+		id := strings.Split(strings.TrimPrefix(req.URL.Path, "/api/site/v1/belai/agent-drafts/"), "/")[0]
+		result, _ := json.Marshal(in["result"])
+		reason, _ := in["reason"].(string)
+		status, _ := in["status"].(string)
+		r.acks["draft:"+id] = map[string]string{"status": status, "reason": reason, "result": string(result)}
+	}
 	if strings.HasSuffix(req.URL.Path, "/inbox") {
 		_, _ = w.Write([]byte(`{"prompts":[]}`))
 		return
