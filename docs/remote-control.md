@@ -96,8 +96,30 @@ predict what will happen to them:
   `on_failure`, handoffs, attempts, lease and budget) and every crew with its
   members. Never a system prompt, a tool list or a model. The daemon sends it
   again whenever a profile or crew changes.
-- **Workers.** Each heartbeat carries the live fleet registry records: id,
-  profile, crew, state, the item held and its transcript session.
+- **Workers.** Each heartbeat carries the fleet registry records: every live
+  worker, then those that stopped or failed in the last 15 minutes, newest
+  first, at most 64. Each has its id, profile, crew, state, the item held,
+  its transcript session and branch, done and failed counts, start and last
+  heartbeat times, and for an ended worker when and why it stopped
+  (`done: nothing left to claim for 1m0s`, `stopped`, `the worker process
+  exited without stopping`, a startup error). It also carries the last 12
+  lines of the worker's own log, startup included. The daemon reads that log
+  by the worker's id from the fleet log directory, never from a path in the
+  record. Each line is cleaned the way a web prompt is (delimiter markup,
+  ANSI, control and bidi runes removed) and clipped to 240 bytes, and all the
+  tails together stay under 48 KiB. The log holds harness lines and the
+  worker process's stderr, never a transcript: model output goes to the
+  item's session. The server cleans it again and applies the same caps.
+- **On the Sessions page.** Each machine running remote control lists its
+  fleet workers above its sessions: a state indicator (working, starting,
+  idle and looking for work, stopped, failed), the profile and crew, done and
+  failed counts, and when it started or ended. Opening one shows the exit
+  reason, the branch, a link to its last session and the log tail. A crew
+  that went idle straight after it was sent reads `looking for …` then
+  `nothing to claim: no …`, which says what the board lacked. Only live
+  workers count against `agents.max_workers`, on the page and when it asks a
+  host to start more. An older Belai sends no log, and the page says to run
+  `belai agent logs ID` there instead.
 - **Starting workers.** A `worker` or `crew` request starts one profile or
   one crew in an offered directory. The daemon checks the directory against
   its own list and the name against its own catalogue, then runs

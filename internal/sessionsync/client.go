@@ -29,6 +29,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 // DefaultWebURL is the Vulnetix console origin; $VULNETIX_WEB_URL overrides it
@@ -183,6 +186,43 @@ type RCWorker struct {
 	Project string `json:"project,omitempty"`
 	Session string `json:"session,omitempty"`
 	Started int64  `json:"started"`
+	// Beat is the worker's last registry write; Stopped and Reason say when
+	// and why a recently stopped or failed worker ended. Done and Failed
+	// count its items; Branch is its current or last item's branch.
+	Beat    int64  `json:"heartbeat,omitempty"`
+	Stopped int64  `json:"stopped,omitempty"`
+	Reason  string `json:"reason,omitempty"`
+	Done    int    `json:"done"`
+	Failed  int    `json:"failed"`
+	Branch  string `json:"branch,omitempty"`
+	// Log is the tail of the worker's own log file, startup included:
+	// harness lines and the detached process's stderr, each cleaned by
+	// CleanLogLine. Never a transcript: model output goes to the session.
+	Log []string `json:"log,omitempty"`
+}
+
+// Worker log limits for the heartbeat: a few lines per worker, each
+// clipped, and a budget across all workers so a busy host stays small.
+const (
+	RCWorkerLogLines  = 12
+	RCWorkerLogLine   = 240
+	RCWorkerLogBudget = 48 << 10
+)
+
+// CleanLogLine makes one worker log line safe to send: delimiter markup,
+// ANSI, control and bidi runes are removed as for a web prompt, whitespace
+// collapses to one line, and it is clipped to RCWorkerLogLine bytes on a
+// rune boundary.
+func CleanLogLine(s string) string {
+	s = strings.Join(strings.Fields(CleanPrompt(ansi.Strip(s))), " ")
+	if len(s) <= RCWorkerLogLine {
+		return s
+	}
+	cut := RCWorkerLogLine
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "…"
 }
 
 // RCDir is one directory an rc daemon offers. Source is "trusted" (a project

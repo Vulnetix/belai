@@ -455,7 +455,12 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   picks the provider, model, posture or permissions. rc refuses to run with
   guardrails off, sessions run with `AllowAsk` false and web answers off
   (never `AskDisabled`, which would allow every ask), and the prompt reaches
-  the child on stdin, never argv.
+  the child on stdin, never argv. The heartbeat's worker entries are
+  registry facts plus a tail of each worker's own log, read by id from the
+  fleet log directory (never a path from a record), cleaned with
+  `sessionsync.CleanLogLine` and capped per line, per worker and in total.
+  That log holds harness lines and the worker process's stderr only; nothing
+  may write model output or item text to it.
 - **A web answer resolves only the ask that is open, through the host's own
   code.** Asks, answers, turn boundaries, tool starts and role-manager
   verdicts are written to the session JSONL by `appendEntry` like any line

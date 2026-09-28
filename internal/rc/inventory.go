@@ -4,8 +4,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"io"
+	"os"
+	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
+	"time"
 
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/config"
@@ -74,26 +79,92 @@ func LocalInventory() Inventory {
 	return inv
 }
 
+// RecentWorkers is how long a stopped or failed worker stays on the
+// website after it ends, so its exit reason and last log lines can be read.
+const RecentWorkers = 15 * time.Minute
+
 func localWorkers() []sessionsync.RCWorker {
 	reg, err := fleet.OpenRegistry(nil)
 	if err != nil {
 		return []sessionsync.RCWorker{}
 	}
-	live, err := reg.Live()
+	all, err := reg.List()
 	if err != nil {
 		return []sessionsync.RCWorker{}
 	}
+	return reportWorkers(all, reg.LogDir(), time.Now())
+}
+
+// reportWorkers picks and shapes the workers a heartbeat carries: every live
+// one, then those that ended within RecentWorkers, newest first, up to
+// maxInvWorkers. Each gets the tail of its own log (read from logDir by id,
+// never from a path in the record) within RCWorkerLogBudget overall.
+func reportWorkers(all []fleet.Record, logDir string, now time.Time) []sessionsync.RCWorker {
+	var live, ended []fleet.Record
+	for _, r := range all {
+		switch {
+		case r.State.Live():
+			live = append(live, r)
+		case r.Stopped > 0 && now.Sub(time.UnixMilli(r.Stopped)) <= RecentWorkers:
+			ended = append(ended, r)
+		}
+	}
+	sort.SliceStable(ended, func(i, j int) bool { return ended[i].Stopped > ended[j].Stopped })
 	out := []sessionsync.RCWorker{}
-	for _, r := range live {
+	budget := sessionsync.RCWorkerLogBudget
+	for _, r := range append(live, ended...) {
 		if len(out) >= maxInvWorkers {
 			break
 		}
-		out = append(out, sessionsync.RCWorker{
+		w := sessionsync.RCWorker{
 			ID: r.ID, Profile: r.Profile, Crew: r.Crew, State: string(r.State),
 			Item: r.Item, Project: r.Project, Session: r.Session, Started: r.Started,
-		})
+			Beat: r.Beat, Stopped: r.Stopped, Reason: sessionsync.CleanLogLine(r.Reason),
+			Done: r.Done, Failed: r.Failed, Branch: r.Branch,
+		}
+		if fleet.ValidID(r.ID) {
+			for _, l := range logTail(filepath.Join(logDir, r.ID+".log"), sessionsync.RCWorkerLogLines) {
+				if budget -= len(l); budget < 0 {
+					break
+				}
+				w.Log = append(w.Log, l)
+			}
+		}
+		out = append(out, w)
 	}
 	return out
+}
+
+// logTailRead bounds how much of a log file is read for its tail.
+const logTailRead = 32 << 10
+
+// logTail returns the last n non-empty lines of the file at path, cleaned
+// with sessionsync.CleanLogLine. A missing or unreadable file has none.
+func logTail(path string, n int) []string {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	if fi, err := f.Stat(); err == nil && fi.Size() > logTailRead {
+		if _, err := f.Seek(fi.Size()-logTailRead, io.SeekStart); err != nil {
+			return nil
+		}
+	}
+	data, err := io.ReadAll(io.LimitReader(f, logTailRead))
+	if err != nil {
+		return nil
+	}
+	var lines []string
+	for _, l := range strings.Split(string(data), "\n") {
+		if l = sessionsync.CleanLogLine(l); l != "" {
+			lines = append(lines, l)
+		}
+	}
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return lines
 }
 
 func profileSummary(p agentprofile.AgentProfile) sessionsync.RCProfile {

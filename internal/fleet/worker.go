@@ -245,6 +245,14 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 	// are still registering are waited for), after each item, and whenever
 	// a teammate is working and could hand work over.
 	quietSince := w.clock()
+	// waiting keeps the "nothing to claim" line to one per dry spell.
+	waiting := false
+	switch {
+	case w.Stay, isCron:
+		w.logf("looking for %s; polling every %s", w.wants(project), idle)
+	default:
+		w.logf("looking for %s; polling every %s, exiting after %s with nothing to claim", w.wants(project), idle, QuietWindow(idle))
+	}
 	for n := 0; ; {
 		if ctx.Err() != nil {
 			return "stopped", nil
@@ -263,6 +271,10 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 		case errors.Is(err, kanban.ErrNoWork):
 			if w.Once {
 				return "no work", nil
+			}
+			if !waiting {
+				w.logf("nothing to claim: no %s", w.wants(project))
+				waiting = true
 			}
 			if !w.Stay && !isCron {
 				if w.teammateWorking() {
@@ -293,7 +305,7 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 		}
 		w.work(ctx, it)
 		n++
-		quietSince = w.clock()
+		quietSince, waiting = w.clock(), false
 		if w.Once || w.Item != "" {
 			return "done", nil
 		}
@@ -363,6 +375,41 @@ func (w *Worker) claimRequest(project string) kanban.ClaimRequest {
 	}
 	w.mu.Unlock()
 	return r
+}
+
+// wants describes what a claim looks for, for the log, so an idle worker
+// says why: "backlog items labelled scout in project belai". Harness facts
+// only: list names, profile labels, the project name and the skip count.
+func (w *Worker) wants(project string) string {
+	r := w.claimRequest(project)
+	lists := []string{string(kanban.Backlog)}
+	if len(r.Lists) > 0 {
+		lists = lists[:0]
+		for _, l := range r.Lists {
+			lists = append(lists, string(l))
+		}
+	}
+	s := strings.Join(lists, "/") + " items"
+	if len(r.Labels) > 0 {
+		s += " labelled " + strings.Join(r.Labels, "+")
+	}
+	if r.AssignedOnly {
+		s += " assigned to " + r.Profile
+	} else {
+		s += " unassigned or assigned to " + r.Profile
+	}
+	if project != "" {
+		s += " in project " + project
+	} else {
+		s += " in any project"
+	}
+	if w.Item != "" {
+		s = "item " + w.Item
+	}
+	if n := len(r.Skip); n > 0 {
+		s += fmt.Sprintf(", skipping %d it failed", n)
+	}
+	return s
 }
 
 func (w *Worker) claim(project string) (kanban.Item, error) {
