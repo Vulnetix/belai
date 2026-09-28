@@ -457,3 +457,34 @@ func TestDaemonStartsWorkersAndAdvertisesInventory(t *testing.T) {
 		t.Errorf("starts = %+v", starts)
 	}
 }
+
+func TestMaxWorkersOverride(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	proj := t.TempDir()
+	real, _ := Normalize(proj)
+	client, err := sessionsync.NewClient("http://127.0.0.1:1", func() (string, error) { return "ApiKey o:k", nil }, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got WorkerStart
+	d, err := New(Options{
+		Client: client, HostID: testHost, Dirs: []Dir{{Path: real, Name: "proj", Source: SourceTrusted}},
+		MaxWorkers: 15,
+		Inventory: func() Inventory {
+			return Inventory{MaxWorkers: 4, Profiles: []sessionsync.RCProfile{{Name: "belai:builder"}}}
+		},
+		StartWorkers: func(w WorkerStart) (string, error) { got = w; return "ok", nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := d.o.Inventory().MaxWorkers; n != 15 {
+		t.Errorf("advertised max workers = %d, want 15 (from --max)", n)
+	}
+	if _, refused := d.startWorkers(sessionsync.Dispatch{Kind: "worker", Cwd: proj, Profile: "belai:builder"}); refused != "" {
+		t.Fatalf("start refused: %s", refused)
+	}
+	if got.MaxWorkers != 15 {
+		t.Errorf("start MaxWorkers = %d, want 15", got.MaxWorkers)
+	}
+}

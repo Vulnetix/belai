@@ -79,6 +79,11 @@ directory with the prompt on stdin. It is an ordinary Belai session:
   **Stop session** on the website, or when remote control stops.
 
 At most `--max` sessions (default 3) run at once; the website refuses more.
+An explicit `--max N` is also the fleet worker cap for this host: the daemon
+advertises N instead of `agents.max_workers` and starts workers with
+`belai agent start -max-workers N`. A repository whose settings lower
+`agents.max_workers` still holds its own cap. Without `--max`,
+`agents.max_workers` (default 4) applies.
 
 ## Fleet workers
 
@@ -97,8 +102,8 @@ predict what will happen to them:
   one crew in an offered directory. The daemon checks the directory against
   its own list and the name against its own catalogue, then runs
   `belai agent start NAME` or `belai agent start -crew NAME` there, which
-  applies the trust check, the preflight and `agents.max_workers` as it
-  does in a terminal. The ack is `started` with the command's report, or
+  applies the trust check, the preflight and the worker cap
+  (`agents.max_workers`, or an explicit `--max`) as it does in a terminal. The ack is `started` with the command's report, or
   `refused` with its error.
 
 ## Files

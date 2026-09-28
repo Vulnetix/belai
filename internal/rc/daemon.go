@@ -34,8 +34,11 @@ type Options struct {
 	Host   sessionsync.Host
 	Dirs   []Dir
 	Max    int
-	Idle   time.Duration
-	URL    string
+	// MaxWorkers, when set, is the fleet worker cap for workers this daemon
+	// starts and reports, in place of agents.max_workers (belai rc --max).
+	MaxWorkers int
+	Idle       time.Duration
+	URL        string
 	// Out receives one line per event (stderr, or the log when detached).
 	Out     io.Writer
 	LogPath string
@@ -58,6 +61,8 @@ type WorkerStart struct {
 	Exe, Cwd string
 	// Profile or Crew; exactly one is set.
 	Profile, Crew string
+	// MaxWorkers overrides agents.max_workers for this start when set.
+	MaxWorkers int
 }
 
 // Child is one session to start.
@@ -109,6 +114,14 @@ func New(o Options) (*Daemon, error) {
 	if o.Inventory == nil {
 		o.Inventory = LocalInventory
 	}
+	if o.MaxWorkers > 0 {
+		read := o.Inventory
+		o.Inventory = func() Inventory {
+			inv := read()
+			inv.MaxWorkers = o.MaxWorkers
+			return inv
+		}
+	}
 	if o.StartWorkers == nil {
 		o.StartWorkers = runAgentStart
 	}
@@ -130,6 +143,9 @@ func (d *Daemon) Run(ctx context.Context) error {
 
 	d.register(ctx, d.o.Inventory())
 	d.logf("remote control on · %d director%s offered · up to %d sessions", len(d.o.Dirs), plural(len(d.o.Dirs), "y", "ies"), d.o.Max)
+	if d.o.MaxWorkers > 0 {
+		d.logf("up to %d fleet workers (--max overrides agents.max_workers)", d.o.MaxWorkers)
+	}
 	d.logf("start sessions at %s", d.o.URL)
 
 	go d.heartbeat(ctx)

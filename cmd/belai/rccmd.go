@@ -57,7 +57,7 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	fs.Usage = func() { fmt.Fprint(stderr, rcUsage); fs.PrintDefaults() }
 	var dirs dirList
 	fs.Var(&dirs, "dir", "also offer this directory (repeatable); it is trusted, as with -trust-dir")
-	max := fs.Int("max", rc.DefaultMax, "sessions to run at once")
+	max := fs.Int("max", rc.DefaultMax, "sessions to run at once; when given, also the fleet worker cap in place of agents.max_workers")
 	idle := fs.Duration("idle", rc.DefaultIdle, "end a session after this long without a prompt")
 	detach := fs.Bool("detach", false, "run in the background; logs go to ~/.vulnetix/belai/rc/rc.log")
 	status := fs.Bool("status", false, "show whether remote control is running")
@@ -159,7 +159,7 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	}
 	d, err := rc.New(rc.Options{
 		Exe: exe, Client: client, HostID: hostID, Host: host, Dirs: offered,
-		Max: *max, Idle: *idle, URL: url, Out: stderr, LogPath: logPath,
+		Max: *max, MaxWorkers: explicitMax(fs, *max), Idle: *idle, URL: url, Out: stderr, LogPath: logPath,
 	})
 	if err != nil {
 		fmt.Fprintln(stderr, "belai rc:", err)
@@ -170,6 +170,18 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		return 1
 	}
 	return 0
+}
+
+// explicitMax is --max when it was given, else 0: only an explicit --max
+// replaces agents.max_workers, so the session default never lowers it.
+func explicitMax(fs *flag.FlagSet, max int) int {
+	n := 0
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "max" {
+			n = max
+		}
+	})
+	return n
 }
 
 // rcClient builds the sync client with the Vulnetix CLI credential, re-read
