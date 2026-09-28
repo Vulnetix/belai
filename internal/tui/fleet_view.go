@@ -30,6 +30,11 @@ type fleetUI struct {
 	log     []string
 	ticking bool
 	loaded  time.Time
+	// The runs panel's crew tab: the crew c cycles to and s starts, and its
+	// log tail of the selected worker.
+	crew       string
+	panelLog   bool
+	panelLines []string
 }
 
 type fleetTickMsg struct{}
@@ -82,10 +87,14 @@ func (a *App) fleetTick() tea.Cmd {
 
 func (a *App) handleFleetTick() tea.Cmd {
 	a.agentState.fleet.ticking = false
-	if a.view != viewAgent || a.agentState.tab != agentTabFleet {
+	panel := a.runsOpen && a.runsTab == tabCrew
+	if !panel && (a.view != viewAgent || a.agentState.tab != agentTabFleet) {
 		return nil
 	}
 	a.reloadFleet()
+	if panel {
+		a.reloadCrewLog()
+	}
 	return a.fleetTick()
 }
 
@@ -219,26 +228,12 @@ func (a *App) handleFleetKey(m tea.KeyMsg) tea.Cmd {
 		a.reloadFleet()
 	case "r":
 		a.reloadFleet()
-	case "x", "X":
-		reg, err := a.fleetRegistry()
-		if err != nil {
-			a.agentState.errorMsg = err.Error()
-			return nil
-		}
-		var targets []fleet.Record
-		if m.String() == "X" {
-			targets, _ = reg.Live()
-		} else if f.sel < len(f.recs) && f.recs[f.sel].State.Live() {
-			targets = []fleet.Record{f.recs[f.sel]}
-		}
-		if len(targets) == 0 {
-			return nil
-		}
-		return func() tea.Msg {
-			for _, r := range targets {
-				_ = reg.Stop(r, 20*time.Second)
-			}
-			return fleetTickMsg{}
+	case "X":
+		return a.stopFleetWorkers(nil)
+	case "x":
+		if f.sel < len(f.recs) && f.recs[f.sel].State.Live() {
+			r := f.recs[f.sel]
+			return a.stopFleetWorkers(&r)
 		}
 	}
 	return nil

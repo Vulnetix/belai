@@ -2486,13 +2486,18 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "f8":
 			// Open the runs panel on the subagents tab.
 			if a.view == viewChat {
-				a.toggleRunsPanel(tabSubagents)
+				return a, a.toggleRunsPanel(tabSubagents)
 			}
 			return a, nil
 		case "f9":
-			// Toggle the runs panel on the activity tab.
+			// Toggle the runs panel on the activity tab; from the focused
+			// kanban pane, open it on the kanban tab instead.
 			if a.view == viewChat {
-				a.toggleRunsPanel(tabActivity)
+				if a.kb != nil && a.kb.pane.focus && a.kanbanPaneVisible() && !a.runsOpen {
+					items, _ := a.kanbanPaneItems()
+					return a, a.openKanbanTabFromPane(items)
+				}
+				return a, a.toggleRunsPanel(tabActivity)
 			}
 			return a, nil
 		case "f10":
@@ -2543,6 +2548,9 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 	}
 	if a.forgeInput.kind != forgeInputNone {
 		return a.handleForgeInputKey(m)
+	}
+	if a.kanbanInputActive() {
+		return a.handleKanbanInputKey(m)
 	}
 	if a.savePromptMode {
 		return a.handleSavePromptKey(m)
@@ -4156,6 +4164,9 @@ func (a *App) renderComposer() string {
 		title, accent, meta = "save file", lipgloss.TerminalColor(components.ColorAmber), "⏎ save · esc cancel"
 	}
 	if t, mt, ok := a.forgeComposerTitle(); ok {
+		title, accent, meta = t, lipgloss.TerminalColor(components.ColorAmber), mt
+	}
+	if t, mt, ok := a.kanbanComposerTitle(); ok {
 		title, accent, meta = t, lipgloss.TerminalColor(components.ColorAmber), mt
 	}
 	if a.historyActive {
@@ -5946,6 +5957,7 @@ func (a *App) startNewSession() {
 	a.saveFileMode = false
 	a.saveFileMsg = -1
 	a.resetForgeFlows()
+	a.resetKanbanInput()
 	a.clearLoadedPrompt()
 	a.subagents = nil
 	a.subagentIdx = map[string]int{}

@@ -1,4 +1,4 @@
-[ activity ]  subagents  processes  git                  tab switch · f9 close
+[ activity ]  subagents  processes  kanban  crew  git    tab switch · f9 close
 ▸ !go test ./...  done
   vulnetix bom  done
   vulnetix scan  done

@@ -32,6 +32,10 @@ type kanbanUI struct {
 
 	pane kanbanPaneState
 	view kanbanViewState
+	// tab is the runs panel's kanban tab: its own filter and scope, so it
+	// never fights the composer pane; input is its open composer prompt.
+	tab   kanbanPaneState
+	input kanbanInputState
 }
 
 // kanbanPaneState is the composer pane's filter and focus.
@@ -44,10 +48,7 @@ type kanbanPaneState struct {
 }
 
 // kanbanPaneFilters are the pane's list filters, in tab order.
-var kanbanPaneFilters = []struct {
-	label string
-	lists []kanban.List
-}{
+var kanbanPaneFilters = []kanbanFilter{
 	{"all", []kanban.List{kanban.Review, kanban.Blocked, kanban.Backlog}},
 	{"backlog", []kanban.List{kanban.Backlog}},
 	{"review", []kanban.List{kanban.Review}},
@@ -208,7 +209,8 @@ func (a *App) kanbanPaneVisible() bool {
 	}
 	if len(a.autocomplete) > 0 || a.agentPickerVisible() || a.promptPickerVisible() || a.dirPickVisible() ||
 		a.filePickerVisible() || a.rootConfirmVisible() || len(a.attachments) > 0 || a.historyActive ||
-		a.savePromptMode || a.saveFileMode || a.promptAction || a.forgeFlowActive() || a.runsFocus || a.reviewActive() {
+		a.savePromptMode || a.saveFileMode || a.promptAction || a.forgeFlowActive() || a.kanbanInputActive() || a.runsFocus || a.reviewActive() ||
+		(a.runsOpen && a.runsTab == tabKanban) {
 		return false
 	}
 	if a.kb.pane.focus {
@@ -234,8 +236,45 @@ func (a *App) renderKanbanPane() string {
 		ps.sel = max(0, len(items)-1)
 	}
 	w := a.contentWidth()
+	head := kanbanPaneHeader(kanbanPaneFilters, ps, all)
+	if ps.focus {
+		head += components.MutedStyle.Render("   ↑↓ select · tab list · p scope · type filter · ⏎ use · esc back")
+	} else {
+		head += components.MutedStyle.Render("   ↓ browse")
+	}
+	lines := []string{ansi.Truncate(head, w, "…")}
+	start := 0
+	if ps.sel >= kanbanPaneRows {
+		start = ps.sel - kanbanPaneRows + 1
+	}
+	end := min(len(items), start+kanbanPaneRows)
+	for i := start; i < end; i++ {
+		prefix := "  "
+		selected := ps.focus && i == ps.sel
+		if selected {
+			prefix = components.AccentStyle.Render("▸ ")
+		}
+		lines = append(lines, ansi.Truncate(prefix+a.kanbanPaneRow(items[i], all, selected), w, "…"))
+	}
+	if len(items) == 0 {
+		lines = append(lines, components.MutedStyle.Render("  nothing matches"))
+	} else if more := len(items) - end; more > 0 {
+		lines = append(lines, components.MutedStyle.Render(fmt.Sprintf("  +%d more", more)))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// kanbanFilter is one list filter chip of the pane or the runs-panel tab.
+type kanbanFilter struct {
+	label string
+	lists []kanban.List
+}
+
+// kanbanPaneHeader is the "▤ kanban  all backlog …  · this project" line the
+// composer pane and the runs panel's kanban tab share.
+func kanbanPaneHeader(filters []kanbanFilter, ps *kanbanPaneState, all bool) string {
 	var chips []string
-	for i, f := range kanbanPaneFilters {
+	for i, f := range filters {
 		if i == ps.filter {
 			chips = append(chips, components.Chip(f.label, components.ColorTealSoft))
 		} else {
@@ -250,45 +289,28 @@ func (a *App) renderKanbanPane() string {
 	if ps.query != "" {
 		head += components.MutedStyle.Render("  · /") + ps.query
 	}
-	if ps.focus {
-		head += components.MutedStyle.Render("   ↑↓ select · tab list · p scope · type filter · ⏎ use · esc back")
-	} else {
-		head += components.MutedStyle.Render("   ↓ browse")
+	return head
+}
+
+// kanbanPaneRow is one item as the pane and the kanban tab draw it: list
+// chip, id, project when listing every project, the unreachable and claim
+// markers, and the title.
+func (a *App) kanbanPaneRow(it kanban.Item, all, selected bool) string {
+	row := kanbanChip(it.List) + " " + components.MutedStyle.Render(it.Short()) + " "
+	if all {
+		row += components.MutedStyle.Render(it.Project + " · ")
 	}
-	lines := []string{ansi.Truncate(head, w, "…")}
-	start := 0
-	if ps.sel >= kanbanPaneRows {
-		start = ps.sel - kanbanPaneRows + 1
+	if !a.kanbanDirReachable(it.Dir) {
+		row += components.WarnStyle.Render("⤴ ")
 	}
-	end := min(len(items), start+kanbanPaneRows)
-	for i := start; i < end; i++ {
-		it := items[i]
-		prefix := "  "
-		if ps.focus && i == ps.sel {
-			prefix = components.AccentStyle.Render("▸ ")
-		}
-		row := prefix + kanbanChip(it.List) + " " + components.MutedStyle.Render(it.Short()) + " "
-		if all {
-			row += components.MutedStyle.Render(it.Project + " · ")
-		}
-		if !a.kanbanDirReachable(it.Dir) {
-			row += components.WarnStyle.Render("⤴ ")
-		}
-		if it.Claimed(time.Now().UnixMilli()) {
-			row += components.AccentStyle.Render("⚙ ")
-		}
-		title := it.Title
-		if ps.focus && i == ps.sel {
-			title = components.EmphStyle.Render(title)
-		}
-		lines = append(lines, ansi.Truncate(row+title, w, "…"))
+	if it.Claimed(time.Now().UnixMilli()) {
+		row += components.AccentStyle.Render("⚙ ")
 	}
-	if len(items) == 0 {
-		lines = append(lines, components.MutedStyle.Render("  nothing matches"))
-	} else if more := len(items) - end; more > 0 {
-		lines = append(lines, components.MutedStyle.Render(fmt.Sprintf("  +%d more", more)))
+	title := it.Title
+	if selected {
+		title = components.EmphStyle.Render(title)
 	}
-	return strings.Join(lines, "\n")
+	return row + title
 }
 
 // kanbanDirReachable reports whether dir is under the session's roots, so a

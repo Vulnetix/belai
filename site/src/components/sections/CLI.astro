@@ -2,7 +2,7 @@
 import SealedSection from '../seal/SealedSection.astro';
 
 const sealText =
-  'Headless CLI: the same harness without the TUI. Terminal detection keeps the UI off in pipelines, -prompt gives a single answer and exits, -plan runs read-only, -detect-mode prints the mode choice, -trust-dir opens a CI workspace, -export prints a session as Markdown, belai acp serves editors, belai plugin manages plugins, and every posture gate is reachable from flags.';
+  'Headless CLI: the same harness without the TUI. Terminal detection keeps the UI off in pipelines, -prompt gives a single answer and exits, -plan runs read-only, -detect-mode prints the mode choice, -trust-dir opens a CI workspace, -export prints a session as Markdown, belai acp serves editors, belai plugin manages plugins, belai kanban files work on the board, belai agent runs crews of workers that take it, and every posture gate is reachable from flags.';
 
 const features = [
   {
@@ -36,6 +36,14 @@ const features = [
   {
     title: 'belai plugin',
     body: 'belai plugin install <git-url|dir> prints every skill, hook command, prompt and agent a plugin adds and installs only on your yes (or -yes after reading it). list, update, enable, disable and remove manage what is installed.',
+  },
+  {
+    title: 'belai kanban',
+    body: 'belai kanban add, list, show, move, note, release and import put work on the board from scripts: labels, priority, an assignee and dependencies route it to the right agent, and -json prints items for tooling.',
+  },
+  {
+    title: 'belai agent',
+    body: 'belai agent start -crew belai:delivery starts detached worker agents that claim items off the board; ps, logs and stop manage them, run -once works one item in the foreground, and import validates a JSON or Markdown profile.',
   },
   {
     title: 'every gate from flags',

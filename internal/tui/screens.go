@@ -79,7 +79,7 @@ func (a *App) screensBlocked() bool {
 	case viewPermissionAsk, viewClarify, viewPlanReview, viewResumeCompact:
 		return true
 	case viewChat:
-		return a.savePromptMode || a.saveFileMode || a.promptAction || a.historyActive || a.forgeFlowActive()
+		return a.savePromptMode || a.saveFileMode || a.promptAction || a.historyActive || a.forgeFlowActive() || a.kanbanInputActive()
 	case viewScreens:
 		return false
 	}

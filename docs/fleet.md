@@ -147,12 +147,35 @@ Your own crews live in `~/.vulnetix/belai/profiles/crews/<name>.json`:
 `-trust-dir` to trust it, as with `-prompt`. `-provider` and `-model`
 override the profile's model for that run.
 
-In the TUI, `/fleet` opens the fleet tab of `/agents` (also `4` there):
+## In the TUI
+
+`/fleet` opens the fleet tab of `/agents` (also `4` there):
 workers with their state, the item each holds, items done and failed, and a
 heartbeat; `l` shows the selected worker's log, `x` stops it and `X` stops
 them all. `/fleet start NAME`, `/fleet crew NAME` and `/fleet stop ID|all`
 do the same as the CLI, and `s` on a worker profile in the profiles tab
 starts one.
+
+The runs panel (`f9`, then `tab`) has a **crew** tab beside its
+[kanban tab](kanban.md#the-runs-panel), so the board and its workers are
+managed from the chat. Its label counts the running workers (`crew 3`), and
+its summary names the chosen crew and its members, the running workers
+against `agents.max_workers`, and the board's counts. The list refreshes
+every two seconds while the tab is open.
+
+| Key | Action |
+|---|---|
+| `c` | choose the next crew |
+| `s` | start the chosen crew, with the same preflight and `max_workers` check as `/fleet crew` |
+| `x` / `X` | stop the selected worker, or every worker |
+| `l` | show the selected worker's log tail |
+| `enter` | show the worker's item on the kanban tab |
+| `v` | open the fleet tab of `/agents` |
+| `r` | refresh |
+
+On the kanban tab, `w` hands an item to the chosen crew: it adds the crew's
+entry labels, moves the item to backlog, and starts the crew when no worker
+is running.
 
 ## Git in the worktree
 

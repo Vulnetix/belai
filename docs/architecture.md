@@ -2117,8 +2117,12 @@ user's behalf; the bottom **runs panel** is the honest register of those
 processes plus the roster of subagents pinned to the conversation. `f8` opens
 and focuses the panel on the **subagents** tab, and `f9` opens it on the
 **activity** tab. `tab` cycles through **activity → subagents → processes →
-git → ci**, where **ci** is skipped unless the branch has an open PR/MR, so
-the processes tab is always one `tab` away from either entry point. The panel
+kanban → crew → git → ci**, where **kanban** is skipped while the board is
+off and **ci** unless the branch has an open PR/MR. The **kanban** tab draws
+the board as the composer pane does, with single-key actions, and the
+**crew** tab lists the fleet workers and starts and stops crews; both are
+described in [Kanban](kanban.md#the-runs-panel) and
+[Fleet](fleet.md). The panel
 is bounded: it never consumes more than one third of the terminal height and
 refuses to open when fewer than six rows are available, so the chat composer
 always remains usable. Each row is truncated to fit the width of the panel;
@@ -2665,7 +2669,7 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 | `f7` | Save the current prompt to the project prompt library, from the chat view — a save-as alias of `ctrl+s` with no loaded entry |
 | `f1` | Open the screen switcher from chat or any screen. One letter opens a screen: `a` agents, `m` model, `p` providers, `s` settings, `b` token budgets, `k` permissions, `r` prompts, `x` processes, `l` lsp, `v` vulnetix, `h` sessions. A screen already open further down the stack is returned to, so `esc` walks back through distinct screens. It does nothing on a permission ask, a clarifying question, plan review or while an inline field edit holds text, and a chat draft is kept while it is open |
 | `f8` | Open and focus the bottom runs panel on the subagents tab (chat); press `tab` twice to reach the processes tab |
-| `f9` | Open and focus the bottom runs panel on the activity tab (chat); press `tab` twice to cycle to the processes tab, three times for git (ci follows when the branch has a PR/MR) |
+| `f9` | Open and focus the bottom runs panel on the activity tab (chat); `tab` cycles processes, kanban, crew, then git (ci follows when the branch has a PR/MR). From the focused kanban pane it opens the kanban tab on the pane's selection |
 | `f10` | Toggle the Vulnetix AI Firewall from any screen |
 | `ctrl+home` / `ctrl+end` | Jump the transcript to the top / bottom |
 | `ctrl+j` | Insert a newline in the prompt editor |
