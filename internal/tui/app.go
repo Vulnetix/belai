@@ -379,7 +379,13 @@ type App struct {
 	providerDetailState providerDetailViewState
 	providerNewState    providerNewViewState
 	gsState             gettingStartedState
-	kiroLogin           kiroLoginState
+	rcState             rcViewState
+	// rcLive and rcSessions are the rc daemon's record as the footer shows
+	// it, re-read at most every few seconds (rcPolled).
+	rcLive     bool
+	rcSessions int
+	rcPolled   time.Time
+	kiroLogin  kiroLoginState
 	// gettingStartedOnInit opens the Getting started view on the first
 	// frame of a first interactive launch (start.go).
 	gettingStartedOnInit bool
@@ -2095,6 +2101,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if cmd, ok := a.handleGettingStartedMsg(msg); ok {
 		return a, cmd
 	}
+	if cmd, ok := a.handleRCMsg(msg); ok {
+		return a, cmd
+	}
 	if cmd, ok := a.handleKiroLoginMsg(msg); ok {
 		return a, cmd
 	}
@@ -2118,6 +2127,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.budgets != nil {
 			a.budgets.Refresh(budgetRefreshAge)
 		}
+		a.pollRC(false)
 		a.refreshFooter()
 		var forgeCmd tea.Cmd
 		if a.forgeTabActive() {
@@ -2418,6 +2428,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, a.copyHoveredPanel(a.hover.msg)
 			}
 			return a, a.copyPrompt()
+		case "ctrl+y":
+			// Over a link in the transcript, open it. Other screens with
+			// links (the runs output, /rc) handle ctrl+y themselves.
+			if a.view == viewChat && a.hover.link != "" {
+				return a, openLink(a.hover.link)
+			}
 		case "ctrl+d":
 			// Two-press armed exit. The first press arms; the second (within
 			// the window) tears down and quits, printing the exit card.
@@ -5009,6 +5025,7 @@ func (a *App) refreshFooter() {
 	a.footer.Provider = a.providerDisplayLabel(a.cfg.Provider)
 	a.footer.Model = run.WireModel(a.cfg.Provider, a.cfg.Model)
 	a.footer.RoutedModels = routedModelCount(a.cfg)
+	a.footer.RC = a.rcFooterLabel()
 	a.footer.Budget = a.budgetGauge(time.Now())
 	// The effective settings are the UI's canonical effort source: the model
 	// picker and settings view both write there, and refreshProvider copies

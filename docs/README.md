@@ -37,6 +37,8 @@ behaviour, and implementation details.
   OpenRouter and Cloudflare), modes, key storage and event cards.
 - [Session sync](session-sync.md): mirroring sessions to the Vulnetix website
   (History and live Sessions) and prompting a live session from the browser.
+- [Remote control](remote-control.md): `belai rc`, which lets the website
+  start and drive sessions on this machine.
 - [Nonce endpoint spec](nonce-endpoint-spec.md): the provider/gateway
   `GET /v1/nonces` contract and verification semantics.
 - [Image attachments](image-attachments.md): deferred multimodal attachment
@@ -64,6 +66,7 @@ until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
 | OpenTelemetry export | [Telemetry](telemetry.md) | alpha-20260926 |
 | Quiet TUI redesign | [TUI design system](tui-design.md) | alpha-20260927 (in part) |
 | Autonomous kanban agent fleet | [Agent fleet](fleet.md) | alpha-20260928 |
+| Remote control from the website | [Remote control](remote-control.md) | alpha-20260930 |
 
 ## Build, test, and publish
 

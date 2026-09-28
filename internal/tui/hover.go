@@ -18,11 +18,12 @@ import (
 // would: expanding with ctrl+o or streaming a delta re-derives the target
 // without another mouse event.
 type hoverTarget struct {
-	file      bool // a Read result carrying a path — save and copy offered
-	text      bool // any panel with text — save and copy offered
-	collapsed bool // a truncated panel — ctrl+o offered
-	session   bool // the footer's session segment — ctrl+x offered
-	msg       int  // message index for file/collapsed/text targets
+	file      bool   // a Read result carrying a path — save and copy offered
+	text      bool   // any panel with text — save and copy offered
+	collapsed bool   // a truncated panel — ctrl+o offered
+	session   bool   // the footer's session segment — ctrl+x offered
+	link      string // an https link under the pointer (or the panel's only one) — ctrl+y offered
+	msg       int    // message index for file/collapsed/text targets
 }
 
 // recomputeHover re-derives a.hover from the last mouse position, the current
@@ -50,6 +51,7 @@ func (a *App) recomputeHover() {
 	a.hover.file = line.File
 	a.hover.text = line.Copyable
 	a.hover.collapsed = line.Collapsed
+	a.hover.link = a.hoverLink(line, p.Col)
 }
 
 // hitSession reports whether a screen cell lies over the footer's session
@@ -80,6 +82,9 @@ func (a *App) hoverHint() string {
 	if a.hover.text {
 		pairs = append(pairs, "ctrl+s", "save "+a.hoverSaveName())
 		pairs = append(pairs, "ctrl+c", "copy")
+	}
+	if a.hover.link != "" {
+		pairs = append(pairs, "ctrl+y", "open link")
 	}
 	if a.hover.collapsed {
 		pairs = append(pairs, "ctrl+o", "expand all")
