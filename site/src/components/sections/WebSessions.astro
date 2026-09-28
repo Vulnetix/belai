@@ -11,7 +11,7 @@ const answers = [
     kind: 'permission',
     choices: 'allow once · allow always · deny',
     detail:
-      'The page shows the tool, its subject, the diff it would make and the exact rule allow-always adds. Allow-always writes that rule to the host’s settings, the same as pressing it there.',
+      'The page shows the tool, its subject, the diff it would make and the exact rule allow-always adds. Allow-always writes that rule to the settings on the host, the same as pressing it there.',
   },
   {
     kind: 'question',
@@ -21,7 +21,7 @@ const answers = [
   },
   {
     kind: 'mode',
-    choices: 'the mode panel’s options',
+    choices: 'the options on the mode panel',
     detail: 'When a request reads like a different mode than the one you set, the host asks before switching. Answer it from the page.',
   },
   {
@@ -43,9 +43,9 @@ const records = [
 
 <SealedSection label="web" sealText={sealText} id="web">
   <div class="prose-measure">
-    <h2 class="text-3xl font-bold text-vx-ink">Web sessions.</h2>
+    <h2 class="text-3xl font-bold text-vx-ink">Web sessions</h2>
     <p class="mt-4 text-vx-ink/80">
-      Walk away from the terminal and the session keeps going. While the Vulnetix CLI is logged in, each
+      While the Vulnetix CLI is logged in, each
       session mirrors to the Vulnetix website. <strong>Belai → Sessions</strong> follows a running
       session live, and a prompt you type there runs on the host as if you had typed it at the
       terminal. When the host stops to ask you something, the page shows the question and you can
@@ -71,7 +71,7 @@ const records = [
       </p>
     </div>
     <div class="prose-measure">
-      <h3 class="text-xl font-bold text-vx-ink">It looks like the TUI.</h3>
+      <h3 class="text-xl font-bold text-vx-ink">Drawn like the TUI</h3>
       <p class="mt-3 text-vx-ink/80">
         The page draws with the TUI's own design system: thread blocks with a top rule, quiet tool rows
         that only turn red when they fail, reasoning folded to one line, diffs with line numbers and
@@ -89,7 +89,7 @@ const records = [
   </div>
 
   <div class="mt-10">
-    <h3 class="text-xl font-bold text-vx-ink">What you can answer from the web.</h3>
+    <h3 class="text-xl font-bold text-vx-ink">What you can answer from the web</h3>
     <div class="mt-5 grid gap-4 md:grid-cols-2">
       {answers.map((a) => (
         <article class="rounded-lg border border-vx-ink/30 p-5">
@@ -106,10 +106,10 @@ const records = [
 
   <div class="mt-10 grid gap-10 lg:grid-cols-2">
     <div class="prose-measure">
-      <h3 class="text-xl font-bold text-vx-ink">One record, two readers.</h3>
+      <h3 class="text-xl font-bold text-vx-ink">The session file is the record</h3>
       <p class="mt-4 text-vx-ink/80">
         Belai writes everything to the session JSONL first. The website mirrors those lines, and a
-        resumed session reads the same ones, so the two can never disagree about what happened:
+        resumed session reads the same ones, so both show the same events:
       </p>
       <ul class="mt-3 space-y-1 text-sm text-vx-ink/80 list-none p-0">
         {records.map(([name, what]) => (
@@ -122,7 +122,7 @@ const records = [
       </p>
     </div>
     <div class="prose-measure">
-      <h3 class="text-xl font-bold text-vx-ink">A web answer is untrusted.</h3>
+      <h3 class="text-xl font-bold text-vx-ink">Web answers are checked on the host</h3>
       <p class="mt-4 text-vx-ink/80">
         The host applies an answer only to the question open right now, only if it fits that question
         (options that exist, one choice where only one is allowed, a known decision), and only through
@@ -139,7 +139,7 @@ const records = [
   </div>
 
   <div class="mt-10 prose-measure">
-    <h3 class="text-xl font-bold text-vx-ink">It never waits on the network.</h3>
+    <h3 class="text-xl font-bold text-vx-ink">Sync runs in the background</h3>
     <p class="mt-4 text-vx-ink/80">
       The terminal never blocks on sync. A line is written to disk, and a background syncer uploads
       it about 30 ms later together with the lines that came with it. Large batches are gzipped. On

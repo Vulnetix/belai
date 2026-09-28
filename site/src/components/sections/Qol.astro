@@ -25,7 +25,7 @@ const benefits = [
   ['caveman mode', 'An optional voice that makes replies short and plain.'],
   ['session toggles per project', 'Toggles such as guardrails and ask-permission are saved for each repository.'],
   ['session export', 'Type /export to write the current session (or another by id) as deterministic Markdown under .vulnetix/exports; belai -export <id> prints it to stdout.'],
-  ['opt-in per-goal auto-commit', 'Turn on auto-commit per task in /settings and every completed goal is committed as one conventional commit of exactly the files it changed — global only, so a repo can never switch it on for you.'],
+  ['opt-in per-goal auto-commit', 'Turn on auto-commit per task in /settings and every completed goal is committed as one conventional commit of exactly the files it changed. The setting is global, so a repository cannot turn it on.'],
   ['!cmd gets its own shell panel', 'A !cmd shows its raw output in a panel, live while it runs. The model only gets the sanitised, classified copy, and the panel marks the output "not sent" when that copy is withheld. ctrl+o expands it, ctrl+c copies it and ctrl+s saves it.'],
   ['timestamps and durations in the transcript', 'Each transcript row is stamped when its event happened, and tool calls, model replies and classifier decisions record how long they took, so a slow session shows where the time went.'],
   ['classifier verdicts in the feed', 'When a result is blocked, the internal-work feed shows which phase blocked it and what it returned.'],
@@ -37,7 +37,7 @@ const benefits = [
 ---
 
 <SealedSection label="qol" sealText={sealText} id="qol">
-  <h2 class="text-3xl font-bold text-vx-ink">Quality of life.</h2>
+  <h2 class="text-3xl font-bold text-vx-ink">Quality of life</h2>
   <p class="prose-measure mt-4 text-vx-ink/80">
     Smaller features you would otherwise add yourself through a <code class="mono">skills.md</code>. Each
     one is implemented and tested in this repository.
@@ -54,7 +54,7 @@ const benefits = [
 
   <div class="mt-10 grid gap-8 rounded-lg border border-vx-ink/30 p-6 lg:grid-cols-2 lg:items-center">
     <div>
-      <h3 class="text-xl font-semibold text-vx-ink">Sessions.</h3>
+      <h3 class="text-xl font-semibold text-vx-ink">Sessions</h3>
       <p class="mt-3 text-vx-ink/80">
         <code class="mono">/compact</code> writes a summary that must include a goal, next steps and
         critical context, and a summary missing any of them is rejected. Sessions are named after the

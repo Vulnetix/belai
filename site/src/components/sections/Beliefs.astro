@@ -10,25 +10,25 @@ const sealText =
 
 const beliefs = [
   {
-    title: 'Safety above all else, and easy to YOLO.',
+    title: 'Safety first, and easy to YOLO',
     body: 'Press f3 to turn the guardrails off. A gold chip appears in the footer, and the classifier is not called at all until you turn them back on. Turning them on again restores every check in the session, inline commands, file attachments, background agents and the CLI.',
     svg: pixYolo,
     alt: 'Pix grinning next to a gold YOLO chip with the guardrail switch thrown',
   },
   {
-    title: 'Roles for determinism.',
+    title: 'Roles for determinism',
     body: 'Once you pick a mode, it stays until you change it, and later turns do not re-classify it. -detect-mode shows which mode the Role Manager would choose without acting on it.',
     svg: pixProfessor,
     alt: 'Pix raising a wing to make a point',
   },
   {
-    title: 'Tools first class.',
+    title: 'Tools first class',
     body: 'About 25 read-only utilities, including Cat, Head, Git, JQ, Find and Diff, are tools of their own. Each runs one specific binary with a fixed argument shape and never goes through a shell, so you do not need a growing Bash(jq *) allowlist.',
     svg: pixConductor,
     alt: 'Pix directing a fan of tool chips',
   },
   {
-    title: 'Local first, open source, community access.',
+    title: 'Local first and open source',
     body: 'Belai is Apache-2.0 and sends no telemetry or logs. The default download includes its classifier model, so guardrails run locally without a provider or API key. Ollama and llama-server work out of the box, and the Vulnetix scanners and AI Firewall are free for everyone.',
     svg: pixHomestead,
     alt: 'Pix perched beside a local box with a dangling cable',
@@ -37,7 +37,7 @@ const beliefs = [
 ---
 
 <SealedSection label="beliefs" sealText={sealText} id="beliefs">
-  <h2 class="text-3xl font-bold text-vx-ink">Beliefs.</h2>
+  <h2 class="text-3xl font-bold text-vx-ink">Beliefs</h2>
   <div class="mt-8 grid gap-6 md:grid-cols-2">
     {
       beliefs.map((b) => (
