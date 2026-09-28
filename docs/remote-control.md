@@ -70,6 +70,27 @@ directory with the prompt on stdin. It is an ordinary Belai session:
 
 At most `--max` sessions (default 3) run at once; the website refuses more.
 
+## Fleet workers
+
+Remote control also tells the website about this host's
+[fleet](fleet.md), so the Agent Coordination page can assign cards and
+predict what will happen to them:
+
+- **Catalogue.** The host upsert's `rc` block carries `agents.max_workers`
+  and every worker profile's routing (lists, labels, `on_success`,
+  `on_failure`, handoffs, attempts, lease and budget) and every crew with its
+  members. Never a system prompt, a tool list or a model. The daemon sends it
+  again whenever a profile or crew changes.
+- **Workers.** Each heartbeat carries the live fleet registry records: id,
+  profile, crew, state, the item held and its transcript session.
+- **Starting workers.** A `worker` or `crew` request starts one profile or
+  one crew in an offered directory. The daemon checks the directory against
+  its own list and the name against its own catalogue, then runs
+  `belai agent start NAME` or `belai agent start -crew NAME` there, which
+  applies the trust check, the preflight and `agents.max_workers` as it
+  does in a terminal. The ack is `started` with the command's report, or
+  `refused` with its error.
+
 ## Files
 
 - `~/.vulnetix/belai/rc/rc.json`: the running daemon's record (pid, sessions,
@@ -88,7 +109,9 @@ At most `--max` sessions (default 3) run at once; the website refuses more.
     `GET|DELETE /dispatches/{id}` and `POST /sessions/{id}/stop`.
 - **Schema:** `BelaiDispatch`, the `rc*` columns on `BelaiHost` and
   `BelaiSession.dispatchUuid` (saas migration
-  `20260930000001_add_belai_remote_control`).
+  `20260930000001_add_belai_remote_control`); `rcWorkers`, `rcProfiles`,
+  `rcMaxWorkers` and `BelaiDispatch.spec` (saas migration
+  `20261001000001_belai_fleet_coordination`).
 - **Inbox scope:** each Belai polls its inbox for its own session only, so a
   TUI on the same machine never takes an rc session's prompts. A poll without
   a session (an older Belai) never claims a prompt for an rc session.

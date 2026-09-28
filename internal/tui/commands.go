@@ -282,10 +282,15 @@ func NewRegistry(workdir string) *Registry {
 	r.Register("prompts", "manage the prompt library", nil, func(a *App, arg string) tea.Cmd {
 		return a.push(viewPrompts)
 	})
-	r.Register("kanban", "view and manage the global kanban board", nil, func(a *App, arg string) tea.Cmd {
+	r.Register("kanban", "view and manage the global kanban board; /kanban K-xxxxxx opens on one item", nil, func(a *App, arg string) tea.Cmd {
 		if a.kb == nil {
 			a.addSystem("kanban: off (the kanban setting is false)")
 			return nil
+		}
+		if ref := strings.TrimSpace(arg); ref != "" {
+			if err := a.kanbanFocus(ref); err != nil {
+				a.addSystem("kanban: " + err.Error())
+			}
 		}
 		return a.push(viewKanban)
 	})

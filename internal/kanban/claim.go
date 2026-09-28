@@ -233,6 +233,8 @@ func (r ClaimRequest) matches(b *Board, it Item, now int64) bool {
 		return false
 	case it.Assignee == "" && r.AssignedOnly:
 		return false
+	case it.PinHost != "" && it.PinHost != r.Host:
+		return false
 	case r.Project != "" && !strings.EqualFold(it.Project, r.Project) && it.ProjectKey != r.Project:
 		return false
 	case slices.Contains(r.Skip, it.ID):
@@ -548,6 +550,8 @@ type RoutePatch struct {
 	Labels   *[]string
 	Priority *int
 	Assignee *string
+	// PinHost pins the item to one sync host id; "" unpins it.
+	PinHost *string
 }
 
 // Route edits an item's labels, priority or assignee — a human's routing from
@@ -583,6 +587,14 @@ func (s *Store) Route(ref string, p RoutePatch, sessionID string) (Item, error) 
 				what = append(what, "unassigned")
 			} else {
 				what = append(what, "assigned to "+assignee)
+			}
+		}
+		if p.PinHost != nil {
+			it.PinHost = CleanTitle(*p.PinHost)
+			if it.PinHost == "" {
+				what = append(what, "unpinned")
+			} else {
+				what = append(what, "pinned to host "+it.PinHost)
 			}
 		}
 		if len(what) == 0 {

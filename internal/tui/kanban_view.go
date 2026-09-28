@@ -46,6 +46,31 @@ func (a *App) enterKanban() tea.Cmd {
 	return nil
 }
 
+// kanbanFocus selects one item: its list's tab, every project, no filter.
+func (a *App) kanbanFocus(ref string) error {
+	it, err := a.kb.store.Get(ref)
+	if err != nil {
+		return err
+	}
+	v := &a.kb.view
+	v.tab, v.sel, v.all, v.query = 0, 0, true, ""
+	for i, l := range kanbanViewLists {
+		if l == it.List {
+			v.tab = i
+		}
+	}
+	rows, err := a.kanbanViewRows()
+	if err != nil {
+		return err
+	}
+	for i, r := range rows {
+		if r.ID == it.ID {
+			v.sel = i
+		}
+	}
+	return nil
+}
+
 // kanbanViewRows returns the selected tab's items.
 func (a *App) kanbanViewRows() ([]kanban.Item, error) {
 	v := a.kb.view

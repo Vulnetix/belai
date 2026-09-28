@@ -111,6 +111,10 @@ type Item struct {
 	Labels   []string
 	Priority int
 	Assignee string
+	// PinHost is the sync host id the item is pinned to: only a worker on
+	// that host may claim it. Empty lets any host claim it. A human sets it
+	// (CLI, TUI or web); the harness never does.
+	PinHost string
 	// Parent is the item this one was handed off from; DependsOn lists items
 	// that must be done before this one can be claimed; Hops counts handoffs
 	// from the root item, so a ping-pong between agents ends.
