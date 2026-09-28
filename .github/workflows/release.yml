@@ -25,7 +25,7 @@ env:
 
 jobs:
   version:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, vulnetix-local]
     timeout-minutes: 5
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
@@ -46,7 +46,7 @@ jobs:
   # rather than per variant.
   models:
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, vulnetix-local]
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
@@ -62,8 +62,8 @@ jobs:
 
       - name: Install torch + safetensors
         run: |
-          pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
-          pip install --quiet safetensors
+          uv pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install --quiet safetensors
 
       # Cache the prepared model directories, not the raw HF downloads. The key
       # pins the modelprep source and the HF commit revisions so a
@@ -87,7 +87,7 @@ jobs:
   # Linux box. Each variant family is built for all six targets.
   build:
     needs: [version, models]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, vulnetix-local]
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
@@ -154,7 +154,7 @@ jobs:
 
   release:
     needs: [version, build]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, vulnetix-local]
     timeout-minutes: 20
     outputs:
       version: ${{ needs.version.outputs.version }}
@@ -194,7 +194,7 @@ jobs:
 
   update-packages:
     needs: release
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, vulnetix-local]
     timeout-minutes: 20
     steps:
       - name: Checkout belai repo

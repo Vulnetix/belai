@@ -29,7 +29,7 @@ jobs:
     # ubuntu-latest rather than a self-hosted runner: Pages must publish without
     # anyone being at a desk, and the self-hosted queue stalls silently when the
     # machine is down.
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, vulnetix-local]
     steps:
       - uses: actions/checkout@v5
 
@@ -75,7 +75,7 @@ jobs:
 
   deploy:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, vulnetix-local]
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
