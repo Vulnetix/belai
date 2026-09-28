@@ -144,9 +144,17 @@ func PrepareWorktree(ctx context.Context, repo string, it kanban.Item, base stri
 			return nil, err
 		}
 		if !forge.BranchExists(ctx, repoRun, repo, branch) {
-			return nil, fmt.Errorf("worktree: branch %s does not exist in this repository", branch)
+			// One of this item's own attempt branches that was deleted (a
+			// failed attempt, or cleaned up after its pull request) starts
+			// the item fresh; the release records the new branch. Any other
+			// missing branch is refused.
+			if !ownAttemptBranch(it, branch) {
+				return nil, fmt.Errorf("worktree: branch %s does not exist in this repository", branch)
+			}
+			newBranch = true
 		}
-	} else {
+	}
+	if newBranch {
 		for n := it.Attempts + 1; ; n++ {
 			branch = fmt.Sprintf("%s%s/a%d", BranchPrefix, it.Short(), n)
 			if !forge.BranchExists(ctx, repoRun, repo, branch) {
@@ -219,6 +227,16 @@ func PrepareWorktree(ctx context.Context, repo string, it kanban.Item, base stri
 		run:     hardenedGit(gitDir, dir, ident...),
 		repoRun: repoRun,
 	}, nil
+}
+
+// ownAttemptBranch reports whether branch is one of the names PrepareWorktree
+// mints for it: belai/K-xxxxxx/a<n>.
+func ownAttemptBranch(it kanban.Item, branch string) bool {
+	n, ok := strings.CutPrefix(branch, BranchPrefix+it.Short()+"/a")
+	if !ok || n == "" || len(n) > 4 || n[0] == '0' {
+		return false
+	}
+	return strings.Trim(n, "0123456789") == ""
 }
 
 // SharedWorkspace is the repository itself, for isolation: shared (and

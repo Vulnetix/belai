@@ -53,7 +53,18 @@ One pass of the worker loop:
 2. **Workspace.** A `worktree` worker gets a fresh git worktree on the branch
    `belai/K-xxxxxx/a<attempt>`, outside the repository
    (`~/.vulnetix/worktrees/<project>/…`, or `$BELAI_WORKTREES_DIR`). A worker
-   that reviews an existing branch checks that branch out instead.
+   that reviews an existing branch checks that branch out instead. When that
+   branch is one of the item's own `a<n>` branches and it was deleted, the item
+   starts fresh on the next free attempt branch; any other missing branch is
+   refused. When the workspace cannot be prepared, the worker runs a
+   **setup-debug turn** before it releases the item. The turn runs in the
+   repository itself on the profile's tools, read-only: mutating tools are
+   dropped and `Bash` becomes the read-only `Bash`. The prompt is a fixed
+   harness sentence. The failure rides as an attachment classified as process
+   output (`KindProcess`), and a withheld failure is not investigated. The
+   model records what it finds on the item with `KanbanUpdate`. The release
+   note adds only harness facts: the stop reason and the pass count. The turn
+   uses the item's lease and budgets, and it is not a separate attempt.
 3. **Work.** The item is worked as a goal-mode turn. The prompt is a fixed
    harness sentence; the item's title, body and recent notes ride as a
    `kanban` attachment that went through the security classifier, exactly

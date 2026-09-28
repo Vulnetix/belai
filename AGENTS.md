@@ -377,6 +377,13 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
     - an autonomous worker with Bash needs a working OS sandbox.
   - **Asks.** A worker that cannot ask blocks the item with the tool names;
     it never widens.
+  - **Setup failures.** A workspace that cannot be prepared gets one
+    setup-debug turn (`Worker.investigate`) in the trusted repository on the
+    profile's `ReadOnlySurface`, because no worktree isolates it. The failure
+    is gated as `KindProcess` and rides only as an attachment. Findings go
+    through `KanbanUpdate`, and the release note stays harness facts. A
+    missing branch starts fresh only when it is one of the item's own
+    `belai/K-xxxxxx/a<n>` names.
   - **Project layer.** It may turn `agents.enabled` and `agents.publish` off
     and lower `agents.max_workers`, never the reverse, and it can define no
     profile or crew.
