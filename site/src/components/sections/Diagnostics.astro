@@ -1,0 +1,103 @@
+---
+import SealedSection from '../seal/SealedSection.astro';
+import SectionHead from '../ui/SectionHead.astro';
+import SubHead from '../ui/SubHead.astro';
+import Limits from '../ui/Limits.astro';
+
+// Diagnostics: an Edit result with its sealed diagnostics block, the language
+// registry (internal/lsp/registry.go) with each server and fallback check,
+// and the limits on language servers.
+
+const sealText =
+  'Diagnostics: the harness checks the file the model just edited and hands the errors back on the same tool result. Language servers detected on PATH, fixed-argv syntax checks when none is installed, per-language on/off in /settings. Every message is capped, flattened to one line, stripped of control runes, and sealed with a nonce and a SHA-256.';
+
+// From internal/lsp/registry.go. `fallback` is the check run when no server
+// is installed; languages without one report nothing until a server is.
+const languages = [
+  ['C', 'clangd', 'clang -fsyntax-only'],
+  ['C++', 'clangd', 'clang -fsyntax-only'],
+  ['C#', 'csharp-ls or omnisharp', ''],
+  ['Dart / Flutter', 'dart language-server', 'dart analyze'],
+  ['Go', 'gopls', 'gofmt -e'],
+  ['Java', 'jdtls', ''],
+  ['Objective-C', 'clangd', 'clang -fsyntax-only'],
+  ['Python', 'pyright, ruff or pylsp', 'python3 -m py_compile'],
+  ['Ruby', 'ruby-lsp or solargraph', 'ruby -c'],
+  ['Rust', 'rust-analyzer', 'rustfmt --check'],
+  ['Shell', 'bash-language-server', 'bash -n'],
+  ['Swift', 'sourcekit-lsp', 'swiftc -parse'],
+  ['TypeScript / JavaScript', 'typescript-language-server', 'node --check'],
+  ['Zig', 'zls', 'zig ast-check'],
+];
+
+const steps = [
+  ['Edit', 'the model changes handler.go'],
+  ['check', 'gopls, or gofmt -e when it is missing'],
+  ['seal', 'up to ten rows, capped and sealed'],
+  ['same result', 'the errors ride back on the Edit'],
+];
+
+const limits = [
+  ['No all-clear message', 'When no check reports anything, nothing is attached. Belai never tells the model a file is error-free.'],
+  ['Capped and flattened', 'Up to ten rows of 200 runes, each on one line, with control and bidi runes removed and the source field restricted.'],
+  ['Found, never installed', 'Belai only uses servers it finds on `PATH`. `/settings` shows the install command for a missing one and does not run it.'],
+  ['Trusted directories only', 'A language server starts only under a directory you have trusted, and only in the interactive TUI.'],
+  ['A server cannot edit', 'Every `workspace/applyEdit` request is answered `{"applied":false}`, and `initializationOptions` is always `null`.'],
+  ['Its own process group', 'Each server starts with a scrubbed environment. A repository cannot swap the server binary: project-layer overrides are dropped.'],
+];
+---
+
+<SealedSection label="diagnostics" sealText={sealText} id="diagnostics">
+  <SectionHead title="Diagnostics">
+    After the model edits a file, Belai checks it and returns any errors in the same{' '}
+    <code class="mono">Edit</code> result. The model does not need a separate build or lint call to see them.
+  </SectionHead>
+
+  <ol class="mt-10 grid list-none gap-3 p-0 sm:grid-cols-2 lg:grid-cols-4">
+    {steps.map(([step, what], i) => (
+      <li class={`relative rounded-xl border border-vx-ink p-5 ${i === 3 ? 'bg-vx-ink text-vx-cream' : ''}`}>
+        <span class={`mono text-xs ${i === 3 ? 'text-vx-cream/60' : 'text-vx-ink/60'}`}>{String(i + 1).padStart(2, '0')}</span>
+        <p class={`mono mt-2 text-lg font-semibold ${i === 3 ? 'text-vx-mint' : ''}`}>{step}</p>
+        <p class={`mt-1 text-sm ${i === 3 ? 'text-vx-cream/80' : 'text-vx-ink/75'}`}>{what}</p>
+        {i < 3 && <span class="mono absolute -right-2.5 top-1/2 hidden -translate-y-1/2 text-vx-mint-strong lg:block" aria-hidden="true">▸</span>}
+      </li>
+    ))}
+  </ol>
+
+  <div class="mt-6 overflow-x-auto rounded-xl bg-tui-ink p-5 text-tui-cream" role="img" aria-label="An Edit result carrying a sealed diagnostics block with one error and one warning">
+    <pre class="mono m-0 text-[13px] leading-7"><span class="text-tui-teal-soft">Edit</span> internal/server/handler.go  <span class="opacity-60">1 replacement</span>
+<span class="text-tui-teal">&lt;diagnostics nonce="3f9a07c1" integrity="c7d2…"&gt;</span>
+42:9	<span class="text-tui-danger">error</span>	undefined: nme  [compiler]
+57:2	<span class="text-tui-amber">warning</span>	result of fmt.Sprintf call not used  [unusedresult]
+<span class="text-tui-teal">&lt;/diagnostics&gt;</span></pre>
+  </div>
+  <p class="mono mt-2 text-xs text-vx-ink/65">rows as the model receives them: line:column, severity, message, source. The file and messages are an example.</p>
+
+  <SubHead title="Fourteen languages">
+    Language servers are detected on <code class="mono">PATH</code>. When none is installed, a fixed-argv
+    syntax check takes over, without a shell. Each language can be switched off in{' '}
+    <code class="mono">/settings</code>.
+  </SubHead>
+  <table class="mt-8 w-full border-collapse text-left text-sm md:text-base">
+    <thead>
+      <tr class="border-b-2 border-vx-ink">
+        <th scope="col" class="pb-3 pr-4 font-bold">Language</th>
+        <th scope="col" class="px-4 pb-3 font-bold">Server on PATH</th>
+        <th scope="col" class="bg-vx-sand px-4 pb-3 pt-2 font-bold">Without a server</th>
+      </tr>
+    </thead>
+    <tbody>
+      {languages.map(([lang, server, fallback]) => (
+        <tr class="border-b border-vx-ink/15 last:border-b-0">
+          <th scope="row" class="py-2.5 pr-4 font-semibold">{lang}</th>
+          <td class="px-4 py-2.5"><code class="mono text-[0.9em]">{server}</code></td>
+          <td class="bg-vx-sand/40 px-4 py-2.5">
+            {fallback ? <code class="mono text-[0.9em]">{fallback}</code> : <span class="text-vx-ink/55">nothing until a server is installed</span>}
+          </td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+
+  <Limits items={limits} class="mt-16" />
+</SealedSection>

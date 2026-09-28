@@ -139,6 +139,30 @@ body {
   background: rgba(102, 220, 200, 0.12);
 }
 
+/* The live seal readout in the sealed-blocks section follows the badge. */
+.seal-live__state::after {
+  content: "● checking…";
+  color: var(--color-vx-sand-amber);
+}
+
+.sealed.is-verified .seal-live__state::after {
+  content: "✓ verified, digests match";
+  color: var(--color-vx-mint);
+}
+
+/* A light sweep over the egress check in the sealed-blocks section. */
+.seal-scan {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(102, 220, 200, 0.18), transparent);
+  animation: seal-scan 2.4s var(--ease-brand) infinite;
+}
+
+@keyframes seal-scan {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+
 .seal-payload {
   /* The sealed payload is real content, present in the DOM so the verify tick
      can recompute its digest. It is visually hidden but not display:none, so
@@ -230,6 +254,11 @@ body {
 
   .seal-badge {
     transition: none;
+  }
+
+  .trust-flow__dots,
+  .seal-scan {
+    display: none;
   }
 }
 

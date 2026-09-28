@@ -1,35 +1,70 @@
 ---
 import SealedSection from '../seal/SealedSection.astro';
-import ComparisonTable from '../ui/ComparisonTable.tsx';
+import SectionHead from '../ui/SectionHead.astro';
+import ComparisonTable, { ROWS, sharedElsewhere } from '../ui/ComparisonTable.tsx';
 import pixFacepalm from '../../assets/pix/pix-facepalm.svg?raw';
+
+// The comparison, summarised from the same rows the table renders, so the
+// counts can never drift from the table.
 
 const sealText =
   'Compared with other harnesses: a table of which features Claude Code, Codex, Cursor and Gemini CLI have. Each row can be checked against a public source, and the table does not rate the models.';
+
+const total = ROWS.length;
+const alone = ROWS.filter((r) => !sharedElsewhere(r)).length;
+const shared = total - alone;
+const groups = [...new Set(ROWS.map((r) => r.group))];
+
+const legend = [
+  ['✓', 'text-vx-mint-strong', 'has it'],
+  ['✗', 'text-vx-coral', 'does not have it'],
+  ['·', 'text-vx-ink/50', 'no public source found either way'],
+];
 ---
 
 <SealedSection label="labs" sealText={sealText} id="labs">
-  <div>
-    <div class="grid gap-10 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-start">
-      <div class="min-w-0">
-        <h2 class="text-3xl font-bold text-vx-ink">Compared with other harnesses</h2>
-        <p class="mt-4 max-w-[72ch] text-vx-ink/80">
-          Claude Code, Codex, Cursor and Gemini CLI run very good models. This table compares the
-          harnesses around those models, and only on whether each feature exists. It says nothing about
-          the models themselves.
-        </p>
-        <p class="mt-3 max-w-[72ch] text-vx-ink/80">
-          Each row can be checked against public documentation or source code. A dot means no public
-          source was found either way when the table was written.
-        </p>
+  <SectionHead title="Compared with other harnesses">
+    Claude Code, Codex, Cursor and Gemini CLI run very good models. This table compares the harnesses
+    around those models, and only on whether each feature exists. It says nothing about the models
+    themselves.
+  </SectionHead>
 
-        <div class="mt-8">
-          <ComparisonTable client:load />
-        </div>
+  <div class="mt-10 grid gap-6 lg:grid-cols-[minmax(0,1fr)_200px] lg:items-center">
+    <dl class="m-0 grid gap-px overflow-hidden rounded-xl border border-vx-ink bg-vx-ink sm:grid-cols-3">
+      <div class="bg-vx-cream p-5">
+        <dt class="mono text-xs tracking-wider text-vx-ink/60">ROWS</dt>
+        <dd class="m-0 mt-1 text-4xl font-extrabold">{total}</dd>
+        <p class="mt-1 text-sm text-vx-ink/70">in {groups.length} groups: {groups.join(', ')}</p>
       </div>
-
-      <div class="hidden max-w-[220px] lg:block" aria-hidden="true">
-        <Fragment set:html={pixFacepalm} />
+      <div class="bg-vx-mint p-5">
+        <dt class="mono text-xs tracking-wider text-vx-ink/60">ONLY IN BELAI</dt>
+        <dd class="m-0 mt-1 text-4xl font-extrabold">{alone}</dd>
+        <p class="mt-1 text-sm text-vx-ink/70">no other harness is marked ✓</p>
       </div>
+      <div class="bg-vx-cream p-5">
+        <dt class="mono text-xs tracking-wider text-vx-ink/60">SHARED</dt>
+        <dd class="m-0 mt-1 text-4xl font-extrabold">{shared}</dd>
+        <p class="mt-1 text-sm text-vx-ink/70">at least one other harness has it too</p>
+      </div>
+    </dl>
+    <div class="mx-auto hidden w-44 lg:block" aria-hidden="true">
+      <Fragment set:html={pixFacepalm} />
     </div>
+  </div>
+
+  <div class="mt-10 flex flex-wrap items-end justify-between gap-4">
+    <p class="max-w-[72ch] text-vx-ink/80">
+      Each row can be checked against public documentation or source code. A dot means no public source
+      was found either way when the table was written.
+    </p>
+    <ul class="mono flex list-none flex-wrap gap-x-5 gap-y-1 p-0 text-xs text-vx-ink/70">
+      {legend.map(([mark, cls, what]) => (
+        <li><span class={`mr-1 text-base font-bold ${cls}`}>{mark}</span>{what}</li>
+      ))}
+    </ul>
+  </div>
+
+  <div class="mt-6">
+    <ComparisonTable client:visible />
   </div>
 </SealedSection>

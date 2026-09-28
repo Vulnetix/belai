@@ -17,13 +17,13 @@ import FAQ from '../components/sections/FAQ.astro';
 
 const rail = [
   ['hero', 'hero'],
+  ['beliefs', 'beliefs'],
   ['trust', 'trust'],
   ['classifier', 'classifier'],
   ['sealed', 'sealed'],
-  ['beliefs', 'beliefs'],
   ['labs', 'labs'],
   ['modes', 'modes'],
-  ['tools', 'tools'],
+  ['tools', 'tools & sandbox'],
   ['diagnostics', 'diagnostics'],
   ['permissions', 'permissions'],
   ['agents', 'agents & crews'],
@@ -35,9 +35,7 @@ const rail = [
   ['vulnetix', 'vulnetix'],
   ['kanban', 'kanban'],
   ['web', 'web sessions'],
-  ['sandbox', 'sandbox'],
-  ['extend', 'extend'],
-  ['integrations', 'integrations'],
+  ['extend', 'extend & integrate'],
   ['cli', 'cli'],
   ['qol', 'qol'],
   ['start', 'getting started'],
@@ -79,10 +77,10 @@ const rail = [
 
     <main class="min-w-0 flex-1 space-y-8">
       <Hero />
+      <Beliefs />
       <Trust />
       <Classifier />
       <SealedBlock />
-      <Beliefs />
       <Labs />
       <Features />
       <Kanban />

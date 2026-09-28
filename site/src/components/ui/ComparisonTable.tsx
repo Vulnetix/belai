@@ -34,7 +34,7 @@ const row = (group: Group, feature: string, belai: Cell, claude: Cell, codex: Ce
   gemini,
 });
 
-const ROWS: Row[] = [
+export const ROWS: Row[] = [
   // untrusted content
   row('untrusted content', 'sealed delimiters (nonce + SHA-256, stripped at egress), the tools briefing included', 'yes', 'no', 'no', 'no', 'no'),
   row('untrusted content', 'security classifier on every arbitrary tool result, including other agents\' transcripts', 'yes', 'no', 'no', 'no', 'no'),
@@ -86,7 +86,7 @@ const FILTERS = [
 
 type Filter = (typeof FILTERS)[number]['id'];
 
-const sharedElsewhere = (r: Row) =>
+export const sharedElsewhere = (r: Row) =>
   r.claude === 'yes' || r.codex === 'yes' || r.cursor === 'yes' || r.gemini === 'yes';
 
 function cellChar(c: Cell): string {
@@ -131,41 +131,41 @@ export default function ComparisonTable() {
         ))}
       </div>
 
-      <div className="comparison-scroll rounded-lg border border-vx-ink/30">
+      <div className="comparison-scroll rounded-xl border border-vx-ink">
         <table className="w-full border-collapse text-left text-sm">
           <caption className="sr-only">
             Feature-presence comparison across Belai, Claude Code, Codex, Cursor and Gemini CLI.
           </caption>
           <thead>
-            <tr className="mono border-b border-vx-ink bg-vx-bone text-vx-ink">
-              <th scope="col" className="px-4 py-3 font-medium">feature</th>
-              <th scope="col" className="bg-vx-mint/15 px-4 py-3 font-bold">belai</th>
-              <th scope="col" className="px-4 py-3 font-medium">claude code</th>
-              <th scope="col" className="px-4 py-3 font-medium">codex</th>
-              <th scope="col" className="px-4 py-3 font-medium">cursor</th>
-              <th scope="col" className="px-4 py-3 font-medium">gemini cli</th>
+            <tr className="mono bg-vx-ink text-vx-cream">
+              <th scope="col" className="sticky left-0 z-10 bg-vx-ink px-4 py-3 font-medium">feature</th>
+              <th scope="col" className="bg-vx-mint px-4 py-3 text-center font-bold text-vx-ink">belai</th>
+              <th scope="col" className="px-4 py-3 text-center font-medium">claude code</th>
+              <th scope="col" className="px-4 py-3 text-center font-medium">codex</th>
+              <th scope="col" className="px-4 py-3 text-center font-medium">cursor</th>
+              <th scope="col" className="px-4 py-3 text-center font-medium">gemini cli</th>
             </tr>
           </thead>
           <tbody>
             {groups.map(({ group, rows }) => (
               <Fragment key={group}>
-                <tr className="border-t border-vx-ink/20 bg-vx-sand/40">
+                <tr className="border-t-2 border-vx-ink bg-vx-sand/50">
                   <th
                     scope="colgroup"
                     colSpan={6}
-                    className="mono px-4 py-2 text-xs font-medium uppercase tracking-wider text-vx-ink/70"
+                    className="mono sticky left-0 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-vx-ink/75"
                   >
                     {group}
                   </th>
                 </tr>
                 {rows.map((r) => (
                   <tr key={r.feature} className="border-t border-vx-ink/15">
-                    <th scope="row" className="px-4 py-3 font-normal text-vx-ink">{r.feature}</th>
-                    <td className={`mono bg-vx-mint/10 px-4 py-3 font-bold ${cellClass(r.belai)}`}>{cellChar(r.belai)}</td>
-                    <td className={`mono px-4 py-3 ${cellClass(r.claude)}`}>{cellChar(r.claude)}</td>
-                    <td className={`mono px-4 py-3 ${cellClass(r.codex)}`}>{cellChar(r.codex)}</td>
-                    <td className={`mono px-4 py-3 ${cellClass(r.cursor)}`}>{cellChar(r.cursor)}</td>
-                    <td className={`mono px-4 py-3 ${cellClass(r.gemini)}`}>{cellChar(r.gemini)}</td>
+                    <th scope="row" className="sticky left-0 min-w-[16rem] bg-vx-cream px-4 py-3 font-normal text-vx-ink">{r.feature}</th>
+                    <td className={`mono bg-vx-mint/15 px-4 py-3 text-center text-base font-bold ${cellClass(r.belai)}`}>{cellChar(r.belai)}</td>
+                    <td className={`mono px-4 py-3 text-center text-base ${cellClass(r.claude)}`}>{cellChar(r.claude)}</td>
+                    <td className={`mono px-4 py-3 text-center text-base ${cellClass(r.codex)}`}>{cellChar(r.codex)}</td>
+                    <td className={`mono px-4 py-3 text-center text-base ${cellClass(r.cursor)}`}>{cellChar(r.cursor)}</td>
+                    <td className={`mono px-4 py-3 text-center text-base ${cellClass(r.gemini)}`}>{cellChar(r.gemini)}</td>
                   </tr>
                 ))}
               </Fragment>

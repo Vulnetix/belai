@@ -1,0 +1,106 @@
+---
+import SealedSection from '../seal/SealedSection.astro';
+import SectionHead from '../ui/SectionHead.astro';
+import SubHead from '../ui/SubHead.astro';
+import Ladder from '../ui/Ladder.astro';
+import Limits from '../ui/Limits.astro';
+
+const sealText =
+  'Memory: SearchSessions, ReadSession and SearchMemory read the transcripts and memory files of other coding agents on this machine from a fixed registry, take no path argument, cite every hit, and always classify. Each turn also carries harness-computed git and forge facts and the read index, and plan and goal turns prefetch the instruction and changed files through a classified Read.';
+
+const tools = [
+  { n: '01', name: 'SearchSessions', key: 'regex', lead: 'Searches past sessions with a regular expression, by default only those recorded in the current project. With `prompts_only`, only prompt history is searched, which is faster.' },
+  { n: '02', name: 'ReadSession', key: 'around a hit', lead: 'Reads the turns around a hit, so the model sees what was asked and what the agent did about it.' },
+  { n: '03', name: 'SearchMemory', key: 'rules · memory', lead: "Searches memory and rules files such as `AGENTS.md`, `CLAUDE.md` and `.cursorrules`, each agent's memory folder, and Belai's saved goals, prompts and plans." },
+];
+
+const agents = ['Belai', 'Claude Code', 'Codex', 'pi', 'Goose', 'opencode', 'Copilot in VS Code', 'Copilot CLI', 'Antigravity'];
+const needsSqlite = new Set(['Goose', 'opencode']);
+
+const hit = [
+  ['agent', 'the agent that wrote it'],
+  ['session', 'which session'],
+  ['turn · role', 'where in it, and who'],
+  ['time', 'when'],
+  ['project', 'which repository'],
+];
+
+const knows = [
+  {
+    title: 'Git and forge facts',
+    body: 'Every turn carries the upstream with ahead and behind counts, the worktrees, and, when `gh` or `glab` answers, the PR or MR number, its state and CI counts. The facts refresh in the background and a turn never waits for the network. PR titles, check names and other forge text are left out; the model reads those through `GH` or `Glab`, which classify.',
+  },
+  {
+    title: 'Read index',
+    body: 'When the model reads an unchanged file again and the earlier copy is still in the conversation, it gets a short note instead: the path, the lines, the size and the git blob id. The index stores those facts, never file contents. Any edit, a changed timestamp or a file whose read was withheld sends the next read to disk and through the classifier as usual.',
+  },
+  {
+    title: 'Context prefetch',
+    body: "Plan and goal turns, and approved plans, start by reading `AGENTS.md`, `CLAUDE.md` and the files changed in the working tree. The reads use the session's own `Read` and are classified the same way. They stop at 12 files, 48 KiB per file and 128 KiB in total, and a file a permission rule would ask about is skipped.",
+  },
+];
+
+const limits = [
+  ['No path argument', 'Every location comes from a fixed list of known agent stores, so the three tools cannot read any other file on the machine.'],
+  ['Read, never written', "They never write to another agent's store."],
+  ['Always classified', 'Text in those stores was written by other models, so every result is classified before the model sees it.'],
+  ['A record, to be checked', 'The model is told that a hit is a record of what an agent once wrote, to be checked against the current files.'],
+  ['Bounded', 'A search stops at 200 matches, 256 KiB or ten seconds, and the result says when it was cut short.'],
+  ['No new dependencies', 'It uses `rg` to narrow the files when it is installed. Goose and opencode need `sqlite3` on `PATH`, and are skipped with the reason without it.'],
+];
+
+const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }));
+---
+
+<SealedSection label="memory" sealText={sealText} id="memory">
+  <SectionHead title="Memory">
+    Other coding agents on your machine have probably explored this repository already. Belai can search
+    what they found instead of exploring again, and each turn starts with what the session already knows
+    about the repository.
+  </SectionHead>
+
+  <Ladder steps={tools} from="finds a hit" to="rules and memory, across agents" />
+
+  <SubHead title="Nine agents' sessions">
+    Every hit names the agent, session, turn, role, time and project it came from, so the model can cite
+    it.
+  </SubHead>
+  <div class="mt-8 grid gap-8 lg:grid-cols-12">
+    <ul class="m-0 grid min-w-0 list-none grid-cols-2 gap-2 p-0 sm:grid-cols-3 lg:col-span-7">
+      {agents.map((a) => (
+        <li class={`flex min-h-16 flex-col justify-center rounded-xl border px-4 py-3 ${a === 'Belai' ? 'border-vx-ink bg-vx-ink text-vx-mint' : 'border-vx-ink'}`}>
+          <span class="font-semibold">{a}</span>
+          {needsSqlite.has(a) && <span class="mono text-xs text-vx-ink/60">needs sqlite3</span>}
+        </li>
+      ))}
+    </ul>
+    <div class="min-w-0 rounded-xl bg-vx-ink p-5 lg:col-span-5">
+      <p class="mono text-xs tracking-wider text-vx-cream/70">EVERY HIT CARRIES</p>
+      <dl class="mono mt-3 grid grid-cols-[7rem_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
+        {hit.map(([k, v]) => (
+          <>
+            <dt class="text-vx-mint">{k}</dt>
+            <dd class="m-0 font-sans text-vx-cream/80">{v}</dd>
+          </>
+        ))}
+      </dl>
+    </div>
+  </div>
+
+  <SubHead title="What the session already knows">
+    Each turn starts with facts the harness worked out itself. None of them carries file contents, so
+    the model does not have to ask again.
+  </SubHead>
+  <div class="mt-8 grid gap-5 lg:grid-cols-3">
+    {knows.map((k) => (
+      <article class="flex flex-col rounded-xl border border-vx-ink p-5">
+        <h4 class="text-lg font-bold">{k.title}</h4>
+        <p class="mt-2 text-sm text-vx-ink/80">
+          {split(k.body).map(({ p, c }) => (c ? <code class="mono text-[0.92em]">{p}</code> : p))}
+        </p>
+      </article>
+    ))}
+  </div>
+
+  <Limits items={limits} class="mt-16" />
+</SealedSection>

@@ -1,0 +1,106 @@
+---
+import SealedSection from '../seal/SealedSection.astro';
+import SectionHead from '../ui/SectionHead.astro';
+import SubHead from '../ui/SubHead.astro';
+import Ladder from '../ui/Ladder.astro';
+import Limits from '../ui/Limits.astro';
+import Shot from '../ui/Shot.astro';
+import permMerge from '../../assets/concepts/permission-merge.svg?raw';
+import guardSwitch from '../../assets/concepts/guardrails-switch.svg?raw';
+import approvalDiffShot from '../../assets/shots/approval-diff.svg';
+import permissionsShot from '../../assets/shots/permissions.svg';
+
+const sealText =
+  'Permissions and approvals: allow, deny, or ask per tool, a union with provenance per grant, and an approval prompt that shows the actual diff.';
+
+const rules = [
+  { n: '01', name: 'Allow', key: 'allow', lead: 'The tool runs without asking. An allow never skips an ask that another rule or a hook demanded.' },
+  { n: '02', name: 'Ask', key: 'ask', lead: 'You decide each call. For a tool that changes files, you see the diff before it runs.' },
+  { n: '03', name: 'Deny', key: 'deny', lead: 'The call is withheld. An explicit deny always wins, whatever else allows it.' },
+];
+
+const sources = [
+  ['policy', 'the allow and deny rules in your settings'],
+  ['session', 'grants you made during this session'],
+  ['tool kind', 'what a kind of tool is granted'],
+  ['role', 'what the running role is granted'],
+];
+
+const surfaces = ['the agent session', 'inline !cmd', '@file attachments', 'background agents', 'the CLI'];
+
+const limits = [
+  ['Grants add up', 'Merging adds grants and keeps where each came from. It never widens a surface on its own, and an explicit deny beats every allow.'],
+  ['No match, your choice', 'When no rule matches, the call is allowed. Set `permission_no_match` to `enforce` to block it instead.'],
+  ['The switch comes first', 'Every gated path checks the guardrails switch before calling the classifier, so turning a gate off also stops its classifier calls.'],
+];
+---
+
+<SealedSection label="permissions" sealText={sealText} id="permissions">
+  <SectionHead title="Permissions">
+    Each tool is set to allow, deny or ask. With ask, you see the diff before a tool that changes files
+    runs.
+  </SectionHead>
+
+  <Ladder steps={rules} from="runs on its own" to="withheld, whatever else says">
+    <svg slot="art-0" viewBox="0 0 320 70" class="h-16 w-full" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="10" y="18" width="130" height="34" rx="8" class="fill-vx-bone" />
+      <text x="24" y="40" font-family="Geist Mono, monospace" font-size="12" fill="currentColor" stroke="none">Read(**)</text>
+      <path d="M140 35 H220" />
+      <circle cx="240" cy="35" r="14" class="fill-vx-mint-strong" stroke="none" />
+    </svg>
+    <svg slot="art-1" viewBox="0 0 320 70" class="h-16 w-full" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="10" y="10" width="300" height="50" rx="8" />
+      <text x="24" y="30" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-coral" stroke="none">− user := r.URL.Query()</text>
+      <text x="24" y="48" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-mint-strong" stroke="none">+ name := r.URL.Query()</text>
+    </svg>
+    <svg slot="art-2" viewBox="0 0 320 70" class="h-16 w-full" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="10" y="18" width="130" height="34" rx="8" class="stroke-vx-cream/40" />
+      <text x="24" y="40" font-family="Geist Mono, monospace" font-size="12" class="fill-vx-cream" stroke="none">Bash(rm *)</text>
+      <path d="M140 35 H200" />
+      <path d="M214 23 L238 47 M238 23 L214 47" class="stroke-vx-coral" stroke-width="3" />
+    </svg>
+  </Ladder>
+
+  <SubHead title="Where a grant comes from">
+    The permissions in effect combine policy, session, tool kind and role. Each grant records which of
+    these added it, and <code class="mono">/permissions</code> shows it.
+  </SubHead>
+  <div class="mt-8 grid gap-8 lg:grid-cols-2 lg:items-center">
+    <div class="rounded-xl border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={permMerge} /></div>
+    <dl class="m-0 grid gap-px overflow-hidden rounded-xl border border-vx-ink bg-vx-ink/20 sm:grid-cols-2">
+      {sources.map(([k, v]) => (
+        <div class="bg-vx-cream p-5">
+          <dt class="mono font-semibold">{k}</dt>
+          <dd class="m-0 mt-1 text-sm text-vx-ink/75">{v}</dd>
+        </div>
+      ))}
+    </dl>
+  </div>
+
+  <SubHead title="What you see when it asks">
+    The approval prompt shows the diff of the change as well as the path, and allow-always writes the
+    rule it names.
+  </SubHead>
+  <div class="mt-8 grid gap-6 lg:grid-cols-2 lg:items-start">
+    <Shot src={approvalDiffShot.src} alt="The approval prompt showing a diff" caption="approval prompt, diff in the prompt" />
+    <Shot src={permissionsShot.src} alt="The permissions screen" caption="/permissions" />
+  </div>
+
+  <SubHead title="One switch for every surface">
+    The guardrails switch applies everywhere at once. <code class="mono">f3</code> turns it off, and a gold
+    chip in the footer says so until you turn it back on.
+  </SubHead>
+  <div class="mt-8 grid gap-8 lg:grid-cols-2 lg:items-center">
+    <ul class="m-0 grid list-none gap-2 p-0">
+      {surfaces.map((s, i) => (
+        <li class="flex items-center justify-between gap-3 rounded-xl border border-vx-ink px-4 py-3">
+          <span class="mono">{s}</span>
+          <span class="mono text-xs text-vx-ink/60">{String(i + 1).padStart(2, '0')}</span>
+        </li>
+      ))}
+    </ul>
+    <div class="rounded-xl border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={guardSwitch} /></div>
+  </div>
+
+  <Limits items={limits} class="mt-16" />
+</SealedSection>

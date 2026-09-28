@@ -1,0 +1,21 @@
+---
+// Shot is one real TUI capture (see tools/shot), shown in full with its
+// caption. Captures are never hidden behind a control: a section that has
+// several lays them out side by side or stacked.
+
+interface Props {
+  src: string;
+  alt: string;
+  caption?: string;
+  class?: string;
+}
+
+const { src, alt, caption, class: cls = '' } = Astro.props;
+---
+
+<figure class={`m-0 min-w-0 ${cls}`}>
+  <div class="overflow-hidden rounded-xl border border-vx-ink bg-vx-ink">
+    <img src={src} alt={alt} class="block h-auto w-full" loading="lazy" decoding="async" />
+  </div>
+  {caption && <figcaption class="mono mt-2 text-xs text-vx-ink/65">{caption}</figcaption>}
+</figure>

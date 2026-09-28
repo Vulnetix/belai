@@ -1,5 +1,8 @@
 ---
 import SealedSection from '../seal/SealedSection.astro';
+import SectionHead from '../ui/SectionHead.astro';
+import SubHead from '../ui/SubHead.astro';
+import Limits from '../ui/Limits.astro';
 
 const docBase = 'https://github.com/Vulnetix/belai/blob/main/docs/';
 
@@ -10,14 +13,12 @@ const answers = [
   {
     kind: 'permission',
     choices: 'allow once · allow always · deny',
-    detail:
-      'The page shows the tool, its subject, the diff it would make and the exact rule allow-always adds. Allow-always writes that rule to the settings on the host, the same as pressing it there.',
+    detail: 'The page shows the tool, its subject, the diff it would make and the exact rule allow-always adds. Allow-always writes that rule to the settings on the host, the same as pressing it there.',
   },
   {
     kind: 'question',
     choices: 'single or multiple choice · notes · skip · decline',
-    detail:
-      'The questions the model asked, with every option and its description. Your answers still pass the prompt classifier on the host, like typed ones.',
+    detail: 'The questions the model asked, with every option and its description. Your answers still pass the prompt classifier on the host, like typed ones.',
   },
   {
     kind: 'mode',
@@ -39,101 +40,111 @@ const records = [
   ['ask_answer', 'how it was resolved, and whether the host or the web answered'],
   ['rolemanager', 'every classifier and role-manager verdict, with its label, model and timing'],
 ];
+
+const path = [
+  ['host', 'writes the line to the session JSONL'],
+  ['syncer', 'uploads it about 30 ms later with the lines that came with it, gzipped when large'],
+  ['server', 'Postgres notifications wake the page and the host inbox'],
+  ['page', 'shows it, about one round trip after it happened'],
+];
+
+const limits = [
+  ['Only the open question', 'The host applies an answer only to the question open right now, and only if it fits: options that exist, one choice where only one is allowed, a known decision.'],
+  ['Through the same code', "An answer is applied through the functions the host's own keys call. Notes are cleaned of control characters and capped."],
+  ['First answer wins', 'If you answer at the terminal first, the page shows that the host refused the late one and why.'],
+  ['Stays on the host', 'The agent picker and the first-run trust prompt are never answered from the web.'],
+  ['Your switches', '`sync.remote_answers` turns web answers off and `sync.remote_prompts` makes a session view-only. A repository can turn either off, never on.'],
+  ['The file is the record', 'Belai writes everything to the session JSONL first. The website mirrors those lines and never composes one.'],
+];
 ---
 
 <SealedSection label="web" sealText={sealText} id="web">
-  <div class="prose-measure">
-    <h2 class="text-3xl font-bold text-vx-ink">Web sessions</h2>
-    <p class="mt-4 text-vx-ink/80">
-      While the Vulnetix CLI is logged in, each
-      session mirrors to the Vulnetix website. <strong>Belai → Sessions</strong> follows a running
-      session live, and a prompt you type there runs on the host as if you had typed it at the
-      terminal. When the host stops to ask you something, the page shows the question and you can
-      answer it there. The host carries on as if you had pressed the key.
-    </p>
-  </div>
+  <SectionHead title="Web sessions">
+    While the Vulnetix CLI is logged in, each session mirrors to the Vulnetix website.{' '}
+    <strong>Belai → Sessions</strong> follows a running session live, and a prompt you type there runs on
+    the host as if you had typed it at the terminal.
+  </SectionHead>
 
-  <div class="mt-8 grid gap-8 lg:grid-cols-2 lg:items-start">
-    <div class="rounded-lg border border-vx-ink/30 p-5 mono text-xs leading-relaxed text-vx-ink/80" aria-label="A permission ask as the Sessions page shows it" role="img">
-      <p><span class="text-vx-sand-amber">── permission</span> <span class="text-vx-ink/50">Edit ·············· waiting for an answer ──</span></p>
-      <p class="mt-2 pl-4"><span class="text-vx-sand-amber">⌁</span> <span class="font-semibold text-vx-ink">Edit</span> internal/server/handler.go</p>
-      <p class="pl-4 text-vx-ink/50">allow always adds Edit(internal/server/handler.go)</p>
-      <div class="mt-2 ml-4 rounded bg-vx-ink/5">
-        <p class="px-2"><span class="text-vx-ink/50"> 41</span>   ctx := r.Context()</p>
-        <p class="px-2 bg-vx-coral/15"><span class="text-vx-coral">−42</span>   user := r.URL.Query().Get("user")</p>
-        <p class="px-2 bg-vx-mint/20"><span class="text-vx-mint-strong">+42</span>   name := r.URL.Query().Get("user")</p>
-        <p class="px-2 bg-vx-mint/20"><span class="text-vx-mint-strong">+43</span>   if name == "" {'{'}</p>
+  <div class="mt-10 grid gap-8 lg:grid-cols-12 lg:items-start">
+    <div class="mono min-w-0 rounded-xl border border-vx-ink p-5 text-xs leading-relaxed text-vx-ink/80 md:text-sm lg:col-span-7" aria-label="A permission ask as the Sessions page shows it" role="img">
+      <p><span class="text-[#B86E00]">── permission</span> <span class="text-vx-ink/50">Edit · waiting for an answer ──</span></p>
+      <p class="mt-3 pl-4"><span class="text-[#B86E00]">⌁</span> <span class="font-semibold text-vx-ink">Edit</span> internal/server/handler.go</p>
+      <p class="pl-4 text-vx-ink/55">allow always adds Edit(internal/server/handler.go)</p>
+      <div class="ml-4 mt-3 overflow-x-auto rounded-lg bg-vx-ink/5 py-1">
+        <p class="whitespace-pre px-3"><span class="text-vx-ink/50"> 41</span>   ctx := r.Context()</p>
+        <p class="whitespace-pre bg-vx-coral/15 px-3"><span class="text-[#B8332E]">−42</span>   user := r.URL.Query().Get("user")</p>
+        <p class="whitespace-pre bg-vx-mint/25 px-3"><span class="text-vx-mint-strong">+42</span>   name := r.URL.Query().Get("user")</p>
+        <p class="whitespace-pre bg-vx-mint/25 px-3"><span class="text-vx-mint-strong">+43</span>   if name == "" {'{'}</p>
       </div>
-      <p class="mt-3 pl-4 flex flex-wrap gap-2">
-        <span class="rounded border border-vx-mint-strong px-2 py-0.5 text-vx-mint-strong">Allow once</span>
-        <span class="rounded border border-vx-ink/30 px-2 py-0.5">Allow always</span>
-        <span class="rounded border border-vx-ink/30 px-2 py-0.5 text-vx-coral">Deny</span>
+      <p class="mt-4 flex flex-wrap gap-2 pl-4">
+        <span class="rounded-md border border-vx-mint-strong px-3 py-1 text-vx-mint-strong">Allow once</span>
+        <span class="rounded-md border border-vx-ink/30 px-3 py-1">Allow always</span>
+        <span class="rounded-md border border-vx-ink/30 px-3 py-1 text-[#B8332E]">Deny</span>
       </p>
     </div>
-    <div class="prose-measure">
-      <h3 class="text-xl font-bold text-vx-ink">Drawn like the TUI</h3>
+    <div class="min-w-0 lg:col-span-5">
+      <h3 class="text-2xl font-bold">Drawn like the TUI</h3>
       <p class="mt-3 text-vx-ink/80">
-        The page draws with the TUI's own design system: thread blocks with a top rule, quiet tool rows
-        that only turn red when they fail, reasoning folded to one line, diffs with line numbers and
-        syntax colour, the plan with <span class="mono">◆ ◇ ✓</span>, and the footer's mode, model,
-        switches and context gauge. Amber still means the host needs you. Open questions are also
-        pinned above the composer, so you can find them in a long transcript.
+        The page draws with the TUI's own design system: thread blocks with a top rule, quiet tool rows that
+        only turn red when they fail, reasoning folded to one line, diffs with line numbers and syntax colour,
+        the plan with <span class="mono">◆ ◇ ✓</span>, and the footer's mode, model, switches and context
+        gauge. Amber still means the host needs you. Open questions are also pinned above the composer, so
+        you can find them in a long transcript.
       </p>
       <p class="mt-3 text-vx-ink/80">
-        Classifier and role-manager decisions appear in the transcript as they happen: what was
-        checked, the verdict, the model that gave it and how long it took. Switch on{' '}
-        <span class="mono">all decisions</span> to also see the ones the TUI folds into its own lines,
-        like mode selection and goal evaluation.
+        Classifier and role-manager decisions appear in the transcript as they happen: what was checked, the
+        verdict, the model that gave it and how long it took. Switch on <span class="mono">all decisions</span>{' '}
+        to also see the ones the TUI folds into its own lines, like mode selection and goal evaluation.
       </p>
     </div>
   </div>
 
-  <div class="mt-10">
-    <h3 class="text-xl font-bold text-vx-ink">What you can answer from the web</h3>
-    <div class="mt-5 grid gap-4 md:grid-cols-2">
-      {answers.map((a) => (
-        <article class="rounded-lg border border-vx-ink/30 p-5">
-          <h4 class="mono text-sm font-semibold text-vx-sand-amber">{a.kind}</h4>
-          <p class="mono mt-1 text-xs text-vx-ink/60">{a.choices}</p>
-          <p class="mt-3 text-sm text-vx-ink/80">{a.detail}</p>
-        </article>
-      ))}
-    </div>
-    <p class="prose-measure mt-4 text-sm text-vx-ink/70">
-      The agent picker and the first-run trust prompt stay on the host.
-    </p>
+  <SubHead title="What you can answer from the web">
+    When the host stops to ask you something, the page shows the question and you can answer it there.
+    The host carries on as if you had pressed the key.
+  </SubHead>
+  <div class="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+    {answers.map((a, i) => (
+      <article class={`flex flex-col rounded-xl border border-vx-ink p-5 ${i === 3 ? 'bg-vx-ink text-vx-cream' : ''}`}>
+        <span class="h-1 w-10 rounded-full bg-vx-sand-amber"></span>
+        <h4 class="mt-3 text-xl font-bold">{a.kind}</h4>
+        <p class={`mono mt-1 text-xs ${i === 3 ? 'text-vx-mint' : 'text-vx-ink/60'}`}>{a.choices}</p>
+        <p class={`mt-3 text-sm ${i === 3 ? 'text-vx-cream/80' : 'text-vx-ink/80'}`}>{a.detail}</p>
+      </article>
+    ))}
   </div>
 
-  <div class="mt-10 grid gap-10 lg:grid-cols-2">
-    <div class="prose-measure">
-      <h3 class="text-xl font-bold text-vx-ink">The session file is the record</h3>
-      <p class="mt-4 text-vx-ink/80">
-        Belai writes everything to the session JSONL first. The website mirrors those lines, and a
-        resumed session reads the same ones, so both show the same events:
-      </p>
-      <ul class="mt-3 space-y-1 text-sm text-vx-ink/80 list-none p-0">
+  <SubHead title="From the terminal to the page">
+    The terminal never blocks on sync. Your answer travels the same way back to the host.
+  </SubHead>
+  <ol class="mt-8 grid list-none gap-3 p-0 sm:grid-cols-2 lg:grid-cols-4">
+    {path.map(([who, what], i) => (
+      <li class={`relative rounded-xl border border-vx-ink p-5 ${i === 0 ? 'bg-vx-ink text-vx-cream' : ''}`}>
+        <span class={`mono text-xs ${i === 0 ? 'text-vx-cream/60' : 'text-vx-ink/60'}`}>{String(i + 1).padStart(2, '0')}</span>
+        <p class={`mono mt-2 text-lg font-semibold ${i === 0 ? 'text-vx-mint' : ''}`}>{who}</p>
+        <p class={`mt-1 text-sm ${i === 0 ? 'text-vx-cream/80' : 'text-vx-ink/75'}`}>{what}</p>
+        {i < path.length - 1 && <span class="mono absolute -right-2.5 top-1/2 hidden -translate-y-1/2 text-vx-mint-strong lg:block" aria-hidden="true">▸</span>}
+      </li>
+    ))}
+  </ol>
+
+  <div class="mt-8 grid gap-8 lg:grid-cols-12">
+    <div class="min-w-0 rounded-xl bg-vx-ink p-5 lg:col-span-7">
+      <p class="mono text-xs tracking-wider text-vx-cream/70">WHAT THE SESSION FILE HOLDS</p>
+      <dl class="mono mt-3 grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[8rem_minmax(0,1fr)]">
         {records.map(([name, what]) => (
-          <li><span class="mono font-semibold text-vx-ink">{name}</span> <span class="text-vx-ink/70">{what}</span></li>
+          <>
+            <dt class="text-vx-mint">{name}</dt>
+            <dd class="m-0 font-sans text-vx-cream/80">{what}</dd>
+          </>
         ))}
-      </ul>
-      <p class="mt-4 text-vx-ink/80">
-        Resume a session with <code class="mono">belai -r</code> and its diffs and answered questions
-        are back on screen.
-      </p>
+      </dl>
     </div>
-    <div class="prose-measure">
-      <h3 class="text-xl font-bold text-vx-ink">Web answers are checked on the host</h3>
-      <p class="mt-4 text-vx-ink/80">
-        The host applies an answer only to the question open right now, only if it fits that question
-        (options that exist, one choice where only one is allowed, a known decision), and only through
-        the same code its own keys call. Notes are cleaned of control characters and capped. The first
-        answer wins: if you answer at the terminal first, the page shows that the host refused the late
-        one and why.
-      </p>
-      <p class="mt-4 text-vx-ink/80">
-        <code class="mono">sync.remote_answers</code> turns web answers off and{' '}
-        <code class="mono">sync.remote_prompts</code> makes a session view-only. A repository's settings
-        can turn either off, never on.
+    <div class="min-w-0 lg:col-span-5">
+      <p class="text-vx-ink/80">
+        A resumed session reads the same lines, so the page and the terminal show the same events. Resume
+        a session with <code class="mono">belai -r</code> and its diffs and answered questions are back on
+        screen. History hides sessions run in <code class="mono">/tmp</code> until you ask for them.
       </p>
       <p class="mt-4 text-vx-ink/80">
         The website's Agent Builder uses a live session too. It sends the host a one-line premise, and the
@@ -141,20 +152,11 @@ const records = [
         field with a reason. Nothing is saved on the host. The request needs web prompts on, runs one at a
         time per session, and expires after three minutes.
       </p>
+      <p class="mt-4 text-sm">
+        <a class="text-vx-ink underline" href={`${docBase}session-sync.md`}>docs/session-sync.md</a>
+      </p>
     </div>
   </div>
 
-  <div class="mt-10 prose-measure">
-    <h3 class="text-xl font-bold text-vx-ink">Sync runs in the background</h3>
-    <p class="mt-4 text-vx-ink/80">
-      The terminal never blocks on sync. A line is written to disk, and a background syncer uploads
-      it about 30 ms later together with the lines that came with it. Large batches are gzipped. On
-      the server, Postgres notifications wake the page's stream and the host's inbox as soon as
-      something changes, so a line reaches the page, and your answer reaches the terminal, in about
-      one round trip. History hides sessions run in <code class="mono">/tmp</code> until you ask for
-      them. Read{' '}
-      <a class="text-vx-ink underline" href={`${docBase}session-sync.md`}>docs/session-sync.md</a> for
-      the details.
-    </p>
-  </div>
+  <Limits items={limits} class="mt-16" />
 </SealedSection>

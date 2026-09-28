@@ -1,24 +1,36 @@
 ---
 import SealedSection from '../seal/SealedSection.astro';
 import CopyButton from '../ui/CopyButton.tsx';
+import Shot from '../ui/Shot.astro';
 import pixSentinel from '../../assets/pix/pix-sentinel.svg?raw';
+import bannerShot from '../../assets/shots/banner-composer.svg';
 
 const sealText =
   'Belai is a safer LLM coding harness: sealed delimiters, a security classifier embedded in the binary, fail-closed posture gates, a prompt library, a repo map, and role/mode determinism. Free and open source, Apache-2.0.';
+
+const install = 'brew install vulnetix/tap/belai';
+
+// Harness facts only, each one covered further down the page.
+const facts = [
+  ['license', 'Apache-2.0'],
+  ['runs on', 'linux · darwin · windows'],
+  ['classifier', 'in the binary'],
+  ['guardrails', 'on by default'],
+];
 ---
 
 <SealedSection label="hero" sealText={sealText} id="hero">
-  <div class="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_280px]">
-    <div class="prose-measure">
+  <div class="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_260px]">
+    <div class="min-w-0">
       <p class="boot-stage boot-stage-1 mono text-sm text-vx-mint-strong" aria-hidden="true">
         <span class="rail-fill inline-block">▌ belai v0.39.16 · sealed</span>
       </p>
 
-      <h1 class="boot-stage boot-stage-2 mt-4 text-4xl font-bold leading-tight text-vx-ink md:text-5xl">
+      <h1 class="boot-stage boot-stage-2 mt-4 max-w-[16ch] text-5xl font-extrabold leading-[1.02] tracking-tight text-vx-ink md:text-6xl">
         A safer LLM coding harness
       </h1>
 
-      <p class="boot-stage boot-stage-3 mt-5 text-lg leading-relaxed text-vx-ink/80">
+      <p class="boot-stage boot-stage-3 prose-measure mt-6 text-lg leading-relaxed text-vx-ink/80">
         Most coding harnesses pass tool output straight to the model and leave safety to whatever you
         write into a <code class="mono">skills.md</code>. Belai does the checking in the harness itself. It
         seals the blocks of context it sends, runs a security classifier built into the binary over
@@ -26,26 +38,41 @@ const sealText =
         repo map, and a mode you choose stays chosen. It is free and open source under Apache-2.0.
       </p>
 
-      <div class="boot-stage boot-stage-4 mt-8 flex flex-wrap items-center gap-4">
-        <code class="mono rounded-md border border-vx-ink bg-vx-ink px-4 py-2.5 text-vx-mint">
-          brew install vulnetix/tap/belai
+      <div class="boot-stage boot-stage-4 mt-8 flex flex-wrap items-center gap-3">
+        <code class="mono flex items-center gap-3 rounded-lg bg-vx-ink px-4 py-3 text-vx-mint">
+          <span class="text-vx-cream/50" aria-hidden="true">$</span>{install}
         </code>
-        <CopyButton
-          value="brew install vulnetix/tap/belai"
-          label="copy install command"
-          client:load
-        />
+        <CopyButton value={install} label="copy install command" client:load />
         <a
           href="https://github.com/vulnetix/belai"
-          class="mono rounded-md border border-vx-ink px-4 py-2.5 text-vx-ink hover:bg-vx-ink hover:text-vx-mint"
+          class="mono rounded-lg border border-vx-ink px-4 py-3 text-vx-ink no-underline hover:bg-vx-ink hover:text-vx-mint"
         >
-          github
+          github ↗
+        </a>
+        <a href="#start" class="mono px-2 py-3 text-sm text-vx-ink underline decoration-vx-mint-strong underline-offset-4">
+          other installs
         </a>
       </div>
+
+      <dl class="boot-stage boot-stage-4 mono mt-8 grid max-w-2xl grid-cols-2 gap-px overflow-hidden rounded-lg border border-vx-ink/25 bg-vx-ink/15 text-sm sm:grid-cols-4">
+        {facts.map(([k, v]) => (
+          <div class="bg-vx-cream px-3 py-2.5">
+            <dt class="text-xs text-vx-ink/55">{k}</dt>
+            <dd class="m-0 mt-0.5 text-vx-ink">{v}</dd>
+          </div>
+        ))}
+      </dl>
     </div>
 
-    <div class="boot-stage boot-stage-1 hidden max-w-[280px] lg:block" aria-hidden="true">
+    <div class="boot-stage boot-stage-1 hidden max-w-[260px] lg:block" aria-hidden="true">
       <Fragment set:html={pixSentinel} />
     </div>
   </div>
+
+  <Shot
+    class="boot-stage boot-stage-4 mt-10 max-w-[830px]"
+    src={bannerShot.src}
+    alt="Belai's start screen: the banner above an empty composer"
+    caption="belai, first frame"
+  />
 </SealedSection>

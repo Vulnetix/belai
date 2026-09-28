@@ -1,0 +1,53 @@
+---
+// Ladder is the numbered row of cards a section opens with. The last card is
+// dark. Each card may carry a small inline SVG, passed as a named slot
+// `art-0`, `art-1`, … so the drawing stays with the section that owns it.
+// Text may mark code with backticks.
+
+interface Step {
+  n: string;
+  name: string;
+  key: string;
+  lead: string;
+}
+
+interface Props {
+  steps: Step[];
+  from?: string;
+  to?: string;
+  cols?: 3 | 4;
+}
+
+const { steps, from, to, cols = 3 } = Astro.props;
+const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }));
+const last = steps.length - 1;
+const slots = await Promise.all(
+  steps.map((_, i) => (Astro.slots.has(`art-${i}`) ? Astro.slots.render(`art-${i}`) : Promise.resolve(''))),
+);
+---
+
+<ol class={`mt-10 grid list-none gap-5 p-0 ${cols === 4 ? 'md:grid-cols-2 xl:grid-cols-4' : 'lg:grid-cols-3'}`}>
+  {steps.map((s, i) => {
+    const dark = i === last;
+    return (
+      <li class={`flex flex-col gap-4 rounded-xl border border-vx-ink p-6 ${dark ? 'bg-vx-ink text-vx-cream' : ''}`}>
+        <div class="flex items-center justify-between gap-3">
+          <span class={`mono text-sm ${dark ? 'text-vx-cream/70' : 'text-vx-ink/60'}`}>{s.n}</span>
+          <kbd class={`mono max-w-[75%] truncate whitespace-nowrap rounded-md border border-b-[3px] px-2 py-0.5 text-sm ${dark ? 'border-vx-mint text-vx-mint' : 'border-vx-ink'}`}>{s.key}</kbd>
+        </div>
+        {slots[i] && <div class={dark ? 'text-vx-mint' : ''}><Fragment set:html={slots[i]} /></div>}
+        <h3 class="text-2xl font-bold">{s.name}</h3>
+        <p class={dark ? 'text-vx-cream/85' : 'text-vx-ink/80'}>
+          {split(s.lead).map(({ p, c }) => (c ? <code class="mono text-[0.92em]">{p}</code> : p))}
+        </p>
+      </li>
+    );
+  })}
+</ol>
+{from && to && (
+  <div class="mono mt-3 hidden items-center gap-4 text-sm lg:flex" aria-hidden="true">
+    <span class="text-vx-ink/60">{from}</span>
+    <span class="h-px flex-1 bg-vx-ink"></span><span class="-ml-3">▸</span>
+    <span>{to}</span>
+  </div>
+)}
