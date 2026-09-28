@@ -56,9 +56,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - uses: actions/setup-python@v6
+      # setup-python cannot install on the self-hosted Amazon Linux pool; uv
+      # can, and activate-environment puts a venv's python and uv pip on PATH.
+      - uses: astral-sh/setup-uv@v6
         with:
           python-version: '3.12'
+          activate-environment: true
 
       - name: Install torch + safetensors
         run: |
