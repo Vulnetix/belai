@@ -9,7 +9,7 @@ env:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, vulnetix-local]
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -38,7 +38,7 @@ jobs:
   # The embedded-model path is exercised here so a drift in the modelprep tool,
   # the attack-label orientation, or the tagged build fails CI before a release.
   models:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, vulnetix-local]
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -50,14 +50,17 @@ jobs:
           cache: true
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        # setup-python cannot install on the self-hosted Amazon Linux pool; uv
+        # can, and activate-environment puts a venv's python and uv pip on PATH.
+        uses: astral-sh/setup-uv@v6
         with:
           python-version: '3.12'
+          activate-environment: true
 
       - name: Install torch + safetensors
         run: |
-          pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
-          pip install --quiet safetensors
+          uv pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+          uv pip install --quiet safetensors
 
       - name: Cache prepared models
         uses: actions/cache@v4
