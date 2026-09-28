@@ -25,7 +25,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
       <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={planMode} /></div>
     </div>
     <div class="prose-measure order-1 lg:order-2">
-      <h2 class="text-3xl font-bold text-vx-ink">Modes.</h2>
+      <h2 class="text-3xl font-bold text-vx-ink">Modes</h2>
       <p class="mt-4 text-vx-ink/80">
         Belai has three modes: agent, plan and goal. A prompt sent without a mode is classified into
         one of them. A mode you pick yourself is kept as it is.
@@ -38,7 +38,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
       </p>
       <p class="mt-4 text-vx-ink/80">
         Plan mode is read-only. The model is not offered <code class="mono">Bash</code> at all, so it has
-        no way to call it; the model stays on a short rope. An explicit allow rule can add a read-only <code class="mono">Bash</code> back.
+        no way to call it. An explicit allow rule can add a read-only <code class="mono">Bash</code> back.
         The last planning pass offers only <code class="mono">update_plan</code>,{' '}
         <code class="mono">ExitPlanMode</code> and <code class="mono">AskUserQuestion</code>, so every plan turn
         ends with a plan or a question. The plan is saved as a structured document that you approve.
@@ -83,7 +83,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
 <SealedSection label="tools" sealText="Tools first class: a fixed-argv native catalogue of read-only utilities, never a shell. Cd is confined so the working directory moves inside the session root and the root does not widen." id="tools">
   <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
     <div class="prose-measure">
-      <h2 class="text-3xl font-bold text-vx-ink">Tools.</h2>
+      <h2 class="text-3xl font-bold text-vx-ink">Tools</h2>
       <p class="mt-4 text-vx-ink/80">
         Belai includes a set of read-only utilities as tools: <code class="mono">Cat</code>, <code class="mono">Head</code>,{' '}
         <code class="mono">Git</code>, <code class="mono">JQ</code>, <code class="mono">Find</code>, <code class="mono">Diff</code> and about 19 more. Each
@@ -118,7 +118,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
 <SealedSection label="diagnostics" sealText="Diagnostics: the harness checks the file the model just edited and hands the errors back on the same tool result. Language servers detected on PATH, fixed-argv syntax checks when none is installed, per-language on/off in /settings. Every message is capped, flattened to one line, stripped of control runes, and sealed with a nonce and a SHA-256." id="diagnostics">
   <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
     <div class="prose-measure">
-      <h2 class="text-3xl font-bold text-vx-ink">Diagnostics.</h2>
+      <h2 class="text-3xl font-bold text-vx-ink">Diagnostics</h2>
       <p class="mt-4 text-vx-ink/80">
         After the model edits a file, Belai checks it and returns any errors in the same{' '}
         <code class="mono">Edit</code> result. The model does not need a separate build or lint call to see them.
@@ -165,14 +165,14 @@ import budgetsShot from '../../assets/shots/budgets.svg';
       <div class="rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={guardSwitch} /></div>
     </div>
     <div class="prose-measure order-1 lg:order-2">
-      <h2 class="text-3xl font-bold text-vx-ink">Permissions.</h2>
+      <h2 class="text-3xl font-bold text-vx-ink">Permissions</h2>
       <p class="mt-4 text-vx-ink/80">
         Each tool is set to allow, deny or ask. With ask, you see the diff before a tool that changes
         files runs.
       </p>
       <p class="mt-4 text-vx-ink/80">
         The permissions in effect combine policy, session, tool kind and role. Each grant records which
-        of these added it, and an explicit deny is the anchor: it always wins.
+        of these added it, and an explicit deny always wins.
       </p>
       <p class="mt-4 text-vx-ink/80">
         When no rule matches, the tool call is allowed. Set <code class="mono">permission_no_match</code> to
@@ -198,7 +198,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
 
 <SealedSection label="memory" sealText="Memory: SearchSessions, ReadSession and SearchMemory read the transcripts and memory files of other coding agents on this machine from a fixed registry, take no path argument, cite every hit, and always classify. Each turn also carries harness-computed git and forge facts and the read index, and plan and goal turns prefetch the instruction and changed files through a classified Read." id="memory">
   <div class="prose-measure">
-    <h2 class="text-3xl font-bold text-vx-ink">Memory.</h2>
+    <h2 class="text-3xl font-bold text-vx-ink">Memory</h2>
     <p class="mt-4 text-vx-ink/80">
       Other coding agents on your machine have probably explored this repository already. Belai can
       search what they found instead of exploring again, and each turn starts with what the session
@@ -208,7 +208,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
 
   <div class="mt-10 grid gap-10 lg:grid-cols-2">
     <div class="prose-measure">
-      <h3 class="text-xl font-bold text-vx-ink">Other agents on this machine.</h3>
+      <h3 class="text-xl font-bold text-vx-ink">Other agents on this machine</h3>
       <p class="mt-4 text-vx-ink/80">
         <code class="mono">SearchSessions</code> searches past sessions with a regular expression, by default
         only those recorded in the current project. <code class="mono">ReadSession</code> reads the turns
@@ -249,7 +249,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
   </div>
 
   <div class="mt-12 prose-measure">
-    <h3 class="text-xl font-bold text-vx-ink">What the session already knows.</h3>
+    <h3 class="text-xl font-bold text-vx-ink">What the session already knows</h3>
   </div>
   <div class="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
     <div class="rounded-lg border border-vx-ink/30 p-4">
@@ -286,7 +286,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
 <SealedSection label="processes"sealText="Supervised processes: !!cmd starts a long-lived command with no model turn, the library keeps it per project or globally, logs stream to disk, and a bounded recovery subagent may change flags but never the binary. The f9 runs panel cycles activity, subagents, processes, git and ci; the git tab manages worktrees and opens a PR or MR behind a confirmation, and forge text stays in the panel." id="processes">
   <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
     <div class="prose-measure">
-      <h2 class="text-3xl font-bold text-vx-ink">Supervised processes.</h2>
+      <h2 class="text-3xl font-bold text-vx-ink">Supervised processes</h2>
       <p class="mt-4 text-vx-ink/80">
         <code class="mono">!!cmd</code> starts a long-running command, such as a dev server, a file watcher
         or a tunnel, inside Belai instead of in another terminal. No model turn is sent for it. The
@@ -334,7 +334,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
 <SealedSection label="budgets" sealText="Token budgets: a global allowance per provider and model for the session, the local day and the local month. Every completed model call counts, classifier and role-manager calls included. The footer shows the selected model's budget right-aligned and cycles between them; teal while tokens last as long as the clock, amber when spend runs ahead of it, red when exhausted. Past sessions are imported from their transcripts once, so day and month totals cover every project. Budgets warn; they never block." id="budgets">
   <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
     <div class="prose-measure">
-      <h2 class="text-3xl font-bold text-vx-ink">Token budgets.</h2>
+      <h2 class="text-3xl font-bold text-vx-ink">Token budgets</h2>
       <p class="mt-4 text-vx-ink/80">
         Give any provider and model a budget for the session, the local day or the local month, up to one
         of each. Budgets are global: a repository's settings file cannot raise or remove them. Open the
@@ -365,7 +365,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
         budget has no clock, so it is never amber. With two or more budgets the footer cycles between them
         every ten seconds (<code class="mono">ui.budget_cycle_seconds</code>). Turn on{' '}
         <code class="mono">ui.budget_warn</code> for a warning line on every call while a budget is amber
-        or red. Budgets give you slack; they never block a call.
+        or red. A budget only warns: a call over budget still runs.
       </p>
     </div>
     <ShotCarousel
@@ -381,7 +381,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
 <SealedSection label="providers" sealText="Providers and local inference: five-layer credential resolution with provenance, ollama and llama-server in the box, multiple named instances with display labels, a /local-model assess verdict, and a classifier role with its own kind and phase rows." id="providers">
   <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
     <div class="prose-measure">
-      <h2 class="text-3xl font-bold text-vx-ink">Providers.</h2>
+      <h2 class="text-3xl font-bold text-vx-ink">Providers</h2>
       <p class="mt-4 text-vx-ink/80">
         Credentials are read from five layers: the command line, environment, config file, agent
         profile and built-in defaults. Each resolved value records which layer it came from.
@@ -432,7 +432,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
 
 <SealedSection label="routing" sealText="Model routing: the model you pick does the work, a fast tier answers one-token verdicts and drafts the goal contract, and routed mode lets Jev pick a model per use case from your candidate list, falling back to the main model when it cannot decide. The security classifier never follows the routing table. tab cycles defined and routed." id="routing">
   <div class="prose-measure">
-    <h2 class="text-3xl font-bold text-vx-ink">Model routing.</h2>
+    <h2 class="text-3xl font-bold text-vx-ink">Model routing</h2>
     <p class="mt-4 text-vx-ink/80">
       A single prompt can make several model calls before the first edit: picking the mode, naming the
       session, checking the plan or goal, drafting the goal contract. Most of those return one token.
@@ -459,7 +459,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
       The security classifier is not part of routing. It stays on the main model, or on the classifier
       models you configured, unless you set <code class="mono">classifier.tier</code> to{' '}
       <code class="mono">fast</code>. A smaller guard is easier to talk past, so moving it is your choice
-      to make. Routing is a cost and speed setting, not a security boundary.
+      to make. Routing affects cost and speed only.
     </p>
   </div>
   <div class="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -496,7 +496,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
       <img src={footerShot.src} alt="The status footer showing the firewall chip" class="block h-auto w-full" loading="lazy" />
     </div>
     <div class="prose-measure order-1 lg:order-2">
-      <h2 class="text-3xl font-bold text-vx-ink">Vulnetix integration.</h2>
+      <h2 class="text-3xl font-bold text-vx-ink">Vulnetix integration</h2>
       <p class="mt-4 text-vx-ink/80">
         <a class="underline" href="https://www.vulnetix.com/features/ai-firewall">AI Firewall</a> routes
         your LLM traffic through a filtering gateway, using the gateway key in place of the provider

@@ -54,9 +54,9 @@ const lists = [
 
 <SealedSection label="kanban" sealText={sealText} id="kanban">
   <div class="prose-measure">
-    <h2 class="text-3xl font-bold text-vx-ink">Kanban.</h2>
+    <h2 class="text-3xl font-bold text-vx-ink">Kanban</h2>
     <p class="mt-4 text-vx-ink/80">
-      A report ends with “tests not run”, “follow-up: update the docs”, “left the workaround in”, and the
+      A report ends with "tests not run", "follow-up: update the docs", "left the workaround in", and the
       next session never sees it. Belai keeps one global board that every session on your machine
       shares, and the model files that open work on it itself. It is also where{' '}
       <a href="#crews" class="text-vx-ink underline">agent crews</a> take their work from.
@@ -87,9 +87,9 @@ const lists = [
   </div>
 
   <div class="mt-10">
-    <h3 class="text-xl font-bold text-vx-ink">What counts as open work.</h3>
+    <h3 class="text-xl font-bold text-vx-ink">What counts as open work</h3>
     <p class="prose-measure mt-3 text-vx-ink/80">
-      The wrap-up does not wait for the word “TODO”. It gives the model eleven categories to look for
+      The wrap-up looks for more than the word "TODO". It gives the model eleven categories to look for
       in the report and the conversation, and it searches the board first so nothing is filed twice.
     </p>
     <div class="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -104,7 +104,7 @@ const lists = [
 
   <div class="mt-10 grid gap-8 rounded-lg border border-vx-ink/30 p-6 lg:grid-cols-2 lg:items-center">
     <div>
-      <h3 class="text-xl font-semibold text-vx-ink">Pick it up from the composer.</h3>
+      <h3 class="text-xl font-semibold text-vx-ink">Working an item from the composer</h3>
       <p class="mt-3 text-vx-ink/80">
         When nothing is running and the composer is empty, this project's backlog, review and blocked
         items sit above it, colour-coded. Press <kbd class="mono">↓</kbd> to browse,{' '}
@@ -133,7 +133,7 @@ const lists = [
 
   <div class="mt-10 grid gap-10 lg:grid-cols-2">
     <div class="prose-measure">
-      <h3 class="text-xl font-bold text-vx-ink">On every machine, and on the web.</h3>
+      <h3 class="text-xl font-bold text-vx-ink">Sync with the Vulnetix website</h3>
       <p class="mt-4 text-vx-ink/80">
         While the Vulnetix CLI is logged in, the board syncs with the <strong>Belai → Kanban</strong>{' '}
         page on the Vulnetix website, where you can drag cards between the same colour-coded columns.
@@ -143,12 +143,12 @@ const lists = [
       </p>
     </div>
     <div class="prose-measure">
-      <h3 class="text-xl font-bold text-vx-ink">Untrusted by design.</h3>
+      <h3 class="text-xl font-bold text-vx-ink">Board text is untrusted</h3>
       <p class="mt-4 text-vx-ink/80">
         Board items were written by other sessions' models and by people on the web, so{' '}
         <code class="mono">KanbanSearch</code> results always go through the security classifier. The
-        per-turn board facts carry counts and ids, never item text. The harness, not the model, stamps
-        the session, project and directory on each item. Subagents can search the board but never write
+        per-turn board facts carry counts and ids, never item text. The harness stamps the session,
+        project and directory on each item, and the model cannot set them. Subagents can search the board but never write
         it, so a poisoned file they read cannot end up there.
       </p>
       <p class="mt-4 text-vx-ink/80">

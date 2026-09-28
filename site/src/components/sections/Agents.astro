@@ -4,7 +4,7 @@ import CopyButton from '../ui/CopyButton.tsx';
 
 // One section for every agent Belai runs besides the session: read-only
 // subagents, background agents and crews of kanban workers. It is laid out as
-// a ladder: each step gives an agent more room to act and a harder fence.
+// a ladder: each kind can change more than the one before it, and has stricter limits.
 
 const docBase = 'https://github.com/Vulnetix/belai/blob/main/docs/';
 
@@ -26,13 +26,13 @@ const steps: Step[] = [
     n: '01',
     name: 'Subagents',
     key: 'f8',
-    lead: 'Split one question across agents that run at once. They read and report back. They have no tool that writes.',
+    lead: 'Several read-only agents work on parts of one question at the same time and report back to your session.',
     facts: {
       Tools: 'Read-only: Read, Grep, Glob and the native readers',
       'Writes to': 'Nothing',
       Runs: 'Inside your turn, side by side',
       'Stops at': 'Two to five rounds, then one report with no tools',
-      'When it would ask': 'It never asks and never widens',
+      'When it would ask': 'It is told to carry on without asking',
       'Hands back': 'One path:line finding per line, 6 KiB at most',
     },
   },
@@ -40,9 +40,9 @@ const steps: Step[] = [
     n: '02',
     name: 'Background agents',
     key: '/agent',
-    lead: 'A saved profile with its own prompt, model and tools. It runs beside your session once, on a loop, on a schedule, or when a condition holds.',
+    lead: 'A saved profile with its own prompt, model and tools. It runs beside your session once, on a loop, on a schedule or when a condition holds.',
     facts: {
-      Tools: 'The profile’s list, or every tool when it lists none',
+      Tools: "The profile's list, or every tool when it lists none",
       'Writes to': 'Your working tree, under the permission rules',
       Runs: 'Beside your session, in its own pool slot',
       'Stops at': 'The end of its run, or max_iterations on a loop',
@@ -54,9 +54,9 @@ const steps: Step[] = [
     n: '03',
     name: 'Crews',
     key: 'belai agent start',
-    lead: 'Worker processes that claim items off the board, work each one on a branch of its own, and hand it on until a draft pull request is waiting for you.',
+    lead: 'Worker processes that take items from the kanban board and work on each one in a branch of its own. A builder opens a draft pull request and a reviewer checks it.',
     facts: {
-      Tools: 'The profile’s list, plus KanbanHandoff and PublishBranch',
+      Tools: "The profile's list, plus KanbanHandoff and PublishBranch",
       'Writes to': 'Its own worktree and branch, belai/K-xxxxxx/a1, outside the repository',
       Runs: 'As a detached process that outlives your terminal',
       'Stops at': 'Its pass budget, a lost lease, or max_attempts failures, which block the item',
@@ -132,15 +132,13 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
   <!-- The ladder -->
   <div class="grid gap-6 lg:grid-cols-12 lg:items-end">
     <div class="lg:col-span-7">
-      <p class="mono text-xs tracking-wider text-vx-mint-strong">SUBAGENTS · BACKGROUND AGENTS · CREWS</p>
-      <h2 class="mt-4 text-4xl font-extrabold leading-tight tracking-tight text-vx-ink md:text-5xl">
-        One question, one profile, one crew.
+      <h2 class="text-4xl font-extrabold leading-tight tracking-tight text-vx-ink md:text-5xl">
+        Agents and crews
       </h2>
     </div>
     <p class="text-lg text-vx-ink/80 lg:col-span-5">
-      Belai runs more than the session you type in. It splits a question across read-only subagents,
-      runs saved profiles beside you, and starts crews that take work off the kanban board. Each step
-      gives an agent more room to act, and puts a harder fence around it.
+      Besides the session you type in, Belai can run three kinds of agent. Each kind can change more
+      than the one before it, and has stricter limits on what it can reach.
     </p>
   </div>
 
@@ -196,17 +194,17 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
     })}
   </ol>
   <div class="mono mt-3 hidden items-center gap-4 text-sm lg:flex" aria-hidden="true">
-    <span class="text-vx-ink/60">reads, answers now</span>
+    <span class="text-vx-ink/60">reads and reports</span>
     <span class="h-px flex-1 bg-vx-ink"></span><span class="-ml-3">▸</span>
-    <span>writes, pushes, runs unattended</span>
+    <span>writes and pushes on its own</span>
   </div>
 
   <!-- What changes on each step -->
   <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
-    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">What changes on each step.</h3>
+    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">How the three kinds differ</h3>
     <p class="text-vx-ink/80">
-      The same rules hold on every step: your permission rules, the guardrails switch, and the security
-      classifier on everything they read. What changes is what they may touch, and what stops them.
+      All three follow your permission rules and the guardrails switch, and the security classifier
+      checks everything they read. The table shows what else differs.
     </p>
   </div>
 
@@ -253,9 +251,9 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
 
   <!-- A crew at work -->
   <div id="crews" class="mt-20 grid scroll-mt-8 gap-6 lg:grid-cols-2 lg:items-end">
-    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">A crew at work, recorded.</h3>
+    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">A recorded crew run</h3>
     <p class="text-vx-ink/80">
-      Item <code class="mono">K-507600</code>, “Add a CONTRIBUTING.md”, on this repository. The builder read
+      Item <code class="mono">K-507600</code>, "Add a CONTRIBUTING.md", on this repository. The builder read
       the docs, wrote the file, committed on its branch and opened{' '}
       <a class="text-vx-ink underline" href="https://github.com/Vulnetix/belai/pull/6">draft PR #6</a>. Every
       step is on the board, in <code class="mono">belai kanban list</code> and on the Vulnetix website.
@@ -322,10 +320,10 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
 
   <!-- Fences -->
   <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
-    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">Unattended, not unfenced.</h3>
+    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">Limits on crew workers</h3>
     <p class="text-vx-ink/80">
-      A worker reads text other people and other models wrote. That is what a prompt injection needs, so
-      the harness, not the model, holds the parts that matter.
+      A worker reads text that other people and other models wrote, which is where prompt injections
+      come from. So the harness keeps control of claims, pushes and settings.
     </p>
   </div>
   <div class="mt-8 grid border-t-2 border-vx-ink md:grid-cols-2 xl:grid-cols-3">
@@ -340,7 +338,7 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
   <!-- Crews and your own -->
   <div class="mt-20 grid gap-10 lg:grid-cols-2 lg:items-start">
     <div class="min-w-0">
-      <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">Two crews built in. Yours is a file.</h3>
+      <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">Built-in crews and your own</h3>
       {crews.map((c) => (
         <div class="mt-7">
           <p class="flex flex-wrap items-baseline justify-between gap-2">
@@ -363,8 +361,8 @@ const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|Pu
         <code class="mono">kanban</code> block says what it takes and where it goes next,{' '}
         <code class="mono">workspace</code> gives it a worktree, <code class="mono">budget</code> bounds one
         item. Write it as Markdown with front matter, as Claude Code, OpenClaw and Hermes do, and{' '}
-        <code class="mono">belai agent import</code> it. A repository can turn workers off or lower their
-        number, never the reverse.
+        <code class="mono">belai agent import</code> it. A repository's settings can turn workers off or
+        lower their number, but cannot turn them on or raise it.
       </p>
       <p class="mt-4 text-vx-ink/80">
         <a class="text-vx-ink underline" href={`${docBase}fleet.md`}>docs/fleet.md</a> has the runtime and a
