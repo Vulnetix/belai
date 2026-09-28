@@ -1694,6 +1694,20 @@ func buildSecurityClassifier(sc SecurityClassifierConfig, phase3 rolemanager.Cla
 	return mlclassify.New(opts)
 }
 
+// RequireSecurityClassifier returns the error every classified call fails
+// with when a models-kind config resolves no phase model in this build, and
+// nil otherwise. PreloadClassifier lets that pass, because a session with
+// guardrails off never calls the classifier. A session that always runs with
+// guardrails on (a fleet worker) checks it at startup, so the error stops the
+// worker instead of failing every item it claims.
+func RequireSecurityClassifier(sc SecurityClassifierConfig) error {
+	if sc.Kind != "models" || sc.Phase1 != nil || sc.Phase2 != nil {
+		return nil
+	}
+	_, err := buildSecurityClassifier(sc, nil, "")
+	return err
+}
+
 // PreloadClassifier eagerly builds the local ML classifier stack so a variant
 // binary whose embedded model fails to load is a hard startup error rather
 // than a silent downgrade. It is idempotent and cheap on repeat calls (models

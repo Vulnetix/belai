@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -29,7 +30,9 @@ import (
 	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/sessionsync"
 	"github.com/vulnetix/belai/internal/tools"
+	"github.com/vulnetix/belai/internal/version"
 )
 
 // workPrompt is every item's prompt: a harness constant. The item itself
@@ -78,6 +81,12 @@ type Worker struct {
 	MCP      *mcp.Manager
 	// Sessions is where transcripts are written; nil writes none.
 	Sessions *session.Store
+	// Sync mirrors each item's transcript to the website, so the session id
+	// on the item's notes opens there; nil mirrors nothing. The mirror only
+	// uploads lines the transcript already wrote, and takes no prompts or
+	// answers: nobody types into a worker.
+	Sync   *sessionsync.Client
+	mirror *sessionsync.Syncer
 	// Record is this worker's registry entry (ID, Profile, Crew set).
 	Record Record
 	// Once works at most one item (or finds none) and returns.
@@ -151,6 +160,11 @@ func Preflight(p agentprofile.AgentProfile, s config.Settings, pol posture.Polic
 	if !s.KanbanEnabled() {
 		return errors.New("the kanban board is turned off (kanban): workers take their work from it")
 	}
+	// A classifier this build cannot run fails every turn; refuse here so it
+	// is not charged to each item as a failed attempt.
+	if err := run.RequireSecurityClassifier(run.ResolveSecurityClassifier(s.Classifier)); err != nil {
+		return err
+	}
 	if p.HasTool("Bash") && p.Autonomy == agentprofile.AutonomyAutonomous {
 		if pol := sandbox.FromSettings(s.Sandbox, []string{"/"}, pol); pol.Mode == sandbox.ModeOff {
 			return errors.New("an autonomous worker with Bash needs the OS sandbox on (sandbox.mode); guardrails off or sandbox off leave its commands unconfined")
@@ -186,6 +200,16 @@ func (w *Worker) Run(ctx context.Context) error {
 		}
 	}
 	w.logf("worker %s (%s) started in %s", w.Record.ID, p.Name, w.Repo)
+	if w.Sync != nil && w.Sessions != nil {
+		w.mirror = sessionsync.New(sessionsync.Options{
+			Client: w.Sync, HostID: headless.HostID(),
+			Host: sessionsync.Host{Hostname: sessionsync.Hostname(), OS: runtime.GOOS, BelaiVersion: version.Version},
+		})
+		// It outlives ctx long enough to upload the last lines and end the
+		// session on the website.
+		w.mirror.Start(context.Background())
+		defer w.mirror.Close(5 * time.Second)
+	}
 	reason, runErr := w.loop(ctx)
 	w.Record.State, w.Record.Item, w.Record.Stopped, w.Record.Reason = StateStopped, "", w.clock().UnixMilli(), reason
 	if runErr != nil {

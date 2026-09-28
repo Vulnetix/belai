@@ -104,6 +104,20 @@ that step yourself, and move the item back. An `autonomous` worker resolves
 asks to allow; it must use a worktree, and a worker that has `Bash` must have
 a working [OS sandbox](sandbox.md) backend, or it refuses to start.
 
+Any worker also refuses to start when its security classifier cannot run in
+this build. For example, `classifier.kind: "models"` in a binary built without
+embedded models fails every turn. Refusing at startup means the error is not
+charged to each item it claims.
+
+### Transcripts
+
+Each item's turn is written as a session under the repository's project, so
+the session id on the item's notes lists, resumes and searches like any
+other. With `sync.enabled` on and a Vulnetix CLI credential, the worker
+mirrors that session to the website the same way the TUI does. The mirror
+uploads only the lines the transcript wrote, and it takes no prompts or
+answers back.
+
 ## Assigning and pinning
 
 `belai kanban assign` routes an item the way a worker will look for it:

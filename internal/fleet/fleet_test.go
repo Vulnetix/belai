@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,11 +19,14 @@ import (
 	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/kanban"
+	"github.com/vulnetix/belai/internal/mlclassify"
 	"github.com/vulnetix/belai/internal/permissions"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sandbox"
+	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/sessionsync"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -119,6 +125,52 @@ func TestWorkerInvestigatesSetupFailure(t *testing.T) {
 	if after.List != kanban.Backlog || after.Attempts != 1 || after.ClaimedBy != "" ||
 		!strings.Contains(note, "could not be prepared") || !strings.Contains(note, "investigated it") {
 		t.Fatalf("released %+v note %q", after, note)
+	}
+}
+
+// A worker mirrors each item's transcript, so the session id on the item's
+// notes opens on the website. The server here is loopback.
+func TestWorkerMirrorsItsSession(t *testing.T) {
+	store, reg := testEnv(t)
+	it, _, _ := store.Add(kanban.ItemInput{Title: "do it", Labels: []string{"build"}}, kanban.Provenance{})
+	var mu sync.Mutex
+	put := map[string]bool{}
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		if _, id, ok := strings.Cut(r.URL.Path, "/sessions/"); ok && r.Method == http.MethodPut && !strings.Contains(id, "/") {
+			mu.Lock()
+			put[id] = true
+			mu.Unlock()
+		}
+		rw.Header().Set("Content-Type", "application/json")
+		rw.Write([]byte(`{"lastSeq":-1}`))
+	}))
+	defer srv.Close()
+	client, err := sessionsync.NewClient(sessionsync.BaseURL(srv.URL), func() (string, error) { return "ApiKey org:hex", nil }, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := newWorker(t, store, reg, builderProfile(), complete)
+	w.Sessions = session.NewStoreAt(t.TempDir())
+	w.Sync = client
+	w.Runner = func(ctx context.Context, tt Turn) (run.Result, error) {
+		tr := w.transcript(tt)
+		tr.user(workPrompt)
+		res, err := complete(ctx, tt)
+		tr.finish(res, err)
+		return res, err
+	}
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := store.Get(it.ID)
+	sid := w.Record.Session
+	if sid == "" {
+		t.Fatalf("no session recorded for %s", after.Short())
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !put[sid] {
+		t.Fatalf("session %s was not registered on the website; saw %v", sid, put)
 	}
 }
 
@@ -259,6 +311,13 @@ func TestPreflightFailsClosed(t *testing.T) {
 	bash.Workspace = &agentprofile.WorkspaceSpec{Isolation: agentprofile.IsolationWorktree}
 	if err := Preflight(bash, config.Settings{}, posture.AllIgnore()); err == nil {
 		t.Fatal("an autonomous Bash worker started with the sandbox off")
+	}
+	// A models-kind classifier with no phase model in this build fails every
+	// turn, so the worker refuses to start rather than burn its items.
+	if !mlclassify.Embedded() {
+		if err := Preflight(p, config.Settings{Classifier: &config.ClassifierSettings{Kind: "models"}}, posture.Defaults()); err == nil || !strings.Contains(err.Error(), "no phase model") {
+			t.Fatalf("an unrunnable classifier passed preflight: %v", err)
+		}
 	}
 	single := builderProfile()
 	single.Mode, single.Kanban = agentprofile.ModeSingle, nil
