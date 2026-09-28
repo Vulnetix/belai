@@ -339,7 +339,8 @@ func (a *App) syncStatusText() string {
 	if st.LastError != "" {
 		b.WriteString("\n  last error: " + st.LastError)
 	}
-	b.WriteString("\n  History and Sessions: https://www.vulnetix.com/resolve/belai-history")
+	b.WriteString("\n  History: https://www.vulnetix.com/resolve/belai-history")
+	b.WriteString("\n  Sessions and hosts: " + rcURL() + " · /rc lets the website start sessions here")
 	return b.String()
 }
 

@@ -436,6 +436,17 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   permission ask or question, and in agent mode with no carrier it is refused
   rather than answering the picker. The project layer may turn `sync.enabled`,
   `sync.remote_prompts` and `sync.remote_answers` off, never on.
+- **Remote control starts sessions only where the host said, with asks off.**
+  `belai rc` (`internal/rc`) offers only trusted projects and `--dir`
+  directories (a `--dir` is trusted like `-trust-dir`: the directory only).
+  Every website request is untrusted: the daemon re-checks the directory
+  against its own list (exact match after resolving symlinks, never a
+  prefix), the `rc-session` child checks trust again and fails closed, and
+  the prompt is cleaned and admitted like a typed one. The website never
+  picks the provider, model, posture or permissions. rc refuses to run with
+  guardrails off, sessions run with `AllowAsk` false and web answers off
+  (never `AskDisabled`, which would allow every ask), and the prompt reaches
+  the child on stdin, never argv.
 - **A web answer resolves only the ask that is open, through the host's own
   code.** Asks, answers, turn boundaries, tool starts and role-manager
   verdicts are written to the session JSONL by `appendEntry` like any line

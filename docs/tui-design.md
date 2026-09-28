@@ -106,8 +106,9 @@ Never use emoji. A new glyph must be in this table before it ships.
 - **Footer.** Three lines under the composer, with no rule: the composer's
   bottom edge is the separator. Line 1 is the mode (coloured text, not a
   chip), working directory and branch, with the budget gauge on the right.
-  Line 2 is provider, model and effort, the switches as `●`/`○`, and the
-  session, token count and context bar on the right. Line 3 shows the armed or
+  Line 2 is provider, model and effort, the switches as `●`/`○` (with
+  `● rc N` while `belai rc` runs), and the session, token count and context
+  bar on the right. Line 3 shows the armed or
   hover hint while there is one and the subagent roster otherwise; it is
   always reserved so the footer never changes height under the pointer.
 

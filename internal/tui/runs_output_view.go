@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/vulnetix/belai/internal/commands"
 	"github.com/vulnetix/belai/internal/tui/components"
 )
 
@@ -18,6 +19,8 @@ type runsOutputState struct {
 	id      string
 	content string
 	vp      viewport.Model
+	// shown is the text last set on the viewport, for snapshot links.
+	shown string
 }
 
 // runsOutputChrome is every non-body row in the output view: padding, header,
@@ -53,6 +56,7 @@ func (s *runsOutputState) setContent(a *App) {
 	if output == "" {
 		output = "(no output)"
 	}
+	s.shown = output
 	s.vp.SetContent(output)
 	s.vp.GotoTop()
 }
@@ -92,7 +96,12 @@ func (a *App) runsOutputView() string {
 	a.runsOutput.setContent(a)
 	b.WriteString(a.runsOutput.vp.View())
 	b.WriteString("\n")
-	b.WriteString(components.HelpBar("pgup/pgdn", "page", "shift+↑↓", "line", "ctrl+home/end", "top/bottom", "esc", "back") + "\n")
+	pairs := []string{"pgup/pgdn", "page", "shift+↑↓", "line", "ctrl+home/end", "top/bottom"}
+	if a.runsOutputSnapshot() != "" {
+		pairs = append(pairs, "ctrl+y", "open snapshot")
+	}
+	pairs = append(pairs, "esc", "back")
+	b.WriteString(components.HelpBar(pairs...) + "\n")
 	return lipgloss.NewStyle().Padding(1).Render(b.String())
 }
 
@@ -119,6 +128,29 @@ func (a *App) handleRunsOutputKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+end":
 		a.runsOutput.vp.GotoBottom()
 		return a, nil
+	case "ctrl+y":
+		return a, openLink(a.runsOutputSnapshot())
 	}
 	return a, nil
+}
+
+// runsOutputSnapshot is the snapshot link ctrl+y opens from a scanner's
+// output: the first one on screen, else the last one printed.
+func (a *App) runsOutputSnapshot() string {
+	snaps := commands.ParseSnapshots(a.runsOutput.shown)
+	if len(snaps) == 0 {
+		return ""
+	}
+	lines := strings.Split(a.runsOutput.shown, "\n")
+	top := a.runsOutput.vp.YOffset
+	bottom := min(top+a.runsOutput.vp.Height, len(lines))
+	if top < bottom {
+		visible := strings.Join(lines[top:bottom], "\n")
+		for _, s := range snaps {
+			if strings.Contains(visible, s.URL) {
+				return s.URL
+			}
+		}
+	}
+	return snaps[len(snaps)-1].URL
 }

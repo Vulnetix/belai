@@ -574,8 +574,9 @@ func reviewScanStatus(o commands.ScanOutcome) string {
 }
 
 // reviewScanCard renders a finished scanner's card. Every line is a harness
-// observation — status, counts, the artifact path, the agent's key — and no
-// finding text, which stays on the classified triage path.
+// observation — status, counts, the artifact path, the snapshot links, the
+// agent's key — and no finding text, which stays on the classified triage
+// path.
 func reviewScanCard(o commands.ScanOutcome, card reviewCard, withheld []string, agentKey string) string {
 	var lines []string
 	switch {
@@ -592,6 +593,15 @@ func reviewScanCard(o commands.ScanOutcome, card reviewCard, withheld []string, 
 	lines = append(lines, card.lines...)
 	if o.Artifact != "" {
 		lines = append(lines, "`.vulnetix/"+o.Artifact+"`")
+	}
+	// Snapshot links are the CLI's own, checked to be https on vulnetix.com;
+	// hovering one and pressing ctrl+y opens it.
+	for _, sn := range o.Snapshots {
+		label := "snapshot"
+		if sn.Label != "" {
+			label = sn.Label + " snapshot"
+		}
+		lines = append(lines, label+" · "+sn.URL)
 	}
 	for _, w := range withheld {
 		lines = append(lines, "withheld from the model: "+w)

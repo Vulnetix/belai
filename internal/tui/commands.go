@@ -492,6 +492,11 @@ func NewRegistry(workdir string) *Registry {
 			return a.openAgentsTab(agentTabLive)
 		}
 	})
+	r.Register("rc", "remote control: let the Vulnetix website start and drive Belai sessions on this machine", func() []string {
+		return []string{"start", "stop", "status", "setup"}
+	}, func(a *App, arg string) tea.Cmd {
+		return a.rcCommand(arg)
+	})
 	r.Register("fleet", "kanban worker agents: start, stop and watch them", func() []string {
 		return []string{"start", "crew", "stop"}
 	}, func(a *App, arg string) tea.Cmd {

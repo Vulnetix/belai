@@ -144,6 +144,9 @@ type ScanOutcome struct {
 	Findings int
 	// Counts is Findings broken down by severity.
 	Counts scanartifacts.Counts
+	// Snapshots are the links to this scan on the Vulnetix website that the
+	// CLI printed (authenticated organisations only).
+	Snapshots []Snapshot
 	// SARIF and BOM are what the scanner's own artifacts say about the scan:
 	// rules fired, files and indicators for a SARIF report; packages,
 	// algorithms, models and their status for a CycloneDX inventory. Either
@@ -247,6 +250,9 @@ func (r Vulnetix) fanOut(ctx context.Context, cli vulnetixcli.CLI, scanners []Sc
 		started := time.Now()
 		var res vulnetixcli.Result
 		var err error
+		// The CLI prints links to the scan's snapshot on the website; keep
+		// them so the review can show them and the TUI can open them.
+		var snaps snapshotCollector
 		if r.Observer == nil {
 			res, err = cli.ExecIn(ctx, r.Workdir, sc.Args...)
 		} else {
@@ -254,14 +260,20 @@ func (r Vulnetix) fanOut(ctx context.Context, cli vulnetixcli.CLI, scanners []Sc
 			defer cancel()
 			argv := append([]string{cli.Path}, vulnetixcli.HardenedArgs(sc.Args...)...)
 			sink, finish := r.Observer.Start("vulnetix "+sc.Name, argv, r.Workdir, cancel)
-			res, err = cli.ExecStreamIn(subCtx, r.Workdir, sink, sc.Args...)
+			tee := func(line string) {
+				snaps.line(line)
+				sink(line)
+			}
+			res, err = cli.ExecStreamIn(subCtx, r.Workdir, tee, sc.Args...)
 			finish(res.ExitCode, res.TimedOut, err)
 		}
+		snaps.line(res.Stdout)
+		snaps.line(res.Stderr)
 		results[i] = SubcommandResult{Name: sc.Name, Output: res.Stdout, Err: err}
 		// Report before releasing the lane, so a lane successor (containers)
 		// cannot overwrite a shared artifact while this scanner's blocks are
 		// being read.
-		r.reportScan(ctx, sc, res, err, time.Since(started))
+		r.reportScan(ctx, sc, res, err, time.Since(started), snaps.snapshots())
 		close(done[i])
 	}
 
@@ -355,7 +367,7 @@ func laneIndex(scanners []Scanner, lane string, target int) int {
 
 // reportScan hands one finished scanner's outcome, with the triage blocks and
 // finding count of its own artifacts, to OnScanDone.
-func (r Vulnetix) reportScan(ctx context.Context, sc Scanner, res vulnetixcli.Result, err error, took time.Duration) {
+func (r Vulnetix) reportScan(ctx context.Context, sc Scanner, res vulnetixcli.Result, err error, took time.Duration, snapshots []Snapshot) {
 	if r.OnScanDone == nil {
 		return
 	}
@@ -375,17 +387,18 @@ func (r Vulnetix) reportScan(ctx context.Context, sc Scanner, res vulnetixcli.Re
 	}
 	sarif, bom := scanFacts(ctx, arts)
 	r.OnScanDone(ScanOutcome{
-		Name:     sc.Name,
-		ExitCode: res.ExitCode,
-		TimedOut: res.TimedOut,
-		Err:      err,
-		Duration: took,
-		Artifact: art,
-		Findings: findings,
-		Counts:   counts,
-		Blocks:   BuildTriageBlocksFor(ctx, r.Workdir, sc.Artifacts),
-		SARIF:    sarif,
-		BOM:      bom,
+		Name:      sc.Name,
+		ExitCode:  res.ExitCode,
+		TimedOut:  res.TimedOut,
+		Err:       err,
+		Duration:  took,
+		Artifact:  art,
+		Findings:  findings,
+		Counts:    counts,
+		Blocks:    BuildTriageBlocksFor(ctx, r.Workdir, sc.Artifacts),
+		Snapshots: snapshots,
+		SARIF:     sarif,
+		BOM:       bom,
 	})
 }
 

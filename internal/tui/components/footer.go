@@ -54,6 +54,10 @@ type Footer struct {
 	// chip; empty renders "on".
 	FirewallLabel string
 
+	// RC is the remote-control daemon's segment ("rc 2": running, two
+	// sessions); empty while `belai rc` is not running.
+	RC string
+
 	// Caveman reports whether the caveman voice rewrite is active. It always
 	// renders, on and off alike, because it silently changes how every reply
 	// is written and the footer is the only place that says so.
@@ -525,6 +529,9 @@ func (f Footer) permissionChipsAt(bareFirewall bool) string {
 			label += ": " + f.FirewallLabel
 		}
 		out += "  " + switchDot(label, true)
+	}
+	if f.RC != "" {
+		out += "  " + switchDot(f.RC, true)
 	}
 	return out
 }

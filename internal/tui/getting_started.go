@@ -73,6 +73,7 @@ var (
 		{"prompts", "save and reuse prompts from the composer · /prompts"},
 		{"processes", "long-lived commands run supervised with their own log · /processes"},
 		{"sync", "mirror sessions to the Vulnetix website · /sync"},
+		{"rc", "remote control: start and drive sessions here from the website · /rc"},
 		{"hooks", "your hooks only narrow a decision; their text is classified"},
 		{"telemetry", "OpenTelemetry exports facts and identifiers, never prompt content"},
 		{"acp", "editors drive Belai over the Agent Client Protocol · belai acp"},

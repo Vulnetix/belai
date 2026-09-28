@@ -26,6 +26,7 @@ func keySections() []keySection {
 	return []keySection{
 		{"anywhere", []keyBinding{
 			{"ctrl+c", "copy the prompt — or the hovered panel — to the clipboard"},
+			{"ctrl+y", "open the hovered link (a snapshot, the Sessions page) in your browser"},
 			{"ctrl+d", "exit — press twice; esc cancels"},
 			{"ctrl+r", "cycle reasoning display: auto, shown, hidden"},
 			{"ctrl+t", "cycle tool-call display: auto → all → edits only → none"},
@@ -125,6 +126,18 @@ func keySections() []keySection {
 			{"t", "activity: start the triage agent on the selected project"},
 			{"esc", "unfocus the panel (panel stays open)"},
 			{"f9", "close the panel"},
+		}},
+		{"activity output (v from the runs panel)", []keyBinding{
+			{"pgup/pgdn, shift+up/down", "scroll"},
+			{"ctrl+y", "open the scan's snapshot on the Vulnetix website (the one on screen, else the last)"},
+			{"esc", "back"},
+		}},
+		{"remote control (/rc)", []keyBinding{
+			{"enter", "take the highlighted step"},
+			{"o, ctrl+y", "open the Sessions page, where hosts are managed and sessions started"},
+			{"s", "stop remote control and its sessions"},
+			{"r", "check again"},
+			{"esc", "back"},
 		}},
 		{"runs panel — git tab", []keyBinding{
 			{"up, down", "select a worktree"},

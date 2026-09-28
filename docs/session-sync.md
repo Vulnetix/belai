@@ -212,6 +212,13 @@ and the inbox run on the syncer's own goroutines.
   the website links the two.
 - **Headless and ACP.** `belai -prompt` keeps no transcript and ACP sessions
   are not persisted, so neither is synced.
+- **Remote control.** A session the website starts through `belai rc` is a
+  headless session that does keep a transcript, so it syncs like a TUI
+  session. It carries the dispatch id, takes web prompts and never web
+  answers (see [remote-control.md](remote-control.md)).
+- **One inbox per session.** Each Belai polls the host inbox for its own
+  session (`?session=`), so two Belais on one machine never take each other's
+  prompts.
 
 ## Server side
 
