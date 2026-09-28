@@ -116,7 +116,7 @@ func keySections() []keySection {
 			{"esc", "back"},
 		}},
 		{"runs panel (after f8/f9)", []keyBinding{
-			{"tab", "switch between activity, subagents, processes, git and ci tabs (ci only while the branch has a PR/MR)"},
+			{"tab", "switch between activity, subagents, processes, kanban, crew, git and ci tabs (kanban only while the board is on, ci only while the branch has a PR/MR)"},
 			{"up, down", "select an item"},
 			{"enter", "activity: send output; subagents: filter transcript; processes: view output"},
 			{"v", "activity/processes: view the selected output full-screen"},
@@ -138,6 +138,29 @@ func keySections() []keySection {
 		{"runs panel — ci tab", []keyBinding{
 			{"up, down", "select a check"},
 			{"enter, c", "copy the selected check's run link"},
+			{"r", "refresh"},
+		}},
+		{"runs panel — kanban tab (f9 from the kanban pane opens it)", []keyBinding{
+			{"up, down", "select an item"},
+			{"enter", "put the item's prompt in the composer"},
+			{"1-5", "move to backlog, review, in progress, blocked, done"},
+			{"n", "new item in the filtered list (backlog under open)"},
+			{"o, a, L", "add a note, assign a profile, set labels"},
+			{"+, -", "raise, lower priority"},
+			{"u", "release a worker's claim"},
+			{"w", "hand to the chosen crew: its entry labels, backlog, and start it when no worker runs"},
+			{"[, ]", "previous, next list filter"},
+			{"p", "this project or every project"},
+			{"/", "filter by text"},
+			{"K", "open the item on /kanban"},
+		}},
+		{"runs panel — crew tab", []keyBinding{
+			{"up, down", "select a worker"},
+			{"c, s", "choose the next crew, start it"},
+			{"x, X", "stop the selected worker, stop every worker"},
+			{"l", "show the selected worker's log tail"},
+			{"enter", "show the worker's item on the kanban tab"},
+			{"v", "open the fleet tab of /agents"},
 			{"r", "refresh"},
 		}},
 		{"plan review (after a plan-mode turn)", []keyBinding{

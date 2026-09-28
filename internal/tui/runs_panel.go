@@ -46,9 +46,11 @@ const (
 	tabActivity  = 0
 	tabSubagents = 1
 	tabProcesses = 2
-	tabGit       = 3
-	tabCI        = 4 // offered only while the branch has a PR/MR (ciTabVisible)
-	tabCount     = 5
+	tabKanban    = 3 // offered only while the kanban setting is on (kanbanTabVisible)
+	tabCrew      = 4
+	tabGit       = 5
+	tabCI        = 6 // offered only while the branch has a PR/MR (ciTabVisible)
+	tabCount     = 7
 )
 
 // runsItem is a row in the runs panel. It unifies activities and subagents so
@@ -59,6 +61,9 @@ type runsItem struct {
 	Detail      string
 	State       string
 	ProjectRoot string
+	// Row, when set, is the row already styled (the kanban tab draws its
+	// items exactly as the composer pane does); Detail follows it.
+	Row string
 }
 
 // runsPanelHeight returns the rows the runs panel contributes below the
@@ -88,6 +93,10 @@ func (a *App) runsItems() []runsItem {
 		return a.subagentItems()
 	case tabProcesses:
 		return a.processItems()
+	case tabKanban:
+		return a.kanbanTabItems()
+	case tabCrew:
+		return a.crewItems()
 	case tabGit:
 		return a.gitItems()
 	case tabCI:
@@ -191,7 +200,7 @@ func (a *App) renderRunsPanel() string {
 	}
 
 	var b strings.Builder
-	header := a.renderRunsTabHeader(a.runsTabNames(), w)
+	header := a.renderRunsTabHeader(a.runsTabs(), w)
 	b.WriteString(header)
 	b.WriteString("\n")
 	for _, line := range a.runsSummary() {
@@ -205,6 +214,10 @@ func (a *App) renderRunsPanel() string {
 			placeholder = components.MutedStyle.Render("  no subagents this turn")
 		case tabProcesses:
 			placeholder = components.MutedStyle.Render("  no running processes")
+		case tabKanban:
+			placeholder = components.MutedStyle.Render("  nothing matches · n new item · [ ] list · p scope")
+		case tabCrew:
+			placeholder = components.MutedStyle.Render("  no workers · c choose a crew · s start it")
 		case tabGit, tabCI:
 			placeholder = components.MutedStyle.Render("  " + a.forgePlaceholder())
 		}
@@ -250,10 +263,11 @@ type itemsWindow struct {
 	all   int
 }
 
-func (a *App) renderRunsTabHeader(names []string, w int) string {
+func (a *App) renderRunsTabHeader(tabs []int, w int) string {
 	var parts []string
 	var plainParts []string
-	for i, n := range names {
+	for _, i := range tabs {
+		n := a.runsTabLabel(i)
 		label := n
 		if i == a.runsTab {
 			label = "[ " + n + " ]"
@@ -265,19 +279,17 @@ func (a *App) renderRunsTabHeader(names []string, w int) string {
 			parts = append(parts, components.MutedStyle.Render(label))
 		}
 	}
+	plainLeft := strings.Join(plainParts, "  ")
 	meta := "f9 close"
-	if a.runsFocus {
+	if a.runsFocus && visibleLen(plainLeft)+visibleLen("  tab switch · f9 close") <= w {
 		meta = "tab switch · f9 close"
 	}
-	plainLeft := strings.Join(plainParts, "  ")
 	left := strings.Join(parts, components.MutedStyle.Render("  "))
 	var b strings.Builder
 	b.WriteString(left)
-	if meta != "" {
-		pad := w - visibleLen(plainLeft) - visibleLen(meta)
-		if pad < 1 {
-			pad = 1
-		}
+	// The key hint goes when the tabs leave no room for it; the help bar
+	// below says the same.
+	if pad := w - visibleLen(plainLeft) - visibleLen(meta); meta != "" && pad >= 1 {
 		b.WriteString(strings.Repeat(" ", pad))
 		b.WriteString(components.MutedStyle.Render(meta))
 	}
@@ -306,6 +318,16 @@ func (a *App) renderRunsRow(it runsItem, logicalIdx, w int) string {
 		stateColour = components.ColorMuted
 	}
 
+	if it.Row != "" {
+		line := marker + it.Row
+		if selected {
+			line = components.AccentStyle.Render(marker) + it.Row
+		}
+		if it.Detail != "" {
+			line += "  " + it.Detail
+		}
+		return ansi.Truncate(line, w, "…")
+	}
 	line := marker + it.Label
 	if it.Detail != "" {
 		line += "  " + components.MutedStyle.Render(it.Detail)
@@ -327,6 +349,10 @@ func (a *App) runsPanelHelp() string {
 		return components.HelpBar("↑↓", "select", "⏎", "filter", "x", "cancel/dismiss", "esc", "unfocus", "tab", "switch")
 	case tabProcesses:
 		return components.HelpBar("↑↓", "select", "⏎", "view", "v", "view", "x", "stop", "r", "restart", "esc", "unfocus", "tab", "switch")
+	case tabKanban:
+		return components.HelpBar("⏎", "prompt", "1-5", "move", "n", "new", "o", "note", "a", "assign", "L", "labels", "+/-", "priority", "u", "release", "w", "to crew", "[ ]", "list", "p", "scope", "/", "filter", "K", "board")
+	case tabCrew:
+		return components.HelpBar("c", "crew", "s", "start", "x", "stop", "X", "stop all", "l", "log", "⏎", "item", "v", "fleet", "r", "refresh")
 	case tabGit:
 		return components.HelpBar("⏎", "switch", "a", "add", "x", "remove", "p", a.forgeNoun(), "c", "url", "r", "refresh")
 	case tabCI:
@@ -350,10 +376,7 @@ func (a *App) handleRunsPanelKey(m tea.KeyMsg) tea.Cmd {
 		a.runsTab = a.nextRunsTab()
 		a.runsSel = 0
 		a.runsScroll = 0
-		if a.forgeTabActive() {
-			return a.refreshForge(false)
-		}
-		return nil
+		return a.enterRunsTab()
 	case "up", "k":
 		if a.runsSel > 0 {
 			a.runsSel--
@@ -373,6 +396,10 @@ func (a *App) handleRunsPanelKey(m tea.KeyMsg) tea.Cmd {
 		return a.handleRunsSubagentKey(m)
 	case tabProcesses:
 		return a.handleRunsProcessKey(m)
+	case tabKanban:
+		return a.handleRunsKanbanKey(m)
+	case tabCrew:
+		return a.handleRunsCrewKey(m)
 	case tabGit:
 		return a.handleRunsGitKey(m)
 	case tabCI:
@@ -493,22 +520,39 @@ func (a *App) handleRunsSubagentKey(m tea.KeyMsg) tea.Cmd {
 // toggleRunsPanel cycles closed ⇄ open+focused. The tab argument selects
 // which tab opens when the panel is currently closed; when the panel is
 // already open, f9 closes it regardless of focus.
-func (a *App) toggleRunsPanel(tab int) {
+func (a *App) toggleRunsPanel(tab int) tea.Cmd {
 	if !a.runsOpen {
 		if a.height < minRunsPanelOpenHeight {
-			return
+			return nil
 		}
 		a.runsOpen = true
 		a.runsFocus = true
 		a.runsTab = tab
+		// The crew tab's label counts live workers, so read the registry
+		// once on open; the crew tab keeps it fresh after that.
+		a.reloadFleet()
 		a.runsSel = len(a.runsItems()) - 1
 		if a.runsSel < 0 {
 			a.runsSel = 0
 		}
-		return
+		return a.enterRunsTab()
 	}
 	a.runsOpen = false
 	a.runsFocus = false
+	return nil
+}
+
+// enterRunsTab is what showing the current tab starts: the git and ci tabs
+// probe the forge, the crew tab keeps the fleet registry fresh.
+func (a *App) enterRunsTab() tea.Cmd {
+	switch {
+	case a.forgeTabActive():
+		return a.refreshForge(false)
+	case a.runsTab == tabCrew:
+		a.reloadFleet()
+		return a.fleetTick()
+	}
+	return nil
 }
 
 // clamp is a small bounds helper.

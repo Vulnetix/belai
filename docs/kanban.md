@@ -128,6 +128,7 @@ Keys:
 | `p` | toggle this project or all projects |
 | typing | filter titles |
 | `enter` | put the item's prompt in the composer |
+| `f9` | open the runs panel's kanban tab on the same filter and item |
 | `esc` | clear the filter, then leave the pane |
 
 The prompt depends on the item's list:
@@ -160,6 +161,38 @@ is admitted like anything you type.
 | `/` | filter |
 | `p` | toggle this project or all projects |
 | `r` | sync now |
+
+### The runs panel
+
+The **kanban** tab of the runs panel (`f9`, then `tab`) manages the board
+without leaving the chat. It draws the items exactly as the composer pane
+does, with each item's labels, priority, assignee and claim beside it, under
+the filters open, backlog, review, in progress, blocked and done. Its
+actions call the same store methods as `/kanban`:
+
+| Key | Action |
+|---|---|
+| `enter` | put the item's prompt in the composer |
+| `1`–`5` | move to backlog, review, in progress, blocked or done |
+| `n` | add an item to the filtered list (backlog under open) |
+| `o` / `a` / `L` | add a note, assign a profile, set labels |
+| `+` / `-` | raise or lower the priority |
+| `u` | release a worker's claim |
+| `w` | hand the item to the crew chosen on the crew tab |
+| `[` / `]` | previous or next filter |
+| `p` | toggle this project or all projects |
+| `/` | filter by text |
+| `K` | open the item on `/kanban` |
+
+Text the actions ask for (a title, a note, an assignee, labels) is typed in
+the composer, which says what it is asking for. `esc` cancels. Deleting stays
+on `/kanban`, behind its confirmation.
+
+`w` adds the chosen crew's entry labels (those of its first member that
+claims from backlog, `#scout` for `belai:delivery`), moves the item to
+backlog, and starts the crew when no worker is running. A claimed item is
+left alone until its claim is released. The **crew** tab is described in
+[Fleet](fleet.md#in-the-tui).
 
 ## Routing and claims
 

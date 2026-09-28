@@ -414,6 +414,36 @@ func (a *App) kanbanCommit(text string) {
 		default:
 			v.status = it.Short() + " added"
 		}
+	case "assign", "labels", "note":
+		if mode == "note" && text == "" {
+			return
+		}
+		if status, err := a.kanbanApplyField(mode, v.editID, text); err != nil {
+			v.errMsg = err.Error()
+		} else {
+			v.status = status
+		}
+	case "edit-title", "edit-body":
+		var p kanban.Patch
+		if mode == "edit-title" {
+			p.Title = &text
+		} else {
+			p.Body = &text
+		}
+		if it, err := a.kb.store.Update(v.editID, p, prov.SessionID); err != nil {
+			v.errMsg = err.Error()
+		} else {
+			v.status = it.Short() + " updated"
+		}
+	}
+}
+
+// kanbanApplyField writes one field the user typed — "assign", "labels"
+// (comma separated) or "note" — to item id, for /kanban and the runs panel's
+// kanban tab alike. The store cleans the text.
+func (a *App) kanbanApplyField(mode, id, text string) (string, error) {
+	sid := a.kb.src.Get().SessionID
+	switch mode {
 	case "assign", "labels":
 		var rp kanban.RoutePatch
 		if mode == "assign" {
@@ -422,30 +452,19 @@ func (a *App) kanbanCommit(text string) {
 			labels := strings.Split(text, ",")
 			rp.Labels = &labels
 		}
-		if it, err := a.kb.store.Route(v.editID, rp, prov.SessionID); err != nil {
-			v.errMsg = err.Error()
-		} else {
-			v.status = it.Short() + " routed"
+		it, err := a.kb.store.Route(id, rp, sid)
+		if err != nil {
+			return "", err
 		}
-	case "edit-title", "edit-body", "note":
-		var p kanban.Patch
-		switch mode {
-		case "edit-title":
-			p.Title = &text
-		case "edit-body":
-			p.Body = &text
-		default:
-			if text == "" {
-				return
-			}
-			p.Note = text
+		return it.Short() + " routed", nil
+	case "note":
+		it, err := a.kb.store.Update(id, kanban.Patch{Note: text}, sid)
+		if err != nil {
+			return "", err
 		}
-		if it, err := a.kb.store.Update(v.editID, p, prov.SessionID); err != nil {
-			v.errMsg = err.Error()
-		} else {
-			v.status = it.Short() + " updated"
-		}
+		return it.Short() + " updated", nil
 	}
+	return "", fmt.Errorf("unknown field %q", mode)
 }
 
 // kanbanStatus is the screen switcher's status for the board.

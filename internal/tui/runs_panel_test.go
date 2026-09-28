@@ -239,6 +239,8 @@ func TestRunsPanelDoesNotOpenOnTinyFrames(t *testing.T) {
 }
 
 func TestRunsPanelTabCyclesThroughProcesses(t *testing.T) {
+	// Entering the crew tab reads the fleet registry: keep it off the real one.
+	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{})
 	a.runsOpen = true
 	a.runsFocus = true
@@ -252,9 +254,11 @@ func TestRunsPanelTabCyclesThroughProcesses(t *testing.T) {
 	if a.runsTab != tabProcesses {
 		t.Fatalf("tab must switch to processes, got %d", a.runsTab)
 	}
-	a.handleRunsPanelKey(tea.KeyMsg{Type: tea.KeyTab})
-	if a.runsTab != tabGit {
-		t.Fatalf("tab must switch to git, got %d", a.runsTab)
+	for _, want := range []int{tabKanban, tabCrew, tabGit} {
+		a.handleRunsPanelKey(tea.KeyMsg{Type: tea.KeyTab})
+		if a.runsTab != want {
+			t.Fatalf("tab must switch to %s, got %d", runsTabLabels[want], a.runsTab)
+		}
 	}
 	// No PR for the branch, so the ci tab is skipped.
 	a.handleRunsPanelKey(tea.KeyMsg{Type: tea.KeyTab})

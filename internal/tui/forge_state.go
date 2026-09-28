@@ -122,23 +122,62 @@ func (a *App) handleForgeProbe(m forgeProbeMsg) {
 	}
 }
 
-// runsTabNames lists the tab labels in index order; ci is last and is left
-// off while it does not apply, so the indices of the others never move.
+// runsTabLabels is each tab's label by index.
+var runsTabLabels = [tabCount]string{"activity", "subagents", "processes", "kanban", "crew", "git", "ci"}
+
+// runsTabVisible reports whether a tab is offered: kanban while the board is
+// on, ci while the branch has a PR/MR. The rest always are.
+func (a *App) runsTabVisible(tab int) bool {
+	switch tab {
+	case tabKanban:
+		return a.kanbanTabVisible()
+	case tabCI:
+		return a.ciTabVisible()
+	}
+	return tab >= 0 && tab < tabCount
+}
+
+// runsTabs lists the offered tabs in order. A hidden tab is left out, and the
+// indices of the others never move.
+func (a *App) runsTabs() []int {
+	tabs := make([]int, 0, tabCount)
+	for t := range tabCount {
+		if a.runsTabVisible(t) {
+			tabs = append(tabs, t)
+		}
+	}
+	return tabs
+}
+
+// runsTabNames lists the offered tabs' labels, in order; ci is last.
 func (a *App) runsTabNames() []string {
-	names := []string{"activity", "subagents", "processes", "git"}
-	if a.ciTabVisible() {
-		names = append(names, "ci")
+	var names []string
+	for _, t := range a.runsTabs() {
+		names = append(names, a.runsTabLabel(t))
 	}
 	return names
 }
 
-// nextRunsTab returns the tab after the current one, skipping a hidden ci tab.
-func (a *App) nextRunsTab() int {
-	next := (a.runsTab + 1) % tabCount
-	if next == tabCI && !a.ciTabVisible() {
-		next = tabActivity
+// runsTabLabel is a tab's label; crew carries its live-worker count.
+func (a *App) runsTabLabel(tab int) string {
+	if tab == tabCrew {
+		if n := a.fleetLive(); n > 0 {
+			return fmt.Sprintf("crew %d", n)
+		}
 	}
-	return next
+	return runsTabLabels[tab]
+}
+
+// nextRunsTab returns the tab after the current one, skipping hidden tabs.
+func (a *App) nextRunsTab() int {
+	next := a.runsTab
+	for range tabCount {
+		next = (next + 1) % tabCount
+		if a.runsTabVisible(next) {
+			return next
+		}
+	}
+	return tabActivity
 }
 
 // gitItems lists the worktrees as runs rows.
@@ -235,6 +274,10 @@ func (a *App) runsSummary() []string {
 		return a.gitSummary()
 	case tabCI:
 		return a.ciSummary()
+	case tabKanban:
+		return a.kanbanTabSummary()
+	case tabCrew:
+		return a.crewSummary()
 	}
 	return nil
 }

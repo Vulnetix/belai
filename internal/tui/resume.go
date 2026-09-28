@@ -188,6 +188,7 @@ func (a *App) clearForResume() {
 	a.saveFileMode = false
 	a.saveFileMsg = -1
 	a.resetForgeFlows()
+	a.resetKanbanInput()
 	a.clearLoadedPrompt()
 	a.loadAgents()
 
