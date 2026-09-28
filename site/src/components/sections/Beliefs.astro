@@ -9,7 +9,7 @@ import pixHomestead from '../../assets/pix/pix-homestead.svg?raw';
 // no card borders, the same four statements as before.
 
 const sealText =
-  'Four beliefs: safety above all else and easy to YOLO. Roles for determinism with sticky modes. Tools first class as a fixed-argv native catalogue. Local first, open source, with Apache-2.0, zero telemetry, embedded classifier models that need no API key, and two local providers.';
+  'Four beliefs: safety above all else and easy to YOLO. Roles for determinism: each judgement is a separate tool-less call with a one-token answer, so work and judgement are never confused, and modes are sticky. Tools first class: common CLIs such as AWS, GCloud, Kubectl, GH, JQ and YQ are structured tools, checked per call and run without a shell, so they cannot be used to pop one. Local first, open source, with Apache-2.0, zero telemetry, embedded classifier models that need no API key, and two local providers.';
 
 const beliefs = [
   {
@@ -19,12 +19,12 @@ const beliefs = [
   },
   {
     title: 'Roles for determinism',
-    body: 'Once you pick a mode, it stays until you change it, and later turns do not re-classify it. -detect-mode shows which mode the Role Manager would choose without acting on it.',
+    body: 'Each judgement is its own role, with its own prompt, no tools and a one-token answer: the security check, the mode choice, the plan and goal checks. A model is never asked to do the work and judge it in the same call, so it cannot confuse the two. A mode you pick stays until you change it.',
     svg: pixProfessor,
   },
   {
     title: 'Tools first class',
-    body: 'About 25 read-only utilities, including Cat, Head, Git, JQ, Find and Diff, are tools of their own. Each runs one specific binary with a fixed argument shape and never goes through a shell, so you do not need a growing Bash(jq *) allowlist.',
+    body: 'AWS, GCloud, Kubectl, Terraform, GH, JQ, YQ and about 40 more are tools of their own. Each call is checked against what that tool may do, read-only commands only for the cloud CLIs, and the binary gets its arguments directly, never through a shell, so a ; or $(…) in an argument stays text. A poisoned file cannot talk the model into popping a shell through them, the trick that works on a general Bash tool.',
     svg: pixConductor,
   },
   {

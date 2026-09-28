@@ -56,7 +56,7 @@ const keys = [
 
 const limits = [
   ['The classifier stays put', 'It follows classifier.tier and ignores the routing table. A smaller guard is easier to talk past, so moving it is your decision.'],
-  ['Checked at load', 'A candidate needs a provider or a model, and the provider must be one Belai knows. A bad table stops startup instead of sending traffic somewhere unexpected.'],
+  ['Checked at load', 'A candidate needs a provider or a model, and the provider must be one Belai knows. A bad table stops startup, so traffic only goes where you listed.'],
   ['A call always gets an answer', 'A failed Jev call, a tie or a winner missing from your list falls back to your model. Routing can make a call slower, and that is all.'],
   ['Per project, key by key', "A project's settings can change one use case without repeating the global table."],
   ['Counted where served', 'Every routed or fast-tier call counts against the budget of the model that answered it.'],

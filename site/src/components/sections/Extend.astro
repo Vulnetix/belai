@@ -47,7 +47,7 @@ const plugin = [
   ['fetch', 'a git URL pinned with #ref, or a directory. Git runs with hooks off and no submodules'],
   ['check', 'every skill, hook, prompt and agent profile, with the validator Belai uses for your own files'],
   ['confirm', 'a listing that names every hook command, installed only on your yes'],
-  ['load', 'as plugin:name, never shadowing yours or the built-ins'],
+  ['load', 'as plugin:name, so your own components and the built-ins keep their names'],
 ];
 
 const install = 'belai plugin install https://github.com/you/your-plugin#v1.0.0';
@@ -74,11 +74,11 @@ const integrations = [
 ];
 
 const limits = [
-  ['Hooks come from your folder', 'Hooks load from the global hooks directory only, never a project, and each command must resolve inside its own directory.'],
+  ['Hooks come from your folder', 'Hooks load from your global hooks directory, and each command must resolve inside its own directory. A project has no way to add one.'],
   ['Hook and skill text classifies', 'What a hook says to the model, and every skill the model loads, goes through the classifier like any other untrusted result.'],
-  ['Skills by name', '`Skill` takes a name, never a path, and reads only a registered skill that passes validation again.'],
+  ['Skills by name', '`Skill` takes a name and loads only a registered skill, checked against its schema as it loads.'],
   ['Drafting always asks', '`SkillDraft` asks on every call, even with the ask gate off, and writes exactly the file you saw.'],
-  ['No settings in a plugin', 'A plugin manifest has no key for providers, credentials, settings or permissions, and no repository setting can install one.'],
+  ['Plugins carry components only', 'A plugin holds skills, hooks, prompts and agent profiles. Its manifest has no key for providers, credentials, settings or permissions, and only you can install one.'],
   ['Notifications from templates', 'Notification text comes from fixed templates, so a repository cannot put words in front of you. `notify-send`, `osascript`, OSC 9 or 777, or the bell.'],
 ];
 

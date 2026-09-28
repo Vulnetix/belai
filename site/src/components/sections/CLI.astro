@@ -18,7 +18,7 @@ const groups = [
       ['belai -plan -prompt "map the repo"', 'runs the plan-mode surface with Bash absent, writes a structured plan document, and exits without asking for approval.'],
       ['belai -detect-mode -prompt "…"', 'runs the mode classifier and prints the mode it would pick. No tools run.'],
       ['belai -prompt "…" -usage-json usage.json', 'writes the tokens the run spent per role and per model, cache reads and writes included, even when the run fails.'],
-      ['belai -export <id-prefix>', 'prints a deterministic Markdown transcript of a saved session. It reads only the session store, never repository content.'],
+      ['belai -export <id-prefix>', 'prints a deterministic Markdown transcript of a saved session. It reads the session store and nothing in the repository.'],
     ],
   },
   {

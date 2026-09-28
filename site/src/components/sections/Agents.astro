@@ -92,10 +92,10 @@ const run = [
 
 const fences = [
   ['The harness claims', 'A claim is one locked write to the board, so two workers never hold one item. A lease that lapses, because a worker crashed, returns it.'],
-  ['Item text is classified', 'The item reaches the model as a classified attachment, never as the prompt or a directive. A withheld item is blocked, and no worker takes it.'],
+  ['Item text is classified', 'The item reaches the model as a classified attachment, kept apart from the prompt and the directives. A withheld item is blocked, and no worker takes it.'],
   ['Its own branch only', 'It commits inside the OS sandbox. Your config, hooks, index, objects and every other ref stay read-only.'],
   ['One way to push', 'PublishBranch pushes that branch to a GitHub or GitLab origin and opens a draft PR. git push, gh pr merge and git config are denied.'],
-  ['Settings from the root', 'Trust, settings and credentials come from your repository, never the worktree, so one agent cannot plant them for the next.'],
+  ['Settings from the root', 'Trust, settings and credentials are read from your repository root, so an agent cannot plant them in a worktree for the next one.'],
   ['Refuses to start', 'No worker runs with guardrails off. An autonomous one needs a pass budget; one with Bash needs a working OS sandbox.'],
   ['Stops when the board is dry', 'A worker with nothing to claim, and no crew mate still working, waits two polls and exits, freeing its slot. Pass -stay to keep one waiting. A scheduled worker always stays.'],
   ['You can see why it idled', 'Its log says what it looks for and when nothing matched. With remote control on, the Sessions page shows each worker, why it stopped and its last log lines, startup errors included.'],

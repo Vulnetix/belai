@@ -30,7 +30,7 @@ const surfaces = ['the agent session', 'inline !cmd', '@file attachments', 'back
 
 const limits = [
   ['Grants add up', 'Merging adds grants and keeps where each came from. It never widens a surface on its own, and an explicit deny beats every allow.'],
-  ['No match, your choice', 'When no rule matches, the call is allowed. Set `permission_no_match` to `enforce` to block it instead.'],
+  ['When no rule matches', 'The call is allowed by default. Set `permission_no_match` to `enforce` and it is blocked.'],
   ['The switch comes first', 'Every gated path checks the guardrails switch before calling the classifier, so turning a gate off also stops its classifier calls.'],
 ];
 ---
