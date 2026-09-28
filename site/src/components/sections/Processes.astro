@@ -1,0 +1,273 @@
+---
+import SealedSection from '../seal/SealedSection.astro';
+import CopyButton from '../ui/CopyButton.tsx';
+
+// Supervised processes as a ladder: start with no model, watch in the runs
+// panel, recover under a cap. Then the panel, what recovery may touch, and
+// the git and ci tabs.
+
+const sealText =
+  'Supervised processes: !!cmd starts a long-lived command with no model turn, the library keeps it per project or globally, logs stream to disk, and a bounded recovery subagent may change flags but never the binary. The f9 runs panel cycles activity, subagents, processes, git and ci; the git tab manages worktrees and opens a PR or MR behind a confirmation, and forge text stays in the panel.';
+
+const steps = [
+  {
+    n: '01',
+    name: 'Start',
+    key: '!!cmd',
+    lead: "No model turn is sent. The command is saved as typed in the project's library, and entries marked enabled start by themselves in the next session.",
+  },
+  {
+    n: '02',
+    name: 'Watch',
+    key: 'f9',
+    lead: 'Output streams to a log file and to the runs panel, where you open the live tail, stop the process or restart it. The log stays on disk after it exits.',
+  },
+  {
+    n: '03',
+    name: 'Recover',
+    key: 'exit ≠ 0',
+    lead: 'A recovery subagent reads the log and may restart the process with new flags, on the same binary. Each try uses one slot, and with none left the process is marked failed.',
+  },
+];
+
+// An illustration of the processes tab. The commands are examples.
+const procs = [
+  ['npm run dev', '● running', 'text-tui-teal', 'project'],
+  ['cloudflared tunnel run', '● running', 'text-tui-teal', 'global'],
+  ['go run ./cmd/api', '↻ recovering 1/3', 'text-tui-amber', 'project'],
+];
+
+const composer = `!!npm run dev
+/process:dev
+/processes`;
+
+const recovery = [
+  ['Tools', 'The read-only plan tools, SubAgentLog to read the log, and ProcessRestart', 'Write files or run any other command'],
+  ['A restart', 'Change the flags', 'Change the binary, because argv[0] is pinned to the original command'],
+  ['Your rules', 'Restart where your permission rules allow it', 'Get past a deny rule'],
+  ['Attempts', 'One per resilience.max_process_recoveries slot', 'Carry on past the cap. The process is marked failed and no more model calls are made'],
+];
+
+const gitKeys = [
+  ['enter', 'Move the session into a worktree'],
+  ['a', 'Add a worktree'],
+  ['x', 'Remove one, after a confirmation'],
+  ['p', 'Open a PR or MR, after a confirmation that names the forge, repository and branch'],
+];
+
+const limits = [
+  ['No model turn to start', '!!cmd runs the command and saves it. Nothing is sent to a model.'],
+  ['Forge text stays in the panel', 'PR titles, check names and other text from the forge are shown to you and never sent to the model.'],
+  ['Fixed arguments', 'Belai runs git, gh and glab with fixed arguments, and those CLIs keep their own credentials.'],
+  ['A PR needs your yes', 'The confirmation before p opens a PR or MR stays on with guardrails off.'],
+  ['Same binary on restart', 'Recovery can change the flags of a command, and argv[0] stays the original.'],
+  ['A cap, then failed', 'When the recovery slots run out, the process is marked failed and no more model calls are made.'],
+];
+
+const code = /(!!cmd|SubAgentLog|ProcessRestart|argv\[0\]|resilience\.max_process_recoveries|\bgit\b|\bgh\b|\bglab\b)/;
+const split = (s: string) => s.split(code).map((p) => ({ p, c: code.test(p) }));
+---
+
+<SealedSection label="processes" sealText={sealText} id="processes">
+  <div class="grid gap-6 lg:grid-cols-12 lg:items-end">
+    <div class="lg:col-span-7">
+      <h2 class="text-4xl font-extrabold leading-tight tracking-tight text-vx-ink md:text-5xl">Supervised processes</h2>
+    </div>
+    <p class="text-lg text-vx-ink/80 lg:col-span-5">
+      Run a dev server, a file watcher or a tunnel inside Belai instead of in another terminal. Belai
+      saves the command for the next session, and a process that crashes gets a limited number of
+      restarts.
+    </p>
+  </div>
+
+  <ol class="mt-10 grid list-none gap-5 p-0 lg:grid-cols-3">
+    {steps.map((s, i) => {
+      const dark = i === 2;
+      return (
+        <li class={`flex flex-col gap-4 rounded-xl border border-vx-ink p-6 ${dark ? 'bg-vx-ink text-vx-cream' : ''}`}>
+          <div class="flex items-center justify-between">
+            <span class={`mono text-sm ${dark ? 'text-vx-cream/70' : 'text-vx-ink/60'}`}>{s.n}</span>
+            <kbd class={`mono rounded-md border border-b-[3px] px-2 py-0.5 text-sm ${dark ? 'border-vx-mint text-vx-mint' : 'border-vx-ink'}`}>{s.key}</kbd>
+          </div>
+          {i === 0 && (
+            <svg viewBox="0 0 320 110" class="h-24 w-full" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="10" y="36" width="150" height="38" rx="8" class="fill-vx-bone" />
+              <text x="24" y="60" font-family="Geist Mono, monospace" font-size="13" fill="currentColor" stroke="none">!!npm run dev</text>
+              <path d="M160 55 L210 55 M202 49 L211 55 L202 61" stroke-linejoin="round" />
+              <rect x="212" y="18" width="98" height="74" rx="8" />
+              <path d="M224 38 H298 M224 54 H286 M224 70 H298" />
+              <circle cx="298" cy="22" r="7" class="fill-vx-mint-strong" stroke="none" />
+            </svg>
+          )}
+          {i === 1 && (
+            <svg viewBox="0 0 320 110" class="h-24 w-full" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="10" y="10" width="300" height="90" rx="8" />
+              <path d="M10 32 H310" />
+              <g stroke="none">
+                <rect x="18" y="16" width="44" height="10" rx="3" class="fill-vx-bone" />
+                <rect x="70" y="16" width="44" height="10" rx="3" class="fill-vx-bone" />
+                <rect x="122" y="16" width="52" height="10" rx="3" fill="currentColor" />
+                <rect x="182" y="16" width="28" height="10" rx="3" class="fill-vx-bone" />
+                <rect x="218" y="16" width="20" height="10" rx="3" class="fill-vx-bone" />
+              </g>
+              <path d="M22 50 H120 M22 66 H150 M22 82 H96" class="text-vx-ink/45" stroke="currentColor" />
+              <path d="M170 88 L186 74 L200 80 L216 58 L232 66 L248 48 L264 54 L280 42 L296 46" class="stroke-vx-mint-strong" />
+            </svg>
+          )}
+          {i === 2 && (
+            <svg viewBox="0 0 320 110" class="h-24 w-full text-vx-mint" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="30" cy="55" r="13" class="fill-vx-coral" stroke="none" />
+              <path d="M43 55 L90 55" stroke-dasharray="3 4" />
+              <rect x="90" y="34" width="84" height="42" rx="8" class="stroke-vx-cream/40" />
+              <text x="102" y="60" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-cream" stroke="none">reads log</text>
+              <path d="M174 55 L214 55" />
+              <path d="M234 32 A 24 24 0 1 1 214 55 M228 24 L236 32 L226 38" stroke-linejoin="round" />
+              <circle cx="272" cy="96" r="5" fill="currentColor" stroke="none" />
+              <circle cx="288" cy="96" r="5" fill="currentColor" stroke="none" />
+              <circle cx="304" cy="96" r="5" class="fill-vx-cream/25" stroke="none" />
+            </svg>
+          )}
+          <h3 class="text-2xl font-bold">{s.name}</h3>
+          <p class={dark ? 'text-vx-cream/85' : 'text-vx-ink/80'}>{s.lead}</p>
+        </li>
+      );
+    })}
+  </ol>
+  <div class="mono mt-3 hidden items-center gap-4 text-sm lg:flex" aria-hidden="true">
+    <span class="text-vx-ink/60">no model involved</span>
+    <span class="h-px flex-1 bg-vx-ink"></span><span class="-ml-3">▸</span>
+    <span>a model restarts it, up to a cap</span>
+  </div>
+
+  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
+    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">The runs panel</h3>
+    <p class="text-vx-ink/80">
+      <code class="mono">f9</code> opens on the activity tab, and <code class="mono">tab</code> moves on to
+      subagents, processes, git and ci. The processes tab lists only the library's running processes.
+    </p>
+  </div>
+
+  <div class="mt-8 grid gap-8 lg:grid-cols-12">
+    <div class="mono min-w-0 rounded-xl bg-tui-ink p-4 text-tui-cream md:p-5 lg:col-span-8" role="img" aria-label="An illustration of the processes tab with three example processes and the keys that act on them">
+      <p class="flex flex-wrap gap-x-4 gap-y-1 border-b border-tui-cream/20 pb-3 text-[13px]">
+        <span class="opacity-60">activity</span><span class="opacity-60">subagents</span>
+        <span class="rounded bg-tui-teal-soft px-2 text-tui-ink">processes</span>
+        <span class="opacity-60">git</span><span class="opacity-60">ci</span>
+      </p>
+      {procs.map(([cmd, state, colour, scope], i) => (
+        <p class={`grid grid-cols-[1.25rem_minmax(0,1fr)_auto] gap-3 py-2.5 text-sm md:grid-cols-[1.25rem_minmax(0,1fr)_9rem_5rem] ${i === 0 ? 'bg-tui-teal-soft/10' : ''}`}>
+          <span class="text-tui-teal">{i === 0 ? '▸' : ''}</span>
+          <span class="truncate">{cmd}</span>
+          <span class={colour}>{state}</span>
+          <span class="hidden opacity-60 md:inline">{scope}</span>
+        </p>
+      ))}
+      <pre class="mt-2 overflow-x-auto border-t border-tui-cream/20 pt-3 text-[13px] leading-7 opacity-85">  VITE ready
+  ➜  Local:   http://localhost:5173/</pre>
+      <p class="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs opacity-70">
+        <span>enter tail</span><span>x stop</span><span>r restart</span><span>tab next</span>
+      </p>
+    </div>
+
+    <aside class="flex min-w-0 flex-col gap-5 lg:col-span-4">
+      <div class="rounded-xl bg-vx-ink p-5">
+        <p class="mono text-xs tracking-wider text-vx-cream/70">FROM THE COMPOSER</p>
+        <pre class="mono mt-3 overflow-x-auto text-sm leading-7 text-vx-mint"><code>{composer}</code></pre>
+        <p class="mt-3 text-sm text-vx-cream/75">
+          Start a command, start a saved one from a few letters of its name, or manage the library
+          across project and global scope. A process that is already running is not started twice. The{' '}
+          <code class="mono">/</code> popup matches names fuzzily and also offers saved prompts
+          (<code class="mono">/prompt:</code>) and agent profiles (<code class="mono">/agent:</code>).
+        </p>
+      </div>
+      <div><CopyButton value="!!npm run dev" label="copy example" client:visible /></div>
+      <div class="rounded-xl border border-vx-ink p-5">
+        <p class="mono text-xs tracking-wider text-vx-ink/60">ON THE PROCESSES TAB</p>
+        <p class="mt-3 flex items-baseline gap-3">
+          <kbd class="mono rounded-md border border-b-[3px] border-vx-ink px-2 text-sm">enter</kbd>
+          <span>opens the live tail full-screen (<kbd class="mono">v</kbd> too)</span>
+        </p>
+        <p class="mt-2 flex items-baseline gap-3">
+          <kbd class="mono rounded-md border border-b-[3px] border-vx-ink px-2 text-sm">x</kbd>
+          <span>stops the process</span>
+        </p>
+        <p class="mt-2 flex items-baseline gap-3">
+          <kbd class="mono rounded-md border border-b-[3px] border-vx-ink px-2 text-sm">r</kbd>
+          <span>restarts it</span>
+        </p>
+        <p class="mono mt-4 text-xs text-vx-ink/65">logs: ~/.vulnetix/belai/logs</p>
+      </div>
+    </aside>
+  </div>
+
+  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
+    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">What recovery can touch</h3>
+    <p class="text-vx-ink/80">
+      The recovery subagent is the only model that acts on a process. It gets enough to read the log
+      and fix a bad flag, and nothing else.
+    </p>
+  </div>
+
+  <table class="mt-8 hidden w-full border-collapse text-left md:table">
+    <thead>
+      <tr class="border-b-2 border-vx-ink">
+        <th scope="col" class="w-[18%] pb-4"><span class="sr-only">Property</span></th>
+        <th scope="col" class="px-5 pb-4 pt-3 text-lg font-bold">It can</th>
+        <th scope="col" class="bg-vx-sand px-5 pb-4 pt-3 text-lg font-bold">It cannot</th>
+      </tr>
+    </thead>
+    <tbody>
+      {recovery.map(([row, can, cannot]) => (
+        <tr class="border-b border-vx-ink/20 last:border-b-0">
+          <th scope="row" class="py-5 pr-5 align-top font-semibold">{row}</th>
+          <td class="px-5 py-5 align-top text-vx-ink/85">{split(can).map(({ p, c }) => (c ? <code class="mono text-[0.92em]">{p}</code> : p))}</td>
+          <td class="bg-vx-sand/40 px-5 py-5 align-top text-vx-ink/85">{split(cannot).map(({ p, c }) => (c ? <code class="mono text-[0.92em]">{p}</code> : p))}</td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+  <dl class="mt-8 grid gap-3 md:hidden">
+    {recovery.map(([row, can, cannot]) => (
+      <div class="rounded-xl border border-vx-ink p-4 text-sm">
+        <dt class="font-semibold">{row}</dt>
+        <dd class="m-0 mt-2 grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-3 gap-y-1">
+          <span class="text-vx-ink/60">can</span><span>{split(can).map(({ p, c }) => (c ? <code class="mono text-[0.92em]">{p}</code> : p))}</span>
+          <span class="text-vx-ink/60">cannot</span><span>{split(cannot).map(({ p, c }) => (c ? <code class="mono text-[0.92em]">{p}</code> : p))}</span>
+        </dd>
+      </div>
+    ))}
+  </dl>
+
+  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
+    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">The git and ci tabs</h3>
+    <p class="text-vx-ink/80">
+      The git tab shows the branch and its upstream, the origin URL with credentials masked, the open
+      PR or MR, and every worktree. The ci tab lists the checks or pipeline jobs for the branch, and
+      appears only while a PR or MR is open.
+    </p>
+  </div>
+  <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    {gitKeys.map(([key, what], i) => (
+      <div class={`flex flex-col gap-3 rounded-xl border border-vx-ink p-5 ${i === 3 ? 'bg-vx-ink text-vx-cream' : ''}`}>
+        <kbd class={`mono self-start rounded-md border border-b-[3px] px-2 py-0.5 text-sm ${i === 3 ? 'border-vx-mint text-vx-mint' : 'border-vx-ink'}`}>{key}</kbd>
+        <p>{what}</p>
+      </div>
+    ))}
+  </div>
+
+  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
+    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">Limits</h3>
+    <p class="text-vx-ink/80">
+      Process output and forge text were written by someone else, so the panel shows them to you and
+      keeps them away from the model.
+    </p>
+  </div>
+  <div class="mt-8 grid border-t-2 border-vx-ink md:grid-cols-2 xl:grid-cols-3">
+    {limits.map(([title, body]) => (
+      <div class="border-b border-vx-ink/20 py-6 md:pr-8">
+        <h4 class="text-lg font-bold">{title}</h4>
+        <p class="mt-2 text-sm text-vx-ink/80">{split(body).map(({ p, c }) => (c ? <code class="mono text-[0.92em]">{p}</code> : p))}</p>
+      </div>
+    ))}
+  </div>
+</SealedSection>

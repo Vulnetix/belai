@@ -1,0 +1,415 @@
+---
+import SealedSection from '../seal/SealedSection.astro';
+import CopyButton from '../ui/CopyButton.tsx';
+
+// The Vulnetix review is laid out like the agents ladder: scan, triage and
+// fix, where each stage can change more than the one before it. The firewall
+// and the MCP server follow the review.
+
+const sealText =
+  'Vulnetix integration: /vulnetix review runs nine code scanners, eight at once in lanes of their own, and each posts a card in the thread as it finishes. A read-only background agent per scanner checks every finding against the repository. The session then reads every report together, asks you when a finding has more than one fix, plans dependency fixes as a dry run, patches code under the permission prompts and writes a code-review report. Report blocks are size-limited, sanitised and classified. The AI Firewall routes model traffic through a filtering gateway, and its verdicts are shown to you only. The scanners, the firewall and the MCP server are free for everyone.';
+
+type Stage = {
+  n: string;
+  name: string;
+  key: string;
+  lead: string;
+  facts: Record<string, string>;
+};
+
+const rows = ['Runs', 'Writes to', 'What the model gets', 'When it would ask', 'Dependencies', 'Hands back'] as const;
+
+const stages: Stage[] = [
+  {
+    n: '01',
+    name: 'Scan',
+    key: '/vulnetix review',
+    lead: 'Nine scanners run, eight at a time, each in a lane of its own. A scanner posts a card in the thread the moment it finishes.',
+    facts: {
+      Runs: 'Nine scanners, eight at once, with no timeout',
+      'Writes to': "Its own lane's output file",
+      'What the model gets': 'Nothing yet. Cards show in the TUI, without raw code snippets',
+      'When it would ask': 'Never. You steer it from the prompt box or press esc',
+      Dependencies: 'Found by sca',
+      'Hands back': 'A card per scanner, written for what that scanner checks',
+    },
+  },
+  {
+    n: '02',
+    name: 'Triage',
+    key: 'read-only',
+    lead: 'As each scanner finishes, a read-only background agent checks every finding against the repository and returns one line per finding.',
+    facts: {
+      Runs: 'One background agent per scanner, as that scanner finishes',
+      'Writes to': 'Nothing',
+      'What the model gets': 'Report blocks, size-limited, sanitised and classified, and dropped unless they pass',
+      'When it would ask': 'Never. It only reads',
+      Dependencies: 'Checked against the repository',
+      'Hands back': 'One line per finding: a verdict, plus a fix, a list of options or a note that there is no fix',
+    },
+  },
+  {
+    n: '03',
+    name: 'Fix',
+    key: 'belai:vulnetix-review',
+    lead: 'The session reads every report together, asks you when a finding has more than one fix, patches code under your permission rules and writes a report.',
+    facts: {
+      Runs: 'The session, in agent mode, with the belai:vulnetix-review profile',
+      'Writes to': 'Your code, under the permission prompts',
+      'What the model gets': 'Every triage report at once, since findings from different scanners often have the same cause',
+      'When it would ask': 'Before any change, when a finding has more than one reasonable fix',
+      Dependencies: 'A vulnetix fix plan, which is a dry run unless you turned on autofix',
+      'Hands back': 'code-review-report.md, listing what was fixed, what needs your decision and what could not be resolved',
+    },
+  },
+];
+
+// What each scanner's card reports, and a state for the lane picture. The
+// states show a moment in one review; they are an illustration, not a capture.
+const lanes = [
+  { name: 'secrets', card: 'Exposed secrets in the files of your working tree, not every commit in your history', state: 'card', width: 'w-[30%]' },
+  { name: 'sbom', card: 'Packages, by ecosystem', state: 'card', width: 'w-[38%]' },
+  { name: 'aibom', card: 'The AI tools and models the code uses', state: 'card', width: 'w-[44%]' },
+  { name: 'cbom', card: 'Algorithms and their post-quantum status, naming any deprecated one', state: 'card', width: 'w-[52%]' },
+  { name: 'sca', card: 'Vulnerabilities and license issues in your dependencies', state: 'running', width: 'w-[64%]' },
+  { name: 'sast', card: 'Static analysis of your own code', state: 'running', width: 'w-[72%]' },
+  { name: 'containers', card: 'Container images', state: 'running', width: 'w-[58%]' },
+  { name: 'iac', card: 'Infrastructure as code. You stopped this one and the other lanes carried on', state: 'stopped', width: 'w-[40%]' },
+  { name: 'malscan', card: 'Malicious packages. It waits for a free lane', state: 'queued', width: 'w-[18%]' },
+];
+
+const stateLabel: Record<string, [string, string]> = {
+  card: ['✓ card', 'text-vx-mint-strong'],
+  running: ['● running', 'text-vx-ink'],
+  stopped: ['■ stopped', 'text-[#B8332E]'],
+  queued: ['◌ queued', 'text-vx-ink/60'],
+};
+
+const barColour: Record<string, string> = {
+  card: 'bg-vx-mint-strong',
+  running: 'bg-vx-ink',
+  stopped: 'bg-vx-coral',
+  queued: 'border border-dashed border-vx-ink',
+};
+
+// The order events reach the thread in a typical review.
+const steps = [
+  ['card posted', 'secrets finishes first and its card lands in the thread', 'scanner'],
+  ['triaged', 'a verdict per finding, with a fix, options or no fix, while slower scanners work', 'background agent'],
+  ['steered', 'what you type in the prompt box is added to the remediation turn', 'you'],
+  ['review → agent', 'the session reads every report together', 'harness'],
+  ['asked you', 'one finding has two reasonable fixes, so Belai asks which to use', 'AskUserQuestion'],
+  ['fix plan', 'dependency findings become a plan, a dry run unless autofix is on', 'vulnetix fix'],
+  ['report written', '.vulnetix/belai/code-review-report.md', 'harness'],
+];
+
+const commands = `/vulnetix review
+/vulnetix firewall
+/vulnetix status`;
+
+const limits = [
+  ['No raw code in the transcript', 'The scanner reports findings without copying snippets of your code into the session.'],
+  ['Classified first', 'Report blocks are size-limited and sanitised, then dropped unless the classifier passes them.'],
+  ['Never a system block', 'Report content is shown in the TUI. The model never receives it as a trusted system block.'],
+  ['Triage only reads', 'The per-scanner agents check findings against the repository and change nothing.'],
+  ['You choose between fixes', 'When a finding has more than one reasonable fix, Belai asks before it changes anything.'],
+  ['Dry run by default', 'Dependency fixes stay a plan until you turn on autofix. Code fixes go through your permission prompts.'],
+];
+
+const products = [
+  { cmd: '/vulnetix review', name: 'Code Scanner', what: 'Nine scanners, triage and fixes', href: 'https://www.vulnetix.com/features/code-scanner', accent: false },
+  { cmd: '/vulnetix firewall', name: 'AI Firewall', what: 'A filtering gateway for model traffic', href: 'https://www.vulnetix.com/features/ai-firewall', accent: false },
+  { cmd: '/vulnetix mcp', name: 'MCP server', what: 'Vulnetix as MCP tools in your session', href: 'https://www.vulnetix.com/features/mcp-server', accent: true },
+];
+
+const codeish = /^(sca|esc|belai:vulnetix-review|vulnetix fix|code-review-report\.md)$/;
+const parts = (s: string) => s.split(/(\bsca\b|\besc\b|belai:vulnetix-review|vulnetix fix|code-review-report\.md)/);
+---
+
+<SealedSection label="vulnetix" sealText={sealText} id="vulnetix">
+  <div class="grid gap-6 lg:grid-cols-12 lg:items-end">
+    <div class="lg:col-span-7">
+      <h2 class="text-4xl font-extrabold leading-tight tracking-tight text-vx-ink md:text-5xl">
+        Vulnetix integration
+      </h2>
+    </div>
+    <p class="text-lg text-vx-ink/80 lg:col-span-5">
+      Belai includes a code review that scans your repository, checks what it finds and fixes it, an
+      AI Firewall in front of your provider, and an MCP server. The review has three stages, and
+      each one can change more than the one before it.
+    </p>
+  </div>
+
+  <ol class="mt-10 grid list-none gap-5 p-0 lg:grid-cols-3">
+    {stages.map((s, i) => {
+      const dark = i === 2;
+      return (
+        <li class={`flex flex-col gap-4 rounded-xl border border-vx-ink p-6 ${dark ? 'bg-vx-ink text-vx-cream' : ''}`}>
+          <div class="flex items-center justify-between gap-3">
+            <span class={`mono text-sm ${dark ? 'text-vx-cream/70' : 'text-vx-ink/60'}`}>{s.n}</span>
+            <kbd class={`mono rounded-md border border-b-[3px] px-2 py-0.5 text-sm ${dark ? 'border-vx-mint text-vx-mint' : 'border-vx-ink'}`}>{s.key}</kbd>
+          </div>
+          {i === 0 && (
+            <svg viewBox="0 0 320 110" class="h-24 w-full" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+              <g class="text-vx-ink/25" stroke="currentColor">
+                {[10, 22, 34, 46, 58, 70, 82, 94].map((y) => <line x1="10" y1={y} x2="310" y2={y} />)}
+              </g>
+              <g stroke="none">
+                <rect x="10" y="7" width="140" height="6" rx="3" class="fill-vx-mint-strong" />
+                <rect x="10" y="19" width="230" height="6" rx="3" fill="currentColor" />
+                <rect x="10" y="31" width="90" height="6" rx="3" class="fill-vx-mint-strong" />
+                <rect x="10" y="43" width="260" height="6" rx="3" fill="currentColor" />
+                <rect x="10" y="55" width="180" height="6" rx="3" fill="currentColor" />
+                <rect x="10" y="67" width="60" height="6" rx="3" class="fill-vx-mint-strong" />
+                <rect x="10" y="79" width="210" height="6" rx="3" fill="currentColor" />
+                <rect x="10" y="91" width="120" height="6" rx="3" class="fill-vx-mint-strong" />
+              </g>
+              <rect x="10" y="102" width="80" height="6" rx="3" stroke-dasharray="3 3" />
+            </svg>
+          )}
+          {i === 1 && (
+            <svg viewBox="0 0 320 110" class="h-24 w-full" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="14" y="16" width="70" height="80" rx="6" class="fill-vx-bone" />
+              <path d="M26 34 H72 M26 48 H64 M26 62 H72 M26 76 H56" />
+              <path d="M84 56 L130 56" stroke-dasharray="3 4" />
+              <circle cx="150" cy="56" r="16" />
+              <path d="M162 68 L176 82" />
+              <path d="M176 56 L206 56" stroke-dasharray="3 4" />
+              <rect x="210" y="22" width="96" height="16" rx="3" />
+              <rect x="210" y="48" width="96" height="16" rx="3" />
+              <rect x="210" y="74" width="96" height="16" rx="3" />
+              <circle cx="220" cy="30" r="4" class="fill-vx-mint-strong" stroke="none" />
+              <circle cx="220" cy="56" r="4" class="fill-vx-sand-amber" stroke="none" />
+              <circle cx="220" cy="82" r="4" class="fill-vx-mint-strong" stroke="none" />
+            </svg>
+          )}
+          {i === 2 && (
+            <svg viewBox="0 0 320 110" class="h-24 w-full text-vx-mint" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+              <g class="text-vx-cream/30" stroke="currentColor">
+                <rect x="6" y="14" width="44" height="18" rx="4" />
+                <rect x="6" y="46" width="44" height="18" rx="4" />
+                <rect x="6" y="78" width="44" height="18" rx="4" />
+              </g>
+              <path d="M50 23 C 80 23, 80 55, 104 55 M50 55 L104 55 M50 87 C 80 87, 80 55, 104 55" stroke-dasharray="3 4" />
+              <circle cx="118" cy="55" r="13" class="fill-vx-sand-amber" stroke="none" />
+              <text x="113" y="60" font-family="Geist Mono, monospace" font-size="14" class="fill-vx-ink" stroke="none">?</text>
+              <path d="M131 55 C 160 55, 160 26, 190 26 M131 55 C 160 55, 160 84, 190 84" />
+              <rect x="190" y="16" width="62" height="20" rx="4" class="fill-vx-mint" stroke="none" />
+              <rect x="190" y="74" width="62" height="20" rx="4" stroke-dasharray="3 3" />
+              <text x="198" y="30" font-family="Geist Mono, monospace" font-size="10" class="fill-vx-ink" stroke="none">patch</text>
+              <text x="198" y="88" font-family="Geist Mono, monospace" font-size="10" fill="currentColor" stroke="none">dry run</text>
+              <path d="M252 26 L280 50 M252 84 L280 60" />
+              <rect x="280" y="40" width="34" height="30" rx="4" class="fill-vx-cream" stroke="none" />
+              <path d="M286 50 H308 M286 58 H302" class="stroke-vx-ink" />
+            </svg>
+          )}
+          <h3 class="text-2xl font-bold">{s.name}</h3>
+          <p class={dark ? 'text-vx-cream/85' : 'text-vx-ink/80'}>{s.lead}</p>
+        </li>
+      );
+    })}
+  </ol>
+  <div class="mono mt-3 hidden items-center gap-4 text-sm lg:flex" aria-hidden="true">
+    <span class="text-vx-ink/60">reads and reports</span>
+    <span class="h-px flex-1 bg-vx-ink"></span><span class="-ml-3">▸</span>
+    <span>changes code, behind your permission prompts</span>
+  </div>
+
+  <!-- A review as it runs -->
+  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
+    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">What you see while it runs</h3>
+    <p class="text-vx-ink/80">
+      Every scanner has its own lane and output file, so stopping one leaves the others running.
+      Review scans have no timeout. The footer counts the scanners that are done and the ones still
+      running.
+    </p>
+  </div>
+
+  <div class="mt-8 grid gap-8 lg:grid-cols-12">
+    <div class="min-w-0 lg:col-span-8">
+      <div class="rounded-xl border border-vx-ink bg-vx-bone/40 p-4 md:p-5" role="img" aria-label="Nine scanner lanes during a review: four have posted cards, three are running, one was stopped and one is queued">
+        <div class="mono hidden grid-cols-[7rem_minmax(0,1fr)_6rem] gap-3 border-b border-vx-ink/20 pb-2.5 text-xs text-vx-ink/60 md:grid">
+          <span>scanner</span><span>lane, and what its card reports</span><span class="text-right">state</span>
+        </div>
+        {lanes.map((l) => (
+          <div class="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-3 gap-y-1 border-b border-vx-ink/10 py-2.5 last:border-b-0 md:grid-cols-[7rem_minmax(0,1fr)_6rem] md:items-center">
+            <code class="mono text-sm font-semibold">{l.name}</code>
+            <div class="flex flex-col gap-1.5">
+              <span class={`h-1.5 rounded-full ${barColour[l.state]} ${l.width}`}></span>
+              <span class="text-sm text-vx-ink/80">{l.card}</span>
+            </div>
+            <span class={`mono col-start-2 text-xs md:col-start-auto md:text-right ${stateLabel[l.state][1]}`}>{stateLabel[l.state][0]}</span>
+          </div>
+        ))}
+        <p class="mono mt-3 flex justify-between gap-3 rounded-lg bg-vx-ink px-3.5 py-2.5 text-xs text-vx-cream md:text-[13px]">
+          <span><span class="text-vx-mint">vulnetix</span> 4/9 done · 3 running · 1 stopped · 1 queued</span>
+          <span class="text-vx-cream/60">footer</span>
+        </p>
+      </div>
+
+      <ol class="mt-6 list-none p-0">
+        {steps.map(([what, detail, who], i) => (
+          <li class="grid grid-cols-[2rem_minmax(0,1fr)] gap-x-3 gap-y-1 border-b border-vx-ink/20 py-3 text-sm last:border-b-0 md:grid-cols-[2rem_11rem_minmax(0,1fr)_9rem] md:text-[15px]">
+            <span class="mono text-vx-ink/60">{i + 1}</span>
+            <span class="mono font-semibold">{what}</span>
+            <span class="col-start-2 md:col-start-auto">{detail.startsWith('.') ? <code class="mono">{detail}</code> : detail}</span>
+            <span class="mono col-start-2 text-xs text-vx-mint-strong md:col-start-auto md:text-sm">{who}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+
+    <aside class="flex min-w-0 flex-col gap-5 lg:col-span-4">
+      <div class="rounded-xl bg-vx-ink p-5">
+        <p class="mono text-xs tracking-wider text-vx-cream/70">THREE COMMANDS</p>
+        <pre class="mono mt-3 overflow-x-auto text-sm leading-7 text-vx-mint"><code>{commands}</code></pre>
+        <p class="mt-3 text-sm text-vx-cream/75">
+          Run the scanners, switch the gateway on or off, and print what your account can use.
+        </p>
+      </div>
+      <div><CopyButton value={commands} label="copy commands" client:visible /></div>
+      <div class="rounded-xl border border-vx-ink p-5">
+        <p class="mono text-xs tracking-wider text-vx-ink/60">WHILE IT RUNS</p>
+        <p class="mt-3 flex items-baseline gap-3">
+          <kbd class="mono rounded-md border border-b-[3px] border-vx-ink px-2 text-sm">type</kbd>
+          <span>your text is added to the remediation turn</span>
+        </p>
+        <p class="mt-2 flex items-baseline gap-3">
+          <kbd class="mono rounded-md border border-b-[3px] border-vx-ink px-2 text-sm">esc</kbd>
+          <span>cancels the review</span>
+        </p>
+      </div>
+      <div class="rounded-xl bg-vx-sand p-5">
+        <p class="mono text-xs tracking-wider text-vx-ink/70">THE REPORT HAS THREE LISTS</p>
+        <ul class="mt-3 list-none space-y-1 p-0">
+          <li>✓ what was fixed</li>
+          <li>? what needs your decision</li>
+          <li>✕ what could not be resolved, with the reason</li>
+        </ul>
+        <p class="mono mt-3 text-xs text-vx-ink/70">.vulnetix/belai/code-review-report.md</p>
+      </div>
+    </aside>
+  </div>
+
+  <!-- How the stages differ -->
+  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
+    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">How the three stages differ</h3>
+    <p class="text-vx-ink/80">
+      Every stage follows your guardrails switch. The table shows what each stage reads and writes,
+      when it asks you, and what it hands back.
+    </p>
+  </div>
+
+  <table class="mt-8 hidden w-full border-collapse text-left lg:table">
+    <thead>
+      <tr class="border-b-2 border-vx-ink">
+        <th scope="col" class="w-[17%] pb-4"><span class="sr-only">Property</span></th>
+        {stages.map((s, i) => (
+          <th scope="col" class={`px-5 pb-4 pt-3 text-lg font-bold ${i === 2 ? 'bg-vx-sand' : ''}`}>
+            <span class="mono text-xs font-medium text-vx-ink/60">{s.n} </span>{s.name}
+          </th>
+        ))}
+      </tr>
+    </thead>
+    <tbody>
+      {rows.map((r) => (
+        <tr class="border-b border-vx-ink/20 last:border-b-0">
+          <th scope="row" class="py-5 pr-5 align-top font-semibold">{r}</th>
+          {stages.map((s, i) => (
+            <td class={`px-5 py-5 align-top text-vx-ink/85 ${i === 2 ? 'bg-vx-sand/40' : ''}`}>
+              {parts(s.facts[r]).map((p) => (codeish.test(p) ? <code class="mono text-[0.92em]">{p}</code> : p))}
+            </td>
+          ))}
+        </tr>
+      ))}
+    </tbody>
+  </table>
+
+  <div class="mt-8 grid gap-4 md:grid-cols-3 lg:hidden">
+    {stages.map((s, i) => (
+      <article class={`rounded-xl border border-vx-ink p-5 ${i === 2 ? 'bg-vx-ink text-vx-cream' : ''}`}>
+        <h4 class="text-xl font-bold"><span class={`mono text-xs font-medium ${i === 2 ? 'text-vx-cream/70' : 'text-vx-ink/60'}`}>{s.n} </span>{s.name}</h4>
+        <dl class={`mt-4 grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 border-t pt-4 text-sm ${i === 2 ? 'border-vx-cream/20' : 'border-vx-ink/20'}`}>
+          {rows.map((r) => (
+            <>
+              <dt class={i === 2 ? 'text-vx-cream/70' : 'text-vx-ink/60'}>{r}</dt>
+              <dd class="m-0">{s.facts[r]}</dd>
+            </>
+          ))}
+        </dl>
+      </article>
+    ))}
+  </div>
+
+  <!-- AI Firewall -->
+  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
+    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">AI Firewall</h3>
+    <p class="text-vx-ink/80">
+      <a class="text-vx-ink underline" href="https://www.vulnetix.com/features/ai-firewall">AI Firewall</a>{' '}
+      sends your model traffic through a filtering gateway, which uses its own key in place of the
+      provider's. If any of its four required settings is missing, Belai talks to the provider directly.
+    </p>
+  </div>
+  <div class="mt-8 grid gap-8 lg:grid-cols-12">
+    <div class="min-w-0 rounded-xl border border-vx-ink p-5 md:p-7 lg:col-span-7">
+      <svg viewBox="0 0 640 220" class="h-auto w-full" fill="none" stroke="currentColor" stroke-width="1.5" role="img" aria-label="Belai sends model calls through the firewall to the provider, or straight to the provider when a required setting is missing">
+        <rect x="10" y="60" width="130" height="60" rx="10" class="fill-vx-cream" />
+        <text x="46" y="96" font-family="Geist, sans-serif" font-size="18" font-weight="700" fill="currentColor" stroke="none">belai</text>
+        <path d="M140 90 L240 90 M232 84 L241 90 L232 96" stroke-linejoin="round" />
+        <rect x="242" y="44" width="160" height="92" rx="10" class="fill-vx-ink" stroke="none" />
+        <text x="266" y="82" font-family="Geist, sans-serif" font-size="16" font-weight="700" class="fill-vx-cream" stroke="none">AI Firewall</text>
+        <text x="266" y="106" font-family="Geist Mono, monospace" font-size="12" class="fill-vx-mint" stroke="none">gateway key</text>
+        <path d="M402 90 L500 90 M492 84 L501 90 L492 96" stroke-linejoin="round" />
+        <rect x="502" y="60" width="128" height="60" rx="10" class="fill-vx-bone" />
+        <text x="530" y="96" font-family="Geist, sans-serif" font-size="18" font-weight="700" fill="currentColor" stroke="none">provider</text>
+        <path d="M75 120 C 75 190, 566 190, 566 124" stroke-dasharray="4 5" />
+        <path d="M560 132 L566 122 L572 132" stroke-linejoin="round" />
+        <text x="190" y="208" font-family="Geist Mono, monospace" font-size="12" class="fill-vx-ink/70" stroke="none">a required setting is missing: straight to the provider</text>
+        <text x="252" y="30" font-family="Geist Mono, monospace" font-size="12" class="fill-vx-ink/70" stroke="none">a block → a report card for you</text>
+      </svg>
+    </div>
+    <div class="flex min-w-0 flex-col gap-4 lg:col-span-5">
+      <div class="rounded-xl bg-vx-ink p-5">
+        <p class="mono text-xs tracking-wider text-vx-cream/70">STATUS FOOTER</p>
+        <p class="mono mt-3 text-sm text-vx-cream"><span class="text-vx-mint">● firewall</span> reachable at start</p>
+      </div>
+      <p class="text-vx-ink/80">
+        When the gateway blocks a call, Belai reads the verdict from the response, cleans and caps it, and
+        shows it to you as a report card. The model does not see it. The gateway key goes only to the
+        gateway's URL, and never across a redirect.
+      </p>
+      <p class="text-vx-ink/80">
+        Only your own settings can point Belai at a firewall. A repository's settings can turn it off
+        but cannot turn it on.
+      </p>
+    </div>
+  </div>
+
+  <!-- Limits -->
+  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
+    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">Limits on review content</h3>
+    <p class="text-vx-ink/80">
+      A report quotes your repository and your dependencies, and either can contain an instruction
+      meant for the model. So Belai handles findings like any other text it did not write.
+    </p>
+  </div>
+  <div class="mt-8 grid border-t-2 border-vx-ink md:grid-cols-2 xl:grid-cols-3">
+    {limits.map(([title, body]) => (
+      <div class="border-b border-vx-ink/20 py-6 md:pr-8">
+        <h4 class="text-lg font-bold">{title}</h4>
+        <p class="mt-2 text-sm text-vx-ink/80">{body}</p>
+      </div>
+    ))}
+  </div>
+
+  <div class="mt-20 grid gap-5 md:grid-cols-3">
+    {products.map((p) => (
+      <a href={p.href} class={`flex flex-col gap-2 rounded-xl border border-vx-ink p-5 no-underline hover:shadow-[0_3px_0_var(--color-vx-ink)] ${p.accent ? 'bg-vx-mint' : ''}`}>
+        <span class={`mono text-xs ${p.accent ? 'text-vx-ink/70' : 'text-vx-ink/60'}`}>{p.cmd}</span>
+        <span class="text-xl font-bold text-vx-ink">{p.name} ↗</span>
+        <span class="text-sm text-vx-ink/80">{p.what}</span>
+      </a>
+    ))}
+  </div>
+  <p class="mt-4 text-sm text-vx-ink/70">The scanners, the firewall and the MCP server are free for everyone.</p>
+</SealedSection>

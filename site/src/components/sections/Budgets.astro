@@ -1,0 +1,197 @@
+---
+import SealedSection from '../seal/SealedSection.astro';
+import ShotCarousel from '../ui/ShotCarousel.tsx';
+import budgetsShot from '../../assets/shots/budgets.svg';
+import footerShot from '../../assets/shots/footer.svg';
+
+// Token budgets: three windows (session, day, month), the footer's three
+// colours, and what counts against a budget.
+
+const sealText =
+  "Token budgets: a global allowance per provider and model for the session, the local day and the local month. Every completed model call counts, classifier and role-manager calls included. The footer shows the selected model's budget right-aligned and cycles between them; teal while tokens last as long as the clock, amber when spend runs ahead of it, red when exhausted. Past sessions are imported from their transcripts once, so day and month totals cover every project. A budget only warns.";
+
+const windows = [
+  {
+    n: '01',
+    name: 'Session',
+    key: 'session',
+    lead: 'Counts this session only. A session budget has no clock to run ahead of, so it is teal until it is spent and never turns amber.',
+  },
+  {
+    n: '02',
+    name: 'Day',
+    key: 'day',
+    lead: 'Counts the local day across every project. The bar turns amber when a larger share of the day is left than of the tokens.',
+  },
+  {
+    n: '03',
+    name: 'Month',
+    key: 'month',
+    lead: 'Counts the local month. Sessions from before budgets existed are read from their transcripts once, in the background, and counted as well.',
+  },
+];
+
+// Illustrative footer states. The captures below are the real footer.
+const colours = [
+  { name: 'Teal', title: 'on pace', body: 'The tokens are lasting at least as long as the clock.', bar: 'bg-tui-teal', fill: 'w-[62%]', text: 'day  62% · 9h left' },
+  { name: 'Amber', title: 'running ahead', body: 'A larger share of the day or month is left than of the tokens.', bar: 'bg-tui-amber', fill: 'w-[31%]', text: 'day  31% · 14h left' },
+  { name: 'Red', title: 'spent', body: 'The allowance is used up. The next call still runs.', bar: 'bg-tui-danger', fill: 'w-full', text: 'month  0% · 11d left' },
+];
+
+const counts = [
+  ['your turns', 'Every call the session makes, and headless runs'],
+  ['agents', 'Subagents and background agents'],
+  ['classifier and role manager', 'Every security check and every one-token verdict'],
+  ['no usage reported', 'Belai estimates the usage and marks it as estimated'],
+  ['a goal run', 'Its exact token count, split across the days it ran'],
+  ['older sessions', "Imported from transcripts. A transcript keeps only its last call's usage, so the imported figure is a lower bound"],
+];
+
+const limits = [
+  ['Set in your own settings', "Budgets are global. A repository's settings file cannot raise or remove them."],
+  ['Counted once', 'A session is never counted twice, even when two belai windows import it at the same time.'],
+  ['Warnings only', 'A call over budget still runs. Turn on ui.budget_warn for a warning line on every call while a budget is amber or red.'],
+];
+---
+
+<SealedSection label="budgets" sealText={sealText} id="budgets">
+  <div class="grid gap-6 lg:grid-cols-12 lg:items-end">
+    <div class="lg:col-span-7">
+      <h2 class="text-4xl font-extrabold leading-tight tracking-tight text-vx-ink md:text-5xl">Token budgets</h2>
+    </div>
+    <p class="text-lg text-vx-ink/80 lg:col-span-5">
+      Give any provider and model an allowance for the session, the local day or the local month, up to
+      one of each. Every completed model call counts against the model that served it, including the
+      classifier's calls.
+    </p>
+  </div>
+
+  <ol class="mt-10 grid list-none gap-5 p-0 lg:grid-cols-3">
+    {windows.map((w, i) => {
+      const dark = i === 2;
+      return (
+        <li class={`flex flex-col gap-4 rounded-xl border border-vx-ink p-6 ${dark ? 'bg-vx-ink text-vx-cream' : ''}`}>
+          <div class="flex items-center justify-between">
+            <span class={`mono text-sm ${dark ? 'text-vx-cream/70' : 'text-vx-ink/60'}`}>{w.n}</span>
+            <kbd class={`mono rounded-md border border-b-[3px] px-2 py-0.5 text-sm ${dark ? 'border-vx-mint text-vx-mint' : 'border-vx-ink'}`}>{w.key}</kbd>
+          </div>
+          {i === 0 && (
+            <svg viewBox="0 0 320 110" class="h-24 w-full" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+              <text x="10" y="30" font-family="Geist Mono, monospace" font-size="12" class="fill-vx-ink/65" stroke="none">tokens left</text>
+              <rect x="10" y="44" width="300" height="22" rx="11" />
+              <rect x="10" y="44" width="190" height="22" rx="11" class="fill-vx-mint-strong" stroke="none" />
+              <text x="10" y="92" font-family="Geist Mono, monospace" font-size="12" class="fill-vx-ink/65" stroke="none">no clock</text>
+            </svg>
+          )}
+          {i === 1 && (
+            <svg viewBox="0 0 320 110" class="h-24 w-full" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+              <text x="10" y="20" font-family="Geist Mono, monospace" font-size="12" class="fill-vx-ink/65" stroke="none">tokens left</text>
+              <rect x="10" y="30" width="300" height="18" rx="9" />
+              <rect x="10" y="30" width="120" height="18" rx="9" class="fill-vx-sand-amber" stroke="none" />
+              <rect x="10" y="66" width="300" height="18" rx="9" />
+              <rect x="10" y="66" width="190" height="18" rx="9" fill="currentColor" stroke="none" />
+              <text x="10" y="104" font-family="Geist Mono, monospace" font-size="12" class="fill-vx-ink/65" stroke="none">day left</text>
+            </svg>
+          )}
+          {i === 2 && (
+            <svg viewBox="0 0 320 110" class="h-24 w-full text-vx-mint" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="10" y="14" width="300" height="82" rx="8" class="stroke-vx-cream/30" />
+              <g stroke="none">
+                {[[22, 16], [42, 28], [62, 22], [82, 40], [102, 32], [122, 48]].map(([x, h]) => (
+                  <rect x={x} y={86 - h} width="14" height={h} fill="currentColor" />
+                ))}
+                {[[142, 24], [162, 36], [182, 20]].map(([x, h]) => (
+                  <rect x={x} y={86 - h} width="14" height={h} class="fill-vx-cream/35" />
+                ))}
+              </g>
+              <text x="210" y="44" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-cream/70" stroke="none">imported</text>
+              <text x="210" y="60" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-cream/70" stroke="none">from older</text>
+              <text x="210" y="76" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-cream/70" stroke="none">transcripts</text>
+            </svg>
+          )}
+          <h3 class="text-2xl font-bold">{w.name}</h3>
+          <p class={dark ? 'text-vx-cream/85' : 'text-vx-ink/80'}>{w.lead}</p>
+        </li>
+      );
+    })}
+  </ol>
+
+  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
+    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">Three colours in the footer</h3>
+    <p class="text-vx-ink/80">
+      With <code class="mono">defined</code> routing, the right of the footer's top line shows the selected
+      model's budget: the share of tokens left, the time left in the day or month, and a bar. With two or
+      more budgets the footer cycles between them every ten seconds
+      (<code class="mono">ui.budget_cycle_seconds</code>).
+    </p>
+  </div>
+  <div class="mt-8 grid gap-5 md:grid-cols-3">
+    {colours.map((c) => (
+      <div class="overflow-hidden rounded-xl border border-vx-ink">
+        <p class="mono flex items-center justify-between gap-3 bg-tui-ink px-4 py-3 text-[13px] text-tui-cream" aria-hidden="true">
+          <span>{c.text}</span>
+          <span class="flex h-2 w-16 rounded-full bg-tui-cream/20"><span class={`rounded-full ${c.bar} ${c.fill}`}></span></span>
+        </p>
+        <div class="p-5">
+          <h4 class="text-lg font-bold">{c.name}: {c.title}</h4>
+          <p class="mt-2 text-sm text-vx-ink/80">{c.body}</p>
+        </div>
+      </div>
+    ))}
+  </div>
+
+  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
+    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">What counts</h3>
+    <p class="text-vx-ink/80">
+      Prompt and completion tokens, reasoning included, under the provider and model that served the
+      call. Usage goes into one ledger that every belai process shares.
+    </p>
+  </div>
+  <div class="mt-8 grid gap-8 lg:grid-cols-12">
+    <div class="min-w-0 lg:col-span-7">
+      <ol class="list-none p-0">
+        {counts.map(([what, detail]) => (
+          <li class="grid gap-x-4 gap-y-1 border-b border-vx-ink/20 py-3.5 text-sm last:border-b-0 md:grid-cols-[14rem_minmax(0,1fr)] md:text-[15px]">
+            <span class="mono font-semibold">{what}</span>
+            <span class="text-vx-ink/85">{detail}</span>
+          </li>
+        ))}
+      </ol>
+      <div class="mt-6 rounded-xl bg-vx-ink p-5">
+        <p class="mono text-xs tracking-wider text-vx-cream/70">SET ONE</p>
+        <p class="mt-3 flex flex-wrap items-baseline gap-3 text-vx-cream">
+          <kbd class="mono rounded-md border border-b-[3px] border-vx-mint px-2 text-sm text-vx-mint">f1</kbd>
+          <span>then</span>
+          <kbd class="mono rounded-md border border-b-[3px] border-vx-mint px-2 text-sm text-vx-mint">b</kbd>
+          <span class="text-vx-cream/70">or</span>
+          <code class="mono text-vx-mint">/budgets</code>
+          <span class="text-vx-cream/70">or the token budgets row in</span>
+          <code class="mono text-vx-mint">/settings</code>
+        </p>
+        <p class="mt-3 text-sm text-vx-cream/75">
+          Type allowances as <code class="mono">250k</code> or <code class="mono">1.5M</code>.
+        </p>
+      </div>
+    </div>
+    <div class="min-w-0 lg:col-span-5">
+      <ShotCarousel
+        client:visible
+        shots={[
+          { src: budgetsShot.src, alt: 'The token budgets screen with teal, amber and red budgets', caption: 'f1 → b, token budgets' },
+          { src: footerShot.src, alt: 'The status footer with an amber day budget on the right of the top line', caption: 'footer, amber day budget' },
+        ]}
+      />
+    </div>
+  </div>
+
+  <div class="mt-16 grid border-t-2 border-vx-ink md:grid-cols-3">
+    {limits.map(([title, body]) => (
+      <div class="border-b border-vx-ink/20 py-6 md:pr-8">
+        <h4 class="text-lg font-bold">{title}</h4>
+        <p class="mt-2 text-sm text-vx-ink/80">
+          {body.split(/(ui\.budget_warn)/).map((p) => (p === 'ui.budget_warn' ? <code class="mono">{p}</code> : p))}
+        </p>
+      </div>
+    ))}
+  </div>
+</SealedSection>
