@@ -10,10 +10,14 @@ The board has five lists:
 | List | Meaning |
 |---|---|
 | `backlog` | work nobody has started |
-| `review` | work a session noted as open; confirm it before doing it |
+| `review` | work a session noted as open, or a scout's survey found; confirm it before doing it |
 | `in_progress` | work a session is doing now |
 | `blocked` | work that cannot continue; the last note says why |
 | `done` | finished and verified, or confirmed obsolete |
+
+A scout that [surveys on its own](fleet.md#finding-work-kanbansurvey) files
+what it finds into `review` with a `build` label. Moving such an item to
+`backlog` confirms it, and a builder takes it from there.
 
 Each item records the session that added it, the project (the `origin`
 remote's repository name, or the repository directory's name), the directory

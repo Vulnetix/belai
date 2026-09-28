@@ -79,6 +79,9 @@ type WorkerClaim struct {
 	// HandoffLabels the labels it may carry. Both empty disables handoffs.
 	HandoffTo     []string
 	HandoffLabels []string
+	// HandoffList, when set, is the list every handoff goes to whatever the
+	// model asks: a survey's self-found work waits in review for a human.
+	HandoffList kanban.List
 
 	mu      sync.Mutex
 	handoff []string // ids handed off this claim
@@ -461,6 +464,9 @@ func (t KanbanHandoff) Execute(ctx context.Context, args map[string]any) (Result
 			return Result{}, errors.New("list must be backlog or review")
 		}
 		in.List = l
+	}
+	if c.HandoffList != "" {
+		in.List = c.HandoffList
 	}
 	if a, ok := argString(args, "assignee"); ok && strings.TrimSpace(a) != "" {
 		a = strings.TrimSpace(a)

@@ -232,7 +232,11 @@ items and works each as a goal. It adds these fields:
 | `kanban.max_attempts` | int | Failed attempts before the item goes to `blocked` (default 3). |
 | `kanban.lease`, `kanban.poll` | duration | Claim lease (1m–2h, default 20m) and idle poll (at least 5s, default 30s). |
 | `kanban.max_items` | int | Stop after this many items; 0 runs until stopped. |
+| `kanban.survey.title`, `kanban.survey.body` | string | When the board has nothing for the worker, it files and works one survey item with this title (`{project}` replaced, date appended) and body. `title` is required in a `survey` block. See [Finding work](fleet.md#finding-work-kanbansurvey). |
+| `kanban.survey.list` | string | Where the survey's handoffs go, whatever the model asks: `review` (default) or `backlog`. |
+| `kanban.survey.every` | duration | At most one survey per this interval for the same profile and repository on one machine (at least `1h`, default `24h`). |
 | `workspace.isolation` | string | `worktree` (a git worktree per item), `shared` (the repository), or `none`. |
+| `workspace.read_only` | bool | The worker runs checks in its worktree but changes nothing: leftovers are not committed, and the worktree and branch are deleted after each item. See [Read-only workspaces](fleet.md#read-only-workspaces). |
 | `workspace.base`, `workspace.keep`, `workspace.publish` | | The commit new branches start from; keep the worktree after release; `publish` is `none`, `agent` (the agent may push its branch and open a draft pull request with `PublishBranch`) or `draft_pr` (the harness does so when the item reaches `done`); see [Publishing](fleet.md#publishing). |
 | `memory.enabled`, `memory.max_bytes` | | The worker's lessons file (default 8 KiB, at most 64 KiB). |
 | `budget.max_passes_per_item`, `budget.max_tokens_per_item`, `budget.max_wall_per_item` | | Per-item bounds. |
@@ -245,7 +249,9 @@ Validation fails closed:
 - `guardrails: false` is rejected outright;
 - `autonomy: autonomous` needs `budget.max_passes_per_item`;
 - a worker that can write (`Write`, `Edit`, `Bash`, or no allowlist) needs `workspace.isolation`;
-- `publish: agent` and `publish: draft_pr` need `isolation: worktree`.
+- `publish: agent` and `publish: draft_pr` need `isolation: worktree`;
+- `read_only` needs `isolation: worktree`, and cannot be combined with `keep` or a `publish` other than `none`;
+- a `survey` block needs a `title`, a `list` of `review` or `backlog`, an `every` of at least `1h`, and `handoff_to` or `handoff_labels`.
 
 A definition can also be written as Markdown with YAML front-matter, the
 shape Claude Code, OpenClaw and Hermes use. The keys are the JSON keys,
@@ -256,7 +262,7 @@ validates it and saves it as JSON.
 
 | Profile | Claims | Hands on to |
 | --- | --- | --- |
-| `belai:scout` | backlog items labelled `scout` | `build` items for `belai:builder` |
+| `belai:scout` | backlog items labelled `scout`; with none, a daily survey of its own (tests, docs, specs and site prose against the code) | `build` items for `belai:builder`: to backlog for a request, to review for a survey |
 | `belai:builder` | backlog `build` items, on a worktree branch | review, labelled `needs-review` |
 | `belai:reviewer` | review `needs-review` items, on their branch | done (and a draft PR), or back to `build` with notes |
 | `belai:vuln-scout` | backlog items labelled `vuln-scan` | `vuln` items for `belai:patcher` |

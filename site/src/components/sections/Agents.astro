@@ -9,7 +9,7 @@ import CopyButton from '../ui/CopyButton.tsx';
 const docBase = 'https://github.com/Vulnetix/belai/blob/main/docs/';
 
 const sealText =
-  'Agents: subagents, background agents and crews. Subagents (f8) split a question across read-only agents that run at once, stop after two to five rounds and report path:line findings. Background agents (/agent) are saved profiles with their own prompt, model, mode and tool list that run beside the session. Crews (belai agent start) are worker processes that claim items off the kanban board, work each on its own git worktree and branch inside the OS sandbox, push only through PublishBranch and open a draft pull request. The harness claims items, the item text is classified, settings come from the trusted repository root, and a worker that cannot ask blocks the item. belai:delivery runs a scout, two builders and a reviewer; belai:security a vulnerability scout, two patchers and a verifier.';
+  'Agents: subagents, background agents and crews. Subagents (f8) split a question across read-only agents that run at once, stop after two to five rounds and report path:line findings. Background agents (/agent) are saved profiles with their own prompt, model, mode and tool list that run beside the session. Crews (belai agent start) are worker processes that claim items off the kanban board, work each on its own git worktree and branch inside the OS sandbox, push only through PublishBranch and open a draft pull request. The harness claims items, the item text is classified, settings come from the trusted repository root, and a worker that cannot ask blocks the item. belai:delivery runs a scout, two builders and a reviewer; belai:security a vulnerability scout, two patchers and a verifier. With nothing filed, the scout surveys the repository at most once a day: it runs the tests and compares docs, specs and site prose with the code, then files what it finds into Review for you to confirm.';
 
 type Step = {
   n: string;
@@ -54,7 +54,7 @@ const steps: Step[] = [
     n: '03',
     name: 'Crews',
     key: 'belai agent start',
-    lead: 'Worker processes that take items from the kanban board and work on each one in a branch of its own. A builder opens a draft pull request and a reviewer checks it.',
+    lead: 'Worker processes that take items from the kanban board and work on each one in a branch of its own. A builder opens a draft pull request and a reviewer checks it. When nobody has filed anything, the scout goes looking for work and files it into Review for you to confirm.',
     facts: {
       Tools: "The profile's list, plus KanbanHandoff and PublishBranch",
       'Writes to': 'Its own worktree and branch, belai/K-xxxxxx/a1, outside the repository',
@@ -97,10 +97,13 @@ const fences = [
   ['One way to push', 'PublishBranch pushes that branch to a GitHub or GitLab origin and opens a draft PR. git push, gh pr merge and git config are denied.'],
   ['Settings from the root', 'Trust, settings and credentials come from your repository, never the worktree, so one agent cannot plant them for the next.'],
   ['Refuses to start', 'No worker runs with guardrails off. An autonomous one needs a pass budget; one with Bash needs a working OS sandbox.'],
+  ['Stops when the board is dry', 'A worker with nothing to claim, and no crew mate still working, waits two polls and exits, freeing its slot. Pass -stay to keep one waiting. A scheduled worker always stays.'],
+  ['You can see why it idled', 'Its log says what it looks for and when nothing matched. With remote control on, the Sessions page shows each worker, why it stopped and its last log lines, startup errors included.'],
+  ['Self-found work waits for you','With nothing filed, the scout surveys the repository at most once a day, in a throwaway worktree where nothing is committed. Everything it finds lands in Review. Nothing is built until you move it to Backlog.'],
 ];
 
 const crews = [
-  { name: 'belai:delivery', what: 'a request → reviewed branches', members: [['scout', 1], ['builder', 2], ['reviewer', 1]] },
+  { name: 'belai:delivery', what: 'a request, or its own daily survey → reviewed branches', members: [['scout', 1], ['builder', 2], ['reviewer', 1]] },
   { name: 'belai:security', what: 'a scan → verified fixes', members: [['vuln-scout', 1], ['patcher', 2], ['verifier', 1]] },
 ] as const;
 

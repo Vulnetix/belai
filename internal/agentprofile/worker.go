@@ -42,6 +42,49 @@ type KanbanSpec struct {
 	Poll  string `json:"poll,omitempty"`
 	// MaxItems stops the worker after this many items; 0 runs until stopped.
 	MaxItems int `json:"max_items,omitempty"`
+	// Survey lets the worker find its own work when the board has none for
+	// it. Nil: the worker only takes items someone filed.
+	Survey *SurveySpec `json:"survey,omitempty"`
+}
+
+// SurveyLabel marks an item a worker filed for itself under kanban.survey.
+// Every handoff made while working one goes to the survey's list, whatever
+// the model asks for.
+const SurveyLabel = "survey"
+
+// DefaultSurveyEvery is how often a worker may survey the same repository
+// on one machine when kanban.survey.every is unset.
+const DefaultSurveyEvery = 24 * time.Hour
+
+// SurveySpec is a worker's own work-finding pass. When the worker has
+// nothing to claim it files one item titled Title (dated, with {project}
+// replaced), labelled with its own claim labels plus survey, claims it and
+// works it like any other item. It does so at most once per start and once
+// per Every for the same repository on the same machine.
+type SurveySpec struct {
+	Title string `json:"title"`
+	Body  string `json:"body,omitempty"`
+	// List is where the survey's handoffs go: review (default), so a human
+	// confirms self-found work before any agent takes it, or backlog.
+	List string `json:"list,omitempty"`
+	// Every is a Go duration of at least 1h (default 24h).
+	Every string `json:"every,omitempty"`
+}
+
+// HandoffList is where the survey's handoffs go.
+func (s SurveySpec) HandoffList() kanban.List {
+	if l, ok := kanban.ParseList(s.List); ok {
+		return l
+	}
+	return kanban.Review
+}
+
+// EveryOr is the survey interval, defaulted.
+func (s SurveySpec) EveryOr() time.Duration {
+	if d, err := time.ParseDuration(s.Every); err == nil && d > 0 {
+		return d
+	}
+	return DefaultSurveyEvery
 }
 
 // Route is a destination list plus label edits.
@@ -61,6 +104,11 @@ type WorkspaceSpec struct {
 	Base string `json:"base,omitempty"`
 	// Keep leaves the worktree on disk after the item is released.
 	Keep bool `json:"keep,omitempty"`
+	// ReadOnly is a worker that runs checks (tests, builds) in its worktree
+	// but changes nothing: the harness commits nothing the turn leaves
+	// behind, such as build output, and the worktree and its branch are
+	// discarded after each item. It needs isolation: worktree and no publish.
+	ReadOnly bool `json:"read_only,omitempty"`
 	// Publish is "none" (default) or "draft_pr": when the item reaches done,
 	// push its branch and open a draft pull request.
 	Publish string `json:"publish,omitempty"`
@@ -167,6 +215,11 @@ func (p AgentProfile) WallBudget() time.Duration {
 }
 
 // IsolationMode is the workspace isolation, defaulted.
+// ReadOnlyWorkspace reports workspace.read_only.
+func (p AgentProfile) ReadOnlyWorkspace() bool {
+	return p.Workspace != nil && p.Workspace.ReadOnly
+}
+
 func (p AgentProfile) IsolationMode() string {
 	if p.Workspace == nil || p.Workspace.Isolation == "" {
 		return IsolationNone
@@ -258,6 +311,24 @@ func (p AgentProfile) validateWorker() error {
 			return errors.New("kanban.poll must be a duration of at least 5s")
 		}
 	}
+	if s := k.Survey; s != nil {
+		if strings.TrimSpace(s.Title) == "" {
+			return errors.New("kanban.survey.title is required")
+		}
+		if s.List != "" {
+			if l, ok := kanban.ParseList(s.List); !ok || (l != kanban.Review && l != kanban.Backlog) {
+				return fmt.Errorf("kanban.survey.list must be review or backlog, not %q", s.List)
+			}
+		}
+		if s.Every != "" {
+			if d, err := time.ParseDuration(s.Every); err != nil || d < time.Hour {
+				return errors.New("kanban.survey.every must be a duration of at least 1h")
+			}
+		}
+		if len(k.HandoffTo) == 0 && len(k.HandoffLabels) == 0 {
+			return errors.New("kanban.survey needs handoff_to or handoff_labels: a survey files what it finds as handoffs")
+		}
+	}
 	if k.MaxAttempts < 0 || k.MaxItems < 0 {
 		return errors.New("kanban.max_attempts and kanban.max_items must not be negative")
 	}
@@ -279,6 +350,9 @@ func (p AgentProfile) validateWorker() error {
 		}
 		if (w.Publish == PublishDraftPR || w.Publish == PublishAgent) && w.Isolation != IsolationWorktree {
 			return errors.New("workspace.publish needs isolation: worktree (a branch to publish)")
+		}
+		if w.ReadOnly && (w.Isolation != IsolationWorktree || w.Keep || (w.Publish != "" && w.Publish != PublishNone)) {
+			return errors.New("workspace.read_only needs isolation: worktree, and cannot keep the worktree or publish")
 		}
 		if strings.HasPrefix(strings.TrimSpace(w.Base), "-") {
 			return errors.New("workspace.base must be a commit or branch, not an option")

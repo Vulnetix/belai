@@ -11,6 +11,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
@@ -108,6 +109,7 @@ type Worker struct {
 	Reflect func(ctx context.Context, it kanban.Item, res run.Result) ([]string, error)
 
 	now      func() time.Time
+	surveyed bool // kanban.survey already considered this start
 	mu       sync.Mutex
 	failures map[string]int64 // items this worker failed, with their Updated at release; skipped until touched again
 }
@@ -267,6 +269,11 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 			lastPull = now
 		}
 		it, err := w.claim(project)
+		if errors.Is(err, kanban.ErrNoWork) {
+			if sv, ok := w.survey(project); ok {
+				it, err = sv, nil
+			}
+		}
 		switch {
 		case errors.Is(err, kanban.ErrNoWork):
 			if w.Once {
@@ -319,6 +326,59 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 			}
 		}
 	}
+}
+
+// survey files and claims this worker's own survey item (kanban.survey)
+// when the board has nothing for it: at most once per start, and once per
+// kanban.survey.every for this repository on this machine. The item is dated,
+// so hosts surveying the same repository on the same day share one.
+func (w *Worker) survey(project string) (kanban.Item, bool) {
+	k := w.Profile.Kanban
+	if k == nil || k.Survey == nil || w.surveyed || w.Once || w.Item != "" {
+		return kanban.Item{}, false
+	}
+	w.surveyed = true
+	stamp := w.surveyStamp()
+	if fi, err := os.Stat(stamp); err == nil && w.clock().Sub(fi.ModTime()) < k.Survey.EveryOr() {
+		w.logf("survey skipped: last one here was %s ago", w.clock().Sub(fi.ModTime()).Round(time.Minute))
+		return kanban.Item{}, false
+	}
+	prov := kanban.ProvenanceFor(w.Repo, w.Record.ID, headless.HostID())
+	name := prov.Project
+	if name == "" {
+		name = "this repository"
+	}
+	title := strings.ReplaceAll(k.Survey.Title, "{project}", name) + " (" + w.clock().Format("2006-01-02") + ")"
+	labels := append(slices.Clone(k.Labels), agentprofile.SurveyLabel)
+	it, _, err := w.Store.Add(kanban.ItemInput{Title: title, Body: k.Survey.Body, List: kanban.Backlog, Labels: labels}, prov)
+	if err != nil {
+		w.logf("survey: %v", err)
+		return kanban.Item{}, false
+	}
+	got, err := w.Store.ClaimID(it.ID, w.claimRequest(project))
+	if err != nil {
+		// Another worker holds today's survey, or it already finished.
+		w.logf("survey %s not claimed: %v", it.Short(), err)
+		return kanban.Item{}, false
+	}
+	if stamp != "" {
+		now := w.clock()
+		if os.MkdirAll(filepath.Dir(stamp), 0o700) == nil && os.WriteFile(stamp, nil, 0o600) == nil {
+			_ = os.Chtimes(stamp, now, now)
+		}
+	}
+	w.logf("surveying: nothing to claim, so filed %s", got.Short())
+	return got, true
+}
+
+// surveyStamp is the file whose mtime records this profile's last survey of
+// this repository, or "" without a registry.
+func (w *Worker) surveyStamp() string {
+	if w.Registry == nil {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(w.Profile.Name + "\x00" + w.Repo))
+	return filepath.Join(w.Registry.Dir(), "surveys", hex.EncodeToString(sum[:8]))
 }
 
 // QuietWindow is how long a worker waits with nothing to claim before it
@@ -468,6 +528,13 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	claim := &tools.WorkerClaim{Worker: w.Record.ID, Item: it.ID, Hops: it.Hops, Profile: p.Name}
 	if k := p.Kanban; k != nil {
 		claim.HandoffTo, claim.HandoffLabels = slices.Clone(k.HandoffTo), slices.Clone(k.HandoffLabels)
+		if slices.Contains(it.Labels, agentprofile.SurveyLabel) {
+			list := kanban.Review
+			if k.Survey != nil {
+				list = k.Survey.HandoffList()
+			}
+			claim.HandoffList = list
+		}
 	}
 	var tokens int
 	var tokMu sync.Mutex
@@ -508,7 +575,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	keep := p.Workspace != nil && p.Workspace.Keep
 	defer func() {
 		if !keep {
-			_ = ws.Remove(context.WithoutCancel(ctx))
+			_ = ws.Discard(context.WithoutCancel(ctx))
 		}
 	}()
 
@@ -533,7 +600,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	if w.stopped(ctx, itemCtx, it, ws) {
 		return
 	}
-	if ws.Worktree {
+	if ws.Worktree && !p.ReadOnlyWorkspace() {
 		msg := fmt.Sprintf("belai: %s %s\n\nAgent %s, kanban item %s, attempt %d.", it.Short(), it.Title, p.Name, it.Short(), it.Attempts+1)
 		if _, err := ws.Commit(context.WithoutCancel(ctx), msg); err != nil {
 			w.logf("%s: commit: %v", it.Short(), err)
@@ -904,7 +971,7 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 	in := agent.TurnInput{
 		Prompt: prompt, HarnessPrompt: prompt, ForceMode: modes.ModeGoal,
 		KanbanItem: t.Item.ID, NoGoalDraft: true,
-		Directive: workspaceDirective(t.Workspace, publish, w.Profile.PublishMode()),
+		Directive: w.directive(t.Workspace, publish),
 	}
 	if t.Memory != "" {
 		in.Attachments = []run.Attachment{{Kind: "memory", Label: "lessons of agent " + p.Name, Body: t.Memory}}
@@ -959,6 +1026,29 @@ var workerGitDeny = []string{
 	"Bash(*glab mr create*)", "Bash(*glab mr merge*)",
 	"Bash(*git switch*)", "Bash(*git checkout -b*)", "Bash(*git worktree*)",
 	"Bash(*git config*)", "Bash(*git remote*)",
+}
+
+// directive is the workspace note for this worker's profile.
+func (w *Worker) directive(ws *Workspace, publish bool) string {
+	if w.Profile.ReadOnlyWorkspace() {
+		return readOnlyDirective(ws)
+	}
+	return workspaceDirective(ws, publish, w.Profile.PublishMode())
+}
+
+// readOnlyDirective is the workspace note for workspace.read_only: a
+// throwaway checkout to run checks in, where nothing is committed or kept.
+func readOnlyDirective(ws *Workspace) string {
+	if ws == nil || !ws.Worktree {
+		return ""
+	}
+	base := ws.Base
+	if len(base) > 12 {
+		base = base[:12]
+	}
+	return fmt.Sprintf("Workspace: your working directory is a throwaway git worktree of commit %s, for reading the code and running the project's checks. "+
+		"Do not edit, create or commit files: nothing you leave here is committed, and the worktree is deleted when the item ends. "+
+		"Report what you find on the kanban board instead.", base)
 }
 
 // workspaceDirective tells the model where it is working and what git may do
