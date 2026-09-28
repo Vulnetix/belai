@@ -382,8 +382,23 @@ func (r *Registry) Spawn(o SpawnOptions) (string, error) {
 	cmd := exec.Command(o.Exe, args...)
 	cmd.Dir = o.Repo
 	cmd.Stdout, cmd.Stderr = logFile, logFile
-	if err := proc.Detach(cmd); err != nil {
+	pid, err := proc.DetachPID(cmd)
+	if err != nil {
 		return "", fmt.Errorf("start %s: %w", o.Profile, err)
+	}
+	// A starting record with the child's pid, so a worker that dies before
+	// it registers is swept to failed by List and still shows, with its
+	// log, in ps and on the website, instead of vanishing. The worker's own
+	// Reserve replaces it (same id, same pid); under the registry lock, and
+	// only while no record exists, so it never overwrites a worker that
+	// registered first.
+	_ = os.MkdirAll(r.dir, 0o700)
+	if release, err := config.AcquireFileLock(filepath.Join(r.dir, ".lock")); err == nil {
+		if _, err := r.Get(id); err != nil {
+			_ = r.Save(Record{ID: id, Profile: o.Profile, Crew: o.Crew, PID: pid, Repo: o.Repo,
+				State: StateStarting, Started: r.now().UnixMilli(), Log: logFile.Name(), Detached: true})
+		}
+		release()
 	}
 	return id, nil
 }

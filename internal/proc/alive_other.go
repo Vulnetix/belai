@@ -27,6 +27,9 @@ var ErrNoDetach = errors.New("detached agents are not supported on this platform
 // Detach is not supported on this platform.
 func Detach(cmd *exec.Cmd) error { return ErrNoDetach }
 
+// DetachPID is not supported on this platform.
+func DetachPID(cmd *exec.Cmd) (int, error) { return 0, ErrNoDetach }
+
 // Terminate stops pid.
 func Terminate(pid int) error {
 	p, err := os.FindProcess(pid)

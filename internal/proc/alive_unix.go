@@ -25,17 +25,28 @@ func Alive(pid int) bool {
 // /dev/null; stdout and stderr are whatever the caller set (a log file).
 // The child is released: the caller does not wait for it.
 func Detach(cmd *exec.Cmd) error {
+	_, err := DetachPID(cmd)
+	return err
+}
+
+// DetachPID is Detach that also returns the child's pid. The child is reaped
+// in the background rather than released: a long-lived parent (the TUI's
+// /fleet) would otherwise keep a crashed worker as a zombie, which Alive
+// reports as running, so its slot is never freed. A short-lived parent just
+// exits and the child is re-parented as before.
+func DetachPID(cmd *exec.Cmd) (int, error) {
 	devnull, err := os.Open(os.DevNull)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer devnull.Close()
 	cmd.Stdin = devnull
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
-		return err
+		return 0, err
 	}
-	return cmd.Process.Release()
+	go func() { _ = cmd.Wait() }()
+	return cmd.Process.Pid, nil
 }
 
 // Terminate asks pid's process group to stop (SIGTERM), falling back to the
