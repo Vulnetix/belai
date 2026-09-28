@@ -374,3 +374,42 @@ profile's `Name` is forced back to the requested name before save, so the LLM
 can design the fields but never rename the user's profile. On failure a valid
 stub is saved and the editor still opens, so the user is never dropped back to
 chat with nothing.
+
+## Drafting from a premise
+
+`internal/agentdraft` drafts a profile as **offers**: for each field, a value
+and a one-sentence reason, which the user takes, edits or drops. It backs
+the website's agent builder (a request a live host claims through session
+sync; see [session-sync.md](session-sync.md#web-agent-drafts)) and
+`belai agent draft`.
+
+- **What the model sees:** the cleaned premise and harness facts only: the
+  tool names `Validate` accepts, the host's worker profile names, and board
+  labels. It sees no file or item text. The call is a tool-less classifier
+  turn.
+- **What it may offer:** name, description, identity, system_prompt, mode,
+  autonomy, max_iterations, reflection, schedule, monitor_condition, effort,
+  tools, and a worker's kanban lists, labels, routes, handoffs, max attempts
+  and lease, workspace isolation and publish, pass and wall budgets, and
+  memory. It never offers `guardrails` or `ask_permission`; provider and model
+  are left to inherit.
+- **How a value is checked:** against the same rules as `Validate`. A name
+  must fit `[a-zA-Z0-9._-]` and must not be a `belai:` name. Enums must be
+  known values. Tools must be known (`KnownTool`), unknown ones are dropped.
+  Lists are claimable ones (`backlog`, `review`, and their aliases). Labels
+  are normalised (`kanban.NormLabels`). A lease runs from 1m to 2h. A schedule
+  is cron or a positive interval. Integers run from 0 to 1000. A value that
+  fails is dropped, never coerced.
+- **Retries:** a reply missing name, description, system_prompt or mode is
+  sent back once with the reason.
+- **Crew offers** are computed, not drafted. The drafter offers a copy of any
+  crew with a member that feeds the new worker, or is fed by it, with the new
+  worker added (named `<crew>-<agent>`, skipped when the crew already has
+  eight members), and a gap for each label it sends, or that is on the board,
+  which no worker claims. At most four, and none for a non-worker.
+- **`belai agent draft`** takes every offer and writes markdown that
+  `belai agent import` reads back unchanged (`agentprofile.MarshalMarkdown`
+  writes each value in JSON form, which YAML reads as flow style). When the
+  drafted profile would fail `Validate`, for example an autonomous worker
+  with no pass budget, it still writes the file and says what to fix. It
+  fails closed on an untrusted repository, like `belai agent run`.

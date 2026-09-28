@@ -33,14 +33,20 @@ type fakeServer struct {
 	beats    int
 	inbox    []RemotePrompt
 	answers  []RemoteAnswer
-	acks     map[string]string
-	gzipped  int // entry posts that arrived gzip-encoded
-	failPost int // fail this many entry posts with 500
+	drafts   []RemoteDraft
+	// results holds each posted draft result body, by draft id.
+	results map[string]map[string]any
+	// conflictDrafts answers a draft result with 409 (cancelled on the web).
+	conflictDrafts bool
+	acks           map[string]string
+	gzipped        int // entry posts that arrived gzip-encoded
+	failPost       int // fail this many entry posts with 500
 }
 
 func newFake() *fakeServer {
 	return &fakeServer{hosts: map[string]Host{}, sessions: map[string]SessionMeta{},
-		entries: map[string]map[int64]Entry{}, ended: map[string]bool{}, acks: map[string]string{}}
+		entries: map[string]map[int64]Entry{}, ended: map[string]bool{}, acks: map[string]string{},
+		results: map[string]map[string]any{}}
 }
 
 func (f *fakeServer) lastSeq(id string) int64 {
@@ -67,9 +73,9 @@ func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.hosts[parts[1]] = h
 		writeJSON(map[string]bool{"ok": true})
 	case r.Method == http.MethodGet && parts[0] == "hosts" && parts[2] == "inbox":
-		out, ans := f.inbox, f.answers
-		f.inbox, f.answers = nil, nil
-		writeJSON(map[string]any{"prompts": out, "answers": ans})
+		out, ans, drafts := f.inbox, f.answers, f.drafts
+		f.inbox, f.answers, f.drafts = nil, nil, nil
+		writeJSON(map[string]any{"prompts": out, "answers": ans, "drafts": drafts})
 	case r.Method == http.MethodPut && parts[0] == "sessions":
 		var m SessionMeta
 		_ = json.NewDecoder(r.Body).Decode(&m)
@@ -108,6 +114,15 @@ func (f *fakeServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(map[string]bool{"ok": true})
 	case r.Method == http.MethodPost && len(parts) == 3 && parts[2] == "end":
 		f.ended[parts[1]] = true
+		writeJSON(map[string]bool{"ok": true})
+	case r.Method == http.MethodPost && parts[0] == "agent-drafts":
+		if f.conflictDrafts {
+			http.Error(w, `{"error":"cancelled"}`, http.StatusConflict)
+			return
+		}
+		var in map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		f.results[parts[1]] = in
 		writeJSON(map[string]bool{"ok": true})
 	case r.Method == http.MethodPost && parts[0] == "answers":
 		var in struct{ Status string }

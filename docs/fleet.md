@@ -127,6 +127,7 @@ Your own crews live in `~/.vulnetix/belai/profiles/crews/<name>.json`:
 | `belai agent show NAME` | one profile as JSON |
 | `belai agent validate FILE` | validate a `.json` or `.md` profile |
 | `belai agent import [-force] FILE` | validate and save a profile |
+| `belai agent draft [-json] [-o FILE] PREMISE` | draft a profile from a premise (every offer taken) as markdown for `import`; `-json` prints each offer with its reason |
 | `belai agent crews` | crews and their members |
 | `belai agent memory NAME [-clear]` | a worker's lessons |
 | `belai agent status` | running workers and this project's board |

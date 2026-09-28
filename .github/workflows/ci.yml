@@ -72,8 +72,13 @@ jobs:
       - name: Prepare models
         run: go run ./tools/modelprep -python python -phase1 -phase2
 
+      # No -race here. The golden tests run real model inference, and the race
+      # detector's shadow memory multiplies the model's footprint: phase 2
+      # peaks at ~10.4 GB under -race (2.9 GB without) and was killed on the
+      # 8 GB runners. The package's own code is still race-tested by the
+      # `test` job's `go test -race ./...`.
       - name: Golden tests (phase 1)
-        run: go test -race -tags belai_bert ./internal/mlclassify/...
+        run: go test -tags belai_bert ./internal/mlclassify/...
 
       - name: Golden tests (phase 2)
-        run: go test -race -tags belai_bert_jailbreak ./internal/mlclassify/...
+        run: go test -tags belai_bert_jailbreak ./internal/mlclassify/...

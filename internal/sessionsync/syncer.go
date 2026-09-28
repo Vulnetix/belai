@@ -94,6 +94,7 @@ type Syncer struct {
 	stopped  chan struct{}
 	prompts  chan RemotePrompt
 	answers  chan RemoteAnswer
+	drafts   chan RemoteDraft
 
 	cancel    context.CancelFunc
 	closeOnce sync.Once
@@ -124,6 +125,7 @@ func New(opts Options) *Syncer {
 		stopped:  make(chan struct{}),
 		prompts:  make(chan RemotePrompt, 16),
 		answers:  make(chan RemoteAnswer, 16),
+		drafts:   make(chan RemoteDraft, 4),
 	}
 }
 
@@ -200,6 +202,22 @@ func (s *Syncer) AckAnswer(answerID, status, reason, entryID string) {
 		defer cancel()
 		if err := s.sendAck(ctx, a); err != nil {
 			s.setErr(fmt.Errorf("ack: %w", err))
+		}
+	}()
+}
+
+// Drafts delivers agent-draft requests claimed from the inbox.
+func (s *Syncer) Drafts() <-chan RemoteDraft { return s.drafts }
+
+// DraftResult posts an agent draft's outcome in the background: done with the
+// result, or refused with a reason. The server refuses a result for a draft
+// the user cancelled or that expired; that refusal is not an error here.
+func (s *Syncer) DraftResult(draftID, status, reason string, result any) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+		defer cancel()
+		if err := s.opts.Client.DraftResult(ctx, draftID, status, reason, result); err != nil && !IsConflict(err) {
+			s.setErr(fmt.Errorf("draft result: %w", err))
 		}
 	}()
 }
@@ -672,7 +690,7 @@ func (s *Syncer) inbox(ctx context.Context) {
 			}
 			continue
 		}
-		prompts, answers, err := s.opts.Client.Inbox(ctx, s.opts.HostID, live, s.opts.InboxWait)
+		prompts, answers, drafts, err := s.opts.Client.Inbox(ctx, s.opts.HostID, live, s.opts.InboxWait)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
@@ -699,6 +717,18 @@ func (s *Syncer) inbox(ctx context.Context) {
 		for _, p := range prompts {
 			select {
 			case s.prompts <- p:
+			case <-ctx.Done():
+				return
+			}
+		}
+		// Agent drafts ride the web-prompt switch: a premise is web-typed text.
+		for _, d := range drafts {
+			if !s.opts.RemotePrompts {
+				s.DraftResult(d.ID, DraftRefused, "this host does not take prompts from the web", nil)
+				continue
+			}
+			select {
+			case s.drafts <- d:
 			case <-ctx.Done():
 				return
 			}

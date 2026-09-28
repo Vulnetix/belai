@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -111,4 +112,51 @@ func ParseFile(name string, data []byte) (AgentProfile, error) {
 		return AgentProfile{}, err
 	}
 	return p, p.Validate()
+}
+
+// markdownKeyOrder is the front-matter order MarshalMarkdown writes; any key
+// not listed follows in sorted order.
+var markdownKeyOrder = []string{
+	"name", "description", "identity", "tools", "mode", "schedule", "monitor_condition", "reflection",
+	"max_iterations", "autonomy", "provider", "model", "effort", "guardrails", "ask_permission",
+	"kanban", "workspace", "budget", "memory",
+}
+
+// MarshalMarkdown writes p as a markdown agent definition: the JSON keys as
+// front-matter and the system prompt as the body. Every value is written in
+// JSON form, which YAML reads as flow style, so ParseMarkdown reads the
+// result back to the same profile and no string needs YAML quoting rules.
+func MarshalMarkdown(p AgentProfile) ([]byte, error) {
+	raw, err := json.Marshal(p)
+	if err != nil {
+		return nil, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	delete(fields, "system_prompt")
+	var b bytes.Buffer
+	b.WriteString("---\n")
+	write := func(k string) {
+		if v, ok := fields[k]; ok {
+			fmt.Fprintf(&b, "%s: %s\n", k, v)
+			delete(fields, k)
+		}
+	}
+	for _, k := range markdownKeyOrder {
+		write(k)
+	}
+	rest := make([]string, 0, len(fields))
+	for k := range fields {
+		rest = append(rest, k)
+	}
+	sort.Strings(rest)
+	for _, k := range rest {
+		write(k)
+	}
+	b.WriteString("---\n")
+	b.WriteString(strings.TrimSpace(p.SystemPrompt))
+	b.WriteString("\n")
+	return b.Bytes(), nil
 }

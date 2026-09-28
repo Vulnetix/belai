@@ -2140,6 +2140,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, tea.Batch(a.handleRemotePrompt(sessionsync.RemotePrompt(m)), a.watchRemotePrompts())
 	case remoteAnswerMsg:
 		return a, tea.Batch(a.handleRemoteAnswer(sessionsync.RemoteAnswer(m)), a.watchRemoteAnswers())
+	case remoteDraftMsg:
+		return a, tea.Batch(a.handleRemoteDraft(sessionsync.RemoteDraft(m)), a.watchRemoteDrafts())
+	case remoteDraftDoneMsg:
+		a.remoteDraftDone(m)
+		return a, nil
 
 	case syncBackfillDoneMsg:
 		if m.err != nil {
