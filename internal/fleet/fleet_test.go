@@ -337,11 +337,12 @@ func TestPreflightFailsClosed(t *testing.T) {
 	if err := Preflight(bash, config.Settings{}, posture.AllIgnore()); err == nil {
 		t.Fatal("an autonomous Bash worker started with the sandbox off")
 	}
-	// A models-kind classifier with no phase model in this build fails every
-	// turn, so the worker refuses to start rather than burn its items.
+	// A models-kind classifier with no phase model in this build falls back
+	// to the LLM sentinel, as the TUI does, so the worker starts.
 	if !mlclassify.Embedded() {
-		if err := Preflight(p, config.Settings{Classifier: &config.ClassifierSettings{Kind: "models"}}, posture.Defaults()); err == nil || !strings.Contains(err.Error(), "no phase model") {
-			t.Fatalf("an unrunnable classifier passed preflight: %v", err)
+		s := config.Settings{Classifier: &config.ClassifierSettings{Kind: "models"}}
+		if err := Preflight(p, s, posture.Defaults()); err != nil {
+			t.Fatalf("a models-kind classifier with no phase model refused the worker: %v", err)
 		}
 	}
 	single := builderProfile()

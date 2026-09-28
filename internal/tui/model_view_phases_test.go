@@ -63,22 +63,23 @@ func TestModelRowsPhasesForModelsVanilla(t *testing.T) {
 	if !ok {
 		t.Fatal("phase2 row missing for models kind")
 	}
-	if !strings.Contains(p2.value, "deferred to phase 3") || !p2.disabled {
-		t.Fatalf("phase2 row = %+v, want locked 'deferred to phase 3' status", p2)
+	if !strings.Contains(p2.value, "deferred to the LLM sentinel") || !p2.disabled {
+		t.Fatalf("phase2 row = %+v, want locked 'deferred to the LLM sentinel' status", p2)
 	}
 
 	p3, ok := rowByKey(a.modelRows(), "phase3")
 	if !ok {
 		t.Fatal("phase3 row missing for models kind")
 	}
-	if !p3.disabled || !strings.Contains(p3.value, "injection + jailbreak + extraction · main: ") {
-		t.Fatalf("phase3 row = %+v, want locked phase 3 inheriting the main model", p3)
+	if !p3.disabled || !strings.Contains(p3.value, "every category (LLM sentinel) · main: ") {
+		t.Fatalf("phase3 row = %+v, want the LLM sentinel on the main model", p3)
 	}
 
-	// A half-set pair is a misconfiguration: phase 3 is off and says how to fix it.
+	// A half-set pair would leave phase 3 off, but with no phase model the
+	// LLM sentinel classifies anyway, so the row says so.
 	a.settings.Classifier = &config.ClassifierSettings{Kind: "models", Model: "gpt-5"}
-	if p3 := a.classifierPhase3Row(); !strings.Contains(p3.value, "off: set both classifier provider and model") {
-		t.Fatalf("half-set phase3 row = %+v, want the off hint", p3)
+	if p3 := a.classifierPhase3Row(); !strings.Contains(p3.value, "every category (LLM sentinel)") {
+		t.Fatalf("half-set phase3 row = %+v, want the LLM sentinel", p3)
 	}
 }
 
@@ -107,7 +108,10 @@ func TestModelPhase3RowOn(t *testing.T) {
 	// Phase 3 takes jailbreak too only when no local jailbreak gate runs; the
 	// jailbreak variant embeds one.
 	scope := "injection + extraction"
-	if a.resolvedSecurityClassifier().Phase2Deferred {
+	switch sc := a.resolvedSecurityClassifier(); {
+	case sc.Fallback != "":
+		scope = "every category (LLM sentinel)"
+	case sc.Phase2Deferred:
 		scope = "injection + jailbreak + extraction"
 	}
 	if !row.disabled || !strings.Contains(row.value, scope+" · openai/gpt-5") {
@@ -306,8 +310,8 @@ func TestModelRowsPhasesNoClassifier(t *testing.T) {
 	if !ok {
 		t.Fatal("phase2 row missing")
 	}
-	if !strings.Contains(p2.value, "deferred to phase 3") || !p2.disabled {
-		t.Fatalf("phase2 row = %+v, want locked 'deferred to phase 3'", p2)
+	if !strings.Contains(p2.value, "deferred to the LLM sentinel") || !p2.disabled {
+		t.Fatalf("phase2 row = %+v, want locked 'deferred to the LLM sentinel'", p2)
 	}
 }
 

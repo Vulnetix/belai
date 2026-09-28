@@ -120,7 +120,15 @@ type SecurityClassifierConfig struct {
 	// classifier provider and model are both unset (it inherits the main
 	// model), or both set to a model that provider can serve.
 	Phase3On bool
+	// Fallback is set when classifier.kind "models" resolved no phase model
+	// in this build, so the full LLM sentinel (Kind "llm") classifies
+	// instead. It is harness text for a startup notice, never model input.
+	Fallback string
 }
+
+// SecurityFallbackNote is the notice every entry point shows when
+// classifier.kind "models" falls back to the LLM sentinel.
+const SecurityFallbackNote = `classifier.kind "models" has no phase model in this build, so the LLM sentinel classifies instead (build with just build-bert for the local gates, or set classifier.kind to "llm" to silence this)`
 
 // ChunkConfig bounds the chunked classify-all path for oversized payloads.
 type ChunkConfig struct {
@@ -369,6 +377,15 @@ func ResolveSecurityClassifier(cls *config.ClassifierSettings) SecurityClassifie
 	// ships no tokenizer files), so defaulting to it 400'd every prompt.
 	sc.Phase1 = resolveSecurityPhase(cls, 1)
 	sc.Phase2 = resolveSecurityPhase(cls, 2)
+	// With no phase model at all the models stack cannot be built, and every
+	// classified call would fail: in the TUI and in every agent process
+	// alike, whichever binary shares these settings. The full LLM sentinel
+	// takes over instead. It covers every threat category the models stack
+	// does (phase 3 alone is a narrowed sentinel), so this is not a relaxed
+	// posture, and Fallback says so wherever the session starts.
+	if sc.Phase1 == nil && sc.Phase2 == nil {
+		return SecurityClassifierConfig{Kind: "llm", Fallback: SecurityFallbackNote}
+	}
 	// Phase 2 is deferred to phase 3 when no local jailbreak gate can run:
 	// this build variant embeds no jailbreak model and no remote model was
 	// configured. On the jailbreak variant the gate is embedded but opt-in, so
@@ -1696,20 +1713,6 @@ func buildSecurityClassifier(sc SecurityClassifierConfig, phase3 rolemanager.Cla
 		HFToken:        envHFToken,
 	}
 	return mlclassify.New(opts)
-}
-
-// RequireSecurityClassifier returns the error every classified call fails
-// with when a models-kind config resolves no phase model in this build, and
-// nil otherwise. PreloadClassifier lets that pass, because a session with
-// guardrails off never calls the classifier. A session that always runs with
-// guardrails on (a fleet worker) checks it at startup, so the error stops the
-// worker instead of failing every item it claims.
-func RequireSecurityClassifier(sc SecurityClassifierConfig) error {
-	if sc.Kind != "models" || sc.Phase1 != nil || sc.Phase2 != nil {
-		return nil
-	}
-	_, err := buildSecurityClassifier(sc, nil, "")
-	return err
 }
 
 // PreloadClassifier eagerly builds the local ML classifier stack so a variant

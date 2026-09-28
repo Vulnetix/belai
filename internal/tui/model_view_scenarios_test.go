@@ -54,8 +54,8 @@ func TestModelViewScenarioNoClassifier(t *testing.T) {
 		if !strings.Contains(p2.value, "disabled") {
 			t.Fatalf("phase2 row = %q, want disabled (embedded gate available but off)", p2.value)
 		}
-	} else if !strings.Contains(p2.value, "deferred to phase 3") {
-		t.Fatalf("phase2 row = %q, want deferred to phase 3", p2.value)
+	} else if want := map[bool]string{true: "deferred to phase 3", false: "deferred to the LLM sentinel"}[mlclassify.Embedded()]; !strings.Contains(p2.value, want) {
+		t.Fatalf("phase2 row = %q, want %q", p2.value, want)
 	}
 }
 
@@ -118,8 +118,12 @@ func TestModelViewScenarioRemoteOpenRouterJev(t *testing.T) {
 	}
 	// On a variant without an embedded jailbreak gate the phase-3 sentinel
 	// broadens to JAILBREAK.
+	// With no phase model at all the full LLM sentinel covers everything.
 	wantScope := "injection + extraction"
-	if !variantHasEmbeddedPhase2() {
+	switch {
+	case !mlclassify.Embedded():
+		wantScope = "every category (LLM sentinel)"
+	case !variantHasEmbeddedPhase2():
 		wantScope = "injection + jailbreak + extraction"
 	}
 	if !strings.Contains(p3.value, wantScope) {

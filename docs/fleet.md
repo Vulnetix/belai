@@ -106,10 +106,10 @@ that step yourself, and move the item back. An `autonomous` worker resolves
 asks to allow; it must use a worktree, and a worker that has `Bash` must have
 a working [OS sandbox](sandbox.md) backend, or it refuses to start.
 
-Any worker also refuses to start when its security classifier cannot run in
-this build. For example, `classifier.kind: "models"` in a binary built without
-embedded models fails every turn. Refusing at startup means the error is not
-charged to each item it claims.
+A worker classifies exactly as the TUI does with the same settings. With
+`classifier.kind: "models"` in a binary built without embedded models (and no
+explicit phase model), both use the full LLM sentinel instead and say so once
+on startup, so one settings file serves every build variant.
 
 ### Transcripts
 

@@ -175,7 +175,7 @@ func (a *App) modelSummary(labelW, valW int) string {
 	work := a.providerDisplayLabel(a.cfg.Provider) + " · " + a.cfg.Model
 	guard := run.GuardConfig(a.cfg)
 	guardLabel := a.providerDisplayLabel(guard.Provider) + " · " + guard.Model
-	if a.classifierKind() == "models" {
+	if a.resolvedSecurityClassifier().Kind == "models" {
 		if a.resolvedSecurityClassifier().Phase3On {
 			guardLabel = "local gates + " + guardLabel
 		} else {

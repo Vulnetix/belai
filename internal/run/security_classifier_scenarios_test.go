@@ -22,6 +22,12 @@ func phase2EmbeddedAvailable() bool {
 func TestResolveSecurityClassifierScenarioNoClassifier(t *testing.T) {
 	t.Setenv("HF_TOKEN", "")
 	t.Setenv("HUGGINGFACE_TOKEN", "")
+	if !mlclassify.Embedded() {
+		if sc := ResolveSecurityClassifier(&config.ClassifierSettings{Kind: "models"}); sc.Kind != "llm" || sc.Fallback == "" {
+			t.Fatalf("no-classifier models config = %+v, want the LLM fallback", sc)
+		}
+		return
+	}
 	sc := ResolveSecurityClassifier(&config.ClassifierSettings{Kind: "models"})
 	if sc.Kind != "models" {
 		t.Fatalf("Kind = %q, want models", sc.Kind)
@@ -90,7 +96,7 @@ func TestResolveSecurityClassifierScenarioRemoteOpenRouterJev(t *testing.T) {
 		Provider: "openrouter",
 		Model:    "typesafe/jev-1",
 	}
-	sc := ResolveSecurityClassifier(cls)
+	sc := ResolveSecurityClassifier(withPhase1(cls))
 	if !sc.Phase3On {
 		t.Fatal("phase 3 must be on when provider and model are both set")
 	}
@@ -127,6 +133,12 @@ func TestResolveSecurityClassifierExplicitDisabledNotDeferred(t *testing.T) {
 func TestResolveSecurityClassifierScenarioNoClassifierHF(t *testing.T) {
 	t.Setenv("HF_TOKEN", "hf-x")
 	t.Setenv("HUGGINGFACE_TOKEN", "")
+	if !mlclassify.Embedded() {
+		if sc := ResolveSecurityClassifier(&config.ClassifierSettings{Kind: "models"}); sc.Kind != "llm" || sc.Fallback == "" {
+			t.Fatalf("no-classifier models config = %+v, want the LLM fallback", sc)
+		}
+		return
+	}
 	sc := ResolveSecurityClassifier(&config.ClassifierSettings{Kind: "models"})
 	if mlclassify.Embedded() {
 		t.Skip("embedded build already has phase 1")
@@ -143,4 +155,14 @@ func TestResolveSecurityClassifierScenarioNoClassifierHF(t *testing.T) {
 	if explicit.Phase1 == nil || explicit.Phase1.Source != mlclassify.SourceHuggingFace {
 		t.Fatalf("explicit phase1 = %+v, want remote huggingface gate", explicit.Phase1)
 	}
+}
+
+// withPhase1 names a remote phase-1 model on a build that embeds none, so a
+// test of the models path resolves one there too instead of the LLM
+// fallback (TestModelsKindNoPhaseModelFallsBackToLLMSentinel covers that).
+func withPhase1(cls *config.ClassifierSettings) *config.ClassifierSettings {
+	if !mlclassify.Embedded() {
+		cls.Phase1 = config.ClassifierPhaseSettings{Model: "some/model", Source: "huggingface"}
+	}
+	return cls
 }

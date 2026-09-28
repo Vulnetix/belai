@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -452,11 +453,18 @@ func withClassifier(cfg run.Config, settings config.Settings, resolver *credenti
 	}
 	cfg.Classifier = cc
 	cfg.Security = run.ResolveSecurityClassifier(settings.Classifier)
+	if n := cfg.Security.Fallback; n != "" {
+		securityFallbackOnce.Do(func() { fmt.Fprintln(os.Stderr, "belai: "+n) })
+	}
 	if rc, err := run.ResolveRouting(cfg, settings.Routing, src); err == nil {
 		cfg.Routing = rc
 	}
 	return cfg, nil
 }
+
+// securityFallbackOnce keeps the fallback notice to one line per process,
+// however many sessions (ACP, a worker's items) resolve the classifier.
+var securityFallbackOnce sync.Once
 
 func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, detectMode, verbose bool, workdir string, pol posture.Policy, enableTools, planMode bool, forceMode modes.Mode, settings config.Settings) error {
 	resolver, err := newResolver(workdir)
