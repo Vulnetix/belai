@@ -1889,6 +1889,27 @@ func TestPrepareFirewallReplacesProviderKey(t *testing.T) {
 	}
 }
 
+// A BYOK firewall holds the provider key, so a provider with no local key is
+// configured through it. Headless and worker sessions fail closed on
+// !Configured, so this must hold without a local key.
+func TestPrepareBYOKFirewallConfiguresWithoutProviderKey(t *testing.T) {
+	src := &fakeFirewallSource{
+		values:   map[string]string{},
+		firewall: true,
+		gateway:  "https://guardrails.vulnetix.com",
+		org:      "org-1",
+		apiKey:   "vulnetix-key",
+		routable: map[string]bool{"anthropic": true},
+	}
+	cfg, status := Prepare("", "anthropic", src)
+	if !status.Configured || len(status.Missing) != 0 {
+		t.Fatalf("status = %+v", status)
+	}
+	if cfg.APIKey != "vulnetix-key" || cfg.Firewall == nil {
+		t.Fatalf("cfg not routed through the firewall: base %q", cfg.BaseURL)
+	}
+}
+
 func TestPrepareBELAI_BASE_URLStillWins(t *testing.T) {
 	t.Setenv("BELAI_BASE_URL", "http://localhost:9999/v1")
 	src := &fakeFirewallSource{
