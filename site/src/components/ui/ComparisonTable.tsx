@@ -69,6 +69,8 @@ const ROWS: Row[] = [
   row('tools & context', 'harness-computed repo map with no file contents', 'yes', 'unknown', 'unknown', 'unknown', 'unknown'),
   row('tools & context', "path-free search across other agents' sessions and memory", 'yes', 'no', 'no', 'no', 'no'),
   row('tools & context', 'prompt library as files', 'yes', 'no', 'no', 'no', 'no'),
+  row('tools & context', 'oversized tool output offloaded as head and tail, read back through the classifier', 'yes', 'unknown', 'unknown', 'unknown', 'unknown'),
+  row('tools & context', 'WebFetch answered by a model with no tools, then classified', 'yes', 'unknown', 'unknown', 'unknown', 'unknown'),
 
   // integrations
   row('integrations', 'local providers in the box (ollama, llama-server)', 'yes', 'no', 'yes', 'no', 'no'),

@@ -30,6 +30,10 @@ package tools
 //   - KindSubagent is the result of the Task tool, a report written by a
 //     read-only subagent. Because the report is model-written arbitrary text,
 //     it classifies before promotion.
+//   - KindOffload is a ReadResult slice of a result the harness offloaded.
+//     The whole result was admitted before it was stored, but a slice is the
+//     same arbitrary bytes read back, so it classifies again rather than
+//     trading on the earlier verdict.
 //
 // Every other kind is both shaped and controlled: Grep returns matching lines
 // for a pattern the harness passed as one argument, Glob returns paths, Write
@@ -54,6 +58,7 @@ var classifierKinds = map[Kind]bool{
 	KindSkill:      true,
 	KindMCP:        true,
 	KindKanban:     true,
+	KindOffload:    true,
 }
 
 // NeedsClassifier reports whether a result of this kind must go through the

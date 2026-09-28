@@ -341,7 +341,7 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 	}
 	stopTelemetry := startTelemetry(settings, repo)
 	defer stopTelemetry()
-	defer recordUsage(workerID, settings)()
+	defer recordUsage(workerID, settings, nil)()
 
 	logw := stdout
 	w := &fleet.Worker{

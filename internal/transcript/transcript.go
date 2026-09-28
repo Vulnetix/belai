@@ -10,6 +10,11 @@ type Usage struct {
 	PromptTokens     int
 	CompletionTokens int
 	TotalTokens      int
+	// CacheReadTokens and CacheWriteTokens are the parts of PromptTokens the
+	// provider served from, or wrote to, its prompt cache. Zero when the
+	// provider does not report them.
+	CacheReadTokens  int
+	CacheWriteTokens int
 }
 
 // Total returns TotalTokens, falling back to Prompt+Completion when the

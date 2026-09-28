@@ -92,10 +92,10 @@ func TestDeferredToolLoadsOnDemand(t *testing.T) {
 		t.Fatalf("run: %+v %v", res, err)
 	}
 	first, second := strings.Join((*seen)[0], ","), strings.Join((*seen)[1], ",")
-	if first != "Read,ToolSearch" {
+	if first != "Read,ReadResult,ToolSearch" {
 		t.Fatalf("first request advertised %s, want the core tools and ToolSearch", first)
 	}
-	if second != "Read,ToolSearch,Frob" {
+	if second != "Read,ReadResult,ToolSearch,Frob" {
 		t.Fatalf("after ToolSearch the request advertised %s", second)
 	}
 	if calls != 1 {
@@ -124,7 +124,7 @@ func TestDeferToolsOffAdvertisesEverything(t *testing.T) {
 	if _, err := sess.RunInput(context.Background(), TurnInput{Prompt: "frob it", ForceMode: "agent"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join((*seen)[0], ","); got != "Read,Frob" {
+	if got := strings.Join((*seen)[0], ","); got != "Read,Frob,ReadResult" {
 		t.Fatalf("defer_tools=false advertised %s", got)
 	}
 }

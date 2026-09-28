@@ -76,6 +76,10 @@ const (
 	// request link the harness opened or found. It is mutating (it pushes to a
 	// remote) and sanitise-only.
 	KindPublish Kind = "publish"
+	// KindOffload is a ReadResult slice: part of a tool result the harness
+	// offloaded (internal/offload). The bytes are the same arbitrary content
+	// the original result carried, so it is read-only and always classifies.
+	KindOffload Kind = "offload"
 )
 
 // AllKinds is every registered Kind, in declaration order. Tests iterate it to
@@ -86,6 +90,7 @@ var AllKinds = []Kind{
 	KindExplore, KindWrite, KindEdit, KindNative, KindRemote, KindUpdatePlan,
 	KindProcess, KindProcessCtl, KindAgentStore, KindSubagent, KindHook, KindSkill,
 	KindSkillWrite, KindMCP, KindKanban, KindKanbanWrite, KindToolSearch, KindPublish,
+	KindOffload,
 }
 
 // readOnlyKinds is the closed allowlist of kinds that only read. A Kind absent
@@ -109,6 +114,7 @@ var readOnlyKinds = map[Kind]bool{
 	KindKanban:      true,
 	KindKanbanWrite: true,
 	KindToolSearch:  true,
+	KindOffload:     true,
 }
 
 // ReadOnly reports whether a tool of this kind only reads and never mutates

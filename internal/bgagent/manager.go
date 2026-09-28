@@ -101,8 +101,8 @@ type Manager struct {
 	// ceiling. nil means no shared ceiling.
 	pool *agentpool.Pool
 	// kanban is the global board background agents search and note on; nil
-	// leaves the kanban tools off. A definition's tools allowlist still
-	// narrows them.
+	// leaves the kanban tools off. A definition's tools allowlist does not
+	// narrow them: every definition may hand work on through the board.
 	kanban    *kanban.Store
 	kanbanSrc *kanban.Source
 	// src resolves credentials when an agent profile overrides the main
@@ -615,12 +615,11 @@ func (m *Manager) buildSession(inst *AgentInstance) (*agent.Session, error) {
 	caps := tools.DetectDefault()
 	ix := repoindex.Scan(context.Background(), workdir)
 	reg := tools.DefaultWithCaps(workdir, m.settings.ReadOnlyEnabled(), caps, ix)
+	// The board is how agents hand work to one another, so its tools come
+	// after the allowlist and every definition keeps them.
 	m.mu.Lock()
-	reg = reg.WithKanban(m.kanban, m.kanbanSrc)
+	reg = reg.NarrowWithKanban(profile.Tools, m.kanban, m.kanbanSrc)
 	m.mu.Unlock()
-	if len(profile.Tools) > 0 {
-		reg = reg.Only(profile.Tools...)
-	}
 	perms := permissions.From(m.settings.Permissions.Allow, m.settings.Permissions.Ask, m.settings.Permissions.Deny)
 	var promptOpts prompt.Options
 	if m.settings.Caveman != nil && *m.settings.Caveman {

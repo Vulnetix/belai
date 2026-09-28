@@ -45,6 +45,7 @@ const (
 	EventLSPServerDown             Event = "lsp_server_down"
 	EventRouteFallback             Event = "route_fallback"
 	EventDepChange                 Event = "dep_change"
+	EventWebFetchAnswer            Event = "web_fetch_answer"
 )
 
 // Level is the display granularity of the internal-work feed. Order matters:
@@ -260,6 +261,8 @@ func Describe(a Activity) (Description, bool) {
 		return lspDetectDescription(a), true
 	case EventLSPServerDown:
 		return lspServerDownDescription(a), true
+	case EventWebFetchAnswer:
+		return webFetchAnswerDescription(a), true
 	case EventDepChange:
 		return depChangeDescription(a), true
 	case EventRouteFallback:
@@ -437,6 +440,20 @@ func depChangeDescription(a Activity) Description {
 	}
 	if strings.HasPrefix(a.Detail, "malformed") {
 		d.Outcome = "reply was unusable, checking anyway"
+	}
+	return d
+}
+
+func webFetchAnswerDescription(a Activity) Description {
+	d := Description{
+		Summary: "Answered a question about a fetched page",
+		Outcome: "answer passed on for checking",
+		Tone:    ToneNeutral,
+		Levels:  LevelDecisions,
+	}
+	if a.Verdict != "answered" {
+		d.Outcome = "no usable answer, passing the page on instead"
+		d.Tone = ToneCaution
 	}
 	return d
 }

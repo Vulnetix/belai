@@ -33,7 +33,9 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   items other sessions' models and web users wrote), `Task` subagent reports (`KindSubagent`, model-written arbitrary text), the `Vulnetix` tool (`KindRemote`,
   database advisory text and repository snippets), the dependency hook's Vulnetix CLI
   output (`KindRemote`) and its background agents' reports (`KindProcess`,
-  `internal/tui/depwatch.go`), the recovery subagent's
+  `internal/tui/depwatch.go`), `ReadResult` slices of offloaded results
+  (`KindOffload`), a `WebFetch` answer drawn from a page (still
+  `KindWebFetch`), the recovery subagent's
   process-tail briefing and the plan/goal context prefetch
   (`agent/prefetch.go`: instruction and changed files, read through the
   session's own `Read` and gated exactly like its result) all classify,
@@ -303,8 +305,10 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   no path. Provenance (session, host, project, directory) is stamped by the
   harness from `kanban.Source` and never taken from arguments. Explore, Task
   and fan-out subagents get `KanbanSearch` only, so repository text they read
-  cannot persist into the board. A tools allowlist still narrows the kanban
-  tools like any other. `KanbanMove` and `KanbanAdd` exist only on their
+  cannot persist into the board. A main session's kanban tools are added
+  after any tools allowlist (an engaged definition, a background agent, a
+  headless profile), because the board is how agents hand work to one
+  another. `KanbanMove` and `KanbanAdd` exist only on their
   phase's surface (the working loop, the post-report wrap-up), and plan mode
   never moves items. Every write, local or pulled, is cleaned (delimiter
   markup, ANSI, control and bidi runes) and capped. A board file failing its
@@ -386,6 +390,26 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   only load tools on the current mode's surface, so plan mode cannot load a
   writer. Deferred tools stay registered and permission-checked, and they run
   when called by name.
+- **Offload stores admitted content only, and reads it back through the
+  classifier.** `internal/offload` replaces an oversized result of an
+  arbitrary-size kind (`Bash`, `WebFetch`, `WebSearch`, `KindRemote`, MCP,
+  `KindProcess`, `KindSubagent`) with a head-and-tail preview and a
+  reference, in `Session.promoteResult`, only after the result was sanitised
+  and admitted; a withheld result is never stored. `Read` is never offloaded.
+  The store is per session and in memory only, so no untrusted bytes land in
+  the state directory. `ReadResult` is path-free: it takes a reference that
+  resolves only in its session's store, and its slices are `KindOffload`, in
+  `tools.classifierKinds` unconditionally. The preview is written into the
+  turn once, so the cached prefix stays byte-identical. `offload` changes how
+  much admitted content rides on a request, never what is admitted, so any
+  settings layer may set it.
+- **A WebFetch answer is drawn by a tool-less role and still classifies.** A
+  `WebFetch` call with a `prompt` sends the sanitised page (capped) and the
+  prompt to the fast-tier `web_fetch` role, which carries no tools, skills or
+  agent block. Its answer replaces the page as the `KindWebFetch` result and
+  goes through the classifier like the page would; the page never reaches the
+  conversation. Any role failure falls back to the page itself. Guardrails off
+  skips only the classification, never the role or sanitising.
 - **Telemetry carries facts, never content.** `internal/otel` exports only
   attribute keys on its fixed allowlist, and reduces every string value to
   identifier characters, capped. Never add a key that can hold a prompt,

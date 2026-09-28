@@ -524,6 +524,7 @@ var fastUseCases = map[string]bool{
 	rolemanager.UseCaseGoalContract: true,
 	rolemanager.UseCaseClarify:      true,
 	rolemanager.UseCaseDepChange:    true,
+	rolemanager.UseCaseWebFetch:     true,
 }
 
 // IsFastUseCase reports whether a use case defaults to the fast tier.
@@ -1384,6 +1385,11 @@ func classifierFromConfig(c Config, client *http.Client, onRetry func(resilience
 		// Noted before the call, so a timeout or a provider error still names
 		// the model that was asked rather than the agent model.
 		rolemanager.NoteServedModel(ctx, c.Provider+"/"+c.Model)
+		role := p.UseCase
+		if role == "" {
+			role = RoleSecurity
+		}
+		ctx = withUsageRole(ctx, role)
 		a, err := chatWithRetryAssistant(ctx, c, p.System, p.User, client, onRetry)
 		if err != nil {
 			return "", err
@@ -2015,7 +2021,7 @@ func sendTurnsWithTools(ctx context.Context, cfg Config, system string, turns []
 	}
 	// Every non-streaming call — role-manager, classifier, evaluator and the
 	// blocking main-turn sender — completes here.
-	reportUsage(cfg, system, turns, a)
+	reportUsage(ctx, cfg, system, turns, a, toolDefTokens(openAITools, anthropicTools))
 	return a, nil
 }
 
@@ -2074,6 +2080,7 @@ func parseOpenAIChat(body []byte, status int, redact func(string) string) (Assis
 			PromptTokens:     cr.Usage.PromptTokens,
 			CompletionTokens: cr.Usage.CompletionTokens,
 			TotalTokens:      cr.Usage.TotalTokens,
+			CacheReadTokens:  cr.Usage.CachedTokens(),
 		}
 	}
 	return Assistant{Text: msg.Content, Reasoning: msg.ReasoningContent, ToolCalls: calls, Stop: stop, Usage: usage, StopReason: cr.Choices[0].FinishReason}, nil
@@ -2110,6 +2117,8 @@ func parseAnthropic(body []byte, status int, redact func(string) string) (Assist
 	usage := &transcript.Usage{
 		PromptTokens:     ar.Usage.InputTokens + ar.Usage.CacheReadInputTokens + ar.Usage.CacheCreationInputTokens,
 		CompletionTokens: ar.Usage.OutputTokens,
+		CacheReadTokens:  ar.Usage.CacheReadInputTokens,
+		CacheWriteTokens: ar.Usage.CacheCreationInputTokens,
 	}
 	return Assistant{Text: b.String(), Reasoning: reasoning.String(), ToolCalls: calls, Usage: usage, StopReason: ar.StopReason, Thinking: thinking}, nil
 }

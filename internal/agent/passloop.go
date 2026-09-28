@@ -641,12 +641,12 @@ func (s *Session) passLoop(ctx context.Context, pipe *rolemanager.Pipeline, syst
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return run.Result{Reply: out.lastText, Usage: out.usage, GoalSentinel: rolemanager.GoalPartial, Passes: l.passes}, ErrPassLoopCancelled
 			}
-			// A ClassOverflow escaping pass is caught once: compact at this
-			// structurally clean boundary and re-run the pass. Any other error
+			// A ClassOverflow escaping pass is caught once: recoverOverflow forces
+			// compaction (or clears old tool results) and the pass re-runs. Any other error
 			// is terminal — streamTurnRetry already owns the retry budget.
 			if !l.overflowRetried && isOverflow(err) {
 				l.overflowRetried = true
-				if compacted, ok := s.compactBoundary(ctx, pipe, turns); ok {
+				if compacted, ok := s.recoverOverflow(ctx, pipe, turns); ok {
 					turns = compacted
 					out, turns, err = s.pass(ctx, pipe, system, turns, streaming, emit, modes.ModeGoal)
 				}
@@ -1261,13 +1261,51 @@ func (s *Session) compactWindow() int {
 // retries. Returns ok=false when compaction was not attempted or did not
 // produce a usable summary.
 func (s *Session) compactBoundary(ctx context.Context, pipe *rolemanager.Pipeline, turns []run.Turn) ([]run.Turn, bool) {
+	return s.compactTurns(ctx, pipe, turns, false)
+}
+
+// overflowKeepToolResults is how many of the newest tool results survive the
+// clearing fallback of recoverOverflow.
+const overflowKeepToolResults = 2
+
+// recoverOverflow is what a pass loop does once when the provider rejects a
+// request as over its context window. The estimate that gates proactive
+// compaction evidently undercounted, so compaction is forced whatever the
+// estimate says. When that fails too, every tool result but the newest
+// overflowKeepToolResults is cleared in place, which always shrinks a context
+// that tool output filled. It returns ok=false when neither made a change.
+func (s *Session) recoverOverflow(ctx context.Context, pipe *rolemanager.Pipeline, turns []run.Turn) ([]run.Turn, bool) {
+	if compacted, ok := s.compactTurns(ctx, pipe, turns, true); ok {
+		s.traceRecord("overflow_recovery", "compacted", "", "", 0)
+		return compacted, true
+	}
+	cleared, seen := 0, 0
+	for i := len(turns) - 1; i >= 0; i-- {
+		if turns[i].Role != "tool" {
+			continue
+		}
+		seen++
+		if seen > overflowKeepToolResults && turns[i].ClearToolResult() {
+			cleared++
+		}
+	}
+	if cleared == 0 {
+		return turns, false
+	}
+	s.traceRecord("overflow_recovery", "cleared", "", fmt.Sprintf("cleared=%d kept=%d", cleared, overflowKeepToolResults), 0)
+	return turns, true
+}
+
+// compactTurns is compactBoundary with the threshold optional: force skips
+// the estimate, for a provider that has already said the context is too big.
+func (s *Session) compactTurns(ctx context.Context, pipe *rolemanager.Pipeline, turns []run.Turn, force bool) ([]run.Turn, bool) {
 	window := s.compactWindow()
 	msgs := make([]transcript.Message, 0, len(turns))
 	for _, t := range turns {
 		msgs = append(msgs, transcript.Message{Role: t.Role, Content: t.Content, ToolName: t.ToolName})
 	}
 	est := transcript.EstimateContext(msgs)
-	if est.Tokens*100 < window*compactThresholdPct {
+	if !force && est.Tokens*100 < window*compactThresholdPct {
 		return nil, false
 	}
 	// pre_compact cannot stop compaction; its output is not read.

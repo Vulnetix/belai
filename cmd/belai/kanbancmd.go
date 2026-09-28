@@ -14,6 +14,7 @@ import (
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/headless"
 	"github.com/vulnetix/belai/internal/kanban"
+	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/tools"
 )
@@ -65,6 +66,11 @@ type kanbanCLI struct {
 }
 
 func openKanbanCLI(wd string) (*kanbanCLI, error) {
+	// The OS sandbox hides Belai's state directory, so a board opened from
+	// inside it would read as empty. Say so rather than print "no items".
+	if sandbox.Nested() {
+		return nil, errors.New("the kanban board is not reachable from inside Belai's sandbox; use the KanbanSearch, KanbanUpdate and KanbanMove tools")
+	}
 	settings, err := config.LoadMerged(wd)
 	if err != nil {
 		return nil, fmt.Errorf("load settings: %w", err)

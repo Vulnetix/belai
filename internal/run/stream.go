@@ -421,7 +421,8 @@ func streamTurns(ctx context.Context, cfg Config, system string, turns []Turn, c
 	}
 	ch := make(chan Chunk, 256)
 	// Every streaming call completes in drainStream; report what it spent.
-	go drainStream(ctx, ch, resp, d, func(a Assistant) { reportUsage(cfg, system, sanitized, a) })
+	toolDefs := toolDefTokens(openAITools, anthropicTools)
+	go drainStream(ctx, ch, resp, d, func(a Assistant) { reportUsage(ctx, cfg, system, sanitized, a, toolDefs) })
 	return ch, nil
 }
 func anthropicEventUsage(ev *wire.AnthropicStreamEvent) *transcript.Usage {
@@ -449,5 +450,7 @@ func anthropicEventUsage(ev *wire.AnthropicStreamEvent) *transcript.Usage {
 	return &transcript.Usage{
 		PromptTokens:     u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens,
 		CompletionTokens: u.OutputTokens,
+		CacheReadTokens:  u.CacheReadInputTokens,
+		CacheWriteTokens: u.CacheCreationInputTokens,
 	}
 }

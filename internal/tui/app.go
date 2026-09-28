@@ -1989,17 +1989,13 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 	if m := mcp.Active(); m != nil {
 		reg = reg.With(m.Tools()...)
 	}
-	// The kanban board's search and update ride on every main session. Like
-	// MCP tools they come before the allowlist, so a definition that names
-	// its tools keeps exactly those.
-	reg = reg.WithKanban(p.kanban, p.kanbanSrc)
-	if len(p.toolAllow) > 0 {
-		// An engaged background definition brings its allowlist with it, the
-		// same narrowing internal/bgagent applies when it runs the definition
-		// on its own. Only keeps the shared working-directory tracker, so a
-		// Cd in an allowlisted session still reaches the footer.
-		reg = reg.Only(p.toolAllow...)
-	}
+	// An engaged background definition brings its allowlist with it, the
+	// same narrowing internal/bgagent applies when it runs the definition on
+	// its own. Only keeps the shared working-directory tracker, so a Cd in an
+	// allowlisted session still reaches the footer. The kanban board's search
+	// and update ride on every main session after the allowlist, as in
+	// headless sessions, so an engaged definition can always hand work on.
+	reg = reg.NarrowWithKanban(p.toolAllow, p.kanban, p.kanbanSrc)
 	if p.procManager != nil {
 		reg = reg.With(&tools.SubAgentLog{Logs: p.procManager})
 	}

@@ -154,6 +154,11 @@ type Settings struct {
 	// false sends every definition on every request. Deferral changes what is
 	// advertised, never what may run.
 	DeferTools *bool `json:"defer_tools,omitempty"`
+	// Offload keeps oversized tool results out of the conversation: a preview
+	// stays inline and ReadResult reads the rest (docs/context-offload.md).
+	// Default on. It changes what rides on a request, never what is admitted,
+	// so any layer may set it.
+	Offload *OffloadSettings `json:"offload,omitempty"`
 }
 
 // SyncSettings configures session sync (docs/session-sync.md).
@@ -1184,6 +1189,7 @@ func (s Settings) Override(proj Settings) Settings {
 	if proj.DeferTools != nil {
 		out.DeferTools = proj.DeferTools
 	}
+	out.Offload = mergeOffload(out.Offload, proj.Offload)
 	// The kanban board syncs off the machine: off only.
 	if proj.Kanban != nil && !*proj.Kanban {
 		f := false

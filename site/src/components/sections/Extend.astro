@@ -46,7 +46,7 @@ const integrations = [
   },
   {
     title: 'OpenTelemetry, without content',
-    body: 'Point Belai at a collector and it exports turn and tool-call spans on the session trace, plus token, tool, classifier and hook metrics. Only allowlisted keys leave, and every value is reduced to identifier characters, so no prompt, argument, output or path can.',
+    body: 'Point Belai at a collector and it exports turn and tool-call spans on the session trace, plus token, tool, classifier and hook metrics. Only allowlisted keys leave, and every value is reduced to identifier characters, so no prompt, argument, output or path can. For a single run, belai -prompt -usage-json writes the tokens each role spent, cache reads and writes included, and how big each part of the requests was: sizes, never content.',
     doc: 'telemetry.md',
   },
 ];

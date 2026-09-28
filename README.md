@@ -145,6 +145,7 @@ belai -provider anthropic -model claude-sonnet-4-5 -prompt "review this diff"
 | `-resume`, `-r` | resume a session by id or unique id prefix in the interactive TUI |
 | `-continue`, `-c` | continue the most recent session for the current project |
 | `-verbose` | print mode and security decisions to stderr |
+| `-usage-json` | with `-prompt`, write a JSON summary of the run's token usage (per role, per model, cache reads and writes, request composition) to a file on exit — see [docs/benchmarks.md](docs/benchmarks.md) |
 | `-version` | print the version and exit |
 | `-trust-dir` | trust the current directory without prompting (grants the directory only, not its proposed workspace dirs) |
 
@@ -219,6 +220,7 @@ scope, following the same precedence rules.
 | `show_session_names` | show session names in the status bar (default on) |
 | `update_check` | check GitHub for a newer Belai release at startup (default on) |
 | `defer_tools` | advertise the core tools in full and load the rest (native catalogue, cloud CLIs, repo and agent-store tools, MCP tools) on demand with `ToolSearch`, keeping every request small (default on; `-defer-tools=false` for one run). Deferred tools stay callable by name |
+| `offload` | keep oversized tool output out of the context: a head-and-tail preview stays inline and `ReadResult` reads the rest; `enabled` (default on), `threshold_tokens` (default 4000), `preview_tokens` (default 1500) — see [docs/context-offload.md](docs/context-offload.md) |
 | `kanban` | the global kanban board: tools, wrap-up, composer pane, `/kanban` and sync (default on; a project may only turn it off) — see [docs/kanban.md](docs/kanban.md) |
 | `agents` | [fleet](docs/fleet.md) workers: `enabled` (default on), `max_workers` (default 4), `publish` (default on); a project may only turn them off or lower the cap |
 | `token_budgets` | global only: token allowances per provider, model and scope (`session`, `day`, `month`) — see [Token budgets](docs/token-budgets.md) |

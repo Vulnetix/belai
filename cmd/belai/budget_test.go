@@ -21,7 +21,7 @@ func TestBudgetRule13_HeadlessRunRecordsUsage(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	done := recordUsage("headless-session", config.Settings{})
+	done := recordUsage("headless-session", config.Settings{}, nil)
 	cfg := run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "sk", Model: "budget-r13"}
 	if _, err := run.SendTurns(context.Background(), cfg, "sys", []run.Turn{{Role: "user", Content: "hi"}}, srv.Client()); err != nil {
 		t.Fatal(err)

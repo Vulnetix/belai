@@ -1484,3 +1484,56 @@ func TestPlanExecutionNoWriteWordingAllowsReadOnlyPlans(t *testing.T) {
 		t.Fatal("the plan execute directive must not call the first step an edit")
 	}
 }
+
+// A provider overflow below the estimated threshold still recovers: the
+// overflow path forces compaction, and when compaction fails it clears all
+// but the newest tool results rather than giving up.
+func TestRecoverOverflowForcesAndFallsBack(t *testing.T) {
+	const summary = "## Goal\nship\n## Next Steps\n1. build\n## Critical Context\npath=/x"
+	s := &Session{
+		cfg:      run.Config{Model: "test"},
+		settings: config.Settings{ContextWindows: map[string]int{"test": 1 << 20}},
+		live:     posture.NewLive(posture.Defaults(), false),
+	}
+	mk := func() []run.Turn {
+		var turns []run.Turn
+		turns = append(turns, run.Turn{Role: "user", Content: "do the thing"})
+		for i := range 5 {
+			turns = append(turns, run.Turn{Role: "tool", Content: "result", ToolCallID: fmt.Sprintf("c%d", i), ToolName: "Bash"})
+		}
+		return turns
+	}
+	good := rolemanager.NewPipeline(rolemanager.ClassifierFunc(func(_ context.Context, p rolemanager.ClassifierPayload) (string, error) {
+		if strings.Contains(p.System, "summarization") {
+			return summary, nil
+		}
+		return "SAFE", nil
+	}))
+	if _, ok := s.compactBoundary(context.Background(), good, mk()); ok {
+		t.Fatal("precondition: below the threshold compactBoundary must not compact")
+	}
+	got, ok := s.recoverOverflow(context.Background(), good, mk())
+	if !ok || len(got) != 2 {
+		t.Fatalf("forced compaction: ok=%v turns=%d", ok, len(got))
+	}
+
+	failing := rolemanager.NewPipeline(rolemanager.ClassifierFunc(func(context.Context, rolemanager.ClassifierPayload) (string, error) {
+		return "", fmt.Errorf("down")
+	}))
+	got, ok = s.recoverOverflow(context.Background(), failing, mk())
+	if !ok {
+		t.Fatal("clearing fallback did not run")
+	}
+	cleared := 0
+	for _, tr := range got {
+		if tr.Content == run.ClearedToolResult {
+			cleared++
+		}
+	}
+	if cleared != 3 || got[len(got)-1].Content != "result" || got[len(got)-2].Content != "result" {
+		t.Fatalf("cleared %d, want every tool result but the newest %d", cleared, overflowKeepToolResults)
+	}
+	if _, ok := s.recoverOverflow(context.Background(), failing, got[:1]); ok {
+		t.Fatal("nothing to clear must report no progress")
+	}
+}

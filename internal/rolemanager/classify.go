@@ -62,6 +62,8 @@ const (
 	UseCaseSessionName  = "session_name"
 	UseCaseAgentEval    = "agent_eval"
 	UseCaseDepChange    = "dep_change"
+	// UseCaseWebFetch answers a WebFetch prompt over the fetched page.
+	UseCaseWebFetch = "web_fetch"
 )
 
 // ClassifierStructuredMaxTokens is the completion budget for classifier calls

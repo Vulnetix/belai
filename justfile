@@ -159,6 +159,17 @@ e2e *ARGS:
 redteam *ARGS:
     go run ./tools/redteam {{ ARGS }}
 
+# Build the Linux binary the benchmark adapter uploads into task containers.
+build-bench ARCH="amd64":
+    CGO_ENABLED=0 GOOS=linux GOARCH={{ ARCH }} go build -ldflags '{{ ldflags }}' -o {{ bin }}/belai-bench-linux-{{ ARCH }} {{ pkg }}
+
+# Run a Harbor dataset against Belai (see docs/benchmarks.md). Makes real
+# provider calls: `just bench terminal-bench@2.0 anthropic/claude-sonnet-5 3`.
+# Extra args go to `harbor run`, e.g. `--ak settings=bench/arms/offload-1500-750.json`.
+bench DATASET MODEL ATTEMPTS="3" *ARGS: build-bench
+    PYTHONPATH=bench/harbor uvx harbor run -d {{ DATASET }} -m {{ MODEL }} -k {{ ATTEMPTS }} \
+      --agent belai_agent:Belai --ak binary={{ bin }}/belai-bench-linux-amd64 {{ ARGS }}
+
 # Write coverage.txt and print the per-function summary.
 cover:
     go test -coverprofile=coverage.txt -covermode=atomic ./...

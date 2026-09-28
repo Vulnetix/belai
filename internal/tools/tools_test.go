@@ -395,6 +395,7 @@ func TestKindReadOnlyClassification(t *testing.T) {
 		// ToolSearch only changes which definitions are advertised.
 		KindToolSearch: true,
 		KindPublish:    false,
+		KindOffload:    true,
 	}
 	seen := map[Kind]bool{}
 	for _, k := range AllKinds {

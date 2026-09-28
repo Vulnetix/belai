@@ -388,7 +388,7 @@ func (s *Session) planPassLoop(ctx context.Context, pipe *rolemanager.Pipeline, 
 			}
 			if !l.overflowRetried && isOverflow(err) {
 				l.overflowRetried = true
-				if compacted, ok := s.compactBoundary(ctx, pipe, turns); ok {
+				if compacted, ok := s.recoverOverflow(ctx, pipe, turns); ok {
 					turns = compacted
 					out, turns, err = s.pass(ctx, pipe, system, turns, streaming, emit, modes.ModePlan)
 				}

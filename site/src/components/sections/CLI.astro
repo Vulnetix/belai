@@ -2,7 +2,7 @@
 import SealedSection from '../seal/SealedSection.astro';
 
 const sealText =
-  'Headless CLI: the same harness without the TUI. Terminal detection keeps the UI off in pipelines, -prompt gives a single answer and exits, -plan runs read-only, -detect-mode prints the mode choice, -trust-dir opens a CI workspace, -export prints a session as Markdown, belai acp serves editors, belai plugin manages plugins, belai kanban files work on the board, belai agent runs crews of workers that take it, and every posture gate is reachable from flags.';
+  'Headless CLI: the same harness without the TUI. Terminal detection keeps the UI off in pipelines, -prompt gives a single answer and exits, -plan runs read-only, -detect-mode prints the mode choice, -trust-dir opens a CI workspace, -export prints a session as Markdown, -usage-json records what a run spent, belai acp serves editors, belai plugin manages plugins, belai kanban files work on the board, belai agent runs crews of workers that take it, and every posture gate is reachable from flags.';
 
 const features = [
   {
@@ -16,6 +16,10 @@ const features = [
   {
     title: 'read-only plans from the shell',
     body: 'belai -plan -prompt "map the repo" runs the plan-mode surface with Bash absent, writes a structured plan document, and exits without asking for approval.',
+  },
+  {
+    title: 'what a run cost',
+    body: 'belai -prompt "…" -usage-json usage.json writes the tokens the run spent per role and per model, cache reads and writes included, even when the run fails. It is what the benchmark adapter in bench/ reads.',
   },
   {
     title: '-detect-mode without acting',

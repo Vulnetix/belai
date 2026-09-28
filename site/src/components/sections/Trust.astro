@@ -6,7 +6,7 @@ import chunked from '../../assets/concepts/chunked-classification.svg?raw';
 import agentTurnShot from '../../assets/shots/agent-turn.svg';
 
 const sealText =
-  'Trust pipeline: every untrusted tool result is sanitized, classified, then passed on or blocked. Tools whose output format Belai controls are sanitized but not classified. The next section covers which engine classifies.';
+  'Trust pipeline: every untrusted tool result is sanitized, classified, then passed on or blocked. Tools whose output format Belai controls are sanitized but not classified. Output kept out of the context is stored only after it passes, and read back through the classifier; a WebFetch answer is written by a model with no tools and classified. The next section covers which engine classifies.';
 ---
 
 <SealedSection label="trust" sealText={sealText} id="trust">
@@ -20,6 +20,13 @@ const sealText =
         third-party repositories is always classified. Tools whose output has a format Belai controls,
         such as <code class="mono">Grep</code>, <code class="mono">Glob</code>, <code class="mono">Write</code> and{' '}
         <code class="mono">Edit</code>, are sanitized but not classified.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        Keeping output out of the context never skips a check. A long result is stored for{' '}
+        <code class="mono">ReadResult</code> only after it has passed, a blocked result is never stored,
+        and every slice read back is classified again. When <code class="mono">WebFetch</code> answers a
+        prompt, the model that reads the page has no tools, and its answer is classified before the agent
+        sees it.
       </p>
       <p class="mt-4 text-vx-ink/80">
         Outbound requests identify themselves. Provider calls, <code class="mono">WebFetch</code> and{' '}
