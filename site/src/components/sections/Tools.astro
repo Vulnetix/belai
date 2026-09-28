@@ -64,14 +64,14 @@ const sandbox = [
 const sandboxModes = [
   ['off', 'commands run as your account, with no boundary'],
   ['auto', 'the default: sandboxed when a backend works here, unsandboxed otherwise'],
-  ['required', 'refuse a command rather than run it bare'],
+  ['required', 'commands run only inside the sandbox, and are refused when no backend works'],
 ];
 
 const limits = [
-  ['No shell for the catalogue', 'Free-form command strings are rejected. A native tool runs one binary with its own arguments.'],
+  ['One binary per tool', 'A native tool runs its own binary with the arguments it was given. Free-form command strings are rejected.'],
   ['Content still classifies', 'A native tool that can print a file, such as `Cat`, `JQ` or `Diff`, is classified like `Read`.'],
   ['Cd stays inside', '`Cd` moves the working directory anywhere inside the session roots. A path such as `../../../etc` is refused.'],
-  ['A repository only tightens', 'A project can raise `sandbox.mode`, deny the network and turn caches off, never the reverse. Its `extra_writable` is dropped.'],
+  ['A repository only tightens', 'A project can raise `sandbox.mode`, deny the network and turn caches off. Loosening any of them takes your own settings, and a project\'s `extra_writable` is dropped.'],
   ['One switch', 'Guardrails off turns the sandbox off with every other check. `/sandbox` shows the policy in effect.'],
   ['Everything that runs a command', '`Bash` in every mode and in explore subagents, inline `!cmd`, supervised processes, and MCP stdio servers that opt in. The command dies with Belai.'],
 ];

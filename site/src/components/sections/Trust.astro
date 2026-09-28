@@ -11,7 +11,7 @@ import agentTurnShot from '../../assets/shots/agent-turn.svg';
 // in the upper lane is withheld. The motion stops under reduced motion.
 
 const sealText =
-  'Trust pipeline: every untrusted tool result is sanitized, classified, then passed on or blocked. Tools whose output format Belai controls are sanitized but not classified. Output kept out of the context is stored only after it passes, and read back through the classifier; a WebFetch answer is written by a model with no tools and classified. The next section covers which engine classifies.';
+  'Trust pipeline: every untrusted tool result is sanitized, classified, then passed on or blocked. Tools whose output format Belai controls are sanitized but not classified. Output kept out of the context is classified slice by slice as the model reads it while guardrails are on, and a WebFetch answer is written by a model with no tools and classified. The next section covers which engine classifies.';
 
 const classified = [
   ['Bash', 'an arbitrary command'],
@@ -35,8 +35,8 @@ const shaped = [
 
 const facts = [
   {
-    title: 'Offloaded output is checked twice',
-    body: 'A long result is stored for `ReadResult` only after it has passed, a blocked result is never stored, and every slice read back is classified again.',
+    title: 'Offloaded output is checked as it is read',
+    body: 'A long result waits in memory behind a short preview. Each slice the model pulls in with `ReadResult` is classified at that moment while guardrails are on, so output saved while they were off is checked before the model sees it. A withheld result is never kept.',
   },
   {
     title: 'WebFetch answers from a model with no tools',
@@ -70,9 +70,9 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
       <rect x="16" y="254" width="170" height="56" rx="10" class="fill-vx-cream" />
       <text x="32" y="287" font-family="Geist Mono, monospace" font-size="13" fill="currentColor" stroke="none">Grep · Glob · Edit</text>
 
-      <path d="M186 98 H650 C 700 98, 710 60, 760 60 H800" class="text-vx-ink/40" stroke="currentColor" stroke-dasharray="4 5" />
-      <path d="M650 98 C 700 98, 710 136, 760 136 H800" class="stroke-vx-coral/60" stroke-dasharray="4 5" />
-      <path d="M186 282 H440 C 560 282, 640 60, 800 60" class="text-vx-ink/40" stroke="currentColor" stroke-dasharray="4 5" />
+      <path d="M186 98 H650 C 700 98, 710 138, 760 138 H800" class="text-vx-ink/40" stroke="currentColor" stroke-dasharray="4 5" />
+      <path d="M650 98 C 700 98, 710 60, 760 60 H800" class="stroke-vx-coral/60" stroke-dasharray="4 5" />
+      <path d="M186 282 H440 C 560 282, 640 138, 800 138" class="text-vx-ink/40" stroke="currentColor" stroke-dasharray="4 5" />
 
       <rect x="250" y="66" width="130" height="64" rx="10" class="fill-vx-cream" />
       <text x="266" y="96" font-family="Geist, sans-serif" font-size="14" font-weight="700" fill="currentColor" stroke="none">sanitize</text>
@@ -86,20 +86,20 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
       <text x="498" y="90" font-family="Geist, sans-serif" font-size="15" font-weight="700" class="fill-vx-cream" stroke="none">classifier</text>
       <text x="498" y="112" font-family="Geist Mono, monospace" font-size="10.5" class="fill-vx-mint" stroke="none">one sentinel token</text>
 
-      <rect x="800" y="36" width="144" height="48" rx="10" class="fill-vx-mint" stroke="none" />
-      <text x="816" y="66" font-family="Geist, sans-serif" font-size="15" font-weight="700" fill="currentColor" stroke="none">to the model</text>
-      <rect x="800" y="114" width="144" height="48" rx="10" class="fill-vx-coral/15 stroke-vx-coral" />
-      <text x="816" y="144" font-family="Geist, sans-serif" font-size="15" font-weight="700" fill="currentColor" stroke="none">withheld</text>
+      <rect x="800" y="114" width="144" height="48" rx="10" class="fill-vx-mint" stroke="none" />
+      <text x="816" y="144" font-family="Geist, sans-serif" font-size="15" font-weight="700" fill="currentColor" stroke="none">to the model</text>
+      <rect x="800" y="36" width="144" height="48" rx="10" class="fill-vx-coral/15 stroke-vx-coral" />
+      <text x="816" y="66" font-family="Geist, sans-serif" font-size="15" font-weight="700" fill="currentColor" stroke="none">withheld</text>
 
       <g class="trust-flow__dots" stroke="none">
         <circle r="6" class="fill-vx-mint-strong">
-          <animateMotion dur="4.2s" repeatCount="indefinite" path="M186 98 H650 C 700 98, 710 60, 760 60 H800" />
+          <animateMotion dur="4.2s" repeatCount="indefinite" path="M186 98 H650 C 700 98, 710 138, 760 138 H800" />
         </circle>
         <circle r="6" class="fill-vx-coral">
-          <animateMotion dur="4.2s" begin="2.1s" repeatCount="indefinite" path="M186 98 H650 C 700 98, 710 136, 760 136 H800" />
+          <animateMotion dur="4.2s" begin="-2.1s" repeatCount="indefinite" path="M186 98 H650 C 700 98, 710 60, 760 60 H800" />
         </circle>
         <circle r="6" class="fill-vx-ink">
-          <animateMotion dur="3.4s" begin="1s" repeatCount="indefinite" path="M186 282 H440 C 560 282, 640 60, 800 60" />
+          <animateMotion dur="3.4s" begin="-1s" repeatCount="indefinite" path="M186 282 H440 C 560 282, 640 138, 800 138" />
         </circle>
       </g>
     </svg>
@@ -133,9 +133,9 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     </div>
   </div>
 
-  <SubHead title="Nothing skips the check">
-    Keeping output out of the context never skips a check, and a model that reads on the agent's behalf
-    is classified like the page it read.
+  <SubHead title="Checked wherever it enters">
+    Content is classified at the point it reaches the model. That includes slices of stored output and
+    answers that another model drew from a page.
   </SubHead>
   <div class="mt-8 grid gap-5 md:grid-cols-3">
     {facts.map((f) => (

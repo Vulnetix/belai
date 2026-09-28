@@ -67,7 +67,7 @@ const stages: Stage[] = [
 // What each scanner's card reports, and a state for the lane picture. The
 // states show a moment in one review; they are an illustration, not a capture.
 const lanes = [
-  { name: 'secrets', card: 'Exposed secrets in the files of your working tree, not every commit in your history', state: 'card', width: 'w-[30%]' },
+  { name: 'secrets', card: 'Exposed secrets in the current files of your working tree', state: 'card', width: 'w-[30%]' },
   { name: 'sbom', card: 'Packages, by ecosystem', state: 'card', width: 'w-[38%]' },
   { name: 'aibom', card: 'The AI tools and models the code uses', state: 'card', width: 'w-[44%]' },
   { name: 'cbom', card: 'Algorithms and their post-quantum status, naming any deprecated one', state: 'card', width: 'w-[52%]' },
@@ -108,9 +108,9 @@ const commands = `/vulnetix review
 /vulnetix status`;
 
 const limits = [
-  ['No raw code in the transcript', 'The scanner reports findings without copying snippets of your code into the session.'],
+  ['Findings, without your code', 'The scanner describes each finding without copying snippets of your code into the session.'],
   ['Classified first', 'Report blocks are size-limited and sanitised, then dropped unless the classifier passes them.'],
-  ['Never a system block', 'Report content is shown in the TUI. The model never receives it as a trusted system block.'],
+  ['Shown to you as a report', 'Report content is drawn in the TUI for you. Whatever the model receives of it arrives as classified text, outside every trusted block.'],
   ['Triage only reads', 'The per-scanner agents check findings against the repository and change nothing.'],
   ['You choose between fixes', 'When a finding has more than one reasonable fix, Belai asks before it changes anything.'],
   ['Dry run by default', 'Dependency fixes stay a plan until you turn on autofix. Code fixes go through your permission prompts.'],

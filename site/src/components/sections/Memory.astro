@@ -41,12 +41,12 @@ const knows = [
 ];
 
 const limits = [
-  ['No path argument', 'Every location comes from a fixed list of known agent stores, so the three tools cannot read any other file on the machine.'],
-  ['Read, never written', "They never write to another agent's store."],
+  ['A fixed list of stores', 'Every location comes from a built-in list of known agent stores. The tools take no path, so they read those stores and nothing else on the machine.'],
+  ['Read-only', "They read other agents' stores and have no way to write to them."],
   ['Always classified', 'Text in those stores was written by other models, so every result is classified before the model sees it.'],
   ['A record, to be checked', 'The model is told that a hit is a record of what an agent once wrote, to be checked against the current files.'],
   ['Bounded', 'A search stops at 200 matches, 256 KiB or ten seconds, and the result says when it was cut short.'],
-  ['No new dependencies', 'It uses `rg` to narrow the files when it is installed. Goose and opencode need `sqlite3` on `PATH`, and are skipped with the reason without it.'],
+  ['Works with what you have', 'It uses `rg` to narrow the files when it is installed. Goose and opencode are searched when `sqlite3` is on `PATH`, and the result says when they were skipped.'],
 ];
 
 const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }));

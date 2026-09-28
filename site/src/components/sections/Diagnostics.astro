@@ -38,9 +38,9 @@ const steps = [
 ];
 
 const limits = [
-  ['No all-clear message', 'When no check reports anything, nothing is attached. Belai never tells the model a file is error-free.'],
+  ['Findings only', 'Only what a check reports is attached, and a clean check adds nothing. The model is not handed an all-clear to lean on.'],
   ['Capped and flattened', 'Up to ten rows of 200 runes, each on one line, with control and bidi runes removed and the source field restricted.'],
-  ['Found, never installed', 'Belai only uses servers it finds on `PATH`. `/settings` shows the install command for a missing one and does not run it.'],
+  ['Uses what you installed','Belai only uses servers it finds on `PATH`. `/settings` shows the install command for a missing one and does not run it.'],
   ['Trusted directories only', 'A language server starts only under a directory you have trusted, and only in the interactive TUI.'],
   ['A server cannot edit', 'Every `workspace/applyEdit` request is answered `{"applied":false}`, and `initializationOptions` is always `null`.'],
   ['Its own process group', 'Each server starts with a scrubbed environment. A repository cannot swap the server binary: project-layer overrides are dropped.'],
