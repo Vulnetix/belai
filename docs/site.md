@@ -14,15 +14,18 @@ The single-scroll marketing site at [belai.vulnetix.com](https://belai.vulnetix.
 `site/src/pages/index.astro` composes one long scroller with a sticky left status
 rail (≥1120px). The content is full-width (no fixed max-width). Section order:
 
-hero · trust · classifier · sealed · beliefs · labs · modes · tools · diagnostics · permissions · agents ·
-memory · processes · budgets · providers · routing · vulnetix · kanban · agent crews · web sessions · sandbox · extend ·
+hero · trust · classifier · sealed · beliefs · labs · modes · tools · diagnostics · permissions · agents & crews ·
+memory · processes · budgets · providers · routing · vulnetix · kanban · web sessions · sandbox · extend ·
 integrations · cli · qol · start · faq
 
-The agent crews section (`site/src/components/sections/Fleet.astro`) shows
-worker agents taking their work from the kanban board: the crew diagram
-(`site/src/assets/concepts/fleet-crew.svg`), the built-in crews, the safety
-model, and a run recorded on this repository. Keep that run truthful: it
-quotes the item history and draft PR of a real release.
+The agents section (`site/src/components/sections/Agents.astro`, rendered
+from `Features.astro`) is one ladder: subagents, background agents, crews.
+Three step cards open it, a table (cards below `lg`) says what changes on
+each step, then come a crew's recorded run on a board (`#crews`, which the
+kanban section links to), the crew fences, the built-in crews and a worker
+profile. The step facts live in one `steps` array that feeds both the table
+and the cards. Keep the run truthful: it quotes the item history and draft
+PR of a real release.
 
 The web sessions section (`site/src/components/sections/WebSessions.astro`)
 covers following and answering a session on the Vulnetix website.

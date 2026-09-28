@@ -1,19 +1,18 @@
 ---
 import SealedSection from '../seal/SealedSection.astro';
+import Agents from './Agents.astro';
 import ShotCarousel from '../ui/ShotCarousel.tsx';
 
 import planMode from '../../assets/concepts/plan-mode-surface.svg?raw';
 import cdConfine from '../../assets/concepts/cd-confinement.svg?raw';
 import permMerge from '../../assets/concepts/permission-merge.svg?raw';
 import guardSwitch from '../../assets/concepts/guardrails-switch.svg?raw';
-import fanOut from '../../assets/concepts/fan-out.svg?raw';
 import credRes from '../../assets/concepts/credential-resolution.svg?raw';
 import processSupervision from '../../assets/concepts/process-supervision.svg?raw';
 
 import planReviewShot from '../../assets/shots/plan-review.svg';
 import approvalDiffShot from '../../assets/shots/approval-diff.svg';
 import permissionsShot from '../../assets/shots/permissions.svg';
-import agentsRosterShot from '../../assets/shots/agents-roster.svg';
 import footerShot from '../../assets/shots/footer.svg';
 import modelPickerShot from '../../assets/shots/model-picker.svg';
 import localModelShot from '../../assets/shots/local-model.svg';
@@ -195,86 +194,7 @@ import budgetsShot from '../../assets/shots/budgets.svg';
   </div>
 </SealedSection>
 
-<SealedSection label="agents" sealText="Agents: the main session and background agents get every tool, behind the permission rules and the guardrails switch. The f8 roster, plan mode and the recovery subagent are read-only. Background agents are saved profiles under /agent with their own system prompt, mode, autonomy, model and tool list. A profile with guardrails off, autonomous and a looping mode must also set max_iterations." id="agents">
-  <div class="prose-measure">
-    <h2 class="text-3xl font-bold text-vx-ink">Agents.</h2>
-    <p class="mt-4 text-vx-ink/80">
-      The main session and background agents get every tool: <code class="mono">Bash</code>,{' '}
-      <code class="mono">Read</code>, <code class="mono">Write</code>, <code class="mono">Edit</code>, the
-      native read-only utilities, and <code class="mono">GH</code> and <code class="mono">Glab</code>. The
-      permission rules and the guardrails switch decide what each call may do.
-    </p>
-    <p class="mt-4 text-vx-ink/80">
-      Three kinds of agent are read-only: the f8 roster, plan mode, and the recovery subagent that
-      restarts a crashed process.
-    </p>
-  </div>
-
-  <div class="mt-10 grid gap-10 lg:grid-cols-2 lg:items-center">
-    <div class="order-2 lg:order-1 prose-measure">
-      <h3 class="text-xl font-bold text-vx-ink">Read-only fan-out.</h3>
-      <p class="mt-4 text-vx-ink/80">
-        The f8 roster splits a question across several read-only agents that run at the same time.
-        Each one gets only the tools it is allowed to use, and their results are merged at the end.
-        These agents have no write tools, so text they read can't get them to change files.
-        Each gets one narrow task and two to five rounds, depending on the kind of task, and reports
-        one <code class="mono">path:line</code> finding per line, capped at 6 KiB.
-        When one runs out of budget it writes its report in a single pass with no tools, instead of
-        reading on.
-      </p>
-    </div>
-    <div class="order-1 lg:order-2 rounded-lg border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={fanOut} /></div>
-  </div>
-  <div class="mt-10 max-w-[72ch]">
-    <ShotCarousel
-      client:load
-      shots={[{ src: agentsRosterShot.src, alt: 'The f8 subagent roster and runs panel', caption: 'f8 roster, runs panel' }]}
-    />
-  </div>
-
-  <div class="mt-12 prose-measure">
-    <h3 class="text-xl font-bold text-vx-ink">Background agents.</h3>
-    <p class="mt-4 text-vx-ink/80">
-      <code class="mono">/agent</code> opens the list of saved agent profiles, where you can edit one,
-      start it, or make a new one. A profile has its own system prompt, provider, model, effort and
-      guardrails setting. A started profile runs in the background while you keep working in the session.
-    </p>
-    <p class="mt-4 text-vx-ink/80">
-      A profile with no tool list gets every tool. A profile that lists tools gets only those. The list is
-      chosen from a fixed set in the profile editor, which includes <code class="mono">Bash</code> and{' '}
-      <code class="mono">Write</code>. The built-in <code class="mono">belai:triage-vulns</code> profile lists{' '}
-      <code class="mono">Read</code>, <code class="mono">Grep</code>, <code class="mono">Glob</code> and{' '}
-      <code class="mono">Bash</code>. It leaves out <code class="mono">Write</code> and{' '}
-      <code class="mono">Edit</code> because it only proposes fixes.
-    </p>
-    <div class="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      <div class="rounded-lg border border-vx-ink/30 p-4">
-        <h3 class="font-semibold text-vx-ink">Modes</h3>
-        <p class="mt-2 text-sm text-vx-ink/80">Single runs once. Loop repeats. Scheduled runs on an interval. Monitor checks a condition on an interval and runs when it is true. Worker claims items off the kanban board, one at a time; see <a href="#fleet" class="underline">agent crews</a>.</p>
-      </div>
-      <div class="rounded-lg border border-vx-ink/30 p-4">
-        <h3 class="font-semibold text-vx-ink">Supervised or autonomous</h3>
-        <p class="mt-2 text-sm text-vx-ink/80">Each profile sets its autonomy. An autonomous agent still follows the permission rules and guardrails.</p>
-      </div>
-      <div class="rounded-lg border border-vx-ink/30 p-4">
-        <h3 class="font-semibold text-vx-ink">Iteration limit</h3>
-        <p class="mt-2 text-sm text-vx-ink/80">A profile with guardrails off, autonomy set to autonomous and a looping mode is refused unless it also sets max_iterations.</p>
-      </div>
-      <div class="rounded-lg border border-vx-ink/30 p-4">
-        <h3 class="font-semibold text-vx-ink">Model and guardrails</h3>
-        <p class="mt-2 text-sm text-vx-ink/80">A profile can use a different provider, model and effort from the main session. It can also turn guardrails on or off for itself.</p>
-      </div>
-      <div class="rounded-lg border border-vx-ink/30 p-4">
-        <h3 class="font-semibold text-vx-ink">Runs beside the session</h3>
-        <p class="mt-2 text-sm text-vx-ink/80">Each background agent has its own slot in the agent pool and its own iteration count. It doesn't block the session you are typing in.</p>
-      </div>
-      <div class="rounded-lg border border-vx-ink/30 p-4">
-        <h3 class="font-semibold text-vx-ink">Recovery subagent</h3>
-        <p class="mt-2 text-sm text-vx-ink/80">The <a href="#processes" class="underline">recovery subagent</a> gets the read-only plan tools plus <code class="mono">SubAgentLog</code> and <code class="mono">ProcessRestart</code>. It can change a command's flags but not its binary.</p>
-      </div>
-    </div>
-  </div>
-</SealedSection>
+<Agents />
 
 <SealedSection label="memory" sealText="Memory: SearchSessions, ReadSession and SearchMemory read the transcripts and memory files of other coding agents on this machine from a fixed registry, take no path argument, cite every hit, and always classify. Each turn also carries harness-computed git and forge facts and the read index, and plan and goal turns prefetch the instruction and changed files through a classified Read." id="memory">
   <div class="prose-measure">
