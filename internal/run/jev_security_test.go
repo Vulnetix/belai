@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/firewall"
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/rolemanager/jev"
 	"github.com/vulnetix/belai/internal/tools"
@@ -56,6 +57,18 @@ func TestSecurityGuardUsesJevForDecisionsModel(t *testing.T) {
 	g := securityGuard(cfg, http.DefaultClient, nil)
 	if _, ok := g.(*jev.Security); !ok {
 		t.Fatalf("securityGuard = %T, want *jev.Security for a Jev classifier", g)
+	}
+}
+
+// A firewall-routed Jev classifier holds the firewall's credential, which
+// never leaves its instance, so it never takes the direct Decisions call.
+func TestSecurityGuardSkipsJevThroughAFirewall(t *testing.T) {
+	cfg := jevClassifierConfig("https://example.invalid")
+	cfg.Classifier.APIKey = "firewall-secret"
+	cfg.Classifier.Firewall = &firewall.Route{Mode: "vulnetix", BaseURL: "https://guardrails.vulnetix.com/openrouter/org-1", APIKey: "firewall-secret"}
+	g := securityGuard(cfg, http.DefaultClient, nil)
+	if _, ok := g.(*jev.Security); ok {
+		t.Fatalf("securityGuard = %T: a firewall-routed classifier would send its credential to OpenRouter", g)
 	}
 }
 
