@@ -293,7 +293,10 @@ and the inbox run on the syncer's own goroutines.
     heartbeat, end, inbox long-poll (prompts, answers and agent drafts), prompt
     and answer acks, and agent-draft results.
   - Browser endpoints: list (sessions run in `/tmp`, `/private/tmp` or
-    `/var/tmp` are hidden unless `tmp=1`), detail, paged entries, an SSE
+    `/var/tmp` are hidden unless `tmp=1`; the live list also carries
+    `openAsks`, `openAskAt` and `openAskKind`, which count ask lines with no
+    `answer-<ask id>` line, so the Sessions page can show who is waiting on
+    the user), detail, paged entries, an SSE
     stream, prompt create/cancel, answer create/cancel, and agent-draft
     create/read/cancel (`belai_drafts.go`).
   - Wake-ups: `belai_notify.go` listens on `belai_s` (session) and `belai_h`
