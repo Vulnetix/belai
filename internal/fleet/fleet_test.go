@@ -174,6 +174,31 @@ func TestWorkerMirrorsItsSession(t *testing.T) {
 	}
 }
 
+// A worker skips an item it failed only until someone touches it: moving it
+// back or assigning it is a deliberate retry.
+func TestWorkerRetakesAFailedItemOnceItIsTouched(t *testing.T) {
+	store, reg := testEnv(t)
+	it, _, _ := store.Add(kanban.ItemInput{Title: "hard", Labels: []string{"build"}}, kanban.Provenance{})
+	runs := 0
+	w := newWorker(t, store, reg, builderProfile(), func(ctx context.Context, tt Turn) (run.Result, error) {
+		runs++
+		return run.Result{StopReason: run.StopStalled, Passes: 1}, nil
+	})
+	w.Run(context.Background())
+	w.Run(context.Background())
+	if runs != 1 {
+		t.Fatalf("%d runs before anyone touched it, want 1", runs)
+	}
+	time.Sleep(2 * time.Millisecond) // Updated is in ms
+	if _, err := store.Move(it.ID, kanban.Backlog, "moved on the website", ""); err != nil {
+		t.Fatal(err)
+	}
+	w.Run(context.Background())
+	if runs != 2 {
+		t.Fatalf("%d runs after it was moved back, want 2", runs)
+	}
+}
+
 func TestWorkerFailureRetriesThenBlocks(t *testing.T) {
 	store, reg := testEnv(t)
 	it, _, _ := store.Add(kanban.ItemInput{Title: "hard", Labels: []string{"build"}}, kanban.Provenance{})

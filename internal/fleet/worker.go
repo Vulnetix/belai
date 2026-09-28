@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"runtime"
@@ -103,7 +104,7 @@ type Worker struct {
 
 	now      func() time.Time
 	mu       sync.Mutex
-	failures map[string]bool // items this worker failed; never reclaimed by it
+	failures map[string]int64 // items this worker failed, with their Updated at release; skipped until touched again
 }
 
 // ProfileHash pins a profile's definition: a worker stops if its profile
@@ -182,7 +183,7 @@ func Preflight(p agentprofile.AgentProfile, s config.Settings, pol posture.Polic
 // profile's max_items is reached.
 func (w *Worker) Run(ctx context.Context) error {
 	if w.failures == nil {
-		w.failures = map[string]bool{}
+		w.failures = map[string]int64{}
 	}
 	if w.Runner == nil {
 		w.Runner = w.runAgent
@@ -320,7 +321,11 @@ func (w *Worker) claimRequest(project string) kanban.ClaimRequest {
 		r.Lists, r.Labels, r.AssignedOnly = k.ClaimLists(), k.Labels, k.AssignedOnly
 	}
 	w.mu.Lock()
-	for id := range w.failures {
+	for id, at := range w.failures {
+		if cur, err := w.Store.Get(id); err == nil && cur.Updated > at {
+			delete(w.failures, id)
+			continue
+		}
 		r.Skip = append(r.Skip, id)
 	}
 	w.mu.Unlock()
@@ -629,13 +634,21 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 	}
 	if o.failed {
 		w.Record.Failed++
-		w.mu.Lock()
-		w.failures[it.ID] = true
-		w.mu.Unlock()
 	} else {
 		w.Record.Done++
 	}
 	released, err := w.Store.Release(it.ID, w.Record.ID, out)
+	if o.failed {
+		// Skip it until someone else touches it: a move or an assignment
+		// after this release is a deliberate retry.
+		at := int64(math.MaxInt64)
+		if err == nil {
+			at = released.Updated
+		}
+		w.mu.Lock()
+		w.failures[it.ID] = at
+		w.mu.Unlock()
+	}
 	if err != nil {
 		w.logf("%s: release: %v", it.Short(), err)
 		return it
