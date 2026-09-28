@@ -96,7 +96,45 @@ type Host struct {
 	Hostname     string `json:"hostname"`
 	OS           string `json:"os"`
 	BelaiVersion string `json:"belaiVersion"`
+	// RC is sent only by `belai rc`: the directories it will start sessions
+	// in and how many it runs at once.
+	RC *RCInfo `json:"rc,omitempty"`
 }
+
+// RCInfo is a remote-control daemon's advertisement.
+type RCInfo struct {
+	Dirs        []RCDir `json:"dirs"`
+	MaxSessions int     `json:"maxSessions"`
+}
+
+// RCDir is one directory an rc daemon offers. Source is "trusted" (a project
+// the host already trusted) or "arg" (passed as `belai rc --dir`).
+type RCDir struct {
+	Path   string `json:"path"`
+	Name   string `json:"name"`
+	Source string `json:"source"`
+}
+
+// Dispatch is a website request to an rc daemon: start a session in Cwd with
+// Prompt, or (Kind "stop") stop SessionID. Everything in it is untrusted: the
+// daemon re-checks Cwd against its own list and the prompt goes through the
+// same admission as a typed one.
+type Dispatch struct {
+	ID        string `json:"id"`
+	Kind      string `json:"kind"`
+	Cwd       string `json:"cwd"`
+	Mode      string `json:"mode"`
+	Prompt    string `json:"prompt"`
+	SessionID string `json:"sessionId"`
+	CreatedAt int64  `json:"createdAt"`
+}
+
+// Dispatch outcomes the daemon reports back.
+const (
+	DispatchStarted = "started"
+	DispatchStopped = "stopped"
+	DispatchRefused = "refused"
+)
 
 // SessionMeta is the session's registration and display metadata.
 type SessionMeta struct {
@@ -114,6 +152,9 @@ type SessionMeta struct {
 	// RemoteAnswers says the host takes web answers to its open asks.
 	RemoteAnswers bool  `json:"remoteAnswers"`
 	CreatedAt     int64 `json:"createdAt,omitempty"`
+	// DispatchID is the website request that started this session on an rc
+	// daemon; empty for a session someone started at the terminal.
+	DispatchID string `json:"dispatchId,omitempty"`
 }
 
 // Entry is one JSONL line as uploaded: the session.Entry fields plus seq.
@@ -255,14 +296,19 @@ func (c *Client) End(ctx context.Context, sessionID string) error {
 	return c.do(ctx, http.MethodPost, "/sessions/"+url.PathEscape(sessionID)+"/end", nil, nil, requestTimeout)
 }
 
-// Inbox long-polls for web prompts and web answers addressed to this host's
-// live sessions. A server that predates answers sends none.
-func (c *Client) Inbox(ctx context.Context, hostID string, wait time.Duration) ([]RemotePrompt, []RemoteAnswer, error) {
+// Inbox long-polls for web prompts and web answers addressed to sessionID, a
+// live session of this host. A server that predates answers sends none; one
+// that predates the session filter hands over the whole host's inbox, which
+// the TUI refuses per prompt as before.
+func (c *Client) Inbox(ctx context.Context, hostID, sessionID string, wait time.Duration) ([]RemotePrompt, []RemoteAnswer, error) {
 	var out struct {
 		Prompts []RemotePrompt `json:"prompts"`
 		Answers []RemoteAnswer `json:"answers"`
 	}
 	path := fmt.Sprintf("/hosts/%s/inbox?wait=%d", url.PathEscape(hostID), int(wait/time.Second))
+	if sessionID != "" {
+		path += "&session=" + url.QueryEscape(sessionID)
+	}
 	err := c.do(ctx, http.MethodGet, path, nil, &out, wait+requestTimeout)
 	return out.Prompts, out.Answers, err
 }
@@ -278,4 +324,32 @@ func (c *Client) AckAnswer(ctx context.Context, answerID, status, reason, entryI
 func (c *Client) Ack(ctx context.Context, promptID, status, reason, entryID string) error {
 	return c.do(ctx, http.MethodPost, "/prompts/"+url.PathEscape(promptID)+"/ack",
 		map[string]string{"status": status, "reason": reason, "entryId": entryID}, nil, requestTimeout)
+}
+
+// RCHeartbeat keeps an rc daemon online and reports how many sessions it runs.
+func (c *Client) RCHeartbeat(ctx context.Context, hostID string, running int) error {
+	return c.do(ctx, http.MethodPost, "/hosts/"+url.PathEscape(hostID)+"/rc/heartbeat",
+		map[string]int{"running": running}, nil, requestTimeout)
+}
+
+// RCOffline marks the rc daemon stopped; requests still waiting expire.
+func (c *Client) RCOffline(ctx context.Context, hostID string) error {
+	return c.do(ctx, http.MethodPost, "/hosts/"+url.PathEscape(hostID)+"/rc/offline", nil, nil, requestTimeout)
+}
+
+// Dispatches long-polls for website requests to this rc daemon.
+func (c *Client) Dispatches(ctx context.Context, hostID string, wait time.Duration) ([]Dispatch, error) {
+	var out struct {
+		Dispatches []Dispatch `json:"dispatches"`
+	}
+	path := fmt.Sprintf("/hosts/%s/dispatch?wait=%d", url.PathEscape(hostID), int(wait/time.Second))
+	err := c.do(ctx, http.MethodGet, path, nil, &out, wait+requestTimeout)
+	return out.Dispatches, err
+}
+
+// AckDispatch reports what the daemon did with a request: started (with the
+// session id it minted), stopped, or refused (with a reason).
+func (c *Client) AckDispatch(ctx context.Context, dispatchID, status, sessionID, reason string) error {
+	return c.do(ctx, http.MethodPost, "/dispatches/"+url.PathEscape(dispatchID)+"/ack",
+		map[string]string{"status": status, "sessionId": sessionID, "reason": reason}, nil, requestTimeout)
 }

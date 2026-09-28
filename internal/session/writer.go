@@ -45,11 +45,15 @@ func (w *Writer) Err() error {
 	return w.err
 }
 
-func (w *Writer) append(e Entry) {
+// Entry writes any entry, chained like the rest, and returns its id ("" if
+// it was not written).
+func (w *Writer) Entry(e Entry) string { return w.append(e) }
+
+func (w *Writer) append(e Entry) string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.err != nil {
-		return
+		return ""
 	}
 	if e.ID == "" {
 		e.ID = MustID()
@@ -60,9 +64,10 @@ func (w *Writer) append(e Entry) {
 	}
 	if err := w.store.AppendTo(w.key, w.id, e); err != nil {
 		w.err = err
-		return
+		return ""
 	}
 	w.last = e.ID
+	return e.ID
 }
 
 // User writes a user turn.
