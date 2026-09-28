@@ -514,7 +514,7 @@ func (w *Workspace) PublishBranch(ctx context.Context, title, body string) (stri
 		return "", err
 	}
 	if w.FilesChanged(ctx) == 0 {
-		return "", fmt.Errorf("nothing is committed on %s yet: commit the work (git add, git commit) before publishing", w.Branch)
+		return "", w.nothingToPublish(ctx)
 	}
 	p, reason := forge.For(rem, w.run, exec.LookPath)
 	if p == nil {
@@ -529,6 +529,23 @@ func (w *Workspace) PublishBranch(ctx context.Context, title, body string) (stri
 		return pr.URL, nil
 	}
 	return p.CreatePR(ctx, w.Dir, forge.CreatePRArgs{Branch: w.Branch, Title: title, Body: body, Draft: true})
+}
+
+// nothingToPublish explains an empty branch. Uncommitted edits only need a
+// commit; a clean worktree means the base already has everything, which a
+// model has mistaken for its own earlier commit, so the error names the base
+// and says what to do instead of sending it back to git commit.
+func (w *Workspace) nothingToPublish(ctx context.Context) error {
+	if paths, err := w.changedPaths(ctx); err == nil && len(paths) > 0 {
+		return fmt.Errorf("nothing is committed on %s yet, and %d path(s) are changed in the worktree: commit them (git add, git commit) before publishing", w.Branch, len(paths))
+	}
+	base := w.Base
+	if len(base) > 12 {
+		base = base[:12]
+	}
+	return fmt.Errorf("%s has no changes beyond its base %s, so there is nothing to publish. "+
+		"A commit that is an ancestor of %s (git merge-base --is-ancestor <commit> %s) is already on the base, not work on this branch. "+
+		"If the base already does what the item asks, say so in the item's notes and finish without publishing", w.Branch, base, base, base)
 }
 
 // Remove deletes the worktree directory. The branch, and the work on it,
