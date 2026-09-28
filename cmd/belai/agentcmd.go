@@ -21,6 +21,7 @@ import (
 	"github.com/vulnetix/belai/internal/credentials"
 	"github.com/vulnetix/belai/internal/fleet"
 	"github.com/vulnetix/belai/internal/gitinfo"
+	"github.com/vulnetix/belai/internal/headless"
 	"github.com/vulnetix/belai/internal/httpclient"
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/mcp"
@@ -352,9 +353,9 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 	w := &fleet.Worker{
 		Profile: profile, Repo: repo, Settings: settings, Posture: pol,
 		Cfg: cfg, Client: httpclient.Default(), Store: store, Registry: reg, MCP: mcpMgr,
-		Sessions: sessions,
-		Record:   fleet.Record{ID: workerID, Profile: profile.Name, Crew: *crew, Detached: *detached, Log: logPath(reg, workerID, *detached)},
-		Once:     *once, Item: *item, Log: logw,
+		Sessions: sessions, Sync: headless.SyncClient(settings, repo),
+		Record: fleet.Record{ID: workerID, Profile: profile.Name, Crew: *crew, Detached: *detached, Log: logPath(reg, workerID, *detached)},
+		Once:   *once, Item: *item, Log: logw,
 		Notify: workerNotifier(settings, profile.Name, *detached),
 	}
 	if err := w.Run(ctx); err != nil {

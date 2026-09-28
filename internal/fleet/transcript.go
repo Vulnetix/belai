@@ -7,13 +7,17 @@ import (
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/sessionsync"
 	"github.com/vulnetix/belai/internal/turnlog"
 )
 
 // transcript writes a worker item's session, keyed by the trusted
 // repository — not the worktree — so it lists with the project's other
 // sessions, resumes, and reaches ReadSession and SearchSessions.
-type transcript struct{ log *turnlog.Log }
+type transcript struct {
+	log    *turnlog.Log
+	mirror *sessionsync.Syncer
+}
 
 func (w *Worker) transcript(t Turn) *transcript {
 	if w.Sessions == nil {
@@ -30,8 +34,16 @@ func (w *Worker) transcript(t Turn) *transcript {
 		w.logf("transcript: %v", err)
 		return &transcript{log: turnlog.New(nil)}
 	}
-	sw.Name(fmt.Sprintf("%s · %s %s", w.Profile.Name, t.Item.Short(), kanban.CleanTitle(t.Item.Title)))
-	return &transcript{log: turnlog.New(sw)}
+	name := fmt.Sprintf("%s · %s %s", w.Profile.Name, t.Item.Short(), kanban.CleanTitle(t.Item.Title))
+	sw.Name(name)
+	if w.mirror != nil {
+		w.mirror.Activate(sessionsync.SessionInfo{
+			ID: t.SessionID, Path: w.Sessions.SessionPath(key, t.SessionID), ProjectKey: string(key),
+			ProjectName: key.Project(), Cwd: t.Workdir, Name: name,
+			Model: w.Cfg.Model, Provider: w.Cfg.Provider, Mode: "goal",
+		})
+	}
+	return &transcript{log: turnlog.New(sw), mirror: w.mirror}
 }
 
 func (t *transcript) user(text string) { t.log.User(text, nil) }
@@ -39,6 +51,11 @@ func (t *transcript) user(text string) { t.log.User(text, nil) }
 func (t *transcript) observe(e agent.Event) { t.log.Observe(e) }
 
 func (t *transcript) finish(res run.Result, err error) {
+	defer func() {
+		if t.mirror != nil {
+			t.mirror.Nudge()
+		}
+	}()
 	t.log.Flush()
 	switch {
 	case err != nil:

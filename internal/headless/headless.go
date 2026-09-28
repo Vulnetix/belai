@@ -179,6 +179,12 @@ func HostID() string {
 	return ""
 }
 
+// SyncClient returns the session-sync client when the kanban and sync
+// settings are on and a usable Vulnetix CLI credential resolves, or nil.
+func SyncClient(settings config.Settings, workdir string) *sessionsync.Client {
+	return syncClient(settings, workdir)
+}
+
 // syncClient returns the session-sync client when the kanban and sync
 // settings are on and a usable Vulnetix CLI credential resolves.
 func syncClient(settings config.Settings, workdir string) *sessionsync.Client {
