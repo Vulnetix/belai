@@ -475,3 +475,21 @@ func TestLargeBatchesAreGzipped(t *testing.T) {
 		t.Fatal("gzipped content did not round-trip")
 	}
 }
+
+// A test binary never gets a client for a real origin, whatever the
+// environment says, so a test that forgot to isolate VULNETIX_WEB_URL
+// cannot push its fixtures to the developer's board. Loopback still works
+// for tests that run a local server.
+func TestNewClientRefusesRealOriginUnderTest(t *testing.T) {
+	auth := func() (string, error) { return "Bearer x", nil }
+	for _, base := range []string{BaseURL(""), "https://staging.vulnetix.com" + apiPath} {
+		if _, err := NewClient(base, auth, nil); !errors.Is(err, errTestOrigin) {
+			t.Fatalf("NewClient(%s) under test = %v, want errTestOrigin", base, err)
+		}
+	}
+	for _, base := range []string{"http://127.0.0.1:1" + apiPath, "http://localhost:8080" + apiPath, "http://[::1]:9" + apiPath} {
+		if _, err := NewClient(base, auth, nil); err != nil {
+			t.Fatalf("NewClient(%s) = %v, want a loopback client", base, err)
+		}
+	}
+}

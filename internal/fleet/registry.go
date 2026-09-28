@@ -348,6 +348,9 @@ type SpawnOptions struct {
 	Crew      string
 	// Provider and Model override the profile's model.
 	Provider, Model string
+	// Stay keeps the worker waiting for work instead of exiting once the
+	// board has nothing left for it.
+	Stay bool
 }
 
 // Spawn starts a detached `belai agent run` worker and returns its id. The
@@ -363,6 +366,9 @@ func (r *Registry) Spawn(o SpawnOptions) (string, error) {
 	}
 	if o.Model != "" {
 		args = append(args, "-model", o.Model)
+	}
+	if o.Stay {
+		args = append(args, "-stay")
 	}
 	args = append(args, o.Profile)
 	if err := os.MkdirAll(r.LogDir(), 0o700); err != nil {

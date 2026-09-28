@@ -94,6 +94,11 @@ type Worker struct {
 	Once bool
 	// Item claims this item instead of searching.
 	Item string
+	// Stay keeps the worker waiting for work after the board runs dry. By
+	// default a worker exits (and frees its max_workers slot) once it has
+	// found nothing to claim, with no crew teammate working, for a quiet
+	// window; a scheduled (cron) worker always stays.
+	Stay bool
 	Log  io.Writer
 	// Notify sends a notification event with the agent name as subject.
 	Notify func(event string)
@@ -236,6 +241,10 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 	}
 	idle := p.PollInterval()
 	lastPull := time.Time{}
+	// quietSince starts the quiet window: at start (so crew members that
+	// are still registering are waited for), after each item, and whenever
+	// a teammate is working and could hand work over.
+	quietSince := w.clock()
 	for n := 0; ; {
 		if ctx.Err() != nil {
 			return "stopped", nil
@@ -254,6 +263,13 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 		case errors.Is(err, kanban.ErrNoWork):
 			if w.Once {
 				return "no work", nil
+			}
+			if !w.Stay && !isCron {
+				if w.teammateWorking() {
+					quietSince = w.clock()
+				} else if w.clock().Sub(quietSince) >= QuietWindow(idle) {
+					return fmt.Sprintf("done: nothing left to claim for %s", QuietWindow(idle)), nil
+				}
 			}
 			wait := idle
 			if isCron {
@@ -277,6 +293,7 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 		}
 		w.work(ctx, it)
 		n++
+		quietSince = w.clock()
 		if w.Once || w.Item != "" {
 			return "done", nil
 		}
@@ -290,6 +307,27 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 			}
 		}
 	}
+}
+
+// QuietWindow is how long a worker waits with nothing to claim before it
+// exits: two polls, so a handoff a teammate just made is claimed first.
+func QuietWindow(poll time.Duration) time.Duration { return 2 * poll }
+
+// teammateWorking reports whether another live worker of this worker's crew,
+// in the same repository, is starting or working, and so may still hand an
+// item over. A worker outside a crew has no teammates.
+func (w *Worker) teammateWorking() bool {
+	if w.Registry == nil || w.Record.Crew == "" {
+		return false
+	}
+	live, _ := w.Registry.Live()
+	for _, r := range live {
+		if r.ID != w.Record.ID && r.Crew == w.Record.Crew && r.Repo == w.Repo &&
+			(r.State == StateWorking || r.State == StateStarting) {
+			return true
+		}
+	}
+	return false
 }
 
 func sleep(ctx context.Context, d time.Duration) bool {
@@ -461,7 +499,9 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		o.branch = ws.Branch
 	}
 	released := w.release(ctx, it, o)
-	if !o.failed && released.List == kanban.Done && w.publishes() && ws.Worktree {
+	// An empty branch has nothing to push; PublishBranch would only refuse
+	// and leave a "not opened" note beside the release note above.
+	if !o.failed && o.files > 0 && released.List == kanban.Done && w.publishes() && ws.Worktree {
 		w.publish(ctx, ws, released)
 	}
 	w.reflect(ctx, it, res, runErr)
@@ -603,7 +643,9 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 	if o.files > 0 {
 		out.Note += fmt.Sprintf("; %d files changed on %s", o.files, o.branch)
 	} else if o.branch != "" && !o.failed {
-		out.Note += "; branch " + o.branch
+		// Nothing to review or publish: the base already had it, or the
+		// turn changed nothing. Either way the note says so plainly.
+		out.Note += "; no files changed on " + o.branch + " (nothing to publish)"
 	}
 	var route agentprofile.Route
 	switch {

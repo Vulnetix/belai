@@ -616,3 +616,131 @@ func TestWorkspaceDirective(t *testing.T) {
 		t.Error("a shared workspace got a worktree directive")
 	}
 }
+
+// An empty branch is explained, not answered with "commit the work": a
+// clean worktree means the base already has it (a model once took a base
+// ancestor for its own commit), and only uncommitted edits need a commit.
+func TestNothingToPublishNamesTheBase(t *testing.T) {
+	testEnv(t)
+	repo := gitRepo(t)
+	ctx := context.Background()
+	ws, err := PrepareWorktree(ctx, repo, kanban.Item{ID: "6a9a2c00-0000-4000-8000-000000000000", Title: "t"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ws.Remove(ctx)
+	msg := ws.nothingToPublish(ctx).Error()
+	for _, want := range []string{"no changes beyond its base " + ws.Base[:12], "merge-base --is-ancestor", "without publishing"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("clean worktree: %q lacks %q", msg, want)
+		}
+	}
+	if strings.Contains(msg, "git add") {
+		t.Fatalf("clean worktree told to commit: %q", msg)
+	}
+	if err := os.WriteFile(filepath.Join(ws.Dir, "new.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if msg := ws.nothingToPublish(ctx).Error(); !strings.Contains(msg, "1 path(s) are changed") || !strings.Contains(msg, "git commit") {
+		t.Fatalf("dirty worktree: %q", msg)
+	}
+}
+
+// A turn that changes nothing on its branch is released with a plain note
+// and never reaches PublishBranch.
+func TestWorkerNoChangeSkipsPublish(t *testing.T) {
+	store, reg := testEnv(t)
+	it, _, _ := store.Add(kanban.ItemInput{Title: "already done", Labels: []string{"build"}}, kanban.Provenance{})
+	p := builderProfile()
+	p.Workspace = &agentprofile.WorkspaceSpec{Isolation: agentprofile.IsolationWorktree, Publish: agentprofile.PublishDraftPR}
+	p.Kanban.OnSuccess = agentprofile.Route{List: "done"}
+	w := newWorker(t, store, reg, p, complete)
+	w.Repo = gitRepo(t)
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := store.Get(it.ID)
+	if after.List != kanban.Done || !strings.Contains(after.LastNote(), "no files changed on belai/") {
+		t.Fatalf("released to %s with note %q", after.List, after.LastNote())
+	}
+	for _, n := range after.History {
+		if strings.Contains(n.Note, "pull request not opened") {
+			t.Fatalf("publish was attempted: %q", n.Note)
+		}
+	}
+}
+
+// quickPoll is a builder profile that polls fast, so the quiet window is
+// short enough to test.
+func quickPoll() agentprofile.AgentProfile {
+	p := builderProfile()
+	p.Kanban.Poll = "10ms"
+	return p
+}
+
+func runFor(t *testing.T, w *Worker, d time.Duration) (Record, time.Duration) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), d)
+	defer cancel()
+	start := time.Now()
+	if err := w.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := w.Registry.Get(w.Record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rec, time.Since(start)
+}
+
+// With nothing to claim a worker exits after the quiet window, stopped, so
+// it no longer takes a max_workers slot.
+func TestWorkerExitsWhenNothingIsLeft(t *testing.T) {
+	store, reg := testEnv(t)
+	w := newWorker(t, store, reg, quickPoll(), complete)
+	w.Once = false
+	rec, took := runFor(t, w, 5*time.Second)
+	if rec.State != StateStopped || !strings.HasPrefix(rec.Reason, "done: nothing left to claim") {
+		t.Fatalf("record %+v", rec)
+	}
+	if took >= 5*time.Second {
+		t.Fatal("the worker waited for the context instead of exiting")
+	}
+	if live, _ := reg.Live(); len(live) != 0 {
+		t.Fatalf("still live: %+v", live)
+	}
+}
+
+// -stay keeps the old standing worker: it waits until it is stopped.
+func TestWorkerStayWaitsForWork(t *testing.T) {
+	store, reg := testEnv(t)
+	w := newWorker(t, store, reg, quickPoll(), complete)
+	w.Once, w.Stay = false, true
+	rec, took := runFor(t, w, 300*time.Millisecond)
+	if rec.Reason != "stopped" || took < 250*time.Millisecond {
+		t.Fatalf("stay worker ended after %s: %+v", took, rec)
+	}
+}
+
+// A crew teammate that is still working may hand work over, so the worker
+// waits for it and exits only once the teammate is done.
+func TestWorkerWaitsForAWorkingTeammate(t *testing.T) {
+	store, reg := testEnv(t)
+	w := newWorker(t, store, reg, quickPoll(), complete)
+	w.Once = false
+	w.Record.Crew = "belai:delivery"
+	mate := Record{ID: NewID("belai:reviewer"), Profile: "belai:reviewer", Crew: "belai:delivery",
+		Repo: w.Repo, PID: os.Getpid(), State: StateWorking, Started: time.Now().UnixMilli()}
+	if err := reg.Save(mate); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		mate.State = StateStopped
+		_ = reg.Save(mate)
+	}()
+	rec, took := runFor(t, w, 5*time.Second)
+	if took < 300*time.Millisecond || !strings.HasPrefix(rec.Reason, "done:") {
+		t.Fatalf("exited after %s with %+v while a teammate worked", took, rec)
+	}
+}

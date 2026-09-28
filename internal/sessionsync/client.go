@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"testing"
 	"time"
 )
 
@@ -69,15 +70,27 @@ func AllowedOrigin(rawURL string) bool {
 	if err != nil || u.User != nil || u.Host == "" {
 		return false
 	}
+	if loopback(u) {
+		return u.Scheme == "http" || u.Scheme == "https"
+	}
 	h := strings.ToLower(u.Hostname())
-	if h == "localhost" {
-		return u.Scheme == "http" || u.Scheme == "https"
-	}
-	if ip := net.ParseIP(h); ip != nil && ip.IsLoopback() {
-		return u.Scheme == "http" || u.Scheme == "https"
-	}
 	return u.Scheme == "https" && (h == "vulnetix.com" || strings.HasSuffix(h, ".vulnetix.com"))
 }
+
+func loopback(u *url.URL) bool {
+	h := strings.ToLower(u.Hostname())
+	if h == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(h)
+	return ip != nil && ip.IsLoopback()
+}
+
+// errTestOrigin refuses a real origin from a test binary. A developer's
+// machine holds a real Vulnetix CLI credential and sync is on by default,
+// so a test that forgot to isolate VULNETIX_WEB_URL pushed its fixture
+// items ("Survey tests") to the developer's own board on every go test run.
+var errTestOrigin = errors.New("sessionsync: a test binary never syncs to a non-loopback origin; set VULNETIX_WEB_URL to a loopback server")
 
 // Client is the thin HTTP client for /v1/belai. AuthHeader is read on every
 // request so a re-login takes effect without a restart.
@@ -91,6 +104,9 @@ type Client struct {
 func NewClient(base string, auth func() (string, error), hc *http.Client) (*Client, error) {
 	if !AllowedOrigin(base) {
 		return nil, fmt.Errorf("sessionsync: refusing to send the Vulnetix credential to %s", base)
+	}
+	if u, _ := url.Parse(base); testing.Testing() && !loopback(u) {
+		return nil, errTestOrigin
 	}
 	if hc == nil {
 		hc = http.DefaultClient

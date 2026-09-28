@@ -48,16 +48,20 @@ const agentUsage = `usage: belai agent <command> [flags] [args]
       -item K-xxxxxx             work this item
       -trust-dir                 trust the repository first
       -provider P -model M       override the model
+      -stay                      keep waiting for work instead of exiting
+                                 once nothing is left to claim
   start [flags] NAME | -crew C   start detached workers; prints their ids
       -replicas N                workers of NAME (default 1)
-      -trust-dir, -provider, -model as for run
+      -trust-dir, -provider, -model, -stay as for run
   ps [-all] [-json]              running workers (-all: recently stopped too)
   logs [-f] [-n N] ID            a worker's log
   stop ID|NAME | -all            stop workers; their items go back to the board
   status                         workers and this project's board
 
 A worker claims kanban items that match its profile, works each as a goal in
-its own git worktree, and moves it on. See docs/fleet.md.
+its own git worktree, and moves it on. When nothing is left to claim and no
+teammate in its crew is working, it exits and frees its slot (unless -stay or
+a cron schedule keeps it). See docs/fleet.md.
 `
 
 // runAgentCLI implements `belai agent …` and returns the exit code.
@@ -271,8 +275,9 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 	id := fs.String("id", "", "worker id (set by `agent start`)")
 	crew := fs.String("crew", "", "the crew this worker belongs to (set by `agent start`)")
 	detached := fs.Bool("detached", false, "started by `agent start`")
+	stay := fs.Bool("stay", false, "keep waiting for work instead of exiting once nothing is left to claim")
 	if err := parseInterleaved(fs, rest); err != nil || fs.NArg() != 1 {
-		return 2, errors.New("usage: belai agent run [-once] [-item K-xxxxxx] NAME")
+		return 2, errors.New("usage: belai agent run [-once] [-item K-xxxxxx] [-stay] NAME")
 	}
 	name := fs.Arg(0)
 	wd, _ := os.Getwd()
@@ -355,7 +360,7 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 		Cfg: cfg, Client: httpclient.Default(), Store: store, Registry: reg, MCP: mcpMgr,
 		Sessions: sessions, Sync: headless.SyncClient(settings, repo),
 		Record: fleet.Record{ID: workerID, Profile: profile.Name, Crew: *crew, Detached: *detached, Log: logPath(reg, workerID, *detached)},
-		Once:   *once, Item: *item, Log: logw,
+		Once:   *once, Item: *item, Stay: *stay, Log: logw,
 		Notify: workerNotifier(settings, profile.Name, *detached),
 	}
 	if err := w.Run(ctx); err != nil {
@@ -428,6 +433,7 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	providerName := fs.String("provider", "", "provider override")
 	model := fs.String("model", "", "model override")
 	maxWorkers := fs.Int("max-workers", 0, "worker cap for this start in place of agents.max_workers (set by `belai rc --max`)")
+	stay := fs.Bool("stay", false, "keep the workers waiting for work instead of exiting once nothing is left to claim")
 	if err := parseInterleaved(fs, rest); err != nil || (fs.NArg() != 1) == (*crewName == "") {
 		return 2, errors.New("usage: belai agent start NAME [-replicas N] | -crew CREW")
 	}
@@ -481,7 +487,7 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	}
 	live, _ := reg.Live()
 	if max := workerCap(settings, *maxWorkers); len(live)+len(launches) > max {
-		return 1, fmt.Errorf("starting %d would run %d workers; the worker cap is %d", len(launches), len(live)+len(launches), max)
+		return 1, fmt.Errorf("starting %d would run %d workers; the worker cap is %d (agents.max_workers, or --max-workers)", len(launches), len(live)+len(launches), max)
 	}
 	exe, err := os.Executable()
 	if err != nil {
@@ -489,7 +495,7 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	}
 	var started []string
 	for _, l := range launches {
-		id, err := reg.Spawn(fleet.SpawnOptions{Exe: exe, Repo: repo, Profile: l.profile, Crew: l.crew, Provider: *providerName, Model: *model})
+		id, err := reg.Spawn(fleet.SpawnOptions{Exe: exe, Repo: repo, Profile: l.profile, Crew: l.crew, Provider: *providerName, Model: *model, Stay: *stay})
 		if err != nil {
 			return 1, err
 		}

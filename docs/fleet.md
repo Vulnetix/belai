@@ -84,6 +84,15 @@ One pass of the worker loop:
 6. **Memory.** An optional reflection turn distils a few lessons into the
    profile's memory file, which later items receive as a classified
    attachment.
+7. **Done.** A worker exits by itself once the board has nothing left for
+   it. With no claimable item and no teammate in its crew (same repository)
+   starting or working, it waits a quiet window of two polls, so a handoff
+   made just before is claimed first, then stops. Its registry record reads
+   `stopped` with the reason `done: nothing left to claim`, and its
+   `agents.max_workers` slot is free. A teammate that is working holds the
+   window open, because it may still hand an item over. `-stay` on
+   `belai agent run` or `start` keeps a standing worker that waits for new
+   items, and a worker on a cron `schedule` always stays.
 
 ### What a worker's model may do on the board
 
@@ -277,6 +286,12 @@ ends. It first checks that the worktree is still on the item's branch.
 line. `PublishBranch` is the only way to push, because a raw push could send
 any ref, `main` included. Publishing needs a GitHub or GitLab `origin` and
 committed work on the branch. The link is recorded on the item.
+
+A branch with no changes beyond its base is never pushed. When the base
+already does what the item asks, `PublishBranch` says so and names the base,
+rather than asking for a commit, so the agent records that on the item. The
+harness skips its own publish at `done` for such a branch, and the release
+note reads "no files changed on" the branch.
 
 The built-in builders and patchers use `agent`; the reviewer and verifier use
 `draft_pr`, which finds the builder's pull request rather than opening a
