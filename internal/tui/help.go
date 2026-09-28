@@ -275,6 +275,14 @@ func keySections() []keySection {
 			{"p", "preview which rule matches a subject"},
 			{"esc", "back"},
 		}},
+		{"trusted directories (/trusted)", []keyBinding{
+			{"up, down", "move (also k, j)"},
+			{"x", "revoke trust for the selected directory (confirm)"},
+			{"p", "revoke every missing or temporary directory (confirm)"},
+			{"a", "trust a directory by path (confirm); its proposed workspace dirs are not accepted"},
+			{"r", "refresh"},
+			{"esc", "back"},
+		}},
 		{"prompt library (/prompts)", []keyBinding{
 			{"up, down", "move (also k, j)"},
 			{"space", "toggle the selected prompt on or off"},

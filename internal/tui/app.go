@@ -380,6 +380,7 @@ type App struct {
 	providerNewState    providerNewViewState
 	gsState             gettingStartedState
 	rcState             rcViewState
+	trustedState        trustedViewState
 	// rcLive and rcSessions are the rc daemon's record as the footer shows
 	// it, re-read at most every few seconds (rcPolled).
 	rcLive     bool

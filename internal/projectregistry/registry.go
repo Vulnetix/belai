@@ -482,6 +482,30 @@ func Decline(workdir string, dirs []string) error {
 	})
 }
 
+// Untrust revokes trust for the entries with the given keys, so the next
+// launch in each directory asks again and remote control stops offering it.
+// Accepted and declined proposals are kept: they are rulings on the
+// directory's settings, not on the directory. It reports how many entries
+// changed.
+func Untrust(keys ...string) (int, error) {
+	want := make(map[string]bool, len(keys))
+	for _, k := range keys {
+		want[k] = true
+	}
+	var n int
+	err := Mutate(func(r *Registry) error {
+		for i := range r.file.Entries {
+			e := &r.file.Entries[i]
+			if want[e.Key] && e.Trusted {
+				e.Trusted, e.TrustedAt = false, time.Time{}
+				n++
+			}
+		}
+		return nil
+	})
+	return n, err
+}
+
 // TrustOf reports whether workdir is trusted and which project-proposed
 // directories have been accepted or declined, read-only.
 func TrustOf(workdir string) (trusted bool, accepted, declined []string, err error) {

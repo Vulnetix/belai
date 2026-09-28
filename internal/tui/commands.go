@@ -502,6 +502,9 @@ func NewRegistry(workdir string) *Registry {
 	}, func(a *App, arg string) tea.Cmd {
 		return a.rcCommand(arg)
 	})
+	r.Register("trusted", "manage trusted directories, the ones remote control offers", nil, func(a *App, arg string) tea.Cmd {
+		return a.openTrusted()
+	})
 	r.Register("fleet", "kanban worker agents: start, stop and watch them", func() []string {
 		return []string{"start", "crew", "stop"}
 	}, func(a *App, arg string) tea.Cmd {

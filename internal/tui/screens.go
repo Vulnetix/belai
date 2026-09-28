@@ -44,6 +44,7 @@ var screenEntries = []screenEntry{
 	{key: "l", name: "lsp", desc: "language-server diagnostics", view: viewLSP, open: viaCommand("/lsp")},
 	{key: "v", name: "vulnetix", desc: "scanners and the Vulnetix AI Firewall", view: viewVulnetixConfig, open: func(a *App) tea.Cmd { return a.push(viewVulnetixConfig) }, status: func(a *App) string { return "firewall " + onOffLabel(a.firewallEnabled()) }},
 	{key: "f", name: "firewall", desc: "AI Firewall adapters and the active one", view: viewFirewall, open: viaCommand("/firewall"), status: func(a *App) string { return a.firewallLabel() + " " + onOffLabel(a.firewallEnabled()) }},
+	{key: "d", name: "trusted", desc: "trusted directories, the ones remote control offers", view: viewTrusted, open: viaCommand("/trusted"), status: (*App).trustedStatus},
 	{key: "h", name: "sessions", desc: "resume an earlier session", view: viewResume, open: viaCommand("/resume")},
 	{key: "t", name: "kanban", desc: "the global kanban board", view: viewKanban, open: viaCommand("/kanban"), status: (*App).kanbanStatus},
 }
