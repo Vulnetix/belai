@@ -89,6 +89,39 @@ func TestWorkerCompletesAndRoutes(t *testing.T) {
 	}
 }
 
+// A workspace that cannot be prepared gets a setup-debug turn in the trusted
+// repository, with the failure attached, before the item goes back.
+func TestWorkerInvestigatesSetupFailure(t *testing.T) {
+	store, reg := testEnv(t)
+	it, _, _ := store.Add(kanban.ItemInput{Title: "do it", Labels: []string{"build"}}, kanban.Provenance{})
+	p := builderProfile()
+	p.Workspace = &agentprofile.WorkspaceSpec{Isolation: agentprofile.IsolationWorktree}
+	var turns []Turn
+	w := newWorker(t, store, reg, p, func(ctx context.Context, tt Turn) (run.Result, error) {
+		turns = append(turns, tt)
+		return run.Result{StopReason: run.StopComplete, Passes: 1}, nil
+	})
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(turns) != 1 {
+		t.Fatalf("%d turns, want one setup-debug turn", len(turns))
+	}
+	got := turns[0]
+	if got.Workspace != nil || got.Workdir != w.Repo || !strings.Contains(got.Setup, "not a git repository") {
+		t.Fatalf("setup turn: workdir %q workspace %v setup %q", got.Workdir, got.Workspace, got.Setup)
+	}
+	if got.Claim == nil || got.Claim.Item != it.ID {
+		t.Fatalf("claim %+v", got.Claim)
+	}
+	after, _ := store.Get(it.ID)
+	note := after.LastNote()
+	if after.List != kanban.Backlog || after.Attempts != 1 || after.ClaimedBy != "" ||
+		!strings.Contains(note, "could not be prepared") || !strings.Contains(note, "investigated it") {
+		t.Fatalf("released %+v note %q", after, note)
+	}
+}
+
 func TestWorkerFailureRetriesThenBlocks(t *testing.T) {
 	store, reg := testEnv(t)
 	it, _, _ := store.Add(kanban.ItemInput{Title: "hard", Labels: []string{"build"}}, kanban.Provenance{})
@@ -309,12 +342,23 @@ func TestWorktreeLifecycleIsHardened(t *testing.T) {
 	}
 	ws2.Remove(ctx)
 
-	for _, branch := range []string{"main", "belai/--upload-pack=x", "belai/nope"} {
+	for _, branch := range []string{"main", "belai/--upload-pack=x", "belai/nope", "belai/K-3f9a2c/a01", "belai/K-000000/a9"} {
 		it.Branch = branch
 		if _, err := PrepareWorktree(ctx, repo, it, ""); err == nil {
 			t.Errorf("branch %q accepted", branch)
 		}
 	}
+	// A recorded branch that was deleted starts the item fresh, on the next
+	// free attempt name (a1 still exists).
+	it.Branch = "belai/K-3f9a2c/a9"
+	ws3, err := PrepareWorktree(ctx, repo, it, "")
+	if err != nil || ws3.Branch != "belai/K-3f9a2c/a2" {
+		t.Fatalf("deleted branch: %v %v", ws3, err)
+	}
+	if _, err := os.Stat(filepath.Join(ws3.Dir, "new.txt")); err == nil {
+		t.Fatal("a fresh start carried the old branch's work")
+	}
+	ws3.Remove(ctx)
 	it.Branch = ""
 	if _, err := PrepareWorktree(ctx, repo, it, "--orphan"); err == nil {
 		t.Error("option-shaped base accepted")
