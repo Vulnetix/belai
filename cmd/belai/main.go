@@ -69,6 +69,14 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "kanban" {
 		os.Exit(runKanbanCLI(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	}
+	// `belai rc` runs remote control; `belai rc-session` is one session it
+	// started (hidden: only the daemon runs it).
+	if len(os.Args) > 1 && os.Args[1] == "rc" {
+		os.Exit(runRCCLI(ctx, os.Args[2:], os.Stdout, os.Stderr))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "rc-session" {
+		os.Exit(runRCSessionCLI(ctx, os.Args[2:], os.Stdin, os.Stderr))
+	}
 	// `belai plugin …` is a subcommand with its own flags.
 	if len(os.Args) > 1 && os.Args[1] == "plugin" {
 		os.Exit(runPluginCLI(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Stderr, isCharDevice(os.Stdin)))

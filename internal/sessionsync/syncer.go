@@ -52,6 +52,8 @@ type SessionInfo struct {
 	Mode            string
 	ParentSessionID string
 	ResumedFromID   string
+	// DispatchID: the rc request that started this session (see Dispatch).
+	DispatchID string
 }
 
 // Status is a snapshot for /sync status.
@@ -445,6 +447,7 @@ func (s *Syncer) metaFor(t *tail) SessionMeta {
 		Name: i.Name, Model: i.Model, Provider: i.Provider, Mode: i.Mode,
 		ParentSessionID: i.ParentSessionID, ResumedFromID: i.ResumedFromID,
 		RemotePrompts: s.opts.RemotePrompts, RemoteAnswers: s.opts.RemoteAnswers,
+		DispatchID: i.DispatchID,
 	}
 }
 
@@ -654,19 +657,22 @@ func (s *Syncer) coalesce(ctx context.Context) {
 }
 
 // inbox long-polls for web prompts and answers while a session is registered.
+// It asks only for that session's requests: another Belai on the same host
+// (a second TUI, an rc session) shares the host id and polls for its own.
 func (s *Syncer) inbox(ctx context.Context) {
 	var backoff time.Duration
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		if s.liveSession() == "" {
+		live := s.liveSession()
+		if live == "" {
 			if !sleep(ctx, s.opts.TickEvery) {
 				return
 			}
 			continue
 		}
-		prompts, answers, err := s.opts.Client.Inbox(ctx, s.opts.HostID, s.opts.InboxWait)
+		prompts, answers, err := s.opts.Client.Inbox(ctx, s.opts.HostID, live, s.opts.InboxWait)
 		if err != nil {
 			if ctx.Err() != nil {
 				return
