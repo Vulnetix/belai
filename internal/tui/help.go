@@ -277,7 +277,11 @@ func keySections() []keySection {
 		}},
 		{"trusted directories (/trusted)", []keyBinding{
 			{"up, down", "move (also k, j)"},
+			{"pgup, pgdn, ctrl+u, ctrl+d, space", "page up and down"},
+			{"home, end, g, G", "first and last"},
+			{"/", "filter by path, or missing, temporary, offered; esc clears"},
 			{"x", "revoke trust for the selected directory (confirm)"},
+			{"X", "revoke every directory the filter shows (confirm)"},
 			{"p", "revoke every missing or temporary directory (confirm)"},
 			{"a", "trust a directory by path (confirm); its proposed workspace dirs are not accepted"},
 			{"r", "refresh"},
