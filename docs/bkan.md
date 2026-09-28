@@ -515,6 +515,7 @@ Sync sends items as JSON (`sessionsync.KanbanItem`), converted by
 | `ServerVersion` | `version` | |
 | `Deleted` | `deleted` | |
 | `Labels`, `Priority`, `Assignee`, `Parent`, `DependsOn`, `Hops` | `agent.labels`, `agent.priority`, `agent.assignee`, `agent.parent`, `agent.dependsOn`, `agent.hops` | Always sent. |
+| `PinHost` | `agent.pinHost` | A sync host id; the website may set or clear it. Only a worker on that host claims the item. |
 | `ClaimedBy`, `ClaimHost`, `ClaimFrom`, `LeaseUntil`, `Attempts`, `Branch`, `PR` | `agent.claimedBy`, `agent.claimHost`, `agent.claimFrom`, `agent.leaseUntil`, `agent.attempts`, `agent.branch`, `agent.pr` | The website may clear a claim, never set one. |
 | `Dirty` | — | Local only; never sent. |
 

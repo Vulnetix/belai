@@ -128,7 +128,7 @@ func (s *Store) Merge(remote []Item, cursor int64) (int, error) {
 // or the claim would lapse under a working worker.
 func keepAgent(r *Item, local Item) {
 	if !r.remoteAgent {
-		r.Labels, r.Priority, r.Assignee = local.Labels, local.Priority, local.Assignee
+		r.Labels, r.Priority, r.Assignee, r.PinHost = local.Labels, local.Priority, local.Assignee, local.PinHost
 		r.Parent, r.DependsOn, r.Hops = local.Parent, local.DependsOn, local.Hops
 		r.ClaimedBy, r.ClaimHost, r.ClaimFrom = local.ClaimedBy, local.ClaimHost, local.ClaimFrom
 		r.LeaseUntil, r.Attempts, r.Branch, r.PR = local.LeaseUntil, local.Attempts, local.Branch, local.PR
@@ -161,6 +161,7 @@ func cleanRemote(r Item) Item {
 	} else {
 		r.Assignee = ""
 	}
+	r.PinHost = CleanTitle(r.PinHost)
 	r.Parent = CleanTitle(r.Parent)
 	var deps []string
 	for _, d := range r.DependsOn {

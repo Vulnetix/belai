@@ -145,7 +145,9 @@ is admitted like anything you type.
 
 ### `/kanban`
 
-`/kanban` (also `f1` then `t`) opens the full board:
+`/kanban` (also `f1` then `t`) opens the full board. `/kanban K-xxxxxx`
+opens it on that item, across every project; the website's card view and
+terminal commands use this form.
 
 | Key | Action |
 |---|---|

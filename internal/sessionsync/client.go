@@ -112,6 +112,61 @@ type Host struct {
 type RCInfo struct {
 	Dirs        []RCDir `json:"dirs"`
 	MaxSessions int     `json:"maxSessions"`
+	// MaxWorkers is agents.max_workers; Profiles and Crews are the worker
+	// profiles and crews this host can start. Harness facts only: names,
+	// lists, labels and limits, never a prompt.
+	MaxWorkers int         `json:"maxWorkers"`
+	Profiles   []RCProfile `json:"profiles"`
+	Crews      []RCCrew    `json:"crews"`
+}
+
+// RCProfile is one worker profile's routing, as the website shows it.
+type RCProfile struct {
+	Name          string   `json:"name"`
+	Builtin       bool     `json:"builtin"`
+	Lists         []string `json:"lists"`
+	Labels        []string `json:"labels"`
+	AssignedOnly  bool     `json:"assignedOnly"`
+	OnSuccess     RCRoute  `json:"onSuccess"`
+	OnFailure     RCRoute  `json:"onFailure"`
+	HandoffTo     []string `json:"handoffTo"`
+	HandoffLabels []string `json:"handoffLabels"`
+	MaxAttempts   int      `json:"maxAttempts"`
+	Lease         string   `json:"lease"`
+	MaxWall       string   `json:"maxWall"`
+	MaxPasses     int      `json:"maxPasses"`
+}
+
+// RCRoute is a destination list plus label edits.
+type RCRoute struct {
+	List       string   `json:"list"`
+	Labels     []string `json:"labels"`
+	DropLabels []string `json:"dropLabels"`
+}
+
+// RCCrew is one crew and its members.
+type RCCrew struct {
+	Name    string     `json:"name"`
+	Builtin bool       `json:"builtin"`
+	Members []RCMember `json:"members"`
+}
+
+// RCMember is one crew member and how many workers run it.
+type RCMember struct {
+	Profile  string `json:"profile"`
+	Replicas int    `json:"replicas"`
+}
+
+// RCWorker is one live fleet worker on the host (fleet.Record, trimmed).
+type RCWorker struct {
+	ID      string `json:"id"`
+	Profile string `json:"profile"`
+	Crew    string `json:"crew,omitempty"`
+	State   string `json:"state"`
+	Item    string `json:"item,omitempty"`
+	Project string `json:"project,omitempty"`
+	Session string `json:"session,omitempty"`
+	Started int64  `json:"started"`
 }
 
 // RCDir is one directory an rc daemon offers. Source is "trusted" (a project
@@ -133,6 +188,9 @@ type Dispatch struct {
 	Mode      string `json:"mode"`
 	Prompt    string `json:"prompt"`
 	SessionID string `json:"sessionId"`
+	// Profile or Crew names what a "worker" or "crew" request starts.
+	Profile   string `json:"profile,omitempty"`
+	Crew      string `json:"crew,omitempty"`
 	CreatedAt int64  `json:"createdAt"`
 }
 
@@ -371,9 +429,12 @@ func (c *Client) Ack(ctx context.Context, promptID, status, reason, entryID stri
 }
 
 // RCHeartbeat keeps an rc daemon online and reports how many sessions it runs.
-func (c *Client) RCHeartbeat(ctx context.Context, hostID string, running int) error {
+func (c *Client) RCHeartbeat(ctx context.Context, hostID string, running int, workers []RCWorker) error {
+	if workers == nil {
+		workers = []RCWorker{}
+	}
 	return c.do(ctx, http.MethodPost, "/hosts/"+url.PathEscape(hostID)+"/rc/heartbeat",
-		map[string]int{"running": running}, nil, requestTimeout)
+		map[string]any{"running": running, "workers": workers}, nil, requestTimeout)
 }
 
 // RCOffline marks the rc daemon stopped; requests still waiting expire.

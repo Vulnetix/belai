@@ -227,7 +227,7 @@ func ToWire(it Item) sessionsync.KanbanItem {
 		CreatedAt: it.Created, UpdatedAt: it.Updated,
 		Version: it.ServerVersion, Deleted: it.Deleted,
 		Agent: &sessionsync.KanbanAgent{
-			Labels: slices.Clone(it.Labels), Priority: it.Priority, Assignee: it.Assignee,
+			Labels: slices.Clone(it.Labels), Priority: it.Priority, Assignee: it.Assignee, PinHost: it.PinHost,
 			Parent: it.Parent, DependsOn: slices.Clone(it.DependsOn), Hops: it.Hops,
 			ClaimedBy: it.ClaimedBy, ClaimHost: it.ClaimHost, ClaimFrom: string(it.ClaimFrom),
 			LeaseUntil: it.LeaseUntil, Attempts: it.Attempts, Branch: it.Branch, PR: it.PR,
@@ -252,7 +252,7 @@ func FromWire(w sessionsync.KanbanItem) Item {
 	}
 	if a := w.Agent; a != nil {
 		it.remoteAgent = true
-		it.Labels, it.Priority, it.Assignee = slices.Clone(a.Labels), a.Priority, a.Assignee
+		it.Labels, it.Priority, it.Assignee, it.PinHost = slices.Clone(a.Labels), a.Priority, a.Assignee, a.PinHost
 		it.Parent, it.DependsOn, it.Hops = a.Parent, slices.Clone(a.DependsOn), a.Hops
 		it.ClaimedBy, it.ClaimHost, it.ClaimFrom = a.ClaimedBy, a.ClaimHost, List(a.ClaimFrom)
 		it.LeaseUntil, it.Attempts, it.Branch, it.PR = a.LeaseUntil, a.Attempts, a.Branch, a.PR

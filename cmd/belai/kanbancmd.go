@@ -36,6 +36,13 @@ const kanbanUsage = `usage: belai kanban <command> [flags] [args]
   move ID LIST [-note T]   move an item
   note ID TEXT             add a note
   release ID               clear a worker's claim; the item returns to its list
+  assign ID PROFILE | -crew CREW [flags]
+                           route an item to a worker profile, or to a crew's
+                           entry profile: sets the assignee (profile only),
+                           adds the profile's claim labels and moves the item
+                           to the list the profile claims from
+      -host this|ID|none             pin to this host, a sync host id, or unpin
+      -start                         also start the worker (or crew) here
   delete ID                delete an item
   import FILE.jsonl        file one item per line: {"title", "body", "list",
                            "labels", "priority", "assignee", "depends_on"}
@@ -262,6 +269,15 @@ func (k *kanbanCLI) run(cmd string, rest []string, stdin io.Reader, stdout, stde
 		}
 		fmt.Fprintf(stdout, "%s released to %s\n", it.Short(), it.List)
 		return 0, nil
+
+	case "assign":
+		crew := fs.String("crew", "", "route to a crew's entry profile")
+		host := fs.String("host", "", "this, a sync host id, or none")
+		start := fs.Bool("start", false, "start the worker or crew in this directory")
+		if err := parseInterleaved(fs, rest); err != nil || fs.NArg() != 1+boolInt(*crew == "") {
+			return 2, errors.New("usage: belai kanban assign ID PROFILE | -crew CREW [-host this|ID|none] [-start]")
+		}
+		return k.assign(fs.Arg(0), fs.Arg(1), *crew, *host, *start, stdout)
 
 	case "delete":
 		if err := parseInterleaved(fs, rest); err != nil || fs.NArg() != 1 {

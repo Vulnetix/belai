@@ -44,6 +44,20 @@ type Options struct {
 	PollWait       time.Duration // 25s
 	// Start replaces the child spawn in tests.
 	Start func(c Child) (pid int, wait func() error, err error)
+	// Inventory reads the host's worker profiles, crews and live workers
+	// (LocalInventory unless a test replaces it).
+	Inventory func() Inventory
+	// StartWorkers runs `belai agent start` for a worker or crew request
+	// (runAgentStart unless a test replaces it). It returns the command's
+	// report, or an error whose text is the refusal reason.
+	StartWorkers func(w WorkerStart) (string, error)
+}
+
+// WorkerStart is one validated worker or crew start.
+type WorkerStart struct {
+	Exe, Cwd string
+	// Profile or Crew; exactly one is set.
+	Profile, Crew string
 }
 
 // Child is one session to start.
@@ -60,6 +74,7 @@ type Daemon struct {
 	sessions map[string]*child
 	online   bool
 	lastErr  string
+	catalog  string // Inventory.catalogueHash of the last advertisement
 	started  time.Time
 	wg       sync.WaitGroup
 }
@@ -91,6 +106,12 @@ func New(o Options) (*Daemon, error) {
 	if o.Start == nil {
 		o.Start = startChild
 	}
+	if o.Inventory == nil {
+		o.Inventory = LocalInventory
+	}
+	if o.StartWorkers == nil {
+		o.StartWorkers = runAgentStart
+	}
 	return &Daemon{o: o, sessions: map[string]*child{}, started: time.Now()}, nil
 }
 
@@ -107,7 +128,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	d.writeRecord()
 	defer removeRecord(os.Getpid())
 
-	d.register(ctx)
+	d.register(ctx, d.o.Inventory())
 	d.logf("remote control on · %d director%s offered · up to %d sessions", len(d.o.Dirs), plural(len(d.o.Dirs), "y", "ies"), d.o.Max)
 	d.logf("start sessions at %s", d.o.URL)
 
@@ -118,10 +139,21 @@ func (d *Daemon) Run(ctx context.Context) error {
 	return nil
 }
 
-// register advertises the host, retrying until it succeeds or ctx ends.
-func (d *Daemon) register(ctx context.Context) {
+// register advertises the host and its worker catalogue, retrying until it
+// succeeds or ctx ends.
+func (d *Daemon) register(ctx context.Context, inv Inventory) {
 	h := d.o.Host
-	h.RC = &sessionsync.RCInfo{MaxSessions: d.o.Max}
+	h.RC = &sessionsync.RCInfo{MaxSessions: d.o.Max, MaxWorkers: inv.MaxWorkers,
+		Profiles: inv.Profiles, Crews: inv.Crews}
+	if h.RC.Profiles == nil {
+		h.RC.Profiles = []sessionsync.RCProfile{}
+	}
+	if h.RC.Crews == nil {
+		h.RC.Crews = []sessionsync.RCCrew{}
+	}
+	d.mu.Lock()
+	d.catalog = inv.catalogueHash()
+	d.mu.Unlock()
 	for _, dir := range d.o.Dirs {
 		h.RC.Dirs = append(h.RC.Dirs, sessionsync.RCDir{Path: dir.Path, Name: dir.Name, Source: dir.Source})
 	}
@@ -149,10 +181,18 @@ func (d *Daemon) heartbeat(ctx context.Context) {
 			return
 		case <-t.C:
 		}
-		err := d.o.Client.RCHeartbeat(ctx, d.o.HostID, d.running())
+		inv := d.o.Inventory()
+		d.mu.Lock()
+		changed := inv.catalogueHash() != d.catalog
+		d.mu.Unlock()
+		if changed {
+			// A profile or crew was added, edited or removed: advertise again.
+			d.register(ctx, inv)
+		}
+		err := d.o.Client.RCHeartbeat(ctx, d.o.HostID, d.running(), inv.Workers)
 		if errors.Is(err, sessionsync.ErrNotFound) {
 			// The server lost the host (or never had it): advertise again.
-			d.register(ctx)
+			d.register(ctx, inv)
 			err = nil
 		}
 		if err != nil && ctx.Err() == nil {
@@ -203,6 +243,15 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 			return
 		}
 		d.ack(ctx, r.ID, sessionsync.DispatchRefused, "", "that session is not running under belai rc on this host")
+	case "worker", "crew":
+		report, reason := d.startWorkers(r)
+		if reason != "" {
+			d.logf("refused %s %s%s in %s: %s", r.Kind, r.Profile, r.Crew, r.Cwd, reason)
+			d.ack(ctx, r.ID, sessionsync.DispatchRefused, "", reason)
+			return
+		}
+		d.logf("started %s %s%s in %s", r.Kind, r.Profile, r.Crew, r.Cwd)
+		d.ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
 	default:
 		d.ack(ctx, r.ID, sessionsync.DispatchRefused, "", "this Belai does not understand that request; update Belai on the host")
 	}

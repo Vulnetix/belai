@@ -50,6 +50,7 @@ type KanbanAgent struct {
 	Labels     []string `json:"labels,omitempty"`
 	Priority   int      `json:"priority,omitempty"`
 	Assignee   string   `json:"assignee,omitempty"`
+	PinHost    string   `json:"pinHost,omitempty"`
 	Parent     string   `json:"parent,omitempty"`
 	DependsOn  []string `json:"dependsOn,omitempty"`
 	Hops       int      `json:"hops,omitempty"`

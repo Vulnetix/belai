@@ -93,6 +93,29 @@ that step yourself, and move the item back. An `autonomous` worker resolves
 asks to allow; it must use a worktree, and a worker that has `Bash` must have
 a working [OS sandbox](sandbox.md) backend, or it refuses to start.
 
+## Assigning and pinning
+
+`belai kanban assign` routes an item the way a worker will look for it:
+
+```sh
+belai kanban assign K-7f3a21 belai:builder            # any host
+belai kanban assign K-7f3a21 belai:builder -host this # only this machine
+belai kanban assign K-2b9e40 -crew belai:delivery -start
+```
+
+For a profile it sets the assignee, adds the profile's claim labels and
+moves the item to the first list the profile claims from. For a crew it
+routes to the crew's first member by labels only, with no assignee, so
+every member can claim what the crew hands on. `-start` then runs
+`belai agent start` in this directory.
+
+`-host` pins the item (`this`, a sync host id, or `none` to unpin). A pinned
+item is claimable only by a worker whose host id matches, including through
+`agent run -item`. Handoffs filed from it are not pinned. The pin syncs as
+`agent.pinHost`, and the website's Agent Coordination page sets it when you
+assign a card to a host there; with [remote control](remote-control.md#fleet-workers)
+running, the page can also start the worker on that host.
+
 ## Crews
 
 A crew is a named set of profiles started together:
@@ -142,6 +165,7 @@ Your own crews live in `~/.vulnetix/belai/profiles/crews/<name>.json`:
 | `belai kanban move ID LIST [-note TEXT]` | move an item |
 | `belai kanban note ID TEXT` | add a note |
 | `belai kanban release ID` | clear a claim |
+| `belai kanban assign ID PROFILE \| -crew CREW [-host this\|ID\|none] [-start]` | route an item to a profile or crew, optionally pinned |
 | `belai kanban import FILE.jsonl` | file many items |
 
 `agent run` and `agent start` refuse a directory you have not trusted; pass

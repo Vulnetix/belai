@@ -110,6 +110,8 @@ type fakeSite struct {
 	queue     []sessionsync.Dispatch
 	acks      map[string][3]string // id → status, session, reason
 	beats     int
+	puts      int
+	workers   []sessionsync.RCWorker
 	offline   bool
 	delivered chan struct{}
 }
@@ -121,9 +123,15 @@ func (f *fakeSite) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodPut && p == "/hosts/"+testHost:
 		_ = json.NewDecoder(r.Body).Decode(&f.host)
+		f.puts++
 		w.Write([]byte(`{"ok":true}`))
 	case p == "/hosts/"+testHost+"/rc/heartbeat":
 		f.beats++
+		var in struct {
+			Workers []sessionsync.RCWorker `json:"workers"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		f.workers = in.Workers
 		w.Write([]byte(`{"ok":true}`))
 	case p == "/hosts/"+testHost+"/rc/offline":
 		f.offline = true
@@ -345,5 +353,107 @@ func TestRunSessionStopsOnCancel(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("session ignored the stop")
+	}
+}
+
+func TestDaemonStartsWorkersAndAdvertisesInventory(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	proj := t.TempDir()
+	real, _ := Normalize(proj)
+	site := &fakeSite{acks: map[string][3]string{}, delivered: make(chan struct{}, 8)}
+	srv := httptest.NewServer(site)
+	defer srv.Close()
+	client, err := sessionsync.NewClient(srv.URL, func() (string, error) { return "ApiKey o:k", nil }, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	inv := Inventory{
+		MaxWorkers: 4,
+		Profiles:   []sessionsync.RCProfile{{Name: "belai:builder", Lists: []string{"backlog"}, Labels: []string{"build"}}},
+		Crews:      []sessionsync.RCCrew{{Name: "belai:delivery", Members: []sessionsync.RCMember{{Profile: "belai:builder", Replicas: 2}}}},
+		Workers:    []sessionsync.RCWorker{{ID: "builder-1", Profile: "belai:builder", State: "idle"}},
+	}
+	var starts []WorkerStart
+	d, err := New(Options{
+		Client: client, HostID: testHost, Dirs: []Dir{{Path: real, Name: "proj", Source: SourceTrusted}},
+		HeartbeatEvery: 10 * time.Millisecond, PollWait: time.Second, Exe: "/bin/belai",
+		Inventory: func() Inventory { mu.Lock(); defer mu.Unlock(); return inv },
+		StartWorkers: func(w WorkerStart) (string, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			starts = append(starts, w)
+			if w.Crew != "" {
+				return "", startError("starting 2 would run 5 workers; agents.max_workers is 4")
+			}
+			return "builder-2  idle", nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	site.queue = []sessionsync.Dispatch{
+		{ID: "w1", Kind: "worker", Cwd: proj, Profile: "belai:builder"},
+		{ID: "w2", Kind: "worker", Cwd: proj, Profile: "-trust-dir"},
+		{ID: "w3", Kind: "worker", Cwd: proj, Profile: "belai:ghost"},
+		{ID: "w4", Kind: "worker", Cwd: filepath.Dir(proj), Profile: "belai:builder"},
+		{ID: "c1", Kind: "crew", Cwd: proj, Crew: "belai:delivery"},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { _ = d.Run(ctx); close(done) }()
+	for i := 0; i < 5; i++ {
+		select {
+		case <-site.delivered:
+		case <-time.After(5 * time.Second):
+			t.Fatal("acks did not arrive")
+		}
+	}
+	// A new profile on disk is advertised again on the next beat.
+	mu.Lock()
+	inv.Profiles = append(inv.Profiles, sessionsync.RCProfile{Name: "docs-writer", Lists: []string{"backlog"}})
+	mu.Unlock()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		site.mu.Lock()
+		n := 0
+		if site.host.RC != nil {
+			n = len(site.host.RC.Profiles)
+		}
+		site.mu.Unlock()
+		if n == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("changed catalogue was not advertised again")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	<-done
+
+	site.mu.Lock()
+	defer site.mu.Unlock()
+	if site.host.RC.MaxWorkers != 4 || len(site.host.RC.Crews) != 1 {
+		t.Errorf("advertised rc = %+v", site.host.RC)
+	}
+	if len(site.workers) != 1 || site.workers[0].ID != "builder-1" {
+		t.Errorf("heartbeat workers = %+v", site.workers)
+	}
+	if a := site.acks["w1"]; a[0] != sessionsync.DispatchStarted || a[2] != "builder-2 idle" {
+		t.Errorf("w1 ack = %v", a)
+	}
+	for _, id := range []string{"w2", "w3", "w4", "c1"} {
+		if a := site.acks[id]; a[0] != sessionsync.DispatchRefused || a[2] == "" {
+			t.Errorf("%s ack = %v, want refused with a reason", id, a)
+		}
+	}
+	if a := site.acks["c1"]; !strings.Contains(a[2], "max_workers") {
+		t.Errorf("crew refusal lost the start error: %v", a)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(starts) != 2 || starts[0].Profile != "belai:builder" || starts[0].Cwd != real || starts[1].Crew != "belai:delivery" {
+		t.Errorf("starts = %+v", starts)
 	}
 }

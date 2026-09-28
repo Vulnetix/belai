@@ -447,3 +447,40 @@ func TestMergeIgnoresAPullOlderThanAPushedClaim(t *testing.T) {
 		t.Fatalf("a second worker claimed it: %v", err)
 	}
 }
+
+func TestClaimRespectsPinHost(t *testing.T) {
+	s := testStore(t)
+	it := addItem(t, s, ItemInput{Title: "pinned"})
+	pin := "host-2"
+	if _, err := s.Route(it.Short(), RoutePatch{PinHost: &pin}, "s"); err != nil {
+		t.Fatal(err)
+	}
+	r := claimReq("w1") // host-1
+	if _, err := s.Claim(r); !errors.Is(err, ErrNoWork) {
+		t.Fatalf("item pinned to host-2 claimed on host-1: %v", err)
+	}
+	if _, err := s.ClaimID(it.Short(), r); !errors.Is(err, ErrNotClaimable) {
+		t.Fatalf("ClaimID ignored the pin: %v", err)
+	}
+	r.Host = "host-2"
+	got, err := s.Claim(r)
+	if err != nil || got.ID != it.ID || got.PinHost != "host-2" {
+		t.Fatalf("pinned host claim %+v %v", got, err)
+	}
+	if n := got.History[len(got.History)-2].Note; n != "pinned to host host-2" {
+		t.Fatalf("route note %q", n)
+	}
+}
+
+func TestWireCarriesPinHost(t *testing.T) {
+	back := FromWire(ToWire(Item{ID: "x", Title: "t", List: Backlog, PinHost: "host-9"}))
+	if back.PinHost != "host-9" {
+		t.Fatalf("pin lost on the wire: %+v", back)
+	}
+	// A backend that does not carry the agent block keeps the local pin.
+	r := Item{ID: "x"}
+	keepAgent(&r, Item{PinHost: "host-9"})
+	if r.PinHost != "host-9" {
+		t.Fatal("local pin dropped by an agent-less pull")
+	}
+}

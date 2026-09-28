@@ -284,3 +284,17 @@ func TestKanbanWrapUpEventLines(t *testing.T) {
 		t.Fatalf("summary line %q", last)
 	}
 }
+
+func TestKanbanCommandFocusesAnItem(t *testing.T) {
+	a, _ := kanbanApp(t)
+	a.kb.store.Add(kanban.ItemInput{Title: "first", List: kanban.Review}, kanban.Provenance{})
+	it, _, err := a.kb.store.Add(kanban.ItemInput{Title: "second", List: kanban.Review}, kanban.Provenance{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.handleCommand("/kanban " + it.Short())
+	got, ok := a.kanbanSelected()
+	if a.view != viewKanban || !ok || got.ID != it.ID {
+		t.Fatalf("/kanban %s selected %+v (view %v)", it.Short(), got, a.view)
+	}
+}
