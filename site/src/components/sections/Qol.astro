@@ -1,81 +1,109 @@
 ---
 import SealedSection from '../seal/SealedSection.astro';
-import ShotCarousel from '../ui/ShotCarousel.tsx';
+import SectionHead from '../ui/SectionHead.astro';
+import SubHead from '../ui/SubHead.astro';
+import Shot from '../ui/Shot.astro';
 import settingsShot from '../../assets/shots/settings.svg';
 import exitCardShot from '../../assets/shots/exit-card.svg';
 import footerShot from '../../assets/shots/footer.svg';
-import budgetsShot from '../../assets/shots/budgets.svg';
 
 const sealText =
   'Quality of life: smaller features you would otherwise add through a skills.md. First-run trust gate, prompt library, one composer history for prompts and commands, repo map, work-discipline prompt section, identity block, capability auth probes, diff in the approval prompt, a todo panel that only trusts assistant text, sessions, Markdown session export, opt-in per-goal auto-commit, /settings with provenance, no alt bindings ever, /help guarded by a test, caveman mode, per-project session toggles, classifier verdicts in the internal-work feed, a shell panel for !cmd with the raw output, transcript rows stamped when they happen with durations, token budgets per model in the footer, oversized tool output kept out of the context with ReadResult to read the rest, WebFetch that answers a question instead of returning the page, desktop notifications, /skills, /plugin, /mcp and /sandbox, and a self-update that stays in its asset family.';
 
-const benefits = [
-  ['first-run trust gate', 'A directory Belai has never seen blocks startup until you say yes, before any settings merge, repo scan or auto-started process.'],
-  ['prompt library as files', 'Prompts are files in the repository, so they are versioned and reviewed like code.'],
-  ['harness-computed repo map', 'Paths, counts, detected commands and git metadata, with no file contents.'],
-  ['one history for everything you typed', 'Up recalls prompts, !shell commands, !!processes and /slash commands in the order you ran them, across restarts, with repeats kept once at their newest position.'],
-  ['work-discipline prompt section', 'The system prompt tells the model to read the exact lines it will change, batch its reads, make the edits it is sure of first, and report what changed.'],
-  ['identity block', 'Every system prompt names the harness, provider and model in use.'],
-  ['capability auth probes', 'A small test request checks that a model supports a capability before Belai relies on it.'],
-  ['diff in the approval prompt', 'The approval prompt shows the diff of the change as well as the path.'],
-  ['todo panel that only trusts assistant text', "The todo list only changes based on the assistant's own text. Tool output cannot update it."],
-  ['/settings with provenance', 'Every value shows which settings layer it came from.'],
-  ['no alt bindings', 'No shortcut uses the alt key, so terminals that capture alt do not swallow keystrokes.'],
-  ['/help guarded by a test', 'A test compares the help text with the real key bindings.'],
-  ['caveman mode', 'An optional voice that makes replies short and plain.'],
-  ['session toggles per project', 'Toggles such as guardrails and ask-permission are saved for each repository.'],
-  ['session export', 'Type /export to write the current session (or another by id) as deterministic Markdown under .vulnetix/exports; belai -export <id> prints it to stdout.'],
-  ['opt-in per-goal auto-commit', 'Turn on auto-commit per task in /settings and every completed goal is committed as one conventional commit of exactly the files it changed. The setting is global, so a repository cannot turn it on.'],
-  ['!cmd gets its own shell panel', 'A !cmd shows its raw output in a panel, live while it runs. The model only gets the sanitised, classified copy, and the panel marks the output "not sent" when that copy is withheld. ctrl+o expands it, ctrl+c copies it and ctrl+s saves it.'],
-  ['timestamps and durations in the transcript', 'Each transcript row is stamped when its event happened, and tool calls, model replies and classifier decisions record how long they took, so a slow session shows where the time went.'],
-  ['classifier verdicts in the feed', 'When a result is blocked, the internal-work feed shows which phase blocked it and what it returned.'],
-  ['token budgets per model', 'Session, day and month allowances per provider and model, counted across every model call and every belai process, shown right-aligned in the footer: teal on pace, amber when spend runs ahead of the clock, red when spent.'],
-  ['oversized output kept out of context', 'A long build log, page or PR thread goes into the conversation as its first and last lines plus a reference. ReadResult reads the rest by line range or pattern when it is needed. Bash keeps the end of its output too, so a failing test summary is never the part that gets cut.'],
-  ['WebFetch answers the question', 'Give WebFetch a prompt and a small model with no tools reads the page and returns the answer. The page itself never enters the conversation, and the answer is classified like the page would be.'],
-  ['desktop notifications', 'Opt in with notifications.enabled and Belai tells you when a permission ask, a question or a plan is waiting, or when a goal ends. The text is written from fixed templates, never from model or tool output.'],
-  ['/skills, /plugin, /mcp and /sandbox', 'One command each shows the installed skills, the plugins and their state, the MCP servers and their tools, and the sandbox policy commands run under.'],
-  ['self-update stays in its family', 'A guardrails binary updates to the next guardrails build, so it keeps its embedded model.'],
+const groups = [
+  {
+    title: 'Trust and safety',
+    items: [
+      ['first-run trust gate', 'A directory Belai has never seen blocks startup until you say yes, before any settings merge, repo scan or auto-started process.'],
+      ['todo panel that only trusts assistant text', "The todo list only changes based on the assistant's own text. Tool output cannot update it."],
+      ['classifier verdicts in the feed', 'When a result is blocked, the internal-work feed shows which phase blocked it and what it returned.'],
+      ['!cmd gets its own shell panel', 'A !cmd shows its raw output in a panel, live while it runs. The model only gets the sanitised, classified copy, and the panel marks the output "not sent" when that copy is withheld. ctrl+o expands it, ctrl+c copies it and ctrl+s saves it.'],
+      ['desktop notifications', 'Opt in with notifications.enabled and Belai tells you when a permission ask, a question or a plan is waiting, or when a goal ends. The text is written from fixed templates, never from model or tool output.'],
+      ['self-update stays in its family', 'A guardrails binary updates to the next guardrails build, so it keeps its embedded model.'],
+    ],
+  },
+  {
+    title: 'Prompts and the composer',
+    items: [
+      ['prompt library as files', 'Prompts are files in the repository, so they are versioned and reviewed like code.'],
+      ['one history for everything you typed', 'Up recalls prompts, !shell commands, !!processes and /slash commands in the order you ran them, across restarts, with repeats kept once at their newest position.'],
+      ['work-discipline prompt section', 'The system prompt tells the model to read the exact lines it will change, batch its reads, make the edits it is sure of first, and report what changed.'],
+      ['identity block', 'Every system prompt names the harness, provider and model in use.'],
+      ['no alt bindings', 'No shortcut uses the alt key, so terminals that capture alt do not swallow keystrokes.'],
+      ['caveman mode', 'An optional voice that makes replies short and plain.'],
+    ],
+  },
+  {
+    title: 'Context and cost',
+    items: [
+      ['harness-computed repo map', 'Paths, counts, detected commands and git metadata, with no file contents.'],
+      ['oversized output kept out of context', 'A long build log, page or PR thread goes into the conversation as its first and last lines plus a reference. ReadResult reads the rest by line range or pattern when it is needed. Bash keeps the end of its output too, so a failing test summary is never the part that gets cut.'],
+      ['WebFetch answers the question', 'Give WebFetch a prompt and a small model with no tools reads the page and returns the answer. The page itself never enters the conversation, and the answer is classified like the page would be.'],
+      ['token budgets per model', 'Session, day and month allowances per provider and model, counted across every model call and every belai process, shown right-aligned in the footer: teal on pace, amber when spend runs ahead of the clock, red when spent.'],
+      ['capability auth probes', 'A small test request checks that a model supports a capability before Belai relies on it.'],
+    ],
+  },
+  {
+    title: 'Sessions and settings',
+    items: [
+      ['/settings with provenance', 'Every value shows which settings layer it came from.'],
+      ['session toggles per project', 'Toggles such as guardrails and ask-permission are saved for each repository.'],
+      ['session export', 'Type /export to write the current session (or another by id) as deterministic Markdown under .vulnetix/exports; belai -export <id> prints it to stdout.'],
+      ['opt-in per-goal auto-commit', 'Turn on auto-commit per task in /settings and every completed goal is committed as one conventional commit of exactly the files it changed. The setting is global, so a repository cannot turn it on.'],
+      ['timestamps and durations in the transcript', 'Each transcript row is stamped when its event happened, and tool calls, model replies and classifier decisions record how long they took, so a slow session shows where the time went.'],
+      ['diff in the approval prompt', 'The approval prompt shows the diff of the change as well as the path.'],
+      ['/help guarded by a test', 'A test compares the help text with the real key bindings.'],
+      ['/skills, /plugin, /mcp and /sandbox', 'One command each shows the installed skills, the plugins and their state, the MCP servers and their tools, and the sandbox policy commands run under.'],
+    ],
+  },
 ];
+
+const total = groups.reduce((n, g) => n + g.items.length, 0);
 ---
 
 <SealedSection label="qol" sealText={sealText} id="qol">
-  <h2 class="text-3xl font-bold text-vx-ink">Quality of life</h2>
-  <p class="prose-measure mt-4 text-vx-ink/80">
+  <SectionHead title="Quality of life">
     Smaller features you would otherwise add yourself through a <code class="mono">skills.md</code>. Each
     one is implemented and tested in this repository.
-  </p>
+  </SectionHead>
 
-  <div class="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-    {benefits.map(([title, detail]) => (
-      <article class="rounded-lg border border-vx-ink/30 p-5">
-        <h3 class="mono text-sm font-semibold text-vx-ink">{title}</h3>
-        <p class="mt-2 text-sm text-vx-ink/80">{detail}</p>
-      </article>
+  <div class="mt-10 grid gap-x-10 gap-y-12 lg:grid-cols-2">
+    {groups.map((g) => (
+      <div class="min-w-0">
+        <div class="flex items-baseline justify-between border-b-2 border-vx-ink pb-2">
+          <h3 class="text-2xl font-bold">{g.title}</h3>
+          <span class="mono text-sm text-vx-ink/60">{g.items.length} of {total}</span>
+        </div>
+        <dl class="m-0">
+          {g.items.map(([title, detail]) => (
+            <div class="border-b border-vx-ink/15 py-3.5">
+              <dt class="mono text-sm font-semibold">{title}</dt>
+              <dd class="m-0 mt-1 text-sm text-vx-ink/80">{detail}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
     ))}
   </div>
 
-  <div class="mt-10 grid gap-8 rounded-lg border border-vx-ink/30 p-6 lg:grid-cols-2 lg:items-center">
-    <div>
-      <h3 class="text-xl font-semibold text-vx-ink">Sessions</h3>
-      <p class="mt-3 text-vx-ink/80">
-        <code class="mono">/compact</code> writes a summary that must include a goal, next steps and
-        critical context, and a summary missing any of them is rejected. Sessions are named after the
-        work done in them. A message sent mid-turn is queued onto the running turn, and the exit card
-        shows the command to resume the session. Long sessions stay affordable: oversized tool output
-        is replaced once, when it arrives, so the cached prefix of every later request is unchanged;
-        old tool results are cleared in large steps; the conversation is compacted at 70% of the
-        window; and when a provider still reports an overflow, Belai compacts and retries instead of
-        ending the turn.
+  <SubHead title="Long sessions">
+    <code class="mono">/compact</code> writes a summary that must include a goal, next steps and critical
+    context, and a summary missing any of them is rejected. Sessions are named after the work done in them.
+  </SubHead>
+  <div class="mt-8 grid gap-8 lg:grid-cols-2 lg:items-center">
+    <div class="min-w-0">
+      <p class="text-vx-ink/80">
+        A message sent mid-turn is queued onto the running turn, and the exit card shows the command to
+        resume the session. Long sessions stay affordable: oversized tool output is replaced once, when it
+        arrives, so the cached prefix of every later request is unchanged; old tool results are cleared in
+        large steps; the conversation is compacted at 70% of the window; and when a provider still reports
+        an overflow, Belai compacts and retries instead of ending the turn.
       </p>
     </div>
-    <ShotCarousel
-      client:load
-      shots={[
-        { src: settingsShot.src, alt: 'The settings screen showing provenance per value', caption: '/settings, provenance per value' },
-        { src: exitCardShot.src, alt: 'The branded session-end card', caption: 'exit card, resume command' },
-        { src: footerShot.src, alt: 'The status footer with chips and an amber day budget', caption: 'status footer, guardrails on, day budget amber' },
-        { src: budgetsShot.src, alt: 'The token budgets screen', caption: 'f1 → b, token budgets' },
-      ]}
-    />
+    <Shot src={exitCardShot.src} alt="The branded session-end card" caption="exit card, resume command" />
+  </div>
+  <div class="mt-8 grid max-w-[1000px] gap-6">
+    <Shot src={settingsShot.src} alt="The settings screen showing provenance per value" caption="/settings, provenance per value" />
+    <Shot src={footerShot.src} alt="The status footer with chips and an amber day budget" caption="status footer, guardrails on, day budget amber" />
   </div>
 </SealedSection>

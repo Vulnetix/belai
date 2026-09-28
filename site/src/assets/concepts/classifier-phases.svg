@@ -59,7 +59,7 @@
   <text x="430" y="166" class="sub">provider + model are set</text>
 
   <text x="24" y="206" class="sub">phase 1 and phase 2 run in parallel over the same windows</text>
-  <text x="24" y="220" class="sub">either hit returns immediately and phase 3 never runs</text>
+  <text x="24" y="220" class="sub">either hit returns at once, and phase 3 is skipped</text>
   <text x="24" y="240" class="sub">precedence: PROMPT_INJECTION &gt; JAILBREAK &gt; DATA_EXTRACTION &gt; MODEL_EXTRACTION &gt; SAFE</text>
 
   <!-- verdict -->

@@ -72,9 +72,11 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
 ---
 
 <SealedSection label="classifier" sealText={sealText} id="classifier">
-  <div class="prose-measure">
-    <h2 class="text-3xl font-bold text-vx-ink">The classifier</h2>
-    <p class="mt-4 text-vx-ink/80">
+  <div class="grid gap-6 lg:grid-cols-12 lg:items-end">
+    <div class="lg:col-span-6">
+      <h2 class="text-4xl font-extrabold leading-tight tracking-tight text-vx-ink md:text-5xl">The classifier</h2>
+    </div>
+    <p class="text-lg text-vx-ink/80 lg:col-span-6">
       Belai accepts only one kind of answer about untrusted content: a single token from the five
       below. Three engines can give that answer. The LLM sentinel asks a chat model to reply with one
       token. The embedded models are BERT classifiers that run inside the Belai binary. Jev is a model
@@ -82,19 +84,21 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
     </p>
   </div>
 
-  <ul class="mt-6 flex flex-wrap gap-2 list-none p-0" aria-label="The five security sentinels">
+  <ul class="mt-8 grid list-none gap-2 p-0 sm:grid-cols-5" aria-label="The five security sentinels">
     {sentinels.map((s) => (
-      <li class={`sentinel-chip sentinel-chip--${s.tone}`}>{s.token}</li>
+      <li class={`sentinel-chip sentinel-chip--${s.tone} py-3 text-center`}>{s.token}</li>
     ))}
   </ul>
 
-  <div class="mt-10">
-    <h3 class="text-xl font-bold text-vx-ink">Coverage by setup</h3>
-    <p class="mt-2 max-w-[72ch] text-vx-ink/80">
-      Each row is a setup. Each cell names the engine that checks for that threat, or says that nothing
-      does. The phase rows in <code class="mono">/model</code> show the same thing for your own settings.
-    </p>
-    <div class="coverage-wrap mt-5">
+  <div class="mt-16">
+    <div class="grid gap-6 lg:grid-cols-2 lg:items-end">
+      <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">Coverage by setup</h3>
+      <p class="text-vx-ink/80">
+        Each row is a setup. Each cell names the engine that checks for that threat, or says that nothing
+        does. The phase rows in <code class="mono">/model</code> show the same thing for your own settings.
+      </p>
+    </div>
+    <div class="coverage-wrap mt-8">
       <table class="coverage">
         <thead>
           <tr>
@@ -125,10 +129,10 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
     </p>
   </div>
 
-  <article class="engine mt-12" aria-labelledby="engine-sentinel">
+  <article class="engine mt-16" aria-labelledby="engine-sentinel">
     <header class="engine__head">
       <span class="engine__num mono">01</span>
-      <h3 id="engine-sentinel" class="text-2xl font-bold text-vx-ink">LLM sentinel</h3>
+      <h3 id="engine-sentinel" class="text-3xl font-bold tracking-tight text-vx-ink">LLM sentinel</h3>
       <code class="engine__tag mono">classifier.kind: llm</code>
     </header>
     <div class="engine__body grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
@@ -203,7 +207,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
   <article class="engine mt-10" aria-labelledby="engine-models">
     <header class="engine__head">
       <span class="engine__num mono">02</span>
-      <h3 id="engine-models" class="text-2xl font-bold text-vx-ink">Embedded models</h3>
+      <h3 id="engine-models" class="text-3xl font-bold tracking-tight text-vx-ink">Embedded models</h3>
       <code class="engine__tag mono">classifier.kind: models</code>
     </header>
     <div class="engine__body grid gap-8 lg:grid-cols-2 lg:items-center">
@@ -308,7 +312,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
   <article class="engine mt-10" aria-labelledby="engine-jev">
     <header class="engine__head">
       <span class="engine__num mono">03</span>
-      <h3 id="engine-jev" class="text-2xl font-bold text-vx-ink">Jev on OpenRouter</h3>
+      <h3 id="engine-jev" class="text-3xl font-bold tracking-tight text-vx-ink">Jev on OpenRouter</h3>
       <code class="engine__tag mono">typesafe/jev-1.13</code>
     </header>
     <div class="engine__body grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
@@ -382,13 +386,15 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
     </details>
   </article>
 
-  <div class="mt-12">
-    <h3 class="text-xl font-bold text-vx-ink">When a check fails</h3>
-    <p class="mt-2 max-w-[72ch] text-vx-ink/80">
+  <div class="mt-20">
+    <div class="grid gap-6 lg:grid-cols-2 lg:items-end">
+      <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">When a check fails</h3>
+      <p class="text-vx-ink/80">
       An error always blocks the content. An unclear result can be passed to another engine. This list
       covers every case.
-    </p>
-    <ul class="ledger mt-5 list-none p-0">
+      </p>
+    </div>
+    <ul class="ledger mt-8 list-none p-0">
       {outcomes.map((o) => (
         <li class={`ledger__row ledger__row--${o.tone}`}>
           <span class="ledger__event">{o.event}</span>
@@ -403,8 +409,8 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
     </p>
   </div>
 
-  <figure class="mt-10 max-w-[72ch]">
-    <div class="overflow-hidden rounded-lg border border-vx-ink bg-vx-ink">
+  <figure class="mt-12">
+    <div class="overflow-hidden rounded-xl border border-vx-ink bg-vx-ink">
       <img src={classifierShot.src} alt="The /model classifier rows showing kind, phase 1, phase 2 and phase 3" class="block h-auto w-full" loading="lazy" />
     </div>
     <figcaption class="mono mt-3 text-sm text-vx-ink/70">/model, classifier kind and phase rows</figcaption>

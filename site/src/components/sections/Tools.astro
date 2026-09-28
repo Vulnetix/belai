@@ -1,0 +1,213 @@
+---
+import SealedSection from '../seal/SealedSection.astro';
+import SectionHead from '../ui/SectionHead.astro';
+import SubHead from '../ui/SubHead.astro';
+import Ladder from '../ui/Ladder.astro';
+import Limits from '../ui/Limits.astro';
+import cdConfine from '../../assets/concepts/cd-confinement.svg?raw';
+
+// Tools and the OS sandbox: the core tools, the native catalogue (from
+// internal/tools/catalog.go, with the kind each one has), where a path may
+// go, and the boundary Bash runs inside (internal/sandbox).
+
+const sealText =
+  'Tools: the core tools take the arguments models are trained on, a fixed-argv native catalogue of 25 read-only utilities never goes through a shell, and Cd is confined so the working directory moves inside the session roots. Bash, inline !cmd and supervised processes run in an OS sandbox: bubblewrap on Linux or sandbox-exec on macOS. The workspace roots, a private /tmp and the usual tool caches are writable, the state directory is hidden, and the network can be denied. A repository can only tighten it; guardrails off turns it off; required refuses to run without a backend.';
+
+const docBase = 'https://github.com/Vulnetix/belai/blob/main/docs/';
+
+const tiers = [
+  {
+    n: '01',
+    name: 'Core tools',
+    key: 'Read · Grep · Edit',
+    lead: 'The tools every model already knows, with the argument shapes it was trained on, so a call is right the first time.',
+  },
+  {
+    n: '02',
+    name: 'Native catalogue',
+    key: '25 tools',
+    lead: 'Read-only utilities as tools of their own. Each runs one binary with a fixed argument shape, passed to `exec.Command` without a shell.',
+  },
+  {
+    n: '03',
+    name: 'Bash, sandboxed',
+    key: 'bubblewrap · sandbox-exec',
+    lead: 'An arbitrary command runs inside an operating-system boundary where only your workspace, a private `/tmp` and tool caches are writable.',
+  },
+];
+
+// Every native tool, grouped. `read` marks the ones that can print a file's
+// contents, whose output is classified; the rest are shaped and sanitised.
+const catalogue = [
+  { group: 'files', tools: [['Cat', true], ['Head', true], ['Tail', true], ['Strings', true], ['File', false]] },
+  { group: 'listing', tools: [['LS', false], ['Find', false]] },
+  { group: 'git', tools: [['Git', false]] },
+  { group: 'transform', tools: [['JQ', true], ['YQ', true], ['Sed', true], ['Awk', true], ['Cut', true], ['Sort', true], ['Uniq', true], ['Tr', true], ['Paste', true], ['Join', true], ['WC', false]] },
+  { group: 'compare', tools: [['Diff', true], ['Cmp', false]] },
+  { group: 'environment', tools: [['Echo', false], ['Date', false], ['Pwd', false], ['Env', false]] },
+] as const;
+
+const core = [
+  ['Grep', '`glob`, `type`, `-i`, context lines and `output_mode`'],
+  ['Bash', 'a `timeout` of up to ten minutes, two by default, so a normal test run finishes'],
+  ['Edit · Write', 'refuse a file the model has not read in this session, or one that changed on disk since'],
+  ['Git', 'status, log, diff, show, rev-parse, ls-files, grep and describe, nothing that writes'],
+];
+
+const sandbox = [
+  { what: 'Writable', items: ['the workspace roots, including folders added with `/add-dir`', 'a private `/tmp` that exists only for that command', 'with `caches` on, the usual tool caches: `~/.cache`, `~/go`, `~/.npm`, `~/.cargo`, `~/.m2`, `~/.gradle` and more'], tone: 'bg-vx-mint/25' },
+  { what: 'Read-only', items: ['everything else your account can see'], tone: 'bg-vx-bone/60' },
+  { what: 'Hidden', items: ['`~/.vulnetix/belai`, which holds credentials and sessions. The command sees an empty directory'], tone: 'bg-vx-ink text-vx-cream' },
+  { what: 'Network', items: ['available by default, so builds work', '`"network": "deny"` turns it off'], tone: 'bg-vx-sand/60' },
+];
+
+const sandboxModes = [
+  ['off', 'commands run as your account, with no boundary'],
+  ['auto', 'the default: sandboxed when a backend works here, unsandboxed otherwise'],
+  ['required', 'refuse a command rather than run it bare'],
+];
+
+const limits = [
+  ['No shell for the catalogue', 'Free-form command strings are rejected. A native tool runs one binary with its own arguments.'],
+  ['Content still classifies', 'A native tool that can print a file, such as `Cat`, `JQ` or `Diff`, is classified like `Read`.'],
+  ['Cd stays inside', '`Cd` moves the working directory anywhere inside the session roots. A path such as `../../../etc` is refused.'],
+  ['A repository only tightens', 'A project can raise `sandbox.mode`, deny the network and turn caches off, never the reverse. Its `extra_writable` is dropped.'],
+  ['One switch', 'Guardrails off turns the sandbox off with every other check. `/sandbox` shows the policy in effect.'],
+  ['Everything that runs a command', '`Bash` in every mode and in explore subagents, inline `!cmd`, supervised processes, and MCP stdio servers that opt in. The command dies with Belai.'],
+];
+
+const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }));
+---
+
+<SealedSection label="tools" sealText={sealText} id="tools">
+  <SectionHead title="Tools and the sandbox">
+    Belai gives the model the tools it was trained on, a catalogue of read-only utilities that never go
+    through a shell, and a sandbox for the commands that do.
+  </SectionHead>
+
+  <Ladder steps={tiers} from="shapes Belai knows" to="an arbitrary command, fenced by the OS">
+    <svg slot="art-0" viewBox="0 0 320 110" class="h-24 w-full" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+      {[['Read', 10, 18], ['Grep', 116, 18], ['Glob', 222, 18], ['Edit', 10, 64], ['Write', 116, 64], ['Bash', 222, 64]].map(([t, x, y]) => (
+        <>
+          <rect x={x} y={y} width="88" height="30" rx="6" class={t === 'Bash' ? '' : 'fill-vx-bone'} />
+          <text x={Number(x) + 14} y={Number(y) + 20} font-family="Geist Mono, monospace" font-size="13" fill="currentColor" stroke="none">{t}</text>
+        </>
+      ))}
+    </svg>
+    <svg slot="art-1" viewBox="0 0 320 110" class="h-24 w-full" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="10" y="30" width="120" height="50" rx="8" class="fill-vx-bone" />
+      <text x="24" y="52" font-family="Geist Mono, monospace" font-size="12" fill="currentColor" stroke="none">JQ</text>
+      <text x="24" y="68" font-family="Geist Mono, monospace" font-size="10" class="fill-vx-ink/60" stroke="none">filter, path</text>
+      <path d="M130 55 H176" /><path d="M168 49 L177 55 L168 61" stroke-linejoin="round" />
+      <rect x="178" y="30" width="132" height="50" rx="8" />
+      <text x="190" y="59" font-family="Geist Mono, monospace" font-size="9.5" fill="currentColor" stroke="none">["jq", filter, path]</text>
+    </svg>
+    <svg slot="art-2" viewBox="0 0 320 110" class="h-24 w-full" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="8" y="8" width="304" height="94" rx="10" stroke-dasharray="5 4" />
+      <rect x="24" y="26" width="120" height="58" rx="8" class="fill-vx-mint" stroke="none" />
+      <text x="38" y="52" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-ink" stroke="none">workspace</text>
+      <text x="38" y="68" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-ink" stroke="none">/tmp · caches</text>
+      <rect x="160" y="26" width="136" height="58" rx="8" class="stroke-vx-cream/40" />
+      <text x="174" y="52" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-cream/80" stroke="none">read-only</text>
+      <text x="174" y="68" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-cream/80" stroke="none">the rest</text>
+    </svg>
+  </Ladder>
+
+  <SubHead title="The native catalogue">
+    Belai includes 25 read-only utilities as tools, each running a specific binary with a fixed argument
+    shape. A tool that can print a file's contents is classified like <code class="mono">Read</code>; the
+    rest return output whose shape Belai knows.
+  </SubHead>
+  <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    {catalogue.map((g) => (
+      <div class={`rounded-xl border border-vx-ink p-4 ${g.group === 'transform' ? 'lg:row-span-2' : ''}`}>
+        <p class="mono text-xs tracking-wider text-vx-ink/60">{g.group.toUpperCase()}</p>
+        <ul class="mt-3 flex list-none flex-wrap gap-2 p-0">
+          {g.tools.map(([name, reads]) => (
+            <li class={`mono rounded-md border px-2.5 py-1 text-sm ${reads ? 'border-vx-ink bg-vx-ink text-vx-mint' : 'border-vx-ink/40'}`}>{name}</li>
+          ))}
+        </ul>
+      </div>
+    ))}
+  </div>
+  <p class="mono mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-vx-ink/70">
+    <span><span class="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm bg-vx-ink align-[-0.05em]"></span>can print a file, so classified</span>
+    <span><span class="mr-1.5 inline-block h-2.5 w-2.5 rounded-sm border border-vx-ink/40 align-[-0.05em]"></span>shaped output, sanitised</span>
+  </p>
+
+  <SubHead title="Arguments models already know">
+    The core tools take the arguments models are trained on, so the model does not have to learn a new
+    shape for the same job.
+  </SubHead>
+  <dl class="mt-8 grid gap-px overflow-hidden rounded-xl border border-vx-ink bg-vx-ink/20 md:grid-cols-2">
+    {core.map(([tool, what]) => (
+      <div class="bg-vx-cream p-5">
+        <dt><code class="mono text-base font-semibold">{tool}</code></dt>
+        <dd class="m-0 mt-2 text-vx-ink/80">{split(what).map(({ p, c }) => (c ? <code class="mono text-[0.92em]">{p}</code> : p))}</dd>
+      </div>
+    ))}
+  </dl>
+
+  <SubHead title="Where a path can go">
+    <code class="mono">Cd</code> can move the working directory anywhere inside the session root and
+    nowhere outside it. You can still reach past the root yourself: <code class="mono">@../</code>,{' '}
+    <code class="mono">@/</code> or <code class="mono">@~/</code> browses one folder at a time.
+  </SubHead>
+  <div class="mt-8 grid gap-8 lg:grid-cols-2 lg:items-center">
+    <div class="rounded-xl border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={cdConfine} /></div>
+    <ol class="m-0 list-none p-0">
+      <li class="grid grid-cols-[2rem_minmax(0,1fr)] gap-3 border-b border-vx-ink/20 py-4">
+        <span class="mono text-vx-ink/60">1</span>
+        <p>Entries outside the session roots carry an amber <code class="mono">⚠</code> in the <code class="mono">@</code> chooser.</p>
+      </li>
+      <li class="grid grid-cols-[2rem_minmax(0,1fr)] gap-3 border-b border-vx-ink/20 py-4">
+        <span class="mono text-vx-ink/60">2</span>
+        <p>Attaching one asks first: add its folder as a root for this session, save it for the project like <code class="mono">/add-dir</code>, or decline.</p>
+      </li>
+      <li class="grid grid-cols-[2rem_minmax(0,1fr)] gap-3 py-4">
+        <span class="mono text-vx-ink/60">3</span>
+        <p>Nothing outside the roots is read until you say yes, and a folder that contains the session root is refused.</p>
+      </li>
+    </ol>
+  </div>
+
+  <SubHead id="sandbox" title="The sandbox">
+    Belai's own file tools stay inside the workspace roots, but a command can reach anything your account
+    can. So <code class="mono">Bash</code>, inline <code class="mono">!cmd</code> and supervised processes run
+    under an operating-system boundary: bubblewrap on Linux, <code class="mono">sandbox-exec</code> on macOS.
+  </SubHead>
+  <div class="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    {sandbox.map((s) => (
+      <div class={`rounded-xl border border-vx-ink p-5 ${s.tone}`}>
+        <p class="mono text-xs tracking-wider opacity-70">{s.what.toUpperCase()}</p>
+        <ul class="mt-3 list-none space-y-2 p-0 text-sm">
+          {s.items.map((it) => <li>{split(it).map(({ p, c }) => (c ? <code class="mono">{p}</code> : p))}</li>)}
+        </ul>
+      </div>
+    ))}
+  </div>
+  <div class="mt-6 grid gap-8 lg:grid-cols-12 lg:items-start">
+    <dl class="m-0 grid min-w-0 gap-px overflow-hidden rounded-xl border border-vx-ink bg-vx-ink/20 sm:grid-cols-3 lg:col-span-8">
+      {sandboxModes.map(([mode, what]) => (
+        <div class="bg-vx-cream p-4">
+          <dt><code class="mono font-semibold">sandbox.mode: {mode}</code></dt>
+          <dd class="m-0 mt-1 text-sm text-vx-ink/75">{what}</dd>
+        </div>
+      ))}
+    </dl>
+    <div class="min-w-0 rounded-xl bg-vx-ink p-5 lg:col-span-4">
+      <p class="mono text-xs tracking-wider text-vx-cream/70">THE STRICT POLICY</p>
+      <pre class="mono mt-3 overflow-x-auto text-sm leading-7 text-vx-mint"><code>{`"sandbox": {
+  "mode": "required",
+  "network": "deny",
+  "caches": false
+}`}</code></pre>
+      <p class="mt-2 text-sm text-vx-cream/75">
+        Only the roots and the private <code class="mono">/tmp</code> are writable, and nothing leaves the
+        machine. <a class="text-vx-cream underline" href={`${docBase}sandbox.md`}>docs/sandbox.md</a>
+      </p>
+    </div>
+  </div>
+
+  <Limits items={limits} class="mt-16" />
+</SealedSection>

@@ -1,0 +1,193 @@
+---
+import SealedSection from '../seal/SealedSection.astro';
+import SectionHead from '../ui/SectionHead.astro';
+import SubHead from '../ui/SubHead.astro';
+import Ladder from '../ui/Ladder.astro';
+import Limits from '../ui/Limits.astro';
+import Shot from '../ui/Shot.astro';
+import planReviewShot from '../../assets/shots/plan-review.svg';
+
+// Modes as a ladder of agent, plan and goal, then how they differ, how a
+// prompt picks one, and how a goal runs pass by pass.
+
+const sealText =
+  'Modes: agent for general coding, plan for read-only investigation with Bash absent, and goal for one tracked objective. In any mode the model can ask you multiple-choice questions; in plan mode your answers start a new agent turn with every tool. Explicit choices are sticky and never re-classified. An agent turn ends on a done panel; a goal or an approved plan ends on a final report.';
+
+const modes = [
+  {
+    n: '01',
+    name: 'Agent',
+    key: 'default',
+    lead: 'General coding. Every tool is available behind the permission rules, and the security classifier checks every untrusted result.',
+  },
+  {
+    n: '02',
+    name: 'Plan',
+    key: 'read-only',
+    lead: 'Investigation without changes. The model is not offered `Bash` at all, and the plan it writes is a structured document that you approve.',
+  },
+  {
+    n: '03',
+    name: 'Goal',
+    key: 'one objective',
+    lead: 'Works on one named objective until it is done, checking progress each pass against a todo list, and ends on a report of what changed.',
+  },
+];
+
+const rows = ['Tools offered', 'Ends on', 'When the model asks you', 'Afterwards'] as const;
+
+const facts: Record<string, string[]> = {
+  'Tools offered': [
+    'Every tool, behind the permission rules',
+    'Read-only tools, with no `Bash` unless an explicit allow rule adds a read-only one. The last pass offers only `update_plan`, `ExitPlanMode` and `AskUserQuestion`',
+    'Every tool, behind the permission rules',
+  ],
+  'Ends on': [
+    'A `✓ done` panel Belai writes itself: tool calls, edits and the time taken',
+    'A plan or a question, every time',
+    'A final report of what changed and how it was checked, or of what is left if it stopped early',
+  ],
+  'When the model asks you': [
+    'Your answers come back to it straight away and the work carries on',
+    'Your answers start a new agent turn with every tool, so the model acts on them',
+    'Your answers come back to it straight away and the work carries on',
+  ],
+  Afterwards: [
+    'The next prompt',
+    'Approve, refine or cancel the plan. An approved plan runs like a goal and ends on the same report',
+    'With `auto-commit per task` on, one conventional commit of exactly the files it changed',
+  ],
+};
+
+const loop = [
+  ['pass', 'the model works on the next step'],
+  ['todo list', 'built from its own text, never from tool output'],
+  ['check', 'progress against the list'],
+  ['continue', 'while the objective moves forward'],
+];
+
+const limits = [
+  ['A mode you pick stays picked', 'Later turns do not re-classify it. When a request reads like another mode, a panel asks before switching.'],
+  ['Plan mode has no Bash', 'The model cannot call a tool it is not offered. Guardrails off restores the full surface.'],
+  ['An approved plan is the gate', 'Once you approve a plan, its run is no longer plan mode and gets the full surface.'],
+  ['A question is asked once', 'A question already asked in the session is never asked again.'],
+  ['Nobody to answer', 'A headless run or a background agent is told to proceed on its own judgement, and nothing widens.'],
+  ['Surveys end', 'After eight rounds of reading without changing a file, a goal is told to stop surveying and make the first edit.'],
+];
+
+const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }));
+---
+
+<SealedSection label="modes" sealText={sealText} id="modes">
+  <SectionHead title="Modes">
+    Belai has three modes: agent, plan and goal. A prompt sent without a mode is classified into one of
+    them. A mode you pick yourself is kept as it is.
+  </SectionHead>
+
+  <Ladder steps={modes} from="reads and writes behind your rules" to="keeps going until the objective is met">
+    <svg slot="art-0" viewBox="0 0 320 110" class="h-24 w-full" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="10" y="20" width="200" height="70" rx="8" class="fill-vx-bone" />
+      <path d="M26 42 H150 M26 58 H190 M26 74 H120" />
+      <rect x="226" y="36" width="84" height="38" rx="8" />
+      <text x="240" y="60" font-family="Geist Mono, monospace" font-size="13" class="fill-vx-mint-strong" stroke="none">✓ done</text>
+    </svg>
+    <svg slot="art-1" viewBox="0 0 320 110" class="h-24 w-full" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="10" y="14" width="150" height="82" rx="8" />
+      <text x="24" y="38" font-family="Geist Mono, monospace" font-size="12" fill="currentColor" stroke="none">◆ step one</text>
+      <text x="24" y="58" font-family="Geist Mono, monospace" font-size="12" fill="currentColor" stroke="none">◇ step two</text>
+      <text x="24" y="78" font-family="Geist Mono, monospace" font-size="12" fill="currentColor" stroke="none">◇ step three</text>
+      <rect x="180" y="34" width="130" height="42" rx="8" class="stroke-vx-coral" stroke-dasharray="3 3" />
+      <text x="196" y="60" font-family="Geist Mono, monospace" font-size="12" class="fill-vx-coral" stroke="none">Bash: absent</text>
+    </svg>
+    <svg slot="art-2" viewBox="0 0 320 110" class="h-24 w-full" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M150 20 A 36 36 0 1 1 114 56" />
+      <path d="M144 12 L152 20 L142 26" stroke-linejoin="round" />
+      <text x="126" y="60" font-family="Geist Mono, monospace" font-size="11" fill="currentColor" stroke="none">pass</text>
+      <path d="M190 56 H250" />
+      <rect x="250" y="38" width="62" height="36" rx="6" class="fill-vx-mint" stroke="none" />
+      <text x="260" y="61" font-family="Geist Mono, monospace" font-size="12" class="fill-vx-ink" stroke="none">report</text>
+      <text x="14" y="30" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-cream/70" stroke="none">✓ todo</text>
+      <text x="14" y="50" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-cream/70" stroke="none">✓ todo</text>
+      <text x="14" y="70" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-cream/70" stroke="none">◇ todo</text>
+    </svg>
+  </Ladder>
+
+  <SubHead title="How the three modes differ">
+    In any mode the model can ask you multiple-choice questions with <code class="mono">AskUserQuestion</code>{' '}
+    instead of guessing. What happens to your answers depends on the mode.
+  </SubHead>
+
+  <table class="mt-8 hidden w-full border-collapse text-left lg:table">
+    <thead>
+      <tr class="border-b-2 border-vx-ink">
+        <th scope="col" class="w-[17%] pb-4"><span class="sr-only">Property</span></th>
+        {modes.map((m, i) => (
+          <th scope="col" class={`px-5 pb-4 pt-3 text-lg font-bold ${i === 2 ? 'bg-vx-sand' : ''}`}>
+            <span class="mono text-xs font-medium text-vx-ink/60">{m.n} </span>{m.name}
+          </th>
+        ))}
+      </tr>
+    </thead>
+    <tbody>
+      {rows.map((r) => (
+        <tr class="border-b border-vx-ink/20 last:border-b-0">
+          <th scope="row" class="py-5 pr-5 align-top font-semibold">{r}</th>
+          {facts[r].map((f, i) => (
+            <td class={`px-5 py-5 align-top text-vx-ink/85 ${i === 2 ? 'bg-vx-sand/40' : ''}`}>
+              {split(f).map(({ p, c }) => (c ? <code class="mono text-[0.92em]">{p}</code> : p))}
+            </td>
+          ))}
+        </tr>
+      ))}
+    </tbody>
+  </table>
+  <div class="mt-8 grid gap-4 md:grid-cols-3 lg:hidden">
+    {modes.map((m, i) => (
+      <article class={`rounded-xl border border-vx-ink p-5 ${i === 2 ? 'bg-vx-ink text-vx-cream' : ''}`}>
+        <h4 class="text-xl font-bold">{m.name}</h4>
+        <dl class={`mt-4 grid gap-y-3 border-t pt-4 text-sm ${i === 2 ? 'border-vx-cream/20' : 'border-vx-ink/20'}`}>
+          {rows.map((r) => (
+            <div>
+              <dt class={i === 2 ? 'text-vx-cream/70' : 'text-vx-ink/60'}>{r}</dt>
+              <dd class="m-0">{split(facts[r][i]).map(({ p, c }) => (c ? <code class="mono">{p}</code> : p))}</dd>
+            </div>
+          ))}
+        </dl>
+      </article>
+    ))}
+  </div>
+
+  <SubHead title="A goal, pass by pass">
+    A goal starts work at once. Its completion contract is drafted alongside and joins at the next pass
+    when it is ready, and it is not held back by a read-only survey unless{' '}
+    <code class="mono">resilience.goal_explore</code> is on.
+  </SubHead>
+  <div class="mt-8 grid gap-8 lg:grid-cols-12">
+    <ol class="m-0 grid min-w-0 list-none gap-3 p-0 sm:grid-cols-2 lg:col-span-8 xl:grid-cols-4">
+      {loop.map(([step, what], i) => (
+        <li class="relative rounded-xl border border-vx-ink p-4">
+          <span class="mono text-xs text-vx-ink/60">{String(i + 1).padStart(2, '0')}</span>
+          <p class="mono mt-2 font-semibold">{step}</p>
+          <p class="mt-1 text-sm text-vx-ink/75">{what}</p>
+          {i < loop.length - 1 && <span class="mono absolute -right-2.5 top-1/2 hidden -translate-y-1/2 text-vx-mint-strong xl:block" aria-hidden="true">▸</span>}
+        </li>
+      ))}
+    </ol>
+    <aside class="min-w-0 rounded-xl bg-vx-ink p-5 lg:col-span-4">
+      <p class="mono text-xs tracking-wider text-vx-cream/70">SWITCH OR ASK</p>
+      <p class="mt-3 flex items-baseline gap-3 text-vx-cream">
+        <kbd class="mono rounded-md border border-b-[3px] border-vx-mint px-2 text-sm text-vx-mint">shift+tab</kbd>
+        <span>cycles agent, plan and goal</span>
+      </p>
+      <pre class="mono mt-4 overflow-x-auto text-sm leading-7 text-vx-mint"><code>belai -detect-mode -prompt "…"</code></pre>
+      <p class="mt-2 text-sm text-vx-cream/75">prints the mode Belai would choose for a prompt without acting on it.</p>
+    </aside>
+  </div>
+
+  <SubHead title="Reviewing a plan">
+    The plan is saved as a structured document. You approve it, send it back with notes, or cancel it.
+  </SubHead>
+  <Shot class="mt-8" src={planReviewShot.src} alt="The plan review pane with Approve, Refine and Cancel" caption="plan review pane" />
+
+  <Limits items={limits} class="mt-16" />
+</SealedSection>
