@@ -429,13 +429,13 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	}
 	if ws.Worktree {
 		msg := fmt.Sprintf("belai: %s %s\n\nAgent %s, kanban item %s, attempt %d.", it.Short(), it.Title, p.Name, it.Short(), it.Attempts+1)
-		if n, err := ws.Commit(context.WithoutCancel(ctx), msg); err != nil {
+		if _, err := ws.Commit(context.WithoutCancel(ctx), msg); err != nil {
 			w.logf("%s: commit: %v", it.Short(), err)
 			if !o.failed {
 				o = outcome{failed: true, note: "the work could not be committed: " + sanitize.Sanitize(err.Error())}
 			}
 		} else {
-			o.files = n
+			o.files = ws.FilesChanged(context.WithoutCancel(ctx))
 		}
 		o.branch = ws.Branch
 	}

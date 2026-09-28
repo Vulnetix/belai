@@ -63,6 +63,12 @@ type Mount struct {
 	Writable bool
 }
 
+// EnvMarker is set to 1 in the environment of every sandboxed command.
+const EnvMarker = "BELAI_SANDBOXED"
+
+// Nested reports whether this process runs inside a Belai sandbox.
+func Nested() bool { return os.Getenv(EnvMarker) != "" }
+
 // ErrUnavailable is returned in required mode when no backend works here.
 var ErrUnavailable = errors.New("sandbox required but no sandbox backend is available (install bubblewrap on Linux)")
 
@@ -176,6 +182,13 @@ func Wrap(cmd *exec.Cmd, p Policy) (bool, error) {
 		}
 		return false, nil
 	}
+	// Mark the command as sandboxed, so a test that would nest a second
+	// sandbox inside this one (bubblewrap cannot reliably see the outer
+	// sandbox's private /tmp) knows to skip.
+	if cmd.Env == nil {
+		cmd.Env = os.Environ()
+	}
+	cmd.Env = append(cmd.Env, EnvMarker+"=1")
 	if len(p.Env) > 0 {
 		if cmd.Env == nil {
 			cmd.Env = os.Environ()

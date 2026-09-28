@@ -368,6 +368,9 @@ func TestWorktreeGitInsideTheSandbox(t *testing.T) {
 	if name, _ := sandbox.Backend(); name == "" {
 		t.Skip("no sandbox backend")
 	}
+	if sandbox.Nested() {
+		t.Skip("already inside a Belai sandbox: a nested sandbox cannot see the outer one's private /tmp")
+	}
 	testEnv(t)
 	repo := gitRepo(t)
 	ctx := context.Background()
@@ -439,7 +442,7 @@ func TestWorktreeGitInsideTheSandbox(t *testing.T) {
 	}
 	// The harness still commits what the model left, on the same branch.
 	os.WriteFile(filepath.Join(ws.Dir, "more.txt"), []byte("x\n"), 0o644)
-	if n, err := ws.Commit(ctx, "belai: rest"); err != nil || n != 2 {
+	if n, err := ws.Commit(ctx, "belai: rest"); err != nil || n != 1 || ws.FilesChanged(ctx) != 2 {
 		t.Fatalf("harness commit: %d %v", n, err)
 	}
 }
