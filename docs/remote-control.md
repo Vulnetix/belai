@@ -47,7 +47,9 @@ A session runs only in a directory the daemon offers:
 
 `/trusted` in the TUI (also `f1` then `d`) lists every trusted directory and
 marks the ones the running daemon offers, the missing ones and the scratch ones
-it hides. `x` revokes one, `p` revokes every missing or scratch directory, and
+it hides. The list scrolls with the cursor, and `/` filters it by path (or by
+`missing`, `temporary`, `offered`). `x` revokes one, `X` revokes every
+directory the filter shows, `p` revokes every missing or scratch directory, and
 `a` trusts a path the same way `-trust-dir` does. Revoking clears the trust
 flag only: the next launch there asks again, and a session the daemon starts
 there fails its trust check. The daemon keeps listing it until you restart

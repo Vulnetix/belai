@@ -1,10 +1,14 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/vulnetix/belai/internal/projectregistry"
 	"github.com/vulnetix/belai/internal/trustgate"
@@ -119,5 +123,76 @@ func TestTrustedAddRefusesMissingPath(t *testing.T) {
 	a.handleTrustedKey(key("enter"))
 	if a.trustedState.mode == "confirm-add" || !a.trustedState.noteErr {
 		t.Fatalf("a missing path was staged: mode %q note %q", a.trustedState.mode, a.trustedState.note)
+	}
+}
+
+// manyTrusted is /trusted on a 24-line terminal with n trusted directories.
+func manyTrusted(t *testing.T, n int) (*App, []string) {
+	t.Helper()
+	root := t.TempDir()
+	var dirs []string
+	for i := 0; i < n; i++ {
+		d := filepath.Join(root, fmt.Sprintf("proj-%03d", i))
+		if err := os.Mkdir(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		dirs = append(dirs, d)
+	}
+	a := trustedApp(t, dirs...)
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	return a, dirs
+}
+
+func TestTrustedFitsTheScreenAndScrolls(t *testing.T) {
+	a, _ := manyTrusted(t, 80)
+	if h := lipgloss.Height(a.trustedView()); h > 24 {
+		t.Fatalf("view is %d lines on a 24-line terminal", h)
+	}
+	if !strings.Contains(a.trustedView(), "↓") {
+		t.Fatal("no marker for the rows below the window")
+	}
+	for i := 0; i < 50; i++ {
+		a.handleTrustedKey(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	v := a.trustedView()
+	if !strings.Contains(v, "proj-050") || strings.Contains(v, "proj-000") {
+		t.Fatal("the window did not follow the cursor to row 50")
+	}
+	if h := lipgloss.Height(v); h > 24 {
+		t.Fatalf("scrolled view is %d lines", h)
+	}
+	a.handleTrustedKey(key("G"))
+	if !strings.Contains(a.trustedView(), "proj-079") {
+		t.Fatal("end did not reach the last row")
+	}
+}
+
+func TestTrustedFilterAndRevokeShown(t *testing.T) {
+	a, dirs := manyTrusted(t, 30)
+	a.handleTrustedKey(key("X"))
+	if a.trustedState.mode != "" {
+		t.Fatal("X without a filter staged a revoke of everything")
+	}
+	a.handleTrustedKey(key("/"))
+	for _, r := range "proj-01" {
+		a.handleTrustedKey(key(string(r)))
+	}
+	a.handleTrustedKey(key("enter"))
+	if n := len(a.trustedShown()); n != 10 {
+		t.Fatalf("filter shows %d rows, want 10", n)
+	}
+	a.handleTrustedKey(key("X"))
+	if a.trustedState.mode != "confirm-shown" {
+		t.Fatalf("mode = %q", a.trustedState.mode)
+	}
+	a.handleTrustedKey(key("y"))
+	for i, d := range dirs {
+		if want := i < 10 || i >= 20; isTrusted(t, d) != want {
+			t.Fatalf("%s trusted = %v, want %v", d, !want, want)
+		}
+	}
+	a.handleTrustedKey(key("esc"))
+	if a.trustedState.filter != "" || a.view != viewTrusted {
+		t.Fatal("esc with a filter should clear it, not leave")
 	}
 }
