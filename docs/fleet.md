@@ -78,7 +78,9 @@ One pass of the worker loop:
    `on_success`. On a stall, a budget stop or an error the item goes back to
    its source list until `max_attempts`, then to `on_failure`. The release
    note is harness-composed: counts, the verdict and the stop reason, never
-   model text.
+   model text. The worker that failed an item leaves it to other workers
+   until someone touches it. Moving it back, assigning it or editing it
+   counts as a deliberate retry, and that worker may take it again.
 6. **Memory.** An optional reflection turn distils a few lessons into the
    profile's memory file, which later items receive as a classified
    attachment.
