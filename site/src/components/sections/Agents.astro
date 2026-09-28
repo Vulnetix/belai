@@ -1,0 +1,384 @@
+---
+import SealedSection from '../seal/SealedSection.astro';
+import CopyButton from '../ui/CopyButton.tsx';
+
+// One section for every agent Belai runs besides the session: read-only
+// subagents, background agents and crews of kanban workers. It is laid out as
+// a ladder: each step gives an agent more room to act and a harder fence.
+
+const docBase = 'https://github.com/Vulnetix/belai/blob/main/docs/';
+
+const sealText =
+  'Agents: subagents, background agents and crews. Subagents (f8) split a question across read-only agents that run at once, stop after two to five rounds and report path:line findings. Background agents (/agent) are saved profiles with their own prompt, model, mode and tool list that run beside the session. Crews (belai agent start) are worker processes that claim items off the kanban board, work each on its own git worktree and branch inside the OS sandbox, push only through PublishBranch and open a draft pull request. The harness claims items, the item text is classified, settings come from the trusted repository root, and a worker that cannot ask blocks the item. belai:delivery runs a scout, two builders and a reviewer; belai:security a vulnerability scout, two patchers and a verifier.';
+
+type Step = {
+  n: string;
+  name: string;
+  key: string;
+  lead: string;
+  facts: Record<string, string>;
+};
+
+const rows = ['Tools', 'Writes to', 'Runs', 'Stops at', 'When it would ask', 'Hands back'] as const;
+
+const steps: Step[] = [
+  {
+    n: '01',
+    name: 'Subagents',
+    key: 'f8',
+    lead: 'Split one question across agents that run at once. They read and report back. They have no tool that writes.',
+    facts: {
+      Tools: 'Read-only: Read, Grep, Glob and the native readers',
+      'Writes to': 'Nothing',
+      Runs: 'Inside your turn, side by side',
+      'Stops at': 'Two to five rounds, then one report with no tools',
+      'When it would ask': 'It never asks and never widens',
+      'Hands back': 'One path:line finding per line, 6 KiB at most',
+    },
+  },
+  {
+    n: '02',
+    name: 'Background agents',
+    key: '/agent',
+    lead: 'A saved profile with its own prompt, model and tools. It runs beside your session once, on a loop, on a schedule, or when a condition holds.',
+    facts: {
+      Tools: 'The profile’s list, or every tool when it lists none',
+      'Writes to': 'Your working tree, under the permission rules',
+      Runs: 'Beside your session, in its own pool slot',
+      'Stops at': 'The end of its run, or max_iterations on a loop',
+      'When it would ask': 'Supervised: it asks you. Autonomous: the rules decide',
+      'Hands back': 'A report in your session',
+    },
+  },
+  {
+    n: '03',
+    name: 'Crews',
+    key: 'belai agent start',
+    lead: 'Worker processes that claim items off the board, work each one on a branch of its own, and hand it on until a draft pull request is waiting for you.',
+    facts: {
+      Tools: 'The profile’s list, plus KanbanHandoff and PublishBranch',
+      'Writes to': 'Its own worktree and branch, belai/K-xxxxxx/a1, outside the repository',
+      Runs: 'As a detached process that outlives your terminal',
+      'Stops at': 'Its pass budget, a lost lease, or max_attempts failures, which block the item',
+      'When it would ask': 'It blocks the item with a note for you to clear',
+      'Hands back': 'A draft pull request, and notes the harness writes on the item',
+    },
+  },
+];
+
+const quickstart = `belai kanban add "Add a CONTRIBUTING.md" -label build
+belai agent start -crew belai:delivery -trust-dir
+belai agent ps; belai kanban list
+belai agent stop -all`;
+
+// The board at the moment the reviewer took the item. Each column names the
+// crew member that claims from it.
+const board = [
+  { list: 'backlog', swatch: 'bg-vx-ink/40', note: '12:17 filed with #build', claims: '#scout', who: 'scout ×1' },
+  { list: 'in progress', swatch: 'bg-vx-mint-strong', note: '12:20 claimed by the builder · 12:27 PR opened', claims: '#build', who: 'builder ×2' },
+  { list: 'review', swatch: 'bg-vx-sand-amber', note: '', claims: '#needs-review', who: 'reviewer ×1' },
+  { list: 'done + PR', swatch: 'bg-vx-mint', note: 'approved work lands here, as a draft PR', claims: 'merges it', who: 'you' },
+];
+
+// Recorded from a real run on this repository with the released v0.57.2
+// binary. Keep it truthful: it quotes the item's history.
+const run = [
+  ['12:17', 'added to backlog', '#build', 'belai kanban add'],
+  ['12:20', 'backlog → in_progress', 'claimed by belai:builder', 'harness'],
+  ['12:27', 'note', 'draft pull request opened: Vulnetix/belai#6', 'PublishBranch'],
+  ['12:28', 'in_progress → review', 'completed in 2 passes; 1 file changed on belai/K-507600/a1', 'harness'],
+  ['12:29', 'review → in_progress', 'claimed by belai:reviewer', 'harness'],
+];
+
+const fences = [
+  ['The harness claims', 'A claim is one locked write to the board, so two workers never hold one item. A lease that lapses, because a worker crashed, returns it.'],
+  ['Item text is classified', 'The item reaches the model as a classified attachment, never as the prompt or a directive. A withheld item is blocked, never worked.'],
+  ['Its own branch only', 'It commits inside the OS sandbox. Your config, hooks, index, objects and every other ref stay read-only.'],
+  ['One way to push', 'PublishBranch pushes that branch to a GitHub or GitLab origin and opens a draft PR. git push, gh pr merge and git config are denied.'],
+  ['Settings from the root', 'Trust, settings and credentials come from your repository, never the worktree, so one agent cannot plant them for the next.'],
+  ['Refuses to start', 'No worker runs with guardrails off. An autonomous one needs a pass budget; one with Bash needs a working OS sandbox.'],
+];
+
+const crews = [
+  { name: 'belai:delivery', what: 'a request → reviewed branches', members: [['scout', 1], ['builder', 2], ['reviewer', 1]] },
+  { name: 'belai:security', what: 'a scan → verified fixes', members: [['vuln-scout', 1], ['patcher', 2], ['verifier', 1]] },
+] as const;
+
+const profile = `---
+name: docs-writer
+description: Writes and updates documentation items
+mode: worker
+autonomy: autonomous
+tools: [Read, Grep, Glob, Edit, Write, Bash]
+kanban:
+  labels: [docs]
+  on_success: {list: review, labels: [needs-review]}
+  handoff_to: [belai:builder]
+  max_attempts: 3
+workspace: {isolation: worktree, publish: agent}
+budget: {max_passes_per_item: 6, max_wall_per_item: 30m}
+memory: {enabled: true}
+---
+You document one kanban item per turn. Read the code it
+names, write the docs, check every link, commit on your
+branch, then PublishBranch with what you changed.`;
+
+// Code-shaped fact values render in mono.
+const codeish = /^(Read|Grep|Glob|KanbanHandoff|PublishBranch|max_iterations|max_attempts|path:line|belai\/K-xxxxxx\/a1)$/;
+const parts = (s: string) => s.split(/(Read(?=,)|Grep(?=,)|Glob|KanbanHandoff|PublishBranch|max_iterations|max_attempts|path:line|belai\/K-xxxxxx\/a1)/);
+---
+
+<SealedSection label="agents" sealText={sealText} id="agents">
+  <!-- The ladder -->
+  <div class="grid gap-6 lg:grid-cols-12 lg:items-end">
+    <div class="lg:col-span-7">
+      <p class="mono text-xs tracking-wider text-vx-mint-strong">SUBAGENTS · BACKGROUND AGENTS · CREWS</p>
+      <h2 class="mt-4 text-4xl font-extrabold leading-tight tracking-tight text-vx-ink md:text-5xl">
+        One question, one profile, one crew.
+      </h2>
+    </div>
+    <p class="text-lg text-vx-ink/80 lg:col-span-5">
+      Belai runs more than the session you type in. It splits a question across read-only subagents,
+      runs saved profiles beside you, and starts crews that take work off the kanban board. Each step
+      gives an agent more room to act, and puts a harder fence around it.
+    </p>
+  </div>
+
+  <ol class="mt-10 grid list-none gap-5 p-0 lg:grid-cols-3">
+    {steps.map((s, i) => {
+      const dark = i === 2;
+      return (
+        <li class={`flex flex-col gap-4 rounded-xl border border-vx-ink p-6 ${dark ? 'bg-vx-ink text-vx-cream' : ''}`}>
+          <div class="flex items-center justify-between">
+            <span class={`mono text-sm ${dark ? 'text-vx-cream/70' : 'text-vx-ink/60'}`}>{s.n}</span>
+            <kbd class={`mono rounded-md border border-b-[3px] px-2 py-0.5 text-sm ${dark ? 'border-vx-mint text-vx-mint' : 'border-vx-ink'}`}>{s.key}</kbd>
+          </div>
+          {i === 0 && (
+            <svg viewBox="0 0 320 110" class="h-24 w-full" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="30" cy="55" r="11" fill="currentColor" />
+              <path d="M41 55 C 90 55, 100 20, 150 20 M41 55 L150 55 M41 55 C 90 55, 100 90, 150 90" />
+              <rect x="150" y="10" width="46" height="20" rx="4" class="fill-vx-bone" />
+              <rect x="150" y="45" width="46" height="20" rx="4" class="fill-vx-bone" />
+              <rect x="150" y="80" width="46" height="20" rx="4" class="fill-vx-bone" />
+              <path d="M196 20 C 240 20, 240 55, 280 55 M196 55 L280 55 M196 90 C 240 90, 240 55, 280 55" stroke-dasharray="3 4" />
+              <circle cx="290" cy="55" r="11" class="fill-vx-mint" />
+            </svg>
+          )}
+          {i === 1 && (
+            <svg viewBox="0 0 320 110" class="h-24 w-full" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="14" y="30" width="128" height="50" rx="8" class="fill-vx-bone" />
+              <line x1="30" y1="48" x2="110" y2="48" />
+              <line x1="30" y1="62" x2="90" y2="62" />
+              <path d="M170 55 A 55 38 0 1 1 280 55 A 55 38 0 1 1 170 55" stroke-dasharray="3 4" />
+              <path d="M272 40 l9 15 l-15 3" stroke-linejoin="round" />
+              <circle cx="225" cy="55" r="12" class="fill-vx-mint-strong" stroke="none" />
+            </svg>
+          )}
+          {i === 2 && (
+            <svg viewBox="0 0 320 110" class="h-24 w-full text-vx-mint" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+              <g class="text-vx-cream/30" stroke="currentColor">
+                <rect x="4" y="8" width="70" height="94" rx="6" />
+                <rect x="84" y="8" width="70" height="94" rx="6" />
+                <rect x="164" y="8" width="70" height="94" rx="6" />
+                <rect x="244" y="8" width="72" height="94" rx="6" />
+              </g>
+              <rect x="12" y="20" width="54" height="16" rx="3" stroke-dasharray="3 3" />
+              <rect x="92" y="44" width="54" height="16" rx="3" stroke-dasharray="3 3" />
+              <rect x="172" y="68" width="54" height="16" rx="3" class="fill-vx-sand-amber" stroke="none" />
+              <path d="M66 28 L92 52 M146 52 L172 76" stroke-dasharray="2 3" />
+              <text x="266" y="60" font-family="Geist Mono, monospace" font-size="11" fill="currentColor" stroke="none">PR</text>
+            </svg>
+          )}
+          <h3 class="text-2xl font-bold">{s.name}</h3>
+          <p class={dark ? 'text-vx-cream/85' : 'text-vx-ink/80'}>{s.lead}</p>
+        </li>
+      );
+    })}
+  </ol>
+  <div class="mono mt-3 hidden items-center gap-4 text-sm lg:flex" aria-hidden="true">
+    <span class="text-vx-ink/60">reads, answers now</span>
+    <span class="h-px flex-1 bg-vx-ink"></span><span class="-ml-3">▸</span>
+    <span>writes, pushes, runs unattended</span>
+  </div>
+
+  <!-- What changes on each step -->
+  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
+    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">What changes on each step.</h3>
+    <p class="text-vx-ink/80">
+      The same rules hold on every step: your permission rules, the guardrails switch, and the security
+      classifier on everything they read. What changes is what they may touch, and what stops them.
+    </p>
+  </div>
+
+  <table class="mt-8 hidden w-full border-collapse text-left lg:table">
+    <thead>
+      <tr class="border-b-2 border-vx-ink">
+        <th scope="col" class="w-[16%] pb-4"><span class="sr-only">Property</span></th>
+        {steps.map((s, i) => (
+          <th scope="col" class={`px-5 pb-4 pt-3 text-lg font-bold ${i === 2 ? 'bg-vx-sand' : ''}`}>
+            <span class="mono text-xs font-medium text-vx-ink/60">{s.n} </span>{s.name}
+          </th>
+        ))}
+      </tr>
+    </thead>
+    <tbody>
+      {rows.map((r) => (
+        <tr class="border-b border-vx-ink/20 last:border-b-0">
+          <th scope="row" class="py-5 pr-5 align-top font-semibold">{r}</th>
+          {steps.map((s, i) => (
+            <td class={`px-5 py-5 align-top text-vx-ink/85 ${i === 2 ? 'bg-vx-sand/40' : ''}`}>
+              {parts(s.facts[r]).map((p) => (codeish.test(p) ? <code class="mono text-[0.92em]">{p}</code> : p))}
+            </td>
+          ))}
+        </tr>
+      ))}
+    </tbody>
+  </table>
+
+  <div class="mt-8 grid gap-4 md:grid-cols-3 lg:hidden">
+    {steps.map((s, i) => (
+      <article class={`rounded-xl border border-vx-ink p-5 ${i === 2 ? 'bg-vx-ink text-vx-cream' : ''}`}>
+        <h4 class="text-xl font-bold"><span class={`mono text-xs font-medium ${i === 2 ? 'text-vx-cream/70' : 'text-vx-ink/60'}`}>{s.n} </span>{s.name}</h4>
+        <dl class={`mt-4 grid grid-cols-[6.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 border-t pt-4 text-sm ${i === 2 ? 'border-vx-cream/20' : 'border-vx-ink/20'}`}>
+          {rows.map((r) => (
+            <>
+              <dt class={i === 2 ? 'text-vx-cream/70' : 'text-vx-ink/60'}>{r}</dt>
+              <dd class="m-0">{s.facts[r]}</dd>
+            </>
+          ))}
+        </dl>
+      </article>
+    ))}
+  </div>
+
+  <!-- A crew at work -->
+  <div id="crews" class="mt-20 grid scroll-mt-8 gap-6 lg:grid-cols-2 lg:items-end">
+    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">A crew at work, recorded.</h3>
+    <p class="text-vx-ink/80">
+      Item <code class="mono">K-507600</code>, “Add a CONTRIBUTING.md”, on this repository. The builder read
+      the docs, wrote the file, committed on its branch and opened{' '}
+      <a class="text-vx-ink underline" href="https://github.com/Vulnetix/belai/pull/6">draft PR #6</a>. Every
+      step is on the board, in <code class="mono">belai kanban list</code> and on the Vulnetix website.
+    </p>
+  </div>
+
+  <div class="mt-8 grid gap-8 lg:grid-cols-12">
+    <div class="min-w-0 lg:col-span-8">
+      <div class="hidden grid-cols-4 gap-3 rounded-xl border border-vx-ink bg-vx-bone/40 p-4 md:grid" aria-label="The board when the reviewer took the item">
+        {board.map((c) => (
+          <div class="flex min-h-56 flex-col gap-3">
+            <p class="mono flex items-center gap-2 text-sm"><span class={`inline-block h-2.5 w-2.5 rounded-sm ${c.swatch}`}></span>{c.list}</p>
+            {c.note ? (
+              <p class="rounded-lg border border-dashed border-vx-ink/40 p-3 text-sm text-vx-ink/70">{c.note}</p>
+            ) : (
+              <div class="flex flex-col gap-2 rounded-lg border border-vx-ink bg-vx-cream p-3 shadow-[0_2px_0_var(--color-vx-ink)]">
+                <p class="mono text-xs text-vx-ink/60">K-507600 · 12:28</p>
+                <p class="text-sm font-semibold leading-snug">Add a CONTRIBUTING.md</p>
+                <p class="flex flex-wrap gap-1.5">
+                  <code class="mono rounded bg-vx-bone px-1.5 py-0.5 text-[11px]">#needs-review</code>
+                  <code class="mono rounded bg-vx-mint px-1.5 py-0.5 text-[11px]">⚙ reviewer</code>
+                </p>
+              </div>
+            )}
+            <p class="mt-auto flex flex-col gap-0.5">
+              <span class="mono text-xs text-vx-ink/60">claims {c.claims}</span>
+              <span class="text-sm font-semibold">{c.who}</span>
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <ol class="mt-6 list-none p-0">
+        {run.map(([at, move, what, who]) => (
+          <li class="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-x-3 gap-y-1 border-b border-vx-ink/20 py-3 text-sm last:border-b-0 md:grid-cols-[3.5rem_13rem_minmax(0,1fr)_9rem] md:text-[15px]">
+            <span class="mono text-vx-ink/60">{at}</span>
+            <span class="mono font-semibold">{move}</span>
+            <span class="col-start-2 md:col-start-auto">{what}</span>
+            <span class="mono col-start-2 text-xs text-vx-mint-strong md:col-start-auto md:text-sm">{who}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+
+    <aside class="flex min-w-0 flex-col gap-5 lg:col-span-4">
+      <div class="rounded-xl bg-vx-ink p-5">
+        <p class="mono text-xs tracking-wider text-vx-cream/70">FOUR COMMANDS</p>
+        <pre class="mono mt-3 overflow-x-auto text-sm leading-7 text-vx-mint"><code>{quickstart}</code></pre>
+      </div>
+      <div><CopyButton value={quickstart} label="copy commands" client:visible /></div>
+      <div class="rounded-xl border border-vx-ink p-5">
+        <p class="mono text-xs tracking-wider text-vx-ink/60">OR WITHOUT LEAVING THE CHAT</p>
+        <p class="mt-3 flex items-baseline gap-3">
+          <kbd class="mono rounded-md border border-b-[3px] border-vx-ink px-2 text-sm">f9</kbd>
+          <span><b>kanban</b> tab: move, route and hand items to a crew</span>
+        </p>
+        <p class="mt-2 flex items-baseline gap-3">
+          <kbd class="mono rounded-md border border-b-[3px] border-vx-ink px-2 text-sm">f9</kbd>
+          <span><b>crew</b> tab: start and stop workers, read their logs</span>
+        </p>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Fences -->
+  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
+    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">Unattended, not unfenced.</h3>
+    <p class="text-vx-ink/80">
+      A worker reads text other people and other models wrote. That is what a prompt injection needs, so
+      the harness, not the model, holds the parts that matter.
+    </p>
+  </div>
+  <div class="mt-8 grid border-t-2 border-vx-ink md:grid-cols-2 xl:grid-cols-3">
+    {fences.map(([title, body]) => (
+      <div class="border-b border-vx-ink/20 py-6 md:pr-8">
+        <h4 class="text-lg font-bold">{title}</h4>
+        <p class="mt-2 text-sm text-vx-ink/80">{body}</p>
+      </div>
+    ))}
+  </div>
+
+  <!-- Crews and your own -->
+  <div class="mt-20 grid gap-10 lg:grid-cols-2 lg:items-start">
+    <div class="min-w-0">
+      <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">Two crews built in. Yours is a file.</h3>
+      {crews.map((c) => (
+        <div class="mt-7">
+          <p class="flex flex-wrap items-baseline justify-between gap-2">
+            <code class="mono text-base font-semibold">{c.name}</code>
+            <span class="text-sm text-vx-ink/60">{c.what}</span>
+          </p>
+          <p class="mt-3 flex flex-wrap items-center gap-2 text-sm">
+            {c.members.map(([m, n]) => (
+              <>
+                <span class="rounded-lg border border-vx-ink px-3 py-1.5"><b>{m}</b> ×{n}</span>
+                <span aria-hidden="true">→</span>
+              </>
+            ))}
+            <span class="rounded-lg bg-vx-mint px-3 py-1.5">draft PR</span>
+          </p>
+        </div>
+      ))}
+      <p class="mt-7 text-vx-ink/80">
+        A worker is an ordinary profile with <code class="mono">mode: worker</code>: its{' '}
+        <code class="mono">kanban</code> block says what it takes and where it goes next,{' '}
+        <code class="mono">workspace</code> gives it a worktree, <code class="mono">budget</code> bounds one
+        item. Write it as Markdown with front matter, as Claude Code, OpenClaw and Hermes do, and{' '}
+        <code class="mono">belai agent import</code> it. A repository can turn workers off or lower their
+        number, never the reverse.
+      </p>
+      <p class="mt-4 text-vx-ink/80">
+        <a class="text-vx-ink underline" href={`${docBase}fleet.md`}>docs/fleet.md</a> has the runtime and a
+        comparison with Hermes Agent and OpenClaw;{' '}
+        <a class="text-vx-ink underline" href={`${docBase}agent-profiles.md`}>docs/agent-profiles.md</a> has
+        every profile field.
+      </p>
+    </div>
+    <div class="min-w-0">
+      <div class="rounded-xl bg-vx-ink p-5">
+        <p class="mono text-xs text-vx-cream/70">~/.vulnetix/belai/agents/docs-writer.md</p>
+        <pre class="mono mt-3 overflow-x-auto text-xs leading-relaxed text-vx-mint md:text-[13px]"><code>{profile}</code></pre>
+      </div>
+      <div class="mt-2"><CopyButton value={profile} label="copy profile" client:visible /></div>
+    </div>
+  </div>
+</SealedSection>
