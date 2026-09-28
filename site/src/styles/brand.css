@@ -58,7 +58,7 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* Prose measure: 66–72ch, left-aligned, never justified. */
+/* Prose measure: 66 to 72ch, left-aligned, never justified. */
 .prose-measure {
   max-width: 72ch;
 }

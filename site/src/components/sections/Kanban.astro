@@ -154,7 +154,7 @@ const lists = [
       <p class="mt-4 text-vx-ink/80">
         The board is one binary file, <code class="mono">~/.vulnetix/belai/kanban</code>: a{' '}
         <code class="mono">BKAN</code> magic, a version, a Go gob payload and a SHA-256. A file that fails
-        any check is refused, never overwritten. Read{' '}
+        any check is refused and left as it is. Read{' '}
         <a class="text-vx-ink underline" href={`${docBase}kanban.md`}>docs/kanban.md</a> for the feature and{' '}
         <a class="text-vx-ink underline" href={`${docBase}bkan.md`}>docs/bkan.md</a> for the format, byte by
         byte.

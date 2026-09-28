@@ -1,0 +1,195 @@
+---
+import SealedSection from '../seal/SealedSection.astro';
+import ShotCarousel from '../ui/ShotCarousel.tsx';
+import modelPickerShot from '../../assets/shots/model-picker.svg';
+import localModelShot from '../../assets/shots/local-model.svg';
+
+// Providers: hosted, local and the classifier, then the credential layers,
+// local instances and the classifier's rows in /model.
+
+const sealText =
+  'Providers and local inference: five-layer credential resolution with provenance, ollama and llama-server in the box, multiple named instances with display labels, a /local-model assess verdict, and a classifier role with its own kind and phase rows.';
+
+const kinds = [
+  {
+    n: '01',
+    name: 'Hosted',
+    key: '/credentials',
+    lead: 'Credentials are read from five layers, and every resolved value records the layer it came from.',
+  },
+  {
+    n: '02',
+    name: 'Local',
+    key: '/local-model',
+    lead: 'ollama and llama-server work with no extra setup, as many named instances as you run, on this machine or another.',
+  },
+  {
+    n: '03',
+    name: 'Classifier',
+    key: '/model',
+    lead: 'The security classifier has its own rows. With a local classifier model, untrusted content is judged on your own machine.',
+  },
+];
+
+const layers = ['Command line', 'Environment', 'Config file', 'Agent profile', 'Built-in defaults'];
+
+const instanceKeys = [
+  ['kind', 'ollama, llama-server or openai-compatible, to copy a built-in template'],
+  ['provider_labels', 'a display name'],
+];
+
+const classifierRows = [
+  ['kind', 'models, the embedded BERT models, or llm, the sentinel'],
+  ['phase rows', 'The model each phase uses, including when phase 3 is off'],
+];
+
+const code = /(\bollama\b|llama-server|openai-compatible|\bmodels\b|\bllm\b)/;
+const split = (s: string) => s.split(code).map((p) => ({ p, c: code.test(p) }));
+---
+
+<SealedSection label="providers" sealText={sealText} id="providers">
+  <div class="grid gap-6 lg:grid-cols-12 lg:items-end">
+    <div class="lg:col-span-7">
+      <h2 class="text-4xl font-extrabold leading-tight tracking-tight text-vx-ink md:text-5xl">Providers</h2>
+    </div>
+    <p class="text-lg text-vx-ink/80 lg:col-span-5">
+      Use hosted models, models on your own machine, or both. The security classifier can run on
+      either, and every credential records where it came from.
+    </p>
+  </div>
+
+  <ol class="mt-10 grid list-none gap-5 p-0 lg:grid-cols-3">
+    {kinds.map((k, i) => {
+      const dark = i === 2;
+      return (
+        <li class={`flex flex-col gap-4 rounded-xl border border-vx-ink p-6 ${dark ? 'bg-vx-ink text-vx-cream' : ''}`}>
+          <div class="flex items-center justify-between">
+            <span class={`mono text-sm ${dark ? 'text-vx-cream/70' : 'text-vx-ink/60'}`}>{k.n}</span>
+            <kbd class={`mono rounded-md border border-b-[3px] px-2 py-0.5 text-sm ${dark ? 'border-vx-mint text-vx-mint' : 'border-vx-ink'}`}>{k.key}</kbd>
+          </div>
+          {i === 0 && (
+            <svg viewBox="0 0 320 110" class="h-24 w-full" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+              {[10, 30, 50, 70, 90].map((y) => (
+                <rect x="10" y={y} width="300" height="16" rx="4" class={y === 30 ? 'fill-vx-mint' : ''} stroke={y === 30 ? 'none' : 'currentColor'} />
+              ))}
+              <text x="20" y="42" font-family="Geist Mono, monospace" font-size="11" fill="currentColor" stroke="none">environment ◆ this key came from here</text>
+            </svg>
+          )}
+          {i === 1 && (
+            <svg viewBox="0 0 320 110" class="h-24 w-full" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="20" y="18" width="120" height="74" rx="8" class="fill-vx-bone" />
+              <path d="M20 36 H140" />
+              <circle cx="32" cy="27" r="3" class="fill-vx-mint-strong" stroke="none" />
+              <text x="32" y="60" font-family="Geist Mono, monospace" font-size="11" fill="currentColor" stroke="none">ollama</text>
+              <text x="32" y="78" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-ink/60" stroke="none">this machine</text>
+              <path d="M140 55 L180 55" stroke-dasharray="3 4" />
+              <rect x="180" y="18" width="120" height="74" rx="8" stroke-dasharray="3 3" />
+              <path d="M180 36 H300" stroke-dasharray="3 3" />
+              <text x="192" y="60" font-family="Geist Mono, monospace" font-size="11" fill="currentColor" stroke="none">llama-server</text>
+              <text x="192" y="78" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-ink/60" stroke="none">another host</text>
+            </svg>
+          )}
+          {i === 2 && (
+            <svg viewBox="0 0 320 110" class="h-24 w-full text-vx-mint" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
+              {[[12, 'kind', 'models · llm'], [44, 'phase 1, 2', 'a model per phase'], [76, 'phase 3', 'on or off']].map(([y, k, v]) => (
+                <>
+                  <rect x="10" y={y} width="300" height="24" rx="6" class="stroke-vx-cream/35" />
+                  <text x="22" y={Number(y) + 17} font-family="Geist Mono, monospace" font-size="11" class="fill-vx-cream" stroke="none">{k}</text>
+                  <text x="130" y={Number(y) + 17} font-family="Geist Mono, monospace" font-size="11" fill="currentColor" stroke="none">{v}</text>
+                </>
+              ))}
+            </svg>
+          )}
+          <h3 class="text-2xl font-bold">{k.name}</h3>
+          <p class={dark ? 'text-vx-cream/85' : 'text-vx-ink/80'}>{split(k.lead).map(({ p, c }) => (c ? <code class="mono text-[0.92em]">{p}</code> : p))}</p>
+        </li>
+      );
+    })}
+  </ol>
+
+  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
+    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">Where a credential comes from</h3>
+    <p class="text-vx-ink/80">
+      Belai reads five layers in this order, and each value it resolves carries the name of the layer
+      that supplied it.
+    </p>
+  </div>
+  <ol class="mt-8 grid list-none overflow-hidden rounded-xl border border-vx-ink p-0 sm:grid-cols-5">
+    {layers.map((l, i) => (
+      <li class={`border-b border-vx-ink/20 p-5 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0 ${i === 1 ? 'bg-vx-mint' : ''}`}>
+        <p class="mono text-xs text-vx-ink/60">{i + 1}</p>
+        <p class="mt-2 font-bold">{l}</p>
+        {i === 1 && <p class="mono mt-2 text-xs">◆ an example key resolved here</p>}
+      </li>
+    ))}
+  </ol>
+
+  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
+    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">Local models</h3>
+    <p class="text-vx-ink/80">
+      A model you run locally appears in <code class="mono">/model</code>. If you stop its server, it leaves
+      the picker and stays in <code class="mono">/credentials</code>, so Belai won't switch to a host that
+      isn't running.
+    </p>
+  </div>
+  <div class="mt-8 grid gap-8 lg:grid-cols-12">
+    <div class="min-w-0 lg:col-span-7">
+      <ShotCarousel
+        client:visible
+        shots={[
+          { src: modelPickerShot.src, alt: 'The model picker', caption: '/model picker' },
+          { src: localModelShot.src, alt: 'A /local-model assess verdict', caption: '/local-model assess' },
+        ]}
+      />
+    </div>
+    <aside class="flex min-w-0 flex-col gap-5 lg:col-span-5">
+      <div class="rounded-xl bg-vx-ink p-5">
+        <p class="mono text-xs tracking-wider text-vx-cream/70">A SECOND OLLAMA IS ONE MORE ENTRY</p>
+        <dl class="mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
+          {instanceKeys.map(([k, v]) => (
+            <>
+              <dt class="mono text-vx-mint">{k}</dt>
+              <dd class="m-0 text-vx-cream/80">{v}</dd>
+            </>
+          ))}
+        </dl>
+        <p class="mt-3 text-sm text-vx-cream/75">
+          <code class="mono">/providers</code>, <code class="mono">/model</code>, the footer and the{' '}
+          <code class="mono">-provider</code> flag all accept the label.
+        </p>
+      </div>
+      <div class="rounded-xl border border-vx-ink p-5">
+        <p class="mono text-xs tracking-wider text-vx-ink/60">/local-model</p>
+        <p class="mt-3">
+          Runs the classifier probe against a local model before you use it for a session. It reports how
+          well the model fits, any notes, and how it compares with the hosted baseline.
+        </p>
+      </div>
+    </aside>
+  </div>
+
+  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
+    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">The classifier's own rows</h3>
+    <p class="text-vx-ink/80">
+      The <a href="#classifier" class="text-vx-ink underline">classifier</a> section explains how the
+      engines combine, and <a href="#routing" class="text-vx-ink underline">model routing</a> covers which
+      model answers every other kind of call.
+    </p>
+  </div>
+  <table class="mt-8 w-full border-collapse text-left">
+    <thead>
+      <tr class="border-b-2 border-vx-ink">
+        <th scope="col" class="mono w-[30%] pb-4 text-sm font-medium text-vx-ink/60 md:w-[22%]">row in /model</th>
+        <th scope="col" class="px-5 pb-4 pt-3 text-lg font-bold">What you choose</th>
+      </tr>
+    </thead>
+    <tbody>
+      {classifierRows.map(([row, what]) => (
+        <tr class="border-b border-vx-ink/20 last:border-b-0">
+          <th scope="row" class="py-5 pr-5 align-top font-semibold">{row === 'kind' ? <code class="mono">kind</code> : row}</th>
+          <td class="px-5 py-5 align-top text-vx-ink/85">{split(what).map(({ p, c }) => (c ? <code class="mono text-[0.92em]">{p}</code> : p))}</td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</SealedSection>
