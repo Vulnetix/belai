@@ -264,8 +264,8 @@ func (w *Workspace) changedPaths(ctx context.Context) ([]string, error) {
 }
 
 // Commit commits every change in the worktree to its branch and reports how
-// many paths it committed. The harness commits; the model is told not to,
-// and the repository's .git stays read-only inside the sandbox.
+// many paths it committed (0 when there was nothing left to commit).
+// The model may already have committed; this catches what it left.
 func (w *Workspace) Commit(ctx context.Context, msg string) (int, error) {
 	if !w.Worktree {
 		return 0, nil
@@ -280,12 +280,14 @@ func (w *Workspace) Commit(ctx context.Context, msg string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if len(paths) > 0 {
-		if _, err := forge.CommitPaths(ctx, w.run, w.Dir, paths, msg); err != nil {
-			return 0, err
-		}
+	if len(paths) == 0 {
+		return 0, nil
 	}
-	return w.FilesChanged(ctx), nil
+	sha, err := forge.CommitPaths(ctx, w.run, w.Dir, paths, msg)
+	if err != nil || sha == "" {
+		return 0, err
+	}
+	return len(paths), nil
 }
 
 // onBranch reports whether the worktree is still on the item's branch. The

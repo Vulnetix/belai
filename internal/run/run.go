@@ -200,7 +200,7 @@ func ResolveClassifier(main Config, cls *config.ClassifierSettings, src Credenti
 	if cls.Provider != "" && cls.Provider != main.Provider {
 		cfg, status := Prepare(cls.Model, cls.Provider, src)
 		if !status.Configured {
-			var envHints []string
+			envHints := envHintsFor(cfg.Provider, status.Missing)
 			return ClassifierConfig{}, &NotConfiguredError{
 				Provider: cfg.Provider,
 				Missing:  status.Missing,
@@ -975,7 +975,14 @@ func (e *NotConfiguredError) Error() string {
 	if len(e.Missing) == 1 && e.Missing[0] == "provider" {
 		return fmt.Sprintf("%s is not a built-in provider and no custom profile is defined (add it under the providers block in settings.json)", e.Provider)
 	}
-	return fmt.Sprintf("%s requires %s (looked in: %s)", e.Provider, strings.Join(e.EnvHints, ", "), strings.Join(e.Searched, ", "))
+	need := strings.Join(e.EnvHints, ", ")
+	if need == "" {
+		need = strings.Join(e.Missing, ", ")
+	}
+	if need == "" {
+		need = "credentials"
+	}
+	return fmt.Sprintf("%s requires %s (looked in: %s)", e.Provider, need, strings.Join(e.Searched, ", "))
 }
 
 func (e *NotConfiguredError) Is(target error) bool { return target == ErrNotConfigured }
@@ -1279,41 +1286,7 @@ func ResolveWithSource(model, providerName string, env func(string) string, src 
 
 	cfg, status := Prepare(model, name, src)
 	if !status.Configured {
-		var envHints []string
-		for _, m := range status.Missing {
-			switch cfg.Provider + ":" + m {
-			case "openai:api_key":
-				envHints = append(envHints, "OPENAI_API_KEY")
-			case "anthropic:api_key":
-				envHints = append(envHints, "ANTHROPIC_API_KEY")
-			case "cloudflare-workers-ai:api_key":
-				envHints = append(envHints, "CLOUDFLARE_API_KEY")
-			case "cloudflare-ai-gateway:token":
-				envHints = append(envHints, "CF_AIG_TOKEN")
-			case "cloudflare-workers-ai:account_id":
-				envHints = append(envHints, "CLOUDFLARE_ACCOUNT_ID")
-			case "cloudflare-ai-gateway:account_id":
-				envHints = append(envHints, "CF_ACCOUNT_ID", "CLOUDFLARE_ACCOUNT_ID")
-			case "cloudflare-ai-gateway:base_url":
-				envHints = append(envHints, "CF_AIG_URL")
-			case "openrouter:api_key":
-				envHints = append(envHints, "OPENROUTER_API_KEY")
-			case "google-gemini:api_key":
-				envHints = append(envHints, "GEMINI_API_KEY", "GOOGLE_API_KEY")
-			case "github-copilot:oauth_token":
-				envHints = append(envHints, "GITHUB_COPILOT_TOKEN", "GH_TOKEN")
-			case "huggingface:api_key":
-				envHints = append(envHints, "HF_TOKEN", "HUGGINGFACE_TOKEN")
-			case "kiro:login":
-				// The value is a sign-in, not a key: `belai login kiro`
-				// writes it.
-				envHints = append(envHints, "KIRO_LOGIN")
-			default:
-				if m == "api_key" {
-					envHints = append(envHints, envVarForProvider(cfg.Provider))
-				}
-			}
-		}
+		envHints := envHintsFor(cfg.Provider, status.Missing)
 		searched := []string{"environment"}
 		if len(status.Missing) == 1 && status.Missing[0] == "provider" {
 			searched = []string{"settings providers block"}
@@ -2497,4 +2470,45 @@ func rawToolArgs(raw json.RawMessage) string {
 		return "{}"
 	}
 	return string(raw)
+}
+
+// envHintsFor names the environment variables that would supply what a
+// provider is missing, for a NotConfiguredError.
+func envHintsFor(provider string, missing []string) []string {
+	var envHints []string
+	for _, m := range missing {
+		switch provider + ":" + m {
+		case "openai:api_key":
+			envHints = append(envHints, "OPENAI_API_KEY")
+		case "anthropic:api_key":
+			envHints = append(envHints, "ANTHROPIC_API_KEY")
+		case "cloudflare-workers-ai:api_key":
+			envHints = append(envHints, "CLOUDFLARE_API_KEY")
+		case "cloudflare-ai-gateway:token":
+			envHints = append(envHints, "CF_AIG_TOKEN")
+		case "cloudflare-workers-ai:account_id":
+			envHints = append(envHints, "CLOUDFLARE_ACCOUNT_ID")
+		case "cloudflare-ai-gateway:account_id":
+			envHints = append(envHints, "CF_ACCOUNT_ID", "CLOUDFLARE_ACCOUNT_ID")
+		case "cloudflare-ai-gateway:base_url":
+			envHints = append(envHints, "CF_AIG_URL")
+		case "openrouter:api_key":
+			envHints = append(envHints, "OPENROUTER_API_KEY")
+		case "google-gemini:api_key":
+			envHints = append(envHints, "GEMINI_API_KEY", "GOOGLE_API_KEY")
+		case "github-copilot:oauth_token":
+			envHints = append(envHints, "GITHUB_COPILOT_TOKEN", "GH_TOKEN")
+		case "huggingface:api_key":
+			envHints = append(envHints, "HF_TOKEN", "HUGGINGFACE_TOKEN")
+		case "kiro:login":
+			// The value is a sign-in, not a key: `belai login kiro`
+			// writes it.
+			envHints = append(envHints, "KIRO_LOGIN")
+		default:
+			if m == "api_key" {
+				envHints = append(envHints, envVarForProvider(provider))
+			}
+		}
+	}
+	return envHints
 }
