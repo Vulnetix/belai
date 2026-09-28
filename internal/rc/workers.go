@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,7 +28,7 @@ func (d *Daemon) startWorkers(r sessionsync.Dispatch) (string, string) {
 	if !ok {
 		return "", "this host does not offer that directory"
 	}
-	w := WorkerStart{Exe: d.o.Exe, Cwd: cwd}
+	w := WorkerStart{Exe: d.o.Exe, Cwd: cwd, MaxWorkers: d.o.MaxWorkers}
 	inv := d.o.Inventory()
 	switch r.Kind {
 	case "worker":
@@ -55,10 +56,13 @@ func (d *Daemon) startWorkers(r sessionsync.Dispatch) (string, string) {
 }
 
 // runAgentStart runs `belai agent start` in the directory, which does the
-// trust check, the preflight and the agents.max_workers check, and waits
-// briefly for the workers to register.
+// trust check, the preflight and the agents.max_workers check (raised or
+// lowered by belai rc --max), and waits briefly for the workers to register.
 func runAgentStart(w WorkerStart) (string, error) {
 	args := []string{"agent", "start"}
+	if w.MaxWorkers > 0 {
+		args = append(args, "-max-workers", strconv.Itoa(w.MaxWorkers))
+	}
 	if w.Crew != "" {
 		args = append(args, "-crew", w.Crew)
 	} else {

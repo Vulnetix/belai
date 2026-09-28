@@ -403,12 +403,31 @@ func workerNotifier(s config.Settings, profile string, detached bool) func(strin
 	}
 }
 
+// workerCap is the worker cap for one start. An override (belai rc --max)
+// replaces the user's agents.max_workers, but a repository that lowered the
+// cap still holds it down: a project layer may only tighten.
+func workerCap(settings config.Settings, override int) int {
+	merged := settings.MaxWorkers()
+	if override <= 0 {
+		return merged
+	}
+	user := config.DefaultMaxWorkers
+	if g, err := config.LoadGlobal(); err == nil {
+		user = g.MaxWorkers()
+	}
+	if merged < user {
+		return min(override, merged)
+	}
+	return override
+}
+
 func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stderr io.Writer) (int, error) {
 	crewName := fs.String("crew", "", "start every member of a crew")
 	replicas := fs.Int("replicas", 1, "workers of the profile")
 	trust := fs.Bool("trust-dir", false, "trust the repository first")
 	providerName := fs.String("provider", "", "provider override")
 	model := fs.String("model", "", "model override")
+	maxWorkers := fs.Int("max-workers", 0, "worker cap for this start in place of agents.max_workers (set by `belai rc --max`)")
 	if err := parseInterleaved(fs, rest); err != nil || (fs.NArg() != 1) == (*crewName == "") {
 		return 2, errors.New("usage: belai agent start NAME [-replicas N] | -crew CREW")
 	}
@@ -461,8 +480,8 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 		return 1, err
 	}
 	live, _ := reg.Live()
-	if max := settings.MaxWorkers(); len(live)+len(launches) > max {
-		return 1, fmt.Errorf("starting %d would run %d workers; agents.max_workers is %d", len(launches), len(live)+len(launches), max)
+	if max := workerCap(settings, *maxWorkers); len(live)+len(launches) > max {
+		return 1, fmt.Errorf("starting %d would run %d workers; the worker cap is %d", len(launches), len(live)+len(launches), max)
 	}
 	exe, err := os.Executable()
 	if err != nil {
