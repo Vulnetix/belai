@@ -367,6 +367,8 @@ func decodeKiroFrame(msg wire.EventMessage, st *kiroStreamState, acc *toolAccumu
 				PromptTokens:     max(input, 0) + max(tu.CacheReadInputTokens, 0) + max(tu.CacheWriteInputTokens, 0),
 				CompletionTokens: max(tu.OutputTokens, 0),
 				TotalTokens:      max(tu.TotalTokens, 0),
+				CacheReadTokens:  max(tu.CacheReadInputTokens, 0),
+				CacheWriteTokens: max(tu.CacheWriteInputTokens, 0),
 			}
 			if u.PromptTokens+u.CompletionTokens+u.TotalTokens > 0 {
 				// A later event replaces an earlier one: the counters are

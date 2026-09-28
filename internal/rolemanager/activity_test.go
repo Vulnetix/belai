@@ -34,6 +34,7 @@ var allEvents = []Event{
 	EventLSPServerDown,
 	EventRouteFallback,
 	EventDepChange,
+	EventWebFetchAnswer,
 }
 
 func TestEveryEventHasDescribeOrSuppression(t *testing.T) {

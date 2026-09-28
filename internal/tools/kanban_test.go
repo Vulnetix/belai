@@ -161,6 +161,31 @@ func TestWithKanbanSurfaces(t *testing.T) {
 	}
 }
 
+// An agent definition's allowlist narrows everything but the board: a
+// builder engaged with only file tools must still be able to move its item.
+func TestNarrowWithKanbanKeepsTheBoard(t *testing.T) {
+	b := kanbanBase(t)
+	reg := Default(t.TempDir(), false).NarrowWithKanban([]string{"Read", "Edit"}, b.Store, b.Source)
+	for _, name := range []string{"Read", "Edit", KanbanSearchName, KanbanUpdateName} {
+		if _, ok := reg.Find(name); !ok {
+			t.Errorf("%s missing from the narrowed surface", name)
+		}
+	}
+	if _, ok := reg.Find("Write"); ok {
+		t.Error("the allowlist did not narrow Write away")
+	}
+	if _, ok := KanbanOf(reg); !ok {
+		t.Error("KanbanOf did not find the board, so the loop would get no KanbanMove")
+	}
+	full := Default(t.TempDir(), false).NarrowWithKanban(nil, b.Store, b.Source)
+	if _, ok := full.Find("Write"); !ok {
+		t.Error("an empty allowlist narrowed the surface")
+	}
+	if got := Default(t.TempDir(), false).NarrowWithKanban([]string{"Read"}, nil, nil); len(got.Names()) != 1 {
+		t.Errorf("a nil store added tools: %v", got.Names())
+	}
+}
+
 func TestKanbanHandoffIsConfinedByTheClaim(t *testing.T) {
 	b := kanbanBase(t)
 	ctx := context.Background()

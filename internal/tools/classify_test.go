@@ -70,6 +70,8 @@ func TestClassifierKindsIsExactlyTheArbitraryContentSet(t *testing.T) {
 		KindKanban:      true,
 		KindKanbanWrite: false,
 		KindToolSearch:  false,
+		// A ReadResult slice is offloaded arbitrary content read back.
+		KindOffload: true,
 	}
 	for _, k := range AllKinds {
 		if got := k.NeedsClassifier(); got != want[k] {

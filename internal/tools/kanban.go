@@ -628,6 +628,16 @@ func (r *Registry) WithKanban(store *kanban.Store, src *kanban.Source) *Registry
 	return r.With(KanbanSearch{base}, KanbanUpdate{base})
 }
 
+// NarrowWithKanban narrows r to allow (an empty allowlist keeps everything)
+// and then adds KanbanSearch and KanbanUpdate over store. The board is how
+// agents hand work to one another, so no allowlist removes it.
+func (r *Registry) NarrowWithKanban(allow []string, store *kanban.Store, src *kanban.Source) *Registry {
+	if len(allow) > 0 {
+		r = r.Only(allow...)
+	}
+	return r.WithKanban(store, src)
+}
+
 // WithKanbanWorker returns r plus a fleet worker's kanban tools: KanbanSearch,
 // and KanbanUpdate and KanbanHandoff bound to the worker's claim. The agent
 // loop sees the claim and gives the session no loop KanbanMove and no

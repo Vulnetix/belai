@@ -276,7 +276,8 @@ func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink
 	if sink != nil {
 		lineSink = func(line string) { sink(Progress{Stream: "stdout", Text: line}) }
 	}
-	tw := proc.NewLineTee(b.MaxBytes, lineSink)
+	// Head and tail: a build or test run prints its summary last.
+	tw := proc.NewLineTee(b.MaxBytes, lineSink).KeepTail()
 	ec.Stdout = tw
 	ec.Stderr = tw
 

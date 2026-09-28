@@ -15,6 +15,8 @@ behaviour, and implementation details.
 | Language-server diagnostics | [LSP](lsp.md) | [Supported languages](lsp.md#supported-languages), [Security model](lsp.md#security-model), [Settings](lsp.md#settings) |
 | Provider retries and recovery | [Resilience](resilience.md) | [Error classification](resilience.md#error-classification-internalresilience), [Turn retry and state invariants](resilience.md#turn-retry-and-state-invariants), [Semantic repair](resilience.md#semantic-repair) |
 | Token budgets per provider and model | [Token budgets](token-budgets.md) | [Settings](token-budgets.md#settings), [Business rules](token-budgets.md#business-rules), [Edge cases](token-budgets.md#edge-cases) |
+| Keeping tool output out of the context window | [Context offload](context-offload.md) | [Offloading oversized results](context-offload.md#offloading-oversized-results), [WebFetch answers the question](context-offload.md#webfetch-answers-the-question), [Settings](context-offload.md#settings) |
+| Measuring token cost and accuracy | [Benchmarks](benchmarks.md) | [What a run records](benchmarks.md#what-a-run-records), [Running a benchmark](benchmarks.md#running-a-benchmark), [Method](benchmarks.md#method) |
 
 ## Agents
 

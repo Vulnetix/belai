@@ -1,0 +1,3 @@
+{
+  "offload": { "enabled": true, "threshold_tokens": 1500, "preview_tokens": 750 }
+}

@@ -34,8 +34,16 @@ type LineTee struct {
 	flushLines int
 
 	mu        sync.Mutex
-	buf       []byte // full output, capped at max
+	buf       []byte // full output, capped at max (the head, with keepTail)
 	truncated bool
+	// keepTail splits the cap between the head and a rolling tail, so the end
+	// of the output — where a build or test run prints its summary — survives
+	// a cap. tail holds at most tailMax bytes; dropped counts what fell
+	// between the head and the tail.
+	keepTail  bool
+	tail      []byte
+	tailMax   int
+	dropped   int
 	partial   []byte // bytes since the last newline
 	pending   []string
 	lastFlush time.Time
@@ -54,11 +62,22 @@ func NewLineTee(max int, sink func(string)) *LineTee {
 	}
 }
 
+// KeepTail makes the cap keep the first and the last half of the output
+// instead of only the first max bytes. Call it before the first Write.
+func (w *LineTee) KeepTail() *LineTee {
+	w.keepTail = true
+	w.tailMax = w.max / 2
+	w.max -= w.tailMax
+	return w
+}
+
 // Write appends p to the capped buffer and reports whole lines to the sink.
 func (w *LineTee) Write(p []byte) (int, error) {
 	w.mu.Lock()
 
-	if !w.truncated {
+	if w.keepTail {
+		w.writeHeadTailLocked(p)
+	} else if !w.truncated {
 		if room := w.max - len(w.buf); room > 0 {
 			if len(p) <= room {
 				w.buf = append(w.buf, p...)
@@ -91,6 +110,31 @@ func (w *LineTee) Write(p []byte) (int, error) {
 
 	w.emit(ready)
 	return len(p), nil
+}
+
+// writeHeadTailLocked fills the head to max, then keeps the newest tailMax
+// bytes. Callers hold w.mu.
+func (w *LineTee) writeHeadTailLocked(p []byte) {
+	if room := w.max - len(w.buf); room > 0 {
+		n := min(room, len(p))
+		w.buf = append(w.buf, p[:n]...)
+		p = p[n:]
+	}
+	if len(p) == 0 {
+		return
+	}
+	w.truncated = true
+	w.tail = append(w.tail, p...)
+	if over := len(w.tail) - w.tailMax; over > 0 {
+		w.dropped += over
+		// Compact only when the slack is large, so a stream of small writes
+		// costs amortised O(1) rather than a copy per write.
+		if over >= w.tailMax || cap(w.tail) > 4*w.tailMax {
+			w.tail = append(w.tail[:0:0], w.tail[over:]...)
+		} else {
+			w.tail = w.tail[over:]
+		}
+	}
 }
 
 // Flush reports any buffered lines, including a trailing line with no newline,
@@ -136,6 +180,24 @@ func (w *LineTee) emit(lines []string) {
 func (w *LineTee) Content() string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.keepTail {
+		if w.dropped == 0 {
+			return string(w.buf) + string(w.tail)
+		}
+		// Start the tail on a whole line when one begins inside it.
+		tail := w.tail
+		dropped := w.dropped
+		if i := bytes.IndexByte(tail, '\n'); i >= 0 && i < len(tail)-1 {
+			dropped += i + 1
+			tail = tail[i+1:]
+		}
+		head := string(w.buf)
+		if !strings.HasSuffix(head, "\n") {
+			head += "\n"
+		}
+		return head + "… truncated: " + strconv.Itoa(dropped) + " bytes elided between the first " +
+			strconv.Itoa(w.max) + " and the last " + strconv.Itoa(len(tail)) + " bytes …\n" + string(tail)
+	}
 	if w.truncated {
 		return string(w.buf) + "\n… truncated at " + strconv.Itoa(w.max) + " bytes"
 	}

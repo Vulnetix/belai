@@ -30,7 +30,7 @@ var CoreTools = []string{
 	"Read", "Write", "Edit", "Bash", "Grep", "Glob", "WebFetch", "WebSearch",
 	"update_plan", "ExitPlanMode", "AskUserQuestion", "Task", "Skill",
 	KanbanSearchName, KanbanUpdateName, KanbanMoveName, KanbanAddName, KanbanHandoffName,
-	"SubAgentLog", "ProcessRestart", ToolSearchName,
+	"SubAgentLog", "ProcessRestart", ToolSearchName, ReadResultName,
 }
 
 // IsCoreTool reports whether name is always advertised in full.

@@ -213,7 +213,7 @@ func TestBashTruncation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if !strings.Contains(res.Content, "truncated at 5 bytes") {
+	if !strings.Contains(res.Content, "truncated") || !strings.Contains(res.Content, "12") || !strings.Contains(res.Content, "9") {
 		t.Fatalf("expected truncation marker in %q", res.Content)
 	}
 }

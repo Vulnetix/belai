@@ -138,9 +138,25 @@ type OpenAIChatChoice struct {
 
 // OpenAIChatUsage reports token usage.
 type OpenAIChatUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens        int                        `json:"prompt_tokens"`
+	CompletionTokens    int                        `json:"completion_tokens"`
+	TotalTokens         int                        `json:"total_tokens"`
+	PromptTokensDetails *OpenAIPromptTokensDetails `json:"prompt_tokens_details,omitempty"`
+}
+
+// OpenAIPromptTokensDetails breaks down prompt tokens; CachedTokens is the part
+// served from the provider's prompt cache.
+type OpenAIPromptTokensDetails struct {
+	CachedTokens int `json:"cached_tokens"`
+}
+
+// CachedTokens returns the prompt tokens served from the provider's cache, or
+// zero when the provider did not report them.
+func (u OpenAIChatUsage) CachedTokens() int {
+	if u.PromptTokensDetails == nil {
+		return 0
+	}
+	return u.PromptTokensDetails.CachedTokens
 }
 
 // OpenAIChatStreamChunk is one SSE `data:` payload in a streaming

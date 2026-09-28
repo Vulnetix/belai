@@ -382,6 +382,12 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.DeferTools = s.DeferTools
 		e.Origin["defer_tools"] = src
 	}
+	if s.Offload != nil {
+		// Offload changes only how much admitted content rides on a request,
+		// never what is admitted or classified, so any layer may set it.
+		e.Settings.Offload = mergeOffload(e.Settings.Offload, s.Offload)
+		e.Origin["offload"] = src
+	}
 	if s.Kanban != nil && (!*s.Kanban || src != SourceProject) {
 		// The board syncs off the machine and carries text between
 		// sessions: a repo-visible project layer may turn it off, never on.

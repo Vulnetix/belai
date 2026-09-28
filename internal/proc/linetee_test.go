@@ -37,3 +37,37 @@ func TestLineTeeNilSinkStaysByteIdentical(t *testing.T) {
 		t.Fatalf("content = %q", got)
 	}
 }
+
+// KeepTail keeps the start and the end of an over-cap stream, the end on a
+// whole line, and says how much fell between them.
+func TestLineTeeKeepTail(t *testing.T) {
+	tee := NewLineTee(40, nil).KeepTail()
+	for i := 0; i < 200; i++ {
+		_, _ = tee.Write([]byte("line ok\n"))
+	}
+	_, _ = tee.Write([]byte("FAIL: boom\n"))
+	got := tee.Content()
+	if !strings.HasPrefix(got, "line ok\nline ok\n") {
+		t.Fatalf("head lost: %q", got)
+	}
+	if !strings.HasSuffix(got, "FAIL: boom\n") {
+		t.Fatalf("tail lost: %q", got)
+	}
+	if !strings.Contains(got, "bytes elided between the first 20 and the last") {
+		t.Fatalf("no elision notice: %q", got)
+	}
+	tail := got[strings.Index(got, "…\n")+len("…\n"):]
+	if !strings.HasPrefix(tail, "line ok\n") && !strings.HasPrefix(tail, "FAIL") {
+		t.Fatalf("tail does not start on a whole line: %q", tail)
+	}
+}
+
+// Under the cap, KeepTail output is byte-identical to the input.
+func TestLineTeeKeepTailUnderCap(t *testing.T) {
+	tee := NewLineTee(40, nil).KeepTail()
+	_, _ = tee.Write([]byte("0123456789"))
+	_, _ = tee.Write([]byte("abcdefghijklmnopqrst"))
+	if got := tee.Content(); got != "0123456789abcdefghijklmnopqrst" {
+		t.Fatalf("content = %q", got)
+	}
+}

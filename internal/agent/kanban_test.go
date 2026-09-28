@@ -176,7 +176,7 @@ func TestKanbanWrapUpFilesOpenWorkAfterAWorkTurn(t *testing.T) {
 	if strings.Contains(first, "SECRET-TITLE") {
 		t.Fatal("an item title rode in the loop directive")
 	}
-	if got := strings.Join(advertised(t, first), ","); got != "Read,KanbanSearch,KanbanUpdate,KanbanMove" {
+	if got := strings.Join(advertised(t, first), ","); got != "Read,KanbanSearch,KanbanUpdate,ReadResult,KanbanMove" {
 		t.Fatalf("loop surface = %s", got)
 	}
 	last := ks.mainCalls[len(ks.mainCalls)-1]

@@ -120,6 +120,7 @@ func main() {
 	continueLast := flag.String("continue", "", "continue the most recent session for this project")
 	flag.StringVar(continueLast, "c", "", "shorthand for -continue")
 	exportID := flag.String("export", "", "export a session by id or unique id prefix as Markdown and exit")
+	flag.StringVar(&usageJSONPath, "usage-json", "", "with -prompt, write a JSON summary of the run's token usage (per role, per model, request composition) to this path on exit")
 	flag.Parse()
 
 	if *showVersion {
@@ -476,7 +477,18 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 	ctx = calltrace.WithSession(ctx, sessionID)
 	// A headless prompt spends tokens like any other session: record them so
 	// day and month budgets see it. Nothing is printed; the TUI shows budgets.
-	defer recordUsage(sessionID, settings)()
+	// With -usage-json the same events are summarised to a file on exit, a
+	// failed run included, so a benchmark can price every attempt.
+	var sum *run.UsageSummary
+	if usageJSONPath != "" {
+		sum = &run.UsageSummary{}
+		defer func() {
+			if werr := sum.WriteFile(usageJSONPath); werr != nil {
+				fmt.Fprintf(os.Stderr, "belai: write usage summary: %v\n", werr)
+			}
+		}()
+	}
+	defer recordUsage(sessionID, settings, sum)()
 	// Firewall events print one line each to stderr; stdout stays the reply.
 	defer watchFirewallHeadless(os.Stderr)()
 
@@ -633,28 +645,41 @@ func continueLatest(store *session.Store, cur session.Key) (session.Key, string,
 	return "", "", errors.New("no sessions to continue for this project")
 }
 
+// usageJSONPath is the -usage-json flag: where a headless -prompt run writes
+// its token-usage summary. Empty means no summary.
+var usageJSONPath string
+
 // recordUsage opens the token-usage ledger for a headless run and registers
 // the run package's usage observer, returning the func that detaches it and
 // flushes the ledger. A ledger that cannot be opened disables recording for
-// this run rather than failing it.
-func recordUsage(sessionID string, settings config.Settings) func() {
-	path, err := budget.DefaultPath()
-	if err != nil {
-		return func() {}
+// this run rather than failing it. A non-nil sum also receives every event
+// (the -usage-json summary), whether or not the ledger opened.
+func recordUsage(sessionID string, settings config.Settings, sum *run.UsageSummary) func() {
+	var rec *budget.Recorder
+	if path, err := budget.DefaultPath(); err == nil {
+		retention := 0
+		if settings.SessionRetentionDays != nil {
+			retention = *settings.SessionRetentionDays
+		}
+		if r, err := budget.Open(path, sessionID, retention); err == nil {
+			rec = r
+		}
 	}
-	retention := 0
-	if settings.SessionRetentionDays != nil {
-		retention = *settings.SessionRetentionDays
-	}
-	rec, err := budget.Open(path, sessionID, retention)
-	if err != nil {
+	if rec == nil && sum == nil {
 		return func() {}
 	}
 	cancel := run.SetUsageObserver(func(ev run.UsageEvent) {
-		rec.Add(ev.Provider, ev.Model, int64(ev.Tokens))
+		if rec != nil {
+			rec.Add(ev.Provider, ev.Model, int64(ev.Tokens))
+		}
+		if sum != nil {
+			sum.Add(ev)
+		}
 	})
 	return func() {
 		cancel()
-		_ = rec.Close()
+		if rec != nil {
+			_ = rec.Close()
+		}
 	}
 }
