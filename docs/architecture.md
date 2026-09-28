@@ -3214,7 +3214,9 @@ rows (when `kind` is `models`), **reasoning**, **effort**, **chunk** and
   variant), or **"deferred to phase 3"** when no local jailbreak gate can
   run. Phase 3 is a locked derived row: off until both classifier provider
   and model are set, then `injection + extraction` (or `injection + jailbreak + extraction` when
-  phase 2 is deferred).
+  phase 2 is deferred). When no phase model resolves at all, the LLM sentinel
+  classifies instead: phase 2 reads "deferred to the LLM sentinel" and phase 3
+  "every category (LLM sentinel)".
 - **Reasoning drives effort.** There is no separate reasoning key. Toggling
   reasoning off writes `classifier.effort: "none"` and greys the effort row;
   toggling it back on restores the previously selected chip.

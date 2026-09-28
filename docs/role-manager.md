@@ -185,12 +185,16 @@ Rules:
   directory on the caller's machine) — and a token therefore never fabricates
   a remote phase-1 default. An explicit `phaseN.model` with
   `source: huggingface` still points a phase at the inference API, for models
-  it can actually serve. Choosing `kind: models` on a vanilla binary never
-  silently downgrades to the LLM sentinel: the phase-1 row shows **"off — no
-  model in this build"** with the ways out and the phase-2 row shows
-  "deferred to phase 3"; with no resolvable phase model the stack fails closed
-  with that same actionable error (build with the embedded model, switch to
-  `kind: llm`, or set an explicit phase model).
+  it can actually serve. Choosing `kind: models` on a vanilla binary with no
+  resolvable phase model uses the full LLM sentinel, which covers every
+  category the models stack does, so a settings file shared with a bert build
+  works in the TUI and in every agent process (fleet workers, remote control,
+  ACP, headless) alike. It is never silent: each session says so once on
+  startup (the TUI as a system line, the CLI on stderr), and `/model` shows
+  phase 1 **"off — no model in this build"**, phase 2 "deferred to the LLM
+  sentinel" and phase 3 "every category (LLM sentinel)". Build with the
+  embedded model, set an explicit phase model, or set `kind: llm` to change or
+  silence it.
 - **Remote phases use the Inference Providers router.** A phase whose
   `source` is `huggingface` posts each window to
   `https://router.huggingface.co/hf-inference/models/<id>` with the resolved

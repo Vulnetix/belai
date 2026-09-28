@@ -1443,7 +1443,13 @@ func (a *App) classifierPhaseRow(phase int) settingsRow {
 			// inference cannot serve the known saturation model), so the row
 			// names the ways out instead of a key.
 			return settingsRow{key: key, label: label, kind: "text",
-				value: "off — no model in this build; use just build-bert or set phase1.model", disabled: true}
+				value: "off — no model in this build; the LLM sentinel classifies (just build-bert or set phase1.model)", disabled: true}
+		}
+		// An explicit turn-off keeps its selector below, so a remote gate is
+		// still one choice away.
+		if cls := a.settings.Classifier; a.resolvedSecurityClassifier().Fallback != "" && (cls == nil || cls.Phase2.Source != "disabled") {
+			return settingsRow{key: key, label: label, kind: "text",
+				value: "deferred to the LLM sentinel", disabled: true}
 		}
 		if a.resolvedSecurityClassifier().Phase2Deferred {
 			return settingsRow{key: key, label: label, kind: "text",
@@ -1536,9 +1542,13 @@ func (a *App) classifierPhase3Row() settingsRow {
 	cls := a.settings.Classifier
 	sc := a.resolvedSecurityClassifier()
 	value := "off: set both classifier provider and model, or clear both to inherit the main model"
-	if sc.Phase3On {
+	if sc.Phase3On || sc.Fallback != "" {
 		scope := "injection + extraction"
-		if sc.Phase2Deferred {
+		switch {
+		case sc.Fallback != "":
+			// No phase model: the full LLM sentinel covers every category.
+			scope = "every category (LLM sentinel)"
+		case sc.Phase2Deferred:
 			scope = "injection + jailbreak + extraction"
 		}
 		if cls != nil && cls.Provider != "" && cls.Model != "" {

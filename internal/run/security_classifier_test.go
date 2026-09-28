@@ -7,6 +7,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/mlclassify"
+	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/tools"
 )
 
@@ -55,16 +56,16 @@ func TestResolveSecurityClassifierDefaultKind(t *testing.T) {
 func TestResolveSecurityClassifierModelsPhase3Default(t *testing.T) {
 	// Phase 3 is on by default: with provider and model both unset it inherits
 	// the main model, because the windowed phase 1 flags nothing on its own.
-	inherit := ResolveSecurityClassifier(&config.ClassifierSettings{Kind: "models"})
+	inherit := ResolveSecurityClassifier(withPhase1(&config.ClassifierSettings{Kind: "models"}))
 	if !inherit.Phase3On {
 		t.Fatal("phase 3 must inherit the main model when provider/model are unset")
 	}
 	// A half-set pair is a misconfiguration and stays off.
-	modelOnly := ResolveSecurityClassifier(&config.ClassifierSettings{Kind: "models", Model: "gpt-5"})
+	modelOnly := ResolveSecurityClassifier(withPhase1(&config.ClassifierSettings{Kind: "models", Model: "gpt-5"}))
 	if modelOnly.Phase3On {
 		t.Fatal("phase 3 must be off when provider is unset")
 	}
-	on := ResolveSecurityClassifier(&config.ClassifierSettings{Kind: "models", Provider: "openai", Model: "gpt-5"})
+	on := ResolveSecurityClassifier(withPhase1(&config.ClassifierSettings{Kind: "models", Provider: "openai", Model: "gpt-5"}))
 	if !on.Phase3On {
 		t.Fatal("phase 3 must be on when provider and model are both set")
 	}
@@ -151,28 +152,53 @@ func TestPreloadClassifierNoopForLLM(t *testing.T) {
 	}
 }
 
-// TestModelsKindNoPhaseModelFailsClosedWithActionableError pins that a
-// models-kind config with no resolvable phase model (a no-classifier binary
-// with no explicit phase) fails closed with the actionable error naming the
-// ways out, not the opaque "no phase configured" repeated per prompt.
-func TestModelsKindNoPhaseModelFailsClosedWithActionableError(t *testing.T) {
+// TestModelsKindNoPhaseModelFallsBackToLLMSentinel pins that a models-kind
+// config with no resolvable phase model (a no-classifier binary sharing
+// settings with a bert build) resolves to the full LLM sentinel with a
+// notice, so the TUI and every agent process classify instead of failing
+// every call. Nothing is skipped: the pipeline still sends the content to
+// the guard.
+func TestModelsKindNoPhaseModelFallsBackToLLMSentinel(t *testing.T) {
 	if mlclassify.Embedded() {
 		t.Skip("embedded build always resolves a phase model")
 	}
+	for _, cls := range []*config.ClassifierSettings{
+		{Kind: "models"},
+		{Kind: "models", Phase2: config.ClassifierPhaseSettings{Source: "embedded"}},
+	} {
+		sc := ResolveSecurityClassifier(cls)
+		if sc.Kind != "llm" || sc.Fallback == "" || sc.Phase1 != nil || sc.Phase2 != nil {
+			t.Fatalf("ResolveSecurityClassifier(%+v) = %+v, want the llm fallback", cls, sc)
+		}
+		for _, want := range []string{"no phase model", "just build-bert", "\"llm\""} {
+			if !strings.Contains(sc.Fallback, want) {
+				t.Fatalf("notice %q must contain %q", sc.Fallback, want)
+			}
+		}
+	}
+
+	var calls int
 	cfg := Config{Provider: "openai", BaseURL: "https://example.invalid/v1", APIKey: "k", Model: "gpt-5"}
 	cfg.Security = ResolveSecurityClassifier(&config.ClassifierSettings{Kind: "models"})
-	if cfg.Security.Phase1 != nil || cfg.Security.Phase2 != nil {
-		t.Fatalf("setup: security config resolved phases: %+v", cfg.Security)
-	}
 	p := NewPipelineWithRetry(cfg, nil, nil, nil)
-	_, err := p.Process(context.Background(), tools.Result{Kind: tools.KindBash, Content: "echo hi"})
-	if err == nil {
-		t.Fatal("Process must fail closed when the models path has no phase model")
+	p.Security = classifierFunc(func(context.Context, rolemanager.ClassifierPayload) (string, error) {
+		calls++
+		return string(rolemanager.SentinelPromptInjection), nil
+	})
+	d, err := p.Process(context.Background(), tools.Result{Kind: tools.KindBash, Content: "echo hi"})
+	if err != nil || calls != 1 || d.Action == rolemanager.ActionProceed {
+		t.Fatalf("fallback pipeline: calls=%d decision=%+v err=%v; want the guard's verdict enforced", calls, d, err)
 	}
-	for _, want := range []string{"no phase model", "just build-bert", "\"llm\""} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("error %q must contain %q", err.Error(), want)
-		}
+}
+
+// A models config whose phase resolves keeps the models stack.
+func TestModelsKindWithPhaseModelHasNoFallback(t *testing.T) {
+	sc := ResolveSecurityClassifier(&config.ClassifierSettings{
+		Kind:   "models",
+		Phase1: config.ClassifierPhaseSettings{Model: "some/model", Source: "huggingface"},
+	})
+	if sc.Kind != "models" || sc.Fallback != "" || sc.Phase1 == nil {
+		t.Fatalf("resolved %+v, want the models stack", sc)
 	}
 }
 
@@ -212,4 +238,10 @@ func TestResolveClassifierModelsPathResolvesPhase3Guard(t *testing.T) {
 	if cc.Provider != "openrouter" || cc.Model != "typesafe/jev-1.13" || cc.APIKey != "or-key" {
 		t.Fatalf("models-path guard must resolve classifier.provider/model: %+v", cc)
 	}
+}
+
+type classifierFunc func(context.Context, rolemanager.ClassifierPayload) (string, error)
+
+func (f classifierFunc) Classify(ctx context.Context, p rolemanager.ClassifierPayload) (string, error) {
+	return f(ctx, p)
 }

@@ -161,11 +161,6 @@ func Preflight(p agentprofile.AgentProfile, s config.Settings, pol posture.Polic
 	if !s.KanbanEnabled() {
 		return errors.New("the kanban board is turned off (kanban): workers take their work from it")
 	}
-	// A classifier this build cannot run fails every turn; refuse here so it
-	// is not charged to each item as a failed attempt.
-	if err := run.RequireSecurityClassifier(run.ResolveSecurityClassifier(s.Classifier)); err != nil {
-		return err
-	}
 	if p.HasTool("Bash") && p.Autonomy == agentprofile.AutonomyAutonomous {
 		if pol := sandbox.FromSettings(s.Sandbox, []string{"/"}, pol); pol.Mode == sandbox.ModeOff {
 			return errors.New("an autonomous worker with Bash needs the OS sandbox on (sandbox.mode); guardrails off or sandbox off leave its commands unconfined")

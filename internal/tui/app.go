@@ -1021,6 +1021,9 @@ func New(opts Options) *App {
 		}
 		a.addSystem(note)
 	}
+	if n := initial.Security.Fallback; n != "" {
+		a.addSystem(n)
+	}
 
 	if opts.Prompt != "" {
 		a.messages = append(a.messages, components.Message{Role: "user", Content: opts.Prompt})
