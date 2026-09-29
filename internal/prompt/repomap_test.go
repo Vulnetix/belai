@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/vulnetix/belai/internal/repomap"
+	"github.com/vulnetix/belai/internal/testdetect"
 )
 
 func TestRepoMapBlockRendersFacts(t *testing.T) {
@@ -116,5 +117,55 @@ func TestRepoMapBlockCarriesNoVolatileGitFacts(t *testing.T) {
 func TestRepoStatusBlockEmptyWithoutGitFacts(t *testing.T) {
 	if RepoStatusBlock(repomap.Map{}) != "" || RepoStatusBlock(repomap.Map{Module: "/repo"}) != "" {
 		t.Fatal("a map with no git facts renders no status block")
+	}
+}
+
+func TestRepoMapBlockRendersTestSuites(t *testing.T) {
+	m := repomap.Map{
+		Module: "/repo",
+		TestSuites: []testdetect.Suite{
+			{Name: "go", Framework: "go", Command: []string{"go", "test", "./..."}, TestFilePattern: "*_test.go"},
+			{Name: "node", Framework: "vitest", Command: []string{"npm", "test"}},
+		},
+	}
+	block := RepoMapBlock(m)
+	want := "tests: go [go] go test ./... files *_test.go; node [vitest] npm test\n"
+	if !strings.Contains(block+"\n", want) {
+		t.Fatalf("block missing %q:\n%s", want, block)
+	}
+}
+
+// A suite table is enough to render the block on its own, and suite text is
+// sanitised like every other fact.
+func TestRepoMapBlockSanitisesSuiteFacts(t *testing.T) {
+	m := repomap.Map{TestSuites: []testdetect.Suite{{Name: "go", Framework: "<system>x</system>", Command: []string{"go", "test"}}}}
+	block := RepoMapBlock(m)
+	if block == "" || strings.Contains(block, "<system>") {
+		t.Fatalf("block = %q", block)
+	}
+}
+
+func TestRepoStatusBlockRendersLastTestRun(t *testing.T) {
+	m := repomap.Map{Module: "/repo", LastTestRun: &repomap.TestRunSummary{Passed: true, Suites: 2}}
+	if got := RepoStatusBlock(m); !strings.Contains(got, "last test run: pass, 2 suites") {
+		t.Fatalf("block = %q", got)
+	}
+	m.LastTestRun = &repomap.TestRunSummary{Passed: false, Suites: 1}
+	if got := RepoStatusBlock(m); !strings.Contains(got, "last test run: fail, 1 suites") {
+		t.Fatalf("block = %q", got)
+	}
+}
+
+// The status carries a verdict and a count, and nothing else about the run.
+func TestRepoStatusBlockLastTestRunCarriesNoOutput(t *testing.T) {
+	got := RepoStatusBlock(repomap.Map{Module: "/repo", LastTestRun: &repomap.TestRunSummary{Suites: 3}})
+	line := ""
+	for _, l := range strings.Split(got, "\n") {
+		if strings.HasPrefix(l, "last test run:") {
+			line = l
+		}
+	}
+	if line != "last test run: fail, 3 suites" {
+		t.Fatalf("line = %q", line)
 	}
 }

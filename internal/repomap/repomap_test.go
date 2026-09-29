@@ -171,3 +171,35 @@ func TestParseStatusSkipsTheBranchHeader(t *testing.T) {
 		t.Fatalf("rows = %+v total = %d", rows, total)
 	}
 }
+
+// Scan derives the suite table from the same marker files that produce
+// Commands.Test, so the two never disagree.
+func TestScanDetectsTestSuites(t *testing.T) {
+	root := fixtureRepo(t)
+	m := Scan(context.Background(), root)
+	if len(m.TestSuites) == 0 {
+		t.Fatalf("TestSuites empty for a Go module: commands=%+v", m.Commands)
+	}
+	var goSuite bool
+	for _, s := range m.TestSuites {
+		if s.Name == "go" && s.Framework == "go" && s.TestFilePattern == "*_test.go" {
+			goSuite = true
+		}
+	}
+	if !goSuite {
+		t.Fatalf("no go suite in %+v", m.TestSuites)
+	}
+}
+
+func TestScanTestSuitesNeverInferFromProse(t *testing.T) {
+	root := fixtureRepo(t)
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("run: pytest and npm test and cargo test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range Scan(context.Background(), root).TestSuites {
+		switch s.Name {
+		case "pytest", "cargo", "node":
+			t.Fatalf("suite %q inferred from prose", s.Name)
+		}
+	}
+}

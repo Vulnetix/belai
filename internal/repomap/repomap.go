@@ -16,6 +16,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/gitinfo"
 	"github.com/vulnetix/belai/internal/repoindex"
+	"github.com/vulnetix/belai/internal/testdetect"
 )
 
 // Scan bounds: never walk unboundedly.
@@ -44,6 +45,15 @@ type Map struct {
 	// JustRecipes are the recipe names a justfile declares — identifiers
 	// only, never recipe bodies.
 	JustRecipes []string
+	// TestSuites is the harness-computed test-suite table (name, ecosystem,
+	// argv, framework, test-file convention and scope), derived from the
+	// fixed marker-file table. Commands.Test is derived from it, so existing
+	// consumers keep working.
+	TestSuites []testdetect.Suite
+	// LastTestRun is the volatile result of the last post-end test pass:
+	// pass/fail and how many suites ran. It is harness-computed and updated by
+	// the test pass runner, never by a model.
+	LastTestRun *TestRunSummary
 	// Changed is the working tree's changed paths (git status porcelain
 	// codes and paths), capped at maxChanged; ChangedTotal is the uncapped
 	// count. RefreshStatus updates both per turn so the model starts from
@@ -56,6 +66,14 @@ type Map struct {
 // ChangedPath is one `git status --porcelain` row: its two-letter code and
 // path.
 type ChangedPath struct{ Status, Path string }
+
+// TestRunSummary is the volatile, harness-computed summary of the last
+// post-end test pass. It carries counts and a pass/fail verdict only, never
+// command output.
+type TestRunSummary struct {
+	Passed bool
+	Suites int
+}
 
 // maxChanged caps the changed-path list the map carries.
 const maxChanged = 50
@@ -120,6 +138,7 @@ func Scan(ctx context.Context, workdir string) Map {
 	m.Languages = languages(ctx, info.Root)
 	m.JustRecipes = justRecipes(info.Root)
 	m.Commands = commands(info.Root, m.JustRecipes)
+	m.TestSuites = testdetect.Detect(info.Root, m.Commands.Test, changedPaths(m.Changed))
 	m.Entrypoints = entrypoints(ctx, info.Root)
 	m.Layout = layout(ctx, info.Root)
 	m.AgentsFiles = agentsFiles(info.Root)
@@ -443,6 +462,15 @@ func isRecipeName(s string) bool {
 		}
 	}
 	return true
+}
+
+// changedPaths extracts the changed paths from the map's status rows.
+func changedPaths(rows []ChangedPath) []string {
+	out := make([]string, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, r.Path)
+	}
+	return out
 }
 
 // redactRemote strips credentials from a remote URL. Remotes enter the system
