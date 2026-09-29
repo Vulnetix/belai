@@ -199,10 +199,8 @@ func TestDecisionLocalIsOfferedAndOpensPicker(t *testing.T) {
 			t.Fatal("the decision provider is offered to a chat role")
 		}
 	}
-	// Cycling onto it opens the picker on its catalogue instead of saving.
-	selectRow(t, a, roleClassifier, "provider")
-	a.setPendingProvider(roleClassifier, provs[len(provs)-2])
-	_ = a.changeModelRow()
+	// Choosing it opens the picker on its catalogue instead of saving.
+	_ = a.selectClassifierProvider(decisions.LocalProvider)
 	if !a.modelState.picking || a.pickerProvider(roleClassifier) != decisions.LocalProvider {
 		t.Fatalf("picking=%v provider=%q", a.modelState.picking, a.pickerProvider(roleClassifier))
 	}

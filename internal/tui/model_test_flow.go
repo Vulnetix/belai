@@ -493,6 +493,7 @@ func (a *App) handleModelTestDone(m modelTestDoneMsg) tea.Cmd {
 		return nil
 	}
 	rep := m.rep
+	a.recordProviderTests(run.change.chatKeys, rep.Passed)
 	if !rep.Passed {
 		run.outcome = "not-saved"
 		rep.Release()

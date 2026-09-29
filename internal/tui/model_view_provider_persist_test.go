@@ -37,13 +37,7 @@ func TestModelAgentProviderSessionScopePersistsToState(t *testing.T) {
 	a, workdir := newPersistProviderApp(t)
 	a.modelState.agentScope = "session"
 
-	providers := a.modelProviders()
-	for i := 0; i <= len(providers); i++ {
-		_ = a.cycleAgentProvider(providers)
-		if a.cfg.Provider == "openrouter" {
-			break
-		}
-	}
+	commitAgentProviderForTest(a, "openrouter")
 	if a.cfg.Provider != "openrouter" {
 		t.Fatalf("provider = %q, want openrouter in this test", a.cfg.Provider)
 	}
@@ -72,13 +66,7 @@ func TestModelAgentProviderGlobalScopePersistsToSettings(t *testing.T) {
 	a, workdir := newPersistProviderApp(t)
 	a.modelState.agentScope = "global"
 
-	providers := a.modelProviders()
-	for i := 0; i <= len(providers); i++ {
-		_ = a.cycleAgentProvider(providers)
-		if a.cfg.Provider == "openrouter" {
-			break
-		}
-	}
+	commitAgentProviderForTest(a, "openrouter")
 	if a.cfg.Provider != "openrouter" {
 		t.Fatalf("provider = %q, want openrouter in this test", a.cfg.Provider)
 	}
@@ -105,13 +93,7 @@ func TestModelAgentProviderProjectScopePersistsToSettings(t *testing.T) {
 	a, workdir := newPersistProviderApp(t)
 	a.modelState.agentScope = "project"
 
-	providers := a.modelProviders()
-	for i := 0; i <= len(providers); i++ {
-		_ = a.cycleAgentProvider(providers)
-		if a.cfg.Provider == "openrouter" {
-			break
-		}
-	}
+	commitAgentProviderForTest(a, "openrouter")
 	if a.cfg.Provider != "openrouter" {
 		t.Fatalf("provider = %q, want openrouter in this test", a.cfg.Provider)
 	}
