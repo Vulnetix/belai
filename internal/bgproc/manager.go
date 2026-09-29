@@ -143,6 +143,14 @@ type processInstance struct {
 	exitCode int
 	attempts int
 
+	// background marks a process the model started (Bash run_in_background):
+	// it runs under policy, is never recovered when it exits, and is reachable
+	// only through the background tools.
+	background bool
+	policy     sandbox.Policy
+	// readOff is how far BashOutput has read into the log.
+	readOff int64
+
 	ctx    context.Context
 	cancel context.CancelFunc
 	log    *cappedLogWriter
@@ -276,7 +284,11 @@ func (m *Manager) startExecLocked(p *processInstance) error {
 	ec.Env = proc.ScrubbedEnv()
 	proc.SetProcessGroup(ec)
 	// Supervised processes run under the same OS sandbox as Bash.
-	if _, err := sandbox.Wrap(ec, sandbox.FromSettings(m.settings.Sandbox, []string{m.workdir, p.dir}, m.posture)); err != nil {
+	pol := sandbox.FromSettings(m.settings.Sandbox, []string{m.workdir, p.dir}, m.posture)
+	if p.background {
+		pol = p.policy
+	}
+	if _, err := sandbox.Wrap(ec, pol); err != nil {
 		return err
 	}
 
@@ -315,7 +327,7 @@ func (m *Manager) Stop(id string) error {
 		return fmt.Errorf("process %q not found", id)
 	}
 	p.mu.Lock()
-	if p.state == StateStopped || p.state == StateFailed {
+	if p.state == StateStopped || p.state == StateFailed || (p.background && p.state == StateExited) {
 		p.mu.Unlock()
 		m.mu.Unlock()
 		return nil
@@ -384,6 +396,20 @@ func (m *Manager) handleExit(id string, pid, code int) {
 	p.ended = time.Now()
 	p.exitCode = code
 
+	// A model-started process is never recovered. It stays in the table, so
+	// its final output is still readable, until the keep cap drops it.
+	if p.background {
+		if p.state != StateStopped {
+			p.state = StateExited
+		}
+		snap := p.snapshotLocked()
+		p.mu.Unlock()
+		m.releaseLock(p)
+		m.mu.Unlock()
+		m.pushEvent(Event{ID: id, Kind: "exit", Process: snap})
+		return
+	}
+
 	if p.state == StateStopped {
 		snap := p.snapshotLocked()
 		p.mu.Unlock()
@@ -426,6 +452,10 @@ func (m *Manager) RestartProcess(id, command string) error {
 	m.mu.Lock()
 	p, ok := m.procs[id]
 	if !ok {
+		m.mu.Unlock()
+		return fmt.Errorf("process %q not found", id)
+	}
+	if p.background {
 		m.mu.Unlock()
 		return fmt.Errorf("process %q not found", id)
 	}
@@ -496,7 +526,7 @@ func (m *Manager) ProcessCommand(id string) (string, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	p, ok := m.procs[id]
-	if !ok {
+	if !ok || p.background {
 		return "", false
 	}
 	return p.command, true

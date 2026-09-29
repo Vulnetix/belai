@@ -263,18 +263,20 @@ func TestProjectCanDisableClarification(t *testing.T) {
 // added to the struct with the merge step forgotten.
 func TestProjectCannotWidenAnyResilienceBudget(t *testing.T) {
 	global := Settings{Resilience: &ResilienceSettings{
-		MaxAttempts:          2,
-		MaxIterations:        5,
-		MaxPasses:            4,
-		MaxClarifyRounds:     1,
-		MaxExploreIterations: 3,
+		MaxAttempts:            2,
+		MaxIterations:          5,
+		MaxPasses:              4,
+		MaxClarifyRounds:       1,
+		MaxExploreIterations:   3,
+		MaxBackgroundProcesses: 4,
 	}}
 	merged := global.Override(Settings{Resilience: &ResilienceSettings{
-		MaxAttempts:          99,
-		MaxIterations:        99,
-		MaxPasses:            99,
-		MaxClarifyRounds:     99,
-		MaxExploreIterations: 99,
+		MaxAttempts:            99,
+		MaxIterations:          99,
+		MaxPasses:              99,
+		MaxClarifyRounds:       99,
+		MaxExploreIterations:   99,
+		MaxBackgroundProcesses: 99,
 	}})
 
 	r := merged.Resilience
@@ -288,6 +290,7 @@ func TestProjectCannotWidenAnyResilienceBudget(t *testing.T) {
 		{"max_passes", r.MaxPassesOr(), 4},
 		{"max_clarify_rounds", r.MaxClarifyRoundsOr(3), 1},
 		{"max_explore_iterations", r.MaxExploreIterationsOr(8), 3},
+		{"max_background_processes", r.MaxBackgroundOr(8), 4},
 	} {
 		if tc.got != tc.want {
 			t.Errorf("%s = %d, want the global (lower) value %d", tc.name, tc.got, tc.want)

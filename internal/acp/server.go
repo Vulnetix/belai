@@ -431,7 +431,7 @@ func toolKind(name string) string {
 		return "edit"
 	case "Grep", "Glob", "SearchSessions", "SearchMemory":
 		return "search"
-	case "Bash", "ProcessRestart":
+	case "Bash", "ProcessRestart", "BashOutput", "KillShell":
 		return "execute"
 	case "WebFetch", "WebSearch":
 		return "fetch"

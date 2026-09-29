@@ -41,7 +41,7 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   repository text), `RepoRead` and the native tools that can print a file's
   contents — `Cat`, `Head`, `Tail`, `Strings` and the path-reading transforms
   `JQ`, `YQ`, `Sed`, `Awk`, `Cut`, `Sort`, `Uniq`, `Tr`, `Paste`, `Join`,
-  `Diff` (all `KindRead`), `SubAgentLog` (`KindProcess`),
+  `Diff` (all `KindRead`), `SubAgentLog` and `BashOutput` (`KindProcess`),
   `SearchSessions`/`ReadSession`/`SearchMemory` (`KindAgentStore`, other
   agents' transcript and memory text), `KanbanSearch` (`KindKanban`, board
   items other sessions' models and web users wrote), `Task` subagent reports (`KindSubagent`, model-written arbitrary text), the `Vulnetix` tool (`KindRemote`,
@@ -270,6 +270,16 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   consumes one `resilience.max_process_recoveries` slot and Deny rules still
   apply. When the cap is reached the process is marked `failed` with no
   further model calls.
+- **Model-started processes are the model's own and never recovered.** `Bash`
+  `run_in_background` goes through the ordinary permission, ask, hook and
+  Vulnetix-redirect path and runs under the sandbox policy on the call's
+  context; it is refused on read-only Bash and where no launcher exists, never
+  run in the foreground instead. `BashOutput` (`KindProcess`, classified),
+  `KillShell` and `ProcessList` reach only processes started that way, never a
+  user's `!!cmd` process. Such a process is not handed to the recovery
+  subagent, and `ProcessRestart` cannot restart it.
+  `resilience.max_background_processes` caps the running ones and a project
+  layer may only lower it.
 - **Skills and hooks validate first.** Skills load only after strict
   front-matter schema validation; hooks load only after strict schema
   validation (unknown keys rejected) with no arbitrary code-path injection.

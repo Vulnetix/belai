@@ -2031,6 +2031,19 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 	reg = reg.NarrowWithKanban(p.toolAllow, p.kanban, p.kanbanSrc)
 	if p.procManager != nil {
 		reg = reg.With(&tools.SubAgentLog{Logs: p.procManager})
+		// Background launching rides on the same manager. Bash is this
+		// registry's own instance, so setting its launcher touches no other
+		// session; an allowlist that dropped Bash drops the launch path too.
+		if t, ok := reg.Find("Bash"); ok {
+			if b, ok := t.(*tools.Bash); ok && !b.ReadOnly {
+				b.Launcher = p.procManager
+				reg = reg.With(
+					&tools.BashOutput{Launcher: p.procManager},
+					&tools.KillShell{Launcher: p.procManager},
+					&tools.ProcessList{Launcher: p.procManager},
+				)
+			}
+		}
 	}
 	perms := permissions.From(p.settings.Permissions.Allow, p.settings.Permissions.Ask, p.settings.Permissions.Deny)
 	var promptOpts prompt.Options

@@ -62,9 +62,13 @@ const limits = [
   ['A PR needs your yes', 'The confirmation before p opens a PR or MR stays on with guardrails off.'],
   ['Same binary on restart', 'Recovery can change the flags of a command, and argv[0] stays the original.'],
   ['A cap, then failed', 'When the recovery slots run out, the process is marked failed and no more model calls are made.'],
+  ['The model can start one too', 'Bash with run_in_background starts a process under the same approval and the same sandbox as any Bash call. BashOutput reads what it printed since the last read, KillShell stops it and ProcessList names the running ones.'],
+  ['Never recovered', 'A process the model started is not handed to the recovery subagent when it exits. It is marked exited and its final output stays readable.'],
+  ['Only its own processes', 'BashOutput and KillShell reach only processes the model started. The ones you start with !!cmd are not readable or stoppable through them.'],
+  ['A cap on running ones', 'At most resilience.max_background_processes run at once (8 by default). A project file can lower the number and never raise it.'],
 ];
 
-const code = /(!!cmd|SubAgentLog|ProcessRestart|argv\[0\]|resilience\.max_process_recoveries|\bgit\b|\bgh\b|\bglab\b)/;
+const code = /(!!cmd|run_in_background|BashOutput|KillShell|ProcessList|resilience\.max_background_processes|SubAgentLog|ProcessRestart|argv\[0\]|resilience\.max_process_recoveries|\bgit\b|\bgh\b|\bglab\b)/;
 const split = (s: string) => s.split(code).map((p) => ({ p, c: code.test(p) }));
 ---
 

@@ -44,6 +44,9 @@ type Bash struct {
 	// Vulnetix is set when the Vulnetix tool is registered: a command that
 	// runs the vulnetix binary is refused with a pointer to that tool.
 	Vulnetix bool
+	// Launcher runs a command in the background when a call sets
+	// run_in_background. Nil where the session has no process manager.
+	Launcher ProcessLauncher
 }
 
 // Bash time limits, in the trained shape: timeout is milliseconds.
@@ -92,15 +95,20 @@ func (b *Bash) Definition() Definition {
 			"Output is capped at 64 KiB, the command is killed after its timeout (at most 600000 ms), and provider credentials are stripped from the environment."
 		arg = "The single command to run, e.g. \"git status\" or \"ls -la internal\" — no pipes, redirections, or chaining"
 	}
+	props := map[string]Property{
+		"command":     {Type: "string", Format: FormatCommand, Description: arg},
+		"timeout":     {Type: "integer", Description: "Optional time limit in milliseconds (max 600000)"},
+		"description": {Type: "string", Description: "Optional short description of what the command does, shown to the user"},
+	}
+	if !b.ReadOnly && b.Launcher != nil {
+		desc += " Set run_in_background for a server or other long-running process: the call returns a handle at once, the process keeps running (same sandbox, same approval), and BashOutput reads its output, KillShell stops it, and ProcessList names the running ones. It is stopped when the session ends."
+		props["run_in_background"] = Property{Type: "boolean", Description: "Run the command in the background and return a handle instead of waiting for it to finish"}
+	}
 	return Definition{
 		Name:        "Bash",
 		Description: desc,
-		Properties: map[string]Property{
-			"command":     {Type: "string", Format: FormatCommand, Description: arg},
-			"timeout":     {Type: "integer", Description: "Optional time limit in milliseconds (max 600000)"},
-			"description": {Type: "string", Description: "Optional short description of what the command does, shown to the user"},
-		},
-		Required: []string{"command"},
+		Properties:  props,
+		Required:    []string{"command"},
 	}
 }
 
@@ -139,6 +147,13 @@ func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink
 
 	if b.Vulnetix && VulnetixInCommand(cmd) {
 		return Result{}, fmt.Errorf("run vulnetix with the Vulnetix tool, not Bash: pass the arguments after `vulnetix` as its command (it adds --no-progress, scopes --path, keeps fix to --dry-run and allows a 15-minute scan)")
+	}
+
+	if bg, _ := argBool(args, "run_in_background"); bg {
+		if b.ReadOnly {
+			return Result{}, fmt.Errorf("run_in_background is not available on the read-only Bash")
+		}
+		return startBackground(ctx, b.Launcher, cmd, baseDir(b.Root, b.Cwd))
 	}
 
 	timeout, err := b.effectiveTimeout(args)
