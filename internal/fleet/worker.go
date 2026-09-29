@@ -100,7 +100,11 @@ type Worker struct {
 	// found nothing to claim, with no crew teammate working, for a quiet
 	// window; a scheduled (cron) worker always stays.
 	Stay bool
-	Log  io.Writer
+	// MaxWorkers, when positive, is the cap this worker reserves its slot
+	// under in place of Settings.MaxWorkers(): the cap `agent start` checked
+	// the whole start against (belai rc --max).
+	MaxWorkers int
+	Log        io.Writer
 	// Notify sends a notification event with the agent name as subject.
 	Notify func(event string)
 	// Runner works one item; nil uses the real agent session.
@@ -198,7 +202,11 @@ func (w *Worker) Run(ctx context.Context) error {
 	w.Record.State = StateIdle
 	w.Record.Started = w.clock().UnixMilli()
 	if w.Registry != nil {
-		if err := w.Registry.Reserve(w.Record, w.Settings.MaxWorkers()); err != nil {
+		max := w.Settings.MaxWorkers()
+		if w.MaxWorkers > 0 {
+			max = w.MaxWorkers
+		}
+		if err := w.Registry.Reserve(w.Record, max); err != nil {
 			return err
 		}
 	}

@@ -276,6 +276,7 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 	crew := fs.String("crew", "", "the crew this worker belongs to (set by `agent start`)")
 	detached := fs.Bool("detached", false, "started by `agent start`")
 	stay := fs.Bool("stay", false, "keep waiting for work instead of exiting once nothing is left to claim")
+	maxWorkers := fs.Int("max-workers", 0, "worker cap to reserve under in place of agents.max_workers (set by `agent start`)")
 	if err := parseInterleaved(fs, rest); err != nil || fs.NArg() != 1 {
 		return 2, errors.New("usage: belai agent run [-once] [-item K-xxxxxx] [-stay] NAME")
 	}
@@ -360,7 +361,7 @@ func agentRun(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, stde
 		Cfg: cfg, Client: httpclient.Default(), Store: store, Registry: reg, MCP: mcpMgr,
 		Sessions: sessions, Sync: headless.SyncClient(settings, repo),
 		Record: fleet.Record{ID: workerID, Profile: profile.Name, Crew: *crew, Detached: *detached, Log: logPath(reg, workerID, *detached)},
-		Once:   *once, Item: *item, Stay: *stay, Log: logw,
+		Once:   *once, Item: *item, Stay: *stay, MaxWorkers: workerCap(settings, *maxWorkers), Log: logw,
 		Notify: workerNotifier(settings, profile.Name, *detached),
 	}
 	if err := w.Run(ctx); err != nil {
@@ -486,8 +487,15 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 		return 1, err
 	}
 	live, _ := reg.Live()
-	if max := workerCap(settings, *maxWorkers); len(live)+len(launches) > max {
+	max := workerCap(settings, *maxWorkers)
+	if len(live)+len(launches) > max {
 		return 1, fmt.Errorf("starting %d would run %d workers; the worker cap is %d (agents.max_workers, or --max-workers)", len(launches), len(live)+len(launches), max)
+	}
+	// Each worker reserves its own slot; it must do so under the cap this
+	// start was checked against, or an rc --max start fails in every child.
+	spawnMax := 0
+	if *maxWorkers > 0 {
+		spawnMax = max
 	}
 	exe, err := os.Executable()
 	if err != nil {
@@ -495,7 +503,7 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	}
 	var started []string
 	for _, l := range launches {
-		id, err := reg.Spawn(fleet.SpawnOptions{Exe: exe, Repo: repo, Profile: l.profile, Crew: l.crew, Provider: *providerName, Model: *model, Stay: *stay})
+		id, err := reg.Spawn(fleet.SpawnOptions{Exe: exe, Repo: repo, Profile: l.profile, Crew: l.crew, Provider: *providerName, Model: *model, Stay: *stay, MaxWorkers: spawnMax})
 		if err != nil {
 			return 1, err
 		}
