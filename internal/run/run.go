@@ -271,6 +271,15 @@ func classifierModelApplies(providerName, model string) bool {
 	if model == "" {
 		return true
 	}
+	// A typesafe/jev* model exists only on OpenRouter's Decisions API. On any
+	// other provider it is a stale or half-written setting (a model with no
+	// provider inherits the main one, for example Cloudflare), and sending it
+	// there as a chat model is rejected by the provider on every check.
+	// Decision providers (decision-local, kind jev) are resolved before this
+	// runs and never reach it.
+	if strings.HasPrefix(strings.ToLower(model), "typesafe/jev") {
+		return providerName == "openrouter"
+	}
 	// A custom provider can serve any model id, so a namespaced id cannot be
 	// attributed to a foreign built-in provider.
 	if !provider.Builtin(providerName) {

@@ -145,3 +145,23 @@ func TestDecisionProviderNeverChats(t *testing.T) {
 		t.Fatal("a chat model misread as a decision backend")
 	}
 }
+
+// A typesafe/jev* model with no provider inherits the main provider, which
+// cannot serve it; it must fall back to the main model instead of being sent
+// to that provider as a chat model (which the provider rejects every time).
+func TestJevModelOnAnotherProviderFallsBackToMain(t *testing.T) {
+	main := Config{Provider: "cloudflare-ai-gateway", BaseURL: "https://gw.invalid", APIKey: "k", Model: "@cf/deepseek-ai/deepseek-v4-pro-0813"}
+	cc, err := ResolveClassifier(main, &config.ClassifierSettings{Model: "typesafe/jev-1.13"}, fakeSource{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cc.Provider != "cloudflare-ai-gateway" || cc.Model != main.Model {
+		t.Fatalf("classifier = %s/%s, want the main model", cc.Provider, cc.Model)
+	}
+	if isDecisionsTarget(cc.Provider, "", cc.Model) {
+		t.Fatal("the fallback must be a chat model")
+	}
+	if classifierModelApplies("openrouter", "typesafe/jev-1.13") != true || classifierModelApplies("openai", "typesafe/jev-1.13") {
+		t.Fatal("jev applies to openrouter only")
+	}
+}

@@ -1,0 +1,129 @@
+---
+// Walkthrough plays an unlisted YouTube video without a frame. It starts
+// muted and looping with the player chrome hidden (browsers only allow muted
+// autoplay). The first click anywhere on it swaps in a player with sound and
+// full controls, picking up where the muted loop was. With reduced motion it
+// waits for that click instead of autoplaying. Without JS it is a plain
+// embed with controls.
+
+interface Props {
+  id: string;
+  title: string;
+  class?: string;
+}
+
+const { id, title, class: cls = '' } = Astro.props;
+---
+
+<div class={`walkthrough relative aspect-video bg-vx-ink ${cls}`} data-walkthrough={id}>
+  <div class="walkthrough__player absolute inset-0 h-full w-full"></div>
+  <noscript>
+    <iframe
+      class="absolute inset-0 h-full w-full"
+      src={`https://www.youtube-nocookie.com/embed/${id}?rel=0`}
+      title={title}
+      loading="lazy"
+      referrerpolicy="strict-origin-when-cross-origin"
+      allow="encrypted-media; picture-in-picture; fullscreen"
+      allowfullscreen
+    ></iframe>
+  </noscript>
+  <button
+    type="button"
+    class="walkthrough__cover absolute inset-0 hidden h-full w-full cursor-pointer border-0 bg-transparent p-0 text-left"
+    aria-label={`Play ${title} with sound and controls`}
+  >
+    <span class="mono absolute bottom-3 left-3 inline-flex h-11 items-center gap-2 rounded-full bg-vx-ink/80 px-4 text-sm text-vx-mint">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M11 5 6 9H2v6h4l5 4V5z"></path><path d="m23 9-6 6"></path><path d="m17 9 6 6"></path>
+      </svg>
+      <span class="walkthrough__label">sound off · tap for sound</span>
+    </span>
+  </button>
+</div>
+
+<script>
+  type Player = {
+    getCurrentTime(): number;
+    destroy(): void;
+    mute(): void;
+    playVideo(): void;
+  };
+  type YTApi = { Player: new (el: Element, opts: object) => Player };
+  const w = window as unknown as { YT?: YTApi; onYouTubeIframeAPIReady?: () => void };
+
+  const ready = new Promise<YTApi>((resolve) => {
+    if (w.YT?.Player) return resolve(w.YT);
+    const prev = w.onYouTubeIframeAPIReady;
+    w.onYouTubeIframeAPIReady = () => {
+      prev?.();
+      resolve(w.YT!);
+    };
+    const s = document.createElement('script');
+    s.src = 'https://www.youtube.com/iframe_api';
+    s.async = true;
+    document.head.appendChild(s);
+  });
+
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-walkthrough]')) {
+    const id = root.dataset.walkthrough!;
+    const cover = root.querySelector<HTMLButtonElement>('.walkthrough__cover')!;
+    const label = root.querySelector<HTMLElement>('.walkthrough__label')!;
+    const mount = () => {
+      const el = document.createElement('div');
+      el.className = 'absolute inset-0 h-full w-full';
+      root.querySelector('.walkthrough__player')!.replaceChildren(el);
+      return el;
+    };
+    const base = { rel: 0, playsinline: 1, modestbranding: 1 };
+
+    if (reduced) label.textContent = 'play walkthrough';
+    cover.classList.remove('hidden');
+
+    ready.then((YT) => {
+      let player = new YT.Player(mount(), {
+        host: 'https://www.youtube-nocookie.com',
+        videoId: id,
+        width: '100%',
+        height: '100%',
+        playerVars: { ...base, autoplay: reduced ? 0 : 1, mute: 1, controls: 0, disablekb: 1, loop: 1, playlist: id },
+        events: {
+          onReady: () => {
+            if (reduced) return;
+            player.mute();
+            player.playVideo();
+          },
+        },
+      });
+
+      cover.addEventListener(
+        'click',
+        () => {
+          const start = Math.floor(player.getCurrentTime?.() ?? 0);
+          player.destroy();
+          cover.remove();
+          player = new YT.Player(mount(), {
+            host: 'https://www.youtube-nocookie.com',
+            videoId: id,
+            width: '100%',
+            height: '100%',
+            playerVars: { ...base, autoplay: 1, mute: 0, controls: 1, start },
+          });
+        },
+        { once: true },
+      );
+    });
+  }
+</script>
+
+<style>
+  .walkthrough :global(iframe) {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+  }
+</style>
