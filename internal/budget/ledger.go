@@ -16,24 +16,50 @@ import (
 // LedgerFile is the usage ledger's name under the global state directory.
 const LedgerFile = "usage.json"
 
+// ledgerVersion is the format written today. Version 1 files (days, sessions
+// and imported only) load unchanged; hours and limits start empty.
+const ledgerVersion = 2
+
 // Retention of ledger entries: day totals older than dayRetention are pruned
 // on every write, so a month budget always has its whole month and a year of
 // history stays inspectable; a session total is pruned once the session has
-// not been touched for the session retention.
-const dayRetention = 13 * 31 * 24 * time.Hour
+// not been touched for the session retention; hour buckets and plan-limit
+// readings are kept for hourRetention, enough for pace, the 24-hour sparkline
+// and the seven-day heatmap.
+const (
+	dayRetention  = 13 * 31 * 24 * time.Hour
+	hourRetention = 8 * 24 * time.Hour
+)
 
-const dayLayout = "2006-01-02"
+const (
+	dayLayout  = "2006-01-02"
+	hourLayout = "2006-01-02T15"
+)
+
+// hourBucket is one model's usage in one local hour: tokens and completed
+// calls.
+type hourBucket struct {
+	T int64 `json:"t"`
+	C int   `json:"c"`
+}
 
 // ledgerData is usage.json. Day totals are keyed by provider/model then local
-// date; session totals by session id then provider/model.
+// date; hour buckets by provider/model then local hour; session totals by
+// session id then provider/model.
 type ledgerData struct {
 	Version  int                         `json:"version"`
 	Days     map[string]map[string]int64 `json:"days,omitempty"`
 	Sessions map[string]*sessionEntry    `json:"sessions,omitempty"`
+	// Hours is what pace, the sparkline, the heatmap and call counts read.
+	// Imported transcripts know only days, so they never appear here.
+	Hours map[string]map[string]hourBucket `json:"hours,omitempty"`
+	// Limits holds the latest plan-limit reading per provider and window.
+	Limits map[string]PlanLimit `json:"limits,omitempty"`
 	// Imported names the sessions whose transcript usage has been folded into
-	// Days (value: the local date of the import), so a session is imported at
-	// most once. A live session pruned from Sessions moves here too, so its
-	// transcript is never imported on top of the usage it recorded live.
+	// Days (value: the local date the session was last active), so a session is
+	// imported at most once. A live session pruned from Sessions moves here
+	// too, so its transcript is never imported on top of the usage it recorded
+	// live.
 	Imported map[string]string `json:"imported,omitempty"`
 }
 
@@ -43,7 +69,35 @@ type sessionEntry struct {
 }
 
 func newLedgerData() ledgerData {
-	return ledgerData{Version: 1, Days: map[string]map[string]int64{}, Sessions: map[string]*sessionEntry{}, Imported: map[string]string{}}
+	return ledgerData{
+		Version:  ledgerVersion,
+		Days:     map[string]map[string]int64{},
+		Sessions: map[string]*sessionEntry{},
+		Hours:    map[string]map[string]hourBucket{},
+		Limits:   map[string]PlanLimit{},
+		Imported: map[string]string{},
+	}
+}
+
+// delta is one flush's worth of unwritten usage.
+type delta struct {
+	days   map[string]map[string]int64
+	ses    map[string]map[string]int64
+	hours  map[string]map[string]hourBucket
+	limits map[string]PlanLimit
+}
+
+func newDelta() delta {
+	return delta{
+		days:   map[string]map[string]int64{},
+		ses:    map[string]map[string]int64{},
+		hours:  map[string]map[string]hourBucket{},
+		limits: map[string]PlanLimit{},
+	}
+}
+
+func (d delta) empty() bool {
+	return len(d.days) == 0 && len(d.ses) == 0 && len(d.hours) == 0 && len(d.limits) == 0
 }
 
 // Recorder accumulates token usage and measures budgets against it. Add is
@@ -58,16 +112,18 @@ type Recorder struct {
 	retention time.Duration
 	now       func() time.Time
 
-	disk    ledgerData                  // last state read from or written to disk
-	pending map[string]map[string]int64 // unflushed day deltas: key → date → tokens
-	pendSes map[string]map[string]int64 // unflushed session deltas: session → key → tokens
-	// inflight holds the deltas a Flush is writing, so Used keeps counting
-	// them until the write lands in disk.
-	inflight    map[string]map[string]int64
-	inflightSes map[string]map[string]int64
-	flushMu     sync.Mutex
-	notice      string
-	loaded      time.Time
+	disk ledgerData // last state read from or written to disk
+	// pending is unflushed usage; inflight is what a Flush is writing, so reads
+	// keep counting it until the write lands in disk.
+	pending  delta
+	inflight delta
+	// roles tallies this process's tokens by usage role. It is memory only: the
+	// ledger keeps no role, so the roles view speaks for this session.
+	roles map[string]int64
+
+	flushMu sync.Mutex
+	notice  string
+	loaded  time.Time
 
 	kick chan struct{}
 	done chan struct{}
@@ -97,8 +153,8 @@ func Open(path, session string, retentionDays int) (*Recorder, error) {
 		retention: time.Duration(retentionDays) * 24 * time.Hour,
 		now:       time.Now,
 		disk:      newLedgerData(),
-		pending:   map[string]map[string]int64{},
-		pendSes:   map[string]map[string]int64{},
+		pending:   newDelta(),
+		roles:     map[string]int64{},
 		kick:      make(chan struct{}, 1),
 		done:      make(chan struct{}),
 	}
@@ -128,21 +184,39 @@ func (r *Recorder) SetSession(id string) {
 
 // Add records tokens spent by one model call to provider/model.
 func (r *Recorder) Add(provider, model string, tokens int64) {
+	r.AddCall(provider, model, "", tokens)
+}
+
+// AddCall records one completed model call: its tokens against provider/model
+// in the day, hour and session totals, and against role in this process's role
+// tally. An empty role is not tallied.
+func (r *Recorder) AddCall(provider, model, role string, tokens int64) {
 	if tokens <= 0 {
 		return
 	}
 	key := config.ModelKey(provider, model)
 	r.mu.Lock()
-	day := r.now().Format(dayLayout)
-	if r.pending[key] == nil {
-		r.pending[key] = map[string]int64{}
+	now := r.now()
+	day, hour := now.Format(dayLayout), now.Format(hourLayout)
+	if r.pending.days[key] == nil {
+		r.pending.days[key] = map[string]int64{}
 	}
-	r.pending[key][day] += tokens
+	r.pending.days[key][day] += tokens
+	if r.pending.hours[key] == nil {
+		r.pending.hours[key] = map[string]hourBucket{}
+	}
+	hb := r.pending.hours[key][hour]
+	hb.T += tokens
+	hb.C++
+	r.pending.hours[key][hour] = hb
 	if r.session != "" {
-		if r.pendSes[r.session] == nil {
-			r.pendSes[r.session] = map[string]int64{}
+		if r.pending.ses[r.session] == nil {
+			r.pending.ses[r.session] = map[string]int64{}
 		}
-		r.pendSes[r.session][key] += tokens
+		r.pending.ses[r.session][key] += tokens
+	}
+	if role != "" {
+		r.roles[role] += tokens
 	}
 	r.mu.Unlock()
 	select {
@@ -157,6 +231,11 @@ func (r *Recorder) Add(provider, model string, tokens int64) {
 func (r *Recorder) Used(b config.TokenBudget) int64 {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.usedLocked(b)
+}
+
+// usedLocked is Used for a caller that already holds r.mu.
+func (r *Recorder) usedLocked(b config.TokenBudget) int64 {
 	key := b.Key()
 	switch b.Scope {
 	case config.BudgetScopeSession:
@@ -164,7 +243,7 @@ func (r *Recorder) Used(b config.TokenBudget) int64 {
 		if e := r.disk.Sessions[r.session]; e != nil {
 			n += e.Models[key]
 		}
-		return n + r.inflightSes[r.session][key] + r.pendSes[r.session][key]
+		return n + r.inflight.ses[r.session][key] + r.pending.ses[r.session][key]
 	case config.BudgetScopeDay:
 		return r.sumDays(key, r.now().Format(dayLayout))
 	case config.BudgetScopeMonth:
@@ -178,7 +257,7 @@ func (r *Recorder) Used(b config.TokenBudget) int64 {
 // prefix, so it serves the day scope as well as the month.
 func (r *Recorder) sumDays(key, prefix string) int64 {
 	var n int64
-	for _, m := range []map[string]int64{r.disk.Days[key], r.inflight[key], r.pending[key]} {
+	for _, m := range []map[string]int64{r.disk.Days[key], r.inflight.days[key], r.pending.days[key]} {
 		for d, v := range m {
 			if strings.HasPrefix(d, prefix) {
 				n += v
@@ -221,20 +300,19 @@ func (r *Recorder) Flush() error {
 	r.flushMu.Lock()
 	defer r.flushMu.Unlock()
 	r.mu.Lock()
-	pending, pendSes := r.pending, r.pendSes
-	if len(pending) == 0 && len(pendSes) == 0 {
+	pending := r.pending
+	if pending.empty() {
 		r.mu.Unlock()
 		return nil
 	}
-	r.pending, r.pendSes = map[string]map[string]int64{}, map[string]map[string]int64{}
-	r.inflight, r.inflightSes = pending, pendSes
+	r.pending = newDelta()
+	r.inflight = pending
 	r.mu.Unlock()
-	if err := r.write(pending, pendSes); err != nil {
+	if err := r.write(pending); err != nil {
 		// Keep the usage: put the deltas back for the next attempt.
 		r.mu.Lock()
-		mergeDeltas(r.pending, pending)
-		mergeDeltas(r.pendSes, pendSes)
-		r.inflight, r.inflightSes = nil, nil
+		mergeDelta(&r.pending, pending)
+		r.inflight = delta{}
 		r.mu.Unlock()
 		return err
 	}
@@ -266,7 +344,7 @@ func (r *Recorder) flusher() {
 
 // write applies deltas to the on-disk ledger under the advisory lock:
 // re-read, add, prune, write atomically.
-func (r *Recorder) write(days, sessions map[string]map[string]int64) error {
+func (r *Recorder) write(d delta) error {
 	// The directory must exist before the lockfile can be created in it.
 	if err := os.MkdirAll(filepath.Dir(r.path), 0o700); err != nil {
 		return err
@@ -281,15 +359,31 @@ func (r *Recorder) write(days, sessions map[string]map[string]int64) error {
 		return err
 	}
 	now := r.now()
-	for key, byDay := range days {
+	for key, byDay := range d.days {
 		if data.Days[key] == nil {
 			data.Days[key] = map[string]int64{}
 		}
-		for d, n := range byDay {
-			data.Days[key][d] += n
+		for day, n := range byDay {
+			data.Days[key][day] += n
 		}
 	}
-	for id, byKey := range sessions {
+	for key, byHour := range d.hours {
+		if data.Hours[key] == nil {
+			data.Hours[key] = map[string]hourBucket{}
+		}
+		for hour, b := range byHour {
+			cur := data.Hours[key][hour]
+			cur.T += b.T
+			cur.C += b.C
+			data.Hours[key][hour] = cur
+		}
+	}
+	for k, l := range d.limits {
+		if cur, ok := data.Limits[k]; !ok || !cur.ObservedAt.After(l.ObservedAt) {
+			data.Limits[k] = l
+		}
+	}
+	for id, byKey := range d.ses {
 		e := data.Sessions[id]
 		if e == nil {
 			e = &sessionEntry{Models: map[string]int64{}}
@@ -303,6 +397,7 @@ func (r *Recorder) write(days, sessions map[string]map[string]int64) error {
 		}
 		e.Updated = now
 	}
+	data.Version = ledgerVersion
 	prune(&data, now, r.retention)
 	buf, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
@@ -314,7 +409,7 @@ func (r *Recorder) write(days, sessions map[string]map[string]int64) error {
 	r.mu.Lock()
 	r.disk = data
 	r.loaded = now
-	r.inflight, r.inflightSes = nil, nil
+	r.inflight = delta{}
 	if notice != "" {
 		r.notice = notice
 	}
@@ -362,14 +457,21 @@ func readLedger(path string) (ledgerData, string, error) {
 	if data.Sessions == nil {
 		data.Sessions = map[string]*sessionEntry{}
 	}
+	if data.Hours == nil {
+		data.Hours = map[string]map[string]hourBucket{}
+	}
+	if data.Limits == nil {
+		data.Limits = map[string]PlanLimit{}
+	}
 	if data.Imported == nil {
 		data.Imported = map[string]string{}
 	}
 	return data, "", nil
 }
 
-// prune drops day totals older than dayRetention and sessions idle past the
-// session retention.
+// prune drops day totals older than dayRetention, hour buckets and limit
+// readings older than hourRetention, and sessions idle past the session
+// retention.
 func prune(d *ledgerData, now time.Time, sessionRetention time.Duration) {
 	if d.Imported == nil {
 		d.Imported = map[string]string{}
@@ -383,6 +485,22 @@ func prune(d *ledgerData, now time.Time, sessionRetention time.Duration) {
 		}
 		if len(byDay) == 0 {
 			delete(d.Days, key)
+		}
+	}
+	hourCutoff := now.Add(-hourRetention).Format(hourLayout)
+	for key, byHour := range d.Hours {
+		for hour := range byHour {
+			if hour < hourCutoff {
+				delete(byHour, hour)
+			}
+		}
+		if len(byHour) == 0 {
+			delete(d.Hours, key)
+		}
+	}
+	for k, l := range d.Limits {
+		if now.Sub(l.ObservedAt) > limitRetention {
+			delete(d.Limits, k)
 		}
 	}
 	for id, e := range d.Sessions {
@@ -406,13 +524,38 @@ func prune(d *ledgerData, now time.Time, sessionRetention time.Duration) {
 	}
 }
 
-func mergeDeltas(dst, src map[string]map[string]int64) {
-	for k, inner := range src {
-		if dst[k] == nil {
-			dst[k] = map[string]int64{}
+// mergeDelta adds src into dst; a limit keeps the later observation.
+func mergeDelta(dst *delta, src delta) {
+	for k, inner := range src.days {
+		if dst.days[k] == nil {
+			dst.days[k] = map[string]int64{}
 		}
 		for k2, n := range inner {
-			dst[k][k2] += n
+			dst.days[k][k2] += n
+		}
+	}
+	for k, inner := range src.ses {
+		if dst.ses[k] == nil {
+			dst.ses[k] = map[string]int64{}
+		}
+		for k2, n := range inner {
+			dst.ses[k][k2] += n
+		}
+	}
+	for k, inner := range src.hours {
+		if dst.hours[k] == nil {
+			dst.hours[k] = map[string]hourBucket{}
+		}
+		for k2, b := range inner {
+			cur := dst.hours[k][k2]
+			cur.T += b.T
+			cur.C += b.C
+			dst.hours[k][k2] = cur
+		}
+	}
+	for k, l := range src.limits {
+		if cur, ok := dst.limits[k]; !ok || !cur.ObservedAt.After(l.ObservedAt) {
+			dst.limits[k] = l
 		}
 	}
 }

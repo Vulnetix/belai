@@ -60,6 +60,8 @@ func main() {
 		"approval-diff":   approvalDiff(),
 		"settings":        settings(),
 		"budgets":         budgets(),
+		"intel":           intel(),
+		"footer-intel":    footerIntel(),
 		"permissions":     permissions(),
 		"agents-roster":   agentsRoster(),
 		"model-picker":    modelPicker(),
@@ -520,4 +522,81 @@ func kanbanBoard() string {
 	return head + strings.Join(tabs, "  ") + "\n" + meta + "\n\n" + strings.Join(rows, "\n") + "\n\n" +
 		strings.Join(detail, "\n") + "\n\n" +
 		components.HelpBar("←→", "list", "↑↓", "item", "⏎", "work on it", "n", "new", "m", "move", "o", "note", "d", "delete", "esc", "back")
+}
+
+// twoCol lays left and right on one line of w cells with right flush right.
+func twoCol(left, right string, w int) string {
+	pad := w - lipgloss.Width(left) - lipgloss.Width(right)
+	if pad < 2 {
+		return left
+	}
+	return left + strings.Repeat(" ", pad) + right
+}
+
+// footerIntel renders the footer with the session intelligence slot on the
+// right of line 1: today's tokens, the five-hour limit at 23% with its reset
+// marker, and the f12 hint that rides the last third of the slot's turn.
+func footerIntel() string {
+	f := &components.Footer{
+		Session:      "turn 14",
+		Tokens:       12480,
+		ContextLimit: 200000,
+		Model:        "claude-sonnet-4-5",
+		Effort:       "high",
+		Provider:     "anthropic",
+		Mode:         "agent",
+		Agent:        "default",
+		Width:        width,
+		Cwd:          "/home/chris/GitHub/belai",
+		Branch:       "main",
+		Guardrails:   true,
+		Ask:          true,
+		SessionName:  "seal-demo",
+		ShowName:     true,
+		Intel: &components.IntelGauge{
+			Today: "34.4M", Limit: "5h 23%", LimitFrac: 0.23, ElapsedFrac: 0.55,
+			Spark: make([]int64, 24), Pace: "comfortable", State: components.BudgetTeal, Hint: true,
+		},
+	}
+	return f.View()
+}
+
+// intel renders the f12 pane: the runs panel's intel tab with a five-hour and a
+// weekly limit, pace, trend, runway, and today, the week and 30 days. The
+// numbers are fixed so the capture is byte-stable.
+func intel() string {
+	teal := lipgloss.NewStyle().Foreground(components.ColorTeal)
+	muted, low, emph := components.MutedStyle, components.LowStyle, components.EmphStyle
+	tabs := muted.Render("activity  subagents  processes  kanban  crew  git  ") + emph.Render("[ intel ]")
+	head := twoCol(tabs, muted.Render("tab switch · f12 close"), width)
+
+	limit := func(title string, used, elapsed float64, resets string) string {
+		left := "  " + muted.Render(fmt.Sprintf("%-18s", title)) +
+			components.LimitBar(used, elapsed, 30, components.ColorTeal) + " " +
+			teal.Render(fmt.Sprintf("%3d%%", int(used*100+0.5)))
+		return twoCol(left, muted.Render("resets in "+resets), width)
+	}
+	spark := make([]int64, 24)
+	for i, v := range []int64{0, 0, 0, 0, 0, 0, 1, 3, 5, 9, 6, 4, 2, 0, 0, 3, 8, 12, 7, 4, 2, 1, 0, 0} {
+		spark[i] = v
+	}
+	row := func(label, pic, tokens, sessions string) string {
+		return "  " + muted.Render(fmt.Sprintf("%-14s", label)) + pic + "  " + muted.Render(fmt.Sprintf("%7s  %s", tokens, sessions))
+	}
+	lines := []string{
+		head,
+		twoCol("  "+muted.Render("anthropic · ")+emph.Render("claude-sonnet-4-5"),
+			muted.Render("today ")+emph.Render("34.4M")+muted.Render(" · 90 calls · 3 sessions")+low.Render("    live 8s ago"), width),
+		limit("5-hour limit", 0.23, 0.55, "3h 40m"),
+		limit("weekly limit", 0.48, 0.42, "4d 2h"),
+		twoCol("  "+muted.Render("pace     ")+teal.Render("comfortable")+muted.Render(" · 1.5%/h · 410k tok/h"),
+			muted.Render("trend  ")+teal.Render("↘ easing")+muted.Render(" · 0.5× the 7-day average"), width),
+		"  " + muted.Render("runway   ") + teal.Render("lasts past the reset"),
+		row("today", components.Sparkline(spark, 24, teal, low)+low.Render(" 24h"), "34.4M", "3 sessions"),
+		row("this week", components.LimitBar(0.52, -1, 24, components.ColorTeal), "625.3M", "19 sessions"),
+		row("last 30 days", components.LimitBar(1, -1, 24, components.ColorTeal), "1.2B", "22 sessions"),
+		components.HelpBar("↑↓", "select", "←→", "window", "m", "models", "r", "roles", "t", "timeline", "b", "budgets", "⏎", "full screen", "esc", "unfocus"),
+		components.Rule(width),
+	}
+	return strings.Join(lines, "\n")
 }

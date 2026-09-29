@@ -1932,11 +1932,16 @@ The footer is a rule plus three content lines:
   move, since line 1 appears or disappears with the directory.
 - Line 1, right: the selected provider+model's [token budget](token-budgets.md)
   gauge — scope, percentage of tokens left, time left (day and month only)
-  and a bar filled in teal, amber or red over a grey trough — shown only under
+  and a bar filled in teal, amber or red over a grey trough — shown under
   `defined` routing when that model has a budget, cycling through its budgets
-  every `ui.budget_cycle_seconds`. When the line is narrow the gauge drops the
-  time first, then the cwd side is truncated (keeping the mode chip), and the
-  percentage goes last.
+  every `ui.budget_cycle_seconds`. The last stop of the cycle is the
+  [session intelligence](token-budgets.md#session-intelligence) slot (`intel`,
+  today's tokens, the tightest plan limit or the pace, and a limit bar with a
+  reset marker or a 24-hour sparkline). It is the only slot under `routed`
+  routing and when the model has no budget, and in its last third it carries a
+  subtle `f12` hint when the line has room. When the line is narrow the gauge
+  drops the time first, then the cwd side is truncated (keeping the mode chip),
+  and the percentage goes last.
 - Line 2, left: provider · model (with effort) · the permission chips ·
   `caveman: on|off`. When smart model routing is engaged (`routing.kind:
   "routed"` resolving to a non-empty pool), the provider/model segment is
@@ -2063,8 +2068,11 @@ Every completed model call reports its usage once, from the two places a call
 completes in `internal/run`: `sendTurnsWithTools` (every non-streaming call —
 classifier, role manager, blocking main turn) and `drainStream` (every
 streaming call). `run.SetUsageObserver` holds one process-wide observer. The
-TUI's observer calls `budget.Recorder.Add` directly — it is safe from any
-goroutine and never waits on disk, so usage is never dropped — and then wakes
+TUI's observer calls `budget.Recorder.AddCall` (tokens, the usage role, and an
+hour bucket beside the day total) and `ObserveLimits` (the plan limits the
+call's response headers reported, parsed by `internal/run/planlimits.go` into
+numbers) directly — both are safe from any goroutine and never wait on disk, so
+usage is never dropped — and then wakes
 the render loop through a buffered channel, which may drop because the next
 tick redraws anyway. The recorder folds usage into `usage.json` in the
 background under an advisory lockfile shared with other belai processes, and
@@ -2126,9 +2134,14 @@ Belai runs the Vulnetix CLI, `!shell` commands and background agents on the
 user's behalf; the bottom **runs panel** is the honest register of those
 processes plus the roster of subagents pinned to the conversation. `f8` opens
 and focuses the panel on the **subagents** tab, and `f9` opens it on the
-**activity** tab. `tab` cycles through **activity → subagents → processes →
-kanban → crew → git → ci**, where **kanban** is skipped while the board is
-off and **ci** unless the branch has an open PR/MR. The **kanban** tab draws
+**activity** tab. `f12` opens it on the **intel** tab. `tab` cycles through **activity →
+subagents → processes → kanban → crew → git → ci → intel**, where **kanban** is
+skipped while the board is off, **ci** unless the branch has an open PR/MR, and
+**intel** while `ui.intel` is off. The **intel** tab is
+[session intelligence](token-budgets.md#session-intelligence): plan limits,
+pace, trend, runway and usage over time, with its own keys (`←`/`→` window,
+`m` models, `r` roles, `t` timeline, `b` budgets, `enter` full screen), and it
+takes half the terminal height. The **kanban** tab draws
 the board as the composer pane does, with single-key actions, and the
 **crew** tab lists the fleet workers and starts and stops crews; both are
 described in [Kanban](kanban.md#the-runs-panel) and
@@ -2677,10 +2690,11 @@ in `handleChatKey`, so it does nothing on a full-screen view.
 | `f5` | Cycle mode and re-sync plan mode, from any screen |
 | `f6` | Cycle reasoning effort: default → low → medium → high → default, from any screen |
 | `f7` | Save the current prompt to the project prompt library, from the chat view — a save-as alias of `ctrl+s` with no loaded entry |
-| `f1` | Open the screen switcher from chat or any screen. One letter opens a screen: `a` agents, `m` model, `p` providers, `s` settings, `b` token budgets, `k` permissions, `r` prompts, `x` processes, `l` lsp, `v` vulnetix, `h` sessions. A screen already open further down the stack is returned to, so `esc` walks back through distinct screens. It does nothing on a permission ask, a clarifying question, plan review or while an inline field edit holds text, and a chat draft is kept while it is open |
+| `f1` | Open the screen switcher from chat or any screen. One letter opens a screen: `a` agents, `m` model, `p` providers, `s` settings, `b` token budgets, `i` session intelligence, `k` permissions, `r` prompts, `x` processes, `l` lsp, `v` vulnetix, `h` sessions. A screen already open further down the stack is returned to, so `esc` walks back through distinct screens. It does nothing on a permission ask, a clarifying question, plan review or while an inline field edit holds text, and a chat draft is kept while it is open |
 | `f8` | Open and focus the bottom runs panel on the subagents tab (chat); press `tab` twice to reach the processes tab |
-| `f9` | Open and focus the bottom runs panel on the activity tab (chat); `tab` cycles processes, kanban, crew, then git (ci follows when the branch has a PR/MR). From the focused kanban pane it opens the kanban tab on the pane's selection |
+| `f9` | Open and focus the bottom runs panel on the activity tab (chat); `tab` cycles processes, kanban, crew, then git (ci follows when the branch has a PR/MR, then intel). From the focused kanban pane it opens the kanban tab on the pane's selection |
 | `f10` | Toggle the Vulnetix AI Firewall from any screen |
+| `f12` | Toggle the bottom runs panel on the intel tab (chat); with the panel open on another tab it switches to intel. `enter` there opens session intelligence full screen, also `/intel` |
 | `ctrl+home` / `ctrl+end` | Jump the transcript to the top / bottom |
 | `ctrl+j` | Insert a newline in the prompt editor |
 | `ctrl+left` / `ctrl+right` | Move the cursor one word left / right, crossing into the neighbouring line at a line boundary |

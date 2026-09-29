@@ -123,7 +123,7 @@ func (a *App) handleForgeProbe(m forgeProbeMsg) {
 }
 
 // runsTabLabels is each tab's label by index.
-var runsTabLabels = [tabCount]string{"activity", "subagents", "processes", "kanban", "crew", "git", "ci"}
+var runsTabLabels = [tabCount]string{"activity", "subagents", "processes", "kanban", "crew", "git", "ci", "intel"}
 
 // runsTabVisible reports whether a tab is offered: kanban while the board is
 // on, ci while the branch has a PR/MR. The rest always are.
@@ -133,6 +133,8 @@ func (a *App) runsTabVisible(tab int) bool {
 		return a.kanbanTabVisible()
 	case tabCI:
 		return a.ciTabVisible()
+	case tabIntel:
+		return a.settings.IntelEnabled()
 	}
 	return tab >= 0 && tab < tabCount
 }

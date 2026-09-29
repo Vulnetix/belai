@@ -17,6 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/vulnetix/belai/internal/budget"
 	"github.com/vulnetix/belai/internal/calltrace"
 	"github.com/vulnetix/belai/internal/clarify"
 	"github.com/vulnetix/belai/internal/config"
@@ -2018,6 +2019,8 @@ func SendTurnsWithTools(ctx context.Context, cfg Config, system string, turns []
 type httpResult struct {
 	body   []byte
 	status int
+	// limits are the plan limits the response headers reported: numbers only.
+	limits []budget.PlanLimit
 }
 
 // defaultRetryPolicy is the L1 policy for model provider calls.
@@ -2050,11 +2053,11 @@ func sendTurnsWithTools(ctx context.Context, cfg Config, system string, turns []
 		if err != nil {
 			return httpResult{}, err
 		}
-		body, status, err := roundTrip(ctx, client, req, cfg, redact)
+		body, status, limits, err := roundTripLimits(ctx, client, req, cfg, redact)
 		if err != nil {
 			return httpResult{}, err
 		}
-		return httpResult{body: body, status: status}, nil
+		return httpResult{body: body, status: status, limits: limits}, nil
 	}
 
 	res, err := resilience.Do(ctx, defaultRetryPolicy, resilience.DefaultClassifier{}, do, onRetry)
@@ -2078,7 +2081,7 @@ func sendTurnsWithTools(ctx context.Context, cfg Config, system string, turns []
 	}
 	// Every non-streaming call — role-manager, classifier, evaluator and the
 	// blocking main-turn sender — completes here.
-	reportUsage(ctx, cfg, system, turns, a, toolDefTokens(openAITools, anthropicTools))
+	reportUsage(ctx, cfg, system, turns, a, toolDefTokens(openAITools, anthropicTools), res.limits)
 	return a, nil
 }
 
@@ -2479,6 +2482,14 @@ func dropIdleConns(ctx context.Context, client *http.Client) {
 }
 
 func roundTrip(ctx context.Context, client *http.Client, req *http.Request, cfg Config, redact func(string) string) ([]byte, int, error) {
+	body, status, _, err := roundTripLimits(ctx, client, req, cfg, redact)
+	return body, status, err
+}
+
+// roundTripLimits is roundTrip that also returns the plan limits a successful
+// response's headers reported. The headers never leave this function: only the
+// parsed numbers do.
+func roundTripLimits(ctx context.Context, client *http.Client, req *http.Request, cfg Config, redact func(string) string) ([]byte, int, []budget.PlanLimit, error) {
 	// A blocking reply's headers arrive only when the completion is done, so
 	// it must not run under the streaming path's 30s header bound.
 	client = httpclient.ForBlocking(client)
@@ -2488,18 +2499,18 @@ func roundTrip(ctx context.Context, client *http.Client, req *http.Request, cfg 
 	resp, err := firewallClient(client, cfg).Do(req)
 	if err != nil {
 		dropIdleConns(ctx, client)
-		return nil, 0, fmt.Errorf("request: %w", err)
+		return nil, 0, nil, fmt.Errorf("request: %w", err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, resp.StatusCode, fmt.Errorf("read response: %w", err)
+		return nil, resp.StatusCode, nil, fmt.Errorf("read response: %w", err)
 	}
 	inspectFirewall(cfg, resp, body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, resp.StatusCode, newProviderError("roundTrip", cfg, resp, body, redact)
+		return nil, resp.StatusCode, nil, newProviderError("roundTrip", cfg, resp, body, redact)
 	}
-	return body, resp.StatusCode, nil
+	return body, resp.StatusCode, parsePlanLimits(cfg.Provider, resp.Header, time.Now()), nil
 }
 
 // parseToolCallArgs decodes a raw tool-call arguments value that may be either

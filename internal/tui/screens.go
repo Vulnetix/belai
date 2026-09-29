@@ -38,6 +38,7 @@ var screenEntries = []screenEntry{
 	{key: "p", name: "providers", desc: "credentials and local models", view: viewProviders, open: viaCommand("/providers"), status: func(a *App) string { return a.providerDisplayLabel(a.cfg.Provider) }},
 	{key: "s", name: "settings", desc: "every setting, by scope", view: viewSettings, open: viaCommand("/settings")},
 	{key: "b", name: "budgets", desc: "token budgets per provider and model", view: viewBudgets, open: viaCommand("/budgets"), status: (*App).budgetsStatus},
+	{key: "i", name: "intel", desc: "plan limits, pace, trend and runway", view: viewIntel, open: viaCommand("/intel"), status: (*App).intelStatus},
 	{key: "k", name: "permissions", desc: "allow, ask and deny rules", view: viewPermissions, open: viaCommand("/permissions"), status: (*App).permissionsStatus},
 	{key: "r", name: "prompts", desc: "the prompt library", view: viewPrompts, open: viaCommand("/prompts")},
 	{key: "x", name: "processes", desc: "the process library", view: viewProcesses, open: viaCommand("/processes")},

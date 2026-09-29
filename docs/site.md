@@ -92,6 +92,9 @@ Determinism rules:
 - The budget frames (`budgets`, and the gauge in `footer`) show a fixed clock —
   09:30 on day 24 of a 30-day month — and every row must obey the colour
   rules in [Token budgets](token-budgets.md) (R7, R8) for that clock.
+- The intel frames (`intel`, and `footer-intel`) use fixed numbers, and every
+  bar, marker and label must obey the colour and marker rules in
+  [Token budgets](token-budgets.md) (R16, R20).
 - The half-block glyph `▀` is drawn as two stacked rects; an unset half means
   "no pixel" and falls back to the ink background, so empty pixels read as
   empty rather than as speckles of light.

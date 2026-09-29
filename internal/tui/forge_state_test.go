@@ -87,19 +87,23 @@ func TestForgeTabCycleShowsCIOnlyWithPR(t *testing.T) {
 		t.Fatalf("with a PR, tab after git must be ci, got %d", a.runsTab)
 	}
 	a.handleRunsPanelKey(tea.KeyMsg{Type: tea.KeyTab})
-	if a.runsTab != tabActivity {
-		t.Fatalf("ci must wrap to activity, got %d", a.runsTab)
+	if a.runsTab != tabIntel {
+		t.Fatalf("intel follows ci, got %d", a.runsTab)
 	}
-	if names := a.runsTabNames(); names[len(names)-1] != "ci" {
-		t.Fatalf("ci missing from tab names: %v", names)
+	a.handleRunsPanelKey(tea.KeyMsg{Type: tea.KeyTab})
+	if a.runsTab != tabActivity {
+		t.Fatalf("intel must wrap to activity, got %d", a.runsTab)
+	}
+	if names := a.runsTabNames(); names[len(names)-2] != "ci" || names[len(names)-1] != "intel" {
+		t.Fatalf("ci and intel missing from tab names: %v", names)
 	}
 
 	b, _ := forgeApp(t, false)
 	b.handleRunsPanelKey(tea.KeyMsg{Type: tea.KeyTab})
-	if b.runsTab != tabActivity {
+	if b.runsTab != tabIntel {
 		t.Fatalf("without a PR, ci must be skipped, got %d", b.runsTab)
 	}
-	if names := b.runsTabNames(); names[len(names)-1] != "git" {
+	if names := b.runsTabNames(); names[len(names)-2] != "git" || names[len(names)-1] != "intel" {
 		t.Fatalf("ci listed without a PR: %v", names)
 	}
 }

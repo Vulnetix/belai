@@ -99,3 +99,22 @@ func (s Settings) BudgetCycle() time.Duration {
 func (s Settings) BudgetWarnEnabled() bool {
 	return s.UI != nil && s.UI.BudgetWarn != nil && *s.UI.BudgetWarn
 }
+
+// IntelSettings is the global-only `intel` key.
+type IntelSettings struct {
+	// PlanLimits turns the parsing of provider rate-limit response headers into
+	// numeric plan-limit facts on or off. Default on.
+	PlanLimits *bool `json:"plan_limits,omitempty"`
+}
+
+// IntelEnabled reports whether the session intelligence slot joins the footer's
+// budget cycle and the intel pane is offered (ui.intel). Default on.
+func (s Settings) IntelEnabled() bool {
+	return s.UI == nil || s.UI.Intel == nil || *s.UI.Intel
+}
+
+// PlanLimitsEnabled reports whether provider rate-limit headers are parsed into
+// plan-limit readings (intel.plan_limits). Default on.
+func (s Settings) PlanLimitsEnabled() bool {
+	return s.Intel == nil || s.Intel.PlanLimits == nil || *s.Intel.PlanLimits
+}

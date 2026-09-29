@@ -15,8 +15,19 @@ import (
 )
 
 // budgetApp is an App on its own BELAI_HOME, selected on provider p and
-// model m, with the given budgets in its effective settings.
+// model m, with the given budgets in its effective settings. Session
+// intelligence is off, so the footer cycle holds only the budgets and a test
+// of the budget gauge does not depend on the clock; intelApp keeps it on.
 func budgetApp(t *testing.T, budgets ...config.TokenBudget) *App {
+	t.Helper()
+	a := intelApp(t, budgets...)
+	off := false
+	a.settings.UI = &config.UISettings{Intel: &off}
+	return a
+}
+
+// intelApp is budgetApp with session intelligence on, as it is by default.
+func intelApp(t *testing.T, budgets ...config.TokenBudget) *App {
 	t.Helper()
 	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{})
@@ -87,19 +98,31 @@ func TestBudgetEdge10_RoutedHidesGaugeButRecords(t *testing.T) {
 	}
 }
 
-// R10: two or more budgets cycle in scope order, one cycle period each.
+// R10: two or more budgets cycle in scope order, one cycle period each, and the
+// session intelligence slot is the last stop of the cycle (R15).
 func TestBudgetRule10_FooterCyclesThroughTheModelsBudgets(t *testing.T) {
-	a := budgetApp(t,
+	a := intelApp(t,
 		bud("p", "m", config.BudgetScopeMonth, 1000),
 		bud("p", "m", config.BudgetScopeSession, 1000),
 		bud("p", "m", config.BudgetScopeDay, 1000))
-	base := time.Unix(990_000_000, 0) // a multiple of 30 s: the cycle starts here
-	var scopes []string
-	for i := 0; i < 4; i++ {
-		scopes = append(scopes, a.budgetGauge(base.Add(time.Duration(i)*10*time.Second)).Scope)
+	base := time.Unix(990_000_000, 0) // a multiple of 40 s: the four-slot cycle starts here
+	var slots []string
+	for i := 0; i < 5; i++ {
+		now := base.Add(time.Duration(i) * 10 * time.Second)
+		if g := a.budgetGauge(now); g != nil {
+			slots = append(slots, g.Scope)
+			if a.intelGauge(now) != nil {
+				t.Fatalf("slot %d shows a budget and the intel gauge together", i)
+			}
+			continue
+		}
+		if a.intelGauge(now) == nil {
+			t.Fatalf("slot %d shows neither a budget nor the intel gauge", i)
+		}
+		slots = append(slots, "intel")
 	}
-	if strings.Join(scopes, ",") != "session,day,month,session" {
-		t.Fatalf("cycle = %v, want session, day, month, session", scopes)
+	if strings.Join(slots, ",") != "session,day,month,intel,session" {
+		t.Fatalf("cycle = %v, want session, day, month, intel, session", slots)
 	}
 }
 

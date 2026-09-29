@@ -99,6 +99,11 @@ type Footer struct {
 	// routing is "routed" or the selected model has no budget. The app picks
 	// which of the model's budgets to show as they cycle.
 	Budget *BudgetGauge
+
+	// Intel is the session intelligence slot shown right-aligned on line 1 when
+	// no budget is (the cycle is on the intel slot, routing is routed, or the
+	// selected model has no budget). Budget takes the line when both are set.
+	Intel *IntelGauge
 }
 
 // SubagentChip is one roster entry in the footer's subagent strip.
@@ -678,15 +683,30 @@ const minBudgetLeft = 20
 // only then does the gauge drop its percentage. The colour and the bar are
 // always kept.
 func (f *Footer) withBudget(left string) string {
-	if f.Budget == nil {
+	var segAt func(detail int) string
+	var hinted string
+	switch {
+	case f.Budget != nil:
+		segAt = f.Budget.budgetSegment
+	case f.Intel != nil:
+		segAt = func(detail int) string { return f.Intel.segmentAt(detail, false) }
+		if f.Intel.Hint {
+			hinted = f.Intel.segmentAt(2, true)
+		}
+	default:
 		return left
 	}
 	fits := func(l, seg string) bool { return lipgloss.Width(l)+1+lipgloss.Width(seg) <= f.Width }
-	seg := f.Budget.budgetSegment(2)
+	// The shortcut hint is shown only when the whole line fits with it; it never
+	// costs the left side or a figure any room.
+	seg := hinted
+	if seg == "" || !fits(left, seg) {
+		seg = segAt(2)
+	}
 	if !fits(left, seg) {
-		seg = f.Budget.budgetSegment(1)
+		seg = segAt(1)
 		if f.Width-lipgloss.Width(seg)-1 < min(minBudgetLeft, lipgloss.Width(left)) {
-			seg = f.Budget.budgetSegment(0)
+			seg = segAt(0)
 		}
 	}
 	room := f.Width - lipgloss.Width(seg) - 1

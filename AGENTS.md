@@ -459,6 +459,21 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   the set and `TestTelemetryCarriesNoContent` runs a real turn against a
   collector. `telemetry` is read from the user's own settings layers only.
   Export is best effort and never fails or slows a turn.
+- **Session intelligence draws numbers, never provider text.**
+  `internal/run/planlimits.go` is the only reader of response headers for plan
+  limits, and it returns `budget.PlanLimit` values: a provider id and a window
+  (harness constants), a used share, a limit and remaining count, and two
+  times. Every value must parse as a number or time of the expected shape and
+  pass `PlanLimit.Valid` (used share 0 to 1, remaining not above the limit, a
+  reset from an hour ago to eight days ahead); anything else is dropped and the
+  header string is never stored, logged or rendered. The intel surface (footer
+  slot, runs-panel tab, full screen) renders from the `budget.Recorder` alone:
+  token counts, hour buckets, provider and model identifiers, times and those
+  readings. It is never referenced by the prompt, a directive, the system block,
+  a tool result or telemetry. `intel.plan_limits` is read from the user's own
+  settings layers only (`resolve.go` drops the project layer's `intel` key), and
+  `ui.intel` only switches the surface off. Do not add a string field to
+  `PlanLimit` or `UsageEvent.Limits`.
 - **Notifications carry harness text only.** `internal/notify` composes
   every notification from a fixed template; the one variable is a tool or
   agent name reduced to an identifier. Model output, tool output and paths

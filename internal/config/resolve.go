@@ -91,6 +91,12 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 		proj.TokenBudgets = nil
 		eff.Notes = append(eff.Notes, "project token_budgets ignored (budgets are global; set them in /budgets)")
 	}
+	// Plan-limit parsing is global: what a user learns about their own account
+	// limits is theirs to decide, not a repository's.
+	if proj.Intel != nil {
+		proj.Intel = nil
+		eff.Notes = append(eff.Notes, "project intel ignored (plan-limit parsing is global)")
+	}
 	// Auto-commit per task is global: a repo-visible settings file must never
 	// be able to make the harness commit on the user's behalf. Dropped
 	// unconditionally, before the project layer is applied.
@@ -440,6 +446,13 @@ func (e *Effective) apply(s Settings, src Source) {
 		// Replace, not append: the global list is the whole set.
 		e.Settings.TokenBudgets = s.TokenBudgets
 		e.Origin["token_budgets"] = src
+	}
+	if s.Intel != nil && s.Intel.PlanLimits != nil {
+		if e.Settings.Intel == nil {
+			e.Settings.Intel = &IntelSettings{}
+		}
+		e.Settings.Intel.PlanLimits = s.Intel.PlanLimits
+		e.Origin["intel"] = src
 	}
 	if s.WorkspaceDirs != nil {
 		// Later layers replace, not append, so a project layer can narrow the

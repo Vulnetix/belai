@@ -50,7 +50,8 @@ const (
 	tabCrew      = 4
 	tabGit       = 5
 	tabCI        = 6 // offered only while the branch has a PR/MR (ciTabVisible)
-	tabCount     = 7
+	tabIntel     = 7 // session intelligence; offered while ui.intel is on
+	tabCount     = 8
 )
 
 // runsItem is a row in the runs panel. It unifies activities and subagents so
@@ -74,6 +75,12 @@ func (a *App) runsPanelHeight() int {
 		return 0
 	}
 	maxRows := a.height/3 - 3
+	summary := len(a.runsSummary())
+	if a.runsTab == tabIntel {
+		// The intel tab takes half the height and draws its own header lines.
+		header, rows := a.intelPanelLayout(max(a.contentWidth(), 1))
+		maxRows, summary = rows, len(header)
+	}
 	if maxRows < 0 {
 		maxRows = 0
 	}
@@ -82,7 +89,7 @@ func (a *App) runsPanelHeight() int {
 	if visible < 1 {
 		visible = 1 // header/help/rule still render one placeholder row
 	}
-	return min(a.height, 3+len(a.runsSummary())+visible)
+	return min(a.height, 3+summary+visible)
 }
 
 // runsItems returns the items for the current runs tab, with a nil guard on the
@@ -101,6 +108,8 @@ func (a *App) runsItems() []runsItem {
 		return a.gitItems()
 	case tabCI:
 		return a.ciItems()
+	case tabIntel:
+		return a.intelItems()
 	default:
 		return a.activityItems()
 	}
@@ -189,6 +198,10 @@ func (a *App) renderRunsPanel() string {
 		w = 1
 	}
 	maxRows := a.height/3 - 3
+	var intelHeader []string
+	if a.runsTab == tabIntel {
+		intelHeader, maxRows = a.intelPanelLayout(w)
+	}
 	if maxRows < 1 {
 		maxRows = 1
 	}
@@ -206,6 +219,11 @@ func (a *App) renderRunsPanel() string {
 	for _, line := range a.runsSummary() {
 		b.WriteString(ansi.Truncate(renderSummaryLine(line), w, "") + "\n")
 	}
+	// The intel tab's header lines are already styled: the summary renderer
+	// would flatten their colours to one.
+	for _, line := range intelHeader {
+		b.WriteString(ansi.Truncate(line, w, "") + "\n")
+	}
 
 	if len(itemsWindow.items) == 0 {
 		placeholder := components.MutedStyle.Render("  no activities this turn")
@@ -220,6 +238,8 @@ func (a *App) renderRunsPanel() string {
 			placeholder = components.MutedStyle.Render("  no workers · c choose a crew · s start it")
 		case tabGit, tabCI:
 			placeholder = components.MutedStyle.Render("  " + a.forgePlaceholder())
+		case tabIntel:
+			placeholder = components.MutedStyle.Render("  nothing recorded yet")
 		}
 		b.WriteString(ansi.Truncate(placeholder, w, "") + "\n")
 	} else {
@@ -280,9 +300,13 @@ func (a *App) renderRunsTabHeader(tabs []int, w int) string {
 		}
 	}
 	plainLeft := strings.Join(plainParts, "  ")
-	meta := "f9 close"
-	if a.runsFocus && visibleLen(plainLeft)+visibleLen("  tab switch · f9 close") <= w {
-		meta = "tab switch · f9 close"
+	closeKey := "f9"
+	if a.runsTab == tabIntel {
+		closeKey = "f12"
+	}
+	meta := closeKey + " close"
+	if a.runsFocus && visibleLen(plainLeft)+visibleLen("  tab switch · "+closeKey+" close") <= w {
+		meta = "tab switch · " + closeKey + " close"
 	}
 	left := strings.Join(parts, components.MutedStyle.Render("  "))
 	var b strings.Builder
@@ -342,9 +366,14 @@ func (a *App) renderRunsRow(it runsItem, logicalIdx, w int) string {
 
 func (a *App) runsPanelHelp() string {
 	if !a.runsFocus {
+		if a.runsTab == tabIntel {
+			return components.HelpBar("f12", "intel")
+		}
 		return components.HelpBar("f9", "runs")
 	}
 	switch a.runsTab {
+	case tabIntel:
+		return components.HelpBar("↑↓", "select", "←→", "window", "m", "models", "r", "roles", "t", "timeline", "b", "budgets", "⏎", "full screen", "esc", "unfocus", "tab", "switch")
 	case tabSubagents:
 		return components.HelpBar("↑↓", "select", "⏎", "filter", "x", "cancel/dismiss", "esc", "unfocus", "tab", "switch")
 	case tabProcesses:
@@ -368,7 +397,7 @@ func (a *App) handleRunsPanelKey(m tea.KeyMsg) tea.Cmd {
 	case "esc":
 		a.runsFocus = false
 		return nil
-	case "f9":
+	case "f9", "f12":
 		a.runsOpen = false
 		a.runsFocus = false
 		return nil
@@ -404,6 +433,8 @@ func (a *App) handleRunsPanelKey(m tea.KeyMsg) tea.Cmd {
 		return a.handleRunsGitKey(m)
 	case tabCI:
 		return a.handleRunsCIKey(m)
+	case tabIntel:
+		return a.handleRunsIntelKey(m)
 	}
 	return nil
 }
@@ -532,7 +563,7 @@ func (a *App) toggleRunsPanel(tab int) tea.Cmd {
 		// once on open; the crew tab keeps it fresh after that.
 		a.reloadFleet()
 		a.runsSel = len(a.runsItems()) - 1
-		if a.runsSel < 0 {
+		if a.runsSel < 0 || tab == tabIntel {
 			a.runsSel = 0
 		}
 		return a.enterRunsTab()
