@@ -71,6 +71,22 @@ func (s DepSentinel) Label() string {
 	return string(s)
 }
 
+// BashReplanSentinelLabels maps the replan role's refusal to a concise,
+// human-readable statement. Maintain parity with the BashReplanSentinel
+// constants.
+var BashReplanSentinelLabels = map[BashReplanSentinel]string{
+	KeepBash: "the builtin tool is not equivalent, keep the Bash call",
+}
+
+// Label returns the human-readable statement for a replan sentinel. Unknown
+// sentinels return their raw token.
+func (s BashReplanSentinel) Label() string {
+	if l, ok := BashReplanSentinelLabels[s]; ok {
+		return l
+	}
+	return string(s)
+}
+
 // IntentLabels maps each detected intent to a concise, human-readable label
 // shown in the TUI mode chip and the mode-choice panel. Maintain parity
 // with the Intent constants.

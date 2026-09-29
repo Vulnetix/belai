@@ -29,8 +29,12 @@ type Message struct {
 	Content  string
 	Usage    *transcript.Usage // non-nil on metered assistant turns
 	ToolName string            // set on tool turns
-	ToolArgs string            // set on tool turns
-	Status   string            // set on tool turns (✓, withheld, …)
+	// SwappedFrom is the tool the model called when the harness ran ToolName
+	// in its place (today only "Bash"). The row shows both so the swap is
+	// visible.
+	SwappedFrom string
+	ToolArgs    string // set on tool turns
+	Status      string // set on tool turns (✓, withheld, …)
 
 	// Level is the role-manager activity level for "rolemanager" rows. The
 	// grouping loop drops a rolemanager row when its level exceeds the
@@ -901,6 +905,10 @@ func toolRow(msg Message, width int, expandAll bool) (string, LineMap) {
 
 	head := toolHead(msg.ToolName, strings.HasPrefix(status, "✗"))
 	plain := "⌁ " + msg.ToolName
+	if msg.SwappedFrom != "" {
+		head += LowStyle.Render(" ← " + msg.SwappedFrom)
+		plain += " ← " + msg.SwappedFrom
+	}
 
 	// Subagent activity rows carry a dim gutter naming their subagent, so a
 	// reader can tell a forwarded subagent tool call from the parent's own.

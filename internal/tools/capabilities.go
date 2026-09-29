@@ -438,3 +438,17 @@ func cloudAllowed(cs cloudSpec, cmd string) bool {
 	}
 	return false
 }
+
+// CapabilitiesOf builds a Capabilities holding the named local and cloud
+// native tools, as if detection had found them. It exists for tests and
+// callers that inject a fixed tool set rather than probing the machine.
+func CapabilitiesOf(local, cloud []string) Capabilities {
+	c := Capabilities{local: map[string]bool{}, cloud: map[string]bool{}}
+	for _, n := range local {
+		c.local[n] = true
+	}
+	for _, n := range cloud {
+		c.cloud[n] = true
+	}
+	return c
+}

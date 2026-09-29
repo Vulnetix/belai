@@ -22,6 +22,9 @@ func TestClassifierPayloadsAreToolSkillAgentFree(t *testing.T) {
 		{"plan evaluator", BuildPlanEvalPayload(PlanEvalInput{Context: "c", Todos: "t", Evidence: "e"})},
 		{"agent loop evaluator", BuildAgentEvalPayload("goals", "output")},
 		{"clarify", BuildClarifyPayload(ClarifyInput{Prompt: "p", Findings: "f", Round: "1"})},
+		{"dep change", BuildDepChangePayload("- a\n+ b")},
+		{"web fetch", BuildWebFetchPayload("https://example.com", "q", "page")},
+		{"bash replan", BuildBashReplanPayload("grep -rn foo .", "Grep", `{"pattern":"string"}`)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -172,3 +172,24 @@ func WarmDecisions(cfg Config) string {
 	decisionserver.Shared(d.Local).Recover()
 	return ""
 }
+
+// NewJevJobs returns the runner for the Jev relevance jobs (bash swap and the
+// others in docs/jev-jobs.md), or nil when no decision backend is configured,
+// so with none every job is off. on reports each job's own switch from the
+// caller's settings; nil means all on. The client keeps a session score
+// cache, so repeated questions cost nothing.
+func NewJevJobs(cfg Config, on func(config.JevJob) bool) *jev.Jobs {
+	var client *jev.Client
+	switch {
+	case cfg.ClassifierOrDefault().Decisions.On():
+		client = jevClientFor(cfg, nil, nil)
+	case cfg.Routing.JevToken != nil &&
+		cfg.Classifier.Provider == "openrouter" && strings.HasPrefix(cfg.Classifier.Model, "typesafe/jev"):
+		client = jev.New(cfg.Routing.JevToken)
+	}
+	if client == nil {
+		return nil
+	}
+	client.SetScoreCache(jev.NewScoreCache(0))
+	return &jev.Jobs{Client: client, On: on}
+}

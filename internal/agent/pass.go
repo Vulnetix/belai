@@ -238,6 +238,49 @@ type callUnit struct {
 	readKey readindex.Key
 	isRead  bool
 	repeat  string
+	// swap is set when the harness runs a builtin tool in place of this Bash
+	// call; tool, args and decision then describe the builtin.
+	swap *bashSwap
+}
+
+// execCall is the call that actually runs: the model's call, or the builtin
+// that replaced it under the same id.
+func (u callUnit) execCall() rolemanager.ToolCall {
+	c := u.call
+	c.Args = u.args
+	if u.swap != nil {
+		c.Name = u.swap.name
+	}
+	return c
+}
+
+// swappedFrom is the model's tool name when a swap happened, else "".
+func (u callUnit) swappedFrom() string {
+	if u.swap != nil {
+		return u.call.Name
+	}
+	return ""
+}
+
+// ranAs is the tool name the UI shows for the call.
+func (u callUnit) ranAs() string { return u.execCall().Name }
+
+// turnContent is what the model reads: the result, with the swap note first
+// when the harness ran another tool.
+func (u callUnit) turnContent(result string) string {
+	if u.swap == nil {
+		return result
+	}
+	return u.swap.note() + result
+}
+
+// execCtx marks the context of a swapped call so its result is classified as
+// Bash output would be.
+func (u callUnit) execCtx(ctx context.Context) context.Context {
+	if u.swap != nil {
+		return withSwapped(ctx)
+	}
+	return ctx
 }
 
 // pass runs exactly one bounded tool-loop pass. It is the verbatim body of the
@@ -346,6 +389,13 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 				if tool, ok := s.findCallable(call.Name); ok {
 					u.tool = tool
 					u.decision, _, _ = s.decidePermission(call.Name, tool.Subject(args))
+					if call.Name == "Bash" {
+						// A builtin tool that fully replaces the command runs
+						// instead, under the same call id (docs/jev-jobs.md).
+						if sw := s.trySwap(ctx, pipe, args); sw != nil {
+							u.swap, u.tool, u.args, u.decision = sw, sw.tool, sw.args, sw.decision
+						}
+					}
 				}
 			}
 			// A Read the index already answers is not run again. Only an
@@ -382,9 +432,8 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 			var wg sync.WaitGroup
 			for i := 0; i < concurrentEnd; i++ {
 				u := units[i]
-				callCopy := u.call
-				callCopy.Args = u.args
-				emit(Event{Kind: EventToolStartKind, Tool: &callCopy})
+				callCopy := u.execCall()
+				emit(Event{Kind: EventToolStartKind, Tool: &callCopy, SwappedFrom: u.swappedFrom()})
 				wg.Add(1)
 				go func(i int, u callUnit) {
 					defer wg.Done()
@@ -394,10 +443,9 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 						results[i] = u.repeat
 						return
 					}
-					callCopy := u.call
-					callCopy.Args = u.args
+					callCopy := u.execCall()
 					start := time.Now()
-					results[i] = s.executeCall(ctx, callCopy, emit, &effects[i])
+					results[i] = s.executeCall(u.execCtx(ctx), callCopy, emit, &effects[i])
 					took[i] = time.Since(start)
 				}(i, u)
 			}
@@ -412,9 +460,8 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 		for i := 0; i < len(units); i++ {
 			u := units[i]
 			if i >= concurrentEnd {
-				callCopy := u.call
-				callCopy.Args = u.args
-				emit(Event{Kind: EventToolStartKind, Tool: &callCopy})
+				callCopy := u.execCall()
+				emit(Event{Kind: EventToolStartKind, Tool: &callCopy, SwappedFrom: u.swappedFrom()})
 				if u.isRead {
 					// Serial calls run after the ones before them in this
 					// response, which may have changed the file: decide
@@ -427,10 +474,9 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 				case u.repeat != "":
 					results[i] = u.repeat
 				default:
-					callCopy := u.call
-					callCopy.Args = u.args
+					callCopy := u.execCall()
 					start := time.Now()
-					results[i] = s.executeCall(ctx, callCopy, emit, &effects[i])
+					results[i] = s.executeCall(u.execCtx(ctx), callCopy, emit, &effects[i])
 					took[i] = time.Since(start)
 				}
 			}
@@ -457,10 +503,10 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 				}
 				results[i] = toolResult
 			}
-			emit(Event{Kind: EventToolResultKind, ToolName: u.call.Name, ToolCallID: u.call.ID, ToolResult: toolResult, Duration: took[i]})
+			emit(Event{Kind: EventToolResultKind, ToolName: u.ranAs(), ToolCallID: u.call.ID, ToolResult: toolResult, Duration: took[i], SwappedFrom: u.swappedFrom()})
 			turns = append(turns, run.Turn{
 				Role:       "tool",
-				Content:    toolResult,
+				Content:    u.turnContent(toolResult),
 				ToolCallID: u.call.ID,
 				ToolName:   u.call.Name,
 			})

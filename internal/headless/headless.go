@@ -136,6 +136,7 @@ func NewSession(ctx context.Context, p Params) (*agent.Session, error) {
 		// subagent never does.
 		AllowPassLoop: true,
 		ModeDetector:  run.NewModeDetector(p.Cfg),
+		Jev:           run.NewJevJobs(p.Cfg, p.Settings.JevJobSet),
 		RepoMap:       &repoMap,
 		// The same settings-backed fan-out ceiling the TUI uses; without it
 		// max_agents had no effect on the CLI.
