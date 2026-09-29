@@ -23,6 +23,7 @@ func TestClassifierPayloadsAreToolSkillAgentFree(t *testing.T) {
 		{"agent loop evaluator", BuildAgentEvalPayload("goals", "output")},
 		{"clarify", BuildClarifyPayload(ClarifyInput{Prompt: "p", Findings: "f", Round: "1"})},
 		{"dep change", BuildDepChangePayload("- a\n+ b")},
+		{"voice cleanup", BuildVoiceCleanupPayload("um so add a retry")},
 		{"web fetch", BuildWebFetchPayload("https://example.com", "q", "page")},
 		{"bash replan", BuildBashReplanPayload("grep -rn foo .", "Grep", `{"pattern":"string"}`)},
 	}

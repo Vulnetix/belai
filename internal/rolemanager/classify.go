@@ -67,6 +67,9 @@ const (
 	// UseCaseBashReplan asks the fast tier to redo a Bash call as a builtin
 	// tool call.
 	UseCaseBashReplan = "bash_replan"
+	// UseCaseVoiceCleanup tidies a dictated transcript before it reaches the
+	// composer.
+	UseCaseVoiceCleanup = "voice_cleanup"
 )
 
 // ClassifierStructuredMaxTokens is the completion budget for classifier calls

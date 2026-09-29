@@ -54,7 +54,7 @@ var rmGlyphs = map[string]string{
 	"recall": "↺", "recall_bad": "↯", "seal": "⊕", "seal_broken": "⊘", "mismatch": "≠",
 	"mode": "◐", "intent": "◎", "pin": "⊙", "limit": "⊤", "goal": "◉", "goal_repair": "↻",
 	"plan": "≡", "agent": "◍", "draft": "✎",
-	"compact": "⊟", "prune": "⊠", "page": "▤", "deps": "⊡",
+	"compact": "⊟", "prune": "⊠", "page": "▤", "deps": "⊡", "voice": "◖",
 	"swap": "⇄", "replan": "⇆", "search": "⊛", "select": "⊞",
 	"server": "⌘", "diagnose": "⌥", "server_down": "⊗", "triage": "▣", "locate": "⌖",
 	"clarify": "?", "options": "≣",

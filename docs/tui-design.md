@@ -160,6 +160,7 @@ back to its category's letter (S, M, C, T, L, ?, R, .) and the markers to
 | `⊠` | compaction prune | `context` |
 | `▤` | page answer | `context` |
 | `⊡` | dependency change | `context` |
+| `◖` | dictation tidied | `context` |
 | `⇄` | Bash swapped for a builtin | `tools` |
 | `⇆` | Bash replanned | `tools` |
 | `⊛` | tool and skill search | `tools` |

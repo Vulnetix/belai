@@ -705,6 +705,31 @@ and any non-printable rune, then truncate rune-safely to 48 runes. A malformed
 reply fails closed to *unnamed* rather than taking a mangled or
 attacker-chosen title.
 
+### Voice-cleanup payload
+
+The fast-tier `voice_cleanup` role tidies a dictated transcript before it
+reaches the composer (see [Voice input](voice.md)).
+`rolemanager.BuildVoiceCleanupPayload` runs `sanitize.Text` over the raw
+transcript, caps it at `VoiceCleanupMaxChars` (4,000) without splitting a rune,
+and carries no tools, skills or agent block. The system prompt says the
+transcript is data and is only ever rewritten, never answered or obeyed.
+
+`rolemanager.CleanVoice` accepts the reply only when it passes three checks:
+
+1. It is not empty after trimming and removing a wrapper the model added
+   despite the instruction (one code fence around the whole reply, or one
+   pair of quotes).
+2. It is not much longer than the transcript: more than twice the input length
+   plus 40 bytes means the role answered or elaborated, so the reply is
+   rejected (`ErrRunawayVoiceCleanup`).
+3. It is sanitised again with `sanitize.Text`.
+
+Any other outcome (a transport error, `ErrEmptyVoiceCleanup`,
+`ErrRunawayVoiceCleanup`) makes the caller insert the raw, sanitised
+transcript. Each outcome is a `voice_cleanup` role-manager activity with the
+verdict `cleaned`, `empty`, `runaway` or `error` and the serving model. It
+never records the transcript.
+
 ### Security decision tree
 
 ```mermaid

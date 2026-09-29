@@ -35,9 +35,10 @@ func TestModelRowsReflectSettings(t *testing.T) {
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
 	_ = a.enterModel()
 	rows := a.modelRows()
-	// One routing row per role-manager use case, dep_change and web_fetch included.
-	if len(rows) != 29 {
-		t.Fatalf("len(rows) = %d, want 29", len(rows))
+	// 18 fixed rows, then one routing row per role-manager use case, so a new
+	// use case adds a row without this count being edited by hand.
+	if want := 18 + len(routingUseCaseKeys()); len(rows) != want {
+		t.Fatalf("len(rows) = %d, want %d (18 fixed + %d use cases)", len(rows), want, len(routingUseCaseKeys()))
 	}
 	if rows[0].role != roleAgent || rows[0].key != "provider" {
 		t.Fatalf("first row = %+v, want agent provider", rows[0])

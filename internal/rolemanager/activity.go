@@ -45,6 +45,7 @@ const (
 	EventLSPServerDown             Event = "lsp_server_down"
 	EventRouteFallback             Event = "route_fallback"
 	EventDepChange                 Event = "dep_change"
+	EventVoiceCleanup              Event = "voice_cleanup"
 	EventWebFetchAnswer            Event = "web_fetch_answer"
 	EventBashSwap                  Event = "bash_swap"
 	EventBashReplan                Event = "bash_replan"
@@ -351,6 +352,8 @@ func Describe(a Activity) (Description, bool) {
 		return webFetchAnswerDescription(a), true
 	case EventDepChange:
 		return depChangeDescription(a), true
+	case EventVoiceCleanup:
+		return voiceCleanupDescription(a), true
 	case EventBashSwap:
 		return bashSwapDescription(a), true
 	case EventBashReplan:
@@ -555,6 +558,22 @@ func webFetchAnswerDescription(a Activity) Description {
 	}
 	if a.Verdict != "answered" {
 		d.Outcome = "no usable answer, passing the page on instead"
+		d.Tone = ToneCaution
+	}
+	return d
+}
+
+// voiceCleanupDescription renders one dictation tidy-up: the fast model
+// rewrote a raw transcript, or the raw transcript was used as spoken.
+func voiceCleanupDescription(a Activity) Description {
+	d := Description{
+		Summary: "Tidied what you dictated",
+		Outcome: "clean text placed in the composer",
+		Tone:    ToneNeutral,
+		Levels:  LevelDecisions,
+	}
+	if a.Verdict != "cleaned" {
+		d.Outcome = "no usable rewrite, your words were used as recognised"
 		d.Tone = ToneCaution
 	}
 	return d
