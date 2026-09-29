@@ -36,19 +36,22 @@ type providerRow struct {
 
 // providerDetailViewState tracks the provider drill-down.
 type providerDetailViewState struct {
-	provider           string
-	tab                int // 0=credentials, 1=models, 2=server
-	fieldIdx           int
-	scroll             int
-	modelCursor        int
-	modelFilter        string
-	modelFiltering     bool
-	modelScroll        int
-	setMode            bool
-	envMode            bool
-	repoMode           bool
-	repoAction         repoAction
-	backend            credentials.Source
+	provider       string
+	tab            int // 0=credentials, 1=models, 2=server
+	fieldIdx       int
+	scroll         int
+	modelCursor    int
+	modelFilter    string
+	modelFiltering bool
+	modelScroll    int
+	setMode        bool
+	envMode        bool
+	repoMode       bool
+	repoAction     repoAction
+	backend        credentials.Source
+	// backendChosen is set once the user cycles the backend; until then it
+	// is Belai's default, which a sign-in may fall back from.
+	backendChosen      bool
 	sets               map[string]credentials.Set
 	localReport        string
 	localReportPending bool
@@ -1025,6 +1028,7 @@ func (a *App) providerDetailCycleBackend() (tea.Model, tea.Cmd) {
 	if len(writable) == 0 {
 		return a, nil
 	}
+	a.providerDetailState.backendChosen = true
 	for i, s := range writable {
 		if s == a.providerDetailState.backend {
 			a.providerDetailState.backend = writable[(i+1)%len(writable)]

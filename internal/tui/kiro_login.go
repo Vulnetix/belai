@@ -163,7 +163,15 @@ func (a *App) kiroStoreLogin(l kiroauth.Login, note string) tea.Cmd {
 	if backend != credentials.SourceKeychain && backend != credentials.SourceUserFile {
 		backend = a.resolver.PreferredBackend()
 	}
-	if err := a.resolver.Store("kiro", "login", l.Encode(), backend); err != nil {
+	var err error
+	if a.providerDetailState.backendChosen {
+		err = a.resolver.Store("kiro", "login", l.Encode(), backend)
+	} else {
+		// Belai picked the backend, so a keychain too small for the login
+		// falls back to the user file.
+		backend, err = a.resolver.StoreFallback("kiro", "login", l.Encode(), backend)
+	}
+	if err != nil {
 		st.status = "✗ could not store the sign-in: " + err.Error()
 		return nil
 	}

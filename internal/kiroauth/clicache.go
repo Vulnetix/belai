@@ -1,0 +1,249 @@
+package kiroauth
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"time"
+
+	"github.com/vulnetix/belai/internal/proc"
+)
+
+// kiro-cli (the terminal client, formerly Amazon Q Developer CLI) keeps its
+// sign-in in a SQLite database rather than the AWS SSO cache: the OIDC token
+// and the client registration are JSON values in its auth_kv table, and an
+// Identity Center login's profile is in its state table.
+const (
+	cliSocialToken  = "kirocli:social:token"
+	cliStateProfile = "api.codewhisperer.profile"
+)
+
+// cliTokenKeys and cliRegistrationKeys are read in order; the codewhisperer
+// keys are the ones a database migrated from Amazon Q Developer CLI holds.
+var (
+	cliTokenKeys        = []string{"kirocli:odic:token", "codewhisperer:odic:token"}
+	cliRegistrationKeys = []string{"kirocli:odic:device-registration", "codewhisperer:odic:device-registration"}
+)
+
+// maxCLIOutput caps what one sqlite3 query may return.
+const maxCLIOutput = 256 << 10
+
+// CLIDatabasePaths returns where kiro-cli keeps its database under home, most
+// likely first.
+func CLIDatabasePaths(home string) []string {
+	linux := filepath.Join(home, ".local", "share", "kiro-cli", "data.sqlite3")
+	if x := os.Getenv("XDG_DATA_HOME"); x != "" && filepath.IsAbs(x) {
+		linux = filepath.Join(x, "kiro-cli", "data.sqlite3")
+	}
+	mac := filepath.Join(home, "Library", "Application Support", "kiro-cli", "data.sqlite3")
+	if runtime.GOOS == "darwin" {
+		return []string{mac, linux}
+	}
+	return []string{linux, mac}
+}
+
+// sqliteQuery runs one read-only query against db and returns sqlite3's JSON
+// rows. It is a variable so tests can stand in for the sqlite3 binary.
+var sqliteQuery = runSQLite
+
+// runSQLite runs the system sqlite3 with a fixed argv, read-only, under the
+// scrubbed environment. The output carries secrets, so it is never echoed
+// into an error.
+func runSQLite(db, query string) ([]byte, error) {
+	bin := "/usr/bin/sqlite3"
+	if _, err := os.Stat(bin); err != nil {
+		if bin, err = exec.LookPath("sqlite3"); err != nil {
+			return nil, errors.New("reading kiro-cli's sign-in needs the sqlite3 command; install it, or run `belai login kiro` to sign in directly")
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, "-readonly", "-json", db, query)
+	cmd.Env = proc.ScrubbedEnv()
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("run sqlite3: %w", err)
+	}
+	out, readErr := io.ReadAll(io.LimitReader(stdout, maxCLIOutput+1))
+	waitErr := cmd.Wait()
+	if readErr != nil {
+		return nil, readErr
+	}
+	if len(out) > maxCLIOutput {
+		return nil, errors.New("kiro-cli's database returned too much data")
+	}
+	if waitErr != nil {
+		return nil, errors.New("sqlite3 could not read kiro-cli's database")
+	}
+	return out, nil
+}
+
+// cliRows maps key to value for the keys a query returned.
+func cliRows(out []byte) (map[string]string, error) {
+	rows := map[string]string{}
+	if len(bytes.TrimSpace(out)) == 0 {
+		return rows, nil
+	}
+	var list []struct {
+		Key   string `json:"key"`
+		Value string `json:"value"`
+	}
+	if err := json.Unmarshal(out, &list); err != nil {
+		return nil, errors.New("unparseable kiro-cli database rows")
+	}
+	for _, r := range list {
+		rows[r.Key] = r.Value
+	}
+	return rows, nil
+}
+
+// sqlList renders fixed keys as a quoted SQL list. The keys are constants of
+// this package, never input.
+func sqlList(keys []string) string {
+	q := make([]string, len(keys))
+	for i, k := range keys {
+		q[i] = "'" + k + "'"
+	}
+	return strings.Join(q, ",")
+}
+
+// ImportKiroCLI reads kiro-cli's sign-in from its database under home. It
+// returns os.ErrNotExist (wrapped) when kiro-cli has never signed in.
+func ImportKiroCLI(home string) (Login, error) {
+	l, _, err := importCLI(home)
+	return l, err
+}
+
+// importCLI is ImportKiroCLI that also returns the database it read, or the
+// most likely one when there is none.
+func importCLI(home string) (Login, string, error) {
+	paths := CLIDatabasePaths(home)
+	for _, p := range paths {
+		if info, err := os.Stat(p); err == nil && info.Mode().IsRegular() {
+			l, err := readCLI(p)
+			return l, p, err
+		}
+	}
+	return Login{}, paths[0], fmt.Errorf("kiro-cli database: %w", os.ErrNotExist)
+}
+
+// readCLI reads the sign-in from one kiro-cli database.
+func readCLI(db string) (Login, error) {
+	keys := append(append([]string{cliSocialToken}, cliTokenKeys...), cliRegistrationKeys...)
+	out, err := sqliteQuery(db, "SELECT key, CAST(value AS TEXT) AS value FROM auth_kv WHERE key IN ("+sqlList(keys)+")")
+	if err != nil {
+		return Login{}, err
+	}
+	rows, err := cliRows(out)
+	if err != nil {
+		return Login{}, err
+	}
+	first := func(keys []string) string {
+		for _, k := range keys {
+			if v := rows[k]; v != "" {
+				return v
+			}
+		}
+		return ""
+	}
+	tokData, regData := first(cliTokenKeys), first(cliRegistrationKeys)
+	if tokData == "" {
+		if rows[cliSocialToken] != "" {
+			return Login{}, ErrSocialLogin
+		}
+		return Login{}, fmt.Errorf("kiro-cli sign-in: %w", os.ErrNotExist)
+	}
+	var tok struct {
+		RefreshToken string `json:"refresh_token"`
+		Region       string `json:"region"`
+		StartURL     string `json:"start_url"`
+		ProfileARN   string `json:"profile_arn"`
+	}
+	if err := json.Unmarshal([]byte(tokData), &tok); err != nil || tok.RefreshToken == "" {
+		return Login{}, errors.New("kiro-cli's token has no AWS sign-in to import")
+	}
+	if regData == "" {
+		return Login{}, errors.New("kiro-cli's client registration is missing")
+	}
+	var reg struct {
+		ClientID     string          `json:"client_id"`
+		ClientSecret string          `json:"client_secret"`
+		Region       string          `json:"region"`
+		ExpiresAt    json.RawMessage `json:"client_secret_expires_at"`
+	}
+	if err := json.Unmarshal([]byte(regData), &reg); err != nil || reg.ClientID == "" || reg.ClientSecret == "" {
+		return Login{}, errors.New("kiro-cli's client registration is unparseable")
+	}
+	l := Login{
+		RefreshToken:          tok.RefreshToken,
+		ClientID:              reg.ClientID,
+		ClientSecret:          reg.ClientSecret,
+		Region:                tok.Region,
+		StartURL:              tok.StartURL,
+		ProfileARN:            tok.ProfileARN,
+		ClientSecretExpiresAt: expiryUnix(reg.ExpiresAt),
+	}
+	if l.Region == "" {
+		l.Region = reg.Region
+	}
+	if l.Region == "" {
+		l.Region = DefaultRegion
+	}
+	if !ValidRegion(l.Region) {
+		return Login{}, errors.New("kiro-cli's sign-in has an invalid region")
+	}
+	if l.StartURL != "" && !ValidStartURL(l.StartURL) {
+		l.StartURL = ""
+	}
+	if l.ProfileARN == "" {
+		l.ProfileARN = cliProfileARN(db)
+	}
+	return l, nil
+}
+
+// cliProfileARN reads the Identity Center profile kiro-cli selected, or "".
+// A Builder ID login has none, and an older database has no state table.
+func cliProfileARN(db string) string {
+	out, err := sqliteQuery(db, "SELECT key, CAST(value AS TEXT) AS value FROM state WHERE key IN ("+sqlList([]string{cliStateProfile})+")")
+	if err != nil {
+		return ""
+	}
+	rows, err := cliRows(out)
+	if err != nil {
+		return ""
+	}
+	var p struct {
+		ARN string `json:"arn"`
+	}
+	if json.Unmarshal([]byte(rows[cliStateProfile]), &p) != nil || !strings.HasPrefix(p.ARN, "arn:aws:codewhisperer:") {
+		return ""
+	}
+	return p.ARN
+}
+
+// expiryUnix reads an expiry written as RFC 3339 text or as Unix seconds.
+func expiryUnix(raw json.RawMessage) int64 {
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		if t, err := time.Parse(time.RFC3339, s); err == nil {
+			return t.Unix()
+		}
+		return 0
+	}
+	var n int64
+	if json.Unmarshal(raw, &n) == nil {
+		return n
+	}
+	return 0
+}

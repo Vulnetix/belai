@@ -1,6 +1,7 @@
 package credentials
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -368,6 +369,19 @@ func (r *Resolver) Store(provider, field, secret string, backend Source) error {
 	default:
 		return fmt.Errorf("backend %q does not support writes", backend)
 	}
+}
+
+// StoreFallback is Store for a harness-obtained sign-in written to the
+// backend Belai chose (PreferredBackend), never one the user named: when the
+// keychain refuses the secret as too large, it writes the user file instead,
+// the same place PreferredBackend picks when there is no keychain. It
+// returns the backend that now holds the secret.
+func (r *Resolver) StoreFallback(provider, field, secret string, backend Source) (Source, error) {
+	err := r.Store(provider, field, secret, backend)
+	if backend == SourceKeychain && errors.Is(err, ErrTooBig) {
+		return SourceUserFile, r.userFile.write(provider, field, secret)
+	}
+	return backend, err
 }
 
 // Replace rewrites field from old to next in the backend that currently

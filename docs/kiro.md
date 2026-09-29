@@ -27,7 +27,7 @@ login.
 | `-region` | The SSO region of that start URL. Any AWS region works; the default is `us-east-1`, the Builder ID region. |
 | `-api-region` | The Kiro API region. The default is the profile's region, else the SSO region. |
 | `-profile-arn` | The CodeWhisperer profile to use. By default Belai looks it up after signing in (see [Profiles](#profiles)). |
-| `-backend` | `keychain` or `user-file`. The default is the keychain when one works, else the user credentials file. |
+| `-backend` | `keychain` or `user-file`. The default is the keychain when one works, else the user credentials file. The macOS keychain holds about 3000 bytes per item, which an Identity Center login can pass: with the default, such a login goes to the user file and the CLI says so; with `-backend keychain` it fails. |
 | `-import` | Import Kiro's own sign-in from `~/.aws/sso/cache` instead of signing in. |
 
 After signing in, run with `-provider kiro`, or pick Kiro in `/providers`.
@@ -59,15 +59,25 @@ instance in, say, `ap-southeast-2` finds its profile in its own region.
   login is stored without a profile and the CLI prints a warning.
 
 `-profile-arn` skips the lookup; the ARN must be a well-formed CodeWhisperer
-ARN. If the lookup's own token refresh rotates the refresh token, Belai stores
+ARN. An imported sign-in that already names Kiro's profile skips it too, so
+an account that answers the lookup with HTTP 403 still imports. If the lookup's own token refresh rotates the refresh token, Belai stores
 the rotated one.
 
 ### Importing Kiro's sign-in
 
-Kiro's IDE and CLI keep their AWS sign-in in
+The Kiro IDE keeps its AWS sign-in in
 `~/.aws/sso/cache/kiro-auth-token.json`, next to a client registration file
-named by the hash of its client ID. Both `belai login kiro -import` and the
-`i` import view (which lists it as agent `kiro`) read those two files.
+named by the hash of its client ID. `kiro-cli` keeps its sign-in in a SQLite
+database instead: `~/Library/Application Support/kiro-cli/data.sqlite3` on
+macOS, `~/.local/share/kiro-cli/data.sqlite3` (or under `$XDG_DATA_HOME`) on
+Linux, with the token and client registration in its `auth_kv` table and an
+Identity Center profile in its `state` table. Both `belai login kiro -import`
+and the `i` import view (which lists it as agent `kiro`) read the IDE's files
+first and fall back to kiro-cli's database.
+
+Belai reads the database with the system `sqlite3` (read-only, a fixed
+command, the scrubbed environment). macOS always has it; on Linux, install
+it or sign in with `belai login kiro`.
 
 Only AWS Builder ID and Identity Center logins can be imported. A Kiro login
 made with GitHub or Google refreshes through Kiro's own auth service rather

@@ -7,13 +7,11 @@ import (
 	"github.com/vulnetix/belai/internal/kiroauth"
 )
 
-// scanKiro imports the AWS sign-in Kiro's IDE or CLI made: the refresh token
-// in the AWS SSO cache and the client registration it names, as the kiro
-// provider's login. A GitHub or Google Kiro login refreshes through Kiro's
+// scanKiro imports the AWS sign-in Kiro's IDE or CLI made (the IDE's AWS SSO
+// cache, else kiro-cli's database) as the kiro provider's login. A GitHub or Google Kiro login refreshes through Kiro's
 // own service and is reported, not imported.
 func scanKiro(home string) []Found {
-	path := kiroauth.CachePath(home)
-	l, err := kiroauth.ImportKiroCache(home)
+	l, path, err := kiroauth.ImportKiroSource(home)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 		return nil
