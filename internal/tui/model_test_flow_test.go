@@ -93,6 +93,7 @@ func TestFailedTestWritesNothingAndOffersRetry(t *testing.T) {
 	calls := 0
 	a := flowScreen(t, func(ctx context.Context, steps []modeltest.Step, env *modeltest.Env, emit func(modeltest.Event)) modeltest.Report {
 		calls++
+		emit(modeltest.Event{Kind: modeltest.EventStart, Index: 0, Name: "probe"})
 		out := modeltest.Outcome{Status: modeltest.StatusFail, Detail: "llama-server is not on PATH",
 			Hints: []modeltest.Hint{{Text: "install llama.cpp"}, {Key: "r", Text: "run the test again", Action: modeltest.ActRetry}}}
 		emit(modeltest.Event{Kind: modeltest.EventDone, Index: 0, Outcome: out})
@@ -333,5 +334,53 @@ func TestJevProviderRefusesPlainHTTPOffLoopback(t *testing.T) {
 	_, _ = a.providerNewCommit()
 	if !strings.Contains(a.providerNewState.errorMsg, "in the clear") {
 		t.Fatalf("error %q", a.providerNewState.errorMsg)
+	}
+}
+
+// A kind whose test fails saves nothing, and the next press of the kind row
+// moves on from the kind that was tried, so a backend that cannot be reached
+// (no key, no network) never traps the row.
+func TestClassifierKindCyclesPastAFailedTest(t *testing.T) {
+	calls := 0
+	tester := func(ctx context.Context, steps []modeltest.Step, env *modeltest.Env, emit func(modeltest.Event)) modeltest.Report {
+		calls++
+		emit(modeltest.Event{Kind: modeltest.EventStart, Index: 0, Name: "probe"})
+		if calls == 1 {
+			emit(modeltest.Event{Kind: modeltest.EventDone, Index: 0, Name: "probe", Outcome: modeltest.Outcome{Status: modeltest.StatusFail, Detail: "refused"}})
+			return modeltest.Report{Passed: false}
+		}
+		emit(modeltest.Event{Kind: modeltest.EventDone, Index: 0, Name: "probe", Outcome: modeltest.Outcome{Status: modeltest.StatusOK, Detail: "fine"}})
+		return modeltest.Report{Passed: true}
+	}
+	a := flowScreen(t, tester)
+	t.Setenv("OPENROUTER_API_KEY", "or-key")
+	seed := &config.ClassifierSettings{Kind: "openrouter-decisions", Provider: "openrouter", Model: "typesafe/jev-1.13"}
+	if err := config.Mutate(config.ScopeProject, a.workdir, func(s *config.Settings) error {
+		s.Classifier = seed
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.reloadSettings(); err != nil {
+		t.Fatal(err)
+	}
+
+	selectRow(t, a, roleClassifier, "kind")
+	_ = a.changeModelRow() // openrouter-decisions -> jev: fails
+	pump(t, a)
+	if k := a.classifierKind(); k != "openrouter-decisions" {
+		t.Fatalf("a failed test moved the kind to %q", k)
+	}
+	selectRow(t, a, roleClassifier, "kind")
+	_ = a.changeModelRow() // must move on to llm, not retry jev
+	pump(t, a)
+	if k := a.classifierKind(); k != "llm" {
+		t.Fatalf("kind = %q after a second press, want llm (past the failed jev)", k)
+	}
+	// The trail resets once a kind is saved: the next press moves on from it.
+	selectRow(t, a, roleClassifier, "kind")
+	_ = a.changeModelRow()
+	if k := a.classifierKind(); k != "models" {
+		t.Fatalf("kind = %q, want models after llm", k)
 	}
 }
