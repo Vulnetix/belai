@@ -1962,8 +1962,7 @@ The footer is a rule plus three content lines:
   [session intelligence](token-budgets.md#session-intelligence) slot (`intel`,
   today's tokens, the tightest plan limit or the pace, and a limit bar with a
   reset marker or a 24-hour sparkline). It is the only slot under `routed`
-  routing and when the model has no budget, and in its last third it carries a
-  subtle `f12` hint when the line has room. When the line is narrow the gauge
+  routing and when the model has no budget. When the line is narrow the gauge
   drops the time first, then the cwd side is truncated (keeping the mode chip),
   and the percentage goes last.
 - Line 2, left: provider · model (with effort) · the permission chips ·
