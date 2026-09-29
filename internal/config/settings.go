@@ -151,6 +151,9 @@ type Settings struct {
 	// the wrap-up after a work turn, the composer pane, /kanban and board sync
 	// (docs/kanban.md). Default on. The project layer may turn it off, never on.
 	Kanban *bool `json:"kanban,omitempty"`
+	// Screenshot governs the Screenshot tool (docs/screenshots.md). The
+	// project layer may turn it, or whole-screen capture, off; never on.
+	Screenshot *ScreenshotSettings `json:"screenshot,omitempty"`
 	// Agents governs the fleet: worker agents that claim kanban items and
 	// run unattended (docs/fleet.md). The project layer may only tighten it.
 	Agents *AgentsSettings `json:"agents,omitempty"`
@@ -160,9 +163,6 @@ type Settings struct {
 	// advertised, never what may run.
 	DeferTools *bool `json:"defer_tools,omitempty"`
 	// Offload keeps oversized tool results out of the conversation: a preview
-	// Screenshot governs the Screenshot tool (docs/screenshots.md). The
-	// project layer may turn it, or whole-screen capture, off; never on.
-	Screenshot *ScreenshotSettings `json:"screenshot,omitempty"`
 	// stays inline and ReadResult reads the rest (docs/context-offload.md).
 	// Default on. It changes what rides on a request, never what is admitted,
 	// so any layer may set it.
@@ -813,6 +813,10 @@ type ResilienceSettings struct {
 	// restarted by the recovery subagent before it is marked failed. Zero
 	// means the default (3).
 	MaxProcessRecoveries int `json:"max_process_recoveries,omitempty"`
+	// MaxBackgroundProcesses caps how many processes the model may have
+	// running at once through Bash run_in_background. Zero means the default
+	// (8). A project layer can only lower it.
+	MaxBackgroundProcesses int `json:"max_background_processes,omitempty"`
 	// MaxAgents caps how many fan-out subagents (explore plus background
 	// agents) run at once across the whole session. It defaults to 15. Zero
 	// means the default (15); a higher value requires provider rate-limit
@@ -967,6 +971,14 @@ func (r *ResilienceSettings) MaxProcessRecoveriesOr(def int) int {
 	return r.MaxProcessRecoveries
 }
 
+// MaxBackgroundOr returns MaxBackgroundProcesses or the provided default.
+func (r *ResilienceSettings) MaxBackgroundOr(def int) int {
+	if r == nil || r.MaxBackgroundProcesses <= 0 {
+		return def
+	}
+	return r.MaxBackgroundProcesses
+}
+
 // MaxAgentsOr returns MaxAgents or the provided default. Zero means "use the
 // default"; callers should pass the built-in default (DefaultMaxAgents).
 func (r *ResilienceSettings) MaxAgentsOr(def int) int {
@@ -1001,16 +1013,13 @@ func (r *ResilienceSettings) merge(other *ResilienceSettings) {
 	// disables clarification and overrides any earlier positive or negative
 	// value, because disabling is an explicit opt-out.
 	if other.MaxClarifyRounds != 0 {
-	// MaxBackgroundProcesses caps how many processes the model may have
-	// running at once through Bash run_in_background. Zero means the default
-	// (8). A project layer can only lower it.
-	MaxBackgroundProcesses int `json:"max_background_processes,omitempty"`
 		if r.MaxClarifyRounds == 0 || other.MaxClarifyRounds < 0 || (r.MaxClarifyRounds > 0 && other.MaxClarifyRounds < r.MaxClarifyRounds) {
 			r.MaxClarifyRounds = other.MaxClarifyRounds
 		}
 	}
 	tighten(&r.MaxExploreIterations, &other.MaxExploreIterations)
 	tighten(&r.MaxProcessRecoveries, &other.MaxProcessRecoveries)
+	tighten(&r.MaxBackgroundProcesses, &other.MaxBackgroundProcesses)
 	// MaxAgents is intentionally overridable upward.
 	if other.MaxAgents != 0 {
 		r.MaxAgents = other.MaxAgents
@@ -1151,14 +1160,6 @@ func (s Settings) CavemanEnabled() bool {
 
 // CatalogWindow returns the context-window size a custom provider profile
 // declares for a model, or 0 when the provider or the model is not in the
-// MaxBackgroundOr returns MaxBackgroundProcesses or the provided default.
-func (r *ResilienceSettings) MaxBackgroundOr(def int) int {
-	if r == nil || r.MaxBackgroundProcesses <= 0 {
-		return def
-	}
-	return r.MaxBackgroundProcesses
-}
-
 // catalogue. It is the fallback between the user's explicit
 // `context_windows` override and the built-in modelinfo registry, so a model
 // that only exists in a provider profile still has a known window.
@@ -1202,7 +1203,6 @@ func (s Settings) ReadOnlyEnabled() bool {
 	}
 	return s.BashReadOnly != nil && *s.BashReadOnly
 }
-	tighten(&r.MaxBackgroundProcesses, &other.MaxBackgroundProcesses)
 
 // Override merges project settings over the receiver (which should be the
 // global settings). It returns the merged result and never mutates the
@@ -1258,6 +1258,8 @@ func (s Settings) Override(proj Settings) Settings {
 		f := false
 		out.Kanban = &f
 	}
+	// Screenshot capture: a project may turn it off, never on.
+	out.Screenshot = mergeScreenshot(out.Screenshot, proj.Screenshot, true)
 	// Fleet workers run unattended: a project may only tighten them.
 	if proj.Agents != nil {
 		out.Agents = out.Agents.tighten(proj.Agents)
@@ -1450,8 +1452,6 @@ func LoadGlobal() (Settings, error) {
 // LoadProject reads the project settings file (<workdir>/.vulnetix/settings.json).
 // A missing file yields zero-value settings with no error.
 func LoadProject(workdir string) (Settings, error) {
-	// Screenshot capture: a project may turn it off, never on.
-	out.Screenshot = mergeScreenshot(out.Screenshot, proj.Screenshot, true)
 	return loadSettings(ProjectSettingsPath(workdir))
 }
 
