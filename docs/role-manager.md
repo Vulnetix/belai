@@ -784,6 +784,29 @@ Events already surfaced by a dedicated line — `mode_classify`, `mode_forced`,
 the same decision never prints twice in one panel. The feed is additive to
 those lines, which are left exactly as they are.
 
+**Session record.** The feed is render-only, but the session record is not:
+every decision is written to the session JSONL as a `rolemanager` entry at the
+moment it is made, whatever the display level, so the transcript is a complete,
+ordered account of what the harness decided. The TUI, `belai rc` sessions, fleet
+workers, headless `-prompt` runs and ACP sessions all write it; each is a process
+with one session, and `rolemanager.AddSink` gives them a lossless, ordered feed
+(the observer behind the feed may drop, a sink never does; the TUI queue is
+unbounded). An entry holds:
+
+- the event name (`activity`), the verdict token (`verdict`) and its label
+  (`verdict_label`), the `subject`, the `pass`, the model as `provider` and
+  `model`, the duration (`duration_ms`), a process-wide sequence number (`seq`)
+  and the time the decision was made (the entry's timestamp);
+- for an event the feed describes, the summary, outcome, tone and level, so a
+  resumed session shows the same row;
+- `hidden: true` for an event the feed suppresses (its own line already
+  shows it), so a resume does not draw it twice.
+
+It never holds `Detail`, a prompt, a command, a path or classified text.
+`Activity.Record` builds the entry, so every writer produces the same one, and a
+test checks every event has a record. A row the TUI shows is written once, when
+the decision is made, and is not written again when it settles.
+
 **Which model a line names.** Each line names the provider/model the call
 was sent to, not the model that was configured for the role. The
 role-manager call site wraps its context with `rolemanager.TrackServedModel`,

@@ -23,6 +23,7 @@ import (
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/todos"
+	"github.com/vulnetix/belai/internal/turnlog"
 	"github.com/vulnetix/belai/internal/version"
 )
 
@@ -43,6 +44,20 @@ type Server struct {
 
 	mu       sync.Mutex
 	sessions map[string]*acpSession
+	opts     Options
+	// recording is set once a session owns the process-wide role-manager
+	// record sink; a connection normally carries one session.
+	recording bool
+}
+
+// Options are the optional parts of a connection.
+type Options struct {
+	// Transcript opens the session transcript for a new editor session. Nil
+	// keeps none. The first session on a connection also receives every
+	// role-manager decision made in the process, shown or not; the sink is
+	// process-wide, so a connection carrying several sessions attributes the
+	// decisions to the first.
+	Transcript func(cwd, sessionID string) *turnlog.Log
 }
 
 type acpSession struct {
@@ -51,6 +66,10 @@ type acpSession struct {
 	mu      sync.Mutex
 	history []run.Turn
 	cancel  context.CancelFunc
+	// log is the session transcript (a no-op Log when none is kept); detach
+	// stops its role-manager record sink.
+	log    *turnlog.Log
+	detach func()
 	// always holds tool names the editor allowed for the rest of the
 	// session (allow_always). It never reaches a settings file.
 	always map[string]bool
@@ -58,7 +77,12 @@ type acpSession struct {
 
 // Serve runs the protocol on r and w until the peer disconnects.
 func Serve(ctx context.Context, r io.Reader, w io.Writer, build Builder) error {
-	s := &Server{build: build, sessions: map[string]*acpSession{}, ready: make(chan struct{})}
+	return ServeWith(ctx, r, w, build, Options{})
+}
+
+// ServeWith is Serve with options.
+func ServeWith(ctx context.Context, r io.Reader, w io.Writer, build Builder, opts Options) error {
+	s := &Server{build: build, sessions: map[string]*acpSession{}, ready: make(chan struct{}), opts: opts}
 	s.conn = jsonrpc.NewConn(r, w, s.handle)
 	close(s.ready)
 	select {
@@ -73,6 +97,9 @@ func Serve(ctx context.Context, r io.Reader, w io.Writer, build Builder) error {
 			ss.cancel()
 		}
 		ss.mu.Unlock()
+		if ss.detach != nil {
+			ss.detach()
+		}
 	}
 	s.mu.Unlock()
 	if err := s.conn.Err(); err != nil && !errors.Is(err, io.EOF) {
@@ -130,8 +157,18 @@ func (s *Server) newSession(ctx context.Context, params json.RawMessage) (any, e
 	if err != nil {
 		return nil, &jsonrpc.Error{Code: jsonrpc.CodeInternalError, Message: err.Error()}
 	}
+	ss := &acpSession{id: id, agent: ag, always: map[string]bool{}, log: turnlog.New(nil)}
+	if s.opts.Transcript != nil {
+		if l := s.opts.Transcript(filepath.Clean(p.Cwd), id); l != nil {
+			ss.log = l
+		}
+	}
 	s.mu.Lock()
-	s.sessions[id] = &acpSession{id: id, agent: ag, always: map[string]bool{}}
+	if !s.recording {
+		s.recording = true
+		ss.detach = ss.log.AttachRoleManager()
+	}
+	s.sessions[id] = ss
 	s.mu.Unlock()
 	return map[string]any{"sessionId": id}, nil
 }
@@ -221,9 +258,11 @@ func (s *Server) prompt(ctx context.Context, params json.RawMessage) (any, error
 		ss.mu.Unlock()
 	}()
 
+	ss.log.User(text, nil)
 	var res run.Result
 	var runErr error
 	for ev := range ss.agent.RunStream(turnCtx, history, agent.TurnInput{Prompt: text}) {
+		ss.log.Observe(ev)
 		switch ev.Kind {
 		case agent.EventDoneKind:
 			res = ev.Result
@@ -233,6 +272,7 @@ func (s *Server) prompt(ctx context.Context, params json.RawMessage) (any, error
 			s.forward(turnCtx, ss, ev)
 		}
 	}
+	ss.log.Flush()
 	if turnCtx.Err() != nil {
 		return map[string]any{"stopReason": "cancelled"}, nil
 	}

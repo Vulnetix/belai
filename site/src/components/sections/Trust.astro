@@ -43,6 +43,14 @@ const facts = [
     body: 'When `WebFetch` answers a prompt, the model that reads the page has no tools, and its answer is classified before the agent sees it.',
   },
   {
+    title: 'A cleaner for each destination',
+    body: 'Text for a model, a terminal line, a path, a URL, a header, a shell command and a decision request each pass their own deterministic check, and no model is asked. A `Bash` rule is matched against every command the line contains, so an allow for `git status` does not approve `git status; rm -rf x`.',
+  },
+  {
+    title: 'Every decision is written down',
+    body: 'Each role-manager decision is saved to the session record as it is made, whether or not the internal-work feed shows it. An entry holds the verdict, the model and the timing, never the prompt, the command or the content that was judged. Headless and ACP runs keep the same private record, and `-no-transcript` opts out.',
+  },
+  {
     title: 'Requests say where they came from',
     body: 'Provider calls, `WebFetch` and `WebSearch` send `User-Agent: belai/<version>`, the `X-Belai-Session-Id` and `X-Belai-Tool` headers, and a W3C `traceparent`, so a gateway or proxy can tie every request back to its session and tool call.',
   },

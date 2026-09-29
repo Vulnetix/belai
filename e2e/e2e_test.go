@@ -1793,3 +1793,90 @@ func truncate(s string, n int) string {
 	}
 	return s[:n] + "…"
 }
+
+// runBelaiHome runs the built binary in dir with the given BELAI_HOME, so the
+// test can read what the run left in the state directory.
+func runBelaiHome(t *testing.T, dir, home, baseURL string, args ...string) (stdout string, code int) {
+	t.Helper()
+	var out, errb bytes.Buffer
+	cmd := exec.Command(belaiBin, append([]string{"-trust-dir"}, args...)...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "BELAI_BASE_URL="+baseURL, "OPENAI_API_KEY=test", "BELAI_HOME="+home)
+	cmd.Stdout = &out
+	cmd.Stderr = &errb
+	if err := cmd.Run(); err != nil {
+		ee, ok := err.(*exec.ExitError)
+		if !ok {
+			t.Fatalf("run belai: %v", err)
+		}
+		code = ee.ExitCode()
+	}
+	return out.String(), code
+}
+
+// sessionFiles lists the transcripts under a state directory.
+func sessionFiles(t *testing.T, home string) []string {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(home, "sessions", "*", "*.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
+}
+
+// A headless -prompt run keeps a transcript with the turn and every
+// role-manager decision it made, and -no-transcript keeps none.
+func TestHeadlessPromptKeepsATranscript(t *testing.T) {
+	srv, _ := newMockServer(t)
+	defer srv.Close()
+	dir := t.TempDir()
+	home := filepath.Join(t.TempDir(), "belai-home")
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	out, code := runBelaiHome(t, dir, home, srv.URL, "-tools", "-provider", "openai", "-model", "test", "-prompt", "what model is this")
+	if code != 0 || !strings.Contains(out, "mock reply") {
+		t.Fatalf("exit %d, stdout %q", code, out)
+	}
+	files := sessionFiles(t, home)
+	if len(files) != 1 {
+		t.Fatalf("transcripts = %v, want one", files)
+	}
+	b, err := os.ReadFile(files[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	types := map[string]int{}
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		var e struct {
+			Type string         `json:"type"`
+			Meta map[string]any `json:"meta"`
+		}
+		if err := json.Unmarshal([]byte(line), &e); err != nil {
+			t.Fatalf("bad transcript line %q: %v", line, err)
+		}
+		types[e.Type]++
+		if e.Type == "rolemanager" {
+			if _, leaked := e.Meta["detail"]; leaked {
+				t.Fatalf("a decision carries Detail: %s", line)
+			}
+			if e.Meta["activity"] == nil || e.Meta["seq"] == nil {
+				t.Fatalf("a decision is missing its event or sequence: %s", line)
+			}
+		}
+	}
+	if types["session_meta"] != 1 || types["user"] != 1 || types["assistant"] == 0 || types["rolemanager"] == 0 {
+		t.Fatalf("transcript entry types = %v", types)
+	}
+
+	home2 := filepath.Join(t.TempDir(), "belai-home")
+	if err := os.MkdirAll(home2, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, code := runBelaiHome(t, dir, home2, srv.URL, "-no-transcript", "-tools", "-provider", "openai", "-model", "test", "-prompt", "what model is this"); code != 0 {
+		t.Fatalf("exit %d with -no-transcript", code)
+	}
+	if files := sessionFiles(t, home2); len(files) != 0 {
+		t.Fatalf("-no-transcript kept %v", files)
+	}
+}

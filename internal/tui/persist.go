@@ -276,6 +276,9 @@ func (a *App) persistMessage(i int) {
 		}
 		a.appendEntry(timedEntry(m, session.Entry{Type: components.ShellRole, Role: components.ShellRole, Content: content, Meta: meta}))
 	case "rolemanager":
+		if m.Persisted {
+			return // written when the decision was made (recordActivity)
+		}
 		meta := map[string]any{
 			"summary": m.RM.Summary,
 			"outcome": m.RM.Outcome,

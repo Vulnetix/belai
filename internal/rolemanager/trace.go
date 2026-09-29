@@ -57,12 +57,7 @@ func recordTimed(e Event, verdict, subject, detail string, pass int, model strin
 		}
 		w.Record(rec)
 	}
-	if fn := observer.Load(); fn != nil {
-		func() {
-			defer func() { _ = recover() }()
-			(*fn)(Activity{Event: e, Verdict: verdict, Subject: subject, Detail: detail, Pass: pass, Model: model, At: time.Now(), Duration: took})
-		}()
-	}
+	deliver(Activity{Event: e, Verdict: verdict, Subject: subject, Detail: detail, Pass: pass, Model: model, At: time.Now(), Duration: took, Seq: activitySeq.Add(1)})
 }
 
 // RecordSecurityPhase emits one ML classifier phase decision to the activity
