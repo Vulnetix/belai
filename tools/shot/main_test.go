@@ -105,9 +105,9 @@ func TestFrameContent(t *testing.T) {
 		}
 	})
 
-	t.Run("footer intel shows the slot and the hint", func(t *testing.T) {
+	t.Run("footer intel shows the slot", func(t *testing.T) {
 		got := footerIntel()
-		for _, want := range []string{"intel", "today 34.4M", "5h 23%", "f12"} {
+		for _, want := range []string{"intel", "today 34.4M", "5h 23%"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("footer intel missing %q", want)
 			}

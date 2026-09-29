@@ -180,11 +180,6 @@ Settings are in the table above. `ui.intel` may be set by any layer;
   requests allowances. The slot is red when a plan window, or the day or month
   budget standing in for one, is spent; amber when at the current pace the
   allowance runs out before its window ends (R20); and teal otherwise.
-- **R17. The shortcut hint.** In the last third of each cycle period the intel
-  slot appends `f12` in the lowest-contrast colour. The hint is drawn only when
-  the whole line still fits with it; when it would not fit it is dropped, and
-  nothing else is shed to make room. It follows the clock like the cycle, so
-  every belai window agrees, and it never appears on a budget.
 - **R18. Windows and sources.** The windows are today (from local midnight), the
   last 7 local days and the last 30, each including today and ending now. Token
   totals and the trend read day totals, which include imported transcripts.

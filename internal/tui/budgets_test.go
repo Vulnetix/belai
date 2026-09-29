@@ -133,7 +133,7 @@ func TestBudgetRule11_WarningsForTheSelectedModelOnly(t *testing.T) {
 		bud("p", "m", config.BudgetScopeSession, 100),
 		// 1 token left of a million: amber for all but the month's last minutes.
 		bud("p", "m", config.BudgetScopeMonth, 1_000_000),
-		bud("p", "m", config.BudgetScopeDay, 1_000_000_000))
+		bud("p", "m", config.BudgetScopeDay, 1_000_000_000_000))
 	a.budgets.Add("p", "m", 999_999)
 	before := len(systemLines(a))
 

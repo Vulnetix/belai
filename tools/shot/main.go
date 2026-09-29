@@ -555,7 +555,7 @@ func footerIntel() string {
 		ShowName:     true,
 		Intel: &components.IntelGauge{
 			Today: "34.4M", Limit: "5h 23%", LimitFrac: 0.23, ElapsedFrac: 0.55,
-			Spark: make([]int64, 24), Pace: "comfortable", State: components.BudgetTeal, Hint: true,
+			Spark: make([]int64, 24), Pace: "comfortable", State: components.BudgetTeal,
 		},
 	}
 	return f.View()
