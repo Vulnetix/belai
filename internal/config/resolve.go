@@ -155,6 +155,9 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	if err := ValidateJev(eff.Settings); err != nil {
 		return eff, err
 	}
+	if err := ValidateVoice(eff.Settings); err != nil {
+		return eff, err
+	}
 	if err := ValidateFirewall(eff.Settings); err != nil {
 		return eff, err
 	}
@@ -255,6 +258,15 @@ func (e *Effective) apply(s Settings, src Source) {
 		}
 		e.Settings.Notifications.merge(s.Notifications)
 		e.Origin["notifications"] = src
+	}
+	if s.Voice != nil && src != SourceProject {
+		// The microphone is the user's alone: a repository cannot switch it
+		// on, name its device or make what is dictated send itself.
+		if e.Settings.Voice == nil {
+			e.Settings.Voice = &VoiceSettings{}
+		}
+		e.Settings.Voice.merge(s.Voice)
+		e.Origin["voice"] = src
 	}
 	if s.Telemetry != nil && src != SourceProject {
 		// Where session facts are sent is the user's choice alone.
