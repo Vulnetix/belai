@@ -198,12 +198,16 @@ const jevRowPrefix = "jev:"
 var jevJobLabels = map[config.JevJob]string{
 	config.JevBashSwap:        "jev bash swap",
 	config.JevPruneCompaction: "jev compaction prune",
+	config.JevToolSelection:   "jev tool selection",
+	config.JevToolSearch:      "jev tool search",
 	config.JevOptionOrder:     "jev option order",
 }
 
 var jevJobHelp = map[config.JevJob]string{
 	config.JevBashSwap:        "run a builtin tool instead of Bash when one is a clear match, and tell the model",
 	config.JevPruneCompaction: "keep or clear tool results by relevance when compacting, before writing a summary",
+	config.JevToolSelection:   "preload the tools and skills a request needs and list only the relevant skills",
+	config.JevToolSearch:      "rank ToolSearch matches, dropping poor ones and adding strong ones",
 	config.JevOptionOrder:     "put the most likely answer first, marked (Recommended), when the model asks you to choose",
 }
 

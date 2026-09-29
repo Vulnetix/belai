@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"sync"
@@ -50,7 +51,7 @@ func (s *Session) toolSurface() (*tools.Registry, []wire.OpenAITool, []wire.Anth
 		// On a surface that never had anything to defer, ToolSearch is noise.
 		// Once it has loaded something it stays, so the tool list keeps its
 		// cached prefix and the earlier ToolSearch calls stay advertised.
-		if len(deferred) == 0 && len(loaded) == 0 && d.Name == tools.ToolSearchName {
+		if len(deferred) == 0 && len(loaded) == 0 && len(s.skillCands) == 0 && d.Name == tools.ToolSearchName {
 			continue
 		}
 		names = append(names, d.Name)
@@ -127,6 +128,22 @@ func (c *deferCatalog) Deferred() []tools.Definition {
 		return nil
 	}
 	return c.s.Deferred()
+}
+
+// Skills and Rank forward to the session, so ToolSearch can search installed
+// skills and refine a keyword search with the decision backend.
+func (c *deferCatalog) Skills() []tools.Candidate {
+	if c.s == nil {
+		return nil
+	}
+	return c.s.Skills()
+}
+
+func (c *deferCatalog) Rank(ctx context.Context, query string, det, pool []tools.Candidate, limit int) ([]tools.Candidate, bool) {
+	if c.s == nil {
+		return nil, false
+	}
+	return c.s.Rank(ctx, query, det, pool, limit)
 }
 
 func (c *deferCatalog) Load(names []string) []string {

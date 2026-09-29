@@ -29,6 +29,9 @@ type Options struct {
 	// Skills is the rendered list of available skills (name + description),
 	// harness-loaded from disk. The classifier turns never carry these.
 	Skills []string
+	// SkillsMore is how many installed skills are not listed in Skills because
+	// they do not fit the request; ToolSearch finds them.
+	SkillsMore int
 	// ExploreNote is a harness-generated framing sentence added when explore
 	// subagent reports are appended as user turns.
 	ExploreNote string
@@ -167,6 +170,9 @@ func System(opts Options) (string, error) {
 		for _, s := range opts.Skills {
 			b.WriteString("- " + s + "\n")
 		}
+	}
+	if opts.SkillsMore > 0 {
+		fmt.Fprintf(&b, "%d more skills are installed but not listed. Find one with ToolSearch, then load it with the Skill tool.\n", opts.SkillsMore)
 	}
 	if opts.ExploreNote != "" {
 		b.WriteString(opts.ExploreNote + "\n")

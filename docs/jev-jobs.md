@@ -52,6 +52,8 @@ prompt runs with it.
 | --- | --- | --- |
 | `bash_swap` | Runs a builtin tool instead of a Bash call when one is a clear match | Shipped |
 | `prune_compaction` | Prunes tool calls and results by relevance before writing a summary | Shipped |
+| `tool_selection` | Preloads the tools and lists the skills a request needs | Shipped |
+| `tool_search` | Ranks `ToolSearch` matches with the backend and searches skills too | Shipped |
 | `option_order` | Puts the likeliest option first, marked (Recommended), when the model asks you to choose | Shipped |
 
 ## Scores and thresholds
@@ -237,3 +239,63 @@ there is nothing new to admit and no long model call to wait for.
 Recorded as a `prune_compaction` event: `pruned` with the number of pairs kept,
 shortened and dropped, the questions left unanswered and the tokens freed, or
 `fallback` when the prune fell short. Never any conversation text.
+
+## Tool and skill selection
+
+A request carries the core tools in full and the model loads the rest with
+`ToolSearch`, and every installed skill's name and description rides in the
+system block. With a decision backend the harness rates the deferred tools and
+the skills against your request at the start of each turn, so the likely ones
+are ready before the model has to ask and only the relevant skills are listed.
+
+- **What is rated.** The deferred tools on the current surface and the
+  installed skills a model may invoke (a skill marked `disable-model-invocation`
+  is not offered). Each is described by its name and the first sentence of its
+  description. With more candidates than one round trip should carry, the
+  candidates that match the request best by keyword are rated: 24 for the local
+  model, 200 for a remote backend.
+- **What happens.** Deferred tools rated at or above 0.50 are loaded, best
+  first, at most 6, through the same loader `ToolSearch` uses, so only tools on
+  the current mode's surface load (plan mode cannot load a writer). Skills rated
+  at or above 0.50 are listed, best first, at most 5, plus any skill the request
+  names outright. The rest are left out of the system block, which says how many
+  ("N more skills are installed but not listed. Find one with ToolSearch, then
+  load it with the Skill tool.").
+- **Nothing is disabled.** An unlisted skill is found by `ToolSearch` and loaded
+  with the `Skill` tool; a deferred tool still runs when called by name.
+  `ToolSearch` stays advertised whenever skills are installed, even when no tool
+  is deferred. With deferral off, or no `ToolSearch` in the registry, every skill
+  is listed as before.
+- **Falls back** to listing every skill and loading nothing when the job is off,
+  the request is empty, or the backend cannot answer.
+- **Cache-friendly.** The choice is made once per turn, before the system block
+  is sealed. Loading only appends to the tool list, so the cached prefix holds.
+
+Recorded as a `tool_select` event: the tools loaded, the skills listed and left
+out, and an estimate of the tokens saved by the omitted skill lines. Never the
+request.
+
+## Tool search
+
+`ToolSearch` finds tools and skills. A keyword query is ranked deterministically
+first; with a decision backend the list is then refined.
+
+- **The deterministic list.** BM25 over each candidate's name (weighted three
+  times) and description, after splitting camelCase and snake_case words,
+  dropping stopwords and applying a light stem so "reading" and "read" meet. A
+  query that names a candidate outright scores higher. Ties sort by name, so the
+  same query always gives the same list. `select:Name1,Name2` matches exact names
+  (tools and skills) and never goes through the backend.
+- **The merge, with a backend.** The backend rates the deterministic list and a
+  wider pool. An entry rated below 0.10 is dropped from the list; an entry it did
+  not rate stays; any other candidate rated at or above 0.80 is added. The result
+  is ordered by the backend's score (an unrated entry counts as 0.50), ties in
+  the deterministic order, and capped at `max_results`.
+- **What comes back.** Names only, never a description. Tools are loaded into the
+  request. A skill is named ("found 1 skill(s): git-ops. Load a skill by calling
+  the Skill tool with its name.") and the model loads it.
+- **Falls back** to the deterministic list when the job is off or the backend
+  cannot answer. If every entry is rejected the answer is "no match".
+
+Recorded as a `tool_search` event with the size of the deterministic list, the
+merged list and the candidates left unrated. Never the query.

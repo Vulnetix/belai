@@ -465,7 +465,7 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   (`tools.CoreTools`) in full, and the sealed tools briefing names the rest of
   the current surface. `ToolSearch` loads a deferred definition into later
   requests. It is harness-composed and sanitise-only (`KindToolSearch`), it
-  returns tool names only and never descriptions, so MCP text still reaches
+  returns tool and skill names only and never descriptions, so MCP and skill text still reaches
   the model only through the sealed briefing and the tool definitions. It can
   only load tools on the current mode's surface, so plan mode cannot load a
   writer. Deferred tools stay registered and permission-checked, and they run

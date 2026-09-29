@@ -213,3 +213,54 @@ func pruneCompactionDescription(a Activity) Description {
 	d.Outcome = "dropped " + num("dropped") + ", shortened " + num("truncated") + ", kept " + num("kept")
 	return d
 }
+
+// RecordToolSearch emits the outcome of ranking a ToolSearch query with the
+// decision backend: how long the deterministic list was, how many entries the
+// merged list has, and how many candidates went unrated. Never the query.
+func RecordToolSearch(det, merged, unknown int, model string, took time.Duration) {
+	recordTimed(EventToolSearch, "ranked", "", fmt.Sprintf("det=%d merged=%d unknown=%d", det, merged, unknown), 0, model, took)
+}
+
+// RecordToolSelect emits the outcome of choosing the tools and skills for a
+// turn: verdict "selected" with the deferred tools preloaded, the skills
+// listed, the skills left out and an estimate of the tokens saved, or
+// "fallback" when the backend could not answer and every skill was listed.
+func RecordToolSelect(verdict string, tools, skills, omitted, saved int, model string, took time.Duration) {
+	recordTimed(EventToolSelect, verdict, "", fmt.Sprintf("tools=%d skills=%d omitted=%d saved=%d", tools, skills, omitted, saved), 0, model, took)
+}
+
+func toolSearchDescription(a Activity) Description {
+	n := func(k string) string {
+		if v := field(a.Detail, k); v != "" && isDigits(v) {
+			return v
+		}
+		return "?"
+	}
+	return Description{
+		Summary: "Ranked the tools and skills that matched a search",
+		Outcome: "kept " + n("merged") + " of the " + n("det") + " keyword matches, adding any strong matches",
+		Tone:    ToneClear,
+		Levels:  LevelAll,
+	}
+}
+
+func toolSelectDescription(a Activity) Description {
+	n := func(k string) string {
+		if v := field(a.Detail, k); v != "" && isDigits(v) {
+			return v
+		}
+		return "?"
+	}
+	d := Description{
+		Summary: "Chose the tools and skills this request is likely to need",
+		Outcome: "loaded " + n("tools") + " tool(s), listed " + n("skills") + " skill(s), left out " + n("omitted"),
+		Tone:    ToneClear,
+		Levels:  LevelDecisions,
+	}
+	if a.Verdict == "fallback" {
+		d.Outcome = "the ranking was unavailable, listed every skill"
+		d.Tone = ToneNeutral
+		d.Levels = LevelAll
+	}
+	return d
+}
