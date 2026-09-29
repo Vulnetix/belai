@@ -54,6 +54,13 @@ const core = [
   ['Git', 'status, log, diff, show, rev-parse, ls-files, grep and describe, nothing that writes'],
 ];
 
+const locateFacts: [string, string][] = [
+  ['Eligible files only', 'Dependency and build folders, hidden files, symlinks, binaries, files over 16 MiB, anything your <code class="mono">.gitignore</code> or <code class="mono">.ignore</code> excludes, and files that hold credentials are never listed, ranked or sent.'],
+  ['Keywords first', 'Every file is scored by the words in its path. The decision backend then rates the likeliest folders, then the files inside them, and a file it cannot rate keeps its keyword score.'],
+  ['Names stay home by default', 'Declared function and type names go only to the local decision model or a server you run. OpenRouter and TypeSafe\'s hosted API see paths and sizes. <code class="mono">jev.locate_previews</code> changes that either way.'],
+  ['What a subagent reads', 'One line of up to eight <code class="mono">path:line</code> entries made of plain characters, so no file name can add words to a prompt.'],
+];
+
 const swapSteps = [
   'The command must be one plain command: no pipe, chain, redirect, substitution or line break.',
   'A Bash deny rule that matches it stops the swap, so a swap never launders a denied command.',
@@ -173,6 +180,25 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
     Any failed step leaves the Bash call to run as written. The row reads{' '}
     <code class="mono">Grep ← Bash</code>, and a command sent twice runs as Bash the second time.{' '}
     <a class="underline" href={`${docBase}jev-jobs.md`}>docs/jev-jobs.md</a>
+  </p>
+
+  <SubHead title="Where to look first">
+    Before the explore subagents start, Belai ranks the files your goal is about and hands each subagent the
+    best few, so they search less. The model can ask for the same list with the deferred{' '}
+    <code class="mono">Locate</code> tool. It returns paths, line numbers and percentages, never file text.
+  </SubHead>
+  <dl class="mt-8 grid gap-x-8 gap-y-4 md:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
+    {locateFacts.map(([term, text]) => (
+      <>
+        <dt class="font-semibold">{term}</dt>
+        <dd class="m-0"><Fragment set:html={text} /></dd>
+      </>
+    ))}
+  </dl>
+  <p class="mt-3 text-sm text-vx-ink/75">
+    <code class="mono">/locate --dry-run</code> shows what would be looked at and where the questions would go,
+    without sending anything.{' '}
+    <a class="underline" href={`${docBase}jev-jobs.md#explore-locate`}>docs/jev-jobs.md</a>
   </p>
 
   <SubHead title="Where a path can go">

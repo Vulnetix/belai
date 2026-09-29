@@ -272,6 +272,8 @@ type Session struct {
 	// run as a builtin once, so a repeated command runs as Bash.
 	jev     *jev.Jobs
 	swapped map[string]bool
+	// loc caches the working directory's inventory for explore locate.
+	loc locateState
 	// lastCompactionPruned says the latest compaction kept the conversation
 	// (a prune) rather than replacing it with a summary.
 	lastCompactionPruned bool
@@ -542,6 +544,14 @@ func NewSession(o Options) (*Session, error) {
 		deferCat = &deferCatalog{}
 		reg = reg.With(tools.ToolSearch{Catalog: deferCat})
 	}
+	// Locate: the tool that ranks files for a question joins the registry
+	// while the explore_locate job can run, so a session with no decision
+	// backend never sees it.
+	var locCat *locateCatalog
+	if o.Jev != nil && o.Jev.Enabled(config.JevExploreLocate) {
+		locCat = &locateCatalog{}
+		reg = reg.With(tools.Locate{Locator: locCat})
+	}
 	// The shared holder carries the effective posture and ask gate; when the
 	// caller supplied none the session wraps the snapshot options in a fixed
 	// holder that never changes.
@@ -649,6 +659,9 @@ func NewSession(o Options) (*Session, error) {
 	if deferCat != nil {
 		sess.deferral = &toolDeferral{}
 		deferCat.s = sess
+	}
+	if locCat != nil {
+		locCat.s = sess
 	}
 	return sess, nil
 }

@@ -40,6 +40,10 @@ const JevPruneCompaction JevJob = "prune_compaction"
 // user to choose, and marks it (Recommended) when the choice is clear.
 const JevOptionOrder JevJob = "option_order"
 
+// JevExploreLocate ranks the files a question is about, before the explore
+// subagents start, so they begin where the code is.
+const JevExploreLocate JevJob = "explore_locate"
+
 // JevJobs lists every shipped job in the order /settings and the docs show
 // them. A job is added here in the change that implements it, so /settings
 // never offers a switch for work that does not exist.
@@ -50,6 +54,7 @@ var JevJobs = []JevJob{
 	JevToolSearch,
 	JevLSPTriage,
 	JevOptionOrder,
+	JevExploreLocate,
 }
 
 // LocatePreview values for jev.locate_previews.
@@ -200,4 +205,49 @@ func maps(m map[string]bool) map[string]bool {
 		out[k] = v
 	}
 	return out
+}
+
+// LocateDestination says where explore_locate would send its questions, and
+// whether declaration names from the user's files may go with them. name is
+// "" when no decision backend is configured. The rule is the one
+// jev.Client.PreviewsAllowed applies: the local decision model and a
+// self-hosted server may see declared names, OpenRouter and TypeSafe's hosted
+// API see paths only, and jev.locate_previews overrides both ways.
+func (s Settings) LocateDestination() (name string, previews bool) {
+	cls := s.Classifier
+	if cls == nil || cls.Provider == "" {
+		return "", false
+	}
+	kind := ""
+	if p, ok := s.Providers[cls.Provider]; ok {
+		kind = p.Kind
+	}
+	backend, ok := decisions.BackendOf(cls.Provider, kind, cls.Model)
+	if !ok {
+		return "", false
+	}
+	pref := ""
+	if s.Jev != nil {
+		pref = s.Jev.LocatePreviews
+	}
+	local := false
+	switch backend {
+	case decisions.BackendLocal:
+		name, local = "the local decision model", true
+	case decisions.BackendSystemOne:
+		if cls.Provider == decisions.TypeSafeProvider {
+			name = "TypeSafe's hosted API"
+		} else {
+			name, local = "your self-hosted server "+cls.Provider, true
+		}
+	default:
+		name = "OpenRouter's hosted Jev model"
+	}
+	switch pref {
+	case LocatePreviewsOff:
+		return name, false
+	case LocatePreviewsHosted:
+		return name, true
+	}
+	return name, local
 }

@@ -168,6 +168,7 @@ back to its category's letter (S, M, C, T, L, ?, R, .) and the markers to
 | `⌥` | diagnostics | `code` |
 | `⊗` | language server down | `code` |
 | `▣` | LSP triage | `code` |
+| `⌖` | files located for a question | `code` |
 | `?` | question asked | `ask` |
 | `≣` | options ordered | `ask` |
 | `⇢` | route fallback | `routing` |

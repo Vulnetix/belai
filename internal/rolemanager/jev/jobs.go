@@ -195,3 +195,40 @@ func (j *Jobs) RateRepair(ctx context.Context, facts, rows string) (p float64, r
 	p, ok = res.Scores["fix"]
 	return p, res, ok
 }
+
+// LocateItem is a directory or file to rate for explore_locate. The label is
+// built by the locate package: a path, a size and a language, and declaration
+// names only when previews are allowed for this backend.
+type LocateItem struct {
+	ID, Label string
+}
+
+// locateDirCriterion and locateFileCriterion are the shared statements for the
+// two stages of a locate.
+const (
+	locateDirCriterion  = "The directory in the item is likely to hold code that answers the question in state.context. A directory that only shares a word with the question does not."
+	locateFileCriterion = "The file in the item is likely to define or use the code that state.context asks about. Use the path, the language and the declared names."
+)
+
+// RateLocate rates directories, then files, against the question. stage is
+// "dirs" or "files". The question is text the user wrote; the labels come from
+// the locate package, which only ever puts paths and, if previews are allowed,
+// declared names in them. Everything reaches the backend as DecisionText.
+func (j *Jobs) RateLocate(ctx context.Context, stage, question string, items []LocateItem) (map[string]float64, ScoreResult, error) {
+	crit := locateFileCriterion
+	if stage == "dirs" {
+		crit = locateDirCriterion
+	}
+	si := make([]ScoreItem, len(items))
+	for i, it := range items {
+		si[i] = ScoreItem{ID: it.ID, Label: sanitize.ForDecision(it.Label, 320)}
+	}
+	res, err := j.Client.Score(ctx, ScoreRequest{
+		Job:         string(config.JevExploreLocate) + "/" + stage,
+		Criterion:   sanitize.ForDecision(crit, 0),
+		Context:     sanitize.ForDecision(question, 1500),
+		Items:       si,
+		MaxRequests: 8,
+	})
+	return res.Scores, res, err
+}
