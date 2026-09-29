@@ -143,3 +143,25 @@ func TestResolveDropsProjectJevWidening(t *testing.T) {
 		t.Fatal("global layer could not re-enable a job")
 	}
 }
+
+func TestLSPRepairAttemptsIsValidatedAndProjectMinimumWins(t *testing.T) {
+	for _, bad := range []int{1, 21, -3} {
+		if err := ValidateLSP(Settings{LSP: &LSPSettings{MaxRepairAttempts: bad}}); err == nil {
+			t.Errorf("max_repair_attempts %d accepted", bad)
+		}
+	}
+	for _, ok := range []int{0, 2, 4, 20} {
+		if err := ValidateLSP(Settings{LSP: &LSPSettings{MaxRepairAttempts: ok}}); err != nil {
+			t.Errorf("max_repair_attempts %d: %v", ok, err)
+		}
+	}
+	global := Settings{LSP: &LSPSettings{MaxRepairAttempts: 6}}
+	lower := global.Override(Settings{LSP: &LSPSettings{MaxRepairAttempts: 3}})
+	higher := global.Override(Settings{LSP: &LSPSettings{MaxRepairAttempts: 12}})
+	if lower.LSP.MaxRepairAttempts != 3 || higher.LSP.MaxRepairAttempts != 6 {
+		t.Fatalf("project layer: lower %d higher %d, want the smaller of the two", lower.LSP.MaxRepairAttempts, higher.LSP.MaxRepairAttempts)
+	}
+	if (&LSPSettings{MaxRepairAttempts: 5}).IsZero() {
+		t.Fatal("IsZero ignores max_repair_attempts")
+	}
+}

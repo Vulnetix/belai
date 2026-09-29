@@ -169,3 +169,29 @@ func (j *Jobs) RankSearch(ctx context.Context, query, request string, items []Su
 	})
 	return res.Scores, res, err
 }
+
+// TriageAt is the score below which another edit pass is judged unlikely to
+// clear the remaining diagnostics.
+const TriageAt = 0.30
+
+// repairCriterion is the statement rated for LSP triage.
+const repairCriterion = "Another edit pass by the model on this file is likely to clear the errors listed in state.context, given how the earlier passes went. Answer false if the same errors keep coming back, if the pass count is high and the errors are not shrinking, or if the errors look like they need something outside this file."
+
+// RateRepair rates how likely another edit pass is to clear a file's
+// diagnostics. facts says how the attempts went and rows lists the errors;
+// both are text derived from the user's code and reach the backend only as
+// DecisionText. ok is false when the backend did not answer.
+func (j *Jobs) RateRepair(ctx context.Context, facts, rows string) (p float64, res ScoreResult, ok bool) {
+	res, err := j.Client.Score(ctx, ScoreRequest{
+		Job:         string(config.JevLSPTriage),
+		Criterion:   sanitize.ForDecision(repairCriterion, 0),
+		Context:     sanitize.ForDecision(facts+"\n"+rows, 2400),
+		Items:       []ScoreItem{{ID: "fix", Label: sanitize.ForDecision("Another edit pass will clear the remaining errors in this file.", 0)}},
+		MaxRequests: 2,
+	})
+	if err != nil {
+		return 0, res, false
+	}
+	p, ok = res.Scores["fix"]
+	return p, res, ok
+}

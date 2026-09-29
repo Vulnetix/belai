@@ -30,8 +30,16 @@ type DiagnosticsGate struct {
 // Render returns the sealed block to append to an Edit/Write result, or ""
 // when there is nothing to say. It never returns an error and never panics.
 func (g DiagnosticsGate) Render(ctx context.Context, abs string, content []byte, pool *nonce.Pool) string {
+	block, _ := g.RenderReport(ctx, abs, content, pool)
+	return block
+}
+
+// RenderReport is Render that also returns the report it rendered, for callers
+// that track diagnostics across edits. The report holds every row, not only
+// the rows the block shows.
+func (g DiagnosticsGate) RenderReport(ctx context.Context, abs string, content []byte, pool *nonce.Pool) (block string, report lsp.Report) {
 	if g.Diagnoser == nil {
-		return ""
+		return "", lsp.Report{}
 	}
 	defer func() {
 		_ = recover()
@@ -39,7 +47,7 @@ func (g DiagnosticsGate) Render(ctx context.Context, abs string, content []byte,
 
 	lang := lsp.LanguageFor(abs)
 	if lang == nil {
-		return ""
+		return "", lsp.Report{}
 	}
 
 	budget := g.Budget
@@ -49,24 +57,24 @@ func (g DiagnosticsGate) Render(ctx context.Context, abs string, content []byte,
 	ctx, cancel := context.WithTimeout(ctx, budget)
 	defer cancel()
 
-	report := g.Diagnoser.Diagnose(ctx, abs, content)
+	report = g.Diagnoser.Diagnose(ctx, abs, content)
 	recordLSPDiagnose(report)
 
 	if report.Status == lsp.StatusUnsupported {
-		return ""
+		return "", report
 	}
 
 	body := lsp.Render(report, g.MaxRows, g.MaxRunes)
 	if body == "" {
-		return ""
+		return "", report
 	}
 	body = sanitize.Sanitize(body)
 
 	non, err := pool.Reserve()
 	if err != nil {
-		return ""
+		return "", report
 	}
-	return delimiters.Wrap(delimiters.KindDiagnostics, non, body)
+	return delimiters.Wrap(delimiters.KindDiagnostics, non, body), report
 }
 
 func recordLSPDiagnose(r lsp.Report) {

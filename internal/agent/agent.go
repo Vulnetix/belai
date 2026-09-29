@@ -278,6 +278,8 @@ type Session struct {
 	// skillCands are the installed skills a model may invoke, refreshed each
 	// turn; ToolSearch searches them.
 	skillCands []tools.Candidate
+	// diagHist tracks each edited file's language server errors across passes.
+	diagHist diagTracker
 	// taskCallsThisTurn counts Task invocations in the current fan-out turn.
 	taskCallsThisTurn int
 	// turnIntent is the detected intent for the current turn.

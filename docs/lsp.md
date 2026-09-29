@@ -105,7 +105,8 @@ etc.). Therefore:
       "go": false
     },
     "timeout_ms": 800,
-    "max_diagnostics": 10
+    "max_diagnostics": 10,
+    "max_repair_attempts": 4
   }
 }
 ```
@@ -119,9 +120,10 @@ etc.). Therefore:
 | `servers[id]` | none | dropped unconditionally |
 | `timeout_ms` | `800` | minimum wins |
 | `max_diagnostics` | `10` | minimum wins |
+| `max_repair_attempts` | `4` | minimum wins |
 
 Time values are in milliseconds and validated to `[100, 30000]`; row counts are
-validated to `[1, 50]`. Out-of-range values fail the whole settings resolve
+validated to `[1, 50]` and repair attempts to `[2, 20]`. Out-of-range values fail the whole settings resolve
 closed.
 
 ## TUI

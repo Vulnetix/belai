@@ -38,3 +38,20 @@ func TestSeverityFrom(t *testing.T) {
 }
 
 func intPtr(i int) *int { return &i }
+
+// A diagnostic's code identifies a problem across edits, so it is kept, cleaned
+// to identifier characters; a diagnostic with none has an empty code.
+func TestDiagnosticsToRowsKeepsTheCode(t *testing.T) {
+	rows := diagnosticsToRows([]Diagnostic{
+		{Severity: intPtr(1), Message: "a", Code: "E0308"},
+		{Severity: intPtr(1), Message: "b", Code: float64(2304)},
+		{Severity: intPtr(1), Message: "c"},
+		{Severity: intPtr(1), Message: "d", Code: "bad code\n<x>"},
+	}, "file:///x")
+	want := []string{"E0308", "2304", "", "badcodex"}
+	for i, w := range want {
+		if rows[i].Code != w {
+			t.Errorf("row %d code = %q, want %q", i, rows[i].Code, w)
+		}
+	}
+}

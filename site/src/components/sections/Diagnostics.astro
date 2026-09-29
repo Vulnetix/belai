@@ -99,5 +99,13 @@ const limits = [
     </tbody>
   </table>
 
+  <SubHead title="When another pass will not help">
+    From the second pass on, if errors are still reported for a file, the decision backend rates how likely
+    another edit is to clear them. When that is unlikely, the harness files a bug on the kanban board itself and
+    tells the model, so it carries on with its goal, plan and todo steps. Without a backend, the pass count set by{' '}
+    <code class="mono">lsp.max_repair_attempts</code> decides, and errors that are shrinking never trigger it.
+    The switch is <code class="mono">lsp_triage</code> in <code class="mono">/settings</code>.
+  </SubHead>
+
   <Limits items={limits} class="mt-16" />
 </SealedSection>
