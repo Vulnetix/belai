@@ -3622,6 +3622,49 @@ executable. Deny permission rules are evaluated against the effective
 command, and each restart call consumes one
 `resilience.max_process_recoveries` slot (default 3).
 
+### Model-started background processes
+
+`Bash` takes `run_in_background`, so the model can start a server or watcher
+and keep working. The tool set is `Bash` (with the flag), `BashOutput`,
+`KillShell` and `ProcessList`, in the trained shapes (`bash_id`, `shell_id`,
+`filter`). They ride on the same `bgproc.Manager` through the
+`tools.ProcessLauncher` seam, and they are on the main TUI session only; headless,
+ACP and fleet sessions have no launcher, so the flag is not advertised there
+and a call that sets it is refused rather than run in the foreground.
+
+Rules:
+
+- **Same gates as a foreground call.** The permission decision, the ask, the
+  hooks and the Vulnetix redirect run on the command before `Execute`, and the
+  Jev builtin swap is skipped for a background call. The process runs under
+  the sandbox policy that rode on the call's context (`sandbox.FromContext`),
+  in the working directory the call had, with `proc.ScrubbedEnv` and its own
+  process group. Required sandbox mode with no backend refuses the launch.
+- **Read-only Bash cannot launch.** `run_in_background` is not advertised on
+  it and is refused if sent.
+- **Never recovered.** An exit marks the process `exited` (or `stopped` after
+  `KillShell`) and records the exit code. The recovery subagent is not run,
+  `ProcessRestart` treats the handle as unknown, and no model call is made on
+  its account. `SubAgentLog` can still search its log.
+- **Only the model's own processes.** `BashOutput`, `KillShell` and
+  `ProcessList` see processes started through `StartBackground` and nothing
+  else, so a process started with `!!cmd` cannot be read or stopped through
+  them. The user still sees and stops every process in `/processes`.
+- **Output is read once.** `BashOutput` returns what was written since the
+  previous read, at most 64 KiB, cut at a line end with a note when more is
+  waiting. A `filter` (RE2, at most 1024 bytes) keeps matching lines; lines it
+  skips are not returned by a later call. The text is the process's own, so
+  the result is `KindProcess`: classified before promotion and offloaded when
+  large. `KillShell` returns a harness-composed line (`KindProcessCtl`) and
+  does not ask, because it can only end a process the model started with
+  approval. `ProcessList` prints handles, states and exit codes only, never a
+  command.
+- **A cap.** `resilience.max_background_processes` (default 8) bounds the
+  running ones; the project layer may lower it, never raise it. The 16 newest
+  finished processes stay readable, older ones are dropped. Each process has
+  a unique lock, so two launches of one binary do not collide. Every process
+  is stopped when the session ends.
+
 The recovery subagent's tail input is untrusted and is classified when
 guardrails are enabled. If the classifier declines it, recovery proceeds from
 the harness-owned facts alone. The subagent's prose result is sanitised and

@@ -32,7 +32,7 @@ four characters per token), the conversation gets a preview in its place:
   Later requests carry the same bytes, so the cached prefix is unchanged.
 - The kinds offloaded are the ones whose size Belai does not shape: `Bash`,
   `WebFetch`, `WebSearch`, `GH`/`Glab` and other `KindRemote` results, MCP
-  tools, `SubAgentLog` and `Task` reports. `Read` is never offloaded: it
+  tools, `SubAgentLog`, `BashOutput` and `Task` reports. `Read` is never offloaded: it
   already pages with `offset`/`limit`, and `Edit` needs the exact bytes.
 
 ### Reading the rest

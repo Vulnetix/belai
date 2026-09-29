@@ -81,6 +81,10 @@ func (s *Session) trySwap(ctx context.Context, pipe *rolemanager.Pipeline, args 
 	if s.jev == nil || !s.jev.Enabled(config.JevBashSwap) || pipe == nil || pipe.Classifier == nil {
 		return nil
 	}
+	// A background launch is never a builtin's job.
+	if bg, _ := args["run_in_background"].(bool); bg {
+		return nil
+	}
 	cmd, _ := args["command"].(string)
 	an := shellsafe.Analyze(cmd)
 	if !an.Simple() {
