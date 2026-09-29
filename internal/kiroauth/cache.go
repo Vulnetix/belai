@@ -29,9 +29,36 @@ func CachePath(home string) string {
 
 var clientHashRE = regexp.MustCompile(`^[A-Za-z0-9_-]{1,128}$`)
 
-// ImportKiroCache reads the Kiro sign-in under home and returns it as a Login.
-// It returns os.ErrNotExist (wrapped) when Kiro has never signed in.
+// ImportKiroCache reads the Kiro sign-in under home and returns it as a Login:
+// the Kiro IDE's AWS SSO cache first, then kiro-cli's database. It returns
+// os.ErrNotExist (wrapped) when neither has signed in.
 func ImportKiroCache(home string) (Login, error) {
+	l, _, err := ImportKiroSource(home)
+	return l, err
+}
+
+// ImportKiroSource is ImportKiroCache that also returns the file the login
+// was read from, or the one a failure concerns.
+func ImportKiroSource(home string) (Login, string, error) {
+	l, err := importIDECache(home)
+	if err == nil {
+		return l, CachePath(home), nil
+	}
+	cl, db, cerr := importCLI(home)
+	switch {
+	case cerr == nil:
+		return cl, db, nil
+	case errors.Is(err, os.ErrNotExist):
+		return Login{}, db, cerr
+	case errors.Is(cerr, os.ErrNotExist):
+		return Login{}, CachePath(home), err
+	default:
+		return Login{}, CachePath(home), fmt.Errorf("%w; kiro-cli: %w", err, cerr)
+	}
+}
+
+// importIDECache reads the Kiro IDE's sign-in from the AWS SSO cache.
+func importIDECache(home string) (Login, error) {
 	path := CachePath(home)
 	data, err := readCapped(path)
 	if err != nil {

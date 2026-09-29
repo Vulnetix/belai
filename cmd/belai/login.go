@@ -30,7 +30,7 @@ the sign-in as the kiro provider's login credential.
   -profile-arn ARN  CodeWhisperer profile ARN (default: looked up after
                     sign-in; asked for when the account has several)
   -backend B        keychain or user-file (default: keychain when available)
-  -import           import the sign-in Kiro already made (~/.aws/sso/cache)
+  -import           import the sign-in Kiro already made (the IDE's ~/.aws/sso/cache, or kiro-cli's database)
 `
 
 // newResolver builds the credential resolver and installs the Kiro rotation
@@ -129,7 +129,14 @@ func runLoginCLI(ctx context.Context, args []string, stdin io.Reader, stdout, st
 		fmt.Fprintln(stderr, "belai:", err)
 		return 1
 	}
-	if err := resolver.Store("kiro", "login", login.Encode(), dest); err != nil {
+	if strings.TrimSpace(*backend) == "" {
+		// Belai picked the backend, so a keychain too small for the login
+		// falls back to the user file, as it would with no keychain at all.
+		dest, err = resolver.StoreFallback("kiro", "login", login.Encode(), dest)
+	} else {
+		err = resolver.Store("kiro", "login", login.Encode(), dest)
+	}
+	if err != nil {
 		fmt.Fprintln(stderr, "belai: could not store the Kiro sign-in:", err)
 		return 1
 	}

@@ -20,6 +20,10 @@ type Keychain interface {
 var (
 	ErrUnavailable = errors.New("no host keychain available")
 	ErrNotFound    = errors.New("credential not found in keychain")
+	// ErrTooBig is a secret larger than the keychain holds: macOS caps an
+	// item at about 3000 bytes, which a Kiro sign-in (refresh token and
+	// client secret) can pass.
+	ErrTooBig = errors.New("the secret is too large for the keychain; store it in the user file instead")
 )
 
 const keyringService = "belai"
@@ -93,6 +97,9 @@ func (k *keyringBackend) Set(account, secret string) error {
 	}()
 	select {
 	case err := <-ch:
+		if errors.Is(err, keyring.ErrSetDataTooBig) {
+			return ErrTooBig
+		}
 		return err
 	case <-time.After(keyringTimeout):
 		return fmt.Errorf("%w: keychain set timed out", ErrUnavailable)

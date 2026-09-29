@@ -420,12 +420,14 @@ func TestDaemonStartsWorkersAndAdvertisesInventory(t *testing.T) {
 		if site.host.RC != nil {
 			n = len(site.host.RC.Profiles)
 		}
+		// The worker list rides on a separate heartbeat; wait for it too.
+		beat := len(site.workers) > 0
 		site.mu.Unlock()
-		if n == 2 {
+		if n == 2 && beat {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("changed catalogue was not advertised again")
+			t.Fatal("changed catalogue or worker heartbeat was not advertised")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

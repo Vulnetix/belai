@@ -257,6 +257,7 @@ func writeFile(t *testing.T, path, data string) {
 }
 
 func TestImportKiroCache(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "")
 	home := t.TempDir()
 	if _, err := ImportKiroCache(home); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("no cache: got %v", err)
@@ -403,5 +404,25 @@ func TestAPIRegionFallsBackToTheSSORegion(t *testing.T) {
 		if got := c.l.APIRegionOrDefault(); got != c.want {
 			t.Errorf("%#v: got %q want %q", c.l, got, c.want)
 		}
+	}
+}
+
+// An imported login that already names Kiro's profile keeps it without a
+// lookup: listing profiles can answer 403 for an account Kiro itself uses.
+func TestResolveProfileKeepsAnImportedARN(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+	in := testLogin()
+	in.ProfileARN = "arn:aws:codewhisperer:us-east-1:9:profile/X"
+	l, ps, err := ResolveProfile(context.Background(), nil, NewRefresher(srv.Client()).WithBaseURL(srv.URL), in, "", []string{srv.URL})
+	if err != nil || ps != nil || calls != 0 {
+		t.Fatalf("ResolveProfile = %v, %v, %d calls", ps, err, calls)
+	}
+	if l.ProfileARN != in.ProfileARN || l.APIRegion != "us-east-1" {
+		t.Fatalf("login = %#v", l)
 	}
 }

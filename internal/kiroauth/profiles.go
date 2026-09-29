@@ -228,6 +228,11 @@ func ResolveProfile(ctx context.Context, client *http.Client, r *Refresher, logi
 		}
 		return login.WithProfile(p), nil, nil
 	}
+	// An imported login already names the profile Kiro itself uses; keep it
+	// rather than list profiles, which an account may refuse (HTTP 403).
+	if p := (Profile{ARN: login.ProfileARN}); login.ProfileARN != "" && p.Region() != "" {
+		return login.WithProfile(p), nil, nil
+	}
 	stored := login.Encode()
 	profiles, err := DiscoverProfiles(ctx, client, r, login, bases)
 	if cur, perr := ParseLogin(r.Current(stored)); perr == nil {
