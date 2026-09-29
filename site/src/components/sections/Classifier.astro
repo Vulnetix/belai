@@ -5,7 +5,7 @@ import classifierPhases from '../../assets/concepts/classifier-phases.svg?raw';
 import classifierShot from '../../assets/shots/classifier.svg';
 
 const sealText =
-  'Classifier: three engines can classify untrusted content, and all of them reply with one of five sentinel tokens. The LLM sentinel works alone and is also the fallback for the other two. Embedded BERT models handle phases 1 and 2 locally or through HuggingFace, with an optional LLM phase 3. Jev on OpenRouter can be phase 3, or the whole classifier on a binary without embedded models, and passes undecided results to the agent model. Jev questions can also go to TypeSafe's hosted API with a TYPESAFE_API_KEY, to a decision model on your own machine, or to a self-hosted Jev server, and Belai tests each choice before it saves it. Errors always block the content.';
+  'Classifier: three engines can classify untrusted content, and all of them reply with one of five sentinel tokens. The LLM sentinel works alone and is also the fallback for the other two. Embedded BERT models handle phases 1 and 2 locally or through HuggingFace, with an optional LLM phase 3. Jev on OpenRouter can be phase 3, or the whole classifier on a binary without embedded models, and passes undecided results to the agent model. Jev questions can also go to the hosted TypeSafe API with a TYPESAFE_API_KEY, to a decision model on your own machine, or to a self-hosted Jev server, and Belai tests each choice before it saves it. Errors always block the content.';
 
 // The five tokens every engine reduces to.
 const sentinels = [
