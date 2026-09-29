@@ -9,6 +9,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/firewall"
 	"github.com/vulnetix/belai/internal/nonce"
+	"github.com/vulnetix/belai/internal/provider"
 )
 
 // FirewallSource is implemented by a CredentialSource that can route a
@@ -120,4 +121,34 @@ func applyFirewall(ctx context.Context, cfg Config, h http.Header) {
 	if pool, ok := ctx.Value(noncePoolKey{}).(*nonce.Pool); ok && pool.RemoteFor(cfg.BaseURL) {
 		h.Set(firewall.HeaderNonceMode, "enforce")
 	}
+}
+
+// unroutedSource wraps a CredentialSource so a provider resolves with no
+// firewall route: credentials, custom profiles and aliases still come from
+// the wrapped source. A nil source stays nil (environment only).
+func unroutedSource(src CredentialSource) CredentialSource {
+	if src == nil {
+		return nil
+	}
+	return unrouted{src}
+}
+
+type unrouted struct{ src CredentialSource }
+
+func (u unrouted) Lookup(provider, field string) (string, string, bool) {
+	return u.src.Lookup(provider, field)
+}
+
+func (u unrouted) Profile(name string) (provider.Profile, bool) {
+	if ps, ok := u.src.(ProviderSource); ok {
+		return ps.Profile(name)
+	}
+	return provider.Profile{}, false
+}
+
+func (u unrouted) CanonicalProvider(label string) (string, bool) {
+	if as, ok := u.src.(AliasSource); ok {
+		return as.CanonicalProvider(label)
+	}
+	return "", false
 }

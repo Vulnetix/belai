@@ -89,7 +89,11 @@ consulted for a firewall key.
   profiles (kind `jev`) answer
   decisions, not chat, so a firewall never carries them and a firewall key
   never rides on a decision request (see docs/role-manager.md, "Decision
-  backends").
+  backends"). This includes OpenRouter's Decisions model
+  (`typesafe/jev*`) as the classifier: with a firewall routing `openrouter`
+  for chat, the classifier still uses your own OpenRouter key, direct to
+  OpenRouter. With no such key the selection fails with a message naming
+  `OPENROUTER_API_KEY`; the firewall's key is never used for it.
 - **Read-only entries change nothing.** OpenRouter and Cloudflare only have
   their refusals read back.
 - **`-firewall` / `BELAI_FIREWALL=1`** turn the active firewall on for one

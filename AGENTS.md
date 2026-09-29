@@ -341,9 +341,12 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `firewall:<name>` (env, user file or keychain, never the project
   credentials file or netrc). It is sent only to its instance's URL, only
   in its configured header, and never across a redirect (model calls, model
-  lists and nonce fetches all refuse one). A firewall-routed classifier
-  never takes the direct OpenRouter Jev Decisions security call, because its
-  key is the firewall's (`securityGuard`). BYOK modes drop the provider's
+  lists and nonce fetches all refuse one). A classifier that is
+  OpenRouter's Decisions model is never firewall-routed: `ResolveClassifier`
+  resolves it with routing off and the user's own OpenRouter key (no such key
+  is `ErrNotConfigured`, never the firewall's key), so the direct Decisions
+  call and the `/model` test never carry a firewall credential
+  (`securityGuard` still refuses a config that arrives with a route). BYOK modes drop the provider's
   auth headers. Copilot, Kiro and the Cloudflare AI Gateway provider are
   never routed. The provider-native OpenRouter and Cloudflare entries are
   read-only: they never alter a request. A `firewall.Verdict` is parsed by

@@ -1,11 +1,13 @@
 package run
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/decisions"
+	"github.com/vulnetix/belai/internal/firewall"
 )
 
 func TestClassifierKindDerivesJev(t *testing.T) {
@@ -75,5 +77,45 @@ func TestResolveClassifierTypeSafe(t *testing.T) {
 	}
 	if _, err := cc.Decisions.Key(); err == nil {
 		t.Fatal("a missing TYPESAFE_API_KEY was accepted")
+	}
+}
+
+// OpenRouter's Decisions API is a decision backend: with an AI Firewall
+// routing openrouter, the classifier still resolves to the user's own
+// OpenRouter key and no route, so the direct Decisions call never carries the
+// firewall's credential (and /model's test asks what the runtime asks).
+func TestResolveClassifierDecisionsModelIsNeverFirewallRouted(t *testing.T) {
+	src := &fakeFirewallSource{
+		values:   map[string]string{"openrouter:api_key": "or-own-key"},
+		firewall: true,
+		gateway:  "https://guardrails.vulnetix.com",
+		org:      "org-1",
+		apiKey:   "vulnetix-key",
+		routable: map[string]bool{"openrouter": true, "cloudflare-workers-ai": true},
+	}
+	main := Config{Provider: "cloudflare-workers-ai", Model: "@cf/x"}
+	cls := &config.ClassifierSettings{Kind: ClassifierKindOpenRouterDecisions, Provider: "openrouter", Model: "typesafe/jev-1.13"}
+	cc, err := ResolveClassifier(main, cls, src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cc.Firewall != nil || cc.APIKey != "or-own-key" || strings.Contains(cc.BaseURL, "vulnetix") {
+		t.Fatalf("classifier = firewall %v key %q base %q, want own key and no route", cc.Firewall, cc.APIKey, cc.BaseURL)
+	}
+	// The same holds when openrouter is also the main provider.
+	main = Config{Provider: "openrouter", Model: "openai/gpt-5", APIKey: "vulnetix-key", Firewall: &firewall.Route{Instance: "vulnetix"}}
+	if cc, err = ResolveClassifier(main, cls, src); err != nil || cc.Firewall != nil || cc.APIKey != "or-own-key" {
+		t.Fatalf("same-provider: %+v %v", cc, err)
+	}
+	// A chat model on openrouter is still routed as before.
+	chat := &config.ClassifierSettings{Kind: "llm", Provider: "openrouter", Model: "openai/gpt-5"}
+	if cc, err = ResolveClassifier(Config{Provider: "cloudflare-workers-ai"}, chat, src); err != nil || cc.Firewall == nil {
+		t.Fatalf("chat classifier lost its firewall route: %+v %v", cc, err)
+	}
+	// No key of the user's own: an error that says what to set, never the
+	// firewall's key.
+	src.values = nil
+	if _, err = ResolveClassifier(Config{Provider: "cloudflare-workers-ai"}, cls, src); !errors.Is(err, ErrNotConfigured) {
+		t.Fatalf("err = %v, want ErrNotConfigured", err)
 	}
 }
