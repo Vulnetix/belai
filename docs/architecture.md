@@ -655,6 +655,7 @@ was well formed:
 | `bash` | **Always** | An arbitrary command string: neither what runs nor what comes back is constrained by the harness |
 | `web_fetch`, `web_search` | **Always** | Text written by someone off this machine with no relationship to the task — the shape a prompt injection takes |
 | `read` | **Always** | The call is confined, but the bytes are not: a repository can carry a poisoned file exactly as a page can carry a poisoned paragraph |
+| `screenshot` | Text: no. Pixels: never | The text is composed by the harness. A text classifier cannot read pixels, so an image is admitted by `internal/imageguard` (decode, bound, re-encode) instead, and only this kind may carry one (see [images](image-attachments.md)) |
 | `grep`, `glob`, `write`, `edit`, `native` | No | Shaped *and* controlled: matching lines for a pattern passed as one argument, paths, a confirmation the harness wrote itself, a fixed argv the harness built |
 
 The distinction between the two halves is not "did the harness validate the

@@ -22,6 +22,7 @@ import (
 	"github.com/vulnetix/belai/internal/forge"
 	"github.com/vulnetix/belai/internal/goals"
 	"github.com/vulnetix/belai/internal/hooks"
+	"github.com/vulnetix/belai/internal/imageguard"
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/modes"
 	"github.com/vulnetix/belai/internal/nonce"
@@ -1616,6 +1617,45 @@ type callEffect struct {
 	changed bool
 	// paths are the changed paths, in the order observed.
 	paths []string
+	// images are the pixels the call returned, admitted by imageguard. They
+	// ride on the tool turn beside its text.
+	images []run.Attachment
+}
+
+// admitImages admits the images a call returned and returns a harness note to
+// append to the result text. Pixels are not text, so the classifier never
+// sees them: only a KindScreenshot result may carry any, and each one must
+// pass imageguard's decode, bound and re-encode. A result whose text was
+// withheld carries none, and a call with nowhere to put them (a subagent) drops
+// them and says so.
+func admitImages(res tools.Result, promoted string, eff *callEffect) string {
+	if len(res.Images) == 0 || res.Kind != tools.KindScreenshot {
+		return ""
+	}
+	if strings.HasPrefix(promoted, "tool result withheld:") {
+		return ""
+	}
+	if eff == nil {
+		return "\n[harness: this call cannot carry an image, so it was not sent]"
+	}
+	var notes []string
+	for _, img := range res.Images {
+		adm, err := imageguard.Admit(img.Data, imageguard.Default)
+		if err != nil {
+			notes = append(notes, "[harness: an image was refused: "+sanitize.Line(err.Error(), 120)+"]")
+			continue
+		}
+		eff.images = append(eff.images, run.Attachment{
+			Kind:      run.AttachmentImage,
+			Label:     "screenshot",
+			MediaType: imageguard.MediaType,
+			Data:      adm.PNG,
+		})
+	}
+	if len(notes) == 0 {
+		return ""
+	}
+	return "\n" + strings.Join(notes, "\n")
 }
 
 // executeCall runs one tool call and returns the string the conversation sees.
@@ -1760,6 +1800,7 @@ func (s *Session) executeCallInner(ctx context.Context, call rolemanager.ToolCal
 	}
 
 	out := s.promoteResult(ctx, call, res, emit)
+	out += admitImages(res, out, eff)
 	// Hook notes classify on their own, so a noisy hook cannot get a clean
 	// tool result withheld, and a clean result cannot vouch for a hook.
 	notes := append(pre.Context, s.postToolHooks(ctx, call, res, emit).Context...)

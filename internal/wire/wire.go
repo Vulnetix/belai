@@ -5,6 +5,7 @@
 package wire
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"strings"
 )
@@ -62,13 +63,33 @@ type OpenAIChatMessage struct {
 	ToolCallID       string           `json:"tool_call_id,omitempty"`
 	Name             string           `json:"name,omitempty"`
 	ReasoningContent string           `json:"reasoning_content,omitempty"`
+	// Images ride on a user message as image_url parts after the text. They
+	// are never set on a tool message: chat/completions has no image seat
+	// there, so the request builder puts them on a user turn that follows.
+	Images []ImageInput `json:"-"`
+}
+
+// ImageInput is one image for a multimodal message.
+type ImageInput struct {
+	MediaType string
+	Data      []byte
+}
+
+type chatPartWire struct {
+	Type     string            `json:"type"`
+	Text     string            `json:"text,omitempty"`
+	ImageURL *chatImageURLWire `json:"image_url,omitempty"`
+}
+
+type chatImageURLWire struct {
+	URL string `json:"url"`
 }
 
 // chatMessageWire is the marshalling shape of OpenAIChatMessage. A nil Content
 // pointer omits the field; a pointer to "" emits an empty content field.
 type chatMessageWire struct {
 	Role             string           `json:"role"`
-	Content          *string          `json:"content,omitempty"`
+	Content          any              `json:"content,omitempty"`
 	ToolCalls        []OpenAIToolCall `json:"tool_calls,omitempty"`
 	ToolCallID       string           `json:"tool_call_id,omitempty"`
 	Name             string           `json:"name,omitempty"`
@@ -93,7 +114,19 @@ func (m OpenAIChatMessage) MarshalJSON() ([]byte, error) {
 		Name:             m.Name,
 		ReasoningContent: m.ReasoningContent,
 	}
-	if m.Content != "" || len(m.ToolCalls) == 0 {
+	switch {
+	case len(m.Images) > 0:
+		parts := make([]chatPartWire, 0, 1+len(m.Images))
+		if m.Content != "" {
+			parts = append(parts, chatPartWire{Type: "text", Text: m.Content})
+		}
+		for _, img := range m.Images {
+			parts = append(parts, chatPartWire{Type: "image_url", ImageURL: &chatImageURLWire{
+				URL: "data:" + img.MediaType + ";base64," + base64.StdEncoding.EncodeToString(img.Data),
+			}})
+		}
+		w.Content = parts
+	case m.Content != "" || len(m.ToolCalls) == 0:
 		content := m.Content
 		w.Content = &content
 	}

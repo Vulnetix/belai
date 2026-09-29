@@ -280,6 +280,15 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   subagent, and `ProcessRestart` cannot restart it.
   `resilience.max_background_processes` caps the running ones and a project
   layer may only lower it.
+- **Pixels are admitted by `internal/imageguard`, never by the text
+  classifier, and only a capture tool may return them.** `tools.Result.Images`
+  is honoured for `KindScreenshot` alone and dropped for every other kind. An
+  image must decode as PNG or JPEG inside the pixel and byte budget, is
+  bounded to a long edge, flattened and re-encoded as a new PNG; any failure
+  refuses it, and a withheld text result carries no image. Only the newest
+  tool image is sent, and a model that `models.Vision` does not name gets a
+  harness note instead. The classifier payload never carries an image. Do not
+  add a second admission path or an image-carrying kind without this gate.
 - **Skills and hooks validate first.** Skills load only after strict
   front-matter schema validation; hooks load only after strict schema
   validation (unknown keys rejected) with no arbitrary code-path injection.

@@ -6,6 +6,7 @@ package wire
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 )
@@ -97,6 +98,39 @@ type AnthropicRequestBlock struct {
 	ToolUseID    string                 `json:"tool_use_id,omitempty"`
 	Content      string                 `json:"content,omitempty"`
 	CacheControl *AnthropicCacheControl `json:"cache_control,omitempty"`
+	// Source carries an image block: base64 bytes and their media type.
+	Source *AnthropicImageSource `json:"source,omitempty"`
+	// Parts, when set on a tool_result, replaces Content with a block list so
+	// the result can carry an image beside its text.
+	Parts []AnthropicRequestBlock `json:"-"`
+}
+
+// AnthropicImageSource is the source of an Anthropic image block.
+type AnthropicImageSource struct {
+	Type      string `json:"type"`
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
+}
+
+// NewAnthropicImageBlock builds a base64 image block.
+func NewAnthropicImageBlock(mediaType string, data []byte) AnthropicRequestBlock {
+	return AnthropicRequestBlock{
+		Type:   "image",
+		Source: &AnthropicImageSource{Type: "base64", MediaType: mediaType, Data: base64.StdEncoding.EncodeToString(data)},
+	}
+}
+
+// MarshalJSON writes Parts as the block's content when it is set.
+func (b AnthropicRequestBlock) MarshalJSON() ([]byte, error) {
+	type plain AnthropicRequestBlock
+	if len(b.Parts) == 0 {
+		return json.Marshal(plain(b))
+	}
+	b.Content = ""
+	return json.Marshal(struct {
+		plain
+		Content []AnthropicRequestBlock `json:"content"`
+	}{plain(b), b.Parts})
 }
 
 // CanonicalToolArgs converts raw wire bytes into canonical JSON text.

@@ -119,6 +119,10 @@ func buildKiroRequest(model, system string, turns []Turn, tools []wire.OpenAIToo
 				Content:   []wire.KiroTextContent{{Text: t.Content}},
 				Status:    "success",
 			})
+			// An image a tool returned (a screenshot) rides on the same user
+			// message; history images are cleared below and a text-only model
+			// gets the omitted note, exactly like an attached image.
+			user.Images = append(user.Images, kiroImages(imageAttachments(t.Attachments))...)
 		default:
 			openUser()
 			if t.Content != "" {
