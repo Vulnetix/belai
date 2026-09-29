@@ -37,6 +37,7 @@ import (
 	"github.com/vulnetix/belai/internal/commands"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/decisionserver"
 	"github.com/vulnetix/belai/internal/explore"
 	"github.com/vulnetix/belai/internal/firewall"
 	"github.com/vulnetix/belai/internal/forge"
@@ -393,10 +394,22 @@ type App struct {
 	settingsState        settingsViewState
 	lspState             lspViewState
 	modelState           modelViewState
-	permState            permissionsViewState
-	importState          importViewState
-	clarifyState         clarifyViewState
-	permAskState         permissionAskViewState
+	// modelTest is the /model test-before-save run in progress or finished;
+	// modelTestGen drops events from a superseded run.
+	modelTest       *modelTestRun
+	modelTestGen    int
+	modelTester     modelTester
+	modelTestPassed map[string]time.Time
+	// modelTestCPU keeps local test launches on the CPU after the user chose
+	// the CPU relaunch hint.
+	modelTestCPU bool
+	// modelTestAsync makes a test run in the background even when the
+	// package tests default to inline runs.
+	modelTestAsync bool
+	permState      permissionsViewState
+	importState    importViewState
+	clarifyState   clarifyViewState
+	permAskState   permissionAskViewState
 	// openAsks maps each ask recorded in the session and not yet answered to
 	// its kind; turnID/turnStarted describe the turn_state open now
 	// (web_asks.go).
@@ -2247,6 +2260,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case planEditedMsg:
 		return a, a.handlePlanEdited(m)
 
+	case localModelLineMsg:
+		a.addSystem(m.line)
+		return a, watchLocalModelLines(m.ch)
+
+	case localModelLaunchedMsg:
+		return a, a.handleLocalModelLaunched(m)
+
 	case localModelReportMsg:
 		switch a.view {
 		case viewProviderDetail:
@@ -2332,6 +2352,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case modelsFetchedMsg:
 		return a, a.handleModelsFetched(m)
+
+	case modelTestEventMsg:
+		return a, a.handleModelTestEvent(m)
+
+	case modelTestDoneMsg:
+		return a, a.handleModelTestDone(m)
+
+	case modelTestTickMsg:
+		return a, a.handleModelTestTick(m)
 
 	case sessionsScannedMsg:
 		return a, a.handleSessionsScanned(m)
@@ -4936,6 +4965,11 @@ func (a *App) refreshProvider() tea.Cmd {
 	if status.Configured {
 		a.SetClassifier(run.NewRoleClassifier(cfg, a.client, nil))
 	}
+	// A local decision model starts loading now, so the first checks find
+	// it ready; a notice says why when it cannot start.
+	if n := run.WarmDecisions(cfg); n != "" {
+		a.avail.note = n
+	}
 	a.refreshFooter()
 	if a.pending != "" && status.Configured {
 		return a.sendPending()
@@ -5592,64 +5626,118 @@ func (a *App) runningLocalServers() []localServerInfo {
 // persists the port credential, registers the process, and lands on the
 // credential view.
 func (a *App) localModelLaunchCmd(repo, portArg, quant string) tea.Cmd {
-	return func() tea.Msg {
-		bin, ok := localinfer.Detect()
-		if !ok || bin.Name != "llama-server" {
-			return localModelReportMsg{text: "launch requires the llama-server binary (llama.cpp); see https://github.com/ggerganov/llama.cpp"}
+	// Everything that reads App state (the credential resolver, the port
+	// choice) is resolved here, on the UI goroutine. The command's goroutine
+	// only talks to the network and the child process, and reports back
+	// through messages: log lines stream through a channel, and the launched
+	// port is persisted by the result handler.
+	token := a.hfToken()
+	port, perr := a.pickLocalServerPort(portArg)
+	registry := a.activity
+	pidfile := ""
+	if perr == nil {
+		pidfile = a.localServerPidfile(port)
+	}
+	lines := make(chan tea.Msg, 256)
+	sink := func(line string) {
+		select {
+		case lines <- localModelLineMsg{line: line, ch: lines}:
+		default:
 		}
-
-		token := a.hfToken()
+	}
+	launch := func() tea.Msg {
+		defer func() { lines <- nil }()
+		if perr != nil {
+			return localModelReportMsg{text: "port allocation failed: " + perr.Error()}
+		}
+		bin, ok := localinfer.LlamaServer()
+		if !ok {
+			return localModelReportMsg{text: "launch requires llama-server (llama.cpp) on PATH: brew install llama.cpp, winget install llama.cpp, or your distribution's llama.cpp package"}
+		}
+		ctx := context.Background()
 		var modelPath string
-		if hfBin, ok := localinfer.HFBinary(); ok {
-			a.addSystem("downloading model with hf CLI...")
-			path, err := localinfer.HFDownload(context.Background(), hfBin, repo, quant, token, func(line string) {
-				a.addSystem(line)
-			})
+		if hfBin, ok := localinfer.HFCLI(); ok {
+			sink("downloading " + repo + " (" + quant + ") with the Hugging Face CLI…")
+			path, err := localinfer.HFDownload(ctx, hfBin, repo, quant, token, sink)
 			if err != nil {
 				return localModelReportMsg{text: "download failed: " + err.Error()}
 			}
 			modelPath = path
-		}
-
-		port, err := a.pickLocalServerPort(portArg)
-		if err != nil {
-			return localModelReportMsg{text: "port allocation failed: " + err.Error()}
+		} else {
+			// No Hugging Face CLI: download the file directly (resumable and
+			// checksum-verified) rather than asking llama-server to fetch it
+			// inside its startup deadline.
+			files, err := localinfer.RepoGGUFs(ctx, nil, repo, token)
+			if err != nil {
+				return localModelReportMsg{text: "could not list " + repo + ": " + err.Error()}
+			}
+			f, found := localinfer.PickGGUF(files, quant)
+			if !found {
+				return localModelReportMsg{text: repo + " has no " + quant + " GGUF"}
+			}
+			if p := localinfer.FindModelFile(repo, f.Name); p != "" {
+				modelPath = p
+			} else {
+				sink("downloading " + f.Name + " (" + humanizeBytes(int(f.Size)) + ")…")
+				last := time.Now()
+				p, err := localinfer.DownloadFile(ctx, nil, repo, f.Name, token, f.RemoteFile, func(done, total int64) {
+					if time.Since(last) > 2*time.Second && total > 0 {
+						last = time.Now()
+						sink(fmt.Sprintf("downloaded %d%%", done*100/total))
+					}
+				})
+				if err != nil {
+					return localModelReportMsg{text: "download failed: " + err.Error()}
+				}
+				modelPath = p
+			}
 		}
 		baseURL := localinfer.BaseURL("127.0.0.1", port)
-
-		opts := localinfer.ArgsOptions{Port: port, Quant: quant}
-		if modelPath != "" {
-			opts.ModelPath = modelPath
-		} else {
-			opts.Repo = repo
-		}
-		args := localinfer.Args(opts)
-
-		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-		defer cancel()
-
-		stop, err := localinfer.Launch(ctx, bin, args, baseURL, localinfer.LaunchOptions{
-			Deadline: 30 * time.Second,
-			HFToken:  token,
-			Registry: a.activity,
-			Pidfile:  a.localServerPidfile(port),
-			OnLine: func(line string) {
-				a.addSystem(line)
-			},
+		args := localinfer.Args(localinfer.ArgsOptions{Port: port, Quant: quant, ModelPath: modelPath})
+		launchPort := port
+		_, err := localinfer.Launch(ctx, bin, args, baseURL, localinfer.LaunchOptions{
+			Deadline: 120 * time.Second,
+			Registry: registry,
+			Pidfile:  pidfile,
+			OnLine:   sink,
+			OnPort:   func(p int) { launchPort = p },
 		})
 		if err != nil {
 			return localModelReportMsg{text: "launch failed: " + err.Error()}
 		}
-
-		if err := a.persistLocalServerCredentials(port); err != nil {
-			_ = stop()
-			return localModelReportMsg{text: "credential persistence failed: " + err.Error()}
-		}
-		a.invalidateAvailability()
-
-		// Land on the providers view so the running server is visible.
-		return a.push(viewProviders)()
+		return localModelLaunchedMsg{port: launchPort}
 	}
+	return tea.Batch(launch, watchLocalModelLines(lines))
+}
+
+// localModelLineMsg is one line of local-server output for the transcript.
+type localModelLineMsg struct {
+	line string
+	ch   chan tea.Msg
+}
+
+// localModelLaunchedMsg reports a llama-server that became healthy.
+type localModelLaunchedMsg struct{ port int }
+
+func watchLocalModelLines(ch chan tea.Msg) tea.Cmd {
+	return func() tea.Msg {
+		m := <-ch
+		if m == nil {
+			return nil
+		}
+		return m
+	}
+}
+
+// handleLocalModelLaunched records the running server's address and shows
+// the providers view with it.
+func (a *App) handleLocalModelLaunched(m localModelLaunchedMsg) tea.Cmd {
+	if err := a.persistLocalServerCredentials(m.port); err != nil {
+		a.addSystem("credential persistence failed: " + err.Error())
+		return nil
+	}
+	a.invalidateAvailability()
+	return a.push(viewProviders)
 }
 
 // localModelDownloadCmd downloads a model with the HF CLI. When the CLI is
@@ -5691,6 +5779,8 @@ func (a *App) localModelStopCmd(portArg string) tea.Cmd {
 
 // stopLocalServers stops every managed llama-server on quit.
 func (a *App) stopLocalServers() {
+	// The decision server is stopped only if this process launched it.
+	decisionserver.StopAll()
 	for _, act := range a.activity.List() {
 		if act.Kind == activity.KindShell && act.Label == "llama-server" {
 			_ = a.activity.Kill(act.ID)

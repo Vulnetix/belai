@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -9,6 +10,8 @@ import (
 
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/decisions"
+	"github.com/vulnetix/belai/internal/modeltest"
 	"github.com/vulnetix/belai/internal/provider"
 	"github.com/vulnetix/belai/internal/tui/components"
 )
@@ -34,7 +37,7 @@ type providerNewField struct {
 }
 
 // providerNewKinds are the selectable template kinds, in cycle order.
-var providerNewKinds = []string{"ollama", "llama-server", "openai-compatible"}
+var providerNewKinds = []string{"ollama", "llama-server", "openai-compatible", "jev"}
 
 // openProviderNew seeds the add-new form with template defaults.
 func (a *App) openProviderNew() {
@@ -65,6 +68,7 @@ func (a *App) buildProviderNewFields(kind, protocol, host, port string, backend 
 		{key: "port", label: "port", kind: "text", value: port},
 		{key: "display", label: "display name", kind: "text", value: display},
 		{key: "name", label: "name (slug)", kind: "text", value: slug},
+		{key: "path", label: "decision path", kind: "text", value: ""},
 		{key: "api_key", label: "api key", kind: "masked", value: ""},
 		{key: "backend", label: "storing to", kind: "cycle", opts: backendNames(a.writableBackends()), value: string(backend)},
 	}
@@ -152,6 +156,15 @@ func (a *App) applyProviderNewKind(kind string) {
 		if port == "" || port == "11434" {
 			a.setProviderNewField("port", "8080")
 		}
+	case "jev":
+		// A self-hosted Jev server (laya-serve, decider.serve, jevk5-serve …)
+		// speaks TypeSafe's /v1/systemone; the port is the server's own.
+		if port == "11434" || port == "8080" {
+			a.setProviderNewField("port", "")
+		}
+		if a.providerNewFieldValue("path") == "" {
+			a.setProviderNewField("path", "/v1/systemone")
+		}
 	default:
 		a.setProviderNewField("port", "")
 	}
@@ -195,6 +208,9 @@ func (a *App) providerNewView() string {
 	}
 
 	for i, f := range st.fields {
+		if a.providerNewHidden(f) {
+			continue
+		}
 		selected := i == st.fieldSel
 		label := fmt.Sprintf("%-14s", f.label)
 		value := f.value
@@ -244,13 +260,19 @@ func (a *App) handleProviderNewKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.pop()
 		return a, nil
 	case "up", "k":
-		if st.fieldSel > 0 {
-			st.fieldSel--
+		for i := st.fieldSel - 1; i >= 0; i-- {
+			if !a.providerNewHidden(st.fields[i]) {
+				st.fieldSel = i
+				break
+			}
 		}
 		return a, nil
 	case "down", "j":
-		if st.fieldSel < len(st.fields)-1 {
-			st.fieldSel++
+		for i := st.fieldSel + 1; i < len(st.fields); i++ {
+			if !a.providerNewHidden(st.fields[i]) {
+				st.fieldSel = i
+				break
+			}
 		}
 		return a, nil
 	case "left", "h":
@@ -377,6 +399,9 @@ func (a *App) providerNewCommit() (tea.Model, tea.Cmd) {
 	if display == "" {
 		display = slug
 	}
+	if kind == config.JevKind {
+		return a, a.providerNewJev(slug, display, protocol, host, port, strings.TrimSpace(a.providerNewFieldValue("path")), apiKey)
+	}
 
 	d, ok := provider.Template(kind)
 	if !ok {
@@ -443,4 +468,122 @@ func (a *App) providerNewCommit() (tea.Model, tea.Cmd) {
 		cmds = append(cmds, a.syncFirewallKey(slug))
 	}
 	return a, tea.Batch(cmds...)
+}
+
+// providerNewJev adds a self-hosted Jev server. Nothing is written first: the
+// /model page tests the address and key as typed (trying the other common
+// decision paths and, on localhost, the other protocol), and only when the
+// test passes is the profile saved, the key stored, and the classifier set
+// to it. A failed test leaves no profile behind.
+func (a *App) providerNewJev(slug, display, protocol, host, port, path, apiKey string) tea.Cmd {
+	st := &a.providerNewState
+	if protocol == "" {
+		protocol = "http"
+	}
+	baseURL := protocol + "://" + host
+	if port != "" {
+		baseURL += ":" + port
+	}
+	if path == decisions.DefaultSystemOnePath {
+		path = ""
+	}
+	prof := config.ProviderProfile{
+		BaseURL: baseURL, Kind: config.JevKind, Protocol: protocol, Host: host, Port: port, DecisionPath: path,
+	}
+	candidate := cloneSettings(a.settings)
+	if candidate.Providers == nil {
+		candidate.Providers = map[string]config.ProviderProfile{}
+	}
+	if candidate.ProviderLabels == nil {
+		candidate.ProviderLabels = map[string]string{}
+	}
+	candidate.Providers[slug] = prof
+	candidate.ProviderLabels[slug] = display
+	if err := config.ValidateProviders(candidate); err != nil {
+		st.errorMsg = err.Error()
+		return nil
+	}
+	backend := st.backend
+	enter := a.push(viewModel)
+	return tea.Batch(enter, a.stageJevProfile(slug, display, prof, apiKey, backend))
+}
+
+// stageJevProfile tests a new self-hosted Jev profile as the classifier and
+// writes the profile, its key and the selection only on a pass.
+func (a *App) stageJevProfile(slug, display string, prof config.ProviderProfile, apiKey string, backend credentials.Source) tea.Cmd {
+	restage := func() tea.Cmd { return a.stageJevProfile(slug, display, prof, apiKey, backend) }
+	var fixed *modeltest.EndpointFix
+	ch := stagedChange{
+		role: roleClassifier, rowKey: "provider",
+		label: "classifier = " + display + " (self-hosted Jev)",
+		was:   "the current classifier; no provider was added",
+		scope: a.modelState.classifierScope,
+		write: func() tea.Cmd {
+			p := prof
+			if fixed != nil {
+				p.BaseURL = fixed.BaseURL
+				p.DecisionPath = fixed.Path
+				if p.DecisionPath == decisions.DefaultSystemOnePath {
+					p.DecisionPath = ""
+				}
+			}
+			if err := config.Mutate(config.ScopeGlobal, a.workdir, func(s *config.Settings) error {
+				if s.Providers == nil {
+					s.Providers = map[string]config.ProviderProfile{}
+				}
+				if s.ProviderLabels == nil {
+					s.ProviderLabels = map[string]string{}
+				}
+				s.Providers[slug] = p
+				s.ProviderLabels[slug] = display
+				return nil
+			}); err != nil {
+				a.modelState.errorMsg = err.Error()
+				return nil
+			}
+			if apiKey != "" && a.resolver != nil {
+				if err := a.resolver.Store(slug, "api_key", apiKey, backend); err != nil {
+					a.modelState.errorMsg = err.Error()
+					return nil
+				}
+			}
+			if err := a.reloadSettings(); err != nil {
+				a.modelState.errorMsg = err.Error()
+				return nil
+			}
+			a.invalidateAvailability()
+			return a.mutateClassifier(func(c *config.ClassifierSettings) {
+				c.Provider = slug
+				c.Model = ""
+			})
+		},
+		restage: restage,
+	}
+	key := apiKey
+	target := modeltest.SystemOneTarget{
+		Name: slug, BaseURL: prof.BaseURL, Path: prof.DecisionPath,
+		Key: func() (string, error) { return key, nil },
+	}
+	steps := modeltest.SystemOneSteps(target)
+	// Capture a discovered address for write (which runs after the report).
+	steps = append(steps, modeltest.Step{Name: "address saved", Run: func(ctx context.Context, st *modeltest.State) modeltest.Outcome {
+		if st.Fix != nil {
+			fixed = st.Fix
+			return modeltest.Outcome{Status: modeltest.StatusOK, Detail: "using " + st.Fix.BaseURL + st.Fix.Path}
+		}
+		return modeltest.Outcome{Status: modeltest.StatusOK, Detail: "as entered"}
+	}})
+	guard := a.chatTarget("fallback", a.cfg.Provider, a.cfg.Model, "none", true)
+	for _, c := range a.freshChats([]modeltest.ChatTarget{guard}) {
+		steps = append(modeltest.ChatSteps(c), steps...)
+		ch.chatKeys = append(ch.chatKeys, chatKey(c))
+	}
+	ch.steps = steps
+	return a.startModelTest(ch)
+}
+
+// providerNewHidden reports whether a form row does not apply to the chosen
+// kind: the decision path belongs to a self-hosted Jev server only.
+func (a *App) providerNewHidden(f providerNewField) bool {
+	return f.key == "path" && a.providerNewFieldValue("kind") != config.JevKind
 }

@@ -25,19 +25,27 @@ func TestModelScreenFastTierRows(t *testing.T) {
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.routingScope = "project"
 
-	// Enter on the provider row assigns one; the model follows that
-	// provider's registry default until one is picked.
+	// Enter on the provider row selects the next provider with its default
+	// model and tests it; an unconfigured provider is not saved.
 	selectRow(t, a, roleFast, "provider")
 	_ = a.changeModelRow()
-	if a.settings.Routing == nil || a.settings.Routing.Fast == nil || a.settings.Routing.Fast.Provider == "" {
-		t.Fatalf("fast provider not stored: %+v", a.settings.Routing)
+	if a.modelTest == nil {
+		t.Fatal("a provider change must be tested before it is saved")
+	}
+	// A configured provider passes its test and is saved, model cleared.
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+	prov := "openai"
+	_ = a.stageRouting(roleFast, "provider", "fast", func(r *config.RoutingSettings) {
+		r.Fast = &config.RoutingTarget{Provider: prov}
+	})
+	if a.settings.Routing == nil || a.settings.Routing.Fast == nil || a.settings.Routing.Fast.Provider != prov {
+		t.Fatalf("fast provider not stored after a passing test: %+v", a.settings.Routing)
 	}
 	if a.settings.Routing.Fast.Model != "" {
 		t.Fatal("a provider change must clear the fast model")
 	}
 
 	// Picking a model keeps the provider.
-	prov := a.settings.Routing.Fast.Provider
 	_ = a.setFastModel("tiny-model")
 	if f := a.settings.Routing.Fast; f.Provider != prov || f.Model != "tiny-model" {
 		t.Fatalf("fast = %+v", f)

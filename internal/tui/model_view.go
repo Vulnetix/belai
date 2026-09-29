@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/decisions"
 	"github.com/vulnetix/belai/internal/mlclassify"
 	"github.com/vulnetix/belai/internal/modelfetch"
 	"github.com/vulnetix/belai/internal/models"
@@ -57,6 +58,11 @@ type modelViewState struct {
 	// reasoning off/on; agentLastEffort does the same for the main model.
 	classifierLastEffort string
 	agentLastEffort      string
+
+	// pendingProvider is a provider cycled to on a role's provider row but
+	// not saved: the model picker opens on it, and the pick is tested and
+	// saved together with it.
+	pendingProvider map[modelRole]string
 
 	// sub-picker state, shared by agent and classifier model rows.
 	picking     bool
@@ -278,7 +284,15 @@ func filterModels(catalog []models.Model, q string) []models.Model {
 // user off their own model. Every site in this view reads it, so the tab
 // strip, the cursor and commitModel always index the same slice.
 func (a *App) modelProviders() []string {
-	return a.availableProviders(a.cfg.Provider)
+	// Decision backends (a self-hosted Jev profile) answer decisions, never
+	// chat, so the chat roles never offer them.
+	var out []string
+	for _, name := range a.availableProviders(a.cfg.Provider) {
+		if !a.providerIsDecisions(name) {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // windowStart clamps off so the cursor stays inside a rows-tall window over n
@@ -807,7 +821,12 @@ func (a *App) modelView() string {
 		}
 		selected := i == a.modelState.selected
 		label := modelIndent + padRight(r.label, labelW)
-		value := truncTail(r.value, valW)
+		rawValue := r.value
+		if p, ok := a.modelState.pendingProvider[r.role]; ok && r.key == "provider" {
+			rawValue = p + "  · pick a model to test and save"
+		}
+		rawValue += a.testingSuffix(r.role, r.key)
+		value := truncTail(rawValue, valW)
 		// Pool rows stay editable under kind defined, but they are not in use,
 		// so they read like disabled ones.
 		dim := r.disabled || (isRoute && !routed)
@@ -827,7 +846,7 @@ func (a *App) modelView() string {
 			if outranks(src, g.scope) {
 				style = components.WarnStyle
 			}
-			gap := valW - ansi.StringWidth(truncTail(r.value, valW)) + 2
+			gap := valW - ansi.StringWidth(truncTail(rawValue, valW)) + 2
 			line += strings.Repeat(" ", gap) + style.Render("set in "+src)
 		}
 		b.WriteString(line + "\n")
@@ -836,11 +855,15 @@ func (a *App) modelView() string {
 	if a.avail.note != "" {
 		b.WriteString("\n" + components.MutedStyle.Render(a.avail.note) + "\n")
 	}
+	if panel := a.modelTestPanel(inner); panel != "" {
+		b.WriteString("\n" + panel)
+	}
 	if a.modelState.errorMsg != "" {
 		b.WriteString("\n" + components.DangerStyle.Render("✗ "+a.modelState.errorMsg) + "\n")
 	}
-	b.WriteString("\n" + components.HelpBar(
-		"↑↓", "move", "⏎", "edit", "tab", "mode", "s", "scope", "c", "clear", "p", "providers") + "\n")
+	help := []string{"↑↓", "move", "⏎", "edit", "tab", "mode", "s", "scope", "c", "clear", "p", "providers"}
+	help = append(help, a.modelTestHelp()...)
+	b.WriteString("\n" + components.HelpBar(help...) + "\n")
 	return lipgloss.NewStyle().Padding(1).Render(b.String())
 }
 
@@ -857,7 +880,21 @@ func (a *App) modelPicker() string {
 
 	const rows = 10
 	if len(catalog) == 0 {
-		b.WriteString("\n" + components.MutedStyle.Render("  no catalogue for this provider — esc to cancel") + "\n")
+		switch {
+		case a.modelState.filter != "":
+			b.WriteString("\n" + components.MutedStyle.Render("  no model matches the filter") + "\n")
+		case a.catalogLoading[name]:
+			msg := "  loading models…"
+			if u := a.catalogURLs[name]; u != "" {
+				msg = "  loading models from " + u + "…"
+			}
+			b.WriteString("\n" + components.AccentStyle.Render(msg) + "\n")
+		case a.catalogErr[name] != "":
+			b.WriteString("\n" + components.DangerStyle.Render("  ✗ could not list models: "+a.catalogErr[name]) + "\n")
+			b.WriteString(components.MutedStyle.Render("  check the provider in providers (p), or esc to cancel") + "\n")
+		default:
+			b.WriteString("\n" + components.MutedStyle.Render("  no catalogue for this provider — esc to cancel") + "\n")
+		}
 	} else {
 		midx := clampIdx(a.modelState.modelIdx, len(catalog))
 		start := windowStart(a.modelState.scroll, midx, len(catalog), rows)
@@ -891,27 +928,12 @@ func (a *App) modelPicker() string {
 }
 
 func (a *App) modelPickerCatalog() (string, []models.Model) {
-	var name string
-	switch a.modelState.pickingRole {
-	case roleAgent:
-		name = a.cfg.Provider
-		if name == "" {
-			if providers := a.modelProviders(); len(providers) > 0 {
-				name = providers[0]
-			}
-		}
-	case roleFast:
-		name = a.fastProvider()
-	case roleClassifier:
-		name = a.classifierProvider()
-	case roleRouting:
-		name, _ = a.routingUseCaseTarget(a.modelState.routingUseCase)
-		if name == "" {
-			name = a.cfg.Provider
-		}
-	}
+	name := a.pickerProvider(a.modelState.pickingRole)
 	if name == "" {
 		return name, nil
+	}
+	if a.modelState.pickingRole == roleClassifier && a.providerIsDecisions(name) {
+		return name, filterModels(a.decisionCatalog(name), a.modelState.filter)
 	}
 	catalog := a.catalogFor(name)
 	// The classifier-only filter (curated BERT ids on huggingface, Jev on
@@ -1002,6 +1024,9 @@ func (a *App) handleModelKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if a.modelState.picking {
 		return a.handleModelPickerKey(m)
 	}
+	if cmd, ok := a.modelTestKey(m.String()); ok {
+		return a, cmd
+	}
 	rows := a.modelRows()
 	a.modelState.rows = rows
 
@@ -1066,6 +1091,7 @@ func (a *App) handleModelPickerKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		a.modelState.picking = false
 		a.modelState.filter = ""
+		delete(a.modelState.pendingProvider, a.modelState.pickingRole)
 		return a, nil
 	case "/":
 		a.modelState.filtering = true
@@ -1092,23 +1118,92 @@ func (a *App) handleModelPickerKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		id := catalog[clampIdx(a.modelState.modelIdx, len(catalog))].ID
 		a.modelState.picking = false
 		a.modelState.filter = ""
-		switch a.modelState.pickingRole {
+		role := a.modelState.pickingRole
+		prov := a.pickerProvider(role)
+		_, cycled := a.modelState.pendingProvider[role]
+		delete(a.modelState.pendingProvider, role)
+		// Every pick is tested before it is written (stage*).
+		switch role {
 		case roleAgent:
-			return a, a.mutateAgent(func(s *config.Settings) { s.Model = id }, func() { a.cfg.Model = id })
+			return a, a.stageAgent("model", prov, id,
+				func(s *config.Settings) {
+					if cycled {
+						s.Provider = prov
+					}
+					s.Model = id
+				},
+				func() { a.cfg.Provider, a.cfg.Model = prov, id })
 		case roleFast:
-			return a, a.setFastModel(id)
+			return a, a.stageRouting(roleFast, "model", "fast = "+prov+" · "+id, func(r *config.RoutingSettings) {
+				t := config.RoutingTarget{Model: id}
+				if cycled {
+					t.Provider = prov
+				} else if r.Fast != nil {
+					t.Provider = r.Fast.Provider
+				}
+				r.Fast = &t
+			})
 		case roleClassifier:
-			return a, a.mutateClassifier(func(c *config.ClassifierSettings) { c.Model = id })
+			// The provider is written only when one was chosen here or is
+			// already set; a model picked on the inherited main provider
+			// keeps the provider inherited, as before.
+			explicit := cycled || (a.settings.Classifier != nil && a.settings.Classifier.Provider != "")
+			return a, a.stageClassifier("model", "classifier = "+prov+" · "+id, func(c *config.ClassifierSettings) {
+				if explicit {
+					c.Provider = prov
+				}
+				c.Model = id
+			})
 		case roleRouting:
 			useCase := a.modelState.routingUseCase
-			return a, a.mutateRouting(func(r *config.RoutingSettings) {
+			return a, a.stageRouting(roleRouting, "route:"+useCase, "route "+useCase+" = "+prov+" · "+id, func(r *config.RoutingSettings) {
 				t := r.UseCases[useCase]
+				if cycled {
+					t.Provider = prov
+				}
 				t.Model = id
 				r.UseCases[useCase] = t
 			})
 		}
 	}
 	return a, nil
+}
+
+// pickerProvider is the provider a role's model picker lists: a provider the
+// user just cycled to (pending until a model is picked and tested), else the
+// role's current provider.
+func (a *App) pickerProvider(role modelRole) string {
+	if p, ok := a.modelState.pendingProvider[role]; ok {
+		return p
+	}
+	switch role {
+	case roleAgent:
+		if a.cfg.Provider == "" {
+			if providers := a.modelProviders(); len(providers) > 0 {
+				return providers[0]
+			}
+		}
+		return a.cfg.Provider
+	case roleFast:
+		return a.fastProvider()
+	case roleClassifier:
+		return a.classifierProvider()
+	case roleRouting:
+		name, _ := a.routingUseCaseTarget(a.modelState.routingUseCase)
+		if name == "" {
+			name = a.cfg.Provider
+		}
+		return name
+	}
+	return ""
+}
+
+// setPendingProvider records a provider cycled to but not yet saved.
+func (a *App) setPendingProvider(role modelRole, name string) {
+	if a.modelState.pendingProvider == nil {
+		a.modelState.pendingProvider = map[modelRole]string{}
+	}
+	a.modelState.pendingProvider[role] = name
 }
 
 // cycleScope advances the storage scope for the selected role. It reads the
@@ -1270,7 +1365,7 @@ func (a *App) cycleClassifierKind(opts []string) tea.Cmd {
 		return nil
 	}
 	next := opts[(indexOfString(opts, a.classifierKind())+1)%len(opts)]
-	return a.mutateClassifier(func(c *config.ClassifierSettings) { c.Kind = next })
+	return a.stageClassifier("kind", "classifier.kind = "+next, func(c *config.ClassifierSettings) { c.Kind = next })
 }
 
 // cycleClassifierPhase advances one phase gate's source through the choices the
@@ -1282,7 +1377,7 @@ func (a *App) cycleClassifierPhase(phase int, opts []string) tea.Cmd {
 	}
 	cur := a.classifierPhaseSource(phase)
 	next := opts[(indexOfString(opts, cur)+1)%len(opts)]
-	return a.mutateClassifier(func(c *config.ClassifierSettings) {
+	return a.stageClassifier(fmt.Sprintf("phase%d", phase), fmt.Sprintf("phase %d = %s", phase, next), func(c *config.ClassifierSettings) {
 		if phase == 1 {
 			c.Phase1.Source = next
 		} else {
@@ -1584,7 +1679,9 @@ func (a *App) classifierProviders() []string {
 			out = append(out, name)
 		}
 	}
-	return out
+	// The local decision model is always offered: selecting it tests (and,
+	// after confirmation, downloads) everything it needs.
+	return append(out, decisions.LocalProvider)
 }
 
 // classifierOpenRouterAvailable reports whether openrouter is offered to the
@@ -1643,7 +1740,7 @@ func (a *App) openAgentModelPicker() tea.Cmd {
 }
 
 func (a *App) openClassifierModelPicker() tea.Cmd {
-	name := a.classifierProvider()
+	name := a.pickerProvider(roleClassifier)
 	a.modelState.picking = true
 	a.modelState.pickingRole = roleClassifier
 	a.modelState.filter = ""
@@ -1671,7 +1768,10 @@ func (a *App) cycleAgentProvider(opts []string) tea.Cmd {
 	}
 	cur := a.cfg.Provider
 	next := opts[(indexOfString(opts, cur)+1)%len(opts)]
-	return a.mutateAgent(func(s *config.Settings) {
+	// The provider is selected with its default model, tested, then saved.
+	// A quick lap of presses tests only the last: each press supersedes the
+	// running test.
+	return a.stageAgent("provider", next, "", func(s *config.Settings) {
 		s.Provider = next
 		s.Model = ""
 	}, func() {
@@ -1697,9 +1797,27 @@ func (a *App) cycleClassifierProvider(opts []string) tea.Cmd {
 	if cls := a.settings.Classifier; cls != nil {
 		cur = cls.Provider
 	}
+	if p, ok := a.modelState.pendingProvider[roleClassifier]; ok {
+		cur = p
+	}
 	ring := append([]string{""}, opts...)
 	next := ring[(indexOfString(ring, cur)+1)%len(ring)]
-	return a.mutateClassifier(func(c *config.ClassifierSettings) {
+	if next == "" {
+		// Back to inheriting the main model: test it as the classifier.
+		delete(a.modelState.pendingProvider, roleClassifier)
+		return a.stageClassifier("provider", "classifier = main model", func(c *config.ClassifierSettings) {
+			c.Provider = ""
+			c.Model = ""
+		})
+	}
+	if a.providerIsDecisions(next) {
+		// A decision provider needs a model choice (and maybe a download):
+		// open the picker on it; the pick is tested and saved together.
+		a.setPendingProvider(roleClassifier, next)
+		return a.openClassifierModelPicker()
+	}
+	delete(a.modelState.pendingProvider, roleClassifier)
+	return a.stageClassifier("provider", "classifier = "+next, func(c *config.ClassifierSettings) {
 		c.Provider = next
 		c.Model = ""
 	})
@@ -1811,7 +1929,7 @@ func (a *App) cycleRoutingKind(opts []string) tea.Cmd {
 		cur = a.settings.Routing.Kind
 	}
 	next := opts[(indexOfString(opts, cur)+1)%len(opts)]
-	return a.mutateRouting(func(r *config.RoutingSettings) { r.Kind = next })
+	return a.stageRouting(roleRouting, "kind", "routing.kind = "+next, func(r *config.RoutingSettings) { r.Kind = next })
 }
 
 // changeRoutingUseCase edits one use-case candidate: the first press assigns a
@@ -1828,7 +1946,7 @@ func (a *App) changeRoutingUseCase(useCase string) tea.Cmd {
 		if idx := indexOfString(providers, a.cfg.Provider); idx >= 0 {
 			next = providers[(idx+1)%len(providers)]
 		}
-		return a.mutateRouting(func(r *config.RoutingSettings) {
+		return a.stageRouting(roleRouting, "route:"+useCase, "route "+useCase+" = "+next, func(r *config.RoutingSettings) {
 			t := r.UseCases[useCase]
 			t.Provider = next
 			t.Model = ""
