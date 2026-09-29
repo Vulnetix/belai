@@ -21,6 +21,10 @@ const (
 	JevBashSwap JevJob = "bash_swap"
 )
 
+// JevPruneCompaction keeps or clears tool calls and results by relevance when
+// the context is compacted, before falling back to a summary.
+const JevPruneCompaction JevJob = "prune_compaction"
+
 // JevOptionOrder puts the most likely option first when the model asks the
 // user to choose, and marks it (Recommended) when the choice is clear.
 const JevOptionOrder JevJob = "option_order"
@@ -30,6 +34,7 @@ const JevOptionOrder JevJob = "option_order"
 // never offers a switch for work that does not exist.
 var JevJobs = []JevJob{
 	JevBashSwap,
+	JevPruneCompaction,
 	JevOptionOrder,
 }
 

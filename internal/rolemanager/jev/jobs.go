@@ -68,6 +68,37 @@ func (j *Jobs) RateSwap(ctx context.Context, command string, cands []SwapCandida
 	return res.Scores, res.Identity, nil
 }
 
+// PruneItem is one statement about a tool call or its result, to be judged
+// against the conversation.
+type PruneItem struct {
+	// ID identifies the statement; the score is returned under it.
+	ID string
+	// Statement says what would be true if the call or result should stay.
+	Statement string
+}
+
+// pruneCriterion is the shared statement every prune item is judged against.
+const pruneCriterion = "The statement in the item is true, given the conversation in state.context and the user's goal in state.goal. A tool can always be run again, so a call or its output should stay only if it still matters for the work ahead."
+
+// PrunePairs scores statements about tool calls and results against the
+// conversation digest and the user's goal. An unanswered item is absent from
+// the returned map.
+func (j *Jobs) PrunePairs(ctx context.Context, state, goal sanitize.DecisionText, items []PruneItem) (map[string]float64, ScoreResult, error) {
+	sitems := make([]ScoreItem, 0, len(items))
+	for _, it := range items {
+		sitems = append(sitems, ScoreItem{ID: it.ID, Label: sanitize.ForDecision(it.Statement, 320)})
+	}
+	res, err := j.Client.Score(ctx, ScoreRequest{
+		Job:         string(config.JevPruneCompaction),
+		Criterion:   sanitize.ForDecision(pruneCriterion, 0),
+		Context:     state,
+		Extra:       map[string]sanitize.DecisionText{"goal": goal},
+		Items:       sitems,
+		MaxRequests: 24,
+	})
+	return res.Scores, res, err
+}
+
 // optionQuestion is the shared question every option group is ranked by.
 const optionQuestion = "Which option would the user most likely choose for the question in state.context? Consider what the request asks for and what the options mean."
 

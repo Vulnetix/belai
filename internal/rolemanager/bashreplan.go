@@ -182,3 +182,34 @@ func optionOrderDescription(a Activity) Description {
 	}
 	return d
 }
+
+// RecordPruneCompaction emits the outcome of pruning the conversation before
+// compaction: verdict "pruned" (the context was cut) or "fallback" (the prune
+// fell short, so the summary ran). The counts are of tool-call pairs kept,
+// truncated and dropped and of questions the backend left unanswered; freed is
+// the estimated tokens removed. No text from the conversation is recorded.
+func RecordPruneCompaction(verdict string, kept, truncated, dropped, unknown, freed int, model string, took time.Duration) {
+	recordTimed(EventPruneCompaction, verdict, "", fmt.Sprintf("kept=%d truncated=%d dropped=%d unknown=%d freed=%d", kept, truncated, dropped, unknown, freed), 0, model, took)
+}
+
+func pruneCompactionDescription(a Activity) Description {
+	d := Description{
+		Summary: "Cleared out tool calls and results the work ahead no longer needs",
+		Tone:    ToneClear,
+		Levels:  LevelDecisions,
+	}
+	num := func(k string) string {
+		if v := field(a.Detail, k); v != "" && isDigits(v) {
+			return v
+		}
+		return "?"
+	}
+	if a.Verdict == "fallback" {
+		d.Summary = "Tried clearing out tool calls and results before summarising"
+		d.Outcome = "not enough freed, wrote a summary instead"
+		d.Tone = ToneNeutral
+		return d
+	}
+	d.Outcome = "dropped " + num("dropped") + ", shortened " + num("truncated") + ", kept " + num("kept")
+	return d
+}

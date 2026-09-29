@@ -992,7 +992,9 @@ func (s *Session) agentContinuations(ctx context.Context, pipe *rolemanager.Pipe
 		// so the summary cannot lose what the user asked for.
 		if compacted, ok := s.compactBoundary(ctx, pipe, turns); ok {
 			turns = compacted
-			if strings.TrimSpace(userPrompt) != "" {
+			// A summary replaces the whole conversation, so the request is
+			// restated; a prune keeps the conversation, request included.
+			if strings.TrimSpace(userPrompt) != "" && !s.lastCompactionPruned {
 				turns = append(turns, run.Turn{Role: "user", Content: userPrompt})
 			}
 			emit(Event{Kind: EventWarningKind, Warning: "context compacted to keep the turn going"})
@@ -1310,6 +1312,16 @@ func (s *Session) compactTurns(ctx context.Context, pipe *rolemanager.Pipeline, 
 	}
 	// pre_compact cannot stop compaction; its output is not read.
 	reportHookFailures(s.FireHook(ctx, hooks.Input{Event: hooks.EventPreCompact}), s.emit)
+	// Prune first: it keeps every surviving word and needs no new text
+	// admitted. It falls back to the summary below on any shortfall.
+	s.lastCompactionPruned = false
+	if pruned, st, ok := s.pruneTurns(ctx, turns); ok {
+		s.lastCompactionPruned = true
+		rolemanager.RecordPruneCompaction("pruned", st.kept, st.truncated, st.dropped, st.unknown, st.tokensBefore-st.tokensAfter, st.identity, 0)
+		return pruned, true
+	} else if st.candidates > 0 && st.requests > 0 {
+		rolemanager.RecordPruneCompaction("fallback", st.kept, st.truncated, st.dropped, st.unknown, 0, st.identity, 0)
+	}
 	conv := transcript.Serialize(msgs, transcript.SerializeOptions{})
 	cctx, served := rolemanager.TrackServedModel(ctx)
 	raw, err := pipe.Classifier.Classify(cctx, rolemanager.BuildCompactionPayload(conv, s.settings.ClassifierCavemanEnabled()))

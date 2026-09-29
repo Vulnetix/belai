@@ -272,6 +272,9 @@ type Session struct {
 	// run as a builtin once, so a repeated command runs as Bash.
 	jev     *jev.Jobs
 	swapped map[string]bool
+	// lastCompactionPruned says the latest compaction kept the conversation
+	// (a prune) rather than replacing it with a summary.
+	lastCompactionPruned bool
 	// taskCallsThisTurn counts Task invocations in the current fan-out turn.
 	taskCallsThisTurn int
 	// turnIntent is the detected intent for the current turn.
