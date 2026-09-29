@@ -231,8 +231,19 @@ func ResolveClassifier(main Config, cls *config.ClassifierSettings, src Credenti
 	if cls.Model != "" {
 		out.Model = cls.Model
 	}
-	if cls.Provider != "" && cls.Provider != main.Provider {
-		cfg, status := Prepare(cls.Model, cls.Provider, src)
+	// OpenRouter's Decisions API is a decision backend: it is never routed
+	// through a firewall, and it needs the user's own OpenRouter key. With a
+	// firewall active, resolving openrouter normally would hand back the
+	// firewall's key and route, and the direct Decisions call would send that
+	// key to OpenRouter. So it is resolved with routing off, even when the
+	// provider is the main one.
+	decisionsModel := jev.IsDecisionsModel(cls.Provider, cls.Model)
+	if cls.Provider != "" && (cls.Provider != main.Provider || (decisionsModel && main.Firewall != nil)) {
+		psrc := src
+		if decisionsModel {
+			psrc = unroutedSource(src)
+		}
+		cfg, status := Prepare(cls.Model, cls.Provider, psrc)
 		if !status.Configured {
 			envHints := envHintsFor(cfg.Provider, status.Missing)
 			return ClassifierConfig{}, &NotConfiguredError{
