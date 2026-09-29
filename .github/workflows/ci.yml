@@ -87,3 +87,33 @@ jobs:
 
       - name: Golden tests (phase 2)
         run: go test -tags belai_bert_jailbreak ./internal/mlclassify/...
+
+  # The speech model that release builds embed. Fetching it here proves the
+  # pinned checksum still matches what Hugging Face serves, that the tagged
+  # build compiles with the 32 MB file inside, and that the embedded model loads.
+  voice:
+    runs-on: [self-hosted, Linux, X64, vulnetix-local]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Cache the speech model
+        uses: actions/cache@v4
+        with:
+          path: internal/voice/assets
+          key: voice-model-${{ hashFiles('internal/voice/models.go') }}
+
+      - name: Prepare the speech model
+        run: go run ./tools/voiceprep
+
+      - name: Test with the model embedded
+        run: go test -tags belai_voice ./internal/voice/...
+
+      - name: Build with the model embedded
+        run: go build -tags belai_voice ./cmd/belai

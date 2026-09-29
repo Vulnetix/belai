@@ -1,151 +1,24 @@
 package asr
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
 	"math"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/vulnetix/belai/internal/voice/asr/asrtest"
 )
-
-// tiny model dimensions: small enough to build in memory, valid enough for
-// validate and bind.
-const (
-	tState  = 8
-	tHeads  = 2
-	tMels   = 8
-	tAudCtx = 80
-	tTxtCtx = 16
-)
-
-type ggmlBuilder struct {
-	buf   bytes.Buffer
-	rng   *rand.Rand
-	skip  string // tensor name to leave out
-	vocab int
-}
-
-func (g *ggmlBuilder) i32(v int) { _ = binary.Write(&g.buf, binary.LittleEndian, int32(v)) }
-
-func (g *ggmlBuilder) header(vocab int) {
-	g.i32(ggmlMagic)
-	for _, v := range []int{vocab, tAudCtx, tState, tHeads, 1, tTxtCtx, tState, tHeads, 1, tMels, 1} {
-		g.i32(v)
-	}
-	g.i32(tMels)
-	g.i32(201)
-	for i := 0; i < tMels*201; i++ {
-		_ = binary.Write(&g.buf, binary.LittleEndian, float32(g.rng.Float64()*0.01))
-	}
-	g.i32(5)
-	for _, tok := range []string{"a", " hello", " world", ".", "!"} {
-		g.i32(len(tok))
-		g.buf.WriteString(tok)
-	}
-}
-
-func (g *ggmlBuilder) tensor(name string, typ int, dims ...int) {
-	if name == g.skip {
-		return
-	}
-	n := 1
-	for _, d := range dims {
-		n *= d
-	}
-	g.i32(len(dims))
-	g.i32(len(name))
-	g.i32(typ)
-	for _, d := range dims {
-		g.i32(d)
-	}
-	g.buf.WriteString(name)
-	switch typ {
-	case typeF32:
-		for i := 0; i < n; i++ {
-			v := float32(g.rng.NormFloat64() * 0.05)
-			if strings.HasSuffix(name, "ln.weight") || strings.HasSuffix(name, "_ln.weight") || strings.HasSuffix(name, "ln_post.weight") {
-				v = 1
-			}
-			_ = binary.Write(&g.buf, binary.LittleEndian, v)
-		}
-	case typeF16:
-		for i := 0; i < n; i++ {
-			_ = binary.Write(&g.buf, binary.LittleEndian, uint16(0x2800+g.rng.Intn(0x200)))
-		}
-	case typeQ5_1:
-		for blk := 0; blk < n/32; blk++ {
-			var q [24]byte
-			g.rng.Read(q[:])
-			binary.LittleEndian.PutUint16(q[0:], 0x2c00) // scale
-			binary.LittleEndian.PutUint16(q[2:], 0xa800) // minimum
-			g.buf.Write(q[:])
-		}
-	}
-}
-
-func (g *ggmlBuilder) lin(prefix string, in, out int, bias bool, typ int) {
-	g.tensor(prefix+".weight", typ, in, out)
-	if bias {
-		g.tensor(prefix+".bias", typeF32, out)
-	}
-}
-
-func (g *ggmlBuilder) norm(prefix string) {
-	g.tensor(prefix+".weight", typeF32, tState)
-	g.tensor(prefix+".bias", typeF32, tState)
-}
-
-// tinyModel returns the bytes of a synthetic English-only ggml model.
-func tinyModel(skip string, vocab int) []byte {
-	g := &ggmlBuilder{rng: rand.New(rand.NewSource(1)), skip: skip}
-	g.header(vocab)
-	d := tState
-	g.tensor("encoder.conv1.weight", typeF16, 3, tMels, d)
-	g.tensor("encoder.conv1.bias", typeF32, d)
-	g.tensor("encoder.conv2.weight", typeF16, 3, d, d)
-	g.tensor("encoder.conv2.bias", typeF32, d)
-	g.tensor("encoder.positional_embedding", typeF32, d, tAudCtx)
-	p := "encoder.blocks.0."
-	g.norm(p + "attn_ln")
-	g.lin(p+"attn.query", d, d, true, typeQ5_1)
-	g.lin(p+"attn.key", d, d, false, typeQ5_1)
-	g.lin(p+"attn.value", d, d, true, typeQ5_1)
-	g.lin(p+"attn.out", d, d, true, typeQ5_1)
-	g.norm(p + "mlp_ln")
-	g.lin(p+"mlp.0", d, 4*d, true, typeQ5_1)
-	g.lin(p+"mlp.2", 4*d, d, true, typeQ5_1)
-	g.norm("encoder.ln_post")
-	g.tensor("decoder.token_embedding.weight", typeQ5_1, d, englishVocab)
-	g.tensor("decoder.positional_embedding", typeF32, d, tTxtCtx)
-	p = "decoder.blocks.0."
-	g.norm(p + "attn_ln")
-	g.lin(p+"attn.query", d, d, true, typeF32)
-	g.lin(p+"attn.key", d, d, false, typeF32)
-	g.lin(p+"attn.value", d, d, true, typeF32)
-	g.lin(p+"attn.out", d, d, true, typeF32)
-	g.norm(p + "cross_attn_ln")
-	g.lin(p+"cross_attn.query", d, d, true, typeF32)
-	g.lin(p+"cross_attn.key", d, d, false, typeF32)
-	g.lin(p+"cross_attn.value", d, d, true, typeF32)
-	g.lin(p+"cross_attn.out", d, d, true, typeF32)
-	g.norm(p + "mlp_ln")
-	g.lin(p+"mlp.0", d, 4*d, true, typeF32)
-	g.lin(p+"mlp.2", 4*d, d, true, typeF32)
-	g.norm("decoder.ln")
-	return g.buf.Bytes()
-}
 
 func TestParseTinyModel(t *testing.T) {
-	m, err := parse(tinyModel("", englishVocab))
+	m, err := parse(asrtest.TinyModel("", englishVocab))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.hp.nAudioState != tState || len(m.enc.blocks) != 1 || len(m.dec.blocks) != 1 || len(m.vocab) != 5 {
+	if m.hp.nAudioState != asrtest.State || len(m.enc.blocks) != 1 || len(m.dec.blocks) != 1 || len(m.vocab) != 5 {
 		t.Fatalf("unexpected model: %v", m)
 	}
 	if !strings.Contains(m.String(), "vocab=51864") {
@@ -154,7 +27,7 @@ func TestParseTinyModel(t *testing.T) {
 }
 
 func TestParseRejectsBadFiles(t *testing.T) {
-	good := tinyModel("", englishVocab)
+	good := asrtest.TinyModel("", englishVocab)
 	cases := map[string][]byte{
 		"empty":       nil,
 		"bad magic":   append([]byte{1, 2, 3, 4}, good[4:]...),
@@ -168,11 +41,11 @@ func TestParseRejectsBadFiles(t *testing.T) {
 	}
 	// A multilingual vocabulary is valid ggml but not a model this decoder
 	// understands.
-	if _, err := parse(tinyModel("", 51865)); !errors.Is(err, ErrUnsupported) {
+	if _, err := parse(asrtest.TinyModel("", 51865)); !errors.Is(err, ErrUnsupported) {
 		t.Errorf("multilingual vocab: err = %v, want ErrUnsupported", err)
 	}
 	// A missing tensor names itself.
-	_, err := parse(tinyModel("decoder.ln.bias", englishVocab))
+	_, err := parse(asrtest.TinyModel("decoder.ln.bias", englishVocab))
 	if !errors.Is(err, ErrUnsupported) || !strings.Contains(err.Error(), "decoder.ln.bias") {
 		t.Errorf("missing tensor: err = %v", err)
 	}
@@ -180,7 +53,7 @@ func TestParseRejectsBadFiles(t *testing.T) {
 
 func TestLoadReadsFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "m.bin")
-	if err := os.WriteFile(path, tinyModel("", englishVocab), 0o600); err != nil {
+	if err := os.WriteFile(path, asrtest.TinyModel("", englishVocab), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Load(path); err != nil {
@@ -192,7 +65,7 @@ func TestLoadReadsFile(t *testing.T) {
 }
 
 func TestTranscribeIsDeterministicAndBounded(t *testing.T) {
-	m, err := parse(tinyModel("", englishVocab))
+	m, err := parse(asrtest.TinyModel("", englishVocab))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +87,7 @@ func TestTranscribeIsDeterministicAndBounded(t *testing.T) {
 }
 
 func TestTranscribeHonoursCancellation(t *testing.T) {
-	m, err := parse(tinyModel("", englishVocab))
+	m, err := parse(asrtest.TinyModel("", englishVocab))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +139,7 @@ func TestDequantQ51(t *testing.T) {
 }
 
 func TestMelShapeAndRange(t *testing.T) {
-	m, err := parse(tinyModel("", englishVocab))
+	m, err := parse(asrtest.TinyModel("", englishVocab))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +148,7 @@ func TestMelShapeAndRange(t *testing.T) {
 		pcm[i] = float32(math.Sin(2 * math.Pi * 440 * float64(i) / SampleRate))
 	}
 	mel, frames := m.mel(pcm)
-	if frames != 20 || len(mel) != tMels*20 {
+	if frames != 20 || len(mel) != asrtest.Mels*20 {
 		t.Fatalf("frames = %d, len = %d", frames, len(mel))
 	}
 	for _, v := range mel {
@@ -363,5 +236,22 @@ func TestRealModel(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(got), "ask not what your country can do for you") {
 		t.Fatalf("transcript = %q", got)
+	}
+}
+
+func TestLoadBytesMatchesLoad(t *testing.T) {
+	b := asrtest.TinyModel("", englishVocab)
+	m, err := LoadBytes(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.hp.nAudioState != asrtest.State {
+		t.Fatalf("model = %v", m)
+	}
+	if _, err := LoadBytes(b[:len(b)/3]); err == nil {
+		t.Fatal("LoadBytes accepted a truncated model")
+	}
+	if _, err := LoadBytes(nil); err == nil {
+		t.Fatal("LoadBytes accepted nothing")
 	}
 }
