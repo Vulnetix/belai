@@ -1,0 +1,7 @@
+[38;2;73;95;91m── [0m[1;38;2;125;145;141mbelai[0m[38;2;47;67;64m ───────────────────────────────────────────────────────────────────────────────────────────[0m
+  [38;2;181;138;230m◈ [39mChecked what the shell command returned for hidden instructions[38;2;73;95;91m — [39m[38;2;58;195;179mclean ✓[39m[38;2;73;95;91m · [39m[38;2;118;224;205mjev-1.13 412ms[39m
+  [38;2;79;195;224m⇄ [39mChecked whether a builtin tool cou…[38;2;73;95;91m — [39m[38;2;58;195;179mran Grep instead of Bash (97% matc… ✓[39m[38;2;73;95;91m · [39m[38;2;118;224;205mjev-1.13 380ms[39m
+  [38;2;140;203;94m⌖ [39mRanked the files a question is lik…[38;2;73;95;91m — [39m[38;2;58;195;179mfound 7 after rating 12 directori… ✓[39m[38;2;73;95;91m · [39m[38;2;118;224;205mdecider-4b 1.8s[39m
+  [38;2;140;203;94m▣ [39mJudged whether another edit would …[38;2;73;95;91m — [39m[38;2;232;145;43munlikely after 3 passes, filed a b… ![39m[38;2;73;95;91m · [39m[38;2;118;224;205mjev-1.13 340ms[39m
+  [38;2;181;138;230m◊ [39mJev couldn't settle the securit…[38;2;73;95;91m — [39m[38;2;232;145;43mthe agent model ruled instead ! ↩[39m[38;2;73;95;91m · [39m[38;2;125;145;141mclaude-haiku-4.5 2.1s[39m
+  [38;2;181;138;230m↺ [39mRecognised the file Belai read from earlier[38;2;73;95;91m — [39m[38;2;125;145;141mreused the earlier result ⟳[39m[38;2;73;95;91m · [39m[38;2;73;95;91mbelai[39m

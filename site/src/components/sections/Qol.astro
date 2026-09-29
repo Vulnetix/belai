@@ -6,6 +6,7 @@ import Shot from '../ui/Shot.astro';
 import settingsShot from '../../assets/shots/settings.svg';
 import exitCardShot from '../../assets/shots/exit-card.svg';
 import footerShot from '../../assets/shots/footer.svg';
+import roleManagerShot from '../../assets/shots/role-manager.svg';
 
 const sealText =
   'Quality of life: smaller features you would otherwise add through a skills.md. First-run trust gate, prompt library, one composer history for prompts and commands, repo map, work-discipline prompt section, identity block, capability auth probes, diff in the approval prompt, a todo panel that only trusts assistant text, sessions, Markdown session export, opt-in per-goal auto-commit, /settings with provenance, no alt bindings ever, /help guarded by a test, caveman mode, per-project session toggles, classifier verdicts in the internal-work feed, a shell panel for !cmd with the raw output, transcript rows stamped when they happen with durations, token budgets per model in the footer, oversized tool output kept out of the context with ReadResult to read the rest, WebFetch that answers a question instead of returning the page, desktop notifications, /skills, /plugin, /mcp and /sandbox, and a self-update that stays in its asset family.';
@@ -17,6 +18,7 @@ const groups = [
       ['first-run trust gate', 'A directory Belai has never seen blocks startup until you say yes, before any settings merge, repo scan or auto-started process.'],
       ['todo panel that only trusts assistant text', "The todo list only changes based on the assistant's own text. Tool output cannot update it."],
       ['classifier verdicts in the feed', 'When a result is blocked, the internal-work feed shows which phase blocked it and what it returned.'],
+      ['one line per decision', 'Each row has an icon for the activity, coloured by the kind of work, the outcome with a mark that reads without colour, and who decided: the Jev model by name, a chat model by name, or belai for plain code. The summary shortens first on a narrow terminal, and ctrl+o adds a dim line with the full model, score and cause.'],
       ['!cmd gets its own shell panel', 'A !cmd shows its raw output in a panel, live while it runs. The model only gets the sanitised, classified copy, and the panel marks the output "not sent" when that copy is withheld. ctrl+o expands it, ctrl+c copies it and ctrl+s saves it.'],
       ['desktop notifications', 'Opt in with notifications.enabled and Belai tells you when a permission ask, a question or a plan is waiting, or when a goal ends. Every notification is written from a fixed template.'],
       ['self-update stays in its family', 'A guardrails binary updates to the next guardrails build, so it keeps its embedded model.'],
@@ -105,6 +107,7 @@ const total = groups.reduce((n, g) => n + g.items.length, 0);
   </div>
   <div class="mt-8 grid max-w-[1000px] gap-6">
     <Shot src={settingsShot.src} alt="The settings screen showing provenance per value" caption="/settings, provenance per value" />
+    <Shot src={roleManagerShot.src} alt="The internal-work feed: one line per decision with an activity icon, an outcome mark and the model that decided" caption="internal-work feed, Jev decisions named by model" />
     <Shot src={footerShot.src} alt="The status footer with chips and an amber day budget" caption="status footer, guardrails on, day budget amber" />
   </div>
 </SealedSection>

@@ -17,12 +17,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/creack/pty"
 	"github.com/muesli/termenv"
 
 	"github.com/vulnetix/belai/internal/filediff"
+	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/tui/components"
 )
 
@@ -56,6 +58,7 @@ func main() {
 		"banner-composer": bannerComposer(),
 		"footer":          footer(),
 		"agent-turn":      agentTurn(),
+		"role-manager":    roleManager(),
 		"plan-review":     planReview(),
 		"approval-diff":   approvalDiff(),
 		"settings":        settings(),
@@ -217,6 +220,35 @@ func agentTurn() string {
 		ShowTools: true,
 		ShowEdits: true,
 	}.View()
+}
+
+// roleManager renders the internal-work feed: one line per decision, with the
+// icon of the activity, the outcome marker and who decided.
+func roleManager() string {
+	acts := []rolemanager.Activity{
+		{Event: rolemanager.EventSecuritySentinel, Verdict: "SAFE", Subject: "Bash", Model: "openrouter/typesafe/jev-1.13", Duration: 412 * time.Millisecond},
+		{Event: rolemanager.EventBashSwap, Verdict: "swapped", Subject: "Grep", Detail: "score=97", Model: "openrouter/typesafe/jev-1.13", Duration: 380 * time.Millisecond},
+		{Event: rolemanager.EventExploreLocate, Verdict: "ranked", Detail: "hits=7 dirs=12 files=48 unknown=0", Model: "decision-local/decider-4b", Duration: 1800 * time.Millisecond},
+		{Event: rolemanager.EventLSPTriage, Verdict: "filed", Detail: "attempts=3 errors=2 score=12", Model: "openrouter/typesafe/jev-1.13", Duration: 340 * time.Millisecond},
+		{Event: rolemanager.EventSecurityFallback, Verdict: "fallback", Model: "openrouter/anthropic/claude-haiku-4.5", Duration: 2100 * time.Millisecond},
+		{Event: rolemanager.EventVerdictCacheHit, Verdict: "SAFE", Subject: "Read"},
+	}
+	var msgs []components.Message
+	for _, a := range acts {
+		d, ok := rolemanager.Describe(a)
+		if !ok {
+			continue
+		}
+		provider, model := "", a.Model
+		if p, m, cut := strings.Cut(a.Model, "/"); cut {
+			provider, model = p, m
+		}
+		msgs = append(msgs, components.Message{
+			Role: "rolemanager", Level: d.Levels, RM: d, RMMeta: components.RMMetaOf(a),
+			Activity: string(a.Event), Provider: provider, Model: model, DurationMS: a.Duration.Milliseconds(),
+		})
+	}
+	return components.MessageList{Messages: msgs, Width: width, InternalWork: rolemanager.LevelAll}.View()
 }
 
 // planReview renders the plan review pane with Approve / Refine / Cancel.
