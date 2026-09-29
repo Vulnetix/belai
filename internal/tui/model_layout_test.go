@@ -286,3 +286,72 @@ func failingTester(detail string) modelTester {
 		return modeltest.Report{Passed: false, Steps: []modeltest.StepResult{{Name: "llama-server", Outcome: out}}}
 	}
 }
+
+// Jev is a decision backend, so it is its own classifier kind: cycling reaches
+// it, it starts on OpenRouter's Jev model, it offers only decision backends,
+// and leaving it hands the guard back to the main model.
+func TestModelClassifierKindJevIsItsOwnKind(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	t.Setenv("OPENROUTER_API_KEY", "")
+	a := newModelScreen(t, t.TempDir())
+	a.modelState.classifierScope = "project"
+	a.settings.Classifier = &config.ClassifierSettings{Kind: "llm"}
+	if err := config.Mutate(config.ScopeProject, a.workdir, func(s *config.Settings) error {
+		s.Classifier = &config.ClassifierSettings{Kind: "llm"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.reloadSettings(); err != nil {
+		t.Fatal(err)
+	}
+
+	selectRow(t, a, roleClassifier, "kind")
+	if got := a.modelRows()[a.modelState.selected].opts; strings.Join(got, ",") != "llm,models,jev" {
+		t.Fatalf("kind options = %v, want llm, models, jev", got)
+	}
+	_ = a.changeModelRow() // llm -> models
+	if k := projectClassifier(t, a).Kind; k != "models" {
+		t.Fatalf("kind = %q, want models", k)
+	}
+	selectRow(t, a, roleClassifier, "kind")
+	_ = a.changeModelRow() // models -> jev, without any OpenRouter key
+	cls := projectClassifier(t, a)
+	if cls.Kind != "jev" || cls.Provider != "openrouter" || cls.Model != "typesafe/jev-1.13" {
+		t.Fatalf("after jev: %+v", cls)
+	}
+	if a.classifierKind() != "jev" {
+		t.Fatalf("kind row reads %q, want jev", a.classifierKind())
+	}
+	if got := strings.Join(a.classifierProviders(), ","); !strings.HasPrefix(got, "openrouter") || strings.Contains(got, "ollama") {
+		t.Fatalf("jev providers = %s, want decision backends only", got)
+	}
+
+	// A model list for openrouter under jev is the Jev models alone.
+	a.modelState.pickingRole = roleClassifier
+	_, catalog := a.modelPickerCatalog()
+	if len(catalog) == 0 {
+		t.Fatal("no Jev model offered")
+	}
+	for _, m := range catalog {
+		if !strings.HasPrefix(m.ID, "typesafe/jev") {
+			t.Fatalf("jev kind offered a chat model: %s", m.ID)
+		}
+	}
+
+	// Leaving jev clears the decision selection, even though the OpenRouter
+	// key is missing, which is what used to leave the row stuck.
+	selectRow(t, a, roleClassifier, "kind")
+	_ = a.changeModelRow() // jev -> llm
+	cls = projectClassifier(t, a)
+	if cls.Kind != "llm" || cls.Provider != "" || cls.Model != "" {
+		t.Fatalf("after leaving jev: %+v", cls)
+	}
+	a.modelState.pickingRole = roleClassifier
+	_, chat := a.modelPickerCatalog()
+	for _, m := range chat {
+		if strings.HasPrefix(m.ID, "typesafe/jev") {
+			t.Fatalf("kind llm offered Jev: %s", m.ID)
+		}
+	}
+}

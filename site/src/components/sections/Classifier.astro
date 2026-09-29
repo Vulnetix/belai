@@ -178,6 +178,10 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
           reply blocks the content.
         </p>
         <p class="mt-4 text-vx-ink/80">
+          Jev is not a chat model, so it is not this kind. It has its own,
+          <code class="mono">classifier.kind: jev</code>, and <code class="mono">/model</code> lists it beside llm and models.
+        </p>
+        <p class="mt-4 text-vx-ink/80">
           If <code class="mono">classifier.provider</code> and <code class="mono">classifier.model</code> are
           empty, your agent model is the classifier. Set them to a local <code class="mono">llama-server</code>{' '}
           or Ollama model to keep untrusted content on your machine.

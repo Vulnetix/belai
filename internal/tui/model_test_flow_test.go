@@ -190,6 +190,13 @@ func TestKnobsStillWriteImmediately(t *testing.T) {
 
 func TestDecisionLocalIsOfferedAndOpensPicker(t *testing.T) {
 	a := flowScreen(t, passAfter(make(chan struct{})))
+	// Kind llm is chat only: a decision backend is offered under jev, never here.
+	for _, p := range a.classifierProviders() {
+		if p == decisions.LocalProvider {
+			t.Fatal("kind llm offered the decision provider")
+		}
+	}
+	a.settings.Classifier = &config.ClassifierSettings{Kind: "jev"}
 	provs := a.classifierProviders()
 	if provs[len(provs)-1] != decisions.LocalProvider {
 		t.Fatalf("classifier providers %v lack %s", provs, decisions.LocalProvider)

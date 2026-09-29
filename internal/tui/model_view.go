@@ -366,6 +366,11 @@ var defaultModelEfforts = []string{"low", "medium", "high"}
 // classifierThresholdOptions are the attack-probability thresholds the phase
 // threshold rows cycle through. They are written back to
 // classifier.phaseN.threshold as numeric values.
+// classifierKindOptions are the classifier stacks the kind row cycles. Jev is its
+// own kind: it is a decision backend, never a chat model, so it is not an
+// llm choice.
+var classifierKindOptions = []string{"llm", "models", run.ClassifierKindJev}
+
 var classifierThresholdOptions = []string{"0.50", "0.60", "0.70", "0.75", "0.80", "0.85", "0.90", "0.95"}
 
 // scopeOptions lists the storage scopes each role may cycle through. The agent
@@ -438,7 +443,7 @@ func (a *App) modelRows() []modelRow {
 	// Selectable on every build: an embedded model only changes the default.
 	kindRow := settingsRow{
 		key: "kind", label: "kind", kind: "choose",
-		opts: []string{"llm", "models"}, value: kind, src: src,
+		opts: classifierKindOptions, value: kind, src: src,
 	}
 
 	rows = append(rows, modelRow{roleClassifier, kindRow})
@@ -885,9 +890,21 @@ func (a *App) modelPickerCatalog() (string, []models.Model) {
 	// The classifier-only filter (curated BERT ids on huggingface, Jev on
 	// openrouter) applies to the models path, where the picker offers
 	// classifier-appropriate models. On the llm path the classifier is the LLM
-	// sentinel, so the provider's full chat catalogue stays selectable.
-	if a.modelState.pickingRole == roleClassifier && a.classifierKind() == "models" {
-		catalog = a.classifierCatalogFor(name, catalog)
+	// sentinel, so the provider's full chat catalogue stays selectable, less
+	// the Jev models: Jev answers decision questions and cannot chat, so it is
+	// picked under kind jev, which offers nothing else.
+	if a.modelState.pickingRole == roleClassifier {
+		switch a.classifierKind() {
+		case "models":
+			catalog = a.classifierCatalogFor(name, catalog)
+		case run.ClassifierKindJev:
+			if name != "openrouter" {
+				return name, nil
+			}
+			catalog = a.classifierCatalogFor(name, catalog)
+		default:
+			catalog = filterOutDecisionsModels(name, catalog)
+		}
 	}
 	// Routed use cases are chat activities, so the routing picker never offers
 	// Jev Decisions models (which cannot chat). Stored Jev routing targets
@@ -1285,7 +1302,13 @@ func (a *App) changeModelRow() tea.Cmd {
 		if cls := a.settings.Classifier; cls != nil {
 			cur = cls.Provider
 		}
-		return a.openProviderPicker(roleClassifier, append([]string{""}, row.opts...), cur)
+		opts := row.opts
+		if a.classifierKind() != run.ClassifierKindJev {
+			// Inheriting the main model is a chat choice; a decision backend has
+			// no main model to inherit.
+			opts = append([]string{""}, opts...)
+		}
+		return a.openProviderPicker(roleClassifier, opts, cur)
 	case "model":
 		if row.role == roleAgent {
 			return a.openAgentModelPicker()
@@ -1374,7 +1397,28 @@ func (a *App) cycleClassifierKind(opts []string) tea.Cmd {
 		return nil
 	}
 	next := opts[(indexOfString(opts, a.classifierKind())+1)%len(opts)]
-	return a.stageClassifier("kind", "classifier.kind = "+next, func(c *config.ClassifierSettings) { c.Kind = next })
+	return a.stageClassifier("kind", "classifier.kind = "+next, func(c *config.ClassifierSettings) {
+		c.Kind = next
+		decision := a.classifierSelectsDecision(c)
+		switch {
+		case next == run.ClassifierKindJev && !decision:
+			// Jev needs a decision backend: start on OpenRouter's, the one
+			// most people have a key for. The provider row moves it.
+			c.Provider, c.Model = "openrouter", jev.DefaultModel
+		case next != run.ClassifierKindJev && decision:
+			// A decision backend cannot chat, so leaving jev hands the guard
+			// back to the main model instead of keeping a selection the new
+			// kind cannot use.
+			c.Provider, c.Model = "", ""
+		}
+	})
+}
+
+// classifierSelectsDecision reports whether a classifier selection names a Jev
+// decision backend: the local decision model, a self-hosted Jev profile, or
+// OpenRouter's Jev model.
+func (a *App) classifierSelectsDecision(c *config.ClassifierSettings) bool {
+	return c != nil && (a.providerIsDecisions(c.Provider) || jev.IsDecisionsModel(c.Provider, c.Model))
 }
 
 // cycleClassifierPhase advances one phase gate's source through the choices the
@@ -1664,13 +1708,32 @@ func (a *App) classifierPhase3Row() settingsRow {
 	return settingsRow{key: "phase3", label: "phase 3", kind: "text", value: value, disabled: true}
 }
 
-// classifierProviders are the providers the classifier page may offer: custom
-// profiles, the built-in local servers, openrouter when a typesafe/jev model
-// is available, and huggingface when a token is configured. Other built-ins
-// (openai, anthropic, …) are general-chat providers and are not
-// classifier-capable, so they never appear for this role.
+// classifierProviders are the providers the classifier page may offer for the
+// current kind. Kind jev offers only decision backends: OpenRouter (always,
+// since a missing key is reported by the test with a way out, not hidden),
+// self-hosted Jev profiles and the local decision model. The other kinds offer
+// chat providers: custom profiles, the built-in local servers, openrouter when
+// it is configured, and huggingface when a token is configured. Other
+// built-ins (openai, anthropic, …) are general-chat providers and are not
+// classifier-capable, so they never appear for this role. A decision backend
+// is never a chat provider, so kind llm never offers one; kind models keeps
+// offering the local decision model, which selecting tests and, after
+// confirmation, downloads.
 func (a *App) classifierProviders() []string {
+	kind := a.classifierKind()
+	if kind == run.ClassifierKindJev {
+		out := []string{"openrouter"}
+		for _, name := range a.providerNames() {
+			if a.providerIsDecisions(name) && name != decisions.LocalProvider {
+				out = append(out, name)
+			}
+		}
+		return append(out, decisions.LocalProvider)
+	}
 	allowed := func(name string) bool {
+		if kind == "llm" && a.providerIsDecisions(name) {
+			return false
+		}
 		switch name {
 		case "huggingface":
 			return a.hfToken() != ""
@@ -1688,8 +1751,9 @@ func (a *App) classifierProviders() []string {
 			out = append(out, name)
 		}
 	}
-	// The local decision model is always offered: selecting it tests (and,
-	// after confirmation, downloads) everything it needs.
+	if kind == "llm" {
+		return out
+	}
 	return append(out, decisions.LocalProvider)
 }
 
@@ -1787,6 +1851,14 @@ func (a *App) selectClassifierProvider(next string) tea.Cmd {
 		return a.openClassifierModelPicker()
 	}
 	delete(a.modelState.pendingProvider, roleClassifier)
+	if a.classifierKind() == run.ClassifierKindJev && next == "openrouter" {
+		// OpenRouter serves Jev through its Decisions API: the model is not a
+		// separate choice, so it travels with the provider.
+		return a.stageClassifier("provider", "classifier = openrouter · "+jev.DefaultModel, func(c *config.ClassifierSettings) {
+			c.Provider = next
+			c.Model = jev.DefaultModel
+		})
+	}
 	return a.stageClassifier("provider", "classifier = "+next, func(c *config.ClassifierSettings) {
 		c.Provider = next
 		c.Model = ""
