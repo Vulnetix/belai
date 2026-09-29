@@ -10,10 +10,16 @@ export default function CopyButton({
   value,
   label = 'copy',
   copiedLabel = 'copied',
+  hoverClass = 'hover:bg-vx-mint hover:text-vx-ink',
+  statusClass = 'text-vx-mint-strong',
 }: {
   value: string;
   label?: string;
   copiedLabel?: string;
+  /** Hover colours. The default disappears on a mint ground. */
+  hoverClass?: string;
+  /** Colour of the "copied" announcement. */
+  statusClass?: string;
 }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -43,12 +49,12 @@ export default function CopyButton({
       <button
         type="button"
         onClick={copy}
-        className="mono rounded-md border border-current px-3 py-2 text-sm font-medium transition-colors hover:bg-vx-mint hover:text-vx-ink focus-visible:outline-2 focus-visible:outline-offset-2"
+        className={`mono rounded-md border border-current px-3 py-2 text-sm font-medium transition-colors ${hoverClass} focus-visible:outline-2 focus-visible:outline-offset-2`}
         aria-label={`${label}: ${value}`}
       >
         {copied ? copiedLabel : label}
       </button>
-      <span aria-live="polite" className="mono text-xs text-vx-mint-strong">
+      <span aria-live="polite" className={`mono text-xs ${statusClass}`}>
         {copied ? '✓ copied' : ''}
       </span>
     </span>
