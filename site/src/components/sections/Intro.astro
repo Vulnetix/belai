@@ -19,7 +19,7 @@ const facts = [
 ];
 ---
 
-<SealedSection label="hero" sealText={sealText} id="hero">
+<SealedSection label="intro" sealText={sealText} id="intro">
   <div class="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_260px]">
     <div class="min-w-0">
       <p class="boot-stage boot-stage-1 mono text-sm text-vx-mint-strong" aria-hidden="true">
@@ -75,4 +75,19 @@ const facts = [
     alt="Belai's start screen: the banner above an empty composer"
     caption="belai, first frame"
   />
+
+  <figure class="boot-stage boot-stage-4 m-0 mt-10 max-w-[830px] min-w-0">
+    <div class="aspect-video overflow-hidden rounded-xl border border-vx-ink bg-vx-ink">
+      <iframe
+        class="block h-full w-full"
+        src="https://www.youtube-nocookie.com/embed/iFc-RGtsvlQ?rel=0"
+        title="Belai walkthrough"
+        loading="lazy"
+        referrerpolicy="strict-origin-when-cross-origin"
+        allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allowfullscreen
+      ></iframe>
+    </div>
+    <figcaption class="mono mt-2 text-xs text-vx-ink/65">belai, in motion</figcaption>
+  </figure>
 </SealedSection>

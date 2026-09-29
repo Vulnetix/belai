@@ -1,6 +1,6 @@
 ---
 import Base from '../layouts/Base.astro';
-import Hero from '../components/sections/Hero.astro';
+import Intro from '../components/sections/Intro.astro';
 import Trust from '../components/sections/Trust.astro';
 import Classifier from '../components/sections/Classifier.astro';
 import SealedBlock from '../components/sections/SealedBlock.astro';
@@ -16,7 +16,7 @@ import Install from '../components/sections/Install.astro';
 import FAQ from '../components/sections/FAQ.astro';
 
 const rail = [
-  ['hero', 'hero'],
+  ['intro', 'intro'],
   ['beliefs', 'beliefs'],
   ['trust', 'trust'],
   ['classifier', 'classifier'],
@@ -76,7 +76,7 @@ const rail = [
     </aside>
 
     <main class="min-w-0 flex-1 space-y-8">
-      <Hero />
+      <Intro />
       <Beliefs />
       <Trust />
       <Classifier />
