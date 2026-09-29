@@ -64,6 +64,9 @@ const (
 	UseCaseDepChange    = "dep_change"
 	// UseCaseWebFetch answers a WebFetch prompt over the fetched page.
 	UseCaseWebFetch = "web_fetch"
+	// UseCaseBashReplan asks the fast tier to redo a Bash call as a builtin
+	// tool call.
+	UseCaseBashReplan = "bash_replan"
 )
 
 // ClassifierStructuredMaxTokens is the completion budget for classifier calls

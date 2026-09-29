@@ -46,6 +46,8 @@ const (
 	EventRouteFallback             Event = "route_fallback"
 	EventDepChange                 Event = "dep_change"
 	EventWebFetchAnswer            Event = "web_fetch_answer"
+	EventBashSwap                  Event = "bash_swap"
+	EventBashReplan                Event = "bash_replan"
 )
 
 // Level is the display granularity of the internal-work feed. Order matters:
@@ -265,6 +267,10 @@ func Describe(a Activity) (Description, bool) {
 		return webFetchAnswerDescription(a), true
 	case EventDepChange:
 		return depChangeDescription(a), true
+	case EventBashSwap:
+		return bashSwapDescription(a), true
+	case EventBashReplan:
+		return bashReplanDescription(a), true
 	case EventRouteFallback:
 		return routeFallbackDescription(a), true
 	}

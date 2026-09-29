@@ -100,6 +100,19 @@ func TestDepSentinelLabelsAreDefined(t *testing.T) {
 	}
 }
 
+func TestBashReplanSentinelLabelsAreDefined(t *testing.T) {
+	if got := KeepBash.Label(); got != "the builtin tool is not equivalent, keep the Bash call" {
+		t.Errorf("KeepBash.Label() = %q", got)
+	}
+	if len(BashReplanSentinelLabels) != 1 {
+		t.Errorf("BashReplanSentinelLabels has %d entries, want 1", len(BashReplanSentinelLabels))
+	}
+	unknown := BashReplanSentinel("UNKNOWN")
+	if got := unknown.Label(); got != string(unknown) {
+		t.Errorf("unknown label fallback = %q", got)
+	}
+}
+
 func TestDepSentinelLabelFallback(t *testing.T) {
 	unknown := DepSentinel("UNKNOWN")
 	if got := unknown.Label(); got != string(unknown) {

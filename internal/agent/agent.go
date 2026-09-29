@@ -35,6 +35,7 @@ import (
 	"github.com/vulnetix/belai/internal/repomap"
 	"github.com/vulnetix/belai/internal/resilience"
 	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/rolemanager/jev"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/sanitize"
@@ -145,6 +146,9 @@ type Options struct {
 	// ModeDetector is the optional intent detector used instead of the LLM
 	// mode classifier. nil means use the LLM fallback.
 	ModeDetector rolemanager.IntentDetector
+	// Jev runs the relevance jobs that use a decision backend (docs/jev-jobs.md).
+	// nil, or a Jobs with no client, runs none of them.
+	Jev *jev.Jobs
 	// Persona is a fleet worker's profile system prompt (and identity). It is
 	// user-authored text from the global profile directory or a built-in —
 	// never repository, board or model text — and rides in the system block
@@ -264,6 +268,10 @@ type Session struct {
 	fanOutAnthropicTools []wire.AnthropicToolDef
 	fanOutTask           *tools.Task
 	modeDetector         rolemanager.IntentDetector
+	// jev runs the relevance jobs; swapped remembers the Bash commands already
+	// run as a builtin once, so a repeated command runs as Bash.
+	jev     *jev.Jobs
+	swapped map[string]bool
 	// taskCallsThisTurn counts Task invocations in the current fan-out turn.
 	taskCallsThisTurn int
 	// turnIntent is the detected intent for the current turn.
@@ -611,6 +619,8 @@ func NewSession(o Options) (*Session, error) {
 		fanOutAnthropicTools: fanOutAnthropicTools,
 		fanOutTask:           fanOutTask,
 		modeDetector:         o.ModeDetector,
+		jev:                  o.Jev,
+		swapped:              map[string]bool{},
 		hookSet:              hookSet,
 		toolMethod:           method,
 		steer:                make(chan string, steerBuffer),
@@ -1742,7 +1752,8 @@ func (s *Session) promoteResult(ctx context.Context, call rolemanager.ToolCall, 
 	// sanitised — delimiter markup stripped, exactly as the classifier path
 	// does first — and promoted without the round trip. See
 	// tools.Kind.NeedsClassifier.
-	if !res.Kind.NeedsClassifier() {
+	swapped := swappedFromBash(ctx)
+	if !res.Kind.NeedsClassifier() && !swapped {
 		if res.Kind == tools.KindGrep {
 			// Always filter: a registry without a tracker resolves row paths
 			// against the session workdir rather than skipping the check.
@@ -1755,6 +1766,22 @@ func (s *Session) promoteResult(ctx context.Context, call rolemanager.ToolCall, 
 		return delimiters.Egress(sanitize.Sanitize(res.Content), s.pool)
 	}
 
+	if swapped {
+		// A call that replaced Bash is classified as Bash output would be, even
+		// when the builtin's own kind is shaped: swapping never lowers the
+		// scrutiny a command's output gets. A Grep row from a file whose Read
+		// was withheld earlier is still withheld first.
+		if res.Kind == tools.KindGrep {
+			root, dir := s.workdir, s.workdir
+			if cwd := s.registry.Cwd(); cwd != nil {
+				root, dir = cwd.Root(), cwd.Dir()
+			}
+			res.Content = s.flagged.withholdGrep(res.Content, root, dir)
+		}
+		if !res.Kind.NeedsClassifier() {
+			res.Kind = tools.KindBash
+		}
+	}
 	emit(Event{Kind: EventRoleManagerKind, Phase: RoleManagerPhaseToolResult})
 	pipe := run.NewPipelineWithRetry(s.cfg, s.client, s.cache, func(a resilience.Attempt) {
 		emit(Event{Kind: EventRetryKind, RetryAttempt: a.Attempt, RetryMax: a.Max, RetryDelay: a.Delay, RetryReason: a.Reason})

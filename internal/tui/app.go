@@ -2072,6 +2072,10 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 		// Jev intent detection when the user already sends traffic to
 		// OpenRouter/Jev; otherwise the LLM classifier handles mode selection.
 		ModeDetector: run.NewModeDetector(cfg),
+		// The Jev relevance jobs (bash swap, ...) run only with a decision
+		// backend; each job's switch is read from the settings the session was
+		// built with, and a change in /settings rebuilds the session.
+		Jev: run.NewJevJobs(cfg, p.settings.JevJobSet),
 		// Explore fan-out is capped by the shared FIFO pool the TUI owns.
 		AgentPool:     p.agentPool,
 		RepoMap:       &p.repoMap,
@@ -3658,11 +3662,12 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		})
 		a.recordToolStart(m.Tool.ID, m.Tool.Name, toolArgsString(m.Tool.Args))
 		a.messages = append(a.messages, components.Message{
-			Role:       "tool",
-			ToolName:   m.Tool.Name,
-			ToolArgs:   toolArgsString(m.Tool.Args),
-			ToolCallID: m.Tool.ID,
-			StartedAt:  time.Now(),
+			Role:        "tool",
+			ToolName:    m.Tool.Name,
+			SwappedFrom: m.SwappedFrom,
+			ToolArgs:    toolArgsString(m.Tool.Args),
+			ToolCallID:  m.Tool.ID,
+			StartedAt:   time.Now(),
 		})
 		return a.nextAgent()
 	case agent.EventToolDiffKind:

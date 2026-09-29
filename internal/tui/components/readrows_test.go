@@ -58,3 +58,26 @@ func TestFileTextStripsGutter(t *testing.T) {
 		t.Fatalf("verbatim FileText = %q", got)
 	}
 }
+
+// A tool row for a call the harness ran in place of Bash names both tools, so
+// the swap is visible to the user as well as to the model.
+func TestSwappedToolRowNamesBothTools(t *testing.T) {
+	msg := Message{
+		Role:        "tool",
+		ToolName:    "Grep",
+		SwappedFrom: "Bash",
+		ToolArgs:    `{"pattern":"needle","path":"f.txt"}`,
+		Content:     "2:needle here",
+		Status:      "✓",
+	}
+	out, _ := toolRow(msg, 80, true)
+	plain := ansi.Strip(out)
+	if !strings.Contains(plain, "⌁ Grep ← Bash") {
+		t.Fatalf("swapped row does not name both tools:\n%s", plain)
+	}
+	msg.SwappedFrom = ""
+	out, _ = toolRow(msg, 80, true)
+	if strings.Contains(ansi.Strip(out), "←") {
+		t.Fatalf("an ordinary row shows a swap marker:\n%s", ansi.Strip(out))
+	}
+}

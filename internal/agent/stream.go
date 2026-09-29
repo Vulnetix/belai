@@ -177,6 +177,10 @@ type Event struct {
 	// ToolProgress carries whole lines of output from a still-running tool on
 	// EventToolProgressKind, keyed by ToolCallID. Render-only.
 	ToolProgress string
+	// SwappedFrom names the tool the model called when the harness ran another
+	// one in its place (today only "Bash"). Set on the tool start and result
+	// events, where ToolName is the tool that actually ran.
+	SwappedFrom string
 
 	// Diff carries what a mutating tool changed, on EventToolDiffKind.
 	// Render-only.

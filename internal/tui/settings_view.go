@@ -152,7 +152,7 @@ func (a *App) settingsRows() []settingsRow {
 	intelVal := boolLabel(s.IntelEnabled())
 	planLimitsVal := boolLabel(s.PlanLimitsEnabled())
 
-	return []settingsRow{
+	rows := []settingsRow{
 		{key: "provider", label: "provider", kind: "text", value: providerVal, src: sourceLabel(origin["provider"])},
 		{key: "model", label: "model", kind: "text", value: modelVal, src: sourceLabel(origin["model"])},
 		{key: "effort", label: "effort", kind: "choose", opts: []string{"low", "medium", "high"}, value: effortVal, src: sourceLabel(origin["effort"])},
@@ -182,6 +182,67 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "intel", label: "session intelligence", kind: "toggle", value: intelVal, src: sourceLabel(origin["ui"]), help: "the footer slot, the intel tab (f12) and /intel"},
 		{key: "plan_limits", label: "plan limits", kind: "toggle", value: planLimitsVal, src: sourceLabel(origin["intel"]), help: "read provider rate-limit response headers into plan-limit readings — global only"},
 	}
+	// The Jev jobs exist only while a decision backend is configured; without
+	// one they are off and hidden, not greyed.
+	if s.JevConfigured() {
+		rows = append(rows, jevRows(s, origin)...)
+	}
+	return rows
+}
+
+// jevRowPrefix marks the /settings rows of the Jev jobs; the rest of the key is
+// the job name.
+const jevRowPrefix = "jev:"
+
+// jevJobLabels and jevJobHelp are the /settings wording of each job.
+var jevJobLabels = map[config.JevJob]string{
+	config.JevBashSwap: "jev bash swap",
+}
+
+var jevJobHelp = map[config.JevJob]string{
+	config.JevBashSwap: "run a builtin tool instead of Bash when one is a clear match, and tell the model",
+}
+
+// jevRows builds the toggle rows for the Jev jobs, one per job, in the
+// documented order.
+func jevRows(s config.Settings, origin map[string]config.Source) []settingsRow {
+	rows := make([]settingsRow, 0, len(config.JevJobs))
+	for _, j := range config.JevJobs {
+		rows = append(rows, settingsRow{
+			key:   jevRowPrefix + string(j),
+			label: jevJobLabels[j],
+			kind:  "toggle",
+			value: boolLabel(s.JevJobSet(j)),
+			src:   sourceLabel(origin["jev"]),
+			help:  jevJobHelp[j],
+		})
+	}
+	return rows
+}
+
+// setJevJob switches one Jev job. on nil removes the explicit switch, which
+// returns the job to its default (on). The cached agent session is dropped so
+// the next prompt runs with the new switch.
+func (a *App) setJevJob(job config.JevJob, on *bool) error {
+	err := a.mutateSetting(func(s *config.Settings) {
+		if on == nil {
+			if s.Jev != nil {
+				delete(s.Jev.Jobs, string(job))
+			}
+			return
+		}
+		if s.Jev == nil {
+			s.Jev = &config.JevSettings{}
+		}
+		if s.Jev.Jobs == nil {
+			s.Jev.Jobs = map[string]bool{}
+		}
+		s.Jev.Jobs[string(job)] = *on
+	})
+	if err == nil {
+		a.invalidateAgentSession()
+	}
+	return err
 }
 
 func lspSummary(a *App) string {
@@ -427,6 +488,10 @@ func (a *App) commitTextRow(row settingsRow, raw string) error {
 }
 
 func (a *App) cycleToggle(key string) error {
+	if job, ok := strings.CutPrefix(key, jevRowPrefix); ok && config.ValidJevJob(job) {
+		on := !a.settings.JevJobSet(config.JevJob(job))
+		return a.setJevJob(config.JevJob(job), &on)
+	}
 	if key == "auto_commit_per_task" {
 		// This toggle is global only: a repo-visible settings file must never
 		// be able to make the harness commit on the user's behalf.
@@ -538,6 +603,9 @@ func (a *App) cycleChoice(key string, opts []string) error {
 }
 
 func (a *App) unsetSetting(key string) error {
+	if job, ok := strings.CutPrefix(key, jevRowPrefix); ok && config.ValidJevJob(job) {
+		return a.setJevJob(config.JevJob(job), nil)
+	}
 	if key == "auto_commit_per_task" {
 		return a.mutateGlobalSetting(func(s *config.Settings) {
 			s.AutoCommitPerTask = nil
