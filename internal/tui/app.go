@@ -404,6 +404,9 @@ type App struct {
 	modelTestGen    int
 	modelTester     modelTester
 	modelTestPassed map[string]time.Time
+	// providerTests labels each provider in the /model provider picker with
+	// its last test outcome. It never gates a choice.
+	providerTests map[string]string
 	// modelTestCPU keeps local test launches on the CPU after the user chose
 	// the CPU relaunch hint.
 	modelTestCPU bool

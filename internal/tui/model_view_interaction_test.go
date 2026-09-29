@@ -180,6 +180,12 @@ func TestModelKeyEnterCyclesAgentProviderAndReResolves(t *testing.T) {
 
 	selectRow(t, a, roleAgent, "provider")
 	_, _ = a.handleModelKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if !a.modelState.pickingProvider {
+		t.Fatal("enter on the provider row must open the provider list")
+	}
+	a.modelState.providerIdx = indexOfString(a.modelState.providerOpts, "openrouter")
+	_, _ = a.handleModelKey(tea.KeyMsg{Type: tea.KeyEnter}) // choose provider: model list opens
+	_, _ = a.handleModelKey(tea.KeyMsg{Type: tea.KeyEnter}) // pick its first model: tested, saved
 	if a.cfg.Provider != "openrouter" {
 		t.Fatalf("provider = %q, want openrouter", a.cfg.Provider)
 	}

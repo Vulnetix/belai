@@ -25,13 +25,17 @@ func TestModelScreenFastTierRows(t *testing.T) {
 	a := newModelScreen(t, t.TempDir())
 	a.modelState.routingScope = "project"
 
-	// Enter on the provider row selects the next provider with its default
-	// model and tests it; an unconfigured provider is not saved.
+	// Enter on the provider row opens the provider list; nothing is tested
+	// or saved until a provider and model are chosen.
 	selectRow(t, a, roleFast, "provider")
 	_ = a.changeModelRow()
-	if a.modelTest == nil {
-		t.Fatal("a provider change must be tested before it is saved")
+	if !a.modelState.pickingProvider {
+		t.Fatal("the provider row must open the provider list")
 	}
+	if a.modelTest != nil {
+		t.Fatal("opening the provider list must not start a test")
+	}
+	a.modelState.pickingProvider = false
 	// A configured provider passes its test and is saved, model cleared.
 	t.Setenv("OPENAI_API_KEY", "sk-test")
 	prov := "openai"

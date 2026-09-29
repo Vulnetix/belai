@@ -179,7 +179,7 @@ func TestModelClassifierProviderChangeClearsModel(t *testing.T) {
 	_ = a.enterModel()
 
 	a.modelState.classifierScope = "project"
-	_ = a.cycleClassifierProvider([]string{"anthropic"})
+	_ = a.selectClassifierProvider("")
 	if a.settings.Classifier.Model != "" {
 		t.Fatalf("model = %q, want empty after provider change", a.settings.Classifier.Model)
 	}
@@ -276,13 +276,7 @@ func TestModelAgentProviderChangeReResolvesConfig(t *testing.T) {
 
 	// Cycle the agent provider row until openrouter is selected. Changing the
 	// provider must re-resolve the base URL and API key, not just the name.
-	providers := a.modelProviders()
-	for i := 0; i <= len(providers); i++ {
-		_ = a.cycleAgentProvider(providers)
-		if a.cfg.Provider == "openrouter" {
-			break
-		}
-	}
+	commitAgentProviderForTest(a, "openrouter")
 	if a.cfg.Provider != "openrouter" {
 		t.Fatalf("provider = %q, want openrouter", a.cfg.Provider)
 	}
@@ -303,13 +297,7 @@ func TestModelAgentProviderChangeGlobalScopeReResolvesConfig(t *testing.T) {
 	_ = a.enterModel()
 	a.modelState.agentScope = "global"
 
-	providers := a.modelProviders()
-	for i := 0; i <= len(providers); i++ {
-		_ = a.cycleAgentProvider(providers)
-		if a.cfg.Provider == "openrouter" {
-			break
-		}
-	}
+	commitAgentProviderForTest(a, "openrouter")
 	if a.cfg.Provider != "openrouter" {
 		t.Fatalf("provider = %q, want openrouter", a.cfg.Provider)
 	}

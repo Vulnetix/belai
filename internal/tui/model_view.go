@@ -65,6 +65,12 @@ type modelViewState struct {
 	pendingProvider map[modelRole]string
 
 	// sub-picker state, shared by agent and classifier model rows.
+	// provider picker: replaces cycling on the provider rows.
+	pickingProvider bool
+	providerRole    modelRole
+	providerOpts    []string
+	providerIdx     int
+
 	picking     bool
 	pickingRole modelRole
 	modelIdx    int
@@ -771,6 +777,12 @@ func (a *App) modelView() string {
 	var b strings.Builder
 	b.WriteString(components.SectionHeader("Model Roles", "esc back", w))
 
+	if a.modelState.pickingProvider {
+		b.WriteString("\n")
+		b.WriteString(a.providerPicker())
+		return lipgloss.NewStyle().Padding(1).Render(b.String())
+	}
+
 	if a.modelState.picking {
 		b.WriteString("\n")
 		b.WriteString(a.modelPicker())
@@ -1021,6 +1033,9 @@ func (a *App) classifierProviderNeedsWarning(name string) bool {
 }
 
 func (a *App) handleModelKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if a.modelState.pickingProvider {
+		return a.handleProviderPickerKey(m)
+	}
 	if a.modelState.picking {
 		return a.handleModelPickerKey(m)
 	}
@@ -1249,7 +1264,7 @@ func (a *App) changeModelRow() tea.Cmd {
 	if row.role == roleFast {
 		switch row.key {
 		case "provider":
-			return a.cycleFastProvider(row.opts)
+			return a.openProviderPicker(roleFast, row.opts, a.fastProvider())
 		case "model":
 			return a.openFastModelPicker()
 		}
@@ -1274,9 +1289,13 @@ func (a *App) changeModelRow() tea.Cmd {
 		return a.cycleClassifierPhaseThreshold(2, row.opts)
 	case "provider":
 		if row.role == roleAgent {
-			return a.cycleAgentProvider(row.opts)
+			return a.openProviderPicker(roleAgent, row.opts, a.cfg.Provider)
 		}
-		return a.cycleClassifierProvider(row.opts)
+		cur := ""
+		if cls := a.settings.Classifier; cls != nil {
+			cur = cls.Provider
+		}
+		return a.openProviderPicker(roleClassifier, append([]string{""}, row.opts...), cur)
 	case "model":
 		if row.role == roleAgent {
 			return a.openAgentModelPicker()
@@ -1726,16 +1745,14 @@ func (a *App) agentEffortOpts() []string {
 func (a *App) openAgentModelPicker() tea.Cmd {
 	a.modelState.picking = true
 	a.modelState.pickingRole = roleAgent
-	name := a.cfg.Provider
-	if name == "" {
-		if providers := a.modelProviders(); len(providers) > 0 {
-			name = providers[0]
-		}
-	}
+	name := a.pickerProvider(roleAgent)
 	a.modelState.filter = ""
 	a.modelState.filtering = false
 	a.modelState.scroll = 0
-	a.modelState.modelIdx = indexOfModel(a.catalogFor(name), a.cfg.Model)
+	a.modelState.modelIdx = 0
+	if _, pending := a.modelState.pendingProvider[roleAgent]; !pending {
+		a.modelState.modelIdx = indexOfModel(a.catalogFor(name), a.cfg.Model)
+	}
 	return a.fetchCatalogCmd(name)
 }
 
@@ -1750,36 +1767,6 @@ func (a *App) openClassifierModelPicker() tea.Cmd {
 	return a.fetchCatalogCmd(name)
 }
 
-// cycleAgentProvider moves the agent's provider to the next one in the
-// picker's list, wrapping from the last back to the first. The list is
-// exactly what the picker offers (availableProviders, which pins the
-// committed provider), so the cycle reaches every authenticated provider in
-// canonical order and the cursor is never off the ring.
-//
-// There is deliberately no "" (unset) stop in the agent ring: every commit
-// ends in refreshProvider, and run.Prepare normalises an empty provider to
-// the default (openai). An "" stop therefore bounces on the very next wrap,
-// so the cycle only ever traversed the tail of the sorted list starting at
-// the default and providers sorting before the committed one were
-// unreachable. Unsetting is the x key's job.
-func (a *App) cycleAgentProvider(opts []string) tea.Cmd {
-	if len(opts) == 0 {
-		return nil
-	}
-	cur := a.cfg.Provider
-	next := opts[(indexOfString(opts, cur)+1)%len(opts)]
-	// The provider is selected with its default model, tested, then saved.
-	// A quick lap of presses tests only the last: each press supersedes the
-	// running test.
-	return a.stageAgent("provider", next, "", func(s *config.Settings) {
-		s.Provider = next
-		s.Model = ""
-	}, func() {
-		a.cfg.Provider = next
-		a.cfg.Model = ""
-	})
-}
-
 func (a *App) cycleAgentEffort(opts []string) tea.Cmd {
 	if len(opts) == 0 {
 		return nil
@@ -1792,16 +1779,9 @@ func (a *App) cycleAgentEffort(opts []string) tea.Cmd {
 	})
 }
 
-func (a *App) cycleClassifierProvider(opts []string) tea.Cmd {
-	cur := ""
-	if cls := a.settings.Classifier; cls != nil {
-		cur = cls.Provider
-	}
-	if p, ok := a.modelState.pendingProvider[roleClassifier]; ok {
-		cur = p
-	}
-	ring := append([]string{""}, opts...)
-	next := ring[(indexOfString(ring, cur)+1)%len(ring)]
+// selectClassifierProvider applies the provider chosen in the provider
+// picker; "" means inherit the main model.
+func (a *App) selectClassifierProvider(next string) tea.Cmd {
 	if next == "" {
 		// Back to inheriting the main model: test it as the classifier.
 		delete(a.modelState.pendingProvider, roleClassifier)

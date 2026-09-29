@@ -89,18 +89,6 @@ func (a *App) cycleClassifierTier(opts []string) tea.Cmd {
 	return a.stageClassifier("tier", "classifier.tier = "+next, func(c *config.ClassifierSettings) { c.Tier = next })
 }
 
-// cycleFastProvider assigns the next provider to the fast tier and clears its
-// model, so the provider's own fast model applies until one is picked.
-func (a *App) cycleFastProvider(opts []string) tea.Cmd {
-	if len(opts) == 0 {
-		return nil
-	}
-	next := opts[(indexOfString(opts, a.fastProvider())+1)%len(opts)]
-	return a.stageRouting(roleFast, "provider", "fast = "+next, func(r *config.RoutingSettings) {
-		r.Fast = &config.RoutingTarget{Provider: next}
-	})
-}
-
 // openFastModelPicker opens the model picker over the fast tier's provider.
 func (a *App) openFastModelPicker() tea.Cmd {
 	prov := a.pickerProvider(roleFast)
