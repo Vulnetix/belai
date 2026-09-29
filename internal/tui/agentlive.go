@@ -6,7 +6,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -15,6 +14,7 @@ import (
 	"github.com/vulnetix/belai/internal/bgagent"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/notify"
+	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/tui/components"
 )
 
@@ -209,43 +209,11 @@ func (a *App) noteAudit(id, what, text string) {
 	}
 }
 
-// auditLine flattens text to one display line: control and bidi runes go,
-// whitespace runs collapse, and the result is capped. Agent output is
+// auditLine flattens text to one display line: control, bidi and zero-width
+// runes go, whitespace runs collapse, and the result is capped. Agent output is
 // untrusted, so it never keeps a rune that could move the cursor or reorder
 // the row.
-func auditLine(s string) string {
-	var b strings.Builder
-	space := false
-	n := 0
-	for _, r := range s {
-		if isBidiRune(r) {
-			continue
-		}
-		if unicode.IsSpace(r) || unicode.IsControl(r) {
-			space = b.Len() > 0
-			continue
-		}
-		if space {
-			b.WriteByte(' ')
-			n++
-			space = false
-		}
-		if n >= auditTextCap {
-			return strings.TrimSpace(b.String()) + "…"
-		}
-		b.WriteRune(r)
-		n++
-	}
-	return b.String()
-}
-
-func isBidiRune(r rune) bool {
-	switch {
-	case r >= 0x202A && r <= 0x202E, r >= 0x2066 && r <= 0x2069, r == 0x200E, r == 0x200F, r == 0x061C:
-		return true
-	}
-	return false
-}
+func auditLine(s string) string { return sanitize.Clip(s, auditTextCap) }
 
 // firstLine returns the first non-blank line of s, flattened.
 func firstLine(s string) string {

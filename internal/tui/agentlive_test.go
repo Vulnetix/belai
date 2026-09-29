@@ -126,7 +126,7 @@ func TestBackgroundErrorIsCountedAndReported(t *testing.T) {
 // Agent output is untrusted; the audit trail keeps one flat line per step.
 func TestAuditLineFlattensUntrustedText(t *testing.T) {
 	got := auditLine("a\x1b[2Jb\n\tc\u202Ed\u2066e")
-	if got != "a [2Jb cde" {
+	if got != "ab cde" {
 		t.Fatalf("auditLine = %q", got)
 	}
 	long := auditLine(strings.Repeat("x", 500))

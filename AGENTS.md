@@ -21,6 +21,20 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
 - **Untrusted content stays untrusted.** Every tool result is sanitized
   (delimiter markup removed) before it can be promoted, and none of them ever
   enters a system/agent/tools block.
+- **Sanitisation is per sink and deterministic.** `internal/sanitize`,
+  `internal/netguard` and `internal/shellsafe` clean or refuse a value by where
+  it is going (text, line, identifier, decision state, path, header, URL, shell
+  command, tool argument); see [docs/sanitization.md](docs/sanitization.md). No
+  model is asked whether a value is safe. A decision request takes only a
+  `sanitize.DecisionText`, so the compiler proves the decision-state sanitiser
+  ran. A `Bash` permission rule is matched against every command the parsed
+  line contains: a deny fires on any of them (quotes removed, wrappers such as
+  `env`, `sudo`, `xargs`, `sh -c` and `find -exec` unwrapped), an allow must
+  cover all of them, and a line that does not parse is never approved by a
+  rule. Read-only `Bash` runs the argv it judged, never a second split. A
+  fetched URL is checked and requested in its canonical form, and every
+  redirect and resolved address is checked again. Do not add a second copy of
+  a control or bidi stripper, a loopback test or a shell splitter.
 - **Arbitrary content goes through the classifier.** `Bash` (an arbitrary
   command), `WebFetch` and `WebSearch` (text written off this machine),
   `Read` (a file's bytes), `GH`/`Glab` results (`KindRemote`, third-party

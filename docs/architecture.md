@@ -329,7 +329,11 @@ Harness-generated blocks use tags such as:
   harness delimiter markup (and nonce/integrity attributes) *before* it is
   ever wrapped in a delimiter, so adversarial text cannot forge tags. It is
   unconditional — results that skip the classifier are sanitized exactly like
-  those that do not; see [Tool-result trust](#tool-result-trust).
+  those that do not; see [Tool-result trust](#tool-result-trust). The scan
+  folds case, full-width brackets, character references and invisible
+  characters, and repeats until nothing changes. Text, lines, identifiers,
+  decision state, paths, headers, URLs and shell commands each have their own
+  deterministic sanitiser; see [Sanitisation](sanitization.md).
 - **Per-block kinds**: `rolemanager.SystemBlock` carries an optional `Kind`,
   defaulting to `system`. A kind that is not in `delimiters.KnownKinds` is
   refused at the boundary rather than sealed, because Egress leaves an

@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/vulnetix/belai/internal/sanitize"
 )
 
 const (
@@ -390,27 +392,14 @@ func stateText(state any) (string, error) {
 	return strings.TrimSpace(buf.String()), nil
 }
 
-// neutralise keeps state and question text from forging prompt structure:
-// a chat special-token opener "<|" is split so /tokenize with parse_special
-// cannot turn it into a real turn boundary.
-func neutralise(s string) string {
-	return strings.ReplaceAll(s, "<|", "< |")
-}
+// neutralise keeps state and question text from forging prompt structure. It
+// is sanitize.ForDecision: chat special-token openers are split in any width
+// and case, lines that imitate the prompt's own layout are prefixed, and
+// control, bidi and zero-width runes are removed.
+func neutralise(s string) string { return sanitize.ForDecision(s, 0).String() }
 
-// neutraliseLines additionally breaks lines that would read as decider's own
-// markup ("Question:", "Options:", "Answer", "(A) …") by prefixing them, so
-// content cannot append a forged question or answer slot.
-func neutraliseLines(s string) string {
-	lines := strings.Split(neutralise(s), "\n")
-	for i, line := range lines {
-		t := strings.TrimSpace(line)
-		if strings.HasPrefix(t, "Question") || strings.HasPrefix(t, "Options:") ||
-			strings.HasPrefix(t, "Answer") || strings.HasPrefix(t, "Context:") || isOptionLine(t) {
-			lines[i] = "| " + line
-		}
-	}
-	return strings.Join(lines, "\n")
-}
+// neutraliseLines is neutralise; the layout-line rule is part of it now.
+func neutraliseLines(s string) string { return neutralise(s) }
 
 func isOptionLine(t string) bool {
 	return len(t) >= 3 && t[0] == '(' && t[2] == ')' && t[1] >= 'A' && t[1] <= 'P'

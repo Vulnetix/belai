@@ -3,7 +3,7 @@ package sessionsync
 import (
 	"errors"
 	"strings"
-	"unicode"
+	"unicode/utf8"
 
 	"github.com/vulnetix/belai/internal/sanitize"
 )
@@ -31,35 +31,18 @@ func UsableCredential(header string) error {
 }
 
 // CleanPrompt makes a web prompt safe to put in the transcript and the
-// terminal: harness delimiter markup is removed, control runes other than
-// newline and tab (terminal escape sequences included) and bidi overrides are
-// dropped, line endings are normalised, and it is capped at MaxPromptBytes.
+// terminal: it goes through sanitize.Text (delimiter markup, terminal escape
+// sequences, control, bidi and zero-width runes and invalid UTF-8 are removed,
+// line endings are normalised) and is capped at MaxPromptBytes.
 // The result is then admitted exactly like a typed prompt.
 func CleanPrompt(s string) string {
-	s = sanitize.Sanitize(strings.ReplaceAll(s, "\r\n", "\n"))
-	var b strings.Builder
-	for _, r := range s {
-		if r == '\n' || r == '\t' {
-			b.WriteRune(r)
-			continue
+	s = sanitize.Text(s)
+	if len(s) > MaxPromptBytes {
+		cut := MaxPromptBytes
+		for cut > 0 && !utf8.RuneStart(s[cut]) {
+			cut--
 		}
-		if r == unicode.ReplacementChar || unicode.IsControl(r) || isBidi(r) {
-			continue
-		}
-		if b.Len()+len(string(r)) > MaxPromptBytes {
-			break
-		}
-		b.WriteRune(r)
+		s = s[:cut]
 	}
-	return strings.TrimSpace(b.String())
-}
-
-// isBidi reports the explicit bidirectional formatting runes, which can make
-// the text a reader sees differ from the text the model receives.
-func isBidi(r rune) bool {
-	switch {
-	case r >= 0x202A && r <= 0x202E, r >= 0x2066 && r <= 0x2069, r == 0x200E, r == 0x200F, r == 0x061C:
-		return true
-	}
-	return false
+	return strings.TrimSpace(s)
 }
