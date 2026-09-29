@@ -8,8 +8,8 @@ problems with different rules, so each has its own constructor and none is used
 for another.
 
 This page is the reference for those rules and their edge cases. The
-[security invariants](../AGENTS.md#security-invariants-do-not-weaken) say what
-must never be weakened; [architecture](architecture.md#sanitization) says where
+[security invariants](../AGENTS.md) say what
+must never be weakened; [architecture](architecture.md#delimiter-nonce-and-integrity-model) says where
 the sanitiser sits in the tool-result pipeline.
 
 ## The sinks
