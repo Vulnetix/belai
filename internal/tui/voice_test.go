@@ -461,7 +461,7 @@ func TestFooterAndComposerChip(t *testing.T) {
 func TestVoiceCommand(t *testing.T) {
 	a, _ := voiceApp(t, config.VoiceSettings{})
 	a.voiceCommand("")
-	for _, want := range []string{"voice: off", "mode push_to_talk", "delivery insert", "cleanup on", "key f11", "ggml-tiny.en-q5_1.bin on disk"} {
+	for _, want := range []string{"voice: off", "mode push_to_talk", "delivery insert", "cleanup on", "key f11", "capture: ", "model: ggml-tiny.en-q5_1.bin on disk"} {
 		if !strings.Contains(lastSystem(a), want) {
 			t.Errorf("status %q lacks %q", lastSystem(a), want)
 		}
@@ -705,7 +705,7 @@ func TestBuiltInModelIsReportedAndNeverDownloaded(t *testing.T) {
 	a, _ := voiceApp(t, config.VoiceSettings{})
 	a.voice.modelPath = func() string { return "built in" }
 	a.voiceCommand("status")
-	if !strings.Contains(lastSystem(a), "built into this binary") || !strings.Contains(lastSystem(a), "32.2 MB") {
+	if !strings.Contains(lastSystem(a), "model: built in") || strings.Count(lastSystem(a), "\n") != 1 {
 		t.Fatalf("status = %q", lastSystem(a))
 	}
 	if cmd := a.voiceDownload(); cmd != nil {
