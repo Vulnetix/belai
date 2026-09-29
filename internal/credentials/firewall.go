@@ -55,7 +55,7 @@ func (r *Resolver) FirewallStateFor(instance, providerName string) FirewallState
 	st.Adapter, st.Label = a, a.Label()
 	// Decision backends are never routed: they are not chat endpoints, and a
 	// firewall key must never ride on a decision request.
-	if providerName == decisions.LocalProvider || r.settings.Providers[providerName].Kind == decisions.JevKind {
+	if providerName == decisions.LocalProvider || providerName == decisions.TypeSafeProvider || r.settings.Providers[providerName].Kind == decisions.JevKind {
 		st.Reason = "decision backends are never routed through a firewall"
 		return st
 	}

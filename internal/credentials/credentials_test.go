@@ -144,3 +144,13 @@ func TestSpecCloudflareAIGateway(t *testing.T) {
 		t.Fatalf("base_url field = %+v", base)
 	}
 }
+
+// TypeSafe's key has one conventional variable and is required: it is a
+// hosted decision provider, so it is neither a registry provider nor a
+// derived BELAI_ variable.
+func TestSpecForTypeSafe(t *testing.T) {
+	spec := Spec("typesafe")
+	if len(spec) != 1 || spec[0].Name != "api_key" || spec[0].Optional || !spec[0].Secret || len(spec[0].EnvVars) != 1 || spec[0].EnvVars[0] != "TYPESAFE_API_KEY" {
+		t.Fatalf("spec = %+v", spec)
+	}
+}

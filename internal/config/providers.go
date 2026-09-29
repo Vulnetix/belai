@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/vulnetix/belai/internal/decisions"
 	"github.com/vulnetix/belai/internal/netguard"
 	"github.com/vulnetix/belai/internal/provider"
 	"github.com/vulnetix/belai/internal/wire"
@@ -36,7 +37,7 @@ func ValidateProviders(s Settings) error {
 }
 
 func validateProvider(name string, p ProviderProfile) error {
-	if provider.Builtin(name) {
+	if provider.Builtin(name) || name == decisions.TypeSafeProvider {
 		return fmt.Errorf("provider %q collides with a built-in provider", name)
 	}
 	if !provider.ValidCustomName(name) {

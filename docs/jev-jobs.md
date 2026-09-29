@@ -21,7 +21,7 @@ without approving anything. This page is the reference for the relevance jobs.
   ([sanitisation](sanitization.md#decision-backends-fordecision)). File
   contents, attachment bytes and tool output are not sent.
 - **It needs a backend.** With no decision backend configured (the local
-  decision model, a self-hosted Jev provider, or OpenRouter's hosted Jev) no job
+  decision model, the hosted `typesafe` provider, a self-hosted Jev provider, or OpenRouter's hosted Jev) no job
   runs and none appears in `/settings`.
 
 ## Settings

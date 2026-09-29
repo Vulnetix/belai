@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/decisions"
 	"github.com/vulnetix/belai/internal/provider"
 )
 
@@ -61,6 +62,12 @@ func SpecFor(providerName string, prof *config.ProviderProfile) []Field {
 		return []Field{
 			{Name: "api_key", EnvVars: []string{EnvVarForProvider(providerName)}, Secret: true, Optional: true},
 		}
+	}
+	if providerName == decisions.TypeSafeProvider {
+		// The hosted decision provider is not a chat provider, so it has no
+		// registry descriptor; its key is required and has one conventional
+		// variable.
+		return []Field{{Name: "api_key", EnvVars: []string{decisions.TypeSafeKeyEnv}, Secret: true}}
 	}
 	if d, ok := provider.Lookup(providerName); ok {
 		out := make([]Field, len(d.Fields))

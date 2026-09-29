@@ -25,8 +25,11 @@ type DecisionsConfig struct {
 	// every call).
 	BaseURL string
 	Path    string
-	Key     func() (string, error)
-	Local   decisions.LocalModel
+	// SendModel sends Model in the request body (TypeSafe's hosted API takes
+	// it; a self-hosted server may reject fields it does not know).
+	SendModel bool
+	Key       func() (string, error)
+	Local     decisions.LocalModel
 	// Timeout and MaxStateBytes come from classifier.decision; zero keeps
 	// the backend default.
 	Timeout       time.Duration
@@ -59,13 +62,14 @@ func (d DecisionsConfig) NewDecider(client *http.Client) decisions.Decider {
 		}
 	case decisions.BackendSystemOne:
 		return &decisions.SystemOne{
-			Name:    d.Provider,
-			Model:   d.Model,
-			BaseURL: d.BaseURL,
-			Path:    d.Path,
-			Key:     d.Key,
-			Client:  client,
-			Timeout: d.Timeout,
+			Name:      d.Provider,
+			Model:     d.Model,
+			SendModel: d.SendModel,
+			BaseURL:   d.BaseURL,
+			Path:      d.Path,
+			Key:       d.Key,
+			Client:    client,
+			Timeout:   d.Timeout,
 		}
 	}
 	return nil
@@ -109,6 +113,27 @@ func resolveDecisions(cls *config.ClassifierSettings, src CredentialSource) (Dec
 		}
 		out.Local = m
 	case decisions.BackendSystemOne:
+		if cls.Provider == decisions.TypeSafeProvider {
+			// TypeSafe's hosted API: a fixed origin and path, a model the
+			// service names, and a key that is required.
+			out.BaseURL, out.Path = decisions.TypeSafeBaseURL, decisions.DefaultSystemOnePath
+			if out.Model == "" {
+				out.Model = decisions.TypeSafeDefaultModel
+			}
+			out.SendModel = true
+			out.Key = func() (string, error) {
+				if src == nil {
+					return "", fmt.Errorf("%s is not set", decisions.TypeSafeKeyEnv)
+				}
+				v, _, _ := src.Lookup(decisions.TypeSafeProvider, "api_key")
+				v = strings.TrimSpace(v)
+				if v == "" {
+					return "", fmt.Errorf("%s is not set", decisions.TypeSafeKeyEnv)
+				}
+				return v, nil
+			}
+			return out, true, nil
+		}
 		if err := config.ValidJevURL(prof.baseURL); err != nil {
 			return DecisionsConfig{}, true, fmt.Errorf("provider %q: %w", cls.Provider, err)
 		}

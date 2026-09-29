@@ -217,8 +217,8 @@ func ResolveClassifier(main Config, cls *config.ClassifierSettings, src Credenti
 	// Kind "jev" is a Jev decision backend and nothing else: a provider and
 	// model that would chat are refused rather than quietly classified by a
 	// model the user did not ask for.
-	if cls.Kind == ClassifierKindJev && !jev.IsDecisionsModel(cls.Provider, cls.Model) {
-		return ClassifierConfig{}, fmt.Errorf(`classifier.kind "jev" needs provider openrouter with a typesafe/jev model, a Jev provider profile, or %s`, decisions.LocalProvider)
+	if IsDecisionKind(cls.Kind) && !jev.IsDecisionsModel(cls.Provider, cls.Model) {
+		return ClassifierConfig{}, fmt.Errorf(`classifier.kind %q needs provider openrouter with a typesafe/jev model, %s, a Jev provider profile, or %s`, cls.Kind, decisions.TypeSafeProvider, decisions.LocalProvider)
 	}
 
 	// ResolveClassifier produces the guardrail classifier config: the LLM
@@ -370,11 +370,23 @@ func ApplyProfileOverride(cfg Config, o ProfileOverride, cls *config.ClassifierS
 	return out, nil
 }
 
-// ClassifierKindJev is the classifier kind that answers through a Jev
-// decision backend (OpenRouter's Decisions API, a self-hosted Jev profile or
-// the local decision model). Jev is never a chat model, so it is a kind of its
-// own and never "llm".
+// ClassifierKindOpenRouterDecisions is the classifier kind that answers
+// through OpenRouter's Decisions API (or the local decision model). A
+// decision model is never a chat model, so it is a kind of its own and never
+// "llm".
+const ClassifierKindOpenRouterDecisions = "openrouter-decisions"
+
+// ClassifierKindJev is the classifier kind that answers through a Jev server
+// speaking TypeSafe's native /v1/systemone API: the hosted typesafe provider
+// or a self-hosted Jev profile. Before the kinds were split, "jev" also named
+// the OpenRouter and local backends; ClassifierKind reads such a file as
+// ClassifierKindOpenRouterDecisions.
 const ClassifierKindJev = "jev"
+
+// IsDecisionKind reports whether a classifier kind is a decision backend.
+func IsDecisionKind(kind string) bool {
+	return kind == ClassifierKindOpenRouterDecisions || kind == ClassifierKindJev
+}
 
 // ClassifierKind resolves the effective classifier kind: an explicit setting,
 // else "models" when the binary embeds a model, else "llm". Embedding a model
@@ -392,10 +404,20 @@ func ClassifierKind(cls *config.ClassifierSettings) string {
 		return "models"
 	}
 	if kind == "" || kind == "llm" {
-		if cls != nil && (cls.Provider == decisions.LocalProvider || jev.IsDecisionsModel(cls.Provider, cls.Model)) {
-			return ClassifierKindJev
+		if cls != nil {
+			switch {
+			case cls.Provider == decisions.LocalProvider || jev.IsDecisionsModel(cls.Provider, cls.Model):
+				return ClassifierKindOpenRouterDecisions
+			case cls.Provider == decisions.TypeSafeProvider:
+				return ClassifierKindJev
+			}
 		}
 		return "llm"
+	}
+	// Files written before the split say "jev" for the OpenRouter and local
+	// backends too.
+	if kind == ClassifierKindJev && cls != nil && (cls.Provider == decisions.LocalProvider || jev.IsDecisionsModel(cls.Provider, cls.Model)) {
+		return ClassifierKindOpenRouterDecisions
 	}
 	return kind
 }
@@ -1085,6 +1107,13 @@ type EnvSource func(string) string
 // list for each field from the provider registry so the table cannot drift
 // from the run-time resolution path.
 func (f EnvSource) Lookup(providerName, field string) (value, origin string, ok bool) {
+	if providerName == decisions.TypeSafeProvider {
+		// A decision provider has no registry descriptor.
+		if v := f(decisions.TypeSafeKeyEnv); field == "api_key" && v != "" {
+			return v, "$" + decisions.TypeSafeKeyEnv, true
+		}
+		return "", "", false
+	}
 	if d, ok := provider.Lookup(providerName); ok {
 		for _, fld := range d.Fields {
 			if fld.Name != field {

@@ -40,6 +40,24 @@ const (
 // LocalProvider is the built-in provider name of the local decision server.
 const LocalProvider = "decision-local"
 
+// TypeSafeProvider is the built-in decision provider for TypeSafe's hosted
+// native API. It is a classifier-only provider: never a chat provider, never
+// in the provider registry, never routed through a firewall.
+const TypeSafeProvider = "typesafe"
+
+// TypeSafeBaseURL is TypeSafe's hosted API origin. It is fixed: the key is
+// only ever sent here.
+const TypeSafeBaseURL = "https://api.typesafe.ai"
+
+// TypeSafeDefaultModel is the model TypeSafe serves when none is named.
+const TypeSafeDefaultModel = "jev-latest"
+
+// TypeSafeModels lists the TypeSafe model ids the /model picker offers.
+var TypeSafeModels = []string{TypeSafeDefaultModel, "jev-1.13.0"}
+
+// TypeSafeKeyEnv is the environment variable holding the TypeSafe API key.
+const TypeSafeKeyEnv = "TYPESAFE_API_KEY"
+
 // JevKind is the provider-profile kind of a self-hosted Jev endpoint.
 const JevKind = "jev"
 
@@ -53,6 +71,8 @@ func BackendOf(provider, kind, model string) (Backend, bool) {
 		return BackendOpenRouter, true
 	case provider == LocalProvider:
 		return BackendLocal, true
+	case provider == TypeSafeProvider:
+		return BackendSystemOne, true
 	case kind == JevKind:
 		return BackendSystemOne, true
 	}

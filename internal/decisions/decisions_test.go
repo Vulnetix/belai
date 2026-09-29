@@ -22,6 +22,7 @@ func TestBackendOf(t *testing.T) {
 		{"openrouter", "", "openai/gpt-5", "", false},
 		{"decision-local", "", "decider-4b", BackendLocal, true},
 		{"my-jev", "jev", "jev", BackendSystemOne, true},
+		{"typesafe", "", "jev-latest", BackendSystemOne, true},
 		{"llama-server", "llama-server", "x", "", false},
 	}
 	for _, c := range cases {
@@ -339,5 +340,34 @@ func TestLlamaFallsBackToV1Completions(t *testing.T) {
 func TestPyStringMatchesPythonJSON(t *testing.T) {
 	if got := pyString("a\"b\\c\nd\x01é"); got != `"a\"b\\c\nd\u0001é"` {
 		t.Fatalf("pyString = %s", got)
+	}
+}
+
+// A TypeSafe call carries the key as a bearer token, the model in the body
+// and the native questions shape, and refuses a redirect.
+func TestTypeSafeRequestShape(t *testing.T) {
+	var gotAuth, gotPath string
+	var body map[string]any
+	d := systemOneServer(t, func(w http.ResponseWriter, r *http.Request) {
+		gotAuth, gotPath = r.Header.Get("Authorization"), r.URL.Path
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, _ = io.WriteString(w, `{"model":"jev-1.13.0","answers":{"q":{"type":"noul","noul":0.9}}}`)
+	})
+	d.Name, d.Model, d.SendModel = TypeSafeProvider, TypeSafeDefaultModel, true
+	res, err := d.Decide(context.Background(), Request{State: "s", Questions: map[string]Question{"q": Noul("p")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotAuth != "Bearer k1" || gotPath != DefaultSystemOnePath || body["model"] != "jev-latest" || body["state"] != "s" {
+		t.Fatalf("auth=%q path=%q body=%v", gotAuth, gotPath, body)
+	}
+	if res.Answers["q"].Noul != 0.9 || d.Identity() != "typesafe/jev-latest" {
+		t.Fatalf("answer=%+v identity=%q", res.Answers["q"], d.Identity())
+	}
+}
+
+func TestTypeSafeConstants(t *testing.T) {
+	if TypeSafeBaseURL != "https://api.typesafe.ai" || TypeSafeKeyEnv != "TYPESAFE_API_KEY" || TypeSafeModels[0] != TypeSafeDefaultModel {
+		t.Fatal("TypeSafe constants drifted from the documented values")
 	}
 }

@@ -696,7 +696,7 @@ func (a *App) testingSuffix(role modelRole, key string) string {
 // providerIsDecisions reports whether a provider name is a decision backend
 // (never offered for chat roles).
 func (a *App) providerIsDecisions(name string) bool {
-	if name == decisions.LocalProvider {
+	if name == decisions.LocalProvider || name == decisions.TypeSafeProvider {
 		return true
 	}
 	p, ok := a.settings.Providers[name]
@@ -719,6 +719,12 @@ func (a *App) decisionCatalog(name string) []models.Model {
 		return out
 	}
 	var out []models.Model
+	if name == decisions.TypeSafeProvider {
+		for _, id := range decisions.TypeSafeModels {
+			out = append(out, models.Model{ID: id, Label: "TypeSafe · hosted"})
+		}
+		return out
+	}
 	if p, ok := a.settings.Providers[name]; ok {
 		for _, m := range p.Models {
 			out = append(out, models.Model{ID: m.ID, Label: "self-hosted Jev"})

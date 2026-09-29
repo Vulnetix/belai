@@ -5,7 +5,7 @@ import classifierPhases from '../../assets/concepts/classifier-phases.svg?raw';
 import classifierShot from '../../assets/shots/classifier.svg';
 
 const sealText =
-  'Classifier: three engines can classify untrusted content, and all of them reply with one of five sentinel tokens. The LLM sentinel works alone and is also the fallback for the other two. Embedded BERT models handle phases 1 and 2 locally or through HuggingFace, with an optional LLM phase 3. Jev on OpenRouter can be phase 3, or the whole classifier on a binary without embedded models, and passes undecided results to the agent model. Jev questions can also go to a decision model on your own machine or to a self-hosted Jev server, and Belai tests each choice before it saves it. Errors always block the content.';
+  'Classifier: three engines can classify untrusted content, and all of them reply with one of five sentinel tokens. The LLM sentinel works alone and is also the fallback for the other two. Embedded BERT models handle phases 1 and 2 locally or through HuggingFace, with an optional LLM phase 3. Jev on OpenRouter can be phase 3, or the whole classifier on a binary without embedded models, and passes undecided results to the agent model. Jev questions can also go to TypeSafe's hosted API with a TYPESAFE_API_KEY, to a decision model on your own machine, or to a self-hosted Jev server, and Belai tests each choice before it saves it. Errors always block the content.';
 
 // The five tokens every engine reduces to.
 const sentinels = [
@@ -32,7 +32,7 @@ const coverage: { setup: string; how: string; cells: Cell[] }[] = [
   },
   {
     setup: 'Jev as the whole classifier',
-    how: 'kind: llm + typesafe/jev-1.13',
+    how: 'kind: openrouter-decisions + typesafe/jev-1.13',
     cells: [J('Jev → sentinel'), J('Jev → sentinel'), J('Jev → sentinel'), J('Jev → sentinel')],
   },
   {
@@ -178,8 +178,10 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
           reply blocks the content.
         </p>
         <p class="mt-4 text-vx-ink/80">
-          Jev is not a chat model, so it is not this kind. It has its own,
-          <code class="mono">classifier.kind: jev</code>, and <code class="mono">/model</code> lists it beside llm and models.
+          Jev is not a chat model, so it is not this kind. It has two of its own:
+          <code class="mono">classifier.kind: openrouter-decisions</code> for OpenRouter and the local decision model,
+          and <code class="mono">classifier.kind: jev</code> for TypeSafe's hosted API (<code class="mono">classifier.provider: typesafe</code>)
+          and self-hosted servers. <code class="mono">/model</code> lists both beside llm and models.
         </p>
         <p class="mt-4 text-vx-ink/80">
           If <code class="mono">classifier.provider</code> and <code class="mono">classifier.model</code> are
@@ -462,7 +464,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
         </div>
       </div>
       <dl class="facts">
-        <div><dt>Settings</dt><dd><code class="mono">classifier.provider: decision-local</code> with <code class="mono">decider-4b</code> or <code class="mono">plumb-4b</code>, or a provider of kind <code class="mono">jev</code></dd></div>
+        <div><dt>Settings</dt><dd><code class="mono">classifier.provider: decision-local</code> with <code class="mono">decider-4b</code> or <code class="mono">plumb-4b</code>, or, under <code class="mono">classifier.kind: jev</code>, the <code class="mono">typesafe</code> provider (key in <code class="mono">TYPESAFE_API_KEY</code>) or a provider of kind <code class="mono">jev</code></dd></div>
         <div><dt>Needs</dt><dd>llama-server on PATH, or your own <code class="mono">/v1/systemone</code> server</dd></div>
         <div><dt>Speed on a CPU</dt><dd>about a second for a short check</dd></div>
         <div><dt>Content leaves</dt><dd>only for your own server, over https or localhost</dd></div>

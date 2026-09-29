@@ -378,11 +378,16 @@ still load, but they fall back at runtime.
 ### Decision backends
 
 Every Jev job — the security guard, intent detection and routing — asks its
-questions through one transport (`internal/decisions`). There are three:
+questions through one transport (`internal/decisions`). There are four. The
+first and third are `classifier.kind: "openrouter-decisions"`; the second and
+the self-hosted profile are `classifier.kind: "jev"`. A file that says `"jev"`
+with the OpenRouter or local backend still loads (it reads as
+`openrouter-decisions`).
 
 | Backend | Selected by | Transport | Timeout |
 |---|---|---|---|
-| OpenRouter Jev | `classifier.provider: openrouter`, `classifier.model: typesafe/jev*` | OpenRouter Decisions API | 3 s |
+| OpenRouter Decisions | `classifier.provider: openrouter`, `classifier.model: typesafe/jev*` | OpenRouter Decisions API | 3 s |
+| TypeSafe | `classifier.provider: typesafe`, `classifier.model: jev-latest` or `jev-1.13.0` | `POST https://api.typesafe.ai/v1/systemone`, key from `TYPESAFE_API_KEY` | 5 s |
 | Self-hosted Jev | `classifier.provider` names a profile of kind `jev` | `POST {base_url}{decision_path}`, TypeSafe's native `/v1/systemone` | 5 s |
 | Local decision model | `classifier.provider: decision-local`, `classifier.model: decider-4b` or `plumb-4b` | llama-server `/completion`, option-letter log-probabilities | 20 s |
 
@@ -393,6 +398,14 @@ OpenRouter's Jev for all three jobs: mode detection uses it without an
 OpenRouter key and without `routing.kind: routed`, and routed use cases are
 chosen by it. The chat fields of the classifier stay on the main model, which
 answers whatever the backend hands off.
+
+**TypeSafe.** A built-in, classifier-only provider for TypeSafe's hosted
+native API. The address is fixed (`https://api.typesafe.ai`), so the key can
+only ever be sent there, in the `Authorization` header; redirects are refused.
+The key is required and comes from `TYPESAFE_API_KEY` (or the credential
+store). It is never routed through a firewall and never offered for a chat
+role. Live check:
+`BELAI_TYPESAFE_LIVE=1 TYPESAFE_API_KEY=… go test ./internal/decisions -run TypeSafeLive -v`.
 
 **Self-hosted Jev.** Any server that speaks `/v1/systemone` works: laya-serve,
 decider.serve, jevk5-serve and others. The profile (kind `jev`) holds the base
@@ -480,6 +493,9 @@ stops at the first failure:
   backend failure relaunches on the CPU); an answer lands on the option
   letters; injection and plain tool output separate; intent detection picks
   *plan* for a planning prompt; and a long tool result's timing is measured.
+- **typesafe** — the key resolves from `TYPESAFE_API_KEY`; the fixed address
+  answers a benign decision, then the same sanity, intent and timing probes. A
+  missing key fails the call and the selection is not saved.
 - **self-hosted Jev** — the URL policy; a benign decision answers (trying the
   other common decision paths and, on loopback, the other protocol, and saving
   the address that answered); the same sanity, intent and timing probes.
@@ -510,7 +526,11 @@ rows filter:
 - **`decision-local`** — always offered. Its picker lists Decider-4B and
   Plumb-4B with their size and whether they are on disk; picking one tests
   (and, after confirmation, downloads) everything it needs.
-- **custom `jev` profiles** — offered like other custom providers; their
+- **`typesafe`** — offered only under `classifier.kind: jev`. Its picker lists
+  `jev-latest` and `jev-1.13.0`; it never appears for the agent, fast or
+  routing roles, and `openrouter-decisions` lists only OpenRouter and
+  `decision-local`.
+- **custom `jev` profiles** — offered under `classifier.kind: jev` like other custom providers; like other custom providers; their
   picker lists the profile's models, or the server's default. They are never
   offered to the agent, fast or routing roles.
 - **custom providers**, **`llama-server`** and **`ollama`** — always offered,
