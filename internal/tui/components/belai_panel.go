@@ -1,6 +1,7 @@
 package components
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -232,14 +233,10 @@ func renderBelaiSystemLines(msg Message, owner, inner int, bar string, barCol, i
 // carries its tone colour while the LineMap is measured while the text is
 // still plain.
 func renderBelaiActivityLines(msg Message, owner, inner int, bar string, barCol, icol int, expandAll bool, groupCopyable bool, owners []int, isSystem []bool, bodyLines []string, lm LineMap) ([]int, []bool, []string, LineMap) {
-	content := []Seg{
-		NewSeg(msg.RM.Summary, nil),
-		NewSeg(" — ", nil),
-		NewSeg(msg.RM.Outcome, toneColor(msg.RM.Tone)),
-	}
-	// When expanded, surface the internal activity key and the model that
-	// produced it as a muted prefix so the user can see which subsystem and
-	// provider/model are behind each belai line.
+	// The row is one line whatever the width: the summary gives way first.
+	// Expanded, a second dim line names the activity key and the full
+	// provider/model behind the decision.
+	lines := [][]Seg{rmRowSegs(msg, max(inner-icol, 1))}
 	if expandAll {
 		var parts []string
 		if msg.Activity != "" {
@@ -248,17 +245,26 @@ func renderBelaiActivityLines(msg Message, owner, inner int, bar string, barCol,
 		if msg.Provider != "" && msg.Model != "" {
 			parts = append(parts, "["+msg.Provider+"/"+msg.Model+"]")
 		}
+		if c := msg.RMMeta.Category; c != "" {
+			parts = append(parts, c)
+		}
+		if msg.RMMeta.HasScore {
+			parts = append(parts, fmt.Sprintf("score %d%%", msg.RMMeta.Score))
+		}
+		if cause := msg.RMMeta.Cause; cause != "" && cause != string(rolemanager.CauseNone) {
+			parts = append(parts, cause)
+		}
 		if len(parts) > 0 {
-			content = append([]Seg{NewSeg(strings.Join(parts, " ")+" ", ColorMuted)}, content...)
+			clipped, _ := clipSegs([]Seg{NewSeg(strings.Join(parts, " "), ColorLow)}, max(inner-icol-2, 1))
+			lines = append(lines, append([]Seg{NewSeg("  ", nil)}, clipped...))
 		}
 	}
-	wrapped := wrapSegs(content, max(inner-icol, 1))
-	if len(wrapped) == 0 {
-		wrapped = [][]Seg{{}}
-	}
 	first := true
-	for _, lineSegs := range wrapped {
-		prefix := "· "
+	for _, lineSegs := range lines {
+		if len(lineSegs) == 0 {
+			lineSegs = []Seg{}
+		}
+		prefix := ""
 		if !first {
 			prefix = spaces(icol)
 		}

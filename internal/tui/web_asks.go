@@ -236,7 +236,10 @@ func (a *App) recordActivity(act rolemanager.Activity) {
 	if _, hidden := rec.Meta["hidden"]; !hidden {
 		// A row the feed shows is labelled with the model that answered it;
 		// only an activity that names none falls back to the agent model.
-		if _, ok := rec.Meta["model"]; !ok {
+		if _, ok := rec.Meta["model"]; !ok && rec.Meta["actor_kind"] == string(rolemanager.ActorModel) {
+			if a.cfg.Model != "" {
+				rec.Meta["actor"] = a.cfg.Model
+			}
 			if a.cfg.Provider != "" {
 				rec.Meta["provider"] = a.cfg.Provider
 			}

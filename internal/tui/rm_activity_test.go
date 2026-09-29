@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/tui/components"
 )
 
 // TestRMActivityObserverFeedsPanel pins the transport wiring: New registers
@@ -65,5 +66,33 @@ func TestRMActivityLabelsTheServedModel(t *testing.T) {
 	}
 	if len(rows) != 2 || rows[0] != want[0] || rows[1] != want[1] {
 		t.Fatalf("rows = %q, want %q", rows, want)
+	}
+}
+
+// A Jev decision names the Jev model, a deterministic one names belai, and
+// neither is labelled with the agent model.
+func TestRMActivityNamesTheDecider(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	defer a.rmCancel()
+	a.cfg.Provider, a.cfg.Model = "anthropic", "claude-agent"
+
+	a.addRMActivity(rolemanager.Activity{Event: rolemanager.EventBashSwap, Verdict: "swapped", Subject: "Grep", Detail: "score=97", Model: "openrouter/typesafe/jev-1.13"})
+	a.addRMActivity(rolemanager.Activity{Event: rolemanager.EventVerdictCacheHit, Subject: "Bash"})
+
+	var got []components.Message
+	for _, m := range a.messages {
+		if m.Role == "rolemanager" {
+			got = append(got, m)
+		}
+	}
+	if len(got) != 2 {
+		t.Fatalf("rows = %d", len(got))
+	}
+	if j := got[0]; j.RMMeta.ActorKind != "jev" || j.RMMeta.Actor != "jev-1.13" || j.Model != "typesafe/jev-1.13" || !j.RMMeta.HasScore || j.RMMeta.Score != 97 {
+		t.Errorf("jev row = %+v model %q", j.RMMeta, j.Model)
+	}
+	if h := got[1]; h.RMMeta.ActorKind != "harness" || h.RMMeta.Actor != "belai" || h.Model != "" || h.Provider != "" {
+		t.Errorf("harness row = %+v %q/%q", h.RMMeta, h.Provider, h.Model)
 	}
 }

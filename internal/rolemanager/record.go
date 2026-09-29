@@ -7,6 +7,11 @@ import (
 // RecordType is the session-entry type and role of a role-manager record.
 const RecordType = "rolemanager"
 
+// RecordSchema versions the entry metadata. 2 added the actor, category, icon,
+// outcome kind, cause and score; a row without it renders with the old
+// defaults.
+const RecordSchema = 2
+
 // Record is the persisted form of one activity: the session entry that says a
 // role-manager decision happened. Every activity has one, whether or not the
 // feed shows it, so the transcript is a complete account of what the harness
@@ -17,6 +22,9 @@ const RecordType = "rolemanager"
 //     sequence number;
 //   - for an event the feed describes, the plain-English summary and outcome
 //     with their tone and level, so a resumed session shows the same row;
+//   - the decider (actor kind and short model name), the category, the icon id,
+//     the outcome kind, the cause and, when the decision has one, its score as
+//     an integer percent;
 //   - never Detail, a prompt, a command, a path or classified text.
 type Record struct {
 	// Content is the row text ("summary - outcome"), or the event name for an
@@ -44,12 +52,25 @@ func (a Activity) Record() Record {
 	if a.Duration > 0 {
 		meta["duration_ms"] = a.Duration.Milliseconds()
 	}
+	actor := ActorOf(a)
+	meta["schema"] = RecordSchema
+	meta["actor_kind"] = string(actor.Kind)
+	if n := actor.Name(); n != "" {
+		meta["actor"] = n
+	}
+	meta["category"] = string(CategoryOf(a.Event))
+	meta["icon"] = IconOf(a.Event)
+	meta["cause"] = string(CauseOf(a))
+	if s := ScorePct(a.Detail); s >= 0 {
+		meta["score_pct"] = s
+	}
 	content := string(a.Event)
 	if d, shown := Describe(a); shown {
 		meta["summary"] = d.Summary
 		meta["outcome"] = d.Outcome
 		meta["tone"] = int(d.Tone)
 		meta["level"] = int(d.Levels)
+		meta["outcome_kind"] = string(d.Tone.Kind())
 		content = d.Summary + " — " + d.Outcome
 	} else {
 		// The feed does not print this event (its own dedicated line does);
