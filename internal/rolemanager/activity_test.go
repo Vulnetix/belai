@@ -39,6 +39,7 @@ var allEvents = []Event{
 	EventBashSwap,
 	EventBashReplan,
 	EventOptionOrder,
+	EventPruneCompaction,
 }
 
 func TestEveryEventHasDescribeOrSuppression(t *testing.T) {

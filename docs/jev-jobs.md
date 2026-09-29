@@ -51,6 +51,7 @@ prompt runs with it.
 | Job | What it does | Status |
 | --- | --- | --- |
 | `bash_swap` | Runs a builtin tool instead of a Bash call when one is a clear match | Shipped |
+| `prune_compaction` | Prunes tool calls and results by relevance before writing a summary | Shipped |
 | `option_order` | Puts the likeliest option first, marked (Recommended), when the model asks you to choose | Shipped |
 
 ## Scores and thresholds
@@ -189,3 +190,50 @@ clear.
 Recorded as an `option_order` event: `ordered` when every group was ranked,
 `fallback` when some were not, with the number of groups. Never the question or
 the options.
+
+## Compaction prune
+
+When the context passes 70 percent of the model window at a pass boundary,
+Belai used to write a summary. With a decision backend it first tries to prune:
+remove the tool calls and results the work ahead no longer needs and keep
+everything else word for word. A pruned conversation contains no new text, so
+there is nothing new to admit and no long model call to wait for.
+
+- **Pairing.** Each call is paired with its result by call id, in order, with a
+  short id (`t1`, `t2`, ...). A call with no result, or a result with no call, is
+  left alone, so the provider never sees a mismatch that was not already there.
+- **Pinned, never judged.** The first request; the newest 6 turns; a call whose
+  turn carries signed thinking; anything that changed something (a mutating
+  tool); a failed or withheld result or a command that exited non-zero;
+  `update_plan`, `ExitPlanMode`, `AskUserQuestion`, `Skill`, `SkillDraft`,
+  `Task`, `ToolSearch`, `ReadResult`, the Kanban tools and MCP tools.
+- **What the backend sees.** The user's last three requests as the goal, and a
+  digest of the conversation: each message's text and, for each call, its tool,
+  its input and the size of its result (`ok, 2000 chars (omitted)`), never the
+  result itself. The digest is fitted to a byte budget (about 7,000 for the
+  local model, 24,000 for a remote backend) by shrinking the oldest first: call
+  inputs to 1,000, then 200, then 60 characters; long messages abridged; old
+  messages collapsed to their length; old calls reduced to one line each; old
+  messages with no calls left out. The first request and the newest turns are
+  never shrunk. A digest that cannot fit means no prune.
+- **Two statements per call.** "The call should stay in the history" and "the
+  full output should stay verbatim, and running the tool again would not help",
+  each scored against the conversation and the goal.
+- **Decision per call.** A result at or above 0.50 stays whole, with its call.
+  Otherwise a call at or above 0.50 stays and its result is cut to its first 300
+  characters plus a note (only if it is more than 120 characters longer than
+  that, and never a preview that points at `ReadResult`). Otherwise the call and
+  its result both go. A question the backend did not answer keeps.
+- **Cleanup.** An assistant message left with no text and no calls is removed.
+  One that still has text keeps it. The rebuilt messages are new values, so no
+  cached rendering of the old ones carries over.
+- **When it counts.** The prune is accepted only if the estimated context is
+  then below the compaction trigger. Otherwise, and whenever the job is off, the
+  backend is unavailable or refuses, or there is nothing to judge, the summary
+  runs on the original conversation as before.
+- **After a prune** the request is not restated (the conversation, request
+  included, is still there); after a summary it is.
+
+Recorded as a `prune_compaction` event: `pruned` with the number of pairs kept,
+shortened and dropped, the questions left unanswered and the tokens freed, or
+`fallback` when the prune fell short. Never any conversation text.

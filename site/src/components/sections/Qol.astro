@@ -97,7 +97,7 @@ const total = groups.reduce((n, g) => n + g.items.length, 0);
         A message sent mid-turn is queued onto the running turn, and the exit card shows the command to
         resume the session. Long sessions stay affordable: oversized tool output is replaced once, when it
         arrives, so the cached prefix of every later request is unchanged; old tool results are cleared in
-        large steps; the conversation is compacted at 70% of the window; and when a provider still reports
+        large steps; the conversation is compacted at 70% of the window, first by pruning the tool calls and results the work ahead no longer needs when a decision backend is configured, and by a summary otherwise; and when a provider still reports
         an overflow, Belai compacts and retries instead of ending the turn.
       </p>
     </div>
