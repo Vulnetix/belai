@@ -196,11 +196,13 @@ const jevRowPrefix = "jev:"
 
 // jevJobLabels and jevJobHelp are the /settings wording of each job.
 var jevJobLabels = map[config.JevJob]string{
-	config.JevBashSwap: "jev bash swap",
+	config.JevBashSwap:    "jev bash swap",
+	config.JevOptionOrder: "jev option order",
 }
 
 var jevJobHelp = map[config.JevJob]string{
-	config.JevBashSwap: "run a builtin tool instead of Bash when one is a clear match, and tell the model",
+	config.JevBashSwap:    "run a builtin tool instead of Bash when one is a clear match, and tell the model",
+	config.JevOptionOrder: "put the most likely answer first, marked (Recommended), when the model asks you to choose",
 }
 
 // jevRows builds the toggle rows for the Jev jobs, one per job, in the

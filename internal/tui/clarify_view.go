@@ -75,7 +75,7 @@ func (s *clarifyViewState) recommendedRow() int {
 			continue
 		}
 		opt := s.q.Groups[row.groupIdx].Options[row.optionIdx]
-		if strings.Contains(opt.Label, "Recommended") {
+		if strings.Contains(strings.ToLower(opt.Label), "recommended") {
 			return i
 		}
 	}

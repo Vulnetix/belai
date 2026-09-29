@@ -51,6 +51,7 @@ prompt runs with it.
 | Job | What it does | Status |
 | --- | --- | --- |
 | `bash_swap` | Runs a builtin tool instead of a Bash call when one is a clear match | Shipped |
+| `option_order` | Puts the likeliest option first, marked (Recommended), when the model asks you to choose | Shipped |
 
 ## Scores and thresholds
 
@@ -148,3 +149,43 @@ run as written:
 Recorded outcomes: `swapped` (the builtin ran), `kept` (Bash ran; either no tool
 rated high enough, or the fast model kept it) and `refused` (the replanned call
 failed a check).
+
+## Option order
+
+When the model asks you to choose (`AskUserQuestion`), the option you are most
+likely to pick comes first, and it is marked **(Recommended)** when the choice is
+clear.
+
+- **When.** In `handleAskUser`, after questions asked earlier are dropped and
+  before the questionnaire is remembered, shown, recorded or sent to the
+  website. The answers name positions in the questionnaire, so ordering it once,
+  up front, means the TUI, the recorded ask, the website and the text the model
+  reads back all agree.
+- **How.** Each group is ranked separately (at most three at a time). The
+  backend sees the question, your request for the turn and each option's label
+  and description, all as `DecisionText`, and returns one probability per
+  option: a choice question on the local model or a self-hosted server, or a
+  noul question per option on OpenRouter, normalised. Options sort by
+  probability, highest first; ties keep the model's order. The number of
+  options, their wording and the question never change.
+- **The marker.** The top option is marked when it holds at least 50 percent
+  with a lead of at least 10 points over the runner-up, or leads the runner-up
+  by 25 points. A group that allows several answers is ordered but never marked.
+  The marker is always ` (Recommended)`, and a label is shortened so it still
+  fits the 80-character limit.
+- **The model cannot forge it.** Any `(recommended)` the model wrote into a
+  label, in any case, in parentheses or brackets, is removed from every option.
+- **Without a backend.** With the job off, or the backend unavailable for a
+  group, the model's order is kept. If the model marked one option, that option
+  moves first and gets the canonical marker, so the marker always reads the
+  same and at most one option carries it.
+- **Answers.** The answer text returned to the model uses the labels it wrote,
+  without the marker. The repeat check is keyed on the question, so a reordered
+  question is still recognised as asked.
+- **In the TUI.** The cursor starts on the first option, which is the
+  recommended one; the mode-choice panel finds its recommended row whatever the
+  case of the marker.
+
+Recorded as an `option_order` event: `ordered` when every group was ranked,
+`fallback` when some were not, with the number of groups. Never the question or
+the options.

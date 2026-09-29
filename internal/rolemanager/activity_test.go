@@ -38,6 +38,7 @@ var allEvents = []Event{
 	EventWebFetchAnswer,
 	EventBashSwap,
 	EventBashReplan,
+	EventOptionOrder,
 }
 
 func TestEveryEventHasDescribeOrSuppression(t *testing.T) {

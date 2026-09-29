@@ -276,6 +276,9 @@ type Session struct {
 	taskCallsThisTurn int
 	// turnIntent is the detected intent for the current turn.
 	turnIntent rolemanager.Intent
+	// turnPrompt is the cleaned prompt of the current turn, context for the
+	// Jev jobs that rank options against what the user asked for.
+	turnPrompt string
 	// handoffUpdatePlanCalled is true once the handoff profile has called
 	// update_plan. Mutating tool calls before it are refused.
 	handoffUpdatePlanCalled bool
@@ -1060,6 +1063,9 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	// tool and runs read-only subagents for parallel investigation.
 	savedIntent := s.turnIntent
 	s.turnIntent = modeDec.Intent
+	savedPrompt := s.turnPrompt
+	s.turnPrompt = sanitize.Sanitize(in.Prompt)
+	defer func() { s.turnPrompt = savedPrompt }()
 	savedFanOut := s.turnFanOut
 	// Fan-out is engaged either by Jev intent detection or by an explicit
 	// @agent:belai:fanout pre-send override.

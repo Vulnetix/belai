@@ -67,3 +67,19 @@ func (j *Jobs) RateSwap(ctx context.Context, command string, cands []SwapCandida
 	}
 	return res.Scores, res.Identity, nil
 }
+
+// optionQuestion is the shared question every option group is ranked by.
+const optionQuestion = "Which option would the user most likely choose for the question in state.context? Consider what the request asks for and what the options mean."
+
+// PickOptions ranks the options of one question by how likely the user is to
+// choose each. question is the model's question and request the user's
+// request for the turn; both are model- or user-written text and reach the
+// backend only as DecisionText.
+func (j *Jobs) PickOptions(ctx context.Context, question, request string, opts []ScoreItem) (PickResult, error) {
+	return j.Client.Pick(ctx, PickRequest{
+		Job:      string(config.JevOptionOrder),
+		Question: sanitize.ForDecision(optionQuestion, 0),
+		Context:  sanitize.ForDecision("Question: "+question+"\nUser request: "+request, 1500),
+		Options:  opts,
+	})
+}

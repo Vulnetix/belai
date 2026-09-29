@@ -21,11 +21,16 @@ const (
 	JevBashSwap JevJob = "bash_swap"
 )
 
+// JevOptionOrder puts the most likely option first when the model asks the
+// user to choose, and marks it (Recommended) when the choice is clear.
+const JevOptionOrder JevJob = "option_order"
+
 // JevJobs lists every shipped job in the order /settings and the docs show
 // them. A job is added here in the change that implements it, so /settings
 // never offers a switch for work that does not exist.
 var JevJobs = []JevJob{
 	JevBashSwap,
+	JevOptionOrder,
 }
 
 // LocatePreview values for jev.locate_previews.

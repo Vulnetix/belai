@@ -1997,6 +1997,12 @@ limits (1 to 6 questions, 2 to 4 options each, one-line text ending in `?` or
 the model fixes in the same pass. The TUI shows the questions in the same
 full-screen view as the clarify loop.
 
+Before they are shown, the options of each question are ordered by how likely
+the user is to pick each, and the clear favourite is marked `(Recommended)`,
+from a decision backend when one is configured and from the model's own
+marking otherwise; the model cannot forge the marker, and the answers read back
+to it use its own labels. See [Jev jobs](jev-jobs.md#option-order).
+
 What happens next depends on the mode:
 
 | Mode | Behaviour |

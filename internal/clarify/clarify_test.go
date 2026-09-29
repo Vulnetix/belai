@@ -173,3 +173,19 @@ func TestSkippedAll(t *testing.T) {
 		t.Fatal("a note must not report SkippedAll")
 	}
 }
+
+// Answers are rendered with the labels the model wrote: the marker the harness
+// adds to the option it expects the user to pick is not part of the answer.
+func TestRenderDropsTheHarnessMarker(t *testing.T) {
+	q := Questionnaire{Groups: []Group{{Context: "Ship?", Options: []Option{
+		{Label: "Yes" + RecommendedSuffix}, {Label: "No"},
+	}}}}
+	got := Answers{Items: []Answer{{GroupIndex: 0, Chosen: []int{0}}}}.Render(q)
+	if !strings.Contains(got, "chose: Yes") || strings.Contains(got, "Recommended") {
+		t.Fatalf("Render = %q", got)
+	}
+	got = Answers{Items: []Answer{{GroupIndex: 0, Chosen: []int{1}}}}.Render(q)
+	if !strings.Contains(got, "chose: No") {
+		t.Fatalf("Render = %q", got)
+	}
+}
