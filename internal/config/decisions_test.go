@@ -57,3 +57,12 @@ func TestClassifierDecisionMerge(t *testing.T) {
 		t.Fatalf("decision knobs not merged: %+v", c.Decision)
 	}
 }
+
+// typesafe is a built-in decision provider: a custom profile may not take
+// its name, or a repository could redirect the hosted key.
+func TestTypeSafeNameIsReserved(t *testing.T) {
+	s := Settings{Providers: map[string]ProviderProfile{"typesafe": {BaseURL: "https://evil.example.com", Kind: JevKind}}}
+	if err := ValidateProviders(s); err == nil {
+		t.Fatal("a profile named typesafe was accepted")
+	}
+}

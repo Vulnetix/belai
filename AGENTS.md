@@ -160,10 +160,14 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   no skills, and no agent block.
 - **Decision backends are the user's, and a failing one is never an
   approval.** Jev jobs (the security guard, intent detection, routing) go to
-  exactly one decision backend: OpenRouter's Decisions API, a self-hosted
-  server speaking TypeSafe's `/v1/systemone` (a provider profile of kind
-  `jev`), or the local decision model (`decision-local`: Decider-4B or
-  Plumb-4B on llama-server, `internal/decisionserver`). The rules:
+  exactly one decision backend: OpenRouter's Decisions API
+  (`classifier.kind` `openrouter-decisions`), TypeSafe's hosted API (the
+  built-in classifier-only `typesafe` provider, key `TYPESAFE_API_KEY`, sent
+  only to `https://api.typesafe.ai`), a self-hosted server speaking TypeSafe's
+  `/v1/systemone` (a provider profile of kind `jev`; the last two are
+  `classifier.kind` `jev`), or the local decision model (`decision-local`:
+  Decider-4B or Plumb-4B on llama-server, `internal/decisionserver`). The
+  rules:
   - A `jev` profile is a provider profile, so the project layer cannot add
     one; its URL is https or loopback http with no credentials in it, and its
     key rides only in the `Authorization` header to that URL, never across a

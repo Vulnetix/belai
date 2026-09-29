@@ -307,21 +307,21 @@ func TestModelClassifierKindJevIsItsOwnKind(t *testing.T) {
 	}
 
 	selectRow(t, a, roleClassifier, "kind")
-	if got := a.modelRows()[a.modelState.selected].opts; strings.Join(got, ",") != "llm,models,jev" {
-		t.Fatalf("kind options = %v, want llm, models, jev", got)
+	if got := a.modelRows()[a.modelState.selected].opts; strings.Join(got, ",") != "llm,models,openrouter-decisions,jev" {
+		t.Fatalf("kind options = %v, want llm, models, openrouter-decisions, jev", got)
 	}
 	_ = a.changeModelRow() // llm -> models
 	if k := projectClassifier(t, a).Kind; k != "models" {
 		t.Fatalf("kind = %q, want models", k)
 	}
 	selectRow(t, a, roleClassifier, "kind")
-	_ = a.changeModelRow() // models -> jev, without any OpenRouter key
+	_ = a.changeModelRow() // models -> openrouter-decisions, without any OpenRouter key
 	cls := projectClassifier(t, a)
-	if cls.Kind != "jev" || cls.Provider != "openrouter" || cls.Model != "typesafe/jev-1.13" {
+	if cls.Kind != "openrouter-decisions" || cls.Provider != "openrouter" || cls.Model != "typesafe/jev-1.13" {
 		t.Fatalf("after jev: %+v", cls)
 	}
-	if a.classifierKind() != "jev" {
-		t.Fatalf("kind row reads %q, want jev", a.classifierKind())
+	if a.classifierKind() != "openrouter-decisions" {
+		t.Fatalf("kind row reads %q, want openrouter-decisions", a.classifierKind())
 	}
 	if got := strings.Join(a.classifierProviders(), ","); !strings.HasPrefix(got, "openrouter") || strings.Contains(got, "ollama") {
 		t.Fatalf("jev providers = %s, want decision backends only", got)
@@ -339,8 +339,20 @@ func TestModelClassifierKindJevIsItsOwnKind(t *testing.T) {
 		}
 	}
 
-	// Leaving jev clears the decision selection, even though the OpenRouter
-	// key is missing, which is what used to leave the row stuck.
+	// Jev is the native TypeSafe kind: it starts on the hosted provider and
+	// offers no OpenRouter.
+	selectRow(t, a, roleClassifier, "kind")
+	_ = a.changeModelRow() // openrouter-decisions -> jev
+	cls = projectClassifier(t, a)
+	if cls.Kind != "jev" || cls.Provider != "typesafe" || cls.Model != "jev-latest" {
+		t.Fatalf("after jev: %+v", cls)
+	}
+	if got := strings.Join(a.classifierProviders(), ","); !strings.HasPrefix(got, "typesafe") || strings.Contains(got, "openrouter") {
+		t.Fatalf("jev providers = %s", got)
+	}
+
+	// Leaving a decision kind clears the decision selection, even though the
+	// OpenRouter key is missing, which is what used to leave the row stuck.
 	selectRow(t, a, roleClassifier, "kind")
 	_ = a.changeModelRow() // jev -> llm
 	cls = projectClassifier(t, a)

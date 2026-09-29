@@ -196,7 +196,7 @@ func TestDecisionLocalIsOfferedAndOpensPicker(t *testing.T) {
 			t.Fatal("kind llm offered the decision provider")
 		}
 	}
-	a.settings.Classifier = &config.ClassifierSettings{Kind: "jev"}
+	a.settings.Classifier = &config.ClassifierSettings{Kind: "openrouter-decisions"}
 	provs := a.classifierProviders()
 	if provs[len(provs)-1] != decisions.LocalProvider {
 		t.Fatalf("classifier providers %v lack %s", provs, decisions.LocalProvider)

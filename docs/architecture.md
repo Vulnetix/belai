@@ -47,21 +47,24 @@ with an optional phase-3 narrowed LLM sentinel for the two extraction
 categories no purpose-built model reaches. The default is `"models"` on a
 binary that embeds the weights, `"llm"` otherwise.
 
-`"jev"` answers through a Jev decision backend and is never a chat model: OpenRouter's Decisions API (`provider: openrouter`, a `typesafe/jev*` model), a
-self-hosted Jev provider profile, or the local decision model. Jev cannot
-answer `chat/completions`, so it is a kind of its own and is never offered
-under `"llm"`, where the provider list and model list are chat only (Jev
-models are filtered out). `ResolveClassifier` refuses `kind: "jev"` with a
-selection that would chat, rather than classify with a model nobody asked for.
-A file written before the kind existed (`kind: "llm"` with an OpenRouter Jev
-model, or the local decision provider) reads as `jev` (`run.ClassifierKind`);
-runtime behaviour is unchanged. In `/model`, the kind row cycles `llm`,
-`models`, `jev`. Choosing `jev` with no decision backend selected starts on
-OpenRouter's Jev model; leaving it clears the decision selection so the guard
-returns to the main model instead of keeping a selection the new kind cannot
-use. Under `jev` the provider row offers decision backends only (OpenRouter is
-always listed, and a missing key is reported by the test with a way out) and
-has no inherit-main option.
+`"openrouter-decisions"` answers through OpenRouter's Decisions API
+(`provider: openrouter`, a `typesafe/jev*` model) or the local decision model.
+`"jev"` answers through a server speaking TypeSafe's native `/v1/systemone`:
+the built-in `typesafe` provider or a self-hosted Jev profile. A decision
+backend cannot answer `chat/completions`, so both are kinds of their own and
+never offered under `"llm"`, where the provider list and model list are chat
+only. `ResolveClassifier` refuses either kind with a selection that would
+chat, rather than classify with a model nobody asked for. A file written
+before the kinds existed reads as what it is (`run.ClassifierKind`): `kind:
+"llm"` with an OpenRouter Jev model or the local decision provider, and
+`kind: "jev"` naming OpenRouter or the local provider, read as
+`openrouter-decisions`; `typesafe` reads as `jev`. In `/model`, the kind row
+cycles `llm`, `models`, `openrouter-decisions`, `jev`. Choosing a decision
+kind whose backend is not selected starts on OpenRouter's Jev model
+(`openrouter-decisions`) or `typesafe/jev-latest` (`jev`); leaving a decision
+kind clears the selection so the guard returns to the main model. Under a
+decision kind the provider row offers that kind's backends only and has no
+inherit-main option.
 
 Flags `-classifier-provider`, `-classifier-model`, `-classifier-effort`,
 `-classifier-kind`, `-classifier-phase1-*`, `-classifier-phase2-*`, and env
@@ -140,9 +143,10 @@ Business rules:
   guardrail security classifier and tool-call gate; Jev is a Decisions model,
   never a chat model, so it appears on the classifier picker only and never on
   the agent or routing pickers.
-- **Decision backends.** Besides OpenRouter's Jev, the classifier can name a
-  self-hosted Jev server (a provider profile of kind `jev`, TypeSafe's
-  `/v1/systemone`) or the local decision model (`decision-local`: Decider-4B
+- **Decision backends.** Besides OpenRouter's Jev, the classifier can name
+  TypeSafe's hosted API (the built-in `typesafe` provider), a self-hosted Jev
+  server (a provider profile of kind `jev`, TypeSafe's `/v1/systemone`) or
+  the local decision model (`decision-local`: Decider-4B
   or Plumb-4B on a shared llama-server). Whichever is set answers every Jev
   job: security, intent detection and routing. `internal/decisions` holds the
   transports, `internal/decisionserver` the shared local server, and
