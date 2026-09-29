@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/vulnetix/belai/internal/gitinfo"
 	"github.com/vulnetix/belai/internal/projectregistry"
 	"github.com/vulnetix/belai/internal/trustgate"
 )
@@ -65,23 +66,43 @@ func TrustArg(dir string) (path string, granted bool, err error) {
 	return path, true, nil
 }
 
+// Skipped is a directory the offer leaves out because a worker could not
+// start there, with the repository root whose trust is missing.
+type Skipped struct {
+	Dir  Dir
+	Root string
+}
+
 // Collect gathers the directories to offer: every trusted project on this
 // host that still exists, plus args (already trusted by TrustArg). Args come
-// first; a directory listed both ways is an arg.
-func Collect(args []string) []Dir {
-	var out []Dir
+// first, then wd (the directory rc was started in) when it is offered, so a
+// start the website does not place lands where the host user ran rc; the
+// rest follow by path. A directory listed both ways is an arg.
+//
+// A directory is offered only when a worker would start there: `belai agent
+// start` takes its trust from the repository root containing the directory,
+// so a directory inside an untrusted repository is skipped here instead of
+// failing after the website picks it.
+func Collect(args []string, wd string) (offered []Dir, skipped []Skipped) {
 	seen := map[string]bool{}
+	add := func(d Dir) {
+		if root, ok := Startable(d.Path); ok {
+			offered = append(offered, d)
+		} else {
+			skipped = append(skipped, Skipped{Dir: d, Root: root})
+		}
+	}
 	for _, a := range args {
 		p, err := Normalize(a)
 		if err != nil || seen[p] {
 			continue
 		}
 		seen[p] = true
-		out = append(out, Dir{Path: p, Name: filepath.Base(p), Source: SourceArg})
+		add(Dir{Path: p, Name: filepath.Base(p), Source: SourceArg})
 	}
 	reg, err := projectregistry.Load()
 	if err != nil {
-		return out
+		return offered, skipped
 	}
 	var trusted []Dir
 	for _, e := range reg.All() {
@@ -99,8 +120,37 @@ func Collect(args []string) []Dir {
 		}
 		trusted = append(trusted, Dir{Path: p, Name: name, Source: SourceTrusted})
 	}
-	sort.Slice(trusted, func(i, j int) bool { return trusted[i].Path < trusted[j].Path })
-	return append(out, trusted...)
+	here, _ := Normalize(wd)
+	for _, d := range hereFirst(trusted, here) {
+		add(d)
+	}
+	return offered, skipped
+}
+
+// hereFirst sorts dirs by path with here, when present, at the front.
+func hereFirst(dirs []Dir, here string) []Dir {
+	sort.Slice(dirs, func(i, j int) bool {
+		if (dirs[i].Path == here) != (dirs[j].Path == here) {
+			return dirs[i].Path == here
+		}
+		return dirs[i].Path < dirs[j].Path
+	})
+	return dirs
+}
+
+// Startable reports whether `belai agent start` would accept dir: dir is not
+// inside a git repository, is the repository root itself, or sits in a
+// repository whose root is trusted. It returns the root it checked.
+func Startable(dir string) (root string, ok bool) {
+	info, found := gitinfo.Detect(dir)
+	if !found || info.Root == "" {
+		return dir, true
+	}
+	if r, err := Normalize(info.Root); err == nil && r == dir {
+		return dir, true
+	}
+	st, err := trustgate.Check(info.Root)
+	return info.Root, err == nil && st.Trusted
 }
 
 // Allowed reports whether cwd is exactly one of dirs once normalised. It is

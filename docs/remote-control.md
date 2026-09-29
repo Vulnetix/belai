@@ -45,6 +45,14 @@ A session runs only in a directory the daemon offers:
   `belai -trust-dir` would, the directory only, never the workspace
   directories its settings propose.
 
+A directory inside a git repository is offered only when that repository's
+root is trusted too, because a worker takes its trust from the repository
+root. The daemon prints each directory it leaves out for that reason, with
+the root to trust. `--dir` directories come first in the list, then the
+directory you ran `belai rc` in, then the rest by path. The website starts a
+worker in the first one when you do not pick a directory and the card names
+no project the host offers.
+
 `/trusted` in the TUI (also `f1` then `d`) lists every trusted directory and
 marks the ones the running daemon offers, the missing ones and the scratch ones
 it hides. The list scrolls with the cursor, and `/` filters it by path (or by

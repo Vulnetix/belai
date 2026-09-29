@@ -112,8 +112,9 @@ func (a *App) rcCheck() tea.Cmd {
 		if err != nil {
 			return rcChecksMsg{checks: rc.Checks{{Name: "Settings", Level: rc.Fail, Detail: err.Error()}}}
 		}
+		offered, _ := rc.Collect(extra, wd)
 		return rcChecksMsg{checks: rc.Preflight(context.Background(), rc.PreflightOptions{
-			Workdir: wd, Settings: settings, Dirs: rc.Collect(extra),
+			Workdir: wd, Settings: settings, Dirs: offered,
 		})}
 	}
 }

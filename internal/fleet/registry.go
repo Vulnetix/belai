@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -351,6 +352,10 @@ type SpawnOptions struct {
 	// Stay keeps the worker waiting for work instead of exiting once the
 	// board has nothing left for it.
 	Stay bool
+	// MaxWorkers, when positive, is the worker cap the start was checked
+	// against (belai rc --max); the worker reserves its slot under the same
+	// cap instead of falling back to agents.max_workers.
+	MaxWorkers int
 }
 
 // Spawn starts a detached `belai agent run` worker and returns its id. The
@@ -369,6 +374,9 @@ func (r *Registry) Spawn(o SpawnOptions) (string, error) {
 	}
 	if o.Stay {
 		args = append(args, "-stay")
+	}
+	if o.MaxWorkers > 0 {
+		args = append(args, "-max-workers", strconv.Itoa(o.MaxWorkers))
 	}
 	args = append(args, o.Profile)
 	if err := os.MkdirAll(r.LogDir(), 0o700); err != nil {

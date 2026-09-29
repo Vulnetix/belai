@@ -115,7 +115,7 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		fmt.Fprintln(stderr, "belai rc: load settings:", err)
 		return 1
 	}
-	offered := rc.Collect(dirs)
+	offered, skipped := rc.Collect(dirs, wd)
 	hostID := headless.HostID()
 	host := sessionsync.Host{Hostname: sessionsync.Hostname(), OS: runtime.GOOS, BelaiVersion: version.Version}
 	client, clientErr := rcClient(wd)
@@ -135,6 +135,13 @@ func runRCCLI(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	})
 	fmt.Fprint(stderr, checks.Render())
 	fmt.Fprintln(stderr)
+	for _, s := range skipped {
+		fmt.Fprintf(stderr, "Not offered: %s (its repository %s is not trusted; run `belai` there once, or pass --dir %s)\n",
+			s.Dir.Path, s.Root, s.Root)
+	}
+	if len(skipped) > 0 {
+		fmt.Fprintln(stderr)
+	}
 	if !checks.OK() {
 		fmt.Fprintln(stderr, "Remote control is not running. Fix the ✗ lines above and run `belai rc` again.")
 		fmt.Fprintf(stderr, "Once it runs, manage this host at %s\n", url)
