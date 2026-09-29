@@ -478,6 +478,15 @@ classifier) and a new `jev` provider take the same path; a `jev` profile is
 written, with its key and the classifier selection, only after its test
 passes, so a failed test leaves no profile behind.
 
+A press of a kind row (classifier or routing) that fails its test saves
+nothing, and the next press moves on from the kind it tried, so a backend that
+cannot be reached never traps the row. `routing.kind = routed` picks no model
+and the Jev router is optional (every use case falls back to the work model
+without it), so its OpenRouter probe is advisory: a refused key is a warning
+and the kind is saved. The OpenRouter probe's step name says where its key
+came from (`env $OPENROUTER_API_KEY`, `keychain`, a file), never the key, and
+the key is trimmed of surrounding whitespace first.
+
 The test (`internal/modeltest`) runs a ladder of steps per selected model and
 stops at the first failure:
 

@@ -65,6 +65,9 @@ type modelViewState struct {
 	// so without this the next press would try the same kind again and the
 	// row could never move past it.
 	kindTried, kindTriedFrom string
+	// routingKindTried and routingKindTriedFrom do the same for the routing
+	// kind row (routed is tested against OpenRouter before it is saved).
+	routingKindTried, routingKindTriedFrom string
 
 	// pendingProvider is a provider cycled to on a role's provider row but
 	// not saved: the model picker opens on it, and the pick is tested and
@@ -1994,7 +1997,14 @@ func (a *App) cycleRoutingKind(opts []string) tea.Cmd {
 	if a.settings.Routing != nil && a.settings.Routing.Kind != "" {
 		cur = a.settings.Routing.Kind
 	}
+	from := cur
+	if a.modelState.routingKindTriedFrom == from && a.modelState.routingKindTried != "" {
+		// The last press did not save (its test failed): move on from the
+		// kind it tried.
+		cur = a.modelState.routingKindTried
+	}
 	next := opts[(indexOfString(opts, cur)+1)%len(opts)]
+	a.modelState.routingKindTried, a.modelState.routingKindTriedFrom = next, from
 	return a.stageRouting(roleRouting, "kind", "routing.kind = "+next, func(r *config.RoutingSettings) { r.Kind = next })
 }
 

@@ -296,3 +296,22 @@ func DeciderSteps(name string, d decisions.Decider) []Step {
 		sanityStep(func() decisions.Decider { return d }),
 	}
 }
+
+// Advisory returns steps whose failures are reported as warnings: the run
+// still passes, and the detail says what the router will do instead.
+func Advisory(steps []Step) []Step {
+	out := make([]Step, len(steps))
+	for i, s := range steps {
+		run := s.Run
+		s.Run = func(ctx context.Context, st *State) Outcome {
+			o := run(ctx, st)
+			if o.Status == StatusFail {
+				o.Status = StatusWarn
+				o.Detail += "; routing falls back to the work model until this works"
+			}
+			return o
+		}
+		out[i] = s
+	}
+	return out
+}

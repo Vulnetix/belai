@@ -719,7 +719,7 @@ func ResolveRouting(main Config, rs *config.RoutingSettings, src CredentialSourc
 		if !ok || strings.TrimSpace(v) == "" {
 			return "", fmt.Errorf("openrouter api key not configured for Jev routing")
 		}
-		return v, nil
+		return strings.TrimSpace(v), nil
 	}
 	return out, nil
 }
@@ -1791,7 +1791,7 @@ func securityGuard(cfg Config, client *http.Client, onRetry func(resilience.Atte
 		return jev.NewSecurityWith(cc.Decisions.NewDecider(client), guard)
 	}
 	if jev.IsDecisionsModel(cc.Provider, cc.Model) && cc.Firewall == nil {
-		guard = jev.NewSecurity(func() (string, error) { return cc.APIKey, nil }, guard)
+		guard = jev.NewSecurity(func() (string, error) { return strings.TrimSpace(cc.APIKey), nil }, guard)
 	}
 	return guard
 }
