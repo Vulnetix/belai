@@ -985,10 +985,6 @@ func (r *ResilienceSettings) merge(other *ResilienceSettings) {
 		return
 	}
 	tighten := func(cur, val *int) {
-	// MaxBackgroundProcesses caps how many processes the model may have
-	// running at once through Bash run_in_background. Zero means the default
-	// (8). A project layer can only lower it.
-	MaxBackgroundProcesses int `json:"max_background_processes,omitempty"`
 		if *val == 0 {
 			return
 		}
@@ -1005,6 +1001,10 @@ func (r *ResilienceSettings) merge(other *ResilienceSettings) {
 	// disables clarification and overrides any earlier positive or negative
 	// value, because disabling is an explicit opt-out.
 	if other.MaxClarifyRounds != 0 {
+	// MaxBackgroundProcesses caps how many processes the model may have
+	// running at once through Bash run_in_background. Zero means the default
+	// (8). A project layer can only lower it.
+	MaxBackgroundProcesses int `json:"max_background_processes,omitempty"`
 		if r.MaxClarifyRounds == 0 || other.MaxClarifyRounds < 0 || (r.MaxClarifyRounds > 0 && other.MaxClarifyRounds < r.MaxClarifyRounds) {
 			r.MaxClarifyRounds = other.MaxClarifyRounds
 		}
@@ -1143,14 +1143,6 @@ func (s Settings) CanonicalProvider(label string) (string, bool) {
 	return "", false
 }
 
-// MaxBackgroundOr returns MaxBackgroundProcesses or the provided default.
-func (r *ResilienceSettings) MaxBackgroundOr(def int) int {
-	if r == nil || r.MaxBackgroundProcesses <= 0 {
-		return def
-	}
-	return r.MaxBackgroundProcesses
-}
-
 // CavemanEnabled reports whether the caveman voice rewrite is active. The
 // default (nil or false) is off.
 func (s Settings) CavemanEnabled() bool {
@@ -1159,6 +1151,14 @@ func (s Settings) CavemanEnabled() bool {
 
 // CatalogWindow returns the context-window size a custom provider profile
 // declares for a model, or 0 when the provider or the model is not in the
+// MaxBackgroundOr returns MaxBackgroundProcesses or the provided default.
+func (r *ResilienceSettings) MaxBackgroundOr(def int) int {
+	if r == nil || r.MaxBackgroundProcesses <= 0 {
+		return def
+	}
+	return r.MaxBackgroundProcesses
+}
+
 // catalogue. It is the fallback between the user's explicit
 // `context_windows` override and the built-in modelinfo registry, so a model
 // that only exists in a provider profile still has a known window.
@@ -1191,7 +1191,6 @@ func (s Settings) GuardrailsEnabled() bool {
 
 // AskPermissionEnabled reports whether the permission-ask gate is on. Default on.
 func (s Settings) AskPermissionEnabled() bool {
-	tighten(&r.MaxBackgroundProcesses, &other.MaxBackgroundProcesses)
 	return s.AskPermission == nil || *s.AskPermission
 }
 
@@ -1203,6 +1202,7 @@ func (s Settings) ReadOnlyEnabled() bool {
 	}
 	return s.BashReadOnly != nil && *s.BashReadOnly
 }
+	tighten(&r.MaxBackgroundProcesses, &other.MaxBackgroundProcesses)
 
 // Override merges project settings over the receiver (which should be the
 // global settings). It returns the merged result and never mutates the
