@@ -13,7 +13,9 @@ import (
 )
 
 // makeStop returns a function that gracefully terminates cmd's process group.
-func makeStop(cmd *exec.Cmd, handle *activity.Handle, pidfile string) func() error {
+// exited is closed by the one goroutine that owns cmd.Wait, so stop waits on
+// it instead of calling Wait a second time.
+func makeStop(cmd *exec.Cmd, exited <-chan struct{}, handle *activity.Handle, pidfile string) func() error {
 	if cmd.Process == nil {
 		return func() error { return nil }
 	}
@@ -27,31 +29,23 @@ func makeStop(cmd *exec.Cmd, handle *activity.Handle, pidfile string) func() err
 			return nil
 		}
 		stopped = true
-		// If the process already exited, Wait has been called and
-		// ProcessState is populated. Re-waiting races and is unnecessary.
-		if cmd.ProcessState != nil {
-			if handle != nil {
-				handle.Finish(cmd.ProcessState.ExitCode(), false, nil)
-			}
-			if pidfile != "" {
-				_ = os.Remove(pidfile)
-			}
-			return nil
-		}
-		_ = syscall.Kill(-pid, syscall.SIGTERM)
-		done := make(chan struct{})
-		go func() {
-			_ = cmd.Wait()
-			close(done)
-		}()
 		select {
-		case <-done:
-		case <-time.After(3 * time.Second):
-			_ = syscall.Kill(-pid, syscall.SIGKILL)
-			<-done
+		case <-exited:
+		default:
+			_ = syscall.Kill(-pid, syscall.SIGTERM)
+			select {
+			case <-exited:
+			case <-time.After(3 * time.Second):
+				_ = syscall.Kill(-pid, syscall.SIGKILL)
+				<-exited
+			}
 		}
 		if handle != nil {
-			handle.Finish(cmd.ProcessState.ExitCode(), false, nil)
+			code := 0
+			if cmd.ProcessState != nil {
+				code = cmd.ProcessState.ExitCode()
+			}
+			handle.Finish(code, false, nil)
 		}
 		if pidfile != "" {
 			_ = os.Remove(pidfile)

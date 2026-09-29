@@ -6,13 +6,15 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"time"
 
 	"github.com/vulnetix/belai/internal/activity"
 )
 
 // makeStop returns a function that terminates cmd on Windows. Process groups
-// are not supported, so the stop is a single-process kill.
-func makeStop(cmd *exec.Cmd, handle *activity.Handle, pidfile string) func() error {
+// are not supported, so the stop is a single-process kill. exited is closed
+// by the goroutine that owns cmd.Wait.
+func makeStop(cmd *exec.Cmd, exited <-chan struct{}, handle *activity.Handle, pidfile string) func() error {
 	stopped := false
 	var mu sync.Mutex
 	return func() error {
@@ -22,21 +24,23 @@ func makeStop(cmd *exec.Cmd, handle *activity.Handle, pidfile string) func() err
 			return nil
 		}
 		stopped = true
-		if cmd.ProcessState != nil {
-			if handle != nil {
-				handle.Finish(cmd.ProcessState.ExitCode(), false, nil)
+		select {
+		case <-exited:
+		default:
+			if cmd.Process != nil {
+				_ = cmd.Process.Kill()
 			}
-			if pidfile != "" {
-				_ = os.Remove(pidfile)
+			select {
+			case <-exited:
+			case <-time.After(5 * time.Second):
 			}
-			return nil
 		}
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-			_, _ = cmd.Process.Wait()
-		}
-		if handle != nil && cmd.ProcessState != nil {
-			handle.Finish(cmd.ProcessState.ExitCode(), false, nil)
+		if handle != nil {
+			code := 0
+			if cmd.ProcessState != nil {
+				code = cmd.ProcessState.ExitCode()
+			}
+			handle.Finish(code, false, nil)
 		}
 		if pidfile != "" {
 			_ = os.Remove(pidfile)
