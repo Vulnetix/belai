@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/decisions"
 	"github.com/vulnetix/belai/internal/sanitize"
 )
@@ -182,6 +183,31 @@ func (c *Client) backendKind() decisions.Backend {
 		return c.backend.Backend()
 	}
 	return decisions.BackendOpenRouter
+}
+
+// PreviewsAllowed says whether declaration names, which come from the user's
+// files, may be put in the labels sent to this backend. pref is the user's
+// jev.locate_previews setting: "off" never, "hosted" always, and otherwise
+// (the default) only to a backend the user runs: the local decision model or
+// a self-hosted server. OpenRouter and TypeSafe's hosted API get paths only.
+func (c *Client) PreviewsAllowed(pref string) bool {
+	switch pref {
+	case config.LocatePreviewsOff:
+		return false
+	case config.LocatePreviewsHosted:
+		return true
+	}
+	switch c.backendKind() {
+	case decisions.BackendLocal:
+		return true
+	case decisions.BackendSystemOne:
+		// Only a backend that says it is not hosted qualifies; one that
+		// cannot say gets paths only.
+		if h, ok := c.backend.(interface{ Hosted() bool }); ok {
+			return !h.Hosted()
+		}
+	}
+	return false
 }
 
 func (c *Client) limits() (items, bytes, workers int) {

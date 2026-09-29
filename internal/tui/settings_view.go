@@ -202,6 +202,7 @@ var jevJobLabels = map[config.JevJob]string{
 	config.JevToolSearch:      "jev tool search",
 	config.JevLSPTriage:       "jev lsp triage",
 	config.JevOptionOrder:     "jev option order",
+	config.JevExploreLocate:   "jev explore locate",
 }
 
 var jevJobHelp = map[config.JevJob]string{
@@ -211,6 +212,7 @@ var jevJobHelp = map[config.JevJob]string{
 	config.JevToolSearch:      "rank ToolSearch matches, dropping poor ones and adding strong ones",
 	config.JevLSPTriage:       "file a board bug when another edit is unlikely to clear the language server errors",
 	config.JevOptionOrder:     "put the most likely answer first, marked (Recommended), when the model asks you to choose",
+	config.JevExploreLocate:   "rank the files a question is about, so explore subagents start where the code is",
 }
 
 // jevRows builds the toggle rows for the Jev jobs, one per job, in the

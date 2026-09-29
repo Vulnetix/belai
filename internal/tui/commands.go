@@ -286,6 +286,11 @@ func NewRegistry(workdir string) *Registry {
 		}
 		return a.openIntel()
 	})
+	r.Register("locate", "list the files explore locate may look at and where it would send its questions (/locate --dry-run)", func() []string {
+		return []string{"--dry-run"}
+	}, func(a *App, arg string) tea.Cmd {
+		return a.locateCommand(arg)
+	})
 	r.Register("prompts", "manage the prompt library", nil, func(a *App, arg string) tea.Cmd {
 		return a.push(viewPrompts)
 	})

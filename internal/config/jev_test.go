@@ -165,3 +165,38 @@ func TestLSPRepairAttemptsIsValidatedAndProjectMinimumWins(t *testing.T) {
 		t.Fatal("IsZero ignores max_repair_attempts")
 	}
 }
+
+func TestLocateDestinationFollowsTheBackendAndTheSetting(t *testing.T) {
+	mk := func(provider, model, kind, pref string) Settings {
+		s := Settings{Classifier: &ClassifierSettings{Provider: provider, Model: model}}
+		if kind != "" {
+			s.Providers = map[string]ProviderProfile{provider: {Kind: kind}}
+		}
+		if pref != "" {
+			s.Jev = &JevSettings{LocatePreviews: pref}
+		}
+		return s
+	}
+	cases := []struct {
+		name     string
+		s        Settings
+		wantName string
+		previews bool
+	}{
+		{"none", Settings{}, "", false},
+		{"not a decision backend", mk("openai", "gpt-x", "", ""), "", false},
+		{"local", mk("decision-local", "decider-4b", "", ""), "the local decision model", true},
+		{"local, off", mk("decision-local", "decider-4b", "", "off"), "the local decision model", false},
+		{"self-hosted", mk("mine", "jev", "jev", ""), "your self-hosted server mine", true},
+		{"typesafe hosted", mk("typesafe", "jev-latest", "", ""), "TypeSafe's hosted API", false},
+		{"typesafe hosted, allowed", mk("typesafe", "jev-latest", "", "hosted"), "TypeSafe's hosted API", true},
+		{"openrouter", mk("openrouter", "typesafe/jev-1.13", "", ""), "OpenRouter's hosted Jev model", false},
+		{"openrouter, allowed", mk("openrouter", "typesafe/jev-1.13", "", "hosted"), "OpenRouter's hosted Jev model", true},
+	}
+	for _, c := range cases {
+		name, previews := c.s.LocateDestination()
+		if name != c.wantName || previews != c.previews {
+			t.Errorf("%s: got (%q, %v), want (%q, %v)", c.name, name, previews, c.wantName, c.previews)
+		}
+	}
+}

@@ -243,6 +243,15 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   and the builtin is allowed and not denied; the provider still receives one
   result for the Bash call id, the model is told in the result, and the result
   is classified as Bash output would be.
+  Explore locate (`internal/locate`) ranks files from an inventory that is eligible
+  before anything is scored: dependency, hidden, ignored, symlinked, binary,
+  oversized, credential-bearing and read-withheld files are never listed, ranked
+  or sent. Declared names from a file reach a backend only when it is the local
+  model or one the user runs, or when the user set `jev.locate_previews` to
+  `hosted`; file contents never do. Its output (the `Locate` tool and the seed
+  line in an explore task's prompt) is paths, line numbers and percentages, so
+  it is sanitise-only like `Glob`, and a path enters a prompt only if it is made
+  of letters, digits and `. _ - / @ +`.
 - **Every role-manager decision is written to the session record.**
   `Activity.Record` builds a `rolemanager` entry for every event, shown or
   hidden, and `rolemanager.AddSink` delivers activities losslessly and in

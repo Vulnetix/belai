@@ -80,6 +80,7 @@ func (s *Session) exploreTurns(ctx context.Context, decision rolemanager.ModeDec
 	// A file the user attached already rides on the turn whole; a subagent
 	// reading it again only to summarise it is a wasted round trip.
 	tasks = explore.DropAttached(tasks, attached)
+	tasks = s.seedTasks(ctx, tasks, clean)
 	return s.runExploreTasks(ctx, tasks, "explore", pipe, emit)
 }
 

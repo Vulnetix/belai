@@ -43,6 +43,13 @@ type SystemOne struct {
 // Backend implements Decider.
 func (s *SystemOne) Backend() Backend { return BackendSystemOne }
 
+// Hosted reports whether the server is TypeSafe's hosted API rather than one
+// the user runs.
+func (s *SystemOne) Hosted() bool {
+	u := strings.TrimRight(s.BaseURL, "/")
+	return u == TypeSafeBaseURL || strings.HasPrefix(u, TypeSafeBaseURL+"/")
+}
+
 // Identity implements Decider.
 func (s *SystemOne) Identity() string {
 	id := s.Name

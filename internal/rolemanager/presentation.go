@@ -71,6 +71,7 @@ var harnessEvents = map[Event]bool{
 	EventToolSearch:                true,
 	EventToolSelect:                true,
 	EventLSPTriage:                 true,
+	EventExploreLocate:             true,
 }
 
 // IsJevIdentity reports whether a provider/model identity names a decision
@@ -159,6 +160,7 @@ var presentations = map[Event]presentation{
 	EventLSPDiagnose:               {CategoryCode, "diagnose"},
 	EventLSPServerDown:             {CategoryCode, "server_down"},
 	EventLSPTriage:                 {CategoryCode, "triage"},
+	EventExploreLocate:             {CategoryCode, "locate"},
 	EventClarify:                   {CategoryAsk, "clarify"},
 	EventOptionOrder:               {CategoryAsk, "options"},
 	EventRouteFallback:             {CategoryRouting, "route"},

@@ -37,7 +37,7 @@ var rmGlyphs = map[string]string{
 	"plan": "≡", "agent": "◍", "draft": "✎",
 	"compact": "⊟", "prune": "⊠", "page": "▤", "deps": "⊡",
 	"swap": "⇄", "replan": "⇆", "search": "⊛", "select": "⊞",
-	"server": "⌘", "diagnose": "⌥", "server_down": "⊗", "triage": "▣",
+	"server": "⌘", "diagnose": "⌥", "server_down": "⊗", "triage": "▣", "locate": "⌖",
 	"clarify": "?", "options": "≣",
 	"route": "⇢", "pool": "◫",
 	"name": "✦", "dot": "·",

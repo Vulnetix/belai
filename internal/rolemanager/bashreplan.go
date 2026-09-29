@@ -229,6 +229,34 @@ func RecordToolSelect(verdict string, tools, skills, omitted, saved int, model s
 	recordTimed(EventToolSelect, verdict, "", fmt.Sprintf("tools=%d skills=%d omitted=%d saved=%d", tools, skills, omitted, saved), 0, model, took)
 }
 
+// RecordExploreLocate emits the outcome of ranking files for a question:
+// verdict "ranked" with the hits found, the directories and files the backend
+// was asked about and the items it gave no answer for, or "lexical" when only
+// the keyword order was used. Never the question or a path.
+func RecordExploreLocate(verdict string, hits, dirs, files, unknown int, model string, took time.Duration) {
+	recordTimed(EventExploreLocate, verdict, "", fmt.Sprintf("hits=%d dirs=%d files=%d unknown=%d", hits, dirs, files, unknown), 0, model, took)
+}
+
+func exploreLocateDescription(a Activity) Description {
+	n := func(k string) string {
+		if v := field(a.Detail, k); v != "" && isDigits(v) {
+			return v
+		}
+		return "?"
+	}
+	d := Description{
+		Summary: "Ranked the files a question is likely about",
+		Outcome: "found " + n("hits") + " after rating " + n("dirs") + " directories and " + n("files") + " files",
+		Tone:    ToneClear,
+		Levels:  LevelAll,
+	}
+	if a.Verdict == "lexical" {
+		d.Outcome = "found " + n("hits") + " by keyword only, the backend gave no answer"
+		d.Tone = ToneNeutral
+	}
+	return d
+}
+
 func toolSearchDescription(a Activity) Description {
 	n := func(k string) string {
 		if v := field(a.Detail, k); v != "" && isDigits(v) {

@@ -2276,6 +2276,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case localModelLaunchedMsg:
 		return a, a.handleLocalModelLaunched(m)
 
+	case locateReportMsg:
+		a.addSystem(m.text)
+		return a, nil
 	case localModelReportMsg:
 		switch a.view {
 		case viewProviderDetail:

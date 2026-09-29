@@ -42,7 +42,7 @@ classifier; the space key toggles a row and `x` returns it to its default.
 | Key | Meaning |
 | --- | --- |
 | `jev.jobs.<job>` | `true` or `false` for a job in the list below. A missing key means on. An unknown job name is an error. |
-| `jev.locate_previews` | Where file previews for file ranking may go: `local` (the local or self-hosted backend only, the default), `hosted` (also OpenRouter) or `off` (paths only). Reserved for the explore ranking job. |
+| `jev.locate_previews` | Where declared names from your files may go when files are ranked: `local` (the local decision model and a self-hosted server only, the default), `hosted` (also OpenRouter and TypeSafe's hosted API) or `off` (paths only, everywhere). |
 
 The project layer may turn a job **off**, never on, and may only narrow
 `locate_previews`. Changing a switch drops the cached agent session so the next
@@ -56,6 +56,7 @@ prompt runs with it.
 | `tool_search` | Ranks `ToolSearch` matches with the backend and searches skills too | Shipped |
 | `lsp_triage` | Files a board bug when another edit is unlikely to clear language server errors | Shipped |
 | `option_order` | Puts the likeliest option first, marked (Recommended), when the model asks you to choose | Shipped |
+| `explore_locate` | Ranks the files a question is about, seeds the explore subagents with them, and offers a `Locate` tool | Shipped |
 
 ## Scores and thresholds
 
@@ -300,6 +301,77 @@ first; with a decision backend the list is then refined.
 
 Recorded as a `tool_search` event with the size of the deterministic list, the
 merged list and the candidates left unrated. Never the query.
+
+## Explore locate
+
+Before the explore subagents start, the harness ranks the files the goal is
+about and tells each subagent where to begin, so they search less. The model can
+also ask for the same ranking with the deferred `Locate` tool. The result is
+paths, line numbers and percentages the harness computed; no file text is in it,
+so it is sanitised like a `Glob` result and not classified.
+
+**Eligibility comes first.** Before anything is scored, labelled or sent, a
+file must be eligible. Left out for good: dependency and build directories
+(`node_modules`, `vendor`, `venv`, `.venv`, `.tox`, `__pycache__`, `dist`,
+`build`, `coverage`, `target`, `.next`, `.nuxt`, `.turbo`), every hidden file and
+directory, `.git`, symlinks and special files, files that hold credentials
+(`.env` and `.env.*`, `.netrc`, `.npmrc`, `.pypirc`, `.htpasswd`, `.pgpass`, `credentials*`, `secrets.*`,
+`id_rsa*` and the other `id_*` keys, and `.pem`, `.key`, `.p12`, `.pfx` and
+similar), files with a known binary extension, files over 16 MiB, and anything a
+`.gitignore` or `.ignore` excludes. A `.gitignore` counts at every directory
+level; a nested repository starts its own git scope; `.ignore` is read after
+`.gitignore` in the same directory and wins. A file whose first bytes contain a
+NUL is dropped when it is read for declarations. At most 100,000 files are
+listed. A file whose read was withheld earlier in the session is never ranked
+or shown to the backend. These rules are a floor, not a setting.
+
+**Ranking, in order.**
+
+1. Every file is scored by the words of its path (camelCase, snake_case and
+   kebab-case split, with a light plural trim) using BM25.
+2. Up to 48 directories (12 for the local model) go to the backend: those whose
+   paths match first, then the ones holding the most source files. A directory
+   the backend rates below 0.25 is dropped; one it gave no answer for is kept.
+3. Files in the directories that survive are read for the names they declare
+   (Go files are parsed, other languages are scanned line by line) and the best
+   160 (24 for the local model) go to the backend.
+4. A file at or above 0.50 is a hit, one from 0.25 to 0.50 is a lead. There is
+   no fixed count: every file above 0.25 is returned, up to 25. A file with no
+   answer keeps its keyword score, because unknown is not low. If the backend
+   answers but rates everything below 0.25, the three best keyword matches are
+   returned as leads.
+5. Without a backend answer the keyword order stands (at most 12 files).
+
+**What the backend sees.** The question (as `DecisionText`) and one label per
+item: `directory internal/auth (4 files: .go x3, .md x1)`, or
+`file internal/auth/login.go (Go, 2 KB)`. The labels include
+`declares Login, VerifyPassword` (up to 12 names) only when previews are
+allowed for that backend: the local decision model and a self-hosted server get
+them, OpenRouter and TypeSafe's hosted API get paths only, and
+`jev.locate_previews` moves that line either way (`off` means paths only
+everywhere). File contents beyond declared names never leave the machine.
+
+**What the subagents get.** Each task prompt gets one line naming up to 8 ranked
+files, strong matches first, as `path:line`. Only paths made of letters, digits
+and `. _ - / @ +` are named, so a file name with a space, quote or markup
+character never enters a prompt. A task that was told where to look loses one
+tool round when the ranking found a strong match. When the backend answered and
+none of its files is a test, the "tests" survey task is dropped; likewise "docs
+and config" when none is a document or configuration file.
+
+**The Locate tool.** `Locate` takes `query` and an optional `max_results`
+(default 12, at most 25) and returns lines such as
+`1. internal/auth/login.go:4  97%`, with `(lead)` on weaker ones. It is deferred
+behind `ToolSearch` and exists only while the job is on.
+
+**/locate --dry-run** lists, with no request made, the eligible files and bytes
+per top-level directory, what was left out and why, and where questions would
+go: the backend, and whether declared names would go with them.
+
+Recorded as an `explore_locate` event: `ranked` or `lexical`, with the hits
+found and the directories, files and unknowns the backend was asked about.
+Never the question or a path. The inventory is reused for 90 seconds and a walk
+stops after 4 seconds; a partial inventory is still ranked.
 
 ## LSP triage
 
