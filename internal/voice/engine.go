@@ -433,3 +433,7 @@ func (l *loop) publish() {
 	l.e.state.Store(int32(s))
 	l.e.emit(l.ctx, Event{Kind: EventState, State: s})
 }
+
+// Done is closed once the engine has stopped. A goroutine waiting on Events
+// selects on it so it exits with the engine.
+func (e *Engine) Done() <-chan struct{} { return e.done }

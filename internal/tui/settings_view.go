@@ -181,6 +181,10 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "budget_warn", label: "budget warnings", kind: "toggle", value: budgetWarnVal, src: sourceLabel(origin["ui"])},
 		{key: "intel", label: "session intelligence", kind: "toggle", value: intelVal, src: sourceLabel(origin["ui"]), help: "the footer slot, the intel tab (f12) and /intel"},
 		{key: "plan_limits", label: "plan limits", kind: "toggle", value: planLimitsVal, src: sourceLabel(origin["intel"]), help: "read provider rate-limit response headers into plan-limit readings — global only"},
+		{key: "voice.enabled", label: "voice input", kind: "toggle", value: boolLabel(s.Voice.VoiceEnabled()), src: sourceLabel(origin["voice"]), help: "dictate into the composer (/voice); the speech model is a 32 MB download you confirm — global only"},
+		{key: "voice.mode", label: "voice mode", kind: "choose", opts: []string{config.VoiceModePushToTalk, config.VoiceModeListen}, value: s.Voice.VoiceModeOr(), src: sourceLabel(origin["voice"]), help: "push_to_talk records while the key is held or toggled; listen keeps the microphone open while the composer is ready"},
+		{key: "voice.delivery", label: "voice delivery", kind: "choose", opts: []string{config.VoiceDeliveryInsert, config.VoiceDeliverySubmit}, value: s.Voice.VoiceDeliveryOr(), src: sourceLabel(origin["voice"]), help: "insert leaves dictated text in the composer; submit also sends it, except text that starts with / or !, or holds an @path"},
+		{key: "voice.cleanup", label: "voice cleanup", kind: "toggle", value: boolLabel(s.Voice.VoiceCleanupEnabled()), src: sourceLabel(origin["voice"]), help: "a fast-model pass that tidies the transcript before it is inserted"},
 	}
 	// The Jev jobs exist only while a decision backend is configured; without
 	// one they are off and hidden, not greyed.
@@ -368,6 +372,9 @@ func (a *App) handleSettingsKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if row.key == "provider" || row.key == "model" {
 					return a, a.syncProviderFromSettings()
 				}
+				if strings.HasPrefix(row.key, "voice.") {
+					return a, a.voiceAfterSetting(row.key)
+				}
 			}
 		}
 		return a, nil
@@ -394,7 +401,7 @@ func (a *App) handleSettingsKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 				a.settingsState.errorMsg = ""
 				a.settingsState.notice = a.shadowNotice(row.key)
 			}
-			return a, nil
+			return a, a.voiceAfterSetting(row.key)
 		case "choose":
 			if err := a.cycleChoice(row.key, row.opts); err != nil {
 				a.settingsState.errorMsg = err.Error()
@@ -402,7 +409,7 @@ func (a *App) handleSettingsKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 				a.settingsState.errorMsg = ""
 				a.settingsState.notice = a.shadowNotice(row.key)
 			}
-			return a, nil
+			return a, a.voiceAfterSetting(row.key)
 		case "text":
 			a.settingsState.editMode = true
 			a.settingsState.errorMsg = ""
@@ -511,6 +518,9 @@ func (a *App) cycleToggle(key string) error {
 			s.AutoCommitPerTask = nextBool(s.AutoCommitPerTask)
 		})
 	}
+	if strings.HasPrefix(key, "voice.") {
+		return a.voiceToggle(key)
+	}
 	if key == "plan_limits" {
 		// Global only: a repository must not change what a user learns about
 		// their own account limits.
@@ -596,6 +606,9 @@ func (a *App) cycleToggle(key string) error {
 }
 
 func (a *App) cycleChoice(key string, opts []string) error {
+	if strings.HasPrefix(key, "voice.") {
+		return a.voiceChoose(key, opts)
+	}
 	return a.mutateSetting(func(s *config.Settings) {
 		switch key {
 		case "effort":
@@ -622,6 +635,9 @@ func (a *App) unsetSetting(key string) error {
 		return a.mutateGlobalSetting(func(s *config.Settings) {
 			s.AutoCommitPerTask = nil
 		})
+	}
+	if strings.HasPrefix(key, "voice.") {
+		return a.voiceUnset(key)
 	}
 	if key == "plan_limits" {
 		return a.mutateGlobalSetting(func(s *config.Settings) {

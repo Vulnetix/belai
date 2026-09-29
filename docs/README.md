@@ -72,7 +72,7 @@ until the feature ships, then `alpha-YYYYMMDD`, the date it landed.
 | Quiet TUI redesign | [TUI design system](tui-design.md) | alpha-20260927 (in part) |
 | Autonomous kanban agent fleet | [Agent fleet](fleet.md) | alpha-20260928 |
 | Remote control from the website | [Remote control](remote-control.md) | alpha-20260930 |
-| Voice input for the composer | [Voice input](voice.md) | Roadmap |
+| Voice input for the composer | [Voice input](voice.md) | alpha-20260930 |
 
 ## Build, test, and publish
 

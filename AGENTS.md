@@ -563,6 +563,25 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   never reach a notification. The external backends run a fixed argv with
   the scrubbed environment. `notifications` is a per-user key: the project
   layer is dropped.
+- **Voice input is local audio and typed-grade text.** `internal/voice`
+  captures the microphone through a helper the harness launches (fixed argv,
+  scrubbed environment, own process group, never through `sandbox.Wrap` or a
+  tool call; `voice.device` is a plain identifier that cannot add an option)
+  and recognises it with `internal/voice/asr`, pure Go, so the release stays
+  `CGO_ENABLED=0`. Audio stays in memory: it is never written, logged, sent
+  or put in telemetry. The speech model downloads only after `/voice
+  download`, is checked against the SHA-256 Hugging Face reports and against
+  the one pinned in `internal/voice/models.go`, and a mismatch is refused,
+  including for a file found in a shared cache. `voice` is read from the
+  user's settings layers only (the project layer is dropped), and voice runs
+  only in the interactive TUI, never headless or over ACP. A transcript is
+  sanitised, tidied by the tool-less `voice_cleanup` role (its reply must be
+  non-empty and not much longer than the input, else the raw transcript is
+  used), sanitised again and inserted at the composer cursor only while
+  `voiceComposerReady` holds; when it does not, the engine closes the
+  microphone and drops audio in progress. `delivery: submit` goes through the
+  Enter path and never fires for text that starts with `/` or `!` or holds an
+  `@path`. Do not add a model-facing tool that starts capture.
 - **Session sync mirrors the file and admits web prompts as prompts.**
   `internal/sessionsync` uploads only the lines `appendEntry` already wrote to
   the session JSONL, keyed by line index; it never composes an entry. It sends

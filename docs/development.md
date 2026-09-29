@@ -718,6 +718,20 @@ Use `plumb-4b` for the other catalogue model. To try a self-hosted Jev from
 the TUI, run any `/v1/systemone` server (for example `laya-serve`) and add it
 under providers → `+ add new provider` → kind `jev`.
 
+The speech recogniser (`internal/voice/asr`) is pure Go, so `just cross` needs
+no toolchain for it. Its unit tests build a tiny synthetic model in memory. An
+opt-in test runs the real weights (a 32 MB file) on a clip:
+
+```bash
+BELAI_VOICE_MODEL=/path/to/ggml-tiny.en-q5_1.bin BELAI_VOICE_WAV=/path/to/jfk.wav \
+  go test -count=1 -run TestRealModel -v ./internal/voice/asr
+```
+
+The clip must be 16 kHz mono 16-bit PCM in a plain 44-byte-header WAV file.
+For hands-on QA of [voice input](voice.md), install one capture helper
+(`parecord`, `arecord`, `ffmpeg` or `sox`), run `/voice on`, then
+`/voice download`.
+
 ## Lint and hygiene
 
 | Command | Does |

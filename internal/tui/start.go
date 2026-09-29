@@ -32,9 +32,16 @@ func Start(opts Options) error {
 	app.createSessionFile()
 	// Session sync likewise only starts on a real run (docs/session-sync.md).
 	app.startSessionSync()
+	// Voice input likewise only starts on a real run, and only when the user
+	// turned it on (docs/voice.md).
+	app.voice.autostart = true
 	app.fireSessionHook(hooks.EventSessionStart)
 	p := tea.NewProgram(app, progOpts...)
 	model, err := p.Run()
+	// Every exit path closes the microphone and stops the capture helper.
+	if a, ok := model.(*App); ok {
+		a.voiceStop()
+	}
 	if a, ok := model.(*App); ok {
 		a.fireSessionHook(hooks.EventSessionEnd)
 	}

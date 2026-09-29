@@ -58,6 +58,12 @@ type Footer struct {
 	// sessions); empty while `belai rc` is not running.
 	RC string
 
+	// Voice is the speech-input segment ("voice: listening"); empty while voice
+	// input is off. VoiceOn draws the dot filled while the microphone is open
+	// or the model is working.
+	Voice   string
+	VoiceOn bool
+
 	// Caveman reports whether the caveman voice rewrite is active. It always
 	// renders, on and off alike, because it silently changes how every reply
 	// is written and the footer is the only place that says so.
@@ -534,6 +540,9 @@ func (f Footer) permissionChipsAt(bareFirewall bool) string {
 			label += ": " + f.FirewallLabel
 		}
 		out += "  " + switchDot(label, true)
+	}
+	if f.Voice != "" {
+		out += "  " + switchDot(f.Voice, f.VoiceOn)
 	}
 	if f.RC != "" {
 		out += "  " + switchDot(f.RC, true)
