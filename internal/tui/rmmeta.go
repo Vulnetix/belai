@@ -8,22 +8,7 @@ import (
 // rmMeta is the presentation metadata of a live activity: who decided, the
 // category, the icon and the cause. Every field is derived by the
 // rolemanager package from the event and the model identity.
-func rmMeta(act rolemanager.Activity) components.RMMeta {
-	actor := rolemanager.ActorOf(act)
-	d, _ := rolemanager.Describe(act)
-	m := components.RMMeta{
-		ActorKind: string(actor.Kind),
-		Actor:     actor.Name(),
-		Category:  string(rolemanager.CategoryOf(act.Event)),
-		Icon:      rolemanager.IconOf(act.Event),
-		Cause:     string(rolemanager.CauseOf(act)),
-		Outcome:   string(d.Tone.Kind()),
-	}
-	if s := rolemanager.ScorePct(act.Detail); s >= 0 {
-		m.Score, m.HasScore = s, true
-	}
-	return m
-}
+func rmMeta(act rolemanager.Activity) components.RMMeta { return components.RMMetaOf(act) }
 
 // rmMetaFromEntry restores the presentation metadata of a persisted row. An
 // entry written before schema 2 has none of the keys; it gets the icon and

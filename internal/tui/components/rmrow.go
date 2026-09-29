@@ -27,6 +27,25 @@ type RMMeta struct {
 	HasScore  bool
 }
 
+// RMMetaOf derives the presentation metadata of a live activity: who decided,
+// the category, the icon and the cause.
+func RMMetaOf(act rolemanager.Activity) RMMeta {
+	actor := rolemanager.ActorOf(act)
+	d, _ := rolemanager.Describe(act)
+	m := RMMeta{
+		ActorKind: string(actor.Kind),
+		Actor:     actor.Name(),
+		Category:  string(rolemanager.CategoryOf(act.Event)),
+		Icon:      rolemanager.IconOf(act.Event),
+		Cause:     string(rolemanager.CauseOf(act)),
+		Outcome:   string(d.Tone.Kind()),
+	}
+	if s := rolemanager.ScorePct(act.Detail); s >= 0 {
+		m.Score, m.HasScore = s, true
+	}
+	return m
+}
+
 // rmGlyphs maps an icon id to its glyph. A glyph that a terminal draws at any
 // width but one cell falls back to its category's ASCII letter, so columns
 // stay aligned.
@@ -150,49 +169,59 @@ func rmDuration(ms int64) string {
 }
 
 // rmRowSegs builds the single line of a role-manager row for a width in cells.
-// The summary is what gives way when the line is too long: the icon, outcome
-// and decider are kept. With no room for the decider tag, it is dropped before
-// the outcome is cut.
+// The icon, the outcome marker and the decider tag are kept; the summary and
+// the outcome words give way, each keeping a share of what is left. Only when
+// the line is too narrow for both to stay readable does the tag go.
 func rmRowSegs(msg Message, width int) []Seg {
 	meta := msg.RMMeta
 	icon := NewSeg(RMGlyph(meta.Icon, meta.Category)+" ", rmCategoryColor(meta.Category))
 
-	outcome := msg.RM.Outcome
+	marks := ""
 	if m := rmOutcomeMarker(msg.RM.Tone); m != "" {
-		outcome += " " + m
+		marks += " " + m
 	}
 	if c := rmCauseMark(meta.Cause); c != "" {
-		outcome += " " + c
+		marks += " " + c
 	}
 	tag, tagColor := rmActorTag(meta, msg.DurationMS)
 
-	build := func(summary string, withTag bool) []Seg {
-		segs := []Seg{icon, NewSeg(summary, nil), NewSeg(" — ", ColorLow), NewSeg(outcome, toneColor(msg.RM.Tone))}
-		if withTag && tag != "" {
-			segs = append(segs, NewSeg(" · ", ColorLow), NewSeg(tag, tagColor))
+	const sep = " — "
+	const tagSep = " · "
+	const minText = 24 // cells left for summary and outcome before the tag is dropped
+	iconW, sepW := 2, lipgloss.Width(sep)
+	summary, outcome := msg.RM.Summary, msg.RM.Outcome
+
+	withTag := tag != ""
+	room := func() int {
+		r := width - iconW - sepW - lipgloss.Width(marks)
+		if withTag {
+			r -= lipgloss.Width(tagSep) + lipgloss.Width(tag)
 		}
-		return segs
+		return r
 	}
-	fixed := func(withTag bool) int {
-		n := 2 + lipgloss.Width(" — ") + lipgloss.Width(outcome)
-		if withTag && tag != "" {
-			n += lipgloss.Width(" · ") + lipgloss.Width(tag)
-		}
-		return n
+	if withTag && room() < minText {
+		withTag = false
 	}
-	const minSummary = 8
-	summary := msg.RM.Summary
-	for _, withTag := range []bool{true, false} {
-		room := width - fixed(withTag)
-		if room >= minSummary || !withTag {
-			if lipgloss.Width(summary) > room {
-				summary = truncateCells(summary, max(room, 1))
-			}
-			segs, _ := clipSegs(build(summary, withTag), width)
-			return segs
-		}
+	rem := room()
+	if rem < 2 {
+		rem = 2
 	}
-	return nil
+	sw, ow := lipgloss.Width(summary), lipgloss.Width(outcome)
+	if sw+ow > rem {
+		// Outcome keeps what the summary leaves, but at least half of the
+		// room; the summary gets the rest.
+		omax := max(min(ow, rem/2), rem-sw)
+		omax = min(omax, ow)
+		smax := rem - omax
+		summary = truncateCells(summary, max(smax, 1))
+		outcome = truncateCells(outcome, max(omax, 1))
+	}
+	segs := []Seg{icon, NewSeg(summary, nil), NewSeg(sep, ColorLow), NewSeg(outcome+marks, toneColor(msg.RM.Tone))}
+	if withTag {
+		segs = append(segs, NewSeg(tagSep, ColorLow), NewSeg(tag, tagColor))
+	}
+	kept, _ := clipSegs(segs, width)
+	return kept
 }
 
 // truncateCells cuts s to at most n cells, ending in an ellipsis.
