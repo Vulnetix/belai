@@ -30,6 +30,7 @@ const surfaces = ['the agent session', 'inline !cmd', '@file attachments', 'back
 const limits = [
   ['Grants add up', 'Merging adds grants and keeps where each came from. It never widens a surface on its own, and an explicit deny beats every allow.'],
   ['When no rule matches', 'The call is allowed by default. Set `permission_no_match` to `enforce` and it is blocked.'],
+  ['Rules read the command', 'A Bash rule is matched against each command the line contains, not the raw text. `Bash(git status*)` does not approve `git status; rm -rf x`, and a deny for `git push` also stops `env git push` and `sh -c \'git push\'`.'],
   ['The switch comes first', 'Every gated path checks the guardrails switch before calling the classifier, so turning a gate off also stops its classifier calls.'],
 ];
 ---

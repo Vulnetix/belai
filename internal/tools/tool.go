@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/permissions"
+	"github.com/vulnetix/belai/internal/sanitize"
 )
 
 // Property is a JSON-schema property for a tool definition.
@@ -20,6 +21,9 @@ type Property struct {
 	Required    []string            `json:"required,omitempty"`
 	// Enum restricts a string property to the listed values.
 	Enum []string `json:"enum,omitempty"`
+	// Format names the deterministic check the argument passes before the tool
+	// runs (see Format). It is not part of the schema sent to the model.
+	Format Format `json:"-"`
 }
 
 // Definition is the static metadata exposed to the model for a tool.
@@ -244,11 +248,28 @@ type Targeter interface {
 	Targets(args map[string]any) []string
 }
 
+// checkPathText applies the lexical path checks (valid UTF-8, no NUL, control,
+// newline, bidirectional or invisible runes, bounded length) before a path is
+// resolved. An empty path is left to the caller, which treats it as the
+// working directory. Confinement below stays the last word.
+func checkPathText(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	if strings.Contains(raw, "\x00") {
+		return fmt.Errorf("path contains NUL")
+	}
+	if err := sanitize.PathText(raw); err != nil {
+		return fmt.Errorf("path %q: %w", sanitize.Line(raw, 80), err)
+	}
+	return nil
+}
+
 // SanitizePath resolves a user-provided path against root, follows symlinks,
 // and returns the clean relative path or an error if it escapes root.
 func SanitizePath(root, raw string) (string, error) {
-	if strings.Contains(raw, "\x00") {
-		return "", fmt.Errorf("path contains NUL")
+	if err := checkPathText(raw); err != nil {
+		return "", err
 	}
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
@@ -274,8 +295,8 @@ func SanitizePath(root, raw string) (string, error) {
 // then resolves a final component that is itself a symlink. A path whose
 // resolved form escapes root is rejected.
 func SanitizeNewPath(root, raw string) (string, error) {
-	if strings.Contains(raw, "\x00") {
-		return "", fmt.Errorf("path contains NUL")
+	if err := checkPathText(raw); err != nil {
+		return "", err
 	}
 	absRoot, err := filepath.Abs(root)
 	if err != nil {

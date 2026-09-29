@@ -457,7 +457,7 @@ func (c *Cd) Definition() Definition {
 			"A path beginning with `/` is interpreted relative to the session root, not the filesystem root; any other path is relative to the current working directory, and `..` moves up. " +
 			"Passing `/` returns to the session root. The result names the new working directory.",
 		Properties: map[string]Property{
-			"path": {Type: "string", Description: `The directory to move to: relative to the current working directory ("internal/tools", ""), or relative to the session root when it starts with "/" ("/internal")`},
+			"path": {Type: "string", Format: FormatPath, Description: `The directory to move to: relative to the current working directory ("internal/tools", ""), or relative to the session root when it starts with "/" ("/internal")`},
 		},
 		Required: []string{"path"},
 	}

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/vulnetix/belai/internal/netguard"
 	"github.com/vulnetix/belai/internal/provider"
 	"github.com/vulnetix/belai/internal/wire"
 )
@@ -115,14 +116,19 @@ func ValidJevURL(raw string) error {
 	}
 	switch u.Scheme {
 	case "https":
-		return nil
 	case "http":
-		if isLoopbackHost(u.Hostname()) {
-			return nil
+		if !netguard.IsLoopbackHost(u.Hostname()) {
+			return fmt.Errorf("base_url %q sends tool output in the clear; use https, or http only on localhost", raw)
 		}
-		return fmt.Errorf("base_url %q sends tool output in the clear; use https, or http only on localhost", raw)
+	default:
+		return fmt.Errorf("base_url %q must be https (or http on localhost)", raw)
 	}
-	return fmt.Errorf("base_url %q must be https (or http on localhost)", raw)
+	// The shared URL policy also refuses whitespace and control characters,
+	// non-canonical numeric hosts and escapes that decode to control bytes.
+	if _, err := netguard.CheckURL(raw, netguard.Endpoint); err != nil {
+		return fmt.Errorf("invalid base_url %q: %w", raw, err)
+	}
+	return nil
 }
 
 // ValidDecisionPath reports whether p is empty or a plain absolute path with

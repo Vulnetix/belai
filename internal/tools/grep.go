@@ -70,8 +70,8 @@ func (g *Grep) Definition() Definition {
 			"Searches inside an added workspace directory return absolute paths; searches inside the session root return root-relative paths. " +
 			"Use Grep to find where something is written; use Glob to find files by name.",
 		Properties: map[string]Property{
-			"pattern":     {Type: "string", Description: "The regular expression to search for; a literal string is also a valid pattern"},
-			"path":        {Type: "string", Description: "Optional subdirectory or single file to search: an absolute filesystem path under one of the session roots, or relative to the working directory; a leading `/` not under any root is relative to the session root. Defaults to the working directory."},
+			"pattern":     {Type: "string", Format: FormatRegex, Description: "The regular expression to search for; a literal string is also a valid pattern"},
+			"path":        {Type: "string", Format: FormatPath, Description: "Optional subdirectory or single file to search: an absolute filesystem path under one of the session roots, or relative to the working directory; a leading `/` not under any root is relative to the session root. Defaults to the working directory."},
 			"glob":        {Type: "string", Description: "Only search files matching this glob, e.g. \"*.go\" or \"**/*_test.go\""},
 			"type":        {Type: "string", Description: "Only search files of this type, e.g. go, py, js, ts, rust, java"},
 			"-i":          {Type: "boolean", Description: "Case-insensitive search"},

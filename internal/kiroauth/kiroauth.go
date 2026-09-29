@@ -19,11 +19,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/vulnetix/belai/internal/netguard"
 )
 
 // Defaults for an AWS Builder ID login.
@@ -155,13 +156,7 @@ func allowedURL(base string, host *regexp.Regexp) bool {
 	return u.Scheme == "https" && u.Port() == "" && host.MatchString(h)
 }
 
-func isLoopback(h string) bool {
-	if h == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(h)
-	return ip != nil && ip.IsLoopback()
-}
+func isLoopback(h string) bool { return netguard.IsLoopbackHost(h) }
 
 // ValidStartURL reports whether s is an acceptable start URL: https with a
 // host and no credentials.

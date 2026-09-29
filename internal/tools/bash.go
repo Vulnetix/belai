@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/vulnetix/belai/internal/calltrace"
 	"github.com/vulnetix/belai/internal/proc"
 	"github.com/vulnetix/belai/internal/sandbox"
+	"github.com/vulnetix/belai/internal/shellsafe"
 )
 
 // ShellMetacharacters are shell syntax that would let a command escape a
@@ -18,103 +18,14 @@ import (
 // rejecting these before tokenising keeps that gate honest and fails closed.
 const ShellMetacharacters = ";&|$`<>\n()"
 
-// readOnlyBash holds the read-only commands the Bash tool is allowed to run.
-// Git read-only subcommands and the metacharacter gate are defined below.
-var readOnlyBash = map[string]bool{
-	"cat": true, "env": true, "false": true, "grep": true, "egrep": true, "rg": true, "find": true,
-	"ls": true, "uname": true, "pwd": true, "head": true, "tail": true,
-	"wc": true, "sort": true, "uniq": true, "file": true, "which": true,
-	"diff": true, "stat": true, "du": true, "basename": true,
-	"dirname": true, "realpath": true, "readlink": true,
-	"jq": true, "cut": true, "tr": true, "nl": true, "fold": true,
-	"paste": true, "printenv": true, "join": true, "comm": true, "rev": true, "shuf": true,
-	"seq": true, "sleep": true, "od": true, "xxd": true, "base64": true, "date": true,
-	"printf": true, "echo": true, "tree": true, "fd": true, "zcat": true,
-	"gunzip": true, "md5sum": true, "sha256sum": true, "column": true,
-	"expand": true, "unexpand": true,
-}
-
-var gitReadSubcommands = map[string]bool{
-	"status": true, "log": true, "diff": true, "show": true,
-	"rev-parse": true, "ls-files": true, "grep": true, "describe": true,
-}
-
-var findUnsafeOptions = map[string]bool{
-	"-exec": true, "-execdir": true, "-ok": true, "-okdir": true,
-	"-delete": true, "-fprint": true, "-fls": true, "-fprintf": true,
-}
-
-// gitValueOptions are git options that consume a following argument. The git
-// branch skips the option's value so `git -C sub status` cannot smuggle a
-// mutating subcommand past the gate through an option argument.
-var gitValueOptions = map[string]bool{
-	"-C": true, "-c": true, "--git-dir": true, "--work-tree": true,
-	"--namespace": true, "--exec-path": true, "--config-env": true,
-}
-
 // BashAllowed reports whether the whole command passes the read-only gate.
 // It is the single source of truth for the read-only Bash allowlist; plan mode
-// forwards to it.
+// and the Git native forward to it. The command is parsed with a shell grammar
+// (internal/shellsafe): it must be one plain command, on the allowlist, with
+// none of the flags that write a file or run a program.
 func BashAllowed(command string) bool {
-	command = strings.TrimSpace(command)
-	if command == "" || strings.ContainsAny(command, ShellMetacharacters) {
-		return false
-	}
-	fields := strings.Fields(command)
-	base := filepath.Base(fields[0])
-	switch base {
-	case "git":
-		return gitReadOnly(fields)
-	case "find":
-		return findReadOnly(fields)
-	case "env":
-		return envReadOnly(fields)
-	default:
-		return readOnlyBash[base]
-	}
-}
-
-// envReadOnly allows env only when it prints the environment rather than
-// executing a command. `env VAR=x` and `env` print; `env cmd` executes, so any
-// bare argument that is not an assignment or a print-only option is rejected.
-// This keeps the read-only gate fail-closed even though env sits in the word
-// list.
-func envReadOnly(fields []string) bool {
-	for _, f := range fields[1:] {
-		if strings.HasPrefix(f, "-") || strings.Contains(f, "=") {
-			continue
-		}
-		return false // a bare token names a command to execute
-	}
-	return true
-}
-
-// gitReadOnly rejects git invocations whose subcommand mutates. Options that
-// consume a value are skipped along with their argument, so the subcommand is
-// always the first non-option, non-value token.
-func gitReadOnly(fields []string) bool {
-	for i := 1; i < len(fields); i++ {
-		f := fields[i]
-		if gitValueOptions[f] {
-			i++ // skip the option's argument
-			continue
-		}
-		if strings.HasPrefix(f, "-") {
-			continue
-		}
-		return gitReadSubcommands[f]
-	}
-	return false
-}
-
-// findReadOnly rejects find invocations that can write, delete, or execute.
-func findReadOnly(fields []string) bool {
-	for _, f := range fields[1:] {
-		if findUnsafeOptions[f] {
-			return false
-		}
-	}
-	return true
+	argv, _ := shellsafe.ReadOnly(command)
+	return argv != nil
 }
 
 // Bash runs a single command. With ReadOnly set it executes without a shell
@@ -185,7 +96,7 @@ func (b *Bash) Definition() Definition {
 		Name:        "Bash",
 		Description: desc,
 		Properties: map[string]Property{
-			"command":     {Type: "string", Description: arg},
+			"command":     {Type: "string", Format: FormatCommand, Description: arg},
 			"timeout":     {Type: "integer", Description: "Optional time limit in milliseconds (max 600000)"},
 			"description": {Type: "string", Description: "Optional short description of what the command does, shown to the user"},
 		},
@@ -242,17 +153,13 @@ func (b *Bash) ExecuteStream(ctx context.Context, args map[string]any, sink Sink
 		// Read-only mode: no shell, fail closed on anything outside the
 		// allowlist. Plan-mode restrictions additionally live in
 		// modes.ToolAllowed, which callers must apply before Execute.
-		if strings.ContainsAny(cmd, ShellMetacharacters) {
-			return Result{}, fmt.Errorf("command contains shell metacharacters; %s", readOnlyBashHint)
+		// The argv that runs is the argv that was judged: the command is parsed
+		// once and its quote-free words are executed, never re-split.
+		argv, why := shellsafe.ReadOnly(cmd)
+		if argv == nil {
+			return Result{}, fmt.Errorf("command refused by the read-only gate (%s): %s; %s", why, cmd, readOnlyBashHint)
 		}
-		if !BashAllowed(cmd) {
-			return Result{}, fmt.Errorf("command not in read-only allowlist: %s; %s", cmd, readOnlyBashHint)
-		}
-		fields := strings.Fields(cmd)
-		if len(fields) == 0 {
-			return Result{}, fmt.Errorf("empty command")
-		}
-		ec = exec.CommandContext(ctx, fields[0], fields[1:]...)
+		ec = exec.CommandContext(ctx, argv[0], argv[1:]...)
 	} else {
 		// Full mode: `sh -c` so &&, pipes, and substitutions work. The
 		// timeout, Dir confinement, env scrubbing, and output truncation

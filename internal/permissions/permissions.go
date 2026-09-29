@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/vulnetix/belai/internal/shellsafe"
 	"github.com/vulnetix/belai/internal/trace"
 )
 
@@ -108,6 +109,9 @@ func (s Settings) Explain(tool, subject string) (Decision, string) {
 }
 
 func (s Settings) explain(tool, subject string) (Decision, string) {
+	if isShell(tool) {
+		return s.explainShell(tool, subject)
+	}
 	for _, r := range append(append([]string{}, s.Deny...), s.Block...) {
 		if matchRule(r, tool, subject) {
 			return DecisionBlock, r
@@ -140,6 +144,9 @@ func (s Settings) Evaluate(tool, subject string) Decision {
 // Unlike Evaluate it never answers yes by default: it is the question a
 // relaxation asks, and a relaxation must be opted into, not fallen into.
 func (s Settings) ExplicitlyAllows(tool, subject string) bool {
+	if isShell(tool) {
+		return s.shellAllowRule(tool, subject, shellsafe.Analyze(subject)) != ""
+	}
 	for _, r := range s.Allow {
 		if matchRule(r, tool, subject) {
 			return true

@@ -23,7 +23,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -32,6 +31,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/vulnetix/belai/internal/netguard"
 )
 
 // DefaultWebURL is the Vulnetix console origin; $VULNETIX_WEB_URL overrides it
@@ -81,12 +82,7 @@ func AllowedOrigin(rawURL string) bool {
 }
 
 func loopback(u *url.URL) bool {
-	h := strings.ToLower(u.Hostname())
-	if h == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(h)
-	return ip != nil && ip.IsLoopback()
+	return netguard.IsLoopbackHost(u.Hostname())
 }
 
 // errTestOrigin refuses a real origin from a test binary. A developer's

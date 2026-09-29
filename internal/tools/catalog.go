@@ -13,6 +13,7 @@ import (
 	"github.com/vulnetix/belai/internal/calltrace"
 	"github.com/vulnetix/belai/internal/proc"
 	"github.com/vulnetix/belai/internal/repoindex"
+	"github.com/vulnetix/belai/internal/shellsafe"
 )
 
 // This file implements the native tool catalogue: first-class read-only tools
@@ -443,15 +444,14 @@ func gitTool() nativeCommand {
 			if cmd == "" {
 				return nil, "", fmt.Errorf("missing command argument")
 			}
-			full := "git " + cmd
-			if strings.ContainsAny(full, ShellMetacharacters) {
-				return nil, "", fmt.Errorf("command contains shell metacharacters")
+			// The same parse-based gate the read-only Bash uses, and the argv it
+			// returns (hardened so repository configuration cannot run a
+			// program) is exactly what runs.
+			checked, why := shellsafe.ReadOnly("git " + cmd)
+			if checked == nil {
+				return nil, "", fmt.Errorf("git command not read-only (%s): %s", why, cmd)
 			}
-			if !BashAllowed(full) {
-				return nil, "", fmt.Errorf("git command not read-only: %s", cmd)
-			}
-			fields := strings.Fields(cmd)
-			argv := make([]string, 0, len(fields)+2)
+			argv := make([]string, 0, len(checked)+2)
 			if p, ok := argString(args, "path"); ok && strings.TrimSpace(p) != "" {
 				abs, err := nativePath(root, p)
 				if err != nil {
@@ -459,7 +459,7 @@ func gitTool() nativeCommand {
 				}
 				argv = append(argv, "-C", abs)
 			}
-			return append(argv, fields...), "", nil
+			return append(argv, checked[1:]...), "", nil
 		},
 		subject: func(args map[string]any) string {
 			s, _ := argString(args, "command")

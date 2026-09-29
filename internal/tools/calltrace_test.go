@@ -55,7 +55,7 @@ func assertTraceHeaders(t *testing.T, h http.Header, tool string) {
 func TestWebFetchSendsTraceHeaders(t *testing.T) {
 	ct := &captureTransport{ct: "text/plain", body: "ok"}
 	wf := &WebFetch{Client: &http.Client{Transport: ct}}
-	if _, err := wf.Execute(traceCtx("WebFetch"), map[string]any{"url": "http://192.0.2.1/"}); err != nil {
+	if _, err := wf.Execute(traceCtx("WebFetch"), map[string]any{"url": "http://93.184.216.34/"}); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 	assertTraceHeaders(t, ct.req.Header, "WebFetch")
