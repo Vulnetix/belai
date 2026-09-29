@@ -188,3 +188,47 @@ func TestAvailableProvidersTreatsKindCustomAsLocal(t *testing.T) {
 		t.Fatal("kind'd local custom with a live server must be offered")
 	}
 }
+
+// typesafe is configured from the providers view (its key), listed once, and
+// never offered to a chat or agent picker.
+func TestProvidersViewListsTypeSafeForItsKey(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	t.Setenv("TYPESAFE_API_KEY", "")
+	workdir := t.TempDir()
+	resolver, err := credentials.NewResolver(workdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := New(Options{Workdir: workdir, Resolver: resolver})
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	a.rebuildProviderRows()
+	count := 0
+	for _, r := range a.providersState.rows {
+		if r.name == "typesafe" && !r.isHeader {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("typesafe listed %d times, want once", count)
+	}
+	if row := a.renderProviderRow("typesafe", false); !strings.Contains(row, "decisions") || !strings.Contains(row, "classifier only") || !strings.HasPrefix(strings.TrimLeft(row, " ▸>"), "○") {
+		t.Fatalf("unconfigured row = %q", row)
+	}
+	t.Setenv("TYPESAFE_API_KEY", "ts-key")
+	if row := a.renderProviderRow("typesafe", false); !strings.Contains(row, "●") {
+		t.Fatalf("configured row = %q", row)
+	}
+	a.openProviderDetail("typesafe")
+	spec := a.providerDetailSpec("typesafe")
+	if len(spec) != 1 || spec[0].EnvVars[0] != "TYPESAFE_API_KEY" {
+		t.Fatalf("detail spec = %+v", spec)
+	}
+	if view := a.providerDetailView(); !strings.Contains(view, "api_key") || !strings.Contains(view, "configured") {
+		t.Fatalf("detail view lacks the configured key:\n%s", view)
+	}
+	for _, n := range a.modelProviders() {
+		if n == "typesafe" {
+			t.Fatal("typesafe offered to a chat role")
+		}
+	}
+}
