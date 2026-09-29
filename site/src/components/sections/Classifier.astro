@@ -5,7 +5,7 @@ import classifierPhases from '../../assets/concepts/classifier-phases.svg?raw';
 import classifierShot from '../../assets/shots/classifier.svg';
 
 const sealText =
-  'Classifier: three engines can classify untrusted content, and all of them reply with one of five sentinel tokens. The LLM sentinel works alone and is also the fallback for the other two. Embedded BERT models handle phases 1 and 2 locally or through HuggingFace, with an optional LLM phase 3. Jev on OpenRouter can be phase 3, or the whole classifier on a binary without embedded models, and passes undecided results to the agent model. Errors always block the content.';
+  'Classifier: three engines can classify untrusted content, and all of them reply with one of five sentinel tokens. The LLM sentinel works alone and is also the fallback for the other two. Embedded BERT models handle phases 1 and 2 locally or through HuggingFace, with an optional LLM phase 3. Jev on OpenRouter can be phase 3, or the whole classifier on a binary without embedded models, and passes undecided results to the agent model. Jev questions can also go to a decision model on your own machine or to a self-hosted Jev server, and Belai tests each choice before it saves it. Errors always block the content.';
 
 // The five tokens every engine reduces to.
 const sentinels = [
@@ -66,6 +66,7 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
   { event: 'The content needs more than 64 BERT windows', result: 'The content is blocked.', tone: 'closed' },
   { event: 'An embedded model fails to load', result: 'Belai refuses to start.', tone: 'closed' },
   { event: 'Jev scores between 0.1 and 0.9, or its answer is malformed', result: 'The agent model answers the same sentinel prompt.', tone: 'hand' },
+  { event: 'A local or self-hosted Jev is slow, the content is over 16 KiB, or the server is restarting', result: 'The agent model answers the same sentinel prompt.', tone: 'hand' },
   { event: 'The binary has no phase-2 model', result: 'Phase 3 checks for jailbreaks as well, if phase 3 is set up.', tone: 'hand' },
   { event: 'Phase 3 replies with something malformed or empty', result: 'The content goes through. Phases 1 and 2 already passed it, and the feed shows "couldn\'t tell" for phase 3.', tone: 'open' },
 ];
@@ -80,7 +81,8 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
       Belai accepts only one kind of answer about untrusted content: a single token from the five
       below. Three engines can give that answer. The LLM sentinel asks a chat model to reply with one
       token. The embedded models are BERT classifiers that run inside the Belai binary. Jev is a model
-      on OpenRouter that returns a probability for each question it is asked. You choose which ones run.
+      that returns a probability for each question it is asked, on OpenRouter or on hardware you
+      control. You choose which ones run.
     </p>
   </div>
 
@@ -381,6 +383,70 @@ const outcomes: { event: string; result: string; tone: 'closed' | 'hand' | 'open
           <code class="mono">DENY</code> and <code class="mono">INCONCLUSIVE</code>. An inconclusive result
           blocks the call. With <code class="mono">routing.kind: routed</code>, Jev also picks a model for
           each use case.
+        </p>
+      </div>
+    </details>
+  </article>
+
+  <article class="engine mt-10" aria-labelledby="engine-jev-local">
+    <header class="engine__head">
+      <span class="engine__num mono">03b</span>
+      <h3 id="engine-jev-local" class="text-3xl font-bold tracking-tight text-vx-ink">Jev on your own machine</h3>
+      <code class="engine__tag mono">decision-local · jev</code>
+    </header>
+    <div class="engine__body grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]">
+      <div class="prose-measure">
+        <p class="text-vx-ink/80">
+          The same questions Jev answers on OpenRouter can be answered on hardware you control. Pick{' '}
+          <code class="mono">decision-local</code> in <code class="mono">/model</code> and choose Decider-4B or
+          Plumb-4B. Belai asks before it downloads the 2.5 GB model, checks the file against the hash Hugging
+          Face publishes, and starts one llama-server on localhost that every Belai process on the machine
+          shares. Or point Belai at a server you already run that speaks TypeSafe's{' '}
+          <code class="mono">/v1/systemone</code> API, such as laya-serve.
+        </p>
+        <p class="mt-4 text-vx-ink/80">
+          Whichever you pick answers every Jev question Belai has: the security check, the choice of mode for
+          your prompt, and the model for each routed use case. Mode detection works with it straight away, with
+          no OpenRouter key.
+        </p>
+        <p class="mt-4 text-vx-ink/80">
+          Belai tests a choice before it saves it. The page shows each check as it runs: the runtime, the
+          download, the server starting, a first answer, a plain tool result scored against a prompt
+          injection, and the time a long result takes. The line at the end names the settings file it was
+          saved to. When a check does not pass, the page says what to try, such as installing llama.cpp or
+          retrying on the CPU, and your previous choice stays in effect.
+        </p>
+        <div class="flow mono mt-5" role="list" aria-label="How a local decision is read">
+          <span role="listitem" class="flow__step flow__step--jev">one question per request</span>
+          <span class="flow__arrow" aria-hidden="true">→</span>
+          <span role="listitem" class="flow__step">read the answer letters' probabilities</span>
+          <span role="listitem" class="flow__step">same thresholds as Jev</span>
+          <span role="listitem" class="flow__step flow__step--hand">slow or large: agent model decides</span>
+        </div>
+      </div>
+      <dl class="facts">
+        <div><dt>Settings</dt><dd><code class="mono">classifier.provider: decision-local</code> with <code class="mono">decider-4b</code> or <code class="mono">plumb-4b</code>, or a provider of kind <code class="mono">jev</code></dd></div>
+        <div><dt>Needs</dt><dd>llama-server on PATH, or your own <code class="mono">/v1/systemone</code> server</dd></div>
+        <div><dt>Speed on a CPU</dt><dd>about a second for a short check</dd></div>
+        <div><dt>Content leaves</dt><dd>only for your own server, over https or localhost</dd></div>
+        <div><dt>Request fails</dt><dd>content is blocked</dd></div>
+      </dl>
+    </div>
+
+    <details class="deep">
+      <summary>How the local model is read</summary>
+      <div class="deep__body">
+        <p>
+          Decider-4B and Plumb-4B are decision models built on Qwen3.5-4B. Belai sends each question to
+          llama-server's <code class="mono">/completion</code> endpoint with a one-token budget and reads the
+          probabilities of the option letters at the answer position, scaled by each model's published
+          temperature. Nothing is generated. The share of probability the letters hold is checked on every
+          answer, and an answer that does not land on them goes to the agent model.
+        </p>
+        <p>
+          The server runs with a fixed command line on 127.0.0.1, a clean environment, and its own process
+          group. Content is quoted so it cannot add a question or an answer of its own. Content larger than
+          16 KiB is checked by the agent model, which keeps each check fast on a CPU.
         </p>
       </div>
     </details>
