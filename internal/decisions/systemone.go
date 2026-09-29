@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/vulnetix/belai/internal/sanitize"
 )
 
 // DefaultSystemOnePath is TypeSafe's native decision endpoint.
@@ -215,12 +217,7 @@ func excerpt(b []byte) string {
 			}
 		}
 	}
-	s = strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f || (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069) {
-			return ' '
-		}
-		return r
-	}, s)
+	s = sanitize.Line(s, 0)
 	if s == "" {
 		return "empty response body"
 	}

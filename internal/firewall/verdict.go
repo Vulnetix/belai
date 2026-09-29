@@ -9,8 +9,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/charmbracelet/x/ansi"
-
 	"github.com/vulnetix/belai/internal/sanitize"
 )
 
@@ -148,32 +146,7 @@ func (v Verdict) Clean() Verdict {
 
 // cleanText removes delimiter markup, ANSI, control and bidi runes, folds
 // whitespace to single spaces and caps the rune count.
-func cleanText(s string, max int) string {
-	s = sanitize.Sanitize(ansi.Strip(s))
-	var b strings.Builder
-	space := false
-	n := 0
-	for _, r := range s {
-		if r == utf8.RuneError || isBidi(r) {
-			continue
-		}
-		if unicode.IsSpace(r) || unicode.IsControl(r) {
-			space = b.Len() > 0
-			continue
-		}
-		if space {
-			b.WriteByte(' ')
-			n++
-			space = false
-		}
-		if n >= max {
-			return strings.TrimSpace(b.String()) + "…"
-		}
-		b.WriteRune(r)
-		n++
-	}
-	return b.String()
-}
+func cleanText(s string, max int) string { return sanitize.Clip(s, max) }
 
 // cleanIdent keeps identifier characters only.
 func cleanIdent(s string, max int) string {
@@ -187,10 +160,6 @@ func cleanIdent(s string, max int) string {
 		}
 	}
 	return b.String()
-}
-
-func isBidi(r rune) bool {
-	return (r >= 0x202A && r <= 0x202E) || (r >= 0x2066 && r <= 0x2069) || r == 0x200E || r == 0x200F || r == 0x061C
 }
 
 // atoi parses a non-negative count, capped.

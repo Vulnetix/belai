@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/vulnetix/belai/internal/proc"
 	"github.com/vulnetix/belai/internal/sanitize"
@@ -79,28 +78,9 @@ func lastLine(s string) string {
 const maxCleanLen = 200
 
 // Clean makes third-party CLI text safe to render: harness delimiter markup
-// is removed, newlines and tabs become spaces, other control and bidi runes
-// are dropped, and the result is capped at maxCleanLen runes.
-func Clean(s string) string {
-	s = sanitize.Sanitize(s)
-	var b strings.Builder
-	n := 0
-	for _, r := range s {
-		switch {
-		case r == '\n' || r == '\t' || r == '\r':
-			r = ' '
-		case unicode.IsControl(r), isBidi(r):
-			continue
-		}
-		if n >= maxCleanLen {
-			b.WriteRune('…')
-			break
-		}
-		b.WriteRune(r)
-		n++
-	}
-	return strings.TrimSpace(b.String())
-}
+// is removed, whitespace becomes single spaces, control, bidi and zero-width
+// runes are dropped, and the result is capped at maxCleanLen runes.
+func Clean(s string) string { return sanitize.Clip(s, maxCleanLen) }
 
 // CleanErr cleans an error's text for display; nil yields "".
 func CleanErr(err error) string {

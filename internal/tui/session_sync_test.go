@@ -145,7 +145,7 @@ func TestRemotePromptIsNeverALocalCommand(t *testing.T) {
 	a.handleRemotePrompt(p)
 	rec.ack(t, "p2")
 	entries := persistedEntries(t, a)
-	if len(entries) == 0 || entries[0].Content != "!rm -rf /[2J" {
+	if len(entries) == 0 || entries[0].Content != "!rm -rf /" {
 		t.Fatalf("entries = %+v", entries)
 	}
 	for _, m := range a.messages {

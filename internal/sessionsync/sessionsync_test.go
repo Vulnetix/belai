@@ -386,7 +386,7 @@ func TestCleanPrompt(t *testing.T) {
 	if strings.ContainsAny(got, "\x1b\x00\r‮") {
 		t.Fatalf("control runes survived: %q", got)
 	}
-	if !strings.Contains(got, "\n") || !strings.HasPrefix(got, "run[2J the") {
+	if !strings.Contains(got, "\n") || !strings.HasPrefix(got, "run the") {
 		t.Fatalf("CleanPrompt = %q", got)
 	}
 	if len(CleanPrompt(strings.Repeat("x", MaxPromptBytes+10))) != MaxPromptBytes {
