@@ -44,6 +44,9 @@ func (s *Session) handleAskUser(ctx context.Context, pipe *rolemanager.Pipeline,
 	if q.Empty() {
 		return askUserRepeated, nil
 	}
+	// The likeliest option goes first, before anything shows or records the
+	// questionnaire, so every consumer sees one order.
+	q = s.orderOptions(ctx, q)
 	s.markAsked(q)
 	if mode == modes.ModePlan {
 		return tools.AskUserSentinel, &q

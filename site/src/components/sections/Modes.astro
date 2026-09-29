@@ -114,7 +114,9 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
 
   <SubHead title="How the three modes differ">
     In any mode the model can ask you multiple-choice questions with <code class="mono">AskUserQuestion</code>{' '}
-    instead of guessing. What happens to your answers depends on the mode.
+    instead of guessing. What happens to your answers depends on the mode. With a decision backend
+    configured, the option you are most likely to pick comes first and carries a{' '}
+    <code class="mono">(Recommended)</code> mark when the choice is clear. The model cannot add that mark itself.
   </SubHead>
 
   <table class="mt-8 hidden w-full border-collapse text-left lg:table">

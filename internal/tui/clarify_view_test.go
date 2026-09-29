@@ -304,3 +304,19 @@ func TestClarifyReplacesComposerAndFooter(t *testing.T) {
 		t.Fatalf("viewport height = %d, want %d (panel height %d)", a.vp.Height, wantVP, wantPanelH)
 	}
 }
+
+// The cursor starts on the option marked recommended, however the marker is
+// cased: the harness writes "(Recommended)", and older or hand-written labels
+// may use lower case.
+func TestRecommendedRowIsCaseInsensitive(t *testing.T) {
+	for _, marker := range []string{"(Recommended)", "(recommended)", "(RECOMMENDED)"} {
+		q := clarify.Questionnaire{Groups: []clarify.Group{{Context: "Which?", Options: []clarify.Option{
+			{Label: "Alpha"}, {Label: "Beta " + marker}, {Label: "Gamma"},
+		}}}}
+		s := newClarifyState(q, make(chan clarify.Answers), true)
+		row := s.currentRow()
+		if row == nil || s.q.Groups[row.groupIdx].Options[row.optionIdx].Label != "Beta "+marker {
+			t.Fatalf("marker %s: cursor is on %+v", marker, row)
+		}
+	}
+}

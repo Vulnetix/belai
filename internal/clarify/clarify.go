@@ -174,6 +174,11 @@ func (q Questionnaire) Validate() error {
 	return errors.New(strings.Join(errs, "; "))
 }
 
+// RecommendedSuffix is the marker the harness appends to the option it expects
+// the user to choose. Answers are rendered without it, so the model reads back
+// the labels it wrote.
+const RecommendedSuffix = " (Recommended)"
+
 // Render turns a set of answers into the harness-authored user turn that
 // re-enters the agent conversation.
 func (a Answers) Render(q Questionnaire) string {
@@ -195,7 +200,7 @@ func (a Answers) Render(q Questionnaire) string {
 		var labels []string
 		for _, idx := range ans.Chosen {
 			if idx >= 0 && idx < len(g.Options) {
-				labels = append(labels, g.Options[idx].Label)
+				labels = append(labels, strings.TrimSuffix(g.Options[idx].Label, RecommendedSuffix))
 			}
 		}
 		if len(labels) == 0 {

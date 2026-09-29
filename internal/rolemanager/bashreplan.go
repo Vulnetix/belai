@@ -156,3 +156,29 @@ func bashReplanDescription(a Activity) Description {
 	}
 	return d
 }
+
+// RecordOptionOrder emits the outcome of ordering the options of a question:
+// verdict "ordered" (every group was ranked) or "fallback" (some were not, and
+// keep the model's order); groups is how many groups the verdict covers. Only
+// counts are recorded, never the question or the options.
+func RecordOptionOrder(verdict string, groups int, model string, took time.Duration) {
+	recordTimed(EventOptionOrder, verdict, "", fmt.Sprintf("groups=%d", groups), 0, model, took)
+}
+
+func optionOrderDescription(a Activity) Description {
+	n := field(a.Detail, "groups")
+	if n == "" || !isDigits(n) {
+		n = "the"
+	}
+	d := Description{
+		Summary: "Ranked the answers to a question by how likely you are to pick each",
+		Outcome: "put the likeliest first for " + n + " question group(s)",
+		Tone:    ToneClear,
+		Levels:  LevelDecisions,
+	}
+	if a.Verdict == "fallback" {
+		d.Outcome = "the ranking was unavailable for " + n + " group(s), kept the model's order"
+		d.Tone = ToneNeutral
+	}
+	return d
+}
