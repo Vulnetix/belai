@@ -309,6 +309,16 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   a skill's name and sanitized description reach the system block, and only
   while `Skill` is on the surface; `disable-model-invocation` skills are
   hidden and answer like missing ones. `SkillDraft` is an `AlwaysAsker`: it
+- **Screenshot runs harness-fixed programs, on loopback pages or after an ask.**
+  A `url` capture must pass `netguard.CheckURL` and name a loopback host, runs a
+  headless browser with a throwaway profile, the scrubbed environment and its
+  own process group, never disables the browser's sandbox, and blocks every
+  request that is not to this machine. A `desktop` capture asks on every call
+  (`tools.AlwaysAsksCall`) whatever a rule or the ask gate says, and is
+  withheld when nobody can be asked. The model chooses only the target, the
+  URL and a size; no argument reaches a program's argv. The tool is registered
+  in the interactive session only, and a project layer may turn
+  `screenshot.enabled` or `screenshot.desktop` off, never on.
   asks on every call whatever the rules or the ask gate say, is withheld when
   nobody can be asked, and writes exactly the previewed file. The project
   layer may turn `skills.self_authoring` off, never on.

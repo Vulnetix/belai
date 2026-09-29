@@ -155,6 +155,16 @@ func ProcessLogsDir() (string, error) {
 	return filepath.Join(dir, "logs"), nil
 }
 
+// ScreenshotsDir returns <GlobalDir>/screenshots, where the Screenshot tool
+// keeps its newest captures for the user.
+func ScreenshotsDir() (string, error) {
+	dir, err := GlobalDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "screenshots"), nil
+}
+
 // GlobalSkillsDir returns <GlobalDir>/skills.
 func GlobalSkillsDir() (string, error) {
 	dir, err := GlobalDir()

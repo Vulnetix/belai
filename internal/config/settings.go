@@ -160,6 +160,9 @@ type Settings struct {
 	// advertised, never what may run.
 	DeferTools *bool `json:"defer_tools,omitempty"`
 	// Offload keeps oversized tool results out of the conversation: a preview
+	// Screenshot governs the Screenshot tool (docs/screenshots.md). The
+	// project layer may turn it, or whole-screen capture, off; never on.
+	Screenshot *ScreenshotSettings `json:"screenshot,omitempty"`
 	// stays inline and ReadResult reads the rest (docs/context-offload.md).
 	// Default on. It changes what rides on a request, never what is admitted,
 	// so any layer may set it.
@@ -1447,6 +1450,8 @@ func LoadGlobal() (Settings, error) {
 // LoadProject reads the project settings file (<workdir>/.vulnetix/settings.json).
 // A missing file yields zero-value settings with no error.
 func LoadProject(workdir string) (Settings, error) {
+	// Screenshot capture: a project may turn it off, never on.
+	out.Screenshot = mergeScreenshot(out.Screenshot, proj.Screenshot, true)
 	return loadSettings(ProjectSettingsPath(workdir))
 }
 
