@@ -221,6 +221,7 @@ scope, following the same precedence rules.
 | `update_check` | check GitHub for a newer Belai release at startup (default on) |
 | `defer_tools` | advertise the core tools in full and load the rest (native catalogue, cloud CLIs, repo and agent-store tools, MCP tools) on demand with `ToolSearch`, keeping every request small (default on; `-defer-tools=false` for one run). Deferred tools stay callable by name |
 | `offload` | keep oversized tool output out of the context: a head-and-tail preview stays inline and `ReadResult` reads the rest; `enabled` (default on), `threshold_tokens` (default 4000), `preview_tokens` (default 1500) — see [docs/context-offload.md](docs/context-offload.md) |
+| `jev` | relevance jobs that use a decision backend: `jobs.<job>` switches (bash swap today; default on, and only while a decision backend is the classifier, when `/settings` shows them) and `locate_previews`; a project may only turn a job off — see [docs/jev-jobs.md](docs/jev-jobs.md) |
 | `kanban` | the global kanban board: tools, wrap-up, composer pane, `/kanban` and sync (default on; a project may only turn it off) — see [docs/kanban.md](docs/kanban.md) |
 | `agents` | [fleet](docs/fleet.md) workers: `enabled` (default on), `max_workers` (default 4), `publish` (default on); a project may only turn them off or lower the cap |
 | `token_budgets` | global only: token allowances per provider, model and scope (`session`, `day`, `month`) — see [Token budgets](docs/token-budgets.md) |

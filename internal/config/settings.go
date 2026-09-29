@@ -164,6 +164,12 @@ type Settings struct {
 	// Default on. It changes what rides on a request, never what is admitted,
 	// so any layer may set it.
 	Offload *OffloadSettings `json:"offload,omitempty"`
+	// Jev configures the relevance jobs that use a decision backend (bash swap,
+	// compaction pruning, tool selection and search, option order, LSP triage,
+	// explore locate; docs/jev-jobs.md). Every job defaults on and runs only
+	// while a decision backend is configured. The project layer may turn a job
+	// off, never on.
+	Jev *JevSettings `json:"jev,omitempty"`
 }
 
 // SyncSettings configures session sync (docs/session-sync.md).
@@ -504,7 +510,7 @@ func (s *Settings) UnmarshalJSON(data []byte) error {
 // main model's effort.
 type ClassifierSettings struct {
 	// Kind selects the security classifier stack: "llm" (the full five-token
-	// LLM sentinel) or "models" (local BERT gates plus an optional narrowed
+	// LLM sentinel), "jev" (a Jev decision backend, never a chat model) or "models" (local BERT gates plus an optional narrowed
 	// phase-3 LLM sentinel). Empty derives from the build variant: "models"
 	// when the binary embeds a model, else "llm".
 	Kind string `json:"kind,omitempty"`
@@ -1230,6 +1236,7 @@ func (s Settings) Override(proj Settings) Settings {
 		out.DeferTools = proj.DeferTools
 	}
 	out.Offload = mergeOffload(out.Offload, proj.Offload)
+	out.Jev = mergeJev(out.Jev, proj.Jev, true)
 	// The kanban board syncs off the machine: off only.
 	if proj.Kanban != nil && !*proj.Kanban {
 		f := false

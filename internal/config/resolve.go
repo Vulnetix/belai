@@ -152,6 +152,9 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	if err := ValidateRouting(eff.Settings); err != nil {
 		return eff, err
 	}
+	if err := ValidateJev(eff.Settings); err != nil {
+		return eff, err
+	}
 	if err := ValidateFirewall(eff.Settings); err != nil {
 		return eff, err
 	}
@@ -393,6 +396,13 @@ func (e *Effective) apply(s Settings, src Source) {
 		// never what is admitted or classified, so any layer may set it.
 		e.Settings.Offload = mergeOffload(e.Settings.Offload, s.Offload)
 		e.Origin["offload"] = src
+	}
+	if s.Jev != nil {
+		// Jev jobs narrow or reorder what a request carries and never approve
+		// anything, but a repository still may not switch one on or widen where
+		// file previews go.
+		e.Settings.Jev = mergeJev(e.Settings.Jev, s.Jev, src == SourceProject)
+		e.Origin["jev"] = src
 	}
 	if s.Kanban != nil && (!*s.Kanban || src != SourceProject) {
 		// The board syncs off the machine and carries text between
