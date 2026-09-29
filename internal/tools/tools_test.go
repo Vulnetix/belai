@@ -396,6 +396,9 @@ func TestKindReadOnlyClassification(t *testing.T) {
 		KindToolSearch: true,
 		KindPublish:    false,
 		KindOffload:    true,
+		// A screenshot observes the desktop, so it is mutating: it asks and
+		// runs on the sequential path.
+		KindScreenshot: false,
 	}
 	seen := map[Kind]bool{}
 	for _, k := range AllKinds {

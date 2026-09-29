@@ -72,6 +72,9 @@ func TestClassifierKindsIsExactlyTheArbitraryContentSet(t *testing.T) {
 		KindToolSearch:  false,
 		// A ReadResult slice is offloaded arbitrary content read back.
 		KindOffload: true,
+		// A screenshot's text is harness-composed. Its pixels are admitted by
+		// internal/imageguard, because a text classifier cannot read an image.
+		KindScreenshot: false,
 	}
 	for _, k := range AllKinds {
 		if got := k.NeedsClassifier(); got != want[k] {

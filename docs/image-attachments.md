@@ -1,10 +1,64 @@
-# Image attachments (deferred)
+# Images
+
+Two things share this page: images a **tool returns** (built), and images the
+user **attaches** with `@` (deferred).
+
+## Tool-returned images (built)
+
+A harness-owned capture tool (`Screenshot`, see [screenshots](screenshots.md))
+can return pixels beside its text. The text classifier reads text and cannot
+judge an image, so pixels take a separate, deterministic path.
+
+- **Only `KindScreenshot` carries pixels.** `tools.Result.Images` is honoured
+  for a `KindScreenshot` result and dropped for every other kind, so an MCP
+  server, a hook or a subagent cannot use it to smuggle bytes into a turn.
+  The kind is mutating (the capture observes the desktop), sanitise-only for
+  its text, and never in `classifierKinds`;
+  `TestClassifierKindsIsExactlyTheArbitraryContentSet` records why.
+- **Admission is `internal/imageguard`, and nothing else.** The header must
+  decode as PNG or JPEG (GIF, WebP and anything else are refused). The
+  declared size is checked against a pixel budget (50 million) from the header
+  alone, so a small file that declares a huge canvas is refused before any
+  pixel is allocated. The input is capped at 8 MiB. The pixels are decoded,
+  reduced to a long edge of 1568 pixels by averaging (which keeps small text
+  legible), flattened onto white and re-encoded as a new PNG. Metadata
+  chunks, trailing bytes and polyglot payloads do not survive because the
+  output is rebuilt from pixels. Any failure refuses the image; there is no
+  partial admission. The refusal note is harness text with the decoder's
+  reason cleaned and capped, and the refused bytes are never echoed.
+- **A withheld result carries no image.** If the text of the result was
+  withheld, the image is dropped with it. A call with nowhere to put an image
+  (a subagent) drops it and says so.
+- **Only the newest image is sent.** Older tool images in the history are
+  replaced by a one-line harness note, so a long session does not pay for every
+  screenshot it ever took. The conversation itself is never edited: the
+  request builder works on a copy (`run.prepareToolImages`).
+- **A model without image input is told.** `models.Vision` decides from the
+  model id (Claude 3 and later, GPT-4o, 4.1, 5 and o3/o4-mini, Gemini, and a
+  few others; an id it does not name is text-only). A text-only model gets a
+  harness note instead of the image. Kiro decides from its live catalogue
+  (`kiromodels.Info.Images`) as for an attached image.
+- **Encoding per surface.** Anthropic: the `tool_result` content becomes a
+  block list, the text first and then a base64 `image` block. OpenAI-style chat
+  completions: a tool message has no image seat, so the image rides on a user
+  message of `image_url` parts (a data URI) that follows the whole run of tool
+  results answering one assistant turn; a user message in the middle of that
+  run would break the tool-call pairing. Kiro: the image joins the current
+  user message like an attached one, with the history's images cleared.
+- **What is not covered.** Pixels can still show text. A page or window the
+  model is shown may contain words written to look like instructions. The
+  result text says the image is data, the `Screenshot` tool asks before a
+  desktop capture and only captures loopback pages (see
+  [screenshots](screenshots.md)), and an image is never a reason to act
+  without the permission rules applying to what the model does next.
+
+## Attached images (deferred)
 
 Images are intentionally **out of scope** for the first `@` file chooser. The
 chooser lists only text-bearing files; image extensions are filtered out in
 `internal/tui/filepick.go`.
 
-This document records the design work so a later round can pick it up without
+This part records the design work so a later round can pick it up without
 re-discovering the constraints.
 
 ## Why images are not this round
@@ -26,15 +80,12 @@ re-discovering the constraints.
    cannot flow through the current `Read` tool unchanged; either the reader
    gets an image mode or images bypass the text tool entirely.
 
-4. **`run.Attachment` is text-only on most surfaces.** It now has an
-   `image` kind (`MediaType`, `Data`) that egress keeps out of the text
-   body, and the Kiro encoder sends it (see [Kiro](kiro.md#models-effort-and-images)).
-   Nothing creates one yet, and image bytes cannot be text-classified, so the
-   feature that attaches images must decide how they pass admission.
-   Before that change: The wire shape in `internal/wire` has no
-   multimodal field today. Sending an image to a model therefore needs a new
-   attachment kind and provider-specific encoding (OpenAI `image_url`,
-   Anthropic `image`, etc.).
+4. **`run.Attachment` has an `image` kind** (`MediaType`, `Data`) that egress
+   keeps out of the text body. The wire shapes now encode it for tool results
+   (see above), and the Kiro encoder sends it (see
+   [Kiro](kiro.md#models-effort-and-images)). Nothing creates a user-attached
+   one yet. When that feature lands it reuses `internal/imageguard` for
+   admission, because image bytes cannot be text-classified.
 
 ## Candidate designs
 

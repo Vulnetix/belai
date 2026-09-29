@@ -187,9 +187,10 @@ minutes, so it isn't retried on every request.
 - only when the model lists `IMAGE` among its input types. Otherwise the
   images are dropped and a harness note says so.
 
-Egress never folds image bytes into the text. Nothing in Belai creates an
-image attachment yet (see [Image attachments](image-attachments.md)), so for
-now this is wire support only.
+Egress never folds image bytes into the text. The one thing that creates an
+image today is a capture tool (`Screenshot`): its admitted PNG rides on the
+current user message beside the tool result, under the same rules (see
+[Images](image-attachments.md)). A user-attached image is still not built.
 
 ## Limits
 

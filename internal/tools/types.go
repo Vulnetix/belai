@@ -80,6 +80,13 @@ const (
 	// offloaded (internal/offload). The bytes are the same arbitrary content
 	// the original result carried, so it is read-only and always classifies.
 	KindOffload Kind = "offload"
+	// KindScreenshot is a harness capture of the screen or of a loopback page.
+	// Its text is composed by the harness (size, target, where the file was
+	// kept) and is sanitise-only; its image is admitted by internal/imageguard,
+	// never by the text classifier, which cannot read pixels. It is mutating
+	// because it observes the desktop, so it asks and runs on the sequential
+	// path.
+	KindScreenshot Kind = "screenshot"
 )
 
 // AllKinds is every registered Kind, in declaration order. Tests iterate it to
@@ -90,7 +97,7 @@ var AllKinds = []Kind{
 	KindExplore, KindWrite, KindEdit, KindNative, KindRemote, KindUpdatePlan,
 	KindProcess, KindProcessCtl, KindAgentStore, KindSubagent, KindHook, KindSkill,
 	KindSkillWrite, KindMCP, KindKanban, KindKanbanWrite, KindToolSearch, KindPublish,
-	KindOffload,
+	KindOffload, KindScreenshot,
 }
 
 // readOnlyKinds is the closed allowlist of kinds that only read. A Kind absent
@@ -128,6 +135,17 @@ type Result struct {
 	Kind    Kind
 	Content string
 	Meta    map[string]any
+	// Images are pixels a harness-owned capture tool produced. Only a
+	// KindScreenshot result may carry them: the agent admits them through
+	// internal/imageguard and drops them from any other kind.
+	Images []Image
+}
+
+// Image is one captured image, as the tool produced it (PNG or JPEG bytes)
+// before admission.
+type Image struct {
+	MediaType string
+	Data      []byte
 }
 
 // Progress is a chunk of tool output reported while the tool is still running.

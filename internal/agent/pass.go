@@ -509,6 +509,9 @@ func (s *Session) pass(ctx context.Context, pipe *rolemanager.Pipeline, system s
 				Content:    u.turnContent(toolResult),
 				ToolCallID: u.call.ID,
 				ToolName:   u.call.Name,
+				// Pixels a capture tool returned, already admitted by
+				// imageguard; the request builder decides who can see them.
+				Attachments: effects[i].images,
 			})
 			switch {
 			case toolResult == tools.AskUserSentinel:

@@ -1973,6 +1973,11 @@ func newRequestFactory(cfg Config, system string, turns []Turn, stream bool, ope
 		// compaction, never per request, so the prefix stays cacheable.
 		turns = synthesizeDanglingToolResults(turns)
 
+		// Kiro decides from its live catalogue below; every other surface
+		// decides from the model id.
+		if d.kind != kindKiro {
+			turns = prepareToolImages(turns, models.Vision(cfg.Provider, cfg.Model))
+		}
 		switch d.kind {
 		case kindKiro:
 			// The live catalogue decides what may ride in
@@ -2309,7 +2314,16 @@ func buildOpenAIMessages(system string, turns []Turn, method wire.ToolMethod) []
 		msgs = append(msgs, wire.OpenAIChatMessage{Role: "system", Content: system})
 	}
 	for _, t := range turns {
+	// chat/completions has no image seat on a tool message, so a tool's image
+	// follows as a user message. It is held until the run of tool results that
+	// answers one assistant turn ends, because a user message in the middle
+	// of that run breaks the tool-call pairing.
+	var pendingImages []wire.OpenAIChatMessage
 		switch t.Role {
+		if t.Role != "tool" && len(pendingImages) > 0 {
+			msgs = append(msgs, pendingImages...)
+			pendingImages = nil
+		}
 		case "assistant":
 			msg := wire.OpenAIChatMessage{Role: t.Role, Content: t.Content}
 			for _, tc := range t.ToolCalls {
@@ -2340,10 +2354,18 @@ func buildOpenAIMessages(system string, turns []Turn, method wire.ToolMethod) []
 		case "tool":
 			msgs = append(msgs, wire.OpenAIChatMessage{Role: "tool", Content: t.Content, ToolCallID: t.ToolCallID, Name: t.ToolName})
 		default:
+			if imgs := toolImages(t); len(imgs) > 0 {
+				pendingImages = append(pendingImages, wire.OpenAIChatMessage{
+					Role:    "user",
+					Content: "[harness: the image below is the result of the " + t.ToolName + " call above]",
+					Images:  imgs,
+				})
+			}
 			msgs = append(msgs, wire.OpenAIChatMessage{Role: t.Role, Content: t.Content})
 		}
 	}
 	return msgs
+	msgs = append(msgs, pendingImages...)
 }
 
 // buildAnthropicMessages renders turns as Anthropic messages. replayFor is the
@@ -2380,9 +2402,16 @@ func buildAnthropicMessages(turns []Turn, replayFor string) []wire.AnthropicMess
 		case "tool":
 			// Anthropic tool results re-enter as a user message carrying a
 			// tool_result block keyed to the originating tool_use id.
-			msgs = append(msgs, wire.NewAnthropicBlockMessage("user", []wire.AnthropicRequestBlock{
-				{Type: "tool_result", ToolUseID: t.ToolCallID, Content: t.Content},
-			}))
+			result := wire.AnthropicRequestBlock{Type: "tool_result", ToolUseID: t.ToolCallID, Content: t.Content}
+			// An image the tool returned rides inside the tool_result, after
+			// its text, as the API's block form.
+			if imgs := imageAttachments(t.Attachments); len(imgs) > 0 {
+				result.Parts = []wire.AnthropicRequestBlock{{Type: "text", Text: t.Content}}
+				for _, a := range imgs {
+					result.Parts = append(result.Parts, wire.NewAnthropicImageBlock(a.MediaType, a.Data))
+				}
+			}
+			msgs = append(msgs, wire.NewAnthropicBlockMessage("user", []wire.AnthropicRequestBlock{result}))
 		default:
 			msgs = append(msgs, wire.NewAnthropicTextMessage(t.Role, t.Content))
 		}
