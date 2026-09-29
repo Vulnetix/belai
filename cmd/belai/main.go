@@ -29,9 +29,11 @@ import (
 	"github.com/vulnetix/belai/internal/modes"
 	"github.com/vulnetix/belai/internal/nonce"
 	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/testpass"
 	"github.com/vulnetix/belai/internal/trustgate"
 	"github.com/vulnetix/belai/internal/tui"
 	"github.com/vulnetix/belai/internal/turnlog"
@@ -575,7 +577,38 @@ func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *ht
 	// exactly as a mode picked in the TUI does.
 	res, err := sess.RunInputObserved(ctx, nil, agent.TurnInput{Prompt: userPrompt, ForceMode: forceMode}, tlog.Observe)
 	tlog.Flush()
+	if err == nil {
+		postEndTests(ctx, cfg, client, pol, workdir, settings, planMode, sess, res, tlog)
+	}
 	return res, err
+}
+
+// postEndTests runs the post-end test pass for a finished headless run when
+// the user's `tests.post_end` setting asks for it. The trigger is a completed
+// goal, or the end of the run when the level is "session" and the tree has
+// changes. Its lines go to stderr so stdout stays the reply. A plan-mode run
+// changes nothing, so it never triggers a pass.
+func postEndTests(ctx context.Context, cfg run.Config, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool, sess *agent.Session, res run.Result, tlog *turnlog.Log) {
+	if planMode || ctx.Err() != nil {
+		return
+	}
+	trigger := testpass.TriggerSession
+	if res.GoalSentinel == rolemanager.GoalComplete {
+		trigger = testpass.TriggerGoal
+	}
+	if !headless.ShouldPostEnd(ctx, settings, workdir, trigger) {
+		return
+	}
+	out := headless.RunPostEnd(ctx, headless.PostEnd{
+		Cfg: cfg, Client: client, Posture: pol, Workdir: workdir, Settings: settings,
+		Session: sess, Trigger: trigger, Observe: tlog.Observe,
+		Notify: func(s string) { fmt.Fprintln(os.Stderr, s) },
+	})
+	tlog.Flush()
+	fmt.Fprintln(os.Stderr, out.Line())
+	if out.Report != "" {
+		fmt.Fprintln(os.Stderr, out.Report)
+	}
 }
 
 // newCLISession builds a top-level agent session outside the TUI: the

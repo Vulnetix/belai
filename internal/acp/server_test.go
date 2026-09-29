@@ -20,6 +20,8 @@ import (
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/testpass"
+	"github.com/vulnetix/belai/internal/testrun"
 	"github.com/vulnetix/belai/internal/tools"
 	"github.com/vulnetix/belai/internal/turnlog"
 )
@@ -402,5 +404,82 @@ func TestServeWithoutATranscriptKeepsNone(t *testing.T) {
 	s := &Server{sessions: map[string]*acpSession{}, ready: make(chan struct{})}
 	if s.opts.Transcript != nil {
 		t.Fatal("default options open a transcript")
+	}
+}
+
+// postEndServer is a Server wired to a fake editor over pipes, with the given
+// post-end hook, for driving postEnd directly.
+func postEndServer(t *testing.T, hook func(context.Context, string, *agent.Session, testpass.Fixer, func(string)) (testpass.Outcome, bool)) (*Server, *editor) {
+	t.Helper()
+	sr, cw := io.Pipe()
+	cr, sw := io.Pipe()
+	ed := &editor{}
+	s := &Server{sessions: map[string]*acpSession{}, ready: make(chan struct{}), opts: Options{PostEnd: hook}}
+	s.conn = jsonrpc.NewConn(sr, sw, s.handle)
+	close(s.ready)
+	client := jsonrpc.NewConn(cr, cw, ed.handle)
+	t.Cleanup(func() { client.Close(); s.conn.Close() })
+	return s, ed
+}
+
+func editorText(ed *editor) string {
+	ed.mu.Lock()
+	defer ed.mu.Unlock()
+	var b strings.Builder
+	for _, u := range ed.updates {
+		if c, ok := u["content"].(map[string]any); ok {
+			b.WriteString(c["text"].(string))
+		}
+	}
+	return b.String()
+}
+
+func TestPostEndStreamsTheOutcomeToTheEditor(t *testing.T) {
+	var gotCwd string
+	s, ed := postEndServer(t, func(_ context.Context, cwd string, _ *agent.Session, fix testpass.Fixer, notify func(string)) (testpass.Outcome, bool) {
+		gotCwd = cwd
+		if fix == nil {
+			t.Error("the editor fix loop was not supplied")
+		}
+		notify("running tests: go")
+		return testpass.Outcome{
+			Trigger: testpass.TriggerGoal, Passed: true,
+			Results: []testrun.Result{{Suite: "go", Status: testrun.Passed}},
+			Report:  "Tests passed: go pass in 1s.",
+		}, true
+	})
+	s.postEnd(context.Background(), &acpSession{id: "s1", cwd: "/work", log: turnlog.New(nil)})
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && !strings.Contains(editorText(ed), "Tests passed") {
+		time.Sleep(10 * time.Millisecond)
+	}
+	text := editorText(ed)
+	if gotCwd != "/work" {
+		t.Fatalf("cwd = %q", gotCwd)
+	}
+	for _, want := range []string{"running tests: go", "tests pass (go pass)", "Tests passed: go pass in 1s."} {
+		if !strings.Contains(text, want) {
+			t.Errorf("editor text missing %q: %q", want, text)
+		}
+	}
+}
+
+func TestPostEndSettingsOffSendsNothing(t *testing.T) {
+	s, ed := postEndServer(t, func(context.Context, string, *agent.Session, testpass.Fixer, func(string)) (testpass.Outcome, bool) {
+		return testpass.Outcome{}, false
+	})
+	s.postEnd(context.Background(), &acpSession{id: "s1", cwd: "/work", log: turnlog.New(nil)})
+	time.Sleep(100 * time.Millisecond)
+	if got := editorText(ed); got != "" {
+		t.Fatalf("editor received %q with the pass off", got)
+	}
+}
+
+func TestPostEndWithoutAHookIsANoOp(t *testing.T) {
+	s, ed := postEndServer(t, nil)
+	s.postEnd(context.Background(), &acpSession{id: "s1", cwd: "/work", log: turnlog.New(nil)})
+	time.Sleep(100 * time.Millisecond)
+	if got := editorText(ed); got != "" {
+		t.Fatalf("editor received %q with no hook", got)
 	}
 }

@@ -143,6 +143,11 @@ type Settings struct {
 	// repo-visible project settings file must never be able to make the harness
 	// commit, so the project layer is dropped in Resolve.
 	AutoCommitPerTask *bool `json:"auto_commit_per_task,omitempty"`
+	// Tests configures the post-end test pass (docs/architecture.md): which
+	// moments trigger it, the command, scoping, and the fail branch. All keys
+	// live in the user layers only; the project layer may turn tests.enabled
+	// off or lower the budgets, never on or change the command.
+	Tests *TestsSettings `json:"tests,omitempty"`
 	// TokenBudgets caps the tokens each provider+model may spend per session,
 	// day or month. Global only: the project layer is dropped in Resolve.
 	TokenBudgets []TokenBudget `json:"token_budgets,omitempty"`
@@ -480,6 +485,189 @@ func (s Settings) UpdateCheckEnabled() bool {
 // explicit user opt-in.
 func (s Settings) AutoCommitPerTaskEnabled() bool {
 	return s.AutoCommitPerTask != nil && *s.AutoCommitPerTask
+}
+
+// TestsSettings configures the post-end test pass. Defaults mirror
+// auto_commit_per_task: the pass is off unless the user opts in, and the fail
+// branch may diagnose and fix only when the user asks for it.
+type TestsSettings struct {
+	// PostEnd is the trigger level: "off" (default), "goal", "goal_plan" or
+	// "session". "goal" runs after a completed goal, "goal_plan" also after a
+	// completed plan, and "session" runs at session end even when the last
+	// goal did not complete.
+	PostEnd string `json:"post_end,omitempty"`
+	// Command overrides the detected test command argv. User layers only.
+	Command []string `json:"command,omitempty"`
+	// Scope is "affected" (default) or "full". "affected" scopes the detected
+	// command to the suites owning changed paths, falling back to full.
+	Scope string `json:"scope,omitempty"`
+	// OnFail is "off", "diagnose" or "fix" (default). "diagnose" runs a
+	// read-only investigation; "fix" runs the agentic diagnose-and-fix loop.
+	OnFail string `json:"on_fail,omitempty"`
+	// MaxFixPasses bounds the diagnose-and-fix loop. Zero means the default.
+	MaxFixPasses int `json:"max_fix_passes,omitempty"`
+	// TimeoutSeconds bounds one suite run. Zero means the default.
+	TimeoutSeconds int `json:"timeout_seconds,omitempty"`
+	// Report enables the fast-model report on pass. Default true; false uses
+	// the harness-composed line only.
+	Report *bool `json:"report,omitempty"`
+}
+
+// DefaultTestsMaxFixPasses is the diagnose-and-fix pass ceiling when unset.
+const DefaultTestsMaxFixPasses = 3
+
+// DefaultTestsTimeoutSeconds is one suite run's timeout when unset.
+const DefaultTestsTimeoutSeconds = 300
+
+// TestsPostEnd returns the trigger level, defaulting to "off".
+func (s Settings) TestsPostEnd() string {
+	if s.Tests == nil || s.Tests.PostEnd == "" {
+		return "off"
+	}
+	return s.Tests.PostEnd
+}
+
+// TestsEnabled reports whether any post-end moment triggers the pass.
+func (s Settings) TestsEnabled() bool {
+	switch s.TestsPostEnd() {
+	case "goal", "goal_plan", "session":
+		return true
+	}
+	return false
+}
+
+// TestsCommand returns the user's command override, or nil.
+func (s Settings) TestsCommand() []string {
+	if s.Tests == nil || len(s.Tests.Command) == 0 {
+		return nil
+	}
+	return append([]string(nil), s.Tests.Command...)
+}
+
+// TestsScope returns "affected" (default) or "full".
+func (s Settings) TestsScope() string {
+	if s.Tests != nil && s.Tests.Scope == "full" {
+		return "full"
+	}
+	return "affected"
+}
+
+// TestsOnFail returns "off", "diagnose" or "fix" (default when unset). An
+// unrecognised value fails closed to "off": a typo must not widen the fail
+// branch to editing files.
+func (s Settings) TestsOnFail() string {
+	if s.Tests == nil || s.Tests.OnFail == "" {
+		return "fix"
+	}
+	switch s.Tests.OnFail {
+	case "off", "diagnose", "fix":
+		return s.Tests.OnFail
+	}
+	return "off"
+}
+
+// TestsMaxFixPasses returns the diagnose-and-fix pass ceiling.
+func (s Settings) TestsMaxFixPasses() int {
+	if s.Tests == nil || s.Tests.MaxFixPasses <= 0 {
+		return DefaultTestsMaxFixPasses
+	}
+	return s.Tests.MaxFixPasses
+}
+
+// TestsTimeoutSeconds returns one suite run's timeout.
+func (s Settings) TestsTimeoutSeconds() int {
+	if s.Tests == nil || s.Tests.TimeoutSeconds <= 0 {
+		return DefaultTestsTimeoutSeconds
+	}
+	return s.Tests.TimeoutSeconds
+}
+
+// TestsReportEnabled reports whether the fast-model pass report is on.
+// Default true: the pass itself is opt-in, and once it runs a passing result
+// gets a fast-model report. Set false for the harness-composed line only.
+func (s Settings) TestsReportEnabled() bool {
+	return s.Tests == nil || s.Tests.Report == nil || *s.Tests.Report
+}
+
+// mergeTests folds from into dst for a user layer. All fields merge normally:
+// the user controls every key.
+func mergeTests(dst, from *TestsSettings) *TestsSettings {
+	if from == nil {
+		return dst
+	}
+	out := &TestsSettings{}
+	if dst != nil {
+		*out = *dst
+	}
+	if from.PostEnd != "" {
+		out.PostEnd = from.PostEnd
+	}
+	if from.Command != nil {
+		out.Command = append([]string(nil), from.Command...)
+	}
+	if from.Scope != "" {
+		out.Scope = from.Scope
+	}
+	if from.OnFail != "" {
+		out.OnFail = from.OnFail
+	}
+	if from.MaxFixPasses != 0 {
+		out.MaxFixPasses = from.MaxFixPasses
+	}
+	if from.TimeoutSeconds != 0 {
+		out.TimeoutSeconds = from.TimeoutSeconds
+	}
+	if from.Report != nil {
+		out.Report = from.Report
+	}
+	return out
+}
+
+// projectTestsWidens reports whether a project layer's tests block sets
+// anything tightenTests will drop: a post_end other than off, a command, a
+// scope, an on_fail or a report.
+func projectTestsWidens(p *TestsSettings) bool {
+	if p == nil {
+		return false
+	}
+	return (p.PostEnd != "" && p.PostEnd != "off") || len(p.Command) > 0 || p.Scope != "" || p.OnFail != "" || p.Report != nil
+}
+
+// tightenTests applies a project layer's tests block. A repo-visible settings
+// file may turn the pass off (post_end "off") and lower max_fix_passes or
+// timeout_seconds, never the reverse, and it may never set the command, scope,
+// on_fail or report: those would let a cloned repo run arbitrary commands or
+// widen the fail branch on the user's machine.
+func tightenTests(dst, proj *TestsSettings) *TestsSettings {
+	out := &TestsSettings{}
+	if dst != nil {
+		*out = *dst
+	}
+	if proj == nil {
+		return out
+	}
+	if proj.PostEnd == "off" {
+		out.PostEnd = "off"
+	}
+	if proj.MaxFixPasses > 0 {
+		cur := out.MaxFixPasses
+		if cur <= 0 {
+			cur = DefaultTestsMaxFixPasses
+		}
+		if proj.MaxFixPasses < cur {
+			out.MaxFixPasses = proj.MaxFixPasses
+		}
+	}
+	if proj.TimeoutSeconds > 0 {
+		cur := out.TimeoutSeconds
+		if cur <= 0 {
+			cur = DefaultTestsTimeoutSeconds
+		}
+		if proj.TimeoutSeconds < cur {
+			out.TimeoutSeconds = proj.TimeoutSeconds
+		}
+	}
+	return out
 }
 
 // SweepEnabled reports whether the vulnetix sweep is on. Default true.
@@ -1310,6 +1498,11 @@ func (s Settings) Override(proj Settings) Settings {
 		}
 		out.BashReadOnly = nil
 	}
+	// Tests is the post-end test pass: a project layer may turn it off and
+	// lower its budgets, never on, and never touch the command.
+	if proj.Tests != nil {
+		out.Tests = tightenTests(out.Tests, proj.Tests)
+	}
 	out.Permissions = out.Permissions.Merge(proj.Permissions)
 	if proj.SessionRetentionDays != nil {
 		out.SessionRetentionDays = proj.SessionRetentionDays
@@ -1354,6 +1547,11 @@ func (s Settings) Override(proj Settings) Settings {
 	}
 	if proj.ShowSessionNames != nil {
 		out.ShowSessionNames = proj.ShowSessionNames
+	}
+	// Tests is the post-end test pass: a project layer may turn it off and
+	// lower its budgets, never on, and never touch the command.
+	if proj.Tests != nil {
+		out.Tests = tightenTests(out.Tests, proj.Tests)
 	}
 	if proj.UpdateCheck != nil {
 		out.UpdateCheck = proj.UpdateCheck

@@ -152,6 +152,7 @@ var presentations = map[Event]presentation{
 	EventPruneCompaction:           {CategoryContext, "prune"},
 	EventWebFetchAnswer:            {CategoryContext, "page"},
 	EventDepChange:                 {CategoryContext, "deps"},
+	EventTestReport:                {CategoryContext, "tests"},
 	EventVoiceCleanup:              {CategoryContext, "voice"},
 	EventBashSwap:                  {CategoryTools, "swap"},
 	EventBashReplan:                {CategoryTools, "replan"},

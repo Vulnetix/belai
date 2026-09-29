@@ -206,6 +206,26 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   they never install or run a package manager, so a malicious package's
   install scripts never run on their account. A repo-visible project
   settings file may turn `vulnetix.dep_watch` on, never off.
+- **The post-end test pass is the user's opt-in and decided by exit code.**
+  `internal/testdetect` names suites from a fixed marker-file table and
+  package.json script names, never file bodies or prose, so the `tests:` line
+  in the repository map and `last test run: pass|fail, N suites` on the turn
+  directive are harness facts. `internal/testrun` runs an argv from that table
+  or the user's `tests.command`, never a model's, without a shell, under the
+  permission rules (a deny refuses, an ask skips), the OS sandbox and the
+  scrubbed environment; pass or fail is the exit code. The suite output is
+  `KindProcess`: it is sanitised and classified through `testpass.NewGate`
+  (level checked before the classifier, guardrails off means sanitise only),
+  reaches a model only as an attachment, and a withheld output is never
+  replaced by a pointer to the same text. The fast `test_report` role sees
+  harness facts and gated output only and falls back to a harness-composed
+  line. The fail branch runs on the ordinary session with every gate applied
+  (`fix` is goal mode, `diagnose` the read-only plan surface), is bounded by
+  `tests.max_fix_passes`, and is never entered when no suite actually ran. An
+  unknown `tests.on_fail` or `post_end` value is off. The `tests` block is read
+  from the user's layers: a project layer may set `post_end` off and lower the
+  budgets, never turn the pass on or set `command`, `scope`, `on_fail` or
+  `report`.
 - **Task subagent reports are arbitrary content.** The result of the `Task` tool is model-written text, so it is added to `tools.classifierKinds` as `KindSubagent` and classified before promotion.
 - **Jev intent detection sees only harness facts.** The detector payload carries the sanitized prompt, the current mode, and derived metadata such as a plan-file task count. It never carries attachment bytes or file contents.
 - **Sticky mode changes only with the user's choice.** When a confident detected intent disagrees with a mode the user set, the deterministic mode-choice panel asks before leaving the sticky mode. In headless mode the sticky mode is preserved.
@@ -289,6 +309,16 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   tool image is sent, and a model that `models.Vision` does not name gets a
   harness note instead. The classifier payload never carries an image. Do not
   add a second admission path or an image-carrying kind without this gate.
+- **Screenshot runs harness-fixed programs, on loopback pages or after an ask.**
+  A `url` capture must pass `netguard.CheckURL` and name a loopback host, runs a
+  headless browser with a throwaway profile, the scrubbed environment and its
+  own process group, never disables the browser's sandbox, and blocks every
+  request that is not to this machine. A `desktop` capture asks on every call
+  (`tools.AlwaysAsksCall`) whatever a rule or the ask gate says, and is
+  withheld when nobody can be asked. The model chooses only the target, the
+  URL and a size; no argument reaches a program's argv. The tool is registered
+  in the interactive session only, and a project layer may turn
+  `screenshot.enabled` or `screenshot.desktop` off, never on.
 - **Skills and hooks validate first.** Skills load only after strict
   front-matter schema validation; hooks load only after strict schema
   validation (unknown keys rejected) with no arbitrary code-path injection.
@@ -309,16 +339,6 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   a skill's name and sanitized description reach the system block, and only
   while `Skill` is on the surface; `disable-model-invocation` skills are
   hidden and answer like missing ones. `SkillDraft` is an `AlwaysAsker`: it
-- **Screenshot runs harness-fixed programs, on loopback pages or after an ask.**
-  A `url` capture must pass `netguard.CheckURL` and name a loopback host, runs a
-  headless browser with a throwaway profile, the scrubbed environment and its
-  own process group, never disables the browser's sandbox, and blocks every
-  request that is not to this machine. A `desktop` capture asks on every call
-  (`tools.AlwaysAsksCall`) whatever a rule or the ask gate says, and is
-  withheld when nobody can be asked. The model chooses only the target, the
-  URL and a size; no argument reaches a program's argv. The tool is registered
-  in the interactive session only, and a project layer may turn
-  `screenshot.enabled` or `screenshot.desktop` off, never on.
   asks on every call whatever the rules or the ask gate say, is withheld when
   nobody can be asked, and writes exactly the previewed file. The project
   layer may turn `skills.self_authoring` off, never on.

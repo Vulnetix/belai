@@ -22,6 +22,7 @@ import (
 	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/testpass"
 	"github.com/vulnetix/belai/internal/todos"
 	"github.com/vulnetix/belai/internal/turnlog"
 	"github.com/vulnetix/belai/internal/version"
@@ -58,10 +59,18 @@ type Options struct {
 	// process-wide, so a connection carrying several sessions attributes the
 	// decisions to the first.
 	Transcript func(cwd, sessionID string) *turnlog.Log
+	// PostEnd runs the post-end test pass after a prompt turn that completed
+	// a goal. fix runs a fail-branch turn on the session and streams its
+	// events, permission asks included, to the editor; notify sends one
+	// harness line to the editor. It returns false when the user's settings
+	// do not run the pass. Nil never runs one. There is no session-end moment
+	// an editor can watch, so a completed goal is the only trigger over ACP.
+	PostEnd func(ctx context.Context, cwd string, sess *agent.Session, fix testpass.Fixer, notify func(string)) (testpass.Outcome, bool)
 }
 
 type acpSession struct {
 	id      string
+	cwd     string
 	agent   *agent.Session
 	mu      sync.Mutex
 	history []run.Turn
@@ -157,7 +166,7 @@ func (s *Server) newSession(ctx context.Context, params json.RawMessage) (any, e
 	if err != nil {
 		return nil, &jsonrpc.Error{Code: jsonrpc.CodeInternalError, Message: err.Error()}
 	}
-	ss := &acpSession{id: id, agent: ag, always: map[string]bool{}, log: turnlog.New(nil)}
+	ss := &acpSession{id: id, cwd: filepath.Clean(p.Cwd), agent: ag, always: map[string]bool{}, log: turnlog.New(nil)}
 	if s.opts.Transcript != nil {
 		if l := s.opts.Transcript(filepath.Clean(p.Cwd), id); l != nil {
 			ss.log = l
@@ -290,7 +299,49 @@ func (s *Server) prompt(ctx context.Context, params json.RawMessage) (any, error
 	}
 	ss.history = append(ss.history, run.Turn{Role: "user", Content: prompt}, run.Turn{Role: "assistant", Content: res.Reply})
 	ss.mu.Unlock()
+	if res.GoalSentinel == rolemanager.GoalComplete {
+		s.postEnd(turnCtx, ss)
+	}
+	if turnCtx.Err() != nil {
+		return map[string]any{"stopReason": "cancelled"}, nil
+	}
 	return map[string]any{"stopReason": "end_turn"}, nil
+}
+
+// postEnd runs the post-end test pass for a session whose goal completed and
+// tells the editor how it went. The pass runs under the prompt's own context,
+// so an editor cancel stops it, and its fail-branch loop streams through
+// forward like any turn, so every permission ask still goes to the editor.
+func (s *Server) postEnd(ctx context.Context, ss *acpSession) {
+	if s.opts.PostEnd == nil {
+		return
+	}
+	say := func(line string) {
+		s.update(ss, map[string]any{"sessionUpdate": "agent_message_chunk", "content": textContent(line + "\n")})
+	}
+	fix := func(ctx context.Context, req testpass.FixRequest) error {
+		var runErr error
+		for ev := range ss.agent.RunStream(ctx, nil, testpass.FixInput(req)) {
+			ss.log.Observe(ev)
+			switch ev.Kind {
+			case agent.EventDoneKind:
+			case agent.EventErrorKind:
+				runErr = ev.Err
+			default:
+				s.forward(ctx, ss, ev)
+			}
+		}
+		ss.log.Flush()
+		return runErr
+	}
+	out, ran := s.opts.PostEnd(ctx, ss.cwd, ss.agent, fix, say)
+	if !ran {
+		return
+	}
+	say(out.Line())
+	if out.Report != "" {
+		say(out.Report)
+	}
 }
 
 func (s *Server) update(ss *acpSession, u map[string]any) {

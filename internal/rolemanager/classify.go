@@ -67,6 +67,9 @@ const (
 	// UseCaseBashReplan asks the fast tier to redo a Bash call as a builtin
 	// tool call.
 	UseCaseBashReplan = "bash_replan"
+	// UseCaseTestReport writes the short report after a post-end test pass
+	// whose suites all passed.
+	UseCaseTestReport = "test_report"
 	// UseCaseVoiceCleanup tidies a dictated transcript before it reaches the
 	// composer.
 	UseCaseVoiceCleanup = "voice_cleanup"

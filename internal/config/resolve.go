@@ -104,6 +104,11 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 		proj.AutoCommitPerTask = nil
 		eff.Notes = append(eff.Notes, "project auto_commit_per_task ignored (auto-commit is global)")
 	}
+	// The test pass runs commands, so a repo-visible file may only turn it off
+	// and lower its budgets; tightenTests drops the rest when it is applied.
+	if projectTestsWidens(proj.Tests) {
+		eff.Notes = append(eff.Notes, "project tests settings ignored except post_end off and lower budgets (the post-end test pass is the user's opt-in)")
+	}
 	if proj.LSP != nil && len(proj.LSP.Servers) > 0 {
 		proj.LSP.Servers = nil
 		eff.Notes = append(eff.Notes, "project lsp.servers ignored (binary paths may only be set in global settings)")
@@ -397,6 +402,17 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.AutoCommitPerTask = s.AutoCommitPerTask
 		e.Origin["auto_commit_per_task"] = src
 	}
+	if s.Tests != nil {
+		// The post-end test pass runs commands: a repo-visible project layer
+		// may only turn it off and lower its budgets, never on or change the
+		// command (see tightenTests).
+		if src == SourceProject {
+			e.Settings.Tests = tightenTests(e.Settings.Tests, s.Tests)
+		} else {
+			e.Settings.Tests = mergeTests(e.Settings.Tests, s.Tests)
+		}
+		e.Origin["tests"] = src
+	}
 	if s.DeferTools != nil {
 		// Deferral changes only which tool definitions ride on a request,
 		// never what may run, so any layer may set it.
@@ -421,6 +437,10 @@ func (e *Effective) apply(s Settings, src Source) {
 		// sessions: a repo-visible project layer may turn it off, never on.
 		e.Settings.Kanban = s.Kanban
 		e.Origin["kanban"] = src
+	}
+	if s.Screenshot != nil {
+		e.Settings.Screenshot = mergeScreenshot(e.Settings.Screenshot, s.Screenshot, src == SourceProject)
+		e.Origin["screenshot"] = src
 	}
 	if s.Agents != nil {
 		// Fleet workers run unattended on the user's account: a project
@@ -449,10 +469,6 @@ func (e *Effective) apply(s Settings, src Source) {
 		}
 		e.Settings.LSP.merge(s.LSP)
 		e.Origin["lsp"] = src
-	}
-	if s.Screenshot != nil {
-		e.Settings.Screenshot = mergeScreenshot(e.Settings.Screenshot, s.Screenshot, src == SourceProject)
-		e.Origin["screenshot"] = src
 	}
 	if s.Resilience != nil {
 		if e.Settings.Resilience == nil {

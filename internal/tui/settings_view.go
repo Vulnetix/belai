@@ -139,6 +139,16 @@ func (a *App) settingsRows() []settingsRow {
 	showNamesVal := showLabel(s.SessionNamesVisible())
 	updateCheckVal := boolLabel(s.UpdateCheckEnabled())
 	autoCommitVal := boolLabel(s.AutoCommitPerTaskEnabled())
+	testsPostEndVal := s.TestsPostEnd()
+	testsScopeVal := s.TestsScope()
+	testsOnFailVal := s.TestsOnFail()
+	testsReportVal := boolLabel(s.TestsReportEnabled())
+	testsMaxFixVal := strconv.Itoa(s.TestsMaxFixPasses())
+	testsTimeoutVal := fmt.Sprintf("%ds", s.TestsTimeoutSeconds())
+	testsCommandVal := "detected"
+	if c := s.TestsCommand(); len(c) > 0 {
+		testsCommandVal = strings.Join(c, " ")
+	}
 	permsVal := fmt.Sprintf("%d allow · %d ask · %d deny", len(s.Permissions.Allow), len(s.Permissions.Ask), len(s.Permissions.Deny))
 	maxAgentsVal := strconv.Itoa(config.DefaultMaxAgents)
 	if s.Resilience != nil && s.Resilience.MaxAgents != 0 {
@@ -171,6 +181,13 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "show_session_names", label: "session names", kind: "toggle", value: showNamesVal, src: sourceLabel(origin["show_session_names"])},
 		{key: "update_check", label: "update check", kind: "toggle", value: updateCheckVal, src: sourceLabel(origin["update_check"])},
 		{key: "auto_commit_per_task", label: "auto-commit per task", kind: "toggle", value: autoCommitVal, src: sourceLabel(origin["auto_commit_per_task"]), help: "commits each completed goal's changed files as one conventional commit — global only, and a file you edited before the goal touched it is committed whole"},
+		{key: "tests.post_end", label: "test pass", kind: "choose", opts: []string{"off", "goal", "goal_plan", "session"}, value: testsPostEndVal, src: sourceLabel(origin["tests"]), help: "runs detected tests at the end of a goal, plan, or session — off by default; a project layer can only turn this off"},
+		{key: "tests.scope", label: "test scope", kind: "choose", opts: []string{"affected", "full"}, value: testsScopeVal, src: sourceLabel(origin["tests"]), help: "affected runs only the suites owning changed paths, falling back to the full suite"},
+		{key: "tests.on_fail", label: "test on fail", kind: "choose", opts: []string{"off", "diagnose", "fix"}, value: testsOnFailVal, src: sourceLabel(origin["tests"]), help: "what happens when the test pass fails: nothing, a read-only diagnosis, or an agentic diagnose-and-fix loop"},
+		{key: "tests.command", label: "test command", kind: "text", value: testsCommandVal, src: sourceLabel(origin["tests"]), help: "override the detected test command argv — user layers only; clear to return to the detected command"},
+		{key: "tests.report", label: "test report", kind: "toggle", value: testsReportVal, src: sourceLabel(origin["tests"]), help: "a fast-model report on a passing test run instead of the harness-composed line"},
+		{key: "tests.max_fix_passes", label: "test fix passes", kind: "text", value: testsMaxFixVal, src: sourceLabel(origin["tests"]), help: "bounds the diagnose-and-fix loop"},
+		{key: "tests.timeout_seconds", label: "test timeout", kind: "text", value: testsTimeoutVal, src: sourceLabel(origin["tests"]), help: "one suite run's time limit in seconds"},
 		{key: "max_agents", label: "max agents", kind: "text", value: maxAgentsVal, src: sourceLabel(origin["resilience"])},
 		{key: "plan_explore", label: "plan explore", kind: "toggle", value: planExploreVal, src: sourceLabel(origin["resilience"])},
 		{key: "goal_explore", label: "goal explore", kind: "toggle", value: goalExploreVal, src: sourceLabel(origin["resilience"])},
@@ -445,6 +462,21 @@ func (a *App) rawValue(key string) string {
 			return strconv.Itoa(*a.settings.UI.BudgetCycleSeconds)
 		}
 		return ""
+	case "tests.command":
+		if c := a.settings.TestsCommand(); len(c) > 0 {
+			return strings.Join(c, " ")
+		}
+		return ""
+	case "tests.max_fix_passes":
+		if a.settings.Tests != nil && a.settings.Tests.MaxFixPasses > 0 {
+			return strconv.Itoa(a.settings.Tests.MaxFixPasses)
+		}
+		return ""
+	case "tests.timeout_seconds":
+		if a.settings.Tests != nil && a.settings.Tests.TimeoutSeconds > 0 {
+			return strconv.Itoa(a.settings.Tests.TimeoutSeconds)
+		}
+		return ""
 	}
 	return ""
 }
@@ -502,6 +534,48 @@ func (a *App) commitTextRow(row settingsRow, raw string) error {
 			}
 			s.UI.BudgetCycleSeconds = &n
 		})
+	case "tests.command":
+		if val == "" {
+			return a.unsetSetting("tests.command")
+		}
+		argv := strings.Fields(val)
+		if len(argv) == 0 {
+			return fmt.Errorf("test command must name a command")
+		}
+		return a.mutateGlobalSetting(func(s *config.Settings) {
+			if s.Tests == nil {
+				s.Tests = &config.TestsSettings{}
+			}
+			s.Tests.Command = argv
+		})
+	case "tests.max_fix_passes":
+		if val == "" {
+			return a.unsetSetting("tests.max_fix_passes")
+		}
+		n, err := strconv.Atoi(val)
+		if err != nil || n <= 0 {
+			return fmt.Errorf("test fix passes must be a positive integer")
+		}
+		return a.mutateGlobalSetting(func(s *config.Settings) {
+			if s.Tests == nil {
+				s.Tests = &config.TestsSettings{}
+			}
+			s.Tests.MaxFixPasses = n
+		})
+	case "tests.timeout_seconds":
+		if val == "" {
+			return a.unsetSetting("tests.timeout_seconds")
+		}
+		n, err := strconv.Atoi(strings.TrimSuffix(val, "s"))
+		if err != nil || n <= 0 {
+			return fmt.Errorf("test timeout must be a positive number of seconds")
+		}
+		return a.mutateGlobalSetting(func(s *config.Settings) {
+			if s.Tests == nil {
+				s.Tests = &config.TestsSettings{}
+			}
+			s.Tests.TimeoutSeconds = n
+		})
 	}
 	return fmt.Errorf("cannot edit %q", row.key)
 }
@@ -516,6 +590,22 @@ func (a *App) cycleToggle(key string) error {
 		// be able to make the harness commit on the user's behalf.
 		return a.mutateGlobalSetting(func(s *config.Settings) {
 			s.AutoCommitPerTask = nextBool(s.AutoCommitPerTask)
+		})
+	}
+	if key == "tests.report" {
+		// The report is an extra model call, so it is opt-in and global only,
+		// like the rest of the tests block's user-facing keys.
+		return a.mutateGlobalSetting(func(s *config.Settings) {
+			if s.Tests == nil {
+				s.Tests = &config.TestsSettings{}
+			}
+			// The report defaults on, so the cycle is on (unset) -> off -> on.
+			if s.Tests.Report == nil || *s.Tests.Report {
+				f := false
+				s.Tests.Report = &f
+			} else {
+				s.Tests.Report = nil
+			}
 		})
 	}
 	if strings.HasPrefix(key, "voice.") {
@@ -609,7 +699,13 @@ func (a *App) cycleChoice(key string, opts []string) error {
 	if strings.HasPrefix(key, "voice.") {
 		return a.voiceChoose(key, opts)
 	}
-	return a.mutateSetting(func(s *config.Settings) {
+	// The tests block runs commands, so its rows always write the global
+	// scope; every other choice follows the scope the user selected.
+	mutate := a.mutateSetting
+	if strings.HasPrefix(key, "tests.") {
+		mutate = a.mutateGlobalSetting
+	}
+	return mutate(func(s *config.Settings) {
 		switch key {
 		case "effort":
 			cur := s.Effort
@@ -623,6 +719,24 @@ func (a *App) cycleChoice(key string, opts []string) error {
 			}
 			next := opts[(idx+1)%len(opts)]
 			s.UI.ShowInternalWork = &next
+		case "tests.post_end":
+			if s.Tests == nil {
+				s.Tests = &config.TestsSettings{}
+			}
+			idx := indexOfString(opts, s.Tests.PostEnd)
+			s.Tests.PostEnd = opts[(idx+1)%len(opts)]
+		case "tests.scope":
+			if s.Tests == nil {
+				s.Tests = &config.TestsSettings{}
+			}
+			idx := indexOfString(opts, s.Tests.Scope)
+			s.Tests.Scope = opts[(idx+1)%len(opts)]
+		case "tests.on_fail":
+			if s.Tests == nil {
+				s.Tests = &config.TestsSettings{}
+			}
+			idx := indexOfString(opts, s.Tests.OnFail)
+			s.Tests.OnFail = opts[(idx+1)%len(opts)]
 		}
 	})
 }
@@ -635,6 +749,9 @@ func (a *App) unsetSetting(key string) error {
 		return a.mutateGlobalSetting(func(s *config.Settings) {
 			s.AutoCommitPerTask = nil
 		})
+	}
+	if strings.HasPrefix(key, "tests.") {
+		return a.unsetTestsKey(key)
 	}
 	if strings.HasPrefix(key, "voice.") {
 		return a.voiceUnset(key)
@@ -725,6 +842,33 @@ func (a *App) unsetSetting(key string) error {
 			if s.UI != nil {
 				s.UI.Intel = nil
 			}
+		}
+	})
+}
+
+// unsetTestsKey clears one tests.* setting in the global layer. The whole
+// tests block is global-only for every key except the off/tighten project
+// exemptions.
+func (a *App) unsetTestsKey(key string) error {
+	return a.mutateGlobalSetting(func(s *config.Settings) {
+		if s.Tests == nil {
+			return
+		}
+		switch key {
+		case "tests.post_end":
+			s.Tests.PostEnd = ""
+		case "tests.scope":
+			s.Tests.Scope = ""
+		case "tests.on_fail":
+			s.Tests.OnFail = ""
+		case "tests.command":
+			s.Tests.Command = nil
+		case "tests.report":
+			s.Tests.Report = nil
+		case "tests.max_fix_passes":
+			s.Tests.MaxFixPasses = 0
+		case "tests.timeout_seconds":
+			s.Tests.TimeoutSeconds = 0
 		}
 	})
 }

@@ -71,6 +71,12 @@ classifier refuses it.
   file. Any error, cancellation or other answer denies.
 - MCP servers come from your global settings. Servers an editor offers in
   `session/new` are ignored.
+- The [post-end test pass](testing.md) runs after a prompt turn that completes a
+  goal, when your `tests.post_end` setting asks for it. An editor has no
+  session-end moment to watch, so a completed goal is the only trigger over ACP.
+  The result streams as agent messages, a failing run's fix loop streams like
+  any turn with its permission asks going to the editor, and cancelling the
+  prompt cancels the suites.
 
 ## Limitations
 

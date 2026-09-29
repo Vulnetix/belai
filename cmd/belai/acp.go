@@ -11,12 +11,14 @@ import (
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/headless"
 	"github.com/vulnetix/belai/internal/httpclient"
 	"github.com/vulnetix/belai/internal/mcp"
 	"github.com/vulnetix/belai/internal/posture"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/session"
+	"github.com/vulnetix/belai/internal/testpass"
 	"github.com/vulnetix/belai/internal/trustgate"
 	"github.com/vulnetix/belai/internal/turnlog"
 )
@@ -65,7 +67,7 @@ func runACP(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 	build := func(ctx context.Context, cwd, sessionID string) (*agent.Session, error) {
 		return buildACPSession(ctx, cwd, sessionID, *providerName, *model)
 	}
-	opts := acp.Options{}
+	opts := acp.Options{PostEnd: acpPostEnd(*providerName, *model)}
 	if !*noTranscript {
 		// The transcript is the same private JSONL a TUI session keeps; it
 		// writes to the state directory, never to stdout.
@@ -92,9 +94,19 @@ func buildACPSession(ctx context.Context, cwd, sessionID, providerName, model st
 	if !st.Trusted {
 		return nil, fmt.Errorf("%s is not trusted yet: run `belai` there once to review and trust it, or `belai -trust-dir` from that directory", cwd)
 	}
+	cfg, settings, pol, err := acpConfig(cwd, providerName, model)
+	if err != nil {
+		return nil, err
+	}
+	return newCLISession(ctx, cfg, httpclient.Default(), pol, cwd, settings, false, sessionID, true)
+}
+
+// acpConfig resolves the model config, merged settings and effective posture
+// for an editor session's directory. The trust check is the caller's.
+func acpConfig(cwd, providerName, model string) (run.Config, config.Settings, posture.Policy, error) {
 	settings, err := config.LoadMerged(cwd)
 	if err != nil {
-		return nil, fmt.Errorf("load settings: %w", err)
+		return run.Config{}, config.Settings{}, nil, fmt.Errorf("load settings: %w", err)
 	}
 	projectPol, _ := posture.Load(cwd)
 	pol := posture.Defaults().Override(projectPol)
@@ -103,15 +115,32 @@ func buildACPSession(ctx context.Context, cwd, sessionID, providerName, model st
 	}
 	resolver, err := newResolver(cwd)
 	if err != nil {
-		return nil, err
+		return run.Config{}, settings, pol, err
 	}
 	cfg, err := run.ResolveWithSource(model, providerName, os.Getenv, resolver)
 	if err != nil {
-		return nil, err
+		return run.Config{}, settings, pol, err
 	}
 	cfg, err = withClassifier(cfg, settings, resolver)
 	if err != nil {
-		return nil, err
+		return run.Config{}, settings, pol, err
 	}
-	return newCLISession(ctx, cfg, httpclient.Default(), pol, cwd, settings, false, sessionID, true)
+	return cfg, settings, pol, nil
+}
+
+// acpPostEnd is the ACP server's post-end test hook. It re-resolves the
+// session directory's settings (the session was built from the same ones), so
+// the user's `tests` block and posture apply exactly as for a headless run,
+// and returns false when the settings do not run the pass.
+func acpPostEnd(providerName, model string) func(context.Context, string, *agent.Session, testpass.Fixer, func(string)) (testpass.Outcome, bool) {
+	return func(ctx context.Context, cwd string, sess *agent.Session, fix testpass.Fixer, notify func(string)) (testpass.Outcome, bool) {
+		cfg, settings, pol, err := acpConfig(cwd, providerName, model)
+		if err != nil || !headless.ShouldPostEnd(ctx, settings, cwd, testpass.TriggerGoal) {
+			return testpass.Outcome{}, false
+		}
+		return headless.RunPostEnd(ctx, headless.PostEnd{
+			Cfg: cfg, Client: httpclient.Default(), Posture: pol, Workdir: cwd, Settings: settings,
+			Session: sess, Trigger: testpass.TriggerGoal, Fix: fix, Notify: notify,
+		}), true
+	}
 }

@@ -627,6 +627,7 @@ var fastUseCases = map[string]bool{
 	rolemanager.UseCaseDepChange:    true,
 	rolemanager.UseCaseWebFetch:     true,
 	rolemanager.UseCaseBashReplan:   true,
+	rolemanager.UseCaseTestReport:   true,
 	rolemanager.UseCaseVoiceCleanup: true,
 }
 

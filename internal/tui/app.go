@@ -354,6 +354,8 @@ type App struct {
 	// set re-executes the active plan, so "continue" resumes the plan instead
 	// of starting an unrelated agent turn.
 	planExecuting bool
+	// testPass is the post-end test pass state (testpass.go).
+	testPass testPassState
 	// lastGoal is the latest goal_state seen in this session (live or
 	// rehydrated). It rides on the next turn as TurnInput.PriorGoal so a
 	// continuation prompt resumes the goal in flight.
@@ -2050,8 +2052,6 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 			}
 		}
 	}
-	perms := permissions.From(p.settings.Permissions.Allow, p.settings.Permissions.Ask, p.settings.Permissions.Deny)
-	var promptOpts prompt.Options
 	// Screenshot is on the interactive session only: a capture asks, and
 	// headless, ACP, fleet and rc sessions have nobody to ask. Added after an
 	// allowlist, so an engaged definition that names its tools does not get it
@@ -2061,6 +2061,8 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 			reg = reg.With(&tools.Screenshot{Dir: dir, Desktop: p.settings.ScreenshotDesktopEnabled()})
 		}
 	}
+	perms := permissions.From(p.settings.Permissions.Allow, p.settings.Permissions.Ask, p.settings.Permissions.Deny)
+	var promptOpts prompt.Options
 	if p.settings.Caveman != nil && *p.settings.Caveman {
 		promptOpts.Caveman = true
 	}
@@ -2310,6 +2312,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case autoCommitMsg:
 		return a, a.handleAutoCommit(m)
 
+	case testPassMsg:
+		return a, a.handleTestPass(m)
+
 	case planEditedMsg:
 		return a, a.handlePlanEdited(m)
 
@@ -2533,6 +2538,12 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// the window) tears down and quits, printing the exit card.
 			if a.isArmed(armQuit) {
 				a.disarm()
+				// A session-end test pass runs first when the settings ask for
+				// one; quitting again exits at once.
+				if cmd, deferred := a.quitTestPass(); deferred {
+					return a, cmd
+				}
+				a.cancelTestPass()
 				if a.rmCancel != nil {
 					a.rmCancel()
 				}
@@ -3653,6 +3664,9 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		}
 		a.persistTail()
 		a.resetTaskPaths()
+		// A failed turn ends a test pass's fail branch: it never re-runs
+		// suites on top of a turn that errored.
+		a.testPass.fixing = false
 		// Edits made before the failure are on disk all the same.
 		return a.flushDepWatch()
 	case agent.EventTextKind:
@@ -3733,6 +3747,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		// Auto-commit collects every changed path so a completed goal can be
 		// committed exactly as one conventional commit.
 		a.observeTaskDiff(m.Diff)
+		a.noteTaskEdit(m.Diff)
 		return a.nextAgent()
 	case agent.EventCwdKind:
 		a.setPhaseWorking()
@@ -3991,9 +4006,11 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 			a.usageStale = false
 			a.tokensTotal += m.Result.Usage.TotalTokens
 		}
+		planDone := false
 		if a.planExecuting && m.Result.GoalSentinel == rolemanager.GoalComplete {
 			// The approved plan is done; the next send is an ordinary turn.
 			a.planExecuting = false
+			planDone = true
 			a.addSystem("approved plan complete")
 		}
 		// Agent mode has no report turn, so its end is marked by a
@@ -4031,7 +4048,7 @@ func (a *App) handleAgentEvent(m agentEventMsg) tea.Cmd {
 		if m.Result.GoalSentinel == "" {
 			notifyDone = a.notifyTurnDone(elapsed)
 		}
-		return tea.Batch(a.flushPendingActivitySends(), a.flushDepWatch(), a.flushAutoCommit(m.Result), notifyDone)
+		return tea.Batch(a.flushPendingActivitySends(), a.flushDepWatch(), a.flushAutoCommit(m.Result), a.flushTestPass(m.Result, planDone), notifyDone)
 	}
 	return nil
 }
@@ -6142,6 +6159,7 @@ func (a *App) startNewSession() {
 	a.planExecuting = false
 	a.lastGoal = nil
 	a.resetTaskPaths()
+	a.resetTestPass()
 	a.publishSessionID()
 	a.lastEntryID = ""
 	a.persistedUpTo = 0

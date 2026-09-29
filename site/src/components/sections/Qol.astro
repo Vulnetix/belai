@@ -9,7 +9,7 @@ import footerShot from '../../assets/shots/footer.svg';
 import roleManagerShot from '../../assets/shots/role-manager.svg';
 
 const sealText =
-  'Quality of life: smaller features you would otherwise add through a skills.md. First-run trust gate, prompt library, one composer history for prompts and commands, repo map, work-discipline prompt section, identity block, capability auth probes, diff in the approval prompt, a todo panel that only trusts assistant text, sessions, Markdown session export, opt-in per-goal auto-commit, /settings with provenance, no alt bindings ever, /help guarded by a test, caveman mode, per-project session toggles, classifier verdicts in the internal-work feed, a shell panel for !cmd with the raw output, transcript rows stamped when they happen with durations, token budgets per model in the footer, oversized tool output kept out of the context with ReadResult to read the rest, WebFetch that answers a question instead of returning the page, desktop notifications, voice input to the composer, /skills, /plugin, /mcp and /sandbox, and a self-update that stays in its asset family.';
+  'Quality of life: smaller features you would otherwise add through a skills.md. First-run trust gate, prompt library, one composer history for prompts and commands, repo map, work-discipline prompt section, identity block, capability auth probes, diff in the approval prompt, a todo panel that only trusts assistant text, sessions, Markdown session export, opt-in per-goal auto-commit, an opt-in post-end test pass with a fast-model report and a bounded fix loop, /settings with provenance, no alt bindings ever, /help guarded by a test, caveman mode, per-project session toggles, classifier verdicts in the internal-work feed, a shell panel for !cmd with the raw output, transcript rows stamped when they happen with durations, token budgets per model in the footer, oversized tool output kept out of the context with ReadResult to read the rest, WebFetch that answers a question instead of returning the page, desktop notifications, voice input to the composer, /skills, /plugin, /mcp and /sandbox, and a self-update that stays in its asset family.';
 
 const groups = [
   {
@@ -39,7 +39,7 @@ const groups = [
   {
     title: 'Context and cost',
     items: [
-      ['harness-computed repo map', 'Paths, counts, detected commands and git metadata, with no file contents.'],
+      ['harness-computed repo map', 'Paths, counts, detected commands, the test suites with their framework and test-file convention, and git metadata, with no file contents.'],
       ['oversized output kept out of context', 'A long build log, page or PR thread goes into the conversation as its first and last lines plus a reference. ReadResult reads the rest by line range or pattern when it is needed. Bash keeps the end of its output too, so a failing test summary is never the part that gets cut.'],
       ['WebFetch answers the question', 'Give WebFetch a prompt and a small model with no tools reads the page and returns the answer. The page itself never enters the conversation, and the answer is classified like the page would be.'],
       ['token budgets per model', 'Session, day and month allowances per provider and model, counted across every model call and every belai process, shown right-aligned in the footer: teal on pace, amber when spend runs ahead of the clock, red when spent.'],
@@ -54,6 +54,7 @@ const groups = [
       ['session toggles per project', 'Toggles such as guardrails and ask-permission are saved for each repository.'],
       ['session export', 'Type /export to write the current session (or another by id) as deterministic Markdown under .vulnetix/exports; belai -export <id> prints it to stdout.'],
       ['opt-in per-goal auto-commit', 'Turn on auto-commit per task in /settings and every completed goal is committed as one conventional commit of exactly the files it changed. The setting is global, so a repository cannot turn it on.'],
+      ['post-end test pass', 'Turn on tests.post_end and a completed goal, plan or session runs the tests Belai detected in the repository. A pass gets a short report from the fast model, and a failure starts a bounded fix loop on the main model with the classified output attached. The pass is off until you turn it on, the exit code decides pass or fail, and a repository can only switch it off.'],
       ['timestamps and durations in the transcript', 'Each transcript row is stamped when its event happened, and tool calls, model replies and classifier decisions record how long they took, so a slow session shows where the time went.'],
       ['diff in the approval prompt', 'The approval prompt shows the diff of the change as well as the path.'],
       ['/help guarded by a test', 'A test compares the help text with the real key bindings.'],

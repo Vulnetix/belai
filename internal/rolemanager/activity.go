@@ -45,6 +45,7 @@ const (
 	EventLSPServerDown             Event = "lsp_server_down"
 	EventRouteFallback             Event = "route_fallback"
 	EventDepChange                 Event = "dep_change"
+	EventTestReport                Event = "test_report"
 	EventVoiceCleanup              Event = "voice_cleanup"
 	EventWebFetchAnswer            Event = "web_fetch_answer"
 	EventBashSwap                  Event = "bash_swap"
@@ -352,6 +353,8 @@ func Describe(a Activity) (Description, bool) {
 		return webFetchAnswerDescription(a), true
 	case EventDepChange:
 		return depChangeDescription(a), true
+	case EventTestReport:
+		return testReportDescription(a), true
 	case EventVoiceCleanup:
 		return voiceCleanupDescription(a), true
 	case EventBashSwap:
@@ -545,6 +548,20 @@ func depChangeDescription(a Activity) Description {
 	}
 	if strings.HasPrefix(a.Detail, "malformed") {
 		d.Outcome = "reply was unusable, checking anyway"
+	}
+	return d
+}
+
+func testReportDescription(a Activity) Description {
+	d := Description{
+		Summary: "Wrote the report for a passing test run",
+		Outcome: "report written",
+		Tone:    ToneClear,
+		Levels:  LevelDecisions,
+	}
+	if a.Verdict != "reported" {
+		d.Outcome = "fast model unavailable, harness report used"
+		d.Tone = ToneNeutral
 	}
 	return d
 }
