@@ -801,6 +801,20 @@ work` selects how much shows, in four additive levels:
 | `security` | everything in `decisions` plus the security classifier sentinel/malformed, the ML classifier's phase 1/2/3 verdicts, bad verdict cache, boundary verify failure |
 | `all` | everything in `security` plus bookkeeping: boundary sealing, verdict-cache hits, fan-out admission |
 
+**Row layout.** A row is one line, never wrapped: an icon for the activity in its
+category colour, the summary, the outcome with a mark that reads without colour
+(`✓` clear, `!` caution, `✗` blocked), a cause mark when the decision did not
+take the plain path (`↩` fell back, `⟳` came from a cache, `◔` timed out), and
+the decider with its time: the short model id of a Jev decision (`jev-1.13`),
+a chat model's id, or `belai` for deterministic code. `belai` never names a Jev
+or chat decision. On a narrow terminal the summary and the outcome share what is
+left, and the decider tag is dropped only below 24 cells of text. Ctrl+O adds a
+dim line with the activity key, the full provider/model, the category, the score
+and the cause. The icon, category and colour tables are in
+[tui-design.md](tui-design.md#role-manager-rows); `rolemanager.ActorOf`,
+`CategoryOf`, `IconOf` and `CauseOf` derive them, and the session record stores
+them.
+
 The `security` level renders the ML classifier stages by *why* they run, not
 by phase number: saturation checks read as "Checked whether the content
 floods the prompt with repeated instructions", jailbreak checks as "Checked
