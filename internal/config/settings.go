@@ -142,6 +142,11 @@ type Settings struct {
 	// TokenBudgets caps the tokens each provider+model may spend per session,
 	// day or month. Global only: the project layer is dropped in Resolve.
 	TokenBudgets []TokenBudget `json:"token_budgets,omitempty"`
+	// Intel governs session intelligence's use of provider response headers
+	// (docs/token-budgets.md). Global only: the project layer is dropped in
+	// Resolve, so a repository cannot change what a user learns about their own
+	// account limits.
+	Intel *IntelSettings `json:"intel,omitempty"`
 	// Kanban turns the global kanban board on or off: the Kanban* model tools,
 	// the wrap-up after a work turn, the composer pane, /kanban and board sync
 	// (docs/kanban.md). Default on. The project layer may turn it off, never on.
@@ -719,6 +724,9 @@ type UISettings struct {
 	// BudgetWarn prints a system line on each model call for the selected
 	// model while any of its budgets is amber or red. Default off.
 	BudgetWarn *bool `json:"budget_warn,omitempty"`
+	// Intel shows the session intelligence slot in the footer's budget cycle
+	// and offers the intel pane on f12. Default on. See IntelEnabled.
+	Intel *bool `json:"intel,omitempty"`
 }
 
 // merge folds from over u, taking any non-nil field from from. It is the
@@ -766,6 +774,9 @@ func (u *UISettings) merge(from *UISettings) {
 	}
 	if from.BudgetWarn != nil {
 		u.BudgetWarn = from.BudgetWarn
+	}
+	if from.Intel != nil {
+		u.Intel = from.Intel
 	}
 }
 

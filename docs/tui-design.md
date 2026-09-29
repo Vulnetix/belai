@@ -80,6 +80,11 @@ deliberately below that and never carry required information on their own.
 | `›` | mode accent | The composer caret. |
 | `⎇` | `Teal` | Git branch. |
 | `▰` | `Teal` / `Line` | Context gauge: used, free (amber over 80%, danger over 95%). |
+| `▁▂▃▄▅▆▇█` | state colour (`Low` for an idle cell) | Sparkline of session intelligence: one cell per group of hours, scaled to the busiest cell. |
+| `╹` | `Low` | Reset marker on a limit bar: how much of the window has passed. Fill beyond it is ahead of the clock. |
+| `░▒▓█` | `Line` / `Low` / `Teal` / `TealSoft` | Heatmap cell of the 7-day by 24-hour view, four steps quantised against the busiest hour. |
+| `↗` `→` `↘` | `Amber` / `Teal` / `Teal` | Trend against the 7-day average: rising, steady, easing. |
+| `······` | `Low` | A picture with nothing to draw yet (no usage recorded). |
 | `…` | `Low` | A truncation hint (`… 16 more lines`). |
 | `◌` | `Amber` | A drafted offer the user has not taken yet (agent builder). Taken turns `✓` `Teal`; a default value is a `Low` `·`. |
 | `┄` `┆` | `Amber` | A drafted route between agents, horizontal and vertical (agent builder's relationship lane). |
@@ -112,7 +117,12 @@ Never use emoji. A new glyph must be in this table before it ships.
   turn is in flight.
 - **Footer.** Three lines under the composer, with no rule: the composer's
   bottom edge is the separator. Line 1 is the mode (coloured text, not a
-  chip), working directory and branch, with the budget gauge on the right.
+  chip), working directory and branch, with the budget gauge on the right. The
+  right side cycles through the model's budgets and ends on the session
+  intelligence slot (`intel`, today's tokens, the tightest plan limit or the
+  pace, and a limit bar or sparkline); that slot is the only one when routing
+  is `routed` or the model has no budget, and in the last third of its turn it
+  carries a `Low` `f12` hint when the line has room.
   Line 2 is provider, model and effort, the switches as `●`/`○` (with
   `● rc N` while `belai rc` runs), and the session, token count and context
   bar on the right. Line 3 shows the armed or
@@ -134,6 +144,7 @@ Never use emoji. A new glyph must be in this table before it ships.
 | Plan / todos | top rule | `TealSoft`, titled `plan` with progress |
 | Composer | full rounded box | mode colour; `Line` while a question is open |
 | Full-screen views, pickers, overlays | full rounded box | unchanged |
+| Runs panel, intel tab (`f12`) | tab bar and a bottom rule, half the terminal height | `Teal` for the active tab; bars and marks take the state colour |
 
 ## States
 

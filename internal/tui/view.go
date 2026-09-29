@@ -36,6 +36,7 @@ const (
 	viewFirewall
 	viewRC
 	viewTrusted
+	viewIntel
 )
 
 // viewHandler is one full-screen view. Chat is the base state and lives
@@ -77,6 +78,7 @@ func init() {
 	viewHandlers[viewFirewall] = viewHandler{name: "firewall", enter: (*App).enterFirewall, key: (*App).handleFirewallKey, render: (*App).firewallView}
 	viewHandlers[viewRC] = viewHandler{name: "rc", enter: (*App).enterRC, key: (*App).handleRCKey, render: (*App).rcView}
 	viewHandlers[viewTrusted] = viewHandler{name: "trusted", enter: (*App).enterTrusted, key: (*App).handleTrustedKey, render: (*App).trustedView}
+	viewHandlers[viewIntel] = viewHandler{name: "intel", enter: (*App).enterIntel, key: (*App).handleIntelKey, render: (*App).intelView}
 }
 
 // push navigates to a full-screen view, remembering the current one on the

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/vulnetix/belai/internal/budget"
 	"github.com/vulnetix/belai/internal/transcript"
 	"github.com/vulnetix/belai/internal/wire"
 )
@@ -36,6 +37,10 @@ type UsageEvent struct {
 	// Request is the estimated composition of what was sent. It holds sizes
 	// only — never content — so it may be summarised anywhere usage goes.
 	Request RequestShape
+	// Limits are the plan limits the call's response headers reported: parsed
+	// numbers, identifiers and times, never header text. Empty for a provider
+	// that reports none.
+	Limits []budget.PlanLimit
 }
 
 // RequestShape is the estimated token size of each part of one request, at
@@ -110,7 +115,7 @@ func SetUsageObserver(fn UsageObserver) (cancel func()) {
 // reportUsage tells the observer what one completed call spent. A call that
 // fails or is cancelled before it completes reports nothing: providers send
 // usage only with the completed response.
-func reportUsage(ctx context.Context, cfg Config, system string, turns []Turn, a Assistant, toolDefs int) {
+func reportUsage(ctx context.Context, cfg Config, system string, turns []Turn, a Assistant, toolDefs int, limits []budget.PlanLimit) {
 	obs, tel := usageObserver.Load(), telemetryUsage.Load()
 	if obs == nil && tel == nil {
 		return
@@ -126,6 +131,7 @@ func reportUsage(ctx context.Context, cfg Config, system string, turns []Turn, a
 		Estimated: estimated,
 		Role:      usageRole(ctx),
 		Request:   requestShape(system, turns, toolDefs),
+		Limits:    limits,
 	}
 	if a.Usage != nil {
 		ev.Prompt = a.Usage.PromptTokens

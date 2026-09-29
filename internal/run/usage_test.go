@@ -145,13 +145,13 @@ func TestSetUsageObserverCancelSemantics(t *testing.T) {
 	c1 := SetUsageObserver(func(UsageEvent) { first++ })
 	c2 := SetUsageObserver(func(UsageEvent) { second++ })
 	c1() // stale cancel: must not detach the second observer
-	reportUsage(context.Background(), Config{Model: "x"}, "", nil, Assistant{Text: "abcd"}, 0)
+	reportUsage(context.Background(), Config{Model: "x"}, "", nil, Assistant{Text: "abcd"}, 0, nil)
 	if first != 0 || second != 1 {
 		t.Fatalf("first=%d second=%d, want 0 and 1", first, second)
 	}
 	c2()
 	c2()
-	reportUsage(context.Background(), Config{Model: "x"}, "", nil, Assistant{Text: "abcd"}, 0)
+	reportUsage(context.Background(), Config{Model: "x"}, "", nil, Assistant{Text: "abcd"}, 0, nil)
 	if second != 1 {
 		t.Fatalf("detached observer still called: %d", second)
 	}

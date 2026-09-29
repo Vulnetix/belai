@@ -98,3 +98,71 @@ func fillBar(frac float64, width int) (fill, trough string) {
 	}
 	return f.String(), t.String()
 }
+
+// IntelGauge is the session intelligence slot of the footer's line-1 cycle. It
+// stands beside BudgetGauge: the app shows one or the other, and the intel
+// slot is the only one when routing is routed or the model has no budget.
+type IntelGauge struct {
+	// Today is the day's tokens, formatted ("34.4M").
+	Today string
+	// Limit is the tightest plan limit's short label ("5h 23%"); empty when the
+	// provider reported none.
+	Limit string
+	// LimitFrac is that limit's used share, 0 to 1, and ElapsedFrac the share of
+	// its window that has passed (the ╹ marker); both are negative when there is
+	// no limit.
+	LimitFrac   float64
+	ElapsedFrac float64
+	// Spark is tokens per hour for the last 24 hours, drawn when there is no
+	// limit. Pace is the label shown beside it ("idle", "active").
+	Spark []int64
+	Pace  string
+	State BudgetState
+	// Hint adds the subtle shortcut key to the roomiest rendering.
+	Hint bool
+}
+
+// Colour returns the state's colour: teal, amber or red.
+func (g IntelGauge) Colour() lipgloss.TerminalColor {
+	return BudgetGauge{State: g.State}.Colour()
+}
+
+// intelHintKey is the shortcut the hint advertises.
+const intelHintKey = "f12"
+
+// Bar draws the slot's picture: the tightest plan limit with its reset marker,
+// else the 24-hour sparkline, else a dotted trough when nothing has been spent.
+func (g IntelGauge) Bar() string {
+	switch {
+	case g.LimitFrac >= 0 && g.Limit != "":
+		return LimitBar(g.LimitFrac, g.ElapsedFrac, barWidth, g.Colour())
+	case SparkTotal(g.Spark) > 0:
+		return Sparkline(g.Spark, barWidth, lipgloss.NewStyle().Foreground(g.Colour()), LowStyle)
+	}
+	return LowStyle.Render(strings.Repeat("·", barWidth))
+}
+
+// segmentAt renders the slot at one of three widths: 2 is everything
+// ("intel  today 34.4M · 5h 23% bar"), 1 drops the limit or pace, 0 keeps only
+// the label and the bar. hint appends the shortcut to width 2 only.
+func (g IntelGauge) segmentAt(detail int, hint bool) string {
+	style := lipgloss.NewStyle().Foreground(g.Colour())
+	text := style.Render("intel")
+	if detail >= 1 && g.Today != "" {
+		text += MutedStyle.Render("  today " + g.Today)
+	}
+	if detail >= 2 {
+		label := g.Limit
+		if label == "" {
+			label = g.Pace
+		}
+		if label != "" {
+			text += MutedStyle.Render(" · ") + style.Render(label)
+		}
+	}
+	text += " " + g.Bar()
+	if hint && detail >= 2 {
+		text += LowStyle.Render("  " + intelHintKey)
+	}
+	return text
+}

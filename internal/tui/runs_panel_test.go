@@ -254,13 +254,13 @@ func TestRunsPanelTabCyclesThroughProcesses(t *testing.T) {
 	if a.runsTab != tabProcesses {
 		t.Fatalf("tab must switch to processes, got %d", a.runsTab)
 	}
-	for _, want := range []int{tabKanban, tabCrew, tabGit} {
+	// No PR for the branch, so the ci tab is skipped; intel is the last tab.
+	for _, want := range []int{tabKanban, tabCrew, tabGit, tabIntel} {
 		a.handleRunsPanelKey(tea.KeyMsg{Type: tea.KeyTab})
 		if a.runsTab != want {
 			t.Fatalf("tab must switch to %s, got %d", runsTabLabels[want], a.runsTab)
 		}
 	}
-	// No PR for the branch, so the ci tab is skipped.
 	a.handleRunsPanelKey(tea.KeyMsg{Type: tea.KeyTab})
 	if a.runsTab != tabActivity {
 		t.Fatalf("tab must wrap back to activity, got %d", a.runsTab)

@@ -422,7 +422,10 @@ func streamTurns(ctx context.Context, cfg Config, system string, turns []Turn, c
 	ch := make(chan Chunk, 256)
 	// Every streaming call completes in drainStream; report what it spent.
 	toolDefs := toolDefTokens(openAITools, anthropicTools)
-	go drainStream(ctx, ch, resp, d, func(a Assistant) { reportUsage(ctx, cfg, system, sanitized, a, toolDefs) })
+	// The headers are read now, before the body drains, and only the parsed
+	// numbers ride along to the usage report.
+	limits := parsePlanLimits(cfg.Provider, resp.Header, time.Now())
+	go drainStream(ctx, ch, resp, d, func(a Assistant) { reportUsage(ctx, cfg, system, sanitized, a, toolDefs, limits) })
 	return ch, nil
 }
 func anthropicEventUsage(ev *wire.AnthropicStreamEvent) *transcript.Usage {

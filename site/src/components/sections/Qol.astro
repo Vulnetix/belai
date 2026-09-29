@@ -40,6 +40,7 @@ const groups = [
       ['oversized output kept out of context', 'A long build log, page or PR thread goes into the conversation as its first and last lines plus a reference. ReadResult reads the rest by line range or pattern when it is needed. Bash keeps the end of its output too, so a failing test summary is never the part that gets cut.'],
       ['WebFetch answers the question', 'Give WebFetch a prompt and a small model with no tools reads the page and returns the answer. The page itself never enters the conversation, and the answer is classified like the page would be.'],
       ['token budgets per model', 'Session, day and month allowances per provider and model, counted across every model call and every belai process, shown right-aligned in the footer: teal on pace, amber when spend runs ahead of the clock, red when spent.'],
+      ['session intelligence', 'Plan limits with their reset times, pace, trend, runway and today, week and 30 day totals. The footer cycle ends on it under any routing, with or without a budget, and f12 opens a pane with bars and sparklines.'],
       ['capability auth probes', 'A small test request checks that a model supports a capability before Belai relies on it.'],
     ],
   },

@@ -76,12 +76,15 @@ func (r *Recorder) ImportHistory(sessionsDir string) (int, error) {
 	}
 
 	parsed := map[string]historyUsage{}
+	lastDays := map[string]string{}
 	for _, f := range todo {
-		h, err := readTranscriptUsage(f, loc)
+		h, last, err := readTranscriptUsage(f, loc)
 		if err != nil {
 			continue // an unreadable transcript is skipped, and retried next start
 		}
-		parsed[strings.TrimSuffix(filepath.Base(f), ".jsonl")] = h
+		id := strings.TrimSuffix(filepath.Base(f), ".jsonl")
+		parsed[id] = h
+		lastDays[id] = last
 	}
 	if len(parsed) == 0 {
 		return 0, nil
@@ -101,6 +104,7 @@ func (r *Recorder) ImportHistory(sessionsDir string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	data.Version = ledgerVersion
 	now := r.now()
 	today := now.Format(dayLayout)
 	imported := 0
@@ -119,7 +123,13 @@ func (r *Recorder) ImportHistory(sessionsDir string) (int, error) {
 				data.Days[key][d] += n
 			}
 		}
-		data.Imported[id] = today
+		// The marker carries the day the session was last active, so the
+		// session counts in the window it belongs to, not the day of import.
+		day := lastDays[id]
+		if day == "" {
+			day = today
+		}
+		data.Imported[id] = day
 		imported++
 	}
 	if imported == 0 {
@@ -143,20 +153,22 @@ func (r *Recorder) ImportHistory(sessionsDir string) (int, error) {
 	return imported, nil
 }
 
-// readTranscriptUsage recovers one transcript's usage. Goal passes are taken
+// readTranscriptUsage recovers one transcript's usage and the local day of its
+// last row. Goal passes are taken
 // from the goal_state rows: the growth of tokensUsed between consecutive rows
 // of the same goal, on the local day of the later row, attributed to the model
 // the goal's assistant rows name. Every other assistant row adds its own
 // total_tokens under its own provider/model. Goal-mode assistant rows are
 // skipped because the goal's tokensUsed already includes them.
-func readTranscriptUsage(path string, loc *time.Location) (historyUsage, error) {
+func readTranscriptUsage(path string, loc *time.Location) (historyUsage, string, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer f.Close()
 
 	h := historyUsage{}
+	lastDay := ""
 	type goalPoint struct {
 		day    string
 		tokens int64
@@ -173,6 +185,9 @@ func readTranscriptUsage(path string, loc *time.Location) (historyUsage, error) 
 			continue
 		}
 		day := time.UnixMilli(e.Timestamp).In(loc).Format(dayLayout)
+		if day > lastDay {
+			lastDay = day
+		}
 		switch e.Type {
 		case "assistant":
 			key := config.ModelKey(metaString(e.Meta, "provider"), metaString(e.Meta, "model"))
@@ -202,7 +217,7 @@ func readTranscriptUsage(path string, loc *time.Location) (historyUsage, error) 
 		}
 	}
 	if err := sc.Err(); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	goalKey, best := "", 0
@@ -218,7 +233,7 @@ func readTranscriptUsage(path string, loc *time.Location) (historyUsage, error) 
 			}
 		}
 	}
-	return h, nil
+	return h, lastDay, nil
 }
 
 func metaString(m map[string]any, k string) string {

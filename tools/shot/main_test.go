@@ -21,6 +21,8 @@ func frames() map[string]func() string {
 	return map[string]func() string{
 		"banner-composer": bannerComposer,
 		"footer":          footer,
+		"footer-intel":    footerIntel,
+		"intel":           intel,
 		"agent-turn":      agentTurn,
 		"plan-review":     planReview,
 		"approval-diff":   approvalDiff,
@@ -90,6 +92,24 @@ func TestFrameContent(t *testing.T) {
 		for _, want := range []string{"agent", "guardrails", "firewall"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("footer missing %q", want)
+			}
+		}
+	})
+
+	t.Run("intel pane shows the limits, pace, trend and runway", func(t *testing.T) {
+		got := intel()
+		for _, want := range []string{"[ intel ]", "f12 close", "5-hour limit", "weekly limit", "resets in", "pace", "trend", "runway", "today", "this week", "last 30 days", "╹"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("intel pane missing %q", want)
+			}
+		}
+	})
+
+	t.Run("footer intel shows the slot and the hint", func(t *testing.T) {
+		got := footerIntel()
+		for _, want := range []string{"intel", "today 34.4M", "5h 23%", "f12"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("footer intel missing %q", want)
 			}
 		}
 	})

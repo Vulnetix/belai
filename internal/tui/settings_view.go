@@ -149,6 +149,8 @@ func (a *App) settingsRows() []settingsRow {
 	budgetCycleVal := fmt.Sprintf("%ds", int(s.BudgetCycle().Seconds()))
 	budgetWarnVal := boolLabel(s.BudgetWarnEnabled())
 	budgetsVal := fmt.Sprintf("%d set", len(s.TokenBudgets))
+	intelVal := boolLabel(s.IntelEnabled())
+	planLimitsVal := boolLabel(s.PlanLimitsEnabled())
 
 	return []settingsRow{
 		{key: "provider", label: "provider", kind: "text", value: providerVal, src: sourceLabel(origin["provider"])},
@@ -177,6 +179,8 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "token_budgets", label: "token budgets", kind: "submenu", value: budgetsVal, src: sourceLabel(origin["token_budgets"])},
 		{key: "budget_cycle_seconds", label: "budget cycle", kind: "text", value: budgetCycleVal, src: sourceLabel(origin["ui"])},
 		{key: "budget_warn", label: "budget warnings", kind: "toggle", value: budgetWarnVal, src: sourceLabel(origin["ui"])},
+		{key: "intel", label: "session intelligence", kind: "toggle", value: intelVal, src: sourceLabel(origin["ui"]), help: "the footer slot, the intel tab (f12) and /intel"},
+		{key: "plan_limits", label: "plan limits", kind: "toggle", value: planLimitsVal, src: sourceLabel(origin["intel"]), help: "read provider rate-limit response headers into plan-limit readings — global only"},
 	}
 }
 
@@ -430,6 +434,16 @@ func (a *App) cycleToggle(key string) error {
 			s.AutoCommitPerTask = nextBool(s.AutoCommitPerTask)
 		})
 	}
+	if key == "plan_limits" {
+		// Global only: a repository must not change what a user learns about
+		// their own account limits.
+		return a.mutateGlobalSetting(func(s *config.Settings) {
+			if s.Intel == nil {
+				s.Intel = &config.IntelSettings{}
+			}
+			s.Intel.PlanLimits = nextBool(s.Intel.PlanLimits)
+		})
+	}
 	return a.mutateSetting(func(s *config.Settings) {
 		switch key {
 		case "caveman":
@@ -495,6 +509,11 @@ func (a *App) cycleToggle(key string) error {
 				s.UI = &config.UISettings{}
 			}
 			s.UI.BudgetWarn = nextBool(s.UI.BudgetWarn)
+		case "intel":
+			if s.UI == nil {
+				s.UI = &config.UISettings{}
+			}
+			s.UI.Intel = nextBool(s.UI.Intel)
 		}
 	})
 }
@@ -522,6 +541,13 @@ func (a *App) unsetSetting(key string) error {
 	if key == "auto_commit_per_task" {
 		return a.mutateGlobalSetting(func(s *config.Settings) {
 			s.AutoCommitPerTask = nil
+		})
+	}
+	if key == "plan_limits" {
+		return a.mutateGlobalSetting(func(s *config.Settings) {
+			if s.Intel != nil {
+				s.Intel.PlanLimits = nil
+			}
 		})
 	}
 	return a.mutateSetting(func(s *config.Settings) {
@@ -598,6 +624,10 @@ func (a *App) unsetSetting(key string) error {
 		case "budget_warn":
 			if s.UI != nil {
 				s.UI.BudgetWarn = nil
+			}
+		case "intel":
+			if s.UI != nil {
+				s.UI.Intel = nil
 			}
 		}
 	})

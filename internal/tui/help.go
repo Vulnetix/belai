@@ -39,6 +39,7 @@ func keySections() []keySection {
 			{"f8", "open the runs panel on the subagents tab (chat)"},
 			{"f9", "toggle the runs panel on the activity tab (chat)"},
 			{"f10", "turn the active AI Firewall on or off (chat)"},
+			{"f12", "toggle the runs panel on the intel tab: plan limits, pace, trend, runway and usage over time (chat)"},
 		}},
 		{"chat", []keyBinding{
 			{"enter", "send; also runs !shell, !!process, and /commands, or steers a running turn"},
@@ -117,7 +118,7 @@ func keySections() []keySection {
 			{"esc", "back"},
 		}},
 		{"runs panel (after f8/f9)", []keyBinding{
-			{"tab", "switch between activity, subagents, processes, kanban, crew, git and ci tabs (kanban only while the board is on, ci only while the branch has a PR/MR)"},
+			{"tab", "switch between activity, subagents, processes, kanban, crew, git, ci and intel tabs (kanban only while the board is on, ci only while the branch has a PR/MR, intel while ui.intel is on)"},
 			{"up, down", "select an item"},
 			{"enter", "activity: send output; subagents: filter transcript; processes: view output"},
 			{"v", "activity/processes: view the selected output full-screen"},
@@ -263,6 +264,25 @@ func keySections() []keySection {
 			{"a", "add a budget: provider/model, then s, d or m for the scope, then tokens (250k, 1.5M)"},
 			{"enter, space", "change the selected budget's allowance"},
 			{"x", "delete the selected budget"},
+			{"esc", "back"},
+		}},
+		{"runs panel — intel tab (f12)", []keyBinding{
+			{"up, down", "select a row (models and roles lists)"},
+			{"left, right", "move the window: today, this week, last 30 days"},
+			{"m", "list the models of the window"},
+			{"r", "list this session's usage by role"},
+			{"t", "back to the timeline: today, week and 30 days"},
+			{"b", "open the token budgets screen"},
+			{"enter", "open session intelligence full screen"},
+			{"esc", "unfocus the panel (panel stays open)"},
+			{"f12", "close the panel"},
+		}},
+		{"session intelligence (/intel)", []keyBinding{
+			{"up, down", "select a model or role row"},
+			{"left, right", "move the window: today, this week, last 30 days"},
+			{"m, r", "list models or this session's roles"},
+			{"R", "re-read the usage ledger now"},
+			{"b", "open the token budgets screen"},
 			{"esc", "back"},
 		}},
 		{"/permissions", []keyBinding{

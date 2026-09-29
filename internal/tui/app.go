@@ -314,6 +314,10 @@ type App struct {
 	usageEvents  chan run.UsageEvent
 	usageCancel  func()
 	budgetsState budgetsViewState
+	// intelState is the session intelligence pane and screen (f12, /intel);
+	// intelReq sums what this session's agent calls sent, by part.
+	intelState intelViewState
+	intelReq   intelRequest
 	// firewallState is the /firewall screen.
 	firewallState firewallViewState
 	pending       string  // pending prompt to send once configured
@@ -2550,6 +2554,18 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, a.toggleRunsPanel(tabActivity)
 			}
 			return a, nil
+		case "f12":
+			// Session intelligence: toggle the runs panel on its intel tab. With
+			// the panel already open on another tab it switches to intel instead.
+			if a.view != viewChat || !a.settings.IntelEnabled() {
+				return a, nil
+			}
+			if a.runsOpen && a.runsTab != tabIntel {
+				a.runsTab, a.runsSel, a.runsScroll = tabIntel, 0, 0
+				a.runsFocus = true
+				return a, nil
+			}
+			return a, a.toggleRunsPanel(tabIntel)
 		case "f10":
 			// Toggle the Vulnetix AI Firewall when the CLI is configured. This
 			// is intentionally global: it works from /vulnetix config too.
@@ -5069,7 +5085,10 @@ func (a *App) refreshFooter() {
 	a.footer.Model = run.WireModel(a.cfg.Provider, a.cfg.Model)
 	a.footer.RoutedModels = routedModelCount(a.cfg)
 	a.footer.RC = a.rcFooterLabel()
-	a.footer.Budget = a.budgetGauge(time.Now())
+	now := time.Now()
+	run.SetPlanLimits(a.settings.PlanLimitsEnabled())
+	a.footer.Budget = a.budgetGauge(now)
+	a.footer.Intel = a.intelGauge(now)
 	// The effective settings are the UI's canonical effort source: the model
 	// picker and settings view both write there, and refreshProvider copies
 	// the value into cfg for the agent session. If the active provider does

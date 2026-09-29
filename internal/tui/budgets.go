@@ -47,8 +47,10 @@ func (a *App) initBudgets() {
 		a.addSystem(n)
 	}
 	rec := a.budgets
+	run.SetPlanLimits(a.settings.PlanLimitsEnabled())
 	a.usageCancel = run.SetUsageObserver(func(ev run.UsageEvent) {
-		rec.Add(ev.Provider, ev.Model, int64(ev.Tokens))
+		rec.AddCall(ev.Provider, ev.Model, ev.Role, int64(ev.Tokens))
+		rec.ObserveLimits(ev.Limits)
 		select {
 		case a.usageEvents <- ev:
 		default:
@@ -100,6 +102,7 @@ func (a *App) closeBudgets() {
 // budget warnings are on and the call was to the selected provider+model,
 // print one line for each of that model's budgets that is amber or red.
 func (a *App) handleUsage(ev run.UsageEvent) {
+	a.intelReq.add(ev)
 	a.refreshFooter()
 	if a.budgets == nil || !a.settings.BudgetWarnEnabled() {
 		return
@@ -128,19 +131,109 @@ func budgetWarning(g budget.Gauge) string {
 	return ""
 }
 
-// budgetGauge is the footer gauge for now: nil when the routing is "routed"
-// (no single model serves the turn) or the selected model has no budget;
+// cycleBudgets is the budgets the footer cycle walks: the selected model's, in
+// scope order, and none when the routing is "routed" (no single model serves
+// the turn).
+func (a *App) cycleBudgets() []config.TokenBudget {
+	if routedModelCount(a.cfg) > 0 {
+		return nil
+	}
+	return a.settings.BudgetsFor(a.cfg.Provider, a.cfg.Model)
+}
+
+// cycleSlot says what the footer's right side shows at now: the index of the
+// budget the cycle is on, or intel when the cycle is on the session
+// intelligence slot. The cycle is the model's budgets followed by one intel
+// slot (when ui.intel is on), so with no budget, or under "routed", intel is
+// the only slot and usage is always visible.
+func (a *App) cycleSlot(now time.Time) (idx int, intel, ok bool) {
+	if a.budgets == nil {
+		return 0, false, false
+	}
+	n := len(a.cycleBudgets())
+	slots := n
+	if a.settings.IntelEnabled() {
+		slots++
+	}
+	if slots == 0 {
+		return 0, false, false
+	}
+	i := budget.CycleIndex(slots, a.settings.BudgetCycle(), now)
+	return i, i >= n, true
+}
+
+// budgetGauge is the footer budget gauge for now: nil when the cycle is on the
+// intel slot, the routing is "routed", or the selected model has no budget;
 // otherwise the budget the cycle is on.
 func (a *App) budgetGauge(now time.Time) *components.BudgetGauge {
-	if a.budgets == nil || routedModelCount(a.cfg) > 0 {
+	idx, intel, ok := a.cycleSlot(now)
+	if !ok || intel {
 		return nil
 	}
-	bs := a.settings.BudgetsFor(a.cfg.Provider, a.cfg.Model)
-	if len(bs) == 0 {
-		return nil
-	}
-	b := bs[budget.CycleIndex(len(bs), a.settings.BudgetCycle(), now)]
+	b := a.cycleBudgets()[idx]
 	return toFooterGauge(budget.Status(b, a.budgets.Used(b), now))
+}
+
+// intelHint reports whether now is in the last third of the cycle period: the
+// stretch of the intel slot that carries the shortcut hint. It follows the
+// clock like the cycle itself, so every belai window agrees.
+func (a *App) intelHint(now time.Time) bool {
+	period := a.settings.BudgetCycle()
+	if period <= 0 {
+		return false
+	}
+	phase := time.Duration(now.UnixNano() % int64(period))
+	return phase*3 >= period*2
+}
+
+// intelGauge is the session intelligence gauge for now: nil unless the cycle is
+// on the intel slot.
+func (a *App) intelGauge(now time.Time) *components.IntelGauge {
+	_, intel, ok := a.cycleSlot(now)
+	if !ok || !intel {
+		return nil
+	}
+	in := a.budgets.Intel(now, a.cfg.Provider, a.cycleBudgets())
+	return toIntelGauge(in, a.intelHint(now))
+}
+
+// limitLabels are the short names the footer gives each limit window.
+var limitLabels = map[string]string{
+	budget.WindowFiveHour:    "5h",
+	budget.WindowSevenDay:    "7d",
+	budget.WindowMinTokens:   "tok/min",
+	budget.WindowMinInput:    "in/min",
+	budget.WindowMinOutput:   "out/min",
+	budget.WindowMinRequests: "req/min",
+}
+
+// limitElapsed is the share of a limit's window that has passed at now, 0 to 1.
+func limitElapsed(l budget.PlanLimit, now time.Time) float64 {
+	span := l.Span()
+	if span <= 0 {
+		return 0
+	}
+	e := 1 - float64(l.Reset.Sub(now))/float64(span)
+	return math.Min(1, math.Max(0, e))
+}
+
+// toIntelGauge converts the ledger's intel into the footer's gauge.
+func toIntelGauge(in budget.Intel, hint bool) *components.IntelGauge {
+	g := &components.IntelGauge{
+		Today:       humanTokens(in.Rollups[0].Tokens),
+		LimitFrac:   -1,
+		ElapsedFrac: -1,
+		Spark:       in.Spark[:],
+		Pace:        in.Pace.Label,
+		State:       components.BudgetState(in.State),
+		Hint:        hint,
+	}
+	if l := budget.Tightest(in.Limits); l != nil {
+		g.Limit = fmt.Sprintf("%s %d%%", limitLabels[l.Window], int(math.Round(l.Used*100)))
+		g.LimitFrac = l.Used
+		g.ElapsedFrac = limitElapsed(*l, in.Now)
+	}
+	return g
 }
 
 func toFooterGauge(g budget.Gauge) *components.BudgetGauge {
@@ -160,22 +253,7 @@ func toFooterGauge(g budget.Gauge) *components.BudgetGauge {
 
 // formatTimeLeft renders a window's remaining time at two units of
 // precision: "3d 4h", "5h 12m", "42m", or "<1m" in the final minute.
-func formatTimeLeft(d time.Duration) string {
-	if d < time.Minute {
-		return "<1m"
-	}
-	days := int(d / (24 * time.Hour))
-	hours := int(d/time.Hour) % 24
-	mins := int(d/time.Minute) % 60
-	switch {
-	case days > 0:
-		return fmt.Sprintf("%dd %dh", days, hours)
-	case hours > 0:
-		return fmt.Sprintf("%dh %dm", hours, mins)
-	default:
-		return fmt.Sprintf("%dm", mins)
-	}
-}
+func formatTimeLeft(d time.Duration) string { return budget.FormatDuration(d) }
 
 // humanTokens renders a token count compactly: 950, 12.5k, 1.2M, 3B.
 func humanTokens(n int64) string {
