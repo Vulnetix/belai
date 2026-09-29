@@ -3,7 +3,9 @@ package voice
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -181,5 +183,76 @@ func TestTailWriterKeepsTheEndAndFlattens(t *testing.T) {
 	}
 	if (&tailWriter{max: 10}).suffix() != "" {
 		t.Fatal("empty writer has a suffix")
+	}
+}
+
+// parecord treats a lone "-" as the name of a file, not as standard output, so
+// belai's argv gives it no file at all. With the "-" the recording went into a
+// file called "-" in the working directory and belai received nothing.
+func TestParecordIsGivenNoFileToWrite(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("linux helper order")
+	}
+	for _, dev := range []string{"", "alsa_input.pci-0000_64_00.6.HiFi__Mic1__source"} {
+		s, err := newExecSource(dev, lookOnly("parecord"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, a := range s.args {
+			if a == "-" || !strings.HasPrefix(a, "--") {
+				t.Errorf("parecord argv %q has a positional argument %q that it would take as a file to write", s.args, a)
+			}
+		}
+	}
+}
+
+func TestNoHelperWritesRecordingsToTheWorkingDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("needs sh")
+	}
+	// A helper that drops a file as soon as it starts: the file must land in the
+	// helper's private directory, never in ours.
+	s := &ExecSource{bin: "/bin/sh", args: []string{"-c", "echo x > stray-recording; printf '\\001\\000'"}}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := s.Start(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range st.C {
+	}
+	if _, err := os.Stat(filepath.Join(cwd, "stray-recording")); err == nil {
+		os.Remove(filepath.Join(cwd, "stray-recording"))
+		t.Fatal("a capture helper wrote a file into the working directory")
+	}
+}
+
+func TestPrivateDirectoryIsRemovedWhenTheHelperEnds(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("needs sh")
+	}
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+	s := &ExecSource{bin: "/bin/sh", args: []string{"-c", "echo x > f; printf '\\001\\000'"}}
+	st, err := s.Start(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range st.C {
+	}
+	_ = st.Err() // Wait has finished by the time the channel closed
+	deadline := time.After(5 * time.Second)
+	for {
+		left, _ := filepath.Glob(filepath.Join(tmp, "belai-voice-*"))
+		if len(left) == 0 {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("the helper's private directory was left behind: %v", left)
+		case <-time.After(10 * time.Millisecond):
+		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"runtime"
@@ -49,7 +50,10 @@ func helpers() []captureHelper {
 			if dev != "" {
 				a = append(a, "--device="+dev)
 			}
-			return append(a, "-")
+			// No file argument: parecord then writes the stream to standard output.
+			// A "-" here is not stdout, it is a file named "-" in the working
+			// directory, which would put the recording on disk.
+			return a
 		}},
 		{"arecord", func(dev string) []string {
 			a := []string{"-q", "-t", "raw", "-f", "S16_LE", "-r", "16000", "-c", "1"}
@@ -128,15 +132,29 @@ func (s *ExecSource) Name() string {
 // from a tool call.
 func (s *ExecSource) Start(ctx context.Context) (Stream, error) {
 	cmd := exec.CommandContext(ctx, s.bin, s.args...)
+	// The helper runs in a private directory that is removed afterwards. It
+	// is given no file to write, but a mistake in an argument must never put
+	// a recording in the project or on disk beyond this session.
+	dir, derr := os.MkdirTemp("", "belai-voice-*")
+	if derr != nil {
+		dir = os.TempDir()
+	}
+	cmd.Dir = dir
 	cmd.Env = proc.ScrubbedEnv()
 	proc.SetProcessGroup(cmd)
 	stderr := &tailWriter{max: 240}
 	cmd.Stderr = stderr
 	out, err := cmd.StdoutPipe()
 	if err != nil {
+		if derr == nil {
+			_ = os.RemoveAll(dir)
+		}
 		return Stream{}, err
 	}
 	if err := cmd.Start(); err != nil {
+		if derr == nil {
+			_ = os.RemoveAll(dir)
+		}
 		return Stream{}, fmt.Errorf("start %s: %w", s.Name(), err)
 	}
 	ch := make(chan []int16, 64)
@@ -170,6 +188,9 @@ func (s *ExecSource) Start(ctx context.Context) (Stream, error) {
 			}
 		}
 		err := cmd.Wait()
+		if derr == nil {
+			_ = os.RemoveAll(dir)
+		}
 		mu.Lock()
 		defer mu.Unlock()
 		if ctx.Err() == nil && err != nil {
