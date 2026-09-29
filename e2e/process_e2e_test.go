@@ -98,6 +98,10 @@ func newProcessMockServer(t *testing.T) (*httptest.Server, *processMock) {
 			writeChat(w, "AGENT")
 		case strings.Contains(system, "clarification questionnaire"):
 			writeChat(w, `{"groups":[]}`)
+		case !strings.Contains(user, "supervised process"):
+			// The startup model test ladder sends its own probes ("Reply OK."
+			// and others). They are not recovery turns and are not counted.
+			writeChat(w, "OK")
 		default:
 			pm.mu.Lock()
 			pm.chatUsers = append(pm.chatUsers, user)
