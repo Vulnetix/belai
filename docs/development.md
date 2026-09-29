@@ -697,6 +697,18 @@ Rules and edge cases:
 
 The `e2e` package builds `./cmd/belai` into a temp dir and runs it against an `httptest` provider, so it catches exactly the class of bug a stale artefact hides: flags, exit codes, and the Role Manager pipeline as the shipped binary sees them.
 
+The local decision-model ladder has an opt-in live test that downloads the
+real weights (~2.6 GB) and drives the llama-server on PATH:
+
+```bash
+BELAI_LIVE_DECISION=decider-4b BELAI_MODELS_DIR=/some/roomy/dir \
+  go test -count=1 -timeout 45m -run TestLiveLocalDecisionLadder -v ./internal/modeltest/
+```
+
+Use `plumb-4b` for the other catalogue model. To try a self-hosted Jev from
+the TUI, run any `/v1/systemone` server (for example `laya-serve`) and add it
+under providers → `+ add new provider` → kind `jev`.
+
 ## Lint and hygiene
 
 | Command | Does |

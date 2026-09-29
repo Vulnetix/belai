@@ -375,6 +375,126 @@ that is a Jev model also resolves to the main classifier, and the `/model`
 routing pickers never offer `typesafe/jev*` models. Stored Jev routing targets
 still load, but they fall back at runtime.
 
+### Decision backends
+
+Every Jev job — the security guard, intent detection and routing — asks its
+questions through one transport (`internal/decisions`). There are three:
+
+| Backend | Selected by | Transport | Timeout |
+|---|---|---|---|
+| OpenRouter Jev | `classifier.provider: openrouter`, `classifier.model: typesafe/jev*` | OpenRouter Decisions API | 3 s |
+| Self-hosted Jev | `classifier.provider` names a profile of kind `jev` | `POST {base_url}{decision_path}`, TypeSafe's native `/v1/systemone` | 5 s |
+| Local decision model | `classifier.provider: decision-local`, `classifier.model: decider-4b` or `plumb-4b` | llama-server `/completion`, option-letter log-probabilities | 20 s |
+
+`classifier.decision.timeout_ms` overrides the timeout and
+`classifier.decision.max_state_bytes` (default 16 KiB) caps what is sent to a
+local model. When a self-hosted or local backend is the classifier it replaces
+OpenRouter's Jev for all three jobs: mode detection uses it without an
+OpenRouter key and without `routing.kind: routed`, and routed use cases are
+chosen by it. The chat fields of the classifier stay on the main model, which
+answers whatever the backend hands off.
+
+**Self-hosted Jev.** Any server that speaks `/v1/systemone` works: laya-serve,
+decider.serve, jevk5-serve and others. The profile (kind `jev`) holds the base
+URL, an optional `decision_path` (default `/v1/systemone`) and an optional key
+stored under `<name>/api_key`. The URL must be https, or plain http only on a
+loopback host, and carries no credentials. The key rides only in the
+`Authorization` header of requests to that URL; redirects are refused. Answers
+are validated (a noul in [0,1], a choice among the offered options) before
+they are used. Add one from providers → `+ add new provider` → kind `jev`.
+
+**Local decision models.** Two 4-bit GGUF models are catalogued:
+
+| id | Hugging Face file | Prompt | Temperatures (noul / choice) |
+|---|---|---|---|
+| `decider-4b` | `Mapika/decider-4b-GGUF` · `decider-4b-v2.1-Q4_K_M.gguf` | decider's plain state-first layout | 1.56 / 1.11 |
+| `plumb-4b` | `crh225/plumb-4b-GGUF` · `plumb-4b-v5-Q4_K_M.gguf` | the JevK5 chat layout, tokenised with special tokens | 2.07 / 2.07 |
+
+Nothing is generated: each question is one `/completion` request with
+`n_predict: 1`, `n_probs: 40` and `temperature: 0`, and the answer is a
+softmax over the option letters' log-probabilities divided by the model's
+temperature. A letter missing from the returned top-k sits two nats below the
+lowest one returned. The share of probability the letters held (the *letter
+mass*) is checked on every answer: under 0.10 the model was not at its answer
+slot, and the check is handed to the fallback rather than used. The local
+backend asks intent detection as one `choice` question over the intents, so
+its probabilities sum to one; the hosted and self-hosted backends keep one
+noul per intent.
+
+Content never shapes the prompt: a chat special-token opener (`<|`) in the
+state or a question is split so it cannot become a turn boundary, and on the
+decider layout a state line that begins like the prompt's own markup
+(`Question`, `Options:`, `Answer`, `Context:`, `(A)`) is prefixed so it cannot
+forge a second question or answer slot. On the JevK5 layout the state is a
+JSON string and cannot leave it.
+
+**The local server** (`internal/decisionserver`) is one llama-server per
+machine, shared by the TUI, headless runs, fleet workers and rc sessions. A
+running server is reused only when it answers `/health` and lists the model's
+alias in `/v1/models`; otherwise the process that needs it takes a file lock
+(`<state dir>/run/decision-server.lock`), probes again and launches it with a
+harness-fixed argv: `-m <file> --alias <alias> --host 127.0.0.1 --port <n>
+-np 1 --ctx-size 8192 --cache-reuse 256`, no chat template, no sampling
+defaults. It starts only after the trust gate, with the scrubbed environment
+in its own process group, and only the process that launched it stops it
+(on `/exit`, ctrl+d twice, or process exit). Weights are never downloaded at
+startup: a missing file is a notice, and checks use the fallback until the
+model is selected in `/model`. A connection refused while the server is gone
+starts a background relaunch (at most one per 30 s) while the fallback
+answers.
+
+**Fallback.** A timeout, a state over the size cap, a low letter mass, a 429
+or a 5xx hands the unchanged payload to the agent model's chat sentinel, and
+the handoff is recorded as a `security_fallback` activity. Any other failure
+(a refused key, a wrong path, an invalid answer) is an error and the pipeline
+fails closed. On a CPU, Decider-4B and Plumb-4B answer a short check in about
+0.5 to 1 s; an ~800-token tool result takes 2 to 3 s per question.
+
+### Testing a selection before it is saved
+
+Every `/model` edit that selects a model is tested first and written only when
+the test passes: the agent provider and model, the fast tier, routing kind
+and use cases, and the classifier's kind, provider, model, phase sources and
+tier. Edits that pick no model (thresholds, effort, reasoning, chunk,
+decision timeouts, clears) are written at once. A provider cycle selects that
+provider with its default model and tests it; a quick lap of presses tests
+only the last, because each new edit supersedes the running test. Cycling
+onto a decision provider opens its model picker instead, since the model
+choice matters and may need a download. The providers view's `g` (assign as
+classifier) and a new `jev` provider take the same path; a `jev` profile is
+written, with its key and the classifier selection, only after its test
+passes, so a failed test leaves no profile behind.
+
+The test (`internal/modeltest`) runs a ladder of steps per selected model and
+stops at the first failure:
+
+- **chat models** — credentials resolve; for ollama, the model is pulled (after
+  confirmation); for llama-server, the server answers, or a `org/repo[:QUANT]`
+  model is downloaded and launched; a minimal reply arrives (a 400 about
+  reasoning or token options is retried without them); a classifier model
+  must also answer the security sentinel with a verdict token.
+- **local decision model** — llama-server is on PATH; the weights are on disk
+  or downloaded after confirmation (resumable, checked against the SHA-256 the
+  Hugging Face API reports, retried once on a mismatch, with the Hugging Face
+  CLI as a fallback when a real one is installed); the server starts (a GPU
+  backend failure relaunches on the CPU); an answer lands on the option
+  letters; injection and plain tool output separate; intent detection picks
+  *plan* for a planning prompt; and a long tool result's timing is measured.
+- **self-hosted Jev** — the URL policy; a benign decision answers (trying the
+  other common decision paths and, on loopback, the other protocol, and saving
+  the address that answered); the same sanity, intent and timing probes.
+- **phases** — embedded gates load; a remote phase has its token.
+
+Weak answers are warnings, not failures: the selection is saved and the
+warning stays on the page. Every failure says why in harness-composed text
+and offers what to try, some with a key: `r` retry, `D` delete belai's copy of
+the weights and download again, `L` retry on the CPU, `p` open providers.
+Install and upgrade hints name the command for the operating system. A
+download asks first, with the size and destination, and shows progress,
+rate and time left; `esc` cancels a running test, and a cancelled download
+resumes next time. The result line names the settings file the selection was
+saved to, or says what stays in effect when it was not.
+
 ### Classifier provider allowlist
 
 The classifier role's provider list is restricted to classifier-capable
@@ -387,6 +507,12 @@ rows filter:
   Its model picker offers the Jev Decisions model (`typesafe/jev-1.13`, seeded)
   plus any `typesafe/jev*` ids the catalogue returns, so the Jev security
   classifier and tool-call gate are the classifier choices there.
+- **`decision-local`** — always offered. Its picker lists Decider-4B and
+  Plumb-4B with their size and whether they are on disk; picking one tests
+  (and, after confirmation, downloads) everything it needs.
+- **custom `jev` profiles** — offered like other custom providers; their
+  picker lists the profile's models, or the server's default. They are never
+  offered to the agent, fast or routing roles.
 - **custom providers**, **`llama-server`** and **`ollama`** — always offered,
   with every model selectable and a broad-model warning shown in the picker:
   *"Classifier provider: choose a classifier-specific model or switch to kind

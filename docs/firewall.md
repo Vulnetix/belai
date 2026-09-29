@@ -84,6 +84,11 @@ consulted for a firewall key.
 - **URLs are https**, or plain http to a loopback host only.
 - **Sign-in providers are never routed.** Copilot, Kiro and the Cloudflare
   AI Gateway provider are never routed through a firewall.
+- **Decision backends are never routed.** The local decision model
+  (`decision-local`) and self-hosted Jev profiles (kind `jev`) answer
+  decisions, not chat, so a firewall never carries them and a firewall key
+  never rides on a decision request (see docs/role-manager.md, "Decision
+  backends").
 - **Read-only entries change nothing.** OpenRouter and Cloudflare only have
   their refusals read back.
 - **`-firewall` / `BELAI_FIREWALL=1`** turn the active firewall on for one

@@ -462,6 +462,11 @@ page ([remote control](remote-control.md#fleet-workers)).
   environment, and an explicit `--git-dir` the harness computed. The
   agent's own git may write only its worktree, the object store and the
   `belai/` branches; config, hooks and every other ref stay read-only.
+- **One decision server for all workers.** When the classifier is the local
+  decision model, workers share the machine's one llama-server
+  (`internal/decisionserver`). The first process that needs it launches it
+  under a file lock; a worker never downloads weights, and while the server
+  is missing or restarting its checks go to the agent-model fallback.
 
 ## Compared with other agent harnesses
 

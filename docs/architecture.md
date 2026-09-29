@@ -124,6 +124,16 @@ Business rules:
   guardrail security classifier and tool-call gate; Jev is a Decisions model,
   never a chat model, so it appears on the classifier picker only and never on
   the agent or routing pickers.
+- **Decision backends.** Besides OpenRouter's Jev, the classifier can name a
+  self-hosted Jev server (a provider profile of kind `jev`, TypeSafe's
+  `/v1/systemone`) or the local decision model (`decision-local`: Decider-4B
+  or Plumb-4B on a shared llama-server). Whichever is set answers every Jev
+  job: security, intent detection and routing. `internal/decisions` holds the
+  transports, `internal/decisionserver` the shared local server, and
+  docs/role-manager.md "Decision backends" the details.
+- **Selections are tested before they are saved.** A `/model` edit that
+  selects a model runs the `internal/modeltest` ladder and is written only on
+  a pass; see docs/role-manager.md "Testing a selection before it is saved".
 - **Embedded models fail closed.** A variant binary whose embedded model fails
   to load or verify is a hard startup error, never a silent downgrade to the
   LLM path. Extraction and load happen once, eagerly.

@@ -144,6 +144,39 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   one.
 - **Classifier turns are tool-less.** The classifier payload carries no tools,
   no skills, and no agent block.
+- **Decision backends are the user's, and a failing one is never an
+  approval.** Jev jobs (the security guard, intent detection, routing) go to
+  exactly one decision backend: OpenRouter's Decisions API, a self-hosted
+  server speaking TypeSafe's `/v1/systemone` (a provider profile of kind
+  `jev`), or the local decision model (`decision-local`: Decider-4B or
+  Plumb-4B on llama-server, `internal/decisionserver`). The rules:
+  - A `jev` profile is a provider profile, so the project layer cannot add
+    one; its URL is https or loopback http with no credentials in it, and its
+    key rides only in the `Authorization` header to that URL, never across a
+    redirect. No decision backend is firewall-routed or asked to chat.
+  - The local server's binary comes from PATH and its argv is harness-fixed
+    (`localinfer.DecisionArgs`: loopback host, `-m` path, alias). It starts
+    only after the trust gate, with the scrubbed environment, in its own
+    process group, and only the process that launched it stops it. Weights
+    are downloaded only in a `/model` test after the user confirms the size,
+    and are checked against the SHA-256 Hugging Face reports.
+  - A decision request carries a state and typed questions only. State text
+    cannot forge prompt structure: chat special-token openers are split, and
+    decider-layout markup lines are prefixed.
+  - A timeout, an oversized state, a low letter mass, 429 or 5xx hands the
+    unchanged payload to the agent-model classifier; any other failure is an
+    error and the pipeline fails closed.
+- **A model selection is saved only after its test passes.** A `/model` edit
+  that selects a model (and the providers view's assign-as-classifier, and a
+  new `jev` provider) runs the `internal/modeltest` ladder first and writes
+  nothing when it fails. The ladder writes no settings itself; probes see
+  only harness-built content, and every step detail is harness-composed or a
+  cleaned, capped excerpt. Knobs that pick no model write at once.
+- **Local inference servers run scrubbed.** Every server `internal/localinfer`
+  launches (chat llama-server, the decision server) gets `proc.ScrubbedEnv`,
+  plus `HF_TOKEN` only on a download path, and its own process group. A
+  launch's context bounds its startup only; a healthy server runs until its
+  stop function is called.
 - **The dependency hook is deterministic up to one sentinel.** A file
   triggers it only by matching the manifest table ported from the Vulnetix
   CLI (`internal/depwatch`, kept in step by a test against `../cli`). The
