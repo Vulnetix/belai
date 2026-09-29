@@ -172,8 +172,11 @@ func TestPushToTalkTranscribesAfterRelease(t *testing.T) {
 
 	e.PTTDown()
 	eventually(t, "microphone opens on key down", func() bool { s, _ := src.counts(); return s == 1 })
-	eventually(t, "hearing", func() bool { return e.State() == StateHearing })
-	for i := 0; i < 5; i++ {
+	// Holding the key opens the microphone; the state follows the voice, not the key.
+	eventually(t, "listening while the key is held", func() bool { return e.State() == StateListening })
+	src.send(tone(ms(100), 0.3))
+	eventually(t, "hearing once there is speech", func() bool { return e.State() == StateHearing })
+	for i := 0; i < 4; i++ {
 		src.send(tone(ms(100), 0.3))
 	}
 	// Audio still queued at the release would count toward the tail, so let
@@ -380,4 +383,146 @@ func TestCloseIsIdempotentAndStopsTheMicrophone(t *testing.T) {
 		t.Fatalf("microphone stops = %d after Close", stops)
 	}
 	e.SetReady(false) // must not block after Close
+}
+
+func TestLevelFollowsTheMicrophone(t *testing.T) {
+	src := &fakeSource{}
+	e := newTestEngine(t, ModeListen, &fakeRec{text: "x"}, src)
+	if l := e.Level(); l != Silent {
+		t.Fatalf("Level before any audio = %+v, want Silent", l)
+	}
+	ready(t, e)
+	eventually(t, "microphone open", func() bool { s, _ := src.counts(); return s == 1 })
+	src.send(tone(ms(100), 0.3))
+	eventually(t, "a level above silence", func() bool { return e.Level().RMS > -40 })
+	l := e.Level()
+	// 0.3 of full scale peaks near -10.5 dBFS and averages near -13.5.
+	if l.Peak < -12 || l.Peak > -9 || l.RMS < -15 || l.RMS > -12 {
+		t.Fatalf("Level = %+v for a 0.3 tone", l)
+	}
+	src.send(silence(ms(100)))
+	eventually(t, "silence reads as silence", func() bool { return e.Level().RMS <= -90 })
+	e.SetReady(false)
+	eventually(t, "closing the microphone resets the level", func() bool { return e.Level() == Silent })
+}
+
+func TestLevelHelpers(t *testing.T) {
+	if rms, peak := chunkLevels(nil); rms != 0 || peak != 0 {
+		t.Fatal("chunkLevels(nil)")
+	}
+	if toDB(0) != floorDB || toDB(1) != 0 {
+		t.Fatalf("toDB(0) = %v, toDB(1) = %v", toDB(0), toDB(1))
+	}
+	if SpeechDB > -30 || SpeechDB < -45 {
+		t.Fatalf("SpeechDB = %v, want about -38", SpeechDB)
+	}
+	var b levelBox
+	if b.get() != Silent {
+		t.Fatal("an empty levelBox is not Silent")
+	}
+}
+
+func TestPushToTalkStateFollowsTheVoice(t *testing.T) {
+	src := &fakeSource{}
+	e := newTestEngine(t, ModePushToTalk, &fakeRec{text: "x"}, src)
+	ready(t, e)
+	e.PTTDown()
+	eventually(t, "microphone open", func() bool { s, _ := src.counts(); return s == 1 })
+	eventually(t, "listening", func() bool { return e.State() == StateListening })
+	src.send(tone(ms(200), 0.3))
+	eventually(t, "hearing", func() bool { return e.State() == StateHearing })
+	// Half a second of quiet: the hold is over, the key is still down.
+	src.send(silence(ms(500)))
+	eventually(t, "back to listening between words", func() bool { return e.State() == StateListening })
+	src.send(tone(ms(200), 0.3))
+	eventually(t, "hearing again", func() bool { return e.State() == StateHearing })
+}
+
+func TestLatchedRecordingEndsWhenTheSpeakerStops(t *testing.T) {
+	src := &fakeSource{}
+	rec := &fakeRec{text: "add a retry"}
+	e := newTestEngine(t, ModePushToTalk, rec, src)
+	ready(t, e)
+	e.PTTDown()
+	eventually(t, "microphone open", func() bool { s, _ := src.counts(); return s == 1 })
+	e.PTTLatch() // a tap: no release will ever be reported
+	src.send(tone(ms(600), 0.3))
+	eventually(t, "hearing", func() bool { return e.State() == StateHearing })
+	// Under a second of quiet keeps it going.
+	src.send(silence(ms(700)))
+	time.Sleep(30 * time.Millisecond)
+	if _, stops := src.counts(); stops != 0 {
+		t.Fatal("the recording ended before a second of quiet")
+	}
+	src.send(silence(ms(700)))
+	if ev := nextEvent(t, e, EventTranscript); ev.Text != "add a retry" {
+		t.Fatalf("transcript = %q", ev.Text)
+	}
+	eventually(t, "microphone closes by itself", func() bool { _, s := src.counts(); return s == 1 })
+	eventually(t, "back to ready", func() bool { return e.State() == StateIdle })
+}
+
+func TestLatchedRecordingGivesUpOnSilence(t *testing.T) {
+	src := &fakeSource{}
+	rec := &fakeRec{text: "should not run"}
+	e := newTestEngine(t, ModePushToTalk, rec, src)
+	ready(t, e)
+	e.PTTDown()
+	eventually(t, "microphone open", func() bool { s, _ := src.counts(); return s == 1 })
+	e.PTTLatch()
+	for i := 0; i < 11; i++ {
+		src.send(silence(ms(1000)))
+	}
+	eventually(t, "microphone closes after ten seconds of nothing", func() bool { _, s := src.counts(); return s == 1 })
+	noTranscript(t, e)
+	if rec.callCount() != 0 {
+		t.Fatal("ten seconds of silence was recognised")
+	}
+}
+
+func TestUnlatchedRecordingNeverEndsOnItsOwn(t *testing.T) {
+	src := &fakeSource{}
+	e := newTestEngine(t, ModePushToTalk, &fakeRec{text: "x"}, src)
+	ready(t, e)
+	e.PTTDown()
+	eventually(t, "microphone open", func() bool { s, _ := src.counts(); return s == 1 })
+	src.send(tone(ms(300), 0.3))
+	for i := 0; i < 3; i++ {
+		src.send(silence(ms(1000)))
+	}
+	time.Sleep(30 * time.Millisecond)
+	if _, stops := src.counts(); stops != 0 {
+		t.Fatal("a held key was ended by silence: only a latched tap may end itself")
+	}
+	e.PTTLatch() // still recording, so it latches; a stray latch is otherwise a no-op
+	e.PTTUp()
+}
+
+func TestPTTLatchWithNoRecordingIsANoOp(t *testing.T) {
+	src := &fakeSource{}
+	e := newTestEngine(t, ModePushToTalk, &fakeRec{text: "x"}, src)
+	ready(t, e)
+	e.PTTLatch()
+	time.Sleep(20 * time.Millisecond)
+	if starts, _ := src.counts(); starts != 0 || e.State() != StateIdle {
+		t.Fatalf("a latch with no recording started something: starts=%d state=%v", starts, e.State())
+	}
+}
+
+func TestSamplesCountsWhatArrives(t *testing.T) {
+	src := &fakeSource{}
+	e := newTestEngine(t, ModeListen, &fakeRec{text: "x"}, src)
+	if e.Samples() != 0 {
+		t.Fatal("samples before any audio")
+	}
+	ready(t, e)
+	eventually(t, "microphone open", func() bool { s, _ := src.counts(); return s == 1 })
+	// Open but delivering nothing: the count stays at zero.
+	time.Sleep(30 * time.Millisecond)
+	if e.Samples() != 0 {
+		t.Fatal("samples counted with no audio delivered")
+	}
+	src.send(silence(ms(100)))
+	src.send(tone(ms(100), 0.3))
+	eventually(t, "both chunks counted", func() bool { return e.Samples() == int64(2*ms(100)) })
 }

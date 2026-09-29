@@ -42,6 +42,12 @@ type Panel struct {
 	// Render attaches them to the last body line whose stripped text equals
 	// Marker so a selection over the hint copies the hidden remainder.
 	// Empty Marker means the panel has no truncation marker.
+	// Wave turns the frame's top and bottom rules into a slow ripple, drawn from
+	// scan-line glyphs at staggered heights and advanced by WavePhase. It is off
+	// for every panel except the voice composer while speech is heard.
+	Wave      bool
+	WavePhase int
+
 	Marker string
 	Hidden string
 }
@@ -75,7 +81,7 @@ func (p Panel) Render() (string, LineMap) {
 	edge := lipgloss.NewStyle().Foreground(accent)
 	titleStyle := lipgloss.NewStyle().Foreground(titleAccent).Bold(true)
 
-	top := TopEdge(width, p.Title, p.Detail, p.Meta, edge, titleStyle, p.Open)
+	top := TopEdgeRule(width, p.Title, p.Detail, p.Meta, edge, titleStyle, p.Open, p.ruleFill())
 
 	// An open panel indents its body by the same two columns the boxed
 	// frame's bar and padding take, so line-map columns match either way.
@@ -172,7 +178,11 @@ func (p Panel) finish(b *strings.Builder, lm LineMap, width int, edge lipgloss.S
 	if p.Open {
 		return strings.TrimSuffix(b.String(), "\n"), lm
 	}
-	b.WriteString(edge.Render("╰" + repeatRune('─', width-2) + "╯"))
+	rule := p.ruleFill()
+	if rule == nil {
+		rule = func(n int) string { return repeatRune('─', n) }
+	}
+	b.WriteString(edge.Render("╰" + rule(width-2) + "╯"))
 	return b.String(), append(lm, SourceLine{Chrome: true})
 }
 
@@ -184,6 +194,15 @@ func (p Panel) finish(b *strings.Builder, lm LineMap, width int, edge lipgloss.S
 // plain text first; when the width runs out the meta goes first, then the
 // detail, then the title is truncated.
 func TopEdge(width int, title, detail, meta string, edge, titleStyle lipgloss.Style, open bool) string {
+	return TopEdgeRule(width, title, detail, meta, edge, titleStyle, open, nil)
+}
+
+// TopEdgeRule is TopEdge with a custom fill for the rule; nil is the plain
+// `─` run.
+func TopEdgeRule(width int, title, detail, meta string, edge, titleStyle lipgloss.Style, open bool, rule func(n int) string) string {
+	if rule == nil {
+		rule = func(n int) string { return repeatRune('─', n) }
+	}
 	lead, tail, end := "╭─ ", " ─╮", "─╮"
 	if open {
 		lead, tail, end = "── ", " ──", ""
@@ -217,7 +236,7 @@ func TopEdge(width int, title, detail, meta string, edge, titleStyle lipgloss.St
 		if detail != "" {
 			top += MutedStyle.Render("  " + detail)
 		}
-		top += edge.Render(" " + repeatRune('─', fill))
+		top += edge.Render(" " + rule(fill))
 		if meta != "" {
 			return top + MutedStyle.Render(" "+meta+" ") + edge.Render(end)
 		}
@@ -226,9 +245,35 @@ func TopEdge(width int, title, detail, meta string, edge, titleStyle lipgloss.St
 	if detail != "" {
 		top += LowStyle.Render("  " + detail)
 	}
-	top += LineStyle.Render(" " + repeatRune('─', fill))
+	top += LineStyle.Render(" " + rule(fill))
 	if meta != "" {
 		top += LowStyle.Render(" "+meta) + LineStyle.Render(tail)
 	}
 	return top
+}
+
+// waveGlyphs are horizontal scan lines at four heights. Laid side by side
+// in a sine-like order they read as a ripple along the rule.
+var waveGlyphs = []rune("─⎽⎼⎻⎺⎻⎼⎽")
+
+// WaveRule returns n cells of rippling rule at the given phase. The same
+// phase draws the same rule, so a frame is reproducible.
+func WaveRule(n, phase int) string {
+	if n <= 0 {
+		return ""
+	}
+	out := make([]rune, n)
+	for i := range out {
+		out[i] = waveGlyphs[((i-phase)%len(waveGlyphs)+len(waveGlyphs))%len(waveGlyphs)]
+	}
+	return string(out)
+}
+
+// ruleFill is the panel's rule fill: a wave while Wave is set, else nil for
+// the plain rule.
+func (p Panel) ruleFill() func(int) string {
+	if !p.Wave {
+		return nil
+	}
+	return func(n int) string { return WaveRule(n, p.WavePhase) }
 }

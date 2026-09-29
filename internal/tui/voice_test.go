@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/docparity"
@@ -79,7 +80,7 @@ func waitFor(t *testing.T, what string, cond func() bool) {
 func started(t *testing.T, v config.VoiceSettings) (*App, *tuiMic) {
 	t.Helper()
 	a, mic := voiceApp(t, v)
-	if cmd := a.voiceStart(); cmd == nil {
+	if cmd := a.voiceStart(false); cmd == nil {
 		t.Fatalf("voiceStart returned no watcher: %v", a.messages)
 	}
 	a.syncVoice()
@@ -160,7 +161,7 @@ func TestATurnInFlightKeepsTheComposerReady(t *testing.T) {
 func TestVoiceStartExplainsWhyItCannot(t *testing.T) {
 	a, mic := voiceApp(t, config.VoiceSettings{Enabled: on()})
 	a.voice.modelPath = func() string { return "" }
-	if cmd := a.voiceStart(); cmd != nil || a.voice.eng != nil {
+	if cmd := a.voiceStart(false); cmd != nil || a.voice.eng != nil {
 		t.Fatal("started without the model")
 	}
 	msg := lastSystem(a)
@@ -171,7 +172,7 @@ func TestVoiceStartExplainsWhyItCannot(t *testing.T) {
 	}
 	a.voice.modelPath = func() string { return "/m" }
 	a.voice.newSource = func(string) (voice.Source, error) { return nil, voice.ErrNoCapture }
-	if cmd := a.voiceStart(); cmd != nil || a.voice.eng != nil {
+	if cmd := a.voiceStart(false); cmd != nil || a.voice.eng != nil {
 		t.Fatal("started without a capture helper")
 	}
 	if !strings.Contains(lastSystem(a), "install one of") {
@@ -433,22 +434,27 @@ func TestConfiguredKeyIsHonoured(t *testing.T) {
 	waitFor(t, "microphone opens on the configured key", func() bool { return mic.starts.Load() == 1 })
 }
 
-func TestFooterAndComposerChip(t *testing.T) {
+func TestFooterAndComposerIcon(t *testing.T) {
 	a, _ := voiceApp(t, config.VoiceSettings{})
-	if label, _ := a.voiceFooter(); label != "" || a.voiceTitleChip() != "" {
-		t.Fatal("voice shows something while it is off")
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	if label, _ := a.voiceFooter(); label != "" {
+		t.Fatal("voice shows a footer switch while it is off")
+	}
+	if strings.ContainsAny(ansi.Strip(a.renderComposer()), "◉◎●◌⊘") {
+		t.Fatal("the composer shows a voice icon while voice is off")
 	}
 	a, _ = started(t, config.VoiceSettings{Enabled: on(), Mode: config.VoiceModeListen})
+	a.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 	a.refreshFooter()
 	if a.footer.Voice != "voice: listening" || !a.footer.VoiceOn {
 		t.Fatalf("footer = %q on=%v", a.footer.Voice, a.footer.VoiceOn)
 	}
-	if !strings.Contains(a.renderComposer(), "listening") {
-		t.Fatal("the composer title does not show the listening chip")
+	if !strings.ContainsAny(ansi.Strip(a.renderComposer()), "◉◎") {
+		t.Fatal("the composer does not show the listening icon")
 	}
 	a.view = viewSettings
-	if strings.Contains(a.renderComposer(), "listening") {
-		t.Fatal("the chip is drawn on another view's field")
+	if strings.ContainsAny(ansi.Strip(a.renderComposer()), "◉◎●◌⊘") {
+		t.Fatal("the icon is drawn on another view's field")
 	}
 	a.view = viewChat
 

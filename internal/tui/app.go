@@ -246,7 +246,8 @@ type App struct {
 
 	// mode classification (optional; nil skips auto-detection)
 	classifier rolemanager.Classifier
-	voice      voiceState // speech input to the composer (docs/voice.md)
+	voice      voiceState      // speech input to the composer (docs/voice.md)
+	vdebug     voiceDebugState // the /voice debug screen
 	cache      *rolemanager.Cache
 	namedAgent string
 	// agentExplicit marks an agent the user engaged by hand (picker, /agent,
@@ -1399,7 +1400,7 @@ func (a *App) relayout() {
 	a.fitEditor()
 	if a.width > 6 {
 		// Two border cells and one column of padding on each side.
-		a.editor.SetWidth(a.width - 6)
+		a.editor.SetWidth(a.width - 6 - a.voiceIconReserve())
 	}
 	a.vp.Width = a.contentWidth()
 	vpHeight := a.height - a.chromeHeight()
@@ -1588,7 +1589,11 @@ func (a *App) dispatchPrompt(input string, safe []run.Attachment, directive stri
 // echoUser appends a submitted prompt to the transcript and persists it as a
 // user entry.
 func (a *App) echoUser(input string) {
-	a.echoUserMessage(components.Message{Role: "user", Content: input})
+	m := components.Message{Role: "user", Content: input}
+	// A prompt that still holds dictated text is a voice turn: its title is
+	// coloured for it and ctrl+o shows what was recognised.
+	a.tagDictated(&m)
+	a.echoUserMessage(m)
 }
 
 // echoUserMessage is echoUser for a prepared user message (a web prompt
@@ -4380,20 +4385,25 @@ func (a *App) renderComposer() string {
 			meta = "⏎ overwrite · d delete · esc cancel"
 		}
 	}
-	// Voice input shows its state on the chat composer only, so the chip is
-	// never drawn on another view's text field.
-	if a.view == viewChat && !a.promptAction && !a.editor.Masked {
-		if chip := a.voiceTitleChip(); chip != "" {
-			title += " " + chip
-		}
+	// Voice input draws on the chat composer only, never on another view's
+	// text field: a circle icon at the right edge of the first row, and a
+	// frame that ripples while speech is heard and turns purple while the
+	// speech or fast model works (voice_view.go).
+	body := a.editor.View()
+	wave, phase := false, 0
+	if a.view == viewChat && !a.promptAction && !a.editor.Masked && a.voice.eng != nil {
+		body = overlayVoiceIcon(body, a.contentWidth()-4, voiceIconFor(a.voiceLook(), a.voice.frame))
+		accent, wave, phase = a.voiceFrame(accent)
 	}
 	return components.Panel{
-		Title:  title,
-		Meta:   meta,
-		Body:   a.editor.View(),
-		Width:  a.contentWidth(),
-		Accent: accent,
-		Raw:    true,
+		Title:     title,
+		Meta:      meta,
+		Body:      body,
+		Width:     a.contentWidth(),
+		Accent:    accent,
+		Raw:       true,
+		Wave:      wave,
+		WavePhase: phase,
 	}.View()
 }
 

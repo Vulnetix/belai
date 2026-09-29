@@ -158,3 +158,53 @@ func TestVoicePageMatchesTheSettings(t *testing.T) {
 		}
 	}
 }
+
+func TestVoiceEnabledOrFollowsTheDefaultUnlessSet(t *testing.T) {
+	on, off := true, false
+	var nilSettings *VoiceSettings
+	for name, tc := range map[string]struct {
+		s    *VoiceSettings
+		def  bool
+		want bool
+	}{
+		"nil, built in":         {nilSettings, true, true},
+		"nil, not built in":     {nilSettings, false, false},
+		"unset, built in":       {&VoiceSettings{}, true, true},
+		"unset, not built in":   {&VoiceSettings{}, false, false},
+		"explicit off wins":     {&VoiceSettings{Enabled: &off}, true, false},
+		"explicit on wins":      {&VoiceSettings{Enabled: &on}, false, true},
+		"explicit on, built in": {&VoiceSettings{Enabled: &on}, true, true},
+	} {
+		if got := tc.s.VoiceEnabledOr(tc.def); got != tc.want {
+			t.Errorf("%s: VoiceEnabledOr(%v) = %v, want %v", name, tc.def, got, tc.want)
+		}
+	}
+	// The plain accessor still means "explicitly on".
+	if (&VoiceSettings{}).VoiceEnabled() {
+		t.Error("VoiceEnabled reports on for an unset setting")
+	}
+}
+
+func TestVoiceKeysAreUsableOnACommonKeyboard(t *testing.T) {
+	has := func(k string) bool {
+		for _, v := range VoiceKeys {
+			if v == k {
+				return true
+			}
+		}
+		return false
+	}
+	for _, k := range []string{"f11", "ctrl+space", "ctrl+]", "ctrl+g"} {
+		if !has(k) {
+			t.Errorf("VoiceKeys lacks %s", k)
+		}
+	}
+	if VoiceKeys[0] != DefaultVoiceKey || VoiceKeys[1] != "ctrl+space" {
+		t.Fatalf("VoiceKeys starts %v: the default and the fallback for a terminal that keeps it come first", VoiceKeys[:2])
+	}
+	for _, k := range VoiceKeys {
+		if err := ValidateVoice(Settings{Voice: &VoiceSettings{Key: k}}); err != nil {
+			t.Errorf("%s is listed but rejected: %v", k, err)
+		}
+	}
+}

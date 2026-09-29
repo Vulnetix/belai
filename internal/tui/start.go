@@ -41,6 +41,8 @@ func Start(opts Options) error {
 	// Every exit path closes the microphone and stops the capture helper.
 	if a, ok := model.(*App); ok {
 		a.voiceStop()
+		a.vdebug.resume = false // quitting, so do not bring voice back
+		a.voiceDebugStop()
 	}
 	if a, ok := model.(*App); ok {
 		a.fireSessionHook(hooks.EventSessionEnd)

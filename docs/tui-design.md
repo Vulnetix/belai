@@ -53,7 +53,9 @@ unreadable on a light background.
 | `ColorText` | `#C9D6D2` | `#2A3835` | Body copy of model replies. Softer than `ColorCream` so emphasis has somewhere to go. |
 | `ColorCream` | `#F6EED6` | `#0F1F1C` | Emphasis: what you typed, identifiers the model names, the model id. |
 | `ColorTeal` | `#3AC4B4` | `#137A6F` | The model's voice, the active composer, success `✓`, bullets, switches that are on. The one brand accent. |
-| `ColorTealSoft` | `#76E0CD` | `#1A8C7C` | Your turns, plan mode, keycaps. |
+| `ColorTealSoft` | `#76E0CD` | `#1A8C7C` | Plan mode, keycaps, the dimmer beat of the voice icon pulse. |
+| `ColorYou` | `#F49AC8` | `#B23C7E` | The `you` title of a prompt you typed. |
+| `ColorVoice` | `#C9B0F2` | `#7B5BBE` | The `you` title of a dictated prompt, and the composer frame while the speech or fast model works. |
 | `ColorAmber` | `#E8912B` | `#A95A0B` | Needs you, or you stepped in: permission asks, steering, `!` shell, goal mode, YOLO, context over 80%. **Not** routine tool activity. |
 | `ColorDanger` | `#E2564E` | `#B8322A` | Failed rows, errors, guardrails off. |
 | `ColorDiffAddBg` | `#11301F` | `#DFF1E6` | Background of added diff lines. |
@@ -214,7 +216,8 @@ back to its category's letter (S, M, C, T, L, ?, R, .) and the markers to
 
 | Surface | Frame | Title accent |
 | --- | --- | --- |
-| Your prompt | top rule | `TealSoft`, titled `you` |
+| Your prompt | top rule | `You` (pink), titled `you` |
+| Your dictated prompt | top rule | `Voice` (pastel purple), titled `you`; `ctrl+o` shows the raw transcript |
 | Steering | top rule | `Amber`, titled `you · steering` |
 | Model reply | top rule | `Teal`, titled `model` plus the model id |
 | Reasoning | none; one `∴` line, expands to a `Muted` block | `Low` |
@@ -238,6 +241,15 @@ back to its category's letter (S, M, C, T, L, ?, R, .) and the markers to
   output expands. The group's rule adds `· 1 failed`.
 - **Relaxed safety.** `guardrails off` is a `Danger` chip; both guardrails
   and ask off is an `Amber` `YOLO` chip. These are the only solid chips.
+- **Voice on the composer.** While voice input runs, a circle icon sits at the
+  right end of the composer's first row: a `Teal` `◉` that pulses while the
+  microphone is open, quicker while speech is heard, and a dim `⊘` or `◌`
+  (`Low`) when voice is muted, waiting for its key or paused. While speech is
+  heard the frame's top and bottom rules ripple slowly (scan-line glyphs
+  `⎽⎼⎻⎺` at staggered heights); while the speech model or the fast model works
+  the frame and the icon turn `Voice`, a pastel purple, and return to the mode
+  colour when the text lands. The text gives up the icon's two columns so the
+  icon never covers it. `docs/voice.md` has the states and the timings.
 
 ## Not yet
 
