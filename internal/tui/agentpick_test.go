@@ -903,6 +903,7 @@ func TestAgentArgumentPickerShowsOutsideAgentMode(t *testing.T) {
 // Tab highlights, enter dispatches: the highlighted name completes the line
 // and runs it in one press.
 func TestAcceptingAgentArgumentRunsTheCommand(t *testing.T) {
+	noHostCredentials(t)
 	t.Setenv("BELAI_HOME", t.TempDir())
 	a := New(Options{Workdir: t.TempDir()})
 	a.loadAgents()
