@@ -82,7 +82,7 @@ Whisper tiny.en in ggml q5_1 form (English only, MIT licence).
 
 Every release variant carries the model inside the binary, the same way the
 classifier models are embedded: `just voiceprep` (which every build recipe
-runs) fetches the file once into `internal/voice/assets`, which is gitignored,
+runs) fetches the file once into the `assets` directory of `internal/voice`, which is gitignored,
 and the `belai_voice` build tag embeds it with `go:embed`. A release binary
 therefore needs no download and no network to dictate. `Embedded` reports it,
 `LoadModel` reads it, and `/voice status` says `model: built in`.
