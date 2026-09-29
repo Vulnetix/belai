@@ -218,7 +218,7 @@ body {
 }
 
 /* ----------------------------------------------------------------------------
- * Hero boot sequence: one orchestrated page-load, then stillness.
+ * Intro boot sequence: one orchestrated page-load, then stillness.
  * ------------------------------------------------------------------------- */
 @keyframes boot-draw {
   from { opacity: 0; transform: translateY(8px); }
