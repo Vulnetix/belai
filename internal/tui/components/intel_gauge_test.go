@@ -39,24 +39,24 @@ func TestBudgetRule16_IntelSegmentThreeDetailLevels(t *testing.T) {
 	}
 
 	for detail, want := range map[int]string{2: "intel  today 34.4M · 5h 23% ", 1: "intel  today 34.4M ", 0: "intel "} {
-		seg := ansi.Strip(g.segmentAt(detail, false))
+		seg := ansi.Strip(g.segmentAt(detail))
 		if !strings.HasPrefix(seg, want) {
 			t.Fatalf("detail %d = %q, want prefix %q", detail, seg, want)
 		}
 	}
-	if seg := ansi.Strip(g.segmentAt(1, false)); strings.Contains(seg, "5h") {
+	if seg := ansi.Strip(g.segmentAt(1)); strings.Contains(seg, "5h") {
 		t.Fatalf("detail 1 = %q, want the limit dropped", seg)
 	}
 
 	// Without a limit the pace stands in beside a 24-hour sparkline.
 	s := sparkGauge()
-	seg := ansi.Strip(s.segmentAt(2, false))
+	seg := ansi.Strip(s.segmentAt(2))
 	if !strings.HasPrefix(seg, "intel  today 1.2M · idle ") || !strings.ContainsAny(seg, "▁▂▃▄▅▆▇█") || strings.Contains(seg, "╹") {
 		t.Fatalf("sparkline segment = %q", seg)
 	}
 	// With nothing recorded the picture is a dotted trough.
 	empty := &IntelGauge{Today: "0", LimitFrac: -1, ElapsedFrac: -1, Spark: make([]int64, 24), Pace: "idle"}
-	if seg := ansi.Strip(empty.segmentAt(0, false)); seg != "intel "+strings.Repeat("·", barWidth) {
+	if seg := ansi.Strip(empty.segmentAt(0)); seg != "intel "+strings.Repeat("·", barWidth) {
 		t.Fatalf("empty segment = %q", seg)
 	}
 }
@@ -89,7 +89,7 @@ func TestBudgetRule16_IntelColoursByState(t *testing.T) {
 		}
 		seq := lipgloss.NewStyle().Foreground(want).Render("x")
 		prefix := seq[:strings.Index(seq, "x")]
-		if seg := g.segmentAt(2, false); !strings.HasPrefix(seg, prefix) {
+		if seg := g.segmentAt(2); !strings.HasPrefix(seg, prefix) {
 			t.Fatalf("state %d segment = %q, want the state colour", state, seg)
 		}
 		if !strings.Contains(g.Bar(), prefix) {
@@ -98,43 +98,10 @@ func TestBudgetRule16_IntelColoursByState(t *testing.T) {
 	}
 }
 
-// R17: the shortcut hint rides on the roomiest rendering only when the whole line
-// still fits with it. When it would not fit it is dropped and nothing else is:
-// the left side and every figure keep their room.
-func TestBudgetRule17_HintShowsOnlyWhenTheLineFits(t *testing.T) {
-	g := limitGauge()
-	g.Hint = true
-	left := ansi.Strip((&Footer{Mode: "agent", Cwd: "/home/user/project", Branch: "main", Width: 200}).View())
-	leftW := lipgloss.Width(strings.TrimRight(strings.Split(left, "\n")[0], " "))
-	segW := lipgloss.Width(ansi.Strip(g.segmentAt(2, false)))
-
-	exact := leftW + 1 + segW // the segment fits with no room to spare
-	plain, _ := line1(t, intelFooter(exact, g))
-	if strings.Contains(plain, intelHintKey) {
-		t.Fatalf("width %d: line 1 = %q, want no hint when it does not fit", exact, plain)
-	}
-	if !strings.Contains(plain, "5h 23%") || !strings.Contains(plain, "today 34.4M") || strings.Contains(plain, "…") {
-		t.Fatalf("width %d: line 1 = %q, want every figure and no truncation", exact, plain)
-	}
-
-	roomy := exact + len("  "+intelHintKey)
-	plain, _ = line1(t, intelFooter(roomy, g))
-	if !strings.HasSuffix(plain, "  "+intelHintKey) || lipgloss.Width(plain) != roomy {
-		t.Fatalf("width %d: line 1 = %q, want the hint flush right", roomy, plain)
-	}
-
-	g.Hint = false
-	plain, _ = line1(t, intelFooter(200, g))
-	if strings.Contains(plain, intelHintKey) {
-		t.Fatalf("line 1 = %q, want no hint when the cycle is not in its last third", plain)
-	}
-}
-
 // E25: a narrow terminal sheds the intel slot's detail first, then the left side,
 // but the label and the picture stay and the line never runs past the width.
 func TestBudgetEdge25_NarrowTerminalShedsIntelDetailFirst(t *testing.T) {
 	g := limitGauge()
-	g.Hint = true
 	full, _ := line1(t, intelFooter(120, g))
 	if !strings.Contains(full, "5h 23%") {
 		t.Fatalf("120 columns: %q", full)
@@ -146,9 +113,6 @@ func TestBudgetEdge25_NarrowTerminalShedsIntelDetailFirst(t *testing.T) {
 		}
 		if !strings.Contains(plain, "intel") || !strings.Contains(plain, "╹") && !strings.ContainsAny(plain, "█▏▎▍▌▋▊▉░") {
 			t.Fatalf("width %d: line 1 = %q, want the label and the picture kept", w, plain)
-		}
-		if strings.Contains(plain, intelHintKey) && w < 60 {
-			t.Fatalf("width %d: the hint survived on a tight line: %q", w, plain)
 		}
 	}
 	plain, _ := line1(t, intelFooter(44, g))

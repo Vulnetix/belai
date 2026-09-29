@@ -73,31 +73,6 @@ func TestBudgetRule15_IntelGaugeCarriesTodayAndTheTightestLimit(t *testing.T) {
 	}
 }
 
-// R17: the hint shows in the last third of the cycle period, following the clock
-// like the cycle, and never otherwise.
-func TestBudgetRule17_HintInTheLastThirdOfTheCyclePeriod(t *testing.T) {
-	a := intelApp(t)
-	base := time.Unix(990_000_000, 0) // a multiple of 10 s
-	for offset, want := range map[time.Duration]bool{
-		0: false, 3 * time.Second: false, 6 * time.Second: false, 6500 * time.Millisecond: false,
-		6700 * time.Millisecond: true, 8 * time.Second: true, 9900 * time.Millisecond: true, 10 * time.Second: false,
-	} {
-		if got := a.intelHint(base.Add(offset)); got != want {
-			t.Fatalf("hint at +%v = %v, want %v", offset, got, want)
-		}
-		if g := a.intelGauge(base.Add(offset)); g == nil || g.Hint != want {
-			t.Fatalf("gauge hint at +%v = %+v, want %v", offset, g, want)
-		}
-	}
-	// A different period moves the boundary with it.
-	nine := 9
-	a.settings.UI = &config.UISettings{BudgetCycleSeconds: &nine}
-	nineBase := time.Unix(990_000_000-990_000_000%9, 0)
-	if a.intelHint(nineBase.Add(5*time.Second)) || !a.intelHint(nineBase.Add(6*time.Second)) {
-		t.Fatal("the hint boundary did not follow a 9 s cycle")
-	}
-}
-
 // E26: ui.intel off removes the slot from the cycle, the intel tab, the f12 key
 // and the /intel screen. Budgets keep their own cycle.
 func TestBudgetEdge26_IntelOffRemovesTheSlotTheTabAndTheKey(t *testing.T) {

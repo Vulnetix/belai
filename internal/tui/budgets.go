@@ -174,18 +174,6 @@ func (a *App) budgetGauge(now time.Time) *components.BudgetGauge {
 	return toFooterGauge(budget.Status(b, a.budgets.Used(b), now))
 }
 
-// intelHint reports whether now is in the last third of the cycle period: the
-// stretch of the intel slot that carries the shortcut hint. It follows the
-// clock like the cycle itself, so every belai window agrees.
-func (a *App) intelHint(now time.Time) bool {
-	period := a.settings.BudgetCycle()
-	if period <= 0 {
-		return false
-	}
-	phase := time.Duration(now.UnixNano() % int64(period))
-	return phase*3 >= period*2
-}
-
 // intelGauge is the session intelligence gauge for now: nil unless the cycle is
 // on the intel slot.
 func (a *App) intelGauge(now time.Time) *components.IntelGauge {
@@ -194,7 +182,7 @@ func (a *App) intelGauge(now time.Time) *components.IntelGauge {
 		return nil
 	}
 	in := a.budgets.Intel(now, a.cfg.Provider, a.cycleBudgets())
-	return toIntelGauge(in, a.intelHint(now))
+	return toIntelGauge(in)
 }
 
 // limitLabels are the short names the footer gives each limit window.
@@ -218,7 +206,7 @@ func limitElapsed(l budget.PlanLimit, now time.Time) float64 {
 }
 
 // toIntelGauge converts the ledger's intel into the footer's gauge.
-func toIntelGauge(in budget.Intel, hint bool) *components.IntelGauge {
+func toIntelGauge(in budget.Intel) *components.IntelGauge {
 	g := &components.IntelGauge{
 		Today:       humanTokens(in.Rollups[0].Tokens),
 		LimitFrac:   -1,
@@ -226,7 +214,6 @@ func toIntelGauge(in budget.Intel, hint bool) *components.IntelGauge {
 		Spark:       in.Spark[:],
 		Pace:        in.Pace.Label,
 		State:       components.BudgetState(in.State),
-		Hint:        hint,
 	}
 	if l := budget.Tightest(in.Limits); l != nil {
 		g.Limit = fmt.Sprintf("%s %d%%", limitLabels[l.Window], int(math.Round(l.Used*100)))

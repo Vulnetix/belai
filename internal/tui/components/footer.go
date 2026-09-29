@@ -684,25 +684,16 @@ const minBudgetLeft = 20
 // always kept.
 func (f *Footer) withBudget(left string) string {
 	var segAt func(detail int) string
-	var hinted string
 	switch {
 	case f.Budget != nil:
 		segAt = f.Budget.budgetSegment
 	case f.Intel != nil:
-		segAt = func(detail int) string { return f.Intel.segmentAt(detail, false) }
-		if f.Intel.Hint {
-			hinted = f.Intel.segmentAt(2, true)
-		}
+		segAt = f.Intel.segmentAt
 	default:
 		return left
 	}
 	fits := func(l, seg string) bool { return lipgloss.Width(l)+1+lipgloss.Width(seg) <= f.Width }
-	// The shortcut hint is shown only when the whole line fits with it; it never
-	// costs the left side or a figure any room.
-	seg := hinted
-	if seg == "" || !fits(left, seg) {
-		seg = segAt(2)
-	}
+	seg := segAt(2)
 	if !fits(left, seg) {
 		seg = segAt(1)
 		if f.Width-lipgloss.Width(seg)-1 < min(minBudgetLeft, lipgloss.Width(left)) {
