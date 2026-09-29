@@ -234,7 +234,7 @@ func Plan(t Target) []Step {
 		case decisions.BackendLocal:
 			steps = append(steps, DecisionLocalSteps(d.Local, d.Timeout, d.MaxStateBytes)...)
 		case decisions.BackendSystemOne:
-			steps = append(steps, SystemOneSteps(SystemOneTarget{Name: d.Provider, BaseURL: d.BaseURL, Path: d.Path, Key: d.Key, Timeout: d.Timeout})...)
+			steps = append(steps, SystemOneSteps(SystemOneTarget{Name: d.Provider, Model: d.Model, SendModel: d.SendModel, BaseURL: d.BaseURL, Path: d.Path, Key: d.Key, Timeout: d.Timeout})...)
 		}
 	}
 	if t.OpenRouterJev != nil {

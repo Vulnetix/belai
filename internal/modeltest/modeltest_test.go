@@ -356,3 +356,43 @@ func TestOpenRouterProbeFailsOrWarns(t *testing.T) {
 		t.Fatalf("warning = %q", w.Outcome.Detail)
 	}
 }
+
+// TypeSafe rejects a request with no model (HTTP 422), so the /model ladder
+// must send the model exactly as the live call does. Planned from a resolved
+// classifier (SendModel set), the ladder passes; without it the same server
+// refuses.
+func TestSystemOneLadderSendsTheModelWhenAsked(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Model     string                    `json:"model"`
+			Questions map[string]map[string]any `json:"questions"`
+			State     map[string]any            `json:"state"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body.Model == "" {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = w.Write([]byte(`{"detail":[{"type":"missing","loc":["body","model"],"msg":"Field required"}]}`))
+			return
+		}
+		p := 0.02
+		if c, _ := body.State["content"].(string); strings.Contains(c, "Ignore all previous") {
+			p = 0.97
+		}
+		answers := map[string]any{}
+		for id := range body.Questions {
+			answers[id] = map[string]any{"type": "noul", "noul": p}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"model": body.Model, "answers": answers})
+	}))
+	defer srv.Close()
+	cfg := run.DecisionsConfig{Backend: decisions.BackendSystemOne, Provider: "typesafe", Model: "jev-latest", BaseURL: srv.URL, SendModel: true}
+	rep := Run(context.Background(), Plan(Target{Decisions: &cfg}), &Env{Client: srv.Client()}, nil)
+	if !rep.Passed {
+		f, _ := rep.Failure()
+		t.Fatalf("with the model: failed at %s: %s", f.Name, f.Outcome.Detail)
+	}
+	cfg.SendModel = false
+	if rep = Run(context.Background(), Plan(Target{Decisions: &cfg}), &Env{Client: srv.Client()}, nil); rep.Passed {
+		t.Fatal("a server that requires the model accepted a request without one")
+	}
+}
