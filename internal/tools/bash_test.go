@@ -21,10 +21,16 @@ func TestBashEcho(t *testing.T) {
 
 func TestBashRejectsShellMetacharacters(t *testing.T) {
 	b := &Bash{Root: t.TempDir(), ReadOnly: true, Timeout: 5 * time.Second}
-	for _, meta := range ";&|$`<>()" {
-		_, err := b.Execute(context.Background(), map[string]any{"command": "echo " + string(meta)})
+	// The gate parses the line: each of these is shell syntax that would do
+	// something other than run one plain command.
+	for _, cmd := range []string{
+		"echo a; echo b", "echo a && echo b", "echo a || echo b", "echo a | cat", "echo a & echo b", "echo a &",
+		"echo $(id)", "echo `id`", "echo $HOME", "echo a > f", "echo a >> f", "cat < f", "(echo a)", "{ echo a; }",
+		"echo a\necho b", "echo <(id)", "FOO=1 echo a",
+	} {
+		_, err := b.Execute(context.Background(), map[string]any{"command": cmd})
 		if err == nil {
-			t.Fatalf("expected rejection for metacharacter %q", meta)
+			t.Fatalf("expected rejection for %q", cmd)
 		}
 	}
 }

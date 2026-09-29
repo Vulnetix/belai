@@ -2,11 +2,12 @@ package config
 
 import (
 	"fmt"
-	"net"
 	"net/url"
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/vulnetix/belai/internal/netguard"
 )
 
 // FirewallSettings configures the AI Firewall: an optional gateway that sits
@@ -210,22 +211,17 @@ func ValidFirewallURL(raw string) error {
 	}
 	switch u.Scheme {
 	case "https":
-		return nil
 	case "http":
-		if isLoopbackHost(u.Hostname()) {
-			return nil
+		if !netguard.IsLoopbackHost(u.Hostname()) {
+			return fmt.Errorf("firewall url %q must use https (plain http is allowed only to a loopback host)", raw)
 		}
-		return fmt.Errorf("firewall url %q must use https (plain http is allowed only to a loopback host)", raw)
+	default:
+		return fmt.Errorf("firewall url %q must use https", raw)
 	}
-	return fmt.Errorf("firewall url %q must use https", raw)
-}
-
-func isLoopbackHost(host string) bool {
-	if strings.EqualFold(host, "localhost") {
-		return true
+	if _, err := netguard.CheckURL(strings.ReplaceAll(raw, "{provider}", "provider"), netguard.Endpoint); err != nil {
+		return fmt.Errorf("firewall url %q is not acceptable: %w", raw, err)
 	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	return nil
 }
 
 // ValidateFirewall checks the firewall settings.

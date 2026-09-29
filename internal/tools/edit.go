@@ -28,7 +28,7 @@ func (e *Edit) Definition() Definition {
 			"The call fails, leaving the file byte-identical, when the file has not been Read in this session or changed on disk since it was, when it does not exist, is binary, is over 1 MiB, when old_string equals new_string, when old_string is not found, or when it appears more than once without replace_all=true. " +
 			"The write is atomic. Mutating, so it asks for approval unless an explicit allow rule matches, and it is unavailable in plan mode.",
 		Properties: map[string]Property{
-			"file_path":   {Type: "string", Description: "Path to the file to edit: an absolute filesystem path under one of the session roots, or relative to the working directory; the file must already exist"},
+			"file_path":   {Type: "string", Format: FormatPath, Description: "Path to the file to edit: an absolute filesystem path under one of the session roots, or relative to the working directory; the file must already exist"},
 			"old_string":  {Type: "string", Description: "The exact bytes to replace; include surrounding context to make it unique"},
 			"new_string":  {Type: "string", Description: "The replacement bytes; must differ from old_string"},
 			"replace_all": {Type: "boolean", Description: "Replace every occurrence instead of requiring a unique match (default false)"},

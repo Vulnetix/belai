@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/decisions"
+	"github.com/vulnetix/belai/internal/netguard"
 )
 
 // injectionProposition is the security guard's own prompt-injection
@@ -259,13 +259,7 @@ func reachable(ctx context.Context, c *http.Client, base string) bool {
 	return false
 }
 
-func isLoopback(h string) bool {
-	if strings.EqualFold(h, "localhost") {
-		return true
-	}
-	ip := net.ParseIP(h)
-	return ip != nil && ip.IsLoopback()
-}
+func isLoopback(h string) bool { return netguard.IsLoopbackHost(h) }
 
 func uniq(xs ...string) []string {
 	seen := map[string]bool{}
