@@ -88,3 +88,46 @@ func TestDetectWorktree(t *testing.T) {
 		t.Fatalf("branch = %q", info.Branch)
 	}
 }
+
+// A stray .git directory with no HEAD (an empty ~/GitHub/.git/info, say) is
+// not a repository: git skips it, and so must Detect, or the repo map walks
+// the whole parent directory.
+func TestDetectSkipsStrayGitDir(t *testing.T) {
+	parent := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(parent, ".git", "info"), 0o755)
+	child := filepath.Join(parent, "project")
+	_ = os.MkdirAll(child, 0o755)
+
+	if info, ok := Detect(child); ok {
+		t.Fatalf("stray .git detected as repo at %q", info.Root)
+	}
+	if got := OriginURL(child); got != "" {
+		t.Fatalf("OriginURL = %q", got)
+	}
+}
+
+func TestDetectSkipsStrayGitDirAboveRealRepo(t *testing.T) {
+	outer := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(outer, ".git", "info"), 0o755)
+	repo := filepath.Join(outer, "mid", "repo")
+	_ = os.MkdirAll(filepath.Join(outer, "mid", ".git"), 0o755) // stray, no HEAD
+	_ = os.MkdirAll(filepath.Join(repo, "sub"), 0o755)
+	_ = os.MkdirAll(filepath.Join(repo, ".git"), 0o755)
+	_ = os.WriteFile(filepath.Join(repo, ".git", "HEAD"), []byte("ref: refs/heads/main\n"), 0o600)
+
+	info, ok := Detect(filepath.Join(repo, "sub"))
+	if !ok || info.Root != repo {
+		t.Fatalf("Detect = %+v, %v; want root %q", info, ok, repo)
+	}
+	if info, ok := Detect(filepath.Join(outer, "mid")); ok {
+		t.Fatalf("stray .git detected as repo at %q", info.Root)
+	}
+}
+
+func TestDetectSkipsGitFileWithoutGitdir(t *testing.T) {
+	root := t.TempDir()
+	_ = os.WriteFile(filepath.Join(root, ".git"), []byte("not a gitfile\n"), 0o600)
+	if info, ok := Detect(root); ok {
+		t.Fatalf("malformed .git file detected as repo at %q", info.Root)
+	}
+}

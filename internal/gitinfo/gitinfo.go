@@ -48,7 +48,10 @@ func Detect(workdir string) (Info, bool) {
 	return info, true
 }
 
-// findGit walks up from dir to find a .git entry.
+// findGit walks up from dir to find a .git entry. Like git itself, it skips a
+// .git directory without a HEAD and a .git file without a gitdir line: a
+// stray, empty .git in a parent directory would otherwise make that whole
+// parent the repository, and the repo map would walk all of it.
 func findGit(dir string) (root, gitDir string) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
@@ -59,18 +62,17 @@ func findGit(dir string) (root, gitDir string) {
 		fi, err := os.Stat(gitPath)
 		if err == nil {
 			if fi.IsDir() {
-				return abs, gitPath
-			}
-			// .git file → worktree
-			data, err := os.ReadFile(gitPath)
-			if err == nil {
+				if _, err := os.Stat(filepath.Join(gitPath, "HEAD")); err == nil {
+					return abs, gitPath
+				}
+			} else if data, err := os.ReadFile(gitPath); err == nil {
+				// .git file → worktree
 				line := strings.TrimSpace(string(data))
 				const prefix = "gitdir: "
 				if strings.HasPrefix(line, prefix) {
 					return abs, strings.TrimSpace(strings.TrimPrefix(line, prefix))
 				}
 			}
-			return abs, gitPath
 		}
 		parent := filepath.Dir(abs)
 		if parent == abs {

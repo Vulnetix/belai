@@ -203,7 +203,12 @@ func languages(ctx context.Context, root string) []LangCount {
 	counts := map[string]int{}
 	filesSeen := 0
 	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || ctx.Err() != nil {
+		// Stop the walk outright at the cap or the scan deadline; returning
+		// nil would keep stat-ing the rest of the tree.
+		if ctx.Err() != nil {
+			return filepath.SkipAll
+		}
+		if err != nil {
 			return nil
 		}
 		if d.IsDir() {
@@ -214,7 +219,7 @@ func languages(ctx context.Context, root string) []LangCount {
 		}
 		filesSeen++
 		if filesSeen > maxFiles {
-			return nil
+			return filepath.SkipAll
 		}
 		ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(d.Name())), ".")
 		if ext == "" {
@@ -297,7 +302,10 @@ func entrypoints(ctx context.Context, root string) []string {
 	cmdDir := filepath.Join(root, "cmd")
 	if _, err := os.Stat(cmdDir); err == nil {
 		_ = filepath.WalkDir(cmdDir, func(path string, d os.DirEntry, err error) error {
-			if err != nil || ctx.Err() != nil {
+			if ctx.Err() != nil {
+				return filepath.SkipAll
+			}
+			if err != nil {
 				return nil
 			}
 			if d.IsDir() {
@@ -336,6 +344,9 @@ func layout(ctx context.Context, root string) []DirSummary {
 		}
 		files := 0
 		_ = filepath.WalkDir(filepath.Join(root, e.Name()), func(path string, d os.DirEntry, err error) error {
+			if ctx.Err() != nil {
+				return filepath.SkipAll
+			}
 			if err != nil {
 				return nil
 			}
