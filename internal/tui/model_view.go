@@ -59,6 +59,13 @@ type modelViewState struct {
 	classifierLastEffort string
 	agentLastEffort      string
 
+	// kindTried is the classifier kind the kind row last tried to move to, and
+	// kindTriedFrom the saved kind it was leaving. A kind that selects a
+	// backend is tested before it is saved, and a failed test saves nothing,
+	// so without this the next press would try the same kind again and the
+	// row could never move past it.
+	kindTried, kindTriedFrom string
+
 	// pendingProvider is a provider cycled to on a role's provider row but
 	// not saved: the model picker opens on it, and the pick is tested and
 	// saved together with it.
@@ -1399,7 +1406,15 @@ func (a *App) cycleClassifierKind(opts []string) tea.Cmd {
 	if len(opts) == 0 {
 		return nil
 	}
-	next := opts[(indexOfString(opts, a.classifierKind())+1)%len(opts)]
+	from := a.classifierKind()
+	cur := from
+	if a.modelState.kindTriedFrom == from && a.modelState.kindTried != "" {
+		// The last press did not save (its test failed): move on from the
+		// kind it tried, not from the saved one.
+		cur = a.modelState.kindTried
+	}
+	next := opts[(indexOfString(opts, cur)+1)%len(opts)]
+	a.modelState.kindTried, a.modelState.kindTriedFrom = next, from
 	return a.stageClassifier("kind", "classifier.kind = "+next, func(c *config.ClassifierSettings) {
 		c.Kind = next
 		decision := a.classifierSelectsDecision(c)

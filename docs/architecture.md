@@ -62,8 +62,10 @@ before the kinds existed reads as what it is (`run.ClassifierKind`): `kind:
 cycles `llm`, `models`, `openrouter-decisions`, `jev`. Choosing a decision
 kind whose backend is not selected starts on OpenRouter's Jev model
 (`openrouter-decisions`) or `typesafe/jev-latest` (`jev`); leaving a decision
-kind clears the selection so the guard returns to the main model. Under a
-decision kind the provider row offers that kind's backends only and has no
+kind clears the selection so the guard returns to the main model. A kind whose
+test fails saves nothing, and the next press of the kind row moves on from the
+kind that was tried, so an unreachable backend (no key, no network) never
+traps the row. Under a decision kind the provider row offers that kind's backends only and has no
 inherit-main option.
 
 Flags `-classifier-provider`, `-classifier-model`, `-classifier-effort`,
