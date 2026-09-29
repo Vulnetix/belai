@@ -130,6 +130,7 @@ const split = (s: string) => s.split(code).map((p) => ({ p, c: code.test(p) }));
       A model you run locally appears in <code class="mono">/model</code>. If you stop its server, it leaves
       the picker and stays in <code class="mono">/credentials</code>, so Belai won't switch to a host that
       isn't running.
+      The <code class="mono">/model</code> screen fits one terminal screen: a rail of roles, a pane for the role you are editing, and a status line for the last test. Left and right change role, and each role names the file it saves to.
     </p>
   </div>
   <div class="mt-8 grid gap-8 lg:grid-cols-12">

@@ -8,7 +8,6 @@ import (
 
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/provider"
-	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/tui/components"
 )
 
@@ -160,35 +159,9 @@ func (a *App) modelRoleBlurb(role modelRole) string {
 // part of the page the groups below exist to change. It shares the rows'
 // label column so the page reads as one table.
 func (a *App) modelSummary(labelW, valW int) string {
-	work := a.providerDisplayLabel(a.cfg.Provider) + " · " + a.cfg.Model
-	guard := run.GuardConfig(a.cfg)
-	guardLabel := a.providerDisplayLabel(guard.Provider) + " · " + guard.Model
-	if a.resolvedSecurityClassifier().Kind == "models" {
-		if a.resolvedSecurityClassifier().Phase3On {
-			guardLabel = "local gates + " + guardLabel
-		} else {
-			guardLabel = "local gates"
-		}
-	}
-	verdicts := a.resolvedFastLabel()
-	drafting := "work model"
-	if a.cfg.Routing.Kind == config.RoutingRouted && len(a.cfg.Routing.Candidates) > 0 {
-		// A fast use case skips Jev whenever a fast tier exists
-		// (run.NewRoleClassifier); only without one does Jev pick for it.
-		if a.cfg.Routing.Fast == nil {
-			verdicts = "Jev picks from pool, else work model"
-		}
-		drafting = "Jev picks from pool, else work model"
-	}
-	lines := [][2]string{
-		{"work", work},
-		{"verdicts", verdicts},
-		{"drafting", drafting},
-		{"security", guardLabel},
-	}
 	var b strings.Builder
 	b.WriteString(components.EmphStyle.Render("IN EFFECT") + "\n")
-	for _, l := range lines {
+	for _, l := range a.modelInEffect() {
 		b.WriteString("  " + components.MutedStyle.Render(modelIndent+padRight(l[0], labelW)) + truncTail(l[1], valW) + "\n")
 	}
 	return b.String()
