@@ -176,3 +176,9 @@ func writeFileAtomic(path string, data []byte, dirMode os.FileMode) error {
 	}
 	return nil
 }
+
+// SettingsPath returns the settings file a scope writes to, so a caller can
+// tell the user exactly which file a change was saved in.
+func SettingsPath(scope Scope, workdir string) (string, error) {
+	return settingsPath(scope, workdir)
+}

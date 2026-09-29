@@ -9,8 +9,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/OpenRouterTeam/go-sdk/models/components"
-
+	"github.com/vulnetix/belai/internal/decisions"
 	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
@@ -37,36 +36,58 @@ var intentHandoffQuestion = intentQuestion{
 	"The user wants an already-written plan in an attached file carried out now, step by step.",
 }
 
-// DetectIntent scores every offered intent with one noul question per intent.
-// It returns a map of intent to probability, plus the model identity. A
-// transport error or a malformed/out-of-range answer is returned as an error
-// so the caller falls back to the LLM classifier.
+// intentChoiceKey keys the single choice question the local backend is asked.
+const intentChoiceKey = "intent"
+
+// DetectIntent scores every offered intent. The hosted and self-hosted
+// backends answer one noul question per intent. The local decision model
+// answers one question per request, so it is asked a single choice question
+// over the same intents instead; its probabilities sum to one. It returns a
+// map of intent to probability, plus the model identity. A transport error or
+// a malformed/out-of-range answer is returned as an error so the caller falls
+// back to the LLM classifier.
 func (c *Client) DetectIntent(ctx context.Context, in rolemanager.DetectInput) (map[rolemanager.Intent]float64, string, error) {
 	req := c.buildRequest(in)
-	sdk := c.decisionsSDK()
-	resp, err := createDecision(ctx, sdk, req, c.endpoint)
+	answers, err := c.decide(ctx, req)
 	if err != nil {
 		return nil, "", err
 	}
-	scores, err := readIntentScores(resp.Answers, req.Questions)
+	scores, err := readIntentScores(answers, req.Questions)
 	if err != nil {
 		return nil, "", err
+	}
+	if c.backend != nil {
+		return scores, c.backend.Identity(), nil
 	}
 	return scores, c.model, nil
 }
 
-func (c *Client) buildRequest(in rolemanager.DetectInput) components.DecisionsRequest {
-	questions := make(map[string]components.Questions, len(intentQuestions)+1)
-	for _, q := range intentQuestions {
-		questions[string(q.key)] = components.CreateQuestionsNoul(components.DecisionsNoulQuestion{
-			Instructions: components.CreateDecisionsNoulQuestionInstructionsStr(q.instructions),
-		})
-	}
+func (c *Client) offeredIntents(in rolemanager.DetectInput) []intentQuestion {
+	qs := append([]intentQuestion(nil), intentQuestions...)
 	if in.PlanAttachment != nil {
-		q := intentHandoffQuestion
-		questions[string(q.key)] = components.CreateQuestionsNoul(components.DecisionsNoulQuestion{
-			Instructions: components.CreateDecisionsNoulQuestionInstructionsStr(q.instructions),
-		})
+		qs = append(qs, intentHandoffQuestion)
+	}
+	return qs
+}
+
+func (c *Client) buildRequest(in rolemanager.DetectInput) decisions.Request {
+	offered := c.offeredIntents(in)
+	questions := make(map[string]decisions.Question, len(offered))
+	if c.Local() {
+		q := decisions.Question{
+			Type:         decisions.TypeChoice,
+			Instructions: "Which kind of work does the user want next?",
+			Descriptions: map[string]string{},
+		}
+		for _, iq := range offered {
+			q.Options = append(q.Options, string(iq.key))
+			q.Descriptions[string(iq.key)] = iq.instructions
+		}
+		questions[intentChoiceKey] = q
+	} else {
+		for _, iq := range offered {
+			questions[string(iq.key)] = decisions.Noul(iq.instructions)
+		}
 	}
 
 	attachments := []map[string]any{}
@@ -82,17 +103,28 @@ func (c *Client) buildRequest(in rolemanager.DetectInput) components.DecisionsRe
 		"current_mode_selected_by_user": in.ModeHint.Sticky,
 		"attachments":                   attachments,
 	}
-
-	return components.DecisionsRequest{
-		Model:     c.model,
-		Questions: questions,
-		State:     components.CreateStateMapOfAny(state),
-	}
+	return decisions.Request{Questions: questions, State: state}
 }
 
-// readIntentScores reads one probability per question. A missing answer, a
-// non-noul answer, or a probability outside [0,1] is an error.
-func readIntentScores(answers map[string]components.Answers, questions map[string]components.Questions) (map[rolemanager.Intent]float64, error) {
+// readIntentScores reads one probability per offered intent: one noul answer
+// per question, or the per-option probabilities of the single choice
+// question. A missing answer or a probability outside [0,1] is an error.
+func readIntentScores(answers map[string]decisions.Answer, questions map[string]decisions.Question) (map[rolemanager.Intent]float64, error) {
+	if q, ok := questions[intentChoiceKey]; ok && q.Type == decisions.TypeChoice {
+		a, ok := answers[intentChoiceKey]
+		if !ok || a.Type != decisions.TypeChoice {
+			return nil, fmt.Errorf("jev intent detection: missing intent answer")
+		}
+		scores := make(map[rolemanager.Intent]float64, len(q.Options))
+		for _, o := range q.Options {
+			p, ok := a.Probabilities[o]
+			if !ok || p < 0 || p > 1 {
+				return nil, fmt.Errorf("jev intent detection: missing or out-of-range %s", o)
+			}
+			scores[rolemanager.Intent(o)] = p
+		}
+		return scores, nil
+	}
 	scores := make(map[rolemanager.Intent]float64, len(questions))
 	for key := range questions {
 		n, err := noulOf(answers, key)

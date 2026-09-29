@@ -44,6 +44,9 @@ func validateProvider(name string, p ProviderProfile) error {
 	if !validBaseURL(p.BaseURL) {
 		return fmt.Errorf("provider %q: invalid base_url %q", name, p.BaseURL)
 	}
+	if p.Kind == JevKind {
+		return validateJevProfile(name, p)
+	}
 	if !validSurface(p.API) {
 		return fmt.Errorf("provider %q: unknown api %q", name, p.API)
 	}
@@ -54,7 +57,7 @@ func validateProvider(name string, p ProviderProfile) error {
 		return fmt.Errorf("provider %q: invalid api_key_env %q", name, p.APIKeyEnv)
 	}
 	if !validKind(p.Kind) {
-		return fmt.Errorf("provider %q: unknown kind %q (want \"ollama\", \"llama-server\", \"openai-compatible\", or empty)", name, p.Kind)
+		return fmt.Errorf("provider %q: unknown kind %q (want \"ollama\", \"llama-server\", \"openai-compatible\", \"jev\", or empty)", name, p.Kind)
 	}
 	if p.Protocol != "" && !ValidOllamaProtocol(p.Protocol) {
 		return fmt.Errorf("provider %q: invalid protocol %q (want http or https)", name, p.Protocol)
@@ -67,10 +70,76 @@ func validateProvider(name string, p ProviderProfile) error {
 
 func validKind(kind string) bool {
 	switch kind {
-	case "", "ollama", "llama-server", "openai-compatible":
+	case "", "ollama", "llama-server", "openai-compatible", JevKind:
 		return true
 	}
 	return false
+}
+
+// JevKind is the provider-profile kind of a self-hosted Jev-compatible
+// decision server (TypeSafe's /v1/systemone API). Such a profile is never a
+// chat provider.
+const JevKind = "jev"
+
+// validateJevProfile checks a self-hosted Jev profile. Tool results are sent
+// to it, so the URL must be https, or plain http only on a loopback host; the
+// decision path is a plain path under that URL.
+func validateJevProfile(name string, p ProviderProfile) error {
+	if err := ValidJevURL(p.BaseURL); err != nil {
+		return fmt.Errorf("provider %q: %w", name, err)
+	}
+	if p.APIKeyEnv != "" && !ValidEnvName(p.APIKeyEnv) {
+		return fmt.Errorf("provider %q: invalid api_key_env %q", name, p.APIKeyEnv)
+	}
+	if !ValidDecisionPath(p.DecisionPath) {
+		return fmt.Errorf("provider %q: invalid decision_path %q", name, p.DecisionPath)
+	}
+	if p.Protocol != "" && !ValidOllamaProtocol(p.Protocol) {
+		return fmt.Errorf("provider %q: invalid protocol %q (want http or https)", name, p.Protocol)
+	}
+	if p.Port != "" && !ValidOllamaPort(p.Port) {
+		return fmt.Errorf("provider %q: invalid port %q", name, p.Port)
+	}
+	return nil
+}
+
+// ValidJevURL reports why a self-hosted Jev base URL is not acceptable: it
+// must be https, or http on a loopback host, with no credentials in it.
+func ValidJevURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("invalid base_url %q", raw)
+	}
+	if u.User != nil {
+		return fmt.Errorf("base_url must not carry credentials; store the key instead")
+	}
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		if isLoopbackHost(u.Hostname()) {
+			return nil
+		}
+		return fmt.Errorf("base_url %q sends tool output in the clear; use https, or http only on localhost", raw)
+	}
+	return fmt.Errorf("base_url %q must be https (or http on localhost)", raw)
+}
+
+// ValidDecisionPath reports whether p is empty or a plain absolute path with
+// no traversal, query or fragment.
+func ValidDecisionPath(p string) bool {
+	if p == "" {
+		return true
+	}
+	if !strings.HasPrefix(p, "/") || strings.Contains(p, "..") || strings.ContainsAny(p, "?#\\ ") || len(p) > 128 {
+		return false
+	}
+	for _, r := range p {
+		if r < 0x21 || r > 0x7e {
+			return false
+		}
+	}
+	return true
 }
 
 // ValidOllamaPort reports whether s is empty or a valid TCP port.

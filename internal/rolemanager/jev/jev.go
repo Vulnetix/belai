@@ -20,6 +20,7 @@ import (
 	"github.com/OpenRouterTeam/go-sdk/models/sdkerrors"
 	"github.com/OpenRouterTeam/go-sdk/retry"
 
+	"github.com/vulnetix/belai/internal/decisions"
 	"github.com/vulnetix/belai/internal/rolemanager"
 )
 
@@ -128,6 +129,41 @@ type Client struct {
 	token    func() (string, error)
 	model    string
 	endpoint string
+	// backend, when set, replaces the OpenRouter Decisions call: a
+	// self-hosted systemone server or the local decision model.
+	backend decisions.Decider
+}
+
+// NewWith builds a Jev client over any decision backend. The questions and
+// thresholds are the same as New's; only the transport differs.
+func NewWith(d decisions.Decider) *Client {
+	return &Client{model: DefaultModel, backend: d}
+}
+
+// Identity names the backend and model answering this client's decisions.
+func (c *Client) Identity() string {
+	if c.backend != nil {
+		return c.backend.Identity()
+	}
+	return "openrouter/" + c.model
+}
+
+// Local reports whether this client asks the local decision model, which
+// answers one question per request and so gets fewer, broader questions.
+func (c *Client) Local() bool {
+	return c.backend != nil && c.backend.Backend() == decisions.BackendLocal
+}
+
+// decide sends one decision request over the configured transport.
+func (c *Client) decide(ctx context.Context, req decisions.Request) (map[string]decisions.Answer, error) {
+	if c.backend != nil {
+		res, err := c.backend.Decide(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		return res.Answers, nil
+	}
+	return openRouterDecide(ctx, c.decisionsSDK(), c.model, c.endpoint, req)
 }
 
 // New wraps an OpenRouter API-key resolver as a Jev tool-call gate. token is
@@ -165,12 +201,12 @@ func (c *Client) decisionsSDK() *openrouter.OpenRouter {
 // noulOf reads one noul answer from an SDK response. A missing answer, a
 // non-noul answer, or a probability outside [0,1] is an error — a broken
 // check must never become an approval or a review.
-func noulOf(answers map[string]components.Answers, key string) (float64, error) {
+func noulOf(answers map[string]decisions.Answer, key string) (float64, error) {
 	ans, ok := answers[key]
-	if !ok || ans.DecisionsNoulAnswer == nil {
+	if !ok || ans.Type != decisions.TypeNoul {
 		return 0, fmt.Errorf("jev decisions response: missing %s answer", key)
 	}
-	n := ans.DecisionsNoulAnswer.Noul
+	n := ans.Noul
 	if n < 0 || n > 1 {
 		return 0, fmt.Errorf("jev decisions response: noul out of range %.3f", n)
 	}
@@ -181,20 +217,14 @@ func noulOf(answers map[string]components.Answers, key string) (float64, error) 
 // from the Decisions API is an error; a reply that cannot be parsed as a
 // probability is INCONCLUSIVE, not an error, so the caller can fail closed.
 func (c *Client) Classify(ctx context.Context, p rolemanager.ClassifierPayload) (string, error) {
-	req := components.DecisionsRequest{
-		Model: c.model,
-		Questions: map[string]components.Questions{
-			unsafeQuestion: components.CreateQuestionsNoul(components.DecisionsNoulQuestion{
-				Instructions: components.CreateDecisionsNoulQuestionInstructionsStr(unsafeInstruction),
-			}),
-		},
-		State: components.CreateStateMapOfAny(map[string]any{"tool_call": p.User}),
-	}
-	resp, err := createDecision(ctx, c.decisionsSDK(), req, c.endpoint)
+	answers, err := c.decide(ctx, decisions.Request{
+		Questions: map[string]decisions.Question{unsafeQuestion: decisions.Noul(unsafeInstruction)},
+		State:     map[string]any{"tool_call": p.User},
+	})
 	if err != nil {
 		return "", err
 	}
-	n, err := noulOf(resp.Answers, unsafeQuestion)
+	n, err := noulOf(answers, unsafeQuestion)
 	if err != nil {
 		// A malformed answer is inconclusive, not a block and not an error:
 		// the caller fails closed on INCONCLUSIVE.
@@ -267,25 +297,18 @@ func (c *Client) Route(ctx context.Context, useCase string, candidates []Candida
 	if len(candidates) == 0 {
 		return RouteDecision{}, fmt.Errorf("jev route: no candidates")
 	}
-	questions := make(map[string]components.Questions, len(candidates))
+	questions := make(map[string]decisions.Question, len(candidates))
 	for _, cand := range candidates {
 		if strings.TrimSpace(cand.Key) == "" {
 			return RouteDecision{}, fmt.Errorf("jev route: empty candidate key")
 		}
-		questions[cand.Key] = components.CreateQuestionsNoul(components.DecisionsNoulQuestion{
-			Instructions: components.CreateDecisionsNoulQuestionInstructionsStr(routeInstruction(cand)),
-		})
+		questions[cand.Key] = decisions.Noul(routeInstruction(cand))
 	}
-	req := components.DecisionsRequest{
-		Model:     c.model,
-		Questions: questions,
-		State:     components.CreateStateMapOfAny(map[string]any{"use_case": useCase}),
-	}
-	resp, err := createDecision(ctx, c.decisionsSDK(), req, c.endpoint)
+	answers, err := c.decide(ctx, decisions.Request{Questions: questions, State: map[string]any{"use_case": useCase}})
 	if err != nil {
 		return RouteDecision{}, err
 	}
-	scores, err := routeAnswerScores(resp.Answers, candidates)
+	scores, err := routeAnswerScores(answers, candidates)
 	if err != nil {
 		// A malformed answer is inconclusive, not an error: the caller fails
 		// closed to the defined global model.
@@ -297,7 +320,7 @@ func (c *Client) Route(ctx context.Context, useCase string, candidates []Candida
 // routeAnswerScores reads one noul answer per candidate. A missing answer or a
 // probability outside [0,1] is an error, so a broken reply can never silently
 // select a candidate.
-func routeAnswerScores(answers map[string]components.Answers, candidates []Candidate) (map[string]float64, error) {
+func routeAnswerScores(answers map[string]decisions.Answer, candidates []Candidate) (map[string]float64, error) {
 	scores := make(map[string]float64, len(candidates))
 	for _, cand := range candidates {
 		n, err := noulOf(answers, cand.Key)
@@ -372,6 +395,40 @@ func SelectRoute(scores map[string]float64) string {
 // defined model, INCONCLUSIVE, or a fail-closed pipeline error).
 var noRetries = operations.WithRetries(retry.Config{Strategy: "none"})
 
+// openRouterDecide sends a transport-neutral decision request through
+// OpenRouter's Decisions API. OpenRouter's Jev answers noul questions; the
+// Jev jobs send only those on this path.
+func openRouterDecide(ctx context.Context, sdk *openrouter.OpenRouter, model, endpoint string, r decisions.Request) (map[string]decisions.Answer, error) {
+	questions := make(map[string]components.Questions, len(r.Questions))
+	for id, q := range r.Questions {
+		if q.Type != decisions.TypeNoul {
+			return nil, fmt.Errorf("jev decisions: OpenRouter path sends noul questions only, got %s for %s", q.Type, id)
+		}
+		questions[id] = components.CreateQuestionsNoul(components.DecisionsNoulQuestion{
+			Instructions: components.CreateDecisionsNoulQuestionInstructionsStr(q.Instructions),
+		})
+	}
+	state, ok := r.State.(map[string]any)
+	if !ok {
+		state = map[string]any{"content": r.State}
+	}
+	resp, err := createDecision(ctx, sdk, components.DecisionsRequest{
+		Model:     model,
+		Questions: questions,
+		State:     components.CreateStateMapOfAny(state),
+	}, endpoint)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]decisions.Answer, len(resp.Answers))
+	for id, a := range resp.Answers {
+		if a.DecisionsNoulAnswer != nil {
+			out[id] = decisions.Answer{Type: decisions.TypeNoul, Noul: a.DecisionsNoulAnswer.Noul}
+		}
+	}
+	return out, nil
+}
+
 // createDecision sends one Decisions request with no retries and wraps a
 // failure as a *DecisionsError so callers can read the HTTP status.
 func createDecision(ctx context.Context, sdk *openrouter.OpenRouter, req components.DecisionsRequest, endpoint string) (*components.DecisionsResponse, error) {
@@ -442,6 +499,22 @@ type Security struct {
 	model    string
 	endpoint string
 	fallback rolemanager.Classifier
+	// backend, when set, replaces the OpenRouter Decisions call.
+	backend decisions.Decider
+}
+
+// NewSecurityWith builds a Jev security classifier over any decision backend,
+// with the same propositions, thresholds and fallback as NewSecurity.
+func NewSecurityWith(d decisions.Decider, fallback rolemanager.Classifier) *Security {
+	return &Security{model: DefaultModel, fallback: fallback, backend: d}
+}
+
+// Identity names the backend and model answering this classifier.
+func (s *Security) Identity() string {
+	if s.backend != nil {
+		return s.backend.Identity()
+	}
+	return "openrouter/" + s.model
 }
 
 // NewSecurity wraps an OpenRouter API-key resolver and a fallback classifier
@@ -482,18 +555,20 @@ func (s *Security) Classify(ctx context.Context, p rolemanager.ClassifierPayload
 	if len(p.Categories) == 0 {
 		return s.fallback.Classify(ctx, p)
 	}
-	questions := make(map[string]components.Questions, len(p.Categories))
+	questions := make(map[string]decisions.Question, len(p.Categories))
 	for _, cat := range p.Categories {
-		questions[string(cat)] = components.CreateQuestionsNoul(components.DecisionsNoulQuestion{
-			Instructions: components.CreateDecisionsNoulQuestionInstructionsStr(categoryProposition(cat)),
-		})
+		questions[string(cat)] = decisions.Noul(categoryProposition(cat))
 	}
-	req := components.DecisionsRequest{
-		Model:     s.model,
-		Questions: questions,
-		State:     components.CreateStateMapOfAny(map[string]any{"content": p.User}),
+	req := decisions.Request{Questions: questions, State: map[string]any{"content": p.User}}
+	var answers map[string]decisions.Answer
+	var err error
+	if s.backend != nil {
+		var res decisions.Result
+		res, err = s.backend.Decide(ctx, req)
+		answers = res.Answers
+	} else {
+		answers, err = openRouterDecide(ctx, s.decisionsSDK(), s.model, s.endpoint, req)
 	}
-	resp, err := createDecision(ctx, s.decisionsSDK(), req, s.endpoint)
 	if err != nil {
 		// The turn itself was cancelled, or the request was refused for a
 		// reason a retry elsewhere would not fix (a bad key): surface it.
@@ -507,7 +582,7 @@ func (s *Security) Classify(ctx context.Context, p rolemanager.ClassifierPayload
 		rolemanager.RecordSecurityFallback()
 		return s.fallback.Classify(ctx, p)
 	}
-	verdict, decided := thresholdCategories(resp.Answers, p.Categories)
+	verdict, decided := thresholdCategories(answers, p.Categories)
 	if decided {
 		return verdict, nil
 	}
@@ -521,6 +596,9 @@ func (s *Security) Classify(ctx context.Context, p rolemanager.ClassifierPayload
 // did not answer in time or is failing on its side — no response (a timeout
 // or transport error), a 429, or a 5xx — as opposed to a request it refused.
 func endpointUnavailable(err error) bool {
+	if decisions.IsUnavailable(err) {
+		return true
+	}
 	var de *DecisionsError
 	if !errors.As(err, &de) {
 		return false
@@ -528,21 +606,25 @@ func endpointUnavailable(err error) bool {
 	return de.Status == 0 || de.Status == http.StatusTooManyRequests || de.Status >= 500
 }
 
+// EndpointUnavailable is endpointUnavailable for callers outside the package
+// (routing records the fallback reason).
+func EndpointUnavailable(err error) bool { return endpointUnavailable(err) }
+
 // thresholdCategories reduces the per-category noul answers to a verdict. A
 // missing answer, a non-noul answer, or a probability outside [0,1] makes the
 // result undecided. Any category at or above denyAt returns the
 // highest-scoring sentinel; every category at or below allowAt returns SAFE;
 // the band between is undecided.
-func thresholdCategories(answers map[string]components.Answers, categories []rolemanager.Sentinel) (string, bool) {
+func thresholdCategories(answers map[string]decisions.Answer, categories []rolemanager.Sentinel) (string, bool) {
 	best := ""
 	bestScore := 0.0
 	allLow := true
 	for _, cat := range categories {
 		ans, ok := answers[string(cat)]
-		if !ok || ans.DecisionsNoulAnswer == nil {
+		if !ok || ans.Type != decisions.TypeNoul {
 			return "", false
 		}
-		n := ans.DecisionsNoulAnswer.Noul
+		n := ans.Noul
 		if n < 0 || n > 1 {
 			return "", false
 		}
@@ -581,3 +663,24 @@ func categoryProposition(cat rolemanager.Sentinel) string {
 	}
 	return "The content is unsafe."
 }
+
+// openRouterDecider adapts OpenRouter's hosted Jev to decisions.Decider, for
+// callers that test a backend without building a gate (the /model test).
+type openRouterDecider struct{ c *Client }
+
+// OpenRouterDecider returns OpenRouter's hosted Jev as a decisions.Decider.
+func OpenRouterDecider(token func() (string, error)) decisions.Decider {
+	return &openRouterDecider{c: New(token)}
+}
+
+func (o *openRouterDecider) Decide(ctx context.Context, r decisions.Request) (decisions.Result, error) {
+	start := time.Now()
+	answers, err := o.c.decide(ctx, r)
+	if err != nil {
+		return decisions.Result{}, err
+	}
+	return decisions.Result{Answers: answers, Meta: decisions.Meta{Latency: time.Since(start), LetterMass: 1}}, nil
+}
+
+func (o *openRouterDecider) Identity() string           { return o.c.Identity() }
+func (o *openRouterDecider) Backend() decisions.Backend { return decisions.BackendOpenRouter }

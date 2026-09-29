@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/decisions"
 	"github.com/vulnetix/belai/internal/firewall"
 	"github.com/vulnetix/belai/internal/provider"
 	"github.com/vulnetix/belai/internal/vulnetixcreds"
@@ -52,6 +53,12 @@ func (r *Resolver) FirewallStateFor(instance, providerName string) FirewallState
 		return st
 	}
 	st.Adapter, st.Label = a, a.Label()
+	// Decision backends are never routed: they are not chat endpoints, and a
+	// firewall key must never ride on a decision request.
+	if providerName == decisions.LocalProvider || r.settings.Providers[providerName].Kind == decisions.JevKind {
+		st.Reason = "decision backends are never routed through a firewall"
+		return st
+	}
 	target := r.firewallTarget(providerName)
 	if len(inst.Providers) > 0 && !contains(inst.Providers, providerName) {
 		st.Reason = st.Label + " is limited to " + strings.Join(inst.Providers, ", ")
