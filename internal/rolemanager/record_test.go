@@ -203,6 +203,7 @@ func TestASinkThatPanicsDoesNotStopTheOthers(t *testing.T) {
 var recordFields = []string{
 	"activity", "verdict", "verdict_label", "subject", "pass", "provider", "model",
 	"duration_ms", "seq", "summary", "outcome", "tone", "level", "hidden",
+	"outcome_kind", "actor_kind", "actor", "category", "icon", "cause", "score_pct", "schema",
 }
 
 // TestSessionRecordIsDocumented keeps the "Session record" section of

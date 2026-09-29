@@ -96,6 +96,85 @@ columns stay aligned.
 
 Never use emoji. A new glyph must be in this table before it ships.
 
+### Role-manager rows
+
+A role-manager decision is one line: `icon summary — outcome marker · decider time`.
+The icon names the activity and takes its category colour. The outcome word
+keeps its tone colour (teal clear, amber caution, danger blocked, muted
+neutral) and a marker, so the result reads without hue. The decider is the
+short model id in the Jev accent (`jev-1.13`), a chat model's id in `Muted`, or
+`belai` in `Low` for deterministic code; "belai" is never the name of a Jev or chat
+decision. The summary is what gives way when the line is short, then the
+decider tag; the icon and the outcome stay. Ctrl+O adds a dim second line with
+the activity key, the full provider/model, the category, the score and the
+cause.
+
+| Marker | Colour | Meaning |
+| --- | --- | --- |
+| `✓` | `Teal` | The decision cleared it. |
+| `!` | `Amber` | Caution. |
+| `✗` | `Danger` | Blocked. |
+| `↩` | outcome | It fell back to another decider. |
+| `⟳` | outcome | It came from a cache. |
+| `◔` | outcome | It timed out. |
+
+A category colours the icon and nothing else. Tone colours the outcome, so
+what the work was and how it went never share a channel.
+
+| Category | Token | Dark | Light |
+| --- | --- | --- | --- |
+| `security` | `ColorCatSecurity` | `#B58AE6` | `#7A3FB0` |
+| `mode` | `ColorCatMode` | `#6FA8E8` | `#2C6FB7` |
+| `context` | `ColorCatContext` | `#D2B24A` | `#8A6D0B` |
+| `tools` | `ColorCatTools` | `#4FC3E0` | `#0E7C9B` |
+| `code` | `ColorCatCode` | `#8CCB5E` | `#3F7D20` |
+| `ask` | `ColorCatAsk` | `#E58AB8` | `#B0357A` |
+| `routing` | `ColorCatRouting` | `#A99BD6` | `#6B5B95` |
+| `housekeeping` | `ColorLow` | `#4A5F5B` | `#7F908C` |
+
+One icon per activity. A glyph a terminal does not draw one cell wide falls
+back to its category's letter (S, M, C, T, L, ?, R, .) and the markers to
+`<`, `=` and `~`.
+
+| Icon | Activity | Category |
+| --- | --- | --- |
+| `◈` | security verdict | `security` |
+| `◇` | verdict unclear | `security` |
+| `▸` | security phase | `security` |
+| `◊` | security fallback | `security` |
+| `↺` | verdict recalled | `security` |
+| `↯` | recalled verdict rejected | `security` |
+| `⊕` | boundary sealed | `security` |
+| `⊘` | boundary check failed | `security` |
+| `≠` | tool call mismatch | `security` |
+| `◐` | mode chosen | `mode` |
+| `◎` | intent detected | `mode` |
+| `⊙` | mode pinned | `mode` |
+| `⊤` | goal length limit | `mode` |
+| `◉` | goal check | `mode` |
+| `↻` | goal check repaired | `mode` |
+| `≡` | plan check | `mode` |
+| `◍` | agent check | `mode` |
+| `✎` | goal drafted | `mode` |
+| `⊟` | compaction summary | `context` |
+| `⊠` | compaction prune | `context` |
+| `▤` | page answer | `context` |
+| `⊡` | dependency change | `context` |
+| `⇄` | Bash swapped for a builtin | `tools` |
+| `⇆` | Bash replanned | `tools` |
+| `⊛` | tool and skill search | `tools` |
+| `⊞` | tool and skill selection | `tools` |
+| `⌘` | language server found | `code` |
+| `⌥` | diagnostics | `code` |
+| `⊗` | language server down | `code` |
+| `▣` | LSP triage | `code` |
+| `?` | question asked | `ask` |
+| `≣` | options ordered | `ask` |
+| `⇢` | route fallback | `routing` |
+| `◫` | agent pool admission | `routing` |
+| `✦` | session named | `housekeeping` |
+| `·` | anything without its own icon | `housekeeping` |
+
 ## Rhythm
 
 - **Block spacing.** One blank line between thread blocks, and no bottom
@@ -121,8 +200,7 @@ Never use emoji. A new glyph must be in this table before it ships.
   right side cycles through the model's budgets and ends on the session
   intelligence slot (`intel`, today's tokens, the tightest plan limit or the
   pace, and a limit bar or sparkline); that slot is the only one when routing
-  is `routed` or the model has no budget, and in the last third of its turn it
-  carries a `Low` `f12` hint when the line has room.
+  is `routed` or the model has no budget.
   Line 2 is provider, model and effort, the switches as `●`/`○` (with
   `● rc N` while `belai rc` runs), and the session, token count and context
   bar on the right. Line 3 shows the armed or

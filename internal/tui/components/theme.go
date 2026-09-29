@@ -22,6 +22,16 @@ var (
 	ColorAmber    = lipgloss.AdaptiveColor{Light: "#A95A0B", Dark: "#E8912B"} // needs you, or you stepped in
 	ColorDanger   = lipgloss.AdaptiveColor{Light: "#B8322A", Dark: "#E2564E"} // failures, relaxed guardrails
 
+	// Role-manager categories: the colour of a row's icon, by the kind of
+	// work. They never colour an outcome; tone does that.
+	ColorCatSecurity = lipgloss.AdaptiveColor{Light: "#7A3FB0", Dark: "#B58AE6"}
+	ColorCatMode     = lipgloss.AdaptiveColor{Light: "#2C6FB7", Dark: "#6FA8E8"}
+	ColorCatContext  = lipgloss.AdaptiveColor{Light: "#8A6D0B", Dark: "#D2B24A"}
+	ColorCatTools    = lipgloss.AdaptiveColor{Light: "#0E7C9B", Dark: "#4FC3E0"}
+	ColorCatCode     = lipgloss.AdaptiveColor{Light: "#3F7D20", Dark: "#8CCB5E"}
+	ColorCatAsk      = lipgloss.AdaptiveColor{Light: "#B0357A", Dark: "#E58AB8"}
+	ColorCatRouting  = lipgloss.AdaptiveColor{Light: "#6B5B95", Dark: "#A99BD6"}
+
 	// ColorText is reply body copy: softer than Cream so emphasis still has
 	// somewhere to go.
 	ColorText = lipgloss.AdaptiveColor{Light: "#2A3835", Dark: "#C9D6D2"}

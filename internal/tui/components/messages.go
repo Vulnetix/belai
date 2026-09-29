@@ -46,6 +46,9 @@ type Message struct {
 	Level rolemanager.Level
 	// RM is the rendered role-manager description for "rolemanager" rows.
 	RM rolemanager.Description
+	// RMMeta says who decided, the category, the icon and the cause of a
+	// "rolemanager" row; it drives the icon, its colour and the decider tag.
+	RMMeta RMMeta
 
 	// Expanded overrides global truncation for this message.
 	Expanded bool

@@ -288,6 +288,10 @@ func rolemanagerMessage(e session.Entry) components.Message {
 		msg.Activity = metaString(e.Meta, "activity")
 		msg.Provider = metaString(e.Meta, "provider")
 		msg.Model = metaString(e.Meta, "model")
+		if d, ok := metaInt(e.Meta, "duration_ms"); ok {
+			msg.DurationMS = int64(d)
+		}
+		msg.RMMeta = rmMetaFromEntry(e.Meta, msg.RM.Tone)
 	}
 	if content == "" && msg.RM.Summary == "" && msg.RM.Outcome == "" {
 		return components.Message{}

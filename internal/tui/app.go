@@ -4713,18 +4713,27 @@ func (a *App) addRMActivity(act rolemanager.Activity) {
 	if !ok {
 		return
 	}
-	provider, model := a.cfg.Provider, a.cfg.Model
-	if act.Model != "" {
+	actor := rolemanager.ActorOf(act)
+	var provider, model string
+	switch {
+	case act.Model != "":
+		provider, model = "", act.Model
 		if p, m, ok := strings.Cut(act.Model, "/"); ok {
 			provider, model = p, m
-		} else {
-			model = act.Model
 		}
+	case actor.Kind == rolemanager.ActorModel:
+		// A chat role that named no model was answered by the agent model.
+		provider, model = a.cfg.Provider, a.cfg.Model
+	}
+	meta := rmMeta(act)
+	if meta.Actor == "" && actor.Kind == rolemanager.ActorModel {
+		meta.Actor = model
 	}
 	a.messages = append(a.messages, components.Message{
 		Role:       "rolemanager",
 		Level:      desc.Levels,
 		RM:         desc,
+		RMMeta:     meta,
 		Activity:   string(act.Event),
 		Facts:      decisionFacts(act),
 		Provider:   provider,

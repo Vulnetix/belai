@@ -818,7 +818,16 @@ unbounded). An entry holds:
   `model`, the duration (`duration_ms`), a process-wide sequence number (`seq`)
   and the time the decision was made (the entry's timestamp);
 - for an event the feed describes, the summary, outcome, tone and level, so a
-  resumed session shows the same row;
+  resumed session shows the same row, and the outcome as a word
+  (`outcome_kind`: clear, caution, blocked or neutral);
+- who decided (`actor_kind`: jev, model or harness) and the short name that
+  goes with it (`actor`: `jev-1.13`, a chat model's id, or `belai` for
+  deterministic code), the `category` of the work (security, mode, context,
+  tools, code, ask, routing or housekeeping), a stable `icon` id rather than
+  the glyph, the `cause` when the decision did not take the plain path
+  (fallback, cache_hit, timeout, or none), the decision's score as an integer
+  percent (`score_pct`) when it has one, and the `schema` version (2). An entry
+  without them is an older one and renders with the old defaults;
 - `hidden: true` for an event the feed suppresses (its own line already
   shows it), so a resume does not draw it twice.
 
@@ -843,8 +852,10 @@ Edge cases:
 - A call that times out or fails still names the model that was asked,
   because the leaf notes itself before sending. A `goal_draft` timeout line
   therefore names the model that was too slow. Only a classifier that never
-  reports itself leaves the model empty. The TUI then labels the line with
-  the agent model, as it does for events that are not classifier calls.
+  reports itself leaves the model empty. The TUI then labels a chat-role line
+  with the agent model. A line decided by deterministic code (a cache hit, a
+  sealed boundary, a pool admission) is labelled `belai`, and a Jev decision
+  always names its backend model (`jev-1.13`), never the agent model.
 - The identity is harness configuration, never model output. The TUI splits
   it on the first `/` only, so a model id such as `@cf/org/name` stays whole.
 - The security classifier lines keep their own label
