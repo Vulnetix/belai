@@ -20,6 +20,7 @@ import (
 	"github.com/vulnetix/belai/internal/calltrace"
 	"github.com/vulnetix/belai/internal/clarify"
 	"github.com/vulnetix/belai/internal/config"
+	"github.com/vulnetix/belai/internal/decisions"
 	"github.com/vulnetix/belai/internal/firewall"
 	"github.com/vulnetix/belai/internal/httpclient"
 	"github.com/vulnetix/belai/internal/kiroauth"
@@ -97,6 +98,10 @@ type ClassifierConfig struct {
 	Explicit bool
 	// Firewall is the AI Firewall route the classifier's calls take.
 	Firewall *firewall.Route
+	// Decisions is the local or self-hosted decision backend named by
+	// classifier.provider. When set, Provider/Model stay the main chat model:
+	// it is the fallback the decision checks hand off to.
+	Decisions DecisionsConfig
 }
 
 // SecurityClassifierConfig is the resolved ML classifier-stack config. It is
@@ -193,6 +198,19 @@ func ResolveClassifier(main Config, cls *config.ClassifierSettings, src Credenti
 	}
 	if cls.Chunk.ConcurrencyOr() > 0 {
 		out.Chunk.Concurrency = cls.Chunk.ConcurrencyOr()
+	}
+
+	// A decision backend (the local decision model or a self-hosted Jev) is
+	// never a chat provider: it is recorded as the Jev backend, and the chat
+	// fields stay on the main model, which answers what the backend hands
+	// off (an undecided check, a timeout, content too large to send).
+	if d, ok, err := resolveDecisions(cls, src); ok {
+		if err != nil {
+			return ClassifierConfig{}, err
+		}
+		out.Decisions = d
+		out.Explicit = false
+		return out, nil
 	}
 
 	// ResolveClassifier produces the guardrail classifier config: the LLM
@@ -666,27 +684,30 @@ func NewModeDetector(cfg Config) rolemanager.IntentDetector {
 	if mode == "" {
 		mode = config.ModeDetectionAuto
 	}
-	switch mode {
-	case config.ModeDetectionLlm:
+	if mode == config.ModeDetectionLlm {
 		return nil
-	case config.ModeDetectionJev:
-		if cfg.Routing.JevToken == nil {
-			return nil
-		}
-		return jev.New(cfg.Routing.JevToken)
-	case config.ModeDetectionAuto:
-		if !jevTrafficLikely(cfg) {
-			return nil
-		}
-		if cfg.Routing.JevToken == nil {
-			return nil
-		}
-		return jev.New(cfg.Routing.JevToken)
 	}
-	return nil
+	if mode != config.ModeDetectionJev && mode != config.ModeDetectionAuto {
+		return nil
+	}
+	// A local or self-hosted decision backend serves intent detection on its
+	// own; it needs neither an OpenRouter key nor routing.kind "routed".
+	if cfg.ClassifierOrDefault().Decisions.On() {
+		return jevClientFor(cfg, nil, nil)
+	}
+	if mode == config.ModeDetectionAuto && !jevTrafficLikely(cfg) {
+		return nil
+	}
+	if cfg.Routing.JevToken == nil {
+		return nil
+	}
+	return jev.New(cfg.Routing.JevToken)
 }
 
 func jevTrafficLikely(cfg Config) bool {
+	if cfg.ClassifierOrDefault().Decisions.On() {
+		return true
+	}
 	if cfg.Provider == "openrouter" {
 		return true
 	}
@@ -1444,7 +1465,7 @@ func mainClassifierConfig(cfg Config) Config {
 // security path wires the Decisions call separately in NewPipelineWithRetry.
 func NewClassifierWithRetry(cfg Config, client *http.Client, onRetry func(resilience.Attempt)) rolemanager.Classifier {
 	cc := GuardConfig(cfg)
-	if jev.IsDecisionsModel(cc.Provider, cc.Model) {
+	if isDecisionsTarget(cc.Provider, cc.Kind, cc.Model) {
 		cc = mainClassifierConfig(cfg)
 	}
 	return classifierFromConfig(cc, client, onRetry)
@@ -1527,7 +1548,7 @@ func newRoutedClassifier(cfg Config, client *http.Client, onRetry func(resilienc
 	return &routedClassifier{
 		main:    classifierFromConfig(mainClassifierConfig(cfg), client, onRetry),
 		pool:    cfg.Routing.Candidates,
-		jev:     jev.New(cfg.Routing.JevToken),
+		jev:     jevClientFor(cfg, cfg.Routing.JevToken, client),
 		client:  client,
 		onRetry: onRetry,
 		cache:   map[string]rolemanager.Classifier{},
@@ -1563,6 +1584,9 @@ func (r *routedClassifier) forUseCase(ctx context.Context, useCase string) rolem
 			Model:    pc.Cfg.Model,
 		}
 	}
+	if r.jev == nil {
+		return r.cacheAndReturn(useCase, r.main)
+	}
 	start := time.Now()
 	decision, err := r.jev.Route(ctx, useCase, candidates)
 	if err != nil || decision.Key == "" {
@@ -1575,10 +1599,12 @@ func (r *routedClassifier) forUseCase(ctx context.Context, useCase string) rolem
 			var de *jev.DecisionsError
 			if errors.As(err, &de) {
 				s = de.Status
+			} else if st := decisions.StatusOf(err); st != 0 {
+				s = st
 			}
 			status = &s
 		}
-		rolemanager.RecordRouteFallback(useCase, status, "openrouter/"+jev.DefaultModel, time.Since(start))
+		rolemanager.RecordRouteFallback(useCase, status, r.jev.Identity(), time.Since(start))
 		return r.cacheAndReturn(useCase, r.main)
 	}
 	for _, pc := range r.pool {
@@ -1586,7 +1612,7 @@ func (r *routedClassifier) forUseCase(ctx context.Context, useCase string) rolem
 			// A Jev Decisions model is not a chat model: a routed winner that
 			// is a Jev model falls back to the main classifier rather than
 			// ever being asked to chat.
-			if jev.IsDecisionsModel(pc.Cfg.Provider, pc.Cfg.Model) {
+			if isDecisionsTarget(pc.Cfg.Provider, pc.Cfg.Kind, pc.Cfg.Model) {
 				return r.cacheAndReturn(useCase, r.main)
 			}
 			return r.cacheAndReturn(useCase, classifierFromConfig(pc.Cfg, r.client, r.onRetry))
@@ -1631,6 +1657,9 @@ func NewPipelineWithRetry(cfg Config, client *http.Client, cache *rolemanager.Ca
 	cc := cfg.ClassifierOrDefault()
 	gc := GuardConfig(cfg)
 	guardLabel := gc.Provider + "/" + gc.Model
+	if cc.Decisions.On() {
+		guardLabel = cc.Decisions.Label()
+	}
 	// The role classifier serves the non-guardrail role-manager activities and
 	// follows the routing config (defined: main; routed: Jev). The guardrail
 	// classifier serves security and always follows classifier.provider/model.
@@ -1681,6 +1710,12 @@ func securityGuard(cfg Config, client *http.Client, onRetry func(resilience.Atte
 	// classifier's APIKey is the firewall's credential, which never leaves
 	// its instance, so that classifier keeps the chat guard, which the
 	// firewall carries.
+	if cc.Decisions.On() {
+		// A local or self-hosted decision backend answers the security
+		// checks; it is never firewall-routed, and the chat guard (the main
+		// model) answers whatever it hands off.
+		return jev.NewSecurityWith(cc.Decisions.NewDecider(client), guard)
+	}
 	if jev.IsDecisionsModel(cc.Provider, cc.Model) && cc.Firewall == nil {
 		guard = jev.NewSecurity(func() (string, error) { return cc.APIKey, nil }, guard)
 	}

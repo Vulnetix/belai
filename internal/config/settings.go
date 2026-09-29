@@ -533,6 +533,9 @@ type ClassifierSettings struct {
 	// Phase2 configures the jailbreak gate. Only consulted when Kind is
 	// "models". Source "disabled" turns it off.
 	Phase2 ClassifierPhaseSettings `json:"phase2,omitempty"`
+	// Decision tunes the decision backend (a local decision model or a
+	// self-hosted Jev) when classifier.provider names one.
+	Decision ClassifierDecisionSettings `json:"decision,omitempty"`
 }
 
 // ClassifierPhaseSettings configures one local BERT gate.
@@ -544,6 +547,18 @@ type ClassifierPhaseSettings struct {
 	// Threshold is the attack-probability threshold at or above which the
 	// gate fires. Zero means the default (mlclassify.DefaultThreshold, 0.75).
 	Threshold float64 `json:"threshold,omitempty"`
+}
+
+// ClassifierDecisionSettings tunes a decision backend. Both knobs change
+// how long the harness waits and how much it sends before handing a check to
+// the agent-model fallback; neither can skip a classification.
+type ClassifierDecisionSettings struct {
+	// TimeoutMS bounds one decision call. Zero uses the backend default
+	// (20s local, 5s self-hosted, 3s OpenRouter).
+	TimeoutMS int `json:"timeout_ms,omitempty"`
+	// MaxStateBytes is the largest content sent to a local decision model;
+	// larger content goes to the fallback. Zero uses 16 KiB.
+	MaxStateBytes int `json:"max_state_bytes,omitempty"`
 }
 
 // ClassifierChunkSettings bounds chunked classification of oversized content.
@@ -588,6 +603,12 @@ func (c *ClassifierSettings) merge(from *ClassifierSettings) {
 	}
 	c.Phase1.merge(&from.Phase1)
 	c.Phase2.merge(&from.Phase2)
+	if from.Decision.TimeoutMS != 0 {
+		c.Decision.TimeoutMS = from.Decision.TimeoutMS
+	}
+	if from.Decision.MaxStateBytes != 0 {
+		c.Decision.MaxStateBytes = from.Decision.MaxStateBytes
+	}
 }
 
 // merge folds from over c, taking any non-zero field from from.
@@ -614,7 +635,8 @@ func (c *ClassifierSettings) IsZero() bool {
 	return c.Kind == "" && c.Provider == "" && c.Model == "" && c.Effort == "" && c.Tier == "" &&
 		c.Caveman == nil &&
 		c.Chunk.MaxBytes == 0 && c.Chunk.Concurrency == 0 &&
-		c.Phase1.IsZero() && c.Phase2.IsZero()
+		c.Phase1.IsZero() && c.Phase2.IsZero() &&
+		c.Decision.TimeoutMS == 0 && c.Decision.MaxStateBytes == 0
 }
 
 // IsZero reports whether the phase settings carry no overrides.
@@ -660,6 +682,10 @@ type ProviderProfile struct {
 	Protocol string `json:"protocol,omitempty"`
 	Host     string `json:"host,omitempty"`
 	Port     string `json:"port,omitempty"`
+	// DecisionPath is the decision endpoint of a kind "jev" profile, relative
+	// to BaseURL; empty means /v1/systemone. The /model test stores the path
+	// it found answering when the default did not.
+	DecisionPath string `json:"decision_path,omitempty"`
 }
 
 // ProviderModel is one model in a custom provider's catalogue.
@@ -852,6 +878,9 @@ func (r *RoutingSettings) merge(from *RoutingSettings) {
 		f := *from.Fast
 		r.Fast = &f
 	}
+	if from.ModeDetection != "" {
+		r.ModeDetection = from.ModeDetection
+	}
 	if from.UseCases != nil {
 		if r.UseCases == nil {
 			r.UseCases = map[string]RoutingTarget{}
@@ -864,7 +893,7 @@ func (r *RoutingSettings) merge(from *RoutingSettings) {
 
 // IsZero reports whether the routing settings carry no overrides.
 func (r *RoutingSettings) IsZero() bool {
-	return r == nil || (r.Kind == "" && len(r.UseCases) == 0 && r.Fast == nil)
+	return r == nil || (r.Kind == "" && len(r.UseCases) == 0 && r.Fast == nil && r.ModeDetection == "")
 }
 
 // MaxAttemptsOr returns MaxAttempts or the provided default.

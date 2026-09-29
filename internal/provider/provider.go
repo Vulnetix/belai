@@ -28,6 +28,8 @@ type Profile struct {
 	// ("ollama", "llama-server", "", or "openai-compatible"). An unknown
 	// kind is rejected so a profile can never invent new behaviour.
 	Kind string
+	// DecisionPath is a kind "jev" profile's decision endpoint path.
+	DecisionPath string
 }
 
 // Lookup returns the descriptor for a compiled-in provider, if any.

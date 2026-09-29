@@ -22,6 +22,7 @@ import (
 	"github.com/vulnetix/belai/internal/calltrace"
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/decisionserver"
 	"github.com/vulnetix/belai/internal/headless"
 	"github.com/vulnetix/belai/internal/httpclient"
 	"github.com/vulnetix/belai/internal/mcp"
@@ -37,6 +38,8 @@ import (
 )
 
 func main() {
+	// Stop any local decision server this process launched, on every exit.
+	defer decisionserver.StopAll()
 	_, _ = config.Migrate()
 	activatePlugins()
 	// Remember providers without a nonce endpoint across runs, so a session
@@ -56,31 +59,31 @@ func main() {
 
 	// `belai acp` serves the Agent Client Protocol to an editor.
 	if len(os.Args) > 1 && os.Args[1] == "acp" {
-		os.Exit(runACP(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+		exitProcess(runACP(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	}
 	// `belai login kiro` signs in to Kiro with an AWS Builder ID.
 	if len(os.Args) > 1 && os.Args[1] == "login" {
-		os.Exit(runLoginCLI(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Stderr, isCharDevice(os.Stdin)))
+		exitProcess(runLoginCLI(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Stderr, isCharDevice(os.Stdin)))
 	}
 	// `belai agent …` manages fleet workers; `belai kanban …` edits the board.
 	// Both parse their own flags, so they dispatch before flag.Parse.
 	if len(os.Args) > 1 && os.Args[1] == "agent" {
-		os.Exit(runAgentCLI(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+		exitProcess(runAgentCLI(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	}
 	if len(os.Args) > 1 && os.Args[1] == "kanban" {
-		os.Exit(runKanbanCLI(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
+		exitProcess(runKanbanCLI(os.Args[2:], os.Stdin, os.Stdout, os.Stderr))
 	}
 	// `belai rc` runs remote control; `belai rc-session` is one session it
 	// started (hidden: only the daemon runs it).
 	if len(os.Args) > 1 && os.Args[1] == "rc" {
-		os.Exit(runRCCLI(ctx, os.Args[2:], os.Stdout, os.Stderr))
+		exitProcess(runRCCLI(ctx, os.Args[2:], os.Stdout, os.Stderr))
 	}
 	if len(os.Args) > 1 && os.Args[1] == "rc-session" {
-		os.Exit(runRCSessionCLI(ctx, os.Args[2:], os.Stdin, os.Stderr))
+		exitProcess(runRCSessionCLI(ctx, os.Args[2:], os.Stdin, os.Stderr))
 	}
 	// `belai plugin …` is a subcommand with its own flags.
 	if len(os.Args) > 1 && os.Args[1] == "plugin" {
-		os.Exit(runPluginCLI(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Stderr, isCharDevice(os.Stdin)))
+		exitProcess(runPluginCLI(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Stderr, isCharDevice(os.Stdin)))
 	}
 
 	showVersion := flag.Bool("version", false, "print version and exit")
@@ -134,7 +137,7 @@ func main() {
 
 	if *showVersion {
 		fmt.Println(version.Version)
-		os.Exit(0)
+		exitProcess(0)
 	}
 	switch modes.Mode(*modeFlag) {
 	case "", modes.ModeAgent, modes.ModeGoal:
@@ -142,29 +145,29 @@ func main() {
 		*planMode = true
 	default:
 		fmt.Fprintf(os.Stderr, "belai: -mode must be agent, plan or goal, not %q\n", *modeFlag)
-		os.Exit(2)
+		exitProcess(2)
 	}
 
 	workdir, _ := os.Getwd()
 	if *exportID != "" {
 		if err := exportSessionCLI(*exportID, workdir); err != nil {
 			fmt.Fprintln(os.Stderr, "belai:", err)
-			os.Exit(1)
+			exitProcess(1)
 		}
-		os.Exit(0)
+		exitProcess(0)
 	}
 
 	if *resume != "" && *prompt != "" {
 		fmt.Fprintln(os.Stderr, "belai: -resume requires the interactive TUI (not supported with -prompt)")
-		os.Exit(1)
+		exitProcess(1)
 	}
 	if *continueLast != "" && *resume != "" {
 		fmt.Fprintln(os.Stderr, "belai: -continue cannot be combined with -resume")
-		os.Exit(1)
+		exitProcess(1)
 	}
 	if *continueLast != "" && *prompt != "" {
 		fmt.Fprintln(os.Stderr, "belai: -continue requires the interactive TUI (not supported with -prompt)")
-		os.Exit(1)
+		exitProcess(1)
 	}
 
 	// First-run trust gate: block on an unknown directory before any repo
@@ -177,7 +180,7 @@ func main() {
 			// not accepted, so the flag can never silently widen the sandbox.
 			if err := trustgate.Grant(workdir, nil); err != nil {
 				fmt.Fprintln(os.Stderr, "belai: trust directory:", err)
-				os.Exit(1)
+				exitProcess(1)
 			}
 			if len(st.NewDirs) > 0 {
 				fmt.Fprintf(os.Stderr, "belai: trusted %s; skipping proposed workspace directories: %s\n",
@@ -187,24 +190,24 @@ func main() {
 			ok, err := tui.RunTrustGate(st)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "belai: trust dialog:", err)
-				os.Exit(1)
+				exitProcess(1)
 			}
 			if !ok && !st.Trusted {
-				os.Exit(1)
+				exitProcess(1)
 			}
 		} else {
 			// Headless fails closed: no model turn runs in an untrusted
 			// directory without an explicit opt-in.
 			fmt.Fprintf(os.Stderr, "belai: %s is not a trusted workspace.\n"+
 				"Run `belai` here once to review and trust it, or `belai -trust-dir`.\n", workdir)
-			os.Exit(1)
+			exitProcess(1)
 		}
 	}
 
 	settings, err := config.LoadMerged(workdir)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "belai: load settings:", err)
-		os.Exit(1)
+		exitProcess(1)
 	}
 	if *effort != "" {
 		settings.Effort = *effort
@@ -297,7 +300,7 @@ func main() {
 	// kind "llm" and this is a no-op.
 	if err := run.PreloadClassifier(run.ResolveSecurityClassifier(settings.Classifier)); err != nil {
 		fmt.Fprintln(os.Stderr, "belai: load embedded classifier:", err)
-		os.Exit(1)
+		exitProcess(1)
 	}
 
 	// Resolve --resume / --continue before the TUI starts so a bad id (or an
@@ -309,20 +312,20 @@ func main() {
 		store, err := session.NewStore()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "belai:", err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		cur, _ := session.KeyFor(workdir)
 		if *resume != "" {
 			resumeKey, resumeID, err = store.ResolveAnywhere(cur, *resume)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "belai:", err)
-				os.Exit(1)
+				exitProcess(1)
 			}
 		} else {
 			resumeKey, resumeID, err = continueLatest(store, cur)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "belai:", err)
-				os.Exit(1)
+				exitProcess(1)
 			}
 		}
 	}
@@ -334,17 +337,17 @@ func main() {
 	if *agentCreate != "" {
 		if err := runAgentCreate(ctx, *agentCreate, *model, *provider, workdir, pol, settings); err != nil {
 			fmt.Fprintln(os.Stderr, "belai:", err)
-			os.Exit(1)
+			exitProcess(1)
 		}
-		os.Exit(0)
+		exitProcess(0)
 	}
 
 	if *agentName != "" {
 		if err := runAgentForeground(ctx, *agentName, *model, *provider, workdir, pol, settings); err != nil {
 			fmt.Fprintln(os.Stderr, "belai:", err)
-			os.Exit(1)
+			exitProcess(1)
 		}
-		os.Exit(0)
+		exitProcess(0)
 	}
 
 	// MCP servers start only here: past the trust gate, from the user's own
@@ -371,24 +374,24 @@ func main() {
 		shutdown()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "belai:", err)
-			os.Exit(1)
+			exitProcess(1)
 		}
-		os.Exit(0)
+		exitProcess(0)
 	}
 
 	if interactive(isCharDevice(os.Stdout), isCharDevice(os.Stdin), os.Getenv) {
 		resolver, err := newResolver(workdir)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "belai:", err)
-			os.Exit(1)
+			exitProcess(1)
 		}
 		err = tui.Start(tui.Options{Workdir: workdir, Resolver: resolver, Provider: *provider, Model: *model, Settings: &settings, Posture: pol, PlanMode: *planMode, Firewall: forceFirewall, ResumeKey: resumeKey, ResumeSession: resumeID})
 		shutdown()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "belai:", err)
-			os.Exit(1)
+			exitProcess(1)
 		}
-		os.Exit(0)
+		exitProcess(0)
 	}
 
 	shutdown()
@@ -403,7 +406,7 @@ func hardExitOnSecondSignal(ctx context.Context) {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	<-sig
-	os.Exit(130)
+	exitProcess(130)
 }
 
 // exportSessionCLI resolves a session id or prefix (preferring the current
@@ -453,6 +456,9 @@ func withClassifier(cfg run.Config, settings config.Settings, resolver *credenti
 	}
 	cfg.Classifier = cc
 	cfg.Security = run.ResolveSecurityClassifier(settings.Classifier)
+	if n := run.WarmDecisions(cfg); n != "" {
+		decisionNoticeOnce.Do(func() { fmt.Fprintln(os.Stderr, "belai: "+n) })
+	}
 	if n := cfg.Security.Fallback; n != "" {
 		securityFallbackOnce.Do(func() { fmt.Fprintln(os.Stderr, "belai: "+n) })
 	}
@@ -465,6 +471,9 @@ func withClassifier(cfg run.Config, settings config.Settings, resolver *credenti
 // securityFallbackOnce keeps the fallback notice to one line per process,
 // however many sessions (ACP, a worker's items) resolve the classifier.
 var securityFallbackOnce sync.Once
+
+// decisionNoticeOnce keeps the decision-server notice to one line per process.
+var decisionNoticeOnce sync.Once
 
 func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, detectMode, verbose bool, workdir string, pol posture.Policy, enableTools, planMode bool, forceMode modes.Mode, settings config.Settings) error {
 	resolver, err := newResolver(workdir)
@@ -698,4 +707,11 @@ func recordUsage(sessionID string, settings config.Settings, sum *run.UsageSumma
 			_ = rec.Close()
 		}
 	}
+}
+
+// exitProcess stops any local decision server this process launched, then
+// exits. A server another belai process launched is left running for it.
+func exitProcess(code int) {
+	decisionserver.StopAll()
+	os.Exit(code)
 }

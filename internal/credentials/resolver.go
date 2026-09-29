@@ -128,7 +128,7 @@ func (r *Resolver) Profile(name string) (provider.Profile, bool) {
 	for _, m := range p.Models {
 		models = append(models, m.ID)
 	}
-	return provider.Profile{BaseURL: p.BaseURL, API: p.API, Auth: auth, Models: models, Kind: p.Kind}, true
+	return provider.Profile{BaseURL: p.BaseURL, API: p.API, Auth: auth, Models: models, Kind: p.Kind, DecisionPath: p.DecisionPath}, true
 }
 
 // CanonicalProvider implements run.AliasSource: it resolves a user-facing
