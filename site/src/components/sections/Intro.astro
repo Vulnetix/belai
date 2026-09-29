@@ -8,6 +8,20 @@ import Walkthrough from '../ui/Walkthrough.astro';
 
 const install = 'brew install vulnetix/tap/belai';
 
+// The latest release tag, read at build time and refreshed in the browser
+// (below) so the page never shows a stale version between deploys. Only a
+// tag of the vX.Y.Z shape is ever shown; anything else leaves it blank.
+const TAG = /^v\d+\.\d+\.\d+$/;
+const RELEASES = 'https://api.github.com/repos/vulnetix/belai/releases/latest';
+let latest = '';
+try {
+  const res = await fetch(RELEASES, { signal: AbortSignal.timeout(5000) });
+  const tag = res.ok ? (await res.json()).tag_name : '';
+  if (TAG.test(tag)) latest = tag;
+} catch {
+  // Offline build: the browser fills it in.
+}
+
 // Harness facts only, each one covered further down the page.
 const facts = [
   ['license', 'Apache-2.0'],
@@ -36,7 +50,10 @@ const facts = [
 
   <div class="relative px-4 pb-16 pt-6 sm:px-6 lg:px-10 lg:pb-24">
     <nav class="mono flex items-center justify-between gap-4 text-sm" aria-label="Site">
-      <span class="font-bold">▌ belai</span>
+      <span>
+        <span class="font-bold">▌ belai</span>
+        <span class="ml-1 text-vx-ink/75" data-latest-version>{latest}</span>
+      </span>
       <a href="https://github.com/vulnetix/belai" class="font-bold text-vx-ink no-underline hover:underline">github ↗</a>
     </nav>
 
@@ -100,6 +117,19 @@ const facts = [
     </div>
   </div>
 </section>
+
+<script>
+  const el = document.querySelector<HTMLElement>('[data-latest-version]');
+  if (el) {
+    fetch('https://api.github.com/repos/vulnetix/belai/releases/latest')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => {
+        const tag = r?.tag_name;
+        if (typeof tag === 'string' && /^v\d+\.\d+\.\d+$/.test(tag)) el.textContent = tag;
+      })
+      .catch(() => {});
+  }
+</script>
 
 <style>
   /* A hard offset shadow instead of a border: cream block, ink outline. */
