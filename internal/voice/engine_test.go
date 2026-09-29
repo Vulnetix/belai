@@ -222,12 +222,12 @@ func TestListenModeTranscribesEachUtterance(t *testing.T) {
 	src.send(silence(ms(300)))
 	src.send(tone(ms(700), 0.3))
 	eventually(t, "hearing", func() bool { return e.State() == StateHearing })
-	src.send(silence(ms(900)))
+	src.send(silence(ms(1200)))
 	if ev := nextEvent(t, e, EventTranscript); ev.Text != "run the tests" {
 		t.Fatalf("transcript = %q", ev.Text)
 	}
 	src.send(tone(ms(700), 0.3))
-	src.send(silence(ms(900)))
+	src.send(silence(ms(1200)))
 	nextEvent(t, e, EventTranscript)
 	if rec.callCount() != 2 {
 		t.Fatalf("recogniser calls = %d, want 2", rec.callCount())
@@ -332,7 +332,7 @@ func TestRecogniserErrorIsReportedNotFatal(t *testing.T) {
 	ready(t, e)
 	eventually(t, "microphone open", func() bool { s, _ := src.counts(); return s == 1 })
 	src.send(tone(ms(700), 0.3))
-	src.send(silence(ms(900)))
+	src.send(silence(ms(1200)))
 	if ev := nextEvent(t, e, EventError); ev.Err == nil {
 		t.Fatal("nil error")
 	}
