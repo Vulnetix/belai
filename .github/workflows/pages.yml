@@ -53,7 +53,7 @@ jobs:
       # case the runner's Node 22 predates it being the default.
       - name: Test site scripts
         working-directory: site
-        run: node --experimental-strip-types --test scripts/
+        run: node --experimental-strip-types --test 'scripts/*.test.mjs'
 
       - name: Build
         working-directory: site
