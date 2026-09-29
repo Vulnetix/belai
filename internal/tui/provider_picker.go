@@ -58,6 +58,7 @@ func (a *App) openProviderPicker(role modelRole, opts []string, current string) 
 	a.modelState.providerRole = role
 	a.modelState.providerOpts = opts
 	a.modelState.providerIdx = max(indexOfString(opts, current), 0)
+	a.modelState.providerScroll = 0
 	return nil
 }
 
@@ -120,7 +121,17 @@ func (a *App) providerPicker() string {
 	var b strings.Builder
 	b.WriteString(components.MutedStyle.Render("provider for ") + components.Chip(string(a.modelState.providerRole), components.ColorTeal) + "\n")
 	b.WriteString(components.MutedStyle.Render("Test results only label a provider. Every provider stays selectable.") + "\n\n")
-	for i, name := range a.modelState.providerOpts {
+	// The list yields to a short terminal so the keys below stay on screen.
+	start, end := 0, len(a.modelState.providerOpts)
+	if a.height > 0 {
+		if rows := max(a.height-11, 3); rows < end {
+			start = windowStart(a.modelState.providerScroll, a.modelState.providerIdx, end, rows)
+			a.modelState.providerScroll = start
+			end = start + rows
+		}
+	}
+	for i := start; i < end; i++ {
+		name := a.modelState.providerOpts[i]
 		selected := i == a.modelState.providerIdx
 		shown := name
 		if shown == "" {

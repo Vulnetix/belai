@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/run"
 )
@@ -90,8 +92,11 @@ func TestModelScreenClassifierTierToggle(t *testing.T) {
 func TestModelScreenSaysWhoAnswersWhat(t *testing.T) {
 	t.Setenv("BELAI_HOME", t.TempDir())
 	a := newModelScreen(t, t.TempDir())
+	// The summary rides beside the roles rail, which needs the wide layout.
+	a.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
+	selectRow(t, a, roleFast, "provider")
 	view := a.modelView()
-	for _, want := range []string{"IN EFFECT", "work", "verdicts", "drafting", "security", "FAST TIER", "answers one-token verdicts", "does the work"} {
+	for _, want := range []string{"IN EFFECT", "work", "verdicts", "drafting", "security", "FAST TIER", "answers one-token verdicts"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("/model view missing %q:\n%s", want, view)
 		}

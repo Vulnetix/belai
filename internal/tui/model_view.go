@@ -78,6 +78,16 @@ type modelViewState struct {
 	filtering   bool
 	scroll      int
 
+	// fieldScroll is the first visible field of the detail pane when a role's
+	// fields outgrow it (the routing pool). roleLast remembers the row the
+	// cursor was on in each role, so ←→ returns to it. showLog swaps the
+	// panes for the full test log.
+	fieldScroll int
+	roleLast    map[modelRole]int
+	showLog     bool
+	// providerScroll is the first visible row of the provider picker.
+	providerScroll int
+
 	errorMsg string
 }
 
@@ -770,113 +780,32 @@ func padRight(s string, w int) string {
 
 func (a *App) modelView() string {
 	w := a.contentWidth()
-	inner := w - 2 // lipgloss Padding(1) below
 	rows := a.modelRows()
 	a.modelState.rows = rows
 
-	var b strings.Builder
-	b.WriteString(components.SectionHeader("Model Roles", "esc back", w))
-
 	if a.modelState.pickingProvider {
+		var b strings.Builder
+		b.WriteString(components.SectionHeader("Model Roles", "esc back", w))
 		b.WriteString("\n")
 		b.WriteString(a.providerPicker())
 		return lipgloss.NewStyle().Padding(1).Render(b.String())
 	}
 
 	if a.modelState.picking {
+		var b strings.Builder
+		b.WriteString(components.SectionHeader("Model Roles", "esc back", w))
 		b.WriteString("\n")
 		b.WriteString(a.modelPicker())
 		return lipgloss.NewStyle().Padding(1).Render(b.String())
 	}
 
-	// One label column for the whole page, the summary included, sized to the
-	// longest label so no label runs into its value.
-	labelW := len("verdicts")
-	for _, r := range rows {
-		labelW = max(labelW, ansi.StringWidth(r.label))
+	if a.modelTest == nil {
+		a.modelState.showLog = false
 	}
-	labelW += 2
-	groups := map[modelRole]modelGroup{}
-	srcW := 0
-	for _, r := range rows {
-		g, ok := groups[r.role]
-		if !ok {
-			g = a.modelGroupFor(r.role, rows)
-			groups[r.role] = g
-		}
-		if g.perRow {
-			srcW = max(srcW, ansi.StringWidth("set in "+setIn(r.src, g.scope)))
-		}
+	if a.modelState.showLog {
+		return lipgloss.NewStyle().Padding(1).Render(a.modelLogScreen(w, a.height))
 	}
-	valW := inner - 2 - len(modelIndent) - labelW
-	if srcW > 0 {
-		valW -= srcW + 2
-	}
-	valW = max(valW, 12)
-
-	b.WriteString("\n" + a.modelSummary(labelW, valW) + "\n")
-
-	routed := a.settings.Routing != nil && a.settings.Routing.Kind == config.RoutingRouted
-	var prev modelRole
-	for i, r := range rows {
-		g := groups[r.role]
-		if r.role != prev {
-			if i > 0 {
-				b.WriteString("\n")
-			}
-			b.WriteString(a.modelGroupHeader(g, inner) + "\n")
-			prev = r.role
-		}
-		isRoute := strings.HasPrefix(r.key, "route:")
-		if isRoute && !strings.HasPrefix(safeRow(rows, i-1).key, "route:") {
-			b.WriteString(components.MutedStyle.Render("  candidate pool") + "\n")
-		}
-		selected := i == a.modelState.selected
-		label := modelIndent + padRight(r.label, labelW)
-		rawValue := r.value
-		if p, ok := a.modelState.pendingProvider[r.role]; ok && r.key == "provider" {
-			rawValue = p + "  · pick a model to test and save"
-		}
-		rawValue += a.testingSuffix(r.role, r.key)
-		value := truncTail(rawValue, valW)
-		// Pool rows stay editable under kind defined, but they are not in use,
-		// so they read like disabled ones.
-		dim := r.disabled || (isRoute && !routed)
-		switch {
-		case selected:
-			label = components.AccentStyle.Bold(true).Render(label)
-			value = components.EmphStyle.Render(value)
-		case dim:
-			label = components.MutedStyle.Render(label)
-			value = components.MutedStyle.Render(value)
-		default:
-			label = components.MutedStyle.Render(label)
-		}
-		line := components.Cursor(selected) + label + value
-		if src := setIn(r.src, g.scope); g.perRow && src != "" {
-			style := components.MutedStyle
-			if outranks(src, g.scope) {
-				style = components.WarnStyle
-			}
-			gap := valW - ansi.StringWidth(truncTail(rawValue, valW)) + 2
-			line += strings.Repeat(" ", gap) + style.Render("set in "+src)
-		}
-		b.WriteString(line + "\n")
-	}
-
-	if a.avail.note != "" {
-		b.WriteString("\n" + components.MutedStyle.Render(a.avail.note) + "\n")
-	}
-	if panel := a.modelTestPanel(inner); panel != "" {
-		b.WriteString("\n" + panel)
-	}
-	if a.modelState.errorMsg != "" {
-		b.WriteString("\n" + components.DangerStyle.Render("✗ "+a.modelState.errorMsg) + "\n")
-	}
-	help := []string{"↑↓", "move", "⏎", "edit", "tab", "mode", "s", "scope", "c", "clear", "p", "providers"}
-	help = append(help, a.modelTestHelp()...)
-	b.WriteString("\n" + components.HelpBar(help...) + "\n")
-	return lipgloss.NewStyle().Padding(1).Render(b.String())
+	return lipgloss.NewStyle().Padding(1).Render(a.modelScreen(rows, w, a.height))
 }
 
 // modelPicker renders the embedded model sub-picker.
@@ -890,7 +819,12 @@ func (a *App) modelPicker() string {
 	}
 	b.WriteString(a.modelSearchLine() + "\n")
 
-	const rows = 10
+	// The list yields to a short terminal: the header, filter line, counter and
+	// help keep their rows so every key stays on screen.
+	rows := 10
+	if a.height > 0 {
+		rows = min(10, max(a.height-12, 3))
+	}
 	if len(catalog) == 0 {
 		switch {
 		case a.modelState.filter != "":
@@ -1044,19 +978,44 @@ func (a *App) handleModelKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	rows := a.modelRows()
 	a.modelState.rows = rows
+	if a.modelState.selected >= len(rows) {
+		a.modelState.selected = max(len(rows)-1, 0)
+	}
+
+	if a.modelState.showLog {
+		switch m.String() {
+		case "esc", "d", "q":
+			a.modelState.showLog = false
+		}
+		return a, nil
+	}
+
+	// The cursor moves inside the selected role; ←→ change role.
+	lo, hi := modelRoleRange(rows, safeRow(rows, a.modelState.selected).role)
 
 	switch m.String() {
 	case "esc":
 		a.pop()
 		return a, nil
 	case "up", "k":
-		if a.modelState.selected > 0 {
+		if a.modelState.selected > lo {
 			a.modelState.selected--
 		}
 		return a, nil
 	case "down", "j":
-		if a.modelState.selected < len(rows)-1 {
+		if a.modelState.selected < hi {
 			a.modelState.selected++
+		}
+		return a, nil
+	case "left", "h":
+		a.moveModelRole(rows, -1)
+		return a, nil
+	case "right", "l":
+		a.moveModelRole(rows, 1)
+		return a, nil
+	case "d":
+		if a.modelTest != nil {
+			a.modelState.showLog = true
 		}
 		return a, nil
 	case "p":
@@ -1073,6 +1032,37 @@ func (a *App) handleModelKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, a.cycleRoutingKind(routingKindOptions)
 	}
 	return a, nil
+}
+
+// moveModelRole moves the cursor to the previous or next role, wrapping at the
+// ends, and lands on the row it last held there (else the role's first row).
+func (a *App) moveModelRole(rows []modelRow, dir int) {
+	order := modelRoleOrder(rows)
+	if len(order) == 0 {
+		return
+	}
+	cur := safeRow(rows, a.modelState.selected).role
+	if a.modelState.roleLast == nil {
+		a.modelState.roleLast = map[modelRole]int{}
+	}
+	a.modelState.roleLast[cur] = a.modelState.selected
+	next := order[(indexOfRole(order, cur)+dir+len(order))%len(order)]
+	lo, hi := modelRoleRange(rows, next)
+	sel := lo
+	if last, ok := a.modelState.roleLast[next]; ok && last >= lo && last <= hi {
+		sel = last
+	}
+	a.modelState.selected = sel
+	a.modelState.fieldScroll = 0
+}
+
+func indexOfRole(list []modelRole, r modelRole) int {
+	for i, v := range list {
+		if v == r {
+			return i
+		}
+	}
+	return 0
 }
 
 func (a *App) handleModelPickerKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {

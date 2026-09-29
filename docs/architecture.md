@@ -3130,42 +3130,71 @@ truncate-on-crash hole in the old JSON save. Directories are `0o755`; files
 
 ### Model roles
 
-`/model` is the role screen. It opens with an **IN EFFECT** summary —
-`work` (the agent model), `verdicts` (the fast tier, which serves the goal
-contract too, even under `routed`; only with no fast tier does it read "Jev
-picks from pool, else work model"), `drafting` (the
-agent model for compaction and clarify, or Jev picking from the pool when
-routing is live) and `security` (`run.GuardConfig`, or the local gates) —
-resolved from the live config. Below it are labelled groups for the
-**agent**, **fast tier**, **classifier**, **routing** and **session
-posture** roles, each with a one-line description of what it decides (see
-[Fast tier](#fast-tier)). The classifier group also carries a standing
-warning that it is the security gate for tool output, because a weaker
-classifier weakens detection everywhere.
+`/model` is the role screen, laid out to fit one terminal screen. A **rail**
+on the left lists the roles (**Agent**, **Fast tier**, **Classifier**,
+**Routing**, **Posture**), each with the scope it saves to and a one-line
+value. Below the rail an **IN EFFECT** box shows `work` (the agent model),
+`verdicts` (the fast tier, which serves the goal contract too, even under
+`routed`; only with no fast tier does it read "Jev picks from pool, else work
+model"), `drafting` (the agent model for compaction and clarify, or Jev
+picking from the pool when routing is live) and `security`
+(`run.GuardConfig`, or the local gates), resolved from the live config. The
+box is dropped when the terminal is too short to hold it. The **detail pane**
+on the right edits only the selected role, headed by that role's one-line
+description (see [Fast tier](#fast-tier)). The classifier pane carries a
+standing warning that it is the security gate for tool output, because a
+weaker classifier weakens detection everywhere.
+
+Below 100 columns the rail becomes a tab strip above the detail pane (with a
+`n/5` position), and IN EFFECT is not shown. Panes are sized from the
+terminal height, so the header, the panes, the status strip and the key bar
+always fit: a short terminal shrinks the rail to one line per role, and a
+role with more fields than rows (the routing pool) scrolls inside its own
+pane, with `↑ n above` / `↓ n below` markers, keeping the cursor row
+visible. The provider and model pickers shrink their lists the same way.
+
+Keys: `↑↓` move between fields of the selected role (they stop at its first
+and last field), `←→` (or `h`/`l`) change role, wrapping at the ends and
+returning to the field last held in that role. `⏎` edits, `tab` switches the
+routing kind, `s` cycles the save target for the selected role, `c` clears
+the field, `p` jumps to `/providers`, `d` opens the full test log when a test
+has run, `esc` returns to chat. When the width cannot hold every key in the
+key bar, the least important go first; movement, edit, back and the keys a
+test result offers stay.
 
 The screen keeps two words for two places. **saves to** is where an edit on
-a group is written — the group's scope (`session`, `global` or `project`),
-shown once on its header, so the header never rewrites itself when the
-cursor moves between roles. The fast tier saves *with routing*, since it is
-stored in the routing block. The posture toggles (guardrails, ask, firewall,
-caveman) always write the per-project preference file, so their group
-carries that fixed target and `s` does nothing there. **set in** is a
-value's provenance (`config.Source`). It is shown only when it differs from
-the save target: hoisted onto the header when a whole group shares it, per
-row when rows disagree, and in amber with a warning line when that layer
-outranks the save target, because then an edit here lasts only until
-restart.
+a role is written: `session` (state file only, no settings file), `global`
+(the user settings file) or `project` (`.vulnetix/settings.json`). It shows
+once on the pane header and beside the role on the rail, so it never
+rewrites itself when the cursor moves within a role. The fast tier saves
+*with routing*, since it is stored in the routing block, and shares the
+routing scope. The posture toggles (guardrails, ask, firewall, caveman)
+always write the per-project preference file, so their pane carries that
+fixed target and `s` does nothing there. A layer written for one role is
+never written for another: an agent edit saved to `global` leaves the project
+file untouched, and the reverse. **set in** is a value's provenance
+(`config.Source`). It is shown only when it differs from the save target:
+hoisted onto the header when a whole role shares it, per row when rows
+disagree, and in amber with a warning line when that layer outranks the save
+target, because then an edit here lasts only until restart.
 
-The routing group lists the use-case entries as a **candidate pool**: under
+Selections are tested before they are saved (see the model test ladder). The
+result reports in a status strip under the panes: the running step, or the
+failed and warned steps, the outcome (`✓ saved … → <file>`, `✗ not saved`) and
+the keys the result offers (`r` retry, `p` providers). `d` swaps the panes
+for the full step list and `d` or `esc` returns. The strip keeps its last
+lines when it would crowd out the panes.
+
+The routing pane lists the use-case entries as a **candidate pool**: under
 `routed` Jev picks from the whole pool for each use case, so an entry's key
 is a label, not an assignment; under `defined` the pool is unused and shown
 dimmed. A use case with no entry reads `not in pool`.
 
 Rows reuse the `/settings` declarative row table (`settingsRow`). The label
-column is sized to the longest label and values keep their tail (the model
-id), so no row overflows or collides. The selected row is highlighted; `⏎`
-edits it, `s` cycles the save target for the active group, `c` clears the
-row, `p` jumps to `/providers`, and `esc` returns to chat.
+column is sized to the longest label in the role and values keep their tail
+(the model id), so no row overflows or collides. The layout lives in
+`internal/tui/model_layout.go`; edits still go through the same `stage*` and
+`mutate*` functions, keyed by each role's own scope.
 
 #### Fast tier role
 

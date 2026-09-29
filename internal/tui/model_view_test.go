@@ -14,6 +14,7 @@ func TestModelViewRendersRolesAndWarning(t *testing.T) {
 	a := New(Options{})
 	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
 	_ = a.enterModel()
+	selectRow(t, a, roleClassifier, "kind")
 	view := a.modelView()
 	if view == "" {
 		t.Fatal("modelView returned empty")
@@ -130,11 +131,18 @@ func TestModelViewFitsWidth(t *testing.T) {
 		a := New(Options{Workdir: workdir})
 		a.Update(tea.WindowSizeMsg{Width: width, Height: 60})
 		_ = a.enterModel()
-		view := a.modelView()
-		for _, line := range strings.Split(view, "\n") {
-			if got := ansi.StringWidth(line); got > width {
-				t.Fatalf("width %d: line is %d cells:\n%q", width, got, ansi.Strip(line))
+		// Every role has its own pane now, so the page is the roles rendered in turn.
+		var view string
+		for _, role := range modelRoleOrder(a.modelRows()) {
+			lo, _ := modelRoleRange(a.modelRows(), role)
+			a.modelState.selected = lo
+			pane := a.modelView()
+			for _, line := range strings.Split(pane, "\n") {
+				if got := ansi.StringWidth(line); got > width {
+					t.Fatalf("width %d: line is %d cells:\n%q", width, got, ansi.Strip(line))
+				}
 			}
+			view += pane
 		}
 		for _, want := range []string{"saves to", "candidate pool", "SESSION POSTURE", "(default model)", "not in pool"} {
 			if !strings.Contains(ansi.Strip(view), want) {
@@ -225,7 +233,8 @@ func TestModelClassifierReasoningToggleDrivesEffort(t *testing.T) {
 
 func TestModelViewGroupsRolesWithPerRoleBadges(t *testing.T) {
 	a := New(Options{})
-	a.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	// Wide enough for the roles rail, which carries every role's save target.
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	_ = a.enterModel()
 	a.modelState.agentScope = "session"
 	a.modelState.classifierScope = "project"
@@ -251,7 +260,7 @@ func TestModelViewGroupsRolesWithPerRoleBadges(t *testing.T) {
 	}
 
 	// The agent chip must still be present after moving to the classifier group.
-	if !strings.Contains(viewClassifier, "AGENT") || !strings.Contains(viewClassifier, "session") {
+	if !strings.Contains(viewClassifier, "Agent") || !strings.Contains(viewClassifier, "session") {
 		t.Fatal("agent scope badge disappeared when cursor moved to classifier")
 	}
 }

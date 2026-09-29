@@ -34,42 +34,9 @@ func (a *App) modelTestPanel(w int) string {
 	}
 	b.WriteString(components.EmphStyle.Render(ansi.Truncate(title, w, "…")) + "\n")
 
-	frame := modelTestSpinner[int(time.Since(run.started)/(100*time.Millisecond))%len(modelTestSpinner)]
-	if !a.settings.SpinnerEnabled() {
-		frame = "○"
-	}
+	frame := a.modelTestFrame(run)
 	for _, s := range run.steps {
-		var mark string
-		style := components.MutedStyle
-		el := s.elapsed
-		switch s.status {
-		case modeltest.StatusOK:
-			mark = components.AccentStyle.Render("✓")
-		case modeltest.StatusWarn:
-			mark, style = components.WarnStyle.Render("!"), components.WarnStyle
-		case modeltest.StatusFail:
-			mark, style = components.DangerStyle.Render("✗"), components.DangerStyle
-		case modeltest.StatusSkip:
-			mark = components.MutedStyle.Render("·")
-		case modeltest.StatusRunning:
-			mark = components.AccentStyle.Render(frame)
-			el = time.Since(s.started)
-		default:
-			mark = components.MutedStyle.Render("·")
-		}
-		line := "  " + mark + " " + padRight(s.name, 22)
-		detail := s.detail
-		if s.status == modeltest.StatusRunning && run.logLine != "" && run.dlTotal == 0 {
-			detail = run.logLine
-		}
-		if el > 0 {
-			detail = strings.TrimSpace(detail + "  " + fmtElapsed(el))
-		}
-		room := w - ansi.StringWidth(line) - 1
-		if room > 8 && detail != "" {
-			line += " " + style.Render(ansi.Truncate(oneLineTUI(detail), room, "…"))
-		}
-		b.WriteString(line + "\n")
+		b.WriteString(a.modelTestStepLine(run, s, w, frame) + "\n")
 		if s.status == modeltest.StatusRunning && run.dlTotal > 0 {
 			b.WriteString("    " + a.downloadBar(run, w-4) + "\n")
 		}
@@ -210,4 +177,39 @@ func (a *App) modelTestHelp() []string {
 		return nil
 	}
 	return []string{"r", "retry"}
+}
+
+// modelTestStepLine renders one step of the test: mark, name, detail, elapsed.
+func (a *App) modelTestStepLine(run *modelTestRun, s modelTestStepView, w int, frame string) string {
+	var mark string
+	style := components.MutedStyle
+	el := s.elapsed
+	switch s.status {
+	case modeltest.StatusOK:
+		mark = components.AccentStyle.Render("✓")
+	case modeltest.StatusWarn:
+		mark, style = components.WarnStyle.Render("!"), components.WarnStyle
+	case modeltest.StatusFail:
+		mark, style = components.DangerStyle.Render("✗"), components.DangerStyle
+	case modeltest.StatusSkip:
+		mark = components.MutedStyle.Render("·")
+	case modeltest.StatusRunning:
+		mark = components.AccentStyle.Render(frame)
+		el = time.Since(s.started)
+	default:
+		mark = components.MutedStyle.Render("·")
+	}
+	line := "  " + mark + " " + padRight(s.name, 22)
+	detail := s.detail
+	if s.status == modeltest.StatusRunning && run.logLine != "" && run.dlTotal == 0 {
+		detail = run.logLine
+	}
+	if el > 0 {
+		detail = strings.TrimSpace(detail + "  " + fmtElapsed(el))
+	}
+	room := w - ansi.StringWidth(line) - 1
+	if room > 8 && detail != "" {
+		line += " " + style.Render(ansi.Truncate(oneLineTUI(detail), room, "…"))
+	}
+	return line
 }
