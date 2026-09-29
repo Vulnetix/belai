@@ -957,6 +957,7 @@ whether the call was well formed — the harness validates all of them:
 | `bash` | Classified | An arbitrary command string: neither what runs nor what returns is constrained by the harness |
 | `web_fetch`, `web_search` | Classified | Written by someone off this machine with no relationship to the task |
 | `read` | Classified | The call is confined, but a file's bytes are not |
+| `process` | Classified | A process's own stdout and stderr, including the [post-end test pass](testing.md#security)'s suite output, whose text the harness does not control |
 | `grep`, `glob`, `write`, `edit`, `native` | Promoted | Shaped and controlled: `path:line:text` for a pattern passed as one argument, a list of paths, a confirmation the harness composed, a fixed argv the harness built |
 
 Business rules and edge cases:

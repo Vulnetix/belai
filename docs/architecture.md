@@ -294,7 +294,10 @@ Business rules and edge cases:
   alongside exploration and never holds the goal's first pass back (see
   [Goal mode](#goal-mode)). Compaction,
   clarify and the final report stay on the main model: their output shapes
-  the agent's later work.
+  the agent's later work. The `test_report` role, which writes the short report
+  after a passing [post-end test pass](testing.md#pass-the-report), is a fast
+  use case too, and falls back to a harness-composed line when the fast model is
+  unavailable.
 - **Precedence per use case:** a fast use case goes to the fast tier whenever
   one exists, under `defined` and `routed` alike. Under `routed` it skips Jev
   entirely: no Decisions call, no `route_fallback`, and no pool candidate,
@@ -1668,6 +1671,25 @@ objective's first word is one of those; otherwise `feat` when any path is a new
 (untracked) file and `chore` when not. The header fits 72 characters and the
 body lists at most 50 paths. A file the user edited before the goal touched it
 is committed whole, including the user's edits — the toggle's help text says so.
+
+#### Post-end test pass
+
+The harness can run the repository's test suites when a goal, an approved plan
+or the session ends. It is off by default (`tests.post_end`), read from the
+user's own layers, and a project layer can only turn it off or lower its
+budgets. `internal/testdetect` derives the suites from the same fixed
+marker-file table the repository map uses and scopes Go suites to the packages
+owning changed files. `internal/testrun` runs a fixed argv without a shell
+under the permission rules, the OS sandbox and the scrubbed environment, and
+decides pass or fail from the exit code alone. `internal/testpass` is the
+shared orchestration: on a pass the fast-tier `test_report` role writes a short
+report from harness facts and gated output, and on a failure a bounded
+diagnose-and-fix loop runs on the main model with the classified output as an
+attachment. The TUI drives the loop as visible turns, headless and ACP call the
+same package. Test output is classified as `KindProcess` before any model sees
+it. Detection facts ride in the repository map (`tests:` line, and
+`last test run:` on the turn directive). The rules, settings and edge cases are
+in [testing.md](testing.md).
 
 ### Todo list
 
@@ -3452,6 +3474,9 @@ overridden off by `BELAI_NO_KITTY=1`),
 `update_check` (default on; overridden off by `BELAI_NO_UPDATE_CHECK=1`),
 `auto_commit_per_task` (default off; global-only — see the per-goal
 auto-commit section in Goal mode),
+`tests` (`post_end`, `command`, `scope`, `on_fail`, `max_fix_passes`,
+`timeout_seconds`, `report`; the pass is off by default and a project layer can
+only turn it off or lower budgets — see [testing.md](testing.md)),
 `context_windows`,
 `resilience` (`max_attempts`, `max_iterations`, `max_passes`,
 `max_clarify_rounds`, `max_explore_iterations`, `max_agents`,

@@ -285,3 +285,29 @@ func TestReadOnlyNoticeNamesSourceAndScope(t *testing.T) {
 		t.Fatal("changing mode must end plan execution")
 	}
 }
+
+// The tests block runs commands, so its rows always write the global scope,
+// even with the project scope selected; other choice rows follow the scope.
+func TestTestsRowsAlwaysWriteGlobal(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	workdir := t.TempDir()
+	a := New(Options{Workdir: workdir})
+	a.push(viewSettings)
+	a.settingsState.scope = config.ScopeProject
+
+	_, idx := settingsRowByKey(a, "tests.post_end")
+	if idx < 0 {
+		t.Fatal("no tests.post_end row")
+	}
+	a.settingsState.selected = idx
+	m, _ := a.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
+	a = m.(*App)
+
+	if proj, err := config.LoadProject(workdir); err != nil || proj.Tests != nil {
+		t.Fatalf("project layer took a tests block: %+v, %v", proj.Tests, err)
+	}
+	glob, err := config.LoadGlobal()
+	if err != nil || glob.Tests == nil || glob.Tests.PostEnd == "" {
+		t.Fatalf("global tests.post_end not written: %+v, %v", glob.Tests, err)
+	}
+}
