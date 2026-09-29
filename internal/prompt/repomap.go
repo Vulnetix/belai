@@ -8,6 +8,14 @@ import (
 	"github.com/vulnetix/belai/internal/sanitize"
 )
 
+func sanitizeAll(ss []string) []string {
+	out := make([]string, len(ss))
+	for i, s := range ss {
+		out[i] = sanitize.Sanitize(s)
+	}
+	return out
+}
+
 // WorkspaceBlock renders a harness-computed repository-map block for each
 // additional workspace directory. Empty maps are skipped; when no map is
 // rendered the function returns "".
@@ -36,7 +44,7 @@ func WorkspaceBlock(maps []repomap.Map) string {
 // file contents. Repository prose reaching the model stays on the RepoRead/Read
 // path, which classifies. An empty map renders nothing.
 func RepoMapBlock(m repomap.Map) string {
-	if m.Module == "" && m.Branch == "" && m.Head == "" && len(m.Languages) == 0 && len(m.Commands.Build) == 0 && len(m.Commands.Test) == 0 {
+	if m.Module == "" && m.Branch == "" && m.Head == "" && len(m.Languages) == 0 && len(m.Commands.Build) == 0 && len(m.Commands.Test) == 0 && len(m.TestSuites) == 0 {
 		return ""
 	}
 	var b strings.Builder
@@ -73,6 +81,22 @@ func RepoMapBlock(m repomap.Map) string {
 	if len(m.Commands.Lint) > 0 {
 		b.WriteString("lint: " + strings.Join(m.Commands.Lint, "; ") + "\n")
 	}
+	if len(m.TestSuites) > 0 {
+		var suites []string
+		for _, s := range m.TestSuites {
+			var sb strings.Builder
+			fmt.Fprintf(&sb, "%s [%s]", sanitize.Sanitize(s.Name), sanitize.Sanitize(s.Framework))
+			if len(s.Command) > 0 {
+				sb.WriteString(" ")
+				sb.WriteString(strings.Join(sanitizeAll(s.Command), " "))
+			}
+			if s.TestFilePattern != "" {
+				sb.WriteString(" files " + sanitize.Sanitize(s.TestFilePattern))
+			}
+			suites = append(suites, sb.String())
+		}
+		b.WriteString("tests: " + strings.Join(suites, "; ") + "\n")
+	}
 	if len(m.Entrypoints) > 0 {
 		b.WriteString("entrypoints: " + strings.Join(m.Entrypoints, " ") + "\n")
 	}
@@ -102,7 +126,7 @@ func RepoMapBlock(m repomap.Map) string {
 // porcelain codes and paths, never file contents. Returns "" when the map has
 // no git facts.
 func RepoStatusBlock(m repomap.Map) string {
-	if m.Module == "" || (m.Branch == "" && m.Head == "" && len(m.Changed) == 0) {
+	if m.Module == "" || (m.Branch == "" && m.Head == "" && len(m.Changed) == 0 && m.LastTestRun == nil) {
 		return ""
 	}
 	var b strings.Builder
@@ -126,6 +150,13 @@ func RepoStatusBlock(m repomap.Map) string {
 			b.WriteString(", …")
 		}
 		b.WriteString("\n")
+	}
+	if m.LastTestRun != nil {
+		verdict := "fail"
+		if m.LastTestRun.Passed {
+			verdict = "pass"
+		}
+		fmt.Fprintf(&b, "last test run: %s, %d suites\n", verdict, m.LastTestRun.Suites)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
