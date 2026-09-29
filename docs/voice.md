@@ -50,8 +50,9 @@ For contributors. Everything the rest of belai calls is here.
 | `NewExecSource`, `ExecSource.Start`, `ExecSource.Name` | pick the capture helper, start it, name it |
 | `NewSegmenter`, `Segmenter.Feed`, `Segmenter.Flush`, `Segmenter.Reset`, `Segmenter.InSpeech`, `HasSpeech` | utterance cutting and the speech gate |
 | `ModelPath`, `Ensure`, `Verify` | find, fetch and check the model file |
+| `Embedded`, `ModelSource`, `LoadModel` | whether the model is built in, where it comes from, and reading it (the embedded copy, else the file), checked against the pinned SHA-256 |
 | `State.String` | the state names the footer shows |
-| `asr.Load`, `Model.Transcribe` | read a ggml file, recognise a clip |
+| `asr.Load`, `asr.LoadBytes`, `Model.Transcribe` | read a ggml file or bytes already in memory, recognise a clip |
 
 ## Requirements
 
@@ -59,8 +60,8 @@ For contributors. Everything the rest of belai calls is here.
   (PulseAudio and PipeWire), `arecord` (alsa-utils), `ffmpeg` or `sox` (`rec`).
   On macOS and Windows only `ffmpeg` and `sox` are tried; Windows also needs
   `voice.device` set to the DirectShow device name.
-- About 32 MB of disk for the model and about 150 MB of memory while voice is
-  on. The memory is released when voice is turned off.
+- About 150 MB of memory while voice is on, released when voice is turned off.
+  A build without the model inside also needs 32 MB of disk for it.
 - A fast model for cleanup is optional. Without one the raw transcript is used.
 
 `/voice status` names the helper in use, or what to install when none is
@@ -77,7 +78,27 @@ Whisper tiny.en in ggml q5_1 form (English only, MIT licence).
 | Size | 32,166,155 bytes |
 | SHA-256 | `c77c5766f1cef09b6b7d47f21b546cbddd4157886b3b5d6d4f709e91e66c7c2b` |
 
-Fetching follows the same rules as the local decision models:
+### Built into release binaries
+
+Every release variant carries the model inside the binary, the same way the
+classifier models are embedded: `just voiceprep` (which every build recipe
+runs) fetches the file once into `internal/voice/assets`, which is gitignored,
+and the `belai_voice` build tag embeds it with `go:embed`. A release binary
+therefore needs no download and no network to dictate. `Embedded` reports it,
+`LoadModel` reads it, and `/voice status` says `model: built in`.
+
+The embedded copy is hashed against the pinned SHA-256 each time it loads.
+`tools/voiceprep` verifies the file it fetched, and CI's `voice` job runs the
+package tests and a build with the tag, so a checksum that no longer matches
+Hugging Face fails before a release. Release builds cache the file under a key
+taken from `internal/voice/models.go`, where the checksum is pinned.
+
+A build made without the tag (a plain `go build`) has no model inside. It uses
+the download path below, so contributors can build without fetching 32 MB.
+
+### Fetching it for a build without the model inside
+
+The same rules as the local decision models apply:
 
 1. `FindModelFile` looks in `$BELAI_MODELS_DIR` (default
    `<user cache>/belai/models`), the Hugging Face hub cache and the llama.cpp
@@ -109,6 +130,11 @@ Audio with no speech-level sound never reaches the model.
 | --- | --- | --- |
 | `push_to_talk` (default) | open only while you record | hold `voice.key` to record while held; tap it to start and tap again to stop |
 | `listen` | open whenever the composer is ready | `voice.key` mutes and unmutes |
+
+Voice is off until you turn it on. Install a capture helper, run `/voice on`,
+then hold `f11` and speak. In a release build the model is already inside the
+binary, so nothing downloads. Pressing the key while voice is off is not
+silent: belai says once per session that voice is off and what to run.
 
 The default key is `f11`. Terminals do not report key release, so a hold is
 recognised from key repeat: the first press starts recording, and if repeats
@@ -295,7 +321,10 @@ and applies to the running session. Any other argument prints the usage line.
 - The model is missing: `/voice on` shows the offer and voice stays off until
   `/voice download` finishes. A failed or checksum-failing download says why,
   and nothing else is affected.
-- Pressing the key while the composer is unavailable does nothing.
+- Pressing the key while voice is off shows one hint per session (voice is off,
+  what to run, and that a terminal which keeps the key for itself needs another
+  `voice.key`). With voice on, pressing it while the composer is unavailable
+  does nothing.
 - Losing the composer while the key is held ends that recording without
   recognising it.
 - Recognition falling more than four phrases behind drops the newest and says

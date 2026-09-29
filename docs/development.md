@@ -728,6 +728,16 @@ BELAI_VOICE_MODEL=/path/to/ggml-tiny.en-q5_1.bin BELAI_VOICE_WAV=/path/to/jfk.wa
 ```
 
 The clip must be 16 kHz mono 16-bit PCM in a plain 44-byte-header WAV file.
+Release builds embed that model. `just voiceprep` (`go run ./tools/voiceprep`)
+fetches `ggml-tiny.en-q5_1.bin` once into `internal/voice/assets`, checking it
+against the pinned SHA-256, and every build recipe (`build`, `install`,
+`build-all`, the bert variants) runs it and builds with the `belai_voice` tag.
+A plain `go build` or `go test` needs neither, and falls back to
+`/voice download`. CI's `voice` job and the release build both run
+`voiceprep`, and `go test -tags belai_voice ./internal/voice/...` proves the
+embedded file is the pinned one. Tests in other packages build a tiny synthetic
+model with `internal/voice/asr/asrtest` instead of fetching the real one.
+
 For hands-on QA of [voice input](voice.md), install one capture helper
 (`parecord`, `arecord`, `ffmpeg` or `sox`), run `/voice on`, then
 `/voice download`.

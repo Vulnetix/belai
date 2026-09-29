@@ -645,30 +645,29 @@ func voiceBool(b bool) *bool { return &b }
 func (a *App) voiceStatus() string {
 	v := &a.voice
 	s := a.settings.Voice
-	var b strings.Builder
 	state := "off"
 	if label, _, ok := a.voiceIndicator(); ok {
 		state = label
 	}
-	fmt.Fprintf(&b, "voice: %s\n", state)
-	fmt.Fprintf(&b, "  mode %s, delivery %s, cleanup %s, key %s\n", s.VoiceModeOr(), s.VoiceDeliveryOr(), onOffLabel(s.VoiceCleanupEnabled()), s.VoiceKeyOr())
+	// Two lines: a note longer than that is collapsed in the transcript, and
+	// the capture helper and the model are what the user runs this to see.
+	capture := "ready"
 	if src, err := v.source(s.VoiceDevice()); err != nil {
-		fmt.Fprintf(&b, "  capture: %s\n", sanitize.Line(err.Error(), 300))
+		capture = sanitize.Line(err.Error(), 300)
 	} else if n, ok := src.(interface{ Name() string }); ok {
-		fmt.Fprintf(&b, "  capture: %s\n", n.Name())
-	} else {
-		b.WriteString("  capture: ready\n")
+		capture = n.Name()
 	}
-	if p := v.model(); p != "" {
-		if p == "built in" {
-			fmt.Fprintf(&b, "  model: built into this binary (%s, %s)", voice.ModelFile, mib(voice.ModelSize))
-		} else {
-			fmt.Fprintf(&b, "  model: %s on disk", voice.ModelFile)
-		}
-	} else {
-		fmt.Fprintf(&b, "  model: not downloaded (%s); run /voice download", mib(voice.ModelSize))
+	var model string
+	switch p := v.model(); p {
+	case "":
+		model = fmt.Sprintf("not downloaded (%s), run /voice download", mib(voice.ModelSize))
+	case "built in":
+		model = "built in"
+	default:
+		model = voice.ModelFile + " on disk"
 	}
-	return b.String()
+	return fmt.Sprintf("voice: %s · mode %s · delivery %s · cleanup %s · key %s\ncapture: %s · model: %s",
+		state, s.VoiceModeOr(), s.VoiceDeliveryOr(), onOffLabel(s.VoiceCleanupEnabled()), s.VoiceKeyOr(), capture, model)
 }
 
 // voiceToggle flips a voice.* toggle row in the global settings. Voice is a
