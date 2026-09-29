@@ -646,3 +646,79 @@ func TestVoicePageMatchesTheTUI(t *testing.T) {
 		t.Error("the site does not mention /voice")
 	}
 }
+
+func TestVoiceKeyWhileOffExplainsItselfOnce(t *testing.T) {
+	a, mic := voiceApp(t, config.VoiceSettings{})
+	before := len(a.messages)
+	cmd, handled := a.handleVoiceMsg(tea.KeyMsg{Type: tea.KeyF11})
+	if !handled || cmd != nil {
+		t.Fatalf("handled=%v cmd=%v: the key must be answered", handled, cmd != nil)
+	}
+	got := lastSystem(a)
+	for _, want := range []string{"voice is off", "/voice on", "hold f11", "voice.key"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("hint %q lacks %q", got, want)
+		}
+	}
+	// Key repeat while held must not repeat the message.
+	a.handleVoiceMsg(tea.KeyMsg{Type: tea.KeyF11})
+	a.handleVoiceMsg(tea.KeyMsg{Type: tea.KeyF11})
+	if len(a.messages) != before+1 {
+		t.Fatalf("%d messages after three presses, want one", len(a.messages)-before)
+	}
+	if mic.starts.Load() != 0 {
+		t.Fatal("the microphone opened while voice was off")
+	}
+	// Another view's text field keeps its keys.
+	b, _ := voiceApp(t, config.VoiceSettings{})
+	b.view = viewSettings
+	if _, handled := b.handleVoiceMsg(tea.KeyMsg{Type: tea.KeyF11}); handled {
+		t.Fatal("the hint stole a key from another view")
+	}
+	// The configured key is the one that answers.
+	c, _ := voiceApp(t, config.VoiceSettings{Key: "f13"})
+	if _, handled := c.handleVoiceMsg(tea.KeyMsg{Type: tea.KeyF11}); handled {
+		t.Fatal("f11 answered although voice.key is f13")
+	}
+	c.handleVoiceMsg(tea.KeyMsg{Type: tea.KeyF13})
+	if !strings.Contains(lastSystem(c), "hold f13") {
+		t.Fatalf("hint = %q", lastSystem(c))
+	}
+}
+
+func TestVoiceKeyHintPointsAtTheModelWhenMissing(t *testing.T) {
+	a, _ := voiceApp(t, config.VoiceSettings{})
+	a.voice.modelPath = func() string { return "" }
+	a.handleVoiceMsg(tea.KeyMsg{Type: tea.KeyF11})
+	if got := lastSystem(a); !strings.Contains(got, "/voice download") || !strings.Contains(got, "not downloaded") {
+		t.Fatalf("hint = %q", got)
+	}
+	b, _ := voiceApp(t, config.VoiceSettings{})
+	b.voice.downloading = true
+	b.handleVoiceMsg(tea.KeyMsg{Type: tea.KeyF11})
+	if !strings.Contains(lastSystem(b), "still downloading") {
+		t.Fatalf("hint = %q", lastSystem(b))
+	}
+}
+
+func TestBuiltInModelIsReportedAndNeverDownloaded(t *testing.T) {
+	a, _ := voiceApp(t, config.VoiceSettings{})
+	a.voice.modelPath = func() string { return "built in" }
+	a.voiceCommand("status")
+	if !strings.Contains(lastSystem(a), "built into this binary") || !strings.Contains(lastSystem(a), "32.2 MB") {
+		t.Fatalf("status = %q", lastSystem(a))
+	}
+	if cmd := a.voiceDownload(); cmd != nil {
+		t.Fatal("a build with the model built in started a download")
+	}
+	if !strings.Contains(lastSystem(a), "built into this binary") {
+		t.Fatalf("message = %q", lastSystem(a))
+	}
+	if a.voice.downloading {
+		t.Fatal("downloading flag set")
+	}
+	// /voice on starts without any download offer.
+	if cmd := a.voiceCommand("on"); cmd == nil || a.voice.eng == nil {
+		t.Fatalf("/voice on did not start with the model built in: %q", lastSystem(a))
+	}
+}

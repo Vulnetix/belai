@@ -48,9 +48,15 @@ detect-mode $TEXT:
 # Build
 # ----------------------------------------------------------------------------
 
+# Fetch the speech model that voice input embeds: one 32 MB download, checked
+# against a pinned SHA-256, and kept once prepared. Every build below runs it,
+# and builds with the belai_voice tag so the model is inside the binary.
+voiceprep:
+    go run ./tools/voiceprep
+
 # Build ./belai for this host.
-build:
-    go build -ldflags '{{ ldflags }}' -o {{ binary }} {{ pkg }}
+build: voiceprep
+    go build -tags belai_voice -ldflags '{{ ldflags }}' -o {{ binary }} {{ pkg }}
 
 # Prepare the embedded classifier models (download + convert + verify).
 # When `uv` is available this runs under `uv run --with torch --with
@@ -68,36 +74,36 @@ modelprep *ARGS:
 
 # Build ./belai with both embedded models (phase 1 saturation + phase 2 jailbreak).
 # Extra args are forwarded to modelprep, e.g. `just build-jailbreak -force`.
-build-jailbreak *ARGS: (modelprep '-phase1' '-phase2' ARGS)
-    go build -tags belai_bert_jailbreak -ldflags '{{ ldflags }} -X {{ module }}/internal/version.Variant=bert-guardrails-jailbreak' -o {{ binary }} {{ pkg }}
+build-jailbreak *ARGS: (modelprep '-phase1' '-phase2' ARGS) voiceprep
+    go build -tags belai_bert_jailbreak,belai_voice -ldflags '{{ ldflags }} -X {{ module }}/internal/version.Variant=bert-guardrails-jailbreak' -o {{ binary }} {{ pkg }}
 
 # Build only the Linux amd64 jailbreak-classifier release binary into bin/.
 # Extra args are forwarded to modelprep, e.g. `just build-jailbreak-linux-amd64 -force`.
-build-jailbreak-linux-amd64 *ARGS: (modelprep '-phase1' '-phase2' ARGS)
+build-jailbreak-linux-amd64 *ARGS: (modelprep '-phase1' '-phase2' ARGS) voiceprep
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-      go build -tags belai_bert_jailbreak \
+      go build -tags belai_bert_jailbreak,belai_voice \
       -ldflags '-s -w {{ ldflags }} -X {{ module }}/internal/version.Variant=bert-guardrails-jailbreak' \
       -o {{ bin }}/belai-bert-guardrails-jailbreak-linux-amd64 {{ pkg }}
 
 # Build ./belai with only the phase-1 prompt-saturation model embedded.
 # Extra args are forwarded to modelprep, e.g. `just build-bert -force`.
-build-bert *ARGS: (modelprep '-phase1' ARGS)
-    go build -tags belai_bert -ldflags '{{ ldflags }} -X {{ module }}/internal/version.Variant=bert-guardrails' -o {{ binary }} {{ pkg }}
+build-bert *ARGS: (modelprep '-phase1' ARGS) voiceprep
+    go build -tags belai_bert,belai_voice -ldflags '{{ ldflags }} -X {{ module }}/internal/version.Variant=bert-guardrails' -o {{ binary }} {{ pkg }}
 
 # Install belai into $(go env GOPATH)/bin.
-install:
-    go install -ldflags '{{ ldflags }}' {{ pkg }}
+install: voiceprep
+    go install -tags belai_voice -ldflags '{{ ldflags }}' {{ pkg }}
 
 # Cross-compile every release target and variant into bin/, mirroring
 # .github/workflows/release.yml. Needs the prepared models (run modelprep).
 # Extra args are forwarded to modelprep, e.g. `just build-all -force`.
-build-all *ARGS: (modelprep '-phase1' '-phase2' ARGS)
+build-all *ARGS: (modelprep '-phase1' '-phase2' ARGS) voiceprep
     #!/usr/bin/env bash
     set -euo pipefail
     mkdir -p {{ bin }}
     build() {
       local variant="$1" goos="$2" goarch="$3" suffix="${4:-}"
-      local name="{{ binary }}" tags="" extra=""
+      local name="{{ binary }}" tags="-tags belai_voice" extra=""
       case "$variant" in
         no-classifier)
           name="{{ binary }}-no-classifier"
@@ -105,12 +111,12 @@ build-all *ARGS: (modelprep '-phase1' '-phase2' ARGS)
           ;;
         bert-guardrails)
           name="{{ binary }}-bert-guardrails"
-          tags="-tags belai_bert"
+          tags="-tags belai_bert,belai_voice"
           extra="-X {{ module }}/internal/version.Variant=bert-guardrails"
           ;;
         bert-guardrails-jailbreak)
           name="{{ binary }}-bert-guardrails-jailbreak"
-          tags="-tags belai_bert_jailbreak"
+          tags="-tags belai_bert_jailbreak,belai_voice"
           extra="-X {{ module }}/internal/version.Variant=bert-guardrails-jailbreak"
           ;;
       esac

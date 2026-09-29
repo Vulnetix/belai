@@ -107,6 +107,18 @@ jobs:
           name: models
           path: internal/mlclassify/assets
 
+      # The speech model every variant embeds for voice input. The key follows
+      # the checksum pinned in the source, so a changed model cannot slip into
+      # a release; voiceprep verifies the file either way.
+      - name: Cache the speech model
+        uses: actions/cache@v4
+        with:
+          path: internal/voice/assets
+          key: voice-model-${{ hashFiles('internal/voice/models.go') }}
+
+      - name: Prepare the speech model
+        run: go run ./tools/voiceprep
+
       - name: Build cross-platform binaries
         run: |
           VERSION=${{ needs.version.outputs.version }}
@@ -118,7 +130,7 @@ jobs:
           # variant: vanilla, no-classifier, bert-guardrails, bert-guardrails-jailbreak
           build_target() {
             local variant="$1" goos="$2" goarch="$3" suffix="$4"
-            local name="belai" tags="" extra=""
+            local name="belai" tags="-tags belai_voice" extra=""
             case "$variant" in
               no-classifier)
                 name="belai-no-classifier"
@@ -126,12 +138,12 @@ jobs:
                 ;;
               bert-guardrails)
                 name="belai-bert-guardrails"
-                tags="-tags belai_bert"
+                tags="-tags belai_bert,belai_voice"
                 extra="-X github.com/vulnetix/belai/internal/version.Variant=bert-guardrails"
                 ;;
               bert-guardrails-jailbreak)
                 name="belai-bert-guardrails-jailbreak"
-                tags="-tags belai_bert_jailbreak"
+                tags="-tags belai_bert_jailbreak,belai_voice"
                 extra="-X github.com/vulnetix/belai/internal/version.Variant=bert-guardrails-jailbreak"
                 ;;
             esac

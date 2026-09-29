@@ -127,3 +127,10 @@ func (m *Model) detokenize(toks []int) string {
 func (m *Model) String() string {
 	return fmt.Sprintf("whisper(vocab=%d state=%d layers=%d)", m.hp.nVocab, m.hp.nAudioState, m.hp.nAudioLayer)
 }
+
+// LoadBytes validates and reads a ggml Whisper model held in memory, such as
+// the one embedded in a release binary. The bytes are not retained: tensors
+// are copied out, so the caller may release them.
+func LoadBytes(b []byte) (*Model, error) {
+	return parse(b)
+}

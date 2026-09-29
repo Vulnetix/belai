@@ -16,7 +16,6 @@ import (
 	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/tui/components"
 	"github.com/vulnetix/belai/internal/voice"
-	"github.com/vulnetix/belai/internal/voice/asr"
 )
 
 // Voice input (docs/voice.md). The engine in internal/voice owns the
@@ -65,6 +64,7 @@ type voiceState struct {
 	queue  []string // raw transcripts waiting for cleanup
 	busy   bool     // one cleanup call in flight
 	wantOn bool     // /voice on was asked while the model was missing
+	hinted bool     // the off-state key hint was shown this session
 
 	downloading bool
 
@@ -98,21 +98,18 @@ func (v *voiceState) model() string {
 	if v.modelPath != nil {
 		return v.modelPath()
 	}
-	return voice.ModelPath()
+	return voice.ModelSource()
 }
 
 func (v *voiceState) recognizer(ctx context.Context) (voice.Recognizer, error) {
 	if v.load != nil {
 		return v.load(ctx)
 	}
-	path := voice.ModelPath()
-	if path == "" {
-		return nil, fmt.Errorf("the speech model is not downloaded")
-	}
-	if err := voice.Verify(path); err != nil {
+	m, err := voice.LoadModel()
+	if err != nil {
 		return nil, err
 	}
-	return asr.Load(path)
+	return m, nil
 }
 
 // voiceInit is called from Init. It brings voice up only for a real run
@@ -199,6 +196,9 @@ func (a *App) handleVoiceMsg(msg tea.Msg) (tea.Cmd, bool) {
 	case tea.KeyMsg:
 		if v.eng != nil && a.view == viewChat && voiceKeyMatches(m.String(), a.settings.Voice.VoiceKeyOr()) {
 			return a.voiceKey(), true
+		}
+		if v.eng == nil && a.view == viewChat && voiceKeyMatches(m.String(), a.settings.Voice.VoiceKeyOr()) {
+			return a.voiceOffHint(), true
 		}
 	}
 	return nil, false
@@ -437,7 +437,11 @@ func mib(n int64) string { return fmt.Sprintf("%.1f MB", float64(n)/1e6) }
 func (a *App) voiceDownload() tea.Cmd {
 	v := &a.voice
 	if v.model() != "" {
-		a.addSystem("voice: the speech model is already on disk")
+		if v.model() == "built in" {
+			a.addSystem("voice: the speech model is built into this binary, so there is nothing to download")
+		} else {
+			a.addSystem("voice: the speech model is already on disk")
+		}
 		return nil
 	}
 	if v.downloading {
@@ -656,7 +660,11 @@ func (a *App) voiceStatus() string {
 		b.WriteString("  capture: ready\n")
 	}
 	if p := v.model(); p != "" {
-		fmt.Fprintf(&b, "  model: %s on disk", voice.ModelFile)
+		if p == "built in" {
+			fmt.Fprintf(&b, "  model: built into this binary (%s, %s)", voice.ModelFile, mib(voice.ModelSize))
+		} else {
+			fmt.Fprintf(&b, "  model: %s on disk", voice.ModelFile)
+		}
 	} else {
 		fmt.Fprintf(&b, "  model: not downloaded (%s); run /voice download", mib(voice.ModelSize))
 	}
@@ -707,4 +715,26 @@ func (a *App) voiceUnset(key string) error {
 			s.Voice.Cleanup = nil
 		}
 	})
+}
+
+// voiceOffHint answers the voice key while voice is off, once a session, so
+// the key never does nothing without saying why. A terminal that keeps the key
+// for itself (some use f11 for fullscreen) never sends it, and voice.key names
+// another.
+func (a *App) voiceOffHint() tea.Cmd {
+	v := &a.voice
+	if v.hinted {
+		return nil
+	}
+	v.hinted = true
+	key := a.settings.Voice.VoiceKeyOr()
+	switch {
+	case v.downloading:
+		a.addSystem("voice: the speech model is still downloading; voice turns on when it finishes")
+	case v.model() == "":
+		a.addSystem("voice is off, and the speech model is not downloaded yet: /voice on shows what it needs, /voice download fetches it, then hold " + key + " to dictate")
+	default:
+		a.addSystem("voice is off: /voice on turns it on, then hold " + key + " to dictate (if " + key + " does nothing, your terminal may keep it; set voice.key to f13 to f16 or ctrl+space)")
+	}
+	return nil
 }
