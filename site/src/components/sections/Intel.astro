@@ -26,7 +26,7 @@ const notes = [
   ['trend', 'compares today with the 7-day mean at the same hour: easing below 0.8×, rising above 1.25×.'],
   ['runway', 'is how long the allowance lasts at this pace. With no plan limit reported, a day or month budget stands in for it.'],
   ['rows', "give tokens and sessions for today, the week and 30 days. Press m for the models of a window, r for this session's roles, enter for the full screen with a 7-day heatmap."],
-  ['footer', 'carries the same figures as the last stop of its cycle, under any routing and with or without a budget. A quiet f12 shows in the last third of the stop.'],
+  ['footer', 'carries the same figures as the last stop of its cycle, under any routing and with or without a budget.'],
 ];
 
 // Footer strips: the same slot in its four colours.
@@ -42,7 +42,6 @@ const strips = [
     today: '34.4M',
     label: '5h 23%',
     picture: limitBar(0.23, 0.55, 10),
-    hint: true,
   },
   {
     key: 'amber',
@@ -55,7 +54,6 @@ const strips = [
     today: '88.1M',
     label: '5h 91%',
     picture: limitBar(0.91, 0.9, 10),
-    hint: false,
   },
   {
     key: 'red',
@@ -68,7 +66,6 @@ const strips = [
     today: '96.0M',
     label: '5h 100%',
     picture: limitBar(1, 0.4, 10),
-    hint: false,
   },
 ] as const;
 const idleSpark = sparkline([0, 1, 2, 4, 1, 7, 0, 2, 1, 0]);
@@ -202,7 +199,7 @@ const mono = 'font-mono';
             <div class="w-56 shrink-0 text-[13px]"><b class={s.cls}>{s.key}</b><div class="mt-0.5 text-xs text-[#8FA39F]">{s.why}</div></div>
             <div class="flex flex-1 justify-between whitespace-pre border-t border-[#2F4340] pt-3.5 text-[13px]">
               <span><b class={s.modeCls}>{s.mode}</b><span class="text-[#4A6560]">  ·  </span><span class="text-[#8FA39F]">~/src/belai</span><span class="text-[#4A6560]">  ·  </span><span class="text-tui-teal">⎇ </span><span class="text-[#8FA39F]">{s.branch}</span></span>
-              <span><span class={s.cls}>{s.slot}</span><span class="text-[#8FA39F]">  today {s.today} · </span><span class={s.cls}>{s.label}</span>{' '}<span class={s.cls}>{s.picture.fill}</span><span class="text-[#4A6560]">{s.picture.before}</span><span class="text-[#8FA39F]">{s.picture.mark}</span><span class="text-[#4A6560]">{s.picture.after}</span>{s.hint && <span class="text-[#4A6560]">  f12</span>}</span>
+              <span><span class={s.cls}>{s.slot}</span><span class="text-[#8FA39F]">  today {s.today} · </span><span class={s.cls}>{s.label}</span>{' '}<span class={s.cls}>{s.picture.fill}</span><span class="text-[#4A6560]">{s.picture.before}</span><span class="text-[#8FA39F]">{s.picture.mark}</span><span class="text-[#4A6560]">{s.picture.after}</span></span>
             </div>
           </div>
         ))}
