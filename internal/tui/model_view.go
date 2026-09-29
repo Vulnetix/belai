@@ -562,6 +562,7 @@ func routingUseCaseKeys() []string {
 		rolemanager.UseCaseAgentEval,
 		rolemanager.UseCaseDepChange,
 		rolemanager.UseCaseWebFetch,
+		rolemanager.UseCaseVoiceCleanup,
 	}
 }
 

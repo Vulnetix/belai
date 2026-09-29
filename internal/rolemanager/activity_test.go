@@ -35,6 +35,7 @@ var allEvents = []Event{
 	EventLSPServerDown,
 	EventRouteFallback,
 	EventDepChange,
+	EventVoiceCleanup,
 	EventWebFetchAnswer,
 	EventBashSwap,
 	EventBashReplan,
