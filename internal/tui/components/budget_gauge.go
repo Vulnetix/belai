@@ -118,17 +118,12 @@ type IntelGauge struct {
 	Spark []int64
 	Pace  string
 	State BudgetState
-	// Hint adds the subtle shortcut key to the roomiest rendering.
-	Hint bool
 }
 
 // Colour returns the state's colour: teal, amber or red.
 func (g IntelGauge) Colour() lipgloss.TerminalColor {
 	return BudgetGauge{State: g.State}.Colour()
 }
-
-// intelHintKey is the shortcut the hint advertises.
-const intelHintKey = "f12"
 
 // Bar draws the slot's picture: the tightest plan limit with its reset marker,
 // else the 24-hour sparkline, else a dotted trough when nothing has been spent.
@@ -144,8 +139,8 @@ func (g IntelGauge) Bar() string {
 
 // segmentAt renders the slot at one of three widths: 2 is everything
 // ("intel  today 34.4M · 5h 23% bar"), 1 drops the limit or pace, 0 keeps only
-// the label and the bar. hint appends the shortcut to width 2 only.
-func (g IntelGauge) segmentAt(detail int, hint bool) string {
+// the label and the bar.
+func (g IntelGauge) segmentAt(detail int) string {
 	style := lipgloss.NewStyle().Foreground(g.Colour())
 	text := style.Render("intel")
 	if detail >= 1 && g.Today != "" {
@@ -161,8 +156,5 @@ func (g IntelGauge) segmentAt(detail int, hint bool) string {
 		}
 	}
 	text += " " + g.Bar()
-	if hint && detail >= 2 {
-		text += LowStyle.Render("  " + intelHintKey)
-	}
 	return text
 }
