@@ -89,6 +89,10 @@ type Activity struct {
 	// forced mode, a phase that did not run).
 	At       time.Time
 	Duration time.Duration
+	// Seq is a process-wide sequence number assigned when the activity is
+	// recorded. Sinks that write it down use it to order rows and to tell one
+	// event from another written at the same millisecond.
+	Seq uint64
 }
 
 // Description is the plain-English rendering of one Activity. It never carries
@@ -122,6 +126,80 @@ type Observer func(Activity)
 // observer is the single registered sink, guarded by an atomic pointer exactly
 // like traceWriter().
 var observer atomic.Pointer[Observer]
+
+// A sink is an additional, lossless consumer of activities: the session record
+// writers register one so every decision is written down whatever the display
+// level, and however busy the screen is. Unlike the single observer (the
+// render feed, which may drop), a sink must keep what it is given; it must not
+// block, so it queues. Sinks are called in registration order, each under a
+// recover, and receive exactly the bounded Activity the observer receives.
+type sinkEntry struct {
+	id uint64
+	fn Observer
+}
+
+var (
+	sinkMu     sync.Mutex
+	sinkList   atomic.Pointer[[]sinkEntry]
+	nextSinkID uint64
+	// activitySeq numbers activities for the life of the process.
+	activitySeq atomic.Uint64
+)
+
+// AddSink registers a sink and returns an idempotent cancel that detaches it.
+// Any number of sinks may be registered.
+func AddSink(fn Observer) (cancel func()) {
+	if fn == nil {
+		return func() {}
+	}
+	sinkMu.Lock()
+	nextSinkID++
+	id := nextSinkID
+	cur := sinkList.Load()
+	var next []sinkEntry
+	if cur != nil {
+		next = append(next, (*cur)...)
+	}
+	next = append(next, sinkEntry{id: id, fn: fn})
+	sinkList.Store(&next)
+	sinkMu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			sinkMu.Lock()
+			defer sinkMu.Unlock()
+			cur := sinkList.Load()
+			if cur == nil {
+				return
+			}
+			var kept []sinkEntry
+			for _, e := range *cur {
+				if e.id != id {
+					kept = append(kept, e)
+				}
+			}
+			sinkList.Store(&kept)
+		})
+	}
+}
+
+// deliver hands one activity to the observer and every sink.
+func deliver(act Activity) {
+	if fn := observer.Load(); fn != nil {
+		func() {
+			defer func() { _ = recover() }()
+			(*fn)(act)
+		}()
+	}
+	if cur := sinkList.Load(); cur != nil {
+		for _, e := range *cur {
+			func() {
+				defer func() { _ = recover() }()
+				e.fn(act)
+			}()
+		}
+	}
+}
 
 // SetObserver registers the in-process activity observer and returns a cancel
 // that detaches it. SetObserver(nil) detaches immediately. The slot is global,

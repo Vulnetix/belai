@@ -17,8 +17,11 @@ import (
 	"github.com/vulnetix/belai/internal/agent"
 	"github.com/vulnetix/belai/internal/jsonrpc"
 	"github.com/vulnetix/belai/internal/posture"
+	"github.com/vulnetix/belai/internal/rolemanager"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/tools"
+	"github.com/vulnetix/belai/internal/turnlog"
 )
 
 // mockProvider answers the classifier SAFE, the mode classifier AGENT, and
@@ -290,5 +293,114 @@ func TestToolKindsAreACPKinds(t *testing.T) {
 		if !valid[toolKind(n)] {
 			t.Errorf("toolKind(%s) = %q, not an ACP ToolKind", n, toolKind(n))
 		}
+	}
+}
+
+// A session opened with a transcript keeps the turn and every role-manager
+// decision made while it ran, and the transcript goes to disk, never to the
+// protocol stream.
+func TestSessionTranscriptRecordsTheTurnAndItsDecisions(t *testing.T) {
+	srv := mockProvider()
+	defer srv.Close()
+	t.Setenv("BELAI_HOME", t.TempDir())
+	root := t.TempDir()
+	build := func(ctx context.Context, cwd, id string) (*agent.Session, error) {
+		return agent.NewSession(agent.Options{
+			Cfg:       run.Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "test"},
+			Client:    srv.Client(),
+			Registry:  tools.NewRegistry(&tools.Write{Root: cwd, MaxBytes: 1024}),
+			Posture:   posture.Defaults(),
+			Workdir:   cwd,
+			SessionID: id,
+			AllowAsk:  true,
+		})
+	}
+	proto := &lockedBuffer{}
+	sr, cw := io.Pipe()
+	cr, sw := io.Pipe()
+	tee := io.MultiWriter(sw, proto)
+	ctx, cancel := context.WithCancel(context.Background())
+	served := make(chan struct{})
+	go func() {
+		defer close(served)
+		ServeWith(ctx, sr, tee, build, Options{Transcript: func(cwd, id string) *turnlog.Log {
+			l, err := turnlog.Open(cwd, id, session.Meta{Cwd: cwd, Mode: "agent"})
+			if err != nil {
+				t.Errorf("Open: %v", err)
+			}
+			return l
+		}})
+	}()
+	ed := &editor{answer: "allow_always"}
+	c := jsonrpc.NewConn(cr, cw, ed.handle)
+	rctx, rcancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer rcancel()
+	var ns struct {
+		SessionID string `json:"sessionId"`
+	}
+	if err := c.Call(rctx, "session/new", map[string]any{"cwd": root}, &ns); err != nil {
+		t.Fatal(err)
+	}
+	var pr struct {
+		StopReason string `json:"stopReason"`
+	}
+	if err := c.Call(rctx, "session/prompt", map[string]any{"sessionId": ns.SessionID, "prompt": []any{map[string]any{"type": "text", "text": "write x.txt"}}}, &pr); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	<-served
+
+	store, err := session.NewStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := session.KeyFor(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := store.ReadFrom(key, ns.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	types := map[string]int{}
+	for _, e := range entries {
+		types[e.Type]++
+	}
+	if types["session_meta"] != 1 || types["user"] != 1 || types["assistant"] == 0 || types["tool"] != 1 {
+		t.Fatalf("transcript entry types = %v", types)
+	}
+	if types[rolemanager.RecordType] == 0 {
+		t.Fatalf("no role-manager decision was recorded: %v", types)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(proto.String()), "\n") {
+		if line != "" && !strings.HasPrefix(line, "{") {
+			t.Fatalf("stdout carries a non-protocol line: %q", line)
+		}
+	}
+}
+
+// lockedBuffer is a bytes.Buffer safe to read while the server still writes.
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuffer) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+// Without a transcript opener the connection keeps none.
+func TestServeWithoutATranscriptKeepsNone(t *testing.T) {
+	s := &Server{sessions: map[string]*acpSession{}, ready: make(chan struct{})}
+	if s.opts.Transcript != nil {
+		t.Fatal("default options open a transcript")
 	}
 }

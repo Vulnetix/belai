@@ -78,6 +78,7 @@ just ask anthropic claude-sonnet-4-5 "review this diff" -detect-mode -verbose
 | `-agent` | start a background agent by name in foreground mode |
 | `-agent-create` | create an agent profile from a description and save to disk |
 | `-no-prune` | never prune idle sessions (overrides `-session-retention-days`) |
+| `-no-transcript` | with `-prompt` (and `belai acp`), keep no session transcript of the run |
 | `-plan` | start in plan mode: read-only tools only, no mutation |
 | `-resume`, `-r` | resume a session by id or unique id prefix in the interactive TUI |
 | `-continue`, `-c` | continue the most recent session for the current project; rejected with `-resume` or `-prompt` |

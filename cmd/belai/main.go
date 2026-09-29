@@ -34,6 +34,7 @@ import (
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/trustgate"
 	"github.com/vulnetix/belai/internal/tui"
+	"github.com/vulnetix/belai/internal/turnlog"
 	"github.com/vulnetix/belai/internal/version"
 )
 
@@ -122,6 +123,7 @@ func main() {
 	caveman := flag.Bool("caveman", false, "enable caveman voice rewrite for this run")
 	sessionRetentionDays := flag.Int("session-retention-days", 0, "idle session retention in days (default 28)")
 	noPrune := flag.Bool("no-prune", false, "never prune idle sessions")
+	flag.BoolVar(&noTranscript, "no-transcript", false, "with -prompt, do not keep a session transcript of the run")
 	planMode := flag.Bool("plan", false, "start in plan mode (read-only)")
 	modeFlag := flag.String("mode", "", "operating mode for -prompt: agent, plan or goal (default: classified from the prompt)")
 	deferTools := flag.Bool("defer-tools", true, "advertise core tools in full and load the rest on demand with ToolSearch; -defer-tools=false sends every tool definition on every request")
@@ -496,10 +498,23 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 		return err
 	}
 
-	// A headless prompt keeps no transcript, but still gets its own session id
-	// so its provider requests and tool calls share one trace.
+	// A headless prompt gets its own session id so its provider requests and
+	// tool calls share one trace, and keeps a transcript like any other session
+	// (it resumes, exports and searches, and records every role-manager
+	// decision it made). -no-transcript opts out; the file is private to the
+	// user, pruned by session_retention_days, and never synced.
 	sessionID := session.MustID()
 	ctx = calltrace.WithSession(ctx, sessionID)
+	tlog := turnlog.New(nil)
+	if !noTranscript {
+		var terr error
+		tlog, terr = turnlog.Open(workdir, sessionID, session.Meta{Cwd: workdir, Mode: string(forceMode)})
+		if terr != nil && verbose {
+			fmt.Fprintf(os.Stderr, "belai: no transcript: %v\n", terr)
+		}
+	}
+	defer tlog.AttachRoleManager()()
+	tlog.User(prompt, nil)
 	// A headless prompt spends tokens like any other session: record them so
 	// day and month budgets see it. Nothing is printed; the TUI shows budgets.
 	// With -usage-json the same events are summarised to a file on exit, a
@@ -520,8 +535,13 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 	var res run.Result
 	if detectMode || !enableTools {
 		res, err = run.EngageWithPosture(ctx, cfg, prompt, detectMode, httpclient.Default(), pol)
+		if err == nil {
+			if w := tlog.Writer(); w != nil {
+				w.Assistant(res.Reply, nil, nil)
+			}
+		}
 	} else {
-		res, err = runAgent(ctx, cfg, prompt, httpclient.Default(), pol, workdir, settings, planMode, forceMode, sessionID)
+		res, err = runAgent(ctx, cfg, prompt, httpclient.Default(), pol, workdir, settings, planMode, forceMode, sessionID, tlog)
 	}
 	if err != nil {
 		return err
@@ -545,7 +565,7 @@ func runPromptOrTUI(ctx context.Context, prompt, model, providerName string, det
 	return nil
 }
 
-func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool, forceMode modes.Mode, sessionID string) (run.Result, error) {
+func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *http.Client, pol posture.Policy, workdir string, settings config.Settings, planMode bool, forceMode modes.Mode, sessionID string, tlog *turnlog.Log) (run.Result, error) {
 	sess, err := newCLISession(ctx, cfg, client, pol, workdir, settings, planMode, sessionID, false)
 	if err != nil {
 		return run.Result{}, err
@@ -553,7 +573,9 @@ func runAgent(ctx context.Context, cfg run.Config, userPrompt string, client *ht
 	defer flushKanban(settings, workdir)
 	// An explicit -mode is the user's choice and outranks the classifier,
 	// exactly as a mode picked in the TUI does.
-	return sess.RunInput(ctx, agent.TurnInput{Prompt: userPrompt, ForceMode: forceMode})
+	res, err := sess.RunInputObserved(ctx, nil, agent.TurnInput{Prompt: userPrompt, ForceMode: forceMode}, tlog.Observe)
+	tlog.Flush()
+	return res, err
 }
 
 // newCLISession builds a top-level agent session outside the TUI: the
@@ -673,6 +695,10 @@ func continueLatest(store *session.Store, cur session.Key) (session.Key, string,
 // usageJSONPath is the -usage-json flag: where a headless -prompt run writes
 // its token-usage summary. Empty means no summary.
 var usageJSONPath string
+
+// noTranscript is the -no-transcript flag: a headless -prompt run keeps no
+// session transcript.
+var noTranscript bool
 
 // recordUsage opens the token-usage ledger for a headless run and registers
 // the run package's usage observer, returning the func that detaches it and

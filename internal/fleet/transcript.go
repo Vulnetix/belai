@@ -17,6 +17,9 @@ import (
 type transcript struct {
 	log    *turnlog.Log
 	mirror *sessionsync.Syncer
+	// detach stops the role-manager record sink; a worker is its own process,
+	// so the process-wide sink belongs to this one transcript.
+	detach func()
 }
 
 func (w *Worker) transcript(t Turn) *transcript {
@@ -43,7 +46,8 @@ func (w *Worker) transcript(t Turn) *transcript {
 			Model: w.Cfg.Model, Provider: w.Cfg.Provider, Mode: "goal",
 		})
 	}
-	return &transcript{log: turnlog.New(sw), mirror: w.mirror}
+	log := turnlog.New(sw)
+	return &transcript{log: log, mirror: w.mirror, detach: log.AttachRoleManager()}
 }
 
 func (t *transcript) user(text string) { t.log.User(text, nil) }
@@ -57,6 +61,9 @@ func (t *transcript) finish(res run.Result, err error) {
 		}
 	}()
 	t.log.Flush()
+	if t.detach != nil {
+		t.detach()
+	}
 	switch {
 	case err != nil:
 		t.log.System("worker turn ended: " + err.Error())

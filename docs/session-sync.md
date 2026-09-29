@@ -276,8 +276,10 @@ and the inbox run on the syncer's own goroutines.
   session and `/sync off` all end the session, which moves it to History.
 - **Compaction.** It starts a new session whose parent is the summarised one;
   the website links the two.
-- **Headless and ACP.** `belai -prompt` keeps no transcript and ACP sessions
-  are not persisted, so neither is synced.
+- **Headless and ACP.** `belai -prompt` and each ACP session keep a private
+  transcript on disk like any other session (`-no-transcript` opts out), but
+  neither is synced: sync covers the TUI, `belai rc` sessions and fleet
+  workers.
 - **Remote control.** A session the website starts through `belai rc` is a
   headless session that does keep a transcript, so it syncs like a TUI
   session. It carries the dispatch id, takes web prompts and never web

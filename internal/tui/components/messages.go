@@ -33,8 +33,12 @@ type Message struct {
 	// in its place (today only "Bash"). The row shows both so the swap is
 	// visible.
 	SwappedFrom string
-	ToolArgs    string // set on tool turns
-	Status      string // set on tool turns (✓, withheld, …)
+	// Persisted marks a role-manager row whose record was already written to
+	// the session when the decision was made, so it is not written again when
+	// the row settles.
+	Persisted bool
+	ToolArgs  string // set on tool turns
+	Status    string // set on tool turns (✓, withheld, …)
 
 	// Level is the role-manager activity level for "rolemanager" rows. The
 	// grouping loop drops a rolemanager row when its level exceeds the

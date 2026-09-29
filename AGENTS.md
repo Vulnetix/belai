@@ -239,6 +239,15 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   and the builtin is allowed and not denied; the provider still receives one
   result for the Bash call id, the model is told in the result, and the result
   is classified as Bash output would be.
+- **Every role-manager decision is written to the session record.**
+  `Activity.Record` builds a `rolemanager` entry for every event, shown or
+  hidden, and `rolemanager.AddSink` delivers activities losslessly and in
+  order to the writers (TUI, rc, fleet, headless and ACP transcripts). The
+  render-only observer may drop; a sink never does. An entry holds the event,
+  verdict, label, subject, pass, model, duration, sequence and time, plus the
+  summary and outcome for a described event, and never `Detail`, a prompt, a
+  command, a path or classified text. Headless and ACP runs keep a private
+  transcript unless `-no-transcript` is set; it is never synced.
 - **Tool-call mismatch defaults to abort.** Stripping or ignoring mismatches
   requires explicit user opt-in.
 - **Recovery subagent authority is bounded.** The recovery subagent sees the

@@ -459,8 +459,12 @@ func runRCSession(ctx context.Context, dispatch, sessionID string, mode modes.Mo
 		syncer.Nudge()
 		return err
 	}
+	tlog := turnlog.New(w)
+	// Every role-manager decision this session makes is written to its
+	// transcript, shown or not.
+	defer tlog.AttachRoleManager()()
 	return rc.RunSession(ctx, rc.SessionOptions{
-		Agent: sess, Log: turnlog.New(w), Mirror: syncer, Dispatch: dispatch,
+		Agent: sess, Log: tlog, Mirror: syncer, Dispatch: dispatch,
 		Prompt: prompt, Mode: mode, Idle: idle, Out: stderr,
 		Facts: map[string]any{
 			"mode": string(mode), "provider": cfg.Provider, "model": cfg.Model, "effort": cfg.Effort,

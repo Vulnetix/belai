@@ -15,6 +15,7 @@ var allEvents = []Event{
 	EventVerdictCacheHit,
 	EventVerdictCacheBad,
 	EventModeClassify,
+	EventModeDetect,
 	EventModeForced,
 	EventModeGoalLengthLimit,
 	EventGoalEval,
@@ -35,6 +36,8 @@ var allEvents = []Event{
 	EventRouteFallback,
 	EventDepChange,
 	EventWebFetchAnswer,
+	EventBashSwap,
+	EventBashReplan,
 }
 
 func TestEveryEventHasDescribeOrSuppression(t *testing.T) {

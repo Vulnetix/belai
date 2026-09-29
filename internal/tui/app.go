@@ -294,7 +294,7 @@ type App struct {
 	events   <-chan agent.Event
 	// rmEvents carries role-manager activity from the observer into the
 	// render loop; rmCancel detaches the observer on teardown.
-	rmEvents chan rolemanager.Activity
+	rmEvents *rmQueue
 	rmCancel func()
 	// fwEvents carries AI Firewall verdicts from the run observer into the
 	// render loop; fwCancel detaches it. fwPasses counts routed responses
@@ -953,7 +953,7 @@ func New(opts Options) *App {
 		subagentIdx:       map[string]int{},
 		execEditor:        tea.ExecProcess,
 		trace:             trace.Env(),
-		rmEvents:          make(chan rolemanager.Activity, 256),
+		rmEvents:          newRMQueue(),
 	}
 	// One Live for the process: the running session and the next one share it.
 	a.live = posture.NewLive(a.effectivePosture(), !a.askEnabled())
@@ -965,16 +965,15 @@ func New(opts Options) *App {
 		}
 	}
 	a.watchFirewall()
-	// Register the role-manager activity observer. The observer contract is
-	// non-blocking: a non-blocking send on a buffered channel, dropping on
-	// overflow. Dropping is correct — the feed is render-only. The returned
-	// cancel detaches on teardown.
-	a.rmCancel = rolemanager.SetObserver(func(act rolemanager.Activity) {
-		select {
-		case a.rmEvents <- act:
-		default:
-		}
-	})
+	// Register for role-manager activity. The sink contract is non-blocking
+	// and lossless: every decision is queued, in order, and the render loop
+	// writes it to the session record and shows it when the level allows.
+	// The returned cancel detaches on teardown.
+	detach := rolemanager.AddSink(func(act rolemanager.Activity) { a.rmEvents.push(act) })
+	a.rmCancel = func() {
+		detach()
+		a.rmEvents.close()
+	}
 	a.initBudgets()
 	a.initKanban()
 	// A brand-new install has nothing persisted and names no provider: the
@@ -2192,9 +2191,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.handleUsage(run.UsageEvent(m))
 		return a, a.nextUsage()
 	case rmActivityMsg:
-		if _, shown := rolemanager.Describe(rolemanager.Activity(m)); !shown {
-			a.recordHiddenDecision(rolemanager.Activity(m))
-		}
+		// Every decision is written to the session record, shown or not.
+		a.recordActivity(rolemanager.Activity(m))
 		a.addRMActivity(rolemanager.Activity(m))
 		a.stampMessages(m.At)
 		return a, a.nextRMActivity()
@@ -4732,6 +4730,9 @@ func (a *App) addRMActivity(act rolemanager.Activity) {
 		Provider:   provider,
 		Model:      model,
 		DurationMS: act.Duration.Milliseconds(),
+		// recordActivity has already written this decision at the moment it
+		// was made; the row must not be written a second time when it settles.
+		Persisted: true,
 	})
 }
 
@@ -4740,7 +4741,7 @@ func (a *App) addRMActivity(act rolemanager.Activity) {
 // classifier decisions never floods a single frame.
 func (a *App) nextRMActivity() tea.Cmd {
 	return func() tea.Msg {
-		act, ok := <-a.rmEvents
+		act, ok := a.rmEvents.pop()
 		if !ok {
 			return nil
 		}

@@ -133,3 +133,28 @@ func (l *Log) TurnEnded(state string, facts map[string]any) {
 	l.turnID = ""
 	l.w.Entry(session.Entry{Type: "turn_state", Role: "system", Timestamp: now.UnixMilli(), Meta: meta})
 }
+
+// Open starts a transcript for a session in workdir and returns a Log writing
+// to it. The transcript is the same JSONL a TUI session keeps, so the session
+// lists, resumes, exports and searches like any other. When the store or the
+// file cannot be opened the returned Log has no writer, every method is a
+// no-op, and err says why: a run never fails because its record could not be
+// kept.
+func Open(workdir, id string, meta session.Meta) (*Log, error) {
+	store, err := session.NewStore()
+	if err != nil {
+		return New(nil), err
+	}
+	key, err := session.KeyFor(workdir)
+	if err != nil {
+		return New(nil), err
+	}
+	if meta.Cwd == "" {
+		meta.Cwd = workdir
+	}
+	w, err := session.NewWriter(store, key, id, meta)
+	if err != nil {
+		return New(nil), err
+	}
+	return New(w), nil
+}

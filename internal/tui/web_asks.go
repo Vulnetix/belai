@@ -223,62 +223,29 @@ func (a *App) recordToolStart(id, name, args string) {
 // decisionFacts is the bounded metadata a decision row persists. Detail is
 // never carried: only the verdict token, its label, the subject tool, the
 // pass and the model reach the record, exactly as the feed's own rule.
-func decisionFacts(act rolemanager.Activity) map[string]any {
-	f := map[string]any{}
-	if act.Verdict != "" {
-		f["verdict"] = act.Verdict
-		if l := verdictLabel(act.Verdict); l != "" {
-			f["verdict_label"] = l
+func decisionFacts(act rolemanager.Activity) map[string]any { return rolemanager.Facts(act) }
+
+// recordActivity writes a role-manager decision to the session record. It runs
+// for every activity, shown or not, at the moment the render loop takes it
+// from the queue, so the transcript is a complete, ordered account of what the
+// harness decided whatever the display level. A decision the feed does not
+// print (mode selection, goal and plan evaluation already have their own
+// lines) is marked hidden so a resumed TUI does not render it twice.
+func (a *App) recordActivity(act rolemanager.Activity) {
+	rec := act.Record()
+	if _, hidden := rec.Meta["hidden"]; !hidden {
+		// A row the feed shows is labelled with the model that answered it;
+		// only an activity that names none falls back to the agent model.
+		if _, ok := rec.Meta["model"]; !ok {
+			if a.cfg.Provider != "" {
+				rec.Meta["provider"] = a.cfg.Provider
+			}
+			if a.cfg.Model != "" {
+				rec.Meta["model"] = a.cfg.Model
+			}
 		}
 	}
-	if act.Subject != "" {
-		f["subject"] = act.Subject
-	}
-	if act.Pass > 0 {
-		f["pass"] = act.Pass
-	}
-	return f
-}
-
-// verdictLabel finds the human label for a sentinel of any role.
-func verdictLabel(v string) string {
-	if l, ok := rolemanager.SentinelLabels[rolemanager.Sentinel(v)]; ok {
-		return l
-	}
-	if l, ok := rolemanager.PlanSentinelLabels[rolemanager.PlanSentinel(v)]; ok {
-		return l
-	}
-	if l, ok := rolemanager.GoalSentinelLabels[rolemanager.GoalSentinel(v)]; ok {
-		return l
-	}
-	if l, ok := rolemanager.DepSentinelLabels[rolemanager.DepSentinel(v)]; ok {
-		return l
-	}
-	if l, ok := rolemanager.IntentLabels[rolemanager.Intent(v)]; ok {
-		return l
-	}
-	return ""
-}
-
-// recordHiddenDecision writes a decision the feed does not show (mode
-// selection, goal and plan evaluation already have their own lines) so the
-// website still sees every classifier verdict. hidden keeps a resumed TUI from
-// rendering it twice.
-func (a *App) recordHiddenDecision(act rolemanager.Activity) {
-	meta := decisionFacts(act)
-	meta["activity"] = string(act.Event)
-	meta["hidden"] = true
-	if act.Model != "" {
-		meta["model"] = act.Model
-	}
-	if act.Duration > 0 {
-		meta["duration_ms"] = act.Duration.Milliseconds()
-	}
-	e := session.Entry{Type: "rolemanager", Role: "rolemanager", Content: string(act.Event), Meta: meta}
-	if !act.At.IsZero() {
-		e.Timestamp = act.At.UnixMilli()
-	}
-	a.appendEntry(e)
+	a.appendEntry(session.Entry{Type: rolemanager.RecordType, Role: rolemanager.RecordType, Content: rec.Content, Meta: rec.Meta, Timestamp: rec.Timestamp})
 }
 
 // ── Recording the host's asks ────────────────────────────────────────────

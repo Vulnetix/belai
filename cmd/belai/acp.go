@@ -18,6 +18,7 @@ import (
 	"github.com/vulnetix/belai/internal/sandbox"
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/trustgate"
+	"github.com/vulnetix/belai/internal/turnlog"
 )
 
 // runACP implements `belai acp`: the Agent Client Protocol on stdin and
@@ -28,6 +29,7 @@ func runACP(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 	fs.SetOutput(stderr)
 	providerName := fs.String("provider", "", "provider (default: as for the TUI)")
 	model := fs.String("model", "", "model id (default: the provider's)")
+	noTranscript := fs.Bool("no-transcript", false, "do not keep a session transcript of editor sessions")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -63,7 +65,16 @@ func runACP(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 	build := func(ctx context.Context, cwd, sessionID string) (*agent.Session, error) {
 		return buildACPSession(ctx, cwd, sessionID, *providerName, *model)
 	}
-	if err := acp.Serve(ctx, stdin, stdout, build); err != nil {
+	opts := acp.Options{}
+	if !*noTranscript {
+		// The transcript is the same private JSONL a TUI session keeps; it
+		// writes to the state directory, never to stdout.
+		opts.Transcript = func(cwd, id string) *turnlog.Log {
+			l, _ := turnlog.Open(cwd, id, session.Meta{Cwd: cwd, Mode: "agent"})
+			return l
+		}
+	}
+	if err := acp.ServeWith(ctx, stdin, stdout, build, opts); err != nil {
 		fmt.Fprintln(stderr, "belai acp:", err)
 		return 1
 	}

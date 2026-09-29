@@ -55,6 +55,11 @@ classifier refuses it.
 
 ## Security model
 
+- Each session keeps a private transcript in the state directory, like a
+  headless run (`belai acp -no-transcript` opts out): the turns, the tool
+  calls and every role-manager decision, never anything on stdout. The first
+  session on a connection also receives the role-manager decisions made in the
+  process, which is normally the only session.
 - The project directory must already be trusted. `session/new` in an
   untrusted directory fails with a message telling you to open it in the TUI
   once or run `belai -trust-dir` there. The trust prompt never runs over ACP.
