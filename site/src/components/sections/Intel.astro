@@ -1,0 +1,383 @@
+---
+import SealedSection from '../seal/SealedSection.astro';
+import { limitBar, sparkline, windows, listHtml, subHeader, heat, heatCells, heatShades } from '../../lib/intel';
+
+// Session intelligence: plan limits, pace, trend and runway on the footer and
+// in a pane (f12). The demo below is the pane, drawn with the TUI's own block
+// glyphs. The numbers are fixed for the demo; the rules behind them are in
+// docs/token-budgets.md (R15 to R22).
+
+const sealText =
+  'Session intelligence: plan limits with their reset times, pace, trend and runway, and today, week and 30 day totals. Its slot ends the footer cycle under every routing, with or without a budget, and f12 opens a pane with the details. Limits come from provider rate limit headers, read as numbers, and every figure is drawn from your own usage ledger. ui.intel switches it off and intel.plan_limits stops the header reading.';
+
+const five = limitBar(0.23, 0.55, 56);
+const weekly = limitBar(0.48, 0.417, 56);
+
+const stats = [
+  { big: '23%', size: 'text-[72px] md:text-[96px]', label: '5-hour limit used', sub: 'resets in 3h 40m' },
+  { big: 'comfortable', size: 'text-[28px] md:text-[32px] md:leading-[96px]', label: 'pace', sub: '1.5% of the window an hour, 410k tokens an hour' },
+  { big: '↘ 0.5×', size: 'text-[52px] md:text-[60px] md:leading-[96px]', label: 'trend', sub: 'half the 7-day average at this time of day' },
+  { big: 'lasts', size: 'text-[52px] md:text-[60px] md:leading-[96px]', label: 'runway', sub: 'past the reset, at this pace' },
+];
+
+const notes = [
+  ['23%', 'is the share of the 5-hour window the provider reports as used. The ╹ marks how far the window has run. Once the fill covers it the marker disappears and the bar turns amber.'],
+  ['pace', 'is the tokens spent in the last 60 minutes, judged against the reset: comfortable lasts past it, brisk runs out a quarter of the way in or later, hot runs out sooner.'],
+  ['trend', 'compares today with the 7-day mean at the same hour: easing below 0.8×, rising above 1.25×.'],
+  ['runway', 'is how long the allowance lasts at this pace. With no plan limit reported, a day or month budget stands in for it.'],
+  ['rows', "give tokens and sessions for today, the week and 30 days. Press m for the models of a window, r for this session's roles, enter for the full screen with a 7-day heatmap."],
+  ['footer', 'carries the same figures as the last stop of its cycle, under any routing and with or without a budget. A quiet f12 shows in the last third of the stop.'],
+];
+
+// Footer strips: the same slot in its four colours.
+const strips = [
+  {
+    key: 'teal',
+    cls: 'text-tui-teal',
+    why: 'the allowance lasts past the reset',
+    mode: 'agent',
+    modeCls: 'text-tui-teal',
+    branch: 'main',
+    slot: 'intel',
+    today: '34.4M',
+    label: '5h 23%',
+    picture: limitBar(0.23, 0.55, 10),
+    hint: true,
+  },
+  {
+    key: 'amber',
+    cls: 'text-tui-amber',
+    why: 'the pace runs it out before the reset',
+    mode: 'goal',
+    modeCls: 'text-tui-amber',
+    branch: 'feat/intel',
+    slot: 'intel',
+    today: '88.1M',
+    label: '5h 91%',
+    picture: limitBar(0.91, 0.9, 10),
+    hint: false,
+  },
+  {
+    key: 'red',
+    cls: 'text-tui-danger',
+    why: 'a plan window, or the budget standing in for it, is spent',
+    mode: 'goal',
+    modeCls: 'text-tui-amber',
+    branch: 'feat/intel',
+    slot: 'intel',
+    today: '96.0M',
+    label: '5h 100%',
+    picture: limitBar(1, 0.4, 10),
+    hint: false,
+  },
+] as const;
+const idleSpark = sparkline([0, 1, 2, 4, 1, 7, 0, 2, 1, 0]);
+
+const steps = [
+  { n: '1,600', text: 'tokens recorded since the 5-hour window opened', cls: 'text-tui-cream' },
+  { n: '40%', text: 'of the window used, as the provider reports it', cls: 'text-tui-cream' },
+  { n: '32.5%', text: 'of the window an hour, at a pace of 1,300 tokens an hour', cls: 'text-tui-amber' },
+  { n: '1h 50m', text: 'until it runs out, with 3h to the reset', cls: 'text-tui-amber' },
+];
+
+const providers = [
+  ['Anthropic, plan calls', 'Utilisation and a reset for the five-hour and seven-day windows.', '5-hour limit, weekly limit'],
+  ['Anthropic, API key', 'A limit, what remains and a reset for requests, tokens, input tokens and output tokens.', 'tokens/min, in/min, out/min, req/min'],
+  ['OpenAI and providers with its headers', 'A limit, what remains and a reset, written as a duration such as 6m0s, for requests and tokens.', 'tokens/min, req/min'],
+  ['OpenRouter', 'A request limit, what remains and a reset in epoch milliseconds.', 'req/min'],
+  ['Copilot, Kiro, Workers AI, AI Gateway', 'No limit headers.', 'sparkline and pace'],
+];
+
+const settings = [
+  ['Set in your own settings', 'ui.intel turns the slot, the tab and f12 off. intel.plan_limits, read from your own settings only, stops the reading of rate limit headers.'],
+  ['Numbers from the provider', 'A response header becomes a used share, a count and a reset time. A value that is not a number of the expected shape is dropped, and the pane is drawn from the ledger alone.'],
+  ['Older sessions', 'Transcripts record days but not hours. They count in the totals and the trend, and the heatmap marks their days as day totals.'],
+];
+
+const keys = [
+  ['← →', 'window'],
+  ['m', 'models'],
+  ['r', 'roles'],
+  ['t', 'timeline'],
+  ['b', 'budgets'],
+  ['⏎', 'full screen'],
+  ['R', 're-read ledger'],
+  ['esc', 'unfocus'],
+];
+
+const initial = listHtml('timeline', 1);
+const w0 = windows[1];
+const mono = 'font-mono';
+---
+
+<SealedSection label="intel" sealText={sealText} id="intel">
+  <div class="grid gap-6 lg:grid-cols-12 lg:items-end">
+    <div class="lg:col-span-7">
+      <h2 class="text-4xl font-extrabold leading-tight tracking-tight text-vx-ink md:text-5xl">Session intelligence</h2>
+    </div>
+    <p class="text-lg text-vx-ink/80 lg:col-span-5">
+      Plan limits with their reset times, pace, trend and runway, on the footer of every session. Routed or
+      defined, with a budget or without one, the answer to whether the allowance lasts until the reset is
+      one glance away.
+    </p>
+  </div>
+
+  <div class="mt-10 rounded-2xl bg-vx-ink p-5 text-tui-cream md:p-8" data-intel>
+    <div class="grid border-b border-[#2F4340] pb-7 md:grid-cols-4">
+      {stats.map((s, i) => (
+        <div class={`py-4 md:py-0 ${i > 0 ? 'border-t border-[#2F4340] md:border-l md:border-t-0 md:pl-5' : 'md:pr-5'} ${i === 0 ? '' : ''}`}>
+          <div class={`${mono} font-bold leading-none tracking-tight text-tui-teal ${s.size}`}>{s.big}</div>
+          <div class={`${mono} mt-3 text-sm text-tui-cream`}>{s.label}</div>
+          <div class={`${mono} mt-1 text-[13px] text-[#8FA39F]`}>{s.sub}</div>
+        </div>
+      ))}
+    </div>
+
+    <div class="overflow-x-auto border-b border-[#2F4340] py-6">
+      <div class={`${mono} min-w-[720px] whitespace-pre text-[13px] leading-[30px] md:text-sm`}>
+        <div class="flex"><span class="w-[13ch] text-[#8FA39F]">5-hour limit</span><span class="text-tui-teal">{five.fill}</span><span class="text-[#4A6560]">{five.before}</span><span class="text-[#8FA39F]">{five.mark}</span><span class="text-[#4A6560]">{five.after}</span><span class="pl-3.5 text-tui-teal">23%</span><span class="pl-7 text-[#8FA39F]">resets in 3h 40m</span></div>
+        <div class="flex"><span class="w-[13ch] text-[#8FA39F]">weekly limit</span><span class="text-tui-amber">{weekly.fill}</span><span class="text-[#4A6560]">{weekly.before}</span><span class="text-[#8FA39F]">{weekly.mark}</span><span class="text-[#4A6560]">{weekly.after}</span><span class="pl-3.5 text-tui-amber">48%</span><span class="pl-7 text-[#8FA39F]">resets in 4d 2h</span></div>
+      </div>
+      <p class={`${mono} mt-2 text-xs leading-5 text-[#8FA39F]`}>
+        The ╹ marks how much of the window has passed. While the fill is short of it the bar is teal. Once the
+        fill covers it the marker disappears and the bar turns amber, because spend is ahead of the clock.
+      </p>
+    </div>
+
+    <div class="flex flex-col gap-8 pt-6 lg:flex-row lg:gap-10">
+      <div class="min-w-0 flex-1">
+        <div class={`${mono} flex flex-wrap items-center gap-x-3 border-b border-[#2F4340] pb-3.5 text-[13px] text-[#8FA39F]`}>
+          <span>activity  subagents  processes  kanban  crew  git</span><b class="text-tui-cream">[ intel ]</b>
+          <span class="flex-1"></span>
+          <span>f12 close</span>
+        </div>
+
+        <div class="mt-3.5 flex flex-wrap items-center gap-2">
+          <button type="button" data-mode="timeline" aria-pressed="true" class={`${mono} min-h-11 rounded-md border border-tui-teal px-3 text-[13px] aria-pressed:bg-tui-teal aria-pressed:text-vx-ink`}><b>t</b> timeline</button>
+          <button type="button" data-mode="models" aria-pressed="false" class={`${mono} min-h-11 rounded-md border border-tui-teal px-3 text-[13px] aria-pressed:bg-tui-teal aria-pressed:text-vx-ink`}><b>m</b> models</button>
+          <button type="button" data-mode="roles" aria-pressed="false" class={`${mono} min-h-11 rounded-md border border-tui-teal px-3 text-[13px] aria-pressed:bg-tui-teal aria-pressed:text-vx-ink`}><b>r</b> roles</button>
+          <span class="flex-1"></span>
+          <button type="button" data-step="-1" aria-label="Previous window" class={`${mono} h-11 w-11 rounded-md border border-[#4A6560] text-base`}>←</button>
+          <span class={`${mono} min-w-[116px] text-center text-[13px] text-tui-cream`} data-out="label">{w0.label}</span>
+          <button type="button" data-step="1" aria-label="Next window" class={`${mono} h-11 w-11 rounded-md border border-[#4A6560] text-base`}>→</button>
+        </div>
+
+        <div class={`${mono} mt-4 whitespace-pre text-[13px] leading-7 text-[#8FA39F]`} data-out="sub">{subHeader('timeline', 1)}</div>
+        <div class={`${mono} mt-1 overflow-x-auto`}>
+          <div class="min-w-[560px]" data-list set:html={initial} />
+        </div>
+        <div class={`${mono} mt-4 border-t border-[#2F4340] pt-3.5 text-xs text-[#8FA39F]`}>
+          ↑↓ select · ←→ window · m models · r roles · t timeline · b budgets · ⏎ full screen · esc unfocus
+        </div>
+      </div>
+
+      <div class={`${mono} shrink-0 border-t border-[#2F4340] pt-6 lg:w-[300px] lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0`}>
+        <div class="text-[13px] text-[#8FA39F]" data-out="label2">{w0.label}</div>
+        <div class="mt-2 text-[56px] font-bold leading-none tracking-tight text-tui-cream md:text-[76px]" data-out="tokens">{w0.tokens}</div>
+        <div class="mt-2.5 text-sm text-tui-cream">tokens</div>
+        <div class="mt-7 flex gap-7">
+          <div><div class="text-3xl font-bold text-tui-teal-soft" data-out="sessions">{w0.sessions}</div><div class="mt-1 text-[13px] text-[#8FA39F]">sessions</div></div>
+          <div><div class="text-3xl font-bold text-tui-teal-soft" data-out="share">{w0.share}</div><div class="mt-1 text-[13px] text-[#8FA39F]">of 30 days</div></div>
+        </div>
+        <p class="mt-7 font-sans text-xs leading-relaxed text-[#8FA39F]">
+          Totals come from day figures in the ledger, so imported transcripts count. The sparkline and the pace
+          come from hours, so they never show an invented shape.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-6 grid gap-x-12 gap-y-3 text-[15px] leading-relaxed text-vx-ink/85 md:grid-cols-2">
+    {notes.map(([term, text]) => (
+      <p><b class="mono text-[13px] text-vx-ink">{term}</b> {text}</p>
+    ))}
+  </div>
+
+  <div class="mt-10 rounded-2xl bg-vx-ink p-5 text-tui-cream md:p-7">
+    <p class="mono text-xs text-[#8FA39F]">footer line 1, right side. Colour follows the runway.</p>
+    <div class="mono mt-4 overflow-x-auto">
+      <div class="min-w-[720px]">
+        {strips.map((s) => (
+          <div class="mt-4 flex items-start gap-6 first:mt-0">
+            <div class="w-56 shrink-0 text-[13px]"><b class={s.cls}>{s.key}</b><div class="mt-0.5 text-xs text-[#8FA39F]">{s.why}</div></div>
+            <div class="flex flex-1 justify-between whitespace-pre border-t border-[#2F4340] pt-3.5 text-[13px]">
+              <span><b class={s.modeCls}>{s.mode}</b><span class="text-[#4A6560]">  ·  </span><span class="text-[#8FA39F]">~/src/belai</span><span class="text-[#4A6560]">  ·  </span><span class="text-tui-teal">⎇ </span><span class="text-[#8FA39F]">{s.branch}</span></span>
+              <span><span class={s.cls}>{s.slot}</span><span class="text-[#8FA39F]">  today {s.today} · </span><span class={s.cls}>{s.label}</span>{' '}<span class={s.cls}>{s.picture.fill}</span><span class="text-[#4A6560]">{s.picture.before}</span><span class="text-[#8FA39F]">{s.picture.mark}</span><span class="text-[#4A6560]">{s.picture.after}</span>{s.hint && <span class="text-[#4A6560]">  f12</span>}</span>
+            </div>
+          </div>
+        ))}
+        <div class="mt-4 flex items-start gap-6">
+          <div class="w-56 shrink-0 text-[13px]"><b class="text-tui-teal-soft">no limit reported</b><div class="mt-0.5 text-xs text-[#8FA39F]">the last 24 hours as a sparkline</div></div>
+          <div class="flex flex-1 justify-between whitespace-pre border-t border-[#2F4340] pt-3.5 text-[13px]">
+            <span><b class="text-tui-teal-soft">plan</b><span class="text-[#4A6560]">  ·  </span><span class="text-[#8FA39F]">~/src/belai</span><span class="text-[#4A6560]">  ·  </span><span class="text-tui-teal">⎇ </span><span class="text-[#8FA39F]">main</span></span>
+            <span><span class="text-tui-teal">intel</span><span class="text-[#8FA39F]">  today 1.2M · </span><span class="text-tui-teal">idle</span>{' '}{idleSpark.map((c) => <span class={c.on ? 'text-tui-teal' : 'text-[#4A6560]'}>{c.ch}</span>)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
+    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">A runway, worked through</h3>
+    <p class="text-vx-ink/80">
+      The provider reports how much of a window is used. Belai measures how many tokens it has recorded since
+      the window opened, and that ratio turns the current pace into a share of the window an hour.
+    </p>
+  </div>
+  <div class="mono mt-8 rounded-2xl bg-vx-ink p-5 text-tui-cream md:p-8">
+    <div class="grid md:grid-cols-4">
+      {steps.map((s, i) => (
+        <div class={`py-4 md:py-0 ${i > 0 ? 'border-t border-[#2F4340] md:border-l md:border-t-0 md:px-5' : 'md:pr-5'} ${i === 3 ? 'md:pr-0' : ''}`}>
+          <div class="text-xs text-[#8FA39F]">step {i + 1}</div>
+          <div class={`mt-2.5 text-[40px] font-bold leading-none tracking-tight md:text-5xl ${s.cls}`}>{s.n}</div>
+          <div class="mt-2.5 text-[13px] leading-normal text-[#8FA39F]">{s.text}</div>
+        </div>
+      ))}
+    </div>
+    <p class="mt-7 rounded-lg border border-[#2F4340] px-4 py-3.5 text-[13px] leading-relaxed">
+      1,300 tok/h × 0.40 ÷ 1,600 tokens = 0.325 of the window an hour, so (1 − 0.40) ÷ 0.325 = 1.85 h
+    </p>
+    <div class="mt-8">
+      <div class="flex h-11 overflow-hidden rounded-lg text-[13px] font-bold text-vx-ink">
+        <div class="flex w-[61.5%] items-center bg-tui-teal pl-4">the allowance lasts</div>
+        <div class="flex w-[38.5%] items-center bg-tui-danger pl-4">1h 9m with none left</div>
+      </div>
+      <div class="relative mt-2 h-10 text-xs">
+        <span class="absolute left-0">now</span>
+        <span class="absolute left-[61.5%] -translate-x-1/2">runs out in 1h 50m</span>
+        <span class="absolute right-0">reset in 3h</span>
+      </div>
+    </div>
+    <div class="mt-4 flex flex-wrap items-center gap-4 border-t border-[#2F4340] pt-6">
+      <span class="rounded-full bg-tui-amber px-3 py-1 text-[13px] font-bold text-vx-ink">brisk</span>
+      <span class="rounded-full bg-tui-amber px-3 py-1 text-[13px] font-bold text-vx-ink">amber slot</span>
+      <span class="text-sm">runs out in 1h 50m, 1h 9m before the reset</span>
+      <span class="flex-1"></span>
+      <span class="text-xs text-[#8FA39F]">brisk: it runs out at least a quarter of the way to the reset</span>
+    </div>
+  </div>
+
+  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
+    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">A week in hours</h3>
+    <p class="text-vx-ink/80">
+      The full screen adds a seven-day, hour-by-hour heatmap in four shades, scaled to the busiest hour of
+      the week so a quiet week still shows its shape.
+    </p>
+  </div>
+  <div class="mono mt-8 flex flex-col gap-8 rounded-2xl bg-vx-ink p-5 text-tui-cream md:p-8 lg:flex-row lg:gap-12">
+    <div class="shrink-0 overflow-x-auto">
+      <div class="whitespace-pre pb-2 pl-[62px] text-xs text-[#8FA39F]">00  04  08  12  16  20</div>
+      {heat.map((d, i) => (
+        <div class="flex h-[34px] items-center text-[22px] leading-none">
+          <span class="w-[62px] text-[13px] text-[#8FA39F]">{d.day}</span>
+          <span class="flex">{heatCells(d.hours, i === 6 ? 14 : -1).map((c) => <span class={`w-[13.2px] text-center ${c.cls}`}>{c.ch}</span>)}</span>
+          <span class="w-[76px] pl-5 text-right text-[13px] text-tui-cream">{d.total}</span>
+          <span class="pl-2.5 text-xs text-tui-amber">{d.note}</span>
+        </div>
+      ))}
+    </div>
+    <div class="flex-1 border-t border-[#2F4340] pt-6 text-sm leading-relaxed lg:border-l lg:border-t-0 lg:pl-10 lg:pt-0">
+      <div class="flex items-center gap-5 text-[22px]">
+        {heatShades.map((s) => <span class={s.cls}>{s.ch}</span>)}
+        <span class="text-xs text-[#8FA39F]">quiet to busiest hour</span>
+      </div>
+      <p class="mt-5 font-sans text-tui-cream/85">
+        Wednesday came from an imported transcript. A transcript records days but no hours, so its row is drawn
+        flat and marked as a day total, and no hourly shape is invented.
+      </p>
+      <p class="mt-3.5 font-sans text-tui-cream/85">Hours later today have not happened yet and show as dots.</p>
+    </div>
+  </div>
+
+  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
+    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">Which providers report limits</h3>
+    <p class="text-vx-ink/80">
+      Limits come from the rate limit headers of a completed call. Where a provider sends none, the footer
+      draws the sparkline and the pane says so.
+    </p>
+  </div>
+  <div class="mt-8 border-t-2 border-vx-ink">
+    <div class="mono hidden gap-6 border-b border-vx-ink/25 py-3.5 text-xs text-vx-ink/70 md:grid md:grid-cols-[19rem_minmax(0,1fr)_17rem]"><span>provider</span><span>what the response headers carry</span><span>shown as</span></div>
+    {providers.map(([who, carries, shown]) => (
+      <div class="grid gap-1 border-b border-vx-ink/25 py-4 text-[15px] leading-normal md:grid-cols-[19rem_minmax(0,1fr)_17rem] md:gap-6">
+        <b>{who}</b>
+        <span class="text-vx-ink/85">{carries}</span>
+        <span class="mono text-[13px]">{shown}</span>
+      </div>
+    ))}
+  </div>
+
+  <div class="mt-20 grid gap-8 lg:grid-cols-12">
+    <div class="rounded-2xl bg-vx-ink p-6 text-tui-cream lg:col-span-5">
+      <h3 class="text-2xl font-bold tracking-tight">Three ways in</h3>
+      <div class="mono mt-5 flex flex-col gap-3.5 text-sm">
+        <div class="flex items-center gap-3"><kbd class="mono rounded-md border border-b-[3px] border-vx-mint px-2.5 py-0.5 text-vx-mint">f12</kbd><span class="text-tui-cream/85">the intel tab of the runs panel</span></div>
+        <div class="flex items-center gap-3"><code class="mono text-vx-mint">/intel</code><span class="text-tui-cream/85">the full screen with the heatmap</span></div>
+        <div class="flex flex-wrap items-center gap-3"><kbd class="mono rounded-md border border-b-[3px] border-vx-mint px-2.5 py-0.5 text-vx-mint">f1</kbd><span class="text-tui-cream/70">then</span><kbd class="mono rounded-md border border-b-[3px] border-vx-mint px-2.5 py-0.5 text-vx-mint">i</kbd><span class="text-tui-cream/85">from the screen switcher</span></div>
+      </div>
+      <div class="mono mt-6 grid grid-cols-2 gap-x-5 gap-y-2.5 border-t border-[#2F4340] pt-5 text-[13px] text-tui-cream/85">
+        {keys.map(([k, what]) => <span><b class="text-tui-teal-soft">{k}</b> {what}</span>)}
+      </div>
+    </div>
+    <div class="border-t-2 border-vx-ink lg:col-span-7">
+      {settings.map(([title, body]) => (
+        <div class="border-b border-vx-ink/25 py-5">
+          <h4 class="text-lg font-bold">{title}</h4>
+          <p class="mt-2 text-sm text-vx-ink/80">
+            {body.split(/(ui\.intel|intel\.plan_limits)/).map((p) => (p === 'ui.intel' || p === 'intel.plan_limits' ? <code class="mono">{p}</code> : p))}
+          </p>
+        </div>
+      ))}
+    </div>
+  </div>
+</SealedSection>
+
+<script>
+  import { listHtml, subHeader, windows } from '../../lib/intel';
+  import type { Mode } from '../../lib/intel';
+
+  // The pane demo: t, m and r change the list, the arrows or a timeline row
+  // change the window. Everything drawn comes from lib/intel.ts.
+  const root = document.querySelector<HTMLElement>('[data-intel]');
+  if (root) {
+    let mode: Mode = 'timeline';
+    let win = 1;
+    const out = (name: string) => root.querySelector<HTMLElement>(`[data-out="${name}"]`);
+    const list = root.querySelector<HTMLElement>('[data-list]');
+
+    const render = () => {
+      const w = windows[win];
+      if (list) list.innerHTML = listHtml(mode, win);
+      const set = (name: string, text: string) => {
+        const el = out(name);
+        if (el) el.textContent = text;
+      };
+      set('sub', subHeader(mode, win));
+      set('label', w.label);
+      set('label2', w.label);
+      set('tokens', w.tokens);
+      set('sessions', String(w.sessions));
+      set('share', w.share);
+      root.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) => {
+        b.setAttribute('aria-pressed', String(b.dataset.mode === mode));
+      });
+    };
+
+    root.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      const modeBtn = target.closest<HTMLElement>('[data-mode]');
+      const stepBtn = target.closest<HTMLElement>('[data-step]');
+      const rowBtn = target.closest<HTMLElement>('[data-row]');
+      if (modeBtn) {
+        mode = modeBtn.dataset.mode as Mode;
+      } else if (stepBtn) {
+        win = (win + Number(stepBtn.dataset.step) + 3) % 3;
+      } else if (rowBtn && mode === 'timeline') {
+        win = Number(rowBtn.dataset.row);
+      } else {
+        return;
+      }
+      render();
+    });
+  }
+</script>

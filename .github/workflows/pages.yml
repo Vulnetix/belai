@@ -48,6 +48,13 @@ jobs:
         working-directory: site
         run: yarn install --immutable
 
+      # The site scripts and the session intelligence demo module have unit
+      # tests. They import a .ts file, so ask for type stripping explicitly in
+      # case the runner's Node 22 predates it being the default.
+      - name: Test site scripts
+        working-directory: site
+        run: node --experimental-strip-types --test scripts/
+
       - name: Build
         working-directory: site
         run: yarn build
