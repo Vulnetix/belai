@@ -93,8 +93,12 @@ type SystemOneTarget struct {
 	Name    string
 	BaseURL string
 	Path    string
-	Key     func() (string, error)
-	Timeout time.Duration
+	// Model and SendModel put the model in the request body, as the live call
+	// does: TypeSafe rejects a request without one (HTTP 422).
+	Model     string
+	SendModel bool
+	Key       func() (string, error)
+	Timeout   time.Duration
 }
 
 // SystemOneSteps is the ladder for a self-hosted Jev server. The connect
@@ -168,7 +172,7 @@ func discoverSystemOne(ctx context.Context, st *State, t SystemOneTarget) (*deci
 	paths := uniq(pathOr(t.Path), "/v1/systemone", "/systemone", "/api/v1/systemone", "/v1/decisions")
 
 	probe := func(base, path string) (*decisions.SystemOne, error) {
-		s := &decisions.SystemOne{Name: t.Name, BaseURL: base, Path: path, Key: t.Key, Client: st.Env.Client, Timeout: t.Timeout}
+		s := &decisions.SystemOne{Name: t.Name, Model: t.Model, SendModel: t.SendModel, BaseURL: base, Path: path, Key: t.Key, Client: st.Env.Client, Timeout: t.Timeout}
 		_, err := s.Decide(ctx, decisions.Request{
 			State:     map[string]any{"content": benignState},
 			Questions: map[string]decisions.Question{"q": decisions.Noul(injectionProposition)},
