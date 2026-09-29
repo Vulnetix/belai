@@ -22,7 +22,7 @@ chain: default < state < global < project prefs < project < env < flag):
 
 ```jsonc
 "classifier": {
-  "kind":   "models",           // "llm" | "models"; default models when embedded, else llm
+  "kind":   "models",           // "llm" | "jev" | "models"; default models when embedded, else llm| "models"; default models when embedded, else llm
   "provider": "openrouter",      // llm: omit → main provider; models: phase 3 (extraction/jailbreak) sentinel
   "model":    "typesafe/jev-1.13", // openrouter → the Jev Decisions gate model; huggingface → a curated BERT id
   "effort":   "none",             // default: reasoning OFF
@@ -46,6 +46,22 @@ pure Go, no cgo) as the phase-1 prompt-saturation and phase-2 jailbreak gates,
 with an optional phase-3 narrowed LLM sentinel for the two extraction
 categories no purpose-built model reaches. The default is `"models"` on a
 binary that embeds the weights, `"llm"` otherwise.
+
+`"jev"` answers through a Jev decision backend and is never a chat model: OpenRouter's Decisions API (`provider: openrouter`, a `typesafe/jev*` model), a
+self-hosted Jev provider profile, or the local decision model. Jev cannot
+answer `chat/completions`, so it is a kind of its own and is never offered
+under `"llm"`, where the provider list and model list are chat only (Jev
+models are filtered out). `ResolveClassifier` refuses `kind: "jev"` with a
+selection that would chat, rather than classify with a model nobody asked for.
+A file written before the kind existed (`kind: "llm"` with an OpenRouter Jev
+model, or the local decision provider) reads as `jev` (`run.ClassifierKind`);
+runtime behaviour is unchanged. In `/model`, the kind row cycles `llm`,
+`models`, `jev`. Choosing `jev` with no decision backend selected starts on
+OpenRouter's Jev model; leaving it clears the decision selection so the guard
+returns to the main model instead of keeping a selection the new kind cannot
+use. Under `jev` the provider row offers decision backends only (OpenRouter is
+always listed, and a missing key is reported by the test with a way out) and
+has no inherit-main option.
 
 Flags `-classifier-provider`, `-classifier-model`, `-classifier-effort`,
 `-classifier-kind`, `-classifier-phase1-*`, `-classifier-phase2-*`, and env

@@ -112,7 +112,7 @@ type ClassifierConfig struct {
 // fail-closed: no inheritance, and phase 3 only when a classifier provider
 // and model are both explicitly set.
 type SecurityClassifierConfig struct {
-	// Kind is "llm" or "models".
+	// Kind is "llm", "jev" or "models".
 	Kind string
 	// Phase1 and Phase2 configure the two local gates; nil disables that gate.
 	Phase1 *mlclassify.ModelConfig
@@ -212,6 +212,13 @@ func ResolveClassifier(main Config, cls *config.ClassifierSettings, src Credenti
 		out.Decisions = d
 		out.Explicit = false
 		return out, nil
+	}
+
+	// Kind "jev" is a Jev decision backend and nothing else: a provider and
+	// model that would chat are refused rather than quietly classified by a
+	// model the user did not ask for.
+	if cls.Kind == ClassifierKindJev && !jev.IsDecisionsModel(cls.Provider, cls.Model) {
+		return ClassifierConfig{}, fmt.Errorf(`classifier.kind "jev" needs provider openrouter with a typesafe/jev model, a Jev provider profile, or %s`, decisions.LocalProvider)
 	}
 
 	// ResolveClassifier produces the guardrail classifier config: the LLM
@@ -363,18 +370,34 @@ func ApplyProfileOverride(cfg Config, o ProfileOverride, cls *config.ClassifierS
 	return out, nil
 }
 
+// ClassifierKindJev is the classifier kind that answers through a Jev
+// decision backend (OpenRouter's Decisions API, a self-hosted Jev profile or
+// the local decision model). Jev is never a chat model, so it is a kind of its
+// own and never "llm".
+const ClassifierKindJev = "jev"
+
 // ClassifierKind resolves the effective classifier kind: an explicit setting,
 // else "models" when the binary embeds a model, else "llm". Embedding a model
 // only changes the default, as -classifier-kind documents; an explicit "llm"
-// selects the full five-way LLM sentinel on every build.
+// selects the full five-way LLM sentinel on every build. A selection that
+// names a Jev decision backend is "jev" whether or not the file says so, so
+// a file written before the kind existed (kind "llm" with an openrouter Jev
+// model) reads as what it is.
 func ClassifierKind(cls *config.ClassifierSettings) string {
-	if cls != nil && cls.Kind != "" {
-		return cls.Kind
+	kind := ""
+	if cls != nil {
+		kind = cls.Kind
 	}
-	if mlclassify.Embedded() {
+	if kind == "" && mlclassify.Embedded() {
 		return "models"
 	}
-	return "llm"
+	if kind == "" || kind == "llm" {
+		if cls != nil && (cls.Provider == decisions.LocalProvider || jev.IsDecisionsModel(cls.Provider, cls.Model)) {
+			return ClassifierKindJev
+		}
+		return "llm"
+	}
+	return kind
 }
 
 const (

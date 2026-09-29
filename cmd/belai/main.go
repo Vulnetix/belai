@@ -112,7 +112,7 @@ func main() {
 	classifierProvider := flag.String("classifier-provider", "", "security-classifier provider (default: the main provider)")
 	classifierModel := flag.String("classifier-model", "", "security-classifier model (default: the main model)")
 	classifierEffort := flag.String("classifier-effort", "", "security-classifier thinking effort (default: none)")
-	classifierKind := flag.String("classifier-kind", "", "security-classifier stack: llm or models (default: models when the binary embeds a model, else llm)")
+	classifierKind := flag.String("classifier-kind", "", "security-classifier stack: llm, jev or models (default: models when the binary embeds a model, else llm)")
 	classifierPhase1Model := flag.String("classifier-phase1-model", "", "phase-1 prompt-saturation model id")
 	classifierPhase1Source := flag.String("classifier-phase1-source", "", "phase-1 source: embedded or huggingface")
 	classifierPhase1Threshold := flag.Float64("classifier-phase1-threshold", 0, "phase-1 attack threshold (default 0.75)")
