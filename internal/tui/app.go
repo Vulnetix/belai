@@ -404,6 +404,9 @@ type App struct {
 	modelTestGen    int
 	modelTester     modelTester
 	modelTestPassed map[string]time.Time
+	// startupPending asks the first resolved credentials to run the startup
+	// model tests once (set by Init).
+	startupPending bool
 	// providerTests labels each provider in the /model provider picker with
 	// its last test outcome. It never gates a choice.
 	providerTests map[string]string
@@ -1181,6 +1184,7 @@ func (a *App) SetClassifier(c rolemanager.Classifier) {
 // Init implements tea.Model.
 func (a *App) Init() tea.Cmd {
 	a.maybeNoticeLegacyPrompts()
+	a.startupPending = true
 	cmds := []tea.Cmd{tickCmd(), a.watchActivityEvents(), a.nextRMActivity(), a.nextFirewall(), a.nextUsage(), a.importHistory()}
 	if cmd := a.watchRemote(); cmd != nil {
 		cmds = append(cmds, cmd)
@@ -4953,6 +4957,11 @@ func (a *App) handleCredentialsResolved(m credentialsResolvedMsg) tea.Cmd {
 	}
 	a.invalidateAvailability()
 	a.refreshFooter()
+	var startupChecks tea.Cmd
+	if a.startupPending {
+		a.startupPending = false
+		startupChecks = a.startupModelTests()
+	}
 	// Warm the live catalogue in the background: the footer's context meter
 	// scales to the selected model's context window, which most providers
 	// only declare in their live catalogue.
@@ -4968,6 +4977,14 @@ func (a *App) handleCredentialsResolved(m credentialsResolvedMsg) tea.Cmd {
 	}
 	if cmd := a.prefetchCatalogCmd(m.cfg.Provider); cmd != nil {
 		cmds = append(cmds, cmd)
+	}
+	// The /providers view fetched every configured provider's models when
+	// opened; do it now so counts and context windows are ready.
+	if cmd := a.prefetchConfiguredCatalogsCmd(); cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	if startupChecks != nil {
+		cmds = append(cmds, startupChecks)
 	}
 	if a.pending != "" && m.status.Configured {
 		cmds = append(cmds, a.sendPending())

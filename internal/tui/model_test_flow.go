@@ -52,6 +52,53 @@ type stagedChange struct {
 	restage func() tea.Cmd
 	// chatKeys identify the chat probes in steps, remembered on a save.
 	chatKeys []string
+	// startup marks the check run at session start: it saves nothing and
+	// declines any download offer.
+	startup bool
+}
+
+// startupModelTests runs the /model test ladder once against the settings the
+// session starts with (agent, classifier and routing), so a routed pool, a
+// local decision model or a llama-server is proven and warm before the first
+// prompt rather than at the first failure. It saves nothing: the write is a
+// no-op, and a download the ladder would offer is declined, since only the
+// user may confirm one.
+func (a *App) startupModelTests() tea.Cmd {
+	if !a.status.Configured {
+		return nil
+	}
+	ch := stagedChange{
+		role: roleAgent, rowKey: "startup", label: "startup check", startup: true,
+		was:   a.cfg.Provider + " · " + orDash(a.cfg.Model),
+		write: func() tea.Cmd { return nil },
+	}
+	agent := modeltest.Target{Chats: a.freshChats([]modeltest.ChatTarget{a.chatTarget("agent", a.cfg.Provider, a.cfg.Model, a.settings.Effort, false)})}
+	ch.plan(agent)
+	if cls := a.settings.Classifier; cls != nil {
+		if t, local, jevProfile, err := a.classifierTarget(cls); err == nil {
+			var c stagedChange
+			c.plan(t)
+			ch.steps = append(ch.steps, c.steps...)
+			ch.chatKeys = append(ch.chatKeys, c.chatKeys...)
+			ch.decisionModel, ch.jevProfile = local, jevProfile
+		}
+	}
+	rc := a.cfg.Routing
+	var rt modeltest.Target
+	if rc.Fast != nil {
+		rt.Chats = append(rt.Chats, a.chatTarget("fast", rc.Fast.Provider, rc.Fast.Model, "none", false))
+	}
+	if rc.Kind == config.RoutingRouted {
+		for _, c := range rc.Candidates {
+			rt.Chats = append(rt.Chats, a.chatTarget("route "+c.Key, c.Cfg.Provider, c.Cfg.Model, "", false))
+		}
+	}
+	rt.Chats = a.freshChats(rt.Chats)
+	var r stagedChange
+	r.plan(rt)
+	ch.steps = append(ch.steps, r.steps...)
+	ch.chatKeys = append(ch.chatKeys, r.chatKeys...)
+	return a.startModelTest(ch)
 }
 
 // modelTestStepView is one step as the panel shows it.
@@ -388,6 +435,9 @@ func (a *App) startModelTest(ch stagedChange) tea.Cmd {
 		Registry: a.activity,
 		NGL:      -1,
 		Confirm: func(ctx context.Context, o modeltest.DownloadOffer) bool {
+			if ch.startup {
+				return false
+			}
 			select {
 			case ok := <-run.reply:
 				return ok

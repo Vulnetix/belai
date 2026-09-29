@@ -97,6 +97,24 @@ func (a *App) prefetchAllCatalogsCmd() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// prefetchConfiguredCatalogsCmd warms the catalogue of every configured
+// provider, for startup. Unconfigured providers have nothing to list.
+func (a *App) prefetchConfiguredCatalogsCmd() tea.Cmd {
+	if a.resolver == nil {
+		return nil
+	}
+	var cmds []tea.Cmd
+	for _, name := range a.resolver.ConfiguredProviders() {
+		if cmd := a.prefetchCatalogCmd(name); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
+}
+
 // rebuildProviderRows recomputes the grouped master list from the current
 // filter. Configured providers are listed first, then unconfigured.
 func (a *App) rebuildProviderRows() {
