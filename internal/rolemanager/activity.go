@@ -50,6 +50,8 @@ const (
 	EventBashReplan                Event = "bash_replan"
 	EventOptionOrder               Event = "option_order"
 	EventPruneCompaction           Event = "prune_compaction"
+	EventToolSearch                Event = "tool_search"
+	EventToolSelect                Event = "tool_select"
 )
 
 // Level is the display granularity of the internal-work feed. Order matters:
@@ -355,6 +357,10 @@ func Describe(a Activity) (Description, bool) {
 		return optionOrderDescription(a), true
 	case EventPruneCompaction:
 		return pruneCompactionDescription(a), true
+	case EventToolSearch:
+		return toolSearchDescription(a), true
+	case EventToolSelect:
+		return toolSelectDescription(a), true
 	case EventRouteFallback:
 		return routeFallbackDescription(a), true
 	}

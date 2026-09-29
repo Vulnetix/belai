@@ -21,6 +21,13 @@ const (
 	JevBashSwap JevJob = "bash_swap"
 )
 
+// JevToolSelection preloads the tools and skills a request is likely to need
+// and lists only the relevant skills.
+const JevToolSelection JevJob = "tool_selection"
+
+// JevToolSearch merges the ToolSearch keyword match with the backend's ranking.
+const JevToolSearch JevJob = "tool_search"
+
 // JevPruneCompaction keeps or clears tool calls and results by relevance when
 // the context is compacted, before falling back to a summary.
 const JevPruneCompaction JevJob = "prune_compaction"
@@ -35,6 +42,8 @@ const JevOptionOrder JevJob = "option_order"
 var JevJobs = []JevJob{
 	JevBashSwap,
 	JevPruneCompaction,
+	JevToolSelection,
+	JevToolSearch,
 	JevOptionOrder,
 }
 

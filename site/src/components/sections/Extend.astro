@@ -77,6 +77,7 @@ const limits = [
   ['Hooks come from your folder', 'Hooks load from your global hooks directory, and each command must resolve inside its own directory. A project has no way to add one.'],
   ['Hook and skill text classifies', 'What a hook says to the model, and every skill the model loads, goes through the classifier like any other untrusted result.'],
   ['Skills by name', '`Skill` takes a name and loads only a registered skill, checked against its schema as it loads.'],
+  ['Search finds names', '`ToolSearch` finds skills as well as tools and returns names only. With a decision backend, only the skills your request needs are listed, and it ranks what it finds.'],
   ['Drafting always asks', '`SkillDraft` asks on every call, even with the ask gate off, and writes exactly the file you saw.'],
   ['Plugins carry components only', 'A plugin holds skills, hooks, prompts and agent profiles. Its manifest has no key for providers, credentials, settings or permissions, and only you can install one.'],
   ['Notifications from templates', 'Notification text comes from fixed templates, so a repository cannot put words in front of you. `notify-send`, `osascript`, OSC 9 or 777, or the bell.'],

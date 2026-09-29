@@ -71,6 +71,11 @@ func runSwap(t *testing.T, commands []string, replan string, scores map[string]f
 func runSwapWith(t *testing.T, commands []string, replan string, scores map[string]float64, perms permissions.Settings, on func(config.JevJob) bool, natives []string) *swapHarness {
 	t.Helper()
 	h := &swapHarness{root: t.TempDir(), decider: &swapDecider{scores: scores}, classify: map[string]int{}}
+	if on == nil {
+		// These tests are about the swap alone; the other jobs would also call
+		// the backend and blur the call counts they assert.
+		on = func(j config.JevJob) bool { return j == config.JevBashSwap }
+	}
 	if err := os.WriteFile(filepath.Join(h.root, "f.txt"), []byte("alpha\nneedle here\nomega\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +313,7 @@ func TestARepeatedCommandRunsAsBash(t *testing.T) {
 
 func TestSwitchedOffJobNeverCallsTheBackend(t *testing.T) {
 	h := runSwap(t, []string{"grep -n needle f.txt"}, grepArgs, map[string]float64{"Grep": 0.99}, allowAll(),
-		func(j config.JevJob) bool { return j != config.JevBashSwap })
+		func(config.JevJob) bool { return false })
 	if h.decider.calls != 0 || h.replans != 0 || strings.Contains(h.replies[0], "[harness:") {
 		t.Fatalf("job off but calls %d replans %d: %q", h.decider.calls, h.replans, h.replies)
 	}

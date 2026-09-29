@@ -114,3 +114,58 @@ func (j *Jobs) PickOptions(ctx context.Context, question, request string, opts [
 		Options:  opts,
 	})
 }
+
+// SurfaceItem is a tool or skill to rate.
+type SurfaceItem struct {
+	// ID is the caller's key for the item.
+	ID string
+	// Name and Description describe it; the description is trimmed to one
+	// sentence and cleaned.
+	Name, Description string
+}
+
+// surfaceCriterion is the shared statement for tool and skill selection.
+const surfaceCriterion = "Having the tool or skill in the item available would help with what state.context asks for. A tool that is only vaguely related, or that a different available tool covers better, does not."
+
+// searchCriterion is the shared statement for ranking a ToolSearch query.
+const searchCriterion = "Loading the tool or skill in the item would help with the search in state.context, given the user's request. Answer true only if it is a good match."
+
+func surfaceItems(items []SurfaceItem) []ScoreItem {
+	out := make([]ScoreItem, 0, len(items))
+	for _, it := range items {
+		label := it.Name
+		if it.Description != "" {
+			label += ": " + it.Description
+		}
+		out = append(out, ScoreItem{ID: it.ID, Label: sanitize.ForDecision(label, 240)})
+	}
+	return out
+}
+
+// RateSurface rates tools and skills against the user's request for the turn.
+// Only the request and the mode reach the backend, with the candidates' names
+// and one-line descriptions, as DecisionText.
+func (j *Jobs) RateSurface(ctx context.Context, request, mode string, items []SurfaceItem) (map[string]float64, ScoreResult, error) {
+	res, err := j.Client.Score(ctx, ScoreRequest{
+		Job:         string(config.JevToolSelection),
+		Criterion:   sanitize.ForDecision(surfaceCriterion, 0),
+		Context:     sanitize.ForDecision(request, 1500),
+		Extra:       map[string]sanitize.DecisionText{"mode": sanitize.ForDecision(mode, 40)},
+		Items:       surfaceItems(items),
+		MaxRequests: 12,
+	})
+	return res.Scores, res, err
+}
+
+// RankSearch rates tools and skills against a ToolSearch query and the user's
+// request.
+func (j *Jobs) RankSearch(ctx context.Context, query, request string, items []SurfaceItem) (map[string]float64, ScoreResult, error) {
+	res, err := j.Client.Score(ctx, ScoreRequest{
+		Job:         string(config.JevToolSearch),
+		Criterion:   sanitize.ForDecision(searchCriterion, 0),
+		Context:     sanitize.ForDecision("Search: "+query+"\nUser request: "+request, 1500),
+		Items:       surfaceItems(items),
+		MaxRequests: 8,
+	})
+	return res.Scores, res, err
+}

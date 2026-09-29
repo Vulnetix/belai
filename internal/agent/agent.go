@@ -275,6 +275,9 @@ type Session struct {
 	// lastCompactionPruned says the latest compaction kept the conversation
 	// (a prune) rather than replacing it with a summary.
 	lastCompactionPruned bool
+	// skillCands are the installed skills a model may invoke, refreshed each
+	// turn; ToolSearch searches them.
+	skillCands []tools.Candidate
 	// taskCallsThisTurn counts Task invocations in the current fan-out turn.
 	taskCallsThisTurn int
 	// turnIntent is the detected intent for the current turn.
@@ -1233,11 +1236,21 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	// Skill tool is on the surface to load them; the bodies are read by that
 	// tool and classify as KindSkill. A user-only skill is not listed.
 	if _, ok := s.registry.Find("Skill"); ok {
+		var all []tools.Candidate
 		for _, e := range tools.InstalledSkills() {
 			if !e.DisableModelInvocation {
-				opts.Skills = append(opts.Skills, e.Name+": "+sanitize.Sanitize(e.Description))
+				all = append(all, tools.Candidate{Name: e.Name, Description: sanitize.Sanitize(e.Description), Skill: true})
 			}
 		}
+		s.skillCands = all
+		// With a decision backend, list only the skills the request needs
+		// and load the deferred tools it will likely use; the rest are found
+		// with ToolSearch.
+		listed, more := s.selectSurface(ctx, s.turnPrompt, string(modeDec.Mode), all)
+		for _, c := range listed {
+			opts.Skills = append(opts.Skills, c.Name+": "+c.Description)
+		}
+		opts.SkillsMore = more
 	}
 
 	// The sealed <tools> block describes the same narrowed surface the
