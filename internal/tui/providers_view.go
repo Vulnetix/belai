@@ -10,6 +10,7 @@ import (
 
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/credentials"
+	"github.com/vulnetix/belai/internal/decisions"
 	"github.com/vulnetix/belai/internal/provider"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/tui/components"
@@ -99,12 +100,14 @@ func (a *App) prefetchAllCatalogsCmd() tea.Cmd {
 // rebuildProviderRows recomputes the grouped master list from the current
 // filter. Configured providers are listed first, then unconfigured.
 func (a *App) rebuildProviderRows() {
-	all := a.providerNames()
+	all := a.providerViewNames()
 	configuredSet := map[string]bool{}
 	if a.resolver != nil {
 		for _, name := range a.resolver.ConfiguredProviders() {
 			configuredSet[name] = true
 		}
+		// A decision provider is not in the resolver's chat list.
+		configuredSet[decisions.TypeSafeProvider] = a.resolver.Configured(decisions.TypeSafeProvider)
 	}
 
 	var configured, notConfigured []providerRow
@@ -171,7 +174,7 @@ func (a *App) providersView() string {
 
 	counter := fmt.Sprintf("%d/%d", a.providersState.cursor+1, max(1, a.providersRowCount()))
 	if a.providersState.filter != "" {
-		counter += fmt.Sprintf(" (of %d)", len(a.providerNames()))
+		counter += fmt.Sprintf(" (of %d)", len(a.providerViewNames()))
 	}
 	b.WriteString(components.MutedStyle.Render(counter) + "\n\n")
 
@@ -265,6 +268,9 @@ func (a *App) providersView() string {
 
 func (a *App) renderProviderRow(name string, selected bool) string {
 	var glyph, status string
+	if name == decisions.TypeSafeProvider {
+		return a.renderTypeSafeRow(selected)
+	}
 	cfg, _ := run.Prepare("", name, credentialSourceOf(a.resolver))
 	d, ok := provider.Lookup(name)
 	if ok {
@@ -1388,4 +1394,30 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// providerViewNames is the providers view's list: the chat providers plus the
+// hosted decision provider, which is configured here (its key) and chosen as
+// a classifier under kind jev, never as a chat model.
+func (a *App) providerViewNames() []string {
+	names := a.providerNames()
+	n := len(provider.Names())
+	out := append([]string{}, names[:n]...)
+	out = append(out, decisions.TypeSafeProvider)
+	return append(out, names[n:]...)
+}
+
+// renderTypeSafeRow is TypeSafe's master-list row: a decision provider with a
+// key, no model catalogue.
+func (a *App) renderTypeSafeRow(selected bool) string {
+	glyph := "○"
+	if a.resolver != nil && a.resolver.Configured(decisions.TypeSafeProvider) {
+		glyph = "●"
+	}
+	name := decisions.TypeSafeProvider
+	nameStr := components.MutedStyle.Render(name)
+	if selected {
+		nameStr = components.EmphStyle.Render(name)
+	}
+	return components.Cursor(selected) + fmt.Sprintf("%s %-16s %-12s %s", glyph, nameStr, components.MutedStyle.Render("decisions"), components.MutedStyle.Render("classifier only"))
 }

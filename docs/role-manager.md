@@ -402,8 +402,9 @@ answers whatever the backend hands off.
 **TypeSafe.** A built-in, classifier-only provider for TypeSafe's hosted
 native API. The address is fixed (`https://api.typesafe.ai`), so the key can
 only ever be sent there, in the `Authorization` header; redirects are refused.
-The key is required and comes from `TYPESAFE_API_KEY` (or the credential
-store). It is never routed through a firewall and never offered for a chat
+The key is required and comes from `TYPESAFE_API_KEY` or the credential
+store. It is listed in the providers view (`/providers`, marked `decisions ·
+classifier only`) so its key can be set there like any provider's. It is never routed through a firewall and never offered for a chat
 role. Live check:
 `BELAI_TYPESAFE_LIVE=1 TYPESAFE_API_KEY=… go test ./internal/decisions -run TypeSafeLive -v`.
 
