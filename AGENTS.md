@@ -224,6 +224,21 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   classifier, never after — a verdict that cannot change the outcome is a
   request nobody asked for and sends the content anyway. Sanitising is not
   part of the switch and always runs.
+- **Jev relevance jobs narrow or reorder and never approve.** The jobs in
+  [docs/jev-jobs.md](docs/jev-jobs.md) work inside the surface the mode already
+  allows; permissions, hooks, the ask gate, the classifier and the sandbox still
+  apply to what they produce. Their input is harness facts and `DecisionText`
+  only, never file contents, attachment bytes or tool output. An unavailable
+  backend, an unanswered item or an answer outside 0 to 1 is *unknown*, and the
+  job falls back to the ordinary behaviour, never to a chat model. Each job is a
+  `jev.jobs.<job>` switch that defaults on, runs only with a decision backend
+  configured, and that a project layer may turn off but never on. A `Bash` call
+  is replaced by a builtin only when the command is one plain command, no
+  deny rule matches it, exactly one shortlisted builtin rates at or above 0.95,
+  the fast model's arguments pass the tool's schema and appear in the command,
+  and the builtin is allowed and not denied; the provider still receives one
+  result for the Bash call id, the model is told in the result, and the result
+  is classified as Bash output would be.
 - **Tool-call mismatch defaults to abort.** Stripping or ignoring mismatches
   requires explicit user opt-in.
 - **Recovery subagent authority is bounded.** The recovery subagent sees the

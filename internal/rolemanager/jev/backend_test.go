@@ -2,6 +2,7 @@ package jev
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/vulnetix/belai/internal/decisions"
@@ -12,11 +13,14 @@ import (
 type fakeDecider struct {
 	backend decisions.Backend
 	answer  func(decisions.Request) (map[string]decisions.Answer, error)
+	mu      sync.Mutex
 	reqs    []decisions.Request
 }
 
 func (f *fakeDecider) Decide(_ context.Context, r decisions.Request) (decisions.Result, error) {
+	f.mu.Lock()
 	f.reqs = append(f.reqs, r)
+	f.mu.Unlock()
 	a, err := f.answer(r)
 	return decisions.Result{Answers: a}, err
 }

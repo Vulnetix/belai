@@ -132,6 +132,8 @@ type Client struct {
 	// backend, when set, replaces the OpenRouter Decisions call: a
 	// self-hosted systemone server or the local decision model.
 	backend decisions.Decider
+	// cache remembers relevance scores for the session (see Score).
+	cache *ScoreCache
 }
 
 // NewWith builds a Jev client over any decision backend. The questions and
