@@ -128,14 +128,41 @@ type LaunchOptions struct {
 	Deadline time.Duration // health-check timeout; zero uses 30s
 	HFToken  string        // passed to the child environment, never argv
 	Registry *activity.Registry
+	Label    string // activity label; empty uses the binary name
 	Pidfile  string
 	OnLine   func(string) // optional sink for stdout/stderr lines
+	// OnPort, when set, is told the port a bind retry moved the server to,
+	// so the caller can persist the address it actually answers on.
+	OnPort func(port int)
 }
 
-// Launch starts the server and waits for {baseURL}/v1/models to answer. It
-// uses process groups, tees llama-server's output, registers the process in
-// the activity registry, and returns a stop function that SIGTERMs the group
-// then SIGKILLs after a short grace period.
+// LaunchError is a launch that failed with something to say about why: the
+// server exited early (ExitCode >= 0) or never became healthy (ExitCode -1).
+// Class is ClassifyLog of the captured output, so a caller can offer a fix
+// without parsing the text itself.
+type LaunchError struct {
+	ExitCode int
+	Output   string
+	Class    LogClass
+	Msg      string
+}
+
+func (e *LaunchError) Error() string {
+	if e.Output == "" {
+		return e.Msg
+	}
+	return e.Msg + "\n" + e.Output
+}
+
+// Launch starts the server and waits for it to report ready. It uses process
+// groups, runs the server with the scrubbed environment, tees its output,
+// registers the process in the activity registry, and returns a stop function
+// that SIGTERMs the group then SIGKILLs after a short grace period.
+//
+// ctx bounds the startup only: cancelling it before the server is healthy
+// stops the server, but a server that became healthy outlives ctx and runs
+// until stop is called. A server that exits during startup is reported at
+// once as a *LaunchError rather than after the whole deadline.
 //
 // If the server fails to bind because its port is already in use, Launch
 // retries up to three times with a freshly allocated port. This covers the
@@ -160,6 +187,9 @@ func Launch(ctx context.Context, bin Binary, args []string, baseURL string, opts
 			if opts.Pidfile != "" {
 				_ = os.Remove(opts.Pidfile)
 			}
+			if opts.OnPort != nil {
+				opts.OnPort(port)
+			}
 		}
 
 		stop, healthy, addrInUse, err := tryLaunch(ctx, bin, args, baseURL, opts)
@@ -180,14 +210,23 @@ func Launch(ctx context.Context, bin Binary, args []string, baseURL string, opts
 }
 
 func tryLaunch(ctx context.Context, bin Binary, args []string, baseURL string, opts LaunchOptions) (stop func() error, healthy, addrInUse bool, err error) {
-	cmd := exec.CommandContext(ctx, bin.Path, args...)
+	// exec.Command, not CommandContext: the context bounds the startup only.
+	// A context-bound command would be killed (with its whole process group)
+	// the moment the caller's startup context is cancelled, which for a
+	// successful launch is right after this function returns.
+	cmd := exec.Command(bin.Path, args...)
 	proc.SetProcessGroup(cmd)
+	cmd.Cancel = nil
 
+	label := opts.Label
+	if label == "" {
+		label = bin.Name
+	}
 	var handle *activity.Handle
 	if opts.Registry != nil {
 		handle = opts.Registry.Add(activity.Activity{
 			Kind:  activity.KindShell,
-			Label: bin.Name,
+			Label: label,
 			Argv:  append([]string{bin.Path}, args...),
 			State: activity.StateRunning,
 		}, func() {
@@ -197,8 +236,12 @@ func tryLaunch(ctx context.Context, bin Binary, args []string, baseURL string, o
 		})
 	}
 
+	// The server never sees provider keys or Belai configuration. The
+	// Hugging Face token is added back only when the caller passes one (the
+	// -hf download path); a -m launch needs none.
+	cmd.Env = proc.ScrubbedEnv()
 	if opts.HFToken != "" {
-		cmd.Env = append(os.Environ(), "HF_TOKEN="+opts.HFToken)
+		cmd.Env = append(cmd.Env, "HF_TOKEN="+opts.HFToken)
 	}
 
 	tee := proc.NewLineTee(0, opts.OnLine)
@@ -209,7 +252,7 @@ func tryLaunch(ctx context.Context, bin Binary, args []string, baseURL string, o
 		if handle != nil {
 			handle.Finish(0, false, err)
 		}
-		return nil, false, isAddrInUse(err.Error()), fmt.Errorf("start llama-server: %w", err)
+		return nil, false, isAddrInUse(err.Error()), fmt.Errorf("start %s: %w", bin.Name, err)
 	}
 
 	pid := cmd.Process.Pid
@@ -217,27 +260,72 @@ func tryLaunch(ctx context.Context, bin Binary, args []string, baseURL string, o
 		_ = os.WriteFile(opts.Pidfile, []byte(strconv.Itoa(pid)), 0o600)
 	}
 
-	stop = makeStop(cmd, handle, opts.Pidfile)
+	// One goroutine owns Wait for the life of the process, so an early exit
+	// is seen during startup and stop never waits twice.
+	exited := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(exited)
+	}()
+	stop = makeStop(cmd, exited, handle, opts.Pidfile)
 
-	deadline := time.Now().Add(opts.Deadline)
-	for time.Now().Before(deadline) {
-		if ProbeRunning(ctx, []string{baseURL}) == baseURL {
+	deadline := time.NewTimer(opts.Deadline)
+	defer deadline.Stop()
+	tick := time.NewTicker(250 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		if serverReady(ctx, baseURL) {
 			return stop, true, false, nil
 		}
-		tee.Flush()
-		if output := tee.Content(); isAddrInUse(output) {
-			return stop, false, true, fmt.Errorf("llama-server could not bind: %s", output)
-		}
 		select {
+		case <-exited:
+			tee.Flush()
+			output := tee.Content()
+			code := -1
+			if cmd.ProcessState != nil {
+				code = cmd.ProcessState.ExitCode()
+			}
+			return stop, false, isAddrInUse(output), &LaunchError{
+				ExitCode: code, Output: output, Class: ClassifyLog(output),
+				Msg: fmt.Sprintf("%s exited during startup (exit code %d)", bin.Name, code),
+			}
 		case <-ctx.Done():
 			return stop, false, false, ctx.Err()
-		case <-time.After(250 * time.Millisecond):
+		case <-deadline.C:
+			tee.Flush()
+			output := tee.Content()
+			return stop, false, isAddrInUse(output), &LaunchError{
+				ExitCode: -1, Output: output, Class: ClassifyLog(output),
+				Msg: fmt.Sprintf("local server did not become healthy at %s within %s", baseURL, opts.Deadline),
+			}
+		case <-tick.C:
+			tee.Flush()
+			if output := tee.Content(); isAddrInUse(output) {
+				return stop, false, true, fmt.Errorf("%s could not bind: %s", bin.Name, output)
+			}
 		}
 	}
+}
 
-	tee.Flush()
-	output := tee.Content()
-	return stop, false, isAddrInUse(output), fmt.Errorf("local server did not become healthy at %s\n%s", baseURL, output)
+// serverReady reports whether the server at baseURL is ready to answer.
+// llama-server answers /health with 503 while the model is still loading and
+// 200 once it can serve, so a 503 there is "not yet" even if /v1/models
+// already answers. Servers without /health fall back to the /v1/models probe.
+func serverReady(ctx context.Context, baseURL string) bool {
+	root := strings.TrimSuffix(strings.TrimRight(baseURL, "/"), "/v1")
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, root+"/health", nil)
+	if err == nil {
+		if resp, err := httpclient.Default().Do(req); err == nil {
+			resp.Body.Close()
+			switch resp.StatusCode {
+			case http.StatusOK:
+				return true
+			case http.StatusServiceUnavailable:
+				return false
+			}
+		}
+	}
+	return ProbeRunning(ctx, []string{baseURL}) == baseURL
 }
 
 // replacePortInArgs returns a copy of args with the value following --port

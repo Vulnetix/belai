@@ -7,19 +7,30 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/vulnetix/belai/internal/proc"
 )
 
 // HFBinary returns the path to the first Hugging Face CLI it finds: the hf
 // binary, then huggingface-cli. The boolean reports whether either was found.
+// A binary is accepted only when its help text names Hugging Face, because
+// another program called "hf" would otherwise be handed download arguments.
 func HFBinary() (string, bool) {
 	for _, name := range []string{"hf", "huggingface-cli"} {
-		if p, err := exec.LookPath(name); err == nil {
+		if p, err := exec.LookPath(name); err == nil && isHFCLI(p) {
 			return p, true
 		}
 	}
 	return "", false
+}
+
+func isHFCLI(p string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, _ := exec.CommandContext(ctx, p, "--help").CombinedOutput()
+	lower := strings.ToLower(string(out))
+	return strings.Contains(lower, "hugging face") || strings.Contains(lower, "huggingface")
 }
 
 // CachedModel is one GGUF discovered in the Hugging Face hub cache.
@@ -52,7 +63,10 @@ func HFDownload(ctx context.Context, binary, repo, quant, token string, sink fun
 
 	cmd := exec.CommandContext(ctx, binary, args...)
 	proc.SetProcessGroup(cmd)
-	cmd.Env = append(os.Environ(), "HF_TOKEN="+token)
+	cmd.Env = proc.ScrubbedEnv()
+	if token != "" {
+		cmd.Env = append(cmd.Env, "HF_TOKEN="+token)
+	}
 
 	tee := proc.NewLineTee(0, func(line string) {
 		if sink != nil {
