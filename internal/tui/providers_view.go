@@ -1134,25 +1134,17 @@ func (a *App) assignProviderModelToClassifier(provider string) tea.Cmd {
 	if model == "" {
 		return nil
 	}
-	cls := a.settings.Classifier
-	if cls == nil {
-		cls = &config.ClassifierSettings{}
-	}
-	cls.Provider = provider
-	cls.Model = model
-	cls.Effort = "none"
-	if err := config.Mutate(config.ScopeProject, a.workdir, func(s *config.Settings) error {
-		s.Classifier = cls
-		return nil
-	}); err != nil {
-		a.providerDetailState.localReport = err.Error()
-		return nil
-	}
-	if err := a.reloadSettings(); err != nil {
-		a.providerDetailState.localReport = err.Error()
-		return nil
-	}
-	return a.refreshProvider()
+	// The assignment is a classifier selection like any other on /model: it
+	// is tested first and written to the project file only on a pass, and it
+	// writes only the fields it sets (never the merged view of other layers).
+	enter := a.push(viewModel)
+	a.modelState.classifierScope = "project"
+	test := a.stageClassifier("model", "classifier = "+provider+" · "+model, func(c *config.ClassifierSettings) {
+		c.Provider = provider
+		c.Model = model
+		c.Effort = "none"
+	})
+	return tea.Batch(enter, test)
 }
 
 func (a *App) handleProviderDetailServerKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1289,12 +1281,29 @@ func (a *App) providerDetailEndpointCommit() (tea.Model, tea.Cmd) {
 		st.localReport = fmt.Sprintf("invalid port %q", port)
 		return a, nil
 	}
-	d, ok := provider.Template(p.Kind)
-	if !ok {
-		st.localReport = fmt.Sprintf("unknown kind %q", p.Kind)
-		return a, nil
+	var baseURL string
+	if p.Kind == config.JevKind {
+		// A self-hosted Jev server has no chat template; its base URL is the
+		// bare origin, and the decision path stays on the profile.
+		if protocol == "" {
+			protocol = "http"
+		}
+		baseURL = protocol + "://" + host
+		if port != "" {
+			baseURL += ":" + port
+		}
+		if err := config.ValidJevURL(baseURL); err != nil {
+			st.localReport = err.Error()
+			return a, nil
+		}
+	} else {
+		d, ok := provider.Template(p.Kind)
+		if !ok {
+			st.localReport = fmt.Sprintf("unknown kind %q", p.Kind)
+			return a, nil
+		}
+		baseURL = d.BaseURLBuilder(map[string]string{"host": host, "port": port, "protocol": protocol})
 	}
-	baseURL := d.BaseURLBuilder(map[string]string{"host": host, "port": port, "protocol": protocol})
 	if display == "" {
 		display = name
 	}
