@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vulnetix/belai/internal/decisions"
 	"github.com/vulnetix/belai/internal/localinfer"
 	"github.com/vulnetix/belai/internal/run"
 	"github.com/vulnetix/belai/internal/wire"
@@ -326,3 +327,32 @@ func TestHFModelID(t *testing.T) {
 }
 
 var timeZero = func() (z time.Time) { return }()
+
+type refusingDecider struct{}
+
+func (refusingDecider) Decide(context.Context, decisions.Request) (decisions.Result, error) {
+	return decisions.Result{}, fmt.Errorf("jev decisions: HTTP 401: User not found.")
+}
+func (refusingDecider) Identity() string           { return "jev" }
+func (refusingDecider) Backend() decisions.Backend { return decisions.BackendOpenRouter }
+
+// A refused OpenRouter key fails a classifier selection and names where the
+// key came from; for a selection that picks no model (routing.kind) the same
+// probe is advisory, so the run passes with a warning.
+func TestOpenRouterProbeFailsOrWarns(t *testing.T) {
+	steps := Plan(Target{OpenRouterJev: refusingDecider{}, OpenRouterKeyFrom: "env $OPENROUTER_API_KEY"})
+	if !strings.Contains(steps[0].Name, "key from env $OPENROUTER_API_KEY") {
+		t.Fatalf("step name %q does not say where the key came from", steps[0].Name)
+	}
+	rep := Run(context.Background(), steps, nil, nil)
+	if rep.Passed {
+		t.Fatal("a refused key passed")
+	}
+	rep = Run(context.Background(), Plan(Target{OpenRouterJev: refusingDecider{}, OpenRouterAdvisory: true}), nil, nil)
+	if !rep.Passed || len(rep.Warnings()) == 0 {
+		t.Fatalf("advisory probe: passed=%v warnings=%v", rep.Passed, rep.Warnings())
+	}
+	if w := rep.Warnings()[0]; !strings.Contains(w.Outcome.Detail, "falls back to the work model") {
+		t.Fatalf("warning = %q", w.Outcome.Detail)
+	}
+}

@@ -211,8 +211,9 @@ func (a *App) classifierTarget(cand *config.ClassifierSettings) (modeltest.Targe
 		// which must answer the sentinel.
 		t.Chats = append(t.Chats, a.chatTarget("fallback", guard.Provider, guard.Model, "none", true))
 	case jev.IsDecisionsModel(guard.Provider, guard.Model):
-		key := guard.APIKey
+		key := strings.TrimSpace(guard.APIKey)
 		t.OpenRouterJev = jev.OpenRouterDecider(func() (string, error) { return key, nil })
+		t.OpenRouterKeyFrom = a.openRouterKeyOrigin(key)
 		t.Chats = append(t.Chats, a.chatTarget("fallback", a.cfg.Provider, a.cfg.Model, "none", true))
 	case needGuard:
 		ct := a.chatTarget("classifier", guard.Provider, guard.Model, "none", true)
@@ -295,9 +296,12 @@ func (a *App) stageRouting(role modelRole, rowKey, label string, fn func(*config
 				key := ""
 				if rc.JevToken != nil {
 					key, _ = rc.JevToken()
+					key = strings.TrimSpace(key)
 				}
 				if key != "" {
 					t.OpenRouterJev = jev.OpenRouterDecider(func() (string, error) { return key, nil })
+					t.OpenRouterKeyFrom = a.openRouterKeyOrigin(key)
+					t.OpenRouterAdvisory = true
 				} else {
 					noJev = true
 				}
@@ -742,3 +746,14 @@ var (
 	testModelTester   modelTester
 	testModelTestSync bool
 )
+
+// openRouterKeyOrigin names where the OpenRouter key a decision probe sends
+// came from ("env $OPENROUTER_API_KEY", "keychain", a file), or "" when the
+// stored key is not the one in use. Origins are harness text, never the key.
+func (a *App) openRouterKeyOrigin(key string) string {
+	v, origin, ok := a.credSource().Lookup("openrouter", "api_key")
+	if !ok || strings.TrimSpace(v) != key {
+		return ""
+	}
+	return origin
+}

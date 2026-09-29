@@ -202,6 +202,15 @@ type Target struct {
 	Decisions *run.DecisionsConfig
 	// OpenRouterJev is set when the classifier is OpenRouter's hosted Jev.
 	OpenRouterJev decisions.Decider
+	// OpenRouterKeyFrom names where the key OpenRouterJev sends came from
+	// (for example "env $OPENROUTER_API_KEY"), so a refused key says which
+	// one to fix. Never the key itself.
+	OpenRouterKeyFrom string
+	// OpenRouterAdvisory downgrades a failed OpenRouter probe to a warning.
+	// It is for a selection that picks no model (routing.kind), where the
+	// Jev router is optional: routed mode without a working one still runs,
+	// every use case falling back to the work model.
+	OpenRouterAdvisory bool
 }
 
 // Plan builds the steps for a target: chat models first, then phases, then
@@ -229,7 +238,15 @@ func Plan(t Target) []Step {
 		}
 	}
 	if t.OpenRouterJev != nil {
-		steps = append(steps, DeciderSteps("jev · openrouter", t.OpenRouterJev)...)
+		name := "jev · openrouter"
+		if t.OpenRouterKeyFrom != "" {
+			name += " (key from " + t.OpenRouterKeyFrom + ")"
+		}
+		js := DeciderSteps(name, t.OpenRouterJev)
+		if t.OpenRouterAdvisory {
+			js = Advisory(js)
+		}
+		steps = append(steps, js...)
 	}
 	return steps
 }
