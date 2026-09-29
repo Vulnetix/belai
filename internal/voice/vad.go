@@ -7,7 +7,7 @@ import "math"
 const (
 	frameLen       = 320 // 20 ms at 16 kHz
 	onsetFrames    = 3   // 60 ms of speech opens a segment
-	hangoverFrames = 35  // 700 ms of quiet closes it
+	hangoverFrames = 50  // 1 s of quiet closes it
 	preRollFrames  = 15  // 300 ms kept from before the onset
 	minSpeech      = 10  // 200 ms of speech at least, or the segment is noise
 	maxSegFrames   = 1250

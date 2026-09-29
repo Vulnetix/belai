@@ -122,8 +122,8 @@ a second can be missed; a short lead-in before speaking avoids it. After a
 release the microphone stays open for 300 ms so the last syllable is kept. A
 recording is capped at 28 seconds.
 
-In `listen` an utterance opens after 60 ms of speech and closes after 700 ms
-of quiet. A pause shorter than that stays inside one sentence.
+In `listen` an utterance opens after 60 ms of speech and closes after one second
+of quiet. A pause shorter than that stays inside one sentence; a longer one ends the utterance, and the next phrase is recognised on its own, so a very short fragment after a long pause can come out empty. `push_to_talk` records the whole phrase and has no such cut.
 
 ## When text appears
 

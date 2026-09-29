@@ -26,10 +26,10 @@ func TestSegmenterCutsAnUtteranceAtTheHangover(t *testing.T) {
 	if got := s.Feed(tone(ms(600), 0.3)); len(got) != 0 || !s.InSpeech() {
 		t.Fatalf("speech open: segments=%d inSpeech=%v", len(got), s.InSpeech())
 	}
-	if got := s.Feed(silence(ms(400))); len(got) != 0 {
-		t.Fatalf("a 400 ms pause split the utterance")
+	if got := s.Feed(silence(ms(600))); len(got) != 0 {
+		t.Fatalf("a 600 ms pause split the utterance")
 	}
-	got := s.Feed(silence(ms(400)))
+	got := s.Feed(silence(ms(600)))
 	if len(got) != 1 {
 		t.Fatalf("segments after the hangover: %d, want 1", len(got))
 	}
@@ -37,7 +37,7 @@ func TestSegmenterCutsAnUtteranceAtTheHangover(t *testing.T) {
 		t.Fatal("still in speech after the segment closed")
 	}
 	// 600 ms of speech, the pre-roll before it, and the hangover after it.
-	if n := len(got[0]); n < ms(600) || n > ms(1800) {
+	if n := len(got[0]); n < ms(600) || n > ms(2200) {
 		t.Fatalf("segment is %d samples", n)
 	}
 	if !HasSpeech(got[0]) {
@@ -48,7 +48,7 @@ func TestSegmenterCutsAnUtteranceAtTheHangover(t *testing.T) {
 func TestSegmenterKeepsAPauseInsideASentence(t *testing.T) {
 	s := NewSegmenter()
 	var all [][]float32
-	for _, chunk := range [][]int16{tone(ms(400), 0.3), silence(ms(300)), tone(ms(400), 0.3), silence(ms(900))} {
+	for _, chunk := range [][]int16{tone(ms(400), 0.3), silence(ms(300)), tone(ms(400), 0.3), silence(ms(1200))} {
 		all = append(all, s.Feed(chunk)...)
 	}
 	if len(all) != 1 {
@@ -75,7 +75,7 @@ func TestSegmenterIgnoresQuietAndBriefNoise(t *testing.T) {
 
 func TestSegmenterHandlesOddChunkSizes(t *testing.T) {
 	s := NewSegmenter()
-	audio := append(append(silence(ms(200)), tone(ms(500), 0.3)...), silence(ms(1000))...)
+	audio := append(append(silence(ms(200)), tone(ms(500), 0.3)...), silence(ms(1200))...)
 	var got [][]float32
 	for i := 0; i < len(audio); i += 137 {
 		end := min(i+137, len(audio))
