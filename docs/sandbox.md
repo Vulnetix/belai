@@ -98,6 +98,9 @@ asks you rather than retrying blindly.
   your browser.
 - MCP stdio servers run in the sandbox only when their settings say
   `sandbox: true` (see [MCP servers](mcp.md)).
+- The microphone helper behind [voice input](voice.md) is started by Belai
+  itself, outside the sandbox, and only from the voice engine. A command inside
+  the sandbox sees a minimal device tree, so it cannot record audio.
 - The sandbox is a boundary for the commands Belai runs. It is not a
   substitute for running Belai itself in a container.
 

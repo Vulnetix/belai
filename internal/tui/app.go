@@ -246,6 +246,7 @@ type App struct {
 
 	// mode classification (optional; nil skips auto-detection)
 	classifier rolemanager.Classifier
+	voice      voiceState // speech input to the composer (docs/voice.md)
 	cache      *rolemanager.Cache
 	namedAgent string
 	// agentExplicit marks an agent the user engaged by hand (picker, /agent,
@@ -1191,6 +1192,10 @@ func (a *App) Init() tea.Cmd {
 	}
 	if a.procManager != nil {
 		cmds = append(cmds, a.watchProcessEvents())
+	}
+	// Voice comes up only on a real run whose settings turn it on.
+	if cmd := a.voiceInit(); cmd != nil {
+		cmds = append(cmds, cmd)
 	}
 	if a.initCmd != nil {
 		cmds = append(cmds, a.initCmd)
@@ -2151,6 +2156,19 @@ func (a *App) syncPlanMode() {
 
 // Update implements tea.Model.
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	model, cmd := a.update(msg)
+	// Voice hears only while the composer can take text, so readiness is
+	// re-read after every message, not on a timer.
+	if vc := a.syncVoice(); vc != nil {
+		cmd = tea.Batch(cmd, vc)
+	}
+	return model, cmd
+}
+
+func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if cmd, ok := a.handleVoiceMsg(msg); ok {
+		return a, cmd
+	}
 	if cmd, ok := a.handleGettingStartedMsg(msg); ok {
 		return a, cmd
 	}
@@ -4345,6 +4363,13 @@ func (a *App) renderComposer() string {
 			meta = "⏎ overwrite · d delete · esc cancel"
 		}
 	}
+	// Voice input shows its state on the chat composer only, so the chip is
+	// never drawn on another view's text field.
+	if a.view == viewChat && !a.promptAction && !a.editor.Masked {
+		if chip := a.voiceTitleChip(); chip != "" {
+			title += " " + chip
+		}
+	}
 	return components.Panel{
 		Title:  title,
 		Meta:   meta,
@@ -5145,6 +5170,7 @@ func (a *App) refreshFooter() {
 	a.footer.Model = run.WireModel(a.cfg.Provider, a.cfg.Model)
 	a.footer.RoutedModels = routedModelCount(a.cfg)
 	a.footer.RC = a.rcFooterLabel()
+	a.footer.Voice, a.footer.VoiceOn = a.voiceFooter()
 	now := time.Now()
 	run.SetPlanLimits(a.settings.PlanLimitsEnabled())
 	a.footer.Budget = a.budgetGauge(now)

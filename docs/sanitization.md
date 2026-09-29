@@ -18,6 +18,7 @@ the sanitiser sits in the tool-result pipeline.
 | --- | --- | --- | --- |
 | Delimiter markup in any text | `internal/sanitize` | `Sanitize` | Repairs (removes the tag) |
 | Free text for a model or transcript | `internal/sanitize` | `Text`, `TextN` | Repairs |
+| Dictated speech, before and after the `voice_cleanup` role | `internal/sanitize` | `Text` | Repairs |
 | One line of UI, log or notification text | `internal/sanitize` | `Line`, `Clip` | Repairs |
 | Identifier or label | `internal/sanitize` | `Ident` | Repairs |
 | State for a decision backend (Jev) | `internal/sanitize` | `ForDecision` (returns `DecisionText`) | Repairs |

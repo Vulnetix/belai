@@ -46,7 +46,7 @@ For contributors. Everything the rest of belai calls is here.
 | `New` | starts an `Engine`; nothing runs until `SetEnabled(true)` |
 | `Engine.SetEnabled`, `Engine.SetReady`, `Engine.SetMode` | turn voice on or off, say whether the composer can take text, switch mode |
 | `Engine.PTTDown`, `Engine.PTTUp` | begin and end a push-to-talk recording |
-| `Engine.Events`, `Engine.State`, `Engine.Close` | state changes, transcripts and errors; the current state; shutdown |
+| `Engine.Events`, `Engine.State`, `Engine.Done`, `Engine.Close` | state changes, transcripts and errors; the current state; closed when the engine stops; shutdown |
 | `NewExecSource`, `ExecSource.Start`, `ExecSource.Name` | pick the capture helper, start it, name it |
 | `NewSegmenter`, `Segmenter.Feed`, `Segmenter.Flush`, `Segmenter.Reset`, `Segmenter.InSpeech`, `HasSpeech` | utterance cutting and the speech gate |
 | `ModelPath`, `Ensure`, `Verify` | find, fetch and check the model file |
@@ -82,9 +82,12 @@ Fetching follows the same rules as the local decision models:
 1. `FindModelFile` looks in `$BELAI_MODELS_DIR` (default
    `<user cache>/belai/models`), the Hugging Face hub cache and the llama.cpp
    cache. A file found there is used with no network call.
-2. Otherwise `RemoteInfo` asks Hugging Face for the size and SHA-256 and
-   belai asks you to confirm the download, showing the size and the
-   destination. Declining downloads nothing and leaves voice off.
+2. Otherwise belai downloads nothing on its own. Turning voice on (`/voice on`,
+   the setting, or the `/settings` row) prints the file name, the size and
+   the destination and stops. Running `/voice download` is the confirmation:
+   `Ensure` asks Hugging Face (`RemoteInfo`) for the size and SHA-256 and
+   fetches the file. Once it arrives, voice starts if you had asked for it.
+   Without the command, voice stays off and nothing else is affected.
 3. `DownloadFile` resumes a partial `.part` file, checks the size and the
    SHA-256 Hugging Face reports, removes the file on a mismatch and tries once
    more. A Hugging Face token, when set, goes only to Hugging Face.
@@ -141,29 +144,42 @@ A running turn does not make the composer unavailable, because typing during
 a turn steers it. Dictated text is then steering text, and with
 `delivery: submit` it steers the turn.
 
-A transcript that finishes in the instant the composer stops being ready
-waits in a one-slot queue and is inserted when the composer is ready again. A
-newer transcript replaces an older one that is still waiting.
+A transcript that finishes in the instant the composer stops being ready is
+held and inserted when the composer is ready again. Transcripts held together
+are joined in the order they were spoken, up to 4,000 characters (the oldest
+words are dropped past that). Transcripts waiting for the cleanup pass are
+handled one at a time, in order, and at most eight wait.
 
-Text is inserted at the cursor. With `delivery: submit` it is inserted and
+Text is inserted at the cursor, with a space added when the text before the
+cursor does not end in whitespace. With `delivery: submit` it is inserted and
 then sent through the same path as pressing Enter, so it takes the ordinary
-prompt admission. Dictated text is never sent any other way.
+prompt admission (with no agent engaged that path opens the agent picker, as
+Enter does). Dictated text is never sent any other way.
+
+Submit never fires when the composer would then hold text that runs
+something: a line that starts with `/` (a command), a line that starts with
+`!` (a shell command), or an `@path` (a file attachment). The text is still
+inserted, belai says why it was not sent, and you press Enter yourself.
 
 ## The listening indicator
 
-A chip in the footer and the composer frame shows the state:
+A `voice:` switch in the footer and a chip in the composer's title show the
+state. The footer dot is filled while the microphone is open or work is
+running, and hollow otherwise. Nothing is shown while voice is off.
 
-| Chip | Meaning |
-| --- | --- |
-| `○ voice off` | voice is off (shown only while enabled once this session) |
-| `… voice loading` | the model is loading |
-| `○ paused` | the composer is unavailable, the microphone is closed |
-| `○ push to talk` | armed; the microphone is closed until you press the key |
-| `● listening` | the microphone is open and waiting for speech |
-| `● hearing` | speech detected, or the key is held |
-| `… transcribing` | recognition or cleanup is running |
+| State | Footer | Composer chip | Meaning |
+| --- | --- | --- | --- |
+| downloading | `○ voice: downloading` | `○ downloading` | the model is being fetched |
+| loading | `○ voice: loading` | `○ loading` | the model is being read into memory |
+| paused | `○ voice: paused` | `○ paused` | the composer is unavailable and the microphone is closed |
+| push to talk | `○ voice: push to talk · f11` | `○ push to talk · f11` | armed; the microphone is closed until you press the key |
+| muted | `○ voice: muted` | `○ muted` | listen mode, silenced with the key |
+| listening | `● voice: listening` | `● listening` | the microphone is open and waiting for speech |
+| hearing | `● voice: hearing` | `● hearing` | speech detected, or the key is held |
+| transcribing | `● voice: transcribing` | `● transcribing` | recognition or cleanup is running |
 
-The footer keeps its three-line height whatever the chip says.
+The composer chip appears on the chat composer only, never on another
+screen's text field. The footer keeps its three-line height whatever it says.
 
 ## Cleanup
 
@@ -235,31 +251,40 @@ Voice is a per-user preference, so the whole key is ignored in a project's
 `.vulnetix/settings.json`. Set it in your global `settings.json`, or with
 `/settings` and `/voice`.
 
+`/settings` has four rows, all written to the global file: `voice input`
+(`enabled`), `voice mode`, `voice delivery` and `voice cleanup`. Turning
+`voice input` on or off, or changing the mode, takes effect at once; delivery
+and cleanup apply from the next transcript. `x` returns a row to its default.
+`key` and `device` are set in the file.
+
 ## Commands
 
 | Command | Effect |
 | --- | --- |
-| `/voice` or `/voice status` | state, mode, delivery, helper, model and what is missing |
-| `/voice on` | turn voice on; offers the model download the first time |
+| `/voice` or `/voice status` | state, mode, delivery, cleanup, key, capture helper and whether the model is on disk |
+| `/voice on` | turn voice on; with no model on disk it shows the offer and waits |
 | `/voice off` | turn voice off and close the microphone |
+| `/voice download` | fetch the speech model, after you have seen its size and destination |
 | `/voice push` / `/voice listen` | choose the mode |
 | `/voice insert` / `/voice submit` | choose the delivery |
 | `/voice cleanup on` / `/voice cleanup off` | switch the cleanup pass |
 
-The commands change the running session and write the setting to your global
-`settings.json`.
+Each command that changes a setting writes it to your global `settings.json`
+and applies to the running session. Any other argument prints the usage line.
 
 ## Limitations
 
 - English only.
 - A capture helper must be installed; belai does not bundle one.
-- Recognition runs on the CPU, single-threaded per phrase and spread across
-  cores. A short phrase takes a fraction of a second on a laptop; a
-  30-second recording takes a few seconds.
+- Recognition runs on the CPU, spread across the cores. A phrase of two to
+  five seconds takes a fraction of a second on a laptop; a 30-second
+  recording takes a few seconds. Longer audio is recognised in 30-second
+  windows.
 - The always-listening gate is an energy detector. A loud room can hold it
   open; a quiet voice below about -38 dBFS is not heard.
 - Speech inside a terminal running over SSH uses the remote machine's
   microphone, which is usually none.
+- Voice runs only in the interactive TUI, never in headless runs or over ACP.
 
 ## Edge cases
 
@@ -267,13 +292,20 @@ The commands change the running session and write the setting to your global
   install.
 - The helper exits or the device is busy: voice turns off with the helper's
   own message. It is not restarted in a loop; turn it on again to retry.
-- The model download is declined, fails or fails its checksum: voice stays
-  off with the reason, and nothing else is affected.
+- The model is missing: `/voice on` shows the offer and voice stays off until
+  `/voice download` finishes. A failed or checksum-failing download says why,
+  and nothing else is affected.
 - Pressing the key while the composer is unavailable does nothing.
+- Losing the composer while the key is held ends that recording without
+  recognising it.
 - Recognition falling more than four phrases behind drops the newest and says
   so.
 - A phrase that recognises to nothing (silence, noise, a sound annotation)
   inserts nothing and shows no error.
 - A repeat-decoding loop is cut at the first repetition.
+- A failed, empty or runaway cleanup inserts the raw transcript.
+- Dictation that would start with `/` or `!`, or holds an `@path`, is inserted
+  but never sent by `delivery: submit`.
 - Changing mode at runtime closes the microphone and drops audio in progress.
+- Turning voice off drops held and queued dictation.
 - Quitting closes the microphone and stops the helper's process group.

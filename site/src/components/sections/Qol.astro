@@ -9,7 +9,7 @@ import footerShot from '../../assets/shots/footer.svg';
 import roleManagerShot from '../../assets/shots/role-manager.svg';
 
 const sealText =
-  'Quality of life: smaller features you would otherwise add through a skills.md. First-run trust gate, prompt library, one composer history for prompts and commands, repo map, work-discipline prompt section, identity block, capability auth probes, diff in the approval prompt, a todo panel that only trusts assistant text, sessions, Markdown session export, opt-in per-goal auto-commit, /settings with provenance, no alt bindings ever, /help guarded by a test, caveman mode, per-project session toggles, classifier verdicts in the internal-work feed, a shell panel for !cmd with the raw output, transcript rows stamped when they happen with durations, token budgets per model in the footer, oversized tool output kept out of the context with ReadResult to read the rest, WebFetch that answers a question instead of returning the page, desktop notifications, /skills, /plugin, /mcp and /sandbox, and a self-update that stays in its asset family.';
+  'Quality of life: smaller features you would otherwise add through a skills.md. First-run trust gate, prompt library, one composer history for prompts and commands, repo map, work-discipline prompt section, identity block, capability auth probes, diff in the approval prompt, a todo panel that only trusts assistant text, sessions, Markdown session export, opt-in per-goal auto-commit, /settings with provenance, no alt bindings ever, /help guarded by a test, caveman mode, per-project session toggles, classifier verdicts in the internal-work feed, a shell panel for !cmd with the raw output, transcript rows stamped when they happen with durations, token budgets per model in the footer, oversized tool output kept out of the context with ReadResult to read the rest, WebFetch that answers a question instead of returning the page, desktop notifications, voice input to the composer, /skills, /plugin, /mcp and /sandbox, and a self-update that stays in its asset family.';
 
 const groups = [
   {
@@ -32,6 +32,7 @@ const groups = [
       ['work-discipline prompt section', 'The system prompt tells the model to read the exact lines it will change, batch its reads, make the edits it is sure of first, and report what changed.'],
       ['identity block', 'Every system prompt names the harness, provider and model in use.'],
       ['no alt bindings', 'No shortcut uses the alt key, so terminals that capture alt do not swallow keystrokes.'],
+      ['voice input', 'Type /voice on, hold F11 and speak. A speech model written in pure Go runs inside Belai, a fast model tidies the wording, and the text lands in the composer while the composer is ready. Audio stays in memory on your machine, and the 32 MB model is a download you confirm and Belai checks against a pinned SHA-256.'],
       ['caveman mode', 'An optional voice that makes replies short and plain.'],
     ],
   },
