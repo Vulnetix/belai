@@ -15,7 +15,7 @@ The single-scroll marketing site at [belai.vulnetix.com](https://belai.vulnetix.
 rail (≥1120px). The content is full-width (no fixed max-width). Section order:
 
 hero · trust · classifier · sealed · beliefs · labs · modes · tools · diagnostics · permissions · agents & crews ·
-memory · processes · budgets · providers · routing · vulnetix · kanban · web sessions · sandbox · extend ·
+memory · processes · budgets · session intelligence · providers · routing · vulnetix · kanban · web sessions · sandbox · extend ·
 integrations · cli · qol · start · faq
 
 The agents section (`site/src/components/sections/Agents.astro`, rendered
@@ -27,6 +27,23 @@ profile. The step facts live in one `steps` array that feeds both the table
 and the cards. Keep the run truthful: it quotes the item history and draft
 PR of a real release.
 
+The session intelligence section (`site/src/components/sections/Intel.astro`,
+rendered from `Features.astro`, id `intel`) follows budgets. It opens with a
+working demo of the `f12` pane on an ink panel: four readouts (limit used,
+pace, trend, runway), the 5-hour and weekly limit bars, and a list whose tabs
+(`t`, `m`, `r`) and window arrows change what it shows, with short notes under
+it that explain each readout. After the demo come the footer in its four colours,
+a runway worked through with the numbers from the unit tests, a 7-day heatmap,
+the providers that report limits, and the three ways in. The glyph helpers, the
+demo data and the list markup live in `site/src/lib/intel.ts`, which the server
+render and the client script both import, so the first paint and every later
+state come from one place. Its rules mirror `internal/tui/components`
+(`fillBar`, `LimitBar`, `Sparkline`) and `site/scripts/intel.test.mjs` pins them
+the way the Go tests do: a marker shows only while the fill has not reached it,
+and every bar keeps its width. The rules the section states are R15 to R22 in
+[Token budgets](token-budgets.md#session-intelligence); change both together.
+Without JS the demo shows its first state (this week, timeline).
+
 The web sessions section (`site/src/components/sections/WebSessions.astro`)
 covers following and answering a session on the Vulnetix website.
 
@@ -36,7 +53,7 @@ doc under `docs/` on GitHub, so the site states the rule and the doc carries
 the edge cases.
 
 Interactive islands live in `site/src/components/ui/` (copy button, comparison
-table, shot carousel); everything else ships zero JS.
+table, shot carousel); the session intelligence demo carries a small inline script, and everything else ships zero JS.
 
 ## The sealed block
 
@@ -118,4 +135,4 @@ the link checker, then uploads and deploys the Pages artifact.
 ## Local workflow
 
 See the `# ---- Site ----` recipes in the `justfile`: `just site-dev`,
-`just site-build`, `just site-check`, `just shots`.
+`just site-build`, `just site-check` (the site script tests, the build and the link check), `just shots`.

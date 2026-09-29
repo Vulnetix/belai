@@ -3,14 +3,12 @@ import SealedSection from '../seal/SealedSection.astro';
 import Shot from '../ui/Shot.astro';
 import budgetsShot from '../../assets/shots/budgets.svg';
 import footerShot from '../../assets/shots/footer.svg';
-import intelShot from '../../assets/shots/intel.svg';
-import footerIntelShot from '../../assets/shots/footer-intel.svg';
 
 // Token budgets: three windows (session, day, month), the footer's three
 // colours, and what counts against a budget.
 
 const sealText =
-  "Token budgets: a global allowance per provider and model for the session, the local day and the local month. Every completed model call counts, classifier and role-manager calls included. The footer shows the selected model's budget right-aligned and cycles between them; teal while tokens last as long as the clock, amber when spend runs ahead of it, red when exhausted. Past sessions are imported from their transcripts once, so day and month totals cover every project. A budget only warns. Session intelligence reads the same ledger: plan limits with their reset times, pace, trend, runway, and today, week and 30 day totals. Its slot ends the footer cycle under every routing, with or without a budget, and f12 opens a pane with the details.";
+  "Token budgets: a global allowance per provider and model for the session, the local day and the local month. Every completed model call counts, classifier and role-manager calls included. The footer shows the selected model's budget right-aligned and cycles between them; teal while tokens last as long as the clock, amber when spend runs ahead of it, red when exhausted. Past sessions are imported from their transcripts once, so day and month totals cover every project. A budget only warns.";
 
 const windows = [
   {
@@ -53,22 +51,6 @@ const limits = [
   ['Set in your own settings', "Budgets are global. A repository's settings file cannot raise or remove them."],
   ['Counted once', 'A session is never counted twice, even when two belai windows import it at the same time.'],
   ['Warnings only', 'A call over budget still runs. Turn on ui.budget_warn for a warning line on every call while a budget is amber or red.'],
-];
-
-// Session intelligence: what the intel slot and pane show.
-const intelParts = [
-  ['Plan limits', 'The five hour and weekly allowances a provider reports, each with a bar, a marker for how much of the window has passed, and the time to the reset. API key limits show as tokens and requests per minute.'],
-  ['Pace', 'Tokens spent in the last 60 minutes. Comfortable means the allowance lasts past the reset, brisk means it runs out at least a quarter of the way to the reset, and hot means sooner.'],
-  ['Trend', 'Today against the average of the last seven days at the same time of day: easing, steady or rising.'],
-  ['Runway', 'How long the allowance lasts at this pace. When a provider reports no plan limit, a day or month budget stands in for it.'],
-  ['Totals', 'Today, this week and the last 30 days, each with tokens and sessions. Today is drawn as the last 24 hours in a sparkline.'],
-  ['Models and roles', 'Press m for the models of a window and r for this session by role, security checks included. Enter opens the full screen with a 7 day heatmap.'],
-];
-
-const intelNotes = [
-  ['Set in your own settings', 'ui.intel turns the slot, the tab and f12 off. intel.plan_limits, read from your own settings only, stops the reading of rate limit headers.'],
-  ['Numbers from the provider', 'A response header becomes a used share, a count and a reset time. A value that is not a number of the expected shape is dropped, and the pane is drawn from the ledger alone.'],
-  ['Older sessions', 'Transcripts record days but not hours. They count in the totals and the trend, and the heatmap marks their days as day totals.'],
 ];
 ---
 
@@ -197,59 +179,6 @@ const intelNotes = [
   <div class="mt-8 grid max-w-[1000px] gap-6">
     <Shot src={budgetsShot.src} alt="The token budgets screen with teal, amber and red budgets" caption="f1 → b, token budgets" />
     <Shot src={footerShot.src} alt="The status footer with an amber day budget on the right of the top line" caption="footer, amber day budget" />
-  </div>
-
-  <div class="mt-20 grid gap-6 lg:grid-cols-2 lg:items-end">
-    <h3 class="text-3xl font-bold tracking-tight text-vx-ink md:text-4xl">Session intelligence</h3>
-    <p class="text-vx-ink/80">
-      The footer cycle ends on an <code class="mono">intel</code> slot: today's tokens, the tightest plan
-      limit or the pace, and a bar with a marker for the reset, or a sparkline of the last 24 hours. It
-      shows under every routing and with or without a budget. In the last third of its turn a quiet
-      <code class="mono">f12</code> appears when the line has room.
-    </p>
-  </div>
-  <div class="mt-8 grid gap-8 lg:grid-cols-12">
-    <div class="min-w-0 lg:col-span-8">
-      <ol class="list-none p-0">
-        {intelParts.map(([what, detail]) => (
-          <li class="grid gap-x-4 gap-y-1 border-b border-vx-ink/20 py-3.5 text-sm last:border-b-0 md:grid-cols-[14rem_minmax(0,1fr)] md:text-[15px]">
-            <span class="mono font-semibold">{what}</span>
-            <span class="text-vx-ink/85">{detail}</span>
-          </li>
-        ))}
-      </ol>
-    </div>
-    <div class="min-w-0 lg:col-span-4">
-      <div class="rounded-xl bg-vx-ink p-5">
-        <p class="flex flex-wrap items-baseline gap-3 text-vx-cream">
-          <kbd class="mono rounded-md border border-b-[3px] border-vx-mint px-2 text-sm text-vx-mint">f12</kbd>
-          <span class="text-vx-cream/70">or</span>
-          <code class="mono text-vx-mint">/intel</code>
-          <span class="text-vx-cream/70">or</span>
-          <kbd class="mono rounded-md border border-b-[3px] border-vx-mint px-2 text-sm text-vx-mint">f1</kbd>
-          <span>then</span>
-          <kbd class="mono rounded-md border border-b-[3px] border-vx-mint px-2 text-sm text-vx-mint">i</kbd>
-        </p>
-        <p class="mt-3 text-sm text-vx-cream/75">
-          The pane is the intel tab of the runs panel. Left and right move between today, the week and
-          30 days.
-        </p>
-      </div>
-    </div>
-  </div>
-  <div class="mt-8 grid max-w-[1000px] gap-6">
-    <Shot src={intelShot.src} alt="The intel pane with a five hour and a weekly limit, pace, trend, runway and usage over time" caption="f12, session intelligence" />
-    <Shot src={footerIntelShot.src} alt="The status footer with the intel slot and the f12 hint on the right of the top line" caption="footer, intel slot" />
-  </div>
-  <div class="mt-10 grid border-t-2 border-vx-ink md:grid-cols-3">
-    {intelNotes.map(([title, body]) => (
-      <div class="border-b border-vx-ink/20 py-6 md:pr-8">
-        <h4 class="text-lg font-bold">{title}</h4>
-        <p class="mt-2 text-sm text-vx-ink/80">
-          {body.split(/(ui\.intel|intel\.plan_limits)/).map((p) => (p === 'ui.intel' || p === 'intel.plan_limits' ? <code class="mono">{p}</code> : p))}
-        </p>
-      </div>
-    ))}
   </div>
 
   <div class="mt-16 grid border-t-2 border-vx-ink md:grid-cols-3">

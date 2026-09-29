@@ -227,7 +227,7 @@ site-build:
 
 # Build the site, assert the custom domain survived, and check internal links.
 site-check:
-    cd site && yarn build && node scripts/check-links.mjs dist && test -f dist/CNAME && grep -qx 'belai.vulnetix.com' dist/CNAME
+    cd site && node --experimental-strip-types --test scripts/ && yarn build && node scripts/check-links.mjs dist && test -f dist/CNAME && grep -qx 'belai.vulnetix.com' dist/CNAME
 
 # Notify search engines that the sitemap changed. Google retired its sitemap
 # ping endpoint in 2023, so Bing (whose index also feeds DuckDuckGo/Yahoo) is
