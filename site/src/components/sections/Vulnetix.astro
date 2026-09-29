@@ -185,10 +185,15 @@ const parts = (s: string) => s.split(/(\bsca\b|\besc\b|belai:vulnetix-review|vul
           )}
           {i === 2 && (
             <svg viewBox="0 0 320 110" class="h-24 w-full text-vx-mint" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5">
-              <g class="text-vx-cream/30" stroke="currentColor">
+              <g class="text-vx-cream/60" stroke="currentColor">
                 <rect x="6" y="14" width="44" height="18" rx="4" />
                 <rect x="6" y="46" width="44" height="18" rx="4" />
                 <rect x="6" y="78" width="44" height="18" rx="4" />
+              </g>
+              <g font-family="Geist Mono, monospace" font-size="10" class="fill-vx-cream" stroke="none">
+                <text x="14" y="27">sca</text>
+                <text x="14" y="59">sast</text>
+                <text x="14" y="91">iac</text>
               </g>
               <path d="M50 23 C 80 23, 80 55, 104 55 M50 55 L104 55 M50 87 C 80 87, 80 55, 104 55" stroke-dasharray="3 4" />
               <circle cx="118" cy="55" r="13" class="fill-vx-sand-amber" stroke="none" />

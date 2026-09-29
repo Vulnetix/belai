@@ -6,7 +6,6 @@ import Ladder from '../ui/Ladder.astro';
 import Limits from '../ui/Limits.astro';
 import Shot from '../ui/Shot.astro';
 import permMerge from '../../assets/concepts/permission-merge.svg?raw';
-import guardSwitch from '../../assets/concepts/guardrails-switch.svg?raw';
 import approvalDiffShot from '../../assets/shots/approval-diff.svg';
 import permissionsShot from '../../assets/shots/permissions.svg';
 
@@ -87,19 +86,55 @@ const limits = [
   </div>
 
   <SubHead title="One switch for every surface">
-    The guardrails switch applies everywhere at once. <code class="mono">f3</code> turns it off, and a gold
-    chip in the footer says so until you turn it back on.
+    <code class="mono">f3</code> turns guardrails off for every surface at once, and a red{' '}
+    <code class="mono">guardrails: off</code> chip stays in the footer until you turn them back on. Tool output
+    is still sanitised either way; the switch decides whether the classifier is called.
   </SubHead>
-  <div class="mt-8 grid gap-8 lg:grid-cols-2 lg:items-center">
-    <ul class="m-0 grid list-none gap-2 p-0">
-      {surfaces.map((s, i) => (
-        <li class="flex items-center justify-between gap-3 rounded-xl border border-vx-ink px-4 py-3">
-          <span class="mono">{s}</span>
-          <span class="mono text-xs text-vx-ink/60">{String(i + 1).padStart(2, '0')}</span>
-        </li>
-      ))}
-    </ul>
-    <div class="rounded-xl border border-vx-ink p-2" aria-hidden="true"><Fragment set:html={guardSwitch} /></div>
+  <div class="mt-8 overflow-hidden rounded-xl border border-vx-ink bg-vx-bone/30 p-4 md:p-6">
+    <svg viewBox="0 0 960 360" class="h-auto w-full" fill="none" stroke="currentColor" stroke-width="1.5" role="img" aria-label="The guardrails switch flips between on and off. While it is on, every surface's output is sanitised and classified; while it is off, every surface's output is sanitised only, and the footer shows a red guardrails: off chip.">
+      <text x="40" y="44" font-family="Geist Mono, monospace" font-size="12" class="fill-vx-ink/60" stroke="none">GUARDRAILS</text>
+      <rect x="40" y="58" width="44" height="28" rx="6" class="fill-vx-cream" />
+      <text x="52" y="77" font-family="Geist Mono, monospace" font-size="13" fill="currentColor" stroke="none">f3</text>
+
+      <rect x="40" y="130" width="104" height="52" rx="26" class="gs-on fill-vx-mint" stroke="none" />
+      <rect x="40" y="130" width="104" height="52" rx="26" class="gs-off fill-vx-coral/15 stroke-vx-coral" />
+      <circle cx="118" cy="156" r="20" class="gs-knob fill-vx-cream" />
+      <text x="40" y="214" font-family="Geist, sans-serif" font-size="16" font-weight="700" class="gs-on" fill="currentColor" stroke="none">on</text>
+      <text x="40" y="214" font-family="Geist, sans-serif" font-size="16" font-weight="700" class="gs-off fill-[#B8332E]" stroke="none">off</text>
+
+      <rect x="24" y="278" width="220" height="44" rx="8" class="fill-tui-ink" stroke="none" />
+      <text x="40" y="305" font-family="Geist Mono, monospace" font-size="13" class="gs-on fill-tui-teal" stroke="none">● guardrails  ● ask</text>
+      <g class="gs-off">
+        <rect x="36" y="288" width="128" height="24" rx="4" class="fill-tui-danger" stroke="none" />
+        <text x="44" y="305" font-family="Geist Mono, monospace" font-size="12" class="fill-tui-ink" stroke="none">guardrails: off</text>
+        <text x="174" y="305" font-family="Geist Mono, monospace" font-size="12" class="fill-tui-teal" stroke="none">● ask</text>
+      </g>
+      <text x="24" y="342" font-family="Geist Mono, monospace" font-size="11" class="fill-vx-ink/60" stroke="none">the footer</text>
+
+      <g class="gs-on">
+        <path d="M144 156 H300 M300 56 V320 M300 56 H340 M300 122 H340 M300 188 H340 M300 254 H340 M300 320 H340" class="stroke-vx-mint-strong/35" />
+        <path d="M144 156 H300 M300 56 V320 M300 56 H340 M300 122 H340 M300 188 H340 M300 254 H340 M300 320 H340" class="gs-flow stroke-vx-mint-strong" stroke-width="2" stroke-dasharray="6 14" />
+      </g>
+      <path d="M144 156 H300 M300 56 V320 M300 56 H340 M300 122 H340 M300 188 H340 M300 254 H340 M300 320 H340" class="gs-off text-vx-ink/35" stroke="currentColor" stroke-dasharray="3 6" />
+
+      {surfaces.map((s, i) => {
+        const y = 32 + i * 66;
+        return (
+          <g>
+            <rect x="340" y={y} width="596" height="48" rx="10" class="fill-vx-cream" />
+            <text x="360" y={y + 30} font-family="Geist Mono, monospace" font-size="15" fill="currentColor" stroke="none">{s}</text>
+            <g class="gs-on">
+              <rect x="690" y={y + 9} width="232" height="30" rx="6" class="fill-vx-mint" stroke="none" />
+              <text x="704" y={y + 29} font-family="Geist Mono, monospace" font-size="13" class="fill-vx-ink" stroke="none">sanitised + classified</text>
+            </g>
+            <g class="gs-off">
+              <rect x="690" y={y + 9} width="232" height="30" rx="6" class="fill-vx-sand" stroke="none" />
+              <text x="704" y={y + 29} font-family="Geist Mono, monospace" font-size="13" class="fill-vx-ink" stroke="none">sanitised only</text>
+            </g>
+          </g>
+        );
+      })}
+    </svg>
   </div>
 
   <Limits items={limits} class="mt-16" />

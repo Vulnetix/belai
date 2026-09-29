@@ -150,6 +150,45 @@ body {
   color: var(--color-vx-mint);
 }
 
+/* The guardrails switch in the permissions section. One cycle: on, flip,
+   off, flip back. Every surface row uses the same timing, so each one
+   changes state at the moment the switch does. */
+.gs-on,
+.gs-off,
+.gs-knob,
+.gs-flow {
+  animation-duration: 8s;
+  animation-iteration-count: infinite;
+  animation-timing-function: var(--ease-brand);
+}
+
+.gs-on { animation-name: gs-on; }
+.gs-off { animation-name: gs-off; opacity: 0; }
+.gs-knob { animation-name: gs-knob; transform-box: fill-box; }
+.gs-flow { animation-name: gs-flow; animation-timing-function: linear; }
+
+@keyframes gs-on {
+  0%, 44% { opacity: 1; }
+  50%, 94% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes gs-off {
+  0%, 44% { opacity: 0; }
+  50%, 94% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes gs-knob {
+  0%, 44% { transform: translateX(0); }
+  50%, 94% { transform: translateX(-44px); }
+  100% { transform: translateX(0); }
+}
+
+@keyframes gs-flow {
+  to { stroke-dashoffset: -80; }
+}
+
 /* A light sweep over the egress check in the sealed-blocks section. */
 .seal-scan {
   position: absolute;
@@ -260,6 +299,15 @@ body {
   .seal-scan {
     display: none;
   }
+
+  /* The guardrails diagram holds still in its "on" state. */
+  .gs-on,
+  .gs-off,
+  .gs-knob,
+  .gs-flow {
+    animation: none;
+  }
+
 }
 
 /* ----------------------------------------------------------------------------
