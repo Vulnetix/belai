@@ -268,11 +268,16 @@ func (c *client) close() error {
 func diagnosticsToRows(d []Diagnostic, uri string) []Row {
 	rows := make([]Row, 0, len(d))
 	for _, diag := range d {
+		code := ""
+		if diag.Code != nil {
+			code = sanitizeSource(fmt.Sprint(diag.Code))
+		}
 		rows = append(rows, Row{
 			Severity: severityFrom(diag.Severity),
 			Line:     diag.Range.Start.Line + 1, // 1-indexed.
 			Col:      diag.Range.Start.Character + 1,
 			Source:   sanitizeSource(diag.Source),
+			Code:     code,
 			Message:  diag.Message,
 		})
 	}

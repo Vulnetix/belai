@@ -21,5 +21,12 @@ func (s *Session) diagnoseEdit(ctx context.Context, res tools.Result) string {
 	if err != nil {
 		return ""
 	}
-	return s.diag.Render(ctx, abs, body, s.pool)
+	block, rep := s.diag.RenderReport(ctx, abs, body, s.pool)
+	if note := s.triageDiagnostics(ctx, abs, rep); note != "" {
+		if block != "" {
+			block += "\n\n"
+		}
+		block += note
+	}
+	return block
 }

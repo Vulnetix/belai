@@ -36,6 +36,11 @@ type LSPSettings struct {
 	TimeoutMS int `json:"timeout_ms,omitempty"`
 	// MaxDiagnostics clamps the rendered rows. Default 10; range [1,50].
 	MaxDiagnostics int `json:"max_diagnostics,omitempty"`
+	// MaxRepairAttempts is how many edit passes on one file may leave errors
+	// before, with no better signal, the harness files a bug and tells the
+	// model to move on. Default 4; range [2,20]. It is the fallback for the
+	// lsp_triage Jev job, which decides sooner when a backend can.
+	MaxRepairAttempts int `json:"max_repair_attempts,omitempty"`
 }
 
 // LSPEnabled reports whether language-server diagnostics are enabled.
@@ -85,6 +90,15 @@ func (s Settings) LSPMaxDiagnosticsOr(def int) int {
 	return s.LSP.MaxDiagnostics
 }
 
+// LSPMaxRepairAttemptsOr returns lsp.max_repair_attempts clamped to [2,20], or
+// def when unset.
+func (s Settings) LSPMaxRepairAttemptsOr(def int) int {
+	if s.LSP == nil || s.LSP.MaxRepairAttempts == 0 {
+		return def
+	}
+	return min(max(s.LSP.MaxRepairAttempts, 2), 20)
+}
+
 // LSPServerFor returns the binary override for a language ID, or "".
 func (s Settings) LSPServerFor(id string) string {
 	if s.LSP == nil {
@@ -112,6 +126,9 @@ func (l *LSPSettings) merge(from *LSPSettings) {
 	if from.MaxDiagnostics != 0 {
 		l.MaxDiagnostics = from.MaxDiagnostics
 	}
+	if from.MaxRepairAttempts != 0 {
+		l.MaxRepairAttempts = from.MaxRepairAttempts
+	}
 	if len(from.Languages) > 0 {
 		if l.Languages == nil {
 			l.Languages = map[string]bool{}
@@ -136,7 +153,7 @@ func (l *LSPSettings) IsZero() bool {
 		return true
 	}
 	return l.Enabled == nil && l.Fallback == nil && l.ClassifyDiagnostics == nil &&
-		len(l.Languages) == 0 && len(l.Servers) == 0 && l.TimeoutMS == 0 && l.MaxDiagnostics == 0
+		len(l.Languages) == 0 && len(l.Servers) == 0 && l.TimeoutMS == 0 && l.MaxDiagnostics == 0 && l.MaxRepairAttempts == 0
 }
 
 // ValidateLSP validates LSP settings. An invalid value fails the whole resolve
@@ -150,6 +167,9 @@ func ValidateLSP(s Settings) error {
 	}
 	if s.LSP.MaxDiagnostics != 0 && (s.LSP.MaxDiagnostics < 1 || s.LSP.MaxDiagnostics > 50) {
 		return fmt.Errorf("lsp.max_diagnostics %d out of range [1,50]", s.LSP.MaxDiagnostics)
+	}
+	if s.LSP.MaxRepairAttempts != 0 && (s.LSP.MaxRepairAttempts < 2 || s.LSP.MaxRepairAttempts > 20) {
+		return fmt.Errorf("lsp.max_repair_attempts %d out of range [2,20]", s.LSP.MaxRepairAttempts)
 	}
 	known := map[string]bool{}
 	for _, id := range KnownLSPLanguages {

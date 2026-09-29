@@ -52,6 +52,7 @@ const (
 	EventPruneCompaction           Event = "prune_compaction"
 	EventToolSearch                Event = "tool_search"
 	EventToolSelect                Event = "tool_select"
+	EventLSPTriage                 Event = "lsp_triage"
 )
 
 // Level is the display granularity of the internal-work feed. Order matters:
@@ -361,6 +362,8 @@ func Describe(a Activity) (Description, bool) {
 		return toolSearchDescription(a), true
 	case EventToolSelect:
 		return toolSelectDescription(a), true
+	case EventLSPTriage:
+		return lspTriageDescription(a), true
 	case EventRouteFallback:
 		return routeFallbackDescription(a), true
 	}

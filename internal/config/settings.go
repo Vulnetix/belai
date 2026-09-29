@@ -1378,6 +1378,13 @@ func (s Settings) Override(proj Settings) Settings {
 				merged.MaxDiagnostics = min(merged.MaxDiagnostics, proj.LSP.MaxDiagnostics)
 			}
 		}
+		if proj.LSP.MaxRepairAttempts != 0 {
+			if merged.MaxRepairAttempts == 0 {
+				merged.MaxRepairAttempts = proj.LSP.MaxRepairAttempts
+			} else {
+				merged.MaxRepairAttempts = min(merged.MaxRepairAttempts, proj.LSP.MaxRepairAttempts)
+			}
+		}
 		if len(proj.LSP.Languages) > 0 {
 			if merged.Languages == nil {
 				merged.Languages = map[string]bool{}

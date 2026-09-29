@@ -68,7 +68,11 @@ type Row struct {
 	Line     int
 	Col      int
 	Source   string
-	Message  string
+	// Code is the server's diagnostic code ("E0308", "2304"), cleaned to
+	// identifier characters; it identifies a problem across edits when the line
+	// moves.
+	Code    string
+	Message string
 }
 
 // Report is the result of diagnosing one file.

@@ -264,3 +264,39 @@ func toolSelectDescription(a Activity) Description {
 	}
 	return d
 }
+
+// RecordLSPTriage emits the outcome of judging a file's remaining language
+// server errors: verdict "filed" (a board item was filed and the model told to
+// move on), "retry" (another pass is likely to help) or "unfiled" (a bug was
+// warranted but could not be filed). scorePct is the backend's rating as a
+// whole percent, or -1 when it did not answer and the pass count decided.
+// Counts only; never a path or a message.
+func RecordLSPTriage(verdict string, attempts, errors, scorePct int, model string, took time.Duration) {
+	recordTimed(EventLSPTriage, verdict, "", fmt.Sprintf("attempts=%d errors=%d score=%d", attempts, errors, scorePct), 0, model, took)
+}
+
+func lspTriageDescription(a Activity) Description {
+	n := func(k string) string {
+		if v := field(a.Detail, k); v != "" && isDigits(v) {
+			return v
+		}
+		return "?"
+	}
+	d := Description{
+		Summary: "Judged whether another edit would clear the language server errors",
+		Outcome: "likely to help after " + n("attempts") + " passes, let the model try again",
+		Tone:    ToneNeutral,
+		Levels:  LevelAll,
+	}
+	switch a.Verdict {
+	case "filed":
+		d.Outcome = "unlikely after " + n("attempts") + " passes, filed a board item and told the model to move on"
+		d.Tone = ToneCaution
+		d.Levels = LevelDecisions
+	case "unfiled":
+		d.Outcome = "unlikely, but the board item could not be filed"
+		d.Tone = ToneCaution
+		d.Levels = LevelDecisions
+	}
+	return d
+}

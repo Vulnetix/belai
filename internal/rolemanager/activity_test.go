@@ -42,6 +42,7 @@ var allEvents = []Event{
 	EventPruneCompaction,
 	EventToolSearch,
 	EventToolSelect,
+	EventLSPTriage,
 }
 
 func TestEveryEventHasDescribeOrSuppression(t *testing.T) {

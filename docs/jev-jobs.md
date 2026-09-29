@@ -54,6 +54,7 @@ prompt runs with it.
 | `prune_compaction` | Prunes tool calls and results by relevance before writing a summary | Shipped |
 | `tool_selection` | Preloads the tools and lists the skills a request needs | Shipped |
 | `tool_search` | Ranks `ToolSearch` matches with the backend and searches skills too | Shipped |
+| `lsp_triage` | Files a board bug when another edit is unlikely to clear language server errors | Shipped |
 | `option_order` | Puts the likeliest option first, marked (Recommended), when the model asks you to choose | Shipped |
 
 ## Scores and thresholds
@@ -299,3 +300,46 @@ first; with a decision backend the list is then refined.
 
 Recorded as a `tool_search` event with the size of the deterministic list, the
 merged list and the candidates left unrated. Never the query.
+
+## LSP triage
+
+After a `Write` or `Edit` the language server's errors ride back on the result
+and the model tries again. Some errors do not yield: the same ones return pass
+after pass, or the fix lies outside the file. From the second pass on, with
+errors still present, the backend is asked how likely another pass is to clear
+them. When it is unlikely, the harness files a bug on the kanban board itself
+and tells the model, so the model carries on with its goal, plan and todo steps
+instead of circling.
+
+- **What is tracked.** Per file, for the session: the pass count, the number of
+  errors after the first, previous and current pass, and a signature of the
+  error set (source, code and message of each error, sorted, with no line
+  numbers, so moving code is not a new error). Only errors count, not warnings,
+  and a report where the server had not answered (warming, timed out) is
+  ignored. A pass with no errors clears the file's history.
+- **What the backend sees.** How the passes went ("Edit pass 3 on this file.
+  Errors now: 2. Errors after the first pass: 5. Errors after the previous pass:
+  2. The errors are the same as after the last pass.") and up to 10 errors as
+  `line N source code: message`, as `DecisionText`. It rates "another edit pass
+  will clear the remaining errors in this file".
+- **Unlikely** means a score below 0.30. Without an answer the pass count
+  decides: at `lsp.max_repair_attempts` passes (default 4, from 2 to 20) with the
+  error count not below the previous pass, the bug is filed anyway. Errors that
+  are shrinking never trigger the fallback.
+- **The filing** is the harness's, with no model text: an item titled "LSP
+  errors remain in <path>" in the review list, labelled `bug` and `lsp`, with
+  the errors in its body, stamped with the session's provenance. A live item
+  with the same title is reused, so one file has one item.
+- **What the model reads**, after the diagnostics block: "[harness: another edit
+  is unlikely to clear the 2 error(s) still reported in pkg/main.go after 3
+  passes, so a bug was filed on the board as K-abc123. Do not keep editing this
+  file for them. Continue with your remaining goal, plan and todo steps, and say
+  in your report that K-abc123 is open.]" Later edits with the same errors get a
+  short reminder that the item exists. If the errors change shape, counting
+  starts again.
+- **Never filed** in plan mode, by a fleet worker (which cannot write the board
+  freely), with no board, or with the job off.
+
+Recorded as an `lsp_triage` event: `filed`, `retry` or `unfiled`, with the pass
+count, the error count and the backend's score in percent (-1 when it did not
+answer). Never a path or a message.

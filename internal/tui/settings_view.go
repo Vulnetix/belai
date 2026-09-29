@@ -200,6 +200,7 @@ var jevJobLabels = map[config.JevJob]string{
 	config.JevPruneCompaction: "jev compaction prune",
 	config.JevToolSelection:   "jev tool selection",
 	config.JevToolSearch:      "jev tool search",
+	config.JevLSPTriage:       "jev lsp triage",
 	config.JevOptionOrder:     "jev option order",
 }
 
@@ -208,6 +209,7 @@ var jevJobHelp = map[config.JevJob]string{
 	config.JevPruneCompaction: "keep or clear tool results by relevance when compacting, before writing a summary",
 	config.JevToolSelection:   "preload the tools and skills a request needs and list only the relevant skills",
 	config.JevToolSearch:      "rank ToolSearch matches, dropping poor ones and adding strong ones",
+	config.JevLSPTriage:       "file a board bug when another edit is unlikely to clear the language server errors",
 	config.JevOptionOrder:     "put the most likely answer first, marked (Recommended), when the model asks you to choose",
 }
 

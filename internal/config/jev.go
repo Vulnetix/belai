@@ -21,6 +21,10 @@ const (
 	JevBashSwap JevJob = "bash_swap"
 )
 
+// JevLSPTriage decides whether another edit pass is likely to clear a file's
+// language server errors, and files a board bug when it is not.
+const JevLSPTriage JevJob = "lsp_triage"
+
 // JevToolSelection preloads the tools and skills a request is likely to need
 // and lists only the relevant skills.
 const JevToolSelection JevJob = "tool_selection"
@@ -44,6 +48,7 @@ var JevJobs = []JevJob{
 	JevPruneCompaction,
 	JevToolSelection,
 	JevToolSearch,
+	JevLSPTriage,
 	JevOptionOrder,
 }
 
