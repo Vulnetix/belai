@@ -58,13 +58,17 @@ type voiceState struct {
 	muted bool
 	ready bool // the readiness last told to the engine
 
-	phase  pttPhase
-	seq    int
-	held   string   // dictation waiting for a ready composer
-	queue  []string // raw transcripts waiting for cleanup
-	busy   bool     // one cleanup call in flight
-	wantOn bool     // /voice on was asked while the model was missing
-	hinted bool     // the off-state key hint was shown this session
+	phase     pttPhase
+	seq       int
+	held      string      // dictation waiting for a ready composer
+	heldRaw   string      // the recognised text behind held
+	dictated  []dictation // what was inserted since the last send, for tagging the turn
+	queue     []string    // raw transcripts waiting for cleanup
+	busy      bool        // one cleanup call in flight
+	wantOn    bool        // /voice on was asked while the model was missing
+	hinted    bool        // the off-state key hint was shown this session
+	frame     int         // animation frame, advanced while something on screen moves
+	animating bool        // a frame timer is running
 
 	downloading bool
 
@@ -115,10 +119,13 @@ func (v *voiceState) recognizer(ctx context.Context) (voice.Recognizer, error) {
 // voiceInit is called from Init. It brings voice up only for a real run
 // whose settings turn it on.
 func (a *App) voiceInit() tea.Cmd {
-	if !a.voice.autostart || !a.settings.Voice.VoiceEnabled() {
+	if !a.voice.autostart || !a.voiceWanted() {
 		return nil
 	}
-	return a.voiceStart()
+	// A start nobody asked for (voice is on because the model is built in) is
+	// quiet: a machine with no microphone helper is not told so on every launch.
+	// The voice key says why when it is pressed.
+	return a.voiceStart(a.settings.Voice == nil || a.settings.Voice.Enabled == nil)
 }
 
 // voiceComposerReady reports whether dictated text could appear in the chat
@@ -137,7 +144,7 @@ func (a *App) voiceComposerReady() bool {
 
 // syncVoice tells the engine whether the composer can take text and delivers
 // dictation that was waiting. Update runs it after every message.
-func (a *App) syncVoice() tea.Cmd {
+func (a *App) syncVoiceReady() tea.Cmd {
 	v := &a.voice
 	if v.eng == nil {
 		return nil
@@ -169,6 +176,9 @@ func (a *App) watchVoice(e *voice.Engine) tea.Cmd {
 
 // handleVoiceMsg handles the voice messages and the voice key.
 func (a *App) handleVoiceMsg(msg tea.Msg) (tea.Cmd, bool) {
+	if cmd, ok := a.handleVoiceDebugMsg(msg); ok {
+		return cmd, true
+	}
 	v := &a.voice
 	switch m := msg.(type) {
 	case voiceEventMsg:
@@ -178,6 +188,9 @@ func (a *App) handleVoiceMsg(msg tea.Msg) (tea.Cmd, bool) {
 		cmd := a.watchVoice(m.eng)
 		switch m.ev.Kind {
 		case voice.EventState:
+			if v.phase == pttLatched && m.ev.State != voice.StateListening && m.ev.State != voice.StateHearing {
+				v.phase = pttIdle // the tap ended itself
+			}
 			a.refreshFooter()
 		case voice.EventError:
 			a.addSystem("voice: " + sanitize.Line(m.ev.Err.Error(), 240))
@@ -188,6 +201,13 @@ func (a *App) handleVoiceMsg(msg tea.Msg) (tea.Cmd, bool) {
 		return cmd, true
 	case voiceCleanedMsg:
 		return a.voiceCleaned(m), true
+	case voiceAnimMsg:
+		v.frame++
+		if a.voiceAnimating() {
+			return voiceAnimTick(), true
+		}
+		v.animating = false
+		return nil, true
 	case voiceHoldMsg:
 		a.voiceHold(m.seq)
 		return nil, true
@@ -257,6 +277,7 @@ func (a *App) voiceHold(seq int) {
 	switch v.phase {
 	case pttPressing:
 		v.phase = pttLatched
+		v.eng.PTTLatch() // a tap ends by itself when the speaker stops
 	case pttHeld:
 		v.eng.PTTUp()
 		v.phase = pttIdle
@@ -305,11 +326,11 @@ func (a *App) voiceNext() tea.Cmd {
 
 func (a *App) voiceCleaned(m voiceCleanedMsg) tea.Cmd {
 	a.voice.busy = false
-	return tea.Batch(a.voiceDeliver(m.text), a.voiceNext())
+	return tea.Batch(a.voiceDeliver(m.raw, m.text), a.voiceNext())
 }
 
 // voiceDeliver puts text in the composer if it is ready, else holds it.
-func (a *App) voiceDeliver(text string) tea.Cmd {
+func (a *App) voiceDeliver(raw, text string) tea.Cmd {
 	text = strings.TrimSpace(sanitize.Text(text))
 	if text == "" {
 		return nil
@@ -317,29 +338,32 @@ func (a *App) voiceDeliver(text string) tea.Cmd {
 	v := &a.voice
 	if !v.ready {
 		v.held = strings.TrimSpace(v.held + " " + text)
+		v.heldRaw = strings.TrimSpace(v.heldRaw + " " + raw)
 		if len(v.held) > voiceHeldMax {
 			v.held = v.held[len(v.held)-voiceHeldMax:]
 		}
 		return nil
 	}
-	return a.voiceInsert(text)
+	return a.voiceInsert(raw, text)
 }
 
 func (a *App) voiceDeliverHeld() tea.Cmd {
 	v := &a.voice
 	text := v.held
+	raw := v.heldRaw
+	v.heldRaw = ""
 	v.held = ""
 	if text == "" {
 		return nil
 	}
-	return a.voiceInsert(text)
+	return a.voiceInsert(raw, text)
 }
 
 // voiceInsert places text at the cursor. With submit delivery it then sends
 // the composer through the same path as pressing Enter, unless what would be
 // sent could run something: a line starting with / or ! is a local command, and
 // an @path attaches a file, and dictation must never reach either by itself.
-func (a *App) voiceInsert(text string) tea.Cmd {
+func (a *App) voiceInsert(raw, text string) tea.Cmd {
 	val := []rune(a.editor.Value())
 	off := a.editor.CursorOffset()
 	if off > len(val) {
@@ -349,6 +373,7 @@ func (a *App) voiceInsert(text string) tea.Cmd {
 		text = " " + text
 	}
 	a.editor.ReplaceRange(off, off, text)
+	a.voice.noteDictated(raw, strings.TrimSpace(text))
 	a.refreshAutocomplete()
 	a.relayout()
 	if a.settings.Voice.VoiceDeliveryOr() != config.VoiceDeliverySubmit {
@@ -381,7 +406,7 @@ func voiceSubmitBlock(s string) string {
 
 // voiceStart brings the engine up. It reports why it cannot in the chat, and
 // starts nothing (no microphone, no download) in that case.
-func (a *App) voiceStart() tea.Cmd {
+func (a *App) voiceStart(quiet bool) tea.Cmd {
 	v := &a.voice
 	if v.eng != nil {
 		return nil
@@ -389,12 +414,16 @@ func (a *App) voiceStart() tea.Cmd {
 	s := a.settings.Voice
 	v.mode = s.VoiceModeOr()
 	if v.model() == "" {
-		a.addSystem(voiceModelOffer())
+		if !quiet {
+			a.addSystem(voiceModelOffer())
+		}
 		return nil
 	}
 	src, err := v.source(s.VoiceDevice())
 	if err != nil {
-		a.addSystem("voice: " + sanitize.Line(err.Error(), 300))
+		if !quiet {
+			a.addSystem("voice: " + sanitize.Line(err.Error(), 300))
+		}
 		return nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -405,6 +434,7 @@ func (a *App) voiceStart() tea.Cmd {
 	eng.SetReady(v.ready)
 	eng.SetMode(voice.Mode(v.mode))
 	eng.SetEnabled(true)
+	a.relayout() // the text gives up room for the icon
 	a.refreshFooter()
 	return a.watchVoice(eng)
 }
@@ -422,6 +452,7 @@ func (a *App) voiceStop() {
 	}
 	v.eng, v.stop = nil, nil
 	v.phase, v.held, v.queue, v.busy, v.ready, v.muted = pttIdle, "", nil, false, false, false
+	a.relayout()
 	a.refreshFooter()
 }
 
@@ -467,7 +498,7 @@ func (a *App) voiceModelDone(m voiceModelMsg) tea.Cmd {
 	a.addSystem("voice: the speech model is ready")
 	if v.wantOn {
 		v.wantOn = false
-		return a.voiceStart()
+		return a.voiceStart(false)
 	}
 	return nil
 }
@@ -514,19 +545,6 @@ func (a *App) voiceFooter() (string, bool) {
 	return "voice: " + label, on
 }
 
-// voiceTitleChip is the composer title's chip, or "".
-func (a *App) voiceTitleChip() string {
-	label, on, ok := a.voiceIndicator()
-	if !ok {
-		return ""
-	}
-	glyph, color := "○ ", components.ColorTealSoft
-	if on {
-		glyph, color = "● ", components.ColorTeal
-	}
-	return components.Chip(glyph+label, color)
-}
-
 // voiceCommand is /voice.
 func (a *App) voiceCommand(arg string) tea.Cmd {
 	fields := strings.Fields(strings.ToLower(arg))
@@ -547,6 +565,8 @@ func (a *App) voiceCommand(arg string) tea.Cmd {
 			a.addSystem("voice: off")
 		}
 		return cmd
+	case "debug":
+		return a.voiceDebugStart()
 	case "download":
 		return a.voiceDownload()
 	case "push", "listen":
@@ -572,7 +592,7 @@ func (a *App) voiceCommand(arg string) tea.Cmd {
 			a.addSystem("voice cleanup: " + fields[1])
 		}
 	default:
-		a.addSystem("usage: /voice [status|on|off|download|push|listen|insert|submit|cleanup on|off]")
+		a.addSystem("usage: /voice [status|debug|on|off|download|push|listen|insert|submit|cleanup on|off]")
 	}
 	return nil
 }
@@ -591,7 +611,7 @@ func (a *App) voiceSave(write func(*config.VoiceSettings)) bool {
 // voice (or offers the model download) when on, and stops it when off.
 func (a *App) voiceApplyEnabled() tea.Cmd {
 	v := &a.voice
-	if a.settings.Voice.VoiceEnabled() {
+	if a.voiceWanted() {
 		if v.eng != nil {
 			return nil
 		}
@@ -600,7 +620,7 @@ func (a *App) voiceApplyEnabled() tea.Cmd {
 			a.addSystem(voiceModelOffer())
 			return nil
 		}
-		return a.voiceStart()
+		return a.voiceStart(false)
 	}
 	v.wantOn = false
 	a.voiceStop()
@@ -677,7 +697,7 @@ func (a *App) voiceToggle(key string) error {
 		v := voiceSettings(s)
 		switch key {
 		case "voice.enabled":
-			v.Enabled = voiceBool(!v.VoiceEnabled())
+			v.Enabled = voiceBool(!v.VoiceEnabledOr(voice.Embedded()))
 		case "voice.cleanup":
 			v.Cleanup = voiceBool(!v.VoiceCleanupEnabled())
 		}
@@ -693,6 +713,8 @@ func (a *App) voiceChoose(key string, opts []string) error {
 			v.Mode = opts[(indexOfString(opts, v.VoiceModeOr())+1)%len(opts)]
 		case "voice.delivery":
 			v.Delivery = opts[(indexOfString(opts, v.VoiceDeliveryOr())+1)%len(opts)]
+		case "voice.key":
+			v.Key = opts[(indexOfString(opts, v.VoiceKeyOr())+1)%len(opts)]
 		}
 	})
 }
@@ -710,6 +732,8 @@ func (a *App) voiceUnset(key string) error {
 			s.Voice.Mode = ""
 		case "voice.delivery":
 			s.Voice.Delivery = ""
+		case "voice.key":
+			s.Voice.Key = ""
 		case "voice.cleanup":
 			s.Voice.Cleanup = nil
 		}
@@ -732,8 +756,76 @@ func (a *App) voiceOffHint() tea.Cmd {
 		a.addSystem("voice: the speech model is still downloading; voice turns on when it finishes")
 	case v.model() == "":
 		a.addSystem("voice is off, and the speech model is not downloaded yet: /voice on shows what it needs, /voice download fetches it, then hold " + key + " to dictate")
+	case a.voiceWanted():
+		// Voice is meant to be running (the model is built in) but did not
+		// start: say why instead of leaving the key silent.
+		if _, err := v.source(a.settings.Voice.VoiceDevice()); err != nil {
+			a.addSystem("voice could not start: " + sanitize.Line(err.Error(), 300))
+		} else {
+			a.addSystem("voice is not running: /voice on starts it, /voice debug checks the microphone")
+		}
 	default:
-		a.addSystem("voice is off: /voice on turns it on, then hold " + key + " to dictate (if " + key + " does nothing, your terminal may keep it; set voice.key to f13 to f16 or ctrl+space)")
+		a.addSystem("voice is off: /voice on turns it on, then hold " + key + " to dictate. If " + key + " does nothing your terminal may keep it; set voice.key to ctrl+space (in /settings or settings.json)")
 	}
 	return nil
+}
+
+// voiceWanted reports whether voice should be running: what voice.enabled
+// says, or on when the speech model is built into this binary and the setting
+// is unset.
+func (a *App) voiceWanted() bool {
+	return a.settings.Voice.VoiceEnabledOr(a.voice.model() == "built in")
+}
+
+// dictation is one inserted stretch of dictated text and what the model
+// recognised behind it.
+type dictation struct{ text, raw string }
+
+const dictatedMax = 16
+
+func (v *voiceState) noteDictated(raw, text string) {
+	if text == "" {
+		return
+	}
+	if len(v.dictated) >= dictatedMax {
+		v.dictated = v.dictated[1:]
+	}
+	v.dictated = append(v.dictated, dictation{text: text, raw: raw})
+}
+
+// tagDictated marks a prompt about to be echoed as dictated when it still
+// holds text that was dictated since the last send, and keeps what was
+// recognised so ctrl+o can show it. A prompt you typed is left alone, and the
+// record is cleared either way.
+func (a *App) tagDictated(m *components.Message) {
+	v := &a.voice
+	var raws []string
+	for _, d := range v.dictated {
+		if strings.Contains(m.Content, d.text) {
+			raws = append(raws, d.raw)
+		}
+	}
+	v.dictated = nil
+	if len(raws) > 0 {
+		m.Voice, m.VoiceRaw = true, strings.Join(raws, " ")
+	}
+}
+
+// voiceEnabledNow is voice.enabled as the user experiences it: the setting,
+// or on when the speech model is built into this binary.
+func voiceEnabledNow(s config.Settings) bool {
+	return s.Voice.VoiceEnabledOr(voice.Embedded())
+}
+
+// syncVoice runs after every message: it tells the engine whether the
+// composer can take text, delivers dictation that was waiting, and starts the
+// animation timer when something on the composer moves.
+func (a *App) syncVoice() tea.Cmd {
+	cmd := a.syncVoiceReady()
+	v := &a.voice
+	if v.eng != nil && !v.animating && a.voiceAnimating() {
+		v.animating = true
+		return tea.Batch(cmd, voiceAnimTick())
+	}
+	return cmd
 }

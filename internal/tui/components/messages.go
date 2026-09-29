@@ -76,6 +76,11 @@ type Message struct {
 	// Steering marks a user turn injected mid-loop while the agent is running.
 	Steering bool
 
+	// Voice marks a user turn that was dictated; VoiceRaw is the recognised
+	// text before the fast model tidied it, shown with ctrl+o.
+	Voice    bool
+	VoiceRaw string
+
 	// RemoteID is the website prompt id on a user turn that arrived through
 	// session sync (docs/session-sync.md). It is persisted as the entry's
 	// meta.remote_prompt_id so the website can match its request to the line.
@@ -724,7 +729,10 @@ func turnPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 	title, accent := "model", lipgloss.TerminalColor(ColorTeal)
 	detail := ""
 	if msg.Role == "user" {
-		title, accent = "you", lipgloss.TerminalColor(ColorTealSoft)
+		title, accent = "you", lipgloss.TerminalColor(ColorYou)
+		if msg.Voice {
+			accent = lipgloss.TerminalColor(ColorVoice)
+		}
 		if msg.Steering {
 			title, accent = "you · steering", lipgloss.TerminalColor(ColorAmber)
 		} else if msg.RemoteID != "" {
@@ -770,6 +778,15 @@ func turnPanel(msg Message, width int, expandAll bool) (string, LineMap) {
 	}
 
 	body := strings.TrimRight(msg.Text(), "\n")
+	// A dictated turn keeps what was recognised: ctrl+o shows it under the
+	// tidied text, and the title says it is there while it is folded.
+	if raw := strings.TrimSpace(msg.VoiceRaw); msg.Voice && msg.Role == "user" && raw != "" && raw != strings.TrimSpace(body) {
+		if expandAll || msg.Expanded {
+			body += "\n" + MutedStyle.Render("raw · "+raw)
+		} else {
+			meta += voiceRawHint(meta)
+		}
+	}
 	if strings.TrimSpace(body) == "" && len(msg.ToolCalls) > 0 {
 		body = toolCallSummary(msg.ToolCalls, width)
 	}
@@ -1424,4 +1441,13 @@ func truncateLine(styled, plain string, width int) string {
 		return styled
 	}
 	return lipgloss.NewStyle().MaxWidth(width).Render(styled)
+}
+
+// voiceRawHint is the title-bar hint that a dictated turn has a raw
+// transcript behind it.
+func voiceRawHint(meta string) string {
+	if meta == "" {
+		return "ctrl+o raw"
+	}
+	return " · ctrl+o raw"
 }

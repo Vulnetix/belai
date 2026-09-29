@@ -603,7 +603,12 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `voiceComposerReady` holds; when it does not, the engine closes the
   microphone and drops audio in progress. `delivery: submit` goes through the
   Enter path and never fires for text that starts with `/` or `!` or holds an
-  `@path`. Do not add a model-facing tool that starts capture.
+  `@path`. Voice starts by itself only when the model is built in, in push to
+  talk, where the microphone is open only while the key is held or a tap
+  recording (which ends when the speaker stops) runs. `/voice debug` opens the
+  microphone in its own engine while it is on screen, probes hardware with
+  fixed programs and the scrubbed environment (`voice.Devices`), and writes
+  nothing to disk. Do not add a model-facing tool that starts capture.
 - **Session sync mirrors the file and admits web prompts as prompts.**
   `internal/sessionsync` uploads only the lines `appendEntry` already wrote to
   the session JSONL, keyed by line index; it never composes an entry. It sends

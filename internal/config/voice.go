@@ -18,7 +18,7 @@ const (
 )
 
 // VoiceKeys are the keys voice.key may name.
-var VoiceKeys = []string{"f11", "f13", "f14", "f15", "f16", "ctrl+space"}
+var VoiceKeys = []string{"f11", "ctrl+space", "ctrl+]", "ctrl+g", "f13", "f14", "f15", "f16"}
 
 // voiceDeviceRE mirrors internal/voice: a plain identifier that cannot start
 // with "-", so a device name can never add an option to the capture helper.
@@ -138,4 +138,16 @@ func ValidateVoice(s Settings) error {
 		return fmt.Errorf("voice.device %q must be letters, digits and . _ : , @ = -, and must not start with -", v.Device)
 	}
 	return nil
+}
+
+// VoiceEnabledOr reports whether voice input is on, using def when the
+// setting is unset. Belai passes whether the speech model is built into the
+// binary, so a release build is ready to dictate with no setting, and a
+// build without the model stays off until asked. An explicit false always
+// wins.
+func (s *VoiceSettings) VoiceEnabledOr(def bool) bool {
+	if s == nil || s.Enabled == nil {
+		return def
+	}
+	return *s.Enabled
 }

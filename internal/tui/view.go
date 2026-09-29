@@ -37,6 +37,7 @@ const (
 	viewRC
 	viewTrusted
 	viewIntel
+	viewVoiceDebug
 )
 
 // viewHandler is one full-screen view. Chat is the base state and lives
@@ -79,6 +80,7 @@ func init() {
 	viewHandlers[viewRC] = viewHandler{name: "rc", enter: (*App).enterRC, key: (*App).handleRCKey, render: (*App).rcView}
 	viewHandlers[viewTrusted] = viewHandler{name: "trusted", enter: (*App).enterTrusted, key: (*App).handleTrustedKey, render: (*App).trustedView}
 	viewHandlers[viewIntel] = viewHandler{name: "intel", enter: (*App).enterIntel, key: (*App).handleIntelKey, render: (*App).intelView}
+	viewHandlers[viewVoiceDebug] = viewHandler{name: "voice-debug", key: (*App).handleVoiceDebugKey, render: (*App).voiceDebugView}
 }
 
 // push navigates to a full-screen view, remembering the current one on the

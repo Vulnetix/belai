@@ -98,13 +98,15 @@ const (
 // its state lives in one goroutine, so its methods are safe from any
 // goroutine and never block on audio.
 type Engine struct {
-	cfg    Config
-	cmds   chan func(*loop)
-	events chan Event
-	state  atomic.Int32
-	cancel context.CancelFunc
-	done   chan struct{}
-	once   sync.Once
+	cfg     Config
+	cmds    chan func(*loop)
+	events  chan Event
+	state   atomic.Int32
+	level   levelBox
+	samples atomic.Int64
+	cancel  context.CancelFunc
+	done    chan struct{}
+	once    sync.Once
 }
 
 // New starts an engine. It does nothing (no microphone, no model) until
@@ -190,6 +192,10 @@ type loop struct {
 	ptt                    bool
 	tail                   int // samples of post-release capture left
 	pttBuf                 []float32
+	latched                bool // a tap-started recording that ends when the speaker stops
+	clock                  int  // samples heard since the engine started
+	lastVoice              int  // clock at the last speech-level chunk, -1 for none
+	startClock, spoke      int  // this recording: where it began, speech-level samples in it
 
 	rec     Recognizer
 	loading bool
@@ -209,7 +215,7 @@ func (e *Engine) run(ctx context.Context) {
 	l := &loop{
 		e: e, ctx: ctx, mode: e.cfg.Mode, seg: NewSegmenter(),
 		loadCh: make(chan loaded, 1), doneCh: make(chan struct{}, jobBacklog+1),
-		lastState: -1,
+		lastState: -1, lastVoice: -1,
 	}
 	l.publish()
 	for {
@@ -275,6 +281,7 @@ func (l *loop) pttDown() {
 		return
 	}
 	l.ptt, l.tail, l.pttBuf = true, 0, nil
+	l.latched, l.startClock, l.spoke, l.lastVoice = false, l.clock, 0, -1
 }
 
 func (l *loop) pttUp() {
@@ -282,6 +289,7 @@ func (l *loop) pttUp() {
 		return
 	}
 	l.ptt = false
+	l.latched = false
 	l.tail = pttTail
 }
 
@@ -336,6 +344,16 @@ func (l *loop) submit(pcm []float32) {
 }
 
 func (l *loop) audio(pcm []int16) {
+	rms, peak := chunkLevels(pcm)
+	l.clock += len(pcm)
+	l.e.samples.Add(int64(len(pcm)))
+	l.e.level.set(Level{RMS: toDB(rms), Peak: toDB(peak)})
+	if rms > absFloor {
+		l.lastVoice = l.clock
+		if l.ptt {
+			l.spoke += len(pcm)
+		}
+	}
 	switch l.mode {
 	case ModeListen:
 		for _, s := range l.seg.Feed(pcm) {
@@ -347,6 +365,9 @@ func (l *loop) audio(pcm []int16) {
 		}
 		if len(l.pttBuf) < maxPTT {
 			l.pttBuf = append(l.pttBuf, toFloat(pcm)...)
+		}
+		if l.ptt && l.latched {
+			l.autoStop()
 		}
 		if !l.ptt {
 			l.tail -= len(pcm)
@@ -388,6 +409,7 @@ func (l *loop) stopCapture() {
 	if l.stream == nil {
 		return
 	}
+	defer l.e.level.set(Silent)
 	l.stopCap()
 	// Drain so the reader goroutine can finish and reap the helper.
 	for range l.stream.C {
@@ -416,8 +438,13 @@ func (l *loop) state() State {
 		return StatePaused
 	case l.pending > 0:
 		return StateTranscribing
-	case l.mode == ModeListen && l.seg.InSpeech(), l.mode == ModePushToTalk && (l.ptt || l.tail > 0):
+	case l.mode == ModeListen && l.seg.InSpeech():
 		return StateHearing
+	case l.mode == ModePushToTalk && (l.ptt || l.tail > 0):
+		if l.hearingNow() {
+			return StateHearing
+		}
+		return StateListening
 	case l.mode == ModeListen && l.stream != nil:
 		return StateListening
 	}
@@ -437,3 +464,47 @@ func (l *loop) publish() {
 // Done is closed once the engine has stopped. A goroutine waiting on Events
 // selects on it so it exits with the engine.
 func (e *Engine) Done() <-chan struct{} { return e.done }
+
+// Level is how loud the microphone audio was in its latest chunk. It reads
+// Silent while the microphone is closed.
+func (e *Engine) Level() Level { return e.level.get() }
+
+// PTTLatch turns the recording in progress into a tap-started one: it keeps
+// going without the key and ends by itself once the speaker has spoken and
+// then been quiet for a second, or after ten seconds with no speech at all. A
+// second press still ends it at once. It exists because a terminal reports no
+// key release, so a tap must not depend on being told when to stop.
+func (e *Engine) PTTLatch() { e.do(func(l *loop) { l.latched = l.ptt }) }
+
+const (
+	// hearingHold keeps the state on Hearing for 300 ms after the last
+	// speech-level chunk, so it does not flicker between words.
+	hearingHold = 4800
+	// latchQuiet is the silence after speech that ends a tap-started recording.
+	latchQuiet = 16000
+	// latchIdle is how long a tap-started recording waits for any speech.
+	latchIdle = 10 * 16000
+	// latchMinSpeech is the speech a tap-started recording needs before quiet
+	// can end it: 200 ms.
+	latchMinSpeech = 3200
+)
+
+func (l *loop) hearingNow() bool {
+	return l.lastVoice >= 0 && l.clock-l.lastVoice < hearingHold
+}
+
+// autoStop ends a tap-started recording the way a key release would.
+func (l *loop) autoStop() {
+	switch {
+	case l.spoke >= latchMinSpeech && l.lastVoice >= 0 && l.clock-l.lastVoice >= latchQuiet:
+		l.pttUp()
+	case l.spoke < latchMinSpeech && l.clock-l.startClock >= latchIdle:
+		l.pttUp()
+	}
+}
+
+// Samples is how many microphone samples have arrived since the engine
+// started. A count that stays at zero while the microphone is open means the
+// capture helper is running but delivering nothing, which is a different fault
+// from audio that arrives silent.
+func (e *Engine) Samples() int64 { return e.samples.Load() }

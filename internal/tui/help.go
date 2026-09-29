@@ -51,7 +51,7 @@ func keySections() []keySection {
 			{"tab", "cycle model mode between routed and defined (when no popup or picker is open)"},
 			{"up", "browse prompt, !cmd and /command history and the prompt library"},
 			{"f7", "save the prompt to the library"},
-			{"f11", "voice input (voice.key): hold to dictate, or tap to start and tap to stop; in listen mode, mute or unmute"},
+			{"f11", "voice input (voice.key): hold to dictate, or tap and speak until you stop; in listen mode, mute or unmute; /voice debug checks it"},
 			{"ctrl+l", "clear the transcript view; the session is kept"},
 			{"ctrl+o", "expand or collapse every truncated output"},
 			{"ctrl+s", "save the hovered panel to a path, overwrite/delete a loaded library prompt, or save the prompt to the library"},

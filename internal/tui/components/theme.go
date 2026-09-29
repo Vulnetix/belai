@@ -21,6 +21,8 @@ var (
 	ColorCream    = lipgloss.AdaptiveColor{Light: "#0F1F1C", Dark: "#F6EED6"} // emphasis: what you typed, named identifiers
 	ColorAmber    = lipgloss.AdaptiveColor{Light: "#A95A0B", Dark: "#E8912B"} // needs you, or you stepped in
 	ColorDanger   = lipgloss.AdaptiveColor{Light: "#B8322A", Dark: "#E2564E"} // failures, relaxed guardrails
+	ColorYou      = lipgloss.AdaptiveColor{Light: "#B23C7E", Dark: "#F49AC8"} // the prompts you type
+	ColorVoice    = lipgloss.AdaptiveColor{Light: "#7B5BBE", Dark: "#C9B0F2"} // dictated turns, the voice frame while the fast model works
 
 	// Role-manager categories: the colour of a row's icon, by the kind of
 	// work. They never colour an outcome; tone does that.

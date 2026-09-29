@@ -13,6 +13,8 @@ composer. Audio stays on your machine.
 - [Modes and keys](#modes-and-keys)
 - [When text appears](#when-text-appears)
 - [The listening indicator](#the-listening-indicator)
+- [In the transcript](#in-the-transcript)
+- [Diagnosing with /voice debug](#diagnosing-with-voice-debug)
 - [Cleanup](#cleanup)
 - [Security model](#security-model)
 - [Settings](#settings)
@@ -45,9 +47,11 @@ For contributors. Everything the rest of belai calls is here.
 | --- | --- |
 | `New` | starts an `Engine`; nothing runs until `SetEnabled(true)` |
 | `Engine.SetEnabled`, `Engine.SetReady`, `Engine.SetMode` | turn voice on or off, say whether the composer can take text, switch mode |
-| `Engine.PTTDown`, `Engine.PTTUp` | begin and end a push-to-talk recording |
+| `Engine.PTTDown`, `Engine.PTTLatch`, `Engine.PTTUp` | begin a push-to-talk recording, turn it into a tap that ends when the speaker stops, end it |
+| `Engine.Level`, `Engine.Samples`, `Level`, `Silent`, `SpeechDB` | how loud the microphone is, in dBFS; how many samples have arrived at all; the level treated as speech |
 | `Engine.Events`, `Engine.State`, `Engine.Done`, `Engine.Close` | state changes, transcripts and errors; the current state; closed when the engine stops; shutdown |
-| `NewExecSource`, `ExecSource.Start`, `ExecSource.Name` | pick the capture helper, start it, name it |
+| `NewExecSource`, `ExecSource.Start`, `ExecSource.Name`, `ExecSource.Command` | pick the capture helper, start it, name it, print its command line |
+| `Devices` | list the inputs the sound system offers, with fixed programs and cleaned, capped output |
 | `NewSegmenter`, `Segmenter.Feed`, `Segmenter.Flush`, `Segmenter.Reset`, `Segmenter.InSpeech`, `HasSpeech` | utterance cutting and the speech gate |
 | `ModelPath`, `Ensure`, `Verify` | find, fetch and check the model file |
 | `Embedded`, `ModelSource`, `LoadModel` | whether the model is built in, where it comes from, and reading it (the embedded copy, else the file), checked against the pinned SHA-256 |
@@ -128,20 +132,31 @@ Audio with no speech-level sound never reaches the model.
 
 | Mode | Microphone | Key |
 | --- | --- | --- |
-| `push_to_talk` (default) | open only while you record | hold `voice.key` to record while held; tap it to start and tap again to stop |
+| `push_to_talk` (default) | open only while you record | hold `voice.key` to record while held; tap it to record until you stop speaking |
 | `listen` | open whenever the composer is ready | `voice.key` mutes and unmutes |
 
-Voice is off until you turn it on. Install a capture helper, run `/voice on`,
-then hold `f11` and speak. In a release build the model is already inside the
-binary, so nothing downloads. Pressing the key while voice is off is not
-silent: belai says once per session that voice is off and what to run.
+Voice is on by default in a release build, where the model is built into the
+binary; a build without the model stays off until `/voice on`. Install a
+capture helper, then hold `f11` and speak. Turn voice off with `/voice off`,
+which is remembered. Pressing the key while voice is not running is not
+silent: belai says once per session why (voice is off, the helper is missing,
+the model is not downloaded) and what to run. A default start with no capture
+helper prints nothing at launch, so a machine without a microphone is not
+told on every run.
 
-The default key is `f11`. Terminals do not report key release, so a hold is
-recognised from key repeat: the first press starts recording, and if repeats
-follow the recording ends a moment after they stop; if none follow within
-0.7 seconds the press was a tap and the recording runs until the next tap.
-Some terminals use `f11` for fullscreen; set `voice.key` to another value
-(`f13` to `f16`, or `ctrl+space`).
+The default key is `f11`. Some terminals keep it for fullscreen and never
+send it, so `voice.key` can be `ctrl+space`, `ctrl+]` or `ctrl+g`, which need
+no special keyboard, or `f13` to `f16` on a keyboard that has them. Choose
+one in `/settings` (the `voice key` row) or in `settings.json`, and check it
+reaches belai with `/voice debug`.
+
+Terminals do not report key release, so belai reads the key another way. The
+first press starts recording. If key repeat follows, it is a hold: the
+recording ends a moment after the repeats stop. If no repeat follows within
+0.7 seconds it was a tap: the recording continues without the key and ends by
+itself once you have spoken and then been quiet for a second, or after ten
+seconds with no speech at all. A second tap ends it at once. So a missed
+release can never leave the microphone open.
 
 In `push_to_talk` the microphone opens on the press, so the first fraction of
 a second can be missed; a short lead-in before speaking avoids it. After a
@@ -189,23 +204,71 @@ inserted, belai says why it was not sent, and you press Enter yourself.
 
 ## The listening indicator
 
-A `voice:` switch in the footer and a chip in the composer's title show the
-state. The footer dot is filled while the microphone is open or work is
-running, and hollow otherwise. Nothing is shown while voice is off.
+Three things show the state. The `voice:` switch in the footer says it in
+words. A circle icon sits inside the composer at the right end of its first
+row. The composer's frame reacts to the voice. Nothing is drawn while voice is
+off, and none of it appears on another screen's text field. The footer keeps
+its three-line height, and the text gives up two columns for the icon so it
+never sits on what you typed.
 
-| State | Footer | Composer chip | Meaning |
+| State | Footer | Composer icon | Meaning |
 | --- | --- | --- | --- |
-| downloading | `○ voice: downloading` | `○ downloading` | the model is being fetched |
-| loading | `○ voice: loading` | `○ loading` | the model is being read into memory |
-| paused | `○ voice: paused` | `○ paused` | the composer is unavailable and the microphone is closed |
-| push to talk | `○ voice: push to talk · f11` | `○ push to talk · f11` | armed; the microphone is closed until you press the key |
-| muted | `○ voice: muted` | `○ muted` | listen mode, silenced with the key |
-| listening | `● voice: listening` | `● listening` | the microphone is open and waiting for speech |
-| hearing | `● voice: hearing` | `● hearing` | speech detected, or the key is held |
-| transcribing | `● voice: transcribing` | `● transcribing` | recognition or cleanup is running |
+| downloading | `○ voice: downloading` | none | the model is being fetched |
+| loading | `○ voice: loading` | dim `◌` | the model is being read into memory |
+| paused | `○ voice: paused` | dim `◌` | the composer is unavailable and the microphone is closed |
+| push to talk | `○ voice: push to talk · f11` | dim `⊘` | armed; the microphone is closed until you press the key |
+| muted | `○ voice: muted` | dim `⊘` | listen mode, silenced with the key |
+| listening | `● voice: listening` | pulsing `◉` | the microphone is open and waiting for speech |
+| hearing | `● voice: hearing` | fast pulse | speech is being heard |
+| transcribing | `● voice: transcribing` | purple `◉` | recognition or the fast model is working |
 
-The composer chip appears on the chat composer only, never on another
-screen's text field. The footer keeps its three-line height whatever it says.
+The state follows the voice, not the key: with the key held (or a tap
+recording) it reads `listening` until speech arrives, `hearing` while you
+speak and again `listening` in the pauses, then `transcribing`.
+
+The composer frame carries the same signal. While speech is heard its top and
+bottom rules ripple slowly, drawn with scan-line glyphs at staggered heights,
+and stay still otherwise. While the speech model or the fast model is working
+the whole frame turns a pastel purple (`ColorVoice`), and returns to teal when
+the text lands. The icon and the ripple advance on a 140 ms timer that runs
+only while something is moving.
+
+## In the transcript
+
+A prompt that still holds dictated text is a voice turn. Its `you` title is a
+pastel purple (`ColorVoice`); a prompt you typed is titled in pink
+(`ColorYou`). The title bar of a voice turn says `ctrl+o raw`, and `ctrl+o`
+shows what the speech model recognised, under the tidied text, as
+`raw · ...`. A turn where the fast model changed nothing shows no raw line. A
+prompt mixing typed and dictated text is a voice turn, with only the dictated
+parts in its raw text.
+
+## Diagnosing with /voice debug
+
+`/voice debug` opens a screen for "I talked and nothing came out". It pauses
+the normal engine, listens with an engine of its own, and brings the normal
+one back when you press `esc` or `q`. `c` clears the log. It shows, top to
+bottom:
+
+| Section | What it tells you |
+| --- | --- |
+| Hardware | the capture helper and its exact command line, the default input and the inputs PulseAudio or PipeWire report (or ALSA's cards), whether the model is built in or on disk, and the engine's state or the reason it cannot start |
+| Microphone level | a live meter in dBFS with the speech level marked, the RMS and peak numbers and a short history. After three seconds it says which of three things is true: no sound reached belai at all (*perhaps the microphone is on mute*, or the wrong input is selected), sound arrives but below the speech level (speak closer, raise the gain), or the microphone is working |
+| Raw transcript | the last 400 characters the speech model recognised, exactly as recognised |
+| Fast-model cleanup | that raw text tidied by the fast model, live: it updates as you keep speaking, keeps the last result up while a new one is made, and says plainly when there is no fast model or the call failed |
+| Events | a timestamped log of the keys the terminal delivered, the engine's states, transcripts, cleanups and errors |
+
+The event log is how to verify keys: a press of the voice key logs `press`;
+if the terminal repeats a held key it logs the first repeat with its delay
+(so a hold works), and when the repeats stop it logs `release inferred` with
+the repeat count and duration; a press with no repeat logs `that was a tap`.
+Any other key is logged as not the voice key. No repeat and no tap line means
+the terminal never sent the key, which is when to pick another `voice.key`.
+
+The screen writes nothing to disk. Its hardware probes run `pactl` and
+`arecord` with fixed arguments and the scrubbed environment, capped and
+cleaned. The raw text goes to the fast model only through `voice_cleanup`,
+like a normal dictation, and never to a log.
 
 ## Cleanup
 
@@ -234,16 +297,30 @@ you said. Route the role like any other with
   wrapped by the OS sandbox. It is reachable only from the voice engine; no
   tool call can start it, and a sandboxed `Bash` command cannot see the audio
   devices. `voice.device` must be a plain identifier (letters, digits and
-  `. _ : , @ = -`, not starting with `-`), so it cannot add an option.
+  `. _ : , @ = -`, not starting with `-`), so it cannot add an option. It is
+  given no file to write (`parecord` reads a lone `-` as a file name, not as
+  standard output, so it gets none), and it runs in a private temporary
+  directory that is removed when it ends, so a mistake could never leave a
+  recording in your project.
 - **The model file is pinned.** Download needs your confirmation, is checked
   twice, and a mismatch is refused.
 - **Dictated text is untrusted.** It is sanitised before cleanup and after,
   and then it is ordinary composer text. It is admitted, classified and
   permission-checked like typed text.
-- **Only you turn it on.** `voice` is read from the user's own settings
+- **Only you choose it.** `voice` is read from the user's own settings
   layers; a repository's `.vulnetix/settings.json` cannot enable it, choose
   the helper device or change the delivery. The microphone never opens in a
   headless run or over ACP.
+- **On by default only where it is safe to be.** Voice starts on its own only
+  when the speech model is built into the binary, and its default mode is push
+  to talk, where the microphone is open only while you hold the key or during a
+  tap recording (which ends by itself). `voice.enabled: false` turns it off for
+  good, and `always listening` is a mode you choose.
+- **`/voice debug` listens too, and says so.** It opens the microphone in its
+  own engine while it is on screen and closes it when you leave, including if
+  another key takes the screen away. Its probes run fixed programs (`pactl`,
+  `arecord`) with the scrubbed environment and no argument from a setting or a
+  model, and it writes nothing to disk.
 - **Guardrails off** skips no sanitising. Voice adds no classifier call of
   its own; the dictated prompt takes the same admission as a typed one.
 
@@ -252,7 +329,7 @@ you said. Route the role like any other with
 ```json
 {
   "voice": {
-    "enabled": false,
+    "enabled": true,
     "mode": "push_to_talk",
     "delivery": "insert",
     "cleanup": true,
@@ -264,11 +341,11 @@ you said. Route the role like any other with
 
 | Key | Default | Project layer |
 | --- | --- | --- |
-| `enabled` | `false` | dropped |
+| `enabled` | on when the model is built into the binary (a release build), otherwise `false`; an explicit `false` always wins | dropped |
 | `mode` | `push_to_talk`; the other value is `listen` | dropped |
 | `delivery` | `insert`; the other value is `submit` | dropped |
 | `cleanup` | `true` | dropped |
-| `key` | `f11`; also `f13`, `f14`, `f15`, `f16`, `ctrl+space` | dropped |
+| `key` | `f11`; also `ctrl+space`, `ctrl+]`, `ctrl+g`, and `f13`, `f14`, `f15`, `f16` on a keyboard that has them | dropped |
 | `device` | empty, the helper's default input | dropped |
 
 An invalid `mode`, `delivery`, `key` or `device` fails settings resolution
@@ -277,19 +354,20 @@ Voice is a per-user preference, so the whole key is ignored in a project's
 `.vulnetix/settings.json`. Set it in your global `settings.json`, or with
 `/settings` and `/voice`.
 
-`/settings` has four rows, all written to the global file: `voice input`
-(`enabled`), `voice mode`, `voice delivery` and `voice cleanup`. Turning
+`/settings` has five rows, all written to the global file: `voice input`
+(`enabled`), `voice mode`, `voice delivery`, `voice cleanup` and `voice key`. Turning
 `voice input` on or off, or changing the mode, takes effect at once; delivery
 and cleanup apply from the next transcript. `x` returns a row to its default.
-`key` and `device` are set in the file.
+`device` is set in the file.
 
 ## Commands
 
 | Command | Effect |
 | --- | --- |
-| `/voice` or `/voice status` | state, mode, delivery, cleanup, key, capture helper and whether the model is on disk |
-| `/voice on` | turn voice on; with no model on disk it shows the offer and waits |
-| `/voice off` | turn voice off and close the microphone |
+| `/voice` or `/voice status` | two lines: state, mode, delivery, cleanup and key; then the capture helper and whether the model is built in or on disk |
+| `/voice debug` | open the diagnostic screen (see above) |
+| `/voice on` | turn voice on and remember it; with no model it shows the offer and waits |
+| `/voice off` | turn voice off, remember it and close the microphone |
 | `/voice download` | fetch the speech model, after you have seen its size and destination |
 | `/voice push` / `/voice listen` | choose the mode |
 | `/voice insert` / `/voice submit` | choose the delivery |
