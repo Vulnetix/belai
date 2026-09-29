@@ -1715,7 +1715,7 @@ func (s *Session) executeCallInner(ctx context.Context, call rolemanager.ToolCal
 	hookAsk := pre.Decision == hooks.DecisionAsk
 	// An always-ask tool (SkillDraft) asks whatever the rules and the ask
 	// gate say, and without a TTY it is withheld: nobody can approve it.
-	if tools.AlwaysAsks(tool) {
+	if tools.AlwaysAsksCall(tool, call.Args) {
 		if !s.allowAsk {
 			s.noteAskWithheld(call.Name)
 			return fmt.Sprintf("tool result withheld: %q needs the user's approval, and no one can be asked in this session", call.Name)

@@ -43,8 +43,11 @@ behaviour, and implementation details.
   start and drive sessions on this machine.
 - [Nonce endpoint spec](nonce-endpoint-spec.md): the provider/gateway
   `GET /v1/nonces` contract and verification semantics.
-- [Image attachments](image-attachments.md): deferred multimodal attachment
-  design and candidate terminal-rendering approaches.
+- [Screenshots](screenshots.md): the `Screenshot` tool, which captures a
+  loopback page or the desktop for the model.
+- [Images](image-attachments.md): how a tool-returned image is admitted and
+  sent to each provider, plus the deferred attached-image design and candidate
+  terminal-rendering approaches.
 
 ## Design
 

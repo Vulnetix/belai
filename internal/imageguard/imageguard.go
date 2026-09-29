@@ -36,7 +36,7 @@ type Limits struct {
 
 // Default is the budget for a screenshot: what vision models downscale to
 // anyway, so nothing is sent that would be thrown away.
-var Default = Limits{MaxBytes: 8 << 20, MaxPixels: 50_000_000, MaxEdge: 1568}
+var Default = Limits{MaxBytes: 32 << 20, MaxPixels: 50_000_000, MaxEdge: 1568}
 
 // MediaType is the media type of every admitted image.
 const MediaType = "image/png"

@@ -202,6 +202,23 @@ func AlwaysAsks(t Tool) bool {
 	return ok && a.AlwaysAsks()
 }
 
+// CallAsker is implemented by tools that ask on some calls only, chosen by the
+// call's arguments (Screenshot asks for every desktop capture).
+type CallAsker interface {
+	AlwaysAsksFor(args map[string]any) bool
+}
+
+// AlwaysAsksCall reports whether this call of t must ask, whatever the rules
+// and the ask gate say: the tool asks on every call, or asks for these
+// arguments.
+func AlwaysAsksCall(t Tool, args map[string]any) bool {
+	if AlwaysAsks(t) {
+		return true
+	}
+	c, ok := t.(CallAsker)
+	return ok && c.AlwaysAsksFor(args)
+}
+
 // Without returns r minus the named tools (case-insensitive).
 func (r *Registry) Without(names ...string) *Registry {
 	var list []Tool

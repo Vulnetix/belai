@@ -128,6 +128,7 @@ var extraToolNames = map[string]bool{
 	"BashOutput":     true,
 	"KillShell":      true,
 	"ProcessList":    true,
+	"Screenshot":     true,
 	"Repos":          true,
 	"RepoFiles":      true,
 	"RepoRead":       true,

@@ -2047,6 +2047,15 @@ func buildAgentSession(p sessionBuildParams) (*agent.Session, error) {
 	}
 	perms := permissions.From(p.settings.Permissions.Allow, p.settings.Permissions.Ask, p.settings.Permissions.Deny)
 	var promptOpts prompt.Options
+	// Screenshot is on the interactive session only: a capture asks, and
+	// headless, ACP, fleet and rc sessions have nobody to ask. Added after an
+	// allowlist, so an engaged definition that names its tools does not get it
+	// unless it lists Screenshot.
+	if p.settings.ScreenshotEnabled() && (len(p.toolAllow) == 0 || slices.ContainsFunc(p.toolAllow, func(n string) bool { return strings.EqualFold(n, tools.ScreenshotName) })) {
+		if dir, err := config.ScreenshotsDir(); err == nil {
+			reg = reg.With(&tools.Screenshot{Dir: dir, Desktop: p.settings.ScreenshotDesktopEnabled()})
+		}
+	}
 	if p.settings.Caveman != nil && *p.settings.Caveman {
 		promptOpts.Caveman = true
 	}

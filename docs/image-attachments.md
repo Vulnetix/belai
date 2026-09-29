@@ -19,7 +19,7 @@ judge an image, so pixels take a separate, deterministic path.
   decode as PNG or JPEG (GIF, WebP and anything else are refused). The
   declared size is checked against a pixel budget (50 million) from the header
   alone, so a small file that declares a huge canvas is refused before any
-  pixel is allocated. The input is capped at 8 MiB. The pixels are decoded,
+  pixel is allocated. The input is capped at 32 MiB (a 4K desktop PNG is large before it is reduced). The pixels are decoded,
   reduced to a long edge of 1568 pixels by averaging (which keeps small text
   legible), flattened onto white and re-encoded as a new PNG. Metadata
   chunks, trailing bytes and polyglot payloads do not survive because the

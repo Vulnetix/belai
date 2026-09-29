@@ -438,6 +438,10 @@ func (e *Effective) apply(s Settings, src Source) {
 		e.Settings.LSP.merge(s.LSP)
 		e.Origin["lsp"] = src
 	}
+	if s.Screenshot != nil {
+		e.Settings.Screenshot = mergeScreenshot(e.Settings.Screenshot, s.Screenshot, src == SourceProject)
+		e.Origin["screenshot"] = src
+	}
 	if s.Resilience != nil {
 		if e.Settings.Resilience == nil {
 			e.Settings.Resilience = &ResilienceSettings{}
