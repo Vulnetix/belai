@@ -85,22 +85,28 @@ func TestABurstOfDecisionsLosesNone(t *testing.T) {
 		}
 	}()
 	<-done
-	if got := a.rmEvents.len(); got != n {
-		t.Fatalf("queued %d of %d decisions", got, n)
+	// Other tests' apps run background work that records decisions through the
+	// same process-wide sinks, so count only this test's own session_name
+	// decisions and let strays pass by.
+	var mine []rolemanager.Activity
+	for a.rmEvents.len() > 0 {
+		act, _ := a.rmEvents.pop()
+		if act.Event == rolemanager.EventSessionName {
+			mine = append(mine, act)
+		}
+	}
+	if len(mine) != n {
+		t.Fatalf("queued %d of %d decisions", len(mine), n)
 	}
 	last := uint64(0)
-	for i := 0; i < n; i++ {
-		act, ok := a.rmEvents.pop()
-		if !ok {
-			t.Fatalf("queue ended after %d", i)
-		}
+	for i, act := range mine {
 		if act.Seq <= last {
 			t.Fatalf("activity %d out of order: seq %d after %d", i, act.Seq, last)
 		}
 		last = act.Seq
 		a.recordActivity(act)
 	}
-	if rows := entriesOfType(t, a, "rolemanager"); len(rows) != n {
+	if rows := entriesOfType(t, a, "rolemanager"); len(rows) < n {
 		t.Fatalf("recorded %d of %d", len(rows), n)
 	}
 }

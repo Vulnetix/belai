@@ -307,6 +307,7 @@ func TestStreamChunksAppendToAssistantMessage(t *testing.T) {
 }
 
 func TestNoCredentialsStillRenders(t *testing.T) {
+	noHostCredentials(t)
 	a := New(Options{})
 	if v := a.View(); v == "" {
 		t.Fatalf("View returned empty")
@@ -351,6 +352,7 @@ func TestMaskedEditorHidesValue(t *testing.T) {
 }
 
 func TestEnterWithoutCredentialsDoesNotCallProvider(t *testing.T) {
+	noHostCredentials(t)
 	called := false
 	transport := &fatalTransport{t: t, called: &called}
 	client := &http.Client{Transport: transport}
