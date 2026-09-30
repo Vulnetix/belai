@@ -307,16 +307,9 @@ func (a *App) startFleetWorkers(profile, crew string, replicas int) {
 		notice("fleet: " + err.Error())
 		return
 	}
-	if c, err := agentprofile.LoadCrew(crew); err == nil && c.OnePerRepo {
-		if err := reg.CheckCrewFree(c.Name, repo); err != nil {
-			notice(err.Error())
-			return
-		}
-	}
-	live, _ := reg.Live()
-	if max := a.settings.MaxWorkers(); len(live)+len(launches) > max {
-		notice(fmt.Sprintf("fleet: starting %d would run %d workers; agents.max_workers is %d", len(launches), len(live)+len(launches), max))
-		return
+	onePerRepo := false
+	if c, err := agentprofile.LoadCrew(crew); err == nil {
+		onePerRepo = c.OnePerRepo
 	}
 	exe, err := os.Executable()
 	if err != nil {
@@ -324,13 +317,23 @@ func (a *App) startFleetWorkers(profile, crew string, replicas int) {
 		return
 	}
 	var ids []string
-	for _, l := range launches {
-		id, err := reg.Spawn(fleet.SpawnOptions{Exe: exe, Repo: repo, Profile: l.profile, Crew: l.crew})
-		if err != nil {
-			notice("fleet: " + err.Error())
-			break
+	// The one-per-repository check, the worker cap and the spawns are one step
+	// under the crew-start lock, so two starts fired together cannot both pass.
+	if err := reg.WithCrewStart(crew, repo, onePerRepo, func() error {
+		live, _ := reg.Live()
+		if max := a.settings.MaxWorkers(); len(live)+len(launches) > max {
+			return fmt.Errorf("fleet: starting %d would run %d workers; agents.max_workers is %d", len(launches), len(live)+len(launches), max)
 		}
-		ids = append(ids, id)
+		for _, l := range launches {
+			id, err := reg.Spawn(fleet.SpawnOptions{Exe: exe, Repo: repo, Profile: l.profile, Crew: l.crew})
+			if err != nil {
+				return fmt.Errorf("fleet: %w", err)
+			}
+			ids = append(ids, id)
+		}
+		return nil
+	}); err != nil {
+		notice(err.Error())
 	}
 	if len(ids) > 0 {
 		a.addSystem(fmt.Sprintf("⚙ started %d worker(s): %s — /agents workers tab, or `belai agent ps`", len(ids), strings.Join(ids, ", ")))
