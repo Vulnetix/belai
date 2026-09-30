@@ -143,7 +143,7 @@ func (s *Server) initialize(params json.RawMessage) (any, error) {
 		"protocolVersion": ProtocolVersion,
 		"agentCapabilities": map[string]any{
 			"loadSession":        false,
-			"promptCapabilities": map[string]any{"image": false, "audio": false, "embeddedContext": true},
+			"promptCapabilities": map[string]any{"image": true, "audio": false, "embeddedContext": true},
 			"mcpCapabilities":    map[string]any{"http": false, "sse": false},
 		},
 		"agentInfo":   map[string]any{"name": "belai", "title": "Vulnetix Belai", "version": version.Version},
@@ -204,10 +204,14 @@ func (s *Server) cancelSession(params json.RawMessage) {
 
 // contentBlock is the subset of ACP content Belai reads from a prompt.
 type contentBlock struct {
-	Type     string `json:"type"`
-	Text     string `json:"text,omitempty"`
-	URI      string `json:"uri,omitempty"`
-	Name     string `json:"name,omitempty"`
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
+	URI  string `json:"uri,omitempty"`
+	Name string `json:"name,omitempty"`
+	// Data and MimeType carry an image block: base64 bytes and the media type the
+	// editor declares (which Belai does not trust; the decoder decides).
+	Data     string `json:"data,omitempty"`
+	MimeType string `json:"mimeType,omitempty"`
 	Resource *struct {
 		URI  string `json:"uri"`
 		Text string `json:"text,omitempty"`
@@ -247,7 +251,14 @@ func (s *Server) prompt(ctx context.Context, params json.RawMessage) (any, error
 		return nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "unknown session %q", p.SessionID)
 	}
 	text := promptText(p.Prompt)
+	imgs, markers, notes := promptImages(p.Prompt)
+	if text == "" && len(imgs) > 0 {
+		text = imagePlaceholder
+	}
 	if text == "" {
+		if len(notes) > 0 {
+			return nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "no image could be admitted: %s", strings.Join(notes, "; "))
+		}
 		return nil, jsonrpc.Errorf(jsonrpc.CodeInvalidParams, "empty prompt")
 	}
 
@@ -267,10 +278,15 @@ func (s *Server) prompt(ctx context.Context, params json.RawMessage) (any, error
 		ss.mu.Unlock()
 	}()
 
-	ss.log.User(text, nil)
+	var userMeta map[string]any
+	if len(markers) > 0 {
+		// A marker per image and never the bytes, as in the TUI transcript.
+		userMeta = map[string]any{"images": markers}
+	}
+	ss.log.User(text, userMeta)
 	var res run.Result
 	var runErr error
-	for ev := range ss.agent.RunStream(turnCtx, history, agent.TurnInput{Prompt: text}) {
+	for ev := range ss.agent.RunStream(turnCtx, history, agent.TurnInput{Prompt: text, Attachments: imgs, Directive: imageNotesDirective(notes)}) {
 		ss.log.Observe(ev)
 		switch ev.Kind {
 		case agent.EventDoneKind:

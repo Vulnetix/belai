@@ -308,7 +308,8 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   a prompt), by pasting one from the clipboard (`clipboard.ReadImage`, a fixed
   program with no argument from a model, the scrubbed environment, five
   seconds and 32 MiB; `ui.clipboard_images`, which a project layer may only turn
-  off) or by dropping a file whose path becomes an `@` token. An
+  off) by dropping a file whose path becomes an `@` token, or as an `image` block in an
+  ACP prompt (never fetched by address). An
   image must decode as PNG or JPEG inside the pixel and byte budget, is
   bounded to a long edge, flattened and re-encoded as a new PNG; any failure
   refuses it, and a withheld text result carries no image. Only the newest
@@ -440,7 +441,10 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   without `trusted:true`; the trust prompt never runs over ACP. Permission
   asks become `session/request_permission`; anything but an explicit allow
   denies, and "allow for this session" lives in memory for that session and
-  tool only. Editor-supplied `mcpServers` are ignored. Nothing but protocol
+  tool only. Editor-supplied `mcpServers` are ignored. An editor's
+  `image` blocks are untrusted bytes: each is admitted by `imageguard` alone
+  (never a classifier, never fetched by address), at most eight a prompt, and
+  the transcript keeps a marker and no bytes. Nothing but protocol
   messages is written to stdout.
 - **Kanban text is other sessions' and the web's text.** The global board
   (`internal/kanban`, `~/.vulnetix/belai/kanban`) holds items written by

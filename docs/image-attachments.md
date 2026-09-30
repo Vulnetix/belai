@@ -114,6 +114,8 @@ way an image can be attached.
   attach path, including the confirm-root prompt for a file outside the
   session roots. Any other paste, several lines of text, a relative path, a
   directory or a non-image file, goes to the composer as text.
+- **From an editor.** An ACP `image` block is admitted by the same gate; see
+  [ACP](acp.md#images) for its edge cases.
 - **At most eight images per prompt.** Further ones are rejected with that
   reason. Each image costs tokens on every round of the turn.
 - **A card, not pixels.** The composer chip and the transcript row show the

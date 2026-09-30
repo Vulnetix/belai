@@ -41,9 +41,9 @@ from your normal Belai settings for the project directory.
 
 | ACP method or update | Belai behaviour |
 | --- | --- |
-| `initialize` | protocol version 1; embedded file context accepted; no session loading |
+| `initialize` | protocol version 1; embedded file context and images accepted, audio not; no session loading |
 | `session/new` | starts a session in the editor's project directory |
-| `session/prompt` | runs one turn; text, file links and embedded file text become the prompt |
+| `session/prompt` | runs one turn; text, file links and embedded file text become the prompt, and `image` blocks are attached as images |
 | `session/cancel` | stops the turn; the prompt returns `cancelled` |
 | `agent_message_chunk` | streamed reply text |
 | `agent_thought_chunk` | streamed reasoning |
@@ -87,7 +87,7 @@ classifier refuses it.
 - Clarifying questions, the harness's and the model's `AskUserQuestion`, are
   answered as declined over ACP; the agent proceeds with its
   best reading of the prompt.
-- Images and audio in prompts are not accepted.
+- Audio in prompts is not accepted. Images are: see below.
 - Slash commands, modes and the TUI panels are not exposed.
 
 ## Edge cases
@@ -101,3 +101,35 @@ classifier refuses it.
 - "Allow for this session" covers that tool name only, and ends with the
   session.
 - Cancelling a turn returns `cancelled` even when the turn also failed.
+
+## Images
+
+Belai advertises `promptCapabilities.image: true`. An `image` content block in
+`session/prompt` (`data` is base64, `mimeType` is the type the editor declares)
+attaches an image to the turn under the same rules as an image attached in the
+TUI (see [Images](image-attachments.md)).
+
+- **Admitted by `internal/imageguard`, never the classifier.** The bytes must
+  decode as PNG or JPEG inside the size and pixel budget and are re-encoded as
+  a new PNG. The declared `mimeType` is not trusted: the decoder decides what
+  the bytes are. The base64 length is checked before anything is decoded, so
+  an oversize payload is refused without being allocated.
+- **A block with only a `uri` is refused.** Belai never fetches an address an
+  editor names.
+- **At most eight images per prompt**, numbered `image-1.png`, `image-2.png`
+  in the order they were admitted (a refused image does not use a number).
+- **A refused image does not fail the prompt.** The prompt runs, and the model
+  is told, in a sealed harness directive, which images were not admitted and
+  why (the reason is cleaned and capped, and the refused bytes are never
+  echoed). When the prompt has no text and no image could be admitted, the
+  call fails with `invalid params: no image could be admitted: ...`.
+- **An image-only prompt runs.** Its text is the harness placeholder
+  `(image attached)`, so no words are put in the editor user's mouth.
+- **Same gates.** The prompt text is admitted as before, the permission rules,
+  sandbox and budgets apply, and a model without image input (a custom
+  provider's `images` declaration, or `models.Vision`) is told the image was not
+  sent instead of receiving it.
+- **The sending turn only.** The image rides that prompt and its tool loop and
+  is not replayed on later prompts. The private transcript records the image
+  as a marker (name, type, size, dimensions, tokens) on the user entry, never
+  the bytes.
