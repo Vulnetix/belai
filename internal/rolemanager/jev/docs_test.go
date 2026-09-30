@@ -12,8 +12,11 @@ import (
 // the constants the jobs read.
 func TestJevJobsPageStatesTheThresholds(t *testing.T) {
 	doc := docparity.Read(t, "docs/jev-jobs.md")
-	for name, v := range map[string]float64{"DropAt": DropAt, "KeepAt": KeepAt, "StrongAt": StrongAt, "SwapAt": SwapAt} {
-		row := fmt.Sprintf("| `%s` | %.2f |", name, v)
+	for name, v := range map[string]struct {
+		key string
+		val float64
+	}{"DropAt": {"drop_at", DropAt}, "KeepAt": {"keep_at", KeepAt}, "StrongAt": {"strong_at", StrongAt}, "SwapAt": {"swap_at", SwapAt}} {
+		row := fmt.Sprintf("| `%s` | `%s` | %.2f |", name, v.key, v.val)
 		if !strings.Contains(doc, row) {
 			t.Errorf("docs/jev-jobs.md lacks the row %q", row)
 		}

@@ -239,6 +239,7 @@ func (a *App) voiceCancelFlow() bool {
 	}
 	a.voiceDetach()
 	v.queue, v.held, v.heldRaw = nil, "", ""
+	v.cmdGen++
 	v.phase = pttIdle
 	v.seq++
 	v.eng.Cancel()

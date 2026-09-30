@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/clarify"
+	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/modes"
 )
 
@@ -158,7 +159,8 @@ func Resolve(det Detection, hint ModeHint, interactive bool) (Intent, bool) {
 	topScore := det.TopScore
 	runnerUp := det.RunnerUp
 
-	confident := topScore >= 0.80 && (topScore-runnerUp) >= 0.25
+	t := config.ActiveJevThresholds()
+	confident := topScore >= t.ModeConfident && (topScore-runnerUp) >= t.ModeMargin
 	hintIntent := modeToIntent(hint.Mode)
 
 	if !hint.Sticky {
@@ -168,7 +170,7 @@ func Resolve(det Detection, hint ModeHint, interactive bool) (Intent, bool) {
 		if interactive {
 			return hintIntent, true
 		}
-		if topScore >= 0.5 {
+		if topScore >= t.ModeHeadless {
 			return top, false
 		}
 		return IntentAgent, false

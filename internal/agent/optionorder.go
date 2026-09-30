@@ -157,8 +157,9 @@ func clearWinner(probs map[string]float64, ids []string) bool {
 	if len(ids) < 2 {
 		return false
 	}
+	t := config.ActiveJevThresholds()
 	p1, p2 := probs[ids[0]], probs[ids[1]]
-	return (p1 >= 0.5 && p1-p2 >= 0.1) || p1-p2 >= 0.25
+	return (p1 >= t.OptionHit && p1-p2 >= t.OptionMargin) || p1-p2 >= t.OptionLead
 }
 
 // stripRecommended removes every "(recommended)" marker from a group's labels

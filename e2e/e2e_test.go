@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/sandbox"
 )
 
 var belaiBin string
@@ -43,6 +44,10 @@ func TestMain(m *testing.M) {
 	// the developer's live account and pulled into their real board by the
 	// next TUI. A closed loopback port is an allowed origin that never answers.
 	os.Setenv("VULNETIX_WEB_URL", "http://127.0.0.1:1")
+	// The e2e subprocesses inherit os.Environ(); scrub the sandbox marker so
+	// the binary exercises its outside-the-sandbox path when `go test` runs
+	// inside a Belai sandbox.
+	os.Unsetenv(sandbox.EnvMarker)
 	os.Exit(m.Run())
 }
 

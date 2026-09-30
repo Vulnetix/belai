@@ -232,3 +232,59 @@ func (j *Jobs) RateLocate(ctx context.Context, stage, question string, items []L
 	})
 	return res.Scores, res, err
 }
+
+// VoiceTarget is something a spoken instruction may start: a skill, the
+// security review, a crew, a saved process or prompt, an agent profile or a
+// mode. Kind says which, and Name is how the user would say it.
+type VoiceTarget struct {
+	// ID is the caller's key for the target.
+	ID string
+	// Kind is skill, review, crew, process, prompt, agent or mode.
+	Kind string
+	// Name is the target's name; Description its one-line purpose, may be empty.
+	Name, Description string
+}
+
+// voiceCriterion is the statement every target is judged against.
+const voiceCriterion = "The speech in state.context is an explicit instruction to start exactly the thing named by the item, such as a command said to an assistant. A speech that only mentions the thing, asks about it, describes it or is about something else does not count."
+
+// RateVoice rates how well a spoken instruction asks for each target. The
+// scores are probabilities in [0,1]; a target the backend did not answer is
+// absent from the map. The speech is user-spoken text and the names come from
+// the user's own libraries; both reach the backend only as DecisionText.
+func (j *Jobs) RateVoice(ctx context.Context, speech string, targets []VoiceTarget) (map[string]float64, ScoreResult, error) {
+	items := make([]ScoreItem, 0, len(targets))
+	for _, t := range targets {
+		label := t.Kind + " " + t.Name
+		if t.Description != "" {
+			label += ": " + t.Description
+		}
+		items = append(items, ScoreItem{ID: sanitize.Ident(t.ID, 64), Label: sanitize.ForDecision(label, 240)})
+	}
+	res, err := j.Client.Score(ctx, ScoreRequest{
+		Job:         string(config.JevVoiceCommand),
+		Criterion:   sanitize.ForDecision(voiceCriterion, 0),
+		Context:     sanitize.ForDecision(speech, 600),
+		Items:       items,
+		MaxRequests: 8,
+	})
+	return res.Scores, res, err
+}
+
+// PickVoice returns the one target a spoken instruction clearly asks for: its
+// ID and score, or "" when no target, or more than one, is at or above the
+// voice cut-off. More than one is ambiguous, so nothing runs.
+func PickVoice(scores map[string]float64) (id string, score float64) {
+	at := config.ActiveJevThresholds().VoiceAt
+	n := 0
+	for k, v := range scores {
+		if v >= at {
+			n++
+			id, score = k, v
+		}
+	}
+	if n != 1 {
+		return "", 0
+	}
+	return id, score
+}

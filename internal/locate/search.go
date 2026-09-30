@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/vulnetix/belai/internal/config"
 )
 
 // Search ranks the inventory's files for a query.
@@ -119,7 +121,7 @@ func Search(ctx context.Context, inv *Inventory, query string, opt Options) Resu
 					continue
 				}
 				res.Lexical = false
-				if s >= LeadAt {
+				if s >= config.ActiveJevThresholds().LeadAt {
 					keep = append(keep, di)
 				}
 			}
@@ -194,10 +196,10 @@ func Search(ctx context.Context, inv *Inventory, query string, opt Options) Resu
 			res.Hits = append(res.Hits, h)
 			continue
 		}
-		if final[i] < LeadAt {
+		if final[i] < config.ActiveJevThresholds().LeadAt {
 			continue
 		}
-		h.Lead = final[i] < HitAt
+		h.Lead = final[i] < config.ActiveJevThresholds().HitAt
 		res.Hits = append(res.Hits, h)
 	}
 	if len(res.Hits) == 0 && !res.Lexical {

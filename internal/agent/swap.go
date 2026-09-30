@@ -159,7 +159,7 @@ func uniqueWinner(scores map[string]float64) (name string, pct int, ok bool) {
 	}
 	sort.Strings(names)
 	for _, n := range names {
-		if scores[n] >= jev.SwapAt {
+		if scores[n] >= config.ActiveJevThresholds().SwapAt {
 			if name != "" {
 				return "", 0, false
 			}

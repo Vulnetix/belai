@@ -44,6 +44,11 @@ const JevOptionOrder JevJob = "option_order"
 // subagents start, so they begin where the code is.
 const JevExploreLocate JevJob = "explore_locate"
 
+// JevVoiceCommand matches a spoken instruction to one skill, security review,
+// crew, supervised process, prompt, agent profile or mode, and runs it only
+// when exactly one target rates at or above the voice threshold.
+const JevVoiceCommand JevJob = "voice_command"
+
 // JevJobs lists every shipped job in the order /settings and the docs show
 // them. A job is added here in the change that implements it, so /settings
 // never offers a switch for work that does not exist.
@@ -55,6 +60,7 @@ var JevJobs = []JevJob{
 	JevLSPTriage,
 	JevOptionOrder,
 	JevExploreLocate,
+	JevVoiceCommand,
 }
 
 // LocatePreview values for jev.locate_previews.
@@ -77,6 +83,10 @@ type JevSettings struct {
 	// LocatePreviews says where file previews may be sent for explore_locate:
 	// "local" (default), "hosted" or "off". User layers only.
 	LocatePreviews string `json:"locate_previews,omitempty"`
+	// Thresholds overrides the score cut-offs the decision gates and jobs read.
+	// Unset keys keep DefaultJevThresholds. User layers only: a project layer's
+	// value is dropped.
+	Thresholds *JevThresholdSettings `json:"thresholds,omitempty"`
 }
 
 // ValidJevJob reports whether name is a job.
@@ -99,7 +109,7 @@ func ValidateJev(s Settings) error {
 	default:
 		return fmt.Errorf("jev.locate_previews %q must be local, hosted or off", s.Jev.LocatePreviews)
 	}
-	return nil
+	return s.Jev.Thresholds.validate()
 }
 
 func jevJobNames() string {
@@ -161,6 +171,10 @@ func mergeJev(dst, src *JevSettings, projectLayer bool) *JevSettings {
 	if dst != nil {
 		out = *dst
 		out.Jobs = maps(dst.Jobs)
+	}
+	if !projectLayer && src.Thresholds != nil {
+		// A repository never sets a threshold: moving a gate is the user's call.
+		out.Thresholds = out.Thresholds.overlay(src.Thresholds)
 	}
 	for name, on := range src.Jobs {
 		if projectLayer && on {

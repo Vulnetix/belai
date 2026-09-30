@@ -3,6 +3,8 @@ package main
 import (
 	"os"
 	"testing"
+
+	"github.com/vulnetix/belai/internal/sandbox"
 )
 
 // TestMain keeps every test in this package off the developer's live
@@ -14,5 +16,8 @@ import (
 // refuses any non-loopback origin from a test binary, as a second line.
 func TestMain(m *testing.M) {
 	os.Setenv("VULNETIX_WEB_URL", "http://127.0.0.1:1")
+	// These tests exercise the CLI's outside-the-sandbox path; the marker
+	// leaks in when `go test` itself runs inside a Belai sandbox.
+	os.Unsetenv(sandbox.EnvMarker)
 	os.Exit(m.Run())
 }

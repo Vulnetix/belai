@@ -20,6 +20,7 @@ import (
 	"github.com/OpenRouterTeam/go-sdk/models/sdkerrors"
 	"github.com/OpenRouterTeam/go-sdk/retry"
 
+	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/decisions"
 	"github.com/vulnetix/belai/internal/rolemanager"
 )
@@ -55,15 +56,14 @@ const (
 	// means the proposition is true (the call is unsafe); a low probability
 	// means it is false (the call is safe).
 	unsafeInstruction = "The tool call is unsafe and must be blocked."
-
-	// allowAt is the probability at or below which the proposition is false:
-	// the call is safe and may proceed. denyAt is the probability at or above
-	// which the proposition is true: the call must be blocked. The band
-	// between the two is inconclusive — a human must decide. The thresholds
-	// match the OpenRouter "gate tool calls with Jev" cookbook.
-	allowAt = 0.1
-	denyAt  = 0.9
 )
+
+// The security gate's allow and deny probabilities (and the routing threshold)
+// are jev.thresholds in settings; config.DefaultJevThresholds holds the
+// defaults, which match the OpenRouter "gate tool calls with Jev" cookbook.
+// At or below the allow cut-off the proposition is false: the call is safe.
+// At or above the deny cut-off it is true: the call must be blocked. The band
+// between is inconclusive — a human must decide.
 
 // DecisionsTimeout bounds one Decisions call. Jev is a fast verdict model: a
 // call that has not answered in 3s is handed to the fallback (the agent model
@@ -235,14 +235,15 @@ func (c *Client) Classify(ctx context.Context, p rolemanager.ClassifierPayload) 
 	return string(Threshold(n)), nil
 }
 
-// Threshold maps a noul probability to a Sentinel. At or above denyAt the
-// proposition is true (Deny); at or below allowAt it is false (Allow); in
-// between the gate cannot decide (Inconclusive).
+// Threshold maps a noul probability to a Sentinel. At or above the deny
+// cut-off the proposition is true (Deny); at or below the allow cut-off it is
+// false (Allow); in between the gate cannot decide (Inconclusive).
 func Threshold(prob float64) Sentinel {
-	if prob >= denyAt {
+	t := config.ActiveJevThresholds()
+	if prob >= t.DenyAt {
 		return Deny
 	}
-	if prob <= allowAt {
+	if prob <= t.AllowAt {
 		return Allow
 	}
 	return Inconclusive
@@ -284,10 +285,6 @@ type RouteDecision struct {
 	Key    string
 	Scores map[string]float64 // noul probability per candidate key
 }
-
-// routeThreshold is the noul probability a candidate must exceed to be
-// selected. At or below it the answer is "probably not this candidate".
-const routeThreshold = 0.5
 
 // Route asks Jev which of candidates should serve useCase. It sends one noul
 // question per candidate — "This use case should be served by <provider>
@@ -383,7 +380,7 @@ func SelectRoute(scores map[string]float64) string {
 			tie = true
 		}
 	}
-	if best == "" || bestScore <= routeThreshold || tie {
+	if best == "" || bestScore <= config.ActiveJevThresholds().RouteAt || tie {
 		return ""
 	}
 	return best
@@ -618,6 +615,7 @@ func EndpointUnavailable(err error) bool { return endpointUnavailable(err) }
 // highest-scoring sentinel; every category at or below allowAt returns SAFE;
 // the band between is undecided.
 func thresholdCategories(answers map[string]decisions.Answer, categories []rolemanager.Sentinel) (string, bool) {
+	t := config.ActiveJevThresholds()
 	best := ""
 	bestScore := 0.0
 	allLow := true
@@ -630,7 +628,7 @@ func thresholdCategories(answers map[string]decisions.Answer, categories []rolem
 		if n < 0 || n > 1 {
 			return "", false
 		}
-		if n > allowAt {
+		if n > t.AllowAt {
 			allLow = false
 		}
 		if n > bestScore {
@@ -638,7 +636,7 @@ func thresholdCategories(answers map[string]decisions.Answer, categories []rolem
 			bestScore = n
 		}
 	}
-	if bestScore >= denyAt {
+	if bestScore >= t.DenyAt {
 		return best, true
 	}
 	if allLow {

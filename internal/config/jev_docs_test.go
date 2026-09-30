@@ -16,7 +16,7 @@ func TestJevJobsPageDocumentsEveryJobAndKey(t *testing.T) {
 			t.Errorf("docs/jev-jobs.md does not document the job %q", j)
 		}
 	}
-	for _, key := range []string{"jev.jobs.", "jev.locate_previews", LocatePreviewsLocal, LocatePreviewsHosted, LocatePreviewsOff} {
+	for _, key := range []string{"jev.jobs.", "jev.locate_previews", "jev.thresholds.", "deny_at", "allow_at", LocatePreviewsLocal, LocatePreviewsHosted, LocatePreviewsOff} {
 		if !strings.Contains(doc, key) {
 			t.Errorf("docs/jev-jobs.md does not mention %q", key)
 		}

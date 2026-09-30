@@ -415,6 +415,7 @@ func abridge(s string) string {
 // calls is removed. Returns the new turns and how many pairs were dropped and
 // truncated.
 func applyPrune(turns []run.Turn, pairs []prunePair, scores map[string]float64) (out []run.Turn, dropped, truncated int) {
+	keepAt := config.ActiveJevThresholds().KeepAt
 	dropCall := map[string]bool{}  // call id -> drop the call
 	dropTool := map[int]bool{}     // tool turn -> drop
 	newContent := map[int]string{} // tool turn -> replacement content
@@ -431,8 +432,8 @@ func applyPrune(turns []run.Turn, pairs []prunePair, scores map[string]float64) 
 			keepCall = 1
 		}
 		switch {
-		case keepResult >= jev.KeepAt:
-		case keepCall >= jev.KeepAt:
+		case keepResult >= keepAt:
+		case keepCall >= keepAt:
 			content := turns[p.resTurn].Content
 			if len(content) > pruneHeadChars+pruneTruncateSlack && !strings.Contains(content, "ReadResult") {
 				cut := pruneHeadChars

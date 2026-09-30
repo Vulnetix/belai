@@ -14,6 +14,9 @@ composer. Audio stays on your machine.
 - [When text appears](#when-text-appears)
 - [How the words arrive](#how-the-words-arrive)
 - [Typing cancels voice](#typing-cancels-voice)
+- [The wake word](#the-wake-word)
+- [Spoken keywords](#spoken-keywords)
+- [Spoken instructions](#spoken-instructions)
 - [The listening indicator](#the-listening-indicator)
 - [In the transcript](#in-the-transcript)
 - [Diagnosing with /voice debug](#diagnosing-with-voice-debug)
@@ -257,6 +260,87 @@ while nothing is happening (a quietly listening microphone) leaves it alone.
 The cancel takes effect before the engine has processed anything else, so a
 result that was already being recognised cannot land late.
 
+## The wake word
+
+With `voice.wake_word` on, belai acts only on speech that starts with "Hey,
+Belay". The microphone stays open in `listen` mode, but everything else is
+dropped the moment it is recognised: it is never shown, never written to the
+composer, never sent to the tidy-up model or Jev, and never recorded. There is
+no running guess either, because a guess is raw text.
+
+- The phrase is stripped first. "Hey, Belay, fix the failing test" goes on as
+  "fix the failing test", and that is all any later step sees.
+- The name tolerates the recogniser's usual misspellings (one letter off
+  "belay" or "belai"), and only at the very start of the utterance. "They said
+  hey belay" and "hey there belay" do not match.
+- A bare "Hey, Belay" arms the next utterance for eight seconds, so you can
+  pause and then say the instruction. One utterance uses it up.
+- Turning the wake word on sets `voice.mode` to `listen`, because push to talk
+  is not listening. Settings that set `wake_word` without `listen` fail
+  validation, naming the key.
+
+The wake word is a filter on what you dictate, not authentication: anyone in
+earshot can say it. Every action it leads to still goes through the same
+permission rules, asks and sandbox as if you had typed it.
+
+## Spoken keywords
+
+With `voice.commands` on (the default), a few words said on their own act
+without any model. The match is on the whole utterance after punctuation and a
+leading or trailing "please" are removed, so "stop the server" is ordinary
+speech and "stop" is not.
+
+| Say | When | Does |
+| --- | --- | --- |
+| stop, cancel | a turn is running, no ask open | interrupts it, as Esc does |
+| approve, approved, allow, yes | a permission ask is open | allow once |
+| approve always, always allow | a permission ask is open | allow and save the rule; only these exact phrases |
+| deny, denied, reject, no | a permission ask is open | deny |
+| option 1 to option 4 (also "number 2", or just "2") | a clarification is open | picks that option in the first group with no answer |
+| submit | a clarification is open | sends the answers shown, as Enter does |
+| skip | a clarification is open | skips the first group with no answer |
+| approve, deny | the plan review is open | approve here, or keep the plan without executing it |
+
+A keyword with nothing to apply to is ordinary speech and is dictated like any
+other words. An option number the group does not have is refused. A single
+choice group that becomes answered last sends the answers at once, so "option
+2" alone is select and proceed; a multiple choice group only toggles, and
+"submit" sends. A keyword never answers an ask other than the one open when it
+was heard, and each one writes a `voice: ...` line in the transcript and records
+its source as `voice`.
+
+While one of those asks is on screen the composer is not, so dictation is
+closed. In `listen` mode the microphone stays open for these keywords alone:
+anything else said is dropped there, never shown, and never sent anywhere.
+Push to talk has no open microphone to keep, so answering an ask by voice needs `listen`.
+With the wake word on, "Hey, Belay, deny" works as well as a bare "deny".
+
+## Spoken instructions
+
+A short utterance (up to 24 words) that is not a keyword is offered to Jev's
+`voice_command` job ([Jev jobs](jev-jobs.md#voice-command)). Jev rates it
+against what you could mean: your skills, saved prompts and processes, agent
+profiles and crews, the security review, plan mode and goal mode. Exactly one
+must rate at or above `jev.thresholds.voice_at` (0.95 by default); two close
+matches, a score just under, no backend or a failure leaves the speech as
+ordinary dictation. Only the speech and the target names reach the backend.
+
+| Target | What running it does |
+| --- | --- |
+| skill | submits "use the NAME skill" through the typed-prompt path |
+| security review | starts `/vulnetix review` |
+| crew | starts the crew, as `/fleet crew NAME` |
+| agent profile | switches to agent mode with that profile, as `/agent:NAME` |
+| process | starts the saved process, as `/process:NAME`; plan mode still refuses |
+| prompt | puts the saved prompt in the composer for you to send, as `/prompt:NAME` |
+| plan, goal | switches the sticky mode, as `/mode` |
+
+The job never approves anything. It calls the function the slash command calls,
+so that command's own checks hold, and it runs only what is saved in your
+libraries, never a command line you said. Typing while a match is pending
+cancels it. The role-manager record holds the kind of target and a rounded
+score, never the speech or a name.
+
 ## The listening indicator
 
 Three things show the state. The `voice:` switch in the footer says it in
@@ -404,7 +488,9 @@ cleanup failure never loses what you said. Route the role like any other with
     "cleanup": true,
     "log": true,
     "key": "f11",
-    "device": ""
+    "device": "",
+    "wake_word": false,
+    "commands": true
   }
 }
 ```
@@ -418,15 +504,18 @@ cleanup failure never loses what you said. Route the role like any other with
 | `log` | `true`; `false` hides voice's automatic notices and its cleanup rows from the transcript | dropped |
 | `key` | `f11`; also `ctrl+space`, `ctrl+]`, `ctrl+g`, and `f13`, `f14`, `f15`, `f16` on a keyboard that has them | dropped |
 | `device` | empty, the helper's default input | dropped |
+| `wake_word` | `false`; `true` acts only on speech that starts with "Hey, Belay" and needs `mode` `listen` | dropped |
+| `commands` | `true`; `false` turns off the spoken keywords and the `voice_command` job | dropped |
 
-An invalid `mode`, `delivery`, `key` or `device` fails settings resolution
+An invalid `mode`, `delivery`, `key` or `device`, or a `wake_word` without
+`listen`, fails settings resolution
 with a message naming the key, the same way an invalid routing entry does.
 Voice is a per-user preference, so the whole key is ignored in a project's
 `.vulnetix/settings.json`. Set it in your global `settings.json`, or with
 `/settings` and `/voice`.
 
-`/settings` has six rows, all written to the global file: `voice input`
-(`enabled`), `voice mode`, `voice delivery`, `voice cleanup`, `voice log` and `voice key`. Turning
+`/settings` has eight rows, all written to the global file: `voice input`
+(`enabled`), `voice mode`, `voice delivery`, `voice cleanup`, `wake word`, `voice commands`, `voice log` and `voice key`. Turning
 `voice input` on or off, or changing the mode, takes effect at once; delivery
 and cleanup apply from the next transcript. `x` returns a row to its default.
 `device` is set in the file.
@@ -448,7 +537,7 @@ session record still holds every role-manager decision, and
 
 | Command | Effect |
 | --- | --- |
-| `/voice` or `/voice status` | two lines: state, mode, delivery, cleanup and key; then the capture helper and whether the model is built in or on disk |
+| `/voice` or `/voice status` | two lines: state, mode, delivery, cleanup, key, wake word and commands; then the capture helper and whether the model is built in or on disk |
 | `/voice debug` | open the diagnostic screen (see above) |
 | `/voice on` | turn voice on and remember it; with no model it shows the offer and waits |
 | `/voice off` | turn voice off, remember it and close the microphone |
@@ -456,6 +545,8 @@ session record still holds every role-manager decision, and
 | `/voice push` / `/voice listen` | choose the mode |
 | `/voice insert` / `/voice submit` | choose the delivery |
 | `/voice cleanup on` / `/voice cleanup off` | switch the cleanup pass |
+| `/voice wake on` / `/voice wake off` | switch the wake word; on also sets the mode to `listen` |
+| `/voice commands on` / `/voice commands off` | switch the spoken keywords and instructions |
 
 Each command that changes a setting writes it to your global `settings.json`
 and applies to the running session. Any other argument prints the usage line.

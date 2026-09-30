@@ -730,6 +730,14 @@ transcript. Each outcome is a `voice_cleanup` role-manager activity with the
 verdict `cleaned`, `empty`, `runaway` or `error` and the serving model. It
 never records the transcript.
 
+Two more voice features sit beside it. The wake word drops speech that does not
+start with "Hey, Belay" before it reaches this role, and strips the phrase from
+what does. The Jev `voice_command` job matches a short spoken instruction to a
+skill, crew, process, prompt, agent profile, the security review or a mode and
+is recorded as a `voice_command` activity with the verdict `matched` or `none`,
+the kind of target and a rounded score, never the speech or a name
+([voice input](voice.md), [Jev jobs](jev-jobs.md#voice-command)).
+
 ### Streaming the voice-cleanup reply
 
 `rolemanager.StreamClassifier` is a `Classifier` that can hand over its answer as

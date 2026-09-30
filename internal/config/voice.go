@@ -45,6 +45,25 @@ type VoiceSettings struct {
 	Log *bool `json:"log,omitempty"`
 	// Device is the capture helper's input device. Empty is its default.
 	Device string `json:"device,omitempty"`
+	// WakeWord makes listen mode act only on speech that starts with "Hey,
+	// Belay". Anything else is dropped unheard: never shown, cleaned up or
+	// sent to a model. Needs mode listen. Default false.
+	WakeWord *bool `json:"wake_word,omitempty"`
+	// Commands turns on the spoken keywords (stop, option N, submit, skip,
+	// approve, deny) and Jev's voice_command job. Default true.
+	Commands *bool `json:"commands,omitempty"`
+}
+
+// VoiceWakeWordEnabled reports whether the wake word gates dictation.
+// Default false.
+func (s *VoiceSettings) VoiceWakeWordEnabled() bool {
+	return s != nil && s.WakeWord != nil && *s.WakeWord
+}
+
+// VoiceCommandsEnabled reports whether spoken keywords and voice commands are
+// on. Default true.
+func (s *VoiceSettings) VoiceCommandsEnabled() bool {
+	return s == nil || s.Commands == nil || *s.Commands
 }
 
 // VoiceEnabled reports whether voice input is on. Default false.
@@ -118,6 +137,12 @@ func (s *VoiceSettings) merge(from *VoiceSettings) {
 	if from.Device != "" {
 		s.Device = from.Device
 	}
+	if from.WakeWord != nil {
+		s.WakeWord = from.WakeWord
+	}
+	if from.Commands != nil {
+		s.Commands = from.Commands
+	}
 }
 
 // ValidateVoice rejects a voice block with a value it does not understand,
@@ -149,6 +174,9 @@ func ValidateVoice(s Settings) error {
 	}
 	if v.Device != "" && !voiceDeviceRE.MatchString(v.Device) {
 		return fmt.Errorf("voice.device %q must be letters, digits and . _ : , @ = -, and must not start with -", v.Device)
+	}
+	if v.VoiceWakeWordEnabled() && v.VoiceModeOr() != VoiceModeListen {
+		return fmt.Errorf("voice.wake_word needs voice.mode %q: push to talk is not listening, so it cannot hear the wake word", VoiceModeListen)
 	}
 	return nil
 }
