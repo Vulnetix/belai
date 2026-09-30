@@ -237,6 +237,10 @@ type App struct {
 	// following turn until the user picks again: the classifier must never
 	// silently reroute a plan session into the unbounded goal loop.
 	modeSticky bool
+	// modeAuto is the shift+tab "auto" stop: no sticky choice, so the
+	// classifier picks the mode and intent for each prompt. a.mode still
+	// holds the effective mode (agent until a decision lands).
+	modeAuto bool
 	// forceMode carries that manual choice into the agent session. Suppressing
 	// the TUI's own classification is not enough: Session.run classifies again
 	// internally, so without this the user's explicit mode is discarded.
@@ -875,6 +879,13 @@ func New(opts Options) *App {
 	// is sticky and explicit, matching cycleMode: otherwise the first turn's
 	// classifier overwrites the mode that was just restored.
 	restoredMode := prefs.Mode != ""
+	modeAuto := (prefs.Mode == "auto" || (prefs.Mode == "" && st.LastMode == "auto")) && !opts.PlanMode
+	if mode == "auto" {
+		mode = "agent"
+	}
+	if modeAuto {
+		restoredMode = false
+	}
 	modeSticky := opts.PlanMode || mode == "plan" || restoredMode
 	modeExplicit := restoredMode
 
@@ -925,6 +936,7 @@ func New(opts Options) *App {
 		footer:            components.Footer{Session: "new", Model: initial.Model},
 		mode:              mode,
 		modeSticky:        modeSticky,
+		modeAuto:          modeAuto,
 		modeExplicit:      modeExplicit,
 		namedAgent:        namedAgent,
 		namedAgentTools:   namedAgentTools,
@@ -4596,30 +4608,53 @@ func (a *App) handleCommand(input string) tea.Cmd {
 
 func (a *App) cycleMode() {
 	a.planExecuting = false
-	switch a.mode {
-	case "agent":
-		a.mode = "plan"
-		a.addSystem("plan mode on (read-only)")
-	case "plan":
-		a.mode = "goal"
-		a.addSystem("goal mode on")
-	case "goal":
+	wasAuto := a.modeAuto
+	a.modeAuto = false
+	switch {
+	case wasAuto:
+		// auto leads to agent, whatever mode the classifier last picked.
 		a.mode = "agent"
 		a.addSystem("agent mode on")
-		// Entering agent mode via shift+tab starts from a clean carrier: the
-		// previously engaged profile is cleared and the footer shows the ctrl+p
-		// shortcut where its name would have been, instead of silently resuming
-		// whatever profile was last used.
 		a.clearEngagedAgent()
 		if note := a.readOnlyNotice(); note != "" {
 			a.addSystem(note)
 		}
+	case a.mode == "agent":
+		a.mode = "plan"
+		a.addSystem("plan mode on (read-only)")
+	case a.mode == "plan":
+		a.mode = "goal"
+		a.addSystem("goal mode on")
+	case a.mode == "goal":
+		// goal leads to auto: no sticky choice, the classifier picks per
+		// prompt.
+		a.mode = "agent"
+		a.modeAuto = true
+		a.clearEngagedAgent()
+		if a.classifier == nil {
+			a.addSystem("auto mode on (no classifier configured, behaves as agent)")
+		} else {
+			a.addSystem("auto mode on (the classifier picks the mode for each prompt)")
+		}
+	default:
+		// An unknown mode leads to agent.
+		a.mode = "agent"
+		a.addSystem("agent mode on")
 	}
-	a.modeExplicit = true
-	a.modeSticky = true
+	a.modeExplicit = !a.modeAuto
+	a.modeSticky = !a.modeAuto
 	a.modeDecision = rolemanager.ModeDecision{}
 	a.syncPlanMode()
 	a.saveMode()
+}
+
+// modeName is the mode as persisted and reported: "auto" while the
+// classifier decides, otherwise the sticky mode.
+func (a *App) modeName() string {
+	if a.modeAuto {
+		return "auto"
+	}
+	return a.mode
 }
 
 func (a *App) toggleCaveman() tea.Cmd {
@@ -4792,9 +4827,9 @@ func (a *App) traceRecord(event, verdict, tool, detail string, pass int) {
 }
 
 func (a *App) saveMode() {
-	a.state.LastMode = a.mode
+	a.state.LastMode = a.modeName()
 	_ = config.SaveState(a.state)
-	_ = a.persistPref(func(p *config.ProjectPrefs) { p.Mode = a.mode })
+	_ = a.persistPref(func(p *config.ProjectPrefs) { p.Mode = a.modeName() })
 }
 
 func (a *App) saveState() {
@@ -5217,7 +5252,12 @@ func (a *App) refreshFooter() {
 	a.footer.Width = a.contentWidth()
 	a.footer.Mode = a.mode
 	a.footer.Agent = a.engagedAgent()
-	if a.mode == "agent" && a.namedAgent == "" {
+	if a.modeAuto {
+		// Auto: the chip names the mode the classifier picked for the last
+		// prompt (agent until one lands) in the profile slot.
+		a.footer.Mode = "auto"
+		a.footer.Agent = a.mode
+	} else if a.mode == "agent" && a.namedAgent == "" {
 		// No carrier is engaged: the profile-name slot in the mode chip becomes
 		// the shortcut that cycles the available profiles, so the prompt to
 		// choose one lives exactly where its name would appear.

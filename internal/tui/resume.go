@@ -304,8 +304,14 @@ func (a *App) restoreMode(r rehydrated) {
 	if r.Mode == "" {
 		return
 	}
+	if r.Mode == "auto" {
+		a.mode, a.modeAuto, a.modeSticky = "agent", true, false
+		a.syncPlanMode()
+		return
+	}
 	a.mode = r.Mode
 	a.modeSticky = true
+	a.modeAuto = false
 	a.syncPlanMode()
 }
 
@@ -317,6 +323,7 @@ func (a *App) restorePlanGoal(r rehydrated, crossProject bool) {
 	if r.Plan != nil && r.Plan.Enabled {
 		a.mode = "plan"
 		a.modeSticky = true
+		a.modeAuto = false
 		var texts []string
 		for _, td := range r.Plan.Todos {
 			texts = append(texts, td.Text)

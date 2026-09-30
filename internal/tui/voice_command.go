@@ -189,9 +189,23 @@ func (a *App) voiceRunSkill(name string) tea.Cmd {
 // setOperatingMode is the mode switch /mode performs: sticky, saved, and
 // re-resolved on the next send.
 func (a *App) setOperatingMode(mode string) tea.Cmd {
+	if strings.EqualFold(strings.TrimSpace(mode), "auto") {
+		// Auto is the absence of a sticky choice: the classifier decides.
+		a.mode = "agent"
+		a.modeAuto = true
+		a.modeExplicit = false
+		a.modeSticky = false
+		a.modeDecision = rolemanager.ModeDecision{}
+		a.syncPlanMode()
+		a.saveMode()
+		a.persistCarrierMeta()
+		a.addSystem("mode: auto")
+		return nil
+	}
 	a.mode = mode
 	a.modeExplicit = true
 	a.modeSticky = true
+	a.modeAuto = false
 	a.syncPlanMode()
 	a.saveMode()
 	a.persistCarrierMeta()

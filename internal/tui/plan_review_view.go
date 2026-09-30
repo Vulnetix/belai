@@ -313,6 +313,7 @@ func (a *App) executeApprovedPlan(opt modes.PlanOption) tea.Cmd {
 	a.mode = string(route.Mode)
 	a.modeExplicit = true
 	a.modeSticky = true
+	a.modeAuto = false
 	a.pendingPlanExecute = true
 	a.planExecuteName = a.planReview.name
 	a.planExecuting = true

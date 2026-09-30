@@ -173,7 +173,7 @@ func (a *App) openTurn() {
 func (a *App) footerFacts() map[string]any {
 	a.refreshFooter()
 	return map[string]any{
-		"mode": a.mode, "provider": a.cfg.Provider, "model": a.cfg.Model, "effort": a.cfg.Effort,
+		"mode": a.modeName(), "provider": a.cfg.Provider, "model": a.cfg.Model, "effort": a.cfg.Effort,
 		"branch": a.footer.Branch, "guardrails": a.guardrailsEnabled(), "ask": a.askEnabled(),
 		"context_tokens": a.footer.Tokens, "context_limit": a.footer.ContextLimit,
 	}

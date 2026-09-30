@@ -196,7 +196,7 @@ func (a *App) persistMessage(i int) {
 		meta := map[string]any{
 			"model":    a.cfg.Model,
 			"provider": a.cfg.Provider,
-			"mode":     a.mode,
+			"mode":     a.modeName(),
 			"effort":   a.cfg.Effort,
 		}
 		// Persist the per-message provider/model so restored history can show
