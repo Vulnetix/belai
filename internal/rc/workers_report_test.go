@@ -83,3 +83,31 @@ func TestReportWorkersLogTail(t *testing.T) {
 		t.Fatalf("log bytes %d over the budget %d", total, sessionsync.RCWorkerLogBudget)
 	}
 }
+
+// Pausing reads the host's own registry: a live worker is paused and resumed,
+// an unknown or ended one is refused.
+func TestSetWorkerPausedOnlyReachesLiveWorkers(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	reg, err := fleet.OpenRegistry(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	live := fleet.Record{ID: "builder-1a2b", Profile: "belai:builder", PID: os.Getpid(), State: fleet.StateIdle, Started: time.Now().UnixMilli()}
+	ended := fleet.Record{ID: "old-9", Profile: "belai:builder", PID: os.Getpid(), State: fleet.StateStopped, Started: 1, Stopped: 2}
+	for _, r := range []fleet.Record{live, ended} {
+		if err := reg.Save(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := setWorkerPaused("builder-1a2b", true); err != nil || !reg.Paused("builder-1a2b") {
+		t.Fatalf("pause: %v paused=%v", err, reg.Paused("builder-1a2b"))
+	}
+	if err := setWorkerPaused("builder-1a2b", false); err != nil || reg.Paused("builder-1a2b") {
+		t.Fatalf("resume: %v paused=%v", err, reg.Paused("builder-1a2b"))
+	}
+	for _, id := range []string{"old-9", "ghost-1"} {
+		if err := setWorkerPaused(id, true); err == nil || reg.Paused(id) {
+			t.Fatalf("%s: paused an ended or unknown worker (%v)", id, err)
+		}
+	}
+}

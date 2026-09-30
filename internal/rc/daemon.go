@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vulnetix/belai/internal/fleet"
 	"github.com/vulnetix/belai/internal/proc"
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/sessionsync"
@@ -54,6 +55,10 @@ type Options struct {
 	// (runAgentStart unless a test replaces it). It returns the command's
 	// report, or an error whose text is the refusal reason.
 	StartWorkers func(w WorkerStart) (string, error)
+	// PauseWorker asks a live worker of this host to pause or resume
+	// (setWorkerPaused unless a test replaces it). The error text is the
+	// refusal reason.
+	PauseWorker func(id string, pause bool) error
 }
 
 // WorkerStart is one validated worker or crew start.
@@ -121,6 +126,9 @@ func New(o Options) (*Daemon, error) {
 			inv.MaxWorkers = o.MaxWorkers
 			return inv
 		}
+	}
+	if o.PauseWorker == nil {
+		o.PauseWorker = setWorkerPaused
 	}
 	if o.StartWorkers == nil {
 		o.StartWorkers = runAgentStart
@@ -268,6 +276,18 @@ func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
 		}
 		d.logf("started %s %s%s in %s", r.Kind, r.Profile, r.Crew, r.Cwd)
 		d.ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
+	case "pause", "resume":
+		if !fleet.ValidID(r.Worker) {
+			d.ack(ctx, r.ID, sessionsync.DispatchRefused, "", "that is not a worker id")
+			return
+		}
+		if err := d.o.PauseWorker(r.Worker, r.Kind == "pause"); err != nil {
+			d.logf("refused %s %s: %v", r.Kind, r.Worker, err)
+			d.ack(ctx, r.ID, sessionsync.DispatchRefused, "", clip(err.Error()))
+			return
+		}
+		d.logf("%s %s", r.Kind, r.Worker)
+		d.ack(ctx, r.ID, sessionsync.DispatchStarted, "", r.Worker+" "+r.Kind+"d")
 	default:
 		d.ack(ctx, r.ID, sessionsync.DispatchRefused, "", "this Belai does not understand that request; update Belai on the host")
 	}

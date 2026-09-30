@@ -3,6 +3,7 @@ package rc
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os/exec"
 	"regexp"
 	"slices"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vulnetix/belai/internal/fleet"
 	"github.com/vulnetix/belai/internal/sessionsync"
 )
 
@@ -97,4 +99,19 @@ func clip(s string) string {
 		s = "…" + strings.ToValidUTF8(s[len(s)-maxStartReport:], "")
 	}
 	return s
+}
+
+// setWorkerPaused asks one of this host's live workers to pause or resume. It
+// reads the worker from the registry, so an id the host does not run, or a
+// worker that already ended, is refused.
+func setWorkerPaused(id string, pause bool) error {
+	reg, err := fleet.OpenRegistry(nil)
+	if err != nil {
+		return err
+	}
+	rec, err := reg.Get(id)
+	if err != nil || !rec.State.Live() {
+		return errors.New("that worker is not running on this host")
+	}
+	return reg.SetPaused(id, pause)
 }

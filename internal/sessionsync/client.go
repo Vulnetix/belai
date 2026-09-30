@@ -241,8 +241,10 @@ type Dispatch struct {
 	Prompt    string `json:"prompt"`
 	SessionID string `json:"sessionId"`
 	// Profile or Crew names what a "worker" or "crew" request starts.
-	Profile   string `json:"profile,omitempty"`
-	Crew      string `json:"crew,omitempty"`
+	Profile string `json:"profile,omitempty"`
+	Crew    string `json:"crew,omitempty"`
+	// Worker is the worker id a "pause" or "resume" request names.
+	Worker    string `json:"worker,omitempty"`
 	CreatedAt int64  `json:"createdAt"`
 }
 

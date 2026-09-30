@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -488,5 +489,72 @@ func TestMaxWorkersOverride(t *testing.T) {
 	}
 	if got.MaxWorkers != 15 {
 		t.Errorf("start MaxWorkers = %d, want 15", got.MaxWorkers)
+	}
+}
+
+// A pause or resume names a worker id and reaches only what the host's own
+// check allows; anything else is refused with a reason.
+func TestDaemonPausesAndResumesWorkers(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	site := &fakeSite{acks: map[string][3]string{}, delivered: make(chan struct{}, 8)}
+	srv := httptest.NewServer(site)
+	defer srv.Close()
+	client, err := sessionsync.NewClient(srv.URL, func() (string, error) { return "ApiKey o:k", nil }, srv.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var calls []string
+	d, err := New(Options{
+		Client: client, HostID: testHost, HeartbeatEvery: 10 * time.Millisecond, PollWait: time.Second, Exe: "/bin/belai",
+		PauseWorker: func(id string, pause bool) error {
+			mu.Lock()
+			defer mu.Unlock()
+			calls = append(calls, fmt.Sprintf("%s %v", id, pause))
+			if id == "gone-1" {
+				return errors.New("that worker is not running on this host")
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	site.queue = []sessionsync.Dispatch{
+		{ID: "p1", Kind: "pause", Worker: "builder-1a2b"},
+		{ID: "p2", Kind: "resume", Worker: "builder-1a2b"},
+		{ID: "p3", Kind: "pause", Worker: "gone-1"},
+		{ID: "p4", Kind: "pause", Worker: "../etc"},
+		{ID: "p5", Kind: "pause"},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { _ = d.Run(ctx); close(done) }()
+	for i := 0; i < 5; i++ {
+		select {
+		case <-site.delivered:
+		case <-time.After(5 * time.Second):
+			t.Fatal("acks did not arrive")
+		}
+	}
+	cancel()
+	<-done
+
+	site.mu.Lock()
+	defer site.mu.Unlock()
+	for _, id := range []string{"p1", "p2"} {
+		if a := site.acks[id]; a[0] != sessionsync.DispatchStarted {
+			t.Errorf("%s ack = %v, want started", id, a)
+		}
+	}
+	for _, id := range []string{"p3", "p4", "p5"} {
+		if a := site.acks[id]; a[0] != sessionsync.DispatchRefused || a[2] == "" {
+			t.Errorf("%s ack = %v, want refused with a reason", id, a)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(calls) != 3 || calls[0] != "builder-1a2b true" || calls[1] != "builder-1a2b false" || calls[2] != "gone-1 true" {
+		t.Errorf("calls = %v (an unsafe or empty id must never reach the registry)", calls)
 	}
 }
