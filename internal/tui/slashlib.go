@@ -189,6 +189,7 @@ func (a *App) engageAgent(name string) tea.Cmd {
 	a.mode = "agent"
 	a.modeExplicit = true
 	a.modeSticky = true
+	a.modeAuto = false
 	// Re-resolve the carrier and reseal the system prompt on the next send.
 	a.syncPlanMode()
 	a.saveMode()

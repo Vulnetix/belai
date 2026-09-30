@@ -156,6 +156,8 @@ func modeColor(mode string) lipgloss.TerminalColor {
 		return ColorTealSoft
 	case "goal":
 		return ColorAmber
+	case "auto":
+		return ColorCream
 	default:
 		return ColorTeal
 	}
