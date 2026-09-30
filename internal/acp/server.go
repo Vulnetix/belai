@@ -88,6 +88,13 @@ type Options struct {
 	// session without a transcript is never reported to it. Nothing arrives
 	// from the far side: the editor owns the conversation.
 	Mirror Mirror
+	// Models lists the provider and model choices an editor may pick for a
+	// session in cwd, given the pair it runs on now. Nil offers no picker.
+	Models func(cwd, provider, model string) []ModelChoice
+	// Switch builds the agent for a picked choice, the way Builder builds the
+	// first one (the trust check and every gate apply again). Nil refuses a
+	// model change.
+	Switch func(ctx context.Context, cwd, id, provider, model string) (*agent.Session, error)
 }
 
 type acpSession struct {
@@ -111,6 +118,9 @@ type acpSession struct {
 	updated time.Time
 	// mode is the editor's chosen mode id (modeAuto until it picks one).
 	mode string
+	// provider and model are what the session runs on now; a model pick
+	// replaces them together with agent.
+	provider, model string
 	// headed is set once the session's header has gone to the editor.
 	headed bool
 	// always holds tool names the editor allowed for the rest of the
@@ -160,7 +170,7 @@ func ServeWith(ctx context.Context, r io.Reader, w io.Writer, build Builder, opt
 }
 
 // Methods lists every ACP method the server answers.
-var Methods = []string{"initialize", "authenticate", "session/new", "session/prompt", "session/cancel", "session/list", "session/close", "session/set_mode"}
+var Methods = []string{"initialize", "authenticate", "session/new", "session/prompt", "session/cancel", "session/list", "session/close", "session/set_mode", "session/set_config_option"}
 
 func (s *Server) handle(ctx context.Context, method string, params json.RawMessage) (any, error) {
 	<-s.ready
@@ -180,6 +190,8 @@ func (s *Server) handle(ctx context.Context, method string, params json.RawMessa
 		return s.listSessions(params)
 	case "session/close":
 		return s.closeSession(params)
+	case "session/set_config_option":
+		return s.setConfigOption(ctx, params)
 	case "session/set_mode":
 		return s.setMode(params)
 	}
@@ -220,7 +232,7 @@ func (s *Server) newSession(ctx context.Context, params json.RawMessage) (any, e
 	}
 	// The editor learns the session's slash commands only after it has the id.
 	return &jsonrpc.Reply{
-		Result: map[string]any{"sessionId": ss.id, "modes": modeState(modeAuto)},
+		Result: map[string]any{"sessionId": ss.id, "modes": modeState(modeAuto), "configOptions": s.configOptions(ss)},
 		After:  func() { s.announceCommands(ss) },
 	}, nil
 }
@@ -234,6 +246,9 @@ func (s *Server) openSession(ctx context.Context, cwd string) (*acpSession, erro
 		return nil, err
 	}
 	ss := &acpSession{id: id, cwd: cwd, agent: ag, always: map[string]bool{}, log: turnlog.New(nil), updated: time.Now(), mode: modeAuto, snaps: map[string]turnSnap{}}
+	if ag != nil {
+		ss.provider, ss.model = ag.ModelInfo()
+	}
 	if s.opts.Transcript != nil {
 		if l := s.opts.Transcript(cwd, id); l != nil {
 			ss.log = l
