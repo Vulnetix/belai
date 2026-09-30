@@ -49,6 +49,10 @@ const JevExploreLocate JevJob = "explore_locate"
 // when exactly one target rates at or above the voice threshold.
 const JevVoiceCommand JevJob = "voice_command"
 
+// JevRequestScale sizes a request as simple or staged, so a simple one skips
+// the goal contract, prefetch and verification ceremony and is worked at once.
+const JevRequestScale JevJob = "request_scale"
+
 // JevJobs lists every shipped job in the order /settings and the docs show
 // them. A job is added here in the change that implements it, so /settings
 // never offers a switch for work that does not exist.
@@ -61,6 +65,7 @@ var JevJobs = []JevJob{
 	JevOptionOrder,
 	JevExploreLocate,
 	JevVoiceCommand,
+	JevRequestScale,
 }
 
 // LocatePreview values for jev.locate_previews.

@@ -235,6 +235,7 @@ var jevJobLabels = map[config.JevJob]string{
 	config.JevOptionOrder:     "jev option order",
 	config.JevExploreLocate:   "jev explore locate",
 	config.JevVoiceCommand:    "jev voice command",
+	config.JevRequestScale:    "jev request scale",
 }
 
 var jevJobHelp = map[config.JevJob]string{
@@ -246,6 +247,7 @@ var jevJobHelp = map[config.JevJob]string{
 	config.JevOptionOrder:     "put the most likely answer first, marked (Recommended), when the model asks you to choose",
 	config.JevExploreLocate:   "rank the files a question is about, so explore subagents start where the code is",
 	config.JevVoiceCommand:    "run a skill, crew, process, prompt, agent profile or mode you ask for by voice, only when exactly one is a very close match",
+	config.JevRequestScale:    "size a request, so a simple one starts at once without a goal contract, file prefetch or test run",
 }
 
 // jevRows builds the toggle rows for the Jev jobs, one per job, in the

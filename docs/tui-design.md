@@ -172,6 +172,7 @@ back to its category's letter (S, M, C, T, L, ?, R, .) and the markers to
 | `⇆` | Bash replanned | `tools` |
 | `⊛` | tool and skill search | `tools` |
 | `⊞` | tool and skill selection | `tools` |
+| `⚖` | request sized | `mode` |
 | `⌘` | language server found | `code` |
 | `⌥` | diagnostics | `code` |
 | `⊗` | language server down | `code` |

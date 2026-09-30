@@ -354,3 +354,29 @@ func voiceCommandDescription(a Activity) Description {
 	}
 	return d
 }
+
+// RecordRequestScale emits the outcome of sizing a request: verdict "simple",
+// "staged" or "unknown" (the backend could not settle it, so the ordinary
+// behaviour ran). Only the rounded score is recorded, never the request.
+func RecordRequestScale(verdict string, scorePct int, model string, took time.Duration) {
+	recordTimed(EventRequestScale, verdict, "", fmt.Sprintf("score=%d", scorePct), 0, model, took)
+}
+
+func requestScaleDescription(a Activity) Description {
+	d := Description{
+		Summary: "Sized the request to decide how much preparation it needs",
+		Outcome: "could not settle it, so the usual preparation ran",
+		Tone:    ToneNeutral,
+		Levels:  LevelAll,
+	}
+	switch a.Verdict {
+	case "simple":
+		d.Outcome = "a simple request, so it was started at once without a contract, prefetch or test run"
+		d.Tone = ToneClear
+		d.Levels = LevelDecisions
+	case "staged":
+		d.Outcome = "a staged request, so the usual preparation ran"
+		d.Levels = LevelDecisions
+	}
+	return d
+}

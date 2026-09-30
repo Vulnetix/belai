@@ -55,3 +55,16 @@ func TestMergeJevProjectLayerCannotSetThresholds(t *testing.T) {
 		t.Fatalf("user layers must overlay key by key: %+v", r)
 	}
 }
+
+func TestSimpleAtDefaultsAndNeedsAMajority(t *testing.T) {
+	if DefaultJevThresholds().SimpleAt != 0.80 {
+		t.Fatalf("simple_at default = %v", DefaultJevThresholds().SimpleAt)
+	}
+	err := ValidateJev(Settings{Jev: &JevSettings{Thresholds: &JevThresholdSettings{SimpleAt: f(0.4)}}})
+	if err == nil || !strings.Contains(err.Error(), "simple_at") {
+		t.Fatalf("simple_at 0.4 must be refused, got %v", err)
+	}
+	if err := ValidateJev(Settings{Jev: &JevSettings{Thresholds: &JevThresholdSettings{SimpleAt: f(0.5)}}}); err != nil {
+		t.Fatal(err)
+	}
+}

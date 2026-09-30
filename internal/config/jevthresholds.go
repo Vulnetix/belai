@@ -22,6 +22,9 @@ type JevThresholds struct {
 	SwapAt float64
 	// VoiceAt is the score a single target needs for a spoken instruction to run it.
 	VoiceAt float64
+	// SimpleAt is the score a request needs to be worked as a simple one:
+	// without the goal contract, prefetch or verification ceremony.
+	SimpleAt float64
 	// TriageAt: below it another edit pass is judged unlikely to help.
 	TriageAt float64
 	// HitAt and LeadAt: explore_locate marks a file a hit or a lead.
@@ -39,7 +42,7 @@ type JevThresholds struct {
 func DefaultJevThresholds() JevThresholds {
 	return JevThresholds{
 		AllowAt: 0.10, DenyAt: 0.90, RouteAt: 0.50,
-		DropAt: 0.10, KeepAt: 0.50, StrongAt: 0.80, SwapAt: 0.95, VoiceAt: 0.95,
+		DropAt: 0.10, KeepAt: 0.50, StrongAt: 0.80, SwapAt: 0.95, VoiceAt: 0.95, SimpleAt: 0.80,
 		TriageAt: 0.30, HitAt: 0.50, LeadAt: 0.25,
 		OptionHit: 0.50, OptionMargin: 0.10, OptionLead: 0.25,
 		ModeConfident: 0.80, ModeMargin: 0.25, ModeHeadless: 0.50,
@@ -57,6 +60,7 @@ type JevThresholdSettings struct {
 	StrongAt      *float64 `json:"strong_at,omitempty"`
 	SwapAt        *float64 `json:"swap_at,omitempty"`
 	VoiceAt       *float64 `json:"voice_at,omitempty"`
+	SimpleAt      *float64 `json:"simple_at,omitempty"`
 	TriageAt      *float64 `json:"triage_at,omitempty"`
 	HitAt         *float64 `json:"hit_at,omitempty"`
 	LeadAt        *float64 `json:"lead_at,omitempty"`
@@ -81,7 +85,7 @@ func (t *JevThresholdSettings) slots(r *JevThresholds) []thresholdSlot {
 		{"allow_at", &t.AllowAt, &r.AllowAt}, {"deny_at", &t.DenyAt, &r.DenyAt},
 		{"route_at", &t.RouteAt, &r.RouteAt}, {"drop_at", &t.DropAt, &r.DropAt},
 		{"keep_at", &t.KeepAt, &r.KeepAt}, {"strong_at", &t.StrongAt, &r.StrongAt},
-		{"swap_at", &t.SwapAt, &r.SwapAt}, {"voice_at", &t.VoiceAt, &r.VoiceAt}, {"triage_at", &t.TriageAt, &r.TriageAt},
+		{"swap_at", &t.SwapAt, &r.SwapAt}, {"voice_at", &t.VoiceAt, &r.VoiceAt}, {"simple_at", &t.SimpleAt, &r.SimpleAt}, {"triage_at", &t.TriageAt, &r.TriageAt},
 		{"hit_at", &t.HitAt, &r.HitAt}, {"lead_at", &t.LeadAt, &r.LeadAt},
 		{"option_hit", &t.OptionHit, &r.OptionHit}, {"option_margin", &t.OptionMargin, &r.OptionMargin},
 		{"option_lead", &t.OptionLead, &r.OptionLead}, {"mode_confident", &t.ModeConfident, &r.ModeConfident},
@@ -151,6 +155,8 @@ func (t *JevThresholdSettings) validate() error {
 		return fmt.Errorf("jev.thresholds: keep_at %v must not exceed strong_at %v", r.KeepAt, r.StrongAt)
 	case r.VoiceAt < 0.5:
 		return fmt.Errorf("jev.thresholds.voice_at %v must be at least 0.5: a spoken instruction runs an action, so it needs a clear majority", r.VoiceAt)
+	case r.SimpleAt < 0.5:
+		return fmt.Errorf("jev.thresholds.simple_at %v must be at least 0.5: a simple verdict drops safeguards around a turn, so it needs a clear majority", r.SimpleAt)
 	case r.LeadAt > r.HitAt:
 		return fmt.Errorf("jev.thresholds: lead_at %v must not exceed hit_at %v", r.LeadAt, r.HitAt)
 	}

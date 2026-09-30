@@ -274,3 +274,23 @@ func TestHandoffSeedsPrefetchWithPlanPaths(t *testing.T) {
 		t.Errorf("nonexistent plan path must not be prefetched")
 	}
 }
+
+// A simple request keeps the instruction files and skips the changed files.
+func TestSimpleTurnPrefetchesInstructionFilesOnly(t *testing.T) {
+	root := prefetchRepo(t)
+	fake := &prefetchServer{}
+	srv := httptest.NewServer(http.HandlerFunc(fake.handler))
+	defer srv.Close()
+	sess := prefetchSession(t, root, srv, nil)
+	tool, _ := sess.execTool("Read")
+	if tool == nil {
+		t.Fatal("no Read tool")
+	}
+	ctx := context.Background()
+	all := sess.prefetchCandidates(ctx, tool, nil, nil)
+	sess.turnSimple = true
+	got := sess.prefetchCandidates(ctx, tool, nil, nil)
+	if len(all) < 2 || strings.Join(got, ",") != "AGENTS.md" {
+		t.Fatalf("ordinary = %v, simple = %v; want the simple turn to keep AGENTS.md alone", all, got)
+	}
+}

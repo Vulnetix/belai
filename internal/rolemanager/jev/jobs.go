@@ -288,3 +288,65 @@ func PickVoice(scores map[string]float64) (id string, score float64) {
 	}
 	return id, score
 }
+
+// Scale is how big a request is: the deterministic ceremony of a goal turn
+// (contract draft, changed-file prefetch, verification commands) is worth it
+// for a staged request and only delay for a simple one.
+type Scale string
+
+const (
+	// ScaleUnknown is the answer when the job is off, the backend did not
+	// answer, or the scores are not conclusive. The ordinary behaviour runs.
+	ScaleUnknown Scale = ""
+	// ScaleSimple is a request of a few direct actions with nothing to
+	// investigate or design.
+	ScaleSimple Scale = "simple"
+	// ScaleStaged is a request with dependent stages, investigation or design.
+	ScaleStaged Scale = "staged"
+)
+
+// scaleCriterion is the statement each item is judged against.
+const scaleCriterion = "The request in state.context matches the description in the item. A simple request is a few direct actions that can start at once and need no investigation, design or planning, such as committing, pushing, renaming, running a command or a small edit. A staged request has several dependent stages, needs investigation or design, or touches many files."
+
+// scale item ids, the harness's own constants.
+const (
+	scaleItemSimple = "simple"
+	scaleItemStaged = "staged"
+)
+
+// RateScale rates a request as simple and as staged. The request is the user's
+// prompt and reaches the backend only as DecisionText. The scores are
+// probabilities in [0,1]; an item the backend did not answer is absent.
+func (j *Jobs) RateScale(ctx context.Context, request string) (map[string]float64, ScoreResult, error) {
+	res, err := j.Client.Score(ctx, ScoreRequest{
+		Job:       string(config.JevRequestScale),
+		Criterion: sanitize.ForDecision(scaleCriterion, 0),
+		Context:   sanitize.ForDecision(request, 1500),
+		Items: []ScoreItem{
+			{ID: scaleItemSimple, Label: sanitize.ForDecision("A simple request: a few direct actions, no investigation or design.", 240)},
+			{ID: scaleItemStaged, Label: sanitize.ForDecision("A staged request: several dependent stages, investigation, design or many files.", 240)},
+		},
+		MaxRequests: 4,
+	})
+	return res.Scores, res, err
+}
+
+// PickScale turns the two scores into a verdict. A request is simple only when
+// the backend rates it simple at or above simple_at and rated staged below
+// keep_at; an unanswered item is unknown, never a low score, and the request
+// is then worked as it always was. The verdict only removes ceremony, so it
+// needs a clear majority and never approves anything.
+func PickScale(scores map[string]float64) (Scale, float64) {
+	th := config.ActiveJevThresholds()
+	simple, okS := scores[scaleItemSimple]
+	staged, okT := scores[scaleItemStaged]
+	switch {
+	case !okS || !okT:
+		return ScaleUnknown, 0
+	case simple >= th.SimpleAt && staged < th.KeepAt:
+		return ScaleSimple, simple
+	case staged >= th.KeepAt && simple < th.KeepAt:
+		return ScaleStaged, staged
+	}
+	return ScaleUnknown, 0
+}

@@ -277,6 +277,13 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   line in an explore task's prompt) is paths, line numbers and percentages, so
   it is sanitise-only like `Glob`, and a path enters a prompt only if it is made
   of letters, digits and `. _ - / @ +`.
+  Request scale (`request_scale`, `agent/scale.go`) sees only the sanitized prompt.
+  A simple verdict (at or above `simple_at`, default 0.80, never below 0.5, and
+  staged below `keep_at`) only drops goal-turn ceremony: the contract draft, the
+  changed-file prefetch (instruction files stay), the planning list and test
+  verification surface, the completion verification pass and the no-write
+  escalation. It never changes the mode, a permission or a gate, the goal
+  evaluator still ends the goal, and any unknown answer runs the ordinary goal.
 - **Every role-manager decision is written to the session record.**
   `Activity.Record` builds a `rolemanager` entry for every event, shown or
   hidden, and `rolemanager.AddSink` delivers activities losslessly and in
