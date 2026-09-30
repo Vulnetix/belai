@@ -570,6 +570,9 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		if s := k.Security; s != nil {
 			claim.Verdicts, claim.VEX = slices.Clone(s.Verdicts), s.VEX
 		}
+		if k.Security != nil && k.Security.Sweep {
+			claim.Notable = w.enrichmentTargets(it)
+		}
 		if q := k.Quality; q != nil && slices.Contains(it.Labels, agentprofile.QualityLabel) {
 			claim.HandoffList = q.HandoffList()
 		}

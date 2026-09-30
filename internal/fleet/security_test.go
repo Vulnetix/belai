@@ -7,10 +7,14 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vulnetix/belai/internal/agentprofile"
+	"github.com/vulnetix/belai/internal/headless"
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/run"
+	"github.com/vulnetix/belai/internal/scanartifacts"
+	"github.com/vulnetix/belai/internal/tools"
 )
 
 const (
@@ -62,7 +66,7 @@ func securityCards(t *testing.T, store *kanban.Store) []kanban.Item {
 	}
 	var cards []kanban.Item
 	for _, it := range out {
-		if it.Finding != "" {
+		if it.Finding != "" && !strings.HasPrefix(it.Finding, SweepFindingPrefix) {
 			cards = append(cards, it)
 		}
 	}
@@ -231,5 +235,125 @@ func TestSecurityStepSweepsOncePerHEAD(t *testing.T) {
 	}
 	if reviews != 2 {
 		t.Fatalf("review ran %d times, want once per HEAD (2)", reviews)
+	}
+}
+
+func TestSweepFilesOneEnrichmentItemPerCommitOnlyForNewCards(t *testing.T) {
+	store, reg := testEnv(t)
+	w := newWorker(t, store, reg, sweeper(), complete)
+	w.Profile.Kanban.AssignedOnly = true // leave the items on the board
+	w.Head = head(secHeadNew)
+	writeReview(t, w.Repo, secHeadNew, "CVE-A", "CVE-B")
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	enrich := func() []kanban.Item {
+		all, _ := store.Search(kanban.Query{Limit: 100})
+		var out []kanban.Item
+		for _, it := range all {
+			if strings.HasPrefix(it.Finding, SweepFindingPrefix) {
+				out = append(out, it)
+			}
+		}
+		return out
+	}
+	items := enrich()
+	if len(items) != 1 || items[0].SeenRef != secHeadNew || !slices.Contains(items[0].Labels, EnrichLabel) || !slices.Contains(items[0].Labels, "vuln-scan") {
+		t.Fatalf("enrichment items %+v", items)
+	}
+	// Sweeping the same commit again finds no new cards and files nothing.
+	w.sweptRef = ""
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(enrich()); n != 1 {
+		t.Fatalf("%d enrichment items after a second sweep", n)
+	}
+}
+
+func TestEnrichmentTargetsComeFromBoardFactsOnly(t *testing.T) {
+	store, reg := testEnv(t)
+	w := newWorker(t, store, reg, sweeper(), complete)
+	w.Profile.Kanban.AssignedOnly = true
+	w.Head = head(secHeadNew)
+	writeReview(t, w.Repo, secHeadNew, "CVE-A", "CVE-B")
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	all, _ := store.Search(kanban.Query{Limit: 100})
+	var enrich kanban.Item
+	cards := map[string]kanban.Item{}
+	for _, it := range all {
+		switch {
+		case strings.HasPrefix(it.Finding, SweepFindingPrefix):
+			enrich = it
+		case it.Finding != "":
+			cards[it.Finding] = it
+		}
+	}
+	got := w.enrichmentTargets(enrich)
+	if len(got) != 2 {
+		t.Fatalf("targets %v, want the two new cards", got)
+	}
+	// A card of an older commit, a hand-filed card and a claimed card are not targets.
+	old, _, _ := store.UpsertFinding(findingCard(scanartifacts.ReviewFinding{ID: "CVE-OLD", Kind: scanartifacts.KindSCA, Severity: "low"}, secHeadOld), kanban.ProvenanceFor(w.Repo, "x", headless.HostID()))
+	hand, _, _ := store.Add(kanban.ItemInput{Title: "mine", Labels: []string{"vuln"}}, kanban.ProvenanceFor(w.Repo, "x", headless.HostID()))
+	// A model that rewrites the enrichment item's text gains nothing.
+	body := "K-000000 " + old.ID + " " + hand.ID
+	if _, err := store.Update(enrich.ID, kanban.Patch{Body: &body}, "s"); err != nil {
+		t.Fatal(err)
+	}
+	enrich, _ = store.Get(enrich.ID)
+	if got := w.enrichmentTargets(enrich); len(got) != 2 || slices.Contains(got, old.ID) || slices.Contains(got, hand.ID) {
+		t.Fatalf("targets after edits %v", got)
+	}
+	if _, err := store.Claim(kanban.ClaimRequest{Worker: "p1", Profile: "patcher", Host: "h", Lease: time.Minute, Labels: []string{"vuln"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := w.enrichmentTargets(enrich); len(got) >= 2 {
+		t.Fatalf("a claimed card is still a target: %v", got)
+	}
+	// Not an enrichment item: no targets at all.
+	if got := w.enrichmentTargets(cards["CVE-A"]); got != nil {
+		t.Fatalf("a finding card got targets %v", got)
+	}
+}
+
+func TestScoutEnrichmentTurnMayNoteTheNewCardsOnly(t *testing.T) {
+	store, reg := testEnv(t)
+	var noted string
+	var refused error
+	w := newWorker(t, store, reg, sweeper(), nil)
+	w.Head = head(secHeadNew)
+	w.Runner = func(ctx context.Context, tt Turn) (run.Result, error) {
+		if !strings.HasPrefix(tt.Item.Finding, SweepFindingPrefix) {
+			return complete(ctx, tt)
+		}
+		if len(tt.Claim.Notable) != 2 {
+			t.Errorf("claim.Notable = %v", tt.Claim.Notable)
+			return complete(ctx, tt)
+		}
+		up := tools.KanbanUpdate{KanbanBase: tools.KanbanBase{Store: store, Claim: tt.Claim}}
+		if _, err := up.Execute(ctx, map[string]any{"id": tt.Claim.Notable[0], "note": "bump to 4.17.21; run npm install"}); err != nil {
+			t.Errorf("note on a target: %v", err)
+		}
+		noted = tt.Claim.Notable[0]
+		_, refused = up.Execute(ctx, map[string]any{"id": tt.Claim.Notable[0], "title": "renamed"})
+		other, _, _ := store.Add(kanban.ItemInput{Title: "somebody else's card"}, kanban.Provenance{})
+		if _, err := up.Execute(ctx, map[string]any{"id": other.ID, "note": "x"}); err == nil {
+			t.Error("a note on a card the claim does not name was accepted")
+		}
+		return complete(ctx, tt)
+	}
+	writeReview(t, w.Repo, secHeadNew, "CVE-A", "CVE-B")
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if noted == "" || refused == nil {
+		t.Fatalf("noted %q, title change refused: %v", noted, refused)
+	}
+	got, _ := store.Get(noted)
+	if !strings.Contains(got.LastNote(), "bump to 4.17.21") || strings.Contains(got.Title, "renamed") {
+		t.Fatalf("card %+v", got)
 	}
 }
