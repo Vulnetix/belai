@@ -1,13 +1,13 @@
 package tui
 
 import (
-	"fmt"
 	"runtime"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/lsp"
@@ -18,7 +18,12 @@ type lspViewState struct {
 	selected int
 	mode     string // "" | "install" | "install-running"
 	install  *lsp.Language
+	gl       glState
 }
+
+// lspChromeRows is what the screen spends outside the grouped body: the view's
+// own padding (2), the header and its rule (2) and the key line.
+const lspChromeRows = 5
 
 func (a *App) lspView() string {
 	w := a.contentWidth()
@@ -30,40 +35,82 @@ func (a *App) lspView() string {
 	}
 
 	rows := a.lspRows()
-	for i, row := range rows {
-		selected := i == a.lspState.selected
-		label := fmt.Sprintf("%-24s", row.label)
-		value := fmt.Sprintf("%-20s", row.value)
-		if selected {
-			label = components.AccentStyle.Bold(true).Render(label)
-			value = components.EmphStyle.Render(value)
-		} else {
-			label = components.MutedStyle.Render(label)
-		}
-		b.WriteString(components.Cursor(selected) + label + value + "\n")
-		if row.notes != "" {
-			note := components.MutedStyle.Render("    " + row.notes)
-			b.WriteString(note + "\n")
-		}
-	}
+	groups := a.lspGroups(rows)
+	a.lspState.selected = glSnap(groups, a.lspState.selected)
 
+	var tail []string
+	foot := glHelpLine([]glKey{
+		{"↑↓", "move", 1}, {"space", "toggle", 1}, {"esc", "back", 1},
+		{"[ ]", "group", 2}, {"i", "install", 2}, {"r", "re-detect", 3}, {"x", "unset", 3},
+	}, w)
 	if a.lspState.mode == "install" && a.lspState.install != nil {
-		b.WriteString("\n" + components.EmphStyle.Render("Run:") + "\n")
-		b.WriteString(strings.Join(a.lspState.install.Install, " ") + "\n")
-		b.WriteString(components.HelpBar("y", "run", "n/esc", "cancel") + "\n")
-	} else {
-		b.WriteString("\n" + components.HelpBar(
-			"↑↓", "move", "space", "toggle", "x", "unset", "i", "install", "r", "re-detect", "esc", "back") + "\n")
+		tail = append(tail, components.EmphStyle.Render("Run:"),
+			ansi.Truncate(strings.Join(a.lspState.install.Install, " "), w, "…"))
+		foot = components.HelpBar("y", "run", "n/esc", "cancel")
 	}
+	bodyH := 0
+	if a.height > 0 {
+		bodyH = max(a.height-lspChromeRows-len(tail), 9)
+	}
+	b.WriteString(glBody(glSpec{groups: groups, cursor: a.lspState.selected}, &a.lspState.gl, w, bodyH))
+	for _, l := range tail {
+		b.WriteString("\n" + l)
+	}
+	b.WriteString("\n" + foot)
 	return lipgloss.NewStyle().Padding(1).Render(b.String())
 }
 
+// lspGroups splits the languages into those found on this machine and those
+// not, each row keeping its index in lspRows so every handler still addresses
+// the flat list.
+func (a *App) lspGroups(rows []lspRow) []glGroup {
+	scope := a.settingsState.scope
+	if scope == "" {
+		scope = config.ScopeProject
+	}
+	found := glGroup{key: "found", title: "Detected"}
+	missing := glGroup{key: "missing", title: "Not detected"}
+	for i, r := range rows {
+		src := "default"
+		if !r.enabled {
+			src = "off"
+		}
+		detail := []string{components.EmphStyle.Render(r.lang.Display) + components.MutedStyle.Render("   server: "+r.value)}
+		if r.notes != "" {
+			detail = append(detail, r.notes)
+		}
+		if !r.detected && len(r.lang.Install) > 0 {
+			detail = append(detail, components.MutedStyle.Render("install: "+strings.Join(r.lang.Install, " ")+"  (i)"))
+		}
+		state := "on"
+		if !r.enabled {
+			state = "turned off"
+		}
+		detail = append(detail, components.MutedStyle.Render(state+" · saved to "+string(scope)))
+		row := glRow{idx: i, key: r.lang.ID, label: r.glyph + " " + r.lang.Display, value: r.value, src: src, dim: !r.enabled, detail: detail, match: r.notes}
+		if r.detected {
+			found.rows = append(found.rows, row)
+		} else {
+			missing.rows = append(missing.rows, row)
+		}
+	}
+	var groups []glGroup
+	for _, g := range []glGroup{found, missing} {
+		if len(g.rows) > 0 {
+			groups = append(groups, g)
+		}
+	}
+	return groups
+}
+
 type lspRow struct {
-	lang    *lsp.Language
-	label   string
-	value   string
-	notes   string
-	enabled bool
+	lang     *lsp.Language
+	label    string
+	value    string
+	notes    string
+	enabled  bool
+	detected bool
+	glyph    string
 }
 
 func (a *App) lspRows() []lspRow {
@@ -110,11 +157,13 @@ func (a *App) lspRows() []lspRow {
 			note = "detected"
 		}
 		rows = append(rows, lspRow{
-			lang:    lang,
-			label:   value,
-			value:   label,
-			notes:   note,
-			enabled: enabled,
+			lang:     lang,
+			label:    value,
+			value:    label,
+			notes:    note,
+			enabled:  enabled,
+			detected: detected[lang.ID],
+			glyph:    glyph,
 		})
 	}
 	return rows
@@ -142,14 +191,21 @@ func (a *App) handleLSPKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	rows := a.lspRows()
 	switch m.String() {
-	case "up", "k":
-		if a.lspState.selected > 0 {
-			a.lspState.selected--
+	case "up", "k", "down", "j":
+		delta := 1
+		if m.String() == "up" || m.String() == "k" {
+			delta = -1
 		}
-	case "down", "j":
-		if a.lspState.selected < len(rows)-1 {
-			a.lspState.selected++
+		groups := a.lspGroups(rows)
+		a.lspState.selected = glStep(groups, glSnap(groups, a.lspState.selected), delta)
+	case "[", "]", "tab", "shift+tab", "left", "right":
+		delta := 1
+		if m.String() == "[" || m.String() == "shift+tab" || m.String() == "left" {
+			delta = -1
 		}
+		groups := a.lspGroups(rows)
+		a.lspState.selected = glStepGroup(groups, glSnap(groups, a.lspState.selected), delta)
+		a.lspState.gl.scroll = 0
 	case "esc":
 		a.pop()
 	case " ":

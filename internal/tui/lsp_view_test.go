@@ -87,3 +87,30 @@ func TestLSPRowsContainGo(t *testing.T) {
 		t.Fatalf("expected Go row, got %+v", rows)
 	}
 }
+
+func TestLSPViewFitsATerminalAndGroupsByDetection(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	a := New(Options{Workdir: t.TempDir()})
+	a.width, a.height = 80, 24
+	rows := a.lspRows()
+	groups := a.lspGroups(rows)
+	total := 0
+	for _, g := range groups {
+		total += g.selectable()
+	}
+	if total != len(rows) {
+		t.Fatalf("the groups hold %d rows, lspRows has %d", total, len(rows))
+	}
+	a.push(viewLSP)
+	for i := range rows {
+		a.lspState.selected = i
+		out := a.View()
+		lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+		if len(lines) > 24 {
+			t.Fatalf("row %d: %d lines\n%s", i, len(lines), out)
+		}
+		if !strings.Contains(out, rows[i].lang.Display) {
+			t.Fatalf("row %d (%s) is not on screen\n%s", i, rows[i].lang.Display, out)
+		}
+	}
+}
