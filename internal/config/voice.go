@@ -39,6 +39,10 @@ type VoiceSettings struct {
 	Cleanup *bool `json:"cleanup,omitempty"`
 	// Key is the push-to-talk (or mute) key. Default f11.
 	Key string `json:"key,omitempty"`
+	// Log shows voice's automatic notices and its voice_cleanup rows in the
+	// transcript. Default true. It changes what the thread shows, never what is
+	// recorded in the session.
+	Log *bool `json:"log,omitempty"`
 	// Device is the capture helper's input device. Empty is its default.
 	Device string `json:"device,omitempty"`
 }
@@ -79,6 +83,12 @@ func (s *VoiceSettings) VoiceKeyOr() string {
 }
 
 // VoiceDevice returns the capture device, empty for the helper's default.
+// VoiceLogEnabled reports whether voice's automatic notices and cleanup rows
+// show in the transcript. Default true.
+func (s *VoiceSettings) VoiceLogEnabled() bool {
+	return s == nil || s.Log == nil || *s.Log
+}
+
 func (s *VoiceSettings) VoiceDevice() string {
 	if s == nil {
 		return ""
@@ -101,6 +111,9 @@ func (s *VoiceSettings) merge(from *VoiceSettings) {
 	}
 	if from.Key != "" {
 		s.Key = from.Key
+	}
+	if from.Log != nil {
+		s.Log = from.Log
 	}
 	if from.Device != "" {
 		s.Device = from.Device

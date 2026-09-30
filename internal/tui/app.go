@@ -1401,6 +1401,7 @@ func (a *App) relayout() {
 	if a.width > 6 {
 		// Two border cells and one column of padding on each side.
 		a.editor.SetWidth(a.width - 6 - a.voiceIconReserve())
+		a.editor.SetPlaceholder(a.composerPlaceholder())
 	}
 	a.vp.Width = a.contentWidth()
 	vpHeight := a.height - a.chromeHeight()
@@ -4392,7 +4393,14 @@ func (a *App) renderComposer() string {
 	body := a.editor.View()
 	wave, phase := false, 0
 	if a.view == viewChat && !a.promptAction && !a.editor.Masked && a.voice.eng != nil {
-		body = overlayVoiceIcon(body, a.contentWidth()-4, voiceIconFor(a.voiceLook(), a.voice.frame))
+		// A round mark centred in the composer; where typed text would run under
+		// it, the small icon at the right edge instead.
+		look, frame, inner := a.voiceLook(), a.voice.frame, a.contentWidth()-4
+		if out, ok := overlayVoiceArt(body, inner, voiceArtFor(look, frame)); ok {
+			body = out
+		} else {
+			body = overlayVoiceIcon(body, inner, voiceIconFor(look, frame))
+		}
 		accent, wave, phase = a.voiceFrame(accent)
 	}
 	return components.Panel{
@@ -4790,6 +4798,11 @@ func (a *App) addSystem(text string) {
 // panel row. Suppressed events (those already covered by a dedicated line)
 // and unrenderable activities are dropped here.
 func (a *App) addRMActivity(act rolemanager.Activity) {
+	// The voice log switch decides whether dictation's cleanup rows show in the
+	// thread. The session record was already written and is unaffected.
+	if act.Event == rolemanager.EventVoiceCleanup && !a.settings.Voice.VoiceLogEnabled() {
+		return
+	}
 	desc, ok := rolemanager.Describe(act)
 	if !ok {
 		return

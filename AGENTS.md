@@ -608,7 +608,12 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   recording (which ends when the speaker stops) runs. `/voice debug` opens the
   microphone in its own engine while it is on screen, probes hardware with
   fixed programs and the scrubbed environment (`voice.Devices`), and writes
-  nothing to disk. Do not add a model-facing tool that starts capture.
+  nothing to disk. Dictation is written live: a running guess, the recognised
+  text at once, then the fast model's reply streamed over it (`voice_cleanup`
+  over the streaming classifier, cut off if it runs away), and any key typed in
+  the composer cancels all of it, including the Enter that submit delivery
+  would press (`voiceCancelFlow`, `Engine.Cancel`). Do not add a model-facing
+  tool that starts capture.
 - **Session sync mirrors the file and admits web prompts as prompts.**
   `internal/sessionsync` uploads only the lines `appendEntry` already wrote to
   the session JSONL, keyed by line index; it never composes an entry. It sends

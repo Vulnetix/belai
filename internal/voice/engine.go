@@ -66,6 +66,10 @@ const (
 	EventState EventKind = iota
 	EventTranscript
 	EventError
+	// EventPartial is a running guess at what is being said, for showing while
+	// the speaker is still talking. It is replaced by the EventTranscript that
+	// follows and is never a final text.
+	EventPartial
 )
 
 // Event is one thing the engine reports.
@@ -104,6 +108,10 @@ type Engine struct {
 	state   atomic.Int32
 	level   levelBox
 	samples atomic.Int64
+	gen     atomic.Uint64 // bumped by Cancel; older results are dropped
+	finals  atomic.Int32  // finals queued or being recognised
+	pmu     sync.Mutex
+	pcancel context.CancelFunc // stops the partial in flight
 	cancel  context.CancelFunc
 	done    chan struct{}
 	once    sync.Once
@@ -164,7 +172,7 @@ func (e *Engine) do(f func(*loop)) {
 }
 
 func (e *Engine) emit(ctx context.Context, ev Event) {
-	if ev.Kind == EventState {
+	if ev.Kind == EventState || ev.Kind == EventPartial {
 		select {
 		case e.events <- ev:
 		default:
@@ -175,6 +183,15 @@ func (e *Engine) emit(ctx context.Context, ev Event) {
 	case e.events <- ev:
 	case <-ctx.Done():
 	}
+}
+
+// job is one clip for the recogniser. A partial is a guess at speech still in
+// progress; a final is a finished utterance. gen is the cancel generation the
+// job was made in: a result from an older generation is dropped.
+type job struct {
+	pcm     []float32
+	partial bool
+	gen     uint64
 }
 
 type loaded struct {
@@ -201,20 +218,22 @@ type loop struct {
 	loading bool
 	loadCh  chan loaded
 
-	stream    *Stream
-	stopCap   context.CancelFunc
-	seg       *Segmenter
-	jobs      chan []float32
-	doneCh    chan struct{}
-	pending   int
-	lastState State
+	stream      *Stream
+	stopCap     context.CancelFunc
+	seg         *Segmenter
+	jobs        chan job
+	doneCh      chan bool // true when a partial finished
+	pending     int       // finals queued or being recognised
+	partialBusy bool
+	lastPartial int
+	lastState   State
 }
 
 func (e *Engine) run(ctx context.Context) {
 	defer close(e.done)
 	l := &loop{
 		e: e, ctx: ctx, mode: e.cfg.Mode, seg: NewSegmenter(),
-		loadCh: make(chan loaded, 1), doneCh: make(chan struct{}, jobBacklog+1),
+		loadCh: make(chan loaded, 1), doneCh: make(chan bool, jobBacklog+2),
 		lastState: -1, lastVoice: -1,
 	}
 	l.publish()
@@ -237,8 +256,12 @@ func (e *Engine) run(ctx context.Context) {
 			}
 		case r := <-l.loadCh:
 			l.loadDone(r)
-		case <-l.doneCh:
-			l.pending--
+		case partial := <-l.doneCh:
+			if partial {
+				l.partialBusy = false
+			} else {
+				l.pending--
+			}
 		}
 		l.reconcile()
 		l.publish()
@@ -282,6 +305,7 @@ func (l *loop) pttDown() {
 	}
 	l.ptt, l.tail, l.pttBuf = true, 0, nil
 	l.latched, l.startClock, l.spoke, l.lastVoice = false, l.clock, 0, -1
+	l.lastPartial = l.clock
 }
 
 func (l *loop) pttUp() {
@@ -306,28 +330,84 @@ func (l *loop) loadDone(r loaded) {
 		return
 	}
 	l.rec = r.rec
-	l.jobs = make(chan []float32, jobBacklog)
+	l.jobs = make(chan job, jobBacklog)
 	go l.worker(r.rec, l.jobs)
 }
 
 // worker recognises queued clips one at a time, in order.
-func (l *loop) worker(rec Recognizer, jobs <-chan []float32) {
+func (l *loop) worker(rec Recognizer, jobs <-chan job) {
 	for {
 		select {
 		case <-l.ctx.Done():
 			return
-		case pcm := <-jobs:
-			text, err := rec.Transcribe(l.ctx, pcm)
-			switch {
-			case l.ctx.Err() != nil:
-				return
-			case err != nil:
-				l.e.emit(l.ctx, Event{Kind: EventError, Err: fmt.Errorf("transcribe: %w", err)})
-			case text != "":
-				l.e.emit(l.ctx, Event{Kind: EventTranscript, Text: text})
-			}
-			l.doneCh <- struct{}{}
+		case j := <-jobs:
+			l.runJob(rec, j)
 		}
+	}
+}
+
+// runJob recognises one clip and reports it. A partial gives way to a final: it
+// is skipped if one is waiting and cancelled if one arrives. A result from
+// before the last Cancel is dropped, so nothing the user cancelled can reach
+// the composer late.
+func (l *loop) runJob(rec Recognizer, j job) {
+	ctx := l.ctx
+	if j.partial {
+		if l.e.finals.Load() > 0 {
+			l.signal(true)
+			return
+		}
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithCancel(l.ctx)
+		l.e.setPartialCancel(cancel)
+		defer cancel()
+	}
+	text, err := rec.Transcribe(ctx, j.pcm)
+	if !j.partial {
+		l.e.finals.Add(-1)
+	}
+	switch {
+	case l.ctx.Err() != nil:
+		return
+	case j.gen != l.e.gen.Load():
+		// Cancelled while it was being recognised.
+	case err != nil:
+		// A partial is only a preview: one that failed or was superseded says
+		// nothing. A final that failed is an error.
+		if !j.partial {
+			l.e.emit(l.ctx, Event{Kind: EventError, Err: fmt.Errorf("transcribe: %w", err)})
+		}
+	case text != "":
+		kind := EventTranscript
+		if j.partial {
+			kind = EventPartial
+		}
+		l.e.emit(l.ctx, Event{Kind: kind, Text: text})
+	}
+	l.signal(j.partial)
+}
+
+func (l *loop) signal(partial bool) {
+	select {
+	case l.doneCh <- partial:
+	case <-l.ctx.Done():
+	}
+}
+
+func (e *Engine) setPartialCancel(c context.CancelFunc) {
+	e.pmu.Lock()
+	e.pcancel = c
+	e.pmu.Unlock()
+}
+
+// cancelPartial stops the partial in flight, if any.
+func (e *Engine) cancelPartial() {
+	e.pmu.Lock()
+	c := e.pcancel
+	e.pcancel = nil
+	e.pmu.Unlock()
+	if c != nil {
+		c()
 	}
 }
 
@@ -335,14 +415,63 @@ func (l *loop) submit(pcm []float32) {
 	if l.rec == nil || !HasSpeech(pcm) {
 		return
 	}
+	// A final supersedes any guess still being made.
+	l.e.cancelPartial()
 	select {
-	case l.jobs <- pcm:
+	case l.jobs <- job{pcm: pcm, gen: l.e.gen.Load()}:
 		l.pending++
+		l.e.finals.Add(1)
 	default:
 		l.e.emit(l.ctx, Event{Kind: EventError, Err: errors.New("voice is behind; a phrase was dropped")})
 	}
 }
 
+const (
+	// partialEvery is how often, in samples, a guess is made at speech still
+	// in progress: every 1.2 seconds.
+	partialEvery = 19200
+	// partialMin is the least audio worth guessing at: 0.6 seconds.
+	partialMin = 9600
+	// partialMax bounds the clip a partial re-recognises: the last 28 seconds.
+	partialMax = 28 * 16000
+)
+
+// maybePartial queues a guess at buf, the speech heard so far in this
+// utterance, when one is due. It runs the recogniser on the whole clip again
+// each time, so the guess improves as the phrase grows; it never runs while a
+// final is being recognised, and never queues behind another partial.
+func (l *loop) maybePartial(buf []float32) {
+	if l.rec == nil || l.partialBusy || l.pending > 0 || len(buf) < partialMin || l.clock-l.lastPartial < partialEvery {
+		return
+	}
+	if !HasSpeech(buf) {
+		return
+	}
+	if len(buf) > partialMax {
+		buf = buf[len(buf)-partialMax:]
+	}
+	select {
+	case l.jobs <- job{pcm: append([]float32(nil), buf...), partial: true, gen: l.e.gen.Load()}:
+		l.partialBusy = true
+		l.lastPartial = l.clock
+	default:
+	}
+}
+
+// Cancel drops everything in progress at once: the recording or utterance
+// being heard, and any result still on its way from the recogniser, so none of
+// it reaches the composer. A push-to-talk recording ends and the microphone
+// closes; an always-listening microphone stays open for the next phrase. It
+// takes effect the instant it is called, before the engine has processed
+// anything else.
+func (e *Engine) Cancel() {
+	e.gen.Add(1)
+	e.cancelPartial()
+	e.do(func(l *loop) {
+		l.resetAudio()
+		l.lastPartial = l.clock
+	})
+}
 func (l *loop) audio(pcm []int16) {
 	rms, peak := chunkLevels(pcm)
 	l.clock += len(pcm)
@@ -359,12 +488,18 @@ func (l *loop) audio(pcm []int16) {
 		for _, s := range l.seg.Feed(pcm) {
 			l.submit(s)
 		}
+		if l.seg.InSpeech() {
+			l.maybePartial(l.seg.Snapshot())
+		}
 	default:
 		if !l.ptt && l.tail <= 0 {
 			return
 		}
 		if len(l.pttBuf) < maxPTT {
 			l.pttBuf = append(l.pttBuf, toFloat(pcm)...)
+		}
+		if l.ptt {
+			l.maybePartial(l.pttBuf)
 		}
 		if l.ptt && l.latched {
 			l.autoStop()

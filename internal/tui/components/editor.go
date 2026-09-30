@@ -18,7 +18,7 @@ type Editor struct {
 // NewEditor returns a focused input editor.
 func NewEditor() Editor {
 	ta := textarea.New()
-	ta.Placeholder = "Type / for commands, @ for files, or ask Belai anything…"
+	ta.Placeholder = DefaultPlaceholder
 	ta.ShowLineNumbers = false
 	ta.SetHeight(3)
 	ta.SetWidth(80)
@@ -238,3 +238,9 @@ func (e Editor) View() string {
 
 // Width returns the editor width.
 func (e Editor) Width() int { return e.textarea.Width() }
+
+// DefaultPlaceholder is what an empty composer shows.
+const DefaultPlaceholder = "Type / for commands, @ for files, or ask Belai anything…"
+
+// SetPlaceholder sets the text an empty editor shows.
+func (e *Editor) SetPlaceholder(s string) { e.textarea.Placeholder = s }

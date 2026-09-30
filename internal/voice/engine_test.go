@@ -126,7 +126,7 @@ func noTranscript(t *testing.T, e *Engine) {
 	}
 }
 
-func newTestEngine(t *testing.T, mode Mode, rec *fakeRec, src *fakeSource) *Engine {
+func newTestEngine(t *testing.T, mode Mode, rec Recognizer, src *fakeSource) *Engine {
 	t.Helper()
 	e := New(context.Background(), Config{
 		Source: src, Mode: mode,
@@ -232,9 +232,8 @@ func TestListenModeTranscribesEachUtterance(t *testing.T) {
 	src.send(tone(ms(700), 0.3))
 	src.send(silence(ms(1200)))
 	nextEvent(t, e, EventTranscript)
-	if rec.callCount() != 2 {
-		t.Fatalf("recogniser calls = %d, want 2", rec.callCount())
-	}
+	// Partial guesses also call the recogniser, so calls are not counted: two
+	// utterances gave two final transcripts, which is what was received.
 }
 
 func TestNotReadyClosesTheMicrophoneAndDropsAudio(t *testing.T) {
@@ -525,4 +524,187 @@ func TestSamplesCountsWhatArrives(t *testing.T) {
 	src.send(silence(ms(100)))
 	src.send(tone(ms(100), 0.3))
 	eventually(t, "both chunks counted", func() bool { return e.Samples() == int64(2*ms(100)) })
+}
+
+// slowRec blocks in Transcribe until released, so a test can act while a
+// clip is being recognised.
+type slowRec struct {
+	release chan struct{}
+	started chan struct{}
+	text    string
+}
+
+func newSlowRec(text string) *slowRec {
+	return &slowRec{release: make(chan struct{}), started: make(chan struct{}, 8), text: text}
+}
+
+func (r *slowRec) Transcribe(ctx context.Context, _ []float32) (string, error) {
+	r.started <- struct{}{}
+	select {
+	case <-r.release:
+		return r.text, nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+func nextPartial(t *testing.T, e *Engine) Event { t.Helper(); return nextEvent(t, e, EventPartial) }
+
+func TestListenModeGuessesWhileYouAreStillTalking(t *testing.T) {
+	src := &fakeSource{}
+	e := newTestEngine(t, ModeListen, &fakeRec{text: "add a retry"}, src)
+	ready(t, e)
+	eventually(t, "microphone open", func() bool { s, _ := src.counts(); return s == 1 })
+	// 2.4 seconds of continuous speech, no pause: the utterance is still open.
+	for i := 0; i < 24; i++ {
+		src.send(tone(ms(100), 0.3))
+	}
+	ev := nextPartial(t, e)
+	if ev.Text != "add a retry" {
+		t.Fatalf("partial = %q", ev.Text)
+	}
+	if e.State() != StateHearing {
+		t.Fatalf("state = %v while the speaker is still talking", e.State())
+	}
+	// The pause ends it; the final follows the guess.
+	src.send(silence(ms(1200)))
+	if ev := nextEvent(t, e, EventTranscript); ev.Text != "add a retry" {
+		t.Fatalf("final = %q", ev.Text)
+	}
+}
+
+func TestPushToTalkGuessesWhileTheKeyIsHeld(t *testing.T) {
+	src := &fakeSource{}
+	e := newTestEngine(t, ModePushToTalk, &fakeRec{text: "run the tests"}, src)
+	ready(t, e)
+	e.PTTDown()
+	eventually(t, "microphone open", func() bool { s, _ := src.counts(); return s == 1 })
+	for i := 0; i < 20; i++ {
+		src.send(tone(ms(100), 0.3))
+	}
+	if ev := nextPartial(t, e); ev.Text != "run the tests" {
+		t.Fatalf("partial = %q", ev.Text)
+	}
+	eventually(t, "held audio read", func() bool { return src.queued() == 0 })
+	e.PTTUp()
+	src.send(silence(ms(400)))
+	if ev := nextEvent(t, e, EventTranscript); ev.Text != "run the tests" {
+		t.Fatalf("final = %q", ev.Text)
+	}
+}
+
+func TestNoGuessForShortOrSilentAudio(t *testing.T) {
+	src := &fakeSource{}
+	rec := &fakeRec{text: "x"}
+	e := newTestEngine(t, ModePushToTalk, rec, src)
+	ready(t, e)
+	e.PTTDown()
+	eventually(t, "microphone open", func() bool { s, _ := src.counts(); return s == 1 })
+	src.send(tone(ms(300), 0.3)) // under 0.6 s
+	for i := 0; i < 20; i++ {
+		src.send(silence(ms(100)))
+	}
+	time.Sleep(60 * time.Millisecond)
+	select {
+	case ev := <-e.Events():
+		if ev.Kind == EventPartial {
+			t.Fatalf("a guess was made from %q", ev.Text)
+		}
+	default:
+	}
+}
+
+func TestFinalSupersedesAGuessInFlight(t *testing.T) {
+	src := &fakeSource{}
+	rec := newSlowRec("done")
+	e := newTestEngine(t, ModePushToTalk, rec, src)
+	ready(t, e)
+	e.PTTDown()
+	eventually(t, "microphone open", func() bool { s, _ := src.counts(); return s == 1 })
+	for i := 0; i < 20; i++ {
+		src.send(tone(ms(100), 0.3))
+	}
+	<-rec.started // the guess is being recognised and will not finish on its own
+	eventually(t, "held audio read", func() bool { return src.queued() == 0 })
+	e.PTTUp()
+	src.send(silence(ms(400)))
+	<-rec.started // the final has started: the guess was cancelled to make room
+	close(rec.release)
+	if ev := nextEvent(t, e, EventTranscript); ev.Text != "done" {
+		t.Fatalf("final = %q", ev.Text)
+	}
+}
+
+func TestCancelDropsARecordingAndItsResult(t *testing.T) {
+	src := &fakeSource{}
+	rec := &fakeRec{text: "should never appear"}
+	e := newTestEngine(t, ModePushToTalk, rec, src)
+	ready(t, e)
+	e.PTTDown()
+	eventually(t, "microphone open", func() bool { s, _ := src.counts(); return s == 1 })
+	src.send(tone(ms(500), 0.3))
+	e.Cancel()
+	eventually(t, "microphone closes", func() bool { _, s := src.counts(); return s == 1 })
+	eventually(t, "back to ready", func() bool { return e.State() == StateIdle })
+	e.PTTUp() // a late release finds nothing to send
+	noTranscript(t, e)
+	if rec.callCount() != 0 {
+		t.Fatalf("the recogniser ran %d times on cancelled audio", rec.callCount())
+	}
+}
+
+func TestCancelDropsAResultAlreadyBeingRecognised(t *testing.T) {
+	src := &fakeSource{}
+	rec := newSlowRec("late")
+	e := newTestEngine(t, ModePushToTalk, rec, src)
+	ready(t, e)
+	e.PTTDown()
+	eventually(t, "microphone open", func() bool { s, _ := src.counts(); return s == 1 })
+	src.send(tone(ms(500), 0.3))
+	eventually(t, "audio read", func() bool { return src.queued() == 0 })
+	e.PTTUp()
+	src.send(silence(ms(400)))
+	<-rec.started // the final is being recognised
+	e.Cancel()
+	close(rec.release)
+	noTranscript(t, e)
+	eventually(t, "the engine settles", func() bool { return e.State() == StateIdle })
+}
+
+func TestCancelKeepsAnAlwaysListeningMicrophoneOpenForTheNextPhrase(t *testing.T) {
+	src := &fakeSource{}
+	rec := &fakeRec{text: "second phrase"}
+	e := newTestEngine(t, ModeListen, rec, src)
+	ready(t, e)
+	eventually(t, "microphone open", func() bool { s, _ := src.counts(); return s == 1 })
+	src.send(tone(ms(400), 0.3))
+	eventually(t, "hearing", func() bool { return e.State() == StateHearing })
+	e.Cancel()
+	eventually(t, "listening again", func() bool { return e.State() == StateListening })
+	if _, stops := src.counts(); stops != 0 {
+		t.Fatal("cancel closed the always-listening microphone")
+	}
+	// The cancelled phrase never becomes a transcript...
+	src.send(silence(ms(1200)))
+	noTranscript(t, e)
+	// ...and the next one does.
+	src.send(tone(ms(700), 0.3))
+	src.send(silence(ms(1200)))
+	if ev := nextEvent(t, e, EventTranscript); ev.Text != "second phrase" {
+		t.Fatalf("transcript = %q", ev.Text)
+	}
+}
+
+func TestPartialsAreDroppableAndFinalsAreNot(t *testing.T) {
+	e := &Engine{events: make(chan Event, 1)}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	e.emit(ctx, Event{Kind: EventPartial, Text: "one"})
+	done := make(chan struct{})
+	go func() { e.emit(ctx, Event{Kind: EventPartial, Text: "two"}); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("a partial blocked on a full channel")
+	}
 }
