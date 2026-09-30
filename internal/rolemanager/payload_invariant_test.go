@@ -27,6 +27,8 @@ func TestClassifierPayloadsAreToolSkillAgentFree(t *testing.T) {
 		{"voice cleanup", BuildVoiceCleanupPayload("um so add a retry")},
 		{"web fetch", BuildWebFetchPayload("https://example.com", "q", "page")},
 		{"bash replan", BuildBashReplanPayload("grep -rn foo .", "Grep", `{"pattern":"string"}`)},
+		{"gate draft", BuildGateDraftPayload("fix the parser", "it drops the last record")},
+		{"delivery report", BuildDeliveryReportPayload(DeliveryReportInput{FilesChanged: 1})},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

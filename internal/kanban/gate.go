@@ -231,3 +231,46 @@ func cleanGateNote(s string) string {
 	}
 	return s
 }
+
+// SetGatesIfNone gives a card that has no gates the manual gates the harness
+// drafted for it. Only the worker holding the card's claim may, only a card
+// with no gates takes them, and every gate must be manual: a runnable gate
+// names a suite the harness detected, which a drafted line never does. The
+// gates are validated like any filed with a card, so ids and the unmet state
+// are the harness's.
+func (s *Store) SetGatesIfNone(ref, holder string, titles []string) (Item, error) {
+	gates := make([]Gate, 0, len(titles))
+	for _, t := range titles {
+		gates = append(gates, Gate{Title: t, Kind: GateManual})
+	}
+	gates, err := NormGates(gates)
+	if err != nil {
+		return Item{}, err
+	}
+	if len(gates) == 0 {
+		return Item{}, fmt.Errorf("%w: no gates to set", ErrGate)
+	}
+	var out Item
+	err = s.mutate(true, func(b *Board) error {
+		i, err := find(b, ref)
+		if err != nil {
+			return err
+		}
+		it := &b.Items[i]
+		if holder == "" || it.ClaimedBy != holder {
+			return ErrLeaseLost
+		}
+		if len(it.Gates) > 0 {
+			out = cloneItem(*it)
+			return errNoWrite
+		}
+		it.Gates = gates
+		it.Updated, it.Dirty = s.nowMs(), true
+		out = cloneItem(*it)
+		return nil
+	})
+	if errors.Is(err, errNoWrite) {
+		return out, nil
+	}
+	return out, err
+}

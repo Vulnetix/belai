@@ -37,3 +37,10 @@ func TestReviewAndAutoAreDocumented(t *testing.T) {
 		t.Errorf("ListAuto is %q but the docs say auto", ListAuto)
 	}
 }
+
+func TestDraftIsDocumented(t *testing.T) {
+	doc := docparity.Read(t, "docs/agent-profiles.md")
+	if !strings.Contains(doc, "`kanban.gates.draft`") || !strings.Contains(doc, "A drafted gate is always manual") {
+		t.Error("docs/agent-profiles.md does not describe kanban.gates.draft")
+	}
+}

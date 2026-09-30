@@ -606,6 +606,41 @@ content-only parsing, but an empty reply there is inconclusive rather than a
 refusal: it returns `SAFE` and the feed shows "couldn't tell" (see
 "Three-phase classification").
 
+### Delivery role payloads
+
+Two fast-tier roles serve the [delivery crew](fleet.md#the-delivery-crew). Both
+are tool-less turns with no skills or agent block, both sanitise every input with
+`sanitize.Text`, and both have a harness-composed fallback, so a missing or weak
+fast model never costs a card its result. Neither goes through Jev.
+
+**`gate_draft`.** `rolemanager.BuildGateDraftPayload` shows the role a card's
+title and body (the body capped at 2,000 runes) and asks for one to four
+outcomes a reviewer can check by reading the change. The card text is described
+as data. `rolemanager.CleanGateDrafts` reduces the reply to at most
+`GateDraftMaxGates` (4) one-line outcomes of at most `GateDraftMaxRunes` (100)
+runes: list markers and numbering are removed, a line under 10 runes, a repeat,
+and a line that looks like a command or a path (a backtick, `$`, `;`, `|`, `<`,
+`>`, a leading `/`, `./` or `$ `) are dropped. `rolemanager.DecideGateDraft`
+never fails: a transport error or an unusable reply gives no draft and the
+card keeps no gates. The harness gates the card text like any item text before
+the role sees it, and files every drafted line as a manual gate (see
+[drafted gates](fleet.md#drafted-gates-and-the-delivery-note)); no line the role
+writes can name a suite or a command.
+
+**`delivery_report`.** `rolemanager.BuildDeliveryReportPayload` shows the role
+harness facts only: the file count, each gate's id, kind and state, whether the
+harness verified the runnable gates, the regression count against the base
+commit (or that none was compared) and the request clauses covered. It carries
+no card text, no gate title, no model note and no test output.
+`rolemanager.ComposeDeliveryReport` writes the same facts as plain sentences and
+is the fallback. `rolemanager.CleanDeliveryReport` folds a reply to one paragraph
+of at most 500 runes. `rolemanager.DecideDeliveryReport` returns the composed
+note on a transport error, an empty reply or no classifier.
+
+Each outcome is a role-manager activity, `gate_draft` (`drafted` or `fallback`)
+or `delivery_report` (`reported` or `fallback`), with the serving model. Neither
+records a card, a gate or a note.
+
 ### Classifier payload invariants
 
 Every classifier payload builder keeps the classifier turn tool-less, skill-less,

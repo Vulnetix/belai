@@ -142,3 +142,24 @@ func TestBuiltinScoutPlansRequestsForCoverage(t *testing.T) {
 		t.Fatalf("the scout records clauses and covers them: %+v", p.Kanban.Gates)
 	}
 }
+
+func TestGatesDraftIsAFlagOnTheBuilder(t *testing.T) {
+	p := worker()
+	p.Kanban.Gates = &GatesSpec{Draft: true, Verify: VerifyEnforce}
+	if err := p.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	b, err := Load("belai:builder")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !b.Kanban.Gates.Draft {
+		t.Fatal("the builder drafts manual gates for a card that has none")
+	}
+	for _, name := range []string{"belai:reviewer", "belai:scout"} {
+		o, _ := Load(name)
+		if o.Kanban.Gates != nil && o.Kanban.Gates.Draft {
+			t.Fatalf("%s must not draft gates", name)
+		}
+	}
+}

@@ -47,6 +47,8 @@ var allEvents = []Event{
 	EventVoiceCommand,
 	EventRequestScale,
 	EventGoalJudge,
+	EventGateDraft,
+	EventDeliveryReport,
 	EventHandoffClarity,
 	EventGateAlignment,
 	EventRequestCoverage,

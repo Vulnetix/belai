@@ -128,7 +128,10 @@ type Worker struct {
 	Scan func(ctx context.Context, dir, finding string, round, max int) (scanFeedback, bool)
 	// Jev runs the delivery relevance jobs; nil builds it from Cfg on first use,
 	// and with no decision backend configured no job runs.
-	Jev      *jev.Jobs
+	Jev *jev.Jobs
+	// Fast is the fast-tier classifier for the delivery roles (gate_draft,
+	// delivery_report); nil builds it from Cfg and Client on first use.
+	Fast     rolemanager.Classifier
 	Suites   func(ctx context.Context) []testdetect.Suite
 	RunTests func(ctx context.Context, plan testrun.Plan) []testrun.Result
 	// Reflect distils lessons from a finished item; nil uses the model.
@@ -140,6 +143,7 @@ type Worker struct {
 	qualityRef string // HEAD the kanban.quality sweep last ran for
 	reconciled string // artefact signature the cards were last reconciled against
 	jevOnce    sync.Once
+	fastOnce   sync.Once
 	mu         sync.Mutex
 	failures   map[string]int64 // items this worker failed, with their Updated at release; skipped until touched again
 }
@@ -606,6 +610,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		claim.Relevance = jevRelevance{jobs}
 	}
 	w.resetManualGates(it)
+	w.draftGates(itemCtx, it)
 	var tokens, tokBase int
 	var tokMu sync.Mutex
 	emit := func(e agent.Event) {
@@ -710,7 +715,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	// An empty branch has nothing to push; PublishBranch would only refuse
 	// and leave a "not opened" note beside the release note above.
 	if !o.failed && o.files > 0 && released.List == kanban.Done && w.publishes() && ws.Worktree {
-		w.publish(ctx, ws, released)
+		w.publish(ctx, ws, released, o.files)
 	}
 	w.reflect(ctx, it, res, runErr)
 }
@@ -919,9 +924,12 @@ func (w *Worker) release(ctx context.Context, it kanban.Item, o outcome) kanban.
 }
 
 // publish pushes the item's branch and opens a draft pull request.
-func (w *Worker) publish(ctx context.Context, ws *Workspace, it kanban.Item) {
+func (w *Worker) publish(ctx context.Context, ws *Workspace, it kanban.Item, files int) {
 	title := "belai: " + it.Title
 	body := fmt.Sprintf("Kanban item %s, worked by Belai agents and approved by agent %s.\n\nOpened as a draft by Belai: review before merging.", it.Short(), w.Profile.Name)
+	if report := w.deliveryReport(ctx, ws, it, files); report != "" {
+		body += "\n\n" + report
+	}
 	url, err := ws.PublishBranch(context.WithoutCancel(ctx), title, body)
 	if err != nil {
 		w.logf("%s: publish: %v", it.Short(), err)

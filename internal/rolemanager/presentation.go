@@ -172,6 +172,8 @@ var presentations = map[Event]presentation{
 	EventVoiceCommand:              {CategoryAsk, "voicecmd"},
 	EventRequestScale:              {CategoryMode, "scale"},
 	EventGoalJudge:                 {CategoryMode, "goaljudge"},
+	EventGateDraft:                 {CategoryContext, "gatedraft"},
+	EventDeliveryReport:            {CategoryContext, "delivery"},
 	EventHandoffClarity:            {CategoryCode, "clarity"},
 	EventGateAlignment:             {CategoryCode, "align"},
 	EventRequestCoverage:           {CategoryCode, "cover"},

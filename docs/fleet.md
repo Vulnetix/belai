@@ -532,6 +532,39 @@ after a person deletes it. The scout's own card then completes, with a note such
 as `coverage: 1 of 2 clauses covered, gaps C2, 1 gap card(s) filed`. A deleted handoff
 covers nothing.
 
+#### Drafted gates and the delivery note
+
+Two fast-model roles help a card that reaches the crew without much structure.
+Neither can change what the harness decides.
+
+**Drafted gates** (`kanban.gates.draft`, set by the built-in builder). A card a
+person filed usually has no gates, so the reviewer has nothing to check it
+against. When a worker with `draft` claims a card that has no gates, the
+harness gates the card's text like any item text (a withheld card is not sent),
+and the fast model's `gate_draft` role writes one to four outcomes a reviewer can
+check by reading the change. Each becomes a manual gate.
+
+- **Always manual.** A drafted line can never name a suite, a package or a
+  command: the harness files it as a manual gate, and a line that looks like a
+  command or a path (a backtick, `$`, `;`, `|`, `<`, `>`, or a leading `/`,
+  `./` or `$ `) is dropped. The gates a reviewer then decides with `KanbanGate`
+  are the ones that matter, and the builder's own route never waits on them.
+- **Only when there are none.** A card that already has gates keeps them, costs
+  no call, and is never given more.
+- **A failure changes nothing.** No fast model, a transport error, an empty
+  reply or nothing usable leaves the card without gates, exactly as before.
+- **Size.** At most 4 gates, each at most 100 characters, a line under 10
+  characters is dropped, and a repeat is dropped.
+
+**The delivery note.** When the harness publishes a draft pull request at `done`,
+it appends a short note on how the card's gates were checked. The fast model's
+`delivery_report` role writes it from harness facts only: the file count, each
+gate's id, kind and state, whether the harness verified the runnable gates, the
+regression count against the base commit (or that none was compared) and how
+many request clauses have a task. It never sees the card's words, a gate title, a
+note or test output. With no fast model, an error or an empty reply, the harness
+writes the same facts as plain sentences. The note is at most 500 characters.
+
 ### The security crew
 
 Start it with `belai agent start -crew belai:security` or `/fleet`. It works
