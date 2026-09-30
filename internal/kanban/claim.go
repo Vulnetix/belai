@@ -163,6 +163,7 @@ func cloneItem(it Item) Item {
 	it.History = slices.Clone(it.History)
 	it.Labels = slices.Clone(it.Labels)
 	it.DependsOn = slices.Clone(it.DependsOn)
+	it.Gates = cloneGates(it.Gates)
 	return it
 }
 

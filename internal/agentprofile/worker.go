@@ -51,6 +51,9 @@ type KanbanSpec struct {
 	// Quality turns on the harness's test-quality sweep for the worker. Nil:
 	// none.
 	Quality *QualitySpec `json:"quality,omitempty"`
+	// Gates turns on acceptance gates for the worker: the tasks it hands on
+	// carry them, and the harness verifies them on the branch. Nil: none.
+	Gates *GatesSpec `json:"gates,omitempty"`
 }
 
 // QualityLabel marks a card the harness seeded from a test run. Every handoff
@@ -406,6 +409,11 @@ func (p AgentProfile) validateWorker() error {
 			return errors.New("kanban.quality.sweep needs handoff_to or handoff_labels: a seeded card is worked by handing tasks on")
 		}
 	}
+	if g := k.Gates; g != nil {
+		if err := g.validate(k); err != nil {
+			return err
+		}
+	}
 	if k.MaxAttempts < 0 || k.MaxItems < 0 {
 		return errors.New("kanban.max_attempts and kanban.max_items must not be negative")
 	}
@@ -492,6 +500,50 @@ func (s SecuritySpec) validate(tools []string) error {
 			return fmt.Errorf("kanban.security.verdicts: %q is listed twice", v)
 		}
 		seen[v] = true
+	}
+	return nil
+}
+
+// Gate verification modes (kanban.gates.verify).
+const (
+	// VerifyOff leaves the crew as it was: a card is done when a worker says
+	// so and the goal evaluator agrees.
+	VerifyOff = "off"
+	// VerifyRecord has the harness run a card's gates on the branch and write
+	// what they show to the card, without changing where the card goes.
+	VerifyRecord = "record"
+	// VerifyEnforce has the harness run a card's gates on the branch and decide
+	// where it goes: a card whose gates are not all met is not done.
+	VerifyEnforce = "enforce"
+)
+
+// GatesSpec is a worker's acceptance-gate duties. A gate is a reference to a
+// detected test suite (see kanban.Gate), never a command, so the harness runs
+// it from its own table and decides it by the exit code.
+type GatesSpec struct {
+	// Require makes KanbanHandoff refuse a handoff that carries no gate: the
+	// scout must say which outcome proves each task done.
+	Require bool `json:"require,omitempty"`
+	// Verify is off (default), record or enforce; see the Verify constants.
+	Verify string `json:"verify,omitempty"`
+}
+
+// VerifyMode returns the effective verification mode.
+func (g *GatesSpec) VerifyMode() string {
+	if g == nil || g.Verify == "" {
+		return VerifyOff
+	}
+	return g.Verify
+}
+
+func (g *GatesSpec) validate(k *KanbanSpec) error {
+	switch g.Verify {
+	case "", VerifyOff, VerifyRecord, VerifyEnforce:
+	default:
+		return fmt.Errorf("kanban.gates.verify must be off, record or enforce, not %q", g.Verify)
+	}
+	if g.Require && len(k.HandoffTo) == 0 && len(k.HandoffLabels) == 0 {
+		return errors.New("kanban.gates.require needs handoff_to or handoff_labels: gates are required on the tasks a worker hands on")
 	}
 	return nil
 }

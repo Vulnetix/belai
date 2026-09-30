@@ -338,6 +338,42 @@ Builders implement each on its own branch and hand it on as `needs-review`.
 The reviewer checks the branch out, runs the tests, and moves the item to
 `done`, or back to `backlog` with its notes.
 
+### Acceptance gates
+
+A gate is one observable outcome a card must show before it is done. The scout
+files each handoff with the gates that prove it, so a builder knows what done
+means and the harness has something to check.
+
+A gate is a reference, never a command. No model writes a command line into
+the board, and no gate can run anything the harness did not already detect:
+
+| Part | Rule |
+| --- | --- |
+| `title` | The outcome, as a statement that is true when the task is done. Cleaned to one line and at most 120 characters. Two gates on one card cannot share a title. |
+| `kind` | `runnable` (a detected test suite decides it) or `manual` (a reviewer decides it, for what no test can observe). |
+| `suite` | Runnable only. The name of a suite the harness detected from marker files (`go`, `pytest`, `just-check` and so on). A name that was not detected is refused, and the refusal lists the detected ones. When nothing was detected, only manual gates are possible. |
+| `dir`, `test` | Runnable and Go suites only. `dir` narrows the suite to one package directory of the repository (a relative path of letters, digits and `. _ - / @ +`, with no `..`, no leading `-` and no trailing `/`; it must exist and stay inside the repository after symlinks). `test` narrows it to one test function name (letters, digits and underscores). A test needs the `dir` of its package. Any other ecosystem runs the whole suite. |
+
+The harness assigns ids by position (`G1`, `G2`, and so on, at most eight a
+card) and starts every gate `unmet`. A model cannot file a gate as already met,
+and cannot choose an id.
+
+Rules and edge cases:
+
+- **A bad gate refuses the whole handoff.** An undetected suite, an unsafe
+  `dir` or `test`, a repeated title, a ninth gate or a manual gate that names a
+  suite returns an error saying what to fix. No card is filed and nothing is
+  dropped silently, so a scout cannot end up with half its plan on the board.
+- **`kanban.gates.require`** makes a handoff with no gate an error. The
+  built-in `belai:scout` sets it. A worker without a `gates` block keeps the
+  handoff tool exactly as it was, and the repository is not scanned for suites.
+- **A worker never edits gates.** Gates are set when the card is filed, and a pulled copy of a card from the Vulnetix
+  website never carries or replaces them (they stay on the host that decided
+  them, like a finding's fields).
+- **The board file is version 3.** A Belai that predates gates refuses the
+  board instead of rewriting it without them; a version 2 board still reads, with
+  no gates. See [the board file](bkan.md).
+
 ### The security crew
 
 Start it with `belai agent start -crew belai:security` or `/fleet`. It works

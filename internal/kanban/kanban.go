@@ -148,6 +148,11 @@ type Item struct {
 	Verdict Verdict
 	VEX     string
 
+	// Gates are the card's acceptance gates (see Gate). The harness assigns
+	// their ids and decides their states; a pulled copy never carries or
+	// replaces them.
+	Gates []Gate
+
 	// remoteAgent is set by FromWire when the pulled item carried the routing
 	// and claim fields. A backend that does not know them yet omits them, and
 	// Merge must then keep the local values rather than clear them. It is
@@ -215,6 +220,9 @@ type ItemInput struct {
 	Parent    string
 	DependsOn []string
 	Hops      int
+	// Gates are the acceptance gates the card is filed with. NormGates
+	// validates them and assigns their ids; an invalid gate is an error.
+	Gates []Gate
 }
 
 // Patch edits an item. Nil fields are left alone; a non-empty Note is
@@ -603,6 +611,10 @@ func (s *Store) Add(in ItemInput, prov Provenance) (Item, bool, error) {
 	if err != nil {
 		return Item{}, false, err
 	}
+	gates, err := NormGates(in.Gates)
+	if err != nil {
+		return Item{}, false, err
+	}
 	var out Item
 	var dup bool
 	err = s.mutate(true, func(b *Board) error {
@@ -646,7 +658,7 @@ func (s *Store) Add(in ItemInput, prov Provenance) (Item, bool, error) {
 			HostID: prov.HostID, SessionID: prov.SessionID,
 			Created: now, Updated: now, Dirty: true,
 			Labels: NormLabels(in.Labels), Priority: ClampPriority(in.Priority), Assignee: assignee,
-			Parent: parent, DependsOn: deps, Hops: max(in.Hops, 0),
+			Parent: parent, DependsOn: deps, Hops: max(in.Hops, 0), Gates: gates,
 		}
 		appendHistory(&out, Move{ID: session.MustID(), To: list, At: now, SessionID: prov.SessionID})
 		b.Items = append(b.Items, out)
