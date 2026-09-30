@@ -49,6 +49,22 @@ type Server struct {
 	// recording is set once a session owns the process-wide role-manager
 	// record sink; a connection normally carries one session.
 	recording bool
+	// client is the editor's declared name (initialize clientInfo), cleaned.
+	// It prefixes every session name so the record says which editor drove it.
+	client string
+}
+
+// Mirror follows the sessions of a connection so their transcripts can be
+// mirrored elsewhere (the Vulnetix web session sync). It sees only a session's
+// id, directory and harness-composed name; the transcript lines are read from
+// the file the session log already wrote.
+type Mirror interface {
+	// Opened reports a new session and its display name.
+	Opened(id, cwd, name string)
+	// Touched reports that the session's transcript grew.
+	Touched(id string)
+	// Close ends every mirrored session; called once when the connection ends.
+	Close()
 }
 
 // Options are the optional parts of a connection.
@@ -66,6 +82,10 @@ type Options struct {
 	// do not run the pass. Nil never runs one. There is no session-end moment
 	// an editor can watch, so a completed goal is the only trigger over ACP.
 	PostEnd func(ctx context.Context, cwd string, sess *agent.Session, fix testpass.Fixer, notify func(string)) (testpass.Outcome, bool)
+	// Mirror follows each session's transcript. Nil mirrors nothing, and a
+	// session without a transcript is never reported to it. Nothing arrives
+	// from the far side: the editor owns the conversation.
+	Mirror Mirror
 }
 
 type acpSession struct {
@@ -79,6 +99,8 @@ type acpSession struct {
 	// stops its role-manager record sink.
 	log    *turnlog.Log
 	detach func()
+	// named is set once the first prompt has given the session its name.
+	named bool
 	// always holds tool names the editor allowed for the rest of the
 	// session (allow_always). It never reaches a settings file.
 	always map[string]bool
@@ -111,6 +133,9 @@ func ServeWith(ctx context.Context, r io.Reader, w io.Writer, build Builder, opt
 		}
 	}
 	s.mu.Unlock()
+	if s.opts.Mirror != nil {
+		s.opts.Mirror.Close()
+	}
 	if err := s.conn.Err(); err != nil && !errors.Is(err, io.EOF) {
 		return err
 	}
@@ -139,6 +164,10 @@ func (s *Server) handle(ctx context.Context, method string, params json.RawMessa
 }
 
 func (s *Server) initialize(params json.RawMessage) (any, error) {
+	name := clientName(params)
+	s.mu.Lock()
+	s.client = name
+	s.mu.Unlock()
 	return map[string]any{
 		"protocolVersion": ProtocolVersion,
 		"agentCapabilities": map[string]any{
@@ -178,7 +207,15 @@ func (s *Server) newSession(ctx context.Context, params json.RawMessage) (any, e
 		ss.detach = ss.log.AttachRoleManager()
 	}
 	s.sessions[id] = ss
+	client := s.client
 	s.mu.Unlock()
+	if ss.log.Writer() != nil {
+		name := sessionName(client, dirName(ss.cwd))
+		ss.log.Name(name)
+		if s.opts.Mirror != nil {
+			s.opts.Mirror.Opened(id, ss.cwd, name)
+		}
+	}
 	return map[string]any{"sessionId": id}, nil
 }
 
@@ -284,10 +321,15 @@ func (s *Server) prompt(ctx context.Context, params json.RawMessage) (any, error
 		userMeta = map[string]any{"images": markers}
 	}
 	ss.log.User(text, userMeta)
+	s.nameFromPrompt(ss, text)
+	s.touch(ss)
 	var res run.Result
 	var runErr error
 	for ev := range ss.agent.RunStream(turnCtx, history, agent.TurnInput{Prompt: text, Attachments: imgs, Directive: imageNotesDirective(notes)}) {
 		ss.log.Observe(ev)
+		if ev.Kind == agent.EventToolResultKind {
+			s.touch(ss)
+		}
 		switch ev.Kind {
 		case agent.EventDoneKind:
 			res = ev.Result
@@ -298,6 +340,7 @@ func (s *Server) prompt(ctx context.Context, params json.RawMessage) (any, error
 		}
 	}
 	ss.log.Flush()
+	s.touch(ss)
 	if turnCtx.Err() != nil {
 		return map[string]any{"stopReason": "cancelled"}, nil
 	}
@@ -322,6 +365,31 @@ func (s *Server) prompt(ctx context.Context, params json.RawMessage) (any, error
 		return map[string]any{"stopReason": "cancelled"}, nil
 	}
 	return map[string]any{"stopReason": "end_turn"}, nil
+}
+
+// nameFromPrompt renames a session after its first prompt: the editor's name,
+// then the prompt's first line. The prompt is already admitted; the name is
+// cleaned again as a line, so it never carries markup or control runes.
+func (s *Server) nameFromPrompt(ss *acpSession, text string) {
+	ss.mu.Lock()
+	first := !ss.named
+	ss.named = true
+	ss.mu.Unlock()
+	if !first || ss.log.Writer() == nil {
+		return
+	}
+	first1, _, _ := strings.Cut(strings.TrimSpace(text), "\n")
+	s.mu.Lock()
+	client := s.client
+	s.mu.Unlock()
+	ss.log.Name(sessionName(client, first1))
+}
+
+// touch tells the mirror the session's transcript grew.
+func (s *Server) touch(ss *acpSession) {
+	if s.opts.Mirror != nil && ss.log.Writer() != nil {
+		s.opts.Mirror.Touched(ss.id)
+	}
 }
 
 // postEnd runs the post-end test pass for a session whose goal completed and

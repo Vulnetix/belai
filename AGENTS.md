@@ -280,7 +280,11 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   verdict, label, subject, pass, model, duration, sequence and time, plus the
   summary and outcome for a described event, and never `Detail`, a prompt, a
   command, a path or classified text. Headless and ACP runs keep a private
-  transcript unless `-no-transcript` is set; it is never synced.
+  transcript unless `-no-transcript` is set. A headless run's is never synced.
+  An ACP session's is mirrored upload-only under the same `sync.enabled`
+  switch and credential as the TUI (`cmd/belai/acpsync.go`): no remote
+  prompts, no remote answers, and the session name carries only the editor's
+  declared name, cleaned to one bracket-free line, and the prompt's first line.
 - **ACP resolves its model like a worker.** With no `-provider`/`-model`,
   `acpConfig` takes the settings file, then the saved TUI selection
   (`workerModel`), never the built-in OpenAI fallback.

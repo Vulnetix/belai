@@ -277,9 +277,11 @@ and the inbox run on the syncer's own goroutines.
 - **Compaction.** It starts a new session whose parent is the summarised one;
   the website links the two.
 - **Headless and ACP.** `belai -prompt` and each ACP session keep a private
-  transcript on disk like any other session (`-no-transcript` opts out), but
-  neither is synced: sync covers the TUI, `belai rc` sessions and fleet
-  workers.
+  transcript on disk like any other session (`-no-transcript` opts out).
+  `belai -prompt` is not synced. An ACP session is: it appears on the website
+  named after the editor, for example `[VS Code] explore repo`, and moves to
+  History when the editor disconnects. It is upload only, so a website prompt
+  or answer never reaches an editor session.
 - **Remote control.** A session the website starts through `belai rc` is a
   headless session that does keep a transcript, so it syncs like a TUI
   session. It carries the dispatch id, takes web prompts and never web

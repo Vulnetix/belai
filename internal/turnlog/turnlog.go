@@ -42,6 +42,13 @@ func (l *Log) User(text string, meta map[string]any) string {
 	return l.w.Entry(session.Entry{Type: "user", Role: "user", Content: text, Meta: meta})
 }
 
+// Name records the session's display name.
+func (l *Log) Name(name string) {
+	if l.w != nil {
+		l.w.Name(name)
+	}
+}
+
 // System writes a harness line.
 func (l *Log) System(text string) {
 	if l.w != nil {

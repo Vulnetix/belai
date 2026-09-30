@@ -62,6 +62,18 @@ classifier refuses it.
   calls and every role-manager decision, never anything on stdout. The first
   session on a connection also receives the role-manager decisions made in the
   process, which is normally the only session.
+- A session is named after the editor that started it. The editor's declared
+  name (`clientInfo.title`, else `name`) is cleaned to one short line and
+  prefixed in square brackets, so a session reads `[VS Code] explore repo`; the
+  first prompt's first line follows it. An editor that declares no name gets
+  no prefix.
+- With `sync.enabled` on and the Vulnetix CLI logged in, the transcript is
+  mirrored to your Vulnetix account like a TUI session, through the same
+  syncer and credential. The mirror is upload only: a prompt or answer typed on
+  the website never reaches an editor session, because the editor owns the
+  conversation. `-no-transcript` keeps nothing and so mirrors nothing.
+- The provider and model follow your settings, then the model you last chose
+  in the TUI, like a fleet worker; `-provider` and `-model` override them.
 - The project directory must already be trusted. `session/new` in an
   untrusted directory fails with a message telling you to open it in the TUI
   once or run `belai -trust-dir` there. The trust prompt never runs over ACP.
@@ -82,8 +94,9 @@ classifier refuses it.
 
 ## Limitations
 
-- Sessions last as long as the editor's connection and are not written to
-  the Belai session store, so they cannot be resumed from the TUI.
+- Sessions last as long as the editor's connection. Each keeps a transcript in
+  the Belai session store, named after the editor, but the editor cannot load
+  one back (`loadSession` is false).
 - Clarifying questions, the harness's and the model's `AskUserQuestion`, are
   answered as declined over ACP; the agent proceeds with its
   best reading of the prompt.

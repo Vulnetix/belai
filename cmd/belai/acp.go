@@ -75,6 +75,11 @@ func runACP(ctx context.Context, args []string, stdin io.Reader, stdout, stderr 
 			l, _ := turnlog.Open(cwd, id, session.Meta{Cwd: cwd, Mode: "agent"})
 			return l
 		}
+		// The transcript is mirrored to the Vulnetix website when session sync
+		// is on and the Vulnetix CLI is logged in; never without a transcript.
+		if m := newACPMirror(global, wd, *providerName, *model); m != nil {
+			opts.Mirror = m
+		}
 	}
 	if err := acp.ServeWith(ctx, stdin, stdout, build, opts); err != nil {
 		fmt.Fprintln(stderr, "belai acp:", err)
