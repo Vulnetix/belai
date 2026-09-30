@@ -55,9 +55,12 @@ var jevThresholdHelp = map[string]string{
 
 // sliderBar draws v in [0,1] as a bar with a partial-fill knob: full blocks up
 // to the value, one eighth-block for the remainder, a dotted track after it.
-func sliderBar(v float64) string {
+func sliderBar(v float64) string { return sliderBarN(v, sliderCells) }
+
+// sliderBarN is sliderBar over cells cells.
+func sliderBarN(v float64, cells int) string {
 	v = math.Max(0, math.Min(1, v))
-	eighths := int(math.Round(v * sliderCells * 8))
+	eighths := int(math.Round(v * float64(cells) * 8))
 	full, part := eighths/8, eighths%8
 	var b strings.Builder
 	b.WriteString(strings.Repeat("█", full))
@@ -66,32 +69,65 @@ func sliderBar(v float64) string {
 		b.WriteRune([]rune(" ▏▎▍▌▋▊▉")[part])
 		used++
 	}
-	b.WriteString(strings.Repeat("·", sliderCells-used))
+	b.WriteString(strings.Repeat("·", cells-used))
 	return b.String()
 }
 
-// jevThresholdRows builds one slider row per cut-off, in the documented order.
+// sliderTrack is sliderBarN with a tick at the default, so a value reads as
+// "where it is, against where it starts".
+func sliderTrack(v, def float64, cells int) string {
+	bar := []rune(sliderBarN(v, cells))
+	def = math.Max(0, math.Min(1, def))
+	i := min(int(def*float64(cells)), cells-1)
+	bar[i] = '│'
+	return string(bar)
+}
+
+// sliderTrackCells is the track's width on the /settings screen.
+const sliderTrackCells = 20
+
+// jevThresholdSections groups the cut-offs by what they decide, in display
+// order. Every key of config.JevThresholdKeys appears in exactly one.
+var jevThresholdSections = []struct {
+	title string
+	keys  []string
+}{
+	{"security gate", []string{"allow_at", "deny_at"}},
+	{"tool and result lists", []string{"drop_at", "keep_at", "strong_at"}},
+	{"actions", []string{"route_at", "swap_at", "voice_at", "simple_at"}},
+	{"language server triage", []string{"triage_at"}},
+	{"locate", []string{"hit_at", "lead_at"}},
+	{"option order", []string{"option_hit", "option_margin", "option_lead"}},
+	{"mode choice", []string{"mode_confident", "mode_margin", "mode_headless"}},
+}
+
+// jevThresholdRows builds one slider row per cut-off, grouped by section.
 func jevThresholdRows(s config.Settings, origin map[string]config.Source) []settingsRow {
 	var th *config.JevThresholdSettings
 	if s.Jev != nil {
 		th = s.Jev.Thresholds
 	}
-	keys := config.JevThresholdKeys()
-	rows := make([]settingsRow, 0, len(keys))
-	for _, k := range keys {
-		v, set, _ := th.Value(k)
-		src := "default"
-		if set {
-			src = sourceLabel(origin["jev"])
+	var none *config.JevThresholdSettings
+	rows := make([]settingsRow, 0, len(config.JevThresholdKeys()))
+	for _, sec := range jevThresholdSections {
+		for _, k := range sec.keys {
+			v, set, _ := th.Value(k)
+			def, _, _ := none.Value(k)
+			src := "default"
+			if set {
+				src = sourceLabel(origin["jev"])
+			}
+			rows = append(rows, settingsRow{
+				key:     jevThresholdRowPrefix + k,
+				label:   jevThresholdLabels[k],
+				kind:    "slider",
+				value:   fmt.Sprintf("%s %.2f", sliderTrack(v, def, sliderTrackCells), v),
+				src:     src,
+				help:    jevThresholdHelp[k],
+				section: sec.title,
+				note:    fmt.Sprintf("range 0.00 to 1.00, default %.2f · ←/→ 0.05, shift 0.01, x default", def),
+			})
 		}
-		rows = append(rows, settingsRow{
-			key:   jevThresholdRowPrefix + k,
-			label: jevThresholdLabels[k],
-			kind:  "slider",
-			value: fmt.Sprintf("%s %.2f", sliderBar(v), v),
-			src:   src,
-			help:  jevThresholdHelp[k] + "  (←/→ 0.05, shift 0.01, x default)",
-		})
 	}
 	return rows
 }

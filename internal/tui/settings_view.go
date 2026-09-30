@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/lsp"
@@ -25,6 +26,8 @@ type settingsViewState struct {
 	errorMsg    string
 	// notice explains a saved edit that a higher settings layer shadows.
 	notice string
+	// gl is the grouped list's own state: scroll offset, filter, changed-only.
+	gl glState
 }
 
 // settingsRow is one declarative settings-browser row.
@@ -42,17 +45,34 @@ type settingsRow struct {
 	// help is the one-line description shown under the selected row. Empty
 	// rows render no help line.
 	help string
+	// group names the rail entry the row lives under (settingsGroupOf).
+	group string
+	// section labels a run of rows inside a group; empty means none.
+	section string
+	// note is an extra detail line after help, such as a slider's range.
+	note string
+	// dim marks a row that has no effect while another row's setting is off.
+	// It only changes how the row reads; the row stays editable. dimWhy says
+	// which setting it waits on.
+	dim    bool
+	dimWhy string
 }
+
+// settingsChromeRows is what the screen spends outside the grouped body: the
+// view's own padding (2), the header and its rule (2), the scope line and the
+// key line.
+const settingsChromeRows = 6
 
 func (a *App) settingsView() string {
 	rows := a.settingsRows()
 	w := a.contentWidth()
+	st := &a.settingsState
 	var b strings.Builder
 	b.WriteString(components.SectionHeader("Settings", "esc back", w))
 
 	path := config.ProjectSettingsPath(a.workdir)
-	scope := string(a.settingsState.scope)
-	if a.settingsState.scope == config.ScopeGlobal {
+	scope := string(st.scope)
+	if st.scope == config.ScopeGlobal {
 		p, _ := config.GlobalSettingsPath()
 		path = p
 	}
@@ -61,43 +81,228 @@ func (a *App) settingsView() string {
 		scope = string(config.ScopeProject)
 	}
 	b.WriteString(components.Chip(scope, components.ColorTealSoft) +
-		"  " + components.MutedStyle.Render(path) + "\n\n")
+		"  " + components.MutedStyle.Render(ansi.Truncate(path, max(w-ansi.StringWidth(scope)-6, 8), "…")) + "\n")
 
-	for i, row := range rows {
-		selected := i == a.settingsState.selected
-		label := fmt.Sprintf("%-20s", row.label)
-		value := fmt.Sprintf("%-27s ", row.value)
-		if row.kind == "submenu" {
-			value = fmt.Sprintf("%-25s → ", row.value)
-		}
-		if selected {
-			label = components.AccentStyle.Bold(true).Render(label)
-			value = components.EmphStyle.Render(value)
-		} else {
-			label = components.MutedStyle.Render(label)
-		}
-		b.WriteString(components.Cursor(selected) + label + value +
-			components.MutedStyle.Render(row.src) + "\n")
+	groups := st.gl.visible(a.settingsGroups(rows))
+	st.selected = glSnap(groups, st.selected)
+
+	var status []string
+	if st.errorMsg != "" {
+		status = append(status, components.DangerStyle.Render(ansi.Truncate("✗ "+st.errorMsg, w, "…")))
+	} else if st.notice != "" {
+		status = append(status, components.WarnStyle.Render(ansi.Truncate("! "+st.notice, w, "…")))
+	}
+	foot := a.settingsHelpLine(rows, w)
+	extra := len(status)
+	editor := ""
+	if st.editMode {
+		editor = a.renderFieldEditor("edit", w)
+		foot = components.HelpBar("enter", "save", "esc", "cancel")
+		extra += lipgloss.Height(editor)
 	}
 
-	if a.settingsState.selected < len(rows) && rows[a.settingsState.selected].help != "" {
-		b.WriteString("\n" + components.MutedStyle.Render(rows[a.settingsState.selected].help) + "\n")
+	bodyH := 0
+	if a.height > 0 {
+		bodyH = max(a.height-settingsChromeRows-extra, 9)
 	}
-
-	if a.settingsState.errorMsg != "" {
-		b.WriteString("\n" + components.DangerStyle.Render("✗ "+a.settingsState.errorMsg) + "\n")
-	} else if a.settingsState.notice != "" {
-		b.WriteString("\n" + components.WarnStyle.Render("! "+a.settingsState.notice) + "\n")
+	b.WriteString(glBody(glSpec{groups: groups, cursor: st.selected, empty: "no setting matches"}, &st.gl, w, bodyH))
+	for _, l := range status {
+		b.WriteString("\n" + l)
 	}
-
-	if a.settingsState.editMode {
-		b.WriteString("\n" + a.renderFieldEditor("edit", w) + "\n")
-		b.WriteString("\n" + components.HelpBar("enter", "save", "esc", "cancel") + "\n")
-	} else {
-		b.WriteString("\n" + components.HelpBar(
-			"↑↓", "move", "space", "edit/open", "x", "unset", "s", "scope", "esc", "back") + "\n")
+	if editor != "" {
+		b.WriteString("\n" + editor)
 	}
+	b.WriteString("\n" + foot)
 	return lipgloss.NewStyle().Padding(1).Render(b.String())
+}
+
+// settingsHelpLine is the key line: movement, edit and back stay on screen at
+// any width, and a slider row swaps in its own keys.
+func (a *App) settingsHelpLine(rows []settingsRow, w int) string {
+	st := &a.settingsState
+	if st.gl.filtering {
+		return glHelpLine([]glKey{{"type", "to filter", 1}, {"enter", "keep", 1}, {"esc", "clear", 1}}, w)
+	}
+	keys := []glKey{
+		{"↑↓", "move", 1}, {"space", "edit/open", 1}, {"esc", "back", 1},
+		{"[ ]", "group", 2}, {"/", "filter", 3}, {"x", "unset", 3},
+		{"s", "scope", 4}, {"m", "changed", 5},
+	}
+	if st.selected < len(rows) && rows[st.selected].kind == "slider" {
+		keys = append(keys, glKey{"←→", "nudge", 2})
+	}
+	return glHelpLine(keys, w)
+}
+
+// settingsGroupDefs is the rail: every row belongs to exactly one group.
+var settingsGroupDefs = []struct{ key, title string }{
+	{"general", "General"},
+	{"display", "Display"},
+	{"tests", "Tests"},
+	{"agents", "Agents"},
+	{"access", "Access"},
+	{"budgets", "Budgets"},
+	{"voice", "Voice"},
+	{"readaloud", "Read aloud"},
+	{"jevjobs", "Jev jobs"},
+	{"jevthresholds", "Jev thresholds"},
+}
+
+// settingsGroupOf names the group a row key lives under.
+func settingsGroupOf(key string) string {
+	switch {
+	case strings.HasPrefix(key, "tests."):
+		return "tests"
+	case strings.HasPrefix(key, "voice."):
+		return "voice"
+	case strings.HasPrefix(key, "tts."):
+		return "readaloud"
+	case strings.HasPrefix(key, jevRowPrefix):
+		return "jevjobs"
+	case strings.HasPrefix(key, jevThresholdRowPrefix):
+		return "jevthresholds"
+	}
+	switch key {
+	case "banner", "colors", "spinner", "show_reasoning", "show_tool_calls",
+		"show_edits", "show_internal_work", "show_todos", "mouse", "show_session_names":
+		return "display"
+	case "max_agents", "plan_explore", "goal_explore":
+		return "agents"
+	case "permissions", "lsp":
+		return "access"
+	case "token_budgets", "budget_cycle_seconds", "budget_warn", "intel", "plan_limits":
+		return "budgets"
+	}
+	return "general"
+}
+
+// settingsWritesGlobalOnly reports whether a row is saved to the user's own
+// settings whatever scope the screen shows: the project layer cannot set it.
+func settingsWritesGlobalOnly(key string) bool {
+	switch {
+	case key == "auto_commit_per_task", key == "plan_limits",
+		strings.HasPrefix(key, "tests."),
+		strings.HasPrefix(key, "voice."),
+		strings.HasPrefix(key, "tts."),
+		strings.HasPrefix(key, jevThresholdRowPrefix):
+		return true
+	}
+	return false
+}
+
+// decorateSettingsRows sets each row's group and marks the rows that wait on
+// another setting. It only reads settings, so it changes nothing a handler sees.
+func decorateSettingsRows(rows []settingsRow, s config.Settings) {
+	for i := range rows {
+		r := &rows[i]
+		r.group = settingsGroupOf(r.key)
+		switch {
+		case strings.HasPrefix(r.key, "tests.") && r.key != "tests.post_end" && s.TestsPostEnd() == "off":
+			r.dim, r.dimWhy = true, "takes effect once test pass is on"
+		case strings.HasPrefix(r.key, "voice.") && r.key != "voice.enabled" && !voiceEnabledNow(s):
+			r.dim, r.dimWhy = true, "takes effect once voice input is on"
+		case strings.HasPrefix(r.key, "tts.") && r.key != "tts.enabled" && !s.TTS.TTSEnabled():
+			r.dim, r.dimWhy = true, "takes effect once read aloud is on"
+		}
+	}
+}
+
+// settingsGroups lays the rows out as rail groups, with a heading wherever a
+// row's section changes. A group with no rows (Jev while no backend is
+// configured) is not on the rail.
+func (a *App) settingsGroups(rows []settingsRow) []glGroup {
+	byGroup := map[string]*glGroup{}
+	var out []*glGroup
+	for _, d := range settingsGroupDefs {
+		g := &glGroup{key: d.key, title: d.title}
+		byGroup[d.key] = g
+		out = append(out, g)
+	}
+	for i, r := range rows {
+		g := byGroup[r.group]
+		if g == nil {
+			g = byGroup["general"]
+		}
+		if r.section != "" && !sectionSeen(g.rows, r.section) {
+			g.rows = append(g.rows, glRow{idx: -1, header: true, label: r.section})
+		}
+		g.rows = append(g.rows, glRow{
+			idx: i, key: r.key, label: r.label, value: r.value, src: r.src,
+			dim: r.dim, match: r.help, detail: a.settingsDetail(r),
+		})
+	}
+	var groups []glGroup
+	for _, g := range out {
+		if len(g.rows) > 0 {
+			groups = append(groups, *g)
+		}
+	}
+	return groups
+}
+
+func sectionSeen(rows []glRow, section string) bool {
+	for _, r := range rows {
+		if r.header && r.label == section {
+			return true
+		}
+	}
+	return false
+}
+
+// settingsDetail is the detail pane of one row: its name and choices, what it
+// does, the rule that binds it, and where it comes from and is saved.
+func (a *App) settingsDetail(r settingsRow) []string {
+	title := components.EmphStyle.Render(r.label)
+	if len(r.opts) > 0 {
+		title += components.MutedStyle.Render("   choices: " + strings.Join(r.opts, ", "))
+	}
+	out := []string{title}
+	if r.help != "" {
+		out = append(out, r.help)
+	}
+	if r.dim && r.dimWhy != "" {
+		out = append(out, components.WarnStyle.Render(r.dimWhy))
+	}
+	if r.note != "" {
+		out = append(out, components.MutedStyle.Render(r.note))
+	}
+	if band := a.jevBandNote(r.key); band != "" {
+		out = append(out, components.MutedStyle.Render(band))
+	}
+	src := r.src
+	if src == "" {
+		src = "default"
+	}
+	line := "from " + src
+	switch {
+	case r.kind == "submenu":
+		line += " · opens its own screen"
+	case settingsWritesGlobalOnly(r.key):
+		line += " · saved to global only"
+	default:
+		scope := string(a.settingsState.scope)
+		if scope == "" {
+			scope = string(config.ScopeProject)
+		}
+		line += " · saved to " + scope + " (s to switch)"
+	}
+	return append(out, components.MutedStyle.Render(line))
+}
+
+// jevBandNote states the live gap between the allow and deny cut-offs for
+// their two rows, the one rule a nudge can break.
+func (a *App) jevBandNote(key string) string {
+	if key != jevThresholdRowPrefix+"allow_at" && key != jevThresholdRowPrefix+"deny_at" {
+		return ""
+	}
+	var th *config.JevThresholdSettings
+	if a.settings.Jev != nil {
+		th = a.settings.Jev.Thresholds
+	}
+	r := th.Resolved()
+	gap := r.DenyAt - r.AllowAt
+	return fmt.Sprintf("now allow %.2f, deny %.2f, gap %.2f; the gap must stay at least %.2f",
+		r.AllowAt, r.DenyAt, gap, config.JevMinBand)
 }
 
 func (a *App) settingsRows() []settingsRow {
@@ -218,6 +423,7 @@ func (a *App) settingsRows() []settingsRow {
 		rows = append(rows, jevRows(s, origin)...)
 		rows = append(rows, jevThresholdRows(s, origin)...)
 	}
+	decorateSettingsRows(rows, s)
 	return rows
 }
 
@@ -369,20 +575,44 @@ func (a *App) handleSettingsKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	switch m.String() {
-	case "up", "k":
-		if a.settingsState.selected > 0 {
-			a.settingsState.selected--
-		}
+	if a.settingsState.gl.key(m) {
 		return a, nil
-	case "down", "j":
-		if a.settingsState.selected < len(a.settingsRows())-1 {
-			a.settingsState.selected++
+	}
+
+	switch m.String() {
+	case "up", "k", "down", "j":
+		delta := 1
+		if m.String() == "up" || m.String() == "k" {
+			delta = -1
 		}
+		groups := a.settingsState.gl.visible(a.settingsGroups(a.settingsRows()))
+		a.settingsState.selected = glStep(groups, glSnap(groups, a.settingsState.selected), delta)
+		return a, nil
+	case "[", "]", "tab", "shift+tab":
+		delta := 1
+		if m.String() == "[" || m.String() == "shift+tab" {
+			delta = -1
+		}
+		return a, a.settingsStepGroup(delta)
+	case "/":
+		a.settingsState.gl.filtering = true
+		a.settingsState.gl.scroll = 0
+		return a, nil
+	case "m":
+		a.settingsState.gl.changed = !a.settingsState.gl.changed
+		a.settingsState.gl.scroll = 0
 		return a, nil
 	case "left", "right", "h", "l", "shift+left", "shift+right", "H", "L":
 		rows := a.settingsRows()
 		if a.settingsState.selected >= len(rows) || rows[a.settingsState.selected].kind != "slider" {
+			// Off a slider the arrows move between groups.
+			if m.String() == "left" || m.String() == "right" {
+				delta := 1
+				if m.String() == "left" {
+					delta = -1
+				}
+				return a, a.settingsStepGroup(delta)
+			}
 			return a, nil
 		}
 		step := sliderStep
@@ -400,6 +630,11 @@ func (a *App) handleSettingsKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return a, nil
 	case "esc":
+		if a.settingsState.gl.active() {
+			// A filter or the changed-only view is closed before the screen is.
+			a.settingsState.gl = glState{}
+			return a, nil
+		}
 		a.pop()
 		return a, nil
 	case "s":
@@ -472,6 +707,15 @@ func (a *App) handleSettingsKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	cmd := a.editor.Update(m)
 	return a, cmd
+}
+
+// settingsStepGroup moves the cursor to the first row of the next or previous
+// group. With a filter on there is one result list, so it does nothing.
+func (a *App) settingsStepGroup(delta int) tea.Cmd {
+	groups := a.settingsState.gl.visible(a.settingsGroups(a.settingsRows()))
+	a.settingsState.selected = glStepGroup(groups, glSnap(groups, a.settingsState.selected), delta)
+	a.settingsState.gl.scroll = 0
+	return nil
 }
 
 func (a *App) rawValue(key string) string {
