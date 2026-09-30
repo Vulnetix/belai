@@ -56,6 +56,7 @@ func keySections() []keySection {
 			{"ctrl+o", "expand or collapse every truncated output"},
 			{"ctrl+s", "save the hovered panel to a path, overwrite/delete a loaded library prompt, or save the prompt to the library"},
 			{"ctrl+x", "copy the session id to the clipboard"},
+			{"ctrl+v", "paste: attaches an image from the clipboard when there is one, otherwise pastes text (also /paste-image)"},
 		}},
 		{"slash completions (while the / popup is open)", []keyBinding{
 			{"tab", "highlight the next completion, wrapping at the end"},

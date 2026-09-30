@@ -72,3 +72,34 @@ func TestProviderModelImagesRoundTrips(t *testing.T) {
 		t.Fatalf("an undeclared model must not write the key: %s", out)
 	}
 }
+
+func TestClipboardImagesDefaultsOnAndProjectCanOnlyTurnItOff(t *testing.T) {
+	var s Settings
+	if !s.ClipboardImagesEnabled() {
+		t.Fatal("default on")
+	}
+	off := Settings{UI: &UISettings{ClipboardImages: ptr(false)}}
+	if off.ClipboardImagesEnabled() {
+		t.Fatal("off was ignored")
+	}
+	// A project file cannot turn it back on over a user's off.
+	merged := off.Override(Settings{UI: &UISettings{ClipboardImages: ptr(true)}})
+	if merged.ClipboardImagesEnabled() {
+		t.Fatal("a project layer turned clipboard images on")
+	}
+	// It can turn it off, and its other UI keys still apply.
+	merged = Settings{}.Override(Settings{UI: &UISettings{ClipboardImages: ptr(false), Colors: ptr(false)}})
+	if merged.ClipboardImagesEnabled() || merged.ColorsEnabled() {
+		t.Fatalf("project off should apply: %+v", merged.UI)
+	}
+	// The same rule through Resolve's layer fold.
+	e := &Effective{Settings: Settings{UI: &UISettings{ClipboardImages: ptr(false)}}, Origin: map[string]Source{}}
+	e.apply(Settings{UI: &UISettings{ClipboardImages: ptr(true)}}, SourceProject)
+	if e.Settings.ClipboardImagesEnabled() {
+		t.Fatal("Resolve let a project layer turn clipboard images on")
+	}
+	e.apply(Settings{UI: &UISettings{ClipboardImages: ptr(true)}}, SourceGlobal)
+	if !e.Settings.ClipboardImagesEnabled() {
+		t.Fatal("a user layer must be able to turn it on")
+	}
+}

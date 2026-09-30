@@ -932,6 +932,10 @@ type UISettings struct {
 	// Intel shows the session intelligence slot in the footer's budget cycle
 	// and offers the intel pane on f12. Default on. See IntelEnabled.
 	Intel *bool `json:"intel,omitempty"`
+	// ClipboardImages lets ctrl+v and /paste-image attach an image from the
+	// system clipboard. Default on. The project layer may turn it off, never
+	// on (docs/image-attachments.md).
+	ClipboardImages *bool `json:"clipboard_images,omitempty"`
 }
 
 // merge folds from over u, taking any non-nil field from from. It is the
@@ -983,6 +987,29 @@ func (u *UISettings) merge(from *UISettings) {
 	if from.Intel != nil {
 		u.Intel = from.Intel
 	}
+	if from.ClipboardImages != nil {
+		u.ClipboardImages = from.ClipboardImages
+	}
+}
+
+// mergeProject folds a project layer over u. It is merge, except that a project
+// file cannot turn clipboard images on: a repository must not be able to make
+// the composer read the clipboard for a user who switched that off.
+func (u *UISettings) mergeProject(from *UISettings) {
+	if from == nil {
+		return
+	}
+	cp := *from
+	if cp.ClipboardImages != nil && *cp.ClipboardImages {
+		cp.ClipboardImages = nil
+	}
+	u.merge(&cp)
+}
+
+// ClipboardImagesEnabled reports whether the composer may attach an image from
+// the clipboard. Default on.
+func (s Settings) ClipboardImagesEnabled() bool {
+	return s.UI == nil || s.UI.ClipboardImages == nil || *s.UI.ClipboardImages
 }
 
 // ResilienceSettings controls the provider retry and agent-loop budgets.
@@ -1516,7 +1543,7 @@ func (s Settings) Override(proj Settings) Settings {
 		if out.UI != nil {
 			*merged = *out.UI
 		}
-		merged.merge(proj.UI)
+		merged.mergeProject(proj.UI)
 		out.UI = merged
 	}
 	if proj.ContextWindows != nil {

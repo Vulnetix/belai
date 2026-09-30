@@ -305,7 +305,10 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `tools.Result.Images` is honoured for `KindScreenshot` alone and dropped for
   every other kind; a user attaches an image with `@path` (confined to the
   session roots after symlinks, never read through `tools.Read`, at most eight
-  a prompt). An
+  a prompt), by pasting one from the clipboard (`clipboard.ReadImage`, a fixed
+  program with no argument from a model, the scrubbed environment, five
+  seconds and 32 MiB; `ui.clipboard_images`, which a project layer may only turn
+  off) or by dropping a file whose path becomes an `@` token. An
   image must decode as PNG or JPEG inside the pixel and byte budget, is
   bounded to a long edge, flattened and re-encoded as a new PNG; any failure
   refuses it, and a withheld text result carries no image. Only the newest

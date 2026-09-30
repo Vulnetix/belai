@@ -377,6 +377,7 @@ type App struct {
 	attachments  map[int]*attachment
 	attachOrder  []int
 	attachSeq    int
+	pasteSeq     int // numbers the clipboard images attached so far, for their names
 	attachSpin   spinner.Model
 	workSpin     spinner.Model
 	pendingInput string // prompt held while attachments validate
@@ -2324,6 +2325,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case testPassMsg:
 		return a, a.handleTestPass(m)
 
+	case clipboardImageMsg:
+		return a, a.handleClipboardImage(m)
+
 	case planEditedMsg:
 		return a, a.handlePlanEdited(m)
 
@@ -2730,6 +2734,12 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 		}
 	}
 
+	// A dropped image file arrives as a paste of its path; it attaches like a
+	// typed @path.
+	if cmd, ok := a.pastedPathKey(m); ok {
+		return cmd
+	}
+
 	switch m.String() {
 	case "pgup", "pgdown", "shift+up", "shift+down", "ctrl+home", "ctrl+end":
 		switch m.String() {
@@ -2751,6 +2761,10 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 	case "shift+tab":
 		a.cycleMode()
 		return nil
+	case "ctrl+v":
+		// An image on the clipboard is attached; otherwise this is the text
+		// paste it always was.
+		return a.pasteKey(m)
 	case "ctrl+p":
 		// In agent mode ctrl+p cycles the available agent profiles — the
 		// shortcut the mode chip advertises after shift+tab clears the

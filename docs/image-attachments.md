@@ -97,6 +97,23 @@ way an image can be attached.
   rejected attachment with a cleaned, capped reason, its bytes are never
   echoed, and the model is told the attachment was not admitted, as for a
   withheld file.
+- **From the clipboard.** `ctrl+v` (and `/paste-image`) attaches the image on
+  the system clipboard as `@clipboard-1.png`, `@clipboard-2.png` and so on.
+  The clipboard is read by a fixed program with no argument from the
+  clipboard or a model: `wl-paste` on Wayland, `xclip` on X11, `pngpaste` on
+  macOS, each with the scrubbed environment, in its own process group, for at
+  most five seconds and 32 MiB. With no image on the clipboard, or no such
+  program installed, `ctrl+v` is the text paste it always was, and
+  `/paste-image` says why nothing was attached (naming the program to
+  install). The bytes then go through the same admission as a file and count
+  toward the same eight images. `ui.clipboard_images` turns it off; a project
+  file can turn it off and never on. Windows is not supported.
+- **Dropped files.** A terminal delivers a file dropped onto it as a paste of
+  its path, often quoted or with escaped spaces. When that path is an existing
+  PNG or JPEG file, the paste becomes an `@` token and follows the ordinary
+  attach path, including the confirm-root prompt for a file outside the
+  session roots. Any other paste, several lines of text, a relative path, a
+  directory or a non-image file, goes to the composer as text.
 - **At most eight images per prompt.** Further ones are rejected with that
   reason. Each image costs tokens on every round of the turn.
 - **A card, not pixels.** The composer chip and the transcript row show the

@@ -8,7 +8,7 @@ import (
 
 func TestRegistryNames(t *testing.T) {
 	r := NewRegistry(t.TempDir())
-	want := []string{"add-dir", "agent", "agents", "budgets", "clear", "compact", "execute", "exit", "export", "firewall", "fleet", "help", "intel", "kanban", "locate", "lsp", "mcp", "mode", "model", "new", "permissions", "plugin", "process", "processes", "profile", "prompts", "providers", "quit", "rc", "refine", "rename", "reset", "resume", "sandbox", "settings", "skills", "sync", "todos", "trusted", "voice", "vulnetix", "welcome", "yolo"}
+	want := []string{"add-dir", "agent", "agents", "budgets", "clear", "compact", "execute", "exit", "export", "firewall", "fleet", "help", "intel", "kanban", "locate", "lsp", "mcp", "mode", "model", "new", "paste-image", "permissions", "plugin", "process", "processes", "profile", "prompts", "providers", "quit", "rc", "refine", "rename", "reset", "resume", "sandbox", "settings", "skills", "sync", "todos", "trusted", "voice", "vulnetix", "welcome", "yolo"}
 	if !reflect.DeepEqual(r.Names(), want) {
 		t.Fatalf("Names = %v, want %v", r.Names(), want)
 	}
@@ -20,7 +20,7 @@ func TestCompleteCommandFuzzy(t *testing.T) {
 	// Prefix matches rank first, in name order; scattered subsequence
 	// matches follow.
 	got := r.Complete("/p")
-	wantHead := []string{"/permissions", "/plugin", "/process", "/processes", "/profile", "/prompts", "/providers"}
+	wantHead := []string{"/paste-image", "/permissions", "/plugin", "/process", "/processes", "/profile", "/prompts", "/providers"}
 	if len(got) < len(wantHead) || !reflect.DeepEqual(got[:len(wantHead)], wantHead) {
 		t.Fatalf("Complete(/p) = %v, want it to start with %v", got, wantHead)
 	}
