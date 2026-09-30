@@ -49,7 +49,7 @@ from your normal Belai settings for the project directory.
 | `session/set_mode` | the editor's mode picker: `auto` (Belai chooses per prompt, the default), `agent`, `plan` (read only, no shell) or `goal`. A chosen mode engages that mode's own tool surface and gates, and the change is echoed as `current_mode_update` |
 | `session/close` | stops a running turn, flushes the transcript and forgets the session |
 | `session_info_update` | after each turn: a harness title (editor, folder, turn count) and the time |
-| `agent_message_chunk` | streamed reply text |
+| `agent_message_chunk` | streamed reply text. The first turn of a session opens with the TUI's header as markdown: `belai` and its tagline, then the version, build, provider and model |
 | `agent_thought_chunk` | streamed reasoning, plus short status lines while Belai works before the first token: checking the prompt, retrying the model, the pass number, files read for context, the chosen mode, and "Still working" after ten quiet seconds. Status lines are fixed templates; provider error text never appears in them |
 | `tool_call` | each tool call as it starts, with its kind (`read`, `edit`, `search`, `execute`, `fetch`, `think`, `other`) and arguments |
 | `tool_call_update` | the file diff a call made, then its result, `completed` or `failed` |

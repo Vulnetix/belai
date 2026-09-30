@@ -2046,3 +2046,7 @@ func nonceEndpoints(cfg run.Config) []nonce.Endpoint {
 	}
 	return eps
 }
+
+// ModelInfo is the provider and model the session runs on: two identifiers,
+// never a credential. A UI shows them in its header.
+func (s *Session) ModelInfo() (provider, model string) { return s.cfg.Provider, s.cfg.Model }
