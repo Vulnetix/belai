@@ -17,7 +17,7 @@ require (
 	github.com/muesli/termenv v0.16.0
 	github.com/nlpodyssey/cybertron v0.2.1
 	github.com/zalando/go-keyring v0.2.8
-	golang.org/x/net v0.55.1-0.20260608170621-8a348850ed68
+	golang.org/x/net v0.55.1-0.20260609165842-9e7fdbfadb32
 	golang.org/x/text v0.38.0
 	gopkg.in/yaml.v3 v3.0.1
 	mvdan.cc/sh/v3 v3.12.0
