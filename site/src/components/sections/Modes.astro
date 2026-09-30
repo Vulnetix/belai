@@ -62,7 +62,7 @@ const facts: Record<string, string[]> = {
 const loop = [
   ['pass', 'the model works on the next step'],
   ['todo list', "built from the model's own text, which tool output cannot change"],
-  ['check', 'progress against the list'],
+  ['check', 'progress against the list, scored first by a decision model when one is set up'],
   ['continue', 'while the objective moves forward'],
 ];
 
@@ -73,6 +73,7 @@ const limits = [
   ['A question is asked once', 'A question already asked in the session is never asked again.'],
   ['Nobody to answer', 'A headless run or a background agent is told to proceed on its own judgement, and nothing widens.'],
   ['Surveys end', 'After eight rounds of reading without changing a file, a goal is told to stop surveying and make the first edit.'],
+  ['A clear score ends a pass, an unclear one is checked harder', 'With a decision backend, a clearly complete or not started pass is settled by its scores. Anything else goes to the model judge with the scores, and completion needs a check made with tools. The verification pass still runs.'],
 ];
 
 const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }));
