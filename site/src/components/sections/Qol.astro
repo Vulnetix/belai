@@ -105,6 +105,13 @@ const total = groups.reduce((n, g) => n + g.items.length, 0);
         large steps; the conversation is compacted at 70% of the window, first by pruning the tool calls and results the work ahead no longer needs when a decision backend is configured, and by a summary otherwise; and when a provider still reports
         an overflow, Belai compacts and retries instead of ending the turn.
       </p>
+      <p class="mt-4 text-vx-ink/80">
+        <code class="mono">/tree</code> shows a session as branches. Pick an earlier reply and the conversation
+        carries on from there; pick a prompt and it returns to the composer to be reworded. The session file
+        only grows, so everything written before stays in it, and <code class="mono">f</code> copies a branch
+        into a new session. Files on disk keep their current contents. Editors connected over ACP can type
+        <code class="mono">/tree</code> too.
+      </p>
     </div>
     <Shot src={exitCardShot.src} alt="The branded session-end card" caption="exit card, resume command" />
   </div>

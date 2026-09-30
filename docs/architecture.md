@@ -1782,6 +1782,7 @@ session name or short id. Entry types:
 | `session_meta` | *(empty)* | per-session JSON: `schema`, `cwd`, `version`, `createdAt`, `resumedFrom`, `originCwd`, `activePlan`, `activeGoal`, `activeProfile`, `mode` |
 | `summary` | *(empty)* | a compaction summary; `meta.parent_session` links the source session |
 | `todo_list` | *(empty)* | the tracked todo list as JSON; append-only, latest wins, `cleared` marks a superseded list |
+| `branch` | *(empty)* | `/tree` moved the session to an earlier entry: `meta.from_entry` is the leaf left, `meta.to_entry` the entry the next one hangs from; the marker's own `parentId` is `to_entry` |
 
 `/compact` creates a **new** session whose root entry is the summary and links
 the old id via `meta.parent_session`; the old file is never mutated, truncated,
@@ -1789,6 +1790,20 @@ or deleted. Naming is append-only: the last `session_name` entry wins. A
 tracked todo list is re-appended under the new session id so the panel and the
 new session file agree. `/clear` drops the list instead: it belongs to the
 session that produced it.
+
+`/tree` (`internal/tui/tree_view.go`) browses the session as a tree and moves
+the conversation to an earlier point without rewriting the file. The active
+leaf is always the last line written, since every append parents to the entry
+before it. Continuing from a reply (or from just before a user prompt, which
+returns to the composer for rewording) appends a `branch` marker parented at
+the chosen entry and reloads the session, so the next entries hang from it and
+the file stays append-only, which session sync needs. `session.ActivePath`
+gives loaders the chain from the root to the active leaf; a session with no
+`branch` entry is read flat, exactly as before. `f` in the view, or
+`/tree fork <id>`, copies that chain into a new session with
+`Store.ForkPath` and opens it. Files on disk are not rolled back. `/tree <id>`
+takes an id or a unique prefix. Over ACP the same move is `/tree <id>`, with
+the history restored from per-turn snapshots (see [acp.md](acp.md#session-tree)).
 
 Resume reads a session back into the running TUI in place: `belai -r <id>`
 opens the transcript, todos, plan/goal state and model, and `/resume` browses
@@ -3423,6 +3438,7 @@ Business rules:
 | `/clear` | Start a new session |
 | `/compact` | Summarise the session into a new one |
 | `/resume` | Resume a session by id, or browse every session on disk |
+| `/tree` | Browse this session as a tree; continue from an earlier reply or prompt (`/tree <id>`) or fork a branch into a new session (`/tree fork <id>`) |
 | `/rename` | Rename this session |
 | `/export` | Export this session (or another by id prefix) as Markdown under `.vulnetix/exports` |
 | `/agent` | Manage background agents (`create`, `list`, `edit <name>`, `start`, `stop`, `pause`, `resume`, `log`); `log` opens the agent's audit trail |

@@ -24,6 +24,11 @@ the Vulnetix website. Two console pages show it:
     is missing.
   - A malformed or oversized line still takes its `seq` as a placeholder, so
     the sequence never has a hole.
+  - `/tree` keeps this true. Continuing from an earlier point appends a
+    `branch` line and later lines parent to the chosen entry, so the file only
+    grows. The website still orders lines by `seq`; a branch appears as further
+    lines until the page reads each line's `parentId`. A fork is a new session
+    with its own id.
 - **A web prompt is a request, not a message.** Delivery works like this:
   1. The website stores the prompt, and the host long-polls its inbox and
      claims it.
