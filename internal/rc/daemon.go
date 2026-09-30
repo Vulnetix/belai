@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vulnetix/belai/internal/audit"
+	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/fleet"
 	"github.com/vulnetix/belai/internal/proc"
 	"github.com/vulnetix/belai/internal/session"
@@ -149,7 +151,15 @@ func (d *Daemon) Run(ctx context.Context) error {
 	d.writeRecord()
 	defer removeRecord(os.Getpid())
 
+	// The daemon's own audit stream: the host's remote-control sessions and
+	// the requests it served (docs/audit.md). Best effort.
+	if dir, err := config.GlobalDir(); err == nil {
+		defer sessionsync.StartAudit(context.Background(), d.o.Client, d.o.HostID, d.o.Host, dir).Close(5 * time.Second)
+	}
+
 	d.register(ctx, d.o.Inventory())
+	audit.Emit(audit.Fact{Kind: audit.HostRCOnline, ActorKind: audit.ActorHarness,
+		Data: map[string]string{"version": d.o.Host.BelaiVersion}})
 	d.logf("remote control on · %d director%s offered · up to %d sessions", len(d.o.Dirs), plural(len(d.o.Dirs), "y", "ies"), d.o.Max)
 	if d.o.MaxWorkers > 0 {
 		d.logf("up to %d fleet workers (--max overrides agents.max_workers)", d.o.MaxWorkers)
@@ -251,45 +261,58 @@ func (d *Daemon) poll(ctx context.Context) {
 
 // handle applies one request. Every field is untrusted.
 func (d *Daemon) handle(ctx context.Context, r sessionsync.Dispatch) {
+	// Every request is acknowledged through here, so the audit log holds each
+	// one with its kind and outcome. The kind is reduced to a known word: the
+	// request is the website's, and only the word the host recognised is kept.
+	ack := func(ctx context.Context, id, status, sid, reason string) {
+		kind := "unknown"
+		switch r.Kind {
+		case "start", "stop", "worker", "crew", "pause", "resume":
+			kind = r.Kind
+		}
+		audit.Emit(audit.Fact{Kind: audit.HostDispatch, ActorKind: audit.ActorWeb,
+			Data: map[string]string{"dispatch": kind, "status": status}})
+		d.ack(ctx, id, status, sid, reason)
+	}
 	switch r.Kind {
 	case "start":
 		sid, reason := d.start(r)
 		if reason != "" {
 			d.logf("refused session in %s: %s", r.Cwd, reason)
-			d.ack(ctx, r.ID, sessionsync.DispatchRefused, "", reason)
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", reason)
 			return
 		}
-		d.ack(ctx, r.ID, sessionsync.DispatchStarted, sid, "")
+		ack(ctx, r.ID, sessionsync.DispatchStarted, sid, "")
 	case "stop":
 		if d.stop(r.SessionID) {
 			d.logf("stopping session %s", short(r.SessionID))
-			d.ack(ctx, r.ID, sessionsync.DispatchStopped, r.SessionID, "")
+			ack(ctx, r.ID, sessionsync.DispatchStopped, r.SessionID, "")
 			return
 		}
-		d.ack(ctx, r.ID, sessionsync.DispatchRefused, "", "that session is not running under belai rc on this host")
+		ack(ctx, r.ID, sessionsync.DispatchRefused, "", "that session is not running under belai rc on this host")
 	case "worker", "crew":
 		report, reason := d.startWorkers(r)
 		if reason != "" {
 			d.logf("refused %s %s%s in %s: %s", r.Kind, r.Profile, r.Crew, r.Cwd, reason)
-			d.ack(ctx, r.ID, sessionsync.DispatchRefused, "", reason)
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", reason)
 			return
 		}
 		d.logf("started %s %s%s in %s", r.Kind, r.Profile, r.Crew, r.Cwd)
-		d.ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
+		ack(ctx, r.ID, sessionsync.DispatchStarted, "", report)
 	case "pause", "resume":
 		if !fleet.ValidID(r.Worker) {
-			d.ack(ctx, r.ID, sessionsync.DispatchRefused, "", "that is not a worker id")
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", "that is not a worker id")
 			return
 		}
 		if err := d.o.PauseWorker(r.Worker, r.Kind == "pause"); err != nil {
 			d.logf("refused %s %s: %v", r.Kind, r.Worker, err)
-			d.ack(ctx, r.ID, sessionsync.DispatchRefused, "", clip(err.Error()))
+			ack(ctx, r.ID, sessionsync.DispatchRefused, "", clip(err.Error()))
 			return
 		}
 		d.logf("%s %s", r.Kind, r.Worker)
-		d.ack(ctx, r.ID, sessionsync.DispatchStarted, "", r.Worker+" "+r.Kind+"d")
+		ack(ctx, r.ID, sessionsync.DispatchStarted, "", r.Worker+" "+r.Kind+"d")
 	default:
-		d.ack(ctx, r.ID, sessionsync.DispatchRefused, "", "this Belai does not understand that request; update Belai on the host")
+		ack(ctx, r.ID, sessionsync.DispatchRefused, "", "this Belai does not understand that request; update Belai on the host")
 	}
 }
 
@@ -397,6 +420,8 @@ func (d *Daemon) shutdown() {
 	if err := d.o.Client.RCOffline(ctx, d.o.HostID); err != nil {
 		d.logf("offline: %v", err)
 	}
+	audit.Emit(audit.Fact{Kind: audit.HostRCOffline, ActorKind: audit.ActorHarness,
+		Data: map[string]string{"reason": "stopped"}})
 	d.logf("remote control off")
 }
 
