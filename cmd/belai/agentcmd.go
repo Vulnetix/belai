@@ -493,16 +493,11 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 	if err != nil {
 		return 1, err
 	}
-	if c, err := agentprofile.LoadCrew(*crewName); err == nil && c.OnePerRepo {
-		if err := reg.CheckCrewFree(c.Name, repo); err != nil {
-			return 1, err
-		}
+	onePerRepo := false
+	if c, err := agentprofile.LoadCrew(*crewName); err == nil {
+		onePerRepo = c.OnePerRepo
 	}
-	live, _ := reg.Live()
 	max := workerCap(settings, *maxWorkers)
-	if len(live)+len(launches) > max {
-		return 1, fmt.Errorf("starting %d would run %d workers; the worker cap is %d (agents.max_workers, or --max-workers)", len(launches), len(live)+len(launches), max)
-	}
 	// Each worker reserves its own slot; it must do so under the cap this
 	// start was checked against, or an rc --max start fails in every child.
 	spawnMax := 0
@@ -514,12 +509,23 @@ func agentStart(ctx context.Context, fs *flag.FlagSet, rest []string, stdout, st
 		return 1, err
 	}
 	var started []string
-	for _, l := range launches {
-		id, err := reg.Spawn(fleet.SpawnOptions{Exe: exe, Repo: repo, Profile: l.profile, Crew: l.crew, Provider: *providerName, Model: *model, Stay: *stay, MaxWorkers: spawnMax})
-		if err != nil {
-			return 1, err
+	// The one-per-repository check, the worker cap and the spawns are one step
+	// under the crew-start lock, so two starts fired together cannot both pass.
+	if err := reg.WithCrewStart(*crewName, repo, onePerRepo, func() error {
+		live, _ := reg.Live()
+		if len(live)+len(launches) > max {
+			return fmt.Errorf("starting %d would run %d workers; the worker cap is %d (agents.max_workers, or --max-workers)", len(launches), len(live)+len(launches), max)
 		}
-		started = append(started, id)
+		for _, l := range launches {
+			id, err := reg.Spawn(fleet.SpawnOptions{Exe: exe, Repo: repo, Profile: l.profile, Crew: l.crew, Provider: *providerName, Model: *model, Stay: *stay, MaxWorkers: spawnMax})
+			if err != nil {
+				return err
+			}
+			started = append(started, id)
+		}
+		return nil
+	}); err != nil {
+		return 1, err
 	}
 	// Wait briefly for each worker to register, so a worker that fails its
 	// own start is reported here rather than discovered later.

@@ -300,6 +300,28 @@ func (r *Registry) CheckCrewFree(crew, repo string) error {
 	return nil
 }
 
+// WithCrewStart runs fn, which spawns a crew's workers, holding a lock that
+// only crew starts take, so the one-per-repository check and the spawns are
+// one step: two starts fired together cannot both pass the check. Spawn saves
+// a starting record before it returns, so the second start sees the first's
+// workers. onePerRepo false skips the check but still serialises the start.
+func (r *Registry) WithCrewStart(crew, repo string, onePerRepo bool, fn func() error) error {
+	if err := os.MkdirAll(r.dir, 0o700); err != nil {
+		return err
+	}
+	release, err := config.AcquireFileLock(filepath.Join(r.dir, ".crewstart"))
+	if err != nil {
+		return err
+	}
+	defer release()
+	if onePerRepo {
+		if err := r.CheckCrewFree(crew, repo); err != nil {
+			return err
+		}
+	}
+	return fn()
+}
+
 // ErrFull is returned when the machine already runs agents.max_workers.
 var ErrFull = errors.New("fleet: the maximum number of workers is already running (agents.max_workers)")
 
