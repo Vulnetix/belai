@@ -64,6 +64,10 @@ type Turn struct {
 	Setup string
 	// Emit, when set, receives every agent event.
 	Emit func(agent.Event)
+	// Feedback, when set, is the harness's account of a scan of the worktree
+	// after the previous round, and Round which round this is (2 or more).
+	Feedback string
+	Round    int
 }
 
 // TurnRunner works one item and returns the goal loop's result.
@@ -118,6 +122,9 @@ type Worker struct {
 	Head   func(ctx context.Context) (string, error)
 	// Suites detects the test suites and RunTests runs a plan, for a quality
 	// sweep; nil detects from the repository and runs the real suites.
+	// Scan scans a worktree for one finding after a patcher's round; nil runs
+	// the Vulnetix CLI.
+	Scan     func(ctx context.Context, dir, finding string, round, max int) (scanFeedback, bool)
 	Suites   func(ctx context.Context) []testdetect.Suite
 	RunTests func(ctx context.Context, plan testrun.Plan) []testrun.Result
 	// Reflect distils lessons from a finished item; nil uses the model.
@@ -584,17 +591,25 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 			claim.HandoffList = list
 		}
 	}
-	var tokens int
+	var tokens, tokBase int
 	var tokMu sync.Mutex
 	emit := func(e agent.Event) {
 		if e.Kind == agent.EventGoalStateKind && e.GoalState != nil {
 			tokMu.Lock()
-			tokens = e.GoalState.TokensUsed
+			tokens = tokBase + e.GoalState.TokensUsed
+			total := tokens
 			tokMu.Unlock()
-			if b := p.Budget; b != nil && b.MaxTokensPerItem > 0 && e.GoalState.TokensUsed > b.MaxTokensPerItem {
+			if b := p.Budget; b != nil && b.MaxTokensPerItem > 0 && total > b.MaxTokensPerItem {
 				cancel(errTokenBudget)
 			}
 		}
+	}
+	// nextRound makes the tokens of the rounds so far the base of the next, so
+	// the budget counts every round of an item together.
+	nextRound := func() {
+		tokMu.Lock()
+		tokBase = tokens
+		tokMu.Unlock()
 	}
 	addTokens := func() {
 		tokMu.Lock()
@@ -633,10 +648,11 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 	// Snapshot the git common dir so Settle can remove what the model adds.
 	ws.Sandbox() // prepares the ref dirs and packed-refs before the snapshot
 	rootBefore := ws.RootEntries()
-	res, runErr := w.Runner(itemCtx, Turn{
+	rr := w.runRounds(itemCtx, Turn{
 		Item: it, Workdir: ws.Dir, Claim: claim, SessionID: sessionID, Workspace: ws,
 		Memory: w.memory(ctx), Emit: emit,
-	})
+	}, nextRound)
+	res, runErr := rr.res, rr.err
 	stopRenew()
 	if removed, err := ws.Settle(rootBefore); err != nil || len(removed) > 0 {
 		w.logf("%s: settled the git common dir: removed %v, err %v", it.Short(), removed, err)
@@ -646,6 +662,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 
 	o := w.judge(it, res, runErr, cause)
 	o = w.applyVerdict(ctx, o, it, claim, runErr == nil && cause == nil)
+	o = w.applyRounds(o, rr, it)
 	if w.stopped(ctx, itemCtx, it, ws) {
 		return
 	}
@@ -1034,6 +1051,9 @@ func (w *Worker) runAgent(ctx context.Context, t Turn) (run.Result, error) {
 	}
 	if t.Memory != "" {
 		in.Attachments = []run.Attachment{{Kind: "memory", Label: "lessons of agent " + p.Name, Body: t.Memory}}
+	}
+	if t.Feedback != "" {
+		in.Attachments = append(in.Attachments, run.Attachment{Kind: "feedback", Label: fmt.Sprintf("scanner result after round %d", t.Round-1), Body: t.Feedback})
 	}
 	if t.Setup != "" {
 		in.Attachments = append(in.Attachments, run.Attachment{Kind: "setup", Label: "workspace setup failure", Body: t.Setup})

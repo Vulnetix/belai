@@ -78,6 +78,9 @@ func (q QualitySpec) HandoffList() kanban.List {
 	return kanban.Review
 }
 
+// MaxRounds bounds kanban.security.rounds.
+const MaxRounds = 5
+
 // SecuritySpec is a security worker's harness-run duties. None of them is a
 // model's decision: the harness runs the review, reads the artefacts and
 // files, reconciles and routes the cards.
@@ -96,6 +99,11 @@ type SecuritySpec struct {
 	// VEX has the harness write a VEX document for each verdict the worker
 	// records, and lets the worker reject a claim.
 	VEX bool `json:"vex,omitempty"`
+	// Rounds is how many turns one item may take. After each turn the harness
+	// scans the worktree and, while the scanner still reports the card's
+	// finding, runs another turn with the result attached. 0 or 1: one turn.
+	// Needs isolation: worktree.
+	Rounds int `json:"rounds,omitempty"`
 }
 
 // SurveyLabel marks an item a worker filed for itself under kanban.survey.
@@ -384,6 +392,9 @@ func (p AgentProfile) validateWorker() error {
 		if err := s.validate(p.Tools); err != nil {
 			return err
 		}
+		if s.Rounds > 1 && p.IsolationMode() != IsolationWorktree {
+			return errors.New("kanban.security.rounds needs workspace.isolation: worktree (a tree to scan after each round)")
+		}
 	}
 	if q := k.Quality; q != nil {
 		if q.List != "" {
@@ -465,6 +476,9 @@ func (s SecuritySpec) validate(tools []string) error {
 	}
 	if s.VEX && len(s.Verdicts) == 0 {
 		return errors.New("kanban.security.vex needs verdicts: a VEX documents a verdict")
+	}
+	if s.Rounds < 0 || s.Rounds > MaxRounds {
+		return fmt.Errorf("kanban.security.rounds runs 0 to %d", MaxRounds)
 	}
 	seen := map[string]bool{}
 	for _, v := range s.Verdicts {
