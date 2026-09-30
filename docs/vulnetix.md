@@ -535,3 +535,37 @@ Only `status: "affected"` counts. `fixed` and `not_affected` are excluded.
 `under_investigation` is counted separately. `risk-accepted` entries are counted
 separately, regardless of severity. Statements are deduplicated by
 `(vulnerability.name, status, sorted products, action.status)`.
+
+## Review evidence and VEX files
+
+The [security crew](fleet.md#the-security-crew) decides whether a review ran on
+a commit from the artefacts alone, by equality of the full 40-character commit
+id and with no clock. These record it:
+
+| Artefact | Where the commit is |
+| --- | --- |
+| `memory.yaml` | `last_scan.git_commit` |
+| `*.cdx.json` | the `vulnetix:git/commit` property of `metadata.component` |
+| `*.sarif` | `runs[].properties.git.commit` |
+
+The findings come from `memory.yaml` (SCA, skipping those the CLI has resolved)
+and from `sast.sarif`, `secrets.sarif`, `iac.sarif` and `malscan.sarif`. Only a
+kind whose own artefact records the commit is compared against the cards. A
+finding is keyed by its advisory id, or for a SARIF result by
+`<kind>:<rule>:<hash of the file>`, so one card covers a rule in one file.
+
+A verdict leaves an [OpenVEX](https://openvex.dev) 0.2.0 document at
+`.vulnetix/vex/<finding>.openvex.json` in the repository, written by the harness
+and never by a model. A finding id is a plain identifier, so it cannot name a
+path, and a symlinked `.vulnetix` or `vex` directory is refused. Each rewrite
+raises the document version.
+
+| Verdict | VEX status |
+| --- | --- |
+| `fixed` | `fixed` |
+| `false_positive` | `not_affected`, with one of the five OpenVEX justifications and an impact statement |
+| `no_fix` | `affected`, with an action statement listing what was tried |
+| `needs_human` | `under_investigation` |
+
+A `rejected` verdict writes nothing. The Vulnetix views above read the file like
+any other VEX.

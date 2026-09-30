@@ -296,10 +296,54 @@ Builders implement each on its own branch and hand it on as `needs-review`.
 The reviewer checks the branch out, runs the tests, and moves the item to
 `done`, or back to `backlog` with its notes.
 
-Security: file an item labelled `vuln-scan`. The vuln scout runs the
-[Vulnetix](vulnetix.md) scans and hands off one `vuln` item per finding.
-Patchers remediate on a branch; the verifier rescans the branch and closes the
-item or sends it back.
+### The security crew
+
+Start it with `belai agent start -crew belai:security` or `/fleet`. It works
+the repository's findings from scan to verified fix. Two checks stop double
+work, and there is no other gate: no cache and no daily limit.
+
+1. **One crew per repository.** A second start is refused while a worker of
+   the crew is live in the same repository.
+2. **One review per commit.** The scout reads `.vulnetix/` (`memory.yaml`, the
+   CycloneDX files and the SARIF files) for the full commit id of HEAD. When
+   an artefact records it, no scan runs. When none does, the harness runs the
+   [review scanners](vulnetix.md#review-evidence-and-vex-files) itself; no
+   model is asked whether a scan ran. A review that leaves no artefact for
+   HEAD files nothing, so stale artefacts never become cards.
+
+Every finding then has one card for the repository, titled
+`[sca] GHSA-… package`, labelled `vuln`, carrying the finding id and the commit
+whose scan last showed it. The body holds identifiers, versions, paths and a
+severity word, never scanner or advisory text. A finding that returns after its
+card was done gets a new card linked to the old one.
+
+On a later HEAD, a card whose finding has left the report becomes a *gone*
+card: it moves to `review` labelled `gone` and `needs-verify`, with the verdict
+`fixed`. Patchers make this comparison from the artefacts on disk before every
+claim and never scan themselves. A kind whose scanner produced nothing for HEAD
+is not compared, so a missing report never closes a card.
+
+A patcher fixes one card on its branch. After each attempt it re-runs the
+scanner and reads the result before choosing what to try next. It can also
+record a verdict with `KanbanVerdict` instead of a fix. The verifier checks
+every claim itself: it re-runs the scanner, repeats a false positive's
+evidence, looks again for a fix, and for a gone card works out why the finding
+left the report. It then records its own verdict, and the harness moves the
+card and writes a VEX for it:
+
+| Verdict | Recorded by | Result |
+| --- | --- | --- |
+| `fixed` | patcher | `review` for the verifier |
+| `false_positive`, `no_fix`, `needs_human` | patcher | `review` for the verifier, no branch to publish |
+| `fixed`, `false_positive` | verifier | `done`, VEX `fixed` or `not_affected` |
+| `no_fix`, `needs_human` | verifier | `blocked`, VEX `affected` or `under_investigation` |
+| `rejected` | verifier | back to `backlog` labelled `vuln`, one failed attempt, no VEX |
+
+A false positive needs evidence anyone can check independently and one of the
+five OpenVEX justifications; `no_fix` needs the list of what was tried. A
+verifier that records no verdict closes nothing. You can still file an item
+labelled `vuln-scan` to ask the scout for a targeted look. See
+[Review evidence and VEX files](vulnetix.md#review-evidence-and-vex-files).
 
 Your own crews live in `~/.vulnetix/belai/profiles/crews/<name>.json`:
 

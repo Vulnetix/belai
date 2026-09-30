@@ -493,6 +493,27 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   `sync.enabled` switch). The project layer may turn `kanban` off, never on.
   A prefilled composer prompt from the pane is text in the editor and takes
   the typed-prompt path like anything the user types.
+- **The security crew's review, cards, verdicts and VEX are harness work.**
+  `belai:security` is marked `one_per_repo`: a start is refused while a worker
+  of it is live in the repository (`Registry.CheckCrewFree`). Whether a review
+  ran is decided by `scanartifacts.ReviewedAt`, which matches the full commit
+  id of HEAD against `memory.yaml`, a CycloneDX property or a SARIF property,
+  with no clock and no cache. `Worker.sweep` runs the fixed review table itself
+  when none matches, then files and reconciles cards from parsed identifiers.
+  The model is never asked whether a scan ran or a finding exists, and a card
+  body holds ids, versions, paths and a severity word, never scanner, advisory
+  or matched text (a secret's value never reaches a card). A reconcile compares
+  only a kind whose own artefact records HEAD, so a missing report never closes
+  a card, and a patcher's reconcile never scans. `Finding`, `SeenRef`,
+  `Verdict` and `VEX` on a card are harness-set, host-local and never taken from
+  a model argument. `KanbanVerdict` is bound to the claim: it takes no item id,
+  writes only the claimed item's verdict and note, and moves no list; the
+  harness routes the card from the recorded verdict. Only the verifier's profile
+  (`kanban.security.vex`) may reject or close a card, and it closes one only
+  with a verdict. The VEX is composed by `internal/vex` from an enum verdict, an
+  OpenVEX justification enum and cleaned one-line statements, written to the
+  trusted repository root (never a worktree) under a plain-identifier file name
+  with a symlink check and an atomic rename.
 - **Fleet workers claim by harness, work in isolation, and hand back facts.**
   `internal/fleet` workers (`belai agent run|start`, `/fleet`) take work
   only from the kanban board. The rules:
