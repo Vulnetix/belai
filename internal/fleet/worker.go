@@ -585,16 +585,19 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		}
 		if q := k.Quality; q != nil && slices.Contains(it.Labels, agentprofile.QualityLabel) {
 			claim.HandoffList = q.HandoffList()
+			claim.HandoffAuto = q.Auto()
 		}
 		if slices.Contains(it.Labels, agentprofile.SurveyLabel) {
 			list := kanban.Review
 			if k.Survey != nil {
 				list = k.Survey.HandoffList()
 			}
+			claim.HandoffAuto = k.Survey != nil && k.Survey.Auto()
 			claim.HandoffList = list
 		}
 	}
 	w.applyGates(itemCtx, claim)
+	w.resetManualGates(it)
 	var tokens, tokBase int
 	var tokMu sync.Mutex
 	emit := func(e agent.Event) {
@@ -691,6 +694,7 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		} else {
 			o = w.applyVerification(o, v, mode)
 		}
+		o = w.applyManualGates(o, it)
 	}
 	stopRenew()
 	released := w.release(ctx, it, o)

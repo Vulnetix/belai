@@ -13,7 +13,7 @@
     "on_success": {"list": "done", "drop_labels": ["scout"]},
     "handoff_to": ["belai:builder"],
     "handoff_labels": ["build"],
-    "quality": {"sweep": true, "list": "review"},
+    "quality": {"sweep": true, "list": "auto"},
     "gates": {"require": true},
     "max_attempts": 2,
     "lease": "30m"

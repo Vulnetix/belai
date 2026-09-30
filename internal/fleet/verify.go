@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/vulnetix/belai/internal/agentprofile"
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/quality"
 	"github.com/vulnetix/belai/internal/repomap"
@@ -231,5 +232,62 @@ func (w *Worker) applyVerification(o outcome, v gateVerdict, mode string) outcom
 	}
 	o.failed = true
 	o.note = fmt.Sprintf("agent %s completed it, but %s", w.Profile.Name, v.note)
+	return o
+}
+
+// resetManualGates returns a reviewer's manual gates to unmet before it works
+// the card, so each review decides them afresh: a gate a reviewer met for an
+// earlier version of the branch says nothing about this one. An abandoned gate
+// stays abandoned, because that is a person's decision to make.
+func (w *Worker) resetManualGates(it kanban.Item) {
+	k := w.Profile.Kanban
+	if k == nil || k.Gates == nil || !k.Gates.Review || w.gatesMode() != agentprofile.VerifyEnforce {
+		return
+	}
+	for _, g := range it.Gates {
+		if g.Kind != kanban.GateManual || g.State == kanban.GateUnmet || g.State == kanban.GateAbandoned {
+			continue
+		}
+		if _, err := w.Store.SetGate(it.ID, w.Record.ID, g.ID, kanban.GateUnmet, "", "to be decided again by this review"); err != nil {
+			w.logf("%s: gate %s: %v", it.Short(), g.ID, err)
+		}
+	}
+}
+
+// applyManualGates holds a reviewer to the card's manual gates. In enforce
+// mode with review on, a turn the model completed is a failed attempt while a
+// manual gate is unmet, and the card is blocked for a person while one is
+// abandoned: abandonment is terminal and never success. The note names gate
+// ids only; a gate's own evidence stays on the gate.
+func (w *Worker) applyManualGates(o outcome, it kanban.Item) outcome {
+	k := w.Profile.Kanban
+	if o.failed || k == nil || k.Gates == nil || !k.Gates.Review || w.gatesMode() != agentprofile.VerifyEnforce {
+		return o
+	}
+	cur, err := w.Store.Get(it.ID)
+	if err != nil {
+		return o
+	}
+	var unmet, abandoned []string
+	for _, g := range cur.Gates {
+		if g.Kind != kanban.GateManual {
+			continue
+		}
+		switch g.State {
+		case kanban.GateAbandoned:
+			abandoned = append(abandoned, g.ID)
+		case kanban.GateMet:
+		default:
+			unmet = append(unmet, g.ID)
+		}
+	}
+	switch {
+	case len(abandoned) > 0:
+		o.failed, o.blocked = true, true
+		o.note = "HANDOFF REQUIRED: manual gate " + strings.Join(abandoned, ", ") + " was abandoned as impossible; a person must decide, and the card is not done"
+	case len(unmet) > 0:
+		o.failed = true
+		o.note = fmt.Sprintf("agent %s completed it, but manual gate %s is not met: the reviewer records each manual gate with KanbanGate", w.Profile.Name, strings.Join(unmet, ", "))
+	}
 	return o
 }

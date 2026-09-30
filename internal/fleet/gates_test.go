@@ -55,3 +55,44 @@ func TestWorkerWithoutAGatesBlockKeepsTheHandoffAsItWas(t *testing.T) {
 		t.Fatalf("no gate facts without a gates block: %+v", got.Claim)
 	}
 }
+
+func TestWorkerRoutesAQualityCardsHandoffsByClarityWhenAuto(t *testing.T) {
+	store, reg := testEnv(t)
+	store.Add(kanban.ItemInput{Title: "seeded", Labels: []string{"scout", agentprofile.QualityLabel}}, kanban.Provenance{})
+	p := builderProfile()
+	p.Name, p.Kanban.Labels, p.Kanban.HandoffLabels = "t-scout", []string{"scout"}, []string{"build"}
+	p.Kanban.Quality = &agentprofile.QualitySpec{Sweep: true, List: agentprofile.ListAuto}
+	var got Turn
+	w := newWorker(t, store, reg, p, func(ctx context.Context, tt Turn) (run.Result, error) {
+		got = tt
+		return complete(ctx, tt)
+	})
+	w.Suites = func(context.Context) []testdetect.Suite { return nil }
+	w.Once = true
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got.Claim == nil || !got.Claim.HandoffAuto || got.Claim.HandoffList != kanban.Review {
+		t.Fatalf("a seeded card's handoffs are routed by clarity, falling back to review: %+v", got.Claim)
+	}
+}
+
+func TestQualityCardWithAFixedListIsNotRoutedByClarity(t *testing.T) {
+	store, reg := testEnv(t)
+	store.Add(kanban.ItemInput{Title: "seeded", Labels: []string{"scout", agentprofile.QualityLabel}}, kanban.Provenance{})
+	p := builderProfile()
+	p.Name, p.Kanban.Labels, p.Kanban.HandoffLabels = "t-scout", []string{"scout"}, []string{"build"}
+	p.Kanban.Quality = &agentprofile.QualitySpec{Sweep: true, List: "backlog"}
+	var got Turn
+	w := newWorker(t, store, reg, p, func(ctx context.Context, tt Turn) (run.Result, error) {
+		got = tt
+		return complete(ctx, tt)
+	})
+	w.Suites = func(context.Context) []testdetect.Suite { return nil }
+	if err := w.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got.Claim.HandoffAuto || got.Claim.HandoffList != kanban.Backlog {
+		t.Fatalf("a fixed list stays fixed: %+v", got.Claim)
+	}
+}

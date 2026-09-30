@@ -34,8 +34,8 @@ Belai offers the model different kanban tools at different points in a turn:
 | While an agent, goal or plan-execute loop works | plus `KanbanMove` (to `in_progress`, `blocked` or `done`) |
 | After the report of a work turn (the wrap-up) | only `KanbanSearch`, `KanbanUpdate`, `KanbanAdd` (to `review`) and `KanbanMove` (to `done`) |
 | Explore, Task and fan-out subagents | `KanbanSearch` only |
-| A [fleet worker](fleet.md) working its claimed item | `KanbanSearch`, `KanbanUpdate` (notes on its own item and its handoffs only) and `KanbanHandoff`; no `KanbanMove`, no wrap-up |
-| A [fleet worker](fleet.md) working its claimed item | `KanbanSearch`, `KanbanUpdate` (notes on its own item and handoffs only) and `KanbanHandoff`; no `KanbanMove`, no wrap-up |
+| A [fleet worker](fleet.md) working its claimed item | `KanbanSearch`, `KanbanUpdate` (notes on its own item and its handoffs only) and `KanbanHandoff` (plus `KanbanGate` for a reviewer); no `KanbanMove`, no wrap-up |
+| A [fleet worker](fleet.md) working its claimed item | `KanbanSearch`, `KanbanUpdate` (notes on its own item and handoffs only) and `KanbanHandoff` (plus `KanbanGate` for a reviewer); no `KanbanMove`, no wrap-up |
 
 - **`KanbanSearch`** lists items by text, lists and project (`current` by
   default, `all`, or a name). A single match also shows its body and history.
@@ -50,6 +50,11 @@ Belai offers the model different kanban tools at different points in a turn:
   A worker whose profile has a `kanban.gates` block also gives each handoff
   acceptance gates, references to test suites the harness detected; see
   [acceptance gates](fleet.md#acceptance-gates).
+- **`KanbanGate`** (a fleet worker whose profile sets `kanban.gates.review`, the
+  reviewer) records `met`, `unmet` or `abandoned` with one line of evidence on a
+  manual gate of the item it holds. It takes no item id, writes only the claimed
+  item, and refuses a runnable gate: the harness decides those. See
+  [manual gates](fleet.md#manual-gates-and-the-reviewer).
 
 In every session, `KanbanMove` and `KanbanUpdate` refuse an item another
 worker has claimed. `KanbanMove` is also a compare-and-set: it refuses the

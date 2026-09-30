@@ -12,7 +12,7 @@
     "labels": ["needs-review"],
     "on_success": {"list": "done", "drop_labels": ["needs-review"]},
     "on_failure": {"list": "backlog", "labels": ["build"], "drop_labels": ["needs-review"]},
-    "gates": {"verify": "enforce"},
+    "gates": {"verify": "enforce", "review": true},
     "max_attempts": 3,
     "lease": "20m"
   },

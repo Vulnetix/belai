@@ -144,3 +144,26 @@ func dirInside(root, dir string) bool {
 	fi, err := os.Stat(real)
 	return err == nil && fi.IsDir()
 }
+
+// renderGate is one line of a card's gates as the model reads them: the id,
+// what decides it, its state and the harness's or reviewer's note.
+func renderGate(g kanban.Gate) string {
+	var ref string
+	switch g.Kind {
+	case kanban.GateRunnable:
+		ref = "runnable " + g.Suite
+		if g.Dir != "" {
+			ref += " " + g.Dir
+		}
+		if g.Test != "" {
+			ref += " " + g.Test
+		}
+	default:
+		ref = "manual, decided by a reviewer"
+	}
+	line := fmt.Sprintf("- %s [%s] %s: %s", g.ID, ref, g.State, g.Title)
+	if g.Note != "" {
+		line += " (" + g.Note + ")"
+	}
+	return line + "\n"
+}
