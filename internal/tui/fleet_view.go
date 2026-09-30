@@ -17,12 +17,12 @@ import (
 	"github.com/vulnetix/belai/internal/tui/components"
 )
 
-// The fleet tab of /agents lists the worker processes on this machine —
+// The workers tab of /agents lists the worker processes on this machine —
 // detached `belai agent run` workers started here, from the CLI or from
 // another session — read from the fleet registry. It is refreshed every two
 // seconds while the tab is open.
 
-// fleetUI is the fleet tab's state.
+// fleetUI is the workers tab's state.
 type fleetUI struct {
 	recs    []fleet.Record
 	sel     int
@@ -327,6 +327,6 @@ func (a *App) startFleetWorkers(profile, crew string, replicas int) {
 		ids = append(ids, id)
 	}
 	if len(ids) > 0 {
-		a.addSystem(fmt.Sprintf("⚙ started %d worker(s): %s — /agents fleet tab, or `belai agent ps`", len(ids), strings.Join(ids, ", ")))
+		a.addSystem(fmt.Sprintf("⚙ started %d worker(s): %s — /agents workers tab, or `belai agent ps`", len(ids), strings.Join(ids, ", ")))
 	}
 }

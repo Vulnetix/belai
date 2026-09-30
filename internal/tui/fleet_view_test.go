@@ -27,7 +27,7 @@ func TestFleetTabListsWorkers(t *testing.T) {
 	a.agentState.tab = agentTabFleet
 	a.view = viewAgent
 	out := a.agentView()
-	for _, want := range []string{"fleet 1", "belai-builder-aaaaaa", "K-123456", "✓2", "belai:delivery", "belai-scout-bbbbbb"} {
+	for _, want := range []string{"workers 1", "belai-builder-aaaaaa", "K-123456", "✓2", "belai:delivery", "belai-scout-bbbbbb"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("fleet tab lacks %q:\n%s", want, out)
 		}
