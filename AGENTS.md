@@ -483,6 +483,10 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
     argument. The website may clear a claim, never set one. An assignee
     naming a person (`person:`) matches no worker, and `crew:NAME` matches
     only workers started in that crew.
+  - **Pause.** A pause is an empty marker file (`<id>.pause`) beside the
+    worker's registry record, set only by the CLI or the TUI. It carries no
+    text, is checked between cards so a turn is never cut off, and a
+    valid worker id is the only path it can name.
   - **Item text.** The claimed item's text reaches the model only as a
     `kanban` attachment gated exactly like a `KanbanSearch` result
     (`agent.TurnInput.KanbanItem`): sanitised, and classified unless the

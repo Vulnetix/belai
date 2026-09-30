@@ -133,7 +133,7 @@ func fleetStateStyle(s fleet.State) string {
 		return "running"
 	case fleet.StateIdle, fleet.StateStarting:
 		return "idle"
-	case fleet.StateStopping:
+	case fleet.StateStopping, fleet.StatePaused:
 		return "paused"
 	case fleet.StateFailed:
 		return "failed"
@@ -193,7 +193,7 @@ func (a *App) fleetView(w int) string {
 			}
 		}
 	}
-	b.WriteString("\n" + components.HelpBar("↑↓", "move", "l", "log", "x", "stop", "X", "stop all", "r", "refresh", "esc", "back") + "\n")
+	b.WriteString("\n" + components.HelpBar("↑↓", "move", "l", "log", "p", "pause/resume", "x", "stop", "X", "stop all", "r", "refresh", "esc", "back") + "\n")
 	return b.String()
 }
 
@@ -228,6 +228,10 @@ func (a *App) handleFleetKey(m tea.KeyMsg) tea.Cmd {
 		a.reloadFleet()
 	case "r":
 		a.reloadFleet()
+	case "p":
+		if f.sel < len(f.recs) && f.recs[f.sel].State.Live() {
+			a.toggleFleetPause(f.recs[f.sel])
+		}
 	case "X":
 		return a.stopFleetWorkers(nil)
 	case "x":
@@ -237,6 +241,27 @@ func (a *App) handleFleetKey(m tea.KeyMsg) tea.Cmd {
 		}
 	}
 	return nil
+}
+
+// toggleFleetPause asks a worker to pause, or to resume when it already
+// paused. It finishes the card it holds first, so nothing is cut off.
+func (a *App) toggleFleetPause(r fleet.Record) {
+	reg, err := a.fleetRegistry()
+	if err != nil {
+		a.agentState.errorMsg = "fleet: " + err.Error()
+		return
+	}
+	pause := !reg.Paused(r.ID)
+	if err := reg.SetPaused(r.ID, pause); err != nil {
+		a.agentState.errorMsg = "fleet: " + err.Error()
+		return
+	}
+	if pause {
+		a.agentNotice(r.ID + " will pause after its current card")
+	} else {
+		a.agentNotice(r.ID + " resumed")
+	}
+	a.reloadFleet()
 }
 
 // startFleetWorkers starts detached workers for a profile or every member of

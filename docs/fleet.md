@@ -157,6 +157,17 @@ add or update. It files at most five `build` handoffs, discrepancies before
 gaps. Moving one from Review to Backlog is the confirmation: a builder then
 claims it by its `build` label.
 
+### Pausing a worker
+
+`belai agent pause ID|NAME` (or `p` on the fleet tab of `/agents`) asks a
+worker to pause. It finishes the card it holds, so no change is left half made,
+then claims nothing and reports `paused` until `belai agent resume` (or `p`
+again). The request is an empty marker file beside the worker's registry
+record, so it carries no text. A paused worker keeps its slot and does not
+count the wait as a dry board, so it is not exited by the quiet window. To
+take a card over, pause the worker, release the claim (`u` in `/kanban`, or
+`belai kanban release`) and continue the card's transcript in your terminal.
+
 ### Read-only workspaces
 
 `"workspace": {"isolation": "worktree", "read_only": true}` is for a worker
@@ -281,6 +292,8 @@ Your own crews live in `~/.vulnetix/belai/profiles/crews/<name>.json`:
 | `belai agent ps` | running and recently stopped workers |
 | `belai agent logs ID [-f]` | a worker's log |
 | `belai agent stop ID \| NAME \| -all` | stop workers; claims are released |
+| `belai agent pause ID \| NAME` | finish the card in hand, then claim nothing until resumed |
+| `belai agent resume ID \| NAME` | take cards again |
 | `belai kanban add TITLE [-label L] [-priority N] [-assignee NAME] [-depends K-…]` | file an item |
 | `belai kanban list [-list L] [-label L] [-project all] [-json]` | list items |
 | `belai kanban show ID` | one item with its history |

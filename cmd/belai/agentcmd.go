@@ -55,6 +55,8 @@ const agentUsage = `usage: belai agent <command> [flags] [args]
       -trust-dir, -provider, -model, -stay as for run
   ps [-all] [-json]              running workers (-all: recently stopped too)
   logs [-f] [-n N] ID            a worker's log
+  pause ID|NAME                 finish the card in hand, then claim nothing
+  resume ID|NAME                take cards again
   stop ID|NAME | -all            stop workers; their items go back to the board
   status                         workers and this project's board
 
@@ -203,6 +205,11 @@ func agentCommand(ctx context.Context, cmd string, rest []string, stdin io.Reade
 			return 2, errors.New("usage: belai agent stop ID|NAME | -all")
 		}
 		return agentStop(fs.Arg(0), *all, stdout)
+	case "pause", "resume":
+		if err := parseInterleaved(fs, rest); err != nil || fs.NArg() != 1 {
+			return 2, errors.New("usage: belai agent " + cmd + " ID|NAME")
+		}
+		return agentPause(fs.Arg(0), cmd == "pause", stdout)
 	case "status":
 		if err := fs.Parse(rest); err != nil {
 			return 2, nil
@@ -703,4 +710,37 @@ func workerModel(flagProvider, flagModel string, s config.Settings, loadState fu
 		}
 	}
 	return provider, model
+}
+
+// agentPause asks the workers a ref names to pause or resume. A paused worker
+// finishes the card it holds and claims nothing until resumed.
+func agentPause(ref string, pause bool, stdout io.Writer) (int, error) {
+	store, _ := kanban.OpenDefault()
+	reg, err := fleet.OpenRegistry(store)
+	if err != nil {
+		return 1, err
+	}
+	recs, err := reg.Resolve(ref)
+	if err != nil {
+		return 1, err
+	}
+	n := 0
+	for _, r := range recs {
+		if !r.State.Live() {
+			continue
+		}
+		if err := reg.SetPaused(r.ID, pause); err != nil {
+			return 1, err
+		}
+		if pause {
+			fmt.Fprintf(stdout, "%s will pause after its current card\n", r.ID)
+		} else {
+			fmt.Fprintf(stdout, "%s resumed\n", r.ID)
+		}
+		n++
+	}
+	if n == 0 {
+		fmt.Fprintln(stdout, "no workers running")
+	}
+	return 0, nil
 }

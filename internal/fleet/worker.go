@@ -270,6 +270,21 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 		if cur, err := agentprofile.Load(p.Name); err == nil && ProfileHash(cur) != w.Record.ProfileHash {
 			return "the profile changed; restart the worker to use the new definition", nil
 		}
+		if w.Registry != nil && w.Registry.Paused(w.Record.ID) {
+			if w.Record.State != StatePaused {
+				w.logf("paused: claiming nothing until resumed")
+			}
+			w.Record.State = StatePaused
+			w.save()
+			quietSince = w.clock()
+			if !sleep(ctx, idle) {
+				return "stopped", nil
+			}
+			continue
+		}
+		if w.Record.State == StatePaused {
+			w.logf("resumed")
+		}
 		w.Record.State = StateIdle
 		w.save()
 		if now := w.clock(); now.Sub(lastPull) >= idle {
