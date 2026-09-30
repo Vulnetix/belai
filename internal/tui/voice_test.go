@@ -475,7 +475,7 @@ func TestFooterAndComposerIcon(t *testing.T) {
 	if a.footer.Voice != "voice: listening" || !a.footer.VoiceOn {
 		t.Fatalf("footer = %q on=%v", a.footer.Voice, a.footer.VoiceOn)
 	}
-	if !strings.ContainsAny(ansi.Strip(a.renderComposer()), "◉◎█▒░▀") {
+	if v := ansi.Strip(a.renderComposer()); !strings.ContainsAny(v, "◉◎") && !hasBraille(v) {
 		t.Fatal("the composer does not show the listening icon")
 	}
 	a.view = viewSettings

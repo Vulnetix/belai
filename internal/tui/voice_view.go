@@ -154,115 +154,202 @@ func (a *App) composerPlaceholder() string {
 	return "Type, or hold " + a.settings.Voice.VoiceKeyOr() + " and speak…"
 }
 
-// The composer's mark is a microphone: a capsule on a U-shaped holder with a
-// pole and a base, three rows by nine cells, drawn with block and box glyphs (no
-// emoji, per docs/tui-design.md). Cells are about twice as tall as they are
-// wide, so the silhouette keeps its proportions. The two cells either side of
-// the microphone are for sound arcs, which animate while speech is heard and
-// are blank otherwise, so the width never changes.
+// The composer's mark is a microphone drawn as a bitmap and printed in Braille.
+// A terminal cell is about twice as tall as it is wide, and a Braille cell is
+// two dots wide by four tall, so its dots sit on a square grid. Nine cells by
+// three rows is therefore an 18 by 12 pixel picture, enough for a capsule, a
+// holder, a pole, a base and two pairs of sound arcs that block glyphs cannot
+// draw without falling apart. Every state is the same bitmap put through a
+// small transform, so the shapes always agree.
 const (
 	voiceArtRows = 3
 	voiceArtCols = 9
+	voicePxW     = voiceArtCols * 2
+	voicePxH     = voiceArtRows * 4
+	voiceMicX    = 5 // the microphone is 8 pixels wide, centred in the 18
 )
 
-// The microphone itself is five cells wide, in the middle of the nine.
-var (
-	voiceMic     = [voiceArtRows]string{" ███ ", "█ █ █", " ▀█▀ "}
-	voiceMicSoft = [voiceArtRows]string{" ▒▒▒ ", "▒ ▒ ▒", " ▀▒▀ "}
-	voiceMicIdle = [voiceArtRows]string{" ░░░ ", "░ ░ ░", " ▀░▀ "}
-)
-
-// voiceArcs returns the left and right sound-arc columns for n arcs (0, 1 or
-// 2): each arc is a bracket of box-drawing corners and a bar, three rows tall,
-// so it reads as a curve open toward the microphone.
-func voiceArcs(n int) (left, right [voiceArtRows]string) {
-	l := [voiceArtRows]string{"╭", "│", "╰"}
-	r := [voiceArtRows]string{"╮", "│", "╯"}
-	for i := 0; i < voiceArtRows; i++ {
-		switch n {
-		case 0:
-			left[i], right[i] = "  ", "  "
-		case 1:
-			left[i], right[i] = " "+l[i], r[i]+" "
-		default:
-			left[i], right[i] = l[i]+l[i], r[i]+r[i]
-		}
-	}
-	return left, right
+// voiceMicBitmap is the microphone, 8 by 12 pixels: a capsule with a rounded
+// top and bottom, a U-shaped holder around it, a pole and a base.
+var voiceMicBitmap = [voicePxH]string{
+	"..####..",
+	".######.",
+	".######.",
+	".######.",
+	".######.",
+	".######.",
+	"#.####.#",
+	"#.####.#",
+	".#....#.",
+	"..####..",
+	"...##...",
+	"..####..",
 }
 
-// voiceArtFor draws the microphone for a look at a frame. Listening pulses
-// between a solid and a soft mic; hearing adds one and then two sound arcs to
-// each side; working is a purple mic alternating solid and soft; muted is a
-// light mic with a slash through it; waiting for the key or paused is a still
-// light mic. The pulse changes shape as well as colour, so it shows on a
-// terminal without colour.
-func voiceArtFor(look voiceLook, frame int) [voiceArtRows]string {
-	if look == lookNone {
-		return [voiceArtRows]string{}
+// voiceArcBitmaps are the sound arcs on the left, inner then outer, each two
+// pixels wide. The right side is the mirror image.
+var voiceArcBitmaps = [2]struct {
+	x    int
+	rows []string // starting at row y0
+	y0   int
+}{
+	{x: 2, y0: 2, rows: []string{".#", "#.", "#.", "#.", "#.", "#.", "#.", ".#"}},
+	{x: 0, y0: 1, rows: []string{".#", ".#", "#.", "#.", "#.", "#.", "#.", "#.", ".#", ".#"}},
+}
+
+// voicePixels is a picture of pixels, [row][column].
+type voicePixels [voicePxH][voicePxW]bool
+
+// voiceMicPixels draws the microphone into an empty picture: whole, or as an
+// outline (only the pixels that touch an empty one), or as a soft dither
+// (every other pixel).
+func voiceMicPixels(outline, soft bool) voicePixels {
+	var p voicePixels
+	on := func(x, y int) bool {
+		return y >= 0 && y < voicePxH && x >= 0 && x < len(voiceMicBitmap[y]) && voiceMicBitmap[y][x] == '#'
 	}
-	var (
-		mic   = voiceMic
-		color lipgloss.TerminalColor
-		bold  bool
-		arcs  int
-		slash bool
-	)
-	switch look {
-	case lookListening:
-		color, bold = components.ColorTeal, true
-		if frame/4%2 == 1 {
-			mic, color, bold = voiceMicSoft, components.ColorTealSoft, false
+	for y := 0; y < voicePxH; y++ {
+		for x := 0; x < len(voiceMicBitmap[y]); x++ {
+			if !on(x, y) {
+				continue
+			}
+			if outline && on(x-1, y) && on(x+1, y) && on(x, y-1) && on(x, y+1) {
+				continue // an interior pixel
+			}
+			if soft && (x+y)%2 != 0 {
+				continue
+			}
+			p[y][voiceMicX+x] = true
 		}
-	case lookHearing:
-		color, bold = components.ColorTeal, true
-		arcs = 1 + frame%2
-	case lookWorking:
-		color, bold = components.ColorVoice, true
-		if frame/2%2 == 1 {
-			mic, bold = voiceMicSoft, false
-		}
-	case lookMuted:
-		mic, color, slash = voiceMicIdle, components.ColorLow, true
-	default: // idle, paused
-		mic = voiceMicIdle
-		color = components.ColorLow
 	}
-	left, right := voiceArcs(arcs)
-	st := lipgloss.NewStyle().Foreground(color).Bold(bold)
+	return p
+}
+
+// addArcs draws n sound arcs (0, 1 or 2) on each side of the microphone.
+func (p *voicePixels) addArcs(n int) {
+	for i := 0; i < n && i < len(voiceArcBitmaps); i++ {
+		a := voiceArcBitmaps[i]
+		for dy, row := range a.rows {
+			for dx, c := range row {
+				if c != '#' {
+					continue
+				}
+				p[a.y0+dy][a.x+dx] = true
+				p[a.y0+dy][voicePxW-1-(a.x+dx)] = true
+			}
+		}
+	}
+}
+
+// addSlash draws a diagonal from the capsule's top left to the base's right.
+func (p *voicePixels) addSlash() {
+	x0, y0, x1, y1 := voiceMicX, 0, voiceMicX+7, voicePxH-1
+	steps := y1 - y0
+	for i := 0; i <= steps; i++ {
+		x := x0 + (x1-x0)*i/steps
+		p[y0+i][x] = true
+		if x+1 < voicePxW {
+			p[y0+i][x+1] = true
+		}
+	}
+}
+
+// voiceBraille prints a picture as Braille rows. An empty cell is a plain
+// space, so a font that draws the blank Braille cell wider or narrower cannot
+// disturb the layout.
+func voiceBraille(p voicePixels) [voiceArtRows]string {
+	// Dot bits by (column in cell, row in cell).
+	bit := [2][4]rune{{0x01, 0x02, 0x04, 0x40}, {0x08, 0x10, 0x20, 0x80}}
 	var out [voiceArtRows]string
-	for i := 0; i < voiceArtRows; i++ {
-		body := mic[i]
-		if slash {
-			// A slash from the capsule's top left to the base's right.
-			b := []rune(body)
-			b[i*2] = '╲'
-			body = string(b)
+	for cy := 0; cy < voiceArtRows; cy++ {
+		row := make([]rune, voiceArtCols)
+		for cx := 0; cx < voiceArtCols; cx++ {
+			var bits rune
+			for dx := 0; dx < 2; dx++ {
+				for dy := 0; dy < 4; dy++ {
+					if p[cy*4+dy][cx*2+dx] {
+						bits |= bit[dx][dy]
+					}
+				}
+			}
+			if bits == 0 {
+				row[cx] = ' '
+			} else {
+				row[cx] = 0x2800 + bits
+			}
 		}
-		out[i] = st.Render(left[i] + body + right[i])
+		out[cy] = string(row)
 	}
 	return out
 }
 
-// overlayVoiceArt draws the mark centred in the composer body, across its
-// first three rows. It reports false, leaving the body alone, when the body is
-// too small or when typed text reaches the mark's columns, so the mark never
-// covers what you wrote; the caller then draws the small icon at the edge.
+// voiceLookPixels is the picture for a look at a frame, with the colour to draw
+// it in. Listening beats between a whole and a soft microphone, hearing adds one
+// and then two sound arcs to each side, working is purple and beats the same way
+// as listening, armed and paused are a still outline, and muted is that outline
+// with a slash through it. The states differ in shape as well as colour, so they
+// show on a terminal without colour.
+func voiceLookPixels(look voiceLook, frame int) (p voicePixels, color lipgloss.TerminalColor, bold, ok bool) {
+	switch look {
+	case lookListening:
+		soft := frame/4%2 == 1
+		color, bold = components.ColorTeal, !soft
+		if soft {
+			color = components.ColorTealSoft
+		}
+		return voiceMicPixels(false, soft), color, bold, true
+	case lookHearing:
+		p = voiceMicPixels(false, false)
+		p.addArcs(1 + frame%2)
+		return p, components.ColorTeal, true, true
+	case lookWorking:
+		soft := frame/2%2 == 1
+		return voiceMicPixels(false, soft), components.ColorVoice, !soft, true
+	case lookMuted:
+		p = voiceMicPixels(true, false)
+		p.addSlash()
+		return p, components.ColorLow, false, true
+	case lookIdle, lookPaused:
+		return voiceMicPixels(true, false), components.ColorLow, false, true
+	}
+	return p, nil, false, false
+}
+
+// voiceArtFor draws the microphone for a look at a frame.
+func voiceArtFor(look voiceLook, frame int) [voiceArtRows]string {
+	p, color, bold, ok := voiceLookPixels(look, frame)
+	if !ok {
+		return [voiceArtRows]string{}
+	}
+	st := lipgloss.NewStyle().Foreground(color).Bold(bold)
+	rows := voiceBraille(p)
+	var out [voiceArtRows]string
+	for i, r := range rows {
+		out[i] = st.Render(r)
+	}
+	return out
+}
+
+// overlayVoiceArt draws the mark flush right in the composer body, across its
+// first three rows, level with the first line of text. It reports false,
+// leaving the body alone, when the body is too small or when typed text
+// reaches the mark's columns, so the mark never covers what you wrote; the
+// caller then draws the small icon at the edge. The composer reserves the
+// mark's width (voiceIconReserve), so text wraps before it.
 func overlayVoiceArt(body string, inner int, art [voiceArtRows]string) (string, bool) {
 	lines := strings.Split(body, "\n")
 	if art[0] == "" || len(lines) < voiceArtRows || inner < voiceArtCols+4 {
 		return body, false
 	}
-	left := (inner - voiceArtCols) / 2
+	left := inner - voiceArtCols
 	for r := 0; r < voiceArtRows; r++ {
 		if lipgloss.Width(strings.TrimRight(ansi.Strip(lines[r]), " ")) > left-1 {
 			return body, false
 		}
 	}
-	right := inner - left - voiceArtCols
 	for r := 0; r < voiceArtRows; r++ {
 		base := ansi.Truncate(lines[r], left, "")
-		lines[r] = base + strings.Repeat(" ", left-lipgloss.Width(base)) + art[r] + strings.Repeat(" ", right)
+		lines[r] = base + strings.Repeat(" ", left-lipgloss.Width(base)) + art[r]
 	}
 	return strings.Join(lines, "\n"), true
 }
