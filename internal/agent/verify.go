@@ -15,6 +15,9 @@ import (
 // exitStatusLine is Bash's trailer for a non-zero exit.
 var exitStatusLine = regexp.MustCompile(`(?m)^exit status [1-9][0-9]*\s*$`)
 
+// shellSeparators splits a command line into its simple commands.
+var shellSeparators = regexp.MustCompile(`&&|\|\||;|\|`)
+
 // inspectionCommands are commands that look but prove nothing about a
 // change: running one after an edit is not verification.
 var inspectionCommands = map[string]bool{
@@ -40,7 +43,7 @@ func isVerifyingBash(name string, args map[string]any, result string) bool {
 // isInspectionOnly reports whether every segment of a shell command is an
 // inspection command (or a read-only git subcommand).
 func isInspectionOnly(cmd string) bool {
-	segs := regexp.MustCompile(`&&|\|\||;|\|`).Split(cmd, -1)
+	segs := shellSeparators.Split(cmd, -1)
 	seen := false
 	for _, seg := range segs {
 		fields := strings.Fields(seg)
