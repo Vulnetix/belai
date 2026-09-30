@@ -521,6 +521,10 @@ not as the agent picker. Press `ctrl+g` on a `↻` row and confirm the agent
 starts in the background; on a flat profile, confirm it says so instead. Then
 `shift+tab` into plan and goal mode and confirm the chip drops the agent name
 and the strip disappears, and that returning to agent mode brings both back.
+The fourth press is auto: the chip reads `auto`, a prompt is classified (the
+chip then reads `auto · <mode>`), and the next press returns to agent. Run
+`/handoff <plan file>` and confirm a handoff turn starts with the `handoff`
+chip and no detection entry in the session record.
 
 **Slash completion.** Type `/c`, then `tab` several times, and confirm the
 highlight cycles through every match instead of sticking on the second one —

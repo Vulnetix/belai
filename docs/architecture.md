@@ -1276,7 +1276,10 @@ Business rules and edge cases:
   `shift+tab`, `f5`, `--plan`, or Approve/Refine/Cancel in the plan review
   pane) holds for every following turn until the user explicitly chooses
   again. The classifier must not silently reroute a plan session into the
-  unbounded goal loop.
+  unbounded goal loop. The one exception is **auto**, the last `shift+tab`
+  stop (or `/mode auto`): it holds no mode, so the classifier decides per
+  prompt. `/handoff <plan file>` builds its handoff decision directly and skips
+  detection, while admission and every gate still run.
 - **Explore subagents build the plan surface directly**
   (`DefaultWithCaps(...).Plan()`) rather than relying on the gate alone, so
   the exploration preamble cannot promise a `Bash` the gate will refuse.

@@ -179,8 +179,11 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
       <p class="mono text-xs tracking-wider text-vx-cream/70">SWITCH OR ASK</p>
       <p class="mt-3 flex items-baseline gap-3 text-vx-cream">
         <kbd class="mono rounded-md border border-b-[3px] border-vx-mint px-2 text-sm text-vx-mint">shift+tab</kbd>
-        <span>cycles agent, plan and goal</span>
+        <span>cycles agent, plan, goal and auto</span>
       </p>
+      <p class="mt-2 text-sm text-vx-cream/75">In auto the classifier picks the mode for each prompt.</p>
+      <pre class="mono mt-4 overflow-x-auto text-sm leading-7 text-vx-mint"><code>/handoff plans/step-1.md</code></pre>
+      <p class="mt-2 text-sm text-vx-cream/75">runs a plan file as a handoff without detection. Admission and every permission still apply.</p>
       <pre class="mono mt-4 overflow-x-auto text-sm leading-7 text-vx-mint"><code>belai -detect-mode -prompt "…"</code></pre>
       <p class="mt-2 text-sm text-vx-cream/75">prints the mode Belai would choose for a prompt without acting on it.</p>
     </aside>
