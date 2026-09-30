@@ -67,7 +67,7 @@ const integrations = [
   {
     title: 'Editors over ACP',
     key: 'belai acp',
-    body: '`belai acp` speaks the Agent Client Protocol, so Zed, JetBrains IDEs, Neovim, Emacs and VS Code can use Belai as their agent. Each session is built like a headless CLI session, so every gate applies, and a directory you have not trusted is refused. With `tests.post_end` on, a completed goal runs the detected tests and streams the result to the editor, and a failing run starts a fix turn whose permission asks go to the editor. Setup for each editor is below.',
+    body: '`belai acp` speaks the Agent Client Protocol, so Zed, JetBrains IDEs, Neovim, Emacs and VS Code can use Belai as their agent. Each session is built like a headless CLI session, so every gate applies, and a directory you have not trusted is refused. An image block in a prompt is accepted: it is checked and re-encoded by Belai, never fetched by address, and at most eight go with a prompt. With `tests.post_end` on, a completed goal runs the detected tests and streams the result to the editor, and a failing run starts a fix turn whose permission asks go to the editor. Setup for each editor is below.',
     doc: 'acp.md',
   },
   {

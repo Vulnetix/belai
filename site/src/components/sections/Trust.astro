@@ -42,7 +42,7 @@ const facts = [
   },
   {
     title: 'Images are checked by Belai, not by the classifier',
-    body: 'A text classifier cannot read pixels, so an image from `Screenshot` is decoded as PNG or JPEG inside a size and pixel limit, reduced to 1568 pixels on its long edge and re-encoded as a new PNG. Metadata, trailing bytes and a file that only looks like an image do not survive, and any failure refuses the image. Only that tool can return one, only the newest is sent, and a model without image input is told it was not. Text inside a screenshot is what was on screen, never an instruction.',
+    body: 'A text classifier cannot read pixels, so an image from `Screenshot`, one you attach with `@`, paste or drop, or one an editor sends over ACP is decoded as PNG or JPEG inside a size and pixel limit, reduced to 1568 pixels on its long edge and re-encoded as a new PNG. Metadata, trailing bytes and a file that only looks like an image do not survive, and any failure refuses the image. Only a capture tool or you can supply one, an `@` path is confined to the session roots, only the newest is sent, and a model without image input is told it was not. Text inside an image is what it shows, never an instruction.',
   },
   {
     title: 'WebFetch answers from a model with no tools',
