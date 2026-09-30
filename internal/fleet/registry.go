@@ -41,11 +41,14 @@ const (
 	StateStopping State = "stopping"
 	StateStopped  State = "stopped"
 	StateFailed   State = "failed"
+	// StatePaused is a worker that finished the card it held and claims
+	// nothing until it is resumed. The process keeps running.
+	StatePaused State = "paused"
 )
 
 // Live reports whether the state is one a running process holds.
 func (s State) Live() bool {
-	return s == StateStarting || s == StateIdle || s == StateWorking || s == StateStopping
+	return s == StateStarting || s == StateIdle || s == StateWorking || s == StateStopping || s == StatePaused
 }
 
 // Record is one worker's entry in the registry: harness facts only.
@@ -126,6 +129,39 @@ func ValidID(id string) bool { return idShape.MatchString(id) }
 
 func (r *Registry) path(id string) string { return filepath.Join(r.dir, id+".json") }
 
+// pausePath is the marker that asks a worker to pause. It is an empty file
+// beside the worker's record, so it carries no text and cannot be forged into
+// anything but a yes or a no. List reads only ".json" files and ignores it.
+func (r *Registry) pausePath(id string) string { return filepath.Join(r.dir, id+".pause") }
+
+// SetPaused asks the worker to pause or resume. A paused worker finishes the
+// card it holds, then claims nothing until resumed; it never interrupts a
+// turn, so no half-made change is left behind.
+func (r *Registry) SetPaused(id string, paused bool) error {
+	if !ValidID(id) {
+		return fmt.Errorf("fleet: %q is not a worker id", id)
+	}
+	if !paused {
+		if err := os.Remove(r.pausePath(id)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	if err := os.MkdirAll(r.dir, 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(r.pausePath(id), nil, 0o600)
+}
+
+// Paused reports whether a pause was asked of the worker.
+func (r *Registry) Paused(id string) bool {
+	if !ValidID(id) {
+		return false
+	}
+	_, err := os.Stat(r.pausePath(id))
+	return err == nil
+}
+
 // Save writes a record atomically.
 func (r *Registry) Save(rec Record) error {
 	if !ValidID(rec.ID) {
@@ -176,6 +212,7 @@ func (r *Registry) Remove(id string) error {
 	if !ValidID(id) {
 		return fmt.Errorf("fleet: invalid worker id %q", id)
 	}
+	_ = os.Remove(r.pausePath(id))
 	err := os.Remove(r.path(id))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil

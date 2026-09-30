@@ -442,7 +442,7 @@ func (a *App) crewItems() []runsItem {
 		}
 		st := "done"
 		switch r.State {
-		case fleet.StateWorking, fleet.StateIdle, fleet.StateStarting, fleet.StateStopping:
+		case fleet.StateWorking, fleet.StateIdle, fleet.StateStarting, fleet.StateStopping, fleet.StatePaused:
 			st = "running"
 		case fleet.StateFailed:
 			st = "failed"

@@ -744,3 +744,64 @@ func TestWorkerWaitsForAWorkingTeammate(t *testing.T) {
 		t.Fatalf("exited after %s with %+v while a teammate worked", took, rec)
 	}
 }
+
+// A paused worker claims nothing and does not count the wait as a dry board,
+// so it stays until resumed. A pause marker is an empty file, and a resumed
+// worker takes the card that was waiting.
+func TestPausedWorkerClaimsNothingUntilResumed(t *testing.T) {
+	store, reg := testEnv(t)
+	it, _, _ := store.Add(kanban.ItemInput{Title: "wait for me", Labels: []string{"build"}}, kanban.Provenance{})
+	p := builderProfile()
+	p.Kanban.Poll = "50ms"
+	w := newWorker(t, store, reg, p, complete)
+	w.Once, w.Stay = false, true
+	if err := reg.SetPaused(w.Record.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { _ = w.Run(ctx); close(done) }()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if rec, err := reg.Get(w.Record.ID); err == nil && rec.State == StatePaused {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if rec, _ := reg.Get(w.Record.ID); rec.State != StatePaused {
+		t.Fatalf("worker did not pause: %+v", rec)
+	}
+	if cur, _ := store.Get(it.ID); cur.ClaimedBy != "" || cur.List != kanban.Backlog {
+		t.Fatalf("a paused worker claimed the card: %+v", cur)
+	}
+
+	if err := reg.SetPaused(w.Record.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	deadline = time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if cur, _ := store.Get(it.ID); cur.List == kanban.Review {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	if cur, _ := store.Get(it.ID); cur.List != kanban.Review {
+		t.Fatalf("the resumed worker did not take the card: %+v", cur)
+	}
+}
+
+func TestSetPausedRefusesAnUnsafeID(t *testing.T) {
+	_, reg := testEnv(t)
+	if err := reg.SetPaused("../x", true); err == nil {
+		t.Fatal("a path was accepted as a worker id")
+	}
+	if reg.Paused("../x") {
+		t.Fatal("an unsafe id reads as paused")
+	}
+	if !ValidID("a-1") || reg.Paused("a-1") {
+		t.Fatal("a fresh worker is paused")
+	}
+}
