@@ -363,7 +363,7 @@ func TestSettingsRowsForVoiceKeyAndEffectiveEnabled(t *testing.T) {
 	var _ = context.Background
 }
 
-func TestVoiceArtIsThreeRowsOfSixCells(t *testing.T) {
+func TestVoiceArtIsThreeRowsOfNineCells(t *testing.T) {
 	for _, look := range []voiceLook{lookIdle, lookMuted, lookPaused, lookListening, lookHearing, lookWorking} {
 		for frame := 0; frame < 8; frame++ {
 			art := voiceArtFor(look, frame)
@@ -377,34 +377,75 @@ func TestVoiceArtIsThreeRowsOfSixCells(t *testing.T) {
 	if voiceArtFor(lookNone, 0)[0] != "" {
 		t.Fatal("a mark is drawn while voice is off")
 	}
-	// The mark is about four times the old icon: many more cells, still round.
+	// The mark is far larger than the old one-cell icon.
 	if voiceArtRows*voiceArtCols < 4 {
 		t.Fatal("the mark is not larger than the old one-cell icon")
 	}
 }
 
-func TestVoiceArtBeatsAndStillRings(t *testing.T) {
+func TestVoiceArtIsAMicrophone(t *testing.T) {
+	plain := func(l voiceLook, f int) []string {
+		art := voiceArtFor(l, f)
+		out := make([]string, len(art))
+		for i, r := range art {
+			out[i] = ansi.Strip(r)
+		}
+		return out
+	}
+	mic := plain(lookListening, 0)
+	// A capsule on top, a holder around a pole in the middle, a base below.
+	want := []string{"   ███   ", "  █ █ █  ", "   ▀█▀   "}
+	for i := range want {
+		if mic[i] != want[i] {
+			t.Fatalf("row %d of the microphone = %q, want %q", i, mic[i], want[i])
+		}
+	}
+	if !strings.Contains(mic[0], "███") || !strings.Contains(mic[2], "▀█▀") {
+		t.Fatal("no capsule and base")
+	}
+}
+
+func TestVoiceArtStatesAreDistinctWithoutColour(t *testing.T) {
 	plain := func(l voiceLook, f int) string {
 		art := voiceArtFor(l, f)
 		return ansi.Strip(strings.Join(art[:], "\n"))
 	}
-	if plain(lookIdle, 0) != plain(lookMuted, 5) || plain(lookIdle, 0) != plain(lookPaused, 3) {
-		t.Fatal("the muted, armed and paused marks are not the same still ring")
+	// Armed and paused are the same still, light mic.
+	if plain(lookIdle, 0) != plain(lookPaused, 3) || plain(lookIdle, 0) != plain(lookIdle, 9) {
+		t.Fatal("armed and paused are not one still mark")
 	}
-	if plain(lookListening, 0) != plain(lookListening, 3) {
-		t.Fatal("listening changed shape inside a beat")
+	// Muted is that mic with a slash through it.
+	if plain(lookMuted, 0) == plain(lookIdle, 0) || !strings.Contains(plain(lookMuted, 0), "╲") {
+		t.Fatalf("muted has no slash:\n%s", plain(lookMuted, 0))
 	}
-	if voiceArtFor(lookListening, 0) == voiceArtFor(lookListening, 4) {
-		t.Fatal("listening does not pulse (the colour should change between beats)")
+	// Listening beats between a solid and a soft mic, and holds inside a beat.
+	if plain(lookListening, 0) != plain(lookListening, 3) || plain(lookListening, 0) == plain(lookListening, 4) {
+		t.Fatal("listening does not beat every four frames")
 	}
-	if plain(lookHearing, 0) == plain(lookHearing, 1) {
-		t.Fatal("hearing does not change shape between frames")
+	// Hearing grows one and then two arcs to each side.
+	h0, h1 := plain(lookHearing, 0), plain(lookHearing, 1)
+	if h0 == h1 || strings.Count(h0, "│") != 2 || strings.Count(h1, "│") != 4 {
+		t.Fatalf("hearing arcs:\n%s\n--\n%s", h0, h1)
 	}
+	if plain(lookListening, 0) == plain(lookHearing, 0) || strings.Contains(plain(lookListening, 0), "│") {
+		t.Fatal("listening shows sound arcs before there is any sound")
+	}
+	// Working alternates and is not any other state.
 	if plain(lookWorking, 0) == plain(lookWorking, 2) {
 		t.Fatal("working does not alternate")
 	}
-	if plain(lookListening, 0) == plain(lookIdle, 0) {
-		t.Fatal("an active mark looks like the still ring")
+	// No two states share a frame-0 look.
+	seen := map[string]voiceLook{}
+	for _, l := range []voiceLook{lookIdle, lookMuted, lookListening, lookHearing} {
+		s := plain(l, 0)
+		if o, dup := seen[s]; dup {
+			t.Fatalf("looks %d and %d are drawn the same", o, l)
+		}
+		seen[s] = l
+	}
+	// Colour still differs between the beats of the pulse.
+	if voiceArtFor(lookListening, 0) == voiceArtFor(lookListening, 4) {
+		t.Fatal("the beats are identical")
 	}
 }
 
@@ -458,13 +499,13 @@ func TestComposerShowsTheCentredMarkAndFallsBackToTheEdgeIcon(t *testing.T) {
 	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	waitFor(t, "listening", func() bool { return a.voice.eng.State() == voice.StateListening })
 	view := ansi.Strip(a.renderComposer())
-	if !strings.ContainsAny(view, "▗▟▙▖▐▌▝▜▛▘") {
+	if !strings.ContainsAny(view, "█▒░▀") {
 		t.Fatalf("no round mark in the composer:\n%s", view)
 	}
 	// Long typed text on the first row: the mark gives way to the small icon.
 	a.editor.SetValue(strings.Repeat("word ", 20))
 	view = ansi.Strip(a.renderComposer())
-	if strings.ContainsAny(view, "▗▟▙▖▝▜▛▘") {
+	if strings.ContainsAny(view, "█▒░▀") {
 		t.Fatalf("the mark was drawn over typed text:\n%s", view)
 	}
 	if !strings.ContainsAny(view, "◉◎") {

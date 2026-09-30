@@ -91,6 +91,9 @@ deliberately below that and never carry required information on their own.
 | `◌` | `Amber` | A drafted offer the user has not taken yet (agent builder). Taken turns `✓` `Teal`; a default value is a `Low` `·`. |
 | `┄` `┆` | `Amber` | A drafted route between agents, horizontal and vertical (agent builder's relationship lane). |
 | `▶` `◀` | `Line` | The direction of a settled route between agents. |
+| `█▀░▒` `╭│╰╮╯` `╲` | `Teal` / `Voice` / `Low` | The composer's voice microphone: capsule, holder and base in blocks (solid, soft `▒`, light `░`), sound arcs in box corners while speech is heard, a slash when muted. |
+| `⎽⎼⎻⎺` | `Teal` | The composer frame's slow ripple while speech is heard. |
+| `◉` `◎` `⊘` `◌` | `Teal` / `TealSoft` / `Low` | The small voice icon at the right end of the composer's first row, drawn only where typed text would sit under the microphone. |
 
 `◌`, `▶`, `◀`, `┄` and `┆` are East Asian ambiguous-width. Where go-runewidth
 reports them as two cells they fall back to `o`, `>`, `<`, `-` and `:` so that
@@ -241,18 +244,21 @@ back to its category's letter (S, M, C, T, L, ?, R, .) and the markers to
   output expands. The group's rule adds `· 1 failed`.
 - **Relaxed safety.** `guardrails off` is a `Danger` chip; both guardrails
   and ask off is an `Amber` `YOLO` chip. These are the only solid chips.
-- **Voice on the composer.** While voice input runs, a round mark of three rows
-  by six cells (block quadrants) is centred across the first three rows of the
-  composer, level with its text: a `Teal` disc that pulses between solid and
-  soft while the microphone is open, a solid disc and a small dot in quick turn
-  while speech is heard, a `Voice` (pastel purple) disc and ring while the
-  speech or fast model works, and a still `Low` ring when voice is muted,
-  waiting for its key or paused. Where typed text reaches the mark's columns it
-  gives way to a one-cell icon at the right end of the first row. While speech
-  is heard the frame's top and bottom rules ripple slowly (scan-line glyphs
-  `⎽⎼⎻⎺` at staggered heights); while the speech model or the fast model works
-  the frame turns `Voice`, and returns to the mode colour when the text lands.
-  `docs/voice.md` has the states and the timings.
+- **Voice on the composer.** While voice input runs, a microphone is drawn
+  in the composer: a capsule on a U-shaped holder with a pole and a base,
+  three rows by nine cells of block and box glyphs (`█▀░▒╭│╰╮╯╲`), starting
+  on the first text row and centred horizontally. It is a `Teal` solid mic
+  that pulses to a soft-shaded one while the microphone is open, gains one
+  and then two sound arcs on each side while speech is heard, a `Voice`
+  (pastel purple) mic alternating solid and soft while the speech or fast
+  model works, a still light-shaded `Low` mic when voice is waiting for its
+  key or paused, and that mic with a slash through it when muted. Where typed
+  text reaches the mic's columns it gives way to a one-cell icon at the right
+  end of the first row. While speech is heard the frame's top and bottom
+  rules ripple slowly (scan-line glyphs `⎽⎼⎻⎺` at staggered heights); while
+  the speech model or the fast model works the frame turns `Voice`, and
+  returns to the mode colour when the text lands. `docs/voice.md` has the
+  states and the timings.
 
 ## Not yet
 

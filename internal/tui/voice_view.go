@@ -154,55 +154,94 @@ func (a *App) composerPlaceholder() string {
 	return "Type, or hold " + a.settings.Voice.VoiceKeyOr() + " and speak…"
 }
 
-// The composer's mark is three rows of six cells: a disc, a smaller dot, or an
-// empty ring, drawn with block quadrants so it reads as round. Cells are about
-// twice as tall as they are wide, so six by three is close to a circle.
+// The composer's mark is a microphone: a capsule on a U-shaped holder with a
+// pole and a base, three rows by nine cells, drawn with block and box glyphs (no
+// emoji, per docs/tui-design.md). Cells are about twice as tall as they are
+// wide, so the silhouette keeps its proportions. The two cells either side of
+// the microphone are for sound arcs, which animate while speech is heard and
+// are blank otherwise, so the width never changes.
 const (
 	voiceArtRows = 3
-	voiceArtCols = 6
+	voiceArtCols = 9
 )
 
+// The microphone itself is five cells wide, in the middle of the nine.
 var (
-	voiceDisc = [voiceArtRows]string{"▗▟██▙▖", "▐████▌", "▝▜██▛▘"}
-	voiceDot  = [voiceArtRows]string{"  ▄▄  ", " ████ ", "  ▀▀  "}
-	voiceSoft = [voiceArtRows]string{"▗▟▒▒▙▖", "▐▒▒▒▒▌", "▝▜▒▒▛▘"}
-	voiceRing = [voiceArtRows]string{"▗▛▀▀▜▖", "▐    ▌", "▝▙▄▄▟▘"}
+	voiceMic     = [voiceArtRows]string{" ███ ", "█ █ █", " ▀█▀ "}
+	voiceMicSoft = [voiceArtRows]string{" ▒▒▒ ", "▒ ▒ ▒", " ▀▒▀ "}
+	voiceMicIdle = [voiceArtRows]string{" ░░░ ", "░ ░ ░", " ▀░▀ "}
 )
 
-// voiceArtFor draws the mark for a look at a frame: a disc that pulses between solid and soft while
-// listening, a quicker one (disc and dot) while speech is heard, a purple
-// disc and ring while the models work, and a still dim ring when voice is
-// muted, waiting for its key or paused.
-func voiceArtFor(look voiceLook, frame int) [voiceArtRows]string {
-	paint := func(rows [voiceArtRows]string, c lipgloss.TerminalColor, bold bool) [voiceArtRows]string {
-		st := lipgloss.NewStyle().Foreground(c).Bold(bold)
-		var out [voiceArtRows]string
-		for i, r := range rows {
-			out[i] = st.Render(r)
+// voiceArcs returns the left and right sound-arc columns for n arcs (0, 1 or
+// 2): each arc is a bracket of box-drawing corners and a bar, three rows tall,
+// so it reads as a curve open toward the microphone.
+func voiceArcs(n int) (left, right [voiceArtRows]string) {
+	l := [voiceArtRows]string{"╭", "│", "╰"}
+	r := [voiceArtRows]string{"╮", "│", "╯"}
+	for i := 0; i < voiceArtRows; i++ {
+		switch n {
+		case 0:
+			left[i], right[i] = "  ", "  "
+		case 1:
+			left[i], right[i] = " "+l[i], r[i]+" "
+		default:
+			left[i], right[i] = l[i]+l[i], r[i]+r[i]
 		}
-		return out
 	}
+	return left, right
+}
+
+// voiceArtFor draws the microphone for a look at a frame. Listening pulses
+// between a solid and a soft mic; hearing adds one and then two sound arcs to
+// each side; working is a purple mic alternating solid and soft; muted is a
+// light mic with a slash through it; waiting for the key or paused is a still
+// light mic. The pulse changes shape as well as colour, so it shows on a
+// terminal without colour.
+func voiceArtFor(look voiceLook, frame int) [voiceArtRows]string {
+	if look == lookNone {
+		return [voiceArtRows]string{}
+	}
+	var (
+		mic   = voiceMic
+		color lipgloss.TerminalColor
+		bold  bool
+		arcs  int
+		slash bool
+	)
 	switch look {
 	case lookListening:
-		if frame/4%2 == 0 {
-			return paint(voiceDisc, components.ColorTeal, true)
+		color, bold = components.ColorTeal, true
+		if frame/4%2 == 1 {
+			mic, color, bold = voiceMicSoft, components.ColorTealSoft, false
 		}
-		// The second beat is a softer disc, so the pulse shows without colour too.
-		return paint(voiceSoft, components.ColorTealSoft, false)
 	case lookHearing:
-		if frame%2 == 0 {
-			return paint(voiceDisc, components.ColorTeal, true)
-		}
-		return paint(voiceDot, components.ColorTealSoft, false)
+		color, bold = components.ColorTeal, true
+		arcs = 1 + frame%2
 	case lookWorking:
-		if frame/2%2 == 0 {
-			return paint(voiceDisc, components.ColorVoice, true)
+		color, bold = components.ColorVoice, true
+		if frame/2%2 == 1 {
+			mic, bold = voiceMicSoft, false
 		}
-		return paint(voiceRing, components.ColorVoice, false)
-	case lookPaused, lookIdle, lookMuted:
-		return paint(voiceRing, components.ColorLow, false)
+	case lookMuted:
+		mic, color, slash = voiceMicIdle, components.ColorLow, true
+	default: // idle, paused
+		mic = voiceMicIdle
+		color = components.ColorLow
 	}
-	return [voiceArtRows]string{}
+	left, right := voiceArcs(arcs)
+	st := lipgloss.NewStyle().Foreground(color).Bold(bold)
+	var out [voiceArtRows]string
+	for i := 0; i < voiceArtRows; i++ {
+		body := mic[i]
+		if slash {
+			// A slash from the capsule's top left to the base's right.
+			b := []rune(body)
+			b[i*2] = '╲'
+			body = string(b)
+		}
+		out[i] = st.Render(left[i] + body + right[i])
+	}
+	return out
 }
 
 // overlayVoiceArt draws the mark centred in the composer body, across its
