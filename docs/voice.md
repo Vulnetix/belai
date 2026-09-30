@@ -254,9 +254,10 @@ result that was already being recognised cannot land late.
 ## The listening indicator
 
 Three things show the state. The `voice:` switch in the footer says it in
-words. A round mark sits in the composer: three rows of six cells, drawn with
-block quadrants, centred horizontally across the first three rows of the
-composer and level with its text. The composer's frame reacts to the voice.
+words. A microphone sits in the composer: a capsule on a U-shaped holder with
+a pole and a base, three rows by nine cells, drawn with block and box glyphs
+(the design system allows no emoji). It starts on the first text row and is
+centred horizontally. The composer's frame reacts to the voice.
 Nothing is drawn while voice is off, and none of it appears on another
 screen's text field. The footer keeps its three-line height.
 
@@ -270,15 +271,15 @@ clear at the right for the small icon.
 | State | Footer | Composer mark | Meaning |
 | --- | --- | --- | --- |
 | downloading | `○ voice: downloading` | none | the model is being fetched |
-| loading | `○ voice: loading` | still dim ring | the model is being read into memory |
-| paused | `○ voice: paused` | still dim ring | the composer is unavailable and the microphone is closed |
-| push to talk | `○ voice: push to talk · f11` | still dim ring | armed; the microphone is closed until you press the key |
-| muted | `○ voice: muted` | still dim ring | listen mode, silenced with the key |
-| listening | `● voice: listening` | disc pulsing between solid and soft | the microphone is open and waiting for speech |
-| hearing | `● voice: hearing` | solid disc and small dot, quickly | speech is being heard |
-| transcribing | `● voice: transcribing` | purple disc and ring | recognition or the fast model is working |
+| loading | `○ voice: loading` | still, light-shaded microphone | the model is being read into memory |
+| paused | `○ voice: paused` | still, light-shaded microphone | the composer is unavailable and the microphone is closed |
+| push to talk | `○ voice: push to talk · f11` | still, light-shaded microphone | armed; the microphone is closed until you press the key |
+| muted | `○ voice: muted` | light-shaded microphone with a slash through it | listen mode, silenced with the key |
+| listening | `● voice: listening` | solid microphone pulsing to a soft-shaded one | the microphone is open and waiting for speech |
+| hearing | `● voice: hearing` | solid microphone with one, then two sound arcs each side, quickly | speech is being heard |
+| transcribing | `● voice: transcribing` | purple microphone alternating solid and soft | recognition or the fast model is working |
 
-The pulse changes shape as well as colour, so it shows on a terminal without
+The pulse and the arcs change shape as well as colour, so they show on a terminal without
 colour.
 
 The state follows the voice, not the key: with the key held (or a tap
