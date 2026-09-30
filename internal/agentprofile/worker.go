@@ -48,6 +48,34 @@ type KanbanSpec struct {
 	// Security turns on the harness's vulnerability duties for the worker:
 	// the review sweep, card reconciliation, verdicts and VEX. Nil: none.
 	Security *SecuritySpec `json:"security,omitempty"`
+	// Quality turns on the harness's test-quality sweep for the worker. Nil:
+	// none.
+	Quality *QualitySpec `json:"quality,omitempty"`
+}
+
+// QualityLabel marks a card the harness seeded from a test run. Every handoff
+// made while working one goes to the quality block's list, whatever the model
+// asks for.
+const QualityLabel = "quality"
+
+// QualitySpec is a worker's harness-run quality sweep. On each new HEAD with
+// no quality record, the harness runs the repository's detected or configured
+// test suites, writes what they show to a record for that commit, and files
+// seed cards for the worker: failing suites, low coverage, untested packages
+// and the standing quality categories. No model runs the suites.
+type QualitySpec struct {
+	Sweep bool `json:"sweep,omitempty"`
+	// List is where the handoffs from a seeded card go: review (default), so a
+	// person confirms self-found work, or backlog.
+	List string `json:"list,omitempty"`
+}
+
+// HandoffList is where a seeded card's handoffs go.
+func (q QualitySpec) HandoffList() kanban.List {
+	if l, ok := kanban.ParseList(q.List); ok {
+		return l
+	}
+	return kanban.Review
 }
 
 // SecuritySpec is a security worker's harness-run duties. None of them is a
@@ -355,6 +383,16 @@ func (p AgentProfile) validateWorker() error {
 	if s := k.Security; s != nil {
 		if err := s.validate(p.Tools); err != nil {
 			return err
+		}
+	}
+	if q := k.Quality; q != nil {
+		if q.List != "" {
+			if l, ok := kanban.ParseList(q.List); !ok || (l != kanban.Review && l != kanban.Backlog) {
+				return fmt.Errorf("kanban.quality.list must be review or backlog, not %q", q.List)
+			}
+		}
+		if q.Sweep && len(k.HandoffTo) == 0 && len(k.HandoffLabels) == 0 {
+			return errors.New("kanban.quality.sweep needs handoff_to or handoff_labels: a seeded card is worked by handing tasks on")
 		}
 	}
 	if k.MaxAttempts < 0 || k.MaxItems < 0 {

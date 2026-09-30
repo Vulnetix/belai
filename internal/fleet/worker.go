@@ -33,6 +33,8 @@ import (
 	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/session"
 	"github.com/vulnetix/belai/internal/sessionsync"
+	"github.com/vulnetix/belai/internal/testdetect"
+	"github.com/vulnetix/belai/internal/testrun"
 	"github.com/vulnetix/belai/internal/tools"
 	"github.com/vulnetix/belai/internal/version"
 )
@@ -114,12 +116,17 @@ type Worker struct {
 	// git. Both exist so a test can stand in for the CLI and git.
 	Review func(ctx context.Context) error
 	Head   func(ctx context.Context) (string, error)
+	// Suites detects the test suites and RunTests runs a plan, for a quality
+	// sweep; nil detects from the repository and runs the real suites.
+	Suites   func(ctx context.Context) []testdetect.Suite
+	RunTests func(ctx context.Context, plan testrun.Plan) []testrun.Result
 	// Reflect distils lessons from a finished item; nil uses the model.
 	Reflect func(ctx context.Context, it kanban.Item, res run.Result) ([]string, error)
 
 	now        func() time.Time
 	surveyed   bool   // kanban.survey already considered this start
 	sweptRef   string // HEAD the kanban.security sweep last ran for
+	qualityRef string // HEAD the kanban.quality sweep last ran for
 	reconciled string // artefact signature the cards were last reconciled against
 	mu         sync.Mutex
 	failures   map[string]int64 // items this worker failed, with their Updated at release; skipped until touched again
@@ -299,6 +306,7 @@ func (w *Worker) loop(ctx context.Context) (string, error) {
 			lastPull = now
 		}
 		w.securityStep(ctx, project)
+		w.qualityStep(ctx)
 		it, err := w.claim(project)
 		if errors.Is(err, kanban.ErrNoWork) {
 			if sv, ok := w.survey(project); ok {
@@ -561,6 +569,9 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		claim.HandoffTo, claim.HandoffLabels = slices.Clone(k.HandoffTo), slices.Clone(k.HandoffLabels)
 		if s := k.Security; s != nil {
 			claim.Verdicts, claim.VEX = slices.Clone(s.Verdicts), s.VEX
+		}
+		if q := k.Quality; q != nil && slices.Contains(it.Labels, agentprofile.QualityLabel) {
+			claim.HandoffList = q.HandoffList()
 		}
 		if slices.Contains(it.Labels, agentprofile.SurveyLabel) {
 			list := kanban.Review
