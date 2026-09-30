@@ -5,12 +5,17 @@ import SubHead from '../ui/SubHead.astro';
 import Ladder from '../ui/Ladder.astro';
 import Limits from '../ui/Limits.astro';
 import CopyButton from '../ui/CopyButton.tsx';
+import zedLogo from '../../assets/editors/zed.svg';
+import jetbrainsLogo from '../../assets/editors/jetbrains.svg';
+import neovimLogo from '../../assets/editors/neovim.svg';
+import emacsLogo from '../../assets/editors/emacs.svg';
+import vscodeLogo from '../../assets/editors/vscode.svg';
 
 // Extending Belai: hooks, skills, plugins and notifications, then the
 // integrations (MCP, ACP, OpenTelemetry). Hook events come from docs/hooks.md.
 
 const extendSeal =
-  'Extend it yourself: hooks at eleven points with allow, deny and ask decisions that can only narrow; skills loaded by name and new ones drafted only with your approval; plugin packages of skills, hooks, prompts and agents, validated whole, pinned and namespaced; desktop notifications written from fixed templates. Hook and skill text is classified like any other untrusted result. Integrations: MCP servers from your own settings, with every tool named mcp__server__tool, asking before it runs and classified after; belai acp for Zed, JetBrains and Neovim with the same gates as the CLI and a fail-closed trust check; OpenTelemetry export of spans and metrics built from an attribute allowlist that cannot carry content.';
+  'Extend it yourself: hooks at eleven points with allow, deny and ask decisions that can only narrow; skills loaded by name and new ones drafted only with your approval; plugin packages of skills, hooks, prompts and agents, validated whole, pinned and namespaced; desktop notifications written from fixed templates. Hook and skill text is classified like any other untrusted result. Integrations: MCP servers from your own settings, with every tool named mcp__server__tool, asking before it runs and classified after; belai acp for Zed, JetBrains IDEs, Neovim, Emacs and VS Code with the same gates as the CLI and a fail-closed trust check, and a setup tutorial for each editor; OpenTelemetry export of spans and metrics built from an attribute allowlist that cannot carry content.';
 
 const docBase = 'https://github.com/Vulnetix/belai/blob/main/docs/';
 
@@ -62,7 +67,7 @@ const integrations = [
   {
     title: 'Editors over ACP',
     key: 'belai acp',
-    body: '`belai acp` speaks the Agent Client Protocol, so Zed, JetBrains IDEs and Neovim plugins can use Belai as their agent. Each session is built like a headless CLI session, so every gate applies, and a directory you have not trusted is refused. With `tests.post_end` on, a completed goal runs the detected tests and streams the result to the editor, and a failing run starts a fix turn whose permission asks go to the editor.',
+    body: '`belai acp` speaks the Agent Client Protocol, so Zed, JetBrains IDEs, Neovim, Emacs and VS Code can use Belai as their agent. Each session is built like a headless CLI session, so every gate applies, and a directory you have not trusted is refused. With `tests.post_end` on, a completed goal runs the detected tests and streams the result to the editor, and a failing run starts a fix turn whose permission asks go to the editor. Setup for each editor is below.',
     doc: 'acp.md',
   },
   {
@@ -81,6 +86,40 @@ const limits = [
   ['Drafting always asks', '`SkillDraft` asks on every call, even with the ask gate off, and writes exactly the file you saw.'],
   ['Plugins carry components only', 'A plugin holds skills, hooks, prompts and agent profiles. Its manifest has no key for providers, credentials, settings or permissions, and only you can install one.'],
   ['Notifications from templates', 'Notification text comes from fixed templates, so a repository cannot put words in front of you. `notify-send`, `osascript`, OSC 9 or 777, or the bell.'],
+];
+
+const zedJson = `{
+  "agent_servers": {
+    "Belai": {
+      "type": "custom",
+      "command": "belai",
+      "args": ["acp"],
+      "env": {}
+    }
+  }
+}`;
+
+const zedSteps = [
+  ['Trust the folder', 'Open the project in the TUI once and accept the prompt, or run `belai -trust-dir` there. The prompt never runs over ACP, so an untrusted folder is refused at `session/new` with a message saying why.'],
+  ['Register the agent', 'Add the entry to Zed\'s `settings.json` under `agent_servers`. Add `"-provider", "<name>", "-model", "<id>"` to `args` to pin a model, or leave them and Belai resolves one as the TUI does.'],
+  ['Start a thread', 'Open the Agent Panel, choose Belai in the agent selector or new-thread menu, and prompt. The session starts in the open project folder. Bind a key to `agent: new external agent thread` if you want one.'],
+  ['Read the protocol', 'Run `dev: open acp logs` from the command palette to see the messages between Zed and Belai. Belai writes only protocol messages to stdout, so its diagnostics are on stderr.'],
+];
+
+const zedStream = [
+  ['agent_message_chunk', 'reply text as it streams'],
+  ['agent_thought_chunk', 'reasoning'],
+  ['tool_call', 'each call as it starts, tagged read, edit, search, execute, fetch or think'],
+  ['tool_call_update', 'the file diff a call made, then its result'],
+  ['plan', 'the goal-mode todo list'],
+  ['session/request_permission', 'allow once, allow for this session, or reject'],
+];
+
+const clients = [
+  { name: 'JetBrains IDEs', logo: jetbrainsLogo, doc: 'acp-jetbrains.md', body: 'Add Custom Agent in AI Chat opens `~/.jetbrains/acp.json`. Register `belai acp` there with an absolute path.' },
+  { name: 'Neovim', logo: neovimLogo, doc: 'acp-neovim.md', body: 'ACP plugins such as CodeCompanion take `belai acp` as the command of a custom adapter.' },
+  { name: 'Emacs', logo: emacsLogo, doc: 'acp-emacs.md', body: 'agent-shell runs `belai acp` as a custom agent from one `setq` in your init file.' },
+  { name: 'VS Code', logo: vscodeLogo, doc: 'acp-vscode.md', body: 'An ACP client extension reads `belai acp` from its `acp.agents` setting and opens a chat panel.' },
 ];
 
 const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }));
@@ -193,7 +232,82 @@ const split = (s: string) => s.split('`').map((p, i) => ({ p, c: i % 2 === 1 }))
       </article>
     ))}
   </div>
-  <p class="mt-4 max-w-[72ch] text-sm text-vx-ink/75">
+
+  <SubHead id="editors" title="Belai in your editor">
+    <code class="mono">belai acp</code> is an Agent Client Protocol agent on stdin and stdout. Zed is the
+    reference setup below, and the other editors take the same command.
+  </SubHead>
+  <div class="mt-8 grid gap-8 lg:grid-cols-12">
+    <div class="min-w-0 lg:col-span-8">
+      <div class="flex items-center gap-4">
+        <img src={zedLogo.src} alt="Zed logo" class="size-10" width="40" height="40" loading="lazy" decoding="async" />
+        <h4 class="text-2xl font-bold">Zed</h4>
+      </div>
+      <ol class="m-0 mt-5 grid list-none gap-3 p-0 sm:grid-cols-2">
+        {zedSteps.map(([step, what], i) => (
+          <li class="rounded-xl border border-vx-ink p-5">
+            <span class="mono text-xs text-vx-ink/60">{String(i + 1).padStart(2, '0')}</span>
+            <p class="mt-2 text-lg font-bold">{step}</p>
+            <p class="mt-1 text-sm text-vx-ink/75">
+              {split(what).map(({ p, c }) => (c ? <code class="mono text-[0.92em]">{p}</code> : p))}
+            </p>
+          </li>
+        ))}
+      </ol>
+      <p class="mt-5 max-w-[72ch] text-sm text-vx-ink/80">
+        Permission asks appear in Zed's own prompt, and "allow for this session" covers one tool until the
+        session ends. Zed's agent profiles and skills belong to Zed's agent, and Belai reads its own
+        settings, skills and hooks. Sessions are alpha: they cannot be resumed from the TUI, clarifying
+        questions are answered as declined, and images and audio are not accepted.
+      </p>
+      <p class="mt-3 text-sm">
+        <a class="text-vx-ink underline" href={`${docBase}acp-zed.md`}>docs/acp-zed.md</a>
+        <span class="text-vx-ink/60"> · </span>
+        <a class="text-vx-ink underline" href="https://zed.dev/docs/ai/external-agents">Zed external agents</a>
+      </p>
+    </div>
+    <aside class="flex min-w-0 flex-col gap-3 lg:col-span-4">
+      <div class="rounded-xl bg-vx-ink p-5">
+        <p class="mono text-xs tracking-wider text-vx-cream/70">ZED settings.json</p>
+        <pre class="mono mt-3 overflow-x-auto text-sm leading-7 text-vx-mint"><code>{zedJson}</code></pre>
+      </div>
+      <div><CopyButton value={zedJson} label="copy settings" client:visible /></div>
+      <div class="rounded-xl border border-vx-ink p-5">
+        <p class="mono text-xs tracking-wider text-vx-ink/60">WHAT ZED RECEIVES</p>
+        <dl class="mt-3 grid gap-y-2 text-sm">
+          {zedStream.map(([k, what]) => (
+            <div>
+              <dt class="mono text-xs font-semibold">{k}</dt>
+              <dd class="m-0 text-vx-ink/75">{what}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+    </aside>
+  </div>
+
+  <h4 class="mt-14 text-2xl font-bold">Other editors</h4>
+  <div class="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+    {clients.map((c) => (
+      <article class="flex flex-col rounded-xl border border-vx-ink p-5">
+        <div class="flex h-10 items-center gap-3">
+          <img src={c.logo.src} alt={`${c.name} logo`} class="max-h-10 w-auto max-w-[8rem]" height="40" loading="lazy" decoding="async" />
+          {c.name !== 'JetBrains IDEs' && <span class="text-lg font-bold">{c.name}</span>}
+        </div>
+        <p class="mt-3 flex-1 text-sm text-vx-ink/80">
+          {split(c.body).map(({ p, c: code }) => (code ? <code class="mono text-[0.92em]">{p}</code> : p))}
+        </p>
+        <a class="mt-4 text-sm text-vx-ink underline" href={`${docBase}${c.doc}`}>docs/{c.doc}</a>
+      </article>
+    ))}
+  </div>
+  <p class="mt-4 max-w-[72ch] text-xs text-vx-ink/60">
+    Product names and logos belong to their owners and appear here only to name the editor. Any other ACP
+    client takes the same command, and <a class="underline" href={`${docBase}acp.md`}>docs/acp.md</a> covers
+    the protocol methods, security model and limits.
+  </p>
+
+  <p class="mt-10 max-w-[72ch] text-sm text-vx-ink/75">
     For a single run, <code class="mono">belai -prompt "…" -usage-json usage.json</code> writes the tokens each
     role spent, cache reads and writes included, and how big each part of the requests was: sizes, never
     content.

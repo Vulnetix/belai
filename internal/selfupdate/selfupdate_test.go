@@ -287,3 +287,26 @@ func TestCheckSkipsDirtyWorkingTreeBuild(t *testing.T) {
 		t.Fatalf("hit GitHub %d times for a -dirty build", hits)
 	}
 }
+
+// A cached "nothing newer" answer goes stale in minutes: releases ship hourly,
+// so an hours-old cache that predates the running version must not hide an
+// upgrade for the rest of its six-hour life.
+func TestCachedUpToDateAnswerExpiresEarly(t *testing.T) {
+	hits := 0
+	srv := releaseServer(t, "v9.9.9", &hits)
+	opts := baseOpts(t, srv)
+	opts.Current = "v0.79.0"
+	opts.ExecPath = fakeBinary(t, "usr/local/bin/belai")
+
+	old := releaseCache{Tag: "v0.77.1", FetchedAt: time.Now().Add(-releaseCurrentTTL - time.Minute)}
+	data, _ := json.Marshal(old)
+	if err := os.WriteFile(opts.CachePath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if st := Check(context.Background(), opts); !st.Available {
+		t.Fatal("Available = false, want the upgrade found past the short TTL")
+	}
+	if hits != 1 {
+		t.Fatalf("hits = %d, want 1", hits)
+	}
+}
