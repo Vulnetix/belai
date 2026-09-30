@@ -307,6 +307,12 @@ func (a *App) startFleetWorkers(profile, crew string, replicas int) {
 		notice("fleet: " + err.Error())
 		return
 	}
+	if c, err := agentprofile.LoadCrew(crew); err == nil && c.OnePerRepo {
+		if err := reg.CheckCrewFree(c.Name, repo); err != nil {
+			notice(err.Error())
+			return
+		}
+	}
 	live, _ := reg.Live()
 	if max := a.settings.MaxWorkers(); len(live)+len(launches) > max {
 		notice(fmt.Sprintf("fleet: starting %d would run %d workers; agents.max_workers is %d", len(launches), len(live)+len(launches), max))
