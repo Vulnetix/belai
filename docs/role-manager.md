@@ -738,6 +738,10 @@ is recorded as a `voice_command` activity with the verdict `matched` or `none`,
 the kind of target and a rounded score, never the speech or a name
 ([voice input](voice.md), [Jev jobs](jev-jobs.md#voice-command)).
 
+The Jev `goal_judge` job is recorded as a `goal_judge` activity with the verdict
+`complete`, `not_started` or `unclear` and the three scores in percent, never the
+goal, the list or the pass evidence ([Jev jobs](jev-jobs.md#goal-judge)).
+
 ### Streaming the voice-cleanup reply
 
 `rolemanager.StreamClassifier` is a `Classifier` that can hand over its answer as
@@ -1747,6 +1751,19 @@ which fails closed to `GOAL_PARTIAL` like any other malformed one.
 | `GOAL_PARTIAL` | Work advanced but the goal is not met | Grant another pass with a continuation directive |
 | `GOAL_NOT_STARTED` | No meaningful work has happened yet | Force an edit-target survey (once per goal), then inject the action directive |
 | _malformed output_ | — | Re-asked once with the rejected text quoted back; if still malformed, fails closed to `GOAL_PARTIAL`, the TUI reports `goal evaluator: malformed reply (pass N)`, and the streak is counted |
+
+#### Decision-backend goal judge
+
+With a decision backend configured (OpenRouter Decisions, TypeSafe, a self-hosted
+`jev` provider or the local decision model), the evaluator first asks the
+`goal_judge` Jev job. It scores complete, partial and not started from the goal,
+the todo list and the ledger's facts. A clear verdict (see
+[jev-jobs.md](jev-jobs.md#goal-judge)) is used without a chat-model call. Any
+other outcome runs the model judge above, with the scores appended as
+"Decision model scores" and an instruction to accept `GOAL_COMPLETE` only when
+the digest shows a check made with tools. The verification gate below applies to
+both judges, and its directive asks for a tool-backed check when the backend was
+not sure.
 
 ### Termination rules
 

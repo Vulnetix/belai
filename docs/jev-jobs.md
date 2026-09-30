@@ -66,6 +66,7 @@ prompt runs with it.
 | `explore_locate` | Ranks the files a question is about, seeds the explore subagents with them, and offers a `Locate` tool | Shipped |
 | `voice_command` | Matches a short spoken instruction to one skill, crew, process, prompt, agent profile, the security review or a mode, and runs it only on a very close match | Shipped |
 | `request_scale` | Rates a request as simple or staged, and starts a simple one at once without a goal contract, file prefetch or test run | Shipped |
+| `goal_judge` | Rates each goal pass as complete, partial or not started, settles a clear verdict without the model judge, and otherwise hands the scores to the model judge as a hint | Shipped |
 
 ## Scores and thresholds
 
@@ -82,6 +83,7 @@ with the default shown; a job reads the value from your settings:
 | `SwapAt` | `swap_at` | 0.95 | A single candidate at or above this replaces the call it rates |
 | | `voice_at` | 0.95 | Exactly one target at or above this runs a spoken instruction; it cannot be set below 0.5 |
 | | `simple_at` | 0.80 | A request at or above this, and not rated staged, is worked as a simple one; it cannot be set below 0.5 |
+| | `goal_complete_at`, `goal_rival_max`, `goal_not_started_at` | 0.90, 0.20, 0.85 | A goal pass is clearly complete at `goal_complete_at` with both other options at or below `goal_rival_max`, and clearly not started at `goal_not_started_at` with the same limit; `goal_complete_at` cannot be set below 0.5 and `goal_rival_max` cannot exceed 0.5 |
 | `TriageAt` | `triage_at` | 0.30 | Below this another edit pass is judged unlikely to help |
 | `HitAt` | `hit_at` | 0.50 | A located file at or above this is a hit |
 | `LeadAt` | `lead_at` | 0.25 | A located file from here to `hit_at` is a lead, and below it is dropped |
@@ -512,3 +514,38 @@ turn, so a request such as "commit and push" starts at once.
 
 Recorded as a `request_scale` event: `simple`, `staged` or `unknown` and the
 score in percent. Never the request.
+
+## Goal judge
+
+A goal ends a pass when a judge says whether the goal is complete, partial or
+not started. The model judge (`goal_eval`) reads a digest of the pass. With a
+decision backend the harness asks that backend first, on three options scored
+against one criterion, so a clear case needs no chat-model call.
+
+- **What the backend sees.** The goal, the rendered todo list and the pass
+  ledger's own facts (pass number, counts of changed files, their paths, and
+  whether a verification pass has run), all as `DecisionText`. It never sees the
+  pass digest, the reply or a file's contents.
+- **The decision.** The pass is clearly complete when `complete` rates at or
+  above `goal_complete_at` (0.90) and both other options are at or below
+  `goal_rival_max` (0.20). It is clearly not started at `goal_not_started_at`
+  (0.85) under the same limit. An unanswered option is unknown, never a low
+  score.
+- **When it is not clear.** A contested score, a timeout (8 seconds), an error
+  or a missing backend sends the pass to the model judge exactly as before. When
+  the backend answered, its percentages ride on the model judge's input as a
+  harness line, and the judge is told to treat them as a prior and to answer
+  complete only when the digest shows a check made with tools, such as a passing
+  test or build, or the changed files read back after the last edit. Otherwise
+  it answers partial and the agent is sent back to verify.
+- **A stronger verification pass.** If the model judge then says complete, the
+  verification directive that gates completion also asks for a proper check with
+  tools: run the tests or build, read back changed files, and compare each
+  requirement with what is on disk.
+- **What it never changes.** The verification gate is unchanged, so a clear
+  complete verdict still runs one verification pass when none has run. The mode,
+  permissions, hooks, the ask gate, the classifier and the sandbox apply as
+  usual. The job never approves a call.
+
+Recorded as a `goal_judge` event: `complete`, `not_started` or `unclear`, and
+the three scores in percent. Never the goal, the list or any evidence.

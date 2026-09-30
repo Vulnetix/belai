@@ -68,3 +68,28 @@ func TestSimpleAtDefaultsAndNeedsAMajority(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestGoalJudgeThresholdDefaultsAndLimits(t *testing.T) {
+	d := DefaultJevThresholds()
+	if d.GoalCompleteAt != 0.90 || d.GoalRivalMax != 0.20 || d.GoalNotStartedAt != 0.85 {
+		t.Fatalf("goal defaults = %v %v %v", d.GoalCompleteAt, d.GoalRivalMax, d.GoalNotStartedAt)
+	}
+	for _, c := range []struct {
+		name string
+		th   JevThresholdSettings
+		key  string
+	}{
+		{"complete below a majority", JevThresholdSettings{GoalCompleteAt: f(0.4)}, "goal_complete_at"},
+		{"not started below a majority", JevThresholdSettings{GoalNotStartedAt: f(0.4)}, "goal_not_started_at"},
+		{"rival above a half", JevThresholdSettings{GoalRivalMax: f(0.6)}, "goal_rival_max"},
+	} {
+		th := c.th
+		if err := ValidateJev(Settings{Jev: &JevSettings{Thresholds: &th}}); err == nil || !strings.Contains(err.Error(), c.key) {
+			t.Errorf("%s: got %v", c.name, err)
+		}
+	}
+	ok := JevThresholdSettings{GoalCompleteAt: f(0.5), GoalRivalMax: f(0.5)}
+	if err := ValidateJev(Settings{Jev: &JevSettings{Thresholds: &ok}}); err != nil {
+		t.Fatalf("the limits themselves are allowed: %v", err)
+	}
+}

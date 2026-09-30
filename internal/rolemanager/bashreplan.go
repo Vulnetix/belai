@@ -380,3 +380,30 @@ func requestScaleDescription(a Activity) Description {
 	}
 	return d
 }
+
+// RecordGoalJudge emits the decision backend's read of a goal pass: verdict
+// "complete", "not_started" or "unclear" (the backend could not settle it, so
+// the model judge ran with the scores as a hint). Only rounded scores are
+// recorded, never the goal, the todo list or any evidence.
+func RecordGoalJudge(verdict string, completePct, partialPct, notStartedPct, pass int, model string, took time.Duration) {
+	recordTimed(EventGoalJudge, verdict, "", fmt.Sprintf("complete=%d partial=%d not_started=%d", completePct, partialPct, notStartedPct), pass, model, took)
+}
+
+func goalJudgeDescription(a Activity) Description {
+	d := Description{
+		Summary: "Rated how far the goal has come",
+		Outcome: "not clear enough, so the model judge decided with these scores as a hint",
+		Tone:    ToneNeutral,
+		Levels:  LevelAll,
+	}
+	switch a.Verdict {
+	case "complete":
+		d.Outcome = "clearly complete, so the model judge was not asked; the verification pass still applies"
+		d.Tone = ToneClear
+		d.Levels = LevelDecisions
+	case "not_started":
+		d.Outcome = "clearly not started, so the model judge was not asked"
+		d.Levels = LevelDecisions
+	}
+	return d
+}

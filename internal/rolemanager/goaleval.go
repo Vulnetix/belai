@@ -56,6 +56,10 @@ type GoalEvalInput struct {
 	// Evidence is a digest of the pass's tool use. It is untrusted: the
 	// caller sanitizes it before it becomes the classifier's user blob.
 	Evidence string
+	// JevHint is the decision backend's read of the pass when it could not
+	// call it clearly complete: harness-composed percentages, never text from
+	// the pass. Empty when no backend rated it.
+	JevHint string
 }
 
 // MaxGoalEvidenceChars bounds the pass digest handed to the evaluator. A pass
@@ -88,11 +92,27 @@ Reply with exactly one of these tokens:
 // skills, or an agent block.
 func BuildGoalEvalPayload(in GoalEvalInput) ClassifierPayload {
 	return ClassifierPayload{
-		System:                 goalEvalSystemPrompt,
+		System:                 goalEvalSystem(in),
 		User:                   goalEvalUser(in),
 		AllowReasoningFallback: true,
 		UseCase:                UseCaseGoalEval,
 	}
+}
+
+// goalJevSystemNote is added to the evaluator's instructions when a decision
+// backend has rated the pass and could not call it clearly complete. The
+// scores are a prior, and completion has to be shown by checks made with tools.
+const goalJevSystemNote = `
+
+A decision model has already rated this pass and could not call the goal clearly complete. Its scores appear under "Decision model scores". Treat them as a prior, not as evidence. Reply GOAL_COMPLETE only when the digest shows the result was checked with tools, such as a passing test or build run, or the changed files read back after the last edit. A claim that the work is done is not a check. If the checks are missing or the scores lean partial, reply GOAL_PARTIAL, so the agent is sent back to verify with its tools.`
+
+// goalEvalSystem is the evaluator's instructions, with the Jev note when the
+// pass carries a hint.
+func goalEvalSystem(in GoalEvalInput) string {
+	if in.JevHint == "" {
+		return goalEvalSystemPrompt
+	}
+	return goalEvalSystemPrompt + goalJevSystemNote
 }
 
 // goalEvalUser renders the evaluator's user blob. The harness facts sit
@@ -102,6 +122,9 @@ func goalEvalUser(in GoalEvalInput) string {
 	user := "Goal:\n" + in.Goal + "\n\nTodo list:\n" + in.Todos
 	if in.Facts != "" {
 		user += "\n\nHarness-observed facts:\n" + in.Facts
+	}
+	if in.JevHint != "" {
+		user += "\n\nDecision model scores:\n" + in.JevHint
 	}
 	return user + "\n\nPass evidence digest:\n" + truncateHead(in.Evidence, MaxGoalEvidenceChars)
 }
@@ -117,7 +140,7 @@ func BuildGoalEvalRepairPayload(in GoalEvalInput, raw string) ClassifierPayload 
 		"\n\nThat is not an accepted answer. Reply with exactly one of these three tokens, on its own, with no explanation, no punctuation, no markdown and no surrounding text:\n" +
 		string(GoalComplete) + "\n" + string(GoalPartial) + "\n" + string(GoalNotStarted)
 	return ClassifierPayload{
-		System:                 goalEvalSystemPrompt,
+		System:                 goalEvalSystem(in),
 		User:                   goalEvalUser(in) + repair,
 		AllowReasoningFallback: true,
 		UseCase:                UseCaseGoalEval,

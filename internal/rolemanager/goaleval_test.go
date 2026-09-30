@@ -171,3 +171,18 @@ func TestGoalEvalRepairPayloadCarriesNoTools(t *testing.T) {
 		t.Fatalf("repair payload must carry no tools, skills or agent block: %+v", p)
 	}
 }
+
+func TestGoalEvalPayloadCarriesTheJevHintOnly(t *testing.T) {
+	plain := BuildGoalEvalPayload(GoalEvalInput{Goal: "g", Todos: "t", Evidence: "e"})
+	if strings.Contains(plain.User, "Decision model scores") || plain.System != goalEvalSystemPrompt {
+		t.Fatal("no hint must leave the payload unchanged")
+	}
+	hinted := BuildGoalEvalPayload(GoalEvalInput{Goal: "g", Todos: "t", Evidence: "e", JevHint: "complete: 60%\n"})
+	if !strings.Contains(hinted.User, "Decision model scores:\ncomplete: 60%") || !strings.Contains(hinted.System, "checked with tools") {
+		t.Fatalf("hint missing:\n%s\n%s", hinted.System, hinted.User)
+	}
+	repair := BuildGoalEvalRepairPayload(GoalEvalInput{Goal: "g", JevHint: "complete: 60%\n"}, "bad")
+	if !strings.Contains(repair.System, "checked with tools") {
+		t.Fatal("the repair re-ask must keep the hint's instructions")
+	}
+}

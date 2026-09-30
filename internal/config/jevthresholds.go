@@ -25,6 +25,11 @@ type JevThresholds struct {
 	// SimpleAt is the score a request needs to be worked as a simple one:
 	// without the goal contract, prefetch or verification ceremony.
 	SimpleAt float64
+	// GoalCompleteAt is the score the goal judge needs to call a pass complete
+	// without asking the model judge; GoalRivalMax is the most a rival verdict
+	// may score for that call to stand. GoalNotStartedAt is the score for a
+	// clear "not started".
+	GoalCompleteAt, GoalRivalMax, GoalNotStartedAt float64
 	// TriageAt: below it another edit pass is judged unlikely to help.
 	TriageAt float64
 	// HitAt and LeadAt: explore_locate marks a file a hit or a lead.
@@ -43,6 +48,7 @@ func DefaultJevThresholds() JevThresholds {
 	return JevThresholds{
 		AllowAt: 0.10, DenyAt: 0.90, RouteAt: 0.50,
 		DropAt: 0.10, KeepAt: 0.50, StrongAt: 0.80, SwapAt: 0.95, VoiceAt: 0.95, SimpleAt: 0.80,
+		GoalCompleteAt: 0.90, GoalRivalMax: 0.20, GoalNotStartedAt: 0.85,
 		TriageAt: 0.30, HitAt: 0.50, LeadAt: 0.25,
 		OptionHit: 0.50, OptionMargin: 0.10, OptionLead: 0.25,
 		ModeConfident: 0.80, ModeMargin: 0.25, ModeHeadless: 0.50,
@@ -52,24 +58,27 @@ func DefaultJevThresholds() JevThresholds {
 // JevThresholdSettings is the settings form of JevThresholds: a nil key keeps
 // the default.
 type JevThresholdSettings struct {
-	AllowAt       *float64 `json:"allow_at,omitempty"`
-	DenyAt        *float64 `json:"deny_at,omitempty"`
-	RouteAt       *float64 `json:"route_at,omitempty"`
-	DropAt        *float64 `json:"drop_at,omitempty"`
-	KeepAt        *float64 `json:"keep_at,omitempty"`
-	StrongAt      *float64 `json:"strong_at,omitempty"`
-	SwapAt        *float64 `json:"swap_at,omitempty"`
-	VoiceAt       *float64 `json:"voice_at,omitempty"`
-	SimpleAt      *float64 `json:"simple_at,omitempty"`
-	TriageAt      *float64 `json:"triage_at,omitempty"`
-	HitAt         *float64 `json:"hit_at,omitempty"`
-	LeadAt        *float64 `json:"lead_at,omitempty"`
-	OptionHit     *float64 `json:"option_hit,omitempty"`
-	OptionMargin  *float64 `json:"option_margin,omitempty"`
-	OptionLead    *float64 `json:"option_lead,omitempty"`
-	ModeConfident *float64 `json:"mode_confident,omitempty"`
-	ModeMargin    *float64 `json:"mode_margin,omitempty"`
-	ModeHeadless  *float64 `json:"mode_headless,omitempty"`
+	AllowAt          *float64 `json:"allow_at,omitempty"`
+	DenyAt           *float64 `json:"deny_at,omitempty"`
+	RouteAt          *float64 `json:"route_at,omitempty"`
+	DropAt           *float64 `json:"drop_at,omitempty"`
+	KeepAt           *float64 `json:"keep_at,omitempty"`
+	StrongAt         *float64 `json:"strong_at,omitempty"`
+	SwapAt           *float64 `json:"swap_at,omitempty"`
+	VoiceAt          *float64 `json:"voice_at,omitempty"`
+	SimpleAt         *float64 `json:"simple_at,omitempty"`
+	GoalCompleteAt   *float64 `json:"goal_complete_at,omitempty"`
+	GoalRivalMax     *float64 `json:"goal_rival_max,omitempty"`
+	GoalNotStartedAt *float64 `json:"goal_not_started_at,omitempty"`
+	TriageAt         *float64 `json:"triage_at,omitempty"`
+	HitAt            *float64 `json:"hit_at,omitempty"`
+	LeadAt           *float64 `json:"lead_at,omitempty"`
+	OptionHit        *float64 `json:"option_hit,omitempty"`
+	OptionMargin     *float64 `json:"option_margin,omitempty"`
+	OptionLead       *float64 `json:"option_lead,omitempty"`
+	ModeConfident    *float64 `json:"mode_confident,omitempty"`
+	ModeMargin       *float64 `json:"mode_margin,omitempty"`
+	ModeHeadless     *float64 `json:"mode_headless,omitempty"`
 }
 
 // thresholdSlot pairs a setting key with its slot in the settings form and in
@@ -86,6 +95,8 @@ func (t *JevThresholdSettings) slots(r *JevThresholds) []thresholdSlot {
 		{"route_at", &t.RouteAt, &r.RouteAt}, {"drop_at", &t.DropAt, &r.DropAt},
 		{"keep_at", &t.KeepAt, &r.KeepAt}, {"strong_at", &t.StrongAt, &r.StrongAt},
 		{"swap_at", &t.SwapAt, &r.SwapAt}, {"voice_at", &t.VoiceAt, &r.VoiceAt}, {"simple_at", &t.SimpleAt, &r.SimpleAt}, {"triage_at", &t.TriageAt, &r.TriageAt},
+		{"goal_complete_at", &t.GoalCompleteAt, &r.GoalCompleteAt}, {"goal_rival_max", &t.GoalRivalMax, &r.GoalRivalMax},
+		{"goal_not_started_at", &t.GoalNotStartedAt, &r.GoalNotStartedAt},
 		{"hit_at", &t.HitAt, &r.HitAt}, {"lead_at", &t.LeadAt, &r.LeadAt},
 		{"option_hit", &t.OptionHit, &r.OptionHit}, {"option_margin", &t.OptionMargin, &r.OptionMargin},
 		{"option_lead", &t.OptionLead, &r.OptionLead}, {"mode_confident", &t.ModeConfident, &r.ModeConfident},
@@ -160,6 +171,12 @@ func (t *JevThresholdSettings) validate() error {
 		return fmt.Errorf("jev.thresholds.voice_at %v must be at least 0.5: a spoken instruction runs an action, so it needs a clear majority", r.VoiceAt)
 	case r.SimpleAt < 0.5:
 		return fmt.Errorf("jev.thresholds.simple_at %v must be at least 0.5: a simple verdict drops safeguards around a turn, so it needs a clear majority", r.SimpleAt)
+	case r.GoalCompleteAt < 0.5:
+		return fmt.Errorf("jev.thresholds.goal_complete_at %v must be at least 0.5: it ends a goal pass without the model judge, so it needs a clear majority", r.GoalCompleteAt)
+	case r.GoalNotStartedAt < 0.5:
+		return fmt.Errorf("jev.thresholds.goal_not_started_at %v must be at least 0.5", r.GoalNotStartedAt)
+	case r.GoalRivalMax > 0.5:
+		return fmt.Errorf("jev.thresholds.goal_rival_max %v must be at most 0.5: a rival verdict above it contradicts a clear call", r.GoalRivalMax)
 	case r.LeadAt > r.HitAt:
 		return fmt.Errorf("jev.thresholds: lead_at %v must not exceed hit_at %v", r.LeadAt, r.HitAt)
 	}

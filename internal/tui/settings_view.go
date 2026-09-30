@@ -103,7 +103,7 @@ func (a *App) settingsView() string {
 
 	bodyH := 0
 	if a.height > 0 {
-		bodyH = max(a.height-settingsChromeRows-extra, 9)
+		bodyH = max(a.height-settingsChromeRows-extra, glMinBody)
 	}
 	b.WriteString(glBody(glSpec{groups: groups, cursor: st.selected, empty: "no setting matches"}, &st.gl, w, bodyH))
 	for _, l := range status {
@@ -442,6 +442,7 @@ var jevJobLabels = map[config.JevJob]string{
 	config.JevExploreLocate:   "jev explore locate",
 	config.JevVoiceCommand:    "jev voice command",
 	config.JevRequestScale:    "jev request scale",
+	config.JevGoalJudge:       "jev goal judge",
 }
 
 var jevJobHelp = map[config.JevJob]string{
@@ -454,6 +455,7 @@ var jevJobHelp = map[config.JevJob]string{
 	config.JevExploreLocate:   "rank the files a question is about, so explore subagents start where the code is",
 	config.JevVoiceCommand:    "run a skill, crew, process, prompt, agent profile or mode you ask for by voice, only when exactly one is a very close match",
 	config.JevRequestScale:    "size a request, so a simple one starts at once without a goal contract, file prefetch or test run",
+	config.JevGoalJudge:       "rate a goal pass, ending it or restarting it only when clear, and otherwise ask the model judge with the scores as a hint",
 }
 
 // jevRows builds the toggle rows for the Jev jobs, one per job, in the
