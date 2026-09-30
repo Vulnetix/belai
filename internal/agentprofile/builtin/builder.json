@@ -11,6 +11,7 @@
     "lists": ["backlog"],
     "labels": ["build"],
     "on_success": {"list": "review", "labels": ["needs-review"], "drop_labels": ["build"]},
+    "gates": {"verify": "enforce"},
     "max_attempts": 3,
     "lease": "30m"
   },

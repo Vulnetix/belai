@@ -569,7 +569,10 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 			}
 		}
 	})
-	stopRenew := func() { close(renewDone); renewWG.Wait() }
+	// The lease is renewed until the item is released, so the harness's gate
+	// verification after the turn cannot outlast it.
+	stopRenew := sync.OnceFunc(func() { close(renewDone); renewWG.Wait() })
+	defer stopRenew()
 
 	claim := &tools.WorkerClaim{Worker: w.Record.ID, Item: it.ID, Hops: it.Hops, Profile: p.Name}
 	if k := p.Kanban; k != nil {
@@ -654,7 +657,6 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		Memory: w.memory(ctx), Emit: emit,
 	}, nextRound)
 	res, runErr := rr.res, rr.err
-	stopRenew()
 	if removed, err := ws.Settle(rootBefore); err != nil || len(removed) > 0 {
 		w.logf("%s: settled the git common dir: removed %v, err %v", it.Short(), removed, err)
 	}
@@ -679,6 +681,18 @@ func (w *Worker) work(ctx context.Context, it kanban.Item) {
 		}
 		o.branch = ws.Branch
 	}
+	if mode := w.gatesMode(); mode != "off" && !o.failed && ws.Worktree && itemCtx.Err() == nil {
+		v := w.verifyBranch(itemCtx, it, ws)
+		if w.stopped(ctx, itemCtx, it, ws) {
+			return
+		}
+		if c := context.Cause(itemCtx); c != nil {
+			o = outcome{failed: true, branch: o.branch, files: o.files, note: "the item's budget ended while its gates were verified: " + c.Error()}
+		} else {
+			o = w.applyVerification(o, v, mode)
+		}
+	}
+	stopRenew()
 	released := w.release(ctx, it, o)
 	// An empty branch has nothing to push; PublishBranch would only refuse
 	// and leave a "not opened" note beside the release note above.

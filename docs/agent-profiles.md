@@ -275,8 +275,8 @@ validates it and saves it as JSON.
 | Profile | Claims | Hands on to |
 | --- | --- | --- |
 | `belai:scout` | backlog items labelled `scout`, including the `quality` cards the harness seeds from a test run on HEAD (failing suites, coverage, untested packages, property tests, fixtures, contract tests, mutation testing, docs against code) | `build` items for `belai:builder`: to backlog for a request, to review for a seeded card |
-| `belai:builder` | backlog `build` items, on a worktree branch | review, labelled `needs-review` |
-| `belai:reviewer` | review `needs-review` items, on their branch | done (and a draft PR), or back to `build` with notes |
+| `belai:builder` | backlog `build` items, on a worktree branch | review, labelled `needs-review`, once the harness has verified the card's gates on the branch |
+| `belai:reviewer` | review `needs-review` items, on their branch | done (and a draft PR) only when the harness re-verifies the card's gates on the branch, or back to `build` with notes |
 | `belai:vuln-scout` | at start, a review sweep of HEAD (harness); backlog items labelled `vuln-scan` for a targeted look | a `vuln` card per finding (harness), and `vuln` items for `belai:patcher` |
 | `belai:patcher` | backlog `vuln` items, on a worktree branch; reconciles cards before each claim | review, labelled `needs-verify`: a fix, or a false positive, no known fix or needs-a-human verdict |
 | `belai:verifier` | review `needs-verify` items, including gone cards, on their branch | done (and a draft PR) or blocked, each with a VEX, or back to `vuln` when it rejects the claim |

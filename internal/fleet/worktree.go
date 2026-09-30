@@ -590,3 +590,19 @@ func (w *Workspace) Remove(ctx context.Context) error {
 	}
 	return nil
 }
+
+// Head returns the commit the worktree stands at: the tip of the item's
+// branch once its work is committed.
+func (w *Workspace) Head(ctx context.Context) (string, error) {
+	if err := w.intact(); err != nil {
+		return "", err
+	}
+	out, err := git(ctx, w.run, w.Dir, "rev-parse", "--verify", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	if ref := kanban.CleanRef(out); ref != "" {
+		return ref, nil
+	}
+	return "", errors.New("the worktree's HEAD is not a commit id")
+}

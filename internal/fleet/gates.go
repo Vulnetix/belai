@@ -3,7 +3,6 @@ package fleet
 import (
 	"context"
 
-	"github.com/vulnetix/belai/internal/repomap"
 	"github.com/vulnetix/belai/internal/testdetect"
 	"github.com/vulnetix/belai/internal/tools"
 )
@@ -16,10 +15,7 @@ import (
 // detectedSuites returns the repository's detected test suites: the harness's
 // own table, from marker files, never from a model.
 func (w *Worker) detectedSuites(ctx context.Context) []testdetect.Suite {
-	if w.Suites != nil {
-		return w.Suites(ctx)
-	}
-	return repomap.Scan(ctx, w.Repo).TestSuites
+	return w.suitesAt(ctx, w.Repo)
 }
 
 // applyGates fills the claim's gate facts from the profile and the repository.

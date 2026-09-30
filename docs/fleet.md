@@ -336,7 +336,10 @@ that.
 
 Builders implement each on its own branch and hand it on as `needs-review`.
 The reviewer checks the branch out, runs the tests, and moves the item to
-`done`, or back to `backlog` with its notes.
+`done`, or back to `backlog` with its notes. With [gate verification](#verification)
+on (the built-in builder and reviewer set it to `enforce`), the harness runs the
+card's acceptance gates itself on the builder's branch and again on the
+reviewer's, and a card is done only when they pass.
 
 ### Acceptance gates
 
@@ -373,6 +376,68 @@ Rules and edge cases:
 - **The board file is version 3.** A Belai that predates gates refuses the
   board instead of rewriting it without them; a version 2 board still reads, with
   no gates. See [the board file](bkan.md).
+
+#### Verification
+
+With `kanban.gates.verify` set, the harness runs a card's gates itself. It does
+this after a worker's turn ends and its work is committed, still holding the
+card's claim (the lease keeps renewing while the suites run), and before the
+card moves. The built-in builder and reviewer both set `enforce`.
+
+| Mode | What the harness does |
+| --- | --- |
+| `off` (default) | Nothing. A card is done when the worker says so and the goal evaluator agrees. |
+| `record` | Runs the gates on the branch and records each gate's state, without changing where the card goes. The result is added to the release note. |
+| `enforce` | As `record`, and the result decides: a card whose gates are not all met is a failed attempt, so it goes back to the list it was claimed from (with the usual attempt limit, then `blocked`). A model's claim that it finished cannot override it. |
+
+How a gate is decided:
+
+- **The argv comes from the table.** A runnable gate runs the command of the
+  detected suite it names. A Go suite with a `dir` runs `go test -count=1 ./DIR`
+  and, with a `test`, adds `-run ^NAME$`; the identifiers were validated when the
+  gate was filed and `dir` is anchored with `./`, so neither can be read as an
+  option. Any other suite runs its own command. Nothing is run through a shell.
+- **The exit code decides**, under your permission rules, the OS sandbox and the
+  scrubbed environment, exactly like the [post-end test pass](testing.md). One
+  more rule: a run that tested nothing is not a pass. A Go test name that
+  selected no tests, or a package with no test files, leaves the gate `unmet`, so
+  a mistyped name can never certify itself.
+- **Identical commands run once.** Two gates, or a gate and a suite, that resolve
+  to the same argv share one run.
+- **A manual gate is never run.** It stays `unmet` until a reviewer records it.
+- **Nothing to verify passes.** A card with no runnable gate, and no record for
+  its base commit to compare against, has nothing to check and moves on.
+
+The regression check compares with the quality record of the card's base commit,
+which the quality sweep writes. With one, a suite that passed at the base and
+fails on the branch is a regression, and so is a Go test that fails on the branch
+in a suite that already failed at the base but did not fail there. A suite that
+failed at the base with no test names to compare counts as failing already. With
+no base record nothing is compared, and the note says nothing about regressions
+rather than claiming there were none.
+
+What the card and the next attempt see is harness facts only: the commit, the
+gate ids, exit codes, suite names and test names, for example
+`verification failed at 3fa9c1d20e44: G1 unmet (exit 1: TestA); regressed: go:TestB`.
+No test output text reaches a card, a note or a model, so a hostile test cannot
+write an instruction onto the board. A cleaned test name is at most 100
+characters and a note names at most five tests.
+
+Edge cases:
+
+- **A gate that cannot run blocks the card.** A deny rule, an ask rule nobody can
+  answer, a missing binary or a required sandbox that is unavailable says nothing
+  about the work. The card goes to `blocked` for a person, like a permission the
+  worker cannot ask for, and is not counted as a failed attempt.
+- **A suite that is gone is unmet, not blocked.** A gate naming a suite the
+  workspace no longer detects is `unmet` with that note, and nothing runs for it.
+- **The item's budget ending during verification** fails the attempt with a note
+  saying so; a stop request or a lost lease leaves the board as those always do.
+- **The record.** Each verification that ran a suite is written to
+  `.vulnetix/belai/quality/verify/<card>-<commit>.json` by the harness alone: gate
+  states, exit codes and suite statuses, never output. The last 50 are kept, a
+  symlinked directory is refused, and a name that is not a card id plus a commit
+  id is refused.
 
 ### The security crew
 

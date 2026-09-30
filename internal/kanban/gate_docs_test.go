@@ -11,7 +11,7 @@ import (
 // docs/fleet.md is the contract for acceptance gates. These tests fail when a
 // gate kind, state or limit changes without the pages following.
 func TestGatesAreDocumented(t *testing.T) {
-	doc := docparity.Read(t, "docs/fleet.md")
+	doc := strings.Join(strings.Fields(docparity.Read(t, "docs/fleet.md")), " ")
 	for _, want := range []string{
 		"### Acceptance gates",
 		"A gate is a reference, never a command",
@@ -19,7 +19,7 @@ func TestGatesAreDocumented(t *testing.T) {
 		"`kanban.gates.require`",
 		"starts every gate `unmet`",
 		fmt.Sprintf("at most %d characters", MaxGateTitleRunes),
-		"at most eight a\ncard",
+		"at most eight a card",
 	} {
 		if !strings.Contains(doc, want) {
 			t.Errorf("docs/fleet.md lacks %q", want)
