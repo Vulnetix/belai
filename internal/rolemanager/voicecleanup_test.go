@@ -146,3 +146,67 @@ func TestVoiceCleanupIsDocumentedAndRoutable(t *testing.T) {
 		}
 	}
 }
+
+func TestCleanVoiceStreamDeliversTheTextSoFar(t *testing.T) {
+	var seen []string
+	c := streamingFake{pieces: []string{"Add ", "a retry", " to the fetch."}}
+	got, err := CleanVoiceStream(context.Background(), c, "um add a a retry to the fetch", func(s string) { seen = append(seen, s) })
+	if err != nil || got != "Add a retry to the fetch." {
+		t.Fatalf("got %q, %v", got, err)
+	}
+	// Each call carries everything so far, so the caller can replace, not append.
+	if len(seen) != 3 || seen[0] != "Add" || seen[1] != "Add a retry" || seen[2] != "Add a retry to the fetch." {
+		t.Fatalf("callbacks = %q", seen)
+	}
+}
+
+func TestCleanVoiceStreamStopsARunawayReplyMidStream(t *testing.T) {
+	var seen []string
+	pieces := []string{"ok"}
+	for i := 0; i < 30; i++ {
+		pieces = append(pieces, " and here is a long explanation nobody asked for")
+	}
+	got, err := CleanVoiceStream(context.Background(), streamingFake{pieces: pieces}, "run tests", func(s string) { seen = append(seen, s) })
+	if !errors.Is(err, ErrRunawayVoiceCleanup) || got != "" {
+		t.Fatalf("got %q, %v", got, err)
+	}
+	for _, s := range seen {
+		if len(s) > 2*len("run tests")+40 {
+			t.Fatalf("a runaway piece reached the display: %d bytes", len(s))
+		}
+	}
+	if len(seen) >= len(pieces) {
+		t.Fatal("the stream was not cut off when it ran away")
+	}
+}
+
+func TestCleanVoiceStreamErrorsAndEmpty(t *testing.T) {
+	if _, err := CleanVoiceStream(context.Background(), streamingFake{pieces: []string{"partial"}, err: errors.New("boom")}, "x", nil); err == nil {
+		t.Fatal("a stream error was swallowed")
+	}
+	if _, err := CleanVoiceStream(context.Background(), streamingFake{pieces: []string{" ", "\n"}}, "x", nil); !errors.Is(err, ErrEmptyVoiceCleanup) {
+		t.Fatalf("err = %v, want ErrEmptyVoiceCleanup", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := CleanVoiceStream(ctx, streamingFake{pieces: []string{"never"}}, "x", nil); err == nil {
+		t.Fatal("a cancelled context did not stop the stream")
+	}
+}
+
+func TestCleanVoiceStreamWorksWithAClassifierThatCannotStream(t *testing.T) {
+	var seen []string
+	got, err := CleanVoiceStream(context.Background(), &cleanupClassifier{reply: "Run the tests."}, "run the tests", func(s string) { seen = append(seen, s) })
+	if err != nil || got != "Run the tests." || len(seen) != 1 || seen[0] != "Run the tests." {
+		t.Fatalf("got %q, seen %q, err %v", got, seen, err)
+	}
+}
+
+func TestCleanVoiceStreamUnwrapsAndSanitizes(t *testing.T) {
+	var last string
+	c := streamingFake{pieces: []string{"\"Run ", "the tests.\x1b[2J\""}}
+	got, err := CleanVoiceStream(context.Background(), c, "run the tests", func(s string) { last = s })
+	if err != nil || got != "Run the tests." || strings.ContainsRune(last, 0x1b) {
+		t.Fatalf("got %q, last %q, err %v", got, last, err)
+	}
+}

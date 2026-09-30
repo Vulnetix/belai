@@ -55,10 +55,50 @@ var ErrRunawayVoiceCleanup = errors.New("voice cleanup is much longer than the t
 // is sanitized text. Any error means the caller uses the raw transcript
 // instead, so a failed cleanup never loses what was said.
 func CleanVoice(ctx context.Context, c Classifier, raw string) (string, error) {
+	return CleanVoiceStream(ctx, c, raw, nil)
+}
+
+// CleanVoiceStream is CleanVoice for a caller that shows the text as it is
+// written. onText receives the whole cleaned text so far, sanitized and
+// unwrapped, each time the model adds to it, so the caller can replace what it
+// shows rather than append. A reply that grows past the runaway limit is cut
+// off mid-stream and reported as ErrRunawayVoiceCleanup, so a model that
+// starts answering instead of tidying is stopped rather than displayed.
+//
+// The final result passes the same checks as CleanVoice; an error means the
+// caller keeps the raw transcript, and text already passed to onText should be
+// put back.
+func CleanVoiceStream(ctx context.Context, c Classifier, raw string, onText func(cleaned string)) (string, error) {
 	raw = sanitize.Text(raw)
+	limit := 2*len(raw) + 40
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	ctx, served := TrackServedModel(ctx)
+
+	var acc strings.Builder
+	runaway := false
 	start := time.Now()
-	reply, model, err := classifyServed(ctx, c, BuildVoiceCleanupPayload(raw))
+	reply, err := ClassifyStreaming(ctx, c, BuildVoiceCleanupPayload(raw), func(delta string) {
+		if runaway {
+			return
+		}
+		acc.WriteString(delta)
+		cur := unwrapCleanup(sanitize.Text(acc.String()))
+		if len(cur) > limit {
+			runaway = true
+			cancel()
+			return
+		}
+		if onText != nil && cur != "" {
+			onText(cur)
+		}
+	})
 	took := time.Since(start)
+	model := served()
+	if runaway {
+		recordTimed(EventVoiceCleanup, "runaway", "", "", 0, model, took)
+		return "", ErrRunawayVoiceCleanup
+	}
 	if err != nil {
 		recordTimed(EventVoiceCleanup, "error", "", traceSnippet(err.Error()), 0, model, took)
 		return "", err
@@ -68,7 +108,7 @@ func CleanVoice(ctx context.Context, c Classifier, raw string) (string, error) {
 	case out == "":
 		recordTimed(EventVoiceCleanup, "empty", "", "", 0, model, took)
 		return "", ErrEmptyVoiceCleanup
-	case len(out) > 2*len(raw)+40:
+	case len(out) > limit:
 		recordTimed(EventVoiceCleanup, "runaway", "", "", 0, model, took)
 		return "", ErrRunawayVoiceCleanup
 	}
