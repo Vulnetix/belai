@@ -62,7 +62,7 @@ const integrations = [
   {
     title: 'Editors over ACP',
     key: 'belai acp',
-    body: '`belai acp` speaks the Agent Client Protocol, so Zed, JetBrains IDEs and Neovim plugins can use Belai as their agent. Each session is built like a headless CLI session, so every gate applies, and a directory you have not trusted is refused.',
+    body: '`belai acp` speaks the Agent Client Protocol, so Zed, JetBrains IDEs and Neovim plugins can use Belai as their agent. Each session is built like a headless CLI session, so every gate applies, and a directory you have not trusted is refused. With `tests.post_end` on, a completed goal runs the detected tests and streams the result to the editor, and a failing run starts a fix turn whose permission asks go to the editor.',
     doc: 'acp.md',
   },
   {

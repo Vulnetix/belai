@@ -26,6 +26,7 @@ const groups = [
     lines: [
       ['BELAI_NO_TUI=1', 'The TUI launches only when stdin and stdout are both terminals. In a pipeline, under GitHub Actions, or with BELAI_NO_TUI=1 or CI set, Belai stays headless.'],
       ['belai -trust-dir', 'grants trust to the current directory once, so an unattended job can start in a fresh checkout without a prompt.'],
+      ['tests.post_end', 'With it set, a -prompt run that completes a goal, or ends on a changed tree at session level, runs the detected tests. The result and report go to stderr, stdout stays the reply, and the exit code is unchanged, so a script reads stderr to gate on the result.'],
       ['-guardrails -ask-permission -tools -firewall -verbose', 'Every gate works from the command line. Scripts get the same blocking defaults as the TUI.'],
     ],
   },

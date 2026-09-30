@@ -5,14 +5,14 @@ import SealedSection from '../seal/SealedSection.astro';
 // answers each of the nine use cases in defined and routed mode.
 
 const sealText =
-  'Model routing: the model you pick does the work, a fast tier answers one-token verdicts and drafts the goal contract, and routed mode lets Jev pick a model per use case from your candidate list, falling back to the main model when it cannot decide. The security classifier never follows the routing table. tab cycles defined and routed.';
+  'Model routing: the model you pick does the work, a fast tier answers one-token verdicts, drafts the goal contract and writes the report after a passing test run, and routed mode lets Jev pick a model per use case from your candidate list, falling back to the main model when it cannot decide. The security classifier never follows the routing table. tab cycles defined and routed.';
 
 const tiers = [
   {
     n: '01',
     name: 'Fast tier',
     key: 'on by default',
-    lead: "The provider's own small model, on the same credentials, gives the one-token verdicts, names the session and drafts the goal contract.",
+    lead: "The provider's own small model, on the same credentials, gives the one-token verdicts, names the session, drafts the goal contract and writes the short report after a passing test run.",
   },
   {
     n: '02',
@@ -39,6 +39,7 @@ const uses: [string, string, string, string][] = [
   ['goal_contract', "Drafting a goal's contract", FAST, `${FAST}, without Jev`],
   ['session_name', 'Naming the session', FAST, `${FAST}, without Jev`],
   ['voice_cleanup', 'Tidying dictated text', FAST, `${FAST}, without Jev`],
+  ['test_report', 'Reporting on a passing test run', FAST, `${FAST}, without Jev`],
 ];
 
 const fastModels = [
