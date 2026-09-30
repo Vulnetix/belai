@@ -144,3 +144,86 @@ func overlayVoiceIcon(body string, inner int, icon string) string {
 	lines[0] = first + strings.Repeat(" ", pad) + " " + icon
 	return strings.Join(lines, "\n")
 }
+
+// composerPlaceholder is what the empty composer shows. While voice runs it is
+// shorter, so the round icon centred in the composer has room on an empty row.
+func (a *App) composerPlaceholder() string {
+	if a.voice.eng == nil {
+		return components.DefaultPlaceholder
+	}
+	return "Type, or hold " + a.settings.Voice.VoiceKeyOr() + " and speak…"
+}
+
+// The composer's mark is three rows of six cells: a disc, a smaller dot, or an
+// empty ring, drawn with block quadrants so it reads as round. Cells are about
+// twice as tall as they are wide, so six by three is close to a circle.
+const (
+	voiceArtRows = 3
+	voiceArtCols = 6
+)
+
+var (
+	voiceDisc = [voiceArtRows]string{"▗▟██▙▖", "▐████▌", "▝▜██▛▘"}
+	voiceDot  = [voiceArtRows]string{"  ▄▄  ", " ████ ", "  ▀▀  "}
+	voiceSoft = [voiceArtRows]string{"▗▟▒▒▙▖", "▐▒▒▒▒▌", "▝▜▒▒▛▘"}
+	voiceRing = [voiceArtRows]string{"▗▛▀▀▜▖", "▐    ▌", "▝▙▄▄▟▘"}
+)
+
+// voiceArtFor draws the mark for a look at a frame: a disc that pulses between solid and soft while
+// listening, a quicker one (disc and dot) while speech is heard, a purple
+// disc and ring while the models work, and a still dim ring when voice is
+// muted, waiting for its key or paused.
+func voiceArtFor(look voiceLook, frame int) [voiceArtRows]string {
+	paint := func(rows [voiceArtRows]string, c lipgloss.TerminalColor, bold bool) [voiceArtRows]string {
+		st := lipgloss.NewStyle().Foreground(c).Bold(bold)
+		var out [voiceArtRows]string
+		for i, r := range rows {
+			out[i] = st.Render(r)
+		}
+		return out
+	}
+	switch look {
+	case lookListening:
+		if frame/4%2 == 0 {
+			return paint(voiceDisc, components.ColorTeal, true)
+		}
+		// The second beat is a softer disc, so the pulse shows without colour too.
+		return paint(voiceSoft, components.ColorTealSoft, false)
+	case lookHearing:
+		if frame%2 == 0 {
+			return paint(voiceDisc, components.ColorTeal, true)
+		}
+		return paint(voiceDot, components.ColorTealSoft, false)
+	case lookWorking:
+		if frame/2%2 == 0 {
+			return paint(voiceDisc, components.ColorVoice, true)
+		}
+		return paint(voiceRing, components.ColorVoice, false)
+	case lookPaused, lookIdle, lookMuted:
+		return paint(voiceRing, components.ColorLow, false)
+	}
+	return [voiceArtRows]string{}
+}
+
+// overlayVoiceArt draws the mark centred in the composer body, across its
+// first three rows. It reports false, leaving the body alone, when the body is
+// too small or when typed text reaches the mark's columns, so the mark never
+// covers what you wrote; the caller then draws the small icon at the edge.
+func overlayVoiceArt(body string, inner int, art [voiceArtRows]string) (string, bool) {
+	lines := strings.Split(body, "\n")
+	if art[0] == "" || len(lines) < voiceArtRows || inner < voiceArtCols+4 {
+		return body, false
+	}
+	left := (inner - voiceArtCols) / 2
+	for r := 0; r < voiceArtRows; r++ {
+		if lipgloss.Width(strings.TrimRight(ansi.Strip(lines[r]), " ")) > left-1 {
+			return body, false
+		}
+	}
+	right := inner - left - voiceArtCols
+	for r := 0; r < voiceArtRows; r++ {
+		base := ansi.Truncate(lines[r], left, "")
+		lines[r] = base + strings.Repeat(" ", left-lipgloss.Width(base)) + art[r] + strings.Repeat(" ", right)
+	}
+	return strings.Join(lines, "\n"), true
+}

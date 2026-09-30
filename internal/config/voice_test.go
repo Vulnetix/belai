@@ -208,3 +208,39 @@ func TestVoiceKeysAreUsableOnACommonKeyboard(t *testing.T) {
 		}
 	}
 }
+
+func TestVoiceLogDefaultsOnAndMerges(t *testing.T) {
+	off, on := false, true
+	var nilS *VoiceSettings
+	if !nilS.VoiceLogEnabled() || !(&VoiceSettings{}).VoiceLogEnabled() {
+		t.Fatal("the voice log is not on by default")
+	}
+	if (&VoiceSettings{Log: &off}).VoiceLogEnabled() {
+		t.Fatal("log: false was ignored")
+	}
+	a := &VoiceSettings{Log: &off}
+	a.merge(&VoiceSettings{Mode: VoiceModeListen})
+	if a.VoiceLogEnabled() {
+		t.Fatal("an unrelated layer turned the log back on")
+	}
+	a.merge(&VoiceSettings{Log: &on})
+	if !a.VoiceLogEnabled() {
+		t.Fatal("a later layer could not set the log")
+	}
+}
+
+func TestVoiceLogIsUserOnly(t *testing.T) {
+	t.Setenv("BELAI_HOME", t.TempDir())
+	workdir := t.TempDir()
+	off := false
+	if err := SaveProject(workdir, Settings{Voice: &VoiceSettings{Log: &off}}); err != nil {
+		t.Fatal(err)
+	}
+	eff, err := Resolve(workdir, func(string) string { return "" }, Settings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !eff.Settings.Voice.VoiceLogEnabled() {
+		t.Fatal("a project file changed what the user's thread shows")
+	}
+}

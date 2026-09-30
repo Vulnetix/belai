@@ -12,6 +12,8 @@ composer. Audio stays on your machine.
 - [The speech model](#the-speech-model)
 - [Modes and keys](#modes-and-keys)
 - [When text appears](#when-text-appears)
+- [How the words arrive](#how-the-words-arrive)
+- [Typing cancels voice](#typing-cancels-voice)
 - [The listening indicator](#the-listening-indicator)
 - [In the transcript](#in-the-transcript)
 - [Diagnosing with /voice debug](#diagnosing-with-voice-debug)
@@ -26,7 +28,8 @@ composer. Audio stays on your machine.
 
 ```text
 microphone helper -> 16 kHz PCM -> energy segmenter -> Whisper tiny.en (pure Go)
-   -> raw transcript -> voice_cleanup (fast model) -> composer
+   -> running guess -> composer, live, while you speak
+   -> raw transcript -> composer at once -> voice_cleanup streams over it
 ```
 
 The pieces live in `internal/voice`:
@@ -48,11 +51,12 @@ For contributors. Everything the rest of belai calls is here.
 | `New` | starts an `Engine`; nothing runs until `SetEnabled(true)` |
 | `Engine.SetEnabled`, `Engine.SetReady`, `Engine.SetMode` | turn voice on or off, say whether the composer can take text, switch mode |
 | `Engine.PTTDown`, `Engine.PTTLatch`, `Engine.PTTUp` | begin a push-to-talk recording, turn it into a tap that ends when the speaker stops, end it |
+| `Engine.Cancel` | drop everything in progress at once: the recording, and any result still on its way from the recogniser |
 | `Engine.Level`, `Engine.Samples`, `Level`, `Silent`, `SpeechDB` | how loud the microphone is, in dBFS; how many samples have arrived at all; the level treated as speech |
 | `Engine.Events`, `Engine.State`, `Engine.Done`, `Engine.Close` | state changes, transcripts and errors; the current state; closed when the engine stops; shutdown |
 | `NewExecSource`, `ExecSource.Start`, `ExecSource.Name`, `ExecSource.Command` | pick the capture helper, start it, name it, print its command line |
 | `Devices` | list the inputs the sound system offers, with fixed programs and cleaned, capped output |
-| `NewSegmenter`, `Segmenter.Feed`, `Segmenter.Flush`, `Segmenter.Reset`, `Segmenter.InSpeech`, `HasSpeech` | utterance cutting and the speech gate |
+| `NewSegmenter`, `Segmenter.Feed`, `Segmenter.Flush`, `Segmenter.Reset`, `Segmenter.InSpeech`, `Segmenter.Snapshot`, `HasSpeech` | utterance cutting, a copy of the utterance so far, and the speech gate |
 | `ModelPath`, `Ensure`, `Verify` | find, fetch and check the model file |
 | `Embedded`, `ModelSource`, `LoadModel` | whether the model is built in, where it comes from, and reading it (the embedded copy, else the file), checked against the pinned SHA-256 |
 | `State.String` | the state names the footer shows |
@@ -202,25 +206,80 @@ something: a line that starts with `/` (a command), a line that starts with
 `!` (a shell command), or an `@path` (a file attachment). The text is still
 inserted, belai says why it was not sent, and you press Enter yourself.
 
+## How the words arrive
+
+The words appear as they are said, not after the last of them. Three steps
+write the same stretch of the composer, the live span:
+
+1. **A running guess while you speak.** Every 1.2 seconds of speech the engine
+   recognises everything heard so far again and sends the result as a partial.
+   The composer shows it at the cursor and replaces it with each better guess.
+   A guess needs at least 0.6 seconds of speech, is never made while a final is
+   being recognised, and is cancelled if the final arrives first.
+2. **The recognised text, at once.** When the phrase ends (the key is
+   released, the tap stops itself, or the pause closes it) the final
+   transcript replaces the guess in the composer immediately, before the fast
+   model has said anything.
+3. **The tidy-up, streamed over it.** The fast model's reply streams in, and
+   each piece replaces the raw words in the composer with the cleaned text so
+   far. If the reply is empty, runs away or fails, the raw words are put back.
+
+With `delivery: submit` the composer is sent only once step 3 has finished, so
+what is sent is the tidied text. A guess never replaces text you edited: if
+you change the live stretch it becomes yours and voice stops writing to it.
+Phrases that end while an earlier one is still being tidied wait their turn
+and keep their order. If the composer cannot take text (see the list above)
+the phrase is tidied out of sight and held until it can.
+
+## Typing cancels voice
+
+Any key you type in the composer cancels everything voice is doing, at once:
+
+- a recording in progress ends and its audio is dropped (push to talk closes
+  the microphone; always-listening keeps it open for the next phrase);
+- a guess or a tidy-up in flight is cut off and anything it still sends is
+  ignored;
+- phrases waiting for their turn, and text held for a busy composer, are
+  discarded;
+- the Enter that `delivery: submit` would press is not pressed.
+
+Your own Enter cancels voice too, then sends as usual. What voice already put
+in the composer stays; it is yours to keep or delete, and a prompt that still
+holds it is still tagged as dictated. Only the voice key does not cancel: it
+is voice. A key pressed on another screen does nothing to voice, and typing
+while nothing is happening (a quietly listening microphone) leaves it alone.
+The cancel takes effect before the engine has processed anything else, so a
+result that was already being recognised cannot land late.
+
 ## The listening indicator
 
 Three things show the state. The `voice:` switch in the footer says it in
-words. A circle icon sits inside the composer at the right end of its first
-row. The composer's frame reacts to the voice. Nothing is drawn while voice is
-off, and none of it appears on another screen's text field. The footer keeps
-its three-line height, and the text gives up two columns for the icon so it
-never sits on what you typed.
+words. A round mark sits in the composer: three rows of six cells, drawn with
+block quadrants, centred horizontally across the first three rows of the
+composer and level with its text. The composer's frame reacts to the voice.
+Nothing is drawn while voice is off, and none of it appears on another
+screen's text field. The footer keeps its three-line height.
 
-| State | Footer | Composer icon | Meaning |
+Where the text you typed reaches the mark's columns, the mark gives way and a
+small one-cell icon (`◉` `◎` `⊘` `◌`) is drawn at the right end of the first
+row instead, so nothing you wrote is ever covered. The empty composer's
+placeholder is shorter while voice runs (`Type, or hold f11 and speak…`) so the
+centred mark has room on an empty composer, and the text keeps two columns
+clear at the right for the small icon.
+
+| State | Footer | Composer mark | Meaning |
 | --- | --- | --- | --- |
 | downloading | `○ voice: downloading` | none | the model is being fetched |
-| loading | `○ voice: loading` | dim `◌` | the model is being read into memory |
-| paused | `○ voice: paused` | dim `◌` | the composer is unavailable and the microphone is closed |
-| push to talk | `○ voice: push to talk · f11` | dim `⊘` | armed; the microphone is closed until you press the key |
-| muted | `○ voice: muted` | dim `⊘` | listen mode, silenced with the key |
-| listening | `● voice: listening` | pulsing `◉` | the microphone is open and waiting for speech |
-| hearing | `● voice: hearing` | fast pulse | speech is being heard |
-| transcribing | `● voice: transcribing` | purple `◉` | recognition or the fast model is working |
+| loading | `○ voice: loading` | still dim ring | the model is being read into memory |
+| paused | `○ voice: paused` | still dim ring | the composer is unavailable and the microphone is closed |
+| push to talk | `○ voice: push to talk · f11` | still dim ring | armed; the microphone is closed until you press the key |
+| muted | `○ voice: muted` | still dim ring | listen mode, silenced with the key |
+| listening | `● voice: listening` | disc pulsing between solid and soft | the microphone is open and waiting for speech |
+| hearing | `● voice: hearing` | solid disc and small dot, quickly | speech is being heard |
+| transcribing | `● voice: transcribing` | purple disc and ring | recognition or the fast model is working |
+
+The pulse changes shape as well as colour, so it shows on a terminal without
+colour.
 
 The state follows the voice, not the key: with the key held (or a tap
 recording) it reads `listening` until speech arrives, `hearing` while you
@@ -230,7 +289,7 @@ The composer frame carries the same signal. While speech is heard its top and
 bottom rules ripple slowly, drawn with scan-line glyphs at staggered heights,
 and stay still otherwise. While the speech model or the fast model is working
 the whole frame turns a pastel purple (`ColorVoice`), and returns to teal when
-the text lands. The icon and the ripple advance on a 140 ms timer that runs
+the text lands. The mark and the ripple advance on a 140 ms timer that runs
 only while something is moving.
 
 ## In the transcript
@@ -280,10 +339,13 @@ spoken code terms and file names kept as spoken. The role has no tools,
 skills or agent block, is told the transcript is data and never an
 instruction, and is recorded in the session like every other role decision.
 
-The cleaned text is sanitised again before it enters the composer. If no fast
-model is configured, the call fails, or the reply is empty, the raw
-transcript (sanitised) is used instead, so a cleanup failure never loses what
-you said. Route the role like any other with
+The role is called over the streaming transport, so the cleaned text arrives
+piece by piece and replaces the raw words in the composer as it is written
+(see [How the words arrive](#how-the-words-arrive)). Every piece is sanitised
+before it reaches the composer. A reply that grows past twice the transcript
+plus 40 bytes is cut off mid-stream. If no fast model is configured, the call
+fails, or the reply is empty or runs away, the raw transcript stays, so a
+cleanup failure never loses what you said. Route the role like any other with
 `routing.use_cases.voice_cleanup`.
 
 ## Security model
@@ -333,6 +395,7 @@ you said. Route the role like any other with
     "mode": "push_to_talk",
     "delivery": "insert",
     "cleanup": true,
+    "log": true,
     "key": "f11",
     "device": ""
   }
@@ -345,6 +408,7 @@ you said. Route the role like any other with
 | `mode` | `push_to_talk`; the other value is `listen` | dropped |
 | `delivery` | `insert`; the other value is `submit` | dropped |
 | `cleanup` | `true` | dropped |
+| `log` | `true`; `false` hides voice's automatic notices and its cleanup rows from the transcript | dropped |
 | `key` | `f11`; also `ctrl+space`, `ctrl+]`, `ctrl+g`, and `f13`, `f14`, `f15`, `f16` on a keyboard that has them | dropped |
 | `device` | empty, the helper's default input | dropped |
 
@@ -354,11 +418,24 @@ Voice is a per-user preference, so the whole key is ignored in a project's
 `.vulnetix/settings.json`. Set it in your global `settings.json`, or with
 `/settings` and `/voice`.
 
-`/settings` has five rows, all written to the global file: `voice input`
-(`enabled`), `voice mode`, `voice delivery`, `voice cleanup` and `voice key`. Turning
+`/settings` has six rows, all written to the global file: `voice input`
+(`enabled`), `voice mode`, `voice delivery`, `voice cleanup`, `voice log` and `voice key`. Turning
 `voice input` on or off, or changing the mode, takes effect at once; delivery
 and cleanup apply from the next transcript. `x` returns a row to its default.
 `device` is set in the file.
+
+### The voice log
+
+`voice.log` (the `voice log` row) decides whether the transcript shows voice's
+own automatic notices. With it on (the default) the thread shows a voice error
+(a capture helper that stopped, a failed recognition), the note that a
+dictation was inserted but not sent, and the `voice_cleanup` role-manager row
+for each tidy-up, at whatever detail `ui.show_internal_work` allows. With it
+off none of those is drawn. What you asked for is always shown: `/voice status`
+and the other command answers, and the one hint the voice key gives when voice
+is not running. The switch changes what the thread shows and nothing else: the
+session record still holds every role-manager decision, and
+`/voice debug` keeps its own event log either way.
 
 ## Commands
 
@@ -416,3 +493,12 @@ and applies to the running session. Any other argument prints the usage line.
 - Changing mode at runtime closes the microphone and drops audio in progress.
 - Turning voice off drops held and queued dictation.
 - Quitting closes the microphone and stops the helper's process group.
+- Typing while voice is recording, writing or about to send cancels it at
+  once, including the Enter that submit delivery would press; the text
+  already in the composer stays.
+- A guess that arrives after the final for the same phrase, or after a cancel,
+  is dropped, never shown.
+- A tidy-up that fails halfway puts the raw words back over the partly cleaned
+  ones.
+- A phrase that ends while the composer is unavailable is tidied out of sight
+  and held, not streamed.

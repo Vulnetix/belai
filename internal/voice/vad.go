@@ -147,3 +147,12 @@ func rms(f []float32) float64 {
 	}
 	return math.Sqrt(sum / float64(len(f)))
 }
+
+// Snapshot returns a copy of the utterance being heard, with its pre-roll, or
+// nil when none is open. The engine uses it to guess at a phrase before it ends.
+func (s *Segmenter) Snapshot() []float32 {
+	if !s.inSeg {
+		return nil
+	}
+	return append([]float32(nil), s.seg...)
+}

@@ -171,8 +171,7 @@ func TestAnimationRunsOnlyWhileSomethingMoves(t *testing.T) {
 func TestDictatedTurnIsTaggedWithItsRawTranscript(t *testing.T) {
 	a, _ := started(t, config.VoiceSettings{Enabled: on()})
 	a.classifier = &fakeClassifier{raw: "Add a retry to the fetch."}
-	msg := a.voiceTranscript("um add a a retry to the fetch")().(voiceCleanedMsg)
-	a.Update(msg)
+	settle(t, a, a.voiceTranscript("um add a a retry to the fetch"))
 	if a.editor.Value() != "Add a retry to the fetch." {
 		t.Fatalf("composer = %q", a.editor.Value())
 	}
@@ -362,4 +361,130 @@ func TestSettingsRowsForVoiceKeyAndEffectiveEnabled(t *testing.T) {
 		t.Fatal("the effective default is not whether the model is built in")
 	}
 	var _ = context.Background
+}
+
+func TestVoiceArtIsThreeRowsOfSixCells(t *testing.T) {
+	for _, look := range []voiceLook{lookIdle, lookMuted, lookPaused, lookListening, lookHearing, lookWorking} {
+		for frame := 0; frame < 8; frame++ {
+			art := voiceArtFor(look, frame)
+			for r, row := range art {
+				if w := lipgloss.Width(row); w != voiceArtCols {
+					t.Fatalf("look %d frame %d row %d is %d cells, want %d", look, frame, r, w, voiceArtCols)
+				}
+			}
+		}
+	}
+	if voiceArtFor(lookNone, 0)[0] != "" {
+		t.Fatal("a mark is drawn while voice is off")
+	}
+	// The mark is about four times the old icon: many more cells, still round.
+	if voiceArtRows*voiceArtCols < 4 {
+		t.Fatal("the mark is not larger than the old one-cell icon")
+	}
+}
+
+func TestVoiceArtBeatsAndStillRings(t *testing.T) {
+	plain := func(l voiceLook, f int) string {
+		art := voiceArtFor(l, f)
+		return ansi.Strip(strings.Join(art[:], "\n"))
+	}
+	if plain(lookIdle, 0) != plain(lookMuted, 5) || plain(lookIdle, 0) != plain(lookPaused, 3) {
+		t.Fatal("the muted, armed and paused marks are not the same still ring")
+	}
+	if plain(lookListening, 0) != plain(lookListening, 3) {
+		t.Fatal("listening changed shape inside a beat")
+	}
+	if voiceArtFor(lookListening, 0) == voiceArtFor(lookListening, 4) {
+		t.Fatal("listening does not pulse (the colour should change between beats)")
+	}
+	if plain(lookHearing, 0) == plain(lookHearing, 1) {
+		t.Fatal("hearing does not change shape between frames")
+	}
+	if plain(lookWorking, 0) == plain(lookWorking, 2) {
+		t.Fatal("working does not alternate")
+	}
+	if plain(lookListening, 0) == plain(lookIdle, 0) {
+		t.Fatal("an active mark looks like the still ring")
+	}
+}
+
+func TestOverlayVoiceArtCentresAndPreservesWidth(t *testing.T) {
+	body := strings.Join([]string{"hi", "", "", "row four"}, "\n")
+	out, ok := overlayVoiceArt(body, 40, voiceArtFor(lookListening, 0))
+	if !ok {
+		t.Fatal("the mark did not fit in an empty-ish composer")
+	}
+	lines := strings.Split(ansi.Strip(out), "\n")
+	left := (40 - voiceArtCols) / 2
+	for r := 0; r < voiceArtRows; r++ {
+		if w := lipgloss.Width(lines[r]); w != 40 {
+			t.Fatalf("row %d is %d cells, want the body width 40", r, w)
+		}
+		cut := string([]rune(lines[r])[left : left+voiceArtCols])
+		if strings.TrimSpace(cut) == "" {
+			t.Fatalf("row %d has no mark at the centre: %q", r, lines[r])
+		}
+	}
+	if !strings.HasPrefix(lines[0], "hi") {
+		t.Fatalf("the mark overwrote the typed text: %q", lines[0])
+	}
+	if lines[3] != "row four" {
+		t.Fatalf("a row below the mark changed: %q", lines[3])
+	}
+}
+
+func TestOverlayVoiceArtNeverCoversTypedText(t *testing.T) {
+	long := strings.Repeat("x", 30)
+	if out, ok := overlayVoiceArt(long+"\n\n", 40, voiceArtFor(lookListening, 0)); ok || out != long+"\n\n" {
+		t.Fatal("the mark was drawn over text that reaches its columns")
+	}
+	// Text on the second or third row counts too.
+	if _, ok := overlayVoiceArt("a\n"+long+"\n", 40, voiceArtFor(lookListening, 0)); ok {
+		t.Fatal("the mark ignored text on its second row")
+	}
+	if _, ok := overlayVoiceArt("a\nb", 40, voiceArtFor(lookListening, 0)); ok {
+		t.Fatal("the mark was drawn in a body shorter than three rows")
+	}
+	if _, ok := overlayVoiceArt("a\nb\nc", 8, voiceArtFor(lookListening, 0)); ok {
+		t.Fatal("the mark was drawn where there is no room")
+	}
+	if _, ok := overlayVoiceArt("a\nb\nc", 40, voiceArtFor(lookNone, 0)); ok {
+		t.Fatal("an empty mark was drawn")
+	}
+}
+
+func TestComposerShowsTheCentredMarkAndFallsBackToTheEdgeIcon(t *testing.T) {
+	a, _ := started(t, config.VoiceSettings{Enabled: on(), Mode: config.VoiceModeListen})
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	waitFor(t, "listening", func() bool { return a.voice.eng.State() == voice.StateListening })
+	view := ansi.Strip(a.renderComposer())
+	if !strings.ContainsAny(view, "▗▟▙▖▐▌▝▜▛▘") {
+		t.Fatalf("no round mark in the composer:\n%s", view)
+	}
+	// Long typed text on the first row: the mark gives way to the small icon.
+	a.editor.SetValue(strings.Repeat("word ", 20))
+	view = ansi.Strip(a.renderComposer())
+	if strings.ContainsAny(view, "▗▟▙▖▝▜▛▘") {
+		t.Fatalf("the mark was drawn over typed text:\n%s", view)
+	}
+	if !strings.ContainsAny(view, "◉◎") {
+		t.Fatalf("no fallback icon:\n%s", view)
+	}
+}
+
+func TestPlaceholderIsShorterWhileVoiceRuns(t *testing.T) {
+	a, _ := voiceApp(t, config.VoiceSettings{})
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	if a.composerPlaceholder() != components.DefaultPlaceholder {
+		t.Fatalf("placeholder = %q with voice off", a.composerPlaceholder())
+	}
+	a, _ = started(t, config.VoiceSettings{Enabled: on(), Key: "ctrl+space"})
+	got := a.composerPlaceholder()
+	if !strings.Contains(got, "ctrl+space") || len([]rune(got)) >= len([]rune(components.DefaultPlaceholder)) {
+		t.Fatalf("placeholder = %q", got)
+	}
+	a.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	if !strings.Contains(ansi.Strip(a.renderComposer()), "hold ctrl+space and speak") {
+		t.Fatal("the shorter placeholder is not shown")
+	}
 }

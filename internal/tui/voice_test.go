@@ -248,35 +248,58 @@ func TestTranscriptIsSanitizedAndEmptyIsIgnored(t *testing.T) {
 	}
 }
 
+// settle runs a command chain to its end the way the program would: it runs
+// each command, feeds the message that comes back through Update, and follows
+// the command Update returns.
+func settle(t *testing.T, a *App, cmd tea.Cmd) {
+	t.Helper()
+	for i := 0; cmd != nil && i < 500; i++ {
+		msg := cmd()
+		if msg == nil {
+			return
+		}
+		if b, ok := msg.(tea.BatchMsg); ok {
+			for _, c := range b {
+				settle(t, a, c)
+			}
+			return
+		}
+		if _, isTick := msg.(voiceAnimMsg); isTick {
+			return // the animation timer is not part of the dictation
+		}
+		_, cmd = a.Update(msg)
+	}
+}
+
 func TestCleanupReplacesTheRawTranscriptAndFallsBack(t *testing.T) {
 	a, _ := started(t, config.VoiceSettings{Enabled: on()})
 	a.classifier = &fakeClassifier{raw: "Add a retry to the fetch."}
 	cmd := a.voiceTranscript("um add a a retry to the fetch")
-	if cmd == nil || !a.voice.busy {
-		t.Fatal("cleanup did not start")
+	// The recognised words are in the composer before the model has said a word.
+	if a.editor.Value() != "um add a a retry to the fetch" {
+		t.Fatalf("the raw text did not appear at once: %q", a.editor.Value())
 	}
-	msg := cmd().(voiceCleanedMsg)
-	if msg.text != "Add a retry to the fetch." {
-		t.Fatalf("cleaned = %q", msg.text)
+	if cmd == nil || !a.voice.busy || !a.voice.live.active {
+		t.Fatalf("no streaming tidy-up started: cmd=%v busy=%v live=%v", cmd != nil, a.voice.busy, a.voice.live.active)
 	}
-	a.Update(msg)
-	if a.editor.Value() != "Add a retry to the fetch." || a.voice.busy {
-		t.Fatalf("composer = %q busy=%v", a.editor.Value(), a.voice.busy)
+	settle(t, a, cmd)
+	if a.editor.Value() != "Add a retry to the fetch." || a.voice.busy || a.voice.live.active {
+		t.Fatalf("composer = %q busy=%v live=%v", a.editor.Value(), a.voice.busy, a.voice.live.active)
 	}
 
-	// A failing fast model inserts what was said.
+	// A failing fast model leaves what was said.
 	a.editor.Reset()
 	a.classifier = &fakeClassifier{err: errors.New("boom")}
-	msg = a.voiceTranscript("run the tests")().(voiceCleanedMsg)
-	if msg.text != "run the tests" {
-		t.Fatalf("fallback = %q", msg.text)
+	settle(t, a, a.voiceTranscript("run the tests"))
+	if a.editor.Value() != "run the tests" || a.voice.busy {
+		t.Fatalf("fallback left %q busy=%v", a.editor.Value(), a.voice.busy)
 	}
-	a.Update(msg)
 
 	// cleanup: false never calls the model.
 	fc := &fakeClassifier{raw: "should not be used"}
 	a.classifier = fc
-	a.settings.Voice.Cleanup = func() *bool { b := false; return &b }()
+	off := false
+	a.settings.Voice.Cleanup = &off
 	a.editor.Reset()
 	a.voiceTranscript("as spoken")
 	if a.editor.Value() != "as spoken" || len(fc.payloads) != 0 {
@@ -289,17 +312,20 @@ func TestTranscriptsKeepTheirOrderThroughCleanup(t *testing.T) {
 	a.classifier = &fakeClassifier{raw: "ok"}
 	first := a.voiceTranscript("one")
 	if second := a.voiceTranscript("two"); second != nil {
-		t.Fatal("a second cleanup started while one was in flight")
+		t.Fatal("a second phrase started while one was being tidied")
 	}
 	if len(a.voice.queue) != 1 {
 		t.Fatalf("queue = %v", a.voice.queue)
 	}
-	a.Update(first().(voiceCleanedMsg))
-	if !a.voice.busy {
-		t.Fatal("the queued transcript did not start after the first finished")
+	settle(t, a, first)
+	// Both phrases came through, in order, and nothing is left waiting.
+	if len(a.voice.queue) != 0 || a.voice.busy {
+		t.Fatalf("queue = %v busy = %v", a.voice.queue, a.voice.busy)
+	}
+	if got := a.editor.Value(); got != "ok ok" {
+		t.Fatalf("composer = %q, want both phrases tidied in order", got)
 	}
 }
-
 func TestSubmitDeliveryBlocksCommandsAndAttachments(t *testing.T) {
 	cases := map[string]string{
 		"/help":            "starts with /",
@@ -449,7 +475,7 @@ func TestFooterAndComposerIcon(t *testing.T) {
 	if a.footer.Voice != "voice: listening" || !a.footer.VoiceOn {
 		t.Fatalf("footer = %q on=%v", a.footer.Voice, a.footer.VoiceOn)
 	}
-	if !strings.ContainsAny(ansi.Strip(a.renderComposer()), "◉◎") {
+	if !strings.ContainsAny(ansi.Strip(a.renderComposer()), "◉◎▗▟▙▖▐▌▝▜▛▘") {
 		t.Fatal("the composer does not show the listening icon")
 	}
 	a.view = viewSettings

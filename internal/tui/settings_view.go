@@ -203,6 +203,7 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "voice.mode", label: "voice mode", kind: "choose", opts: []string{config.VoiceModePushToTalk, config.VoiceModeListen}, value: s.Voice.VoiceModeOr(), src: sourceLabel(origin["voice"]), help: "push_to_talk records while the key is held or toggled; listen keeps the microphone open while the composer is ready"},
 		{key: "voice.delivery", label: "voice delivery", kind: "choose", opts: []string{config.VoiceDeliveryInsert, config.VoiceDeliverySubmit}, value: s.Voice.VoiceDeliveryOr(), src: sourceLabel(origin["voice"]), help: "insert leaves dictated text in the composer; submit also sends it, except text that starts with / or !, or holds an @path"},
 		{key: "voice.cleanup", label: "voice cleanup", kind: "toggle", value: boolLabel(s.Voice.VoiceCleanupEnabled()), src: sourceLabel(origin["voice"]), help: "a fast-model pass that tidies the transcript before it is inserted"},
+		{key: "voice.log", label: "voice log", kind: "toggle", value: boolLabel(s.Voice.VoiceLogEnabled()), src: sourceLabel(origin["voice"]), help: "show voice's automatic notices and its cleanup rows in the transcript; the session record keeps them either way"},
 	}
 	// The Jev jobs exist only while a decision backend is configured; without
 	// one they are off and hidden, not greyed.

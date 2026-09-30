@@ -58,17 +58,20 @@ type voiceState struct {
 	muted bool
 	ready bool // the readiness last told to the engine
 
-	phase     pttPhase
-	seq       int
-	held      string      // dictation waiting for a ready composer
-	heldRaw   string      // the recognised text behind held
-	dictated  []dictation // what was inserted since the last send, for tagging the turn
-	queue     []string    // raw transcripts waiting for cleanup
-	busy      bool        // one cleanup call in flight
-	wantOn    bool        // /voice on was asked while the model was missing
-	hinted    bool        // the off-state key hint was shown this session
-	frame     int         // animation frame, advanced while something on screen moves
-	animating bool        // a frame timer is running
+	phase       pttPhase
+	seq         int
+	held        string             // dictation waiting for a ready composer
+	heldRaw     string             // the recognised text behind held
+	dictated    []dictation        // what was inserted since the last send, for tagging the turn
+	queue       []string           // raw transcripts waiting for cleanup
+	busy        bool               // one cleanup call in flight
+	wantOn      bool               // /voice on was asked while the model was missing
+	hinted      bool               // the off-state key hint was shown this session
+	frame       int                // animation frame, advanced while something on screen moves
+	animating   bool               // a frame timer is running
+	live        liveSpan           // the stretch of the composer dictation is writing
+	cleanGen    int                // which streaming tidy-up is current
+	cleanCancel context.CancelFunc // stops the streaming tidy-up
 
 	downloading bool
 
@@ -156,6 +159,9 @@ func (a *App) syncVoiceReady() tea.Cmd {
 	v.ready = ready
 	v.eng.SetReady(ready)
 	if !ready {
+		// The composer cannot take text: a tidy-up in flight is cut off and the
+		// live span let go. Phrases already queued wait for the composer.
+		a.voiceDetach()
 		v.phase = pttIdle
 		v.seq++
 		return nil
@@ -193,12 +199,16 @@ func (a *App) handleVoiceMsg(msg tea.Msg) (tea.Cmd, bool) {
 			}
 			a.refreshFooter()
 		case voice.EventError:
-			a.addSystem("voice: " + sanitize.Line(m.ev.Err.Error(), 240))
+			a.voiceNote("voice: " + sanitize.Line(m.ev.Err.Error(), 240))
 			a.refreshFooter()
+		case voice.EventPartial:
+			a.voicePartial(m.ev.Text)
 		case voice.EventTranscript:
 			cmd = tea.Batch(cmd, a.voiceTranscript(m.ev.Text))
 		}
 		return cmd, true
+	case voiceCleanMsg:
+		return a.handleVoiceClean(m), true
 	case voiceCleanedMsg:
 		return a.voiceCleaned(m), true
 	case voiceAnimMsg:
@@ -219,6 +229,12 @@ func (a *App) handleVoiceMsg(msg tea.Msg) (tea.Cmd, bool) {
 		}
 		if v.eng == nil && a.view == viewChat && voiceKeyMatches(m.String(), a.settings.Voice.VoiceKeyOr()) {
 			return a.voiceOffHint(), true
+		}
+		// Anything else typed in the composer takes over from voice at once:
+		// what it was recording, writing or about to send is cancelled. The key
+		// then goes on to the composer as usual.
+		if a.view == viewChat {
+			a.voiceCancelFlow()
 		}
 	}
 	return nil, false
@@ -300,7 +316,8 @@ func (a *App) voiceTranscript(raw string) tea.Cmd {
 }
 
 // voiceNext starts the cleanup of the next queued transcript, one at a time so
-// phrases keep their order.
+// phrases keep their order. With the composer ready the phrase is shown at once
+// and tidied in place; otherwise it is tidied out of sight and held.
 func (a *App) voiceNext() tea.Cmd {
 	v := &a.voice
 	if v.busy || len(v.queue) == 0 {
@@ -308,6 +325,13 @@ func (a *App) voiceNext() tea.Cmd {
 	}
 	raw := v.queue[0]
 	v.queue = v.queue[1:]
+	if v.ready {
+		// The words go into the composer at once and the tidy-up streams over
+		// them (voice_live.go).
+		return a.voiceBegin(raw)
+	}
+	// The composer cannot take text right now: tidy the phrase out of sight and
+	// hold the result until it can.
 	if !a.settings.Voice.VoiceCleanupEnabled() || a.classifier == nil {
 		return a.voiceCleaned(voiceCleanedMsg{raw: raw, text: raw})
 	}
@@ -323,7 +347,6 @@ func (a *App) voiceNext() tea.Cmd {
 		return voiceCleanedMsg{raw: raw, text: text}
 	}
 }
-
 func (a *App) voiceCleaned(m voiceCleanedMsg) tea.Cmd {
 	a.voice.busy = false
 	return tea.Batch(a.voiceDeliver(m.raw, m.text), a.voiceNext())
@@ -376,14 +399,7 @@ func (a *App) voiceInsert(raw, text string) tea.Cmd {
 	a.voice.noteDictated(raw, strings.TrimSpace(text))
 	a.refreshAutocomplete()
 	a.relayout()
-	if a.settings.Voice.VoiceDeliveryOr() != config.VoiceDeliverySubmit {
-		return nil
-	}
-	if reason := voiceSubmitBlock(a.editor.Value()); reason != "" {
-		a.addSystem("voice: inserted but not sent, because it " + reason + "; press enter to send it")
-		return nil
-	}
-	return a.handleChatKey(tea.KeyMsg{Type: tea.KeyEnter})
+	return a.voiceMaybeSubmit()
 }
 
 // voiceSubmitBlock says why composer text must not be sent automatically, or
@@ -446,6 +462,7 @@ func (a *App) voiceStop() {
 	if v.eng == nil {
 		return
 	}
+	a.voiceDetach()
 	v.eng.Close()
 	if v.stop != nil {
 		v.stop()
@@ -700,6 +717,8 @@ func (a *App) voiceToggle(key string) error {
 			v.Enabled = voiceBool(!v.VoiceEnabledOr(voice.Embedded()))
 		case "voice.cleanup":
 			v.Cleanup = voiceBool(!v.VoiceCleanupEnabled())
+		case "voice.log":
+			v.Log = voiceBool(!v.VoiceLogEnabled())
 		}
 	})
 }
@@ -736,6 +755,8 @@ func (a *App) voiceUnset(key string) error {
 			s.Voice.Key = ""
 		case "voice.cleanup":
 			s.Voice.Cleanup = nil
+		case "voice.log":
+			s.Voice.Log = nil
 		}
 	})
 }
