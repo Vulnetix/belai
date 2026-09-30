@@ -13,6 +13,7 @@ import (
 	"github.com/vulnetix/belai/internal/config"
 	"github.com/vulnetix/belai/internal/localinfer"
 	"github.com/vulnetix/belai/internal/rolemanager"
+	"github.com/vulnetix/belai/internal/rolemanager/jev"
 	"github.com/vulnetix/belai/internal/sanitize"
 	"github.com/vulnetix/belai/internal/tui/components"
 	"github.com/vulnetix/belai/internal/voice"
@@ -54,9 +55,14 @@ type voiceState struct {
 	// microphone.
 	autostart bool
 
-	mode  string // the engine's mode; delivery, cleanup and key are read live
-	muted bool
-	ready bool // the readiness last told to the engine
+	mode      string // the engine's mode; delivery, cleanup and key are read live
+	muted     bool
+	ready     bool      // the composer can take dictation
+	engReady  bool      // the readiness last told to the engine: the composer, or an ask waiting for a keyword
+	wakeUntil time.Time // a bare "Hey, Belay" counts the next utterance until then
+	jobs      *jev.Jobs // Jev job runner for spoken instructions, see voice_command.go
+	jobsKey   string
+	cmdGen    int // which spoken-instruction match is current; typing bumps it
 
 	phase       pttPhase
 	seq         int
@@ -153,11 +159,17 @@ func (a *App) syncVoiceReady() tea.Cmd {
 		return nil
 	}
 	ready := a.voiceComposerReady()
+	// The microphone also stays open while an ask waits for a spoken keyword.
+	// That is commands-only: v.ready stays false, so nothing is dictated.
+	engine := ready || a.voiceCommandReady()
+	if engine != v.engReady {
+		v.engReady = engine
+		v.eng.SetReady(engine)
+	}
 	if ready == v.ready {
 		return nil
 	}
 	v.ready = ready
-	v.eng.SetReady(ready)
 	if !ready {
 		// The composer cannot take text: a tidy-up in flight is cut off and the
 		// live span let go. Phrases already queued wait for the composer.
@@ -202,11 +214,17 @@ func (a *App) handleVoiceMsg(msg tea.Msg) (tea.Cmd, bool) {
 			a.voiceNote("voice: " + sanitize.Line(m.ev.Err.Error(), 240))
 			a.refreshFooter()
 		case voice.EventPartial:
-			a.voicePartial(m.ev.Text)
+			// A running guess is raw text, so it never shows while the wake
+			// word gates dictation: only a matched utterance may appear.
+			if !a.settings.Voice.VoiceWakeWordEnabled() {
+				a.voicePartial(m.ev.Text)
+			}
 		case voice.EventTranscript:
 			cmd = tea.Batch(cmd, a.voiceTranscript(m.ev.Text))
 		}
 		return cmd, true
+	case voiceCommandMsg:
+		return a.handleVoiceCommand(m), true
 	case voiceCleanMsg:
 		return a.handleVoiceClean(m), true
 	case voiceCleanedMsg:
@@ -307,11 +325,20 @@ func (a *App) voiceTranscript(raw string) tea.Cmd {
 	if raw == "" {
 		return nil
 	}
+	text, cmd, done := a.voiceGate(raw)
+	if done {
+		return cmd
+	}
+	return a.voiceEnqueue(text)
+}
+
+// voiceEnqueue queues text for cleanup and insertion.
+func (a *App) voiceEnqueue(text string) tea.Cmd {
 	v := &a.voice
 	if len(v.queue) >= voiceQueueMax {
 		v.queue = v.queue[1:]
 	}
-	v.queue = append(v.queue, raw)
+	v.queue = append(v.queue, text)
 	return a.voiceNext()
 }
 
@@ -447,7 +474,8 @@ func (a *App) voiceStart(quiet bool) tea.Cmd {
 	eng := voice.New(ctx, voice.Config{Source: src, Load: v.recognizer, Mode: voice.Mode(v.mode)})
 	v.eng, v.muted, v.phase = eng, false, pttIdle
 	v.ready = a.voiceComposerReady()
-	eng.SetReady(v.ready)
+	v.engReady = v.ready || a.voiceCommandReady()
+	eng.SetReady(v.engReady)
 	eng.SetMode(voice.Mode(v.mode))
 	eng.SetEnabled(true)
 	a.relayout() // the text gives up room for the icon
@@ -467,8 +495,9 @@ func (a *App) voiceStop() {
 	if v.stop != nil {
 		v.stop()
 	}
+	v.cmdGen++
 	v.eng, v.stop = nil, nil
-	v.phase, v.held, v.queue, v.busy, v.ready, v.muted = pttIdle, "", nil, false, false, false
+	v.phase, v.held, v.queue, v.busy, v.ready, v.engReady, v.muted = pttIdle, "", nil, false, false, false, false
 	a.relayout()
 	a.refreshFooter()
 }
@@ -608,8 +637,33 @@ func (a *App) voiceCommand(arg string) tea.Cmd {
 		if a.voiceSave(func(v *config.VoiceSettings) { v.Cleanup = voiceBool(on) }) {
 			a.addSystem("voice cleanup: " + fields[1])
 		}
+	case "wake", "commands":
+		if len(fields) < 2 || (fields[1] != "on" && fields[1] != "off") {
+			a.addSystem("usage: /voice " + sub + " on|off")
+			return nil
+		}
+		on := fields[1] == "on"
+		if a.voiceSave(func(v *config.VoiceSettings) {
+			if sub == "wake" {
+				v.WakeWord = voiceBool(on)
+				if on {
+					// Only listen mode hears the wake word; the notice below
+					// says so rather than leave a setting that cannot work.
+					v.Mode = config.VoiceModeListen
+				}
+				return
+			}
+			v.Commands = voiceBool(on)
+		}) {
+			a.voiceApplyMode()
+			msg := "voice " + sub + ": " + fields[1]
+			if sub == "wake" && on {
+				msg += " (mode listen: the wake word needs the microphone open)"
+			}
+			a.addSystem(msg)
+		}
 	default:
-		a.addSystem("usage: /voice [status|debug|on|off|download|push|listen|insert|submit|cleanup on|off]")
+		a.addSystem("usage: /voice [status|debug|on|off|download|push|listen|insert|submit|cleanup on|off|wake on|off|commands on|off]")
 	}
 	return nil
 }
@@ -663,7 +717,7 @@ func (a *App) voiceAfterSetting(key string) tea.Cmd {
 	switch key {
 	case "voice.enabled":
 		return a.voiceApplyEnabled()
-	case "voice.mode":
+	case "voice.mode", "voice.wake_word":
 		a.voiceApplyMode()
 	}
 	return nil
@@ -703,8 +757,9 @@ func (a *App) voiceStatus() string {
 	default:
 		model = voice.ModelFile + " on disk"
 	}
-	return fmt.Sprintf("voice: %s · mode %s · delivery %s · cleanup %s · key %s\ncapture: %s · model: %s",
-		state, s.VoiceModeOr(), s.VoiceDeliveryOr(), onOffLabel(s.VoiceCleanupEnabled()), s.VoiceKeyOr(), capture, model)
+	return fmt.Sprintf("voice: %s · mode %s · delivery %s · cleanup %s · key %s · wake %s · commands %s\ncapture: %s · model: %s",
+		state, s.VoiceModeOr(), s.VoiceDeliveryOr(), onOffLabel(s.VoiceCleanupEnabled()), s.VoiceKeyOr(),
+		onOffLabel(s.VoiceWakeWordEnabled()), onOffLabel(s.VoiceCommandsEnabled()), capture, model)
 }
 
 // voiceToggle flips a voice.* toggle row in the global settings. Voice is a
@@ -719,6 +774,15 @@ func (a *App) voiceToggle(key string) error {
 			v.Cleanup = voiceBool(!v.VoiceCleanupEnabled())
 		case "voice.log":
 			v.Log = voiceBool(!v.VoiceLogEnabled())
+		case "voice.commands":
+			v.Commands = voiceBool(!v.VoiceCommandsEnabled())
+		case "voice.wake_word":
+			on := !v.VoiceWakeWordEnabled()
+			v.WakeWord = voiceBool(on)
+			if on {
+				// Only listen mode hears the wake word (config.ValidateVoice).
+				v.Mode = config.VoiceModeListen
+			}
 		}
 	})
 }
@@ -757,6 +821,10 @@ func (a *App) voiceUnset(key string) error {
 			s.Voice.Cleanup = nil
 		case "voice.log":
 			s.Voice.Log = nil
+		case "voice.commands":
+			s.Voice.Commands = nil
+		case "voice.wake_word":
+			s.Voice.WakeWord = nil
 		}
 	})
 }

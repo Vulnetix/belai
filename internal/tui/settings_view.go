@@ -203,12 +203,15 @@ func (a *App) settingsRows() []settingsRow {
 		{key: "voice.mode", label: "voice mode", kind: "choose", opts: []string{config.VoiceModePushToTalk, config.VoiceModeListen}, value: s.Voice.VoiceModeOr(), src: sourceLabel(origin["voice"]), help: "push_to_talk records while the key is held or toggled; listen keeps the microphone open while the composer is ready"},
 		{key: "voice.delivery", label: "voice delivery", kind: "choose", opts: []string{config.VoiceDeliveryInsert, config.VoiceDeliverySubmit}, value: s.Voice.VoiceDeliveryOr(), src: sourceLabel(origin["voice"]), help: "insert leaves dictated text in the composer; submit also sends it, except text that starts with / or !, or holds an @path"},
 		{key: "voice.cleanup", label: "voice cleanup", kind: "toggle", value: boolLabel(s.Voice.VoiceCleanupEnabled()), src: sourceLabel(origin["voice"]), help: "a fast-model pass that tidies the transcript before it is inserted"},
+		{key: "voice.wake_word", label: "wake word", kind: "toggle", value: boolLabel(s.Voice.VoiceWakeWordEnabled()), src: sourceLabel(origin["voice"]), help: "listen mode acts only on speech that starts with \"Hey, Belay\"; anything else is dropped unheard. Turning it on sets mode listen"},
+		{key: "voice.commands", label: "voice commands", kind: "toggle", value: boolLabel(s.Voice.VoiceCommandsEnabled()), src: sourceLabel(origin["voice"]), help: "spoken keywords (stop, option 2, submit, skip, approve, deny) while a matching ask or turn is open, and Jev's voice_command job"},
 		{key: "voice.log", label: "voice log", kind: "toggle", value: boolLabel(s.Voice.VoiceLogEnabled()), src: sourceLabel(origin["voice"]), help: "show voice's automatic notices and its cleanup rows in the transcript; the session record keeps them either way"},
 	}
 	// The Jev jobs exist only while a decision backend is configured; without
 	// one they are off and hidden, not greyed.
 	if s.JevConfigured() {
 		rows = append(rows, jevRows(s, origin)...)
+		rows = append(rows, jevThresholdRows(s, origin)...)
 	}
 	return rows
 }
@@ -226,6 +229,7 @@ var jevJobLabels = map[config.JevJob]string{
 	config.JevLSPTriage:       "jev lsp triage",
 	config.JevOptionOrder:     "jev option order",
 	config.JevExploreLocate:   "jev explore locate",
+	config.JevVoiceCommand:    "jev voice command",
 }
 
 var jevJobHelp = map[config.JevJob]string{
@@ -236,6 +240,7 @@ var jevJobHelp = map[config.JevJob]string{
 	config.JevLSPTriage:       "file a board bug when another edit is unlikely to clear the language server errors",
 	config.JevOptionOrder:     "put the most likely answer first, marked (Recommended), when the model asks you to choose",
 	config.JevExploreLocate:   "rank the files a question is about, so explore subagents start where the code is",
+	config.JevVoiceCommand:    "run a skill, crew, process, prompt, agent profile or mode you ask for by voice, only when exactly one is a very close match",
 }
 
 // jevRows builds the toggle rows for the Jev jobs, one per job, in the
@@ -366,6 +371,25 @@ func (a *App) handleSettingsKey(m tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "down", "j":
 		if a.settingsState.selected < len(a.settingsRows())-1 {
 			a.settingsState.selected++
+		}
+		return a, nil
+	case "left", "right", "h", "l", "shift+left", "shift+right", "H", "L":
+		rows := a.settingsRows()
+		if a.settingsState.selected >= len(rows) || rows[a.settingsState.selected].kind != "slider" {
+			return a, nil
+		}
+		step := sliderStep
+		if strings.HasPrefix(m.String(), "shift+") || m.String() == "H" || m.String() == "L" {
+			step = sliderFine
+		}
+		if strings.HasSuffix(m.String(), "left") || strings.EqualFold(m.String(), "h") {
+			step = -step
+		}
+		key := strings.TrimPrefix(rows[a.settingsState.selected].key, jevThresholdRowPrefix)
+		if err := a.stepJevThreshold(key, step); err != nil {
+			a.settingsState.errorMsg = err.Error()
+		} else {
+			a.settingsState.errorMsg = ""
 		}
 		return a, nil
 	case "esc":
@@ -744,6 +768,9 @@ func (a *App) cycleChoice(key string, opts []string) error {
 }
 
 func (a *App) unsetSetting(key string) error {
+	if k, ok := strings.CutPrefix(key, jevThresholdRowPrefix); ok {
+		return a.resetJevThreshold(k)
+	}
 	if job, ok := strings.CutPrefix(key, jevRowPrefix); ok && config.ValidJevJob(job) {
 		return a.setJevJob(config.JevJob(job), nil)
 	}

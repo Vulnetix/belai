@@ -13,7 +13,6 @@ import (
 	"github.com/vulnetix/belai/internal/kanban"
 	"github.com/vulnetix/belai/internal/lsp"
 	"github.com/vulnetix/belai/internal/rolemanager"
-	"github.com/vulnetix/belai/internal/rolemanager/jev"
 	"github.com/vulnetix/belai/internal/sanitize"
 )
 
@@ -136,7 +135,7 @@ func (s *Session) triageDiagnostics(ctx context.Context, abs string, rep lsp.Rep
 	p, res, answered := s.jev.RateRepair(ctx, facts, repairRows(errs))
 	unlikely := false
 	if answered {
-		unlikely = p < jev.TriageAt
+		unlikely = p < config.ActiveJevThresholds().TriageAt
 	} else {
 		unlikely = attempts >= s.settings.LSPMaxRepairAttemptsOr(defaultRepairAttempts) && len(errs) >= prev
 	}

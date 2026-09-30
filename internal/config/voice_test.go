@@ -145,7 +145,7 @@ func TestVoiceSettingsJSONKeys(t *testing.T) {
 func TestVoicePageMatchesTheSettings(t *testing.T) {
 	doc := docparity.Read(t, "docs/voice.md")
 	for _, want := range []string{
-		"`enabled`", "`mode`", "`delivery`", "`cleanup`", "`key`", "`device`",
+		"`enabled`", "`mode`", "`delivery`", "`cleanup`", "`key`", "`device`", "`wake_word`", "`commands`",
 		VoiceModePushToTalk, VoiceModeListen, VoiceDeliveryInsert, VoiceDeliverySubmit, DefaultVoiceKey,
 	} {
 		if !strings.Contains(doc, want) {
@@ -242,5 +242,33 @@ func TestVoiceLogIsUserOnly(t *testing.T) {
 	}
 	if !eff.Settings.Voice.VoiceLogEnabled() {
 		t.Fatal("a project file changed what the user's thread shows")
+	}
+}
+
+func TestVoiceWakeWordAndCommands(t *testing.T) {
+	var nilSettings *VoiceSettings
+	if nilSettings.VoiceWakeWordEnabled() || !nilSettings.VoiceCommandsEnabled() {
+		t.Fatal("defaults are wake word off, commands on")
+	}
+	on, off := true, false
+	a := &VoiceSettings{WakeWord: &on, Commands: &off}
+	a.merge(&VoiceSettings{})
+	if !a.VoiceWakeWordEnabled() || a.VoiceCommandsEnabled() {
+		t.Fatalf("an empty merge changed %+v", a)
+	}
+	a.merge(&VoiceSettings{WakeWord: &off, Commands: &on})
+	if a.VoiceWakeWordEnabled() || !a.VoiceCommandsEnabled() {
+		t.Fatalf("merge = %+v", a)
+	}
+}
+
+func TestValidateVoiceWakeWordNeedsListen(t *testing.T) {
+	on := true
+	err := ValidateVoice(Settings{Voice: &VoiceSettings{WakeWord: &on}})
+	if err == nil || !strings.Contains(err.Error(), "voice.wake_word") {
+		t.Fatalf("push to talk with a wake word = %v", err)
+	}
+	if err := ValidateVoice(Settings{Voice: &VoiceSettings{WakeWord: &on, Mode: VoiceModeListen}}); err != nil {
+		t.Fatal(err)
 	}
 }

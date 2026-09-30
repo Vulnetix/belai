@@ -328,3 +328,29 @@ func lspTriageDescription(a Activity) Description {
 	}
 	return d
 }
+
+// RecordVoiceCommand emits the outcome of matching a spoken instruction to an
+// action: verdict "matched" (exactly one target cleared the cut-off and ran) or
+// "none" (no target, or more than one, so the speech stayed dictation). Only the
+// kind of target and a rounded score are recorded, never the speech or a name.
+func RecordVoiceCommand(verdict, kind string, scorePct int, model string, took time.Duration) {
+	recordTimed(EventVoiceCommand, verdict, "", fmt.Sprintf("kind=%s score=%d", sanitize.Ident(kind, 24), scorePct), 0, model, took)
+}
+
+func voiceCommandDescription(a Activity) Description {
+	d := Description{
+		Summary: "Checked whether what you said was an instruction to run something",
+		Outcome: "no single action matched closely enough, so it was dictated as text",
+		Tone:    ToneNeutral,
+		Levels:  LevelDecisions,
+	}
+	if a.Verdict == "matched" {
+		kind := field(a.Detail, "kind")
+		if kind == "" {
+			kind = "an action"
+		}
+		d.Outcome = "matched one " + kind + " and ran it"
+		d.Tone = ToneClear
+	}
+	return d
+}

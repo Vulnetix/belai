@@ -111,11 +111,11 @@ func mergeSearch(det, pool []tools.Candidate, scores map[string]float64, limit i
 	seen := map[string]bool{}
 	for i, c := range det {
 		sc, ok := scores[c.Key()]
-		if ok && sc < jev.DropAt {
+		if ok && sc < config.ActiveJevThresholds().DropAt {
 			continue
 		}
 		if !ok {
-			sc = jev.KeepAt
+			sc = config.ActiveJevThresholds().KeepAt
 		}
 		seen[c.Key()] = true
 		es = append(es, entry{c, sc, i})
@@ -124,7 +124,7 @@ func mergeSearch(det, pool []tools.Candidate, scores map[string]float64, limit i
 		if seen[c.Key()] {
 			continue
 		}
-		if sc, ok := scores[c.Key()]; ok && sc >= jev.StrongAt {
+		if sc, ok := scores[c.Key()]; ok && sc >= config.ActiveJevThresholds().StrongAt {
 			seen[c.Key()] = true
 			es = append(es, entry{c, sc, len(det) + i})
 		}
@@ -206,7 +206,7 @@ func chooseSurface(request string, rated []tools.Candidate, scores map[string]fl
 	}
 	var toolsHit, skillsHit []sc
 	for _, c := range rated {
-		if s, ok := scores[c.Key()]; ok && s >= jev.KeepAt {
+		if s, ok := scores[c.Key()]; ok && s >= config.ActiveJevThresholds().KeepAt {
 			if c.Skill {
 				skillsHit = append(skillsHit, sc{c, s})
 			} else {

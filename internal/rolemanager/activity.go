@@ -56,6 +56,7 @@ const (
 	EventToolSelect                Event = "tool_select"
 	EventLSPTriage                 Event = "lsp_triage"
 	EventExploreLocate             Event = "explore_locate"
+	EventVoiceCommand              Event = "voice_command"
 )
 
 // Level is the display granularity of the internal-work feed. Order matters:
@@ -363,6 +364,8 @@ func Describe(a Activity) (Description, bool) {
 		return bashReplanDescription(a), true
 	case EventOptionOrder:
 		return optionOrderDescription(a), true
+	case EventVoiceCommand:
+		return voiceCommandDescription(a), true
 	case EventPruneCompaction:
 		return pruneCompactionDescription(a), true
 	case EventToolSearch:

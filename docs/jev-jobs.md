@@ -44,8 +44,15 @@ classifier; the space key toggles a row and `x` returns it to its default.
 | `jev.jobs.<job>` | `true` or `false` for a job in the list below. A missing key means on. An unknown job name is an error. |
 | `jev.locate_previews` | Where declared names from your files may go when files are ranked: `local` (the local decision model and a self-hosted server only, the default), `hosted` (also OpenRouter and TypeSafe's hosted API) or `off` (paths only, everywhere). |
 
+| `jev.thresholds.<key>` | A score cut-off, a number from 0 to 1, for a gate or job. A missing key keeps its default. The keys are in [Scores and thresholds](#scores-and-thresholds). An out-of-range value or an inverted pair is an error, and settings that fail to validate are never used. |
+
 The project layer may turn a job **off**, never on, and may only narrow
-`locate_previews`. Changing a switch drops the cached agent session so the next
+`locate_previews`. It cannot set `thresholds`: a repository's value is ignored,
+because moving a gate is your call. In `/settings` each cut-off is a slider row
+(shown while a decision backend is configured): left and right move it by 0.05,
+shift with them by 0.01, and `x` restores the default. A move that would break
+one of the rules below is refused with the rule's message, and a change is saved
+to your user settings and applies at once. Changing a switch drops the cached agent session so the next
 prompt runs with it.
 
 | Job | What it does | Status |
@@ -57,19 +64,41 @@ prompt runs with it.
 | `lsp_triage` | Files a board bug when another edit is unlikely to clear language server errors | Shipped |
 | `option_order` | Puts the likeliest option first, marked (Recommended), when the model asks you to choose | Shipped |
 | `explore_locate` | Ranks the files a question is about, seeds the explore subagents with them, and offers a `Locate` tool | Shipped |
+| `voice_command` | Matches a short spoken instruction to one skill, crew, process, prompt, agent profile, the security review or a mode, and runs it only on a very close match | Shipped |
 
 ## Scores and thresholds
 
 `Client.Score` in `internal/rolemanager/jev` rates a list of items against one
 criterion. A request holds the long criterion once, in the state, and one short
-question per item that points at it. Thresholds are constants that jobs read:
+question per item that points at it. Every cut-off is a `jev.thresholds` key
+with the default shown; a job reads the value from your settings:
 
-| Constant | Value | Use |
+| Constant | Setting | Default | Use |
+| --- | --- | --- | --- |
+| `DropAt` | `drop_at` | 0.10 | An item scoring below this is dropped from a list it was on |
+| `KeepAt` | `keep_at` | 0.50 | An item scoring at or above this is kept |
+| `StrongAt` | `strong_at` | 0.80 | An item scoring at or above this is added to a list |
+| `SwapAt` | `swap_at` | 0.95 | A single candidate at or above this replaces the call it rates |
+| | `voice_at` | 0.95 | Exactly one target at or above this runs a spoken instruction; it cannot be set below 0.5 |
+| `TriageAt` | `triage_at` | 0.30 | Below this another edit pass is judged unlikely to help |
+| `HitAt` | `hit_at` | 0.50 | A located file at or above this is a hit |
+| `LeadAt` | `lead_at` | 0.25 | A located file from here to `hit_at` is a lead, and below it is dropped |
+| | `option_hit`, `option_margin`, `option_lead` | 0.50, 0.10, 0.25 | The first option is a clear winner at `option_hit` with a lead of `option_margin`, or with a lead of `option_lead` |
+| | `mode_confident`, `mode_margin`, `mode_headless` | 0.80, 0.25, 0.50 | A detected intent is confident at `mode_confident` with a lead of `mode_margin`; a non-interactive run accepts one at `mode_headless` |
+
+Two more cut-offs belong to the decision gates rather than a job:
+
+| Setting | Default | Use |
 | --- | --- | --- |
-| `DropAt` | 0.10 | An item scoring below this is dropped from a list it was on |
-| `KeepAt` | 0.50 | An item scoring at or above this is kept |
-| `StrongAt` | 0.80 | An item scoring at or above this is added to a list |
-| `SwapAt` | 0.95 | A single candidate at or above this replaces the call it rates |
+| `allow_at` | 0.10 | The security gate lets a call or content through at or below this. It cannot exceed 0.5. |
+| `deny_at` | 0.90 | The security gate blocks at or above this. It cannot be below 0.5. |
+| `route_at` | 0.50 | A routing candidate must score above this to be chosen |
+
+`allow_at` and `deny_at` must be at least 0.05 apart, so a band always remains
+where the answer goes to the agent model or to you. Lowering `deny_at` makes the
+gate stricter; raising `allow_at` makes it looser. `drop_at` cannot exceed
+`keep_at`, `keep_at` cannot exceed `strong_at`, and `lead_at` cannot exceed
+`hit_at`.
 
 How a request is sent:
 
@@ -415,3 +444,36 @@ instead of circling.
 Recorded as an `lsp_triage` event: `filed`, `retry` or `unfiled`, with the pass
 count, the error count and the backend's score in percent (-1 when it did not
 answer). Never a path or a message.
+
+## Voice command
+
+With [voice input](voice.md#spoken-instructions) on, a short utterance that is
+not a spoken keyword and (with `voice.wake_word` on) follows the wake word is
+matched to something you could have asked for by name, and that thing runs.
+
+- **What is offered.** Up to 48 targets, each a plain identifier: plan mode and
+  goal mode, the security review, your crews, agent profiles, saved processes,
+  saved prompts and installed skills. Only the kind and the name go to the
+  backend, plus one fixed line for the mode and review targets. No description
+  from a skill file, prompt body or process command is sent.
+- **What the backend sees.** The speech, cleaned, as `DecisionText`, and the
+  names. It rates, for each target, "the speech is an explicit instruction to
+  start exactly the thing named", so a sentence that only mentions a name, asks
+  about it or is about something else does not count.
+- **When it runs.** Only at 24 words or fewer, with `voice.commands` and the
+  job switch on, and a backend configured. The match waits at most 4 seconds.
+  Typing cancels a pending match.
+- **The decision.** Exactly one target at or above `voice_at` (0.95) runs. Two
+  at or above it is ambiguous and nothing runs, the same as none. A score of
+  0.94 is a miss. Any failure, a missing backend or a timeout leaves the speech
+  as ordinary dictation, exactly as if the job were off. The job never asks a
+  chat model.
+- **What running means.** The target's own function, the one its slash command
+  calls. A process still refuses in plan mode, a crew still passes fleet
+  preflight and the worker cap, an agent profile still has to be one the picker
+  offers, and a prompt only fills the composer for you to send. A skill is
+  submitted as "use the NAME skill" through the typed-prompt path, so every
+  admission gate applies. A shell line said aloud is never run.
+
+Recorded as a `voice_command` event: `matched` or `none`, the kind of target
+and the score in percent. Never the speech or a name.

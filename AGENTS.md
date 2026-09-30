@@ -650,7 +650,21 @@ See [docs/development.md](docs/development.md) for the full local and QA workflo
   over the streaming classifier, cut off if it runs away), and any key typed in
   the composer cancels all of it, including the Enter that submit delivery
   would press (`voiceCancelFlow`, `Engine.Cancel`). Do not add a model-facing
-  tool that starts capture.
+  tool that starts capture. The wake word (`voice.wake_word`, listen mode only)
+  gates on the final transcript: speech without "Hey, Belay" is dropped in
+  `voiceGate` before it is queued, shown, cleaned, sent to Jev or recorded, and
+  partials never show while it is on. Spoken keywords (`internal/voicecmd`, a
+  fixed vocabulary matched on the whole utterance, never a model) act only on
+  the ask or running turn they name, through `settlePermissionAsk`,
+  `settleClarify`, the plan-review arms and `cancelTurn`, with source `voice`;
+  an open ask keeps the microphone ready for keywords alone (`voiceCommandReady`),
+  and nothing else said there is shown or sent. `allow always` needs its exact
+  phrase. The `voice_command` Jev job sees the cleaned speech and plain target
+  names only, needs exactly one target at or above `voice_at` (default 0.95, at
+  least 0.5, user layers only), and runs only the function the matching slash
+  command runs, never a spoken command line; it falls back to dictation on any
+  miss, failure or timeout. `voice.wake_word` and `voice.commands` are
+  per-user keys, dropped from the project layer.
 - **Session sync mirrors the file and admits web prompts as prompts.**
   `internal/sessionsync` uploads only the lines `appendEntry` already wrote to
   the session JSONL, keyed by line index; it never composes an entry. It sends

@@ -167,6 +167,7 @@ back to its category's letter (S, M, C, T, L, ?, R, .) and the markers to
 | `⊡` | dependency change | `context` |
 | `⊨` | test report | `context` |
 | `◖` | dictation tidied | `context` |
+| `◗` | spoken instruction matched | `ask` |
 | `⇄` | Bash swapped for a builtin | `tools` |
 | `⇆` | Bash replanned | `tools` |
 | `⊛` | tool and skill search | `tools` |

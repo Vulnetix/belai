@@ -2840,13 +2840,7 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 			a.follow = true
 			return nil
 		}
-		if a.preSend {
-			// Cancel the in-flight pre-send: mode classification is still
-			// running; the turn is dropped when the decision lands.
-			a.preSend = false
-			a.endPhase()
-			a.addSystem("request cancelled")
-			a.persistTail()
+		if a.cancelPreSend() {
 			return nil
 		}
 		if a.reviewSteerable() {
@@ -2854,21 +2848,7 @@ func (a *App) handleChatKey(m tea.KeyMsg) tea.Cmd {
 			a.cancelReview()
 			return nil
 		}
-		if a.cancel != nil {
-			a.cancel()
-			a.cancel = nil
-			a.closeTurn("interrupted")
-			a.endPhase()
-			// Flush whatever streamed before the cancel (reasoning, partial
-			// text, completed tools, notices) so the transcript survives.
-			if last := a.trailingAssistant(); last >= 0 {
-				a.messages[last].Materialise()
-			}
-			if last := a.trailingReasoning(); last >= 0 {
-				a.messages[last].Materialise()
-			}
-			a.addSystem("request cancelled")
-			a.persistTail()
+		if a.cancelTurn() {
 			return nil
 		}
 		// Last step of the cascade: composer clear is two-press armed. Every
@@ -6602,6 +6582,43 @@ func nonceHex() string {
 		return "00000000"
 	}
 	return hex.EncodeToString(b[:])
+}
+
+// cancelPreSend cancels the in-flight pre-send: mode classification is still
+// running, and the turn is dropped when the decision lands. It reports whether
+// there was one.
+func (a *App) cancelPreSend() bool {
+	if !a.preSend {
+		return false
+	}
+	a.preSend = false
+	a.endPhase()
+	a.addSystem("request cancelled")
+	a.persistTail()
+	return true
+}
+
+// cancelTurn interrupts the running agent turn, and reports whether there was
+// one. Esc and the spoken "stop" share it.
+func (a *App) cancelTurn() bool {
+	if a.cancel == nil {
+		return false
+	}
+	a.cancel()
+	a.cancel = nil
+	a.closeTurn("interrupted")
+	a.endPhase()
+	// Flush whatever streamed before the cancel (reasoning, partial
+	// text, completed tools, notices) so the transcript survives.
+	if last := a.trailingAssistant(); last >= 0 {
+		a.messages[last].Materialise()
+	}
+	if last := a.trailingReasoning(); last >= 0 {
+		a.messages[last].Materialise()
+	}
+	a.addSystem("request cancelled")
+	a.persistTail()
+	return true
 }
 
 // working reports whether an agent turn is in flight. It is true from send()

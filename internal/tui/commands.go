@@ -117,16 +117,9 @@ func NewRegistry(workdir string) *Registry {
 	})
 	r.Register("mode", "show or set operating mode", nil, func(a *App, arg string) tea.Cmd {
 		if arg != "" {
-			a.mode = arg
-			a.modeExplicit = true
-			a.modeSticky = true
-			a.syncPlanMode()
-			a.saveMode()
-			a.persistCarrierMeta()
-			a.addSystem("mode: " + arg)
-		} else {
-			a.addSystem("mode: " + a.mode)
+			return a.setOperatingMode(arg)
 		}
+		a.addSystem("mode: " + a.mode)
 		return nil
 	})
 	r.Register("todos", "show plan progress", nil, func(a *App, arg string) tea.Cmd {

@@ -44,6 +44,7 @@ var allEvents = []Event{
 	EventPruneCompaction,
 	EventToolSearch,
 	EventExploreLocate,
+	EventVoiceCommand,
 	EventToolSelect,
 	EventLSPTriage,
 }

@@ -163,6 +163,7 @@ func Resolve(workdir string, env func(string) string, flags Settings) (Effective
 	if err := ValidateVoice(eff.Settings); err != nil {
 		return eff, err
 	}
+	SetActiveJevThresholds(eff.Settings.JevThresholds())
 	if err := ValidateFirewall(eff.Settings); err != nil {
 		return eff, err
 	}
