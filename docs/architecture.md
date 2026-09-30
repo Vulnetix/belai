@@ -1725,7 +1725,7 @@ background agent seen this session with its state, running tool, iteration,
 tool count, elapsed time and latest output line; **profiles** is the profile
 list and editor; **audit** is the step-by-step trail (state changes, tool
 calls, results, replies, errors) held in a bounded in-memory ledger of 1000
-rows. On the running tab `enter` follows an agent's thread in chat, `p` pauses
+rows. On the live tab `enter` follows an agent's thread in chat, `p` pauses
 or resumes a background agent, `x` stops it (or cancels or dismisses a
 subagent), and `a` narrows the audit tab to it. `/agent list` opens the
 profiles tab and `/agent log <name>` opens that agent's audit trail. Audit rows

@@ -503,19 +503,20 @@ func NewRegistry(workdir string) *Registry {
 			return nil
 		}
 	})
-	r.Register("agents", "running agents, profiles and the audit trail", func() []string {
-		return []string{"running", "profiles", "audit", "fleet"}
+	r.Register("agents", "live agents, workers, profiles and the audit trail", func() []string {
+		return []string{"live", "profiles", "audit", "workers"}
 	}, func(a *App, arg string) tea.Cmd {
+		// "fleet" and "running" are the tabs' earlier names and still work.
 		switch strings.TrimSpace(arg) {
 		case "profiles":
 			return a.openAgentsTab(agentTabProfiles)
 		case "audit":
 			a.agentState.auditFilter = ""
 			return a.openAgentsTab(agentTabAudit)
-		case "fleet":
+		case "workers", "fleet":
 			a.agentState.fleet.loaded = time.Time{}
 			return tea.Batch(a.openAgentsTab(agentTabFleet), a.fleetTick())
-		case "running":
+		case "live", "running":
 			return a.openAgentsTab(agentTabLive)
 		default:
 			// Nothing has run yet: the profiles are the useful first view.

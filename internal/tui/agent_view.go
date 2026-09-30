@@ -39,13 +39,13 @@ type agentViewState struct {
 	// entry lands on.
 	tab     int
 	openTab *int
-	// liveSel is the highlighted agent on the running tab.
+	// liveSel is the highlighted agent on the live tab.
 	liveSel int
 	// auditSel is the highlighted row on the audit tab, newest first, and
 	// auditFilter narrows the trail to one agent id.
 	auditSel    int
 	auditFilter string
-	// fleet is the fleet tab (fleet_view.go).
+	// fleet is the workers tab (fleet_view.go).
 	fleet fleetUI
 }
 
@@ -58,7 +58,7 @@ const (
 	agentTabCount
 )
 
-var agentTabNames = [agentTabCount]string{"running", "profiles", "audit", "fleet"}
+var agentTabNames = [agentTabCount]string{"live", "profiles", "audit", "workers"}
 
 // openAgentsTab pushes the hub on one tab.
 func (a *App) openAgentsTab(tab int) tea.Cmd {

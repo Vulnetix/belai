@@ -159,7 +159,7 @@ claims it by its `build` label.
 
 ### Pausing a worker
 
-`belai agent pause ID|NAME` (or `p` on the fleet tab of `/agents`) asks a
+`belai agent pause ID|NAME` (or `p` on the workers tab of `/agents`) asks a
 worker to pause. It finishes the card it holds, so no change is left half made,
 then claims nothing and reports `paused` until `belai agent resume` (or `p`
 again). The request is an empty marker file beside the worker's registry
@@ -309,7 +309,7 @@ override the profile's model for that run.
 
 ## In the TUI
 
-`/fleet` opens the fleet tab of `/agents` (also `4` there):
+`/fleet` opens the workers tab of `/agents` (also `4` there):
 workers with their state, the item each holds, items done and failed, and a
 heartbeat; `l` shows the selected worker's log, `x` stops it and `X` stops
 them all. `/fleet start NAME`, `/fleet crew NAME` and `/fleet stop ID|all`
@@ -330,7 +330,7 @@ every two seconds while the tab is open.
 | `x` / `X` | stop the selected worker, or every worker |
 | `l` | show the selected worker's log tail |
 | `enter` | show the worker's item on the kanban tab |
-| `v` | open the fleet tab of `/agents` |
+| `v` | open the workers tab of `/agents` |
 | `r` | refresh |
 
 On the kanban tab, `w` hands an item to the chosen crew: it adds the crew's

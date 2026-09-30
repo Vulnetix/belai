@@ -176,7 +176,7 @@ func keySections() []keySection {
 			{"x, X", "stop the selected worker, stop every worker"},
 			{"l", "show the selected worker's log tail"},
 			{"enter", "show the worker's item on the kanban tab"},
-			{"v", "open the fleet tab of /agents"},
+			{"v", "open the workers tab of /agents"},
 			{"r", "refresh"},
 		}},
 		{"plan review (after a plan-mode turn)", []keyBinding{
