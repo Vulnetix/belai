@@ -42,7 +42,7 @@ The architecture overview lives in [architecture.md](architecture.md).
 | Streaming | `internal/run` | Send turns and parse tool calls from provider responses | Live |
 | Carrier resolution | `internal/agent` | Resolve active plan/goal/profile into prompt.Options | Live |
 | Credential resolution | `internal/credentials` | Detect configured providers and select the right default | Live |
-| Mode cycling | `internal/tui` | shift+tab cycles agent → plan → goal with persistence | Live |
+| Mode cycling | `internal/tui` | shift+tab cycles agent → plan → goal → auto (no sticky mode, the classifier decides) with persistence; `/handoff <plan file>` skips detection | Live |
 | Status bar | `internal/tui` | Provider·model, mode chip, cwd, git branch, context-usage bar + percentage | Live |
 | Banner | `internal/tui` | Pix owl rendered with half-blocks, ASCII fallback | Live |
 | Settings UI | `internal/tui` | /settings browser (write-through) + /permissions editor | Live |
@@ -1363,6 +1363,56 @@ present: a file under the project plans directory, under a `plans/` directory,
 with `*plan*.md` in its basename, or containing at least three task markers.
 The plan text never enters the system block; only harness-computed metadata
 (label, task count, referenced paths) crosses into the detector.
+
+### Auto mode
+
+`shift+tab` cycles agent, plan, goal, then **auto**, and `/mode auto` sets it
+directly. Auto is not a fourth `modes.Mode`: it is the absence of a sticky
+choice (`App.modeAuto`, with `modeSticky` and `modeExplicit` both false), so
+every prompt goes through mode and intent detection as it does in a fresh
+session. `App.mode` keeps holding the effective mode, agent until a decision
+lands, so every `mode == "agent"` check and the tool surface are unchanged.
+
+- The footer chip reads `auto` with the classifier's last pick beside it
+  (`auto · plan`). A turn's intent label such as `handoff` replaces the pick
+  for that turn.
+- The next press leaves auto for agent, whatever mode the classifier last
+  chose. That step clears the engaged agent profile like goal to agent did.
+- Every other choice (`/mode <name>`, `/profile`, `/execute`, plan review
+  Approve, resume of a sticky session) clears auto and is sticky again.
+- It persists as `mode: auto` in the project prefs and in session meta, and
+  restores as non-sticky: the restored session does not force the first turn.
+- With no classifier configured the prompt takes the forced-agent path, so
+  auto behaves as agent; cycling into it says so.
+- Nothing is relaxed: detection still only narrows, the mode-choice panel
+  still asks before a sticky mode is left, and admission, permissions and the
+  plan-mode surface are unchanged.
+
+### Explicit handoff (`/handoff`)
+
+`/handoff <plan file path> [extra direction]` runs a plan file as a handoff
+without detection. The path goes through the composer's own `@path` admission
+(confined to the session roots, sanitised, classified; a path outside every
+root asks to adopt its directory). Then:
+
+- `TurnInput.Handoff` carries harness facts only (label, task count,
+  referenced paths, from `plans.HandoffFactsFor`). It applies no filename or
+  task-count hint, because the user named the file, but the file must be
+  Markdown with a body.
+- `Session.run` builds the decision as `IntentHandoff.Decision(facts)` with
+  `UserChosen` set and reports it through the same mode-decided event. It does
+  not run the intent detector, the mode-choice panel or the plan-attachment
+  heuristic, and `ForceMode`, the plan-mode default and the engaged agent name
+  do not override it.
+- Prompt admission, attachment classification, hooks, permissions, the
+  sandbox and the `update_plan` first-call gate all still apply. The turn
+  stays path-scoped to the plan's named paths.
+- Run from plan mode, `/handoff` leaves plan mode (the command is the user's
+  choice to edit). It does not change the sticky flag or engaged agent
+  otherwise.
+- With no extra direction the prompt is "Execute the attached plan." If the
+  file is not attached (missing, not Markdown, withheld) the turn runs as an
+  ordinary prompt and says so.
 
 ### Forced mode
 
