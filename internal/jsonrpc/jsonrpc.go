@@ -64,6 +64,13 @@ func (m *Message) IsNotification() bool { return m.Method != "" && len(m.ID) == 
 // notification the result is discarded.
 type Handler func(ctx context.Context, method string, params json.RawMessage) (any, error)
 
+// Reply is a handler result with work to do once the response is on the wire,
+// for a peer that must see the answer before any notification about it.
+type Reply struct {
+	Result any
+	After  func()
+}
+
 // Conn is one JSON-RPC connection.
 type Conn struct {
 	w       io.Writer
@@ -159,6 +166,10 @@ func (c *Conn) dispatch(m *Message) {
 	if c.handler != nil {
 		result, err = c.handler(c.ctx, m.Method, m.Params)
 	}
+	var after func()
+	if r, ok := result.(*Reply); ok && r != nil {
+		result, after = r.Result, r.After
+	}
 	if m.IsNotification() {
 		return
 	}
@@ -179,6 +190,9 @@ func (c *Conn) dispatch(m *Message) {
 		}
 	}
 	_ = c.write(resp)
+	if after != nil && resp.Error == nil {
+		after()
+	}
 }
 
 func (c *Conn) write(m *Message) error {

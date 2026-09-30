@@ -103,3 +103,22 @@ func TestCallCancelled(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestReplyUnwrapsTheResultAndRunsAfter(t *testing.T) {
+	ran := make(chan struct{})
+	_, cli := pair(func(ctx context.Context, method string, params json.RawMessage) (any, error) {
+		return &Reply{Result: map[string]int{"n": 1}, After: func() { close(ran) }}, nil
+	}, nil)
+	var out struct{ N int }
+	if err := cli.Call(context.Background(), "x", nil, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.N != 1 {
+		t.Fatalf("result not unwrapped: %+v", out)
+	}
+	select {
+	case <-ran:
+	case <-time.After(time.Second):
+		t.Fatal("After never ran")
+	}
+}

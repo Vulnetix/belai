@@ -96,6 +96,9 @@ func (w *Writer) Branch(to string) string {
 	return m.ID
 }
 
+// Entries reads back this session's own file.
+func (w *Writer) Entries() ([]Entry, error) { return w.store.ReadFrom(w.key, w.id) }
+
 // Last is the id the next entry will parent to.
 func (w *Writer) Last() string {
 	w.mu.Lock()
