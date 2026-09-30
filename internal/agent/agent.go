@@ -700,6 +700,12 @@ type TurnInput struct {
 	// Select call, since the caller's decision would otherwise be re-run and
 	// discarded. It is not "forced": an empty Mode still classifies.
 	Mode rolemanager.ModeDecision
+	// Handoff is set by /handoff: the user named this plan file, so the turn
+	// is a plan handoff without intent detection. Harness facts only (label,
+	// task count, paths); the plan text stays the classified attachment.
+	// Admission, attachment classification and every permission gate still
+	// apply.
+	Handoff *rolemanager.HandoffFacts
 	// ModeHint is the currently selected UI mode and whether it is sticky.
 	// It feeds the intent detector's mode-choice logic.
 	ModeHint rolemanager.ModeHint
@@ -932,7 +938,7 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	// mode. The interactive TUI forces its plan mode through
 	// TurnInput.ForceMode, so this only changes the paths that rely on the
 	// session baseline alone.
-	if s.planMode && in.Mode.Mode == "" && in.ForceMode == "" && in.ForceAgent == "" {
+	if s.planMode && in.Mode.Mode == "" && in.ForceMode == "" && in.ForceAgent == "" && in.Handoff == nil {
 		in.ForceMode = modes.ModePlan
 	}
 
@@ -941,7 +947,7 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 	// they run concurrently. Selection is skipped when the caller already
 	// supplied a decision or forced a mode/agent — its result would be
 	// discarded below.
-	needSelect := in.Mode.Mode == "" && in.ForceMode == "" && in.ForceAgent == ""
+	needSelect := in.Mode.Mode == "" && in.ForceMode == "" && in.ForceAgent == "" && in.Handoff == nil
 	detectCh := make(chan rolemanager.Detection, 1)
 	detectErrCh := make(chan error, 1)
 	// selectWG joins the mode-selection goroutine before run returns on ANY
@@ -995,6 +1001,15 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 
 	emit(Event{Kind: EventRoleManagerKind, Phase: RoleManagerPhasePrePrompt})
 	modeDec := in.Mode
+	if in.Handoff != nil {
+		// The user named the plan: no intent detection and no mode-choice
+		// panel. The decision is the handoff profile's, reported like a
+		// detected one so the chip and session record show it.
+		modeDec = rolemanager.IntentHandoff.Decision(in.Handoff)
+		modeDec.UserChosen = true
+		d := modeDec
+		emit(Event{Kind: EventModeDecidedKind, Mode: &d})
+	}
 	if needSelect {
 		var det rolemanager.Detection
 		select {
@@ -1024,7 +1039,7 @@ func (s *Session) runTurn(ctx context.Context, history []run.Turn, in TurnInput,
 
 	// An explicitly chosen mode outranks the classifier. ForceAgent is the
 	// narrower of the two (it also names the profile), so it is applied last.
-	if in.ForceMode != "" {
+	if in.ForceMode != "" && in.Handoff == nil {
 		modeDec = rolemanager.DecideForcedMode(in.ForceMode, clean, in.HasReferences)
 	}
 

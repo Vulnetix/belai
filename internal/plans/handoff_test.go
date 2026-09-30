@@ -88,3 +88,16 @@ func TestReferencedPathsDedupes(t *testing.T) {
 		t.Fatalf("got %v, want [a.go]", got)
 	}
 }
+
+func TestHandoffFactsForNeedsNoHint(t *testing.T) {
+	f, ok := HandoffFactsFor("notes.md", "just prose about `internal/a.go`")
+	if !ok || f.Tasks != 0 || len(f.Paths) != 1 {
+		t.Fatalf("facts = %+v ok=%v", f, ok)
+	}
+	if _, ok := HandoffFactsFor("notes.txt", "1. a"); ok {
+		t.Fatal("non-Markdown accepted")
+	}
+	if _, ok := HandoffFactsFor("plan.md", "  \n"); ok {
+		t.Fatal("empty body accepted")
+	}
+}
