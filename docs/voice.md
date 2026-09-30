@@ -88,12 +88,15 @@ Whisper tiny.en in ggml q5_1 form (English only, MIT licence).
 
 ### Built into release binaries
 
-Every release variant carries the model inside the binary, the same way the
-classifier models are embedded: `just voiceprep` (which every build recipe
-runs) fetches the file once into the `assets` directory of `internal/voice`, which is gitignored,
-and the `belai_voice` build tag embeds it with `go:embed`. A release binary
-therefore needs no download and no network to dictate. `Embedded` reports it,
-`LoadModel` reads it, and `/voice status` says `model: built in`.
+Every release family except the plain `belai` build carries the model inside
+the binary (`belai-no-classifier`, `belai-bert-guardrails`, which Homebrew,
+Scoop and `install.sh` install by default, and `belai-bert-guardrails-jailbreak`),
+the same way the classifier models are embedded: `just voiceprep` (which the
+build recipes for those variants run) fetches the file once into the `assets`
+directory of `internal/voice`, which is gitignored, and the `belai_voice` build
+tag embeds it with `go:embed`. Those binaries therefore need no download and no
+network to dictate. `Embedded` reports it, `LoadModel` reads it, and
+`/voice status` says `model: built in`.
 
 The embedded copy is hashed against the pinned SHA-256 each time it loads.
 `tools/voiceprep` verifies the file it fetched, and CI's `voice` job runs the
@@ -101,8 +104,10 @@ package tests and a build with the tag, so a checksum that no longer matches
 Hugging Face fails before a release. Release builds cache the file under a key
 taken from `internal/voice/models.go`, where the checksum is pinned.
 
-A build made without the tag (a plain `go build`) has no model inside. It uses
-the download path below, so contributors can build without fetching 32 MB.
+The plain `belai` release build is the small one (about 24 MB against about 56 MB
+for `belai-no-classifier`) and embeds nothing, and neither does a `go build`
+made without the tag. They use the download path below: voice is off until you
+run `/voice on`, then `/voice download` fetches the 32 MB file once.
 
 ### Fetching it for a build without the model inside
 
@@ -139,8 +144,9 @@ Audio with no speech-level sound never reaches the model.
 | `push_to_talk` (default) | open only while you record | hold `voice.key` to record while held; tap it to record until you stop speaking |
 | `listen` | open whenever the composer is ready | `voice.key` mutes and unmutes |
 
-Voice is on by default in a release build, where the model is built into the
-binary; a build without the model stays off until `/voice on`. Install a
+Voice is on by default where the model is built into the binary (every release
+family except the plain `belai` build); a build without the model stays off
+until `/voice on`. Install a
 capture helper, then hold `f11` and speak. Turn voice off with `/voice off`,
 which is remembered. Pressing the key while voice is not running is not
 silent: belai says once per session why (voice is off, the helper is missing,
@@ -405,7 +411,7 @@ cleanup failure never loses what you said. Route the role like any other with
 
 | Key | Default | Project layer |
 | --- | --- | --- |
-| `enabled` | on when the model is built into the binary (a release build), otherwise `false`; an explicit `false` always wins | dropped |
+| `enabled` | on when the model is built into the binary (every release family except plain `belai`), otherwise `false`; an explicit `false` always wins | dropped |
 | `mode` | `push_to_talk`; the other value is `listen` | dropped |
 | `delivery` | `insert`; the other value is `submit` | dropped |
 | `cleanup` | `true` | dropped |

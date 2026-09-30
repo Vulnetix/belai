@@ -18,10 +18,10 @@ const installs = [
 
 // Sizes drive the bars, relative to the largest family.
 const variants = [
-  { asset: 'belai-bert-guardrails', flag: 'bert-guardrails', tag: 'default', embeds: 'phase-1 prompt-saturation model', size: 40, note: 'Guardrails classify locally with no provider and no API key configured.' },
-  { asset: 'belai-bert-guardrails-jailbreak', flag: 'bert-guardrails-jailbreak', tag: '', embeds: 'phase-1 and phase-2 jailbreak models', size: 485, note: 'Adds the local jailbreak gate, run in parallel with phase 1.' },
-  { asset: 'belai', flag: 'vanilla', tag: '', embeds: 'nothing', size: 23, note: 'Classifies with the LLM sentinel, as Belai did before models were embedded.' },
-  { asset: 'belai-no-classifier', flag: 'no-classifier', tag: '', embeds: 'nothing', size: 23, note: 'For hosts that classify somewhere else entirely.' },
+  { asset: 'belai-bert-guardrails', flag: 'bert-guardrails', tag: 'default', embeds: 'phase-1 prompt-saturation model and the speech model', size: 77, note: 'Guardrails classify locally with no provider and no API key configured.' },
+  { asset: 'belai-bert-guardrails-jailbreak', flag: 'bert-guardrails-jailbreak', tag: '', embeds: 'phase-1 and phase-2 jailbreak models and the speech model', size: 517, note: 'Adds the local jailbreak gate, run in parallel with phase 1.' },
+  { asset: 'belai', flag: 'vanilla', tag: '', embeds: 'nothing', size: 24, note: 'Classifies with the LLM sentinel, as Belai did before models were embedded. Voice input downloads its speech model on request.' },
+  { asset: 'belai-no-classifier', flag: 'no-classifier', tag: '', embeds: 'the speech model only', size: 56, note: 'For hosts that classify somewhere else entirely. Voice input works with no download.' },
 ];
 const maxSize = Math.max(...variants.map((v) => v.size));
 
