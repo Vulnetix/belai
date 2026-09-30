@@ -56,22 +56,25 @@ func (w *Worker) runReview(ctx context.Context) error {
 }
 
 // securityStep runs the worker's harness duties before it looks for a card:
-// the sweep once per start, then a reconcile from the artefacts already on
-// disk. It never fails the worker; a problem is logged and the worker goes on
-// to claim what the board holds.
+// the sweep once for each HEAD this worker sees (so a worker kept waiting with
+// -stay sweeps a new commit, and a sweep that found nothing is not retried
+// until HEAD moves), then a reconcile from the artefacts already on disk. It
+// never fails the worker; a problem is logged and the worker goes on to claim
+// what the board holds.
 func (w *Worker) securityStep(ctx context.Context, project string) {
 	if w.Profile.Kanban == nil || w.Profile.Kanban.Security == nil || w.Item != "" {
 		return
 	}
 	sec := w.Profile.Kanban.Security
+	head, headErr := w.headRef(ctx)
 	switch {
-	case sec.Sweep && !w.swept:
-		w.swept = true
+	case sec.Sweep && headErr == nil && head != w.sweptRef:
+		w.sweptRef = head
 		// A working worker keeps its crew mates waiting rather than letting
 		// them leave while the scan runs.
 		w.Record.State = StateWorking
 		w.save()
-		w.sweep(ctx)
+		w.sweep(ctx, head)
 		w.Record.State = StateIdle
 		w.save()
 	case sec.Reconcile:
@@ -82,12 +85,7 @@ func (w *Worker) securityStep(ctx context.Context, project string) {
 // sweep makes sure a review ran on HEAD and that every finding it reports has
 // a card. The only gate is evidence in the artefacts that HEAD was scanned:
 // there is no clock, cache or daily limit.
-func (w *Worker) sweep(ctx context.Context) {
-	head, err := w.headRef(ctx)
-	if err != nil {
-		w.logf("security sweep: no HEAD: %v", err)
-		return
-	}
+func (w *Worker) sweep(ctx context.Context, head string) {
 	dir := w.artefactDir()
 	if ok, ev := scanartifacts.ReviewedAt(dir, head); ok {
 		w.logf("security sweep: %s already carries a review of %s; not scanning", strings.Join(ev.Files, ", "), head[:12])

@@ -146,7 +146,7 @@ func TestSweepRunsAgainOnANewHEADWithNoClock(t *testing.T) {
 	}
 	for _, h := range []string{secHeadOld, secHeadNew} {
 		w.Head = head(h)
-		w.swept = false
+		w.sweptRef = ""
 		writeReview(t, w.Repo, h, "CVE-2026-4")
 		if err := w.Run(context.Background()); err != nil {
 			t.Fatal(err)
@@ -216,3 +216,20 @@ func TestReconcileWaitsForEvidenceOnHEAD(t *testing.T) {
 }
 
 var _ = run.Result{}
+
+// The sweep is keyed on HEAD: polling again on the same commit does not scan
+// twice, a failed sweep is not retried until HEAD moves, and a new commit is
+// swept again.
+func TestSecurityStepSweepsOncePerHEAD(t *testing.T) {
+	store, reg := testEnv(t)
+	w := newWorker(t, store, reg, sweeper(), complete)
+	reviews := 0
+	w.Review = func(context.Context) error { reviews++; return nil } // leaves no artefact
+	for _, h := range []string{secHeadOld, secHeadOld, secHeadOld, secHeadNew, secHeadNew} {
+		w.Head = head(h)
+		w.securityStep(context.Background(), "")
+	}
+	if reviews != 2 {
+		t.Fatalf("review ran %d times, want once per HEAD (2)", reviews)
+	}
+}
